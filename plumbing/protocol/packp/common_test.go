@@ -6,8 +6,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 // returns a byte slice with the pkt-lines for the given payloads.

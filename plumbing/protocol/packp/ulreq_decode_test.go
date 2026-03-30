@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/suite"
 )
 
 type UlReqDecodeSuite struct {
@@ -20,6 +21,7 @@ type UlReqDecodeSuite struct {
 }
 
 func TestUlReqDecodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UlReqDecodeSuite))
 }
 
@@ -49,13 +51,13 @@ func (s *UlReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern stri
 	s.Regexp(regexp.MustCompile(pattern), err)
 }
 
-func (s *UlReqDecodeSuite) TestInvalidFirstHash() {
+func (s *UlReqDecodeSuite) TestMalformedHash() {
 	payloads := []string{
 		"want 6ecf0ef2c2dffb796alberto2219af86ec6584e5\n",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
-	s.testDecoderErrorMatches(r, ".*invalid hash.*")
+	s.testDecoderErrorMatches(r, ".*malformed hash.*")
 }
 
 func (s *UlReqDecodeSuite) TestWantOK() {
@@ -135,6 +137,28 @@ func (s *UlReqDecodeSuite) TestManyWantsNoCapabilities() {
 		plumbing.NewHash("2222222222222222222222222222222222222222"),
 		plumbing.NewHash("3333333333333333333333333333333333333333"),
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
+	}
+
+	sort.Sort(byHash(ur.Wants))
+	sort.Sort(byHash(expected))
+	s.Equal(expected, ur.Wants)
+}
+
+func (s *UlReqDecodeSuite) TestManySHA256WantsNoCapabilities() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333333333333333333333333333\n",
+		"want 4444444444444444444444444444444444444444444444444444444444444444\n",
+		"want 1111111111111111111111111111111111111111111111111111111111111111\n",
+		"want 2222222222222222222222222222222222222222222222222222222222222222\n",
+		"",
+	}
+	ur, _ := s.testDecodeOK(payloads, 0)
+
+	expected := []plumbing.Hash{
+		plumbing.NewHash("1111111111111111111111111111111111111111111111111111111111111111"),
+		plumbing.NewHash("2222222222222222222222222222222222222222222222222222222222222222"),
+		plumbing.NewHash("3333333333333333333333333333333333333333333333333333333333333333"),
+		plumbing.NewHash("4444444444444444444444444444444444444444444444444444444444444444"),
 	}
 
 	sort.Sort(byHash(ur.Wants))

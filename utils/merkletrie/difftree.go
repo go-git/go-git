@@ -7,7 +7,7 @@ package merkletrie
 // The diff algorithm implemented here is based on the doubleiter
 // type defined in this same package; we will iterate over both
 // trees at the same time, while comparing the current noders in
-// each iterator.  Depending on how they differ we will output the
+// each iterator. Depending on how they differ we will output the
 // corresponding changes and move the iterators further over both
 // trees.
 //
@@ -255,10 +255,8 @@ import (
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
-var (
-	// ErrCanceled is returned whenever the operation is canceled.
-	ErrCanceled = errors.New("operation canceled")
-)
+// ErrCanceled is returned whenever the operation is canceled.
+var ErrCanceled = errors.New("operation canceled")
 
 // DiffTree calculates the list of changes between two merkletries.  It
 // uses the provided hashEqual callback to compare noders.
@@ -275,7 +273,8 @@ func DiffTree(
 // Error will be returned if context expires
 // Provided context must be non nil
 func DiffTreeContext(ctx context.Context, fromTree, toTree noder.Noder,
-	hashEqual noder.Equal) (Changes, error) {
+	hashEqual noder.Equal,
+) (Changes, error) {
 	ret := NewChanges()
 
 	ii, err := newDoubleIter(fromTree, toTree, hashEqual)

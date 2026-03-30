@@ -93,6 +93,7 @@ func (mi *MemoryIndex) Add(hash plumbing.Hash, data *CommitData) {
 	mi.hasGenerationV2 = mi.hasGenerationV2 && data.GenerationV2 != 0
 }
 
+// HasGenerationV2 returns true if the index has generation v2 data.
 func (mi *MemoryIndex) HasGenerationV2() bool {
 	return mi.hasGenerationV2
 }
@@ -102,6 +103,7 @@ func (mi *MemoryIndex) Close() error {
 	return nil
 }
 
+// MaximumNumberOfHashes returns the maximum number of hashes in the index.
 func (mi *MemoryIndex) MaximumNumberOfHashes() uint32 {
 	return uint32(len(mi.indexMap))
 }

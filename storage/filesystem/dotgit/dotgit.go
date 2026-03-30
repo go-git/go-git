@@ -1,11 +1,14 @@
+// Package dotgit implements the .git directory layout.
 // https://github.com/git/git/blob/master/Documentation/gitrepository-layout.txt
 package dotgit
 
 import (
 	"bufio"
 	"bytes"
+	"crypto"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path"
@@ -16,37 +19,40 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/storage"
-	"github.com/go-git/go-git/v6/utils/ioutil"
-
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/helper/chroot"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
+	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 const (
-	suffix         = ".git"
-	packedRefsPath = "packed-refs"
-	configPath     = "config"
-	indexPath      = "index"
-	shallowPath    = "shallow"
-	modulePath     = "modules"
-	objectsPath    = "objects"
-	packPath       = "pack"
-	refsPath       = "refs"
-	branchesPath   = "branches"
-	hooksPath      = "hooks"
-	infoPath       = "info"
-	remotesPath    = "remotes"
-	logsPath       = "logs"
-	worktreesPath  = "worktrees"
-	alternatesPath = "alternates"
+	packedRefsPath     = "packed-refs"
+	configPath         = "config"
+	configWorktreePath = "config.worktree"
+	indexPath          = "index"
+	shallowPath        = "shallow"
+	modulePath         = "modules"
+	objectsPath        = "objects"
+	packPath           = "pack"
+	refsPath           = "refs"
+	branchesPath       = "branches"
+	hooksPath          = "hooks"
+	infoPath           = "info"
+	remotesPath        = "remotes"
+	logsPath           = "logs"
+	worktreesPath      = "worktrees"
+	alternatesPath     = "alternates"
 
 	tmpPackedRefsPrefix = "._packed-refs"
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
-	idxExt     = ".idx"
 )
 
 var (
@@ -88,6 +94,16 @@ type Options struct {
 	// If none is provided, it falls back to using the underlying instance used for
 	// DotGit.
 	AlternatesFS billy.Filesystem
+
+	ObjectFormat formatcfg.ObjectFormat
+
+	// ReadReverseIndex controls whether .rev files are read from disk.
+	// When false, a reverse index is generated in memory on demand.
+	// Defaults to true.
+	ReadReverseIndex bool
+	// WriteReverseIndex controls whether .rev files are written when
+	// creating new packfiles. Defaults to true.
+	WriteReverseIndex bool
 }
 
 // The DotGit type represents a local git repository on disk. This
@@ -112,7 +128,11 @@ type DotGit struct {
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return NewWithOptions(fs, Options{})
+	return NewWithOptions(fs, Options{
+		ObjectFormat:      formatcfg.DefaultObjectFormat,
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
 }
 
 // NewWithOptions sets non default configuration options.
@@ -183,6 +203,16 @@ func (d *DotGit) Config() (billy.File, error) {
 	return d.fs.Open(configPath)
 }
 
+// ConfigWorktree returns a file pointer for read to the worktree config file.
+func (d *DotGit) ConfigWorktree() (billy.File, error) {
+	return d.fs.Open(configWorktreePath)
+}
+
+// ConfigWorktreeWriter returns a file pointer for write to the worktree config file.
+func (d *DotGit) ConfigWorktreeWriter() (billy.File, error) {
+	return d.fs.Create(configWorktreePath)
+}
+
 // IndexWriter returns a file pointer for write to the index file
 func (d *DotGit) IndexWriter() (billy.File, error) {
 	return d.fs.Create(indexPath)
@@ -191,6 +221,11 @@ func (d *DotGit) IndexWriter() (billy.File, error) {
 // Index returns a file pointer for read to the index file
 func (d *DotGit) Index() (billy.File, error) {
 	return d.fs.Open(indexPath)
+}
+
+// StatIndex returns the os.FileInfo for the index file without opening it.
+func (d *DotGit) StatIndex() (os.FileInfo, error) {
+	return d.fs.Stat(indexPath)
 }
 
 // ShallowWriter returns a file pointer for write to the shallow file
@@ -212,11 +247,45 @@ func (d *DotGit) Shallow() (billy.File, error) {
 	return f, nil
 }
 
+// ReflogReader returns a file pointer for reading the reflog for the given reference.
+// Returns nil, nil if the reflog file does not exist.
+func (d *DotGit) ReflogReader(name plumbing.ReferenceName) (billy.File, error) {
+	p := d.fs.Join(logsPath, string(name))
+	f, err := d.fs.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return f, nil
+}
+
+// ReflogWriter returns a file pointer for appending to the reflog for the given reference.
+// It creates the file and any necessary parent directories if they don't exist.
+func (d *DotGit) ReflogWriter(name plumbing.ReferenceName) (billy.File, error) {
+	p := d.fs.Join(logsPath, string(name))
+	if err := d.fs.MkdirAll(filepath.Dir(p), os.ModePerm); err != nil {
+		return nil, err
+	}
+	return d.fs.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+}
+
+// DeleteReflog removes the reflog file for the given reference.
+func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
+	p := d.fs.Join(logsPath, string(name))
+	err := d.fs.Remove(p)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	d.cleanPackList()
-	return newPackWrite(d.fs)
+	return newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
 }
 
 // ObjectPacks returns the list of availables packfiles
@@ -244,7 +313,7 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 		return nil, err
 	}
 
-	var packs []plumbing.Hash
+	packs := make([]plumbing.Hash, 0, len(files))
 	for _, f := range files {
 		n := f.Name()
 		if !strings.HasSuffix(n, packExt) || !strings.HasPrefix(n, packPrefix) {
@@ -300,7 +369,7 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 	return pack, nil
 }
 
-// ObjectPack returns a fs.File of the given packfile
+// ObjectPack returns a fs.File of the given packfile.
 func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	err := d.hasPack(hash)
 	if err != nil {
@@ -310,7 +379,7 @@ func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
 	return d.objectPackOpen(hash, `pack`)
 }
 
-// ObjectPackIdx returns a fs.File of the index file for a given packfile
+// ObjectPackIdx returns a fs.File of the index file for a given packfile.
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 	err := d.hasPack(hash)
 	if err != nil {
@@ -319,6 +388,74 @@ func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 
 	return d.objectPackOpen(hash, `idx`)
 }
+
+// ObjectPackRev returns a fs.File of the reverse index file for a given packfile.
+func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
+	err := d.hasPack(hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.objectPackOpen(hash, `rev`)
+}
+
+// OpenPackRev returns a [idxfile.ReadAtCloser] for the reverse index of the given
+// packfile. When ReadReverseIndex is true the .rev file is read from disk;
+// otherwise the reverse index is generated in memory on demand.
+func (d *DotGit) OpenPackRev(hash plumbing.Hash) (idxfile.ReadAtCloser, error) {
+	if d.options.ReadReverseIndex {
+		r, err := d.ObjectPackRev(hash)
+		if err == nil {
+			return r, nil
+		}
+	}
+	return d.generateInMemoryRev(hash)
+}
+
+// generateInMemoryRev builds the reverse index data in memory from the
+// .idx file. A fresh reverse index is generated on every call.
+func (d *DotGit) generateInMemoryRev(h plumbing.Hash) (idxfile.ReadAtCloser, error) {
+	f, err := d.ObjectPackIdx(h)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	var hasher hash.Hash
+	if h.Size() == crypto.SHA256.Size() {
+		hasher = plumbhash.New(crypto.SHA256)
+	} else {
+		hasher = plumbhash.New(crypto.SHA1)
+	}
+
+	idx := idxfile.NewMemoryIndex(h.Size())
+	dec := idxfile.NewDecoder(f, hasher)
+	if err := dec.Decode(idx); err != nil {
+		return nil, fmt.Errorf("cannot decode idx for in-memory rev generation: %w", err)
+	}
+
+	hasher.Reset()
+
+	var buf bytes.Buffer
+	if err := revfile.Encode(&buf, hasher, idx); err != nil {
+		return nil, fmt.Errorf("cannot encode in-memory rev: %w", err)
+	}
+
+	return newBytesReadAtCloser(buf.Bytes()), nil
+}
+
+// bytesReadAtCloser wraps a bytes.Reader to satisfy [idxfile.ReadAtCloser].
+type bytesReadAtCloser struct {
+	*bytes.Reader
+}
+
+func newBytesReadAtCloser(data []byte) *bytesReadAtCloser {
+	return &bytesReadAtCloser{Reader: bytes.NewReader(data)}
+}
+
+func (b *bytesReadAtCloser) Close() error { return nil }
 
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	d.cleanPackList()
@@ -532,7 +669,7 @@ func (d *DotGit) genPackList() error {
 		return err
 	}
 
-	d.packMap = make(map[plumbing.Hash]struct{})
+	d.packMap = make(map[plumbing.Hash]struct{}, len(op))
 	d.packList = nil
 
 	for _, h := range op {
@@ -858,7 +995,7 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		if time.Since(start) > 15*time.Second {
 			return nil, errors.New("timeout trying to lock packed refs")
 		}
-		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0600)
+		f, err = d.fs.OpenFile(packedRefsPath, openFlags, 0o600)
 		if err != nil {
 			if os.IsNotExist(err) && !doCreate {
 				return nil, nil
@@ -872,9 +1009,11 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 		}
 		mtime := fi.ModTime()
 
-		err = f.Lock()
-		if err != nil {
-			return nil, err
+		if locker, ok := f.(billy.Locker); ok {
+			err = locker.Lock()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		fi, err = d.fs.Stat(packedRefsPath)
@@ -1140,20 +1279,22 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 func (d *DotGit) AddAlternate(remote string) error {
 	altpath := d.fs.Join(objectsPath, infoPath, alternatesPath)
 
-	f, err := d.fs.OpenFile(altpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
+	f, err := d.fs.OpenFile(altpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
 	if err != nil {
 		return fmt.Errorf("cannot open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	// locking in windows throws an error, based on comments
-	// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
-	// do not lock on windows platform.
-	if runtime.GOOS != "windows" {
-		if err = f.Lock(); err != nil {
-			return fmt.Errorf("cannot lock file: %w", err)
+	if locker, ok := f.(billy.Locker); ok {
+		// locking in windows throws an error, based on comments
+		// https://github.com/go-git/go-git/pull/860#issuecomment-1751823044
+		// do not lock on windows platform.
+		if runtime.GOOS != "windows" {
+			if err = locker.Lock(); err != nil {
+				return fmt.Errorf("cannot lock file: %w", err)
+			}
+			defer func() { _ = locker.Unlock() }()
 		}
-		defer f.Unlock()
 	}
 
 	line := path.Join(remote, objectsPath) + "\n"
@@ -1173,7 +1314,7 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fs := d.options.AlternatesFS
 	if fs == nil {
@@ -1199,7 +1340,7 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 			// Handling absolute paths should be straight-forward. However, the default osfs (Chroot)
 			// tries to concatenate an abs path with the root path in some operations (e.g. Stat),
 			// which leads to unexpected errors. Therefore, make the path relative to the current FS instead.
-			if reflect.TypeOf(fs) == reflect.TypeOf(&chroot.ChrootHelper{}) {
+			if reflect.TypeOf(fs) == reflect.TypeFor[*chroot.ChrootHelper]() {
 				path, err = filepath.Rel(fs.Root(), path)
 				if err != nil {
 					return nil, fmt.Errorf("cannot make path %q relative: %w", path, err)
@@ -1238,6 +1379,12 @@ func (d *DotGit) Fs() billy.Filesystem {
 	return d.fs
 }
 
+func (d *DotGit) SetObjectFormat(of formatcfg.ObjectFormat) error {
+	d.options.ObjectFormat = of
+
+	return nil
+}
+
 func isHex(s string) bool {
 	for _, b := range []byte(s) {
 		if isNum(b) {
@@ -1271,9 +1418,9 @@ func incBytes(in []byte) (out []byte, overflow bool) {
 	for i := len(out) - 1; i >= 0; i-- {
 		out[i]++
 		if out[i] != 0 {
-			return // Didn't overflow.
+			return out, overflow // Didn't overflow.
 		}
 	}
 	overflow = true
-	return
+	return out, overflow
 }

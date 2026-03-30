@@ -6,8 +6,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type DeltaSuite struct {
@@ -16,6 +17,7 @@ type DeltaSuite struct {
 }
 
 func TestDeltaSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DeltaSuite))
 }
 
@@ -64,10 +66,21 @@ func (s *DeltaSuite) SetupSuite() {
 		target:      []piece{{"0", 100}},
 	}, {
 		description: "complex modification",
-		base: []piece{{"0", 3}, {"1", 40}, {"2", 30}, {"3", 2},
-			{"4", 400}, {"5", 23}},
-		target: []piece{{"1", 30}, {"2", 20}, {"7", 40}, {"4", 400},
-			{"5", 10}},
+		base: []piece{
+			{"0", 3},
+			{"1", 40},
+			{"2", 30},
+			{"3", 2},
+			{"4", 400},
+			{"5", 23},
+		},
+		target: []piece{
+			{"1", 30},
+			{"2", 20},
+			{"7", 40},
+			{"4", 400},
+			{"5", 10},
+		},
 	}, {
 		description: "A copy operation bigger than 64kb",
 		base:        []piece{{bigRandStr, 1}, {"1", 200}},
@@ -187,7 +200,7 @@ func FuzzPatchDelta(f *testing.F) {
 	f.Add([]byte("some value"), []byte("\n\x0e\x0eva"))
 	f.Add([]byte("some value"), []byte("\n\x80\x80\x80\x80\x80\x802\x7fvalue"))
 
-	f.Fuzz(func(t *testing.T, input1, input2 []byte) {
+	f.Fuzz(func(_ *testing.T, input1, input2 []byte) {
 		PatchDelta(input1, input2)
 	})
 }

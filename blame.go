@@ -10,10 +10,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sergi/go-diff/diffmatchpatch"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/utils/diff"
-	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 // BlameResult represents the result of a Blame operation.
@@ -216,16 +217,18 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 			cur := curItems[i].NeedsMap
 			n := 0 // position in newNeedsMap
 			c := 0 // position in current list
+		curLoop:
 			for c < len(cur) {
-				if n == len(newNeedsMap) {
+				switch {
+				case n == len(newNeedsMap):
 					newNeedsMap = append(newNeedsMap, cur[c:]...)
-					break
-				} else if newNeedsMap[n].Cur == cur[c].Cur {
+					break curLoop
+				case newNeedsMap[n].Cur == cur[c].Cur:
 					n++
 					c++
-				} else if newNeedsMap[n].Cur < cur[c].Cur {
+				case newNeedsMap[n].Cur < cur[c].Cur:
 					n++
-				} else {
+				default:
 					newNeedsMap = append(newNeedsMap, cur[c])
 					newPos := len(newNeedsMap) - 1
 					for newPos > n {
@@ -238,7 +241,6 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		curItem.NeedsMap = newNeedsMap
 		curItem.IdenticalToChild = false
 		curItem.Child = nil
-		curItems = nil // free the memory
 	}
 
 	parents, err := parentsContainingPath(curItem.path, curItem.Commit)
@@ -302,7 +304,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 	out:
 		for h := range hunks {
 			hLines := countLines(hunks[h].Text)
-			for hl := 0; hl < hLines; hl++ {
+			for range hLines {
 				switch hunks[h].Type {
 				case diffmatchpatch.DiffEqual:
 					prevl++
@@ -381,13 +383,14 @@ func finishNeeds(curItem *queueItem) (bool, error) {
 		m := 0 // position in merged needs map
 		p := 0 // position in parent needs map
 		for p < len(ctn.NeedsMap) {
-			if ctn.NeedsMap[p].Cur == curItem.NeedsMap[m].Cur {
+			switch {
+			case ctn.NeedsMap[p].Cur == curItem.NeedsMap[m].Cur:
 				ctn.NeedsMap[p].Commit = curItem.NeedsMap[m].Commit
 				m++
 				p++
-			} else if ctn.NeedsMap[p].Cur < curItem.NeedsMap[m].Cur {
+			case ctn.NeedsMap[p].Cur < curItem.NeedsMap[m].Cur:
 				p++
-			} else {
+			default:
 				m++
 			}
 		}
@@ -469,20 +472,6 @@ func (b BlameResult) maxAuthorLength() int {
 	return m
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 type childToNeedsMap struct {
 	Child            *queueItem
 	NeedsMap         []lineMap
@@ -518,6 +507,7 @@ func (pq *priorityQueueImp) Pop() any {
 
 	return ret
 }
+
 func (pq *priorityQueueImp) Peek() *object.Commit {
 	if len(*pq) == 0 {
 		return nil
@@ -532,6 +522,7 @@ func (pq *priorityQueue) Len() int { return (*priorityQueueImp)(pq).Len() }
 func (pq *priorityQueue) Push(c *queueItem) {
 	heap.Push((*priorityQueueImp)(pq), c)
 }
+
 func (pq *priorityQueue) Pop() *queueItem {
 	return heap.Pop((*priorityQueueImp)(pq)).(*queueItem)
 }

@@ -5,14 +5,14 @@ import (
 	"io"
 	"testing"
 
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type FileSuite struct {
@@ -21,6 +21,7 @@ type FileSuite struct {
 }
 
 func TestFileSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FileSuite))
 }
 
@@ -247,7 +248,7 @@ func (s *FileSuite) TestFileIter() {
 
 	count = 0
 	i = tree.Files()
-	i.ForEach(func(f *File) error {
+	i.ForEach(func(_ *File) error {
 		count++
 		return storer.ErrStop
 	})

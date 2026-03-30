@@ -6,6 +6,7 @@ import (
 )
 
 func TestEncodeEmptyGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	var p GitProtoRequest
 	err := p.Encode(&buf)
@@ -15,6 +16,7 @@ func TestEncodeEmptyGitProtoRequest(t *testing.T) {
 }
 
 func TestEncodeGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	p := GitProtoRequest{
 		RequestCommand: "command",
@@ -33,6 +35,7 @@ func TestEncodeGitProtoRequest(t *testing.T) {
 }
 
 func TestEncodeInvalidGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	p := GitProtoRequest{
 		RequestCommand: "command",
@@ -44,6 +47,7 @@ func TestEncodeInvalidGitProtoRequest(t *testing.T) {
 }
 
 func TestDecodeEmptyGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	var p GitProtoRequest
 	err := p.Decode(&buf)
@@ -53,6 +57,7 @@ func TestDecodeEmptyGitProtoRequest(t *testing.T) {
 }
 
 func TestDecodeGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	buf.WriteString("002ecommand pathname\x00host=host\x00\x00param1\x00param2\x00")
 	var p GitProtoRequest
@@ -81,6 +86,7 @@ func TestDecodeGitProtoRequest(t *testing.T) {
 }
 
 func TestDecodeInvalidGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	buf.WriteString("0026command \x00host=host\x00\x00param1\x00param2")
 	var p GitProtoRequest
@@ -91,6 +97,7 @@ func TestDecodeInvalidGitProtoRequest(t *testing.T) {
 }
 
 func TestValidateEmptyGitProtoRequest(t *testing.T) {
+	t.Parallel()
 	var p GitProtoRequest
 	err := p.validate()
 	if err == nil {

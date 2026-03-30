@@ -1,12 +1,13 @@
 package commitgraph
 
 import (
+	"errors"
 	"io"
+
+	"github.com/emirpasic/gods/trees/binaryheap"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-
-	"github.com/emirpasic/gods/trees/binaryheap"
 )
 
 type commitNodeIteratorByCTime struct {
@@ -34,7 +35,7 @@ func NewCommitNodeIterCTime(
 		seen[h] = true
 	}
 
-	heap := binaryheap.NewWith(func(a, b interface{}) int {
+	heap := binaryheap.NewWith(func(a, b any) int {
 		if a.(CommitNode).CommitTime().Before(b.(CommitNode).CommitTime()) {
 			return 1
 		}
@@ -92,7 +93,7 @@ func (w *commitNodeIteratorByCTime) ForEach(cb func(CommitNode) error) error {
 		}
 
 		err = cb(c)
-		if err == storer.ErrStop {
+		if errors.Is(err, storer.ErrStop) {
 			break
 		}
 		if err != nil {

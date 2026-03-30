@@ -84,7 +84,7 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 			// to handle plain files with different modes.
 			// Other non-tree objects are somewhat rare, so they
 			// are not special-cased.
-			if obj.Entries[i].Mode|0755 == filemode.Executable {
+			if obj.Entries[i].Mode|0o755 == filemode.Executable {
 				p.add(obj.Entries[i].Hash)
 				continue
 			}

@@ -36,7 +36,8 @@ type doubleIter struct {
 // to compare the hash of the noders in the merkletries.  The doubleIter
 // will be initialized to the first elements in each merkletrie if any.
 func newDoubleIter(from, to noder.Noder, hashEqual noder.Equal) (
-	*doubleIter, error) {
+	*doubleIter, error,
+) {
 	var ii doubleIter
 	var err error
 
@@ -159,7 +160,7 @@ func (d *doubleIter) compare() (s comparison, err error) {
 	s.fromIsEmptyDir = fromIsDir && fromNumChildren == 0
 	s.toIsEmptyDir = toIsDir && toNumChildren == 0
 
-	return
+	return s, err
 }
 
 // Answers to a lot of questions you can ask about how to noders are

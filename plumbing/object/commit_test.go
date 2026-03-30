@@ -10,10 +10,10 @@ import (
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -24,6 +24,7 @@ type SuiteCommit struct {
 }
 
 func TestSuiteCommit(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteCommit))
 }
 
@@ -227,8 +228,9 @@ change
 %s
 `, pgpsignature)
 
-	ts, err := time.Parse(time.RFC3339, "2006-01-02T15:04:05-07:00")
+	ts, err := time.ParseInLocation(time.RFC3339, "2006-01-02T15:04:05-07:00", time.UTC)
 	s.NoError(err)
+
 	commits := []*Commit{
 		{
 			Author:       Signature{Name: "Foo", Email: "foo@example.local", When: ts},
@@ -272,14 +274,14 @@ change
 				plumbing.NewHash("f000000000000000000000000000000000000002"),
 				plumbing.NewHash("f000000000000000000000000000000000000003"),
 			},
-			MergeTag:     tag,
-			PGPSignature: pgpsignature,
-			Encoding:     defaultUtf8CommitMessageEncoding,
+			MergeTag:  tag,
+			Signature: pgpsignature,
+			Encoding:  defaultUtf8CommitMessageEncoding,
 		},
 	}
 	for _, commit := range commits {
 		obj := &plumbing.MemoryObject{}
-		err = commit.Encode(obj)
+		err := commit.Encode(obj)
 		s.NoError(err)
 		newCommit := &Commit{}
 		err = newCommit.Decode(obj)
@@ -384,21 +386,21 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 =EFTF
 -----END PGP SIGNATURE-----
 `
-	commit.PGPSignature = pgpsignature
+	commit.Signature = pgpsignature
 
 	err := commit.Encode(encoded)
 	s.NoError(err)
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(pgpsignature, decoded.PGPSignature)
+	s.Equal(pgpsignature, decoded.Signature)
 
 	// signature with extra empty line, it caused "index out of range" when
 	// parsing it
 
 	pgpsignature2 := "\n" + pgpsignature
 
-	commit.PGPSignature = pgpsignature2
+	commit.Signature = pgpsignature2
 	encoded = &plumbing.MemoryObject{}
 	decoded = &Commit{}
 
@@ -407,11 +409,11 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(pgpsignature2, decoded.PGPSignature)
+	s.Equal(pgpsignature2, decoded.Signature)
 
 	// signature in author name
 
-	commit.PGPSignature = ""
+	commit.Signature = ""
 	commit.Author.Name = beginpgp
 	encoded = &plumbing.MemoryObject{}
 	decoded = &Commit{}
@@ -421,12 +423,12 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal("", decoded.PGPSignature)
+	s.Equal("", decoded.Signature)
 	s.Equal(beginpgp, decoded.Author.Name)
 
 	// broken signature
 
-	commit.PGPSignature = beginpgp + "\n" +
+	commit.Signature = beginpgp + "\n" +
 		"some\n" +
 		"trash\n" +
 		endpgp +
@@ -439,7 +441,7 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(commit.PGPSignature, decoded.PGPSignature)
+	s.Equal(commit.Signature, decoded.Signature)
 }
 
 func (s *SuiteCommit) TestStat() {
@@ -479,7 +481,7 @@ func (s *SuiteCommit) TestVerify() {
 `,
 		TreeHash:     plumbing.NewHash("52a266a58f2c028ad7de4dfd3a72fdf76b0d4e24"),
 		ParentHashes: []plumbing.Hash{plumbing.NewHash("e4fbb611cd14149c7a78e9c08425f59f4b736a9a")},
-		PGPSignature: `
+		Signature: `
 -----BEGIN PGP SIGNATURE-----
 
 iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
@@ -522,7 +524,6 @@ func (s *SuiteCommit) TestPatchCancel() {
 	patch, err := from.PatchContext(ctx, to)
 	s.Nil(patch)
 	s.ErrorContains(err, "operation canceled")
-
 }
 
 func (s *SuiteCommit) TestMalformedHeader() {
@@ -530,7 +531,7 @@ func (s *SuiteCommit) TestMalformedHeader() {
 	decoded := &Commit{}
 	commit := *s.Commit
 
-	commit.PGPSignature = "\n"
+	commit.Signature = "\n"
 	commit.Author.Name = "\n"
 	commit.Author.Email = "\n"
 	commit.Committer.Name = "\n"
@@ -590,6 +591,7 @@ Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
 	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err = commit.EncodeWithoutSignature(encoded)
+	s.NoError(err)
 	er, err := encoded.Reader()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)
@@ -629,20 +631,20 @@ initial commit
 	s.NoError(err)
 
 	s.Equal(commit.ExtraHeaders, []ExtraHeader{
-		ExtraHeader {
-			Key: "continuedheader",
+		{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued",
 		},
-		ExtraHeader {
-			Key: "continuedheader",
+		{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued\non\nmore than\na single line",
 		},
-		ExtraHeader {
-			Key: "simpleflag",
+		{
+			Key:   "simpleflag",
 			Value: "",
 		},
-		ExtraHeader {
-			Key: "",
+		{
+			Key:   "",
 			Value: "value no key",
 		},
 	})
@@ -650,6 +652,7 @@ initial commit
 	// Similar to TestString since no signature
 	encoded := &plumbing.MemoryObject{}
 	err = commit.EncodeWithoutSignature(encoded)
+	s.NoError(err)
 	er, err := encoded.Reader()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)

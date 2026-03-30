@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 type SuiteReader struct {
@@ -18,6 +19,7 @@ type SuiteReader struct {
 }
 
 func TestSuiteReader(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteReader))
 }
 
@@ -348,8 +350,8 @@ func (s *SuiteReader) TestReadPacketError() {
 // and so on
 func sectionsExample(nSections, nLines int) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
-	for section := 0; section < nSections; section++ {
-		for line := 0; line < nLines; line++ {
+	for section := range nSections {
+		for line := range nLines {
 			line := fmt.Sprintf(" %d.%d\n", section, line)
 			_, err := pktline.WriteString(&buf, line)
 			if err != nil {

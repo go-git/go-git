@@ -17,8 +17,8 @@
 // Originally from: https://github.com/xanzy/ssh-agent/blob/main/sshagent.go
 
 //go:build !windows
-// +build !windows
 
+// Package sshagent provides functionality to interact with the SSH agent.
 package sshagent
 
 import (
@@ -27,8 +27,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/go-git/go-git/v6/utils/trace"
 	"golang.org/x/crypto/ssh/agent"
+
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // New returns a new agent.Agent that uses a unix socket

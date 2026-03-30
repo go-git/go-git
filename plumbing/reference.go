@@ -29,6 +29,7 @@ var RefRevParseRules = []string{
 }
 
 var (
+	// ErrReferenceNotFound is returned when a reference is not found.
 	ErrReferenceNotFound = errors.New("reference not found")
 
 	// ErrInvalidReferenceName is returned when a reference name is invalid.
@@ -39,8 +40,11 @@ var (
 type ReferenceType int8
 
 const (
-	InvalidReference  ReferenceType = 0
-	HashReference     ReferenceType = 1
+	// InvalidReference represents an invalid reference type.
+	InvalidReference ReferenceType = 0
+	// HashReference represents a hash reference.
+	HashReference ReferenceType = 1
+	// SymbolicReference represents a symbolic reference.
 	SymbolicReference ReferenceType = 2
 )
 
@@ -128,9 +132,7 @@ func (r ReferenceName) Short() string {
 	return res
 }
 
-var (
-	ctrlSeqs = regexp.MustCompile(`[\000-\037\177]`)
-)
+var ctrlSeqs = regexp.MustCompile(`[\000-\037\177]`)
 
 // Validate validates a reference name.
 // This follows the git-check-ref-format rules.
@@ -167,7 +169,7 @@ var (
 func (r ReferenceName) Validate() error {
 	s := string(r)
 	if len(s) == 0 {
-		return ErrInvalidReferenceName
+		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 	}
 
 	// HEAD is a special case
@@ -177,13 +179,13 @@ func (r ReferenceName) Validate() error {
 
 	// rule 7
 	if strings.HasSuffix(s, ".") {
-		return ErrInvalidReferenceName
+		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 	}
 
 	// rule 2
 	parts := strings.Split(s, "/")
 	if len(parts) < 2 {
-		return ErrInvalidReferenceName
+		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 	}
 
 	isBranch := r.IsBranch()
@@ -191,7 +193,7 @@ func (r ReferenceName) Validate() error {
 	for i, part := range parts {
 		// rule 6
 		if len(part) == 0 {
-			return ErrInvalidReferenceName
+			return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 		}
 
 		if strings.HasPrefix(part, ".") || // rule 1
@@ -202,11 +204,11 @@ func (r ReferenceName) Validate() error {
 			part == "@" || // rule 9
 			strings.Contains(part, "\\") || // rule 10
 			strings.HasSuffix(part, ".lock") { // rule 1
-			return ErrInvalidReferenceName
+			return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 		}
 
 		if (isBranch || isTag) && strings.HasPrefix(part, "-") && (i == 2) { // branches & tags can't start with -
-			return ErrInvalidReferenceName
+			return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 		}
 	}
 
@@ -214,9 +216,15 @@ func (r ReferenceName) Validate() error {
 }
 
 const (
-	HEAD   ReferenceName = "HEAD"
+	// HEAD is the special reference pointing to the current branch.
+	HEAD ReferenceName = "HEAD"
+	// Master is the master branch reference.
 	Master ReferenceName = "refs/heads/master"
-	Main   ReferenceName = "refs/heads/main"
+	// Main is the main branch reference.
+	Main ReferenceName = "refs/heads/main"
+	// Invalid defines an invalid reference target which is used for specific
+	// workflows on upstream Git.
+	Invalid ReferenceName = "refs/heads/.invalid"
 )
 
 // Reference is a representation of git reference

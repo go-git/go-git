@@ -1,13 +1,16 @@
 package filesystem
 
 import (
+	"crypto"
 	"io"
 
 	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
@@ -77,11 +80,18 @@ func NewPackfileIter(
 	idxFile billy.File,
 	t plumbing.ObjectType,
 	keepPack bool,
-	largeObjectThreshold int64,
+	_ int64, // largeObjectThreshold - currently unused
 	objectIDSize int,
 ) (storer.EncodedObjectIter, error) {
+	var hasher hash.Hash
+	if objectIDSize == crypto.SHA256.Size() {
+		hasher = hash.New(crypto.SHA256)
+	} else {
+		hasher = hash.New(crypto.SHA1)
+	}
+
 	idx := idxfile.NewMemoryIndex(objectIDSize)
-	if err := idxfile.NewDecoder(idxFile).Decode(idx); err != nil {
+	if err := idxfile.NewDecoder(idxFile, hasher).Decode(idx); err != nil {
 		return nil, err
 	}
 

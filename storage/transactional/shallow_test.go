@@ -3,12 +3,14 @@ package transactional
 import (
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 func TestShallowSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ShallowSuite))
 }
 

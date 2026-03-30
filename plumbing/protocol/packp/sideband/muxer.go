@@ -21,13 +21,13 @@ const chLen = 1
 // other value is given, max pack is set to MaxPackedSize64k, that is the
 // maximum length of a line in pktline format.
 func NewMuxer(t Type, w io.Writer) *Muxer {
-	max := MaxPackedSize64k
+	maxSize := MaxPackedSize64k
 	if t == Sideband {
-		max = MaxPackedSize
+		maxSize = MaxPackedSize
 	}
 
 	return &Muxer{
-		max: max - chLen,
+		max: maxSize - chLen,
 		w:   w,
 	}
 }
@@ -56,10 +56,7 @@ func (m *Muxer) WriteChannel(t Channel, p []byte) (int, error) {
 }
 
 func (m *Muxer) doWrite(ch Channel, p []byte) (int, error) {
-	sz := len(p)
-	if sz > m.max {
-		sz = m.max
-	}
+	sz := min(len(p), m.max)
 
 	_, err := pktline.Write(m.w, ch.WithPayload(p[:sz]))
 	return sz, err

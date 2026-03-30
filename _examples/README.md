@@ -28,6 +28,7 @@ Here you can find a list of annotated _go-git_ examples:
 - [submodule](submodule/main.go) - Submodule update remote.
 - [blame](blame/main.go) - Blame/annotate a commit.
 - [ls-remote](ls-remote/main.go) - List remote tags without cloning a repository.
+- [update-server-info](update-server-info/main.go) - Update server info files in a repository.
 
 ### Advanced
 - [custom_http](custom_http/main.go) - Replacing the HTTP client using a custom one.
@@ -36,3 +37,4 @@ Here you can find a list of annotated _go-git_ examples:
 - [sha256](sha256/main.go) - Init and committing repositories that use sha256 as object format.
 - [memory](memory/main.go) - Clone a repository into an in-memory dotgit storage and worktree.
 - [perf-clone](performance/clone/main.go) - Clone a repository with the least time and space complexity.
+- [worktrees](worktrees/main.go) - Create a linked worktree

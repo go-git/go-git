@@ -38,7 +38,7 @@ type mockCommander struct {
 	stderr string
 }
 
-func (c mockCommander) Command(_ context.Context, cmd string, ep *Endpoint, auth AuthMethod, _ ...string) (Command, error) {
+func (c mockCommander) Command(_ context.Context, _ string, _ *Endpoint, _ AuthMethod, _ ...string) (Command, error) {
 	return &mockCommand{
 		stderr: *bytes.NewBufferString(c.stderr),
 	}, nil

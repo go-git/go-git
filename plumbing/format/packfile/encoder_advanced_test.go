@@ -6,16 +6,16 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/go-git/go-billy/v6/memfs"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	. "github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v6/memfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type EncoderAdvancedSuite struct {
@@ -23,6 +23,7 @@ type EncoderAdvancedSuite struct {
 }
 
 func TestEncoderAdvancedSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(EncoderAdvancedSuite))
 }
 
@@ -69,7 +70,6 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 		expectedObjects[o.Hash()] = true
 		hashes = append(hashes, o.Hash())
 		return err
-
 	})
 	s.NoError(err)
 

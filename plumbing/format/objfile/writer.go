@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
+// ErrOverflow is returned when the declared data length is exceeded.
 var ErrOverflow = errors.New("objfile: declared data length exceeded (overflow)")
 
 // Writer writes and encodes data in compressed objfile format to a provided
@@ -86,10 +87,10 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	w.pending -= int64(n)
 	if err == nil && overwrite {
 		err = ErrOverflow
-		return
+		return n, err
 	}
 
-	return
+	return n, err
 }
 
 // Hash returns the hash of the object data stream that has been written so far.

@@ -15,6 +15,7 @@ import (
 // not be used.
 type Path []Noder
 
+// Skip returns true if the path should be skipped.
 func (p Path) Skip() bool {
 	if len(p) > 0 {
 		return p.Last().Skip()

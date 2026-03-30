@@ -3,8 +3,9 @@ package fsnoder
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
 type FileSuite struct {
@@ -12,6 +13,7 @@ type FileSuite struct {
 }
 
 func TestFileSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FileSuite))
 }
 

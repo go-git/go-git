@@ -19,7 +19,7 @@ func NewDecoder(r io.Reader) *Decoder {
 // Decode reads the whole config from its input and stores it in the
 // value pointed to by config.
 func (d *Decoder) Decode(config *Config) error {
-	cb := func(s string, ss string, k string, v string, bv bool) error {
+	cb := func(s, ss, k, v string, _ bool) error {
 		if ss == "" && k == "" {
 			config.Section(s)
 			return nil

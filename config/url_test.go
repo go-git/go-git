@@ -11,6 +11,7 @@ type URLSuite struct {
 }
 
 func TestURLSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(URLSuite))
 }
 
@@ -27,6 +28,7 @@ func (b *URLSuite) TestValidateInsteadOf() {
 func (b *URLSuite) TestMarshal() {
 	expected := []byte(`[core]
 	bare = false
+	filemode = true
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 `)
@@ -45,6 +47,7 @@ func (b *URLSuite) TestMarshal() {
 func (b *URLSuite) TestMarshalMultipleInsteadOf() {
 	expected := []byte(`[core]
 	bare = false
+	filemode = true
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 	insteadOf = https://google.com/
@@ -125,17 +128,17 @@ func (b *URLSuite) TestApplyInsteadOf() {
 
 func (b *URLSuite) TestFindLongestInsteadOfMatch() {
 	urlRules := map[string]*URL{
-		"ssh://github.com": &URL{
+		"ssh://github.com": {
 			Name:       "ssh://github.com",
 			InsteadOfs: []string{"http://github.com"},
 		},
-		"ssh://somethingelse.com": &URL{
+		"ssh://somethingelse.com": {
 			Name:       "ssh://somethingelse.com",
 			InsteadOfs: []string{"http://github.com/foobar"},
 		},
 	}
 
-	longestUrl := findLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
+	longestURL := findLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
 
-	b.Equal("ssh://somethingelse.com", longestUrl.Name)
+	b.Equal("ssh://somethingelse.com", longestURL.Name)
 }

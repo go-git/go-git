@@ -9,6 +9,7 @@ import (
 )
 
 func TestEncodeEmptyErrorLine(t *testing.T) {
+	t.Parallel()
 	e := &ErrorLine{}
 	err := e.Encode(io.Discard)
 	if err != nil {
@@ -17,6 +18,7 @@ func TestEncodeEmptyErrorLine(t *testing.T) {
 }
 
 func TestEncodeErrorLine(t *testing.T) {
+	t.Parallel()
 	e := &ErrorLine{
 		Text: "something",
 	}
@@ -31,6 +33,7 @@ func TestEncodeErrorLine(t *testing.T) {
 }
 
 func TestDecodeEmptyErrorLine(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	e := &ErrorLine{}
 	err := e.Decode(&buf)
@@ -43,6 +46,7 @@ func TestDecodeEmptyErrorLine(t *testing.T) {
 }
 
 func TestDecodeErrorLine(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	buf.WriteString("000eERR foobar")
 	var e ErrorLine
@@ -56,6 +60,7 @@ func TestDecodeErrorLine(t *testing.T) {
 }
 
 func TestDecodeErrorLineLn(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	buf.WriteString("000fERR foobar\n")
 	var e ErrorLine
@@ -69,6 +74,7 @@ func TestDecodeErrorLineLn(t *testing.T) {
 }
 
 func TestPeekErrorLine(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	buf.WriteString("000fERR foobar\n")
 	var e *ErrorLine

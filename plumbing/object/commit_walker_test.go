@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type CommitWalkerSuite struct {
@@ -14,6 +15,7 @@ type CommitWalkerSuite struct {
 }
 
 func TestCommitWalkerSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(CommitWalkerSuite))
 }
 

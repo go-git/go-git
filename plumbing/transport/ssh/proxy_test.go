@@ -7,24 +7,24 @@ import (
 	"testing"
 
 	"github.com/armon/go-socks5"
+	"github.com/stretchr/testify/suite"
+	stdssh "golang.org/x/crypto/ssh"
+
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/stretchr/testify/suite"
-
-	stdssh "golang.org/x/crypto/ssh"
 )
 
 type ProxySuite struct {
 	suite.Suite
 }
 
-func TestProxySuite(t *testing.T) {
+func TestProxySuite(t *testing.T) { //nolint: paralleltest // modifies global DefaultAuthBuilder
 	suite.Run(t, new(ProxySuite))
 }
 
 type TestProxyRule struct{ proxiedRequests int }
 
-func (dr *TestProxyRule) Allow(ctx context.Context, req *socks5.Request) (context.Context, bool) {
+func (dr *TestProxyRule) Allow(ctx context.Context, _ *socks5.Request) (context.Context, bool) {
 	dr.proxiedRequests++
 	return ctx, true
 }
@@ -50,15 +50,17 @@ func (s *ProxySuite) TestCommand() {
 		s.Require().ErrorIs(socksServer.Serve(socksListener), net.ErrClosed)
 	}()
 
-	defer func() {
+	s.T().Cleanup(func() {
 		s.Require().NoError(socksListener.Close())
 		<-done
-	}()
+	})
 
 	socksProxyAddr := fmt.Sprintf("socks5://localhost:%d", socksListener.Addr().(*net.TCPAddr).Port)
 
 	base, port, _ := setupTest(s.T())
 
+	authBuilder := DefaultAuthBuilder
+	s.T().Cleanup(func() { DefaultAuthBuilder = authBuilder })
 	DefaultAuthBuilder = func(user string) (AuthMethod, error) {
 		return &Password{User: user}, nil
 	}

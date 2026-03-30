@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -88,7 +90,11 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	// Some transports like Git doesn't support stderr, so we need to check if
 	// it's not nil before starting to read it.
 	if stderr != nil {
-		go ioutil.CopyBufferPool(&c.stderrBuf, stderr) // nolint: errcheck
+		go func() {
+			var buf bytes.Buffer
+			_, _ = ioutil.CopyBufferPool(&buf, stderr)
+			c.stderrBuf.Store(&buf)
+		}()
 	}
 
 	// Check if stderr is not empty before returning.
@@ -114,7 +120,11 @@ func (p *PackSession) Handshake(ctx context.Context, service Service, params ...
 	}
 
 	ar := packp.NewAdvRefs()
-	if err := ar.Decode(c.r); err != nil {
+	// Git < 2.41 sends only a flush packet for empty repositories via
+	// upload-pack, while Git 2.41+ (commit 933e3a4) sends capabilities^{}
+	// with a zero OID instead. This fallback ensures compatibility with
+	// older git versions by deferring empty-repo detection to GetRemoteRefs().
+	if err := ar.Decode(c.r); err != nil && !errors.Is(err, packp.ErrEmptyAdvRefs) {
 		return nil, err
 	}
 
@@ -131,7 +141,7 @@ type packConnection struct {
 	svc       Service
 	w         io.WriteCloser // stdin
 	r         *bufio.Reader  // stdout
-	stderrBuf bytes.Buffer
+	stderrBuf atomic.Pointer[bytes.Buffer]
 
 	version protocol.Version
 	caps    *capability.List
@@ -143,7 +153,11 @@ var _ Connection = &packConnection{}
 // stderr returns stderr of the command if it's not empty. This will always
 // return a RemoteError.
 func (p *packConnection) stderr() error {
-	s := strings.TrimSpace(p.stderrBuf.String())
+	buf := p.stderrBuf.Load()
+	if buf == nil {
+		return nil
+	}
+	s := strings.TrimSpace(buf.String())
 	if s == "" {
 		return nil
 	}
@@ -162,7 +176,7 @@ func (p *packConnection) Capabilities() *capability.List {
 }
 
 // GetRemoteRefs implements Connection.
-func (p *packConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+func (p *packConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	if p.refs == nil {
 		// TODO: return appropriate error
 		return nil, ErrEmptyRemoteRepository

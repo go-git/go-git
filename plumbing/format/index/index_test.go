@@ -2,20 +2,26 @@ package index
 
 import (
 	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func (s *IndexSuite) TestIndexAdd() {
+func TestIndexAdd(t *testing.T) {
+	t.Parallel()
 	idx := &Index{}
 	e := idx.Add("foo")
 	e.Size = 42
 
 	e, err := idx.Entry("foo")
-	s.NoError(err)
-	s.Equal("foo", e.Name)
-	s.Equal(uint32(42), e.Size)
+	require.NoError(t, err)
+	assert.Equal(t, "foo", e.Name)
+	assert.Equal(t, uint32(42), e.Size)
 }
 
-func (s *IndexSuite) TestIndexEntry() {
+func TestIndexEntry(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Entries: []*Entry{
 			{Name: "foo", Size: 42},
@@ -24,15 +30,16 @@ func (s *IndexSuite) TestIndexEntry() {
 	}
 
 	e, err := idx.Entry("foo")
-	s.NoError(err)
-	s.Equal("foo", e.Name)
+	require.NoError(t, err)
+	assert.Equal(t, "foo", e.Name)
 
 	e, err = idx.Entry("missing")
-	s.Nil(e)
-	s.ErrorIs(err, ErrEntryNotFound)
+	assert.Nil(t, e)
+	assert.ErrorIs(t, err, ErrEntryNotFound)
 }
 
-func (s *IndexSuite) TestIndexRemove() {
+func TestIndexRemove(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Entries: []*Entry{
 			{Name: "foo", Size: 42},
@@ -41,15 +48,16 @@ func (s *IndexSuite) TestIndexRemove() {
 	}
 
 	e, err := idx.Remove("foo")
-	s.NoError(err)
-	s.Equal("foo", e.Name)
+	require.NoError(t, err)
+	assert.Equal(t, "foo", e.Name)
 
 	e, err = idx.Remove("foo")
-	s.Nil(e)
-	s.ErrorIs(err, ErrEntryNotFound)
+	assert.Nil(t, e)
+	assert.ErrorIs(t, err, ErrEntryNotFound)
 }
 
-func (s *IndexSuite) TestIndexGlob() {
+func TestIndexGlob(t *testing.T) {
+	t.Parallel()
 	idx := &Index{
 		Entries: []*Entry{
 			{Name: "foo/bar/bar", Size: 42},
@@ -59,16 +67,16 @@ func (s *IndexSuite) TestIndexGlob() {
 	}
 
 	m, err := idx.Glob(filepath.Join("foo", "b*"))
-	s.NoError(err)
-	s.Len(m, 2)
-	s.Equal("foo/bar/bar", m[0].Name)
-	s.Equal("foo/baz/qux", m[1].Name)
+	require.NoError(t, err)
+	assert.Len(t, m, 2)
+	assert.Equal(t, "foo/bar/bar", m[0].Name)
+	assert.Equal(t, "foo/baz/qux", m[1].Name)
 
 	m, err = idx.Glob("f*")
-	s.NoError(err)
-	s.Len(m, 3)
+	require.NoError(t, err)
+	assert.Len(t, m, 3)
 
 	m, err = idx.Glob("f*/baz/q*")
-	s.NoError(err)
-	s.Len(m, 1)
+	require.NoError(t, err)
+	assert.Len(t, m, 1)
 }

@@ -9,12 +9,12 @@ For example:
 
 will create a noder as follows:
 
-       root        - "root" is an unnamed dir containing "a", "b" and "B".
-       / | \       - "a" is a file containing the string "1".
-      /  |  \      - "b" is a file containing the string "2".
-     a   b   B     - "B" is a directory containing "c" and "d".
-            / \    - "c" is a file containing the string "3".
-           c   d   - "D" is an empty directory.
+	  root        - "root" is an unnamed dir containing "a", "b" and "B".
+	  / | \       - "a" is a file containing the string "1".
+	 /  |  \      - "b" is a file containing the string "2".
+	a   b   B     - "B" is a directory containing "c" and "d".
+	       / \    - "c" is a file containing the string "3".
+	      c   d   - "D" is an empty directory.
 
 Files are expressed as:
 
@@ -43,10 +43,10 @@ respective contents, inside a directory called "D".
 
 - (b(c<1> d(e<2>)) f<>) : an unamed directory containing:
 
-    ├── b              --> directory
-    │   ├── c          --> file containing "1"
-    │   └── d          --> directory
-    │       └── e      --> file containing "2"
-    └── f              --> empty file
+	├── b              --> directory
+	│   ├── c          --> file containing "1"
+	│   └── d          --> directory
+	│       └── e      --> file containing "2"
+	└── f              --> empty file
 */
 package fsnoder

@@ -10,6 +10,7 @@ import (
 )
 
 func TestSmartReply_Decode(t *testing.T) {
+	t.Parallel()
 	var s SmartReply
 	r := strings.NewReader("001e# service=git-upload-pack\n0000")
 	err := s.Decode(r)
@@ -18,6 +19,7 @@ func TestSmartReply_Decode(t *testing.T) {
 }
 
 func TestSmartReply_Decode_Error(t *testing.T) {
+	t.Parallel()
 	var s SmartReply
 	r := strings.NewReader("0000")
 	err := s.Decode(r)
@@ -26,6 +28,7 @@ func TestSmartReply_Decode_Error(t *testing.T) {
 }
 
 func TestSmartReply_Decode_Error_Flush(t *testing.T) {
+	t.Parallel()
 	var s SmartReply
 	r := strings.NewReader("001e# service=git-upload-pack\n")
 	err := s.Decode(r)
@@ -33,6 +36,7 @@ func TestSmartReply_Decode_Error_Flush(t *testing.T) {
 }
 
 func TestSmartReply_Encode(t *testing.T) {
+	t.Parallel()
 	var s SmartReply
 	s.Service = "git-upload-pack"
 	var buf bytes.Buffer

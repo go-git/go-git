@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
@@ -26,8 +29,6 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 type RemoteSuite struct {
@@ -35,6 +36,7 @@ type RemoteSuite struct {
 }
 
 func TestRemoteSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(RemoteSuite))
 }
 
@@ -345,7 +347,7 @@ func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing
 	var refs int
 	l, err := r.s.IterReferences()
 	s.Require().NoError(err)
-	err = l.ForEach(func(r *plumbing.Reference) error { refs++; return nil })
+	err = l.ForEach(func(*plumbing.Reference) error { refs++; return nil })
 	s.Require().NoError(err)
 
 	s.Len(expected, refs)
@@ -1411,14 +1413,22 @@ func (s *RemoteSuite) TestListPeeling() {
 }
 
 func (s *RemoteSuite) TestListTimeout() {
+	// Create a server that blocks until the request context is done
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
 	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
-		URLs: []string{"https://deelay.me/60000/https://httpstat.us/503"},
+		URLs: []string{srv.URL},
 	})
 
-	_, err := remote.List(&ListOptions{})
-
-	s.NotNil(err)
+	_, err := remote.ListContext(ctx, &ListOptions{})
+	s.ErrorIs(err, context.DeadlineExceeded)
 }
 
 /*
@@ -1702,11 +1712,11 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 
 func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	tempDir := s.T().TempDir()
-	remoteUrl := filepath.Join(tempDir, "remote")
+	remoteURL := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
 	// Create a new repo and add more than 1 commit (so we can have a shallow commit)
-	remote, err := PlainInit(remoteUrl, false)
+	remote, err := PlainInit(remoteURL, false)
 	s.Require().NoError(err)
 	s.Require().NotNil(remote)
 
@@ -1715,7 +1725,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 
 	// Clone the repo with a depth of 1
 	repo, err := PlainClone(repoDir, &CloneOptions{
-		URL:           remoteUrl,
+		URL:           remoteURL,
 		Depth:         1,
 		Tags:          plumbing.NoTags,
 		SingleBranch:  true,
@@ -1765,7 +1775,67 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	})
 }
 
+// TestFetchAfterShallowClone_NoForceRefspec is a regression test for
+// https://github.com/go-git/go-git/issues/207.
+//
+// When a shallow clone is followed by a depth-limited fetch using a plain
+// (non-force) refspec, the local ancestor walk would fail with
+// plumbing.ErrObjectNotFound because intermediate commits (between the old
+// local tip and the new shallow tip) are absent from the local store.
+// The fix makes isFastForward aware of shallow boundaries: when ancestry
+// cannot be proven due to missing shallow history, it conservatively assumes
+// fast-forward (matching the behaviour of git(1)).
+func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	// Build a remote with two commits so we can take a shallow clone.
+	remoteRepo, err := PlainInit(remoteURL, false)
+	s.Require().NoError(err)
+	_ = CommitNewFile(s.T(), remoteRepo, "File1")
+	_ = CommitNewFile(s.T(), remoteRepo, "File2")
+
+	// Shallow clone at depth=1 — only the latest commit is stored locally.
+	repo, err := PlainClone(repoDir, &CloneOptions{
+		URL:           remoteURL,
+		Depth:         1,
+		Tags:          plumbing.NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	s.Require().NoError(err)
+
+	// Push two more commits to the remote while the local clone is still shallow.
+	_ = CommitNewFile(s.T(), remoteRepo, "File3")
+	sha4 := CommitNewFile(s.T(), remoteRepo, "File4")
+
+	// Fetch with depth=1 and a plain (non-force) refspec.
+	// This means only File4's commit is fetched; File3's commit is absent
+	// locally, so the ancestry walk from sha4 back to our current tip would
+	// hit a missing object without the fix.
+	r, err := repo.Remote(DefaultRemoteName)
+	s.Require().NoError(err)
+
+	err = r.Fetch(&FetchOptions{
+		Depth: 1,
+		Tags:  plumbing.NoTags,
+		RefSpecs: []config.RefSpec{
+			// No leading '+' — this is a fast-forward-only refspec.
+			"refs/heads/master:refs/heads/master",
+			"refs/heads/master:refs/remotes/origin/master",
+		},
+	})
+	s.Require().NoError(err, "shallow fetch with non-force refspec must not return an error")
+
+	// Confirm the local branch was updated to the new tip.
+	head, err := repo.Reference(plumbing.NewBranchReferenceName("master"), true)
+	s.Require().NoError(err)
+	s.Equal(sha4, head.Hash(), "local master must point to the new remote tip")
+}
+
 func TestFetchFastForwardForCustomRef(t *testing.T) {
+	t.Parallel()
 	customRef := "refs/custom/branch"
 	// 1. Set up a remote with a URL
 	remoteURL := t.TempDir()

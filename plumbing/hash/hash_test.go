@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestRegisterHash(t *testing.T) {
+func TestRegisterHash(t *testing.T) { //nolint: paralleltest // modifies global algos map
 	// Reset default hash to avoid side effects.
 	defer reset()
 
@@ -38,14 +38,15 @@ func TestRegisterHash(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint: paralleltest // modifies global algos map
 		t.Run(tt.name, func(t *testing.T) {
 			err := RegisterHash(tt.hash, tt.new)
-			if tt.wantErr == "" && err != nil {
+			switch {
+			case tt.wantErr == "" && err != nil:
 				t.Errorf("unexpected error: %v", err)
-			} else if tt.wantErr != "" && err == nil {
+			case tt.wantErr != "" && err == nil:
 				t.Errorf("expected error: %v got: nil", tt.wantErr)
-			} else if err != nil && !strings.Contains(err.Error(), tt.wantErr) {
+			case err != nil && !strings.Contains(err.Error(), tt.wantErr):
 				t.Errorf("expected error: %v got: %v", tt.wantErr, err)
 			}
 		})
@@ -54,7 +55,7 @@ func TestRegisterHash(t *testing.T) {
 
 // Verifies that the SHA1 implementation used is collision-resistant
 // by default.
-func TestSha1Collision(t *testing.T) {
+func TestSha1Collision(t *testing.T) { //nolint: paralleltest // modifies global algos map
 	defer reset()
 
 	tests := []struct {
@@ -78,7 +79,7 @@ func TestSha1Collision(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint: paralleltest // modifies global algos map
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.before != nil {
 				tt.before()

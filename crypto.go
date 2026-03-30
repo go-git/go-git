@@ -1,7 +1,8 @@
 package git
 
 import (
-	_ "crypto/sha256" // Register Go's SHA256 implementation.
-
-	_ "github.com/pjbgf/sha1cd" // Register sha1cd implementation.
+	// Register Go's SHA256 implementation.
+	_ "crypto/sha256"
+	// Register sha1cd implementation.
+	_ "github.com/pjbgf/sha1cd"
 )

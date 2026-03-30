@@ -6,6 +6,7 @@ import (
 )
 
 func Test_typeForSignature(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		b    []byte
@@ -33,20 +34,7 @@ MKEQruIQWJb+8HVXwssA4=
 			want: signatureTypeSSH,
 		},
 		{
-			name: "known signature format (X509) CERTIFICATE",
-			b: []byte(`-----BEGIN CERTIFICATE-----
-MIIDZjCCAk6gAwIBAgIJALZ9Z3Z9Z3Z9MA0GCSqGSIb3DQEBCwUAMIGIMQswCQYD
-VQQGEwJTRTEOMAwGA1UECAwFVGV4YXMxDjAMBgNVBAcMBVRleGFzMQ4wDAYDVQQK
-DAVUZXhhczEOMAwGA1UECwwFVGV4YXMxGDAWBgNVBAMMD1RleGFzIENlcnRpZmlj
-YXRlMB4XDTE3MDUyNjE3MjY0MloXDTI3MDUyNDE3MjY0MlowgYgxCzAJBgNVBAYT
-AlNFMQ4wDAYDVQQIDAVUZXhhczEOMAwGA1UEBwwFVGV4YXMxDjAMBgNVBAoMBVRl
-eGFzMQ4wDAYDVQQLDAVUZXhhczEYMBYGA1UEAwwPVGV4YXMgQ2VydGlmaWNhdGUw
-ggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQZ9Z3Z9Z3Z9Z3Z9Z3Z9Z3
------END CERTIFICATE-----`),
-			want: signatureTypeX509,
-		},
-		{
-			name: "known signature format (x509) SIGNED MESSAGE",
+			name: "known signature format (X.509)",
 			b: []byte(`-----BEGIN SIGNED MESSAGE-----
 MIIDZjCCAk6gAwIBAgIJALZ9Z3Z9Z3Z9MA0GCSqGSIb3DQEBCwUAMIGIMQswCQYD
 VQQGEwJTRTEOMAwGA1UECAwFVGV4YXMxDjAMBgNVBAcMBVRleGFzMQ4wDAYDVQQK
@@ -65,9 +53,17 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 -----END UNKNOWN SIGNATURE-----`),
 			want: signatureTypeUnknown,
 		},
+		{
+			name: "unknown signature format CERTIFICATE",
+			b: []byte(`-----BEGIN CERTIFICATE-----
+MIIDZjCCAk6gAwIBAgIJALZ9Z3Z9Z3Z9MA0GCSqGSIb3DQEBCwUAMIGIMQswCQYD
+-----END CERTIFICATE-----`),
+			want: signatureTypeUnknown,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := typeForSignature(tt.b); got != tt.want {
 				t.Errorf("typeForSignature() = %v, want %v", got, tt.want)
 			}
@@ -76,6 +72,7 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 }
 
 func Test_parseSignedBytes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		b             []byte
@@ -177,6 +174,7 @@ signed tag`),
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			pos, st := parseSignedBytes(tt.b)
 			var signature []byte
 			if pos >= 0 {
@@ -197,7 +195,7 @@ func FuzzParseSignedBytes(f *testing.F) {
 	f.Add([]byte(x509SignatureFormat[0]))
 	f.Add([]byte(sshSignatureFormat[0]))
 
-	f.Fuzz(func(t *testing.T, input []byte) {
+	f.Fuzz(func(_ *testing.T, input []byte) {
 		parseSignedBytes(input)
 	})
 }

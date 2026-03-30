@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
@@ -14,12 +15,13 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// ErrUpdateReference is returned when a reference update fails.
 var ErrUpdateReference = errors.New("failed to update ref")
 
 // AdvertiseReferences is a server command that implements the reference
 // discovery phase of the Git transfer protocol.
 func AdvertiseReferences(
-	ctx context.Context,
+	_ context.Context,
 	st storage.Storer,
 	w io.Writer,
 	service Service,
@@ -35,27 +37,38 @@ func AdvertiseReferences(
 	ar := packp.NewAdvRefs()
 
 	// Set server default capabilities
-	ar.Capabilities.Set(capability.Agent, capability.DefaultAgent()) //nolint:errcheck
-	ar.Capabilities.Set(capability.OFSDelta)                         //nolint:errcheck
-	ar.Capabilities.Set(capability.Sideband64k)                      //nolint:errcheck
+	_ = ar.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+	_ = ar.Capabilities.Set(capability.OFSDelta)
+	_ = ar.Capabilities.Set(capability.Sideband64k)
 	if forPush {
 		// TODO: support thin-pack
-		ar.Capabilities.Set(capability.NoThin) //nolint:errcheck
+		_ = ar.Capabilities.Set(capability.NoThin)
 		// TODO: support atomic
-		ar.Capabilities.Set(capability.DeleteRefs)   //nolint:errcheck
-		ar.Capabilities.Set(capability.ReportStatus) //nolint:errcheck
-		ar.Capabilities.Set(capability.PushOptions)  //nolint:errcheck
-		ar.Capabilities.Set(capability.Quiet)        //nolint:errcheck
+		_ = ar.Capabilities.Set(capability.DeleteRefs)
+		_ = ar.Capabilities.Set(capability.ReportStatus)
+		_ = ar.Capabilities.Set(capability.PushOptions)
+		_ = ar.Capabilities.Set(capability.Quiet)
 	} else {
 		// TODO: support include-tag
 		// TODO: support deepen
 		// TODO: support deepen-since
-		ar.Capabilities.Set(capability.MultiACK)         //nolint:errcheck
-		ar.Capabilities.Set(capability.MultiACKDetailed) //nolint:errcheck
-		ar.Capabilities.Set(capability.Sideband)         //nolint:errcheck
-		ar.Capabilities.Set(capability.NoProgress)       //nolint:errcheck
-		ar.Capabilities.Set(capability.SymRef)           //nolint:errcheck
-		ar.Capabilities.Set(capability.Shallow)          //nolint:errcheck
+		_ = ar.Capabilities.Set(capability.MultiACK)
+		_ = ar.Capabilities.Set(capability.MultiACKDetailed)
+		_ = ar.Capabilities.Set(capability.Sideband)
+		_ = ar.Capabilities.Set(capability.NoProgress)
+		_ = ar.Capabilities.Set(capability.SymRef)
+		_ = ar.Capabilities.Set(capability.Shallow)
+
+		cfg, err := st.Config()
+		var objectformat config.ObjectFormat
+		if err == nil && cfg != nil {
+			objectformat = cfg.Extensions.ObjectFormat
+		}
+
+		if objectformat == config.UnsetObjectFormat {
+			objectformat = config.DefaultObjectFormat
+		}
+		_ = ar.Capabilities.Set(capability.ObjectFormat, objectformat.String())
 	}
 
 	// Set references
@@ -83,10 +96,9 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 	}
 
 	// Add references and their peeled values
-	if err := iter.ForEach(func(r *plumbing.Reference) error {
+	return iter.ForEach(func(r *plumbing.Reference) error {
 		hash, name := r.Hash(), r.Name()
-		switch r.Type() {
-		case plumbing.SymbolicReference:
+		if r.Type() == plumbing.SymbolicReference {
 			ref, err := storer.ResolveReference(st, r.Target())
 			if errors.Is(err, plumbing.ErrReferenceNotFound) {
 				return nil
@@ -100,8 +112,13 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			if !addHead {
 				return nil
 			}
-			// Add default branch HEAD symref
-			ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target())) //nolint:errcheck
+			// Only advertise a symref when HEAD is symbolic. A detached HEAD
+			// (HashReference) has no branch target to advertise; emitting
+			// "HEAD:" with an empty target corrupts the capability list and
+			// causes the client to store an unresolvable HEAD symref.
+			if r.Type() == plumbing.SymbolicReference {
+				_ = ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+			}
 			ar.Head = &hash
 		}
 		ar.References[name.String()] = hash
@@ -111,9 +128,5 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }

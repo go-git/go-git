@@ -23,21 +23,34 @@ func TestHasher(t *testing.T) {
 		want    string
 	}{
 		{
-			"blob object sha1", crypto.SHA1.New(),
+			"blob object (sha1)", crypto.SHA1.New(),
 			BlobObject,
 			[]byte("hash object sample"),
 			"9f361d484fcebb869e1919dc7467b82ac6ca5fad",
 		},
 		{
-			"blob object sha256", crypto.SHA256.New(),
+			"empty blob object (sha1)", crypto.SHA1.New(),
+			BlobObject,
+			[]byte(""),
+			"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+		},
+		{
+			"blob object (sha256)", crypto.SHA256.New(),
 			BlobObject,
 			[]byte("hash object sample"),
 			"2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677",
+		},
+		{
+			"empty blob object (sha256)", crypto.SHA256.New(),
+			BlobObject,
+			[]byte(""),
+			"473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, ""), func(t *testing.T) {
+			t.Parallel()
 			oh, err := FromHash(tc.h)
 			assert.NoError(t, err)
 
@@ -80,6 +93,7 @@ func TestMultipleHashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, ""), func(t *testing.T) {
+			t.Parallel()
 			oh, err := FromHash(tc.h)
 			assert.NoError(t, err)
 
@@ -94,7 +108,7 @@ func TestMultipleHashes(t *testing.T) {
 	}
 }
 
-func TestThreadSatefy(t *testing.T) {
+func TestThreadSafety(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -123,6 +137,7 @@ func TestThreadSatefy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			oh, err := FromHash(tc.h)
 			assert.NoError(t, err)
 

@@ -3,7 +3,7 @@ WORKDIR = $(PWD)
 
 # Go parameters
 GOCMD = go
-GOTEST = $(GOCMD) test 
+GOTEST = $(GOCMD) test
 
 # Git config
 GIT_VERSION ?=
@@ -13,6 +13,16 @@ GIT_REPOSITORY = http://github.com/git/git.git
 # Coverage
 COVERAGE_REPORT = coverage.out
 COVERAGE_MODE = count
+
+# renovate: datasource=github-tags depName=golangci/golangci-lint
+GOLANGCI_VERSION ?= v2.7.2
+TOOLS_BIN := $(shell mkdir -p build/tools && realpath build/tools)
+
+GOLANGCI = $(TOOLS_BIN)/golangci-lint-$(GOLANGCI_VERSION)
+$(GOLANGCI):
+	rm -f $(TOOLS_BIN)/golangci-lint*
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_VERSION)/install.sh | sh -s -- -b $(TOOLS_BIN) $(GOLANGCI_VERSION)
+	mv $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/golangci-lint-$(GOLANGCI_VERSION)
 
 # Defines the maximum time each fuzz target will be executed for.
 FUZZ_TIME ?= 10s
@@ -46,3 +56,16 @@ fuzz:
 	@for path in $(FUZZ_PKGS); do \
 		go test -fuzz=Fuzz -fuzztime=$(FUZZ_TIME) $$path; \
 	done
+
+validate: validate-lint validate-dirty ## Run validation checks.
+
+validate-lint: $(GOLANGCI)
+	$(GOLANGCI) run
+
+validate-dirty:
+ifneq ($(shell git status --porcelain --untracked-files=no),)
+	@echo worktree is dirty
+	@git --no-pager status
+	@git --no-pager diff
+	@exit 1
+endif

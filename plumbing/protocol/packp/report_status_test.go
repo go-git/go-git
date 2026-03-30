@@ -6,8 +6,9 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type ReportStatusSuite struct {
@@ -15,6 +16,7 @@ type ReportStatusSuite struct {
 }
 
 func TestReportStatusSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ReportStatusSuite))
 }
 

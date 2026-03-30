@@ -1,19 +1,24 @@
 package filesystem
 
 import (
+	"context"
 	"crypto"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -34,6 +39,16 @@ type ObjectStorage struct {
 	packfiles   map[plumbing.Hash]*packfile.Packfile
 	muI         sync.RWMutex
 	muP         sync.RWMutex
+
+	oh *plumbing.ObjectHasher
+
+	// alternates holds cached ObjectStorage instances for alternate repositories.
+	// Initialized lazily via initAlternates to avoid recreating them on every lookup.
+	// Protected by muA; use findInAlternates for concurrent lookups.
+	alternates     []*ObjectStorage
+	alternatesInit bool
+	alternatesErr  error
+	muA            sync.RWMutex
 }
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
@@ -47,7 +62,120 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 		options:     ops,
 		objectCache: objectCache,
 		dir:         dir,
+		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
 	}
+}
+
+// initAlternates initializes the cached alternate ObjectStorage instances.
+// Uses double-checked locking to ensure thread-safe, one-time initialization.
+// Returns a non-nil error only for real I/O failures; a missing alternates
+// file (os.ErrNotExist) is silently ignored since alternates are optional.
+func (s *ObjectStorage) initAlternates() error {
+	s.muA.RLock()
+	if s.alternatesInit {
+		err := s.alternatesErr
+		s.muA.RUnlock()
+		return err
+	}
+	s.muA.RUnlock()
+
+	s.muA.Lock()
+	defer s.muA.Unlock()
+
+	if s.alternatesInit {
+		return s.alternatesErr
+	}
+	s.alternatesInit = true
+
+	dotgits, err := s.dir.Alternates()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			s.alternatesErr = err
+		}
+		return s.alternatesErr
+	}
+	for _, dg := range dotgits {
+		s.alternates = append(s.alternates,
+			NewObjectStorageWithOptions(dg, s.objectCache, s.options))
+	}
+	return nil
+}
+
+// resetAlternates closes cached alternates and marks them for re-initialization.
+// Must be called when the on-disk alternates list changes (e.g. via AddAlternate).
+func (s *ObjectStorage) resetAlternates() {
+	s.muA.Lock()
+	defer s.muA.Unlock()
+
+	for _, alt := range s.alternates {
+		_ = alt.Close()
+	}
+	s.alternates = nil
+	s.alternatesErr = nil
+	s.alternatesInit = false
+}
+
+// findInAlternates concurrently searches alternate object stores using an
+// errgroup bounded by GOMAXPROCS. The first alternate to succeed captures
+// the result and cancels the remaining searches. The read lock on muA is
+// held for the duration to prevent resetAlternates from closing in-use
+// alternates.
+func findInAlternates[T any](s *ObjectStorage, fn func(*ObjectStorage) (T, error)) (T, error) {
+	var zero T
+
+	if err := s.initAlternates(); err != nil {
+		return zero, err
+	}
+
+	s.muA.RLock()
+	defer s.muA.RUnlock()
+
+	n := len(s.alternates)
+	if n == 0 {
+		return zero, plumbing.ErrObjectNotFound
+	}
+	if n == 1 {
+		return fn(s.alternates[0])
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	g := new(errgroup.Group)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	var (
+		foundVal  T
+		foundOnce sync.Once
+		found     bool
+	)
+
+	for _, alt := range s.alternates {
+		g.Go(func() error {
+			if ctx.Err() != nil {
+				return nil
+			}
+			v, err := fn(alt)
+			if err == nil {
+				foundOnce.Do(func() {
+					foundVal = v
+					found = true
+					cancel()
+				})
+				return nil
+			}
+			if errors.Is(err, plumbing.ErrObjectNotFound) {
+				return nil
+			}
+			return err
+		})
+	}
+
+	err := g.Wait()
+	if err != nil && !found {
+		return zero, errors.Join(err, plumbing.ErrObjectNotFound)
+	}
+	return foundVal, nil
 }
 
 func (s *ObjectStorage) requireIndex() error {
@@ -81,7 +209,39 @@ func (s *ObjectStorage) Reindex() {
 	s.index = nil
 }
 
-func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
+func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
+	if s.options.UseInMemoryIdx {
+		return s.loadMemoryIndex(h)
+	}
+
+	// Use LazyIndex on a best-effort basis.
+	if idx, err := s.loadLazyIndex(h); err == nil {
+		// If an index already exists, and implements io.Closer, try to close it.
+		if i, found := s.index[h]; found && i != nil {
+			if closer, ok := i.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+
+		s.index[h] = idx
+		return nil
+	}
+
+	return s.loadMemoryIndex(h)
+}
+
+func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, error) {
+	openIdx := func() (idxfile.ReadAtCloser, error) {
+		return s.dir.ObjectPackIdx(h)
+	}
+	openRev := func() (idxfile.ReadAtCloser, error) {
+		return s.dir.OpenPackRev(h)
+	}
+
+	return idxfile.NewLazyIndex(openIdx, openRev, h)
+}
+
+func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
 		return err
@@ -89,10 +249,22 @@ func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) (err error) {
 
 	defer ioutil.CheckClose(f, &err)
 
+	var hasher hash.Hash
+	if h.Size() == crypto.SHA256.Size() {
+		hasher = hash.New(crypto.SHA256)
+	} else {
+		hasher = hash.New(crypto.SHA1)
+	}
+
 	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f)
+	d := idxfile.NewDecoder(f, hasher)
 	if err = d.Decode(idxf); err != nil {
 		return err
+	}
+
+	if idxf.PackfileChecksum != h {
+		return fmt.Errorf("%w: packfile mismatch: target is %q not %q",
+			idxfile.ErrMalformedIdxFile, idxf.PackfileChecksum.String(), h.String())
 	}
 
 	s.index[h] = idxf
@@ -114,7 +286,7 @@ func (s *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io
 }
 
 func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
-	return &plumbing.MemoryObject{}
+	return plumbing.NewMemoryObject(s.oh)
 }
 
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
@@ -201,10 +373,14 @@ func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 		return err
 	}
 	_, _, offset := s.findObjectInPackfile(h)
-	if offset == -1 {
-		return plumbing.ErrObjectNotFound
+	if offset != -1 {
+		return nil
 	}
-	return nil
+
+	_, err = findInAlternates(s, func(alt *ObjectStorage) (struct{}, error) {
+		return struct{}{}, alt.HasEncodedObject(h)
+	})
+	return err
 }
 
 func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int64, err error) {
@@ -342,7 +518,18 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 		return size, nil
 	}
 
-	return s.encodedObjectSizeFromPackfile(h)
+	size, err = s.encodedObjectSizeFromPackfile(h)
+	if err == nil {
+		return size, nil
+	}
+
+	if !errors.Is(err, plumbing.ErrObjectNotFound) {
+		return 0, err
+	}
+
+	return findInAlternates(s, func(alt *ObjectStorage) (int64, error) {
+		return alt.EncodedObjectSize(h)
+	})
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -363,22 +550,10 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 		}
 	}
 
-	// If the error is still object not found, check if it's a shared object
-	// repository.
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		dotgits, e := s.dir.Alternates()
-		if e == nil {
-			// Create a new object storage with the DotGit(s) and check for the
-			// required hash object. Skip when not found.
-			for _, dg := range dotgits {
-				o := NewObjectStorage(dg, s.objectCache)
-				enobj, enerr := o.EncodedObject(t, h)
-				if enerr != nil {
-					continue
-				}
-				return enobj, nil
-			}
-		}
+		obj, err = findInAlternates(s, func(alt *ObjectStorage) (plumbing.EncodedObject, error) {
+			return alt.EncodedObject(t, h)
+		})
 	}
 
 	if err != nil {
@@ -464,13 +639,6 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 	return obj, nil
 }
 
-var copyBufferPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 32*1024)
-		return &b
-	},
-}
-
 // Get returns the object with the given hash, by searching for it in
 // the packfile.
 func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (plumbing.EncodedObject, error) {
@@ -509,7 +677,7 @@ func (s *ObjectStorage) decodeDeltaObjectAt(
 	offset int64,
 	hash plumbing.Hash,
 ) (plumbing.EncodedObject, error) {
-	scan, err := p.Scanner()
+	scan, err := p.Scanner() //nolint:staticcheck // TODO: Refactor to avoid deprecated Scanner method
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +768,7 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 				hashes = append(hashes, e.Hash)
 			}
 		}
-		ei.Close()
+		_ = ei.Close()
 	}
 
 	return hashes, nil
@@ -657,9 +825,17 @@ func (s *ObjectStorage) buildPackfileIters(
 	}, nil
 }
 
-// Close closes all opened files.
+// Close closes all opened files including cached alternate storages.
 func (s *ObjectStorage) Close() error {
 	var firstError error
+
+	s.muA.RLock()
+	for _, alt := range s.alternates {
+		if err := alt.Close(); err != nil && firstError == nil {
+			firstError = err
+		}
+	}
+	s.muA.RUnlock()
 
 	s.muP.RLock()
 	defer s.muP.RUnlock()
@@ -673,8 +849,22 @@ func (s *ObjectStorage) Close() error {
 		}
 	}
 
+	// If the index being used implements io.Closer, make sure we call it.
+	// LazyIndex.Close permanently disables the index and releases any
+	// idle file descriptors. The same pattern applies to other Index
+	// implementations that hold resources.
+	s.muI.RLock()
+	for _, idx := range s.index {
+		if closer, ok := idx.(io.Closer); ok {
+			if err := closer.Close(); firstError == nil && err != nil {
+				firstError = err
+			}
+		}
+	}
+	s.muI.RUnlock()
+
 	s.packfiles = nil
-	s.dir.Close()
+	_ = s.dir.Close()
 
 	return firstError
 }

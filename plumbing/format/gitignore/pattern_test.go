@@ -11,6 +11,7 @@ type PatternSuite struct {
 }
 
 func TestPatternSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(PatternSuite))
 }
 

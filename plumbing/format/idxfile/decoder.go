@@ -1,11 +1,13 @@
 package idxfile
 
 import (
-	"bufio"
 	"bytes"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -14,7 +16,7 @@ var (
 	// is not supported.
 	ErrUnsupportedVersion = errors.New("unsupported version")
 	// ErrMalformedIdxFile is returned by Decode when the idx file is corrupted.
-	ErrMalformedIdxFile = errors.New("malformed IDX file")
+	ErrMalformedIdxFile = errors.New("malformed idx file")
 )
 
 const (
@@ -23,16 +25,19 @@ const (
 
 // Decoder reads and decodes idx files from an input stream.
 type Decoder struct {
-	*bufio.Reader
+	io.Reader
+	h hash.Hash
 }
 
 // NewDecoder builds a new idx stream decoder, that reads from r.
-func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{bufio.NewReader(r)}
+func NewDecoder(r io.Reader, h hash.Hash) *Decoder {
+	tr := io.TeeReader(r, h)
+	return &Decoder{tr, h}
 }
 
 // Decode reads from the stream and decode the content into the MemoryIndex struct.
 func (d *Decoder) Decode(idx *MemoryIndex) error {
+	d.h.Reset()
 	if err := validateHeader(d); err != nil {
 		return err
 	}
@@ -43,7 +48,7 @@ func (d *Decoder) Decode(idx *MemoryIndex) error {
 		readObjectNames,
 		readCRC32,
 		readOffsets,
-		readChecksums,
+		readPackChecksum,
 	}
 
 	for _, f := range flow {
@@ -52,11 +57,21 @@ func (d *Decoder) Decode(idx *MemoryIndex) error {
 		}
 	}
 
+	actual := d.h.Sum(nil)
+	if err := readIdxChecksum(idx, d); err != nil {
+		return err
+	}
+
+	if idx.IdxChecksum.Compare(actual) != 0 {
+		return fmt.Errorf("%w: checksum mismatch: %q instead of %q",
+			ErrMalformedIdxFile, idx.IdxChecksum.String(), hex.EncodeToString(actual))
+	}
+
 	return nil
 }
 
 func validateHeader(r io.Reader) error {
-	var h = make([]byte, 4)
+	h := make([]byte, 4)
 	if _, err := io.ReadFull(r, h); err != nil {
 		return err
 	}
@@ -74,8 +89,8 @@ func readVersion(idx *MemoryIndex, r io.Reader) error {
 		return err
 	}
 
-	if v > VersionSupported {
-		return ErrUnsupportedVersion
+	if v != VersionSupported {
+		return fmt.Errorf("%w: v%d", ErrUnsupportedVersion, v)
 	}
 
 	idx.Version = v
@@ -83,12 +98,15 @@ func readVersion(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readFanout(idx *MemoryIndex, r io.Reader) error {
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		n, err := binary.ReadUint32(r)
 		if err != nil {
 			return err
 		}
 
+		if k > 0 && n < idx.Fanout[k-1] {
+			return fmt.Errorf("%w: fanout table is not monotonically non-decreasing at entry %d", ErrMalformedIdxFile, k)
+		}
 		idx.Fanout[k] = n
 		idx.FanoutMapping[k] = noMapping
 	}
@@ -97,7 +115,9 @@ func readFanout(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readObjectNames(idx *MemoryIndex, r io.Reader) error {
-	for k := 0; k < fanout; k++ {
+	idSize := uint32(idx.idSize())
+
+	for k := range fanout {
 		var buckets uint32
 		if k == 0 {
 			buckets = idx.Fanout[k]
@@ -111,7 +131,7 @@ func readObjectNames(idx *MemoryIndex, r io.Reader) error {
 
 		idx.FanoutMapping[k] = len(idx.Names)
 
-		nameLen := int(buckets * uint32(idx.idSize()))
+		nameLen := int(buckets * idSize)
 		bin := make([]byte, nameLen)
 		if _, err := io.ReadFull(r, bin); err != nil {
 			return err
@@ -126,7 +146,7 @@ func readObjectNames(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readCRC32(idx *MemoryIndex, r io.Reader) error {
-	for k := 0; k < fanout; k++ {
+	for k := range fanout {
 		if pos := idx.FanoutMapping[k]; pos != noMapping {
 			if _, err := io.ReadFull(r, idx.CRC32[pos]); err != nil {
 				return err
@@ -138,8 +158,8 @@ func readCRC32(idx *MemoryIndex, r io.Reader) error {
 }
 
 func readOffsets(idx *MemoryIndex, r io.Reader) error {
-	var o64cnt int
-	for k := 0; k < fanout; k++ {
+	var o64cnt int64
+	for k := range fanout {
 		if pos := idx.FanoutMapping[k]; pos != noMapping {
 			if _, err := io.ReadFull(r, idx.Offset32[pos]); err != nil {
 				return err
@@ -163,12 +183,16 @@ func readOffsets(idx *MemoryIndex, r io.Reader) error {
 	return nil
 }
 
-func readChecksums(idx *MemoryIndex, r io.Reader) error {
+func readPackChecksum(idx *MemoryIndex, r io.Reader) error {
 	idx.PackfileChecksum.ResetBySize(idx.idSize())
 	if _, err := idx.PackfileChecksum.ReadFrom(r); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func readIdxChecksum(idx *MemoryIndex, r io.Reader) error {
 	idx.IdxChecksum.ResetBySize(idx.idSize())
 	if _, err := idx.IdxChecksum.ReadFrom(r); err != nil {
 		return err

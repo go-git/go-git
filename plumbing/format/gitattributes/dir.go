@@ -3,6 +3,7 @@ package gitattributes
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
@@ -20,6 +21,7 @@ const (
 	systemFile        = "/etc/gitconfig"
 )
 
+// ReadAttributesFile reads a gitattributes file from the given filesystem and path.
 func ReadAttributesFile(fs billy.Filesystem, path []string, attributesFile string, allowMacro bool) ([]MatchAttribute, error) {
 	f, err := fs.Open(fs.Join(append(path, attributesFile)...))
 	if os.IsNotExist(err) {
@@ -43,7 +45,7 @@ func ReadAttributesFile(fs billy.Filesystem, path []string, attributesFile strin
 func ReadPatterns(fs billy.Filesystem, path []string) (attributes []MatchAttribute, err error) {
 	attributes, err = ReadAttributesFile(fs, path, gitattributesFile, true)
 	if err != nil {
-		return
+		return attributes, err
 	}
 
 	attrs, err := walkDirectory(fs, path)
@@ -66,9 +68,9 @@ func walkDirectory(fs billy.Filesystem, root []string) (attributes []MatchAttrib
 		// Handles the case whereby just the volume name ("C:") is appended,
 		// to root. Change it to "C:\", which is better handled by fs.Join().
 		if filepath.VolumeName(p) != "" && !strings.HasSuffix(p, string(filepath.Separator)) {
-			p = p + string(filepath.Separator)
+			p += string(filepath.Separator)
 		}
-		path := append(root, p)
+		path := slices.Concat(root, []string{p})
 
 		dirAttributes, err := ReadAttributesFile(fs, path, gitattributesFile, false)
 		if err != nil {
@@ -83,7 +85,7 @@ func walkDirectory(fs billy.Filesystem, root []string) (attributes []MatchAttrib
 		attributes = append(attributes, append(dirAttributes, subAttributes...)...)
 	}
 
-	return
+	return attributes, err
 }
 
 func loadPatterns(fs billy.Filesystem, path string) ([]MatchAttribute, error) {
@@ -119,7 +121,7 @@ func loadPatterns(fs billy.Filesystem, path string) ([]MatchAttribute, error) {
 func LoadGlobalPatterns(fs billy.Filesystem) (attributes []MatchAttribute, err error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return
+		return attributes, err
 	}
 
 	return loadPatterns(fs, fs.Join(home, gitconfigFile))

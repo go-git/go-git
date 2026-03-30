@@ -26,10 +26,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
       with:
         go-version: stable
 
@@ -39,15 +39,23 @@ jobs:
     - name: Git Build
       run: make build-git
 
-    - name: Set Git config
+    - name: Set Git config environment variables
       run: |
-        export GIT_DIST_PATH=.git-dist/${{ matrix.git[0] }}
-        export GIT_EXEC_PATH=${{ github.workspace }}/$GIT_DIST_PATH
-        export PATH=$GIT_EXEC_PATH:$PATH
-        git --exec-path
+        echo "GIT_DIST_PATH=.git-dist/${{ matrix.git[0] }}" >> $GITHUB_ENV
+        echo "GIT_EXEC_PATH=${{ github.workspace }}/$GIT_DIST_PATH" >> $GITHUB_ENV
+        echo "PATH=${{ github.workspace }}/$GIT_DIST_PATH:$PATH" >> $GITHUB_ENV
+
+    - name: Verify Git installation
+      run: |
+        exec_path=$(git --exec-path)
+        echo "Git exec path: $exec_path"
+        if [ "$exec_path" != "${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}" ]; then
+          echo "Git exec path mismatch: expected ${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}, got $exec_path"
+          exit 1
+        fi
         git config --global user.email "gha@example.com"
         git config --global user.name "GitHub Actions"
- 
+
     - name: Test
       run: make test-coverage
 

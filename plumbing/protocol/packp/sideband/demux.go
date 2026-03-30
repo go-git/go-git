@@ -43,15 +43,15 @@ type Demuxer struct {
 
 // NewDemuxer returns a new Demuxer for the given t and read from r
 func NewDemuxer(t Type, r io.Reader) *Demuxer {
-	max := MaxPackedSize64k
+	maxSize := MaxPackedSize64k
 	if t == Sideband {
-		max = MaxPackedSize
+		maxSize = MaxPackedSize
 	}
 
 	return &Demuxer{
 		t:   t,
 		r:   r,
-		max: max,
+		max: maxSize,
 	}
 }
 

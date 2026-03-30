@@ -3,6 +3,7 @@ package object
 import (
 	"bytes"
 	"context"
+	"errors"
 
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
@@ -75,7 +76,7 @@ func DiffTreeWithOptions(
 
 	merkletrieChanges, err := merkletrie.DiffTreeContext(ctx, from, to, hashEqual)
 	if err != nil {
-		if err == merkletrie.ErrCanceled {
+		if errors.Is(err, merkletrie.ErrCanceled) {
 			return nil, ErrCanceled
 		}
 		return nil, err

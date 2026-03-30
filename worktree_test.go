@@ -10,11 +10,21 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -24,15 +34,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
-	"golang.org/x/text/unicode/norm"
 )
 
 func defaultTestCommitOptions() *CommitOptions {
@@ -46,6 +47,7 @@ type WorktreeSuite struct {
 }
 
 func TestWorktreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(WorktreeSuite))
 }
 
@@ -342,6 +344,67 @@ func (s *WorktreeSuite) TestPullAfterShallowClone() {
 	s.NoError(err)
 }
 
+// TestPullAfterShallowClone_UntrackedFilesPreserved checks that an untracked
+// file in a shallow-cloned worktree is not deleted by a subsequent pull.
+// Regression test for https://github.com/go-git/go-git/issues/1719.
+func (s *WorktreeSuite) TestPullAfterShallowClone_UntrackedFilesPreserved() {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	remote, err := PlainInit(remoteURL, false)
+	s.Require().NoError(err)
+
+	_ = CommitNewFile(s.T(), remote, "File1")
+	_ = CommitNewFile(s.T(), remote, "File2")
+
+	repo, err := PlainClone(repoDir, &CloneOptions{
+		URL:           remoteURL,
+		Depth:         1,
+		Tags:          plumbing.NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	s.Require().NoError(err)
+
+	// Create an untracked file in the cloned worktree.
+	untrackedPath := filepath.Join(repoDir, "untracked.txt")
+	s.Require().NoError(os.WriteFile(untrackedPath, []byte("do not delete me"), 0o644))
+
+	// Push new commits to the remote so the pull has actual work to do.
+	_ = CommitNewFile(s.T(), remote, "File3")
+	_ = CommitNewFile(s.T(), remote, "File4")
+
+	w, err := repo.Worktree()
+	s.Require().NoError(err)
+
+	// Test without Force first.
+	err = w.Pull(&PullOptions{
+		RemoteName:    DefaultRemoteName,
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewBranchReferenceName("master"),
+	})
+	s.Require().NoError(err)
+
+	// The untracked file must survive the pull (mirrors real git behaviour).
+	_, statErr := os.Stat(untrackedPath)
+	s.Require().NoError(statErr, "untracked file was removed by pull (no Force) on a shallow clone")
+
+	// Push another commit and test with Force: true.
+	_ = CommitNewFile(s.T(), remote, "File5")
+
+	err = w.Pull(&PullOptions{
+		RemoteName:    DefaultRemoteName,
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewBranchReferenceName("master"),
+		Force:         true,
+	})
+	s.Require().NoError(err)
+
+	_, statErr = os.Stat(untrackedPath)
+	s.Require().NoError(statErr, "untracked file was removed by pull (Force: true) on a shallow clone")
+}
+
 func (s *WorktreeSuite) TestCheckout() {
 	fs := memfs.New()
 	w := &Worktree{
@@ -493,6 +556,44 @@ func (s *WorktreeSuite) TestCheckoutSparse() {
 		}
 		s.True(oneOfSparseCheckoutDirs)
 	}
+}
+
+func (s *WorktreeSuite) TestCheckoutCRLF() {
+	runTest := func(t *testing.T, autoCRLF string) (result []byte) {
+		r := NewRepositoryWithEmptyWorktree(fixtures.Basic().One())
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+		cfg.Core.AutoCRLF = autoCRLF
+		require.NoError(t, r.SetConfig(cfg))
+
+		wt, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, wt.Checkout(&CheckoutOptions{}))
+
+		status, err := wt.Status()
+		require.NoError(t, err)
+		require.True(t, status.IsClean(), status)
+
+		file, err := wt.Filesystem.Open("CHANGELOG")
+		require.NoError(t, err)
+
+		content, err := io.ReadAll(file)
+		require.NoError(t, err)
+
+		return content
+	}
+
+	s.Run("autocrlf=true", func() {
+		result := runTest(s.T(), "true")
+		s.Equal("Initial changelog\r\n", string(result))
+	})
+
+	s.Run("autocrlf=input", func() {
+		result := runTest(s.T(), "input")
+		s.Equal("Initial changelog\n", string(result))
+	})
 }
 
 func (s *WorktreeSuite) TestFilenameNormalization() {
@@ -764,6 +865,91 @@ func (s *WorktreeSuite) TestCheckoutBranchUntracked() {
 	s.NoError(err)
 	// After deleting the untracked file it should now be clean
 	s.True(status.IsClean())
+}
+
+// TestCheckoutForceUntracked verifies that Checkout with Force:true (HardReset)
+// does not delete untracked files, matching real git checkout -f behaviour.
+func (s *WorktreeSuite) TestCheckoutForceUntracked() {
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: memfs.New(),
+	}
+
+	// Populate the worktree first.
+	err := w.Checkout(&CheckoutOptions{})
+	s.Require().NoError(err)
+
+	// Create an untracked file.
+	uf, err := w.Filesystem.Create("untracked_file")
+	s.Require().NoError(err)
+	_, err = uf.Write([]byte("don't delete me"))
+	s.Require().NoError(err)
+	s.Require().NoError(uf.Close())
+
+	// Force checkout (HardReset) — should leave untracked files alone.
+	err = w.Checkout(&CheckoutOptions{Force: true})
+	s.Require().NoError(err)
+
+	status, err := w.Status()
+	s.Require().NoError(err)
+	// Untracked file must still be present.
+	s.True(status.IsUntracked("untracked_file"), "untracked file was deleted by Force checkout")
+}
+
+// TestCheckoutForceSparseUntrackedPreserved verifies that when switching
+// SparseCheckoutDirectories with Force:true, tracked files outside the new
+// sparse set are removed from disk but untracked files inside those directories
+// are preserved — matching real git behaviour (git keeps the untracked file
+// and prints a warning).
+func (s *WorktreeSuite) TestCheckoutForceSparseUntrackedPreserved() {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL:        s.GetBasicLocalRepositoryURL(),
+		NoCheckout: true,
+	})
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	// Initial sparse checkout: only the "go" directory.
+	s.Require().NoError(w.Checkout(&CheckoutOptions{
+		SparseCheckoutDirectories: []string{"go"},
+	}))
+
+	// Confirm that at least one tracked file is present inside "go/".
+	goFiles, err := fs.ReadDir("go")
+	s.Require().NoError(err)
+	s.Require().NotEmpty(goFiles, "expected tracked files in go/ after sparse checkout")
+
+	// Create an untracked file inside the soon-to-be-removed sparse directory.
+	uf, err := w.Filesystem.Create("go/untracked.txt")
+	s.Require().NoError(err)
+	_, err = uf.Write([]byte("do not delete me"))
+	s.Require().NoError(err)
+	s.Require().NoError(uf.Close())
+
+	// Force checkout: switch sparse set from "go" to "php".
+	// Real git removes tracked "go/" files from the worktree but preserves
+	// untracked files (showing a warning). go-git must match this behaviour.
+	s.Require().NoError(w.Checkout(&CheckoutOptions{
+		Force:                     true,
+		SparseCheckoutDirectories: []string{"php"},
+	}))
+
+	// Untracked file inside the removed sparse directory must be preserved.
+	_, statErr := w.Filesystem.Stat("go/untracked.txt")
+	s.Require().NoError(statErr, "untracked file inside removed sparse dir was deleted by Force checkout")
+
+	// Tracked files that moved out of the sparse set must be removed from disk.
+	firstGoFile := filepath.Join("go", goFiles[0].Name())
+	_, statErr = w.Filesystem.Stat(firstGoFile)
+	s.Require().Error(statErr, "tracked file %q in removed sparse dir should have been removed by Force checkout", firstGoFile)
+
+	// The "php" directory must now be present and populated.
+	phpFiles, err := fs.ReadDir("php")
+	s.Require().NoError(err)
+	s.NotEmpty(phpFiles, "expected php/ files after sparse checkout switch")
 }
 
 func (s *WorktreeSuite) TestCheckoutCreateWithHash() {
@@ -1237,6 +1423,253 @@ func (s *WorktreeSuite) TestResetMerge() {
 	s.Equal(commitA, branch.Hash())
 }
 
+func (s *WorktreeSuite) TestResetKeep() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	s.Require().NoError(err)
+
+	// KeepReset with no local changes should succeed and update the worktree.
+	err = w.Reset(&ResetOptions{Mode: KeepReset, Commit: commit})
+	s.Require().NoError(err)
+
+	branch, err := w.r.Reference(plumbing.Master, false)
+	s.NoError(err)
+	s.Equal(commit, branch.Hash())
+
+	// CHANGELOG was added in the commit being reset away; it should be gone.
+	_, statErr := fs.Stat("CHANGELOG")
+	s.Error(statErr, "CHANGELOG should have been removed by KeepReset")
+}
+
+// TestResetKeepConflict verifies that KeepReset is aborted when a file that
+// would be changed by the reset has local modifications — matching
+// git reset --keep behaviour.
+func (s *WorktreeSuite) TestResetKeepConflict() {
+	tempDir := s.T().TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+
+	// Build a repo with two commits that both touch "tracked.txt".
+	r, err := PlainInit(repoDir, false)
+	s.Require().NoError(err)
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	commitA := CommitNewFile(s.T(), r, "tracked.txt")
+
+	// Advance to commitB by changing tracked.txt.
+	s.Require().NoError(util.WriteFile(w.Filesystem, "tracked.txt", []byte("version B"), 0o644))
+	_, err = w.Add("tracked.txt")
+	s.Require().NoError(err)
+	commitB, err := w.Commit("second", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	// Go back to commitA cleanly.
+	err = w.Reset(&ResetOptions{Mode: HardReset, Commit: commitA})
+	s.Require().NoError(err)
+
+	// Make a local (unstaged) modification to tracked.txt, which differs
+	// between commitA and commitB.
+	s.Require().NoError(util.WriteFile(w.Filesystem, "tracked.txt", []byte("local change"), 0o644))
+
+	// KeepReset to commitB should be aborted.
+	err = w.Reset(&ResetOptions{Mode: KeepReset, Commit: commitB})
+	s.ErrorIs(err, ErrLocalChanges)
+
+	// HEAD must not have moved.
+	head, err := r.Head()
+	s.NoError(err)
+	s.Equal(commitA, head.Hash())
+}
+
+// TestResetKeepUntrackedPreserved verifies that KeepReset never deletes
+// untracked files, just like real git reset --keep.
+func (s *WorktreeSuite) TestResetKeepUntrackedPreserved() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	commit := plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")
+
+	err := w.Checkout(&CheckoutOptions{})
+	s.Require().NoError(err)
+
+	// Create an untracked file.
+	s.Require().NoError(util.WriteFile(fs, "untracked.txt", []byte("keep me"), 0o644))
+
+	err = w.Reset(&ResetOptions{Mode: KeepReset, Commit: commit})
+	s.Require().NoError(err)
+
+	_, statErr := fs.Stat("untracked.txt")
+	s.NoError(statErr, "untracked file was deleted by KeepReset")
+}
+
+// TestResetKeepSparselyUntracked verifies that KeepReset with SparseDirs
+// removes tracked files outside the new sparse set from disk, writes files
+// in the new sparse set, and preserves untracked files in the removed dirs —
+// matching real git reset --keep behaviour.
+func (s *WorktreeSuite) TestResetKeepSparselyUntracked() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	// Sparse-populate the "go" directory first.
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: KeepReset, SparseDirs: []string{"go"}}))
+
+	goFiles, err := fs.ReadDir("go")
+	s.Require().NoError(err)
+	s.Require().NotEmpty(goFiles, "expected tracked files in go/ after KeepReset with SparseDirs=[go]")
+
+	// Create an untracked file inside the soon-to-be-removed sparse dir.
+	s.Require().NoError(util.WriteFile(fs, "go/untracked.txt", []byte("do not delete me"), 0o644))
+
+	// Switch sparse set from "go" to "php" using KeepReset. There are no
+	// local modifications to tracked files, so the keep-check must pass.
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: KeepReset, SparseDirs: []string{"php"}}))
+
+	// Tracked files in the removed "go" sparse dir must be removed from disk;
+	// git always removes SkipWorktree-marked files from the worktree.
+	firstGoFile := filepath.Join("go", goFiles[0].Name())
+	_, statErr := fs.Stat(firstGoFile)
+	s.Require().Error(statErr, "tracked file %q in removed sparse dir should have been removed", firstGoFile)
+
+	// Untracked file in the removed sparse dir must be preserved.
+	_, statErr = fs.Stat("go/untracked.txt")
+	s.Require().NoError(statErr, "untracked file inside removed sparse dir was deleted by KeepReset")
+
+	// Files in the new sparse dir must now be present.
+	phpFiles, err := fs.ReadDir("php")
+	s.Require().NoError(err)
+	s.NotEmpty(phpFiles, "expected php/ files after KeepReset sparse switch")
+}
+
+// TestResetKeepConflictNotOnSparseExcluded verifies that KeepReset does not
+// abort when a file that changes between commits is SkipWorktree (i.e. outside
+// the current sparse set). Such a file is absent from the worktree and has no
+// local modifications, so it must not be counted as a conflict.
+func (s *WorktreeSuite) TestResetKeepConflictNotOnSparseExcluded() {
+	tempDir := s.T().TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+
+	r, err := PlainInit(repoDir, false)
+	s.Require().NoError(err)
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	// commitA: create tracked.txt and subdir/other.txt
+	commitA := CommitNewFile(s.T(), r, "tracked.txt")
+
+	// commitB: change tracked.txt (so it appears in the tree-to-tree diff)
+	s.Require().NoError(util.WriteFile(w.Filesystem, "tracked.txt", []byte("version B"), 0o644))
+	_, err = w.Add("tracked.txt")
+	s.Require().NoError(err)
+	commitB, err := w.Commit("second", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	// Go back to commitA and apply a sparse checkout that excludes tracked.txt
+	// by resetting with a SparseDirs that doesn't contain it.
+	// We use a subdirectory "subdir" that doesn't actually exist in the tree;
+	// we skip validation so we can force SkipWorktree onto all files.
+	err = w.Reset(&ResetOptions{
+		Mode:                    HardReset,
+		Commit:                  commitA,
+		SparseDirs:              []string{"subdir"},
+		SkipSparseDirValidation: true,
+	})
+	s.Require().NoError(err)
+
+	// Now tracked.txt should be SkipWorktree=true (not on disk). A KeepReset
+	// to commitB touches tracked.txt in the tree diff, but since it isn't
+	// locally modified (it's sparse-excluded), the check must pass.
+	err = w.Reset(&ResetOptions{
+		Mode:                    KeepReset,
+		Commit:                  commitB,
+		SparseDirs:              []string{"subdir"},
+		SkipSparseDirValidation: true,
+	})
+	s.Require().NoError(err)
+
+	head, err := r.Head()
+	s.Require().NoError(err)
+	s.Equal(commitB, head.Hash(), "HEAD should advance to commitB")
+}
+
+// TestResetKeepSparseConflict verifies that KeepReset is aborted when a change
+// in SparseDirs would remove a currently-on-disk tracked file that has local
+// modifications — matching git reset --keep behaviour.
+func (s *WorktreeSuite) TestResetKeepSparseConflict() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	// Sparse-populate the "go" directory so its tracked files are on disk.
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: KeepReset, SparseDirs: []string{"go"}}))
+
+	// Find a tracked file inside go/ to dirty.
+	goFiles, err := fs.ReadDir("go")
+	s.Require().NoError(err)
+	s.Require().NotEmpty(goFiles, "expected tracked files in go/ after sparse reset")
+
+	dirtyFile := filepath.Join("go", goFiles[0].Name())
+	s.Require().NoError(util.WriteFile(fs, dirtyFile, []byte("local modification"), 0o644))
+
+	// Switching SparseDirs from "go" to "php" (same commit) would remove
+	// dirty go/ files from disk — KeepReset must refuse.
+	err = w.Reset(&ResetOptions{Mode: KeepReset, SparseDirs: []string{"php"}})
+	s.ErrorIs(err, ErrLocalChanges, "KeepReset should abort when SparseDirs removal would discard local mods")
+}
+
+// TestResetKeepUntrackedOverwrite verifies that KeepReset is aborted when an
+// untracked file exists at a path that the target commit would write — matching
+// git reset --keep behaviour (would otherwise silently overwrite the file).
+func (s *WorktreeSuite) TestResetKeepUntrackedOverwrite() {
+	tempDir := s.T().TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+
+	r, err := PlainInit(repoDir, false)
+	s.Require().NoError(err)
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	// commitA: only tracked.txt exists.
+	commitA := CommitNewFile(s.T(), r, "tracked.txt")
+
+	// commitB: add new.txt alongside tracked.txt.
+	s.Require().NoError(util.WriteFile(w.Filesystem, "new.txt", []byte("tracked content"), 0o644))
+	_, err = w.Add("new.txt")
+	s.Require().NoError(err)
+	commitB, err := w.Commit("add new.txt", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	// Go back to commitA so new.txt is absent from the worktree.
+	err = w.Reset(&ResetOptions{Mode: HardReset, Commit: commitA})
+	s.Require().NoError(err)
+
+	// Place an untracked file at the path that commitB will insert.
+	s.Require().NoError(util.WriteFile(w.Filesystem, "new.txt", []byte("untracked content"), 0o644))
+
+	// KeepReset to commitB must abort because new.txt would be overwritten.
+	err = w.Reset(&ResetOptions{Mode: KeepReset, Commit: commitB})
+	s.ErrorIs(err, ErrLocalChanges, "KeepReset should abort when an untracked file would be overwritten")
+
+	// HEAD must not have moved.
+	head, err := r.Head()
+	s.NoError(err)
+	s.Equal(commitA, head.Hash())
+}
+
 func (s *WorktreeSuite) TestResetHard() {
 	fs := memfs.New()
 	w := &Worktree{
@@ -1554,6 +1987,54 @@ func (s *WorktreeSuite) TestStatusDeleted() {
 	s.Equal(Deleted, status.File(".gitignore").Worktree)
 }
 
+func (s *WorktreeSuite) TestStatusFileMode() {
+	runTest := func(t *testing.T, fileMode bool) string {
+		fs := memfs.New()
+		r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+		require.NoError(t, err)
+
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+
+		cfg.Core.FileMode = fileMode
+		err = r.SetConfig(cfg)
+		require.NoError(t, err)
+
+		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0755)
+		require.NoError(t, err)
+
+		_, err = w.Add("run.bash")
+		require.NoError(t, err)
+
+		_, err = w.Commit("Add an executable", defaultTestCommitOptions())
+		require.NoError(t, err)
+
+		err = util.RemoveAll(fs, "run.bash")
+		require.NoError(t, err)
+
+		err = util.WriteFile(fs, "run.bash", []byte("#!/bin/bash\n"), 0o0644)
+		require.NoError(t, err)
+
+		s, err := w.Status()
+		require.NoError(t, err)
+
+		return s.String()
+	}
+
+	s.Run("filemode=true", func() {
+		result := runTest(s.T(), true)
+		s.Equal(" M run.bash\n", result)
+	})
+
+	s.Run("filemode=false", func() {
+		result := runTest(s.T(), false)
+		s.Equal("", result)
+	})
+}
+
 func (s *WorktreeSuite) TestSubmodule() {
 	fs := fixtures.ByTag("submodule").One().Worktree()
 	gitdir, err := fs.Chroot(GitDirName)
@@ -1651,7 +2132,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 			w, err := r.Worktree()
 			s.NoError(err)
 
-			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0644)
+			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0o644)
 			s.NoError(err)
 
 			submodules, err := w.Submodules()
@@ -1673,6 +2154,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 }
 
 func TestResolveModuleURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		originURL string
 		moduleURL string
@@ -1742,6 +2224,7 @@ func TestResolveModuleURL(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			got, err := resolveModuleURL(tc.originURL, tc.moduleURL)
 			if tc.wantErr == nil {
 				assert.NoError(t, err)
@@ -1796,6 +2279,49 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	s.NoError(err)
 	s.NotNil(obj)
 	s.Equal(int64(3), obj.Size())
+}
+
+func (s *WorktreeSuite) TestAddCRLF() {
+	runTest := func(t *testing.T, autoCRLF string) (result []byte) {
+		r := NewRepositoryWithEmptyWorktree(fixtures.Basic().One())
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+		cfg.Core.AutoCRLF = autoCRLF
+		require.NoError(t, r.SetConfig(cfg))
+
+		wt, err := r.Worktree()
+		require.NoError(t, err)
+
+		err = util.WriteFile(wt.Filesystem, "foo", []byte("FOO\r\n"), 0o755)
+		require.NoError(t, err)
+
+		h, err := wt.Add("foo")
+		require.NoError(t, err)
+
+		obj, err := r.Storer.EncodedObject(plumbing.BlobObject, h)
+		require.NoError(t, err)
+		require.NotNil(t, obj)
+
+		reader, err := obj.Reader()
+		require.NoError(t, err)
+		defer reader.Close()
+
+		content, err := io.ReadAll(reader)
+		s.Require().NoError(err)
+
+		return content
+	}
+
+	s.Run("autocrlf=true", func() {
+		result := runTest(s.T(), "true")
+		s.Equal("FOO\n", string(result))
+	})
+
+	s.Run("autocrlf=input", func() {
+		result := runTest(s.T(), "input")
+		s.Equal("FOO\n", string(result))
+	})
 }
 
 func (s *WorktreeSuite) TestIgnored() {
@@ -1943,7 +2469,7 @@ func (s *WorktreeSuite) TestAddRemoved() {
 	s.Equal(Deleted, file.Staging)
 }
 
-func (s *WorktreeSuite) TestAddRemovedInDirectory() {
+func (s *WorktreeSuite) testAddRemovedInDirectory(addPath string, expectedJSONStatus StatusCode) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -1963,7 +2489,7 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory() {
 	err = w.Filesystem.Remove("json/short.json")
 	s.NoError(err)
 
-	hash, err := w.Add("go")
+	hash, err := w.Add(addPath)
 	s.NoError(err)
 	s.True(hash.IsZero())
 
@@ -1985,97 +2511,19 @@ func (s *WorktreeSuite) TestAddRemovedInDirectory() {
 	s.Equal(Deleted, file.Staging)
 
 	file = status.File("json/short.json")
-	s.Equal(Unmodified, file.Staging)
+	s.Equal(expectedJSONStatus, file.Staging)
+}
+
+func (s *WorktreeSuite) TestAddRemovedInDirectory() {
+	s.testAddRemovedInDirectory("go", Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddRemovedInDirectoryWithTrailingSlash() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = w.Filesystem.Remove("go/example.go")
-	s.NoError(err)
-
-	err = w.Filesystem.Remove("json/short.json")
-	s.NoError(err)
-
-	hash, err := w.Add("go/")
-	s.NoError(err)
-	s.True(hash.IsZero())
-
-	e, err := idx.Entry("go/example.go")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	e, err = idx.Entry("json/short.json")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 2)
-
-	file := status.File("go/example.go")
-	s.Equal(Deleted, file.Staging)
-
-	file = status.File("json/short.json")
-	s.Equal(Unmodified, file.Staging)
+	s.testAddRemovedInDirectory("go/", Unmodified)
 }
 
 func (s *WorktreeSuite) TestAddRemovedInDirectoryDot() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = w.Filesystem.Remove("go/example.go")
-	s.NoError(err)
-
-	err = w.Filesystem.Remove("json/short.json")
-	s.NoError(err)
-
-	hash, err := w.Add(".")
-	s.NoError(err)
-	s.True(hash.IsZero())
-
-	e, err := idx.Entry("go/example.go")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	e, err = idx.Entry("json/short.json")
-	s.NoError(err)
-	s.Equal(plumbing.NewHash("c8f1d8c61f9da76f4cb49fd86322b6e685dba956"), e.Hash)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 2)
-
-	file := status.File("go/example.go")
-	s.Equal(Deleted, file.Staging)
-
-	file = status.File("json/short.json")
-	s.Equal(Deleted, file.Staging)
+	s.testAddRemovedInDirectory(".", Deleted)
 }
 
 func (s *WorktreeSuite) TestAddSymlink() {
@@ -2327,7 +2775,7 @@ func (s *WorktreeSuite) TestAddGlobErrorNoMatches() {
 	s.ErrorIs(err, ErrGlobNoMatches)
 }
 
-func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
+func (s *WorktreeSuite) testAddSkipStatus(filePath string, expectedEntries int, expectedStaging StatusCode) {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
@@ -2341,17 +2789,17 @@ func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
 	s.NoError(err)
 	s.Len(idx.Entries, 9)
 
-	err = util.WriteFile(w.Filesystem, "file1", []byte("file1"), 0o644)
+	err = util.WriteFile(w.Filesystem, filePath, []byte("file1"), 0o644)
 	s.NoError(err)
 
-	err = w.AddWithOptions(&AddOptions{Path: "file1", SkipStatus: true})
+	err = w.AddWithOptions(&AddOptions{Path: filePath, SkipStatus: true})
 	s.NoError(err)
 
 	idx, err = w.r.Storer.Index()
 	s.NoError(err)
-	s.Len(idx.Entries, 10)
+	s.Len(idx.Entries, expectedEntries)
 
-	e, err := idx.Entry("file1")
+	e, err := idx.Entry(filePath)
 	s.NoError(err)
 	s.Equal(filemode.Regular, e.Mode)
 
@@ -2359,46 +2807,17 @@ func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
 	s.NoError(err)
 	s.Len(status, 1)
 
-	file := status.File("file1")
-	s.Equal(Added, file.Staging)
+	file := status.File(filePath)
+	s.Equal(expectedStaging, file.Staging)
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddSkipStatusAddedPath() {
+	s.testAddSkipStatus("file1", 10, Added)
+}
+
 func (s *WorktreeSuite) TestAddSkipStatusModifiedPath() {
-	fs := memfs.New()
-	w := &Worktree{
-		r:          s.Repository,
-		Filesystem: fs,
-	}
-
-	err := w.Checkout(&CheckoutOptions{Force: true})
-	s.NoError(err)
-
-	idx, err := w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	err = util.WriteFile(w.Filesystem, "LICENSE", []byte("file1"), 0o644)
-	s.NoError(err)
-
-	err = w.AddWithOptions(&AddOptions{Path: "LICENSE", SkipStatus: true})
-	s.NoError(err)
-
-	idx, err = w.r.Storer.Index()
-	s.NoError(err)
-	s.Len(idx.Entries, 9)
-
-	e, err := idx.Entry("LICENSE")
-	s.NoError(err)
-	s.Equal(filemode.Regular, e.Mode)
-
-	status, err := w.Status()
-	s.NoError(err)
-	s.Len(status, 1)
-
-	file := status.File("LICENSE")
-	s.Equal(Modified, file.Staging)
-	s.Equal(Unmodified, file.Worktree)
+	s.testAddSkipStatus("LICENSE", 9, Modified)
 }
 
 func (s *WorktreeSuite) TestAddSkipStatusNonModifiedPath() {
@@ -2794,6 +3213,7 @@ func (s *WorktreeSuite) TestCleanBare() {
 }
 
 func TestAlternatesRepo(t *testing.T) {
+	t.Parallel()
 	fs := fixtures.ByTag("alternates").One().Worktree()
 
 	// Open 1st repo.
@@ -3034,14 +3454,7 @@ func (s *WorktreeSuite) TestGrep() {
 		// Iterate through the results and check if the wanted result is present
 		// in the got result.
 		for _, wantResult := range tc.wantResult {
-			found := false
-			for _, gotResult := range gr {
-				if wantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(gr, wantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -3049,14 +3462,7 @@ func (s *WorktreeSuite) TestGrep() {
 		// Iterate through the results and check if the not wanted result is
 		// present in the got result.
 		for _, dontWantResult := range tc.dontWantResult {
-			found := false
-			for _, gotResult := range gr {
-				if dontWantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.Contains(gr, dontWantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}
@@ -3110,14 +3516,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 		// Iterate through the results and check if the wanted result is present
 		// in the got result.
 		for _, wantResult := range tc.wantResult {
-			found := false
-			for _, gotResult := range gr {
-				if wantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(gr, wantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to contain: %v", tc.name, wantResult)
 			}
 		}
@@ -3125,14 +3524,7 @@ func (s *WorktreeSuite) TestGrepBare() {
 		// Iterate through the results and check if the not wanted result is
 		// present in the got result.
 		for _, dontWantResult := range tc.dontWantResult {
-			found := false
-			for _, gotResult := range gr {
-				if dontWantResult == gotResult {
-					found = true
-					break
-				}
-			}
-			if found {
+			if slices.Contains(gr, dontWantResult) {
 				s.T().Errorf("unexpected grep results for %q, expected result to NOT contain: %v", tc.name, dontWantResult)
 			}
 		}
@@ -3222,7 +3614,7 @@ func (s *WorktreeSuite) TestAddAndCommit() {
 			return err
 		}
 
-		err = files.ForEach(func(f *object.File) error {
+		err = files.ForEach(func(*object.File) error {
 			filesFound++
 			return nil
 		})
@@ -3259,7 +3651,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("main")
 		s.Require().NoError(err)
-		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		repo, err := PlainOpenWithOptions(fs.Root(), nil)
 		s.Require().NoError(err)
 
 		wt, err := repo.Worktree()
@@ -3278,7 +3670,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("linked-worktree-1")
 		s.Require().NoError(err)
-		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		repo, err := PlainOpenWithOptions(fs.Root(), nil)
 		s.Require().NoError(err)
 
 		wt, err := repo.Worktree()
@@ -3300,7 +3692,7 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("linked-worktree-2")
 		s.Require().NoError(err)
-		repo, err := PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		repo, err := PlainOpenWithOptions(fs.Root(), nil)
 		s.Require().NoError(err)
 
 		wt, err := repo.Worktree()
@@ -3322,12 +3714,13 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 	{
 		fs, err := fs.Chroot("linked-worktree-invalid-commondir")
 		s.Require().NoError(err)
-		_, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableDotGitCommonDir: true})
+		_, err = PlainOpenWithOptions(fs.Root(), nil)
 		s.ErrorIs(err, ErrRepositoryIncomplete)
 	}
 }
 
 func TestTreeContainsDirs(t *testing.T) {
+	t.Parallel()
 	tree := &object.Tree{
 		Entries: []object.TreeEntry{
 			{Name: "foo", Mode: filemode.Dir},
@@ -3366,12 +3759,14 @@ func TestTreeContainsDirs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, test.expected, treeContainsDirs(tree, test.dirs))
 		})
 	}
 }
 
 func TestValidPath(t *testing.T) {
+	t.Parallel()
 	type testcase struct {
 		path    string
 		wantErr bool
@@ -3410,6 +3805,7 @@ func TestValidPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			err := validPath(tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -3421,6 +3817,7 @@ func TestValidPath(t *testing.T) {
 }
 
 func TestWindowsValidPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want bool
@@ -3441,6 +3838,7 @@ func TestWindowsValidPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			got := windowsValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
 		})
@@ -3476,7 +3874,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		{Worktree: Untracked, Staging: Untracked},
 	})
 
-	// Touch of bunch of files including create a new file and delete an exsiting file
+	// Touch of bunch of files including create a new file and delete an existing file
 	for _, name := range names {
 		err = util.WriteFile(fs, name, []byte("Foo Bar"), 0o755)
 		s.NoError(err)
@@ -3517,7 +3915,7 @@ func setupForRestore(s *WorktreeSuite) (fs billy.Filesystem, w *Worktree, names 
 		{Worktree: Unmodified, Staging: Deleted},
 	})
 
-	return
+	return fs, w, names
 }
 
 func verifyStatus(s *WorktreeSuite, marker string, w *Worktree, files []string, statuses []FileStatus) {

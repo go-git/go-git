@@ -137,7 +137,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	pathCurrent := ""
 
 	// search for the longest path in the tree path cache
-	for i := len(pathParts) - 1; i > 1; i-- {
+	for i := len(pathParts) - 1; i >= 1; i-- {
 		path := filepath.Join(pathParts[:i]...)
 
 		tree, ok := t.t[path]
@@ -257,6 +257,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		}
 
 		var hash plumbing.Hash
+		hash.ResetBySize(t.Hash.Size())
 		if _, err = hash.ReadFrom(r); err != nil {
 			return err
 		}
@@ -272,6 +273,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	return nil
 }
 
+// TreeEntrySorter is a helper type for sorting TreeEntry slices.
 type TreeEntrySorter []TreeEntry
 
 func (s TreeEntrySorter) Len() int {
@@ -429,13 +431,13 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		if current < 0 {
 			// Nothing left on the stack so we're finished
 			err = io.EOF
-			return
+			return name, entry, err
 		}
 
 		if current > maxTreeDepth {
 			// We're probably following bad data or some self-referencing tree
 			err = ErrMaxTreeDepth
-			return
+			return name, entry, err
 		}
 
 		entry, err = w.stack[current].Next()
@@ -448,7 +450,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		}
 
 		if err != nil {
-			return
+			return name, entry, err
 		}
 
 		if w.seen[entry.Hash] {
@@ -463,14 +465,14 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 
 		if err != nil {
 			err = io.EOF
-			return
+			return name, entry, err
 		}
 
 		break
 	}
 
 	if !w.recursive {
-		return
+		return name, entry, err
 	}
 
 	if obj != nil {
@@ -478,7 +480,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		w.base = simpleJoin(w.base, entry.Name)
 	}
 
-	return
+	return name, entry, err
 }
 
 // Tree returns the tree that the tree walker most recently operated on.

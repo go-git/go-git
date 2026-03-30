@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/object"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
 type BlameSuite struct {
@@ -16,6 +16,7 @@ type BlameSuite struct {
 }
 
 func TestBlameSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(BlameSuite))
 }
 
@@ -106,7 +107,7 @@ func repeat(s string, n int) []string {
 		panic("repeat: n < 0")
 	}
 	r := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		r = append(r, s)
 	}
 

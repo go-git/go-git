@@ -84,9 +84,8 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 
 	if p.inclusion {
 		return Include
-	} else {
-		return Exclude
 	}
+	return Exclude
 }
 
 func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {

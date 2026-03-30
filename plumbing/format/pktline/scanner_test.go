@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 type SuiteScanner struct {
@@ -16,6 +17,7 @@ type SuiteScanner struct {
 }
 
 func TestSuiteScanner(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteScanner))
 }
 

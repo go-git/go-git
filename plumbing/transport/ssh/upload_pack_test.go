@@ -11,15 +11,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gliderlabs/ssh"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	stdssh "golang.org/x/crypto/ssh"
+
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/gliderlabs/ssh"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
-	stdssh "golang.org/x/crypto/ssh"
 )
 
 type UploadPackSuite struct {
@@ -31,7 +31,7 @@ type UploadPackSuite struct {
 	base        string
 }
 
-func TestUploadPackSuite(t *testing.T) {
+func TestUploadPackSuite(t *testing.T) { //nolint:paralleltest // modifies global DefaultAuthBuilder
 	if runtime.GOOS == "js" {
 		t.Skip("tcp connections are not available in wasm")
 	}
@@ -146,13 +146,12 @@ func handlerSSH(s ssh.Session) {
 	if err := cmd.Wait(); err != nil {
 		return
 	}
-
 }
 
 func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdout io.ReadCloser, err error) {
 	if len(c) != 2 {
 		err = fmt.Errorf("invalid command")
-		return
+		return cmd, stdin, stderr, stdout, err
 	}
 
 	// fix for Windows environments
@@ -166,18 +165,18 @@ func buildCommand(c []string) (cmd *exec.Cmd, stdin io.WriteCloser, stderr, stdo
 	cmd = exec.Command(c[0], path)
 	stdout, err = cmd.StdoutPipe()
 	if err != nil {
-		return
+		return cmd, stdin, stderr, stdout, err
 	}
 
 	stdin, err = cmd.StdinPipe()
 	if err != nil {
-		return
+		return cmd, stdin, stderr, stdout, err
 	}
 
 	stderr, err = cmd.StderrPipe()
 	if err != nil {
-		return
+		return cmd, stdin, stderr, stdout, err
 	}
 
-	return
+	return cmd, stdin, stderr, stdout, err
 }

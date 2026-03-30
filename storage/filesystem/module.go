@@ -6,6 +6,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
+// ModuleStorage implements storage for git submodules.
 type ModuleStorage struct {
 	dir *dotgit.DotGit
 }

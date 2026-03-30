@@ -108,7 +108,7 @@ func (fi *fileIndex) Close() (err error) {
 		}()
 	}
 	err = fi.reader.Close()
-	return
+	return err
 }
 
 func (fi *fileIndex) verifyFileHeader() error {
@@ -129,8 +129,8 @@ func (fi *fileIndex) verifyFileHeader() error {
 	if header[0] != 1 {
 		return ErrUnsupportedVersion
 	}
-	if !(fi.objSize == crypto.SHA1.Size() && header[1] == 1) &&
-		!(fi.objSize == crypto.SHA256.Size() && header[1] == 2) {
+	if (fi.objSize != crypto.SHA1.Size() || header[1] != 1) &&
+		(fi.objSize != crypto.SHA256.Size() || header[1] != 2) {
 		// Unknown hash type / unsupported hash type
 		return ErrUnsupportedHash
 	}
@@ -172,7 +172,7 @@ func (fi *fileIndex) readFanout() error {
 	// The Fanout table is a 256 entry table of the number (as uint32) of OIDs with first byte at most i.
 	// Thus F[255] stores the total number of commits (N)
 	fanoutReader := io.NewSectionReader(fi.reader, fi.offsets[OIDFanoutChunk], lenFanout*szUint32)
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		fanoutValue, err := binary.ReadUint32(fanoutReader)
 		if err != nil {
 			return err
@@ -204,11 +204,12 @@ func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 			return 0, err
 		}
 		cmp := h.Compare(oid.Bytes())
-		if cmp < 0 {
+		switch {
+		case cmp < 0:
 			high = mid
-		} else if cmp == 0 {
+		case cmp == 0:
 			return mid + fi.minimumNumberOfHashes, nil
-		} else {
+		default:
 			low = mid + 1
 		}
 	}
@@ -265,7 +266,8 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 	}
 
 	var parentIndexes []uint32
-	if parent2&parentOctopusUsed == parentOctopusUsed {
+	switch {
+	case parent2&parentOctopusUsed == parentOctopusUsed:
 		// Octopus merge - Look-up the extra parents from the extra edge list
 		// The extra edge list is a list of uint32s, each of which is an index into the Commit Data table, terminated by a index with the most significant bit on.
 		parentIndexes = []uint32{parent1 & parentOctopusMask}
@@ -284,9 +286,9 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 				break
 			}
 		}
-	} else if parent2 != parentNone {
+	case parent2 != parentNone:
 		parentIndexes = []uint32{parent1 & parentOctopusMask, parent2 & parentOctopusMask}
-	} else if parent1 != parentNone {
+	case parent1 != parentNone:
 		parentIndexes = []uint32{parent1 & parentOctopusMask}
 	}
 

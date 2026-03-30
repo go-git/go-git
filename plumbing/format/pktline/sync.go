@@ -3,7 +3,7 @@ package pktline
 import "sync"
 
 var pktBuffer = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		var b [MaxSize]byte
 		return &b
 	},
@@ -21,5 +21,8 @@ func GetBuffer() *[MaxSize]byte {
 
 // PutBuffer puts buf back into its sync.Pool.
 func PutBuffer(buf *[MaxSize]byte) {
+	if buf == nil {
+		return
+	}
 	pktBuffer.Put(buf)
 }

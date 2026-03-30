@@ -1,3 +1,4 @@
+// Package diff implements diff operations and unified diff encoding.
 package diff
 
 import (

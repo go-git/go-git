@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	shallowLineLength       = len(shallow) + hashSize
-	minCommandLength        = hashSize*2 + 2 + 1
+	minCommandLength        = sha1HexSize*2 + 2 + 1
 	minCommandAndCapsLength = minCommandLength + 1
 )
 
+// Decode errors.
 var (
 	ErrEmpty                        = errors.New("empty update-request message")
 	errNoCommands                   = errors.New("unexpected EOF before any command")
@@ -27,19 +27,14 @@ func errMalformedRequest(reason string) error {
 	return fmt.Errorf("malformed request: %s", reason)
 }
 
-func errInvalidHashSize(got int) error {
-	return fmt.Errorf("invalid hash size: expected %d, got %d",
-		hashSize, got)
-}
-
 func errInvalidHash(hash string) error {
 	return fmt.Errorf("invalid hash: %s", hash)
 }
 
 func errInvalidShallowLineLength(got int) error {
 	return errMalformedRequest(fmt.Sprintf(
-		"invalid shallow line length: expected %d, got %d",
-		shallowLineLength, got))
+		"invalid shallow line length: expected %d or %d, got %d",
+		len(shallow)+sha1HexSize, len(shallow)+sha256HexSize, got))
 }
 
 func errInvalidCommandCapabilitiesLineLength(got int) error {
@@ -54,17 +49,17 @@ func errInvalidCommandLineLength(got int) error {
 		minCommandLength, got))
 }
 
-func errInvalidShallowObjId(err error) error {
+func errInvalidShallowObjID(err error) error {
 	return errMalformedRequest(
 		fmt.Sprintf("invalid shallow object id: %s", err.Error()))
 }
 
-func errInvalidOldObjId(err error) error {
+func errInvalidOldObjID(err error) error {
 	return errMalformedRequest(
 		fmt.Sprintf("invalid old object id: %s", err.Error()))
 }
 
-func errInvalidNewObjId(err error) error {
+func errInvalidNewObjID(err error) error {
 	return errMalformedRequest(
 		fmt.Sprintf("invalid new object id: %s", err.Error()))
 }
@@ -135,19 +130,20 @@ func (d *updReqDecoder) scanLine() error {
 }
 
 func (d *updReqDecoder) decodeShallow() error {
-	b := d.payload
+	b := bytes.TrimSuffix(d.payload, eol)
 
 	if !bytes.HasPrefix(b, shallowNoSp) {
 		return nil
 	}
 
-	if len(b) != shallowLineLength {
+	hashLen := len(b) - len(shallow)
+	if hashLen != sha1HexSize && hashLen != sha256HexSize {
 		return errInvalidShallowLineLength(len(b))
 	}
 
 	h, err := parseHash(string(b[len(shallow):]))
 	if err != nil {
-		return errInvalidShallowObjId(err)
+		return errInvalidShallowObjID(err)
 	}
 
 	if err := d.readLine(errNoCommands); err != nil {
@@ -227,22 +223,18 @@ func parseCommand(b []byte) (*Command, error) {
 
 	oh, err := parseHash(os)
 	if err != nil {
-		return nil, errInvalidOldObjId(err)
+		return nil, errInvalidOldObjID(err)
 	}
 
 	nh, err := parseHash(ns)
 	if err != nil {
-		return nil, errInvalidNewObjId(err)
+		return nil, errInvalidNewObjID(err)
 	}
 
 	return &Command{Old: oh, New: nh, Name: n}, nil
 }
 
 func parseHash(s string) (plumbing.Hash, error) {
-	if len(s) != hashSize {
-		return plumbing.ZeroHash, errInvalidHashSize(len(s))
-	}
-
 	h, ok := plumbing.FromHex(s)
 	if !ok {
 		return plumbing.ZeroHash, errInvalidHash(s)

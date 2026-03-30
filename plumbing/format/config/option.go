@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ type Option struct {
 	Value string
 }
 
+// Options is a collection of Option.
 type Options []*Option
 
 // IsKey returns true if the given key matches
@@ -22,8 +24,9 @@ func (o *Option) IsKey(key string) bool {
 	return strings.EqualFold(o.Key, key)
 }
 
+// GoString returns a Go-syntax representation of Options.
 func (opts Options) GoString() string {
-	var strs []string
+	strs := make([]string, 0, len(opts))
 	for _, opt := range opts {
 		strs = append(strs, fmt.Sprintf("%#v", opt))
 	}
@@ -34,7 +37,7 @@ func (opts Options) GoString() string {
 // Get gets the value for the given key if set,
 // otherwise it returns the empty string.
 //
-// Note that there is no difference
+// # Note that there is no difference
 //
 // This matches git behaviour since git v1.8.1-rc1,
 // if there are multiple definitions of a key, the
@@ -85,7 +88,7 @@ func (opts Options) withoutOption(key string) Options {
 	return result
 }
 
-func (opts Options) withAddedOption(key string, value string) Options {
+func (opts Options) withAddedOption(key, value string) Options {
 	return append(opts, &Option{key, value})
 }
 
@@ -98,7 +101,7 @@ func (opts Options) withSettedOption(key string, values ...string) Options {
 			continue
 		}
 
-		if contains(values, o.Value) {
+		if slices.Contains(values, o.Value) {
 			added = append(added, o.Value)
 			result = append(result, o)
 			continue
@@ -106,7 +109,7 @@ func (opts Options) withSettedOption(key string, values ...string) Options {
 	}
 
 	for _, value := range values {
-		if contains(added, value) {
+		if slices.Contains(added, value) {
 			continue
 		}
 
@@ -114,14 +117,4 @@ func (opts Options) withSettedOption(key string, values ...string) Options {
 	}
 
 	return result
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-
-	return false
 }

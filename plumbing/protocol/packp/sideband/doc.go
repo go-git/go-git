@@ -1,4 +1,4 @@
-// Package sideband implements a sideband mutiplex/demultiplexer
+// Package sideband implements a sideband multiplex/demultiplexer
 package sideband
 
 // If 'side-band' or 'side-band-64k' capabilities have been specified by

@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
+// Errors returned by the objfile package.
 var (
 	ErrClosed       = errors.New("objfile: already closed")
 	ErrHeader       = errors.New("objfile: invalid header")
@@ -21,24 +22,20 @@ var (
 // Reader implements io.ReadCloser. Close should be called when finished with
 // the Reader. Close will not close the underlying io.Reader.
 type Reader struct {
-	multi   io.Reader
-	zlib    io.Reader
-	zlibref sync.ZLibReader
-	hasher  plumbing.Hasher
-	closed  bool
+	multi  io.Reader
+	zlib   *sync.ZLibReader
+	hasher plumbing.Hasher
+	closed bool
 }
 
 // NewReader returns a new Reader reading from r.
 func NewReader(r io.Reader) (*Reader, error) {
 	zlib, err := sync.GetZlibReader(r)
 	if err != nil {
-		return nil, packfile.ErrZLib.AddDetails(err.Error())
+		return nil, packfile.ErrZLib.AddDetails("%s", err.Error())
 	}
 
-	return &Reader{
-		zlib:    zlib.Reader,
-		zlibref: zlib,
-	}, nil
+	return &Reader{zlib: zlib}, nil
 }
 
 // Header reads the type and the size of object, and prepares the reader for read
@@ -46,27 +43,27 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 	var raw []byte
 	raw, err = r.readUntil(' ')
 	if err != nil {
-		return
+		return t, size, err
 	}
 
 	t, err = plumbing.ParseObjectType(string(raw))
 	if err != nil {
-		return
+		return t, size, err
 	}
 
 	raw, err = r.readUntil(0)
 	if err != nil {
-		return
+		return t, size, err
 	}
 
 	size, err = strconv.ParseInt(string(raw), 10, 64)
 	if err != nil {
 		err = ErrHeader
-		return
+		return t, size, err
 	}
 
 	defer r.prepareForRead(t, size)
-	return
+	return t, size, err
 }
 
 // readSlice reads one byte at a time from r until it encounters delim or an
@@ -118,6 +115,7 @@ func (r *Reader) Close() error {
 		return nil
 	}
 	r.closed = true
-	sync.PutZlibReader(r.zlibref)
-	return nil
+
+	defer sync.PutZlibReader(r.zlib)
+	return r.zlib.Close()
 }

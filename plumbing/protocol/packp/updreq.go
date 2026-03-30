@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
 
+// Errors returned by the updreq package.
 var (
 	ErrEmptyCommands    = errors.New("commands cannot be empty")
 	ErrMalformedCommand = errors.New("malformed command")
@@ -43,8 +44,10 @@ func (req *UpdateRequests) validate() error {
 	return nil
 }
 
+// Action represents the action type of a command.
 type Action string
 
+// Action types.
 const (
 	Create  Action = "create"
 	Update  Action = "update"
@@ -52,12 +55,14 @@ const (
 	Invalid Action = "invalid"
 )
 
+// Command represents a command to be executed on a reference.
 type Command struct {
 	Name plumbing.ReferenceName
 	Old  plumbing.Hash
 	New  plumbing.Hash
 }
 
+// Action returns the action type of the command.
 func (c *Command) Action() Action {
 	if c.Old == plumbing.ZeroHash && c.New == plumbing.ZeroHash {
 		return Invalid

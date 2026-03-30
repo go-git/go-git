@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/assert"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
 )
 
 func TestCommitNodeIter(t *testing.T) {

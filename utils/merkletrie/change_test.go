@@ -3,10 +3,11 @@ package merkletrie_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/go-git/go-git/v6/utils/merkletrie/internal/fsnoder"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
-	"github.com/stretchr/testify/suite"
 )
 
 type ChangeSuite struct {
@@ -14,6 +15,7 @@ type ChangeSuite struct {
 }
 
 func TestChangeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ChangeSuite))
 }
 

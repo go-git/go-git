@@ -8,13 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/trace"
-	"github.com/stretchr/testify/assert"
 )
 
 // mockConnection implements the Connection interface for testing
@@ -38,15 +39,15 @@ func (c *mockConnection) StatelessRPC() bool {
 	return false
 }
 
-func (c *mockConnection) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
+func (c *mockConnection) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	return nil, nil
 }
 
-func (c *mockConnection) Fetch(ctx context.Context, req *FetchRequest) error {
+func (c *mockConnection) Fetch(_ context.Context, _ *FetchRequest) error {
 	return nil
 }
 
-func (c *mockConnection) Push(ctx context.Context, req *PushRequest) error {
+func (c *mockConnection) Push(_ context.Context, _ *PushRequest) error {
 	return nil
 }
 
@@ -88,8 +89,9 @@ func (rw *mockReadWriteCloser) Close() error {
 
 // TestSendPackWithReportStatus tests the SendPack function with ReportStatus capability
 func TestSendPackWithReportStatus(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
-	caps.Add(capability.ReportStatus) //nolint:errcheck
+	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
 
 	// Create a mock reader with a valid report status response
@@ -125,6 +127,7 @@ func TestSendPackWithReportStatus(t *testing.T) {
 
 // TestSendPackWithReportStatusError tests the SendPack function with an error in the report status
 func TestSendPackWithReportStatusError(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
@@ -164,6 +167,7 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 
 // TestSendPackWithoutReportStatus tests the SendPack function without ReportStatus capability
 func TestSendPackWithoutReportStatus(t *testing.T) {
+	t.Parallel()
 	// Create a mock connection without ReportStatus capability
 	caps := capability.NewList()
 	conn := &mockConnection{caps: caps}
@@ -198,6 +202,7 @@ func init() {
 }
 
 func TestSendPackWithProgress(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	caps.Add(capability.Sideband64k)
@@ -246,6 +251,7 @@ func TestSendPackWithProgress(t *testing.T) {
 
 // TestSendPackWithPackfile tests the SendPack function with a packfile
 func TestSendPackWithPackfile(t *testing.T) {
+	t.Parallel()
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
 	conn := &mockConnection{caps: caps}
@@ -286,6 +292,7 @@ func TestSendPackWithPackfile(t *testing.T) {
 
 // TestSendPackErrors tests various error conditions in SendPack
 func TestSendPackErrors(t *testing.T) {
+	t.Parallel()
 	// Create a mock connection with ReportStatus capability
 	caps := capability.NewList()
 	caps.Add(capability.ReportStatus)
@@ -293,6 +300,7 @@ func TestSendPackErrors(t *testing.T) {
 
 	// Test case: error encoding update requests
 	t.Run("EncodeError", func(t *testing.T) {
+		t.Parallel()
 		writer := newMockRWC(nil)
 		writer.writeErr = errors.New("encode error")
 		reader := newMockRWC(nil)
@@ -317,6 +325,7 @@ func TestSendPackErrors(t *testing.T) {
 
 	// Test case: error copying packfile
 	t.Run("PackfileCopyError", func(t *testing.T) {
+		t.Parallel()
 		writer := newMockRWC(nil)
 		reader := newMockRWC(nil)
 
@@ -342,6 +351,7 @@ func TestSendPackErrors(t *testing.T) {
 
 	// Test case: error closing writer
 	t.Run("WriterCloseError", func(t *testing.T) {
+		t.Parallel()
 		writer := newMockRWC(nil)
 		writer.closeErr = errors.New("writer close error")
 		reader := newMockRWC(nil)
@@ -366,6 +376,7 @@ func TestSendPackErrors(t *testing.T) {
 
 	// Test case: error decoding report status
 	t.Run("ReportStatusDecodeError", func(t *testing.T) {
+		t.Parallel()
 		// Create invalid report status response (missing flush)
 		invalidResponse := strings.Join([]string{
 			"000eunpack ok\n", // "unpack ok\n"
@@ -393,6 +404,7 @@ func TestSendPackErrors(t *testing.T) {
 
 	// Test case: error closing reader
 	t.Run("ReaderCloseError", func(t *testing.T) {
+		t.Parallel()
 		// Create valid report status response
 		validResponse := strings.Join([]string{
 			"000eunpack ok\n", // "unpack ok\n"
@@ -426,6 +438,6 @@ type errorReader struct {
 	err error
 }
 
-func (r *errorReader) Read(p []byte) (int, error) {
+func (r *errorReader) Read(_ []byte) (int, error) {
 	return 0, r.err
 }

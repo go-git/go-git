@@ -28,7 +28,7 @@ func setUpTest(t testing.TB, buf *bytes.Buffer) {
 	SetLogger(log.New(w, "", 0))
 }
 
-func TestEmpty(t *testing.T) {
+func TestEmpty(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	var buf bytes.Buffer
 	setUpTest(t, &buf)
 	General.Print("test")
@@ -37,7 +37,7 @@ func TestEmpty(t *testing.T) {
 	}
 }
 
-func TestOneTarget(t *testing.T) {
+func TestOneTarget(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	var buf bytes.Buffer
 	setUpTest(t, &buf)
 	SetTarget(General)
@@ -47,7 +47,7 @@ func TestOneTarget(t *testing.T) {
 	}
 }
 
-func TestMultipleTargets(t *testing.T) {
+func TestMultipleTargets(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	var buf bytes.Buffer
 	setUpTest(t, &buf)
 	SetTarget(General | Packet)
@@ -58,7 +58,7 @@ func TestMultipleTargets(t *testing.T) {
 	}
 }
 
-func TestPrintf(t *testing.T) {
+func TestPrintf(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	var buf bytes.Buffer
 	setUpTest(t, &buf)
 	SetTarget(General)
@@ -68,7 +68,7 @@ func TestPrintf(t *testing.T) {
 	}
 }
 
-func TestDisabledMultipleTargets(t *testing.T) {
+func TestDisabledMultipleTargets(t *testing.T) { //nolint:paralleltest // modifies global trace target
 	var buf bytes.Buffer
 	setUpTest(t, &buf)
 	SetTarget(General)
@@ -81,7 +81,7 @@ func TestDisabledMultipleTargets(t *testing.T) {
 
 func BenchmarkDisabledTarget(b *testing.B) {
 	setUpTest(b, nil)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		General.Print("test")
 	}
 }
@@ -89,7 +89,7 @@ func BenchmarkDisabledTarget(b *testing.B) {
 func BenchmarkEnabledTarget(b *testing.B) {
 	setUpTest(b, nil)
 	SetTarget(General)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		General.Print("test")
 	}
 }

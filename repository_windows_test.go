@@ -1,5 +1,4 @@
 //go:build !plan9 && !unix && windows
-// +build !plan9,!unix,windows
 
 package git
 
@@ -10,24 +9,27 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/util"
-	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 // preReceiveHook returns the bytes of a pre-receive hook script
 // that prints m before exiting successfully
 func preReceiveHook(m string) []byte {
-	return []byte(fmt.Sprintf("#!C:/Program\\ Files/Git/usr/bin/sh.exe\nprintf '%s'\n", m))
+	return fmt.Appendf(nil, "#!C:/Program\\ Files/Git/usr/bin/sh.exe\nprintf '%s'\n", m)
 }
 
 func TestCloneFileUrlWindows(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	r, err := PlainInit(dir, false)
 	require.NoError(t, err)
 
-	err = util.WriteFile(r.wt, "foo", nil, 0755)
+	err = util.WriteFile(r.wt, "foo", nil, 0o755)
 	require.NoError(t, err)
 
 	w, err := r.Worktree()

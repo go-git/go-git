@@ -33,16 +33,16 @@ func Write(w io.Writer, p []byte) (n int, err error) {
 	pktlen := len(p) + LenSize
 	n, err = w.Write(asciiHex16(pktlen))
 	if err != nil {
-		return
+		return n, err
 	}
 
 	n2, err := w.Write(p)
 	n += n2
-	return
+	return n, err
 }
 
 // Writef writes a pktline packet from a format string.
-func Writef(w io.Writer, format string, a ...interface{}) (n int, err error) {
+func Writef(w io.Writer, format string, a ...any) (n int, err error) {
 	if len(a) == 0 {
 		return Write(w, []byte(format))
 	}
@@ -152,9 +152,8 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 	return length, err
 }
 
-// ReadLine reads a packet line into a temporary shared buffer and
+// ReadLine reads a packet line into a newly allocated buffer and
 // returns the packet length and payload.
-// Subsequent calls to ReadLine may overwrite the buffer.
 //
 // Use packet length to determine the type of packet i.e. 0 is a flush packet,
 // 1 is a delim packet, 2 is a response-end packet, and a length greater or
@@ -170,7 +169,9 @@ func ReadLine(r io.Reader) (l int, p []byte, err error) {
 		return l, nil, err
 	}
 
-	return l, (*buf)[LenSize:l], err
+	clone := bytes.Clone((*buf)[LenSize:l])
+
+	return l, clone, err
 }
 
 // PeekLine reads a packet line without consuming it.

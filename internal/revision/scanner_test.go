@@ -12,6 +12,7 @@ type ScannerSuite struct {
 }
 
 func TestScannerSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ScannerSuite))
 }
 
@@ -88,7 +89,7 @@ func (s *ScannerSuite) TestReadSpace() {
 }
 
 func (s *ScannerSuite) TestReadControl() {
-	scanner := newScanner(bytes.NewBufferString(""))
+	scanner := newScanner(bytes.NewBufferString("\x01"))
 	tok, data, err := scanner.scan()
 
 	s.NoError(err)

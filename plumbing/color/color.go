@@ -1,3 +1,4 @@
+// Package color provides ANSI color codes for terminal output.
 package color
 
 // TODO read colors from a github.com/go-git/go-git/plumbing/format/config.Config struct

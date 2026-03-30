@@ -81,7 +81,7 @@ func DiffDelta(src, tgt []byte) []byte {
 	return diffDelta(new(deltaIndex), src, tgt)
 }
 
-func diffDelta(index *deltaIndex, src []byte, tgt []byte) []byte {
+func diffDelta(index *deltaIndex, src, tgt []byte) []byte {
 	buf := sync.GetBytesBuffer()
 	defer sync.PutBytesBuffer(buf)
 	buf.Write(deltaEncodeSize(len(src)))
@@ -96,23 +96,24 @@ func diffDelta(index *deltaIndex, src []byte, tgt []byte) []byte {
 	for i := 0; i < len(tgt); i++ {
 		offset, l := index.findMatch(src, tgt, i)
 
-		if l == 0 {
+		switch {
+		case l == 0:
 			// couldn't find a match, just write the current byte and continue
 			ibuf.WriteByte(tgt[i])
-		} else if l < 0 {
+		case l < 0:
 			// src is less than blksz, copy the rest of the target to avoid
 			// calls to findMatch
 			for ; i < len(tgt); i++ {
 				ibuf.WriteByte(tgt[i])
 			}
-		} else if l < s {
+		case l < s:
 			// remaining target is less than blksz, copy what's left of it
 			// and avoid calls to findMatch
 			for j := i; j < i+l; j++ {
 				ibuf.WriteByte(tgt[j])
 			}
 			i += l - 1
-		} else {
+		default:
 			encodeInsertOperation(ibuf, buf)
 
 			rl := l
@@ -146,10 +147,7 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	b := ibuf.Bytes()
 	s := ibuf.Len()
 	o := 0
-	for {
-		if s <= 127 {
-			break
-		}
+	for s > 127 {
 		buf.WriteByte(byte(127))
 		buf.Write(b[o : o+127])
 		s -= 127
@@ -165,11 +163,7 @@ func deltaEncodeSize(size int) []byte {
 	var ret []byte
 	c := size & 0x7f
 	size >>= 7
-	for {
-		if size == 0 {
-			break
-		}
-
+	for size != 0 {
 		ret = append(ret, byte(c|0x80))
 		c = size & 0x7f
 		size >>= 7
@@ -192,7 +186,7 @@ func encodeCopyOperation(offset, length int) []byte {
 		}
 	}
 
-	for i = 0; i < 3; i++ {
+	for i = range 3 {
 		f := 0xff << (i * 8)
 		if length&f != 0 {
 			opcodes = append(opcodes, byte(length&f>>(i*8)))

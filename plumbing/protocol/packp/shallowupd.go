@@ -14,11 +14,13 @@ const (
 	unshallowLineLen = 50
 )
 
+// ShallowUpdate represents shallow/unshallow updates during fetch.
 type ShallowUpdate struct {
 	Shallows   []plumbing.Hash
 	Unshallows []plumbing.Hash
 }
 
+// Decode parses shallow update information from the reader.
 func (r *ShallowUpdate) Decode(reader io.Reader) error {
 	var (
 		p   []byte
@@ -48,11 +50,11 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 		}
 	}
 
-	if err != nil && err != io.EOF {
-		return err
+	if err == io.EOF {
+		return nil
 	}
 
-	return nil
+	return err
 }
 
 func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
@@ -84,6 +86,7 @@ func (r *ShallowUpdate) decodeLine(line, prefix []byte, expLen int) (plumbing.Ha
 	return plumbing.NewHash(raw), nil
 }
 
+// Encode writes the shallow update to the writer.
 func (r *ShallowUpdate) Encode(w io.Writer) error {
 	for _, h := range r.Shallows {
 		if _, err := pktline.Writef(w, "%s%s\n", shallow, h.String()); err != nil {

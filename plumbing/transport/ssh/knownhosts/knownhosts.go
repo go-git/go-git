@@ -30,9 +30,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-git/v6/utils/trace"
 	"golang.org/x/crypto/ssh"
 	xknownhosts "golang.org/x/crypto/ssh/knownhosts"
+
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // HostKeyDB wraps logic in golang.org/x/crypto/ssh/knownhosts with additional
@@ -74,7 +75,7 @@ func NewDB(files ...string) (*HostKeyDB, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		scanner := bufio.NewScanner(f)
 		lineNum := 0
 		for scanner.Scan() {
@@ -253,8 +254,8 @@ func keyTypeToCertAlgo(keyType string) string {
 		return ssh.CertAlgoRSASHA256v01
 	case ssh.KeyAlgoRSASHA512:
 		return ssh.CertAlgoRSASHA512v01
-	case ssh.KeyAlgoDSA:
-		return ssh.CertAlgoDSAv01
+	case ssh.KeyAlgoDSA: //nolint:staticcheck // DSA support needed for legacy SSH servers
+		return ssh.CertAlgoDSAv01 //nolint:staticcheck // DSA support needed for legacy SSH servers
 	case ssh.KeyAlgoECDSA256:
 		return ssh.CertAlgoECDSA256v01
 	case ssh.KeyAlgoSKECDSA256:
@@ -409,7 +410,7 @@ func Normalize(address string) string {
 // uses the local patched implementation of Normalize in order to solve
 // https://github.com/golang/go/issues/53463.
 func Line(addresses []string, key ssh.PublicKey) string {
-	var trimmed []string
+	trimmed := make([]string, 0, len(addresses))
 	for _, a := range addresses {
 		trimmed = append(trimmed, Normalize(a))
 	}

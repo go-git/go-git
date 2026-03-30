@@ -21,8 +21,7 @@ var empty = make([]byte, format.SHA256Size)
 func FromHex(in string) (ObjectID, bool) {
 	var id ObjectID
 
-	switch len(in) {
-	case format.SHA256HexSize:
+	if len(in) == format.SHA256HexSize {
 		id.format = format.SHA256
 	}
 
@@ -31,7 +30,7 @@ func FromHex(in string) (ObjectID, bool) {
 		return id, false
 	}
 
-	id.Write(out)
+	_, _ = id.Write(out)
 	return id, true
 }
 
@@ -45,7 +44,7 @@ func FromBytes(in []byte) (ObjectID, bool) {
 
 	switch len(in) {
 	case format.SHA1Size:
-		id.format = format.SHA1
+		id.format = format.UnsetObjectFormat
 
 	case format.SHA256Size:
 		id.format = format.SHA256
@@ -114,7 +113,7 @@ func (s ObjectID) String() string {
 // Write writes the hexadecimal representation of the ObjectID from [in]
 // directly into the current object.
 func (s *ObjectID) Write(in []byte) (int, error) {
-	n := copy(s.hash[:], in[:])
+	n := copy(s.hash[:], in)
 	return n, nil
 }
 
@@ -148,7 +147,7 @@ func (s *ObjectID) ResetBySize(idSize int) {
 	if idSize == format.SHA256Size {
 		s.format = format.SHA256
 	} else {
-		s.format = format.SHA1
+		s.format = format.UnsetObjectFormat
 	}
 	copy(s.hash[:], s.hash[:0])
 }

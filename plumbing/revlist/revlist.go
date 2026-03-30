@@ -213,7 +213,7 @@ func iterateCommitTrees(
 }
 
 func hashSetToList(hashes map[plumbing.Hash]bool) []plumbing.Hash {
-	var result []plumbing.Hash
+	result := make([]plumbing.Hash, 0, len(hashes))
 	for key := range hashes {
 		result = append(result, key)
 	}

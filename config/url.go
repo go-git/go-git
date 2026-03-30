@@ -7,11 +7,9 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
-var (
-	errURLEmptyInsteadOf = errors.New("url config: empty insteadOf")
-)
+var errURLEmptyInsteadOf = errors.New("url config: empty insteadOf")
 
-// Url defines Url rewrite rules
+// URL defines URL rewrite rules.
 type URL struct {
 	// Name new base url
 	Name string
@@ -24,9 +22,9 @@ type URL struct {
 	raw *format.Subsection
 }
 
-// Validate validates fields of branch
-func (b *URL) Validate() error {
-	if len(b.InsteadOfs) == 0 {
+// Validate validates fields of branch.
+func (u *URL) Validate() error {
+	if len(u.InsteadOfs) == 0 {
 		return errURLEmptyInsteadOf
 	}
 
@@ -79,6 +77,7 @@ func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
 	return longestMatch
 }
 
+// ApplyInsteadOf applies the URL rewrite rules to the given URL.
 func (u *URL) ApplyInsteadOf(url string) string {
 	for _, j := range u.InsteadOfs {
 		if strings.HasPrefix(url, j) {

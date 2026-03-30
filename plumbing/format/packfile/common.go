@@ -4,6 +4,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/go-git/go-git/v6/config"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -20,23 +22,31 @@ const (
 	maskFirstLength = 15         // 0000 1111
 	maskContinue    = 0x80       // 1000 0000
 	maskLength      = uint8(127) // 0111 1111
-	maskType        = uint8(112) // 0111 0000
 )
 
 // UpdateObjectStorage updates the storer with the objects in the given
 // packfile.
 func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: update_obj_storage", time.Since(start).Seconds())
-	}()
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: update_obj_storage", time.Since(start).Seconds())
+		}()
+	}
 
 	if pw, ok := s.(storer.PackfileWriter); ok {
 		return WritePackfileToObjectStorage(pw, packfile)
 	}
 
-	p := NewParser(packfile, WithStorage(s))
+	of := formatcfg.DefaultObjectFormat
+	if c, ok := s.(config.ConfigStorer); ok {
+		cfg, err := c.Config()
+		if err == nil {
+			of = cfg.Extensions.ObjectFormat
+		}
+	}
 
+	p := NewParser(packfile, WithStorage(s), WithObjectFormat(of))
 	_, err := p.Parse()
 	return err
 }

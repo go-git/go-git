@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-	"github.com/stretchr/testify/suite"
 )
 
 type TreeSuite struct {
@@ -23,6 +24,7 @@ type TreeSuite struct {
 }
 
 func TestTreeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(TreeSuite))
 }
 
@@ -111,7 +113,7 @@ func (s *TreeSuite) TestSize() {
 
 func (s *TreeSuite) TestFiles() {
 	var count int
-	err := s.Tree.Files().ForEach(func(f *File) error {
+	err := s.Tree.Files().ForEach(func(_ *File) error {
 		count++
 		return nil
 	})
@@ -133,6 +135,86 @@ func (s *TreeSuite) TestFindEntryNotFound() {
 	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
 	s.Nil(e)
 	s.ErrorIs(err, ErrDirectoryNotFound)
+}
+
+// countingStorer wraps a storer and counts EncodedObject calls per hash
+type countingStorer struct {
+	storer.EncodedObjectStorer
+	calls map[plumbing.Hash]int
+}
+
+func newCountingStorer(s storer.EncodedObjectStorer) *countingStorer {
+	return &countingStorer{
+		EncodedObjectStorer: s,
+		calls:               make(map[plumbing.Hash]int),
+	}
+}
+
+func (cs *countingStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	cs.calls[h]++
+	return cs.EncodedObjectStorer.EncodedObject(t, h)
+}
+
+// TestFindEntryCacheDepth1 verifies that the tree path cache works for
+// paths with only one directory level (e.g., "vendor/foo.go").
+// This test ensures that repeated lookups in the same directory reuse
+// the cached subtree instead of fetching it from the storer each time.
+func (s *TreeSuite) TestFindEntryCacheDepth1() {
+	cs := newCountingStorer(s.Storer)
+
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(cs, hash)
+	s.Require().NoError(err)
+
+	vendorEntry, err := tree.entry("vendor")
+	s.Require().NoError(err)
+	vendorHash := vendorEntry.Hash
+
+	// Previous calls to GetTree and entry may pollute the "calls" state, reset it to start afresh.
+	cs.calls = make(map[plumbing.Hash]int)
+
+	e1, err := tree.FindEntry("vendor/foo.go")
+	s.Require().NoError(err)
+	s.Equal("foo.go", e1.Name)
+
+	s.Equal(1, cs.calls[vendorHash], "first FindEntry should fetch vendor tree once")
+
+	e2, err := tree.FindEntry("vendor/foo.go")
+	s.Require().NoError(err)
+	s.Equal("foo.go", e2.Name)
+
+	s.Equal(1, cs.calls[vendorHash], "second FindEntry should reuse cached vendor tree")
+}
+
+// TestFindEntryCacheDepth2 verifies that the tree path cache works for
+// paths with two different files in the same directory ("json/short.json"
+// and "json/long.json") .
+// This complements TestFindEntryCacheDepth1 by testing multiple access with
+// different path in the same directory.
+func (s *TreeSuite) TestFindEntryCacheDepth2() {
+	cs := newCountingStorer(s.Storer)
+
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(cs, hash)
+	s.Require().NoError(err)
+
+	jsonEntry, err := tree.entry("json")
+	s.Require().NoError(err)
+	jsonHash := jsonEntry.Hash
+
+	cs.calls = make(map[plumbing.Hash]int)
+
+	e1, err := tree.FindEntry("json/short.json")
+	s.Require().NoError(err)
+	s.Equal("short.json", e1.Name)
+
+	s.Equal(1, cs.calls[jsonHash], "first FindEntry should fetch json tree once")
+
+	e2, err := tree.FindEntry("json/long.json")
+	s.Require().NoError(err)
+	s.Equal("long.json", e2.Name)
+
+	s.Equal(1, cs.calls[jsonHash], "second FindEntry should reuse cached json tree")
 }
 
 // Overrides returned plumbing.EncodedObject for given hash.
@@ -326,7 +408,7 @@ func (s *TreeSuite) TestTreeIter() {
 		t.s = nil
 		s.NoError(err)
 		s.Equal(trees[i], t)
-		i += 1
+		i++
 	}
 
 	iter.Close()
@@ -1494,7 +1576,8 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 				Name: "test_quota.c", Mode: filemode.Regular,
 				Hash: plumbing.NewHash("e590996ca4b8574ab1e4185d577756664ad2495f"),
 			},
-			{Name: "test_quota.h", Mode: filemode.Regular,
+			{
+				Name: "test_quota.h", Mode: filemode.Regular,
 				Hash: plumbing.NewHash("2d767a19ab7c3a421cdba6a349204367c22c81"),
 			},
 			{
@@ -1626,9 +1709,6 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 				Hash: plumbing.NewHash("e614f4a6d864e7ec4328dbdb254e3ac9f0d287"),
 			},
 		},
-		Hash: plumbing.ZeroHash,
-		s:    (storer.EncodedObjectStorer)(nil),
-		m:    map[string]*TreeEntry(nil),
 	}
 
 	var obtained Tree

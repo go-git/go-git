@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	fillSystemInfo = func(e *index.Entry, sys interface{}) {
+	fillSystemInfo = func(e *index.Entry, sys any) {
 		if os, ok := sys.(*syscall.Dir); ok {
 			// Plan 9 doesn't have a CreatedAt field.
 			e.CreatedAt = time.Unix(int64(os.Mtime), 0)
@@ -26,6 +26,6 @@ func init() {
 	}
 }
 
-func isSymlinkWindowsNonAdmin(err error) bool {
+func isSymlinkWindowsNonAdmin(error) bool {
 	return true
 }

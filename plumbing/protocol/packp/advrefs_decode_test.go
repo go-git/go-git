@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/suite"
 )
 
 type AdvRefsDecodeSuite struct {
@@ -19,6 +20,7 @@ type AdvRefsDecodeSuite struct {
 }
 
 func TestAdvRefsDecodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AdvRefsDecodeSuite))
 }
 
@@ -145,13 +147,13 @@ func (s *AdvRefsDecodeSuite) TestNoNULL() {
 	s.testDecoderErrorMatches(r, ".*NULL not found.*")
 }
 
-func (s *AdvRefsDecodeSuite) TestNoSpaceAfterHash() {
+func (s *AdvRefsDecodeSuite) TestInvalidSizeHash() {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5-HEAD\x00",
 		"",
 	}
 	r := toPktLines(s.T(), payloads)
-	s.testDecoderErrorMatches(r, ".*no space after hash.*")
+	s.testDecoderErrorMatches(r, ".*invalid size.*")
 }
 
 func (s *AdvRefsDecodeSuite) TestNoCaps() {

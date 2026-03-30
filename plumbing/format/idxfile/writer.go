@@ -43,6 +43,11 @@ func (w *Writer) Index() (*MemoryIndex, error) {
 
 // Add appends new object data.
 func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
+	// Skip unmaterialised delta objects.
+	if h.IsZero() {
+		return
+	}
+
 	w.m.Lock()
 	defer w.m.Unlock()
 
@@ -54,9 +59,9 @@ func (w *Writer) Add(h plumbing.Hash, pos uint64, crc uint32) {
 		w.added[h] = struct{}{}
 		w.objects = append(w.objects, Entry{h, crc, pos})
 	}
-
 }
 
+// Finished returns true if the writer has finished writing.
 func (w *Writer) Finished() bool {
 	return w.finished
 }
@@ -69,7 +74,7 @@ func (w *Writer) OnHeader(count uint32) error {
 }
 
 // OnInflatedObjectHeader implements packfile.Observer interface.
-func (w *Writer) OnInflatedObjectHeader(t plumbing.ObjectType, objSize int64, pos int64) error {
+func (w *Writer) OnInflatedObjectHeader(_ plumbing.ObjectType, _, _ int64) error {
 	return nil
 }
 
@@ -95,7 +100,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 		return nil, fmt.Errorf("the index still hasn't finished building")
 	}
 
-	idx := new(MemoryIndex)
+	idx := NewMemoryIndex(w.checksum.Size())
 	w.index = idx
 
 	sort.Sort(w.objects)
@@ -105,11 +110,21 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 		idx.FanoutMapping[i] = noMapping
 	}
 
+	// Pre-allocate underlying array based on expected number
+	// of objects.
+	idx.Names = make([][]byte, 0, len(w.objects))
+	idx.Offset32 = make([][]byte, 0, len(w.objects))
+	idx.CRC32 = make([][]byte, 0, len(w.objects))
+
 	buf := new(bytes.Buffer)
 
 	last := -1
 	bucket := -1
 	for i, o := range w.objects {
+		if o.Hash.Size() != w.checksum.Size() {
+			return nil, fmt.Errorf("object hash size mismatch: %d instead of %d", o.Hash.Size(), w.checksum.Size())
+		}
+
 		fan := o.Hash.Bytes()[0]
 
 		// fill the gaps between fans
@@ -183,11 +198,11 @@ func (o objects) Len() int {
 	return len(o)
 }
 
-func (o objects) Less(i int, j int) bool {
+func (o objects) Less(i, j int) bool {
 	cmp := o[i].Hash.Compare(o[j].Hash.Bytes())
 	return cmp < 0
 }
 
-func (o objects) Swap(i int, j int) {
+func (o objects) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }

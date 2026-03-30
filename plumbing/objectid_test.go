@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 var input = strings.Repeat("43aec75c611f22c73b27ece2841e6ccca592f2", 50000000)
@@ -73,6 +74,7 @@ func BenchmarkObjectIDComparison(b *testing.B) {
 }
 
 func TestReadFrom(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expected string
 		bytes    []byte
@@ -83,7 +85,8 @@ func TestReadFrom(t *testing.T) {
 			expected: "43aec75c611f22c73b27ece2841e6ccca592f285",
 			bytes:    []byte{67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133},
 			len:      20,
-		}, {
+		},
+		{
 			expected: "3b27ece2841e6ccca592f28543aec75c611f22c73b27ece2841e6ccca592f285",
 			bytes:    []byte{59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133, 67, 174, 199, 92, 97, 31, 34, 199, 59, 39, 236, 226, 132, 30, 108, 204, 165, 146, 242, 133},
 			len:      32,
@@ -98,6 +101,7 @@ func TestReadFrom(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
 			buf := &bytes.Buffer{}
 			err := binary.Write(buf, binary.BigEndian, tc.bytes)
 			require.NoError(t, err)
@@ -119,6 +123,7 @@ func TestReadFrom(t *testing.T) {
 }
 
 func TestFromHex(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		in    string
@@ -137,6 +142,7 @@ func TestFromHex(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, tc.in), func(t *testing.T) {
+			t.Parallel()
 			h, ok := FromHex(tc.in)
 
 			assert.Equal(t, tc.ok, ok, "OK did not match")
@@ -150,6 +156,7 @@ func TestFromHex(t *testing.T) {
 }
 
 func TestFromBytes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in     []byte
 		wantOK bool

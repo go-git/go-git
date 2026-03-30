@@ -1,9 +1,9 @@
 package commitgraph
 
 import (
-	"github.com/go-git/go-git/v6/plumbing"
-
 	"github.com/emirpasic/gods/trees/binaryheap"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // NewCommitNodeIterDateOrder returns a CommitNodeIter that walks the commit history,

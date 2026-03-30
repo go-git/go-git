@@ -8,12 +8,14 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func TestGet(t *testing.T) {
@@ -113,7 +115,6 @@ func TestDecode(t *testing.T) {
 	assert.Greater(t, len(packfiles), 0)
 
 	for _, f := range packfiles {
-		f := f
 		index := getIndexFromIdxFile(f.Idx())
 		n, err := index.Count()
 		require.NoError(t, err)
@@ -124,7 +125,6 @@ func TestDecode(t *testing.T) {
 		)
 
 		for _, h := range expectedHashes {
-			h := h
 			obj, err := p.Get(plumbing.NewHash(h))
 			require.NoError(t, err)
 			assert.Equal(t, obj.Hash().String(), h)
@@ -180,9 +180,7 @@ func TestDecodeByType(t *testing.T) {
 	}
 
 	for _, f := range fixtures.Basic().ByTag("packfile") {
-		f := f
 		for _, typ := range types {
-			typ := typ
 			index := getIndexFromIdxFile(f.Idx())
 			n, err := index.Count()
 			require.NoError(t, err)
@@ -233,7 +231,7 @@ func getIndexFromIdxFile(r io.ReadCloser) idxfile.Index {
 	defer r.Close()
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
-	if err := idxfile.NewDecoder(r).Decode(idx); err != nil {
+	if err := idxfile.NewDecoder(r, hash.New(crypto.SHA1)).Decode(idx); err != nil {
 		panic(err)
 	}
 
@@ -277,7 +275,7 @@ func BenchmarkGetByOffset(b *testing.B) {
 	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
 
 	cache := cache.NewObjectLRUDefault()
-	err := idxfile.NewDecoder(f.Idx()).Decode(idx)
+	err := idxfile.NewDecoder(f.Idx(), hash.New(crypto.SHA1)).Decode(idx)
 	require.NoError(b, err)
 
 	b.Run("with storage",

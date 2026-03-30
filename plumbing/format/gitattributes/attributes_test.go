@@ -12,6 +12,7 @@ type AttributesSuite struct {
 }
 
 func TestAttributesSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AttributesSuite))
 }
 

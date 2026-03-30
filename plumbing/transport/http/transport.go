@@ -19,12 +19,6 @@ func (c *client) addTransport(opts transportOptions, transport *http.Transport) 
 	c.mutex.Unlock()
 }
 
-func (c *client) removeTransport(opts transportOptions) {
-	c.mutex.Lock()
-	c.transports.Remove(opts)
-	c.mutex.Unlock()
-}
-
 func (c *client) fetchTransport(opts transportOptions) (*http.Transport, bool) {
 	c.mutex.RLock()
 	t, ok := c.transports.Get(opts)

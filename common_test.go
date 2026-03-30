@@ -6,20 +6,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 type BaseSuite struct {
@@ -33,6 +36,27 @@ func (s *BaseSuite) SetupSuite() {
 	s.buildBasicRepository()
 
 	s.cache = make(map[string]*Repository)
+}
+
+// registerTestConfigLoader registers a static ConfigSource plugin with
+// default test user data. Tests that need specific config values should
+// register their own ConfigSource.
+func registerTestConfigLoader() {
+	resetPluginEntry("config-loader")
+
+	err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+		return xconfig.NewStatic(defaultTestConfig(), defaultTestConfig())
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to register config storers: %v", err))
+	}
+}
+
+func defaultTestConfig() config.Config {
+	cfg := config.NewConfig()
+	cfg.User.Name = "Test User"
+	cfg.User.Email = "test@example.com"
+	return *cfg
 }
 
 func (s *BaseSuite) buildBasicRepository() {
@@ -127,7 +151,7 @@ func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {
 		_ = util.RemoveAll(fs, relPath)
 	}
 
-	return
+	return path, clean
 }
 
 func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem) {
@@ -146,6 +170,7 @@ type SuiteCommon struct {
 }
 
 func TestSuiteCommon(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SuiteCommon))
 }
 

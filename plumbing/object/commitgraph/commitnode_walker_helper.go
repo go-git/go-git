@@ -3,9 +3,9 @@ package commitgraph
 import (
 	"math"
 
-	"github.com/go-git/go-git/v6/plumbing"
-
 	"github.com/emirpasic/gods/trees/binaryheap"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // commitNodeStackable represents a common interface between heaps and stacks
@@ -88,7 +88,7 @@ func (h *commitNodeHeap) Size() int {
 // If the left CommitNode object is in a higher generation or is newer than the right one, it returns a -1.
 // If the left CommitNode object is in a lower generation or is older than the right one, it returns a 1.
 // If the two CommitNode objects have the same commit time and generation, it returns 0.
-func generationAndDateOrderComparator(left, right interface{}) int {
+func generationAndDateOrderComparator(left, right any) int {
 	leftCommit := left.(CommitNode)
 	rightCommit := right.(CommitNode)
 

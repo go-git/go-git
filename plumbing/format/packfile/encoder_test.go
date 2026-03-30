@@ -5,12 +5,12 @@ import (
 	"io"
 	"testing"
 
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-billy/v6/memfs"
 )
 
 type EncoderSuite struct {
@@ -21,6 +21,7 @@ type EncoderSuite struct {
 }
 
 func TestEncoderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(EncoderSuite))
 }
 
@@ -38,7 +39,7 @@ func (s *EncoderSuite) TestCorrectPackHeader() {
 
 	// PACK + VERSION + OBJECTS + HASH
 	expectedResult := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0}
-	expectedResult = append(expectedResult, hb[:]...)
+	expectedResult = append(expectedResult, hb...)
 
 	result := s.buf.Bytes()
 
@@ -66,7 +67,7 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 
 	// + HASH
 	hb := h.Bytes()
-	expectedResult = append(expectedResult, hb[:]...)
+	expectedResult = append(expectedResult, hb...)
 
 	result := s.buf.Bytes()
 

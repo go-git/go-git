@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/suite"
 )
 
 type UlReqEncodeSuite struct {
@@ -18,6 +19,7 @@ type UlReqEncodeSuite struct {
 }
 
 func TestUlReqEncodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UlReqEncodeSuite))
 }
 

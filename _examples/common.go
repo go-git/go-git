@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/go-git/go-git/v6/internal/trace"
 )
+
+func init() {
+	trace.ReadEnv()
+}
 
 // CheckArgs should be used to ensure the right command line arguments are
 // passed before executing an example.
@@ -26,11 +32,11 @@ func CheckIfError(err error) {
 }
 
 // Info should be used to describe the example commands that are about to run.
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	fmt.Printf("\x1b[34;1m%s\x1b[0m\n", fmt.Sprintf(format, args...))
 }
 
 // Warning should be used to display a warning
-func Warning(format string, args ...interface{}) {
+func Warning(format string, args ...any) {
 	fmt.Printf("\x1b[36;1m%s\x1b[0m\n", fmt.Sprintf(format, args...))
 }

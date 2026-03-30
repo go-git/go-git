@@ -4,9 +4,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
 type DirSuite struct {
@@ -14,6 +15,7 @@ type DirSuite struct {
 }
 
 func TestDirSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DirSuite))
 }
 

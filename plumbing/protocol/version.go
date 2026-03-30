@@ -1,3 +1,4 @@
+// Package protocol provides types for the Git wire protocol.
 package protocol
 
 import (
@@ -5,6 +6,7 @@ import (
 	"fmt"
 )
 
+// ErrUnknownProtocol is returned when an unknown protocol version is used.
 var ErrUnknownProtocol = errors.New("unknown Git Wire protocol")
 
 // Version sets the preferred version for the Git wire protocol.
@@ -18,6 +20,7 @@ const (
 	// V2 represents the version V2 of the Wire protocol.
 	V2
 
+	// Undefined represents an undefined protocol version.
 	Undefined Version = -1
 )
 

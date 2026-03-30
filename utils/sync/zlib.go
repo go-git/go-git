@@ -10,12 +10,16 @@ import (
 var (
 	zlibInitBytes = []byte{0x78, 0x9c, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01}
 	zlibReader    = sync.Pool{
-		New: func() interface{} {
-			return NewZlibReader(nil)
+		New: func() any {
+			r, _ := zlib.NewReader(bytes.NewReader(zlibInitBytes))
+			return &ZLibReader{
+				reader: r.(zlibReadCloser),
+				dict:   nil,
+			}
 		},
 	}
 	zlibWriter = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return zlib.NewWriter(nil)
 		},
 	}
@@ -26,25 +30,20 @@ type zlibReadCloser interface {
 	zlib.Resetter
 }
 
-func NewZlibReader(dict *[]byte) ZLibReader {
-	r, _ := zlib.NewReader(bytes.NewReader(zlibInitBytes))
-	return ZLibReader{
-		Reader: r.(zlibReadCloser),
-		dict:   dict,
-	}
-}
-
+// ZLibReader is a poolable zlib reader.
 type ZLibReader struct {
 	dict   *[]byte
-	Reader zlibReadCloser
+	reader zlibReadCloser
 }
 
-func (z ZLibReader) Reset(r io.Reader) error {
-	var dict []byte
-	if z.dict != nil {
-		dict = *z.dict
-	}
-	return z.Reader.Reset(r, dict)
+// Read reads data from the zlib reader.
+func (r *ZLibReader) Read(p []byte) (int, error) {
+	return r.reader.Read(p)
+}
+
+// Close closes the zlib reader.
+func (r *ZLibReader) Close() error {
+	return r.reader.Close()
 }
 
 // GetZlibReader returns a ZLibReader that is managed by a sync.Pool.
@@ -53,19 +52,21 @@ func (z ZLibReader) Reset(r io.Reader) error {
 //
 // After use, the ZLibReader should be put back into the sync.Pool
 // by calling PutZlibReader.
-func GetZlibReader(r io.Reader) (ZLibReader, error) {
-	z := zlibReader.Get().(ZLibReader)
+func GetZlibReader(r io.Reader) (*ZLibReader, error) {
+	z := zlibReader.Get().(*ZLibReader)
 	z.dict = GetByteSlice()
 
-	err := z.Reader.Reset(r, *z.dict)
+	err := z.reader.Reset(r, *z.dict)
 
 	return z, err
 }
 
-// PutZlibReader puts z back into its sync.Pool, first closing the reader.
+// PutZlibReader puts z back into its sync.Pool.
 // The Byte slice dictionary is also put back into its sync.Pool.
-func PutZlibReader(z ZLibReader) {
-	z.Reader.Close()
+func PutZlibReader(z *ZLibReader) {
+	if z == nil {
+		return
+	}
 	PutByteSlice(z.dict)
 	zlibReader.Put(z)
 }
@@ -83,5 +84,8 @@ func GetZlibWriter(w io.Writer) *zlib.Writer {
 
 // PutZlibWriter puts w back into its sync.Pool.
 func PutZlibWriter(w *zlib.Writer) {
+	if w == nil {
+		return
+	}
 	zlibWriter.Put(w)
 }

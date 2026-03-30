@@ -2,15 +2,19 @@ package idxfile_test
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/base64"
+	"encoding/binary"
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
-	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/go-git/go-git/v6/plumbing"
+	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type IdxfileSuite struct {
@@ -18,13 +22,14 @@ type IdxfileSuite struct {
 }
 
 func TestIdxfileSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(IdxfileSuite))
 }
 
 func (s *IdxfileSuite) TestDecode() {
 	f := fixtures.Basic().One()
 
-	d := NewDecoder(f.Idx())
+	d := NewDecoder(f.Idx(), hash.New(crypto.SHA1))
 	idx := new(MemoryIndex)
 	err := d.Decode(idx)
 	s.NoError(err)
@@ -54,7 +59,7 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 
 	idx := new(MemoryIndex)
 
-	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f))
+	d := NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
 	err := d.Decode(idx)
 	s.NoError(err)
 
@@ -122,12 +127,166 @@ func BenchmarkDecode(b *testing.B) {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
 
-	for i := 0; i < b.N; i++ {
+	hasher := hash.New(crypto.SHA1)
+	for b.Loop() {
 		f := bytes.NewBuffer(fixture)
 		idx := new(MemoryIndex)
-		d := NewDecoder(f)
+		d := NewDecoder(f, hasher)
 		if err := d.Decode(idx); err != nil {
 			b.Errorf("unexpected error decoding: %s", err)
 		}
 	}
+}
+
+func TestDecodeErrors(t *testing.T) {
+	t.Parallel()
+
+	idx := fixtures.Basic().One().Idx()
+	t.Cleanup(func() { idx.Close() })
+	validIdx, err := io.ReadAll(idx)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name            string
+		input           func() []byte
+		wantErr         error
+		wantErrContains string
+	}{
+		{
+			name:    "empty input",
+			input:   func() []byte { return nil },
+			wantErr: io.EOF,
+		},
+		{
+			name:    "wrong magic",
+			input:   func() []byte { return []byte{0, 0, 0, 0, 0, 0, 0, 2} },
+			wantErr: ErrMalformedIdxFile,
+		},
+		{
+			name:    "truncated header",
+			input:   func() []byte { return []byte{255, 't'} },
+			wantErr: io.ErrUnexpectedEOF,
+		},
+		{
+			name: "unsupported version 1",
+			input: func() []byte {
+				var buf bytes.Buffer
+				buf.Write([]byte{255, 't', 'O', 'c'})
+				binary.Write(&buf, binary.BigEndian, uint32(1))
+				return buf.Bytes()
+			},
+			wantErr:         ErrUnsupportedVersion,
+			wantErrContains: "v1",
+		},
+		{
+			name: "unsupported version 3",
+			input: func() []byte {
+				var buf bytes.Buffer
+				buf.Write([]byte{255, 't', 'O', 'c'})
+				binary.Write(&buf, binary.BigEndian, uint32(3))
+				return buf.Bytes()
+			},
+			wantErr:         ErrUnsupportedVersion,
+			wantErrContains: "v3",
+		},
+		{
+			name: "truncated fanout table",
+			input: func() []byte {
+				buf := idxV2Header()
+				// Only 10 fanout entries instead of 256.
+				for range 10 {
+					buf = binary.BigEndian.AppendUint32(buf, 0)
+				}
+				return buf
+			},
+			wantErr: io.EOF,
+		},
+		{
+			name: "non-monotonic fanout at entry 1",
+			input: func() []byte {
+				buf := idxV2Header()
+				// entry[0]=5, entry[1]=3 (decrease), rest=5
+				buf = append(buf, writeFanout(5, map[int]uint32{0: 5, 1: 3})...)
+				return buf
+			},
+			wantErr:         ErrMalformedIdxFile,
+			wantErrContains: "not monotonically non-decreasing",
+		},
+		{
+			name: "non-monotonic fanout at last entry",
+			input: func() []byte {
+				buf := idxV2Header()
+				// all entries = 10, except entry[255] = 5
+				buf = append(buf, writeFanout(10, map[int]uint32{255: 5})...)
+				return buf
+			},
+			wantErr:         ErrMalformedIdxFile,
+			wantErrContains: "not monotonically non-decreasing",
+		},
+		{
+			name: "truncated object names",
+			input: func() []byte {
+				buf := idxV2Header()
+				// Fanout claims 1 object, but no name data follows.
+				buf = append(buf, writeFanout(1, nil)...)
+				return buf
+			},
+			wantErr: io.EOF,
+		},
+		{
+			name: "checksum mismatch",
+			input: func() []byte {
+				corrupted := make([]byte, len(validIdx))
+				copy(corrupted, validIdx)
+				// Flip the last byte of the idx checksum.
+				corrupted[len(corrupted)-1] ^= 0xff
+				return corrupted
+			},
+			wantErr:         ErrMalformedIdxFile,
+			wantErrContains: "checksum mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			idx := new(MemoryIndex)
+			d := NewDecoder(bytes.NewReader(tt.input()), hash.New(crypto.SHA1))
+
+			err := d.Decode(idx)
+			require.Error(t, err)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			}
+			if tt.wantErrContains != "" {
+				require.ErrorContains(t, err, tt.wantErrContains)
+			}
+		})
+	}
+}
+
+// writeFanout writes a 256-entry fanout table where every entry is set to total,
+// except for overrides specified as index→value pairs applied afterwards.
+func writeFanout(total uint32, overrides map[int]uint32) []byte {
+	var buf bytes.Buffer
+	entries := [256]uint32{}
+	for i := range entries {
+		entries[i] = total
+	}
+	for k, v := range overrides {
+		entries[k] = v
+	}
+	for _, v := range entries {
+		binary.Write(&buf, binary.BigEndian, v)
+	}
+	return buf.Bytes()
+}
+
+// idxV2Header returns the 8-byte idx v2 header (magic + version).
+func idxV2Header() []byte {
+	var buf bytes.Buffer
+	buf.Write([]byte{255, 't', 'O', 'c'})
+	binary.Write(&buf, binary.BigEndian, uint32(2))
+	return buf.Bytes()
 }

@@ -7,7 +7,7 @@ import (
 
 // Write writes the binary representation of data into w, using BigEndian order
 // https://golang.org/pkg/encoding/binary/#Write
-func Write(w io.Writer, data ...interface{}) error {
+func Write(w io.Writer, data ...any) error {
 	for _, v := range data {
 		if err := binary.Write(w, binary.BigEndian, v); err != nil {
 			return err
@@ -17,6 +17,7 @@ func Write(w io.Writer, data ...interface{}) error {
 	return nil
 }
 
+// WriteVariableWidthInt writes a variable width encoded int64 to w.
 func WriteVariableWidthInt(w io.Writer, n int64) error {
 	buf := []byte{byte(n & 0x7f)}
 	n >>= 7

@@ -1,16 +1,21 @@
 package dotgit
 
 import (
+	"crypto"
+	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"sync/atomic"
 
+	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-
-	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 )
 
 // PackWriter is a io.Writer that generates the packfile index simultaneously,
@@ -29,9 +34,11 @@ type PackWriter struct {
 	parser   *packfile.Parser
 	writer   *idxfile.Writer
 	result   chan error
+	format   formatcfg.ObjectFormat
+	writeRev bool
 }
 
-func newPackWrite(fs billy.Filesystem) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -43,12 +50,16 @@ func newPackWrite(fs billy.Filesystem) (*PackWriter, error) {
 	}
 
 	writer := &PackWriter{
-		fs:     fs,
-		fw:     fw,
-		fr:     fr,
-		synced: newSyncedReader(fw, fr),
-		result: make(chan error),
+		fs:       fs,
+		fw:       fw,
+		fr:       fr,
+		synced:   newSyncedReader(fw, fr),
+		result:   make(chan error),
+		format:   format,
+		writeRev: writeRev,
 	}
+
+	writer.checksum.ResetBySize(format.Size())
 
 	go writer.buildIndex()
 	return writer, nil
@@ -58,7 +69,9 @@ func (w *PackWriter) buildIndex() {
 	w.writer = new(idxfile.Writer)
 	var err error
 
-	w.parser = packfile.NewParser(w.synced, packfile.WithScannerObservers(w.writer))
+	w.parser = packfile.NewParser(w.synced,
+		packfile.WithScannerObservers(w.writer),
+		packfile.WithObjectFormat(w.format))
 
 	h, err := w.parser.Parse()
 	if err != nil {
@@ -75,7 +88,7 @@ func (w *PackWriter) buildIndex() {
 // ignore the error
 func (w *PackWriter) waitBuildIndex() error {
 	err := <-w.result
-	if err == packfile.ErrEmptyPackfile {
+	if errors.Is(err, packfile.ErrEmptyPackfile) {
 		return nil
 	}
 
@@ -126,39 +139,77 @@ func (w *PackWriter) clean() error {
 
 func (w *PackWriter) save() error {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
+
 	idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
 	if err != nil {
 		return err
 	}
 
-	if err := w.encodeIdx(idx); err != nil {
+	h := crypto.SHA1.New()
+	if w.checksum.Size() == crypto.SHA256.Size() {
+		h = crypto.SHA256.New()
+	}
+
+	if err := w.encodeIdx(idx, h); err != nil {
+		_ = idx.Close()
 		return err
 	}
 
 	if err := idx.Close(); err != nil {
 		return err
 	}
+	fixPermissions(w.fs, fmt.Sprintf("%s.idx", base))
 
-	return w.fs.Rename(w.fw.Name(), fmt.Sprintf("%s.pack", base))
+	if w.writeRev {
+		rev, err := w.fs.Create(fmt.Sprintf("%s.rev", base))
+		if err != nil {
+			return err
+		}
+
+		if err := w.encodeRev(rev, h); err != nil {
+			_ = rev.Close()
+			return err
+		}
+
+		if err := rev.Close(); err != nil {
+			return err
+		}
+		fixPermissions(w.fs, fmt.Sprintf("%s.rev", base))
+	}
+
+	packPath := fmt.Sprintf("%s.pack", base)
+	if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
+		return err
+	}
+	fixPermissions(w.fs, packPath)
+
+	return nil
 }
 
-func (w *PackWriter) encodeIdx(writer io.Writer) error {
+func (w *PackWriter) encodeIdx(writer io.Writer, h hash.Hash) error {
 	idx, err := w.writer.Index()
 	if err != nil {
 		return err
 	}
 
-	e := idxfile.NewEncoder(writer)
-	_, err = e.Encode(idx)
-	return err
+	return idxfile.Encode(writer, h, idx)
+}
+
+func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
+	idx, err := w.writer.Index()
+	if err != nil {
+		return err
+	}
+
+	return revfile.Encode(writer, h, idx)
 }
 
 type syncedReader struct {
 	w io.Writer
 	r io.ReadSeeker
 
-	blocked, done uint32
-	written, read uint64
+	blocked, done atomic.Uint32
+	written, read atomic.Uint64
 	news          chan bool
 }
 
@@ -172,19 +223,19 @@ func newSyncedReader(w io.Writer, r io.ReadSeeker) *syncedReader {
 
 func (s *syncedReader) Write(p []byte) (n int, err error) {
 	defer func() {
-		written := atomic.AddUint64(&s.written, uint64(n))
-		read := atomic.LoadUint64(&s.read)
+		written := s.written.Add(uint64(n))
+		read := s.read.Load()
 		if written > read {
 			s.wake()
 		}
 	}()
 
 	n, err = s.w.Write(p)
-	return
+	return n, err
 }
 
 func (s *syncedReader) Read(p []byte) (n int, err error) {
-	defer func() { atomic.AddUint64(&s.read, uint64(n)) }()
+	defer func() { s.read.Add(uint64(n)) }()
 
 	for {
 		s.sleep()
@@ -196,32 +247,31 @@ func (s *syncedReader) Read(p []byte) (n int, err error) {
 		break
 	}
 
-	return
+	return n, err
 }
 
 func (s *syncedReader) isDone() bool {
-	return atomic.LoadUint32(&s.done) == 1
+	return s.done.Load() == 1
 }
 
 func (s *syncedReader) isBlocked() bool {
-	return atomic.LoadUint32(&s.blocked) == 1
+	return s.blocked.Load() == 1
 }
 
 func (s *syncedReader) wake() {
 	if s.isBlocked() {
-		atomic.StoreUint32(&s.blocked, 0)
+		s.blocked.Store(0)
 		s.news <- true
 	}
 }
 
 func (s *syncedReader) sleep() {
-	read := atomic.LoadUint64(&s.read)
-	written := atomic.LoadUint64(&s.written)
+	read := s.read.Load()
+	written := s.written.Load()
 	if read >= written {
-		atomic.StoreUint32(&s.blocked, 1)
+		s.blocked.Store(1)
 		<-s.news
 	}
-
 }
 
 func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
@@ -230,13 +280,13 @@ func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	p, err := s.r.Seek(offset, whence)
-	atomic.StoreUint64(&s.read, uint64(p))
+	s.read.Store(uint64(p))
 
 	return p, err
 }
 
 func (s *syncedReader) Close() error {
-	atomic.StoreUint32(&s.done, 1)
+	s.done.Store(1)
 	close(s.news)
 	return nil
 }
@@ -277,5 +327,17 @@ func (w *ObjectWriter) save() error {
 	hex := h.String()
 	file := w.fs.Join(objectsPath, hex[0:2], hex[2:h.HexSize()])
 
-	return w.fs.Rename(w.f.Name(), file)
+	// Loose objects are content addressable, if they already exist
+	// we can safely delete the temporary file and short-circuit the
+	// operation.
+	if _, err := w.fs.Stat(file); err == nil {
+		return w.fs.Remove(w.f.Name())
+	}
+
+	if err := w.fs.Rename(w.f.Name(), file); err != nil {
+		return err
+	}
+	fixPermissions(w.fs, file)
+
+	return nil
 }

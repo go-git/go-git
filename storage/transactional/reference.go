@@ -34,7 +34,7 @@ func (r *ReferenceStorage) SetReference(ref *plumbing.Reference) error {
 	return r.temporal.SetReference(ref)
 }
 
-// SetReference honors the storer.ReferenceStorer interface.
+// CheckAndSetReference honors the storer.ReferenceStorer interface.
 func (r *ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
 	if old == nil {
 		return r.SetReference(ref)

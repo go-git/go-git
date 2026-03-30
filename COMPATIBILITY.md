@@ -62,7 +62,7 @@ compatibility status with go-git.
 | Feature       | Sub-feature | Status | Notes                                                | Examples |
 | ------------- | ----------- | ------ | ---------------------------------------------------- | -------- |
 | `apply`       |             | ❌     |                                                      |          |
-| `cherry-pick` |             | ❌     |                                                      |          |
+| `cherry-pick` |             | ⚠️ (partial) | It supports default merge strategy `--strategy=ort` and underlying auto-conflict resolve strategy options `--strategy-option` which are `theirs` and `ours`.|          |
 | `diff`        |             | ✅     | Patch object with UnifiedDiff output representation. |          |
 | `rebase`      |             | ❌     |                                                      |          |
 | `revert`      |             | ❌     |                                                      |          |
@@ -110,10 +110,10 @@ compatibility status with go-git.
 
 ## Server admin
 
-| Feature              | Sub-feature | Status | Notes | Examples                                  |
-| -------------------- | ----------- | ------ | ----- | ----------------------------------------- |
-| `daemon`             |             | ❌     |       |                                           |
-| `update-server-info` |             | ✅     |       | [cli](./cli/go-git/update_server_info.go) |
+| Feature              | Sub-feature | Status | Notes | Examples                                                   |
+| -------------------- | ----------- | ------ | ----- | ---------------------------------------------------------- |
+| `daemon`             |             | ❌     |       |                                                            |
+| `update-server-info` |             | ✅     |       | [update-server-info](_examples/update-server-info/main.go) |
 
 ## Advanced
 
@@ -121,7 +121,7 @@ compatibility status with go-git.
 | ---------- | ----------- | ----------- | ----- | -------- |
 | `notes`    |             | ❌          |       |          |
 | `replace`  |             | ❌          |       |          |
-| `worktree` |             | ❌          |       |          |
+| `worktree` | `add`       | ⚠️ (partial) | Creation and opening of linked worktrees via the `x/plumbing/worktree` package. Not all flags or subcommands are supported. | - [worktrees](_examples/worktrees/main.go) |
 | `annotate` |             | (see blame) |       |          |
 
 ## GPG
@@ -229,6 +229,8 @@ compatibility status with go-git.
 | --------------- | --------------------------- | ------ | ---------------------------------------------- | -------- |
 | `config`        | `--local`                   | ✅     | Read and write per-repository (`.git/config`). |          |
 | `config`        | `--global` <br/> `--system` | ✅     | Read-only.                                     |          |
+| `config`        | `--worktree`                | ✅     | Read and write per-worktree (`.git/worktrees/<name>/config.worktree`). Requires `extensions.worktreeConfig=true`. |          |
 | `gitignore`     |                             | ✅     |                                                |          |
 | `gitattributes` |                             | ✅     |                                                |          |
-| `git-worktree`  |                             | ❌     | Multiple worktrees are not supported.          |          |
+| `git-worktree`  | `add`, `remove` and `list`  | ⚠️ (partial) | Not all flags nor subcommands are supported.   | - [worktrees](_examples/worktrees/main.go) |
+| `extensions`    | `worktreeConfig`            | ✅           | Per-worktree `config.worktree` files are read and overlaid on the common config when this extension is enabled. Supported only by `storage.filesystem`. |          |

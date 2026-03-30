@@ -1,5 +1,4 @@
 //go:build plan9 && !unix && !windows
-// +build plan9,!unix,!windows
 
 package git
 
@@ -11,7 +10,7 @@ import (
 // preReceiveHook returns the bytes of a pre-receive hook script
 // that prints m before exiting successfully
 func preReceiveHook(m string) []byte {
-	return []byte(fmt.Sprintf("#!/bin/rc\necho -n %s\n", quote(m)))
+	return fmt.Appendf(nil, "#!/bin/rc\necho -n %s\n", quote(m))
 }
 
 const quoteChar = '\''

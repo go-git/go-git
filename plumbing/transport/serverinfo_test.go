@@ -8,13 +8,14 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type ServerInfoSuite struct {
@@ -22,6 +23,7 @@ type ServerInfoSuite struct {
 }
 
 func TestServerInfoSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ServerInfoSuite))
 }
 
@@ -44,7 +46,7 @@ func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) 
 	s.NoError(err)
 
 	localRefs := make(map[plumbing.ReferenceName]plumbing.Hash)
-	for _, line := range strings.Split(string(bts), "\n") {
+	for line := range strings.SplitSeq(string(bts), "\n") {
 		if line == "" {
 			continue
 		}
@@ -103,7 +105,7 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 	packs, err := pos.ObjectPacks()
 	s.NoError(err)
 
-	for _, line := range strings.Split(string(bts), "\n") {
+	for line := range strings.SplitSeq(string(bts), "\n") {
 		if line == "" {
 			continue
 		}

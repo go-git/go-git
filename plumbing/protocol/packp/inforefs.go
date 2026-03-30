@@ -39,8 +39,8 @@ func (i *InfoRefs) Decode(r io.Reader) error {
 
 		hash := plumbing.NewHash(parts[0])
 		refname := parts[1]
-		if strings.HasSuffix(refname, string(peeled)) {
-			i.Peeled[strings.TrimSuffix(refname, string(peeled))] = hash
+		if name, found := strings.CutSuffix(refname, string(peeled)); found {
+			i.Peeled[name] = hash
 		} else {
 			i.References[refname] = hash
 		}

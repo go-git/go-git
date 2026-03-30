@@ -9,16 +9,16 @@ import "errors"
 type RepositoryFormatVersion string
 
 const (
-	// Version_0 is the format defined by the initial version of git,
+	// Version0 is the format defined by the initial version of git,
 	// including but not limited to the format of the repository
 	// directory, the repository configuration file, and the object
 	// and ref storage.
 	//
 	// Specifying the complete behavior of git is beyond the scope
 	// of this document.
-	Version_0 = "0"
+	Version0 = "0"
 
-	// Version_1 is identical to version 0, with the following exceptions:
+	// Version1 is identical to version 0, with the following exceptions:
 	//
 	//   1. When reading the core.repositoryformatversion variable, a git
 	//		implementation which supports version 1 MUST also read any
@@ -34,21 +34,23 @@ const (
 	// core.repositoryformatversion SHOULD be set to 0 (setting it to 1 provides
 	// no benefit, and makes the repository incompatible with older
 	// implementations of git).
-	Version_1 = "1"
+	Version1 = "1"
 
 	// DefaultRepositoryFormatVersion holds the default repository format version.
-	DefaultRepositoryFormatVersion = Version_0
+	DefaultRepositoryFormatVersion = Version0
 )
 
 // ObjectFormat defines the object format.
-type ObjectFormat int
+type ObjectFormat string
 
 const (
+	UnsetObjectFormat ObjectFormat = ""
+
 	// SHA1 represents the object format used for SHA1.
-	SHA1 ObjectFormat = iota
+	SHA1 ObjectFormat = "sha1"
 
 	// SHA256 represents the object format used for SHA256.
-	SHA256
+	SHA256 ObjectFormat = "sha256"
 
 	// DefaultObjectFormat holds the default object format.
 	DefaultObjectFormat = SHA1
@@ -56,14 +58,7 @@ const (
 
 // String returns the string representation of the ObjectFormat.
 func (f ObjectFormat) String() string {
-	switch f {
-	case SHA1:
-		return "sha1"
-	case SHA256:
-		return "sha256"
-	default:
-		return ""
-	}
+	return string(f)
 }
 
 // Size returns the hash size of the ObjectFormat.
@@ -74,7 +69,7 @@ func (f ObjectFormat) Size() int {
 	case SHA256:
 		return SHA256Size
 	default:
-		return 0
+		return DefaultObjectFormat.Size()
 	}
 }
 
@@ -86,7 +81,7 @@ func (f ObjectFormat) HexSize() int {
 	case SHA256:
 		return SHA256HexSize
 	default:
-		return 0
+		return DefaultObjectFormat.HexSize()
 	}
 }
 

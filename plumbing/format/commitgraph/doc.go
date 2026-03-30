@@ -1,4 +1,4 @@
-// Package v2 implements encoding and decoding of commit-graph files.
+// Package commitgraph implements encoding and decoding of commit-graph files.
 //
 // This package was created to work around the issues of the incorrect types in
 // the commitgraph package.

@@ -9,17 +9,16 @@ import (
 	"strconv"
 	"strings"
 
+	dmp "github.com/sergi/go-diff/diffmatchpatch"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/utils/diff"
-
-	dmp "github.com/sergi/go-diff/diffmatchpatch"
 )
 
-var (
-	ErrCanceled = errors.New("operation canceled")
-)
+// ErrCanceled is returned when the operation is canceled.
+var ErrCanceled = errors.New("operation canceled")
 
 func getPatch(message string, changes ...*Change) (*Patch, error) {
 	ctx := context.Background()
@@ -27,7 +26,11 @@ func getPatch(message string, changes ...*Change) (*Patch, error) {
 }
 
 func getPatchContext(ctx context.Context, message string, changes ...*Change) (*Patch, error) {
-	var filePatches []fdiff.FilePatch
+	if len(changes) == 0 {
+		return &Patch{message: message}, nil
+	}
+
+	filePatches := make([]fdiff.FilePatch, 0, len(changes))
 	for _, c := range changes {
 		select {
 		case <-ctx.Done():
@@ -67,7 +70,7 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 
 	diffs := diff.Do(fromContent, toContent)
 
-	var chunks []fdiff.Chunk
+	chunks := make([]fdiff.Chunk, 0, len(diffs))
 	for _, d := range diffs {
 		select {
 		case <-ctx.Done():
@@ -93,22 +96,21 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 		from:   c.From,
 		to:     c.To,
 	}, nil
-
 }
 
 func fileContent(f *File) (content string, isBinary bool, err error) {
 	if f == nil {
-		return
+		return content, isBinary, err
 	}
 
 	isBinary, err = f.IsBinary()
 	if err != nil || isBinary {
-		return
+		return content, isBinary, err
 	}
 
 	content, err = f.Contents()
 
-	return
+	return content, isBinary, err
 }
 
 // Patch is an implementation of fdiff.Patch interface
@@ -117,20 +119,24 @@ type Patch struct {
 	filePatches []fdiff.FilePatch
 }
 
+// FilePatches returns the file patches.
 func (p *Patch) FilePatches() []fdiff.FilePatch {
 	return p.filePatches
 }
 
+// Message returns the patch message.
 func (p *Patch) Message() string {
 	return p.message
 }
 
+// Encode encodes the patch to the given writer.
 func (p *Patch) Encode(w io.Writer) error {
 	ue := fdiff.NewUnifiedEncoder(w, fdiff.DefaultContextLines)
 
 	return ue.Encode(p)
 }
 
+// Stats returns the file stats.
 func (p *Patch) Stats() FileStats {
 	return getFileStatsFromFilePatches(p.FilePatches())
 }
@@ -161,6 +167,7 @@ func (f *changeEntryWrapper) Hash() plumbing.Hash {
 func (f *changeEntryWrapper) Mode() filemode.FileMode {
 	return f.ce.TreeEntry.Mode
 }
+
 func (f *changeEntryWrapper) Path() string {
 	if !f.ce.TreeEntry.Mode.IsFile() {
 		return ""
@@ -179,7 +186,7 @@ type textFilePatch struct {
 	from, to ChangeEntry
 }
 
-func (tf *textFilePatch) Files() (from fdiff.File, to fdiff.File) {
+func (tf *textFilePatch) Files() (from, to fdiff.File) {
 	f := &changeEntryWrapper{tf.from}
 	t := &changeEntryWrapper{tf.to}
 
@@ -191,7 +198,7 @@ func (tf *textFilePatch) Files() (from fdiff.File, to fdiff.File) {
 		to = t
 	}
 
-	return
+	return from, to
 }
 
 func (tf *textFilePatch) IsBinary() bool {
@@ -244,12 +251,12 @@ func printStat(fileStats []FileStat) string {
 	maxNameLen := 0
 	maxChangeLen := 0
 
-	scaleLinear := func(it, width, max uint) uint {
-		if it == 0 || max == 0 {
+	scaleLinear := func(it, width, maxVal uint) uint {
+		if it == 0 || maxVal == 0 {
 			return 0
 		}
 
-		return 1 + (it * (width - 1) / max)
+		return 1 + (it * (width - 1) / maxVal)
 	}
 
 	for _, fs := range fileStats {
@@ -263,7 +270,7 @@ func printStat(fileStats []FileStat) string {
 		}
 	}
 
-	result := ""
+	var result strings.Builder
 	for _, fs := range fileStats {
 		add := uint(fs.Addition)
 		del := uint(fs.Deletion)
@@ -281,13 +288,13 @@ func printStat(fileStats []FileStat) string {
 		namePad := strings.Repeat(" ", np)
 		changePad := strings.Repeat(" ", cp)
 
-		result += fmt.Sprintf(" %s%s | %s%d %s%s\n", fs.Name, namePad, changePad, total, adds, dels)
+		fmt.Fprintf(&result, " %s%s | %s%d %s%s\n", fs.Name, namePad, changePad, total, adds, dels)
 	}
-	return result
+	return result.String()
 }
 
 func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
-	var fileStats FileStats
+	fileStats := make(FileStats, 0, len(filePatches))
 
 	for _, fp := range filePatches {
 		// ignore empty patches (binary files, submodule refs updates)
@@ -297,16 +304,17 @@ func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
 
 		cs := FileStat{}
 		from, to := fp.Files()
-		if from == nil {
+		switch {
+		case from == nil:
 			// New File is created.
 			cs.Name = to.Path()
-		} else if to == nil {
+		case to == nil:
 			// File is deleted.
 			cs.Name = from.Path()
-		} else if from.Path() != to.Path() {
+		case from.Path() != to.Path():
 			// File is renamed.
 			cs.Name = fmt.Sprintf("%s => %s", from.Path(), to.Path())
-		} else {
+		default:
 			cs.Name = from.Path()
 		}
 

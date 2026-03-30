@@ -53,7 +53,7 @@ func (d *advRefsDecoder) Decode(v *AdvRefs) error {
 type decoderStateFn func(*advRefsDecoder) decoderStateFn
 
 // fills out the parser sticky error
-func (d *advRefsDecoder) error(format string, a ...interface{}) {
+func (d *advRefsDecoder) error(format string, a ...any) {
 	msg := fmt.Sprintf(
 		"pkt-line %d: %s", d.nLine,
 		fmt.Sprintf(format, a...),
@@ -91,6 +91,23 @@ func (d *advRefsDecoder) nextLine() bool {
 	return true
 }
 
+func hashFrom(line []byte) (plumbing.Hash, error) {
+	hashSize := bytes.Index(line, []byte(" "))
+	if hashSize == -1 {
+		hashSize = len(line)
+	}
+	if hashSize != sha1HexSize && hashSize != sha256HexSize {
+		return plumbing.ZeroHash, fmt.Errorf("cannot read hash, invalid size: %d", hashSize)
+	}
+
+	h, ok := plumbing.FromHex(string(line[:hashSize]))
+	if !ok {
+		return plumbing.ZeroHash, fmt.Errorf("invalid hash text: %s", line[:hashSize])
+	}
+
+	return h, nil
+}
+
 // If the first hash is zero, then a no-refs is coming. Otherwise, a
 // list-of-refs is coming, and the hash will be followed by the first
 // advertised ref.
@@ -106,19 +123,19 @@ func decodeFirstHash(p *advRefsDecoder) decoderStateFn {
 	}
 
 	// TODO: Use object-format (when available) for hash size. Git 2.41+
-	if len(p.line) < hashSize {
+	if len(p.line) < sha1HexSize {
 		p.error("cannot read hash, pkt-line too short")
 		return nil
 	}
 
-	h, ok := plumbing.FromHex(string(p.line[:hashSize]))
-	if !ok {
-		p.error("invalid hash text: %s", p.line[:hashSize])
+	h, err := hashFrom(p.line)
+	if err != nil {
+		p.error("%s", err.Error())
 		return nil
 	}
 
 	p.hash = h
-	p.line = p.line[hashSize:]
+	p.line = p.line[h.HexSize():]
 
 	if p.hash.IsZero() {
 		return decodeSkipNoRefs
@@ -199,8 +216,8 @@ func decodeOtherRefs(p *advRefsDecoder) decoderStateFn {
 	}
 
 	saveTo := p.data.References
-	if bytes.HasSuffix(p.line, peeled) {
-		p.line = bytes.TrimSuffix(p.line, peeled)
+	if line, found := bytes.CutSuffix(p.line, peeled); found {
+		p.line = line
 		saveTo = p.data.Peeled
 	}
 
@@ -235,17 +252,15 @@ func decodeShallow(p *advRefsDecoder) decoderStateFn {
 	}
 	p.line = bytes.TrimPrefix(p.line, shallow)
 
-	if len(p.line) != hashSize {
-		p.error(fmt.Sprintf(
-			"malformed shallow hash: wrong length, expected 40 bytes, read %d bytes",
-			len(p.line)))
+	if len(p.line) != sha1HexSize && len(p.line) != sha256HexSize {
+		p.error("malformed shallow hash: wrong length, expected 40 or 64 bytes, read %d bytes",
+			len(p.line))
 		return nil
 	}
 
-	text := p.line[:hashSize]
-	h, ok := plumbing.FromHex(string(text))
+	h, ok := plumbing.FromHex(string(p.line))
 	if !ok {
-		p.error("invalid hash text: %s", string(text))
+		p.error("invalid hash text: %s", string(p.line))
 		return nil
 	}
 

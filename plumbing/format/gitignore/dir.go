@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	gofs "io/fs"
 	"os"
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-git/v6/internal/path_util"
+
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	gioutil "github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -26,12 +28,11 @@ const (
 
 // readIgnoreFile reads a specific git ignore file.
 func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps []Pattern, err error) {
-
-	ignoreFile, _ = path_util.ReplaceTildeWithHome(ignoreFile)
+	ignoreFile, _ = pathutil.ReplaceTildeWithHome(ignoreFile)
 
 	f, err := fs.Open(fs.Join(append(path, ignoreFile)...))
 	if err == nil {
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
@@ -44,7 +45,7 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 		return nil, err
 	}
 
-	return
+	return ps, err
 }
 
 // ReadPatterns reads the .git/info/exclude and then the gitignore patterns
@@ -56,10 +57,10 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 	subps, _ := readIgnoreFile(fs, path, gitignoreFile)
 	ps = append(ps, subps...)
 
-	var fis []os.FileInfo
+	var fis []gofs.DirEntry
 	fis, err = fs.ReadDir(fs.Join(path...))
 	if err != nil {
-		return
+		return ps, err
 	}
 
 	for _, fi := range fis {
@@ -71,7 +72,7 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 			var subps []Pattern
 			subps, err = ReadPatterns(fs, append(path, fi.Name()))
 			if err != nil {
-				return
+				return ps, err
 			}
 
 			if len(subps) > 0 {
@@ -80,7 +81,7 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 		}
 	}
 
-	return
+	return ps, err
 }
 
 func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
@@ -96,14 +97,14 @@ func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
 
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return
+		return ps, err
 	}
 
 	d := config.NewDecoder(bytes.NewBuffer(b))
 
 	raw := config.New()
 	if err = d.Decode(raw); err != nil {
-		return
+		return ps, err
 	}
 
 	s := raw.Section(coreSection)
@@ -117,7 +118,7 @@ func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
 		return nil, nil
 	}
 
-	return
+	return ps, err
 }
 
 // LoadGlobalPatterns loads gitignore patterns from the gitignore file
@@ -130,7 +131,7 @@ func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
 func LoadGlobalPatterns(fs billy.Filesystem) (ps []Pattern, err error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return
+		return ps, err
 	}
 
 	return loadPatterns(fs, fs.Join(home, gitconfigFile))

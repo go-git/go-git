@@ -6,9 +6,10 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/stretchr/testify/suite"
 )
 
 type UpdReqDecodeSuite struct {
@@ -16,6 +17,7 @@ type UpdReqDecodeSuite struct {
 }
 
 func TestUpdReqDecodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(UpdReqDecodeSuite))
 }
 
@@ -38,28 +40,28 @@ func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 7$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 7$")
 
 	payloads = []string{
 		"shallow ",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 8$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 8$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec65",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 44$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 44$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e54",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48, got 49$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 49$")
 
 	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584eu",
@@ -67,6 +69,27 @@ func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 		"",
 	}
 	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow object id: invalid hash: .*")
+}
+
+func (s *UpdReqDecodeSuite) TestShallowWithTrailingNewline() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := NewUpdateRequests()
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref"), Old: hash1, New: hash2},
+	}
+	expected.Capabilities.Add("shallow")
+	expected.Shallow = &hash1
+
+	// Shallow line with trailing newline (49 bytes), as sent by reference Git.
+	payloads := []string{
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00shallow",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
 }
 
 func (s *UpdReqDecodeSuite) TestMalformedCommand() {
@@ -89,13 +112,13 @@ func (s *UpdReqDecodeSuite) TestInvalidCommandInvalidHash() {
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid old object id: invalid hash size: expected 40, got 39$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid old object id: invalid hash: ")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e myref\x00",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash size: expected 40, got 39$")
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash: ")
 
 	payloads = []string{
 		"1ecf0ef2c2dffb796033e5a02219af86e 2ecf0ef2c2dffb796033e5a02219af86ec6 m\x00",
@@ -293,17 +316,6 @@ func (s *UpdReqDecodeSuite) testDecodeOK(payloads []string) *UpdateRequests {
 	return r
 }
 
-func (s *UpdReqDecodeSuite) testDecodeOkRaw(expected *UpdateRequests, raw []byte) {
-	req := NewUpdateRequests()
-	s.Nil(req.Decode(bytes.NewBuffer(raw)))
-	// TODO: Add packfile comparison tests to [transport.SendPack].
-	// s.NotNil(req.Packfile)
-	// s.compareReaders(req.Packfile, expected.Packfile)
-	// req.Packfile = nil
-	// expected.Packfile = nil
-	s.Equal(expected, req)
-}
-
 func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *UpdateRequests, payloads []string) {
 	req := s.testDecodeOK(payloads)
 	// s.NotNil(req.Packfile)
@@ -311,14 +323,4 @@ func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *UpdateRequests, paylo
 	// req.Packfile = nil
 	// expected.Packfile = nil
 	s.Equal(expected, req)
-}
-
-func (s *UpdReqDecodeSuite) compareReaders(a io.ReadCloser, b io.ReadCloser) {
-	pba, err := io.ReadAll(a)
-	s.NoError(err)
-	s.NoError(a.Close())
-	pbb, err := io.ReadAll(b)
-	s.NoError(err)
-	s.NoError(b.Close())
-	s.Equal(pbb, pba)
 }

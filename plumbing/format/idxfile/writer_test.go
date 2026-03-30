@@ -2,16 +2,18 @@ package idxfile_test
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/base64"
 	"io"
 	"testing"
 
+	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/stretchr/testify/suite"
-
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type WriterSuite struct {
@@ -19,6 +21,7 @@ type WriterSuite struct {
 }
 
 func TestWriterSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(WriterSuite))
 }
 
@@ -41,10 +44,9 @@ func (s *WriterSuite) TestWriter() {
 	idxFile.Close()
 
 	buf := new(bytes.Buffer)
-	encoder := idxfile.NewEncoder(buf)
-	n, err := encoder.Encode(idx)
+	err = idxfile.Encode(buf, hash.New(crypto.SHA1), idx)
 	s.NoError(err)
-	s.Len(expected, n)
+	s.Len(expected, buf.Len())
 
 	s.Equal(expected, buf.Bytes())
 }
@@ -71,10 +73,9 @@ func (s *WriterSuite) TestWriterLarge() {
 	s.NoError(err)
 
 	buf := new(bytes.Buffer)
-	encoder := idxfile.NewEncoder(buf)
-	n, err := encoder.Encode(idx)
+	err = idxfile.Encode(buf, hash.New(crypto.SHA1), idx)
 	s.NoError(err)
-	s.Len(expected, n)
+	s.Len(expected, buf.Len())
 
 	s.Equal(expected, buf.Bytes())
 }

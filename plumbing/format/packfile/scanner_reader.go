@@ -28,9 +28,13 @@ type scannerReader struct {
 	seeker io.Seeker
 }
 
-func newScannerReader(r io.Reader, h io.Writer) *scannerReader {
+func newScannerReader(r io.Reader, h io.Writer, rbuf *bufio.Reader) *scannerReader {
+	if rbuf == nil {
+		rbuf = bufio.NewReader(nil)
+	}
+
 	sr := &scannerReader{
-		rbuf: bufio.NewReader(nil),
+		rbuf: rbuf,
 		wbuf: bufio.NewWriterSize(nil, 64),
 		crc:  h,
 	}
@@ -61,7 +65,7 @@ func (r *scannerReader) Read(p []byte) (n int, err error) {
 	if _, err := r.wbuf.Write(p[:n]); err != nil {
 		return n, err
 	}
-	return
+	return n, err
 }
 
 func (r *scannerReader) ReadByte() (b byte, err error) {
@@ -70,7 +74,7 @@ func (r *scannerReader) ReadByte() (b byte, err error) {
 		r.offset++
 		return b, r.wbuf.WriteByte(b)
 	}
-	return
+	return b, err
 }
 
 func (r *scannerReader) Flush() error {

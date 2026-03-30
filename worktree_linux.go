@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package git
 
@@ -11,7 +10,7 @@ import (
 )
 
 func init() {
-	fillSystemInfo = func(e *index.Entry, sys interface{}) {
+	fillSystemInfo = func(e *index.Entry, sys any) {
 		if os, ok := sys.(*syscall.Stat_t); ok {
 			e.CreatedAt = time.Unix(os.Ctim.Unix())
 			e.Dev = uint32(os.Dev)
@@ -22,6 +21,6 @@ func init() {
 	}
 }
 
-func isSymlinkWindowsNonAdmin(_ error) bool {
+func isSymlinkWindowsNonAdmin(error) bool {
 	return false
 }

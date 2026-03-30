@@ -21,8 +21,8 @@
 // MIT LICENSE: https://github.com/davidmz/go-pageant/blob/master/LICENSE.txt
 
 //go:build windows
-// +build windows
 
+// Package sshagent provides SSH agent support for Windows using Pageant.
 package sshagent
 
 // see https://github.com/Yasushi/putty/blob/master/windows/winpgntc.c#L155
@@ -39,16 +39,20 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Maximum size of message can be sent to pageant
+// MaxMessageLen is the maximum size of message that can be sent to pageant.
 const MaxMessageLen = 8192
 
 var (
+	// ErrPageantNotFound is returned when the Pageant process is not found.
 	ErrPageantNotFound = errors.New("pageant process not found")
-	ErrSendMessage     = errors.New("error sending message")
-
-	ErrMessageTooLong       = errors.New("message too long")
+	// ErrSendMessage is returned when an error occurs sending a message to Pageant.
+	ErrSendMessage = errors.New("error sending message")
+	// ErrMessageTooLong is returned when the message exceeds MaxMessageLen.
+	ErrMessageTooLong = errors.New("message too long")
+	// ErrInvalidMessageFormat is returned when the message format is invalid.
 	ErrInvalidMessageFormat = errors.New("invalid message format")
-	ErrResponseTooLong      = errors.New("response too long")
+	// ErrResponseTooLong is returned when the response exceeds the maximum allowed length.
+	ErrResponseTooLong = errors.New("response too long")
 )
 
 const (
@@ -108,13 +112,13 @@ func query(msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer syscall.CloseHandle(mmap)
+	defer func() { _ = syscall.CloseHandle(mmap) }()
 
 	ptr, err := syscall.MapViewOfFile(mmap, syscall.FILE_MAP_WRITE, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	defer syscall.UnmapViewOfFile(ptr)
+	defer func() { _ = syscall.UnmapViewOfFile(ptr) }()
 
 	mmSlice := (*(*[MaxMessageLen]byte)(unsafe.Pointer(ptr)))[:]
 

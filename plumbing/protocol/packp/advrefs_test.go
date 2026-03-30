@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/stretchr/testify/suite"
 )
 
 type AdvRefSuite struct {
@@ -17,6 +18,7 @@ type AdvRefSuite struct {
 }
 
 func TestAdvRefSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AdvRefSuite))
 }
 
@@ -165,10 +167,11 @@ type AdvRefsDecodeEncodeSuite struct {
 }
 
 func TestAdvRefsDecodeEncodeSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(AdvRefsDecodeEncodeSuite))
 }
 
-func (s *AdvRefsDecodeEncodeSuite) test(in []string, exp []string, isEmpty bool) {
+func (s *AdvRefsDecodeEncodeSuite) test(in, exp []string, isEmpty bool) {
 	s.T().Helper()
 
 	var input io.Reader

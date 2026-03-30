@@ -13,6 +13,7 @@ type EncoderSuite struct {
 }
 
 func TestEncoderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(EncoderSuite))
 }
 

@@ -32,6 +32,7 @@ import (
 )
 
 func TestNewDB(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 
 	// Valid path should return a non-nil HostKeyDB and no error
@@ -69,6 +70,7 @@ func TestNewDB(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 
 	// Valid path should return a callback and no error; callback should be usable
@@ -96,6 +98,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestHostKeys(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -128,6 +131,7 @@ func TestHostKeys(t *testing.T) {
 }
 
 func TestHostKeyAlgorithms(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -161,6 +165,7 @@ func TestHostKeyAlgorithms(t *testing.T) {
 }
 
 func TestWithCertLines(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	khPath2 := khPath + "2"
 	appendCertTestKnownHosts(t, khPath, "*.certy.test", ssh.KeyAlgoRSA)
@@ -258,6 +263,7 @@ func TestWithCertLines(t *testing.T) {
 }
 
 func TestIsHostKeyChanged(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -278,7 +284,7 @@ func TestIsHostKeyChanged(t *testing.T) {
 
 	// Append the key for a known host that doesn't already have that key type,
 	// re-init the known_hosts, and check again: should return false
-	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
@@ -295,6 +301,7 @@ func TestIsHostKeyChanged(t *testing.T) {
 }
 
 func TestIsHostUnknown(t *testing.T) {
+	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	kh, err := New(khPath)
 	if err != nil {
@@ -315,7 +322,7 @@ func TestIsHostUnknown(t *testing.T) {
 
 	// Append the key for an unknown host, re-init the known_hosts, and check
 	// again: should return false
-	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
@@ -332,6 +339,7 @@ func TestIsHostUnknown(t *testing.T) {
 }
 
 func TestNormalize(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"127.0.0.1":                 "127.0.0.1",
 		"127.0.0.1:22":              "127.0.0.1",
@@ -352,6 +360,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestLine(t *testing.T) {
+	t.Parallel()
 	edKeyStr := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF9Wn63tLEhSWl9Ye+4x2GnruH8cq0LIh2vum/fUHrFQ"
 	edKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(edKeyStr))
 	if err != nil {
@@ -371,6 +380,7 @@ func TestLine(t *testing.T) {
 }
 
 func TestWriteKnownHost(t *testing.T) {
+	t.Parallel()
 	edKeyStr := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF9Wn63tLEhSWl9Ye+4x2GnruH8cq0LIh2vum/fUHrFQ"
 	edKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(edKeyStr))
 	if err != nil {
@@ -414,6 +424,7 @@ func TestWriteKnownHost(t *testing.T) {
 }
 
 func TestFakePublicKey(t *testing.T) {
+	t.Parallel()
 	fpk := fakePublicKey{}
 	if err := fpk.Verify(nil, nil); err == nil {
 		t.Error("Expected fakePublicKey.Verify() to always return an error, but it did not")
@@ -434,7 +445,7 @@ func getTestKnownHosts(t *testing.T) string {
 	if len(testKnownHostsContents) > 0 {
 		dir := t.TempDir()
 		khPath := filepath.Join(dir, "known_hosts")
-		if err := os.WriteFile(khPath, testKnownHostsContents, 0600); err != nil {
+		if err := os.WriteFile(khPath, testKnownHostsContents, 0o600); err != nil {
 			t.Fatalf("Unable to write to %s: %v", khPath, err)
 		}
 		return khPath
@@ -464,7 +475,7 @@ func writeTestKnownHosts(t *testing.T) string {
 
 	dir := t.TempDir()
 	khPath := filepath.Join(dir, "known_hosts")
-	f, err := os.OpenFile(khPath, os.O_WRONLY|os.O_CREATE, 0600)
+	f, err := os.OpenFile(khPath, os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
@@ -508,7 +519,7 @@ func appendCertTestKnownHosts(t *testing.T, filePath, hostPattern, keyType strin
 		testCertKeys[cacheKey] = pubKey
 	}
 
-	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", filePath, err)
 	}

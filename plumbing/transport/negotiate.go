@@ -5,15 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
+// Negotiation errors.
 var (
 	ErrFilterNotSupported  = errors.New("server does not support filters")
 	ErrShallowNotSupported = errors.New("server does not support shallow clients")
@@ -38,36 +42,84 @@ func NegotiatePack(
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
 	if multiAckDetailed {
-		upreq.Capabilities.Set(capability.MultiACKDetailed) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.MultiACKDetailed)
 	} else if multiAck {
-		upreq.Capabilities.Set(capability.MultiACK) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.MultiACK)
 	}
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			upreq.Capabilities.Set(capability.Sideband64k) // nolint: errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			upreq.Capabilities.Set(capability.Sideband) // nolint: errcheck
+			_ = upreq.Capabilities.Set(capability.Sideband)
 		}
 	} else if caps.Supports(capability.NoProgress) {
-		upreq.Capabilities.Set(capability.NoProgress) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.NoProgress)
 	}
 
 	// TODO: support thin-pack
 	// if caps.Supports(capability.ThinPack) {
-	// 	upreq.Capabilities.Set(capability.ThinPack) // nolint: errcheck
+	// 	_ = upreq.Capabilities.Set(capability.ThinPack)
 	// }
 
+	if caps.Supports(capability.ObjectFormat) {
+		var clientFormat, serverFormat config.ObjectFormat
+		if cap := caps.Get(capability.ObjectFormat); len(cap) > 0 {
+			of := config.ObjectFormat(cap[0])
+			switch of {
+			case config.SHA1, config.SHA256:
+				serverFormat = of
+			}
+		}
+
+		cfg, err := st.Config()
+		if err == nil {
+			clientFormat = cfg.Extensions.ObjectFormat
+		}
+
+		// The first pack negotiation may change the storage's ObjectFormat during
+		// clone operations - provided the underlying storage was partially
+		// initialised.
+		//
+		// Refer to upstream for further information:
+		// https://github.com/git/git/blob/ab380cb80b0727f7f2d7f6b17592ae6783e9820c/builtin/clone.c#L1216C60-L1216C68
+		if clientFormat == config.UnsetObjectFormat && serverFormat == config.SHA256 {
+			ref, err := st.Reference(plumbing.HEAD)
+			// The storage is likely better suited to make this check, however it is made here
+			// to avoid code duplication and to better handle off-tree storage implementations.
+			if err == nil && ref.Target().String() == "refs/heads/.invalid" {
+				if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
+					err := setter.SetObjectFormat(serverFormat)
+					if err != nil {
+						return nil, fmt.Errorf("unable to set object format: %w", err)
+					}
+
+					clientFormat = serverFormat
+				}
+			}
+		}
+
+		if clientFormat == config.UnsetObjectFormat {
+			clientFormat = config.SHA1
+		}
+
+		if serverFormat != clientFormat {
+			return nil, fmt.Errorf("mismatched algorithms: client %s; server %s", clientFormat, serverFormat)
+		}
+
+		_ = upreq.Capabilities.Set(capability.ObjectFormat, clientFormat.String())
+	}
+
 	if caps.Supports(capability.OFSDelta) {
-		upreq.Capabilities.Set(capability.OFSDelta) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.OFSDelta)
 	}
 
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent()) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	if req.IncludeTags && caps.Supports(capability.IncludeTag) {
-		upreq.Capabilities.Set(capability.IncludeTag) // nolint: errcheck
+		_ = upreq.Capabilities.Set(capability.IncludeTag)
 	}
 
 	if req.Filter != "" {
@@ -102,9 +154,11 @@ func NegotiatePack(
 			return nil, err
 		}
 
-		// Close the writer to signal the end of the request
-		if err := writer.Close(); err != nil {
-			return nil, fmt.Errorf("closing writer: %s", err)
+		// Close the writer to signal the end of the request.
+		// The server may have already closed the connection after receiving
+		// the flush-pkt with no wants, so io.EOF is expected.
+		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 
 		return nil, ErrNoChange
@@ -141,9 +195,11 @@ func NegotiatePack(
 				return nil, err
 			}
 
-			// Close the writer to signal the end of the request
-			if err := writer.Close(); err != nil {
-				return nil, fmt.Errorf("closing writer: %s", err)
+			// Close the writer to signal the end of the request.
+			// The server may have already closed the connection after receiving
+			// the flush-pkt with no wants, so io.EOF is expected.
+			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 
 			return nil, ErrNoChange
@@ -214,7 +270,7 @@ func NegotiatePack(
 	}
 
 	if !conn.StatelessRPC() {
-		if err := writer.Close(); err != nil {
+		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 	}
@@ -222,17 +278,9 @@ func NegotiatePack(
 	return shallowInfo, nil
 }
 
-func isSubset(needle []plumbing.Hash, haystack []plumbing.Hash) bool {
+func isSubset(needle, haystack []plumbing.Hash) bool {
 	for _, h := range needle {
-		found := false
-		for _, oh := range haystack {
-			if h == oh {
-				found = true
-				break
-			}
-		}
-
-		if !found {
+		if !slices.Contains(haystack, h) {
 			return false
 		}
 	}
@@ -256,9 +304,10 @@ func readShallows(
 			return fmt.Errorf("decoding shallow-update: %w", err)
 		}
 
-		// Only return the first shallow update
-		if shallowInfo == nil {
-			shallowInfo = new(*packp.ShallowUpdate)
+		// Only capture the first shallow update; subsequent rounds may
+		// also produce shallow-update packets (stateless RPC sends one per
+		// request round-trip) but the first one is authoritative.
+		if *shallowInfo == nil {
 			*shallowInfo = &shupd
 		}
 	}

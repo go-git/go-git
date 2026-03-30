@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
 type FSNoderSuite struct {
@@ -13,6 +14,7 @@ type FSNoderSuite struct {
 }
 
 func TestFSNoderSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(FSNoderSuite))
 }
 

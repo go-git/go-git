@@ -9,13 +9,13 @@ var (
 	size = 32 * 1024
 
 	byteSlice = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			b := make([]byte, size)
 			return &b
 		},
 	}
 	bytesBuffer = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return bytes.NewBuffer(nil)
 		},
 	}
@@ -33,11 +33,7 @@ func GetByteSlice() *[]byte {
 		b = b[:cap(b)]
 	}
 
-	// zero out the array contents.
-	for i := 0; i < len(b); i++ {
-		b[i] = 0
-	}
-
+	clear(b)
 	return &b
 }
 

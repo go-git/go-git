@@ -3,10 +3,13 @@ package packfile
 import (
 	"compress/zlib"
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	cfgformat "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -19,7 +22,7 @@ type Encoder struct {
 	selector *deltaSelector
 	w        *offsetWriter
 	zw       *zlib.Writer
-	hasher   plumbing.Hasher
+	hasher   hash.Hash
 
 	useRefDeltas bool
 }
@@ -28,10 +31,21 @@ type Encoder struct {
 // EncodedObjectStorer. By default deltas used to generate the packfile will be
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *Encoder {
-	h := plumbing.Hasher{
-		// TODO: Support passing an ObjectFormat (sha256)
-		Hash: hash.New(crypto.SHA1),
+	var of cfgformat.ObjectFormat
+	if c, ok := s.(config.ConfigStorer); ok {
+		cfg, err := c.Config()
+		if err == nil {
+			of = cfg.Extensions.ObjectFormat
+		}
 	}
+
+	var h hash.Hash
+	if of == cfgformat.SHA256 {
+		h = hash.New(crypto.SHA256)
+	} else {
+		h = hash.New(crypto.SHA1)
+	}
+
 	mw := io.MultiWriter(w, h)
 	ow := newOffsetWriter(mw)
 	zw := zlib.NewWriter(mw)
@@ -90,7 +104,9 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 		// (for example due to a concurrent repack) and a different base
 		// was chosen, forcing a cycle. Select something other than a
 		// delta, and write this object.
-		e.selector.restoreOriginal(o)
+		if err := e.selector.restoreOriginal(o); err != nil {
+			return err
+		}
 		o.BackToOriginal()
 	}
 
@@ -158,9 +174,8 @@ func (e *Encoder) writeDeltaHeader(o *ObjectToPack) error {
 
 	if e.useRefDeltas {
 		return e.writeRefDeltaHeader(o.Base.Hash())
-	} else {
-		return e.writeOfsDeltaHeader(o)
 	}
+	return e.writeOfsDeltaHeader(o)
 }
 
 func (e *Encoder) writeRefDeltaHeader(base plumbing.Hash) error {
@@ -184,10 +199,7 @@ func (e *Encoder) entryHead(typeNum plumbing.ObjectType, size int64) error {
 	header := []byte{}
 	c := (t << firstLengthBits) | (size & maskFirstLength)
 	size >>= firstLengthBits
-	for {
-		if size == 0 {
-			break
-		}
+	for size != 0 {
 		header = append(header, byte(c|maskContinue))
 		c = size & int64(maskLength)
 		size >>= lengthBits
@@ -200,7 +212,11 @@ func (e *Encoder) entryHead(typeNum plumbing.ObjectType, size int64) error {
 }
 
 func (e *Encoder) footer() (plumbing.Hash, error) {
-	h := e.hasher.Sum()
+	h, ok := plumbing.FromBytes(e.hasher.Sum(nil))
+	if !ok {
+		return plumbing.ZeroHash, errors.New("packfile encoder yielded invalid hash")
+	}
+
 	_, err := h.WriteTo(e.w)
 	return h, err
 }

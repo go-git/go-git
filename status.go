@@ -70,6 +70,7 @@ type FileStatus struct {
 // StatusCode status code of a file in the Worktree
 type StatusCode byte
 
+// File status codes.
 const (
 	Unmodified         StatusCode = ' '
 	Untracked          StatusCode = '?'
@@ -124,7 +125,14 @@ func preloadStatus(w *Worktree) (Status, error) {
 		return nil, err
 	}
 
-	idxRoot := mindex.NewRootNode(idx)
+	c, err := w.r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	idxRoot := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: c.Core.FileMode,
+	})
 	nodes := []noder.Noder{idxRoot}
 
 	status := make(Status)
@@ -139,7 +147,7 @@ func preloadStatus(w *Worktree) (Status, error) {
 			nodes = append(nodes, children...)
 			continue
 		}
-		fs := status.File(node.Name())
+		fs := status.File(node.String())
 		fs.Worktree = Unmodified
 		fs.Staging = Unmodified
 	}
