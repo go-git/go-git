@@ -1446,7 +1446,7 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until, TailHash: o.To}
 		it = r.logWithLimit(it, limitOptions)
 	}
-	
+
 	if o.FileName != nil {
 		// for `git log --all` also check parent (if the next commit comes from the real parent)
 		it = r.logWithFile(*o.FileName, it, o.All)
