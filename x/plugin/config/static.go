@@ -9,7 +9,7 @@ import (
 
 // NewStatic returns a ConfigSource that always returns read-only
 // ConfigStorers backed by copies of the provided global and system configs.
-func NewStatic(global, system config.Config) *static {
+func NewStatic(global, system config.Config) *static { //nolint:revive
 	return &static{global: global, system: system}
 }
 
