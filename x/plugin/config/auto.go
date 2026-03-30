@@ -31,8 +31,8 @@ const maxConfigFileSize = 10 << 20 // 10 MiB
 type Option func(*auto)
 
 // WithFilesystem sets the filesystem used to read configuration files.
-// When not provided, the host OS filesystem rooted at "/" is used.
-func WithFilesystem(fs billy.Filesystem) Option {
+// When not provided, the host OS filesystem is used.
+func WithFilesystem(fs billy.Basic) Option {
 	return func(a *auto) {
 		a.fs = fs
 	}
@@ -49,7 +49,7 @@ func WithFilesystem(fs billy.Filesystem) Option {
 //   - GIT_CONFIG_SYSTEM, when set to a non-empty path, reads only that
 //     file. When set to "", system config is disabled entirely.
 func NewAuto(opts ...Option) *auto {
-	a := &auto{fs: osfs.New("/")}
+	a := &auto{fs: osfs.Default}
 	for _, o := range opts {
 		o(a)
 	}
@@ -57,7 +57,7 @@ func NewAuto(opts ...Option) *auto {
 }
 
 type auto struct {
-	fs billy.Filesystem
+	fs billy.Basic
 }
 
 func (a *auto) Load(scope config.Scope) (config.ConfigStorer, error) {
