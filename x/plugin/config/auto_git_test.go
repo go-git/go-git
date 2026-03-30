@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
@@ -15,50 +18,68 @@ import (
 // upstream git for every scenario documented in git-config(1).
 // All file I/O is backed by memfs so the tests are hermetic and fast.
 
+const testHome = "/testhome"
+
 // git-config(1): "read only from global ~/.gitconfig and from
 // $XDG_CONFIG_HOME/git/config rather than from all available files."
 
-func TestGitBehaviour_GlobalOnlyGitconfig(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.gitconfig": "[user]\n\tname = HomeUser\n",
-	})
-	t.Setenv("HOME", "/home/user")
+func TestGitBehaviour_GlobalOnlyGitconfig(t *testing.T) { //nolint:paralleltest // modifies env
+	setTestHome(t, testHome)
 	mustUnsetenv(t, envGitConfigGlobal)
 	mustUnsetenv(t, envXDGConfigHome)
+
+	src := memAuto(t, map[string]string{
+		filepath.Join(testHome, ".gitconfig"): "[user]\n\tname = HomeUser\n",
+	})
 
 	assert.Equal(t, "HomeUser", loadUserName(t, src, config.GlobalScope))
 }
 
-func TestGitBehaviour_GlobalOnlyXDGDefault(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.config/git/config": "[user]\n\tname = XDGUser\n",
-	})
-	t.Setenv("HOME", "/home/user")
+func TestGitBehaviour_GlobalOnlyXDGDefault(t *testing.T) { //nolint:paralleltest // modifies env
+	setTestHome(t, testHome)
 	mustUnsetenv(t, envGitConfigGlobal)
 	mustUnsetenv(t, envXDGConfigHome)
+	setTestAppData(t, filepath.Join(testHome, "AppData"))
+
+	xdgPath := xdgConfigPath(testHome)
+	if xdgPath == "" {
+		t.Skip("no default XDG config path on this platform")
+	}
+
+	src := memAuto(t, map[string]string{
+		xdgPath: "[user]\n\tname = XDGUser\n",
+	})
 
 	assert.Equal(t, "XDGUser", loadUserName(t, src, config.GlobalScope))
 }
 
-func TestGitBehaviour_GlobalNoFilesExist(t *testing.T) {
-	src := NewAuto(WithFilesystem(memfs.New()))
-	t.Setenv("HOME", "/home/user")
+func TestGitBehaviour_GlobalNoFilesExist(t *testing.T) { //nolint:paralleltest // modifies env
+	setTestHome(t, testHome)
 	mustUnsetenv(t, envGitConfigGlobal)
 	mustUnsetenv(t, envXDGConfigHome)
+
+	src := NewAuto(WithFilesystem(memfs.New()))
 
 	assert.Empty(t, loadUserName(t, src, config.GlobalScope))
 }
 
 // git treats ~/.gitconfig and the XDG config as alternatives: when
 // ~/.gitconfig exists the XDG location is ignored entirely.
-func TestGitBehaviour_GlobalGitconfigIgnoresXDG(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.config/git/config": "[user]\n\tname = XDGUser\n\temail = xdg@example.com\n",
-		"/home/user/.gitconfig":         "[user]\n\tname = HomeUser\n",
-	})
-	t.Setenv("HOME", "/home/user")
+func TestGitBehaviour_GlobalGitconfigIgnoresXDG(t *testing.T) { //nolint:paralleltest // modifies env
+	setTestHome(t, testHome)
 	mustUnsetenv(t, envGitConfigGlobal)
 	mustUnsetenv(t, envXDGConfigHome)
+	setTestAppData(t, filepath.Join(testHome, "AppData"))
+
+	xdgPath := xdgConfigPath(testHome)
+	if xdgPath == "" {
+		t.Skip("no default XDG config path on this platform")
+	}
+
+	src := memAuto(t, map[string]string{
+		xdgPath:                               "[user]\n\tname = XDGUser\n\temail = xdg@example.com\n",
+		filepath.Join(testHome, ".gitconfig"): "[user]\n\tname = HomeUser\n",
+	})
 
 	assert.Equal(t, "HomeUser", loadUserName(t, src, config.GlobalScope))
 	// XDG email is NOT visible because ~/.gitconfig exists.
@@ -66,27 +87,33 @@ func TestGitBehaviour_GlobalGitconfigIgnoresXDG(t *testing.T) {
 }
 
 func TestGitBehaviour_GlobalXDGEnvOverridesDefaultPath(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.config/git/config": "[user]\n\tname = DefaultXDG\n",
-		"/custom/xdg/git/config":        "[user]\n\tname = CustomXDG\n",
-	})
-	t.Setenv("HOME", "/home/user")
+	setTestHome(t, testHome)
 	t.Setenv(envXDGConfigHome, "/custom/xdg")
 	mustUnsetenv(t, envGitConfigGlobal)
+	setTestAppData(t, filepath.Join(testHome, "AppData"))
 
-	// Only the custom XDG path is consulted; the default is ignored.
+	xdgDefault := xdgConfigPath(testHome)
+	// The env XDG_CONFIG_HOME is set, so this returns the custom path.
+	customXDG := filepath.Join("/custom/xdg", "git", "config")
+	require.Equal(t, customXDG, xdgDefault)
+
+	src := memAuto(t, map[string]string{
+		customXDG: "[user]\n\tname = CustomXDG\n",
+	})
+
 	assert.Equal(t, "CustomXDG", loadUserName(t, src, config.GlobalScope))
 }
 
 // When ~/.gitconfig exists, XDG_CONFIG_HOME is ignored even if set.
 func TestGitBehaviour_GlobalXDGEnvIgnoredWhenGitconfigExists(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.gitconfig":  "[user]\n\tname = HomeUser\n",
-		"/custom/xdg/git/config": "[user]\n\temail = xdg@example.com\n",
-	})
-	t.Setenv("HOME", "/home/user")
+	setTestHome(t, testHome)
 	t.Setenv(envXDGConfigHome, "/custom/xdg")
 	mustUnsetenv(t, envGitConfigGlobal)
+
+	src := memAuto(t, map[string]string{
+		filepath.Join(testHome, ".gitconfig"):         "[user]\n\tname = HomeUser\n",
+		filepath.Join("/custom/xdg", "git", "config"): "[user]\n\temail = xdg@example.com\n",
+	})
 
 	assert.Equal(t, "HomeUser", loadUserName(t, src, config.GlobalScope))
 	assert.Empty(t, loadUserEmail(t, src, config.GlobalScope))
@@ -94,14 +121,14 @@ func TestGitBehaviour_GlobalXDGEnvIgnoredWhenGitconfigExists(t *testing.T) {
 
 // git-config(1): GIT_CONFIG_GLOBAL "replaces ~/.gitconfig" and XDG.
 func TestGitBehaviour_GlobalEnvReplacesAll(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.config/git/config": "[user]\n\temail = xdg@example.com\n",
-		"/home/user/.gitconfig":         "[user]\n\tname = HomeUser\n\temail = home@example.com\n",
-		"/override.cfg":                 "[user]\n\tname = EnvUser\n",
-	})
-	t.Setenv("HOME", "/home/user")
+	setTestHome(t, testHome)
 	t.Setenv(envGitConfigGlobal, "/override.cfg")
 	mustUnsetenv(t, envXDGConfigHome)
+
+	src := memAuto(t, map[string]string{
+		filepath.Join(testHome, ".gitconfig"): "[user]\n\tname = HomeUser\n\temail = home@example.com\n",
+		"/override.cfg":                       "[user]\n\tname = EnvUser\n",
+	})
 
 	assert.Equal(t, "EnvUser", loadUserName(t, src, config.GlobalScope))
 	// Neither ~/.gitconfig nor XDG values leak through.
@@ -109,69 +136,81 @@ func TestGitBehaviour_GlobalEnvReplacesAll(t *testing.T) {
 }
 
 func TestGitBehaviour_GlobalEnvNonexistentFile(t *testing.T) {
-	src := NewAuto(WithFilesystem(memfs.New()))
 	t.Setenv(envGitConfigGlobal, "/nonexistent/path/gitconfig")
+
+	src := NewAuto(WithFilesystem(memfs.New()))
 
 	assert.Empty(t, loadUserName(t, src, config.GlobalScope))
 }
 
 // git-config(1): GIT_CONFIG_GLOBAL="" explicitly disables global config.
 func TestGitBehaviour_GlobalEnvEmptyDisablesGlobal(t *testing.T) {
-	src := memAuto(t, map[string]string{
-		"/home/user/.gitconfig": "[user]\n\tname = HomeUser\n",
-	})
-	t.Setenv("HOME", "/home/user")
+	setTestHome(t, testHome)
 	t.Setenv(envGitConfigGlobal, "")
 	mustUnsetenv(t, envXDGConfigHome)
+
+	src := memAuto(t, map[string]string{
+		filepath.Join(testHome, ".gitconfig"): "[user]\n\tname = HomeUser\n",
+	})
 
 	assert.Empty(t, loadUserName(t, src, config.GlobalScope))
 }
 
 func TestGitBehaviour_SystemEnv(t *testing.T) {
+	t.Setenv(envGitConfigSystem, "/custom/system.cfg")
+	mustUnsetenv(t, envGitConfigNoSystem)
+
 	src := memAuto(t, map[string]string{
 		"/custom/system.cfg": "[user]\n\tname = SysUser\n",
 	})
-	t.Setenv(envGitConfigSystem, "/custom/system.cfg")
-	mustUnsetenv(t, envGitConfigNoSystem)
 
 	assert.Equal(t, "SysUser", loadUserName(t, src, config.SystemScope))
 }
 
 func TestGitBehaviour_SystemEnvNonexistentFile(t *testing.T) {
-	src := NewAuto(WithFilesystem(memfs.New()))
 	t.Setenv(envGitConfigSystem, "/nonexistent/path/gitconfig")
 	mustUnsetenv(t, envGitConfigNoSystem)
+
+	src := NewAuto(WithFilesystem(memfs.New()))
 
 	assert.Empty(t, loadUserName(t, src, config.SystemScope))
 }
 
 // git-config(1): GIT_CONFIG_SYSTEM="" explicitly disables system config.
 func TestGitBehaviour_SystemEnvEmptyDisablesSystem(t *testing.T) {
+	t.Setenv(envGitConfigSystem, "")
+	mustUnsetenv(t, envGitConfigNoSystem)
+
 	src := memAuto(t, map[string]string{
 		"/etc/gitconfig": "[user]\n\tname = SysUser\n",
 	})
-	t.Setenv(envGitConfigSystem, "")
-	mustUnsetenv(t, envGitConfigNoSystem)
 
 	assert.Empty(t, loadUserName(t, src, config.SystemScope))
 }
 
-// System scope falls back to /etc/gitconfig when GIT_CONFIG_SYSTEM is
-// unset and GIT_CONFIG_NOSYSTEM is not truthy.
+// System scope falls back to the platform default path when
+// GIT_CONFIG_SYSTEM is unset and GIT_CONFIG_NOSYSTEM is not truthy.
 func TestGitBehaviour_SystemDefaultPath(t *testing.T) { //nolint:paralleltest // modifies env
-	src := memAuto(t, map[string]string{
-		"/etc/gitconfig": "[user]\n\tname = SystemDefault\n",
-	})
 	mustUnsetenv(t, envGitConfigSystem)
 	mustUnsetenv(t, envGitConfigNoSystem)
+
+	paths := systemPaths()
+	if len(paths) == 0 {
+		t.Skip("no default system config path on this platform")
+	}
+
+	src := memAuto(t, map[string]string{
+		paths[0]: "[user]\n\tname = SystemDefault\n",
+	})
 
 	assert.Equal(t, "SystemDefault", loadUserName(t, src, config.SystemScope))
 }
 
 func TestGitBehaviour_SystemDefaultPathMissing(t *testing.T) { //nolint:paralleltest // modifies env
-	src := NewAuto(WithFilesystem(memfs.New()))
 	mustUnsetenv(t, envGitConfigSystem)
 	mustUnsetenv(t, envGitConfigNoSystem)
+
+	src := NewAuto(WithFilesystem(memfs.New()))
 
 	assert.Empty(t, loadUserName(t, src, config.SystemScope))
 }
@@ -179,31 +218,34 @@ func TestGitBehaviour_SystemDefaultPathMissing(t *testing.T) { //nolint:parallel
 // git-config(1): "If GIT_CONFIG_NOSYSTEM is set to a true value, the
 // system configuration file is not read."
 func TestGitBehaviour_NoSystemOverridesSystemEnv(t *testing.T) {
+	t.Setenv(envGitConfigSystem, "/custom/system.cfg")
+	t.Setenv(envGitConfigNoSystem, "1")
+
 	src := memAuto(t, map[string]string{
 		"/custom/system.cfg": "[user]\n\tname = SysUser\n",
 	})
-	t.Setenv(envGitConfigSystem, "/custom/system.cfg")
-	t.Setenv(envGitConfigNoSystem, "1")
 
 	assert.Empty(t, loadUserName(t, src, config.SystemScope))
 }
 
 func TestGitBehaviour_NoSystemOverridesDefaultPath(t *testing.T) {
+	mustUnsetenv(t, envGitConfigSystem)
+	t.Setenv(envGitConfigNoSystem, "1")
+
 	src := memAuto(t, map[string]string{
 		"/etc/gitconfig": "[user]\n\tname = SysUser\n",
 	})
-	mustUnsetenv(t, envGitConfigSystem)
-	t.Setenv(envGitConfigNoSystem, "1")
 
 	assert.Empty(t, loadUserName(t, src, config.SystemScope))
 }
 
 func TestGitBehaviour_NoSystemUnset(t *testing.T) {
+	t.Setenv(envGitConfigSystem, "/custom/system.cfg")
+	mustUnsetenv(t, envGitConfigNoSystem)
+
 	src := memAuto(t, map[string]string{
 		"/custom/system.cfg": "[user]\n\tname = SysUser\n",
 	})
-	t.Setenv(envGitConfigSystem, "/custom/system.cfg")
-	mustUnsetenv(t, envGitConfigNoSystem)
 
 	assert.Equal(t, "SysUser", loadUserName(t, src, config.SystemScope))
 }
@@ -235,11 +277,12 @@ func TestGitBehaviour_NoSystemBooleans(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv(envGitConfigSystem, "/custom/system.cfg")
+			t.Setenv(envGitConfigNoSystem, tt.value)
+
 			src := memAuto(t, map[string]string{
 				"/custom/system.cfg": "[user]\n\tname = SysUser\n",
 			})
-			t.Setenv(envGitConfigSystem, "/custom/system.cfg")
-			t.Setenv(envGitConfigNoSystem, tt.value)
 
 			assert.Equal(t, tt.want, loadUserName(t, src, config.SystemScope),
 				"GIT_CONFIG_NOSYSTEM=%q", tt.value)
@@ -253,6 +296,40 @@ func TestGitBehaviour_UnsupportedScope(t *testing.T) {
 
 	_, err := src.Load(config.LocalScope)
 	require.Error(t, err)
+}
+
+// mustUnsetenv removes an environment variable for the duration of the test,
+// restoring it (or keeping it unset) at cleanup.
+func mustUnsetenv(t *testing.T, key string) {
+	t.Helper()
+	prev, hadIt := os.LookupEnv(key)
+	os.Unsetenv(key)
+	t.Cleanup(func() {
+		if hadIt {
+			os.Setenv(key, prev)
+		} else {
+			os.Unsetenv(key)
+		}
+	})
+}
+
+// setTestHome sets HOME (and USERPROFILE on Windows) so that
+// os.UserHomeDir returns the given path on every platform.
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	}
+}
+
+// setTestAppData sets APPDATA on Windows so that the XDG fallback
+// path is deterministic. No-op on other platforms.
+func setTestAppData(t *testing.T, appData string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", appData)
+	}
 }
 
 // memAuto returns an Auto backed by an in-memory filesystem pre-populated
