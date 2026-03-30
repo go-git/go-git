@@ -17,6 +17,7 @@ var envToTarget = map[string]trace.Target{
 	"GIT_TRACE_SSH":         trace.SSH,
 	"GIT_TRACE_PERFORMANCE": trace.Performance,
 	"GIT_TRACE_HTTP":        trace.HTTP,
+	"GIT_TRACE_INTERNAL":    trace.Internal,
 }
 
 // ReadEnv reads the environment variables and sets the trace targets.
