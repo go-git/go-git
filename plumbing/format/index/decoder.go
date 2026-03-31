@@ -302,24 +302,24 @@ func (d *Decoder) readExtension(idx *Index) error {
 	case bytes.Equal(header[:], treeExtSignature):
 		trace.Internal.Printf("index: decoding tree extension")
 		idx.Cache = &Tree{}
-		d := &treeExtensionDecoder{r, d.hash}
-		if err := d.Decode(idx.Cache); err != nil {
+		extDec := &treeExtensionDecoder{r, d.hash}
+		if err := extDec.Decode(idx.Cache); err != nil {
 			return err
 		}
 		trace.Internal.Printf("index: tree extension decoded, %d entries", len(idx.Cache.Entries))
 	case bytes.Equal(header[:], resolveUndoExtSignature):
 		trace.Internal.Printf("index: decoding resolve-undo extension")
 		idx.ResolveUndo = &ResolveUndo{}
-		d := &resolveUndoDecoder{r, d.hash}
-		if err := d.Decode(idx.ResolveUndo); err != nil {
+		extDec := &resolveUndoDecoder{r, d.hash}
+		if err := extDec.Decode(idx.ResolveUndo); err != nil {
 			return err
 		}
 		trace.Internal.Printf("index: resolve-undo extension decoded, %d entries", len(idx.ResolveUndo.Entries))
 	case bytes.Equal(header[:], endOfIndexEntryExtSignature):
 		trace.Internal.Printf("index: decoding end-of-index-entry extension")
 		idx.EndOfIndexEntry = &EndOfIndexEntry{}
-		d := &endOfIndexEntryDecoder{r, d.hash}
-		if err := d.Decode(idx.EndOfIndexEntry); err != nil {
+		extDec := &endOfIndexEntryDecoder{r, d.hash}
+		if err := extDec.Decode(idx.EndOfIndexEntry); err != nil {
 			return err
 		}
 		trace.Internal.Printf("index: end-of-index-entry extension decoded, offset %d hash %s", idx.EndOfIndexEntry.Offset, idx.EndOfIndexEntry.Hash)
@@ -332,8 +332,8 @@ func (d *Decoder) readExtension(idx *Index) error {
 		}
 
 		trace.Internal.Printf("index: skipping optional unknown extension %s", string(header[:]))
-		d := &unknownExtensionDecoder{r}
-		if err := d.Decode(); err != nil {
+		extDec := &unknownExtensionDecoder{r}
+		if err := extDec.Decode(); err != nil {
 			return err
 		}
 	}
