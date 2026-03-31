@@ -1680,6 +1680,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 
 	subRepo, err := submodule.Repository()
 	s.Require().NoError(err)
+	defer subRepo.Close()
 
 	lr, err := subRepo.Log(&LogOptions{})
 	s.Require().NoError(err)
