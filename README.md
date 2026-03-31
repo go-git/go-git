@@ -5,39 +5,34 @@
 
 It can be used to manipulate git repositories at low level *(plumbing)* or high level *(porcelain)*, through an idiomatic Go API. It also supports several types of storage, such as in-memory filesystems, or custom implementations, thanks to the [`Storer`](https://pkg.go.dev/github.com/go-git/go-git/v6/plumbing/storer) interface.
 
-It's being actively developed since 2015 and is being used extensively by [Keybase](https://keybase.io/blog/encrypted-git-for-everyone), [Gitea](https://gitea.io/en-us/) or [Pulumi](https://github.com/search?q=org%3Apulumi+go-git&type=Code), and by many other libraries and tools.
+It has been actively developed since 2015 and is used extensively by [Keybase](https://keybase.io/blog/encrypted-git-for-everyone), [Gitea](https://gitea.io/en-us/), and [Pulumi](https://github.com/search?q=org%3Apulumi+go-git&type=Code), among many other libraries and tools. It is also a dependency in major CNCF projects such as [Kubernetes Prow](https://github.com/kubernetes-sigs/prow) and [Flux](https://fluxcd.io/).
 
-Project Status
---------------
+## Project Status
 
-After the [legal issues](https://github.com/src-d/go-git/issues/1295#issuecomment-592965250) with the [`src-d`](https://github.com/src-d) organization, the lack of update for four months and the requirement to make a hard fork, the project is **now back to normality**.
+> For the full backstory see [HISTORY.md](HISTORY.md).
 
-The project is currently actively maintained by individual contributors, including several of the original authors, but also backed by a new company, [gitsight](https://github.com/gitsight), where `go-git` is a critical component used at scale.
+The project is actively maintained by individual contributors, including several of the original authors. It is backed by [GitSight](https://github.com/gitsight), where `go-git` is a critical component used at scale, and by [Entire](https://entire.io), which supports ongoing maintenance and development of new features.
 
 
-Comparison with git
--------------------
+## Comparison with git
 
 *go-git* aims to be fully compatible with [git](https://github.com/git/git), all the *porcelain* operations are implemented to work exactly as *git* does.
 
 *git* is a humongous project with years of development by thousands of contributors, making it challenging for *go-git* to implement all the features. You can find a comparison of *go-git* vs *git* in the [compatibility documentation](COMPATIBILITY.md).
 
 
-Installation
-------------
+## Installation
 
 The recommended way to install *go-git* is:
 
 ```go
-import "github.com/go-git/go-git/v6" // with go modules enabled (GO111MODULE=on or outside GOPATH)
-import "github.com/go-git/go-git" // with go modules disabled
+import "github.com/go-git/go-git/v6"
 ```
 
 
-Examples
---------
+## Examples
 
-> Please note that the `CheckIfError` and `Info` functions  used in the examples are from the [examples package](https://github.com/go-git/go-git/blob/master/_examples/common.go#L19) just to be used in the examples.
+> Please note that the `CheckIfError` and `Info` functions used in the examples are from the [examples package](https://github.com/go-git/go-git/blob/main/_examples/common.go#L19) just to be used in the examples.
 
 
 ### Basic example
@@ -120,12 +115,10 @@ Date:   Fri Nov 11 13:23:22 2016 +0100
 
 You can find this [example](_examples/log/main.go) and many others in the [examples](_examples) folder.
 
-Contribute
-----------
+## Contribute
 
 [Contributions](https://github.com/go-git/go-git/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) are more than welcome, if you are interested please take a look to
 our [Contributing Guidelines](CONTRIBUTING.md).
 
-License
--------
+## License
 Apache License Version 2.0, see [LICENSE](LICENSE)
