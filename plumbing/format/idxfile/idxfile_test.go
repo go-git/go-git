@@ -184,23 +184,19 @@ func TestOffsetHashConcurrentPopulation(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for _, h := range fixtureHashes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 5000 {
 				_, _ = idx.FindOffset(h)
 			}
-		}()
+		})
 	}
 
 	for _, off := range fixtureOffsets {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 3000 {
 				_, _ = idx.FindHash(off)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

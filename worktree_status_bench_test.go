@@ -33,9 +33,7 @@ func setupBenchmarkRepo(b *testing.B, numFiles, numSubdirs, numGoroutines int) *
 	fileChan := make(chan string, numFiles)
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
 				err := wt.Filesystem.MkdirAll(dir, 0o755)
@@ -49,7 +47,7 @@ func setupBenchmarkRepo(b *testing.B, numFiles, numSubdirs, numGoroutines int) *
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
 			}
-		}()
+		})
 	}
 
 	for i := range numFiles {

@@ -244,12 +244,10 @@ func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// Tunnel data between client and target.
 	// Use one goroutine for client->target, current goroutine for target->client.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_, _ = io.Copy(targetConn, clientConn)
 		targetConn.Close() // Signal EOF to the other direction
-	}()
+	})
 
 	_, _ = io.Copy(clientConn, targetConn)
 	clientConn.Close() // Signal EOF to the other direction
