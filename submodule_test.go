@@ -71,6 +71,7 @@ func (s *SubmoduleSuite) TestUpdate() {
 
 	r, err := sm.Repository()
 	s.Require().NoError(err)
+	defer r.Close()
 
 	ref, err := r.Reference(plumbing.HEAD, true)
 	s.Require().NoError(err)
@@ -163,6 +164,7 @@ func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
 
 	r, err := sm.Repository()
 	s.Require().NoError(err)
+	defer r.Close()
 
 	ref, err := r.Reference(plumbing.HEAD, true)
 	s.Require().NoError(err)
@@ -239,6 +241,7 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 
 	r, err := sm.Repository()
 	s.Require().NoError(err)
+	defer r.Close()
 
 	lr, err := r.Log(&LogOptions{})
 	s.Require().NoError(err)
