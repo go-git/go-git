@@ -32,18 +32,19 @@ func (b *BranchSuite) TestValidateName() {
 }
 
 func (b *BranchSuite) TestValidateMerge() {
-	goodBranch := Branch{
+	// Real git allows any value for branch.*.merge.
+	refsBranch := Branch{
 		Name:   "master",
 		Remote: "some_remote",
 		Merge:  "refs/heads/master",
 	}
-	badBranch := Branch{
+	nonRefsBranch := Branch{
 		Name:   "master",
 		Remote: "some_remote",
 		Merge:  "blah",
 	}
-	b.Nil(goodBranch.Validate())
-	b.NotNil(badBranch.Validate())
+	b.Nil(refsBranch.Validate())
+	b.Nil(nonRefsBranch.Validate())
 }
 
 func (b *BranchSuite) TestMarshal() {
@@ -104,4 +105,27 @@ func (b *BranchSuite) TestValidateMergeWithPullRef() {
 		Merge:  "refs/merge-requests/42/head",
 	}
 	b.Nil(mrBranch.Validate())
+}
+
+func (b *BranchSuite) TestUnmarshalNonRefsPrefix() {
+	// Real git allows any value for branch.*.merge during config read.
+	// unmarshal should not reject merge values that lack a refs/ prefix.
+	input := []byte(`[core]
+	bare = false
+[branch "foo"]
+	remote = origin
+	merge = main
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	b.NoError(err)
+	branch := cfg.Branches["foo"]
+	b.Equal("foo", branch.Name)
+	b.Equal("origin", branch.Remote)
+	b.Equal(plumbing.ReferenceName("main"), branch.Merge)
+
+	// Validate must also accept this value so that SetConfig (which
+	// calls Validate) works for configs read from disk.
+	b.NoError(branch.Validate())
 }
