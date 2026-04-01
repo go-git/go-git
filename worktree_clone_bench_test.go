@@ -38,9 +38,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	fileChan := make(chan string, numFiles)
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
 				err := sourceWt.Filesystem.MkdirAll(dir, 0o755)
@@ -53,7 +51,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
 			}
-		}()
+		})
 	}
 
 	for i := range numFiles {
@@ -120,9 +118,7 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	fileChan := make(chan string, numFiles)
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
 				err := sourceWt.Filesystem.MkdirAll(dir, 0o755)
@@ -135,7 +131,7 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
 			}
-		}()
+		})
 	}
 
 	for i := range numFiles {
