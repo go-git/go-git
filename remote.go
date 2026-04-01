@@ -215,7 +215,7 @@ func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remote
 			hashesToPush, err = revlist.ObjectsWithStorageForIgnores(
 				r.s, localStorer, objects, haves)
 		} else {
-			hashesToPush, err = revlist.Objects(r.s, objects, haves)
+			hashesToPush, err = revlist.ObjectsDiff(r.s, objects, haves)
 		}
 		if err != nil {
 			return err
