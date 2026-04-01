@@ -39,7 +39,7 @@ func (s *HTTPSession) fetchDumb(ctx context.Context, req *transport.FetchRequest
 	}
 
 	repoFs := fsi.Filesystem()
-	r := newFetchWalker(s, ctx, repoFs)
+	r := newFetchWalker(ctx, s, repoFs)
 	if err := r.process(); err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ type fetchWalker struct {
 	packIdx map[plumbing.Hash]string
 }
 
-func newFetchWalker(s *HTTPSession, ctx context.Context, fs billy.Filesystem) *fetchWalker {
+func newFetchWalker(ctx context.Context, s *HTTPSession, fs billy.Filesystem) *fetchWalker {
 	walker := new(fetchWalker)
 	walker.HTTPSession = s
 	walker.ctx = ctx

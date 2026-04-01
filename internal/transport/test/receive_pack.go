@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
+// ReceivePackSuite is a test suite for receive-pack transport implementations.
 type ReceivePackSuite struct {
 	suite.Suite
 	Endpoint            *transport.Endpoint
@@ -35,6 +36,7 @@ type ReceivePackSuite struct {
 	Client              transport.Transport
 }
 
+// TearDownTest closes all storers.
 func (s *ReceivePackSuite) TearDownTest() {
 	for _, st := range []storage.Storer{s.Storer, s.EmptyStorer, s.NonExistentStorer} {
 		if c, ok := st.(io.Closer); ok {
@@ -43,6 +45,7 @@ func (s *ReceivePackSuite) TearDownTest() {
 	}
 }
 
+// TestAdvertisedReferencesEmpty tests advertised references on an empty repo.
 func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -55,6 +58,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
 	s.Require().Len(refs, 0)
 }
 
+// TestAdvertisedReferencesNotExists tests advertised references on a non-existent repo.
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -63,6 +67,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists() {
 	s.Require().Error(err)
 }
 
+// TestCallAdvertisedReferenceTwice tests that calling advertised references twice returns the same result.
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -80,6 +85,7 @@ func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice() {
 	s.Require().Equal(refs1, refs2)
 }
 
+// TestDefaultBranch tests that the default branch is correctly advertised.
 func (s *ReceivePackSuite) TestDefaultBranch() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -103,6 +109,7 @@ func (s *ReceivePackSuite) TestDefaultBranch() {
 	s.Require().Equal(fixtures.Basic().One().Head, ref.Hash().String())
 }
 
+// TestCapabilities tests that capabilities are correctly reported.
 func (s *ReceivePackSuite) TestCapabilities() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -113,6 +120,7 @@ func (s *ReceivePackSuite) TestCapabilities() {
 	s.Require().Len(conn.Capabilities().Get("agent"), 1)
 }
 
+// TestFullSendPackOnEmpty tests a full send-pack on an empty repo.
 func (s *ReceivePackSuite) TestFullSendPackOnEmpty() {
 	endpoint := s.EmptyEndpoint
 	full := true
@@ -125,6 +133,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty() {
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
+// TestSendPackWithContext tests send-pack with a cancelled context.
 func (s *ReceivePackSuite) TestSendPackWithContext() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{
@@ -148,6 +157,7 @@ func (s *ReceivePackSuite) TestSendPackWithContext() {
 	s.Require().NotNil(err)
 }
 
+// TestSendPackOnEmpty tests send-pack on an empty repo.
 func (s *ReceivePackSuite) TestSendPackOnEmpty() {
 	endpoint := s.EmptyEndpoint
 	full := false
@@ -160,6 +170,7 @@ func (s *ReceivePackSuite) TestSendPackOnEmpty() {
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
+// TestSendPackOnEmptyWithReportStatus tests send-pack on an empty repo with report-status.
 func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus() {
 	endpoint := s.EmptyEndpoint
 	full := false
@@ -173,6 +184,7 @@ func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus() {
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
+// TestFullSendPackOnNonEmpty tests a full send-pack on a non-empty repo.
 func (s *ReceivePackSuite) TestFullSendPackOnNonEmpty() {
 	endpoint := s.Endpoint
 	full := true
@@ -185,6 +197,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnNonEmpty() {
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
+// TestSendPackOnNonEmpty tests send-pack on a non-empty repo.
 func (s *ReceivePackSuite) TestSendPackOnNonEmpty() {
 	endpoint := s.Endpoint
 	full := false
@@ -197,6 +210,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmpty() {
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
+// TestSendPackOnNonEmptyWithReportStatus tests send-pack on a non-empty repo with report-status.
 func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus() {
 	endpoint := s.Endpoint
 	full := false
@@ -211,6 +225,7 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus() {
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
+// TestSendPackOnNonEmptyWithReportStatusWithError tests send-pack error handling.
 func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	endpoint := s.Endpoint
 	full := false
@@ -353,6 +368,7 @@ func (s *ReceivePackSuite) checkRemoteReference(ep *transport.Endpoint,
 	s.Require().NoError(conn.Close())
 }
 
+// TestSendPackAddDeleteReference tests adding and deleting a reference via send-pack.
 func (s *ReceivePackSuite) TestSendPackAddDeleteReference() {
 	s.testSendPackAddReference()
 	s.testSendPackDeleteReference()

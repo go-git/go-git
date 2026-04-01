@@ -235,7 +235,7 @@ func (c *client) SupportedProtocols() []protocol.Version {
 }
 
 // HTTPSession represents a transport session that uses the HTTP protocol.
-type HTTPSession struct {
+type HTTPSession struct { //nolint:revive // stutters but is a well-established name
 	st          storage.Storer
 	auth        AuthMethod
 	client      *http.Client
@@ -457,7 +457,7 @@ func (s *HTTPSession) Handshake(ctx context.Context, service transport.Service, 
 		ar.References = infoRefs.References
 		ar.Peeled = infoRefs.Peeled
 
-		walker := newFetchWalker(s, ctx, nil)
+		walker := newFetchWalker(ctx, s, nil)
 		head, err := walker.getHead()
 		if err != nil {
 			return nil, err

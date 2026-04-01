@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// ObjectStorage implements object storage backed by the filesystem.
 type ObjectStorage struct {
 	options Options
 
@@ -271,6 +272,7 @@ func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 	return err
 }
 
+// RawObjectWriter returns a writer for a new loose object of the given type and size.
 func (s *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error) {
 	ow, err := s.dir.NewObject()
 	if err != nil {
@@ -285,10 +287,12 @@ func (s *ObjectStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io
 	return ow, nil
 }
 
+// NewEncodedObject returns a new in-memory encoded object.
 func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 	return plumbing.NewMemoryObject(s.oh)
 }
 
+// PackfileWriter returns a writer for creating a new packfile.
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
@@ -877,6 +881,7 @@ func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]struct{} {
 	return m
 }
 
+// ForEachObjectHash iterates over every object hash in the storage.
 func (s *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 	err := s.dir.ForEachObjectHash(fun)
 	if err == storer.ErrStop {
@@ -885,6 +890,7 @@ func (s *ObjectStorage) ForEachObjectHash(fun func(plumbing.Hash) error) error {
 	return err
 }
 
+// LooseObjectTime returns the modification time of a loose object.
 func (s *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {
 	fi, err := s.dir.ObjectStat(hash)
 	if err != nil {
@@ -893,14 +899,17 @@ func (s *ObjectStorage) LooseObjectTime(hash plumbing.Hash) (time.Time, error) {
 	return fi.ModTime(), nil
 }
 
+// DeleteLooseObject removes a loose object from storage.
 func (s *ObjectStorage) DeleteLooseObject(hash plumbing.Hash) error {
 	return s.dir.ObjectDelete(hash)
 }
 
+// ObjectPacks returns the list of packfile hashes.
 func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 	return s.dir.ObjectPacks()
 }
 
+// DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
 func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
 	return s.dir.DeleteOldObjectPackAndIndex(h, t)
 }

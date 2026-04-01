@@ -35,7 +35,7 @@ const (
 )
 
 // ConfigStorer is a generic storage of Config object.
-type ConfigStorer interface {
+type ConfigStorer interface { //nolint:revive // stutters but is a well-established name
 	Config() (*Config, error)
 	SetConfig(*Config) error
 }
@@ -1048,7 +1048,7 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	if len(c.Fetch) == 0 {
 		c.raw.RemoveOption(fetchKey)
 	} else {
-		var values []string
+		values := make([]string, 0, len(c.Fetch))
 		for _, rs := range c.Fetch {
 			values = append(values, rs.String())
 		}

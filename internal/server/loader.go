@@ -1,3 +1,4 @@
+// Package server provides test helpers for running in-process git servers.
 package server
 
 import (
@@ -18,7 +19,7 @@ type fixturesLoader struct {
 
 var _ transport.Loader = &fixturesLoader{}
 
-func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+func (f *fixturesLoader) Load(_ *transport.Endpoint) (storage.Storer, error) {
 	if f.dot == nil {
 		return nil, fmt.Errorf("cannot load endpoint: fixture not set")
 	}

@@ -21,7 +21,7 @@ func TestVerifyExtensions(t *testing.T) {
 	}{
 		{
 			name: "repositoryformatversion=0: invalid extension",
-			setup: func(t *testing.T, cfg *config.Config) {
+			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
 				cfg.Raw.Section("extensions").SetOption("unknown", "foo")
 				cfg.Raw.Section("extensions").SetOption("objectformat", "sha1")
@@ -30,20 +30,20 @@ func TestVerifyExtensions(t *testing.T) {
 		},
 		{
 			name: "repositoryformatversion=0: allows supported noop",
-			setup: func(t *testing.T, cfg *config.Config) {
+			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
 				cfg.Raw.Section("extensions").SetOption("noop", "bar")
 			},
 		},
 		{
 			name: "repositoryformatversion='': allows supported noop",
-			setup: func(t *testing.T, cfg *config.Config) {
+			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Raw.Section("extensions").SetOption("noop", "bar")
 			},
 		},
 		{
 			name: "repositoryformatversion=1: rejects unknown extensions",
-			setup: func(t *testing.T, cfg *config.Config) {
+			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 				cfg.Raw.Section("extensions").SetOption("unknownext", "true")
 			},
@@ -51,7 +51,7 @@ func TestVerifyExtensions(t *testing.T) {
 		},
 		{
 			name: "repositoryformatversion=1: allows known extension",
-			setup: func(t *testing.T, cfg *config.Config) {
+			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 				cfg.Raw.Section("extensions").SetOption("NOOP", "foo")
 				cfg.Raw.Section("extensions").SetOption("noop-v1", "bar")
@@ -59,7 +59,7 @@ func TestVerifyExtensions(t *testing.T) {
 		},
 		{
 			name: "repositoryformatversion=1: allows objectformat=sha1",
-			setup: func(t *testing.T, cfg *config.Config) {
+			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 				cfg.Raw.Section("extensions").SetOption("objectformat", "sha1")
 			},

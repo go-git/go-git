@@ -97,7 +97,7 @@ type tagLoader struct {
 
 var _ transport.Loader = &tagLoader{}
 
-func (l *tagLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+func (l *tagLoader) Load(_ *transport.Endpoint) (storage.Storer, error) {
 	fix := fixtures.ByTag(l.tag).One()
 	require.NotNil(l.TB, fix, "fixture not found for tag %s", l.tag)
 

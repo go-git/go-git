@@ -331,6 +331,7 @@ func (s *syncedReader) Close() error {
 	return nil
 }
 
+// ObjectWriter writes a single git object to the filesystem.
 type ObjectWriter struct {
 	objfile.Writer
 	fs billy.Filesystem
@@ -350,6 +351,7 @@ func newObjectWriter(fs billy.Filesystem) (*ObjectWriter, error) {
 	}, nil
 }
 
+// Close finalizes the object and moves it to its permanent location.
 func (w *ObjectWriter) Close() error {
 	if err := w.Writer.Close(); err != nil {
 		return err

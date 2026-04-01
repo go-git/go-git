@@ -123,7 +123,10 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		flags |= nameMask
 	}
 
-	flow := []any{
+	flagsFlow := []any{flags}
+
+	flow := make([]any, 0, 11+len(flagsFlow))
+	flow = append(flow,
 		sec, nsec,
 		msec, mnsec,
 		entry.Dev,
@@ -133,9 +136,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		entry.GID,
 		entry.Size,
 		entry.Hash.Bytes(),
-	}
-
-	flagsFlow := []any{flags}
+	)
 
 	if entry.IntentToAdd || entry.SkipWorktree {
 		var extendedFlags uint16

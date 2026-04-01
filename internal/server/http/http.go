@@ -1,3 +1,4 @@
+// Package http provides an in-process HTTP git server for testing.
 package http
 
 import (
@@ -22,7 +23,8 @@ type server struct {
 	srv *gohttp.Server
 }
 
-func FromLoader(l transport.Loader) (*server, error) {
+// FromLoader creates an HTTP git server backed by the given loader.
+func FromLoader(l transport.Loader) (*server, error) { //nolint:revive // unexported-return is intentional
 	s := &server{
 		l: l,
 	}

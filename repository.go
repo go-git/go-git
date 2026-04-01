@@ -353,7 +353,8 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		wt = osfs.New(path, osfs.WithBoundOS())
 		dot, _ = wt.Chroot(GitDirName)
 		initFn = func(s *filesystem.Storage) (*Repository, error) {
-			oo := []InitOption{WithWorkTree(wt)}
+			oo := make([]InitOption, 0, 1+len(options))
+			oo = append(oo, WithWorkTree(wt))
 			oo = append(oo, options...)
 			return Init(s, oo...)
 		}
@@ -1300,14 +1301,15 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 		return updateReferenceStorerIfNeeded(r.Storer, head)
 	}
 
-	refs := []*plumbing.Reference{
+	remoteHeadRefs := r.calculateRemoteHeadReference(spec, resolvedRef)
+	refs := make([]*plumbing.Reference, 0, 2+len(remoteHeadRefs))
+	refs = append(refs,
 		// Create local reference for the resolved ref
 		resolvedRef,
 		// Create local symbolic HEAD
 		plumbing.NewSymbolicReference(plumbing.HEAD, resolvedRef.Name()),
-	}
-
-	refs = append(refs, r.calculateRemoteHeadReference(spec, resolvedRef)...)
+	)
+	refs = append(refs, remoteHeadRefs...)
 
 	for _, ref := range refs {
 		u, err := updateReferenceStorerIfNeeded(r.Storer, ref)

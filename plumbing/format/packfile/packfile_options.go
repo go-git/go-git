@@ -8,7 +8,7 @@ import (
 )
 
 // PackfileOption configures a Packfile.
-type PackfileOption func(*Packfile)
+type PackfileOption func(*Packfile) //nolint:revive // stutters but is a well-established name
 
 // WithCache sets the cache to be used throughout Packfile operations.
 // Use this to share existing caches with the Packfile. If not used, a
@@ -39,6 +39,6 @@ func WithFs(fs billy.Filesystem) PackfileOption {
 // When no object ID size is set, hash.SHA1Size will be used.
 func WithObjectIDSize(sz int) PackfileOption {
 	return func(p *Packfile) {
-		p.objectIdSize = sz
+		p.objectIDSize = sz
 	}
 }
