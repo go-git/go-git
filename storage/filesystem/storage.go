@@ -83,6 +83,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	// Reverse index defaults (true); overridden by repo config below.
 	readRevIdx := true
 	writeRevIdx := true
+	skipHash := false
 
 	f, err := fs.Open("config")
 	if err == nil {
@@ -91,6 +92,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 			ops.ObjectFormat = cfg.Extensions.ObjectFormat
 			readRevIdx = cfg.Pack.ReadReverseIndex
 			writeRevIdx = cfg.Pack.WriteReverseIndex
+			skipHash = cfg.Index.SkipHash.IsTrue()
 		}
 
 		_ = f.Close()
@@ -123,7 +125,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache},
+		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir},

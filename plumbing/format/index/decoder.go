@@ -46,20 +46,45 @@ type Decoder struct {
 	r         io.Reader
 	hash      hash.Hash
 	lastEntry *Entry
+	skipHash  bool
 
 	extReader *bufio.Reader
 }
 
+// DecoderOption configures a Decoder.
+type DecoderOption func(*Decoder)
+
+// WithSkipHash disables checksum verification when decoding the index.
+// This corresponds to git's index.skipHash configuration (git 2.40+),
+// where git writes an all-zero checksum for performance on large
+// repositories and skips verification on read.
+func WithSkipHash() DecoderOption {
+	return func(d *Decoder) {
+		d.skipHash = true
+	}
+}
+
 // NewDecoder returns a new decoder that reads from r.
-func NewDecoder(r io.Reader, h hash.Hash) *Decoder {
-	h.Reset()
+func NewDecoder(r io.Reader, h hash.Hash, opts ...DecoderOption) *Decoder {
 	buf := bufio.NewReader(r)
-	return &Decoder{
+	d := &Decoder{
 		buf:       buf,
-		r:         io.TeeReader(buf, h),
 		hash:      h,
 		extReader: bufio.NewReader(nil),
 	}
+
+	for _, o := range opts {
+		o(d)
+	}
+
+	if d.skipHash {
+		d.r = buf
+	} else {
+		h.Reset()
+		d.r = io.TeeReader(buf, h)
+	}
+
+	return d
 }
 
 // Decode reads the whole index object from its input and stores it in the
@@ -358,6 +383,11 @@ func (d *Decoder) readChecksum(expected []byte) error {
 	if _, err := h.ReadFrom(d.r); err != nil {
 		trace.Internal.Printf("index: checksum read error: %v", err)
 		return err
+	}
+
+	if d.skipHash {
+		trace.Internal.Printf("index: skipping checksum verification (skipHash)")
+		return nil
 	}
 
 	if h.Compare(expected) != 0 {

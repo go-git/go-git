@@ -408,6 +408,103 @@ func TestDecodeTruncatedExt(t *testing.T) {
 	assert.ErrorContains(t, err, io.EOF.Error())
 }
 
+func TestDecodeSkipHash(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		hash crypto.Hash
+	}{
+		{"SHA1", crypto.SHA1},
+		{"SHA256", crypto.SHA256},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hashSize := tc.hash.New().Size()
+
+			var eh plumbing.Hash
+			eh.ResetBySize(hashSize)
+
+			idx := &Index{
+				Version: 2,
+				Entries: []*Entry{{
+					CreatedAt:  time.Now(),
+					ModifiedAt: time.Now(),
+					Name:       "file.txt",
+					Hash:       eh,
+					Size:       1,
+				}},
+			}
+
+			buf := bytes.NewBuffer(nil)
+			e := NewEncoder(buf, tc.hash.New())
+
+			err := e.encode(idx, false)
+			require.NoError(t, err)
+			err = e.encodeRawExtension("TEST", []byte("testdata"))
+			require.NoError(t, err)
+
+			_, err = buf.Write(make([]byte, hashSize))
+			require.NoError(t, err)
+
+			// Without SkipHash, decoding must fail (checksum mismatch).
+			out := &Index{}
+			d := NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New())
+			err = d.Decode(out)
+			assert.ErrorIs(t, err, ErrInvalidChecksum)
+
+			// With SkipHash, decoding must succeed.
+			out = &Index{}
+			d = NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New(), WithSkipHash())
+			err = d.Decode(out)
+			require.NoError(t, err)
+			assert.Len(t, out.Entries, 1)
+		})
+	}
+}
+
+func TestDecodeSkipHashWithKnownAndUnknownExtensions(t *testing.T) {
+	t.Parallel()
+
+	// Read the basic fixture raw bytes (header + entries + TREE ext + checksum).
+	// The fixture uses SHA1.
+	f, err := fixtures.Basic().One().DotGit().Open("index")
+	require.NoError(t, err)
+	raw, err := io.ReadAll(f)
+	require.NoError(t, f.Close())
+	require.NoError(t, err)
+
+	hashSize := crypto.SHA1.New().Size()
+
+	// Strip the trailing checksum, keeping header + entries + TREE extension.
+	body := raw[:len(raw)-hashSize]
+
+	// Append unknown optional extensions (matching UNTR + FSMN scenario).
+	var extra bytes.Buffer
+	for _, sig := range []string{"UNTR", "FSMN"} {
+		extra.Write([]byte(sig))
+		extData := bytes.Repeat([]byte{0x42}, 128)
+		require.NoError(t, binary.WriteUint32(&extra, uint32(len(extData))))
+		extra.Write(extData)
+	}
+
+	// Build new file with null checksum.
+	var newFile bytes.Buffer
+	newFile.Write(body)
+	newFile.Write(extra.Bytes())
+	newFile.Write(make([]byte, hashSize))
+
+	idx := &Index{}
+	d := NewDecoder(bytes.NewReader(newFile.Bytes()), crypto.SHA1.New(), WithSkipHash())
+	err = d.Decode(idx)
+	require.NoError(t, err)
+	require.NotNil(t, idx.Cache, "TREE cache should be decoded")
+	assert.Len(t, idx.Entries, 9)
+}
+
 func TestDecodeInvalidHash(t *testing.T) {
 	t.Parallel()
 	idx := readSimpleIndex(t)
