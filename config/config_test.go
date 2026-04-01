@@ -733,6 +733,61 @@ func TestUnmarshalMarshalPackReverseIndex(t *testing.T) {
 	}
 }
 
+func TestUnmarshalIndexSkipHash(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  OptBool
+	}{
+		{
+			name:  "true",
+			input: "[index]\n\tskipHash = true\n",
+			want:  OptBoolTrue,
+		},
+		{
+			name:  "false",
+			input: "[index]\n\tskipHash = false\n",
+			want:  OptBoolFalse,
+		},
+		{
+			name:  "absent defaults to unset",
+			input: "[core]\n\tbare = false\n",
+			want:  OptBoolUnset,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			err := cfg.Unmarshal([]byte(tc.input))
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.want, cfg.Index.SkipHash)
+		})
+	}
+}
+
+func TestMarshalIndexSkipHash(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	cfg.Index.SkipHash = OptBoolTrue
+
+	b, err := cfg.Marshal()
+	require.NoError(t, err)
+	assert.Contains(t, string(b), "skipHash = true")
+
+	// Round-trip: unmarshal the marshaled output and verify.
+	cfg2 := NewConfig()
+	err = cfg2.Unmarshal(b)
+	require.NoError(t, err)
+	assert.Equal(t, OptBoolTrue, cfg2.Index.SkipHash)
+}
+
 func TestMerge(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

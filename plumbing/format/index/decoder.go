@@ -46,20 +46,34 @@ type Decoder struct {
 	r         io.Reader
 	hash      hash.Hash
 	lastEntry *Entry
+	skipHash  bool
 
 	extReader *bufio.Reader
 }
 
 // NewDecoder returns a new decoder that reads from r.
-func NewDecoder(r io.Reader, h hash.Hash) *Decoder {
-	h.Reset()
+func NewDecoder(r io.Reader, h hash.Hash, opts ...Option) *Decoder {
+	var cfg options
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	buf := bufio.NewReader(r)
-	return &Decoder{
+	d := &Decoder{
 		buf:       buf,
-		r:         io.TeeReader(buf, h),
 		hash:      h,
+		skipHash:  cfg.skipHash,
 		extReader: bufio.NewReader(nil),
 	}
+
+	if d.skipHash {
+		d.r = buf
+	} else {
+		h.Reset()
+		d.r = io.TeeReader(buf, h)
+	}
+
+	return d
 }
 
 // Decode reads the whole index object from its input and stores it in the
@@ -263,7 +277,9 @@ func (d *Decoder) readExtensions(idx *Index) error {
 	peekLen := 4 + 4 + d.hash.Size()
 
 	for {
-		expected = d.hash.Sum(nil)
+		if !d.skipHash {
+			expected = d.hash.Sum(nil)
+		}
 		peeked, err = d.buf.Peek(peekLen)
 		if len(peeked) < peekLen {
 			trace.Internal.Printf("index: decode peeked %d bytes, less than minimum %d; done reading extensions", len(peeked), peekLen)
@@ -280,7 +296,9 @@ func (d *Decoder) readExtensions(idx *Index) error {
 		}
 	}
 
-	trace.Internal.Printf("index: verifying checksum, expected %x", expected)
+	if !d.skipHash {
+		trace.Internal.Printf("index: verifying checksum, expected %x", expected)
+	}
 	return d.readChecksum(expected)
 }
 
@@ -358,6 +376,11 @@ func (d *Decoder) readChecksum(expected []byte) error {
 	if _, err := h.ReadFrom(d.r); err != nil {
 		trace.Internal.Printf("index: checksum read error: %v", err)
 		return err
+	}
+
+	if d.skipHash {
+		trace.Internal.Printf("index: skipping checksum verification (skipHash)")
+		return nil
 	}
 
 	if h.Compare(expected) != 0 {

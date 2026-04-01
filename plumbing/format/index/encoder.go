@@ -26,13 +26,29 @@ type Encoder struct {
 	w         io.Writer
 	hash      hash.Hash
 	lastEntry *Entry
+	skipHash  bool
 }
 
 // NewEncoder returns a new encoder that writes to w.
-func NewEncoder(w io.Writer, h hash.Hash) *Encoder {
-	h.Reset()
-	mw := io.MultiWriter(w, h)
-	return &Encoder{mw, h, nil}
+func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
+	var cfg options
+	for _, o := range opts {
+		o(&cfg)
+	}
+
+	e := &Encoder{
+		hash:     h,
+		skipHash: cfg.skipHash,
+	}
+
+	if e.skipHash {
+		e.w = w
+	} else {
+		h.Reset()
+		e.w = io.MultiWriter(w, h)
+	}
+
+	return e
 }
 
 // Encode writes the Index to the stream of the encoder.
@@ -239,6 +255,10 @@ func (e *Encoder) padEntry(idx *Index, wrote int) error {
 }
 
 func (e *Encoder) encodeFooter() error {
+	if e.skipHash {
+		_, err := e.w.Write(make([]byte, e.hash.Size()))
+		return err
+	}
 	return binary.Write(e.w, e.hash.Sum(nil))
 }
 

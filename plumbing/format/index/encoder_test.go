@@ -206,3 +206,75 @@ func TestEncodeWithSkipWorktreeUnsupportedVersion(t *testing.T) {
 	assert.EqualExportedValues(t, idx, output)
 	assert.Equal(t, true, output.Entries[0].SkipWorktree)
 }
+
+func TestEncodeSkipHash(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		hash crypto.Hash
+	}{
+		{"SHA1", crypto.SHA1},
+		{"SHA256", crypto.SHA256},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hashSize := tc.hash.New().Size()
+
+			var h1, h2 plumbing.Hash
+			h1.ResetBySize(hashSize)
+			h2.ResetBySize(hashSize)
+			copy(h1.Bytes(), []byte{0xe2, 0x5b, 0x29})
+			copy(h2.Bytes(), []byte{0x00})
+
+			idx := &Index{
+				Version: 2,
+				Entries: []*Entry{{
+					CreatedAt:  time.Now(),
+					ModifiedAt: time.Now(),
+					Dev:        4242,
+					Inode:      424242,
+					UID:        84,
+					GID:        8484,
+					Size:       42,
+					Stage:      TheirMode,
+					Hash:       h1,
+					Name:       "foo",
+				}, {
+					CreatedAt:  time.Now(),
+					ModifiedAt: time.Now(),
+					Name:       "bar",
+					Hash:       h2,
+					Size:       82,
+				}},
+			}
+
+			buf := bytes.NewBuffer(nil)
+			e := NewEncoder(buf, tc.hash.New(), WithSkipHash())
+			err := e.Encode(idx)
+			require.NoError(t, err)
+
+			raw := buf.Bytes()
+
+			checksum := raw[len(raw)-hashSize:]
+			assert.Equal(t, make([]byte, hashSize), checksum)
+
+			// A normal decoder must reject the null checksum.
+			output := &Index{}
+			d := NewDecoder(bytes.NewReader(raw), tc.hash.New())
+			err = d.Decode(output)
+			assert.ErrorIs(t, err, ErrInvalidChecksum)
+
+			// A skipHash decoder must accept it and recover the entries.
+			output = &Index{}
+			d = NewDecoder(bytes.NewReader(raw), tc.hash.New(), WithSkipHash())
+			err = d.Decode(output)
+			require.NoError(t, err)
+
+			assert.EqualExportedValues(t, idx, output)
+		})
+	}
+}

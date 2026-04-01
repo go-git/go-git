@@ -14,9 +14,10 @@ import (
 )
 
 type IndexStorage struct {
-	dir   *dotgit.DotGit
-	h     hash.Hash
-	cache IndexCache
+	dir      *dotgit.DotGit
+	h        hash.Hash
+	cache    IndexCache
+	skipHash bool
 }
 
 func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
@@ -52,7 +53,12 @@ func (s *IndexStorage) writeIndex(idx *index.Index) (err error) {
 		}
 	}()
 
-	e := index.NewEncoder(bw, s.h)
+	var encOpts []index.Option
+	if s.skipHash {
+		encOpts = append(encOpts, index.WithSkipHash())
+	}
+
+	e := index.NewEncoder(bw, s.h, encOpts...)
 	return e.Encode(idx)
 }
 
@@ -100,7 +106,12 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 		sz = fi.Size()
 	}
 
-	d := index.NewDecoder(f, s.h)
+	var decOpts []index.Option
+	if s.skipHash {
+		decOpts = append(decOpts, index.WithSkipHash())
+	}
+
+	d := index.NewDecoder(f, s.h, decOpts...)
 	err = d.Decode(idx)
 	if err != nil {
 		return nil, err
