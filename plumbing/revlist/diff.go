@@ -43,12 +43,9 @@ func ObjectsDiff(
 	for _, h := range localCommits {
 		c, err := object.GetCommit(s, h)
 		if err != nil {
-			if !seen[h] {
-				seen[h] = true
-				result = append(result, h)
-			}
-			continue
+			return nil, fmt.Errorf("getting local commit %s: %w", h, err)
 		}
+		localSeen[h] = true
 		insertSorted(&localQueue, c)
 	}
 	for _, h := range remoteCommits {
@@ -56,6 +53,7 @@ func ObjectsDiff(
 		if err != nil {
 			continue
 		}
+		remoteSeen[h] = true
 		insertSorted(&remoteQueue, c)
 	}
 
@@ -65,15 +63,13 @@ func ObjectsDiff(
 			// Remote commit is newer or equal — pop it and mark as known.
 			rc := remoteQueue[0]
 			remoteQueue = remoteQueue[1:]
-			if remoteSeen[rc.Hash] {
-				continue
-			}
-			remoteSeen[rc.Hash] = true
 			for _, ph := range rc.ParentHashes {
-				if !remoteSeen[ph] {
-					if pc, err := object.GetCommit(s, ph); err == nil {
-						insertSorted(&remoteQueue, pc)
-					}
+				if remoteSeen[ph] {
+					continue
+				}
+				remoteSeen[ph] = true
+				if pc, err := object.GetCommit(s, ph); err == nil {
+					insertSorted(&remoteQueue, pc)
 				}
 			}
 			continue
@@ -82,10 +78,6 @@ func ObjectsDiff(
 		// Local commit is newer — pop and process it.
 		lc := localQueue[0]
 		localQueue = localQueue[1:]
-		if localSeen[lc.Hash] {
-			continue
-		}
-		localSeen[lc.Hash] = true
 
 		if remoteSeen[lc.Hash] {
 			// Boundary — remote already has this commit.
@@ -116,10 +108,12 @@ func ObjectsDiff(
 
 		// Insert parents into local queue.
 		for _, ph := range lc.ParentHashes {
-			if !localSeen[ph] {
-				if pc, err := object.GetCommit(s, ph); err == nil {
-					insertSorted(&localQueue, pc)
-				}
+			if localSeen[ph] {
+				continue
+			}
+			localSeen[ph] = true
+			if pc, err := object.GetCommit(s, ph); err == nil {
+				insertSorted(&localQueue, pc)
 			}
 		}
 	}
@@ -137,6 +131,9 @@ func collectChangedTreeObjects(
 	result *[]plumbing.Hash,
 ) error {
 	if seen[newTree.Hash] {
+		return nil
+	}
+	if oldTree != nil && newTree.Hash == oldTree.Hash {
 		return nil
 	}
 	seen[newTree.Hash] = true
