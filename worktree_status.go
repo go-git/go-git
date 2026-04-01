@@ -743,6 +743,14 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 	if err != nil {
 		return err
 	}
+	if len(entries) == 0 {
+		prefix := filepath.ToSlash(filepath.Clean(pattern)) + "/"
+		for _, e := range idx.Entries {
+			if strings.HasPrefix(e.Name, prefix) {
+				entries = append(entries, e)
+			}
+		}
+	}
 
 	for _, e := range entries {
 		file := filepath.FromSlash(e.Name)
