@@ -49,10 +49,10 @@ func BenchmarkLogWithPathFilterAndDateRange(b *testing.B) {
 
 		for i := range numCommits {
 			if i%20 == 0 {
-				require.NoError(b, util.WriteFile(wt.Filesystem, "tracked.txt", []byte(fmt.Sprintf("tracked %d\n", i)), 0o644))
+				require.NoError(b, util.WriteFile(wt.Filesystem, "tracked.txt", fmt.Appendf(nil, "tracked %d\n", i), 0o644))
 				_, err = wt.Add("tracked.txt")
 			} else {
-				require.NoError(b, util.WriteFile(wt.Filesystem, "noise.txt", []byte(fmt.Sprintf("noise %d\n", i)), 0o644))
+				require.NoError(b, util.WriteFile(wt.Filesystem, "noise.txt", fmt.Appendf(nil, "noise %d\n", i), 0o644))
 				_, err = wt.Add("noise.txt")
 			}
 			require.NoError(b, err)
@@ -97,7 +97,7 @@ func BenchmarkLogWithPathFilterAndDateRange(b *testing.B) {
 		require.NoError(b, err)
 
 		for i := range numCommits {
-			require.NoError(b, util.WriteFile(wt.Filesystem, "tracked.txt", []byte(fmt.Sprintf("tracked %d\n", i)), 0o644))
+			require.NoError(b, util.WriteFile(wt.Filesystem, "tracked.txt", fmt.Appendf(nil, "tracked %d\n", i), 0o644))
 			_, err = wt.Add("tracked.txt")
 			require.NoError(b, err)
 
