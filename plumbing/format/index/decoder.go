@@ -288,7 +288,9 @@ func (d *Decoder) readExtensions(idx *Index) error {
 	peekLen := 4 + 4 + d.hash.Size()
 
 	for {
-		expected = d.hash.Sum(nil)
+		if !d.skipHash {
+			expected = d.hash.Sum(nil)
+		}
 		peeked, err = d.buf.Peek(peekLen)
 		if len(peeked) < peekLen {
 			trace.Internal.Printf("index: decode peeked %d bytes, less than minimum %d; done reading extensions", len(peeked), peekLen)
@@ -305,7 +307,9 @@ func (d *Decoder) readExtensions(idx *Index) error {
 		}
 	}
 
-	trace.Internal.Printf("index: verifying checksum, expected %x", expected)
+	if !d.skipHash {
+		trace.Internal.Printf("index: verifying checksum, expected %x", expected)
+	}
 	return d.readChecksum(expected)
 }
 
