@@ -53,9 +53,9 @@ func (s *IndexStorage) writeIndex(idx *index.Index) (err error) {
 		}
 	}()
 
-	var encOpts []index.EncoderOption
+	var encOpts []index.Option
 	if s.skipHash {
-		encOpts = append(encOpts, index.WithSkipHashEncoder())
+		encOpts = append(encOpts, index.WithSkipHash())
 	}
 
 	e := index.NewEncoder(bw, s.h, encOpts...)
@@ -106,7 +106,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 		sz = fi.Size()
 	}
 
-	var decOpts []index.DecoderOption
+	var decOpts []index.Option
 	if s.skipHash {
 		decOpts = append(decOpts, index.WithSkipHash())
 	}

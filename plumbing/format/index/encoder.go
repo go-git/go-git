@@ -29,26 +29,16 @@ type Encoder struct {
 	skipHash  bool
 }
 
-// EncoderOption configures an Encoder.
-type EncoderOption func(*Encoder)
-
-// WithSkipHashEncoder disables checksum computation when encoding the index.
-// The trailing checksum is written as all zeros, matching git's
-// index.skipHash behaviour (git 2.40+).
-func WithSkipHashEncoder() EncoderOption {
-	return func(e *Encoder) {
-		e.skipHash = true
-	}
-}
-
 // NewEncoder returns a new encoder that writes to w.
-func NewEncoder(w io.Writer, h hash.Hash, opts ...EncoderOption) *Encoder {
-	e := &Encoder{
-		hash: h,
+func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
+	var cfg options
+	for _, o := range opts {
+		o(&cfg)
 	}
 
-	for _, o := range opts {
-		o(e)
+	e := &Encoder{
+		hash:     h,
+		skipHash: cfg.skipHash,
 	}
 
 	if e.skipHash {

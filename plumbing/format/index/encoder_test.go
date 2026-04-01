@@ -253,7 +253,7 @@ func TestEncodeSkipHash(t *testing.T) {
 			}
 
 			buf := bytes.NewBuffer(nil)
-			e := NewEncoder(buf, tc.hash.New(), WithSkipHashEncoder())
+			e := NewEncoder(buf, tc.hash.New(), WithSkipHash())
 			err := e.Encode(idx)
 			require.NoError(t, err)
 

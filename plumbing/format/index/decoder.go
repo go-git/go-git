@@ -51,30 +51,19 @@ type Decoder struct {
 	extReader *bufio.Reader
 }
 
-// DecoderOption configures a Decoder.
-type DecoderOption func(*Decoder)
-
-// WithSkipHash disables checksum verification when decoding the index.
-// This corresponds to git's index.skipHash configuration (git 2.40+),
-// where git writes an all-zero checksum for performance on large
-// repositories and skips verification on read.
-func WithSkipHash() DecoderOption {
-	return func(d *Decoder) {
-		d.skipHash = true
-	}
-}
-
 // NewDecoder returns a new decoder that reads from r.
-func NewDecoder(r io.Reader, h hash.Hash, opts ...DecoderOption) *Decoder {
+func NewDecoder(r io.Reader, h hash.Hash, opts ...Option) *Decoder {
+	var cfg options
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	buf := bufio.NewReader(r)
 	d := &Decoder{
 		buf:       buf,
 		hash:      h,
+		skipHash:  cfg.skipHash,
 		extReader: bufio.NewReader(nil),
-	}
-
-	for _, o := range opts {
-		o(d)
 	}
 
 	if d.skipHash {
