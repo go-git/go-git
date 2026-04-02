@@ -2,7 +2,6 @@ package revlist
 
 import (
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 
@@ -491,11 +490,4 @@ func BenchmarkObjectsDiff(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-}
-
-// sortHashes sorts a slice of hashes lexicographically for comparison.
-func sortHashes(hs []plumbing.Hash) {
-	sort.Slice(hs, func(i, j int) bool {
-		return hs[i].String() < hs[j].String()
-	})
 }
