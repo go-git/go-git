@@ -1190,6 +1190,24 @@ func (s *RepositorySuite) TestDeleteBranch() {
 	s.ErrorIs(err, ErrBranchNotFound)
 }
 
+func (s *RepositorySuite) TestDeleteBranchFullRefName() {
+	r, _ := Init(memory.NewStorage())
+	testBranch := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err := r.CreateBranch(testBranch)
+	s.NoError(err)
+
+	err = r.DeleteBranch("refs/heads/foo")
+	s.NoError(err)
+
+	b, err := r.Branch("foo")
+	s.ErrorIs(err, ErrBranchNotFound)
+	s.Nil(b)
+}
+
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	dir := s.T().TempDir()
 	r, err := PlainInit(dir, true)
