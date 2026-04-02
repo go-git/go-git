@@ -2283,6 +2283,39 @@ func (s *WorktreeSuite) TestAddUntracked() {
 	s.Equal(int64(3), obj.Size())
 }
 
+func (s *WorktreeSuite) TestAddAbsolutePath() {
+	dir := s.T().TempDir()
+
+	r, err := PlainInit(dir, false)
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, "foo.txt", []byte("FOO"), 0o644)
+	s.NoError(err)
+
+	absPath := filepath.Join(dir, "foo.txt")
+	_, err = w.Add(absPath)
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+
+	_, err = idx.Entry("foo.txt")
+	s.NoError(err)
+
+	_, err = idx.Entry(absPath)
+	s.Error(err)
+
+	status, err := w.Status()
+	s.NoError(err)
+
+	file := status.File("foo.txt")
+	s.Equal(Added, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
+}
+
 func (s *WorktreeSuite) TestAddCRLF() {
 	runTest := func(t *testing.T, autoCRLF string) (result []byte) {
 		r := NewRepositoryWithEmptyWorktree(fixtures.Basic().One())

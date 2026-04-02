@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -408,6 +409,17 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	}
 
 	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		root := w.Filesystem.Root()
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			return plumbing.ZeroHash, fmt.Errorf("path %q is not inside the worktree root %q: %w", path, root, err)
+		}
+		if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+			return plumbing.ZeroHash, fmt.Errorf("path %q is outside the worktree root %q", path, root)
+		}
+		path = relPath
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
