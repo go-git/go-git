@@ -17,11 +17,11 @@ require (
 	github.com/pjbgf/sha1cd v0.5.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.48.0
-	golang.org/x/net v0.51.0
-	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.41.0
-	golang.org/x/text v0.34.0
+	golang.org/x/crypto v0.49.0
+	golang.org/x/net v0.52.0
+	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.42.0
+	golang.org/x/text v0.35.0
 )
 
 require (
