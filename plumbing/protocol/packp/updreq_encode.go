@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
@@ -15,7 +14,7 @@ func (req *UpdateRequests) Encode(w io.Writer) error {
 		return err
 	}
 
-	if err := req.encodeShallow(w, req.Shallow); err != nil {
+	if err := req.encodeShallow(w); err != nil {
 		return err
 	}
 
@@ -26,16 +25,16 @@ func (req *UpdateRequests) Encode(w io.Writer) error {
 	return nil
 }
 
-func (req *UpdateRequests) encodeShallow(w io.Writer,
-	h *plumbing.Hash,
-) error {
-	if h == nil {
-		return nil
+func (req *UpdateRequests) encodeShallow(w io.Writer) error {
+	for _, h := range req.Shallows {
+		objID := []byte(h.String())
+		_, err := pktline.Writef(w, "%s%s", shallow, objID)
+		if err != nil {
+			return err
+		}
 	}
 
-	objID := []byte(h.String())
-	_, err := pktline.Writef(w, "%s%s", shallow, objID)
-	return err
+	return nil
 }
 
 func (req *UpdateRequests) encodeCommands(w io.Writer,
