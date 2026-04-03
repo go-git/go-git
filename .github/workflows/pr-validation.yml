@@ -30,3 +30,39 @@ jobs:
           excludeTitle: 'true'
           checkAllCommitMessages: 'true'
           accessToken: ${{ secrets.GITHUB_TOKEN }}
+
+  check-dco:
+    name: Check DCO Sign-off
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Verify all commits carry Signed-off-by
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          while IFS= read -r sha; do
+            body=$(git log -1 --format="%B" "$sha")
+            if ! printf '%s\n' "$body" | grep -qE '^Signed-off-by: .+ <.+>$'; then
+              echo "MISSING sign-off: $sha $(git log -1 --format='%s' "$sha")"
+              missing=1
+            fi
+          done < <(git log --format="%H" "$BASE_SHA..$HEAD_SHA")
+          if [ "$missing" -eq 1 ]; then
+            echo ""
+            echo "One or more commits are missing a DCO Signed-off-by line."
+            echo "Fix with:"
+            echo "  git commit --amend --signoff --no-edit   # last commit"
+            echo "  git rebase --signoff HEAD~N              # last N commits"
+            echo ""
+            echo "See CONTRIBUTING.md for details."
+            exit 1
+          fi
