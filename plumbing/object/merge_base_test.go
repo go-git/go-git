@@ -73,7 +73,9 @@ type mergeBaseSuite struct {
 
 func (s *mergeBaseSuite) SetupSuite() {
 	s.Fixture = fixtures.ByTag("merge-base").One()
-	s.Storer = filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+	s.Storer = filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 }
 
 var revisionIndex = map[string]plumbing.Hash{

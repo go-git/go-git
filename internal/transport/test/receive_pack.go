@@ -137,7 +137,7 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty() {
 func (s *ReceivePackSuite) TestSendPackWithContext() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{
-		Packfile: fixture.Packfile(),
+		Packfile: s.mustPackfile(fixture),
 		Commands: []*packp.Command{
 			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 		},
@@ -298,8 +298,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 
 	if needPackfile {
 		if fixture != nil {
-			s.Require().NotNil(fixture.Packfile())
-			req.Packfile = fixture.Packfile()
+			req.Packfile = s.mustPackfile(fixture)
 		} else {
 			req.Packfile = s.emptyPackfile()
 		}
@@ -429,6 +428,13 @@ func (s *ReceivePackSuite) testSendPackDeleteReference() {
 
 	s.receivePack(s.Endpoint, req, fixture, false)
 	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.ZeroHash)
+}
+
+func (s *ReceivePackSuite) mustPackfile(fixture *fixtures.Fixture) io.ReadCloser {
+	s.T().Helper()
+	f, err := fixture.Packfile()
+	s.Require().NoError(err)
+	return f
 }
 
 func (s *ReceivePackSuite) emptyPackfile() io.ReadCloser {

@@ -41,18 +41,27 @@ func (e *errorAfterReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+func mustRev(t testing.TB, f *fixtures.Fixture) io.Reader {
+	t.Helper()
+	r, err := f.Rev()
+	require.NoError(t, err)
+	return r
+}
+
 func TestDecodeSHA256(t *testing.T) {
 	t.Parallel()
 	fixture := fixtures.ByTag("packfile-sha256").One()
-	revf := fixture.Rev()
+	revf, err := fixture.Rev()
+	require.NoError(t, err)
 	require.NotNil(t, revf)
 
-	idxf := fixture.Idx()
+	idxf, err := fixture.Idx()
+	require.NoError(t, err)
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
 	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
-	err := idec.Decode(idx)
+	err = idec.Decode(idx)
 	require.NoError(t, err)
 
 	count, err := idx.Count()
@@ -98,13 +107,13 @@ func TestDecode(t *testing.T) {
 		},
 		{
 			name:     "nil chan",
-			revFile:  fixture.Rev(),
+			revFile:  mustRev(t, fixture),
 			objCount: 6,
 			wantErr:  "nil channel",
 		},
 		{
 			name:          "shorter obj count",
-			revFile:       fixture.Rev(),
+			revFile:       mustRev(t, fixture),
 			objCount:      5,
 			packChecksum:  plumbing.NewHash("00000001407497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8"),
 			ch:            make(chan uint32),
@@ -113,7 +122,7 @@ func TestDecode(t *testing.T) {
 		},
 		{
 			name:         "longer obj count",
-			revFile:      fixture.Rev(),
+			revFile:      mustRev(t, fixture),
 			objCount:     50,
 			packChecksum: plumbing.NewHash("00"),
 			ch:           make(chan uint32),
@@ -121,7 +130,7 @@ func TestDecode(t *testing.T) {
 		},
 		{
 			name:          "wrong pack checksum",
-			revFile:       fixture.Rev(),
+			revFile:       mustRev(t, fixture),
 			objCount:      6,
 			packChecksum:  plumbing.NewHash("aa7497645643e18a7ba56c6132603f167fe9c51c00361ee0c81d74a8f55d0ee2"),
 			ch:            make(chan uint32),
@@ -131,7 +140,7 @@ func TestDecode(t *testing.T) {
 		{
 			name: "longer rev file",
 			revFile: io.MultiReader(
-				fixture.Rev(),
+				mustRev(t, fixture),
 				bytes.NewReader([]byte{0xFF}),
 			),
 			objCount:      6,
@@ -143,7 +152,7 @@ func TestDecode(t *testing.T) {
 		{
 			name: "read error at EOF check",
 			revFile: &errorAfterReader{
-				r:         fixture.Rev(),
+				r:         mustRev(t, fixture),
 				bytesLeft: 100, // rev file is 100 bytes (header + entries + checksums)
 				err:       errors.New("network error"),
 			},

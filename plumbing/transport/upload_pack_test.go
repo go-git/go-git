@@ -42,7 +42,8 @@ func (s *UploadPackSuite) TestUploadPackAdvertiseV1() {
 }
 
 func (s *UploadPackSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
-	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	upreq := packp.NewUploadRequest()
 	upreq.Capabilities.Add(capability.Sideband64k)
@@ -71,7 +72,8 @@ func (s *UploadPackSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 }
 
 func (s *UploadPackSuite) TestUploadPackSkipDeltaCompression() {
-	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	// Resolve HEAD to get a known commit hash as the want.

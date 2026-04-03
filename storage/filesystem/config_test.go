@@ -38,7 +38,9 @@ func (s *ConfigSuite) SetupTest() {
 }
 
 func (s *ConfigSuite) TestRemotes() {
-	dir := dotgit.New(fixtures.Basic().ByTag(".git").One().DotGit())
+	dotgitFs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
+	dir := dotgit.New(dotgitFs)
 	storer := &ConfigStorage{dir: dir}
 
 	cfg, err := storer.Config()

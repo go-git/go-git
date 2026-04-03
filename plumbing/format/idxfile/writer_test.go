@@ -27,18 +27,21 @@ func TestWriterSuite(t *testing.T) {
 
 func (s *WriterSuite) TestWriter() {
 	f := fixtures.Basic().One()
-	scanner := packfile.NewScanner(f.Packfile())
+	pf, err := f.Packfile()
+	s.Require().NoError(err)
+	scanner := packfile.NewScanner(pf)
 
 	obs := new(idxfile.Writer)
 	parser := packfile.NewParser(scanner, packfile.WithScannerObservers(obs))
 
-	_, err := parser.Parse()
+	_, err = parser.Parse()
 	s.NoError(err)
 
 	idx, err := obs.Index()
 	s.NoError(err)
 
-	idxFile := f.Idx()
+	idxFile, err := f.Idx()
+	s.Require().NoError(err)
 	expected, err := io.ReadAll(idxFile)
 	s.NoError(err)
 	idxFile.Close()

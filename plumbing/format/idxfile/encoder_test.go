@@ -18,7 +18,8 @@ func TestEncode(t *testing.T) {
 	t.Parallel()
 
 	fixture := fixtures.ByTag("packfile").One()
-	idxf := fixture.Idx()
+	idxf, err := fixture.Idx()
+	require.NoError(t, err)
 	require.NotNil(t, idxf)
 
 	expected, err := io.ReadAll(idxf)
@@ -143,7 +144,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			idxf := tc.fixture.Idx()
+			idxf, err := tc.fixture.Idx()
+			require.NoError(t, err)
 			require.NotNil(t, idxf)
 
 			expected, err := io.ReadAll(idxf)
@@ -168,7 +170,9 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 func TestDecodeEncode(t *testing.T) {
 	t.Parallel()
 	for _, f := range fixtures.ByTag("packfile") {
-		expected, err := io.ReadAll(f.Idx())
+		idxFile, err := f.Idx()
+		require.NoError(t, err)
+		expected, err := io.ReadAll(idxFile)
 		require.NoError(t, err)
 
 		idx := new(MemoryIndex)

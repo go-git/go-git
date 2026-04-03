@@ -53,7 +53,10 @@ func testAdvertise[T UploadPackOptions | ReceivePackOptions](
 	proto string,
 	stateless bool,
 ) *bytes.Buffer {
-	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir))
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir))
+	if err != nil {
+		t.Fatal(err)
+	}
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	opts := new(T)
 	switch o := any(opts).(type) {

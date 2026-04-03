@@ -26,7 +26,9 @@ type ChangeSuite struct {
 func (s *ChangeSuite) SetupSuite() {
 	s.Fixture = fixtures.ByURL("https://github.com/src-d/go-git.git").
 		ByTag(".git").One()
-	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
@@ -255,7 +257,9 @@ func (s *ChangeSuite) TestEmptyChangeFails() {
 func (s *ChangeSuite) TestNoFileFilemodes() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One()
 
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
 	s.NoError(err)

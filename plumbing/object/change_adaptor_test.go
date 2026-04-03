@@ -24,7 +24,9 @@ type ChangeAdaptorSuite struct {
 
 func (s *ChangeAdaptorSuite) SetupSuite() {
 	s.Fixture = fixtures.Basic().One()
-	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 

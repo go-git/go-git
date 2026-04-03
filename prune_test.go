@@ -24,9 +24,9 @@ func TestPruneSuite(t *testing.T) {
 }
 
 func (s *PruneSuite) testPrune(deleteTime time.Time) {
-	srcFs := fixtures.ByTag("unpacked").One().DotGit()
+	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	var sto storage.Storer
-	var err error
 	sto = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	los := sto.(storer.LooseObjectStorer)

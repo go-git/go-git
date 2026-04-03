@@ -3,6 +3,7 @@ package revlist
 import (
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
 
@@ -55,7 +56,9 @@ const (
 // * b029517 Initial commit
 
 func (s *RevListSuite) SetupTest() {
-	sto := filesystem.NewStorage(fixtures.Basic().One().DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
@@ -64,7 +67,9 @@ func (s *RevListSuite) TestRevListObjects_Submodules() {
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5": true,
 	}
 
-	sto := filesystem.NewStorage(fixtures.ByTag("submodule").One().DotGit(), cache.NewObjectLRUDefault())
+	subDotgit, err := fixtures.ByTag("submodule").One().DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
 
 	ref, err := storer.ResolveReference(sto, plumbing.HEAD)
 	s.NoError(err)
@@ -106,8 +111,12 @@ func (s *RevListSuite) TestRevListObjects() {
 
 func (s *RevListSuite) TestRevListObjectsTagObject() {
 	sto := filesystem.NewStorage(
-		fixtures.ByTag("tags").
-			ByURL("https://github.com/git-fixtures/tags.git").One().DotGit(), cache.NewObjectLRUDefault())
+	
+		func() billy.Filesystem {
+			d, err := fixtures.ByTag("tags").ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+			s.Require().NoError(err)
+			return d
+		}(), cache.NewObjectLRUDefault())
 
 	expected := map[string]bool{
 		"70846e9a10ef7b41064b40f07713d5b8b9a8fc73": true,
@@ -128,7 +137,12 @@ func (s *RevListSuite) TestRevListObjectsTagObject() {
 
 func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores() {
 	sto := filesystem.NewStorage(
-		fixtures.ByTag("merge-conflict").One().DotGit(),
+	
+		func() billy.Filesystem {
+			d, err := fixtures.ByTag("merge-conflict").One().DotGit()
+			s.Require().NoError(err)
+			return d
+		}(),
 		cache.NewObjectLRUDefault())
 
 	// The "merge-conflict" repo has one extra commit in it, with a
