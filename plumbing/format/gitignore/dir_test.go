@@ -357,3 +357,45 @@ func (s *MatcherSuite) TestDir_LoadSystemPatterns() {
 	s.True(m.Match([]string{"go-git.v4.iml"}, true))
 	s.True(m.Match([]string{".idea"}, true))
 }
+
+// TestDir_ReadPatterns_NestedPathIgnoreWithNegation tests that negation
+// patterns in subdirectory .gitignore files cannot override path-based
+// ignore patterns from ancestor .gitignore files. This exercises the fix
+// for https://github.com/go-git/go-git/issues/877 where a root pattern
+// like "a/b" ignores a nested directory, and a .gitignore inside that
+// directory tries to negate files with "!file".
+func (s *MatcherSuite) TestDir_ReadPatterns_NestedPathIgnoreWithNegation() {
+	fs := memfs.New()
+
+	err := fs.MkdirAll(".git/info", os.ModePerm)
+	s.NoError(err)
+
+	// Root .gitignore uses a path pattern to ignore a nested directory
+	f, err := fs.Create(".gitignore")
+	s.NoError(err)
+	_, err = f.Write([]byte("a/b\n"))
+	s.NoError(err)
+	err = f.Close()
+	s.NoError(err)
+
+	// a/b/.gitignore tries to negate a file
+	err = fs.MkdirAll("a/b", os.ModePerm)
+	s.NoError(err)
+	f, err = fs.Create("a/b/.gitignore")
+	s.NoError(err)
+	_, err = f.Write([]byte("!file\n"))
+	s.NoError(err)
+	err = f.Close()
+	s.NoError(err)
+	f, err = fs.Create("a/b/file")
+	s.NoError(err)
+	err = f.Close()
+	s.NoError(err)
+
+	ps, err := ReadPatterns(fs, nil)
+	s.NoError(err)
+
+	m := NewMatcher(ps)
+	s.True(m.Match([]string{"a", "b"}, true), "a/b should be ignored")
+	s.True(m.Match([]string{"a", "b", "file"}, false), "a/b/file should be ignored (negation in subdir cannot override parent path ignore)")
+}
