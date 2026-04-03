@@ -202,8 +202,8 @@ func TestDecodeByType(t *testing.T) {
 	for _, f := range fixtures.Basic().ByTag("packfile") {
 		for _, typ := range types {
 			idxFile, idxErr := f.Idx()
-		require.NoError(t, idxErr)
-		index := getIndexFromIdxFile(idxFile)
+			require.NoError(t, idxErr)
+			index := getIndexFromIdxFile(idxFile)
 			n, err := index.Count()
 			require.NoError(t, err)
 			require.Equal(t, int64(31), n)
@@ -317,7 +317,9 @@ func BenchmarkGetByOffset(b *testing.B) {
 	b.Run("with storage",
 		func() func(b *testing.B) {
 			pf1, err := f.Packfile()
-			if err != nil { b.Fatal(err) }
+			if err != nil {
+				b.Fatal(err)
+			}
 			return benchmarkGetByOffset(packfile.NewPackfile(pf1,
 				packfile.WithIdx(idx), packfile.WithFs(osfs.New(b.TempDir())),
 				packfile.WithCache(cache),
@@ -326,7 +328,9 @@ func BenchmarkGetByOffset(b *testing.B) {
 	b.Run("without storage",
 		func() func(b *testing.B) {
 			pf2, err := f.Packfile()
-			if err != nil { b.Fatal(err) }
+			if err != nil {
+				b.Fatal(err)
+			}
 			return benchmarkGetByOffset(packfile.NewPackfile(pf2,
 				packfile.WithCache(cache), packfile.WithIdx(idx),
 			))

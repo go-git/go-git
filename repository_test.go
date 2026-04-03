@@ -3697,8 +3697,7 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks int) {
 	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)
-	var sto storage.Storer
-	sto = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	var sto storage.Storer = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	los := sto.(storer.LooseObjectStorer)
 	s.NotNil(los)

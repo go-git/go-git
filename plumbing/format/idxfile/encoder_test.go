@@ -175,13 +175,18 @@ func TestDecodeEncode(t *testing.T) {
 		expected, err := io.ReadAll(idxFile)
 		require.NoError(t, err)
 
-		idx := new(MemoryIndex)
-		d := NewDecoder(bytes.NewBuffer(expected), hash.New(crypto.SHA1))
+		h := crypto.SHA1
+		if f.ObjectFormat == "sha256" {
+			h = crypto.SHA256
+		}
+
+		idx := NewMemoryIndex(h.Size())
+		d := NewDecoder(bytes.NewBuffer(expected), hash.New(h))
 		err = d.Decode(idx)
 		require.NoError(t, err)
 
 		result := bytes.NewBuffer(nil)
-		err = Encode(result, hash.New(crypto.SHA1), idx)
+		err = Encode(result, hash.New(h), idx)
 		require.NoError(t, err)
 
 		assert.Len(t, expected, result.Len())

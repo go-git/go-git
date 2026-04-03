@@ -211,7 +211,9 @@ func TestMemoryResolveExternalRefs(t *testing.T) {
 
 func BenchmarkParseBasic(b *testing.B) {
 	f, err := fixtures.Basic().One().Packfile()
-	if err != nil { b.Fatal(err) }
+	if err != nil {
+		b.Fatal(err)
+	}
 	scanner := packfile.NewScanner(f)
 	storage := filesystem.NewStorage(osfs.New(b.TempDir()), cache.NewObjectLRUDefault())
 
@@ -253,7 +255,9 @@ func benchmarkParseBasic(b *testing.B,
 func BenchmarkParse(b *testing.B) {
 	for _, f := range fixtures.ByTag("packfile") {
 		pff, pffErr := f.Packfile()
-		if pffErr != nil { b.Fatal(pffErr) }
+		if pffErr != nil {
+			b.Fatal(pffErr)
+		}
 		scanner := packfile.NewScanner(pff)
 
 		b.Run(f.URL, func(b *testing.B) {

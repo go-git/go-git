@@ -1066,11 +1066,11 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 
 		f := fixtures.Basic().One()
 		dotgit, dotgitErr := f.DotGit()
-	s.Require().NoError(dotgitErr)
-	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		s.Require().NoError(dotgitErr)
+		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		dstFs, dstErr := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
-	s.Require().NoError(dstErr)
+		s.Require().NoError(dstErr)
 		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 
 		newCommit := plumbing.NewHashReference(
@@ -1131,8 +1131,8 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 
 		f := fixtures.Basic().One()
 		dotgit, dotgitErr := f.DotGit()
-	s.Require().NoError(dotgitErr)
-	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		s.Require().NoError(dotgitErr)
+		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 		s.NoError(sto.SetReference(
 			plumbing.NewHashReference(
 				"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
@@ -1140,7 +1140,7 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 		))
 
 		dstFs, dstErr := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
-	s.Require().NoError(dstErr)
+		s.Require().NoError(dstErr)
 		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 		s.NoError(dstSto.SetReference(
 			plumbing.NewHashReference(

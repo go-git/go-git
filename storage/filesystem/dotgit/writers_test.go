@@ -243,8 +243,8 @@ func TestPackWriterExistingReadOnly(t *testing.T) {
 				require.NoError(t, err)
 
 				pf, pfErr := f.Packfile()
-			require.NoError(t, pfErr)
-			_, err = io.Copy(w, pf)
+				require.NoError(t, pfErr)
+				_, err = io.Copy(w, pf)
 				require.NoError(t, err)
 				require.NoError(t, w.Close())
 			}

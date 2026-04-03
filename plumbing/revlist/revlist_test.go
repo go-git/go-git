@@ -111,7 +111,7 @@ func (s *RevListSuite) TestRevListObjects() {
 
 func (s *RevListSuite) TestRevListObjectsTagObject() {
 	sto := filesystem.NewStorage(
-	
+
 		func() billy.Filesystem {
 			d, err := fixtures.ByTag("tags").ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
 			s.Require().NoError(err)
@@ -137,7 +137,7 @@ func (s *RevListSuite) TestRevListObjectsTagObject() {
 
 func (s *RevListSuite) TestRevListObjectsWithStorageForIgnores() {
 	sto := filesystem.NewStorage(
-	
+
 		func() billy.Filesystem {
 			d, err := fixtures.ByTag("merge-conflict").One().DotGit()
 			s.Require().NoError(err)

@@ -864,16 +864,21 @@ func TestDecodeAllIndexFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f, err := dotgit.Open("index")
+			fi, err := dotgit.Open("index")
 			if errors.Is(err, os.ErrNotExist) {
 				return
 			}
 
 			require.NoError(t, err)
-			defer func() { require.NoError(t, f.Close()) }()
+			defer func() { require.NoError(t, fi.Close()) }()
+
+			h := crypto.SHA1
+			if f.ObjectFormat == "sha256" {
+				h = crypto.SHA256
+			}
 
 			idx := &Index{}
-			d := NewDecoder(f, crypto.SHA1.New())
+			d := NewDecoder(fi, h.New())
 			err = d.Decode(idx)
 			require.NoError(t, err)
 

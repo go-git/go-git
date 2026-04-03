@@ -310,6 +310,7 @@ func (s *FsSuite) TestPackfileIter() {
 		fs, err := f.DotGit()
 		s.Require().NoError(err)
 		dg := dotgit.New(fs)
+		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
@@ -322,7 +323,7 @@ func (s *FsSuite) TestPackfileIter() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.Require().NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
+				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, objectIDSize)
 				s.Require().NoError(err)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -333,6 +334,13 @@ func (s *FsSuite) TestPackfileIter() {
 			}
 		}
 	}
+}
+
+func objectIDSizeFromFormat(format string) int {
+	if format == "sha256" {
+		return crypto.SHA256.Size()
+	}
+	return crypto.SHA1.Size()
 }
 
 func copyFile(fs billy.Filesystem, dstFilename string, srcFile billy.File) error {
@@ -398,6 +406,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 		s.Require().NoError(err)
 		ops := dotgit.Options{KeepDescriptors: true}
 		dg := dotgit.NewWithOptions(fs, ops)
+		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
@@ -410,7 +419,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.Require().NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, crypto.SHA1.Size())
+				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, objectIDSize)
 				s.Require().NoError(err)
 
 				if err != nil {
