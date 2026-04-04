@@ -804,6 +804,9 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	_, err := d.fs.Stat(path)
 	if err == nil {
 		err = d.fs.Remove(path)
+		if err == nil {
+			d.cleanUpEmptyRefDirs(path)
+		}
 		// Drop down to remove it from the packed refs file, too.
 	}
 
@@ -812,6 +815,25 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	}
 
 	return d.rewritePackedRefsWithoutRef(name)
+}
+
+// cleanUpEmptyRefDirs removes empty parent directories left behind after
+// deleting a loose reference file. It walks up from the deleted file's
+// parent toward the repository root, stopping as soon as a directory is
+// non-empty or at the root level. Errors are silently ignored since
+// leftover empty directories are harmless.
+func (d *DotGit) cleanUpEmptyRefDirs(refPath string) {
+	dir := filepath.Dir(refPath)
+	for dir != "." && dir != string(filepath.Separator) {
+		entries, err := d.fs.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			break
+		}
+		if err := d.fs.Remove(dir); err != nil {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
