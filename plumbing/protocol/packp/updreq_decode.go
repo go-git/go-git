@@ -130,29 +130,33 @@ func (d *updReqDecoder) scanLine() error {
 }
 
 func (d *updReqDecoder) decodeShallow() error {
-	b := bytes.TrimSuffix(d.payload, eol)
+	// Process all consecutive shallow lines
+	for {
+		b := bytes.TrimSuffix(d.payload, eol)
 
-	if !bytes.HasPrefix(b, shallowNoSp) {
-		return nil
+		if !bytes.HasPrefix(b, shallowNoSp) {
+			// Not a shallow line, exit loop
+			return nil
+		}
+
+		hashLen := len(b) - len(shallow)
+		if hashLen != sha1HexSize && hashLen != sha256HexSize {
+			return errInvalidShallowLineLength(len(b))
+		}
+
+		h, err := parseHash(string(b[len(shallow):]))
+		if err != nil {
+			return errInvalidShallowObjID(err)
+		}
+
+		// Add to shallows slice
+		d.req.Shallows = append(d.req.Shallows, h)
+
+		// Read next line for potential next shallow line
+		if err := d.readLine(errNoCommands); err != nil {
+			return err
+		}
 	}
-
-	hashLen := len(b) - len(shallow)
-	if hashLen != sha1HexSize && hashLen != sha256HexSize {
-		return errInvalidShallowLineLength(len(b))
-	}
-
-	h, err := parseHash(string(b[len(shallow):]))
-	if err != nil {
-		return errInvalidShallowObjID(err)
-	}
-
-	if err := d.readLine(errNoCommands); err != nil {
-		return err
-	}
-
-	d.req.Shallow = &h
-
-	return nil
 }
 
 func (d *updReqDecoder) decodeCommands() error {
