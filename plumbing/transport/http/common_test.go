@@ -44,7 +44,8 @@ func (s *ClientSuite) SetupSuite() {
 		"https://github.com/git-fixtures/basic",
 	)
 	s.Nil(err)
-	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
 	s.Storer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 }
 

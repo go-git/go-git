@@ -2038,7 +2038,8 @@ func (s *WorktreeSuite) TestStatusFileMode() {
 }
 
 func (s *WorktreeSuite) TestSubmodule() {
-	fs := fixtures.ByTag("submodule").One().Worktree()
+	fs, err := fixtures.ByTag("submodule").One().Worktree()
+	s.Require().NoError(err)
 	gitdir, err := fs.Chroot(GitDirName)
 	s.Require().NoError(err)
 
@@ -3171,10 +3172,11 @@ func (s *WorktreeSuite) TestMoveToExistent() {
 }
 
 func (s *WorktreeSuite) TestClean() {
-	fs := fixtures.ByTag("dirty").One().Worktree(fixtures.WithTargetDir(s.T().TempDir))
+	fs, err := fixtures.ByTag("dirty").One().Worktree(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
 
 	// Open the repo.
-	fs, err := fs.Chroot("repo")
+	fs, err = fs.Chroot("repo")
 	s.NoError(err)
 	r, err := PlainOpen(fs.Root())
 	s.Require().NoError(err)
@@ -3249,7 +3251,8 @@ func (s *WorktreeSuite) TestCleanBare() {
 
 func TestAlternatesRepo(t *testing.T) {
 	t.Parallel()
-	fs := fixtures.ByTag("alternates").One().Worktree()
+	fs, err := fixtures.ByTag("alternates").One().Worktree()
+	require.NoError(t, err)
 
 	// Open 1st repo.
 	rep1fs, err := fs.Chroot("rep1")
@@ -3680,7 +3683,8 @@ func (s *WorktreeSuite) TestAddAndCommitEmpty() {
 }
 
 func (s *WorktreeSuite) TestLinkedWorktree() {
-	fs := fixtures.ByTag("linked-worktree").One().Worktree(fixtures.WithTargetDir(s.T().TempDir))
+	fs, err := fixtures.ByTag("linked-worktree").One().Worktree(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
 
 	// Open main repo.
 	{

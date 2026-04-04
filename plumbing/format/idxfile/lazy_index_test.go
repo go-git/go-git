@@ -68,7 +68,7 @@ func (s *LazyIndexSuite) TestFindHashWithRev() {
 
 func (s *LazyIndexSuite) TestNoRev() {
 	fixture := fixtures.Basic().One()
-	openIdx := func() (ReadAtCloser, error) { return fixture.Idx(), nil }
+	openIdx := func() (ReadAtCloser, error) { return fixture.Idx() }
 	idx, err := NewLazyIndex(openIdx, nil, plumbing.NewHash(fixture.PackfileHash))
 	s.Require().Error(err)
 	s.Require().Nil(idx)
@@ -76,7 +76,7 @@ func (s *LazyIndexSuite) TestNoRev() {
 
 func (s *LazyIndexSuite) TestNoIdx() {
 	fixture := fixtures.Basic().One()
-	openRev := func() (ReadAtCloser, error) { return fixture.Rev(), nil }
+	openRev := func() (ReadAtCloser, error) { return fixture.Rev() }
 	idx, err := NewLazyIndex(nil, openRev, plumbing.NewHash(fixture.PackfileHash))
 	s.Require().Error(err)
 	s.Require().Nil(idx)
@@ -84,8 +84,8 @@ func (s *LazyIndexSuite) TestNoIdx() {
 
 func (s *LazyIndexSuite) TestPackfileHashMismatch() {
 	fixture := fixtures.Basic().One()
-	openIdx := func() (ReadAtCloser, error) { return fixture.Idx(), nil }
-	openRev := func() (ReadAtCloser, error) { return fixture.Rev(), nil }
+	openIdx := func() (ReadAtCloser, error) { return fixture.Idx() }
+	openRev := func() (ReadAtCloser, error) { return fixture.Rev() }
 	wrongHash := plumbing.NewHash("0000000000000000000000000000000000000000")
 	idx, err := NewLazyIndex(openIdx, openRev, wrongHash)
 	s.Require().Error(err)

@@ -39,6 +39,9 @@ func Loader(t testing.TB, fix *fixtures.Fixture) transport.Loader {
 	if fix == nil {
 		t.Fatal("Loader: fixture must not be nil")
 	}
-	dot := fix.DotGit(fixtures.WithMemFS())
+	dot, err := fix.DotGit(fixtures.WithMemFS())
+	if err != nil {
+		t.Fatal("Loader: DotGit failed:", err)
+	}
 	return &fixturesLoader{dot: dot}
 }

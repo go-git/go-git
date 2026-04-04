@@ -37,7 +37,9 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 2",
 			input: func() io.ReadCloser {
-				f, err := fixtures.Basic().One().DotGit().Open("index")
+				dotgit, err := fixtures.Basic().One().DotGit()
+				require.NoError(t, err)
+				f, err := dotgit.Open("index")
 				require.NoError(t, err)
 				return f
 			},
@@ -47,7 +49,9 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 2: Resolve Undo",
 			input: func() io.ReadCloser {
-				f, err := fixtures.Basic().ByTag("resolve-undo").One().DotGit().Open("index")
+				dotgit, err := fixtures.Basic().ByTag("resolve-undo").One().DotGit()
+				require.NoError(t, err)
+				f, err := dotgit.Open("index")
 				require.NoError(t, err)
 				return f
 			},
@@ -77,7 +81,9 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 2: End of Index Entry",
 			input: func() io.ReadCloser {
-				f, err := fixtures.Basic().ByTag("end-of-index-entry").One().DotGit().Open("index")
+				dotgit, err := fixtures.Basic().ByTag("end-of-index-entry").One().DotGit()
+				require.NoError(t, err)
+				f, err := dotgit.Open("index")
 				require.NoError(t, err)
 				return f
 			},
@@ -93,7 +99,9 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 3",
 			input: func() io.ReadCloser {
-				f, err := fixtures.ByTag("intent-to-add").One().DotGit().Open("index")
+				dotgit, err := fixtures.ByTag("intent-to-add").One().DotGit()
+				require.NoError(t, err)
+				f, err := dotgit.Open("index")
 				require.NoError(t, err)
 				return f
 			},
@@ -106,7 +114,9 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 4",
 			input: func() io.ReadCloser {
-				f, err := fixtures.ByTag("index-v4").One().DotGit().Open("index")
+				dotgit, err := fixtures.ByTag("index-v4").One().DotGit()
+				require.NoError(t, err)
+				f, err := dotgit.Open("index")
 				require.NoError(t, err)
 				return f
 			},
@@ -119,7 +129,9 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 2 - sha256",
 			input: func() io.ReadCloser {
-				f, err := fixtures.ByTag(".git-sha256").One().DotGit().Open("index")
+				dotgit, err := fixtures.ByTag(".git-sha256").One().DotGit()
+				require.NoError(t, err)
+				f, err := dotgit.Open("index")
 				require.NoError(t, err)
 				return f
 			},
@@ -292,7 +304,9 @@ var basicIndex = Index{
 
 func TestDecodeMergeConflict(t *testing.T) {
 	t.Parallel()
-	f, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit().Open("index")
+	dotgit, err := fixtures.Basic().ByTag("merge-conflict").One().DotGit()
+	require.NoError(t, err)
+	f, err := dotgit.Open("index")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, f.Close()) }()
 
@@ -330,7 +344,9 @@ func TestDecodeMergeConflict(t *testing.T) {
 
 func readSimpleIndex(tb testing.TB) *Index {
 	tb.Helper()
-	f, err := fixtures.Basic().One().DotGit().Open("index")
+	dotgit, err := fixtures.Basic().One().DotGit()
+	require.NoError(tb, err)
+	f, err := dotgit.Open("index")
 	require.NoError(tb, err)
 	defer func() { require.NoError(tb, f.Close()) }()
 
@@ -471,7 +487,9 @@ func TestDecodeSkipHashWithKnownAndUnknownExtensions(t *testing.T) {
 
 	// Read the basic fixture raw bytes (header + entries + TREE ext + checksum).
 	// The fixture uses SHA1.
-	f, err := fixtures.Basic().One().DotGit().Open("index")
+	dotgit, err := fixtures.Basic().One().DotGit()
+	require.NoError(t, err)
+	f, err := dotgit.Open("index")
 	require.NoError(t, err)
 	raw, err := io.ReadAll(f)
 	require.NoError(t, f.Close())
@@ -842,16 +860,25 @@ func TestDecodeAllIndexFixtures(t *testing.T) {
 
 	for i, f := range fix { //nolint: paralleltest // breaks fixtures
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			f, err := f.DotGit().Open("index")
+			dotgit, err := f.DotGit()
+			if err != nil {
+				t.Fatal(err)
+			}
+			fi, err := dotgit.Open("index")
 			if errors.Is(err, os.ErrNotExist) {
 				return
 			}
 
 			require.NoError(t, err)
-			defer func() { require.NoError(t, f.Close()) }()
+			defer func() { require.NoError(t, fi.Close()) }()
+
+			h := crypto.SHA1
+			if f.ObjectFormat == "sha256" {
+				h = crypto.SHA256
+			}
 
 			idx := &Index{}
-			d := NewDecoder(f, crypto.SHA1.New())
+			d := NewDecoder(fi, h.New())
 			err = d.Decode(idx)
 			require.NoError(t, err)
 

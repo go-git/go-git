@@ -25,7 +25,10 @@ func TestPackfileEmbedFS(t *testing.T) {
 	fixture := fixtures.Basic().One()
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
-			pack, idx := fixture.Packfile(), fixture.Idx()
+			pack, err := fixture.Packfile()
+			require.NoError(t, err)
+			idx, err := fixture.Idx()
+			require.NoError(t, err)
 			t.Cleanup(func() {
 				pack.Close()
 				idx.Close()
@@ -43,7 +46,10 @@ func TestPackfileWithFSandCache(t *testing.T) {
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
-			pack, idx := fixture.Packfile(), fixture.Idx()
+			pack, err := fixture.Packfile()
+			require.NoError(t, err)
+			idx, err := fixture.Idx()
+			require.NoError(t, err)
 			t.Cleanup(func() {
 				pack.Close()
 				idx.Close()
@@ -61,7 +67,10 @@ func TestPackfileWithFS(t *testing.T) {
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
-			pack, idx := fixture.Packfile(), fixture.Idx()
+			pack, err := fixture.Packfile()
+			require.NoError(t, err)
+			idx, err := fixture.Idx()
+			require.NoError(t, err)
 			t.Cleanup(func() {
 				pack.Close()
 				idx.Close()
@@ -77,7 +86,10 @@ func TestPackfileWithCache(t *testing.T) {
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[int64]{
 		newPackHandler: func() packHandler[int64] {
-			pack, idx := fixture.Packfile(), fixture.Idx()
+			pack, err := fixture.Packfile()
+			require.NoError(t, err)
+			idx, err := fixture.Idx()
+			require.NoError(t, err)
 			t.Cleanup(func() {
 				pack.Close()
 				idx.Close()

@@ -26,7 +26,10 @@ func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 	url := "https://github.com/git-fixtures/" + ep.Path
 	fix := fixtures.ByURL(url).One()
 	require.NotNil(f.TB, fix, "fixture not found for %s", url)
-	dot := fix.DotGit(fixtures.WithTargetDir(f.TempDir))
+	dot, err := fix.DotGit(fixtures.WithTargetDir(f.TempDir))
+	if err != nil {
+		return nil, err
+	}
 	st := filesystem.NewStorage(dot, nil)
 	return st, nil
 }
@@ -101,7 +104,10 @@ func (l *tagLoader) Load(_ *transport.Endpoint) (storage.Storer, error) {
 	fix := fixtures.ByTag(l.tag).One()
 	require.NotNil(l.TB, fix, "fixture not found for tag %s", l.tag)
 
-	dot := fix.DotGit(fixtures.WithTargetDir(l.TempDir))
+	dot, err := fix.DotGit(fixtures.WithTargetDir(l.TempDir))
+	if err != nil {
+		return nil, err
+	}
 	st := filesystem.NewStorage(dot, nil)
 
 	if l.objectFormat != "" {

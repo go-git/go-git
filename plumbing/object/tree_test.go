@@ -354,7 +354,9 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent() {
 
 func (s *TreeSuite) TestTreeDiff() {
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
-	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := f.DotGit()
+	s.Require().NoError(err)
+	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	commit, err := GetCommit(storer, plumbing.NewHash("89f8bda31d29767a6d6ba8f9d0dfb941d598e843"))
 	s.NoError(err)
 
@@ -500,8 +502,9 @@ func (s *TreeSuite) TestPatchContext_ToNil() {
 }
 
 func (s *TreeSuite) TestTreeWalkerNextSubmodule() {
-	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
-	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	dotgit2, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit2, cache.NewObjectLRUDefault())
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)

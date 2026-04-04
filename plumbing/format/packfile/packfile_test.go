@@ -22,12 +22,16 @@ func TestGet(t *testing.T) {
 	t.Parallel()
 
 	f := fixtures.Basic().One()
-	index := getIndexFromIdxFile(f.Idx())
+	idxFile, idxErr := f.Idx()
+	require.NoError(t, idxErr)
+	index := getIndexFromIdxFile(idxFile)
 	n, err := index.Count()
 	require.NoError(t, err)
 	require.Equal(t, int64(31), n)
 
-	p := packfile.NewPackfile(f.Packfile(),
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	p := packfile.NewPackfile(pf,
 		packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())),
 	)
 
@@ -51,12 +55,16 @@ func TestGetByOffset(t *testing.T) {
 	t.Parallel()
 
 	f := fixtures.Basic().One()
-	index := getIndexFromIdxFile(f.Idx())
+	idxFile, idxErr := f.Idx()
+	require.NoError(t, idxErr)
+	index := getIndexFromIdxFile(idxFile)
 	n, err := index.Count()
 	require.NoError(t, err)
 	require.Equal(t, int64(31), n)
 
-	p := packfile.NewPackfile(f.Packfile(),
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	p := packfile.NewPackfile(pf,
 		packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())),
 	)
 
@@ -75,12 +83,16 @@ func TestGetAll(t *testing.T) {
 	t.Parallel()
 
 	f := fixtures.Basic().One()
-	index := getIndexFromIdxFile(f.Idx())
+	idxFile, idxErr := f.Idx()
+	require.NoError(t, idxErr)
+	index := getIndexFromIdxFile(idxFile)
 	n, err := index.Count()
 	require.NoError(t, err)
 	require.Equal(t, int64(31), n)
 
-	p := packfile.NewPackfile(f.Packfile(),
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	p := packfile.NewPackfile(pf,
 		packfile.WithIdx(index),
 		packfile.WithFs(osfs.New(t.TempDir())))
 
@@ -115,12 +127,16 @@ func TestDecode(t *testing.T) {
 	assert.Greater(t, len(packfiles), 0)
 
 	for _, f := range packfiles {
-		index := getIndexFromIdxFile(f.Idx())
+		idxFile, idxErr := f.Idx()
+		require.NoError(t, idxErr)
+		index := getIndexFromIdxFile(idxFile)
 		n, err := index.Count()
 		require.NoError(t, err)
 		require.Equal(t, int64(31), n)
 
-		p := packfile.NewPackfile(f.Packfile(),
+		pf, pfErr := f.Packfile()
+		require.NoError(t, pfErr)
+		p := packfile.NewPackfile(pf,
 			packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())),
 		)
 
@@ -140,12 +156,16 @@ func TestDecodeByTypeRefDelta(t *testing.T) {
 
 	f := fixtures.Basic().ByTag("ref-delta").One()
 
-	index := getIndexFromIdxFile(f.Idx())
+	idxFile, idxErr := f.Idx()
+	require.NoError(t, idxErr)
+	index := getIndexFromIdxFile(idxFile)
 	n, err := index.Count()
 	require.NoError(t, err)
 	require.Equal(t, int64(31), n)
 
-	packfile := packfile.NewPackfile(f.Packfile(),
+	pff, pffErr := f.Packfile()
+	require.NoError(t, pffErr)
+	packfile := packfile.NewPackfile(pff,
 		packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())))
 
 	iter, err := packfile.GetByType(plumbing.CommitObject)
@@ -181,12 +201,16 @@ func TestDecodeByType(t *testing.T) {
 
 	for _, f := range fixtures.Basic().ByTag("packfile") {
 		for _, typ := range types {
-			index := getIndexFromIdxFile(f.Idx())
+			idxFile, idxErr := f.Idx()
+			require.NoError(t, idxErr)
+			index := getIndexFromIdxFile(idxFile)
 			n, err := index.Count()
 			require.NoError(t, err)
 			require.Equal(t, int64(31), n)
 
-			packfile := packfile.NewPackfile(f.Packfile(),
+			pff, pffErr := f.Packfile()
+			require.NoError(t, pffErr)
+			packfile := packfile.NewPackfile(pff,
 				packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())),
 			)
 			defer packfile.Close()
@@ -207,12 +231,16 @@ func TestDecodeByTypeConstructor(t *testing.T) {
 	t.Parallel()
 
 	f := fixtures.Basic().ByTag("packfile").One()
-	index := getIndexFromIdxFile(f.Idx())
+	idxFile, idxErr := f.Idx()
+	require.NoError(t, idxErr)
+	index := getIndexFromIdxFile(idxFile)
 	n, err := index.Count()
 	require.NoError(t, err)
 	require.Equal(t, int64(31), n)
 
-	packfile := packfile.NewPackfile(f.Packfile(),
+	pff, pffErr := f.Packfile()
+	require.NoError(t, pffErr)
+	packfile := packfile.NewPackfile(pff,
 		packfile.WithIdx(index), packfile.WithFs(osfs.New(t.TempDir())),
 	)
 	defer packfile.Close()
@@ -243,12 +271,16 @@ func TestSize(t *testing.T) {
 
 	f := fixtures.Basic().ByTag("ref-delta").One()
 
-	index := getIndexFromIdxFile(f.Idx())
+	idxFile, idxErr := f.Idx()
+	require.NoError(t, idxErr)
+	index := getIndexFromIdxFile(idxFile)
 	n, err := index.Count()
 	require.NoError(t, err)
 	require.Equal(t, int64(31), n)
 
-	packfile := packfile.NewPackfile(f.Packfile(),
+	pff, pffErr := f.Packfile()
+	require.NoError(t, pffErr)
+	packfile := packfile.NewPackfile(pff,
 		packfile.WithIdx(index),
 		packfile.WithFs(osfs.New(t.TempDir())),
 	)
@@ -275,18 +307,34 @@ func BenchmarkGetByOffset(b *testing.B) {
 	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
 
 	cache := cache.NewObjectLRUDefault()
-	err := idxfile.NewDecoder(f.Idx(), hash.New(crypto.SHA1)).Decode(idx)
+	idxFF, idxFFErr := f.Idx()
+	if idxFFErr != nil {
+		b.Fatal(idxFFErr)
+	}
+	err := idxfile.NewDecoder(idxFF, hash.New(crypto.SHA1)).Decode(idx)
 	require.NoError(b, err)
 
 	b.Run("with storage",
-		benchmarkGetByOffset(packfile.NewPackfile(f.Packfile(),
-			packfile.WithIdx(idx), packfile.WithFs(osfs.New(b.TempDir())),
-			packfile.WithCache(cache),
-		)))
+		func() func(b *testing.B) {
+			pf1, err := f.Packfile()
+			if err != nil {
+				b.Fatal(err)
+			}
+			return benchmarkGetByOffset(packfile.NewPackfile(pf1,
+				packfile.WithIdx(idx), packfile.WithFs(osfs.New(b.TempDir())),
+				packfile.WithCache(cache),
+			))
+		}())
 	b.Run("without storage",
-		benchmarkGetByOffset(packfile.NewPackfile(f.Packfile(),
-			packfile.WithCache(cache), packfile.WithIdx(idx),
-		)))
+		func() func(b *testing.B) {
+			pf2, err := f.Packfile()
+			if err != nil {
+				b.Fatal(err)
+			}
+			return benchmarkGetByOffset(packfile.NewPackfile(pf2,
+				packfile.WithCache(cache), packfile.WithIdx(idx),
+			))
+		}())
 }
 
 func benchmarkGetByOffset(p *packfile.Packfile) func(b *testing.B) {

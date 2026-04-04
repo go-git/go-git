@@ -29,7 +29,9 @@ func BenchmarkNewObjectPack(b *testing.B) {
 		w, err := newPackWrite(fs, config.SHA1, false)
 
 		require.NoError(b, err)
-		_, err = io.Copy(w, f.Packfile())
+		pf, pfErr := f.Packfile()
+		require.NoError(b, pfErr)
+		_, err = io.Copy(w, pf)
 
 		require.NoError(b, err)
 		require.NoError(b, w.Close())
@@ -47,7 +49,9 @@ func TestNewObjectPack(t *testing.T) {
 	w, err := dot.NewObjectPack()
 	require.NoError(t, err)
 
-	_, err = io.Copy(w, f.Packfile())
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	_, err = io.Copy(w, pf)
 	require.NoError(t, err)
 
 	require.NoError(t, w.Close())
@@ -63,11 +67,11 @@ func TestNewObjectPack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1940), stat.Size())
 
-	pf, err := fs.Open(pfPath)
+	pf2, err := fs.Open(pfPath)
 	assert.NoError(t, err)
 
 	objFound := false
-	pfs := packfile.NewScanner(pf)
+	pfs := packfile.NewScanner(pf2)
 	for pfs.Scan() {
 		data := pfs.Data()
 		if data.Section != packfile.ObjectSection {
@@ -78,7 +82,7 @@ func TestNewObjectPack(t *testing.T) {
 		assert.NotNil(t, data.Value())
 	}
 
-	assert.NoError(t, pf.Close())
+	assert.NoError(t, pf2.Close())
 	assert.True(t, objFound)
 }
 
@@ -186,7 +190,9 @@ func TestPackWriterPermissions(t *testing.T) {
 			w, err := dot.NewObjectPack()
 			require.NoError(t, err)
 
-			_, err = io.Copy(w, f.Packfile())
+			pf, pfErr := f.Packfile()
+			require.NoError(t, pfErr)
+			_, err = io.Copy(w, pf)
 			require.NoError(t, err)
 
 			require.NoError(t, w.Close())
@@ -236,7 +242,9 @@ func TestPackWriterExistingReadOnly(t *testing.T) {
 				w, err := dot.NewObjectPack()
 				require.NoError(t, err)
 
-				_, err = io.Copy(w, f.Packfile())
+				pf, pfErr := f.Packfile()
+				require.NoError(t, pfErr)
+				_, err = io.Copy(w, pf)
 				require.NoError(t, err)
 				require.NoError(t, w.Close())
 			}
@@ -310,7 +318,9 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			w, err := dot.NewObjectPack()
 			require.NoError(t, err)
 
-			_, err = io.Copy(w, f.Packfile())
+			pf, pfErr := f.Packfile()
+			require.NoError(t, pfErr)
+			_, err = io.Copy(w, pf)
 			require.NoError(t, err)
 
 			err = w.Close()

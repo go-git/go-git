@@ -29,9 +29,11 @@ func TestIdxfileSuite(t *testing.T) {
 func (s *IdxfileSuite) TestDecode() {
 	f := fixtures.Basic().One()
 
-	d := NewDecoder(f.Idx(), hash.New(crypto.SHA1))
+	idxf, err := f.Idx()
+	s.Require().NoError(err)
+	d := NewDecoder(idxf, hash.New(crypto.SHA1))
 	idx := new(MemoryIndex)
-	err := d.Decode(idx)
+	err = d.Decode(idx)
 	s.NoError(err)
 
 	count, _ := idx.Count()
@@ -122,7 +124,11 @@ ch2xUA==
 
 func BenchmarkDecode(b *testing.B) {
 	f := fixtures.Basic().One()
-	fixture, err := io.ReadAll(f.Idx())
+	idxFile, idxErr := f.Idx()
+	if idxErr != nil {
+		b.Errorf("unexpected error getting idx: %s", idxErr)
+	}
+	fixture, err := io.ReadAll(idxFile)
 	if err != nil {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
@@ -141,7 +147,8 @@ func BenchmarkDecode(b *testing.B) {
 func TestDecodeErrors(t *testing.T) {
 	t.Parallel()
 
-	idx := fixtures.Basic().One().Idx()
+	idx, err := fixtures.Basic().One().Idx()
+	require.NoError(t, err)
 	t.Cleanup(func() { idx.Close() })
 	validIdx, err := io.ReadAll(idx)
 	require.NoError(t, err)

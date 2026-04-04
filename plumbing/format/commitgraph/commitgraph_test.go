@@ -83,12 +83,16 @@ func testDecodeHelper(s *CommitgraphSuite, index commitgraph.Index) {
 
 func (s *CommitgraphSuite) TestDecodeMultiChain() {
 	for _, f := range fixtures.ByTag("commit-graph-chain-2") {
-		dotgit := f.DotGit()
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
 		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
 		s.Require().NoError(err)
 		defer index.Close()
-		storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-		p := f.Packfile()
+		dotgit2, err := f.DotGit()
+		s.Require().NoError(err)
+		storer := filesystem.NewStorage(dotgit2, cache.NewObjectLRUDefault())
+		p, err := f.Packfile()
+		s.Require().NoError(err)
 		defer p.Close()
 
 		err = packfile.UpdateObjectStorage(storer, p)
@@ -116,7 +120,8 @@ func (s *CommitgraphSuite) TestDecodeMultiChain() {
 
 func (s *CommitgraphSuite) TestDecode() {
 	for _, f := range fixtures.ByTag("commit-graph") {
-		dotgit := f.DotGit()
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
 		index := testReadIndex(s, dotgit, dotgit.Join("objects", "info", "commit-graph"))
 		defer index.Close()
 		testDecodeHelper(s, index)
@@ -125,7 +130,8 @@ func (s *CommitgraphSuite) TestDecode() {
 
 func (s *CommitgraphSuite) TestDecodeChain() {
 	for _, f := range fixtures.ByTag("commit-graph") {
-		dotgit := f.DotGit()
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
 		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
 		s.Require().NoError(err)
 		defer index.Close()
@@ -133,7 +139,8 @@ func (s *CommitgraphSuite) TestDecodeChain() {
 	}
 
 	for _, f := range fixtures.ByTag("commit-graph-chain") {
-		dotgit := f.DotGit()
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
 		index, err := commitgraph.OpenChainOrFileIndex(dotgit)
 		s.Require().NoError(err)
 		defer index.Close()
@@ -143,7 +150,8 @@ func (s *CommitgraphSuite) TestDecodeChain() {
 
 func (s *CommitgraphSuite) TestReencode() {
 	for _, f := range fixtures.ByTag("commit-graph") {
-		dotgit := f.DotGit()
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
 
 		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
 		s.Require().NoError(err)
@@ -170,7 +178,8 @@ func (s *CommitgraphSuite) TestReencode() {
 
 func (s *CommitgraphSuite) TestReencodeInMemory() {
 	for _, f := range fixtures.ByTag("commit-graph") {
-		dotgit := f.DotGit()
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
 
 		reader, err := dotgit.Open(dotgit.Join("objects", "info", "commit-graph"))
 		s.Require().NoError(err)

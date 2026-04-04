@@ -36,7 +36,8 @@ func TestFsSuite(t *testing.T) {
 }
 
 func (s *FsSuite) TestGetFromObjectFile() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
@@ -47,7 +48,8 @@ func (s *FsSuite) TestGetFromObjectFile() {
 
 func (s *FsSuite) TestGetFromPackfile() {
 	for _, f := range fixtures.Basic().ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -68,7 +70,8 @@ func firstNonMatching(packfileHash string) *fixtures.Fixture {
 
 func (s *FsSuite) TestMismatchIdxFile() {
 	f := fixtures.Basic().ByTag(".git").One()
-	fs := f.DotGit()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	fix2 := firstNonMatching(f.PackfileHash)
@@ -77,7 +80,8 @@ func (s *FsSuite) TestMismatchIdxFile() {
 	idx, err := fs.OpenFile(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash), os.O_TRUNC|os.O_WRONLY, 0o600)
 	s.Require().NoError(err)
 
-	idx2 := fix2.Idx()
+	idx2, err := fix2.Idx()
+	s.Require().NoError(err)
 	_, err = io.Copy(idx, idx2)
 	s.Require().NoError(err)
 
@@ -94,7 +98,8 @@ func (s *FsSuite) TestMismatchIdxFile() {
 
 func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
 	for _, f := range fixtures.Basic().ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		dg := dotgit.NewWithOptions(fs, dotgit.Options{KeepDescriptors: true})
 		o := NewObjectStorageWithOptions(dg, cache.NewObjectLRUDefault(), Options{KeepDescriptors: true})
 
@@ -127,7 +132,8 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
 }
 
 func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptors() {
-	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{MaxOpenDescriptors: 1})
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
@@ -145,7 +151,8 @@ func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptors() {
 }
 
 func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold() {
-	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{
 		MaxOpenDescriptors:   1,
 		LargeObjectThreshold: 1,
@@ -166,7 +173,8 @@ func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold() {
 }
 
 func (s *FsSuite) TestGetSizeOfObjectFile() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	// Get the size of `tree_walker.go`.
@@ -178,7 +186,8 @@ func (s *FsSuite) TestGetSizeOfObjectFile() {
 
 func (s *FsSuite) TestGetSizeFromPackfile() {
 	for _, f := range fixtures.Basic().ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 		// Get the size of `binary.jpg`.
@@ -190,11 +199,12 @@ func (s *FsSuite) TestGetSizeFromPackfile() {
 }
 
 func (s *FsSuite) TestGetSizeOfAllObjectFiles() {
-	fs := fixtures.ByTag(".git").One().DotGit()
+	fs, err := fixtures.ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	// Get the size of `tree_walker.go`.
-	err := o.ForEachObjectHash(func(h plumbing.Hash) error {
+	err = o.ForEachObjectHash(func(h plumbing.Hash) error {
 		size, err := o.EncodedObjectSize(h)
 		s.Require().NoError(err)
 		s.NotEqual(int64(0), size)
@@ -204,7 +214,8 @@ func (s *FsSuite) TestGetSizeOfAllObjectFiles() {
 }
 
 func (s *FsSuite) TestGetFromPackfileMultiplePackfiles() {
-	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
@@ -219,7 +230,8 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfiles() {
 }
 
 func (s *FsSuite) TestGetFromPackfileMultiplePackfilesLargeObjectThreshold() {
-	fs := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{LargeObjectThreshold: 1})
 
 	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
@@ -235,7 +247,8 @@ func (s *FsSuite) TestGetFromPackfileMultiplePackfilesLargeObjectThreshold() {
 
 func (s *FsSuite) TestIter() {
 	for _, f := range fixtures.ByTag(".git").ByTag("packfile") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
@@ -254,7 +267,8 @@ func (s *FsSuite) TestIter() {
 
 func (s *FsSuite) TestIterLargeObjectThreshold() {
 	for _, f := range fixtures.ByTag(".git").ByTag("packfile") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{LargeObjectThreshold: 1})
 
 		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
@@ -274,7 +288,8 @@ func (s *FsSuite) TestIterLargeObjectThreshold() {
 func (s *FsSuite) TestIterWithType() {
 	for _, f := range fixtures.ByTag(".git") {
 		for _, t := range objectTypes {
-			fs := f.DotGit()
+			fs, err := f.DotGit()
+			s.Require().NoError(err)
 			o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 			iter, err := o.IterEncodedObjects(t)
@@ -292,8 +307,10 @@ func (s *FsSuite) TestIterWithType() {
 
 func (s *FsSuite) TestPackfileIter() {
 	for _, f := range fixtures.ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		dg := dotgit.New(fs)
+		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
@@ -306,7 +323,7 @@ func (s *FsSuite) TestPackfileIter() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.Require().NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
+				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, objectIDSize)
 				s.Require().NoError(err)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -317,6 +334,13 @@ func (s *FsSuite) TestPackfileIter() {
 			}
 		}
 	}
+}
+
+func objectIDSizeFromFormat(format string) int {
+	if format == "sha256" {
+		return crypto.SHA256.Size()
+	}
+	return crypto.SHA1.Size()
 }
 
 func copyFile(fs billy.Filesystem, dstFilename string, srcFile billy.File) error {
@@ -344,16 +368,19 @@ func (s *FsSuite) TestPackfileReindex() {
 	// obtain a standalone packfile that is not part of any other repository
 	// in the fixtures:
 	packFixture := fixtures.ByTag("packfile").ByTag("standalone").One()
-	packFile := packFixture.Packfile()
-	idxFile := packFixture.Idx()
+	packFile, err := packFixture.Packfile()
+	s.Require().NoError(err)
+	idxFile, err := packFixture.Idx()
+	s.Require().NoError(err)
 	packFilename := packFixture.PackfileHash
 	testObjectHash := plumbing.NewHash("a771b1e94141480861332fd0e4684d33071306c6") // this is an object we know exists in the standalone packfile
 	for _, f := range fixtures.ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		storer := NewStorage(fs, cache.NewObjectLRUDefault())
 
 		// check that our test object is NOT found
-		_, err := storer.EncodedObject(plumbing.CommitObject, testObjectHash)
+		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
 		s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
 		// add the external packfile+idx to the packs folder
@@ -375,9 +402,11 @@ func (s *FsSuite) TestPackfileReindex() {
 
 func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 	for _, f := range fixtures.ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		ops := dotgit.Options{KeepDescriptors: true}
 		dg := dotgit.NewWithOptions(fs, ops)
+		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
@@ -390,7 +419,7 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.Require().NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, crypto.SHA1.Size())
+				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, objectIDSize)
 				s.Require().NoError(err)
 
 				if err != nil {
@@ -415,8 +444,10 @@ func (s *FsSuite) TestPackfileIterKeepDescriptors() {
 }
 
 func (s *FsSuite) TestGetFromObjectFileSharedCache() {
-	f1 := fixtures.ByTag("worktree").One().DotGit()
-	f2 := fixtures.ByTag("worktree").ByTag("submodule").One().DotGit()
+	f1, err := fixtures.ByTag("worktree").One().DotGit()
+	s.Require().NoError(err)
+	f2, err := fixtures.ByTag("worktree").ByTag("submodule").One().DotGit()
+	s.Require().NoError(err)
 
 	ch := cache.NewObjectLRUDefault()
 	o1 := NewObjectStorage(dotgit.New(f1), ch)
@@ -433,7 +464,8 @@ func (s *FsSuite) TestGetFromObjectFileSharedCache() {
 
 func (s *FsSuite) TestHashesWithPrefix() {
 	// Same setup as TestGetFromObjectFile.
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
 	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
@@ -450,7 +482,8 @@ func (s *FsSuite) TestHashesWithPrefix() {
 func (s *FsSuite) TestHashesWithPrefixFromPackfile() {
 	// Same setup as TestGetFromPackfile
 	for _, f := range fixtures.Basic().ByTag(".git") {
-		fs := f.DotGit()
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -465,7 +498,10 @@ func (s *FsSuite) TestHashesWithPrefixFromPackfile() {
 func BenchmarkPackfileIter(b *testing.B) {
 	for _, f := range fixtures.ByTag(".git") {
 		b.Run(f.URL, func(b *testing.B) {
-			fs := f.DotGit()
+			fs, err := f.DotGit()
+			if err != nil {
+				b.Fatal(err)
+			}
 			dg := dotgit.New(fs)
 
 			for i := 0; i < b.N; i++ {
@@ -510,7 +546,10 @@ func BenchmarkPackfileIter(b *testing.B) {
 func BenchmarkPackfileIterReadContent(b *testing.B) {
 	for _, f := range fixtures.ByTag(".git") {
 		b.Run(f.URL, func(b *testing.B) {
-			fs := f.DotGit()
+			fs, err := f.DotGit()
+			if err != nil {
+				b.Fatal(err)
+			}
 			dg := dotgit.New(fs)
 
 			for i := 0; i < b.N; i++ {
@@ -565,7 +604,10 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 func BenchmarkGetObjectFromPackfile(b *testing.B) {
 	for _, f := range fixtures.Basic() {
 		b.Run(f.URL, func(b *testing.B) {
-			fs := f.DotGit()
+			fs, err := f.DotGit()
+			if err != nil {
+				b.Fatal(err)
+			}
 			o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 			for i := 0; i < b.N; i++ {
 				expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
@@ -583,7 +625,8 @@ func BenchmarkGetObjectFromPackfile(b *testing.B) {
 }
 
 func (s *FsSuite) TestGetFromUnpackedCachesObjects() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	objectCache := cache.NewObjectLRUDefault()
 	objectStorage := NewObjectStorage(dotgit.New(fs), objectCache)
 	hash := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
@@ -624,7 +667,8 @@ func (s *FsSuite) TestGetFromUnpackedCachesObjects() {
 }
 
 func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	objectCache := cache.NewObjectLRUDefault()
 	objectStorage := NewObjectStorageWithOptions(dotgit.New(fs), objectCache, Options{LargeObjectThreshold: 1})
 	hash := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
@@ -648,15 +692,17 @@ func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
 func (s *FsSuite) TestObjectStorageMultipleAlternates() {
 	baseDir := s.T().TempDir()
 
-	templateFs1 := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
-	templateFs2 := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	templateFs1, err := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	s.Require().NoError(err)
+	templateFs2, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	s.Require().NoError(err)
 
 	commitHash1 := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	commitHash2 := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 
 	workDotGit := filepath.Join(baseDir, "work", ".git")
 	alternatesDir := filepath.Join(workDotGit, "objects", "info")
-	err := os.MkdirAll(alternatesDir, 0o755)
+	err = os.MkdirAll(alternatesDir, 0o755)
 	s.Require().NoError(err)
 	alternatesContent := templateFs1.Root() + "/objects\n" + templateFs2.Root() + "/objects\n"
 	alternatesFile := filepath.Join(alternatesDir, "alternates")
@@ -685,13 +731,14 @@ func (s *FsSuite) TestObjectStorageMultipleAlternates() {
 // correctly checks alternates.
 func (s *FsSuite) TestObjectStorageAlternatesHasEncodedObject() {
 	baseDir := s.T().TempDir()
-	templateFs := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	s.Require().NoError(err)
 	commitHash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	nonExistentHash := plumbing.NewHash("0000000000000000000000000000000000000000")
 
 	workDotGit := filepath.Join(baseDir, "work", ".git")
 	alternatesDir := filepath.Join(workDotGit, "objects", "info")
-	err := os.MkdirAll(alternatesDir, 0o755)
+	err = os.MkdirAll(alternatesDir, 0o755)
 	s.Require().NoError(err)
 	alternatesFile := filepath.Join(alternatesDir, "alternates")
 	err = os.WriteFile(alternatesFile, []byte(templateFs.Root()+"/objects\n"), 0o644)
@@ -717,12 +764,13 @@ func (s *FsSuite) TestObjectStorageAlternatesHasEncodedObject() {
 // correctly checks alternates.
 func (s *FsSuite) TestObjectStorageAlternatesEncodedObjectSize() {
 	baseDir := s.T().TempDir()
-	templateFs := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	s.Require().NoError(err)
 	commitHash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	workDotGit := filepath.Join(baseDir, "work", ".git")
 	alternatesDir := filepath.Join(workDotGit, "objects", "info")
-	err := os.MkdirAll(alternatesDir, 0o755)
+	err = os.MkdirAll(alternatesDir, 0o755)
 	s.Require().NoError(err)
 	alternatesFile := filepath.Join(alternatesDir, "alternates")
 	err = os.WriteFile(alternatesFile, []byte(templateFs.Root()+"/objects\n"), 0o644)
@@ -746,7 +794,8 @@ func (s *FsSuite) TestObjectStorageAlternatesEncodedObjectSize() {
 // the cached alternate state so that subsequent lookups pick up new alternates.
 func (s *FsSuite) TestObjectStorageAlternatesReset() {
 	baseDir := s.T().TempDir()
-	templateFs := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(fixtures.WithTargetDir(func() string { return baseDir }))
+	s.Require().NoError(err)
 	commitHash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	rootFs := osfs.New(baseDir)
