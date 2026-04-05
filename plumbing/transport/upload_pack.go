@@ -21,8 +21,8 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// UploadPackOptions is a set of options for the UploadPack service.
-type UploadPackOptions struct {
+// UploadPackRequest is a set of options for the UploadPack service.
+type UploadPackRequest struct {
 	GitProtocol   string
 	AdvertiseRefs bool
 	StatelessRPC  bool
@@ -41,7 +41,7 @@ func UploadPack(
 	st storage.Storer,
 	r io.ReadCloser,
 	w io.WriteCloser,
-	opts *UploadPackOptions,
+	opts *UploadPackRequest,
 ) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
@@ -50,7 +50,7 @@ func UploadPack(
 	w = ioutil.NewContextWriteCloser(ctx, w)
 
 	if opts == nil {
-		opts = &UploadPackOptions{}
+		opts = &UploadPackRequest{}
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
@@ -65,7 +65,7 @@ func UploadPack(
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
 		}
 
-		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
+		if err := AdvertiseRefs(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
 			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
