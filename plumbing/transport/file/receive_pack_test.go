@@ -1,56 +1,46 @@
 package file
 
 import (
-	"context"
+	"net/url"
 	"path/filepath"
-	"regexp"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/plumbing/transport"
+	oldtest "github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	xtest "github.com/go-git/go-git/v6/plumbing/transport/test"
 )
 
 func TestReceivePackSuite(t *testing.T) {
 	t.Parallel()
-	suite.Run(t, &ReceivePackSuite{})
+	suite.Run(t, new(receivePackSuite))
 }
 
-type ReceivePackSuite struct {
-	test.ReceivePackSuite
+type receivePackSuite struct {
+	xtest.ReceivePackSuite
 }
 
-func (s *ReceivePackSuite) SetupSuite() {
-	s.Client = DefaultTransport
-}
+func (s *receivePackSuite) SetupTest() {
+	base := s.T().TempDir()
 
-func (s *ReceivePackSuite) SetupTest() {
-	base := filepath.Join(s.T().TempDir(), "go-git-file")
+	basicFS := oldtest.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
+	emptyFS := oldtest.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), base, "empty.git")
 
-	basic := test.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
-	empty := test.PrepareRepository(s.T(), fixtures.ByTag("empty").One(), base, "empty.git")
+	basicPath, err := filepath.Abs(basicFS.Root())
+	s.Require().NoError(err)
+	emptyPath, err := filepath.Abs(emptyFS.Root())
+	s.Require().NoError(err)
 
-	s.Endpoint, _ = transport.NewEndpoint(basic.Root())
-	s.Storer = filesystem.NewStorage(basic, cache.NewObjectLRUDefault())
+	s.Endpoint = &url.URL{Scheme: "file", Path: basicPath}
+	s.EmptyEndpoint = &url.URL{Scheme: "file", Path: emptyPath}
+	s.NonExistentEndpoint = &url.URL{Scheme: "file", Path: "/nonexistent/repo.git"}
 
-	s.EmptyEndpoint, _ = transport.NewEndpoint(empty.Root())
-	s.EmptyStorer = filesystem.NewStorage(empty, cache.NewObjectLRUDefault())
-
-	s.NonExistentEndpoint, _ = transport.NewEndpoint("/non-existent")
+	s.Storer = filesystem.NewStorage(basicFS, nil)
+	s.EmptyStorer = filesystem.NewStorage(emptyFS, nil)
 	s.NonExistentStorer = memory.NewStorage()
-}
 
-func (s *ReceivePackSuite) TestNonExistentCommand() {
-	client := DefaultTransport
-	session, err := client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.NoError(err)
-	conn, err := session.Handshake(context.TODO(), transport.Service("git-fake-command"))
-	s.Regexp(regexp.MustCompile(".*(no such file or directory|file does not exist)*."), err)
-	s.Nil(conn)
-	s.Error(err)
+	s.Transport = NewTransport(Options{})
 }
