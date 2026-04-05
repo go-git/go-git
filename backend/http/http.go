@@ -179,14 +179,14 @@ func serviceRPC(w http.ResponseWriter, r *http.Request) {
 	switch svc {
 	case transport.UploadPackService:
 		err = transport.UploadPack(ctx, st, reader, frw,
-			&transport.UploadPackOptions{
+			&transport.UploadPackRequest{
 				GitProtocol:   version,
 				AdvertiseRefs: false,
 				StatelessRPC:  true,
 			})
 	case transport.ReceivePackService:
 		err = transport.ReceivePack(ctx, st, reader, frw,
-			&transport.ReceivePackOptions{
+			&transport.ReceivePackRequest{
 				GitProtocol:   version,
 				AdvertiseRefs: false,
 				StatelessRPC:  true,
@@ -283,7 +283,7 @@ func getInfoRefs(w http.ResponseWriter, r *http.Request) {
 		switch service {
 		case transport.UploadPackService:
 			err = transport.UploadPack(ctx, st, nil, ioutil.WriteNopCloser(w),
-				&transport.UploadPackOptions{
+				&transport.UploadPackRequest{
 					GitProtocol:   version,
 					AdvertiseRefs: true,
 					StatelessRPC:  true,
@@ -291,7 +291,7 @@ func getInfoRefs(w http.ResponseWriter, r *http.Request) {
 			)
 		case transport.ReceivePackService:
 			err = transport.ReceivePack(ctx, st, nil, ioutil.WriteNopCloser(w),
-				&transport.ReceivePackOptions{
+				&transport.ReceivePackRequest{
 					GitProtocol:   version,
 					AdvertiseRefs: true,
 					StatelessRPC:  true,

@@ -4,12 +4,13 @@ package git
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // DefaultPort is the default port for the git protocol.
@@ -36,6 +37,7 @@ func NewTransport(opts Options) *Transport {
 	return &Transport{opts: opts}
 }
 
+// Connect opens a raw connection to the Git protocol server.
 func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
 	host := req.URL.Hostname()
 	port := req.URL.Port()
@@ -53,7 +55,7 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 		dialFn = t.opts.DialProxy(dialFn)
 	}
 
-	conn, err := dialFn(ctx, "tcp", addr)
+	nc, err := dialFn(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -68,10 +70,21 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 		proto.ExtraParams = append(proto.ExtraParams, gp)
 	}
 
-	if err := proto.Encode(conn); err != nil {
-		_ = conn.Close()
+	if err := proto.Encode(nc); err != nil {
+		_ = nc.Close()
 		return nil, fmt.Errorf("git: encode proto request: %w", err)
 	}
 
-	return transport.NewConn(conn, ioutil.WriteNopCloser(conn), conn.Close), nil
+	return &gitConn{nc: nc}, nil
 }
+
+// gitConn implements transport.Conn over a TCP connection.
+type gitConn struct {
+	nc net.Conn
+}
+
+var _ transport.Conn = (*gitConn)(nil)
+
+func (c *gitConn) Reader() io.Reader      { return c.nc }
+func (c *gitConn) Writer() io.WriteCloser { return ioutil.WriteNopCloser(c.nc) }
+func (c *gitConn) Close() error           { return c.nc.Close() }

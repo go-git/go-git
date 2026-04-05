@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // ServerFunc is a function that runs a git server-side command over pipes.
@@ -53,12 +53,13 @@ func NewTransport(opts Options) *Transport {
 	}
 }
 
+// Connect opens a raw connection to the file transport process.
 func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
 	sr, pw, closeAll, err := t.connect(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	return transport.NewConn(sr, pw, closeAll), nil
+	return &fileConn{r: sr, w: pw, close: closeAll}, nil
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Reader, *io.PipeWriter, func() error, error) {
@@ -93,12 +94,15 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 	return sr, pw, closeAll, nil
 }
 
-type streamConn struct {
-	io.Reader
-	io.Writer
-	closeFunc func() error
+// fileConn implements transport.Conn over in-process pipes.
+type fileConn struct {
+	r     io.Reader
+	w     io.WriteCloser
+	close func() error
 }
 
-func (c *streamConn) Close() error {
-	return c.closeFunc()
-}
+var _ transport.Conn = (*fileConn)(nil)
+
+func (c *fileConn) Reader() io.Reader      { return c.r }
+func (c *fileConn) Writer() io.WriteCloser { return c.w }
+func (c *fileConn) Close() error           { return c.close() }

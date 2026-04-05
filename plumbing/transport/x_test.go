@@ -16,7 +16,7 @@ func TestConn(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	rwc := &pipeRWC{Reader: pr, Writer: pw}
-	s := NewConn(pr, pw, rwc.Close)
+	s := &testConn{r: pr, w: pw, close: rwc.Close}
 
 	go func() {
 		_, err := s.Writer().Write([]byte("hello"))
@@ -53,6 +53,7 @@ func TestRequest(t *testing.T) {
 	assert.Equal(t, "ssh", req.URL.Scheme)
 	assert.Equal(t, "/foo/bar.git", req.URL.Path)
 	assert.Equal(t, "git-upload-pack", req.Command)
+	assert.Equal(t, []string{"download"}, req.Args)
 	assert.Equal(t, protocol.V2, req.Protocol)
 }
 
@@ -74,3 +75,13 @@ func (p *pipeRWC) Close() error {
 	}
 	return nil
 }
+
+type testConn struct {
+	r     io.Reader
+	w     io.WriteCloser
+	close func() error
+}
+
+func (c *testConn) Reader() io.Reader      { return c.r }
+func (c *testConn) Writer() io.WriteCloser { return c.w }
+func (c *testConn) Close() error           { return c.close() }

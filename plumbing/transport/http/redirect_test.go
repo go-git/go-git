@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/storage/filesystem"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
 func TestRedirectPath(t *testing.T) {

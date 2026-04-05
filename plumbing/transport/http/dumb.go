@@ -23,9 +23,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 func (s *dumbPackSession) fetchDumb(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {

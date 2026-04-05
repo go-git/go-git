@@ -15,8 +15,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
-	"github.com/go-git/go-git/v6/storage"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage"
 )
 
 // Handshake implements transport.Transport. GETs /info/refs to discover
@@ -67,7 +67,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	}
 
 	// Update base URL if the server redirected.
-	baseURL = applyRedirect(resp, baseURL)
+	_ = applyRedirect(resp, baseURL)
 
 	if forceDumb {
 		return handshakeDumb(resp, req, client, t.opts.Authorizer)
@@ -83,7 +83,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 }
 
 func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
 	_, prefix, err := pktline.PeekLine(rd)
@@ -127,7 +127,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 }
 
 func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
 	var infoRefs packp.InfoRefs

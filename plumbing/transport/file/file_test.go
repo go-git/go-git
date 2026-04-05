@@ -2,15 +2,14 @@ package file
 
 import (
 	"context"
-	"io"
 	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/memory"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 func TestFileTransport_Open(t *testing.T) {
@@ -93,8 +92,8 @@ func TestFileTransport_ImplementsConnectable(t *testing.T) {
 
 	tr := NewTransport(Options{})
 
-	_, ok := interface{}(tr).(transport.Connectable)
+	_, ok := any(tr).(transport.Connectable)
 	assert.True(t, ok)
 }
 
-var _ io.ReadWriteCloser = (*streamConn)(nil)
+var _ transport.Conn = (*fileConn)(nil)

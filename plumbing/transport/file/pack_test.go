@@ -1,16 +1,12 @@
-package ssh
+package file
 
 import (
-	"context"
-	"fmt"
-	"net"
 	"net/url"
 	"path/filepath"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/suite"
-	stdssh "golang.org/x/crypto/ssh"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -19,45 +15,37 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-type sshPackEnv struct {
+type filePackEnv struct {
 	Endpoint, EmptyEndpoint, NonExistentEndpoint *url.URL
 	Storer, EmptyStorer, NonExistentStorer       storage.Storer
 	Transport                                    transport.Transport
 }
 
-func setupSSHPackEnv(t testing.TB) sshPackEnv {
+func setupFilePackEnv(t testing.TB) filePackEnv {
 	t.Helper()
-	addr := startSSHServer(t.(*testing.T))
 	base := t.TempDir()
 
 	basicFS := test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
 	emptyFS := test.PrepareRepository(t, fixtures.ByTag("empty").One(), base, "empty.git")
 
-	basicPath := filepath.ToSlash(basicFS.Root())
-	emptyPath := filepath.ToSlash(emptyFS.Root())
+	basicPath, err := filepath.Abs(basicFS.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyPath, err := filepath.Abs(emptyFS.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	host := formatSSHHost(addr)
-	return sshPackEnv{
-		Endpoint:            &url.URL{Scheme: "ssh", User: url.User("git"), Host: host, Path: basicPath},
-		EmptyEndpoint:       &url.URL{Scheme: "ssh", User: url.User("git"), Host: host, Path: emptyPath},
-		NonExistentEndpoint: &url.URL{Scheme: "ssh", User: url.User("git"), Host: host, Path: "/nonexistent/repo.git"},
+	return filePackEnv{
+		Endpoint:            &url.URL{Scheme: "file", Path: basicPath},
+		EmptyEndpoint:       &url.URL{Scheme: "file", Path: emptyPath},
+		NonExistentEndpoint: &url.URL{Scheme: "file", Path: "/nonexistent/repo.git"},
 		Storer:              filesystem.NewStorage(basicFS, nil),
 		EmptyStorer:         filesystem.NewStorage(emptyFS, nil),
 		NonExistentStorer:   memory.NewStorage(),
-		Transport: NewTransport(Options{
-			ClientConfig: func(_ context.Context, _ *transport.Request) (*stdssh.ClientConfig, error) {
-				return &stdssh.ClientConfig{
-					User:            "git",
-					Auth:            []stdssh.AuthMethod{stdssh.Password("")},
-					HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
-				}, nil
-			},
-		}),
+		Transport:           NewTransport(Options{}),
 	}
-}
-
-func formatSSHHost(addr *net.TCPAddr) string {
-	return fmt.Sprintf("localhost:%d", addr.Port)
 }
 
 func TestUploadPackSuite(t *testing.T) {
@@ -70,7 +58,7 @@ type uploadPackSuite struct {
 }
 
 func (s *uploadPackSuite) SetupTest() {
-	env := setupSSHPackEnv(s.T())
+	env := setupFilePackEnv(s.T())
 	s.Endpoint = env.Endpoint
 	s.EmptyEndpoint = env.EmptyEndpoint
 	s.NonExistentEndpoint = env.NonExistentEndpoint
@@ -90,7 +78,7 @@ type receivePackSuite struct {
 }
 
 func (s *receivePackSuite) SetupTest() {
-	env := setupSSHPackEnv(s.T())
+	env := setupFilePackEnv(s.T())
 	s.Endpoint = env.Endpoint
 	s.EmptyEndpoint = env.EmptyEndpoint
 	s.NonExistentEndpoint = env.NonExistentEndpoint

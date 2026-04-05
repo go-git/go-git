@@ -13,10 +13,9 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
+	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
-	xtest "github.com/go-git/go-git/v6/plumbing/transport/test"
 )
 
 func setupDumbServer(t testing.TB) (base string, addr *net.TCPAddr) {
@@ -60,7 +59,7 @@ func (w *noSendFileResponseWriter) Write(p []byte) (int, error) {
 }
 
 type dumbUploadPackSuite struct {
-	xtest.UploadPackSuite
+	test.UploadPackSuite
 }
 
 func TestDumbUploadPackSuite(t *testing.T) {
@@ -89,7 +88,7 @@ func (s *dumbUploadPackSuite) SetupTest() {
 }
 
 func (*dumbUploadPackSuite) TestDefaultBranch()                         {}
-func (*dumbUploadPackSuite) TestAdvertisedReferencesEmpty()              {}
+func (*dumbUploadPackSuite) TestAdvertisedReferencesEmpty()             {}
 func (*dumbUploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {}
 func (*dumbUploadPackSuite) TestCapabilities()                          {}
 func (*dumbUploadPackSuite) TestUploadPack()                            {}

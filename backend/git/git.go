@@ -97,13 +97,13 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	case transport.UploadPackService:
 		err = transport.UploadPack(ctx, st,
 			io.NopCloser(r), ioutil.WriteNopCloser(wc),
-			&transport.UploadPackOptions{
+			&transport.UploadPackRequest{
 				GitProtocol: version,
 			})
 	case transport.ReceivePackService:
 		err = transport.ReceivePack(ctx, st,
 			io.NopCloser(r), ioutil.WriteNopCloser(wc),
-			&transport.ReceivePackOptions{
+			&transport.ReceivePackRequest{
 				GitProtocol: version,
 			})
 	}

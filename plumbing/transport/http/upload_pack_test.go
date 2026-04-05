@@ -6,9 +6,9 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
-	xtest "github.com/go-git/go-git/v6/plumbing/transport/test"
 )
 
 func TestUploadPackSuite(t *testing.T) {
@@ -17,7 +17,7 @@ func TestUploadPackSuite(t *testing.T) {
 }
 
 type uploadPackSuite struct {
-	xtest.UploadPackSuite
+	test.UploadPackSuite
 }
 
 func (s *uploadPackSuite) SetupTest() {

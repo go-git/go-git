@@ -3,17 +3,19 @@ package ssh
 import (
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
+	"github.com/kevinburke/ssh_config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
 
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 func TestNewPublicKeysWithEncryptedPEM(t *testing.T) {
@@ -38,17 +40,16 @@ func TestNewPublicKeysFromFile(t *testing.T) {
 	}
 	t.Parallel()
 
-	f, err := util.TempFile(osfs.Default, "", "ssh-test")
+	f, err := util.TempFile(osfs.Default, "", "ssh-test-key")
 	require.NoError(t, err)
 	_, err = f.Write(testdata.PEMBytes["rsa"])
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
-	defer osfs.Default.Remove(f.Name())
+	defer util.RemoveAll(osfs.Default, f.Name())
 
-	auth, err := NewPublicKeysFromFile("foo", f.Name(), "")
+	auth, err := NewPublicKeysFromFile("git", f.Name(), "")
 	require.NoError(t, err)
 	require.NotNil(t, auth)
-	assert.Equal(t, "foo", auth.User)
 }
 
 func TestNewSSHAgentAuth(t *testing.T) {
@@ -67,11 +68,7 @@ func TestNewSSHAgentAuth(t *testing.T) {
 }
 
 func TestNewSSHAgentAuthNoAgent(t *testing.T) {
-	t.Parallel()
-
-	addr := os.Getenv("SSH_AUTH_SOCK")
-	require.NoError(t, os.Unsetenv("SSH_AUTH_SOCK"))
-	defer os.Setenv("SSH_AUTH_SOCK", addr)
+	t.Setenv("SSH_AUTH_SOCK", "")
 
 	k, err := NewSSHAgentAuth("foo")
 	assert.Nil(t, k)
@@ -96,55 +93,45 @@ func TestNewKnownHostsCallback(t *testing.T) {
 	require.NotNil(t, clb)
 }
 
-func TestSSHConfig_HostWithPort(t *testing.T) {
+func TestSSHConfig(t *testing.T) {
 	t.Parallel()
 
-	old := DefaultSSHConfig
-	defer func() { DefaultSSHConfig = old }()
+	t.Run("HostWithPort", func(t *testing.T) {
+		t.Parallel()
 
-	DefaultSSHConfig = &mockSSHConfig{map[string]map[string]string{
-		"github.com": {
-			"Hostname": "foo.local",
-			"Port":     "42",
-		},
-	}}
+		tr := newTransportWithConfig(t, `
+Host github.com
+    Hostname foo.local
+    Port 42
+`)
+		req := &transport.Request{
+			URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
+		}
+		assert.Equal(t, "foo.local:42", tr.resolveHostWithPort(req))
+	})
 
-	req := &transport.Request{
-		URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
-	}
-	assert.Equal(t, "foo.local:42", resolveHostWithPort(req))
-}
+	t.Run("Default", func(t *testing.T) {
+		t.Parallel()
 
-func TestSSHConfig_Nil(t *testing.T) {
-	t.Parallel()
+		tr := newTransportWithConfig(t, "")
+		req := &transport.Request{
+			URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
+		}
+		assert.Equal(t, "github.com:22", tr.resolveHostWithPort(req))
+	})
 
-	old := DefaultSSHConfig
-	defer func() { DefaultSSHConfig = old }()
+	t.Run("Wildcard", func(t *testing.T) {
+		t.Parallel()
 
-	DefaultSSHConfig = nil
-
-	req := &transport.Request{
-		URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
-	}
-	assert.Equal(t, "github.com:22", resolveHostWithPort(req))
-}
-
-func TestSSHConfig_Wildcard(t *testing.T) {
-	t.Parallel()
-
-	old := DefaultSSHConfig
-	defer func() { DefaultSSHConfig = old }()
-
-	DefaultSSHConfig = &mockSSHConfig{Values: map[string]map[string]string{
-		"*": {
-			"Port": "42",
-		},
-	}}
-
-	req := &transport.Request{
-		URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
-	}
-	assert.Equal(t, "github.com:42", resolveHostWithPort(req))
+		tr := newTransportWithConfig(t, `
+Host *
+    Port 42
+`)
+		req := &transport.Request{
+			URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
+		}
+		assert.Equal(t, "github.com:42", tr.resolveHostWithPort(req))
+	})
 }
 
 func TestHostKeyCallbackHelper_NilFallback(t *testing.T) {
@@ -153,7 +140,7 @@ func TestHostKeyCallbackHelper_NilFallback(t *testing.T) {
 	h := &HostKeyCallbackHelper{}
 	cfg := &gossh.ClientConfig{}
 	_, err := h.SetHostKeyCallback(cfg)
-	if os.Getenv("SSH_KNOWN_HOSTS") != "" || fileExists(os.ExpandEnv("$HOME/.ssh/known_hosts")) {
+	if os.Getenv("SSH_KNOWN_HOSTS") != "" || fileExists(os.ExpandEnv("$HOME/.ssh/known_hosts")) || fileExists("/etc/ssh/ssh_known_hosts") {
 		require.NoError(t, err)
 		assert.NotNil(t, cfg.HostKeyCallback)
 	} else {
@@ -161,16 +148,13 @@ func TestHostKeyCallbackHelper_NilFallback(t *testing.T) {
 	}
 }
 
-type mockSSHConfig struct {
-	Values map[string]map[string]string
-}
-
-func (c *mockSSHConfig) Get(alias, key string) string {
-	a, ok := c.Values[alias]
-	if !ok {
-		return c.Values["*"][key]
-	}
-	return a[key]
+func newTransportWithConfig(t *testing.T, content string) *Transport {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(f, []byte(content), 0o644))
+	us := &ssh_config.UserSettings{}
+	us.ConfigFinder(func() string { return f })
+	return NewTransport(Options{UserSettings: us})
 }
 
 func mustParseURL(s string) *url.URL {

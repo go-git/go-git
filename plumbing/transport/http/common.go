@@ -17,6 +17,7 @@ type Err struct {
 	Reason string
 }
 
+// StatusCode returns the HTTP status code of the error.
 func (e *Err) StatusCode() int { return e.Status }
 
 func (e *Err) Error() string {

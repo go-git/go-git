@@ -266,8 +266,8 @@ func (s *Submodule) fetchAndCheckout(
 
 			err := r.FetchContext(ctx, &FetchOptions{
 				ClientOptions: o.ClientOptions,
-				RefSpecs: []config.RefSpec{refSpec},
-				Depth:    o.Depth,
+				RefSpecs:      []config.RefSpec{refSpec},
+				Depth:         o.Depth,
 			})
 			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) && !errors.Is(err, ErrExactSHA1NotSupported) {
 				return err

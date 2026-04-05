@@ -12,6 +12,8 @@ import (
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -19,7 +21,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -214,7 +215,7 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		}
 	}
 
-	if err := pushHashes(ctx, conn, r.s, cmds, hashesToPush, allDelete, o); err != nil {
+	if err := pushHashes(ctx, sess, r.s, cmds, hashesToPush, allDelete, o); err != nil {
 		return err
 	}
 
@@ -382,7 +383,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	if err := r.isSupportedRefSpec(o.RefSpecs, sess.Capabilities(); err != nil {
+	if err := r.isSupportedRefSpec(o.RefSpecs, sess.Capabilities()); err != nil {
 		return nil, err
 	}
 

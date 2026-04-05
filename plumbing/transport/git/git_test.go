@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 func freePort(t *testing.T) int {
@@ -41,8 +42,11 @@ func startDaemon(t *testing.T, base string, port int) {
 
 	t.Cleanup(func() {
 		if daemon.Process != nil {
+			// Signal graceful shutdown; do not use Kill which leaves
+			// child processes (git-upload-pack, git-receive-pack) orphaned.
+			// Do not Wait — on Windows os.Interrupt is a no-op so Wait
+			// would block forever.
 			_ = daemon.Process.Signal(os.Interrupt)
-			_ = daemon.Wait()
 		}
 	})
 
@@ -65,72 +69,61 @@ func waitForPort(ctx context.Context, port int) error {
 	}
 }
 
-func TestGitTransport_Open(t *testing.T) {
-	t.Parallel()
-
-	port := freePort(t)
-	base := filepath.Join(t.TempDir(), fmt.Sprintf("git-proto-%d", port))
-	_ = test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
-	startDaemon(t, base, port)
-
-	tr := NewTransport(Options{})
-
-	req := &transport.Request{
-		URL: &url.URL{
-			Scheme: "git",
-			Host:   fmt.Sprintf("localhost:%d", port),
-			Path:   "/basic.git",
-		},
-		Command:  "git-upload-pack",
-		Protocol: protocol.V0,
-	}
-
-	sess, err := tr.Connect(context.Background(), req)
-	require.NoError(t, err)
-	require.NotNil(t, sess)
-
-	buf := make([]byte, 4)
-	n, err := sess.Reader().Read(buf)
-	require.NoError(t, err)
-	assert.Greater(t, n, 0, "should read pkt-line data from server")
-
-	require.NoError(t, sess.Close())
-}
+const windowsSkipMsg = `git for windows has issues with write operations through git:// protocol.
+See https://github.com/git-for-windows/git/issues/907`
 
 func TestGitTransport_Connect(t *testing.T) {
 	t.Parallel()
-
-	port := freePort(t)
-	base := filepath.Join(t.TempDir(), fmt.Sprintf("git-proto-%d", port))
-	_ = test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
-	startDaemon(t, base, port)
-
-	tr := NewTransport(Options{})
-
-	req := &transport.Request{
-		URL: &url.URL{
-			Scheme: "git",
-			Host:   fmt.Sprintf("localhost:%d", port),
-			Path:   "/basic.git",
-		},
-		Command:  "git-upload-pack",
-		Protocol: protocol.V0,
+	if runtime.GOOS == "windows" {
+		t.Skip(windowsSkipMsg)
 	}
 
-	rwc, err := tr.Connect(context.Background(), req)
-	require.NoError(t, err)
-	require.NotNil(t, rwc)
+	for _, tc := range []struct {
+		name    string
+		command string
+	}{
+		{"UploadPack", "git-upload-pack"},
+		{"ReceivePack", "git-upload-pack"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	buf := make([]byte, 4)
-	n, err := rwc.Reader().Read(buf)
-	require.NoError(t, err)
-	assert.Greater(t, n, 0, "should read pkt-line data from server")
+			port := freePort(t)
+			base := filepath.Join(t.TempDir(), fmt.Sprintf("git-proto-%d", port))
+			_ = test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
+			startDaemon(t, base, port)
 
-	require.NoError(t, rwc.Close())
+			tr := NewTransport(Options{})
+
+			req := &transport.Request{
+				URL: &url.URL{
+					Scheme: "git",
+					Host:   fmt.Sprintf("localhost:%d", port),
+					Path:   "/basic.git",
+				},
+				Command:  tc.command,
+				Protocol: protocol.V0,
+			}
+
+			sess, err := tr.Connect(context.Background(), req)
+			require.NoError(t, err)
+			require.NotNil(t, sess)
+
+			buf := make([]byte, 4)
+			n, err := sess.Reader().Read(buf)
+			require.NoError(t, err)
+			assert.Greater(t, n, 0, "should read pkt-line data from server")
+
+			require.NoError(t, sess.Close())
+		})
+	}
 }
 
 func TestGitTransport_ConnectFail(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip(windowsSkipMsg)
+	}
 
 	tr := NewTransport(Options{})
 

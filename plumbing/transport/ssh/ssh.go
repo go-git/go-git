@@ -15,9 +15,8 @@ import (
 	"github.com/kevinburke/ssh_config"
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	transport "github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/plumbing/transport/ssh/sshagent"
 )
 
 // DefaultPort is the default port for the SSH protocol.
@@ -26,37 +25,11 @@ const DefaultPort = 22
 // DefaultUsername is the default username for SSH connections.
 const DefaultUsername = "git"
 
-// DefaultSSHConfig is the reader used to access parameters stored in the
-// system's ssh_config files. If nil all the ssh_config are ignored.
-var DefaultSSHConfig Config = ssh_config.DefaultUserSettings
-
-// Config is a reader of SSH configuration.
-type Config interface {
-	Get(alias, key string) string
-}
-
-// DefaultAuthBuilder is the function used to create a default ClientConfig
-// when Options.ClientConfig is nil. It uses SSH agent authentication.
-var DefaultAuthBuilder = func(user string) (*gossh.ClientConfig, error) {
-	a, _, err := sshagent.New()
-	if err != nil {
-		return nil, err
-	}
-
-	if user == "" {
-		user = DefaultUsername
-	}
-
-	return &gossh.ClientConfig{
-		User: user,
-		Auth: []gossh.AuthMethod{gossh.PublicKeysCallback(a.Signers)},
-	}, nil
-}
-
 // Options configures the SSH transport.
 type Options struct {
 	// ClientConfig provides SSH client configuration for each request.
-	// If nil, DefaultAuthBuilder is used with the username from the URL.
+	// If nil, SSH agent authentication is used with the username from the
+	// URL (falling back to DefaultUsername).
 	ClientConfig func(context.Context, *transport.Request) (*gossh.ClientConfig, error)
 
 	// DialContext is the function used to establish TCP connections.
@@ -66,6 +39,10 @@ type Options struct {
 	// DialProxy wraps DialContext to route connections through a proxy.
 	// If nil, connections are made directly.
 	DialProxy func(transport.DialContextFunc) transport.DialContextFunc
+
+	// UserSettings reads SSH configuration (Hostname, Port overrides
+	// from ~/.ssh/config). If nil, ssh_config.DefaultUserSettings is used.
+	UserSettings *ssh_config.UserSettings
 }
 
 // Transport implements the ssh:// transport protocol.
@@ -84,7 +61,7 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 	if err != nil {
 		return nil, err
 	}
-	return transport.NewConn(conn.stdout, conn.stdin, conn.Close), nil
+	return conn, nil
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshConn, error) {
@@ -93,9 +70,8 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		return nil, err
 	}
 
-	hostWithPort := resolveHostWithPort(req)
+	hostWithPort := t.resolveHostWithPort(req)
 
-	// Set up host key verification from known_hosts if not provided.
 	if config.HostKeyCallback == nil {
 		db, err := newKnownHostsDb()
 		if err != nil {
@@ -155,7 +131,6 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		client:  client,
 	}
 
-	// Read stderr in background.
 	go func() {
 		var buf bytes.Buffer
 		_, _ = ioutil.CopyBufferPool(&buf, stderrPipe)
@@ -177,16 +152,21 @@ func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (
 		return t.opts.ClientConfig(ctx, req)
 	}
 
-	// Default: use SSH agent auth with username from URL.
-	var username string
+	username := DefaultUsername
 	if req.URL.User != nil {
-		username = req.URL.User.Username()
+		if u := req.URL.User.Username(); u != "" {
+			username = u
+		}
 	}
-	return DefaultAuthBuilder(username)
+
+	auth, err := NewSSHAgentAuth(username)
+	if err != nil {
+		return nil, err
+	}
+	return auth.ClientConfig(ctx, req)
 }
 
 func (t *Transport) dial(ctx context.Context, network, addr string, config *gossh.ClientConfig) (*gossh.Client, error) {
-	// Honor timeout from ssh.ClientConfig.
 	var cancel context.CancelFunc
 	if config.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, config.Timeout)
@@ -221,21 +201,25 @@ func (t *Transport) dial(ctx context.Context, network, addr string, config *goss
 	return gossh.NewClient(c, chans, reqs), nil
 }
 
+func (t *Transport) userSettings() *ssh_config.UserSettings {
+	if t.opts.UserSettings != nil {
+		return t.opts.UserSettings
+	}
+	return ssh_config.DefaultUserSettings
+}
 
-
-func resolveHostWithPort(req *transport.Request) string {
+func (t *Transport) resolveHostWithPort(req *transport.Request) string {
 	hostname := req.URL.Hostname()
 	port := req.URL.Port()
 
-	if DefaultSSHConfig != nil {
-		if configHost := DefaultSSHConfig.Get(hostname, "Hostname"); configHost != "" {
-			hostname = configHost
-		}
-		if port == "" {
-			if configPort := DefaultSSHConfig.Get(req.URL.Hostname(), "Port"); configPort != "" {
-				if _, err := strconv.Atoi(configPort); err == nil {
-					port = configPort
-				}
+	cfg := t.userSettings()
+	if configHost := cfg.Get(hostname, "Hostname"); configHost != "" {
+		hostname = configHost
+	}
+	if port == "" {
+		if configPort := cfg.Get(req.URL.Hostname(), "Port"); configPort != "" {
+			if _, err := strconv.Atoi(configPort); err == nil {
+				port = configPort
 			}
 		}
 	}
@@ -255,43 +239,29 @@ type sshConn struct {
 	stderrBuf atomic.Pointer[bytes.Buffer]
 }
 
-func (c *sshConn) Read(p []byte) (int, error) {
-	n, err := c.stdout.Read(p)
-	if err != nil {
-		if stderrErr := c.stderr(); stderrErr != nil {
-			return n, stderrErr
-		}
-	}
-	return n, err
-}
+var _ transport.Conn = (*sshConn)(nil)
 
-func (c *sshConn) Write(p []byte) (int, error) {
-	return c.stdin.Write(p)
-}
+func (c *sshConn) Reader() io.Reader      { return c.stdout }
+func (c *sshConn) Writer() io.WriteCloser { return c.stdin }
 
 func (c *sshConn) Close() error {
-	_ = c.stdin.Close()
 	_ = c.session.Close()
 	err := c.client.Close()
 	if errors.Is(err, net.ErrClosed) {
 		err = nil
 	}
-	if stderrErr := c.stderr(); stderrErr != nil {
-		return stderrErr
-	}
 	return err
 }
 
-func (c *sshConn) stderr() error {
+// Stderr returns the stderr stream from the remote process. StreamSession
+// checks for this after Push/Fetch to surface remote errors at the
+// operation site rather than at Close time.
+func (c *sshConn) Stderr() io.Reader {
 	buf := c.stderrBuf.Load()
 	if buf == nil {
 		return nil
 	}
-	s := strings.TrimSpace(buf.String())
-	if s == "" {
-		return nil
-	}
-	return transport.NewRemoteError(s)
+	return buf
 }
 
 func buildCommand(req *transport.Request) string {

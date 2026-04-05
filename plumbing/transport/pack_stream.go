@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -81,14 +82,38 @@ func (s *StreamSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference,
 func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *FetchRequest) error {
 	shallows, err := NegotiatePack(ctx, st, s.caps, false, s.r, s.w, req)
 	if err != nil {
-		return err
+		return s.wrapStderr(err)
 	}
-	return FetchPack(ctx, st, s.caps, io.NopCloser(s.r), shallows, req)
+	if err := FetchPack(ctx, st, s.caps, io.NopCloser(s.r), shallows, req); err != nil {
+		return s.wrapStderr(err)
+	}
+	return nil
 }
 
 // Push implements PackSession.
 func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRequest) error {
-	return SendPack(ctx, st, s.caps, s.w, io.NopCloser(s.r), req)
+	if err := SendPack(ctx, st, s.caps, s.w, io.NopCloser(s.r), req); err != nil {
+		return s.wrapStderr(err)
+	}
+	return nil
+}
+
+// wrapStderr checks if the underlying connection has stderr output and
+// returns it as a RemoteError so that remote error messages surface at
+// the operation site rather than at Close time.
+func (s *StreamSession) wrapStderr(err error) error {
+	type stderrer interface {
+		Stderr() io.Reader
+	}
+	if se, ok := s.conn.(stderrer); ok {
+		if r := se.Stderr(); r != nil {
+			b, readErr := io.ReadAll(r)
+			if readErr == nil && len(b) > 0 {
+				return NewRemoteError(strings.TrimSpace(string(b)))
+			}
+		}
+	}
+	return err
 }
 
 // Close implements PackSession.

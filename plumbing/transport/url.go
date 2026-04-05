@@ -21,3 +21,4 @@ func ParseURL(endpoint string) (*url.URL, error) {
 
 	return giturl.ParseURL(endpoint)
 }
+

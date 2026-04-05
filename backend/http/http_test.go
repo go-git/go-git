@@ -3,6 +3,7 @@ package http
 import (
 	"io"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -22,7 +23,7 @@ type fixturesLoader struct {
 var _ transport.Loader = &fixturesLoader{}
 
 // Load implements transport.Loader.
-func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+func (f *fixturesLoader) Load(ep *url.URL) (storage.Storer, error) {
 	url := "https://github.com/git-fixtures/" + ep.Path
 	fix := fixtures.ByURL(url).One()
 	require.NotNil(f.TB, fix, "fixture not found for %s", url)
@@ -100,7 +101,7 @@ type tagLoader struct {
 
 var _ transport.Loader = &tagLoader{}
 
-func (l *tagLoader) Load(_ *transport.Endpoint) (storage.Storer, error) {
+func (l *tagLoader) Load(_ *url.URL) (storage.Storer, error) {
 	fix := fixtures.ByTag(l.tag).One()
 	require.NotNil(l.TB, fix, "fixture not found for tag %s", l.tag)
 
