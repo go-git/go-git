@@ -337,9 +337,9 @@ func ReadConfig(r io.Reader) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadConfig loads a config file from a given scope. The returned Config,
-// contains exclusively information from the given scope. If it couldn't find a
-// config file to the given scope, an empty one is returned.
+// LoadConfig loads a config file from a given scope.
+//
+// Deprecated: Use the ConfigLoader plugin instead. This will be removed in v7.
 func LoadConfig(scope Scope) (*Config, error) {
 	if scope == LocalScope {
 		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer")
@@ -368,6 +368,9 @@ func LoadConfig(scope Scope) (*Config, error) {
 }
 
 // Paths returns the config file location for a given scope.
+//
+// Deprecated: Use the ConfigLoader plugin instead.
+// This will be removed in v7.
 func Paths(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
