@@ -25,7 +25,7 @@ type service struct {
 	pattern *regexp.Regexp
 	method  string
 	handler http.HandlerFunc
-	svc     transport.Service
+	svc     string
 }
 
 var services = []service{
@@ -90,7 +90,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			repo := strings.TrimPrefix(m[1], "/")
 			file := strings.Replace(urlPath, repo+"/", "", 1)
-			ep, err := transport.NewEndpoint(repo)
+			ep, err := transport.ParseURL(repo)
 			if err != nil {
 				logf(b.ErrorLog, "error creating endpoint: %v", err)
 				renderStatusError(w, http.StatusBadRequest)
@@ -135,7 +135,7 @@ func serviceRPC(w http.ResponseWriter, r *http.Request) {
 		renderStatusError(w, http.StatusInternalServerError)
 		return
 	}
-	svc, ok := ctx.Value(contextKey("service")).(transport.Service)
+	svc, ok := ctx.Value(contextKey("service")).(string)
 	if !ok {
 		renderStatusError(w, http.StatusInternalServerError)
 		return
@@ -148,13 +148,13 @@ func serviceRPC(w http.ResponseWriter, r *http.Request) {
 	version := r.Header.Get("Git-Protocol")
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 
-	expectedContentType := strings.ToLower(fmt.Sprintf("application/x-git-%s-request", svc.Name()))
+	expectedContentType := strings.ToLower(fmt.Sprintf("application/x-git-%s-request", transport.ServiceName(svc)))
 	if contentType != expectedContentType {
 		renderStatusError(w, http.StatusForbidden)
 		return
 	}
 
-	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", svc.Name()))
+	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", transport.ServiceName(svc)))
 	w.Header().Set("Connection", "Keep-Alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -193,7 +193,7 @@ func serviceRPC(w http.ResponseWriter, r *http.Request) {
 			})
 	default:
 		// TODO: Support git-upload-archive
-		logf(errorLog, "unknown service: %s", svc.Name())
+		logf(errorLog, "unknown service: %s", transport.ServiceName(svc))
 		renderStatusError(w, http.StatusNotFound)
 		return
 	}
@@ -272,12 +272,12 @@ func getInfoRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	service := transport.Service(r.URL.Query().Get("service"))
+	service := string(r.URL.Query().Get("service"))
 	version := r.Header.Get("Git-Protocol")
 
 	if service != "" {
 		hdrNocache(w)
-		w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", service.Name()))
+		w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", transport.ServiceName(service)))
 
 		var err error
 		switch service {

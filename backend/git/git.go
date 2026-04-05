@@ -59,7 +59,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 	// Ensure we close the connection when we're done.
 	defer func() { _ = c.Close() }()
 
-	svc := transport.Service(req.RequestCommand)
+	svc := string(req.RequestCommand)
 	switch {
 	case svc == transport.UploadPackService && b.UploadPack,
 		svc == transport.ReceivePackService && b.ReceivePack:
@@ -80,7 +80,7 @@ func (b *Backend) ServeTCP(ctx context.Context, c io.ReadWriteCloser, req *packp
 		return
 	}
 
-	ep, err := transport.NewEndpoint(url)
+	ep, err := transport.ParseURL(url)
 	if err != nil {
 		_ = renderError(wc, fmt.Errorf("%w: %w", transport.ErrRepositoryNotFound, err))
 		return
