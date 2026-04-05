@@ -1,106 +1,87 @@
 package transport
 
 import (
+	"net/url"
 	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-type loaderSuiteRepo struct {
-	bare bool
-
-	path string
-}
-
-func TestLoaderSuite(t *testing.T) {
+func TestFilesystemLoader_Load(t *testing.T) {
 	t.Parallel()
-	suite.Run(t, new(LoaderSuite))
+	dir := t.TempDir()
+
+	repoPath := filepath.Join(dir, "repo.git")
+	st := filesystem.NewStorage(osfs.New(repoPath), nil)
+	require.NoError(t, st.Init())
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	cfg.Core.IsBare = true
+	require.NoError(t, st.SetConfig(cfg))
+
+	loader := NewFilesystemLoader(osfs.New(dir), false)
+
+	u := &url.URL{Path: "repo"}
+	sto, err := loader.Load(u)
+	require.NoError(t, err)
+	assert.NotNil(t, sto)
 }
 
-type LoaderSuite struct {
-	suite.Suite
-	loader Loader
-	repos  map[string]loaderSuiteRepo
+func TestFilesystemLoader_LoadBare(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	st := filesystem.NewStorage(osfs.New(filepath.Join(dir, "bare.git")), nil)
+	require.NoError(t, st.Init())
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	cfg.Core.IsBare = true
+	require.NoError(t, st.SetConfig(cfg))
+
+	loader := NewFilesystemLoader(osfs.New(dir), false)
+
+	u := &url.URL{Path: "bare.git"}
+	sto, err := loader.Load(u)
+	require.NoError(t, err)
+	assert.NotNil(t, sto)
 }
 
-func (s *LoaderSuite) SetupSuite() {
-	s.repos = map[string]loaderSuiteRepo{
-		"repo": {path: "repo.git"},
-		"bare": {path: "bare.git", bare: true},
-	}
-	dir := s.T().TempDir()
-	s.loader = NewFilesystemLoader(osfs.New(dir), false)
-	for key, repo := range s.repos {
-		repo.path = filepath.Join(dir, repo.path)
-		st := filesystem.NewStorage(osfs.New(repo.path), nil)
-		err := st.Init()
-		s.NoError(err)
-		cfg, err := st.Config()
-		s.NoError(err)
-		if repo.bare {
-			cfg.Core.IsBare = repo.bare
-		}
-		err = st.SetConfig(cfg)
-		s.NoError(err)
-		s.repos[key] = repo
-	}
+func TestFilesystemLoader_LoadNonExistent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	loader := NewFilesystemLoader(osfs.New(dir), false)
+
+	u := &url.URL{Path: "does-not-exist"}
+	sto, err := loader.Load(u)
+	assert.ErrorIs(t, err, ErrRepositoryNotFound)
+	assert.Nil(t, sto)
 }
 
-func (s *LoaderSuite) Load(ep *Endpoint) (storage.Storer, error) {
-	_, ok := s.repos[ep.Path]
-	if !ok {
-		return nil, ErrRepositoryNotFound
-	}
-	return memory.NewStorage(), nil
+func TestMapLoader_Load(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	loader := MapLoader{"/test": st}
+
+	u := &url.URL{Path: "/test"}
+	sto, err := loader.Load(u)
+	require.NoError(t, err)
+	assert.Equal(t, st, sto)
 }
 
-func (s *LoaderSuite) endpoint(url string) *Endpoint {
-	ep, err := NewEndpoint(url)
-	s.Nil(err)
-	return ep
-}
+func TestMapLoader_LoadNotFound(t *testing.T) {
+	t.Parallel()
 
-func (s *LoaderSuite) TestLoadNonExistent() {
-	sto, err := s.loader.Load(s.endpoint("does-not-exist"))
-	s.ErrorIs(err, ErrRepositoryNotFound)
-	s.Nil(sto)
-}
-
-func (s *LoaderSuite) TestLoadNonExistentIgnoreHost() {
-	sto, err := s.loader.Load(s.endpoint("https://github.com/does-not-exist"))
-	s.ErrorIs(err, ErrRepositoryNotFound)
-	s.Nil(sto)
-}
-
-func (s *LoaderSuite) TestLoad() {
-	sto, err := s.loader.Load(s.endpoint("repo"))
-	s.Nil(err)
-	s.NotNil(sto)
-}
-
-func (s *LoaderSuite) TestLoadBare() {
-	sto, err := s.loader.Load(s.endpoint("bare"))
-	s.Nil(err)
-	s.NotNil(sto)
-}
-
-func (s *LoaderSuite) TestMapLoader() {
-	ep, err := NewEndpoint("file://test")
-	sto := memory.NewStorage()
-	s.Nil(err)
-
-	loader := MapLoader{ep.String(): sto}
-
-	ep, err = NewEndpoint("file://test")
-	s.Nil(err)
-
-	loaderSto, err := loader.Load(ep)
-	s.Nil(err)
-	s.Equal(sto, loaderSto)
+	loader := MapLoader{}
+	u := &url.URL{Path: "/missing"}
+	sto, err := loader.Load(u)
+	assert.ErrorIs(t, err, ErrRepositoryNotFound)
+	assert.Nil(t, sto)
 }

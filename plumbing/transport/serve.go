@@ -18,13 +18,13 @@ import (
 // ErrUpdateReference is returned when a reference update fails.
 var ErrUpdateReference = errors.New("failed to update ref")
 
-// AdvertiseReferences is a server command that implements the reference
+// AdvertiseRefs is a server command that implements the reference
 // discovery phase of the Git transfer protocol.
-func AdvertiseReferences(
+func AdvertiseRefs(
 	_ context.Context,
 	st storage.Storer,
 	w io.Writer,
-	service Service,
+	service string,
 	smart bool,
 ) error {
 	switch service {
@@ -78,7 +78,7 @@ func AdvertiseReferences(
 
 	if smart {
 		smartReply := packp.SmartReply{
-			Service: service.String(),
+			Service: service,
 		}
 
 		if err := smartReply.Encode(w); err != nil {
