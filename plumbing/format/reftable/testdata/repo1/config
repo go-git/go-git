@@ -1,0 +1,12 @@
+[extensions]
+	refstorage = reftable
+[core]
+	repositoryformatversion = 1
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	ignorecase = true
+	precomposeunicode = true
+[user]
+	name = Test User
+	email = test@example.com
