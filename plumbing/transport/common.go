@@ -98,8 +98,8 @@ type FetchRequest struct {
 	// TODO: Build this slice in the transport package.
 	Haves []plumbing.Hash
 
-	// Depth is the depth of the fetch.
-	Depth int
+	// Depth configures shallow fetch negotiation.
+	Depth packp.Depth
 
 	// Filter holds the filters to be applied when deciding what
 	// objects will be added to the packfile.
@@ -107,6 +107,11 @@ type FetchRequest struct {
 
 	// IncludeTags indicates whether tags should be fetched.
 	IncludeTags bool
+}
+
+// HasDepth reports whether the fetch request configures shallow fetch negotiation.
+func (r FetchRequest) HasDepth() bool {
+	return r.Depth != nil && !r.Depth.IsZero()
 }
 
 // PushRequest contains the parameters for a push request.
