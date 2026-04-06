@@ -167,6 +167,10 @@ type Config struct {
 		// When true, each worktree may have a config.worktree file that
 		// overrides settings in the common .git/config.
 		WorktreeConfig bool
+		// RefStorage specifies the reference storage backend. The acceptable
+		// values are "files" (default) and "reftable". If not specified, the
+		// traditional files-based storage is assumed.
+		RefStorage format.RefStorage
 	}
 
 	Protocol struct {
@@ -453,6 +457,7 @@ const (
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormatKey            = "objectformat"
 	worktreeConfigKey          = "worktreeConfig"
+	refStorageKey              = "refstorage"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
@@ -533,6 +538,7 @@ func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
 	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
+	c.Extensions.RefStorage = format.RefStorage(s.Options.Get(refStorageKey))
 }
 
 func (c *Config) unmarshalTag() {
@@ -768,7 +774,8 @@ func (c *Config) marshalExtensions() {
 	// Only marshal the [extensions] section if there are extension options to write.
 	// This avoids introducing an empty [extensions] section on round-trips.
 	if c.Extensions.ObjectFormat == format.UnsetObjectFormat &&
-		!c.Extensions.WorktreeConfig {
+		!c.Extensions.WorktreeConfig &&
+		c.Extensions.RefStorage == format.RefStorageUnset {
 		return
 	}
 
@@ -779,6 +786,10 @@ func (c *Config) marshalExtensions() {
 
 	if c.Extensions.WorktreeConfig {
 		s.SetOption(worktreeConfigKey, "true")
+	}
+
+	if c.Extensions.RefStorage != format.RefStorageUnset {
+		s.SetOption(refStorageKey, string(c.Extensions.RefStorage))
 	}
 }
 
