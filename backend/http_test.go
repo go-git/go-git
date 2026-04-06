@@ -1,4 +1,4 @@
-package http
+package backend
 
 import (
 	"io"
@@ -37,7 +37,7 @@ func (f *fixturesLoader) Load(ep *url.URL) (storage.Storer, error) {
 
 func TestNilLoaderBackend(t *testing.T) {
 	t.Parallel()
-	h := NewBackend(nil)
+	h := New(nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -60,7 +60,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 00486ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master
 003e6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/tags/v1.0.0
 0000`
-	h := NewBackend(&fixturesLoader{t})
+	h := New(&fixturesLoader{t})
 
 	urlPath := "/basic.git/info/refs"
 	if isSmart {
@@ -152,7 +152,7 @@ func TestSmartInfoRefsObjectFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			b := NewBackend(&tagLoader{TB: t, tag: tc.tag, objectFormat: tc.forceObjectFormat})
+			b := New(&tagLoader{TB: t, tag: tc.tag, objectFormat: tc.forceObjectFormat})
 
 			req := httptest.NewRequest("GET", "/repo.git/info/refs?service=git-upload-pack", nil)
 			w := httptest.NewRecorder()

@@ -8,7 +8,7 @@ import (
 	gohttp "net/http"
 	"time"
 
-	"github.com/go-git/go-git/v6/backend/http"
+	"github.com/go-git/go-git/v6/backend"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
@@ -32,7 +32,7 @@ func FromLoader(l transport.Loader) (*server, error) { //nolint:revive // unexpo
 }
 
 func (s *server) Start() (string, error) {
-	h := http.NewBackend(s.l)
+	h := backend.New(s.l)
 
 	var err error
 	s.ln, err = net.Listen("tcp", addr)
