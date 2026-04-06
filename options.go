@@ -224,6 +224,13 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
+	// DepthSince limits fetching to commits newer than the given time.
+	DepthSince time.Time
+	// DepthReference requests only commits not reachable from the given reference.
+	DepthReference plumbing.ReferenceName
+	// Unshallow converts a shallow fetch into a full fetch by requesting the
+	// maximum supported depth.
+	Unshallow bool
 	// Auth credentials, if required, to use with the remote repository.
 	Auth transport.AuthMethod
 	// Progress is where the human readable information sent by the server is
@@ -260,6 +267,29 @@ func (o *FetchOptions) Validate() error {
 		o.Tags = plumbing.TagFollowing
 	}
 
+	depthModes := 0
+	if o.Depth > 0 {
+		depthModes++
+	}
+	if !o.DepthSince.IsZero() {
+		depthModes++
+	}
+	if o.DepthReference != "" {
+		depthModes++
+	}
+	if o.Unshallow {
+		depthModes++
+	}
+	if depthModes > 1 {
+		return errors.New("options Depth, DepthSince, DepthReference, and Unshallow are mutually exclusive")
+	}
+
+	if o.DepthReference != "" {
+		if err := o.DepthReference.Validate(); err != nil {
+			return err
+		}
+	}
+
 	for _, r := range o.RefSpecs {
 		if err := r.Validate(); err != nil {
 			return err
@@ -267,6 +297,37 @@ func (o *FetchOptions) Validate() error {
 	}
 
 	return nil
+}
+
+// Matches Git's special "infinite" depth constant and fetch usage:
+// https://github.com/git/git/blob/cf2139f8e1680b076e115bc0b349e369b4b0ecc4/commit.h#L281
+// https://github.com/git/git/blob/cf2139f8e1680b076e115bc0b349e369b4b0ecc4/builtin/fetch.c#L2675
+const infiniteFetchDepth = 0x7fffffff
+
+func (o *FetchOptions) uploadPackDepth() packp.Depth {
+	switch {
+	case o.Unshallow:
+		return packp.DepthCommits(infiniteFetchDepth)
+	case !o.DepthSince.IsZero():
+		return packp.DepthSince(o.DepthSince)
+	case o.DepthReference != "":
+		return packp.DepthReference(o.DepthReference.String())
+	case o.Depth > 0:
+		return packp.DepthCommits(o.Depth)
+	default:
+		return nil
+	}
+}
+
+func (o *FetchOptions) depthHint() int {
+	switch {
+	case o.Unshallow:
+		return infiniteFetchDepth
+	case o.Depth > 0:
+		return o.Depth
+	default:
+		return 0
+	}
 }
 
 // PushOptions describes how a push should be performed.
