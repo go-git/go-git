@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
