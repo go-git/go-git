@@ -30,7 +30,13 @@ func dataSources(tb testing.TB) []dataSource {
 		name: "basic-fixture",
 		files: func() (billy.File, billy.File, billy.File) {
 			fixture := fixtures.NewOSFixture(fixtures.Basic().One(), tb.TempDir())
-			return fixture.Packfile(), fixture.Idx(), fixture.Rev()
+			pack, err := fixture.Packfile()
+			require.NoError(tb, err)
+			idx, err := fixture.Idx()
+			require.NoError(tb, err)
+			rev, err := fixture.Rev()
+			require.NoError(tb, err)
+			return pack, idx, rev
 		},
 		run: true,
 		offsetHashMap: map[uint64]string{

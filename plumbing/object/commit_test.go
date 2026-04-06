@@ -317,7 +317,9 @@ func (s *SuiteCommit) TestStringMultiLine() {
 	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
 	s.NoError(err)

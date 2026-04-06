@@ -19,8 +19,9 @@ func FixturesFactory(base, name string) func() string {
 
 // PrepareRepository creates a bare repository from a fixture.
 func PrepareRepository(t testing.TB, f *fixtures.Fixture, base, name string) billy.Filesystem {
-	fs := f.DotGit(fixtures.WithTargetDir(FixturesFactory(base, name)))
-	err := fixtures.EnsureIsBare(fs)
+	fs, err := f.DotGit(fixtures.WithTargetDir(FixturesFactory(base, name)))
+	require.NoError(t, err)
+	err = fixtures.EnsureIsBare(fs)
 	require.NoError(t, err)
 	return fs
 }

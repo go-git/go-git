@@ -112,7 +112,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow() {
 		{Name: plumbing.ReferenceName("myref3"), Old: hash1, New: plumbing.ZeroHash},
 	}
 	r.Capabilities.Add("shallow")
-	r.Shallow = &hash1
+	r.Shallows = []plumbing.Hash{hash1}
 
 	expected := pktlines(s.T(),
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",

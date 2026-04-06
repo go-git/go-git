@@ -11,17 +11,17 @@ require (
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.2
 	github.com/go-git/go-billy/v6 v6.0.0-20260226131633-45bd0956d66f
-	github.com/go-git/go-git-fixtures/v5 v5.1.2-0.20260122163445-0622d7459a67
+	github.com/go-git/go-git-fixtures/v5 v5.1.2-0.20260328065819-eda62fa02f83
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.5.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.48.0
-	golang.org/x/net v0.51.0
-	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.41.0
-	golang.org/x/text v0.34.0
+	golang.org/x/crypto v0.49.0
+	golang.org/x/net v0.52.0
+	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.42.0
+	golang.org/x/text v0.35.0
 )
 
 require (

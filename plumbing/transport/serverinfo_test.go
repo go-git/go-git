@@ -124,10 +124,12 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 
 func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
 	fixture := fixtures.Basic().One()
-	st := filesystem.NewStorage(fixture.DotGit(), nil)
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
 	fs := memfs.New()
 
-	err := UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
@@ -136,10 +138,12 @@ func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
 
 func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
 	fixture := fixtures.Basic().One()
-	st := filesystem.NewStorage(fixture.DotGit(), nil)
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
 	fs := memfs.New()
 
-	err := UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
@@ -148,10 +152,12 @@ func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
 
 func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
 	fixture := fixtures.Basic().One()
-	st := filesystem.NewStorage(fixture.DotGit(), nil)
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
 	fs := memfs.New()
 
-	err := UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)

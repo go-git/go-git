@@ -37,7 +37,9 @@ func (s *EncoderAdvancedSuite) TestEncodeDecode() {
 		ByTag("packfile").ByTag(".git").One())
 
 	for _, f := range fixs {
-		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+		storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 		s.testEncodeDecode(storage, 10)
 	}
 }
@@ -52,7 +54,9 @@ func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression() {
 		ByTag("packfile").ByTag(".git").One())
 
 	for _, f := range fixs {
-		storage := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+		storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 		s.testEncodeDecode(storage, 0)
 	}
 }

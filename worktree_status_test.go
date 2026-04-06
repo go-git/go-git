@@ -96,7 +96,11 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 	b.StopTimer()
 
 	f := fixtures.Basic().One()
-	st := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := f.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	r, err := Open(st, memfs.New())
 	require.NoError(b, err)

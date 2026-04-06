@@ -860,6 +860,8 @@ func (r *Repository) CreateBranch(c *config.Branch) error {
 
 // DeleteBranch delete a Branch from the repository and delete the config
 func (r *Repository) DeleteBranch(name string) error {
+	name = strings.TrimPrefix(name, "refs/heads/")
+
 	cfg, err := r.Config()
 	if err != nil {
 		return err

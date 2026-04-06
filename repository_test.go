@@ -775,7 +775,9 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 		f := fixtures.ByTag(".git-sha256").One()
 		require.NotNil(t, f, "fixture not found for tag .git-sha256")
 
-		st := filesystem.NewStorage(f.DotGit(fixtures.WithMemFS()), cache.NewObjectLRUDefault())
+		dotgit, dotgitErr := f.DotGit(fixtures.WithMemFS())
+		require.NoError(t, dotgitErr)
+		st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		wrapped := &sha1OnlyStorage{st}
 		_, okGetter := storage.Storer(wrapped).(xstorage.ExtensionChecker)
@@ -1188,6 +1190,24 @@ func (s *RepositorySuite) TestDeleteBranch() {
 
 	err = r.DeleteBranch("foo")
 	s.ErrorIs(err, ErrBranchNotFound)
+}
+
+func (s *RepositorySuite) TestDeleteBranchFullRefName() {
+	r, _ := Init(memory.NewStorage())
+	testBranch := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err := r.CreateBranch(testBranch)
+	s.NoError(err)
+
+	err = r.DeleteBranch("refs/heads/foo")
+	s.NoError(err)
+
+	b, err := r.Branch("foo")
+	s.ErrorIs(err, ErrBranchNotFound)
+	s.Nil(b)
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
@@ -1664,7 +1684,11 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 	}
 
 	dir := s.T().TempDir()
-	path := fixtures.ByTag("submodule").One().Worktree().Root()
+	path := func() billy.Filesystem {
+		wt, err := fixtures.ByTag("submodule").One().Worktree()
+		s.Require().NoError(err)
+		return wt
+	}().Root()
 	mainRepo, err := PlainClone(dir, &CloneOptions{
 		URL:               path,
 		RecurseSubmodules: 1,
@@ -2274,7 +2298,8 @@ func (s *RepositorySuite) TestPushDepth() {
 }
 
 func (s *RepositorySuite) TestPushNonExistentRemote() {
-	srcFs := fixtures.Basic().One().DotGit()
+	srcFs, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
 	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	r, err := Open(sto, srcFs)
@@ -3355,8 +3380,12 @@ func (s *RepositorySuite) TestInvalidTagName() {
 
 func (s *RepositorySuite) TestBranches() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/root-references.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	r, err := Open(sto, f.DotGit())
+	dotgit1, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	dotgit2, err := f.DotGit()
+	s.Require().NoError(err)
+	r, err := Open(sto, dotgit2)
 	s.NoError(err)
 
 	count := 0
@@ -3572,8 +3601,12 @@ func (s *RepositorySuite) TestWorktreeBare() {
 
 func (s *RepositorySuite) TestResolveRevision() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/basic.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	r, err := Open(sto, f.DotGit())
+	dotgit1, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	dotgit2, err := f.DotGit()
+	s.Require().NoError(err)
+	r, err := Open(sto, dotgit2)
 	s.NoError(err)
 
 	datas := map[string]string{
@@ -3610,8 +3643,12 @@ func (s *RepositorySuite) TestResolveRevision() {
 
 func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	r, err := Open(sto, f.DotGit())
+	dotgit1, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	dotgit2, err := f.DotGit()
+	s.Require().NoError(err)
+	r, err := Open(sto, dotgit2)
 	s.NoError(err)
 
 	datas := map[string]string{
@@ -3658,10 +3695,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 }
 
 func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks int) {
-	srcFs := fixtures.ByTag("unpacked").One().DotGit()
-	var sto storage.Storer
-	var err error
-	sto = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
+	var sto storage.Storer = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	los := sto.(storer.LooseObjectStorer)
 	s.NotNil(los)
@@ -3827,7 +3863,10 @@ func BenchmarkObjects(b *testing.B) {
 		}
 
 		b.Run(f.URL, func(b *testing.B) {
-			fs := f.DotGit()
+			fs, err := f.DotGit()
+			if err != nil {
+				b.Fatal(err)
+			}
 			st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 			worktree, err := fs.Chroot(filepath.Dir(fs.Root()))

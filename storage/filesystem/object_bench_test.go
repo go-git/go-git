@@ -22,8 +22,11 @@ func BenchmarkAlternatesObjectLookup(b *testing.B) {
 	// (repository.go imports storage/filesystem), so we set up alternates manually.
 	baseDir := b.TempDir()
 
-	templateFs := fixtures.Basic().ByTag(".git").One().DotGit(
+	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(
 		fixtures.WithTargetDir(func() string { return baseDir }))
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	workDotGit := filepath.Join(baseDir, "work", ".git")
 	alternatesDir := filepath.Join(workDotGit, "objects", "info")

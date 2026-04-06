@@ -7,6 +7,7 @@ import (
 
 	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -26,7 +27,9 @@ type BaseObjectsSuite struct {
 
 func (s *BaseObjectsSuite) SetupSuite(t *testing.T) {
 	s.Fixture = fixtures.Basic().One()
-	storer := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	require.NoError(t, err)
+	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = storer
 	s.t = t
 }

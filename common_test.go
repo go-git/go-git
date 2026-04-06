@@ -68,10 +68,12 @@ func (s *BaseSuite) buildBasicRepository() {
 // is tagged as worktree the filesystem from fixture is used, otherwise a new
 // memfs filesystem is used as worktree.
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	dotgit := f.DotGit()
+	dotgit, err := f.DotGit()
+	s.Require().NoError(err)
 	worktree := memfs.New()
 	if f.Is("worktree") {
-		worktree = f.Worktree()
+		worktree, err = f.Worktree()
+		s.Require().NoError(err)
 	}
 
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
@@ -86,8 +88,11 @@ func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
 // from the fixture but without a empty memfs worktree, the index and the
 // modules are deleted from the .git folder.
 func NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
-	dotgit := f.DotGit()
-	err := dotgit.Remove("index")
+	dotgit, err := f.DotGit()
+	if err != nil {
+		panic(err)
+	}
+	err = dotgit.Remove("index")
 	if err != nil {
 		panic(err)
 	}
@@ -116,7 +121,8 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 	}
 
 	storer := memory.NewStorage()
-	p := f.Packfile()
+	p, err := f.Packfile()
+	s.Require().NoError(err)
 	defer func() { _ = p.Close() }()
 
 	s.Require().NoError(packfile.UpdateObjectStorage(storer, p))
@@ -135,7 +141,9 @@ func (s *BaseSuite) GetBasicLocalRepositoryURL() string {
 }
 
 func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
-	return f.DotGit(fixtures.WithTargetDir(s.T().TempDir)).Root()
+	dotgit, err := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	return dotgit.Root()
 }
 
 func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {

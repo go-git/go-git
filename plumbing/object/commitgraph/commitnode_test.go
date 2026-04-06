@@ -24,8 +24,15 @@ func TestCommitNodeSuite(t *testing.T) {
 }
 
 func unpackRepository(f *fixtures.Fixture) *filesystem.Storage {
-	storer := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	p := f.Packfile()
+	dotgit, err := f.DotGit()
+	if err != nil {
+		panic(err)
+	}
+	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	p, err := f.Packfile()
+	if err != nil {
+		panic(err)
+	}
 	defer p.Close()
 	packfile.UpdateObjectStorage(storer, p)
 	return storer
