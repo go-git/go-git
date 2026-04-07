@@ -312,20 +312,22 @@ func TestCloneAll(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		tag        string
+		fixOF      string
 		format     formatcfg.ObjectFormat
 		refs       int
 		plainClone bool
 	}{
-		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4},
-		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11},
-		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4, plainClone: true},
-		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11, plainClone: true},
+		{tag: ".git", fixOF: "sha256", format: formatcfg.SHA256, refs: 4},
+		{tag: ".git", fixOF: "sha1", format: formatcfg.UnsetObjectFormat, refs: 11},
+		{tag: ".git", fixOF: "sha256", format: formatcfg.SHA256, refs: 4, plainClone: true},
+		{tag: ".git", fixOF: "sha1", format: formatcfg.UnsetObjectFormat, refs: 11, plainClone: true},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.tag, func(t *testing.T) {
+		testName := fmt.Sprintf("%s/%s/plain=%t", tc.tag, tc.fixOF, tc.plainClone)
+		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			f := fixtures.ByTag(tc.tag).One()
+			f := fixtures.ByTag(tc.tag).ByObjectFormat(tc.fixOF).One()
 
 			for _, srv := range server.All(server.Loader(t, f)) {
 				endpoint, err := srv.Start()
@@ -383,24 +385,28 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 		name         string
 		clientFormat formatcfg.ObjectFormat
 		serverTag    string
+		fixOF        string
 		wantErr      bool
 	}{
 		{
 			name:         "unset client format cannot fetch sha256",
 			clientFormat: formatcfg.UnsetObjectFormat,
-			serverTag:    ".git-sha256",
+			serverTag:    ".git",
+			fixOF:        "sha256",
 			wantErr:      true,
 		},
 		{
 			name:         "sha1 client cannot fetch sha256",
 			clientFormat: formatcfg.SHA1,
-			serverTag:    ".git-sha256",
+			serverTag:    ".git",
+			fixOF:        "sha256",
 			wantErr:      true,
 		},
 		{
 			name:         "sha256 client cannot fetch sha1",
 			clientFormat: formatcfg.SHA256,
 			serverTag:    ".git",
+			fixOF:        "sha1",
 			wantErr:      true,
 		},
 	}
@@ -409,7 +415,7 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			f := fixtures.ByTag(tc.serverTag).One()
+			f := fixtures.ByTag(tc.serverTag).ByObjectFormat(tc.fixOF).One()
 			require.NotNil(t, f, "fixture not found for tag %s", tc.serverTag)
 
 			for _, srv := range server.All(server.Loader(t, f)) {
@@ -748,8 +754,8 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 	t.Run("clone", func(t *testing.T) {
 		t.Parallel()
 
-		f := fixtures.ByTag(".git-sha256").One()
-		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+		f := fixtures.ByTag(".git").ByObjectFormat("sha256").One()
+		require.NotNil(t, f, "fixture not found")
 
 		for _, srv := range server.All(server.Loader(t, f)) {
 			endpoint, err := srv.Start()
@@ -772,8 +778,8 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 	t.Run("open", func(t *testing.T) {
 		t.Parallel()
 
-		f := fixtures.ByTag(".git-sha256").One()
-		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+		f := fixtures.ByTag(".git").ByObjectFormat("sha256").One()
+		require.NotNil(t, f, "fixture not found")
 
 		dotgit, dotgitErr := f.DotGit(fixtures.WithMemFS())
 		require.NoError(t, dotgitErr)

@@ -50,7 +50,7 @@ func mustRev(t testing.TB, f *fixtures.Fixture) io.Reader {
 
 func TestDecodeSHA256(t *testing.T) {
 	t.Parallel()
-	fixture := fixtures.ByTag("packfile-sha256").One()
+	fixture := fixtures.ByTag("packfile").ByObjectFormat("sha256").One()
 	revf, err := fixture.Rev()
 	require.NoError(t, err)
 	require.NotNil(t, revf)
@@ -88,7 +88,7 @@ func TestDecodeSHA256(t *testing.T) {
 func TestDecode(t *testing.T) {
 	t.Parallel()
 
-	fixture := fixtures.ByTag("packfile-sha256").One()
+	fixture := fixtures.ByTag("packfile").ByObjectFormat("sha256").One()
 
 	allPositions := []uint32{2, 0, 3, 4, 5, 1}
 

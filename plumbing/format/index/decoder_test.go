@@ -129,7 +129,7 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 2 - sha256",
 			input: func() io.ReadCloser {
-				dotgit, err := fixtures.ByTag(".git-sha256").One().DotGit()
+				dotgit, err := fixtures.ByTag(".git").ByObjectFormat("sha256").One().DotGit()
 				require.NoError(t, err)
 				f, err := dotgit.Open("index")
 				require.NoError(t, err)
