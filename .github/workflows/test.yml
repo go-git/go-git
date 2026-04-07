@@ -5,7 +5,13 @@ on:
     branches:
     - releases/v5.x
     - main
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
   pull_request:
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
 
 permissions: {}
 
