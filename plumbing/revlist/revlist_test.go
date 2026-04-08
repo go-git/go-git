@@ -1,11 +1,15 @@
 package revlist
 
 import (
+	"fmt"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -321,38 +325,41 @@ func (s *RevListSuite) TestRevListObjectsTreeWant() {
 //   LICENSE:   32858aad3c383ed1ff0a0f9bdf231d54a00c9e88
 //   .gitignore: c192bd6a24ea1ab01d78686e417c8bdc7c3d197f
 
-func (s *RevListSuite) makeTree(entries []object.TreeEntry) plumbing.Hash {
-	s.T().Helper()
-	tree := &object.Tree{Entries: entries}
-	obj := s.Storer.NewEncodedObject()
-	obj.SetType(plumbing.TreeObject)
-	s.Require().NoError(tree.Encode(obj))
-	hash, err := s.Storer.SetEncodedObject(obj)
-	s.Require().NoError(err)
-	return hash
-}
-
-func (s *RevListSuite) makeBlob(contents string) plumbing.Hash {
-	s.T().Helper()
-	obj := s.Storer.NewEncodedObject()
-	obj.SetType(plumbing.BlobObject)
-	w, err := obj.Writer()
-	s.Require().NoError(err)
-	_, err = w.Write([]byte(contents))
-	s.Require().NoError(err)
-	s.Require().NoError(w.Close())
-	hash, err := s.Storer.SetEncodedObject(obj)
-	s.Require().NoError(err)
-	return hash
-}
-
 var commitCounter int
 
-func (s *RevListSuite) makeCommit(treeHash plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
-	s.T().Helper()
+func testMakeTree(t *testing.T, s storer.EncodedObjectStorer, entries []object.TreeEntry) plumbing.Hash {
+	t.Helper()
+	tree := &object.Tree{Entries: entries}
+	obj := s.NewEncodedObject()
+	obj.SetType(plumbing.TreeObject)
+	require.NoError(t, tree.Encode(obj))
+	hash, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
+func testMakeCommit(t *testing.T, s storer.EncodedObjectStorer, treeHash plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
+	t.Helper()
 	commitCounter++
 	when := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(commitCounter) * time.Second)
-	return s.makeCommitAt(treeHash, when, parents...)
+	return testMakeCommitAt(t, s, treeHash, when, parents...)
+}
+
+func testMakeCommitAt(t *testing.T, s storer.EncodedObjectStorer, treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
+	t.Helper()
+	c := &object.Commit{
+		Author:       object.Signature{Name: "Test", Email: "t@t.com", When: when},
+		Committer:    object.Signature{Name: "Test", Email: "t@t.com", When: when},
+		Message:      "test",
+		TreeHash:     treeHash,
+		ParentHashes: parents,
+	}
+	obj := s.NewEncodedObject()
+	obj.SetType(plumbing.CommitObject)
+	require.NoError(t, c.Encode(obj))
+	hash, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
 }
 
 func (s *RevListSuite) makeCommitAt(treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
@@ -370,6 +377,14 @@ func (s *RevListSuite) makeCommitAt(treeHash plumbing.Hash, when time.Time, pare
 	hash, err := s.Storer.SetEncodedObject(obj)
 	s.Require().NoError(err)
 	return hash
+}
+
+func (s *RevListSuite) makeTree(entries []object.TreeEntry) plumbing.Hash {
+	return testMakeTree(s.T(), s.Storer, entries)
+}
+
+func (s *RevListSuite) makeCommit(treeHash plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
+	return testMakeCommit(s.T(), s.Storer, treeHash, parents...)
 }
 
 func (s *RevListSuite) TestRevListObjects_RevertedSubtreeMatchesRoot() {
@@ -507,60 +522,161 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaves() {
 	s.False(gotSet[gitignore], ".gitignore is in haves, must not be included")
 }
 
-func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaveAncestorIsExcluded() {
-	oldBlob := s.makeBlob("old")
-	newBlob := s.makeBlob("new")
-
-	baseTree := s.makeTree([]object.TreeEntry{
-		{Name: "x", Mode: filemode.Regular, Hash: oldBlob},
-	})
-	base := s.makeCommitAt(baseTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
-
-	haveTree := s.makeTree(nil)
-	have := s.makeCommitAt(haveTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), base)
-
-	wantTree := s.makeTree([]object.TreeEntry{
-		{Name: "x", Mode: filemode.Regular, Hash: oldBlob},
-		{Name: "y", Mode: filemode.Regular, Hash: newBlob},
-	})
-	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 2, 0, 0, time.UTC), have)
-
-	got, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaveAncestor() {
+	// A blob exists in a haves ancestor (not the tip), gets removed in
+	// the haves tip, then reintroduced in wants. We verify our output
+	// matches git rev-list --objects exactly.
+	//
+	// Use an on-disk fixture so we can compare against git rev-list.
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+
+	t := s.T()
+	license := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+	gitignore := plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+
+	baseTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: ".gitignore", Mode: filemode.Regular, Hash: gitignore},
+		{Name: "LICENSE", Mode: filemode.Regular, Hash: license},
+	})
+	base := testMakeCommit(t, sto, baseTree)
+
+	haveTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: ".gitignore", Mode: filemode.Regular, Hash: gitignore},
+	})
+	have := testMakeCommit(t, sto, haveTree, base)
+
+	wantTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: ".gitignore", Mode: filemode.Regular, Hash: gitignore},
+		{Name: "LICENSE", Mode: filemode.Regular, Hash: license},
+	})
+	want := testMakeCommit(t, sto, wantTree, have)
+
+	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
 	for _, h := range got {
 		gotSet[h] = true
 	}
 
-	s.False(gotSet[oldBlob], "objects reachable from haves ancestry must not be included")
-	s.True(gotSet[newBlob], "new objects reachable only from wants must be included")
+	// Compare against git rev-list --objects.
+	gitSet := gitRevListObjects(s.T(), dotgit.Root(), want, have)
+
+	s.Equal(gitSet, gotSet, "Objects output must match git rev-list --objects")
 }
 
-func (s *RevListSuite) TestRevListObjects_MissingHaveAncestorReturnsError() {
-	haveTree := s.makeTree([]object.TreeEntry{
-		{Name: "have", Mode: filemode.Regular, Hash: s.makeBlob("have")},
+// gitRevListObjects runs git rev-list --objects want ^have against the
+// given git directory and returns the set of object hashes.
+func gitRevListObjects(t *testing.T, gitDir string, want, have plumbing.Hash) map[plumbing.Hash]bool {
+	t.Helper()
+	set, err := tryGitRevListObjects(t, gitDir, want, have)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
+// tryGitRevListObjects is the error-returning variant of
+// gitRevListObjects for tests that need to assert on git failures.
+func tryGitRevListObjects(t *testing.T, gitDir string, want, have plumbing.Hash) (map[plumbing.Hash]bool, error) {
+	t.Helper()
+	args := []string{"--git-dir", gitDir, "rev-list", "--objects", want.String(), "^" + have.String()}
+	cmd := exec.Command("git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git rev-list failed: %s\n%s", err, string(out))
+	}
+
+	set := make(map[plumbing.Hash]bool)
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		// git rev-list --objects outputs "hash path" for tree entries;
+		// we only need the hash (first field).
+		fields := strings.Fields(line)
+		set[plumbing.NewHash(fields[0])] = true
+	}
+	return set, nil
+}
+
+func (s *RevListSuite) TestRevListObjects_MissingHaveAncestorIsTolerated() {
+	// A haves commit references a parent that doesn't exist locally.
+	// Matching git's behavior, missing haves ancestors are silently
+	// skipped — the remote may advertise refs whose ancestors we
+	// don't have locally. Verified against git rev-list --objects.
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	t := s.T()
+
+	haveTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: ".gitignore", Mode: filemode.Regular, Hash: plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")},
 	})
 	missingAncestor := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	have := s.makeCommitAt(haveTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), missingAncestor)
+	have := testMakeCommit(t, sto, haveTree, missingAncestor)
 
-	wantTree := s.makeTree([]object.TreeEntry{
-		{Name: "want", Mode: filemode.Regular, Hash: s.makeBlob("want")},
+	wantTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "LICENSE", Mode: filemode.Regular, Hash: plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")},
 	})
-	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), have)
+	want := testMakeCommit(t, sto, wantTree, have)
 
-	_, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
-	s.Error(err, "missing non-shallow have ancestors must not be ignored")
+	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.NoError(err, "missing haves ancestors should be tolerated")
+
+	gotSet := make(map[plumbing.Hash]bool, len(got))
+	for _, h := range got {
+		gotSet[h] = true
+	}
+
+	gitSet := gitRevListObjects(t, dotgit.Root(), want, have)
+	s.Equal(gitSet, gotSet, "Objects output must match git rev-list --objects")
+}
+
+func (s *RevListSuite) TestRevListObjects_MissingWantAncestorErrors() {
+	// A want commit references a parent that doesn't exist locally, and
+	// the missing parent is not reachable from any have (so it is not a
+	// shallow or haves-boundary case). git rev-list --objects errors in
+	// this case with "fatal: cannot simplify commit ... (because of
+	// <missing>)"; Objects() should match that behavior.
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	t := s.T()
+
+	// Unrelated have — no shared ancestry with want, so it cannot
+	// "cover" the missing ancestor.
+	haveTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "have", Mode: filemode.Regular, Hash: plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")},
+	})
+	have := testMakeCommit(t, sto, haveTree)
+
+	// Want with a missing parent commit, not reachable from have.
+	missingAncestor := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	wantTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "want", Mode: filemode.Regular, Hash: plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")},
+	})
+	want := testMakeCommit(t, sto, wantTree, missingAncestor)
+
+	// git rev-list must error on this case — confirm the premise.
+	_, gitErr := tryGitRevListObjects(t, dotgit.Root(), want, have)
+	s.Require().Error(gitErr, "git rev-list must error on missing want ancestor (otherwise this test's premise is wrong)")
+
+	// Objects() should match git's behavior and return an error.
+	_, err = Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.Error(err, "Objects must error on missing want ancestor to match git rev-list")
 }
 
 func (s *RevListSuite) TestRevListObjects_MissingWantParentTreeReturnsError() {
 	missingTree := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	parent := s.makeCommitAt(missingTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	parent := s.makeCommit(missingTree)
 
 	wantTree := s.makeTree([]object.TreeEntry{
-		{Name: "want", Mode: filemode.Regular, Hash: s.makeBlob("want")},
+		{Name: ".gitignore", Mode: filemode.Regular, Hash: plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")},
 	})
-	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), parent)
+	want := s.makeCommit(wantTree, parent)
 
 	_, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{parent})
 	s.Error(err, "missing trees for reachable want parents must not be ignored")
@@ -665,6 +781,52 @@ func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {
 	s.True(gotSet[commitHash], "shallow commit must be included")
 	s.True(gotSet[treeHash], "commit tree must be included")
 	s.False(gotSet[missingParent], "missing parent beyond shallow boundary must not be walked")
+}
+
+func (s *RevListSuite) TestRevListObjects_ClockSkewedHaveAncestorMissingParentTolerated() {
+	// A commit reachable from both wants and haves has a missing parent.
+	// Due to clock skew, that commit has a later timestamp than the
+	// haves tip and would be popped from the priority queue first.
+	// Ensure the missing parent is tolerated (matching Git behavior).
+	//
+	//   H (have, T=1) ──→ A (T=100, clock skew) ──→ missing
+	//   W (want, T=10) ─→ B (T=5) ──→ A
+	license := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+	gitignore := plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+
+	aTree := s.makeTree([]object.TreeEntry{
+		{Name: "shared", Mode: filemode.Regular, Hash: license},
+	})
+	missingParent := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	a := s.makeCommitAt(aTree, time.Date(2024, 1, 1, 1, 40, 0, 0, time.UTC), missingParent)
+
+	haveTree := s.makeTree([]object.TreeEntry{
+		{Name: "shared", Mode: filemode.Regular, Hash: license},
+	})
+	have := s.makeCommitAt(haveTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), a)
+
+	bTree := s.makeTree([]object.TreeEntry{
+		{Name: "extra", Mode: filemode.Regular, Hash: gitignore},
+		{Name: "shared", Mode: filemode.Regular, Hash: license},
+	})
+	b := s.makeCommitAt(bTree, time.Date(2024, 1, 1, 0, 5, 0, 0, time.UTC), a)
+
+	wantTree := s.makeTree([]object.TreeEntry{
+		{Name: "unique", Mode: filemode.Regular, Hash: gitignore},
+	})
+	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 10, 0, 0, time.UTC), b)
+
+	got, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.NoError(err, "missing parent of clock-skewed haves ancestor must be tolerated")
+
+	gotSet := make(map[plumbing.Hash]bool, len(got))
+	for _, h := range got {
+		gotSet[h] = true
+	}
+
+	s.True(gotSet[want], "want tip must be included")
+	s.False(gotSet[a], "shared ancestor must not be included")
+	s.False(gotSet[have], "have must not be included")
 }
 
 // benchFixture opens the src-d/go-git fixture (2133 objects) and walks
