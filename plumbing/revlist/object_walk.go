@@ -14,6 +14,7 @@ import (
 // objectWalk holds the state for a single Objects computation.
 type objectWalk struct {
 	s          storer.EncodedObjectStorer
+	shallows   map[plumbing.Hash]struct{}
 	wantsQueue []*object.Commit
 	havesQueue []*object.Commit
 	wantsSeen  map[plumbing.Hash]struct{}
@@ -22,13 +23,38 @@ type objectWalk struct {
 	result     []plumbing.Hash
 }
 
-func newObjectWalk(s storer.EncodedObjectStorer) *objectWalk {
+func newObjectWalk(s storer.EncodedObjectStorer) (*objectWalk, error) {
+	shallows, err := shallowSet(s)
+	if err != nil {
+		return nil, err
+	}
+
 	return &objectWalk{
 		s:         s,
+		shallows:  shallows,
 		wantsSeen: make(map[plumbing.Hash]struct{}),
 		havesSeen: make(map[plumbing.Hash]struct{}),
 		seen:      make(map[plumbing.Hash]struct{}),
+	}, nil
+}
+
+func shallowSet(s storer.EncodedObjectStorer) (map[plumbing.Hash]struct{}, error) {
+	ss, ok := s.(storer.ShallowStorer)
+	if !ok {
+		return map[plumbing.Hash]struct{}{}, nil
 	}
+
+	hashes, err := ss.Shallow()
+	if err != nil {
+		return nil, err
+	}
+
+	set := make(map[plumbing.Hash]struct{}, len(hashes))
+	for _, h := range hashes {
+		set[h] = struct{}{}
+	}
+
+	return set, nil
 }
 
 // seedWants resolves each want hash and enqueues commits for walking.
@@ -178,6 +204,10 @@ func (w *objectWalk) walkFull() error {
 			return fmt.Errorf("collecting tree objects for %s: %w", lc.Hash, err)
 		}
 
+		if _, ok := w.shallows[lc.Hash]; ok {
+			continue
+		}
+
 		for _, ph := range lc.ParentHashes {
 			if _, ok := w.wantsSeen[ph]; ok {
 				continue
@@ -197,6 +227,11 @@ func (w *objectWalk) walkFull() error {
 func (w *objectWalk) advanceHaves() {
 	rc := w.havesQueue[0]
 	w.havesQueue = w.havesQueue[1:]
+
+	if _, ok := w.shallows[rc.Hash]; ok {
+		return
+	}
+
 	for _, ph := range rc.ParentHashes {
 		if _, ok := w.havesSeen[ph]; ok {
 			continue
@@ -240,6 +275,10 @@ func (w *objectWalk) processWant() error {
 
 	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
 		return fmt.Errorf("diffing trees for %s: %w", lc.Hash, err)
+	}
+
+	if _, ok := w.shallows[lc.Hash]; ok {
+		return nil
 	}
 
 	// Enqueue parents.

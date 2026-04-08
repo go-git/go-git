@@ -16,7 +16,10 @@ func Objects(
 	wants,
 	haves []plumbing.Hash,
 ) ([]plumbing.Hash, error) {
-	w := newObjectWalk(s)
+	w, err := newObjectWalk(s)
+	if err != nil {
+		return nil, err
+	}
 	if err := w.seedHaves(haves); err != nil {
 		return nil, err
 	}

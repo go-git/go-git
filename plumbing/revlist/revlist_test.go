@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 type RevListFixtureSuite struct{}
@@ -450,7 +451,70 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaves() {
 	s.False(gotSet[gitignore], ".gitignore is in haves, must not be included")
 }
 
-// --- Benchmarks ---
+func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {
+	sto := memory.NewStorage()
+
+	blobObj := sto.NewEncodedObject()
+	blobObj.SetType(plumbing.BlobObject)
+	blobWriter, err := blobObj.Writer()
+	s.Require().NoError(err)
+	_, err = blobWriter.Write([]byte("README\n"))
+	s.Require().NoError(err)
+	s.Require().NoError(blobWriter.Close())
+	blob, err := sto.SetEncodedObject(blobObj)
+	s.Require().NoError(err)
+
+	tree := &object.Tree{Entries: []object.TreeEntry{
+		{Name: "README", Mode: filemode.Regular, Hash: blob},
+	}}
+	treeObj := sto.NewEncodedObject()
+	treeObj.SetType(plumbing.TreeObject)
+	s.Require().NoError(tree.Encode(treeObj))
+	treeHash, err := sto.SetEncodedObject(treeObj)
+	s.Require().NoError(err)
+
+	missingParent := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	when := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	commit := &object.Commit{
+		Author:       object.Signature{Name: "Test", Email: "t@t.com", When: when},
+		Committer:    object.Signature{Name: "Test", Email: "t@t.com", When: when},
+		Message:      "shallow",
+		TreeHash:     treeHash,
+		ParentHashes: []plumbing.Hash{missingParent},
+	}
+	commitObj := sto.NewEncodedObject()
+	commitObj.SetType(plumbing.CommitObject)
+	s.Require().NoError(commit.Encode(commitObj))
+	commitHash, err := sto.SetEncodedObject(commitObj)
+	s.Require().NoError(err)
+	s.Require().NoError(sto.SetShallow([]plumbing.Hash{commitHash}))
+
+	tag := &object.Tag{
+		Name:       "v0.0.1",
+		Tagger:     object.Signature{Name: "Test", Email: "t@t.com", When: when},
+		TargetType: plumbing.CommitObject,
+		Target:     commitHash,
+		Message:    "test tag",
+	}
+	tagObj := sto.NewEncodedObject()
+	tagObj.SetType(plumbing.TagObject)
+	s.Require().NoError(tag.Encode(tagObj))
+	tagHash, err := sto.SetEncodedObject(tagObj)
+	s.Require().NoError(err)
+
+	got, err := Objects(sto, []plumbing.Hash{tagHash}, nil)
+	s.Require().NoError(err)
+
+	gotSet := make(map[plumbing.Hash]bool, len(got))
+	for _, h := range got {
+		gotSet[h] = true
+	}
+
+	s.True(gotSet[tagHash], "tag must be included")
+	s.True(gotSet[commitHash], "shallow commit must be included")
+	s.True(gotSet[treeHash], "commit tree must be included")
+	s.False(gotSet[missingParent], "missing parent beyond shallow boundary must not be walked")
+}
 
 // benchFixture opens the src-d/go-git fixture (2133 objects) and walks
 // back from HEAD to find a commit ~10 commits earlier to use as the
