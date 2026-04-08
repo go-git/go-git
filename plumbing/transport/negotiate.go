@@ -19,8 +19,10 @@ import (
 
 // Negotiation errors.
 var (
-	ErrFilterNotSupported  = errors.New("server does not support filters")
-	ErrShallowNotSupported = errors.New("server does not support shallow clients")
+	ErrFilterNotSupported      = errors.New("server does not support filters")
+	ErrShallowNotSupported     = errors.New("server does not support shallow clients")
+	ErrDeepenSinceNotSupported = errors.New("server does not support deepen-since")
+	ErrDeepenNotSupported      = errors.New("server does not support deepen-not")
 )
 
 // NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
@@ -135,12 +137,23 @@ func NegotiatePack(
 
 	upreq.Wants = req.Wants
 
-	if req.Depth > 0 {
+	if req.HasDepth() {
 		if !caps.Supports(capability.Shallow) {
 			return nil, ErrShallowNotSupported
 		}
 
-		upreq.Depth = packp.DepthCommits(req.Depth)
+		switch req.Depth.(type) {
+		case packp.DepthSince:
+			if !caps.Supports(capability.DeepenSince) {
+				return nil, ErrDeepenSinceNotSupported
+			}
+		case packp.DepthReference:
+			if !caps.Supports(capability.DeepenNot) {
+				return nil, ErrDeepenNotSupported
+			}
+		}
+
+		upreq.Depth = req.Depth
 		upreq.Shallows, err = st.Shallow()
 		if err != nil {
 			return nil, err
@@ -298,7 +311,7 @@ func readShallows(
 	// Decode shallow-update
 	// If depth is not zero, then we expect a shallow update from the
 	// server.
-	if (firstRound || conn.StatelessRPC()) && req.Depth > 0 {
+	if (firstRound || conn.StatelessRPC()) && req.HasDepth() {
 		var shupd packp.ShallowUpdate
 		if err := shupd.Decode(r); err != nil {
 			return fmt.Errorf("decoding shallow-update: %w", err)

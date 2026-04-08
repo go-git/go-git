@@ -2,12 +2,14 @@ package git
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/x/plugin"
 	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
@@ -99,6 +101,48 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal() {
 
 	s.Equal("foo", o.Tagger.Name)
 	s.Equal("foo@foo.com", o.Tagger.Email)
+}
+
+func (s *OptionsSuite) TestFetchOptionsValidateRejectsMultipleDepthModes() {
+	o := FetchOptions{
+		Depth:          1,
+		DepthReference: plumbing.ReferenceName("refs/tags/v1.0.0"),
+	}
+
+	err := o.Validate()
+	s.ErrorContains(err, "mutually exclusive")
+}
+
+func (s *OptionsSuite) TestFetchOptionsUploadPackDepthSince() {
+	since := time.Unix(123, 0).UTC()
+	o := FetchOptions{DepthSince: since}
+
+	depth, ok := o.uploadPackDepth().(packp.DepthSince)
+	s.True(ok)
+	s.Equal(since, time.Time(depth))
+}
+
+func (s *OptionsSuite) TestFetchOptionsUploadPackDepthUnshallow() {
+	o := FetchOptions{Unshallow: true}
+
+	depth, ok := o.uploadPackDepth().(packp.DepthCommits)
+	s.True(ok)
+	s.Equal(packp.DepthCommits(infiniteFetchDepth), depth)
+}
+
+func (s *OptionsSuite) TestFetchOptionsUploadPackDepthReference() {
+	o := FetchOptions{DepthReference: plumbing.ReferenceName("refs/tags/v1.0.0")}
+
+	depth, ok := o.uploadPackDepth().(packp.DepthReference)
+	s.True(ok)
+	s.Equal(packp.DepthReference("refs/tags/v1.0.0"), depth)
+}
+
+func (s *OptionsSuite) TestFetchOptionsValidateRejectsInvalidDepthReference() {
+	o := FetchOptions{DepthReference: plumbing.ReferenceName("invalid")}
+
+	err := o.Validate()
+	s.ErrorIs(err, plumbing.ErrInvalidReferenceName)
 }
 
 // registerGlobalConfig registers a static ConfigSource plugin with the

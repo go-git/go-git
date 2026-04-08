@@ -408,8 +408,11 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	depth := o.uploadPackDepth()
+	depthHint := o.depthHint()
+
 	var shallows []plumbing.Hash
-	if o.Depth != 0 {
+	if depth != nil && !depth.IsZero() {
 		shallows, err = r.s.Shallow()
 		if err != nil {
 			return nil, err
@@ -425,9 +428,9 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	var haves []plumbing.Hash
-	wants, _ := getWants(r.s, refs, o.Depth)
+	wants, _ := getWants(r.s, refs, depthHint)
 	if len(wants) > 0 {
-		haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
+		haves, err = getHaves(localRefs, remoteRefs, r.s, depthHint)
 		if err != nil {
 			return nil, err
 		}
@@ -457,7 +460,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		req := &transport.FetchRequest{
 			Wants:       wants,
 			Haves:       haves,
-			Depth:       o.Depth,
+			Depth:       depth,
 			Progress:    o.Progress,
 			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
 			Filter:      o.Filter,

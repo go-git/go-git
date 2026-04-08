@@ -27,7 +27,7 @@ import (
 )
 
 func (s *HTTPSession) fetchDumb(ctx context.Context, req *transport.FetchRequest) error {
-	if req.Depth != 0 {
+	if req != nil && req.HasDepth() {
 		return errors.New("dumb http protocol does not support shallow capabilities")
 	}
 
