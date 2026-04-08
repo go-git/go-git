@@ -55,11 +55,14 @@ func OpenTable(r io.ReaderAt, size int64) (*Table, error) {
 
 // readAt reads len(p) bytes from the table at the given offset.
 func (t *Table) readAt(p []byte, off int64) error {
-	_, err := t.r.ReadAt(p, off)
-	if err != nil && err != io.EOF {
+	n, err := t.r.ReadAt(p, off)
+	if n == len(p) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	return nil
+	return io.ErrUnexpectedEOF
 }
 
 func (t *Table) readFooter() error {
@@ -334,7 +337,7 @@ func (t *Table) searchRefBlock(br *blockReader, name string) (*RefRecord, error)
 	var found *RefRecord
 
 	// Use binary search via restart points, then linear scan.
-	startPos := max(br.seek(name, t.headerSize()), 0)
+	startPos := max(br.seek(name), 0)
 
 	pos := startPos
 	prevName := ""

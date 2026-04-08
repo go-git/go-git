@@ -383,6 +383,13 @@ func (d *Decoder) readChecksum(expected []byte) error {
 		return nil
 	}
 
+	// Git writes an all-zero checksum when index.skipHash is enabled.
+	// Accept these unconditionally, matching native Git behavior.
+	if h.IsZero() {
+		trace.Internal.Printf("index: stored checksum is all-zero (skipHash index), accepting")
+		return nil
+	}
+
 	if h.Compare(expected) != 0 {
 		trace.Internal.Printf("index: checksum mismatch, expected %x got %s", expected, h)
 		return ErrInvalidChecksum

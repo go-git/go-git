@@ -2,7 +2,9 @@ package reftable
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -145,4 +147,58 @@ func TestWriterWithLogs(t *testing.T) {
 	assert.Equal(t, "refs/heads/main", logs[0].RefName)
 	assert.Equal(t, "Test User", logs[0].Name)
 	assert.Equal(t, "initial commit", logs[0].Message)
+}
+
+func TestWriterMultiBlockRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Create enough refs to span multiple blocks with a small block size.
+	const numRefs = 200
+	const blockSize = 512
+
+	var refs []RefRecord
+	for i := 0; i < numRefs; i++ {
+		h := sha1.Sum([]byte(fmt.Sprintf("ref-%04d", i)))
+		refs = append(refs, RefRecord{
+			RefName:     fmt.Sprintf("refs/heads/branch-%04d", i),
+			ValueType:   refValueVal1,
+			Value:       h[:],
+			UpdateIndex: uint64(i + 1),
+		})
+	}
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterOptions{
+		BlockSize:      blockSize,
+		MinUpdateIndex: 1,
+		MaxUpdateIndex: uint64(numRefs),
+	})
+	for _, r := range refs {
+		w.AddRef(r)
+	}
+	require.NoError(t, w.Close())
+
+	data := buf.Bytes()
+	t.Logf("table size: %d bytes (expect multiple %d-byte blocks)", len(data), blockSize)
+
+	tbl, err := OpenTable(newBytesReaderAt(data), int64(len(data)))
+	require.NoError(t, err)
+
+	// Verify every ref can be looked up individually.
+	for _, ref := range refs {
+		rec, err := tbl.Ref(ref.RefName)
+		require.NoError(t, err, "lookup failed for %s", ref.RefName)
+		require.NotNil(t, rec, "ref %s not found", ref.RefName)
+		assert.Equal(t, ref.RefName, rec.RefName)
+		assert.Equal(t, hex.EncodeToString(ref.Value), hex.EncodeToString(rec.Value))
+	}
+
+	// Verify iteration returns all refs.
+	var names []string
+	err = tbl.IterRefs(func(rec RefRecord) bool {
+		names = append(names, rec.RefName)
+		return true
+	})
+	require.NoError(t, err)
+	assert.Len(t, names, numRefs)
 }

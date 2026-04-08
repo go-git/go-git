@@ -134,33 +134,33 @@ func (w *Writer) writeHeader() error {
 }
 
 func (w *Writer) writeRefBlocks() error {
-	// Build blocks of encoded ref records.
 	var buf bytes.Buffer
 	prevName := ""
 	recordCount := 0
 	var restarts []uint32
-	blockDataStart := w.totalWritten + int64(blockHeaderSize)
+	isFirstBlock := (w.totalWritten == int64(headerSizeV1))
 
 	flush := func() error {
 		if buf.Len() == 0 {
 			return nil
 		}
-		return w.flushRefBlock(buf.Bytes(), restarts)
+		err := w.flushRefBlock(buf.Bytes(), restarts, isFirstBlock)
+		isFirstBlock = false
+		return err
 	}
 
 	for i := range w.refs {
 		rec := &w.refs[i]
 		encoded := encodeRefRecord(rec, prevName, w.hashSize, w.opts.MinUpdateIndex)
 
-		// Check if this record would exceed block size.
-		// Block = file header (first block only) + block header + data + restart table.
-		headerOverhead := int64(0)
-		if w.totalWritten == int64(headerSizeV1) && buf.Len() == 0 {
-			headerOverhead = 0 // header already written
+		// Compute the total block size including all overhead.
+		fileHeaderOverhead := 0
+		if isFirstBlock {
+			fileHeaderOverhead = headerSizeV1
 		}
 		restartTableSize := (len(restarts) + 1) * 3 // +1 for potential new restart
-		totalSize := headerOverhead + int64(blockHeaderSize) + int64(buf.Len()) + int64(len(encoded)) + int64(restartTableSize) + 2
-		if buf.Len() > 0 && totalSize > int64(w.blockSize) {
+		totalSize := fileHeaderOverhead + blockHeaderSize + buf.Len() + len(encoded) + restartTableSize + 2
+		if buf.Len() > 0 && totalSize > w.blockSize {
 			if err := flush(); err != nil {
 				return err
 			}
@@ -168,36 +168,30 @@ func (w *Writer) writeRefBlocks() error {
 			restarts = nil
 			prevName = ""
 			recordCount = 0
-			// Re-encode with no prefix compression since we're starting a new block.
 			encoded = encodeRefRecord(rec, "", w.hashSize, w.opts.MinUpdateIndex)
 		}
 
 		if recordCount%w.restartFreq == 0 {
-			restarts = append(restarts, uint32(int64(blockHeaderSize)+int64(buf.Len())+w.refBlockStart()))
-			// Re-encode at restart point with no prefix compression.
+			// Restart offset is relative to the start of the block in the file.
+			// For the first block, the block starts at file offset 0 (includes file header).
+			// For subsequent blocks, the block starts at the block boundary.
+			restartBase := 0
+			if isFirstBlock {
+				restartBase = headerSizeV1
+			}
+			restarts = append(restarts, uint32(restartBase+blockHeaderSize+buf.Len()))
 			encoded = encodeRefRecord(rec, "", w.hashSize, w.opts.MinUpdateIndex)
 		}
 
 		buf.Write(encoded)
 		prevName = rec.RefName
 		recordCount++
-		_ = blockDataStart // suppress unused
 	}
 
 	return flush()
 }
 
-// refBlockStart returns the offset adjustment for restart points in the current ref block.
-func (w *Writer) refBlockStart() int64 {
-	// For the first block, restart offsets are relative to file position 0
-	// and include the file header.
-	if w.totalWritten == int64(headerSizeV1) {
-		return int64(headerSizeV1)
-	}
-	return 0
-}
-
-func (w *Writer) flushRefBlock(data []byte, restarts []uint32) error {
+func (w *Writer) flushRefBlock(data []byte, restarts []uint32, isFirstBlock bool) error {
 	// Build the full block: header + data + restart table + restart count.
 	restartTable := make([]byte, len(restarts)*3+2)
 	for i, r := range restarts {
@@ -207,18 +201,16 @@ func (w *Writer) flushRefBlock(data []byte, restarts []uint32) error {
 	}
 	binary.BigEndian.PutUint16(restartTable[len(restarts)*3:], uint16(len(restarts)))
 
-	// Determine if this is the first block (which shares space with the file header).
+	// blockLen as stored in the header is the total meaningful size from
+	// the start of the raw block data (including file header for the first block).
 	fileHeaderSize := 0
-	if w.totalWritten == int64(headerSizeV1) {
+	if isFirstBlock {
 		fileHeaderSize = headerSizeV1
 	}
-
-	// blockLen as stored in the header is the total meaningful size of the block
-	// from the start of the raw block data (including file header for the first block).
 	contentLen := blockHeaderSize + len(data) + len(restartTable)
 	blockLen := fileHeaderSize + contentLen
 
-	// Pad to blockSize.
+	// Pad to blockSize alignment.
 	padding := 0
 	if w.blockSize > 0 && blockLen < w.blockSize {
 		padding = w.blockSize - blockLen

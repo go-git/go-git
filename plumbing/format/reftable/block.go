@@ -114,17 +114,17 @@ func readBlock(raw []byte, fileHeaderSize int) (*blockReader, error) {
 //
 // For ref blocks, the offset in the restart table is relative to the start of
 // the file, but our data starts after the header. We need to adjust offsets.
-func (br *blockReader) seek(target string, headerLen int) int {
+func (br *blockReader) seek(target string) int {
 	if len(br.restarts) == 0 {
 		return -1
 	}
 
 	// Binary search over restart points to find the last restart <= target.
-	// Restart offsets are relative to file position 0 for ref blocks,
-	// so we subtract headerLen + blockHeaderSize to get positions within br.data.
+	// Restart offsets are relative to the start of the block in the file,
+	// so we subtract br.headerLen to get positions within br.data.
 	adjustedRestarts := make([]int, len(br.restarts))
 	for i, r := range br.restarts {
-		adj := max(int(r)-headerLen-blockHeaderSize, 0)
+		adj := max(int(r)-br.headerLen, 0)
 		adjustedRestarts[i] = adj
 	}
 
