@@ -8,14 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-billy/v6/osfs"
-
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
-	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -24,7 +20,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
-	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -206,17 +201,7 @@ func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remote
 	var hashesToPush []plumbing.Hash
 	// Avoid the expensive revlist operation if we're only doing deletes.
 	if !allDelete {
-		if url.IsLocalEndpoint(o.RemoteURL) {
-			// If we're are pushing to a local repo, it might be much
-			// faster to use a local storage layer to get the commits
-			// to ignore, when calculating the object revlist.
-			localStorer := filesystem.NewStorage(
-				osfs.New(o.RemoteURL, osfs.WithBoundOS()), cache.NewObjectLRUDefault())
-			hashesToPush, err = revlist.ObjectsWithStorageForIgnores(
-				r.s, localStorer, objects, haves)
-		} else {
-			hashesToPush, err = revlist.Objects(r.s, objects, haves)
-		}
+		hashesToPush, err = revlist.Objects(r.s, objects, haves)
 		if err != nil {
 			return err
 		}
