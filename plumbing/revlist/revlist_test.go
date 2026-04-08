@@ -215,21 +215,24 @@ func (s *RevListSuite) TestReachableObjectsNoRevisit() {
 		[]plumbing.Hash{plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")})
 	s.NoError(err)
 
-	// Filter to just commits and verify reverse chronological order.
-	// Merge-branch commits (a5b8b09, b8e471f) must be included
-	// despite 35e8510 being in haves.
-	var commits []plumbing.Hash
+	// Filter to just commits and verify merge-branch commits (a5b8b09,
+	// b8e471f) are included despite 35e8510 being in haves.
+	gotSet := make(map[plumbing.Hash]bool)
 	for _, h := range got {
 		if _, err := object.GetCommit(s.Storer, h); err == nil {
-			commits = append(commits, h)
+			gotSet[h] = true
 		}
 	}
-	s.Equal([]plumbing.Hash{
+	expected := []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
 		plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
 		plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
-	}, commits)
+	}
+	for _, h := range expected {
+		s.True(gotSet[h])
+	}
+	s.Len(gotSet, len(expected))
 }
 
 func (s *RevListSuite) TestRevListObjectsNoIgnore() {
@@ -295,12 +298,34 @@ func (s *RevListSuite) makeTree(entries []object.TreeEntry) plumbing.Hash {
 	return hash
 }
 
+func (s *RevListSuite) makeTag(target plumbing.Hash) plumbing.Hash {
+	s.T().Helper()
+	tag := &object.Tag{
+		Name:       "v0.0.1",
+		Tagger:     object.Signature{Name: "Test", Email: "t@t.com", When: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+		TargetType: plumbing.CommitObject,
+		Target:     target,
+		Message:    "test tag",
+	}
+	obj := s.Storer.NewEncodedObject()
+	obj.SetType(plumbing.TagObject)
+	s.Require().NoError(tag.Encode(obj))
+	hash, err := s.Storer.SetEncodedObject(obj)
+	s.Require().NoError(err)
+	return hash
+}
+
 var commitCounter int
 
 func (s *RevListSuite) makeCommit(treeHash plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
 	s.T().Helper()
 	commitCounter++
 	when := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(commitCounter) * time.Second)
+	return s.makeCommitAt(treeHash, when, parents...)
+}
+
+func (s *RevListSuite) makeCommitAt(treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
+	s.T().Helper()
 	c := &object.Commit{
 		Author:       object.Signature{Name: "Test", Email: "t@t.com", When: when},
 		Committer:    object.Signature{Name: "Test", Email: "t@t.com", When: when},
@@ -449,6 +474,42 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaves() {
 
 	s.False(gotSet[license], "LICENSE is in haves, must not be included")
 	s.False(gotSet[gitignore], ".gitignore is in haves, must not be included")
+}
+
+func (s *RevListSuite) TestRevListObjects_SkewedCommitTimesDoNotResendCommonBase() {
+	// Reachability is graph-based, not timestamp-based. Even when the shared
+	// base commit has a later committer time than both child tips, it is
+	// already reachable from haves and must not be emitted.
+	license := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
+	gitignore := plumbing.NewHash("c192bd6a24ea1ab01d78686e417c8bdc7c3d197f")
+
+	baseTree := s.makeTree([]object.TreeEntry{
+		{Name: "shared", Mode: filemode.Regular, Hash: license},
+	})
+	base := s.makeCommitAt(baseTree, time.Date(2024, 1, 1, 0, 2, 0, 0, time.UTC))
+
+	haveTree := s.makeTree([]object.TreeEntry{
+		{Name: "shared", Mode: filemode.Regular, Hash: license},
+	})
+	have := s.makeCommitAt(haveTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), base)
+
+	wantTree := s.makeTree([]object.TreeEntry{
+		{Name: "unique", Mode: filemode.Regular, Hash: gitignore},
+	})
+	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), base)
+
+	got, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.Require().NoError(err)
+
+	gotSet := make(map[plumbing.Hash]bool, len(got))
+	for _, h := range got {
+		gotSet[h] = true
+	}
+
+	s.True(gotSet[want], "want tip must be included")
+	s.True(gotSet[wantTree], "want tree must be included")
+	s.True(gotSet[gitignore], "new blob must be included")
+	s.False(gotSet[base], "common base reachable from haves must not be included")
 }
 
 func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {

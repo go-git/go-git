@@ -7,10 +7,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
-// Objects computes the set of object hashes reachable from wants but not
-// reachable from haves. It walks wants and haves simultaneously in
-// committer-time order, only advancing the haves side far enough to
-// determine which wanted commits are new.
+// Objects computes object hashes reachable from wants while excluding
+// commits reachable from haves. It expands haves first to establish commit
+// boundaries, then walks wants in the same object store.
 func Objects(
 	s storer.EncodedObjectStorer,
 	wants,
@@ -36,17 +35,17 @@ func Objects(
 // list of want hashes that can reach it.
 func ObjectsWithRef(
 	s storer.EncodedObjectStorer,
-	objs,
-	ignore []plumbing.Hash,
+	wants,
+	haves []plumbing.Hash,
 ) (map[plumbing.Hash][]plumbing.Hash, error) {
 	all := map[plumbing.Hash][]plumbing.Hash{}
-	for _, obj := range objs {
-		hashes, err := Objects(s, []plumbing.Hash{obj}, ignore)
+	for _, want := range wants {
+		hashes, err := Objects(s, []plumbing.Hash{want}, haves)
 		if err != nil {
 			return nil, err
 		}
 		for _, h := range hashes {
-			all[h] = append(all[h], obj)
+			all[h] = append(all[h], want)
 		}
 	}
 	return all, nil

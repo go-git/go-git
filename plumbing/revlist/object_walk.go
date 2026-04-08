@@ -3,7 +3,6 @@ package revlist
 import (
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -81,7 +80,7 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 				return fmt.Errorf("decoding commit %s: %w", h, err)
 			}
 			w.wantsSeen[h] = struct{}{}
-			insertSorted(&w.wantsQueue, c)
+			w.wantsQueue = append(w.wantsQueue, c)
 		case plumbing.TagObject:
 			tag, err := object.DecodeTag(w.s, o)
 			if err != nil {
@@ -138,7 +137,7 @@ func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
 				return fmt.Errorf("decoding haves commit %s: %w", h, err)
 			}
 			w.havesSeen[h] = struct{}{}
-			insertSorted(&w.havesQueue, c)
+			w.havesQueue = append(w.havesQueue, c)
 			if t, err := c.Tree(); err == nil {
 				markTreeSeen(w.s, t, w.seen)
 			}
@@ -167,13 +166,10 @@ func (w *objectWalk) walk() error {
 	if len(w.havesQueue) == 0 {
 		return w.walkFull()
 	}
+	for len(w.havesQueue) > 0 {
+		w.advanceHaves()
+	}
 	for len(w.wantsQueue) > 0 {
-		// Pop whichever side has the newer commit.
-		if len(w.havesQueue) > 0 && !w.havesQueue[0].Committer.When.Before(w.wantsQueue[0].Committer.When) {
-			w.advanceHaves()
-			continue
-		}
-
 		if err := w.processWant(); err != nil {
 			return err
 		}
@@ -217,7 +213,7 @@ func (w *objectWalk) walkFull() error {
 			if err != nil {
 				return fmt.Errorf("getting parent commit %s: %w", ph, err)
 			}
-			insertSorted(&w.wantsQueue, pc)
+			w.wantsQueue = append(w.wantsQueue, pc)
 		}
 	}
 	return nil
@@ -238,7 +234,7 @@ func (w *objectWalk) advanceHaves() {
 		}
 		w.havesSeen[ph] = struct{}{}
 		if pc, err := object.GetCommit(w.s, ph); err == nil {
-			insertSorted(&w.havesQueue, pc)
+			w.havesQueue = append(w.havesQueue, pc)
 		}
 	}
 }
@@ -291,20 +287,9 @@ func (w *objectWalk) processWant() error {
 		if err != nil {
 			return fmt.Errorf("getting parent commit %s: %w", ph, err)
 		}
-		insertSorted(&w.wantsQueue, pc)
+		w.wantsQueue = append(w.wantsQueue, pc)
 	}
 	return nil
-}
-
-// insertSorted inserts a commit into a slice sorted by committer time
-// descending (newest first).
-func insertSorted(q *[]*object.Commit, c *object.Commit) {
-	i := sort.Search(len(*q), func(i int) bool {
-		return (*q)[i].Committer.When.Before(c.Committer.When)
-	})
-	*q = append(*q, nil)
-	copy((*q)[i+1:], (*q)[i:])
-	(*q)[i] = c
 }
 
 // collectChangedTreeObjects walks newTree, comparing entry hashes against
