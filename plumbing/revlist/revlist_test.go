@@ -298,18 +298,15 @@ func (s *RevListSuite) makeTree(entries []object.TreeEntry) plumbing.Hash {
 	return hash
 }
 
-func (s *RevListSuite) makeTag(target plumbing.Hash) plumbing.Hash {
+func (s *RevListSuite) makeBlob(contents string) plumbing.Hash {
 	s.T().Helper()
-	tag := &object.Tag{
-		Name:       "v0.0.1",
-		Tagger:     object.Signature{Name: "Test", Email: "t@t.com", When: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
-		TargetType: plumbing.CommitObject,
-		Target:     target,
-		Message:    "test tag",
-	}
 	obj := s.Storer.NewEncodedObject()
-	obj.SetType(plumbing.TagObject)
-	s.Require().NoError(tag.Encode(obj))
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	s.Require().NoError(err)
+	_, err = w.Write([]byte(contents))
+	s.Require().NoError(err)
+	s.Require().NoError(w.Close())
 	hash, err := s.Storer.SetEncodedObject(obj)
 	s.Require().NoError(err)
 	return hash
@@ -474,6 +471,65 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaves() {
 
 	s.False(gotSet[license], "LICENSE is in haves, must not be included")
 	s.False(gotSet[gitignore], ".gitignore is in haves, must not be included")
+}
+
+func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaveAncestorIsExcluded() {
+	oldBlob := s.makeBlob("old")
+	newBlob := s.makeBlob("new")
+
+	baseTree := s.makeTree([]object.TreeEntry{
+		{Name: "x", Mode: filemode.Regular, Hash: oldBlob},
+	})
+	base := s.makeCommitAt(baseTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	haveTree := s.makeTree(nil)
+	have := s.makeCommitAt(haveTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), base)
+
+	wantTree := s.makeTree([]object.TreeEntry{
+		{Name: "x", Mode: filemode.Regular, Hash: oldBlob},
+		{Name: "y", Mode: filemode.Regular, Hash: newBlob},
+	})
+	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 2, 0, 0, time.UTC), have)
+
+	got, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.Require().NoError(err)
+
+	gotSet := make(map[plumbing.Hash]bool, len(got))
+	for _, h := range got {
+		gotSet[h] = true
+	}
+
+	s.False(gotSet[oldBlob], "objects reachable from haves ancestry must not be included")
+	s.True(gotSet[newBlob], "new objects reachable only from wants must be included")
+}
+
+func (s *RevListSuite) TestRevListObjects_MissingHaveAncestorReturnsError() {
+	haveTree := s.makeTree([]object.TreeEntry{
+		{Name: "have", Mode: filemode.Regular, Hash: s.makeBlob("have")},
+	})
+	missingAncestor := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	have := s.makeCommitAt(haveTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), missingAncestor)
+
+	wantTree := s.makeTree([]object.TreeEntry{
+		{Name: "want", Mode: filemode.Regular, Hash: s.makeBlob("want")},
+	})
+	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), have)
+
+	_, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.Error(err, "missing non-shallow have ancestors must not be ignored")
+}
+
+func (s *RevListSuite) TestRevListObjects_MissingWantParentTreeReturnsError() {
+	missingTree := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	parent := s.makeCommitAt(missingTree, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	wantTree := s.makeTree([]object.TreeEntry{
+		{Name: "want", Mode: filemode.Regular, Hash: s.makeBlob("want")},
+	})
+	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), parent)
+
+	_, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{parent})
+	s.Error(err, "missing trees for reachable want parents must not be ignored")
 }
 
 func (s *RevListSuite) TestRevListObjects_SkewedCommitTimesDoNotResendCommonBase() {

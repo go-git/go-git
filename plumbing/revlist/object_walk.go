@@ -167,7 +167,9 @@ func (w *objectWalk) walk() error {
 		return w.walkFull()
 	}
 	for len(w.havesQueue) > 0 {
-		w.advanceHaves()
+		if err := w.advanceHaves(); err != nil {
+			return err
+		}
 	}
 	for len(w.wantsQueue) > 0 {
 		if err := w.processWant(); err != nil {
@@ -220,12 +222,12 @@ func (w *objectWalk) walkFull() error {
 }
 
 // advanceHaves pops the newest haves commit and enqueues its parents.
-func (w *objectWalk) advanceHaves() {
+func (w *objectWalk) advanceHaves() error {
 	rc := w.havesQueue[0]
 	w.havesQueue = w.havesQueue[1:]
 
 	if _, ok := w.shallows[rc.Hash]; ok {
-		return
+		return nil
 	}
 
 	for _, ph := range rc.ParentHashes {
@@ -233,10 +235,19 @@ func (w *objectWalk) advanceHaves() {
 			continue
 		}
 		w.havesSeen[ph] = struct{}{}
-		if pc, err := object.GetCommit(w.s, ph); err == nil {
-			w.havesQueue = append(w.havesQueue, pc)
+		pc, err := object.GetCommit(w.s, ph)
+		if err != nil {
+			return fmt.Errorf("getting haves parent commit %s: %w", ph, err)
 		}
+		if t, err := pc.Tree(); err == nil {
+			markTreeSeen(w.s, t, w.seen)
+		} else {
+			return fmt.Errorf("getting haves tree for %s: %w", pc.Hash, err)
+		}
+		w.havesQueue = append(w.havesQueue, pc)
 	}
+
+	return nil
 }
 
 // processWant pops the newest wants commit, collects its new objects,
@@ -262,11 +273,15 @@ func (w *objectWalk) processWant() error {
 
 	var oldTrees []*object.Tree
 	for i := 0; i < lc.NumParents(); i++ {
-		if parent, err := lc.Parent(i); err == nil {
-			if pt, err := parent.Tree(); err == nil {
-				oldTrees = append(oldTrees, pt)
-			}
+		parent, err := lc.Parent(i)
+		if err != nil {
+			return fmt.Errorf("getting parent commit %s: %w", lc.ParentHashes[i], err)
 		}
+		pt, err := parent.Tree()
+		if err != nil {
+			return fmt.Errorf("getting parent tree for %s: %w", parent.Hash, err)
+		}
+		oldTrees = append(oldTrees, pt)
 	}
 
 	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
