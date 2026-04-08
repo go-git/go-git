@@ -25,6 +25,21 @@ type RevListSuite struct {
 	Storer storer.EncodedObjectStorer
 }
 
+type delegatedObjectStorer struct {
+	storer.EncodedObjectStorer
+	called bool
+	wants  []plumbing.Hash
+	haves  []plumbing.Hash
+	result []plumbing.Hash
+}
+
+func (s *delegatedObjectStorer) RevListObjects(wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	s.called = true
+	s.wants = append([]plumbing.Hash(nil), wants...)
+	s.haves = append([]plumbing.Hash(nil), haves...)
+	return append([]plumbing.Hash(nil), s.result...), nil
+}
+
 func TestRevListSuite(t *testing.T) {
 	t.Parallel()
 	suite.Run(t, new(RevListSuite))
@@ -82,6 +97,25 @@ func (s *RevListSuite) TestRevListObjects_Submodules() {
 	for _, h := range revList {
 		s.False(submodules[h.String()])
 	}
+}
+
+func (s *RevListSuite) TestRevListObjects_DelegatesToObjectWalker() {
+	want := plumbing.NewHash(initialCommit)
+	have := plumbing.NewHash(secondCommit)
+	expected := []plumbing.Hash{plumbing.NewHash(someCommit)}
+
+	sto := &delegatedObjectStorer{
+		EncodedObjectStorer: memory.NewStorage(),
+		result:              expected,
+	}
+
+	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.Require().NoError(err)
+
+	s.True(sto.called)
+	s.Equal([]plumbing.Hash{want}, sto.wants)
+	s.Equal([]plumbing.Hash{have}, sto.haves)
+	s.Equal(expected, got)
 }
 
 // ---
