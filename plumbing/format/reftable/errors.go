@@ -17,8 +17,4 @@ var (
 
 	// ErrCorruptBlock is returned when a block cannot be decoded.
 	ErrCorruptBlock = errors.New("reftable: corrupt block")
-
-	// ErrReadOnly is returned when a write operation is attempted on a
-	// read-only reftable storage.
-	ErrReadOnly = errors.New("reftable: write operations not yet supported")
 )

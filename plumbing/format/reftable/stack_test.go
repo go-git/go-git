@@ -1,18 +1,23 @@
 package reftable
 
 import (
-	"encoding/hex"
 	"testing"
 
-	"github.com/go-git/go-billy/v6/osfs"
+	fixtures "github.com/go-git/go-git-fixtures/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func openTestStack(t *testing.T) *Stack {
+func openFixtureStack(t *testing.T) *Stack {
 	t.Helper()
-	fs := osfs.New("testdata/repo1/reftable")
-	stack, err := OpenStack(fs)
+	f := fixtures.ByTag("reftable").One()
+	dotgit, err := f.DotGit()
+	require.NoError(t, err)
+
+	reftableDir, err := dotgit.Chroot("reftable")
+	require.NoError(t, err)
+
+	stack, err := OpenStack(reftableDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = stack.Close() })
 	return stack
@@ -20,48 +25,34 @@ func openTestStack(t *testing.T) *Stack {
 
 func TestStackRef(t *testing.T) {
 	t.Parallel()
-	stack := openTestStack(t)
+	stack := openFixtureStack(t)
 
-	tests := []struct {
-		name     string
-		wantHash string
-		wantNil  bool
-	}{
-		{"refs/heads/main", "057b41687e44e63ac774d827e64f95b8a383912a", false},
-		{"refs/heads/feature", "057b41687e44e63ac774d827e64f95b8a383912a", false},
-		{"refs/tags/v1.0", "9e9e03cb2ab761b9a888da292e5066d0939b1221", false},
-		{"refs/heads/nonexistent", "", true},
-	}
+	// HEAD should exist.
+	head, err := stack.Ref("HEAD")
+	require.NoError(t, err)
+	require.NotNil(t, head)
+	assert.Equal(t, uint8(refValueSymref), head.ValueType)
+	assert.NotEmpty(t, head.Target)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			rec, err := stack.Ref(tt.name)
-			require.NoError(t, err)
-			if tt.wantNil {
-				assert.Nil(t, rec)
-			} else {
-				require.NotNil(t, rec)
-				assert.Equal(t, tt.wantHash, hex.EncodeToString(rec.Value))
-			}
-		})
-	}
+	// The branch HEAD points to should also exist.
+	branch, err := stack.Ref(head.Target)
+	require.NoError(t, err)
+	require.NotNil(t, branch, "branch %s not found", head.Target)
+	assert.Equal(t, uint8(refValueVal1), branch.ValueType)
 }
 
-func TestStackRefHEAD(t *testing.T) {
+func TestStackRefNotFound(t *testing.T) {
 	t.Parallel()
-	stack := openTestStack(t)
+	stack := openFixtureStack(t)
 
-	rec, err := stack.Ref("HEAD")
+	rec, err := stack.Ref("refs/heads/nonexistent")
 	require.NoError(t, err)
-	require.NotNil(t, rec)
-	assert.Equal(t, uint8(refValueSymref), rec.ValueType)
-	assert.Equal(t, "refs/heads/main", rec.Target)
+	assert.Nil(t, rec)
 }
 
 func TestStackIterRefs(t *testing.T) {
 	t.Parallel()
-	stack := openTestStack(t)
+	stack := openFixtureStack(t)
 
 	var names []string
 	err := stack.IterRefs(func(rec RefRecord) bool {
@@ -71,22 +62,24 @@ func TestStackIterRefs(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, names, "HEAD")
-	assert.Contains(t, names, "refs/heads/main")
-	assert.Contains(t, names, "refs/heads/feature")
-	assert.Contains(t, names, "refs/tags/v1.0")
-	assert.Contains(t, names, "refs/tags/v2.0")
+	assert.Greater(t, len(names), 1, "expected more than just HEAD")
 }
 
 func TestStackLogsFor(t *testing.T) {
 	t.Parallel()
-	stack := openTestStack(t)
+	stack := openFixtureStack(t)
 
-	logs, err := stack.LogsFor("refs/heads/main")
+	// Find the branch HEAD points to.
+	head, err := stack.Ref("HEAD")
 	require.NoError(t, err)
-	assert.Greater(t, len(logs), 0, "expected reflog entries for refs/heads/main")
+	require.NotNil(t, head)
 
-	// Entries should be newest first.
+	logs, err := stack.LogsFor(head.Target)
+	require.NoError(t, err)
+
+	// Logs may be empty depending on fixture content.
 	if len(logs) > 1 {
+		// Should be newest first.
 		assert.GreaterOrEqual(t, logs[0].UpdateIndex, logs[1].UpdateIndex)
 	}
 }

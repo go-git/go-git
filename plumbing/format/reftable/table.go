@@ -40,28 +40,26 @@ type Table struct {
 	size     int64
 	footer   footer
 	hashSize int
-
-	// Cached full file data for simplicity. For very large tables,
-	// this could be replaced with on-demand block reads.
-	data []byte
 }
 
 // OpenTable opens a reftable from an io.ReaderAt with the given size.
 func OpenTable(r io.ReaderAt, size int64) (*Table, error) {
 	t := &Table{r: r, size: size}
 
-	// Read the entire file into memory. For typical reftable sizes
-	// (kilobytes to low megabytes) this is efficient.
-	t.data = make([]byte, size)
-	if _, err := r.ReadAt(t.data, 0); err != nil && err != io.EOF {
-		return nil, fmt.Errorf("reftable: reading file: %w", err)
-	}
-
 	if err := t.readFooter(); err != nil {
 		return nil, err
 	}
 
 	return t, nil
+}
+
+// readAt reads len(p) bytes from the table at the given offset.
+func (t *Table) readAt(p []byte, off int64) error {
+	_, err := t.r.ReadAt(p, off)
+	if err != nil && err != io.EOF {
+		return err
+	}
+	return nil
 }
 
 func (t *Table) readFooter() error {
@@ -71,7 +69,10 @@ func (t *Table) readFooter() error {
 		return fmt.Errorf("%w: file too small for footer", ErrInvalidReftable)
 	}
 
-	footerData := t.data[t.size-int64(footerSize):]
+	footerData := make([]byte, footerSizeV2) // allocate for largest possible footer
+	if err := t.readAt(footerData[:footerSize], t.size-int64(footerSize)); err != nil {
+		return fmt.Errorf("reftable: reading footer: %w", err)
+	}
 
 	// Check magic.
 	if footerData[0] != magic[0] || footerData[1] != magic[1] ||
@@ -81,7 +82,9 @@ func (t *Table) readFooter() error {
 		if t.size < int64(footerSize) {
 			return ErrBadMagic
 		}
-		footerData = t.data[t.size-int64(footerSize):]
+		if err := t.readAt(footerData[:footerSize], t.size-int64(footerSize)); err != nil {
+			return fmt.Errorf("reftable: reading footer: %w", err)
+		}
 		if footerData[0] != magic[0] || footerData[1] != magic[1] ||
 			footerData[2] != magic[2] || footerData[3] != magic[3] {
 			return ErrBadMagic
@@ -92,10 +95,14 @@ func (t *Table) readFooter() error {
 	switch version {
 	case versionV1:
 		footerSize = footerSizeV1
-		footerData = t.data[t.size-int64(footerSize):]
+		if err := t.readAt(footerData[:footerSize], t.size-int64(footerSize)); err != nil {
+			return fmt.Errorf("reftable: reading footer: %w", err)
+		}
 	case versionV2:
 		footerSize = footerSizeV2
-		footerData = t.data[t.size-int64(footerSize):]
+		if err := t.readAt(footerData[:footerSize], t.size-int64(footerSize)); err != nil {
+			return fmt.Errorf("reftable: reading footer: %w", err)
+		}
 	default:
 		return fmt.Errorf("%w: %d", ErrUnsupportedVersion, version)
 	}
@@ -150,15 +157,19 @@ func (t *Table) readFooter() error {
 	}
 
 	// Verify the file header matches the footer.
-	if len(t.data) < 5 {
+	if t.size < 5 {
 		return fmt.Errorf("%w: file too small for header", ErrInvalidReftable)
 	}
-	if t.data[0] != magic[0] || t.data[1] != magic[1] ||
-		t.data[2] != magic[2] || t.data[3] != magic[3] {
+	var header [5]byte
+	if err := t.readAt(header[:], 0); err != nil {
+		return fmt.Errorf("reftable: reading header: %w", err)
+	}
+	if header[0] != magic[0] || header[1] != magic[1] ||
+		header[2] != magic[2] || header[3] != magic[3] {
 		return ErrBadMagic
 	}
-	if int(t.data[4]) != version {
-		return fmt.Errorf("%w: header version %d != footer version %d", ErrInvalidReftable, t.data[4], version)
+	if int(header[4]) != version {
+		return fmt.Errorf("%w: header version %d != footer version %d", ErrInvalidReftable, header[4], version)
 	}
 
 	return nil
@@ -194,6 +205,15 @@ func (t *Table) refBlockEndPos() int64 {
 	}
 }
 
+// blockTypeAt reads just the block type byte at the given file offset.
+func (t *Table) blockTypeAt(offset int64, fileHeaderSize int) (byte, error) {
+	var b [1]byte
+	if err := t.readAt(b[:], offset+int64(fileHeaderSize)); err != nil {
+		return 0, err
+	}
+	return b[0], nil
+}
+
 // blockAt reads a block starting at the given file offset.
 func (t *Table) blockAt(offset int64, fileHeaderSize int) (*blockReader, error) {
 	if offset >= t.size-int64(t.footerSize()) {
@@ -209,7 +229,10 @@ func (t *Table) blockAt(offset int64, fileHeaderSize int) (*blockReader, error) 
 		}
 	}
 
-	raw := t.data[offset:end]
+	raw := make([]byte, end-offset)
+	if err := t.readAt(raw, offset); err != nil {
+		return nil, fmt.Errorf("reftable: reading block at %d: %w", offset, err)
+	}
 	return readBlock(raw, fileHeaderSize)
 }
 
@@ -271,12 +294,18 @@ func (t *Table) seekRefLinear(name string) (*RefRecord, error) {
 	endPos := t.refBlockEndPos()
 
 	for offset < endPos {
-		br, err := t.blockAt(offset, headerSize)
+		// Check block type before full parsing to avoid decompressing log blocks.
+		bt, err := t.blockTypeAt(offset, headerSize)
 		if err != nil {
 			return nil, err
 		}
-		if br.blockType != blockTypeRef {
+		if bt != blockTypeRef {
 			break
+		}
+
+		br, err := t.blockAt(offset, headerSize)
+		if err != nil {
+			return nil, err
 		}
 
 		rec, err := t.searchRefBlock(br, name)
@@ -354,12 +383,18 @@ func (t *Table) IterRefs(fn func(RefRecord) bool) error {
 	endPos := t.refBlockEndPos()
 
 	for offset < endPos {
-		br, err := t.blockAt(offset, headerSize)
+		// Check block type before full parsing to avoid decompressing log blocks.
+		bt, err := t.blockTypeAt(offset, headerSize)
 		if err != nil {
 			return err
 		}
-		if br.blockType != blockTypeRef {
+		if bt != blockTypeRef {
 			break
+		}
+
+		br, err := t.blockAt(offset, headerSize)
+		if err != nil {
+			return err
 		}
 
 		stop := false
@@ -411,7 +446,10 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 		return nil
 	}
 
-	raw := t.data[logStart:logEnd]
+	raw := make([]byte, logEnd-logStart)
+	if err := t.readAt(raw, logStart); err != nil {
+		return fmt.Errorf("reftable: reading log block: %w", err)
+	}
 	br, err := readBlock(raw, 0)
 	if err != nil {
 		return err

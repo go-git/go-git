@@ -2,6 +2,9 @@ package reftable
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -177,6 +180,139 @@ func (s *Stack) LogsFor(name string) ([]LogRecord, error) {
 	})
 
 	return all, nil
+}
+
+// nextUpdateIndex returns the next update index for writing.
+func (s *Stack) nextUpdateIndex() uint64 {
+	var maxIdx uint64
+	for _, t := range s.tables {
+		if t.footer.maxUpdateIndex > maxIdx {
+			maxIdx = t.footer.maxUpdateIndex
+		}
+	}
+	return maxIdx + 1
+}
+
+// SetRef writes or updates a reference in the reftable stack by creating
+// a new table containing the ref record and updating tables.list.
+func (s *Stack) SetRef(rec RefRecord) error {
+	idx := s.nextUpdateIndex()
+	rec.UpdateIndex = idx
+
+	return s.writeNewTable([]RefRecord{rec}, nil, idx, idx)
+}
+
+// RemoveRef removes a reference by writing a deletion tombstone.
+func (s *Stack) RemoveRef(name string) error {
+	idx := s.nextUpdateIndex()
+	rec := RefRecord{
+		RefName:     name,
+		UpdateIndex: idx,
+		ValueType:   refValueDeletion,
+	}
+	return s.writeNewTable([]RefRecord{rec}, nil, idx, idx)
+}
+
+// AddLog writes a log record to the reftable stack.
+func (s *Stack) AddLog(rec LogRecord) error {
+	idx := s.nextUpdateIndex()
+	rec.UpdateIndex = idx
+
+	return s.writeNewTable(nil, []LogRecord{rec}, idx, idx)
+}
+
+// writeNewTable creates a new reftable file with the given records,
+// appends it to the stack, and updates tables.list.
+func (s *Stack) writeNewTable(refs []RefRecord, logs []LogRecord, minIdx, maxIdx uint64) error {
+	// Generate a unique table name.
+	tableName, err := generateTableName(minIdx, maxIdx)
+	if err != nil {
+		return fmt.Errorf("reftable: generating table name: %w", err)
+	}
+
+	// Write the new table file.
+	f, err := s.fs.Create(tableName)
+	if err != nil {
+		return fmt.Errorf("reftable: creating table %s: %w", tableName, err)
+	}
+
+	w := NewWriter(f, WriterOptions{
+		MinUpdateIndex: minIdx,
+		MaxUpdateIndex: maxIdx,
+		HashSize:       20, // SHA-1
+	})
+
+	for i := range refs {
+		w.AddRef(refs[i])
+	}
+	for i := range logs {
+		w.AddLog(logs[i])
+	}
+
+	if err := w.Close(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("reftable: writing table: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("reftable: closing table: %w", err)
+	}
+
+	// Atomically update tables.list by writing to a temp file and renaming.
+	if err := s.appendTablesList(tableName); err != nil {
+		return err
+	}
+
+	// Reload the stack to pick up the new table.
+	return s.reload()
+}
+
+// appendTablesList appends a table name to the tables.list file.
+func (s *Stack) appendTablesList(tableName string) error {
+	// Read existing tables.list.
+	var names []string
+	f, err := s.fs.Open("tables.list")
+	if err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" && !strings.HasPrefix(line, "#") {
+				names = append(names, line)
+			}
+		}
+		_ = f.Close()
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("reftable: reading tables.list: %w", err)
+		}
+	}
+
+	names = append(names, tableName)
+
+	// Write updated tables.list.
+	var buf bytes.Buffer
+	for _, name := range names {
+		fmt.Fprintln(&buf, name)
+	}
+
+	wf, err := s.fs.Create("tables.list")
+	if err != nil {
+		return fmt.Errorf("reftable: creating tables.list: %w", err)
+	}
+	if _, err := wf.Write(buf.Bytes()); err != nil {
+		_ = wf.Close()
+		return fmt.Errorf("reftable: writing tables.list: %w", err)
+	}
+	return wf.Close()
+}
+
+// generateTableName creates a reftable filename in the format:
+// 0xMIN-0xMAX-RANDOM.ref
+func generateTableName(minIdx, maxIdx uint64) (string, error) {
+	var randBytes [4]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("0x%012x-0x%012x-%s.ref",
+		minIdx, maxIdx, hex.EncodeToString(randBytes[:])), nil
 }
 
 // Close closes all open table files.

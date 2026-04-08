@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"encoding/hex"
+	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
@@ -9,7 +10,7 @@ import (
 )
 
 // ReftableReflogStorage implements storer.ReflogStorer backed by a
-// reftable stack. Currently read-only.
+// reftable stack.
 type ReftableReflogStorage struct {
 	stack *reftable.Stack
 }
@@ -35,14 +36,35 @@ func (r *ReftableReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.E
 	return entries, nil
 }
 
-// AppendReflog is not supported for reftable (read-only).
-func (r *ReftableReflogStorage) AppendReflog(_ plumbing.ReferenceName, _ *reflog.Entry) error {
-	return reftable.ErrReadOnly
+// AppendReflog appends a single entry to the reflog for the given reference.
+func (r *ReftableReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+	_, tzOffset := entry.Committer.When.Zone()
+	tzMinutes := int16(tzOffset / 60)
+
+	rec := reftable.LogRecord{
+		RefName: string(name),
+		LogType: 1, // update
+		OldHash: entry.OldHash.Bytes(),
+		NewHash: entry.NewHash.Bytes(),
+		Name:    entry.Committer.Name,
+		Email:   entry.Committer.Email,
+		Time:    entry.Committer.When,
+		TZOffset: tzMinutes,
+		Message: entry.Message,
+	}
+
+	return r.stack.AddLog(rec)
 }
 
-// DeleteReflog is not supported for reftable (read-only).
-func (r *ReftableReflogStorage) DeleteReflog(_ plumbing.ReferenceName) error {
-	return reftable.ErrReadOnly
+// DeleteReflog removes the entire reflog for the given reference by writing
+// a deletion tombstone.
+func (r *ReftableReflogStorage) DeleteReflog(name plumbing.ReferenceName) error {
+	rec := reftable.LogRecord{
+		RefName: string(name),
+		LogType: 0, // deletion tombstone
+		Time:    time.Now(),
+	}
+	return r.stack.AddLog(rec)
 }
 
 func logRecordToEntry(rec *reftable.LogRecord) *reflog.Entry {

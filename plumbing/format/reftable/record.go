@@ -3,6 +3,8 @@ package reftable
 import (
 	"fmt"
 	"time"
+
+	gbinary "github.com/go-git/go-git/v6/utils/binary"
 )
 
 // Record value types for ref records.
@@ -59,14 +61,14 @@ func decodeRefRecord(buf []byte, prefixName string, hashSize int, minUpdateIndex
 	pos := 0
 
 	// Decode prefix_length.
-	prefixLen, n := getVarint(buf[pos:])
+	prefixLen, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return RefRecord{}, 0, fmt.Errorf("%w: truncated prefix_length", ErrCorruptBlock)
 	}
 	pos += n
 
 	// Decode (suffix_length << 3) | value_type.
-	suffixTypeVal, n := getVarint(buf[pos:])
+	suffixTypeVal, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return RefRecord{}, 0, fmt.Errorf("%w: truncated suffix_type", ErrCorruptBlock)
 	}
@@ -91,7 +93,7 @@ func decodeRefRecord(buf []byte, prefixName string, hashSize int, minUpdateIndex
 	pos += suffixLen
 
 	// Decode update_index delta.
-	updateDelta, n := getVarint(buf[pos:])
+	updateDelta, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return RefRecord{}, 0, fmt.Errorf("%w: truncated update_index", ErrCorruptBlock)
 	}
@@ -124,7 +126,7 @@ func decodeRefRecord(buf []byte, prefixName string, hashSize int, minUpdateIndex
 		copy(rec.TargetValue, buf[pos:pos+hashSize])
 		pos += hashSize
 	case refValueSymref:
-		targetLen, n := getVarint(buf[pos:])
+		targetLen, n := gbinary.GetVarInt(buf[pos:])
 		if n == 0 {
 			return RefRecord{}, 0, fmt.Errorf("%w: truncated symref target length", ErrCorruptBlock)
 		}
@@ -151,14 +153,14 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 	pos := 0
 
 	// Decode prefix_length.
-	prefixLen, n := getVarint(buf[pos:])
+	prefixLen, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated prefix_length", ErrCorruptBlock)
 	}
 	pos += n
 
 	// Decode (suffix_length << 3) | log_type.
-	suffixTypeVal, n := getVarint(buf[pos:])
+	suffixTypeVal, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated suffix_type", ErrCorruptBlock)
 	}
@@ -216,7 +218,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 	pos += hashSize
 
 	// name
-	nameLen, n := getVarint(buf[pos:])
+	nameLen, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated name_length", ErrCorruptBlock)
 	}
@@ -228,7 +230,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 	pos += int(nameLen)
 
 	// email
-	emailLen, n := getVarint(buf[pos:])
+	emailLen, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated email_length", ErrCorruptBlock)
 	}
@@ -240,7 +242,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 	pos += int(emailLen)
 
 	// time_seconds (varint)
-	timeSec, n := getVarint(buf[pos:])
+	timeSec, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated time_seconds", ErrCorruptBlock)
 	}
@@ -259,7 +261,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 	rec.Time = time.Unix(int64(timeSec), 0).In(loc)
 
 	// message
-	msgLen, n := getVarint(buf[pos:])
+	msgLen, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated message_length", ErrCorruptBlock)
 	}
@@ -309,13 +311,13 @@ func decodeIndexRecord(buf []byte, prefixKey string) (indexRecord, int, error) {
 
 	pos := 0
 
-	prefixLen, n := getVarint(buf[pos:])
+	prefixLen, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return indexRecord{}, 0, fmt.Errorf("%w: truncated prefix_length", ErrCorruptBlock)
 	}
 	pos += n
 
-	suffixTypeVal, n := getVarint(buf[pos:])
+	suffixTypeVal, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return indexRecord{}, 0, fmt.Errorf("%w: truncated suffix_type", ErrCorruptBlock)
 	}
@@ -334,7 +336,7 @@ func decodeIndexRecord(buf []byte, prefixKey string) (indexRecord, int, error) {
 	key := prefixKey[:prefixLen] + string(buf[pos:pos+suffixLen])
 	pos += suffixLen
 
-	blockPos, n := getVarint(buf[pos:])
+	blockPos, n := gbinary.GetVarInt(buf[pos:])
 	if n == 0 {
 		return indexRecord{}, 0, fmt.Errorf("%w: truncated block_position", ErrCorruptBlock)
 	}

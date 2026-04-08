@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+
+	gbinary "github.com/go-git/go-git/v6/utils/binary"
 )
 
 // Block types.
@@ -154,14 +156,14 @@ func readKeyAtRestart(data []byte, pos int) string {
 	}
 
 	// prefix_length varint (should be 0).
-	_, n := getVarint(data[pos:])
+	_, n := gbinary.GetVarInt(data[pos:])
 	if n == 0 {
 		return ""
 	}
 	pos += n
 
 	// (suffix_length << 3) | value_type
-	suffixType, n := getVarint(data[pos:])
+	suffixType, n := gbinary.GetVarInt(data[pos:])
 	if n == 0 {
 		return ""
 	}

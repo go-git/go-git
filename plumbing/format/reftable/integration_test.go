@@ -11,7 +11,6 @@ import (
 
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/reftable"
 )
 
 func TestIntegrationPlainOpenReftableRepo(t *testing.T) {
@@ -56,9 +55,20 @@ func TestIntegrationPlainOpenReftableRepo(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, tagRef.Hash().IsZero())
 
-	// Verify write operations return read-only error.
+	// Verify write operations work.
 	err = repo.Storer.SetReference(plumbing.NewHashReference("refs/heads/test", mainRef.Hash()))
-	assert.ErrorIs(t, err, reftable.ErrReadOnly)
+	require.NoError(t, err, "SetReference should succeed for reftable repo")
+
+	// Verify the written ref can be read back.
+	testRef, err := repo.Reference(plumbing.NewBranchReferenceName("test"), false)
+	require.NoError(t, err)
+	assert.Equal(t, mainRef.Hash(), testRef.Hash())
+
+	// Verify RemoveReference works.
+	err = repo.Storer.RemoveReference(plumbing.NewBranchReferenceName("test"))
+	require.NoError(t, err)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName("test"), false)
+	assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 }
 
 func TestIntegrationPlainOpenReftableWorktree(t *testing.T) {

@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"encoding/hex"
+	"fmt"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/reftable"
@@ -9,19 +10,44 @@ import (
 )
 
 // ReftableReferenceStorage implements storer.ReferenceStorer backed by a
-// reftable stack. Currently read-only.
+// reftable stack.
 type ReftableReferenceStorage struct {
 	stack *reftable.Stack
 }
 
-// SetReference is not supported for reftable (read-only).
-func (r *ReftableReferenceStorage) SetReference(_ *plumbing.Reference) error {
-	return reftable.ErrReadOnly
+// SetReference stores a reference in the reftable stack.
+func (r *ReftableReferenceStorage) SetReference(ref *plumbing.Reference) error {
+	rec, err := referenceToRefRecord(ref)
+	if err != nil {
+		return err
+	}
+	return r.stack.SetRef(rec)
 }
 
-// CheckAndSetReference is not supported for reftable (read-only).
-func (r *ReftableReferenceStorage) CheckAndSetReference(_, _ *plumbing.Reference) error {
-	return reftable.ErrReadOnly
+// CheckAndSetReference stores a reference after verifying the old value matches.
+func (r *ReftableReferenceStorage) CheckAndSetReference(newRef, old *plumbing.Reference) error {
+	if old != nil {
+		current, err := r.stack.Ref(string(old.Name()))
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("reference %s not found", old.Name())
+		}
+
+		// Verify old value matches.
+		currentRef, err := refRecordToReference(current)
+		if err != nil {
+			return err
+		}
+		if old.Type() == plumbing.HashReference {
+			if currentRef.Hash() != old.Hash() {
+				return fmt.Errorf("reference %s has changed", old.Name())
+			}
+		}
+	}
+
+	return r.SetReference(newRef)
 }
 
 // Reference returns the reference with the given name from the reftable stack.
@@ -56,9 +82,9 @@ func (r *ReftableReferenceStorage) IterReferences() (storer.ReferenceIter, error
 	return storer.NewReferenceSliceIter(refs), nil
 }
 
-// RemoveReference is not supported for reftable (read-only).
-func (r *ReftableReferenceStorage) RemoveReference(_ plumbing.ReferenceName) error {
-	return reftable.ErrReadOnly
+// RemoveReference removes a reference from the reftable stack.
+func (r *ReftableReferenceStorage) RemoveReference(n plumbing.ReferenceName) error {
+	return r.stack.RemoveRef(string(n))
 }
 
 // CountLooseRefs returns 0 for reftable (no loose refs concept).
@@ -88,4 +114,23 @@ func refRecordToReference(rec *reftable.RefRecord) (*plumbing.Reference, error) 
 	default:
 		return nil, plumbing.ErrReferenceNotFound
 	}
+}
+
+func referenceToRefRecord(ref *plumbing.Reference) (reftable.RefRecord, error) {
+	rec := reftable.RefRecord{
+		RefName: string(ref.Name()),
+	}
+
+	switch ref.Type() {
+	case plumbing.HashReference:
+		rec.ValueType = 1
+		rec.Value = ref.Hash().Bytes()
+	case plumbing.SymbolicReference:
+		rec.ValueType = 3
+		rec.Target = string(ref.Target())
+	default:
+		return reftable.RefRecord{}, fmt.Errorf("unsupported reference type: %s", ref.Type())
+	}
+
+	return rec, nil
 }
