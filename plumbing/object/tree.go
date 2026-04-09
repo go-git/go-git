@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	gosync "sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -37,9 +38,10 @@ type Tree struct {
 	Entries []TreeEntry
 	Hash    plumbing.Hash
 
-	s storer.EncodedObjectStorer
-	m map[string]*TreeEntry
-	t map[string]*Tree // tree path cache
+	s  storer.EncodedObjectStorer
+	mu gosync.RWMutex
+	m  map[string]*TreeEntry
+	t  map[string]*Tree // tree path cache
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -128,27 +130,31 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
+	t.mu.Lock()
 	if t.t == nil {
 		t.t = make(map[string]*Tree)
 	}
+	t.mu.Unlock()
 
 	pathParts := strings.Split(path, "/")
 	startingTree := t
 	pathCurrent := ""
 
 	// search for the longest path in the tree path cache
+	t.mu.RLock()
 	for i := len(pathParts) - 1; i >= 1; i-- {
-		path := filepath.Join(pathParts[:i]...)
+		p := filepath.Join(pathParts[:i]...)
 
-		tree, ok := t.t[path]
+		tree, ok := t.t[p]
 		if ok {
 			startingTree = tree
 			pathParts = pathParts[i:]
-			pathCurrent = path
+			pathCurrent = p
 
 			break
 		}
 	}
+	t.mu.RUnlock()
 
 	var tree *Tree
 	var err error
@@ -158,7 +164,9 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
+		t.mu.Lock()
 		t.t[pathCurrent] = tree
+		t.mu.Unlock()
 	}
 
 	return tree.entry(pathParts[0])
@@ -182,11 +190,15 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
+	t.mu.Lock()
 	if t.m == nil {
 		t.buildMap()
 	}
+	t.mu.Unlock()
 
+	t.mu.RLock()
 	entry, ok := t.m[baseName]
+	t.mu.RUnlock()
 	if !ok {
 		return nil, ErrEntryNotFound
 	}
