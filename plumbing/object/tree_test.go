@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	stdsync "sync"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -135,6 +136,37 @@ func (s *TreeSuite) TestFindEntryNotFound() {
 	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
 	s.Nil(e)
 	s.ErrorIs(err, ErrDirectoryNotFound)
+}
+
+// TestFindEntryConcurrent verifies that concurrent calls to FindEntry
+// on the same Tree do not trigger a data race. This is a regression test
+// for https://github.com/go-git/go-git/issues/1917.
+func (s *TreeSuite) TestFindEntryConcurrent() {
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(s.Storer, hash)
+	s.Require().NoError(err)
+
+	paths := []string{
+		"vendor/foo.go",
+		"json/short.json",
+		"json/long.json",
+		"LICENSE",
+		".gitignore",
+	}
+
+	const goroutines = 10
+	var wg stdsync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			p := paths[id%len(paths)]
+			e, err := tree.FindEntry(p)
+			s.NoError(err)
+			s.NotNil(e)
+		}(i)
+	}
+	wg.Wait()
 }
 
 // countingStorer wraps a storer and counts EncodedObject calls per hash
