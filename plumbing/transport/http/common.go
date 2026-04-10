@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // Err represents an HTTP error response.
@@ -79,11 +80,57 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) *url.URL {
 	return &redirected
 }
 
+var safeHeaders = map[string]struct{}{
+	"User-Agent":        {},
+	"Host":              {},
+	"Accept":            {},
+	"Content-Type":      {},
+	"Content-Length":     {},
+	"Cache-Control":     {},
+	"Git-Protocol":      {},
+	"Transfer-Encoding": {},
+	"Content-Encoding":  {},
+}
+
+func filterHeaders(h http.Header) http.Header {
+	filtered := make(http.Header)
+	for key, values := range h {
+		if _, ok := safeHeaders[http.CanonicalHeaderKey(key)]; ok {
+			filtered[key] = values
+		}
+	}
+	return filtered
+}
+
+func redactedURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if u.User == nil {
+		return u.String()
+	}
+	if _, hasPassword := u.User.Password(); !hasPassword {
+		return u.String()
+	}
+	redacted := *u
+	redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+	return redacted.String()
+}
+
 // doRequest performs an HTTP request and returns a typed error on failure.
 func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
+	traceHTTP := trace.HTTP.Enabled()
+	if traceHTTP {
+		trace.HTTP.Printf("requesting %s %s %v", req.Method, redactedURL(req.URL), filterHeaders(req.Header))
+	}
+
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if traceHTTP {
+		trace.HTTP.Printf("response %s %s %s %v", res.Proto, res.Status, redactedURL(res.Request.URL), filterHeaders(res.Header))
 	}
 
 	if res.StatusCode >= http.StatusOK && res.StatusCode < http.StatusMultipleChoices {
