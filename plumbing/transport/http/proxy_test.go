@@ -160,8 +160,8 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool
 
 type testProxy struct {
 	proxiedRequests *int32
-	username       string
-	password       string
+	username        string
+	password        string
 }
 
 func newTestProxy(proxiedRequests *int32, username, password string) *testProxy {

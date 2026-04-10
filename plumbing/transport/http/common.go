@@ -85,7 +85,7 @@ var safeHeaders = map[string]struct{}{
 	"Host":              {},
 	"Accept":            {},
 	"Content-Type":      {},
-	"Content-Length":     {},
+	"Content-Length":    {},
 	"Cache-Control":     {},
 	"Git-Protocol":      {},
 	"Transfer-Encoding": {},
