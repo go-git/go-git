@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -33,13 +34,14 @@ type proxySuite struct {
 
 func (s *proxySuite) TestAdvertisedReferencesHTTP() {
 	var proxiedRequests int32
-	proxy := newTestProxy(&proxiedRequests)
+	proxy := newTestProxy(&proxiedRequests, "user", "pass")
 	httpProxyAddr := setupProxyServer(s.T(), proxy, false, true)
 
 	base, addr := setupSmartServer(s.T())
 	prepareRepo(s.T(), fixtures.Basic().One(), base, "basic.git")
 
 	proxyURL, err := url.Parse(httpProxyAddr)
+	proxyURL.User = url.UserPassword("user", "pass")
 	s.Require().NoError(err)
 	tr := NewTransport(Options{
 		HTTPProxy: http.ProxyURL(proxyURL),
@@ -63,10 +65,11 @@ func (s *proxySuite) TestAdvertisedReferencesHTTP() {
 
 func (s *proxySuite) TestAdvertisedReferencesHTTPS() {
 	var proxiedRequests int32
-	proxy := newTestProxy(&proxiedRequests)
+	proxy := newTestProxy(&proxiedRequests, "user", "pass")
 	httpsProxyAddr := setupProxyServer(s.T(), proxy, true, true)
 
 	proxyURL, err := url.Parse(httpsProxyAddr)
+	proxyURL.User = url.UserPassword("user", "pass")
 	s.Require().NoError(err)
 	tr := NewTransport(Options{
 		HTTPProxy: http.ProxyURL(proxyURL),
@@ -157,13 +160,21 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool
 
 type testProxy struct {
 	proxiedRequests *int32
+	username       string
+	password       string
 }
 
-func newTestProxy(proxiedRequests *int32) *testProxy {
-	return &testProxy{proxiedRequests: proxiedRequests}
+func newTestProxy(proxiedRequests *int32, username, password string) *testProxy {
+	return &testProxy{proxiedRequests: proxiedRequests, username: username, password: password}
 }
 
 func (p *testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	user, pass, _ := parseBasicAuth(r.Header.Get("Proxy-Authorization"))
+	if user != p.username || pass != p.password {
+		http.Error(w, "Proxy Authentication Required", http.StatusProxyAuthRequired)
+		return
+	}
+
 	if r.Method == http.MethodConnect {
 		p.handleConnect(w, r)
 	} else {
@@ -252,4 +263,21 @@ func (p *testProxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func parseBasicAuth(auth string) (username, password string, ok bool) {
+	const prefix = "Basic "
+	if len(auth) < len(prefix) || !strings.EqualFold(auth[:len(prefix)], prefix) {
+		return "", "", false
+	}
+	c, err := base64.StdEncoding.DecodeString(auth[len(prefix):])
+	if err != nil {
+		return "", "", false
+	}
+	cs := string(c)
+	username, password, ok = strings.Cut(cs, ":")
+	if !ok {
+		return "", "", false
+	}
+	return username, password, true
 }
