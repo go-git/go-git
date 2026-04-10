@@ -65,9 +65,9 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Reader, *io.PipeWriter, func() error, error) {
 	var serverFn ServerFunc
 	switch req.Command {
-	case "git-upload-pack":
+	case transport.UploadPackService:
 		serverFn = t.uploadPack
-	case "git-receive-pack":
+	case transport.ReceivePackService:
 		serverFn = t.receivePack
 	default:
 		return nil, nil, nil, fmt.Errorf("%w: %s", transport.ErrCommandUnsupported, req.Command)
