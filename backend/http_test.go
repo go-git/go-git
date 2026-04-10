@@ -170,3 +170,27 @@ func TestSmartInfoRefsObjectFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestUnsupportedService(t *testing.T) {
+	t.Parallel()
+
+	h := New(&fixturesLoader{t})
+
+	req := httptest.NewRequest("GET", "/basic.git/info/refs?service=invalid-service", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	res := w.Result()
+	require.Equal(t, 404, res.StatusCode)
+}
+
+func TestInvalidService(t *testing.T) {
+	t.Parallel()
+
+	h := New(&fixturesLoader{t})
+
+	req := httptest.NewRequest("POST", "/basic.git/git-your-face", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	res := w.Result()
+	require.Equal(t, 404, res.StatusCode)
+}

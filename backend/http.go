@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -92,6 +93,12 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 		return
 	}
 
+	if s := path.Base(ep.Path); s != svc {
+		b.logf("invalid service requested: %q", s)
+		renderStatusError(w, http.StatusNotFound)
+		return
+	}
+
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
 	if err := b.Serve(r.Context(), reader, frw, &Request{
 		URL:          ep,
@@ -110,6 +117,12 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, f
 	if service == "" {
 		hdrNocache(w)
 		b.handleDumbSendFile(w, r, repo, file, "text/plain; charset=utf-8")
+		return
+	}
+
+	if service != transport.UploadPackService && service != transport.ReceivePackService {
+		b.logf("unsupported service requested: %q", service)
+		renderStatusError(w, http.StatusNotFound)
 		return
 	}
 
