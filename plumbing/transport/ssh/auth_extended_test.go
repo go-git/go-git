@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -107,7 +108,9 @@ Host github.com
 		req := &transport.Request{
 			URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
 		}
-		assert.Equal(t, "foo.local:42", tr.resolveHostWithPort(req))
+		hostPort, err := tr.resolveHostWithPort(t.Context(), req)
+		assert.NoError(t, err)
+		assert.Equal(t, "foo.local:42", hostPort)
 	})
 
 	t.Run("Default", func(t *testing.T) {
@@ -117,7 +120,9 @@ Host github.com
 		req := &transport.Request{
 			URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
 		}
-		assert.Equal(t, "github.com:22", tr.resolveHostWithPort(req))
+		hostPort, err := tr.resolveHostWithPort(t.Context(), req)
+		assert.NoError(t, err)
+		assert.Equal(t, "github.com:22", hostPort)
 	})
 
 	t.Run("Wildcard", func(t *testing.T) {
@@ -130,7 +135,9 @@ Host *
 		req := &transport.Request{
 			URL: mustParseURL("ssh://git@github.com/foo/bar.git"),
 		}
-		assert.Equal(t, "github.com:42", tr.resolveHostWithPort(req))
+		hostPort, err := tr.resolveHostWithPort(t.Context(), req)
+		assert.NoError(t, err)
+		assert.Equal(t, "github.com:42", hostPort)
 	})
 }
 
@@ -154,7 +161,11 @@ func newTransportWithConfig(t *testing.T, content string) *Transport {
 	require.NoError(t, os.WriteFile(f, []byte(content), 0o644))
 	us := &ssh_config.UserSettings{}
 	us.ConfigFinder(func() string { return f })
-	return NewTransport(Options{UserSettings: us})
+	return NewTransport(Options{
+		UserSettings: func(context.Context, *transport.Request) (*ssh_config.UserSettings, error) {
+			return us, nil
+		},
+	})
 }
 
 func mustParseURL(s string) *url.URL {
