@@ -147,6 +147,9 @@ func WithLoader(l transport.Loader) Option {
 // This overrides any built-in transport for that scheme.
 func WithTransport(scheme string, tr transport.Transport) Option {
 	return func(o *options) {
+		if scheme == "" || tr == nil {
+			return
+		}
 		if o.schemes == nil {
 			o.schemes = make(map[string]transport.Transport)
 		}
