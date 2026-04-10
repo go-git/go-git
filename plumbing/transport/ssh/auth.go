@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -13,6 +14,16 @@ import (
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh/knownhosts"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh/sshagent"
+	"github.com/go-git/go-git/v6/utils/trace"
+)
+
+// The names of the auth method implementations.
+const (
+	keyboardInteractiveName = "ssh-keyboard-interactive"
+	passwordName            = "ssh-password"
+	passwordCallbackName    = "ssh-password-callback"
+	publicKeysName          = "ssh-public-keys"
+	publicKeysCallbackName  = "ssh-public-key-callback"
 )
 
 // HostKeyCallbackHelper provides common functionality to configure
@@ -34,8 +45,15 @@ func (m *HostKeyCallbackHelper) SetHostKeyCallback(cfg *gossh.ClientConfig) (*go
 		m.HostKeyCallback = db.HostKeyCallback()
 	}
 
-	cfg.HostKeyCallback = m.HostKeyCallback
+	cfg.HostKeyCallback = m.traceHostKeyCallback
 	return cfg, nil
+}
+
+func (m *HostKeyCallbackHelper) traceHostKeyCallback(hostname string, remote net.Addr, key gossh.PublicKey) error {
+	trace.SSH.Printf(
+		`ssh: hostkey callback hostname=%s remote=%s pubkey="%s %s"`,
+		hostname, remote, key.Type(), gossh.FingerprintSHA256(key))
+	return m.HostKeyCallback(hostname, remote, key)
 }
 
 // Password implements SSH password authentication.
@@ -47,6 +65,7 @@ type Password struct {
 
 // ClientConfig returns the ssh.ClientConfig for password authentication.
 func (a *Password) ClientConfig(_ context.Context, _ *transport.Request) (*gossh.ClientConfig, error) {
+	trace.SSH.Printf("ssh: %s user=%s", passwordName, a.User)
 	return a.SetHostKeyCallback(&gossh.ClientConfig{
 		User: a.User,
 		Auth: []gossh.AuthMethod{gossh.Password(a.Password)},
@@ -63,6 +82,7 @@ type PasswordCallback struct {
 
 // ClientConfig returns the ssh.ClientConfig for password callback authentication.
 func (a *PasswordCallback) ClientConfig(_ context.Context, _ *transport.Request) (*gossh.ClientConfig, error) {
+	trace.SSH.Printf("ssh: %s user=%s", passwordCallbackName, a.User)
 	return a.SetHostKeyCallback(&gossh.ClientConfig{
 		User: a.User,
 		Auth: []gossh.AuthMethod{gossh.PasswordCallback(a.Callback)},
@@ -104,6 +124,9 @@ func NewPublicKeysFromFile(user, pemFile, password string) (*PublicKeys, error) 
 
 // ClientConfig returns the ssh.ClientConfig for public key authentication.
 func (a *PublicKeys) ClientConfig(_ context.Context, _ *transport.Request) (*gossh.ClientConfig, error) {
+	trace.SSH.Printf("ssh: %s user=%s signer=\"%s %s\"", publicKeysName, a.User,
+		a.Signer.PublicKey().Type(),
+		gossh.FingerprintSHA256(a.Signer.PublicKey()))
 	return a.SetHostKeyCallback(&gossh.ClientConfig{
 		User: a.User,
 		Auth: []gossh.AuthMethod{gossh.PublicKeys(a.Signer)},
@@ -143,9 +166,10 @@ func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 
 // ClientConfig returns the ssh.ClientConfig for public key callback authentication.
 func (a *PublicKeysCallback) ClientConfig(_ context.Context, _ *transport.Request) (*gossh.ClientConfig, error) {
+	trace.SSH.Printf("ssh: %s user=%s", publicKeysCallbackName, a.User)
 	return a.SetHostKeyCallback(&gossh.ClientConfig{
 		User: a.User,
-		Auth: []gossh.AuthMethod{gossh.PublicKeysCallback(a.Callback)},
+		Auth: []gossh.AuthMethod{tracePublicKeysCallback(a.Callback)},
 	})
 }
 
@@ -159,6 +183,7 @@ type KeyboardInteractive struct {
 
 // ClientConfig returns the ssh.ClientConfig for keyboard-interactive authentication.
 func (a *KeyboardInteractive) ClientConfig(_ context.Context, _ *transport.Request) (*gossh.ClientConfig, error) {
+	trace.SSH.Printf("ssh: %s user=%s", keyboardInteractiveName, a.User)
 	return a.SetHostKeyCallback(&gossh.ClientConfig{
 		User: a.User,
 		Auth: []gossh.AuthMethod{a.Challenge},
@@ -193,16 +218,21 @@ func newKnownHostsDb(files ...string) (*knownhosts.HostKeyDB, error) {
 		}
 	}
 
+	trace.SSH.Printf("ssh: known_hosts sources %s", files)
+
 	files, err := filterKnownHostsFiles(files...)
 	if err != nil {
 		return nil, err
 	}
+	trace.SSH.Printf("ssh: filtered known_hosts sources %s", files)
+
 	return knownhosts.NewDB(files...)
 }
 
 func getDefaultKnownHostsFiles() ([]string, error) {
 	files := filepath.SplitList(os.Getenv("SSH_KNOWN_HOSTS"))
 	if len(files) != 0 {
+		trace.SSH.Printf("ssh: loading known_hosts from SSH_KNOWN_HOSTS")
 		return files, nil
 	}
 
@@ -215,6 +245,25 @@ func getDefaultKnownHostsFiles() ([]string, error) {
 		filepath.Join(homeDirPath, ".ssh", "known_hosts"),
 		"/etc/ssh/ssh_known_hosts",
 	}, nil
+}
+
+func tracePublicKeysCallback(getSigners func() ([]gossh.Signer, error)) gossh.AuthMethod {
+	signers, err := getSigners()
+	if err != nil {
+		trace.SSH.Printf("ssh: error calling getSigners: %v", err)
+	}
+	if len(signers) == 0 {
+		trace.SSH.Printf("ssh: no signers found")
+	}
+	for _, s := range signers {
+		trace.SSH.Printf("ssh: found key: %s %s", s.PublicKey().Type(),
+			gossh.FingerprintSHA256(s.PublicKey()))
+	}
+
+	cb := func() ([]gossh.Signer, error) {
+		return signers, err
+	}
+	return gossh.PublicKeysCallback(cb)
 }
 
 func filterKnownHostsFiles(files ...string) ([]string, error) {
@@ -242,8 +291,10 @@ func username() (string, error) {
 	var u string
 	if current, err := user.Current(); err == nil {
 		u = current.Username
+		trace.SSH.Printf("ssh: Falling back to current user name %q", u)
 	} else {
 		u = os.Getenv("USER")
+		trace.SSH.Printf("ssh: Falling back to environment variable USER %q", u)
 	}
 
 	if u == "" {

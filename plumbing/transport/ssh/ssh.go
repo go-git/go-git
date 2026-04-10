@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // DefaultPort is the default port for the SSH protocol.
@@ -86,6 +87,8 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		}
 		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
 	}
+
+	trace.SSH.Printf("ssh: host key algorithms %s", config.HostKeyAlgorithms)
 
 	client, err := t.dial(ctx, "tcp", hostWithPort, config)
 	if err != nil {
@@ -159,6 +162,8 @@ func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (
 		}
 	}
 
+	trace.SSH.Printf("ssh: Using default auth builder (user: %s)", username)
+
 	auth, err := NewSSHAgentAuth(username)
 	if err != nil {
 		return nil, err
@@ -184,6 +189,7 @@ func (t *Transport) dial(ctx context.Context, network, addr string, config *goss
 		if dialFn == nil {
 			dialFn = (&net.Dialer{}).DialContext
 		}
+		trace.SSH.Printf("ssh: using proxyURL for connection")
 		conn, err = t.opts.DialProxy(dialFn)(ctx, network, addr)
 	case t.opts.DialContext != nil:
 		conn, err = t.opts.DialContext(ctx, network, addr)
