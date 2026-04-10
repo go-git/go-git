@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -93,14 +92,7 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 		return
 	}
 
-	service := path.Base(ep.Path)
-	if service != svc {
-		b.logf("invalid service requested: %q", service)
-		renderStatusError(w, http.StatusNotFound)
-		return
-	}
-
-	if !b.requireReceivePackAuth(w, r, service) {
+	if !b.requireReceivePackAuth(w, r, svc) {
 		return
 	}
 
