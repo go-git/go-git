@@ -193,7 +193,7 @@ func (c *Client) Connect(ctx context.Context, req *transport.Request) (transport
 	}
 	conn, ok := tr.(transport.Connectable)
 	if !ok {
-		return nil, transport.ErrConnectUnsupported
+		return nil, fmt.Errorf("transport for %s does not support Connect: %w", req.URL.Scheme, transport.ErrConnectUnsupported)
 	}
 	return conn.Connect(ctx, req)
 }
