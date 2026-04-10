@@ -174,6 +174,8 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 			return fmt.Errorf("cannot set object format on dotgit: %w", err)
 		}
 
+		s.ConfigStorage.objectFormat = of
+		s.ModuleStorage.objectFormat = of
 		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
 		s.h = s.hasher.Hash
 	}

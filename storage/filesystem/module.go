@@ -1,9 +1,8 @@
 package filesystem
 
 import (
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
-
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
