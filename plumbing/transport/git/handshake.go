@@ -15,4 +15,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	return transport.NewStreamSession(conn, req.Command)
 }
 
-var _ transport.Transport = (*Transport)(nil)
+var (
+	_ transport.Transport = (*Transport)(nil)
+	_ transport.Connector = (*Transport)(nil)
+)

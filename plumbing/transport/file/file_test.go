@@ -95,5 +95,3 @@ func TestFileTransport_ImplementsConnector(t *testing.T) {
 	_, ok := any(tr).(transport.Connector)
 	assert.True(t, ok)
 }
-
-var _ transport.Conn = (*fileConn)(nil)

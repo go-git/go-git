@@ -150,6 +150,8 @@ func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Cli
 
 // --- smart HTTP pack session ---
 
+var _ transport.Session = (*smartPackSession)(nil)
+
 type smartPackSession struct {
 	client     *http.Client
 	baseURL    *url.URL
@@ -253,6 +255,8 @@ func (r *httpRequester) doPost() error {
 }
 
 // --- dumb HTTP pack session ---
+
+var _ transport.Session = (*dumbPackSession)(nil)
 
 type dumbPackSession struct {
 	client     *http.Client

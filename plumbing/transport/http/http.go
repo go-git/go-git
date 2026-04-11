@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/url"
+
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // Options configures the HTTP transport.
@@ -38,6 +40,8 @@ type Options struct {
 type Transport struct {
 	opts Options
 }
+
+var _ transport.Transport = (*Transport)(nil)
 
 // NewTransport creates an HTTP transport with the given options.
 func NewTransport(opts Options) *Transport {
