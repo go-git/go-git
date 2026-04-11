@@ -318,14 +318,9 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 // no error is returned. When path is a file, the blob.Hash is returned.
 func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v7.
-	patterns := make([]gitignore.Pattern, 0)
-	dir := filepath.Dir(path)
-	if dir == "." || dir == "" {
-		dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, nil)
-		patterns = append(patterns, dirPatterns...)
-	} else {
-		dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, []string{dir})
-		patterns = append(patterns, dirPatterns...)
+	patterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
+	if err != nil {
+		return plumbing.ZeroHash, err
 	}
 	return w.doAdd(path, patterns, false)
 }
@@ -376,23 +371,26 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 		return err
 	}
 
-	patterns := make([]gitignore.Pattern, 0)
-
-	if opts.All {
-		patterns, _ = gitignore.ReadPatterns(w.Filesystem, nil)
-		_, err := w.doAdd(".", patterns, false)
-		return err
-	}
-
 	if opts.Glob != "" {
 		return w.AddGlob(opts.Glob)
 	}
 
+	path := opts.Path
+	skipStatus := opts.SkipStatus
+	if opts.All {
+		path = "."
+		skipStatus = false
+	}
+
+	patterns := make([]gitignore.Pattern, 0)
 	if !opts.Force {
-		dirPatterns, _ := gitignore.ReadPatterns(w.Filesystem, nil)
+		dirPatterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
+		if err != nil {
+			return err
+		}
 		patterns = append(patterns, dirPatterns...)
 	}
-	_, err := w.doAdd(opts.Path, patterns, opts.SkipStatus)
+	_, err := w.doAdd(path, patterns, skipStatus)
 	return err
 }
 
@@ -465,6 +463,11 @@ func (w *Worktree) AddGlob(pattern string) error {
 	}
 
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
+	patterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
+	if err != nil {
+		return err
+	}
+
 	files, err := util.Glob(w.Filesystem, pattern)
 	if err != nil {
 		return err
@@ -493,9 +496,9 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 		var added bool
 		if fi.IsDir() {
-			added, err = w.doAddDirectory(idx, s, file, make([]gitignore.Pattern, 0))
+			added, err = w.doAddDirectory(idx, s, file, patterns)
 		} else {
-			added, _, err = w.doAddFile(idx, s, file, make([]gitignore.Pattern, 0))
+			added, _, err = w.doAddFile(idx, s, file, patterns)
 		}
 
 		if err != nil {

@@ -2744,6 +2744,61 @@ func (s *WorktreeSuite) TestAddGlob() {
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddGlobGitIgnore() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, ".gitignore", []byte("*.log\ndir/excluded/*\n"), 0o644)
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, "dir/included/file.txt", []byte("included"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "dir/excluded/file.txt", []byte("excluded"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "another.log", []byte("log file"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "included.txt", []byte("included"), 0o644)
+	s.NoError(err)
+
+	err = w.AddGlob("dir/*")
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+
+	_, err = idx.Entry("dir/included/file.txt")
+	s.NoError(err)
+
+	_, err = idx.Entry("dir/excluded/file.txt")
+	s.ErrorIs(err, index.ErrEntryNotFound)
+
+	err = w.AddGlob("*.log")
+	s.NoError(err)
+
+	idx, err = w.r.Storer.Index()
+	s.NoError(err)
+
+	_, err = idx.Entry("another.log")
+	s.ErrorIs(err, index.ErrEntryNotFound)
+
+	status, err := w.Status()
+	s.NoError(err)
+
+	logStatus := status.File("another.log")
+	s.Equal(Untracked, logStatus.Staging)
+	s.Equal(Untracked, logStatus.Worktree)
+
+	excludedStatus := status.File("dir/excluded/file.txt")
+	s.Equal(Untracked, excludedStatus.Staging)
+	s.Equal(Untracked, excludedStatus.Worktree)
+}
+
 func (s *WorktreeSuite) TestAddFilenameStartingWithDot() {
 	fs := memfs.New()
 	w := &Worktree{
