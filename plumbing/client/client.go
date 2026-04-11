@@ -185,13 +185,13 @@ func (c *Client) Handshake(ctx context.Context, req *transport.Request) (transpo
 
 // Connect resolves the transport for the request URL scheme and opens a
 // raw full-duplex connection. Returns ErrConnectUnsupported if the transport
-// does not implement Connectable (e.g. HTTP).
+// does not implement Connector (e.g. HTTP).
 func (c *Client) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
 	tr, err := c.resolve(req)
 	if err != nil {
 		return nil, err
 	}
-	conn, ok := tr.(transport.Connectable)
+	conn, ok := tr.(transport.Connector)
 	if !ok {
 		return nil, fmt.Errorf("transport for %s does not support Connect: %w", req.URL.Scheme, transport.ErrConnectUnsupported)
 	}

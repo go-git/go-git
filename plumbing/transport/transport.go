@@ -22,12 +22,12 @@ type Conn interface {
 	Writer() io.WriteCloser
 }
 
-// Connectable is implemented by transports that can open a raw full-duplex
+// Connector is implemented by transports that can open a raw full-duplex
 // connection. SSH, Git TCP, and file transports implement this.
 // HTTP does not.
 //
 // Use Connect for non-pack protocols like git-upload-archive,
 // git-lfs-authenticate, git-lfs-transfer, or custom commands.
-type Connectable interface {
+type Connector interface {
 	Connect(context.Context, *Request) (Conn, error)
 }

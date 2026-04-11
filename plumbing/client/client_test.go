@@ -29,7 +29,7 @@ func TestNew_BuiltinSchemes(t *testing.T) {
 	}
 }
 
-func TestNew_ConnectableSchemes(t *testing.T) {
+func TestNew_ConnectorSchemes(t *testing.T) {
 	t.Parallel()
 
 	c := New()
@@ -38,12 +38,12 @@ func TestNew_ConnectableSchemes(t *testing.T) {
 	for _, scheme := range []string{"file", "git", "ssh"} {
 		tr, err := c.Transport(scheme)
 		require.NoError(t, err)
-		_, ok := tr.(transport.Connectable)
-		assert.True(t, ok, "scheme %q should implement Connectable", scheme)
+		_, ok := tr.(transport.Connector)
+		assert.True(t, ok, "scheme %q should implement Connector", scheme)
 	}
 }
 
-func TestNew_HTTPNotConnectable(t *testing.T) {
+func TestNew_HTTPNotConnector(t *testing.T) {
 	t.Parallel()
 
 	c := New()
@@ -52,8 +52,8 @@ func TestNew_HTTPNotConnectable(t *testing.T) {
 	for _, scheme := range []string{"http", "https"} {
 		tr, err := c.Transport(scheme)
 		require.NoError(t, err)
-		_, ok := tr.(transport.Connectable)
-		assert.False(t, ok, "scheme %q should NOT implement Connectable", scheme)
+		_, ok := tr.(transport.Connector)
+		assert.False(t, ok, "scheme %q should NOT implement Connector", scheme)
 	}
 }
 

@@ -87,12 +87,12 @@ func TestFileTransport_RepoNotFound(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestFileTransport_ImplementsConnectable(t *testing.T) {
+func TestFileTransport_ImplementsConnector(t *testing.T) {
 	t.Parallel()
 
 	tr := NewTransport(Options{})
 
-	_, ok := any(tr).(transport.Connectable)
+	_, ok := any(tr).(transport.Connector)
 	assert.True(t, ok)
 }
 
