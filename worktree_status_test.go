@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -96,7 +96,11 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 	b.StopTimer()
 
 	f := fixtures.Basic().One()
-	st := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := f.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	r, err := Open(st, memfs.New())
 	require.NoError(b, err)

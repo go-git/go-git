@@ -5,8 +5,10 @@ package dotgit
 import (
 	"bufio"
 	"bytes"
+	"crypto"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path"
@@ -22,26 +24,30 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/revfile"
+	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 const (
-	packedRefsPath = "packed-refs"
-	configPath     = "config"
-	indexPath      = "index"
-	shallowPath    = "shallow"
-	modulePath     = "modules"
-	objectsPath    = "objects"
-	packPath       = "pack"
-	refsPath       = "refs"
-	branchesPath   = "branches"
-	hooksPath      = "hooks"
-	infoPath       = "info"
-	remotesPath    = "remotes"
-	logsPath       = "logs"
-	worktreesPath  = "worktrees"
-	alternatesPath = "alternates"
+	packedRefsPath     = "packed-refs"
+	configPath         = "config"
+	configWorktreePath = "config.worktree"
+	indexPath          = "index"
+	shallowPath        = "shallow"
+	modulePath         = "modules"
+	objectsPath        = "objects"
+	packPath           = "pack"
+	refsPath           = "refs"
+	branchesPath       = "branches"
+	hooksPath          = "hooks"
+	infoPath           = "info"
+	remotesPath        = "remotes"
+	logsPath           = "logs"
+	worktreesPath      = "worktrees"
+	alternatesPath     = "alternates"
 
 	tmpPackedRefsPrefix = "._packed-refs"
 
@@ -90,6 +96,14 @@ type Options struct {
 	AlternatesFS billy.Filesystem
 
 	ObjectFormat formatcfg.ObjectFormat
+
+	// ReadReverseIndex controls whether .rev files are read from disk.
+	// When false, a reverse index is generated in memory on demand.
+	// Defaults to true.
+	ReadReverseIndex bool
+	// WriteReverseIndex controls whether .rev files are written when
+	// creating new packfiles. Defaults to true.
+	WriteReverseIndex bool
 }
 
 // The DotGit type represents a local git repository on disk. This
@@ -114,7 +128,11 @@ type DotGit struct {
 // be the absolute path of a git repository directory (e.g.
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
-	return NewWithOptions(fs, Options{ObjectFormat: formatcfg.DefaultObjectFormat})
+	return NewWithOptions(fs, Options{
+		ObjectFormat:      formatcfg.DefaultObjectFormat,
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
 }
 
 // NewWithOptions sets non default configuration options.
@@ -185,6 +203,16 @@ func (d *DotGit) Config() (billy.File, error) {
 	return d.fs.Open(configPath)
 }
 
+// ConfigWorktree returns a file pointer for read to the worktree config file.
+func (d *DotGit) ConfigWorktree() (billy.File, error) {
+	return d.fs.Open(configWorktreePath)
+}
+
+// ConfigWorktreeWriter returns a file pointer for write to the worktree config file.
+func (d *DotGit) ConfigWorktreeWriter() (billy.File, error) {
+	return d.fs.Create(configWorktreePath)
+}
+
 // IndexWriter returns a file pointer for write to the index file
 func (d *DotGit) IndexWriter() (billy.File, error) {
 	return d.fs.Create(indexPath)
@@ -193,6 +221,11 @@ func (d *DotGit) IndexWriter() (billy.File, error) {
 // Index returns a file pointer for read to the index file
 func (d *DotGit) Index() (billy.File, error) {
 	return d.fs.Open(indexPath)
+}
+
+// StatIndex returns the os.FileInfo for the index file without opening it.
+func (d *DotGit) StatIndex() (os.FileInfo, error) {
+	return d.fs.Stat(indexPath)
 }
 
 // ShallowWriter returns a file pointer for write to the shallow file
@@ -214,11 +247,45 @@ func (d *DotGit) Shallow() (billy.File, error) {
 	return f, nil
 }
 
+// ReflogReader returns a file pointer for reading the reflog for the given reference.
+// Returns nil, nil if the reflog file does not exist.
+func (d *DotGit) ReflogReader(name plumbing.ReferenceName) (billy.File, error) {
+	p := d.fs.Join(logsPath, string(name))
+	f, err := d.fs.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return f, nil
+}
+
+// ReflogWriter returns a file pointer for appending to the reflog for the given reference.
+// It creates the file and any necessary parent directories if they don't exist.
+func (d *DotGit) ReflogWriter(name plumbing.ReferenceName) (billy.File, error) {
+	p := d.fs.Join(logsPath, string(name))
+	if err := d.fs.MkdirAll(filepath.Dir(p), os.ModePerm); err != nil {
+		return nil, err
+	}
+	return d.fs.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
+}
+
+// DeleteReflog removes the reflog file for the given reference.
+func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
+	p := d.fs.Join(logsPath, string(name))
+	err := d.fs.Remove(p)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	d.cleanPackList()
-	return newPackWrite(d.fs, d.options.ObjectFormat)
+	return newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
 }
 
 // ObjectPacks returns the list of availables packfiles
@@ -332,6 +399,65 @@ func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
 	return d.objectPackOpen(hash, `rev`)
 }
 
+// OpenPackRev returns a [idxfile.ReadAtCloser] for the reverse index of the given
+// packfile. When ReadReverseIndex is true the .rev file is read from disk;
+// otherwise the reverse index is generated in memory on demand.
+func (d *DotGit) OpenPackRev(hash plumbing.Hash) (idxfile.ReadAtCloser, error) {
+	if d.options.ReadReverseIndex {
+		r, err := d.ObjectPackRev(hash)
+		if err == nil {
+			return r, nil
+		}
+	}
+	return d.generateInMemoryRev(hash)
+}
+
+// generateInMemoryRev builds the reverse index data in memory from the
+// .idx file. A fresh reverse index is generated on every call.
+func (d *DotGit) generateInMemoryRev(h plumbing.Hash) (idxfile.ReadAtCloser, error) {
+	f, err := d.ObjectPackIdx(h)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	var hasher hash.Hash
+	if h.Size() == crypto.SHA256.Size() {
+		hasher = plumbhash.New(crypto.SHA256)
+	} else {
+		hasher = plumbhash.New(crypto.SHA1)
+	}
+
+	idx := idxfile.NewMemoryIndex(h.Size())
+	dec := idxfile.NewDecoder(f, hasher)
+	if err := dec.Decode(idx); err != nil {
+		return nil, fmt.Errorf("cannot decode idx for in-memory rev generation: %w", err)
+	}
+
+	hasher.Reset()
+
+	var buf bytes.Buffer
+	if err := revfile.Encode(&buf, hasher, idx); err != nil {
+		return nil, fmt.Errorf("cannot encode in-memory rev: %w", err)
+	}
+
+	return newBytesReadAtCloser(buf.Bytes()), nil
+}
+
+// bytesReadAtCloser wraps a bytes.Reader to satisfy [idxfile.ReadAtCloser].
+type bytesReadAtCloser struct {
+	*bytes.Reader
+}
+
+func newBytesReadAtCloser(data []byte) *bytesReadAtCloser {
+	return &bytesReadAtCloser{Reader: bytes.NewReader(data)}
+}
+
+func (b *bytesReadAtCloser) Close() error { return nil }
+
+// DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	d.cleanPackList()
 
@@ -712,6 +838,7 @@ func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference
 	return f.Truncate(0)
 }
 
+// SetRef stores a reference, optionally checking that old matches the current value.
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 	var content string
 	switch r.Type() {
@@ -1056,6 +1183,7 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 	return d.readReferenceFrom(f, name)
 }
 
+// CountLooseRefs returns the number of loose references in the repository.
 func (d *DotGit) CountLooseRefs() (int, error) {
 	var refs []*plumbing.Reference
 	seen := make(map[plumbing.ReferenceName]bool)
@@ -1151,6 +1279,7 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	return d.fs.Chroot(d.fs.Join(modulePath, name))
 }
 
+// AddAlternate appends an alternate object directory path to the alternates file.
 func (d *DotGit) AddAlternate(remote string) error {
 	altpath := d.fs.Join(objectsPath, infoPath, alternatesPath)
 
@@ -1254,6 +1383,7 @@ func (d *DotGit) Fs() billy.Filesystem {
 	return d.fs
 }
 
+// SetObjectFormat configures the object format for this DotGit instance.
 func (d *DotGit) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	d.options.ObjectFormat = of
 

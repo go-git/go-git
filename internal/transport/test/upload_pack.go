@@ -4,6 +4,7 @@ package test
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/stretchr/testify/suite"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// UploadPackSuite is a test suite for upload-pack transport implementations.
 type UploadPackSuite struct {
 	suite.Suite
 	Endpoint            *transport.Endpoint
@@ -26,6 +28,16 @@ type UploadPackSuite struct {
 	Client              transport.Transport
 }
 
+// TearDownTest closes all storers.
+func (s *UploadPackSuite) TearDownTest() {
+	for _, st := range []storage.Storer{s.Storer, s.EmptyStorer, s.NonExistentStorer} {
+		if c, ok := st.(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
+}
+
+// TestAdvertisedReferencesEmpty tests advertised references on an empty repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -38,6 +50,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	s.Require().Nil(ar)
 }
 
+// TestAdvertisedReferencesNotExists tests advertised references on a non-existent repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	r, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -45,6 +58,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	s.Require().Error(err)
 }
 
+// TestCallAdvertisedReferenceTwice tests that calling advertised references twice returns the same result.
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -60,6 +74,7 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	s.Require().Equal(ar1, ar2)
 }
 
+// TestDefaultBranch tests that the default branch is correctly advertised.
 func (s *UploadPackSuite) TestDefaultBranch() {
 	ctx := context.TODO()
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
@@ -76,6 +91,7 @@ func (s *UploadPackSuite) TestDefaultBranch() {
 	s.Require().Equal("HEAD:refs/heads/master", symrefs[0])
 }
 
+// TestAdvertisedReferencesFilterUnsupported tests filtering unsupported capabilities.
 func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -89,6 +105,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	s.Require().True(conn.Capabilities().Supports(capability.MultiACK))
 }
 
+// TestCapabilities tests that capabilities are correctly reported.
 func (s *UploadPackSuite) TestCapabilities() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -102,6 +119,7 @@ func (s *UploadPackSuite) TestCapabilities() {
 	s.Require().Len(conn.Capabilities().Get(capability.Agent), 1)
 }
 
+// TestUploadPack tests a basic upload-pack fetch.
 func (s *UploadPackSuite) TestUploadPack() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -121,6 +139,7 @@ func (s *UploadPackSuite) TestUploadPack() {
 	s.Require().Equal(28, afterCount-beforeCount)
 }
 
+// TestUploadPackWithContext tests upload-pack with a cancelled context.
 func (s *UploadPackSuite) TestUploadPackWithContext() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
@@ -142,6 +161,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	s.Require().NotNil(err)
 }
 
+// TestUploadPackWithContextOnRead tests upload-pack with context cancelled during read.
 func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -163,6 +183,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	s.Require().NotNil(err)
 }
 
+// TestUploadPackFull tests a full upload-pack fetch with advertised references.
 func (s *UploadPackSuite) TestUploadPackFull() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -185,6 +206,7 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 	s.Require().Equal(28, afterCount-beforeCount)
 }
 
+// TestUploadPackInvalidReq tests upload-pack with an invalid request.
 func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -200,6 +222,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	s.Require().NoError(err) // Should succeed as invalid capabilities are handled internally
 }
 
+// TestUploadPackNoChanges tests upload-pack when there are no changes.
 func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)
@@ -215,6 +238,7 @@ func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	s.Require().ErrorIs(err, transport.ErrNoChange)
 }
 
+// TestUploadPackMulti tests upload-pack with multiple wants.
 func (s *UploadPackSuite) TestUploadPackMulti() {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
@@ -222,6 +246,7 @@ func (s *UploadPackSuite) TestUploadPackMulti() {
 	s.testUploadPackFetch(req, 31)
 }
 
+// TestUploadPackPartial tests upload-pack with haves for a partial fetch.
 func (s *UploadPackSuite) TestUploadPackPartial() {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
@@ -244,6 +269,7 @@ func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expec
 	s.Require().Equal(expectedObjects, afterCount-beforeCount)
 }
 
+// TestFetchError tests that fetching a non-existent object returns an error.
 func (s *UploadPackSuite) TestFetchError() {
 	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
 	s.Require().NoError(err)

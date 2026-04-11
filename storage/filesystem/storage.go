@@ -28,6 +28,7 @@ type Storage struct {
 	ShallowStorage
 	ConfigStorage
 	ModuleStorage
+	ReflogStorage
 }
 
 // Options holds configuration for the storage.
@@ -58,6 +59,15 @@ type Options struct {
 	// existing dotgit. In such cases the repository config will define the
 	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
+
+	// UseInMemoryIdx loads .idx files fully into memory (MemoryIndex) instead
+	// of reading them on demand via ReadAt (LazyIndex). This uses more memory
+	// but avoids keeping file descriptors open. Defaults to false.
+	UseInMemoryIdx bool
+
+	// IndexCache provides an optional cache implementation for index data.
+	// If left as nil, a default stat-based implementation is created automatically.
+	IndexCache IndexCache
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -70,11 +80,19 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 // Returns an error if an explicit ObjectFormat is provided via options
 // but conflicts with an existing config in the filesystem.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
+	// Reverse index defaults (true); overridden by repo config below.
+	readRevIdx := true
+	writeRevIdx := true
+	skipHash := false
+
 	f, err := fs.Open("config")
 	if err == nil {
 		cfg, err := config.ReadConfig(f)
 		if err == nil {
 			ops.ObjectFormat = cfg.Extensions.ObjectFormat
+			readRevIdx = cfg.Pack.ReadReverseIndex
+			writeRevIdx = cfg.Pack.WriteReverseIndex
+			skipHash = cfg.Index.SkipHash.IsTrue()
 		}
 
 		_ = f.Close()
@@ -83,15 +101,21 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
 
 	dirOps := dotgit.Options{
-		ExclusiveAccess: ops.ExclusiveAccess,
-		AlternatesFS:    ops.AlternatesFS,
-		KeepDescriptors: ops.KeepDescriptors,
-		ObjectFormat:    ops.ObjectFormat,
+		ExclusiveAccess:   ops.ExclusiveAccess,
+		AlternatesFS:      ops.AlternatesFS,
+		KeepDescriptors:   ops.KeepDescriptors,
+		ObjectFormat:      ops.ObjectFormat,
+		ReadReverseIndex:  readRevIdx,
+		WriteReverseIndex: writeRevIdx,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
 	if c == nil {
 		c = cache.NewObjectLRUDefault()
+	}
+
+	if ops.IndexCache == nil {
+		ops.IndexCache = NewIndexCache()
 	}
 
 	s := &Storage{
@@ -101,10 +125,11 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash},
+		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir},
+		ReflogStorage:    ReflogStorage{dir: dir},
 	}
 
 	return s
@@ -156,6 +181,24 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	return nil
 }
 
+// SupportsExtension checks whether the Storer supports the given
+// Git extension defined by name.
+func (s *Storage) SupportsExtension(name, value string) bool {
+	switch name {
+	case "objectformat":
+		switch value {
+		case "sha1", "sha256", "":
+			return true
+		}
+	case "worktreeconfig":
+		switch value {
+		case "true", "false":
+			return true
+		}
+	}
+	return false
+}
+
 // Filesystem returns the underlying filesystem
 func (s *Storage) Filesystem() billy.Filesystem {
 	return s.fs
@@ -166,9 +209,14 @@ func (s *Storage) Init() error {
 	return s.dir.Initialize()
 }
 
-// AddAlternate adds an alternate object directory.
+// AddAlternate adds an alternate object directory and resets the cached
+// alternate state so that subsequent object lookups pick up the new alternate.
 func (s *Storage) AddAlternate(remote string) error {
-	return s.dir.AddAlternate(remote)
+	if err := s.dir.AddAlternate(remote); err != nil {
+		return err
+	}
+	s.resetAlternates()
+	return nil
 }
 
 // LowMemoryMode returns true if low memory mode is enabled.

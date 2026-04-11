@@ -128,18 +128,18 @@ func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
 
 	name := n.String()
 	ws := strings.Index(src, refSpecWildcard)
-	wd := strings.Index(dst, refSpecWildcard)
+	before, after, _ := strings.Cut(dst, refSpecWildcard)
 	match := name[ws : len(name)-(len(src)-(ws+1))]
 
-	return plumbing.ReferenceName(dst[0:wd] + match + dst[wd+1:])
+	return plumbing.ReferenceName(before + match + after)
 }
 
 // Reverse returns the RefSpec with source and destination swapped.
 func (s RefSpec) Reverse() RefSpec {
 	spec := string(s)
-	separator := strings.Index(spec, refSpecSeparator)
+	before, after, _ := strings.Cut(spec, refSpecSeparator)
 
-	return RefSpec(spec[separator+1:] + refSpecSeparator + spec[:separator])
+	return RefSpec(after + refSpecSeparator + before)
 }
 
 func (s RefSpec) String() string {

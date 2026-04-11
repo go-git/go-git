@@ -3,6 +3,8 @@ package transactional
 import (
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/reflog"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 )
@@ -27,12 +29,22 @@ type basic struct {
 	*IndexStorage
 	*ShallowStorage
 	*ConfigStorage
+	reflog *ReflogStorage
 }
 
 // packageWriter implements storer.PackfileWriter interface over
 // a Storage with a temporal storer that supports it.
 type packageWriter struct {
 	*basic
+	pw storer.PackfileWriter
+}
+
+type reflogBasic struct {
+	*basic
+}
+
+type reflogPackageWriter struct {
+	*reflogBasic
 	pw storer.PackfileWriter
 }
 
@@ -51,12 +63,29 @@ func NewStorage(base, temporal storage.Storer) Storage {
 		ConfigStorage:    NewConfigStorage(base, temporal),
 	}
 
+	if baseReflog, ok := base.(storer.ReflogStorer); ok {
+		if tempReflog, ok := temporal.(storer.ReflogStorer); ok {
+			st.reflog = NewReflogStorage(baseReflog, tempReflog)
+		}
+	}
+
 	pw, ok := temporal.(storer.PackfileWriter)
 	if ok {
+		if st.reflog != nil {
+			return &reflogPackageWriter{
+				reflogBasic: &reflogBasic{basic: st},
+				pw:          pw,
+			}
+		}
+
 		return &packageWriter{
 			basic: st,
 			pw:    pw,
 		}
+	}
+
+	if st.reflog != nil {
+		return &reflogBasic{basic: st}
 	}
 
 	return st
@@ -91,10 +120,33 @@ func (s *basic) Commit() error {
 		}
 	}
 
+	if s.reflog != nil {
+		if err := s.reflog.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // PackfileWriter honors storage.PackfileWriter.
 func (s *packageWriter) PackfileWriter() (io.WriteCloser, error) {
+	return s.pw.PackfileWriter()
+}
+
+func (s *reflogBasic) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+	return s.reflog.Reflog(name)
+}
+
+func (s *reflogBasic) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+	return s.reflog.AppendReflog(name, entry)
+}
+
+func (s *reflogBasic) DeleteReflog(name plumbing.ReferenceName) error {
+	return s.reflog.DeleteReflog(name)
+}
+
+// PackfileWriter honors storer.PackfileWriter.
+func (s *reflogPackageWriter) PackfileWriter() (io.WriteCloser, error) {
 	return s.pw.PackfileWriter()
 }

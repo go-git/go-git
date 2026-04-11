@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -73,7 +73,9 @@ type mergeBaseSuite struct {
 
 func (s *mergeBaseSuite) SetupSuite() {
 	s.Fixture = fixtures.ByTag("merge-base").One()
-	s.Storer = filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+	s.Storer = filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 }
 
 var revisionIndex = map[string]plumbing.Hash{

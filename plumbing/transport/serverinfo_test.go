@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -124,10 +124,12 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 
 func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
 	fixture := fixtures.Basic().One()
-	st := filesystem.NewStorage(fixture.DotGit(), nil)
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
 	fs := memfs.New()
 
-	err := UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
@@ -136,10 +138,12 @@ func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
 
 func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
 	fixture := fixtures.Basic().One()
-	st := filesystem.NewStorage(fixture.DotGit(), nil)
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
 	fs := memfs.New()
 
-	err := UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)
@@ -148,10 +152,12 @@ func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
 
 func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
 	fixture := fixtures.Basic().One()
-	st := filesystem.NewStorage(fixture.DotGit(), nil)
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
 	fs := memfs.New()
 
-	err := UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(st, fs)
 	s.NoError(err)
 
 	assertInfoRefs(s, st, fs)

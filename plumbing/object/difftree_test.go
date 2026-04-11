@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -27,7 +27,9 @@ type DiffTreeSuite struct {
 
 func (s *DiffTreeSuite) SetupSuite() {
 	s.Fixture = fixtures.Basic().One()
-	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
 	s.cache = make(map[string]storer.EncodedObjectStorer)
 }
@@ -48,7 +50,10 @@ func (s *DiffTreeSuite) storageFromPackfile(f *fixtures.Fixture) storer.EncodedO
 
 	storer := memory.NewStorage()
 
-	pf := f.Packfile()
+	pf, err := f.Packfile()
+	if err != nil {
+		panic(err)
+	}
 	defer pf.Close()
 
 	if err := packfile.UpdateObjectStorage(storer, pf); err != nil {

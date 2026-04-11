@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -55,7 +55,9 @@ var fileIterTests = []struct {
 func (s *FileSuite) TestIter() {
 	for i, t := range fileIterTests {
 		f := fixtures.ByURL(t.repo).One()
-		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -116,7 +118,9 @@ hs_err_pid*
 func (s *FileSuite) TestContents() {
 	for i, t := range contentsTests {
 		f := fixtures.ByURL(t.repo).One()
-		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -169,7 +173,9 @@ var linesTests = []struct {
 func (s *FileSuite) TestLines() {
 	for i, t := range linesTests {
 		f := fixtures.ByURL(t.repo).One()
-		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -203,7 +209,9 @@ var ignoreEmptyDirEntriesTests = []struct {
 func (s *FileSuite) TestIgnoreEmptyDirEntries() {
 	for i, t := range ignoreEmptyDirEntriesTests {
 		f := fixtures.ByURL(t.repo).One()
-		sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -257,7 +265,8 @@ func (s *FileSuite) TestFileIter() {
 }
 
 func (s *FileSuite) TestFileIterSubmodule() {
-	dotgit := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	dotgit, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	s.Require().NoError(err)
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")

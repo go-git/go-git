@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -244,12 +244,10 @@ func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// Tunnel data between client and target.
 	// Use one goroutine for client->target, current goroutine for target->client.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_, _ = io.Copy(targetConn, clientConn)
 		targetConn.Close() // Signal EOF to the other direction
-	}()
+	})
 
 	_, _ = io.Copy(clientConn, targetConn)
 	clientConn.Close() // Signal EOF to the other direction

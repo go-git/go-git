@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -317,7 +317,9 @@ func (s *SuiteCommit) TestStringMultiLine() {
 	hash := plumbing.NewHash("e7d896db87294e33ca3202e536d4d9bb16023db3")
 
 	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
 	s.NoError(err)

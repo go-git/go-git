@@ -3,6 +3,7 @@ package dotgit
 import (
 	"bufio"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -17,11 +18,13 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
 )
 
@@ -74,7 +77,8 @@ func (s *SuiteDotGit) TestSetRefsNorwfs() {
 }
 
 func (s *SuiteDotGit) TestRefsHeadFirst() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 	refs, err := dir.Refs()
 	s.Require().NoError(err)
@@ -163,7 +167,8 @@ func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 }
 
 func (s *SuiteDotGit) TestRefsFromPackedRefs() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	refs, err := dir.Refs()
@@ -175,7 +180,8 @@ func (s *SuiteDotGit) TestRefsFromPackedRefs() {
 }
 
 func (s *SuiteDotGit) TestRefsFromReferenceFile() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	refs, err := dir.Refs()
@@ -188,11 +194,14 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile() {
 }
 
 func BenchmarkRefMultipleTimes(b *testing.B) {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
 	refname := plumbing.ReferenceName("refs/remotes/origin/branch")
 
 	dir := New(fs)
-	_, err := dir.Ref(refname)
+	_, err = dir.Ref(refname)
 	if err != nil {
 		b.Fatalf("unexpected error: %s", err)
 	}
@@ -206,11 +215,12 @@ func BenchmarkRefMultipleTimes(b *testing.B) {
 }
 
 func (s *SuiteDotGit) TestRemoveRefFromReferenceFile() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	name := plumbing.ReferenceName("refs/remotes/origin/HEAD")
-	err := dir.RemoveRef(name)
+	err = dir.RemoveRef(name)
 	s.Require().NoError(err)
 
 	refs, err := dir.Refs()
@@ -221,11 +231,12 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFile() {
 }
 
 func (s *SuiteDotGit) TestRemoveRefFromPackedRefs() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	name := plumbing.ReferenceName("refs/remotes/origin/master")
-	err := dir.RemoveRef(name)
+	err = dir.RemoveRef(name)
 	s.Require().NoError(err)
 
 	b, err := util.ReadFile(fs, packedRefsPath)
@@ -239,11 +250,12 @@ func (s *SuiteDotGit) TestRemoveRefFromPackedRefs() {
 }
 
 func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	// Make a ref file for a ref that's already in `packed-refs`.
-	err := dir.SetRef(plumbing.NewReferenceFromStrings(
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/remotes/origin/branch",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
@@ -281,7 +293,8 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 }
 
 func (s *SuiteDotGit) TestRemoveRefNonExistent() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	before, err := util.ReadFile(fs, packedRefsPath)
@@ -298,12 +311,13 @@ func (s *SuiteDotGit) TestRemoveRefNonExistent() {
 }
 
 func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	brokenContent := "BROKEN STUFF REALLY BROKEN"
 
-	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0o755))
+	err = util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0o755))
 	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
@@ -317,12 +331,13 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs() {
 }
 
 func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	brokenContent := strings.Repeat("a", bufio.MaxScanTokenSize*2)
 
-	err := util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0o755))
+	err = util.WriteFile(fs, packedRefsPath, []byte(brokenContent), os.FileMode(0o755))
 	s.Require().NoError(err)
 
 	name := plumbing.ReferenceName("refs/heads/nonexistent")
@@ -336,7 +351,8 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2() {
 }
 
 func (s *SuiteDotGit) TestRefsFromHEADFile() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	refs, err := dir.Refs()
@@ -349,7 +365,8 @@ func (s *SuiteDotGit) TestRefsFromHEADFile() {
 }
 
 func (s *SuiteDotGit) TestConfig() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	file, err := dir.Config()
@@ -378,7 +395,8 @@ func (s *SuiteDotGit) TestConfigWriteAndConfig() {
 }
 
 func (s *SuiteDotGit) TestIndex() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	idx, err := dir.Index()
@@ -407,7 +425,8 @@ func (s *SuiteDotGit) TestIndexWriteAndIndex() {
 }
 
 func (s *SuiteDotGit) TestShallow() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	file, err := dir.Shallow()
@@ -448,7 +467,8 @@ func findReference(refs []*plumbing.Reference, name string) *plumbing.Reference 
 
 func (s *SuiteDotGit) TestObjectPacks() {
 	f := fixtures.Basic().ByTag(".git").One()
-	fs := f.DotGit()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	testObjectPacks(s, fs, dir, f)
@@ -456,7 +476,8 @@ func (s *SuiteDotGit) TestObjectPacks() {
 
 func (s *SuiteDotGit) TestObjectPacksExclusive() {
 	f := fixtures.Basic().ByTag(".git").One()
-	fs := f.DotGit()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
 	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
 
 	testObjectPacks(s, fs, dir, f)
@@ -488,7 +509,8 @@ func testObjectPacks(s *SuiteDotGit, fs billy.Filesystem, dir *DotGit, f *fixtur
 
 func (s *SuiteDotGit) TestObjectPack() {
 	f := fixtures.Basic().ByTag(".git").One()
-	fs := f.DotGit()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
@@ -498,7 +520,8 @@ func (s *SuiteDotGit) TestObjectPack() {
 
 func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors() {
 	f := fixtures.Basic().ByTag(".git").One()
-	fs := f.DotGit()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
 	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
 
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
@@ -536,7 +559,8 @@ func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors() {
 
 func (s *SuiteDotGit) TestObjectPackIdx() {
 	f := fixtures.Basic().ByTag(".git").One()
-	fs := f.DotGit()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	idx, err := dir.ObjectPackIdx(plumbing.NewHash(f.PackfileHash))
@@ -545,8 +569,201 @@ func (s *SuiteDotGit) TestObjectPackIdx() {
 	s.Nil(idx.Close())
 }
 
+func TestOpenPackRevReadFromDisk(t *testing.T) {
+	t.Parallel()
+
+	dot, h, _ := createPackWithRev(t, Options{
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
+
+	rev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	var hdr [4]byte
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
+
+	require.NoError(t, rev.Close())
+}
+
+func TestOpenPackRevIgnoreReverseIndex(t *testing.T) {
+	t.Parallel()
+
+	dot, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
+
+	// Overwrite the .rev with garbage.
+	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", h)
+	corruptRevFile(t, fs, revPath, []byte("corrupt rev data"))
+
+	rev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	var hdr [4]byte
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.NotEqual(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
+	require.NoError(t, rev.Close())
+
+	// Re-open DotGit with ReadReverseIndex=false so the corrupt disk
+	// file is ignored and a fresh rev is generated instead.
+	dot = NewWithOptions(fs, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: true,
+	})
+
+	rev, err = dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, [4]byte{'R', 'I', 'D', 'X'}, hdr, "generated rev should have valid RIDX header")
+	require.NoError(t, rev.Close())
+}
+
+func TestOpenPackRevNoRevFileOnDisk(t *testing.T) {
+	t.Parallel()
+
+	_, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: false,
+	})
+
+	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", h)
+	_, err := fs.Stat(revPath)
+	require.True(t, os.IsNotExist(err), ".rev file should not exist on disk")
+
+	dot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	rev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	var hdr [4]byte
+	_, err = rev.ReadAt(hdr[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
+	require.NoError(t, rev.Close())
+}
+
+func TestOpenRevFileDoesNotExist(t *testing.T) {
+	t.Parallel()
+
+	_, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: false,
+	})
+
+	// ReadReverseIndex=true tries to open the .rev from disk — which
+	// does not exist. Generate one on demand.
+	dot := NewWithOptions(fs, Options{ReadReverseIndex: true})
+	_, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+}
+
+func TestOpenPackRevGeneratedMatchesDisk(t *testing.T) {
+	t.Parallel()
+
+	dot, h, fs := createPackWithRev(t, Options{
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	})
+
+	diskRev, err := dot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	diskData, err := io.ReadAll(diskRev)
+	require.NoError(t, err)
+	require.NoError(t, diskRev.Close())
+
+	genDot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	genRev, err := genDot.OpenPackRev(h)
+	require.NoError(t, err)
+
+	genData, err := io.ReadAll(genRev)
+	require.NoError(t, err)
+	require.NoError(t, genRev.Close())
+
+	assert.Equal(t, diskData, genData, "generated rev should be byte-identical to on-disk rev")
+}
+
+func TestOpenPackRevUsableByLazyIndex(t *testing.T) {
+	t.Parallel()
+
+	dot, h, _ := createPackWithRev(t, Options{
+		ReadReverseIndex:  false,
+		WriteReverseIndex: false,
+	})
+
+	openIdx := func() (idxfile.ReadAtCloser, error) {
+		return dot.ObjectPackIdx(h)
+	}
+	openRev := func() (idxfile.ReadAtCloser, error) {
+		return dot.OpenPackRev(h)
+	}
+
+	idx, err := idxfile.NewLazyIndex(openIdx, openRev, h)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	// Verify we can look up a known object by offset → hash (uses the rev).
+	// First get an entry via the forward index to obtain a known offset.
+	entries, err := idx.Entries()
+	require.NoError(t, err)
+
+	entry, err := entries.Next()
+	require.NoError(t, err)
+	require.NoError(t, entries.Close())
+
+	// Use FindHash (reverse lookup) which relies on the rev data.
+	got, err := idx.FindHash(int64(entry.Offset))
+	require.NoError(t, err)
+	assert.Equal(t, entry.Hash, got, "FindHash via generated rev should return the correct hash")
+}
+
+// createPackWithRev creates a packfile from the basic fixture and returns
+// the DotGit, the pack hash, and the filesystem. The DotGit is created
+// with the given options.
+func createPackWithRev(t *testing.T, opts Options) (*DotGit, plumbing.Hash, billy.Filesystem) {
+	t.Helper()
+
+	f := fixtures.Basic().One()
+	fs := osfs.New(t.TempDir())
+	dot := NewWithOptions(fs, opts)
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	_, err = io.Copy(w, pf)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	h := plumbing.NewHash(f.PackfileHash)
+	return dot, h, fs
+}
+
+// corruptRevFile overwrites the file at path with the given data,
+// handling the read-only permissions set by fixPermissions.
+func corruptRevFile(t *testing.T, fs billy.Filesystem, path string, data []byte) {
+	t.Helper()
+	if chmodFS, ok := fs.(billy.Chmod); ok {
+		require.NoError(t, chmodFS.Chmod(path, 0o644))
+	}
+	f, err := fs.Create(path)
+	require.NoError(t, err)
+	_, err = f.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+}
+
 func (s *SuiteDotGit) TestObjectPackNotFound() {
-	fs := fixtures.Basic().ByTag(".git").One().DotGit()
+	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	pack, err := dir.ObjectPack(plumbing.ZeroHash)
@@ -582,7 +799,8 @@ func (s *SuiteDotGit) TestNewObject() {
 }
 
 func (s *SuiteDotGit) TestObjects() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	testObjects(s, fs, dir)
@@ -590,7 +808,8 @@ func (s *SuiteDotGit) TestObjects() {
 }
 
 func (s *SuiteDotGit) TestObjectsExclusive() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	dir := NewWithOptions(fs, Options{ExclusiveAccess: true})
 
 	testObjects(s, fs, dir)
@@ -629,8 +848,9 @@ func (s *SuiteDotGit) TestObjectsNoFolder() {
 	s.Len(hash, 0)
 }
 
-func (s *SuiteDotGit) TestObject() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+func (s *SuiteDotGit) testObjectWithIncomingDir(incomingDirName string) {
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
@@ -640,41 +860,30 @@ func (s *SuiteDotGit) TestObject() {
 		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
 	)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
-	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
+	incomingDirPath := fs.Join("objects", incomingDirName)
 	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
 	fs.MkdirAll(incomingDirPath, os.FileMode(0o755))
 	fs.Create(incomingFilePath)
 
 	_, err = dir.Object(plumbing.NewHash(incomingHash))
 	s.Require().NoError(err)
+}
+
+func (s *SuiteDotGit) TestObject() {
+	s.testObjectWithIncomingDir("tmp_objdir-incoming-123456")
 }
 
 func (s *SuiteDotGit) TestPreGit235Object() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
-	dir := New(fs)
-
-	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
-	file, err := dir.Object(hash)
-	s.Require().NoError(err)
-	s.True(strings.HasSuffix(
-		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
-	)
-	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
-	incomingDirPath := fs.Join("objects", "incoming-123456")
-	incomingFilePath := fs.Join(incomingDirPath, incomingHash[0:2], incomingHash[2:40])
-	fs.MkdirAll(incomingDirPath, os.FileMode(0o755))
-	fs.Create(incomingFilePath)
-
-	_, err = dir.Object(plumbing.NewHash(incomingHash))
-	s.Require().NoError(err)
+	s.testObjectWithIncomingDir("incoming-123456")
 }
 
 func (s *SuiteDotGit) TestObjectStat() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
-	_, err := dir.ObjectStat(hash)
+	_, err = dir.ObjectStat(hash)
 	s.Require().NoError(err)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", "tmp_objdir-incoming-123456")
@@ -687,11 +896,12 @@ func (s *SuiteDotGit) TestObjectStat() {
 }
 
 func (s *SuiteDotGit) TestObjectDelete() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	hash := plumbing.NewHash("03db8e1fbe133a480f2867aac478fd866686d69e")
-	err := dir.ObjectDelete(hash)
+	err = dir.ObjectDelete(hash)
 	s.Require().NoError(err)
 
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
@@ -713,7 +923,8 @@ func (s *SuiteDotGit) TestObjectDelete() {
 }
 
 func (s *SuiteDotGit) TestObjectNotFound() {
-	fs := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	hash := plumbing.NewHash("not-found-object")
@@ -723,7 +934,8 @@ func (s *SuiteDotGit) TestObjectNotFound() {
 }
 
 func (s *SuiteDotGit) TestSubmodules() {
-	fs := fixtures.ByTag("submodule").One().DotGit()
+	fs, err := fixtures.ByTag("submodule").One().DotGit()
+	s.Require().NoError(err)
 	dir := New(fs)
 
 	m, err := dir.Module("basic")
@@ -1084,4 +1296,62 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 	looseCount, err = dir.CountLooseRefs()
 	s.Require().NoError(err)
 	s.Equal(1, looseCount)
+}
+
+func TestIssue55(t *testing.T) {
+	t.Parallel()
+
+	writeObject := func(fs billy.Filesystem) {
+		t.Helper()
+
+		dir := New(fs)
+		err := dir.Initialize()
+		require.NoError(t, err)
+
+		w, err := dir.NewObject()
+		require.NoError(t, err)
+
+		err = w.WriteHeader(plumbing.BlobObject, 14)
+		require.NoError(t, err)
+		n, err := w.Write([]byte("this is a test"))
+		require.NoError(t, err)
+		assert.Equal(t, 14, n)
+
+		assert.Equal(t, "a8a940627d132695a9769df883f85992f0ff4a43", w.Hash().String())
+
+		err = w.Close()
+		require.NoError(t, err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		fs   billy.Filesystem
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join("objects", "a8", "a940627d132695a9769df883f85992f0ff4a43")
+
+			writeObject(tc.fs)
+			i, err := tc.fs.Stat(path)
+			require.NoError(t, err)
+			assert.Equal(t, int64(34), i.Size())
+
+			ro, err := isReadOnly(tc.fs, path)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", path)
+
+			// Recreate the same object.
+			writeObject(tc.fs)
+			i, err = tc.fs.Stat(path)
+			require.NoError(t, err)
+			assert.Equal(t, int64(34), i.Size())
+
+			ro, err = isReadOnly(tc.fs, path)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", path)
+		})
+	}
 }

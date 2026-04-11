@@ -6,7 +6,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,18 +17,25 @@ import (
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
+func mustDotGit(t testing.TB, f *fixtures.Fixture, opts ...fixtures.Option) billy.Filesystem {
+	t.Helper()
+	fs, err := f.DotGit(opts...)
+	require.NoError(t, err)
+	return fs
+}
+
 var (
 	fs  = memfs.New()
 	sto = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer  = sto
-	_ storer.IndexStorer          = sto
-	_ storer.ReferenceStorer      = sto
-	_ storer.ShallowStorer        = sto
-	_ storer.DeltaObjectStorer    = sto
-	_ storer.PackfileWriter       = sto
-	_ xstorage.ObjectFormatGetter = sto
+	_ storer.EncodedObjectStorer = sto
+	_ storer.IndexStorer         = sto
+	_ storer.ReferenceStorer     = sto
+	_ storer.ShallowStorer       = sto
+	_ storer.DeltaObjectStorer   = sto
+	_ storer.PackfileWriter      = sto
+	_ xstorage.ExtensionChecker  = sto
 )
 
 func TestFilesystem(t *testing.T) {
@@ -150,7 +157,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 	}{
 		{
 			name:             "existing SHA1 (unset) repo, unset opts format",
-			fs:               fixtures.ByTag(".git").One().DotGit(),
+			fs:               mustDotGit(t, fixtures.ByTag(".git").One()),
 			inObjectFormat:   formatcfg.UnsetObjectFormat,
 			wantObjectFormat: formatcfg.UnsetObjectFormat,
 		},
@@ -162,13 +169,13 @@ func TestNewStorageWithOptions(t *testing.T) {
 		},
 		{
 			name:             "existing SHA256 repo, unset opts format",
-			fs:               fixtures.ByTag(".git-sha256").One().DotGit(),
+			fs:               mustDotGit(t, fixtures.ByTag(".git-sha256").One()),
 			inObjectFormat:   formatcfg.UnsetObjectFormat,
 			wantObjectFormat: formatcfg.SHA256,
 		},
 		{
 			name:             "existing SHA1 (unset) repo, SHA1 opts format",
-			fs:               fixtures.ByTag(".git").One().DotGit(),
+			fs:               mustDotGit(t, fixtures.ByTag(".git").One()),
 			inObjectFormat:   formatcfg.SHA1,
 			wantObjectFormat: formatcfg.UnsetObjectFormat,
 		},
@@ -180,19 +187,19 @@ func TestNewStorageWithOptions(t *testing.T) {
 		},
 		{
 			name:             "existing SHA256 repo, SHA256 opts format",
-			fs:               fixtures.ByTag(".git-sha256").One().DotGit(),
+			fs:               mustDotGit(t, fixtures.ByTag(".git-sha256").One()),
 			inObjectFormat:   formatcfg.SHA256,
 			wantObjectFormat: formatcfg.SHA256,
 		},
 		{
 			name:             "SHA256 opts format conflicts with existing SHA1 config",
-			fs:               fixtures.ByTag(".git").One().DotGit(),
+			fs:               mustDotGit(t, fixtures.ByTag(".git").One()),
 			inObjectFormat:   formatcfg.SHA256,
 			wantObjectFormat: formatcfg.UnsetObjectFormat,
 		},
 		{
 			name:             "existing SHA256 repo, SHA1 opts format",
-			fs:               fixtures.ByTag(".git-sha256").One().DotGit(),
+			fs:               mustDotGit(t, fixtures.ByTag(".git-sha256").One()),
 			inObjectFormat:   formatcfg.SHA1,
 			wantObjectFormat: formatcfg.SHA256,
 		},
@@ -206,7 +213,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 			name:             "empty fs, SHA1 opts format",
 			fs:               osfs.New(t.TempDir()),
 			inObjectFormat:   formatcfg.SHA1,
-			wantObjectFormat: formatcfg.SHA1,
+			wantObjectFormat: formatcfg.UnsetObjectFormat,
 		},
 		{
 			name:             "empty fs, SHA256 opts format",
@@ -226,7 +233,10 @@ func TestNewStorageWithOptions(t *testing.T) {
 				filesystem.Options{ObjectFormat: tt.inObjectFormat},
 			)
 
-			assert.Equal(t, tt.wantObjectFormat, sto.ObjectFormat())
+			cfg, err := sto.Config()
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantObjectFormat, cfg.Extensions.ObjectFormat)
 		})
 	}
 }
@@ -265,7 +275,8 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			fs := fixtures.ByTag(tt.tag).One().DotGit()
+			fs, err := fixtures.ByTag(tt.tag).One().DotGit()
+			require.NoError(t, err)
 			sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 			packs, err := sto.ObjectPacks()
@@ -276,6 +287,58 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "cannot change object format")
+		})
+	}
+}
+
+func TestSupportsExtension(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		ext   string
+		value string
+		want  bool
+	}{
+		{
+			name:  "objectformat with sha1",
+			ext:   "objectformat",
+			value: "sha1",
+			want:  true,
+		},
+		{
+			name:  "objectformat with sha256",
+			ext:   "objectformat",
+			value: "sha256",
+			want:  true,
+		},
+		{
+			name:  "objectformat with empty string",
+			ext:   "objectformat",
+			value: "",
+			want:  true,
+		},
+		{
+			name:  "objectformat with unsupported value",
+			ext:   "objectformat",
+			value: "sha512",
+			want:  false,
+		},
+		{
+			name:  "unsupported extension name",
+			ext:   "noop",
+			value: "sha1",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sto := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+			got := sto.SupportsExtension(tt.ext, tt.value)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

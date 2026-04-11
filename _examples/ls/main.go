@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"github.com/emirpasic/gods/trees/binaryheap"
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -17,9 +20,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/object/commitgraph"
 	"github.com/go-git/go-git/v6/storage/filesystem"
-
-	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/osfs"
 )
 
 // Example how to resolve a revision into its commit counterpart
@@ -183,7 +183,7 @@ func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []st
 		// Load the parent commits for the one we are currently examining
 		numParents := current.commit.NumParents()
 		var parents []commitgraph.CommitNode
-		for i := 0; i < numParents; i++ {
+		for i := range numParents {
 			parent, err := current.commit.ParentNode(i)
 			if err != nil {
 				break

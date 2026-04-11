@@ -38,7 +38,8 @@ func (s *EncoderSuite) TestCorrectPackHeader() {
 	hb := h.Bytes()
 
 	// PACK + VERSION + OBJECTS + HASH
-	expectedResult := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0}
+	expectedResult := make([]byte, 0, 12+len(hb))
+	expectedResult = append(expectedResult, 'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0)
 	expectedResult = append(expectedResult, hb...)
 
 	result := s.buf.Bytes()
@@ -56,8 +57,12 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 	h, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
 	s.NoError(err)
 
+	// + HASH
+	hb := h.Bytes()
+
 	// PACK + VERSION(2) + OBJECT NUMBER(1)
-	expectedResult := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 1}
+	expectedResult := make([]byte, 0, 24+len(hb))
+	expectedResult = append(expectedResult, 'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 1)
 	// OBJECT HEADER(TYPE + SIZE)= 0001 0000
 	expectedResult = append(expectedResult, []byte{16}...)
 
@@ -65,8 +70,6 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 	expectedResult = append(expectedResult,
 		[]byte{120, 156, 1, 0, 0, 255, 255, 0, 0, 0, 1}...)
 
-	// + HASH
-	hb := h.Bytes()
 	expectedResult = append(expectedResult, hb...)
 
 	result := s.buf.Bytes()

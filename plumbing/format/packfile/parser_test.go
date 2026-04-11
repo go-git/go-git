@@ -8,7 +8,7 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -58,7 +58,9 @@ func TestParserHashes(t *testing.T) {
 			f := fixtures.Basic().One()
 
 			obs := new(testObserver)
-			parser := packfile.NewParser(f.Packfile(), packfile.WithScannerObservers(obs),
+			pf, pfErr := f.Packfile()
+			require.NoError(t, pfErr)
+			parser := packfile.NewParser(pf, packfile.WithScannerObservers(obs),
 				packfile.WithStorage(tc.storage), tc.option)
 
 			field := reflect.ValueOf(parser).Elem().FieldByName("lowMemoryMode")
@@ -115,7 +117,9 @@ func TestParserHashes(t *testing.T) {
 func TestParserMalformedPack(t *testing.T) {
 	t.Parallel()
 	f := fixtures.Basic().One()
-	parser := packfile.NewParser(io.LimitReader(f.Packfile(), 300))
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	parser := packfile.NewParser(io.LimitReader(pf, 300))
 
 	_, err := parser.Parse()
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
@@ -130,8 +134,9 @@ func TestThinPack(t *testing.T) {
 	// Try to parse a thin pack without having the required objects in the repo to
 	// see if the correct errors are returned
 	thinpack := fixtures.ByTag("thinpack").One()
-	parser := packfile.NewParser(thinpack.Packfile(), packfile.WithStorage(r.Storer)) // ParserWithStorage writes to the storer all parsed objects!
-	assert.NoError(t, err)
+	thinPf, thinPfErr := thinpack.Packfile()
+	require.NoError(t, thinPfErr)
+	parser := packfile.NewParser(thinPf, packfile.WithStorage(r.Storer)) // ParserWithStorage writes to the storer all parsed objects!
 
 	_, err = parser.Parse()
 	assert.ErrorIs(t, err, packfile.ErrReferenceDeltaNotFound)
@@ -144,7 +149,9 @@ func TestThinPack(t *testing.T) {
 	f := fixtures.ByURL("https://github.com/spinnaker/spinnaker.git").One()
 	w, err := r.Storer.(storer.PackfileWriter).PackfileWriter()
 	assert.NoError(t, err)
-	_, err = io.Copy(w, f.Packfile())
+	fPf, fPfErr := f.Packfile()
+	require.NoError(t, fPfErr)
+	_, err = io.Copy(w, fPf)
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
 
@@ -153,7 +160,9 @@ func TestThinPack(t *testing.T) {
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 
 	// Now unpack the thin pack:
-	parser = packfile.NewParser(thinpack.Packfile(), packfile.WithStorage(r.Storer)) // ParserWithStorage writes to the storer all parsed objects!
+	thinPf2, thinPf2Err := thinpack.Packfile()
+	require.NoError(t, thinPf2Err)
+	parser = packfile.NewParser(thinPf2, packfile.WithStorage(r.Storer)) // ParserWithStorage writes to the storer all parsed objects!
 
 	h, err := parser.Parse()
 	assert.NoError(t, err)
@@ -166,7 +175,8 @@ func TestThinPack(t *testing.T) {
 
 func TestResolveExternalRefsInThinPack(t *testing.T) {
 	t.Parallel()
-	extRefsThinPack := fixtures.ByTag("codecommit").One().Packfile()
+	extRefsThinPack, err := fixtures.ByTag("codecommit").One().Packfile()
+	require.NoError(t, err)
 
 	parser := packfile.NewParser(extRefsThinPack)
 
@@ -177,7 +187,8 @@ func TestResolveExternalRefsInThinPack(t *testing.T) {
 
 func TestResolveExternalRefs(t *testing.T) {
 	t.Parallel()
-	extRefsThinPack := fixtures.ByTag("delta-before-base").One().Packfile()
+	extRefsThinPack, err := fixtures.ByTag("delta-before-base").One().Packfile()
+	require.NoError(t, err)
 
 	parser := packfile.NewParser(extRefsThinPack)
 
@@ -188,7 +199,8 @@ func TestResolveExternalRefs(t *testing.T) {
 
 func TestMemoryResolveExternalRefs(t *testing.T) {
 	t.Parallel()
-	extRefsThinPack := fixtures.ByTag("delta-before-base").One().Packfile()
+	extRefsThinPack, err := fixtures.ByTag("delta-before-base").One().Packfile()
+	require.NoError(t, err)
 
 	parser := packfile.NewParser(extRefsThinPack, packfile.WithStorage(memory.NewStorage()))
 
@@ -198,7 +210,10 @@ func TestMemoryResolveExternalRefs(t *testing.T) {
 }
 
 func BenchmarkParseBasic(b *testing.B) {
-	f := fixtures.Basic().One().Packfile()
+	f, err := fixtures.Basic().One().Packfile()
+	if err != nil {
+		b.Fatal(err)
+	}
 	scanner := packfile.NewScanner(f)
 	storage := filesystem.NewStorage(osfs.New(b.TempDir()), cache.NewObjectLRUDefault())
 
@@ -239,10 +254,14 @@ func benchmarkParseBasic(b *testing.B,
 
 func BenchmarkParse(b *testing.B) {
 	for _, f := range fixtures.ByTag("packfile") {
-		scanner := packfile.NewScanner(f.Packfile())
+		pff, pffErr := f.Packfile()
+		if pffErr != nil {
+			b.Fatal(pffErr)
+		}
+		scanner := packfile.NewScanner(pff)
 
 		b.Run(f.URL, func(b *testing.B) {
-			benchmarkParseBasic(b, f.Packfile(), scanner)
+			benchmarkParseBasic(b, pff, scanner)
 		})
 	}
 }
@@ -321,7 +340,9 @@ func TestChecksumMismatch(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	_, err = io.Copy(f, fixtures.Basic().One().Packfile())
+	basicPf, bpfErr := fixtures.Basic().One().Packfile()
+	require.NoError(t, bpfErr)
+	_, err = io.Copy(f, basicPf)
 	require.NoError(t, err)
 
 	_, err = f.Seek(-1, io.SeekEnd)
@@ -347,7 +368,9 @@ func TestMalformedPack(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	_, err = io.Copy(f, io.LimitReader(fixtures.Basic().One().Packfile(), 200))
+	basicPf2, bpf2Err := fixtures.Basic().One().Packfile()
+	require.NoError(t, bpf2Err)
+	_, err = io.Copy(f, io.LimitReader(basicPf2, 200))
 	require.NoError(t, err)
 
 	_, err = f.Seek(0, io.SeekStart)

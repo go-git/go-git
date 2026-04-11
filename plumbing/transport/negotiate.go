@@ -64,8 +64,8 @@ func NegotiatePack(
 
 	if caps.Supports(capability.ObjectFormat) {
 		var clientFormat, serverFormat config.ObjectFormat
-		if cap := caps.Get(capability.ObjectFormat); len(cap) > 0 {
-			of := config.ObjectFormat(cap[0])
+		if capValues := caps.Get(capability.ObjectFormat); len(capValues) > 0 {
+			of := config.ObjectFormat(capValues[0])
 			switch of {
 			case config.SHA1, config.SHA256:
 				serverFormat = of
@@ -154,9 +154,11 @@ func NegotiatePack(
 			return nil, err
 		}
 
-		// Close the writer to signal the end of the request
-		if err := writer.Close(); err != nil {
-			return nil, fmt.Errorf("closing writer: %s", err)
+		// Close the writer to signal the end of the request.
+		// The server may have already closed the connection after receiving
+		// the flush-pkt with no wants, so io.EOF is expected.
+		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 
 		return nil, ErrNoChange
@@ -193,9 +195,11 @@ func NegotiatePack(
 				return nil, err
 			}
 
-			// Close the writer to signal the end of the request
-			if err := writer.Close(); err != nil {
-				return nil, fmt.Errorf("closing writer: %s", err)
+			// Close the writer to signal the end of the request.
+			// The server may have already closed the connection after receiving
+			// the flush-pkt with no wants, so io.EOF is expected.
+			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 
 			return nil, ErrNoChange
@@ -300,9 +304,10 @@ func readShallows(
 			return fmt.Errorf("decoding shallow-update: %w", err)
 		}
 
-		// Only return the first shallow update
-		if shallowInfo == nil {
-			shallowInfo = new(*packp.ShallowUpdate)
+		// Only capture the first shallow update; subsequent rounds may
+		// also produce shallow-update packets (stateless RPC sends one per
+		// request round-trip) but the first one is authoritative.
+		if *shallowInfo == nil {
 			*shallowInfo = &shupd
 		}
 	}

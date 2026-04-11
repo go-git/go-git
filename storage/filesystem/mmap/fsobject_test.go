@@ -8,7 +8,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -37,7 +37,13 @@ var data = []struct {
 func TestOndemandObject(t *testing.T) {
 	t.Parallel()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
-	scanner, err := NewPackScanner(crypto.SHA1.Size(), fixture.Packfile(), fixture.Idx(), fixture.Rev())
+	pack, err := fixture.Packfile()
+	require.NoError(t, err)
+	idx, err := fixture.Idx()
+	require.NoError(t, err)
+	rev, err := fixture.Rev()
+	require.NoError(t, err)
+	scanner, err := NewPackScanner(crypto.SHA1.Size(), pack, idx, rev)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := scanner.Close()

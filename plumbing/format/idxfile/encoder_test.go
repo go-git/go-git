@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,7 +18,8 @@ func TestEncode(t *testing.T) {
 	t.Parallel()
 
 	fixture := fixtures.ByTag("packfile").One()
-	idxf := fixture.Idx()
+	idxf, err := fixture.Idx()
+	require.NoError(t, err)
 	require.NotNil(t, idxf)
 
 	expected, err := io.ReadAll(idxf)
@@ -27,7 +28,7 @@ func TestEncode(t *testing.T) {
 	validIdxFn := func() *MemoryIndex {
 		idx := NewMemoryIndex(crypto.SHA1.Size())
 		d := NewDecoder(bytes.NewBuffer(expected), hash.New(crypto.SHA1))
-		err = d.Decode(idx)
+		err := d.Decode(idx)
 		require.NoError(t, err)
 		return idx
 	}
@@ -143,7 +144,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			idxf := tc.fixture.Idx()
+			idxf, err := tc.fixture.Idx()
+			require.NoError(t, err)
 			require.NotNil(t, idxf)
 
 			expected, err := io.ReadAll(idxf)
@@ -168,16 +170,23 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 func TestDecodeEncode(t *testing.T) {
 	t.Parallel()
 	for _, f := range fixtures.ByTag("packfile") {
-		expected, err := io.ReadAll(f.Idx())
+		idxFile, err := f.Idx()
+		require.NoError(t, err)
+		expected, err := io.ReadAll(idxFile)
 		require.NoError(t, err)
 
-		idx := new(MemoryIndex)
-		d := NewDecoder(bytes.NewBuffer(expected), hash.New(crypto.SHA1))
+		h := crypto.SHA1
+		if f.ObjectFormat == "sha256" {
+			h = crypto.SHA256
+		}
+
+		idx := NewMemoryIndex(h.Size())
+		d := NewDecoder(bytes.NewBuffer(expected), hash.New(h))
 		err = d.Decode(idx)
 		require.NoError(t, err)
 
 		result := bytes.NewBuffer(nil)
-		err = Encode(result, hash.New(crypto.SHA1), idx)
+		err = Encode(result, hash.New(h), idx)
 		require.NoError(t, err)
 
 		assert.Len(t, expected, result.Len())

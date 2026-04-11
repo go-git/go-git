@@ -76,3 +76,39 @@ The default hash functions can be changed by calling `hash.RegisterHash`.
 ```
 
 New `SHA1` or `SHA256` hash functions that implement the `hash.RegisterHash` interface can be registered by calling `RegisterHash`.
+
+## Plugin System (Experimental)
+
+> **Note:** The plugin system is experimental and its API may change in future releases.
+
+`go-git` provides a plugin registry in the [`x/plugin`](x/plugin) package that enables off-tree implementations of specific features to be registered and used at runtime, without modifying the core codebase.
+
+Each plugin is identified by a typed key. Registrations must happen before the first call to `Get` for a given key (typically in a `func init()`), after which the entry is frozen and no further registrations are accepted.
+
+### Object Signing
+
+The first feature exposed via the plugin system is object signing. When an `ObjectSigner` plugin is registered, it becomes the default signer for new commits and tags.
+
+```go
+import (
+    "github.com/go-git/go-git/v6/x/plugin"
+)
+
+func init() {
+    plugin.Register(plugin.ObjectSigner(), func() plugin.Signer {
+        return &mySigner{}
+    })
+}
+```
+
+Where `mySigner` implements the `plugin.Signer` interface:
+
+```go
+type Signer interface {
+    Sign(message io.Reader) ([]byte, error)
+}
+```
+
+More features will be exposed through the plugin system in the future.
+
+For more information, refer to the [`x/plugin` package documentation](x/plugin/plugin.go).

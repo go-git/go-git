@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -44,7 +44,8 @@ func (s *ClientSuite) SetupSuite() {
 		"https://github.com/git-fixtures/basic",
 	)
 	s.Nil(err)
-	dot := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
 	s.Storer = filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 }
 
@@ -264,8 +265,11 @@ func setupServer(t testing.TB, smart bool) (base string, port int) {
 			},
 		}
 	} else {
+		// Wrap the file server to prevent sendfile optimization on Windows,
+		// which causes data races with HTTP server's background reads.
+		fileServer := http.FileServer(http.Dir(base))
 		server = &http.Server{
-			Handler: http.FileServer(http.Dir(base)),
+			Handler: noSendFileHandler(fileServer),
 		}
 	}
 
@@ -282,6 +286,26 @@ func setupServer(t testing.TB, smart bool) (base string, port int) {
 	})
 
 	return base, port
+}
+
+// noSendFileHandler wraps an http.Handler to prevent sendfile optimization.
+// This is needed on Windows to avoid data races between sendfile and HTTP
+// server's background read operations.
+func noSendFileHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nw := &noSendFileResponseWriter{ResponseWriter: w}
+		h.ServeHTTP(nw, r)
+	})
+}
+
+// noSendFileResponseWriter wraps http.ResponseWriter and prevents sendfile
+// by not implementing io.ReaderFrom interface.
+type noSendFileResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w *noSendFileResponseWriter) Write(p []byte) (n int, err error) {
+	return w.ResponseWriter.Write(p)
 }
 
 func TestFilterHeaders(t *testing.T) {

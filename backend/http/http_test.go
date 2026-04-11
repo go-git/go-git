@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing/format/config"
@@ -26,7 +26,10 @@ func (f *fixturesLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
 	url := "https://github.com/git-fixtures/" + ep.Path
 	fix := fixtures.ByURL(url).One()
 	require.NotNil(f.TB, fix, "fixture not found for %s", url)
-	dot := fix.DotGit(fixtures.WithTargetDir(f.TempDir))
+	dot, err := fix.DotGit(fixtures.WithTargetDir(f.TempDir))
+	if err != nil {
+		return nil, err
+	}
 	st := filesystem.NewStorage(dot, nil)
 	return st, nil
 }
@@ -97,11 +100,14 @@ type tagLoader struct {
 
 var _ transport.Loader = &tagLoader{}
 
-func (l *tagLoader) Load(ep *transport.Endpoint) (storage.Storer, error) {
+func (l *tagLoader) Load(_ *transport.Endpoint) (storage.Storer, error) {
 	fix := fixtures.ByTag(l.tag).One()
 	require.NotNil(l.TB, fix, "fixture not found for tag %s", l.tag)
 
-	dot := fix.DotGit(fixtures.WithTargetDir(l.TempDir))
+	dot, err := fix.DotGit(fixtures.WithTargetDir(l.TempDir))
+	if err != nil {
+		return nil, err
+	}
 	st := filesystem.NewStorage(dot, nil)
 
 	if l.objectFormat != "" {

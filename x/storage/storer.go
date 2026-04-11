@@ -1,3 +1,4 @@
+// Package storage provides extended storage interfaces for experimental features.
 package storage
 
 import "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -15,12 +16,14 @@ type ObjectFormatSetter interface {
 	SetObjectFormat(config.ObjectFormat) error
 }
 
-// ObjectFormatGetter expands a Storer so that it can support different Object Formats.
-// Note that storage.Storer do not require this as they expose ConfigStorers, which is
-// the source of truth for this information.
+// ExtensionChecker expands a Storer enabling it to confirm whether it supports
+// a given Git extension.
 //
-// Storers that don't implement this interface will default to the default Object Format.
-type ObjectFormatGetter interface {
-	// ObjectFormat returns the object format (hash algorithm) used by the Storer.
-	ObjectFormat() config.ObjectFormat
+// If a repository defines an extension and go-git is unable to confirm whether
+// the Storer supports it, the repository won't be opened and an error will be
+// returned instead.
+type ExtensionChecker interface {
+	// SupportsExtension checks whether the underlying Storer supports the given
+	// Git extension.
+	SupportsExtension(name, value string) bool
 }

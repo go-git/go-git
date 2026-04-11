@@ -35,10 +35,10 @@ func commitsFromIter(iter CommitIter) ([]*Commit, error) {
 
 func assertHashes(s *filterCommitIterSuite, commits []*Commit, hashes []string) {
 	if len(commits) != len(hashes) {
-		var expected []string
+		expected := make([]string, 0, len(hashes))
 		expected = append(expected, hashes...)
 		fmt.Println("expected:", strings.Join(expected, ", "))
-		var got []string
+		got := make([]string, 0, len(commits))
 		for _, c := range commits {
 			got = append(got, c.Hash.String())
 		}

@@ -5,7 +5,13 @@ on:
     branches:
     - releases/v5.x
     - main
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
   pull_request:
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
 
 permissions: {}
 
@@ -14,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [1.24.x, 1.25.x]
+        go-version: [oldstable, stable]
         platform: [ubuntu-latest, macos-latest, windows-latest]
 
     permissions:
@@ -46,16 +52,13 @@ jobs:
       run: make validate
 
     - name: Test
-      run: make test-coverage
-
-    - name: Test Examples
-      run: go test -timeout 45s -v -run '^TestExamples$' github.com/go-git/go-git/v6/_examples --examples
+      run: make test
 
   test-wasi:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [1.24.x, 1.25.x]
+        go-version: [oldstable, stable]
 
     permissions:
       contents: read

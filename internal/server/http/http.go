@@ -1,3 +1,4 @@
+// Package http provides an in-process HTTP git server for testing.
 package http
 
 import (
@@ -22,7 +23,8 @@ type server struct {
 	srv *gohttp.Server
 }
 
-func FromLoader(l transport.Loader) (*server, error) {
+// FromLoader creates an HTTP git server backed by the given loader.
+func FromLoader(l transport.Loader) (*server, error) { //nolint:revive // unexported-return is intentional
 	s := &server{
 		l: l,
 	}
@@ -62,8 +64,8 @@ func (s *server) Endpoint() (string, error) {
 }
 
 func (s *server) Close() error {
-	err1 := s.ln.Close()
-	err2 := s.srv.Close()
-
-	return errors.Join(err1, err2)
+	// s.srv.Close() closes the listener internally; calling s.ln.Close()
+	// separately would close it twice and return "use of closed network
+	// connection" from the second close.
+	return s.srv.Close()
 }

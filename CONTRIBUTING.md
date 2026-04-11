@@ -18,6 +18,11 @@ issue you're facing, or it's a known issue that we're already aware of.
 
 In addition to the channels above, contributors are also able to join the go-git [discord server].
 
+## AI-Assisted Contributions
+
+If you use AI tools as part of your contribution workflow, please read the
+[AI Contribution Policy](AI_POLICY.md) before opening a PR.
+
 ## How to Contribute
 
 ### RFC Process for Major Changes
@@ -40,7 +45,7 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 - You should be able to run the same query using `git`. We don't accept features that are not implemented in the official git implementation.
 - The expected behavior must match the [official git implementation].
 - The actual behavior must be correctly explained with natural language and providing a minimum working example in Go that reproduces it.
-- All PRs must be written in idiomatic Go, formatted according to [gofmt], and without any warnings from [golangci-lint].
+- All PRs must be written in idiomatic Go and pass [golangci-lint] with no warnings (this includes formatting checks).
 - They should in general include tests, and those shall pass.
 - If the PR is a bug fix, it has to include a suite of unit tests for the new functionality.
 - If the PR is a new feature, it has to come with a suite of unit tests, that tests the new functionality.
@@ -80,5 +85,4 @@ The format can be described more formally as follows:
 [StackOverflow go-git tag]: https://stackoverflow.com/questions/tagged/go-git
 [Issues]: https://github.com/go-git/go-git/issues
 [official git implementation]: https://github.com/git/git
-[gofmt]: https://golang.org/cmd/gofmt/
 [golangci-lint]: https://github.com/golangci/golangci-lint

@@ -41,6 +41,9 @@ var (
 	ErrSubmoduleNotFound = errors.New("submodule not found")
 	// ErrUnstagedChanges is returned when the worktree has unstaged changes.
 	ErrUnstagedChanges = errors.New("worktree contains unstaged changes")
+	// ErrLocalChanges is returned when a KeepReset is attempted but a file
+	// that would be changed by the reset has local modifications.
+	ErrLocalChanges = errors.New("worktree contains local changes that would be overwritten by reset")
 	// ErrGitModulesSymlink is returned when .gitmodules is a symlink.
 	ErrGitModulesSymlink = errors.New(gitmodulesFile + " is a symlink")
 	// ErrNonFastForwardUpdate is returned when a non-fast-forward update is attempted.
@@ -80,6 +83,13 @@ func (w *Worktree) Pull(o *PullOptions) error {
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git pull", time.Since(start).Seconds())
+		}()
+	}
+
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -118,12 +128,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		// if we don't have a shallows list, just ignore it
 		shallowList, _ := w.r.Storer.Shallow()
 
-		var earliestShallow *plumbing.Hash
-		if len(shallowList) > 0 {
-			earliestShallow = &shallowList[0]
-		}
-
-		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash(), earliestShallow)
+		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash(), shallowList)
 		if err != nil {
 			return err
 		}
@@ -132,7 +137,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 			return NoErrAlreadyUpToDate
 		}
 
-		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash(), earliestShallow)
+		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash(), shallowList)
 		if err != nil {
 			return err
 		}
@@ -178,6 +183,13 @@ func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptio
 
 // Checkout switch branches or restore working tree files.
 func (w *Worktree) Checkout(opts *CheckoutOptions) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git checkout", time.Since(start).Seconds())
+		}()
+	}
+
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -298,10 +310,12 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
-	start := time.Now()
-	defer func() {
-		trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
-	}()
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: reset_worktree", time.Since(start).Seconds())
+		}()
+	}
 
 	if err := opts.Validate(w.r); err != nil {
 		return err
@@ -333,12 +347,30 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
+	// For HardReset and KeepReset, capture the current HEAD tree before
+	// resetting HEAD. resetWorktreeToTree will diff prevTree→t and apply only
+	// those changes to the worktree. Since the diff is tree-to-tree, untracked
+	// files are invisible and are never deleted — matching real git reset --hard.
+	var prevTree *object.Tree
+	if opts.Mode == HardReset || opts.Mode == KeepReset {
+		prevTree, err = w.headTree()
+		if err != nil {
+			return err
+		}
+	}
+
+	if opts.Mode == KeepReset {
+		if err := w.checkKeepResetConflicts(prevTree, t, opts.SparseDirs, opts.Files); err != nil {
+			return err
+		}
+	}
+
 	if err := w.setHEADCommit(opts.Commit); err != nil {
 		return err
 	}
 
 	var removedFiles []string
-	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset {
+	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset || opts.Mode == KeepReset {
 		if removedFiles, err = w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
@@ -350,8 +382,8 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
-	if opts.Mode == HardReset {
-		if err := w.resetWorktree(t, opts.Files); err != nil {
+	if opts.Mode == HardReset || opts.Mode == KeepReset {
+		if err := w.resetWorktreeToTree(prevTree, t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -428,6 +460,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 	}
 
 	removedFiles := make([]string, 0, len(changes))
+	filesMap := buildFilePathMap(files)
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
@@ -449,7 +482,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		}
 
 		if len(files) > 0 {
-			contains := inFiles(files, name)
+			contains := inFiles(filesMap, name)
 			if !contains {
 				continue
 			}
@@ -477,17 +510,255 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 	return removedFiles, w.r.Storer.SetIndex(idx)
 }
 
-func inFiles(files []string, v string) bool {
+// inFiles checks if the given file is in the list of files. The incoming filepaths in files should be cleaned before calling this function.
+func inFiles(files map[string]struct{}, v string) bool {
 	v = filepath.Clean(v)
-	for _, s := range files {
-		if filepath.Clean(s) == v {
-			return true
+	_, exists := files[v]
+	return exists
+}
+
+// headTree returns the tree for the current HEAD commit.
+// Returns nil, nil if there is no HEAD yet (e.g. an unborn branch).
+func (w *Worktree) headTree() (*object.Tree, error) {
+	head, err := w.r.Head()
+	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	c, err := w.r.CommitObject(head.Hash())
+	if err != nil {
+		return nil, err
+	}
+	return c.Tree()
+}
+
+// checkKeepResetConflicts implements the safety check for KeepReset
+// (git reset --keep): it aborts if any file that would be modified by the
+// reset has local staged or unstaged modifications in the worktree.
+//
+// Two categories of "touched" paths are checked:
+//
+//  1. Files that differ between fromTree and toTree (filtered by files when
+//     non-empty). Among these, paths that will be *written* to disk (Insert or
+//     Modify) are additionally checked for untracked-overwrite collisions.
+//
+//  2. When sparseDirs is non-empty: currently-on-disk tracked files that will
+//     become SkipWorktree because their path is no longer under any of the new
+//     sparse directories. Step 3 of resetWorktreeToTree removes them from disk,
+//     so KeepReset must refuse if they carry local modifications.
+func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparseDirs, files []string) error {
+	changes, err := diffTrees(fromTree, toTree)
+	if err != nil {
+		return err
+	}
+
+	filesMap := buildFilePathMap(files)
+
+	// touched: all paths that the reset will affect (checked for local mods).
+	// writtenPaths: subset of touched that will be written to disk (Insert /
+	// Modify). An untracked file at such a path would be silently overwritten,
+	// which KeepReset must refuse — matching git reset --keep behaviour.
+	touched := make(map[string]struct{})
+	writtenPaths := make(map[string]struct{})
+
+	for _, ch := range changes {
+		// Canonical path for the files-filter: prefer To (Insert/Modify),
+		// fall back to From (Delete).
+		var name string
+		if ch.To != nil {
+			name = ch.To.String()
+		} else {
+			name = ch.From.String()
+		}
+		if len(files) > 0 && !inFiles(filesMap, name) {
+			continue
+		}
+		if ch.From != nil {
+			touched[ch.From.String()] = struct{}{}
+		}
+		if ch.To != nil {
+			touched[ch.To.String()] = struct{}{}
+			writtenPaths[ch.To.String()] = struct{}{}
 		}
 	}
 
-	return false
+	// When SparseDirs is changing, any currently-on-disk tracked file that
+	// falls outside the new sparse set will be removed from disk by step 3 of
+	// resetWorktreeToTree. KeepReset must refuse if such a file has local mods.
+	if len(sparseDirs) > 0 {
+		idx, err := w.r.Storer.Index()
+		if err != nil {
+			return err
+		}
+		for _, e := range idx.Entries {
+			if e.SkipWorktree {
+				continue // already excluded from the worktree
+			}
+			if len(files) > 0 && !inFiles(filesMap, e.Name) {
+				continue
+			}
+			included := false
+			for _, dir := range sparseDirs {
+				if strings.HasPrefix(e.Name, dir+"/") || e.Name == dir {
+					included = true
+					break
+				}
+			}
+			if !included {
+				touched[e.Name] = struct{}{}
+			}
+		}
+	}
+
+	if len(touched) == 0 {
+		return nil
+	}
+
+	// Check worktree status for local modifications on touched paths.
+	status, err := w.Status()
+	if err != nil {
+		return err
+	}
+	for path, st := range status {
+		if _, willChange := touched[path]; !willChange {
+			continue
+		}
+		// Tracked file with staged or unstaged local changes → conflict.
+		if (st.Staging != Unmodified && st.Staging != Untracked) ||
+			(st.Worktree != Unmodified && st.Worktree != Untracked) {
+			return fmt.Errorf("%w: %s", ErrLocalChanges, path)
+		}
+		// Untracked file at a path that will be written to disk → the reset
+		// would silently overwrite it, which KeepReset must refuse.
+		if st.Staging == Untracked && st.Worktree == Untracked {
+			if _, willWrite := writtenPaths[path]; willWrite {
+				return fmt.Errorf("%w: %s", ErrLocalChanges, path)
+			}
+		}
+	}
+	return nil
 }
 
+// resetWorktreeToTree updates the worktree to match toTree, mirroring
+// real git reset --hard / checkout -f:
+//
+//  1. Tree-to-tree diff (fromTree→toTree): remove files that were tracked in
+//     fromTree but deleted in toTree. Because the diff is purely object-graph,
+//     untracked files never appear and are never deleted.
+//
+//  2. New-index-to-worktree diff: write files that are in the new index but
+//     absent or different on disk. For Delete actions (file on disk, but absent
+//     from the index): the file is truly untracked and is preserved.
+//     (SkipWorktree entries are invisible to the merkletrie diff; they are
+//     handled in step 3.)
+//
+//  3. Remove SkipWorktree files from disk: diffStagingWithWorktree never
+//     surfaces SkipWorktree-flagged entries as Delete actions because the
+//     merkletrie marks them skip=true. Mirror git's behaviour: any tracked
+//     file with SkipWorktree=true must not exist in the worktree.
+//
+// files optionally restricts the operation to a specific subset of paths.
+func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []string) error {
+	filesMap := buildFilePathMap(files)
+
+	// Step 1: delete files removed from the tracked tree.
+	treeChanges, err := diffTrees(fromTree, toTree)
+	if err != nil {
+		return err
+	}
+	for _, ch := range treeChanges {
+		a, err := ch.Action()
+		if err != nil {
+			return err
+		}
+		if a != merkletrie.Delete {
+			continue
+		}
+		name := ch.From.String()
+		if len(files) > 0 && !inFiles(filesMap, name) {
+			continue
+		}
+		if err := w.validChange(ch); err != nil {
+			return err
+		}
+		if err := rmFileAndDirsIfEmpty(w.Filesystem, name); err != nil {
+			return err
+		}
+	}
+
+	// Step 2: write files that are in the new index but missing or stale
+	// in the worktree. We use diffStagingWithWorktree(reverse=true) which
+	// gives Insert for "in index, not on disk" and Modify for "differs".
+	// Delete means "on disk, not in index" = untracked → always skip.
+	// Note: SkipWorktree entries are invisible to the merkletrie diff;
+	// they are cleaned up in step 3 below.
+	worktreeChanges, err := w.diffStagingWithWorktree(true, false)
+	if err != nil {
+		return err
+	}
+
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+	b := newIndexBuilder(idx)
+
+	for _, ch := range worktreeChanges {
+		a, err := ch.Action()
+		if err != nil {
+			return err
+		}
+		if a == merkletrie.Delete {
+			// In the reverse diff, Delete means the file exists on disk but is
+			// absent from the index node tree. SkipWorktree entries are marked
+			// skip=true in the merkletrie and never appear here; they are removed
+			// in step 3 below. A Delete action here therefore always means the
+			// file is truly untracked — preserve it.
+			continue
+		}
+
+		if len(files) > 0 {
+			file := ch.To.String()
+			if !inFiles(filesMap, file) {
+				continue
+			}
+		}
+
+		if err := w.validChange(ch); err != nil {
+			return err
+		}
+		if err := w.checkoutChange(ch, toTree, b); err != nil {
+			return err
+		}
+	}
+
+	// Step 3: remove tracked files that are SkipWorktree=true from disk.
+	// diffStagingWithWorktree builds the index node tree with skip=true for
+	// SkipWorktree entries, so they never appear as Delete actions in step 2.
+	// git removes these files when the sparse-checkout contract excludes them.
+	for _, e := range idx.Entries {
+		if !e.SkipWorktree {
+			continue
+		}
+		if len(files) > 0 && !inFiles(filesMap, e.Name) {
+			continue
+		}
+		if _, statErr := w.Filesystem.Lstat(e.Name); os.IsNotExist(statErr) {
+			continue
+		}
+		if err := rmFileAndDirsIfEmpty(w.Filesystem, e.Name); err != nil {
+			return err
+		}
+	}
+
+	b.Write(idx)
+	return w.r.Storer.SetIndex(idx)
+}
+
+// resetWorktree updates the worktree to match the staging area.
+// files restricts the operation to the named paths; nil means all files.
 func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	changes, err := w.diffStagingWithWorktree(true, false)
 	if err != nil {
@@ -500,6 +771,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	}
 	b := newIndexBuilder(idx)
 
+	filesMap := buildFilePathMap(files)
 	for _, ch := range changes {
 		if err := w.validChange(ch); err != nil {
 			return err
@@ -517,7 +789,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 				continue
 			}
 
-			contains := inFiles(files, file)
+			contains := inFiles(filesMap, file)
 			if !contains {
 				continue
 			}
@@ -1315,4 +1587,17 @@ func (b *indexBuilder) Add(e *index.Entry) {
 
 func (b *indexBuilder) Remove(name string) {
 	delete(b.entries, filepath.ToSlash(name))
+}
+
+// buildFilePathMap creates a map of cleaned file paths for efficient lookup.
+// Returns nil if the input slice is empty.
+func buildFilePathMap(files []string) map[string]struct{} {
+	if len(files) == 0 {
+		return nil
+	}
+	filesMap := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		filesMap[filepath.Clean(f)] = struct{}{}
+	}
+	return filesMap
 }

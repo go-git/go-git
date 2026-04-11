@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -24,10 +24,9 @@ func TestPruneSuite(t *testing.T) {
 }
 
 func (s *PruneSuite) testPrune(deleteTime time.Time) {
-	srcFs := fixtures.ByTag("unpacked").One().DotGit()
-	var sto storage.Storer
-	var err error
-	sto = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
+	var sto storage.Storer = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	los := sto.(storer.LooseObjectStorer)
 	s.NotNil(los)

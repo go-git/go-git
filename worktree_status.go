@@ -3,11 +3,13 @@ package git
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-billy/v6/util"
 
@@ -23,6 +25,7 @@ import (
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 var (
@@ -153,6 +156,7 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 
 	fsOpts := filesystem.Options{
 		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:    idx,
 	}
 
 	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
@@ -274,6 +278,19 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
 }
 
+// diffTrees returns the changes between two tree objects.
+// Either tree may be nil, which is treated as the empty tree.
+func diffTrees(from, to *object.Tree) (merkletrie.Changes, error) {
+	var fromNode, toNode noder.Noder
+	if from != nil {
+		fromNode = object.NewTreeRootNode(from)
+	}
+	if to != nil {
+		toNode = object.NewTreeRootNode(to)
+	}
+	return merkletrie.DiffTree(fromNode, toNode, diffTreeIsEquals)
+}
+
 var emptyNoderHash = make([]byte, 24)
 
 // diffTreeIsEquals is a implementation of noder.Equals, used to compare
@@ -380,6 +397,13 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 }
 
 func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipStatus bool) (plumbing.Hash, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git add %s", time.Since(start).Seconds(), path)
+		}()
+	}
+
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -400,6 +424,17 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	}
 
 	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		root := w.Filesystem.Root()
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			return plumbing.ZeroHash, fmt.Errorf("path %q is not inside the worktree root %q: %w", path, root, err)
+		}
+		if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+			return plumbing.ZeroHash, fmt.Errorf("path %q is outside the worktree root %q", path, root)
+		}
+		path = relPath
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
@@ -422,6 +457,13 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 // directory path, all directory contents are added to the index recursively. No
 // error is returned if all matching paths are already staged in index.
 func (w *Worktree) AddGlob(pattern string) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: add glob %s", time.Since(start).Seconds(), pattern)
+		}()
+	}
+
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
 	files, err := util.Glob(w.Filesystem, pattern)
 	if err != nil {

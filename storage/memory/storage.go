@@ -11,9 +11,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/format/reflog"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // ErrUnsupportedObjectType is returned when an unsupported object type is used.
@@ -30,6 +32,7 @@ type Storage struct {
 	IndexStorage
 	ReferenceStorage
 	ModuleStorage
+	ReflogStorage
 	options options
 }
 
@@ -53,6 +56,9 @@ func NewStorage(o ...StorageOption) *Storage {
 			Tags:    make(map[plumbing.Hash]plumbing.EncodedObject),
 		},
 		ModuleStorage: make(ModuleStorage),
+		ReflogStorage: ReflogStorage{
+			entries: make(map[plumbing.ReferenceName][]*reflog.Entry),
+		},
 	}
 
 	if opts.objectFormat != formatcfg.UnsetObjectFormat {
@@ -67,12 +73,7 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
-func (s *Storage) ObjectFormat() formatcfg.ObjectFormat {
-	cfg, _ := s.Config()
-
-	return cfg.Extensions.ObjectFormat
-}
-
+// SetObjectFormat configures the object format for this storage.
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	switch of {
 	case formatcfg.SHA1, formatcfg.SHA256:
@@ -101,6 +102,21 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	s.options.objectFormat = of
 	s.oh = plumbing.FromObjectFormat(of)
 	return nil
+}
+
+// SupportsExtension checks whether the Storer supports the given
+// Git extension defined by name.
+func (s *Storage) SupportsExtension(name, value string) bool {
+	if name != "objectformat" {
+		return false
+	}
+
+	switch value {
+	case "sha1", "sha256", "":
+		return true
+	default:
+		return false
+	}
 }
 
 // ConfigStorage implements config.ConfigStorer for in-memory storage.
@@ -133,13 +149,23 @@ type IndexStorage struct {
 }
 
 // SetIndex stores the given index.
+// Note: this method sets idx.ModTime to simulate filesystem storage behavior.
 func (c *IndexStorage) SetIndex(idx *index.Index) error {
+	// Set ModTime to enable racy git detection in the metadata optimization.
+	idx.ModTime = time.Now()
 	c.index = idx
 	return nil
 }
 
 // Index returns the stored index.
 func (c *IndexStorage) Index() (*index.Index, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: storage/memory: get index()", time.Since(start).Seconds())
+		}()
+	}
+
 	if c.index == nil {
 		c.index = &index.Index{Version: 2}
 	}
@@ -456,4 +482,34 @@ func (s ModuleStorage) Module(name string) (storage.Storer, error) {
 	s[name] = m
 
 	return m, nil
+}
+
+// ReflogStorage implements storer.ReflogStorer for in-memory storage.
+type ReflogStorage struct {
+	entries map[plumbing.ReferenceName][]*reflog.Entry
+}
+
+// Reflog returns the reflog entries for the given reference.
+func (r *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+	if r.entries == nil {
+		return nil, nil
+	}
+	return r.entries[name], nil
+}
+
+// AppendReflog appends a single entry to the reflog for the given reference.
+func (r *ReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+	if r.entries == nil {
+		r.entries = make(map[plumbing.ReferenceName][]*reflog.Entry)
+	}
+	r.entries[name] = append(r.entries[name], entry)
+	return nil
+}
+
+// DeleteReflog removes the entire reflog for the given reference.
+func (r *ReflogStorage) DeleteReflog(name plumbing.ReferenceName) error {
+	if r.entries != nil {
+		delete(r.entries, name)
+	}
+	return nil
 }

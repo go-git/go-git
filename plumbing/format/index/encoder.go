@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/hash"
@@ -28,13 +26,29 @@ type Encoder struct {
 	w         io.Writer
 	hash      hash.Hash
 	lastEntry *Entry
+	skipHash  bool
 }
 
 // NewEncoder returns a new encoder that writes to w.
-func NewEncoder(w io.Writer, h hash.Hash) *Encoder {
-	h.Reset()
-	mw := io.MultiWriter(w, h)
-	return &Encoder{mw, h, nil}
+func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
+	var cfg options
+	for _, o := range opts {
+		o(&cfg)
+	}
+
+	e := &Encoder{
+		hash:     h,
+		skipHash: cfg.skipHash,
+	}
+
+	if e.skipHash {
+		e.w = w
+	} else {
+		h.Reset()
+		e.w = io.MultiWriter(w, h)
+	}
+
+	return e
 }
 
 // Encode writes the Index to the stream of the encoder.
@@ -109,7 +123,10 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		flags |= nameMask
 	}
 
-	flow := []any{
+	flagsFlow := []any{flags}
+
+	flow := make([]any, 0, 11+len(flagsFlow))
+	flow = append(flow,
 		sec, nsec,
 		msec, mnsec,
 		entry.Dev,
@@ -119,9 +136,7 @@ func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
 		entry.GID,
 		entry.Size,
 		entry.Hash.Bytes(),
-	}
-
-	flagsFlow := []any{flags}
+	)
 
 	if entry.IntentToAdd || entry.SkipWorktree {
 		var extendedFlags uint16
@@ -159,26 +174,39 @@ func (e *Encoder) encodeEntryName(entry *Entry) error {
 }
 
 func (e *Encoder) encodeEntryNameV4(entry *Entry) error {
-	name := entry.Name
-	l := 0
+	// V4 prefix compression: find the longest common prefix between the
+	// previous entry's name and the current one. The strip length tells
+	// the decoder how many bytes to remove from the end of the previous
+	// name, and the suffix is the remainder of the current name.
+	prefix := 0
 	if e.lastEntry != nil {
-		dir := path.Dir(e.lastEntry.Name) + "/"
-		if strings.HasPrefix(entry.Name, dir) {
-			l = len(e.lastEntry.Name) - len(dir)
-			name = strings.TrimPrefix(entry.Name, dir)
-		} else {
-			l = len(e.lastEntry.Name)
-		}
+		prefix = commonPrefixLen(e.lastEntry.Name, entry.Name)
+	}
+	stripLen := 0
+	if e.lastEntry != nil {
+		stripLen = len(e.lastEntry.Name) - prefix
 	}
 
 	e.lastEntry = entry
 
-	err := binary.WriteVariableWidthInt(e.w, int64(l))
-	if err != nil {
+	if err := binary.WriteVariableWidthInt(e.w, int64(stripLen)); err != nil {
 		return err
 	}
 
-	return binary.Write(e.w, []byte(name+string('\x00')))
+	suffix := entry.Name[prefix:]
+	return binary.Write(e.w, append([]byte(suffix), '\x00'))
+}
+
+// commonPrefixLen returns the length of the longest common byte prefix
+// between a and b.
+func commonPrefixLen(a, b string) int {
+	n := min(len(b), len(a))
+	for i := range n {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
 }
 
 func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
@@ -228,6 +256,10 @@ func (e *Encoder) padEntry(idx *Index, wrote int) error {
 }
 
 func (e *Encoder) encodeFooter() error {
+	if e.skipHash {
+		_, err := e.w.Write(make([]byte, e.hash.Size()))
+		return err
+	}
 	return binary.Write(e.w, e.hash.Sum(nil))
 }
 

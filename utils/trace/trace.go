@@ -39,6 +39,9 @@ const (
 
 	// HTTP traces HTTP operations and requests.
 	HTTP
+
+	// Internal traces internal go-git operations for debugging.
+	Internal
 )
 
 // SetTarget sets the tracing targets.

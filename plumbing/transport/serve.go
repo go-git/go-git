@@ -112,8 +112,13 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			if !addHead {
 				return nil
 			}
-			// Add default branch HEAD symref
-			_ = ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+			// Only advertise a symref when HEAD is symbolic. A detached HEAD
+			// (HashReference) has no branch target to advertise; emitting
+			// "HEAD:" with an empty target corrupts the capability list and
+			// causes the client to store an unresolvable HEAD symref.
+			if r.Type() == plumbing.SymbolicReference {
+				_ = ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+			}
 			ar.Head = &hash
 		}
 		ar.References[name.String()] = hash

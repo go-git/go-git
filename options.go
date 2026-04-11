@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
@@ -94,6 +93,10 @@ type CloneOptions struct {
 	// Bare determines whether the repository will have a worktree (non-bare)
 	// or not (bare).
 	Bare bool
+	// AllowEmptyRepo when set to true, cloning an empty remote repository
+	// will not return an error. The resulting repository will be initialized
+	// with the remote configured but no commits.
+	AllowEmptyRepo bool
 
 	// worktree defines the worktree filesystem for non-bare clone operations.
 	// This is only used internally due to partial inits.
@@ -435,6 +438,12 @@ const (
 	// resets the head to <commit>, just like all modes do). This leaves all
 	// your changed files "Changes to be committed", as git status would put it.
 	SoftReset
+	// KeepReset resets the index and updates files in the working tree that
+	// differ between Commit and HEAD, like HardReset. However, if a file that
+	// differs between Commit and HEAD has local modifications (staged or
+	// unstaged), the reset is aborted. Untracked files are never deleted.
+	// Equivalent to git reset --keep.
+	KeepReset
 )
 
 // ResetOptions describes how a reset operation should be performed.
@@ -678,9 +687,9 @@ type CreateTagOptions struct {
 	// validation into the format expected by git - no leading whitespace and
 	// ending in a newline.
 	Message string
-	// SignKey denotes a key to sign the tag with. A nil value here means the tag
-	// will not be signed. The private key must be present and already decrypted.
-	SignKey *openpgp.Entity
+	// Signer denotes a cryptographic signer to sign the tag with.
+	// A nil value here means the tag will not be signed.
+	Signer Signer
 }
 
 // Validate validates the fields and sets the default values.
@@ -816,9 +825,6 @@ type PlainOpenOptions struct {
 	// DetectDotGit defines whether parent directories should be
 	// walked until a .git directory or file is found.
 	DetectDotGit bool
-	// Enable .git/commondir support (see https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt).
-	// NOTE: This option will only work with the filesystem storage.
-	EnableDotGitCommonDir bool
 }
 
 // Validate validates the fields and sets the default values.

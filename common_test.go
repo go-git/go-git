@@ -10,16 +10,19 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 type BaseSuite struct {
@@ -35,6 +38,27 @@ func (s *BaseSuite) SetupSuite() {
 	s.cache = make(map[string]*Repository)
 }
 
+// registerTestConfigLoader registers a static ConfigSource plugin with
+// default test user data. Tests that need specific config values should
+// register their own ConfigSource.
+func registerTestConfigLoader() {
+	resetPluginEntry("config-loader")
+
+	err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+		return xconfig.NewStatic(defaultTestConfig(), defaultTestConfig())
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to register config storers: %v", err))
+	}
+}
+
+func defaultTestConfig() config.Config {
+	cfg := config.NewConfig()
+	cfg.User.Name = "Test User"
+	cfg.User.Email = "test@example.com"
+	return *cfg
+}
+
 func (s *BaseSuite) buildBasicRepository() {
 	f := fixtures.Basic().One()
 	s.Repository = s.NewRepository(f)
@@ -44,10 +68,12 @@ func (s *BaseSuite) buildBasicRepository() {
 // is tagged as worktree the filesystem from fixture is used, otherwise a new
 // memfs filesystem is used as worktree.
 func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
-	dotgit := f.DotGit()
+	dotgit, err := f.DotGit()
+	s.Require().NoError(err)
 	worktree := memfs.New()
 	if f.Is("worktree") {
-		worktree = f.Worktree()
+		worktree, err = f.Worktree()
+		s.Require().NoError(err)
 	}
 
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
@@ -62,8 +88,11 @@ func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
 // from the fixture but without a empty memfs worktree, the index and the
 // modules are deleted from the .git folder.
 func NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
-	dotgit := f.DotGit()
-	err := dotgit.Remove("index")
+	dotgit, err := f.DotGit()
+	if err != nil {
+		panic(err)
+	}
+	err = dotgit.Remove("index")
 	if err != nil {
 		panic(err)
 	}
@@ -92,7 +121,8 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 	}
 
 	storer := memory.NewStorage()
-	p := f.Packfile()
+	p, err := f.Packfile()
+	s.Require().NoError(err)
 	defer func() { _ = p.Close() }()
 
 	s.Require().NoError(packfile.UpdateObjectStorage(storer, p))
@@ -111,7 +141,9 @@ func (s *BaseSuite) GetBasicLocalRepositoryURL() string {
 }
 
 func (s *BaseSuite) GetLocalRepositoryURL(f *fixtures.Fixture) string {
-	return f.DotGit(fixtures.WithTargetDir(s.T().TempDir)).Root()
+	dotgit, err := f.DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	return dotgit.Root()
 }
 
 func (s *BaseSuite) TemporalHomeDir() (path string, clean func()) {

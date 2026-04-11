@@ -10,7 +10,6 @@ import (
 
 var (
 	errBranchEmptyName     = errors.New("branch config: empty name")
-	errBranchInvalidMerge  = errors.New("branch config: invalid merge")
 	errBranchInvalidRebase = errors.New("branch config: rebase must be one of 'true' or 'interactive'")
 )
 
@@ -37,14 +36,12 @@ type Branch struct {
 	raw *format.Subsection
 }
 
-// Validate validates fields of branch
+// Validate validates fields of branch.
+// It does not reject Merge values that lack a "refs/" prefix,
+// matching the behaviour of real git during config read and write.
 func (b *Branch) Validate() error {
 	if b.Name == "" {
 		return errBranchEmptyName
-	}
-
-	if b.Merge != "" && !b.Merge.IsBranch() {
-		return errBranchInvalidMerge
 	}
 
 	if b.Rebase != "" &&

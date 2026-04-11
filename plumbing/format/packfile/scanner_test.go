@@ -9,11 +9,20 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
+
+func mustPackfile(tb testing.TB, f *fixtures.Fixture) billy.File {
+	tb.Helper()
+	pf, err := f.Packfile()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return pf
+}
 
 func TestScan(t *testing.T) {
 	t.Parallel()
@@ -27,14 +36,14 @@ func TestScan(t *testing.T) {
 	}{
 		{
 			name:         "ofs",
-			packfile:     fixtures.Basic().One().Packfile(),
+			packfile:     mustPackfile(t, fixtures.Basic().One()),
 			want:         expectedHeadersOFS256,
 			wantCrc:      expectedCRCOFS,
 			wantChecksum: "a3fed42da1e8189a077c0e6846c040dcf73fc9dd",
 		},
 		{
 			name:     "ofs sha256",
-			packfile: fixtures.ByTag("packfile-sha256").One().Packfile(),
+			packfile: mustPackfile(t, fixtures.ByTag("packfile-sha256").One()),
 			sha256:   true,
 			want: []ObjectHeader{
 				{Hash: plumbing.NewHash("233fbe36fbc685c391d6e48049c1e6558a6742dba527281d02896bcba43a8950"), Offset: 12, Size: 685, Type: plumbing.CommitObject},
@@ -49,7 +58,7 @@ func TestScan(t *testing.T) {
 		},
 		{
 			name:         "refs",
-			packfile:     fixtures.Basic().ByTag("ref-delta").One().Packfile(),
+			packfile:     mustPackfile(t, fixtures.Basic().ByTag("ref-delta").One()),
 			want:         expectedHeadersREF,
 			wantCrc:      expectedCRCREF,
 			wantChecksum: "c544593473465e6315ad4182d04d366c4592b829",
@@ -107,7 +116,7 @@ func TestScan(t *testing.T) {
 }
 
 func BenchmarkScannerBasic(b *testing.B) {
-	f := fixtures.Basic().One().Packfile()
+	f := mustPackfile(b, fixtures.Basic().One())
 	scanner := NewScanner(f)
 	for b.Loop() {
 		if err := scanner.Reset(); err != nil {
