@@ -218,13 +218,13 @@ func newKnownHostsDb(files ...string) (*knownhosts.HostKeyDB, error) {
 		}
 	}
 
-	trace.SSH.Printf("ssh: known_hosts sources %s", files)
+	trace.SSH.Printf("ssh: known_hosts sources %v", files)
 
 	files, err := filterKnownHostsFiles(files...)
 	if err != nil {
 		return nil, err
 	}
-	trace.SSH.Printf("ssh: filtered known_hosts sources %s", files)
+	trace.SSH.Printf("ssh: filtered known_hosts sources %v", files)
 
 	return knownhosts.NewDB(files...)
 }

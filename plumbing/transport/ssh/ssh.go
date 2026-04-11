@@ -91,7 +91,7 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
 	}
 
-	trace.SSH.Printf("ssh: host key algorithms %s", config.HostKeyAlgorithms)
+	trace.SSH.Printf("ssh: host key algorithms %s", strings.Join(config.HostKeyAlgorithms, ", "))
 
 	client, err := t.dial(ctx, "tcp", hostWithPort, config)
 	if err != nil {
