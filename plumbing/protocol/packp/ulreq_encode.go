@@ -3,7 +3,6 @@ package packp
 import (
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -104,34 +103,28 @@ func (e *ulReqEncoder) encodeShallows() stateFn {
 }
 
 func (e *ulReqEncoder) encodeDepth() stateFn {
-	if e.data.Depth == nil {
-		return e.encodeFilter
+	depth := e.data.Depth
+
+	if depth.Commits > 0 {
+		if _, err := pktline.Writef(e.w, "deepen %d\n", depth.Commits); err != nil {
+			e.err = fmt.Errorf("encoding depth %d: %s", depth.Commits, err)
+			return nil
+		}
 	}
 
-	switch depth := e.data.Depth.(type) {
-	case DepthCommits:
-		if depth != 0 {
-			commits := int(depth)
-			if _, err := pktline.Writef(e.w, "deepen %d\n", commits); err != nil {
-				e.err = fmt.Errorf("encoding depth %d: %s", depth, err)
-				return nil
-			}
-		}
-	case DepthSince:
-		when := time.Time(depth).UTC()
+	if !depth.Since.IsZero() {
+		when := depth.Since.UTC()
 		if _, err := pktline.Writef(e.w, "deepen-since %d\n", when.Unix()); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", when, err)
 			return nil
 		}
-	case DepthReference:
-		reference := string(depth)
-		if _, err := pktline.Writef(e.w, "deepen-not %s\n", reference); err != nil {
-			e.err = fmt.Errorf("encoding depth %s: %s", reference, err)
+	}
+
+	for _, ref := range depth.NotRefs {
+		if _, err := pktline.Writef(e.w, "deepen-not %s\n", ref); err != nil {
+			e.err = fmt.Errorf("encoding depth %s: %s", ref, err)
 			return nil
 		}
-	default:
-		e.err = fmt.Errorf("unsupported depth type")
-		return nil
 	}
 
 	return e.encodeFilter

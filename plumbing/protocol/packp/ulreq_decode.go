@@ -35,7 +35,7 @@ func newUlReqDecoder(r io.Reader) *ulReqDecoder {
 
 func (d *ulReqDecoder) Decode(v *UploadRequest) error {
 	d.data = v
-	d.data.Depth = DepthCommits(0)
+	d.data.Depth = DepthRequest{}
 
 	for state := d.decodeFirstWant; state != nil; {
 		state = state()
@@ -213,7 +213,7 @@ func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 		d.err = fmt.Errorf("negative depth")
 		return nil
 	}
-	d.data.Depth = DepthCommits(n)
+	d.data.Depth = DepthRequest{Commits: n}
 
 	return d.decodeFlush
 }
@@ -227,7 +227,7 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 		return nil
 	}
 	t := time.Unix(secs, 0).UTC()
-	d.data.Depth = DepthSince(t)
+	d.data.Depth = DepthRequest{Since: t}
 
 	return d.decodeFlush
 }
@@ -235,7 +235,7 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 	d.line = bytes.TrimPrefix(d.line, deepenReference)
 
-	d.data.Depth = DepthReference(string(d.line))
+	d.data.Depth = DepthRequest{NotRefs: []string{string(d.line)}}
 
 	return d.decodeFlush
 }

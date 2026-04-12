@@ -1,8 +1,6 @@
 package packp
 
 import (
-	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -11,57 +9,37 @@ import (
 
 // UploadRequest values represent the information transmitted on a
 // upload-request message. The zero value is safe to use; Wants, Shallows
-// and Capabilities can be populated via append. Depth defaults to
-// infinite (no depth limit) when nil.
+// and Capabilities can be populated via append.
 type UploadRequest struct {
 	Capabilities capability.List
 	Wants        []plumbing.Hash
 	Shallows     []plumbing.Hash
-	Depth        Depth
+	Depth        DepthRequest
 	Filter       Filter
 }
 
-// Depth values stores the desired depth of the requested packfile: see
-// DepthCommit, DepthSince and DepthReference.
-type Depth interface {
-	fmt.Stringer
-	IsZero() bool
+// DepthRequest specifies the depth constraints for a fetch request.
+// The zero value means no depth constraint (infinite depth).
+//
+// Commits cannot be combined with Since or NotRefs (git rejects it).
+// Since and NotRefs may be combined to further refine the shallow boundary.
+type DepthRequest struct {
+	// Commits limits the fetch to the given number of commits from the tip.
+	// Zero means no commit-based depth limit.
+	// Corresponds to "deepen <n>" in the protocol.
+	Commits int
+
+	// Since limits the fetch to commits newer than the given time.
+	// Zero value means no time-based limit.
+	// Corresponds to "deepen-since <timestamp>" in the protocol.
+	Since time.Time
+
+	// NotRefs excludes commits reachable from the named references.
+	// Multiple refs may be specified. Each emits a "deepen-not <ref>" line.
+	NotRefs []string
 }
 
-// DepthCommits values stores the maximum number of requested commits in
-// the packfile.  Zero means infinite.  A negative value will have
-// undefined consequences.
-type DepthCommits int
-
-// IsZero returns true if the depth is zero.
-func (d DepthCommits) IsZero() bool {
-	return d == 0
-}
-
-func (d DepthCommits) String() string {
-	return strconv.Itoa(int(d))
-}
-
-// DepthSince values requests only commits newer than the specified time.
-type DepthSince time.Time
-
-// IsZero returns true if the time is zero.
-func (d DepthSince) IsZero() bool {
-	return time.Time(d).IsZero()
-}
-
-func (d DepthSince) String() string {
-	return time.Time(d).Format(time.RFC3339)
-}
-
-// DepthReference requests only commits not to found in the specified reference.
-type DepthReference string
-
-// IsZero returns true if the reference is empty.
-func (d DepthReference) IsZero() bool {
-	return string(d) == ""
-}
-
-func (d DepthReference) String() string {
-	return string(d)
+// IsZero returns true when no depth constraints are set.
+func (d DepthRequest) IsZero() bool {
+	return d.Commits == 0 && d.Since.IsZero() && len(d.NotRefs) == 0
 }
