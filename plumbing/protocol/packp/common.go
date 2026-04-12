@@ -9,9 +9,6 @@ type stateFn func() stateFn
 const (
 	sha1HexSize   = 40
 	sha256HexSize = 64
-
-	// advrefs
-	head = "HEAD"
 )
 
 var (
@@ -21,7 +18,6 @@ var (
 
 	// advertised-refs
 	null       = []byte("\x00")
-	peeled     = []byte("^{}")
 	noHeadMark = []byte(" capabilities^{}\x00")
 
 	// upload-request

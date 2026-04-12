@@ -99,7 +99,7 @@ func UploadPack(
 	var upreq *packp.UploadRequest
 	var havesWithRef map[plumbing.Hash][]plumbing.Hash
 	var multiAck, multiAckDetailed bool
-	var caps *capability.List
+	var caps capability.List
 	var wants []plumbing.Hash
 	firstRound := true
 	for !done {

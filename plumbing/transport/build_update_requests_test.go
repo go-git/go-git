@@ -14,7 +14,7 @@ import (
 
 func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 
 	req := &PushRequest{
@@ -31,7 +31,7 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 
 func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
@@ -45,7 +45,7 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 
 func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.Sideband64k)
 
 	req := &PushRequest{
@@ -62,7 +62,7 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 
 func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.Sideband)
 
 	req := &PushRequest{
@@ -79,7 +79,7 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 
 func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.Quiet)
 
 	req := &PushRequest{
@@ -96,7 +96,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 
 func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.Atomic)
 
 	req := &PushRequest{
@@ -112,7 +112,7 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 
 func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
@@ -127,7 +127,7 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 
 func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Set(capability.Agent, capability.DefaultAgent())
 
 	req := &PushRequest{

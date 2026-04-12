@@ -175,7 +175,7 @@ func (d *updReqDecoder) decodeCommands() error {
 	}
 
 	// Extract and decode capabilities (everything after the null byte)
-	capability.DecodeList(payload[sep+1:], d.req.Capabilities)
+	capability.DecodeList(payload[sep+1:], &d.req.Capabilities)
 
 	// Extract the command (everything before the null byte)
 	payload = payload[:sep]

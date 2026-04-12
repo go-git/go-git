@@ -17,7 +17,7 @@ import (
 func SendPack(
 	ctx context.Context,
 	_ storage.Storer,
-	caps *capability.List,
+	caps capability.List,
 	writer io.WriteCloser,
 	reader io.ReadCloser,
 	req *PushRequest,
@@ -121,7 +121,7 @@ func SendPack(
 	return reportError
 }
 
-func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateRequests {
+func buildUpdateRequests(caps capability.List, req *PushRequest) *packp.UpdateRequests {
 	upreq := packp.NewUpdateRequests()
 
 	if caps.Supports(capability.ReportStatus) {

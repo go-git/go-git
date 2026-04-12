@@ -176,7 +176,7 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 
 func (r *fetchWalker) process() error {
 	var head plumbing.Hash
-	if r.refs.Head == nil {
+	if headRef, err := r.refs.Head(); err != nil {
 		h, err := r.getHead()
 		if err != nil {
 			return err
@@ -185,17 +185,17 @@ func (r *fetchWalker) process() error {
 		switch h.Type() {
 		case plumbing.HashReference:
 			head = h.Hash()
-			r.refs.Head = &head
+			r.refs.References = append([]*plumbing.Reference{h}, r.refs.References...)
 		case plumbing.SymbolicReference:
-			for name, refHash := range r.refs.References {
-				if name == h.Target().String() {
-					head = refHash
+			for _, ref := range r.refs.References {
+				if ref.Name().String() == h.Target().String() {
+					head = ref.Hash()
 					break
 				}
 			}
 		}
 	} else {
-		head = *r.refs.Head
+		head = headRef.Hash()
 	}
 
 	if head.IsZero() {
@@ -225,13 +225,9 @@ func (r *fetchWalker) process() error {
 	}
 
 	r.queue = append(r.queue, head)
-	for name, refHash := range r.refs.References {
-		peeled, hasPeeled := r.refs.Peeled[name]
-		if r.st.HasEncodedObject(refHash) != nil {
-			r.queue = append(r.queue, refHash)
-		}
-		if hasPeeled && r.st.HasEncodedObject(peeled) != nil {
-			r.queue = append(r.queue, peeled)
+	for _, ref := range r.refs.References {
+		if r.st.HasEncodedObject(ref.Hash()) != nil {
+			r.queue = append(r.queue, ref.Hash())
 		}
 	}
 

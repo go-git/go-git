@@ -112,7 +112,7 @@ func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 // Expected format: sp cap1 sp cap2 sp cap3...
 func (d *ulReqDecoder) decodeCaps() stateFn {
 	d.line = bytes.TrimPrefix(d.line, sp)
-	capability.DecodeList(d.line, d.data.Capabilities)
+	capability.DecodeList(d.line, &d.data.Capabilities)
 
 	return d.decodeOtherWants
 }

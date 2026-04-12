@@ -18,7 +18,7 @@ func (req *UpdateRequests) Encode(w io.Writer) error {
 		return err
 	}
 
-	if err := req.encodeCommands(w, req.Commands, req.Capabilities); err != nil {
+	if err := req.encodeCommands(w, req.Commands, &req.Capabilities); err != nil {
 		return err
 	}
 

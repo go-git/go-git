@@ -16,7 +16,7 @@ var (
 // UpdateRequests values represent reference upload requests.
 // Values from this type are not zero-value safe, use the New function instead.
 type UpdateRequests struct {
-	Capabilities *capability.List
+	Capabilities capability.List
 	Commands     []*Command
 	Shallows     []plumbing.Hash
 	// TODO: Support push-cert
@@ -26,8 +26,7 @@ type UpdateRequests struct {
 func NewUpdateRequests() *UpdateRequests {
 	// TODO: Add support for push-cert
 	return &UpdateRequests{
-		Capabilities: &capability.List{},
-		Shallows:     []plumbing.Hash{},
+		Shallows: []plumbing.Hash{},
 	}
 }
 

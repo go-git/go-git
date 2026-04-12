@@ -13,7 +13,7 @@ import (
 // upload-request message.  Values from this type are not zero-value
 // safe, use the New function instead.
 type UploadRequest struct {
-	Capabilities *capability.List
+	Capabilities capability.List
 	Wants        []plumbing.Hash
 	Shallows     []plumbing.Hash
 	Depth        Depth
@@ -70,9 +70,8 @@ func (d DepthReference) String() string {
 // note that to encode an upload-request it has to have at least one wanted hash.
 func NewUploadRequest() *UploadRequest {
 	return &UploadRequest{
-		Capabilities: &capability.List{},
-		Wants:        []plumbing.Hash{},
-		Shallows:     []plumbing.Hash{},
-		Depth:        DepthCommits(0),
+		Wants:    []plumbing.Hash{},
+		Shallows: []plumbing.Hash{},
+		Depth:    DepthCommits(0),
 	}
 }

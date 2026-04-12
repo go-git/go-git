@@ -1526,7 +1526,7 @@ func (s *RemoteSuite) TestUseRefDeltas() {
 		URLs: []string{url},
 	})
 
-	ar := packp.NewAdvRefs()
+	ar := &packp.AdvRefs{}
 
 	ar.Capabilities.Add(capability.OFSDelta)
 	s.False(r.useRefDeltas(ar))
