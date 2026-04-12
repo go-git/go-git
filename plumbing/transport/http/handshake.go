@@ -350,7 +350,7 @@ type dumbPackSession struct {
 	refs       *packp.AdvRefs
 }
 
-func (s *dumbPackSession) Capabilities() *capability.List { return capability.NewList() }
+func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
 
 func (s *dumbPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	if s.refs == nil {

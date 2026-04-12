@@ -59,7 +59,7 @@ func (s *AdvRefsEncodeSuite) TestHead() {
 }
 
 func (s *AdvRefsEncodeSuite) TestCapsNoHead() {
-	capabilities := capability.NewList()
+	capabilities := &capability.List{}
 	capabilities.Add(capability.MultiACK)
 	capabilities.Add(capability.OFSDelta)
 	capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
@@ -77,7 +77,7 @@ func (s *AdvRefsEncodeSuite) TestCapsNoHead() {
 
 func (s *AdvRefsEncodeSuite) TestCapsWithHead() {
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	capabilities := capability.NewList()
+	capabilities := &capability.List{}
 	capabilities.Add(capability.MultiACK)
 	capabilities.Add(capability.OFSDelta)
 	capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")
@@ -175,7 +175,7 @@ func (s *AdvRefsEncodeSuite) TestShallow() {
 func (s *AdvRefsEncodeSuite) TestAll() {
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	capabilities := capability.NewList()
+	capabilities := &capability.List{}
 	capabilities.Add(capability.MultiACK)
 	capabilities.Add(capability.OFSDelta)
 	capabilities.Add(capability.SymRef, "HEAD:/refs/heads/master")

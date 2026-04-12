@@ -26,7 +26,7 @@ type UpdateRequests struct {
 func NewUpdateRequests() *UpdateRequests {
 	// TODO: Add support for push-cert
 	return &UpdateRequests{
-		Capabilities: capability.NewList(),
+		Capabilities: &capability.List{},
 		Shallows:     []plumbing.Hash{},
 	}
 }
