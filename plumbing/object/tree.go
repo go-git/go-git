@@ -10,11 +10,13 @@ import (
 	"sort"
 	"strings"
 
+	gosync "sync"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/go-git/go-git/v6/utils/sync"
+	utilsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
 const (
@@ -40,6 +42,7 @@ type Tree struct {
 	s storer.EncodedObjectStorer
 	m map[string]*TreeEntry
 	t map[string]*Tree // tree path cache
+	mu gosync.RWMutex
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -128,9 +131,11 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
+	t.mu.Lock()
 	if t.t == nil {
 		t.t = make(map[string]*Tree)
 	}
+	t.mu.Unlock()
 
 	pathParts := strings.Split(path, "/")
 	startingTree := t
@@ -140,7 +145,9 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	for i := len(pathParts) - 1; i >= 1; i-- {
 		path := filepath.Join(pathParts[:i]...)
 
+		t.mu.RLock()
 		tree, ok := t.t[path]
+		t.mu.RUnlock()
 		if ok {
 			startingTree = tree
 			pathParts = pathParts[i:]
@@ -158,7 +165,9 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
+		t.mu.Lock()
 		t.t[pathCurrent] = tree
+		t.mu.Unlock()
 	}
 
 	return tree.entry(pathParts[0])
@@ -182,11 +191,13 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
+	t.mu.Lock()
 	if t.m == nil {
 		t.buildMap()
 	}
 
 	entry, ok := t.m[baseName]
+	t.mu.Unlock()
 	if !ok {
 		return nil, ErrEntryNotFound
 	}
@@ -224,7 +235,9 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	}
 
 	t.Entries = nil
+	t.mu.Lock()
 	t.m = nil
+	t.mu.Unlock()
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -232,8 +245,8 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	r := sync.GetBufioReader(reader)
-	defer sync.PutBufioReader(r)
+	r := utilsync.GetBufioReader(reader)
+	defer utilsync.PutBufioReader(r)
 
 	for {
 		str, err := r.ReadString(' ')
@@ -332,10 +345,12 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 }
 
 func (t *Tree) buildMap() {
+	t.mu.Lock()
 	t.m = make(map[string]*TreeEntry)
 	for i := 0; i < len(t.Entries); i++ {
 		t.m[t.Entries[i].Name] = &t.Entries[i]
 	}
+	t.mu.Unlock()
 }
 
 // Diff returns a list of changes between this tree and the provided one
