@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -47,11 +48,24 @@ func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	return e.err
 }
 
+// peeledToMap builds a map from reference name (without ^{} suffix) to
+// the peeled hash, for only the peeled refs in the slice.
+func peeledToMap(refs []*plumbing.Reference) map[string]plumbing.Hash {
+	m := make(map[string]plumbing.Hash)
+	for _, ref := range refs {
+		name := ref.Name().String()
+		if base, ok := strings.CutSuffix(name, "^{}"); ok {
+			m[base] = ref.Hash()
+		}
+	}
+	return m
+}
+
 // sortedNonPeeledRefs returns non-peeled, non-HEAD references sorted by name.
 func sortedNonPeeledRefs(refs []*plumbing.Reference) []*plumbing.Reference {
 	var out []*plumbing.Reference
 	for _, ref := range refs {
-		if plumbing.IsPeeled(ref) {
+		if isPeeled(ref) {
 			continue
 		}
 		out = append(out, ref)
@@ -113,7 +127,7 @@ func formatCaps(c capability.List) string {
 // and their peeled refs if any.
 func encodeRefs(e *advRefsEncoder) encoderStateFn {
 	// Build a map for fast peeled lookup by base name.
-	peeled := plumbing.PeeledToMap(e.data.References)
+	peeled := peeledToMap(e.data.References)
 
 	for _, ref := range e.sortedRefs {
 		if ref.Name().String() == e.firstRefName {
