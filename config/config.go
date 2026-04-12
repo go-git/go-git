@@ -154,6 +154,13 @@ type Config struct {
 		DefaultBranch string
 	}
 
+	UploadArchive struct {
+		// AllowUnreachable when true allows clients to request archives
+		// using arbitrary SHA-1 expressions. When false (the default),
+		// only direct ref names are allowed.
+		AllowUnreachable OptBool
+	}
+
 	Extensions struct {
 		// ObjectFormat specifies the hash algorithm to use. The
 		// acceptable values are sha1 and sha256. If not specified,
@@ -466,6 +473,8 @@ const (
 	formatKey                  = "format"
 	allowedSignersFileKey      = "allowedSignersFile"
 	gpgSignKey                 = "gpgSign"
+	uploadArchiveSection       = "uploadArchive"
+	allowUnreachableKey        = "allowUnreachable"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -492,6 +501,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	c.unmarshalUser()
 	c.unmarshalGPG()
 	c.unmarshalInit()
+	c.unmarshalUploadArchive()
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
@@ -707,6 +717,14 @@ func (c *Config) unmarshalInit() {
 	c.Init.DefaultBranch = s.Options.Get(defaultBranchKey)
 }
 
+func (c *Config) unmarshalUploadArchive() {
+	s := c.Raw.Section(uploadArchiveSection)
+	v, err := strconv.ParseBool(s.Options.Get(allowUnreachableKey))
+	if err == nil {
+		c.UploadArchive.AllowUnreachable = NewOptBool(v)
+	}
+}
+
 // Marshal returns Config encoded as a git-config file.
 //
 // This call populates the field Raw with the current values of
@@ -730,6 +748,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalURLs()
 	c.marshalProtocol()
 	c.marshalInit()
+	c.marshalUploadArchive()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
@@ -960,6 +979,13 @@ func (c *Config) marshalInit() {
 	s := c.Raw.Section(initSection)
 	if c.Init.DefaultBranch != "" {
 		s.SetOption(defaultBranchKey, c.Init.DefaultBranch)
+	}
+}
+
+func (c *Config) marshalUploadArchive() {
+	if c.UploadArchive.AllowUnreachable.IsSet() {
+		s := c.Raw.Section(uploadArchiveSection)
+		s.SetOption(allowUnreachableKey, c.UploadArchive.AllowUnreachable.FormatBool())
 	}
 }
 

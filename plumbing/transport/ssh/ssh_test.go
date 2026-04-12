@@ -1,6 +1,8 @@
 package ssh
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -152,4 +154,51 @@ func TestSSHTransport_NoConfig(t *testing.T) {
 
 	_, err := tr.Connect(context.Background(), req)
 	require.Error(t, err)
+}
+
+func TestSSHTransport_Archive(t *testing.T) {
+	t.Parallel()
+
+	addr := startSSHServer(t)
+	base := t.TempDir()
+	repoFS := test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
+	repoPath := filepath.ToSlash(repoFS.Root())
+
+	tr := NewTransport(sshClientOptions())
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL: &url.URL{
+			Scheme: "ssh",
+			User:   url.User("git"),
+			Host:   fmt.Sprintf("localhost:%d", addr.Port),
+			Path:   repoPath,
+		},
+		Command: transport.UploadArchiveService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	a, ok := session.(transport.Archiver)
+	require.True(t, ok, "session should implement Archiver")
+
+	rc, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "master"},
+	})
+	require.NoError(t, err)
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Greater(t, len(data), 0)
+
+	tarR := tar.NewReader(bytes.NewReader(data))
+	var names []string
+	for {
+		hdr, err := tarR.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, hdr.Name)
+	}
+	assert.Greater(t, len(names), 0)
 }

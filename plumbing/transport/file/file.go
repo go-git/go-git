@@ -26,6 +26,10 @@ func defaultReceivePack(ctx context.Context, st storage.Storer, r io.ReadCloser,
 	})
 }
 
+func defaultUploadArchive(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, _ string) error {
+	return transport.UploadArchive(ctx, st, r, w, nil)
+}
+
 // Options configures the file transport.
 type Options struct {
 	// Loader resolves URLs to storage.Storer instances. If nil,
@@ -35,9 +39,10 @@ type Options struct {
 
 // Transport implements the file:// transport protocol.
 type Transport struct {
-	loader      transport.Loader
-	uploadPack  ServerFunc
-	receivePack ServerFunc
+	loader        transport.Loader
+	uploadPack    ServerFunc
+	receivePack   ServerFunc
+	uploadArchive ServerFunc
 }
 
 // NewTransport creates a file transport with the given options.
@@ -47,9 +52,10 @@ func NewTransport(opts Options) *Transport {
 		loader = transport.DefaultLoader
 	}
 	return &Transport{
-		loader:      loader,
-		uploadPack:  defaultUploadPack,
-		receivePack: defaultReceivePack,
+		loader:        loader,
+		uploadPack:    defaultUploadPack,
+		receivePack:   defaultReceivePack,
+		uploadArchive: defaultUploadArchive,
 	}
 }
 
@@ -69,6 +75,8 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 		serverFn = t.uploadPack
 	case transport.ReceivePackService:
 		serverFn = t.receivePack
+	case transport.UploadArchiveService:
+		serverFn = t.uploadArchive
 	default:
 		return nil, nil, nil, fmt.Errorf("%w: %s", transport.ErrCommandUnsupported, req.Command)
 	}
