@@ -51,6 +51,7 @@ func NegotiatePack(
 
 	if caps.Supports(capability.ObjectFormat) {
 		var clientFormat, serverFormat config.ObjectFormat
+		requestedFormat := config.UnsetObjectFormat
 		if capValues := caps.Get(capability.ObjectFormat); len(capValues) > 0 {
 			of := config.ObjectFormat(capValues[0])
 			switch of {
@@ -82,10 +83,17 @@ func NegotiatePack(
 		}
 
 		if serverFormat != clientFormat {
-			return nil, fmt.Errorf("mismatched algorithms: client %s; server %s", clientFormat, serverFormat)
+			tr := compatTranslatorFromObjectStorer(st)
+			if tr == nil || clientFormat != tr.NativeObjectFormat() || serverFormat != tr.CompatObjectFormat() {
+				return nil, fmt.Errorf("mismatched algorithms: client %s; server %s", clientFormat, serverFormat)
+			}
+
+			requestedFormat = serverFormat
+		} else {
+			requestedFormat = clientFormat
 		}
 
-		_ = upreq.Capabilities.Set(capability.ObjectFormat, clientFormat.String())
+		_ = upreq.Capabilities.Set(capability.ObjectFormat, requestedFormat.String())
 	}
 
 	if caps.Supports(capability.OFSDelta) {
@@ -224,6 +232,23 @@ func NegotiatePack(
 	}
 
 	return shallowInfo, nil
+}
+
+func compatTranslatorFromObjectStorer(st storage.Storer) interface {
+	NativeObjectFormat() config.ObjectFormat
+	CompatObjectFormat() config.ObjectFormat
+} {
+	provider, ok := st.(xstorage.CompatTranslatorProvider)
+	if !ok {
+		return nil
+	}
+
+	tr := provider.Translator()
+	if tr == nil {
+		return nil
+	}
+
+	return tr
 }
 
 func isSubset(needle, haystack []plumbing.Hash) bool {

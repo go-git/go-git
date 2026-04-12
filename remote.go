@@ -370,17 +370,8 @@ func equalHashesWithCompat(tr *compatplumbing.Translator, oldHash, newHash plumb
 }
 
 func compatFetchTranslator(caps *capability.List, s storage.Storer) *compatplumbing.Translator {
-	tr := compatTranslatorFromObjectStorer(s)
-	if tr == nil || !caps.Supports(capability.ObjectFormat) {
-		return nil
-	}
-
-	values := caps.Get(capability.ObjectFormat)
-	if len(values) == 0 {
-		return nil
-	}
-
-	if cfgformat.ObjectFormat(values[0]) != tr.CompatObjectFormat() {
+	tr, _, ok := transport.CompatFetchTranslator(caps, s)
+	if !ok {
 		return nil
 	}
 
