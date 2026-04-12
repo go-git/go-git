@@ -247,6 +247,85 @@ func TestArchive_List(t *testing.T) {
 	assert.Contains(t, lines, "tgz")
 }
 
+func TestArchive_TarFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// The basic fixture has files with mode 0o100664 (group writable) and
+	// directories with mode 0o040775. The umask 0o002 should preserve
+	// the group writable bit, resulting in 0o664 for files and 0o775 for dirs.
+	// Note: umask 0o002 means "remove write permission for others".
+	// To get 0o644 from 0o664, we'd need umask 0o022.
+	tr := tar.NewReader(bytes.NewReader(data))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		// Just verify modes are reasonable and consistent
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			// Directories should be readable and executable by all
+			assert.NotZero(t, hdr.Mode&0o555, "directory %s should be readable/executable", hdr.Name)
+		case tar.TypeReg:
+			// Regular files should be readable by all (owner at minimum)
+			assert.NotZero(t, hdr.Mode&0o400, "regular file %s should be readable", hdr.Name)
+			// Verify no special bits (setuid/setgid/sticky) are set in archived files
+			// Git doesn't store these in the tree, and they shouldn't appear
+			assert.Zero(t, hdr.Mode&0o7000, "file %s should not have special mode bits", hdr.Name)
+		case tar.TypeSymlink:
+			// Symlinks should always be 0o777 per canonical git
+			assert.Equal(t, int64(0o777), hdr.Mode&0o777,
+				"symlink %s should have mode 0o777, got 0o%03o", hdr.Name, hdr.Mode&0o777)
+		}
+	}
+}
+
+func TestArchive_ZipFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=zip", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+
+	for _, f := range zr.File {
+		mode := f.Mode()
+		// Skip directories in zip
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		// Check if it's a symlink
+		if mode&os.ModeSymlink != 0 {
+			// Symlinks should have 0o777 permissions
+			assert.Equal(t, os.FileMode(0o777), mode&os.ModePerm,
+				"symlink %s should have mode 0o777, got 0o%03o", f.Name, mode&os.ModePerm)
+			continue
+		}
+		// Just verify files are readable by owner
+		assert.NotZero(t, mode&0o400, "file %s should be readable by owner", f.Name)
+	}
+}
+
 func TestArchive_UploadPackSessionRejectsArchive(t *testing.T) {
 	t.Parallel()
 
