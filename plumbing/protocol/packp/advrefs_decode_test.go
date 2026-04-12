@@ -128,7 +128,10 @@ func (s *AdvRefsDecodeSuite) TestFirstIsNotHead() {
 	ar := s.testDecodeOK(payloads)
 	_, err := ar.Head()
 	s.Equal(plumbing.ErrReferenceNotFound, err)
-	refs := plumbing.RefsToMap(ar.References)
+	refs := make(map[string]plumbing.Hash)
+	for _, ref := range ar.References {
+		refs[ref.Name().String()] = ref.Hash()
+	}
 	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 		refs["refs/heads/master"])
 }
@@ -355,8 +358,26 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 	}} {
 		ar := s.testDecodeOK(test.input)
 		comment := fmt.Sprintf("input = %v\n", test.input)
-		s.Equal(test.references, plumbing.RefsToMap(ar.References), comment)
-		s.Equal(test.peeled, plumbing.PeeledToMap(ar.References), comment)
+
+		// Build refs map excluding peeled refs
+		refs := make(map[string]plumbing.Hash)
+		for _, ref := range ar.References {
+			name := ref.Name().String()
+			if !strings.HasSuffix(name, "^{}") {
+				refs[name] = ref.Hash()
+			}
+		}
+		s.Equal(test.references, refs, comment)
+
+		// Build peeled map
+		peeled := make(map[string]plumbing.Hash)
+		for _, ref := range ar.References {
+			name := ref.Name().String()
+			if base, ok := strings.CutSuffix(name, "^{}"); ok {
+				peeled[base] = ref.Hash()
+			}
+		}
+		s.Equal(test.peeled, peeled, comment)
 	}
 }
 

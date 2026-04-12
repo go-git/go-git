@@ -321,34 +321,3 @@ func (r *Reference) String() string {
 	v.WriteString(name)
 	return v.String()
 }
-
-// IsPeeled returns true if the reference name has the ^{} suffix,
-// indicating it is a peeled (dereferenced) tag.
-func IsPeeled(r *Reference) bool {
-	return strings.HasSuffix(r.Name().String(), "^{}")
-}
-
-// RefsToMap builds a map from reference name to hash, excluding peeled refs
-// (those whose name ends in ^{}).
-func RefsToMap(refs []*Reference) map[string]Hash {
-	m := make(map[string]Hash, len(refs))
-	for _, ref := range refs {
-		if !IsPeeled(ref) {
-			m[ref.Name().String()] = ref.Hash()
-		}
-	}
-	return m
-}
-
-// PeeledToMap builds a map from reference name (without ^{} suffix) to
-// the peeled hash, for only the peeled refs in the slice.
-func PeeledToMap(refs []*Reference) map[string]Hash {
-	m := make(map[string]Hash)
-	for _, ref := range refs {
-		name := ref.Name().String()
-		if base, ok := strings.CutSuffix(name, "^{}"); ok {
-			m[base] = ref.Hash()
-		}
-	}
-	return m
-}
