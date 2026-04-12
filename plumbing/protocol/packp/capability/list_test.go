@@ -218,3 +218,26 @@ func (s *SuiteCapabilities) TestAll() {
 	caps.Add(OFSDelta)
 	s.Equal([]Capability{Agent, OFSDelta}, caps.All())
 }
+
+func (s *SuiteCapabilities) TestZeroValueSafe() {
+	var caps List
+
+	s.True(caps.IsEmpty())
+	s.Nil(caps.All())
+	s.Nil(caps.Get(Agent))
+	s.False(caps.Supports(Agent))
+
+	caps.Add(Agent, "foo")
+	s.False(caps.IsEmpty())
+	s.True(caps.Supports(Agent))
+	s.Equal([]string{"foo"}, caps.Get(Agent))
+	s.Equal([]Capability{Agent}, caps.All())
+	s.Equal("agent=foo", caps.String())
+
+	caps.Delete(Agent)
+	s.True(caps.IsEmpty())
+
+	caps.Set(OFSDelta)
+	s.True(caps.Supports(OFSDelta))
+	s.Equal("ofs-delta", caps.String())
+}
