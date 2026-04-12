@@ -269,7 +269,13 @@ func TestTranslateStoredObjectsMatchesUpstreamGitReverse(t *testing.T) {
 func initGitRepo(t *testing.T, dir, objectFormat string) {
 	t.Helper()
 
-	output, err := runCmd("", nil, "git", "init", "--object-format="+objectFormat, dir)
+	args := []string{"init"}
+	if objectFormat != "sha1" {
+		args = append(args, "--object-format="+objectFormat)
+	}
+	args = append(args, dir)
+
+	output, err := runCmd("", nil, "git", args...)
 	if err != nil {
 		if strings.Contains(output, "unknown option") && strings.Contains(output, "object-format") {
 			t.Skip("installed git does not support --object-format")
