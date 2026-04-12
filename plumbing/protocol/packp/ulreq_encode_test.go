@@ -217,7 +217,7 @@ func (s *UlReqEncodeSuite) TestShallowsDuplicate() {
 func (s *UlReqEncodeSuite) TestDepthCommits() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Depth = DepthCommits(1234)
+	ur.Depth = DepthRequest{Commits: 1234}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -232,7 +232,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceUTC() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
-	ur.Depth = DepthSince(since)
+	ur.Depth = DepthRequest{Since: since}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -255,7 +255,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, berlin)
 	// since value is 2015-01-02 03:04:05 +0100 UTC (Europe/Berlin) or
 	// 2015-01-02 02:04:05 +0000 UTC, which is 1420164245 Unix seconds.
-	ur.Depth = DepthSince(since)
+	ur.Depth = DepthRequest{Since: since}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -269,7 +269,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 func (s *UlReqEncodeSuite) TestDepthReference() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Depth = DepthReference("refs/heads/feature-foo")
+	ur.Depth = DepthRequest{NotRefs: []string{"refs/heads/feature-foo"}}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -316,7 +316,7 @@ func (s *UlReqEncodeSuite) TestAll() {
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
-	ur.Depth = DepthSince(since)
+	ur.Depth = DepthRequest{Since: since}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band symref=HEAD:/refs/heads/master thin-pack\n",
