@@ -65,7 +65,7 @@ func peeledToMap(refs []*plumbing.Reference) map[string]plumbing.Hash {
 func sortedNonPeeledRefs(refs []*plumbing.Reference) []*plumbing.Reference {
 	var out []*plumbing.Reference
 	for _, ref := range refs {
-		if isPeeled(ref) {
+		if ref.Name().IsPeeled() {
 			continue
 		}
 		out = append(out, ref)
