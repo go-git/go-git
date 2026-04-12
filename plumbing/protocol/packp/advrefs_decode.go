@@ -147,7 +147,7 @@ func (d *decoder) nextLine() bool {
 			if d.nLine == 1 {
 				d.err = ErrEmptyInput
 			} else {
-				d.error("unexpected EOF")
+				_ = d.error("unexpected EOF")
 			}
 		} else {
 			d.err = err
