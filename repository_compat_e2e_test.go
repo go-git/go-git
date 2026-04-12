@@ -548,7 +548,7 @@ func advanceBareRemoteMain(t *testing.T, root, remoteDir, cloneDirName, content,
 	t.Helper()
 
 	cloneDir := filepath.Join(root, cloneDirName)
-	mustRunGitCmd(t, "", nil, "git", "clone", remoteDir, cloneDir)
+	mustRunGitCmd(t, "", nil, "git", "clone", "--branch", "main", remoteDir, cloneDir)
 	require.NoError(t, os.WriteFile(filepath.Join(cloneDir, "remote.txt"), []byte(content), 0o644))
 	env := compatE2EGitEnv()
 	mustRunGitCmd(t, cloneDir, env, "git", "add", "remote.txt")
@@ -698,7 +698,7 @@ func initUpstreamRepoWithHistory(t *testing.T, dir, objectFormat string) plumbin
 
 	out, err := runGitCmd("", nil, "git", "init", "--object-format="+objectFormat, dir)
 	if err != nil {
-		if objectFormat == "sha256" && strings.Contains(out, "unknown option") {
+		if strings.Contains(out, "unknown option") && strings.Contains(out, "object-format") {
 			t.Skip("installed git does not support --object-format")
 		}
 		if objectFormat == "sha256" && strings.Contains(strings.ToLower(out), "sha256") {
@@ -733,7 +733,7 @@ func initUpstreamBareRepo(t *testing.T, dir, objectFormat string) {
 
 	out, err := runGitCmd("", nil, "git", "init", "--bare", "--object-format="+objectFormat, dir)
 	if err != nil {
-		if objectFormat == "sha256" && strings.Contains(out, "unknown option") {
+		if strings.Contains(out, "unknown option") && strings.Contains(out, "object-format") {
 			t.Skip("installed git does not support --object-format")
 		}
 		if objectFormat == "sha256" && strings.Contains(strings.ToLower(out), "sha256") {
@@ -800,6 +800,9 @@ func stripLocalObjectDataPreservingCompatMetadata(objectsDir string) error {
 func mustRunGitCmd(t *testing.T, dir string, env []string, name string, args ...string) string {
 	t.Helper()
 	out, err := runGitCmd(dir, env, name, args...)
+	if err != nil && strings.Contains(out, "compatibility hash algorithm support requires Rust") {
+		t.Skip("installed git does not support compatibility hash algorithms without Rust")
+	}
 	require.NoError(t, err, out)
 	return strings.TrimSpace(out)
 }
