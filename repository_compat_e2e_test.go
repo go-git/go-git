@@ -9,21 +9,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCompatInteropValidationMatrix(t *testing.T) {
+	t.Parallel()
+
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git binary not available")
 	}
 
 	t.Run("native sha1 open repack reopen", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		repoDir := filepath.Join(root, "repo-sha1")
 
@@ -32,6 +37,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("native sha256 open repack reopen", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		repoDir := filepath.Join(root, "repo-sha256")
 
@@ -40,6 +47,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat fetch sha1 native remote with legacy mapping writes", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-sha1")
 		localDir := filepath.Join(root, "local-compat-sha1")
@@ -58,6 +67,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat fetch sha1 remote into sha256 native repo", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-sha1-to-sha256")
 		localDir := filepath.Join(root, "local-compat-sha256-native")
@@ -76,6 +87,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat fetch sha256 native remote with object-map writes", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-sha256")
 		localDir := filepath.Join(root, "local-compat-sha256")
@@ -94,6 +107,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat fetch sha256 remote into sha1 native repo", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-sha256-to-sha1")
 		localDir := filepath.Join(root, "local-compat-sha1-native")
@@ -112,6 +127,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat incremental fetch preserves old and new mappings", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-incremental")
 		localDir := filepath.Join(root, "local-compat-incremental")
@@ -139,6 +156,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat repo survives upstream git gc lifecycle", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-gc")
 		localDir := filepath.Join(root, "local-compat-gc")
@@ -171,6 +190,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat lookup survives alternates-only object access", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-alternate")
 		localDir := filepath.Join(root, "local-compat-alternate")
@@ -195,6 +216,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push creates sha1 remote from sha256 local", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push.git")
 		localDir := filepath.Join(root, "local-push")
@@ -220,6 +243,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push fast-forwards sha1 remote from sha256 local", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-ff.git")
 		localDir := filepath.Join(root, "local-push-ff")
@@ -253,6 +278,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push no-op reports already up to date", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-noop.git")
 		localDir := filepath.Join(root, "local-push-noop")
@@ -278,6 +305,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push deletes remote ref", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-delete.git")
 		localDir := filepath.Join(root, "local-push-delete")
@@ -302,6 +331,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push rejects non-fast-forward update", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-nff.git")
 		localDir := filepath.Join(root, "local-push-nff")
@@ -333,6 +364,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push force updates divergent remote", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-force.git")
 		localDir := filepath.Join(root, "local-push-force")
@@ -362,6 +395,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push force-with-lease rejects stale tracking ref", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-lease-fail.git")
 		localDir := filepath.Join(root, "local-push-lease-fail")
@@ -388,6 +423,8 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 	})
 
 	t.Run("compat push force-with-lease succeeds with refreshed tracking ref", func(t *testing.T) {
+		t.Parallel()
+
 		root := t.TempDir()
 		remoteDir := filepath.Join(root, "remote-push-lease-ok.git")
 		localDir := filepath.Join(root, "local-push-lease-ok")

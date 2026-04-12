@@ -4,16 +4,19 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTranslateStoredObjects(t *testing.T) {
+	t.Parallel()
+
 	// Create a memory storage with SHA-1 objects.
 	s := memory.NewStorage(memory.WithObjectFormat(format.SHA1))
 
@@ -29,7 +32,7 @@ func TestTranslateStoredObjects(t *testing.T) {
 	require.NoError(t, err)
 
 	// Store a tree referencing the blob.
-	var treeContent []byte
+	treeContent := make([]byte, 0, 17+len(blobHash.Bytes()))
 	treeContent = append(treeContent, []byte("100644 hello.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, blobHash.Bytes()...)
@@ -92,6 +95,8 @@ func TestTranslateStoredObjects(t *testing.T) {
 }
 
 func TestTranslateStoredObjectsEmpty(t *testing.T) {
+	t.Parallel()
+
 	s := memory.NewStorage()
 	m := compat.NewMemoryMapping()
 	tr := compat.NewTranslator(compat.Formats{
@@ -107,10 +112,12 @@ func TestTranslateStoredObjectsEmpty(t *testing.T) {
 }
 
 func TestTranslateStoredObjectsReportsUnresolvableDependencies(t *testing.T) {
+	t.Parallel()
+
 	s := memory.NewStorage(memory.WithObjectFormat(format.SHA1))
 	oh := plumbing.FromObjectFormat(format.SHA1)
 
-	var treeContent []byte
+	treeContent := make([]byte, 0, 19+len(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").Bytes()))
 	treeContent = append(treeContent, []byte("100644 missing.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").Bytes()...)
@@ -134,6 +141,8 @@ func TestTranslateStoredObjectsReportsUnresolvableDependencies(t *testing.T) {
 }
 
 func TestTranslateStoredObjectsSurfacesNonDependencyErrors(t *testing.T) {
+	t.Parallel()
+
 	s := memory.NewStorage(memory.WithObjectFormat(format.SHA1))
 	oh := plumbing.FromObjectFormat(format.SHA1)
 
@@ -158,6 +167,8 @@ func TestTranslateStoredObjectsSurfacesNonDependencyErrors(t *testing.T) {
 }
 
 func TestTranslateStoredObjectsTranslatesTagOfTag(t *testing.T) {
+	t.Parallel()
+
 	s := memory.NewStorage(memory.WithObjectFormat(format.SHA1))
 	oh := plumbing.FromObjectFormat(format.SHA1)
 

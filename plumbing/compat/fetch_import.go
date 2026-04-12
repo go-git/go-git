@@ -37,29 +37,38 @@ func NewImportStorer(base storer.EncodedObjectStorer, tr *Translator) *ImportSto
 	}
 }
 
+// RawObjectWriter returns a compat-format writer that defers translation until
+// the object is closed.
 func (s *ImportStorer) RawObjectWriter(typ plumbing.ObjectType, _ int64) (io.WriteCloser, error) {
 	return &importObjectWriter{storer: s, typ: typ}, nil
 }
 
+// NewEncodedObject allocates a compat-format memory object for parser writes.
 func (s *ImportStorer) NewEncodedObject() plumbing.EncodedObject {
 	return plumbing.NewMemoryObject(plumbing.FromObjectFormat(s.tr.CompatObjectFormat()))
 }
 
+// SetEncodedObject translates a compat-format object into native storage and
+// returns the native hash once the object is fully imported.
 func (s *ImportStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
 	reader, err := obj.Reader()
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	defer reader.Close()
 
 	content, err := io.ReadAll(reader)
 	if err != nil {
+		_ = reader.Close()
+		return plumbing.ZeroHash, err
+	}
+	if err := reader.Close(); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
 	return s.importCompatObject(obj.Type(), content)
 }
 
+// EncodedObject exposes a compat-format view of imported and pending objects.
 func (s *ImportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	if pending, ok := s.pendingObject(h); ok {
 		if objType != plumbing.AnyObject && pending.typ != objType {
@@ -86,10 +95,13 @@ func (s *ImportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Has
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
 
 	nativeContent, err := io.ReadAll(reader)
 	if err != nil {
+		_ = reader.Close()
+		return nil, err
+	}
+	if err := reader.Close(); err != nil {
 		return nil, err
 	}
 
@@ -120,10 +132,13 @@ func (s *ImportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Has
 	return exported, nil
 }
 
+// IterEncodedObjects is unsupported because import storage is a write-through
+// parser adapter rather than a general object database view.
 func (s *ImportStorer) IterEncodedObjects(plumbing.ObjectType) (storer.EncodedObjectIter, error) {
 	return nil, fmt.Errorf("compat import storage does not support iteration")
 }
 
+// HasEncodedObject reports whether a compat or translated native object exists.
 func (s *ImportStorer) HasEncodedObject(h plumbing.Hash) error {
 	if _, ok := s.pendingObject(h); ok {
 		return nil
@@ -140,6 +155,7 @@ func (s *ImportStorer) HasEncodedObject(h plumbing.Hash) error {
 	return s.base.HasEncodedObject(native)
 }
 
+// EncodedObjectSize returns the size of the compat-format view of the object.
 func (s *ImportStorer) EncodedObjectSize(h plumbing.Hash) (int64, error) {
 	obj, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
@@ -148,6 +164,7 @@ func (s *ImportStorer) EncodedObjectSize(h plumbing.Hash) (int64, error) {
 	return obj.Size(), nil
 }
 
+// AddAlternate forwards alternate object storage configuration to the base store.
 func (s *ImportStorer) AddAlternate(remote string) error {
 	return s.base.AddAlternate(remote)
 }

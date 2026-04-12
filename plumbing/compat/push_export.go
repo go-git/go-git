@@ -41,26 +41,32 @@ func NewPushExportStorer(base storer.EncodedObjectStorer, cfg *config.Config, tr
 	}
 }
 
+// Config returns the compat-format export configuration exposed to pack writing.
 func (s *PushExportStorer) Config() (*config.Config, error) {
 	return s.cfg, nil
 }
 
+// SetConfig rejects writes because the export view is read-only.
 func (s *PushExportStorer) SetConfig(*config.Config) error {
 	return fmt.Errorf("compat push export storage is read-only")
 }
 
+// RawObjectWriter rejects writes because the export view is read-only.
 func (s *PushExportStorer) RawObjectWriter(plumbing.ObjectType, int64) (io.WriteCloser, error) {
 	return nil, fmt.Errorf("compat push export storage is read-only")
 }
 
+// NewEncodedObject allocates a compat-format memory object for export callers.
 func (s *PushExportStorer) NewEncodedObject() plumbing.EncodedObject {
 	return plumbing.NewMemoryObject(plumbing.FromObjectFormat(s.tr.CompatObjectFormat()))
 }
 
+// SetEncodedObject rejects writes because the export view is read-only.
 func (s *PushExportStorer) SetEncodedObject(plumbing.EncodedObject) (plumbing.Hash, error) {
 	return plumbing.ZeroHash, fmt.Errorf("compat push export storage is read-only")
 }
 
+// EncodedObject returns a compat-format projection of a native stored object.
 func (s *PushExportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	nativeHash := h
 
@@ -90,10 +96,13 @@ func (s *PushExportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
 
 	content, err := io.ReadAll(reader)
 	if err != nil {
+		_ = reader.Close()
+		return nil, err
+	}
+	if err := reader.Close(); err != nil {
 		return nil, err
 	}
 
@@ -124,10 +133,13 @@ func (s *PushExportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing
 	return exported, nil
 }
 
-func (s *PushExportStorer) IterEncodedObjects(objType plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+// IterEncodedObjects is unsupported because export storage only exposes
+// point lookups for pack generation.
+func (s *PushExportStorer) IterEncodedObjects(plumbing.ObjectType) (storer.EncodedObjectIter, error) {
 	return nil, fmt.Errorf("compat push export storage does not support iteration")
 }
 
+// HasEncodedObject reports whether the hash is addressable in the export view.
 func (s *PushExportStorer) HasEncodedObject(h plumbing.Hash) error {
 	if err := s.base.HasEncodedObject(h); err == nil {
 		return nil
@@ -140,6 +152,7 @@ func (s *PushExportStorer) HasEncodedObject(h plumbing.Hash) error {
 	return s.base.HasEncodedObject(native)
 }
 
+// EncodedObjectSize returns the size of the compat-format exported object.
 func (s *PushExportStorer) EncodedObjectSize(h plumbing.Hash) (int64, error) {
 	obj, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
@@ -148,6 +161,7 @@ func (s *PushExportStorer) EncodedObjectSize(h plumbing.Hash) (int64, error) {
 	return obj.Size(), nil
 }
 
+// AddAlternate rejects writes because the export view is read-only.
 func (s *PushExportStorer) AddAlternate(string) error {
 	return fmt.Errorf("compat push export storage is read-only")
 }

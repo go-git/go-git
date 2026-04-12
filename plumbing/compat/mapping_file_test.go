@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"strings"
 	"sync"
@@ -12,15 +13,20 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
-	"github.com/go-git/go-git/v6/plumbing"
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
-func mustReadDir(t *testing.T, fs interface {
-	ReadDir(string) ([]fs.DirEntry, error)
-}, path string) []fs.DirEntry {
+func mustReadDir(
+	t *testing.T,
+	fs interface {
+		ReadDir(string) ([]fs.DirEntry, error)
+	},
+	path string,
+) []fs.DirEntry {
 	t.Helper()
 	entries, err := fs.ReadDir(path)
 	require.NoError(t, err)
@@ -28,16 +34,20 @@ func mustReadDir(t *testing.T, fs interface {
 }
 
 func TestFileMapping(t *testing.T) {
+	t.Parallel()
+
 	testHashMapping(t, func() HashMapping {
 		fs := memfs.New()
-		_ = fs.MkdirAll("objects", 0755)
+		_ = fs.MkdirAll("objects", 0o755)
 		return NewFileMapping(fs, "objects")
 	})
 }
 
 func TestFileMappingPersistence(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
-	_ = fs.MkdirAll("objects", 0755)
+	_ = fs.MkdirAll("objects", 0o755)
 
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -62,6 +72,8 @@ func TestFileMappingPersistence(t *testing.T) {
 }
 
 func TestFileMappingPersistenceDefaultsToLegacyWrite(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -80,8 +92,10 @@ func TestFileMappingPersistenceDefaultsToLegacyWrite(t *testing.T) {
 }
 
 func TestFileMappingEmptyFile(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
-	_ = fs.MkdirAll("objects", 0755)
+	_ = fs.MkdirAll("objects", 0o755)
 
 	m := NewFileMapping(fs, "objects")
 	count, err := m.Count()
@@ -90,6 +104,8 @@ func TestFileMappingEmptyFile(t *testing.T) {
 }
 
 func TestFileMappingCountReturnsLoadError(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	require.NoError(t, fs.MkdirAll("objects/object-map", 0o755))
 
@@ -106,8 +122,10 @@ func TestFileMappingCountReturnsLoadError(t *testing.T) {
 }
 
 func TestFileMappingReadsLegacyLooseObjectIdx(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
-	_ = fs.MkdirAll("objects", 0755)
+	_ = fs.MkdirAll("objects", 0o755)
 
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -125,6 +143,8 @@ func TestFileMappingReadsLegacyLooseObjectIdx(t *testing.T) {
 }
 
 func TestFileMappingReadsLegacyAndObjectMapTogether(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -162,6 +182,8 @@ func TestFileMappingReadsLegacyAndObjectMapTogether(t *testing.T) {
 }
 
 func TestFileMappingPrefersSnapshotFilesAfterSorting(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects/object-map", 0o755)
 
@@ -193,6 +215,8 @@ func TestFileMappingPrefersSnapshotFilesAfterSorting(t *testing.T) {
 }
 
 func TestFileMappingCompact(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -231,6 +255,8 @@ func TestFileMappingCompact(t *testing.T) {
 }
 
 func TestFileMappingObjectMapAddWritesIncrementalShards(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -262,9 +288,7 @@ func TestFileMappingObjectMapAddWritesIncrementalShards(t *testing.T) {
 		nativeToCompat, _, err := decodeMapFile(data)
 		require.NoError(t, err)
 		require.Len(t, nativeToCompat, 1)
-		for native, compat := range nativeToCompat {
-			total[native] = compat
-		}
+		maps.Copy(total, nativeToCompat)
 	}
 
 	assert.Equal(t, map[plumbing.Hash]plumbing.Hash{
@@ -274,6 +298,8 @@ func TestFileMappingObjectMapAddWritesIncrementalShards(t *testing.T) {
 }
 
 func TestFileMappingObjectMapOverwriteUpdatesCurrentInstance(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -305,6 +331,8 @@ func TestFileMappingObjectMapOverwriteUpdatesCurrentInstance(t *testing.T) {
 }
 
 func TestFileMappingCompactLegacy(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -328,6 +356,8 @@ func TestFileMappingCompactLegacy(t *testing.T) {
 }
 
 func TestFileMappingCompactEmpty(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -339,18 +369,24 @@ func TestFileMappingCompactEmpty(t *testing.T) {
 }
 
 func TestDecodeMapFileErrors(t *testing.T) {
+	t.Parallel()
+
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	valid, err := encodeMapEntries([]mapPair{{native: native, compat: compat}})
 	require.NoError(t, err)
 
 	t.Run("too small", func(t *testing.T) {
+		t.Parallel()
+
 		_, _, err := decodeMapFile([]byte("small"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "map file too small")
 	})
 
 	t.Run("invalid signature", func(t *testing.T) {
+		t.Parallel()
+
 		data := append([]byte(nil), valid...)
 		copy(data[:4], []byte("BAD!"))
 		_, _, err = decodeMapFile(data)
@@ -359,6 +395,8 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("unsupported version", func(t *testing.T) {
+		t.Parallel()
+
 		data := append([]byte(nil), valid...)
 		binary.BigEndian.PutUint32(data[4:8], 2)
 		_, _, err = decodeMapFile(data)
@@ -367,6 +405,8 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("invalid trailer offset", func(t *testing.T) {
+		t.Parallel()
+
 		data := append([]byte(nil), valid...)
 		binary.BigEndian.PutUint64(data[52:60], uint64(len(data)+1))
 		_, _, err := decodeMapFile(data)
@@ -375,6 +415,8 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("truncated format tables", func(t *testing.T) {
+		t.Parallel()
+
 		data := append([]byte(nil), valid...)
 		binary.BigEndian.PutUint32(data[12:16], 2)
 		_, _, err := decodeMapFile(data)
@@ -383,6 +425,8 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("invalid format offset", func(t *testing.T) {
+		t.Parallel()
+
 		data := append([]byte(nil), valid...)
 		binary.BigEndian.PutUint64(data[28:36], uint64(len(data)+1))
 		_, _, err := decodeMapFile(data)
@@ -391,6 +435,8 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("invalid object ordering", func(t *testing.T) {
+		t.Parallel()
+
 		data, err := encodeMapEntries([]mapPair{
 			{native: native, compat: compat},
 			{native: plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"), compat: plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")},
@@ -406,10 +452,14 @@ func TestDecodeMapFileErrors(t *testing.T) {
 }
 
 func TestHexFromBytes(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, "00abff", hexFromBytes([]byte{0x00, 0xab, 0xff}))
 }
 
 func TestEncodeMapEntriesUsesShortAndFullTables(t *testing.T) {
+	t.Parallel()
+
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
@@ -424,6 +474,8 @@ func TestEncodeMapEntriesUsesShortAndFullTables(t *testing.T) {
 }
 
 func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
@@ -439,9 +491,7 @@ func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 16)
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 100 {
 				got, err := m.NativeToCompat(native)
 				if err != nil {
@@ -453,7 +503,7 @@ func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errCh)
@@ -464,6 +514,8 @@ func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
 }
 
 func TestFileMappingOverwriteLegacyPreservesExistingStateOnWriteFailure(t *testing.T) {
+	t.Parallel()
+
 	base := memfs.New()
 	_ = base.MkdirAll("objects", 0o755)
 
@@ -486,6 +538,8 @@ func TestFileMappingOverwriteLegacyPreservesExistingStateOnWriteFailure(t *testi
 }
 
 func TestFileMappingOverwriteObjectMapPreservesExistingStateOnWriteFailure(t *testing.T) {
+	t.Parallel()
+
 	base := memfs.New()
 	_ = base.MkdirAll("objects", 0o755)
 
@@ -508,6 +562,8 @@ func TestFileMappingOverwriteObjectMapPreservesExistingStateOnWriteFailure(t *te
 }
 
 func TestFileMappingSnapshotFileWinsDuringRecovery(t *testing.T) {
+	t.Parallel()
+
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 

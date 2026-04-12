@@ -3,10 +3,11 @@ package compat
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 func newTestTranslator() (*Translator, *MemoryMapping) {
@@ -33,6 +34,8 @@ func makeEncodedObject(t *testing.T, objType plumbing.ObjectType, content []byte
 }
 
 func TestTranslateBlob(t *testing.T) {
+	t.Parallel()
+
 	tr, m := newTestTranslator()
 
 	blobContent := []byte("hello world\n")
@@ -56,6 +59,8 @@ func TestTranslateBlob(t *testing.T) {
 }
 
 func TestTranslateTree(t *testing.T) {
+	t.Parallel()
+
 	tr, m := newTestTranslator()
 
 	// First, create a blob and translate it so its mapping exists.
@@ -66,7 +71,7 @@ func TestTranslateTree(t *testing.T) {
 
 	// Build a tree with one entry pointing to the blob.
 	// Tree entry format: "<mode> <name>\0<20-byte-hash>"
-	var treeContent []byte
+	treeContent := make([]byte, 0, 16+len(blobObj.Hash().Bytes()))
 	treeContent = append(treeContent, []byte("100644 test.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, blobObj.Hash().Bytes()...)
@@ -89,6 +94,8 @@ func TestTranslateTree(t *testing.T) {
 }
 
 func TestTranslateCommit(t *testing.T) {
+	t.Parallel()
+
 	tr, m := newTestTranslator()
 
 	// Create and translate a blob, then a tree pointing to it.
@@ -97,7 +104,7 @@ func TestTranslateCommit(t *testing.T) {
 	_, err := tr.TranslateObject(blobObj)
 	require.NoError(t, err)
 
-	var treeContent []byte
+	treeContent := make([]byte, 0, 16+len(blobObj.Hash().Bytes()))
 	treeContent = append(treeContent, []byte("100644 file.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, blobObj.Hash().Bytes()...)
@@ -125,6 +132,8 @@ func TestTranslateCommit(t *testing.T) {
 }
 
 func TestTranslateCommitWithParents(t *testing.T) {
+	t.Parallel()
+
 	tr, _ := newTestTranslator()
 
 	// Create blob -> tree -> commit1 (root) -> commit2 (child).
@@ -132,7 +141,7 @@ func TestTranslateCommitWithParents(t *testing.T) {
 	_, err := tr.TranslateObject(blobObj)
 	require.NoError(t, err)
 
-	var treeContent []byte
+	treeContent := make([]byte, 0, 13+len(blobObj.Hash().Bytes()))
 	treeContent = append(treeContent, []byte("100644 f.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, blobObj.Hash().Bytes()...)
@@ -166,6 +175,8 @@ func TestTranslateCommitWithParents(t *testing.T) {
 }
 
 func TestTranslateTag(t *testing.T) {
+	t.Parallel()
+
 	tr, m := newTestTranslator()
 
 	// Create a blob to tag.
@@ -192,11 +203,13 @@ func TestTranslateTag(t *testing.T) {
 }
 
 func TestTranslateTreeMissingMapping(t *testing.T) {
+	t.Parallel()
+
 	tr, _ := newTestTranslator()
 
 	// Build a tree entry with a hash that has no mapping.
 	fakeHash := plumbing.NewHash("1111111111111111111111111111111111111111")
-	var treeContent []byte
+	treeContent := make([]byte, 0, 18+len(fakeHash.Bytes()))
 	treeContent = append(treeContent, []byte("100644 orphan.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, fakeHash.Bytes()...)
@@ -208,6 +221,8 @@ func TestTranslateTreeMissingMapping(t *testing.T) {
 }
 
 func TestTranslateCommitMissingTreeMapping(t *testing.T) {
+	t.Parallel()
+
 	tr, _ := newTestTranslator()
 
 	fakeTreeHash := plumbing.NewHash("2222222222222222222222222222222222222222")
@@ -224,13 +239,15 @@ func TestTranslateCommitMissingTreeMapping(t *testing.T) {
 }
 
 func TestReverseTranslateContent(t *testing.T) {
+	t.Parallel()
+
 	tr, _ := newTestTranslator()
 
 	blobObj := makeEncodedObject(t, plumbing.BlobObject, []byte("content"), format.SHA1)
 	_, err := tr.TranslateObject(blobObj)
 	require.NoError(t, err)
 
-	var treeContent []byte
+	treeContent := make([]byte, 0, 16+len(blobObj.Hash().Bytes()))
 	treeContent = append(treeContent, []byte("100644 file.txt")...)
 	treeContent = append(treeContent, 0x00)
 	treeContent = append(treeContent, blobObj.Hash().Bytes()...)
