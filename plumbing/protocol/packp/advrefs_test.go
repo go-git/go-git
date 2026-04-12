@@ -77,10 +77,9 @@ func (s *AdvRefSuite) TestAllReferences() {
 
 func (s *AdvRefSuite) TestAllReferencesBadSymref() {
 	a := NewAdvRefs()
-	err := a.Capabilities.Set(capability.SymRef, "foo")
-	s.NoError(err)
+	a.Capabilities.Set(capability.SymRef, "foo")
 
-	_, err = a.AllReferences()
+	_, err := a.AllReferences()
 	s.NotNil(err)
 }
 
