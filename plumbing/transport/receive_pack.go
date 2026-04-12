@@ -84,7 +84,7 @@ func ReceivePack(
 		return nil
 	}
 
-	updreq := packp.NewUpdateRequests()
+	updreq := &packp.UpdateRequests{}
 	if err := updreq.Decode(rd); err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func closeWriter(w io.WriteCloser) error {
 }
 
 func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
-	rs := packp.NewReportStatus()
+	rs := &packp.ReportStatus{}
 	rs.UnpackStatus = "ok"
 	if unpackErr != nil {
 		rs.UnpackStatus = unpackErr.Error()

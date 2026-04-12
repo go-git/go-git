@@ -106,7 +106,7 @@ func UploadPack(
 	for !done {
 		writec := make(chan error)
 		if firstRound || opts.StatelessRPC {
-			upreq = packp.NewUploadRequest()
+			upreq = &packp.UploadRequest{}
 			if err := upreq.Decode(rd); err != nil {
 				return fmt.Errorf("decoding upload-request: %w", err)
 			}

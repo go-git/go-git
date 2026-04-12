@@ -47,14 +47,14 @@ func testUlReqEncodeError(s *UlReqEncodeSuite, ur *UploadRequest, expectedErrorR
 }
 
 func (s *UlReqEncodeSuite) TestZeroValue() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	expectedErrorRegEx := ".*empty wants.*"
 
 	testUlReqEncodeError(s, ur, expectedErrorRegEx)
 }
 
 func (s *UlReqEncodeSuite) TestOneWant() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	expected := []string{
@@ -66,7 +66,7 @@ func (s *UlReqEncodeSuite) TestOneWant() {
 }
 
 func (s *UlReqEncodeSuite) TestOneWantWithCapabilities() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
 	ur.Capabilities.Add(capability.OFSDelta)
@@ -83,7 +83,7 @@ func (s *UlReqEncodeSuite) TestOneWantWithCapabilities() {
 }
 
 func (s *UlReqEncodeSuite) TestWants() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
 		plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -105,7 +105,7 @@ func (s *UlReqEncodeSuite) TestWants() {
 }
 
 func (s *UlReqEncodeSuite) TestWantsDuplicates() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
 		plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -127,7 +127,7 @@ func (s *UlReqEncodeSuite) TestWantsDuplicates() {
 }
 
 func (s *UlReqEncodeSuite) TestWantsWithCapabilities() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
 		plumbing.NewHash("1111111111111111111111111111111111111111"),
@@ -155,7 +155,7 @@ func (s *UlReqEncodeSuite) TestWantsWithCapabilities() {
 }
 
 func (s *UlReqEncodeSuite) TestShallow() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
@@ -170,7 +170,7 @@ func (s *UlReqEncodeSuite) TestShallow() {
 }
 
 func (s *UlReqEncodeSuite) TestManyShallows() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
 	ur.Shallows = append(ur.Shallows,
@@ -193,7 +193,7 @@ func (s *UlReqEncodeSuite) TestManyShallows() {
 }
 
 func (s *UlReqEncodeSuite) TestShallowsDuplicate() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Capabilities.Add(capability.MultiACK)
 	ur.Shallows = append(ur.Shallows,
@@ -215,7 +215,7 @@ func (s *UlReqEncodeSuite) TestShallowsDuplicate() {
 }
 
 func (s *UlReqEncodeSuite) TestDepthCommits() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthCommits(1234)
 
@@ -229,7 +229,7 @@ func (s *UlReqEncodeSuite) TestDepthCommits() {
 }
 
 func (s *UlReqEncodeSuite) TestDepthSinceUTC() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
 	ur.Depth = DepthSince(since)
@@ -248,7 +248,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 		s.T().Skip("time.LoadLocation not supported in wasm")
 	}
 
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	s.NoError(err)
@@ -267,7 +267,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 }
 
 func (s *UlReqEncodeSuite) TestDepthReference() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthReference("refs/heads/feature-foo")
 
@@ -281,7 +281,7 @@ func (s *UlReqEncodeSuite) TestDepthReference() {
 }
 
 func (s *UlReqEncodeSuite) TestFilter() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Filter = FilterTreeDepth(0)
 
@@ -295,7 +295,7 @@ func (s *UlReqEncodeSuite) TestFilter() {
 }
 
 func (s *UlReqEncodeSuite) TestAll() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants,
 		plumbing.NewHash("4444444444444444444444444444444444444444"),
 		plumbing.NewHash("1111111111111111111111111111111111111111"),

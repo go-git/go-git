@@ -104,6 +104,10 @@ func (e *ulReqEncoder) encodeShallows() stateFn {
 }
 
 func (e *ulReqEncoder) encodeDepth() stateFn {
+	if e.data.Depth == nil {
+		return e.encodeFilter
+	}
+
 	switch depth := e.data.Depth.(type) {
 	case DepthCommits:
 		if depth != 0 {
