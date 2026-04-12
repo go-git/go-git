@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
+	"github.com/go-git/go-git/v6/plumbing"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 func TestRedirectPath(t *testing.T) {
@@ -109,4 +111,66 @@ func TestRedirectSchema(t *testing.T) {
 	info, err := session.GetRemoteRefs(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, info)
+}
+
+// TestRedirectFetch verifies that Fetch works correctly after a redirect.
+// This is a regression test for a bug where the redirect URL was only
+// applied during handshake but not used for subsequent POST requests.
+func TestRedirectPathWithFetch(t *testing.T) {
+	t.Parallel()
+
+	base, backend := setupSmartServer(t)
+	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
+
+	rl := test.ListenTCP(t)
+	raddr := rl.Addr().(*net.TCPAddr)
+
+	backendURL := fmt.Sprintf("http://localhost:%d", backend.Port)
+	redirectServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			target := backendURL + "/basic.git" + r.URL.Path[len("/redirected-repo"):]
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+		}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		require.ErrorIs(t, redirectServer.Serve(rl), http.ErrServerClosed)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, redirectServer.Close())
+		<-done
+	})
+
+	tr := NewTransport(Options{})
+	endpoint := &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
+		Path:   "/redirected-repo",
+	}
+
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     endpoint,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	// Verify that refs are available
+	refs, err := session.GetRemoteRefs(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, refs)
+
+	// Fetch objects - this uses POST to git-upload-pack which would fail
+	// if the redirect wasn't properly applied
+	st := memory.NewStorage()
+	req := &transport.FetchRequest{}
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	err = session.Fetch(context.Background(), st, req)
+	require.NoError(t, err)
 }

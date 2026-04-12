@@ -67,19 +67,20 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	}
 
 	// Update base URL if the server redirected.
-	_ = applyRedirect(resp, baseURL)
+	sessReq := *req
+	sessReq.URL = applyRedirect(resp, baseURL)
 
 	if forceDumb {
-		return handshakeDumb(resp, req, client, t.opts.Authorizer)
+		return handshakeDumb(resp, &sessReq, client, t.opts.Authorizer)
 	}
 
 	expected := fmt.Sprintf("application/x-%s-advertisement", service)
 	isSmart := resp.Header.Get("Content-Type") == expected
 
 	if isSmart {
-		return handshakeSmart(resp, req, client, t.opts.Authorizer)
+		return handshakeSmart(resp, &sessReq, client, t.opts.Authorizer)
 	}
-	return handshakeDumb(resp, req, client, t.opts.Authorizer)
+	return handshakeDumb(resp, &sessReq, client, t.opts.Authorizer)
 }
 
 func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
