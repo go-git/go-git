@@ -21,7 +21,7 @@ import (
 func NegotiatePack(
 	ctx context.Context,
 	st storage.Storer,
-	caps *capability.List,
+	caps capability.List,
 	statelessRPC bool,
 	reader io.Reader,
 	writer io.WriteCloser,

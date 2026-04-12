@@ -17,7 +17,7 @@ import (
 
 func TestSendPackWithReportStatus(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 
 	reportStatusResponse := strings.Join([]string{
@@ -46,7 +46,7 @@ func TestSendPackWithReportStatus(t *testing.T) {
 
 func TestSendPackWithReportStatusError(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 
 	reportStatusResponse := strings.Join([]string{
@@ -74,7 +74,7 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 
 func TestSendPackWithoutReportStatus(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 
 	reader := io.NopCloser(bytes.NewReader(nil))
 	writer := newMockWriteCloser(nil)
@@ -97,7 +97,7 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 
 func TestSendPackWithProgress(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 	caps.Add(capability.Sideband64k)
 
@@ -132,7 +132,7 @@ func TestSendPackWithProgress(t *testing.T) {
 
 func TestSendPackWithPackfile(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 
 	reportStatusResponse := strings.Join([]string{
@@ -162,7 +162,7 @@ func TestSendPackWithPackfile(t *testing.T) {
 
 func TestSendPackErrors(t *testing.T) {
 	t.Parallel()
-	caps := &capability.List{}
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 
 	t.Run("EncodeError", func(t *testing.T) {

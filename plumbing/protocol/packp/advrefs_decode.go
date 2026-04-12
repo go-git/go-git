@@ -183,17 +183,13 @@ func decodeFirstRef(l *advRefsDecoder) decoderStateFn {
 	ref := chunks[0]
 	l.line = chunks[1]
 
-	if bytes.Equal(ref, []byte(head)) {
-		l.data.Head = &l.hash
-	} else {
-		l.data.References[string(ref)] = l.hash
-	}
+	l.data.References = append(l.data.References, plumbing.NewHashReference(plumbing.ReferenceName(ref), l.hash))
 
 	return decodeCaps
 }
 
 func decodeCaps(p *advRefsDecoder) decoderStateFn {
-	capability.DecodeList(p.line, p.data.Capabilities)
+	capability.DecodeList(p.line, &p.data.Capabilities)
 
 	return decodeOtherRefs
 }
@@ -213,18 +209,15 @@ func decodeOtherRefs(p *advRefsDecoder) decoderStateFn {
 		return nil
 	}
 
-	saveTo := p.data.References
-	if line, found := bytes.CutSuffix(p.line, peeled); found {
-		p.line = line
-		saveTo = p.data.Peeled
-	}
-
-	ref, hash, err := readRef(p.line)
+	refName, hash, err := readRef(p.line)
 	if err != nil {
 		p.error("%s", err)
 		return nil
 	}
-	saveTo[ref] = hash
+
+	p.data.References = append(p.data.References, plumbing.NewHashReference(
+		plumbing.ReferenceName(refName), hash,
+	))
 
 	return decodeOtherRefs
 }

@@ -17,7 +17,7 @@ import (
 func TestNegotiatePackNoChangeWithEOFOnClose(t *testing.T) {
 	t.Parallel()
 
-	caps := &capability.List{}
+	caps := capability.List{}
 	reader := bytes.NewReader(nil)
 	writer := newMockWriteCloser(nil)
 	writer.closeErr = io.EOF
@@ -37,7 +37,7 @@ func TestNegotiatePackNoChangeWithEOFOnClose(t *testing.T) {
 func TestNegotiatePackNoChangeWithNonEOFCloseError(t *testing.T) {
 	t.Parallel()
 
-	caps := &capability.List{}
+	caps := capability.List{}
 	reader := bytes.NewReader(nil)
 	writer := newMockWriteCloser(nil)
 	writer.closeErr = io.ErrUnexpectedEOF
@@ -59,7 +59,7 @@ func TestNegotiatePackNoChangeWithNonEOFCloseError(t *testing.T) {
 func TestNegotiatePackCompleteWithEOFOnClose(t *testing.T) {
 	t.Parallel()
 
-	caps := &capability.List{}
+	caps := capability.List{}
 	reader := bytes.NewReader([]byte("0008NAK\n"))
 	writer := newMockWriteCloser(nil)
 	writer.closeErr = io.EOF
@@ -80,7 +80,7 @@ func TestNegotiatePackCompleteWithEOFOnClose(t *testing.T) {
 func TestNegotiatePackCompleteWithNonEOFCloseError(t *testing.T) {
 	t.Parallel()
 
-	caps := &capability.List{}
+	caps := capability.List{}
 	reader := bytes.NewReader([]byte("0008NAK\n"))
 	writer := newMockWriteCloser(nil)
 	writer.closeErr = io.ErrUnexpectedEOF

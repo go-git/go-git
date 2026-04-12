@@ -34,7 +34,7 @@ func AdvertiseRefs(
 	}
 
 	forPush := service == ReceivePackService
-	ar := packp.NewAdvRefs()
+	ar := &packp.AdvRefs{}
 
 	// Set server default capabilities
 	ar.Capabilities.Set(capability.Agent, capability.DefaultAgent())
@@ -118,12 +118,15 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			if r.Type() == plumbing.SymbolicReference {
 				ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
 			}
-			ar.Head = &hash
+			ar.References = append([]*plumbing.Reference{plumbing.NewHashReference(name, hash)}, ar.References...)
+			return nil
 		}
-		ar.References[name.String()] = hash
+		ar.References = append(ar.References, plumbing.NewHashReference(name, hash))
 		if r.Name().IsTag() {
 			if tag, err := object.GetTag(st, hash); err == nil {
-				ar.Peeled[name.String()] = tag.Target
+				ar.References = append(ar.References, plumbing.NewHashReference(
+					plumbing.ReferenceName(name.String()+"^{}"), tag.Target,
+				))
 			}
 		}
 		return nil

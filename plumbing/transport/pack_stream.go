@@ -23,7 +23,7 @@ type StreamSession struct {
 	w       io.WriteCloser
 	svc     string
 	version protocol.Version
-	caps    *capability.List
+	caps    capability.List
 	refs    *packp.AdvRefs
 }
 
@@ -59,7 +59,7 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 	case protocol.V1, protocol.V0:
 	}
 
-	ar := packp.NewAdvRefs()
+	ar := &packp.AdvRefs{}
 	if err := ar.Decode(r); err != nil && !errors.Is(err, packp.ErrEmptyAdvRefs) {
 		_ = conn.Close()
 		return nil, err
@@ -72,7 +72,7 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 }
 
 // Capabilities implements PackSession.
-func (s *StreamSession) Capabilities() *capability.List { return s.caps }
+func (s *StreamSession) Capabilities() *capability.List { return &s.caps }
 
 // GetRemoteRefs implements PackSession.
 func (s *StreamSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
@@ -83,7 +83,12 @@ func (s *StreamSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference,
 	if !forPush && s.refs.IsEmpty() {
 		return nil, ErrEmptyRemoteRepository
 	}
-	return s.refs.MakeReferenceSlice()
+
+	refs, err := s.refs.ResolvedReferences()
+	if err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 // Fetch implements PackSession.

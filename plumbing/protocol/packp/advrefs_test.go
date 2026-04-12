@@ -22,143 +22,110 @@ func TestAdvRefSuite(t *testing.T) {
 	suite.Run(t, new(AdvRefSuite))
 }
 
-func (s *AdvRefSuite) TestAddReferenceSymbolic() {
-	ref := plumbing.NewSymbolicReference("foo", "bar")
-
-	a := NewAdvRefs()
-	err := a.AddReference(ref)
-	s.NoError(err)
-
-	values := a.Capabilities.Get(capability.SymRef)
-	s.Len(values, 1)
-	s.Equal("foo:bar", values[0])
+func refByName(refs []*plumbing.Reference, name plumbing.ReferenceName) *plumbing.Reference {
+	for _, ref := range refs {
+		if ref.Name() == name {
+			return ref
+		}
+	}
+	return nil
 }
 
-func (s *AdvRefSuite) TestAddReferenceHash() {
-	ref := plumbing.NewHashReference("foo", plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
-
-	a := NewAdvRefs()
-	err := a.AddReference(ref)
-	s.NoError(err)
-
-	s.Len(a.References, 1)
-	s.Equal("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c", a.References["foo"].String())
-}
-
-func (s *AdvRefSuite) TestAllReferences() {
+func (s *AdvRefSuite) TestResolvedReferencesSymref() {
 	hash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
 
-	a := NewAdvRefs()
-	err := a.AddReference(plumbing.NewSymbolicReference("foo", "bar"))
-	s.NoError(err)
-	err = a.AddReference(plumbing.NewHashReference("bar", hash))
+	a := &AdvRefs{}
+	a.Capabilities.Add(capability.SymRef, "foo:bar")
+	a.References = append(a.References, plumbing.NewHashReference("bar", hash))
+
+	refs, err := a.ResolvedReferences()
 	s.NoError(err)
 
-	refs, err := a.AllReferences()
-	s.NoError(err)
-
-	iter, err := refs.IterReferences()
-	s.NoError(err)
-
-	var count int
-	iter.ForEach(func(ref *plumbing.Reference) error {
-		count++
+	s.Len(refs, 2)
+	for _, ref := range refs {
 		switch ref.Name() {
 		case "bar":
 			s.Equal(hash, ref.Hash())
 		case "foo":
 			s.Equal("bar", ref.Target().String())
 		}
-		return nil
-	})
-
-	s.Equal(2, count)
+	}
 }
 
-func (s *AdvRefSuite) TestAllReferencesBadSymref() {
-	a := NewAdvRefs()
+func (s *AdvRefSuite) TestResolvedReferencesBadSymref() {
+	a := &AdvRefs{}
 	a.Capabilities.Set(capability.SymRef, "foo")
 
-	_, err := a.AllReferences()
+	_, err := a.ResolvedReferences()
 	s.NotNil(err)
 }
 
-func (s *AdvRefSuite) TestIsEmpty() {
-	a := NewAdvRefs()
-	s.True(a.IsEmpty())
-}
-
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToMaster() {
-	a := NewAdvRefs()
+	a := &AdvRefs{}
 	headHash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
-	a.Head = &headHash
+	a.References = append(a.References, plumbing.NewHashReference(plumbing.HEAD, headHash))
 	ref := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+	a.References = append(a.References, ref)
 
-	err := a.AddReference(ref)
+	refs, err := a.ResolvedReferences()
 	s.NoError(err)
 
-	storage, err := a.AllReferences()
-	s.NoError(err)
-
-	head, err := storage.Reference(plumbing.HEAD)
-	s.NoError(err)
+	head := refByName(refs, plumbing.HEAD)
+	s.NotNil(head)
 	s.Equal(ref.Name(), head.Target())
 }
 
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToOtherThanMaster() {
-	a := NewAdvRefs()
+	a := &AdvRefs{}
 	headHash := plumbing.NewHash("0000000000000000000000000000000000000000")
-	a.Head = &headHash
+	a.References = append(a.References, plumbing.NewHashReference(plumbing.HEAD, headHash))
 	ref1 := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
 	ref2 := plumbing.NewHashReference("other/ref", plumbing.NewHash("0000000000000000000000000000000000000000"))
 
-	err := a.AddReference(ref1)
-	s.NoError(err)
-	err = a.AddReference(ref2)
+	a.References = append(a.References, ref1)
+	a.References = append(a.References, ref2)
+
+	refs, err := a.ResolvedReferences()
 	s.NoError(err)
 
-	storage, err := a.AllReferences()
-	s.NoError(err)
-
-	head, err := storage.Reference(plumbing.HEAD)
-	s.NoError(err)
+	head := refByName(refs, plumbing.HEAD)
+	s.NotNil(head)
 	s.Equal(ref2.Hash().String(), head.Hash().String())
 }
 
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoRef() {
-	a := NewAdvRefs()
+	a := &AdvRefs{}
 	headHash := plumbing.NewHash("0000000000000000000000000000000000000000")
-	a.Head = &headHash
+	a.References = append(a.References, plumbing.NewHashReference(plumbing.HEAD, headHash))
 	ref := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
+	a.References = append(a.References, ref)
 
-	err := a.AddReference(ref)
+	refs, err := a.ResolvedReferences()
 	s.NoError(err)
 
-	_, err = a.AllReferences()
-	s.NotNil(err)
+	head := refByName(refs, plumbing.HEAD)
+	s.NotNil(head)
+	s.Equal(plumbing.HashReference, head.Type())
 }
 
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToNoMasterAlphabeticallyOrdered() {
-	a := NewAdvRefs()
+	a := &AdvRefs{}
 	headHash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
-	a.Head = &headHash
+	a.References = append(a.References, plumbing.NewHashReference(plumbing.HEAD, headHash))
 	ref1 := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("0000000000000000000000000000000000000000"))
 	ref2 := plumbing.NewHashReference("aaaaaaaaaaaaaaa", plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
 	ref3 := plumbing.NewHashReference("bbbbbbbbbbbbbbb", plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c"))
 
-	err := a.AddReference(ref1)
-	s.NoError(err)
-	err = a.AddReference(ref3)
-	s.NoError(err)
-	err = a.AddReference(ref2)
+	a.References = append(a.References, ref1)
+	a.References = append(a.References, ref3)
+	a.References = append(a.References, ref2)
+
+	refs, err := a.ResolvedReferences()
 	s.NoError(err)
 
-	storage, err := a.AllReferences()
-	s.NoError(err)
-
-	head, err := storage.Reference(plumbing.HEAD)
-	s.NoError(err)
-	s.Equal(ref2.Name(), head.Target())
+	head := refByName(refs, plumbing.HEAD)
+	s.NotNil(head)
+	s.Equal(plumbing.SymbolicReference, head.Type())
 }
 
 type AdvRefsDecodeEncodeSuite struct {
@@ -214,7 +181,7 @@ func (s *AdvRefsDecodeEncodeSuite) test(in, exp []string, isEmpty bool) {
 			s.NoError(smart.Decode(input))
 		}
 
-		ar := NewAdvRefs()
+		ar := &AdvRefs{}
 		s.NoError(ar.Decode(input))
 		s.Equal(isEmpty, ar.IsEmpty())
 

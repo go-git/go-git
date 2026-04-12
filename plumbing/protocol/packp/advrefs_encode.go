@@ -21,12 +21,12 @@ func (a *AdvRefs) Encode(w io.Writer) error {
 }
 
 type advRefsEncoder struct {
-	data         *AdvRefs      // data to encode
-	w            io.Writer     // where to write the encoded data
-	firstRefName string        // reference name to encode in the first pkt-line (HEAD if present)
-	firstRefHash plumbing.Hash // hash referenced to encode in the first pkt-line (HEAD if present)
-	sortedRefs   []string      // hash references to encode ordered by increasing order
-	err          error         // sticky error
+	data         *AdvRefs              // data to encode
+	w            io.Writer             // where to write the encoded data
+	firstRefName string                // reference name to encode in the first pkt-line (HEAD if present)
+	firstRefHash plumbing.Hash         // hash referenced to encode in the first pkt-line (HEAD if present)
+	sortedRefs   []*plumbing.Reference // sorted non-HEAD, non-peeled references
+	err          error                 // sticky error
 }
 
 func newAdvRefsEncoder(w io.Writer) *advRefsEncoder {
@@ -47,35 +47,36 @@ func (e *advRefsEncoder) Encode(v *AdvRefs) error {
 	return e.err
 }
 
-// sortRefs returns a sorted slice of reference names by name.
-func sortRefs(refs map[string]plumbing.Hash) []string {
-	if len(refs) > 0 {
-		sortedRefs := make([]string, 0, len(refs))
-		for refName := range refs {
-			sortedRefs = append(sortedRefs, refName)
+// sortedNonPeeledRefs returns non-peeled, non-HEAD references sorted by name.
+func sortedNonPeeledRefs(refs []*plumbing.Reference) []*plumbing.Reference {
+	var out []*plumbing.Reference
+	for _, ref := range refs {
+		if plumbing.IsPeeled(ref) {
+			continue
 		}
-
-		sort.Strings(sortedRefs)
-		return sortedRefs
+		out = append(out, ref)
 	}
-	return nil
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name() < out[j].Name()
+	})
+	return out
 }
 
 func (e *advRefsEncoder) sortRefs() {
-	e.sortedRefs = sortRefs(e.data.References)
+	e.sortedRefs = sortedNonPeeledRefs(e.data.References)
 }
 
 func (e *advRefsEncoder) setFirstRef() {
-	if e.data.Head != nil {
-		e.firstRefName = head
-		e.firstRefHash = *e.data.Head
+	if headRef, err := e.data.Head(); err == nil {
+		e.firstRefName = headRef.Name().String()
+		e.firstRefHash = headRef.Hash()
 		return
 	}
 
 	if len(e.sortedRefs) > 0 {
 		refName := e.sortedRefs[0]
-		e.firstRefName = refName
-		e.firstRefHash = e.data.References[refName]
+		e.firstRefName = refName.Name().String()
+		e.firstRefHash = refName.Hash()
 	}
 }
 
@@ -104,29 +105,28 @@ func encodeFirstLine(e *advRefsEncoder) encoderStateFn {
 	return encodeRefs
 }
 
-func formatCaps(c *capability.List) string {
-	if c == nil {
-		return ""
-	}
-
+func formatCaps(c capability.List) string {
 	return c.String()
 }
 
 // Adds the (sorted) refs: hash SP refname EOL
 // and their peeled refs if any.
 func encodeRefs(e *advRefsEncoder) encoderStateFn {
-	for _, r := range e.sortedRefs {
-		if r == e.firstRefName {
+	// Build a map for fast peeled lookup by base name.
+	peeled := plumbing.PeeledToMap(e.data.References)
+
+	for _, ref := range e.sortedRefs {
+		if ref.Name().String() == e.firstRefName {
 			continue
 		}
 
-		hash := e.data.References[r]
-		if _, e.err = pktline.Writef(e.w, "%s %s\n", hash.String(), r); e.err != nil {
+		name := ref.Name().String()
+		if _, e.err = pktline.Writef(e.w, "%s %s\n", ref.Hash().String(), name); e.err != nil {
 			return nil
 		}
 
-		if hash, ok := e.data.Peeled[r]; ok {
-			if _, e.err = pktline.Writef(e.w, "%s %s^{}\n", hash.String(), r); e.err != nil {
+		if hash, ok := peeled[name]; ok {
+			if _, e.err = pktline.Writef(e.w, "%s %s^{}\n", hash.String(), name); e.err != nil {
 				return nil
 			}
 		}
