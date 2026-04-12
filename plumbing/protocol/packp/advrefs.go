@@ -10,12 +10,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
-// isPeeled returns true if the reference name has the ^{} suffix,
-// indicating it is a peeled (dereferenced) tag.
-func isPeeled(ref *plumbing.Reference) bool {
-	return strings.HasSuffix(ref.Name().String(), "^{}")
-}
-
 // AdvRefs values represent the information transmitted on an
 // advertised-refs message. The zero value is safe to use; References
 // and Shallows can be populated via append.
@@ -152,7 +146,7 @@ func (a *AdvRefs) resolvedHeadFromHeuristic(head *plumbing.Reference) *plumbing.
 
 	candidates := make([]*plumbing.Reference, 0, len(a.References))
 	for _, ref := range a.References {
-		if ref.Name() == plumbing.HEAD || isPeeled(ref) {
+		if ref.Name() == plumbing.HEAD || ref.Name().IsPeeled() {
 			continue
 		}
 		if ref.Type() == plumbing.HashReference && ref.Hash() == headHash {

@@ -114,6 +114,12 @@ func (r ReferenceName) IsTag() bool {
 	return strings.HasPrefix(string(r), refTagPrefix)
 }
 
+// IsPeeled returns true if the reference name ends with "^{}", indicating
+// it is a peeled (dereferenced) tag. This is used in the Git protocol.
+func (r ReferenceName) IsPeeled() bool {
+	return strings.HasSuffix(string(r), "^{}")
+}
+
 func (r ReferenceName) String() string {
 	return string(r)
 }
