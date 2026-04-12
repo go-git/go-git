@@ -20,11 +20,12 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 }
 
 type ulReqDecoder struct {
-	r     io.Reader      // a pkt-line scanner from the input stream
-	line  []byte         // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine int            // current pkt-line number for debugging, begins at 1
-	err   error          // sticky error, use the parser.error() method to fill this out
-	data  *UploadRequest // parsed data is stored here
+	r             io.Reader      // a pkt-line scanner from the input stream
+	line          []byte         // current pkt-line contents, use parser.nextLine() to make it advance
+	nLine         int            // current pkt-line number for debugging, begins at 1
+	err           error          // sticky error, use the parser.error() method to fill this out
+	data          *UploadRequest // parsed data is stored here
+	deepenRevList bool           // set when deepen-since or deepen-not is seen; used for validation
 }
 
 func newUlReqDecoder(r io.Reader) *ulReqDecoder {
@@ -203,6 +204,13 @@ func (d *ulReqDecoder) decodeDeepen() stateFn {
 }
 
 func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
+	// Validate: deepen <n> cannot be combined with deepen-since or deepen-not
+	// This matches canonical git's validation in upload-pack.c
+	if d.deepenRevList {
+		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil
+	}
+
 	d.line = bytes.TrimPrefix(d.line, deepenCommits)
 
 	var n int
@@ -219,6 +227,13 @@ func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 }
 
 func (d *ulReqDecoder) decodeDeepenSince() stateFn {
+	// Validate: deepen-since cannot be combined with deepen <n>
+	// This matches canonical git's validation in upload-pack.c
+	if d.data.Depth.Commits > 0 {
+		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil
+	}
+
 	d.line = bytes.TrimPrefix(d.line, deepenSince)
 
 	var secs int64
@@ -227,15 +242,24 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 		return nil
 	}
 	t := time.Unix(secs, 0).UTC()
-	d.data.Depth = DepthRequest{Since: t}
+	d.data.Depth.Since = t
+	d.deepenRevList = true
 
 	return d.decodeFlush
 }
 
 func (d *ulReqDecoder) decodeDeepenReference() stateFn {
+	// Validate: deepen-not cannot be combined with deepen <n>
+	// This matches canonical git's validation in upload-pack.c
+	if d.data.Depth.Commits > 0 {
+		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil
+	}
+
 	d.line = bytes.TrimPrefix(d.line, deepenReference)
 
-	d.data.Depth = DepthRequest{NotRefs: []string{string(d.line)}}
+	d.data.Depth.NotRefs = append(d.data.Depth.NotRefs, string(d.line))
+	d.deepenRevList = true
 
 	return d.decodeFlush
 }
@@ -245,9 +269,23 @@ func (d *ulReqDecoder) decodeFlush() stateFn {
 		return nil
 	}
 
-	if len(d.line) != 0 {
-		d.err = fmt.Errorf("unexpected payload while expecting a flush-pkt: %q", d.line)
+	if len(d.line) == 0 {
+		return nil
 	}
 
+	// Validate: deepen-since/deepen-not cannot follow deepen <n>
+	// This catches cases where deepen <n> is followed by another depth line
+	if d.data.Depth.Commits > 0 && (bytes.HasPrefix(d.line, deepenSince) || bytes.HasPrefix(d.line, deepenReference)) {
+		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil
+	}
+
+	// Validate: deepen <n> cannot follow deepen-since/deepen-not
+	if d.deepenRevList && bytes.HasPrefix(d.line, deepen) && !bytes.HasPrefix(d.line, deepenSince) && !bytes.HasPrefix(d.line, deepenReference) {
+		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil
+	}
+
+	d.err = fmt.Errorf("unexpected payload while expecting a flush-pkt: %q", d.line)
 	return nil
 }

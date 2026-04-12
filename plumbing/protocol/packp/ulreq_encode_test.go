@@ -280,6 +280,28 @@ func (s *UlReqEncodeSuite) TestDepthReference() {
 	testUlReqEncode(s, ur, expected)
 }
 
+func (s *UlReqEncodeSuite) TestDepthCommitsWithSinceError() {
+	ur := &UploadRequest{}
+	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	ur.Depth = DepthRequest{
+		Commits: 10,
+		Since:   time.Now(),
+	}
+
+	testUlReqEncodeError(s, ur, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqEncodeSuite) TestDepthCommitsWithNotRefsError() {
+	ur := &UploadRequest{}
+	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	ur.Depth = DepthRequest{
+		Commits: 10,
+		NotRefs: []string{"refs/heads/feature"},
+	}
+
+	testUlReqEncodeError(s, ur, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
 func (s *UlReqEncodeSuite) TestFilter() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))

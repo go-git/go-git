@@ -510,6 +510,50 @@ func (s *UlReqDecodeSuite) TestDeepenReference() {
 	s.Equal(DepthRequest{NotRefs: []string{expected}}, ur.Depth)
 }
 
+func (s *UlReqDecodeSuite) TestDeepenCommitsWithSinceError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen 10",
+		"deepen-since 1420167845",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqDecodeSuite) TestDeepenCommitsWithNotRefsError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen 10",
+		"deepen-not refs/heads/master",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqDecodeSuite) TestDeepenSinceWithCommitsError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen-since 1420167845",
+		"deepen 10",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqDecodeSuite) TestDeepenNotWithCommitsError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen-not refs/heads/master",
+		"deepen 10",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
 func (s *UlReqDecodeSuite) TestAll() {
 	payloads := []string{
 		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack\n",
