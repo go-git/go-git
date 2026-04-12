@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"path"
 	"strings"
 	"time"
@@ -302,6 +303,24 @@ func resolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, 
 	return plumbing.ZeroHash, fmt.Errorf("cannot resolve %q", name)
 }
 
+// defaultUmask is the default tar umask (002).
+const defaultUmask = 0o002
+
+// applyUmask applies umask to the given mode for regular files.
+// Returns mode with all permission bits set, then applies umask.
+func applyUmask(mode int64, isExecutable bool) int64 {
+	if isExecutable {
+		return (mode | 0o777) &^ defaultUmask
+	}
+	return (mode | 0o666) &^ defaultUmask
+}
+
+// applyUmaskDir applies umask to directories.
+// Directories always get full permissions minus umask.
+func applyUmaskDir(mode int64) int64 {
+	return (mode | 0o777) &^ defaultUmask
+}
+
 func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix string, pathFilter []string, modTime time.Time) error {
 	tw := tar.NewWriter(w)
 
@@ -309,7 +328,7 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 		_ = tw.WriteHeader(&tar.Header{
 			Typeflag: tar.TypeDir,
 			Name:     prefix,
-			Mode:     0o755,
+			Mode:     applyUmaskDir(0),
 			ModTime:  modTime,
 		})
 	}
@@ -332,11 +351,14 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 
 		fullName := prefix + name
 
+		// Extract Unix permission bits from git mode.
+		unixMode := int64(entry.Mode) & 0o777
+
 		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
 			_ = tw.WriteHeader(&tar.Header{
 				Typeflag: tar.TypeDir,
 				Name:     fullName + "/",
-				Mode:     0o755,
+				Mode:     applyUmaskDir(unixMode),
 				ModTime:  modTime,
 			})
 			continue
@@ -350,7 +372,7 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 		hdr := &tar.Header{
 			Name:    fullName,
 			Size:    blob.Size,
-			Mode:    int64(entry.Mode),
+			Mode:    unixMode,
 			ModTime: modTime,
 		}
 
@@ -367,15 +389,16 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 			hdr.Typeflag = tar.TypeSymlink
 			hdr.Linkname = string(target)
 			hdr.Size = 0
-			return tw.WriteHeader(hdr)
+			// Symlinks always get 0777 per canonical git.
+			hdr.Mode = 0o777
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			continue
 		}
 
-		switch entry.Mode {
-		case filemode.Executable:
-			hdr.Mode = 0o755
-		default:
-			hdr.Mode = 0o644
-		}
+		isExec := entry.Mode == filemode.Executable
+		hdr.Mode = applyUmask(unixMode, isExec)
 
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
@@ -424,6 +447,9 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 			return err
 		}
 
+		// Extract Unix permission bits from git mode and apply default umask.
+		unixMode := int64(entry.Mode) & 0o777
+
 		fh := &zip.FileHeader{
 			Name:     fullName,
 			Method:   zip.Deflate,
@@ -431,11 +457,12 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 		}
 		switch entry.Mode {
 		case filemode.Executable:
-			fh.SetMode(0o755)
+			fh.SetMode(fs.FileMode(applyUmask(unixMode, true)))
 		case filemode.Symlink:
-			fh.SetMode(0o120000)
+			// Zip stores symlinks with mode 0o120000 + permissions.
+			fh.SetMode(fs.FileMode(0o120000 | (applyUmask(unixMode, true) & 0o777)))
 		default:
-			fh.SetMode(0o644)
+			fh.SetMode(fs.FileMode(applyUmask(unixMode, false)))
 		}
 
 		fw, err := zw.CreateHeader(fh)
