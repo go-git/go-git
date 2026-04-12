@@ -101,6 +101,7 @@ func (m *FileMapping) load() error {
 		}
 		entries = nil
 	}
+	sortMapEntries(entries)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !isMapFile(entry.Name()) {
@@ -686,6 +687,24 @@ func removeExistingMapFilesExcept(fs billy.Filesystem, dir, keepPath string) err
 
 func isMapFile(name string) bool {
 	return strings.HasPrefix(name, mapFilePrefix) && strings.HasSuffix(name, mapFileExt)
+}
+
+func isSnapshotMapFile(name string) bool {
+	return strings.HasPrefix(name, mapSnapshotPrefix) && strings.HasSuffix(name, mapFileExt)
+}
+
+func sortMapEntries(entries []os.DirEntry) {
+	slices.SortFunc(entries, func(a, b os.DirEntry) int {
+		aSnapshot := isSnapshotMapFile(a.Name())
+		bSnapshot := isSnapshotMapFile(b.Name())
+		if aSnapshot != bSnapshot {
+			if aSnapshot {
+				return 1
+			}
+			return -1
+		}
+		return strings.Compare(a.Name(), b.Name())
+	})
 }
 
 func removeLegacyTextIndex(fs billy.Filesystem, path string) error {
