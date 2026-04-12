@@ -16,12 +16,12 @@ func TestSuiteCapabilities(t *testing.T) {
 }
 
 func (s *SuiteCapabilities) TestIsEmpty() {
-	caps := NewList()
+	caps := &List{}
 	s.True(caps.IsEmpty())
 }
 
 func (s *SuiteCapabilities) TestDecode() {
-	caps := NewList()
+	caps := &List{}
 	// symref=foo symref=qux thin-pack
 	caps.Add("symref", "foo", "qux")
 	caps.Add("thin-pack")
@@ -32,7 +32,7 @@ func (s *SuiteCapabilities) TestDecode() {
 }
 
 func (s *SuiteCapabilities) TestDecodeWithLeadingSpace() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add("report-status")
 
 	s.Len(caps.m, 1)
@@ -40,12 +40,12 @@ func (s *SuiteCapabilities) TestDecodeWithLeadingSpace() {
 }
 
 func (s *SuiteCapabilities) TestDecodeEmpty() {
-	caps := NewList()
-	s.Equal(NewList(), caps)
+	caps := &List{}
+	s.Equal(&List{}, caps)
 }
 
 func (s *SuiteCapabilities) TestDecodeWithEqual() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add("agent", "foo=bar")
 
 	s.Len(caps.m, 1)
@@ -53,13 +53,13 @@ func (s *SuiteCapabilities) TestDecodeWithEqual() {
 }
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapability() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add("foo")
 	s.True(caps.Supports("foo"))
 }
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithArgument() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add("oldref", "HEAD:refs/heads/v2")
 	caps.Add("thin-pack")
 
@@ -69,7 +69,7 @@ func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithArgument() {
 }
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithMultipleArgument() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add("foo", "HEAD:refs/heads/v2", "HEAD:refs/heads/v1")
 	caps.Add("thin-pack")
 
@@ -79,7 +79,7 @@ func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithMultipleArgument(
 }
 
 func (s *SuiteCapabilities) TestString() {
-	caps := NewList()
+	caps := &List{}
 	caps.Set(Agent, "bar")
 	caps.Set(SymRef, "foo:qux")
 	caps.Set(ThinPack)
@@ -88,7 +88,7 @@ func (s *SuiteCapabilities) TestString() {
 }
 
 func (s *SuiteCapabilities) TestStringSort() {
-	caps := NewList()
+	caps := &List{}
 	caps.Set(Agent, "bar")
 	caps.Set(SymRef, "foo:qux")
 	caps.Set(ThinPack)
@@ -97,7 +97,7 @@ func (s *SuiteCapabilities) TestStringSort() {
 }
 
 func (s *SuiteCapabilities) TestSet() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add(SymRef, "foo", "qux")
 	caps.Set(SymRef, "bar")
 
@@ -106,14 +106,14 @@ func (s *SuiteCapabilities) TestSet() {
 }
 
 func (s *SuiteCapabilities) TestSetEmpty() {
-	caps := NewList()
+	caps := &List{}
 	caps.Set(Agent, "bar")
 
 	s.Len(caps.Get(Agent), 1)
 }
 
 func (s *SuiteCapabilities) TestSetDuplicate() {
-	caps := NewList()
+	caps := &List{}
 	caps.Set(Agent, "baz")
 	caps.Set(Agent, "bar")
 
@@ -121,12 +121,12 @@ func (s *SuiteCapabilities) TestSetDuplicate() {
 }
 
 func (s *SuiteCapabilities) TestGetEmpty() {
-	caps := NewList()
+	caps := &List{}
 	s.Len(caps.Get(Agent), 0)
 }
 
 func (s *SuiteCapabilities) TestDelete() {
-	caps := NewList()
+	caps := &List{}
 	caps.Delete(SymRef)
 
 	caps.Add(Sideband)
@@ -139,7 +139,7 @@ func (s *SuiteCapabilities) TestDelete() {
 }
 
 func (s *SuiteCapabilities) TestAdd() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add(SymRef, "foo", "qux")
 	caps.Add(ThinPack)
 
@@ -147,14 +147,14 @@ func (s *SuiteCapabilities) TestAdd() {
 }
 
 func (s *SuiteCapabilities) TestAddUnknownCapability() {
-	caps := NewList()
+	caps := &List{}
 	caps.Add("foo")
 	s.True(caps.Supports("foo"))
 }
 
 func (s *SuiteCapabilities) TestAll() {
-	caps := NewList()
-	s.Nil(NewList().All())
+	caps := &List{}
+	s.Nil((&List{}).All())
 
 	caps.Add(Agent, "foo")
 	s.Equal([]string{Agent}, caps.All())

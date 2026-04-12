@@ -33,7 +33,7 @@ type AdvRefs struct {
 // NewAdvRefs returns a pointer to a new AdvRefs value, ready to be used.
 func NewAdvRefs() *AdvRefs {
 	return &AdvRefs{
-		Capabilities: capability.NewList(),
+		Capabilities: &capability.List{},
 		References:   make(map[string]plumbing.Hash),
 		Peeled:       make(map[string]plumbing.Hash),
 		Shallows:     []plumbing.Hash{},

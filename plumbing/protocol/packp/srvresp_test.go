@@ -131,7 +131,7 @@ func (s *ServerResponseSuite) TestEncodeEmpty() {
 		}
 		close(haves)
 	}()
-	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capability.NewList()}}}
+	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: &capability.List{}}}}
 	b := bytes.NewBuffer(nil)
 	err := sr.Encode(b)
 	s.NoError(err)
@@ -151,7 +151,7 @@ func (s *ServerResponseSuite) TestEncodeSingleAck() {
 		}
 		close(haves)
 	}()
-	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capability.NewList()}}}
+	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: &capability.List{}}}}
 	b := bytes.NewBuffer(nil)
 	err := sr.Encode(b)
 	s.NoError(err)
@@ -172,7 +172,7 @@ func (s *ServerResponseSuite) TestEncodeSingleAckDone() {
 		}
 		close(haves)
 	}()
-	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capability.NewList()}}}
+	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: &capability.List{}}}}
 	b := bytes.NewBuffer(nil)
 	err := sr.Encode(b)
 	s.NoError(err)
@@ -196,7 +196,7 @@ func (s *ServerResponseSuite) TestEncodeMutiAck() {
 		}
 		close(haves)
 	}()
-	capabilities := capability.NewList()
+	capabilities := &capability.List{}
 	capabilities.Add(capability.MultiACK)
 	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capabilities}}}
 	b := bytes.NewBuffer(nil)
@@ -221,7 +221,7 @@ func (s *ServerResponseSuite) TestEncodeMutiAckOnlyOneNak() {
 		}
 		close(haves)
 	}()
-	capabilities := capability.NewList()
+	capabilities := &capability.List{}
 	capabilities.Add(capability.MultiACK)
 	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capabilities}}}
 	b := bytes.NewBuffer(nil)
@@ -250,7 +250,7 @@ func (s *ServerResponseSuite) TestEncodeMutiAckDetailed() {
 		}
 		close(haves)
 	}()
-	capabilities := capability.NewList()
+	capabilities := &capability.List{}
 	capabilities.Add(capability.MultiACKDetailed)
 	sr := &ServerResponse{req: &UploadPackRequest{UploadPackCommands: haves, UploadRequest: UploadRequest{Capabilities: capabilities}}}
 	b := bytes.NewBuffer(nil)
