@@ -37,27 +37,27 @@ func AdvertiseRefs(
 	ar := packp.NewAdvRefs()
 
 	// Set server default capabilities
-	_ = ar.Capabilities.Set(capability.Agent, capability.DefaultAgent())
-	_ = ar.Capabilities.Set(capability.OFSDelta)
-	_ = ar.Capabilities.Set(capability.Sideband64k)
+	ar.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+	ar.Capabilities.Set(capability.OFSDelta)
+	ar.Capabilities.Set(capability.Sideband64k)
 	if forPush {
 		// TODO: support thin-pack
-		_ = ar.Capabilities.Set(capability.NoThin)
+		ar.Capabilities.Set(capability.NoThin)
 		// TODO: support atomic
-		_ = ar.Capabilities.Set(capability.DeleteRefs)
-		_ = ar.Capabilities.Set(capability.ReportStatus)
-		_ = ar.Capabilities.Set(capability.PushOptions)
-		_ = ar.Capabilities.Set(capability.Quiet)
+		ar.Capabilities.Set(capability.DeleteRefs)
+		ar.Capabilities.Set(capability.ReportStatus)
+		ar.Capabilities.Set(capability.PushOptions)
+		ar.Capabilities.Set(capability.Quiet)
 	} else {
 		// TODO: support include-tag
 		// TODO: support deepen
 		// TODO: support deepen-since
-		_ = ar.Capabilities.Set(capability.MultiACK)
-		_ = ar.Capabilities.Set(capability.MultiACKDetailed)
-		_ = ar.Capabilities.Set(capability.Sideband)
-		_ = ar.Capabilities.Set(capability.NoProgress)
-		_ = ar.Capabilities.Set(capability.SymRef)
-		_ = ar.Capabilities.Set(capability.Shallow)
+		ar.Capabilities.Set(capability.MultiACK)
+		ar.Capabilities.Set(capability.MultiACKDetailed)
+		ar.Capabilities.Set(capability.Sideband)
+		ar.Capabilities.Set(capability.NoProgress)
+		ar.Capabilities.Set(capability.SymRef)
+		ar.Capabilities.Set(capability.Shallow)
 
 		cfg, err := st.Config()
 		var objectformat config.ObjectFormat
@@ -68,7 +68,7 @@ func AdvertiseRefs(
 		if objectformat == config.UnsetObjectFormat {
 			objectformat = config.DefaultObjectFormat
 		}
-		_ = ar.Capabilities.Set(capability.ObjectFormat, objectformat.String())
+		ar.Capabilities.Set(capability.ObjectFormat, objectformat.String())
 	}
 
 	// Set references
@@ -117,7 +117,7 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			// "HEAD:" with an empty target corrupts the capability list and
 			// causes the client to store an unresolvable HEAD symref.
 			if r.Type() == plumbing.SymbolicReference {
-				_ = ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+				ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
 			}
 			ar.Head = &hash
 		}
