@@ -258,5 +258,3 @@ func DefaultAgent() string {
 	}
 	return userAgent
 }
-
-
