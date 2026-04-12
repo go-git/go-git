@@ -105,6 +105,13 @@ func (e *ulReqEncoder) encodeShallows() stateFn {
 func (e *ulReqEncoder) encodeDepth() stateFn {
 	depth := e.data.Depth
 
+	// Validate: deepen <n> cannot be combined with deepen-since or deepen-not
+	// This matches canonical git's validation in upload-pack.c
+	if depth.Commits > 0 && (!depth.Since.IsZero() || len(depth.NotRefs) > 0) {
+		e.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil
+	}
+
 	if depth.Commits > 0 {
 		if _, err := pktline.Writef(e.w, "deepen %d\n", depth.Commits); err != nil {
 			e.err = fmt.Errorf("encoding depth %d: %s", depth.Commits, err)
