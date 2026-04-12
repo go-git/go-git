@@ -63,6 +63,26 @@ func TestPushExportStorerPropagatesMappingErrors(t *testing.T) {
 	assert.ErrorContains(t, err, "native lookup failed")
 }
 
+func TestPushExportStorerUsesBaseObjectWhenMappingIsMissing(t *testing.T) {
+	t.Parallel()
+
+	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
+	mapping := compat.NewMemoryMapping()
+	tr := compat.NewTranslator(compat.Formats{
+		Native: format.SHA256,
+		Compat: format.SHA1,
+	}, mapping)
+
+	blobObj := makeCompatEncodedObject(t, plumbing.BlobObject, []byte("unmapped blob\n"), format.SHA256)
+	_, err := base.ObjectStorage.SetEncodedObject(blobObj)
+	require.NoError(t, err)
+
+	exporter := compat.NewPushExportStorer(base, config.NewConfig(), tr)
+	exported, err := exporter.EncodedObject(plumbing.BlobObject, blobObj.Hash())
+	require.NoError(t, err)
+	assert.NotEqual(t, plumbing.ZeroHash, exported.Hash())
+}
+
 type failingNativeLookupMapping struct {
 	err error
 }

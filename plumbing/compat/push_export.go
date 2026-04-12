@@ -63,14 +63,21 @@ func (s *PushExportStorer) SetEncodedObject(plumbing.EncodedObject) (plumbing.Ha
 
 func (s *PushExportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	nativeHash := h
-	if _, err := s.tr.Mapping().NativeToCompat(h); err != nil {
+
+	if _, err := s.base.EncodedObject(plumbing.AnyObject, h); err != nil {
 		if !errors.Is(err, plumbing.ErrObjectNotFound) {
 			return nil, err
 		}
-		var resolveErr error
-		nativeHash, resolveErr = s.tr.Mapping().CompatToNative(h)
-		if resolveErr != nil {
-			return nil, resolveErr
+
+		if _, err := s.tr.Mapping().NativeToCompat(h); err != nil {
+			if !errors.Is(err, plumbing.ErrObjectNotFound) {
+				return nil, err
+			}
+			var resolveErr error
+			nativeHash, resolveErr = s.tr.Mapping().CompatToNative(h)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
 		}
 	}
 

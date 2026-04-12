@@ -40,7 +40,7 @@ func FetchPack(
 		reader = demuxer
 	}
 
-	tr, remoteFormat, compatFetch := CompatFetchTranslator(conn.Capabilities(), st)
+	tr, remoteFormat, compatFetch := CompatFetchTranslator(caps, st)
 	if compatFetch {
 		importer := compat.NewImportStorer(st, tr)
 		p := packfile.NewParser(reader,

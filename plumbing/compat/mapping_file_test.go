@@ -161,6 +161,37 @@ func TestFileMappingReadsLegacyAndObjectMapTogether(t *testing.T) {
 	assert.Equal(t, compat2, got2)
 }
 
+func TestFileMappingPrefersSnapshotFilesAfterSorting(t *testing.T) {
+	fs := memfs.New()
+	_ = fs.MkdirAll("objects/object-map", 0o755)
+
+	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	compatOld := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	compatNew := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+
+	olderData, err := encodeMapEntries([]mapPair{{native: native, compat: compatOld}})
+	require.NoError(t, err)
+	newerData, err := encodeMapEntries([]mapPair{{native: native, compat: compatNew}})
+	require.NoError(t, err)
+
+	writeMapFile := func(path string, data []byte) {
+		t.Helper()
+		f, err := fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		require.NoError(t, err)
+		_, err = f.Write(data)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+
+	writeMapFile("objects/object-map/map-aaaa.map", olderData)
+	writeMapFile("objects/object-map/map-zsnapshot-zzzz.map", newerData)
+
+	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
+	got, err := m.NativeToCompat(native)
+	require.NoError(t, err)
+	assert.Equal(t, compatNew, got)
+}
+
 func TestFileMappingCompact(t *testing.T) {
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
