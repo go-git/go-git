@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/compat"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
@@ -33,7 +34,8 @@ type Storage struct {
 	ReferenceStorage
 	ModuleStorage
 	ReflogStorage
-	options options
+	options    options
+	translator *compat.Translator
 }
 
 // NewStorage returns a new in memory Storage base.
@@ -66,6 +68,15 @@ func NewStorage(o ...StorageOption) *Storage {
 		cfg.Extensions.ObjectFormat = opts.objectFormat
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 		s.oh = plumbing.FromObjectFormat(opts.objectFormat)
+
+		if opts.compatObjectFormat != formatcfg.UnsetObjectFormat {
+			cfg.Extensions.CompatObjectFormat = opts.compatObjectFormat
+			m := compat.NewMemoryMapping()
+			s.translator = compat.NewTranslator(compat.Formats{
+				Native: opts.objectFormat,
+				Compat: opts.compatObjectFormat,
+			}, m)
+		}
 	} else {
 		s.oh = plumbing.FromObjectFormat(formatcfg.DefaultObjectFormat)
 	}
@@ -107,16 +118,81 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 // SupportsExtension checks whether the Storer supports the given
 // Git extension defined by name.
 func (s *Storage) SupportsExtension(name, value string) bool {
-	if name != "objectformat" {
-		return false
+	switch name {
+	case "objectformat":
+		switch value {
+		case "sha1", "sha256", "":
+			return true
+		}
+	case "compatobjectformat":
+		switch value {
+		case "sha1", "sha256":
+			return true
+		}
+	}
+	return false
+}
+
+// Translator returns the compat translator, or nil if compat is not enabled.
+func (s *Storage) Translator() *compat.Translator {
+	return s.translator
+}
+
+// HasEncodedObject returns nil if the object exists (by native or compat hash).
+func (s *Storage) HasEncodedObject(h plumbing.Hash) error {
+	err := s.ObjectStorage.HasEncodedObject(h)
+	if err == nil || s.translator == nil {
+		return err
 	}
 
-	switch value {
-	case "sha1", "sha256", "":
-		return true
-	default:
-		return false
+	// Try resolving via compat mapping.
+	native, cerr := s.translator.Mapping().CompatToNative(h)
+	if cerr != nil {
+		return err // return original error
 	}
+	return s.ObjectStorage.HasEncodedObject(native)
+}
+
+// EncodedObject returns the object by native or compat hash.
+func (s *Storage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := s.ObjectStorage.EncodedObject(t, h)
+	if err == nil || s.translator == nil {
+		return obj, err
+	}
+
+	// Try resolving via compat mapping.
+	native, cerr := s.translator.Mapping().CompatToNative(h)
+	if cerr != nil {
+		return nil, err // return original error
+	}
+	return s.ObjectStorage.EncodedObject(t, native)
+}
+
+// SetEncodedObject stores the object and, if compat is enabled,
+// computes and records its compat hash mapping.
+//
+// This operation is intentionally not atomic across object persistence and
+// compat mapping persistence: the object is stored first, then the mapping
+// is recorded. If compat translation fails after the object is stored, the
+// object remains present and a later reconciliation pass can populate the
+// missing mapping.
+func (s *Storage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	h, err := s.ObjectStorage.SetEncodedObject(obj)
+	if err != nil {
+		return h, err
+	}
+
+	if s.translator != nil {
+		if _, terr := s.translator.TranslateObject(obj); terr != nil {
+			if errors.Is(terr, plumbing.ErrObjectNotFound) {
+				trace.General.Printf("compat translation deferred for %s: %v", h, terr)
+			} else {
+				return h, terr
+			}
+		}
+	}
+
+	return h, nil
 }
 
 // ConfigStorage implements config.ConfigStorer for in-memory storage.

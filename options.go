@@ -813,6 +813,9 @@ type PlainOpenOptions struct {
 	// DetectDotGit defines whether parent directories should be
 	// walked until a .git directory or file is found.
 	DetectDotGit bool
+	// EnableCompatObjectMapWrite switches compatObjectFormat mapping writes from
+	// the legacy loose-object-idx format to objects/object-map/map-*.map.
+	EnableCompatObjectMapWrite bool
 }
 
 // Validate validates the fields and sets the default values.

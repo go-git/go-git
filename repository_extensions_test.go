@@ -15,9 +15,10 @@ func TestVerifyExtensions(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		setup   func(*testing.T, *config.Config)
-		wantErr string
+		name          string
+		setup         func(*testing.T, *config.Config)
+		wantSetConfig string
+		wantOpenErr   string
 	}{
 		{
 			name: "repositoryformatversion=0: invalid extension",
@@ -26,7 +27,7 @@ func TestVerifyExtensions(t *testing.T) {
 				cfg.Raw.Section("extensions").SetOption("unknown", "foo")
 				cfg.Raw.Section("extensions").SetOption("objectformat", "sha1")
 			},
-			wantErr: "repositoryformatversion does not support extension: unknown, objectformat",
+			wantSetConfig: "config extensions require core.repositoryformatversion = 1",
 		},
 		{
 			name: "repositoryformatversion=0: allows supported noop",
@@ -47,7 +48,7 @@ func TestVerifyExtensions(t *testing.T) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 				cfg.Raw.Section("extensions").SetOption("unknownext", "true")
 			},
-			wantErr: "unknown extension: unknownext",
+			wantOpenErr: "unknown extension: unknownext",
 		},
 		{
 			name: "repositoryformatversion=1: allows known extension",
@@ -80,12 +81,18 @@ func TestVerifyExtensions(t *testing.T) {
 			require.NoError(t, err)
 
 			tt.setup(t, cfg)
-			require.NoError(t, st.SetConfig(cfg))
+			err = st.SetConfig(cfg)
+			if tt.wantSetConfig != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantSetConfig)
+				return
+			}
+			require.NoError(t, err)
 
 			r, err = Open(st, nil)
-			if tt.wantErr != "" {
+			if tt.wantOpenErr != "" {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Contains(t, err.Error(), tt.wantOpenErr)
 				assert.Nil(t, r)
 			} else {
 				require.NoError(t, err)
