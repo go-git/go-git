@@ -26,7 +26,7 @@ func TestUlReqDecodeSuite(t *testing.T) {
 }
 
 func (s *UlReqDecodeSuite) TestEmpty() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	var buf bytes.Buffer
 	d := newUlReqDecoder(&buf)
 
@@ -44,7 +44,7 @@ func (s *UlReqDecodeSuite) TestNoWant() {
 }
 
 func (s *UlReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	d := newUlReqDecoder(input)
 
 	err := d.Decode(ur)
@@ -83,7 +83,7 @@ func (s *UlReqDecodeSuite) testDecodeOK(payloads []string, expectedHaveCalls int
 		}
 	}
 
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	d := newUlReqDecoder(&buf)
 
 	s.Nil(d.Decode(ur))

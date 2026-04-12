@@ -30,7 +30,7 @@ func NegotiatePack(
 	reader = ioutil.NewContextReader(ctx, reader)
 	writer = ioutil.NewContextWriteCloser(ctx, writer)
 
-	upreq := packp.NewUploadRequest()
+	upreq := &packp.UploadRequest{}
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
 	if multiAckDetailed {

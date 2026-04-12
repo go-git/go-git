@@ -93,7 +93,7 @@ func SendPack(
 		}
 	}
 
-	report := packp.NewReportStatus()
+	report := &packp.ReportStatus{}
 	if err := report.Decode(r); err != nil {
 		return fmt.Errorf("decode report-status: %w", err)
 	}
@@ -122,7 +122,7 @@ func SendPack(
 }
 
 func buildUpdateRequests(caps capability.List, req *PushRequest) *packp.UpdateRequests {
-	upreq := packp.NewUpdateRequests()
+	upreq := &packp.UpdateRequests{}
 
 	if caps.Supports(capability.ReportStatus) {
 		upreq.Capabilities.Set(capability.ReportStatus)

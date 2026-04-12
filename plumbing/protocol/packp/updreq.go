@@ -14,20 +14,13 @@ var (
 )
 
 // UpdateRequests values represent reference upload requests.
-// Values from this type are not zero-value safe, use the New function instead.
+// The zero value is safe to use; Commands and Shallows can be populated
+// via append.
 type UpdateRequests struct {
 	Capabilities capability.List
 	Commands     []*Command
 	Shallows     []plumbing.Hash
 	// TODO: Support push-cert
-}
-
-// NewUpdateRequests returns a new UpdateRequests.
-func NewUpdateRequests() *UpdateRequests {
-	// TODO: Add support for push-cert
-	return &UpdateRequests{
-		Shallows: []plumbing.Hash{},
-	}
 }
 
 func (req *UpdateRequests) validate() error {
