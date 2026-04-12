@@ -45,7 +45,7 @@ func (a *AdvRefs) AddReference(r *plumbing.Reference) error {
 	switch r.Type() {
 	case plumbing.SymbolicReference:
 		v := fmt.Sprintf("%s:%s", r.Name().String(), r.Target().String())
-		return a.Capabilities.Add(capability.SymRef, v)
+		a.Capabilities.Add(capability.SymRef, v)
 	case plumbing.HashReference:
 		a.References[r.Name().String()] = r.Hash()
 	default:

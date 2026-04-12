@@ -7,11 +7,7 @@ import (
 )
 
 // Capability describes a server or client capability.
-type Capability string
-
-func (n Capability) String() string {
-	return string(n)
-}
+type Capability = string
 
 const (
 	// MultiACK capability allows the server to return "ACK obj-id continue" as
@@ -263,20 +259,4 @@ func DefaultAgent() string {
 	return userAgent
 }
 
-var known = map[Capability]bool{
-	MultiACK: true, MultiACKDetailed: true, NoDone: true, ThinPack: true,
-	Sideband: true, Sideband64k: true, OFSDelta: true, Agent: true,
-	Shallow: true, DeepenSince: true, DeepenNot: true, DeepenRelative: true,
-	NoProgress: true, IncludeTag: true, ReportStatus: true, DeleteRefs: true,
-	Quiet: true, Atomic: true, PushOptions: true, AllowTipSHA1InWant: true,
-	AllowReachableSHA1InWant: true, PushCert: true, SymRef: true,
-	ObjectFormat: true, Filter: true,
-}
 
-var requiresArgument = map[Capability]bool{
-	Agent: true, PushCert: true, SymRef: true, ObjectFormat: true,
-}
-
-var multipleArgument = map[Capability]bool{
-	SymRef: true,
-}

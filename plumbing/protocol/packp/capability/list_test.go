@@ -46,12 +46,6 @@ func (s *SuiteCapabilities) TestDecodeEmpty() {
 	s.Equal(NewList(), caps)
 }
 
-func (s *SuiteCapabilities) TestDecodeWithErrArguments() {
-	caps := NewList()
-	err := caps.Decode([]byte("thin-pack=foo"))
-	s.ErrorIs(err, ErrArguments)
-}
-
 func (s *SuiteCapabilities) TestDecodeWithEqual() {
 	caps := NewList()
 	err := caps.Decode([]byte("agent=foo=bar"))
@@ -65,7 +59,7 @@ func (s *SuiteCapabilities) TestDecodeWithUnknownCapability() {
 	caps := NewList()
 	err := caps.Decode([]byte("foo"))
 	s.NoError(err)
-	s.True(caps.Supports(Capability("foo")))
+	s.True(caps.Supports("foo"))
 }
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithArgument() {
@@ -108,10 +102,8 @@ func (s *SuiteCapabilities) TestStringSort() {
 
 func (s *SuiteCapabilities) TestSet() {
 	caps := NewList()
-	err := caps.Add(SymRef, "foo", "qux")
-	s.NoError(err)
-	err = caps.Set(SymRef, "bar")
-	s.NoError(err)
+	caps.Add(SymRef, "foo", "qux")
+	caps.Set(SymRef, "bar")
 
 	s.Len(caps.m, 1)
 	s.Equal([]string{"bar"}, caps.Get(SymRef))
@@ -119,19 +111,15 @@ func (s *SuiteCapabilities) TestSet() {
 
 func (s *SuiteCapabilities) TestSetEmpty() {
 	caps := NewList()
-	err := caps.Set(Agent, "bar")
-	s.NoError(err)
+	caps.Set(Agent, "bar")
 
 	s.Len(caps.Get(Agent), 1)
 }
 
 func (s *SuiteCapabilities) TestSetDuplicate() {
 	caps := NewList()
-	err := caps.Set(Agent, "baz")
-	s.NoError(err)
-
-	err = caps.Set(Agent, "bar")
-	s.NoError(err)
+	caps.Set(Agent, "baz")
+	caps.Set(Agent, "bar")
 
 	s.Equal("agent=bar", caps.String())
 }
@@ -145,12 +133,9 @@ func (s *SuiteCapabilities) TestDelete() {
 	caps := NewList()
 	caps.Delete(SymRef)
 
-	err := caps.Add(Sideband)
-	s.NoError(err)
-	err = caps.Set(SymRef, "bar")
-	s.NoError(err)
-	err = caps.Set(Sideband64k)
-	s.NoError(err)
+	caps.Add(Sideband)
+	caps.Set(SymRef, "bar")
+	caps.Set(Sideband64k)
 
 	caps.Delete(SymRef)
 
@@ -159,53 +144,16 @@ func (s *SuiteCapabilities) TestDelete() {
 
 func (s *SuiteCapabilities) TestAdd() {
 	caps := NewList()
-	err := caps.Add(SymRef, "foo", "qux")
-	s.NoError(err)
-
-	err = caps.Add(ThinPack)
-	s.NoError(err)
+	caps.Add(SymRef, "foo", "qux")
+	caps.Add(ThinPack)
 
 	s.Equal("symref=foo symref=qux thin-pack", caps.String())
 }
 
 func (s *SuiteCapabilities) TestAddUnknownCapability() {
 	caps := NewList()
-	err := caps.Add(Capability("foo"))
-	s.NoError(err)
-	s.True(caps.Supports(Capability("foo")))
-}
-
-func (s *SuiteCapabilities) TestAddErrArgumentsRequired() {
-	caps := NewList()
-	err := caps.Add(SymRef)
-	s.ErrorIs(err, ErrArgumentsRequired)
-}
-
-func (s *SuiteCapabilities) TestAddErrArgumentsNotAllowed() {
-	caps := NewList()
-	err := caps.Add(OFSDelta, "foo")
-	s.ErrorIs(err, ErrArguments)
-}
-
-func (s *SuiteCapabilities) TestAddErrArguments() {
-	caps := NewList()
-	err := caps.Add(SymRef, "")
-	s.ErrorIs(err, ErrEmptyArgument)
-}
-
-func (s *SuiteCapabilities) TestAddErrMultipleArguments() {
-	caps := NewList()
-	err := caps.Add(Agent, "foo")
-	s.NoError(err)
-
-	err = caps.Add(Agent, "bar")
-	s.ErrorIs(err, ErrMultipleArguments)
-}
-
-func (s *SuiteCapabilities) TestAddErrMultipleArgumentsAtTheSameTime() {
-	caps := NewList()
-	err := caps.Add(Agent, "foo", "bar")
-	s.ErrorIs(err, ErrMultipleArguments)
+	caps.Add("foo")
+	s.True(caps.Supports("foo"))
 }
 
 func (s *SuiteCapabilities) TestAll() {
@@ -213,10 +161,10 @@ func (s *SuiteCapabilities) TestAll() {
 	s.Nil(NewList().All())
 
 	caps.Add(Agent, "foo")
-	s.Equal([]Capability{Agent}, caps.All())
+	s.Equal([]string{Agent}, caps.All())
 
 	caps.Add(OFSDelta)
-	s.Equal([]Capability{Agent, OFSDelta}, caps.All())
+	s.Equal([]string{Agent, OFSDelta}, caps.All())
 }
 
 func (s *SuiteCapabilities) TestZeroValueSafe() {
@@ -231,7 +179,7 @@ func (s *SuiteCapabilities) TestZeroValueSafe() {
 	s.False(caps.IsEmpty())
 	s.True(caps.Supports(Agent))
 	s.Equal([]string{"foo"}, caps.Get(Agent))
-	s.Equal([]Capability{Agent}, caps.All())
+	s.Equal([]string{Agent}, caps.All())
 	s.Equal("agent=foo", caps.String())
 
 	caps.Delete(Agent)

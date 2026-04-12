@@ -2,35 +2,19 @@ package capability
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"slices"
 	"strings"
-)
-
-var (
-	// ErrArgumentsRequired is returned if no arguments are giving with a
-	// capability that requires arguments
-	ErrArgumentsRequired = errors.New("arguments required")
-	// ErrArguments is returned if arguments are given with a capabilities that
-	// not supports arguments
-	ErrArguments = errors.New("arguments not allowed")
-	// ErrEmptyArgument is returned when an empty value is given
-	ErrEmptyArgument = errors.New("empty argument")
-	// ErrMultipleArguments multiple argument given to a capabilities that not
-	// support it
-	ErrMultipleArguments = errors.New("multiple arguments not allowed")
 )
 
 // List represents a list of capabilities. The zero value is safe to use;
 // the internal map is lazily initialized on first write.
 type List struct {
-	m    map[Capability]*entry
+	m    map[string]*entry
 	sort []string
 }
 
 type entry struct {
-	Name   Capability
+	Name   string
 	Values []string
 }
 
@@ -49,9 +33,6 @@ func (l *List) IsEmpty() bool {
 
 // Decode decodes list of capabilities from raw into the list
 func (l *List) Decode(raw []byte) error {
-	// git 1.x receive pack used to send a leading space on its
-	// git-receive-pack capabilities announcement. We just trim space to be
-	// tolerant to space changes in different versions.
 	raw = bytes.TrimSpace(raw)
 
 	if len(raw) == 0 {
@@ -61,25 +42,20 @@ func (l *List) Decode(raw []byte) error {
 	for data := range bytes.SplitSeq(raw, []byte{' '}) {
 		pair := bytes.SplitN(data, []byte{'='}, 2)
 
-		c := Capability(pair[0])
+		c := string(pair[0])
 		if len(pair) == 1 {
-			if err := l.Add(c); err != nil {
-				return err
-			}
-
+			l.Add(c)
 			continue
 		}
 
-		if err := l.Add(c, string(pair[1])); err != nil {
-			return err
-		}
+		l.Add(c, string(pair[1]))
 	}
 
 	return nil
 }
 
 // Get returns the values for a capability
-func (l *List) Get(capability Capability) []string {
+func (l *List) Get(capability string) []string {
 	if _, ok := l.m[capability]; !ok {
 		return nil
 	}
@@ -88,84 +64,50 @@ func (l *List) Get(capability Capability) []string {
 }
 
 // Set sets a capability removing the previous values
-func (l *List) Set(capability Capability, values ...string) error {
+func (l *List) Set(capability string, values ...string) {
 	if _, ok := l.m[capability]; ok {
 		l.m[capability].Values = l.m[capability].Values[:0]
 	}
-	return l.Add(capability, values...)
+	l.Add(capability, values...)
 }
 
 func (l *List) init() {
 	if l.m == nil {
-		l.m = make(map[Capability]*entry)
+		l.m = make(map[string]*entry)
 	}
 }
 
 // Add adds a capability, values are optional
-func (l *List) Add(c Capability, values ...string) error {
+func (l *List) Add(c string, values ...string) {
 	l.init()
-
-	if err := l.validate(c, values); err != nil {
-		return err
-	}
 
 	if !l.Supports(c) {
 		l.m[c] = &entry{Name: c}
-		l.sort = append(l.sort, c.String())
+		l.sort = append(l.sort, c)
 	}
 
 	if len(values) == 0 {
-		return nil
-	}
-
-	if known[c] && !multipleArgument[c] && len(l.m[c].Values) > 0 {
-		return ErrMultipleArguments
+		return
 	}
 
 	l.m[c].Values = append(l.m[c].Values, values...)
-	return nil
-}
-
-func (l *List) validateNoEmptyArgs(values []string) error {
-	if slices.Contains(values, "") {
-		return ErrEmptyArgument
-	}
-	return nil
-}
-
-func (l *List) validate(c Capability, values []string) error {
-	if !known[c] {
-		return l.validateNoEmptyArgs(values)
-	}
-	if requiresArgument[c] && len(values) == 0 {
-		return ErrArgumentsRequired
-	}
-
-	if !requiresArgument[c] && len(values) != 0 {
-		return ErrArguments
-	}
-
-	if !multipleArgument[c] && len(values) > 1 {
-		return ErrMultipleArguments
-	}
-	return l.validateNoEmptyArgs(values)
 }
 
 // Supports returns true if capability is present
-func (l *List) Supports(capability Capability) bool {
+func (l *List) Supports(capability string) bool {
 	_, ok := l.m[capability]
 	return ok
 }
 
 // Delete deletes a capability from the List
-func (l *List) Delete(capability Capability) {
+func (l *List) Delete(capability string) {
 	if !l.Supports(capability) {
 		return
 	}
 
 	delete(l.m, capability)
 	for i, c := range l.sort {
-		if c != string(capability) {
+		if c != capability {
 			continue
 		}
 
@@ -175,15 +117,13 @@ func (l *List) Delete(capability Capability) {
 }
 
 // All returns a slice with all defined capabilities.
-func (l *List) All() []Capability {
+func (l *List) All() []string {
 	if len(l.sort) == 0 {
 		return nil
 	}
 
-	cs := make([]Capability, 0, len(l.sort))
-	for _, key := range l.sort {
-		cs = append(cs, Capability(key))
-	}
+	cs := make([]string, len(l.sort))
+	copy(cs, l.sort)
 
 	return cs
 }
@@ -193,7 +133,7 @@ func (l *List) All() []Capability {
 func (l *List) String() string {
 	var o []string
 	for _, key := range l.sort {
-		c := l.m[Capability(key)]
+		c := l.m[key]
 		if len(c.Values) == 0 {
 			o = append(o, key)
 			continue

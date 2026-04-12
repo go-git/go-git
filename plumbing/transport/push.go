@@ -125,26 +125,26 @@ func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateR
 	upreq := packp.NewUpdateRequests()
 
 	if caps.Supports(capability.ReportStatus) {
-		_ = upreq.Capabilities.Set(capability.ReportStatus)
+		upreq.Capabilities.Set(capability.ReportStatus)
 	}
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			_ = upreq.Capabilities.Set(capability.Sideband64k)
+			upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			_ = upreq.Capabilities.Set(capability.Sideband)
+			upreq.Capabilities.Set(capability.Sideband)
 		}
 		if req.Quiet && caps.Supports(capability.Quiet) {
-			_ = upreq.Capabilities.Set(capability.Quiet)
+			upreq.Capabilities.Set(capability.Quiet)
 		}
 	}
 	if req.Atomic && caps.Supports(capability.Atomic) {
-		_ = upreq.Capabilities.Set(capability.Atomic)
+		upreq.Capabilities.Set(capability.Atomic)
 	}
 	if len(req.Options) > 0 && caps.Supports(capability.PushOptions) {
-		_ = upreq.Capabilities.Set(capability.PushOptions)
+		upreq.Capabilities.Set(capability.PushOptions)
 	}
 	if caps.Supports(capability.Agent) {
-		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	upreq.Commands = req.Commands
