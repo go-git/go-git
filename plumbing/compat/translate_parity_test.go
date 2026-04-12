@@ -271,7 +271,7 @@ func initGitRepo(t *testing.T, dir, objectFormat string) {
 
 	output, err := runCmd("", nil, "git", "init", "--object-format="+objectFormat, dir)
 	if err != nil {
-		if objectFormat == "sha256" && strings.Contains(output, "unknown option") {
+		if strings.Contains(output, "unknown option") && strings.Contains(output, "object-format") {
 			t.Skip("installed git does not support --object-format")
 		}
 		if objectFormat == "sha256" && strings.Contains(strings.ToLower(output), "sha256") {
@@ -295,7 +295,7 @@ func createObjectChain(t *testing.T, dir string) (blob, tree, commit, tag string
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hello compat\n"), 0o644))
 
-	blob = strings.TrimSpace(mustRunCmd(t, dir, env, "git", "hash-object", "-w", "hello.txt"))
+	blob = strings.TrimSpace(mustRunCmdInput(t, dir, env, "hello compat\n", "git", "hash-object", "-w", "--stdin"))
 	mustRunCmd(t, dir, env, "git", "update-index", "--add", "--cacheinfo", "100644", blob, "hello.txt")
 	tree = strings.TrimSpace(mustRunCmd(t, dir, env, "git", "write-tree"))
 	commit = strings.TrimSpace(mustRunCmd(t, dir, env, "git", "commit-tree", tree, "-m", "Initial commit"))
@@ -399,12 +399,16 @@ func runCmd(dir string, env []string, name string, args ...string) (string, erro
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
 
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	return buf.String(), err
+	if err != nil {
+		return stdout.String() + stderr.String(), err
+	}
+
+	return stdout.String(), nil
 }
 
 func runCmdInput(
@@ -419,10 +423,14 @@ func runCmdInput(
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdin = strings.NewReader(input)
 
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	return buf.String(), err
+	if err != nil {
+		return stdout.String() + stderr.String(), err
+	}
+
+	return stdout.String(), nil
 }
