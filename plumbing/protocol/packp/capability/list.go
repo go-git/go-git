@@ -22,7 +22,8 @@ var (
 	ErrMultipleArguments = errors.New("multiple arguments not allowed")
 )
 
-// List represents a list of capabilities
+// List represents a list of capabilities. The zero value is safe to use;
+// the internal map is lazily initialized on first write.
 type List struct {
 	m    map[Capability]*entry
 	sort []string
@@ -33,11 +34,12 @@ type entry struct {
 	Values []string
 }
 
-// NewList returns a new List of capabilities
+// NewList returns a new List of capabilities.
+//
+// Deprecated: the zero value &List{} is safe to use; List lazily initializes
+// its internal map on first write.
 func NewList() *List {
-	return &List{
-		m: make(map[Capability]*entry),
-	}
+	return &List{}
 }
 
 // IsEmpty returns true if the List is empty
@@ -93,8 +95,16 @@ func (l *List) Set(capability Capability, values ...string) error {
 	return l.Add(capability, values...)
 }
 
+func (l *List) init() {
+	if l.m == nil {
+		l.m = make(map[Capability]*entry)
+	}
+}
+
 // Add adds a capability, values are optional
 func (l *List) Add(c Capability, values ...string) error {
+	l.init()
+
 	if err := l.validate(c, values); err != nil {
 		return err
 	}
