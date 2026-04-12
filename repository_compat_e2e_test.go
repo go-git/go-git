@@ -696,7 +696,13 @@ func openCompatRepo(path string, enableObjectMapWrite bool) (*Repository, error)
 func initUpstreamRepoWithHistory(t *testing.T, dir, objectFormat string) plumbing.Hash {
 	t.Helper()
 
-	out, err := runGitCmd("", nil, "git", "init", "--object-format="+objectFormat, dir)
+	args := []string{"init"}
+	if objectFormat != "sha1" {
+		args = append(args, "--object-format="+objectFormat)
+	}
+	args = append(args, dir)
+
+	out, err := runGitCmd("", nil, "git", args...)
 	if err != nil {
 		if strings.Contains(out, "unknown option") && strings.Contains(out, "object-format") {
 			t.Skip("installed git does not support --object-format")
@@ -731,7 +737,13 @@ func initUpstreamRepoWithHistory(t *testing.T, dir, objectFormat string) plumbin
 func initUpstreamBareRepo(t *testing.T, dir, objectFormat string) {
 	t.Helper()
 
-	out, err := runGitCmd("", nil, "git", "init", "--bare", "--object-format="+objectFormat, dir)
+	args := []string{"init", "--bare"}
+	if objectFormat != "sha1" {
+		args = append(args, "--object-format="+objectFormat)
+	}
+	args = append(args, dir)
+
+	out, err := runGitCmd("", nil, "git", args...)
 	if err != nil {
 		if strings.Contains(out, "unknown option") && strings.Contains(out, "object-format") {
 			t.Skip("installed git does not support --object-format")
@@ -800,7 +812,7 @@ func stripLocalObjectDataPreservingCompatMetadata(objectsDir string) error {
 func mustRunGitCmd(t *testing.T, dir string, env []string, name string, args ...string) string {
 	t.Helper()
 	out, err := runGitCmd(dir, env, name, args...)
-	if err != nil && strings.Contains(out, "compatibility hash algorithm support requires Rust") {
+	if err != nil && strings.Contains(err.Error(), "compatibility hash algorithm support requires Rust") {
 		t.Skip("installed git does not support compatibility hash algorithms without Rust")
 	}
 	require.NoError(t, err, out)
@@ -820,7 +832,7 @@ func runGitCmd(dir string, env []string, name string, args ...string) (string, e
 
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("%w: %s", err, stderr.String())
+		return stdout.String() + stderr.String(), fmt.Errorf("%w: %s", err, stderr.String())
 	}
 	return stdout.String(), nil
 }
