@@ -16,7 +16,7 @@ import (
 func FetchPack(
 	ctx context.Context,
 	st storage.Storer,
-	caps *capability.List,
+	caps capability.List,
 	packf io.ReadCloser,
 	shallowInfo *packp.ShallowUpdate,
 	req *FetchRequest,

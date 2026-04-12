@@ -111,7 +111,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	case protocol.V1, protocol.V0:
 	}
 
-	ar := packp.NewAdvRefs()
+	ar := &packp.AdvRefs{}
 	if err := ar.Decode(rd); err != nil && !errors.Is(err, packp.ErrEmptyAdvRefs) {
 		return nil, err
 	}
@@ -136,9 +136,8 @@ func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Cli
 		return nil, err
 	}
 
-	ar := packp.NewAdvRefs()
+	ar := &packp.AdvRefs{}
 	ar.References = infoRefs.References
-	ar.Peeled = infoRefs.Peeled
 
 	return &dumbPackSession{
 		client:     client,
@@ -159,11 +158,11 @@ type smartPackSession struct {
 	service    string
 	authorizer func(*http.Request) error
 	version    protocol.Version
-	caps       *capability.List
+	caps       capability.List
 	refs       *packp.AdvRefs
 }
 
-func (s *smartPackSession) Capabilities() *capability.List { return s.caps }
+func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
 
 func (s *smartPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
@@ -173,7 +172,11 @@ func (s *smartPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Referen
 	if !forPush && s.refs.IsEmpty() {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
-	return s.refs.MakeReferenceSlice()
+	refs, err := s.refs.ResolvedReferences()
+	if err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
@@ -273,7 +276,11 @@ func (s *dumbPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Referenc
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
-	return s.refs.MakeReferenceSlice()
+	refs, err := s.refs.ResolvedReferences()
+	if err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 func (s *dumbPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {

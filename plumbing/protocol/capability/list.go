@@ -20,6 +20,9 @@ type entry struct {
 
 // IsEmpty returns true if the List is empty
 func (l *List) IsEmpty() bool {
+	if l == nil {
+		return true
+	}
 	return len(l.sort) == 0
 }
 
@@ -27,6 +30,10 @@ func (l *List) IsEmpty() bool {
 // List. This is the format used in advertise-refs, upload-request, and
 // update-request messages.
 func DecodeList(raw []byte, l *List) {
+	if l == nil {
+		return
+	}
+
 	raw = bytes.TrimSpace(raw)
 
 	if len(raw) == 0 {
