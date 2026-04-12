@@ -15,7 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-func testServe[T UploadPackOptions | ReceivePackOptions](
+func testServe[T UploadPackRequest | ReceivePackRequest](
 	t testing.TB,
 	st storage.Storer,
 	fun func(
@@ -41,7 +41,7 @@ func testServe[T UploadPackOptions | ReceivePackOptions](
 	return &out
 }
 
-func testAdvertise[T UploadPackOptions | ReceivePackOptions](
+func testAdvertise[T UploadPackRequest | ReceivePackRequest](
 	t testing.TB,
 	fun func(
 		ctx context.Context,
@@ -60,11 +60,11 @@ func testAdvertise[T UploadPackOptions | ReceivePackOptions](
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	opts := new(T)
 	switch o := any(opts).(type) {
-	case *UploadPackOptions:
+	case *UploadPackRequest:
 		o.GitProtocol = proto
 		o.AdvertiseRefs = true
 		o.StatelessRPC = stateless
-	case *ReceivePackOptions:
+	case *ReceivePackRequest:
 		o.GitProtocol = proto
 		o.AdvertiseRefs = true
 		o.StatelessRPC = stateless

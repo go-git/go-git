@@ -17,27 +17,19 @@ import (
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
-// Negotiation errors.
-var (
-	ErrFilterNotSupported  = errors.New("server does not support filters")
-	ErrShallowNotSupported = errors.New("server does not support shallow clients")
-)
-
-// NegotiatePack returns the result of the pack negotiation phase of the fetch operation.
-// See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
+// NegotiatePack performs the pack negotiation phase of the fetch operation.
 func NegotiatePack(
 	ctx context.Context,
 	st storage.Storer,
-	conn Connection,
+	caps *capability.List,
+	statelessRPC bool,
 	reader io.Reader,
 	writer io.WriteCloser,
 	req *FetchRequest,
 ) (shallowInfo *packp.ShallowUpdate, err error) {
 	reader = ioutil.NewContextReader(ctx, reader)
 	writer = ioutil.NewContextWriteCloser(ctx, writer)
-	caps := conn.Capabilities()
 
-	// Create upload-request
 	upreq := packp.NewUploadRequest()
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
@@ -57,11 +49,6 @@ func NegotiatePack(
 		_ = upreq.Capabilities.Set(capability.NoProgress)
 	}
 
-	// TODO: support thin-pack
-	// if caps.Supports(capability.ThinPack) {
-	// 	_ = upreq.Capabilities.Set(capability.ThinPack)
-	// }
-
 	if caps.Supports(capability.ObjectFormat) {
 		var clientFormat, serverFormat config.ObjectFormat
 		if capValues := caps.Get(capability.ObjectFormat); len(capValues) > 0 {
@@ -77,23 +64,14 @@ func NegotiatePack(
 			clientFormat = cfg.Extensions.ObjectFormat
 		}
 
-		// The first pack negotiation may change the storage's ObjectFormat during
-		// clone operations - provided the underlying storage was partially
-		// initialised.
-		//
-		// Refer to upstream for further information:
-		// https://github.com/git/git/blob/ab380cb80b0727f7f2d7f6b17592ae6783e9820c/builtin/clone.c#L1216C60-L1216C68
 		if clientFormat == config.UnsetObjectFormat && serverFormat == config.SHA256 {
 			ref, err := st.Reference(plumbing.HEAD)
-			// The storage is likely better suited to make this check, however it is made here
-			// to avoid code duplication and to better handle off-tree storage implementations.
 			if err == nil && ref.Target().String() == "refs/heads/.invalid" {
 				if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
 					err := setter.SetObjectFormat(serverFormat)
 					if err != nil {
 						return nil, fmt.Errorf("unable to set object format: %w", err)
 					}
-
 					clientFormat = serverFormat
 				}
 			}
@@ -139,7 +117,6 @@ func NegotiatePack(
 		if !caps.Supports(capability.Shallow) {
 			return nil, ErrShallowNotSupported
 		}
-
 		upreq.Depth = packp.DepthCommits(req.Depth)
 		upreq.Shallows, err = st.Shallow()
 		if err != nil {
@@ -147,35 +124,23 @@ func NegotiatePack(
 		}
 	}
 
-	// Note: empty request means haves are a subset of wants, in that case we have
-	// everything we asked for. Close the connection and return nil.
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
 		if err := pktline.WriteFlush(writer); err != nil {
 			return nil, err
 		}
-
-		// Close the writer to signal the end of the request.
-		// The server may have already closed the connection after receiving
-		// the flush-pkt with no wants, so io.EOF is expected.
 		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
-
 		return nil, ErrNoChange
 	}
 
-	// Create upload-haves
 	common := map[plumbing.Hash]struct{}{}
-
 	var inVein int
 	var done bool
-	var gotContinue bool // whether we got a continue from the server
+	var gotContinue bool
 	firstRound := true
+
 	for !done {
-		// Pop the last 32 or depth have commits from the pending list and
-		// insert their parents into the pending list.
-		// TODO: Properly build and implement haves negotiation, and move it
-		// from remote.go to this package.
 		var uphav packp.UploadHaves
 		for i := 0; i < 32 && len(req.Haves) > 0; i++ {
 			uphav.Haves = append(uphav.Haves, req.Haves[len(req.Haves)-1])
@@ -183,56 +148,43 @@ func NegotiatePack(
 			inVein++
 		}
 
-		// Let the server know we're done
 		const maxInVein = 256
 		done = len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
 		uphav.Done = done
 
-		// Note: empty request means haves are a subset of wants, in that case we have
-		// everything we asked for. Close the connection and return nil.
 		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
 			if err := pktline.WriteFlush(writer); err != nil {
 				return nil, err
 			}
-
-			// Close the writer to signal the end of the request.
-			// The server may have already closed the connection after receiving
-			// the flush-pkt with no wants, so io.EOF is expected.
 			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
-
 			return nil, ErrNoChange
 		}
 
-		// Begin the upload-pack negotiation
-		if firstRound || conn.StatelessRPC() {
+		if firstRound || statelessRPC {
 			if err := upreq.Encode(writer); err != nil {
 				return nil, fmt.Errorf("sending upload-request: %w", err)
 			}
 		}
 
 		readc := make(chan error)
-		if !conn.StatelessRPC() {
-			go func() { readc <- readShallows(conn, reader, req, &shallowInfo, firstRound) }()
+		if !statelessRPC {
+			go func() { readc <- readShallows(statelessRPC, reader, req, &shallowInfo, firstRound) }()
 		}
 
-		// Encode upload-haves
 		if err := uphav.Encode(writer); err != nil {
 			return nil, fmt.Errorf("sending upload-haves: %w", err)
 		}
 
-		// Close the writer to signal the end of the request
-		if conn.StatelessRPC() {
+		if statelessRPC {
 			if err := writer.Close(); err != nil {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
-
-			if err := readShallows(conn, reader, req, &shallowInfo, firstRound); err != nil {
+			if err := readShallows(statelessRPC, reader, req, &shallowInfo, firstRound); err != nil {
 				return nil, err
 			}
 		} else {
-			// Wait for the read channel to be closed
 			if err := <-readc; err != nil {
 				return nil, err
 			}
@@ -240,14 +192,12 @@ func NegotiatePack(
 
 		go func() {
 			defer close(readc)
-
 			if done || len(uphav.Haves) > 0 {
 				var srvrs packp.ServerResponse
 				if err := srvrs.Decode(reader); err != nil {
 					readc <- fmt.Errorf("decoding server-response: %w", err)
 					return
 				}
-
 				for _, ack := range srvrs.ACKs {
 					if !gotContinue && ack.Status > 0 {
 						gotContinue = true
@@ -257,11 +207,9 @@ func NegotiatePack(
 					}
 				}
 			}
-
 			readc <- nil
 		}()
 
-		// Wait for the read channel to be closed
 		if err := <-readc; err != nil {
 			return nil, err
 		}
@@ -269,7 +217,7 @@ func NegotiatePack(
 		firstRound = false
 	}
 
-	if !conn.StatelessRPC() {
+	if !statelessRPC {
 		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
@@ -284,33 +232,24 @@ func isSubset(needle, haystack []plumbing.Hash) bool {
 			return false
 		}
 	}
-
 	return true
 }
 
 func readShallows(
-	conn Connection,
+	statelessRPC bool,
 	r io.Reader,
 	req *FetchRequest,
 	shallowInfo **packp.ShallowUpdate,
 	firstRound bool,
 ) error {
-	// Decode shallow-update
-	// If depth is not zero, then we expect a shallow update from the
-	// server.
-	if (firstRound || conn.StatelessRPC()) && req.Depth > 0 {
+	if (firstRound || statelessRPC) && req.Depth > 0 {
 		var shupd packp.ShallowUpdate
 		if err := shupd.Decode(r); err != nil {
 			return fmt.Errorf("decoding shallow-update: %w", err)
 		}
-
-		// Only capture the first shallow update; subsequent rounds may
-		// also produce shallow-update packets (stateless RPC sends one per
-		// request round-trip) but the first one is authoritative.
 		if *shallowInfo == nil {
 			*shallowInfo = &shupd
 		}
 	}
-
 	return nil
 }

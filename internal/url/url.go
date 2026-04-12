@@ -2,7 +2,12 @@
 package url
 
 import (
+	"fmt"
+	"net"
+	"net/url"
 	"regexp"
+	"runtime"
+	"strings"
 )
 
 var (
@@ -10,6 +15,8 @@ var (
 
 	// Ref: https://github.com/git/git/blob/master/Documentation/urls.txt#L37
 	scpLikeURLRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5}):)?(?P<path>[^\\].*)$`)
+
+	fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
 )
 
 // MatchesScheme returns true if the given string matches a URL-like
@@ -37,4 +44,82 @@ func FindScpLikeComponents(url string) (user, host, port, path string) {
 // `https://github.com/src-d/go-git` would not.
 func IsLocalEndpoint(url string) bool {
 	return !MatchesScheme(url) && !MatchesScpLike(url)
+}
+
+// Parse parses a remote URL string into a *url.URL. It handles:
+//   - Standard URLs (https://host/path, ssh://host/path, git://host/path)
+//   - SCP-like URLs (git@host:path) — normalized to ssh:// scheme
+//   - Local paths (/path/to/repo, C:\path) — normalized to file:// scheme
+func Parse(endpoint string) (*url.URL, error) {
+	if u, ok := ParseSCP(endpoint); ok {
+		return u, nil
+	}
+
+	if u, ok := ParseFile(endpoint); ok {
+		return u, nil
+	}
+
+	return ParseURL(endpoint)
+}
+
+// ParseURL parses a standard URL string (e.g. https://host/path) into
+// a *url.URL. It also handles file:// URLs with Windows path fixing.
+// Returns an error if the URL is not absolute.
+func ParseURL(endpoint string) (*url.URL, error) {
+	if after, found := strings.CutPrefix(endpoint, "file://"); found {
+		path := after
+		if runtime.GOOS == "windows" && fileIssueWindows.MatchString(path) {
+			path = path[1:]
+		}
+		return &url.URL{
+			Scheme: "file",
+			Path:   path,
+		}, nil
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	if !u.IsAbs() {
+		return nil, fmt.Errorf("invalid endpoint: %s", endpoint)
+	}
+
+	return u, nil
+}
+
+// ParseSCP parses an SCP-like URL (e.g. git@github.com:user/repo.git)
+// into an ssh:// *url.URL. Returns the URL and true if the endpoint
+// matches the SCP-like format, or nil and false otherwise.
+func ParseSCP(endpoint string) (*url.URL, bool) {
+	if MatchesScheme(endpoint) || !MatchesScpLike(endpoint) {
+		return nil, false
+	}
+
+	user, host, port, path := FindScpLikeComponents(endpoint)
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+
+	return &url.URL{
+		Scheme: "ssh",
+		User:   url.User(user),
+		Host:   host,
+		Path:   path,
+	}, true
+}
+
+// ParseFile parses a local file path into a file:// *url.URL.
+// Returns the URL and true if the endpoint has no scheme, or nil and
+// false otherwise.
+func ParseFile(endpoint string) (*url.URL, bool) {
+	if MatchesScheme(endpoint) {
+		return nil, false
+	}
+
+	return &url.URL{
+		Scheme: "file",
+		Path:   endpoint,
+	}, true
 }

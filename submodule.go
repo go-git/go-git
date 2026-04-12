@@ -135,7 +135,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
-	moduleEndpoint, err := transport.NewEndpoint(s.c.URL)
+	moduleEndpoint, err := transport.ParseURL(s.c.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 			return nil, err
 		}
 
-		rootEndpoint, err := transport.NewEndpoint(remotes[0].c.URLs[0])
+		rootEndpoint, err := transport.ParseURL(remotes[0].c.URLs[0])
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +245,7 @@ func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
 	if !o.NoFetch {
-		err := r.FetchContext(ctx, &FetchOptions{Auth: o.Auth, Depth: o.Depth})
+		err := r.FetchContext(ctx, &FetchOptions{ClientOptions: o.ClientOptions, Depth: o.Depth})
 		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 			return err
 		}
@@ -265,9 +265,9 @@ func (s *Submodule) fetchAndCheckout(
 			refSpec := config.RefSpec("+" + hash.String() + ":" + hash.String())
 
 			err := r.FetchContext(ctx, &FetchOptions{
-				Auth:     o.Auth,
-				RefSpecs: []config.RefSpec{refSpec},
-				Depth:    o.Depth,
+				ClientOptions: o.ClientOptions,
+				RefSpecs:      []config.RefSpec{refSpec},
+				Depth:         o.Depth,
 			})
 			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) && !errors.Is(err, ErrExactSHA1NotSupported) {
 				return err

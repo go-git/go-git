@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 )
@@ -50,9 +51,9 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 
 	Info("git clone %s", url)
 	r, err := git.PlainClone(dir, &git.CloneOptions{
-		Progress: os.Stdout,
-		URL:      url,
-		Auth:     auth,
+		Progress:      os.Stdout,
+		URL:           url,
+		ClientOptions: []client.Option{client.WithSSHAuth(auth)},
 	})
 	if err != nil {
 		log.Printf("clone git repo error: %s", err)
@@ -122,10 +123,10 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 	auth, _ := publicKey(publicKeyPath)
 
 	po := &git.PushOptions{
-		RemoteName: "origin",
-		Progress:   os.Stdout,
-		RefSpecs:   []config.RefSpec{config.RefSpec("refs/tags/*:refs/tags/*")},
-		Auth:       auth,
+		RemoteName:    "origin",
+		Progress:      os.Stdout,
+		RefSpecs:      []config.RefSpec{config.RefSpec("refs/tags/*:refs/tags/*")},
+		ClientOptions: []client.Option{client.WithSSHAuth(auth)},
 	}
 	Info("git push --tags")
 	err := r.Push(po)

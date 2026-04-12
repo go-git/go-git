@@ -18,8 +18,8 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// ReceivePackOptions is a set of options for the ReceivePack service.
-type ReceivePackOptions struct {
+// ReceivePackRequest is a set of options for the ReceivePack service.
+type ReceivePackRequest struct {
 	GitProtocol   string
 	AdvertiseRefs bool
 	StatelessRPC  bool
@@ -32,7 +32,7 @@ func ReceivePack(
 	st storage.Storer,
 	r io.ReadCloser,
 	w io.WriteCloser,
-	opts *ReceivePackOptions,
+	opts *ReceivePackRequest,
 ) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
@@ -41,7 +41,7 @@ func ReceivePack(
 	w = ioutil.NewContextWriteCloser(ctx, w)
 
 	if opts == nil {
-		opts = &ReceivePackOptions{}
+		opts = &ReceivePackRequest{}
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
@@ -56,7 +56,7 @@ func ReceivePack(
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
 		}
 
-		if err := AdvertiseReferences(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
+		if err := AdvertiseRefs(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
 			return err
 		}
 	}
