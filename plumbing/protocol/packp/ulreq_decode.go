@@ -35,6 +35,7 @@ func newUlReqDecoder(r io.Reader) *ulReqDecoder {
 
 func (d *ulReqDecoder) Decode(v *UploadRequest) error {
 	d.data = v
+	d.data.Depth = DepthCommits(0)
 
 	for state := d.decodeFirstWant; state != nil; {
 		state = state()

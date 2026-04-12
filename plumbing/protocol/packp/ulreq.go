@@ -10,8 +10,9 @@ import (
 )
 
 // UploadRequest values represent the information transmitted on a
-// upload-request message.  Values from this type are not zero-value
-// safe, use the New function instead.
+// upload-request message. The zero value is safe to use; Wants, Shallows
+// and Capabilities can be populated via append. Depth defaults to
+// infinite (no depth limit) when nil.
 type UploadRequest struct {
 	Capabilities capability.List
 	Wants        []plumbing.Hash
@@ -63,15 +64,4 @@ func (d DepthReference) IsZero() bool {
 
 func (d DepthReference) String() string {
 	return string(d)
-}
-
-// NewUploadRequest returns a pointer to a new UploadRequest value, ready to be
-// used. It has no capabilities, wants or shallows and an infinite depth. Please
-// note that to encode an upload-request it has to have at least one wanted hash.
-func NewUploadRequest() *UploadRequest {
-	return &UploadRequest{
-		Wants:    []plumbing.Hash{},
-		Shallows: []plumbing.Hash{},
-		Depth:    DepthCommits(0),
-	}
 }

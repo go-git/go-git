@@ -44,7 +44,7 @@ func (s *UploadPackServeSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-	upreq := packp.NewUploadRequest()
+	upreq := &packp.UploadRequest{}
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
 	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
@@ -80,7 +80,7 @@ func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 	wantHash := head.Hash()
 
 	servePack := func(skipDelta bool) []byte {
-		upreq := packp.NewUploadRequest()
+		upreq := &packp.UploadRequest{}
 		upreq.Capabilities.Add(capability.NoProgress)
 		upreq.Wants = append(upreq.Wants, wantHash)
 

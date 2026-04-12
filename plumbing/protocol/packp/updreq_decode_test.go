@@ -22,14 +22,14 @@ func TestUpdReqDecodeSuite(t *testing.T) {
 }
 
 func (s *UpdReqDecodeSuite) TestEmpty() {
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	var buf bytes.Buffer
 	s.ErrorIs(r.Decode(&buf), ErrEmpty)
-	s.Equal(NewUpdateRequests(), r)
+	s.Equal(&UpdateRequests{}, r)
 }
 
 func (s *UpdReqDecodeSuite) TestInvalidPktlines() {
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	input := bytes.NewReader([]byte("xxxxxxxxxx"))
 	s.Regexp(regexp.MustCompile("invalid pkt-len found"), r.Decode(input))
 }
@@ -75,7 +75,7 @@ func (s *UpdReqDecodeSuite) TestShallowWithTrailingNewline() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref"), Old: hash1, New: hash2},
 	}
@@ -180,7 +180,7 @@ func (s *UpdReqDecodeSuite) TestOneUpdateCommand() {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
@@ -197,7 +197,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommands() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -218,7 +218,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilities() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -240,7 +240,7 @@ func (s *UpdReqDecodeSuite) TestMultipleCommandsAndCapabilitiesShallow() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -268,7 +268,7 @@ func (s *UpdReqDecodeSuite) TestWithPackfile() {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
@@ -295,7 +295,7 @@ func (s *UpdReqDecodeSuite) TestWithPackfile() {
 */
 
 func (s *UpdReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	s.Regexp(regexp.MustCompile(pattern), r.Decode(input))
 }
 
@@ -310,7 +310,7 @@ func (s *UpdReqDecodeSuite) testDecodeOK(payloads []string) *UpdateRequests {
 		}
 	}
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	s.Nil(r.Decode(&buf))
 
 	return r
@@ -331,7 +331,7 @@ func (s *UpdReqDecodeSuite) TestMultipleShallowLines() {
 	hash12 := plumbing.NewHash("bac8a6bb3bb99813cc1982c98046bd38a0214b97")
 	hash13 := plumbing.NewHash("ef046a102e1a97b2d670e83bced72612b6de0bd5")
 
-	expected := NewUpdateRequests()
+	expected := &UpdateRequests{}
 	expected.Commands = []*Command{
 		{Name: plumbing.ReferenceName("refs/heads/func_add_report_displayVersion"), Old: plumbing.NewHash("0f5a36a5437539a952ca965e5ade1249a854efb8"), New: plumbing.NewHash("aa7bf2479778e73f18843ee7133eb05ab177522f")},
 	}
