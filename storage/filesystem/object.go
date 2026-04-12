@@ -341,7 +341,7 @@ func (s *ObjectStorage) SetEncodedObject(o plumbing.EncodedObject) (h plumbing.H
 		return plumbing.ZeroHash, err
 	}
 
-	return o.Hash(), err
+	return ow.Hash(), err
 }
 
 // LazyWriter returns a lazy ObjectWriter that is bound to a DotGit file.
@@ -821,9 +821,13 @@ func (s *ObjectStorage) buildPackfileIters(
 			if err != nil {
 				return nil, err
 			}
+			objectIDSize := h.Size()
+			if objectIDSize == 0 {
+				objectIDSize = crypto.SHA1.Size()
+			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, s.index[h],
-				s.objectCache, s.options.KeepDescriptors, h.Size(),
+				s.objectCache, s.options.KeepDescriptors, objectIDSize,
 			)
 		},
 	}, nil

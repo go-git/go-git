@@ -483,7 +483,7 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 func (d *DotGit) NewObject() (*ObjectWriter, error) {
 	d.cleanObjectList()
 
-	return newObjectWriter(d.fs)
+	return newObjectWriter(d.fs, d.options.ObjectFormat)
 }
 
 // ObjectsWithPrefix returns the hashes of objects that have the given prefix.

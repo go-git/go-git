@@ -13,7 +13,9 @@ import (
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
+	compatplumbing "github.com/go-git/go-git/v6/plumbing/compat"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	cfgformat "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
@@ -24,6 +26,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // Remote operation errors and sentinel values.
@@ -51,6 +54,12 @@ const (
 type Remote struct {
 	c *config.RemoteConfig
 	s storage.Storer
+}
+
+type compatPushContext struct {
+	encoderStorer storer.EncodedObjectStorer
+	cmds          []*packp.Command
+	tr            *compatplumbing.Translator
 }
 
 // NewRemote creates a new Remote.
@@ -165,6 +174,11 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		return err
 	}
 
+	tr, err := compatPushTranslator(sess, r.s)
+	if err != nil {
+		return err
+	}
+
 	cmds := make([]*packp.Command, 0)
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, &cmds, o.Prune, o.ForceWithLease); err != nil {
 		return err
@@ -185,6 +199,9 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 	if err != nil {
 		return err
 	}
+	if tr != nil {
+		haves = translateCompatHashesToNative(tr, haves)
+	}
 
 	stop, err := r.s.Shallow()
 	if err != nil {
@@ -204,6 +221,13 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		}
 	}
 
+	pushCtx, err := compatPushStorerAndCommands(r.s, cmds, tr)
+	if err != nil {
+		return err
+	}
+	encoderStorer := pushCtx.encoderStorer
+	cmds = pushCtx.cmds
+
 	if len(hashesToPush) == 0 {
 		allDelete = true
 		for _, command := range cmds {
@@ -214,11 +238,175 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		}
 	}
 
-	if err := pushHashes(ctx, sess, r.s, cmds, hashesToPush, allDelete, o); err != nil {
+	if err := pushHashes(ctx, sess, r.s, encoderStorer, cmds, hashesToPush, allDelete, o); err != nil {
 		return err
 	}
 
 	return r.updateRemoteReferenceStorage(cmds)
+}
+
+func compatPushTranslator(sess transport.Session, s storage.Storer) (*compatplumbing.Translator, error) {
+	provider, ok := s.(xstorage.CompatTranslatorProvider)
+	if !ok {
+		return nil, nil
+	}
+
+	tr := provider.Translator()
+	if tr == nil {
+		return nil, nil
+	}
+
+	remoteFormat := cfgformat.SHA1
+	if caps := sess.Capabilities().Get(capability.ObjectFormat); len(caps) > 0 {
+		remoteFormat = cfgformat.ObjectFormat(caps[0])
+	}
+
+	if remoteFormat != tr.CompatObjectFormat() || remoteFormat == tr.NativeObjectFormat() {
+		return nil, nil
+	}
+
+	// Push compat is only active when the remote expects the repository's
+	// configured compat format. Other remote-format combinations still follow
+	// the normal native push path.
+	return tr, nil
+}
+
+func compatPushStorerAndCommands(
+	s storage.Storer,
+	cmds []*packp.Command,
+	tr *compatplumbing.Translator,
+) (*compatPushContext, error) {
+	if tr == nil {
+		return &compatPushContext{encoderStorer: s, cmds: cmds}, nil
+	}
+
+	cfg, err := s.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := compatplumbing.TranslateStoredObjects(s, tr); err != nil {
+		return nil, fmt.Errorf("prepare compat push mappings: %w", err)
+	}
+
+	// Keep command.Old in the remote namespace for the wire protocol, but map
+	// command.New into the compat namespace so the exported pack and ref updates
+	// agree on the object IDs being sent.
+	translated := make([]*packp.Command, 0, len(cmds))
+	for _, cmd := range cmds {
+		next := &packp.Command{
+			Name: cmd.Name,
+			Old:  cmd.Old,
+			New:  cmd.New,
+		}
+		if cmd.New != plumbing.ZeroHash {
+			mapped, err := tr.Mapping().NativeToCompat(cmd.New)
+			if err != nil {
+				return nil, fmt.Errorf("translate push command %s: %w", cmd.Name, err)
+			}
+			next.New = mapped
+		}
+		translated = append(translated, next)
+	}
+
+	return &compatPushContext{
+		encoderStorer: compatplumbing.NewPushExportStorer(s, cfg, tr),
+		cmds:          translated,
+		tr:            tr,
+	}, nil
+}
+
+func translateCompatHashToNative(tr *compatplumbing.Translator, h plumbing.Hash) plumbing.Hash {
+	if tr == nil || h == plumbing.ZeroHash {
+		return h
+	}
+
+	native, err := tr.Mapping().CompatToNative(h)
+	if err == nil {
+		return native
+	}
+
+	return h
+}
+
+func translateCompatHashesToNative(tr *compatplumbing.Translator, hs []plumbing.Hash) []plumbing.Hash {
+	if tr == nil || len(hs) == 0 {
+		return hs
+	}
+
+	translated := make([]plumbing.Hash, 0, len(hs))
+	for _, h := range hs {
+		translated = append(translated, translateCompatHashToNative(tr, h))
+	}
+
+	return translated
+}
+
+func translateNativeHashesToCompat(tr *compatplumbing.Translator, hs []plumbing.Hash) []plumbing.Hash {
+	if tr == nil || len(hs) == 0 {
+		return hs
+	}
+
+	translated := make([]plumbing.Hash, 0, len(hs))
+	for _, h := range hs {
+		if compatHash, err := tr.Mapping().NativeToCompat(h); err == nil {
+			translated = append(translated, compatHash)
+		}
+	}
+
+	return translated
+}
+
+func equalHashesWithCompat(tr *compatplumbing.Translator, oldHash, newHash plumbing.Hash) bool {
+	if oldHash == newHash {
+		return true
+	}
+
+	if tr == nil || oldHash == plumbing.ZeroHash || newHash == plumbing.ZeroHash {
+		return false
+	}
+
+	return translateCompatHashToNative(tr, oldHash) == newHash
+}
+
+func compatFetchTranslator(caps *capability.List, s storage.Storer) *compatplumbing.Translator {
+	tr := compatTranslatorFromObjectStorer(s)
+	if tr == nil || !caps.Supports(capability.ObjectFormat) {
+		return nil
+	}
+
+	values := caps.Get(capability.ObjectFormat)
+	if len(values) == 0 {
+		return nil
+	}
+
+	if cfgformat.ObjectFormat(values[0]) != tr.CompatObjectFormat() {
+		return nil
+	}
+
+	return tr
+}
+
+func translateReferenceStorageCompatToNative(
+	tr *compatplumbing.Translator,
+	refs memory.ReferenceStorage,
+) memory.ReferenceStorage {
+	if tr == nil {
+		return refs
+	}
+
+	translated := make(memory.ReferenceStorage, len(refs))
+	for name, ref := range refs {
+		if ref.Type() != plumbing.HashReference {
+			translated[name] = ref
+			continue
+		}
+
+		translatedHash := translateCompatHashToNative(tr, ref.Hash())
+		translated[name] = plumbing.NewHashReference(ref.Name(), translatedHash)
+	}
+
+	return translated
 }
 
 func (r *Remote) useRefDeltas(ar *packp.AdvRefs) bool {
@@ -396,6 +584,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	if err != nil {
 		return nil, err
 	}
+	compatFetchTr := compatFetchTranslator(sess.Capabilities(), r.s)
 	refs, specToRefs, err := calculateRefs(o.RefSpecs, remoteRefs, o.Tags)
 	if err != nil {
 		return nil, err
@@ -424,6 +613,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		if err != nil {
 			return nil, err
 		}
+		haves = translateNativeHashesToCompat(compatFetchTr, haves)
 
 		// When performing a shallow fetch, exclude any shallow-boundary commits
 		// from the haves list. Shallow commits are already communicated to the
@@ -459,6 +649,9 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		if err := sess.Fetch(ctx, r.s, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
 			// Note: We receive ErrNoChange when remote is the same as local. At
 			// this point, we have everything we're asking for.
+			if compatFetchTr != nil {
+				return nil, fmt.Errorf("compat fetch pack: %w", err)
+			}
 			return nil, err
 		}
 	}
@@ -475,7 +668,18 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
+	localFetchedRefs := translateReferenceStorageCompatToNative(compatFetchTr, refs)
+	localRemoteRefs := translateReferenceStorageCompatToNative(compatFetchTr, remoteRefs)
+
+	updated, err := r.updateLocalReferenceStorage(
+		o.RefSpecs,
+		localFetchedRefs,
+		localRemoteRefs,
+		specToRefs,
+		o.Tags,
+		o.Force,
+		compatFetchTr,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -702,7 +906,7 @@ func (r *Remote) addObject(rs config.RefSpec,
 	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return err
 	}
-	if cmd.Old == cmd.New {
+	if equalHashesWithCompat(compatTranslatorFromObjectStorer(r.s), cmd.Old, cmd.New) {
 		return nil
 	}
 	if !rs.IsForceUpdate() {
@@ -745,7 +949,7 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 		return err
 	}
 
-	if cmd.Old == cmd.New {
+	if equalHashesWithCompat(compatTranslatorFromObjectStorer(r.s), cmd.Old, cmd.New) {
 		return nil
 	}
 
@@ -780,7 +984,7 @@ func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Co
 			expectedOID = forceWithLease.Hash
 		}
 
-		if cmd.Old != expectedOID {
+		if !equalHashesWithCompat(compatTranslatorFromObjectStorer(r.s), cmd.Old, expectedOID) {
 			return fmt.Errorf("non-fast-forward update: %s", cmd.Name.String())
 		}
 	}
@@ -1044,7 +1248,12 @@ func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.Refe
 		shallows, _ = ss.Shallow()
 	}
 
-	ff, err := isFastForward(s, cmd.Old, cmd.New, shallows)
+	oldHash := cmd.Old
+	if tr := compatTranslatorFromObjectStorer(s); tr != nil {
+		oldHash = translateCompatHashToNative(tr, cmd.Old)
+	}
+
+	ff, err := isFastForward(s, oldHash, cmd.New, shallows)
 	if err != nil {
 		return err
 	}
@@ -1054,6 +1263,15 @@ func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.Refe
 	}
 
 	return nil
+}
+
+func compatTranslatorFromObjectStorer(s storer.EncodedObjectStorer) *compatplumbing.Translator {
+	provider, ok := s.(xstorage.CompatTranslatorProvider)
+	if !ok {
+		return nil
+	}
+
+	return provider.Translator()
 }
 
 // isFastForward reports whether newHash is a descendant of old in the commit
@@ -1148,6 +1366,7 @@ func (r *Remote) updateLocalReferenceStorage(
 	specToRefs [][]*plumbing.Reference,
 	tagMode plumbing.TagMode,
 	force bool,
+	tr *compatplumbing.Translator,
 ) (updated bool, err error) {
 	isWildcard := true
 	forceNeeded := false
@@ -1179,7 +1398,7 @@ func (r *Remote) updateLocalReferenceStorage(
 				localName = plumbing.NewBranchReferenceName(localName.String())
 			}
 			old, _ := storer.ResolveReference(r.s, localName)
-			newRef := plumbing.NewHashReference(localName, ref.Hash())
+			newRef := plumbing.NewHashReference(localName, translateCompatHashToNative(tr, ref.Hash()))
 
 			// If the ref exists locally as a non-tag and force is not
 			// specified, only update if the new ref is an ancestor of the old
@@ -1361,6 +1580,7 @@ func pushHashes(
 	ctx context.Context,
 	sess transport.Session,
 	s storage.Storer,
+	encoderStorer storer.EncodedObjectStorer,
 	cmds []*packp.Command,
 	hs []plumbing.Hash,
 	allDelete bool,
@@ -1389,7 +1609,7 @@ func pushHashes(
 	if !allDelete {
 		req.Packfile = rd
 		go func() {
-			e := packfile.NewEncoder(wr, s, useRefDeltas)
+			e := packfile.NewEncoder(wr, encoderStorer, useRefDeltas)
 			if _, err := e.Encode(hs, config.Pack.Window); err != nil {
 				done <- wr.CloseWithError(err)
 				return
