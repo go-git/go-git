@@ -168,7 +168,7 @@ func TestParseURLFile(t *testing.T) {
 
 func TestFilterUnsupportedCapabilities(t *testing.T) {
 	t.Parallel()
-	l := capability.NewList()
+	l := &capability.List{}
 	l.Set(capability.MultiACK)
 	l.Set(capability.MultiACKDetailed)
 

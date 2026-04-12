@@ -70,7 +70,7 @@ func (d DepthReference) String() string {
 // note that to encode an upload-request it has to have at least one wanted hash.
 func NewUploadRequest() *UploadRequest {
 	return &UploadRequest{
-		Capabilities: capability.NewList(),
+		Capabilities: &capability.List{},
 		Wants:        []plumbing.Hash{},
 		Shallows:     []plumbing.Hash{},
 		Depth:        DepthCommits(0),

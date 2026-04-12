@@ -56,7 +56,6 @@ func AdvertiseRefs(
 		ar.Capabilities.Set(capability.MultiACKDetailed)
 		ar.Capabilities.Set(capability.Sideband)
 		ar.Capabilities.Set(capability.NoProgress)
-		ar.Capabilities.Set(capability.SymRef)
 		ar.Capabilities.Set(capability.Shallow)
 
 		cfg, err := st.Config()

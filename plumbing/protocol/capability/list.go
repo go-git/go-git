@@ -18,14 +18,6 @@ type entry struct {
 	Values []string
 }
 
-// NewList returns a new List of capabilities.
-//
-// Deprecated: the zero value &List{} is safe to use; List lazily initializes
-// its internal map on first write.
-func NewList() *List {
-	return &List{}
-}
-
 // IsEmpty returns true if the List is empty
 func (l *List) IsEmpty() bool {
 	return len(l.sort) == 0
@@ -56,6 +48,9 @@ func DecodeList(raw []byte, l *List) {
 
 // Get returns the values for a capability
 func (l *List) Get(capability string) []string {
+	if l.m == nil {
+		return nil
+	}
 	if _, ok := l.m[capability]; !ok {
 		return nil
 	}
@@ -95,6 +90,9 @@ func (l *List) Add(c string, values ...string) {
 
 // Supports returns true if capability is present
 func (l *List) Supports(capability string) bool {
+	if l.m == nil {
+		return false
+	}
 	_, ok := l.m[capability]
 	return ok
 }
@@ -133,6 +131,9 @@ func (l *List) All() []string {
 func (l *List) String() string {
 	var o []string
 	for _, key := range l.sort {
+		if l.m == nil {
+			continue
+		}
 		c := l.m[key]
 		if len(c.Values) == 0 {
 			o = append(o, key)
