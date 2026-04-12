@@ -115,7 +115,7 @@ func NegotiatePack(
 		if !caps.Supports(capability.Shallow) {
 			return nil, ErrShallowNotSupported
 		}
-		upreq.Depth = packp.DepthCommits(req.Depth)
+		upreq.Depth = packp.DepthRequest{Commits: req.Depth}
 		upreq.Shallows, err = st.Shallow()
 		if err != nil {
 			return nil, err

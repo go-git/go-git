@@ -132,14 +132,13 @@ func UploadPack(
 				// TODO: support deepen-since, and deepen-not
 				var shupd packp.ShallowUpdate
 				if !upreq.Depth.IsZero() {
-					switch depth := upreq.Depth.(type) {
-					case packp.DepthCommits:
-						if err := getShallowCommits(st, wants, int(depth), &shupd); err != nil {
+					if upreq.Depth.Commits > 0 {
+						if err := getShallowCommits(st, wants, upreq.Depth.Commits, &shupd); err != nil {
 							writec <- fmt.Errorf("getting shallow commits: %w", err)
 							return
 						}
-					default:
-						writec <- fmt.Errorf("unsupported depth type %T", upreq.Depth)
+					} else {
+						writec <- fmt.Errorf("unsupported depth: %+v", upreq.Depth)
 						return
 					}
 
