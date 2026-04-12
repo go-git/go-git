@@ -362,9 +362,8 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 		// Build refs map excluding peeled refs
 		refs := make(map[string]plumbing.Hash)
 		for _, ref := range ar.References {
-			name := ref.Name().String()
-			if !strings.HasSuffix(name, "^{}") {
-				refs[name] = ref.Hash()
+			if !ref.Name().IsPeeled() {
+				refs[ref.Name().String()] = ref.Hash()
 			}
 		}
 		s.Equal(test.references, refs, comment)
@@ -372,8 +371,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 		// Build peeled map
 		peeled := make(map[string]plumbing.Hash)
 		for _, ref := range ar.References {
-			name := ref.Name().String()
-			if base, ok := strings.CutSuffix(name, "^{}"); ok {
+			if base, ok := strings.CutSuffix(ref.Name().String(), "^{}"); ok {
 				peeled[base] = ref.Hash()
 			}
 		}
