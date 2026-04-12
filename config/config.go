@@ -49,6 +49,15 @@ var (
 	ErrRemoteConfigEmptyURL = errors.New("remote config: empty URL")
 	// ErrRemoteConfigEmptyName is returned when a remote config has an empty name.
 	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
+	// ErrExtensionRequiresVersion1 is returned when a repository extension is
+	// configured without repository format version 1.
+	ErrExtensionRequiresVersion1 = errors.New("config extensions require core.repositoryformatversion = 1")
+	// ErrCompatObjectFormatRequiresObjectFormat is returned when
+	// compatObjectFormat is configured without objectFormat.
+	ErrCompatObjectFormatRequiresObjectFormat = errors.New("config compatObjectFormat requires extensions.objectFormat")
+	// ErrCompatObjectFormatEqualsObjectFormat is returned when compatObjectFormat
+	// matches objectFormat.
+	ErrCompatObjectFormatEqualsObjectFormat = errors.New("config compatObjectFormat must differ from extensions.objectFormat")
 )
 
 // Scope defines the scope of a config file, such as local, global or system.
@@ -170,6 +179,19 @@ type Config struct {
 		// This setting must not be changed after repository initialization
 		// (e.g. clone or init).
 		ObjectFormat format.ObjectFormat
+		// CompatObjectFormat specifies a secondary hash algorithm for
+		// backward compatibility. When set, a bidirectional mapping is
+		// maintained between the native ObjectFormat and this compat
+		// format, enabling interoperability with servers using the
+		// compat format.
+		//
+		// For example, a sha256 repository with compatObjectFormat=sha1
+		// can fetch from and push to sha1 servers.
+		//
+		// It is an error to specify this key unless
+		// core.repositoryFormatVersion is 1 and extensions.objectFormat
+		// is also set. The value must differ from objectFormat.
+		CompatObjectFormat format.ObjectFormat
 		// WorktreeConfig indicates that per-worktree config files are enabled.
 		// When true, each worktree may have a config.worktree file that
 		// overrides settings in the common .git/config.
@@ -425,6 +447,55 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if err := c.validateExtensions(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) validateExtensions() error {
+	repoVersion := c.Core.RepositoryFormatVersion
+	objectFormat := c.Extensions.ObjectFormat
+	compatObjectFormat := c.Extensions.CompatObjectFormat
+	worktreeConfig := c.Extensions.WorktreeConfig
+
+	if c.Raw != nil {
+		if c.Raw.HasSection(coreSection) {
+			if rawVersion := format.RepositoryFormatVersion(c.Raw.Section(coreSection).Options.Get(repositoryFormatVersionKey)); rawVersion != "" {
+				repoVersion = rawVersion
+			}
+		}
+
+		if c.Raw.HasSection(extensionsSection) {
+			section := c.Raw.Section(extensionsSection)
+			if rawObjectFormat := format.ObjectFormat(section.Options.Get(objectFormatKey)); rawObjectFormat != "" {
+				objectFormat = rawObjectFormat
+			}
+			if rawCompatObjectFormat := format.ObjectFormat(section.Options.Get(compatObjectFormatKey)); rawCompatObjectFormat != "" {
+				compatObjectFormat = rawCompatObjectFormat
+			}
+			if section.Options.Has(worktreeConfigKey) {
+				worktreeConfig = strings.EqualFold(section.Options.Get(worktreeConfigKey), "true")
+			}
+		}
+	}
+
+	if objectFormat != format.UnsetObjectFormat || compatObjectFormat != format.UnsetObjectFormat || worktreeConfig {
+		if repoVersion != format.Version1 {
+			return ErrExtensionRequiresVersion1
+		}
+	}
+
+	if compatObjectFormat != format.UnsetObjectFormat {
+		if objectFormat == format.UnsetObjectFormat {
+			return ErrCompatObjectFormatRequiresObjectFormat
+		}
+		if compatObjectFormat == objectFormat {
+			return ErrCompatObjectFormatEqualsObjectFormat
+		}
+	}
+
 	return nil
 }
 
@@ -462,6 +533,7 @@ const (
 	defaultBranchKey           = "defaultBranch"
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormatKey            = "objectformat"
+	compatObjectFormatKey      = "compatobjectformat"
 	worktreeConfigKey          = "worktreeConfig"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
@@ -545,6 +617,7 @@ func (c *Config) unmarshalCore() {
 func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
+	c.Extensions.CompatObjectFormat = format.ObjectFormat(s.Options.Get(compatObjectFormatKey))
 	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
 }
 
@@ -790,6 +863,7 @@ func (c *Config) marshalExtensions() {
 	// Only marshal the [extensions] section if there are extension options to write.
 	// This avoids introducing an empty [extensions] section on round-trips.
 	if c.Extensions.ObjectFormat == format.UnsetObjectFormat &&
+		c.Extensions.CompatObjectFormat == format.UnsetObjectFormat &&
 		!c.Extensions.WorktreeConfig {
 		return
 	}
@@ -797,6 +871,10 @@ func (c *Config) marshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	if c.Extensions.ObjectFormat != format.UnsetObjectFormat {
 		s.SetOption(objectFormatKey, string(c.Extensions.ObjectFormat))
+	}
+
+	if c.Extensions.CompatObjectFormat != format.UnsetObjectFormat {
+		s.SetOption(compatObjectFormatKey, string(c.Extensions.CompatObjectFormat))
 	}
 
 	if c.Extensions.WorktreeConfig {
