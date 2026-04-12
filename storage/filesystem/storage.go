@@ -10,8 +10,10 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/compat"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // Storage is an implementation of git.Storer that stores data on disk in the
@@ -29,6 +31,8 @@ type Storage struct {
 	ConfigStorage
 	ModuleStorage
 	ReflogStorage
+
+	translator *compat.Translator
 }
 
 // Options holds configuration for the storage.
@@ -68,6 +72,11 @@ type Options struct {
 	// IndexCache provides an optional cache implementation for index data.
 	// If left as nil, a default stat-based implementation is created automatically.
 	IndexCache IndexCache
+
+	// CompatMappingWriteMode controls how compatObjectFormat mappings are
+	// persisted on disk when the extension is enabled. Defaults to the legacy
+	// loose-object-idx format unless explicitly set to FileMappingWriteObjectMap.
+	CompatMappingWriteMode compat.FileMappingWriteMode
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -84,12 +93,14 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	readRevIdx := true
 	writeRevIdx := true
 	skipHash := false
+	var compatObjFmt formatcfg.ObjectFormat
 
 	f, err := fs.Open("config")
 	if err == nil {
 		cfg, err := config.ReadConfig(f)
 		if err == nil {
 			ops.ObjectFormat = cfg.Extensions.ObjectFormat
+			compatObjFmt = cfg.Extensions.CompatObjectFormat
 			readRevIdx = cfg.Pack.ReadReverseIndex
 			writeRevIdx = cfg.Pack.WriteReverseIndex
 			skipHash = cfg.Index.SkipHash.IsTrue()
@@ -130,6 +141,19 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ReflogStorage:    ReflogStorage{dir: dir},
+	}
+
+	if compatObjFmt != formatcfg.UnsetObjectFormat && compatObjFmt != "" {
+		nativeFmt := ops.ObjectFormat
+		if nativeFmt == formatcfg.UnsetObjectFormat || nativeFmt == "" {
+			nativeFmt = formatcfg.DefaultObjectFormat
+		}
+		mode := ops.CompatMappingWriteMode
+		m := compat.NewFileMappingWithWriteMode(fs, "objects", mode)
+		s.translator = compat.NewTranslator(compat.Formats{
+			Native: nativeFmt,
+			Compat: compatObjFmt,
+		}, m)
 	}
 
 	return s
@@ -192,6 +216,11 @@ func (s *Storage) SupportsExtension(name, value string) bool {
 		case "sha1", "sha256", "":
 			return true
 		}
+	case "compatobjectformat":
+		switch value {
+		case "sha1", "sha256":
+			return true
+		}
 	case "worktreeconfig":
 		switch value {
 		case "true", "false":
@@ -199,6 +228,81 @@ func (s *Storage) SupportsExtension(name, value string) bool {
 		}
 	}
 	return false
+}
+
+// Translator returns the compat translator, or nil if compat is not enabled.
+func (s *Storage) Translator() *compat.Translator {
+	return s.translator
+}
+
+// CompactCompatMappings rewrites compat mappings into a single multi-entry map
+// file when compatObjectFormat is enabled.
+func (s *Storage) CompactCompatMappings() error {
+	if s.translator == nil {
+		return nil
+	}
+
+	fm, ok := s.translator.Mapping().(*compat.FileMapping)
+	if !ok {
+		return nil
+	}
+
+	return fm.Compact()
+}
+
+// HasEncodedObject returns nil if the object exists (by native or compat hash).
+func (s *Storage) HasEncodedObject(h plumbing.Hash) error {
+	err := s.ObjectStorage.HasEncodedObject(h)
+	if err == nil || s.translator == nil {
+		return err
+	}
+
+	native, cerr := s.translator.Mapping().CompatToNative(h)
+	if cerr != nil {
+		return err
+	}
+	return s.ObjectStorage.HasEncodedObject(native)
+}
+
+// EncodedObject returns the object by native or compat hash.
+func (s *Storage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := s.ObjectStorage.EncodedObject(t, h)
+	if err == nil || s.translator == nil {
+		return obj, err
+	}
+
+	native, cerr := s.translator.Mapping().CompatToNative(h)
+	if cerr != nil {
+		return nil, err
+	}
+	return s.ObjectStorage.EncodedObject(t, native)
+}
+
+// SetEncodedObject stores the object and, if compat is enabled,
+// computes and records its compat hash mapping.
+//
+// This operation is intentionally not atomic across object persistence and
+// compat mapping persistence: the object is written first, then the mapping
+// is recorded. If compat translation fails after the object is stored, the
+// object remains present and a later reconciliation pass can populate the
+// missing mapping.
+func (s *Storage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	h, err := s.ObjectStorage.SetEncodedObject(obj)
+	if err != nil {
+		return h, err
+	}
+
+	if s.translator != nil {
+		if _, terr := s.translator.TranslateObject(obj); terr != nil {
+			if errors.Is(terr, plumbing.ErrObjectNotFound) {
+				trace.General.Printf("compat translation deferred for %s: %v", h, terr)
+			} else {
+				return h, terr
+			}
+		}
+	}
+
+	return h, nil
 }
 
 // Filesystem returns the underlying filesystem

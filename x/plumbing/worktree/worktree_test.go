@@ -1162,6 +1162,7 @@ func TestWorktreeConfig(t *testing.T) {
 		cfg, err := storer.Config()
 		require.NoError(t, err)
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		cfg.Raw.Section("core").SetOption("repositoryformatversion", string(formatcfg.Version1))
 		cfg.Extensions.WorktreeConfig = true
 		err = storer.SetConfig(cfg)
 		require.NoError(t, err)
@@ -1197,6 +1198,8 @@ func TestWorktreeConfig(t *testing.T) {
 
 		cfg, err := storer.Config()
 		require.NoError(t, err)
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		cfg.Raw.Section("core").SetOption("repositoryformatversion", string(formatcfg.Version1))
 		cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
 		err = storer.SetConfig(cfg)
 		require.NoError(t, err)
@@ -1253,6 +1256,8 @@ func TestWorktreeConfig(t *testing.T) {
 
 		cfg, err := storer.Config()
 		require.NoError(t, err)
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		cfg.Raw.Section("core").SetOption("repositoryformatversion", string(formatcfg.Version1))
 		cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
 		err = storer.SetConfig(cfg)
 		require.NoError(t, err)

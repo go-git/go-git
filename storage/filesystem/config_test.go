@@ -74,7 +74,7 @@ func newDualStorer(commonFs, wtFs billy.Filesystem) *ConfigStorage {
 func TestWorktreeConfigRead(t *testing.T) {
 	t.Parallel()
 
-	const baseConfig = "[core]\n\tbare = false\n\tfilemode = true\n" +
+	const baseConfig = "[core]\n\tbare = false\n\tfilemode = true\n\trepositoryformatversion = 1\n" +
 		"[extensions]\n\tworktreeConfig = true\n" +
 		"[user]\n\tname = base-user\n\temail = base@example.com\n"
 	const wtConfig = "[user]\n\tname = wt-user\n"
@@ -128,7 +128,7 @@ func TestWorktreeConfigRead(t *testing.T) {
 func TestWorktreeConfigSetConfig(t *testing.T) {
 	t.Parallel()
 
-	const baseConfig = "[core]\n\tbare = false\n\tfilemode = true\n" +
+	const baseConfig = "[core]\n\tbare = false\n\tfilemode = true\n\trepositoryformatversion = 1\n" +
 		"[extensions]\n\tworktreeConfig = true\n" +
 		"[user]\n\tname = base-user\n\temail = base@example.com\n"
 
