@@ -105,3 +105,4 @@ func (s *SuiteWriter) TestNewWriterInvalidSize() {
 	err = w.WriteHeader(plumbing.BlobObject, -1651860)
 	s.ErrorIs(err, ErrNegativeSize)
 }
+
