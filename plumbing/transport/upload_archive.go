@@ -150,9 +150,23 @@ func writeArchive(_ context.Context, st storage.Storer, mux *sideband.Muxer, arg
 	var paths []string
 	list := false
 
-	i := 0
-	for ; i < len(args); i++ {
+	// Normalize arguments: convert "--format zip" to "--format=zip" etc.
+	normalized := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		switch arg {
+		case "--format", "--prefix":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("%s requires an argument", arg)
+			}
+			normalized = append(normalized, arg+"="+args[i])
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+
+	for _, arg := range normalized {
 		switch {
 		case arg == "--list" || arg == "-l":
 			list = true
@@ -161,16 +175,27 @@ func writeArchive(_ context.Context, st storage.Storer, mux *sideband.Muxer, arg
 		case strings.HasPrefix(arg, "--prefix="):
 			prefix = arg[len("--prefix="):]
 		case arg == "--":
-			i++
-			paths = args[i:]
-			i = len(args)
-		case !strings.HasPrefix(arg, "-"):
-			treeish = arg
-			i++
-			paths = args[i:]
-			i = len(args)
+			// paths are handled below
 		default:
-			return fmt.Errorf("unknown option: %s", arg)
+			if !strings.HasPrefix(arg, "-") {
+				treeish = arg
+			} else {
+				return fmt.Errorf("unknown option: %s", arg)
+			}
+		}
+	}
+
+	// Extract paths after treeish
+	for i, arg := range normalized {
+		if arg == treeish {
+			if i+1 < len(normalized) {
+				if normalized[i+1] == "--" {
+					paths = normalized[i+2:]
+				} else {
+					paths = normalized[i+1:]
+				}
+			}
+			break
 		}
 	}
 

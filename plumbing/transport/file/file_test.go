@@ -247,6 +247,50 @@ func TestArchive_List(t *testing.T) {
 	assert.Contains(t, lines, "tgz")
 }
 
+func TestArchive_SpaceSeparatedArgs(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	// Test space-separated format option: --format zip instead of --format=zip
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format", "zip", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	assert.Greater(t, len(zr.File), 0)
+}
+
+func TestArchive_SpaceSeparatedPrefix(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	// Test space-separated prefix option: --prefix myproject/ instead of --prefix=myproject/
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--prefix", "myproject/", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	tr := tar.NewReader(bytes.NewReader(data))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(hdr.Name, "myproject/"), "expected prefix myproject/, got %s", hdr.Name)
+	}
+}
+
 func TestArchive_TarFilePermissions(t *testing.T) {
 	t.Parallel()
 
