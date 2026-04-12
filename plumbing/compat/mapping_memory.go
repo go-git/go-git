@@ -21,6 +21,7 @@ func NewMemoryMapping() *MemoryMapping {
 	}
 }
 
+// NativeToCompat returns the compat hash for a native hash.
 func (m *MemoryMapping) NativeToCompat(native plumbing.Hash) (plumbing.Hash, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -32,6 +33,7 @@ func (m *MemoryMapping) NativeToCompat(native plumbing.Hash) (plumbing.Hash, err
 	return h, nil
 }
 
+// CompatToNative returns the native hash for a compat hash.
 func (m *MemoryMapping) CompatToNative(compat plumbing.Hash) (plumbing.Hash, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -43,6 +45,7 @@ func (m *MemoryMapping) CompatToNative(compat plumbing.Hash) (plumbing.Hash, err
 	return h, nil
 }
 
+// Add records or replaces a native/compat hash mapping in memory.
 func (m *MemoryMapping) Add(native, compat plumbing.Hash) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -56,6 +59,7 @@ func (m *MemoryMapping) Add(native, compat plumbing.Hash) error {
 	return nil
 }
 
+// Count returns the number of in-memory mappings.
 func (m *MemoryMapping) Count() (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

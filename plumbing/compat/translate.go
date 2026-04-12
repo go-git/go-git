@@ -48,11 +48,14 @@ func (t *Translator) TranslateObject(obj plumbing.EncodedObject) (plumbing.Hash,
 	if err != nil {
 		return plumbing.Hash{}, fmt.Errorf("read object: %w", err)
 	}
-	defer reader.Close()
 
 	content, err := io.ReadAll(reader)
 	if err != nil {
+		_ = reader.Close()
 		return plumbing.Hash{}, fmt.Errorf("read object content: %w", err)
+	}
+	if err := reader.Close(); err != nil {
+		return plumbing.Hash{}, fmt.Errorf("close object reader: %w", err)
 	}
 
 	var compatContent []byte
@@ -99,78 +102,25 @@ func (t *Translator) TranslateObject(obj plumbing.EncodedObject) (plumbing.Hash,
 // translateTree rewrites binary hashes in tree entries from native to compat format.
 // Tree entry format: <mode-octal> <name>\0<binary-hash>
 func (t *Translator) translateTree(content []byte) ([]byte, error) {
-	nativeSize := t.formats.Native.Size()
-	compatSize := t.formats.Compat.Size()
-
-	var out bytes.Buffer
-	buf := content
-
-	for len(buf) > 0 {
-		// Find the null byte separating "mode name" from the binary hash.
-		nullIdx := bytes.IndexByte(buf, 0)
-		if nullIdx < 0 {
-			return nil, fmt.Errorf("malformed tree entry: missing null byte")
-		}
-
-		// Copy everything up to and including the null byte.
-		out.Write(buf[:nullIdx+1])
-		buf = buf[nullIdx+1:]
-
-		if len(buf) < nativeSize {
-			return nil, fmt.Errorf("malformed tree entry: truncated hash (have %d, want %d)", len(buf), nativeSize)
-		}
-
-		// Read the native-format binary hash.
-		nativeHash, _ := plumbing.FromBytes(buf[:nativeSize])
-		buf = buf[nativeSize:]
-
-		// Look up the compat hash.
-		compatHash, err := t.mapping.NativeToCompat(nativeHash)
-		if err != nil {
-			return nil, fmt.Errorf("tree entry hash %s: no compat mapping: %w", nativeHash, err)
-		}
-
-		// Write the compat-format binary hash.
-		out.Write(compatHash.Bytes()[:compatSize])
-	}
-
-	return out.Bytes(), nil
+	return t.translateTreeContent(
+		content,
+		t.formats.Native.Size(),
+		t.formats.Compat.Size(),
+		"compat",
+		t.mapping.NativeToCompat,
+	)
 }
 
 // translateCompatTree rewrites binary hashes in tree entries from compat to
 // native format.
 func (t *Translator) translateCompatTree(content []byte) ([]byte, error) {
-	compatSize := t.formats.Compat.Size()
-	nativeSize := t.formats.Native.Size()
-
-	var out bytes.Buffer
-	buf := content
-
-	for len(buf) > 0 {
-		nullIdx := bytes.IndexByte(buf, 0)
-		if nullIdx < 0 {
-			return nil, fmt.Errorf("malformed tree entry: missing null byte")
-		}
-
-		out.Write(buf[:nullIdx+1])
-		buf = buf[nullIdx+1:]
-
-		if len(buf) < compatSize {
-			return nil, fmt.Errorf("malformed tree entry: truncated hash (have %d, want %d)", len(buf), compatSize)
-		}
-
-		compatHash, _ := plumbing.FromBytes(buf[:compatSize])
-		buf = buf[compatSize:]
-
-		nativeHash, err := t.mapping.CompatToNative(compatHash)
-		if err != nil {
-			return nil, fmt.Errorf("tree entry hash %s: no native mapping: %w", compatHash, err)
-		}
-
-		out.Write(nativeHash.Bytes()[:nativeSize])
-	}
-
-	return out.Bytes(), nil
+	return t.translateTreeContent(
+		content,
+		t.formats.Compat.Size(),
+		t.formats.Native.Size(),
+		"native",
+		t.mapping.CompatToNative,
+	)
 }
 
 // translateCommit rewrites hex hashes on "tree" and "parent" lines.
@@ -186,75 +136,72 @@ func (t *Translator) translateTag(content []byte) ([]byte, error) {
 // translateTextObject rewrites hex hashes on specified header lines.
 // It processes lines until it hits an empty line (the header/body separator).
 func (t *Translator) translateTextObject(content []byte, hashFields []string) ([]byte, error) {
-	nativeHexSize := t.formats.Native.HexSize()
-
-	var out bytes.Buffer
-	remaining := content
-	headerDone := false
-
-	for len(remaining) > 0 {
-		nlIdx := bytes.IndexByte(remaining, '\n')
-		var line []byte
-		if nlIdx >= 0 {
-			line = remaining[:nlIdx]
-			remaining = remaining[nlIdx+1:]
-		} else {
-			line = remaining
-			remaining = nil
-		}
-
-		if !headerDone {
-			if len(line) == 0 {
-				// Empty line = end of header.
-				headerDone = true
-				out.WriteByte('\n')
-				continue
-			}
-
-			replaced := false
-			for _, field := range hashFields {
-				prefix := field + " "
-				if bytes.HasPrefix(line, []byte(prefix)) && len(line) == len(prefix)+nativeHexSize {
-					hexStr := string(line[len(prefix):])
-					nativeHash, ok := plumbing.FromHex(hexStr)
-					if !ok {
-						return nil, fmt.Errorf("invalid hash on %s line: %q", field, hexStr)
-					}
-
-					compatHash, err := t.mapping.NativeToCompat(nativeHash)
-					if err != nil {
-						return nil, fmt.Errorf("%s hash %s: no compat mapping: %w", field, nativeHash, err)
-					}
-
-					out.WriteString(prefix)
-					out.WriteString(compatHash.String()[:t.formats.Compat.HexSize()])
-					out.WriteByte('\n')
-					replaced = true
-					break
-				}
-			}
-
-			if !replaced {
-				out.Write(line)
-				out.WriteByte('\n')
-			}
-		} else {
-			// Body: copy verbatim.
-			out.Write(line)
-			if nlIdx >= 0 {
-				out.WriteByte('\n')
-			}
-		}
-	}
-
-	return out.Bytes(), nil
+	return t.translateTextObjectContent(
+		content,
+		hashFields,
+		t.formats.Native.HexSize(),
+		t.formats.Compat.HexSize(),
+		"compat",
+		t.mapping.NativeToCompat,
+	)
 }
 
 // translateCompatTextObject rewrites compat-format hashes on specified header
 // lines back into native format.
 func (t *Translator) translateCompatTextObject(content []byte, hashFields []string) ([]byte, error) {
-	compatHexSize := t.formats.Compat.HexSize()
+	return t.translateTextObjectContent(
+		content,
+		hashFields,
+		t.formats.Compat.HexSize(),
+		t.formats.Native.HexSize(),
+		"native",
+		t.mapping.CompatToNative,
+	)
+}
 
+func (t *Translator) translateTreeContent(
+	content []byte,
+	fromSize, toSize int,
+	target string,
+	lookup func(plumbing.Hash) (plumbing.Hash, error),
+) ([]byte, error) {
+	var out bytes.Buffer
+	buf := content
+
+	for len(buf) > 0 {
+		nullIdx := bytes.IndexByte(buf, 0)
+		if nullIdx < 0 {
+			return nil, fmt.Errorf("malformed tree entry: missing null byte")
+		}
+
+		out.Write(buf[:nullIdx+1])
+		buf = buf[nullIdx+1:]
+
+		if len(buf) < fromSize {
+			return nil, fmt.Errorf("malformed tree entry: truncated hash (have %d, want %d)", len(buf), fromSize)
+		}
+
+		fromHash, _ := plumbing.FromBytes(buf[:fromSize])
+		buf = buf[fromSize:]
+
+		toHash, err := lookup(fromHash)
+		if err != nil {
+			return nil, fmt.Errorf("tree entry hash %s: no %s mapping: %w", fromHash, target, err)
+		}
+
+		out.Write(toHash.Bytes()[:toSize])
+	}
+
+	return out.Bytes(), nil
+}
+
+func (t *Translator) translateTextObjectContent(
+	content []byte,
+	hashFields []string,
+	fromHexSize, toHexSize int,
+	target string,
+	lookup func(plumbing.Hash) (plumbing.Hash, error),
+) ([]byte, error) {
 	var out bytes.Buffer
 	remaining := content
 	headerDone := false
@@ -270,45 +217,47 @@ func (t *Translator) translateCompatTextObject(content []byte, hashFields []stri
 			remaining = nil
 		}
 
-		if !headerDone {
-			if len(line) == 0 {
-				headerDone = true
-				out.WriteByte('\n')
-				continue
-			}
-
-			replaced := false
-			for _, field := range hashFields {
-				prefix := field + " "
-				if bytes.HasPrefix(line, []byte(prefix)) && len(line) == len(prefix)+compatHexSize {
-					hexStr := string(line[len(prefix):])
-					compatHash, ok := plumbing.FromHex(hexStr)
-					if !ok {
-						return nil, fmt.Errorf("invalid hash on %s line: %q", field, hexStr)
-					}
-
-					nativeHash, err := t.mapping.CompatToNative(compatHash)
-					if err != nil {
-						return nil, fmt.Errorf("%s hash %s: no native mapping: %w", field, compatHash, err)
-					}
-
-					out.WriteString(prefix)
-					out.WriteString(nativeHash.String()[:t.formats.Native.HexSize()])
-					out.WriteByte('\n')
-					replaced = true
-					break
-				}
-			}
-
-			if !replaced {
-				out.Write(line)
-				out.WriteByte('\n')
-			}
-		} else {
+		if headerDone {
 			out.Write(line)
 			if nlIdx >= 0 {
 				out.WriteByte('\n')
 			}
+			continue
+		}
+
+		if len(line) == 0 {
+			headerDone = true
+			out.WriteByte('\n')
+			continue
+		}
+
+		replaced := false
+		for _, field := range hashFields {
+			prefix := field + " "
+			if !bytes.HasPrefix(line, []byte(prefix)) || len(line) != len(prefix)+fromHexSize {
+				continue
+			}
+
+			fromHash, ok := plumbing.FromHex(string(line[len(prefix):]))
+			if !ok {
+				return nil, fmt.Errorf("invalid hash on %s line: %q", field, line[len(prefix):])
+			}
+
+			toHash, err := lookup(fromHash)
+			if err != nil {
+				return nil, fmt.Errorf("%s hash %s: no %s mapping: %w", field, fromHash, target, err)
+			}
+
+			out.WriteString(prefix)
+			out.WriteString(toHash.String()[:toHexSize])
+			out.WriteByte('\n')
+			replaced = true
+			break
+		}
+
+		if !replaced {
+			out.Write(line)
+			out.WriteByte('\n')
 		}
 	}
 

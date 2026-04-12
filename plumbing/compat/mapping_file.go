@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -119,12 +120,8 @@ func (m *FileMapping) load() error {
 			return fmt.Errorf("decode map file %s: %w", entry.Name(), err)
 		}
 
-		for native, compat := range nativeToCompat {
-			m.nativeToCompat[native] = compat
-		}
-		for compat, native := range compatToNative {
-			m.compatToNative[compat] = native
-		}
+		maps.Copy(m.nativeToCompat, nativeToCompat)
+		maps.Copy(m.compatToNative, compatToNative)
 	}
 
 	if err := m.loadLegacyTextIndex(); err != nil {
@@ -135,6 +132,7 @@ func (m *FileMapping) load() error {
 	return nil
 }
 
+// NativeToCompat returns the compat hash for a native hash.
 func (m *FileMapping) NativeToCompat(native plumbing.Hash) (plumbing.Hash, error) {
 	m.mu.RLock()
 	if m.loaded {
@@ -159,6 +157,7 @@ func (m *FileMapping) NativeToCompat(native plumbing.Hash) (plumbing.Hash, error
 	return h, nil
 }
 
+// CompatToNative returns the native hash for a compat hash.
 func (m *FileMapping) CompatToNative(compat plumbing.Hash) (plumbing.Hash, error) {
 	m.mu.RLock()
 	if m.loaded {
@@ -183,6 +182,7 @@ func (m *FileMapping) CompatToNative(compat plumbing.Hash) (plumbing.Hash, error
 	return h, nil
 }
 
+// Add records or replaces a native/compat hash mapping on disk.
 func (m *FileMapping) Add(native, compat plumbing.Hash) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -262,6 +262,7 @@ func (m *FileMapping) overwriteMapping(native, compat plumbing.Hash) error {
 	return nil
 }
 
+// Count returns the number of persisted mappings.
 func (m *FileMapping) Count() (int, error) {
 	m.mu.RLock()
 	if m.loaded {
@@ -492,8 +493,7 @@ func (m *FileMapping) loadLegacyTextIndex() error {
 		return fmt.Errorf("read legacy loose-object-idx: %w", err)
 	}
 
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -539,7 +539,7 @@ func decodeMapFile(data []byte) (map[plumbing.Hash]plumbing.Hash, map[plumbing.H
 	}
 	formats := make([]formatInfo, 0, numFormats)
 	pos := 20
-	for i := uint32(0); i < numFormats; i++ {
+	for range numFormats {
 		id := string(data[pos : pos+4])
 		shortLen := binary.BigEndian.Uint32(data[pos+4 : pos+8])
 		offset := binary.BigEndian.Uint64(data[pos+8 : pos+16])
@@ -580,7 +580,7 @@ func decodeMapFile(data []byte) (map[plumbing.Hash]plumbing.Hash, map[plumbing.H
 			return nil, nil, fmt.Errorf("truncated format tables")
 		}
 
-		for j := uint32(0); j < numObjects; j++ {
+		for j := range numObjects {
 			offset := start + int(j)*int(info.shortLen)
 			_, ok := plumbing.FromHex(hexFromBytes(data[offset : offset+int(info.shortLen)]))
 			if !ok {
@@ -590,7 +590,7 @@ func decodeMapFile(data []byte) (map[plumbing.Hash]plumbing.Hash, map[plumbing.H
 
 		fullStart := start + shortTableLen
 		var names []plumbing.Hash
-		for j := uint32(0); j < numObjects; j++ {
+		for j := range numObjects {
 			offset := fullStart + int(j)*info.hashLen
 			h, ok := plumbing.FromBytes(data[offset : offset+info.hashLen])
 			if !ok {
@@ -603,7 +603,7 @@ func decodeMapFile(data []byte) (map[plumbing.Hash]plumbing.Hash, map[plumbing.H
 		if i > 0 {
 			orderStart := fullStart + fullTableLen
 			order := make([]uint32, 0, numObjects)
-			for j := uint32(0); j < numObjects; j++ {
+			for j := range numObjects {
 				offset := orderStart + int(j)*4
 				order = append(order, binary.BigEndian.Uint32(data[offset:offset+4]))
 			}
@@ -629,15 +629,19 @@ func decodeMapFile(data []byte) (map[plumbing.Hash]plumbing.Hash, map[plumbing.H
 	return nativeToCompat, compatToNative, nil
 }
 
-func readFile(fs billy.Filesystem, path string) ([]byte, error) {
+func readFile(fs billy.Filesystem, path string) (data []byte, err error) {
 	f, err := fs.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(f); err != nil {
+	if _, err = buf.ReadFrom(f); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

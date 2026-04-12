@@ -10,12 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTranslateObjectMatchesUpstreamGit(t *testing.T) {
@@ -58,6 +59,8 @@ func TestTranslateObjectMatchesUpstreamGit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			obj, err := repo.Storer.EncodedObject(tt.objType, tt.native)
 			require.NoError(t, err)
 
@@ -97,6 +100,7 @@ func TestTranslateContentMatchesUpstreamGit(t *testing.T) {
 		Native: format.SHA1,
 		Compat: format.SHA256,
 	}, compat.NewMemoryMapping())
+	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
 		name     string
@@ -112,6 +116,8 @@ func TestTranslateContentMatchesUpstreamGit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			obj, err := repo.Storer.EncodedObject(tt.objType, plumbing.NewHash(tt.native))
 			require.NoError(t, err)
 
@@ -193,6 +199,8 @@ func TestTranslateSignedObjectsMatchesUpstreamGit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			obj, err := repo.Storer.EncodedObject(tt.objType, plumbing.NewHash(tt.native))
 			require.NoError(t, err)
 
@@ -249,6 +257,8 @@ func TestTranslateStoredObjectsMatchesUpstreamGitReverse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			mapped, err := tr.Mapping().NativeToCompat(plumbing.NewHash(tt.native))
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, mapped.String())
@@ -357,7 +367,14 @@ func mustRunCmd(t *testing.T, dir string, env []string, name string, args ...str
 	return output
 }
 
-func mustRunCmdInput(t *testing.T, dir string, env []string, input string, name string, args ...string) string {
+func mustRunCmdInput(
+	t *testing.T,
+	dir string,
+	env []string,
+	input string,
+	name string,
+	args ...string,
+) string {
 	t.Helper()
 
 	output, err := runCmdInput(dir, env, input, name, args...)
@@ -390,7 +407,13 @@ func runCmd(dir string, env []string, name string, args ...string) (string, erro
 	return buf.String(), err
 }
 
-func runCmdInput(dir string, env []string, input string, name string, args ...string) (string, error) {
+func runCmdInput(
+	dir string,
+	env []string,
+	input string,
+	name string,
+	args ...string,
+) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)

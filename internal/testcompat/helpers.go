@@ -1,18 +1,24 @@
+// Package testcompat provides shared helpers for compat storage tests.
 package testcompat
 
 import (
 	"io"
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// EncodedObjectStore is the minimal object storage surface needed by the
+// compat storage test helpers.
 type EncodedObjectStore interface {
 	NewEncodedObject() plumbing.EncodedObject
 	SetEncodedObject(plumbing.EncodedObject) (plumbing.Hash, error)
 }
 
+// PopulateCompatChain writes a blob/tree/commit/tag chain into the given store
+// and returns their native hashes.
 func PopulateCompatChain(t *testing.T, sto EncodedObjectStore) (blobHash, treeHash, commitHash, tagHash plumbing.Hash) {
 	t.Helper()
 
@@ -76,12 +82,15 @@ func PopulateCompatChain(t *testing.T, sto EncodedObjectStore) (blobHash, treeHa
 	return blobHash, treeHash, commitHash, tagHash
 }
 
+// ReadEncodedObject reads the full content of an encoded object for assertions.
 func ReadEncodedObject(t *testing.T, obj plumbing.EncodedObject) []byte {
 	t.Helper()
 
 	r, err := obj.Reader()
 	require.NoError(t, err)
-	defer r.Close()
+	defer func() {
+		require.NoError(t, r.Close())
+	}()
 
 	content, err := io.ReadAll(r)
 	require.NoError(t, err)

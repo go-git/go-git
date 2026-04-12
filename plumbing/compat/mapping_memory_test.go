@@ -3,12 +3,15 @@ package compat
 import (
 	"testing"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 func TestMemoryMapping(t *testing.T) {
+	t.Parallel()
+
 	testHashMapping(t, func() HashMapping {
 		return NewMemoryMapping()
 	})
@@ -24,6 +27,8 @@ func testHashMapping(t *testing.T, newMapping func() HashMapping) {
 	compat2 := plumbing.NewHash("dddddddddddddddddddddddddddddddddddddd")
 
 	t.Run("empty mapping returns not found", func(t *testing.T) {
+		t.Parallel()
+
 		m := newMapping()
 		_, err := m.NativeToCompat(native1)
 		assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
@@ -35,6 +40,8 @@ func testHashMapping(t *testing.T, newMapping func() HashMapping) {
 	})
 
 	t.Run("add and lookup", func(t *testing.T) {
+		t.Parallel()
+
 		m := newMapping()
 		require.NoError(t, m.Add(native1, compat1))
 
@@ -52,6 +59,8 @@ func testHashMapping(t *testing.T, newMapping func() HashMapping) {
 	})
 
 	t.Run("multiple mappings", func(t *testing.T) {
+		t.Parallel()
+
 		m := newMapping()
 		require.NoError(t, m.Add(native1, compat1))
 		require.NoError(t, m.Add(native2, compat2))
@@ -66,6 +75,8 @@ func testHashMapping(t *testing.T, newMapping func() HashMapping) {
 	})
 
 	t.Run("overwrite mapping", func(t *testing.T) {
+		t.Parallel()
+
 		m := newMapping()
 		require.NoError(t, m.Add(native1, compat1))
 		require.NoError(t, m.Add(native1, compat2))
