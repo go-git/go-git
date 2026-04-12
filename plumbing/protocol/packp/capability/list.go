@@ -31,12 +31,14 @@ func (l *List) IsEmpty() bool {
 	return len(l.sort) == 0
 }
 
-// Decode decodes list of capabilities from raw into the list
-func (l *List) Decode(raw []byte) error {
+// DecodeList decodes a v0/v1 space-separated capability string into the
+// List. This is the format used in advertise-refs, upload-request, and
+// update-request messages.
+func DecodeList(raw []byte, l *List) {
 	raw = bytes.TrimSpace(raw)
 
 	if len(raw) == 0 {
-		return nil
+		return
 	}
 
 	for data := range bytes.SplitSeq(raw, []byte{' '}) {
@@ -50,8 +52,6 @@ func (l *List) Decode(raw []byte) error {
 
 		l.Add(c, string(pair[1]))
 	}
-
-	return nil
 }
 
 // Get returns the values for a capability

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
 
 var (
@@ -174,9 +175,7 @@ func (d *updReqDecoder) decodeCommands() error {
 	}
 
 	// Extract and decode capabilities (everything after the null byte)
-	if err := d.req.Capabilities.Decode(payload[sep+1:]); err != nil {
-		return err
-	}
+	capability.DecodeList(payload[sep+1:], d.req.Capabilities)
 
 	// Extract the command (everything before the null byte)
 	payload = payload[:sep]

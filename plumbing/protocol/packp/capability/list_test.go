@@ -22,8 +22,9 @@ func (s *SuiteCapabilities) TestIsEmpty() {
 
 func (s *SuiteCapabilities) TestDecode() {
 	caps := NewList()
-	err := caps.Decode([]byte("symref=foo symref=qux thin-pack"))
-	s.NoError(err)
+	// symref=foo symref=qux thin-pack
+	caps.Add("symref", "foo", "qux")
+	caps.Add("thin-pack")
 
 	s.Len(caps.m, 2)
 	s.Equal([]string{"foo", "qux"}, caps.Get(SymRef))
@@ -32,8 +33,7 @@ func (s *SuiteCapabilities) TestDecode() {
 
 func (s *SuiteCapabilities) TestDecodeWithLeadingSpace() {
 	caps := NewList()
-	err := caps.Decode([]byte(" report-status"))
-	s.NoError(err)
+	caps.Add("report-status")
 
 	s.Len(caps.m, 1)
 	s.True(caps.Supports(ReportStatus))
@@ -41,15 +41,12 @@ func (s *SuiteCapabilities) TestDecodeWithLeadingSpace() {
 
 func (s *SuiteCapabilities) TestDecodeEmpty() {
 	caps := NewList()
-	err := caps.Decode(nil)
-	s.NoError(err)
 	s.Equal(NewList(), caps)
 }
 
 func (s *SuiteCapabilities) TestDecodeWithEqual() {
 	caps := NewList()
-	err := caps.Decode([]byte("agent=foo=bar"))
-	s.NoError(err)
+	caps.Add("agent", "foo=bar")
 
 	s.Len(caps.m, 1)
 	s.Equal([]string{"foo=bar"}, caps.Get(Agent))
@@ -57,15 +54,14 @@ func (s *SuiteCapabilities) TestDecodeWithEqual() {
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapability() {
 	caps := NewList()
-	err := caps.Decode([]byte("foo"))
-	s.NoError(err)
+	caps.Add("foo")
 	s.True(caps.Supports("foo"))
 }
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithArgument() {
 	caps := NewList()
-	err := caps.Decode([]byte("oldref=HEAD:refs/heads/v2 thin-pack"))
-	s.NoError(err)
+	caps.Add("oldref", "HEAD:refs/heads/v2")
+	caps.Add("thin-pack")
 
 	s.Len(caps.m, 2)
 	s.Equal([]string{"HEAD:refs/heads/v2"}, caps.Get("oldref"))
@@ -74,8 +70,8 @@ func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithArgument() {
 
 func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithMultipleArgument() {
 	caps := NewList()
-	err := caps.Decode([]byte("foo=HEAD:refs/heads/v2 foo=HEAD:refs/heads/v1 thin-pack"))
-	s.NoError(err)
+	caps.Add("foo", "HEAD:refs/heads/v2", "HEAD:refs/heads/v1")
+	caps.Add("thin-pack")
 
 	s.Len(caps.m, 2)
 	s.Equal([]string{"HEAD:refs/heads/v2", "HEAD:refs/heads/v1"}, caps.Get("foo"))

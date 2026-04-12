@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
 
 // Decode reads the next advertised-refs message form its input and
@@ -192,10 +193,7 @@ func decodeFirstRef(l *advRefsDecoder) decoderStateFn {
 }
 
 func decodeCaps(p *advRefsDecoder) decoderStateFn {
-	if err := p.data.Capabilities.Decode(p.line); err != nil {
-		p.error("invalid capabilities: %s", err)
-		return nil
-	}
+	capability.DecodeList(p.line, p.data.Capabilities)
 
 	return decodeOtherRefs
 }

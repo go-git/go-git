@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
 
 // Decode reads the next upload-request form its input and
@@ -111,9 +112,7 @@ func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
 // Expected format: sp cap1 sp cap2 sp cap3...
 func (d *ulReqDecoder) decodeCaps() stateFn {
 	d.line = bytes.TrimPrefix(d.line, sp)
-	if err := d.data.Capabilities.Decode(d.line); err != nil {
-		d.error("invalid capabilities: %s", err)
-	}
+	capability.DecodeList(d.line, d.data.Capabilities)
 
 	return d.decodeOtherWants
 }
