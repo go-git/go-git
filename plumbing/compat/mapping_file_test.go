@@ -373,33 +373,47 @@ func TestDecodeMapFileErrors(t *testing.T) {
 
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	valid, err := encodeMapEntries([]mapPair{{native: native, compat: compat}})
-	require.NoError(t, err)
+	newValid := func(t *testing.T) []byte {
+		t.Helper()
+
+		data, err := encodeMapEntries([]mapPair{{native: native, compat: compat}})
+		require.NoError(t, err)
+
+		return data
+	}
 
 	t.Run("too small", func(t *testing.T) {
+		t.Parallel()
+
 		_, _, err := decodeMapFile([]byte("small"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "map file too small")
 	})
 
 	t.Run("invalid signature", func(t *testing.T) {
-		data := append([]byte(nil), valid...)
+		t.Parallel()
+
+		data := newValid(t)
 		copy(data[:4], []byte("BAD!"))
-		_, _, err = decodeMapFile(data)
+		_, _, err := decodeMapFile(data)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid signature")
 	})
 
 	t.Run("unsupported version", func(t *testing.T) {
-		data := append([]byte(nil), valid...)
+		t.Parallel()
+
+		data := newValid(t)
 		binary.BigEndian.PutUint32(data[4:8], 2)
-		_, _, err = decodeMapFile(data)
+		_, _, err := decodeMapFile(data)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported version")
 	})
 
 	t.Run("invalid trailer offset", func(t *testing.T) {
-		data := append([]byte(nil), valid...)
+		t.Parallel()
+
+		data := newValid(t)
 		binary.BigEndian.PutUint64(data[52:60], uint64(len(data)+1))
 		_, _, err := decodeMapFile(data)
 		require.Error(t, err)
@@ -407,7 +421,9 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("truncated format tables", func(t *testing.T) {
-		data := append([]byte(nil), valid...)
+		t.Parallel()
+
+		data := newValid(t)
 		binary.BigEndian.PutUint32(data[12:16], 2)
 		_, _, err := decodeMapFile(data)
 		require.Error(t, err)
@@ -415,7 +431,9 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("invalid format offset", func(t *testing.T) {
-		data := append([]byte(nil), valid...)
+		t.Parallel()
+
+		data := newValid(t)
 		binary.BigEndian.PutUint64(data[28:36], uint64(len(data)+1))
 		_, _, err := decodeMapFile(data)
 		require.Error(t, err)
@@ -423,6 +441,8 @@ func TestDecodeMapFileErrors(t *testing.T) {
 	})
 
 	t.Run("invalid object ordering", func(t *testing.T) {
+		t.Parallel()
+
 		data, err := encodeMapEntries([]mapPair{
 			{native: native, compat: compat},
 			{native: plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"), compat: plumbing.NewHash("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")},
