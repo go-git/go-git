@@ -228,8 +228,17 @@ func UploadPack(
 					writec <- fmt.Errorf("sending final ack server-response: %w", err)
 					return
 				}
-			case ack.Hash.IsZero():
-				// We don't have multi-ack and there are no haves. Encode a NAK.
+			case ack.Hash.IsZero() && len(haves) == 0:
+				// We don't have multi-ack and no haves were sent. Emit the
+				// single terminal NAK.
+				//
+				// When haves *were* sent, the ServerResponse{ACKs: acks}
+				// write above already emitted a NAK (encodeServerResponse
+				// writes NAK when ACKs is empty). Emitting another one here
+				// would produce two consecutive "0008NAK\n" pktlines;
+				// ServerResponse.Decode consumes only the first, and the
+				// second would then be misread by the sideband demuxer as
+				// a frame with channel byte 'N' ("unknown channel NAK").
 				srvrsp := packp.ServerResponse{}
 				if err := srvrsp.Encode(w); err != nil {
 					writec <- fmt.Errorf("sending final nak server-response: %w", err)
