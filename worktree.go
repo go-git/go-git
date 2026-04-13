@@ -100,15 +100,12 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	}
 
 	fetchHead, err := remote.fetch(ctx, &FetchOptions{
-		RemoteName:      o.RemoteName,
-		RemoteURL:       o.RemoteURL,
-		Depth:           o.Depth,
-		Auth:            o.Auth,
-		Progress:        o.Progress,
-		Force:           o.Force,
-		InsecureSkipTLS: o.InsecureSkipTLS,
-		CABundle:        o.CABundle,
-		ProxyOptions:    o.ProxyOptions,
+		RemoteName:    o.RemoteName,
+		RemoteURL:     o.RemoteURL,
+		Depth:         o.Depth,
+		ClientOptions: o.ClientOptions,
+		Progress:      o.Progress,
+		Force:         o.Force,
 	})
 
 	updated := true
@@ -165,7 +162,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	if o.RecurseSubmodules != NoRecurseSubmodules {
 		return w.updateSubmodules(ctx, &SubmoduleUpdateOptions{
 			RecurseSubmodules: o.RecurseSubmodules,
-			Auth:              o.Auth,
+			ClientOptions:     o.ClientOptions,
 		})
 	}
 

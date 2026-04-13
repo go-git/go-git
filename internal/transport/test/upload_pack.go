@@ -1,10 +1,10 @@
-// Package test implements common test suite for different transport
-// implementations.
+// Package test implements common test suites for the new transport API.
 package test
 
 import (
 	"context"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/stretchr/testify/suite"
@@ -15,17 +15,16 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
-// UploadPackSuite is a test suite for upload-pack transport implementations.
+// UploadPackSuite is a test suite for upload-pack over the new transport API.
 type UploadPackSuite struct {
 	suite.Suite
-	Endpoint            *transport.Endpoint
-	EmptyEndpoint       *transport.Endpoint
-	NonExistentEndpoint *transport.Endpoint
+	Endpoint            *url.URL
+	EmptyEndpoint       *url.URL
+	NonExistentEndpoint *url.URL
 	Storer              storage.Storer
 	EmptyStorer         storage.Storer
 	NonExistentStorer   storage.Storer
-	EmptyAuth           transport.AuthMethod
-	Client              transport.Transport
+	Transport           transport.Transport
 }
 
 // TearDownTest closes all storers.
@@ -37,13 +36,16 @@ func (s *UploadPackSuite) TearDownTest() {
 	}
 }
 
+func (s *UploadPackSuite) packClient() transport.Transport {
+	return s.Transport
+}
+
 // TestAdvertisedReferencesEmpty tests advertised references on an empty repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
-	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.EmptyEndpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	ar, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().ErrorIs(err, transport.ErrEmptyRemoteRepository)
@@ -52,19 +54,17 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 
 // TestAdvertisedReferencesNotExists tests advertised references on a non-existent repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
-	r, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
-	s.Require().NoError(err)
-	_, err = r.Handshake(context.TODO(), transport.UploadPackService)
+	pc := s.packClient()
+	_, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.NonExistentEndpoint, Command: transport.UploadPackService})
 	s.Require().Error(err)
 }
 
 // TestCallAdvertisedReferenceTwice tests that calling advertised references twice returns the same result.
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	ar1, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -76,14 +76,12 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 
 // TestDefaultBranch tests that the default branch is correctly advertised.
 func (s *UploadPackSuite) TestDefaultBranch() {
-	ctx := context.TODO()
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(ctx, transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(ctx)
+	info, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 	symrefs := conn.Capabilities().Get(capability.SymRef)
@@ -93,11 +91,10 @@ func (s *UploadPackSuite) TestDefaultBranch() {
 
 // TestAdvertisedReferencesFilterUnsupported tests filtering unsupported capabilities.
 func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -107,11 +104,10 @@ func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 
 // TestCapabilities tests that capabilities are correctly reported.
 func (s *UploadPackSuite) TestCapabilities() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -121,21 +117,19 @@ func (s *UploadPackSuite) TestCapabilities() {
 
 // TestUploadPack tests a basic upload-pack fetch.
 func (s *UploadPackSuite) TestUploadPack() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(context.Background(), req)
+	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().NoError(err)
 
 	afterCount := s.countObjects(s.Storer)
-
 	s.Require().Equal(28, afterCount-beforeCount)
 }
 
@@ -144,11 +138,10 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
 
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -157,7 +150,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(ctx, req)
+	err = conn.Fetch(ctx, s.Storer, req)
 	s.Require().NotNil(err)
 }
 
@@ -165,11 +158,10 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -179,17 +171,16 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	cancel()
-	err = conn.Fetch(ctx, req)
+	err = conn.Fetch(ctx, s.Storer, req)
 	s.Require().NotNil(err)
 }
 
 // TestUploadPackFull tests a full upload-pack fetch with advertised references.
 func (s *UploadPackSuite) TestUploadPackFull() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -199,7 +190,7 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(context.Background(), req)
+	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().NoError(err)
 
 	afterCount := s.countObjects(s.Storer)
@@ -208,33 +199,30 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 
 // TestUploadPackInvalidReq tests upload-pack with an invalid request.
 func (s *UploadPackSuite) TestUploadPackInvalidReq() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	// Invalid capabilities are now handled by the transport layer
 
-	err = conn.Fetch(context.Background(), req)
-	s.Require().NoError(err) // Should succeed as invalid capabilities are handled internally
+	err = conn.Fetch(context.Background(), s.Storer, req)
+	s.Require().NoError(err)
 }
 
 // TestUploadPackNoChanges tests upload-pack when there are no changes.
 func (s *UploadPackSuite) TestUploadPackNoChanges() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(context.Background(), req)
+	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().ErrorIs(err, transport.ErrNoChange)
 }
 
@@ -255,14 +243,13 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 }
 
 func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expectedObjects int) {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	beforeCount := s.countObjects(s.Storer)
-	err = conn.Fetch(context.Background(), req)
+	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().NoError(err)
 
 	afterCount := s.countObjects(s.Storer)
@@ -271,20 +258,16 @@ func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expec
 
 // TestFetchError tests that fetching a non-existent object returns an error.
 func (s *UploadPackSuite) TestFetchError() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
 	s.Require().NoError(err)
-	conn, err := r.Handshake(context.TODO(), transport.UploadPackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
-	err = conn.Fetch(context.Background(), req)
+	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().NotNil(err)
-
-	// XXX: We do not test Close error, since implementations might return
-	//     different errors if a previous error was found.
 }
 
 func (s *UploadPackSuite) countObjects(st storage.Storer) int {

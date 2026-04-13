@@ -30,19 +30,71 @@ func TestServerInfoSuite(t *testing.T) {
 func (s *ServerInfoSuite) TestUpdateServerInfoInit() {
 	fs := memfs.New()
 	st := memory.NewStorage()
-	s.NotNil(fs)
-	s.NotNil(st)
-
 	err := UpdateServerInfo(st, fs)
 	s.NoError(err)
 }
 
-func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) {
-	refsFile, err := fs.Open("info/refs")
+func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
+	fixture := fixtures.Basic().One()
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
+	fs := memfs.New()
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
+	fixture := fixtures.Basic().One()
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
+	fs := memfs.New()
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
+	fixture := fixtures.Basic().One()
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
+	fs := memfs.New()
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+
+	head, err := st.Reference(plumbing.HEAD)
 	s.NoError(err)
 
-	defer refsFile.Close()
-	bts, err := io.ReadAll(refsFile)
+	ref := plumbing.NewHashReference("refs/heads/my-branch", head.Hash())
+	err = st.SetReference(ref)
+	s.NoError(err)
+
+	tag := plumbing.NewHashReference("refs/tags/test-tag", head.Hash())
+	err = st.SetReference(tag)
+	s.NoError(err)
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+}
+
+func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) {
+	f, err := fs.Open("info/refs")
+	s.NoError(err)
+	defer f.Close()
+
+	bts, err := io.ReadAll(f)
 	s.NoError(err)
 
 	localRefs := make(map[plumbing.ReferenceName]plumbing.Hash)
@@ -87,16 +139,15 @@ func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) 
 		}
 		return nil
 	})
-
 	s.NoError(err)
 }
 
 func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) {
-	infoPacks, err := fs.Open("objects/info/packs")
+	f, err := fs.Open("objects/info/packs")
 	s.NoError(err)
+	defer f.Close()
 
-	defer infoPacks.Close()
-	bts, err := io.ReadAll(infoPacks)
+	bts, err := io.ReadAll(f)
 	s.NoError(err)
 
 	pos, ok := st.(storer.PackedObjectStorer)
@@ -120,63 +171,4 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 		_, ok := localPacks[p.String()]
 		s.True(ok)
 	}
-}
-
-func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
-	fixture := fixtures.Basic().One()
-	dotgit, err := fixture.DotGit()
-	s.Require().NoError(err)
-	st := filesystem.NewStorage(dotgit, nil)
-	fs := memfs.New()
-
-	err = UpdateServerInfo(st, fs)
-	s.NoError(err)
-
-	assertInfoRefs(s, st, fs)
-	assertObjectPacks(s, st, fs)
-}
-
-func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
-	fixture := fixtures.Basic().One()
-	dotgit, err := fixture.DotGit()
-	s.Require().NoError(err)
-	st := filesystem.NewStorage(dotgit, nil)
-	fs := memfs.New()
-
-	err = UpdateServerInfo(st, fs)
-	s.NoError(err)
-
-	assertInfoRefs(s, st, fs)
-	assertObjectPacks(s, st, fs)
-}
-
-func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
-	fixture := fixtures.Basic().One()
-	dotgit, err := fixture.DotGit()
-	s.Require().NoError(err)
-	st := filesystem.NewStorage(dotgit, nil)
-	fs := memfs.New()
-
-	err = UpdateServerInfo(st, fs)
-	s.NoError(err)
-
-	assertInfoRefs(s, st, fs)
-	assertObjectPacks(s, st, fs)
-
-	head, err := st.Reference(plumbing.HEAD)
-	s.NoError(err)
-
-	ref := plumbing.NewHashReference("refs/heads/my-branch", head.Hash())
-	err = st.SetReference(ref)
-	s.NoError(err)
-
-	tag := plumbing.NewHashReference("refs/tags/test-tag", head.Hash())
-	err = st.SetReference(tag)
-	s.NoError(err)
-
-	err = UpdateServerInfo(st, fs)
-	s.NoError(err)
-
-	assertInfoRefs(s, st, fs)
-	assertObjectPacks(s, st, fs)
 }

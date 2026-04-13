@@ -1106,16 +1106,13 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
-		RefSpecs:        c.Fetch,
-		Depth:           o.Depth,
-		Auth:            o.Auth,
-		Progress:        o.Progress,
-		Tags:            o.Tags,
-		RemoteName:      o.RemoteName,
-		InsecureSkipTLS: o.InsecureSkipTLS,
-		CABundle:        o.CABundle,
-		ProxyOptions:    o.ProxyOptions,
-		Filter:          o.Filter,
+		RefSpecs:      c.Fetch,
+		Depth:         o.Depth,
+		ClientOptions: o.ClientOptions,
+		Progress:      o.Progress,
+		Tags:          o.Tags,
+		RemoteName:    o.RemoteName,
+		Filter:        o.Filter,
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
@@ -1159,7 +1156,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 					}
 					return 0
 				}(),
-				Auth: o.Auth,
+				ClientOptions: o.ClientOptions,
 			}); err != nil {
 				return err
 			}

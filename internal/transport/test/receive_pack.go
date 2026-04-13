@@ -1,5 +1,3 @@
-// Package test implements common test suite for different transport
-// implementations.
 package test
 
 import (
@@ -7,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,17 +22,16 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-// ReceivePackSuite is a test suite for receive-pack transport implementations.
+// ReceivePackSuite is a test suite for receive-pack over the new transport API.
 type ReceivePackSuite struct {
 	suite.Suite
-	Endpoint            *transport.Endpoint
-	EmptyEndpoint       *transport.Endpoint
-	NonExistentEndpoint *transport.Endpoint
+	Endpoint            *url.URL
+	EmptyEndpoint       *url.URL
+	NonExistentEndpoint *url.URL
 	Storer              storage.Storer
 	EmptyStorer         storage.Storer
 	NonExistentStorer   storage.Storer
-	EmptyAuth           transport.AuthMethod
-	Client              transport.Transport
+	Transport           transport.Transport
 }
 
 // TearDownTest closes all storers.
@@ -45,14 +43,17 @@ func (s *ReceivePackSuite) TearDownTest() {
 	}
 }
 
+func (s *ReceivePackSuite) packClient() transport.Transport {
+	return s.Transport
+}
+
 // TestAdvertisedReferencesEmpty tests advertised references on an empty repo.
 func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
-	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.EmptyEndpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
+	defer func() { s.Require().NoError(conn.Close()) }()
 
-	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
 	refs, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
 	s.Require().Len(refs, 0)
@@ -60,21 +61,17 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
 
 // TestAdvertisedReferencesNotExists tests advertised references on a non-existent repo.
 func (s *ReceivePackSuite) TestAdvertisedReferencesNotExists() {
-	r, err := s.Client.NewSession(s.NonExistentStorer, s.NonExistentEndpoint, s.EmptyAuth)
-	s.Require().NoError(err)
-
-	_, err = r.Handshake(context.TODO(), transport.ReceivePackService)
+	pc := s.packClient()
+	_, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.NonExistentEndpoint, Command: transport.ReceivePackService})
 	s.Require().Error(err)
 }
 
 // TestCallAdvertisedReferenceTwice tests that calling advertised references twice returns the same result.
 func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
-
-	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	refs1, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -87,12 +84,10 @@ func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice() {
 
 // TestDefaultBranch tests that the default branch is correctly advertised.
 func (s *ReceivePackSuite) TestDefaultBranch() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
-
-	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	refs, err := conn.GetRemoteRefs(context.TODO())
 	s.Require().NoError(err)
@@ -111,12 +106,10 @@ func (s *ReceivePackSuite) TestDefaultBranch() {
 
 // TestCapabilities tests that capabilities are correctly reported.
 func (s *ReceivePackSuite) TestCapabilities() {
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
-
-	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 	s.Require().Len(conn.Capabilities().Get("agent"), 1)
 }
 
@@ -143,17 +136,15 @@ func (s *ReceivePackSuite) TestSendPackWithContext() {
 		},
 	}
 
-	r, err := s.Client.NewSession(s.EmptyStorer, s.EmptyEndpoint, s.EmptyAuth)
+	pc := s.packClient()
+	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.EmptyEndpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
-
-	conn, err := r.Handshake(context.TODO(), transport.ReceivePackService)
-	s.Require().NoError(err)
-	defer func() { s.Require().Nil(conn.Close()) }()
+	defer func() { s.Require().NoError(conn.Close()) }()
 
 	ctx, cancel := context.WithCancel(context.TODO())
 	cancel()
 
-	err = conn.Push(ctx, req)
+	err = conn.Push(ctx, s.EmptyStorer, req)
 	s.Require().NotNil(err)
 }
 
@@ -179,7 +170,6 @@ func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus() {
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
-	// req.Capabilities.Set(capability.ReportStatus)
 	s.receivePack(endpoint, req, fixture, full)
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
@@ -219,8 +209,6 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus() {
 	req.Commands = []*packp.Command{
 		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
 	}
-	// req.Capabilities.Set(capability.ReportStatus)
-
 	s.receivePack(endpoint, req, fixture, full)
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
@@ -235,39 +223,31 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 	}
 	err := s.receivePackNoCheck(endpoint, req, fixture, full)
-	// XXX: Recent git versions return "failed to update ref", while older
-	//     (>=1.9) return "failed to lock".
-	// More recent versions: command error on <ref>: reference already exists
 	s.Regexp(regexp.MustCompile(".*(failed to update ref|failed to lock|reference already exists).*"), err)
 	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
 }
 
-func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
+func (s *ReceivePackSuite) receivePackNoCheck(ep *url.URL,
 	req *transport.PushRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool,
 ) error {
 	s.T().Helper()
 	ctx := context.TODO()
-	url := ""
+	fixtureURL := ""
 	if fixture != nil {
-		url = fixture.URL
+		fixtureURL = fixture.URL
 	}
 	comment := fmt.Sprintf(
 		"failed with ep=%s fixture=%s callAdvertisedReferences=%v",
-		ep.String(), url, callAdvertisedReferences,
+		ep.String(), fixtureURL, callAdvertisedReferences,
 	)
 
-	// Set write permissions to endpoint directory files. By default
-	// fixtures are generated with read only permissions, this causes
-	// errors deleting or modifying files.
 	rootPath := ep.Path
 	stat, err := os.Stat(ep.Path)
-
 	if rootPath != "" && err == nil && stat.IsDir() {
 		objectPath := filepath.Join(rootPath, "objects/pack")
 		files, err := os.ReadDir(objectPath)
 		s.Require().NoError(err)
-
 		for _, file := range files {
 			path := filepath.Join(objectPath, file.Name())
 			err = os.Chmod(path, 0o644)
@@ -275,10 +255,8 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 		}
 	}
 
-	r, err := s.Client.NewSession(s.EmptyStorer, ep, s.EmptyAuth)
-	s.Require().NoError(err, comment)
-
-	conn, err := r.Handshake(ctx, transport.ReceivePackService)
+	pc := s.packClient()
+	conn, err := pc.Handshake(ctx, &transport.Request{URL: ep, Command: transport.ReceivePackService})
 	s.Require().NoError(err, comment)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -304,47 +282,38 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *transport.Endpoint,
 		}
 	}
 
-	return conn.Push(ctx, req)
+	return conn.Push(ctx, s.EmptyStorer, req)
 }
 
-func (s *ReceivePackSuite) receivePack(ep *transport.Endpoint,
+func (s *ReceivePackSuite) receivePack(ep *url.URL,
 	req *transport.PushRequest, fixture *fixtures.Fixture,
 	callAdvertisedReferences bool,
 ) {
 	s.T().Helper()
-	url := ""
+	fixtureURL := ""
 	if fixture != nil {
-		url = fixture.URL
+		fixtureURL = fixture.URL
 	}
-
 	comment := fmt.Sprintf(
 		"failed with ep=%s fixture=%s callAdvertisedReferences=%v",
-		ep.String(), url, callAdvertisedReferences,
+		ep.String(), fixtureURL, callAdvertisedReferences,
 	)
 	err := s.receivePackNoCheck(ep, req, fixture, callAdvertisedReferences)
-	// report, err := s.receivePackNoCheck(ep, req, fixture, callAdvertisedReferences)
 	s.Require().NoError(err, comment)
-	// if req.Capabilities.Supports(capability.ReportStatus) {
-	// 	s.Require().NotNil(report, comment)
-	// 	s.Require().NoError(report.Error(), comment)
-	// } else {
-	// 	s.Require().Nil(report, comment)
-	// }
 }
 
-func (s *ReceivePackSuite) checkRemoteHead(ep *transport.Endpoint, head plumbing.Hash) {
+func (s *ReceivePackSuite) checkRemoteHead(ep *url.URL, head plumbing.Hash) {
 	s.T().Helper()
 	s.checkRemoteReference(ep, plumbing.Master, head)
 }
 
-func (s *ReceivePackSuite) checkRemoteReference(ep *transport.Endpoint,
+func (s *ReceivePackSuite) checkRemoteReference(ep *url.URL,
 	refName plumbing.ReferenceName, head plumbing.Hash,
 ) {
 	s.T().Helper()
 	ctx := context.TODO()
-	r, err := s.Client.NewSession(s.EmptyStorer, ep, s.EmptyAuth)
-	s.Require().NoError(err)
-	conn, err := r.Handshake(ctx, transport.ReceivePackService)
+	pc := s.packClient()
+	conn, err := pc.Handshake(ctx, &transport.Request{URL: ep, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
 	ar, err := conn.GetRemoteRefs(ctx)
 	s.Require().NoError(err, fmt.Sprintf("endpoint: %s", ep.String()))
@@ -363,7 +332,6 @@ func (s *ReceivePackSuite) checkRemoteReference(ep *transport.Endpoint,
 		s.Require().True(ok)
 		s.Require().Equal(head, ref.Hash())
 	}
-
 	s.Require().NoError(conn.Close())
 }
 
@@ -376,10 +344,8 @@ func (s *ReceivePackSuite) TestSendPackAddDeleteReference() {
 func (s *ReceivePackSuite) testSendPackAddReference() {
 	s.T().Helper()
 	ctx := context.TODO()
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.Require().NoError(err)
-
-	conn, err := r.Handshake(ctx, transport.ReceivePackService)
+	pc := s.packClient()
+	conn, err := pc.Handshake(ctx, &transport.Request{URL: s.Endpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
 
 	refs, err := conn.GetRemoteRefs(ctx)
@@ -388,13 +354,11 @@ func (s *ReceivePackSuite) testSendPackAddReference() {
 	s.Require().NoError(conn.Close())
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
-
 	req := &transport.PushRequest{
 		Commands: []*packp.Command{
 			{Name: "refs/heads/newbranch", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
 		},
 	}
-
 	s.receivePack(s.Endpoint, req, fixture, false)
 	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.NewHash(fixture.Head))
 }
@@ -402,10 +366,8 @@ func (s *ReceivePackSuite) testSendPackAddReference() {
 func (s *ReceivePackSuite) testSendPackDeleteReference() {
 	s.T().Helper()
 	ctx := context.TODO()
-	r, err := s.Client.NewSession(s.Storer, s.Endpoint, s.EmptyAuth)
-	s.Require().NoError(err)
-
-	conn, err := r.Handshake(ctx, transport.ReceivePackService)
+	pc := s.packClient()
+	conn, err := pc.Handshake(ctx, &transport.Request{URL: s.Endpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
 
 	caps := conn.Capabilities()
@@ -415,7 +377,6 @@ func (s *ReceivePackSuite) testSendPackDeleteReference() {
 	s.Require().NoError(conn.Close())
 
 	fixture := fixtures.Basic().ByTag("packfile").One()
-
 	req := &transport.PushRequest{
 		Commands: []*packp.Command{
 			{Name: "refs/heads/newbranch", Old: plumbing.NewHash(fixture.Head), New: plumbing.ZeroHash},
@@ -445,6 +406,5 @@ func (s *ReceivePackSuite) emptyPackfile() io.ReadCloser {
 	if err != nil {
 		panic(err)
 	}
-
 	return io.NopCloser(&buf)
 }

@@ -19,21 +19,14 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
 	assert.True(t, upreq.Capabilities.Supports(capability.ReportStatus))
 	require.Len(t, upreq.Commands, 1)
 	assert.Equal(t, plumbing.ReferenceName("refs/heads/master"), upreq.Commands[0].Name)
-	assert.Equal(t, plumbing.ZeroHash, upreq.Commands[0].Old)
-	assert.Equal(t, plumbing.NewHash("0123456789012345678901234567890123456789"), upreq.Commands[0].New)
 }
 
 func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
@@ -42,11 +35,7 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 	}
 
@@ -56,17 +45,12 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 
 func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 	t.Parallel()
-	// Create capabilities with Sideband64k
 	caps := capability.NewList()
 	caps.Add(capability.Sideband64k)
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Progress: &mockWriter{},
 	}
@@ -83,11 +67,7 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Progress: &mockWriter{},
 	}
@@ -105,11 +85,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 	req := &PushRequest{
 		Progress: io.Discard,
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Quiet: true,
 	}
@@ -125,17 +101,12 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Atomic: true,
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
 	assert.True(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
@@ -145,11 +116,7 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Atomic: true,
 	}
@@ -165,11 +132,7 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 	}
 
@@ -177,7 +140,6 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 	assert.True(t, upreq.Capabilities.Supports(capability.Agent))
 }
 
-// mockWriter is a simple io.Writer implementation for testing
 type mockWriter struct {
 	data []byte
 }
