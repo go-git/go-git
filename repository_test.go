@@ -1,7 +1,10 @@
 package git
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -27,6 +30,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	archivePkg "github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -4057,4 +4061,224 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 			}
 		})
 	}
+}
+
+func TestRepository_Archive(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		opts      ArchiveOptions
+		wantErr   string
+		wantRead  string // if non-empty, reading stream should fail containing this substring
+		wantFiles bool   // if true, archive should contain at least one file
+		wantCheck func(t *testing.T, data []byte)
+	}{
+		{
+			name:      "tar format",
+			opts:      ArchiveOptions{Format: "tar", Treeish: "master"},
+			wantFiles: true,
+		},
+		{
+			name:      "tar.gz format",
+			opts:      ArchiveOptions{Format: "tar.gz", Treeish: "master"},
+			wantFiles: true,
+		},
+		{
+			name:      "tgz format",
+			opts:      ArchiveOptions{Format: "tgz", Treeish: "master"},
+			wantFiles: true,
+		},
+		{
+			name:      "zip format",
+			opts:      ArchiveOptions{Format: "zip", Treeish: "master"},
+			wantFiles: true,
+		},
+		{
+			name: "tar with prefix",
+			opts: ArchiveOptions{Format: "tar", Treeish: "master", Prefix: "myproject/"},
+			wantCheck: func(t *testing.T, data []byte) {
+				tr := tar.NewReader(bytes.NewReader(data))
+				for {
+					hdr, err := tr.Next()
+					if err == io.EOF {
+						break
+					}
+					require.NoError(t, err)
+					if hdr.Typeflag == tar.TypeXGlobalHeader {
+						continue
+					}
+					assert.True(t, strings.HasPrefix(hdr.Name, "myproject/"),
+						"expected prefix myproject/, got %s", hdr.Name)
+				}
+			},
+		},
+		{
+			name:      "tar with path filter",
+			opts:      ArchiveOptions{Format: "tar", Treeish: "master", Paths: []string{".gitignore"}},
+			wantFiles: true,
+		},
+		{
+			name:      "tar from tag",
+			opts:      ArchiveOptions{Format: "tar", Treeish: "v1.0.0"},
+			wantFiles: true,
+		},
+		{
+			name: "tar contains commit ID in PAX header",
+			opts: ArchiveOptions{Format: "tar", Treeish: "master"},
+			wantCheck: func(t *testing.T, data []byte) {
+				commitID, err := archivePkg.GetTarCommitID(bytes.NewReader(data))
+				require.NoError(t, err)
+				assert.NotNil(t, commitID)
+			},
+		},
+		{
+			name: "zip contains commit ID as comment",
+			opts: ArchiveOptions{Format: "zip", Treeish: "master"},
+			wantCheck: func(t *testing.T, data []byte) {
+				zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+				require.NoError(t, err)
+				assert.NotEmpty(t, zr.Comment)
+			},
+		},
+		{
+			name:    "invalid format",
+			opts:    ArchiveOptions{Format: "rar", Treeish: "master"},
+			wantErr: "unsupported archive format",
+		},
+		{
+			name:    "empty tree-ish",
+			opts:    ArchiveOptions{Format: "tar", Treeish: ""},
+			wantErr: "tree-ish is required",
+		},
+		{
+			name:     "invalid prefix",
+			opts:     ArchiveOptions{Format: "tar", Treeish: "master", Prefix: "../../etc/"},
+			wantRead: "invalid archive prefix",
+		},
+		{
+			name:     "nonexistent ref",
+			opts:     ArchiveOptions{Format: "tar", Treeish: "nonexistent-branch"},
+			wantRead: "cannot resolve",
+		},
+		{
+			name:     "pathspec no match",
+			opts:     ArchiveOptions{Format: "tar", Treeish: "master", Paths: []string{"nonexistent/path/xyzzy"}},
+			wantRead: "pathspec",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := setupArchiveRepo(t)
+
+			rc, err := r.Archive(&tt.opts)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			t.Cleanup(func() { rc.Close() })
+
+			data, err := io.ReadAll(rc)
+			if tt.wantRead != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantRead)
+				return
+			}
+			require.NoError(t, err)
+
+			if tt.wantCheck != nil {
+				tt.wantCheck(t, data)
+				return
+			}
+
+			if tt.wantFiles {
+				names := archiveFileNames(t, tt.opts.Format, data)
+				assert.Greater(t, len(names), 0, "archive should contain files")
+			}
+		})
+	}
+}
+
+func TestRepository_ArchiveContext_Cancelled(t *testing.T) {
+	t.Parallel()
+
+	r := setupArchiveRepo(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	ar, err := r.ArchiveContext(ctx, &ArchiveOptions{
+		Format:  "tar",
+		Treeish: "master",
+	})
+	assert.NoError(t, err)
+	t.Cleanup(func() { ar.Close() })
+	_, err = io.Copy(io.Discard, ar)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// archiveFileNames extracts file names from an archive based on format.
+func archiveFileNames(t *testing.T, format string, data []byte) []string {
+	t.Helper()
+
+	var names []string
+
+	switch format {
+	case "zip":
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		require.NoError(t, err)
+		for _, f := range zr.File {
+			names = append(names, f.Name)
+		}
+
+	case "tar":
+		tr := tar.NewReader(bytes.NewReader(data))
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			if hdr.Typeflag == tar.TypeXGlobalHeader {
+				continue
+			}
+			names = append(names, hdr.Name)
+		}
+
+	default: // tar.gz, tgz
+		gr, err := gzip.NewReader(bytes.NewReader(data))
+		require.NoError(t, err)
+		tr := tar.NewReader(gr)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			if hdr.Typeflag == tar.TypeXGlobalHeader {
+				continue
+			}
+			names = append(names, hdr.Name)
+		}
+	}
+
+	return names
+}
+
+// setupArchiveRepo creates a repository from the basic fixture suitable for
+// archive tests. It returns an opened *Repository.
+func setupArchiveRepo(t *testing.T) *Repository {
+	t.Helper()
+	f := fixtures.Basic().One()
+	dotgit, err := f.DotGit()
+	require.NoError(t, err)
+	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	r, err := Open(st, memfs.New())
+	require.NoError(t, err)
+	return r
 }

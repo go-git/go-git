@@ -61,6 +61,10 @@ var (
 	// ErrInvalidPrefix is returned when the requested archive prefix contains
 	// path traversal sequences.
 	ErrInvalidPrefix = errors.New("invalid archive prefix")
+
+	// ErrUnsupportedFormat is returned when the requested archive format is
+	// not supported.
+	ErrUnsupportedFormat = errors.New("unsupported archive format")
 )
 
 const maxTarSymlinkTargetSize = 64 * 1024
@@ -495,7 +499,7 @@ func WriteArchive(st storage.Storer, w io.Writer, treeish, format, prefix string
 	case "zip":
 		return WriteZipArchive(st, w, tree, commitHash, prefix, paths, commitTime)
 	default:
-		return fmt.Errorf("unsupported archive format: %s", format)
+		return fmt.Errorf("%w: %s", ErrUnsupportedFormat, format)
 	}
 }
 
