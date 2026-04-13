@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/util"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -63,10 +64,15 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		hash = ref.Hash()
 	}
 
-	return w.status(o.Strategy, hash)
+	cfg, err := w.r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	return w.status(cfg, o.Strategy, hash)
 }
 
-func (w *Worktree) status(ss StatusStrategy, commit plumbing.Hash) (Status, error) {
+func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
 	s, err := ss.new(w)
 	if err != nil {
 		return nil, err
@@ -96,7 +102,7 @@ func (w *Worktree) status(ss StatusStrategy, commit plumbing.Hash) (Status, erro
 		}
 	}
 
-	right, err := w.diffStagingWithWorktree(false, true)
+	right, err := w.diffStagingWithWorktree(cfg, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +141,8 @@ func nameFromAction(ch *merkletrie.Change) string {
 	return name
 }
 
-func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
 	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return nil, err
-	}
-
-	cfg, err := w.r.Config()
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +150,7 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: cfg.Core.FileMode,
 	})
-	submodules, err := w.getSubmodulesStatus()
+	submodules, err := w.getSubmodulesStatus(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -216,10 +217,10 @@ func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes) merkletrie.
 	return res
 }
 
-func (w *Worktree) getSubmodulesStatus() (map[string]plumbing.Hash, error) {
+func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.Hash, error) {
 	o := map[string]plumbing.Hash{}
 
-	sub, err := w.Submodules()
+	sub, err := w.submodulesWithConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +322,7 @@ func (w *Worktree) Add(path string) (plumbing.Hash, error) {
 	return w.doAdd(path, make([]gitignore.Pattern, 0), false)
 }
 
-func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
+func (w *Worktree) doAddDirectory(cfg *config.Config, idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
 	if len(ignorePattern) > 0 {
 		m := gitignore.NewMatcher(ignorePattern)
 		matchPath := strings.Split(directory, string(os.PathSeparator))
@@ -339,7 +340,7 @@ func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, 
 		}
 
 		var a bool
-		a, _, err = w.doAddFile(idx, s, name, ignorePattern)
+		a, _, err = w.doAddFile(cfg, idx, s, name, ignorePattern)
 		if err != nil {
 			return added, err
 		}
@@ -388,6 +389,11 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		}()
 	}
 
+	cfg, err := w.r.Config()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -422,9 +428,9 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	}
 
 	if err != nil || !fi.IsDir() {
-		added, h, err = w.doAddFile(idx, s, path, ignorePattern)
+		added, h, err = w.doAddFile(cfg, idx, s, path, ignorePattern)
 	} else {
-		added, err = w.doAddDirectory(idx, s, path, ignorePattern)
+		added, err = w.doAddDirectory(cfg, idx, s, path, ignorePattern)
 	}
 
 	if err != nil {
@@ -459,6 +465,11 @@ func (w *Worktree) AddGlob(pattern string) error {
 		return ErrGlobNoMatches
 	}
 
+	cfg, err := w.r.Config()
+	if err != nil {
+		return err
+	}
+
 	s, err := w.Status()
 	if err != nil {
 		return err
@@ -478,9 +489,9 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 		var added bool
 		if fi.IsDir() {
-			added, err = w.doAddDirectory(idx, s, file, make([]gitignore.Pattern, 0))
+			added, err = w.doAddDirectory(cfg, idx, s, file, make([]gitignore.Pattern, 0))
 		} else {
-			added, _, err = w.doAddFile(idx, s, file, make([]gitignore.Pattern, 0))
+			added, _, err = w.doAddFile(cfg, idx, s, file, make([]gitignore.Pattern, 0))
 		}
 
 		if err != nil {
@@ -502,7 +513,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 // doAddFile create a new blob from path and update the index, added is true if
 // the file added is different from the index.
 // if s status is nil will skip the status check and update the index anyway
-func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePattern []gitignore.Pattern) (added bool, h plumbing.Hash, err error) {
+func (w *Worktree) doAddFile(cfg *config.Config, idx *index.Index, s Status, path string, ignorePattern []gitignore.Pattern) (added bool, h plumbing.Hash, err error) {
 	if s != nil && s.File(path).Worktree == Unmodified {
 		return false, h, nil
 	}
@@ -515,7 +526,7 @@ func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePatt
 		}
 	}
 
-	h, err = w.copyFileToStorage(path)
+	h, err = w.copyFileToStorage(cfg, path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			added = true
@@ -532,7 +543,7 @@ func (w *Worktree) doAddFile(idx *index.Index, s Status, path string, ignorePatt
 	return true, h, err
 }
 
-func (w *Worktree) copyFileToStorage(path string) (hash plumbing.Hash, err error) {
+func (w *Worktree) copyFileToStorage(cfg *config.Config, path string) (hash plumbing.Hash, err error) {
 	fi, err := w.Filesystem.Lstat(path)
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -552,7 +563,7 @@ func (w *Worktree) copyFileToStorage(path string) (hash plumbing.Hash, err error
 	if fi.Mode()&os.ModeSymlink != 0 {
 		err = w.fillEncodedObjectFromSymlink(writer, path, fi)
 	} else {
-		err = w.fillEncodedObjectFromFile(writer, path, fi)
+		err = w.fillEncodedObjectFromFile(cfg, writer, path, fi)
 	}
 
 	if err != nil {
@@ -562,17 +573,12 @@ func (w *Worktree) copyFileToStorage(path string) (hash plumbing.Hash, err error
 	return w.r.Storer.SetEncodedObject(obj)
 }
 
-func (w *Worktree) fillEncodedObjectFromFile(dst io.Writer, path string, _ os.FileInfo) (err error) {
+func (w *Worktree) fillEncodedObjectFromFile(cfg *config.Config, dst io.Writer, path string, _ os.FileInfo) (err error) {
 	file, err := w.Filesystem.Open(path)
 	if err != nil {
 		return err
 	}
 	defer ioutil.CheckClose(file, &err)
-
-	cfg, err := w.r.Config()
-	if err != nil {
-		return err
-	}
 
 	switch cfg.Core.AutoCRLF {
 	case "true", "input":
