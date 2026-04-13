@@ -139,7 +139,7 @@ func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV0() {
 }
 
 func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV2() {
-	testAdvertise(s.T(), UploadPack, "version=2", false)
+	testAdvertise(s.T(), ReceivePack, "version=2", false)
 }
 
 func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV1() {
