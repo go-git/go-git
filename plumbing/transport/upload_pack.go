@@ -229,8 +229,7 @@ func UploadPack(
 					return
 				}
 			case ack.Hash.IsZero() && len(haves) == 0:
-				// We don't have multi-ack and no haves were sent. Emit the
-				// single terminal NAK.
+				// No haves were sent. Emit the single terminal NAK.
 				//
 				// When haves *were* sent, the ServerResponse{ACKs: acks}
 				// write above already emitted a NAK (encodeServerResponse

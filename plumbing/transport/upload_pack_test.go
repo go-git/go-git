@@ -153,17 +153,17 @@ func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV1() {
 // the client sends haves that are not reachable from any want, the server
 // emits exactly one NAK pktline before the sideband-wrapped pack, not two.
 //
-// The upload-pack writer currently emits an extra NAK in this case. It first
-// calls ServerResponse{ACKs: nil}.Encode, which writes a NAK, and then falls
-// through to the "ack.Hash.IsZero()" branch, which writes a second NAK.
-// packp.ServerResponse.Decode consumes only the first NAK, leaving the second
+// Previously, the upload-pack writer emitted an extra NAK in this case. It
+// first called ServerResponse{ACKs: nil}.Encode, which wrote a NAK, and then
+// fell through to the "ack.Hash.IsZero()" branch, which wrote a second NAK.
+// packp.ServerResponse.Decode consumed only the first NAK, leaving the second
 // "0008NAK\n" pktline in front of the sideband frames. The sideband demuxer
-// then reads "NAK\n" as a frame with channel byte 'N' (0x4E) and fails with
+// then read "NAK\n" as a frame with channel byte 'N' (0x4E) and failed with
 // "unknown channel NAK".
 //
 // A caller consuming the response with the standard go-git client pipeline
 // (ServerResponse.Decode + sideband.Demuxer) cannot recover.
-func (s *UploadPackSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSingleNAK() {
+func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSingleNAK() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
@@ -189,7 +189,7 @@ func (s *UploadPackSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSingleN
 	s.Require().NoError(upreq.Encode(&reqW))
 	s.Require().NoError(uphav.Encode(&reqW))
 
-	buf := testServe(s.T(), st, UploadPack, io.NopCloser(&reqW), &UploadPackOptions{
+	buf := testServe(s.T(), st, UploadPack, io.NopCloser(&reqW), &UploadPackRequest{
 		GitProtocol:   "version=1",
 		AdvertiseRefs: false,
 		StatelessRPC:  true,
