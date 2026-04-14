@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
@@ -145,4 +147,90 @@ func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV2() {
 func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV1() {
 	buf := testAdvertise(s.T(), ReceivePack, "version=1", false)
 	s.Contains(buf.String(), "version 1")
+}
+
+// TestUploadPackStatelessRPCUnreachableHavesEmitsSingleNAK verifies that when
+// the client sends haves that are not reachable from any want, the server
+// emits exactly one NAK pktline before the sideband-wrapped pack, not two.
+//
+// Previously, the upload-pack writer emitted an extra NAK in this case. It
+// first called ServerResponse{ACKs: nil}.Encode, which wrote a NAK, and then
+// fell through to the "ack.Hash.IsZero()" branch, which wrote a second NAK.
+// packp.ServerResponse.Decode consumed only the first NAK, leaving the second
+// "0008NAK\n" pktline in front of the sideband frames. The sideband demuxer
+// then read "NAK\n" as a frame with channel byte 'N' (0x4E) and failed with
+// "unknown channel NAK".
+//
+// A caller consuming the response with the standard go-git client pipeline
+// (ServerResponse.Decode + sideband.Demuxer) cannot recover.
+func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSingleNAK() {
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	s.Require().NoError(err)
+
+	upreq := packp.NewUploadRequest()
+	upreq.Capabilities.Add(capability.Sideband64k)
+	upreq.Capabilities.Add(capability.NoProgress)
+	upreq.Wants = append(upreq.Wants, head.Hash())
+
+	// A hash the server definitely does not have and that is not reachable
+	// from the want. This is the rewind / divergent-overwrite case: client
+	// sends a "have" the server cannot match against the wants.
+	unreachable := plumbing.NewHash("0123456789abcdef0123456789abcdef01234567")
+
+	var uphav packp.UploadHaves
+	uphav.Haves = []plumbing.Hash{unreachable}
+	uphav.Done = true
+
+	var reqW bytes.Buffer
+	s.Require().NoError(upreq.Encode(&reqW))
+	s.Require().NoError(uphav.Encode(&reqW))
+
+	buf := testServe(s.T(), st, UploadPack, io.NopCloser(&reqW), &UploadPackRequest{
+		GitProtocol:   "version=1",
+		AdvertiseRefs: false,
+		StatelessRPC:  true,
+	})
+	raw := buf.Bytes()
+
+	// First: byte-level assertion. The response must not begin with two
+	// consecutive NAK pktlines.
+	const doubleNAK = "0008NAK\n0008NAK\n"
+	s.Falsef(bytes.HasPrefix(raw, []byte(doubleNAK)),
+		"response begins with two NAK pktlines, client-side sideband demux will fail:\n%s",
+		prefixHex(raw, 64),
+	)
+
+	// Second: end-to-end assertion using the standard client pipeline.
+	// ServerResponse.Decode + sideband.Demuxer + PACK signature read.
+	rd := bytes.NewReader(raw)
+	var srv packp.ServerResponse
+	s.Require().NoError(srv.Decode(rd), "decode server response")
+
+	demux := sideband.NewDemuxer(sideband.Sideband64k, rd)
+	var signature [4]byte
+	_, err = io.ReadFull(demux, signature[:])
+	s.Require().NoError(err, "read PACK signature through sideband demuxer")
+	s.Equal("PACK", string(signature[:]), "expected PACK magic after the NAK preamble")
+}
+
+func prefixHex(b []byte, n int) string {
+	if len(b) < n {
+		n = len(b)
+	}
+	var sb strings.Builder
+	for _, c := range b[:n] {
+		if c >= 0x20 && c < 0x7f {
+			sb.WriteByte(c)
+		} else {
+			sb.WriteString("\\x")
+			const hexchars = "0123456789abcdef"
+			sb.WriteByte(hexchars[c>>4])
+			sb.WriteByte(hexchars[c&0x0f])
+		}
+	}
+	return sb.String()
 }
