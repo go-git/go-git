@@ -99,7 +99,8 @@ func TestApplyRedirect(t *testing.T) {
 		t.Parallel()
 		resp := &http.Response{}
 		base, _ := url.Parse("https://example.com/repo.git")
-		result := applyRedirect(resp, base)
+		result, err := applyRedirect(resp, base)
+		require.NoError(t, err)
 		assert.Equal(t, base, result)
 	})
 
@@ -108,7 +109,58 @@ func TestApplyRedirect(t *testing.T) {
 		req, _ := http.NewRequest("GET", "https://new.example.com/repo.git/info/refs", nil)
 		resp := &http.Response{Request: req}
 		base, _ := url.Parse("https://old.example.com/repo.git")
-		result := applyRedirect(resp, base)
+		result, err := applyRedirect(resp, base)
+		require.NoError(t, err)
 		assert.Equal(t, "new.example.com", result.Host)
+	})
+
+	t.Run("same host and path is no-op", func(t *testing.T) {
+		t.Parallel()
+		req, _ := http.NewRequest("GET", "https://example.com/repo.git/info/refs", nil)
+		resp := &http.Response{Request: req}
+		base, _ := url.Parse("https://example.com/repo.git")
+		result, err := applyRedirect(resp, base)
+		require.NoError(t, err)
+		assert.Equal(t, base, result)
+	})
+
+	t.Run("unsupported scheme", func(t *testing.T) {
+		t.Parallel()
+		req, _ := http.NewRequest("GET", "ftp://evil.com/repo.git/info/refs", nil)
+		resp := &http.Response{Request: req}
+		base, _ := url.Parse("https://example.com/repo.git")
+		_, err := applyRedirect(resp, base)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported scheme")
+	})
+
+	t.Run("tail mismatch", func(t *testing.T) {
+		t.Parallel()
+		req, _ := http.NewRequest("GET", "https://evil.com/malicious-path", nil)
+		resp := &http.Response{Request: req}
+		base, _ := url.Parse("https://example.com/repo.git")
+		_, err := applyRedirect(resp, base)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "does not end with")
+	})
+
+	t.Run("redirect updates scheme", func(t *testing.T) {
+		t.Parallel()
+		req, _ := http.NewRequest("GET", "https://example.com/repo.git/info/refs", nil)
+		resp := &http.Response{Request: req}
+		base, _ := url.Parse("http://example.com/repo.git")
+		result, err := applyRedirect(resp, base)
+		require.NoError(t, err)
+		assert.Equal(t, "https", result.Scheme)
+	})
+
+	t.Run("redirect updates path", func(t *testing.T) {
+		t.Parallel()
+		req, _ := http.NewRequest("GET", "https://example.com/new-repo.git/info/refs", nil)
+		resp := &http.Response{Request: req}
+		base, _ := url.Parse("https://example.com/old-repo.git")
+		result, err := applyRedirect(resp, base)
+		require.NoError(t, err)
+		assert.Equal(t, "/new-repo.git", result.Path)
 	})
 }

@@ -2,12 +2,31 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/url"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
+
+// contextKey is an unexported type for context keys in this package.
+type contextKey int
+
+const initialRequestKey contextKey = iota
+
+// withInitialRequest marks a context so that checkRedirect allows
+// the HTTP client to follow redirects. Only the /info/refs discovery
+// request should carry this flag.
+func withInitialRequest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, initialRequestKey, true)
+}
+
+func isInitialRequest(req *http.Request) bool {
+	v, _ := req.Context().Value(initialRequestKey).(bool)
+	return v
+}
 
 // Options configures the HTTP transport.
 type Options struct {
@@ -63,5 +82,32 @@ func (t *Transport) resolveClient() *http.Client {
 		tr.TLSClientConfig = t.opts.TLS
 	}
 
-	return &http.Client{Transport: tr}
+	return &http.Client{
+		Transport:     tr,
+		CheckRedirect: checkRedirect,
+	}
+}
+
+// checkRedirect implements the "initial" redirect policy from canonical
+// git (http.followRedirects = initial). Only the first request in a
+// session — the GET /info/refs discovery — is allowed to follow
+// redirects. All subsequent requests (pack-data POSTs, dumb-HTTP object
+// GETs) treat a 3xx response as an error.
+//
+// Credential handling on redirect is left to Go's http.Client, which
+// already strips the Authorization header when a redirect crosses to a
+// different host (since Go 1.8) and preserves it for same-host
+// redirects — matching the expected behavior for scheme upgrades and
+// path-only redirects on the same server.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if !isInitialRequest(req) {
+		return fmt.Errorf("http transport: redirect on non-initial request to %s", req.URL)
+	}
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		return fmt.Errorf("http transport: redirect to unsupported scheme %q", req.URL.Scheme)
+	}
+	if len(via) >= 10 {
+		return fmt.Errorf("http transport: too many redirects")
+	}
+	return nil
 }

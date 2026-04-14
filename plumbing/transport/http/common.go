@@ -64,20 +64,46 @@ func checkError(r *http.Response) error {
 
 const infoRefsPath = "/info/refs"
 
-// applyRedirect updates the base URL if the server redirected.
-func applyRedirect(resp *http.Response, baseURL *url.URL) *url.URL {
+// applyRedirect derives a new base URL from the final request URL after
+// the HTTP client followed any redirects during the /info/refs GET.
+//
+// The logic mirrors canonical git's update_url_from_redirect(): strip
+// the request-specific tail ("/info/refs") from the final URL to recover
+// the new base. If the tail is missing, the redirect target is
+// inconsistent and we return an error — canonical git die()s here
+// because a mismatch could let a malicious server rewrite the base URL
+// to an unrelated repository.
+//
+// Scheme is validated to prevent SSRF via protocol downgrade (e.g. a
+// redirect to file:// or gopher://).
+func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	if resp.Request == nil {
-		return baseURL
+		return baseURL, nil
 	}
-	r := resp.Request
-	if !strings.HasSuffix(r.URL.Path, infoRefsPath) {
-		return baseURL
+
+	final := resp.Request.URL
+	if final.Host == baseURL.Host &&
+		final.Scheme == baseURL.Scheme &&
+		strings.TrimSuffix(final.Path, infoRefsPath) == baseURL.Path {
+		return baseURL, nil
 	}
+
+	if final.Scheme != "http" && final.Scheme != "https" {
+		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", final.Scheme)
+	}
+
+	if !strings.HasSuffix(final.Path, infoRefsPath) {
+		return nil, fmt.Errorf(
+			"http transport: redirect target %q does not end with %s",
+			final.Path, infoRefsPath,
+		)
+	}
+
 	redirected := *baseURL
-	redirected.Host = r.URL.Host
-	redirected.Scheme = r.URL.Scheme
-	redirected.Path = r.URL.Path[:len(r.URL.Path)-len(infoRefsPath)]
-	return &redirected
+	redirected.Host = final.Host
+	redirected.Scheme = final.Scheme
+	redirected.Path = final.Path[:len(final.Path)-len(infoRefsPath)]
+	return &redirected, nil
 }
 
 var safeHeaders = map[string]struct{}{
