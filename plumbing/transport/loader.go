@@ -1,8 +1,12 @@
 package transport
 
 import (
+	"bufio"
+	"fmt"
+	"io"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -44,20 +48,68 @@ func (l *FilesystemLoader) load(path string, tried bool) (storage.Storer, error)
 		return nil, err
 	}
 
-	if _, err := fs.Stat("config"); err != nil {
-		if !l.strict && !tried {
+	// Check for .git first (directory or gitfile) to match git's behavior
+	// Git prefers .git/ over a bare repository in the same directory
+	if !tried && !l.strict {
+		if fi, err := fs.Lstat(".git"); err == nil {
 			tried = true
-			if fi, err := fs.Stat(".git"); err == nil && fi.IsDir() {
+			if fi.IsDir() {
+				// .git is a directory, use it
 				path = filepath.Join(path, ".git")
 			} else {
-				path += ".git"
+				// .git is a file (gitfile), read the gitdir path
+				gitdir, err := readGitfile(fs)
+				if err != nil {
+					return nil, err
+				}
+				// gitdir can be absolute or relative
+				if filepath.IsAbs(gitdir) {
+					path = gitdir
+				} else {
+					path = filepath.Join(path, gitdir)
+				}
 			}
+			return l.load(path, tried)
+		}
+	}
+
+	// Check for config file to detect bare repository
+	fi, err := fs.Lstat("config")
+	if err != nil || fi.IsDir() {
+		if !l.strict && !tried {
+			// No .git and no config, try appending .git
+			tried = true
+			path += ".git"
 			return l.load(path, tried)
 		}
 		return nil, ErrRepositoryNotFound
 	}
 
 	return filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{}), nil
+}
+
+// readGitfile reads a .git file and extracts the gitdir path.
+// The .git file should contain a single line: "gitdir: <path>"
+func readGitfile(fs billy.Filesystem) (string, error) {
+	f, err := fs.Open(".git")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	reader := bufio.NewReader(f)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+
+	const prefix = "gitdir: "
+	if !strings.HasPrefix(line, prefix) {
+		return "", fmt.Errorf(".git file has no %s prefix", prefix)
+	}
+
+	gitdir := strings.TrimSpace(line[len(prefix):])
+	return gitdir, nil
 }
 
 // MapLoader is a Loader that uses a lookup map keyed by URL path.
