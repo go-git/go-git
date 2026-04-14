@@ -177,22 +177,35 @@ func (s *smartPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Referen
 }
 
 func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
-	rwc := &httpRequester{session: s, ctx: ctx}
-	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, rwc, rwc, req)
+	neg := &httpNegotiator{session: s, ctx: ctx}
+
+	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
 	if err != nil {
+		// Don't close the response body here — context-wrapper goroutines
+		// inside NegotiatePack may still be reading from it.
 		return err
 	}
-	if rwc.resp == nil {
-		if err := rwc.doPost(); err != nil {
+	if neg.current == nil || neg.current.resp == nil {
+		neg.current = &httpRequester{session: s, ctx: ctx}
+		if err := neg.current.doPost(); err != nil {
 			return err
 		}
 	}
-	return transport.FetchPack(ctx, st, s.caps, io.NopCloser(rwc), shallows, req)
+	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
+	neg.closeResponse()
+	return err
 }
 
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
 	rwc := &httpRequester{session: s, ctx: ctx}
-	return transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
+	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
+	// Only close the response body on success. On error (especially context
+	// cancellation), context-wrapper goroutines inside SendPack may still
+	// be reading from it.
+	if err == nil && rwc.resp != nil {
+		_ = rwc.resp.Body.Close()
+	}
+	return err
 }
 
 func (s *smartPackSession) Close() error { return nil }
@@ -253,6 +266,51 @@ func (r *httpRequester) doPost() error {
 		return fmt.Errorf("http transport: POST %s unexpected status %d", serviceURL, r.resp.StatusCode)
 	}
 	return nil
+}
+
+// httpNegotiator supports multi-round stateless RPC negotiation by
+// creating a fresh httpRequester for each round. A new round begins
+// when Write is called after the previous round's response has arrived.
+type httpNegotiator struct {
+	session *smartPackSession
+	ctx     context.Context
+	current *httpRequester
+}
+
+func (n *httpNegotiator) Write(p []byte) (int, error) {
+	if n.current != nil && n.current.resp != nil {
+		// Previous round is complete — close its response, start fresh.
+		_, _ = io.Copy(io.Discard, n.current.resp.Body)
+		_ = n.current.resp.Body.Close()
+		n.current = nil
+	}
+	if n.current == nil {
+		n.current = &httpRequester{session: n.session, ctx: n.ctx}
+	}
+	return n.current.Write(p)
+}
+
+func (n *httpNegotiator) Read(p []byte) (int, error) {
+	if n.current == nil {
+		return 0, io.ErrClosedPipe
+	}
+	return n.current.Read(p)
+}
+
+func (n *httpNegotiator) Close() error {
+	if n.current == nil {
+		return nil
+	}
+	return n.current.Close()
+}
+
+// closeResponse closes the current HTTP response body.
+// The caller (FetchPack) is expected to have already drained the body.
+func (n *httpNegotiator) closeResponse() {
+	if n.current != nil && n.current.resp != nil {
+		_ = n.current.resp.Body.Close()
+		n.current.resp = nil
+	}
 }
 
 // --- dumb HTTP pack session ---
