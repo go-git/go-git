@@ -259,6 +259,7 @@ func checkWorktree(t *testing.T, storage, wt billy.Filesystem, path string) {
 
 	f, err := wt.Open(fn)
 	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(f)
 	require.NoError(t, err)
@@ -307,6 +308,7 @@ func checkFiles(t *testing.T, expected []expectedFile, storage, wt billy.Filesys
 
 		f, err := storage.Open(fn)
 		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
 
 		data, err := io.ReadAll(f)
 		require.NoError(t, err)
