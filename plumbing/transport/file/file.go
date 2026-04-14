@@ -83,9 +83,22 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 	pr, pw := io.Pipe()
 	sr, sw := io.Pipe()
 
-	closeAll := func() error { _ = pw.Close(); return sr.Close() }
+	done := make(chan struct{})
+
+	closeAll := func() error {
+		_ = pw.Close()
+		closeErr := sr.Close()
+		<-done // Wait for server goroutine to finish
+		if closer, ok := st.(io.Closer); ok {
+			if err := closer.Close(); err != nil && closeErr == nil {
+				closeErr = err
+			}
+		}
+		return closeErr
+	}
 
 	go func() {
+		defer close(done)
 		err := serverFn(ctx, st, io.NopCloser(pr), sw, gitProtocol)
 		_ = sw.CloseWithError(err)
 		_ = pr.Close()
