@@ -199,22 +199,22 @@ func writeArchive(_ context.Context, st storage.Storer, mux *sideband.Muxer, arg
 		return fmt.Errorf("no tree-ish specified")
 	}
 
-	tree, commitTime, err := resolveTreeish(st, treeish, allowUnreachable)
+	tree, commitHash, commitTime, err := resolveTreeish(st, treeish, allowUnreachable)
 	if err != nil {
 		return err
 	}
 
 	switch format {
 	case "tar":
-		return writeTarArchive(st, mux, tree, prefix, paths, commitTime)
+		return writeTarArchive(st, mux, tree, commitHash, prefix, paths, commitTime)
 	case "tar.gz", "tgz":
 		gw := gzip.NewWriter(mux)
-		if err := writeTarArchive(st, gw, tree, prefix, paths, commitTime); err != nil {
+		if err := writeTarArchive(st, gw, tree, commitHash, prefix, paths, commitTime); err != nil {
 			return err
 		}
 		return gw.Close()
 	case "zip":
-		return writeZipArchive(st, mux, tree, prefix, paths, commitTime)
+		return writeZipArchive(st, mux, tree, commitHash, prefix, paths, commitTime)
 	default:
 		return fmt.Errorf("unsupported archive format: %s", format)
 	}
@@ -226,7 +226,9 @@ func writeArchive(_ context.Context, st storage.Storer, mux *sideband.Muxer, arg
 // sub-tree syntax (v1.0:Documentation) are allowed. Raw SHA-1 hashes and
 // relative expressions (main^, HEAD~2) are rejected unless
 // allowUnreachable is true. See https://git-scm.com/docs/git-upload-archive
-func resolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*object.Tree, time.Time, error) {
+//
+// Returns the tree, commit hash (if applicable), commit time, and any error.
+func resolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*object.Tree, *plumbing.Hash, time.Time, error) {
 	var subPath string
 	if idx := strings.IndexByte(treeish, ':'); idx >= 0 {
 		subPath = treeish[idx+1:]
@@ -235,42 +237,45 @@ func resolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 
 	if !allowUnreachable {
 		if plumbing.IsHash(treeish) {
-			return nil, time.Time{}, fmt.Errorf("upload-archive: only ref names are allowed (got %s)", treeish)
+			return nil, nil, time.Time{}, fmt.Errorf("upload-archive: only ref names are allowed (got %s)", treeish)
 		}
 		if strings.ContainsAny(treeish, "^~@{}") {
-			return nil, time.Time{}, fmt.Errorf("upload-archive: relative expressions are not allowed (got %s)", treeish)
+			return nil, nil, time.Time{}, fmt.Errorf("upload-archive: relative expressions are not allowed (got %s)", treeish)
 		}
 	}
 
 	h, err := resolveRef(st, treeish, allowUnreachable)
 	if err != nil {
-		return nil, time.Time{}, err
+		return nil, nil, time.Time{}, err
 	}
 
 	obj, err := object.GetObject(st, h)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("object not found: %s", treeish)
+		return nil, nil, time.Time{}, fmt.Errorf("object not found: %s", treeish)
 	}
 
+	var commitHash *plumbing.Hash
 	var commitTime time.Time
 	var tree *object.Tree
 
 	switch o := obj.(type) {
 	case *object.Commit:
+		commitHash = &o.Hash
 		commitTime = o.Committer.When
 		tree, err = o.Tree()
 		if err != nil {
-			return nil, time.Time{}, err
+			return nil, nil, time.Time{}, err
 		}
 	case *object.Tag:
 		commit, err := object.GetCommit(st, o.Target)
 		if err != nil {
-			return nil, time.Time{}, err
+			return nil, nil, time.Time{}, err
 		}
+		commitHash = &commit.Hash
 		commitTime = commit.Committer.When
 		tree, err = commit.Tree()
 		if err != nil {
-			return nil, time.Time{}, err
+			return nil, nil, time.Time{}, err
 		}
 	case *object.Tree:
 		tree = o
@@ -284,24 +289,24 @@ func resolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 		// See https://git-scm.com/docs/git-archive
 		commitTime = time.Now()
 	default:
-		return nil, time.Time{}, fmt.Errorf("unsupported object type for archive: %T", obj)
+		return nil, nil, time.Time{}, fmt.Errorf("unsupported object type for archive: %T", obj)
 	}
 
 	if subPath != "" {
 		entry, err := tree.FindEntry(subPath)
 		if err != nil {
-			return nil, time.Time{}, fmt.Errorf("path not found in tree: %s", subPath)
+			return nil, nil, time.Time{}, fmt.Errorf("path not found in tree: %s", subPath)
 		}
 		if entry.Mode != filemode.Dir {
-			return nil, time.Time{}, fmt.Errorf("path is not a directory: %s", subPath)
+			return nil, nil, time.Time{}, fmt.Errorf("path is not a directory: %s", subPath)
 		}
 		tree, err = object.GetTree(st, entry.Hash)
 		if err != nil {
-			return nil, time.Time{}, err
+			return nil, nil, time.Time{}, err
 		}
 	}
 
-	return tree, commitTime, nil
+	return tree, commitHash, commitTime, nil
 }
 
 func resolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, error) {
@@ -341,8 +346,24 @@ func applyUmaskDir(mode int64) int64 {
 	return (mode | 0o777) &^ defaultUmask
 }
 
-func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix string, pathFilter []string, modTime time.Time) error {
+func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
 	tw := tar.NewWriter(w)
+
+	// Write PAX global extended header with commit ID if available.
+	// This matches the behavior of git archive and allows extraction
+	// via git get-tar-commit-id.
+	if commitHash != nil {
+		err := tw.WriteHeader(&tar.Header{
+			Typeflag: tar.TypeXGlobalHeader,
+			Name:     paxGlobalHeader,
+			PAXRecords: map[string]string{
+				"comment": commitHash.String(),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("writing global PAX header: %w", err)
+		}
+	}
 
 	if prefix != "" && strings.HasSuffix(prefix, "/") {
 		_ = tw.WriteHeader(&tar.Header{
@@ -438,7 +459,7 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 	return tw.Close()
 }
 
-func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix string, pathFilter []string, modTime time.Time) error {
+func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
 	zw := zip.NewWriter(w)
 
 	walker := object.NewTreeWalker(tree, true, nil)
@@ -501,7 +522,41 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, prefix s
 		}
 	}
 
+	// Store commit ID as ZIP file comment if available.
+	// This matches the behavior of git archive.
+	if commitHash != nil {
+		_ = zw.SetComment(commitHash.String())
+	}
+
 	return zw.Close()
+}
+
+// paxGlobalHeader is the name used for PAX global extended headers in
+// git-generated tar archives. This matches the name used by canonical git.
+const paxGlobalHeader = "pax_global_header"
+
+// getTarCommitID extracts the commit ID from a git-generated tar archive.
+// It reads the PAX global extended header from the beginning of the archive
+// and returns the value of the "comment" field, which contains the commit hash.
+// If no global header is found or it doesn't contain a comment, it returns
+// an error.
+func getTarCommitID(r io.Reader) (*plumbing.Hash, error) {
+	tr := tar.NewReader(r)
+	hdr, err := tr.Next()
+	if err != nil {
+		return nil, fmt.Errorf("reading tar header: %w", err)
+	}
+	// Check for PAX global extended header (typeflag 'g')
+	if hdr.Typeflag != tar.TypeXGlobalHeader {
+		return nil, fmt.Errorf("expected global PAX header, got typeflag %c", hdr.Typeflag)
+	}
+	// The PAX records should contain the commit ID in the "comment" field
+	comment, ok := hdr.PAXRecords["comment"]
+	if !ok {
+		return nil, fmt.Errorf("global header missing comment field")
+	}
+	hash := plumbing.NewHash(comment)
+	return &hash, nil
 }
 
 func matchesPathFilter(name string, filters []string) bool {

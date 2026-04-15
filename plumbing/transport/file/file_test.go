@@ -222,6 +222,10 @@ func TestArchive_Prefix(t *testing.T) {
 			break
 		}
 		require.NoError(t, err)
+		// Skip the global PAX header - it's not a real file
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			continue
+		}
 		assert.True(t, strings.HasPrefix(hdr.Name, "myproject/"), "expected prefix myproject/, got %s", hdr.Name)
 	}
 }
@@ -287,6 +291,10 @@ func TestArchive_SpaceSeparatedPrefix(t *testing.T) {
 			break
 		}
 		require.NoError(t, err)
+		// Skip the global PAX header - it's not a real file
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			continue
+		}
 		assert.True(t, strings.HasPrefix(hdr.Name, "myproject/"), "expected prefix myproject/, got %s", hdr.Name)
 	}
 }
@@ -456,4 +464,98 @@ func TestArchive_AllowUnreachableConfig(t *testing.T) {
 		names = append(names, hdr.Name)
 	}
 	assert.Greater(t, len(names), 0)
+}
+
+func TestArchive_TarCommitID(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Greater(t, len(data), 0)
+
+	// Read the tar archive and verify the global PAX header contains the commit ID
+	tr := tar.NewReader(bytes.NewReader(data))
+
+	// The first entry should be the global PAX header with the commit ID
+	hdr, err := tr.Next()
+	require.NoError(t, err)
+
+	// Check that it's a global PAX extended header
+	assert.Equal(t, byte(tar.TypeXGlobalHeader), hdr.Typeflag)
+	assert.Equal(t, "pax_global_header", hdr.Name)
+
+	// Check that it contains a comment with the commit ID
+	comment, ok := hdr.PAXRecords["comment"]
+	require.True(t, ok, "global header should have a comment record")
+
+	// Verify the commit ID looks like a valid hash (40 hex characters)
+	assert.Equal(t, 40, len(comment), "commit ID should be 40 characters")
+	assert.Regexp(t, "^[0-9a-f]+$", comment, "commit ID should be hex")
+}
+
+func TestArchive_TarGzCommitID(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar.gz", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Greater(t, len(data), 0)
+
+	// Decompress and read the tar archive
+	gr, err := gzip.NewReader(bytes.NewReader(data))
+	require.NoError(t, err)
+
+	tr := tar.NewReader(gr)
+
+	// The first entry should be the global PAX header with the commit ID
+	hdr, err := tr.Next()
+	require.NoError(t, err)
+
+	assert.Equal(t, byte(tar.TypeXGlobalHeader), hdr.Typeflag)
+	assert.Equal(t, "pax_global_header", hdr.Name)
+
+	comment, ok := hdr.PAXRecords["comment"]
+	require.True(t, ok, "global header should have a comment record")
+	assert.Equal(t, 40, len(comment), "commit ID should be 40 characters")
+	assert.Regexp(t, "^[0-9a-f]+$", comment, "commit ID should be hex")
+}
+
+func TestArchive_ZipCommitID(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=zip", "master"},
+	})
+	require.NoError(t, err)
+
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Greater(t, len(data), 0)
+
+	// Read the ZIP archive
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+
+	// Check the ZIP file comment contains the commit ID
+	comment := zr.Comment
+	require.NotEmpty(t, comment, "ZIP file should have a comment")
+
+	// Verify the commit ID looks like a valid hash (40 hex characters)
+	assert.Equal(t, 40, len(comment), "commit ID should be 40 characters")
+	assert.Regexp(t, "^[0-9a-f]+$", comment, "commit ID should be hex")
 }
