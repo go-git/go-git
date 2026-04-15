@@ -244,6 +244,136 @@ func TestResolveTreeish_Errors(t *testing.T) {
 	}
 }
 
+// TestResolveTreeish_AllowUnreachable tests the allowUnreachable flag enforcement
+// comprehensively with various tree-ish expressions.
+func TestResolveTreeish_AllowUnreachable(t *testing.T) {
+	fixture := fixtures.Basic().One()
+	dotGit, err := fixture.DotGit()
+	require.NoError(t, err)
+	storer := filesystem.NewStorage(dotGit, nil)
+
+	// Get the master commit hash for testing
+	masterRef, err := storer.Reference(plumbing.ReferenceName("refs/heads/master"))
+	require.NoError(t, err)
+	masterHash := masterRef.Hash().String()
+
+	tests := []struct {
+		name             string
+		treeish          string
+		allowUnreachable bool
+		wantErr          bool
+		errIs            error
+		errContain       string
+	}{
+		// allowUnreachable=false cases (secure mode)
+		{
+			name:             "raw hash blocked when allowUnreachable=false",
+			treeish:          masterHash,
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrOnlyRefNames,
+		},
+		{
+			name:             "parent expression blocked (~)",
+			treeish:          "master~1",
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
+		},
+		{
+			name:             "ancestor expression blocked (~N)",
+			treeish:          "master~3",
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
+		},
+		{
+			name:             "parent expression blocked (^)",
+			treeish:          "master^",
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
+		},
+		{
+			name:             "nth parent blocked (^N)",
+			treeish:          "master^2",
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
+		},
+		{
+			name:             "at-sign expression blocked (@)",
+			treeish:          "@{upstream}",
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
+		},
+		{
+			name:             "brace expression blocked",
+			treeish:          "master@{1}",
+			allowUnreachable: false,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
+		},
+		{
+			name:             "ref short name allowed",
+			treeish:          "master",
+			allowUnreachable: false,
+			wantErr:          false,
+		},
+		{
+			name:             "full ref path allowed",
+			treeish:          "refs/heads/master",
+			allowUnreachable: false,
+			wantErr:          false,
+		},
+		{
+			name:             "tag short name allowed",
+			treeish:          "v1.0.0",
+			allowUnreachable: false,
+			wantErr:          false,
+		},
+		// allowUnreachable=true cases
+		{
+			name:             "raw hash allowed when allowUnreachable=true",
+			treeish:          masterHash,
+			allowUnreachable: true,
+			wantErr:          false,
+		},
+		{
+			name:             "parent expression allowed (~)",
+			treeish:          "master~1",
+			allowUnreachable: true,
+			wantErr:          true, // fails because we can't resolve, but not blocked
+			errContain:       "cannot resolve",
+		},
+		{
+			name:             "parent expression allowed (^)",
+			treeish:          "master^",
+			allowUnreachable: true,
+			wantErr:          true,
+			errContain:       "cannot resolve",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errIs != nil {
+					assert.ErrorIs(t, err, tt.errIs)
+				}
+				if tt.errContain != "" {
+					assert.Contains(t, err.Error(), tt.errContain)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestSupportedFormats(t *testing.T) {
 	formats := SupportedFormats()
 	assert.Contains(t, formats, "tar")
