@@ -109,6 +109,37 @@ type Signer interface {
 }
 ```
 
-More features will be exposed through the plugin system in the future.
+### Config Loader
+
+The `ConfigLoader` plugin controls how global and system-level Git configuration are loaded. By default, the Auto plugin is registered, mimicking Git behaviour.
+To override this, register a `ConfigSource` implementation based on your needs: static configs, custom backends, etc.
+To completely ignore System and Global configs:
+
+```go
+import (
+    "github.com/go-git/go-git/v6/x/plugin"
+    xconfig "github.com/go-git/go-git/v6/x/plugin/config"
+)
+
+func init() {
+    plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+        return xconfig.NewEmpty()
+    })
+}
+```
+
+The `ConfigSource` interface has a single method:
+
+```go
+type ConfigSource interface {
+    Load(scope config.Scope) (config.ConfigStorer, error)
+}
+```
+
+Built-in implementations in [`x/plugin/config`](x/plugin/config):
+
+- **`NewAuto()`** mimics default Git behaviour, where environment variables override the filesystem defaults.
+- **`NewStatic(global, system)`** returns fixed configs provided at construction time, useful for testing and embedded use.
+- **`NewEmpty()`** returns empty configs for both scopes.
 
 For more information, refer to the [`x/plugin` package documentation](x/plugin/plugin.go).
