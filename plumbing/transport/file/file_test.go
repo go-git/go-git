@@ -575,3 +575,50 @@ func TestArchive_PathspecNoMatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "pathspec")
 	assert.Contains(t, err.Error(), "did not match")
 }
+
+func TestArchive_UnknownOption(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "--unknown", "master"},
+	})
+	require.NoError(t, err)
+
+	_, err = io.ReadAll(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown option")
+	assert.Contains(t, err.Error(), "--unknown")
+}
+
+func TestArchive_MissingOptionArgument(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format"},
+	})
+	require.NoError(t, err)
+
+	_, err = io.ReadAll(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires an argument")
+	assert.Contains(t, err.Error(), "--format")
+}
+
+func TestArchive_NoTreeish(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar"},
+	})
+	require.NoError(t, err)
+
+	_, err = io.ReadAll(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no tree-ish specified")
+}
