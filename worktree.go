@@ -205,14 +205,25 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	// Fast path optimization for same tree.
 	// When target commit has the same tree as current HEAD, we can skip
 	// the expensive Reset() operation that scans all files. This matches
-	// git CLI behavior which only updates files when trees actually differ.
-	// This is trying to match `git checkout -b` and `git switch -c` behavior
-	// which is implemented here https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L1215
+	// git CLI behavior: `git checkout -b <branch>` and `git switch -c <branch>`
+	// only update worktree files when trees actually differ.
+	// See https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L1215
 	//
-	// However, we must also verify the index matches the target tree.
-	// Git uses the index (staging area) as the source of truth for what should
-	// be in the worktree. If index != target tree, we need Reset() to update both
+	// We must also verify the index matches the target tree. Git uses the
+	// index (staging area) as the source of truth for what should be in
+	// the worktree. If index != target tree, we need Reset() to update both
 	// the index and worktree, even if HEAD's tree matches the target tree.
+	//
+	// Note: this intentionally does NOT check for unstaged worktree changes.
+	// When trees are identical, no files are overwritten — dirty working tree
+	// files carry over to the new branch untouched, exactly as git does:
+	//   $ echo dirty > tracked-file && git checkout -b new-branch  # succeeds
+	// The ErrUnstagedChanges guard in Reset(MergeReset) exists to prevent
+	// overwriting modified files with different tree content, which cannot
+	// happen when the source and target trees are the same.
+	//
+	// This fast path also applies when opts.Create is true, because
+	// createBranch has already been called above.
 	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
 		targetCommit, err := w.r.CommitObject(c)
 		if err != nil {
@@ -227,7 +238,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 				return w.setHEADToBranch(opts.Branch, c)
 			}
 		}
-		// On error or if fast path not applicable, continue with slow path
+		// On error or if fast path not applicable, fall through to slow path.
 	}
 
 	ro := &ResetOptions{
