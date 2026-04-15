@@ -103,9 +103,7 @@ func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 			StatelessRPC:  req.StatelessRPC,
 		})
 	case transport.UploadArchiveService:
-		return transport.UploadArchive(ctx, st, r, w, &transport.UploadArchiveRequest{
-			AllowUnreachable: false,
-		})
+		return transport.UploadArchive(ctx, st, r, w, &transport.UploadArchiveRequest{})
 	default:
 		return fmt.Errorf("%w: %s", transport.ErrUnsupportedService, req.Service)
 	}

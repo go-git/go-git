@@ -23,18 +23,7 @@ import (
 )
 
 // UploadArchiveRequest configures the server-side upload-archive service.
-type UploadArchiveRequest struct {
-	// AllowUnreachable when true disables the default security restrictions
-	// and allows clients to use arbitrary SHA-1 expressions. By default,
-	// only direct ref targets (e.g. v1.0, main) and ref:path sub-tree
-	// syntax (e.g. v1.0:Documentation) are allowed.
-	//
-	// This serves as the default value. When the repository-level config
-	// uploadArchive.allowUnreachable is explicitly set, it always overrides
-	// this value (both true → false and false → true).
-	// See https://git-scm.com/docs/git-upload-archive
-	AllowUnreachable bool
-}
+type UploadArchiveRequest struct{}
 
 // UploadArchive is a server command that serves the git-upload-archive service.
 //
@@ -51,15 +40,13 @@ func UploadArchive(
 	st storage.Storer,
 	r io.ReadCloser,
 	w io.WriteCloser,
-	req *UploadArchiveRequest,
+	_ *UploadArchiveRequest,
 ) error {
-	if req == nil {
-		req = &UploadArchiveRequest{}
-	}
-
 	w = ioutil.NewContextWriteCloser(ctx, w)
 
-	allowUnreachable := req.AllowUnreachable
+	// TODO: Derive allowUnreachable from global/system config as well, not
+	// just repository config.
+	var allowUnreachable bool
 	if v, ok := readAllowUnreachable(st); ok {
 		allowUnreachable = v
 	}
