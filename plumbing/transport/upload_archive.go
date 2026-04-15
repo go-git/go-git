@@ -1,23 +1,14 @@
 package transport
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
-	"path"
 	"strings"
-	"time"
 
-	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
-	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -66,11 +57,82 @@ func UploadArchive(
 
 	mux := sideband.NewMuxer(sideband.Sideband64k, w)
 
-	if err := writeArchive(ctx, st, mux, args, allowUnreachable); err != nil {
-		errMsg := fmt.Sprintf("upload-archive: %s", err.Error())
-		_, _ = mux.WriteChannel(sideband.ErrorMessage, []byte(errMsg))
-		_ = pktline.WriteFlush(w)
-		return err
+	format := "tar"
+	prefix := ""
+	var treeish string
+	var paths []string
+	list := false
+
+	// Normalize arguments: convert "--format zip" to "--format=zip" etc.
+	normalized := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--format", "--prefix":
+			i++
+			if i >= len(args) {
+				return muxError(mux, w, fmt.Errorf("%s requires an argument", arg))
+			}
+			normalized = append(normalized, arg+"="+args[i])
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+
+	for _, arg := range normalized {
+		switch {
+		case arg == "--list" || arg == "-l":
+			list = true
+		case strings.HasPrefix(arg, "--format="):
+			format = arg[len("--format="):]
+		case strings.HasPrefix(arg, "--prefix="):
+			prefix = arg[len("--prefix="):]
+		case arg == "--":
+			// paths are handled below
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				if treeish == "" {
+					treeish = arg
+				}
+			} else {
+				return muxError(mux, w, fmt.Errorf("unknown option: %s", arg))
+			}
+		}
+	}
+
+	// Extract paths after treeish
+	for i, arg := range normalized {
+		if arg == treeish {
+			if i+1 < len(normalized) {
+				if normalized[i+1] == "--" {
+					paths = normalized[i+2:]
+				} else {
+					paths = normalized[i+1:]
+				}
+			}
+			break
+		}
+	}
+
+	if list {
+		// List-only mode: just write the list of supported formats.
+		for _, f := range archive.SupportedFormats() {
+			if _, err := fmt.Fprintf(mux, "%s\n", f); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteFlush(w); err != nil {
+			return fmt.Errorf("upload-archive: writing flush: %w", err)
+		}
+		return nil
+	}
+
+	if treeish == "" {
+		return muxError(mux, w, fmt.Errorf("no tree-ish specified"))
+	}
+
+	if err = archive.WriteArchive(st, mux, treeish, format, prefix, paths, allowUnreachable); err != nil {
+		return muxError(mux, w, err)
 	}
 
 	return pktline.WriteFlush(w)
@@ -107,6 +169,15 @@ func writeNACK(w io.Writer, reason string) {
 	_ = pktline.WriteFlush(w)
 }
 
+// muxError writes an error to the sideband error channel and flushes.
+// Returns the original error for convenience.
+func muxError(mux *sideband.Muxer, w io.Writer, err error) error {
+	errMsg := fmt.Sprintf("upload-archive: %s", err.Error())
+	_, _ = mux.WriteChannel(sideband.ErrorMessage, []byte(errMsg))
+	_ = pktline.WriteFlush(w)
+	return err
+}
+
 // readAllowUnreachable reads the uploadArchive.allowUnreachable config
 // from the repository. It returns the value and whether the key was
 // explicitly set. When the key is absent or the config cannot be read,
@@ -120,468 +191,4 @@ func readAllowUnreachable(st storage.Storer) (value, ok bool) {
 		return cfg.UploadArchive.AllowUnreachable.IsTrue(), true
 	}
 	return false, false
-}
-
-// Supported archive formats.
-var supportedArchiveFormats = []string{"tar", "tar.gz", "tgz", "zip"}
-
-// writeArchive generates an archive from the repository and writes it to
-// the sideband muxer's PackData channel.
-//
-// Args follow the same format as git-archive: [options...] <tree-ish> [paths...]
-// Supported options: --format=tar|zip|tar.gz|tgz, --prefix=<prefix>, --list/-l
-func writeArchive(_ context.Context, st storage.Storer, mux *sideband.Muxer, args []string, allowUnreachable bool) error {
-	format := "tar"
-	prefix := ""
-	var treeish string
-	var paths []string
-	list := false
-
-	// Normalize arguments: convert "--format zip" to "--format=zip" etc.
-	normalized := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "--format", "--prefix":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("%s requires an argument", arg)
-			}
-			normalized = append(normalized, arg+"="+args[i])
-		default:
-			normalized = append(normalized, arg)
-		}
-	}
-
-	for _, arg := range normalized {
-		switch {
-		case arg == "--list" || arg == "-l":
-			list = true
-		case strings.HasPrefix(arg, "--format="):
-			format = arg[len("--format="):]
-		case strings.HasPrefix(arg, "--prefix="):
-			prefix = arg[len("--prefix="):]
-		case arg == "--":
-			// paths are handled below
-		default:
-			if !strings.HasPrefix(arg, "-") {
-				if treeish == "" {
-					treeish = arg
-				}
-			} else {
-				return fmt.Errorf("unknown option: %s", arg)
-			}
-		}
-	}
-
-	// Extract paths after treeish
-	for i, arg := range normalized {
-		if arg == treeish {
-			if i+1 < len(normalized) {
-				if normalized[i+1] == "--" {
-					paths = normalized[i+2:]
-				} else {
-					paths = normalized[i+1:]
-				}
-			}
-			break
-		}
-	}
-
-	if list {
-		for _, f := range supportedArchiveFormats {
-			if _, err := fmt.Fprintf(mux, "%s\n", f); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	if treeish == "" {
-		return fmt.Errorf("no tree-ish specified")
-	}
-
-	tree, commitHash, commitTime, err := resolveTreeish(st, treeish, allowUnreachable)
-	if err != nil {
-		return err
-	}
-
-	switch format {
-	case "tar":
-		return writeTarArchive(st, mux, tree, commitHash, prefix, paths, commitTime)
-	case "tar.gz", "tgz":
-		gw := gzip.NewWriter(mux)
-		if err := writeTarArchive(st, gw, tree, commitHash, prefix, paths, commitTime); err != nil {
-			return err
-		}
-		return gw.Close()
-	case "zip":
-		return writeZipArchive(st, mux, tree, commitHash, prefix, paths, commitTime)
-	default:
-		return fmt.Errorf("unsupported archive format: %s", format)
-	}
-}
-
-// resolveTreeish resolves a tree-ish expression to a tree object.
-//
-// Security: By default, only direct ref names (v1.0, main) and ref:path
-// sub-tree syntax (v1.0:Documentation) are allowed. Raw SHA-1 hashes and
-// relative expressions (main^, HEAD~2) are rejected unless
-// allowUnreachable is true. See https://git-scm.com/docs/git-upload-archive
-//
-// Returns the tree, commit hash (if applicable), commit time, and any error.
-func resolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*object.Tree, *plumbing.Hash, time.Time, error) {
-	var subPath string
-	if idx := strings.IndexByte(treeish, ':'); idx >= 0 {
-		subPath = treeish[idx+1:]
-		treeish = treeish[:idx]
-	}
-
-	if !allowUnreachable {
-		if plumbing.IsHash(treeish) {
-			return nil, nil, time.Time{}, fmt.Errorf("upload-archive: only ref names are allowed (got %s)", treeish)
-		}
-		if strings.ContainsAny(treeish, "^~@{}") {
-			return nil, nil, time.Time{}, fmt.Errorf("upload-archive: relative expressions are not allowed (got %s)", treeish)
-		}
-	}
-
-	h, err := resolveRef(st, treeish, allowUnreachable)
-	if err != nil {
-		return nil, nil, time.Time{}, err
-	}
-
-	obj, err := object.GetObject(st, h)
-	if err != nil {
-		return nil, nil, time.Time{}, fmt.Errorf("object not found: %s", treeish)
-	}
-
-	var commitHash *plumbing.Hash
-	var commitTime time.Time
-	var tree *object.Tree
-
-	switch o := obj.(type) {
-	case *object.Commit:
-		commitHash = &o.Hash
-		commitTime = o.Committer.When
-		tree, err = o.Tree()
-		if err != nil {
-			return nil, nil, time.Time{}, err
-		}
-	case *object.Tag:
-		commit, err := object.GetCommit(st, o.Target)
-		if err != nil {
-			return nil, nil, time.Time{}, err
-		}
-		commitHash = &commit.Hash
-		commitTime = commit.Committer.When
-		tree, err = commit.Tree()
-		if err != nil {
-			return nil, nil, time.Time{}, err
-		}
-	case *object.Tree:
-		tree = o
-
-		// git archive behaves differently when given a tree ID versus when
-		// given a commit ID or tag ID. In the first case the current time is
-		// used as the modification time of each file in the archive. In the
-		// latter case the commit time as recorded in the referenced commit
-		// object is used instead.
-		//
-		// See https://git-scm.com/docs/git-archive
-		commitTime = time.Now()
-	default:
-		return nil, nil, time.Time{}, fmt.Errorf("unsupported object type for archive: %T", obj)
-	}
-
-	if subPath != "" {
-		entry, err := tree.FindEntry(subPath)
-		if err != nil {
-			return nil, nil, time.Time{}, fmt.Errorf("path not found in tree: %s", subPath)
-		}
-		if entry.Mode != filemode.Dir {
-			return nil, nil, time.Time{}, fmt.Errorf("path is not a directory: %s", subPath)
-		}
-		tree, err = object.GetTree(st, entry.Hash)
-		if err != nil {
-			return nil, nil, time.Time{}, err
-		}
-	}
-
-	return tree, commitHash, commitTime, nil
-}
-
-func resolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, error) {
-	if allowHash && plumbing.IsHash(name) {
-		return plumbing.NewHash(name), nil
-	}
-
-	for _, candidate := range []plumbing.ReferenceName{
-		plumbing.ReferenceName(name),
-		plumbing.ReferenceName("refs/heads/" + name),
-		plumbing.ReferenceName("refs/tags/" + name),
-	} {
-		ref, err := storer.ResolveReference(st, candidate)
-		if err == nil {
-			return ref.Hash(), nil
-		}
-	}
-
-	return plumbing.ZeroHash, fmt.Errorf("cannot resolve %q", name)
-}
-
-// defaultUmask is the default tar umask (002).
-const defaultUmask = 0o002
-
-// applyUmask applies umask to the given mode for regular files.
-// Returns mode with all permission bits set, then applies umask.
-func applyUmask(mode int64, isExecutable bool) int64 {
-	if isExecutable {
-		return (mode | 0o777) &^ defaultUmask
-	}
-	return (mode | 0o666) &^ defaultUmask
-}
-
-// applyUmaskDir applies umask to directories.
-// Directories always get full permissions minus umask.
-func applyUmaskDir(mode int64) int64 {
-	return (mode | 0o777) &^ defaultUmask
-}
-
-func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
-	tw := tar.NewWriter(w)
-
-	// Write PAX global extended header with commit ID if available.
-	// This matches the behavior of git archive and allows extraction
-	// via git get-tar-commit-id.
-	if commitHash != nil {
-		err := tw.WriteHeader(&tar.Header{
-			Typeflag: tar.TypeXGlobalHeader,
-			Name:     paxGlobalHeader,
-			PAXRecords: map[string]string{
-				"comment": commitHash.String(),
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("writing global PAX header: %w", err)
-		}
-	}
-
-	if prefix != "" && strings.HasSuffix(prefix, "/") {
-		_ = tw.WriteHeader(&tar.Header{
-			Typeflag: tar.TypeDir,
-			Name:     prefix,
-			Mode:     applyUmaskDir(0),
-			ModTime:  modTime,
-		})
-	}
-
-	walker := object.NewTreeWalker(tree, true, nil)
-	defer walker.Close()
-
-	var matchedAny bool
-	for {
-		name, entry, err := walker.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		if len(pathFilter) > 0 && !matchesPathFilter(name, pathFilter) {
-			continue
-		}
-		matchedAny = true
-
-		fullName := prefix + name
-
-		// Extract Unix permission bits from git mode.
-		unixMode := int64(entry.Mode) & 0o777
-
-		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
-			_ = tw.WriteHeader(&tar.Header{
-				Typeflag: tar.TypeDir,
-				Name:     fullName + "/",
-				Mode:     applyUmaskDir(unixMode),
-				ModTime:  modTime,
-			})
-			continue
-		}
-
-		blob, err := object.GetBlob(st, entry.Hash)
-		if err != nil {
-			return err
-		}
-
-		hdr := &tar.Header{
-			Name:    fullName,
-			Size:    blob.Size,
-			Mode:    unixMode,
-			ModTime: modTime,
-		}
-
-		if entry.Mode == filemode.Symlink {
-			rc, err := blob.Reader()
-			if err != nil {
-				return err
-			}
-			target, err := io.ReadAll(rc)
-			_ = rc.Close()
-			if err != nil {
-				return err
-			}
-			hdr.Typeflag = tar.TypeSymlink
-			hdr.Linkname = string(target)
-			hdr.Size = 0
-			// Symlinks always get 0777 per canonical git.
-			hdr.Mode = 0o777
-			if err := tw.WriteHeader(hdr); err != nil {
-				return err
-			}
-			continue
-		}
-
-		isExec := entry.Mode == filemode.Executable
-		hdr.Mode = applyUmask(unixMode, isExec)
-
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		rc, err := blob.Reader()
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(tw, rc)
-		_ = rc.Close()
-		if err != nil {
-			return err
-		}
-	}
-
-	if len(pathFilter) > 0 && !matchedAny {
-		return fmt.Errorf("pathspec '%s' did not match any files", strings.Join(pathFilter, " "))
-	}
-
-	return tw.Close()
-}
-
-func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
-	zw := zip.NewWriter(w)
-
-	walker := object.NewTreeWalker(tree, true, nil)
-	defer walker.Close()
-
-	var matchedAny bool
-	for {
-		name, entry, err := walker.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		if len(pathFilter) > 0 && !matchesPathFilter(name, pathFilter) {
-			continue
-		}
-		matchedAny = true
-
-		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
-			continue
-		}
-
-		fullName := prefix + name
-		blob, err := object.GetBlob(st, entry.Hash)
-		if err != nil {
-			return err
-		}
-
-		// Extract Unix permission bits from git mode and apply default umask.
-		unixMode := int64(entry.Mode) & 0o777
-
-		fh := &zip.FileHeader{
-			Name:     fullName,
-			Method:   zip.Deflate,
-			Modified: modTime,
-		}
-		switch entry.Mode {
-		case filemode.Executable:
-			fh.SetMode(fs.FileMode(applyUmask(unixMode, true)))
-		case filemode.Symlink:
-			// Zip stores symlinks with mode 0o120000 + permissions.
-			fh.SetMode(fs.FileMode(0o120000 | (applyUmask(unixMode, true) & 0o777)))
-		default:
-			fh.SetMode(fs.FileMode(applyUmask(unixMode, false)))
-		}
-
-		fw, err := zw.CreateHeader(fh)
-		if err != nil {
-			return err
-		}
-
-		rc, err := blob.Reader()
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(fw, rc)
-		_ = rc.Close()
-		if err != nil {
-			return err
-		}
-	}
-
-	if len(pathFilter) > 0 && !matchedAny {
-		return fmt.Errorf("pathspec '%s' did not match any files", strings.Join(pathFilter, " "))
-	}
-
-	// Store commit ID as ZIP file comment if available.
-	// This matches the behavior of git archive.
-	if commitHash != nil {
-		_ = zw.SetComment(commitHash.String())
-	}
-
-	return zw.Close()
-}
-
-// PaxGlobalHeader is the name used for PAX global extended headers in
-// git-generated tar archives. This matches the name used by canonical git.
-const paxGlobalHeader = "pax_global_header"
-
-// getTarCommitID extracts the commit ID from a git-generated tar archive.
-// It reads the PAX global extended header from the beginning of the archive
-// and returns the value of the "comment" field, which contains the commit hash.
-// If no global header is found or it doesn't contain a comment, it returns
-// an error.
-func getTarCommitID(r io.Reader) (*plumbing.Hash, error) {
-	tr := tar.NewReader(r)
-	hdr, err := tr.Next()
-	if err != nil {
-		return nil, fmt.Errorf("reading tar header: %w", err)
-	}
-	// Check for PAX global extended header (typeflag 'g')
-	if hdr.Typeflag != tar.TypeXGlobalHeader {
-		return nil, fmt.Errorf("expected global PAX header, got typeflag %c", hdr.Typeflag)
-	}
-	// The PAX records should contain the commit ID in the "comment" field
-	comment, ok := hdr.PAXRecords["comment"]
-	if !ok {
-		return nil, fmt.Errorf("global header missing comment field")
-	}
-	hash := plumbing.NewHash(comment)
-	return &hash, nil
-}
-
-func matchesPathFilter(name string, filters []string) bool {
-	for _, f := range filters {
-		if name == f || strings.HasPrefix(name, f+"/") || strings.HasPrefix(f, name+"/") {
-			return true
-		}
-		matched, _ := path.Match(f, name)
-		if matched {
-			return true
-		}
-	}
-	return false
 }
