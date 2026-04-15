@@ -274,6 +274,14 @@ func resolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 		}
 	case *object.Tree:
 		tree = o
+
+		// git archive behaves differently when given a tree ID versus when
+		// given a commit ID or tag ID. In the first case the current time is
+		// used as the modification time of each file in the archive. In the
+		// latter case the commit time as recorded in the referenced commit
+		// object is used instead.
+		//
+		// See https://git-scm.com/docs/git-archive
 		commitTime = time.Now()
 	default:
 		return nil, time.Time{}, fmt.Errorf("unsupported object type for archive: %T", obj)
