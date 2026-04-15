@@ -20,6 +20,9 @@ func TestSubmoduleInit(t *testing.T) {
 		t.Parallel()
 
 		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 
@@ -50,13 +53,18 @@ func TestSubmoduleUpdate(t *testing.T) {
 		}
 
 		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
 
 		subRepo, err := sm.Repository()
 		require.NoError(t, err)
-		defer subRepo.Close()
+		defer func() {
+			_ = CloseStorage(subRepo)
+		}()
 
 		ref, err := subRepo.Reference(plumbing.HEAD, true)
 		require.NoError(t, err)
@@ -74,13 +82,16 @@ func TestSubmoduleRepositoryWithoutInit(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 
-		r, err := sm.Repository()
+		subRepo, err := sm.Repository()
 		require.ErrorIs(t, err, ErrSubmoduleNotInitialized)
-		require.Nil(t, r)
+		require.Nil(t, subRepo)
 	})
 }
 
@@ -90,7 +101,10 @@ func TestSubmoduleUpdateWithoutInit(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		err := sm.Update(&SubmoduleUpdateOptions{})
@@ -104,7 +118,10 @@ func TestSubmoduleUpdateWithNotFetch(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		err := sm.Update(&SubmoduleUpdateOptions{
@@ -126,7 +143,10 @@ func TestSubmoduleUpdateWithRecursion(t *testing.T) {
 			t.Skip("skipping test in short mode.")
 		}
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, "itself")
 		err := sm.Update(&SubmoduleUpdateOptions{
@@ -152,13 +172,18 @@ func TestSubmoduleUpdateWithInitAndUpdate(t *testing.T) {
 		}
 
 		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
 
 		subRepo, err := sm.Repository()
 		require.NoError(t, err)
-		defer subRepo.Close()
+		defer func() {
+			_ = CloseStorage(subRepo)
+		}()
 
 		log, err := subRepo.Log(&LogOptions{})
 		require.NoError(t, err)
@@ -199,7 +224,10 @@ func TestSubmodulesInit(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm, err := wt.Submodules()
 		require.NoError(t, err)
@@ -220,7 +248,10 @@ func TestGitSubmodulesSymlink(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		file, err := wt.Filesystem.Create("badfile")
 		require.NoError(t, err)
@@ -240,7 +271,10 @@ func TestSubmodulesStatus(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm, err := wt.Submodules()
 		require.NoError(t, err)
@@ -261,7 +295,10 @@ func TestSubmodulesUpdateContext(t *testing.T) {
 			t.Skip("skipping test in short mode.")
 		}
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm, err := wt.Submodules()
 		require.NoError(t, err)
@@ -288,7 +325,10 @@ func TestSubmodulesFetchDepth(t *testing.T) {
 			t.Skip("shallow submodule updates do not yet support SHA-256 shallow-update parsing")
 		}
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{
@@ -298,7 +338,9 @@ func TestSubmodulesFetchDepth(t *testing.T) {
 
 		subRepo, err := sm.Repository()
 		require.NoError(t, err)
-		defer subRepo.Close()
+		defer func() {
+			_ = CloseStorage(subRepo)
+		}()
 
 		lr, err := subRepo.Log(&LogOptions{})
 		require.NoError(t, err)

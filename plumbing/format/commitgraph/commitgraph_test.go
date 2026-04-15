@@ -91,6 +91,7 @@ func (s *CommitgraphSuite) TestDecodeMultiChain() {
 		dotgit2, err := f.DotGit()
 		s.Require().NoError(err)
 		storer := filesystem.NewStorage(dotgit2, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 		p, err := f.Packfile()
 		s.Require().NoError(err)
 		defer p.Close()

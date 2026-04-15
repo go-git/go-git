@@ -19,6 +19,9 @@ func TestSubmoduleRepositoryConfigIsIndependentFromParent(t *testing.T) {
 		t.Parallel()
 
 		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
@@ -31,7 +34,9 @@ func TestSubmoduleRepositoryConfigIsIndependentFromParent(t *testing.T) {
 
 		subRepo, err := sm.Repository()
 		require.NoError(t, err)
-		defer subRepo.Close()
+		defer func() {
+			_ = CloseStorage(subRepo)
+		}()
 
 		subCfg, err := subRepo.Config()
 		require.NoError(t, err)
@@ -46,7 +51,10 @@ func TestSubmoduleRepositoryConfigPersistsObjectFormatOnReopen(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Init())
@@ -56,11 +64,13 @@ func TestSubmoduleRepositoryConfigPersistsObjectFormatOnReopen(t *testing.T) {
 
 		cfg, err := subRepo.Config()
 		require.NoError(t, err)
-		require.NoError(t, subRepo.Close())
+		require.NoError(t, CloseStorage(subRepo))
 
 		reopened, err := sm.Repository()
 		require.NoError(t, err)
-		defer reopened.Close()
+		defer func() {
+			_ = CloseStorage(reopened)
+		}()
 
 		reopenedCfg, err := reopened.Config()
 		require.NoError(t, err)
@@ -76,13 +86,18 @@ func TestSubmoduleRepositoryCreateRemoteWritesModuleConfig(t *testing.T) {
 		t.Parallel()
 
 		r, wt := cloneFixture(t, f)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Init())
 
 		subRepo, err := sm.Repository()
 		require.NoError(t, err)
-		defer subRepo.Close()
+		defer func() {
+			_ = CloseStorage(subRepo)
+		}()
 
 		_, err = subRepo.CreateRemote(&config.RemoteConfig{
 			Name: "module-only",

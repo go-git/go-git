@@ -20,6 +20,7 @@ func main() {
 		NoCheckout: true,
 	})
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	w, err := r.Worktree()
 	CheckIfError(err)

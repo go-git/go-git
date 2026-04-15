@@ -681,6 +681,7 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 	_, err := Init(st)
 	s.Require().NoError(err)
 
@@ -730,6 +731,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	fsDotgit, err := fs.Chroot(".git") // real fs to get modified timestamps
 	s.Require().NoError(err)
 	storage := filesystem.NewStorage(fsDotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = storage.Close() }()
 
 	r, err := Init(storage, WithWorkTree(fs))
 	s.Require().NoError(err)
@@ -784,6 +786,9 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 
 func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	f := fixtures.Basic().One()
+	if s.Repository != nil {
+		_ = CloseStorage(s.Repository)
+	}
 	s.Repository = NewRepositoryWithEmptyWorktree(f)
 
 	expected := plumbing.NewHash("e8eecef2524c3a37cf0f0996603162f81e0373f1")

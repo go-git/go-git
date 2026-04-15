@@ -77,6 +77,9 @@ func TestParserStorageModes(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
+				if closer, ok := tc.storage.(io.Closer); ok {
+					defer func() { _ = closer.Close() }()
+				}
 
 				obs := new(testObserver)
 				pf, pfErr := f.Packfile()
@@ -171,8 +174,12 @@ func TestThinPack(t *testing.T) {
 	assert.ErrorIs(t, err, packfile.ErrReferenceDeltaNotFound)
 
 	// start over with a clean repo
+	_ = git.CloseStorage(r)
 	r, err = git.PlainInit(t.TempDir(), true)
 	assert.NoError(t, err)
+	defer func() {
+		_ = git.CloseStorage(r)
+	}()
 
 	// Now unpack a base packfile into our empty repo:
 	f := fixtures.ByURL("https://github.com/spinnaker/spinnaker.git").One()

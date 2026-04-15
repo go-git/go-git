@@ -18,6 +18,7 @@ func main() {
 	Info("git open %s", url)
 	r, err := git.PlainOpen(url)
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	// Retrieve the branch's HEAD, to then get the HEAD commit.
 	ref, err := r.Head()

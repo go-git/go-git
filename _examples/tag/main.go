@@ -18,6 +18,7 @@ func main() {
 	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	// List all tag references, both lightweight tags and annotated tags
 	Info("git show-ref --tag")

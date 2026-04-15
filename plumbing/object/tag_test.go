@@ -28,10 +28,20 @@ func TestTagSuite(t *testing.T) {
 
 func (s *TagSuite) SetupSuite() {
 	s.BaseObjectsSuite.SetupSuite(s.T())
+	// Close the base storer before overwriting it
+	if closer, ok := s.Storer.(io.Closer); ok {
+		_ = closer.Close()
+	}
 	tagsDotgit, err := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
 	s.Require().NoError(err)
 	storer := filesystem.NewStorage(tagsDotgit, cache.NewObjectLRUDefault())
 	s.Storer = storer
+}
+
+func (s *TagSuite) TearDownSuite() {
+	if closer, ok := s.Storer.(io.Closer); ok {
+		_ = closer.Close()
+	}
 }
 
 func (s *TagSuite) TestNameIDAndType() {

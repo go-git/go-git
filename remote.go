@@ -128,7 +128,15 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
-	return r.sendPack(ctx, sess, remoteRefs, o)
+	if err := r.sendPack(ctx, sess, remoteRefs, o); err != nil {
+		return err
+	}
+
+	if err := sess.Close(); err != nil {
+		return fmt.Errorf("error closing connection: %w", err)
+	}
+
+	return nil
 }
 
 func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRefs storer.ReferenceStorer, o *PushOptions) error {

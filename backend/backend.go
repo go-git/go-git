@@ -88,6 +88,11 @@ func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closer, ok := st.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	switch req.Service {
 	case transport.UploadPackService:

@@ -144,9 +144,6 @@ func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
 		offset, err := pack2.Seek(0, io.SeekCurrent)
 		s.Require().NoError(err)
 		s.Equal(int64(0), offset)
-
-		err = o.Close()
-		s.Require().NoError(err)
 	}
 }
 
@@ -307,19 +304,22 @@ func (s *FsSuite) TestIterLargeObjectThreshold() {
 func (s *FsSuite) TestIterWithType() {
 	for _, f := range fixtures.ByTag(".git") {
 		for _, t := range objectTypes {
-			fs, err := f.DotGit()
-			s.Require().NoError(err)
-			o := NewStorage(fs, cache.NewObjectLRUDefault())
+			func() {
+				fs, err := f.DotGit()
+				s.Require().NoError(err)
+				o := NewStorage(fs, cache.NewObjectLRUDefault())
+				defer func() { _ = o.Close() }()
 
-			iter, err := o.IterEncodedObjects(t)
-			s.Require().NoError(err)
+				iter, err := o.IterEncodedObjects(t)
+				s.Require().NoError(err)
 
-			err = iter.ForEach(func(o plumbing.EncodedObject) error {
-				s.Equal(t, o.Type())
-				return nil
-			})
+				err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+					s.Equal(t, obj.Type())
+					return nil
+				})
 
-			s.Require().NoError(err)
+				s.Require().NoError(err)
+			}()
 		}
 	}
 }

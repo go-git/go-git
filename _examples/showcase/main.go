@@ -29,6 +29,7 @@ func main() {
 
 	r, err := git.PlainClone(path, &git.CloneOptions{URL: url})
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	// Getting the latest commit on the current branch
 	Info("git log -1")

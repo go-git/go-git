@@ -24,6 +24,7 @@ func main() {
 	})
 
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	w, err := r.Worktree()
 	if err != nil {

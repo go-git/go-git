@@ -27,6 +27,7 @@ func main() {
 		},
 	})
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	ref, err := r.Head()
 	CheckIfError(err)

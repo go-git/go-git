@@ -25,6 +25,7 @@ func main() {
 	// Init a new repository using the ObjectFormat SHA256.
 	r, err := git.PlainInit(directory, false, git.WithObjectFormat(config.SHA256))
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	w, err := r.Worktree()
 	CheckIfError(err)

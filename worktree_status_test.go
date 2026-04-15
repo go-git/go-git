@@ -24,6 +24,7 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = s.Close() }()
 	r, err := Init(s, WithWorkTree(w))
 	require.NoError(t, err)
 	require.NotNil(t, r)

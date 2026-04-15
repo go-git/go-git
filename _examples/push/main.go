@@ -15,6 +15,7 @@ func main() {
 
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	Info("git push")
 	// push using default options

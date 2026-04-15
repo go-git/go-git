@@ -34,6 +34,12 @@ func (s *BaseObjectsSuite) SetupSuite(t *testing.T) {
 	s.t = t
 }
 
+func (s *BaseObjectsSuite) TearDownSuite() {
+	if closer, ok := s.Storer.(io.Closer); ok {
+		_ = closer.Close()
+	}
+}
+
 func (s *BaseObjectsSuite) tag(h plumbing.Hash) *Tag {
 	t, err := GetTag(s.Storer, h)
 	assert.NoError(s.t, err)

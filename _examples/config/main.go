@@ -20,6 +20,7 @@ func main() {
 	Info("git init")
 	r, err := git.PlainInit(tmp, false)
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	// Load the configuration
 	cfg, err := r.Config()

@@ -26,6 +26,7 @@ func main() {
 		log.Printf("clone repo error: %s", err)
 		return
 	}
+	defer func() { _ = git.CloseStorage(r) }()
 
 	created, err := setTag(r, tag)
 	if err != nil {

@@ -38,6 +38,15 @@ func (s *BaseSuite) SetupSuite() {
 	s.cache = make(map[string]*Repository)
 }
 
+func (s *BaseSuite) TearDownSuite() {
+	if s.Repository != nil {
+		_ = CloseStorage(s.Repository)
+	}
+	for _, r := range s.cache {
+		_ = CloseStorage(r)
+	}
+}
+
 // registerTestConfigLoader registers a static ConfigSource plugin with
 // default test user data. Tests that need specific config values should
 // register their own ConfigSource.

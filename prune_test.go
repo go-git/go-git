@@ -1,6 +1,7 @@
 package git
 
 import (
+	"io"
 	"testing"
 	"time"
 
@@ -27,6 +28,11 @@ func (s *PruneSuite) testPrune(deleteTime time.Time) {
 	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)
 	var sto storage.Storer = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	defer func() {
+		if closer, ok := sto.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	los := sto.(storer.LooseObjectStorer)
 	s.NotNil(los)

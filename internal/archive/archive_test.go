@@ -119,6 +119,7 @@ func TestResolveRef(t *testing.T) {
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotGit, nil)
+	defer func() { _ = storer.Close() }()
 
 	// Get expected hashes from the fixture
 	masterRef, err := storer.Reference(plumbing.ReferenceName("refs/heads/master"))
@@ -205,6 +206,7 @@ func TestResolveTreeish_Errors(t *testing.T) {
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotGit, nil)
+	defer func() { _ = storer.Close() }()
 
 	tests := []struct {
 		name             string
@@ -263,6 +265,7 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotGit, nil)
+	defer func() { _ = storer.Close() }()
 
 	// Get the master commit hash for testing
 	masterRef, err := storer.Reference(plumbing.ReferenceName("refs/heads/master"))
@@ -392,6 +395,7 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotGit, nil)
+	defer func() { _ = storer.Close() }()
 
 	tests := []struct {
 		name    string

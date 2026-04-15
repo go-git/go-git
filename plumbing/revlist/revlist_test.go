@@ -2,6 +2,7 @@ package revlist
 
 import (
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -82,6 +83,12 @@ func (s *RevListSuite) SetupTest() {
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
+}
+
+func (s *RevListSuite) TearDownTest() {
+	if closer, ok := s.Storer.(io.Closer); ok {
+		_ = closer.Close()
+	}
 }
 
 func (s *RevListSuite) TestRevListObjects_Submodules() {
@@ -531,6 +538,7 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaveAncestor() {
 	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	t := s.T()
 	license := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
@@ -610,6 +618,7 @@ func (s *RevListSuite) TestRevListObjects_MissingHaveAncestorIsTolerated() {
 	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 	t := s.T()
 
 	haveTree := testMakeTree(t, sto, []object.TreeEntry{

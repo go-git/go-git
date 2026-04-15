@@ -2,6 +2,7 @@ package object
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"testing"
 
@@ -32,6 +33,12 @@ func (s *DiffTreeSuite) SetupSuite() {
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
 	s.cache = make(map[string]storer.EncodedObjectStorer)
+}
+
+func (s *DiffTreeSuite) TearDownSuite() {
+	if closer, ok := s.Storer.(io.Closer); ok {
+		_ = closer.Close()
+	}
 }
 
 func (s *DiffTreeSuite) commitFromStorer(sto storer.EncodedObjectStorer,

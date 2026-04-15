@@ -260,6 +260,7 @@ func (s *ChangeSuite) TestNoFileFilemodes() {
 	dotgit, err := f.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
 	s.NoError(err)

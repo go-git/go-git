@@ -505,6 +505,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule() {
 	dotgit2, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dotgit2, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)

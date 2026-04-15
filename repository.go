@@ -87,6 +87,27 @@ type Repository struct {
 	wt billy.Filesystem
 }
 
+// CloseStorage safely closes a repository's storage if it implements io.Closer.
+// It returns any error from Close() for explicit error handling, or can be used with defer.
+//
+// This is only needed when using Plain* functions (PlainClone, PlainInit, PlainOpen,
+// PlainOpenWithOptions) which create storage internally. When you create storage directly
+// (e.g., filesystem.NewStorage), close it directly instead.
+//
+// Usage:
+//
+//	r, err := git.PlainClone("/tmp/repo", false, &git.CloneOptions{...})
+//	if err != nil {
+//	    return err
+//	}
+//	defer func() { _ = git.CloseStorage(r) }()
+func CloseStorage(r *Repository) error {
+	if closer, ok := r.Storer.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 type initOptions struct {
 	defaultBranch plumbing.ReferenceName
 	workTree      billy.Filesystem
@@ -364,6 +385,7 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	})
 	r, err := initFn(s)
 	if err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 
@@ -373,11 +395,13 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 
 	cfg, err := r.Config()
 	if err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 
 	err = r.Storer.SetConfig(cfg)
 	if err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 
@@ -441,7 +465,12 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 
 	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
 
-	return Open(s, wt)
+	r, err := Open(s, wt)
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return r, nil
 }
 
 func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
@@ -619,6 +648,8 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 			// We created the directory; remove it entirely.
 			_ = os.RemoveAll(path)
 		}
+		// Close the storage that PlainInit created
+		_ = CloseStorage(r)
 		return r, err
 	}
 
@@ -657,16 +688,6 @@ func checkTargetDirIsEmpty(path string) (empty bool, err error) {
 	}
 
 	return false, nil
-}
-
-// Close releases any open resources held by the repository. It must be called
-// when the repository is no longer needed. It is safe to call Close on a
-// repository backed by memory storage, where it is a no-op.
-func (r *Repository) Close() error {
-	if c, ok := r.Storer.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
 }
 
 // Config return the repository config. In a filesystem backed repository this
@@ -1093,6 +1114,9 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to open remote repository: %w", err)
 		}
+		defer func() {
+			_ = CloseStorage(remoteRepo)
+		}()
 		conf, err := remoteRepo.Config()
 		if err != nil {
 			return fmt.Errorf("failed to read remote repository configuration: %w", err)

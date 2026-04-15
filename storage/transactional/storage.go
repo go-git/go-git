@@ -30,6 +30,7 @@ type basic struct {
 	*ShallowStorage
 	*ConfigStorage
 	reflog *ReflogStorage
+	closed bool
 }
 
 // packageWriter implements storer.PackfileWriter interface over
@@ -68,6 +69,8 @@ func NewStorage(base, temporal storage.Storer) Storage {
 			st.reflog = NewReflogStorage(baseReflog, tempReflog)
 		}
 	}
+
+	setupLeakCheck(st)
 
 	pw, ok := temporal.(storer.PackfileWriter)
 	if ok {
@@ -127,6 +130,23 @@ func (s *basic) Commit() error {
 	}
 
 	return nil
+}
+
+// Close closes both the base and temporal storages if they implement io.Closer.
+func (s *basic) Close() error {
+	// Mark as closed for leak detection (used by finalizer when compiled with -tags leakcheck)
+	s.closed = true
+
+	var err error
+	if closer, ok := s.temporal.(io.Closer); ok {
+		err = closer.Close()
+	}
+	if closer, ok := s.s.(io.Closer); ok {
+		if closeErr := closer.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 // PackfileWriter honors storage.PackfileWriter.

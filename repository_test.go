@@ -150,6 +150,9 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 				r, err := PlainInit(rdir, tc.wantBare, opts...)
 				require.NotNil(t, r)
 				require.NoError(t, err)
+				defer func() {
+					_ = CloseStorage(r)
+				}()
 
 				cfg, err := r.Config()
 				require.NoError(t, err)
@@ -172,6 +175,9 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 				ro, err := PlainOpen(rdir)
 				require.NotNil(t, ro)
 				require.NoError(t, err)
+				defer func() {
+					_ = CloseStorage(ro)
+				}()
 
 				if !tc.wantBare {
 					ref, err := ro.Head()
@@ -204,6 +210,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit() {
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot("storage")
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	wt, _ := fs.Chroot("worktree")
 	r, err := Init(st, WithWorkTree(wt))
@@ -228,6 +235,7 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 	fs := osfs.New(dir)
 	dot, _ := fs.Chroot(".git")
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	r, err := Init(st, WithWorkTree(fs))
 	s.NoError(err)
@@ -347,6 +355,9 @@ func TestCloneAll(t *testing.T) {
 				}
 				require.NoError(t, err)
 				require.NotNil(t, r, "repository must not be nil")
+				defer func() {
+					_ = CloseStorage(r)
+				}()
 
 				remotes, err := r.Remotes()
 				require.NoError(t, err)
@@ -506,6 +517,9 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 		Tags:  NoTags,
 	})
 	require.NoError(t, err, "clone should succeed")
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	// Confirm the target commit is not yet available.
 	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
@@ -611,8 +625,11 @@ func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
 	t.Parallel()
 
 	remote := filepath.Join(t.TempDir(), "remote.git")
-	_, err := PlainInit(remote, true)
+	remoteRepo, err := PlainInit(remote, true)
 	require.NoError(t, err)
+	defer func() {
+		_ = CloseStorage(remoteRepo)
+	}()
 
 	dest := filepath.Join(t.TempDir(), "clone")
 	_, err = PlainCloneContext(context.Background(), dest, &CloneOptions{
@@ -628,8 +645,11 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 
 	// Create a bare empty repository to use as the remote.
 	remote := filepath.Join(t.TempDir(), "remote.git")
-	_, err := PlainInit(remote, true)
+	remoteRepo, err := PlainInit(remote, true)
 	require.NoError(t, err)
+	defer func() {
+		_ = CloseStorage(remoteRepo)
+	}()
 
 	dest := filepath.Join(t.TempDir(), "clone")
 	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
@@ -638,6 +658,9 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, r)
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	// The cloned repo should have the "origin" remote configured.
 	remotes, err := r.Remotes()
@@ -662,6 +685,9 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	// its config persisted (unlike a partialInit repo).
 	reopened, err := PlainOpen(dest)
 	require.NoError(t, err)
+	defer func() {
+		_ = CloseStorage(reopened)
+	}()
 	reopenedRemotes, err := reopened.Remotes()
 	require.NoError(t, err)
 	require.Len(t, reopenedRemotes, 1)
@@ -684,6 +710,9 @@ func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
 	srcDir := t.TempDir()
 	src, err := PlainInit(srcDir, false)
 	require.NoError(t, err)
+	defer func() {
+		_ = CloseStorage(src)
+	}()
 
 	wt, err := src.Worktree()
 	require.NoError(t, err)
@@ -729,6 +758,9 @@ func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
 	// git clone creates a symbolic HEAD (→ refs/heads/<branch>) in the clone
 	// even when the source has a detached HEAD; the resolved commit must match.
 	require.NotNil(t, dst, "cloned repository must not be nil")
+	defer func() {
+		_ = CloseStorage(dst)
+	}()
 
 	rawClonedHead, err := dst.Storer.Reference(plumbing.HEAD)
 	require.NoError(t, err)
@@ -784,6 +816,7 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 		dotgit, dotgitErr := f.DotGit(fixtures.WithMemFS())
 		require.NoError(t, dotgitErr)
 		st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = st.Close() }()
 
 		wrapped := &sha1OnlyStorage{st}
 		_, okGetter := storage.Storer(wrapped).(xstorage.ExtensionChecker)
@@ -1221,6 +1254,7 @@ func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	r, err := PlainInit(dir, true)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	r, err = PlainInit(dir, true)
 	s.ErrorIs(err, ErrTargetDirNotEmpty)
@@ -1234,6 +1268,7 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 	r, err := PlainInit(dir, false)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	currentUser, err := user.Current()
 	s.NoError(err)
@@ -1247,6 +1282,7 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 		r, err = PlainOpen(path)
 		s.NoError(err)
 		s.NotNil(r)
+		_ = CloseStorage(r)
 	}
 }
 
@@ -1259,6 +1295,7 @@ func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
 	r, err := PlainInit(fs.Join(fs.Root(), dir), true)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	altDir, err := util.TempDir(fs, "", "plain-open")
 	s.NoError(err)
@@ -1273,6 +1310,7 @@ func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
 	r, err = PlainOpen(fs.Join(fs.Root(), altDir))
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 }
 
 func (s *RepositorySuite) TestPlainOpenBareAbsoluteGitDirFile() {
@@ -1312,6 +1350,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage() {
 	r, err := PlainInit(dir, true)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	altDir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
@@ -1322,9 +1361,9 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage() {
 	)
 	s.NoError(err)
 
-	r, err = PlainOpen(altDir)
+	r2, err := PlainOpen(altDir)
 	s.ErrorIs(err, ErrRepositoryNotExists)
-	s.Nil(r)
+	s.Nil(r2)
 }
 
 func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix() {
@@ -1336,6 +1375,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix() {
 	r, err := PlainInit(fs.Join(fs.Root(), dir), true)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	altDir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
@@ -1375,15 +1415,18 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 	r, err := PlainInit(fs.Join(fs.Root(), dir), false)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	opt := &PlainOpenOptions{DetectDotGit: true}
 	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), subdir), opt)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), file), opt)
 	s.NoError(err)
 	s.NotNil(r)
+	_ = CloseStorage(r)
 
 	optnodetect := &PlainOpenOptions{DetectDotGit: false}
 	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), file), optnodetect)
@@ -1413,6 +1456,9 @@ func (s *RepositorySuite) TestPlainClone() {
 	})
 
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	remotes, err := r.Remotes()
 	s.NoError(err)
@@ -1433,6 +1479,9 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared() {
 		Bare:   true,
 	})
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	altpath := path.Join(dir, "objects", "info", "alternates")
 	_, err = os.Stat(altpath)
@@ -1459,6 +1508,9 @@ func (s *RepositorySuite) TestPlainCloneShared() {
 		Shared: true,
 	})
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	altpath := path.Join(dir, GitDirName, "objects", "info", "alternates")
 	_, err = os.Stat(altpath)
@@ -1517,6 +1569,9 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName() {
 	})
 
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	remote, err := r.Remote("test")
 	s.NoError(err)
@@ -1528,6 +1583,7 @@ func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory() {
 	r, err := PlainInit(dir, false)
 	s.NotNil(r)
 	s.NoError(err)
+	_ = CloseStorage(r)
 
 	r, err = PlainClone(dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -1654,6 +1710,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	r, err := PlainInit(dir, false)
 	s.NotNil(r)
 	s.NoError(err)
+	_ = CloseStorage(r)
 
 	r, err = PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
@@ -1675,6 +1732,9 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 			RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 		})
 		require.NoError(t, err)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
@@ -1704,6 +1764,9 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 			ShallowSubmodules: true,
 		})
 		require.NoError(t, err)
+		defer func() {
+			_ = CloseStorage(mainRepo)
+		}()
 
 		mainWorktree, err := mainRepo.Worktree()
 		require.NoError(t, err)
@@ -1713,7 +1776,6 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 
 		subRepo, err := submodule.Repository()
 		require.NoError(t, err)
-		defer subRepo.Close()
 
 		lr, err := subRepo.Log(&LogOptions{})
 		require.NoError(t, err)
@@ -1739,6 +1801,9 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 			RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 		})
 		require.NoError(t, err)
+		defer func() {
+			_ = CloseStorage(r)
+		}()
 
 		h, err := r.Head()
 		require.NoError(t, err)
@@ -2183,6 +2248,9 @@ func (s *RepositorySuite) TestPush() {
 	url := s.T().TempDir()
 	server, err := PlainInit(url, true)
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(server)
+	}()
 
 	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
 		Name: "test",
@@ -2208,8 +2276,11 @@ func (s *RepositorySuite) TestPush() {
 
 func (s *RepositorySuite) TestPushContext() {
 	url := s.T().TempDir()
-	_, err := PlainInit(url, true)
+	server, err := PlainInit(url, true)
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(server)
+	}()
 
 	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
 		Name: "foo",
@@ -2251,6 +2322,9 @@ func (s *RepositorySuite) TestPushWithProgress() {
 
 	server, err := PlainInit(url, true)
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(server)
+	}()
 
 	m := "Receiving..."
 	installPreReceiveHook(s, fs, path, m)
@@ -2281,6 +2355,9 @@ func (s *RepositorySuite) TestPushDepth() {
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	s.Require().NoError(err)
+	defer func() {
+		_ = CloseStorage(server)
+	}()
 
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL:   server.wt.Root(),
@@ -2319,6 +2396,7 @@ func (s *RepositorySuite) TestPushNonExistentRemote() {
 	srcFs, err := fixtures.Basic().One().DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	r, err := Open(sto, srcFs)
 	s.NoError(err)
@@ -3291,6 +3369,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotated() {
 	fs := s.TemporalFilesystem()
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	defer func() { _ = fss.Close() }()
 
 	r, _ := Init(fss)
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
@@ -3323,6 +3402,9 @@ func (s *RepositorySuite) TestDeleteTagAnnotated() {
 	r, err = PlainOpen(fs.Root())
 	s.NotNil(r)
 	s.NoError(err)
+	defer func() {
+		_ = CloseStorage(r)
+	}()
 
 	// Now check to see if the GC was effective in removing the tag object.
 	obj, err = r.TagObject(ref.Hash())
@@ -3338,6 +3420,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked() {
 	fs := s.TemporalFilesystem()
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	defer func() { _ = fss.Close() }()
 
 	r, _ := Init(fss)
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
@@ -3401,6 +3484,7 @@ func (s *RepositorySuite) TestBranches() {
 	dotgit1, err := f.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 	dotgit2, err := f.DotGit()
 	s.Require().NoError(err)
 	r, err := Open(sto, dotgit2)
@@ -3622,6 +3706,7 @@ func (s *RepositorySuite) TestResolveRevision() {
 	dotgit1, err := f.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 	dotgit2, err := f.DotGit()
 	s.Require().NoError(err)
 	r, err := Open(sto, dotgit2)
@@ -3664,6 +3749,7 @@ func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	dotgit1, err := f.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 	dotgit2, err := f.DotGit()
 	s.Require().NoError(err)
 	r, err := Open(sto, dotgit2)

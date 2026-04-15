@@ -16,6 +16,7 @@ func main() {
 	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
+	defer func() { _ = git.CloseStorage(r) }()
 
 	// Get the working directory for the repository
 	w, err := r.Worktree()
