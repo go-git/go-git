@@ -381,6 +381,17 @@ func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 }
 
 // MatchesPathFilter checks if a name matches any of the path filters.
+//
+// Note: This function assumes paths use forward slashes (/), which is the
+// format used by Git internally. The TreeWalker produces paths with forward
+// slashes regardless of the operating system, so this function is
+// platform-independent.
+//
+// Supported patterns:
+//   - Exact match: "README.md"
+//   - Prefix match: "docs/" matches "docs/guide.md"
+//   - Glob patterns: "*.go" matches "main.go"
+//   - Parent-child: "docs/guide.md" matches parent "docs"
 func MatchesPathFilter(name string, filters []string) bool {
 	for _, f := range filters {
 		if name == f || strings.HasPrefix(name, f+"/") || strings.HasPrefix(f, name+"/") {

@@ -12,6 +12,8 @@ import (
 )
 
 func TestMatchesPathFilter(t *testing.T) {
+	// Note: All paths use forward slashes because these are Git internal paths,
+	// not OS filesystem paths. Git always uses / regardless of platform.
 	tests := []struct {
 		name    string
 		path    string
@@ -28,6 +30,12 @@ func TestMatchesPathFilter(t *testing.T) {
 			name:    "prefix match",
 			path:    "docs/guide.md",
 			filters: []string{"docs"},
+			want:    true,
+		},
+		{
+			name:    "deep nested path",
+			path:    "src/pkg/sub/module.go",
+			filters: []string{"src/pkg"},
 			want:    true,
 		},
 		{
@@ -66,6 +74,12 @@ func TestMatchesPathFilter(t *testing.T) {
 			filters: []string{"src", "docs"},
 			want:    true,
 		},
+		{
+			name:    "dot prefix match",
+			path:    ".github/workflows/ci.yml",
+			filters: []string{".github"},
+			want:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -74,6 +88,20 @@ func TestMatchesPathFilter(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestMatchesPathFilter_PlatformIndependence verifies that the function
+// works correctly with forward slashes, which is the format used by Git
+// internally regardless of the operating system.
+func TestMatchesPathFilter_PlatformIndependence(t *testing.T) {
+	// Windows-style backslash paths should NOT match because Git
+	// always uses forward slashes internally
+	assert.False(t, MatchesPathFilter("docs\\guide.md", []string{"docs"}),
+		"backslash paths should not match - Git uses forward slashes")
+
+	// Forward slashes should match regardless of OS
+	assert.True(t, MatchesPathFilter("docs/guide.md", []string{"docs"}),
+		"forward slash paths should always match")
 }
 
 func TestResolveRef(t *testing.T) {
