@@ -559,3 +559,19 @@ func TestArchive_ZipCommitID(t *testing.T) {
 	assert.Equal(t, 40, len(comment), "commit ID should be 40 characters")
 	assert.Regexp(t, "^[0-9a-f]+$", comment, "commit ID should be hex")
 }
+
+func TestArchive_PathspecNoMatch(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "master", "nonexistent/path/"},
+	})
+	require.NoError(t, err)
+
+	_, err = io.ReadAll(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pathspec")
+	assert.Contains(t, err.Error(), "did not match")
+}

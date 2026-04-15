@@ -165,7 +165,9 @@ func writeArchive(_ context.Context, st storage.Storer, mux *sideband.Muxer, arg
 			// paths are handled below
 		default:
 			if !strings.HasPrefix(arg, "-") {
-				treeish = arg
+				if treeish == "" {
+					treeish = arg
+				}
 			} else {
 				return fmt.Errorf("unknown option: %s", arg)
 			}
@@ -377,6 +379,7 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 	walker := object.NewTreeWalker(tree, true, nil)
 	defer walker.Close()
 
+	var matchedAny bool
 	for {
 		name, entry, err := walker.Next()
 		if err == io.EOF {
@@ -389,6 +392,7 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 		if len(pathFilter) > 0 && !matchesPathFilter(name, pathFilter) {
 			continue
 		}
+		matchedAny = true
 
 		fullName := prefix + name
 
@@ -456,6 +460,10 @@ func writeTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 		}
 	}
 
+	if len(pathFilter) > 0 && !matchedAny {
+		return fmt.Errorf("pathspec '%s' did not match any files", strings.Join(pathFilter, " "))
+	}
+
 	return tw.Close()
 }
 
@@ -465,6 +473,7 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 	walker := object.NewTreeWalker(tree, true, nil)
 	defer walker.Close()
 
+	var matchedAny bool
 	for {
 		name, entry, err := walker.Next()
 		if err == io.EOF {
@@ -477,6 +486,7 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 		if len(pathFilter) > 0 && !matchesPathFilter(name, pathFilter) {
 			continue
 		}
+		matchedAny = true
 
 		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
 			continue
@@ -522,6 +532,10 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 		}
 	}
 
+	if len(pathFilter) > 0 && !matchedAny {
+		return fmt.Errorf("pathspec '%s' did not match any files", strings.Join(pathFilter, " "))
+	}
+
 	// Store commit ID as ZIP file comment if available.
 	// This matches the behavior of git archive.
 	if commitHash != nil {
@@ -531,7 +545,7 @@ func writeZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 	return zw.Close()
 }
 
-// paxGlobalHeader is the name used for PAX global extended headers in
+// PaxGlobalHeader is the name used for PAX global extended headers in
 // git-generated tar archives. This matches the name used by canonical git.
 const paxGlobalHeader = "pax_global_header"
 
