@@ -39,6 +39,37 @@ func nextFlush(statelessRPC bool, count int) int {
 	return count + pipeSafeFlush
 }
 
+func applyServerACKs(
+	statelessRPC bool,
+	acks []packp.ACK,
+	common map[plumbing.Hash]struct{},
+	statelessCommon *[]plumbing.Hash,
+	gotContinue *bool,
+	gotReady *bool,
+	inVein *int,
+) {
+	for _, ack := range acks {
+		if !*gotContinue && ack.Status > 0 {
+			*gotContinue = true
+		}
+
+		switch ack.Status {
+		case packp.ACKContinue:
+			*inVein = 0
+		case packp.ACKReady:
+			*gotReady = true
+			*inVein = 0
+		case packp.ACKCommon:
+			_, alreadyCommon := common[ack.Hash]
+			common[ack.Hash] = struct{}{}
+			if statelessRPC && !alreadyCommon {
+				*statelessCommon = append(*statelessCommon, ack.Hash)
+				*inVein = 0
+			}
+		}
+	}
+}
+
 // NegotiatePack performs the pack negotiation phase of the fetch operation.
 func NegotiatePack(
 	ctx context.Context,
@@ -157,21 +188,41 @@ func NegotiatePack(
 	}
 
 	common := map[plumbing.Hash]struct{}{}
+	var statelessCommon []plumbing.Hash
 	var inVein int
 	var done bool
 	var gotContinue bool
+	var gotReady bool
+	var sendDoneAfterReady bool
 	firstRound := true
 	flushAt := initialFlush
 
 	for !done {
 		var uphav packp.UploadHaves
-		for i := 0; i < flushAt && len(req.Haves) > 0; i++ {
+		if statelessRPC && !sendDoneAfterReady {
+			uphav.Haves = append(uphav.Haves, statelessCommon...)
+		}
+
+		batchSize := 0
+		if !sendDoneAfterReady {
+			batchSize = flushAt
+			if gotContinue {
+				remaining := maxInVein - inVein
+				if remaining <= 0 {
+					batchSize = 0
+				} else if batchSize > remaining {
+					batchSize = remaining
+				}
+			}
+		}
+
+		for i := 0; i < batchSize && len(req.Haves) > 0; i++ {
 			uphav.Haves = append(uphav.Haves, req.Haves[len(req.Haves)-1])
 			req.Haves = req.Haves[:len(req.Haves)-1]
 			inVein++
 		}
 
-		done = len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
+		done = sendDoneAfterReady || len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
 		uphav.Done = done
 
 		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
@@ -220,20 +271,19 @@ func NegotiatePack(
 					readc <- fmt.Errorf("decoding server-response: %w", err)
 					return
 				}
-				for _, ack := range srvrs.ACKs {
-					if !gotContinue && ack.Status > 0 {
-						gotContinue = true
-					}
-					if ack.Status == packp.ACKCommon {
-						common[ack.Hash] = struct{}{}
-					}
-				}
+				applyServerACKs(statelessRPC, srvrs.ACKs, common, &statelessCommon, &gotContinue, &gotReady, &inVein)
 			}
 			readc <- nil
 		}()
 
 		if err := <-readc; err != nil {
 			return nil, err
+		}
+		if sendDoneAfterReady {
+			break
+		}
+		if gotReady {
+			sendDoneAfterReady = true
 		}
 
 		firstRound = false
