@@ -17,6 +17,28 @@ import (
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
+const (
+	initialFlush  = 16
+	pipeSafeFlush = 32
+	largeFlush    = 16384
+	maxInVein     = 256
+)
+
+func nextFlush(statelessRPC bool, count int) int {
+	if statelessRPC {
+		if count < largeFlush {
+			return count << 1
+		}
+		return count * 11 / 10
+	}
+
+	if count < pipeSafeFlush {
+		return count << 1
+	}
+
+	return count + pipeSafeFlush
+}
+
 // NegotiatePack performs the pack negotiation phase of the fetch operation.
 func NegotiatePack(
 	ctx context.Context,
@@ -139,16 +161,16 @@ func NegotiatePack(
 	var done bool
 	var gotContinue bool
 	firstRound := true
+	flushAt := initialFlush
 
 	for !done {
 		var uphav packp.UploadHaves
-		for i := 0; i < 32 && len(req.Haves) > 0; i++ {
+		for i := 0; i < flushAt && len(req.Haves) > 0; i++ {
 			uphav.Haves = append(uphav.Haves, req.Haves[len(req.Haves)-1])
 			req.Haves = req.Haves[:len(req.Haves)-1]
 			inVein++
 		}
 
-		const maxInVein = 256
 		done = len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
 		uphav.Done = done
 
@@ -215,6 +237,7 @@ func NegotiatePack(
 		}
 
 		firstRound = false
+		flushAt = nextFlush(statelessRPC, flushAt)
 	}
 
 	if !statelessRPC {

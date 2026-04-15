@@ -99,6 +99,24 @@ func TestNegotiatePackCompleteWithNonEOFCloseError(t *testing.T) {
 	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }
 
+func TestNextFlushStatelessRPC(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 32, nextFlush(true, 16))
+	assert.Equal(t, 64, nextFlush(true, 32))
+	assert.Equal(t, 18022, nextFlush(true, 16384))
+	assert.Equal(t, 36044, nextFlush(true, 32768))
+}
+
+func TestNextFlushStateful(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 32, nextFlush(false, 16))
+	assert.Equal(t, 64, nextFlush(false, 32))
+	assert.Equal(t, 96, nextFlush(false, 64))
+	assert.Equal(t, 128, nextFlush(false, 96))
+}
+
 // mockWriteCloser implements io.WriteCloser for testing.
 type mockWriteCloser struct {
 	writeBuf *bytes.Buffer
