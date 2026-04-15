@@ -177,9 +177,8 @@ func TestResolveRef(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:paralleltest // avoid parallel test because of shared fixture state
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got, err := ResolveRef(storer, tt.ref, tt.allowHash)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -232,9 +231,8 @@ func TestResolveTreeish_Errors(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:paralleltest // avoid parallel test because of shared fixture state
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -364,9 +362,8 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:paralleltest // avoid parallel test because of shared fixture state
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
 			if tt.wantErr {
 				require.Error(t, err)
