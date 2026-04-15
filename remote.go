@@ -371,6 +371,8 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RemoteURL = r.c.URLs[0]
 	}
 
+	o.Filter = fetchFilterFromConfig(r.c, o.Filter)
+
 	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
 	if err != nil {
 		return nil, err
@@ -392,7 +394,8 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	remoteRefs := referenceStorageFromRefs(rRefs, true)
-	localRefs, err := reference.References(r.s)
+	negotiationStorer := unwrapPromiserStorer(r.s)
+	localRefs, err := reference.References(negotiationStorer)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +406,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	var shallows []plumbing.Hash
 	if o.Depth != 0 {
-		shallows, err = r.s.Shallow()
+		shallows, err = negotiationStorer.Shallow()
 		if err != nil {
 			return nil, err
 		}
@@ -418,9 +421,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	var haves []plumbing.Hash
-	wants, _ := getWants(r.s, refs, o.Depth)
+	wants, err := getWants(negotiationStorer, refs, o.Depth)
+	if err != nil {
+		return nil, err
+	}
 	if len(wants) > 0 {
-		haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
+		haves, err = getHaves(localRefs, remoteRefs, negotiationStorer, o.Depth)
 		if err != nil {
 			return nil, err
 		}
@@ -456,7 +462,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			Filter:      o.Filter,
 		}
 
-		if err := sess.Fetch(ctx, r.s, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
+		fetchStorer := r.s
+		if o.Filter != "" {
+			fetchStorer = withPromisorPackfileWriter(fetchStorer)
+		}
+
+		if err := sess.Fetch(ctx, fetchStorer, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
 			// Note: We receive ErrNoChange when remote is the same as local. At
 			// this point, we have everything we're asking for.
 			return nil, err
@@ -465,6 +476,14 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	if err := sess.Close(); err != nil {
 		return nil, fmt.Errorf("error closing connection: %w", err)
+	}
+
+	if o.Filter != "" {
+		if err := savePartialCloneConfigToStorer(r.s, o.RemoteName, o.Filter, false); err != nil {
+			return nil, err
+		}
+		r.c.Promisor = true
+		r.c.PartialCloneFilter = string(o.Filter)
 	}
 
 	var updatedPrune bool
@@ -481,7 +500,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if !updated {
-		updated, err = depthChanged(shallows, r.s)
+		updated, err = depthChanged(shallows, negotiationStorer)
 		if err != nil {
 			return nil, fmt.Errorf("error checking depth change: %v", err)
 		}
@@ -490,7 +509,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	if !updated && !updatedPrune {
 		// No references updated, but may have fetched new objects, check if we now have any of our wants
 		for _, hash := range wants {
-			exists, _ := objectExists(r.s, hash)
+			exists, _ := objectExists(negotiationStorer, hash)
 			if exists {
 				updated = true
 				break

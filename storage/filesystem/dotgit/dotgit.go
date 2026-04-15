@@ -476,6 +476,15 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 	if err != nil {
 		return err
 	}
+
+	// Remove the .promisor marker if it exists (partial clone packs).
+	promisorPath := d.objectPackPath(hash, `promisor`)
+	if _, err := d.fs.Stat(promisorPath); err == nil {
+		if err := d.fs.Remove(promisorPath); err != nil {
+			return err
+		}
+	}
+
 	return d.fs.Remove(d.objectPackPath(hash, `idx`))
 }
 
