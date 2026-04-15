@@ -27,6 +27,7 @@ import (
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -272,13 +273,33 @@ func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error 
 // if the given storer is complete empty ErrRepositoryNotExists is returned.
 // The worktree can be nil when the repository being opened is bare, if the
 // repository is a normal one (not bare) and worktree is nil the err
-// ErrWorktreeNotProvided is returned
+// ErrWorktreeNotProvided is returned.
+//
+// Open does not accept ClientOptions, so any subsequent on-demand fetch on a
+// partial clone (e.g. BlobObject, Checkout) runs without credentials. For
+// authenticated promisor remotes, use OpenWithOptions or call
+// Repository.SetPromisorClientOptions on the returned *Repository.
 func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
+	return OpenWithOptions(s, worktree, nil)
+}
+
+// OpenWithOptions opens a git repository like Open and additionally forwards
+// the supplied OpenOptions to the partial-clone wrapper, so on-demand fetches
+// triggered later (e.g. Checkout, Reset, BlobObject) inherit the configured
+// ClientOptions (auth, TLS, custom transports).
+func OpenWithOptions(s storage.Storer, worktree billy.Filesystem, o *OpenOptions) (*Repository, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
 			trace.Performance.Printf("performance: %.9f s: open", time.Since(start).Seconds())
 		}()
+	}
+
+	if o == nil {
+		o = &OpenOptions{}
+	}
+	if err := o.Validate(); err != nil {
+		return nil, err
 	}
 
 	_, err := s.Reference(plumbing.HEAD)
@@ -296,7 +317,11 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		return nil, err
 	}
 
-	return newRepository(s, worktree), nil
+	r := newRepository(s, worktree)
+	r.Storer = wrapStorerIfPromisor(r.Storer, &promisorOptions{
+		ClientOptions: o.ClientOptions,
+	})
+	return r, nil
 }
 
 // Clone a repository into the given Storer and worktree Filesystem with the
@@ -1148,9 +1173,30 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		return err
 	}
 
+	if err := r.updateRemoteConfigIfNeeded(o, c, ref); err != nil {
+		return err
+	}
+
+	// For partial clones, persist promisor remote config and upgrade
+	// the repository format version to 1.
+	if o.Filter != "" {
+		if err := r.savePartialCloneConfig(o.RemoteName, o.Filter); err != nil {
+			return err
+		}
+	}
+
 	err = r.setWorktreeAndStoragePaths()
 	if err != nil {
 		return err
+	}
+
+	// Wrap the storer after setWorktreeAndStoragePaths (which needs the
+	// unwrapped fsBased interface) but before checkout (which needs
+	// on-demand fetch for missing blobs).
+	if o.Filter != "" {
+		r.Storer = wrapStorerIfPromisor(r.Storer, &promisorOptions{
+			ClientOptions: o.ClientOptions,
+		})
 	}
 
 	if r.wt != nil && !o.NoCheckout {
@@ -1187,10 +1233,6 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		}
 	}
 
-	if err := r.updateRemoteConfigIfNeeded(o, c, ref); err != nil {
-		return err
-	}
-
 	if !o.Mirror && ref.Name().IsBranch() {
 		branchRef := ref.Name()
 		branchName := strings.Split(string(branchRef), "refs/heads/")[1]
@@ -1212,6 +1254,13 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	return nil
+}
+
+// savePartialCloneConfig upgrades the repository format version to 1 and
+// persists the promisor remote config for a partial clone, matching the
+// behavior of modern git.
+func (r *Repository) savePartialCloneConfig(remoteName string, filter packp.Filter) error {
+	return savePartialCloneConfigToStorer(r.Storer, remoteName, filter, true)
 }
 
 const (
@@ -1263,6 +1312,11 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 	cfg, err := r.Config()
 	if err != nil {
 		return err
+	}
+
+	if existing, ok := cfg.Remotes[c.Name]; ok {
+		c.Promisor = existing.Promisor
+		c.PartialCloneFilter = existing.PartialCloneFilter
 	}
 
 	cfg.Remotes[c.Name] = c
@@ -1426,7 +1480,41 @@ func (r *Repository) FetchContext(ctx context.Context, o *FetchOptions) error {
 		return err
 	}
 
-	return remote.FetchContext(ctx, o)
+	err = remote.FetchContext(ctx, o)
+	ok := err == nil || errors.Is(err, NoErrAlreadyUpToDate) || errors.Is(err, ErrForceNeeded)
+	if ok {
+		switch {
+		case o.Filter != "":
+			// First-time filtered fetch on a normal repo: wrap now so the
+			// returned *Repository performs on-demand fetches with the same
+			// transport options that were just used for the explicit fetch.
+			r.Storer = wrapStorerIfPromisor(r.Storer, &promisorOptions{
+				ClientOptions: o.ClientOptions,
+			})
+		case len(o.ClientOptions) > 0:
+			// Re-fetch with credentials on an already-wrapped partial clone:
+			// propagate the options so subsequent lazy fetches (Checkout,
+			// BlobObject, ...) reuse them rather than running unauthenticated.
+			if ps, ok := getPromiserStorer(r.Storer); ok {
+				ps.setClientOptions(o.ClientOptions)
+			}
+		}
+	}
+	return err
+}
+
+// SetPromisorClientOptions configures the transport options used by on-demand
+// fetches when this repository is a partial clone. Use it after Open (or after
+// adding a promisor remote at runtime) to supply credentials/TLS for operations
+// such as BlobObject, Checkout, or Reset that may lazy-fetch missing objects
+// without an Options struct of their own. If the storer is not yet wrapped
+// (e.g. a promisor remote was created after Open), this wraps it.
+func (r *Repository) SetPromisorClientOptions(opts []client.Option) {
+	if ps, ok := getPromiserStorer(r.Storer); ok {
+		ps.setClientOptions(opts)
+		return
+	}
+	r.Storer = wrapStorerIfPromisor(r.Storer, &promisorOptions{ClientOptions: opts})
 }
 
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if

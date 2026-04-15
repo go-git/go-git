@@ -567,10 +567,11 @@ func (d *DotGit) CloseIdleDescriptors() error {
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
-// The .pack, .idx and .rev files are each attempted independently; any
-// failures are joined into the returned error so a partial failure cannot
-// leave orphaned siblings on disk. A missing .rev is not an error — the
-// reverse index is optional and may have been generated only in memory.
+// The .pack, .idx, .rev and .promisor files are each attempted independently;
+// any failures are joined into the returned error so a partial failure cannot
+// leave orphaned siblings on disk. A missing .rev or .promisor is not an
+// error — the reverse index is optional (may have been generated only in
+// memory) and the promisor marker only exists for partial clone packs.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	var errs []error
 	if err := d.cleanPackList(); err != nil {
@@ -590,9 +591,10 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 		}
 	}
 
-	for _, ext := range []string{`pack`, `idx`, `rev`} {
+	for _, ext := range []string{`pack`, `idx`, `rev`, `promisor`} {
 		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
-			if ext == `rev` && os.IsNotExist(err) {
+			// .rev and .promisor are optional siblings; missing is not an error.
+			if (ext == `rev` || ext == `promisor`) && os.IsNotExist(err) {
 				continue
 			}
 			errs = append(errs, err)

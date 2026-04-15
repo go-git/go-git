@@ -818,6 +818,20 @@ type PlainOpenOptions struct {
 // Validate validates the fields and sets the default values.
 func (o *PlainOpenOptions) Validate() error { return nil }
 
+// OpenOptions describes how opening a repository should be performed.
+type OpenOptions struct {
+	// ClientOptions are forwarded to the transport when the opened
+	// repository is a partial clone (promisor remote) and performs
+	// on-demand object fetches. Operations such as BlobObject, Checkout,
+	// and Reset can trigger lazy fetches without an options struct of
+	// their own, so without this hook there is no way to supply
+	// authentication or TLS settings for those fetches after Open.
+	ClientOptions []client.Option
+}
+
+// Validate validates the fields and sets the default values.
+func (o *OpenOptions) Validate() error { return nil }
+
 // ErrNoRestorePaths is returned when no paths are specified to restore.
 var ErrNoRestorePaths = errors.New("you must specify path(s) to restore")
 

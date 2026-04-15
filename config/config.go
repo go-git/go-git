@@ -184,6 +184,12 @@ type Config struct {
 		// When true, each worktree may have a config.worktree file that
 		// overrides settings in the common .git/config.
 		WorktreeConfig bool
+		// PartialClone holds the name of the promisor remote when the
+		// repository was created with a partial clone. This is a legacy
+		// config key (extensions.partialClone); modern Git uses
+		// remote.<name>.promisor instead. This field is read for backward
+		// compatibility but not written by new partial clones.
+		PartialClone string
 	}
 
 	Protocol struct {
@@ -473,7 +479,10 @@ const (
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormatKey            = "objectformat"
 	worktreeConfigKey          = "worktreeConfig"
+	partialCloneKey            = "partialClone"
 	mirrorKey                  = "mirror"
+	promisorKey                = "promisor"
+	partialCloneFilterKey      = "partialCloneFilter"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
 	fileModeKey                = "filemode"
@@ -566,6 +575,7 @@ func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
 	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
+	c.Extensions.PartialClone = s.Options.Get(partialCloneKey)
 }
 
 func (c *Config) unmarshalTag() {
@@ -819,7 +829,8 @@ func (c *Config) marshalExtensions() {
 	// Only marshal the [extensions] section if there are extension options to write.
 	// This avoids introducing an empty [extensions] section on round-trips.
 	if c.Extensions.ObjectFormat == format.UnsetObjectFormat &&
-		!c.Extensions.WorktreeConfig {
+		!c.Extensions.WorktreeConfig &&
+		c.Extensions.PartialClone == "" {
 		return
 	}
 
@@ -830,6 +841,10 @@ func (c *Config) marshalExtensions() {
 
 	if c.Extensions.WorktreeConfig {
 		s.SetOption(worktreeConfigKey, "true")
+	}
+
+	if c.Extensions.PartialClone != "" {
+		s.SetOption(partialCloneKey, c.Extensions.PartialClone)
 	}
 }
 
@@ -1036,6 +1051,13 @@ type RemoteConfig struct {
 	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
 
+	// Promisor indicates this remote is a promisor remote that can
+	// supply missing objects on demand for partial clone repositories.
+	Promisor bool
+	// PartialCloneFilter holds the filter-spec used when the partial
+	// clone was created (e.g. "blob:none", "blob:limit=1m").
+	PartialCloneFilter string
+
 	// raw representation of the subsection, filled by marshal or unmarshal are
 	// called
 	raw *format.Subsection
@@ -1082,6 +1104,8 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.URLs = append(c.URLs, c.raw.Options.GetAll(pushurlKey)...)
 	c.Fetch = fetch
 	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
+	c.Promisor = c.raw.Options.Get(promisorKey) == "true"
+	c.PartialCloneFilter = c.raw.Options.Get(partialCloneFilterKey)
 
 	return nil
 }
@@ -1116,6 +1140,18 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 
 	if c.Mirror {
 		c.raw.SetOption(mirrorKey, strconv.FormatBool(c.Mirror))
+	}
+
+	if c.Promisor {
+		c.raw.SetOption(promisorKey, "true")
+	} else {
+		c.raw.RemoveOption(promisorKey)
+	}
+
+	if c.PartialCloneFilter != "" {
+		c.raw.SetOption(partialCloneFilterKey, c.PartialCloneFilter)
+	} else {
+		c.raw.RemoveOption(partialCloneFilterKey)
 	}
 
 	return c.raw

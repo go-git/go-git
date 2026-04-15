@@ -41,6 +41,11 @@ var (
 		// noop-v1 does not change git’s behavior at all.
 		// It is useful only for testing format-1 compatibility.
 		"noop-v1": {},
+
+		// partialclone indicates that the repo was created with a
+		// partial clone (--filter) and that a promisor remote can
+		// supply any missing objects on demand.
+		"partialclone": {},
 	}
 
 	// Some Git extensions were supported upstream before the introduction

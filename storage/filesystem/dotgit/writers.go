@@ -36,6 +36,19 @@ type PackWriter struct {
 	result   chan error
 	format   formatcfg.ObjectFormat
 	writeRev bool
+	// promisor, when true, creates a .promisor marker file alongside
+	// the packfile. This marks the pack as coming from a partial clone
+	// (filtered fetch) where missing objects can be fetched on demand.
+	// Set via SetPromisor; not exported to keep the configuration
+	// surface single (the dual field+setter form was misuse-prone).
+	promisor bool
+}
+
+// SetPromisor configures whether Close creates a .promisor marker next to the
+// finalized packfile. Must be called before Close; calling it afterwards has
+// no effect.
+func (w *PackWriter) SetPromisor(v bool) {
+	w.promisor = v
 }
 
 func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
@@ -205,9 +218,36 @@ func (w *PackWriter) save() error {
 		fixPermissions(w.fs, packPath)
 	} else {
 		// Pack already exists, clean up the temp file.
-		return w.clean()
+		if err := w.clean(); err != nil {
+			return err
+		}
 	}
 
+	if w.promisor {
+		return w.savePromisorMarker(base)
+	}
+
+	return nil
+}
+
+func (w *PackWriter) savePromisorMarker(base string) error {
+	promisorPath := fmt.Sprintf("%s.promisor", base)
+	exists, err := fileExists(w.fs, promisorPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	f, err := w.fs.Create(promisorPath)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	fixPermissions(w.fs, promisorPath)
 	return nil
 }
 
