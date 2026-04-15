@@ -12,6 +12,7 @@ import (
 )
 
 func TestMatchesPathFilter(t *testing.T) {
+	t.Parallel()
 	// Note: All paths use forward slashes because these are Git internal paths,
 	// not OS filesystem paths. Git always uses / regardless of platform.
 	tests := []struct {
@@ -84,6 +85,7 @@ func TestMatchesPathFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := MatchesPathFilter(tt.path, tt.filters)
 			assert.Equal(t, tt.want, got)
 		})
@@ -94,6 +96,7 @@ func TestMatchesPathFilter(t *testing.T) {
 // works correctly with forward slashes, which is the format used by Git
 // internally regardless of the operating system.
 func TestMatchesPathFilter_PlatformIndependence(t *testing.T) {
+	t.Parallel()
 	// Windows-style backslash paths should NOT match because Git
 	// always uses forward slashes internally
 	assert.False(t, MatchesPathFilter("docs\\guide.md", []string{"docs"}),
@@ -105,6 +108,7 @@ func TestMatchesPathFilter_PlatformIndependence(t *testing.T) {
 }
 
 func TestResolveRef(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.Basic().One()
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
@@ -128,25 +132,25 @@ func TestResolveRef(t *testing.T) {
 		errContain string
 	}{
 		{
-			name:     "resolve branch with full ref",
-			ref:      "refs/heads/master",
+			name:      "resolve branch with full ref",
+			ref:       "refs/heads/master",
 			allowHash: false,
-			wantHash: masterHash,
-			wantErr:  false,
+			wantHash:  masterHash,
+			wantErr:   false,
 		},
 		{
-			name:     "resolve short branch name",
-			ref:      "master",
+			name:      "resolve short branch name",
+			ref:       "master",
 			allowHash: false,
-			wantHash: masterHash,
-			wantErr:  false,
+			wantHash:  masterHash,
+			wantErr:   false,
 		},
 		{
-			name:     "resolve tag name",
-			ref:      "v1.0.0",
+			name:      "resolve tag name",
+			ref:       "v1.0.0",
 			allowHash: false,
-			wantHash: tagHash,
-			wantErr:  false,
+			wantHash:  tagHash,
+			wantErr:   false,
 		},
 		{
 			name:       "non-existent ref fails",
@@ -157,11 +161,11 @@ func TestResolveRef(t *testing.T) {
 			errContain: "cannot resolve",
 		},
 		{
-			name:     "raw hash allowed when allowHash=true",
-			ref:      masterHash.String(),
+			name:      "raw hash allowed when allowHash=true",
+			ref:       masterHash.String(),
 			allowHash: true,
-			wantHash: masterHash,
-			wantErr:  false,
+			wantHash:  masterHash,
+			wantErr:   false,
 		},
 		{
 			name:       "raw hash rejected when allowHash=false",
@@ -175,6 +179,7 @@ func TestResolveRef(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := ResolveRef(storer, tt.ref, tt.allowHash)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -190,44 +195,46 @@ func TestResolveRef(t *testing.T) {
 }
 
 func TestResolveTreeish_Errors(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.Basic().One()
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotGit, nil)
 
 	tests := []struct {
-		name       string
-		treeish    string
+		name             string
+		treeish          string
 		allowUnreachable bool
-		wantErr    bool
-		errIs      error
-		errContain string
+		wantErr          bool
+		errIs            error
+		errContain       string
 	}{
 		{
-			name:       "raw hash rejected without allowUnreachable",
-			treeish:    "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+			name:             "raw hash rejected without allowUnreachable",
+			treeish:          "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 			allowUnreachable: false,
-			wantErr:    true,
-			errIs:      ErrOnlyRefNames,
+			wantErr:          true,
+			errIs:            ErrOnlyRefNames,
 		},
 		{
-			name:       "relative ref expression rejected",
-			treeish:    "master~1",
+			name:             "relative ref expression rejected",
+			treeish:          "master~1",
 			allowUnreachable: false,
-			wantErr:    true,
-			errIs:      ErrRelativeExpressions,
+			wantErr:          true,
+			errIs:            ErrRelativeExpressions,
 		},
 		{
-			name:       "non-existent ref fails",
-			treeish:    "nonexistent",
+			name:             "non-existent ref fails",
+			treeish:          "nonexistent",
 			allowUnreachable: false,
-			wantErr:    true,
-			errContain: "cannot resolve",
+			wantErr:          true,
+			errContain:       "cannot resolve",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -247,6 +254,7 @@ func TestResolveTreeish_Errors(t *testing.T) {
 // TestResolveTreeish_AllowUnreachable tests the allowUnreachable flag enforcement
 // comprehensively with various tree-ish expressions.
 func TestResolveTreeish_AllowUnreachable(t *testing.T) {
+	t.Parallel()
 	fixture := fixtures.Basic().One()
 	dotGit, err := fixture.DotGit()
 	require.NoError(t, err)
@@ -358,6 +366,7 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -375,6 +384,7 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 }
 
 func TestSupportedFormats(t *testing.T) {
+	t.Parallel()
 	formats := SupportedFormats()
 	assert.Contains(t, formats, "tar")
 	assert.Contains(t, formats, "zip")
@@ -383,6 +393,7 @@ func TestSupportedFormats(t *testing.T) {
 }
 
 func TestApplyUmask(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		mode         int64
@@ -411,6 +422,7 @@ func TestApplyUmask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := ApplyUmask(tt.mode, tt.isExecutable)
 			assert.Equal(t, tt.want, got)
 		})
@@ -418,6 +430,7 @@ func TestApplyUmask(t *testing.T) {
 }
 
 func TestApplyUmaskDir(t *testing.T) {
+	t.Parallel()
 	got := ApplyUmaskDir(0o000)
 	assert.Equal(t, int64(0o775), got)
 }

@@ -1,3 +1,5 @@
+// Package archive provides archive generation functionality for git-upload-archive.
+// It supports tar and zip formats with proper security controls.
 package archive
 
 import (
@@ -436,7 +438,9 @@ func GetTarCommitID(r io.Reader) (*plumbing.Hash, error) {
 // The prefix is prepended to all file paths in the archive.
 // The paths slice can be used to filter which files are included.
 // If allowUnreachable is false, only ref names are allowed (no raw hashes).
-func WriteArchive(st storage.Storer, w io.Writer, treeish string, format string, prefix string, paths []string, allowUnreachable bool) error {
+func WriteArchive(st storage.Storer, w io.Writer, treeish, format, prefix string,
+	paths []string, allowUnreachable bool,
+) error {
 	if treeish == "" {
 		return fmt.Errorf("no tree-ish specified")
 	}
