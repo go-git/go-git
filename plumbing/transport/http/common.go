@@ -84,6 +84,12 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	}
 
 	final := resp.Request.URL
+	if !strings.HasSuffix(final.Path, infoRefsPath) {
+		return nil, fmt.Errorf(
+			"http transport: redirect target %q does not end with %s",
+			final.Path, infoRefsPath,
+		)
+	}
 	if final.Host == baseURL.Host &&
 		final.Scheme == baseURL.Scheme &&
 		strings.TrimSuffix(final.Path, infoRefsPath) == baseURL.Path {
@@ -94,17 +100,10 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", final.Scheme)
 	}
 	if final.Scheme != baseURL.Scheme &&
-		!(baseURL.Scheme == "http" && final.Scheme == "https") {
+		(baseURL.Scheme != "http" || final.Scheme != "https") {
 		return nil, fmt.Errorf(
 			"http transport: redirect changes scheme from %q to %q",
 			baseURL.Scheme, final.Scheme,
-		)
-	}
-
-	if !strings.HasSuffix(final.Path, infoRefsPath) {
-		return nil, fmt.Errorf(
-			"http transport: redirect target %q does not end with %s",
-			final.Path, infoRefsPath,
 		)
 	}
 

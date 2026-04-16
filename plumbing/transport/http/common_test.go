@@ -96,12 +96,12 @@ func TestApplyRedirect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		baseURL    string
-		finalURL   string
-		wantURL    string
-		wantErr    string
-		noRequest  bool
+		name      string
+		baseURL   string
+		finalURL  string
+		wantURL   string
+		wantErr   string
+		noRequest bool
 	}{
 		{
 			name:      "no redirect",
@@ -151,10 +151,15 @@ func TestApplyRedirect(t *testing.T) {
 			finalURL: "https://example.com/new-repo.git/info/refs",
 			wantURL:  "https://example.com/new-repo.git",
 		},
+		{
+			name:     "redirect to bare repo path errors",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/repo.git",
+			wantErr:  "does not end with",
+		},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

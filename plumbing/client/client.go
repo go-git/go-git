@@ -33,6 +33,19 @@ type HTTPAuth interface {
 	Authorizer(*http.Request) error
 }
 
+// RedirectPolicy controls how HTTP transports follow redirects.
+type RedirectPolicy = xhttp.RedirectPolicy
+
+const (
+	// FollowInitialRedirects follows redirects only for the initial
+	// /info/refs discovery request.
+	FollowInitialRedirects = xhttp.FollowInitialRedirects
+	// FollowRedirects follows redirects for all requests.
+	FollowRedirects = xhttp.FollowRedirects
+	// NoFollowRedirects disables redirects for all requests.
+	NoFollowRedirects = xhttp.NoFollowRedirects
+)
+
 // Option configures a Client.
 type Option func(*options)
 
@@ -114,6 +127,14 @@ func WithDialer(fn transport.DialContextFunc) Option {
 func WithHTTPClient(c *http.Client) Option {
 	return func(o *options) {
 		o.http.Client = c
+	}
+}
+
+// WithRedirectPolicy sets the HTTP redirect policy. If unset, the HTTP
+// transport defaults to FollowInitialRedirects.
+func WithRedirectPolicy(policy RedirectPolicy) Option {
+	return func(o *options) {
+		o.http.FollowRedirects = xhttp.RedirectPolicy(policy)
 	}
 }
 
