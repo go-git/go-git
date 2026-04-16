@@ -136,6 +136,15 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NotNil(t, tr)
 }
 
+func TestWithRedirectPolicy(t *testing.T) {
+	t.Parallel()
+
+	var o options
+	WithRedirectPolicy(NoFollowRedirects)(&o)
+
+	assert.Equal(t, xhttp.NoFollowRedirects, o.http.FollowRedirects)
+}
+
 func TestWithProxyURL(t *testing.T) {
 	t.Parallel()
 

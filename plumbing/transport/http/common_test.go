@@ -151,6 +151,12 @@ func TestApplyRedirect(t *testing.T) {
 			finalURL: "https://example.com/new-repo.git/info/refs",
 			wantURL:  "https://example.com/new-repo.git",
 		},
+		{
+			name:     "redirect to bare repo path errors",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/repo.git",
+			wantErr:  "does not end with",
+		},
 	}
 
 	for _, tt := range tests {

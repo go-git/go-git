@@ -192,9 +192,9 @@ func TestRedirectPostBlockedWithCustomClient(t *testing.T) {
 	assert.Contains(t, err.Error(), "non-initial request")
 }
 
-func TestRedirectPostAllowedWithFollowRedirectsTrue(t *testing.T) {
+func TestRedirectPostAllowedWithFollowRedirects(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, fetchWithRedirectedPost(t, Options{FollowRedirects: FollowRedirectsTrue}))
+	require.NoError(t, fetchWithRedirectedPost(t, Options{FollowRedirects: FollowRedirects}))
 }
 
 func TestRedirectStripsCredentials(t *testing.T) {
@@ -252,54 +252,70 @@ func TestCheckRedirectPolicy(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		policy        FollowRedirects
+		policy        RedirectPolicy
 		targetURL     string
 		initial       bool
 		redirectCount int
+		via           []string
 		wantErr       string
 	}{
 		{
 			name:      "initial blocks non-initial request",
-			policy:    FollowRedirectsInitial,
+			policy:    FollowInitialRedirects,
 			targetURL: "http://example.com/repo.git",
 			wantErr:   "non-initial request",
 		},
 		{
 			name:      "initial allows initial request",
-			policy:    FollowRedirectsInitial,
+			policy:    FollowInitialRedirects,
 			targetURL: "http://example.com/repo.git",
 			initial:   true,
 		},
 		{
 			name:      "true allows non-initial request",
-			policy:    FollowRedirectsTrue,
+			policy:    FollowRedirects,
 			targetURL: "http://example.com/repo.git",
 		},
 		{
 			name:      "false blocks redirects",
-			policy:    FollowRedirectsFalse,
+			policy:    NoFollowRedirects,
 			targetURL: "http://example.com/repo.git",
 			initial:   true,
 			wantErr:   "redirects disabled",
 		},
 		{
 			name:      "blocks unsupported scheme",
-			policy:    FollowRedirectsTrue,
+			policy:    FollowRedirects,
 			targetURL: "file:///etc/passwd",
 			initial:   true,
 			wantErr:   "unsupported scheme",
 		},
 		{
 			name:          "blocks too many redirects",
-			policy:        FollowRedirectsTrue,
+			policy:        FollowRedirects,
 			targetURL:     "http://example.com/repo.git",
 			initial:       true,
 			redirectCount: 10,
 			wantErr:       "too many redirects",
 		},
 		{
+			name:      "blocks https to http downgrade",
+			policy:    FollowRedirects,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			via:       []string{"https://example.com/repo.git"},
+			wantErr:   "downgrades scheme",
+		},
+		{
+			name:      "redacts credentials in redirect errors",
+			policy:    NoFollowRedirects,
+			targetURL: "https://user:pass@example.com/repo.git",
+			initial:   true,
+			wantErr:   "https://user:REDACTED@example.com/repo.git",
+		},
+		{
 			name:      "rejects invalid policy",
-			policy:    FollowRedirects("bogus"),
+			policy:    RedirectPolicy("bogus"),
 			targetURL: "http://example.com/repo.git",
 			initial:   true,
 			wantErr:   "invalid redirect policy",
@@ -324,6 +340,14 @@ func TestCheckRedirectPolicy(t *testing.T) {
 			for i := range via {
 				via[i] = &http.Request{}
 			}
+			if len(tt.via) != 0 {
+				via = make([]*http.Request, 0, len(tt.via))
+				for _, rawURL := range tt.via {
+					u, err := url.Parse(rawURL)
+					require.NoError(t, err)
+					via = append(via, &http.Request{URL: u})
+				}
+			}
 
 			err = checkRedirect(req, via, tt.policy)
 			if tt.wantErr != "" {
@@ -333,6 +357,39 @@ func TestCheckRedirectPolicy(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestOptionsRedirectPolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		option Options
+		want   RedirectPolicy
+	}{
+		{
+			name: "nil config defaults to initial",
+			want: FollowInitialRedirects,
+		},
+		{
+			name:   "true is preserved",
+			option: Options{FollowRedirects: FollowRedirects},
+			want:   FollowRedirects,
+		},
+		{
+			name:   "false is preserved",
+			option: Options{FollowRedirects: NoFollowRedirects},
+			want:   NoFollowRedirects,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, tt.option.redirectPolicy())
 		})
 	}
 }
