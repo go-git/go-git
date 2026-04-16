@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -47,6 +48,7 @@ func (s *UploadPackSuite) TestNewClient(c *C) {
 	r, ok := NewClient(cl).(*client)
 	c.Assert(ok, Equals, true)
 	c.Assert(r.client, Equals, cl)
+	c.Assert(r.follow, Equals, FollowInitialRedirects)
 }
 
 func (s *ClientSuite) TestNewBasicAuth(c *C) {
@@ -163,6 +165,36 @@ func (s *ClientSuite) Test_newSession(c *C) {
 	c.Assert(sessionTransport.TLSClientConfig.InsecureSkipVerify, Equals, true)
 }
 
+func (s *ClientSuite) Test_newSessionWrapsCustomClientRedirectPolicy(c *C) {
+	called := false
+	customTransport := &http.Transport{}
+	customClient := &http.Client{
+		Transport: customTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			called = true
+			return nil
+		},
+	}
+
+	cl := NewClientWithOptions(customClient, &ClientOptions{}).(*client)
+	session, err := newSession(cl, s.Endpoint, nil)
+	c.Assert(err, IsNil)
+	c.Assert(session.client, Not(Equals), customClient)
+	c.Assert(session.client.Transport, Equals, customTransport)
+
+	target, err := url.Parse("http://example.com/repo.git")
+	c.Assert(err, IsNil)
+
+	req := (&http.Request{URL: target, Header: http.Header{}}).WithContext(withInitialRequest(context.Background()))
+	err = session.client.CheckRedirect(req, []*http.Request{{}})
+	c.Assert(err, IsNil)
+	c.Assert(called, Equals, true)
+
+	req = req.WithContext(context.Background())
+	err = session.client.CheckRedirect(req, []*http.Request{{}})
+	c.Assert(err, ErrorMatches, ".*non-initial request.*")
+}
+
 func (s *ClientSuite) testNewHTTPError(c *C, code int, msg string) {
 	req, _ := http.NewRequest("GET", "foo", nil)
 	res := &http.Response{
@@ -196,35 +228,269 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 	sess := &session{endpoint: nil}
 	u, _ := url.Parse("https://example.com/info/refs")
 	res := &http.Response{Request: &http.Request{URL: u}}
-	c.Assert(func() {
-		sess.ModifyEndpointIfRedirect(res)
-	}, PanicMatches, ".*nil pointer dereference.*")
+	err := sess.ModifyEndpointIfRedirect(res)
+	c.Assert(err, ErrorMatches, ".*nil endpoint.*")
 
 	sess = &session{endpoint: nil}
 	// no-op - should return and not panic
-	sess.ModifyEndpointIfRedirect(&http.Response{})
+	err = sess.ModifyEndpointIfRedirect(&http.Response{})
+	c.Assert(err, IsNil)
 
 	data := []struct {
 		url      string
 		endpoint *transport.Endpoint
 		expected *transport.Endpoint
+		err      string
 	}{
-		{"https://example.com/foo/bar", nil, nil},
+		{"https://example.com/foo/bar", &transport.Endpoint{}, &transport.Endpoint{}, ".*does not end with.*"},
 		{"https://example.com/foo.git/info/refs",
-			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"}},
+			&transport.Endpoint{Protocol: "https"},
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Path: "/foo.git"}, ""},
 		{"https://example.com:8080/foo.git/info/refs",
-			&transport.Endpoint{},
-			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"}},
+			&transport.Endpoint{Protocol: "https"},
+			&transport.Endpoint{Protocol: "https", Host: "example.com", Port: 8080, Path: "/foo.git"}, ""},
+		{"http://example.com/foo.git/info/refs",
+			&transport.Endpoint{Protocol: "https"},
+			&transport.Endpoint{Protocol: "https"},
+			".*changes scheme.*"},
 	}
 
 	for _, d := range data {
 		u, _ := url.Parse(d.url)
 		sess := &session{endpoint: d.endpoint}
-		sess.ModifyEndpointIfRedirect(&http.Response{
+		err := sess.ModifyEndpointIfRedirect(&http.Response{
 			Request: &http.Request{URL: u},
 		})
+		if d.err != "" {
+			c.Assert(err, ErrorMatches, d.err)
+		} else {
+			c.Assert(err, IsNil)
+		}
 		c.Assert(d.endpoint, DeepEquals, d.expected)
+	}
+}
+
+func (s *ClientSuite) TestModifyEndpointIfRedirectClearsCredentialsOnCrossHost(c *C) {
+	sess := &session{
+		auth: &BasicAuth{Username: "user", Password: "pass"},
+		endpoint: &transport.Endpoint{
+			Protocol: "https",
+			User:     "user",
+			Password: "pass",
+			Host:     "old.example.com",
+			Path:     "/repo.git",
+		},
+	}
+
+	u, err := url.Parse("https://new.example.com/repo.git/info/refs")
+	c.Assert(err, IsNil)
+	err = sess.ModifyEndpointIfRedirect(&http.Response{
+		Request: &http.Request{URL: u},
+	})
+	c.Assert(err, IsNil)
+	c.Assert(sess.auth, IsNil)
+	c.Assert(sess.endpoint.User, Equals, "")
+	c.Assert(sess.endpoint.Password, Equals, "")
+	c.Assert(sess.endpoint.Host, Equals, "new.example.com")
+}
+
+func (s *ClientSuite) TestModifyEndpointIfRedirectPreservesCredentialsOnEquivalentAuthority(c *C) {
+	tests := []struct {
+		name           string
+		endpoint       *transport.Endpoint
+		redirectURL    string
+		expectedHost   string
+		expectedPort   int
+		expectedPath   string
+		expectedString string
+	}{
+		{
+			name: "same host",
+			endpoint: &transport.Endpoint{
+				Protocol: "https",
+				User:     "user",
+				Password: "pass",
+				Host:     "example.com",
+				Path:     "/old.git",
+			},
+			redirectURL:    "https://example.com/new.git/info/refs",
+			expectedHost:   "example.com",
+			expectedPort:   0,
+			expectedPath:   "/new.git",
+			expectedString: "https://user:pass@example.com/new.git",
+		},
+		{
+			name: "default https port normalization",
+			endpoint: &transport.Endpoint{
+				Protocol: "https",
+				User:     "user",
+				Password: "pass",
+				Host:     "example.com",
+				Port:     443,
+				Path:     "/old.git",
+			},
+			redirectURL:    "https://example.com/new.git/info/refs",
+			expectedHost:   "example.com",
+			expectedPort:   0,
+			expectedPath:   "/new.git",
+			expectedString: "https://user:pass@example.com/new.git",
+		},
+		{
+			name: "ipv6 loopback implicit https port",
+			endpoint: &transport.Endpoint{
+				Protocol: "https",
+				User:     "user",
+				Password: "pass",
+				Host:     "[::1]",
+				Port:     443,
+				Path:     "/old.git",
+			},
+			redirectURL:    "https://[::1]/new.git/info/refs",
+			expectedHost:   "[::1]",
+			expectedPort:   0,
+			expectedPath:   "/new.git",
+			expectedString: "https://user:pass@[::1]/new.git",
+		},
+		{
+			name: "ipv6 documentation prefix explicit https port",
+			endpoint: &transport.Endpoint{
+				Protocol: "https",
+				User:     "user",
+				Password: "pass",
+				Host:     "[2001:db8::1]",
+				Path:     "/old.git",
+			},
+			redirectURL:    "https://[2001:db8::1]:443/new.git/info/refs",
+			expectedHost:   "[2001:db8::1]",
+			expectedPort:   443,
+			expectedPath:   "/new.git",
+			expectedString: "https://user:pass@[2001:db8::1]/new.git",
+		},
+		{
+			name: "ipv6 mapped address non-default port",
+			endpoint: &transport.Endpoint{
+				Protocol: "https",
+				User:     "user",
+				Password: "pass",
+				Host:     "[::ffff:192.0.2.1]",
+				Port:     8443,
+				Path:     "/old.git",
+			},
+			redirectURL:    "https://[::ffff:192.0.2.1]:8443/new.git/info/refs",
+			expectedHost:   "[::ffff:192.0.2.1]",
+			expectedPort:   8443,
+			expectedPath:   "/new.git",
+			expectedString: "https://user:pass@[::ffff:192.0.2.1]:8443/new.git",
+		},
+	}
+
+	for _, tt := range tests {
+		auth := &BasicAuth{Username: "user", Password: "pass"}
+		sess := &session{
+			auth:     auth,
+			endpoint: cloneEndpoint(tt.endpoint),
+		}
+
+		u, err := url.Parse(tt.redirectURL)
+		c.Assert(err, IsNil, Commentf(tt.name))
+		err = sess.ModifyEndpointIfRedirect(&http.Response{
+			Request: &http.Request{URL: u},
+		})
+		c.Assert(err, IsNil, Commentf(tt.name))
+		c.Assert(sess.auth, Equals, auth, Commentf(tt.name))
+		c.Assert(sess.endpoint.User, Equals, "user", Commentf(tt.name))
+		c.Assert(sess.endpoint.Password, Equals, "pass", Commentf(tt.name))
+		c.Assert(sess.endpoint.Host, Equals, tt.expectedHost, Commentf(tt.name))
+		c.Assert(sess.endpoint.Port, Equals, tt.expectedPort, Commentf(tt.name))
+		c.Assert(sess.endpoint.Path, Equals, tt.expectedPath, Commentf(tt.name))
+		c.Assert(sess.endpoint.String(), Equals, tt.expectedString, Commentf(tt.name))
+	}
+}
+
+func cloneEndpoint(ep *transport.Endpoint) *transport.Endpoint {
+	cloned := *ep
+	return &cloned
+}
+
+func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
+	tests := []struct {
+		name          string
+		policy        RedirectPolicy
+		targetURL     string
+		initial       bool
+		redirectCount int
+		err           string
+	}{
+		{
+			name:      "initial blocks non-initial request",
+			policy:    FollowInitialRedirects,
+			targetURL: "http://example.com/repo.git",
+			err:       ".*non-initial request.*",
+		},
+		{
+			name:      "initial allows initial request",
+			policy:    FollowInitialRedirects,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+		},
+		{
+			name:      "true allows non-initial request",
+			policy:    FollowRedirects,
+			targetURL: "http://example.com/repo.git",
+		},
+		{
+			name:      "false blocks redirects",
+			policy:    NoFollowRedirects,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			err:       ".*redirects disabled.*",
+		},
+		{
+			name:      "blocks unsupported scheme",
+			policy:    FollowRedirects,
+			targetURL: "file:///etc/passwd",
+			initial:   true,
+			err:       ".*unsupported scheme.*",
+		},
+		{
+			name:          "blocks too many redirects",
+			policy:        FollowRedirects,
+			targetURL:     "http://example.com/repo.git",
+			initial:       true,
+			redirectCount: 10,
+			err:           ".*too many redirects.*",
+		},
+		{
+			name:      "rejects invalid policy",
+			policy:    RedirectPolicy("bogus"),
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			err:       ".*invalid redirect policy.*",
+		},
+	}
+
+	for _, tt := range tests {
+		target, err := url.Parse(tt.targetURL)
+		c.Assert(err, IsNil)
+
+		req := &http.Request{URL: target, Header: http.Header{}}
+		if tt.initial {
+			req = req.WithContext(withInitialRequest(context.Background()))
+		} else {
+			req = req.WithContext(context.Background())
+		}
+
+		via := make([]*http.Request, tt.redirectCount)
+		for i := range via {
+			via[i] = &http.Request{}
+		}
+
+		err = checkRedirect(req, via, tt.policy)
+		if tt.err != "" {
+			c.Assert(err, ErrorMatches, tt.err, Commentf(tt.name))
+			continue
+		}
+		c.Assert(err, IsNil, Commentf(tt.name))
 	}
 }
 
