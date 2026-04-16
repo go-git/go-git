@@ -1,9 +1,11 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -78,14 +80,45 @@ func TestResolveClient_InsecureAndCABundle(t *testing.T) {
 func TestResolveClient_CustomClient_IgnoresTLS(t *testing.T) {
 	t.Parallel()
 
-	custom := &http.Client{}
+	customTransport := &http.Transport{}
+	custom := &http.Client{Transport: customTransport}
 	tr := NewTransport(Options{
 		Client: custom,
 		TLS:    &tls.Config{InsecureSkipVerify: true},
 	})
 	client := tr.resolveClient()
 
-	assert.Equal(t, custom, client)
+	assert.NotSame(t, custom, client)
+	assert.Same(t, customTransport, client.Transport)
+	require.NotNil(t, client.CheckRedirect)
+	assert.Nil(t, custom.CheckRedirect)
+}
+
+func TestResolveClient_CustomClientWrapsRedirectPolicy(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	custom := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			called = true
+			return nil
+		},
+	}
+	tr := NewTransport(Options{Client: custom})
+	client := tr.resolveClient()
+
+	target, _ := url.Parse("http://example.com/repo.git")
+	req := &http.Request{URL: target, Header: http.Header{}}
+	req = req.WithContext(withInitialRequest(context.Background()))
+
+	err := client.CheckRedirect(req, []*http.Request{{}})
+	require.NoError(t, err)
+	assert.True(t, called)
+
+	req = req.WithContext(context.Background())
+	err = client.CheckRedirect(req, []*http.Request{{}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-initial request")
 }
 
 func TestResolveClient_NilTLS(t *testing.T) {

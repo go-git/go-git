@@ -34,7 +34,11 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		infoURL += "?service=" + service
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, infoURL, nil)
+	// Mark this as the initial request so checkRedirect allows
+	// the HTTP client to follow redirects for this discovery request.
+	// Subsequent requests (pack POSTs, object GETs) use a plain
+	// context and will not follow redirects.
+	httpReq, err := http.NewRequestWithContext(withInitialRequest(ctx), http.MethodGet, infoURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("http transport: %w", err)
 	}
@@ -66,21 +70,42 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		return nil, err
 	}
 
-	// Update base URL if the server redirected.
+	// Update base URL from the final redirect target.
+	redirectedURL, err := applyRedirect(resp, baseURL)
+	if err != nil {
+		_ = resp.Body.Close()
+		return nil, err
+	}
 	sessReq := *req
-	sessReq.URL = applyRedirect(resp, baseURL)
+	sessReq.URL = redirectedURL
+	authorizer := t.opts.Authorizer
+
+	// Clear credentials when the redirect landed on a different host.
+	// The session stores baseURL and re-applies its User field and the
+	// Authorizer callback on every subsequent POST — without this, the
+	// original host's credentials would be sent to the new host.
+	// Go's http.Client already strips the Authorization header on
+	// cross-host redirects during the initial GET, but User and
+	// Authorizer are carried in the session and applied explicitly by
+	// doPost/applyAuth. In canonical git, credential_from_url()
+	// re-derives credentials from the new URL, effectively wiping the
+	// old ones.
+	if redirectedURL.Host != baseURL.Host {
+		sessReq.URL.User = nil
+		authorizer = nil
+	}
 
 	if forceDumb {
-		return handshakeDumb(resp, &sessReq, client, t.opts.Authorizer)
+		return handshakeDumb(resp, &sessReq, client, authorizer)
 	}
 
 	expected := fmt.Sprintf("application/x-%s-advertisement", service)
 	isSmart := resp.Header.Get("Content-Type") == expected
 
 	if isSmart {
-		return handshakeSmart(resp, &sessReq, client, t.opts.Authorizer)
+		return handshakeSmart(resp, &sessReq, client, authorizer)
 	}
-	return handshakeDumb(resp, &sessReq, client, t.opts.Authorizer)
+	return handshakeDumb(resp, &sessReq, client, authorizer)
 }
 
 func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
