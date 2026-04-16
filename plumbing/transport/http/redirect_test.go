@@ -243,6 +243,73 @@ func TestRedirectPostBlocked(t *testing.T) {
 	assert.Contains(t, err.Error(), "non-initial request")
 }
 
+func TestRedirectPostBlockedWithCustomClient(t *testing.T) {
+	t.Parallel()
+
+	base, backend := setupSmartServer(t)
+	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
+
+	rl := test.ListenTCP(t)
+	raddr := rl.Addr().(*net.TCPAddr)
+
+	backendURL := fmt.Sprintf("http://localhost:%d", backend.Port)
+	proxyServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				http.Redirect(w, r, backendURL+r.URL.Path, http.StatusTemporaryRedirect)
+				return
+			}
+			resp, err := http.Get(backendURL + r.URL.Path + "?" + r.URL.RawQuery)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
+			maps.Copy(w.Header(), resp.Header)
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+		}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		require.ErrorIs(t, proxyServer.Serve(rl), http.ErrServerClosed)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, proxyServer.Close())
+		<-done
+	})
+
+	tr := NewTransport(Options{
+		Client: &http.Client{},
+	})
+	endpoint := &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
+		Path:   "/basic.git",
+	}
+
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     endpoint,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	refs, err := session.GetRemoteRefs(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, refs)
+
+	st := memory.NewStorage()
+	req := &transport.FetchRequest{}
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	err = session.Fetch(context.Background(), st, req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-initial request")
+}
+
 func TestRedirectStripsCredentials(t *testing.T) {
 	t.Parallel()
 

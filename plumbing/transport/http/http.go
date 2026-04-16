@@ -69,7 +69,9 @@ func NewTransport(opts Options) *Transport {
 
 func (t *Transport) resolveClient() *http.Client {
 	if t.opts.Client != nil {
-		return t.opts.Client
+		client := *t.opts.Client
+		client.CheckRedirect = wrapCheckRedirect(t.opts.Client.CheckRedirect)
+		return &client
 	}
 
 	tr := http.DefaultTransport.(*http.Transport).Clone()
@@ -85,6 +87,18 @@ func (t *Transport) resolveClient() *http.Client {
 	return &http.Client{
 		Transport:     tr,
 		CheckRedirect: checkRedirect,
+	}
+}
+
+func wrapCheckRedirect(next func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if err := checkRedirect(req, via); err != nil {
+			return err
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		return nil
 	}
 }
 
