@@ -171,7 +171,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	s.Require().NoError(err)
 
-	upreq := packp.NewUploadRequest()
+	upreq := &packp.UploadRequest{}
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
 	upreq.Wants = append(upreq.Wants, head.Hash())
