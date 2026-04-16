@@ -144,7 +144,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	s.Require().NotEmpty(headCommit.ParentHashes)
 	common := headCommit.ParentHashes[0]
 
-	upreq := packp.NewUploadRequest()
+	var upreq packp.UploadRequest
 	upreq.Capabilities.Add(capability.MultiACK)
 	upreq.Capabilities.Add(capability.NoProgress)
 	upreq.Wants = append(upreq.Wants, head.Hash())
@@ -236,7 +236,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	s.Require().NoError(err)
 
-	upreq := packp.NewUploadRequest()
+	var upreq packp.UploadRequest
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
 	upreq.Wants = append(upreq.Wants, head.Hash())
