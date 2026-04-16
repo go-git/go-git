@@ -96,12 +96,12 @@ func TestApplyRedirect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		baseURL    string
-		finalURL   string
-		wantURL    string
-		wantErr    string
-		noRequest  bool
+		name      string
+		baseURL   string
+		finalURL  string
+		wantURL   string
+		wantErr   string
+		noRequest bool
 	}{
 		{
 			name:      "no redirect",
@@ -154,7 +154,6 @@ func TestApplyRedirect(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -16,6 +16,24 @@ type contextKey int
 
 const initialRequestKey contextKey = iota
 
+// FollowRedirects controls how the HTTP transport follows redirects.
+//
+// The values mirror Git's http.followRedirects config:
+// "true" follows redirects for all requests, "false" treats any redirect
+// as an error, and "initial" follows redirects only for the initial
+// /info/refs discovery request. The zero value defaults to "initial".
+type FollowRedirects string
+
+const (
+	// FollowRedirectsInitial follows redirects only for the initial
+	// /info/refs discovery request.
+	FollowRedirectsInitial FollowRedirects = "initial"
+	// FollowRedirectsTrue follows redirects for all requests.
+	FollowRedirectsTrue FollowRedirects = "true"
+	// FollowRedirectsFalse disables redirects for all requests.
+	FollowRedirectsFalse FollowRedirects = "false"
+)
+
 // withInitialRequest marks a context so that checkRedirect allows
 // the HTTP client to follow redirects. Only the /info/refs discovery
 // request should carry this flag.
@@ -34,6 +52,11 @@ type Options struct {
 	// created. When Client is set, TLS and HTTPProxy are ignored —
 	// configure them on the provided Client directly.
 	Client *http.Client
+
+	// FollowRedirects controls redirect handling. Supported values are
+	// "true", "false", and "initial". The zero value defaults to
+	// "initial", matching Git's http.followRedirects default.
+	FollowRedirects FollowRedirects
 
 	// Authorizer mutates outgoing HTTP requests to add authentication.
 	Authorizer func(*http.Request) error
@@ -70,7 +93,7 @@ func NewTransport(opts Options) *Transport {
 func (t *Transport) resolveClient() *http.Client {
 	if t.opts.Client != nil {
 		client := *t.opts.Client
-		client.CheckRedirect = wrapCheckRedirect(t.opts.Client.CheckRedirect)
+		client.CheckRedirect = wrapCheckRedirect(t.opts.redirectPolicy(), t.opts.Client.CheckRedirect)
 		return &client
 	}
 
@@ -86,13 +109,20 @@ func (t *Transport) resolveClient() *http.Client {
 
 	return &http.Client{
 		Transport:     tr,
-		CheckRedirect: checkRedirect,
+		CheckRedirect: wrapCheckRedirect(t.opts.redirectPolicy(), nil),
 	}
 }
 
-func wrapCheckRedirect(next func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
+func (o Options) redirectPolicy() FollowRedirects {
+	if o.FollowRedirects == "" {
+		return FollowRedirectsInitial
+	}
+	return o.FollowRedirects
+}
+
+func wrapCheckRedirect(policy FollowRedirects, next func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
-		if err := checkRedirect(req, via); err != nil {
+		if err := checkRedirect(req, via, policy); err != nil {
 			return err
 		}
 		if next != nil {
@@ -102,20 +132,26 @@ func wrapCheckRedirect(next func(*http.Request, []*http.Request) error) func(*ht
 	}
 }
 
-// checkRedirect implements the "initial" redirect policy from canonical
-// git (http.followRedirects = initial). Only the first request in a
-// session — the GET /info/refs discovery — is allowed to follow
-// redirects. All subsequent requests (pack-data POSTs, dumb-HTTP object
-// GETs) treat a 3xx response as an error.
+// checkRedirect implements Git's http.followRedirects policies. The
+// default policy is "initial", where only the GET /info/refs discovery
+// request is allowed to follow redirects.
 //
 // Credential handling on redirect is left to Go's http.Client, which
 // already strips the Authorization header when a redirect crosses to a
 // different host (since Go 1.8) and preserves it for same-host
 // redirects — matching the expected behavior for scheme upgrades and
 // path-only redirects on the same server.
-func checkRedirect(req *http.Request, via []*http.Request) error {
-	if !isInitialRequest(req) {
-		return fmt.Errorf("http transport: redirect on non-initial request to %s", req.URL)
+func checkRedirect(req *http.Request, via []*http.Request, policy FollowRedirects) error {
+	switch policy {
+	case FollowRedirectsTrue:
+	case FollowRedirectsFalse:
+		return fmt.Errorf("http transport: redirects disabled to %s", req.URL)
+	case FollowRedirectsInitial:
+		if !isInitialRequest(req) {
+			return fmt.Errorf("http transport: redirect on non-initial request to %s", req.URL)
+		}
+	default:
+		return fmt.Errorf("http transport: invalid redirect policy %q", policy)
 	}
 	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 		return fmt.Errorf("http transport: redirect to unsupported scheme %q", req.URL.Scheme)

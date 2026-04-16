@@ -180,134 +180,21 @@ func TestRedirectPathWithFetch(t *testing.T) {
 
 func TestRedirectPostBlocked(t *testing.T) {
 	t.Parallel()
-
-	base, backend := setupSmartServer(t)
-	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
-
-	rl := test.ListenTCP(t)
-	raddr := rl.Addr().(*net.TCPAddr)
-
-	backendURL := fmt.Sprintf("http://localhost:%d", backend.Port)
-	proxyServer := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodPost {
-				http.Redirect(w, r, backendURL+r.URL.Path, http.StatusTemporaryRedirect)
-				return
-			}
-			resp, err := http.Get(backendURL + r.URL.Path + "?" + r.URL.RawQuery)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadGateway)
-				return
-			}
-			defer resp.Body.Close()
-			maps.Copy(w.Header(), resp.Header)
-			w.WriteHeader(resp.StatusCode)
-			io.Copy(w, resp.Body)
-		}),
-	}
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		require.ErrorIs(t, proxyServer.Serve(rl), http.ErrServerClosed)
-	}()
-	t.Cleanup(func() {
-		require.NoError(t, proxyServer.Close())
-		<-done
-	})
-
-	tr := NewTransport(Options{})
-	endpoint := &url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
-		Path:   "/basic.git",
-	}
-
-	session, err := tr.Handshake(context.Background(), &transport.Request{
-		URL:     endpoint,
-		Command: transport.UploadPackService,
-	})
-	require.NoError(t, err)
-	defer session.Close()
-
-	refs, err := session.GetRemoteRefs(context.Background())
-	require.NoError(t, err)
-	require.NotNil(t, refs)
-
-	st := memory.NewStorage()
-	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-
-	err = session.Fetch(context.Background(), st, req)
+	err := fetchWithRedirectedPost(t, Options{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-initial request")
 }
 
 func TestRedirectPostBlockedWithCustomClient(t *testing.T) {
 	t.Parallel()
-
-	base, backend := setupSmartServer(t)
-	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
-
-	rl := test.ListenTCP(t)
-	raddr := rl.Addr().(*net.TCPAddr)
-
-	backendURL := fmt.Sprintf("http://localhost:%d", backend.Port)
-	proxyServer := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodPost {
-				http.Redirect(w, r, backendURL+r.URL.Path, http.StatusTemporaryRedirect)
-				return
-			}
-			resp, err := http.Get(backendURL + r.URL.Path + "?" + r.URL.RawQuery)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadGateway)
-				return
-			}
-			defer resp.Body.Close()
-			maps.Copy(w.Header(), resp.Header)
-			w.WriteHeader(resp.StatusCode)
-			io.Copy(w, resp.Body)
-		}),
-	}
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		require.ErrorIs(t, proxyServer.Serve(rl), http.ErrServerClosed)
-	}()
-	t.Cleanup(func() {
-		require.NoError(t, proxyServer.Close())
-		<-done
-	})
-
-	tr := NewTransport(Options{
-		Client: &http.Client{},
-	})
-	endpoint := &url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
-		Path:   "/basic.git",
-	}
-
-	session, err := tr.Handshake(context.Background(), &transport.Request{
-		URL:     endpoint,
-		Command: transport.UploadPackService,
-	})
-	require.NoError(t, err)
-	defer session.Close()
-
-	refs, err := session.GetRemoteRefs(context.Background())
-	require.NoError(t, err)
-	require.NotNil(t, refs)
-
-	st := memory.NewStorage()
-	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-
-	err = session.Fetch(context.Background(), st, req)
+	err := fetchWithRedirectedPost(t, Options{Client: &http.Client{}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-initial request")
+}
+
+func TestRedirectPostAllowedWithFollowRedirectsTrue(t *testing.T) {
+	t.Parallel()
+	require.NoError(t, fetchWithRedirectedPost(t, Options{FollowRedirects: FollowRedirectsTrue}))
 }
 
 func TestRedirectStripsCredentials(t *testing.T) {
@@ -363,46 +250,152 @@ func TestRedirectStripsCredentials(t *testing.T) {
 func TestCheckRedirectPolicy(t *testing.T) {
 	t.Parallel()
 
-	t.Run("blocks non-initial request", func(t *testing.T) {
-		t.Parallel()
-		target, _ := url.Parse("http://example.com/repo.git")
-		req := &http.Request{URL: target}
-		req = req.WithContext(context.Background())
-		err := checkRedirect(req, []*http.Request{{}})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "non-initial request")
+	tests := []struct {
+		name          string
+		policy        FollowRedirects
+		targetURL     string
+		initial       bool
+		redirectCount int
+		wantErr       string
+	}{
+		{
+			name:      "initial blocks non-initial request",
+			policy:    FollowRedirectsInitial,
+			targetURL: "http://example.com/repo.git",
+			wantErr:   "non-initial request",
+		},
+		{
+			name:      "initial allows initial request",
+			policy:    FollowRedirectsInitial,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+		},
+		{
+			name:      "true allows non-initial request",
+			policy:    FollowRedirectsTrue,
+			targetURL: "http://example.com/repo.git",
+		},
+		{
+			name:      "false blocks redirects",
+			policy:    FollowRedirectsFalse,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			wantErr:   "redirects disabled",
+		},
+		{
+			name:      "blocks unsupported scheme",
+			policy:    FollowRedirectsTrue,
+			targetURL: "file:///etc/passwd",
+			initial:   true,
+			wantErr:   "unsupported scheme",
+		},
+		{
+			name:          "blocks too many redirects",
+			policy:        FollowRedirectsTrue,
+			targetURL:     "http://example.com/repo.git",
+			initial:       true,
+			redirectCount: 10,
+			wantErr:       "too many redirects",
+		},
+		{
+			name:      "rejects invalid policy",
+			policy:    FollowRedirects("bogus"),
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			wantErr:   "invalid redirect policy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			target, err := url.Parse(tt.targetURL)
+			require.NoError(t, err)
+
+			req := &http.Request{URL: target, Header: http.Header{}}
+			if tt.initial {
+				req = req.WithContext(withInitialRequest(context.Background()))
+			} else {
+				req = req.WithContext(context.Background())
+			}
+
+			via := make([]*http.Request, tt.redirectCount)
+			for i := range via {
+				via[i] = &http.Request{}
+			}
+
+			err = checkRedirect(req, via, tt.policy)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func fetchWithRedirectedPost(t *testing.T, opts Options) error {
+	t.Helper()
+
+	base, backend := setupSmartServer(t)
+	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
+
+	rl := test.ListenTCP(t)
+	raddr := rl.Addr().(*net.TCPAddr)
+
+	backendURL := fmt.Sprintf("http://localhost:%d", backend.Port)
+	proxyServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				http.Redirect(w, r, backendURL+r.URL.Path, http.StatusTemporaryRedirect)
+				return
+			}
+			resp, err := http.Get(backendURL + r.URL.Path + "?" + r.URL.RawQuery)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
+			maps.Copy(w.Header(), resp.Header)
+			w.WriteHeader(resp.StatusCode)
+			_, _ = io.Copy(w, resp.Body)
+		}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		require.ErrorIs(t, proxyServer.Serve(rl), http.ErrServerClosed)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, proxyServer.Close())
+		<-done
 	})
 
-	t.Run("allows initial request", func(t *testing.T) {
-		t.Parallel()
-		target, _ := url.Parse("http://example.com/repo.git")
-		req := &http.Request{URL: target, Header: http.Header{}}
-		req = req.WithContext(withInitialRequest(context.Background()))
-		err := checkRedirect(req, []*http.Request{{}})
-		require.NoError(t, err)
-	})
+	tr := NewTransport(opts)
+	endpoint := &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
+		Path:   "/basic.git",
+	}
 
-	t.Run("blocks unsupported scheme", func(t *testing.T) {
-		t.Parallel()
-		target, _ := url.Parse("file:///etc/passwd")
-		req := &http.Request{URL: target, Header: http.Header{}}
-		req = req.WithContext(withInitialRequest(context.Background()))
-		err := checkRedirect(req, []*http.Request{{}})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported scheme")
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     endpoint,
+		Command: transport.UploadPackService,
 	})
+	require.NoError(t, err)
+	defer session.Close()
 
-	t.Run("blocks too many redirects", func(t *testing.T) {
-		t.Parallel()
-		target, _ := url.Parse("http://example.com/repo.git")
-		req := &http.Request{URL: target, Header: http.Header{}}
-		req = req.WithContext(withInitialRequest(context.Background()))
-		via := make([]*http.Request, 10)
-		for i := range via {
-			via[i] = &http.Request{}
-		}
-		err := checkRedirect(req, via)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "too many redirects")
-	})
+	refs, err := session.GetRemoteRefs(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, refs)
+
+	st := memory.NewStorage()
+	req := &transport.FetchRequest{}
+	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+
+	return session.Fetch(context.Background(), st, req)
 }

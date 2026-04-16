@@ -99,7 +99,7 @@ func TestResolveClient_CustomClientWrapsRedirectPolicy(t *testing.T) {
 
 	called := false
 	custom := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			called = true
 			return nil
 		},
