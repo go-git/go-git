@@ -18,6 +18,27 @@ func TestRefSpecSuite(t *testing.T) {
 	suite.Run(t, new(RefSpecSuite))
 }
 
+func (s *RefSpecSuite) TestRefSpecIsNegative() {
+	s.True(RefSpec("^refs/heads/main").IsNegative())
+	s.True(RefSpec("^refs/heads/*").IsNegative())
+	s.False(RefSpec("+refs/heads/*:refs/remotes/origin/*").IsNegative())
+	s.False(RefSpec("refs/heads/*:refs/remotes/origin/*").IsNegative())
+}
+
+func (s *RefSpecSuite) TestRefSpecMatchNegative() {
+	spec := RefSpec("^refs/heads/main")
+	s.True(spec.MatchNegative(plumbing.ReferenceName("refs/heads/main")))
+	s.False(spec.MatchNegative(plumbing.ReferenceName("refs/heads/other")))
+
+	spec = RefSpec("^refs/heads/*")
+	s.True(spec.MatchNegative(plumbing.ReferenceName("refs/heads/main")))
+	s.True(spec.MatchNegative(plumbing.ReferenceName("refs/heads/feature")))
+	s.False(spec.MatchNegative(plumbing.ReferenceName("refs/tags/v1.0")))
+
+	spec = RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	s.False(spec.MatchNegative(plumbing.ReferenceName("refs/heads/main")))
+}
+
 func (s *RefSpecSuite) TestRefSpecIsValid() {
 	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	s.NoError(spec.Validate())
@@ -48,6 +69,12 @@ func (s *RefSpecSuite) TestRefSpecIsValid() {
 
 	spec = RefSpec("12039e008f9a4e3394f3f94f8ea897785cb09448:refs/heads/*")
 	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedWildcard)
+
+	spec = RefSpec("^refs/heads/some-excluded-branch")
+	s.NoError(spec.Validate())
+
+	spec = RefSpec("^refs/heads/*")
+	s.NoError(spec.Validate())
 }
 
 func (s *RefSpecSuite) TestRefSpecIsForceUpdate() {
