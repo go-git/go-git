@@ -61,8 +61,53 @@ func ParsePattern(p string, domain []string) Pattern {
 		res.isGlob = true
 	}
 
-	res.pattern = strings.Split(p, patternDirSep)
+	res.pattern = strings.Split(normalizeGitPattern(p), patternDirSep)
 	return &res
+}
+
+func normalizeGitPattern(p string) string {
+	if !strings.Contains(p, "[!") {
+		return p
+	}
+
+	var b strings.Builder
+	b.Grow(len(p))
+	inClass := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c == '\\' && i+1 < len(p) {
+			b.WriteByte(c)
+			i++
+			b.WriteByte(p[i])
+			continue
+		}
+		if !inClass && c == '[' {
+			if i+1 < len(p) && p[i+1] == '!' && hasClosingBracket(p[i+2:]) {
+				b.WriteString("[^")
+				inClass = true
+				i++
+				continue
+			}
+			inClass = hasClosingBracket(p[i+1:])
+		} else if inClass && c == ']' {
+			inClass = false
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+func hasClosingBracket(p string) bool {
+	for i := 0; i < len(p); i++ {
+		if p[i] == '\\' && i+1 < len(p) {
+			i++
+			continue
+		}
+		if p[i] == ']' {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *pattern) Match(path []string, isDir bool) MatchResult {

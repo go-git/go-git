@@ -15,6 +15,44 @@ func TestPatternSuite(t *testing.T) {
 	suite.Run(t, new(PatternSuite))
 }
 
+func (s *PatternSuite) TestNormalizeGitPattern() {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "negated character class",
+			in:   "[!0-9].dat",
+			want: "[^0-9].dat",
+		},
+		{
+			name: "negated character class in glob",
+			in:   "head/[!0-9].dat",
+			want: "head/[^0-9].dat",
+		},
+		{
+			name: "escaped class opener",
+			in:   `\[!0-9].dat`,
+			want: `\[!0-9].dat`,
+		},
+		{
+			name: "unclosed class",
+			in:   "[!0-9.dat",
+			want: "[!0-9.dat",
+		},
+		{
+			name: "literal opener inside character class",
+			in:   "[[!]]",
+			want: "[[!]]",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Equal(tt.want, normalizeGitPattern(tt.in), tt.name)
+	}
+}
+
 func (s *PatternSuite) TestSimpleMatch_inclusion() {
 	p := ParsePattern("!vul?ano", nil)
 	r := p.Match([]string{"value", "vulkano", "tail"}, false)
@@ -121,6 +159,13 @@ func (s *PatternSuite) TestSimpleMatch_magicChars() {
 	p := ParsePattern("v[ou]l[kc]ano", nil)
 	r := p.Match([]string{"value", "volcano"}, false)
 	s.Equal(Exclude, r)
+}
+
+func (s *PatternSuite) TestSimpleMatch_negatedCharacterClass() {
+	p := ParsePattern("[!0-9].dat", nil)
+
+	s.Equal(Exclude, p.Match([]string{"x.dat"}, false))
+	s.Equal(NoMatch, p.Match([]string{"7.dat"}, false))
 }
 
 func (s *PatternSuite) TestSimpleMatch_wrongPattern_mismatch() {
@@ -271,6 +316,13 @@ func (s *PatternSuite) TestGlobMatch_magicChars() {
 	p := ParsePattern("**/head/v[ou]l[kc]ano", nil)
 	r := p.Match([]string{"value", "head", "volcano"}, false)
 	s.Equal(Exclude, r)
+}
+
+func (s *PatternSuite) TestGlobMatch_negatedCharacterClass() {
+	p := ParsePattern("head/[!0-9].dat", nil)
+
+	s.Equal(Exclude, p.Match([]string{"head", "x.dat"}, false))
+	s.Equal(NoMatch, p.Match([]string{"head", "7.dat"}, false))
 }
 
 func (s *PatternSuite) TestGlobMatch_wrongPattern_noTraversal_mismatch() {
