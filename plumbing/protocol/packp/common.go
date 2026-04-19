@@ -4,8 +4,6 @@ import (
 	"fmt"
 )
 
-type stateFn func() stateFn
-
 const (
 	sha1HexSize   = 40
 	sha256HexSize = 64

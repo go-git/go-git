@@ -25,9 +25,8 @@ func TestUlReqEncodeSuite(t *testing.T) {
 
 func testUlReqEncode(s *UlReqEncodeSuite, ur *UploadRequest, expectedPayloads []string) {
 	var buf bytes.Buffer
-	e := newUlReqEncoder(&buf)
 
-	err := e.Encode(ur)
+	err := ur.Encode(&buf)
 	s.NoError(err)
 	obtained := buf.Bytes()
 
@@ -40,9 +39,8 @@ func testUlReqEncode(s *UlReqEncodeSuite, ur *UploadRequest, expectedPayloads []
 
 func testUlReqEncodeError(s *UlReqEncodeSuite, ur *UploadRequest, expectedErrorRegEx string) {
 	var buf bytes.Buffer
-	e := newUlReqEncoder(&buf)
 
-	err := e.Encode(ur)
+	err := ur.Encode(&buf)
 	s.Regexp(regexp.MustCompile(expectedErrorRegEx), err)
 }
 

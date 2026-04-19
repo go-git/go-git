@@ -10,7 +10,7 @@ import (
 
 // Encode writes the ReferenceUpdateRequest encoding to the stream.
 func (req *UpdateRequests) Encode(w io.Writer) error {
-	if err := req.validate(); err != nil {
+	if err := validateUpdateRequests(req); err != nil {
 		return err
 	}
 
