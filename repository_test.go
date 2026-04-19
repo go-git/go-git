@@ -3902,6 +3902,78 @@ func BenchmarkObjects(b *testing.B) {
 	}
 }
 
+func TestApplyURLInsteadOfRules(t *testing.T) {
+	tests := []struct {
+		name        string
+		remoteURL   string
+		wantURL     string
+		setupConfig bool
+		configURLs  map[string]string
+	}{
+		{
+			name:        "no config - returns original URL",
+			remoteURL:   "https://github.com/example/repo.git",
+			wantURL:     "https://github.com/example/repo.git",
+			setupConfig: false,
+		},
+		{
+			name:        "matching rule - rewrites URL",
+			remoteURL:   "https://github.com/example/repo.git",
+			wantURL:     "ssh://git@github.com/example/repo.git",
+			setupConfig: true,
+			configURLs: map[string]string{
+				"ssh://git@github.com/": "https://github.com/",
+			},
+		},
+		{
+			name:        "no matching rule - returns original URL",
+			remoteURL:   "https://gitlab.com/example/repo.git",
+			wantURL:     "https://gitlab.com/example/repo.git",
+			setupConfig: true,
+			configURLs: map[string]string{
+				"ssh://git@github.com/": "https://github.com/",
+			},
+		},
+		{
+			name:        "longest match wins",
+			remoteURL:   "https://github.com/org/repo.git",
+			wantURL:     "ssh://git@github.com/org/repo.git",
+			setupConfig: true,
+			configURLs: map[string]string{
+				"ssh://git@github.com/org/": "https://github.com/org/",
+				"ssh://git@gitlab.com/":     "https://github.com/",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupConfig {
+				// Create a temporary directory for the gitconfig
+				tmpDir := t.TempDir()
+				configPath := filepath.Join(tmpDir, ".gitconfig")
+
+				// Build the config content
+				var configContent strings.Builder
+				for newName, insteadOf := range tc.configURLs {
+					configContent.WriteString(fmt.Sprintf("[url \"%s\"]\n", newName))
+					configContent.WriteString(fmt.Sprintf("    insteadOf = %s\n", insteadOf))
+				}
+
+				err := os.WriteFile(configPath, []byte(configContent.String()), 0o600)
+				require.NoError(t, err)
+
+				// Set HOME to the temporary directory
+				t.Setenv("HOME", tmpDir)
+			}
+
+			// Test the function
+			result := applyURLInsteadOfRules(tc.remoteURL)
+			assert.Equal(t, tc.wantURL, result)
+		})
+	}
+}
+
 func BenchmarkPlainClone(b *testing.B) {
 	b.StopTimer()
 	clone := func(b *testing.B) {
