@@ -107,27 +107,27 @@ func (e *ulReqEncoder) encodeDepth() stateFn {
 
 	// Validate: deepen <n> cannot be combined with deepen-since or deepen-not
 	// This matches canonical git's validation in upload-pack.c
-	if depth.Commits > 0 && (!depth.Since.IsZero() || len(depth.NotRefs) > 0) {
+	if depth.Deepen > 0 && (!depth.DeepenSince.IsZero() || len(depth.DeepenNot) > 0) {
 		e.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 		return nil
 	}
 
-	if depth.Commits > 0 {
-		if _, err := pktline.Writef(e.w, "deepen %d\n", depth.Commits); err != nil {
-			e.err = fmt.Errorf("encoding depth %d: %s", depth.Commits, err)
+	if depth.Deepen > 0 {
+		if _, err := pktline.Writef(e.w, "deepen %d\n", depth.Deepen); err != nil {
+			e.err = fmt.Errorf("encoding depth %d: %s", depth.Deepen, err)
 			return nil
 		}
 	}
 
-	if !depth.Since.IsZero() {
-		when := depth.Since.UTC()
+	if !depth.DeepenSince.IsZero() {
+		when := depth.DeepenSince.UTC()
 		if _, err := pktline.Writef(e.w, "deepen-since %d\n", when.Unix()); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", when, err)
 			return nil
 		}
 	}
 
-	for _, ref := range depth.NotRefs {
+	for _, ref := range depth.DeepenNot {
 		if _, err := pktline.Writef(e.w, "deepen-not %s\n", ref); err != nil {
 			e.err = fmt.Errorf("encoding depth %s: %s", ref, err)
 			return nil

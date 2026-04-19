@@ -221,7 +221,7 @@ func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 		d.err = fmt.Errorf("negative depth")
 		return nil
 	}
-	d.data.Depth = DepthRequest{Commits: n}
+	d.data.Depth = DepthRequest{Deepen: n}
 
 	return d.decodeFlush
 }
@@ -229,7 +229,7 @@ func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
 func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 	// Validate: deepen-since cannot be combined with deepen <n>
 	// This matches canonical git's validation in upload-pack.c
-	if d.data.Depth.Commits > 0 {
+	if d.data.Depth.Deepen > 0 {
 		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 		return nil
 	}
@@ -242,7 +242,7 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 		return nil
 	}
 	t := time.Unix(secs, 0).UTC()
-	d.data.Depth.Since = t
+	d.data.Depth.DeepenSince = t
 	d.deepenRevList = true
 
 	return d.decodeFlush
@@ -251,14 +251,14 @@ func (d *ulReqDecoder) decodeDeepenSince() stateFn {
 func (d *ulReqDecoder) decodeDeepenReference() stateFn {
 	// Validate: deepen-not cannot be combined with deepen <n>
 	// This matches canonical git's validation in upload-pack.c
-	if d.data.Depth.Commits > 0 {
+	if d.data.Depth.Deepen > 0 {
 		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 		return nil
 	}
 
 	d.line = bytes.TrimPrefix(d.line, deepenReference)
 
-	d.data.Depth.NotRefs = append(d.data.Depth.NotRefs, string(d.line))
+	d.data.Depth.DeepenNot = append(d.data.Depth.DeepenNot, string(d.line))
 	d.deepenRevList = true
 
 	return d.decodeFlush
@@ -275,7 +275,7 @@ func (d *ulReqDecoder) decodeFlush() stateFn {
 
 	// Validate: deepen-since/deepen-not cannot follow deepen <n>
 	// This catches cases where deepen <n> is followed by another depth line
-	if d.data.Depth.Commits > 0 && (bytes.HasPrefix(d.line, deepenSince) || bytes.HasPrefix(d.line, deepenReference)) {
+	if d.data.Depth.Deepen > 0 && (bytes.HasPrefix(d.line, deepenSince) || bytes.HasPrefix(d.line, deepenReference)) {
 		d.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 		return nil
 	}

@@ -440,7 +440,7 @@ func (s *UlReqDecodeSuite) TestDeepenCommits() {
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
 
-	s.Equal(DepthRequest{Commits: 1234}, ur.Depth)
+	s.Equal(DepthRequest{Deepen: 1234}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteImplicit() {
@@ -494,7 +494,7 @@ func (s *UlReqDecodeSuite) TestDeepenSince() {
 
 	expected := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
 
-	s.Equal(DepthRequest{Since: expected}, ur.Depth)
+	s.Equal(DepthRequest{DeepenSince: expected}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestDeepenReference() {
@@ -507,7 +507,7 @@ func (s *UlReqDecodeSuite) TestDeepenReference() {
 
 	expected := "refs/heads/master"
 
-	s.Equal(DepthRequest{NotRefs: []string{expected}}, ur.Depth)
+	s.Equal(DepthRequest{DeepenNot: []string{expected}}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestDeepenCommitsWithSinceError() {
@@ -602,7 +602,7 @@ func (s *UlReqDecodeSuite) TestAll() {
 	sort.Sort(byHash(ur.Shallows))
 	s.Equal(expectedShallows, ur.Shallows)
 
-	s.Equal(DepthRequest{Commits: 1234}, ur.Depth)
+	s.Equal(DepthRequest{Deepen: 1234}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestExtraData() {
