@@ -22,50 +22,78 @@ var (
 // Decode reads the next advertised-refs message form its input and
 // stores it in the AdvRefs.
 func (a *AdvRefs) Decode(r io.Reader) error {
-	d := &decoder{r: r}
+	var (
+		nLine int
+		line  []byte
+		err   error
+	)
 
-	if !d.nextLine() {
-		return d.err
+	nextLine := func() bool {
+		nLine++
+		_, p, e := pktline.ReadLine(r)
+		if e != nil {
+			if errors.Is(e, io.EOF) {
+				if nLine == 1 {
+					err = ErrEmptyInput
+				} else {
+					err = NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: unexpected EOF", nLine), line)
+				}
+			} else {
+				err = e
+			}
+			return false
+		}
+		line = bytes.TrimSuffix(p, eol)
+		return true
+	}
+
+	decodeError := func(format string, a ...any) error {
+		msg := fmt.Sprintf("pkt-line %d: %s", nLine, fmt.Sprintf(format, a...))
+		return NewErrUnexpectedData(msg, line)
+	}
+
+	if !nextLine() {
+		return err
 	}
 
 	// Check for empty repository (flush packet)
-	if isFlush(d.line) {
+	if isFlush(line) {
 		return ErrEmptyAdvRefs
 	}
 
 	// Must have at least a hash
-	if len(d.line) < sha1HexSize {
-		return d.error("line too short for hash")
+	if len(line) < sha1HexSize {
+		return decodeError("line too short for hash")
 	}
 
-	hash, err := hashFrom(d.line)
-	if err != nil {
-		return d.error("cannot read hash: %s", err)
+	hash, e := hashFrom(line)
+	if e != nil {
+		return decodeError("cannot read hash: %s", e)
 	}
-	remain := d.line[hash.HexSize():]
+	remain := line[hash.HexSize():]
 
 	if hash.IsZero() {
 		// Empty repo: skip SP "capabilities^{}" NUL
 		if len(remain) < len(noHeadMark) {
-			return d.error("too short zero-id ref")
+			return decodeError("too short zero-id ref")
 		}
 		if !bytes.HasPrefix(remain, noHeadMark) {
-			return d.error("malformed zero-id ref")
+			return decodeError("malformed zero-id ref")
 		}
 		remain = remain[len(noHeadMark):]
 	} else {
 		// Normal ref: SP refname NUL
 		if len(remain) < 3 {
-			return d.error("line too short after hash")
+			return decodeError("line too short after hash")
 		}
 		if remain[0] != ' ' {
-			return d.error("no space after hash")
+			return decodeError("no space after hash")
 		}
 		remain = remain[1:]
 
 		chunks := bytes.SplitN(remain, null, 2)
 		if len(chunks) < 2 {
-			return d.error("NULL not found")
+			return decodeError("NULL not found")
 		}
 		a.References = append(a.References, plumbing.NewHashReference(
 			plumbing.ReferenceName(chunks[0]), hash,
@@ -78,16 +106,22 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 
 	// Decode remaining refs and shallows
 	inShallows := false
-	for d.nextLine() {
-		if len(d.line) == 0 {
+	for nextLine() {
+		if len(line) == 0 {
 			return nil // flush packet
 		}
 
-		if bytes.HasPrefix(d.line, shallow) {
+		if bytes.HasPrefix(line, shallow) {
 			inShallows = true
-			h, err := d.parseShallowData()
-			if err != nil {
-				return err
+			data := bytes.TrimPrefix(line, shallow)
+
+			if len(data) != sha1HexSize && len(data) != sha256HexSize {
+				return decodeError("malformed shallow hash: wrong length")
+			}
+
+			h, ok := plumbing.FromHex(string(data))
+			if !ok {
+				return decodeError("invalid hash text: %s", string(data))
 			}
 			a.Shallows = append(a.Shallows, h)
 			continue
@@ -95,20 +129,20 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 
 		// Once we see shallows, refs cannot follow
 		if inShallows {
-			return d.error("malformed shallow prefix, found ref after shallow")
+			return decodeError("malformed shallow prefix, found ref after shallow")
 		}
 
 		// parse ref line: hash SP refname
-		name, hash, err := parseRef(d.line)
-		if err != nil {
-			return d.error("%s", err)
+		name, hash, e := parseRef(line)
+		if e != nil {
+			return decodeError("%s", e)
 		}
 		a.References = append(a.References, plumbing.NewHashReference(
 			plumbing.ReferenceName(name), hash,
 		))
 	}
 
-	return d.err
+	return err
 }
 
 func hashFrom(line []byte) (plumbing.Hash, error) {
@@ -125,60 +159,6 @@ func hashFrom(line []byte) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, fmt.Errorf("invalid hash text: %s", line[:hashSize])
 	}
 
-	return h, nil
-}
-
-type decoder struct {
-	r     io.Reader
-	line  []byte
-	nLine int
-	err   error
-}
-
-func (d *decoder) nextLine() bool {
-	if d.err != nil {
-		return false
-	}
-	d.nLine++
-
-	_, line, err := pktline.ReadLine(d.r)
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			if d.nLine == 1 {
-				d.err = ErrEmptyInput
-			} else {
-				_ = d.error("unexpected EOF")
-			}
-		} else {
-			d.err = err
-		}
-		return false
-	}
-
-	d.line = bytes.TrimSuffix(line, eol)
-	return true
-}
-
-func (d *decoder) error(format string, a ...any) error {
-	if d.err != nil {
-		return d.err
-	}
-	msg := fmt.Sprintf("pkt-line %d: %s", d.nLine, fmt.Sprintf(format, a...))
-	d.err = NewErrUnexpectedData(msg, d.line)
-	return d.err
-}
-
-func (d *decoder) parseShallowData() (plumbing.Hash, error) {
-	data := bytes.TrimPrefix(d.line, shallow)
-
-	if len(data) != sha1HexSize && len(data) != sha256HexSize {
-		return plumbing.ZeroHash, d.error("malformed shallow hash: wrong length")
-	}
-
-	h, ok := plumbing.FromHex(string(data))
-	if !ok {
-		return plumbing.ZeroHash, d.error("invalid hash text: %s", string(data))
-	}
 	return h, nil
 }
 

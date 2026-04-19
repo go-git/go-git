@@ -23,7 +23,7 @@ type UpdateRequests struct {
 	// TODO: Support push-cert
 }
 
-func (req *UpdateRequests) validate() error {
+func validateUpdateRequests(req *UpdateRequests) error {
 	if len(req.Commands) == 0 {
 		return ErrEmptyCommands
 	}

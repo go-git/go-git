@@ -14,145 +14,79 @@ import (
 // shallows are sorted alphabetically.  A depth of 0 means no depth
 // request is sent.
 func (req *UploadRequest) Encode(w io.Writer) error {
-	e := newUlReqEncoder(w)
-	return e.Encode(req)
-}
-
-type ulReqEncoder struct {
-	w    io.Writer      // where to write the encoded data
-	data *UploadRequest // the data to encode
-	err  error          // sticky error
-}
-
-func newUlReqEncoder(w io.Writer) *ulReqEncoder {
-	return &ulReqEncoder{
-		w: w,
-	}
-}
-
-func (e *ulReqEncoder) Encode(v *UploadRequest) error {
-	e.data = v
-
-	if len(v.Wants) == 0 {
+	if len(req.Wants) == 0 {
 		return fmt.Errorf("empty wants provided")
 	}
 
-	plumbing.HashesSort(e.data.Wants)
-	for state := e.encodeFirstWant; state != nil; {
-		state = state()
-	}
+	plumbing.HashesSort(req.Wants)
 
-	return e.err
-}
-
-func (e *ulReqEncoder) encodeFirstWant() stateFn {
-	var err error
-	if e.data.Capabilities.IsEmpty() {
-		_, err = pktline.Writef(e.w, "want %s\n", e.data.Wants[0])
+	// First want line (with optional capabilities)
+	if req.Capabilities.IsEmpty() {
+		if _, err := pktline.Writef(w, "want %s\n", req.Wants[0]); err != nil {
+			return fmt.Errorf("encoding first want line: %s", err)
+		}
 	} else {
-		_, err = pktline.Writef(e.w, "want %s %s\n",
-			e.data.Wants[0],
-			e.data.Capabilities.String(),
-		)
+		if _, err := pktline.Writef(w, "want %s %s\n",
+			req.Wants[0],
+			req.Capabilities.String(),
+		); err != nil {
+			return fmt.Errorf("encoding first want line: %s", err)
+		}
 	}
 
-	if err != nil {
-		e.err = fmt.Errorf("encoding first want line: %s", err)
-		return nil
-	}
-
-	return e.encodeAdditionalWants
-}
-
-func (e *ulReqEncoder) encodeAdditionalWants() stateFn {
-	last := e.data.Wants[0]
-	for _, w := range e.data.Wants[1:] {
-		if last.Compare(w.Bytes()) == 0 {
+	// Additional wants (deduplicated)
+	last := req.Wants[0]
+	for _, h := range req.Wants[1:] {
+		if last.Compare(h.Bytes()) == 0 {
 			continue
 		}
-
-		if _, err := pktline.Writef(e.w, "want %s\n", w); err != nil {
-			e.err = fmt.Errorf("encoding want %q: %s", w, err)
-			return nil
+		if _, err := pktline.Writef(w, "want %s\n", h); err != nil {
+			return fmt.Errorf("encoding want %q: %s", h, err)
 		}
-
-		last = w
+		last = h
 	}
 
-	return e.encodeShallows
-}
-
-func (e *ulReqEncoder) encodeShallows() stateFn {
-	plumbing.HashesSort(e.data.Shallows)
-
-	var last plumbing.Hash
-	for _, s := range e.data.Shallows {
-		if last.Compare(s.Bytes()) == 0 {
+	// Shallows (sorted, deduplicated)
+	plumbing.HashesSort(req.Shallows)
+	var lastShallow plumbing.Hash
+	for _, s := range req.Shallows {
+		if lastShallow.Compare(s.Bytes()) == 0 {
 			continue
 		}
-
-		if _, err := pktline.Writef(e.w, "shallow %s\n", s); err != nil {
-			e.err = fmt.Errorf("encoding shallow %q: %s", s, err)
-			return nil
+		if _, err := pktline.Writef(w, "shallow %s\n", s); err != nil {
+			return fmt.Errorf("encoding shallow %q: %s", s, err)
 		}
-
-		last = s
+		lastShallow = s
 	}
 
-	return e.encodeDepth
-}
-
-func (e *ulReqEncoder) encodeDepth() stateFn {
-	depth := e.data.Depth
-
-	// Validate: deepen <n> cannot be combined with deepen-since or deepen-not
-	// This matches canonical git's validation in upload-pack.c
+	// Depth
+	depth := req.Depth
 	if depth.Deepen > 0 && (!depth.DeepenSince.IsZero() || len(depth.DeepenNot) > 0) {
-		e.err = fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
-		return nil
+		return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 	}
-
 	if depth.Deepen > 0 {
-		if _, err := pktline.Writef(e.w, "deepen %d\n", depth.Deepen); err != nil {
-			e.err = fmt.Errorf("encoding depth %d: %s", depth.Deepen, err)
-			return nil
+		if _, err := pktline.Writef(w, "deepen %d\n", depth.Deepen); err != nil {
+			return fmt.Errorf("encoding depth %d: %s", depth.Deepen, err)
 		}
 	}
-
 	if !depth.DeepenSince.IsZero() {
 		when := depth.DeepenSince.UTC()
-		if _, err := pktline.Writef(e.w, "deepen-since %d\n", when.Unix()); err != nil {
-			e.err = fmt.Errorf("encoding depth %s: %s", when, err)
-			return nil
+		if _, err := pktline.Writef(w, "deepen-since %d\n", when.Unix()); err != nil {
+			return fmt.Errorf("encoding depth %s: %s", when, err)
 		}
 	}
-
 	for _, ref := range depth.DeepenNot {
-		if _, err := pktline.Writef(e.w, "deepen-not %s\n", ref); err != nil {
-			e.err = fmt.Errorf("encoding depth %s: %s", ref, err)
-			return nil
+		if _, err := pktline.Writef(w, "deepen-not %s\n", ref); err != nil {
+			return fmt.Errorf("encoding depth %s: %s", ref, err)
 		}
 	}
 
-	return e.encodeFilter
-}
-
-func (e *ulReqEncoder) encodeFilter() stateFn {
-	if filter := e.data.Filter; filter != "" {
-		if _, err := pktline.Writef(e.w, "filter %s\n", filter); err != nil {
-			e.err = fmt.Errorf("encoding filter %s: %s", filter, err)
-			return nil
+	// Filter
+	if filter := req.Filter; filter != "" {
+		if _, err := pktline.Writef(w, "filter %s\n", filter); err != nil {
+			return fmt.Errorf("encoding filter %s: %s", filter, err)
 		}
 	}
 
-	return e.encodeFlush
-}
-
-func (e *ulReqEncoder) encodeFlush() stateFn {
-	if err := pktline.WriteFlush(e.w); err != nil {
-		e.err = fmt.Errorf("encoding flush-pkt: %s", err)
-		return nil
-	}
-
-	return nil
+	return pktline.WriteFlush(w)
 }
