@@ -132,8 +132,8 @@ func UploadPack(
 				// TODO: support deepen-since, and deepen-not
 				var shupd packp.ShallowUpdate
 				if !upreq.Depth.IsZero() {
-					if upreq.Depth.Commits > 0 {
-						if err := getShallowCommits(st, wants, upreq.Depth.Commits, &shupd); err != nil {
+					if upreq.Depth.Deepen > 0 {
+						if err := getShallowCommits(st, wants, upreq.Depth.Deepen, &shupd); err != nil {
 							writec <- fmt.Errorf("getting shallow commits: %w", err)
 							return
 						}

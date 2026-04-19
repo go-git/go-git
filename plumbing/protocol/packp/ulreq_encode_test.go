@@ -217,7 +217,7 @@ func (s *UlReqEncodeSuite) TestShallowsDuplicate() {
 func (s *UlReqEncodeSuite) TestDepthCommits() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Depth = DepthRequest{Commits: 1234}
+	ur.Depth = DepthRequest{Deepen: 1234}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -232,7 +232,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceUTC() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
-	ur.Depth = DepthRequest{Since: since}
+	ur.Depth = DepthRequest{DeepenSince: since}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -255,7 +255,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, berlin)
 	// since value is 2015-01-02 03:04:05 +0100 UTC (Europe/Berlin) or
 	// 2015-01-02 02:04:05 +0000 UTC, which is 1420164245 Unix seconds.
-	ur.Depth = DepthRequest{Since: since}
+	ur.Depth = DepthRequest{DeepenSince: since}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -269,7 +269,7 @@ func (s *UlReqEncodeSuite) TestDepthSinceNonUTC() {
 func (s *UlReqEncodeSuite) TestDepthReference() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
-	ur.Depth = DepthRequest{NotRefs: []string{"refs/heads/feature-foo"}}
+	ur.Depth = DepthRequest{DeepenNot: []string{"refs/heads/feature-foo"}}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111\n",
@@ -284,8 +284,8 @@ func (s *UlReqEncodeSuite) TestDepthCommitsWithSinceError() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthRequest{
-		Commits: 10,
-		Since:   time.Now(),
+		Deepen:      10,
+		DeepenSince: time.Now(),
 	}
 
 	testUlReqEncodeError(s, ur, ".*deepen and deepen-since.*cannot be used together.*")
@@ -295,8 +295,8 @@ func (s *UlReqEncodeSuite) TestDepthCommitsWithNotRefsError() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 	ur.Depth = DepthRequest{
-		Commits: 10,
-		NotRefs: []string{"refs/heads/feature"},
+		Deepen:    10,
+		DeepenNot: []string{"refs/heads/feature"},
 	}
 
 	testUlReqEncodeError(s, ur, ".*deepen and deepen-since.*cannot be used together.*")
@@ -338,7 +338,7 @@ func (s *UlReqEncodeSuite) TestAll() {
 	ur.Shallows = append(ur.Shallows, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 
 	since := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
-	ur.Depth = DepthRequest{Since: since}
+	ur.Depth = DepthRequest{DeepenSince: since}
 
 	expected := []string{
 		"want 1111111111111111111111111111111111111111 multi_ack ofs-delta side-band symref=HEAD:/refs/heads/master thin-pack\n",

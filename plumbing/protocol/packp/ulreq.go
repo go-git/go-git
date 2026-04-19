@@ -24,22 +24,22 @@ type UploadRequest struct {
 // Commits cannot be combined with Since or NotRefs (git rejects it).
 // Since and NotRefs may be combined to further refine the shallow boundary.
 type DepthRequest struct {
-	// Commits limits the fetch to the given number of commits from the tip.
+	// Deepen limits the fetch to the given number of commits from the tip.
 	// Zero means no commit-based depth limit.
 	// Corresponds to "deepen <n>" in the protocol.
-	Commits int
+	Deepen int
 
-	// Since limits the fetch to commits newer than the given time.
+	// DeepenSince limits the fetch to commits newer than the given time.
 	// Zero value means no time-based limit.
 	// Corresponds to "deepen-since <timestamp>" in the protocol.
-	Since time.Time
+	DeepenSince time.Time
 
-	// NotRefs excludes commits reachable from the named references.
+	// DeepenNot excludes commits reachable from the named references.
 	// Multiple refs may be specified. Each emits a "deepen-not <ref>" line.
-	NotRefs []string
+	DeepenNot []string
 }
 
 // IsZero returns true when no depth constraints are set.
 func (d DepthRequest) IsZero() bool {
-	return d.Commits == 0 && d.Since.IsZero() && len(d.NotRefs) == 0
+	return d.Deepen == 0 && d.DeepenSince.IsZero() && len(d.DeepenNot) == 0
 }
