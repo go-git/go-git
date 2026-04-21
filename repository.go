@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -27,11 +25,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -353,7 +353,8 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		wt = osfs.New(path, osfs.WithBoundOS())
 		dot, _ = wt.Chroot(GitDirName)
 		initFn = func(s *filesystem.Storage) (*Repository, error) {
-			oo := []InitOption{WithWorkTree(wt)}
+			oo := make([]InitOption, 0, 1+len(options))
+			oo = append(oo, WithWorkTree(wt))
 			oo = append(oo, options...)
 			return Init(s, oo...)
 		}
@@ -590,12 +591,38 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	if o.Mirror {
 		isBare = true
 	}
-	r, err := PlainInit(path, isBare, withPartialInit())
+	// Record whether the directory existed before we touched it so we can
+	// roll back correctly on failure, matching the behaviour of `git clone`:
+	//   - directory didn't exist → remove it entirely on failure
+	//   - directory already existed (empty) → remove only content we added
+	_, preErr := os.Stat(path)
+	dirPreexisted := !os.IsNotExist(preErr)
+
+	var initOptions []InitOption
+	if !o.AllowEmptyRepo {
+		initOptions = append(initOptions, withPartialInit())
+	}
+
+	r, err := PlainInit(path, isBare, initOptions...)
 	if err != nil {
 		return nil, err
 	}
 
-	return r, r.clone(ctx, o)
+	if err := r.clone(ctx, o); err != nil {
+		if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
+			return r, nil
+		}
+		if dirPreexisted {
+			// Restore the directory to its original empty state.
+			_ = os.RemoveAll(filepath.Join(path, GitDirName))
+		} else {
+			// We created the directory; remove it entirely.
+			_ = os.RemoveAll(path)
+		}
+		return r, err
+	}
+
+	return r, nil
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
@@ -632,6 +659,16 @@ func checkTargetDirIsEmpty(path string) (empty bool, err error) {
 	return false, nil
 }
 
+// Close releases any open resources held by the repository. It must be called
+// when the repository is no longer needed. It is safe to call Close on a
+// repository backed by memory storage, where it is a no-op.
+func (r *Repository) Close() error {
+	if c, ok := r.Storer.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
 // Config return the repository config. In a filesystem backed repository this
 // means read the `.git/config`.
 func (r *Repository) Config() (*config.Config, error) {
@@ -652,10 +689,35 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
 
-	var err error
+	local, err := r.Storer.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	// LocalScope only needs the repository's own config; no plugin required.
+	if scope <= config.LocalScope {
+		cfg := config.Merge(config.NewConfig(), config.NewConfig(), local)
+		return &cfg, nil
+	}
+
+	// Use Has before Get so the key is not frozen when no plugin is
+	// registered, allowing callers to register one later.
+	if !plugin.Has(plugin.ConfigLoader()) {
+		return nil, errors.New("no config loader registered")
+	}
+
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return nil, err
+	}
+
 	system := config.NewConfig()
 	if scope >= config.SystemScope {
-		system, err = config.LoadConfig(config.SystemScope)
+		ss, err := src.Load(config.SystemScope)
+		if err != nil {
+			return nil, err
+		}
+		system, err = ss.Config()
 		if err != nil {
 			return nil, err
 		}
@@ -663,15 +725,14 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 
 	global := config.NewConfig()
 	if scope >= config.GlobalScope {
-		global, err = config.LoadConfig(config.GlobalScope)
+		gs, err := src.Load(config.GlobalScope)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	local, err := r.Storer.Config()
-	if err != nil {
-		return nil, err
+		global, err = gs.Config()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	cfg := config.Merge(system, global, local)
@@ -799,6 +860,8 @@ func (r *Repository) CreateBranch(c *config.Branch) error {
 
 // DeleteBranch delete a Branch from the repository and delete the config
 func (r *Repository) DeleteBranch(name string) error {
+	name = strings.TrimPrefix(name, "refs/heads/")
+
 	cfg, err := r.Config()
 	if err != nil {
 		return err
@@ -868,8 +931,25 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 		Target:     hash,
 	}
 
-	if opts.SignKey != nil {
-		sig, err := r.buildTagSignature(tag, opts.SignKey)
+	signer := opts.Signer
+	if signer == nil {
+		cfg, err := r.ConfigScoped(config.SystemScope)
+		if err == nil && cfg != nil && cfg.Tag.GpgSign.IsTrue() {
+			// Use Has before Get so the key is not frozen when no plugin is
+			// registered, allowing callers to register one later.
+			if !plugin.Has(plugin.ObjectSigner()) {
+				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin")
+			}
+
+			signer, err = plugin.Get(plugin.ObjectSigner())
+			if err != nil {
+				return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+			}
+		}
+	}
+
+	if signer != nil {
+		sig, err := r.buildTagSignature(tag, signer)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -885,7 +965,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	return r.Storer.SetEncodedObject(obj)
 }
 
-func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity) (string, error) {
+func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, error) {
 	encoded := &plumbing.MemoryObject{}
 	if err := tag.Encode(encoded); err != nil {
 		return "", err
@@ -896,12 +976,12 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signKey *openpgp.Entity)
 		return "", err
 	}
 
-	var b bytes.Buffer
-	if err := openpgp.ArmoredDetachSign(&b, signKey, rdr, nil); err != nil {
+	b, err := signer.Sign(rdr)
+	if err != nil {
 		return "", err
 	}
 
-	return b.String(), nil
+	return string(b), nil
 }
 
 // Tag returns a tag from the repository.
@@ -1026,16 +1106,13 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
-		RefSpecs:        c.Fetch,
-		Depth:           o.Depth,
-		Auth:            o.Auth,
-		Progress:        o.Progress,
-		Tags:            o.Tags,
-		RemoteName:      o.RemoteName,
-		InsecureSkipTLS: o.InsecureSkipTLS,
-		CABundle:        o.CABundle,
-		ProxyOptions:    o.ProxyOptions,
-		Filter:          o.Filter,
+		RefSpecs:      c.Fetch,
+		Depth:         o.Depth,
+		ClientOptions: o.ClientOptions,
+		Progress:      o.Progress,
+		Tags:          o.Tags,
+		RemoteName:    o.RemoteName,
+		Filter:        o.Filter,
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
@@ -1079,7 +1156,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 					}
 					return 0
 				}(),
-				Auth: o.Auth,
+				ClientOptions: o.ClientOptions,
 			}); err != nil {
 				return err
 			}
@@ -1223,14 +1300,15 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 		return updateReferenceStorerIfNeeded(r.Storer, head)
 	}
 
-	refs := []*plumbing.Reference{
+	remoteHeadRefs := r.calculateRemoteHeadReference(spec, resolvedRef)
+	refs := make([]*plumbing.Reference, 0, 2+len(remoteHeadRefs))
+	refs = append(refs,
 		// Create local reference for the resolved ref
 		resolvedRef,
 		// Create local symbolic HEAD
 		plumbing.NewSymbolicReference(plumbing.HEAD, resolvedRef.Name()),
-	}
-
-	refs = append(refs, r.calculateRemoteHeadReference(spec, resolvedRef)...)
+	)
+	refs = append(refs, remoteHeadRefs...)
 
 	for _, ref := range refs {
 		u, err := updateReferenceStorerIfNeeded(r.Storer, ref)
@@ -1902,17 +1980,13 @@ func (r *Repository) Merge(ref plumbing.Reference, opts MergeOptions) error {
 
 	// Ignore error as not having a shallow list is optional here.
 	shallowList, _ := r.Storer.Shallow()
-	var earliestShallow *plumbing.Hash
-	if len(shallowList) > 0 {
-		earliestShallow = &shallowList[0]
-	}
 
 	head, err := r.Head()
 	if err != nil {
 		return err
 	}
 
-	ff, err := isFastForward(r.Storer, head.Hash(), ref.Hash(), earliestShallow)
+	ff, err := isFastForward(r.Storer, head.Hash(), ref.Hash(), shallowList)
 	if err != nil {
 		return err
 	}

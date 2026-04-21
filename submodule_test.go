@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
@@ -72,6 +72,7 @@ func (s *SubmoduleSuite) TestUpdate() {
 
 	r, err := sm.Repository()
 	s.Require().NoError(err)
+	defer r.Close()
 
 	ref, err := r.Reference(plumbing.HEAD, true)
 	s.Require().NoError(err)
@@ -164,6 +165,7 @@ func (s *SubmoduleSuite) TestUpdateWithInitAndUpdate() {
 
 	r, err := sm.Repository()
 	s.Require().NoError(err)
+	defer r.Close()
 
 	ref, err := r.Reference(plumbing.HEAD, true)
 	s.Require().NoError(err)
@@ -240,6 +242,7 @@ func (s *SubmoduleSuite) TestSubmodulesFetchDepth() {
 
 	r, err := sm.Repository()
 	s.Require().NoError(err)
+	defer r.Close()
 
 	lr, err := r.Log(&LogOptions{})
 	s.Require().NoError(err)

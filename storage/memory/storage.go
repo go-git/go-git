@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/format/reflog"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -31,6 +32,7 @@ type Storage struct {
 	IndexStorage
 	ReferenceStorage
 	ModuleStorage
+	ReflogStorage
 	options options
 }
 
@@ -54,6 +56,9 @@ func NewStorage(o ...StorageOption) *Storage {
 			Tags:    make(map[plumbing.Hash]plumbing.EncodedObject),
 		},
 		ModuleStorage: make(ModuleStorage),
+		ReflogStorage: ReflogStorage{
+			entries: make(map[plumbing.ReferenceName][]*reflog.Entry),
+		},
 	}
 
 	if opts.objectFormat != formatcfg.UnsetObjectFormat {
@@ -68,6 +73,7 @@ func NewStorage(o ...StorageOption) *Storage {
 	return s
 }
 
+// SetObjectFormat configures the object format for this storage.
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	switch of {
 	case formatcfg.SHA1, formatcfg.SHA256:
@@ -476,4 +482,34 @@ func (s ModuleStorage) Module(name string) (storage.Storer, error) {
 	s[name] = m
 
 	return m, nil
+}
+
+// ReflogStorage implements storer.ReflogStorer for in-memory storage.
+type ReflogStorage struct {
+	entries map[plumbing.ReferenceName][]*reflog.Entry
+}
+
+// Reflog returns the reflog entries for the given reference.
+func (r *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+	if r.entries == nil {
+		return nil, nil
+	}
+	return r.entries[name], nil
+}
+
+// AppendReflog appends a single entry to the reflog for the given reference.
+func (r *ReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+	if r.entries == nil {
+		r.entries = make(map[plumbing.ReferenceName][]*reflog.Entry)
+	}
+	r.entries[name] = append(r.entries[name], entry)
+	return nil
+}
+
+// DeleteReflog removes the entire reflog for the given reference.
+func (r *ReflogStorage) DeleteReflog(name plumbing.ReferenceName) error {
+	if r.entries != nil {
+		delete(r.entries, name)
+	}
+	return nil
 }

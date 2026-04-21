@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -20,11 +21,18 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// UploadPackOptions is a set of options for the UploadPack service.
-type UploadPackOptions struct {
+// UploadPackRequest is a set of options for the UploadPack service.
+type UploadPackRequest struct {
 	GitProtocol   string
 	AdvertiseRefs bool
 	StatelessRPC  bool
+
+	// SkipDeltaCompression disables delta compression when encoding the
+	// packfile. When false, the repository pack.window configuration is used.
+	//
+	// Disabling delta compression significantly improves performance for local
+	// transfers where recomputing deltas is unnecessary.
+	SkipDeltaCompression bool
 }
 
 // UploadPack is a server command that serves the upload-pack service.
@@ -33,7 +41,7 @@ func UploadPack(
 	st storage.Storer,
 	r io.ReadCloser,
 	w io.WriteCloser,
-	opts *UploadPackOptions,
+	opts *UploadPackRequest,
 ) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
@@ -42,7 +50,7 @@ func UploadPack(
 	w = ioutil.NewContextWriteCloser(ctx, w)
 
 	if opts == nil {
-		opts = &UploadPackOptions{}
+		opts = &UploadPackRequest{}
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
@@ -57,7 +65,7 @@ func UploadPack(
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
 		}
 
-		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
+		if err := AdvertiseRefs(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
 			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
@@ -220,8 +228,16 @@ func UploadPack(
 					writec <- fmt.Errorf("sending final ack server-response: %w", err)
 					return
 				}
-			case ack.Hash.IsZero():
-				// We don't have multi-ack and there are no haves. Encode a NAK.
+			case ack.Hash.IsZero() && len(haves) == 0:
+				// No haves were sent. Emit the single terminal NAK.
+				//
+				// When haves *were* sent, the ServerResponse{ACKs: acks}
+				// write above already emitted a NAK (encodeServerResponse
+				// writes NAK when ACKs is empty). Emitting another one here
+				// would produce two consecutive "0008NAK\n" pktlines;
+				// ServerResponse.Decode consumes only the first, and the
+				// second would then be misread by the sideband demuxer as
+				// a frame with channel byte 'N' ("unknown channel NAK").
 				srvrsp := packp.ServerResponse{}
 				if err := srvrsp.Encode(w); err != nil {
 					writec <- fmt.Errorf("sending final nak server-response: %w", err)
@@ -265,8 +281,17 @@ func UploadPack(
 
 	// TODO: Support shallow-file
 	// TODO: Support thin-pack
+	var packWindow uint
+	if opts.SkipDeltaCompression {
+		packWindow = 0
+	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
+		packWindow = cfg.Pack.Window
+	} else {
+		packWindow = config.DefaultPackWindow
+	}
+
 	e := packfile.NewEncoder(writer, st, false)
-	_, err = e.Encode(objs, 10)
+	_, err = e.Encode(objs, packWindow)
 	if err != nil {
 		return fmt.Errorf("encoding packfile: %w", err)
 	}

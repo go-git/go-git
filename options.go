@@ -7,15 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
-	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // SubmoduleRecursivity defines how depth will affect any submodule recursive
@@ -39,8 +38,10 @@ var ErrMissingURL = errors.New("URL field is required")
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
 	URL string
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	// Use client.WithSSHAuth, client.WithHTTPAuth, client.WithInsecureSkipTLS,
+	// client.WithCABundle, client.WithProxyURL, etc.
+	ClientOptions []client.Option
 	// Name of the remote to be added, by default `origin`.
 	RemoteName string
 	// Remote branch to clone.
@@ -73,12 +74,6 @@ type CloneOptions struct {
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is AllTags.
 	Tags plumbing.TagMode
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// When the repository to clone is on the local machine, instead of
 	// using hard links, automatically setup .git/objects/info/alternates
 	// to share the objects with the source repository.
@@ -94,6 +89,10 @@ type CloneOptions struct {
 	// Bare determines whether the repository will have a worktree (non-bare)
 	// or not (bare).
 	Bare bool
+	// AllowEmptyRepo when set to true, cloning an empty remote repository
+	// will not return an error. The resulting repository will be initialized
+	// with the remote configured but no commits.
+	AllowEmptyRepo bool
 
 	// worktree defines the worktree filesystem for non-bare clone operations.
 	// This is only used internally due to partial inits.
@@ -164,8 +163,8 @@ type PullOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits.
 	Depth int
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// RecurseSubmodules controls if new commits of all populated submodules
 	// should be fetched too.
 	RecurseSubmodules SubmoduleRecursivity
@@ -176,12 +175,6 @@ type PullOptions struct {
 	// Force allows the pull to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 }
 
 // Validate validates the fields and sets the default values.
@@ -221,8 +214,8 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
@@ -233,12 +226,6 @@ type FetchOptions struct {
 	// Force allows the fetch to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// Prune specify that local refs that match given RefSpecs and that do
 	// not exist remotely will be removed.
 	Prune bool
@@ -281,8 +268,8 @@ type PushOptions struct {
 	//
 	// A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored.
 	Progress sideband.Progress
@@ -292,10 +279,6 @@ type PushOptions struct {
 	// Force allows the push to update a remote branch even when the local
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
 	// RequireRemoteRefs only allows a remote ref to be updated if its current
 	// value is the one specified here.
 	RequireRemoteRefs []config.RefSpec
@@ -308,8 +291,6 @@ type PushOptions struct {
 	Options []string
 	// Atomic sets option to be an atomic push
 	Atomic bool
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// Quiet indicates whether the server should suppress human-readable
 	// output.
 	Quiet bool
@@ -360,8 +341,8 @@ type SubmoduleUpdateOptions struct {
 	// the current repository but also in any nested submodules inside those
 	// submodules (and so on). Until the SubmoduleRecursivity is reached.
 	RecurseSubmodules SubmoduleRecursivity
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
@@ -435,6 +416,12 @@ const (
 	// resets the head to <commit>, just like all modes do). This leaves all
 	// your changed files "Changes to be committed", as git status would put it.
 	SoftReset
+	// KeepReset resets the index and updates files in the working tree that
+	// differ between Commit and HEAD, like HardReset. However, if a file that
+	// differs between Commit and HEAD has local modifications (staged or
+	// unstaged), the reset is aborted. Untracked files are never deleted.
+	// Equivalent to git reset --keep.
+	KeepReset
 )
 
 // ResetOptions describes how a reset operation should be performed.
@@ -676,9 +663,9 @@ type CreateTagOptions struct {
 	// validation into the format expected by git - no leading whitespace and
 	// ending in a newline.
 	Message string
-	// SignKey denotes a key to sign the tag with. A nil value here means the tag
-	// will not be signed. The private key must be present and already decrypted.
-	SignKey *openpgp.Entity
+	// Signer denotes a cryptographic signer to sign the tag with.
+	// A nil value here means the tag will not be signed.
+	Signer Signer
 }
 
 // Validate validates the fields and sets the default values.
@@ -730,17 +717,11 @@ func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
 
 // ListOptions describes how a remote list should be performed.
 type ListOptions struct {
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// PeelingOption defines how peeled objects are handled during a
 	// remote list.
 	PeelingOption PeelingOption
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// Timeout specifies the timeout in seconds for list operations
 	Timeout int
 }

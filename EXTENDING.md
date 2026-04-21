@@ -76,3 +76,70 @@ The default hash functions can be changed by calling `hash.RegisterHash`.
 ```
 
 New `SHA1` or `SHA256` hash functions that implement the `hash.RegisterHash` interface can be registered by calling `RegisterHash`.
+
+## Plugin System (Experimental)
+
+> **Note:** The plugin system is experimental and its API may change in future releases.
+
+`go-git` provides a plugin registry in the [`x/plugin`](x/plugin) package that enables off-tree implementations of specific features to be registered and used at runtime, without modifying the core codebase.
+
+Each plugin is identified by a typed key. Registrations must happen before the first call to `Get` for a given key (typically in a `func init()`), after which the entry is frozen and no further registrations are accepted.
+
+### Object Signing
+
+The first feature exposed via the plugin system is object signing. When an `ObjectSigner` plugin is registered, it becomes the default signer for new commits and tags.
+
+```go
+import (
+    "github.com/go-git/go-git/v6/x/plugin"
+)
+
+func init() {
+    plugin.Register(plugin.ObjectSigner(), func() plugin.Signer {
+        return &mySigner{}
+    })
+}
+```
+
+Where `mySigner` implements the `plugin.Signer` interface:
+
+```go
+type Signer interface {
+    Sign(message io.Reader) ([]byte, error)
+}
+```
+
+### Config Loader
+
+The `ConfigLoader` plugin controls how global and system-level Git configuration are loaded. By default, the Auto plugin is registered, mimicking Git behaviour.
+To override this, register a `ConfigSource` implementation based on your needs: static configs, custom backends, etc.
+To completely ignore System and Global configs:
+
+```go
+import (
+    "github.com/go-git/go-git/v6/x/plugin"
+    xconfig "github.com/go-git/go-git/v6/x/plugin/config"
+)
+
+func init() {
+    plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+        return xconfig.NewEmpty()
+    })
+}
+```
+
+The `ConfigSource` interface has a single method:
+
+```go
+type ConfigSource interface {
+    Load(scope config.Scope) (config.ConfigStorer, error)
+}
+```
+
+Built-in implementations in [`x/plugin/config`](x/plugin/config):
+
+- **`NewAuto()`** mimics default Git behaviour, where environment variables override the filesystem defaults.
+- **`NewStatic(global, system)`** returns fixed configs provided at construction time, useful for testing and embedded use.
+- **`NewEmpty()`** returns empty configs for both scopes.
+
+For more information, refer to the [`x/plugin` package documentation](x/plugin/plugin.go).

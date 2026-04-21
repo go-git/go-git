@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -57,7 +57,8 @@ func TestAdd(t *testing.T) {
 		{
 			description: "memfs: add worktree",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			setupWorktree: func() billy.Filesystem {
@@ -80,7 +81,8 @@ func TestAdd(t *testing.T) {
 		{
 			description: "memfs: add worktree with commit",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			setupWorktree: func() billy.Filesystem {
@@ -106,7 +108,8 @@ func TestAdd(t *testing.T) {
 		{
 			description: "boundOS: add worktree",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			setupWorktree: func() billy.Filesystem {
@@ -122,7 +125,8 @@ func TestAdd(t *testing.T) {
 		{
 			description: "memfs: add worktree with detached HEAD",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			setupWorktree: func() billy.Filesystem {
@@ -157,7 +161,8 @@ func TestAdd(t *testing.T) {
 		{
 			description: "memfs: add worktree with branch (default)",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			setupWorktree: func() billy.Filesystem {
@@ -165,7 +170,7 @@ func TestAdd(t *testing.T) {
 			},
 			name:    "branch-worktree",
 			wantErr: false,
-			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, name string) {
+			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, _ string) {
 				w, err := New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
 				require.NoError(t, err)
 
@@ -186,7 +191,8 @@ func TestAdd(t *testing.T) {
 		{
 			description: "memfs: add worktree that already exists",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -253,6 +259,7 @@ func checkWorktree(t *testing.T, storage, wt billy.Filesystem, path string) {
 
 	f, err := wt.Open(fn)
 	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(f)
 	require.NoError(t, err)
@@ -301,6 +308,7 @@ func checkFiles(t *testing.T, expected []expectedFile, storage, wt billy.Filesys
 
 		f, err := storage.Open(fn)
 		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
 
 		data, err := io.ReadAll(f)
 		require.NoError(t, err)
@@ -323,7 +331,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "memfs: remove existing worktree",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 				w, err := New(storer)
@@ -346,7 +355,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "boundOS: remove existing worktree",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -368,7 +378,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "remove non-existent worktree",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			name:        "non-existent",
@@ -378,7 +389,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "invalid worktree name with spaces",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			name:        "invalid name",
@@ -388,7 +400,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "invalid worktree name with special characters",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			name:        "test@worktree",
@@ -398,7 +411,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "invalid worktree name with slash",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			name:        "test/worktree",
@@ -408,7 +422,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "empty worktree name",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			name:        "",
@@ -418,7 +433,8 @@ func TestRemove(t *testing.T) {
 		{
 			description: "worktree name with only dash",
 			setupStorer: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -477,7 +493,8 @@ func TestList(t *testing.T) {
 		{
 			description: "memfs: list empty worktrees",
 			setup: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				return filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			},
 			wantNames: []string{},
@@ -486,7 +503,8 @@ func TestList(t *testing.T) {
 		{
 			description: "memfs: list single worktree",
 			setup: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -504,7 +522,8 @@ func TestList(t *testing.T) {
 		{
 			description: "memfs: list multiple worktrees",
 			setup: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -524,7 +543,8 @@ func TestList(t *testing.T) {
 		{
 			description: "boundOS: list worktrees",
 			setup: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -545,7 +565,8 @@ func TestList(t *testing.T) {
 		{
 			description: "memfs: list after removing a worktree",
 			setup: func() *filesystem.Storage {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -600,7 +621,8 @@ func TestOpen(t *testing.T) {
 		{
 			description: "memfs: open linked worktree",
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -614,7 +636,7 @@ func TestOpen(t *testing.T) {
 				return storer, wtFS
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				wt, err := repo.Worktree()
@@ -629,7 +651,8 @@ func TestOpen(t *testing.T) {
 		{
 			description: "boundOS: open linked worktree",
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -643,7 +666,7 @@ func TestOpen(t *testing.T) {
 				return storer, wtFS
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				wt, err := repo.Worktree()
@@ -658,7 +681,8 @@ func TestOpen(t *testing.T) {
 		{
 			description: "open with nil filesystem",
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				return storer, nil
 			},
@@ -668,13 +692,14 @@ func TestOpen(t *testing.T) {
 		{
 			description: "open regular repository (non-linked worktree)",
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 				return storer, memfs.New()
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				_, err := repo.Head()
@@ -684,7 +709,8 @@ func TestOpen(t *testing.T) {
 		{
 			description: "open linked worktree and verify filesystem operations",
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -717,7 +743,8 @@ func TestOpen(t *testing.T) {
 		{
 			description: "open multiple linked worktrees",
 			setup: func() (*filesystem.Storage, billy.Filesystem) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -751,7 +778,7 @@ func TestOpen(t *testing.T) {
 				return storer, wtFS1
 			},
 			wantErr: false,
-			checkRepo: func(t *testing.T, repo *git.Repository, wtFS billy.Filesystem) {
+			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
 				head, err := repo.Head()
@@ -802,7 +829,8 @@ func TestInit(t *testing.T) {
 		{
 			description: "memfs storer with memfs worktree",
 			setup: func() (*filesystem.Storage, string) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -818,7 +846,7 @@ func TestInit(t *testing.T) {
 			wtFS:    memfs.New(),
 			name:    "test-init",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -834,7 +862,8 @@ func TestInit(t *testing.T) {
 		{
 			description: "boundOS storer with memfs worktree (cross-FS)",
 			setup: func() (*filesystem.Storage, string) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -850,7 +879,7 @@ func TestInit(t *testing.T) {
 			wtFS:    memfs.New(),
 			name:    "cross-fs-init",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -870,7 +899,8 @@ func TestInit(t *testing.T) {
 		{
 			description: "memfs storer with boundOS worktree (cross-FS)",
 			setup: func() (*filesystem.Storage, string) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -886,7 +916,7 @@ func TestInit(t *testing.T) {
 			wtFS:    osfs.New(t.TempDir(), osfs.WithBoundOS()),
 			name:    "reverse-cross-fs",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -902,7 +932,8 @@ func TestInit(t *testing.T) {
 		{
 			description: "init with non-existent worktree metadata",
 			setup: func() (*filesystem.Storage, string) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				return storer, "non-existent"
 			},
@@ -914,7 +945,8 @@ func TestInit(t *testing.T) {
 		{
 			description: "init with nil filesystem",
 			setup: func() (*filesystem.Storage, string) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				return storer, "test"
 			},
@@ -925,7 +957,8 @@ func TestInit(t *testing.T) {
 		{
 			description: "init and verify checkout state",
 			setup: func() (*filesystem.Storage, string) {
-				fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+				require.NoError(t, err)
 				storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 				w, err := New(storer)
 				require.NoError(t, err)
@@ -941,7 +974,7 @@ func TestInit(t *testing.T) {
 			wtFS:    memfs.New(),
 			name:    "specific-commit",
 			wantErr: false,
-			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, name string) {
+			checkRepo: func(t *testing.T, storage *filesystem.Storage, wt billy.Filesystem, _ string) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
@@ -1122,7 +1155,8 @@ func TestWorktreeConfig(t *testing.T) {
 	t.Run("linked worktree reads config.worktree", func(t *testing.T) {
 		t.Parallel()
 
-		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 		cfg, err := storer.Config()
@@ -1157,7 +1191,8 @@ func TestWorktreeConfig(t *testing.T) {
 	t.Run("config.worktree absent", func(t *testing.T) {
 		t.Parallel()
 
-		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 		cfg, err := storer.Config()
@@ -1185,7 +1220,8 @@ func TestWorktreeConfig(t *testing.T) {
 	t.Run("extension disabled config.worktree ignored", func(t *testing.T) {
 		t.Parallel()
 
-		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 		w, err := New(storer)
@@ -1211,7 +1247,8 @@ func TestWorktreeConfig(t *testing.T) {
 	t.Run("boundOS linked worktree reads config.worktree", func(t *testing.T) {
 		t.Parallel()
 
-		fs := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+		fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 		cfg, err := storer.Config()
@@ -1260,7 +1297,8 @@ func FuzzAdd(f *testing.F) {
 	f.Add("../../../test")
 
 	f.Fuzz(func(t *testing.T, name string) {
-		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 		w, err := New(storer)
 		require.NoError(t, err, "failed to create worktree manager")
@@ -1293,7 +1331,8 @@ func FuzzOpen(f *testing.F) {
 	f.Add("../../path\n")
 
 	f.Fuzz(func(t *testing.T, gitFileContent string) {
-		fs := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 		w, err := New(storer)
 		require.NoError(t, err, "failed to create worktree manager")

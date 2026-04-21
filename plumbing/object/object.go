@@ -164,7 +164,7 @@ func (s *Signature) String() string {
 }
 
 // ObjectIter provides an iterator for a set of objects.
-type ObjectIter struct {
+type ObjectIter struct { //nolint:revive // stutters but is a well-established name
 	storer.EncodedObjectIter
 	s storer.EncodedObjectStorer
 }

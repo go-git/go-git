@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -27,18 +27,21 @@ func TestWriterSuite(t *testing.T) {
 
 func (s *WriterSuite) TestWriter() {
 	f := fixtures.Basic().One()
-	scanner := packfile.NewScanner(f.Packfile())
+	pf, err := f.Packfile()
+	s.Require().NoError(err)
+	scanner := packfile.NewScanner(pf)
 
 	obs := new(idxfile.Writer)
 	parser := packfile.NewParser(scanner, packfile.WithScannerObservers(obs))
 
-	_, err := parser.Parse()
+	_, err = parser.Parse()
 	s.NoError(err)
 
 	idx, err := obs.Index()
 	s.NoError(err)
 
-	idxFile := f.Idx()
+	idxFile, err := f.Idx()
+	s.Require().NoError(err)
 	expected, err := io.ReadAll(idxFile)
 	s.NoError(err)
 	idxFile.Close()

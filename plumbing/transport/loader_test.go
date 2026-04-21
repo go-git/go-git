@@ -1,106 +1,181 @@
 package transport
 
 import (
+	"net/url"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-type loaderSuiteRepo struct {
-	bare bool
-
-	path string
-}
-
-func TestLoaderSuite(t *testing.T) {
+func TestFilesystemLoader_Load(t *testing.T) {
 	t.Parallel()
-	suite.Run(t, new(LoaderSuite))
+	dir := t.TempDir()
+
+	repoPath := filepath.Join(dir, "repo.git")
+	st := filesystem.NewStorage(osfs.New(repoPath), nil)
+	require.NoError(t, st.Init())
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	cfg.Core.IsBare = true
+	require.NoError(t, st.SetConfig(cfg))
+
+	loader := NewFilesystemLoader(osfs.New(dir), false)
+
+	u := &url.URL{Path: "repo"}
+	sto, err := loader.Load(u)
+	require.NoError(t, err)
+	assert.NotNil(t, sto)
 }
 
-type LoaderSuite struct {
-	suite.Suite
-	loader Loader
-	repos  map[string]loaderSuiteRepo
+func TestFilesystemLoader_LoadBare(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	st := filesystem.NewStorage(osfs.New(filepath.Join(dir, "bare.git")), nil)
+	require.NoError(t, st.Init())
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	cfg.Core.IsBare = true
+	require.NoError(t, st.SetConfig(cfg))
+
+	loader := NewFilesystemLoader(osfs.New(dir), false)
+
+	u := &url.URL{Path: "bare.git"}
+	sto, err := loader.Load(u)
+	require.NoError(t, err)
+	assert.NotNil(t, sto)
 }
 
-func (s *LoaderSuite) SetupSuite() {
-	s.repos = map[string]loaderSuiteRepo{
-		"repo": {path: "repo.git"},
-		"bare": {path: "bare.git", bare: true},
-	}
-	dir := s.T().TempDir()
-	s.loader = NewFilesystemLoader(osfs.New(dir), false)
-	for key, repo := range s.repos {
-		repo.path = filepath.Join(dir, repo.path)
-		st := filesystem.NewStorage(osfs.New(repo.path), nil)
-		err := st.Init()
-		s.NoError(err)
-		cfg, err := st.Config()
-		s.NoError(err)
-		if repo.bare {
-			cfg.Core.IsBare = repo.bare
-		}
-		err = st.SetConfig(cfg)
-		s.NoError(err)
-		s.repos[key] = repo
-	}
+func TestFilesystemLoader_LoadNonExistent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	loader := NewFilesystemLoader(osfs.New(dir), false)
+
+	u := &url.URL{Path: "does-not-exist"}
+	sto, err := loader.Load(u)
+	assert.ErrorIs(t, err, ErrRepositoryNotFound)
+	assert.Nil(t, sto)
 }
 
-func (s *LoaderSuite) Load(ep *Endpoint) (storage.Storer, error) {
-	_, ok := s.repos[ep.Path]
-	if !ok {
-		return nil, ErrRepositoryNotFound
-	}
-	return memory.NewStorage(), nil
+func TestMapLoader_Load(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	loader := MapLoader{"/test": st}
+
+	u := &url.URL{Path: "/test"}
+	sto, err := loader.Load(u)
+	require.NoError(t, err)
+	assert.Equal(t, st, sto)
 }
 
-func (s *LoaderSuite) endpoint(url string) *Endpoint {
-	ep, err := NewEndpoint(url)
-	s.Nil(err)
-	return ep
+func TestMapLoader_LoadNotFound(t *testing.T) {
+	t.Parallel()
+
+	loader := MapLoader{}
+	u := &url.URL{Path: "/missing"}
+	sto, err := loader.Load(u)
+	assert.ErrorIs(t, err, ErrRepositoryNotFound)
+	assert.Nil(t, sto)
 }
 
-func (s *LoaderSuite) TestLoadNonExistent() {
-	sto, err := s.loader.Load(s.endpoint("does-not-exist"))
-	s.ErrorIs(err, ErrRepositoryNotFound)
-	s.Nil(sto)
+func TestFilesystemLoader_LoadWithConfigDir(t *testing.T) {
+	t.Parallel()
+	// Create a temporary directory structure that mimics a non-bare repository
+	// with a "config" directory in the working tree (which exists in go-git's own repo)
+	tmpDir := t.TempDir()
+
+	// Create repo directory
+	repoDir := filepath.Join(tmpDir, "repo")
+	require.NoError(t, os.Mkdir(repoDir, 0o755))
+
+	// Create .git directory with a config file
+	gitDir := filepath.Join(repoDir, ".git")
+	require.NoError(t, os.MkdirAll(gitDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "config"), []byte("[core]\n"), 0o644))
+
+	// Create a "config" directory in the working tree (not in .git)
+	configDir := filepath.Join(repoDir, "config")
+	require.NoError(t, os.Mkdir(configDir, 0o755))
+
+	// The loader should find .git/config, not the config directory
+	loader := NewFilesystemLoader(osfs.New(tmpDir), false)
+	u := &url.URL{Path: "repo"}
+
+	st, err := loader.Load(u)
+	require.NoError(t, err)
+	require.NotNil(t, st)
+
+	// Verify it loaded the correct config
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
 }
 
-func (s *LoaderSuite) TestLoadNonExistentIgnoreHost() {
-	sto, err := s.loader.Load(s.endpoint("https://github.com/does-not-exist"))
-	s.ErrorIs(err, ErrRepositoryNotFound)
-	s.Nil(sto)
+func TestFilesystemLoader_LoadWithGitfile(t *testing.T) {
+	t.Parallel()
+	// Test loading a repository where .git is a file (gitfile) pointing to the real git directory
+	// This is common in worktrees and submodules
+	tmpDir := t.TempDir()
+
+	// Create the actual git directory
+	realGitDir := filepath.Join(tmpDir, "real-git")
+	require.NoError(t, os.MkdirAll(realGitDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(realGitDir, "config"), []byte("[core]\n"), 0o644))
+
+	// Create working tree with .git file pointing to real git directory (absolute path)
+	workTree := filepath.Join(tmpDir, "worktree")
+	require.NoError(t, os.MkdirAll(workTree, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workTree, ".git"), []byte("gitdir: "+realGitDir+"\n"), 0o644))
+
+	// The loader should follow the gitfile and load the real git directory
+	// Use root filesystem since gitfile contains absolute path
+	loader := NewFilesystemLoader(osfs.New(""), false)
+	u := &url.URL{Path: filepath.ToSlash(workTree)}
+
+	st, err := loader.Load(u)
+	require.NoError(t, err)
+	require.NotNil(t, st)
+
+	// Verify it loaded the correct config
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
 }
 
-func (s *LoaderSuite) TestLoad() {
-	sto, err := s.loader.Load(s.endpoint("repo"))
-	s.Nil(err)
-	s.NotNil(sto)
-}
+func TestFilesystemLoader_LoadWithRelativeGitfile(t *testing.T) {
+	t.Parallel()
+	// Test loading a repository where .git file contains a relative path
+	tmpDir := t.TempDir()
 
-func (s *LoaderSuite) TestLoadBare() {
-	sto, err := s.loader.Load(s.endpoint("bare"))
-	s.Nil(err)
-	s.NotNil(sto)
-}
+	// Create the actual git directory
+	realGitDir := filepath.Join(tmpDir, ".git-real")
+	require.NoError(t, os.MkdirAll(realGitDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(realGitDir, "config"), []byte("[core]\n"), 0o644))
 
-func (s *LoaderSuite) TestMapLoader() {
-	ep, err := NewEndpoint("file://test")
-	sto := memory.NewStorage()
-	s.Nil(err)
+	// Create working tree with .git file pointing to relative git directory
+	workTree := filepath.Join(tmpDir, "repo")
+	require.NoError(t, os.MkdirAll(workTree, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workTree, ".git"), []byte("gitdir: ../.git-real\n"), 0o644))
 
-	loader := MapLoader{ep.String(): sto}
+	// The loader should follow the relative gitfile path
+	loader := NewFilesystemLoader(osfs.New(tmpDir), false)
+	u := &url.URL{Path: "repo"}
 
-	ep, err = NewEndpoint("file://test")
-	s.Nil(err)
+	st, err := loader.Load(u)
+	require.NoError(t, err)
+	require.NotNil(t, st)
 
-	loaderSto, err := loader.Load(ep)
-	s.Nil(err)
-	s.Equal(sto, loaderSto)
+	// Verify it loaded the correct config
+	cfg, err := st.Config()
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
 }

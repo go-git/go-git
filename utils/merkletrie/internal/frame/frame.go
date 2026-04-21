@@ -54,7 +54,7 @@ func (f *Frame) String() string {
 	for i := f.Len() - 1; i >= 0; i-- {
 		_, _ = buf.WriteString(sep)
 		sep = ", "
-		_, _ = buf.WriteString(fmt.Sprintf("%q", f.stack[i].Name()))
+		_, _ = fmt.Fprintf(&buf, "%q", f.stack[i].Name())
 	}
 
 	_ = buf.WriteByte(']')

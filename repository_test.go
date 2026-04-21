@@ -17,14 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/ProtonMail/go-crypto/openpgp/armor"
-	openpgperr "github.com/ProtonMail/go-crypto/openpgp/errors"
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -41,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
@@ -356,7 +354,7 @@ func TestCloneAll(t *testing.T) {
 				require.NoError(t, err)
 
 				refs := 0
-				iter.ForEach(func(r *plumbing.Reference) error {
+				iter.ForEach(func(_ *plumbing.Reference) error {
 					refs++
 					return nil
 				})
@@ -450,6 +448,293 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 	}
 }
 
+// TestFetchByHashThenResolveRevision is a regression test for two bugs that
+// affected fetching a specific commit by hash into an existing repository
+// using the force-refspec "+<hash>:<hash>".
+//
+// Regression 1 (negotiate.go): shallow boundaries were not persisted after a
+// clone, so subsequent fetches sent no "shallow" lines to the server. The
+// server then inferred the client already owned the wanted commit (a deep
+// ancestor of the shallow tip) and returned an empty packfile, leaving the
+// object absent from the store.
+//
+// Regression 2 (remote.go): when the dst of a refspec is a bare SHA, the
+// code created a branch named after the hash (refs/heads/<sha>) pointing to
+// the zero hash. ResolveRevision resolved via that spurious ref and returned
+// the zero hash instead of the real commit hash, breaking all downstream
+// callers such as Worktree.Checkout.
+//
+// Note: this test uses the live GitHub URL rather than a local fixture server
+// because the fixture HTTP server does not implement depth filtering in
+// upload-pack. Without depth support the server sends all objects on a
+// depth=1 clone, making commitSHA present from the start and preventing
+// regression 1 from being reproduced.
+func TestFetchByHashThenResolveRevision(t *testing.T) {
+	t.Parallel()
+
+	// git-fixtures/basic.git commit graph (abbreviated):
+	//
+	//   * 6ecf0ef  vendor stuff          <- refs/heads/master (HEAD)
+	//   | * e8d3ffa some code in branch  <- refs/heads/branch
+	//   |/
+	//   * 918c48b  some code
+	//   ...several more commits...
+	//   * 35e8510  binary file            <- commitSHA (deep ancestor of both)
+	//   * b029517  Initial commit
+	//
+	// A depth=1 shallow clone of master fetches only 6ecf0ef2. The target
+	// commit (35e85108) is a deep historical ancestor, absent because it is
+	// pruned by the shallow depth limit — not because it is on a different branch.
+	const (
+		repoURL   = "https://github.com/git-fixtures/basic.git"
+		commitSHA = "35e85108805c84807bc66a02d91535e1e24b38b9"
+	)
+
+	tmp := t.TempDir()
+
+	// Step 1: clone the default branch at depth=1.
+	// commitSHA is a deep ancestor excluded by the shallow depth limit.
+	r, err := PlainClone(tmp, &CloneOptions{
+		URL:   repoURL,
+		Depth: 1,
+		Tags:  NoTags,
+	})
+	require.NoError(t, err, "clone should succeed")
+
+	// Confirm the target commit is not yet available.
+	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
+	require.Error(t, err, "commit should NOT be present in a shallow clone of master")
+
+	// Step 2: fetch the specific commit by hash using "+<hash>:<hash>".
+	// This is the standard refspec for fetching an arbitrary commit that is not
+	// the tip of a branch or tag.
+	refSpec := config.RefSpec("+" + commitSHA + ":" + commitSHA)
+	err = r.Fetch(&FetchOptions{
+		Depth:    1,
+		Force:    true,
+		RefSpecs: []config.RefSpec{refSpec},
+		Tags:     NoTags,
+	})
+	require.NoError(t, err, "fetch should succeed")
+
+	// Step 3: the commit object MUST now be present in the object store.
+	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
+	assert.NoError(t, err,
+		"commit object must be present in the object store after a successful Fetch with '+<hash>:<hash>'",
+	)
+
+	// Step 4: regression 2 — no spurious refs/heads/<sha> must be created.
+	// Before the fix, updateLocalReferenceStorage created refs/heads/<sha>
+	// pointing to the zero hash for any bare-hash dst refspec.
+	_, refErr := r.Storer.Reference(plumbing.NewBranchReferenceName(commitSHA))
+	assert.Error(t, refErr,
+		"fetching by hash must NOT create a branch named after the hash")
+
+	// Step 5: the commit must also be resolvable as a revision.
+	// Before the fix, the spurious branch caused ResolveRevision to return
+	// the zero hash.
+	hash, err := r.ResolveRevision(plumbing.Revision(commitSHA))
+	assert.NoError(t, err,
+		"ResolveRevision with a full SHA must succeed when the commit object is present",
+	)
+	if hash != nil {
+		assert.Equal(t, commitSHA, hash.String())
+	}
+
+	// Step 6: downstream effect — Worktree.Checkout must also succeed.
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	err = w.Checkout(&CheckoutOptions{
+		Hash:  plumbing.NewHash(commitSHA),
+		Force: true,
+	})
+	assert.NoError(t, err, "Worktree.Checkout by hash should succeed after fetching the commit")
+}
+
+// TestPlainCloneContext_FailedCloneRemovesCreatedDirectory is a regression test
+// for a v6 behaviour difference vs v5 and the reference git implementation.
+//
+// When PlainCloneContext creates the destination directory (i.e. it did not
+// exist before the call) and the clone subsequently fails, it must remove the
+// directory it created — just as `git clone` does. Without this cleanup a
+// caller that retries with different credentials (e.g. iterating over auth
+// methods) gets "destination path already exists" on the second attempt.
+func TestPlainCloneContext_FailedCloneRemovesCreatedDirectory(t *testing.T) {
+	t.Parallel()
+
+	// dest does not exist yet; PlainCloneContext must create and then remove it.
+	dest := filepath.Join(t.TempDir(), "repo")
+
+	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	require.Error(t, err)
+
+	_, statErr := os.Stat(dest)
+	assert.True(t, os.IsNotExist(statErr),
+		"PlainCloneContext must remove the directory it created when the clone fails")
+}
+
+// TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory verifies
+// that a directory which already existed (but was empty) before the call is
+// preserved after a failed clone — matching `git clone` behaviour.
+func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *testing.T) {
+	t.Parallel()
+
+	// dest exists and is empty before the clone attempt.
+	dest := t.TempDir()
+
+	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: "incorrectOnPurpose",
+	})
+	require.Error(t, err)
+
+	// The directory itself must still be there …
+	_, statErr := os.Stat(dest)
+	assert.NoError(t, statErr, "PlainCloneContext must not remove a pre-existing directory")
+
+	// … and must be empty (any .git content added by PlainInit must be removed).
+	entries, _ := os.ReadDir(dest)
+	assert.Empty(t, entries,
+		"PlainCloneContext must remove any content it added to a pre-existing empty directory")
+}
+
+// TestPlainCloneContext_EmptyRemoteReturnsError verifies that cloning an
+// empty remote repository returns ErrEmptyRemoteRepository by default.
+func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	_, err := PlainInit(remote, true)
+	require.NoError(t, err)
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	_, err = PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL: remote,
+	})
+	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+}
+
+// TestPlainCloneContext_EmptyRemoteDoesNotCleanup verifies that cloning an
+// empty remote repository with AllowEmptyRepo does not remove the directory.
+func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
+	t.Parallel()
+
+	// Create a bare empty repository to use as the remote.
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	_, err := PlainInit(remote, true)
+	require.NoError(t, err)
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// The cloned repo should have the "origin" remote configured.
+	remotes, err := r.Remotes()
+	require.NoError(t, err)
+	require.Len(t, remotes, 1)
+	assert.Equal(t, "origin", remotes[0].Config().Name)
+
+	// The .git directory must still exist — the repo was initialized successfully.
+	_, statErr := os.Stat(filepath.Join(dest, GitDirName))
+	assert.NoError(t, statErr,
+		"PlainCloneContext must not remove .git when cloning an empty remote")
+
+	// HEAD must be a valid symbolic reference (not .invalid), because
+	// AllowEmptyRepo skips withPartialInit and fully initialises the repo.
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.NotEqual(t, plumbing.Invalid, head.Target(),
+		"HEAD must not point to .invalid when AllowEmptyRepo is set")
+
+	// The repository should be re-openable — a fully initialised repo has
+	// its config persisted (unlike a partialInit repo).
+	reopened, err := PlainOpen(dest)
+	require.NoError(t, err)
+	reopenedRemotes, err := reopened.Remotes()
+	require.NoError(t, err)
+	require.Len(t, reopenedRemotes, 1)
+	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
+}
+
+// TestPlainCloneContext_DetachedHeadSource is a regression test for a bug
+// where PlainCloneContext returns plumbing.ErrReferenceNotFound when the
+// source repository has a detached HEAD.
+//
+// A detached HEAD is the normal state of a repository after
+// Worktree.Checkout is called with CheckoutOptions{Hash: someHash}.
+// Cloning FROM such a repo (e.g. when using a local filesystem directory
+// as a "remote") must succeed, just as `git clone` does.
+func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
+	t.Parallel()
+
+	// ── Build the source repo using PlainInit + Worktree.Commit ──────────
+	// Self-contained: no network access required.
+	srcDir := t.TempDir()
+	src, err := PlainInit(srcDir, false)
+	require.NoError(t, err)
+
+	wt, err := src.Worktree()
+	require.NoError(t, err)
+
+	// Write a file and create an initial commit so HEAD resolves to a real hash.
+	err = os.WriteFile(filepath.Join(srcDir, "README.md"), []byte("hello"), 0o644)
+	require.NoError(t, err)
+	_, err = wt.Add("README.md")
+	require.NoError(t, err)
+	commitHash, err := wt.Commit("initial commit", &CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "t@t.com"},
+	})
+	require.NoError(t, err)
+
+	// Verify HEAD is a symbolic reference before detaching.
+	rawHead, err := src.Storer.Reference(plumbing.HEAD)
+	require.NoError(t, err)
+	require.Equal(t, plumbing.SymbolicReference, rawHead.Type(),
+		"HEAD should be a symbolic ref after commit")
+
+	// Detach HEAD by checking out by hash.
+	err = wt.Checkout(&CheckoutOptions{Hash: commitHash, Force: true})
+	require.NoError(t, err)
+
+	detachedHead, err := src.Storer.Reference(plumbing.HEAD)
+	require.NoError(t, err)
+	require.Equal(t, plumbing.HashReference, detachedHead.Type(),
+		"HEAD must be a hash-reference (detached) after Checkout{Hash:...}")
+
+	// ── Clone from the detached-HEAD source ───────────────────────────────
+	// The branch ref (refs/heads/master) still exists in the source object
+	// store; only HEAD is detached. PlainCloneContext must succeed — just as
+	// `git clone` does — by advertising the available refs rather than
+	// requiring HEAD to be symbolic.
+	dstDir := filepath.Join(t.TempDir(), "dst")
+	dst, err := PlainCloneContext(context.Background(), dstDir, &CloneOptions{
+		URL: srcDir,
+	})
+	assert.NoError(t, err,
+		"PlainCloneContext must succeed when the source repo has a detached HEAD")
+
+	// ── Verify the cloned repo behaves like `git clone` ──────────────────────
+	// git clone creates a symbolic HEAD (→ refs/heads/<branch>) in the clone
+	// even when the source has a detached HEAD; the resolved commit must match.
+	require.NotNil(t, dst, "cloned repository must not be nil")
+
+	rawClonedHead, err := dst.Storer.Reference(plumbing.HEAD)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, rawClonedHead.Type(),
+		"cloned repo HEAD must be a symbolic ref (as git clone produces), not detached")
+
+	resolvedHead, err := dst.Head()
+	require.NoError(t, err)
+	assert.Equal(t, commitHash, resolvedHead.Hash(),
+		"cloned repo HEAD must resolve to the same commit as the source")
+}
+
 // sha1OnlyStorage wraps a storage.Storer to hide the ExtensionChecker
 // implementation, simulating a storage backend that does not implement
 // that interface.
@@ -490,7 +775,9 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 		f := fixtures.ByTag(".git-sha256").One()
 		require.NotNil(t, f, "fixture not found for tag .git-sha256")
 
-		st := filesystem.NewStorage(f.DotGit(fixtures.WithMemFS()), cache.NewObjectLRUDefault())
+		dotgit, dotgitErr := f.DotGit(fixtures.WithMemFS())
+		require.NoError(t, dotgitErr)
+		st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 		wrapped := &sha1OnlyStorage{st}
 		_, okGetter := storage.Storer(wrapped).(xstorage.ExtensionChecker)
@@ -903,6 +1190,24 @@ func (s *RepositorySuite) TestDeleteBranch() {
 
 	err = r.DeleteBranch("foo")
 	s.ErrorIs(err, ErrBranchNotFound)
+}
+
+func (s *RepositorySuite) TestDeleteBranchFullRefName() {
+	r, _ := Init(memory.NewStorage())
+	testBranch := &config.Branch{
+		Name:   "foo",
+		Remote: "origin",
+		Merge:  "refs/heads/foo",
+	}
+	err := r.CreateBranch(testBranch)
+	s.NoError(err)
+
+	err = r.DeleteBranch("refs/heads/foo")
+	s.NoError(err)
+
+	b, err := r.Branch("foo")
+	s.ErrorIs(err, ErrBranchNotFound)
+	s.Nil(b)
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
@@ -1379,7 +1684,11 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 	}
 
 	dir := s.T().TempDir()
-	path := fixtures.ByTag("submodule").One().Worktree().Root()
+	path := func() billy.Filesystem {
+		wt, err := fixtures.ByTag("submodule").One().Worktree()
+		s.Require().NoError(err)
+		return wt
+	}().Root()
 	mainRepo, err := PlainClone(dir, &CloneOptions{
 		URL:               path,
 		RecurseSubmodules: 1,
@@ -1395,6 +1704,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 
 	subRepo, err := submodule.Repository()
 	s.Require().NoError(err)
+	defer subRepo.Close()
 
 	lr, err := subRepo.Log(&LogOptions{})
 	s.Require().NoError(err)
@@ -2020,7 +2330,8 @@ func (s *RepositorySuite) TestPushDepth() {
 }
 
 func (s *RepositorySuite) TestPushNonExistentRemote() {
-	srcFs := fixtures.Basic().One().DotGit()
+	srcFs, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
 	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	r, err := Open(sto, srcFs)
@@ -2897,68 +3208,6 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadHash() {
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
-func (s *RepositorySuite) TestCreateTagSigned() {
-	url := s.GetLocalRepositoryURL(
-		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
-	)
-
-	r, _ := Init(memory.NewStorage())
-	err := r.clone(context.Background(), &CloneOptions{URL: url})
-	s.NoError(err)
-
-	h, err := r.Head()
-	s.NoError(err)
-
-	key := commitSignKey(s.T(), true)
-	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
-		Tagger:  defaultSignature(),
-		Message: "foo bar baz qux",
-		SignKey: key,
-	})
-	s.NoError(err)
-
-	tag, err := r.Tag("foobar")
-	s.NoError(err)
-
-	obj, err := r.TagObject(tag.Hash())
-	s.NoError(err)
-
-	// Verify the tag.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	s.NoError(err)
-
-	err = key.Serialize(pkw)
-	s.NoError(err)
-	err = pkw.Close()
-	s.NoError(err)
-
-	actual, err := obj.Verify(pks.String())
-	s.NoError(err)
-	s.Equal(key.PrimaryKey, actual.PrimaryKey)
-}
-
-func (s *RepositorySuite) TestCreateTagSignedBadKey() {
-	url := s.GetLocalRepositoryURL(
-		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
-	)
-
-	r, _ := Init(memory.NewStorage())
-	err := r.clone(context.Background(), &CloneOptions{URL: url})
-	s.NoError(err)
-
-	h, err := r.Head()
-	s.NoError(err)
-
-	key := commitSignKey(s.T(), false)
-	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
-		Tagger:  defaultSignature(),
-		Message: "foo bar baz qux",
-		SignKey: key,
-	})
-	s.ErrorIs(err, openpgperr.InvalidArgumentError("signing key is encrypted"))
-}
-
 func (s *RepositorySuite) TestCreateTagCanonicalize() {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
@@ -2971,11 +3220,9 @@ func (s *RepositorySuite) TestCreateTagCanonicalize() {
 	h, err := r.Head()
 	s.NoError(err)
 
-	key := commitSignKey(s.T(), true)
 	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "\n\nfoo bar baz qux\n\nsome message here",
-		SignKey: key,
 	})
 	s.NoError(err)
 
@@ -2987,20 +3234,6 @@ func (s *RepositorySuite) TestCreateTagCanonicalize() {
 
 	// Assert the new canonicalized message.
 	s.Equal("foo bar baz qux\n\nsome message here\n", obj.Message)
-
-	// Verify the tag.
-	pks := new(bytes.Buffer)
-	pkw, err := armor.Encode(pks, openpgp.PublicKeyType, nil)
-	s.NoError(err)
-
-	err = key.Serialize(pkw)
-	s.NoError(err)
-	err = pkw.Close()
-	s.NoError(err)
-
-	actual, err := obj.Verify(pks.String())
-	s.NoError(err)
-	s.Equal(key.PrimaryKey, actual.PrimaryKey)
 }
 
 func (s *RepositorySuite) TestTagLightweight() {
@@ -3179,8 +3412,12 @@ func (s *RepositorySuite) TestInvalidTagName() {
 
 func (s *RepositorySuite) TestBranches() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/root-references.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	r, err := Open(sto, f.DotGit())
+	dotgit1, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	dotgit2, err := f.DotGit()
+	s.Require().NoError(err)
+	r, err := Open(sto, dotgit2)
 	s.NoError(err)
 
 	count := 0
@@ -3396,8 +3633,12 @@ func (s *RepositorySuite) TestWorktreeBare() {
 
 func (s *RepositorySuite) TestResolveRevision() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/basic.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	r, err := Open(sto, f.DotGit())
+	dotgit1, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	dotgit2, err := f.DotGit()
+	s.Require().NoError(err)
+	r, err := Open(sto, dotgit2)
 	s.NoError(err)
 
 	datas := map[string]string{
@@ -3434,8 +3675,12 @@ func (s *RepositorySuite) TestResolveRevision() {
 
 func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	f := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One()
-	sto := filesystem.NewStorage(f.DotGit(), cache.NewObjectLRUDefault())
-	r, err := Open(sto, f.DotGit())
+	dotgit1, err := f.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
+	dotgit2, err := f.DotGit()
+	s.Require().NoError(err)
+	r, err := Open(sto, dotgit2)
 	s.NoError(err)
 
 	datas := map[string]string{
@@ -3482,10 +3727,9 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 }
 
 func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks int) {
-	srcFs := fixtures.ByTag("unpacked").One().DotGit()
-	var sto storage.Storer
-	var err error
-	sto = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
+	var sto storage.Storer = filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
 	los := sto.(storer.LooseObjectStorer)
 	s.NotNil(los)
@@ -3651,7 +3895,10 @@ func BenchmarkObjects(b *testing.B) {
 		}
 
 		b.Run(f.URL, func(b *testing.B) {
-			fs := f.DotGit()
+			fs, err := f.DotGit()
+			if err != nil {
+				b.Fatal(err)
+			}
 			st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 			worktree, err := fs.Chroot(filepath.Dir(fs.Root()))
@@ -3709,5 +3956,137 @@ func BenchmarkPlainClone(b *testing.B) {
 	b.StartTimer()
 	for b.Loop() {
 		clone(b)
+	}
+}
+
+func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	tests := []struct {
+		name           string
+		registerPlugin bool
+		optionsSigner  Signer
+		tagSignGpg     config.OptBool
+		wantErr        string
+		wantSignature  bool
+		wantPluginUsed bool
+		wantOptionUsed bool
+	}{
+		{
+			name:          "no signer at all produces unsigned tag",
+			tagSignGpg:    config.OptBoolFalse,
+			wantSignature: false,
+		},
+		{
+			name:           "CreateTagOptions.Signer works without plugin registered",
+			tagSignGpg:     config.OptBoolFalse,
+			optionsSigner:  &mockSigner{},
+			wantSignature:  true,
+			wantOptionUsed: true,
+		},
+		{
+			name:           "plugin signer is used when CreateTagOptions.Signer is nil",
+			registerPlugin: true,
+			tagSignGpg:     config.OptBoolTrue,
+			wantSignature:  true,
+			wantPluginUsed: true,
+		},
+		{
+			name:           "plugin signer is ignored if tag.signGpg=false",
+			registerPlugin: true,
+			tagSignGpg:     config.OptBoolFalse,
+			wantPluginUsed: false,
+		},
+		{
+			name:       "error if tag.signGpg=true and no plugin registered",
+			tagSignGpg: config.OptBoolTrue,
+			wantErr:    "cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin",
+		},
+		{
+			name:           "CreateTagOptions.Signer takes precedence over plugin",
+			registerPlugin: true,
+			tagSignGpg:     config.OptBoolTrue,
+			optionsSigner:  &mockSigner{},
+			wantSignature:  true,
+			wantOptionUsed: true,
+		},
+	}
+
+	for _, tt := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tt.name, func(t *testing.T) {
+			resetPluginEntry("object-signer")
+			t.Cleanup(func() { resetPluginEntry("object-signer") })
+
+			// Create a repo with an initial commit to tag.
+			// This must happen before registering the plugin signer,
+			// otherwise buildCommitObject would call the plugin signer.
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+
+			cfg.Tag.GpgSign = tt.tagSignGpg
+			err = r.SetConfig(cfg)
+			require.NoError(t, err)
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
+			_, err = w.Add("file.txt")
+			require.NoError(t, err)
+
+			commitHash, err := w.Commit("initial commit\n", &CommitOptions{
+				Author: defaultSignature(),
+			})
+			require.NoError(t, err)
+
+			var pluginSigner *mockSigner
+			if tt.registerPlugin {
+				pluginSigner = &mockSigner{}
+				err = plugin.Register(plugin.ObjectSigner(), func() plugin.Signer { return pluginSigner })
+				require.NoError(t, err)
+			}
+
+			_, err = r.CreateTag("test-tag", commitHash, &CreateTagOptions{
+				Tagger:  defaultSignature(),
+				Message: "tag message",
+				Signer:  tt.optionsSigner,
+			})
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+				return // no need to carry on
+			}
+
+			tagRef, err := r.Tag("test-tag")
+			require.NoError(t, err)
+
+			tagObj, err := r.TagObject(tagRef.Hash())
+			require.NoError(t, err)
+
+			if tt.wantSignature {
+				assert.NotEmpty(t, tagObj.Signature)
+			} else {
+				assert.Empty(t, tagObj.Signature)
+			}
+
+			if tt.wantPluginUsed {
+				require.NotNil(t, pluginSigner)
+				assert.True(t, pluginSigner.called, "expected plugin signer to be called")
+			}
+
+			if tt.wantOptionUsed {
+				optSigner, ok := tt.optionsSigner.(*mockSigner)
+				require.True(t, ok)
+				assert.True(t, optSigner.called, "expected options signer to be called")
+			}
+
+			if pluginSigner != nil && tt.optionsSigner != nil {
+				assert.False(t, pluginSigner.called,
+					"plugin signer should not be called when CreateTagOptions.Signer is set")
+			}
+		})
 	}
 }

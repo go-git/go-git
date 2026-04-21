@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -28,7 +28,9 @@ func TestTagSuite(t *testing.T) {
 
 func (s *TagSuite) SetupSuite() {
 	s.BaseObjectsSuite.SetupSuite(s.T())
-	storer := filesystem.NewStorage(fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit(), cache.NewObjectLRUDefault())
+	tagsDotgit, err := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
+	s.Require().NoError(err)
+	storer := filesystem.NewStorage(tagsDotgit, cache.NewObjectLRUDefault())
 	s.Storer = storer
 }
 

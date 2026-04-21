@@ -12,22 +12,19 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// FetchPack fetches a packfile from the remote connection into the given
-// storage repository and updates the shallow information.
+// FetchPack fetches a packfile from the remote into the given storage.
 func FetchPack(
 	ctx context.Context,
 	st storage.Storer,
-	conn Connection,
+	caps *capability.List,
 	packf io.ReadCloser,
 	shallowInfo *packp.ShallowUpdate,
 	req *FetchRequest,
-) (err error) {
+) error {
 	packf = ioutil.NewContextReadCloser(ctx, packf)
 
-	// Do we have sideband enabled?
 	var demuxer *sideband.Demuxer
 	var reader io.Reader = packf
-	caps := conn.Capabilities()
 	if caps.Supports(capability.Sideband64k) {
 		demuxer = sideband.NewDemuxer(sideband.Sideband64k, reader)
 	} else if caps.Supports(capability.Sideband) {
@@ -47,7 +44,6 @@ func FetchPack(
 		return err
 	}
 
-	// Update shallow
 	if shallowInfo != nil {
 		if err := updateShallow(st, shallowInfo); err != nil {
 			return err
@@ -73,7 +69,6 @@ outer:
 		shallows = append(shallows, s)
 	}
 
-	// unshallow commits
 	for _, s := range shallowInfo.Unshallows {
 		for i, oldS := range shallows {
 			if s == oldS {

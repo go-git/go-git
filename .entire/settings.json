@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "strategy": "manual-commit",
+  "strategy_options": {
+    "checkpoint_remote": {
+      "provider": "github",
+      "repo": "go-git/entire"
+    }
+  }
+}

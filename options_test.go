@@ -1,15 +1,15 @@
 package git
 
 import (
-	"os"
 	"testing"
 
-	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 type OptionsSuite struct {
@@ -49,7 +49,7 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalConfigUser() {
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	clean := s.writeGlobalConfig(cfg)
+	clean := s.registerGlobalConfig(cfg)
 	defer clean()
 
 	o := CommitOptions{}
@@ -69,7 +69,7 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalCommitter() {
 	cfg.Committer.Name = "bar"
 	cfg.Committer.Email = "bar@bar.com"
 
-	clean := s.writeGlobalConfig(cfg)
+	clean := s.registerGlobalConfig(cfg)
 	defer clean()
 
 	o := CommitOptions{}
@@ -87,7 +87,7 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal() {
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	clean := s.writeGlobalConfig(cfg)
+	clean := s.registerGlobalConfig(cfg)
 	defer clean()
 
 	o := CreateTagOptions{
@@ -101,25 +101,17 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal() {
 	s.Equal("foo@foo.com", o.Tagger.Email)
 }
 
-func (s *OptionsSuite) writeGlobalConfig(cfg *config.Config) func() {
-	fs := s.TemporalFilesystem()
-
-	tmp, err := util.TempDir(fs, "", "test-options")
-	s.NoError(err)
-
-	err = fs.MkdirAll(fs.Join(tmp, "git"), 0o777)
-	s.NoError(err)
-
-	os.Setenv("XDG_CONFIG_HOME", fs.Join(fs.Root(), tmp))
-
-	content, err := cfg.Marshal()
-	s.NoError(err)
-
-	cfgFile := fs.Join(tmp, "git/config")
-	err = util.WriteFile(fs, cfgFile, content, 0o777)
+// registerGlobalConfig registers a static ConfigSource plugin with the
+// given config as the global config. It returns a cleanup function that
+// restores the default test ConfigSource.
+func (s *OptionsSuite) registerGlobalConfig(cfg *config.Config) func() {
+	resetPluginEntry("config-loader")
+	err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+		return xconfig.NewStatic(*cfg, *config.NewConfig())
+	})
 	s.NoError(err)
 
 	return func() {
-		os.Setenv("XDG_CONFIG_HOME", "")
+		registerTestConfigLoader()
 	}
 }

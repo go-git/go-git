@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,10 +26,12 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	fs := osfs.New(b.TempDir())
 
 	for b.Loop() {
-		w, err := newPackWrite(fs, config.SHA1)
+		w, err := newPackWrite(fs, config.SHA1, false)
 
 		require.NoError(b, err)
-		_, err = io.Copy(w, f.Packfile())
+		pf, pfErr := f.Packfile()
+		require.NoError(b, pfErr)
+		_, err = io.Copy(w, pf)
 
 		require.NoError(b, err)
 		require.NoError(b, w.Close())
@@ -47,7 +49,9 @@ func TestNewObjectPack(t *testing.T) {
 	w, err := dot.NewObjectPack()
 	require.NoError(t, err)
 
-	_, err = io.Copy(w, f.Packfile())
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	_, err = io.Copy(w, pf)
 	require.NoError(t, err)
 
 	require.NoError(t, w.Close())
@@ -63,11 +67,11 @@ func TestNewObjectPack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1940), stat.Size())
 
-	pf, err := fs.Open(pfPath)
+	pf2, err := fs.Open(pfPath)
 	assert.NoError(t, err)
 
 	objFound := false
-	pfs := packfile.NewScanner(pf)
+	pfs := packfile.NewScanner(pf2)
 	for pfs.Scan() {
 		data := pfs.Data()
 		if data.Section != packfile.ObjectSection {
@@ -78,7 +82,7 @@ func TestNewObjectPack(t *testing.T) {
 		assert.NotNil(t, data.Value())
 	}
 
-	assert.NoError(t, pf.Close())
+	assert.NoError(t, pf2.Close())
 	assert.True(t, objFound)
 }
 
@@ -155,7 +159,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
-	w, err := newPackWrite(fs, config.SHA1)
+	w, err := newPackWrite(fs, config.SHA1, false)
 	require.NoError(t, err)
 
 	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
@@ -186,7 +190,9 @@ func TestPackWriterPermissions(t *testing.T) {
 			w, err := dot.NewObjectPack()
 			require.NoError(t, err)
 
-			_, err = io.Copy(w, f.Packfile())
+			pf, pfErr := f.Packfile()
+			require.NoError(t, pfErr)
+			_, err = io.Copy(w, pf)
 			require.NoError(t, err)
 
 			require.NoError(t, w.Close())
@@ -201,6 +207,125 @@ func TestPackWriterPermissions(t *testing.T) {
 			ro, err = isReadOnly(tc.fs, idxPath)
 			require.NoError(t, err)
 			assert.True(t, ro, "file %q is not read-only", idxPath)
+		})
+	}
+}
+
+func TestPackWriterExistingReadOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		fs       billy.Filesystem
+		writeRev bool
+	}{
+		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS()), false},
+		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS()), false},
+		{"BoundOS_Rev", osfs.New(t.TempDir(), osfs.WithBoundOS()), true},
+		{"ChrootOS_Rev", osfs.New(t.TempDir(), osfs.WithChrootOS()), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := fixtures.Basic().One()
+
+			dot := New(tc.fs)
+			dot.options.WriteReverseIndex = tc.writeRev
+			require.NoError(t, dot.Initialize())
+
+			pfPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", f.PackfileHash))
+			idxPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", f.PackfileHash))
+			revPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.rev", f.PackfileHash))
+
+			writePack := func() {
+				t.Helper()
+				w, err := dot.NewObjectPack()
+				require.NoError(t, err)
+
+				pf, pfErr := f.Packfile()
+				require.NoError(t, pfErr)
+				_, err = io.Copy(w, pf)
+				require.NoError(t, err)
+				require.NoError(t, w.Close())
+			}
+
+			writePack()
+
+			ro, err := isReadOnly(tc.fs, pfPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", pfPath)
+
+			ro, err = isReadOnly(tc.fs, idxPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "file %q is not read-only", idxPath)
+
+			if tc.writeRev {
+				ro, err = isReadOnly(tc.fs, revPath)
+				require.NoError(t, err)
+				assert.True(t, ro, "file %q is not read-only", revPath)
+			}
+
+			// Writing the same pack again must not fail on read-only files.
+			writePack()
+
+			// Remove .idx only, keep .pack — the next write must
+			// recreate .idx without touching the existing .pack.
+			require.NoError(t, tc.fs.Remove(idxPath))
+			writePack()
+
+			_, err = tc.fs.Lstat(idxPath)
+			require.NoError(t, err, ".idx should have been recreated")
+
+			ro, err = isReadOnly(tc.fs, idxPath)
+			require.NoError(t, err)
+			assert.True(t, ro, "recreated %q is not read-only", idxPath)
+
+			if tc.writeRev {
+				// Remove .rev only — the next write must recreate it.
+				require.NoError(t, tc.fs.Remove(revPath))
+				writePack()
+
+				_, err = tc.fs.Lstat(revPath)
+				require.NoError(t, err, ".rev should have been recreated")
+
+				ro, err = isReadOnly(tc.fs, revPath)
+				require.NoError(t, err)
+				assert.True(t, ro, "recreated %q is not read-only", revPath)
+			}
+		})
+	}
+}
+
+func TestPackWriterRejectsNonRegularFile(t *testing.T) {
+	t.Parallel()
+
+	for _, ext := range []string{".idx", ".pack", ".rev"} {
+		t.Run(ext, func(t *testing.T) {
+			t.Parallel()
+
+			f := fixtures.Basic().One()
+			fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
+
+			dot := New(fs)
+			dot.options.WriteReverseIndex = (ext == ".rev")
+			require.NoError(t, dot.Initialize())
+
+			// Place a directory where the pack file should go.
+			path := filepath.Join("objects", "pack",
+				fmt.Sprintf("pack-%s%s", f.PackfileHash, ext))
+			require.NoError(t, fs.MkdirAll(path, 0o755))
+
+			w, err := dot.NewObjectPack()
+			require.NoError(t, err)
+
+			pf, pfErr := f.Packfile()
+			require.NoError(t, pfErr)
+			_, err = io.Copy(w, pf)
+			require.NoError(t, err)
+
+			err = w.Close()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unexpected file type")
 		})
 	}
 }

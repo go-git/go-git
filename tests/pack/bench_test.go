@@ -10,7 +10,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -30,7 +30,13 @@ func dataSources(tb testing.TB) []dataSource {
 		name: "basic-fixture",
 		files: func() (billy.File, billy.File, billy.File) {
 			fixture := fixtures.NewOSFixture(fixtures.Basic().One(), tb.TempDir())
-			return fixture.Packfile(), fixture.Idx(), fixture.Rev()
+			pack, err := fixture.Packfile()
+			require.NoError(tb, err)
+			idx, err := fixture.Idx()
+			require.NoError(tb, err)
+			rev, err := fixture.Rev()
+			require.NoError(tb, err)
+			return pack, idx, rev
 		},
 		run: true,
 		offsetHashMap: map[uint64]string{

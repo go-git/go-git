@@ -9,61 +9,53 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
-	"github.com/stretchr/testify/assert"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/storage/filesystem"
+	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
-// This test tests proxy support via an env var, i.e. `HTTPS_PROXY`.
-// Its located in a separate package because golang caches the value
-// of proxy env vars leading to misleading/unexpected test results.
 func TestProxySuite(t *testing.T) {
 	t.Parallel()
-	suite.Run(t, new(ProxySuite))
+	suite.Run(t, new(proxySuite))
 }
 
-type ProxySuite struct {
+type proxySuite struct {
 	suite.Suite
 }
 
-func (s *ProxySuite) TestAdvertisedReferencesHTTP() {
+func (s *proxySuite) TestAdvertisedReferencesHTTP() {
 	var proxiedRequests int32
-
-	proxy := newTestProxy(&proxiedRequests)
-
+	proxy := newTestProxy(&proxiedRequests, "user", "pass")
 	httpProxyAddr := setupProxyServer(s.T(), proxy, false, true)
 
-	base, port := setupServer(s.T(), true)
+	base, addr := setupSmartServer(s.T())
+	prepareRepo(s.T(), fixtures.Basic().One(), base, "basic.git")
 
-	endpoint := newEndpoint(s.T(), port, "basic.git")
-	endpoint.Proxy = transport.ProxyOptions{
-		URL:      httpProxyAddr,
-		Username: "user",
-		Password: "pass",
-	}
-
-	client := NewTransport(nil)
-	dotgit := test.PrepareRepository(s.T(), fixtures.Basic().One(), base, "basic.git")
-	st := filesystem.NewStorage(dotgit, nil)
-
-	session, err := client.NewSession(st, endpoint, nil)
+	proxyURL, err := url.Parse(httpProxyAddr)
+	proxyURL.User = url.UserPassword("user", "pass")
 	s.Require().NoError(err)
-	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
-	s.Require().NoError(err)
+	tr := NewTransport(Options{
+		HTTPProxy: http.ProxyURL(proxyURL),
+	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	info, err := conn.GetRemoteRefs(ctx)
+	endpoint := httpEndpoint(addr, "basic.git")
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     endpoint,
+		Command: transport.UploadPackService,
+	})
+	s.Require().NoError(err)
+	defer session.Close()
+
+	info, err := session.GetRemoteRefs(context.Background())
 	s.NoError(err)
 	s.NotNil(info)
 
@@ -71,34 +63,29 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTP() {
 	s.True(proxyUsed)
 }
 
-func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
+func (s *proxySuite) TestAdvertisedReferencesHTTPS() {
 	var proxiedRequests int32
-
-	proxy := newTestProxy(&proxiedRequests)
-
+	proxy := newTestProxy(&proxiedRequests, "user", "pass")
 	httpsProxyAddr := setupProxyServer(s.T(), proxy, true, true)
 
-	endpoint, err := transport.NewEndpoint("https://github.com/git-fixtures/basic.git")
+	proxyURL, err := url.Parse(httpsProxyAddr)
+	proxyURL.User = url.UserPassword("user", "pass")
 	s.Require().NoError(err)
-	endpoint.Proxy = transport.ProxyOptions{
-		URL:      httpsProxyAddr,
-		Username: "user",
-		Password: "pass",
-	}
-	endpoint.InsecureSkipTLS = true
+	tr := NewTransport(Options{
+		HTTPProxy: http.ProxyURL(proxyURL),
+		TLS:       &tls.Config{InsecureSkipVerify: true},
+	})
 
-	client := NewTransport(nil)
-	dotgit := test.PrepareRepository(s.T(), fixtures.Basic().One(), s.T().TempDir(), "basic.git")
-	st := filesystem.NewStorage(dotgit, nil)
-
-	session, err := client.NewSession(st, endpoint, nil)
+	endpoint, err := url.Parse("https://github.com/git-fixtures/basic.git")
 	s.Require().NoError(err)
-	conn, err := session.Handshake(context.Background(), transport.UploadPackService)
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     endpoint,
+		Command: transport.UploadPackService,
+	})
 	s.Require().NoError(err)
+	defer session.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	info, err := conn.GetRemoteRefs(ctx)
+	info, err := session.GetRemoteRefs(context.Background())
 	s.NoError(err)
 	s.NotNil(info)
 
@@ -109,8 +96,9 @@ func (s *ProxySuite) TestAdvertisedReferencesHTTPS() {
 //go:embed testdata/certs/*
 var certs embed.FS
 
-// Make sure you close the server after the test.
 func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool) string {
+	t.Helper()
+
 	schema := "http"
 	if isTLS {
 		schema = "https"
@@ -132,39 +120,33 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool
 
 	if isTLS {
 		certf, err := certs.Open("testdata/certs/server.crt")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer certf.Close()
 		keyf, err := certs.Open("testdata/certs/server.key")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		defer keyf.Close()
 		cert, err := io.ReadAll(certf)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		key, err := io.ReadAll(keyf)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		keyPair, err := tls.X509KeyPair(cert, key)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		cfg := &tls.Config{
 			NextProtos:   []string{"http/1.1"},
 			Certificates: []tls.Certificate{keyPair},
 		}
-
-		// Due to how golang manages http/2 when provided with custom TLS config,
-		// servers and clients running in the same process leads to issues.
-		// Ref: https://github.com/golang/go/issues/21336
 		proxyServer.TLSConfig = cfg
 	}
 
 	done := make(chan struct{})
-
 	go func() {
-		defer func() { close(done) }()
+		defer close(done)
 		var err error
 		if isTLS {
 			err = proxyServer.ServeTLS(httpListener, "", "")
 		} else {
 			err = proxyServer.Serve(httpListener)
 		}
-
 		require.ErrorIs(t, err, http.ErrServerClosed)
 	}()
 
@@ -176,34 +158,31 @@ func setupProxyServer(t testing.TB, handler http.Handler, isTLS, schemaAddr bool
 	return httpProxyAddr
 }
 
-// testProxy is a minimal HTTP/HTTPS proxy for testing.
 type testProxy struct {
 	proxiedRequests *int32
+	username        string
+	password        string
 }
 
-func newTestProxy(proxiedRequests *int32) *testProxy {
-	return &testProxy{proxiedRequests: proxiedRequests}
+func newTestProxy(proxiedRequests *int32, username, password string) *testProxy {
+	return &testProxy{proxiedRequests: proxiedRequests, username: username, password: password}
 }
 
 func (p *testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Check proxy authentication
 	user, pass, _ := parseBasicAuth(r.Header.Get("Proxy-Authorization"))
-	if user != "user" || pass != "pass" {
+	if user != p.username || pass != p.password {
 		http.Error(w, "Proxy Authentication Required", http.StatusProxyAuthRequired)
 		return
 	}
 
 	if r.Method == http.MethodConnect {
-		// HTTPS proxy: handle CONNECT requests
 		p.handleConnect(w, r)
 	} else {
-		// HTTP proxy: forward the request
 		p.handleHTTP(w, r)
 	}
 }
 
 func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
-	// Only allow connections to github.com for HTTPS tests
 	if !strings.Contains(r.Host, "github.com") && !strings.Contains(r.Host, "localhost") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
@@ -211,14 +190,12 @@ func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	atomic.AddInt32(p.proxiedRequests, 1)
 
-	// Establish connection to the target
 	targetConn, err := net.Dial("tcp", r.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
-	// Hijack the connection first
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
@@ -233,7 +210,6 @@ func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send 200 Connection Established response manually after hijacking
 	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	if err != nil {
 		targetConn.Close()
@@ -241,24 +217,19 @@ func (p *testProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tunnel data between client and target.
-	// Use one goroutine for client->target, current goroutine for target->client.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_, _ = io.Copy(targetConn, clientConn)
-		targetConn.Close() // Signal EOF to the other direction
-	}()
+		targetConn.Close()
+	})
 
 	_, _ = io.Copy(clientConn, targetConn)
-	clientConn.Close() // Signal EOF to the other direction
+	clientConn.Close()
 
 	wg.Wait()
 }
 
 func (p *testProxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
-	// Only allow requests to localhost for HTTP tests
 	if !strings.Contains(r.Host, "localhost") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
@@ -266,20 +237,13 @@ func (p *testProxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	atomic.AddInt32(p.proxiedRequests, 1)
 
-	// Create a new request to the target
 	outReq := r.Clone(r.Context())
 	outReq.RequestURI = ""
 
-	// Remove hop-by-hop headers
 	hopHeaders := []string{
-		"Connection",
-		"Proxy-Connection", // non-standard but still sent by some proxies
-		"Keep-Alive",
-		"Proxy-Authorization",
-		"TE",
-		"Trailer",
-		"Transfer-Encoding",
-		"Upgrade",
+		"Connection", "Proxy-Connection", "Keep-Alive",
+		"Proxy-Authorization", "TE", "Trailer",
+		"Transfer-Encoding", "Upgrade",
 	}
 	for _, h := range hopHeaders {
 		outReq.Header.Del(h)
@@ -292,7 +256,6 @@ func (p *testProxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers
 	for key, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)
@@ -302,7 +265,6 @@ func (p *testProxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
-// adapted from https://github.com/golang/go/blob/2ef70d9d0f98832c8103a7968b195e560a8bb262/src/net/http/request.go#L959
 func parseBasicAuth(auth string) (username, password string, ok bool) {
 	const prefix = "Basic "
 	if len(auth) < len(prefix) || !strings.EqualFold(auth[:len(prefix)], prefix) {

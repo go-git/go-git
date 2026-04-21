@@ -35,9 +35,10 @@ type PackWriter struct {
 	writer   *idxfile.Writer
 	result   chan error
 	format   formatcfg.ObjectFormat
+	writeRev bool
 }
 
-func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -49,12 +50,13 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat) (*PackWrit
 	}
 
 	writer := &PackWriter{
-		fs:     fs,
-		fw:     fw,
-		fr:     fr,
-		synced: newSyncedReader(fw, fr),
-		result: make(chan error),
-		format: format,
+		fs:       fs,
+		fw:       fw,
+		fr:       fr,
+		synced:   newSyncedReader(fw, fr),
+		result:   make(chan error),
+		format:   format,
+		writeRev: writeRev,
 	}
 
 	writer.checksum.ResetBySize(format.Size())
@@ -138,48 +140,90 @@ func (w *PackWriter) clean() error {
 func (w *PackWriter) save() error {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
 
-	idx, err := w.fs.Create(fmt.Sprintf("%s.idx", base))
-	if err != nil {
-		return err
-	}
-
 	h := crypto.SHA1.New()
 	if w.checksum.Size() == crypto.SHA256.Size() {
 		h = crypto.SHA256.New()
 	}
 
-	if err := w.encodeIdx(idx, h); err != nil {
-		_ = idx.Close()
-		return err
-	}
-
-	if err := idx.Close(); err != nil {
-		return err
-	}
-	fixPermissions(w.fs, fmt.Sprintf("%s.idx", base))
-
-	rev, err := w.fs.Create(fmt.Sprintf("%s.rev", base))
+	// Pack files are content addressable. Each file is checked
+	// individually — if it already exists on disk, skip creating it.
+	idxPath := fmt.Sprintf("%s.idx", base)
+	exists, err := fileExists(w.fs, idxPath)
 	if err != nil {
 		return err
 	}
+	if !exists {
+		idx, err := w.fs.Create(idxPath)
+		if err != nil {
+			return err
+		}
 
-	if err := w.encodeRev(rev, h); err != nil {
-		_ = rev.Close()
-		return err
+		if err := w.encodeIdx(idx, h); err != nil {
+			_ = idx.Close()
+			return err
+		}
+
+		if err := idx.Close(); err != nil {
+			return err
+		}
+		fixPermissions(w.fs, idxPath)
 	}
 
-	if err := rev.Close(); err != nil {
-		return err
+	if w.writeRev {
+		revPath := fmt.Sprintf("%s.rev", base)
+		exists, err := fileExists(w.fs, revPath)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			rev, err := w.fs.Create(revPath)
+			if err != nil {
+				return err
+			}
+
+			if err := w.encodeRev(rev, h); err != nil {
+				_ = rev.Close()
+				return err
+			}
+
+			if err := rev.Close(); err != nil {
+				return err
+			}
+			fixPermissions(w.fs, revPath)
+		}
 	}
-	fixPermissions(w.fs, fmt.Sprintf("%s.rev", base))
 
 	packPath := fmt.Sprintf("%s.pack", base)
-	if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
+	exists, err = fileExists(w.fs, packPath)
+	if err != nil {
 		return err
 	}
-	fixPermissions(w.fs, packPath)
+	if !exists {
+		if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
+			return err
+		}
+		fixPermissions(w.fs, packPath)
+	} else {
+		// Pack already exists, clean up the temp file.
+		return w.clean()
+	}
 
 	return nil
+}
+
+// fileExists checks whether path already exists as a regular file.
+// It returns (true, nil) for an existing regular file, (false, nil) when the
+// path does not exist, and (false, err) if the path exists but is not a
+// regular file (e.g. a directory or symlink).
+func fileExists(fs billy.Filesystem, path string) (bool, error) {
+	fi, err := fs.Lstat(path)
+	if err != nil {
+		return false, nil
+	}
+	if !fi.Mode().IsRegular() {
+		return false, fmt.Errorf("unexpected file type for %q: %s", path, fi.Mode().Type())
+	}
+	return true, nil
 }
 
 func (w *PackWriter) encodeIdx(writer io.Writer, h hash.Hash) error {
@@ -287,6 +331,7 @@ func (s *syncedReader) Close() error {
 	return nil
 }
 
+// ObjectWriter writes a single git object to the filesystem.
 type ObjectWriter struct {
 	objfile.Writer
 	fs billy.Filesystem
@@ -306,6 +351,7 @@ func newObjectWriter(fs billy.Filesystem) (*ObjectWriter, error) {
 	}, nil
 }
 
+// Close finalizes the object and moves it to its permanent location.
 func (w *ObjectWriter) Close() error {
 	if err := w.Writer.Close(); err != nil {
 		return err
@@ -326,7 +372,7 @@ func (w *ObjectWriter) save() error {
 	// Loose objects are content addressable, if they already exist
 	// we can safely delete the temporary file and short-circuit the
 	// operation.
-	if _, err := w.fs.Stat(file); err == nil {
+	if _, err := w.fs.Lstat(file); err == nil {
 		return w.fs.Remove(w.f.Name())
 	}
 

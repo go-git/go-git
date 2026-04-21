@@ -18,13 +18,13 @@ import (
 // ErrUpdateReference is returned when a reference update fails.
 var ErrUpdateReference = errors.New("failed to update ref")
 
-// AdvertiseReferences is a server command that implements the reference
+// AdvertiseRefs is a server command that implements the reference
 // discovery phase of the Git transfer protocol.
-func AdvertiseReferences(
+func AdvertiseRefs(
 	_ context.Context,
 	st storage.Storer,
 	w io.Writer,
-	service Service,
+	service string,
 	smart bool,
 ) error {
 	switch service {
@@ -78,7 +78,7 @@ func AdvertiseReferences(
 
 	if smart {
 		smartReply := packp.SmartReply{
-			Service: service.String(),
+			Service: service,
 		}
 
 		if err := smartReply.Encode(w); err != nil {
@@ -112,8 +112,13 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			if !addHead {
 				return nil
 			}
-			// Add default branch HEAD symref
-			_ = ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+			// Only advertise a symref when HEAD is symbolic. A detached HEAD
+			// (HashReference) has no branch target to advertise; emitting
+			// "HEAD:" with an empty target corrupts the capability list and
+			// causes the client to store an unresolvable HEAD symref.
+			if r.Type() == plumbing.SymbolicReference {
+				_ = ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+			}
 			ar.Head = &hash
 		}
 		ar.References[name.String()] = hash

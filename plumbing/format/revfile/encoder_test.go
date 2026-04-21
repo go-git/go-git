@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,12 +18,13 @@ func TestEncode(t *testing.T) {
 	t.Parallel()
 
 	fixture := fixtures.ByTag("packfile-sha256").One()
-	idxf := fixture.Idx()
+	idxf, err := fixture.Idx()
+	require.NoError(t, err)
 	require.NotNil(t, idxf)
 
 	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
 	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
-	err := idec.Decode(idx)
+	err = idec.Decode(idx)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -62,7 +63,9 @@ func TestEncode(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 
-				content, err := io.ReadAll(fixture.Rev())
+				revf, err := fixture.Rev()
+				require.NoError(t, err)
+				content, err := io.ReadAll(revf)
 				require.NoError(t, err)
 
 				// Ensure the produced rev file is byte-identical to
@@ -96,12 +99,13 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			idxf := tc.fixture.Idx()
+			idxf, err := tc.fixture.Idx()
+			require.NoError(t, err)
 			require.NotNil(t, idxf)
 
 			idx := idxfile.NewMemoryIndex(tc.hasher.Size())
 			idec := idxfile.NewDecoder(idxf, hash.New(tc.hasher))
-			err := idec.Decode(idx)
+			err = idec.Decode(idx)
 			require.NoError(t, err)
 
 			var buf bytes.Buffer

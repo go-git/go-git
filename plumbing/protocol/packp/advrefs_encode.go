@@ -148,7 +148,7 @@ func encodeShallow(e *advRefsEncoder) encoderStateFn {
 }
 
 func sortShallows(c []plumbing.Hash) []string {
-	ret := []string{}
+	ret := make([]string, 0, len(c))
 	for _, h := range c {
 		ret = append(ret, h.String())
 	}

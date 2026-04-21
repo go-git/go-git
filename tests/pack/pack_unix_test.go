@@ -5,7 +5,8 @@ package pack_test
 import (
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -14,7 +15,12 @@ func TestPackScanner(t *testing.T) {
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
 	suite.Run(t, &PackHandlerSuite[uint64]{
 		newPackHandler: func() packHandler[uint64] {
-			pack, idx, rev := fixture.Packfile(), fixture.Idx(), fixture.Rev()
+			pack, err := fixture.Packfile()
+			require.NoError(t, err)
+			idx, err := fixture.Idx()
+			require.NoError(t, err)
+			rev, err := fixture.Rev()
+			require.NoError(t, err)
 			t.Cleanup(func() {
 				pack.Close()
 				idx.Close()

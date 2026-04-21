@@ -44,6 +44,7 @@ const (
 type ObjectFormat string
 
 const (
+	// UnsetObjectFormat indicates no object format has been set.
 	UnsetObjectFormat ObjectFormat = ""
 
 	// SHA1 represents the object format used for SHA1.

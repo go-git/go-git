@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -100,7 +100,9 @@ func TestPackfileWriter(t *testing.T) {
 		assert.NoError(t, err)
 
 		f := fixtures.Basic().One()
-		_, err = io.Copy(pw, f.Packfile())
+		pf, pfErr := f.Packfile()
+		assert.NoError(t, pfErr)
+		_, err = io.Copy(pw, pf)
 		assert.NoError(t, err)
 
 		err = pw.Close()
@@ -138,7 +140,9 @@ func TestDeltaObjectStorer(t *testing.T) {
 		require.NoError(t, err)
 
 		f := fixtures.Basic().One()
-		_, err = io.Copy(pw, f.Packfile())
+		pf, pfErr := f.Packfile()
+		assert.NoError(t, pfErr)
+		_, err = io.Copy(pw, pf)
 		require.NoError(t, err)
 
 		err = pw.Close()

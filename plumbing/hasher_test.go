@@ -143,15 +143,13 @@ func TestThreadSafety(t *testing.T) {
 
 			var wg sync.WaitGroup
 			for i := 0; i < tc.count; i++ {
-				wg.Add(1)
-				go func() {
+				wg.Go(func() {
 					h, err := oh.Compute(tc.ot, tc.content)
 					assert.NoError(t, err)
 
 					got := h.String()
 					assert.Equal(t, tc.want, got, "resulting hash impacted by race condition")
-					wg.Done()
-				}()
+				})
 			}
 			wg.Wait()
 		})

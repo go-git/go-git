@@ -17,6 +17,7 @@ import (
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 )
 
+// Errors returned by PackScanner operations.
 var (
 	ErrObjectNotFound   = errors.New("object not found")
 	ErrOffsetNotFound   = errors.New("offset not found in packfile")
@@ -47,6 +48,7 @@ type PackScanner struct {
 	revCleanup  func() error
 }
 
+// NewPackScanner creates a PackScanner from the given pack, idx, and rev files.
 func NewPackScanner(hashSize int, pack, idx, rev billy.File) (*PackScanner, error) {
 	s := &PackScanner{
 		hashSize: hashSize,

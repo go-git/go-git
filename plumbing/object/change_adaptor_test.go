@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -24,7 +24,9 @@ type ChangeAdaptorSuite struct {
 
 func (s *ChangeAdaptorSuite) SetupSuite() {
 	s.Fixture = fixtures.Basic().One()
-	sto := filesystem.NewStorage(s.Fixture.DotGit(), cache.NewObjectLRUDefault())
+	dotgit, err := s.Fixture.DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	s.Storer = sto
 }
 
@@ -61,14 +63,16 @@ func (s *ChangeAdaptorSuite) TestTreeNoderHashHasMode() {
 		mode: mode,
 	}
 
-	expected := []byte{
+	modeBytes := filemode.Regular.Bytes()
+	expected := make([]byte, 0, 20+len(modeBytes))
+	expected = append(expected,
 		0xaa, 0xaa, 0x00, 0x00, // original hash is aaaa and 16 zeros
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
-	}
-	expected = append(expected, filemode.Regular.Bytes()...)
+	)
+	expected = append(expected, modeBytes...)
 
 	s.Equal(expected, treeNoder.Hash())
 }

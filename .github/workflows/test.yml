@@ -5,7 +5,13 @@ on:
     branches:
     - releases/v5.x
     - main
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
   pull_request:
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
 
 permissions: {}
 
@@ -14,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [1.24.x, 1.25.x]
+        go-version: [oldstable, stable]
         platform: [ubuntu-latest, macos-latest, windows-latest]
 
     permissions:
@@ -52,7 +58,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [1.24.x, 1.25.x]
+        go-version: [oldstable, stable]
 
     permissions:
       contents: read
