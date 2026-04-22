@@ -3,6 +3,7 @@ package sync
 import (
 	"bytes"
 	"compress/zlib"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -38,7 +39,7 @@ var (
 )
 
 func init() {
-	var p ZlibProvider = stdlibZlibProvider{}
+	var p ZlibProvider = StdlibZlibProvider{}
 	zlibProvider.Store(&p)
 }
 
@@ -48,11 +49,11 @@ func init() {
 //
 // Implementations must support Reset being called on a reader after
 // Close so that pooled readers can be re-seeded with a new source and
-// dictionary, matching zlib.Resetter semantics.
+// dictionary, matching zlib.Resetter semantics. Reset runs once per
+// packfile object during scan, so it should be O(1) and avoid
+// reallocating decompressor state.
 type ZlibReader interface {
 	io.ReadCloser
-	// Reset swaps the source and an optional preset dictionary without
-	// reallocating, matching zlib.Resetter.
 	Reset(r io.Reader, dict []byte) error
 }
 
@@ -68,16 +69,15 @@ type ZlibReader interface {
 //     closes.
 //   - Reset after Close is supported: packfile.Encoder closes the
 //     writer once per object entry and then calls Reset to reuse it
-//     for the next entry within the same encode.
+//     for the next entry within the same encode. Reset is on the
+//     per-object hot path during encode, so it should be O(1) and
+//     avoid reallocating compressor state.
 //   - Flush writes any pending compressed data to the underlying
 //     writer without ending the stream; the writer remains usable
 //     after Flush.
 type ZlibWriter interface {
 	io.WriteCloser
-	// Reset swaps the destination writer, matching *zlib.Writer.Reset.
 	Reset(w io.Writer)
-	// Flush writes any pending compressed data to the underlying
-	// writer, matching *zlib.Writer.Flush.
 	Flush() error
 }
 
@@ -125,21 +125,29 @@ func activeZlibProvider() ZlibProvider {
 	return *zlibProvider.Load()
 }
 
-// stdlibZlibProvider produces compress/zlib readers and writers and is
-// the default provider registered in init.
-type stdlibZlibProvider struct{}
+// StdlibZlibProvider produces readers and writers from the Go
+// standard library's compress/zlib package. It is the default
+// provider registered in init, and is exported so custom providers
+// can delegate to it (for example, to wrap stdlib with instrumentation
+// or a partial klauspost migration).
+type StdlibZlibProvider struct{}
 
-func (stdlibZlibProvider) NewReader(r io.Reader) (ZlibReader, error) {
+// NewReader returns a zlib decompression reader backed by
+// compress/zlib.
+func (StdlibZlibProvider) NewReader(r io.Reader) (ZlibReader, error) {
 	zr, err := zlib.NewReader(r)
 	if err != nil {
 		return nil, err
 	}
-	// compress/zlib's reader value implements zlib.Resetter, so its
-	// concrete type satisfies ZlibReader.
-	return zr.(ZlibReader), nil
+	zlr, ok := zr.(ZlibReader)
+	if !ok {
+		return nil, fmt.Errorf("utils/sync: compress/zlib reader %T does not implement zlib.Resetter", zr)
+	}
+	return zlr, nil
 }
 
-func (stdlibZlibProvider) NewWriter(w io.Writer) ZlibWriter {
+// NewWriter returns a zlib compression writer backed by compress/zlib.
+func (StdlibZlibProvider) NewWriter(w io.Writer) ZlibWriter {
 	return zlib.NewWriter(w)
 }
 

@@ -81,10 +81,13 @@ New `SHA1` or `SHA256` hash functions that implement the `hash.RegisterHash` int
 
 `go-git` uses zlib compression for loose objects and packfile entries. By default it uses the Go standard library's `compress/zlib`. The implementation is pluggable via the [`utils/sync.ZlibProvider`](utils/sync/zlib.go) interface, which lets you swap in a drop-in alternative — for example [`github.com/klauspost/compress/zlib`](https://github.com/klauspost/compress) — without `go-git` taking a direct dependency on it.
 
+> **Breaking change in v6.** `utils/sync.GetZlibWriter` now returns `sync.ZlibWriter` (an interface) instead of `*zlib.Writer`, and `PutZlibWriter` accepts the same interface. Callers that previously relied on the concrete `*zlib.Writer` return type will need to update to the interface, whose method set is `Write`, `Close`, `Reset(io.Writer)`, and `Flush`.
+
 Install a provider during program init, before any `go-git` operation runs:
 
 ```go
 import (
+    "fmt"
     "io"
 
     kpzlib "github.com/klauspost/compress/zlib"
@@ -99,7 +102,11 @@ func (klauspostProvider) NewReader(r io.Reader) (gogitsync.ZlibReader, error) {
     if err != nil {
         return nil, err
     }
-    return zr.(gogitsync.ZlibReader), nil
+    zlr, ok := zr.(gogitsync.ZlibReader)
+    if !ok {
+        return nil, fmt.Errorf("klauspost reader %T does not implement Resetter", zr)
+    }
+    return zlr, nil
 }
 
 func (klauspostProvider) NewWriter(w io.Writer) gogitsync.ZlibWriter {
@@ -112,8 +119,6 @@ func init() {
 ```
 
 `SetZlibProvider` returns the previously installed provider, which is useful for save-and-restore patterns in tests. Installing a provider after `go-git` has begun compressing or decompressing data is undefined — see the `SetZlibProvider` godoc for the full contract.
-
-> **Breaking change in v6.** `utils/sync.GetZlibWriter` now returns `sync.ZlibWriter` (an interface) instead of `*zlib.Writer`, and `PutZlibWriter` accepts the same interface. Callers that previously relied on the concrete `*zlib.Writer` return type will need to update to the interface, whose method set is `Write`, `Close`, `Reset(io.Writer)`, and `Flush`.
 
 ## Plugin System (Experimental)
 

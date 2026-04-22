@@ -15,23 +15,6 @@ import (
 	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
-// stdlibWrapper mirrors the package-internal default provider. It lets
-// test code construct a tracking provider that delegates to the stdlib
-// without coupling to unexported types.
-type stdlibWrapper struct{}
-
-func (stdlibWrapper) NewReader(r io.Reader) (gogitsync.ZlibReader, error) {
-	zr, err := zlib.NewReader(r)
-	if err != nil {
-		return nil, err
-	}
-	return zr.(gogitsync.ZlibReader), nil
-}
-
-func (stdlibWrapper) NewWriter(w io.Writer) gogitsync.ZlibWriter {
-	return zlib.NewWriter(w)
-}
-
 // trackingProvider wraps another provider and counts factory calls and
 // bytes flowing through returned readers/writers.
 type trackingProvider struct {
@@ -78,13 +61,13 @@ func (w *trackingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func TestSetZlibProviderReturnsPrevious(t *testing.T) {
-	p1 := &trackingProvider{inner: stdlibWrapper{}}
+func TestSetZlibProviderReturnsPrevious(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
+	p1 := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
 	prev := gogitsync.SetZlibProvider(p1)
 	defer gogitsync.SetZlibProvider(prev)
 	require.NotNil(t, prev, "default provider must not be nil")
 
-	p2 := &trackingProvider{inner: stdlibWrapper{}}
+	p2 := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
 	fromSwap := gogitsync.SetZlibProvider(p2)
 	assert.Same(t, p1, fromSwap)
 
@@ -93,14 +76,15 @@ func TestSetZlibProviderReturnsPrevious(t *testing.T) {
 }
 
 func TestSetZlibProviderPanicsOnNil(t *testing.T) {
+	t.Parallel()
 	assert.PanicsWithValue(t,
 		"utils/sync: SetZlibProvider called with nil provider",
 		func() { gogitsync.SetZlibProvider(nil) },
 	)
 }
 
-func TestNewZlibWriterUsesActiveProvider(t *testing.T) {
-	tracker := &trackingProvider{inner: stdlibWrapper{}}
+func TestNewZlibWriterUsesActiveProvider(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
+	tracker := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
 	prev := gogitsync.SetZlibProvider(tracker)
 	defer gogitsync.SetZlibProvider(prev)
 
@@ -128,8 +112,8 @@ func TestNewZlibWriterUsesActiveProvider(t *testing.T) {
 // (objfile) and verifies a round-trip works with a custom provider
 // installed. This is the first test to touch the sync.Pool in this
 // binary, so New is guaranteed to fire through the tracker.
-func TestObjfileRoundTripUsesActiveProvider(t *testing.T) {
-	tracker := &trackingProvider{inner: stdlibWrapper{}}
+func TestObjfileRoundTripUsesActiveProvider(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
+	tracker := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
 	prev := gogitsync.SetZlibProvider(tracker)
 	defer gogitsync.SetZlibProvider(prev)
 
@@ -162,6 +146,7 @@ func TestObjfileRoundTripUsesActiveProvider(t *testing.T) {
 }
 
 func TestDefaultProviderRoundTripWithStdlib(t *testing.T) {
+	t.Parallel()
 	payload := []byte("default provider check")
 
 	var buf bytes.Buffer
