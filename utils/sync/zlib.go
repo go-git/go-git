@@ -15,7 +15,15 @@ var (
 
 	zlibReader = sync.Pool{
 		New: func() any {
-			r, _ := activeZlibProvider().NewReader(bytes.NewReader(zlibInitBytes))
+			r, err := activeZlibProvider().NewReader(bytes.NewReader(zlibInitBytes))
+			if err != nil {
+				// Unreachable for any conforming zlib implementation:
+				// zlibInitBytes is a minimal valid zlib stream used to
+				// seed the pool. A provider returning an error here is
+				// non-compliant; fail loudly rather than stash a nil
+				// reader that would panic with no context on first use.
+				panic("utils/sync: zlib provider failed to initialize pooled reader: " + err.Error())
+			}
 			return &ZLibReader{
 				reader: r,
 				dict:   nil,
@@ -37,6 +45,10 @@ func init() {
 // ZlibReader is the method set required of a zlib decompression reader.
 // It matches the value returned by compress/zlib.NewReader, which
 // implements both io.ReadCloser and zlib.Resetter.
+//
+// Implementations must support Reset being called on a reader after
+// Close so that pooled readers can be re-seeded with a new source and
+// dictionary, matching zlib.Resetter semantics.
 type ZlibReader interface {
 	io.ReadCloser
 	// Reset swaps the source and an optional preset dictionary without
@@ -46,6 +58,20 @@ type ZlibReader interface {
 
 // ZlibWriter is the method set required of a zlib compression writer.
 // It matches the stdlib *zlib.Writer.
+//
+// Implementations must preserve the following behavioral contract
+// that go-git relies on:
+//
+//   - Close flushes pending data and writes the zlib stream footer,
+//     but must not close the underlying io.Writer. Both objfile and
+//     packfile keep using the wrapped writer after the ZlibWriter
+//     closes.
+//   - Reset after Close is supported: packfile.Encoder closes the
+//     writer once per object entry and then calls Reset to reuse it
+//     for the next entry within the same encode.
+//   - Flush writes any pending compressed data to the underlying
+//     writer without ending the stream; the writer remains usable
+//     after Flush.
 type ZlibWriter interface {
 	io.WriteCloser
 	// Reset swaps the destination writer, matching *zlib.Writer.Reset.
@@ -80,7 +106,14 @@ type ZlibProvider interface {
 // entries remain on the old provider until the garbage collector
 // evicts them, and callers that have already acquired a reader or
 // writer continue to use the old one.
+//
+// SetZlibProvider panics if p is nil. A typed-nil provider (a non-nil
+// interface wrapping a nil concrete value) cannot be detected here
+// and will panic on first use.
 func SetZlibProvider(p ZlibProvider) ZlibProvider {
+	if p == nil {
+		panic("utils/sync: SetZlibProvider called with nil provider")
+	}
 	prev := zlibProvider.Swap(&p)
 	if prev == nil {
 		return nil

@@ -85,7 +85,10 @@ Install a provider during program init, before any `go-git` operation runs:
 
 ```go
 import (
+    "io"
+
     kpzlib "github.com/klauspost/compress/zlib"
+
     gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 

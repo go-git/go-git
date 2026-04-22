@@ -92,6 +92,13 @@ func TestSetZlibProviderReturnsPrevious(t *testing.T) {
 	assert.Same(t, p2, restored)
 }
 
+func TestSetZlibProviderPanicsOnNil(t *testing.T) {
+	assert.PanicsWithValue(t,
+		"utils/sync: SetZlibProvider called with nil provider",
+		func() { gogitsync.SetZlibProvider(nil) },
+	)
+}
+
 func TestNewZlibWriterUsesActiveProvider(t *testing.T) {
 	tracker := &trackingProvider{inner: stdlibWrapper{}}
 	prev := gogitsync.SetZlibProvider(tracker)
