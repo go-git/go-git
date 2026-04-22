@@ -145,8 +145,13 @@ func TestObjfileRoundTripUsesActiveProvider(t *testing.T) { //nolint:paralleltes
 	assert.Positive(t, tracker.readBytes.Load(), "bytes should have flowed through the tracker reader")
 }
 
-func TestDefaultProviderRoundTripWithStdlib(t *testing.T) {
-	t.Parallel()
+func TestDefaultProviderRoundTripWithStdlib(t *testing.T) { //nolint:paralleltest // pins the zlib provider to Stdlib for the duration
+	// Force the stdlib provider for the duration so the assertion is
+	// about the default behavior, not about whatever provider a
+	// concurrent test has installed.
+	prev := gogitsync.SetZlibProvider(gogitsync.StdlibZlibProvider{})
+	defer gogitsync.SetZlibProvider(prev)
+
 	payload := []byte("default provider check")
 
 	var buf bytes.Buffer
