@@ -77,6 +77,41 @@ The default hash functions can be changed by calling `hash.RegisterHash`.
 
 New `SHA1` or `SHA256` hash functions that implement the `hash.RegisterHash` interface can be registered by calling `RegisterHash`.
 
+## Compression
+
+`go-git` uses zlib compression for loose objects and packfile entries. By default it uses the Go standard library's `compress/zlib`. The implementation is pluggable via the [`utils/sync.ZlibProvider`](utils/sync/zlib.go) interface, which lets you swap in a drop-in alternative — for example [`github.com/klauspost/compress/zlib`](https://github.com/klauspost/compress) — without `go-git` taking a direct dependency on it.
+
+Install a provider during program init, before any `go-git` operation runs:
+
+```go
+import (
+    kpzlib "github.com/klauspost/compress/zlib"
+    gogitsync "github.com/go-git/go-git/v6/utils/sync"
+)
+
+type klauspostProvider struct{}
+
+func (klauspostProvider) NewReader(r io.Reader) (gogitsync.ZlibReader, error) {
+    zr, err := kpzlib.NewReader(r)
+    if err != nil {
+        return nil, err
+    }
+    return zr.(gogitsync.ZlibReader), nil
+}
+
+func (klauspostProvider) NewWriter(w io.Writer) gogitsync.ZlibWriter {
+    return kpzlib.NewWriter(w)
+}
+
+func init() {
+    gogitsync.SetZlibProvider(klauspostProvider{})
+}
+```
+
+`SetZlibProvider` returns the previously installed provider, which is useful for save-and-restore patterns in tests. Installing a provider after `go-git` has begun compressing or decompressing data is undefined — see the `SetZlibProvider` godoc for the full contract.
+
+> **Breaking change in v6.** `utils/sync.GetZlibWriter` now returns `sync.ZlibWriter` (an interface) instead of `*zlib.Writer`, and `PutZlibWriter` accepts the same interface. Callers that previously relied on the concrete `*zlib.Writer` return type will need to update to the interface, whose method set is `Write`, `Close`, `Reset(io.Writer)`, and `Flush`.
+
 ## Plugin System (Experimental)
 
 > **Note:** The plugin system is experimental and its API may change in future releases.
