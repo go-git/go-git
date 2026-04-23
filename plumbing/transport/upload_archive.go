@@ -95,6 +95,9 @@ func UploadArchive(
 					treeish = arg
 				}
 			} else {
+				if feature := unsupportedArchiveFeature(arg); feature != "" {
+					return muxError(mux, w, fmt.Errorf("unsupported feature: %s", feature))
+				}
 				return muxError(mux, w, fmt.Errorf("unknown option: %s", arg))
 			}
 		}
@@ -176,6 +179,23 @@ func muxError(mux *sideband.Muxer, w io.Writer, err error) error {
 	_, _ = mux.WriteChannel(sideband.ErrorMessage, []byte(errMsg))
 	_ = pktline.WriteFlush(w)
 	return err
+}
+
+func unsupportedArchiveFeature(arg string) string {
+	switch {
+	case arg == "--worktree-attributes":
+		return "export-ignore / export-subst"
+	case arg == "--add-file" || strings.HasPrefix(arg, "--add-file="):
+		return "--add-file"
+	case arg == "--add-virtual-file" || strings.HasPrefix(arg, "--add-virtual-file="):
+		return "--add-virtual-file"
+	case arg == "--mtime" || strings.HasPrefix(arg, "--mtime="):
+		return "--mtime"
+	case len(arg) == 2 && arg[0] == '-' && arg[1] >= '0' && arg[1] <= '9':
+		return "archive backend compression options"
+	}
+
+	return ""
 }
 
 // readAllowUnreachable reads the uploadArchive.allowUnreachable config

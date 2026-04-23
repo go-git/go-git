@@ -592,6 +592,66 @@ func TestArchive_UnknownOption(t *testing.T) {
 	assert.Contains(t, err.Error(), "--unknown")
 }
 
+func TestArchive_UnsupportedFeature(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		args       []string
+		wantSubstr string
+	}{
+		{
+			name:       "worktree attributes",
+			args:       []string{"--format=tar", "--worktree-attributes", "master"},
+			wantSubstr: "export-ignore / export-subst",
+		},
+		{
+			name:       "compression option",
+			args:       []string{"--format=tar.gz", "-9", "master"},
+			wantSubstr: "archive backend compression options",
+		},
+		{
+			name:       "add file",
+			args:       []string{"--format=tar", "--add-file=extra.txt", "master"},
+			wantSubstr: "--add-file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := archiveSession(t)
+
+			r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+				Args: tt.args,
+			})
+			require.NoError(t, err)
+
+			_, err = io.ReadAll(r)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported feature")
+			assert.Contains(t, err.Error(), tt.wantSubstr)
+		})
+	}
+}
+
+func TestArchive_UnknownArgumentValue(t *testing.T) {
+	t.Parallel()
+
+	a := archiveSession(t)
+
+	r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=unknown", "master"},
+	})
+	require.NoError(t, err)
+
+	_, err = io.ReadAll(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported archive format")
+	assert.Contains(t, err.Error(), "unknown")
+}
+
 func TestArchive_MissingOptionArgument(t *testing.T) {
 	t.Parallel()
 
