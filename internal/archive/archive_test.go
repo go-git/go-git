@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -376,6 +377,74 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestResolveTreeish_AnnotatedTags(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.ByTag("tags").One()
+	dotGit, err := fixture.DotGit()
+	require.NoError(t, err)
+	storer := filesystem.NewStorage(dotGit, nil)
+
+	tests := []struct {
+		name    string
+		treeish string
+		assert  func(*testing.T, *object.Tag)
+	}{
+		{
+			name:    "commit target",
+			treeish: "commit-tag",
+			assert: func(t *testing.T, tag *object.Tag) {
+				commit, err := object.GetCommit(storer, tag.Target)
+				require.NoError(t, err)
+
+				expectedTree, err := commit.Tree()
+				require.NoError(t, err)
+
+				tree, commitHash, commitTime, err := ResolveTreeish(storer, "commit-tag", false)
+				require.NoError(t, err)
+				require.NotNil(t, commitHash)
+				assert.Equal(t, expectedTree.Hash, tree.Hash)
+				assert.Equal(t, commit.Hash, *commitHash)
+				assert.True(t, commit.Committer.When.Equal(commitTime))
+			},
+		},
+		{
+			name:    "tree target",
+			treeish: "tree-tag",
+			assert: func(t *testing.T, tag *object.Tag) {
+				expectedTree, err := object.GetTree(storer, tag.Target)
+				require.NoError(t, err)
+
+				tree, commitHash, commitTime, err := ResolveTreeish(storer, "tree-tag", false)
+				require.NoError(t, err)
+				assert.Equal(t, expectedTree.Hash, tree.Hash)
+				assert.Nil(t, commitHash)
+				assert.False(t, commitTime.IsZero())
+			},
+		},
+		{
+			name:    "unsupported target",
+			treeish: "blob-tag",
+			assert: func(t *testing.T, _ *object.Tag) {
+				_, _, _, err := ResolveTreeish(storer, "blob-tag", false)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported object type for archive")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tagRef, err := storer.Reference(plumbing.ReferenceName("refs/tags/" + tt.treeish))
+			require.NoError(t, err)
+
+			tag, err := object.GetTag(storer, tagRef.Hash())
+			require.NoError(t, err)
+
+			tt.assert(t, tag)
 		})
 	}
 }

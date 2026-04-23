@@ -108,6 +108,18 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 		return nil, nil, time.Time{}, fmt.Errorf("%w: %s", ErrObjectNotFound, treeish)
 	}
 
+	for {
+		tag, ok := obj.(*object.Tag)
+		if !ok {
+			break
+		}
+
+		obj, err = object.GetObject(st, tag.Target)
+		if err != nil {
+			return nil, nil, time.Time{}, fmt.Errorf("resolve annotated tag: %w", err)
+		}
+	}
+
 	var commitHash *plumbing.Hash
 	var commitTime time.Time
 	var tree *object.Tree
@@ -117,17 +129,6 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 		commitHash = &o.Hash
 		commitTime = o.Committer.When
 		tree, err = o.Tree()
-		if err != nil {
-			return nil, nil, time.Time{}, err
-		}
-	case *object.Tag:
-		commit, err := object.GetCommit(st, o.Target)
-		if err != nil {
-			return nil, nil, time.Time{}, err
-		}
-		commitHash = &commit.Hash
-		commitTime = commit.Committer.When
-		tree, err = commit.Tree()
 		if err != nil {
 			return nil, nil, time.Time{}, err
 		}
