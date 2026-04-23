@@ -438,6 +438,7 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tagRef, err := storer.Reference(plumbing.ReferenceName("refs/tags/" + tt.treeish))
 			require.NoError(t, err)
 
