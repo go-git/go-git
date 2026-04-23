@@ -31,6 +31,6 @@ type ZlibProvider = xzlib.Provider
 // Zlib returns the key used to register a zlib provider plugin. When
 // set, go-git uses this plugin to construct zlib readers and writers
 // instead of the built-in stdlib provider.
-func Zlib() key[ZlibProvider] { //nolint:revive // intentional unexported return type
+func Zlib() key[ZlibProvider] {
 	return zlibKey
 }
