@@ -1,15 +1,20 @@
 package archive
 
 import (
+	"bytes"
+	"strings"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 func TestMatchesPathFilter(t *testing.T) {
@@ -447,6 +452,44 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 			tt.assert(t, tag)
 		})
 	}
+}
+
+func TestWriteTarArchive_RejectsOversizedSymlinkTarget(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+
+	blobObj := &plumbing.MemoryObject{}
+	blobObj.SetType(plumbing.BlobObject)
+	_, err := blobObj.Write([]byte(strings.Repeat("a", maxTarSymlinkTargetSize+1)))
+	require.NoError(t, err)
+	blobHash, err := st.SetEncodedObject(blobObj)
+	require.NoError(t, err)
+
+	treeObj := &object.Tree{
+		Entries: []object.TreeEntry{
+			{
+				Name: "link",
+				Mode: filemode.Symlink,
+				Hash: blobHash,
+			},
+		},
+	}
+
+	encodedTree := &plumbing.MemoryObject{}
+	encodedTree.SetType(plumbing.TreeObject)
+	require.NoError(t, treeObj.Encode(encodedTree))
+	treeHash, err := st.SetEncodedObject(encodedTree)
+	require.NoError(t, err)
+
+	tree, err := object.GetTree(st, treeHash)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	err = WriteTarArchive(st, &buf, tree, nil, "", nil, time.Now())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSymlinkTargetTooLarge)
+	assert.Contains(t, err.Error(), "link")
 }
 
 func TestSupportedFormats(t *testing.T) {

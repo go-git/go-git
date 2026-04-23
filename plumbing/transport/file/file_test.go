@@ -418,7 +418,7 @@ func TestArchive_UnreachableBlocked(t *testing.T) {
 	assert.Contains(t, err.Error(), "only ref names are allowed")
 }
 
-func TestArchive_AllowUnreachableConfig(t *testing.T) {
+func TestArchive_BlockHash_AllowUnreachableConfig(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
@@ -450,8 +450,8 @@ func TestArchive_AllowUnreachableConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	data, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.Greater(t, len(data), 0)
+	require.ErrorContains(t, err, "upload-archive: only ref names are allowed")
+	require.Empty(t, data)
 
 	tr2 := tar.NewReader(bytes.NewReader(data))
 	var names []string
@@ -463,7 +463,7 @@ func TestArchive_AllowUnreachableConfig(t *testing.T) {
 		require.NoError(t, err)
 		names = append(names, hdr.Name)
 	}
-	assert.Greater(t, len(names), 0)
+	assert.Empty(t, names)
 }
 
 func TestArchive_TarCommitID(t *testing.T) {

@@ -52,7 +52,13 @@ var (
 
 	// ErrPathspecNoMatch is returned when pathspec filters don't match any files.
 	ErrPathspecNoMatch = errors.New("pathspec did not match any files")
+
+	// ErrSymlinkTargetTooLarge is returned when a symlink blob exceeds the
+	// maximum size accepted by the tar archive writer.
+	ErrSymlinkTargetTooLarge = errors.New("symlink target too large")
 )
+
+const maxTarSymlinkTargetSize = 64 * 1024
 
 // SupportedFormats returns the list of supported archive formats.
 func SupportedFormats() []string {
@@ -263,10 +269,13 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 			if err != nil {
 				return err
 			}
-			target, err := io.ReadAll(rc)
+			target, err := io.ReadAll(io.LimitReader(rc, maxTarSymlinkTargetSize+1))
 			_ = rc.Close()
 			if err != nil {
 				return err
+			}
+			if len(target) > maxTarSymlinkTargetSize {
+				return fmt.Errorf("%w: %s (%d bytes)", ErrSymlinkTargetTooLarge, fullName, len(target))
 			}
 			hdr.Typeflag = tar.TypeSymlink
 			hdr.Linkname = string(target)
