@@ -35,12 +35,12 @@ func UploadArchive(
 ) error {
 	w = ioutil.NewContextWriteCloser(ctx, w)
 
-	// TODO: Derive allowUnreachable from global/system config as well, not
-	// just repository config.
-	var allowUnreachable bool
-	if v, ok := readAllowUnreachable(st); ok {
-		allowUnreachable = v
-	}
+	// Unreachable Git objects (i.e. objects not referenced by any refs or unreachable
+	// from the commit graph) are intentionally not supported due to security concerns.
+	//
+	// Support for handling such objects may be reconsidered in the future if a safe
+	// and performant approach is established.
+	allowUnreachable := false
 
 	args, err := readArchiveArgs(r)
 	if err != nil {
@@ -196,19 +196,4 @@ func unsupportedArchiveFeature(arg string) string {
 	}
 
 	return ""
-}
-
-// readAllowUnreachable reads the uploadArchive.allowUnreachable config
-// from the repository. It returns the value and whether the key was
-// explicitly set. When the key is absent or the config cannot be read,
-// ok is false and the caller should fall back to its own default.
-func readAllowUnreachable(st storage.Storer) (value, ok bool) {
-	cfg, err := st.Config()
-	if err != nil {
-		return false, false
-	}
-	if cfg.UploadArchive.AllowUnreachable.IsSet() {
-		return cfg.UploadArchive.AllowUnreachable.IsTrue(), true
-	}
-	return false, false
 }
