@@ -104,7 +104,7 @@ func (klauspostProvider) NewReader(r io.Reader) (plugin.ZlibReader, error) {
     }
     zlr, ok := zr.(plugin.ZlibReader)
     if !ok {
-        return nil, fmt.Errorf("klauspost reader %T does not implement Resetter", zr)
+        return nil, fmt.Errorf("klauspost reader %T does not implement plugin.ZlibReader", zr)
     }
     return zlr, nil
 }
@@ -114,9 +114,12 @@ func (klauspostProvider) NewWriter(w io.Writer) plugin.ZlibWriter {
 }
 
 func init() {
-    plugin.Register(plugin.Zlib(), func() plugin.ZlibProvider {
+    err := plugin.Register(plugin.Zlib(), func() plugin.ZlibProvider {
         return klauspostProvider{}
     })
+    if err != nil {
+        panic(err)
+    }
 }
 ```
 
