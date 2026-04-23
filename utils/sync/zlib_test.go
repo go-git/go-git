@@ -2,7 +2,6 @@ package sync_test
 
 import (
 	"bytes"
-	"compress/zlib"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -13,19 +12,21 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	gogitsync "github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xzlib "github.com/go-git/go-git/v6/x/plugin/zlib"
 )
 
 // trackingProvider wraps another provider and counts factory calls and
 // bytes flowing through returned readers/writers.
 type trackingProvider struct {
-	inner       gogitsync.ZlibProvider
+	inner       plugin.ZlibProvider
 	readerCalls atomic.Int64
 	writerCalls atomic.Int64
 	readBytes   atomic.Int64
 	writeBytes  atomic.Int64
 }
 
-func (t *trackingProvider) NewReader(r io.Reader) (gogitsync.ZlibReader, error) {
+func (t *trackingProvider) NewReader(r io.Reader) (plugin.ZlibReader, error) {
 	t.readerCalls.Add(1)
 	inner, err := t.inner.NewReader(r)
 	if err != nil {
@@ -34,13 +35,13 @@ func (t *trackingProvider) NewReader(r io.Reader) (gogitsync.ZlibReader, error) 
 	return &trackingReader{ZlibReader: inner, parent: t}, nil
 }
 
-func (t *trackingProvider) NewWriter(w io.Writer) gogitsync.ZlibWriter {
+func (t *trackingProvider) NewWriter(w io.Writer) plugin.ZlibWriter {
 	t.writerCalls.Add(1)
 	return &trackingWriter{ZlibWriter: t.inner.NewWriter(w), parent: t}
 }
 
 type trackingReader struct {
-	gogitsync.ZlibReader
+	plugin.ZlibReader
 	parent *trackingProvider
 }
 
@@ -51,7 +52,7 @@ func (r *trackingReader) Read(p []byte) (int, error) {
 }
 
 type trackingWriter struct {
-	gogitsync.ZlibWriter
+	plugin.ZlibWriter
 	parent *trackingProvider
 }
 
@@ -61,32 +62,19 @@ func (w *trackingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func TestSetZlibProviderReturnsPrevious(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
-	p1 := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
-	prev := gogitsync.SetZlibProvider(p1)
-	defer gogitsync.SetZlibProvider(prev)
-	require.NotNil(t, prev, "default provider must not be nil")
-
-	p2 := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
-	fromSwap := gogitsync.SetZlibProvider(p2)
-	assert.Same(t, p1, fromSwap)
-
-	restored := gogitsync.SetZlibProvider(prev)
-	assert.Same(t, p2, restored)
-}
-
-func TestSetZlibProviderPanicsOnNil(t *testing.T) {
-	t.Parallel()
-	assert.PanicsWithValue(t,
-		"utils/sync: SetZlibProvider called with nil provider",
-		func() { gogitsync.SetZlibProvider(nil) },
-	)
+// installProvider resets the zlib plugin entry, registers provider as
+// the active provider for the test, and schedules cleanup that
+// restores the built-in stdlib default.
+func installProvider(t *testing.T, provider plugin.ZlibProvider) {
+	t.Helper()
+	gogitsync.ResetZlibForTest()
+	require.NoError(t, plugin.Register(plugin.Zlib(), func() plugin.ZlibProvider { return provider }))
+	t.Cleanup(gogitsync.ResetZlibForTest)
 }
 
 func TestNewZlibWriterUsesActiveProvider(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
-	tracker := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
-	prev := gogitsync.SetZlibProvider(tracker)
-	defer gogitsync.SetZlibProvider(prev)
+	tracker := &trackingProvider{inner: xzlib.NewStdlib()}
+	installProvider(t, tracker)
 
 	payload := []byte("hello world")
 
@@ -99,7 +87,7 @@ func TestNewZlibWriterUsesActiveProvider(t *testing.T) { //nolint:paralleltest /
 	assert.Equal(t, int64(1), tracker.writerCalls.Load())
 	assert.Equal(t, int64(len(payload)), tracker.writeBytes.Load())
 
-	zr, err := zlib.NewReader(&buf)
+	zr, err := xzlib.NewStdlib().NewReader(&buf)
 	require.NoError(t, err)
 	got, err := io.ReadAll(zr)
 	require.NoError(t, err)
@@ -110,12 +98,11 @@ func TestNewZlibWriterUsesActiveProvider(t *testing.T) { //nolint:paralleltest /
 // TestObjfileRoundTripUsesActiveProvider exercises the pooled
 // GetZlibReader / GetZlibWriter paths through their intended caller
 // (objfile) and verifies a round-trip works with a custom provider
-// installed. This is the first test to touch the sync.Pool in this
-// binary, so New is guaranteed to fire through the tracker.
+// installed. ResetZlibForTest replaces the sync.Pools, so the pools
+// are guaranteed to miss and resolve through the tracker.
 func TestObjfileRoundTripUsesActiveProvider(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
-	tracker := &trackingProvider{inner: gogitsync.StdlibZlibProvider{}}
-	prev := gogitsync.SetZlibProvider(tracker)
-	defer gogitsync.SetZlibProvider(prev)
+	tracker := &trackingProvider{inner: xzlib.NewStdlib()}
+	installProvider(t, tracker)
 
 	payload := []byte("pluggable compression smoke test")
 
@@ -145,12 +132,8 @@ func TestObjfileRoundTripUsesActiveProvider(t *testing.T) { //nolint:paralleltes
 	assert.Positive(t, tracker.readBytes.Load(), "bytes should have flowed through the tracker reader")
 }
 
-func TestDefaultProviderRoundTripWithStdlib(t *testing.T) { //nolint:paralleltest // pins the zlib provider to Stdlib for the duration
-	// Force the stdlib provider for the duration so the assertion is
-	// about the default behavior, not about whatever provider a
-	// concurrent test has installed.
-	prev := gogitsync.SetZlibProvider(gogitsync.StdlibZlibProvider{})
-	defer gogitsync.SetZlibProvider(prev)
+func TestDefaultProviderRoundTripWithStdlib(t *testing.T) { //nolint:paralleltest // pins the zlib provider to stdlib for the duration
+	installProvider(t, xzlib.NewStdlib())
 
 	payload := []byte("default provider check")
 
@@ -160,10 +143,21 @@ func TestDefaultProviderRoundTripWithStdlib(t *testing.T) { //nolint:paralleltes
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	zr, err := zlib.NewReader(&buf)
+	zr, err := xzlib.NewStdlib().NewReader(&buf)
 	require.NoError(t, err)
 	got, err := io.ReadAll(zr)
 	require.NoError(t, err)
 	require.NoError(t, zr.Close())
 	assert.Equal(t, payload, got)
+}
+
+func TestRegisterAfterGetIsFrozen(t *testing.T) { //nolint:paralleltest // modifies global zlib provider state
+	installProvider(t, xzlib.NewStdlib())
+
+	// Force resolution so the plugin entry freezes.
+	w := gogitsync.NewZlibWriter(io.Discard)
+	require.NoError(t, w.Close())
+
+	err := plugin.Register(plugin.Zlib(), func() plugin.ZlibProvider { return xzlib.NewStdlib() })
+	assert.ErrorIs(t, err, plugin.ErrFrozen)
 }

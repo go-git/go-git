@@ -79,11 +79,11 @@ New `SHA1` or `SHA256` hash functions that implement the `hash.RegisterHash` int
 
 ## Compression
 
-`go-git` uses zlib compression for loose objects and packfile entries. By default it uses the Go standard library's `compress/zlib`. The implementation is pluggable via the [`utils/sync.ZlibProvider`](utils/sync/zlib.go) interface, which lets you swap in a drop-in alternative — for example [`github.com/klauspost/compress/zlib`](https://github.com/klauspost/compress) — without `go-git` taking a direct dependency on it.
+`go-git` uses zlib compression for loose objects and packfile entries. By default it uses the Go standard library's `compress/zlib`, registered at init time as the [`plugin.Zlib()`](x/plugin/plugin_zlib.go) provider. Register an alternative `plugin.ZlibProvider` — for example [`github.com/klauspost/compress/zlib`](https://github.com/klauspost/compress) — to swap the implementation without `go-git` taking a direct dependency on it.
 
-> **Breaking change in v6.** `utils/sync.GetZlibWriter` now returns `sync.ZlibWriter` (an interface) instead of `*zlib.Writer`, and `PutZlibWriter` accepts the same interface. Callers that previously relied on the concrete `*zlib.Writer` return type will need to update to the interface, whose method set is `Write`, `Close`, `Reset(io.Writer)`, and `Flush`.
+> **Breaking change in v6.** `utils/sync.GetZlibWriter` now returns `sync.ZlibWriter` (an interface aliased to `plugin.ZlibWriter`) instead of `*zlib.Writer`, and `PutZlibWriter` accepts the same interface. Callers that previously relied on the concrete `*zlib.Writer` return type will need to update to the interface, whose method set is `Write`, `Close`, `Reset(io.Writer)`, and `Flush`.
 
-Install a provider during program init, before any `go-git` operation runs:
+Register a provider during program init, before any `go-git` operation runs. Registration uses the [plugin system](#plugin-system-experimental) so it follows the same freeze-on-first-use lifecycle as other plugins:
 
 ```go
 import (
@@ -92,33 +92,35 @@ import (
 
     kpzlib "github.com/klauspost/compress/zlib"
 
-    gogitsync "github.com/go-git/go-git/v6/utils/sync"
+    "github.com/go-git/go-git/v6/x/plugin"
 )
 
 type klauspostProvider struct{}
 
-func (klauspostProvider) NewReader(r io.Reader) (gogitsync.ZlibReader, error) {
+func (klauspostProvider) NewReader(r io.Reader) (plugin.ZlibReader, error) {
     zr, err := kpzlib.NewReader(r)
     if err != nil {
         return nil, err
     }
-    zlr, ok := zr.(gogitsync.ZlibReader)
+    zlr, ok := zr.(plugin.ZlibReader)
     if !ok {
         return nil, fmt.Errorf("klauspost reader %T does not implement Resetter", zr)
     }
     return zlr, nil
 }
 
-func (klauspostProvider) NewWriter(w io.Writer) gogitsync.ZlibWriter {
+func (klauspostProvider) NewWriter(w io.Writer) plugin.ZlibWriter {
     return kpzlib.NewWriter(w)
 }
 
 func init() {
-    gogitsync.SetZlibProvider(klauspostProvider{})
+    plugin.Register(plugin.Zlib(), func() plugin.ZlibProvider {
+        return klauspostProvider{}
+    })
 }
 ```
 
-`SetZlibProvider` returns the previously installed provider, which is useful for save-and-restore patterns in tests. Installing a provider after `go-git` has begun compressing or decompressing data is undefined — see the `SetZlibProvider` godoc for the full contract.
+Registering after `go-git` has already resolved the zlib provider (on the first pool miss or `sync.NewZlibWriter` call) returns `plugin.ErrFrozen` and the existing provider stays in effect.
 
 ## Plugin System (Experimental)
 
