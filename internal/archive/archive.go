@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,6 +57,10 @@ var (
 	// ErrSymlinkTargetTooLarge is returned when a symlink blob exceeds the
 	// maximum size accepted by the tar archive writer.
 	ErrSymlinkTargetTooLarge = errors.New("symlink target too large")
+
+	// ErrInvalidPrefix is returned when the requested archive prefix contains
+	// path traversal sequences.
+	ErrInvalidPrefix = errors.New("invalid archive prefix")
 )
 
 const maxTarSymlinkTargetSize = 64 * 1024
@@ -454,6 +459,9 @@ func WriteArchive(st storage.Storer, w io.Writer, treeish, format, prefix string
 	if treeish == "" {
 		return fmt.Errorf("no tree-ish specified")
 	}
+	if hasInvalidArchivePrefix(prefix) {
+		return fmt.Errorf("%w: %s", ErrInvalidPrefix, prefix)
+	}
 
 	tree, commitHash, commitTime, err := ResolveTreeish(st, treeish, allowUnreachable)
 	if err != nil {
@@ -474,4 +482,13 @@ func WriteArchive(st storage.Storer, w io.Writer, treeish, format, prefix string
 	default:
 		return fmt.Errorf("unsupported archive format: %s", format)
 	}
+}
+
+func hasInvalidArchivePrefix(prefix string) bool {
+	if strings.HasPrefix(prefix, "/") || strings.HasPrefix(prefix, "\\") {
+		return true
+	}
+	return slices.Contains(strings.FieldsFunc(prefix, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}), "..")
 }

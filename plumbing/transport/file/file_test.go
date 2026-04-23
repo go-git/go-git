@@ -230,6 +230,65 @@ func TestArchive_Prefix(t *testing.T) {
 	}
 }
 
+func TestArchive_InvalidPrefixRejected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		args   []string
+		prefix string
+	}{
+		{
+			name:   "forward slash traversal",
+			args:   []string{"--format=tar", "--prefix=../../dir1/", "master"},
+			prefix: "../../dir1/",
+		},
+		{
+			name:   "backslash traversal",
+			args:   []string{"--format=tar", "--prefix=..\\..\\dir1\\", "master"},
+			prefix: "..\\..\\dir1\\",
+		},
+		{
+			name:   "middle forward slash traversal",
+			args:   []string{"--format=tar", "--prefix=abc/test/../../../abc.go", "master"},
+			prefix: "abc/test/../../../abc.go",
+		},
+		{
+			name:   "middle backslash traversal",
+			args:   []string{"--format=tar", "--prefix=abc\\test\\..\\..\\..\\abc.go", "master"},
+			prefix: "abc\\test\\..\\..\\..\\abc.go",
+		},
+		{
+			name:   "leading forward slash",
+			args:   []string{"--format=tar", "--prefix=/absolute/path/", "master"},
+			prefix: "/absolute/path/",
+		},
+		{
+			name:   "leading backslash",
+			args:   []string{"--format=tar", "--prefix=\\absolute\\path\\", "master"},
+			prefix: "\\absolute\\path\\",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			a := archiveSession(t)
+
+			r, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+				Args: tt.args,
+			})
+			require.NoError(t, err)
+
+			_, err = io.ReadAll(r)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid archive prefix")
+			assert.Contains(t, err.Error(), tt.prefix)
+		})
+	}
+}
+
 func TestArchive_List(t *testing.T) {
 	t.Parallel()
 
