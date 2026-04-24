@@ -169,3 +169,31 @@ func (s *SuiteCapabilities) TestValidateUnknownCapabilityFirst() {
 	s.Error(err)
 	s.Contains(err.Error(), "unknown capability")
 }
+
+func (s *SuiteCapabilities) TestValidateSessionID() {
+	// Can fit in a packet line.
+	sessionID := "0123456789abcdef0123456789abcdef01234567"
+	caps := &List{}
+	caps.Add(SessionID, sessionID)
+	err := Validate(caps)
+	s.NoError(err)
+
+	// Too long for a packet line.
+	sessionID = strings.Repeat("a", pktline.MaxPayloadSize+1)
+	caps = &List{}
+	caps.Add(SessionID, sessionID)
+	err = Validate(caps)
+	s.ErrorContains(err, "too long")
+
+	// Empty session ID is not allowed.
+	caps = &List{}
+	caps.Add(SessionID, "")
+	err = Validate(caps)
+	s.ErrorIs(err, ErrEmptyArgument)
+
+	// Cannot contain spaces.
+	caps = &List{}
+	caps.Add(SessionID, "invalid session id")
+	err = Validate(caps)
+	s.ErrorContains(err, "invalid char")
+}

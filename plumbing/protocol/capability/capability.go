@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 var (
@@ -264,6 +266,10 @@ const (
 	// Filter if present, fetch-pack may send "filter" commands to request a
 	// partial clone or partial fetch and request that the server omit various objects from the packfile
 	Filter Capability = "filter"
+	// SessionID the server may advertise a session ID that can be used to
+	// identify this process across multiple requests. The client may advertise
+	// its own session ID back to the server as well.
+	SessionID Capability = "session-id"
 )
 
 const userAgent = "go-git/6.x"
@@ -309,6 +315,12 @@ func validateCapability(c Capability, values []string) error {
 		return ErrMultipleArguments
 	}
 
+	if c == SessionID && len(values) == 1 {
+		if err := validateSessionID(values[0]); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -319,7 +331,7 @@ func isKnown(c Capability) bool {
 		Sideband64k, OFSDelta, Agent, Shallow, DeepenSince, DeepenNot,
 		DeepenRelative, NoProgress, IncludeTag, ReportStatus, ReportStatusV2,
 		DeleteRefs, Quiet, Atomic, PushOptions, SymRef, AllowTipSHA1InWant,
-		AllowReachableSHA1InWant, PushCert, Filter, ObjectFormat:
+		AllowReachableSHA1InWant, PushCert, Filter, ObjectFormat, SessionID:
 		return true
 	default:
 		return false
@@ -329,7 +341,7 @@ func isKnown(c Capability) bool {
 // requiresArgument reports whether the capability requires an argument.
 func requiresArgument(c Capability) bool {
 	switch c {
-	case Agent, PushCert, SymRef, ObjectFormat:
+	case Agent, PushCert, SymRef, ObjectFormat, SessionID:
 		return true
 	default:
 		return false
@@ -350,6 +362,23 @@ func allowsMultipleArguments(c Capability) bool {
 func validateNoEmptyArgs(values []string) error {
 	if slices.Contains(values, "") {
 		return ErrEmptyArgument
+	}
+	return nil
+}
+
+// validateSessionID validates that the session ID is not empty and only
+// contains printable ASCII characters except space.
+func validateSessionID(sessionID string) error {
+	if sessionID == "" {
+		return ErrEmptyArgument
+	}
+	if len(sessionID) > pktline.MaxPayloadSize {
+		return fmt.Errorf("session ID is too long: %d bytes", len(sessionID))
+	}
+	if strings.ContainsFunc(sessionID, func(r rune) bool {
+		return r <= 32 || r >= 127 // Non-printable ASCII characters and space
+	}) {
+		return fmt.Errorf("session ID contains invalid characters: %q", sessionID)
 	}
 	return nil
 }
