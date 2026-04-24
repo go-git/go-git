@@ -8,6 +8,8 @@ import (
 
 // List represents a list of capabilities. The zero value is safe to use;
 // the internal map is lazily initialized on first write.
+//
+// Note that the List is not thread safe.
 type List struct {
 	m    map[string]*entry
 	sort []string
