@@ -2,8 +2,25 @@
 package capability
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
+)
+
+var (
+	// ErrArguments is returned when a capability is given an argument but
+	// doesn't accept any.
+	ErrArguments = errors.New("capability does not accept arguments")
+	// ErrArgumentsRequired is returned when a capability requires an argument
+	// but none was provided.
+	ErrArgumentsRequired = errors.New("capability requires an argument")
+	// ErrMultipleArguments is returned when a capability accepts only one argument
+	// but multiple were provided.
+	ErrMultipleArguments = errors.New("capability accepts only one argument")
+	// ErrEmptyArgument is returned when an argument is empty.
+	ErrEmptyArgument = errors.New("capability argument cannot be empty")
 )
 
 // Capability describes a server or client capability.
@@ -253,8 +270,86 @@ const userAgent = "go-git/6.x"
 
 // DefaultAgent provides the user agent string.
 func DefaultAgent() string {
-	if envUserAgent, ok := os.LookupEnv("GO_GIT_USER_AGENT_EXTRA"); ok {
+	if envUserAgent, ok := os.LookupEnv("GO_GIT_USER_AGENT_EXTRA"); ok && strings.TrimSpace(envUserAgent) != "" {
 		return fmt.Sprintf("%s %s", userAgent, envUserAgent)
 	}
 	return userAgent
+}
+
+// Validate validates that all capabilities in the list are valid v0/v1
+// capabilities and that they have proper arguments.
+func Validate(l *List) error {
+	for _, c := range l.All() {
+		values := l.Get(c)
+		if err := validateCapability(c, values); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCapability(c Capability, values []string) error {
+	if err := validateNoEmptyArgs(values); err != nil {
+		return err
+	}
+
+	if !isKnown(c) {
+		return fmt.Errorf("unknown capability: %s", c)
+	}
+
+	if requiresArgument(c) && len(values) == 0 {
+		return ErrArgumentsRequired
+	}
+
+	if !requiresArgument(c) && len(values) != 0 {
+		return ErrArguments
+	}
+
+	if !allowsMultipleArguments(c) && len(values) > 1 {
+		return ErrMultipleArguments
+	}
+
+	return nil
+}
+
+// isKnown reports whether the capability is a known v0/v1 capability.
+func isKnown(c Capability) bool {
+	switch c {
+	case MultiACK, MultiACKDetailed, NoDone, ThinPack, NoThin, Sideband,
+		Sideband64k, OFSDelta, Agent, Shallow, DeepenSince, DeepenNot,
+		DeepenRelative, NoProgress, IncludeTag, ReportStatus, ReportStatusV2,
+		DeleteRefs, Quiet, Atomic, PushOptions, SymRef, AllowTipSHA1InWant,
+		AllowReachableSHA1InWant, PushCert, Filter, ObjectFormat:
+		return true
+	default:
+		return false
+	}
+}
+
+// requiresArgument reports whether the capability requires an argument.
+func requiresArgument(c Capability) bool {
+	switch c {
+	case Agent, PushCert, SymRef, ObjectFormat:
+		return true
+	default:
+		return false
+	}
+}
+
+// allowsMultipleArguments reports whether the capability accepts multiple arguments.
+func allowsMultipleArguments(c Capability) bool {
+	switch c {
+	case SymRef:
+		return true
+	default:
+		return false
+	}
+}
+
+// validateNoEmptyArgs validates that no argument is empty.
+func validateNoEmptyArgs(values []string) error {
+	if slices.Contains(values, "") {
+		return ErrEmptyArgument
+	}
+	return nil
 }
