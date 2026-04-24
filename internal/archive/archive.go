@@ -216,12 +216,14 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 	}
 
 	if prefix != "" && strings.HasSuffix(prefix, "/") {
-		_ = tw.WriteHeader(&tar.Header{
+		if err := tw.WriteHeader(&tar.Header{
 			Typeflag: tar.TypeDir,
 			Name:     prefix,
 			Mode:     ApplyUmaskDir(0),
 			ModTime:  modTime,
-		})
+		}); err != nil {
+			return err
+		}
 	}
 
 	walker := object.NewTreeWalker(tree, true, nil)
@@ -248,12 +250,14 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 		unixMode := int64(entry.Mode) & 0o777
 
 		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
-			_ = tw.WriteHeader(&tar.Header{
+			if err := tw.WriteHeader(&tar.Header{
 				Typeflag: tar.TypeDir,
 				Name:     fullName + "/",
 				Mode:     ApplyUmaskDir(unixMode),
 				ModTime:  modTime,
-			})
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -275,9 +279,12 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 				return err
 			}
 			target, err := io.ReadAll(io.LimitReader(rc, maxTarSymlinkTargetSize+1))
-			_ = rc.Close()
+			closeErr := rc.Close()
 			if err != nil {
 				return err
+			}
+			if closeErr != nil {
+				return closeErr
 			}
 			if len(target) > maxTarSymlinkTargetSize {
 				return fmt.Errorf("%w: %s (%d bytes)", ErrSymlinkTargetTooLarge, fullName, len(target))
@@ -305,9 +312,12 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 			return err
 		}
 		_, err = io.Copy(tw, rc)
-		_ = rc.Close()
+		closeErr := rc.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 
@@ -378,9 +388,12 @@ func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 			return err
 		}
 		_, err = io.Copy(fw, rc)
-		_ = rc.Close()
+		closeErr := rc.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 
@@ -391,7 +404,9 @@ func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 	// Store commit ID as ZIP file comment if available.
 	// This matches the behavior of git archive.
 	if commitHash != nil {
-		_ = zw.SetComment(commitHash.String())
+		if err := zw.SetComment(commitHash.String()); err != nil {
+			return err
+		}
 	}
 
 	return zw.Close()
