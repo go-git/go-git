@@ -75,6 +75,11 @@ func AdvertiseRefs(
 		return err
 	}
 
+	// Validate capabilities before sending the response.
+	if err := capability.Validate(&ar.Capabilities); err != nil {
+		return fmt.Errorf("invalid capabilities: %w", err)
+	}
+
 	if smart {
 		smartReply := packp.SmartReply{
 			Service: service,

@@ -141,6 +141,11 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 		return nil, err
 	}
 
+	// Validate capabilities before returning the session.
+	if err := capability.Validate(&ar.Capabilities); err != nil {
+		return nil, err
+	}
+
 	return &smartPackSession{
 		client:     client,
 		baseURL:    req.URL,

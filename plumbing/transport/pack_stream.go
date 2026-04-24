@@ -65,9 +65,16 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
+	// Validate capabilities before returning the session.
+	if err := capability.Validate(&ar.Capabilities); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
 	s.version = ver
 	s.caps = ar.Capabilities
 	s.refs = ar
+
 	return s, nil
 }
 
