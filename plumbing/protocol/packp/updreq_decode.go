@@ -72,15 +72,6 @@ func errMalformedCommand(err error) error {
 
 // Decode reads the next update-request message from the reader.
 func (req *UpdateRequests) Decode(r io.Reader) error {
-	var rc io.ReadCloser
-	if rd, ok := r.(io.ReadCloser); ok {
-		rc = rd
-	} else {
-		rc = io.NopCloser(r)
-	}
-
-	defer rc.Close() //nolint:errcheck
-
 	var (
 		payload []byte
 		length  int
