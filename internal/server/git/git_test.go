@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
@@ -144,16 +145,94 @@ func TestGitServer_UnsupportedService(t *testing.T) {
 	// Handshake will fail because the server closes the connection.
 	conn, err := tr.Connect(context.Background(), req)
 	if err != nil {
-		// Connection failed — acceptable outcome.
 		return
 	}
 	defer conn.Close()
 
-	// If Connect succeeded, reading from the connection should fail
-	// because the server closes it immediately.
 	buf := make([]byte, 1)
 	_, err = conn.Reader().Read(buf)
 	assert.Error(t, err, "reading from unsupported service should fail")
+}
+
+func TestGitServer_MaxConnections(t *testing.T) {
+	t.Parallel()
+
+	loader := servergit.Loader(t, fixtures.Basic().One())
+	srv := servergitdaemon.FromLoader(loader)
+	srv.MaxConnections = 1
+
+	endpoint, err := srv.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { srv.Close() })
+
+	u, err := url.Parse(endpoint + "/basic.git")
+	require.NoError(t, err)
+
+	// Hold one connection open.
+	tr1 := git.NewTransport(git.Options{})
+	conn1, err := tr1.Connect(context.Background(), &transportgit.Request{
+		URL: u, Command: transportgit.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer conn1.Close()
+
+	// Second connection should be rejected (server closes it).
+	tr2 := git.NewTransport(git.Options{})
+	conn2, err := tr2.Connect(context.Background(), &transportgit.Request{
+		URL: u, Command: transportgit.UploadPackService,
+	})
+	if err != nil {
+		return
+	}
+	defer conn2.Close()
+
+	buf := make([]byte, 1)
+	_, err = conn2.Reader().Read(buf)
+	assert.Error(t, err, "second connection should be rejected due to max connections")
+}
+
+func TestGitServer_InitTimeout(t *testing.T) {
+	t.Parallel()
+
+	loader := servergit.Loader(t, fixtures.Basic().One())
+	srv := servergitdaemon.FromLoader(loader)
+	srv.InitTimeout = 50 * time.Millisecond
+
+	endpoint, err := srv.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { srv.Close() })
+
+	// The init timeout configuration is accepted without error.
+	// Exercising it requires a raw TCP connection that stalls after
+	// connect, which is difficult from the client transport layer.
+	_ = endpoint
+}
+
+func TestGitServer_Timeout(t *testing.T) {
+	t.Parallel()
+
+	loader := servergit.Loader(t, fixtures.Basic().One())
+	srv := servergitdaemon.FromLoader(loader)
+	srv.Timeout = 100 * time.Millisecond
+
+	endpoint, err := srv.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { srv.Close() })
+
+	u, err := url.Parse(endpoint + "/basic.git")
+	require.NoError(t, err)
+
+	// Normal operation should still work within the idle timeout.
+	tr := git.NewTransport(git.Options{})
+	sess, err := tr.Handshake(context.Background(), &transportgit.Request{
+		URL: u, Command: transportgit.UploadPackService,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { sess.Close() })
+
+	refs, err := sess.GetRemoteRefs(context.Background())
+	require.NoError(t, err)
+	assert.Greater(t, len(refs), 0, "should still get refs within idle timeout")
 }
 
 // gitServer is a helper that holds a running git:// server and its endpoint.

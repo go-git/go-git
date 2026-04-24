@@ -1,10 +1,9 @@
-// Package git provides an in-process git:// protocol server for testing.
+// Package git provides an in-process git:// protocol server.
 //
-// It listens on a random TCP port and handles the git:// wire protocol
+// It listens on a TCP port and handles the git:// wire protocol
 // (git-upload-pack, git-receive-pack, git-upload-archive) using the
-// [backend.Backend] handler. This allows integration tests to exercise
-// the full git:// transport stack without requiring an external git
-// daemon.
+// [backend.Backend] handler. The server supports configurable timeouts
+// and maximum connections, similar to git-daemon.
 package git
 
 import (
@@ -15,6 +14,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/go-git/go-git/v6/backend"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -33,8 +35,36 @@ type Server struct {
 	// ErrorLog is used to log errors. If nil, errors are not logged.
 	ErrorLog *log.Logger
 
+	// Timeout is the idle timeout for each connection. If a connection
+	// has no read or write activity for this duration, it is closed.
+	// If zero, there is no idle timeout. Corresponds to git-daemon's
+	// --timeout.
+	Timeout time.Duration
+
+	// InitTimeout is the timeout for the initial protocol handshake
+	// (reading the GitProtoRequest). If zero, there is no handshake
+	// timeout. Corresponds to git-daemon's --init-timeout.
+	InitTimeout time.Duration
+
+	// MaxTimeout is the absolute maximum duration a connection is
+	// allowed to live, regardless of activity. If zero, there is no
+	// maximum. This is useful to prevent long-lived connections from
+	// consuming server resources indefinitely.
+	MaxTimeout time.Duration
+
+	// MaxConnections is the maximum number of simultaneous connections.
+	// If zero, there is no limit. Corresponds to git-daemon's
+	// --max-connections. Connections beyond the limit are immediately
+	// closed.
+	MaxConnections int
+
 	ln  net.Listener
 	srv *backend.Backend
+
+	mu    sync.Mutex
+	conns map[net.Conn]context.CancelFunc
+	wg    sync.WaitGroup
+	done  chan struct{}
 }
 
 // FromLoader creates a git:// server backed by the given loader.
@@ -53,6 +83,8 @@ func (s *Server) Start() (string, error) {
 	}
 
 	s.srv = backend.New(s.Loader)
+	s.conns = make(map[net.Conn]context.CancelFunc)
+	s.done = make(chan struct{})
 
 	var err error
 	s.ln, err = net.Listen("tcp", defaultAddr)
@@ -73,12 +105,29 @@ func (s *Server) Endpoint() (string, error) {
 	return "git://" + s.ln.Addr().String(), nil
 }
 
-// Close shuts down the server and closes the listener.
+// Close immediately closes the listener and all active connections.
 func (s *Server) Close() error {
-	if s.ln != nil {
-		return s.ln.Close()
+	s.mu.Lock()
+	if s.done != nil {
+		select {
+		case <-s.done:
+		default:
+			close(s.done)
+		}
 	}
-	return nil
+	for conn, cancel := range s.conns {
+		_ = conn.Close()
+		cancel()
+	}
+	s.conns = make(map[net.Conn]context.CancelFunc)
+	s.mu.Unlock()
+
+	var err error
+	if s.ln != nil {
+		err = s.ln.Close()
+	}
+	s.wg.Wait()
+	return err
 }
 
 // serve accepts connections and handles each in a goroutine.
@@ -86,11 +135,47 @@ func (s *Server) serve() {
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
-			// Listener closed — normal shutdown.
-			return
+			select {
+			case <-s.done:
+				return
+			default:
+				s.logf("git: accept: %v", err)
+				return
+			}
 		}
-		go s.handleConn(conn)
+
+		if !s.trackConn(conn, true) {
+			_ = conn.Close()
+			continue
+		}
+
+		s.wg.Go(func() {
+			s.handleConn(conn)
+			s.trackConn(conn, false)
+		})
 	}
+}
+
+// trackConn registers or unregisters a connection. Returns false if
+// the connection exceeds MaxConnections and should be rejected.
+func (s *Server) trackConn(conn net.Conn, add bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if add {
+		if s.MaxConnections > 0 && len(s.conns) >= s.MaxConnections {
+			return false
+		}
+		_, cancel := context.WithCancel(context.Background())
+		s.conns[conn] = cancel
+		return true
+	}
+
+	if cancel, ok := s.conns[conn]; ok {
+		cancel()
+		delete(s.conns, conn)
+	}
+	return true
 }
 
 // handleConn processes a single git:// connection.
@@ -103,16 +188,48 @@ func (s *Server) serve() {
 func (s *Server) handleConn(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Retrieve the per-connection context created by trackConn.
+	s.mu.Lock()
+	cancel, ok := s.conns[conn]
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	defer ctxCancel()
+
+	// When the connection times out, cancel the per-connection context
+	// so backend.Serve can abort gracefully.
+	closeCanceler := func() {
+		cancel()
+		ctxCancel()
+	}
+
+	maxDeadline := time.Time{}
+	if s.MaxTimeout > 0 {
+		maxDeadline = time.Now().Add(s.MaxTimeout)
+	}
+
+	sc := &serverConn{
+		Conn:          conn,
+		idleTimeout:   s.Timeout,
+		initTimeout:   s.InitTimeout,
+		maxDeadline:   maxDeadline,
+		closeCanceler: closeCanceler,
+	}
+	sc.updateDeadline()
 
 	// Read the git protocol request line.
-	br := bufio.NewReader(conn)
+	br := bufio.NewReader(sc)
 	var proto packp.GitProtoRequest
 	if err := proto.Decode(br); err != nil {
 		s.logf("git: decode request: %v", err)
 		return
 	}
+
+	// Handshake complete — clear init deadline so only idle + max
+	// remain in effect.
+	sc.clearInitDeadline()
 
 	req := backend.RequestFromProto(&proto)
 	if !s.validService(req.Service) {
@@ -120,7 +237,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	if err := s.srv.Serve(ctx, io.NopCloser(conn), ioutil.WriteNopCloser(conn), req); err != nil {
+	if err := s.srv.Serve(ctx, io.NopCloser(br), ioutil.WriteNopCloser(sc), req); err != nil {
 		s.logf("git: serve %s %s: %v", req.Service, req.URL.Path, err)
 	}
 }
@@ -139,4 +256,94 @@ func (*Server) validService(svc string) bool {
 	default:
 		return false
 	}
+}
+
+// serverConn wraps a net.Conn with deadline management, inspired by
+// gliderlabs/ssh. Every Read and Write resets the idle deadline.
+// Three deadlines are computed:
+//
+//   - initTimeout: applied only during the initial handshake phase
+//     (reading the GitProtoRequest). Cleared once the handshake
+//     completes.
+//   - idleTimeout: resets on each Read/Write. If no I/O occurs
+//     within this duration, the connection times out.
+//   - maxDeadline: absolute deadline for the connection lifetime,
+//     set once when the connection is accepted.
+//
+// When a timeout net.Error is returned from Read or Write, the
+// connection's context is cancelled via closeCanceler so the
+// backend handler can abort gracefully.
+type serverConn struct {
+	net.Conn
+
+	idleTimeout   time.Duration
+	initTimeout   time.Duration
+	maxDeadline   time.Time
+	initCleared   atomic.Bool
+	closeCanceler func()
+}
+
+func (c *serverConn) Read(b []byte) (n int, err error) {
+	if c.idleTimeout > 0 {
+		c.updateDeadline()
+	}
+	n, err = c.Conn.Read(b)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() && c.closeCanceler != nil {
+		c.closeCanceler()
+	}
+	return n, err
+}
+
+func (c *serverConn) Write(p []byte) (n int, err error) {
+	if c.idleTimeout > 0 {
+		c.updateDeadline()
+	}
+	n, err = c.Conn.Write(p)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() && c.closeCanceler != nil {
+		c.closeCanceler()
+	}
+	return n, err
+}
+
+func (c *serverConn) Close() (err error) {
+	err = c.Conn.Close()
+	if c.closeCanceler != nil {
+		c.closeCanceler()
+	}
+	return err
+}
+
+// clearInitDeadline clears the handshake deadline so only idle +
+// max remain in effect.
+func (c *serverConn) clearInitDeadline() {
+	c.initCleared.Store(true)
+	if c.idleTimeout > 0 || !c.maxDeadline.IsZero() {
+		c.updateDeadline()
+	}
+}
+
+// updateDeadline recomputes and sets the connection deadline from the
+// three configured timeouts. The earliest non-zero deadline wins.
+func (c *serverConn) updateDeadline() {
+	var deadline time.Time
+
+	if !c.maxDeadline.IsZero() {
+		deadline = c.maxDeadline
+	}
+
+	if !c.initCleared.Load() && c.initTimeout > 0 {
+		initDeadline := time.Now().Add(c.initTimeout)
+		if deadline.IsZero() || initDeadline.Before(deadline) {
+			deadline = initDeadline
+		}
+	}
+
+	if c.idleTimeout > 0 {
+		idleDeadline := time.Now().Add(c.idleTimeout)
+		if deadline.IsZero() || idleDeadline.Before(deadline) {
+			deadline = idleDeadline
+		}
+	}
+
+	_ = c.SetDeadline(deadline)
 }
