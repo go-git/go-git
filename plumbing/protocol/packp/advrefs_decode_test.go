@@ -71,7 +71,7 @@ func (s *AdvRefsDecodeSuite) TestZeroId() {
 	}
 	ar := s.testDecodeOK(payloads)
 	_, err := ar.Head()
-	s.Equal(plumbing.ErrReferenceNotFound, err)
+	s.ErrorIs(plumbing.ErrReferenceNotFound, err)
 }
 
 func (s *AdvRefsDecodeSuite) testDecodeOK(payloads []string) *AdvRefs {
