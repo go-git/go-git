@@ -89,9 +89,24 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 	}
 }
 
+// convertGitignoreNegation converts gitignore-style [!...] negation character class
+// to Go's filepath.Match compatible [^...] format.
+// Git uses [!...] for negated character classes (like shells), but Go's filepath.Match
+// uses [^...]. This conversion is needed because gitignore patterns are processed
+// by filepath.Match which doesn't understand the [!...] syntax.
+func convertGitignoreNegation(pattern string) string {
+	// Only handle [!...] at start of character class (not [!abc]![...] etc)
+	if len(pattern) >= 4 && pattern[0] == '[' && pattern[1] == '!' && pattern[len(pattern)-1] == ']' {
+		return pattern[:2] + "^" + pattern[2:]
+	}
+	return pattern
+}
+
 func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	for i, name := range path {
-		if match, err := filepath.Match(p.pattern[0], name); err != nil {
+		// Convert gitignore [!...] negation to [^...] for Go's filepath.Match
+		converted := convertGitignoreNegation(p.pattern[0])
+		if match, err := filepath.Match(converted, name); err != nil {
 			return false
 		} else if !match {
 			continue
@@ -130,7 +145,9 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 			for len(path) > 0 {
 				e := path[0]
 				path = path[1:]
-				if match, err := filepath.Match(pattern, e); err != nil {
+				// Convert gitignore [!...] negation to [^...] for Go's filepath.Match
+				converted := convertGitignoreNegation(pattern)
+				if match, err := filepath.Match(converted, e); err != nil {
 					return false
 				} else if match {
 					matched = true
@@ -141,7 +158,9 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 				}
 			}
 		} else {
-			if match, err := filepath.Match(pattern, path[0]); err != nil || !match {
+			// Convert gitignore [!...] negation to [^...] for Go's filepath.Match
+			converted := convertGitignoreNegation(pattern)
+			if match, err := filepath.Match(converted, path[0]); err != nil || !match {
 				return false
 			}
 			matched = true
