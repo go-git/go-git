@@ -73,7 +73,7 @@ type Backend struct {
 }
 
 // New creates a Backend with the given loader.
-func New(loader transport.Loader, opts ...BackendOption) *Backend {
+func New(loader transport.Loader, opts ...Option) *Backend {
 	if loader == nil {
 		loader = transport.DefaultLoader
 	}
