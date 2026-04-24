@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -55,16 +56,34 @@ type Backend struct {
 	// Prefix is an HTTP path prefix stripped before route matching.
 	// Only used by [ServeHTTP].
 	Prefix string
+
+	// PreReceiveHook is called for every command receive,
+	// if an error is returned, the receive_pack is stopped
+	// but no error is written to the writer.
+	PreReceiveHook func(cmd *packp.Command, options []string) error
+	// PostReceiveHook is called for every command receive after the store is updated,
+	// but before the ref are updated, it is the last chance to avoid the update.
+	// if an error is returned, the receive_pack is stopped
+	// but no error is written to the writer. You probably want tp call a gc
+	// else orphan object can stay in the store.
+	PostReceiveHook func(cmd *packp.Command, options []string) error
+	// PostUpdateHook is called when all the receive_pack is finished,
+	// give the updated branches
+	PostUpdateHook func(refs []plumbing.ReferenceName, options []string)
 }
 
 // New creates a Backend with the given loader.
-func New(loader transport.Loader) *Backend {
+func New(loader transport.Loader, opts ...BackendOption) *Backend {
 	if loader == nil {
 		loader = transport.DefaultLoader
 	}
-	return &Backend{
+	b := &Backend{
 		Loader: loader,
 	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b
 }
 
 // Serve handles a Git pack protocol request. It resolves the repository

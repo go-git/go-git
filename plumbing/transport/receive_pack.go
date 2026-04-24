@@ -20,9 +20,12 @@ import (
 
 // ReceivePackRequest is a set of options for the ReceivePack service.
 type ReceivePackRequest struct {
-	GitProtocol   string
-	AdvertiseRefs bool
-	StatelessRPC  bool
+	GitProtocol     string
+	AdvertiseRefs   bool
+	StatelessRPC    bool
+	PreReceiveHook  func(cmd packp.Command, options []string) error
+	PostReceiveHook func(cmd packp.Command, options []string) error
+	PostUpdateHook  func(refs []plumbing.ReferenceName, options []string)
 }
 
 // ReceivePack is a server command that serves the receive-pack service.
@@ -102,6 +105,14 @@ func ReceivePack(
 		}
 	}
 
+	if opts.PreReceiveHook != nil {
+		for _, cmd := range updreq.Commands {
+			if err := opts.PreReceiveHook(*cmd, pushOpts.Options); err != nil {
+				return err
+			}
+		}
+	}
+
 	// Should we expect a packfile?
 	for _, cmd := range updreq.Commands {
 		if cmd.Action() != packp.Delete {
@@ -114,6 +125,14 @@ func ReceivePack(
 	var unpackErr error
 	if needPackfile {
 		unpackErr = packfile.UpdateObjectStorage(st, rd)
+	}
+
+	if opts.PostReceiveHook != nil {
+		for _, cmd := range updreq.Commands {
+			if err := opts.PostReceiveHook(*cmd, pushOpts.Options); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Done with the request, now close the reader
@@ -151,6 +170,16 @@ func ReceivePack(
 	var firstErr error
 	cmdStatus := make(map[plumbing.ReferenceName]error)
 	updateReferences(st, updreq, cmdStatus, &firstErr)
+
+	if opts.PostUpdateHook != nil {
+		updatedRefs := make([]plumbing.ReferenceName, 0)
+		for ref, err := range cmdStatus {
+			if err == nil {
+				updatedRefs = append(updatedRefs, ref)
+			}
+		}
+		opts.PostUpdateHook(updatedRefs, pushOpts.Options)
+	}
 
 	if err := sendReportStatus(writeCloser, firstErr, cmdStatus); err != nil {
 		return err
