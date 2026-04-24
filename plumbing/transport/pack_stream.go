@@ -14,7 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
-// StreamSession implements PackSession over a full-duplex stream.
+// StreamSession implements Session over a full-duplex stream.
 // Stream transports (SSH, Git TCP, file) call NewStreamSession from
 // their Handshake implementation.
 type StreamSession struct {
@@ -27,11 +27,24 @@ type StreamSession struct {
 	refs    *packp.AdvRefs
 }
 
-// NewStreamSession reads version + adv-refs from the session and
-// returns a ready StreamSession.
+// NewStreamSession creates a session from an open Conn.
+// For pack services (upload-pack, receive-pack), it reads the version
+// and advertised refs from the stream. For upload-archive, it skips
+// that — the archive protocol has no ref advertisement.
 func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 	r := bufio.NewReader(conn.Reader())
 	w := conn.Writer()
+
+	s := &StreamSession{
+		conn: conn,
+		r:    r,
+		w:    w,
+		svc:  service,
+	}
+
+	if service == UploadArchiveService {
+		return s, nil
+	}
 
 	ver, err := DiscoverVersion(r)
 	if err != nil {
@@ -52,15 +65,10 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
-	return &StreamSession{
-		conn:    conn,
-		r:       r,
-		w:       w,
-		svc:     service,
-		version: ver,
-		caps:    ar.Capabilities,
-		refs:    ar,
-	}, nil
+	s.version = ver
+	s.caps = ar.Capabilities
+	s.refs = ar
+	return s, nil
 }
 
 // Capabilities implements PackSession.
@@ -116,7 +124,19 @@ func (s *StreamSession) wrapStderr(err error) error {
 	return err
 }
 
-// Close implements PackSession.
+// Close implements Session.
 func (s *StreamSession) Close() error { return s.conn.Close() }
 
-var _ Session = (*StreamSession)(nil)
+// Archive implements Archiver. It speaks the git-upload-archive wire
+// protocol over the session's existing connection.
+func (s *StreamSession) Archive(ctx context.Context, req *ArchiveRequest) (io.ReadCloser, error) {
+	if s.svc != UploadArchiveService {
+		return nil, ErrArchiveUnsupported
+	}
+	return Archive(ctx, s.conn.Writer(), io.NopCloser(s.conn.Reader()), req)
+}
+
+var (
+	_ Session  = (*StreamSession)(nil)
+	_ Archiver = (*StreamSession)(nil)
+)
