@@ -43,6 +43,8 @@ func (it *lazyPackfilesIter) Next() (plumbing.EncodedObject, error) {
 			it.cur = nil
 			continue
 		} else if err != nil {
+			it.cur.Close()
+			it.cur = nil
 			return nil, err
 		}
 		return ob, nil
@@ -122,6 +124,9 @@ func newPackfileIter(
 
 	iter, err := p.GetByType(t)
 	if err != nil {
+		if !keepPack {
+			_ = f.Close()
+		}
 		return nil, err
 	}
 
@@ -149,11 +154,11 @@ func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
 }
 
 func (iter *packfileIter) ForEach(cb func(plumbing.EncodedObject) error) error {
+	defer iter.Close()
 	for {
 		o, err := iter.Next()
 		if err != nil {
 			if err == io.EOF {
-				iter.Close()
 				return nil
 			}
 			return err
@@ -198,6 +203,7 @@ func (iter *objectsIter) Next() (plumbing.EncodedObject, error) {
 }
 
 func (iter *objectsIter) ForEach(cb func(plumbing.EncodedObject) error) error {
+	defer iter.Close()
 	for {
 		o, err := iter.Next()
 		if err != nil {
