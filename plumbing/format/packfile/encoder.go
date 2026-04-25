@@ -48,7 +48,7 @@ func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *E
 
 	mw := io.MultiWriter(w, h)
 	ow := newOffsetWriter(mw)
-	zw := sync.NewZlibWriter(mw)
+	zw := sync.GetZlibWriter(mw)
 	return &Encoder{
 		selector:     newDeltaSelector(s),
 		w:            ow,

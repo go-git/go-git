@@ -2,10 +2,13 @@ package sync
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"sync"
 
+	"github.com/go-git/go-git/v6/utils/trace"
 	"github.com/go-git/go-git/v6/x/plugin"
+	"github.com/go-git/go-git/v6/x/plugin/zlib"
 )
 
 // ZlibReader is an alias of plugin.ZlibReader.
@@ -14,47 +17,48 @@ type ZlibReader = plugin.ZlibReader
 // ZlibWriter is an alias of plugin.ZlibWriter.
 type ZlibWriter = plugin.ZlibWriter
 
+var errNilZlibReader = errors.New("utils/sync: zlib reader source is nil")
+
 var (
 	zlibInitBytes = []byte{0x78, 0x9c, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01}
 
-	resolvedProvider = sync.OnceValue(func() plugin.ZlibProvider {
-		p, err := plugin.Get(plugin.Zlib())
-		if err != nil {
-			// Unreachable in normal builds: x/plugin registers a
-			// stdlib default in init.
-			panic("utils/sync: no zlib provider registered in x/plugin: " + err.Error())
-		}
-		return p
-	})
+	zlibProviderOnce sync.Once
+	zlibProvider     plugin.ZlibProvider
 
 	zlibReader = sync.Pool{New: newPooledZlibReader}
 	zlibWriter = sync.Pool{New: newPooledZlibWriter}
 )
 
+func getZlibProvider() plugin.ZlibProvider {
+	zlibProviderOnce.Do(func() {
+		p, err := plugin.Get(plugin.Zlib())
+		if err != nil {
+			// This code path should be unreachable, as the zlib plugin
+			// is registered with a built-in implementation, and invalid
+			// registrations are rejected.
+			//
+			// If for some reason a plugin is not found, fallback to
+			// default implementation.
+			zlibProvider = zlib.NewStdlib()
+			trace.Internal.Print("zlib plugin not registered: fall back to built-in version")
+			return
+		}
+		zlibProvider = p
+	})
+
+	return zlibProvider
+}
+
 func newPooledZlibReader() any {
-	r, err := resolvedProvider().NewReader(bytes.NewReader(zlibInitBytes))
+	r, err := getZlibProvider().NewReader(bytes.NewReader(zlibInitBytes))
 	if err != nil {
-		// Unreachable for any conforming zlib implementation:
-		// zlibInitBytes is a minimal valid zlib stream used to seed
-		// the pool. A provider returning an error here is
-		// non-compliant; fail loudly rather than stash a nil reader
-		// that would panic with no context on first use.
-		panic("utils/sync: zlib provider failed to initialize pooled reader: " + err.Error())
+		panic("zlib provider failed to initialize pooled reader: " + err.Error())
 	}
 	return &ZLibReader{reader: r, dict: nil}
 }
 
 func newPooledZlibWriter() any {
-	return resolvedProvider().NewWriter(nil)
-}
-
-// NewZlibWriter returns a ZlibWriter built by the active provider. The
-// writer is not managed by a sync.Pool; the caller owns it for its
-// full lifetime. Use this for long-lived writers (for example, one
-// held per encoder across many Reset calls) where pool rental offers
-// no benefit.
-func NewZlibWriter(w io.Writer) ZlibWriter {
-	return resolvedProvider().NewWriter(w)
+	return getZlibProvider().NewWriter(nil)
 }
 
 // ZLibReader is a poolable zlib reader.
@@ -73,13 +77,22 @@ func (r *ZLibReader) Close() error {
 	return r.reader.Close()
 }
 
-// GetZlibReader returns a ZLibReader that is managed by a sync.Pool.
-// Returns a ZLibReader that is reset using a dictionary that is
+// Reset resets the pooled zlib reader.
+func (r *ZLibReader) Reset(in io.Reader, dict []byte) error {
+	return r.reader.Reset(in, dict)
+}
+
+// GetZlibReader returns a ZlibReader that is managed by a sync.Pool.
+// Returns a ZlibReader that is reset using a dictionary that is
 // also managed by a sync.Pool.
 //
 // After use, the ZLibReader should be put back into the sync.Pool
 // by calling PutZlibReader.
 func GetZlibReader(r io.Reader) (*ZLibReader, error) {
+	if r == nil {
+		return nil, errNilZlibReader
+	}
+
 	z := zlibReader.Get().(*ZLibReader)
 	z.dict = GetByteSlice()
 
@@ -104,6 +117,10 @@ func PutZlibReader(z *ZLibReader) {
 // After use, the writer should be put back into the sync.Pool by
 // calling PutZlibWriter.
 func GetZlibWriter(w io.Writer) ZlibWriter {
+	if w == nil {
+		w = io.Discard
+	}
+
 	z := zlibWriter.Get().(ZlibWriter)
 	z.Reset(w)
 	return z

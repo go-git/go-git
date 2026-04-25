@@ -1,7 +1,5 @@
 // Package zlib provides the zlib provider interfaces and the built-in
-// Stdlib implementation backing go-git's default compression. The
-// interfaces live here — rather than in x/plugin — so x/plugin can
-// alias them without creating an import cycle back to this subpackage.
+// Stdlib implementation backing go-git's default compression.
 package zlib
 
 import (
@@ -12,20 +10,18 @@ import (
 
 // Reader is the method set required of a zlib decompression reader.
 // It matches the value returned by compress/zlib.NewReader, which
-// implements both io.ReadCloser and zlib.Resetter.
+// implements both io.ReadCloser and zlib.Reader.
 //
 // Implementations must support Reset being called on a reader after
 // Close so that pooled readers can be re-seeded with a new source and
-// dictionary, matching zlib.Resetter semantics. Reset runs once per
-// packfile object during scan, so it should be O(1) and avoid
-// reallocating decompressor state.
+// dictionary, matching zlib.Reader semantics. During a packfile scan,
+// the Reset will be called once per object.
 type Reader interface {
 	io.ReadCloser
 	Reset(r io.Reader, dict []byte) error
 }
 
-// Writer is the method set required of a zlib compression writer.
-// It matches the stdlib *zlib.Writer.
+// Writer defines the interface for a zlib compression writer.
 //
 // Implementations must preserve the following behavioral contract
 // that go-git relies on:
@@ -37,8 +33,7 @@ type Reader interface {
 //   - Reset after Close is supported: packfile.Encoder closes the
 //     writer once per object entry and then calls Reset to reuse it
 //     for the next entry within the same encode. Reset is on the
-//     per-object hot path during encode, so it should be O(1) and
-//     avoid reallocating compressor state.
+//     per-object hot path during encode.
 //   - Flush writes any pending compressed data to the underlying
 //     writer without ending the stream; the writer remains usable
 //     after Flush.
@@ -49,11 +44,7 @@ type Writer interface {
 }
 
 // Provider constructs zlib implementations. go-git calls its factory
-// methods (often via internal sync.Pool instances) whenever it needs
-// to read or write zlib-compressed data. Register a non-default
-// provider with plugin.Register(plugin.Zlib(), factory) — for example
-// to swap in github.com/klauspost/compress/zlib without go-git taking
-// a direct dependency on it.
+// methods whenever it needs to read or write zlib-compressed data.
 //
 // Implementations must be safe for concurrent calls to NewReader and
 // NewWriter. Returned readers and writers need not be concurrency-safe
@@ -64,8 +55,7 @@ type Provider interface {
 }
 
 // Stdlib is a zlib provider backed by the Go standard library's
-// compress/zlib package. It is the default provider registered with
-// x/plugin during package init.
+// compress/zlib package. It is the default provider used in go-git.
 type Stdlib struct{}
 
 // NewStdlib returns a new Stdlib provider.
@@ -79,10 +69,12 @@ func (*Stdlib) NewReader(r io.Reader) (Reader, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	zlr, ok := zr.(Reader)
 	if !ok {
-		return nil, fmt.Errorf("compress/zlib reader %T does not implement zlib.Resetter", zr)
+		return nil, fmt.Errorf("compress/zlib reader %T does not implement Reader", zr)
 	}
+
 	return zlr, nil
 }
 
