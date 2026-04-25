@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -38,6 +39,7 @@ type Tree struct {
 	Hash    plumbing.Hash
 
 	s storer.EncodedObjectStorer
+	mu sync.RWMutex
 	m map[string]*TreeEntry
 	t map[string]*Tree // tree path cache
 }
@@ -128,6 +130,7 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
+	t.mu.Lock()
 	if t.t == nil {
 		t.t = make(map[string]*Tree)
 	}
@@ -145,7 +148,6 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 			startingTree = tree
 			pathParts = pathParts[i:]
 			pathCurrent = path
-
 			break
 		}
 	}
@@ -154,6 +156,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	var err error
 	for tree = startingTree; len(pathParts) > 1; pathParts = pathParts[1:] {
 		if tree, err = tree.dir(pathParts[0]); err != nil {
+			t.mu.Unlock()
 			return nil, err
 		}
 
@@ -161,6 +164,9 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		t.t[pathCurrent] = tree
 	}
 
+	// Unlock before calling entry() so entry() can acquire its own lock
+	// (which it needs to safely access its t.m cache)
+	t.mu.Unlock()
 	return tree.entry(pathParts[0])
 }
 
@@ -182,15 +188,28 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
+	t.mu.RLock()
+	if t.m != nil {
+		entry, ok := t.m[baseName]
+		t.mu.RUnlock()
+		if !ok {
+			return nil, ErrEntryNotFound
+		}
+		return entry, nil
+	}
+	t.mu.RUnlock()
+
+	// t.m is nil; acquire write lock and double-check
+	t.mu.Lock()
 	if t.m == nil {
 		t.buildMap()
 	}
+	t.mu.Unlock()
 
 	entry, ok := t.m[baseName]
 	if !ok {
 		return nil, ErrEntryNotFound
 	}
-
 	return entry, nil
 }
 
