@@ -1,7 +1,6 @@
 package packfile
 
 import (
-	"compress/zlib"
 	"crypto"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 // Encoder gets the data from the storage and write it into the writer in PACK
@@ -21,7 +21,7 @@ import (
 type Encoder struct {
 	selector *deltaSelector
 	w        *offsetWriter
-	zw       *zlib.Writer
+	zw       sync.ZlibWriter
 	hasher   hash.Hash
 
 	useRefDeltas bool
@@ -48,7 +48,7 @@ func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool) *E
 
 	mw := io.MultiWriter(w, h)
 	ow := newOffsetWriter(mw)
-	zw := zlib.NewWriter(mw)
+	zw := sync.GetZlibWriter(mw)
 	return &Encoder{
 		selector:     newDeltaSelector(s),
 		w:            ow,

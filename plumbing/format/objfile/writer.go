@@ -1,7 +1,6 @@
 package objfile
 
 import (
-	"compress/zlib"
 	"errors"
 	"io"
 	"strconv"
@@ -21,7 +20,7 @@ type Writer struct {
 	raw    io.Writer
 	hasher plumbing.Hasher
 	multi  io.Writer
-	zlib   *zlib.Writer
+	zlib   sync.ZlibWriter
 
 	closed  bool
 	pending int64 // number of unwritten bytes

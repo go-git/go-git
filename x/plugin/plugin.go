@@ -58,6 +58,12 @@ func Register[T any](key key[T], factory func() T) error {
 		return ErrNilFactory
 	}
 
+	if e.validate != nil {
+		if err := e.validate(factory()); err != nil {
+			return err
+		}
+	}
+
 	e.factory = factory
 	return nil
 }
@@ -104,20 +110,33 @@ type key[T any] struct {
 // newKey creates a new plugin entry key with the given name.
 // It panics if a key with the same name has already been created.
 func newKey[T any](name Name) key[T] {
+	return newKeyWithValidator[T](name, nil)
+}
+
+// newKeyWithValidator creates a new plugin entry key with the given name
+// and optional registration-time validator.
+func newKeyWithValidator[T any](name Name, validate func(T) error) key[T] {
 	mu.Lock()
 	defer mu.Unlock()
 
 	if _, exists := entries[name]; exists {
 		panic("plugin: duplicate key name: " + name)
 	}
-	entries[name] = &entry{}
+	var wrapped func(any) error
+	if validate != nil {
+		wrapped = func(v any) error {
+			return validate(v.(T))
+		}
+	}
+	entries[name] = &entry{validate: wrapped}
 	return key[T]{name: name}
 }
 
 // entry holds the internal state for a single plugin entry.
 type entry struct {
-	frozen  bool
-	factory any // func() T stored as any; nil means not registered
+	frozen   bool
+	factory  any // func() T stored as any; nil means not registered
+	validate func(any) error
 }
 
 // resetEntry clears the factory and unfreezes the plugin entry identified by
