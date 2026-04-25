@@ -1279,22 +1279,34 @@ func TestWorktreeConfig(t *testing.T) {
 }
 
 func FuzzAdd(f *testing.F) {
-	f.Add("test")
-	f.Add("test-worktree")
-	f.Add("test123")
-	f.Add("TEST-123")
-	f.Add("")
-	f.Add("test worktree")
-	f.Add("test@worktree")
-	f.Add("test/worktree")
-	f.Add("test.worktree")
-	f.Add("test_worktree")
-	f.Add("-")
-	f.Add("a")
-	f.Add("123")
-	f.Add("test-")
-	f.Add("-test")
-	f.Add("../../../test")
+	type tc struct {
+		name       string
+		shouldPass bool
+	}
+	PASS, FAIL := true, false // For extra-explicit test intents
+	cases := []tc{
+		{"test", PASS},
+		{"test-worktree", PASS},
+		{"test123", PASS},
+		{"TEST-123", PASS},
+		{"", FAIL},
+		{"test worktree", FAIL},
+		{"test@worktree", FAIL},
+		{"test/worktree", FAIL},
+		{"test.worktree", PASS},
+		{"test_worktree", PASS},
+		{"-", PASS},
+		{"a", PASS},
+		{"123", PASS},
+		{"test-", PASS},
+		{"-test", PASS},
+		{"../../../test", FAIL},
+	}
+	expected := make(map[string]bool, len(cases))
+	for _, tc := range cases {
+		f.Add(tc.name)
+		expected[tc.name] = tc.shouldPass
+	}
 
 	f.Fuzz(func(t *testing.T, name string) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
@@ -1308,10 +1320,12 @@ func FuzzAdd(f *testing.F) {
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 		err = w.Add(wtFS, name, WithCommit(commit), WithDetachedHead())
-		if worktreeNameRE.MatchString(name) {
-			assert.NoError(t, err, "worktree name: %q", name)
-		} else {
-			assert.Error(t, err, "worktree name: %q", name)
+		if shouldPass, found := expected[name]; found {
+			if shouldPass {
+				assert.NoError(t, err, "worktree name: %q", name)
+			} else {
+				assert.Error(t, err, "worktree name: %q", name)
+			}
 		}
 	})
 }
