@@ -135,7 +135,7 @@ func (m FileMode) IsMalformed() bool {
 }
 
 // String returns the FileMode as a string in the standard git format,
-// this is, an octal number padded with ceros to 7 digits.  Malformed
+// this is, an octal number padded with zeros to 7 digits.  Malformed
 // modes are printed in that same format, for easier debugging.
 //
 // Example: Regular is "0100644", Empty is "0000000".
