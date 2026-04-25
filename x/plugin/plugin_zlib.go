@@ -14,7 +14,7 @@ func init() {
 
 const zlibPlugin Name = "zlib"
 
-var zlibKey = newKey[ZlibProvider](zlibPlugin)
+var zlibKey = newKeyWithValidator(zlibPlugin, xzlib.ValidateProvider)
 
 // ZlibReader is the method set required of a zlib decompression reader.
 // See [xzlib.Reader] for the full contract.
