@@ -34,16 +34,21 @@ func (opts *PushOptions) Decode(r io.Reader) error {
 		opts.Options = make([]string, 0)
 	}
 
-	for {
-		l, line, err := pktline.ReadLine(r)
-		if err != nil {
-			return err
-		}
-		if l == pktline.Flush {
+	s := pktline.NewScanner(r)
+	flushed := false
+	for s.Scan() {
+		if s.Len() == pktline.Flush {
+			flushed = true
 			break
 		}
 
-		opts.Options = append(opts.Options, string(line))
+		opts.Options = append(opts.Options, s.Text())
+	}
+	if err := s.Err(); err != nil {
+		return err
+	}
+	if !flushed {
+		return io.ErrUnexpectedEOF
 	}
 
 	return nil
