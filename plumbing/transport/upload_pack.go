@@ -97,6 +97,7 @@ func UploadPack(
 	var done bool
 	var haves []plumbing.Hash
 	var upreq *packp.UploadRequest
+	var savedShallow *packp.ShallowUpdate
 	var havesWithRef map[plumbing.Hash][]plumbing.Hash
 	var multiAck, multiAckDetailed bool
 	var caps *capability.List
@@ -201,6 +202,14 @@ func UploadPack(
 		go func() {
 			defer close(writec)
 
+			// Re-send shallow in stateless RPC phase 2
+			if done && savedShallow != nil {
+				if err := savedShallow.Encode(w); err != nil {
+					writec <- fmt.Errorf("sending shallow-update in done phase: %w", err)
+					return
+				}
+			}
+
 			if len(haves) > 0 {
 				// Encode ACKs to client when we have haves
 				srvrsp := packp.ServerResponse{ACKs: acks}
@@ -243,6 +252,7 @@ func UploadPack(
 					writec <- fmt.Errorf("sending final nak server-response: %w", err)
 					return
 				}
+				savedShallow = &shupd
 			}
 
 			writec <- nil
