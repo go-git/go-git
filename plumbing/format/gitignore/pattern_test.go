@@ -302,3 +302,35 @@ func (s *PatternSuite) TestGlobMatch_folderVersusFileAgain() {
 	r := p.Match([]string{"ab", "ab"}, false)
 	s.Equal(Exclude, r)
 }
+
+func (s *PatternSuite) TestNegationPattern() {
+	// Test [!...] negation pattern - issue #2006
+	// [!cc] should match anything EXCEPT cc (not just starting with !)
+	p := ParsePattern("[!cc]", nil)
+	r := p.Match([]string{"a"}, false)
+	s.Equal(Exclude, r) // 'a' does not start with 'c', so it should be excluded
+	r = p.Match([]string{"cc"}, false)
+	s.Equal(NoMatch, r) // 'cc' is exactly 'cc', should NOT be matched (excluded)
+	r = p.Match([]string{"cx"}, false)
+	s.Equal(NoMatch, r) // 'cx' starts with 'c', should NOT be matched
+}
+
+func (s *PatternSuite) TestNegationPatternInSubdir() {
+	// Test [!...] in subdirectory patterns
+	p := ParsePattern("subdir/[!cc]", nil)
+	r := p.Match([]string{"subdir", "a"}, false)
+	s.Equal(Exclude, r)
+	r = p.Match([]string{"subdir", "cc"}, false)
+	s.Equal(NoMatch, r)
+}
+
+func (s *PatternSuite) TestNegationPatternMultipleChars() {
+	// Test [!abc] - should exclude any char in [abc]
+	p := ParsePattern("[!abc]", nil)
+	r := p.Match([]string{"d"}, false)
+	s.Equal(Exclude, r) // 'd' is not a, b, or c, should be excluded
+	r = p.Match([]string{"a"}, false)
+	s.Equal(NoMatch, r)
+	r = p.Match([]string{"b"}, false)
+	s.Equal(NoMatch, r)
+}
