@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -74,15 +73,19 @@ func (g *GitProtoRequest) Encode(w io.Writer) error {
 
 // Decode decodes the request from the reader.
 func (g *GitProtoRequest) Decode(r io.Reader) error {
-	_, p, err := pktline.ReadLine(r)
-	if errors.Is(err, io.EOF) {
-		return ErrInvalidGitProtoRequest
-	}
-	if err != nil {
-		return err
+	s := pktline.NewScanner(r)
+	if !s.Scan() {
+		if s.Err() == nil {
+			return ErrInvalidGitProtoRequest
+		}
+		return s.Err()
 	}
 
-	line := string(p)
+	if s.Len() == pktline.Flush {
+		return io.EOF
+	}
+
+	line := s.Text()
 	if len(line) == 0 {
 		return io.EOF
 	}

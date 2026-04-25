@@ -28,28 +28,33 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 		err   error
 	)
 
+	s := pktline.NewScanner(r)
+
 	nextLine := func() bool {
 		nLine++
-		_, p, e := pktline.ReadLine(r)
-		if e != nil {
-			if errors.Is(e, io.EOF) {
+		if !s.Scan() {
+			if s.Err() == nil {
 				if nLine == 1 {
 					err = ErrEmptyInput
 				} else {
-					err = NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: unexpected EOF", nLine), line)
+					err = NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: unexpected EOF", nLine), bytes.Clone(line))
 				}
 			} else {
-				err = e
+				err = s.Err()
 			}
 			return false
 		}
-		line = bytes.TrimSuffix(p, eol)
+		if s.Len() == pktline.Flush {
+			line = nil
+			return true
+		}
+		line = bytes.TrimSuffix(s.Bytes(), eol)
 		return true
 	}
 
 	decodeError := func(format string, a ...any) error {
 		msg := fmt.Sprintf("pkt-line %d: %s", nLine, fmt.Sprintf(format, a...))
-		return NewErrUnexpectedData(msg, line)
+		return NewErrUnexpectedData(msg, bytes.Clone(line))
 	}
 
 	if !nextLine() {

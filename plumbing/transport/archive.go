@@ -58,16 +58,19 @@ func Archive(ctx context.Context, w io.WriteCloser, r io.ReadCloser, req *Archiv
 	}
 
 	rd := bufio.NewReader(r)
+	sc := pktline.NewScanner(rd)
 
-	l, line, err := pktline.ReadLine(rd)
-	if err != nil {
-		return nil, fmt.Errorf("archive: reading ACK/NACK: %w", err)
+	if !sc.Scan() {
+		if sc.Err() != nil {
+			return nil, fmt.Errorf("archive: reading ACK/NACK: %w", sc.Err())
+		}
+		return nil, fmt.Errorf("archive: expected ACK/NACK, got EOF")
 	}
-	if l == pktline.Flush {
+	if sc.Len() == pktline.Flush {
 		return nil, fmt.Errorf("archive: expected ACK/NACK, got flush")
 	}
 
-	resp := strings.TrimSuffix(string(line), "\n")
+	resp := strings.TrimSuffix(sc.Text(), "\n")
 	switch {
 	case resp == "ACK":
 	case strings.HasPrefix(resp, "NACK "):
@@ -76,11 +79,13 @@ func Archive(ctx context.Context, w io.WriteCloser, r io.ReadCloser, req *Archiv
 		return nil, fmt.Errorf("archive: protocol error: %s", resp)
 	}
 
-	l, _, err = pktline.ReadLine(rd)
-	if err != nil {
-		return nil, fmt.Errorf("archive: reading flush after ACK: %w", err)
+	if !sc.Scan() {
+		if sc.Err() != nil {
+			return nil, fmt.Errorf("archive: reading flush after ACK: %w", sc.Err())
+		}
+		return nil, fmt.Errorf("archive: expected flush after ACK, got EOF")
 	}
-	if l != pktline.Flush {
+	if sc.Len() != pktline.Flush {
 		return nil, fmt.Errorf("archive: expected flush after ACK, got data")
 	}
 

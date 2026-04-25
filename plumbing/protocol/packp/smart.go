@@ -28,22 +28,28 @@ type SmartReply struct {
 
 // Decode decodes a SmartReply from reader.
 func (s *SmartReply) Decode(r io.Reader) error {
-	_, p, err := pktline.ReadLine(r)
-	if err != nil {
-		return err
+	sc := pktline.NewScanner(r)
+	if !sc.Scan() {
+		if sc.Err() != nil {
+			return sc.Err()
+		}
+		return fmt.Errorf("%w: empty input", ErrInvalidSmartReply)
 	}
 
+	p := sc.Bytes()
 	if len(p) == 0 || !bytes.HasPrefix(p, []byte("# service=")) {
 		return fmt.Errorf("%w: %q", ErrInvalidSmartReply, p)
 	}
 
 	s.Service = strings.TrimSpace(string(p[10:]))
-	l, _, err := pktline.ReadLine(r)
-	if err != nil {
-		return err
+	if !sc.Scan() {
+		if sc.Err() != nil {
+			return sc.Err()
+		}
+		return fmt.Errorf("%w: expected flush-pkt", ErrInvalidSmartReply)
 	}
 
-	if l != pktline.Flush {
+	if sc.Len() != pktline.Flush {
 		return fmt.Errorf("%w: expected flush-pkt", ErrInvalidSmartReply)
 	}
 

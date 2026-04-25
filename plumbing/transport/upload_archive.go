@@ -146,23 +146,23 @@ const maxArchiveArgs = 64
 // readArchiveArgs reads "argument <arg>\n" pkt-lines until flush.
 func readArchiveArgs(r io.Reader) ([]string, error) {
 	var args []string
-	for {
-		l, line, err := pktline.ReadLine(r)
-		if err != nil {
-			return nil, fmt.Errorf("upload-archive: reading argument: %w", err)
-		}
-		if l == pktline.Flush {
+	sc := pktline.NewScanner(r)
+	for sc.Scan() {
+		if sc.Len() == pktline.Flush {
 			break
 		}
 		if len(args) >= maxArchiveArgs {
 			return nil, fmt.Errorf("upload-archive: too many arguments (>%d)", maxArchiveArgs)
 		}
 
-		s := strings.TrimSuffix(string(line), "\n")
-		if !strings.HasPrefix(s, "argument ") {
-			return nil, fmt.Errorf("upload-archive: expected 'argument' token, got: %s", s)
+		line := strings.TrimSuffix(sc.Text(), "\n")
+		if !strings.HasPrefix(line, "argument ") {
+			return nil, fmt.Errorf("upload-archive: expected 'argument' token, got: %s", line)
 		}
-		args = append(args, s[len("argument "):])
+		args = append(args, line[len("argument "):])
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("upload-archive: reading argument: %w", err)
 	}
 	return args, nil
 }
