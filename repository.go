@@ -1081,28 +1081,10 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		return err
 	}
 
-	// When the repository to clone is on the local machine,
-	// instead of using hard links, automatically setup .git/objects/info/alternates
-	// to share the objects with the source repository
-	if o.Shared {
-		if !url.IsLocalEndpoint(o.URL) {
-			return ErrAlternatePathNotSupported
-		}
-		altpath := o.URL
-		remoteRepo, err := PlainOpen(o.URL)
-		if err != nil {
-			return fmt.Errorf("failed to open remote repository: %w", err)
-		}
-		conf, err := remoteRepo.Config()
-		if err != nil {
-			return fmt.Errorf("failed to read remote repository configuration: %w", err)
-		}
-		if !conf.Core.IsBare {
-			altpath = path.Join(altpath, GitDirName)
-		}
-		if err := r.Storer.AddAlternate(altpath); err != nil {
-			return fmt.Errorf("failed to add alternate file to git objects dir: %w", err)
-		}
+	// Configure object alternates before fetch, allowing clone to borrow objects
+	// from an existing local repository.
+	if err := r.configureCloneAlternates(o); err != nil {
+		return err
 	}
 
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
@@ -1217,6 +1199,58 @@ func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
 			config.RefSpec(fmt.Sprintf(config.DefaultFetchRefSpec, o.RemoteName)),
 		}
 	}
+}
+
+func (r *Repository) configureCloneAlternates(o *CloneOptions) error {
+	if o.Shared {
+		if err := r.addAlternateFromRepositoryPath(o.URL); err != nil {
+			return err
+		}
+	}
+
+	if o.ReferenceRepo != "" {
+		if err := r.addAlternateFromRepositoryPath(o.ReferenceRepo); !o.ReferenceRepoIfAble && err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *Repository) addAlternateFromRepositoryPath(repositoryPath string) error {
+	altPath, err := repositoryAlternatesPath(repositoryPath)
+	if err != nil {
+		return err
+	}
+
+	if err := r.Storer.AddAlternate(altPath); err != nil {
+		return fmt.Errorf("failed to add alternate file to git objects dir: %w", err)
+	}
+
+	return nil
+}
+
+func repositoryAlternatesPath(repositoryPath string) (string, error) {
+	if !url.IsLocalEndpoint(repositoryPath) {
+		return "", ErrAlternatePathNotSupported
+	}
+
+	altRepo, err := PlainOpen(repositoryPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open alternate repository: %w", err)
+	}
+
+	conf, err := altRepo.Config()
+	if err != nil {
+		return "", fmt.Errorf("failed to read alternate repository configuration: %w", err)
+	}
+
+	altPath := repositoryPath
+	if !conf.Core.IsBare {
+		altPath = path.Join(altPath, GitDirName)
+	}
+
+	return altPath, nil
 }
 
 func (r *Repository) setIsBare(isBare bool) error {
