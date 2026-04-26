@@ -36,6 +36,10 @@ const (
 // ErrMissingURL is returned when a URL is required but not provided.
 var ErrMissingURL = errors.New("URL field is required")
 
+// ErrReferenceRepoNotProvided is returned when ReferenceRepoIfAble is set
+// and ReferenceRepo is not provided.
+var ErrReferenceRepoNotProvided = errors.New("ReferenceRepo is required when ReferenceRepoIfAble is set")
+
 // CloneOptions describes how a clone should be performed.
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
@@ -85,6 +89,18 @@ type CloneOptions struct {
 	//
 	// [Reference]: https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
 	Shared bool
+	// If the reference repository is on the local machine, automatically setup
+	// .git/objects/info/alternates to obtain objects from the reference
+	// repository. Using an already existing repository as an alternate will
+	// require fewer objects to be copied from the repository being cloned.
+	//
+	// [Reference]: https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---referencerepository
+	ReferenceRepo string
+	// When set to true and the reference repository is not available, the remote repository
+	// will be used to clone the repository without returning an error.
+	//
+	// [Reference]: https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---referencerepositoryifavailable
+	ReferenceRepoIfAble bool
 	// Filter requests that the server to send only a subset of the objects.
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
@@ -164,6 +180,10 @@ func (o *CloneOptions) Validate() error {
 
 	if o.Tags == plumbing.InvalidTagMode {
 		o.Tags = plumbing.AllTags
+	}
+
+	if o.ReferenceRepoIfAble && o.ReferenceRepo == "" {
+		return ErrReferenceRepoNotProvided
 	}
 
 	return nil
