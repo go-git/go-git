@@ -79,6 +79,9 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		_, err = o.pack.Seek(o.offset, io.SeekStart)
 	}
 	if err != nil {
+		if file != nil {
+			_ = file.Close()
+		}
 		return nil, err
 	}
 
@@ -86,6 +89,10 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 
 	zr, err := sync.GetZlibReader(br)
 	if err != nil {
+		sync.PutBufioReader(br)
+		if file != nil {
+			_ = file.Close()
+		}
 		return nil, err
 	}
 	return &zlibReadCloser{r: zr, f: file, rbuf: br}, nil
