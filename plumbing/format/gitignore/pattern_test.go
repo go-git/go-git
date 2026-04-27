@@ -302,3 +302,44 @@ func (s *PatternSuite) TestGlobMatch_folderVersusFileAgain() {
 	r := p.Match([]string{"ab", "ab"}, false)
 	s.Equal(Exclude, r)
 }
+
+func (s *PatternSuite) TestGitignoreNegation_simpleMatch() {
+	// [!0-9] should match any character NOT in 0-9
+	p := ParsePattern("[!0-9].dat", nil)
+	r := p.Match([]string{"x.dat"}, false)
+	s.Equal(Exclude, r)
+}
+
+func (s *PatternSuite) TestGitignoreNegation_simpleMatch_numericExcluded() {
+	// [!0-9] should NOT match digits
+	p := ParsePattern("[!0-9].dat", nil)
+	r := p.Match([]string{"7.dat"}, false)
+	s.Equal(NoMatch, r)
+}
+
+func (s *PatternSuite) TestGitignoreNegation_globMatch() {
+	// [!abc] should match any character NOT in a,b,c
+	p := ParsePattern("dir/[!abc].dat", nil)
+	r := p.Match([]string{"dir", "x.dat"}, false)
+	s.Equal(Exclude, r)
+}
+
+func (s *PatternSuite) TestGitignoreNegation_globMatch_excluded() {
+	// [!abc] should NOT match a, b, or c
+	p := ParsePattern("dir/[!abc].dat", nil)
+	r := p.Match([]string{"dir", "a.dat"}, false)
+	s.Equal(NoMatch, r)
+}
+
+func (s *PatternSuite) TestGitignoreNegation_withQuestionMark() {
+	// Combinations with other glob metacharacters
+	p := ParsePattern("[!0-9]?.dat", nil)
+	r := p.Match([]string{"ab.dat"}, false)
+	s.Equal(Exclude, r)
+}
+
+func (s *PatternSuite) TestGitignoreNegation_doubleAsterisk() {
+	p := ParsePattern("dir/**/[!0-9]*.dat", nil)
+	r := p.Match([]string{"dir", "subdir", "x.dat"}, false)
+	s.Equal(Exclude, r)
+}

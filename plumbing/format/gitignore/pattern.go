@@ -88,9 +88,21 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 	return Exclude
 }
 
+// convertGitignoreNegation converts gitignore-style negation [!...] to
+// Go's filepath.Match compatible syntax [^...].
+// Git's gitignore uses [!...] for negated character classes, but Go's
+// filepath.Match uses [^...] for the same purpose.
+func convertGitignoreNegation(pattern string) string {
+	if strings.Contains(pattern, "[!") {
+		pattern = strings.ReplaceAll(pattern, "[!", "[^")
+	}
+	return pattern
+}
+
 func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	for i, name := range path {
-		if match, err := filepath.Match(p.pattern[0], name); err != nil {
+		convertedPattern := convertGitignoreNegation(p.pattern[0])
+		if match, err := filepath.Match(convertedPattern, name); err != nil {
 			return false
 		} else if !match {
 			continue
@@ -124,12 +136,13 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 		if len(path) == 0 {
 			return false
 		}
+		convertedPattern := convertGitignoreNegation(pattern)
 		if canTraverse {
 			canTraverse = false
 			for len(path) > 0 {
 				e := path[0]
 				path = path[1:]
-				if match, err := filepath.Match(pattern, e); err != nil {
+				if match, err := filepath.Match(convertedPattern, e); err != nil {
 					return false
 				} else if match {
 					matched = true
@@ -140,7 +153,7 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 				}
 			}
 		} else {
-			if match, err := filepath.Match(pattern, path[0]); err != nil || !match {
+			if match, err := filepath.Match(convertedPattern, path[0]); err != nil || !match {
 				return false
 			}
 			matched = true
