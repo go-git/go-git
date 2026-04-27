@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	gosync "sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -38,8 +39,15 @@ type Tree struct {
 	Hash    plumbing.Hash
 
 	s storer.EncodedObjectStorer
-	m map[string]*TreeEntry
-	t map[string]*Tree // tree path cache
+
+	// Write-once map: initialized once by buildMap(), never modified afterward.
+	mOnce gosync.Once
+	m     map[string]*TreeEntry
+
+	// Continuously updated path cache.
+	tOnce gosync.Once
+	tMu   gosync.RWMutex
+	t     map[string]*Tree
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -128,27 +136,29 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
-	if t.t == nil {
+	t.tOnce.Do(func() {
 		t.t = make(map[string]*Tree)
-	}
+	})
 
 	pathParts := strings.Split(path, "/")
 	startingTree := t
 	pathCurrent := ""
 
 	// search for the longest path in the tree path cache
+	t.tMu.RLock()
 	for i := len(pathParts) - 1; i >= 1; i-- {
-		path := filepath.Join(pathParts[:i]...)
+		p := filepath.Join(pathParts[:i]...)
 
-		tree, ok := t.t[path]
+		tree, ok := t.t[p]
 		if ok {
 			startingTree = tree
 			pathParts = pathParts[i:]
-			pathCurrent = path
+			pathCurrent = p
 
 			break
 		}
 	}
+	t.tMu.RUnlock()
 
 	var tree *Tree
 	var err error
@@ -158,7 +168,9 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
+		t.tMu.Lock()
 		t.t[pathCurrent] = tree
+		t.tMu.Unlock()
 	}
 
 	return tree.entry(pathParts[0])
@@ -182,10 +194,12 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	if t.m == nil {
+	t.mOnce.Do(func() {
 		t.buildMap()
-	}
+	})
 
+	// No lock needed: sync.Once provides happens-before, and t.m is never
+	// modified after init.
 	entry, ok := t.m[baseName]
 	if !ok {
 		return nil, ErrEntryNotFound

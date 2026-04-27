@@ -1724,3 +1724,32 @@ func (s *TreeSuite) TestTreeDecodeReadBug() {
 		}
 	}
 }
+
+func (s *TreeSuite) TestFindEntryConcurrent() {
+	// Regression test for https://github.com/go-git/go-git/issues/1917
+	// FindEntry must be safe for concurrent use on the same Tree.
+	const goroutines = 10
+
+	entries := make([]string, 0, len(s.Tree.Entries))
+	for _, e := range s.Tree.Entries {
+		entries = append(entries, e.Name)
+	}
+	s.Require().NotEmpty(entries)
+
+	errCh := make(chan error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			for _, name := range entries {
+				if _, err := s.Tree.FindEntry(name); err != nil {
+					errCh <- err
+					return
+				}
+			}
+			errCh <- nil
+		}()
+	}
+
+	for i := 0; i < goroutines; i++ {
+		s.NoError(<-errCh)
+	}
+}
