@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	gosync "sync"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -135,6 +136,46 @@ func (s *TreeSuite) TestFindEntryNotFound() {
 	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
 	s.Nil(e)
 	s.ErrorIs(err, ErrDirectoryNotFound)
+}
+
+func (s *TreeSuite) TestFindEntryConcurrent() {
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(s.Storer, hash)
+	s.Require().NoError(err)
+
+	// Use top-level entry names so concurrent goroutines exercise the
+	// Tree-level caches (t.m via sync.Once, t.t via sync.Mutex) without
+	// concurrent storer I/O which has its own unrelated races.
+	paths := []string{".gitignore", "LICENSE", "go", "vendor"}
+	const goroutines = 20
+	errs := make([]error, goroutines)
+	names := make([]string, goroutines)
+
+	// Start barrier ensures all goroutines begin simultaneously,
+	// maximizing the chance of concurrent cache initialization.
+	var start gosync.WaitGroup
+	start.Add(1)
+
+	var wg gosync.WaitGroup
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int, p string) {
+			defer wg.Done()
+			start.Wait()
+			e, err := tree.FindEntry(p)
+			errs[idx] = err
+			if e != nil {
+				names[idx] = e.Name
+			}
+		}(i, paths[i%len(paths)])
+	}
+	start.Done()
+	wg.Wait()
+
+	for i := range goroutines {
+		s.NoError(errs[i], "goroutine %d", i)
+		s.Equal(paths[i%len(paths)], names[i], "goroutine %d", i)
+	}
 }
 
 // countingStorer wraps a storer and counts EncodedObject calls per hash

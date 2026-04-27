@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	gosync "sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -37,9 +38,11 @@ type Tree struct {
 	Entries []TreeEntry
 	Hash    plumbing.Hash
 
-	s storer.EncodedObjectStorer
-	m map[string]*TreeEntry
-	t map[string]*Tree // tree path cache
+	s     storer.EncodedObjectStorer
+	m     map[string]*TreeEntry
+	mOnce gosync.Once
+	t     map[string]*Tree // tree path cache
+	tMu   gosync.Mutex
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -128,6 +131,7 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 
 // FindEntry search a TreeEntry in this tree or any subtree.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
+	t.tMu.Lock()
 	if t.t == nil {
 		t.t = make(map[string]*Tree)
 	}
@@ -149,6 +153,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 			break
 		}
 	}
+	t.tMu.Unlock()
 
 	var tree *Tree
 	var err error
@@ -158,7 +163,9 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
+		t.tMu.Lock()
 		t.t[pathCurrent] = tree
+		t.tMu.Unlock()
 	}
 
 	return tree.entry(pathParts[0])
@@ -182,9 +189,7 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	if t.m == nil {
-		t.buildMap()
-	}
+	t.mOnce.Do(t.buildMap)
 
 	entry, ok := t.m[baseName]
 	if !ok {
@@ -225,6 +230,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	t.Entries = nil
 	t.m = nil
+	t.mOnce = gosync.Once{}
 
 	reader, err := o.Reader()
 	if err != nil {
