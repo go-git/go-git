@@ -463,18 +463,29 @@ func TestDecodeSkipHash(t *testing.T) {
 			err = e.encodeRawExtension("TEST", []byte("testdata"))
 			require.NoError(t, err)
 
-			_, err = buf.Write(make([]byte, hashSize))
-			require.NoError(t, err)
+			// All-zero checksum (Git's index.skipHash): must succeed.
+			zeroBuf := make([]byte, buf.Len()+hashSize)
+			copy(zeroBuf, buf.Bytes())
+			// trailing hashSize bytes are already zero
 
-			// Without SkipHash, decoding must fail (checksum mismatch).
 			out := &Index{}
-			d := NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New())
+			d := NewDecoder(bytes.NewReader(zeroBuf), tc.hash.New())
+			err = d.Decode(out)
+			require.NoError(t, err)
+			assert.Len(t, out.Entries, 1)
+
+			// Non-zero wrong checksum: must fail.
+			badBuf := make([]byte, buf.Len()+hashSize)
+			copy(badBuf, buf.Bytes())
+			badBuf[len(badBuf)-1] = 0xff // non-zero wrong checksum
+			out = &Index{}
+			d = NewDecoder(bytes.NewReader(badBuf), tc.hash.New())
 			err = d.Decode(out)
 			assert.ErrorIs(t, err, ErrInvalidChecksum)
 
-			// With SkipHash, decoding must succeed.
+			// With SkipHash option, even wrong checksum must succeed.
 			out = &Index{}
-			d = NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New(), WithSkipHash())
+			d = NewDecoder(bytes.NewReader(badBuf), tc.hash.New(), WithSkipHash())
 			err = d.Decode(out)
 			require.NoError(t, err)
 			assert.Len(t, out.Entries, 1)

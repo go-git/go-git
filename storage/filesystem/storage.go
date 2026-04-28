@@ -4,13 +4,18 @@ package filesystem
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/helper/chroot"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/reflog"
+	"github.com/go-git/go-git/v6/plumbing/format/reftable"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -23,12 +28,14 @@ type Storage struct {
 	hasher plumbing.Hasher
 
 	ObjectStorage
-	ReferenceStorage
+	referenceStorage storer.ReferenceStorer
 	IndexStorage
 	ShallowStorage
 	ConfigStorage
 	ModuleStorage
-	ReflogStorage
+	reflogStorage storer.ReflogStorer
+
+	reftableStack *reftable.Stack // non-nil when using reftable backend
 }
 
 // Options holds configuration for the storage.
@@ -84,6 +91,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	readRevIdx := true
 	writeRevIdx := true
 	skipHash := false
+	var refStorage formatcfg.RefStorage
 
 	f, err := fs.Open("config")
 	if err == nil {
@@ -93,6 +101,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 			readRevIdx = cfg.Pack.ReadReverseIndex
 			writeRevIdx = cfg.Pack.WriteReverseIndex
 			skipHash = cfg.Index.SkipHash.IsTrue()
+			refStorage = cfg.Extensions.RefStorage
 		}
 
 		_ = f.Close()
@@ -123,16 +132,47 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		dir:    dir,
 		hasher: hasher,
 
-		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
-		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
-		ShallowStorage:   ShallowStorage{dir: dir},
-		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
-		ModuleStorage:    ModuleStorage{dir: dir},
-		ReflogStorage:    ReflogStorage{dir: dir},
+		ObjectStorage:  *NewObjectStorageWithOptions(dir, c, ops),
+		IndexStorage:   IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
+		ShallowStorage: ShallowStorage{dir: dir},
+		ConfigStorage:  ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
+		ModuleStorage:  ModuleStorage{dir: dir},
+	}
+
+	if refStorage == formatcfg.RefStorageReftable {
+		reftableFS, err := chrootIfExists(fs, "reftable")
+		if err == nil && reftableFS != nil {
+			stack, err := reftable.OpenStack(reftableFS)
+			if err == nil {
+				s.reftableStack = stack
+				s.referenceStorage = &ReftableReferenceStorage{stack: stack}
+				s.reflogStorage = &ReftableReflogStorage{stack: stack}
+			}
+		}
+		// If reftable setup fails, fall through to default dotgit storage.
+		// This handles the case where a repo has the config but no reftable dir yet.
+	}
+
+	if s.referenceStorage == nil {
+		s.referenceStorage = &ReferenceStorage{dir: dir}
+	}
+	if s.reflogStorage == nil {
+		s.reflogStorage = &ReflogStorage{dir: dir}
 	}
 
 	return s
+}
+
+// chrootIfExists returns a chrooted filesystem if the directory exists.
+func chrootIfExists(fs billy.Filesystem, path string) (billy.Filesystem, error) {
+	_, err := fs.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return chroot.New(fs, path), nil
 }
 
 // SetObjectFormat sets the ObjectFormat for the storage, initiatising
@@ -195,6 +235,10 @@ func (s *Storage) SupportsExtension(name, value string) bool {
 		case "true", "false":
 			return true
 		}
+	case "refstorage":
+		if value == "reftable" {
+			return true
+		}
 	}
 	return false
 }
@@ -222,4 +266,54 @@ func (s *Storage) AddAlternate(remote string) error {
 // LowMemoryMode returns true if low memory mode is enabled.
 func (s *Storage) LowMemoryMode() bool {
 	return !s.options.HighMemoryMode
+}
+
+// SetReference stores a reference.
+func (s *Storage) SetReference(ref *plumbing.Reference) error {
+	return s.referenceStorage.SetReference(ref)
+}
+
+// CheckAndSetReference stores a reference after verifying the old value matches.
+func (s *Storage) CheckAndSetReference(newRef, old *plumbing.Reference) error {
+	return s.referenceStorage.CheckAndSetReference(newRef, old)
+}
+
+// Reference returns the reference with the given name.
+func (s *Storage) Reference(n plumbing.ReferenceName) (*plumbing.Reference, error) {
+	return s.referenceStorage.Reference(n)
+}
+
+// IterReferences returns an iterator over all references.
+func (s *Storage) IterReferences() (storer.ReferenceIter, error) {
+	return s.referenceStorage.IterReferences()
+}
+
+// RemoveReference deletes the reference with the given name.
+func (s *Storage) RemoveReference(n plumbing.ReferenceName) error {
+	return s.referenceStorage.RemoveReference(n)
+}
+
+// CountLooseRefs returns the number of loose references.
+func (s *Storage) CountLooseRefs() (int, error) {
+	return s.referenceStorage.CountLooseRefs()
+}
+
+// PackRefs packs all loose references.
+func (s *Storage) PackRefs() error {
+	return s.referenceStorage.PackRefs()
+}
+
+// Reflog returns the reflog entries for the given reference.
+func (s *Storage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+	return s.reflogStorage.Reflog(name)
+}
+
+// AppendReflog appends a single entry to the reflog for the given reference.
+func (s *Storage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+	return s.reflogStorage.AppendReflog(name, entry)
+}
+
+// DeleteReflog removes the entire reflog for the given reference.
+func (s *Storage) DeleteReflog(name plumbing.ReferenceName) error {
+	return s.reflogStorage.DeleteReflog(name)
 }

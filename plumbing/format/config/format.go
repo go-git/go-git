@@ -89,6 +89,26 @@ func (f ObjectFormat) HexSize() int {
 // ErrInvalidObjectFormat is returned when an invalid ObjectFormat is used.
 var ErrInvalidObjectFormat = errors.New("invalid object format")
 
+// RefStorage defines the reference storage backend.
+type RefStorage string
+
+const (
+	// RefStorageUnset indicates no ref storage format has been explicitly set,
+	// which implies the default files-based storage (loose refs + packed-refs).
+	RefStorageUnset RefStorage = ""
+
+	// RefStorageFiles represents the traditional files-based reference storage
+	// using loose refs under refs/ and a packed-refs file.
+	RefStorageFiles RefStorage = "files"
+
+	// RefStorageReftable represents the reftable binary reference storage format.
+	// See https://git-scm.com/docs/reftable for the specification.
+	RefStorageReftable RefStorage = "reftable"
+
+	// DefaultRefStorage holds the default reference storage format.
+	DefaultRefStorage = RefStorageUnset
+)
+
 const (
 	// SHA1Size is the size of SHA1 hash.
 	SHA1Size = 20
