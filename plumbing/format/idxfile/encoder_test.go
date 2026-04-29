@@ -130,12 +130,12 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			// This does not mean idxfile supports sha256. That will take place
 			// when Version 3 is implemented.
 			name:    "sha256 packfile",
-			fixture: fixtures.ByTag("packfile-sha256").One(),
+			fixture: fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
 			hasher:  crypto.SHA256,
 		},
 		{
 			name:    "sha1 packfile",
-			fixture: fixtures.Basic().One(),
+			fixture: fixtures.Basic().ByObjectFormat("sha1").One(),
 			hasher:  crypto.SHA1,
 		},
 	}

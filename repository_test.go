@@ -312,20 +312,22 @@ func TestCloneAll(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		tag        string
+		fixOF      string
 		format     formatcfg.ObjectFormat
 		refs       int
 		plainClone bool
 	}{
-		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4},
-		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11},
-		{tag: ".git-sha256", format: formatcfg.SHA256, refs: 4, plainClone: true},
-		{tag: ".git", format: formatcfg.UnsetObjectFormat, refs: 11, plainClone: true},
+		{tag: ".git", fixOF: "sha256", format: formatcfg.SHA256, refs: 4},
+		{tag: ".git", fixOF: "sha1", format: formatcfg.UnsetObjectFormat, refs: 11},
+		{tag: ".git", fixOF: "sha256", format: formatcfg.SHA256, refs: 4, plainClone: true},
+		{tag: ".git", fixOF: "sha1", format: formatcfg.UnsetObjectFormat, refs: 11, plainClone: true},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.tag, func(t *testing.T) {
+		testName := fmt.Sprintf("%s/%s/plain=%t", tc.tag, tc.fixOF, tc.plainClone)
+		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			f := fixtures.ByTag(tc.tag).One()
+			f := fixtures.ByTag(tc.tag).ByObjectFormat(tc.fixOF).One()
 
 			for _, srv := range server.All(server.Loader(t, f)) {
 				endpoint, err := srv.Start()
@@ -383,24 +385,28 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 		name         string
 		clientFormat formatcfg.ObjectFormat
 		serverTag    string
+		fixOF        string
 		wantErr      bool
 	}{
 		{
 			name:         "unset client format cannot fetch sha256",
 			clientFormat: formatcfg.UnsetObjectFormat,
-			serverTag:    ".git-sha256",
+			serverTag:    ".git",
+			fixOF:        "sha256",
 			wantErr:      true,
 		},
 		{
 			name:         "sha1 client cannot fetch sha256",
 			clientFormat: formatcfg.SHA1,
-			serverTag:    ".git-sha256",
+			serverTag:    ".git",
+			fixOF:        "sha256",
 			wantErr:      true,
 		},
 		{
 			name:         "sha256 client cannot fetch sha1",
 			clientFormat: formatcfg.SHA256,
 			serverTag:    ".git",
+			fixOF:        "sha1",
 			wantErr:      true,
 		},
 	}
@@ -409,7 +415,7 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			f := fixtures.ByTag(tc.serverTag).One()
+			f := fixtures.ByTag(tc.serverTag).ByObjectFormat(tc.fixOF).One()
 			require.NotNil(t, f, "fixture not found for tag %s", tc.serverTag)
 
 			for _, srv := range server.All(server.Loader(t, f)) {
@@ -748,8 +754,8 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 	t.Run("clone", func(t *testing.T) {
 		t.Parallel()
 
-		f := fixtures.ByTag(".git-sha256").One()
-		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+		f := fixtures.ByTag(".git").ByObjectFormat("sha256").One()
+		require.NotNil(t, f, "fixture not found")
 
 		for _, srv := range server.All(server.Loader(t, f)) {
 			endpoint, err := srv.Start()
@@ -772,8 +778,8 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 	t.Run("open", func(t *testing.T) {
 		t.Parallel()
 
-		f := fixtures.ByTag(".git-sha256").One()
-		require.NotNil(t, f, "fixture not found for tag .git-sha256")
+		f := fixtures.ByTag(".git").ByObjectFormat("sha256").One()
+		require.NotNil(t, f, "fixture not found")
 
 		dotgit, dotgitErr := f.DotGit(fixtures.WithMemFS())
 		require.NoError(t, dotgitErr)
@@ -1661,17 +1667,21 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 		s.T().Skip("skipping test in short mode.")
 	}
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
-		URL:               s.GetLocalRepositoryURL(fixtures.ByTag("submodule").One()),
-		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
-	})
-	s.Require().NoError(err)
+	fixtures.ByTag("submodule").Run(s.T(), func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
 
-	cfg, err := r.Config()
-	s.NoError(err)
-	s.Len(cfg.Remotes, 1)
-	s.Len(cfg.Branches, 1)
-	s.Len(cfg.Submodules, 2)
+		r, err := PlainClone(t.TempDir(), &CloneOptions{
+			URL:               s.GetLocalRepositoryURL(f),
+			RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+		})
+		require.NoError(t, err)
+
+		cfg, err := r.Config()
+		require.NoError(t, err)
+		assert.Len(t, cfg.Remotes, 1)
+		assert.Len(t, cfg.Branches, 1)
+		assert.Len(t, cfg.Submodules, 2)
+	})
 }
 
 func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
@@ -1679,61 +1689,69 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
+
 	if testing.Short() {
 		s.T().Skip("skipping test in short mode.")
 	}
 
-	dir := s.T().TempDir()
-	path := func() billy.Filesystem {
-		wt, err := fixtures.ByTag("submodule").One().Worktree()
-		s.Require().NoError(err)
-		return wt
-	}().Root()
-	mainRepo, err := PlainClone(dir, &CloneOptions{
-		URL:               path,
-		RecurseSubmodules: 1,
-		ShallowSubmodules: true,
+	fixtures.ByTag("submodule").Run(s.T(), func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		mainRepo, err := PlainClone(dir, &CloneOptions{
+			URL:               s.GetLocalRepositoryURL(f),
+			RecurseSubmodules: 1,
+			ShallowSubmodules: true,
+		})
+		require.NoError(t, err)
+
+		mainWorktree, err := mainRepo.Worktree()
+		require.NoError(t, err)
+
+		submodule, err := mainWorktree.Submodule(primaryFixtureSubmoduleName(f))
+		require.NoError(t, err)
+
+		subRepo, err := submodule.Repository()
+		require.NoError(t, err)
+		defer subRepo.Close()
+
+		lr, err := subRepo.Log(&LogOptions{})
+		require.NoError(t, err)
+
+		commitCount := 0
+		for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+			commitCount++
+		}
+		require.NoError(t, err)
+		assert.Equal(t, 1, commitCount)
 	})
-	s.Require().NoError(err)
-
-	mainWorktree, err := mainRepo.Worktree()
-	s.Require().NoError(err)
-
-	submodule, err := mainWorktree.Submodule("basic")
-	s.Require().NoError(err)
-
-	subRepo, err := submodule.Repository()
-	s.Require().NoError(err)
-	defer subRepo.Close()
-
-	lr, err := subRepo.Log(&LogOptions{})
-	s.Require().NoError(err)
-
-	commitCount := 0
-	for _, err := lr.Next(); err == nil; _, err = lr.Next() {
-		commitCount++
-	}
-	s.NoError(err)
-	s.Equal(1, commitCount)
 }
 
 func (s *RepositorySuite) TestPlainCloneNoCheckout() {
-	dir := s.T().TempDir()
+	fixtures.ByTag("submodule").Run(s.T(), func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
 
-	r, err := PlainClone(dir, &CloneOptions{
-		URL:               s.GetLocalRepositoryURL(fixtures.ByTag("submodule").One()),
-		NoCheckout:        true,
-		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+		dir := t.TempDir()
+
+		r, err := PlainClone(dir, &CloneOptions{
+			URL:               s.GetLocalRepositoryURL(f),
+			NoCheckout:        true,
+			RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+		})
+		require.NoError(t, err)
+
+		h, err := r.Head()
+		require.NoError(t, err)
+		if f.Head != "" {
+			assert.Equal(t, f.Head, h.Hash().String())
+		} else {
+			assert.False(t, h.Hash().IsZero(), "HEAD should not be empty")
+		}
+
+		fi, err := osfs.New(dir).ReadDir("")
+		require.NoError(t, err)
+		assert.Len(t, fi, 1) // .git
 	})
-	s.Require().NoError(err)
-
-	h, err := r.Head()
-	s.NoError(err)
-	s.Equal("b685400c1f9316f350965a5993d350bc746b0bf4", h.Hash().String())
-
-	fi, err := osfs.New(dir).ReadDir("")
-	s.NoError(err)
-	s.Len(fi, 1) // .git
 }
 
 func (s *RepositorySuite) TestFetch() {

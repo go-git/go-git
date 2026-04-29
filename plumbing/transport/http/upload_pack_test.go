@@ -23,6 +23,7 @@ type uploadPackSuite struct {
 func (s *uploadPackSuite) SetupTest() {
 	base, addr := setupSmartServer(s.T())
 
+	prepareRepo(s.T(), fixtures.Basic().One(), base, "basic.git")
 	basicFS := prepareRepo(s.T(), fixtures.Basic().One(), base, "basic.git")
 	emptyFS := prepareRepo(s.T(), fixtures.ByTag("empty").One(), base, "empty.git")
 

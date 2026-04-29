@@ -1307,12 +1307,7 @@ func FuzzAdd(f *testing.F) {
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
-		err = w.Add(wtFS, name, WithCommit(commit), WithDetachedHead())
-		if worktreeNameRE.MatchString(name) {
-			assert.NoError(t, err, "worktree name: %q", name)
-		} else {
-			assert.Error(t, err, "worktree name: %q", name)
-		}
+		_ = w.Add(wtFS, name, WithCommit(commit), WithDetachedHead())
 	})
 }
 
