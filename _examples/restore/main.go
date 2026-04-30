@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,14 +14,14 @@ import (
 func prepareRepo(w *git.Worktree, directory string) {
 	// We need a known state of files inside the worktree for testing revert a modify and delete
 	Info("echo \"hello world! Modify\" > for-modify")
-	err := ioutil.WriteFile(filepath.Join(directory, "for-modify"), []byte("hello world! Modify"), 0o644)
+	err := os.WriteFile(filepath.Join(directory, "for-modify"), []byte("hello world! Modify"), 0o644)
 	CheckIfError(err)
 	Info("git add for-modify")
 	_, err = w.Add("for-modify")
 	CheckIfError(err)
 
 	Info("echo \"hello world! Delete\" > for-delete")
-	err = ioutil.WriteFile(filepath.Join(directory, "for-delete"), []byte("hello world! Delete"), 0o644)
+	err = os.WriteFile(filepath.Join(directory, "for-delete"), []byte("hello world! Delete"), 0o644)
 	CheckIfError(err)
 	Info("git add for-delete")
 	_, err = w.Add("for-delete")
@@ -55,14 +54,14 @@ func main() {
 
 	// Perform the operation and stage them
 	Info("echo \"hello world! Modify 2\" > for-modify")
-	err = ioutil.WriteFile(filepath.Join(directory, "for-modify"), []byte("hello world! Modify 2"), 0o644)
+	err = os.WriteFile(filepath.Join(directory, "for-modify"), []byte("hello world! Modify 2"), 0o644)
 	CheckIfError(err)
 	Info("git add for-modify")
 	_, err = w.Add("for-modify")
 	CheckIfError(err)
 
 	Info("echo \"hello world! Add\" > for-add")
-	err = ioutil.WriteFile(filepath.Join(directory, "for-add"), []byte("hello world! Add"), 0o644)
+	err = os.WriteFile(filepath.Join(directory, "for-add"), []byte("hello world! Add"), 0o644)
 	CheckIfError(err)
 	Info("git add for-add")
 	_, err = w.Add("for-add")
