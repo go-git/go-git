@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
@@ -18,11 +19,11 @@ import (
 type Translator struct {
 	nativeHasher *plumbing.ObjectHasher
 	compatHasher *plumbing.ObjectHasher
-	mapping      HashMapping
+	mapping      oidmap.Map
 }
 
 // NewTranslator creates a Translator for the given format pair and mapping.
-func NewTranslator(native, compat format.ObjectFormat, m HashMapping) *Translator {
+func NewTranslator(native, compat format.ObjectFormat, m oidmap.Map) *Translator {
 	return &Translator{
 		nativeHasher: plumbing.FromObjectFormat(native),
 		compatHasher: plumbing.FromObjectFormat(compat),
@@ -30,8 +31,8 @@ func NewTranslator(native, compat format.ObjectFormat, m HashMapping) *Translato
 	}
 }
 
-// Mapping returns the underlying HashMapping.
-func (t *Translator) Mapping() HashMapping {
+// Mapping returns the underlying object ID map.
+func (t *Translator) Mapping() oidmap.Map {
 	return t.mapping
 }
 
@@ -105,7 +106,7 @@ func (t *Translator) translateTree(content []byte) ([]byte, error) {
 		t.nativeHasher.Size(),
 		t.compatHasher.Size(),
 		"compat",
-		t.mapping.NativeToCompat,
+		t.mapping.ToCompat,
 	)
 }
 
@@ -117,7 +118,7 @@ func (t *Translator) translateCompatTree(content []byte) ([]byte, error) {
 		t.compatHasher.Size(),
 		t.nativeHasher.Size(),
 		"native",
-		t.mapping.CompatToNative,
+		t.mapping.ToNative,
 	)
 }
 
@@ -140,7 +141,7 @@ func (t *Translator) translateTextObject(content []byte, hashFields []string) ([
 		t.nativeHasher.Size()*2,
 		t.compatHasher.Size()*2,
 		"compat",
-		t.mapping.NativeToCompat,
+		t.mapping.ToCompat,
 	)
 }
 
@@ -153,7 +154,7 @@ func (t *Translator) translateCompatTextObject(content []byte, hashFields []stri
 		t.compatHasher.Size()*2,
 		t.nativeHasher.Size()*2,
 		"native",
-		t.mapping.CompatToNative,
+		t.mapping.ToNative,
 	)
 }
 

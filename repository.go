@@ -21,7 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -93,7 +93,7 @@ type initOptions struct {
 	defaultBranch          plumbing.ReferenceName
 	workTree               billy.Filesystem
 	objectFormat           formatcfg.ObjectFormat
-	compatMappingWriteMode compat.FileMappingWriteMode
+	compatMappingWriteMode oidmap.FileWriteMode
 	partialInit            bool
 }
 
@@ -134,10 +134,10 @@ func WithObjectFormat(of formatcfg.ObjectFormat) InitOption {
 func WithCompatObjectMapWrite(enabled bool) InitOption {
 	return func(o *initOptions) {
 		if enabled {
-			o.compatMappingWriteMode = compat.FileMappingWriteObjectMap
+			o.compatMappingWriteMode = oidmap.FileWriteObjectMap
 			return
 		}
-		o.compatMappingWriteMode = compat.FileMappingWriteLegacy
+		o.compatMappingWriteMode = oidmap.FileWriteLegacy
 	}
 }
 
@@ -459,9 +459,9 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		alternatesFSRoot = volume + string(filepath.Separator)
 	}
 
-	writeMode := compat.FileMappingWriteLegacy
+	writeMode := oidmap.FileWriteLegacy
 	if o.EnableCompatObjectMapWrite {
-		writeMode = compat.FileMappingWriteObjectMap
+		writeMode = oidmap.FileWriteObjectMap
 	}
 
 	s := filesystem.NewStorageWithOptions(repositoryFs, cache.NewObjectLRUDefault(), filesystem.Options{

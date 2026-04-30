@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -75,8 +76,8 @@ type Options struct {
 
 	// CompatMappingWriteMode controls how compatObjectFormat mappings are
 	// persisted on disk when the extension is enabled. Defaults to the legacy
-	// loose-object-idx format unless explicitly set to FileMappingWriteObjectMap.
-	CompatMappingWriteMode compat.FileMappingWriteMode
+	// loose-object-idx format unless explicitly set to oidmap.FileWriteObjectMap.
+	CompatMappingWriteMode oidmap.FileWriteMode
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -149,7 +150,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 			nativeFmt = formatcfg.DefaultObjectFormat
 		}
 		mode := ops.CompatMappingWriteMode
-		m := compat.NewFileMappingWithWriteMode(fs, "objects", mode)
+		m := oidmap.NewFileWithWriteMode(fs, "objects", mode)
 		s.translator = compat.NewTranslator(nativeFmt, compatObjFmt, m)
 	}
 
@@ -241,7 +242,7 @@ func (s *Storage) CompactCompatMappings() error {
 		return nil
 	}
 
-	fm, ok := s.translator.Mapping().(*compat.FileMapping)
+	fm, ok := s.translator.Mapping().(*oidmap.File)
 	if !ok {
 		return nil
 	}
@@ -256,7 +257,7 @@ func (s *Storage) HasEncodedObject(h plumbing.Hash) error {
 		return err
 	}
 
-	native, cerr := s.translator.Mapping().CompatToNative(h)
+	native, cerr := s.translator.Mapping().ToNative(h)
 	if cerr != nil {
 		return err
 	}
@@ -270,7 +271,7 @@ func (s *Storage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbin
 		return obj, err
 	}
 
-	native, cerr := s.translator.Mapping().CompatToNative(h)
+	native, cerr := s.translator.Mapping().ToNative(h)
 	if cerr != nil {
 		return nil, err
 	}

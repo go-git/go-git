@@ -52,7 +52,7 @@ func translateObjectsOfType(s storer.EncodedObjectStorer, t *Translator, objType
 
 	return iter.ForEach(func(obj plumbing.EncodedObject) error {
 		// Skip if already translated.
-		if _, err := t.mapping.NativeToCompat(obj.Hash()); err == nil {
+		if _, err := t.mapping.ToCompat(obj.Hash()); err == nil {
 			return nil
 		}
 
@@ -76,7 +76,7 @@ func translateObjectsWithRetry(s storer.EncodedObjectStorer, t *Translator, objT
 
 		err = iter.ForEach(func(obj plumbing.EncodedObject) error {
 			// Skip if already translated.
-			if _, err := t.mapping.NativeToCompat(obj.Hash()); err == nil {
+			if _, err := t.mapping.ToCompat(obj.Hash()); err == nil {
 				return nil
 			}
 

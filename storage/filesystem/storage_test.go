@@ -14,7 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/testcompat"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -392,7 +392,7 @@ func TestCompatLookupByCompatHash(t *testing.T) {
 
 	for _, tt := range tests { //nolint:paralleltest // shared DotGit is not thread safe
 		t.Run(tt.name, func(t *testing.T) {
-			compatHash, err := translator.Mapping().NativeToCompat(tt.native)
+			compatHash, err := translator.Mapping().ToCompat(tt.native)
 			require.NoError(t, err)
 
 			require.NoError(t, sto.HasEncodedObject(compatHash))
@@ -457,7 +457,7 @@ func TestCompatMappingWriteModeObjectMap(t *testing.T) {
 	require.NoError(t, sto.SetConfig(cfg))
 
 	sto = filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
-		CompatMappingWriteMode: compat.FileMappingWriteObjectMap,
+		CompatMappingWriteMode: oidmap.FileWriteObjectMap,
 	})
 	testcompat.PopulateCompatChain(t, sto)
 

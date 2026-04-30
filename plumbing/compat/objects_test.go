@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -71,7 +72,7 @@ func TestTranslateStoredObjects(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a translator from SHA-1 (native) to SHA-256 (compat).
-	m := compat.NewMemoryMapping()
+	m := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	// Translate all stored objects.
@@ -85,7 +86,7 @@ func TestTranslateStoredObjects(t *testing.T) {
 
 	// Verify each object's mapping exists.
 	for _, h := range []plumbing.Hash{blobHash, treeHash, commitHash, tagHash} {
-		compatHash, err := m.NativeToCompat(h)
+		compatHash, err := m.ToCompat(h)
 		require.NoError(t, err, "missing mapping for %s", h)
 		assert.False(t, compatHash.IsZero())
 	}
@@ -95,7 +96,7 @@ func TestTranslateStoredObjectsEmpty(t *testing.T) {
 	t.Parallel()
 
 	s := memory.NewStorage()
-	m := compat.NewMemoryMapping()
+	m := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	err := compat.TranslateStoredObjects(s, tr)
@@ -123,7 +124,7 @@ func TestTranslateStoredObjectsReportsUnresolvableDependencies(t *testing.T) {
 	_, err := s.ObjectStorage.SetEncodedObject(tree)
 	require.NoError(t, err)
 
-	m := compat.NewMemoryMapping()
+	m := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	err = compat.TranslateStoredObjects(s, tr)
@@ -145,7 +146,7 @@ func TestTranslateStoredObjectsSurfacesNonDependencyErrors(t *testing.T) {
 	_, err := s.ObjectStorage.SetEncodedObject(tree)
 	require.NoError(t, err)
 
-	m := compat.NewMemoryMapping()
+	m := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	err = compat.TranslateStoredObjects(s, tr)
@@ -197,7 +198,7 @@ func TestTranslateStoredObjectsTranslatesTagOfTag(t *testing.T) {
 	_, err = s.ObjectStorage.SetEncodedObject(tag1)
 	require.NoError(t, err)
 
-	m := compat.NewMemoryMapping()
+	m := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	ordered := orderedTagStorer{
@@ -206,9 +207,9 @@ func TestTranslateStoredObjectsTranslatesTagOfTag(t *testing.T) {
 	}
 	require.NoError(t, compat.TranslateStoredObjects(ordered, tr))
 
-	compatTag1, err := m.NativeToCompat(tag1Hash)
+	compatTag1, err := m.ToCompat(tag1Hash)
 	require.NoError(t, err)
-	compatTag2, err := m.NativeToCompat(tag2Hash)
+	compatTag2, err := m.ToCompat(tag2Hash)
 	require.NoError(t, err)
 	assert.False(t, compatTag1.IsZero())
 	assert.False(t, compatTag2.IsZero())

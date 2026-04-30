@@ -78,12 +78,12 @@ func FetchPack(
 	if shallowInfo != nil {
 		if compatFetch {
 			for i, h := range shallowInfo.Shallows {
-				if native, err := tr.Mapping().CompatToNative(h); err == nil {
+				if native, err := tr.Mapping().ToNative(h); err == nil {
 					shallowInfo.Shallows[i] = native
 				}
 			}
 			for i, h := range shallowInfo.Unshallows {
-				if native, err := tr.Mapping().CompatToNative(h); err == nil {
+				if native, err := tr.Mapping().ToNative(h); err == nil {
 					shallowInfo.Unshallows[i] = native
 				}
 			}

@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
@@ -71,7 +72,7 @@ func NewStorage(o ...StorageOption) *Storage {
 
 		if opts.compatObjectFormat != formatcfg.UnsetObjectFormat {
 			cfg.Extensions.CompatObjectFormat = opts.compatObjectFormat
-			m := compat.NewMemoryMapping()
+			m := oidmap.NewMemory()
 			s.translator = compat.NewTranslator(opts.objectFormat, opts.compatObjectFormat, m)
 		}
 	} else {
@@ -143,7 +144,7 @@ func (s *Storage) HasEncodedObject(h plumbing.Hash) error {
 	}
 
 	// Try resolving via compat mapping.
-	native, cerr := s.translator.Mapping().CompatToNative(h)
+	native, cerr := s.translator.Mapping().ToNative(h)
 	if cerr != nil {
 		return err // return original error
 	}
@@ -158,7 +159,7 @@ func (s *Storage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbin
 	}
 
 	// Try resolving via compat mapping.
-	native, cerr := s.translator.Mapping().CompatToNative(h)
+	native, cerr := s.translator.Mapping().ToNative(h)
 	if cerr != nil {
 		return nil, err // return original error
 	}

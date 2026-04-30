@@ -1,4 +1,4 @@
-package compat
+package oidmap
 
 import (
 	"bytes"
@@ -33,17 +33,20 @@ func mustReadDir(
 	return entries
 }
 
-func TestFileMapping(t *testing.T) {
-	t.Parallel()
+func writeObjectMapFileForTest(t *testing.T, fs billy.Filesystem, path string, pairs []mapPair) {
+	t.Helper()
 
-	testHashMapping(t, func() countHashMapping {
-		fs := memfs.New()
-		_ = fs.MkdirAll("objects", 0o755)
-		return NewFileMapping(fs, "objects")
-	})
+	data, err := encodeMapEntries(pairs)
+	require.NoError(t, err)
+
+	f, err := fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	require.NoError(t, err)
+	_, err = f.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 }
 
-func TestFileMappingPersistence(t *testing.T) {
+func TestFilePersistence(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -53,12 +56,12 @@ func TestFileMappingPersistence(t *testing.T) {
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
 	// Write a mapping with one instance.
-	m1 := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
+	m1 := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
 	require.NoError(t, m1.Add(native, compat))
 
 	// Open a fresh instance and verify it can read the persisted mapping.
-	m2 := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
-	got, err := m2.NativeToCompat(native)
+	m2 := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
+	got, err := m2.ToCompat(native)
 	require.NoError(t, err)
 	assert.True(t, got.Equal(compat))
 
@@ -71,7 +74,7 @@ func TestFileMappingPersistence(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestFileMappingPersistenceDefaultsToLegacyWrite(t *testing.T) {
+func TestFilePersistenceDefaultsToLegacyWrite(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -80,7 +83,7 @@ func TestFileMappingPersistenceDefaultsToLegacyWrite(t *testing.T) {
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
-	m := NewFileMapping(fs, "objects")
+	m := NewFile(fs, "objects")
 	require.NoError(t, m.Add(native, compat))
 
 	data, err := readFile(fs, fs.Join("objects", "loose-object-idx"))
@@ -91,19 +94,19 @@ func TestFileMappingPersistenceDefaultsToLegacyWrite(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestFileMappingEmptyFile(t *testing.T) {
+func TestFileEmptyFile(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
-	m := NewFileMapping(fs, "objects")
+	m := NewFile(fs, "objects")
 	count, err := m.Count()
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
 }
 
-func TestFileMappingCountReturnsLoadError(t *testing.T) {
+func TestFileCountReturnsLoadError(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -115,13 +118,13 @@ func TestFileMappingCountReturnsLoadError(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
 	count, err := m.Count()
 	require.Error(t, err)
 	assert.Zero(t, count)
 }
 
-func TestFileMappingReadsLegacyLooseObjectIdx(t *testing.T) {
+func TestFileReadsLegacyLooseObjectIdx(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -136,13 +139,13 @@ func TestFileMappingReadsLegacyLooseObjectIdx(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
-	got, err := m.NativeToCompat(native)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
+	got, err := m.ToCompat(native)
 	require.NoError(t, err)
 	assert.Equal(t, compat, got)
 }
 
-func TestFileMappingReadsLegacyAndObjectMapTogether(t *testing.T) {
+func TestFileReadsLegacyAndObjectMapTogether(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -161,7 +164,7 @@ func TestFileMappingReadsLegacyAndObjectMapTogether(t *testing.T) {
 
 	data, err := encodeMapEntries([]mapPair{{native: native2, compat: compat2}})
 	require.NoError(t, err)
-	mapPath, err := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap).mapPathForData(formatcfg.SHA1, data)
+	mapPath, err := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap).mapPathForData(formatcfg.SHA1, data)
 	require.NoError(t, err)
 	require.NoError(t, fs.MkdirAll(fs.Join("objects", "object-map"), 0o755))
 	objectMapFile, err := fs.OpenFile(mapPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -170,18 +173,79 @@ func TestFileMappingReadsLegacyAndObjectMapTogether(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, objectMapFile.Close())
 
-	m := NewFileMapping(fs, "objects")
+	m := NewFile(fs, "objects")
 
-	got1, err := m.NativeToCompat(native1)
+	got1, err := m.ToCompat(native1)
 	require.NoError(t, err)
 	assert.Equal(t, compat1, got1)
 
-	got2, err := m.NativeToCompat(native2)
+	got2, err := m.ToCompat(native2)
 	require.NoError(t, err)
 	assert.Equal(t, compat2, got2)
 }
 
-func TestFileMappingPrefersSnapshotFilesAfterSorting(t *testing.T) {
+func TestFileLoadConflictingObjectMapShardsRemovesStaleReverse(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	require.NoError(t, fs.MkdirAll("objects/object-map", 0o755))
+
+	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	compatOld := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	compatNew := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+
+	writeObjectMapFileForTest(t, fs, "objects/object-map/map-aaaa.map", []mapPair{{native: native, compat: compatOld}})
+	writeObjectMapFileForTest(t, fs, "objects/object-map/map-bbbb.map", []mapPair{{native: native, compat: compatNew}})
+
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
+	got, err := m.ToCompat(native)
+	require.NoError(t, err)
+	assert.Equal(t, compatNew, got)
+
+	_, err = m.ToNative(compatOld)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+	got, err = m.ToNative(compatNew)
+	require.NoError(t, err)
+	assert.Equal(t, native, got)
+}
+
+func TestFileLoadLegacyWinsOverObjectMapConflict(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	require.NoError(t, fs.MkdirAll("objects/object-map", 0o755))
+
+	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	objectMapCompat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	legacyCompat := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+
+	writeObjectMapFileForTest(t, fs, "objects/object-map/map-aaaa.map", []mapPair{{native: native, compat: objectMapCompat}})
+
+	legacy, err := fs.OpenFile("objects/loose-object-idx", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	require.NoError(t, err)
+	_, err = legacy.Write([]byte(native.String() + " " + legacyCompat.String() + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, legacy.Close())
+
+	m := NewFile(fs, "objects")
+	got, err := m.ToCompat(native)
+	require.NoError(t, err)
+	assert.Equal(t, legacyCompat, got)
+
+	_, err = m.ToNative(objectMapCompat)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+	got, err = m.ToNative(legacyCompat)
+	require.NoError(t, err)
+	assert.Equal(t, native, got)
+
+	count, err := m.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+func TestFilePrefersSnapshotFilesAfterSorting(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -208,19 +272,19 @@ func TestFileMappingPrefersSnapshotFilesAfterSorting(t *testing.T) {
 	writeMapFile("objects/object-map/map-aaaa.map", olderData)
 	writeMapFile("objects/object-map/map-zsnapshot-zzzz.map", newerData)
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
-	got, err := m.NativeToCompat(native)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
+	got, err := m.ToCompat(native)
 	require.NoError(t, err)
 	assert.Equal(t, compatNew, got)
 }
 
-func TestFileMappingCompact(t *testing.T) {
+func TestFileCompact(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
 	native1 := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat1 := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	native2 := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
@@ -244,23 +308,23 @@ func TestFileMappingCompact(t *testing.T) {
 	}
 	assert.Equal(t, 1, count)
 
-	m2 := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
-	got1, err := m2.NativeToCompat(native1)
+	m2 := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
+	got1, err := m2.ToCompat(native1)
 	require.NoError(t, err)
 	assert.Equal(t, compat1, got1)
 
-	got2, err := m2.NativeToCompat(native2)
+	got2, err := m2.ToCompat(native2)
 	require.NoError(t, err)
 	assert.Equal(t, compat2, got2)
 }
 
-func TestFileMappingObjectMapAddWritesIncrementalShards(t *testing.T) {
+func TestFileObjectMapAddWritesIncrementalShards(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
 	native1 := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat1 := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	native2 := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
@@ -297,13 +361,13 @@ func TestFileMappingObjectMapAddWritesIncrementalShards(t *testing.T) {
 	}, total)
 }
 
-func TestFileMappingObjectMapOverwriteUpdatesCurrentInstance(t *testing.T) {
+func TestFileObjectMapOverwriteUpdatesCurrentInstance(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
 	native1 := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat1 := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	native2 := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
@@ -312,31 +376,31 @@ func TestFileMappingObjectMapOverwriteUpdatesCurrentInstance(t *testing.T) {
 	require.NoError(t, m.Add(native1, compat1))
 	require.NoError(t, m.Add(native1, compat2))
 
-	got, err := m.NativeToCompat(native1)
+	got, err := m.ToCompat(native1)
 	require.NoError(t, err)
 	assert.Equal(t, compat2, got)
 
-	got, err = m.CompatToNative(compat2)
+	got, err = m.ToNative(compat2)
 	require.NoError(t, err)
 	assert.Equal(t, native1, got)
 
-	_, err = m.CompatToNative(compat1)
+	_, err = m.ToNative(compat1)
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 
 	require.NoError(t, m.Add(native2, compat1))
 
-	got, err = m.CompatToNative(compat1)
+	got, err = m.ToNative(compat1)
 	require.NoError(t, err)
 	assert.Equal(t, native2, got)
 }
 
-func TestFileMappingCompactLegacy(t *testing.T) {
+func TestFileCompactLegacy(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
-	m := NewFileMapping(fs, "objects")
+	m := NewFile(fs, "objects")
 	native1 := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat1 := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	native2 := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
@@ -355,13 +419,13 @@ func TestFileMappingCompactLegacy(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestFileMappingCompactEmpty(t *testing.T) {
+func TestFileCompactEmpty(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
 	_ = fs.MkdirAll("objects", 0o755)
 
-	m := NewFileMapping(fs, "objects")
+	m := NewFile(fs, "objects")
 	require.NoError(t, m.Compact())
 
 	_, err := fs.Stat(fs.Join("objects", "loose-object-idx"))
@@ -379,6 +443,15 @@ func TestDecodeMapFileErrors(t *testing.T) {
 		data, err := encodeMapEntries([]mapPair{{native: native, compat: compat}})
 		require.NoError(t, err)
 
+		return data
+	}
+	newHeader := func(size int, headerLen, numFormats uint32) []byte {
+		data := make([]byte, size)
+		copy(data[:4], []byte(mapSignature))
+		binary.BigEndian.PutUint32(data[4:8], mapVersion)
+		binary.BigEndian.PutUint32(data[8:12], headerLen)
+		binary.BigEndian.PutUint32(data[12:16], 1)
+		binary.BigEndian.PutUint32(data[16:20], numFormats)
 		return data
 	}
 
@@ -418,6 +491,81 @@ func TestDecodeMapFileErrors(t *testing.T) {
 		_, _, err := decodeMapFile(data)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid trailer offset")
+	})
+
+	t.Run("unsupported number of formats", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name       string
+			numFormats uint32
+		}{
+			{name: "zero", numFormats: 0},
+			{name: "one", numFormats: 1},
+			{name: "three", numFormats: 3},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				data := newHeader(60, 60, tt.numFormats)
+
+				var err error
+				require.NotPanics(t, func() {
+					_, _, err = decodeMapFile(data)
+				})
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported number of formats")
+			})
+		}
+	})
+
+	t.Run("invalid header length bounds", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name      string
+			headerLen func([]byte) uint32
+		}{
+			{
+				name: "before descriptor trailer",
+				headerLen: func([]byte) uint32 {
+					return 52
+				},
+			},
+			{
+				name: "past end",
+				headerLen: func(data []byte) uint32 {
+					return uint32(len(data) + 1)
+				},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				data := newValid(t)
+				binary.BigEndian.PutUint32(data[8:12], tt.headerLen(data))
+
+				var err error
+				require.NotPanics(t, func() {
+					_, _, err = decodeMapFile(data)
+				})
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "invalid header length")
+			})
+		}
+	})
+
+	t.Run("checksum mismatch", func(t *testing.T) {
+		t.Parallel()
+
+		data := newValid(t)
+		data[len(data)-1] ^= 0xff
+
+		_, _, err := decodeMapFile(data)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "checksum mismatch")
 	})
 
 	t.Run("truncated format tables", func(t *testing.T) {
@@ -479,7 +627,7 @@ func TestEncodeMapEntriesUsesShortAndFullTables(t *testing.T) {
 	assert.True(t, bytes.Equal(shortTable, fullTable))
 }
 
-func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
+func TestFileConcurrentReadsAfterLoad(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -488,10 +636,10 @@ func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
 	native := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	compat := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
-	m := NewFileMapping(fs, "objects")
+	m := NewFile(fs, "objects")
 	require.NoError(t, m.Add(native, compat))
 
-	_, err := m.NativeToCompat(native)
+	_, err := m.ToCompat(native)
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -499,7 +647,7 @@ func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
 	for range 16 {
 		wg.Go(func() {
 			for range 100 {
-				got, err := m.NativeToCompat(native)
+				got, err := m.ToCompat(native)
 				if err != nil {
 					errCh <- err
 					return
@@ -519,7 +667,7 @@ func TestFileMappingConcurrentReadsAfterLoad(t *testing.T) {
 	}
 }
 
-func TestFileMappingOverwriteLegacyPreservesExistingStateOnWriteFailure(t *testing.T) {
+func TestFileOverwriteLegacyPreservesExistingStateOnWriteFailure(t *testing.T) {
 	t.Parallel()
 
 	base := memfs.New()
@@ -529,21 +677,21 @@ func TestFileMappingOverwriteLegacyPreservesExistingStateOnWriteFailure(t *testi
 	compat1 := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	compat2 := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
 
-	m := NewFileMapping(base, "objects")
+	m := NewFile(base, "objects")
 	require.NoError(t, m.Add(native, compat1))
 
 	failing := failingRenameFS{Filesystem: base, failTarget: base.Join("objects", "loose-object-idx")}
-	m = NewFileMapping(failing, "objects")
+	m = NewFile(failing, "objects")
 	err := m.Add(native, compat2)
 	require.Error(t, err)
 
-	reloaded := NewFileMapping(base, "objects")
-	got, err := reloaded.NativeToCompat(native)
+	reloaded := NewFile(base, "objects")
+	got, err := reloaded.ToCompat(native)
 	require.NoError(t, err)
 	assert.Equal(t, compat1, got)
 }
 
-func TestFileMappingOverwriteObjectMapPreservesExistingStateOnWriteFailure(t *testing.T) {
+func TestFileOverwriteObjectMapPreservesExistingStateOnWriteFailure(t *testing.T) {
 	t.Parallel()
 
 	base := memfs.New()
@@ -553,21 +701,21 @@ func TestFileMappingOverwriteObjectMapPreservesExistingStateOnWriteFailure(t *te
 	compat1 := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	compat2 := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
 
-	m := NewFileMappingWithWriteMode(base, "objects", FileMappingWriteObjectMap)
+	m := NewFileWithWriteMode(base, "objects", FileWriteObjectMap)
 	require.NoError(t, m.Add(native, compat1))
 
 	failing := failingRenameFS{Filesystem: base, failTargetPrefix: base.Join("objects", "object-map", mapSnapshotPrefix)}
-	m = NewFileMappingWithWriteMode(failing, "objects", FileMappingWriteObjectMap)
+	m = NewFileWithWriteMode(failing, "objects", FileWriteObjectMap)
 	err := m.Add(native, compat2)
 	require.Error(t, err)
 
-	reloaded := NewFileMappingWithWriteMode(base, "objects", FileMappingWriteObjectMap)
-	got, err := reloaded.NativeToCompat(native)
+	reloaded := NewFileWithWriteMode(base, "objects", FileWriteObjectMap)
+	got, err := reloaded.ToCompat(native)
 	require.NoError(t, err)
 	assert.Equal(t, compat1, got)
 }
 
-func TestFileMappingSnapshotFileWinsDuringRecovery(t *testing.T) {
+func TestFileSnapshotFileWinsDuringRecovery(t *testing.T) {
 	t.Parallel()
 
 	fs := memfs.New()
@@ -579,7 +727,7 @@ func TestFileMappingSnapshotFileWinsDuringRecovery(t *testing.T) {
 
 	oldData, err := encodeMapEntries([]mapPair{{native: native, compat: oldCompat}})
 	require.NoError(t, err)
-	oldPath, err := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap).mapPathForData(formatcfg.SHA1, oldData)
+	oldPath, err := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap).mapPathForData(formatcfg.SHA1, oldData)
 	require.NoError(t, err)
 	require.NoError(t, fs.MkdirAll(fs.Join("objects", "object-map"), 0o755))
 	f, err := fs.OpenFile(oldPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -597,8 +745,8 @@ func TestFileMappingSnapshotFileWinsDuringRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	m := NewFileMappingWithWriteMode(fs, "objects", FileMappingWriteObjectMap)
-	got, err := m.NativeToCompat(native)
+	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
+	got, err := m.ToCompat(native)
 	require.NoError(t, err)
 	assert.Equal(t, newCompat, got)
 }

@@ -9,15 +9,16 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-func TestImportStorerRecordsCompatHashMappingImmediately(t *testing.T) {
+func TestImportStorerRecordsCompatOIDMapImmediately(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
@@ -33,7 +34,7 @@ func TestImportStorerRecordsCompatHashMappingImmediately(t *testing.T) {
 	nativeHash, err := importer.SetEncodedObject(compatBlob)
 	require.NoError(t, err)
 
-	mapped, err := mapping.CompatToNative(compatBlob.Hash())
+	mapped, err := mapping.ToNative(compatBlob.Hash())
 	require.NoError(t, err)
 	assert.Equal(t, nativeHash, mapped)
 
@@ -46,7 +47,7 @@ func TestImportStorerImportsTopologicalCommitChain(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
@@ -97,11 +98,11 @@ func TestImportStorerImportsTopologicalCommitChain(t *testing.T) {
 	nativeCommit, err := importer.SetEncodedObject(compatCommit)
 	require.NoError(t, err)
 
-	mappedTree, err := mapping.CompatToNative(compatTree.Hash())
+	mappedTree, err := mapping.ToNative(compatTree.Hash())
 	require.NoError(t, err)
 	assert.Equal(t, nativeTree, mappedTree)
 
-	mappedCommit, err := mapping.CompatToNative(compatCommit.Hash())
+	mappedCommit, err := mapping.ToNative(compatCommit.Hash())
 	require.NoError(t, err)
 	assert.Equal(t, nativeCommit, mappedCommit)
 
@@ -121,7 +122,7 @@ func TestImportStorerFinalizeImportsDeferredCommitChain(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
@@ -177,15 +178,15 @@ func TestImportStorerFinalizeImportsDeferredCommitChain(t *testing.T) {
 
 	require.NoError(t, importer.Finalize())
 
-	mappedBlob, err := mapping.CompatToNative(compatBlobHash)
+	mappedBlob, err := mapping.ToNative(compatBlobHash)
 	require.NoError(t, err)
 	assert.Equal(t, nativeBlobHash, mappedBlob)
 
-	mappedTree, err := mapping.CompatToNative(compatTreeHash)
+	mappedTree, err := mapping.ToNative(compatTreeHash)
 	require.NoError(t, err)
 	assert.Equal(t, nativeTreeHash, mappedTree)
 
-	mappedCommit, err := mapping.CompatToNative(compatCommit.Hash())
+	mappedCommit, err := mapping.ToNative(compatCommit.Hash())
 	require.NoError(t, err)
 
 	commitObj, err := base.EncodedObject(plumbing.CommitObject, mappedCommit)
@@ -197,7 +198,7 @@ func TestImportStorerReturnsCompatHashForDeferredObject(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
@@ -215,7 +216,7 @@ func TestImportStorerReturnsCompatHashForDeferredObject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, compatTree.Hash(), returnedHash)
 
-	_, err = mapping.CompatToNative(compatTree.Hash())
+	_, err = mapping.ToNative(compatTree.Hash())
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 }
 
@@ -223,7 +224,7 @@ func TestImportStorerExposesPendingCompatObjects(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
