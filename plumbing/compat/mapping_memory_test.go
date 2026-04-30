@@ -12,13 +12,18 @@ import (
 func TestMemoryMapping(t *testing.T) {
 	t.Parallel()
 
-	testHashMapping(t, func() HashMapping {
+	testHashMapping(t, func() countHashMapping {
 		return NewMemoryMapping()
 	})
 }
 
+type countHashMapping interface {
+	HashMapping
+	Count() (int, error)
+}
+
 // testHashMapping is a shared test suite for all HashMapping implementations.
-func testHashMapping(t *testing.T, newMapping func() HashMapping) {
+func testHashMapping(t *testing.T, newMapping func() countHashMapping) {
 	t.Helper()
 
 	native1 := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")

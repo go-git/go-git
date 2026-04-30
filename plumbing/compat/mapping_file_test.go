@@ -36,7 +36,7 @@ func mustReadDir(
 func TestFileMapping(t *testing.T) {
 	t.Parallel()
 
-	testHashMapping(t, func() HashMapping {
+	testHashMapping(t, func() countHashMapping {
 		fs := memfs.New()
 		_ = fs.MkdirAll("objects", 0o755)
 		return NewFileMapping(fs, "objects")
