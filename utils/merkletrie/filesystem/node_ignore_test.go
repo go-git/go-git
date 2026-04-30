@@ -35,6 +35,7 @@ func matcher(pattern string) gitignore.Matcher {
 // TestIgnoredDirIsSkipped verifies that a directory matching the ignore
 // matcher and containing only untracked files is not walked.
 func TestIgnoredDirIsSkipped(t *testing.T) {
+	t.Parallel()
 	fs := memfs.New()
 	require.NoError(t, WriteFile(fs, "src/keep.go", []byte("package main\n"), 0o644))
 	require.NoError(t, WriteFile(fs, "vendor/lib1.go", []byte("package vendor\n"), 0o644))
@@ -67,6 +68,7 @@ func TestIgnoredDirIsSkipped(t *testing.T) {
 // inside a directory matching the ignore matcher is still walked, and
 // modifications to it surface as a Modify change.
 func TestTrackedFileInIgnoredDirReportsModify(t *testing.T) {
+	t.Parallel()
 	fs := memfs.New()
 	require.NoError(t, WriteFile(fs, "src/keep.go", []byte("package main\n"), 0o644))
 	require.NoError(t, WriteFile(fs, "vendor/keep.go", []byte("modified\n"), 0o644))
@@ -100,6 +102,7 @@ func TestTrackedFileInIgnoredDirReportsModify(t *testing.T) {
 // file forces the walker to descend into an ignored directory, untracked
 // siblings of that file are still filtered out.
 func TestUntrackedSiblingsInIgnoredDirAreSkipped(t *testing.T) {
+	t.Parallel()
 	fs := memfs.New()
 	content := []byte("package vendor\n")
 	require.NoError(t, WriteFile(fs, "vendor/keep.go", content, 0o644))
