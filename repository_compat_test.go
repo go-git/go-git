@@ -3,21 +3,170 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/compat"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
+
+func TestCompatObjectFormat_FetchAndGet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                 string
+		localFixture         *fixtures.Fixture
+		remoteFixture        *fixtures.Fixture
+		objectFormat         formatcfg.ObjectFormat
+		compatObjectFormat   formatcfg.ObjectFormat
+		initialCommit        plumbing.Hash
+		objectsAtFirstCommit int
+		nativeTopCommit      plumbing.Hash
+		compatTopCommit      plumbing.Hash
+	}{
+		{
+			name:                 "sha256 repo fetches sha1 remote",
+			localFixture:         fixtures.Basic().ByTag(".git").ByObjectFormat("sha256").One(),
+			remoteFixture:        fixtures.Basic().ByTag(".git").ByObjectFormat("sha1").One(),
+			objectFormat:         formatcfg.SHA256,
+			compatObjectFormat:   formatcfg.SHA1,
+			initialCommit:        plumbing.NewHash("9768a9bcb42f35dc598a517bd98a5cbba79052b980a8a015f3be5577ebd9f201"),
+			nativeTopCommit:      plumbing.NewHash("4fef4adac3be863b9b94613016bdd8e53f67f6d7577234e028bc9d24c5a6a27c"),
+			compatTopCommit:      plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+			objectsAtFirstCommit: 4,
+		},
+		{
+			name:                 "sha1 repo fetches sha256 remote",
+			localFixture:         fixtures.Basic().ByTag(".git").ByObjectFormat("sha1").One(),
+			remoteFixture:        fixtures.Basic().ByTag(".git").ByObjectFormat("sha256").One(),
+			objectFormat:         formatcfg.SHA1,
+			compatObjectFormat:   formatcfg.SHA256,
+			initialCommit:        plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
+			nativeTopCommit:      plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+			compatTopCommit:      plumbing.NewHash("4fef4adac3be863b9b94613016bdd8e53f67f6d7577234e028bc9d24c5a6a27c"),
+			objectsAtFirstCommit: 4,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.NotNil(t, tc.localFixture, "local Basic fixture not found")
+			require.NotNil(t, tc.remoteFixture, "remote Basic fixture not found")
+			require.NotEqual(t, tc.objectFormat, tc.compatObjectFormat)
+			assert.Equal(t, string(tc.objectFormat), tc.localFixture.ObjectFormat)
+			assert.Equal(t, string(tc.compatObjectFormat), tc.remoteFixture.ObjectFormat)
+
+			servers := server.All(server.Loader(t, tc.remoteFixture))
+			require.NotEmpty(t, servers)
+
+			for _, srv := range servers {
+				endpoint, err := srv.Start()
+				require.NoError(t, err)
+
+				t.Cleanup(func() {
+					require.NoError(t, srv.Close())
+				})
+
+				st := memory.NewStorage(
+					memory.WithObjectFormat(tc.objectFormat),
+					memory.WithCompatObjectFormat(tc.compatObjectFormat),
+				)
+				r, err := Init(st, WithObjectFormat(tc.objectFormat))
+				require.NoError(t, err)
+
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				assert.Equal(t, tc.objectFormat, cfg.Extensions.ObjectFormat)
+				assert.Equal(t, tc.compatObjectFormat, cfg.Extensions.CompatObjectFormat)
+
+				copyReachableObjects(t, st, tc.localFixture, tc.initialCommit)
+				require.NoError(t, r.Storer.SetReference(plumbing.NewHashReference(plumbing.Master, tc.initialCommit)))
+				assert.Len(t, st.Objects, tc.objectsAtFirstCommit)
+
+				_, err = r.CreateRemote(&config.RemoteConfig{
+					Name: DefaultRemoteName,
+					URLs: []string{endpoint},
+				})
+				require.NoError(t, err)
+
+				err = r.Fetch(&FetchOptions{})
+				require.NoError(t, err)
+
+				ref, err := r.Reference(plumbing.NewRemoteReferenceName(DefaultRemoteName, "master"), true)
+				require.NoError(t, err)
+				assert.Equal(t, tc.nativeTopCommit, ref.Hash())
+
+				nativeCommit, err := r.Object(plumbing.CommitObject, tc.nativeTopCommit)
+				require.NoError(t, err, "top commit must be reachable by native OID %s", tc.nativeTopCommit)
+
+				compatCommit, err := r.Object(plumbing.CommitObject, tc.compatTopCommit)
+				require.NoError(t, err, "top commit must be reachable by compat OID %s", tc.compatTopCommit)
+
+				assert.Equal(t, nativeCommit.Type(), compatCommit.Type())
+				assert.Equal(t, nativeCommit.ID(), tc.nativeTopCommit)
+				// The compatCommit is the native objectFormat representation, which
+				// makes sense, but still represents an awkward UX:
+				// - Using the SHA256 ID returns the SHA1 version of the encoded object.
+				assert.Equal(t, compatCommit.ID(), tc.nativeTopCommit)
+			}
+		})
+	}
+}
+
+func copyReachableObjects(t *testing.T, dst *memory.Storage, src *fixtures.Fixture, want plumbing.Hash) {
+	t.Helper()
+
+	dotgit, err := src.DotGit(fixtures.WithMemFS())
+	require.NoError(t, err)
+
+	srcStorage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	hashes, err := revlist.Objects(srcStorage, []plumbing.Hash{want}, nil)
+	require.NoError(t, err)
+
+	for _, h := range hashes {
+		obj, err := srcStorage.EncodedObject(plumbing.AnyObject, h)
+		require.NoError(t, err)
+
+		copied := dst.NewEncodedObject()
+		copied.SetType(obj.Type())
+		copied.SetSize(obj.Size())
+
+		reader, err := obj.Reader()
+		require.NoError(t, err)
+		content, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+
+		writer, err := copied.Writer()
+		require.NoError(t, err)
+		_, err = writer.Write(content)
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		_, err = dst.SetEncodedObject(copied)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, compat.TranslateStoredObjects(dst, dst.Translator()))
+}
 
 func TestCompatInteropValidationMatrix(t *testing.T) {
 	t.Parallel()
