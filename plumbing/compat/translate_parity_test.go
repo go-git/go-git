@@ -16,6 +16,7 @@ import (
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
@@ -39,7 +40,7 @@ func TestTranslateObjectMatchesUpstreamGit(t *testing.T) {
 	repo, err := git.PlainOpen(sha1Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(format.SHA1, format.SHA256, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, oidmap.NewMemory())
 	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
@@ -66,7 +67,7 @@ func TestTranslateObjectMatchesUpstreamGit(t *testing.T) {
 
 			assert.Equal(t, tt.expected, got.String())
 
-			mapped, err := tr.Mapping().NativeToCompat(tt.native)
+			mapped, err := tr.Mapping().ToCompat(tt.native)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, mapped.String())
 		})
@@ -93,7 +94,7 @@ func TestTranslateContentMatchesUpstreamGit(t *testing.T) {
 	repo, err := git.PlainOpen(sha1Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(format.SHA1, format.SHA256, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, oidmap.NewMemory())
 	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
@@ -162,7 +163,7 @@ func TestTranslateSignedObjectsMatchesUpstreamGit(t *testing.T) {
 	repo, err := git.PlainOpen(sha1Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(format.SHA1, format.SHA256, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, oidmap.NewMemory())
 
 	for _, dep := range []struct {
 		objType plumbing.ObjectType
@@ -229,7 +230,7 @@ func TestTranslateStoredObjectsMatchesUpstreamGitReverse(t *testing.T) {
 	repo, err := git.PlainOpen(sha256Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(format.SHA256, format.SHA1, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, oidmap.NewMemory())
 	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
@@ -247,7 +248,7 @@ func TestTranslateStoredObjectsMatchesUpstreamGitReverse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			mapped, err := tr.Mapping().NativeToCompat(plumbing.NewHash(tt.native))
+			mapped, err := tr.Mapping().ToCompat(plumbing.NewHash(tt.native))
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, mapped.String())
 		})

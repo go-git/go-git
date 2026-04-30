@@ -593,7 +593,7 @@ func TestCompatInteropValidationMatrix(t *testing.T) {
 		require.NoError(t, err)
 		provider, ok := r.Storer.(xstorage.CompatTranslatorProvider)
 		require.True(t, ok)
-		nativeTrackingHash, err := provider.Translator().Mapping().CompatToNative(remoteTrackingHash)
+		nativeTrackingHash, err := provider.Translator().Mapping().ToNative(remoteTrackingHash)
 		require.NoError(t, err)
 		assert.Equal(t, nativeTrackingHash, ref.Hash())
 
@@ -674,7 +674,7 @@ func compatHeadForRepo(t *testing.T, r *Repository, native plumbing.Hash) plumbi
 	provider, ok := r.Storer.(xstorage.CompatTranslatorProvider)
 	require.True(t, ok)
 
-	compatHead, err := provider.Translator().Mapping().NativeToCompat(native)
+	compatHead, err := provider.Translator().Mapping().ToCompat(native)
 	require.NoError(t, err)
 	return compatHead
 }
@@ -730,7 +730,7 @@ func validateCompatFetchLifecycle(t *testing.T, tc compatFetchCase) {
 		require.True(t, ok)
 
 		var err error
-		expectedHead, err = provider.Translator().Mapping().CompatToNative(tc.remoteHeadHash)
+		expectedHead, err = provider.Translator().Mapping().ToNative(tc.remoteHeadHash)
 		require.NoError(t, err)
 	}
 
@@ -799,7 +799,7 @@ func validateCompatLookup(t *testing.T, r *Repository, nativeHash plumbing.Hash)
 	translator := provider.Translator()
 	require.NotNil(t, translator)
 
-	compatHash, err := translator.Mapping().NativeToCompat(nativeHash)
+	compatHash, err := translator.Mapping().ToCompat(nativeHash)
 	require.NoError(t, err)
 
 	obj, err := r.Storer.EncodedObject(plumbing.CommitObject, compatHash)

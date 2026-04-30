@@ -79,7 +79,7 @@ func (s *ImportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Has
 
 	nativeHash := h
 	if _, err := s.base.EncodedObject(plumbing.AnyObject, h); err != nil {
-		resolved, resolveErr := s.tr.Mapping().CompatToNative(h)
+		resolved, resolveErr := s.tr.Mapping().ToNative(h)
 		if resolveErr != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func (s *ImportStorer) HasEncodedObject(h plumbing.Hash) error {
 		return nil
 	}
 
-	native, err := s.tr.Mapping().CompatToNative(h)
+	native, err := s.tr.Mapping().ToNative(h)
 	if err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (s *ImportStorer) importCompatObject(objType plumbing.ObjectType, compatCon
 		return plumbing.ZeroHash, err
 	}
 
-	nativeHash, err := s.tr.Mapping().CompatToNative(compatHash)
+	nativeHash, err := s.tr.Mapping().ToNative(compatHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}

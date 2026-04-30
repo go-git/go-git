@@ -7,11 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
-func newTestTranslator() (*Translator, *MemoryMapping) {
-	m := NewMemoryMapping()
+func newTestTranslator() (*Translator, *oidmap.Memory) {
+	m := oidmap.NewMemory()
 	return NewTranslator(format.SHA1, format.SHA256, m), m
 }
 
@@ -53,7 +54,7 @@ func TestTranslatorObjectFormats(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tr := NewTranslator(tt.native, tt.compat, NewMemoryMapping())
+			tr := NewTranslator(tt.native, tt.compat, oidmap.NewMemory())
 			assert.Equal(t, tt.native, tr.NativeObjectFormat())
 			assert.Equal(t, tt.compat, tr.CompatObjectFormat())
 		})
@@ -80,7 +81,7 @@ func TestTranslateBlob(t *testing.T) {
 	count, err := m.Count()
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
-	got, err := m.NativeToCompat(obj.Hash())
+	got, err := m.ToCompat(obj.Hash())
 	require.NoError(t, err)
 	assert.True(t, got.Equal(compatHash))
 }
@@ -112,7 +113,7 @@ func TestTranslateTree(t *testing.T) {
 	count, err := m.Count()
 	require.NoError(t, err)
 	assert.Equal(t, 2, count) // blob + tree
-	got, err := m.NativeToCompat(treeObj.Hash())
+	got, err := m.ToCompat(treeObj.Hash())
 	require.NoError(t, err)
 	assert.True(t, got.Equal(compatHash))
 
@@ -153,7 +154,7 @@ func TestTranslateCommit(t *testing.T) {
 	count, err := m.Count()
 	require.NoError(t, err)
 	assert.Equal(t, 3, count) // blob + tree + commit
-	got, err := m.NativeToCompat(commitObj.Hash())
+	got, err := m.ToCompat(commitObj.Hash())
 	require.NoError(t, err)
 	assert.True(t, got.Equal(compatHash))
 }
@@ -224,7 +225,7 @@ func TestTranslateTag(t *testing.T) {
 	count, err := m.Count()
 	require.NoError(t, err)
 	assert.Equal(t, 2, count) // blob + tag
-	got, err := m.NativeToCompat(tagObj.Hash())
+	got, err := m.ToCompat(tagObj.Hash())
 	require.NoError(t, err)
 	assert.True(t, got.Equal(compatHash))
 }
@@ -290,7 +291,7 @@ func TestReverseTranslateContent(t *testing.T) {
 	compatContent, err := tr.ReverseTranslateContent(plumbing.CommitObject, commitContent)
 	require.NoError(t, err)
 
-	compatTree, err := tr.Mapping().NativeToCompat(treeObj.Hash())
+	compatTree, err := tr.Mapping().ToCompat(treeObj.Hash())
 	require.NoError(t, err)
 	assert.Contains(t, string(compatContent), "tree "+compatTree.String())
 	assert.NotContains(t, string(compatContent), treeObj.Hash().String())

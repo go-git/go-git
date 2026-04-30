@@ -300,7 +300,7 @@ func compatPushStorerAndCommands(
 			New:  cmd.New,
 		}
 		if cmd.New != plumbing.ZeroHash {
-			mapped, err := tr.Mapping().NativeToCompat(cmd.New)
+			mapped, err := tr.Mapping().ToCompat(cmd.New)
 			if err != nil {
 				return nil, fmt.Errorf("translate push command %s: %w", cmd.Name, err)
 			}
@@ -321,7 +321,7 @@ func translateCompatHashToNative(tr *compatplumbing.Translator, h plumbing.Hash)
 		return h
 	}
 
-	native, err := tr.Mapping().CompatToNative(h)
+	native, err := tr.Mapping().ToNative(h)
 	if err == nil {
 		return native
 	}
@@ -349,7 +349,7 @@ func translateNativeHashesToCompat(tr *compatplumbing.Translator, hs []plumbing.
 
 	translated := make([]plumbing.Hash, 0, len(hs))
 	for _, h := range hs {
-		if compatHash, err := tr.Mapping().NativeToCompat(h); err == nil {
+		if compatHash, err := tr.Mapping().ToCompat(h); err == nil {
 			translated = append(translated, compatHash)
 		}
 	}

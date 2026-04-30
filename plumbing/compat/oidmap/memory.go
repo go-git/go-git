@@ -1,4 +1,4 @@
-package compat
+package oidmap
 
 import (
 	"sync"
@@ -6,23 +6,23 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-// MemoryMapping is an in-memory implementation of HashMapping.
-type MemoryMapping struct {
+// Memory is an in-memory implementation of Map.
+type Memory struct {
 	mu             sync.RWMutex
 	nativeToCompat map[plumbing.Hash]plumbing.Hash
 	compatToNative map[plumbing.Hash]plumbing.Hash
 }
 
-// NewMemoryMapping returns a new empty in-memory HashMapping.
-func NewMemoryMapping() *MemoryMapping {
-	return &MemoryMapping{
+// NewMemory returns a new empty in-memory Map.
+func NewMemory() *Memory {
+	return &Memory{
 		nativeToCompat: make(map[plumbing.Hash]plumbing.Hash),
 		compatToNative: make(map[plumbing.Hash]plumbing.Hash),
 	}
 }
 
-// NativeToCompat returns the compat hash for a native hash.
-func (m *MemoryMapping) NativeToCompat(native plumbing.Hash) (plumbing.Hash, error) {
+// ToCompat returns the compat hash for a native hash.
+func (m *Memory) ToCompat(native plumbing.Hash) (plumbing.Hash, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -33,8 +33,8 @@ func (m *MemoryMapping) NativeToCompat(native plumbing.Hash) (plumbing.Hash, err
 	return h, nil
 }
 
-// CompatToNative returns the native hash for a compat hash.
-func (m *MemoryMapping) CompatToNative(compat plumbing.Hash) (plumbing.Hash, error) {
+// ToNative returns the native hash for a compat hash.
+func (m *Memory) ToNative(compat plumbing.Hash) (plumbing.Hash, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -46,21 +46,16 @@ func (m *MemoryMapping) CompatToNative(compat plumbing.Hash) (plumbing.Hash, err
 }
 
 // Add records or replaces a native/compat hash mapping in memory.
-func (m *MemoryMapping) Add(native, compat plumbing.Hash) error {
+func (m *Memory) Add(native, compat plumbing.Hash) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if oldCompat, ok := m.nativeToCompat[native]; ok && oldCompat != compat {
-		delete(m.compatToNative, oldCompat)
-	}
-
-	m.nativeToCompat[native] = compat
-	m.compatToNative[compat] = native
+	setMapping(m.nativeToCompat, m.compatToNative, native, compat)
 	return nil
 }
 
 // Count returns the number of in-memory mappings.
-func (m *MemoryMapping) Count() (int, error) {
+func (m *Memory) Count() (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

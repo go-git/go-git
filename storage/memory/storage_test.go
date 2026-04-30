@@ -239,7 +239,7 @@ func TestCompatLookupByCompatHash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			compatHash, err := translator.Mapping().NativeToCompat(tt.native)
+			compatHash, err := translator.Mapping().ToCompat(tt.native)
 			require.NoError(t, err)
 
 			require.NoError(t, sto.HasEncodedObject(compatHash))

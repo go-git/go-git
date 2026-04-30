@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
@@ -18,7 +19,7 @@ func TestSetEncodedObjectDefersMissingCompatDependencies(t *testing.T) {
 	t.Parallel()
 
 	s := NewStorageWithOptions(memfs.New(), cache.NewObjectLRUDefault(), Options{ObjectFormat: formatcfg.SHA1})
-	s.translator = compat.NewTranslator(formatcfg.SHA1, formatcfg.SHA256, compat.NewMemoryMapping())
+	s.translator = compat.NewTranslator(formatcfg.SHA1, formatcfg.SHA256, oidmap.NewMemory())
 
 	tree := s.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
@@ -40,7 +41,7 @@ func TestSetEncodedObjectReturnsCompatPersistenceErrors(t *testing.T) {
 	t.Parallel()
 
 	s := NewStorageWithOptions(memfs.New(), cache.NewObjectLRUDefault(), Options{ObjectFormat: formatcfg.SHA1})
-	s.translator = compat.NewTranslator(formatcfg.SHA1, formatcfg.SHA256, failingHashMapping{err: errors.New("mapping write failed")})
+	s.translator = compat.NewTranslator(formatcfg.SHA1, formatcfg.SHA256, failingMap{err: errors.New("mapping write failed")})
 
 	blob := s.NewEncodedObject()
 	blob.SetType(plumbing.BlobObject)
@@ -60,18 +61,18 @@ func TestSetEncodedObjectReturnsCompatPersistenceErrors(t *testing.T) {
 	assert.ErrorContains(t, err, "mapping write failed")
 }
 
-type failingHashMapping struct {
+type failingMap struct {
 	err error
 }
 
-func (m failingHashMapping) NativeToCompat(plumbing.Hash) (plumbing.Hash, error) {
+func (m failingMap) ToCompat(plumbing.Hash) (plumbing.Hash, error) {
 	return plumbing.Hash{}, plumbing.ErrObjectNotFound
 }
 
-func (m failingHashMapping) CompatToNative(plumbing.Hash) (plumbing.Hash, error) {
+func (m failingMap) ToNative(plumbing.Hash) (plumbing.Hash, error) {
 	return plumbing.Hash{}, plumbing.ErrObjectNotFound
 }
 
-func (m failingHashMapping) Add(plumbing.Hash, plumbing.Hash) error {
+func (m failingMap) Add(plumbing.Hash, plumbing.Hash) error {
 	return m.err
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -18,7 +19,7 @@ func TestPushExportStorerExportsCompatObjects(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 
 	blobObj := makeCompatEncodedObject(t, plumbing.BlobObject, []byte("exported content\n"), format.SHA256)
@@ -49,7 +50,7 @@ func TestPushExportStorerPropagatesMappingErrors(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := &failingNativeLookupMapping{err: errors.New("native lookup failed")}
+	mapping := &failingLookupMap{err: errors.New("native lookup failed")}
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 
 	exporter := compat.NewPushExportStorer(base, config.NewConfig(), tr)
@@ -62,7 +63,7 @@ func TestPushExportStorerUsesBaseObjectWhenMappingIsMissing(t *testing.T) {
 	t.Parallel()
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
-	mapping := compat.NewMemoryMapping()
+	mapping := oidmap.NewMemory()
 	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 
 	blobObj := makeCompatEncodedObject(t, plumbing.BlobObject, []byte("unmapped blob\n"), format.SHA256)
@@ -75,19 +76,19 @@ func TestPushExportStorerUsesBaseObjectWhenMappingIsMissing(t *testing.T) {
 	assert.NotEqual(t, plumbing.ZeroHash, exported.Hash())
 }
 
-type failingNativeLookupMapping struct {
+type failingLookupMap struct {
 	err error
 }
 
-func (m *failingNativeLookupMapping) NativeToCompat(plumbing.Hash) (plumbing.Hash, error) {
+func (m *failingLookupMap) ToCompat(plumbing.Hash) (plumbing.Hash, error) {
 	return plumbing.ZeroHash, m.err
 }
 
-func (m *failingNativeLookupMapping) CompatToNative(plumbing.Hash) (plumbing.Hash, error) {
+func (m *failingLookupMap) ToNative(plumbing.Hash) (plumbing.Hash, error) {
 	return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 }
 
-func (m *failingNativeLookupMapping) Add(plumbing.Hash, plumbing.Hash) error {
+func (m *failingLookupMap) Add(plumbing.Hash, plumbing.Hash) error {
 	return nil
 }
 
