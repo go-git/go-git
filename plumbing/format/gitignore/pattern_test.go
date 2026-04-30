@@ -261,10 +261,10 @@ func (s *PatternSuite) TestGlobMatch_middleAsterisks_isDir() {
 	s.Equal(Exclude, r)
 }
 
-func (s *PatternSuite) TestGlobMatch_wrongDoubleAsterisk_mismatch() {
+func (s *PatternSuite) TestGlobMatch_DoubleAsterisk_match() {
 	p := ParsePattern("/*lue/**foo/vol?ano", nil)
 	r := p.Match([]string{"value", "foo", "volcano", "tail"}, false)
-	s.Equal(NoMatch, r)
+	s.Equal(Exclude, r, "Git matches **foo patterns")
 }
 
 func (s *PatternSuite) TestGlobMatch_magicChars() {
