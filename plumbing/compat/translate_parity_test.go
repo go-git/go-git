@@ -39,10 +39,7 @@ func TestTranslateObjectMatchesUpstreamGit(t *testing.T) {
 	repo, err := git.PlainOpen(sha1Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, compat.NewMemoryMapping())
 	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
@@ -96,10 +93,7 @@ func TestTranslateContentMatchesUpstreamGit(t *testing.T) {
 	repo, err := git.PlainOpen(sha1Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, compat.NewMemoryMapping())
 	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
@@ -168,10 +162,7 @@ func TestTranslateSignedObjectsMatchesUpstreamGit(t *testing.T) {
 	repo, err := git.PlainOpen(sha1Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, compat.NewMemoryMapping())
 
 	for _, dep := range []struct {
 		objType plumbing.ObjectType
@@ -238,10 +229,7 @@ func TestTranslateStoredObjectsMatchesUpstreamGitReverse(t *testing.T) {
 	repo, err := git.PlainOpen(sha256Dir)
 	require.NoError(t, err)
 
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, compat.NewMemoryMapping())
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, compat.NewMemoryMapping())
 	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
 
 	tests := []struct {
