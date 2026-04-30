@@ -24,6 +24,13 @@ type ConformanceSuite struct {
 
 	oracleOnce sync.Once
 	oracleRoot *os.Root // nil when oracle disabled
+
+	// platformIgnoresCase reflects what `git init` set core.ignorecase to in
+	// the scratch repo, which mirrors the filesystem default (true on macOS
+	// and Windows, false on Linux). go-git's matcher is always case-sensitive,
+	// so on a case-folding platform the oracle skips assertions whose answer
+	// depends on case.
+	platformIgnoresCase bool
 }
 
 func TestConformanceSuite(t *testing.T) {
@@ -60,6 +67,10 @@ func (s *ConformanceSuite) gitOracleRoot() *os.Root {
 			return
 		}
 		s.oracleRoot = root
+		out, err := exec.Command("git", "-C", dir, "config", "--get", "core.ignorecase").Output()
+		if err == nil {
+			s.platformIgnoresCase = strings.TrimSpace(string(out)) == "true"
+		}
 	})
 	return s.oracleRoot
 }
@@ -94,6 +105,9 @@ func (s *ConformanceSuite) gitOracle(patterns []string, path string, isDir bool)
 	if path == "." || path == ".." || strings.Contains(path, "//") {
 		return false, false
 	}
+	if skipOnLegacyGit(patterns) {
+		return false, false
+	}
 	if err := cleanScratch(root); err != nil {
 		return false, false
 	}
@@ -110,14 +124,40 @@ func (s *ConformanceSuite) gitOracle(patterns []string, path string, isDir bool)
 	}
 	// `check-ignore` (without --no-index) stats the path so it can distinguish
 	// dirs from files, which is the only way it produces the same answer as
-	// `git status` for re-include patterns over directories.
-	cmd := exec.Command("git", "-C", root.Name(), "check-ignore", "-q", "--", arg)
-	err := cmd.Run()
+	// `git status` for re-include patterns over directories. The platform's
+	// default core.ignorecase applies — that's what real-world callers see.
+	matched, ok := s.runCheckIgnore(root, arg, "")
+	if !ok {
+		return false, false
+	}
+	// On case-folding platforms (macOS, Windows), confirm the answer doesn't
+	// depend on case. If it does, go-git's always-case-sensitive matcher
+	// diverges from platform Git and we have nothing useful to assert.
+	if s.platformIgnoresCase {
+		csMatched, csOK := s.runCheckIgnore(root, arg, "false")
+		if !csOK || csMatched != matched {
+			return false, false
+		}
+	}
+	return matched, true
+}
+
+// runCheckIgnore invokes `git check-ignore` against the scratch repo. When
+// ignoreCase is non-empty it is passed as `-c core.ignorecase=<value>` to
+// override the platform default. Returns (matched, ok); ok=false on exec
+// failure or unrecognized exit codes.
+func (s *ConformanceSuite) runCheckIgnore(root *os.Root, arg, ignoreCase string) (bool, bool) {
+	args := []string{"-C", root.Name()}
+	if ignoreCase != "" {
+		args = append(args, "-c", "core.ignorecase="+ignoreCase)
+	}
+	args = append(args, "check-ignore", "-q", "--", arg)
+	err := exec.Command("git", args...).Run()
 	switch {
 	case err == nil:
-		return true, true // exit 0: ignored
+		return true, true
 	case exitCode(err) == 1:
-		return false, true // exit 1: not ignored
+		return false, true
 	default:
 		return false, false
 	}
@@ -897,4 +937,45 @@ func materialize(root *os.Root, p string, isDir bool) error {
 		return err
 	}
 	return f.Close()
+}
+
+// skipOnLegacyGit reports whether the (patterns, ...) input exercises a
+// gitignore feature broken or absent in Git 2.11.0 (December 2016). CI sets
+// GIT_VERSION=v2.11.0 when running against that version. The two known
+// regressions are:
+//
+//  1. `!`-prefixed re-include patterns: 2.11.0 doesn't honour them in
+//     several cases that modern Git handles correctly.
+//  2. `**` adjacent to a non-slash character (e.g. `foo**/bar`,
+//     `**/bar**`): 2.11.0 treats `**` like `*` in those positions.
+func skipOnLegacyGit(patterns []string) bool {
+	if os.Getenv("GIT_VERSION") != "v2.11.0" {
+		return false
+	}
+	for _, p := range patterns {
+		if strings.HasPrefix(p, "!") {
+			return true
+		}
+		if hasNonSlashAdjacentDoubleStar(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNonSlashAdjacentDoubleStar reports whether p contains a `**` whose
+// neighbour on either side is a non-slash character. The form Git 2.11.0
+// mishandles.
+func hasNonSlashAdjacentDoubleStar(p string) bool {
+	for i := 0; i+1 < len(p); i++ {
+		if p[i] != '*' || p[i+1] != '*' {
+			continue
+		}
+		beforeOK := i == 0 || p[i-1] == '/'
+		afterOK := i+2 >= len(p) || p[i+2] == '/'
+		if !beforeOK || !afterOK {
+			return true
+		}
+	}
+	return false
 }
