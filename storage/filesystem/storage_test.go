@@ -390,10 +390,8 @@ func TestCompatLookupByCompatHash(t *testing.T) {
 		{name: "tag", objType: plumbing.TagObject, native: tagHash},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range tests { //nolint:paralleltest // shared DotGit is not thread safe
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			compatHash, err := translator.Mapping().NativeToCompat(tt.native)
 			require.NoError(t, err)
 
