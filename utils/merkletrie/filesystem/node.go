@@ -46,7 +46,8 @@ type Options struct {
 	// excluded from the walk so callers do not have to descend into large
 	// gitignored directories like node_modules. Tracked entries are always
 	// walked even if they match, so modifications to them are still
-	// reported. When Index is nil this option is ignored.
+	// reported. Requires Index to be set: without an index there is no way
+	// to identify tracked entries, so the matcher is treated as a no-op.
 	IgnoreMatcher IgnoreMatcher
 }
 
@@ -239,15 +240,18 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 	if n.options == nil || n.options.IgnoreMatcher == nil {
 		return false
 	}
+	// Without an index we cannot prove that a subtree contains no tracked
+	// entries, so refuse to skip. This matches the documented contract on
+	// Options.IgnoreMatcher.
+	if n.idxMap == nil {
+		return false
+	}
 	childPath := path.Join(n.path, name)
 	if !n.options.IgnoreMatcher.Match(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
 	if isDir {
 		return !n.trackedDirs[childPath]
-	}
-	if n.idxMap == nil {
-		return true
 	}
 	_, tracked := n.idxMap[childPath]
 	return !tracked

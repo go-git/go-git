@@ -127,3 +127,29 @@ func TestUntrackedSiblingsInIgnoredDirAreSkipped(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, changes, "vendor/extra.go is ignored+untracked and must not appear in the diff")
 }
+
+// TestIgnoreMatcherWithoutIndexIsNoop verifies that IgnoreMatcher does not
+// take effect when Index is nil. Without an index there is no way to prove
+// that an ignored subtree contains no tracked entries, so the documented
+// contract is that the matcher is ignored.
+func TestIgnoreMatcherWithoutIndexIsNoop(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "src/keep.go", []byte("package main\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "vendor/lib.go", []byte("package vendor\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{
+		IgnoreMatcher: matcher("vendor/"),
+	})
+
+	children, err := root.Children()
+	require.NoError(t, err)
+
+	names := map[string]bool{}
+	for _, c := range children {
+		names[c.Name()] = true
+	}
+
+	require.True(t, names["src"], "src/ should be walked")
+	require.True(t, names["vendor"], "vendor/ must be walked when Index is nil — the matcher is documented as a no-op in that case")
+}
