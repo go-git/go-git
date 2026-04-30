@@ -159,6 +159,18 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		Index:    idx,
 	}
 
+	// When ignored changes are to be filtered out anyway, gather the
+	// gitignore patterns once, build a matcher, and let the filesystem
+	// noder skip ignored, untracked entries during the walk. This avoids
+	// descending into large gitignored directories like node_modules.
+	var ignorePatterns []gitignore.Pattern
+	if excludeIgnoredChanges {
+		ignorePatterns = w.collectIgnorePatterns()
+		if len(ignorePatterns) > 0 {
+			fsOpts.IgnoreMatcher = gitignore.NewMatcher(ignorePatterns)
+		}
+	}
+
 	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
 
 	var c merkletrie.Changes
@@ -173,19 +185,20 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 	}
 
 	if excludeIgnoredChanges {
-		return w.excludeIgnoredChanges(c), nil
+		return w.excludeIgnoredChanges(c, ignorePatterns), nil
 	}
 	return c, nil
 }
 
-func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes) merkletrie.Changes {
+func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
 	patterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
 	if err != nil {
-		return changes
+		patterns = nil
 	}
+	return append(patterns, w.Excludes...)
+}
 
-	patterns = append(patterns, w.Excludes...)
-
+func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes, patterns []gitignore.Pattern) merkletrie.Changes {
 	if len(patterns) == 0 {
 		return changes
 	}

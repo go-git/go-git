@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -19,6 +20,13 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
+// IgnoreMatcher matches paths against a set of ignore rules. It is
+// satisfied by gitignore.Matcher; the indirection avoids a direct
+// dependency on the gitignore package from this leaf utility.
+type IgnoreMatcher interface {
+	Match(path []string, isDir bool) bool
+}
+
 var ignore = map[string]bool{
 	".git": true,
 }
@@ -32,6 +40,14 @@ type Options struct {
 	// correctly handling the "racy git" condition. If no index is provided,
 	// the function works without the optimization.
 	Index *index.Index
+
+	// IgnoreMatcher, if non-nil, is consulted while walking the tree.
+	// Untracked entries (files or directories) that match the matcher are
+	// excluded from the walk so callers do not have to descend into large
+	// gitignored directories like node_modules. Tracked entries are always
+	// walked even if they match, so modifications to them are still
+	// reported. When Index is nil this option is ignored.
+	IgnoreMatcher IgnoreMatcher
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -44,6 +60,11 @@ type node struct {
 	submodules map[string]plumbing.Hash
 	idx        *index.Index
 	idxMap     map[string]*index.Entry
+	// trackedDirs holds every directory path that has at least one entry
+	// in the index. It is populated only when IgnoreMatcher is set so the
+	// walker can keep tracked entries even if their parent directory
+	// matches an ignore rule.
+	trackedDirs map[string]bool
 
 	options *Options
 
@@ -88,21 +109,35 @@ func NewRootNodeWithOptions(
 	options Options,
 ) noder.Noder {
 	var idxMap map[string]*index.Entry
+	var trackedDirs map[string]bool
 
 	if options.Index != nil {
 		idxMap = make(map[string]*index.Entry, len(options.Index.Entries))
 		for _, entry := range options.Index.Entries {
 			idxMap[entry.Name] = entry
 		}
+
+		if options.IgnoreMatcher != nil {
+			trackedDirs = make(map[string]bool)
+			for _, entry := range options.Index.Entries {
+				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
+					if trackedDirs[parent] {
+						break
+					}
+					trackedDirs[parent] = true
+				}
+			}
+		}
 	}
 
 	return &node{
-		fs:         fs,
-		submodules: submodules,
-		idx:        options.Index,
-		idxMap:     idxMap,
-		options:    &options,
-		isDir:      true,
+		fs:          fs,
+		submodules:  submodules,
+		idx:         options.Index,
+		idxMap:      idxMap,
+		trackedDirs: trackedDirs,
+		options:     &options,
+		isDir:       true,
 	}
 }
 
@@ -181,6 +216,10 @@ func (n *node) calculateChildren() error {
 			continue
 		}
 
+		if n.shouldSkipIgnored(file.Name(), fi.IsDir()) {
+			continue
+		}
+
 		c, err := n.newChildNode(fi)
 		if err != nil {
 			return err
@@ -192,15 +231,38 @@ func (n *node) calculateChildren() error {
 	return nil
 }
 
+// shouldSkipIgnored reports whether the child entry of n with the given
+// name should be skipped because it matches the configured ignore matcher
+// AND has no entry in the index. Tracked entries are never skipped so
+// modifications to them are still reported.
+func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
+	if n.options == nil || n.options.IgnoreMatcher == nil {
+		return false
+	}
+	childPath := path.Join(n.path, name)
+	if !n.options.IgnoreMatcher.Match(strings.Split(childPath, "/"), isDir) {
+		return false
+	}
+	if isDir {
+		return !n.trackedDirs[childPath]
+	}
+	if n.idxMap == nil {
+		return true
+	}
+	_, tracked := n.idxMap[childPath]
+	return !tracked
+}
+
 func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	path := path.Join(n.path, file.Name())
 
 	node := &node{
-		fs:         n.fs,
-		submodules: n.submodules,
-		idx:        n.idx,
-		idxMap:     n.idxMap,
-		options:    n.options,
+		fs:          n.fs,
+		submodules:  n.submodules,
+		idx:         n.idx,
+		idxMap:      n.idxMap,
+		trackedDirs: n.trackedDirs,
+		options:     n.options,
 
 		path:    path,
 		isDir:   file.IsDir(),
