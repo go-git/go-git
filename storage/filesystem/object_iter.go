@@ -149,6 +149,7 @@ func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
 			continue
 		}
 
+		iter.seen[obj.Hash()] = struct{}{}
 		return obj, nil
 	}
 }
