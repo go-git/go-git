@@ -19,10 +19,7 @@ func TestPushExportStorerExportsCompatObjects(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 
 	blobObj := makeCompatEncodedObject(t, plumbing.BlobObject, []byte("exported content\n"), format.SHA256)
 	_, err := base.ObjectStorage.SetEncodedObject(blobObj)
@@ -53,10 +50,7 @@ func TestPushExportStorerPropagatesMappingErrors(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := &failingNativeLookupMapping{err: errors.New("native lookup failed")}
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 
 	exporter := compat.NewPushExportStorer(base, config.NewConfig(), tr)
 	_, err := exporter.EncodedObject(plumbing.AnyObject, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
@@ -69,10 +63,7 @@ func TestPushExportStorerUsesBaseObjectWhenMappingIsMissing(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 
 	blobObj := makeCompatEncodedObject(t, plumbing.BlobObject, []byte("unmapped blob\n"), format.SHA256)
 	_, err := base.ObjectStorage.SetEncodedObject(blobObj)

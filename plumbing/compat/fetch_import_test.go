@@ -18,10 +18,7 @@ func TestImportStorerRecordsCompatHashMappingImmediately(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
 	compatBlob := plumbing.NewMemoryObject(plumbing.FromObjectFormat(format.SHA1))
@@ -50,10 +47,7 @@ func TestImportStorerImportsTopologicalCommitChain(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
 	compatBlob := plumbing.NewMemoryObject(plumbing.FromObjectFormat(format.SHA1))
@@ -128,10 +122,7 @@ func TestImportStorerFinalizeImportsDeferredCommitChain(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
 	compatBlob := plumbing.NewMemoryObject(plumbing.FromObjectFormat(format.SHA1))
@@ -207,10 +198,7 @@ func TestImportStorerReturnsCompatHashForDeferredObject(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
 	compatTreeContent := append([]byte("100644 file.txt\x00"), plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").Bytes()[:format.SHA1.Size()]...)
@@ -236,10 +224,7 @@ func TestImportStorerExposesPendingCompatObjects(t *testing.T) {
 
 	base := memory.NewStorage(memory.WithObjectFormat(format.SHA256))
 	mapping := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA256,
-		Compat: format.SHA1,
-	}, mapping)
+	tr := compat.NewTranslator(format.SHA256, format.SHA1, mapping)
 	importer := compat.NewImportStorer(base, tr)
 
 	compatTreeContent := append([]byte("100644 file.txt\x00"), plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").Bytes()[:format.SHA1.Size()]...)

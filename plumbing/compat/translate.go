@@ -16,18 +16,16 @@ import (
 // trees, then commits and tags. Each object's referenced objects must
 // already have mappings recorded before the object itself is translated.
 type Translator struct {
-	formats      Formats
 	nativeHasher *plumbing.ObjectHasher
 	compatHasher *plumbing.ObjectHasher
 	mapping      HashMapping
 }
 
 // NewTranslator creates a Translator for the given format pair and mapping.
-func NewTranslator(f Formats, m HashMapping) *Translator {
+func NewTranslator(native, compat format.ObjectFormat, m HashMapping) *Translator {
 	return &Translator{
-		formats:      f,
-		nativeHasher: plumbing.FromObjectFormat(f.Native),
-		compatHasher: plumbing.FromObjectFormat(f.Compat),
+		nativeHasher: plumbing.FromObjectFormat(native),
+		compatHasher: plumbing.FromObjectFormat(compat),
 		mapping:      m,
 	}
 }
@@ -104,8 +102,8 @@ func (t *Translator) TranslateObject(obj plumbing.EncodedObject) (plumbing.Hash,
 func (t *Translator) translateTree(content []byte) ([]byte, error) {
 	return t.translateTreeContent(
 		content,
-		t.formats.Native.Size(),
-		t.formats.Compat.Size(),
+		t.nativeHasher.Size(),
+		t.compatHasher.Size(),
 		"compat",
 		t.mapping.NativeToCompat,
 	)
@@ -116,8 +114,8 @@ func (t *Translator) translateTree(content []byte) ([]byte, error) {
 func (t *Translator) translateCompatTree(content []byte) ([]byte, error) {
 	return t.translateTreeContent(
 		content,
-		t.formats.Compat.Size(),
-		t.formats.Native.Size(),
+		t.compatHasher.Size(),
+		t.nativeHasher.Size(),
 		"native",
 		t.mapping.CompatToNative,
 	)
@@ -139,8 +137,8 @@ func (t *Translator) translateTextObject(content []byte, hashFields []string) ([
 	return t.translateTextObjectContent(
 		content,
 		hashFields,
-		t.formats.Native.HexSize(),
-		t.formats.Compat.HexSize(),
+		t.nativeHasher.Size()*2,
+		t.compatHasher.Size()*2,
 		"compat",
 		t.mapping.NativeToCompat,
 	)
@@ -152,8 +150,8 @@ func (t *Translator) translateCompatTextObject(content []byte, hashFields []stri
 	return t.translateTextObjectContent(
 		content,
 		hashFields,
-		t.formats.Compat.HexSize(),
-		t.formats.Native.HexSize(),
+		t.compatHasher.Size()*2,
+		t.nativeHasher.Size()*2,
 		"native",
 		t.mapping.CompatToNative,
 	)
@@ -315,12 +313,21 @@ func (t *Translator) ComputeCompatHash(objType plumbing.ObjectType, content []by
 	return t.compatHasher.Compute(objType, content)
 }
 
+func objectFormatFromHasher(h *plumbing.ObjectHasher) format.ObjectFormat {
+	switch h.Size() {
+	case format.SHA256Size:
+		return format.SHA256
+	default:
+		return format.SHA1
+	}
+}
+
 // NativeObjectFormat returns the native object format.
 func (t *Translator) NativeObjectFormat() format.ObjectFormat {
-	return t.formats.Native
+	return objectFormatFromHasher(t.nativeHasher)
 }
 
 // CompatObjectFormat returns the compat object format.
 func (t *Translator) CompatObjectFormat() format.ObjectFormat {
-	return t.formats.Compat
+	return objectFormatFromHasher(t.compatHasher)
 }

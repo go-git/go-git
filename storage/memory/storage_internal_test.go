@@ -16,10 +16,7 @@ func TestSetEncodedObjectDefersMissingCompatDependencies(t *testing.T) {
 	t.Parallel()
 
 	s := NewStorage(WithObjectFormat(formatcfg.SHA1))
-	s.translator = compat.NewTranslator(compat.Formats{
-		Native: formatcfg.SHA1,
-		Compat: formatcfg.SHA256,
-	}, compat.NewMemoryMapping())
+	s.translator = compat.NewTranslator(formatcfg.SHA1, formatcfg.SHA256, compat.NewMemoryMapping())
 
 	tree := s.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
@@ -41,10 +38,7 @@ func TestSetEncodedObjectReturnsCompatPersistenceErrors(t *testing.T) {
 	t.Parallel()
 
 	s := NewStorage(WithObjectFormat(formatcfg.SHA1))
-	s.translator = compat.NewTranslator(compat.Formats{
-		Native: formatcfg.SHA1,
-		Compat: formatcfg.SHA256,
-	}, failingHashMapping{err: errors.New("mapping write failed")})
+	s.translator = compat.NewTranslator(formatcfg.SHA1, formatcfg.SHA256, failingHashMapping{err: errors.New("mapping write failed")})
 
 	blob := s.NewEncodedObject()
 	blob.SetType(plumbing.BlobObject)

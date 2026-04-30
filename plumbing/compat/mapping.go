@@ -2,7 +2,6 @@ package compat
 
 import (
 	"github.com/go-git/go-git/v6/plumbing"
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 // HashMapping provides bidirectional lookup between native-format and
@@ -26,11 +25,4 @@ type HashMapping interface {
 	// Filesystem-backed implementations may return an error if the mapping
 	// cannot be loaded from disk.
 	Count() (int, error)
-}
-
-// Formats holds the native and compat ObjectFormat for a repository that
-// has the compatObjectFormat extension enabled.
-type Formats struct {
-	Native format.ObjectFormat
-	Compat format.ObjectFormat
 }

@@ -72,10 +72,7 @@ func TestTranslateStoredObjects(t *testing.T) {
 
 	// Create a translator from SHA-1 (native) to SHA-256 (compat).
 	m := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, m)
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	// Translate all stored objects.
 	err = compat.TranslateStoredObjects(s, tr)
@@ -99,10 +96,7 @@ func TestTranslateStoredObjectsEmpty(t *testing.T) {
 
 	s := memory.NewStorage()
 	m := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, m)
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	err := compat.TranslateStoredObjects(s, tr)
 	require.NoError(t, err)
@@ -130,10 +124,7 @@ func TestTranslateStoredObjectsReportsUnresolvableDependencies(t *testing.T) {
 	require.NoError(t, err)
 
 	m := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, m)
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	err = compat.TranslateStoredObjects(s, tr)
 	require.Error(t, err)
@@ -155,10 +146,7 @@ func TestTranslateStoredObjectsSurfacesNonDependencyErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	m := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, m)
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	err = compat.TranslateStoredObjects(s, tr)
 	require.Error(t, err)
@@ -210,10 +198,7 @@ func TestTranslateStoredObjectsTranslatesTagOfTag(t *testing.T) {
 	require.NoError(t, err)
 
 	m := compat.NewMemoryMapping()
-	tr := compat.NewTranslator(compat.Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}, m)
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, m)
 
 	ordered := orderedTagStorer{
 		EncodedObjectStorer: s,

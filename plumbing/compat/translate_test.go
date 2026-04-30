@@ -12,11 +12,7 @@ import (
 
 func newTestTranslator() (*Translator, *MemoryMapping) {
 	m := NewMemoryMapping()
-	f := Formats{
-		Native: format.SHA1,
-		Compat: format.SHA256,
-	}
-	return NewTranslator(f, m), m
+	return NewTranslator(format.SHA1, format.SHA256, m), m
 }
 
 func makeEncodedObject(t *testing.T, objType plumbing.ObjectType, content []byte, f format.ObjectFormat) plumbing.EncodedObject {
@@ -31,6 +27,37 @@ func makeEncodedObject(t *testing.T, objType plumbing.ObjectType, content []byte
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	return obj
+}
+
+func TestTranslatorObjectFormats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		native format.ObjectFormat
+		compat format.ObjectFormat
+	}{
+		{
+			name:   "sha1 native sha256 compat",
+			native: format.SHA1,
+			compat: format.SHA256,
+		},
+		{
+			name:   "sha256 native sha1 compat",
+			native: format.SHA256,
+			compat: format.SHA1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tr := NewTranslator(tt.native, tt.compat, NewMemoryMapping())
+			assert.Equal(t, tt.native, tr.NativeObjectFormat())
+			assert.Equal(t, tt.compat, tr.CompatObjectFormat())
+		})
+	}
 }
 
 func TestTranslateBlob(t *testing.T) {

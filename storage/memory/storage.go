@@ -72,10 +72,7 @@ func NewStorage(o ...StorageOption) *Storage {
 		if opts.compatObjectFormat != formatcfg.UnsetObjectFormat {
 			cfg.Extensions.CompatObjectFormat = opts.compatObjectFormat
 			m := compat.NewMemoryMapping()
-			s.translator = compat.NewTranslator(compat.Formats{
-				Native: opts.objectFormat,
-				Compat: opts.compatObjectFormat,
-			}, m)
+			s.translator = compat.NewTranslator(opts.objectFormat, opts.compatObjectFormat, m)
 		}
 	} else {
 		s.oh = plumbing.FromObjectFormat(formatcfg.DefaultObjectFormat)

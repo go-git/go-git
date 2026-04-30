@@ -150,10 +150,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		}
 		mode := ops.CompatMappingWriteMode
 		m := compat.NewFileMappingWithWriteMode(fs, "objects", mode)
-		s.translator = compat.NewTranslator(compat.Formats{
-			Native: nativeFmt,
-			Compat: compatObjFmt,
-		}, m)
+		s.translator = compat.NewTranslator(nativeFmt, compatObjFmt, m)
 	}
 
 	return s
