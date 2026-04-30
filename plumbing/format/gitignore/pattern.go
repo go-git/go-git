@@ -2,7 +2,6 @@ package gitignore
 
 import (
 	"strings"
-	"unicode"
 )
 
 // MatchResult defines outcomes of a match, no match, exclusion or inclusion.
@@ -101,31 +100,35 @@ func wildmatch(pattern, text string) bool {
 		if pi < plen {
 			pc := pattern[pi]
 
-			switch {
-			case pc == '\\' && pi+1 < plen:
-				// Handle escaped characters
+			switch pc {
+			case '\\':
+				// Trailing '\' with nothing to escape: Git's wildmatch advances
+				// past it into NUL and the literal comparison fails, so we fall
+				// through to backtracking (or NOMATCH if no '*' to retry).
+				if pi+1 >= plen {
+					break
+				}
 				pi++
 				if pattern[pi] == text[ti] {
 					pi++
 					ti++
 					continue
 				}
-				return false
 
-			case pc == '?':
+			case '?':
 				// Question mark matches any single character
 				pi++
 				ti++
 				continue
 
-			case pc == '*':
+			case '*':
 				// Star matches zero or more characters
 				starIdx = pi
 				matchIdx = ti
 				pi++
 				continue
 
-			case pc == '[':
+			case '[':
 				// Bracket expression
 				bracketEnd := findBracketEnd(pattern, pi)
 				if bracketEnd > pi && matchBracket(pattern[pi:bracketEnd+1], text[ti]) {
@@ -142,11 +145,12 @@ func wildmatch(pattern, text string) bool {
 				}
 				return false
 
-			case pc == text[ti]:
-				// Exact character match
-				pi++
-				ti++
-				continue
+			default:
+				if pc == text[ti] {
+					pi++
+					ti++
+					continue
+				}
 			}
 		}
 
@@ -193,19 +197,9 @@ func findBracketEnd(pattern string, start int) int {
 		case pattern[i] == '\\' && i+1 < len(pattern):
 			i += 2
 		case pattern[i] == '[' && i+1 < len(pattern) && pattern[i+1] == ':':
-			// Potential character class - look for :]
-			j := i + 2
-			foundClass := false
-			for j < len(pattern) && pattern[j] != ']' {
-				j++
-			}
-			// Check if we found :] (]: must be preceded by :)
-			if j < len(pattern) && j > i+2 && pattern[j-1] == ':' {
-				// Valid character class, skip past it
-				i = j + 1
-				foundClass = true
-			}
-			if !foundClass {
+			if _, end, ok := parsePosixClass(pattern, i); ok {
+				i = end
+			} else {
 				// Not a valid character class, treat [ as literal and continue
 				i++
 			}
@@ -280,19 +274,7 @@ func matchBracket(bracketExpr string, ch byte) bool {
 			}
 			pCh = 0 // Reset prev_ch
 		case pCh == '[' && i+1 < len(bracketExpr) && bracketExpr[i+1] == ':':
-			// Potential character class
-			classStart := i + 2
-			j := classStart
-			for j < len(bracketExpr) && bracketExpr[j] != ']' {
-				j++
-			}
-			if j >= len(bracketExpr) {
-				return false
-			}
-			// Check if it ends with :]
-			classLen := j - classStart
-			if classLen > 0 && bracketExpr[j-1] == ':' {
-				className := bracketExpr[classStart : j-1]
+			if className, end, ok := parsePosixClass(bracketExpr, i); ok {
 				classMatch, valid := matchCharClass(className, ch)
 				if !valid {
 					// Malformed [:class:] string - entire pattern fails
@@ -301,8 +283,8 @@ func matchBracket(bracketExpr string, ch byte) bool {
 				if classMatch {
 					matched = true
 				}
-				i = j
-				pCh = 0 // Reset prev_ch after character class
+				i = end - 1 // loop's i++ advances past ']'
+				pCh = 0     // Reset prev_ch after character class
 			} else if ch == '[' {
 				// Didn't find ":]", so treat [ as a literal character in the set
 				matched = true
@@ -327,40 +309,73 @@ func matchBracket(bracketExpr string, ch byte) bool {
 	return matched
 }
 
-// matchCharClass checks if a character matches a POSIX character class
-// Returns (matched, valid) where valid indicates if the class name was recognized
-func matchCharClass(class string, ch byte) (bool, bool) {
-	r := rune(ch)
+// parsePosixClass parses a POSIX character class header of the form [:name:]
+// starting at s[start], where s[start] is '[' and s[start+1] is ':'. On
+// success it returns the class name (between [: and :]) and the index just
+// past the closing ']'. ok is false when the form is malformed: no closing
+// ']', empty name, or missing trailing ':'.
+func parsePosixClass(s string, start int) (name string, end int, ok bool) {
+	classStart := start + 2
+	j := classStart
+	for j < len(s) && s[j] != ']' {
+		j++
+	}
+	if j >= len(s) || j == classStart || s[j-1] != ':' {
+		return "", 0, false
+	}
+	return s[classStart : j-1], j + 1, true
+}
 
+// matchCharClass checks if a character matches a POSIX character class.
+// Classification is ASCII-only to match Git's wildmatch (sane-ctype.h):
+// high-bit bytes never satisfy any class.
+// Returns (matched, valid) where valid indicates if the class name was recognized.
+func matchCharClass(class string, ch byte) (bool, bool) {
 	switch class {
 	case "alnum":
-		return unicode.IsLetter(r) || unicode.IsDigit(r), true
+		return isASCIIAlpha(ch) || isASCIIDigit(ch), true
 	case "alpha":
-		return unicode.IsLetter(r), true
+		return isASCIIAlpha(ch), true
 	case "blank":
 		return ch == ' ' || ch == '\t', true
 	case "cntrl":
-		return unicode.IsControl(r), true
+		return ch < 0x20 || ch == 0x7f, true
 	case "digit":
-		return unicode.IsDigit(r), true
+		return isASCIIDigit(ch), true
 	case "graph":
-		return unicode.IsGraphic(r) && !unicode.IsSpace(r), true
+		return ch > ' ' && ch < 0x7f, true
 	case "lower":
-		return unicode.IsLower(r), true
+		return ch >= 'a' && ch <= 'z', true
 	case "print":
-		return unicode.IsPrint(r), true
+		return ch >= ' ' && ch < 0x7f, true
 	case "punct":
-		return unicode.IsPunct(r), true
+		return isASCIIPunct(ch), true
 	case "space":
-		return unicode.IsSpace(r), true
+		return ch == ' ' || ch == '\t' || ch == '\n' ||
+			ch == '\v' || ch == '\f' || ch == '\r', true
 	case "upper":
-		return unicode.IsUpper(r), true
+		return ch >= 'A' && ch <= 'Z', true
 	case "xdigit":
-		return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F'), true
+		return isASCIIDigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F'), true
 	default:
 		// Malformed/unknown character class
 		return false, false
 	}
+}
+
+func isASCIIAlpha(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+}
+
+func isASCIIDigit(ch byte) bool {
+	return ch >= '0' && ch <= '9'
+}
+
+func isASCIIPunct(ch byte) bool {
+	return (ch >= '!' && ch <= '/') ||
+		(ch >= ':' && ch <= '@') ||
+		(ch >= '[' && ch <= '`') ||
+		(ch >= '{' && ch <= '~')
 }
 
 func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
