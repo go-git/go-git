@@ -73,7 +73,3 @@ func (m failingHashMapping) CompatToNative(plumbing.Hash) (plumbing.Hash, error)
 func (m failingHashMapping) Add(plumbing.Hash, plumbing.Hash) error {
 	return m.err
 }
-
-func (m failingHashMapping) Count() (int, error) {
-	return 0, nil
-}

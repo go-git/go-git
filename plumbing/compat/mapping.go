@@ -20,9 +20,4 @@ type HashMapping interface {
 	// Add records a bidirectional mapping between a native-format hash and
 	// a compat-format hash.
 	Add(native, compat plumbing.Hash) error
-
-	// Count returns the number of mappings stored.
-	// Filesystem-backed implementations may return an error if the mapping
-	// cannot be loaded from disk.
-	Count() (int, error)
 }

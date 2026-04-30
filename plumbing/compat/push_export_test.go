@@ -91,10 +91,6 @@ func (m *failingNativeLookupMapping) Add(plumbing.Hash, plumbing.Hash) error {
 	return nil
 }
 
-func (m *failingNativeLookupMapping) Count() (int, error) {
-	return 0, nil
-}
-
 func makeCompatEncodedObject(
 	t *testing.T,
 	objType plumbing.ObjectType,
