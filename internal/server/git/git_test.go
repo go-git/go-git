@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"net"
 	"net/url"
 	"testing"
 	"time"
@@ -123,7 +124,6 @@ func TestGitServer_MaxConnections(t *testing.T) {
 	u, err := url.Parse(endpoint + "/basic.git")
 	require.NoError(t, err)
 
-	// Hold one connection open.
 	tr1 := git.NewTransport(git.Options{})
 	conn1, err := tr1.Connect(context.Background(), &transportgit.Request{
 		URL: u, Command: transportgit.UploadPackService,
@@ -131,19 +131,14 @@ func TestGitServer_MaxConnections(t *testing.T) {
 	require.NoError(t, err)
 	defer conn1.Close()
 
-	// Second connection should be rejected (server closes it).
-	tr2 := git.NewTransport(git.Options{})
-	conn2, err := tr2.Connect(context.Background(), &transportgit.Request{
-		URL: u, Command: transportgit.UploadPackService,
-	})
-	if err != nil {
-		return
-	}
+	conn2, err := net.Dial("tcp", u.Host)
+	require.NoError(t, err, "TCP accept should succeed before server checks MaxConnections")
 	defer conn2.Close()
 
+	require.NoError(t, conn2.SetReadDeadline(time.Now().Add(2*time.Second)))
 	buf := make([]byte, 1)
-	_, err = conn2.Reader().Read(buf)
-	assert.Error(t, err, "second connection should be rejected due to max connections")
+	_, err = conn2.Read(buf)
+	assert.ErrorIs(t, err, io.EOF, "second connection should be closed by server due to MaxConnections")
 }
 
 func TestGitServer_InitTimeout(t *testing.T) {
@@ -168,26 +163,28 @@ func TestGitServer_Timeout(t *testing.T) {
 
 	loader := servergit.Loader(t, fixtures.Basic().One())
 	srv := servergitdaemon.FromLoader(loader)
-	srv.Timeout = 100 * time.Millisecond
+	srv.Timeout = 200 * time.Millisecond
 
 	endpoint, err := srv.Start()
 	require.NoError(t, err)
 	t.Cleanup(func() { srv.Close() })
 
-	u, err := url.Parse(endpoint + "/basic.git")
+	u, err := url.Parse(endpoint)
 	require.NoError(t, err)
 
-	// Normal operation should still work within the idle timeout.
-	tr := git.NewTransport(git.Options{})
-	sess, err := tr.Handshake(context.Background(), &transportgit.Request{
-		URL: u, Command: transportgit.UploadPackService,
-	})
+	conn, err := net.Dial("tcp", u.Host)
 	require.NoError(t, err)
-	t.Cleanup(func() { sess.Close() })
+	defer conn.Close()
 
-	refs, err := sess.GetRemoteRefs(context.Background())
-	require.NoError(t, err)
-	assert.Greater(t, len(refs), 0, "should still get refs within idle timeout")
+	// Stay idle past the configured Timeout; the server must close
+	// the connection, surfacing as a Read error.
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	buf := make([]byte, 1)
+	start := time.Now()
+	_, err = conn.Read(buf)
+	elapsed := time.Since(start)
+	assert.Error(t, err, "server should close idle connection past Timeout")
+	assert.GreaterOrEqual(t, elapsed, srv.Timeout, "server should not close before Timeout elapses")
 }
 
 // gitServer is a helper that holds a running git:// server and its endpoint.

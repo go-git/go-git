@@ -164,38 +164,56 @@ func (s *Server) serve() {
 			}
 		}
 
-		if !s.trackConn(conn, true) {
+		ctx, ok := s.addConn(conn)
+		if !ok {
 			_ = conn.Close()
 			continue
 		}
 
 		s.wg.Go(func() {
-			s.handleConn(conn)
-			s.trackConn(conn, false)
+			s.handleConn(ctx, conn)
+			s.removeConn(conn)
 		})
 	}
 }
 
-// trackConn registers or unregisters a connection. Returns false if
-// the connection exceeds MaxConnections and should be rejected.
-func (s *Server) trackConn(conn net.Conn, add bool) bool {
+// addConn registers a new connection with a fresh per-connection context.
+// Returns false (and a nil context) if the connection exceeds
+// MaxConnections and should be rejected.
+func (s *Server) addConn(conn net.Conn) (context.Context, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if add {
-		if s.MaxConnections > 0 && len(s.conns) >= s.MaxConnections {
-			return false
-		}
-		_, cancel := context.WithCancel(context.Background())
-		s.conns[conn] = cancel
-		return true
+	if s.MaxConnections > 0 && len(s.conns) >= s.MaxConnections {
+		return nil, false
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.conns[conn] = cancel
+	return ctx, true
+}
+
+// removeConn unregisters a connection, cancelling its per-connection
+// context.
+func (s *Server) removeConn(conn net.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if cancel, ok := s.conns[conn]; ok {
 		cancel()
 		delete(s.conns, conn)
 	}
-	return true
+}
+
+// cancelConn cancels the per-connection context if still registered.
+// Used to abort an in-flight backend.Serve when the connection times
+// out.
+func (s *Server) cancelConn(conn net.Conn) {
+	s.mu.RLock()
+	cancel, ok := s.conns[conn]
+	s.mu.RUnlock()
+	if ok {
+		cancel()
+	}
 }
 
 // handleConn processes a single git:// connection.
@@ -205,35 +223,27 @@ func (s *Server) trackConn(conn net.Conn, add bool) bool {
 //	Client sends: <command> <path>\0host=<host>\0\n  (pkt-line)
 //	Server reads the GitProtoRequest, resolves the repository, and
 //	dispatches to the appropriate backend handler.
-func (s *Server) handleConn(conn net.Conn) {
+func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	defer func() { _ = conn.Close() }()
-
-	// Retrieve the per-connection context created by trackConn.
-	s.mu.RLock()
-	cancel, ok := s.conns[conn]
-	s.mu.RUnlock()
-	if !ok {
-		return
-	}
-	ctx, ctxCancel := context.WithCancel(context.Background())
-	defer ctxCancel()
 
 	// When the connection times out, cancel the per-connection context
 	// so backend.Serve can abort gracefully.
-	closeCanceler := func() {
-		cancel()
-		ctxCancel()
-	}
+	closeCanceler := func() { s.cancelConn(conn) }
 
+	now := time.Now()
 	maxDeadline := time.Time{}
 	if s.MaxTimeout > 0 {
-		maxDeadline = time.Now().Add(s.MaxTimeout)
+		maxDeadline = now.Add(s.MaxTimeout)
+	}
+	initDeadline := time.Time{}
+	if s.InitTimeout > 0 {
+		initDeadline = now.Add(s.InitTimeout)
 	}
 
 	sc := &serverConn{
 		Conn:          conn,
 		idleTimeout:   s.Timeout,
-		initTimeout:   s.InitTimeout,
+		initDeadline:  initDeadline,
 		maxDeadline:   maxDeadline,
 		closeCanceler: closeCanceler,
 	}
@@ -282,9 +292,10 @@ func (*Server) validService(svc string) bool {
 // gliderlabs/ssh. Every Read and Write resets the idle deadline.
 // Three deadlines are computed:
 //
-//   - initTimeout: applied only during the initial handshake phase
-//     (reading the GitProtoRequest). Cleared once the handshake
-//     completes.
+//   - initDeadline: absolute deadline for the initial handshake phase
+//     (reading the GitProtoRequest). Fixed at connection accept time
+//     so that a slow client trickling bytes cannot keep extending it.
+//     Cleared once the handshake completes.
 //   - idleTimeout: resets on each Read/Write. If no I/O occurs
 //     within this duration, the connection times out.
 //   - maxDeadline: absolute deadline for the connection lifetime,
@@ -297,7 +308,7 @@ type serverConn struct {
 	net.Conn
 
 	idleTimeout   time.Duration
-	initTimeout   time.Duration
+	initDeadline  time.Time
 	maxDeadline   time.Time
 	initCleared   atomic.Bool
 	closeCanceler func()
@@ -351,10 +362,9 @@ func (c *serverConn) updateDeadline() {
 		deadline = c.maxDeadline
 	}
 
-	if !c.initCleared.Load() && c.initTimeout > 0 {
-		initDeadline := time.Now().Add(c.initTimeout)
-		if deadline.IsZero() || initDeadline.Before(deadline) {
-			deadline = initDeadline
+	if !c.initCleared.Load() && !c.initDeadline.IsZero() {
+		if deadline.IsZero() || c.initDeadline.Before(deadline) {
+			deadline = c.initDeadline
 		}
 	}
 

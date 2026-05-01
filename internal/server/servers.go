@@ -20,9 +20,7 @@ func All(l transport.Loader) []GitServer {
 	if srv, err := http.FromLoader(l); err == nil {
 		servers = append(servers, srv)
 	}
-	if srv := git.FromLoader(l); srv != nil {
-		servers = append(servers, srv)
-	}
+	servers = append(servers, git.FromLoader(l))
 
 	return servers
 }
