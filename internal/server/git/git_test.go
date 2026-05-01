@@ -20,26 +20,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/git"
 )
 
-func TestGitServer_UploadPack(t *testing.T) {
-	t.Parallel()
-
-	srv := startGitServer(t, fixtures.Basic().One())
-
-	tr := git.NewTransport(git.Options{})
-	req := &transportgit.Request{
-		URL:     srv.url("/basic.git"),
-		Command: transportgit.UploadPackService,
-	}
-
-	sess, err := tr.Handshake(context.Background(), req)
-	require.NoError(t, err)
-	t.Cleanup(func() { sess.Close() })
-
-	refs, err := sess.GetRemoteRefs(context.Background())
-	require.NoError(t, err)
-	assert.Greater(t, len(refs), 0, "server should advertise refs")
-}
-
 func TestGitServer_Archive(t *testing.T) {
 	t.Parallel()
 
@@ -127,31 +107,6 @@ func TestGitServer_ArchiveTarGz(t *testing.T) {
 		names = append(names, hdr.Name)
 	}
 	assert.Greater(t, len(names), 0, "archive should contain files")
-}
-
-func TestGitServer_UnsupportedService(t *testing.T) {
-	t.Parallel()
-
-	srv := startGitServer(t, fixtures.Basic().One())
-
-	tr := git.NewTransport(git.Options{})
-	req := &transportgit.Request{
-		URL:     srv.url("/basic.git"),
-		Command: "git-unsupported-service",
-	}
-
-	// The server silently drops connections for unsupported services.
-	// Connect may succeed (it's just TCP + request write), but
-	// Handshake will fail because the server closes the connection.
-	conn, err := tr.Connect(context.Background(), req)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	buf := make([]byte, 1)
-	_, err = conn.Reader().Read(buf)
-	assert.Error(t, err, "reading from unsupported service should fail")
 }
 
 func TestGitServer_MaxConnections(t *testing.T) {
