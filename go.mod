@@ -13,7 +13,7 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-20260410103409-85b6241850b5
 	github.com/go-git/go-git-fixtures/v6 v6.0.0-20260422085740-0c07409f52ec
 	github.com/kevinburke/ssh_config v1.6.0
-	github.com/pjbgf/sha1cd v0.5.0
+	github.com/pjbgf/sha1cd v0.6.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.50.0
