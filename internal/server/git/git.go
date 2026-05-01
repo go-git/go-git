@@ -26,6 +26,8 @@ import (
 
 const defaultAddr = "127.0.0.1:0"
 
+var errAlreadyStarted = errors.New("git: server already started")
+
 // Server is a git:// protocol server.
 type Server struct {
 	// Loader resolves repository URLs to storage. If nil,
@@ -61,10 +63,12 @@ type Server struct {
 	ln  net.Listener
 	srv *backend.Backend
 
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	conns map[net.Conn]context.CancelFunc
 	wg    sync.WaitGroup
 	done  chan struct{}
+
+	started bool
 }
 
 // FromLoader creates a git:// server backed by the given loader.
@@ -78,31 +82,46 @@ func FromLoader(loader transport.Loader) *Server {
 // It returns the endpoint URL (e.g. "git://127.0.0.1:XXXXX") that
 // clients can use to connect.
 func (s *Server) Start() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.started {
+		return "", errAlreadyStarted
+	}
+
 	if s.Loader == nil {
 		s.Loader = transport.DefaultLoader
+	}
+
+	ln, err := net.Listen("tcp", defaultAddr)
+	if err != nil {
+		return "", fmt.Errorf("git: listen: %w", err)
 	}
 
 	s.srv = backend.New(s.Loader)
 	s.conns = make(map[net.Conn]context.CancelFunc)
 	s.done = make(chan struct{})
-
-	var err error
-	s.ln, err = net.Listen("tcp", defaultAddr)
-	if err != nil {
-		return "", fmt.Errorf("git: listen: %w", err)
-	}
+	s.ln = ln
+	s.started = true
 
 	go s.serve()
 
-	return s.Endpoint()
+	return endpoint(ln)
 }
 
 // Endpoint returns the git:// URL clients should connect to.
 func (s *Server) Endpoint() (string, error) {
-	if s.ln == nil {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return endpoint(s.ln)
+}
+
+func endpoint(ln net.Listener) (string, error) {
+	if ln == nil {
 		return "", errors.New("git: server not started")
 	}
-	return "git://" + s.ln.Addr().String(), nil
+	return "git://" + ln.Addr().String(), nil
 }
 
 // Close immediately closes the listener and all active connections.
@@ -120,11 +139,12 @@ func (s *Server) Close() error {
 		cancel()
 	}
 	s.conns = make(map[net.Conn]context.CancelFunc)
+	ln := s.ln
 	s.mu.Unlock()
 
 	var err error
-	if s.ln != nil {
-		err = s.ln.Close()
+	if ln != nil {
+		err = ln.Close()
 	}
 	s.wg.Wait()
 	return err
@@ -189,9 +209,9 @@ func (s *Server) handleConn(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
 	// Retrieve the per-connection context created by trackConn.
-	s.mu.Lock()
+	s.mu.RLock()
 	cancel, ok := s.conns[conn]
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	if !ok {
 		return
 	}
