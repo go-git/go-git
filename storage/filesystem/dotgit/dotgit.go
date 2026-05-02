@@ -949,7 +949,19 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 		return err
 	}
 
+	d.removeEmptyParentDirs(path)
+
 	return d.rewritePackedRefsWithoutRef(name)
+}
+
+// removeEmptyParentDirs walks up the directory tree from the removed ref file
+// and removes any empty parent directories, stopping at the DotGit root.
+func (d *DotGit) removeEmptyParentDirs(refPath string) {
+	for dir := filepath.Dir(refPath); dir != "."; dir = filepath.Dir(dir) {
+		if err := d.fs.Remove(dir); err != nil {
+			break
+		}
+	}
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {

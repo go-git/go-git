@@ -350,6 +350,86 @@ func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs2() {
 	s.Equal(string(after), brokenContent)
 }
 
+func (s *SuiteDotGit) TestRemoveRefCleansUpEmptyParentDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	err := dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/main",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	), nil)
+	s.Require().NoError(err)
+
+	name := plumbing.ReferenceName("refs/heads/main")
+	err = dir.RemoveRef(name)
+	s.Require().NoError(err)
+
+	_, err = fs.Stat(fs.Join("refs", "heads", "main"))
+	s.True(os.IsNotExist(err))
+
+	_, err = fs.Stat(fs.Join("refs", "heads"))
+	s.True(os.IsNotExist(err))
+
+	_, err = fs.Stat(fs.Join("refs"))
+	s.True(os.IsNotExist(err))
+}
+
+func (s *SuiteDotGit) TestRemoveRefDoesNotRemoveSiblings() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	err := dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/main",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	), nil)
+	s.Require().NoError(err)
+
+	err = dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/heads/feature",
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
+	), nil)
+	s.Require().NoError(err)
+
+	err = dir.RemoveRef(plumbing.ReferenceName("refs/heads/main"))
+	s.Require().NoError(err)
+
+	_, err = fs.Stat(fs.Join("refs", "heads", "main"))
+	s.True(os.IsNotExist(err))
+
+	_, err = fs.Stat(fs.Join("refs", "heads", "feature"))
+	s.Require().NoError(err)
+
+	_, err = fs.Stat(fs.Join("refs", "heads"))
+	s.Require().NoError(err)
+}
+
+func (s *SuiteDotGit) TestRemoveRefCleansUpNestedEmptyParentDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	err := dir.SetRef(plumbing.NewReferenceFromStrings(
+		"refs/remotes/origin/feature/bugfix",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+	), nil)
+	s.Require().NoError(err)
+
+	name := plumbing.ReferenceName("refs/remotes/origin/feature/bugfix")
+	err = dir.RemoveRef(name)
+	s.Require().NoError(err)
+
+	_, err = fs.Stat(fs.Join("refs", "remotes", "origin", "feature", "bugfix"))
+	s.True(os.IsNotExist(err))
+
+	_, err = fs.Stat(fs.Join("refs", "remotes", "origin", "feature"))
+	s.True(os.IsNotExist(err))
+
+	_, err = fs.Stat(fs.Join("refs", "remotes", "origin"))
+	s.True(os.IsNotExist(err))
+
+	_, err = fs.Stat(fs.Join("refs", "remotes"))
+	s.True(os.IsNotExist(err))
+}
+
 func (s *SuiteDotGit) TestRefsFromHEADFile() {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	s.Require().NoError(err)
