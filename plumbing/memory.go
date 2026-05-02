@@ -45,6 +45,9 @@ func (o *MemoryObject) Hash() Hash {
 	return o.h
 }
 
+// SetHash pre-populates the object hash, avoiding recomputation on Hash().
+func (o *MemoryObject) SetHash(h Hash) { o.h = h }
+
 // Type returns the ObjectType
 func (o *MemoryObject) Type() ObjectType { return o.t }
 
