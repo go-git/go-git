@@ -20,6 +20,7 @@ const (
 	beginpgp       string = "-----BEGIN PGP SIGNATURE-----"
 	endpgp         string = "-----END PGP SIGNATURE-----"
 	headerpgp      string = "gpgsig"
+	headerpgp256   string = "gpgsig-sha256"
 	headerencoding string = "encoding"
 
 	// https://github.com/git/git/blob/bcb6cae2966cc407ca1afc77413b3ef11103c175/Documentation/gitformat-signature.txt#L153
@@ -98,8 +99,8 @@ func (h ExtraHeader) Format(f fmt.State, verb rune) {
 func parseExtraHeader(line []byte) (ExtraHeader, bool) {
 	split := bytes.SplitN(line, []byte{' '}, 2)
 
-	out := ExtraHeader {
-		Key: string(bytes.TrimRight(split[0], "\n")),
+	out := ExtraHeader{
+		Key:   string(bytes.TrimRight(split[0], "\n")),
 		Value: "",
 	}
 
@@ -248,6 +249,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	var message bool
 	var mergetag bool
 	var pgpsig bool
+	var pgpsig256 bool
 	var msgbuf bytes.Buffer
 	var extraheader *ExtraHeader = nil
 	for {
@@ -274,6 +276,13 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			} else {
 				pgpsig = false
 			}
+		}
+
+		if pgpsig256 {
+			if len(line) > 0 && line[0] == ' ' {
+				continue
+			}
+			pgpsig256 = false
 		}
 
 		if extraheader != nil {
@@ -319,6 +328,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 			case headerpgp:
 				c.PGPSignature += string(data) + "\n"
 				pgpsig = true
+			case headerpgp256:
+				pgpsig256 = true
 			default:
 				h, maybecontinued := parseExtraHeader(original_line)
 				if maybecontinued {
@@ -407,7 +418,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	for _, header := range c.ExtraHeaders {
-		
+
 		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
 			return err
 		}
