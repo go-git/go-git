@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -42,6 +43,11 @@ type MessageEncoding string
 // in time, such as a timestamp, the author of the changes since the last
 // commit, a pointer to the previous commit(s), etc.
 // http://shafiulazam.com/gitbook/1_the_git_object_model.html
+//
+// When a Commit is populated by Decode it retains a reference to the source
+// plumbing.EncodedObject so that EncodeWithoutSignature can reproduce the
+// exact bytes the signature was computed over. Refer to EncodeWithoutSignature
+// for more information.
 type Commit struct {
 	// Hash of the commit object.
 	Hash plumbing.Hash
@@ -67,6 +73,9 @@ type Commit struct {
 	ExtraHeaders []ExtraHeader
 
 	s storer.EncodedObjectStorer
+	// src holds the encoded object this Commit was decoded from, used by
+	// EncodeWithoutSignature to recover the canonical signed bytes.
+	src plumbing.EncodedObject
 }
 
 // ExtraHeader holds any non-standard header
@@ -236,6 +245,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 
 	c.Hash = o.Hash()
 	c.Encoding = defaultUtf8CommitMessageEncoding
+	c.src = o
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -355,9 +365,125 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 	return c.encode(o, true)
 }
 
-// EncodeWithoutSignature export a Commit into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
+// EncodeWithoutSignature exports a Commit into a plumbing.EncodedObject
+// without any signature headers, producing the payload that PGP/GPG
+// signatures are computed over.
+//
+// Behaviour depends on how the Commit was created:
+//
+//   - For Commits populated by Decode whose exported fields still match the
+//     source object, the payload is streamed from the raw source bytes with
+//     gpgsig and gpgsig-sha256 headers (and their continuation lines)
+//     stripped verbatim. This preserves the exact bytes the signature was
+//     computed over, regardless of any normalization performed by Decode.
+//
+//   - For Commits constructed in memory, or for decoded Commits whose
+//     exported fields have been mutated, the payload is derived from the
+//     current struct fields. Mutation is detected by re-decoding the source
+//     object and comparing exported fields; if any differ, the in-memory
+//     representation prevails.
 func (c *Commit) EncodeWithoutSignature(o plumbing.EncodedObject) error {
+	if c.matchesSource() {
+		return stripSignaturesFromRaw(o, c.src)
+	}
 	return c.encode(o, false)
+}
+
+// matchesSource reports whether c.src is set and re-decoding it produces a
+// Commit whose payload-affecting exported fields are identical to those of
+// c. It is the auto-detection used by EncodeWithoutSignature to decide
+// between the raw bytes and the struct-encoded payload.
+//
+// PGPSignature is intentionally excluded from the comparison: neither path
+// emits it, so mutating it must not trigger a switch to struct-encode (which
+// would change the byte layout the caller is trying to verify against).
+func (c *Commit) matchesSource() bool {
+	if c.src == nil {
+		return false
+	}
+	fresh := &Commit{}
+	if err := fresh.Decode(c.src); err != nil {
+		return false
+	}
+	return c.Hash == fresh.Hash &&
+		signatureEqual(c.Author, fresh.Author) &&
+		signatureEqual(c.Committer, fresh.Committer) &&
+		c.MergeTag == fresh.MergeTag &&
+		c.Message == fresh.Message &&
+		c.TreeHash == fresh.TreeHash &&
+		c.Encoding == fresh.Encoding &&
+		slices.Equal(c.ParentHashes, fresh.ParentHashes) &&
+		slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders)
+}
+
+func signatureEqual(a, b Signature) bool {
+	return a.Name == b.Name &&
+		a.Email == b.Email &&
+		a.When.Unix() == b.When.Unix() &&
+		a.When.Format("-0700") == b.When.Format("-0700")
+}
+
+// stripSignaturesFromRaw streams src into dst, dropping the canonical commit
+// signature headers ("gpgsig " and "gpgsig-sha256 ") together with their
+// continuation lines (those starting with a space). Everything past the
+// blank line that ends the header block is copied verbatim, as is any other
+// "gpgsig"-prefixed extra header (for example a user-defined "gpgsig-key-id")
+// that does not match one of the canonical signature headers.
+func stripSignaturesFromRaw(dst, src plumbing.EncodedObject) (err error) {
+	dst.SetType(plumbing.CommitObject)
+
+	r, err := src.Reader()
+	if err != nil {
+		return err
+	}
+	defer ioutil.CheckClose(r, &err)
+
+	w, err := dst.Writer()
+	if err != nil {
+		return err
+	}
+	defer ioutil.CheckClose(w, &err)
+
+	br := sync.GetBufioReader(r)
+	defer sync.PutBufioReader(br)
+
+	var inBody, skipping bool
+	for {
+		line, rerr := br.ReadBytes('\n')
+		if rerr != nil && rerr != io.EOF {
+			return rerr
+		}
+
+		write := true
+		if !inBody {
+			switch {
+			case skipping && len(line) > 0 && line[0] == ' ':
+				write = false
+			case isSignatureHeader(line):
+				skipping = true
+				write = false
+			case len(line) == 1 && line[0] == '\n':
+				skipping = false
+				inBody = true
+			default:
+				skipping = false
+			}
+		}
+
+		if write && len(line) > 0 {
+			if _, werr := w.Write(line); werr != nil {
+				return werr
+			}
+		}
+		if rerr == io.EOF {
+			return nil
+		}
+	}
+}
+
+func isSignatureHeader(line []byte) bool {
+	return bytes.HasPrefix(line, []byte(headerpgp+" ")) ||
+		bytes.HasPrefix(line, []byte(headerpgp256+" "))
 }
 
 func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
