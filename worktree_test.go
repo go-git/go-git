@@ -2744,6 +2744,61 @@ func (s *WorktreeSuite) TestAddGlob() {
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddGlobGitIgnore() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, ".gitignore", []byte("*.log\ndir/excluded/*\n"), 0o644)
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, "dir/included/file.txt", []byte("included"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "dir/excluded/file.txt", []byte("excluded"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "another.log", []byte("log file"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.Filesystem, "included.txt", []byte("included"), 0o644)
+	s.NoError(err)
+
+	err = w.AddGlob("dir/*")
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+
+	_, err = idx.Entry("dir/included/file.txt")
+	s.NoError(err)
+
+	_, err = idx.Entry("dir/excluded/file.txt")
+	s.ErrorIs(err, index.ErrEntryNotFound)
+
+	err = w.AddGlob("*.log")
+	s.NoError(err)
+
+	idx, err = w.r.Storer.Index()
+	s.NoError(err)
+
+	_, err = idx.Entry("another.log")
+	s.ErrorIs(err, index.ErrEntryNotFound)
+
+	status, err := w.Status()
+	s.NoError(err)
+
+	logStatus := status.File("another.log")
+	s.Equal(Untracked, logStatus.Staging)
+	s.Equal(Untracked, logStatus.Worktree)
+
+	excludedStatus := status.File("dir/excluded/file.txt")
+	s.Equal(Untracked, excludedStatus.Staging)
+	s.Equal(Untracked, excludedStatus.Worktree)
+}
+
 func (s *WorktreeSuite) TestAddFilenameStartingWithDot() {
 	fs := memfs.New()
 	w := &Worktree{
@@ -2927,6 +2982,13 @@ func (s *WorktreeSuite) TestAddSkipStatusWithIgnoredPath() {
 
 	idx, err = w.r.Storer.Index()
 	s.NoError(err)
+	s.Len(idx.Entries, 9)
+
+	err = w.AddWithOptions(&AddOptions{Path: "fileToIgnore", SkipStatus: true, Force: true})
+	s.NoError(err)
+
+	idx, err = w.r.Storer.Index()
+	s.NoError(err)
 	s.Len(idx.Entries, 10)
 
 	e, err := idx.Entry("fileToIgnore")
@@ -2938,6 +3000,114 @@ func (s *WorktreeSuite) TestAddSkipStatusWithIgnoredPath() {
 	s.Len(status, 1)
 
 	file = status.File("fileToIgnore")
+	s.Equal(Added, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
+}
+
+func (s *WorktreeSuite) TestAddFileWithForceIgnore() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 9)
+
+	err = util.WriteFile(w.Filesystem, ".gitignore", []byte("*.log\n"), 0o755)
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, "file.log", []byte("file to ignore"), 0o644)
+	s.NoError(err)
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.Len(status, 1)
+
+	err = w.AddWithOptions(&AddOptions{Path: "file.log"})
+	s.NoError(err)
+
+	status, err = w.Status()
+	file := status.File("file.log")
+	s.Equal(Untracked, file.Staging)
+	s.Equal(Untracked, file.Worktree)
+
+	err = w.AddWithOptions(&AddOptions{Path: "file.log", Force: true})
+	s.NoError(err)
+
+	idx, err = w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 10)
+
+	e, err := idx.Entry("file.log")
+	s.NoError(err)
+	s.Equal(filemode.Regular, e.Mode)
+
+	status, err = w.Status()
+	s.NoError(err)
+	s.Len(status, 2)
+
+	file = status.File("file.log")
+	s.Equal(Added, file.Staging)
+	s.Equal(Unmodified, file.Worktree)
+}
+
+func (s *WorktreeSuite) TestAddFromSubdirRespectsRootGitignore() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	idx, err := w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 9)
+
+	fileName := "foo/bar.txt"
+
+	err = util.WriteFile(w.Filesystem, ".gitignore", []byte("foo\n"), 0o755)
+	s.NoError(err)
+
+	err = util.WriteFile(w.Filesystem, fileName, []byte("file to ignore"), 0o644)
+	s.NoError(err)
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.Len(status, 1)
+
+	err = w.AddWithOptions(&AddOptions{Path: fileName})
+	s.NoError(err)
+
+	status, err = w.Status()
+	s.NoError(err)
+	s.Len(status, 1)
+
+	file := status.File(fileName)
+	s.Equal(Untracked, file.Staging)
+
+	err = w.AddWithOptions(&AddOptions{Path: fileName, Force: true})
+	s.NoError(err)
+
+	idx, err = w.r.Storer.Index()
+	s.NoError(err)
+	s.Len(idx.Entries, 10)
+
+	e, err := idx.Entry(fileName)
+	s.NoError(err)
+	s.Equal(filemode.Regular, e.Mode)
+
+	status, err = w.Status()
+	s.NoError(err)
+	s.Len(status, 2)
+
+	file = status.File(fileName)
 	s.Equal(Added, file.Staging)
 	s.Equal(Unmodified, file.Worktree)
 }

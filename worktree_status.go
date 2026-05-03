@@ -317,8 +317,12 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 // the worktree to the index. If any of the files is already staged in the index
 // no error is returned. When path is a file, the blob.Hash is returned.
 func (w *Worktree) Add(path string) (plumbing.Hash, error) {
-	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
-	return w.doAdd(path, make([]gitignore.Pattern, 0), false)
+	// TODO(mcuadros): deprecate in favor of AddWithOption in v7.
+	patterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return w.doAdd(path, patterns, false)
 }
 
 func (w *Worktree) doAddDirectory(idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
@@ -367,16 +371,26 @@ func (w *Worktree) AddWithOptions(opts *AddOptions) error {
 		return err
 	}
 
-	if opts.All {
-		_, err := w.doAdd(".", w.Excludes, false)
-		return err
-	}
-
 	if opts.Glob != "" {
 		return w.AddGlob(opts.Glob)
 	}
 
-	_, err := w.doAdd(opts.Path, make([]gitignore.Pattern, 0), opts.SkipStatus)
+	path := opts.Path
+	skipStatus := opts.SkipStatus
+	if opts.All {
+		path = "."
+		skipStatus = false
+	}
+
+	patterns := make([]gitignore.Pattern, 0)
+	if !opts.Force {
+		dirPatterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
+		if err != nil {
+			return err
+		}
+		patterns = append(patterns, dirPatterns...)
+	}
+	_, err := w.doAdd(path, patterns, skipStatus)
 	return err
 }
 
@@ -397,7 +411,6 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	var added bool
 
 	fi, err := w.Filesystem.Lstat(path)
-
 	// status is required for doAddDirectory
 	var s Status
 	var err2 error
@@ -450,6 +463,11 @@ func (w *Worktree) AddGlob(pattern string) error {
 	}
 
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
+	patterns, err := gitignore.ReadPatterns(w.Filesystem, nil)
+	if err != nil {
+		return err
+	}
+
 	files, err := util.Glob(w.Filesystem, pattern)
 	if err != nil {
 		return err
@@ -478,9 +496,9 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 		var added bool
 		if fi.IsDir() {
-			added, err = w.doAddDirectory(idx, s, file, make([]gitignore.Pattern, 0))
+			added, err = w.doAddDirectory(idx, s, file, patterns)
 		} else {
-			added, _, err = w.doAddFile(idx, s, file, make([]gitignore.Pattern, 0))
+			added, _, err = w.doAddFile(idx, s, file, patterns)
 		}
 
 		if err != nil {
