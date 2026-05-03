@@ -97,7 +97,9 @@ type Scanner struct {
 	*scannerReader
 	rbuf *bufio.Reader
 
-	lowMemoryMode bool
+	lowMemoryMode  bool
+	packChecksum   bool
+	objectChecksum bool
 }
 
 // NewScanner creates a new instance of Scanner.
@@ -106,11 +108,13 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	packhash := gogithash.New(crypto.SHA1)
 
 	r := &Scanner{
-		objIndex: -1,
-		hasher:   plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
-		crc:      crc,
-		packhash: packhash,
-		nextFn:   packHeaderSignature,
+		objIndex:       -1,
+		hasher:         plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
+		crc:            crc,
+		packhash:       packhash,
+		nextFn:         packHeaderSignature,
+		packChecksum:   true,
+		objectChecksum: true,
 		// Set the default size, which can be overridden by opts.
 		objectIDSize: packhash.Size(),
 	}
@@ -119,7 +123,18 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		opt(r)
 	}
 
-	r.scannerReader = newScannerReader(rs, io.MultiWriter(crc, r.packhash), r.rbuf)
+	var hashWriter io.Writer
+	switch {
+	case r.objectChecksum && r.packChecksum:
+		hashWriter = io.MultiWriter(crc, r.packhash)
+	case r.objectChecksum:
+		hashWriter = crc
+	case r.packChecksum:
+		hashWriter = r.packhash
+	default:
+		hashWriter = io.Discard
+	}
+	r.scannerReader = newScannerReader(rs, hashWriter, r.rbuf)
 
 	return r
 }
