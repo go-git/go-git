@@ -407,17 +407,16 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	defer gogitsync.PutZlibReader(zr)
 
 	mw := io.Discard
+	var writer io.WriteCloser
 	if !oh.Type.IsDelta() {
 		r.hasher.Reset(oh.Type, oh.Size)
 		mw = r.hasher
 		if r.storage != nil {
-			w, err := r.storage.RawObjectWriter(oh.Type, oh.Size)
+			writer, err = r.storage.RawObjectWriter(oh.Type, oh.Size)
 			if err != nil {
 				return nil, err
 			}
-
-			defer func() { _ = w.Close() }()
-			mw = io.MultiWriter(r.hasher, w)
+			mw = io.MultiWriter(r.hasher, writer)
 		}
 	}
 
@@ -431,7 +430,16 @@ func objectEntry(r *Scanner) (stateFn, error) {
 
 	_, err = ioutil.CopyBufferPool(mw, zr)
 	if err != nil {
+		if writer != nil {
+			_ = writer.Close()
+		}
 		return nil, err
+	}
+
+	if writer != nil {
+		if err := writer.Close(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := r.Flush(); err != nil {

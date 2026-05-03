@@ -3775,6 +3775,161 @@ func (s *RepositorySuite) TestRepackObjectsWithNoDelete() {
 	s.testRepackObjects(time.Unix(0, 1), 3)
 }
 
+func (s *RepositorySuite) TestRepackObjectsCompactsCompatMappings() {
+	fs := osfs.New(s.T().TempDir())
+	storage := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	r, err := Init(storage, WithWorkTree(fs), WithObjectFormat(formatcfg.SHA1))
+	s.Require().NoError(err)
+
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	s.Require().NoError(r.SetConfig(cfg))
+
+	// Re-open so filesystem storage initializes the compat translator from config.
+	r, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableCompatObjectMapWrite: true})
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	s.Require().NoError(util.WriteFile(fs, "a.txt", []byte("a"), 0o644))
+	_, err = w.Add("a.txt")
+	s.Require().NoError(err)
+	_, err = w.Commit("first\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	s.Require().NoError(util.WriteFile(fs, "b.txt", []byte("b"), 0o644))
+	_, err = w.Add("b.txt")
+	s.Require().NoError(err)
+	_, err = w.Commit("second\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	objectMapDir := filepath.Join(fs.Root(), "objects", "object-map")
+	entriesBefore, err := os.ReadDir(objectMapDir)
+	s.Require().NoError(err)
+	s.True(len(entriesBefore) > 1)
+
+	err = r.RepackObjects(&RepackConfig{})
+	s.Require().NoError(err)
+
+	entriesAfter, err := os.ReadDir(objectMapDir)
+	s.Require().NoError(err)
+
+	count := 0
+	for _, entry := range entriesAfter {
+		if entry.IsDir() {
+			continue
+		}
+		s.True(strings.HasPrefix(entry.Name(), "map-"))
+		s.True(strings.HasSuffix(entry.Name(), ".map"))
+		count++
+	}
+	s.Equal(1, count)
+}
+
+func (s *RepositorySuite) TestPlainOpenCompatMappingWriteModeDefaultsToLegacy() {
+	fs := osfs.New(s.T().TempDir())
+
+	r, err := PlainInit(fs.Root(), false, WithObjectFormat(formatcfg.SHA1))
+	s.Require().NoError(err)
+
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	s.Require().NoError(r.SetConfig(cfg))
+
+	r, err = PlainOpen(fs.Root())
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(fs, "legacy.txt", []byte("legacy"), 0o644))
+	_, err = w.Add("legacy.txt")
+	s.Require().NoError(err)
+	_, err = w.Commit("legacy\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	_, err = os.Stat(filepath.Join(fs.Root(), ".git", "objects", "loose-object-idx"))
+	s.Require().NoError(err)
+
+	_, err = os.Stat(filepath.Join(fs.Root(), ".git", "objects", "object-map"))
+	s.ErrorIs(err, os.ErrNotExist)
+}
+
+func (s *RepositorySuite) TestPlainOpenCompatMappingWriteModeCanUseObjectMap() {
+	fs := osfs.New(s.T().TempDir())
+
+	r, err := PlainInit(fs.Root(), false, WithObjectFormat(formatcfg.SHA1))
+	s.Require().NoError(err)
+
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	s.Require().NoError(r.SetConfig(cfg))
+
+	r, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableCompatObjectMapWrite: true})
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(fs, "map.txt", []byte("map"), 0o644))
+	_, err = w.Add("map.txt")
+	s.Require().NoError(err)
+	_, err = w.Commit("map\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	entries, err := os.ReadDir(filepath.Join(fs.Root(), ".git", "objects", "object-map"))
+	s.Require().NoError(err)
+	s.NotEmpty(entries)
+
+	_, err = os.Stat(filepath.Join(fs.Root(), ".git", "objects", "loose-object-idx"))
+	s.ErrorIs(err, os.ErrNotExist)
+}
+
+func (s *RepositorySuite) TestPlainInitCompatMappingWriteModeCanUseObjectMap() {
+	fs := osfs.New(s.T().TempDir())
+
+	r, err := PlainInit(fs.Root(), false,
+		WithObjectFormat(formatcfg.SHA1),
+		WithCompatObjectMapWrite(true),
+	)
+	s.Require().NoError(err)
+
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	s.Require().NoError(r.SetConfig(cfg))
+
+	// Re-open so filesystem storage initializes the compat translator from config.
+	r, err = PlainOpenWithOptions(fs.Root(), &PlainOpenOptions{EnableCompatObjectMapWrite: true})
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(fs, "init-map.txt", []byte("map"), 0o644))
+	_, err = w.Add("init-map.txt")
+	s.Require().NoError(err)
+	_, err = w.Commit("init map\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	entries, err := os.ReadDir(filepath.Join(fs.Root(), ".git", "objects", "object-map"))
+	s.Require().NoError(err)
+	s.NotEmpty(entries)
+
+	_, err = os.Stat(filepath.Join(fs.Root(), ".git", "objects", "loose-object-idx"))
+	s.ErrorIs(err, os.ErrNotExist)
+}
+
 func ExecuteOnPath(t *testing.T, path string, cmds ...string) error {
 	for _, cmd := range cmds {
 		err := executeOnPath(path, cmd)

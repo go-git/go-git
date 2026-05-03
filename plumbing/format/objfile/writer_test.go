@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 type SuiteWriter struct {
@@ -85,4 +86,23 @@ func (s *SuiteWriter) TestNewWriterInvalidSize() {
 	s.ErrorIs(err, ErrNegativeSize)
 	err = w.WriteHeader(plumbing.BlobObject, -1651860)
 	s.ErrorIs(err, ErrNegativeSize)
+}
+
+func (s *SuiteWriter) TestNewWriterWithFormat() {
+	buf := bytes.NewBuffer(nil)
+	content := []byte("sha256 content")
+	w := NewWriterWithFormat(buf, formatcfg.SHA256)
+
+	err := w.WriteHeader(plumbing.BlobObject, int64(len(content)))
+	s.NoError(err)
+
+	_, err = io.Copy(w, bytes.NewReader(content))
+	s.NoError(err)
+
+	hasher := plumbing.NewHasher(formatcfg.SHA256, plumbing.BlobObject, int64(len(content)))
+	_, err = hasher.Write(content)
+	s.NoError(err)
+	expected := hasher.Sum()
+	s.Equal(expected, w.Hash())
+	s.NoError(w.Close())
 }

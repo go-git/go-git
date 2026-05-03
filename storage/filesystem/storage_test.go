@@ -1,6 +1,7 @@
 package filesystem_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -10,7 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/testcompat"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -29,13 +33,15 @@ var (
 	sto = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer = sto
-	_ storer.IndexStorer         = sto
-	_ storer.ReferenceStorer     = sto
-	_ storer.ShallowStorer       = sto
-	_ storer.DeltaObjectStorer   = sto
-	_ storer.PackfileWriter      = sto
-	_ xstorage.ExtensionChecker  = sto
+	_ storer.EncodedObjectStorer        = sto
+	_ storer.IndexStorer                = sto
+	_ storer.ReferenceStorer            = sto
+	_ storer.ShallowStorer              = sto
+	_ storer.DeltaObjectStorer          = sto
+	_ storer.PackfileWriter             = sto
+	_ xstorage.ExtensionChecker         = sto
+	_ xstorage.CompatTranslatorProvider = sto
+	_ xstorage.CompatMappingCompactor   = sto
 )
 
 func TestFilesystem(t *testing.T) {
@@ -346,6 +352,121 @@ func TestSupportsExtension(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestCompatLookupByCompatHash(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	sto := filesystem.NewStorageWithOptions(
+		fs,
+		cache.NewObjectLRUDefault(),
+		filesystem.Options{ObjectFormat: formatcfg.SHA1},
+	)
+	require.NoError(t, sto.Init())
+
+	cfg, err := sto.Config()
+	require.NoError(t, err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	require.NoError(t, sto.SetConfig(cfg))
+
+	sto = filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{})
+
+	blobHash, treeHash, commitHash, tagHash := testcompat.PopulateCompatChain(t, sto)
+
+	translator := sto.Translator()
+	require.NotNil(t, translator)
+
+	tests := []struct {
+		name    string
+		objType plumbing.ObjectType
+		native  plumbing.Hash
+	}{
+		{name: "blob", objType: plumbing.BlobObject, native: blobHash},
+		{name: "tree", objType: plumbing.TreeObject, native: treeHash},
+		{name: "commit", objType: plumbing.CommitObject, native: commitHash},
+		{name: "tag", objType: plumbing.TagObject, native: tagHash},
+	}
+
+	for _, tt := range tests { //nolint:paralleltest // shared DotGit is not thread safe
+		t.Run(tt.name, func(t *testing.T) {
+			compatHash, err := translator.Mapping().ToCompat(tt.native)
+			require.NoError(t, err)
+
+			require.NoError(t, sto.HasEncodedObject(compatHash))
+
+			got, err := sto.EncodedObject(tt.objType, compatHash)
+			require.NoError(t, err)
+
+			want, err := sto.EncodedObject(tt.objType, tt.native)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.native, got.Hash())
+			assert.Equal(t, testcompat.ReadEncodedObject(t, want), testcompat.ReadEncodedObject(t, got))
+		})
+	}
+}
+
+func TestCompatMappingWriteModeDefaultIsLegacy(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	sto := filesystem.NewStorageWithOptions(
+		fs,
+		cache.NewObjectLRUDefault(),
+		filesystem.Options{ObjectFormat: formatcfg.SHA1},
+	)
+	require.NoError(t, sto.Init())
+
+	cfg, err := sto.Config()
+	require.NoError(t, err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	require.NoError(t, sto.SetConfig(cfg))
+
+	sto = filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{})
+	testcompat.PopulateCompatChain(t, sto)
+
+	data, err := os.ReadFile(fs.Join(fs.Root(), "objects", "loose-object-idx"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, data)
+
+	_, err = os.Stat(fs.Join(fs.Root(), "objects", "object-map"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestCompatMappingWriteModeObjectMap(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	sto := filesystem.NewStorageWithOptions(
+		fs,
+		cache.NewObjectLRUDefault(),
+		filesystem.Options{ObjectFormat: formatcfg.SHA1},
+	)
+	require.NoError(t, sto.Init())
+
+	cfg, err := sto.Config()
+	require.NoError(t, err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Extensions.ObjectFormat = formatcfg.SHA1
+	cfg.Extensions.CompatObjectFormat = formatcfg.SHA256
+	require.NoError(t, sto.SetConfig(cfg))
+
+	sto = filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{
+		CompatMappingWriteMode: oidmap.FileWriteObjectMap,
+	})
+	testcompat.PopulateCompatChain(t, sto)
+
+	entries, err := os.ReadDir(fs.Join(fs.Root(), "objects", "object-map"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, entries)
+
+	_, err = os.Stat(fs.Join(fs.Root(), "objects", "loose-object-idx"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func getExplicitSHA1(t testing.TB) billy.Filesystem {

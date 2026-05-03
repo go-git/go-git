@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -32,6 +33,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
 	"github.com/go-git/go-git/v6/x/plugin"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -88,10 +90,11 @@ type Repository struct {
 }
 
 type initOptions struct {
-	defaultBranch plumbing.ReferenceName
-	workTree      billy.Filesystem
-	objectFormat  formatcfg.ObjectFormat
-	partialInit   bool
+	defaultBranch          plumbing.ReferenceName
+	workTree               billy.Filesystem
+	objectFormat           formatcfg.ObjectFormat
+	compatMappingWriteMode oidmap.FileWriteMode
+	partialInit            bool
 }
 
 func newInitOptions() initOptions {
@@ -123,6 +126,18 @@ func WithWorkTree(worktree billy.Filesystem) InitOption {
 func WithObjectFormat(of formatcfg.ObjectFormat) InitOption {
 	return func(o *initOptions) {
 		o.objectFormat = of
+	}
+}
+
+// WithCompatObjectMapWrite enables objects/object-map/map-*.map writes for
+// compatObjectFormat mappings instead of the legacy loose-object-idx format.
+func WithCompatObjectMapWrite(enabled bool) InitOption {
+	return func(o *initOptions) {
+		if enabled {
+			o.compatMappingWriteMode = oidmap.FileWriteObjectMap
+			return
+		}
+		o.compatMappingWriteMode = oidmap.FileWriteLegacy
 	}
 }
 
@@ -360,7 +375,8 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 		}
 	}
 	s := filesystem.NewStorageWithOptions(dot, cache.NewObjectLRUDefault(), filesystem.Options{
-		ObjectFormat: o.objectFormat,
+		ObjectFormat:           o.objectFormat,
+		CompatMappingWriteMode: o.compatMappingWriteMode,
 	})
 	r, err := initFn(s)
 	if err != nil {
@@ -438,8 +454,20 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		return nil, err
 	}
 	repositoryFs = dotgit.NewRepositoryFilesystem(dot, dotGitCommon)
+	alternatesFSRoot := string(filepath.Separator)
+	if volume := filepath.VolumeName(dot.Root()); volume != "" {
+		alternatesFSRoot = volume + string(filepath.Separator)
+	}
 
-	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
+	writeMode := oidmap.FileWriteLegacy
+	if o.EnableCompatObjectMapWrite {
+		writeMode = oidmap.FileWriteObjectMap
+	}
+
+	s := filesystem.NewStorageWithOptions(repositoryFs, cache.NewObjectLRUDefault(), filesystem.Options{
+		AlternatesFS:           osfs.New(alternatesFSRoot, osfs.WithBoundOS()),
+		CompatMappingWriteMode: writeMode,
+	})
 
 	return Open(s, wt)
 }
@@ -2042,6 +2070,12 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 			return nil
 		})
 		if err != nil {
+			return h, err
+		}
+	}
+
+	if compactor, ok := r.Storer.(xstorage.CompatMappingCompactor); ok {
+		if err := compactor.CompactCompatMappings(); err != nil {
 			return h, err
 		}
 	}

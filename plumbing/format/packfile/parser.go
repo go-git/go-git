@@ -98,10 +98,13 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 			return err
 		}
 
-		defer func() { _ = w.Close() }()
-
 		_, err = ioutil.CopyBufferPool(w, oh.content)
 		if err != nil {
+			_ = w.Close()
+			return err
+		}
+
+		if err := w.Close(); err != nil {
 			return err
 		}
 	}

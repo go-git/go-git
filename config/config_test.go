@@ -810,8 +810,9 @@ func TestMerge(t *testing.T) {
 				}},
 				{
 					Extensions: struct {
-						ObjectFormat   config.ObjectFormat
-						WorktreeConfig bool
+						ObjectFormat       config.ObjectFormat
+						CompatObjectFormat config.ObjectFormat
+						WorktreeConfig     bool
 					}{
 						ObjectFormat:   config.SHA256,
 						WorktreeConfig: true,
@@ -824,8 +825,9 @@ func TestMerge(t *testing.T) {
 					Email: "bar@test",
 				},
 				Extensions: struct {
-					ObjectFormat   config.ObjectFormat
-					WorktreeConfig bool
+					ObjectFormat       config.ObjectFormat
+					CompatObjectFormat config.ObjectFormat
+					WorktreeConfig     bool
 				}{
 					ObjectFormat:   config.SHA256,
 					WorktreeConfig: true,
@@ -987,6 +989,82 @@ func TestMerge(t *testing.T) {
 		assert.Equal(t, "wt-user",
 			merged.Raw.Section("user").Options.Get("name"))
 	})
+}
+
+func TestValidateExtensions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		setup   func(*Config)
+		wantErr error
+	}{
+		{
+			name: "compatObjectFormat requires repository format version 1",
+			setup: func(cfg *Config) {
+				cfg.Extensions.ObjectFormat = config.SHA256
+				cfg.Extensions.CompatObjectFormat = config.SHA1
+			},
+			wantErr: ErrExtensionRequiresVersion1,
+		},
+		{
+			name: "compatObjectFormat requires objectFormat",
+			setup: func(cfg *Config) {
+				cfg.Core.RepositoryFormatVersion = config.Version1
+				cfg.Extensions.CompatObjectFormat = config.SHA1
+			},
+			wantErr: ErrCompatObjectFormatRequiresObjectFormat,
+		},
+		{
+			name: "compatObjectFormat must differ from objectFormat",
+			setup: func(cfg *Config) {
+				cfg.Core.RepositoryFormatVersion = config.Version1
+				cfg.Extensions.ObjectFormat = config.SHA256
+				cfg.Extensions.CompatObjectFormat = config.SHA256
+			},
+			wantErr: ErrCompatObjectFormatEqualsObjectFormat,
+		},
+		{
+			name: "objectFormat with repository format version 1 is valid",
+			setup: func(cfg *Config) {
+				cfg.Core.RepositoryFormatVersion = config.Version1
+				cfg.Extensions.ObjectFormat = config.SHA256
+			},
+		},
+		{
+			name: "compatObjectFormat with repository format version 1 is valid",
+			setup: func(cfg *Config) {
+				cfg.Core.RepositoryFormatVersion = config.Version1
+				cfg.Extensions.ObjectFormat = config.SHA256
+				cfg.Extensions.CompatObjectFormat = config.SHA1
+			},
+		},
+		{
+			name: "raw config extensions are validated too",
+			setup: func(cfg *Config) {
+				cfg.Raw.Section("core").SetOption("repositoryformatversion", "1")
+				cfg.Raw.Section("extensions").SetOption("compatobjectformat", "sha1")
+			},
+			wantErr: ErrCompatObjectFormatRequiresObjectFormat,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			tt.setup(cfg)
+
+			err := cfg.Validate()
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestGPGConfig(t *testing.T) {

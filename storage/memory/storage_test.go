@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/testcompat"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
@@ -19,13 +20,14 @@ var (
 	sto = memory.NewStorage()
 
 	// Ensure interfaces are implemented.
-	_ storer.EncodedObjectStorer  = sto
-	_ storer.IndexStorer          = sto
-	_ storer.ReferenceStorer      = sto
-	_ storer.ShallowStorer        = sto
-	_ storer.ReflogStorer         = sto
-	_ xstorage.ObjectFormatSetter = sto
-	_ xstorage.ExtensionChecker   = sto
+	_ storer.EncodedObjectStorer        = sto
+	_ storer.IndexStorer                = sto
+	_ storer.ReferenceStorer            = sto
+	_ storer.ShallowStorer              = sto
+	_ storer.ReflogStorer               = sto
+	_ xstorage.ObjectFormatSetter       = sto
+	_ xstorage.ExtensionChecker         = sto
+	_ xstorage.CompatTranslatorProvider = sto
 )
 
 func TestSetObjectFormat(t *testing.T) {
@@ -205,6 +207,51 @@ func TestSupportsExtension(t *testing.T) {
 			sto := memory.NewStorage()
 			got := sto.SupportsExtension(tt.ext, tt.value)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCompatLookupByCompatHash(t *testing.T) {
+	t.Parallel()
+
+	sto := memory.NewStorage(
+		memory.WithObjectFormat(formatcfg.SHA1),
+		memory.WithCompatObjectFormat(formatcfg.SHA256),
+	)
+
+	blobHash, treeHash, commitHash, tagHash := testcompat.PopulateCompatChain(t, sto)
+
+	translator := sto.Translator()
+	require.NotNil(t, translator)
+
+	tests := []struct {
+		name    string
+		objType plumbing.ObjectType
+		native  plumbing.Hash
+	}{
+		{name: "blob", objType: plumbing.BlobObject, native: blobHash},
+		{name: "tree", objType: plumbing.TreeObject, native: treeHash},
+		{name: "commit", objType: plumbing.CommitObject, native: commitHash},
+		{name: "tag", objType: plumbing.TagObject, native: tagHash},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			compatHash, err := translator.Mapping().ToCompat(tt.native)
+			require.NoError(t, err)
+
+			require.NoError(t, sto.HasEncodedObject(compatHash))
+
+			got, err := sto.EncodedObject(tt.objType, compatHash)
+			require.NoError(t, err)
+
+			want, err := sto.EncodedObject(tt.objType, tt.native)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.native, got.Hash())
+			assert.Equal(t, testcompat.ReadEncodedObject(t, want), testcompat.ReadEncodedObject(t, got))
 		})
 	}
 }
