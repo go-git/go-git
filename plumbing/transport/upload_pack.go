@@ -101,6 +101,7 @@ func UploadPack(
 	var multiAck, multiAckDetailed bool
 	var caps *capability.List
 	var wants []plumbing.Hash
+	var ack packp.ACK
 	firstRound := true
 	for !done {
 		writec := make(chan error)
@@ -150,10 +151,10 @@ func UploadPack(
 
 				writec <- nil
 			}()
-		}
 
-		if err := <-writec; err != nil {
-			return err
+			if err := <-writec; err != nil {
+				return err
+			}
 		}
 
 		var uphav packp.UploadHaves
@@ -168,16 +169,9 @@ func UploadPack(
 		haves = append(haves, uphav.Haves...)
 		done = uphav.Done
 
-		common := map[plumbing.Hash]struct{}{}
-		var ack packp.ACK
 		var acks []packp.ACK
 		for _, hu := range uphav.Haves {
-			refs, ok := havesWithRef[hu]
-			if ok {
-				for _, ref := range refs {
-					common[ref] = struct{}{}
-				}
-			}
+			_, ok := havesWithRef[hu]
 
 			var status packp.ACKStatus
 			if multiAckDetailed {

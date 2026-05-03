@@ -128,7 +128,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
-		ModuleStorage:    ModuleStorage{dir: dir},
+		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ReflogStorage:    ReflogStorage{dir: dir},
 	}
 
@@ -174,6 +174,8 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 			return fmt.Errorf("cannot set object format on dotgit: %w", err)
 		}
 
+		s.ConfigStorage.objectFormat = of
+		s.ModuleStorage.objectFormat = of
 		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
 		s.h = s.hasher.Hash
 	}

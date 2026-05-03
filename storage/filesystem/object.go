@@ -823,7 +823,7 @@ func (s *ObjectStorage) buildPackfileIters(
 			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, s.index[h],
-				s.objectCache, s.options.KeepDescriptors, crypto.SHA1.Size(),
+				s.objectCache, s.options.KeepDescriptors, h.Size(),
 			)
 		},
 	}, nil

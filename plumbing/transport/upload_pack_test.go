@@ -2,9 +2,12 @@ package transport
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
@@ -13,11 +16,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 type UploadPackServeSuite struct {
@@ -125,6 +130,66 @@ func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 
 	skipPack := servePack(true)
 	s.Equal(0, countDeltas(skipPack))
+}
+
+func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	s.Require().NoError(err)
+	headCommit, err := object.GetCommit(st, head.Hash())
+	s.Require().NoError(err)
+	s.Require().NotEmpty(headCommit.ParentHashes)
+	common := headCommit.ParentHashes[0]
+
+	upreq := packp.NewUploadRequest()
+	upreq.Capabilities.Add(capability.MultiACK)
+	upreq.Capabilities.Add(capability.NoProgress)
+	upreq.Wants = append(upreq.Wants, head.Hash())
+
+	var firstRound packp.UploadHaves
+	firstRound.Haves = []plumbing.Hash{common}
+
+	var finalRound packp.UploadHaves
+	finalRound.Done = true
+
+	var reqW bytes.Buffer
+	s.Require().NoError(upreq.Encode(&reqW))
+	s.Require().NoError(firstRound.Encode(&reqW))
+	s.Require().NoError(finalRound.Encode(&reqW))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var out bytes.Buffer
+	errc := make(chan error, 1)
+	go func() {
+		errc <- UploadPack(ctx, st, io.NopCloser(&reqW), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+			GitProtocol:   "version=1",
+			AdvertiseRefs: false,
+			StatelessRPC:  false,
+		})
+	}()
+
+	select {
+	case err := <-errc:
+		s.Require().NoError(err)
+	case <-time.After(5 * time.Second):
+		s.FailNow("upload-pack did not complete stateful multi-round negotiation")
+	}
+
+	response := out.String()
+	continueACK := fmt.Sprintf("ACK %s continue\n", common)
+	finalACK := fmt.Sprintf("ACK %s\n", common)
+
+	continueAt := strings.Index(response, continueACK)
+	s.Require().NotEqual(-1, continueAt)
+	nakAt := strings.Index(response[continueAt+len(continueACK):], "NAK\n")
+	s.Require().NotEqual(-1, nakAt)
+	finalAt := strings.Index(response[continueAt+len(continueACK)+nakAt:], finalACK)
+	s.Require().NotEqual(-1, finalAt)
 }
 
 type ReceivePackServeSuite struct {

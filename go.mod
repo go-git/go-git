@@ -1,6 +1,6 @@
 module github.com/go-git/go-git/v6
 
-// go-git supports the last 3 stable Go versions.
+// go-git supports the last 2 stable Go versions.
 go 1.25.0
 
 require (
@@ -10,8 +10,8 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.2
-	github.com/go-git/go-billy/v6 v6.0.0-20260328065524-593ae452e14d
-	github.com/go-git/go-git-fixtures/v6 v6.0.0-20260405195209-b16dd39735e0
+	github.com/go-git/go-billy/v6 v6.0.0-20260424211911-732291493fb8
+	github.com/go-git/go-git-fixtures/v6 v6.0.0-20260422085740-0c07409f52ec
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.5.0
 	github.com/sergi/go-diff v1.4.0

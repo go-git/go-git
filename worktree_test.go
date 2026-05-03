@@ -3760,13 +3760,15 @@ func (s *WorktreeSuite) TestLinkedWorktree() {
 
 func TestTreeContainsDirs(t *testing.T) {
 	t.Parallel()
-	tree := &object.Tree{
-		Entries: []object.TreeEntry{
-			{Name: "foo", Mode: filemode.Dir},
-			{Name: "bar", Mode: filemode.Dir},
-			{Name: "baz", Mode: filemode.Dir},
-			{Name: "this-is-regular", Mode: filemode.Regular},
-		},
+	buildTree := func() *object.Tree {
+		return &object.Tree{
+			Entries: []object.TreeEntry{
+				{Name: "foo", Mode: filemode.Dir},
+				{Name: "bar", Mode: filemode.Dir},
+				{Name: "baz", Mode: filemode.Dir},
+				{Name: "this-is-regular", Mode: filemode.Regular},
+			},
+		}
 	}
 
 	tests := []struct {
@@ -3799,7 +3801,7 @@ func TestTreeContainsDirs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, test.expected, treeContainsDirs(tree, test.dirs))
+			assert.Equal(t, test.expected, treeContainsDirs(buildTree(), test.dirs))
 		})
 	}
 }

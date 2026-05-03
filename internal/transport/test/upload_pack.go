@@ -10,9 +10,11 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 // UploadPackSuite is a test suite for upload-pack over the new transport API.
@@ -122,15 +124,15 @@ func (s *UploadPackSuite) TestUploadPack() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(context.Background(), s.Storer, req)
+	clientStorer := memory.NewStorage(memory.WithObjectFormat(config.SHA1))
+	err = conn.Fetch(context.Background(), clientStorer, req)
 	s.Require().NoError(err)
 
-	afterCount := s.countObjects(s.Storer)
-	s.Require().Equal(28, afterCount-beforeCount)
+	afterCount := s.countObjects(clientStorer)
+	s.Require().Equal(28, afterCount)
 }
 
 // TestUploadPackWithContext tests upload-pack with a cancelled context.
@@ -150,8 +152,9 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(ctx, s.Storer, req)
-	s.Require().NotNil(err)
+	clientStorer := memory.NewStorage(memory.WithObjectFormat(config.SHA1))
+	err = conn.Fetch(ctx, clientStorer, req)
+	s.Require().Error(err)
 }
 
 // TestUploadPackWithContextOnRead tests upload-pack with context cancelled during read.
@@ -172,7 +175,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 
 	cancel()
 	err = conn.Fetch(ctx, s.Storer, req)
-	s.Require().NotNil(err)
+	s.Require().Error(err)
 }
 
 // TestUploadPackFull tests a full upload-pack fetch with advertised references.
@@ -186,15 +189,15 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
-	beforeCount := s.countObjects(s.Storer)
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	err = conn.Fetch(context.Background(), s.Storer, req)
+	clientStorer := memory.NewStorage(memory.WithObjectFormat(config.SHA1))
+	err = conn.Fetch(context.Background(), clientStorer, req)
 	s.Require().NoError(err)
 
-	afterCount := s.countObjects(s.Storer)
-	s.Require().Equal(28, afterCount-beforeCount)
+	afterCount := s.countObjects(clientStorer)
+	s.Require().Equal(28, afterCount)
 }
 
 // TestUploadPackInvalidReq tests upload-pack with an invalid request.
@@ -248,12 +251,14 @@ func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expec
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	beforeCount := s.countObjects(s.Storer)
-	err = conn.Fetch(context.Background(), s.Storer, req)
+	beforeCount := s.countObjects(s.EmptyStorer)
+	s.Zero(beforeCount)
+
+	err = conn.Fetch(context.Background(), s.EmptyStorer, req)
 	s.Require().NoError(err)
 
-	afterCount := s.countObjects(s.Storer)
-	s.Require().Equal(expectedObjects, afterCount-beforeCount)
+	afterCount := s.countObjects(s.EmptyStorer)
+	s.Require().Equal(expectedObjects, afterCount)
 }
 
 // TestFetchError tests that fetching a non-existent object returns an error.
@@ -267,7 +272,7 @@ func (s *UploadPackSuite) TestFetchError() {
 	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
 
 	err = conn.Fetch(context.Background(), s.Storer, req)
-	s.Require().NotNil(err)
+	s.Require().Error(err)
 }
 
 func (s *UploadPackSuite) countObjects(st storage.Storer) int {
