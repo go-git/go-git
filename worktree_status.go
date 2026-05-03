@@ -159,35 +159,25 @@ func (w *Worktree) diffStagingWithWorktree(reverse, excludeIgnoredChanges bool) 
 		Index:    idx,
 	}
 
-	// When ignored changes are to be filtered out anyway, gather the
-	// gitignore patterns once, build a matcher, and let the filesystem
-	// noder skip ignored, untracked entries during the walk. This avoids
-	// descending into large gitignored directories like node_modules.
-	var ignorePatterns []gitignore.Pattern
+	// When ignored changes are to be filtered out, gather the gitignore
+	// patterns once, build a matcher, and let the filesystem noder skip
+	// ignored, untracked entries during the walk. This avoids descending
+	// into large gitignored directories like node_modules and makes a
+	// post-walk filter unnecessary: tracked entries are still walked even
+	// when their parent matches an ignore rule, so modifications to them
+	// are still reported.
 	if excludeIgnoredChanges {
-		ignorePatterns = w.collectIgnorePatterns()
-		if len(ignorePatterns) > 0 {
-			fsOpts.IgnoreMatcher = gitignore.NewMatcher(ignorePatterns)
+		if patterns := w.collectIgnorePatterns(); len(patterns) > 0 {
+			fsOpts.IgnoreMatcher = gitignore.NewMatcher(patterns)
 		}
 	}
 
 	to := filesystem.NewRootNodeWithOptions(w.Filesystem, submodules, fsOpts)
 
-	var c merkletrie.Changes
 	if reverse {
-		c, err = merkletrie.DiffTree(to, from, diffTreeIsEquals)
-	} else {
-		c, err = merkletrie.DiffTree(from, to, diffTreeIsEquals)
+		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if excludeIgnoredChanges {
-		return w.excludeIgnoredChanges(c, ignorePatterns), nil
-	}
-	return c, nil
+	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
 }
 
 func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
@@ -196,37 +186,6 @@ func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
 		patterns = nil
 	}
 	return append(patterns, w.Excludes...)
-}
-
-func (w *Worktree) excludeIgnoredChanges(changes merkletrie.Changes, patterns []gitignore.Pattern) merkletrie.Changes {
-	if len(patterns) == 0 {
-		return changes
-	}
-
-	m := gitignore.NewMatcher(patterns)
-
-	var res merkletrie.Changes
-	for _, ch := range changes {
-		var path []string
-		for _, n := range ch.To {
-			path = append(path, n.Name())
-		}
-		if len(path) == 0 {
-			for _, n := range ch.From {
-				path = append(path, n.Name())
-			}
-		}
-		if len(path) != 0 {
-			isDir := (len(ch.To) > 0 && ch.To.IsDir()) || (len(ch.From) > 0 && ch.From.IsDir())
-			if m.Match(path, isDir) {
-				if len(ch.From) == 0 {
-					continue
-				}
-			}
-		}
-		res = append(res, ch)
-	}
-	return res
 }
 
 func (w *Worktree) getSubmodulesStatus() (map[string]plumbing.Hash, error) {
