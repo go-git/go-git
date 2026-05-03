@@ -486,6 +486,15 @@ func isSignatureHeader(line []byte) bool {
 		bytes.HasPrefix(line, []byte(headerpgp256+" "))
 }
 
+func isStandardHeader(key string) bool {
+	switch key {
+	case "tree", "parent", "author", "committer",
+		headerencoding, headermergetag, headerpgp, headerpgp256:
+		return true
+	}
+	return false
+}
+
 func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	o.SetType(plumbing.CommitObject)
 	w, err := o.Writer()
@@ -544,7 +553,9 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	for _, header := range c.ExtraHeaders {
-
+		if isStandardHeader(header.Key) {
+			continue
+		}
 		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
 			return err
 		}

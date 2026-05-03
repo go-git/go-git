@@ -706,6 +706,36 @@ committer John Doe <john.doe@example.com> 1755280730 -0700
 rewritten message
 `,
 		},
+		{
+			name: "standard-keyed ExtraHeaders are dropped on encode",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.Message = "rewritten message\n"
+				c.ExtraHeaders = []ExtraHeader{
+					{Key: "tree", Value: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},
+					{Key: "parent", Value: "feedfacefeedfacefeedfacefeedfacefeedface"},
+					{Key: "author", Value: "Fake <fake@example.com> 0 +0000"},
+					{Key: "committer", Value: "Fake <fake@example.com> 0 +0000"},
+					{Key: "encoding", Value: "fake-enc"},
+					{Key: "mergetag", Value: "fake mergetag"},
+					{Key: "gpgsig", Value: "fake-sig"},
+					{Key: "gpgsig-sha256", Value: "fake-sig-256"},
+					{Key: "x-real-extra", Value: "kept"},
+				}
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+x-real-extra kept
+
+rewritten message
+`,
+		},
 	}
 
 	for _, tc := range tests {
