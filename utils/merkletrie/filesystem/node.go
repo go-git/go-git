@@ -65,7 +65,7 @@ type node struct {
 	// in the index. It is populated only when IgnoreMatcher is set so the
 	// walker can keep tracked entries even if their parent directory
 	// matches an ignore rule.
-	trackedDirs map[string]bool
+	trackedDirs map[string]struct{}
 
 	options *Options
 
@@ -110,7 +110,7 @@ func NewRootNodeWithOptions(
 	options Options,
 ) noder.Noder {
 	var idxMap map[string]*index.Entry
-	var trackedDirs map[string]bool
+	var trackedDirs map[string]struct{}
 
 	if options.Index != nil {
 		idxMap = make(map[string]*index.Entry, len(options.Index.Entries))
@@ -119,13 +119,13 @@ func NewRootNodeWithOptions(
 		}
 
 		if options.IgnoreMatcher != nil {
-			trackedDirs = make(map[string]bool)
+			trackedDirs = make(map[string]struct{})
 			for _, entry := range options.Index.Entries {
 				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
-					if trackedDirs[parent] {
+					if _, ok := trackedDirs[parent]; ok {
 						break
 					}
-					trackedDirs[parent] = true
+					trackedDirs[parent] = struct{}{}
 				}
 			}
 		}
@@ -251,7 +251,8 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 		return false
 	}
 	if isDir {
-		return !n.trackedDirs[childPath]
+		_, tracked := n.trackedDirs[childPath]
+		return !tracked
 	}
 	_, tracked := n.idxMap[childPath]
 	return !tracked
