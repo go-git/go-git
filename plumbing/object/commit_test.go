@@ -3,6 +3,7 @@ package object
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -488,6 +489,177 @@ func (s *SuiteCommit) TestPatchCancel(c *C) {
 	c.Assert(patch, IsNil)
 	c.Assert(err, ErrorMatches, "operation canceled")
 
+}
+
+func (s *SuiteCommit) TestDecodeRequiresTreeFirst(c *C) {
+	const (
+		validTree   = "eba74343e2f15d62adedfd8c883ee0262b5c8021"
+		validParent = "35e85108805c84807bc66a02d91535e1e24b38b9"
+		validIdent  = "Foo <foo@example.local> 1427802494 +0200"
+	)
+
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "missing tree",
+			raw:  "author " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "parent before tree",
+			raw:  "parent " + validParent + "\ntree " + validTree + "\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "extra header before tree",
+			raw:  "x-extra hi\ntree " + validTree + "\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "empty",
+			raw:  "",
+		},
+	}
+
+	for _, tc := range cases {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.CommitObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		err = (&Commit{}).Decode(obj)
+		c.Assert(errors.Is(err, ErrMalformedCommit), Equals, true)
+	}
+}
+
+func (s *SuiteCommit) TestDecodeFirstOccurrenceWins(c *C) {
+	const (
+		treeA       = "eba74343e2f15d62adedfd8c883ee0262b5c8021"
+		treeB       = "0000000000000000000000000000000000000001"
+		parentA     = "35e85108805c84807bc66a02d91535e1e24b38b9"
+		parentB     = "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"
+		parentC     = "0000000000000000000000000000000000000002"
+		identA      = "Alice <alice@example.local> 1427802494 +0200"
+		identB      = "Bob <bob@example.local> 1427802495 +0200"
+		identAuthor = "Author Name <author@example.local> 1500000000 +0000"
+		identCommit = "Commit Name <commit@example.local> 1500000001 +0000"
+	)
+
+	cases := []struct {
+		name   string
+		raw    string
+		assert func(*Commit)
+	}{
+		{
+			name: "duplicate tree drops the second",
+			raw: "tree " + treeA + "\ntree " + treeB +
+				"\nauthor " + identAuthor + "\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.TreeHash.String(), Equals, treeA)
+			},
+		},
+		{
+			name: "duplicate author drops the second",
+			raw: "tree " + treeA + "\nauthor " + identA + "\nauthor " + identB +
+				"\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Author.Name, Equals, "Alice")
+			},
+		},
+		{
+			name: "duplicate committer drops the second",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\ncommitter " + identA + "\ncommitter " + identB + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Committer.Name, Equals, "Alice")
+			},
+		},
+		{
+			name: "parent after author is dropped",
+			raw: "tree " + treeA + "\nparent " + parentA +
+				"\nauthor " + identAuthor + "\nparent " + parentC +
+				"\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.ParentHashes, DeepEquals, []plumbing.Hash{plumbing.NewHash(parentA)})
+			},
+		},
+		{
+			name: "parent interleaved with extras is dropped",
+			raw: "tree " + treeA + "\nparent " + parentA + "\nparent " + parentB +
+				"\nx-other thing\nparent " + parentC +
+				"\nauthor " + identAuthor + "\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.ParentHashes, DeepEquals, []plumbing.Hash{
+					plumbing.NewHash(parentA),
+					plumbing.NewHash(parentB),
+				})
+			},
+		},
+		{
+			name: "missing committer is allowed (zero-valued)",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Author.Name, Equals, "Author Name")
+				c.Assert(commit.Committer.Name, Equals, "")
+			},
+		},
+		{
+			name: "encoding between author and committer drops committer",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\nencoding latin-1\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Author.Name, Equals, "Author Name")
+				c.Assert(commit.Encoding, Equals, MessageEncoding("latin-1"))
+				// committer was not at its canonical position
+				// (immediately after author) so it is dropped, matching
+				// upstream's parse_commit_date returning 0 and the
+				// subsequent standard_header_field filter.
+				c.Assert(commit.Committer.Name, Equals, "")
+			},
+		},
+		{
+			name: "author out of canonical position is dropped",
+			raw: "tree " + treeA + "\nencoding latin-1\nauthor " + identAuthor +
+				"\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Encoding, Equals, MessageEncoding("latin-1"))
+				c.Assert(commit.Author.Name, Equals, "")
+				c.Assert(commit.Committer.Name, Equals, "")
+			},
+		},
+		{
+			name: "duplicate gpgsig drops the second and its continuations",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\ncommitter " + identCommit +
+				"\ngpgsig firstline\n morefirst\ngpgsig secondline\n moresecond\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.PGPSignature, Equals, "firstline\nmorefirst\n")
+			},
+		},
+		{
+			name: "gpgsig-sha256 headers are not exposed as extras",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\ncommitter " + identCommit +
+				"\ngpgsig-sha256 firstline\n morefirst\ngpgsig-sha256 secondline\n moresecond\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.PGPSignature, Equals, "")
+				c.Assert(len(commit.ExtraHeaders), Equals, 0)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.CommitObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		commit := &Commit{}
+		c.Assert(commit.Decode(obj), IsNil)
+		tc.assert(commit)
+	}
 }
 
 func (s *SuiteCommit) TestMalformedHeader(c *C) {

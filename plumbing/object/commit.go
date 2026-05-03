@@ -191,6 +191,11 @@ func (c *Commit) NumParents() int {
 
 var ErrParentNotFound = errors.New("commit parent not found")
 
+// ErrMalformedCommit is returned when a commit object cannot be decoded
+// because its standard headers (tree, parent, author, committer) are missing,
+// duplicated, or out of order.
+var ErrMalformedCommit = errors.New("malformed commit")
+
 // Parent returns the ith parent of a commit.
 func (c *Commit) Parent(i int) (*Commit, error) {
 	if len(c.ParentHashes) == 0 || i > len(c.ParentHashes)-1 {
@@ -256,107 +261,17 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
-	var message bool
-	var mergetag bool
-	var pgpsig bool
-	var pgpsig256 bool
-	var msgbuf bytes.Buffer
-	var extraheader *ExtraHeader = nil
-	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil && err != io.EOF {
+	s := &commitScanner{r: r, c: c}
+	for state := scanTree; state != nil; {
+		state, err = state(s)
+		if err != nil {
 			return err
 		}
-
-		if mergetag {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.MergeTag += string(line)
-				continue
-			} else {
-				mergetag = false
-			}
-		}
-
-		if pgpsig {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.PGPSignature += string(line)
-				continue
-			} else {
-				pgpsig = false
-			}
-		}
-
-		if pgpsig256 {
-			if len(line) > 0 && line[0] == ' ' {
-				continue
-			}
-			pgpsig256 = false
-		}
-
-		if extraheader != nil {
-			if len(line) > 0 && line[0] == ' ' {
-				extraheader.Value += string(line[1:])
-				continue
-			} else {
-				extraheader.Value = strings.TrimRight(extraheader.Value, "\n")
-				c.ExtraHeaders = append(c.ExtraHeaders, *extraheader)
-				extraheader = nil
-			}
-		}
-
-		if !message {
-			original_line := line
-			line = bytes.TrimSpace(line)
-			if len(line) == 0 {
-				message = true
-				continue
-			}
-
-			split := bytes.SplitN(line, []byte{' '}, 2)
-
-			var data []byte
-			if len(split) == 2 {
-				data = split[1]
-			}
-
-			switch string(split[0]) {
-			case "tree":
-				c.TreeHash = plumbing.NewHash(string(data))
-			case "parent":
-				c.ParentHashes = append(c.ParentHashes, plumbing.NewHash(string(data)))
-			case "author":
-				c.Author.Decode(data)
-			case "committer":
-				c.Committer.Decode(data)
-			case headermergetag:
-				c.MergeTag += string(data) + "\n"
-				mergetag = true
-			case headerencoding:
-				c.Encoding = MessageEncoding(data)
-			case headerpgp:
-				c.PGPSignature += string(data) + "\n"
-				pgpsig = true
-			case headerpgp256:
-				pgpsig256 = true
-			default:
-				h, maybecontinued := parseExtraHeader(original_line)
-				if maybecontinued {
-					extraheader = &h
-				} else {
-					c.ExtraHeaders = append(c.ExtraHeaders, h)
-				}
-			}
-		} else {
-			msgbuf.Write(line)
-		}
-
-		if err == io.EOF {
-			break
-		}
 	}
-	c.Message = msgbuf.String()
+	if !s.sawTree {
+		return fmt.Errorf("%w: missing tree header", ErrMalformedCommit)
+	}
+	c.Message = s.msgbuf.String()
 	return nil
 }
 
