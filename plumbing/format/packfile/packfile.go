@@ -210,7 +210,7 @@ func (p *Packfile) init() error {
 
 		p.rbuf = gogitsync.GetBufioReader(nil)
 
-		opts := []ScannerOption{WithBufioReader(p.rbuf)}
+		opts := []ScannerOption{WithBufioReader(p.rbuf), WithoutPackChecksum(), WithoutObjectChecksum()}
 
 		if p.objectIDSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
