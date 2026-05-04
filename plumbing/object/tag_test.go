@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -308,10 +309,87 @@ func (s *TagSuite) TestTagDecodeSignatures(c *C) {
 	}
 }
 
+func (s *TagSuite) TestDecodeRequiresHeaders(c *C) {
+	const (
+		target = "c029517f6300c2da0f4b651b8642506cd6aaf45e"
+		tagger = "Foo <foo@example.local> 1500000000 +0000"
+	)
+
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "empty",
+			raw:  "",
+		},
+		{
+			name: "missing object",
+			raw:  "type commit\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "object out of canonical position",
+			raw:  "type commit\nobject " + target + "\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "missing type",
+			raw:  "object " + target + "\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "missing tag",
+			raw:  "object " + target + "\ntype commit\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "duplicate object before type",
+			raw: "object " + target + "\nobject " + target +
+				"\ntype commit\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "duplicate type before tag",
+			raw: "object " + target + "\ntype commit\ntype blob" +
+				"\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "truncated after object header",
+			raw:  "object " + target + "\n",
+		},
+		{
+			name: "truncated after type header",
+			raw:  "object " + target + "\ntype commit\n",
+		},
+		{
+			name: "non-hex object value",
+			raw:  "object zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\ntype commit\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "object value too short",
+			raw:  "object abcd\ntype commit\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "object value too long",
+			raw:  "object " + target + "00\ntype commit\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+		{
+			name: "object value missing",
+			raw:  "object\ntype commit\ntag v1\ntagger " + tagger + "\n\nmsg\n",
+		},
+	}
+
+	for _, tc := range cases {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.TagObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		err = (&Tag{}).Decode(obj)
+		c.Assert(errors.Is(err, ErrMalformedTag), Equals, true)
+	}
+}
+
 func (s *TagSuite) TestDecodeFirstOccurrenceWins(c *C) {
 	const (
 		targetA   = "c029517f6300c2da0f4b651b8642506cd6aaf45e"
-		targetB   = "0000000000000000000000000000000000000001"
 		taggerA   = "Alice <alice@example.local> 1500000000 +0000"
 		taggerB   = "Bob <bob@example.local> 1500000001 +0000"
 		canonical = "object " + targetA +
@@ -323,22 +401,6 @@ func (s *TagSuite) TestDecodeFirstOccurrenceWins(c *C) {
 		raw    string
 		assert func(*Tag)
 	}{
-		{
-			name: "duplicate object drops the second",
-			raw: "object " + targetA + "\nobject " + targetB +
-				"\ntype commit\ntag v1\ntagger " + taggerA + "\n\nmsg\n",
-			assert: func(t *Tag) {
-				c.Assert(t.Target.String(), Equals, targetA)
-			},
-		},
-		{
-			name: "duplicate type drops the second",
-			raw: "object " + targetA + "\ntype commit\ntype blob" +
-				"\ntag v1\ntagger " + taggerA + "\n\nmsg\n",
-			assert: func(t *Tag) {
-				c.Assert(t.TargetType, Equals, plumbing.CommitObject)
-			},
-		},
 		{
 			name: "duplicate tag drops the second",
 			raw: "object " + targetA + "\ntype commit\ntag v1\ntag v1-override" +
@@ -353,26 +415,6 @@ func (s *TagSuite) TestDecodeFirstOccurrenceWins(c *C) {
 				"\ntagger " + taggerB + "\n\nmsg\n",
 			assert: func(t *Tag) {
 				c.Assert(t.Tagger.Name, Equals, "Alice")
-			},
-		},
-		{
-			name: "type at slot 1: type captured, misplaced object dropped",
-			raw: "type commit\nobject " + targetA + "\ntag v1\ntagger " + taggerA +
-				"\n\nmsg\n",
-			assert: func(t *Tag) {
-				c.Assert(t.TargetType, Equals, plumbing.CommitObject)
-				c.Assert(t.Target.IsZero(), Equals, true)
-				c.Assert(t.Name, Equals, "")
-				c.Assert(t.Tagger.Name, Equals, "")
-			},
-		},
-		{
-			name: "tagger at slot 4: tagger captured, misplaced tag dropped",
-			raw: "object " + targetA + "\ntype commit\ntagger " + taggerA +
-				"\ntag v1\n\nmsg\n",
-			assert: func(t *Tag) {
-				c.Assert(t.Tagger.Name, Equals, "Alice")
-				c.Assert(t.Name, Equals, "")
 			},
 		},
 		{
@@ -419,17 +461,6 @@ func (s *TagSuite) TestDecodeFirstOccurrenceWins(c *C) {
 				c.Assert(t.Tagger.Name, Equals, "Alice")
 				c.Assert(t.Message, Equals, "msg\n")
 				c.Assert(t.PGPSignature, Equals, "")
-			},
-		},
-		{
-			name: "truncated after object header",
-			raw:  "object " + targetA + "\n",
-			assert: func(t *Tag) {
-				c.Assert(t.Target.String(), Equals, targetA)
-				c.Assert(t.TargetType, Equals, plumbing.InvalidObject)
-				c.Assert(t.Name, Equals, "")
-				c.Assert(t.Tagger.Name, Equals, "")
-				c.Assert(t.Message, Equals, "")
 			},
 		},
 		{
@@ -848,32 +879,6 @@ tag message
 				t.PGPSignature = "different signature value"
 			},
 			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
-type commit
-tag v1
-tagger Test Tagger <tagger@example.local> 1700000000 +0000
-
-tag message
-`,
-		},
-		{
-			// Duplicates are preserved verbatim by the raw path: if
-			// the decoded struct still matches the source after
-			// re-decoding, the original bytes are streamed through
-			// (with only the canonical signature data stripped).
-			name: "duplicate-object preserved on raw path",
-			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
-object 4444444444444444444444444444444444444444
-type commit
-tag v1
-tagger Test Tagger <tagger@example.local> 1700000000 +0000
-
-tag message
------BEGIN PGP SIGNATURE-----
-inlineline1
------END PGP SIGNATURE-----
-`,
-			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
-object 4444444444444444444444444444444444444444
 type commit
 tag v1
 tagger Test Tagger <tagger@example.local> 1700000000 +0000

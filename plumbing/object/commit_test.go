@@ -518,6 +518,30 @@ func (s *SuiteCommit) TestDecodeRequiresTreeFirst(c *C) {
 			name: "empty",
 			raw:  "",
 		},
+		{
+			name: "non-hex tree value",
+			raw:  "tree zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "tree value too short",
+			raw:  "tree abcd\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "tree value too long",
+			raw:  "tree " + validTree + "00\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "tree value missing",
+			raw:  "tree\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "non-hex parent value",
+			raw:  "tree " + validTree + "\nparent zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "parent value too short",
+			raw:  "tree " + validTree + "\nparent abcd\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
 	}
 
 	for _, tc := range cases {

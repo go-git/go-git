@@ -3,6 +3,7 @@ package object
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -58,91 +59,81 @@ func (s *tagScanner) pushBack(line []byte, err error) {
 	s.pendingErr = err
 }
 
-// scanTagObject expects the first non-empty header to be `object HASH`.
-// Anything else falls through to scanTagType so out-of-position canonical
-// fields are silently dropped (matching the existing decoder's
-// best-effort behaviour).
+// scanTagObject requires the first line to be `object HASH`, mirroring
+// upstream's strict parse_tag_buffer (tag.c:151-156). Anything else
+// returns ErrMalformedTag.
 func scanTagObject(s *tagScanner) (tagState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-	if len(line) == 0 {
-		return nil, nil
-	}
-	if isBlankLine(line) {
-		return scanTagMessage, nil
+	if len(line) == 0 || isBlankLine(line) {
+		return nil, fmt.Errorf("%w: missing object header", ErrMalformedTag)
 	}
 
 	key, data := splitHeader(line)
-	if key == "object" {
-		s.t.Target = plumbing.NewHash(string(data))
-		s.sawObject = true
-		if err == io.EOF {
-			return nil, nil
-		}
-		return scanTagType, nil
+	if key != "object" {
+		return nil, fmt.Errorf("%w: object header must be first", ErrMalformedTag)
 	}
-	s.pushBack(line, err)
+	h, herr := parseObjectIDHex(data, ErrMalformedTag, "object")
+	if herr != nil {
+		return nil, herr
+	}
+	s.t.Target = h
+	s.sawObject = true
+	if err == io.EOF {
+		return nil, nil
+	}
 	return scanTagType, nil
 }
 
-// scanTagType accepts a `type` line at its canonical position
-// immediately after the object header. Any other header is pushed back
-// for scanTagName.
+// scanTagType requires a `type` line immediately after the object header,
+// mirroring upstream's parse_tag_buffer (tag.c:158-166).
 func scanTagType(s *tagScanner) (tagState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-	if len(line) == 0 {
-		return nil, nil
-	}
-	if isBlankLine(line) {
-		return scanTagMessage, nil
+	if len(line) == 0 || isBlankLine(line) {
+		return nil, fmt.Errorf("%w: missing type header", ErrMalformedTag)
 	}
 
 	key, data := splitHeader(line)
-	if key == "type" {
-		ot, perr := plumbing.ParseObjectType(string(data))
-		if perr != nil {
-			return nil, perr
-		}
-		s.t.TargetType = ot
-		s.sawType = true
-		if err == io.EOF {
-			return nil, nil
-		}
-		return scanTagName, nil
+	if key != "type" {
+		return nil, fmt.Errorf("%w: type header must follow object", ErrMalformedTag)
 	}
-	s.pushBack(line, err)
+	ot, perr := plumbing.ParseObjectType(string(data))
+	if perr != nil {
+		return nil, perr
+	}
+	s.t.TargetType = ot
+	s.sawType = true
+	if err == io.EOF {
+		return nil, nil
+	}
 	return scanTagName, nil
 }
 
-// scanTagName accepts a `tag` line at its canonical position. Any other
-// header is pushed back for scanTagTagger.
+// scanTagName requires a `tag` line immediately after the type header,
+// mirroring upstream's parse_tag_buffer (tag.c:186-194).
 func scanTagName(s *tagScanner) (tagState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
-	if len(line) == 0 {
-		return nil, nil
-	}
-	if isBlankLine(line) {
-		return scanTagMessage, nil
+	if len(line) == 0 || isBlankLine(line) {
+		return nil, fmt.Errorf("%w: missing tag header", ErrMalformedTag)
 	}
 
 	key, data := splitHeader(line)
-	if key == "tag" {
-		s.t.Name = string(data)
-		s.sawName = true
-		if err == io.EOF {
-			return nil, nil
-		}
-		return scanTagTagger, nil
+	if key != "tag" {
+		return nil, fmt.Errorf("%w: tag header must follow type", ErrMalformedTag)
 	}
-	s.pushBack(line, err)
+	s.t.Name = string(data)
+	s.sawName = true
+	if err == io.EOF {
+		return nil, nil
+	}
 	return scanTagTagger, nil
 }
 
