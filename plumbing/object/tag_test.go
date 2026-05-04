@@ -267,9 +267,208 @@ func (s *TagSuite) TestTagDecodeSignatures(c *C) {
 				c.Assert(t.PGPSignature, Equals, inline)
 			},
 		},
+		{
+			// parseSignedBytes returns the position of the LAST PGP
+			// block in the buffer, mirroring upstream's
+			// parse_signed_buffer (gpg-interface.c:702). Any earlier
+			// PGP-armored bytes embedded in the body stay part of the
+			// message; only the trailing block becomes t.PGPSignature.
+			name: "multiple inline PGP blocks: last is the signature",
+			raw: headers + "\nbody line 1\n" +
+				"-----BEGIN PGP SIGNATURE-----\nfakeline\n-----END PGP SIGNATURE-----\n" +
+				"body line 2\n" +
+				"-----BEGIN PGP SIGNATURE-----\nrealline\n-----END PGP SIGNATURE-----\n",
+			assert: func(t *Tag) {
+				c.Assert(
+					t.Message,
+					Equals,
+					"body line 1\n"+
+						"-----BEGIN PGP SIGNATURE-----\nfakeline\n-----END PGP SIGNATURE-----\n"+
+						"body line 2\n",
+				)
+				c.Assert(
+					t.PGPSignature,
+					Equals,
+					"-----BEGIN PGP SIGNATURE-----\nrealline\n-----END PGP SIGNATURE-----\n",
+				)
+			},
+		},
 	}
 
 	for _, tc := range tests {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.TagObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		tag := &Tag{}
+		c.Assert(tag.Decode(obj), IsNil)
+		tc.assert(tag)
+	}
+}
+
+func (s *TagSuite) TestDecodeFirstOccurrenceWins(c *C) {
+	const (
+		targetA   = "c029517f6300c2da0f4b651b8642506cd6aaf45e"
+		targetB   = "0000000000000000000000000000000000000001"
+		taggerA   = "Alice <alice@example.local> 1500000000 +0000"
+		taggerB   = "Bob <bob@example.local> 1500000001 +0000"
+		canonical = "object " + targetA +
+			"\ntype commit\ntag v1\ntagger " + taggerA + "\n"
+	)
+
+	cases := []struct {
+		name   string
+		raw    string
+		assert func(*Tag)
+	}{
+		{
+			name: "duplicate object drops the second",
+			raw: "object " + targetA + "\nobject " + targetB +
+				"\ntype commit\ntag v1\ntagger " + taggerA + "\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Target.String(), Equals, targetA)
+			},
+		},
+		{
+			name: "duplicate type drops the second",
+			raw: "object " + targetA + "\ntype commit\ntype blob" +
+				"\ntag v1\ntagger " + taggerA + "\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.TargetType, Equals, plumbing.CommitObject)
+			},
+		},
+		{
+			name: "duplicate tag drops the second",
+			raw: "object " + targetA + "\ntype commit\ntag v1\ntag v1-override" +
+				"\ntagger " + taggerA + "\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Name, Equals, "v1")
+			},
+		},
+		{
+			name: "duplicate tagger drops the second",
+			raw: "object " + targetA + "\ntype commit\ntag v1\ntagger " + taggerA +
+				"\ntagger " + taggerB + "\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Tagger.Name, Equals, "Alice")
+			},
+		},
+		{
+			name: "type at slot 1: type captured, misplaced object dropped",
+			raw: "type commit\nobject " + targetA + "\ntag v1\ntagger " + taggerA +
+				"\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.TargetType, Equals, plumbing.CommitObject)
+				c.Assert(t.Target.IsZero(), Equals, true)
+				c.Assert(t.Name, Equals, "")
+				c.Assert(t.Tagger.Name, Equals, "")
+			},
+		},
+		{
+			name: "tagger at slot 4: tagger captured, misplaced tag dropped",
+			raw: "object " + targetA + "\ntype commit\ntagger " + taggerA +
+				"\ntag v1\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Tagger.Name, Equals, "Alice")
+				c.Assert(t.Name, Equals, "")
+			},
+		},
+		{
+			name: "missing tagger is allowed (zero-valued)",
+			raw:  "object " + targetA + "\ntype commit\ntag v1\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Name, Equals, "v1")
+				c.Assert(t.Tagger.Name, Equals, "")
+				c.Assert(t.Message, Equals, "msg\n")
+			},
+		},
+		{
+			name: "gpgsig-sha256 headers are skipped",
+			raw: canonical +
+				"gpgsig-sha256 firstline\n morefirst\n" +
+				"gpgsig-sha256 secondline\n moresecond\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.PGPSignature, Equals, "")
+				c.Assert(t.Message, Equals, "msg\n")
+			},
+		},
+		{
+			name: "single-line gpgsig-sha256 (no continuation)",
+			raw:  canonical + "gpgsig-sha256 short\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.PGPSignature, Equals, "")
+				c.Assert(t.Message, Equals, "msg\n")
+			},
+		},
+		{
+			name: "gpgsig-sha256 with empty value",
+			raw:  canonical + "gpgsig-sha256\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.PGPSignature, Equals, "")
+				c.Assert(t.Message, Equals, "msg\n")
+			},
+		},
+		{
+			name: "unknown extra header is dropped",
+			raw:  canonical + "x-some-extra value\n\nmsg\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Target.String(), Equals, targetA)
+				c.Assert(t.Name, Equals, "v1")
+				c.Assert(t.Tagger.Name, Equals, "Alice")
+				c.Assert(t.Message, Equals, "msg\n")
+				c.Assert(t.PGPSignature, Equals, "")
+			},
+		},
+		{
+			name: "truncated after object header",
+			raw:  "object " + targetA + "\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Target.String(), Equals, targetA)
+				c.Assert(t.TargetType, Equals, plumbing.InvalidObject)
+				c.Assert(t.Name, Equals, "")
+				c.Assert(t.Tagger.Name, Equals, "")
+				c.Assert(t.Message, Equals, "")
+			},
+		},
+		{
+			name: "EOF after tagger (no blank-line separator)",
+			raw:  "object " + targetA + "\ntype commit\ntag v1\ntagger " + taggerA + "\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Target.String(), Equals, targetA)
+				c.Assert(t.TargetType, Equals, plumbing.CommitObject)
+				c.Assert(t.Name, Equals, "v1")
+				c.Assert(t.Tagger.Name, Equals, "Alice")
+				c.Assert(t.Message, Equals, "")
+			},
+		},
+		{
+			name: "EOF on blank line (empty body)",
+			raw:  "object " + targetA + "\ntype commit\ntag v1\ntagger " + taggerA + "\n\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Name, Equals, "v1")
+				c.Assert(t.Message, Equals, "")
+			},
+		},
+		{
+			name: "message without trailing newline",
+			raw:  "object " + targetA + "\ntype commit\ntag v1\ntagger " + taggerA + "\n\npartial",
+			assert: func(t *Tag) {
+				c.Assert(t.Message, Equals, "partial")
+			},
+		},
+		{
+			name: "EOF mid-gpgsig-sha256 continuation",
+			raw:  canonical + "gpgsig-sha256 line1\n line2\n line3\n",
+			assert: func(t *Tag) {
+				c.Assert(t.PGPSignature, Equals, "")
+				c.Assert(t.Message, Equals, "")
+			},
+		},
+	}
+
+	for _, tc := range cases {
 		c.Log(tc.name)
 		obj := &plumbing.MemoryObject{}
 		obj.SetType(plumbing.TagObject)

@@ -1,9 +1,7 @@
 package object
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -98,60 +96,15 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
-	var skipPGPSig256 bool
-
-	for {
-		var line []byte
-		line, err = r.ReadBytes('\n')
-		if err != nil && err != io.EOF {
+	scanner := &tagScanner{r: r, t: t}
+	for state := scanTagObject; state != nil; {
+		state, err = state(scanner)
+		if err != nil {
 			return err
 		}
-
-		if skipPGPSig256 {
-			if len(line) > 0 && line[0] == ' ' {
-				if err == io.EOF {
-					return nil
-				}
-				continue
-			}
-			skipPGPSig256 = false
-		}
-
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			break // Start of message
-		}
-
-		split := bytes.SplitN(line, []byte{' '}, 2)
-		var value []byte
-		if len(split) == 2 {
-			value = split[1]
-		}
-		switch string(split[0]) {
-		case "object":
-			t.Target = plumbing.NewHash(string(value))
-		case "type":
-			t.TargetType, err = plumbing.ParseObjectType(string(value))
-			if err != nil {
-				return err
-			}
-		case "tag":
-			t.Name = string(value)
-		case "tagger":
-			t.Tagger.Decode(value)
-		case headerpgp256:
-			skipPGPSig256 = true
-		}
-
-		if err == io.EOF {
-			return nil
-		}
 	}
 
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
+	data := scanner.msgbuf.Bytes()
 	if sm, _ := parseSignedBytes(data); sm >= 0 {
 		t.PGPSignature = string(data[sm:])
 		data = data[:sm]
