@@ -4,6 +4,7 @@ package objectverify_test
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,6 +107,10 @@ func TestCommitVerifyAlignment(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			if tc.name == "double-signature" && os.Getenv("GIT_VERSION") == "v2.11.0" {
+				t.Skip("multi-signature rejection not yet established in Git 2.11.0")
+			}
 
 			repo := initRepo(t)
 			unsigned := tc.build()
