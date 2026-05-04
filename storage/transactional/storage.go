@@ -129,6 +129,20 @@ func (s *basic) Commit() error {
 	return nil
 }
 
+// Close closes both the base and temporal storages if they implement io.Closer.
+func (s *basic) Close() error {
+	var err error
+	if closer, ok := s.temporal.(io.Closer); ok {
+		err = closer.Close()
+	}
+	if closer, ok := s.s.(io.Closer); ok {
+		if closeErr := closer.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
 // PackfileWriter honors storage.PackfileWriter.
 func (s *packageWriter) PackfileWriter() (io.WriteCloser, error) {
 	return s.pw.PackfileWriter()
