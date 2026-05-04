@@ -154,6 +154,36 @@ func TestIgnoreMatcherWithoutIndexIsNoop(t *testing.T) {
 	require.True(t, names["vendor"], "vendor/ must be walked when Index is nil — the matcher is documented as a no-op in that case")
 }
 
+// TestDeeplyNestedTrackedFileInIgnoredDir verifies that a tracked file
+// several levels deep inside an ignored top-level directory is still
+// walked. trackedDirs is populated by walking up the parent chain of
+// every index entry, so each intermediate directory must be marked
+// tracked even when only a deep descendant is in the index.
+func TestDeeplyNestedTrackedFileInIgnoredDir(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	content := []byte("package deep\n")
+	require.NoError(t, WriteFile(fs, "vendor/inner/deep/keep.go", content, 0o644))
+	require.NoError(t, WriteFile(fs, "vendor/inner/extra.go", []byte("untracked\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "vendor/sibling.go", []byte("untracked\n"), 0o644))
+
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{Name: "vendor/inner/deep/keep.go", Hash: blobHash(t, content), Mode: filemode.Regular},
+		},
+	}
+
+	to := NewRootNodeWithOptions(fs, nil, Options{
+		Index:         idx,
+		IgnoreMatcher: matcher("vendor/"),
+	})
+	from := mindex.NewRootNode(idx)
+
+	changes, err := merkletrie.DiffTree(from, to, IsEquals)
+	require.NoError(t, err)
+	require.Empty(t, changes, "tracked content matches the index and untracked siblings at every nesting level must be skipped")
+}
+
 // TestSubmoduleInIgnoredDirIsWalked verifies that a tracked submodule
 // inside a directory matching the ignore matcher is still walked. A
 // submodule's own path is the index entry, so trackedDirs (which only
@@ -190,4 +220,62 @@ func TestSubmoduleInIgnoredDirIsWalked(t *testing.T) {
 	require.Len(t, grandchildren, 1, "vendor/sub (submodule) must not be skipped")
 	require.Equal(t, "sub", grandchildren[0].Name())
 	require.False(t, grandchildren[0].IsDir(), "submodule must report as non-dir so it is compared by hash, not descended into")
+}
+
+// TestFilePatternIgnoreSkipsUntrackedSiblings verifies that an ignore
+// pattern matching individual files (rather than a directory) skips
+// only the untracked instances; tracked siblings are still walked.
+func TestFilePatternIgnoreSkipsUntrackedSiblings(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	tracked := []byte("tracked log\n")
+	require.NoError(t, WriteFile(fs, "app.log", tracked, 0o644))
+	require.NoError(t, WriteFile(fs, "other.log", []byte("untracked log\n"), 0o644))
+
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{Name: "app.log", Hash: blobHash(t, tracked), Mode: filemode.Regular},
+		},
+	}
+
+	to := NewRootNodeWithOptions(fs, nil, Options{
+		Index:         idx,
+		IgnoreMatcher: matcher("*.log"),
+	})
+	from := mindex.NewRootNode(idx)
+
+	changes, err := merkletrie.DiffTree(from, to, IsEquals)
+	require.NoError(t, err)
+	require.Empty(t, changes, "untracked *.log files must be skipped while tracked app.log is walked and matches the index")
+}
+
+// TestEmptyIgnoredDirIsSkipped verifies that an ignored directory
+// containing nothing on disk is still skipped: there is no tracked
+// content forcing a descent, so the matcher prunes it cleanly.
+func TestEmptyIgnoredDirIsSkipped(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "src/keep.go", []byte("package main\n"), 0o644))
+	require.NoError(t, fs.MkdirAll("vendor", 0o755))
+
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{Name: "src/keep.go", Hash: blobHash(t, []byte("package main\n")), Mode: filemode.Regular},
+		},
+	}
+
+	root := NewRootNodeWithOptions(fs, nil, Options{
+		Index:         idx,
+		IgnoreMatcher: matcher("vendor/"),
+	})
+
+	children, err := root.Children()
+	require.NoError(t, err)
+
+	names := map[string]bool{}
+	for _, c := range children {
+		names[c.Name()] = true
+	}
+	require.True(t, names["src"], "src/ should be walked")
+	require.False(t, names["vendor"], "empty ignored vendor/ must be skipped")
 }
