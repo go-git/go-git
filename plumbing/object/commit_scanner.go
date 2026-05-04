@@ -28,9 +28,14 @@ type commitScanner struct {
 	// First-occurrence tracking: once the corresponding field has been
 	// decoded, subsequent occurrences are silently dropped (matches
 	// upstream's find_commit_header / first-wins semantics).
+	//
+	// gpgsig is not tracked here: upstream's parse_buffer_signed_by_header
+	// (commit.c:1186) accumulates every occurrence into one signature buffer,
+	// so we do the same on the scanner side to keep verification payloads
+	// byte-aligned. gpgsig-sha256 is recognized and skipped without exposing a
+	// new field in v5.
 	sawTree, sawAuthor, sawCommitter bool
 	sawEncoding, sawMergetag         bool
-	sawPgp                           bool
 
 	// extra is the multi-line ExtraHeader currently being assembled.
 	extra *ExtraHeader
@@ -216,13 +221,8 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 			next = scanMergetagCont
 		}
 	case headerpgp:
-		if s.sawPgp {
-			next = scanSkipCont
-		} else {
-			s.c.PGPSignature += string(data) + "\n"
-			s.sawPgp = true
-			next = scanPgpCont
-		}
+		s.c.PGPSignature += string(data) + "\n"
+		next = scanPgpCont
 	case headerpgp256:
 		next = scanSkipCont
 	default:
@@ -241,14 +241,20 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 	return next, nil
 }
 
-// scanMergetagCont and scanPgpCont accumulate continuation
-// lines for the matching first-wins header. Continuations strip exactly one
-// leading space, mirroring upstream's `line + 1` (commit.c:1509). The first
-// non-continuation line is pushed back so scanHeaders can dispatch it.
+// scanMergetagCont accumulates continuation lines for the first mergetag
+// header. Continuations strip exactly one leading space, mirroring upstream's
+// `line + 1` (commit.c:1509). The first non-continuation line is pushed back
+// so scanHeaders can dispatch it.
 func scanMergetagCont(s *commitScanner) (commitState, error) {
 	return continuationCont(s, &s.c.MergeTag, scanMergetagCont)
 }
 
+// scanPgpCont accumulates continuation lines for a signature header.
+// Continuations strip exactly one leading space, mirroring upstream's
+// `line + 1` (commit.c:1509). The first non-continuation line is pushed back
+// so scanHeaders can dispatch it. Repeat occurrences of the same signature
+// header land back here and concatenate, matching upstream's
+// parse_buffer_signed_by_header (commit.c:1186).
 func scanPgpCont(s *commitScanner) (commitState, error) {
 	return continuationCont(s, &s.c.PGPSignature, scanPgpCont)
 }
@@ -271,8 +277,8 @@ func continuationCont(s *commitScanner, dst *string, self commitState) (commitSt
 	return scanHeaders, nil
 }
 
-// scanSkipCont discards continuation lines that belong to a duplicate
-// mergetag / gpgsig / gpgsig-sha256 header that scanHeaders chose to drop.
+// scanSkipCont discards continuation lines that belong to a header scanHeaders
+// chose to drop.
 func scanSkipCont(s *commitScanner) (commitState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {

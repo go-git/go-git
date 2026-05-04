@@ -108,6 +108,27 @@ func parseSignedBytes(b []byte) (int, signatureType) {
 	return match, t
 }
 
+// countSignatureBlocks reports how many distinct armored signature blocks
+// start at a line boundary in b. Used by verification paths to reject
+// multi-signature payloads, matching upstream's check in gpg-interface.c
+// where parse_gpg_output bails out the first time it sees a second
+// exclusive status line (a second GOODSIG/BADSIG/etc.).
+func countSignatureBlocks(b []byte) int {
+	n, count := 0, 0
+	for n < len(b) {
+		i := b[n:]
+		if typeForSignature(i) != signatureTypeUnknown {
+			count++
+		}
+		if eol := bytes.IndexByte(i, '\n'); eol >= 0 {
+			n += eol + 1
+			continue
+		}
+		break
+	}
+	return count
+}
+
 // isSignatureHeader reports whether line is a canonical "gpgsig "/
 // "gpgsig-sha256 " header line. Other "gpgsig"-prefixed extra headers
 // are intentionally not matched.
