@@ -244,12 +244,18 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 	if !n.options.IgnoreMatcher.Match(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
-	if isDir {
-		_, tracked := n.trackedDirs[childPath]
-		return !tracked
+	// An entry whose own path is in the index is tracked, regardless of
+	// whether it is a regular file or a directory-shaped entry such as a
+	// submodule. Submodule entries' paths are *not* added to trackedDirs
+	// (which only records parent chains), so this check has to come first.
+	if _, tracked := n.idxMap[childPath]; tracked {
+		return false
 	}
-	_, tracked := n.idxMap[childPath]
-	return !tracked
+	if isDir {
+		_, hasTrackedDescendant := n.trackedDirs[childPath]
+		return !hasTrackedDescendant
+	}
+	return true
 }
 
 func (n *node) newChildNode(file os.FileInfo) (*node, error) {

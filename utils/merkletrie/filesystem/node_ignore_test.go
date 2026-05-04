@@ -153,3 +153,41 @@ func TestIgnoreMatcherWithoutIndexIsNoop(t *testing.T) {
 	require.True(t, names["src"], "src/ should be walked")
 	require.True(t, names["vendor"], "vendor/ must be walked when Index is nil — the matcher is documented as a no-op in that case")
 }
+
+// TestSubmoduleInIgnoredDirIsWalked verifies that a tracked submodule
+// inside a directory matching the ignore matcher is still walked. A
+// submodule's own path is the index entry, so trackedDirs (which only
+// records *parents* of entries) does not list it; the dir branch of
+// shouldSkipIgnored must also consult idxMap to keep the submodule
+// from being pruned.
+func TestSubmoduleInIgnoredDirIsWalked(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, fs.MkdirAll("vendor/sub", 0o755))
+
+	submoduleHash := plumbing.NewHash("0123456789abcdef0123456789abcdef01234567")
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{Name: "vendor/sub", Hash: submoduleHash, Mode: filemode.Submodule},
+		},
+	}
+	submodules := map[string]plumbing.Hash{
+		"vendor/sub": submoduleHash,
+	}
+
+	root := NewRootNodeWithOptions(fs, submodules, Options{
+		Index:         idx,
+		IgnoreMatcher: matcher("vendor/"),
+	})
+
+	children, err := root.Children()
+	require.NoError(t, err)
+	require.Len(t, children, 1, "vendor/ must be walked because it contains a tracked submodule")
+	require.Equal(t, "vendor", children[0].Name())
+
+	grandchildren, err := children[0].Children()
+	require.NoError(t, err)
+	require.Len(t, grandchildren, 1, "vendor/sub (submodule) must not be skipped")
+	require.Equal(t, "sub", grandchildren[0].Name())
+	require.False(t, grandchildren[0].IsDir(), "submodule must report as non-dir so it is compared by hash, not descended into")
+}
