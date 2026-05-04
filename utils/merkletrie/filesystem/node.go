@@ -13,19 +13,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
-
-// IgnoreMatcher matches paths against a set of ignore rules. It is
-// satisfied by gitignore.Matcher; the indirection avoids a direct
-// dependency on the gitignore package from this leaf utility.
-type IgnoreMatcher interface {
-	Match(path []string, isDir bool) bool
-}
 
 var ignore = map[string]bool{
 	".git": true,
@@ -48,7 +42,7 @@ type Options struct {
 	// walked even if they match, so modifications to them are still
 	// reported. Requires Index to be set: without an index there is no way
 	// to identify tracked entries, so the matcher is treated as a no-op.
-	IgnoreMatcher IgnoreMatcher
+	IgnoreMatcher gitignore.Matcher
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
