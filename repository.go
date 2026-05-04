@@ -153,10 +153,16 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	if err := initStorer(s); err != nil {
+		if closer, ok := s.(io.Closer); ok {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 
 	if err := options.defaultBranch.Validate(); err != nil {
+		if closer, ok := s.(io.Closer); ok {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 
@@ -165,8 +171,10 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	switch err {
 	case plumbing.ErrReferenceNotFound:
 	case nil:
+		_ = r.Close()
 		return nil, ErrTargetDirNotEmpty
 	default:
+		_ = r.Close()
 		return nil, err
 	}
 
@@ -176,6 +184,7 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
 	if err := s.SetReference(h); err != nil {
+		_ = r.Close()
 		return nil, err
 	}
 
@@ -373,11 +382,13 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 
 	cfg, err := r.Config()
 	if err != nil {
+		_ = r.Close()
 		return nil, err
 	}
 
 	err = r.Storer.SetConfig(cfg)
 	if err != nil {
+		_ = r.Close()
 		return nil, err
 	}
 
@@ -441,7 +452,12 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 
 	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
 
-	return Open(s, wt)
+	r, err := Open(s, wt)
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return r, nil
 }
 
 func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
@@ -612,6 +628,7 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 		if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
 			return r, nil
 		}
+		_ = r.Close()
 		if dirPreexisted {
 			// Restore the directory to its original empty state.
 			_ = os.RemoveAll(filepath.Join(path, GitDirName))
@@ -626,11 +643,13 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
-	return &Repository{
+	repo := &Repository{
 		Storer: s,
 		wt:     worktree,
 		r:      make(map[string]*Remote),
 	}
+
+	return repo
 }
 
 func checkTargetDirIsEmpty(path string) (empty bool, err error) {
@@ -1093,6 +1112,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to open remote repository: %w", err)
 		}
+		defer func() { _ = remoteRepo.Close() }()
 		conf, err := remoteRepo.Config()
 		if err != nil {
 			return fmt.Errorf("failed to read remote repository configuration: %w", err)

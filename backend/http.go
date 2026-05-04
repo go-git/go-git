@@ -198,6 +198,11 @@ func (b *Backend) handleDumbSendFile(w http.ResponseWriter, _ *http.Request, rep
 		renderStatusError(w, http.StatusNotFound)
 		return
 	}
+	defer func() {
+		if closer, ok := st.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	fss, ok := st.(storer.FilesystemStorer)
 	if !ok {

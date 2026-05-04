@@ -25,17 +25,19 @@ func ExampleClone() {
 
 	// Clones the repository into the worktree (fs) and stores all the .git
 	// content into the storer
-	_, err := git.Clone(storer, fs, &git.CloneOptions{
+	r, err := git.Clone(storer, fs, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer func() { _ = r.Close() }()
 
 	// Prints the content of the CHANGELOG file from the cloned repository
 	changelog, err := fs.Open("CHANGELOG")
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	io.Copy(os.Stdout, changelog)
@@ -52,13 +54,14 @@ func ExamplePlainClone() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	if err != nil {
 		log.Print(err)
 		return
 	}
+	defer func() { _ = r.Close() }()
 
 	// Prints the content of the CHANGELOG file from the cloned repository
 	changelog, err := os.Open(filepath.Join(dir, "CHANGELOG"))
@@ -81,7 +84,7 @@ func ExamplePlainClone_usernamePassword() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 		ClientOptions: []client.Option{
 			client.WithHTTPAuth(&http.BasicAuth{
@@ -92,7 +95,9 @@ func ExamplePlainClone_usernamePassword() {
 	})
 	if err != nil {
 		log.Print(err)
+		return
 	}
+	defer func() { _ = r.Close() }()
 }
 
 func ExamplePlainClone_accessToken() {
@@ -105,7 +110,7 @@ func ExamplePlainClone_accessToken() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	_, err = git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 		ClientOptions: []client.Option{
 			client.WithHTTPAuth(&http.BasicAuth{
@@ -116,13 +121,16 @@ func ExamplePlainClone_accessToken() {
 	})
 	if err != nil {
 		log.Print(err)
+		return
 	}
+	defer func() { _ = r.Close() }()
 }
 
 func ExampleRepository_References() {
 	r, _ := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
+	defer func() { _ = r.Close() }()
 
 	// simulating a git show-ref
 	refs, _ := r.References()
@@ -144,6 +152,7 @@ func ExampleRepository_Branches() {
 	r, _ := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
+	defer func() { _ = r.Close() }()
 
 	branches, _ := r.Branches()
 	branches.ForEach(func(branch *plumbing.Reference) error {
@@ -157,6 +166,7 @@ func ExampleRepository_Branches() {
 
 func ExampleRepository_CreateRemote() {
 	r, _ := git.Init(memory.NewStorage(), nil)
+	defer func() { _ = r.Close() }()
 
 	// Add a new remote, with the default fetch refspec
 	_, err := r.CreateRemote(&config.RemoteConfig{
@@ -164,12 +174,14 @@ func ExampleRepository_CreateRemote() {
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	list, err := r.Remotes()
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	for _, r := range list {

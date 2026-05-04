@@ -39,3 +39,16 @@ When reviewing pull requests in this repository, focus on correctness, maintaina
 - Any new encoding or decoding feature must include fuzz tests.
 - Flag encoding/decoding changes that lack fuzz coverage, especially when they parse untrusted, malformed, or external input.
 - Check that fuzz tests cover malformed input, boundary cases, round-trip behavior, and compatibility expectations where relevant.
+
+## Resource management
+
+- **Repository cleanup**: All `Repository` instances created with `PlainClone`, `PlainInit`, `PlainOpen`, `Clone`, or `Open` must have a corresponding `defer func() { _ = repo.Close() }()` immediately after error checking.
+  - Flag any repository creation where the instance is discarded with `_`. These must assign to a variable and add `defer Close()`.
+  - Rationale: Prevents file handle leaks that cause intermittent Windows test failures.
+- **Storage cleanup**: All `Storage` instances created with `filesystem.NewStorage` must have a corresponding `defer func() { _ = storage.Close() }()` immediately after creation, **except** when the storage is passed to a repository creation function.
+  - **Repository takes ownership**: When storage is passed to `Init`, `Open`, `PlainInit`, `PlainOpen`, `Clone`, `PlainClone`, or `newRepository`, do NOT add a separate `defer storage.Close()`. The repository takes ownership and will close the storage when `repo.Close()` is called.
+  - **Other uses require explicit close**: When storage is passed to types like `Remote` (via `NewRemote`) or used directly without creating a repository, you MUST add `defer func() { _ = storage.Close() }()`.
+  - Flag any storage creation that lacks a deferred Close() call, unless it's passed directly to a repository creation function.
+  - Rationale: Same file handle leak prevention as repositories.
+- **File handle cleanup**: All file `Open()` calls should have corresponding `defer Close()` calls, using `defer func() { _ = f.Close() }()` to avoid errcheck violations.
+- **Other closeable resources**: Flag leaked connections, file descriptors, and other resources that implement `io.Closer`.

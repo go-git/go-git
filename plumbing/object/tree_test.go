@@ -357,6 +357,7 @@ func (s *TreeSuite) TestTreeDiff() {
 	dotgit, err := f.DotGit()
 	s.Require().NoError(err)
 	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = storer.Close() }()
 	commit, err := GetCommit(storer, plumbing.NewHash("89f8bda31d29767a6d6ba8f9d0dfb941d598e843"))
 	s.NoError(err)
 
@@ -505,6 +506,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule() {
 	dotgit2, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dotgit2, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)

@@ -68,6 +68,17 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 - If the PR is a new feature, it has to come with a suite of unit tests that cover the new functionality.
 - In any case, all the PRs have to pass the personal evaluation of at least one of the maintainers of go-git.
 
+## Code Review Checklist
+
+When reviewing code (whether you're a human reviewer or using AI tools to assist), please verify:
+
+### Resource Management
+- **Repository cleanup**: All `Repository` instances must have `defer func() { _ = repo.Close() }()` after creation.
+- **Storage cleanup**: All `Storage` instances must have `defer func() { _ = storage.Close() }()` after creation, **except** when passed to repository creation functions (`Init`, `Open`, `PlainInit`, etc.) where the repository takes ownership.
+- **File handles**: All file `Open()` calls must have `defer func() { _ = f.Close() }()`.
+
+For detailed review guidelines, see [.github/copilot-instructions.md](.github/copilot-instructions.md).
+
 ### Branches
 
 The development branch is `main`, where all development takes place.

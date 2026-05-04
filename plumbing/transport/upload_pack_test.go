@@ -51,6 +51,7 @@ func (s *UploadPackServeSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 	upreq := &packp.UploadRequest{}
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
@@ -81,6 +82,7 @@ func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	require.NoError(s.T(), err)
@@ -136,6 +138,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	s.Require().NoError(err)
@@ -232,6 +235,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	s.Require().NoError(err)

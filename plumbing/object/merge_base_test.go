@@ -75,7 +75,11 @@ func (s *mergeBaseSuite) SetupSuite() {
 	s.Fixture = fixtures.ByTag("merge-base").One()
 	dotgit, err := s.Fixture.DotGit()
 	s.Require().NoError(err)
-	s.Storer = filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() {
+		_ = sto.Close()
+	})
+	s.Storer = sto
 }
 
 var revisionIndex = map[string]plumbing.Hash{

@@ -74,6 +74,7 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 			t.Parallel()
 			r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 			require.NoError(t, err)
+			defer func() { _ = r.Close() }()
 
 			w, err := r.Worktree()
 			require.NoError(t, err)

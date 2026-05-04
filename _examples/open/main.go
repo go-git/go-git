@@ -17,6 +17,7 @@ func main() {
 	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	// Length of the HEAD history
 	Info("git rev-list HEAD --count")

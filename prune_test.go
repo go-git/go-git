@@ -41,6 +41,7 @@ func (s *PruneSuite) testPrune(deleteTime time.Time) {
 	r, err := Open(sto, srcFs)
 	s.NoError(err)
 	s.NotNil(r)
+	defer func() { _ = r.Close() }()
 
 	// Remove a branch so we can prune some objects.
 	err = sto.RemoveReference(plumbing.ReferenceName("refs/heads/v4"))
