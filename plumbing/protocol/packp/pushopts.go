@@ -1,10 +1,19 @@
 package packp
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"slices"
+	"strings"
+	"unicode"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
+
+// ErrInvalidPushOption is returned when a push option contains invalid
+// characters.
+var ErrInvalidPushOption = errors.New("invalid push option")
 
 // PushOptions represents a list of update request push-options.
 //
@@ -15,8 +24,10 @@ type PushOptions struct {
 
 // Encode encodes the push options into the given writer.
 func (opts *PushOptions) Encode(w io.Writer) error {
-	if len(opts.Options) == 0 {
-		return nil
+	if slices.ContainsFunc(opts.Options, func(opt string) bool {
+		return strings.ContainsFunc(opt, isNotGraphic) || len(opt) > pktline.MaxPayloadSize
+	}) {
+		return fmt.Errorf("%w: contains invalid character", ErrInvalidPushOption)
 	}
 
 	for _, opt := range opts.Options {
@@ -43,8 +54,17 @@ func (opts *PushOptions) Decode(r io.Reader) error {
 			break
 		}
 
-		opts.Options = append(opts.Options, string(line))
+		opt := string(line)
+		if strings.ContainsFunc(opt, isNotGraphic) {
+			return fmt.Errorf("%w: contains invalid character", ErrInvalidPushOption)
+		}
+
+		opts.Options = append(opts.Options, opt)
 	}
 
 	return nil
+}
+
+func isNotGraphic(r rune) bool {
+	return !unicode.IsGraphic(r)
 }
