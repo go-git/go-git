@@ -212,6 +212,7 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 		err = newTag.Decode(obj)
 		c.Assert(err, IsNil)
 		tag.Hash = obj.Hash()
+		tag.src = obj
 		c.Assert(newTag, DeepEquals, tag)
 	}
 }
@@ -534,22 +535,226 @@ eQnkGpsz85DfEviLtk8cZjY/t6o8lPDLiwVjIzUBaA==
 }
 
 func (s *TagSuite) TestEncodeWithoutSignature(c *C) {
-	//Similar to TestString since no signature
-	encoded := &plumbing.MemoryObject{}
-	tag := s.tag(c, plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
-	err := tag.EncodeWithoutSignature(encoded)
-	c.Assert(err, IsNil)
-	er, err := encoded.Reader()
-	c.Assert(err, IsNil)
-	payload, err := io.ReadAll(er)
-	c.Assert(err, IsNil)
+	tests := []struct {
+		name     string
+		tagRaw   string
+		mutate   func(*Tag)
+		expected string
+	}{
+		{
+			name: "tag without signature",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
 
-	c.Assert(string(payload), Equals, ""+
-		"object f7b877701fbf855b44c0a9e86f3fdce2c298b07f\n"+
-		"type commit\n"+
-		"tag annotated-tag\n"+
-		"tagger Máximo Cuadros <mcuadros@gmail.com> 1474485215 +0200\n"+
-		"\n"+
-		"example annotated tag\n",
-	)
+plain tag message
+`,
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+plain tag message
+`,
+		},
+		{
+			name: "gpgsig-sha256 header",
+			tagRaw: "object 1eca38290a3131d0c90709496a9b2207a872631e\n" +
+				"type commit\n" +
+				"tag v1\n" +
+				"tagger Test Tagger <tagger@example.local> 1700000000 +0000\n" +
+				"gpgsig-sha256 -----BEGIN PGP SIGNATURE-----\n" +
+				" \n" +
+				" sha256line1\n" +
+				" sha256line2\n" +
+				" -----END PGP SIGNATURE-----\n" +
+				"\n" +
+				"tag message\n",
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
+			name: "inline trailing signature",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+-----BEGIN PGP SIGNATURE-----
+
+inlineline1
+inlineline2
+-----END PGP SIGNATURE-----
+`,
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
+			// Compat-mode primary SHA-1 layout: gpgsig-sha256 header
+			// (SHA-256 sig) plus inline trailing PGP block (SHA-1 sig).
+			// Both are stripped to produce the verification payload.
+			name: "gpgsig-sha256 + inline trailing",
+			tagRaw: "object 1eca38290a3131d0c90709496a9b2207a872631e\n" +
+				"type commit\n" +
+				"tag v1\n" +
+				"tagger Test Tagger <tagger@example.local> 1700000000 +0000\n" +
+				"gpgsig-sha256 -----BEGIN PGP SIGNATURE-----\n" +
+				" \n" +
+				" sha256line1\n" +
+				" -----END PGP SIGNATURE-----\n" +
+				"\n" +
+				"tag message\n" +
+				"-----BEGIN PGP SIGNATURE-----\n" +
+				"\n" +
+				"inlineline1\n" +
+				"-----END PGP SIGNATURE-----\n",
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
+			// Mutating only the inline signature must not trigger
+			// struct-encode: the raw bytes, with all signature data
+			// stripped, are still the canonical signed payload.
+			name: "raw bytes preserved when only inline signature is mutated",
+			tagRaw: "object 1eca38290a3131d0c90709496a9b2207a872631e\n" +
+				"type commit\n" +
+				"tag v1\n" +
+				"tagger Test Tagger <tagger@example.local> 1700000000 +0000\n" +
+				"gpgsig-sha256 -----BEGIN PGP SIGNATURE-----\n" +
+				" sha256line1\n" +
+				" -----END PGP SIGNATURE-----\n" +
+				"\n" +
+				"tag message\n" +
+				"-----BEGIN PGP SIGNATURE-----\n" +
+				"inlineline1\n" +
+				"-----END PGP SIGNATURE-----\n",
+			mutate: func(t *Tag) {
+				t.PGPSignature = "different signature value"
+			},
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
+			// Duplicates are preserved verbatim by the raw path: if
+			// the decoded struct still matches the source after
+			// re-decoding, the original bytes are streamed through
+			// (with only the canonical signature data stripped).
+			name: "duplicate-object preserved on raw path",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+object 4444444444444444444444444444444444444444
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+-----BEGIN PGP SIGNATURE-----
+inlineline1
+-----END PGP SIGNATURE-----
+`,
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+object 4444444444444444444444444444444444444444
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
+			name: "timezone-only change triggers struct-encode",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 -0700
+
+tag message
+-----BEGIN PGP SIGNATURE-----
+inlineline1
+-----END PGP SIGNATURE-----
+`,
+			mutate: func(t *Tag) {
+				tz := time.FixedZone("CEST", 2*60*60)
+				t.Tagger.When = t.Tagger.When.In(tz)
+			},
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0200
+
+tag message
+`,
+		},
+		{
+			name: "field mutation triggers struct-encode",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+-----BEGIN PGP SIGNATURE-----
+inlineline1
+-----END PGP SIGNATURE-----
+`,
+			mutate: func(t *Tag) {
+				t.Name = "v1-rewritten"
+			},
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1-rewritten
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.TagObject)
+		_, err := obj.Write([]byte(tc.tagRaw))
+		c.Assert(err, IsNil)
+
+		tag := &Tag{}
+		c.Assert(tag.Decode(obj), IsNil)
+
+		if tc.mutate != nil {
+			tc.mutate(tag)
+		}
+
+		encoded := &plumbing.MemoryObject{}
+		err = tag.EncodeWithoutSignature(encoded)
+		c.Assert(err, IsNil)
+
+		er, err := encoded.Reader()
+		c.Assert(err, IsNil)
+
+		payload, err := io.ReadAll(er)
+		c.Assert(err, IsNil)
+
+		c.Assert(string(payload), Equals, tc.expected)
+	}
 }

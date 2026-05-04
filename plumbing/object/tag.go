@@ -39,6 +39,9 @@ type Tag struct {
 	Target plumbing.Hash
 
 	s storer.EncodedObjectStorer
+	// src holds the encoded object this Tag was decoded from, used by
+	// EncodeWithoutSignature to recover the canonical signed bytes.
+	src plumbing.EncodedObject
 }
 
 // GetTag gets a tag from an object storer and decodes it.
@@ -84,6 +87,7 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	}
 
 	t.Hash = o.Hash()
+	t.src = o
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -162,9 +166,52 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 	return t.encode(o, true)
 }
 
-// EncodeWithoutSignature export a Tag into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
+// EncodeWithoutSignature exports a Tag into a plumbing.EncodedObject without
+// any signature data, producing the payload that PGP/GPG signatures are
+// computed over.
+//
+// Behaviour mirrors Commit.EncodeWithoutSignature:
+//
+//   - For Tags populated by Decode whose exported fields still match the
+//     source object, the payload is streamed from the raw source bytes with
+//     the inline trailing signature truncated and gpgsig/gpgsig-sha256
+//     headers (and their continuation lines) stripped verbatim. This
+//     preserves the exact bytes the signature was computed over, regardless
+//     of any normalization performed by Decode.
+//
+//   - For Tags constructed in memory, or for decoded Tags whose exported
+//     fields have been mutated, the payload is derived from the current
+//     struct fields. Mutation is detected by re-decoding the source object
+//     and comparing exported fields; if any differ, the in-memory
+//     representation prevails.
 func (t *Tag) EncodeWithoutSignature(o plumbing.EncodedObject) error {
+	if t.matchesSource() {
+		return stripObjectSignatures(o, t.src, plumbing.TagObject)
+	}
 	return t.encode(o, false)
+}
+
+// matchesSource reports whether t.src is set and re-decoding it produces a
+// Tag whose payload-affecting exported fields are identical to those of t.
+//
+// PGPSignature is intentionally excluded from the comparison: neither path
+// emits it as part of the verification payload, so mutating it must not
+// trigger a switch to struct-encode (which would change the byte layout the
+// caller is trying to verify against).
+func (t *Tag) matchesSource() bool {
+	if t.src == nil {
+		return false
+	}
+	fresh := &Tag{}
+	if err := fresh.Decode(t.src); err != nil {
+		return false
+	}
+	return t.Hash == fresh.Hash &&
+		t.Name == fresh.Name &&
+		signatureEqual(t.Tagger, fresh.Tagger) &&
+		t.Message == fresh.Message &&
+		t.TargetType == fresh.TargetType &&
+		t.Target == fresh.Target
 }
 
 func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {

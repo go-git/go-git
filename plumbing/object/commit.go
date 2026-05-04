@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
@@ -299,7 +298,7 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 //     representation prevails.
 func (c *Commit) EncodeWithoutSignature(o plumbing.EncodedObject) error {
 	if c.matchesSource() {
-		return stripSignaturesFromRaw(o, c.src)
+		return stripObjectSignatures(o, c.src, plumbing.CommitObject)
 	}
 	return c.encode(o, false)
 }
@@ -336,69 +335,6 @@ func signatureEqual(a, b Signature) bool {
 		a.Email == b.Email &&
 		a.When.Unix() == b.When.Unix() &&
 		a.When.Format("-0700") == b.When.Format("-0700")
-}
-
-// stripSignaturesFromRaw streams src into dst, dropping the canonical commit
-// signature headers ("gpgsig " and "gpgsig-sha256 ") together with their
-// continuation lines (those starting with a space). Everything past the
-// blank line that ends the header block is copied verbatim, as is any other
-// "gpgsig"-prefixed extra header (for example a user-defined "gpgsig-key-id")
-// that does not match one of the canonical signature headers.
-func stripSignaturesFromRaw(dst, src plumbing.EncodedObject) (err error) {
-	dst.SetType(plumbing.CommitObject)
-
-	r, err := src.Reader()
-	if err != nil {
-		return err
-	}
-	defer ioutil.CheckClose(r, &err)
-
-	w, err := dst.Writer()
-	if err != nil {
-		return err
-	}
-	defer ioutil.CheckClose(w, &err)
-
-	br := sync.GetBufioReader(r)
-	defer sync.PutBufioReader(br)
-
-	var inBody, skipping bool
-	for {
-		line, rerr := br.ReadBytes('\n')
-		if rerr != nil && rerr != io.EOF {
-			return rerr
-		}
-
-		write := true
-		if !inBody {
-			switch {
-			case skipping && len(line) > 0 && line[0] == ' ':
-				write = false
-			case isSignatureHeader(line):
-				skipping = true
-				write = false
-			case len(line) == 1 && line[0] == '\n':
-				skipping = false
-				inBody = true
-			default:
-				skipping = false
-			}
-		}
-
-		if write && len(line) > 0 {
-			if _, werr := w.Write(line); werr != nil {
-				return werr
-			}
-		}
-		if rerr == io.EOF {
-			return nil
-		}
-	}
-}
-
-func isSignatureHeader(line []byte) bool {
-	return bytes.HasPrefix(line, []byte(headerpgp+" ")) ||
-		bytes.HasPrefix(line, []byte(headerpgp256+" "))
 }
 
 func isStandardHeader(key string) bool {
