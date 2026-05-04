@@ -76,6 +76,10 @@ When reviewing code (whether you're a human reviewer or using AI tools to assist
 - **Repository cleanup**: All `Repository` instances must have `defer func() { _ = repo.Close() }()` after creation.
 - **Storage cleanup**: All `Storage` instances must have `defer func() { _ = storage.Close() }()` after creation, **except** when passed to repository creation functions (`Init`, `Open`, `PlainInit`, etc.) where the repository takes ownership.
 - **File handles**: All file `Open()` calls must have `defer func() { _ = f.Close() }()`.
+- **Leak detection**: Run tests with `-tags leakcheck` to detect unclosed resources:
+  ```bash
+  go test -tags leakcheck ./...
+  ```
 
 For detailed review guidelines, see [.github/copilot-instructions.md](.github/copilot-instructions.md).
 

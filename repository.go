@@ -85,6 +85,10 @@ type Repository struct {
 
 	r  map[string]*Remote
 	wt billy.Filesystem
+
+	// closed tracks whether Close() was called, used for leak detection
+	// when compiled with -tags leakcheck
+	closed bool
 }
 
 type initOptions struct {
@@ -647,7 +651,11 @@ func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
 		Storer: s,
 		wt:     worktree,
 		r:      make(map[string]*Remote),
+		closed: false,
 	}
+
+	// Set up leak detection when compiled with -tags leakcheck
+	setupLeakCheck(repo)
 
 	return repo
 }
@@ -682,6 +690,9 @@ func checkTargetDirIsEmpty(path string) (empty bool, err error) {
 // when the repository is no longer needed. It is safe to call Close on a
 // repository backed by memory storage, where it is a no-op.
 func (r *Repository) Close() error {
+	// Mark as closed for leak detection (used by finalizer when compiled with -tags leakcheck)
+	r.closed = true
+
 	if c, ok := r.Storer.(io.Closer); ok {
 		return c.Close()
 	}
