@@ -17,8 +17,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -51,7 +51,7 @@ func (s *UploadPackServeSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-	upreq := packp.NewUploadRequest()
+	upreq := &packp.UploadRequest{}
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
 	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
@@ -87,7 +87,7 @@ func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 	wantHash := head.Hash()
 
 	servePack := func(skipDelta bool) []byte {
-		upreq := packp.NewUploadRequest()
+		upreq := &packp.UploadRequest{}
 		upreq.Capabilities.Add(capability.NoProgress)
 		upreq.Wants = append(upreq.Wants, wantHash)
 
@@ -144,7 +144,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	s.Require().NotEmpty(headCommit.ParentHashes)
 	common := headCommit.ParentHashes[0]
 
-	upreq := packp.NewUploadRequest()
+	var upreq packp.UploadRequest
 	upreq.Capabilities.Add(capability.MultiACK)
 	upreq.Capabilities.Add(capability.NoProgress)
 	upreq.Wants = append(upreq.Wants, head.Hash())
@@ -236,7 +236,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	s.Require().NoError(err)
 
-	upreq := packp.NewUploadRequest()
+	var upreq packp.UploadRequest
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
 	upreq.Wants = append(upreq.Wants, head.Hash())

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 type UpdReqEncodeSuite struct {
@@ -36,7 +36,7 @@ func (s *UpdReqEncodeSuite) TestZeroValue() {
 	var buf bytes.Buffer
 	s.Equal(ErrEmptyCommands, r.Encode(&buf))
 
-	r = NewUpdateRequests()
+	r = &UpdateRequests{}
 	s.Equal(ErrEmptyCommands, r.Encode(&buf))
 }
 
@@ -45,7 +45,7 @@ func (s *UpdReqEncodeSuite) TestOneUpdateCommand() {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
@@ -62,7 +62,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommands() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	r.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -83,7 +83,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilities() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	r.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -105,7 +105,7 @@ func (s *UpdReqEncodeSuite) TestMultipleCommandsAndCapabilitiesShallow() {
 	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	r.Commands = []*Command{
 		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
 		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
@@ -135,7 +135,7 @@ func (s *UpdReqEncodeSuite) TestWithPackfile() {
 	packfileReader := bytes.NewReader(packfileContent)
 	packfileReadCloser := io.NopCloser(packfileReader)
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},
 	}
@@ -156,7 +156,7 @@ func (s *UpdReqEncodeSuite) TestPushAtomic() {
 	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	name := plumbing.ReferenceName("myref")
 
-	r := NewUpdateRequests()
+	r := &UpdateRequests{}
 	r.Capabilities.Set(capability.Atomic)
 	r.Commands = []*Command{
 		{Name: name, Old: hash1, New: hash2},

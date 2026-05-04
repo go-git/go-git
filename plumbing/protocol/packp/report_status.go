@@ -38,14 +38,10 @@ func (e CommandStatusErr) Error() string {
 
 // ReportStatus is a report status message, as used in the git-receive-pack
 // process whenever the 'report-status' capability is negotiated.
+// The zero value is safe to use.
 type ReportStatus struct {
 	UnpackStatus    string
 	CommandStatuses []*CommandStatus
-}
-
-// NewReportStatus creates a new ReportStatus message.
-func NewReportStatus() *ReportStatus {
-	return &ReportStatus{}
 }
 
 // Error returns the first error if any.

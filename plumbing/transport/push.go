@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -17,7 +17,7 @@ import (
 func SendPack(
 	ctx context.Context,
 	_ storage.Storer,
-	caps *capability.List,
+	caps capability.List,
 	writer io.WriteCloser,
 	reader io.ReadCloser,
 	req *PushRequest,
@@ -93,7 +93,7 @@ func SendPack(
 		}
 	}
 
-	report := packp.NewReportStatus()
+	report := &packp.ReportStatus{}
 	if err := report.Decode(r); err != nil {
 		return fmt.Errorf("decode report-status: %w", err)
 	}
@@ -121,30 +121,30 @@ func SendPack(
 	return reportError
 }
 
-func buildUpdateRequests(caps *capability.List, req *PushRequest) *packp.UpdateRequests {
-	upreq := packp.NewUpdateRequests()
+func buildUpdateRequests(caps capability.List, req *PushRequest) *packp.UpdateRequests {
+	upreq := &packp.UpdateRequests{}
 
 	if caps.Supports(capability.ReportStatus) {
-		_ = upreq.Capabilities.Set(capability.ReportStatus)
+		upreq.Capabilities.Set(capability.ReportStatus)
 	}
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			_ = upreq.Capabilities.Set(capability.Sideband64k)
+			upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			_ = upreq.Capabilities.Set(capability.Sideband)
+			upreq.Capabilities.Set(capability.Sideband)
 		}
 		if req.Quiet && caps.Supports(capability.Quiet) {
-			_ = upreq.Capabilities.Set(capability.Quiet)
+			upreq.Capabilities.Set(capability.Quiet)
 		}
 	}
 	if req.Atomic && caps.Supports(capability.Atomic) {
-		_ = upreq.Capabilities.Set(capability.Atomic)
+		upreq.Capabilities.Set(capability.Atomic)
 	}
 	if len(req.Options) > 0 && caps.Supports(capability.PushOptions) {
-		_ = upreq.Capabilities.Set(capability.PushOptions)
+		upreq.Capabilities.Set(capability.PushOptions)
 	}
 	if caps.Supports(capability.Agent) {
-		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	upreq.Commands = req.Commands

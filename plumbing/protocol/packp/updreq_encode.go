@@ -5,12 +5,12 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 // Encode writes the ReferenceUpdateRequest encoding to the stream.
 func (req *UpdateRequests) Encode(w io.Writer) error {
-	if err := req.validate(); err != nil {
+	if err := validateUpdateRequests(req); err != nil {
 		return err
 	}
 
@@ -18,7 +18,7 @@ func (req *UpdateRequests) Encode(w io.Writer) error {
 		return err
 	}
 
-	if err := req.encodeCommands(w, req.Commands, req.Capabilities); err != nil {
+	if err := req.encodeCommands(w, req.Commands, &req.Capabilities); err != nil {
 		return err
 	}
 

@@ -10,8 +10,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -84,7 +84,7 @@ func ReceivePack(
 		return nil
 	}
 
-	updreq := packp.NewUpdateRequests()
+	updreq := &packp.UpdateRequests{}
 	if err := updreq.Decode(rd); err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func closeWriter(w io.WriteCloser) error {
 }
 
 func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
-	rs := packp.NewReportStatus()
+	rs := &packp.ReportStatus{}
 	rs.UnpackStatus = "ok"
 	if unpackErr != nil {
 		rs.UnpackStatus = unpackErr.Error()

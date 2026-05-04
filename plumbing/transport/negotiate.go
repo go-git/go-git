@@ -10,8 +10,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
@@ -21,7 +21,7 @@ import (
 func NegotiatePack(
 	ctx context.Context,
 	st storage.Storer,
-	caps *capability.List,
+	caps capability.List,
 	statelessRPC bool,
 	reader io.Reader,
 	writer io.WriteCloser,
@@ -30,23 +30,23 @@ func NegotiatePack(
 	reader = ioutil.NewContextReader(ctx, reader)
 	writer = ioutil.NewContextWriteCloser(ctx, writer)
 
-	upreq := packp.NewUploadRequest()
+	upreq := &packp.UploadRequest{}
 	multiAck := caps.Supports(capability.MultiACK)
 	multiAckDetailed := caps.Supports(capability.MultiACKDetailed)
 	if multiAckDetailed {
-		_ = upreq.Capabilities.Set(capability.MultiACKDetailed)
+		upreq.Capabilities.Set(capability.MultiACKDetailed)
 	} else if multiAck {
-		_ = upreq.Capabilities.Set(capability.MultiACK)
+		upreq.Capabilities.Set(capability.MultiACK)
 	}
 
 	if req.Progress != nil {
 		if caps.Supports(capability.Sideband64k) {
-			_ = upreq.Capabilities.Set(capability.Sideband64k)
+			upreq.Capabilities.Set(capability.Sideband64k)
 		} else if caps.Supports(capability.Sideband) {
-			_ = upreq.Capabilities.Set(capability.Sideband)
+			upreq.Capabilities.Set(capability.Sideband)
 		}
 	} else if caps.Supports(capability.NoProgress) {
-		_ = upreq.Capabilities.Set(capability.NoProgress)
+		upreq.Capabilities.Set(capability.NoProgress)
 	}
 
 	if caps.Supports(capability.ObjectFormat) {
@@ -85,27 +85,25 @@ func NegotiatePack(
 			return nil, fmt.Errorf("mismatched algorithms: client %s; server %s", clientFormat, serverFormat)
 		}
 
-		_ = upreq.Capabilities.Set(capability.ObjectFormat, clientFormat.String())
+		upreq.Capabilities.Set(capability.ObjectFormat, clientFormat.String())
 	}
 
 	if caps.Supports(capability.OFSDelta) {
-		_ = upreq.Capabilities.Set(capability.OFSDelta)
+		upreq.Capabilities.Set(capability.OFSDelta)
 	}
 
 	if caps.Supports(capability.Agent) {
-		_ = upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
 	}
 
 	if req.IncludeTags && caps.Supports(capability.IncludeTag) {
-		_ = upreq.Capabilities.Set(capability.IncludeTag)
+		upreq.Capabilities.Set(capability.IncludeTag)
 	}
 
 	if req.Filter != "" {
 		if caps.Supports(capability.Filter) {
 			upreq.Filter = req.Filter
-			if err := upreq.Capabilities.Set(capability.Filter); err != nil {
-				return nil, err
-			}
+			upreq.Capabilities.Set(capability.Filter)
 		} else {
 			return nil, ErrFilterNotSupported
 		}
@@ -117,7 +115,7 @@ func NegotiatePack(
 		if !caps.Supports(capability.Shallow) {
 			return nil, ErrShallowNotSupported
 		}
-		upreq.Depth = packp.DepthCommits(req.Depth)
+		upreq.Depth = packp.DepthRequest{Deepen: req.Depth}
 		upreq.Shallows, err = st.Shallow()
 		if err != nil {
 			return nil, err

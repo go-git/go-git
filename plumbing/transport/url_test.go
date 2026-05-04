@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 func TestParseURL(t *testing.T) {
@@ -168,7 +168,7 @@ func TestParseURLFile(t *testing.T) {
 
 func TestFilterUnsupportedCapabilities(t *testing.T) {
 	t.Parallel()
-	l := capability.NewList()
+	l := &capability.List{}
 	l.Set(capability.MultiACK)
 	l.Set(capability.MultiACKDetailed)
 

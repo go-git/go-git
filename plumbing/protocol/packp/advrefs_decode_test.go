@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 type AdvRefsDecodeSuite struct {
@@ -26,14 +26,14 @@ func TestAdvRefsDecodeSuite(t *testing.T) {
 
 func (s *AdvRefsDecodeSuite) TestEmpty() {
 	var buf bytes.Buffer
-	ar := NewAdvRefs()
+	ar := &AdvRefs{}
 	s.Equal(ErrEmptyInput, ar.Decode(&buf))
 }
 
 func (s *AdvRefsDecodeSuite) TestEmptyFlush() {
 	var buf bytes.Buffer
 	pktline.WriteFlush(&buf)
-	ar := NewAdvRefs()
+	ar := &AdvRefs{}
 	s.Equal(ErrEmptyAdvRefs, ar.Decode(&buf))
 }
 
@@ -47,7 +47,7 @@ func (s *AdvRefsDecodeSuite) TestShortForHash() {
 }
 
 func (s *AdvRefsDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
-	ar := NewAdvRefs()
+	ar := &AdvRefs{}
 	err := ar.Decode(input)
 	s.Error(err)
 	if err != nil {
@@ -70,7 +70,8 @@ func (s *AdvRefsDecodeSuite) TestZeroId() {
 		"",
 	}
 	ar := s.testDecodeOK(payloads)
-	s.Nil(ar.Head)
+	_, err := ar.Head()
+	s.ErrorIs(plumbing.ErrReferenceNotFound, err)
 }
 
 func (s *AdvRefsDecodeSuite) testDecodeOK(payloads []string) *AdvRefs {
@@ -84,7 +85,7 @@ func (s *AdvRefsDecodeSuite) testDecodeOK(payloads []string) *AdvRefs {
 		}
 	}
 
-	ar := NewAdvRefs()
+	ar := &AdvRefs{}
 	s.Nil(ar.Decode(&buf))
 
 	return ar
@@ -114,8 +115,9 @@ func (s *AdvRefsDecodeSuite) TestHead() {
 		"",
 	}
 	ar := s.testDecodeOK(payloads)
-	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-		*ar.Head)
+	head, err := ar.Head()
+	s.NoError(err)
+	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), head.Hash())
 }
 
 func (s *AdvRefsDecodeSuite) TestFirstIsNotHead() {
@@ -124,9 +126,14 @@ func (s *AdvRefsDecodeSuite) TestFirstIsNotHead() {
 		"",
 	}
 	ar := s.testDecodeOK(payloads)
-	s.Nil(ar.Head)
+	_, err := ar.Head()
+	s.Equal(plumbing.ErrReferenceNotFound, err)
+	refs := make(map[string]plumbing.Hash)
+	for _, ref := range ar.References {
+		refs[ref.Name().String()] = ref.Hash()
+	}
 	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
-		ar.References["refs/heads/master"])
+		refs["refs/heads/master"])
 }
 
 func (s *AdvRefsDecodeSuite) TestShortRef() {
@@ -255,8 +262,10 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
 			"",
 		},
-		references: make(map[string]plumbing.Hash),
-		peeled:     make(map[string]plumbing.Hash),
+		references: map[string]plumbing.Hash{
+			"HEAD": plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		},
+		peeled: make(map[string]plumbing.Hash),
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
@@ -264,6 +273,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"",
 		},
 		references: map[string]plumbing.Hash{
+			"HEAD":    plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
 		},
 		peeled: make(map[string]plumbing.Hash),
@@ -274,6 +284,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"",
 		},
 		references: map[string]plumbing.Hash{
+			"HEAD":    plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
 		},
 		peeled: make(map[string]plumbing.Hash),
@@ -285,6 +296,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"",
 		},
 		references: map[string]plumbing.Hash{
+			"HEAD":    plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
 			"ref/bar": plumbing.NewHash("2222222222222222222222222222222222222222"),
 		},
@@ -295,7 +307,9 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"1111111111111111111111111111111111111111 ref/foo^{}\n",
 			"",
 		},
-		references: make(map[string]plumbing.Hash),
+		references: map[string]plumbing.Hash{
+			"HEAD": plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		},
 		peeled: map[string]plumbing.Hash{
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
 		},
@@ -307,6 +321,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"",
 		},
 		references: map[string]plumbing.Hash{
+			"HEAD":    plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 			"ref/foo": plumbing.NewHash("1111111111111111111111111111111111111111"),
 		},
 		peeled: map[string]plumbing.Hash{
@@ -327,6 +342,7 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 			"",
 		},
 		references: map[string]plumbing.Hash{
+			"HEAD":                   plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 			"refs/heads/master":      plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7"),
 			"refs/pull/10/head":      plumbing.NewHash("51b8b4fb32271d39fbdd760397406177b2b0fd36"),
 			"refs/pull/100/head":     plumbing.NewHash("02b5a6031ba7a8cbfde5d65ff9e13ecdbc4a92ca"),
@@ -342,8 +358,24 @@ func (s *AdvRefsDecodeSuite) TestOtherRefs() {
 	}} {
 		ar := s.testDecodeOK(test.input)
 		comment := fmt.Sprintf("input = %v\n", test.input)
-		s.Equal(test.references, ar.References, comment)
-		s.Equal(test.peeled, ar.Peeled, comment)
+
+		// Build refs map excluding peeled refs
+		refs := make(map[string]plumbing.Hash)
+		for _, ref := range ar.References {
+			if !ref.Name().IsPeeled() {
+				refs[ref.Name().String()] = ref.Hash()
+			}
+		}
+		s.Equal(test.references, refs, comment)
+
+		// Build peeled map
+		peeled := make(map[string]plumbing.Hash)
+		for _, ref := range ar.References {
+			if base, ok := strings.CutSuffix(ref.Name().String(), "^{}"); ok {
+				peeled[base] = ref.Hash()
+			}
+		}
+		s.Equal(test.peeled, peeled, comment)
 	}
 }
 
@@ -379,7 +411,7 @@ func (s *AdvRefsDecodeSuite) TestShallow() {
 			"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
 			"",
 		},
-		shallows: []plumbing.Hash{},
+		shallows: nil,
 	}, {
 		input: []string{
 			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:/refs/heads/master\n",
