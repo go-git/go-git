@@ -192,6 +192,17 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 			TargetType: plumbing.BlobObject,
 			Target:     plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
 		},
+		{
+			Name:       "signed",
+			Tagger:     Signature{Name: "Foo", Email: "foo@example.local", When: ts},
+			Message:    "Signed tag\n",
+			TargetType: plumbing.CommitObject,
+			Target:     plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45e"),
+			PGPSignature: "-----BEGIN PGP SIGNATURE-----\n" +
+				"\n" +
+				"inlineSig=\n" +
+				"-----END PGP SIGNATURE-----\n",
+		},
 	}
 	for _, tag := range tags {
 		obj := &plumbing.MemoryObject{}
@@ -202,6 +213,71 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent(c *C) {
 		c.Assert(err, IsNil)
 		tag.Hash = obj.Hash()
 		c.Assert(newTag, DeepEquals, tag)
+	}
+}
+
+func (s *TagSuite) TestTagDecodeSignatures(c *C) {
+	const (
+		target = "c029517f6300c2da0f4b651b8642506cd6aaf45e"
+		tagger = "Foo <foo@example.local> 1500000000 +0000"
+		inline = "-----BEGIN PGP SIGNATURE-----\n\ninlineline1\ninlineline2\n-----END PGP SIGNATURE-----\n"
+	)
+	headers := "object " + target + "\ntype commit\ntag t\ntagger " + tagger + "\n"
+	sha256Block := "gpgsig-sha256 -----BEGIN PGP SIGNATURE-----\n" +
+		" \n" +
+		" sha256line1\n" +
+		" sha256line2\n" +
+		" -----END PGP SIGNATURE-----\n"
+
+	tests := []struct {
+		name   string
+		raw    string
+		assert func(*Tag)
+	}{
+		{
+			name: "no signature",
+			raw:  headers + "\nplain tag message\n",
+			assert: func(t *Tag) {
+				c.Assert(t.PGPSignature, Equals, "")
+				c.Assert(t.Message, Equals, "plain tag message\n")
+			},
+		},
+		{
+			name: "inline trailing PGP signature",
+			raw:  headers + "\nTag body\n" + inline,
+			assert: func(t *Tag) {
+				c.Assert(t.Message, Equals, "Tag body\n")
+				c.Assert(t.PGPSignature, Equals, inline)
+			},
+		},
+		{
+			name: "gpgsig-sha256 header only (synthetic, no inline trailer)",
+			raw:  headers + sha256Block + "\nTag body, header sig only\n",
+			assert: func(t *Tag) {
+				c.Assert(t.Message, Equals, "Tag body, header sig only\n")
+				c.Assert(t.PGPSignature, Equals, "")
+			},
+		},
+		{
+			name: "compat-mode, primary SHA-1 (gpgsig-sha256 header + inline trailer)",
+			raw:  headers + sha256Block + "\nDual-signed tag body\n" + inline,
+			assert: func(t *Tag) {
+				c.Assert(t.Message, Equals, "Dual-signed tag body\n")
+				c.Assert(t.PGPSignature, Equals, inline)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.TagObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		tag := &Tag{}
+		c.Assert(tag.Decode(obj), IsNil)
+		tc.assert(tag)
 	}
 }
 

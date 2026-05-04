@@ -94,11 +94,23 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
+	var skipPGPSig256 bool
+
 	for {
 		var line []byte
 		line, err = r.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
+		}
+
+		if skipPGPSig256 {
+			if len(line) > 0 && line[0] == ' ' {
+				if err == io.EOF {
+					return nil
+				}
+				continue
+			}
+			skipPGPSig256 = false
 		}
 
 		line = bytes.TrimSpace(line)
@@ -107,18 +119,24 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 		}
 
 		split := bytes.SplitN(line, []byte{' '}, 2)
+		var value []byte
+		if len(split) == 2 {
+			value = split[1]
+		}
 		switch string(split[0]) {
 		case "object":
-			t.Target = plumbing.NewHash(string(split[1]))
+			t.Target = plumbing.NewHash(string(value))
 		case "type":
-			t.TargetType, err = plumbing.ParseObjectType(string(split[1]))
+			t.TargetType, err = plumbing.ParseObjectType(string(value))
 			if err != nil {
 				return err
 			}
 		case "tag":
-			t.Name = string(split[1])
+			t.Name = string(value)
 		case "tagger":
-			t.Tagger.Decode(split[1])
+			t.Tagger.Decode(value)
+		case headerpgp256:
+			skipPGPSig256 = true
 		}
 
 		if err == io.EOF {
@@ -175,11 +193,12 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	// Note that this is highly sensitive to what it sent along in the message.
-	// Message *always* needs to end with a newline, or else the message and the
-	// signature will be concatenated into a corrupt object. Since this is a
-	// lower-level method, we assume you know what you are doing and have already
-	// done the needful on the message in the caller.
+	// Note that this is highly sensitive to what is sent along in the
+	// message. Message *always* needs to end with a newline, or else the
+	// message and the trailing signature will be concatenated into a
+	// corrupt object. Since this is a lower-level method, we assume you
+	// know what you are doing and have already done the needful on the
+	// message in the caller.
 	if includeSig {
 		if _, err = fmt.Fprint(w, t.PGPSignature); err != nil {
 			return err
@@ -256,7 +275,8 @@ func (t *Tag) String() string {
 }
 
 // Verify performs PGP verification of the tag with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
+// keyring and returns openpgp.Entity associated with verifying key on
+// success.
 func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	keyRingReader := strings.NewReader(armoredKeyRing)
 	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
