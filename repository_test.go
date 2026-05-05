@@ -1509,6 +1509,100 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError() {
 	s.ErrorIs(err, ErrAlternatePathNotSupported)
 }
 
+func (s *RepositorySuite) TestPlainCloneReferenceRepo() {
+	dir := s.T().TempDir()
+	reference := s.GetBasicLocalRepositoryURL()
+
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:           s.GetBasicLocalRepositoryURL(),
+		ReferenceRepo: reference,
+	})
+	s.NoError(err)
+
+	altpath := path.Join(dir, GitDirName, "objects", "info", "alternates")
+	_, err = os.Stat(altpath)
+	s.NoError(err)
+
+	data, err := os.ReadFile(altpath)
+	s.NoError(err)
+
+	line := path.Join(reference, GitDirName, "objects") + "\n"
+	s.Equal(line, string(data))
+
+	cfg, err := r.Config()
+	s.NoError(err)
+	s.Len(cfg.Branches, 1)
+	s.Equal("master", cfg.Branches["master"].Name)
+}
+
+func (s *RepositorySuite) TestPlainCloneReferenceRepoBare() {
+	dir := s.T().TempDir()
+	reference := s.GetBasicLocalRepositoryURL()
+
+	_, err := PlainClone(dir, &CloneOptions{
+		URL:           s.GetBasicLocalRepositoryURL(),
+		ReferenceRepo: reference,
+		Bare:          true,
+	})
+	s.NoError(err)
+
+	altpath := path.Join(dir, "objects", "info", "alternates")
+	_, err = os.Stat(altpath)
+	s.NoError(err)
+
+	data, err := os.ReadFile(altpath)
+	s.NoError(err)
+
+	line := path.Join(reference, GitDirName, "objects") + "\n"
+	s.Equal(line, string(data))
+}
+
+func (s *RepositorySuite) TestPlainCloneReferenceRepoMissingShouldReturnError() {
+	dir := s.T().TempDir()
+
+	_, err := PlainClone(dir, &CloneOptions{
+		URL:           s.GetBasicLocalRepositoryURL(),
+		ReferenceRepo: filepath.Join(s.T().TempDir(), "does-not-exist"),
+	})
+	s.Error(err)
+}
+
+func (s *RepositorySuite) TestPlainCloneReferenceRepoHttpShouldReturnError() {
+	dir := s.T().TempDir()
+
+	_, err := PlainClone(dir, &CloneOptions{
+		URL:           s.GetBasicLocalRepositoryURL(),
+		ReferenceRepo: "http://somerepo",
+	})
+	s.ErrorIs(err, ErrAlternatePathNotSupported)
+}
+
+func (s *RepositorySuite) TestPlainCloneReferenceRepoIfAbleSkipsMissingRepository() {
+	dir := s.T().TempDir()
+
+	r, err := PlainClone(dir, &CloneOptions{
+		URL:                 s.GetBasicLocalRepositoryURL(),
+		ReferenceRepo:       filepath.Join(s.T().TempDir(), "does-not-exist"),
+		ReferenceRepoIfAble: true,
+	})
+	s.NoError(err)
+	s.NotNil(r)
+
+	altpath := path.Join(dir, GitDirName, "objects", "info", "alternates")
+	_, err = os.Stat(altpath)
+	s.ErrorIs(err, os.ErrNotExist)
+}
+
+func (s *RepositorySuite) TestPlainCloneReferenceRepoIfAbleReturnsErrorWhenRepositoryIsMissing() {
+	dir := s.T().TempDir()
+
+	_, err := PlainClone(dir, &CloneOptions{
+		URL:                 s.GetBasicLocalRepositoryURL(),
+		ReferenceRepoIfAble: true,
+	})
+	s.ErrorIs(err, ErrReferenceRepoNotProvided)
+}
+
 func (s *RepositorySuite) TestPlainCloneWithRemoteName() {
 	dir := s.T().TempDir()
 	r, err := PlainClone(dir, &CloneOptions{
