@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"bufio"
+	"container/list"
 	"crypto"
 	"fmt"
 	"io"
@@ -27,6 +28,64 @@ var (
 	ErrZLib = NewError("zlib reading error")
 )
 
+// deltaBaseCacheMemLimit and deltaBaseCacheObjLimit mirror the limits used by
+// libgit2 (pack.h: GIT_PACK_CACHE_MEMORY_LIMIT / GIT_PACK_CACHE_SIZE_LIMIT).
+const (
+	deltaBaseCacheMemLimit = 16 * 1024 * 1024 // 16 MiB total
+	deltaBaseCacheObjLimit = 1024 * 1024       // skip objects larger than 1 MiB
+)
+
+// deltaBaseCache is an LRU cache keyed by pack offset, used for delta base
+// resolution. Using offsets as keys avoids calling obj.Hash() (which triggers
+// a SHA recomputation) just to populate the cache. The cache is bounded by
+// total byte size, not entry count, matching libgit2's design.
+type deltaBaseCache struct {
+	memUsed int64
+	ll      *list.List
+	items   map[int64]*list.Element
+}
+
+type deltaCacheEntry struct {
+	offset int64
+	size   int64
+	obj    plumbing.EncodedObject
+}
+
+func newDeltaBaseCache() *deltaBaseCache {
+	return &deltaBaseCache{
+		ll:    list.New(),
+		items: make(map[int64]*list.Element),
+	}
+}
+
+func (c *deltaBaseCache) get(offset int64) (plumbing.EncodedObject, bool) {
+	if e, ok := c.items[offset]; ok {
+		c.ll.MoveToFront(e)
+		return e.Value.(*deltaCacheEntry).obj, true
+	}
+	return nil, false
+}
+
+func (c *deltaBaseCache) put(offset int64, obj plumbing.EncodedObject) {
+	if _, ok := c.items[offset]; ok {
+		return
+	}
+	sz := obj.Size()
+	if sz > deltaBaseCacheObjLimit {
+		return
+	}
+	e := c.ll.PushFront(&deltaCacheEntry{offset: offset, size: sz, obj: obj})
+	c.items[offset] = e
+	c.memUsed += sz
+	for c.memUsed > deltaBaseCacheMemLimit && c.ll.Len() > 0 {
+		back := c.ll.Back()
+		entry := back.Value.(*deltaCacheEntry)
+		c.memUsed -= entry.size
+		delete(c.items, entry.offset)
+		c.ll.Remove(back)
+	}
+}
+
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
@@ -34,8 +93,9 @@ type Packfile struct {
 	file    billy.File
 	scanner *Scanner
 
-	cache cache.Object
-	rbuf  *bufio.Reader
+	cache      cache.Object
+	deltaCache *deltaBaseCache
+	rbuf       *bufio.Reader
 
 	id           plumbing.Hash
 	m            sync.Mutex
@@ -174,7 +234,19 @@ func (p *Packfile) get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 		return nil, err
 	}
 
-	return p.objectFromHeader(oh)
+	obj, err := p.objectFromHeader(oh)
+	if err != nil {
+		return nil, err
+	}
+
+	// The hash is already known here; pre-set it so ObjectLRU.Put does not
+	// trigger a SHA recomputation on delta-reconstructed MemoryObjects.
+	if mo, ok := obj.(*plumbing.MemoryObject); ok {
+		mo.SetHash(h)
+	}
+	p.cache.Put(obj)
+
+	return obj, nil
 }
 
 // getByOffset is not threat-safe, and should only be called within packfile.go.
@@ -193,7 +265,19 @@ func (p *Packfile) getByOffset(offset int64) (plumbing.EncodedObject, error) {
 		return nil, err
 	}
 
-	return p.objectFromHeader(oh)
+	obj, err := p.objectFromHeader(oh)
+	if err != nil {
+		return nil, err
+	}
+
+	// The hash is already known here; pre-set it so ObjectLRU.Put does not
+	// trigger a SHA recomputation on delta-reconstructed MemoryObjects.
+	if mo, ok := obj.(*plumbing.MemoryObject); ok {
+		mo.SetHash(h)
+	}
+	p.cache.Put(obj)
+
+	return obj, nil
 }
 
 func (p *Packfile) init() error {
@@ -210,7 +294,7 @@ func (p *Packfile) init() error {
 
 		p.rbuf = gogitsync.GetBufioReader(nil)
 
-		opts := []ScannerOption{WithBufioReader(p.rbuf)}
+		opts := []ScannerOption{WithBufioReader(p.rbuf), WithoutPackChecksum(), WithoutObjectChecksum()}
 
 		if p.objectIDSize == format.SHA256Size {
 			opts = append(opts, WithSHA256())
@@ -238,6 +322,8 @@ func (p *Packfile) init() error {
 		if p.cache == nil {
 			p.cache = cache.NewObjectLRUDefault()
 		}
+
+		p.deltaCache = newDeltaBaseCache()
 	})
 
 	return p.onceErr
@@ -310,6 +396,13 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 	obj.SetSize(oh.Size)
 	obj.SetType(oh.Type)
 
+	// Pre-populate from the scanner-computed hash for non-delta objects.
+	// For delta objects the hash is unknown here; callers (get/getByOffset)
+	// set it after reconstruction using the index-provided hash.
+	if !oh.Hash.IsZero() {
+		obj.SetHash(oh.Hash)
+	}
+
 	w, err := obj.Writer()
 	if err != nil {
 		return nil, err
@@ -325,13 +418,21 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 
 		switch oh.Type {
 		case plumbing.REFDeltaObject:
+			// REFDelta bases are looked up by hash (already known from the pack
+			// stream), so the hash-keyed cache is appropriate here.
 			var ok bool
 			parent, ok = p.cache.Get(oh.Reference)
 			if !ok {
 				parent, err = p.get(oh.Reference)
 			}
 		case plumbing.OFSDeltaObject:
-			parent, err = p.getByOffset(oh.OffsetReference)
+			// OFSDelta bases are looked up by offset. Use the offset-keyed
+			// deltaCache to avoid triggering a SHA recomputation on the base.
+			var ok bool
+			parent, ok = p.deltaCache.get(oh.OffsetReference)
+			if !ok {
+				parent, err = p.getByOffset(oh.OffsetReference)
+			}
 		}
 
 		if err != nil {
@@ -358,7 +459,9 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 		return nil, err
 	}
 
-	p.cache.Put(obj)
+	// Store in the offset-keyed delta cache so that subsequent OFSDelta
+	// objects can use this as a base without triggering a SHA recomputation.
+	p.deltaCache.put(oh.Offset, obj)
 
 	return obj, nil
 }
