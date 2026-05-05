@@ -3094,6 +3094,29 @@ func (s *WorktreeSuite) TestRemoveGlobDirectory() {
 	s.True(os.IsNotExist(err))
 }
 
+func (s *WorktreeSuite) TestRemoveGlobExactDirectory() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	err = w.RemoveGlob("json")
+	s.NoError(err)
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.Len(status, 2)
+	s.Equal(Deleted, status.File("json/short.json").Staging)
+	s.Equal(Deleted, status.File("json/long.json").Staging)
+
+	_, err = w.Filesystem.Stat("json")
+	s.True(os.IsNotExist(err))
+}
+
 func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted() {
 	fs := memfs.New()
 	w := &Worktree{
