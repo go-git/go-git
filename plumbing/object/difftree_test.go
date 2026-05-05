@@ -30,6 +30,9 @@ func (s *DiffTreeSuite) SetupSuite() {
 	dotgit, err := s.Fixture.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() {
+		_ = sto.Close()
+	})
 	s.Storer = sto
 	s.cache = make(map[string]storer.EncodedObjectStorer)
 }

@@ -36,6 +36,7 @@ func main() {
 		},
 	})
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	Info("git rev-parse HEAD")
 

@@ -16,7 +16,7 @@ func main() {
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
 
-	_, err := git.PlainClone(directory, &git.CloneOptions{
+	r, err := git.PlainClone(directory, &git.CloneOptions{
 		URL:   url,
 		Depth: 1,
 
@@ -27,4 +27,5 @@ func main() {
 	})
 
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 }

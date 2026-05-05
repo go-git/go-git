@@ -36,11 +36,12 @@ func main() {
 
 	// Using PlainCloneContext we can provide to a context, if the context
 	// is cancelled, the clone operation stops gracefully.
-	_, err := git.PlainCloneContext(ctx, directory, &git.CloneOptions{
+	r, err := git.PlainCloneContext(ctx, directory, &git.CloneOptions{
 		URL:      url,
 		Progress: os.Stdout,
 	})
 
 	// If the context was cancelled, an error is returned.
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 }

@@ -22,7 +22,7 @@ type Storage struct {
 	dir    *dotgit.DotGit
 	hasher plumbing.Hasher
 
-	ObjectStorage
+	*ObjectStorage
 	ReferenceStorage
 	IndexStorage
 	ShallowStorage
@@ -123,7 +123,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		dir:    dir,
 		hasher: hasher,
 
-		ObjectStorage:    *NewObjectStorageWithOptions(dir, c, ops),
+		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
 		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir},

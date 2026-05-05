@@ -31,6 +31,9 @@ func (s *TagSuite) SetupSuite() {
 	tagsDotgit, err := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
 	s.Require().NoError(err)
 	storer := filesystem.NewStorage(tagsDotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() {
+		_ = storer.Close()
+	})
 	s.Storer = storer
 }
 

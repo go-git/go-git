@@ -31,6 +31,7 @@ func ExampleSigner() {
 	if err != nil {
 		panic(err)
 	}
+	defer func() { _ = repo.Close() }()
 	w, err := repo.Worktree()
 	if err != nil {
 		panic(err)

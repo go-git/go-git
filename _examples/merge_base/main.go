@@ -80,6 +80,7 @@ func main() {
 	// Open a git repository from current directory
 	repo, err := git.PlainOpen(path)
 	checkIfError(err, exitCodeCouldNotOpenRepository, "not in a git repository")
+	defer func() { _ = repo.Close() }()
 
 	// Get the hashes of the passed revisions
 	var hashes []*plumbing.Hash
