@@ -26,6 +26,7 @@ func TestCommitStatsSuite(t *testing.T) {
 
 func (s *CommitStatsSuite) TestStats() {
 	r, hash := s.writeHistory([]byte("foo\n"), []byte("foo\nbar\n"))
+	defer func() { _ = r.Close() }()
 
 	aCommit, err := r.CommitObject(hash)
 	s.NoError(err)
@@ -41,6 +42,7 @@ func (s *CommitStatsSuite) TestStats() {
 
 func (s *CommitStatsSuite) TestStats_RootCommit() {
 	r, hash := s.writeHistory([]byte("foo\n"))
+	defer func() { _ = r.Close() }()
 
 	aCommit, err := r.CommitObject(hash)
 	s.NoError(err)
@@ -57,6 +59,7 @@ func (s *CommitStatsSuite) TestStats_RootCommit() {
 
 func (s *CommitStatsSuite) TestStats_WithoutNewLine() {
 	r, hash := s.writeHistory([]byte("foo\nbar"), []byte("foo\nbar\n"))
+	defer func() { _ = r.Close() }()
 
 	aCommit, err := r.CommitObject(hash)
 	s.NoError(err)

@@ -17,6 +17,7 @@ func main() {
 	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	// Get HEAD reference to use for comparison later on.
 	ref, err := r.Head()

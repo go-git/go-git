@@ -5,13 +5,13 @@ import (
 	"io"
 	"log"
 	"testing"
+
+	"github.com/go-git/go-git/v6/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
 	defer SetLogger(newLogger())
-	if code := m.Run(); code != 0 {
-		panic(code)
-	}
+	testutil.RunWithLeakCheck(m)
 }
 
 func setUpTest(t testing.TB, buf *bytes.Buffer) {

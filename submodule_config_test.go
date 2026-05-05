@@ -19,6 +19,7 @@ func TestSubmoduleRepositoryConfigIsIndependentFromParent(t *testing.T) {
 		t.Parallel()
 
 		r, wt := cloneFixture(t, f)
+		defer func() { _ = r.Close() }()
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
@@ -46,7 +47,8 @@ func TestSubmoduleRepositoryConfigPersistsObjectFormatOnReopen(t *testing.T) {
 	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		_, wt := cloneFixture(t, f)
+		r, wt := cloneFixture(t, f)
+		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Init())
@@ -76,6 +78,7 @@ func TestSubmoduleRepositoryCreateRemoteWritesModuleConfig(t *testing.T) {
 		t.Parallel()
 
 		r, wt := cloneFixture(t, f)
+		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 		require.NoError(t, sm.Init())

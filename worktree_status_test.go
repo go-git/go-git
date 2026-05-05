@@ -29,6 +29,7 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	r, err := Init(s, WithWorkTree(w))
 	require.NoError(t, err)
 	require.NotNil(t, r)
+	defer func() { _ = r.Close() }()
 
 	wt, err := r.Worktree()
 	require.NoError(t, err)
@@ -106,6 +107,7 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	repoDir := filepath.Join(t.TempDir(), "repo")
 	repo, err := PlainInit(repoDir, false)
 	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
 
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
@@ -160,6 +162,7 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 
 	r, err := Open(st, memfs.New())
 	require.NoError(b, err)
+	defer func() { _ = r.Close() }()
 
 	wt, err := r.Worktree()
 	require.NoError(b, err)

@@ -30,6 +30,9 @@ func (s *BaseObjectsSuite) SetupSuite(t *testing.T) {
 	dotgit, err := s.Fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	t.Cleanup(func() {
+		_ = storer.Close()
+	})
 	s.Storer = storer
 	s.t = t
 }

@@ -22,6 +22,7 @@ func main() {
 		URL: url,
 	})
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	// ... retrieving the commit being pointed by HEAD
 	Info("git show-ref --head HEAD")

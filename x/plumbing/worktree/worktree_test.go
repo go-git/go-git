@@ -145,11 +145,14 @@ func TestAdd(t *testing.T) {
 				})
 				checkFiles(t, expected, storage, wt, name)
 
-				w, err := New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
+				st := filesystem.NewStorage(storage, cache.NewObjectLRUDefault())
+				defer func() { _ = st.Close() }()
+				w, err := New(st)
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
 				require.NoError(t, err)
+				defer func() { _ = repo.Close() }()
 
 				// Verify HEAD points to the commit (detached).
 				head, err := repo.Head()
@@ -171,11 +174,14 @@ func TestAdd(t *testing.T) {
 			name:    "branch-worktree",
 			wantErr: false,
 			checkFiles: func(t *testing.T, storage, wt billy.Filesystem, _ string) {
-				w, err := New(filesystem.NewStorage(storage, cache.NewObjectLRUDefault()))
+				st := filesystem.NewStorage(storage, cache.NewObjectLRUDefault())
+				defer func() { _ = st.Close() }()
+				w, err := New(st)
 				require.NoError(t, err)
 
 				repo, err := w.Open(wt)
 				require.NoError(t, err)
+				defer func() { _ = repo.Close() }()
 
 				// Verify HEAD points to the branch.
 				head, err := repo.Head()
@@ -216,6 +222,7 @@ func TestAdd(t *testing.T) {
 			t.Parallel()
 
 			storer := tt.setupStorer()
+			defer func() { _ = storer.Close() }()
 			wt := tt.setupWorktree()
 
 			w, err := New(storer)
@@ -277,6 +284,7 @@ func checkWorktree(t *testing.T, storage, wt billy.Filesystem, path string) {
 		cache.NewObjectLRUDefault())
 	r, err := git.Open(stor, wt)
 	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	require.NoError(t, err)
@@ -460,6 +468,7 @@ func TestRemove(t *testing.T) {
 			t.Parallel()
 
 			storer := tt.setupStorer()
+			defer func() { _ = storer.Close() }()
 			w, err := New(storer)
 			require.NoError(t, err, "Unable to create worktree")
 
@@ -593,6 +602,7 @@ func TestList(t *testing.T) {
 			t.Parallel()
 
 			storer := tt.setup()
+			defer func() { _ = storer.Close() }()
 			w, err := New(storer)
 			require.NoError(t, err)
 
@@ -756,6 +766,7 @@ func TestOpen(t *testing.T) {
 
 				r, err := w.Open(wtFS1)
 				require.NoError(t, err)
+				defer func() { _ = r.Close() }()
 
 				wt, err := r.Worktree()
 				require.NoError(t, err)
@@ -793,6 +804,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			storer, wtFS := tt.setup()
+			defer func() { _ = storer.Close() }()
 			w, err := New(storer)
 			require.NoError(t, err)
 
@@ -806,6 +818,7 @@ func TestOpen(t *testing.T) {
 			}
 
 			require.NoError(t, err, "Open() should not return an error")
+			defer func() { _ = repo.Close() }()
 
 			if tt.checkRepo != nil {
 				tt.checkRepo(t, repo, wtFS)
@@ -852,6 +865,7 @@ func TestInit(t *testing.T) {
 
 				repo, err := w.Open(wt)
 				require.NoError(t, err)
+				defer func() { _ = repo.Close() }()
 				require.NotNil(t, repo)
 
 				fi, err := wt.Stat(".git")
@@ -885,6 +899,7 @@ func TestInit(t *testing.T) {
 
 				repo, err := w.Open(wt)
 				require.NoError(t, err)
+				defer func() { _ = repo.Close() }()
 				require.NotNil(t, repo)
 
 				fi, err := wt.Stat(".git")
@@ -922,6 +937,7 @@ func TestInit(t *testing.T) {
 
 				repo, err := w.Open(wt)
 				require.NoError(t, err)
+				defer func() { _ = repo.Close() }()
 				require.NotNil(t, repo)
 
 				fi, err := wt.Stat(".git")
@@ -980,6 +996,7 @@ func TestInit(t *testing.T) {
 
 				repo, err := w.Open(wt)
 				require.NoError(t, err)
+				defer func() { _ = repo.Close() }()
 
 				head, err := repo.Head()
 				require.NoError(t, err)
@@ -1000,6 +1017,7 @@ func TestInit(t *testing.T) {
 			t.Parallel()
 
 			storer, name := tt.setup()
+			defer func() { _ = storer.Close() }()
 			w, err := New(storer)
 			require.NoError(t, err)
 
@@ -1030,6 +1048,7 @@ func TestWorktreeIsolation(t *testing.T) {
 
 	mainRepo, err := git.PlainInit(mainRepoDir, false)
 	require.NoError(t, err)
+	defer func() { _ = mainRepo.Close() }()
 
 	mainWt, err := mainRepo.Worktree()
 	require.NoError(t, err)
@@ -1053,6 +1072,7 @@ func TestWorktreeIsolation(t *testing.T) {
 	remoteDir := t.TempDir()
 	remoteRepo, err := git.PlainInit(remoteDir, true)
 	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
 
 	_, err = mainRepo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
@@ -1078,6 +1098,7 @@ func TestWorktreeIsolation(t *testing.T) {
 
 	wtRepo, err := w.Open(worktreeFS)
 	require.NoError(t, err)
+	defer func() { _ = wtRepo.Close() }()
 
 	wtWorkTree, err := wtRepo.Worktree()
 	require.NoError(t, err)
@@ -1158,6 +1179,7 @@ func TestWorktreeConfig(t *testing.T) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 
 		cfg, err := storer.Config()
 		require.NoError(t, err)
@@ -1180,6 +1202,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repo, err := w.Open(wtFS)
 		require.NoError(t, err)
+		defer func() { _ = repo.Close() }()
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
@@ -1194,6 +1217,7 @@ func TestWorktreeConfig(t *testing.T) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 
 		cfg, err := storer.Config()
 		require.NoError(t, err)
@@ -1211,6 +1235,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repo, err := w.Open(wtFS)
 		require.NoError(t, err)
+		defer func() { _ = repo.Close() }()
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
@@ -1223,6 +1248,7 @@ func TestWorktreeConfig(t *testing.T) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 
 		w, err := New(storer)
 		require.NoError(t, err)
@@ -1238,6 +1264,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repo, err := w.Open(wtFS)
 		require.NoError(t, err)
+		defer func() { _ = repo.Close() }()
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
@@ -1250,6 +1277,7 @@ func TestWorktreeConfig(t *testing.T) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
 		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 
 		cfg, err := storer.Config()
 		require.NoError(t, err)
@@ -1271,6 +1299,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repo, err := w.Open(wtFS)
 		require.NoError(t, err)
+		defer func() { _ = repo.Close() }()
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
@@ -1300,6 +1329,7 @@ func FuzzAdd(f *testing.F) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 		w, err := New(storer)
 		require.NoError(t, err, "failed to create worktree manager")
 		require.NotNil(t, w)
@@ -1329,6 +1359,7 @@ func FuzzOpen(f *testing.F) {
 		fs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 		require.NoError(t, err)
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+		defer func() { _ = storer.Close() }()
 		w, err := New(storer)
 		require.NoError(t, err, "failed to create worktree manager")
 		require.NotNil(t, w)
@@ -1338,6 +1369,9 @@ func FuzzOpen(f *testing.F) {
 		require.NoError(t, err, "failed to write .git file")
 
 		repo, err := w.Open(wtFS)
+		if repo != nil {
+			defer func() { _ = repo.Close() }()
+		}
 
 		if err == nil && repo == nil {
 			assert.Fail(t, "invalid state: repository and error is nil")
@@ -1349,6 +1383,7 @@ func ExampleWorktree_Open() {
 	// Setup repository storage pointing to existing dotgit.
 	fs := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	defer func() { _ = storer.Close() }()
 	w, err := New(storer)
 	if err != nil {
 		panic(err)
@@ -1371,6 +1406,7 @@ func ExampleWorktree_Open() {
 	if err != nil {
 		panic(err)
 	}
+	defer func() { _ = r.Close() }()
 
 	_, _ = r.Head()
 
@@ -1381,6 +1417,7 @@ func ExampleWorktree_Remove() {
 	// Setup repository storage pointing to existing dotgit.
 	fs := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	defer func() { _ = storer.Close() }()
 	w, err := New(storer)
 	if err != nil {
 		panic(err)
@@ -1399,6 +1436,7 @@ func ExampleWorktree_Init() {
 	// Setup repository storage on osfs pointing to existing dotgit.
 	storerFS := osfs.New("/path/to/repo/.git")
 	storer := filesystem.NewStorage(storerFS, cache.NewObjectLRUDefault())
+	defer func() { _ = storer.Close() }()
 	w, err := New(storer)
 	if err != nil {
 		panic(err)
@@ -1418,6 +1456,7 @@ func ExampleWorktree_Init() {
 	if err != nil {
 		panic(err)
 	}
+	defer func() { _ = r.Close() }()
 
 	// The worktree is now connected and can be used.
 	_, _ = r.Head()
