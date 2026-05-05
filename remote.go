@@ -411,6 +411,9 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	isWildcard := true
 	for _, s := range o.RefSpecs {
+		if s.IsNegative() {
+			continue
+		}
 		if !s.IsWildcard() {
 			isWildcard = false
 			break
@@ -552,6 +555,9 @@ func newClient(rawURL string, opts []client.Option) (*client.Client, *transport.
 func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer) (bool, error) {
 	var updatedPrune bool
 	for _, spec := range specs {
+		if spec.IsNegative() {
+			continue
+		}
 		rev := spec.Reverse()
 		for _, ref := range localRefs {
 			if !rev.Match(ref.Name()) {
@@ -908,14 +914,49 @@ func calculateRefs(
 		spec = append(spec, refspecAllTags)
 	}
 
+	var negSpecs []config.RefSpec
 	refs := make(memory.ReferenceStorage)
 	// list of references matched for each spec
 	specToRefs := make([][]*plumbing.Reference, len(spec))
 	for i := range spec {
+		if spec[i].IsNegative() {
+			negSpecs = append(negSpecs, spec[i])
+			continue
+		}
 		var err error
 		specToRefs[i], err = doCalculateRefs(spec[i], remoteRefs, refs)
 		if err != nil {
 			return nil, nil, err
+		}
+	}
+
+	if len(negSpecs) > 0 {
+		for i, refList := range specToRefs {
+			if spec[i].IsNegative() {
+				continue
+			}
+			filtered := refList[:0]
+			for _, ref := range refList {
+				excluded := false
+				for _, neg := range negSpecs {
+					if neg.MatchNegative(ref.Name()) {
+						excluded = true
+						break
+					}
+				}
+				if !excluded {
+					filtered = append(filtered, ref)
+				}
+			}
+			specToRefs[i] = filtered
+		}
+		for name, ref := range refs {
+			for _, neg := range negSpecs {
+				if neg.MatchNegative(ref.Name()) {
+					delete(refs, name)
+					break
+				}
+			}
 		}
 	}
 
@@ -1125,6 +1166,9 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, sha
 func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List) error {
 	var containsIsExact bool
 	for _, ref := range refs {
+		if ref.IsNegative() {
+			continue
+		}
 		if ref.IsExactSHA1() {
 			containsIsExact = true
 		}
@@ -1155,6 +1199,9 @@ func (r *Remote) updateLocalReferenceStorage(
 	shallows, _ := r.s.Shallow()
 
 	for i, spec := range specs {
+		if spec.IsNegative() {
+			continue
+		}
 		if !spec.IsWildcard() {
 			isWildcard = false
 		}

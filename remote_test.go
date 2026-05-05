@@ -66,7 +66,7 @@ func (s *RemoteSuite) TestFetchOverriddenEndpoint() {
 
 func (s *RemoteSuite) TestFetchInvalidFetchOptions() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
-	invalid := config.RefSpec("^*$ñ")
+	invalid := config.RefSpec("*$ñ")
 	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{invalid}})
 	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
 }
@@ -1314,7 +1314,7 @@ func (s *RemoteSuite) TestPushInvalidSchemaEndpoint() {
 
 func (s *RemoteSuite) TestPushInvalidFetchOptions() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
-	invalid := config.RefSpec("^*$ñ")
+	invalid := config.RefSpec("*$ñ")
 	err := r.Push(&PushOptions{RefSpecs: []config.RefSpec{invalid}})
 	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
 }
@@ -1325,7 +1325,7 @@ func (s *RemoteSuite) TestPushInvalidRefSpec() {
 		URLs: []string{"some-url"},
 	})
 
-	rs := config.RefSpec("^*$**")
+	rs := config.RefSpec("*$**")
 	err := r.Push(&PushOptions{
 		RefSpecs: []config.RefSpec{rs},
 	})
