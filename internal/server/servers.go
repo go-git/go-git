@@ -3,6 +3,7 @@ package server
 import (
 	"io"
 
+	"github.com/go-git/go-git/v6/internal/server/git"
 	"github.com/go-git/go-git/v6/internal/server/http"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -19,6 +20,7 @@ func All(l transport.Loader) []GitServer {
 	if srv, err := http.FromLoader(l); err == nil {
 		servers = append(servers, srv)
 	}
+	servers = append(servers, git.FromLoader(l))
 
 	return servers
 }

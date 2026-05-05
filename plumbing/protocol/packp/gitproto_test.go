@@ -37,9 +37,7 @@ func TestEncodeGitProtoRequest(t *testing.T) {
 func TestEncodeInvalidGitProtoRequest(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	p := GitProtoRequest{
-		RequestCommand: "command",
-	}
+	p := GitProtoRequest{}
 	err := p.Encode(&buf)
 	if err == nil {
 		t.Fatal("expected error")
