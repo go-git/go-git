@@ -4055,3 +4055,100 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 	})
 }
+
+func TestPrefetchBlobsCollectsMissingBlobs(t *testing.T) {
+	t.Parallel()
+
+	// Set up a repo with a commit containing a blob.
+	fs := memfs.New()
+	sto := memory.NewStorage()
+	r, err := Init(sto, WithWorkTree(fs))
+	require.NoError(t, err)
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	// Create a file and commit it.
+	require.NoError(t, util.WriteFile(fs, "test.txt", []byte("hello"), 0o644))
+	_, err = w.Add("test.txt")
+	require.NoError(t, err)
+	commitHash, err := w.Commit("initial", defaultTestCommitOptions())
+	require.NoError(t, err)
+
+	commit, err := r.CommitObject(commitHash)
+	require.NoError(t, err)
+	tree, err := commit.Tree()
+	require.NoError(t, err)
+
+	// Get the blob hash.
+	entry, err := tree.FindEntry("test.txt")
+	require.NoError(t, err)
+	blobHash := entry.Hash
+
+	// Wrap the storer with a mock fetcher and remove the worktree file
+	// so that diffStagingWithWorktree produces an Insert change.
+	require.NoError(t, fs.Remove("test.txt"))
+
+	fetcher := &prefetchTestFetcher{}
+	ps := newPromiserStorer(sto, fetcher)
+	r.Storer = ps
+
+	changes, err := w.diffStagingWithWorktree(true, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, changes, "should detect missing worktree file")
+
+	// Blob exists in the inner storer → prefetch should skip it.
+	w.prefetchBlobs(changes, tree, nil, nil)
+	assert.Equal(t, 0, fetcher.calls, "should not fetch blobs that already exist")
+
+	// Now use a storer that lacks the blob to simulate partial clone.
+	sto2 := memory.NewStorage()
+	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	defer iter.Close()
+	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+		if obj.Hash() == blobHash {
+			return nil // skip the blob
+		}
+		_, err := sto2.SetEncodedObject(obj)
+		return err
+	})
+	require.NoError(t, err)
+	// Copy refs so the worktree diff still works.
+	refIter, err := sto.IterReferences()
+	require.NoError(t, err)
+	defer refIter.Close()
+	err = refIter.ForEach(func(ref *plumbing.Reference) error {
+		return sto2.SetReference(ref)
+	})
+	require.NoError(t, err)
+	// Copy index.
+	idx, err := sto.Index()
+	require.NoError(t, err)
+	require.NoError(t, sto2.SetIndex(idx))
+
+	fetcher2 := &prefetchTestFetcher{}
+	ps2 := newPromiserStorer(sto2, fetcher2)
+	r.Storer = ps2
+
+	changes2, err := w.diffStagingWithWorktree(true, false)
+	require.NoError(t, err)
+
+	w.prefetchBlobs(changes2, tree, nil, nil)
+	assert.Equal(t, 1, fetcher2.calls, "should batch-fetch missing blobs once")
+	if len(fetcher2.hashes) > 0 {
+		assert.Contains(t, fetcher2.hashes[0], blobHash)
+	}
+}
+
+// prefetchTestFetcher records FetchObjects calls for testing.
+type prefetchTestFetcher struct {
+	calls  int
+	hashes [][]plumbing.Hash
+}
+
+func (f *prefetchTestFetcher) FetchObjects(_ context.Context, hashes []plumbing.Hash) error {
+	f.calls++
+	f.hashes = append(f.hashes, hashes)
+	return nil
+}

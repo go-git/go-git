@@ -330,6 +330,82 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 	}
 }
 
+func TestPackWriterPromisor(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	fs := osfs.New(t.TempDir())
+	dot := New(fs)
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+	w.Promisor = true
+
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	_, err = io.Copy(w, pf)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	promisorPath := fmt.Sprintf("objects/pack/pack-%s.promisor", f.PackfileHash)
+	stat, err := fs.Stat(promisorPath)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), stat.Size())
+}
+
+func TestPackWriterPromisorExistingPack(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	fs := osfs.New(t.TempDir())
+	dot := New(fs)
+
+	writePack := func(promisor bool) {
+		w, err := dot.NewObjectPack()
+		require.NoError(t, err)
+		w.Promisor = promisor
+
+		pf, pfErr := f.Packfile()
+		require.NoError(t, pfErr)
+		_, err = io.Copy(w, pf)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+	}
+
+	promisorPath := fmt.Sprintf("objects/pack/pack-%s.promisor", f.PackfileHash)
+
+	writePack(false)
+	_, err := fs.Stat(promisorPath)
+	assert.True(t, os.IsNotExist(err), ".promisor file should not exist after the first non-promisor write")
+
+	writePack(true)
+	stat, err := fs.Stat(promisorPath)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), stat.Size())
+}
+
+func TestPackWriterNoPromisor(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	fs := osfs.New(t.TempDir())
+	dot := New(fs)
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+	// Promisor is false by default
+
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	_, err = io.Copy(w, pf)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	promisorPath := fmt.Sprintf("objects/pack/pack-%s.promisor", f.PackfileHash)
+	_, err = fs.Stat(promisorPath)
+	assert.True(t, os.IsNotExist(err), ".promisor file should not exist when Promisor is false")
+}
+
 func TestObjectWriterPermissions(t *testing.T) {
 	t.Parallel()
 

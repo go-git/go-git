@@ -323,6 +323,133 @@ func TestMarshalExtensions(t *testing.T) {
 	}
 }
 
+func TestMarshalExtensionsPartialClone(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PartialClone writes section when V1", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Core.RepositoryFormatVersion = config.Version1
+		cfg.Extensions.PartialClone = "origin"
+
+		out, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		s := string(out)
+		assert.Contains(t, s, "[extensions]")
+		assert.Contains(t, s, "partialClone = origin")
+	})
+
+	t.Run("PartialClone ignored when V0", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Core.RepositoryFormatVersion = config.Version0
+		cfg.Extensions.PartialClone = "origin"
+
+		out, err := cfg.Marshal()
+		require.NoError(t, err)
+		assert.NotContains(t, string(out), "[extensions]")
+	})
+
+	t.Run("PartialClone round-trips", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[core]
+	repositoryformatversion = 1
+[extensions]
+	partialClone = origin
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+		assert.Equal(t, "origin", cfg.Extensions.PartialClone)
+
+		out, err := cfg.Marshal()
+		require.NoError(t, err)
+		assert.Contains(t, string(out), "partialClone = origin")
+	})
+}
+
+func TestRemoteConfigPromisor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unmarshal promisor and partialclonefilter", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[remote "origin"]
+	url = https://github.com/go-git/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	promisor = true
+	partialclonefilter = blob:none
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		remote := cfg.Remotes["origin"]
+		require.NotNil(t, remote)
+		assert.True(t, remote.Promisor)
+		assert.Equal(t, "blob:none", remote.PartialCloneFilter)
+	})
+
+	t.Run("marshal promisor and partialclonefilter", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Remotes["origin"] = &RemoteConfig{
+			Name:               "origin",
+			URLs:               []string{"https://github.com/go-git/go-git.git"},
+			Promisor:           true,
+			PartialCloneFilter: "blob:none",
+		}
+
+		out, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		s := string(out)
+		assert.Contains(t, s, "promisor = true")
+		assert.Contains(t, s, "partialCloneFilter = blob:none")
+	})
+
+	t.Run("round-trip preserves promisor fields", func(t *testing.T) {
+		t.Parallel()
+		input := []byte(`[core]
+	repositoryformatversion = 1
+[remote "origin"]
+	url = https://github.com/go-git/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	promisor = true
+	partialclonefilter = blob:none
+`)
+		cfg := NewConfig()
+		err := cfg.Unmarshal(input)
+		require.NoError(t, err)
+
+		out, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		cfg2 := NewConfig()
+		err = cfg2.Unmarshal(out)
+		require.NoError(t, err)
+
+		remote := cfg2.Remotes["origin"]
+		require.NotNil(t, remote)
+		assert.True(t, remote.Promisor)
+		assert.Equal(t, "blob:none", remote.PartialCloneFilter)
+	})
+
+	t.Run("promisor false is not written", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Remotes["origin"] = &RemoteConfig{
+			Name: "origin",
+			URLs: []string{"https://github.com/go-git/go-git.git"},
+		}
+
+		out, err := cfg.Marshal()
+		require.NoError(t, err)
+		assert.NotContains(t, string(out), "promisor")
+		assert.NotContains(t, string(out), "partialclonefilter")
+	})
+}
+
 func (s *ConfigSuite) TestLoadConfigXDG() {
 	cfg := NewConfig()
 	cfg.User.Name = "foo"
@@ -812,6 +939,7 @@ func TestMerge(t *testing.T) {
 					Extensions: struct {
 						ObjectFormat   config.ObjectFormat
 						WorktreeConfig bool
+						PartialClone   string
 					}{
 						ObjectFormat:   config.SHA256,
 						WorktreeConfig: true,
@@ -826,6 +954,7 @@ func TestMerge(t *testing.T) {
 				Extensions: struct {
 					ObjectFormat   config.ObjectFormat
 					WorktreeConfig bool
+					PartialClone   string
 				}{
 					ObjectFormat:   config.SHA256,
 					WorktreeConfig: true,

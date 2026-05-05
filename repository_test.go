@@ -1815,10 +1815,21 @@ func (s *RepositorySuite) TestFetchWithFiltersReal() {
 	err = r.Fetch(&FetchOptions{
 		Filter: packp.FilterBlobNone(),
 	})
-	s.NoError(err)
+	s.Require().NoError(err)
+
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	rc := cfg.Remotes[DefaultRemoteName]
+	s.Require().NotNil(rc)
+	s.True(rc.Promisor)
+	s.Equal("blob:none", rc.PartialCloneFilter)
+
+	_, ok := getPromiserStorer(r.Storer)
+	s.True(ok, "storer should be wrapped as promiserStorer after filtered fetch")
+
 	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
-	s.NotNil(err)
-	s.Nil(blob)
+	s.NoError(err)
+	s.NotNil(blob)
 }
 
 func (s *RepositorySuite) TestCloneWithProgress() {
@@ -2174,9 +2185,106 @@ func (s *RepositorySuite) TestCloneWithFilter() {
 		Filter: packp.FilterTreeDepth(0),
 	})
 	s.Require().NoError(err)
+
+	// With the promiserStorer wrapper, on-demand fetch retrieves the
+	// blob from the promisor remote transparently.
 	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
-	s.Require().Error(err)
-	s.Nil(blob)
+	s.Require().NoError(err)
+	s.NotNil(blob)
+}
+
+func (s *RepositorySuite) TestCloneWithFilterBlobNone_Config() {
+	r, _ := Init(memory.NewStorage())
+
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:    "https://github.com/git-fixtures/basic.git",
+		Filter: packp.FilterBlobNone(),
+	})
+	s.Require().NoError(err)
+
+	// Verify config was persisted correctly.
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	s.Equal(
+		formatcfg.RepositoryFormatVersion(formatcfg.Version1),
+		cfg.Core.RepositoryFormatVersion,
+		"repositoryformatversion should be 1",
+	)
+
+	rc := cfg.Remotes["origin"]
+	s.Require().NotNil(rc)
+	s.True(rc.Promisor, "remote.origin.promisor should be true")
+	s.Equal("blob:none", rc.PartialCloneFilter)
+
+	// Storer should be wrapped with promiserStorer.
+	_, ok := r.Storer.(*promiserStorer)
+	s.True(ok, "storer should be wrapped as promiserStorer after filtered clone")
+}
+
+func (s *RepositorySuite) TestCloneWithFilterBlobNone_OnDemandFetch() {
+	r, _ := Init(memory.NewStorage())
+
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:    "https://github.com/git-fixtures/basic.git",
+		Filter: packp.FilterBlobNone(),
+	})
+	s.Require().NoError(err)
+
+	// A blob that was excluded by the filter should be fetchable on demand.
+	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
+	s.Require().NoError(err)
+	s.NotNil(blob)
+
+	reader, err := blob.Reader()
+	s.Require().NoError(err)
+	defer reader.Close()
+
+	content, err := io.ReadAll(reader)
+	s.Require().NoError(err)
+	s.NotEmpty(content, "blob content should not be empty")
+}
+
+func (s *RepositorySuite) TestCloneWithFilterBlobNone_DepthAndSparse() {
+	fs := memfs.New()
+	r, _ := Init(memory.NewStorage(), WithWorkTree(fs))
+
+	err := r.clone(context.Background(), &CloneOptions{
+		URL:        "https://github.com/git-fixtures/basic.git",
+		Filter:     packp.FilterBlobNone(),
+		Depth:      1,
+		NoCheckout: true,
+	})
+	s.Require().NoError(err)
+
+	// Verify partial clone config.
+	cfg, err := r.Config()
+	s.Require().NoError(err)
+	s.True(cfg.Remotes["origin"].Promisor)
+	s.Equal("blob:none", cfg.Remotes["origin"].PartialCloneFilter)
+
+	// Sparse checkout: only the "json" directory.
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+	err = w.Checkout(&CheckoutOptions{
+		Branch:                    "refs/heads/master",
+		SparseCheckoutDirectories: []string{"json"},
+	})
+	s.Require().NoError(err)
+
+	// Verify only the json directory was checked out.
+	fis, err := fs.ReadDir(".")
+	s.Require().NoError(err)
+	s.Require().NotEmpty(fis)
+
+	for _, fi := range fis {
+		s.True(fi.IsDir(), "expected only directories at root")
+		s.Equal("json", fi.Name(), "only json/ should be checked out")
+	}
+
+	// Verify a file inside the sparse directory exists and has content.
+	jsonDir, err := fs.ReadDir("json")
+	s.Require().NoError(err)
+	s.NotEmpty(jsonDir, "json/ should contain files")
 }
 
 func (s *RepositorySuite) TestPush() {
@@ -4075,4 +4183,81 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 			}
 		})
 	}
+}
+
+func TestSavePartialCloneConfig(t *testing.T) {
+	t.Parallel()
+
+	sto := memory.NewStorage()
+	r, err := Init(sto, nil)
+	require.NoError(t, err)
+
+	// Create a remote so savePartialCloneConfig can find it.
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"https://github.com/go-git/go-git.git"},
+	})
+	require.NoError(t, err)
+
+	err = r.savePartialCloneConfig("origin", packp.FilterBlobNone())
+	require.NoError(t, err)
+
+	cfg, err := r.Config()
+	require.NoError(t, err)
+
+	assert.Equal(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+
+	rc := cfg.Remotes["origin"]
+	require.NotNil(t, rc)
+	assert.True(t, rc.Promisor)
+	assert.Equal(t, "blob:none", rc.PartialCloneFilter)
+}
+
+func TestSavePartialCloneConfig_RemoteNotFound(t *testing.T) {
+	t.Parallel()
+
+	sto := memory.NewStorage()
+	r, err := Init(sto, nil)
+	require.NoError(t, err)
+
+	err = r.savePartialCloneConfig("nonexistent", packp.FilterBlobNone())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestUpdateRemoteConfigIfNeededPreservesPartialCloneConfig(t *testing.T) {
+	t.Parallel()
+
+	sto := memory.NewStorage()
+	r, err := Init(sto, nil)
+	require.NoError(t, err)
+
+	_, err = r.CreateRemote(&config.RemoteConfig{
+		Name:               "origin",
+		URLs:               []string{"https://github.com/go-git/go-git.git"},
+		Promisor:           true,
+		PartialCloneFilter: "blob:none",
+	})
+	require.NoError(t, err)
+
+	staleRemote := &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"https://github.com/go-git/go-git.git"},
+	}
+
+	err = r.updateRemoteConfigIfNeeded(&CloneOptions{
+		RemoteName:    "origin",
+		ReferenceName: plumbing.HEAD,
+		SingleBranch:  true,
+	}, staleRemote, nil)
+	require.NoError(t, err)
+
+	cfg, err := r.Config()
+	require.NoError(t, err)
+
+	rc := cfg.Remotes["origin"]
+	require.NotNil(t, rc)
+	assert.True(t, rc.Promisor)
+	assert.Equal(t, "blob:none", rc.PartialCloneFilter)
+	assert.Equal(t, []config.RefSpec{config.RefSpec("+HEAD:refs/remotes/origin/HEAD")}, rc.Fetch)
 }

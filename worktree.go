@@ -99,20 +99,27 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	fetchHead, err := remote.fetch(ctx, &FetchOptions{
+	fetchOptions := &FetchOptions{
 		RemoteName:    o.RemoteName,
 		RemoteURL:     o.RemoteURL,
 		Depth:         o.Depth,
 		ClientOptions: o.ClientOptions,
 		Progress:      o.Progress,
 		Force:         o.Force,
-	})
+	}
+	fetchHead, err := remote.fetch(ctx, fetchOptions)
 
 	updated := true
 	if errors.Is(err, NoErrAlreadyUpToDate) {
 		updated = false
 	} else if err != nil {
 		return err
+	}
+
+	if fetchOptions.Filter != "" {
+		w.r.Storer = wrapStorerIfPromisor(w.r.Storer, &promisorOptions{
+			ClientOptions: o.ClientOptions,
+		})
 	}
 
 	ref, err := storer.ResolveReference(fetchHead, o.ReferenceName)
@@ -696,6 +703,10 @@ func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []st
 		return err
 	}
 
+	// Batch-prefetch missing blobs for partial clone repositories.
+	// This reduces N individual on-demand fetches to a single request.
+	w.prefetchBlobs(worktreeChanges, toTree, files, filesMap)
+
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return err
@@ -899,6 +910,50 @@ func (w *Worktree) validChange(ch merkletrie.Change) error {
 	}
 
 	return nil
+}
+
+// prefetchBlobs collects blob hashes that will be needed during checkout
+// and fetches them in a single batch request from the promisor remote.
+// This is a performance optimization for partial clone repositories;
+// errors are logged and ignored because the individual on-demand fetch
+// in promiserStorer serves as a fallback.
+func (w *Worktree) prefetchBlobs(changes merkletrie.Changes, toTree *object.Tree, files []string, filesMap map[string]struct{}) {
+	ps, ok := getPromiserStorer(w.r.Storer)
+	if !ok {
+		return
+	}
+
+	var hashes []plumbing.Hash
+	for _, ch := range changes {
+		a, err := ch.Action()
+		if err != nil || a == merkletrie.Delete {
+			continue
+		}
+
+		name := ch.To.String()
+		if len(files) > 0 && !inFiles(filesMap, name) {
+			continue
+		}
+
+		e, err := toTree.FindEntry(name)
+		if err != nil || e.Mode == filemode.Submodule {
+			continue
+		}
+
+		// Check the inner storer directly to avoid triggering
+		// individual on-demand fetches via promiserStorer.
+		if isObjectNotFound(ps.Storer.HasEncodedObject(e.Hash)) {
+			hashes = append(hashes, e.Hash)
+		}
+	}
+
+	if len(hashes) == 0 {
+		return
+	}
+
+	if err := ps.fetchObjects(context.Background(), hashes); err != nil {
+		trace.General.Printf("prefetchBlobs: batch fetch of %d objects failed: %v", len(hashes), err)
+	}
 }
 
 func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
