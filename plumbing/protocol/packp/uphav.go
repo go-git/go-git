@@ -52,20 +52,13 @@ func (u *UploadHaves) Encode(w io.Writer) error {
 func (u *UploadHaves) Decode(r io.Reader) error {
 	u.Haves = make([]plumbing.Hash, 0)
 
-	for {
-		l, line, err := pktline.ReadLine(r)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return fmt.Errorf("decoding haves: %w", err)
-		}
-
-		if l == pktline.Flush {
+	s := pktline.NewScanner(r)
+	for s.Scan() {
+		if s.Len() == pktline.Flush {
 			break
 		}
 
+		line := s.Bytes()
 		if bytes.HasPrefix(line, []byte("done")) {
 			u.Done = true
 			break
@@ -77,6 +70,10 @@ func (u *UploadHaves) Decode(r io.Reader) error {
 
 		have := plumbing.NewHash(strings.TrimSpace(string(line[5:])))
 		u.Haves = append(u.Haves, have)
+	}
+
+	if err := s.Err(); err != nil {
+		return fmt.Errorf("decoding haves: %w", err)
 	}
 
 	return nil

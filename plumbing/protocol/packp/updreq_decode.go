@@ -77,16 +77,21 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		length  int
 	)
 
+	s := pktline.NewScanner(r)
+
 	readLine := func(eofErr error) error {
-		l, p, err := pktline.ReadLine(r)
-		if errors.Is(err, io.EOF) {
-			return eofErr
+		if !s.Scan() {
+			if s.Err() == nil {
+				return eofErr
+			}
+			return s.Err()
 		}
-		if err != nil {
-			return err
+		length = s.Len()
+		if length == pktline.Flush {
+			payload = nil
+		} else {
+			payload = s.Bytes()
 		}
-		payload = p
-		length = l
 		return nil
 	}
 

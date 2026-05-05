@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -79,7 +78,9 @@ func (s *ReportStatus) Encode(w io.Writer) error {
 // Decode reads from the given reader and decodes a report-status message. It
 // does not read more input than what is needed to fill the report status.
 func (s *ReportStatus) Decode(r io.Reader) error {
-	b, err := s.scanFirstLine(r)
+	sc := pktline.NewScanner(r)
+
+	b, err := s.scanFirstLine(sc)
 	if err != nil {
 		return err
 	}
@@ -88,48 +89,34 @@ func (s *ReportStatus) Decode(r io.Reader) error {
 		return err
 	}
 
-	var l int
 	flushed := false
-	for {
-		l, b, err = pktline.ReadLine(r)
-		if err != nil {
-			break
-		}
-
-		if l == pktline.Flush {
+	for sc.Scan() {
+		if sc.Len() == pktline.Flush {
 			flushed = true
 			break
 		}
 
-		if err := s.decodeCommandStatus(b); err != nil {
+		if err := s.decodeCommandStatus(sc.Bytes()); err != nil {
 			return err
 		}
 	}
 
 	if !flushed {
-		return fmt.Errorf("missing flush: %w", err)
+		return fmt.Errorf("missing flush: %w", sc.Err())
 	}
 
-	if err != nil && !errors.Is(err, io.EOF) {
-		// TODO: We should not ignore EOF errors here. Decoding a report-status
-		// message ends with a flush-pkt, an EOF indicates that the flush-pkt
-		// was not received.
-		return err
-	}
-
-	return nil
+	return sc.Err()
 }
 
-func (s *ReportStatus) scanFirstLine(r io.Reader) ([]byte, error) {
-	_, p, err := pktline.ReadLine(r)
-	if errors.Is(err, io.EOF) {
-		return p, io.ErrUnexpectedEOF
-	}
-	if err != nil {
-		return nil, err
+func (s *ReportStatus) scanFirstLine(sc *pktline.Scanner) ([]byte, error) {
+	if !sc.Scan() {
+		if sc.Err() == nil {
+			return nil, io.ErrUnexpectedEOF
+		}
+		return nil, sc.Err()
 	}
 
-	return p, nil
+	return sc.Bytes(), nil
 }
 
 func (s *ReportStatus) decodeReportStatus(b []byte) error {
