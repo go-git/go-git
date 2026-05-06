@@ -1,9 +1,6 @@
 module github.com/go-git/go-git/v5
 
-// go-git supports the last 3 stable Go versions.
-go 1.24.0
-
-toolchain go1.24.10
+go 1.25.0
 
 require (
 	dario.cat/mergo v1.0.0
