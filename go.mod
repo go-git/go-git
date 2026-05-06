@@ -16,7 +16,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
 	github.com/kevinburke/ssh_config v1.2.0
-	github.com/pjbgf/sha1cd v0.3.2
+	github.com/pjbgf/sha1cd v0.6.0
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
 	github.com/skeema/knownhosts v1.3.1
 	github.com/stretchr/testify v1.10.0
@@ -34,6 +34,7 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
