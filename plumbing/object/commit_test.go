@@ -3,6 +3,7 @@ package object
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -39,6 +40,49 @@ func (s *SuiteCommit) TestDecodeNonCommit(c *C) {
 	commit := &Commit{}
 	err = commit.Decode(blob)
 	c.Assert(err, Equals, ErrUnsupportedObject)
+}
+
+func (s *SuiteCommit) TestDecodeClearsExistingState(c *C) {
+	const raw = "tree eba74343e2f15d62adedfd8c883ee0262b5c8021\n\nfresh message\n"
+
+	staleSrc := &plumbing.MemoryObject{}
+	commit := &Commit{
+		Hash:         plumbing.NewHash("1111111111111111111111111111111111111111"),
+		Author:       Signature{Name: "Stale Author", Email: "author@example.local", When: time.Unix(1, 0).UTC()},
+		Committer:    Signature{Name: "Stale Committer", Email: "committer@example.local", When: time.Unix(2, 0).UTC()},
+		MergeTag:     "stale merge tag",
+		PGPSignature: "stale signature",
+		Message:      "stale message",
+		TreeHash:     plumbing.NewHash("2222222222222222222222222222222222222222"),
+		ParentHashes: []plumbing.Hash{
+			plumbing.NewHash("3333333333333333333333333333333333333333"),
+		},
+		Encoding: MessageEncoding("latin-1"),
+		ExtraHeaders: []ExtraHeader{
+			{Key: "x-stale", Value: "stale"},
+		},
+		s:   s.Storer,
+		src: staleSrc,
+	}
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.CommitObject)
+	_, err := obj.Write([]byte(raw))
+	c.Assert(err, IsNil)
+
+	c.Assert(commit.Decode(obj), IsNil)
+	c.Assert(commit.Hash, Equals, obj.Hash())
+	c.Assert(commit.Author, DeepEquals, Signature{})
+	c.Assert(commit.Committer, DeepEquals, Signature{})
+	c.Assert(commit.MergeTag, Equals, "")
+	c.Assert(commit.PGPSignature, Equals, "")
+	c.Assert(commit.Message, Equals, "fresh message\n")
+	c.Assert(commit.TreeHash.String(), Equals, "eba74343e2f15d62adedfd8c883ee0262b5c8021")
+	c.Assert(commit.ParentHashes, IsNil)
+	c.Assert(commit.Encoding, Equals, defaultUtf8CommitMessageEncoding)
+	c.Assert(commit.ExtraHeaders, IsNil)
+	c.Assert(commit.s, Equals, s.Storer)
+	c.Assert(commit.src, Equals, obj)
 }
 
 func (s *SuiteCommit) TestType(c *C) {
@@ -277,6 +321,7 @@ change
 		err = newCommit.Decode(obj)
 		c.Assert(err, IsNil)
 		commit.Hash = obj.Hash()
+		commit.src = obj
 		c.Assert(newCommit, DeepEquals, commit)
 	}
 }
@@ -359,10 +404,6 @@ func (s *SuiteCommit) TestLongCommitMessageSerialization(c *C) {
 }
 
 func (s *SuiteCommit) TestPGPSignatureSerialization(c *C) {
-	encoded := &plumbing.MemoryObject{}
-	decoded := &Commit{}
-	commit := *s.Commit
-
 	pgpsignature := `-----BEGIN PGP SIGNATURE-----
 
 iQEcBAABAgAGBQJTZbQlAAoJEF0+sviABDDrZbQH/09PfE51KPVPlanr6q1v4/Ut
@@ -374,62 +415,40 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 =EFTF
 -----END PGP SIGNATURE-----
 `
-	commit.PGPSignature = pgpsignature
+	broken := beginpgp + "\nsome\ntrash\n" + endpgp + "text\n"
 
-	err := commit.Encode(encoded)
-	c.Assert(err, IsNil)
+	cases := []struct {
+		name         string
+		pgpSignature string
+		authorName   string
+	}{
+		{name: "pgp signature", pgpSignature: pgpsignature},
+		{name: "pgp signature with leading empty line", pgpSignature: "\n" + pgpsignature},
+		{name: "beginpgp marker in author name is not parsed as signature", authorName: beginpgp},
+		{name: "garbage between begin and end markers round-trips", pgpSignature: broken},
+	}
 
-	err = decoded.Decode(encoded)
-	c.Assert(err, IsNil)
-	c.Assert(decoded.PGPSignature, Equals, pgpsignature)
+	for _, tc := range cases {
+		c.Log(tc.name)
 
-	// signature with extra empty line, it caused "index out of range" when
-	// parsing it
+		commit := *s.Commit
+		commit.PGPSignature = tc.pgpSignature
+		if tc.authorName != "" {
+			commit.Author.Name = tc.authorName
+		}
 
-	pgpsignature2 := "\n" + pgpsignature
+		encoded := &plumbing.MemoryObject{}
+		decoded := &Commit{}
+		err := commit.Encode(encoded)
+		c.Assert(err, IsNil)
 
-	commit.PGPSignature = pgpsignature2
-	encoded = &plumbing.MemoryObject{}
-	decoded = &Commit{}
-
-	err = commit.Encode(encoded)
-	c.Assert(err, IsNil)
-
-	err = decoded.Decode(encoded)
-	c.Assert(err, IsNil)
-	c.Assert(decoded.PGPSignature, Equals, pgpsignature2)
-
-	// signature in author name
-
-	commit.PGPSignature = ""
-	commit.Author.Name = beginpgp
-	encoded = &plumbing.MemoryObject{}
-	decoded = &Commit{}
-
-	err = commit.Encode(encoded)
-	c.Assert(err, IsNil)
-
-	err = decoded.Decode(encoded)
-	c.Assert(err, IsNil)
-	c.Assert(decoded.PGPSignature, Equals, "")
-	c.Assert(decoded.Author.Name, Equals, beginpgp)
-
-	// broken signature
-
-	commit.PGPSignature = beginpgp + "\n" +
-		"some\n" +
-		"trash\n" +
-		endpgp +
-		"text\n"
-	encoded = &plumbing.MemoryObject{}
-	decoded = &Commit{}
-
-	err = commit.Encode(encoded)
-	c.Assert(err, IsNil)
-
-	err = decoded.Decode(encoded)
-	c.Assert(err, IsNil)
-	c.Assert(decoded.PGPSignature, Equals, commit.PGPSignature)
+		err = decoded.Decode(encoded)
+		c.Assert(err, IsNil)
+		c.Assert(decoded.PGPSignature, Equals, tc.pgpSignature)
+		if tc.authorName != "" {
+			c.Assert(decoded.Author.Name, Equals, tc.authorName)
+		}
+	}
 }
 
 func (s *SuiteCommit) TestStat(c *C) {
@@ -515,6 +534,204 @@ func (s *SuiteCommit) TestPatchCancel(c *C) {
 
 }
 
+func (s *SuiteCommit) TestDecodeRequiresTreeFirst(c *C) {
+	const (
+		validTree   = "eba74343e2f15d62adedfd8c883ee0262b5c8021"
+		validParent = "35e85108805c84807bc66a02d91535e1e24b38b9"
+		validIdent  = "Foo <foo@example.local> 1427802494 +0200"
+	)
+
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "missing tree",
+			raw:  "author " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "parent before tree",
+			raw:  "parent " + validParent + "\ntree " + validTree + "\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "extra header before tree",
+			raw:  "x-extra hi\ntree " + validTree + "\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "empty",
+			raw:  "",
+		},
+		{
+			name: "non-hex tree value",
+			raw:  "tree zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "tree value too short",
+			raw:  "tree abcd\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "tree value too long",
+			raw:  "tree " + validTree + "00\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "tree value missing",
+			raw:  "tree\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "non-hex parent value",
+			raw:  "tree " + validTree + "\nparent zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+		{
+			name: "parent value too short",
+			raw:  "tree " + validTree + "\nparent abcd\nauthor " + validIdent + "\ncommitter " + validIdent + "\n\nmsg\n",
+		},
+	}
+
+	for _, tc := range cases {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.CommitObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		err = (&Commit{}).Decode(obj)
+		c.Assert(errors.Is(err, ErrMalformedCommit), Equals, true)
+	}
+}
+
+func (s *SuiteCommit) TestDecodeFirstOccurrenceWins(c *C) {
+	const (
+		treeA       = "eba74343e2f15d62adedfd8c883ee0262b5c8021"
+		treeB       = "0000000000000000000000000000000000000001"
+		parentA     = "35e85108805c84807bc66a02d91535e1e24b38b9"
+		parentB     = "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"
+		parentC     = "0000000000000000000000000000000000000002"
+		identA      = "Alice <alice@example.local> 1427802494 +0200"
+		identB      = "Bob <bob@example.local> 1427802495 +0200"
+		identAuthor = "Author Name <author@example.local> 1500000000 +0000"
+		identCommit = "Commit Name <commit@example.local> 1500000001 +0000"
+	)
+
+	cases := []struct {
+		name   string
+		raw    string
+		assert func(*Commit)
+	}{
+		{
+			name: "duplicate tree drops the second",
+			raw: "tree " + treeA + "\ntree " + treeB +
+				"\nauthor " + identAuthor + "\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.TreeHash.String(), Equals, treeA)
+			},
+		},
+		{
+			name: "duplicate author drops the second",
+			raw: "tree " + treeA + "\nauthor " + identA + "\nauthor " + identB +
+				"\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Author.Name, Equals, "Alice")
+			},
+		},
+		{
+			name: "duplicate committer drops the second",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\ncommitter " + identA + "\ncommitter " + identB + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Committer.Name, Equals, "Alice")
+			},
+		},
+		{
+			name: "parent after author is dropped",
+			raw: "tree " + treeA + "\nparent " + parentA +
+				"\nauthor " + identAuthor + "\nparent " + parentC +
+				"\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.ParentHashes, DeepEquals, []plumbing.Hash{plumbing.NewHash(parentA)})
+			},
+		},
+		{
+			name: "parent interleaved with extras is dropped",
+			raw: "tree " + treeA + "\nparent " + parentA + "\nparent " + parentB +
+				"\nx-other thing\nparent " + parentC +
+				"\nauthor " + identAuthor + "\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.ParentHashes, DeepEquals, []plumbing.Hash{
+					plumbing.NewHash(parentA),
+					plumbing.NewHash(parentB),
+				})
+			},
+		},
+		{
+			name: "missing committer is allowed (zero-valued)",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Author.Name, Equals, "Author Name")
+				c.Assert(commit.Committer.Name, Equals, "")
+			},
+		},
+		{
+			name: "encoding between author and committer drops committer",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\nencoding latin-1\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Author.Name, Equals, "Author Name")
+				c.Assert(commit.Encoding, Equals, MessageEncoding("latin-1"))
+				// committer was not at its canonical position
+				// (immediately after author) so it is dropped, matching
+				// upstream's parse_commit_date returning 0 and the
+				// subsequent standard_header_field filter.
+				c.Assert(commit.Committer.Name, Equals, "")
+			},
+		},
+		{
+			name: "author out of canonical position is dropped",
+			raw: "tree " + treeA + "\nencoding latin-1\nauthor " + identAuthor +
+				"\ncommitter " + identCommit + "\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.Encoding, Equals, MessageEncoding("latin-1"))
+				c.Assert(commit.Author.Name, Equals, "")
+				c.Assert(commit.Committer.Name, Equals, "")
+			},
+		},
+		{
+			// Multiple gpgsig headers concatenate into a single
+			// signature buffer, mirroring upstream's
+			// parse_buffer_signed_by_header (commit.c:1186).
+			name: "multiple gpgsig headers concatenate",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\ncommitter " + identCommit +
+				"\ngpgsig firstline\n morefirst\ngpgsig secondline\n moresecond\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.PGPSignature, Equals, "firstline\nmorefirst\nsecondline\nmoresecond\n")
+			},
+		},
+		{
+			name: "gpgsig-sha256 headers are not exposed as extras",
+			raw: "tree " + treeA + "\nauthor " + identAuthor +
+				"\ncommitter " + identCommit +
+				"\ngpgsig-sha256 firstline\n morefirst\ngpgsig-sha256 secondline\n moresecond\n\nmsg\n",
+			assert: func(commit *Commit) {
+				c.Assert(commit.PGPSignature, Equals, "")
+				c.Assert(len(commit.ExtraHeaders), Equals, 0)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		c.Log(tc.name)
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.CommitObject)
+		_, err := obj.Write([]byte(tc.raw))
+		c.Assert(err, IsNil)
+
+		commit := &Commit{}
+		c.Assert(commit.Decode(obj), IsNil)
+		tc.assert(commit)
+	}
+}
+
 func (s *SuiteCommit) TestMalformedHeader(c *C) {
 	encoded := &plumbing.MemoryObject{}
 	decoded := &Commit{}
@@ -534,34 +751,38 @@ func (s *SuiteCommit) TestMalformedHeader(c *C) {
 }
 
 func (s *SuiteCommit) TestEncodeWithoutSignature(c *C) {
-	// Similar to TestString since no signature
-	encoded := &plumbing.MemoryObject{}
-	err := s.Commit.EncodeWithoutSignature(encoded)
-	c.Assert(err, IsNil)
-	er, err := encoded.Reader()
-	c.Assert(err, IsNil)
-	payload, err := io.ReadAll(er)
-	c.Assert(err, IsNil)
+	tests := []struct {
+		name      string
+		commitRaw string
+		mutate    func(*Commit)
+		expected  string
+	}{
+		{
+			name: "commit without signature",
+			commitRaw: `tree eba74343e2f15d62adedfd8c883ee0262b5c8021
+parent 35e85108805c84807bc66a02d91535e1e24b38b9
+parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
+author Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200
+committer Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200
 
-	c.Assert(string(payload), Equals, ""+
-		"tree eba74343e2f15d62adedfd8c883ee0262b5c8021\n"+
-		"parent 35e85108805c84807bc66a02d91535e1e24b38b9\n"+
-		"parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69\n"+
-		"author Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200\n"+
-		"committer Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200\n"+
-		"\n"+
-		"Merge branch 'master' of github.com:tyba/git-fixture\n")
-}
+Merge branch 'master' of github.com:tyba/git-fixture
+`,
+			expected: `tree eba74343e2f15d62adedfd8c883ee0262b5c8021
+parent 35e85108805c84807bc66a02d91535e1e24b38b9
+parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
+author Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200
+committer Máximo Cuadros Ortiz <mcuadros@gmail.com> 1427802494 +0200
 
-func (s *SuiteCommit) TestEncodeWithoutSignatureJujutsu(c *C) {
-	object := &plumbing.MemoryObject{}
-	object.SetType(plumbing.CommitObject)
-	object.Write([]byte(`tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+Merge branch 'master' of github.com:tyba/git-fixture
+`,
+		},
+		{
+			name: "commit with change-id and gpgsig",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 author John Doe <john.doe@example.com> 1755280730 -0700
 committer John Doe <john.doe@example.com> 1755280730 -0700
 change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
 gpgsig -----BEGIN PGP SIGNATURE-----
- 
  iHUEABMIAB0WIQSZpnSpGKbQbDaLe5iiNQl48cTY5gUCaJ91XQAKCRCiNQl48cTY
  5vCYAP9Sf1yV9oUviRIxEA+4rsGIx0hI6kqFajJ/3TtBjyCTggD+PFnKOxdXeFL2
  GLwcCzFIsmQmkLxuLypsg+vueDSLpsM=
@@ -571,20 +792,8 @@ gpgsig -----BEGIN PGP SIGNATURE-----
 initial commit
 
 Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
-`))
-
-	commit, err := DecodeCommit(s.Storer, object)
-	c.Assert(err, IsNil)
-
-	// Similar to TestString since no signature
-	encoded := &plumbing.MemoryObject{}
-	err = commit.EncodeWithoutSignature(encoded)
-	er, err := encoded.Reader()
-	c.Assert(err, IsNil)
-	payload, err := io.ReadAll(er)
-	c.Assert(err, IsNil)
-
-	c.Assert(string(payload), Equals, `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+`,
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 author John Doe <john.doe@example.com> 1755280730 -0700
 committer John Doe <john.doe@example.com> 1755280730 -0700
 change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
@@ -592,7 +801,210 @@ change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
 initial commit
 
 Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
-`)
+`,
+		},
+		{
+			name: "gpgsig-sha256",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
+gpgsig-sha256 -----BEGIN PGP SIGNATURE-----
+ iHUEABMIAB0WIQSZpnSpGKbQbDaLe5iiNQl48cTY5gUCaJ91XQAKCRCiNQl48cTY
+ 5vCYAP9Sf1yV9oUviRIxEA+4rsGIx0hI6kqFajJ/3TtBjyCTggD+PFnKOxdXeFL2
+ GLwcCzFIsmQmkLxuLypsg+vueDSLpsM=
+ =VucY
+ -----END PGP SIGNATURE-----
+
+initial commit
+
+Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
+`,
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
+
+initial commit
+
+Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
+`,
+		},
+		{
+			name: "gpgsig + gpgsig-sha256",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
+gpgsig -----BEGIN PGP SIGNATURE-----
+ iHUEABMIAB0WIQSZpnSpGKbQbDaLe5iiNQl48cTY5gUCaJ91XQAKCRCiNQl48cTY
+ GLwcCzFIsmQmkLxuLypsg+vueDSLpsM=
+ =VucY
+ -----END PGP SIGNATURE-----
+gpgsig-sha256 -----BEGIN PGP SIGNATURE-----
+ iHUEABMIAB0WIQSZpnSpGKbQbDaLe5iiNQl48cTY5gUCaJ91XQAKCRCiNQl48cTY
+ =VucY
+ -----END PGP SIGNATURE-----
+
+initial commit
+
+Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
+`,
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+change-id wxmuynokkzxmuwxwvnnpnptoyuypknwv
+
+initial commit
+
+Change-Id: I6a6a696432d51cbff02d53234ccaca6b151afc34
+`,
+		},
+		{
+			name: "non-canonical gpgsig-prefixed extra header is preserved",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+gpgsig-key-id ABCDEF0123456789
+gpgsig -----BEGIN PGP SIGNATURE-----
+ sigline1
+ -----END PGP SIGNATURE-----
+
+initial commit
+`,
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+gpgsig-key-id ABCDEF0123456789
+
+initial commit
+`,
+		},
+		{
+			name: "raw bytes preserved when only PGPSignature is mutated",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+gpgsig -----BEGIN PGP SIGNATURE-----
+ sigline1
+ -----END PGP SIGNATURE-----
+gpgsig-sha256 -----BEGIN PGP SIGNATURE-----
+ sha256line1
+ -----END PGP SIGNATURE-----
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.PGPSignature = "different signature value"
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+
+initial commit
+`,
+		},
+		{
+			name: "timezone-only change triggers struct-encode",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+gpgsig -----BEGIN PGP SIGNATURE-----
+ sigline1
+ -----END PGP SIGNATURE-----
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				tz := time.FixedZone("CEST", 2*60*60)
+				c.Author.When = c.Author.When.In(tz)
+				c.Committer.When = c.Committer.When.In(tz)
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 +0200
+committer John Doe <john.doe@example.com> 1755280730 +0200
+
+initial commit
+`,
+		},
+		{
+			name: "field mutation triggers struct-encode",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+gpgsig -----BEGIN PGP SIGNATURE-----
+ sigline1
+ -----END PGP SIGNATURE-----
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.Message = "rewritten message\n"
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+
+rewritten message
+`,
+		},
+		{
+			name: "standard-keyed ExtraHeaders are dropped on encode",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.Message = "rewritten message\n"
+				c.ExtraHeaders = []ExtraHeader{
+					{Key: "tree", Value: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},
+					{Key: "parent", Value: "feedfacefeedfacefeedfacefeedfacefeedface"},
+					{Key: "author", Value: "Fake <fake@example.com> 0 +0000"},
+					{Key: "committer", Value: "Fake <fake@example.com> 0 +0000"},
+					{Key: "encoding", Value: "fake-enc"},
+					{Key: "mergetag", Value: "fake mergetag"},
+					{Key: "gpgsig", Value: "fake-sig"},
+					{Key: "gpgsig-sha256", Value: "fake-sig-256"},
+					{Key: "x-real-extra", Value: "kept"},
+				}
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+x-real-extra kept
+
+rewritten message
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		c.Log(tc.name)
+
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.CommitObject)
+		obj.Write([]byte(tc.commitRaw))
+
+		commit, err := DecodeCommit(s.Storer, obj)
+		c.Assert(err, IsNil)
+		if tc.mutate != nil {
+			tc.mutate(commit)
+		}
+
+		encoded := &plumbing.MemoryObject{}
+		err = commit.EncodeWithoutSignature(encoded)
+		c.Assert(err, IsNil)
+
+		er, err := encoded.Reader()
+		c.Assert(err, IsNil)
+
+		payload, err := io.ReadAll(er)
+		c.Assert(err, IsNil)
+
+		c.Assert(string(payload), Equals, tc.expected)
+	}
 }
 
 func (s *SuiteCommit) TestEncodeExtraHeaders(c *C) {
@@ -618,20 +1030,20 @@ initial commit
 	c.Assert(err, IsNil)
 
 	c.Assert(commit.ExtraHeaders, DeepEquals, []ExtraHeader{
-		ExtraHeader {
-			Key: "continuedheader",
+		ExtraHeader{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued",
 		},
-		ExtraHeader {
-			Key: "continuedheader",
+		ExtraHeader{
+			Key:   "continuedheader",
 			Value: "to be\ncontinued\non\nmore than\na single line",
 		},
-		ExtraHeader {
-			Key: "simpleflag",
+		ExtraHeader{
+			Key:   "simpleflag",
 			Value: "",
 		},
-		ExtraHeader {
-			Key: "",
+		ExtraHeader{
+			Key:   "",
 			Value: "value no key",
 		},
 	})

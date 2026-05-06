@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -8,11 +9,15 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -56,8 +61,8 @@ func (s *TreeSuite) TestType(c *C) {
 }
 
 func (s *TreeSuite) TestTree(c *C) {
-	expectedEntry, ok := s.Tree.m["vendor"]
-	c.Assert(ok, Equals, true)
+	expectedEntry, err := s.Tree.entry("vendor")
+	c.Assert(err, IsNil)
 	expected := expectedEntry.Hash
 
 	obtainedTree, err := s.Tree.Tree("vendor")
@@ -224,9 +229,9 @@ func (o *SortReadCloser) Read(p []byte) (int, error) {
 func (s *TreeSuite) TestTreeEntriesSorted(c *C) {
 	tree := &Tree{
 		Entries: []TreeEntry{
-			{"foo", filemode.Empty, plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
-			{"bar", filemode.Empty, plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
-			{"baz", filemode.Empty, plumbing.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			{"foo", filemode.Regular, plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			{"bar", filemode.Regular, plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
+			{"baz", filemode.Regular, plumbing.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
 		},
 	}
 
@@ -249,9 +254,9 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 	trees := []*Tree{
 		{
 			Entries: []TreeEntry{
-				{"foo", filemode.Empty, plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
-				{"bar", filemode.Empty, plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
-				{"baz", filemode.Empty, plumbing.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				{"foo", filemode.Regular, plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				{"bar", filemode.Regular, plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45d")},
+				{"baz", filemode.Regular, plumbing.NewHash("d029517f6300c2da0f4b651b8642506cd6aaf45d")},
 			},
 		},
 	}
@@ -264,7 +269,8 @@ func (s *TreeSuite) TestTreeDecodeEncodeIdempotent(c *C) {
 		err = newTree.Decode(obj)
 		c.Assert(err, IsNil)
 		tree.Hash = obj.Hash()
-		c.Assert(newTree, DeepEquals, tree)
+		c.Assert(newTree.Hash, Equals, tree.Hash)
+		c.Assert(newTree.Entries, DeepEquals, tree.Entries)
 	}
 }
 
@@ -1642,7 +1648,6 @@ func (s *TreeSuite) TestTreeDecodeReadBug(c *C) {
 		},
 		Hash: plumbing.Hash{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
 		s:    (storer.EncodedObjectStorer)(nil),
-		m:    map[string]*TreeEntry(nil),
 	}
 
 	var obtained Tree
@@ -1665,4 +1670,391 @@ func FuzzDecode(f *testing.F) {
 		newTree := &Tree{}
 		newTree.Decode(obj)
 	})
+}
+
+type rawTreeEntry struct {
+	mode string
+	name string
+	hash []byte
+}
+
+func encodeRawTreeEntries(entries ...rawTreeEntry) []byte {
+	var buf bytes.Buffer
+	for _, e := range entries {
+		buf.WriteString(e.mode)
+		buf.WriteByte(' ')
+		buf.WriteString(e.name)
+		buf.WriteByte(0)
+		buf.Write(e.hash)
+	}
+	return buf.Bytes()
+}
+
+func newRawTreeObject(t *testing.T, body []byte) *plumbing.MemoryObject {
+	t.Helper()
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	return obj
+}
+
+func decodeRawTree(t *testing.T, body []byte) (*Tree, error) {
+	t.Helper()
+
+	obj := newRawTreeObject(t, body)
+
+	var tree Tree
+	err := tree.Decode(obj)
+	return &tree, err
+}
+
+func TestTreeDecodeRejectsMalformedEntries(t *testing.T) {
+	t.Parallel()
+
+	hash := bytes.Repeat([]byte{0xAA}, 20)
+
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "short object id",
+			body: append(append([]byte{}, []byte("100644 foo\x00")...), hash[:19]...),
+		},
+		{
+			name: "empty filename",
+			body: encodeRawTreeEntries(rawTreeEntry{"100644", "", hash}),
+		},
+		{
+			name: "missing filename terminator",
+			body: append(append([]byte{}, []byte("100644 foo")...), hash...),
+		},
+		{
+			name: "malformed mode",
+			body: encodeRawTreeEntries(rawTreeEntry{"10064x", "foo", hash}),
+		},
+		{
+			name: "trailing partial entry",
+			body: append(encodeRawTreeEntries(rawTreeEntry{"100644", "foo", hash}), []byte("100644 trailing")...),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tree, err := decodeRawTree(t, tc.body)
+			require.ErrorIs(t, err, ErrMalformedTree)
+			assert.NotNil(t, tree)
+		})
+	}
+}
+
+func TestTreeDecodeCanonicalizesModes(t *testing.T) {
+	t.Parallel()
+
+	hash := bytes.Repeat([]byte{0xAA}, 20)
+	body := encodeRawTreeEntries(
+		rawTreeEntry{"100664", "regular", hash},
+		rawTreeEntry{"100111", "executable", hash},
+		rawTreeEntry{"120777", "symlink", hash},
+		rawTreeEntry{"040755", "directory", hash},
+		rawTreeEntry{"42", "submodule", hash},
+	)
+
+	tree, err := decodeRawTree(t, body)
+	require.NoError(t, err)
+	require.Len(t, tree.Entries, 5)
+	assert.Equal(t, filemode.Regular, tree.Entries[0].Mode)
+	assert.Equal(t, filemode.Executable, tree.Entries[1].Mode)
+	assert.Equal(t, filemode.Symlink, tree.Entries[2].Mode)
+	assert.Equal(t, filemode.Dir, tree.Entries[3].Mode)
+	assert.Equal(t, filemode.Submodule, tree.Entries[4].Mode)
+}
+
+func TestTreeDecodeEmptyClearsExistingEntries(t *testing.T) {
+	t.Parallel()
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+
+	tree := &Tree{
+		Entries: []TreeEntry{
+			{Name: "stale", Mode: filemode.Regular},
+		},
+	}
+
+	require.NoError(t, tree.Decode(obj))
+	assert.Empty(t, tree.Entries)
+}
+
+func TestTreeDecodeClearsExistingState(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+
+	tree := &Tree{
+		Hash: plumbing.NewHash("1111111111111111111111111111111111111111"),
+		Entries: []TreeEntry{
+			{Name: "stale", Mode: filemode.Regular},
+		},
+		s:             store,
+		t:             map[string]*Tree{"stale": &Tree{}},
+		entriesSorted: false,
+	}
+
+	require.NoError(t, tree.Decode(obj))
+	assert.Equal(t, obj.Hash(), tree.Hash)
+	assert.Empty(t, tree.Entries)
+	assert.Same(t, store, tree.s)
+	assert.Nil(t, tree.t)
+	assert.True(t, tree.entriesSorted)
+}
+
+func TestTreeDecodeClearsPathCache(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	oldFileHash := bytes.Repeat([]byte{0xAA}, 20)
+	newFileHash := bytes.Repeat([]byte{0xBB}, 20)
+
+	oldSubtree := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"100644", "old", oldFileHash},
+	))
+	oldSubtreeHash, err := store.SetEncodedObject(oldSubtree)
+	require.NoError(t, err)
+
+	oldDir := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "sub", oldSubtreeHash[:]},
+	))
+	oldDirHash, err := store.SetEncodedObject(oldDir)
+	require.NoError(t, err)
+
+	oldRoot := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "dir", oldDirHash[:]},
+	))
+
+	newSubtree := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"100644", "new", newFileHash},
+	))
+	newSubtreeHash, err := store.SetEncodedObject(newSubtree)
+	require.NoError(t, err)
+
+	newDir := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "sub", newSubtreeHash[:]},
+	))
+	newDirHash, err := store.SetEncodedObject(newDir)
+	require.NoError(t, err)
+
+	newRoot := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "dir", newDirHash[:]},
+	))
+
+	tree := &Tree{s: store}
+	require.NoError(t, tree.Decode(oldRoot))
+	got, err := tree.FindEntry("dir/sub/old")
+	require.NoError(t, err)
+	assert.Equal(t, 0, bytes.Compare(oldFileHash, got.Hash[:]))
+
+	require.NoError(t, tree.Decode(newRoot))
+	got, err = tree.FindEntry("dir/sub/new")
+	require.NoError(t, err)
+	assert.Equal(t, 0, bytes.Compare(newFileHash, got.Hash[:]))
+}
+
+func TestTreeFindEntryDuplicates(t *testing.T) {
+	t.Parallel()
+
+	hashA := bytes.Repeat([]byte{0xAA}, 20)
+	hashB := bytes.Repeat([]byte{0xBB}, 20)
+	hashC := bytes.Repeat([]byte{0xCC}, 20)
+
+	cases := []struct {
+		name      string
+		body      []byte
+		lookup    string
+		wantHash  []byte
+		wantMode  filemode.FileMode
+		wantCount int
+	}{
+		{
+			name: "two regular files with same name",
+			body: encodeRawTreeEntries(
+				rawTreeEntry{"100644", "foo", hashA},
+				rawTreeEntry{"100644", "foo", hashB},
+			),
+			lookup:    "foo",
+			wantHash:  hashA,
+			wantMode:  filemode.Regular,
+			wantCount: 2,
+		},
+		{
+			name: "triplicate regular file",
+			body: encodeRawTreeEntries(
+				rawTreeEntry{"100644", "foo", hashA},
+				rawTreeEntry{"100644", "foo", hashB},
+				rawTreeEntry{"100644", "foo", hashC},
+			),
+			lookup:    "foo",
+			wantHash:  hashA,
+			wantMode:  filemode.Regular,
+			wantCount: 3,
+		},
+		{
+			name: "file shadows later directory of same name",
+			body: encodeRawTreeEntries(
+				rawTreeEntry{"100644", "foo", hashA},
+				rawTreeEntry{"40000", "foo", hashB},
+			),
+			lookup:    "foo",
+			wantHash:  hashA,
+			wantMode:  filemode.Regular,
+			wantCount: 2,
+		},
+		{
+			name: "directory shadows later file of same name",
+			body: encodeRawTreeEntries(
+				rawTreeEntry{"40000", "foo", hashA},
+				rawTreeEntry{"100644", "foo", hashB},
+			),
+			lookup:    "foo",
+			wantHash:  hashA,
+			wantMode:  filemode.Dir,
+			wantCount: 2,
+		},
+		{
+			name: "duplicate is not first entry",
+			body: encodeRawTreeEntries(
+				rawTreeEntry{"100644", "bar", hashC},
+				rawTreeEntry{"100644", "foo", hashA},
+				rawTreeEntry{"100644", "foo", hashB},
+			),
+			lookup:    "foo",
+			wantHash:  hashA,
+			wantMode:  filemode.Regular,
+			wantCount: 3,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			obj := &plumbing.MemoryObject{}
+			obj.SetType(plumbing.TreeObject)
+			w, err := obj.Writer()
+			require.NoError(t, err)
+			_, err = w.Write(tc.body)
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+
+			var tree Tree
+			require.NoError(t, tree.Decode(obj))
+			require.Len(t, tree.Entries, tc.wantCount,
+				"all duplicate entries must be preserved in storage order")
+
+			got, err := tree.FindEntry(tc.lookup)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantMode, got.Mode)
+			assert.Equal(t, 0, bytes.Compare(tc.wantHash, got.Hash[:]),
+				"FindEntry must return the first matching entry; got %s want %x",
+				got.Hash, tc.wantHash)
+		})
+	}
+}
+
+func TestTreeFindEntryStopsAtUnsortedEntryPastName(t *testing.T) {
+	t.Parallel()
+
+	hashA := bytes.Repeat([]byte{0xAA}, 20)
+	hashB := bytes.Repeat([]byte{0xBB}, 20)
+	body := encodeRawTreeEntries(
+		rawTreeEntry{"100644", "z", hashA},
+		rawTreeEntry{"100644", "foo", hashB},
+	)
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	var tree Tree
+	require.NoError(t, tree.Decode(obj))
+
+	got, err := tree.FindEntry("foo")
+	require.ErrorIs(t, err, ErrEntryNotFound)
+	assert.Nil(t, got)
+}
+
+func TestTreeFindEntryFindsDirectoryAfterLexicallyEarlierFile(t *testing.T) {
+	t.Parallel()
+
+	hashA := bytes.Repeat([]byte{0xAA}, 20)
+	hashB := bytes.Repeat([]byte{0xBB}, 20)
+	body := encodeRawTreeEntries(
+		rawTreeEntry{"100644", "foo.bar", hashA},
+		rawTreeEntry{"40000", "foo", hashB},
+	)
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	var tree Tree
+	require.NoError(t, tree.Decode(obj))
+
+	got, err := tree.FindEntry("foo")
+	require.NoError(t, err)
+	assert.Equal(t, filemode.Dir, got.Mode)
+	assert.Equal(t, 0, bytes.Compare(hashB, got.Hash[:]))
+}
+
+func TestTreeEncodePreservesDuplicateEntries(t *testing.T) {
+	t.Parallel()
+
+	hashABytes := bytes.Repeat([]byte{0xAA}, 20)
+	hashBBytes := bytes.Repeat([]byte{0xBB}, 20)
+	var hashA, hashB plumbing.Hash
+	copy(hashA[:], hashABytes)
+	copy(hashB[:], hashBBytes)
+
+	tree := &Tree{
+		Entries: []TreeEntry{
+			{Name: "foo", Mode: filemode.Regular, Hash: hashA},
+			{Name: "foo", Mode: filemode.Regular, Hash: hashB},
+		},
+	}
+
+	obj := &plumbing.MemoryObject{}
+	require.NoError(t, tree.Encode(obj))
+
+	r, err := obj.Reader()
+	require.NoError(t, err)
+	got, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+
+	var want bytes.Buffer
+	want.WriteString("100644 foo")
+	want.WriteByte(0)
+	want.Write(hashABytes)
+	want.WriteString("100644 foo")
+	want.WriteByte(0)
+	want.Write(hashBBytes)
+	assert.Equal(t, want.Bytes(), got)
 }
