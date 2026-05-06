@@ -57,3 +57,20 @@ func WithHighMemoryMode() ParserOption {
 		p.lowMemoryMode = false
 	}
 }
+
+// WithLowMemoryCapable sets the provider used to determine whether the parser
+// should operate in low-memory mode. This primarily affects the scanner, which
+// skips buffering raw delta content in memory when low-memory mode is active.
+// Additionally, when a storage is also set, decoded object content is released
+// from memory immediately after writing to storage, trading CPU (seeks) for
+// lower peak heap.
+//
+// Has no effect if the reader does not implement io.Seeker.
+//
+// Precedence: this option overrides both the storage's own LowMemoryCapable
+// advertisement and the WithHighMemoryMode option.
+func WithLowMemoryCapable(lmc LowMemoryCapable) ParserOption {
+	return func(p *Parser) {
+		p.lowMemoryProvider = lmc
+	}
+}

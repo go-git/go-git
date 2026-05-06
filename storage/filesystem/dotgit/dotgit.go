@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage"
@@ -281,9 +282,11 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
-func (d *DotGit) NewObjectPack() (*PackWriter, error) {
+// lmc optionally controls whether the parser operates in low-memory mode;
+// pass nil to use the default (high-memory) behaviour.
+func (d *DotGit) NewObjectPack(lmc packfile.LowMemoryCapable) (*PackWriter, error) {
 	d.cleanPackList()
-	return newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	return newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex, lmc)
 }
 
 // ObjectPacks returns the list of availables packfiles

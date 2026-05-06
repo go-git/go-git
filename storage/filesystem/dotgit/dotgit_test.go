@@ -734,7 +734,7 @@ func createPackWithRev(t *testing.T, opts Options) (*DotGit, plumbing.Hash, bill
 	dot := NewWithOptions(fs, opts)
 	require.NoError(t, dot.Initialize())
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	pf, pfErr := f.Packfile()

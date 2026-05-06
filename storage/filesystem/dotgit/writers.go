@@ -27,18 +27,19 @@ import (
 type PackWriter struct {
 	Notify func(plumbing.Hash, *idxfile.Writer)
 
-	fs       billy.Filesystem
-	fr, fw   billy.File
-	synced   *syncedReader
-	checksum plumbing.Hash
-	parser   *packfile.Parser
-	writer   *idxfile.Writer
-	result   chan error
-	format   formatcfg.ObjectFormat
-	writeRev bool
+	fs               billy.Filesystem
+	fr, fw           billy.File
+	synced           *syncedReader
+	checksum         plumbing.Hash
+	parser           *packfile.Parser
+	writer           *idxfile.Writer
+	result           chan error
+	format           formatcfg.ObjectFormat
+	writeRev         bool
+	lowMemoryCapable packfile.LowMemoryCapable
 }
 
-func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool, lmc packfile.LowMemoryCapable) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -50,13 +51,14 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 	}
 
 	writer := &PackWriter{
-		fs:       fs,
-		fw:       fw,
-		fr:       fr,
-		synced:   newSyncedReader(fw, fr),
-		result:   make(chan error),
-		format:   format,
-		writeRev: writeRev,
+		fs:               fs,
+		fw:               fw,
+		fr:               fr,
+		synced:           newSyncedReader(fw, fr),
+		result:           make(chan error),
+		format:           format,
+		writeRev:         writeRev,
+		lowMemoryCapable: lmc,
 	}
 
 	writer.checksum.ResetBySize(format.Size())
@@ -71,7 +73,8 @@ func (w *PackWriter) buildIndex() {
 
 	w.parser = packfile.NewParser(w.synced,
 		packfile.WithScannerObservers(w.writer),
-		packfile.WithObjectFormat(w.format))
+		packfile.WithObjectFormat(w.format),
+		packfile.WithLowMemoryCapable(w.lowMemoryCapable))
 
 	h, err := w.parser.Parse()
 	if err != nil {

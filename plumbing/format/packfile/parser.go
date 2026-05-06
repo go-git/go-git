@@ -30,9 +30,18 @@ var (
 // Parser decodes a packfile and calls any observer associated to it. Is used
 // to generate indexes.
 type Parser struct {
-	storage       storer.EncodedObjectStorer
-	cache         *parserCache
-	lowMemoryMode bool
+	storage           storer.EncodedObjectStorer
+	lowMemoryProvider LowMemoryCapable
+	cache             *parserCache
+	lowMemoryMode     bool
+
+	// parentRefCount tracks how many pending OFS-delta objects reference
+	// each parent offset, and parentHashCount tracks how many pending
+	// REF-delta objects reference each parent hash. In low-memory mode,
+	// object content is only freed from cache once both counts reach zero.
+	// Nil when not in low-memory mode.
+	parentRefCount  map[int64]int
+	parentHashCount map[plumbing.Hash]int
 
 	scanner   *Scanner
 	observers []Observer
@@ -80,6 +89,10 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 		p.lowMemoryMode = ok && lm.LowMemoryMode()
 	}
 
+	if p.lowMemoryProvider != nil {
+		p.lowMemoryMode = p.lowMemoryProvider.LowMemoryMode()
+	}
+
 	if p.scanner.seeker == nil {
 		p.lowMemoryMode = false
 	}
@@ -107,15 +120,16 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 	}
 
 	if p.cache != nil {
-		o := oh
-		for p.lowMemoryMode && o.content != nil {
-			sync.PutBytesBuffer(o.content)
-			o.content = nil
-
-			if o.parent == nil || o.parent.content == nil {
-				break
+		if p.lowMemoryMode && p.parentRefCount != nil {
+			// Free content for objects that have no remaining children
+			// needing their content. Walk up the parent chain.
+			for o := oh; o != nil && o.content != nil; o = o.parent {
+				if p.parentRefCount[o.Offset] > 0 || p.parentHashCount[o.Hash] > 0 {
+					break
+				}
+				sync.PutBytesBuffer(o.content)
+				o.content = nil
 			}
-			o = o.parent
 		}
 		p.cache.Add(oh)
 	}
@@ -183,10 +197,24 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, err
 	}
 
+	if p.lowMemoryMode {
+		p.parentRefCount = make(map[int64]int, len(pendingDeltas))
+		for _, oh := range pendingDeltas {
+			p.parentRefCount[oh.OffsetReference]++
+		}
+		p.parentHashCount = make(map[plumbing.Hash]int, len(pendingDeltaREFs))
+		for _, oh := range pendingDeltaREFs {
+			p.parentHashCount[oh.Reference]++
+		}
+	}
+
 	for _, oh := range pendingDeltaREFs {
 		err := p.processDelta(oh)
 		if err != nil {
 			return plumbing.ZeroHash, fmt.Errorf("processing ref-delta at offset %v: %w", oh.Offset, err)
+		}
+		if p.parentHashCount != nil {
+			p.parentHashCount[oh.Reference]--
 		}
 	}
 
@@ -194,6 +222,9 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		err := p.processDelta(oh)
 		if err != nil {
 			return plumbing.ZeroHash, fmt.Errorf("processing ofs-delta at offset %v: %w", oh.Offset, err)
+		}
+		if p.parentRefCount != nil {
+			p.parentRefCount[oh.OffsetReference]--
 		}
 	}
 
@@ -292,7 +323,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 		return bytes.NewReader(parent.content.Bytes()), nil
 	}
 
-	// If parent is a Delta object, the inflated object must come
+	// If parent is a delta object, the inflated object must come
 	// from either cache or storage, else we would need to inflate
 	// it to then inflate the current object, which could go on
 	// indefinitely.
