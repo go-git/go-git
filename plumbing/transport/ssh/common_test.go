@@ -7,6 +7,7 @@ import (
 
 	"github.com/gliderlabs/ssh"
 	"github.com/kevinburke/ssh_config"
+	"github.com/stretchr/testify/assert"
 	stdssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
 	. "gopkg.in/check.v1"
@@ -251,4 +252,52 @@ func (s *SuiteCommon) TestCommandWithInvalidAuthMethod(c *C) {
 
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, "invalid auth method")
+}
+
+func TestEndpointToCommand(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		cmd  string
+		path string
+		want string
+	}{
+		{
+			name: "plain path",
+			cmd:  "git-upload-pack",
+			path: "/repo.git",
+			want: "git-upload-pack '/repo.git'",
+		},
+		{
+			name: "path with single-quote injection payload",
+			cmd:  "git-upload-pack",
+			path: "/repo.git'; touch /tmp/x ; #",
+			want: `git-upload-pack '/repo.git'\''; touch /tmp/x ; #'`,
+		},
+		{
+			name: "bang is escaped for csh history expansion",
+			cmd:  "git-upload-pack",
+			path: "/repo!.git",
+			want: `git-upload-pack '/repo'\!'.git'`,
+		},
+		{
+			name: "mixed quote and bang",
+			cmd:  "git-upload-pack",
+			path: "/a'b!c",
+			want: `git-upload-pack '/a'\''b'\!'c'`,
+		},
+		{
+			name: "inert shell metacharacters pass through",
+			cmd:  "git-upload-pack",
+			path: "/a\\b\"c$d`e",
+			want: "git-upload-pack '/a\\b\"c$d`e'",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ep := &transport.Endpoint{Path: tc.path}
+			assert.Equal(t, tc.want, endpointToCommand(tc.cmd, ep))
+		})
+	}
 }
