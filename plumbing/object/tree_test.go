@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/memory"
 
 	. "gopkg.in/check.v1"
 )
@@ -1689,7 +1690,7 @@ func encodeRawTreeEntries(entries ...rawTreeEntry) []byte {
 	return buf.Bytes()
 }
 
-func decodeRawTree(t *testing.T, body []byte) (*Tree, error) {
+func newRawTreeObject(t *testing.T, body []byte) *plumbing.MemoryObject {
 	t.Helper()
 
 	obj := &plumbing.MemoryObject{}
@@ -1700,8 +1701,16 @@ func decodeRawTree(t *testing.T, body []byte) (*Tree, error) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
+	return obj
+}
+
+func decodeRawTree(t *testing.T, body []byte) (*Tree, error) {
+	t.Helper()
+
+	obj := newRawTreeObject(t, body)
+
 	var tree Tree
-	err = tree.Decode(obj)
+	err := tree.Decode(obj)
 	return &tree, err
 }
 
@@ -1783,6 +1792,82 @@ func TestTreeDecodeEmptyClearsExistingEntries(t *testing.T) {
 
 	require.NoError(t, tree.Decode(obj))
 	assert.Empty(t, tree.Entries)
+}
+
+func TestTreeDecodeClearsExistingState(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TreeObject)
+
+	tree := &Tree{
+		Hash: plumbing.NewHash("1111111111111111111111111111111111111111"),
+		Entries: []TreeEntry{
+			{Name: "stale", Mode: filemode.Regular},
+		},
+		s:             store,
+		t:             map[string]*Tree{"stale": &Tree{}},
+		entriesSorted: false,
+	}
+
+	require.NoError(t, tree.Decode(obj))
+	assert.Equal(t, obj.Hash(), tree.Hash)
+	assert.Empty(t, tree.Entries)
+	assert.Same(t, store, tree.s)
+	assert.Nil(t, tree.t)
+	assert.True(t, tree.entriesSorted)
+}
+
+func TestTreeDecodeClearsPathCache(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	oldFileHash := bytes.Repeat([]byte{0xAA}, 20)
+	newFileHash := bytes.Repeat([]byte{0xBB}, 20)
+
+	oldSubtree := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"100644", "old", oldFileHash},
+	))
+	oldSubtreeHash, err := store.SetEncodedObject(oldSubtree)
+	require.NoError(t, err)
+
+	oldDir := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "sub", oldSubtreeHash[:]},
+	))
+	oldDirHash, err := store.SetEncodedObject(oldDir)
+	require.NoError(t, err)
+
+	oldRoot := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "dir", oldDirHash[:]},
+	))
+
+	newSubtree := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"100644", "new", newFileHash},
+	))
+	newSubtreeHash, err := store.SetEncodedObject(newSubtree)
+	require.NoError(t, err)
+
+	newDir := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "sub", newSubtreeHash[:]},
+	))
+	newDirHash, err := store.SetEncodedObject(newDir)
+	require.NoError(t, err)
+
+	newRoot := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"40000", "dir", newDirHash[:]},
+	))
+
+	tree := &Tree{s: store}
+	require.NoError(t, tree.Decode(oldRoot))
+	got, err := tree.FindEntry("dir/sub/old")
+	require.NoError(t, err)
+	assert.Equal(t, 0, bytes.Compare(oldFileHash, got.Hash[:]))
+
+	require.NoError(t, tree.Decode(newRoot))
+	got, err = tree.FindEntry("dir/sub/new")
+	require.NoError(t, err)
+	assert.Equal(t, 0, bytes.Compare(newFileHash, got.Hash[:]))
 }
 
 func TestTreeFindEntryDuplicates(t *testing.T) {

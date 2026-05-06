@@ -240,14 +240,19 @@ func (t *Tree) Type() plumbing.ObjectType {
 	return plumbing.TreeObject
 }
 
+func (t *Tree) reset() {
+	storer := t.s
+	*t = Tree{s: storer}
+}
+
 // Decode transform an plumbing.EncodedObject into a Tree struct
 func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.TreeObject {
 		return ErrUnsupportedObject
 	}
 
+	t.reset()
 	t.Hash = o.Hash()
-	t.Entries = nil
 	// assume tree is sorted as a valid tree should always be sorted.
 	t.entriesSorted = true
 	if o.Size() == 0 {

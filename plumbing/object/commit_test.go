@@ -42,6 +42,49 @@ func (s *SuiteCommit) TestDecodeNonCommit(c *C) {
 	c.Assert(err, Equals, ErrUnsupportedObject)
 }
 
+func (s *SuiteCommit) TestDecodeClearsExistingState(c *C) {
+	const raw = "tree eba74343e2f15d62adedfd8c883ee0262b5c8021\n\nfresh message\n"
+
+	staleSrc := &plumbing.MemoryObject{}
+	commit := &Commit{
+		Hash:         plumbing.NewHash("1111111111111111111111111111111111111111"),
+		Author:       Signature{Name: "Stale Author", Email: "author@example.local", When: time.Unix(1, 0).UTC()},
+		Committer:    Signature{Name: "Stale Committer", Email: "committer@example.local", When: time.Unix(2, 0).UTC()},
+		MergeTag:     "stale merge tag",
+		PGPSignature: "stale signature",
+		Message:      "stale message",
+		TreeHash:     plumbing.NewHash("2222222222222222222222222222222222222222"),
+		ParentHashes: []plumbing.Hash{
+			plumbing.NewHash("3333333333333333333333333333333333333333"),
+		},
+		Encoding: MessageEncoding("latin-1"),
+		ExtraHeaders: []ExtraHeader{
+			{Key: "x-stale", Value: "stale"},
+		},
+		s:   s.Storer,
+		src: staleSrc,
+	}
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.CommitObject)
+	_, err := obj.Write([]byte(raw))
+	c.Assert(err, IsNil)
+
+	c.Assert(commit.Decode(obj), IsNil)
+	c.Assert(commit.Hash, Equals, obj.Hash())
+	c.Assert(commit.Author, DeepEquals, Signature{})
+	c.Assert(commit.Committer, DeepEquals, Signature{})
+	c.Assert(commit.MergeTag, Equals, "")
+	c.Assert(commit.PGPSignature, Equals, "")
+	c.Assert(commit.Message, Equals, "fresh message\n")
+	c.Assert(commit.TreeHash.String(), Equals, "eba74343e2f15d62adedfd8c883ee0262b5c8021")
+	c.Assert(commit.ParentHashes, IsNil)
+	c.Assert(commit.Encoding, Equals, defaultUtf8CommitMessageEncoding)
+	c.Assert(commit.ExtraHeaders, IsNil)
+	c.Assert(commit.s, Equals, s.Storer)
+	c.Assert(commit.src, Equals, obj)
+}
+
 func (s *SuiteCommit) TestType(c *C) {
 	c.Assert(s.Commit.Type(), Equals, plumbing.CommitObject)
 }

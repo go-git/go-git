@@ -83,12 +83,18 @@ func (t *Tag) Type() plumbing.ObjectType {
 	return plumbing.TagObject
 }
 
+func (t *Tag) reset() {
+	storer := t.s
+	*t = Tag{s: storer}
+}
+
 // Decode transforms a plumbing.EncodedObject into a Tag struct.
 func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.TagObject {
 		return ErrUnsupportedObject
 	}
 
+	t.reset()
 	t.Hash = o.Hash()
 	t.src = o
 
@@ -181,16 +187,26 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	defer ioutil.CheckClose(w, &err)
 
 	if _, err = fmt.Fprintf(w,
-		"object %s\ntype %s\ntag %s\ntagger ",
+		"object %s\ntype %s\ntag %s\n",
 		t.Target.String(), t.TargetType.Bytes(), t.Name); err != nil {
 		return err
 	}
 
-	if err = t.Tagger.Encode(w); err != nil {
-		return err
+	if !isZeroSignature(t.Tagger) {
+		if _, err = fmt.Fprint(w, "tagger "); err != nil {
+			return err
+		}
+
+		if err = t.Tagger.Encode(w); err != nil {
+			return err
+		}
+
+		if _, err = fmt.Fprint(w, "\n"); err != nil {
+			return err
+		}
 	}
 
-	if _, err = fmt.Fprint(w, "\n\n"); err != nil {
+	if _, err = fmt.Fprint(w, "\n"); err != nil {
 		return err
 	}
 
@@ -211,6 +227,10 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	return err
+}
+
+func isZeroSignature(s Signature) bool {
+	return s.Name == "" && s.Email == "" && s.When.IsZero()
 }
 
 // Commit returns the commit pointed to by the tag. If the tag points to a

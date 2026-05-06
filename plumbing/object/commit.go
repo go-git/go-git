@@ -241,14 +241,22 @@ func (c *Commit) Type() plumbing.ObjectType {
 	return plumbing.CommitObject
 }
 
+func (c *Commit) reset() {
+	storer := c.s
+	*c = Commit{
+		Encoding: defaultUtf8CommitMessageEncoding,
+		s:        storer,
+	}
+}
+
 // Decode transforms a plumbing.EncodedObject into a Commit struct.
 func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.CommitObject {
 		return ErrUnsupportedObject
 	}
 
+	c.reset()
 	c.Hash = o.Hash()
-	c.Encoding = defaultUtf8CommitMessageEncoding
 	c.src = o
 
 	reader, err := o.Reader()
