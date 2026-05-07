@@ -130,18 +130,26 @@ func (s *ModulesSuite) TestUnmarshal(c *C) {
 [submodule "suspicious"]
         path = ../../foo/bar
         url = https://github.com/foo/bar.git
+[submodule ".."]
+        path = deps/x
+        url = https://github.com/foo/bar.git
 `)
 
 	cfg := NewModules()
 	err := cfg.Unmarshal(input)
 	c.Assert(err, IsNil)
 
+	// The "suspicious" entry is dropped because of its `..` path,
+	// and the `..` entry is dropped because of its suspicious name
+	// (canonical Git's "ignoring suspicious submodule name" rule).
 	c.Assert(cfg.Submodules, HasLen, 2)
 	c.Assert(cfg.Submodules["qux"].Name, Equals, "qux")
 	c.Assert(cfg.Submodules["qux"].URL, Equals, "https://github.com/foo/qux.git")
 	c.Assert(cfg.Submodules["foo/bar"].Name, Equals, "foo/bar")
 	c.Assert(cfg.Submodules["foo/bar"].URL, Equals, "https://github.com/foo/bar.git")
 	c.Assert(cfg.Submodules["foo/bar"].Branch, Equals, "dev")
+	_, hasDotDot := cfg.Submodules[".."]
+	c.Assert(hasDotDot, Equals, false)
 }
 
 func (s *ModulesSuite) TestUnmarshalMarshal(c *C) {
