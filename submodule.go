@@ -197,8 +197,8 @@ func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
 	}
 
 	if len(cfg.Remotes) == 1 {
-		for _, rc := range cfg.Remotes {
-			return rc, nil
+		for name := range cfg.Remotes {
+			return lookupRemote(cfg, name)
 		}
 	}
 
@@ -209,6 +209,9 @@ func lookupRemote(cfg *config.Config, name string) (*config.RemoteConfig, error)
 	rc, ok := cfg.Remotes[name]
 	if !ok {
 		return nil, fmt.Errorf("remote %q not found", name)
+	}
+	if len(rc.URLs) == 0 {
+		return nil, fmt.Errorf("remote %q has no configured URL", name)
 	}
 	return rc, nil
 }
