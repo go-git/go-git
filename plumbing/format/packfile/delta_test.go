@@ -183,6 +183,12 @@ func FuzzPatchDelta(f *testing.F) {
 	f.Add([]byte("some value"), []byte("\n\x0e\x0evalue"))
 	f.Add([]byte("some value"), []byte("\n\x0e\x0eva"))
 	f.Add([]byte("some value"), []byte("\n\x80\x80\x80\x80\x80\x802\x7fvalue"))
+	// Two copy-from-delta ops whose declared sizes each fit within
+	// targetSz but whose sum exceeds it. Header: srcSz=10, targetSz=10.
+	f.Add([]byte("AAAAAAAAAA"), []byte("\n\n\aBBBBBBB\aCCCCCCC"))
+	// Two copy-from-src ops with the same shape: cmd=0x90 takes one
+	// size byte and reads from offset 0 of src.
+	f.Add([]byte("AAAAAAAAAA"), []byte("\n\n\x90\a\x90\a"))
 
 	f.Fuzz(func(t *testing.T, input1, input2 []byte) {
 		PatchDelta(input1, input2)
