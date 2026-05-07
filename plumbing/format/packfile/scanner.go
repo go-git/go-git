@@ -29,6 +29,10 @@ var (
 	ErrSeekNotSupported = NewError("not seek support")
 	// ErrMalformedPackFile is returned by the parser when the pack file is corrupted.
 	ErrMalformedPackFile = errors.New("malformed PACK file")
+	// ErrLengthOverflow is returned when a variable-length integer would not
+	// fit into its accumulator because the input declares more continuation
+	// bytes than the type can hold.
+	ErrLengthOverflow = errors.New("variable-length integer overflow")
 )
 
 // ObjectHeader contains the information related to the object, this information
@@ -220,6 +224,13 @@ func (s *Scanner) nextObjectHeader() (*ObjectHeader, error) {
 			return nil, err
 		}
 
+		// An OFS-delta references a base object that appears earlier
+		// in the pack; the negative offset must be strictly positive
+		// and not larger than the current object's offset.
+		if no <= 0 || no > h.Offset {
+			return nil, fmt.Errorf("%w: invalid OFS delta offset", ErrMalformedPackFile)
+		}
+
 		h.OffsetReference = h.Offset - no
 	case plumbing.REFDeltaObject:
 		var err error
@@ -303,6 +314,13 @@ func (s *Scanner) readLength(first byte) (int64, error) {
 	shift := firstLengthBits
 	var err error
 	for c&maskContinue > 0 {
+		// Mirrors unpack_object_header_buffer in canonical Git's
+		// packfile.c: a continuation byte at shift > 64-7 cannot
+		// contribute without overflowing an int64.
+		if shift > 64-lengthBits {
+			return 0, fmt.Errorf("%w: %w", ErrMalformedPackFile, ErrLengthOverflow)
+		}
+
 		if c, err = s.r.ReadByte(); err != nil {
 			return 0, err
 		}
