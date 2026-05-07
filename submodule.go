@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"path/filepath"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/config"
+	giturl "github.com/go-git/go-git/v5/internal/url"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -138,10 +140,23 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
-	if !path.IsAbs(moduleEndpoint.Path) && moduleEndpoint.Protocol == "file" {
+	// A relative submodule URL such as "../X.git" must resolve against
+	// the parent repository's remote URL, not against the process CWD.
+	// Detect relativity from the raw configured URL because
+	// transport.NewEndpoint normalizes local paths to absolute form via
+	// filepath.Abs, which would otherwise mask the relative form here.
+	if giturl.IsLocalEndpoint(s.c.URL) &&
+		!path.IsAbs(s.c.URL) && !filepath.IsAbs(s.c.URL) {
+
 		remotes, err := s.w.r.Remotes()
 		if err != nil {
 			return nil, err
+		}
+		if len(remotes) == 0 {
+			return nil, fmt.Errorf(
+				"submodule %q has relative URL %q but parent has no remote configured",
+				s.c.Name, s.c.URL,
+			)
 		}
 
 		rootEndpoint, err := transport.NewEndpoint(remotes[0].c.URLs[0])
@@ -149,7 +164,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 			return nil, err
 		}
 
-		rootEndpoint.Path = path.Join(rootEndpoint.Path, moduleEndpoint.Path)
+		rootEndpoint.Path = path.Join(rootEndpoint.Path, s.c.URL)
 		*moduleEndpoint = *rootEndpoint
 	}
 

@@ -278,3 +278,105 @@ func (s *SubmoduleSuite) TestSubmoduleParseScp(c *C) {
 	_, err := submodule.Repository()
 	c.Assert(err, IsNil)
 }
+
+// newSubmoduleForRelativeURL constructs an in-memory Repository with
+// the given parent remote URL configured as origin, plus a Submodule
+// whose configured URL is the given submoduleURL. Returns the
+// submodule for direct Repository() invocation. Pass parentRemoteURL
+// = "" to omit the origin remote entirely.
+func newSubmoduleForRelativeURL(c *C, parentRemoteURL, submoduleName, submoduleURL string) *Submodule {
+	repo := &Repository{
+		Storer: memory.NewStorage(),
+		wt:     memfs.New(),
+	}
+	if parentRemoteURL != "" {
+		_, err := repo.CreateRemote(&config.RemoteConfig{
+			Name: DefaultRemoteName,
+			URLs: []string{parentRemoteURL},
+		})
+		c.Assert(err, IsNil)
+	}
+	worktree := &Worktree{
+		Filesystem: memfs.New(),
+		r:          repo,
+	}
+	return &Submodule{
+		initialized: true,
+		c: &config.Submodule{
+			Name: submoduleName,
+			URL:  submoduleURL,
+		},
+		w: worktree,
+	}
+}
+
+func (s *SubmoduleSuite) TestRepositoryRelativeURLHTTPSParent(c *C) {
+	sm := newSubmoduleForRelativeURL(c,
+		"https://example.invalid/group/proj.git", "basic", "../X.git")
+
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+	c.Assert(remotes[0].Config().URLs[0], Equals,
+		"https://example.invalid/group/X.git")
+}
+
+func (s *SubmoduleSuite) TestRepositoryRelativeURLSSHParent(c *C) {
+	sm := newSubmoduleForRelativeURL(c,
+		"ssh://git@example.invalid/group/proj.git", "basic", "../X.git")
+
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+	c.Assert(remotes[0].Config().URLs[0], Equals,
+		"ssh://git@example.invalid/group/X.git")
+}
+
+func (s *SubmoduleSuite) TestRepositoryRelativeURLDeepTraversal(c *C) {
+	sm := newSubmoduleForRelativeURL(c,
+		"https://example.invalid/group/proj.git", "basic", "../../org/X.git")
+
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+	c.Assert(remotes[0].Config().URLs[0], Equals,
+		"https://example.invalid/org/X.git")
+}
+
+func (s *SubmoduleSuite) TestRepositoryAbsoluteLocalURLPreserved(c *C) {
+	raw := "/abs/path/X.git"
+	sm := newSubmoduleForRelativeURL(c, "", "basic", raw)
+
+	r, err := sm.Repository()
+	c.Assert(err, IsNil)
+
+	remotes, err := r.Remotes()
+	c.Assert(err, IsNil)
+	c.Assert(remotes, HasLen, 1)
+
+	// transport.NewEndpoint -> parseFile normalizes via filepath.Abs;
+	// on Windows this prepends a drive letter. Mirror that here so the
+	// assertion is portable. The point of this test is that the
+	// relative-resolution branch is skipped for absolute inputs, not
+	// the exact form parseFile produces.
+	expected, err := filepath.Abs(raw)
+	c.Assert(err, IsNil)
+	c.Assert(remotes[0].Config().URLs[0], Equals, "file://"+expected)
+}
+
+func (s *SubmoduleSuite) TestRepositoryRelativeURLNoParentRemote(c *C) {
+	sm := newSubmoduleForRelativeURL(c, "", "basic", "../X.git")
+
+	_, err := sm.Repository()
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, `submodule "basic" has relative URL "\.\./X\.git" but parent has no remote configured`)
+}
