@@ -430,3 +430,71 @@ func TestMalformedPack(t *testing.T) {
 	_, err = parser.Parse()
 	require.ErrorContains(t, err, "malformed pack")
 }
+
+type stubLowMemoryCapable struct{ lowMemory bool }
+
+func (s *stubLowMemoryCapable) LowMemoryMode() bool { return s.lowMemory }
+
+func TestWithLowMemoryCapable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		provider          packfile.LowMemoryCapable
+		seekable          bool
+		wantLowMemoryMode bool
+	}{
+		{
+			name:              "nil provider",
+			provider:          nil,
+			seekable:          true,
+			wantLowMemoryMode: false,
+		},
+		{
+			name:              "provider returns true, seekable reader",
+			provider:          &stubLowMemoryCapable{true},
+			seekable:          true,
+			wantLowMemoryMode: true,
+		},
+		{
+			name:              "provider returns true, non-seekable reader",
+			provider:          &stubLowMemoryCapable{true},
+			seekable:          false,
+			wantLowMemoryMode: false,
+		},
+		{
+			name:              "provider returns false",
+			provider:          &stubLowMemoryCapable{false},
+			seekable:          true,
+			wantLowMemoryMode: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			pf, pfErr := fixtures.Basic().One().Packfile()
+			require.NoError(t, pfErr)
+
+			var reader io.Reader
+			if tc.seekable {
+				f, err := os.CreateTemp(t.TempDir(), "pack")
+				require.NoError(t, err)
+				defer f.Close()
+				_, err = io.Copy(f, pf)
+				require.NoError(t, err)
+				_, err = f.Seek(0, io.SeekStart)
+				require.NoError(t, err)
+				reader = f
+			} else {
+				// Wrap in a struct to strip io.Seeker.
+				reader = struct{ io.Reader }{pf}
+			}
+
+			parser := packfile.NewParser(reader, packfile.WithLowMemoryCapable(tc.provider))
+			field := reflect.ValueOf(parser).Elem().FieldByName("lowMemoryMode")
+			assert.Equal(t, tc.wantLowMemoryMode, field.Bool())
+		})
+	}
+}

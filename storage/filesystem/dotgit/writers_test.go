@@ -26,7 +26,7 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	fs := osfs.New(b.TempDir())
 
 	for b.Loop() {
-		w, err := newPackWrite(fs, config.SHA1, false)
+		w, err := newPackWrite(fs, config.SHA1, false, nil)
 
 		require.NoError(b, err)
 		pf, pfErr := f.Packfile()
@@ -46,7 +46,7 @@ func TestNewObjectPack(t *testing.T) {
 	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	pf, pfErr := f.Packfile()
@@ -92,7 +92,7 @@ func TestNewObjectPackUnused(t *testing.T) {
 	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	assert.NoError(t, w.Close())
@@ -159,7 +159,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
-	w, err := newPackWrite(fs, config.SHA1, false)
+	w, err := newPackWrite(fs, config.SHA1, false, nil)
 	require.NoError(t, err)
 
 	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
@@ -186,7 +186,7 @@ func TestPackWriterPermissions(t *testing.T) {
 			dot := New(tc.fs)
 			require.NoError(t, dot.Initialize())
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 
 			pf, pfErr := f.Packfile()
@@ -236,7 +236,7 @@ func TestPackWriterExistingReadOnly(t *testing.T) {
 
 			writePack := func() {
 				t.Helper()
-				w, err := dot.NewObjectPack()
+				w, err := dot.NewObjectPack(nil)
 				require.NoError(t, err)
 
 				pf, pfErr := f.Packfile()
@@ -312,7 +312,7 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 				fmt.Sprintf("pack-%s%s", f.PackfileHash, ext))
 			require.NoError(t, fs.MkdirAll(path, 0o755))
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 
 			pf, pfErr := f.Packfile()
@@ -323,6 +323,97 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			err = w.Close()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "unexpected file type")
+		})
+	}
+}
+
+type lowMemStub struct{ lowMemory bool }
+
+func (s *lowMemStub) LowMemoryMode() bool { return s.lowMemory }
+
+func TestNewObjectPackLowMemory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("basic pack without deltas", func(t *testing.T) {
+		t.Parallel()
+
+		f := fixtures.Basic().One()
+
+		fs := osfs.New(t.TempDir())
+		dot := New(fs)
+
+		w, err := dot.NewObjectPack(&lowMemStub{true})
+		require.NoError(t, err)
+
+		pf, pfErr := f.Packfile()
+		require.NoError(t, pfErr)
+		_, err = io.Copy(w, pf)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+
+		pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
+		idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
+
+		stat, err := fs.Stat(pfPath)
+		require.NoError(t, err)
+		assert.Equal(t, int64(84794), stat.Size())
+
+		stat, err = fs.Stat(idxPath)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1940), stat.Size())
+	})
+
+	t.Run("pack with OFS-delta objects", func(t *testing.T) {
+		t.Parallel()
+
+		f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
+
+		fs := osfs.New(t.TempDir())
+		dot := New(fs)
+
+		w, err := dot.NewObjectPack(&lowMemStub{true})
+		require.NoError(t, err)
+
+		pf, pfErr := f.Packfile()
+		require.NoError(t, pfErr)
+		_, err = io.Copy(w, pf)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+
+		pfPath := fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash)
+		idxPath := fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash)
+
+		_, err = fs.Stat(pfPath)
+		require.NoError(t, err)
+
+		_, err = fs.Stat(idxPath)
+		require.NoError(t, err)
+	})
+}
+
+func BenchmarkNewObjectPackMemory(b *testing.B) {
+	f := fixtures.ByURL("https://github.com/src-d/go-git.git").One()
+
+	for _, tc := range []struct {
+		name string
+		lmc  packfile.LowMemoryCapable
+	}{
+		{"high_memory", nil},
+		{"low_memory", &lowMemStub{true}},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				fs := osfs.New(b.TempDir())
+				w, err := newPackWrite(fs, config.SHA1, false, tc.lmc)
+				require.NoError(b, err)
+
+				pf, pfErr := f.Packfile()
+				require.NoError(b, pfErr)
+				_, err = io.Copy(w, pf)
+				require.NoError(b, err)
+				require.NoError(b, w.Close())
+			}
 		})
 	}
 }

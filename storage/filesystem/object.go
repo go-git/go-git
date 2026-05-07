@@ -292,13 +292,18 @@ func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 	return plumbing.NewMemoryObject(s.oh)
 }
 
+// LowMemoryMode returns true if low memory mode is enabled for this storage.
+func (s *ObjectStorage) LowMemoryMode() bool {
+	return !s.options.HighMemoryMode
+}
+
 // PackfileWriter returns a writer for creating a new packfile.
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
 
-	w, err := s.dir.NewObjectPack()
+	w, err := s.dir.NewObjectPack(s)
 	if err != nil {
 		return nil, err
 	}
