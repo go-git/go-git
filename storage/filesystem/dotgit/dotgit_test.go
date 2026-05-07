@@ -3,6 +3,7 @@ package dotgit
 import (
 	"bufio"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -43,6 +45,32 @@ func (s *SuiteDotGit) TemporalFilesystem(c *C) (fs billy.Filesystem) {
 	}
 
 	return fs
+}
+
+func (s *SuiteDotGit) TestModuleRejectsEscapingNames(c *C) {
+	d := New(memfs.New())
+	// Only true path-traversal cases — names like "/etc" or
+	// "modules/../escape" land inside modules/ once Join cleans
+	// them, so the containment check correctly accepts those.
+	bad := []string{
+		"..",
+		"../x",
+		"foo/../..",
+		"a/b/c/../../../..",
+	}
+	for _, n := range bad {
+		_, err := d.Module(n)
+		c.Assert(errors.Is(err, ErrModuleNameEscape), Equals, true,
+			Commentf("name %q", n))
+	}
+}
+
+func (s *SuiteDotGit) TestModuleAcceptsBenignNames(c *C) {
+	d := New(memfs.New())
+	for _, n := range []string{"foo", "lib/foo", "x.y"} {
+		_, err := d.Module(n)
+		c.Assert(err, IsNil, Commentf("name %q", n))
+	}
 }
 
 func (s *SuiteDotGit) TestInitialize(c *C) {
