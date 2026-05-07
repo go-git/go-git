@@ -2,12 +2,16 @@ package git
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -573,4 +577,48 @@ func (s *SubmoduleSuite) TestSubmoduleRelativeURLRemoteWithoutURLs(c *C) {
 	c.Assert(subRepo, IsNil)
 	c.Assert(err, ErrorMatches,
 		`resolving relative submodule URL: remote "origin" has no configured URL`)
+}
+
+// TestSubmoduleRepositoryRejectsEscapingName covers the storage-layer
+// defence against submodule name path traversal. Constructing a
+// Submodule with `Name = ".."` programmatically (bypassing the
+// .gitmodules parser) must not result in `Repository()` opening a
+// storer rooted in the parent's `.git/` directory, and must leave the
+// parent's HEAD reference untouched.
+func (s *SubmoduleSuite) TestSubmoduleRepositoryRejectsEscapingName(c *C) {
+	dotfs := memfs.New()
+	wtfs := memfs.New()
+	// Use filesystem.NewStorage rather than memory.NewStorage for the
+	// parent because only the filesystem-backed ModuleStorer exercises
+	// the dotgit defence; the in-memory implementation maps names to
+	// storage units directly without traversing a path.
+	storer := filesystem.NewStorage(dotfs, cache.NewObjectLRUDefault())
+	r, err := Init(storer, wtfs)
+	c.Assert(err, IsNil)
+
+	wt, err := r.Worktree()
+	c.Assert(err, IsNil)
+
+	headBefore, err := storer.Reference(plumbing.HEAD)
+	c.Assert(err, IsNil)
+
+	sm := &Submodule{
+		initialized: true,
+		c: &config.Submodule{
+			Name: "..",
+			Path: "deps/x",
+			URL:  "https://example.com/",
+		},
+		w: wt,
+	}
+
+	repo, err := sm.Repository()
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, dotgit.ErrModuleNameEscape), Equals, true)
+	c.Assert(repo, IsNil)
+
+	headAfter, err := storer.Reference(plumbing.HEAD)
+	c.Assert(err, IsNil)
+	c.Assert(headBefore.Target(), Equals, headAfter.Target(),
+		Commentf("parent HEAD must not be overwritten"))
 }
