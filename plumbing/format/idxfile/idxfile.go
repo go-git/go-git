@@ -151,7 +151,7 @@ func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) (uint64, error) {
 
 	if (uint64(ofs) & isO64Mask) != 0 {
 		offset := 8 * (uint64(ofs) & ^isO64Mask)
-		if offset+8 > uint64(len(idx.Offset64)) {
+		if l := uint64(len(idx.Offset64)); l < 8 || offset > l-8 {
 			return 0, fmt.Errorf("%w: offset64 index out of range", ErrMalformedIdxFile)
 		}
 		return encbin.BigEndian.Uint64(idx.Offset64[offset : offset+8]), nil
