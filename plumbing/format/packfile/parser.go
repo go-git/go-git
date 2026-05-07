@@ -26,6 +26,41 @@ var (
 	ErrDeltaNotCached = errors.New("delta could not be found in cache")
 )
 
+// maxObjectPreallocBytes caps the up-front size hint passed to
+// bytes.Buffer.Grow when staging an object's contents, so a malformed length
+// cannot trigger a huge or out-of-range allocation. The buffer still grows
+// dynamically as data is written; this is purely a hint cap.
+const maxObjectPreallocBytes = 1 << 30 // 1 GiB
+
+// maxObjectsPrealloc caps the up-front capacity reserved from the pack's
+// declared object count, so a header advertising an absurd quantity cannot
+// trigger a multi-gigabyte allocation. The slice and maps still grow
+// organically beyond this hint.
+const maxObjectsPrealloc = 1 << 16 // 64 Ki entries
+
+// growHint returns a non-negative int64 size, clamped to a sane upper bound,
+// suitable for passing to bytes.Buffer.Grow.
+func growHint(n int64) int {
+	switch {
+	case n <= 0:
+		return 0
+	case n > maxObjectPreallocBytes:
+		return maxObjectPreallocBytes
+	default:
+		return int(n)
+	}
+}
+
+// objectsHint returns a non-negative count, clamped to maxObjectsPrealloc,
+// suitable for passing to make() as the capacity hint for slices or maps
+// sized from a pack's declared object count.
+func objectsHint(n uint32) int {
+	if n > maxObjectsPrealloc {
+		return maxObjectsPrealloc
+	}
+	return int(n)
+}
+
 // Observer interface is implemented by index encoders.
 type Observer interface {
 	// OnHeader is called when a new packfile is opened.
@@ -166,9 +201,10 @@ func (p *Parser) init() error {
 	}
 
 	p.count = c
-	p.oiByHash = make(map[plumbing.Hash]*objectInfo, p.count)
-	p.oiByOffset = make(map[int64]*objectInfo, p.count)
-	p.oi = make([]*objectInfo, p.count)
+	hint := objectsHint(p.count)
+	p.oiByHash = make(map[plumbing.Hash]*objectInfo, hint)
+	p.oiByOffset = make(map[int64]*objectInfo, hint)
+	p.oi = make([]*objectInfo, 0, hint)
 
 	return nil
 }
@@ -261,7 +297,7 @@ func (p *Parser) indexObjects() error {
 		}
 		if delta && !p.scanner.IsSeekable {
 			buf.Reset()
-			buf.Grow(int(oh.Length))
+			buf.Grow(growHint(oh.Length))
 			writers = append(writers, buf)
 		}
 
@@ -306,7 +342,7 @@ func (p *Parser) indexObjects() error {
 		}
 
 		p.oiByOffset[oh.Offset] = ota
-		p.oi[i] = ota
+		p.oi = append(p.oi, ota)
 	}
 
 	return nil
@@ -318,7 +354,7 @@ func (p *Parser) resolveDeltas() error {
 
 	for _, obj := range p.oi {
 		buf.Reset()
-		buf.Grow(int(obj.Length))
+		buf.Grow(growHint(obj.Length))
 		err := p.get(obj, buf)
 		if err != nil {
 			return err
@@ -405,7 +441,7 @@ func (p *Parser) get(o *objectInfo, buf *bytes.Buffer) (err error) {
 	if o.DiskType.IsDelta() {
 		b := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(b)
-		buf.Grow(int(o.Length))
+		buf.Grow(growHint(o.Length))
 		err := p.get(o.Parent, b)
 		if err != nil {
 			return err

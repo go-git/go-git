@@ -35,6 +35,9 @@ const (
 	minDeltaSize = 4
 )
 
+// uintBits is the bit width of uint on the current platform (32 or 64).
+const uintBits = 32 << (^uint(0) >> 63)
+
 type offset struct {
 	mask  byte
 	shift uint
@@ -241,12 +244,18 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 		return ErrInvalidDelta
 	}
 
-	srcSz, delta := decodeLEB128(delta)
+	srcSz, delta, err := decodeLEB128(delta)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidDelta, err)
+	}
 	if srcSz != uint(len(src)) {
 		return ErrInvalidDelta
 	}
 
-	targetSz, delta := decodeLEB128(delta)
+	targetSz, delta, err := decodeLEB128(delta)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidDelta, err)
+	}
 	remainingTargetSz := targetSz
 
 	var cmd byte
@@ -410,19 +419,25 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 }
 
 // Decodes a number encoded as an unsigned LEB128 at the start of some
-// binary data and returns the decoded number and the rest of the
-// stream.
+// binary data and returns the decoded number, the rest of the stream,
+// and an error if the encoded value does not fit in a uint.
 //
 // This must be called twice on the delta data buffer, first to get the
 // expected source buffer size, and again to get the target buffer size.
-func decodeLEB128(input []byte) (uint, []byte) {
+func decodeLEB128(input []byte) (uint, []byte, error) {
 	if len(input) == 0 {
-		return 0, input
+		return 0, input, nil
 	}
 
 	var num, sz uint
 	var b byte
 	for {
+		// A continuation byte at shift > uintBits-7 cannot contribute
+		// without overflowing the accumulator.
+		if sz*7 > uintBits-7 {
+			return 0, input, ErrLengthOverflow
+		}
+
 		b = input[sz]
 		num |= (uint(b) & payload) << (sz * 7) // concats 7 bits chunks
 		sz++
@@ -432,12 +447,16 @@ func decodeLEB128(input []byte) (uint, []byte) {
 		}
 	}
 
-	return num, input[sz:]
+	return num, input[sz:], nil
 }
 
 func decodeLEB128ByteReader(input io.ByteReader) (uint, error) {
 	var num, sz uint
 	for {
+		if sz*7 > uintBits-7 {
+			return 0, ErrLengthOverflow
+		}
+
 		b, err := input.ReadByte()
 		if err != nil {
 			return 0, err

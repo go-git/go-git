@@ -1,10 +1,32 @@
 package packfile
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestDecodeLEB128Overflow(t *testing.T) {
+	t.Parallel()
+
+	// Eleven continuation bytes is enough to push shift past the bit width
+	// of uint on either 32- or 64-bit platforms.
+	input := append(bytes.Repeat([]byte{0x80}, 11), 0x01)
+
+	_, _, err := decodeLEB128(input)
+	require.ErrorIs(t, err, ErrLengthOverflow)
+}
+
+func TestDecodeLEB128ByteReaderOverflow(t *testing.T) {
+	t.Parallel()
+
+	input := bytes.Repeat([]byte{0x80}, 11)
+
+	_, err := decodeLEB128ByteReader(bytes.NewReader(input))
+	require.ErrorIs(t, err, ErrLengthOverflow)
+}
 
 func TestDecodeLEB128(t *testing.T) {
 	t.Parallel()
@@ -64,7 +86,8 @@ func TestDecodeLEB128(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotNum, gotRest := decodeLEB128(tc.input)
+			gotNum, gotRest, err := decodeLEB128(tc.input)
+			assert.NoError(t, err)
 			assert.Equal(t, tc.want, gotNum, "decoded number mismatch")
 			assert.Equal(t, tc.wantRest, gotRest, "remaining bytes mismatch")
 		})
