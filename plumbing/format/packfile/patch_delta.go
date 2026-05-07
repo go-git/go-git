@@ -319,10 +319,9 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 	return nil
 }
 
-func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
+func patchDeltaWriter(dst io.Writer, base io.ReaderAt, deltaBuf *bufio.Reader,
 	typ plumbing.ObjectType, writeHeader objectHeaderWriter, of format.ObjectFormat,
 ) (uint, plumbing.Hash, error) {
-	deltaBuf := bufio.NewReader(delta)
 	srcSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
 	if err != nil {
 		if err == io.EOF {
