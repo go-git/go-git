@@ -148,18 +148,12 @@ func (s *Submodule) Repository() (*Repository, error) {
 	if giturl.IsLocalEndpoint(s.c.URL) &&
 		!path.IsAbs(s.c.URL) && !filepath.IsAbs(s.c.URL) {
 
-		remotes, err := s.w.r.Remotes()
+		base, err := defaultRemote(s.w.r)
 		if err != nil {
-			return nil, err
-		}
-		if len(remotes) == 0 {
-			return nil, fmt.Errorf(
-				"submodule %q has relative URL %q but parent has no remote configured",
-				s.c.Name, s.c.URL,
-			)
+			return nil, fmt.Errorf("resolving relative submodule URL: %w", err)
 		}
 
-		rootEndpoint, err := transport.NewEndpoint(remotes[0].c.URLs[0])
+		rootEndpoint, err := transport.NewEndpoint(base.URLs[0])
 		if err != nil {
 			return nil, err
 		}
@@ -174,6 +168,49 @@ func (s *Submodule) Repository() (*Repository, error) {
 	})
 
 	return r, err
+}
+
+// defaultRemote returns the remote that relative submodule URLs are
+// resolved against, mirroring canonical Git's repo_default_remote
+// (remote.c) and resolve_relative_url (builtin/submodule--helper.c):
+//
+//  1. if HEAD is on a branch with branch.<name>.remote configured,
+//     use that remote;
+//  2. else if exactly one remote is configured, use it;
+//  3. otherwise fall back to DefaultRemoteName ("origin").
+//
+// Each rule falls through unconditionally: a branch lookup that
+// finds the branch but with an empty Remote does not short-circuit
+// rule (2). Returns an error when the chosen remote is not configured.
+func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
+	cfg, err := r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	if ref, err := r.Reference(plumbing.HEAD, false); err == nil &&
+		ref.Type() == plumbing.SymbolicReference &&
+		ref.Target().IsBranch() {
+		if b, ok := cfg.Branches[ref.Target().Short()]; ok && b.Remote != "" {
+			return lookupRemote(cfg, b.Remote)
+		}
+	}
+
+	if len(cfg.Remotes) == 1 {
+		for _, rc := range cfg.Remotes {
+			return rc, nil
+		}
+	}
+
+	return lookupRemote(cfg, DefaultRemoteName)
+}
+
+func lookupRemote(cfg *config.Config, name string) (*config.RemoteConfig, error) {
+	rc, ok := cfg.Remotes[name]
+	if !ok {
+		return nil, fmt.Errorf("remote %q not found", name)
+	}
+	return rc, nil
 }
 
 // Update the registered submodule to match what the superproject expects, the
