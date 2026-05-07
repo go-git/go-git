@@ -530,3 +530,35 @@ func (s *SubmoduleSuite) TestSubmoduleRelativeURLPicksOrigin(c *C) {
 			Commentf("iteration %d: expected URL resolved against origin", i))
 	}
 }
+
+func (s *SubmoduleSuite) TestSubmoduleRelativeURLRemoteWithoutURLs(c *C) {
+	// Defense in depth: a relative submodule URL must be joined onto
+	// the chosen parent remote. If that remote has no configured URL,
+	// earlier code panicked on `base.URLs[0]`. Mutating the in-memory
+	// config directly bypasses SetConfig's validation, mirroring the
+	// on-disk case where a `[remote "origin"]` section with no
+	// `url =` entry could be loaded.
+	parent := &Repository{
+		Storer: memory.NewStorage(),
+		wt:     memfs.New(),
+	}
+	cfg, err := parent.Config()
+	c.Assert(err, IsNil)
+	cfg.Remotes["origin"] = &config.RemoteConfig{Name: "origin", URLs: nil}
+
+	sub := &Submodule{
+		initialized: true,
+		w:           &Worktree{Filesystem: memfs.New(), r: parent},
+		c: &config.Submodule{
+			Name: "child",
+			Path: "child",
+			URL:  "../child",
+		},
+	}
+
+	subRepo, err := sub.Repository()
+	c.Assert(err, NotNil)
+	c.Assert(subRepo, IsNil)
+	c.Assert(err, ErrorMatches,
+		`resolving relative submodule URL: remote "origin" has no configured URL`)
+}
