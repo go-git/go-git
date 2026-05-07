@@ -358,7 +358,10 @@ func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target
 		typ = ota.parent.Type
 	}
 
-	sz, h, err := patchDeltaWriter(target, parentContents, delta, typ, wh, p.objectFormat)
+	deltaBuf := sync.GetBufioReader(delta)
+	defer sync.PutBufioReader(deltaBuf)
+
+	sz, h, err := patchDeltaWriter(target, parentContents, deltaBuf, typ, wh, p.objectFormat)
 	if err != nil {
 		return err
 	}
