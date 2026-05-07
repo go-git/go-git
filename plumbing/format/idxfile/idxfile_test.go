@@ -2,7 +2,9 @@ package idxfile_test
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"sync"
@@ -12,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
+	"github.com/stretchr/testify/require"
 	. "gopkg.in/check.v1"
 )
 
@@ -198,4 +201,55 @@ func TestOffsetHashConcurrentPopulation(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestMemoryIndexOffset64OutOfRange(t *testing.T) {
+	t.Parallel()
+
+	const hashSize = 20
+
+	var buf bytes.Buffer
+	buf.Write([]byte{255, 't', 'O', 'c'})
+	binary.Write(&buf, binary.BigEndian, uint32(2))
+
+	// Fanout: one object whose first byte is 0x00, so all 256 entries
+	// hold the cumulative count 1.
+	for range 256 {
+		binary.Write(&buf, binary.BigEndian, uint32(1))
+	}
+
+	// One name (any valid 20-byte hash with first byte 0x00).
+	name := make([]byte, hashSize)
+	name[hashSize-1] = 0x01
+	buf.Write(name)
+	buf.Write(make([]byte, 4)) // CRC32
+
+	// Offset32: MSB set, lower 31 bits = 5 → references Offset64[40:48].
+	binary.Write(&buf, binary.BigEndian, uint32(0x80000005))
+
+	// Offset64: a single 8-byte slot — the lookup above is out of range.
+	binary.Write(&buf, binary.BigEndian, uint64(0x12345678))
+
+	buf.Write(make([]byte, hashSize)) // pack checksum
+
+	sum := sha1.Sum(buf.Bytes())
+	buf.Write(sum[:])
+
+	idx := new(idxfile.MemoryIndex)
+	require.NoError(t, idxfile.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(idx))
+
+	var h plumbing.Hash
+	copy(h[:], name)
+
+	_, err := idx.FindOffset(h)
+	require.ErrorIs(t, err, idxfile.ErrMalformedIdxFile)
+
+	_, err = idx.FindHash(0)
+	require.ErrorIs(t, err, idxfile.ErrMalformedIdxFile)
+
+	iter, err := idx.Entries()
+	require.NoError(t, err)
+	_, err = iter.Next()
+	require.ErrorIs(t, err, idxfile.ErrMalformedIdxFile)
+	iter.Close()
 }
