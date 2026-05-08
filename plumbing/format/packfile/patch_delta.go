@@ -31,8 +31,10 @@ const (
 	// premptively made available for a patch operation.
 	maxPatchPreemptionSize uint = 65536
 
-	// minDeltaSize defines the smallest size for a delta.
-	minDeltaSize = 4
+	// minDeltaSize is the smallest valid delta: a 1-byte srcSz LEB128
+	// header followed by a 1-byte targetSz LEB128 header (the
+	// shortest case being targetSz=0 with no operations).
+	minDeltaSize = 2
 )
 
 // uintBits is the bit width of uint on the current platform (32 or 64).
@@ -145,7 +147,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 		baseBuf := bufio.NewReader(baseRd)
 		basePos := uint(0)
 
-		for {
+		for remainingTargetSz > 0 {
 			cmd, err := deltaBuf.ReadByte()
 			if err == io.EOF {
 				_ = dstWr.CloseWithError(ErrInvalidDelta)
@@ -169,9 +171,9 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					return
 				}
 
-				if invalidSize(sz, targetSz) ||
+				if invalidSize(sz, remainingTargetSz) ||
 					invalidOffsetSize(offset, sz, srcSz) {
-					_ = dstWr.Close()
+					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
 
@@ -213,7 +215,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 
 			case isCopyFromDelta(cmd):
 				sz := uint(cmd) // cmd is the size itself
-				if invalidSize(sz, targetSz) {
+				if invalidSize(sz, remainingTargetSz) {
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
@@ -228,22 +230,25 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 				_ = dstWr.CloseWithError(ErrDeltaCmd)
 				return
 			}
-
-			if remainingTargetSz <= 0 {
-				_ = dstWr.Close()
-				return
-			}
 		}
+
+		// Mirror upstream's `data != top` post-loop check: every byte
+		// of the delta payload must be consumed.
+		if _, err := deltaBuf.ReadByte(); err == nil {
+			_ = dstWr.CloseWithError(ErrInvalidDelta)
+			return
+		} else if err != io.EOF {
+			_ = dstWr.CloseWithError(err)
+			return
+		}
+
+		_ = dstWr.Close()
 	}()
 
 	return dstRd, nil
 }
 
 func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
-	if len(delta) < minCopySize {
-		return ErrInvalidDelta
-	}
-
 	srcSz, delta, err := decodeLEB128(delta)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidDelta, err)
@@ -258,16 +263,15 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 	}
 	remainingTargetSz := targetSz
 
-	var cmd byte
-
 	growSz := min(targetSz, maxPatchPreemptionSize)
 	dst.Grow(int(growSz))
-	for {
+
+	for remainingTargetSz > 0 {
 		if len(delta) == 0 {
 			return ErrInvalidDelta
 		}
 
-		cmd = delta[0]
+		cmd := delta[0]
 		delta = delta[1:]
 
 		switch {
@@ -284,16 +288,16 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 				return err
 			}
 
-			if invalidSize(sz, targetSz) ||
+			if invalidSize(sz, remainingTargetSz) ||
 				invalidOffsetSize(offset, sz, srcSz) {
-				break
+				return ErrInvalidDelta
 			}
 			dst.Write(src[offset : offset+sz])
 			remainingTargetSz -= sz
 
 		case isCopyFromDelta(cmd):
 			sz := uint(cmd) // cmd is the size itself
-			if invalidSize(sz, targetSz) {
+			if invalidSize(sz, remainingTargetSz) {
 				return ErrInvalidDelta
 			}
 
@@ -308,10 +312,12 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 		default:
 			return ErrDeltaCmd
 		}
+	}
 
-		if remainingTargetSz <= 0 {
-			break
-		}
+	// Mirror upstream's `data != top` post-loop check: every byte of
+	// the delta payload must be consumed.
+	if len(delta) != 0 {
+		return ErrInvalidDelta
 	}
 
 	return nil
@@ -363,7 +369,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 	baselr := io.LimitReader(sr, 0).(*io.LimitedReader)
 	deltalr := io.LimitReader(deltaBuf, 0).(*io.LimitedReader)
 
-	for {
+	for remainingTargetSz > 0 {
 		buf := *bufp
 		cmd, err := deltaBuf.ReadByte()
 		if err == io.EOF {
@@ -383,9 +389,9 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 				return 0, plumbing.ZeroHash, err
 			}
 
-			if invalidSize(sz, targetSz) ||
+			if invalidSize(sz, remainingTargetSz) ||
 				invalidOffsetSize(offset, sz, srcSz) {
-				return 0, plumbing.ZeroHash, err
+				return 0, plumbing.ZeroHash, ErrInvalidDelta
 			}
 
 			if _, err := sr.Seek(int64(offset), io.SeekStart); err != nil {
@@ -398,7 +404,7 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 			remainingTargetSz -= sz
 		} else if isCopyFromDelta(cmd) {
 			sz := uint(cmd) // cmd is the size itself
-			if invalidSize(sz, targetSz) {
+			if invalidSize(sz, remainingTargetSz) {
 				return 0, plumbing.ZeroHash, ErrInvalidDelta
 			}
 			deltalr.N = int64(sz)
@@ -408,11 +414,16 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, delta io.Reader,
 
 			remainingTargetSz -= sz
 		} else {
-			return 0, plumbing.ZeroHash, err
+			return 0, plumbing.ZeroHash, ErrDeltaCmd
 		}
-		if remainingTargetSz <= 0 {
-			break
-		}
+	}
+
+	// Mirror upstream's `data != top` post-loop check: every byte of
+	// the delta payload must be consumed.
+	if _, err := deltaBuf.ReadByte(); err == nil {
+		return 0, plumbing.ZeroHash, ErrInvalidDelta
+	} else if err != io.EOF {
+		return 0, plumbing.ZeroHash, err
 	}
 
 	return targetSz, hasher.Sum(), nil
@@ -548,8 +559,9 @@ func decodeSize(cmd byte, delta []byte) (uint, []byte, error) {
 	return sz, delta, nil
 }
 
-func invalidSize(sz, targetSz uint) bool {
-	return sz > targetSz
+// invalidSize reports whether sz exceeds the remaining target size.
+func invalidSize(sz, remaining uint) bool {
+	return sz > remaining
 }
 
 func invalidOffsetSize(offset, sz, srcSz uint) bool {
