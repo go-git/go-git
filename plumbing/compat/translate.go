@@ -43,6 +43,10 @@ func (t *Translator) Mapping() oidmap.Map {
 //
 // For blobs, content is identical across formats; only the hash differs.
 func (t *Translator) TranslateObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	if obj.Type() == plumbing.BlobObject {
+		return t.translateBlob(obj)
+	}
+
 	reader, err := obj.Reader()
 	if err != nil {
 		return plumbing.Hash{}, fmt.Errorf("read object: %w", err)
@@ -60,10 +64,6 @@ func (t *Translator) TranslateObject(obj plumbing.EncodedObject) (plumbing.Hash,
 	var compatContent []byte
 
 	switch obj.Type() {
-	case plumbing.BlobObject:
-		// Blob content is identical in both formats.
-		compatContent = content
-
 	case plumbing.TreeObject:
 		compatContent, err = t.translateTree(content)
 		if err != nil {
@@ -87,6 +87,28 @@ func (t *Translator) TranslateObject(obj plumbing.EncodedObject) (plumbing.Hash,
 	}
 
 	compatHash, err := t.compatHasher.Compute(obj.Type(), compatContent)
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("compute compat hash: %w", err)
+	}
+
+	if err := t.mapping.Add(obj.Hash(), compatHash); err != nil {
+		return plumbing.Hash{}, fmt.Errorf("record mapping: %w", err)
+	}
+
+	return compatHash, nil
+}
+
+// translateBlob streams the blob through the compat hasher to compute its
+// compat-format hash without buffering the full content in memory. Blob
+// bytes are identical across hash formats, so no translation is needed.
+func (t *Translator) translateBlob(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	reader, err := obj.Reader()
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("read blob: %w", err)
+	}
+	defer reader.Close()
+
+	compatHash, err := t.compatHasher.ComputeReader(plumbing.BlobObject, obj.Size(), reader)
 	if err != nil {
 		return plumbing.Hash{}, fmt.Errorf("compute compat hash: %w", err)
 	}
@@ -122,22 +144,26 @@ func (t *Translator) translateCompatTree(content []byte) ([]byte, error) {
 	)
 }
 
-// translateCommit rewrites hex hashes on "tree" and "parent" lines.
+// translateCommit rewrites hex hashes on "tree" and "parent" lines and
+// recursively translates embedded tags inside "mergetag" headers.
 func (t *Translator) translateCommit(content []byte) ([]byte, error) {
-	return t.translateTextObject(content, []string{"tree", "parent"})
+	return t.translateTextObject(content, []string{"tree", "parent"}, true)
 }
 
 // translateTag rewrites the hex hash on the "object" line.
 func (t *Translator) translateTag(content []byte) ([]byte, error) {
-	return t.translateTextObject(content, []string{"object"})
+	return t.translateTextObject(content, []string{"object"}, false)
 }
 
 // translateTextObject rewrites hex hashes on specified header lines.
 // It processes lines until it hits an empty line (the header/body separator).
-func (t *Translator) translateTextObject(content []byte, hashFields []string) ([]byte, error) {
+// When handleMergetag is true, "mergetag" headers (which embed a full tag
+// object across continuation lines) are recursively translated.
+func (t *Translator) translateTextObject(content []byte, hashFields []string, handleMergetag bool) ([]byte, error) {
 	return t.translateTextObjectContent(
 		content,
 		hashFields,
+		handleMergetag,
 		t.nativeHasher.Size()*2,
 		t.compatHasher.Size()*2,
 		"compat",
@@ -147,10 +173,11 @@ func (t *Translator) translateTextObject(content []byte, hashFields []string) ([
 
 // translateCompatTextObject rewrites compat-format hashes on specified header
 // lines back into native format.
-func (t *Translator) translateCompatTextObject(content []byte, hashFields []string) ([]byte, error) {
+func (t *Translator) translateCompatTextObject(content []byte, hashFields []string, handleMergetag bool) ([]byte, error) {
 	return t.translateTextObjectContent(
 		content,
 		hashFields,
+		handleMergetag,
 		t.compatHasher.Size()*2,
 		t.nativeHasher.Size()*2,
 		"native",
@@ -197,6 +224,7 @@ func (t *Translator) translateTreeContent(
 func (t *Translator) translateTextObjectContent(
 	content []byte,
 	hashFields []string,
+	handleMergetag bool,
 	fromHexSize, toHexSize int,
 	target string,
 	lookup func(plumbing.Hash) (plumbing.Hash, error),
@@ -228,6 +256,17 @@ func (t *Translator) translateTextObjectContent(
 			headerDone = true
 			out.WriteByte('\n')
 			continue
+		}
+
+		if handleMergetag {
+			if first, ok := bytes.CutPrefix(line, []byte("mergetag ")); ok {
+				newRemaining, err := t.writeMergetag(&out, first, remaining, fromHexSize, toHexSize, target, lookup)
+				if err != nil {
+					return nil, err
+				}
+				remaining = newRemaining
+				continue
+			}
 		}
 
 		replaced := false
@@ -263,6 +302,59 @@ func (t *Translator) translateTextObjectContent(
 	return out.Bytes(), nil
 }
 
+// writeMergetag reconstructs the embedded tag bytes from the first line of a
+// "mergetag" header (passed in firstLine, with the "mergetag " prefix already
+// stripped) plus any continuation lines (each prefixed with a single space) at
+// the start of remaining. It translates the embedded tag's hash references in
+// the same direction as the surrounding commit and writes the re-encoded
+// "mergetag" header to out. Returns the remaining commit bytes after the
+// consumed continuation lines.
+func (t *Translator) writeMergetag(
+	out *bytes.Buffer,
+	firstLine, remaining []byte,
+	fromHexSize, toHexSize int,
+	target string,
+	lookup func(plumbing.Hash) (plumbing.Hash, error),
+) ([]byte, error) {
+	var embedded bytes.Buffer
+	embedded.Write(firstLine)
+	embedded.WriteByte('\n')
+
+	for len(remaining) > 0 && remaining[0] == ' ' {
+		nl := bytes.IndexByte(remaining, '\n')
+		if nl < 0 {
+			return nil, fmt.Errorf("mergetag: missing newline in continuation")
+		}
+		embedded.Write(remaining[1:nl])
+		embedded.WriteByte('\n')
+		remaining = remaining[nl+1:]
+	}
+
+	translated, err := t.translateTextObjectContent(
+		embedded.Bytes(),
+		[]string{"object"},
+		false,
+		fromHexSize,
+		toHexSize,
+		target,
+		lookup,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("mergetag: %w", err)
+	}
+
+	out.WriteString("mergetag")
+	for _, l := range bytes.SplitAfter(translated, []byte{'\n'}) {
+		if len(l) == 0 {
+			continue
+		}
+		out.WriteByte(' ')
+		out.Write(l)
+	}
+
+	return remaining, nil
+}
+
 // ReverseTranslateContent takes object content in native format and returns
 // it in compat format. This is the inverse of what TranslateObject does
 // internally -- it rewrites hash references from native to compat format.
@@ -294,9 +386,9 @@ func (t *Translator) TranslateCompatContent(objType plumbing.ObjectType, compatC
 	case plumbing.TreeObject:
 		return t.translateCompatTree(compatContent)
 	case plumbing.CommitObject:
-		return t.translateCompatTextObject(compatContent, []string{"tree", "parent"})
+		return t.translateCompatTextObject(compatContent, []string{"tree", "parent"}, true)
 	case plumbing.TagObject:
-		return t.translateCompatTextObject(compatContent, []string{"object"})
+		return t.translateCompatTextObject(compatContent, []string{"object"}, false)
 	default:
 		return nil, fmt.Errorf("unsupported object type: %s", objType)
 	}

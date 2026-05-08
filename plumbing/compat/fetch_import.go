@@ -51,6 +51,14 @@ func (s *ImportStorer) NewEncodedObject() plumbing.EncodedObject {
 // SetEncodedObject translates a compat-format object into native storage and
 // returns the native hash once the object is fully imported.
 func (s *ImportStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	// Blob content is identical across formats, so we can stream from the
+	// compat object straight into a native-format object without buffering
+	// the whole blob with io.ReadAll. Non-blob types still need to be
+	// buffered because translation requires structural parsing.
+	if obj.Type() == plumbing.BlobObject {
+		return s.importCompatBlob(obj)
+	}
+
 	reader, err := obj.Reader()
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -66,6 +74,48 @@ func (s *ImportStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Ha
 	}
 
 	return s.importCompatObject(obj.Type(), content)
+}
+
+// importCompatBlob streams a compat-format blob into native storage. Blobs
+// have no internal hash references, so the bytes are identical across
+// formats and we can avoid buffering them. The native hash is determined by
+// the base storer's hasher when the data is written through.
+func (s *ImportStorer) importCompatBlob(obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	compatHash := obj.Hash()
+
+	reader, err := obj.Reader()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	defer reader.Close()
+
+	nativeObj := s.base.NewEncodedObject()
+	nativeObj.SetType(plumbing.BlobObject)
+	nativeObj.SetSize(obj.Size())
+
+	writer, err := nativeObj.Writer()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if _, err := io.Copy(writer, reader); err != nil {
+		_ = writer.Close()
+		return plumbing.ZeroHash, err
+	}
+	if err := writer.Close(); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	nativeHash, err := s.base.SetEncodedObject(nativeObj)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if err := s.tr.Mapping().Add(nativeHash, compatHash); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return nativeHash, nil
 }
 
 // EncodedObject exposes a compat-format view of imported and pending objects.

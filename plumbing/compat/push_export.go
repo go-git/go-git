@@ -67,29 +67,26 @@ func (s *PushExportStorer) SetEncodedObject(plumbing.EncodedObject) (plumbing.Ha
 }
 
 // EncodedObject returns a compat-format projection of a native stored object.
+//
+// The input hash is treated as native if the base storage has it, and only as
+// compat when it isn't. This is important when the mapping table is sparse:
+// e.g., a freshly-stored blob whose compat mapping hasn't been recorded yet
+// is still resolvable via base storage and should not be misidentified as a
+// compat hash that needs reverse mapping.
 func (s *PushExportStorer) EncodedObject(objType plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
-	nativeHash := h
-
-	if _, err := s.base.EncodedObject(plumbing.AnyObject, h); err != nil {
+	obj, err := s.base.EncodedObject(plumbing.AnyObject, h)
+	if err != nil {
 		if !errors.Is(err, plumbing.ErrObjectNotFound) {
 			return nil, err
 		}
-
-		if _, err := s.tr.Mapping().ToCompat(h); err != nil {
-			if !errors.Is(err, plumbing.ErrObjectNotFound) {
-				return nil, err
-			}
-			var resolveErr error
-			nativeHash, resolveErr = s.tr.Mapping().ToNative(h)
-			if resolveErr != nil {
-				return nil, resolveErr
-			}
+		nativeHash, resolveErr := s.tr.Mapping().ToNative(h)
+		if resolveErr != nil {
+			return nil, resolveErr
 		}
-	}
-
-	obj, err := s.base.EncodedObject(plumbing.AnyObject, nativeHash)
-	if err != nil {
-		return nil, err
+		obj, err = s.base.EncodedObject(plumbing.AnyObject, nativeHash)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	reader, err := obj.Reader()

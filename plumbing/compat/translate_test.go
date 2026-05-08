@@ -230,6 +230,115 @@ func TestTranslateTag(t *testing.T) {
 	assert.True(t, got.Equal(compatHash))
 }
 
+func TestTranslateCommitWithMergetag(t *testing.T) {
+	t.Parallel()
+
+	tr, m := newTestTranslator()
+
+	// Set up a tree, a commit (the merged-in commit), and a tag pointing to it.
+	blobObj := makeEncodedObject(t, plumbing.BlobObject, []byte("data"), format.SHA1)
+	_, err := tr.TranslateObject(blobObj)
+	require.NoError(t, err)
+
+	treeContent := make([]byte, 0, 13+len(blobObj.Hash().Bytes()))
+	treeContent = append(treeContent, []byte("100644 f.txt")...)
+	treeContent = append(treeContent, 0x00)
+	treeContent = append(treeContent, blobObj.Hash().Bytes()...)
+	treeObj := makeEncodedObject(t, plumbing.TreeObject, treeContent, format.SHA1)
+	_, err = tr.TranslateObject(treeObj)
+	require.NoError(t, err)
+
+	mergedCommitText := "tree " + treeObj.Hash().String() + "\n" +
+		"author A <a@b.c> 100 +0000\n" +
+		"committer A <a@b.c> 100 +0000\n" +
+		"\n" +
+		"feature\n"
+	mergedCommitObj := makeEncodedObject(t, plumbing.CommitObject, []byte(mergedCommitText), format.SHA1)
+	_, err = tr.TranslateObject(mergedCommitObj)
+	require.NoError(t, err)
+
+	rootCommitText := "tree " + treeObj.Hash().String() + "\n" +
+		"author A <a@b.c> 90 +0000\n" +
+		"committer A <a@b.c> 90 +0000\n" +
+		"\n" +
+		"root\n"
+	rootCommitObj := makeEncodedObject(t, plumbing.CommitObject, []byte(rootCommitText), format.SHA1)
+	_, err = tr.TranslateObject(rootCommitObj)
+	require.NoError(t, err)
+
+	tagText := "object " + mergedCommitObj.Hash().String() + "\n" +
+		"type commit\n" +
+		"tag feature\n" +
+		"tagger A <a@b.c> 110 +0000\n" +
+		"\n" +
+		"Feature tag\n"
+
+	mergeCommitText := "tree " + treeObj.Hash().String() + "\n" +
+		"parent " + rootCommitObj.Hash().String() + "\n" +
+		"parent " + mergedCommitObj.Hash().String() + "\n" +
+		"author A <a@b.c> 200 +0000\n" +
+		"committer A <a@b.c> 200 +0000\n" +
+		"mergetag " + indentContinuationLines(tagText) + // tagText already ends with \n
+		"\n" +
+		"Merge feature\n"
+	mergeCommitObj := makeEncodedObject(t, plumbing.CommitObject, []byte(mergeCommitText), format.SHA1)
+
+	compatHash, err := tr.TranslateObject(mergeCommitObj)
+	require.NoError(t, err)
+	assert.False(t, compatHash.IsZero())
+
+	got, err := m.ToCompat(mergeCommitObj.Hash())
+	require.NoError(t, err)
+	assert.True(t, got.Equal(compatHash))
+
+	// Round-trip via ReverseTranslateContent and verify the embedded tag's
+	// "object" hash was rewritten to the compat mapping for the merged commit.
+	compatContent, err := tr.ReverseTranslateContent(plumbing.CommitObject, []byte(mergeCommitText))
+	require.NoError(t, err)
+
+	compatMergedCommit, err := m.ToCompat(mergedCommitObj.Hash())
+	require.NoError(t, err)
+	assert.Contains(t, string(compatContent), "object "+compatMergedCommit.String())
+	assert.NotContains(t, string(compatContent), mergedCommitObj.Hash().String())
+
+	// Translating back to native should yield the original bytes.
+	roundTripped, err := tr.TranslateCompatContent(plumbing.CommitObject, compatContent)
+	require.NoError(t, err)
+	assert.Equal(t, mergeCommitText, string(roundTripped))
+}
+
+// indentContinuationLines rewrites the input so the first line stays as-is
+// and every subsequent line is prefixed with a single space, matching the
+// continuation-line format used by git for multi-line headers like mergetag
+// and gpgsig.
+func indentContinuationLines(s string) string {
+	var out []byte
+	first := true
+	for len(s) > 0 {
+		nl := -1
+		for i := 0; i < len(s); i++ {
+			if s[i] == '\n' {
+				nl = i
+				break
+			}
+		}
+		var line string
+		if nl >= 0 {
+			line = s[:nl+1]
+			s = s[nl+1:]
+		} else {
+			line = s
+			s = ""
+		}
+		if !first {
+			out = append(out, ' ')
+		}
+		out = append(out, line...)
+		first = false
+	}
+	return string(out)
+}
+
 func TestTranslateTreeMissingMapping(t *testing.T) {
 	t.Parallel()
 

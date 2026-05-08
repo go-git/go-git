@@ -210,6 +210,50 @@ func TestTranslateSignedObjectsMatchesUpstreamGit(t *testing.T) {
 	}
 }
 
+func TestTranslateMergetagCommitMatchesUpstreamGit(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available")
+	}
+
+	root := t.TempDir()
+	sha1Dir := filepath.Join(root, "repo-sha1")
+	sha256Dir := filepath.Join(root, "repo-sha256")
+
+	initGitRepo(t, sha1Dir, "sha1")
+	initGitRepo(t, sha256Dir, "sha256")
+
+	sha1Merge := createMergetagCommit(t, sha1Dir)
+	sha256Merge := createMergetagCommit(t, sha256Dir)
+
+	// Sanity: ensure the synthesized merge commit really carries a mergetag
+	// header. If git ever stops emitting it, this test would silently degrade
+	// into a regular merge translation test.
+	rawSha1 := mustRunCmd(t, sha1Dir, nil, "git", "cat-file", "commit", sha1Merge)
+	require.Contains(t, rawSha1, "\nmergetag object ", "expected synthetic merge to contain mergetag header")
+
+	repo, err := git.PlainOpen(sha1Dir)
+	require.NoError(t, err)
+
+	tr := compat.NewTranslator(format.SHA1, format.SHA256, oidmap.NewMemory())
+	require.NoError(t, compat.TranslateStoredObjects(repo.Storer, tr))
+
+	mergeObj, err := repo.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(sha1Merge))
+	require.NoError(t, err)
+
+	gotHash, err := tr.TranslateObject(mergeObj)
+	require.NoError(t, err)
+	assert.Equal(t, sha256Merge, gotHash.String(), "translated merge-commit hash must match upstream sha256 hash")
+
+	nativeRaw := readObjectContent(t, mergeObj)
+	gotRaw, err := tr.ReverseTranslateContent(plumbing.CommitObject, nativeRaw)
+	require.NoError(t, err)
+
+	expectedRaw := []byte(mustRunCmd(t, sha256Dir, nil, "git", "cat-file", "commit", sha256Merge))
+	assert.Equal(t, expectedRaw, gotRaw, "translated merge-commit bytes must match upstream sha256 bytes")
+}
+
 func TestTranslateStoredObjectsMatchesUpstreamGitReverse(t *testing.T) {
 	t.Parallel()
 
@@ -299,6 +343,88 @@ func createObjectChain(t *testing.T, dir string) (blob, tree, commit, tag string
 	tag = strings.TrimSpace(mustRunCmd(t, dir, env, "git", "rev-parse", "refs/tags/v1.0"))
 
 	return blob, tree, commit, tag
+}
+
+// createMergetagCommit synthesizes a merge commit that embeds an annotated
+// tag in a `mergetag` header. We assemble the commit bytes directly and feed
+// them through `git hash-object -t commit -w` so the result is bit-for-bit
+// stable across git versions and doesn't depend on the merge-driver behavior
+// of fmt-merge-msg.
+//
+// Layout: two roots (no parents in either, just a tree pointing to the same
+// blob), an annotated tag pointing to the feature root, then a merge commit
+// with both as parents and the tag embedded as a mergetag header.
+func createMergetagCommit(t *testing.T, dir string) string {
+	t.Helper()
+
+	env := []string{
+		"GIT_AUTHOR_NAME=Compat Test",
+		"GIT_AUTHOR_EMAIL=compat@example.com",
+		"GIT_AUTHOR_DATE=1700000000 +0000",
+		"GIT_COMMITTER_NAME=Compat Test",
+		"GIT_COMMITTER_EMAIL=compat@example.com",
+		"GIT_COMMITTER_DATE=1700000000 +0000",
+	}
+
+	blob := strings.TrimSpace(mustRunCmdInput(t, dir, env, "shared\n", "git", "hash-object", "-w", "--stdin"))
+	mustRunCmd(t, dir, env, "git", "update-index", "--add", "--cacheinfo", "100644", blob, "shared.txt")
+	tree := strings.TrimSpace(mustRunCmd(t, dir, env, "git", "write-tree"))
+	mustRunCmd(t, dir, env, "git", "rm", "--cached", "shared.txt")
+
+	rootCommit := strings.TrimSpace(mustRunCmd(t, dir, env, "git", "commit-tree", tree, "-m", "root"))
+	featureCommit := strings.TrimSpace(mustRunCmd(t, dir, env, "git", "commit-tree", tree, "-m", "feature"))
+
+	tagContent := "" +
+		"object " + featureCommit + "\n" +
+		"type commit\n" +
+		"tag feature-v1\n" +
+		"tagger Compat Test <compat@example.com> 1700000000 +0000\n" +
+		"\n" +
+		"feature v1\n"
+	tagHash := strings.TrimSpace(mustRunCmdInput(t, dir, env, tagContent, "git", "hash-object", "-t", "tag", "-w", "--stdin"))
+
+	mergeContent := "" +
+		"tree " + tree + "\n" +
+		"parent " + rootCommit + "\n" +
+		"parent " + featureCommit + "\n" +
+		"author Compat Test <compat@example.com> 1700000000 +0000\n" +
+		"committer Compat Test <compat@example.com> 1700000000 +0000\n" +
+		"mergetag " + indentMergetagBody(tagContent) +
+		"\n" +
+		"Merge tag 'feature-v1'\n"
+	mergeCommit := strings.TrimSpace(mustRunCmdInput(t, dir, env, mergeContent, "git", "hash-object", "-t", "commit", "-w", "--stdin"))
+
+	// Keep a ref so gc can't reach this commit before we read it back.
+	mustRunCmd(t, dir, env, "git", "update-ref", "refs/heads/main", mergeCommit)
+	mustRunCmd(t, dir, env, "git", "update-ref", "refs/tags/feature-v1", tagHash)
+
+	return mergeCommit
+}
+
+// indentMergetagBody prefixes every line after the first with a single space
+// to match the continuation-line format git uses for the embedded tag inside a
+// `mergetag` header. The first line stays bare (its leading "mergetag " is
+// supplied by the caller).
+func indentMergetagBody(s string) string {
+	var b strings.Builder
+	first := true
+	for len(s) > 0 {
+		nl := strings.IndexByte(s, '\n')
+		var line string
+		if nl >= 0 {
+			line = s[:nl+1]
+			s = s[nl+1:]
+		} else {
+			line = s
+			s = ""
+		}
+		if !first {
+			b.WriteByte(' ')
+		}
+		b.WriteString(line)
+		first = false
+	}
+	return b.String()
 }
 
 func createSignedObjects(t *testing.T, dir, treeHash, commitHash string) (signedCommit, signedTag string) {

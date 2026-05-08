@@ -270,7 +270,7 @@ func TestFilePrefersSnapshotFilesAfterSorting(t *testing.T) {
 	}
 
 	writeMapFile("objects/object-map/map-aaaa.map", olderData)
-	writeMapFile("objects/object-map/map-zsnapshot-zzzz.map", newerData)
+	writeMapFile("objects/object-map/zsnapshot-mapzzzz.map", newerData)
 
 	m := NewFileWithWriteMode(fs, "objects", FileWriteObjectMap)
 	got, err := m.ToCompat(native)

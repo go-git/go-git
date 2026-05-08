@@ -81,11 +81,11 @@ type failingLookupMap struct {
 }
 
 func (m *failingLookupMap) ToCompat(plumbing.Hash) (plumbing.Hash, error) {
-	return plumbing.ZeroHash, m.err
+	return plumbing.ZeroHash, plumbing.ErrObjectNotFound
 }
 
 func (m *failingLookupMap) ToNative(plumbing.Hash) (plumbing.Hash, error) {
-	return plumbing.ZeroHash, plumbing.ErrObjectNotFound
+	return plumbing.ZeroHash, m.err
 }
 
 func (m *failingLookupMap) Add(plumbing.Hash, plumbing.Hash) error {

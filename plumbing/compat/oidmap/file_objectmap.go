@@ -1,5 +1,12 @@
 package oidmap
 
+// This file implements the on-disk object-map binary format used by git's
+// hash transition / "compatObjectFormat" support. The layout (signature,
+// version, sizes, native/compat hashes, trailing checksum) follows the
+// loose-object compat-mapping spec documented upstream:
+//
+//	https://github.com/git/git/blob/94f057755b7941b321fd11fec1b2e3ca5313a4e0/Documentation/gitformat-loose.adoc
+
 import (
 	"bytes"
 	stdbinary "encoding/binary"
@@ -18,7 +25,7 @@ import (
 const (
 	objectMapDirName  = "object-map"
 	mapFilePrefix     = "map-"
-	mapSnapshotPrefix = "map-zsnapshot-"
+	mapSnapshotPrefix = "zsnapshot-map"
 	mapFileExt        = ".map"
 	mapSignature      = "LMAP"
 	mapVersion        = uint32(1)
@@ -386,8 +393,14 @@ func removeExistingMapFilesExcept(fs billy.Filesystem, dir, keepPath string) err
 	return nil
 }
 
+// isMapFile reports whether name is a regular or snapshot map file. The two
+// prefixes are deliberately disjoint so snapshot files can be identified
+// independently for ordering and cleanup, but both are valid map files.
 func isMapFile(name string) bool {
-	return strings.HasPrefix(name, mapFilePrefix) && strings.HasSuffix(name, mapFileExt)
+	if !strings.HasSuffix(name, mapFileExt) {
+		return false
+	}
+	return strings.HasPrefix(name, mapFilePrefix) || strings.HasPrefix(name, mapSnapshotPrefix)
 }
 
 func isSnapshotMapFile(name string) bool {
