@@ -511,7 +511,7 @@ var worktreeDeny = map[string]struct{}{
 // For upstream rules:
 // https://github.com/git/git/blob/564d0252ca632e0264ed670534a51d18a689ef5d/read-cache.c#L946
 // https://github.com/git/git/blob/564d0252ca632e0264ed670534a51d18a689ef5d/path.c#L1383
-func validPath(paths ...string) error {
+func validPath(protectNTFS, protectHFS bool, paths ...string) error {
 	for _, p := range paths {
 		for _, r := range p {
 			if r < 0x20 || r == 0x7f {
@@ -524,7 +524,7 @@ func validPath(paths ...string) error {
 			return fmt.Errorf("invalid path: %q", p)
 		}
 
-		if runtime.GOOS == "windows" {
+		if protectNTFS {
 			// Volume names are not supported, in both formats: \\ and <DRIVE_LETTER>:.
 			if vol := filepath.VolumeName(p); vol != "" {
 				return fmt.Errorf("invalid path: %q", p)
@@ -544,7 +544,7 @@ func validPath(paths ...string) error {
 			isDotGit := false
 			if _, denied := worktreeDeny[strings.ToLower(part)]; denied {
 				isDotGit = true
-			} else if runtime.GOOS == "darwin" && isHFSDotGit(part) {
+			} else if protectHFS && isHFSDotGit(part) {
 				isDotGit = true
 			}
 
@@ -552,12 +552,49 @@ func validPath(paths ...string) error {
 				return fmt.Errorf("invalid path component: %q", p)
 			}
 
-			if runtime.GOOS == "windows" && !windowsValidPath(part) {
+			if protectNTFS && !windowsValidPath(part) {
 				return fmt.Errorf("invalid path: %q", p)
 			}
 		}
 	}
 	return nil
+}
+
+// defaultProtectNTFS returns the default value for core.protectNTFS
+// when not explicitly configured. Matches upstream Git behaviour:
+// enabled by default on Windows.
+func defaultProtectNTFS() bool {
+	return runtime.GOOS == "windows"
+}
+
+// defaultProtectHFS returns the default value for core.protectHFS
+// when not explicitly configured. Matches upstream Git behaviour:
+// enabled by default on macOS.
+func defaultProtectHFS() bool {
+	return runtime.GOOS == "darwin"
+}
+
+// pathProtections returns the effective core.protectNTFS / core.protectHFS
+// values for this worktree's repository, falling back to platform defaults
+// when the config keys are not explicitly set.
+func (w *Worktree) pathProtections() (protectNTFS, protectHFS bool) {
+	protectNTFS = defaultProtectNTFS()
+	protectHFS = defaultProtectHFS()
+
+	if w == nil || w.r == nil {
+		return
+	}
+	cfg, err := w.r.Config()
+	if err != nil {
+		return
+	}
+	if cfg.Core.ProtectNTFS.IsSet() {
+		protectNTFS = cfg.Core.ProtectNTFS.IsTrue()
+	}
+	if cfg.Core.ProtectHFS.IsSet() {
+		protectHFS = cfg.Core.ProtectHFS.IsTrue()
+	}
+	return
 }
 
 // windowsPathReplacer defines the chars that need to be replaced
@@ -709,13 +746,14 @@ func (w *Worktree) validChange(ch merkletrie.Change) error {
 		return nil
 	}
 
+	protectNTFS, protectHFS := w.pathProtections()
 	switch action {
 	case merkletrie.Delete:
-		return validPath(ch.From.String())
+		return validPath(protectNTFS, protectHFS, ch.From.String())
 	case merkletrie.Insert:
-		return validPath(ch.To.String())
+		return validPath(protectNTFS, protectHFS, ch.To.String())
 	case merkletrie.Modify:
-		return validPath(ch.From.String(), ch.To.String())
+		return validPath(protectNTFS, protectHFS, ch.From.String(), ch.To.String())
 	}
 
 	return nil

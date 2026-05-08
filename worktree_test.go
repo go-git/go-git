@@ -3180,9 +3180,11 @@ func TestValidPath(t *testing.T) {
 		}...)
 	}
 
+	protectNTFS := runtime.GOOS == "windows"
+	protectHFS := runtime.GOOS == "darwin"
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
-			err := validPath(tc.path)
+			err := validPath(protectNTFS, protectHFS, tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {
