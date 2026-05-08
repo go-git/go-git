@@ -680,8 +680,13 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 		return err
 	}
 
+	protectNTFS, protectHFS := w.pathProtections()
 	for _, e := range entries {
 		file := filepath.FromSlash(e.Name)
+		if err := validPath(protectNTFS, protectHFS, file); err != nil {
+			return err
+		}
+
 		if _, err := w.Filesystem.Lstat(file); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -703,6 +708,11 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 // not supported.
 func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
 	// TODO(mcuadros): support directories and/or implement support for glob
+	protectNTFS, protectHFS := w.pathProtections()
+	if err := validPath(protectNTFS, protectHFS, from, to); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
 	if _, err := w.Filesystem.Lstat(from); err != nil {
 		return plumbing.ZeroHash, err
 	}

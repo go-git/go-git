@@ -948,7 +948,13 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 		return
 	}
 
-	err = w.Filesystem.Symlink(string(bytes), f.Name)
+	target := string(bytes)
+	protectNTFS, protectHFS := w.pathProtections()
+	if err := validPath(protectNTFS, protectHFS, target, f.Name); err != nil {
+		return err
+	}
+
+	err = w.Filesystem.Symlink(target, f.Name)
 
 	// On windows, this might fail.
 	// Follow Git on Windows behavior by writing the link as it is.

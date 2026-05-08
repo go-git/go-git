@@ -121,6 +121,13 @@ func (s *Submodule) Repository() (*Repository, error) {
 		exists = true
 	}
 
+	protectNTFS, protectHFS := s.w.pathProtections()
+	if s.c.Path != "" {
+		if err := validPath(protectNTFS, protectHFS, s.c.Path); err != nil {
+			return nil, err
+		}
+	}
+
 	var worktree billy.Filesystem
 	if worktree, err = s.w.Filesystem.Chroot(s.c.Path); err != nil {
 		return nil, err
