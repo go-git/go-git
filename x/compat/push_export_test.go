@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/compat"
-	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
+	"github.com/go-git/go-git/v6/x/compat"
+	"github.com/go-git/go-git/v6/x/compat/oidmap"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/memory"
 )

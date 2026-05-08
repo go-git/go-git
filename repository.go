@@ -21,7 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
+	"github.com/go-git/go-git/v6/x/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"

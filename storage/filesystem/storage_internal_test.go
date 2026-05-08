@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
-	"github.com/go-git/go-git/v6/plumbing/compat"
-	"github.com/go-git/go-git/v6/plumbing/compat/oidmap"
+	"github.com/go-git/go-git/v6/x/compat"
+	"github.com/go-git/go-git/v6/x/compat/oidmap"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 

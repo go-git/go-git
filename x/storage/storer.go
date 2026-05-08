@@ -2,7 +2,7 @@
 package storage
 
 import (
-	"github.com/go-git/go-git/v6/plumbing/compat"
+	"github.com/go-git/go-git/v6/x/compat"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 )
 

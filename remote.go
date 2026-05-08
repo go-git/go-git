@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
-	compatplumbing "github.com/go-git/go-git/v6/plumbing/compat"
+	compatplumbing "github.com/go-git/go-git/v6/x/compat"
 	cfgformat "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
