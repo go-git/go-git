@@ -2123,7 +2123,6 @@ func (s *WorktreeSuite) TestAddFilenameStartingWithDot(c *C) {
 	file = status.File("foo/bar/baz")
 	c.Assert(file.Staging, Equals, Added)
 	c.Assert(file.Worktree, Equals, Unmodified)
-
 }
 
 func (s *WorktreeSuite) TestAddGlobErrorNoMatches(c *C) {
@@ -2491,7 +2490,6 @@ func (s *WorktreeSuite) TestMove(c *C) {
 	c.Assert(status, HasLen, 2)
 	c.Assert(status.File("LICENSE").Staging, Equals, Deleted)
 	c.Assert(status.File("foo").Staging, Equals, Added)
-
 }
 
 func (s *WorktreeSuite) TestMoveNotExistentEntry(c *C) {
@@ -3392,7 +3390,6 @@ func (s *WorktreeSuite) TestRestoreBoth(c *C) {
 }
 
 func TestFilePermissions(t *testing.T) {
-
 	// Initialize an in memory repository
 	remoteUrl := t.TempDir()
 
@@ -3449,5 +3446,4 @@ func TestFilePermissions(t *testing.T) {
 		assert.Equal(t, expectedEntry.Name, idx.Entries[i].Name)
 		assert.Equal(t, expectedEntry.Mode, idx.Entries[i].Mode)
 	}
-
 }
