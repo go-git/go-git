@@ -7,9 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"unicode"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
@@ -560,20 +558,6 @@ func validPath(protectNTFS, protectHFS bool, paths ...string) error {
 	return nil
 }
 
-// defaultProtectNTFS returns the default value for core.protectNTFS
-// when not explicitly configured. Matches upstream Git behaviour:
-// enabled by default on Windows.
-func defaultProtectNTFS() bool {
-	return runtime.GOOS == "windows"
-}
-
-// defaultProtectHFS returns the default value for core.protectHFS
-// when not explicitly configured. Matches upstream Git behaviour:
-// enabled by default on macOS.
-func defaultProtectHFS() bool {
-	return runtime.GOOS == "darwin"
-}
-
 // pathProtections returns the effective core.protectNTFS / core.protectHFS
 // values for this worktree's repository, falling back to platform defaults
 // when the config keys are not explicitly set.
@@ -595,149 +579,6 @@ func (w *Worktree) pathProtections() (protectNTFS, protectHFS bool) {
 		protectHFS = cfg.Core.ProtectHFS.IsTrue()
 	}
 	return
-}
-
-// windowsPathReplacer defines the chars that need to be replaced
-// as part of windowsValidPath.
-var windowsPathReplacer = strings.NewReplacer(" ", "", ".", "")
-
-func windowsValidPath(part string) bool {
-	// Bare ".git" is allowed at this layer; rejection of root-level or
-	// non-final ".git" components is handled by validPath. This check
-	// only catches the Windows-specific variants (`.git ` / `.git.` /
-	// `.git::$INDEX_ALLOCATION` etc.) that get normalised back to ".git".
-	if len(part) > 4 && strings.EqualFold(part[:4], GitDirName) {
-		// For historical reasons, file names that end in spaces or periods are
-		// automatically trimmed. Therefore, `.git . . ./` is a valid way to refer
-		// to `.git/`.
-		if windowsPathReplacer.Replace(part[4:]) == "" {
-			return false
-		}
-
-		// For yet other historical reasons, NTFS supports so-called "Alternate Data
-		// Streams", i.e. metadata associated with a given file, referred to via
-		// `<filename>:<stream-name>:<stream-type>`. There exists a default stream
-		// type for directories, allowing `.git/` to be accessed via
-		// `.git::$INDEX_ALLOCATION/`.
-		//
-		// For performance reasons, _all_ Alternate Data Streams of `.git/` are
-		// forbidden, not just `::$INDEX_ALLOCATION`.
-		if part[4:5] == ":" {
-			return false
-		}
-	}
-	return !isWindowsReservedName(part)
-}
-
-// windowsReservedNames lists the Windows reserved device names.
-// A path component is reserved if its base name (ignoring trailing
-// spaces, extensions, and NTFS Alternate Data Streams) matches one of
-// these case-insensitively.
-//
-// See upstream Git compat/mingw.c is_valid_win32_path().
-var windowsReservedNames = []string{
-	"CON", "PRN", "AUX", "NUL",
-	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-	"CONIN$", "CONOUT$",
-}
-
-func isWindowsReservedName(part string) bool {
-	for _, name := range windowsReservedNames {
-		if len(part) < len(name) {
-			continue
-		}
-		if !strings.EqualFold(part[:len(name)], name) {
-			continue
-		}
-		// Exact match or followed by space, dot, colon (ADS), or separator.
-		if len(part) == len(name) {
-			return true
-		}
-		switch part[len(name)] {
-		case ' ', '.', ':':
-			return true
-		}
-	}
-	return false
-}
-
-// hfsIgnoredCodepoints contains Unicode code points that HFS+ ignores
-// during path normalization. A path containing these characters between
-// the characters of ".git" will be treated as ".git" by HFS+.
-//
-// See upstream Git utf8.c next_hfs_char() for the full list.
-var hfsIgnoredCodepoints = map[rune]struct{}{
-	0x200c: {}, // ZERO WIDTH NON-JOINER
-	0x200d: {}, // ZERO WIDTH JOINER
-	0x200e: {}, // LEFT-TO-RIGHT MARK
-	0x200f: {}, // RIGHT-TO-LEFT MARK
-	0x202a: {}, // LEFT-TO-RIGHT EMBEDDING
-	0x202b: {}, // RIGHT-TO-LEFT EMBEDDING
-	0x202c: {}, // POP DIRECTIONAL FORMATTING
-	0x202d: {}, // LEFT-TO-RIGHT OVERRIDE
-	0x202e: {}, // RIGHT-TO-LEFT OVERRIDE
-	0x206a: {}, // INHIBIT SYMMETRIC SWAPPING
-	0x206b: {}, // ACTIVATE SYMMETRIC SWAPPING
-	0x206c: {}, // INHIBIT ARABIC FORM SHAPING
-	0x206d: {}, // ACTIVATE ARABIC FORM SHAPING
-	0x206e: {}, // NATIONAL DIGIT SHAPES
-	0x206f: {}, // NOMINAL DIGIT SHAPES
-	0xfeff: {}, // ZERO WIDTH NO-BREAK SPACE
-}
-
-// isHFSDotGit returns true if the given path component would be
-// treated as ".git" on an HFS+ filesystem after stripping ignored
-// Unicode code points and folding to lower case.
-func isHFSDotGit(part string) bool {
-	const needle = "git"
-
-	runes := []rune(part)
-	i := 0
-
-	// skip ignored code points, then expect '.'
-	for i < len(runes) {
-		if _, ok := hfsIgnoredCodepoints[runes[i]]; !ok {
-			break
-		}
-		i++
-	}
-	if i >= len(runes) || runes[i] != '.' {
-		return false
-	}
-	i++
-
-	// match "git" case-insensitively, skipping ignored code points
-	for _, expected := range needle {
-		for i < len(runes) {
-			if _, ok := hfsIgnoredCodepoints[runes[i]]; !ok {
-				break
-			}
-			i++
-		}
-		if i >= len(runes) {
-			return false
-		}
-		r := runes[i]
-		if r > 127 {
-			return false
-		}
-		if unicode.ToLower(r) != unicode.ToLower(expected) {
-			return false
-		}
-		i++
-	}
-
-	// skip trailing ignored code points
-	for i < len(runes) {
-		if _, ok := hfsIgnoredCodepoints[runes[i]]; !ok {
-			break
-		}
-		i++
-	}
-
-	// must be at end of component
-	return i == len(runes)
 }
 
 func (w *Worktree) validChange(ch merkletrie.Change) error {
