@@ -23,6 +23,8 @@ github.com/go-git/go-billy/v6 v6.0.0-20260424211911-732291493fb8 h1:QRpwB1ans3fB
 github.com/go-git/go-billy/v6 v6.0.0-20260424211911-732291493fb8/go.mod h1:CdBVp7CXl9l3sOyNEog46cP1Pvx/hjCe9AD0mtaIUYU=
 github.com/go-git/go-git-fixtures/v6 v6.0.0-20260422085740-0c07409f52ec h1:FpCNUs50xfQyJJs31uO3mDnqU855OhzAzfkkTgE6/DI=
 github.com/go-git/go-git-fixtures/v6 v6.0.0-20260422085740-0c07409f52ec/go.mod h1:F1SpxOny2UYXu62DzjEH4UqBjk4AoGs27cA8I9buK+o=
+github.com/hanwen/reftable v1.0.0 h1:Q9F9+jyndpB0KIPjENT1AzOVGRwV5KtS1vqOu1ltJ1M=
+github.com/hanwen/reftable v1.0.0/go.mod h1:1MHuNlbe12e6RCt2+tF/oXtxoKZ8duQ2xac5aoqabMM=
 github.com/kevinburke/ssh_config v1.6.0 h1:J1FBfmuVosPHf5GRdltRLhPJtJpTlMdKTBjRgTaQBFY=
 github.com/kevinburke/ssh_config v1.6.0/go.mod h1:q2RIzfka+BXARoNexmF9gkxEX7DmvbW9P4hIVx2Kg4M=
 github.com/klauspost/cpuid/v2 v2.3.0 h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=
