@@ -3161,11 +3161,11 @@ func TestValidPath(t *testing.T) {
 		{".gitmodules", false},
 		{".gitignore", false},
 		{"a..b", false},
-		{".", false},
+		{".", true},
 		{"a/.git", false},
 		{"a\\.git", false},
-		{"a/.git/b", false},
-		{"a\\.git\\b", false},
+		{"a/.git/b", true},
+		{"a\\.git\\b", true},
 	}
 
 	if runtime.GOOS == "windows" {
@@ -3197,7 +3197,7 @@ func TestWindowsValidPath(t *testing.T) {
 		path string
 		want bool
 	}{
-		{".git", false},
+		{".git", true},
 		{".git . . .", false},
 		{".git ", false},
 		{".git  ", false},

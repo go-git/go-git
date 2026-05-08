@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
@@ -512,13 +513,15 @@ var worktreeDeny = map[string]struct{}{
 // https://github.com/git/git/blob/564d0252ca632e0264ed670534a51d18a689ef5d/path.c#L1383
 func validPath(paths ...string) error {
 	for _, p := range paths {
+		for _, r := range p {
+			if r < 0x20 || r == 0x7f {
+				return fmt.Errorf("invalid path %q: contains control character", p)
+			}
+		}
+
 		parts := strings.FieldsFunc(p, func(r rune) bool { return (r == '\\' || r == '/') })
 		if len(parts) == 0 {
 			return fmt.Errorf("invalid path: %q", p)
-		}
-
-		if _, denied := worktreeDeny[strings.ToLower(parts[0])]; denied {
-			return fmt.Errorf("invalid path prefix: %q", p)
 		}
 
 		if runtime.GOOS == "windows" {
@@ -526,15 +529,31 @@ func validPath(paths ...string) error {
 			if vol := filepath.VolumeName(p); vol != "" {
 				return fmt.Errorf("invalid path: %q", p)
 			}
-
-			if !windowsValidPath(parts[0]) {
-				return fmt.Errorf("invalid path: %q", p)
-			}
 		}
 
-		for _, part := range parts {
-			if part == ".." {
-				return fmt.Errorf("invalid path %q: cannot use '..'", p)
+		for i, part := range parts {
+			if part == "." || part == ".." {
+				return fmt.Errorf("invalid path %q: cannot use %q", p, part)
+			}
+
+			// Reject .git (and equivalents) as a path component when it is
+			// either the first component (root-level .git) or a non-final
+			// component (traversal into a .git directory, e.g. "a/.git/config").
+			// A final non-first .git component (e.g. "submodule/.git") is
+			// allowed because submodule worktrees contain a .git pointer file.
+			isDotGit := false
+			if _, denied := worktreeDeny[strings.ToLower(part)]; denied {
+				isDotGit = true
+			} else if runtime.GOOS == "darwin" && isHFSDotGit(part) {
+				isDotGit = true
+			}
+
+			if isDotGit && (i == 0 || i < len(parts)-1) {
+				return fmt.Errorf("invalid path component: %q", p)
+			}
+
+			if runtime.GOOS == "windows" && !windowsValidPath(part) {
+				return fmt.Errorf("invalid path: %q", p)
 			}
 		}
 	}
@@ -543,14 +562,14 @@ func validPath(paths ...string) error {
 
 // windowsPathReplacer defines the chars that need to be replaced
 // as part of windowsValidPath.
-var windowsPathReplacer *strings.Replacer
-
-func init() {
-	windowsPathReplacer = strings.NewReplacer(" ", "", ".", "")
-}
+var windowsPathReplacer = strings.NewReplacer(" ", "", ".", "")
 
 func windowsValidPath(part string) bool {
-	if len(part) > 3 && strings.EqualFold(part[:4], GitDirName) {
+	// Bare ".git" is allowed at this layer; rejection of root-level or
+	// non-final ".git" components is handled by validPath. This check
+	// only catches the Windows-specific variants (`.git ` / `.git.` /
+	// `.git::$INDEX_ALLOCATION` etc.) that get normalised back to ".git".
+	if len(part) > 4 && strings.EqualFold(part[:4], GitDirName) {
 		// For historical reasons, file names that end in spaces or periods are
 		// automatically trimmed. Therefore, `.git . . ./` is a valid way to refer
 		// to `.git/`.
@@ -566,11 +585,122 @@ func windowsValidPath(part string) bool {
 		//
 		// For performance reasons, _all_ Alternate Data Streams of `.git/` are
 		// forbidden, not just `::$INDEX_ALLOCATION`.
-		if len(part) > 4 && part[4:5] == ":" {
+		if part[4:5] == ":" {
 			return false
 		}
 	}
-	return true
+	return !isWindowsReservedName(part)
+}
+
+// windowsReservedNames lists the Windows reserved device names.
+// A path component is reserved if its base name (ignoring trailing
+// spaces, extensions, and NTFS Alternate Data Streams) matches one of
+// these case-insensitively.
+//
+// See upstream Git compat/mingw.c is_valid_win32_path().
+var windowsReservedNames = []string{
+	"CON", "PRN", "AUX", "NUL",
+	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+	"CONIN$", "CONOUT$",
+}
+
+func isWindowsReservedName(part string) bool {
+	for _, name := range windowsReservedNames {
+		if len(part) < len(name) {
+			continue
+		}
+		if !strings.EqualFold(part[:len(name)], name) {
+			continue
+		}
+		// Exact match or followed by space, dot, colon (ADS), or separator.
+		if len(part) == len(name) {
+			return true
+		}
+		switch part[len(name)] {
+		case ' ', '.', ':':
+			return true
+		}
+	}
+	return false
+}
+
+// hfsIgnoredCodepoints contains Unicode code points that HFS+ ignores
+// during path normalization. A path containing these characters between
+// the characters of ".git" will be treated as ".git" by HFS+.
+//
+// See upstream Git utf8.c next_hfs_char() for the full list.
+var hfsIgnoredCodepoints = map[rune]struct{}{
+	0x200c: {}, // ZERO WIDTH NON-JOINER
+	0x200d: {}, // ZERO WIDTH JOINER
+	0x200e: {}, // LEFT-TO-RIGHT MARK
+	0x200f: {}, // RIGHT-TO-LEFT MARK
+	0x202a: {}, // LEFT-TO-RIGHT EMBEDDING
+	0x202b: {}, // RIGHT-TO-LEFT EMBEDDING
+	0x202c: {}, // POP DIRECTIONAL FORMATTING
+	0x202d: {}, // LEFT-TO-RIGHT OVERRIDE
+	0x202e: {}, // RIGHT-TO-LEFT OVERRIDE
+	0x206a: {}, // INHIBIT SYMMETRIC SWAPPING
+	0x206b: {}, // ACTIVATE SYMMETRIC SWAPPING
+	0x206c: {}, // INHIBIT ARABIC FORM SHAPING
+	0x206d: {}, // ACTIVATE ARABIC FORM SHAPING
+	0x206e: {}, // NATIONAL DIGIT SHAPES
+	0x206f: {}, // NOMINAL DIGIT SHAPES
+	0xfeff: {}, // ZERO WIDTH NO-BREAK SPACE
+}
+
+// isHFSDotGit returns true if the given path component would be
+// treated as ".git" on an HFS+ filesystem after stripping ignored
+// Unicode code points and folding to lower case.
+func isHFSDotGit(part string) bool {
+	const needle = "git"
+
+	runes := []rune(part)
+	i := 0
+
+	// skip ignored code points, then expect '.'
+	for i < len(runes) {
+		if _, ok := hfsIgnoredCodepoints[runes[i]]; !ok {
+			break
+		}
+		i++
+	}
+	if i >= len(runes) || runes[i] != '.' {
+		return false
+	}
+	i++
+
+	// match "git" case-insensitively, skipping ignored code points
+	for _, expected := range needle {
+		for i < len(runes) {
+			if _, ok := hfsIgnoredCodepoints[runes[i]]; !ok {
+				break
+			}
+			i++
+		}
+		if i >= len(runes) {
+			return false
+		}
+		r := runes[i]
+		if r > 127 {
+			return false
+		}
+		if unicode.ToLower(r) != unicode.ToLower(expected) {
+			return false
+		}
+		i++
+	}
+
+	// skip trailing ignored code points
+	for i < len(runes) {
+		if _, ok := hfsIgnoredCodepoints[runes[i]]; !ok {
+			break
+		}
+		i++
+	}
+
+	// must be at end of component
+	return i == len(runes)
 }
 
 func (w *Worktree) validChange(ch merkletrie.Change) error {
