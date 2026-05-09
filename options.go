@@ -814,8 +814,8 @@ type PlainOpenOptions struct {
 	// walked until a .git directory or file is found.
 	DetectDotGit bool
 	// AlternatesFS provides the billy filesystem to be used for Git Alternates.
-	// If none is provided, it falls back to using the underlying instance used for
-	// DotGit.
+	// If none is provided, it falls back to the repository's .git directory
+	// filesystem.
 	AlternatesFS billy.Filesystem
 }
 
