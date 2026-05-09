@@ -1530,7 +1530,7 @@ func (r *Repository) Worktree() (*Worktree, error) {
 		return nil, ErrIsBareRepository
 	}
 
-	return &Worktree{r: r, Filesystem: r.wt}, nil
+	return &Worktree{r: r, Filesystem: newWorktreeFilesystem(r.wt)}, nil
 }
 
 func expand_ref(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
