@@ -1,10 +1,10 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -26,45 +26,104 @@ func newWorktreeFilesystem(fs billy.Filesystem, protectNTFS, protectHFS bool) *w
 
 func (sfs *worktreeFilesystem) Create(filename string) (billy.File, error) {
 	if err := sfs.validPath(filename); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create: %w", err)
 	}
 	return sfs.Filesystem.Create(filename)
 }
 
+func (sfs *worktreeFilesystem) Open(filename string) (billy.File, error) {
+	if err := sfs.validReadPath(filename); err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	return sfs.Filesystem.Open(filename)
+}
+
 func (sfs *worktreeFilesystem) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
 	if err := sfs.validPath(filename); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("openfile: %w", err)
 	}
 	return sfs.Filesystem.OpenFile(filename, flag, perm)
 }
 
+func (sfs *worktreeFilesystem) Stat(filename string) (os.FileInfo, error) {
+	if err := sfs.validReadPath(filename); err != nil {
+		return nil, fmt.Errorf("stat: %w", err)
+	}
+	return sfs.Filesystem.Stat(filename)
+}
+
 func (sfs *worktreeFilesystem) Remove(filename string) error {
 	if err := sfs.validPath(filename); err != nil {
-		return err
+		return fmt.Errorf("remove: %w", err)
 	}
 	return sfs.Filesystem.Remove(filename)
 }
 
 func (sfs *worktreeFilesystem) Rename(from, to string) error {
 	if err := sfs.validPath(from, to); err != nil {
-		return err
+		return fmt.Errorf("rename: %w", err)
 	}
 	return sfs.Filesystem.Rename(from, to)
 }
 
+func (sfs *worktreeFilesystem) ReadDir(path string) ([]os.FileInfo, error) {
+	if err := sfs.validReadPath(path); err != nil {
+		return nil, fmt.Errorf("readdir: %w", err)
+	}
+	return sfs.Filesystem.ReadDir(path)
+}
+
+func (sfs *worktreeFilesystem) Lstat(filename string) (os.FileInfo, error) {
+	if err := sfs.validReadPath(filename); err != nil {
+		return nil, fmt.Errorf("lstat: %w", err)
+	}
+	return sfs.Filesystem.Lstat(filename)
+}
+
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
 	if err := sfs.validPath(link); err != nil {
-		return err
+		return fmt.Errorf("symlink: %w", err)
 	}
 	return sfs.Filesystem.Symlink(target, link)
 }
 
+func (sfs *worktreeFilesystem) Readlink(link string) (string, error) {
+	if err := sfs.validReadPath(link); err != nil {
+		return "", fmt.Errorf("readlink: %w", err)
+	}
+	return sfs.Filesystem.Readlink(link)
+}
+
 func (sfs *worktreeFilesystem) MkdirAll(path string, perm os.FileMode) error {
 	if err := sfs.validPath(path); err != nil {
-		return err
+		return fmt.Errorf("mkdirall: %w", err)
 	}
 	return sfs.Filesystem.MkdirAll(path, perm)
 }
+
+func (sfs *worktreeFilesystem) TempFile(dir, prefix string) (billy.File, error) {
+	return nil, fmt.Errorf("tempfile: %w", errUnsupportedOperation)
+}
+
+func (sfs *worktreeFilesystem) Chroot(path string) (billy.Filesystem, error) {
+	if err := sfs.validReadPath(path); err != nil {
+		return nil, fmt.Errorf("chroot: %w", err)
+	}
+	return sfs.Filesystem.Chroot(path)
+}
+
+// validReadPath is like validPath but treats the empty string and "." as
+// valid references to the worktree root. Read-side operations on the root
+// (e.g. ReadDir(""), Lstat(".")) are legitimate; mutating the root itself
+// is not, so write-side operations continue to use validPath directly.
+func (sfs *worktreeFilesystem) validReadPath(p string) error {
+	if p == "" || p == "." || p == "/" {
+		return nil
+	}
+	return sfs.validPath(p)
+}
+
+var errUnsupportedOperation = errors.New("unsupported operation")
 
 // worktreeDeny is a list of paths that are not allowed
 // to be used when resetting the worktree.
@@ -89,6 +148,12 @@ var worktreeDeny = map[string]struct{}{
 // https://github.com/git/git/blob/564d0252ca632e0264ed670534a51d18a689ef5d/path.c#L1383
 func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 	for _, p := range paths {
+		for _, r := range p {
+			if r < 0x20 || r == 0x7f {
+				return fmt.Errorf("invalid path %q: contains control character", p)
+			}
+		}
+
 		parts := strings.FieldsFunc(p, func(r rune) bool { return (r == '\\' || r == '/') })
 		if len(parts) == 0 {
 			return fmt.Errorf("invalid path: %q", p)
@@ -128,152 +193,4 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 		}
 	}
 	return nil
-}
-
-// defaultProtectNTFS returns the default value for core.protectNTFS
-// when not explicitly configured. Matches upstream Git behaviour:
-// enabled by default on Windows.
-func defaultProtectNTFS() bool {
-	return runtime.GOOS == "windows"
-}
-
-// defaultProtectHFS returns the default value for core.protectHFS
-// when not explicitly configured. Matches upstream Git behaviour:
-// enabled by default on macOS.
-func defaultProtectHFS() bool {
-	return runtime.GOOS == "darwin"
-}
-
-// hfsIgnoredCodepoints contains Unicode code points that HFS+ ignores
-// during path normalization. A path containing these characters between
-// the characters of ".git" will be treated as ".git" by HFS+.
-//
-// See upstream Git utf8.c next_hfs_char() for the full list.
-var hfsIgnoredCodepoints = map[rune]bool{
-	0x200c: true, // ZERO WIDTH NON-JOINER
-	0x200d: true, // ZERO WIDTH JOINER
-	0x200e: true, // LEFT-TO-RIGHT MARK
-	0x200f: true, // RIGHT-TO-LEFT MARK
-	0x202a: true, // LEFT-TO-RIGHT EMBEDDING
-	0x202b: true, // RIGHT-TO-LEFT EMBEDDING
-	0x202c: true, // POP DIRECTIONAL FORMATTING
-	0x202d: true, // LEFT-TO-RIGHT OVERRIDE
-	0x202e: true, // RIGHT-TO-LEFT OVERRIDE
-	0x206a: true, // INHIBIT SYMMETRIC SWAPPING
-	0x206b: true, // ACTIVATE SYMMETRIC SWAPPING
-	0x206c: true, // INHIBIT ARABIC FORM SHAPING
-	0x206d: true, // ACTIVATE ARABIC FORM SHAPING
-	0x206e: true, // NATIONAL DIGIT SHAPES
-	0x206f: true, // NOMINAL DIGIT SHAPES
-	0xfeff: true, // ZERO WIDTH NO-BREAK SPACE
-}
-
-// isHFSDotGit returns true if the given path component would be
-// treated as ".git" on an HFS+ filesystem after stripping ignored
-// Unicode code points and folding to lower case.
-func isHFSDotGit(part string) bool {
-	const needle = "git"
-
-	runes := []rune(part)
-	i := 0
-
-	// skip ignored code points, then expect '.'
-	for i < len(runes) && hfsIgnoredCodepoints[runes[i]] {
-		i++
-	}
-	if i >= len(runes) || runes[i] != '.' {
-		return false
-	}
-	i++
-
-	// match "git" case-insensitively, skipping ignored code points
-	for _, expected := range needle {
-		for i < len(runes) && hfsIgnoredCodepoints[runes[i]] {
-			i++
-		}
-		if i >= len(runes) {
-			return false
-		}
-		r := runes[i]
-		if r > 127 {
-			return false
-		}
-		if strings.ToLower(string(r)) != string(expected) {
-			return false
-		}
-		i++
-	}
-
-	// skip trailing ignored code points
-	for i < len(runes) && hfsIgnoredCodepoints[runes[i]] {
-		i++
-	}
-
-	// must be at end of component
-	return i == len(runes)
-}
-
-// windowsPathReplacer defines the chars that need to be replaced
-// as part of windowsValidPath.
-var windowsPathReplacer *strings.Replacer
-
-func init() {
-	windowsPathReplacer = strings.NewReplacer(" ", "", ".", "")
-}
-
-func windowsValidPath(part string) bool {
-	if len(part) > 3 && strings.EqualFold(part[:4], GitDirName) {
-		// For historical reasons, file names that end in spaces or periods are
-		// automatically trimmed. Therefore, `.git . . ./` is a valid way to refer
-		// to `.git/`.
-		if windowsPathReplacer.Replace(part[4:]) == "" {
-			return false
-		}
-
-		// For yet other historical reasons, NTFS supports so-called "Alternate Data
-		// Streams", i.e. metadata associated with a given file, referred to via
-		// `<filename>:<stream-name>:<stream-type>`. There exists a default stream
-		// type for directories, allowing `.git/` to be accessed via
-		// `.git::$INDEX_ALLOCATION/`.
-		//
-		// For performance reasons, _all_ Alternate Data Streams of `.git/` are
-		// forbidden, not just `::$INDEX_ALLOCATION`.
-		if len(part) > 4 && part[4:5] == ":" {
-			return false
-		}
-	}
-	return !isWindowsReservedName(part)
-}
-
-// windowsReservedNames lists the Windows reserved device names.
-// A path component is reserved if its base name (ignoring trailing
-// spaces, extensions, and NTFS Alternate Data Streams) matches one of
-// these case-insensitively.
-//
-// See upstream Git compat/mingw.c is_valid_win32_path().
-var windowsReservedNames = []string{
-	"CON", "PRN", "AUX", "NUL",
-	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-	"CONIN$", "CONOUT$",
-}
-
-func isWindowsReservedName(part string) bool {
-	for _, name := range windowsReservedNames {
-		if len(part) < len(name) {
-			continue
-		}
-		if !strings.EqualFold(part[:len(name)], name) {
-			continue
-		}
-		// Exact match or followed by space, dot, colon (ADS), or separator.
-		if len(part) == len(name) {
-			return true
-		}
-		switch part[len(name)] {
-		case ' ', '.', ':':
-			return true
-		}
-	}
-	return false
 }
