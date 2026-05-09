@@ -12,6 +12,7 @@ require (
 	github.com/go-git/gcfg/v2 v2.0.2
 	github.com/go-git/go-billy/v6 v6.0.0-20260424211911-732291493fb8
 	github.com/go-git/go-git-fixtures/v6 v6.0.0-20260422085740-0c07409f52ec
+	github.com/hanwen/reftable v1.0.0
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.6.0
 	github.com/sergi/go-diff v1.4.0
