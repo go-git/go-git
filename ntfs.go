@@ -17,7 +17,11 @@ func defaultProtectNTFS() bool {
 var windowsPathReplacer = strings.NewReplacer(" ", "", ".", "")
 
 func windowsValidPath(part string) bool {
-	if len(part) > 3 && strings.EqualFold(part[:4], GitDirName) {
+	// Bare ".git" is allowed at this layer; rejection of root-level or
+	// non-final ".git" components is handled by validPath. This check
+	// only catches the Windows-specific variants (`.git ` / `.git.` /
+	// `.git::$INDEX_ALLOCATION` etc.) that get normalised back to ".git".
+	if len(part) > 4 && strings.EqualFold(part[:4], GitDirName) {
 		// For historical reasons, file names that end in spaces or periods are
 		// automatically trimmed. Therefore, `.git . . ./` is a valid way to refer
 		// to `.git/`.
@@ -33,7 +37,7 @@ func windowsValidPath(part string) bool {
 		//
 		// For performance reasons, _all_ Alternate Data Streams of `.git/` are
 		// forbidden, not just `::$INDEX_ALLOCATION`.
-		if len(part) > 4 && part[4:5] == ":" {
+		if part[4:5] == ":" {
 			return false
 		}
 	}

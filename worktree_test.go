@@ -3198,7 +3198,7 @@ func TestWindowsValidPath(t *testing.T) {
 		path string
 		want bool
 	}{
-		{".git", false},
+		{".git", true},
 		{".git . . .", false},
 		{".git ", false},
 		{".git  ", false},
