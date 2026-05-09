@@ -439,7 +439,9 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 	}
 	repositoryFs = dotgit.NewRepositoryFilesystem(dot, dotGitCommon)
 
-	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
+	s := filesystem.NewStorageWithOptions(repositoryFs, cache.NewObjectLRUDefault(), filesystem.Options{
+		AlternatesFS: o.AlternatesFS,
+	})
 
 	return Open(s, wt)
 }
