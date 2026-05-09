@@ -14,17 +14,25 @@ import (
 )
 
 // defaultProtectHFS returns the default value for core.protectHFS
-// when not explicitly configured. Matches upstream Git behaviour:
-// enabled by default on macOS.
+// when not explicitly configured. Matches upstream Git's
+// PROTECT_HFS_DEFAULT[1], which the Makefile sets to 1 on Darwin
+// and leaves at 0 on every other platform.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/config.mak.uname#L146
 func defaultProtectHFS() bool {
 	return runtime.GOOS == "darwin"
 }
 
 // defaultProtectNTFS returns the default value for core.protectNTFS
-// when not explicitly configured. Matches upstream Git behaviour:
-// enabled by default on Windows.
+// when not explicitly configured. Matches upstream Git's
+// PROTECT_NTFS_DEFAULT, which has been 1 on every platform since
+// 9102f958ee5 (CVE-2019-1353)[1]: WSL allows Linux processes to
+// reach NTFS-mounted worktrees on Windows hosts, so the
+// is_ntfs_dotgit guard cannot safely be gated on the runtime OS.
+//
+// [1]: https://github.com/git/git/commit/9102f958ee5
 func defaultProtectNTFS() bool {
-	return runtime.GOOS == "windows"
+	return true
 }
 
 // worktreeFilesystem wraps a billy.Filesystem and validates every path passed
