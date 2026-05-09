@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -95,27 +94,37 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 			return fmt.Errorf("invalid path: %q", p)
 		}
 
-		if _, denied := worktreeDeny[strings.ToLower(parts[0])]; denied {
-			return fmt.Errorf("invalid path prefix: %q", p)
-		}
-
-		if sfs.protectHFS && isHFSDotGit(parts[0]) {
-			return fmt.Errorf("invalid path prefix: %q", p)
-		}
-
 		if sfs.protectNTFS {
 			// Volume names are not supported, in both formats: \\ and <DRIVE_LETTER>:.
 			if vol := filepath.VolumeName(p); vol != "" {
 				return fmt.Errorf("invalid path: %q", p)
 			}
-
-			if !windowsValidPath(parts[0]) {
-				return fmt.Errorf("invalid path: %q", p)
-			}
 		}
 
-		if slices.Contains(parts, "..") {
-			return fmt.Errorf("invalid path %q: cannot use '..'", p)
+		for i, part := range parts {
+			if part == "." || part == ".." {
+				return fmt.Errorf("invalid path %q: cannot use %q", p, part)
+			}
+
+			// Reject .git (and equivalents) as a path component when it is
+			// either the first component (root-level .git) or a non-final
+			// component (traversal into a .git directory, e.g. "a/.git/config").
+			// A final non-first .git component (e.g. "submodule/.git") is
+			// allowed because submodule worktrees contain a .git pointer file.
+			isDotGit := false
+			if _, denied := worktreeDeny[strings.ToLower(part)]; denied {
+				isDotGit = true
+			} else if sfs.protectHFS && isHFSDotGit(part) {
+				isDotGit = true
+			}
+
+			if isDotGit && (i == 0 || i < len(parts)-1) {
+				return fmt.Errorf("invalid path component: %q", p)
+			}
+
+			if sfs.protectNTFS && !windowsValidPath(part) {
+				return fmt.Errorf("invalid path: %q", p)
+			}
 		}
 	}
 	return nil
