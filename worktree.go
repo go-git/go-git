@@ -516,7 +516,7 @@ func (w *Worktree) validPath(paths ...string) error {
 	if wfs, ok := w.Filesystem.(*worktreeFilesystem); ok {
 		return wfs.validPath(paths...)
 	}
-	return newWorktreeFilesystem(w.Filesystem, defaultProtectNTFS()).validPath(paths...)
+	return newWorktreeFilesystem(w.Filesystem, defaultProtectNTFS(), defaultProtectHFS()).validPath(paths...)
 }
 
 func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {

@@ -18,10 +18,11 @@ import (
 type worktreeFilesystem struct {
 	billy.Filesystem
 	protectNTFS bool
+	protectHFS  bool
 }
 
-func newWorktreeFilesystem(fs billy.Filesystem, protectNTFS bool) *worktreeFilesystem {
-	return &worktreeFilesystem{Filesystem: fs, protectNTFS: protectNTFS}
+func newWorktreeFilesystem(fs billy.Filesystem, protectNTFS, protectHFS bool) *worktreeFilesystem {
+	return &worktreeFilesystem{Filesystem: fs, protectNTFS: protectNTFS, protectHFS: protectHFS}
 }
 
 func (sfs *worktreeFilesystem) Create(filename string) (billy.File, error) {
@@ -98,6 +99,10 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 			return fmt.Errorf("invalid path prefix: %q", p)
 		}
 
+		if sfs.protectHFS && isHFSDotGit(parts[0]) {
+			return fmt.Errorf("invalid path prefix: %q", p)
+		}
+
 		if sfs.protectNTFS {
 			// Volume names are not supported, in both formats: \\ and <DRIVE_LETTER>:.
 			if vol := filepath.VolumeName(p); vol != "" {
@@ -121,6 +126,82 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 // enabled by default on Windows.
 func defaultProtectNTFS() bool {
 	return runtime.GOOS == "windows"
+}
+
+// defaultProtectHFS returns the default value for core.protectHFS
+// when not explicitly configured. Matches upstream Git behaviour:
+// enabled by default on macOS.
+func defaultProtectHFS() bool {
+	return runtime.GOOS == "darwin"
+}
+
+// hfsIgnoredCodepoints contains Unicode code points that HFS+ ignores
+// during path normalization. A path containing these characters between
+// the characters of ".git" will be treated as ".git" by HFS+.
+//
+// See upstream Git utf8.c next_hfs_char() for the full list.
+var hfsIgnoredCodepoints = map[rune]bool{
+	0x200c: true, // ZERO WIDTH NON-JOINER
+	0x200d: true, // ZERO WIDTH JOINER
+	0x200e: true, // LEFT-TO-RIGHT MARK
+	0x200f: true, // RIGHT-TO-LEFT MARK
+	0x202a: true, // LEFT-TO-RIGHT EMBEDDING
+	0x202b: true, // RIGHT-TO-LEFT EMBEDDING
+	0x202c: true, // POP DIRECTIONAL FORMATTING
+	0x202d: true, // LEFT-TO-RIGHT OVERRIDE
+	0x202e: true, // RIGHT-TO-LEFT OVERRIDE
+	0x206a: true, // INHIBIT SYMMETRIC SWAPPING
+	0x206b: true, // ACTIVATE SYMMETRIC SWAPPING
+	0x206c: true, // INHIBIT ARABIC FORM SHAPING
+	0x206d: true, // ACTIVATE ARABIC FORM SHAPING
+	0x206e: true, // NATIONAL DIGIT SHAPES
+	0x206f: true, // NOMINAL DIGIT SHAPES
+	0xfeff: true, // ZERO WIDTH NO-BREAK SPACE
+}
+
+// isHFSDotGit returns true if the given path component would be
+// treated as ".git" on an HFS+ filesystem after stripping ignored
+// Unicode code points and folding to lower case.
+func isHFSDotGit(part string) bool {
+	const needle = "git"
+
+	runes := []rune(part)
+	i := 0
+
+	// skip ignored code points, then expect '.'
+	for i < len(runes) && hfsIgnoredCodepoints[runes[i]] {
+		i++
+	}
+	if i >= len(runes) || runes[i] != '.' {
+		return false
+	}
+	i++
+
+	// match "git" case-insensitively, skipping ignored code points
+	for _, expected := range needle {
+		for i < len(runes) && hfsIgnoredCodepoints[runes[i]] {
+			i++
+		}
+		if i >= len(runes) {
+			return false
+		}
+		r := runes[i]
+		if r > 127 {
+			return false
+		}
+		if strings.ToLower(string(r)) != string(expected) {
+			return false
+		}
+		i++
+	}
+
+	// skip trailing ignored code points
+	for i < len(runes) && hfsIgnoredCodepoints[runes[i]] {
+		i++
+	}
+
+	// must be at end of component
+	return i == len(runes)
 }
 
 // windowsPathReplacer defines the chars that need to be replaced

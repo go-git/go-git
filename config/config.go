@@ -66,6 +66,11 @@ type Config struct {
 		// data streams, 8.3 short names). When unset, defaults to true on
 		// Windows.
 		ProtectNTFS OptBool
+		// ProtectHFS controls whether HFS+-specific path protections are
+		// applied (e.g. rejecting .git with Unicode zero-width or
+		// directional characters that HFS+ would normalize away).
+		// When unset, defaults to true on macOS.
+		ProtectHFS OptBool
 	}
 
 	User struct {
@@ -272,6 +277,7 @@ const (
 	objectFormat               = "objectformat"
 	mirrorKey                  = "mirror"
 	protectNTFSKey             = "protectNTFS"
+	protectHFSKey              = "protectHFS"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -318,6 +324,10 @@ func (c *Config) unmarshalCore() {
 
 	if v, err := strconv.ParseBool(s.Options.Get(protectNTFSKey)); err == nil {
 		c.Core.ProtectNTFS = NewOptBool(v)
+	}
+
+	if v, err := strconv.ParseBool(s.Options.Get(protectHFSKey)); err == nil {
+		c.Core.ProtectHFS = NewOptBool(v)
 	}
 }
 
@@ -449,6 +459,10 @@ func (c *Config) marshalCore() {
 
 	if c.Core.ProtectNTFS.IsSet() {
 		s.SetOption(protectNTFSKey, c.Core.ProtectNTFS.FormatBool())
+	}
+
+	if c.Core.ProtectHFS.IsSet() {
+		s.SetOption(protectHFSKey, c.Core.ProtectHFS.FormatBool())
 	}
 }
 
