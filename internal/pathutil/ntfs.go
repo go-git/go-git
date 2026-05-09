@@ -2,42 +2,57 @@ package pathutil
 
 import "strings"
 
-// dotGit is the canonical Git metadata directory name. Used as a
-// constant by the NTFS variant detection helpers to avoid coupling
-// internal/pathutil to the root `git` package's GitDirName constant.
-const dotGit = ".git"
+// IsNTFSDotGit ports upstream Git's is_ntfs_dotgit. It detects path
+// components that NTFS would resolve to ".git": the canonical name
+// itself and its 8.3 short-name alias "git~1", each followed by any
+// number of trailing spaces or periods (which NTFS silently trims)
+// and an optional Alternate Data Stream suffix (":<stream>"). The
+// bare strings ".git" and "git~1" also match, mirroring upstream.
+//
+// Reference: upstream Git path.c is_ntfs_dotgit at L1415-L1449
+// in tag v2.54.0[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/path.c#L1415-L1449
+func IsNTFSDotGit(part string) bool {
+	var i int
+	switch {
+	case len(part) >= 4 && part[0] == '.' &&
+		asciiToLower(part[1]) == 'g' &&
+		asciiToLower(part[2]) == 'i' &&
+		asciiToLower(part[3]) == 't':
+		i = 4
+	case len(part) >= 5 &&
+		asciiToLower(part[0]) == 'g' &&
+		asciiToLower(part[1]) == 'i' &&
+		asciiToLower(part[2]) == 't' &&
+		part[3] == '~' && part[4] == '1':
+		i = 5
+	default:
+		return false
+	}
 
-// windowsPathReplacer strips trailing spaces and periods. NTFS
-// silently trims them from filename suffixes, so a path like
-// `.git . . .` resolves back to `.git` once normalised.
-var windowsPathReplacer = strings.NewReplacer(" ", "", ".", "")
+	for ; i < len(part); i++ {
+		c := part[i]
+		if c == ':' {
+			return true
+		}
+		if c != '.' && c != ' ' {
+			return false
+		}
+	}
+	return true
+}
 
 // WindowsValidPath reports whether part is a valid Windows / NTFS
 // path component for the worktree filesystem abstraction. It rejects
-// the NTFS-specific variants of `.git` (trailing spaces, periods,
-// Alternate Data Streams) and Windows reserved device names. Bare
-// `.git` itself is allowed at this layer; the caller decides whether
-// it is permissible at the current path position.
+// NTFS-disguised variants of `.git` and `git~1` (trailing spaces,
+// periods, Alternate Data Streams) and Windows reserved device
+// names. Bare `.git` and `git~1` are allowed at this layer; the
+// caller decides whether they are permissible at the current path
+// position.
 func WindowsValidPath(part string) bool {
-	if len(part) > 4 && strings.EqualFold(part[:4], dotGit) {
-		// For historical reasons, file names that end in spaces or periods are
-		// automatically trimmed. Therefore, `.git . . ./` is a valid way to refer
-		// to `.git/`.
-		if windowsPathReplacer.Replace(part[4:]) == "" {
-			return false
-		}
-
-		// For yet other historical reasons, NTFS supports so-called "Alternate Data
-		// Streams", i.e. metadata associated with a given file, referred to via
-		// `<filename>:<stream-name>:<stream-type>`. There exists a default stream
-		// type for directories, allowing `.git/` to be accessed via
-		// `.git::$INDEX_ALLOCATION/`.
-		//
-		// For performance reasons, _all_ Alternate Data Streams of `.git/` are
-		// forbidden, not just `::$INDEX_ALLOCATION`.
-		if part[4:5] == ":" {
-			return false
-		}
+	if IsNTFSDotGit(part) && !IsDotGitName(part) {
+		return false
 	}
 	return !isWindowsReservedName(part)
 }

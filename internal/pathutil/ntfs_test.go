@@ -20,6 +20,10 @@ func TestWindowsValidPath(t *testing.T) {
 		{".git . .", false},
 		{".git::$INDEX_ALLOCATION", false},
 		{".git:", false},
+		{"git~1 ", false},
+		{"git~1.", false},
+		{"GIT~1 ", false},
+		{"git~1::$DATA", false},
 		{"CON", false},
 		{"con", false},
 		{"CON.txt", false},
@@ -43,6 +47,10 @@ func TestWindowsValidPath(t *testing.T) {
 		{"COM", true},
 		{"COM0", true},
 		{"LPT0", true},
+		// Bare ".git" / "git~1" stay valid here; the caller decides
+		// whether they are permissible at the current path position.
+		{".git", true},
+		{"git~1", true},
 	}
 
 	for _, tc := range tests {
@@ -50,6 +58,51 @@ func TestWindowsValidPath(t *testing.T) {
 			t.Parallel()
 			got := WindowsValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestIsNTFSDotGit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		part string
+		want bool
+	}{
+		// Bare canonical names match (parity with upstream).
+		{".git", true},
+		{".GIT", true},
+		{"git~1", true},
+		{"GIT~1", true},
+		// Trailing-space / period / ADS variants on .git.
+		{".git ", true},
+		{".git.", true},
+		{".git . . .", true},
+		{".git::$INDEX_ALLOCATION", true},
+		{".git:foo", true},
+		// Same shapes on git~1.
+		{"git~1 ", true},
+		{"git~1.", true},
+		{"git~1 . ", true},
+		{"git~1::$DATA", true},
+		{"GIT~1.", true},
+		// Negatives.
+		{".gitignore", false},
+		{".gitmodules", false},
+		{"gitfoo", false},
+		{"git~2", false},
+		{"git~10", false},
+		{"git", false},
+		{"", false},
+		{".", false},
+		{"readme.md", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.part, func(t *testing.T) {
+			t.Parallel()
+			got := IsNTFSDotGit(tc.part)
+			assert.Equal(t, tc.want, got, "IsNTFSDotGit(%q)", tc.part)
 		})
 	}
 }

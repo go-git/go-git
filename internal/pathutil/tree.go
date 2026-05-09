@@ -18,20 +18,21 @@ var ErrInvalidPath = fmt.Errorf("invalid path")
 //   - empty paths and "." / ".." components;
 //   - Windows volume name prefixes (e.g. C:);
 //   - .git, its 8.3 NTFS short-name git~1, plus their HFS+ and NTFS
-//     variants — at every position, not just the root;
-//   - NTFS reserved device names (CON, NUL, etc).
+//     variants — at every position, not just the root.
 //
-// HFS+/NTFS variants are always rejected at this layer regardless of
-// runtime config: tree paths are canonical UTF-8 with no zero-width
-// characters or NTFS short-name forms; an entry that looks like one
-// is suspicious anywhere. The flag-gated checks at the wrapper layer
-// (validPath in package git) handle application-supplied paths,
-// where some shapes legitimately appear during submodule cleanup.
+// HFS+/NTFS variants of `.git` are always rejected at this layer
+// regardless of runtime config: tree paths are canonical UTF-8 with
+// no zero-width characters or NTFS short-name forms, so an entry
+// that looks like a disguised `.git` is suspicious anywhere. Windows
+// reserved device names (CON, NUL, etc.) are not policed here — they
+// are legitimate filenames on non-Windows filesystems and upstream
+// Git accepts them. The wrapper layer (validPath in package git)
+// rejects them at materialisation time when core.protectNTFS is on.
 //
 // Mirrors upstream Git's verify_path_internal at read-cache.c#L987
-// in tag v2.54.0[1], stripped of its protect_hfs / protect_ntfs
-// gating because tree paths are checked at the boundary where data
-// leaves the trusted store.
+// in tag v2.54.0[1] with protect_hfs / protect_ntfs treated as
+// always-on for `.git`-disguise detection (tree paths are not
+// application-supplied) and is_valid_win32_path left to the wrapper.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
 func ValidTreePath(p string) error {
@@ -56,12 +57,8 @@ func ValidTreePath(p string) error {
 			return fmt.Errorf("%w %q: cannot use %q", ErrInvalidPath, p, part)
 		}
 
-		if IsDotGitName(part) || IsHFSDotGit(part) {
+		if IsDotGitName(part) || IsHFSDotGit(part) || IsNTFSDotGit(part) {
 			return fmt.Errorf("%w component: %q", ErrInvalidPath, p)
-		}
-
-		if !WindowsValidPath(part) {
-			return fmt.Errorf("%w: %q", ErrInvalidPath, p)
 		}
 	}
 

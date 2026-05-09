@@ -29,11 +29,12 @@ func TestValidTreePath(t *testing.T) {
 		{"reject control char SOH", "a\x01b", true},
 		{"reject DEL", "foo\x7fbar", true},
 
-		// Always-on NTFS variants (no flag gate at this layer).
+		// Always-on NTFS .git-disguise variants (no flag gate at this layer).
 		{"reject .git . trailing", "sub/.git . /x", true},
 		{"reject .git:: ADS", ".git::$INDEX_ALLOCATION/x", true},
-		{"reject reserved CON", "CON/file", true},
-		{"reject reserved NUL", "dir/NUL", true},
+		{"reject git~1 trailing space", "sub/git~1 /x", true},
+		{"reject git~1 trailing dot", "git~1./x", true},
+		{"reject git~1:: ADS", "git~1::$INDEX_ALLOCATION/x", true},
 
 		// Always-on HFS+ variants.
 		{"reject .g\u200cit zwnj", ".g\u200cit/x", true},
@@ -49,6 +50,12 @@ func TestValidTreePath(t *testing.T) {
 		{"allow submodule directory entry", "submodule", false},
 		{"allow nested submodule directory", "vendor/sub", false},
 		{"allow Çircle/file high-codepoint", "Çircle/file", false},
+		// Windows reserved device names are not policed at this layer:
+		// they are legitimate on non-Windows and upstream Git accepts
+		// them. The wrapper enforces them when core.protectNTFS is on.
+		{"allow CON file", "CON/file", false},
+		{"allow CON.txt", "CON.txt", false},
+		{"allow nested NUL", "dir/NUL", false},
 	}
 
 	for _, tc := range tests {
