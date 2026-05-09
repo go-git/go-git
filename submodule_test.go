@@ -189,14 +189,24 @@ func (s *SubmoduleSuite) TestSubmodulesInit(c *C) {
 }
 
 func (s *SubmoduleSuite) TestGitSubmodulesSymlink(c *C) {
-	f, err := s.Worktree.Filesystem.Create("badfile")
+	// Plant the malicious symlink directly on the inner filesystem.
+	// The worktreeFilesystem wrapper's Symlink rejects .gitmodules
+	// link names by design (see validSymlinkName); the read-side
+	// detection in Submodules() is the layer being exercised here,
+	// so the setup goes through the unwrapped billy.Filesystem.
+	fs := s.Worktree.Filesystem
+	if wfs, ok := fs.(*worktreeFilesystem); ok {
+		fs = wfs.Filesystem
+	}
+
+	f, err := fs.Create("badfile")
 	c.Assert(err, IsNil)
 	defer func() { _ = f.Close() }()
 
-	err = s.Worktree.Filesystem.Remove(gitmodulesFile)
+	err = fs.Remove(gitmodulesFile)
 	c.Assert(err, IsNil)
 
-	err = s.Worktree.Filesystem.Symlink("badfile", gitmodulesFile)
+	err = fs.Symlink("badfile", gitmodulesFile)
 	c.Assert(err, IsNil)
 
 	_, err = s.Worktree.Submodules()
@@ -272,7 +282,8 @@ func (s *SubmoduleSuite) TestSubmoduleParseScp(c *C) {
 	}
 
 	submodule.c = &config.Submodule{
-		URL: "git@github.com:username/submodule_repo",
+		Path: "child",
+		URL:  "git@github.com:username/submodule_repo",
 	}
 
 	_, err := submodule.Repository()
@@ -304,6 +315,7 @@ func newSubmoduleForRelativeURL(c *C, parentRemoteURL, submoduleName, submoduleU
 		initialized: true,
 		c: &config.Submodule{
 			Name: submoduleName,
+			Path: submoduleName,
 			URL:  submoduleURL,
 		},
 		w: worktree,

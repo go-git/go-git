@@ -656,10 +656,10 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 }
 
 func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
-	// https://github.com/git/git/commit/10ecfa76491e4923988337b2e2243b05376b40de
-	if strings.EqualFold(f.Name, gitmodulesFile) {
-		return ErrGitModulesSymlink
-	}
+	// .gitmodules symlink rejection (and its NTFS / HFS variants) is
+	// enforced by the worktreeFilesystem wrapper's Symlink method via
+	// validSymlinkName. See https://github.com/git/git/commit/10ecfa7
+	// for the upstream rationale.
 
 	from, err := f.Reader()
 	if err != nil {

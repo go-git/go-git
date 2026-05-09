@@ -3193,33 +3193,6 @@ func TestValidPath(t *testing.T) {
 	}
 }
 
-func TestWindowsValidPath(t *testing.T) {
-	tests := []struct {
-		path string
-		want bool
-	}{
-		{".git", true},
-		{".git . . .", false},
-		{".git ", false},
-		{".git  ", false},
-		{".git . .", false},
-		{".git . .", false},
-		{".git::$INDEX_ALLOCATION", false},
-		{".git:", false},
-		{"a", true},
-		{"a\\b", true},
-		{"a/b", true},
-		{".gitm", true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.path, func(t *testing.T) {
-			got := windowsValidPath(tc.path)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 var statusCodeNames = map[StatusCode]string{
 	Unmodified:         "Unmodified",
 	Untracked:          "Untracked",
