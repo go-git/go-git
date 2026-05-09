@@ -61,6 +61,11 @@ type Config struct {
 		CommentChar string
 		// RepositoryFormatVersion identifies the repository format and layout version.
 		RepositoryFormatVersion format.RepositoryFormatVersion
+		// ProtectNTFS controls whether NTFS-specific path protections are
+		// applied (e.g. rejecting .git trailing spaces/periods, alternate
+		// data streams, 8.3 short names). When unset, defaults to true on
+		// Windows.
+		ProtectNTFS OptBool
 	}
 
 	User struct {
@@ -266,6 +271,7 @@ const (
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormat               = "objectformat"
 	mirrorKey                  = "mirror"
+	protectNTFSKey             = "protectNTFS"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -309,6 +315,10 @@ func (c *Config) unmarshalCore() {
 
 	c.Core.Worktree = s.Options.Get(worktreeKey)
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
+
+	if v, err := strconv.ParseBool(s.Options.Get(protectNTFSKey)); err == nil {
+		c.Core.ProtectNTFS = NewOptBool(v)
+	}
 }
 
 func (c *Config) unmarshalUser() {
@@ -435,6 +445,10 @@ func (c *Config) marshalCore() {
 
 	if c.Core.Worktree != "" {
 		s.SetOption(worktreeKey, c.Core.Worktree)
+	}
+
+	if c.Core.ProtectNTFS.IsSet() {
+		s.SetOption(protectNTFSKey, c.Core.ProtectNTFS.FormatBool())
 	}
 }
 

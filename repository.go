@@ -1530,7 +1530,12 @@ func (r *Repository) Worktree() (*Worktree, error) {
 		return nil, ErrIsBareRepository
 	}
 
-	return &Worktree{r: r, Filesystem: newWorktreeFilesystem(r.wt)}, nil
+	protectNTFS := defaultProtectNTFS()
+	if cfg, err := r.Config(); err == nil && cfg.Core.ProtectNTFS.IsSet() {
+		protectNTFS = cfg.Core.ProtectNTFS.IsTrue()
+	}
+
+	return &Worktree{r: r, Filesystem: newWorktreeFilesystem(r.wt, protectNTFS)}, nil
 }
 
 func expand_ref(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {

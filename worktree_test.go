@@ -3180,9 +3180,10 @@ func TestValidPath(t *testing.T) {
 		}...)
 	}
 
+	fs := newWorktreeFilesystem(nil, defaultProtectNTFS())
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
-			err := validPath(tc.path)
+			err := fs.validPath(tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {

@@ -17,49 +17,50 @@ import (
 // code path triggers the operation.
 type worktreeFilesystem struct {
 	billy.Filesystem
+	protectNTFS bool
 }
 
-func newWorktreeFilesystem(fs billy.Filesystem) *worktreeFilesystem {
-	return &worktreeFilesystem{Filesystem: fs}
+func newWorktreeFilesystem(fs billy.Filesystem, protectNTFS bool) *worktreeFilesystem {
+	return &worktreeFilesystem{Filesystem: fs, protectNTFS: protectNTFS}
 }
 
 func (sfs *worktreeFilesystem) Create(filename string) (billy.File, error) {
-	if err := validPath(filename); err != nil {
+	if err := sfs.validPath(filename); err != nil {
 		return nil, err
 	}
 	return sfs.Filesystem.Create(filename)
 }
 
 func (sfs *worktreeFilesystem) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
-	if err := validPath(filename); err != nil {
+	if err := sfs.validPath(filename); err != nil {
 		return nil, err
 	}
 	return sfs.Filesystem.OpenFile(filename, flag, perm)
 }
 
 func (sfs *worktreeFilesystem) Remove(filename string) error {
-	if err := validPath(filename); err != nil {
+	if err := sfs.validPath(filename); err != nil {
 		return err
 	}
 	return sfs.Filesystem.Remove(filename)
 }
 
 func (sfs *worktreeFilesystem) Rename(from, to string) error {
-	if err := validPath(from, to); err != nil {
+	if err := sfs.validPath(from, to); err != nil {
 		return err
 	}
 	return sfs.Filesystem.Rename(from, to)
 }
 
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
-	if err := validPath(link); err != nil {
+	if err := sfs.validPath(link); err != nil {
 		return err
 	}
 	return sfs.Filesystem.Symlink(target, link)
 }
 
 func (sfs *worktreeFilesystem) MkdirAll(path string, perm os.FileMode) error {
-	if err := validPath(path); err != nil {
+	if err := sfs.validPath(path); err != nil {
 		return err
 	}
 	return sfs.Filesystem.MkdirAll(path, perm)
@@ -86,7 +87,7 @@ var worktreeDeny = map[string]struct{}{
 // For upstream rules:
 // https://github.com/git/git/blob/564d0252ca632e0264ed670534a51d18a689ef5d/read-cache.c#L946
 // https://github.com/git/git/blob/564d0252ca632e0264ed670534a51d18a689ef5d/path.c#L1383
-func validPath(paths ...string) error {
+func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 	for _, p := range paths {
 		parts := strings.FieldsFunc(p, func(r rune) bool { return (r == '\\' || r == '/') })
 		if len(parts) == 0 {
@@ -97,7 +98,7 @@ func validPath(paths ...string) error {
 			return fmt.Errorf("invalid path prefix: %q", p)
 		}
 
-		if runtime.GOOS == "windows" {
+		if sfs.protectNTFS {
 			// Volume names are not supported, in both formats: \\ and <DRIVE_LETTER>:.
 			if vol := filepath.VolumeName(p); vol != "" {
 				return fmt.Errorf("invalid path: %q", p)
@@ -113,6 +114,13 @@ func validPath(paths ...string) error {
 		}
 	}
 	return nil
+}
+
+// defaultProtectNTFS returns the default value for core.protectNTFS
+// when not explicitly configured. Matches upstream Git behaviour:
+// enabled by default on Windows.
+func defaultProtectNTFS() bool {
+	return runtime.GOOS == "windows"
 }
 
 // windowsPathReplacer defines the chars that need to be replaced

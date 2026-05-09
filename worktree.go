@@ -496,14 +496,27 @@ func (w *Worktree) validChange(ch merkletrie.Change) error {
 
 	switch action {
 	case merkletrie.Delete:
-		return validPath(ch.From.String())
+		return w.validPath(ch.From.String())
 	case merkletrie.Insert:
-		return validPath(ch.To.String())
+		return w.validPath(ch.To.String())
 	case merkletrie.Modify:
-		return validPath(ch.From.String(), ch.To.String())
+		return w.validPath(ch.From.String(), ch.To.String())
 	}
 
 	return nil
+}
+
+// validPath validates one or more paths through the worktree's
+// filesystem wrapper. When Worktree.Filesystem is a *worktreeFilesystem
+// (the standard case constructed by Repository.Worktree), validation
+// uses the configured protectNTFS flag. Otherwise — typically a test
+// that builds a Worktree directly with a raw billy.Filesystem — a
+// transient wrapper is used with the platform default.
+func (w *Worktree) validPath(paths ...string) error {
+	if wfs, ok := w.Filesystem.(*worktreeFilesystem); ok {
+		return wfs.validPath(paths...)
+	}
+	return newWorktreeFilesystem(w.Filesystem, defaultProtectNTFS()).validPath(paths...)
 }
 
 func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
