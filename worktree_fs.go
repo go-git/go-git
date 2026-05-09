@@ -81,7 +81,7 @@ func (sfs *worktreeFilesystem) Lstat(filename string) (os.FileInfo, error) {
 }
 
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
-	if err := sfs.validPath(link); err != nil {
+	if err := sfs.validPath(target, link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
 	return sfs.Filesystem.Symlink(target, link)
@@ -101,7 +101,7 @@ func (sfs *worktreeFilesystem) MkdirAll(path string, perm os.FileMode) error {
 	return sfs.Filesystem.MkdirAll(path, perm)
 }
 
-func (sfs *worktreeFilesystem) TempFile(dir, prefix string) (billy.File, error) {
+func (sfs *worktreeFilesystem) TempFile(_, _ string) (billy.File, error) {
 	return nil, fmt.Errorf("tempfile: %w", errUnsupportedOperation)
 }
 
