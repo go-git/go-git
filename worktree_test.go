@@ -3161,11 +3161,11 @@ func TestValidPath(t *testing.T) {
 		{".gitmodules", false},
 		{".gitignore", false},
 		{"a..b", false},
-		{".", false},
+		{".", true},
+		{"a/.git/b", true},
+		{"a\\.git\\b", true},
 		{"a/.git", false},
 		{"a\\.git", false},
-		{"a/.git/b", false},
-		{"a\\.git\\b", false},
 	}
 
 	if runtime.GOOS == "windows" {
@@ -3180,41 +3180,15 @@ func TestValidPath(t *testing.T) {
 		}...)
 	}
 
+	fs := newWorktreeFilesystem(nil, defaultProtectNTFS(), defaultProtectHFS())
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
-			err := validPath(tc.path)
+			err := fs.validPath(tc.path)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 			}
-		})
-	}
-}
-
-func TestWindowsValidPath(t *testing.T) {
-	tests := []struct {
-		path string
-		want bool
-	}{
-		{".git", false},
-		{".git . . .", false},
-		{".git ", false},
-		{".git  ", false},
-		{".git . .", false},
-		{".git . .", false},
-		{".git::$INDEX_ALLOCATION", false},
-		{".git:", false},
-		{"a", true},
-		{"a\\b", true},
-		{"a/b", true},
-		{".gitm", true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.path, func(t *testing.T) {
-			got := windowsValidPath(tc.path)
-			assert.Equal(t, tc.want, got)
 		})
 	}
 }

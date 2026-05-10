@@ -3114,7 +3114,10 @@ func (s *RepositorySuite) TestWorktree(c *C) {
 	r, _ := Init(memory.NewStorage(), def)
 	w, err := r.Worktree()
 	c.Assert(err, IsNil)
-	c.Assert(w.Filesystem, Equals, def)
+	// w.Filesystem is the worktreeFilesystem wrapper around def.
+	wfs, ok := w.Filesystem.(*worktreeFilesystem)
+	c.Assert(ok, Equals, true)
+	c.Assert(wfs.Filesystem, Equals, def)
 }
 
 func (s *RepositorySuite) TestWorktreeBare(c *C) {
