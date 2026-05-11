@@ -76,6 +76,22 @@ func TestScan(t *testing.T) {
 	})
 }
 
+func TestScannerRejectsReservedObjectType(t *testing.T) {
+	t.Parallel()
+
+	pack, _ := buildTestPack(t, testPackObject{
+		typ:     plumbing.ObjectType(5),
+		content: nil,
+	})
+	scanner := NewScanner(bytes.NewReader(pack))
+
+	for scanner.Scan() {
+	}
+
+	require.ErrorIs(t, scanner.Error(), ErrMalformedPackfile)
+	require.ErrorContains(t, scanner.Error(), "invalid object type")
+}
+
 func BenchmarkScannerBasic(b *testing.B) {
 	f := mustPackfile(b, fixtures.Basic().One())
 	scanner := NewScanner(f)

@@ -88,7 +88,13 @@ func (t ObjectType) Bytes() []byte {
 
 // Valid returns true if t is a valid ObjectType.
 func (t ObjectType) Valid() bool {
-	return t >= CommitObject && t <= REFDeltaObject
+	switch t {
+	case CommitObject, TreeObject, BlobObject,
+		TagObject, OFSDeltaObject, REFDeltaObject:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsDelta returns true for any ObjectType that represents a delta (i.e.
