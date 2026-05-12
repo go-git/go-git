@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -3189,6 +3190,31 @@ func TestValidPath(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+// TestWorktreeFilesystemMkdirAllRootIsNoop locks in the contract that
+// MkdirAll on a root-equivalent path is a silent no-op against the
+// wrapper. validPath itself still rejects "", ".", and "/" (see
+// TestValidPath), but MkdirAll specifically tolerates them because
+// "ensure the root exists" is always trivially satisfied.
+func TestWorktreeFilesystemMkdirAllRootIsNoop(t *testing.T) {
+	t.Parallel()
+
+	rootPaths := []string{"", ".", "/"}
+	for _, p := range rootPaths {
+		t.Run(p, func(t *testing.T) {
+			t.Parallel()
+
+			mfs := memfs.New()
+			fs := newWorktreeFilesystem(mfs, true, true)
+
+			require.NoError(t, fs.MkdirAll(p, 0o755))
+
+			entries, err := mfs.ReadDir("/")
+			require.NoError(t, err)
+			assert.Empty(t, entries, "MkdirAll(%q) must not materialise a directory entry", p)
 		})
 	}
 }
