@@ -3,7 +3,7 @@ module github.com/go-git/go-git/cli/go-git
 go 1.25.0
 
 require (
-	github.com/go-git/go-git/v5 v5.18.0
+	github.com/go-git/go-git/v5 v5.19.0
 	github.com/jessevdk/go-flags v1.6.1
 )
 
