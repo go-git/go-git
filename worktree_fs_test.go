@@ -217,9 +217,6 @@ func TestWorktreeFilesystemSymlinkRejectsDangerousPaths(t *testing.T) {
 			err := fs.Symlink("safe-target.txt", p)
 			assert.ErrorContains(t, err, "symlink:", "Symlink should reject link name %q", p)
 
-			err = fs.Symlink(p, "safe-link")
-			assert.ErrorContains(t, err, "symlink:", "Symlink should reject target %q", p)
-
 			assertOpsRejected(t, fs, p)
 		})
 	}

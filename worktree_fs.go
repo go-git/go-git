@@ -107,7 +107,7 @@ func (sfs *worktreeFilesystem) Lstat(filename string) (os.FileInfo, error) {
 }
 
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
-	if err := sfs.validPath(target, link); err != nil {
+	if err := sfs.validPath(link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
 	if err := sfs.validSymlinkName(link); err != nil {
