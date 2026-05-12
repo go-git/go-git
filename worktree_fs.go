@@ -123,6 +123,14 @@ func (sfs *worktreeFilesystem) Readlink(link string) (string, error) {
 }
 
 func (sfs *worktreeFilesystem) MkdirAll(path string, perm os.FileMode) error {
+	// MkdirAll on the worktree root is a no-op: the root always exists,
+	// so there is nothing to materialise. Mirroring the tolerance that
+	// validReadPath gives to read-side operations avoids breaking callers
+	// that walk a directory tree and pass the relative-to-root prefix
+	// ("") through to the worktree FS.
+	if path == "" || path == "." || path == "/" {
+		return nil
+	}
 	if err := sfs.validPath(path); err != nil {
 		return fmt.Errorf("mkdirall: %w", err)
 	}
