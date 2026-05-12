@@ -199,7 +199,7 @@ func assertOpsRejected(t *testing.T, fs *worktreeFilesystem, p string) {
 func TestWorktreeFilesystemSymlinkRejectsDangerousPaths(t *testing.T) {
 	t.Parallel()
 
-	badPaths := []string{
+	badLinkNames := []string{
 		".git",
 		".git/config",
 		".git/hooks/pre-commit",
@@ -208,17 +208,19 @@ func TestWorktreeFilesystemSymlinkRejectsDangerousPaths(t *testing.T) {
 		"a/../../etc/passwd",
 	}
 
-	for _, p := range badPaths {
+	for _, p := range badLinkNames {
 		t.Run(p, func(t *testing.T) {
 			t.Parallel()
 
 			fs := newWorktreeFilesystem(memfs.New(), false, false)
 
+			// Symlink NAME (link) must be validated and rejected
 			err := fs.Symlink("safe-target.txt", p)
 			assert.ErrorContains(t, err, "symlink:", "Symlink should reject link name %q", p)
 
-			err = fs.Symlink(p, "safe-link")
-			assert.ErrorContains(t, err, "symlink:", "Symlink should reject target %q", p)
+			// Symlink TARGET is NOT validated by git - any target is allowed
+			// This matches git's behavior where targets can be dangerous paths.
+			// The OS filesystem provides the security boundary.
 
 			assertOpsRejected(t, fs, p)
 		})
@@ -237,6 +239,42 @@ func TestWorktreeFilesystemSymlinkAllowsValidLink(t *testing.T) {
 	assert.Equal(t, "target.txt", got)
 
 	assertOpsRejected(t, fs, ".git/config")
+}
+
+func TestWorktreeFilesystemSymlinkAllowsDangerousTargets(t *testing.T) {
+	t.Parallel()
+
+	// Git allows symlink targets to contain dangerous paths like "..",
+	// ".git", or paths that escape the worktree. The symlink target is
+	// just a string stored in the blob - git doesn't validate it.
+	// This matches upstream git behavior (verified with git v2.54.0).
+	dangerousTargets := []string{
+		"../escape",
+		"../../escape",
+		"a/../../etc/passwd",
+		".git/config",
+		".git/hooks/pre-commit",
+		"git~1/HEAD",
+		"../sibling",
+	}
+
+	for _, target := range dangerousTargets {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+
+			fs := newWorktreeFilesystem(memfs.New(), false, false)
+
+			// Symlink targets are NOT validated - matches git behavior
+			err := fs.Symlink(target, "link")
+			require.NoError(t, err, "Symlink should allow target %q", target)
+
+			got, err := fs.Readlink("link")
+			require.NoError(t, err)
+			// Normalize path separators for cross-platform comparison
+			// (Windows converts forward slashes to backslashes in symlink targets)
+			assert.Equal(t, filepath.ToSlash(target), filepath.ToSlash(got))
+		})
+	}
 }
 
 func TestWorktreeFilesystemReadlinkValidatesPath(t *testing.T) {
@@ -357,8 +395,8 @@ func TestWorktreeFilesystemAbsolutePaths(t *testing.T) {
 				err := fs.Symlink("safe-target.txt", tc.path)
 				assert.ErrorContains(t, err, "symlink:", "Symlink should reject link %q", tc.path)
 
-				err = fs.Symlink(tc.path, "safe-link")
-				assert.ErrorContains(t, err, "symlink:", "Symlink should reject target %q", tc.path)
+				// Symlink targets are NOT validated - matches git behavior
+				// Any target path is allowed
 				return
 			}
 

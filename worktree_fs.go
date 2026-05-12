@@ -107,7 +107,15 @@ func (sfs *worktreeFilesystem) Lstat(filename string) (os.FileInfo, error) {
 }
 
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
-	if err := sfs.validPath(target, link); err != nil {
+	// Only validate the symlink name (link), not the target.
+	// Git does not validate symlink targets - they are just strings
+	// stored in blobs. Upstream git reads the blob content and calls
+	// symlink(2) directly without validation (entry.c write_entry at
+	// v2.54.0[1]). Targets can legitimately contain ".." or other
+	// path components that would be dangerous for worktree operations.
+	//
+	// [1]: https://github.com/git/git/blob/v2.54.0/entry.c#L388
+	if err := sfs.validPath(link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
 	if err := sfs.validSymlinkName(link); err != nil {
