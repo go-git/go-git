@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"fmt"
 	"hash"
+	"io"
 	"strconv"
 	"sync"
 
@@ -47,6 +48,26 @@ func (h *ObjectHasher) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 
 	copy(out.hash[:], h.hasher.Sum(out.hash[:0]))
 	h.m.Unlock()
+	return out, nil
+}
+
+// ComputeReader computes the hash of an object given its type, declared
+// size, and a reader yielding exactly that many bytes of content. The data
+// is streamed through the hasher rather than buffered in memory, making it
+// suitable for large blobs.
+func (h *ObjectHasher) ComputeReader(ot ObjectType, size int64, r io.Reader) (ObjectID, error) {
+	h.m.Lock()
+	defer h.m.Unlock()
+	h.hasher.Reset()
+
+	out := ObjectID{format: h.format}
+	writeHeader(h.hasher, ot, size)
+
+	if _, err := io.Copy(h.hasher, r); err != nil {
+		return out, fmt.Errorf("failed to compute hash: %w", err)
+	}
+
+	copy(out.hash[:], h.hasher.Sum(out.hash[:0]))
 	return out, nil
 }
 
