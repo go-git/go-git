@@ -225,7 +225,7 @@ func TestReaderAtRevIndex_EmptyIndexWithCloser(t *testing.T) {
 
 	assert.Equal(t, int64(0), ri.Count())
 
-	_, found, err := ri.LookupIndex(100, func(idxPos int) (uint64, error) {
+	_, found, err := ri.LookupIndex(100, func(_ int) (uint64, error) {
 		return 0, nil
 	})
 	require.NoError(t, err)
@@ -289,9 +289,12 @@ func BenchmarkReaderAtRevIndex(b *testing.B) {
 	b.Run("All", func(b *testing.B) {
 		for b.Loop() {
 			all, finish := ri.All()
+			count := 0
 			for range all {
+				count++
 			}
 			assert.NoError(b, finish())
+			b.ReportMetric(float64(count), "entries")
 		}
 	})
 }
