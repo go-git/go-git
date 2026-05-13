@@ -54,6 +54,9 @@ func FuzzReaderAtRevIndex(f *testing.F) {
 			// Binary search with a trivial offset getter.
 			_, _, _ = ri.LookupIndex(0, func(int) (uint64, error) { return 0, nil })
 
+			// Full-file integrity path (reads and hashes the whole file).
+			_ = ri.ValidateChecksums(make([]byte, hashSize))
+
 			_ = ri.Close()
 		}
 	})
