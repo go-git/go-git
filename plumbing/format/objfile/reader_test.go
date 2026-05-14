@@ -65,3 +65,39 @@ func (s *SuiteReader) TestReadCorruptZLib(c *C) {
 	_, _, err = r.Header()
 	c.Assert(err, NotNil)
 }
+
+func (s *SuiteReader) TestReaderReadBeforeHeader(c *C) {
+	data, _ := base64.StdEncoding.DecodeString(objfileFixtures[0].data)
+	source := bytes.NewReader(data)
+
+	r, err := NewReader(source)
+	c.Assert(err, IsNil)
+	defer r.Close()
+
+	var buf [16]byte
+	n, err := r.Read(buf[:])
+	c.Assert(err, Equals, ErrHeaderNotRead)
+	c.Assert(n, Equals, 0)
+
+	c.Assert(r.Hash(), Equals, plumbing.ZeroHash)
+}
+
+func (s *SuiteReader) TestReaderReadAfterHeaderError(c *C) {
+	// This zlib stream decompresses to bytes that do not form a valid
+	// loose-object header, so Header() returns an error.
+	data, _ := base64.StdEncoding.DecodeString("eAFLysaalPUjBgAAAJsAHw")
+	source := bytes.NewReader(data)
+
+	r, err := NewReader(source)
+	c.Assert(err, IsNil)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	c.Assert(err, NotNil)
+
+	// Read must return an error rather than accessing uninitialised state.
+	var buf [16]byte
+	n, readErr := r.Read(buf[:])
+	c.Assert(readErr, NotNil)
+	c.Assert(n, Equals, 0)
+}
