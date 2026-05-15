@@ -103,8 +103,8 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 		GitProtocol:  version,
 		StatelessRPC: true,
 	}); err != nil {
+		// Body may already be streaming; renderStatusError would race the writer.
 		b.logf("error processing request: %v", err)
-		renderStatusError(w, http.StatusInternalServerError)
 		return
 	}
 }
@@ -146,8 +146,8 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, f
 		AdvertiseRefs: true,
 		StatelessRPC:  true,
 	}); err != nil {
+		// Headers were committed before Serve; renderStatusError would race the writer.
 		b.logf("error processing request: %v", err)
-		renderStatusError(w, http.StatusInternalServerError)
 		return
 	}
 }
@@ -230,8 +230,8 @@ func (b *Backend) handleDumbSendFile(w http.ResponseWriter, _ *http.Request, rep
 
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
 	if _, err := ioutil.CopyBufferPool(frw, f); err != nil {
+		// Headers were committed above; renderStatusError would race the writer.
 		b.logf("error writing response: %v", err)
-		renderStatusError(w, http.StatusInternalServerError)
 		return
 	}
 }

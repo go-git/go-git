@@ -31,8 +31,8 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 		}
 		nw, err := f.Write(p[:nr])
 		if err != nil {
+			// Body partially written; renderStatusError would race the writer.
 			f.log.Printf("error writing response: %v", err)
-			renderStatusError(f.ResponseWriter, http.StatusInternalServerError)
 			return n, err
 		}
 		if nr != nw {
@@ -41,7 +41,6 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 		n += int64(nr)
 		if err := flusher.Flush(); err != nil {
 			f.log.Printf("mismatched bytes written: expected %d, wrote %d", nr, nw)
-			renderStatusError(f.ResponseWriter, http.StatusInternalServerError)
 			return n, fmt.Errorf("%w: error while flush", err)
 		}
 	}
