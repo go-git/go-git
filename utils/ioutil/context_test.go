@@ -170,15 +170,18 @@ func TestWriterCancel(t *testing.T) {
 
 	cancel()
 
+	// Write waits for the in-flight underlying write to complete before
+	// returning on context cancel — otherwise the inner goroutine would
+	// still be touching the underlying writer after Write returns.
+	// Unblock pipew by reading from the other end.
+	go func() { _, _ = piper.Read(buf) }()
+
 	select {
 	case ret := <-done:
-		if ret.n != 0 {
-			t.Error("ret.n should be 0", ret.n)
-		}
 		if !errors.Is(ret.err, context.Canceled) {
 			t.Error("ret.err should be ctx error", ret.err)
 		}
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("failed to stop writing after cancel")
 	}
 }
@@ -251,15 +254,17 @@ func TestWritePostCancel(t *testing.T) {
 
 	cancel()
 
+	// Write waits for the in-flight underlying write to complete before
+	// returning on context cancel. Drain pipew so the inner goroutine can
+	// finish.
+	go func() { _, _ = piper.Read(buf2) }()
+
 	select {
 	case ret := <-done:
-		if ret.n != 0 {
-			t.Error("ret.n should be 0", ret.n)
-		}
 		if !errors.Is(ret.err, context.Canceled) {
 			t.Error("ret.err should be ctx error", ret.err)
 		}
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("failed to stop writing after cancel")
 	}
 }
@@ -305,6 +310,56 @@ func TestWriteUnderlyingPanics(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Error("test timed out")
+	}
+}
+
+// blockingWriter blocks each Write call until release is signalled.
+type blockingWriter struct {
+	release chan struct{}
+	started chan struct{}
+}
+
+func (b *blockingWriter) Write(p []byte) (int, error) {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-b.release
+	return len(p), nil
+}
+
+func TestWriterCancelWaitsForInFlightWrite(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	bw := &blockingWriter{
+		release: make(chan struct{}),
+		started: make(chan struct{}, 1),
+	}
+	w := NewContextWriter(ctx, bw)
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = w.Write([]byte("hello"))
+		close(done)
+	}()
+
+	<-bw.started
+	cancel()
+
+	select {
+	case <-done:
+		t.Fatal("Write returned before the in-flight underlying write completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(bw.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Write did not return after underlying write completed")
 	}
 }
 
