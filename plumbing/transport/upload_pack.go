@@ -17,7 +17,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -272,10 +271,10 @@ func UploadPack(
 		writer      io.Writer = w
 	)
 	if caps.Supports(capability.Sideband64k) {
-		writer = sideband.NewMuxer(sideband.Sideband64k, w)
+		writer = pktline.NewSidebandWriter(w, pktline.MaxSize)
 		useSideband = true
 	} else if caps.Supports(capability.Sideband) {
-		writer = sideband.NewMuxer(sideband.Sideband, w)
+		writer = pktline.NewSidebandWriter(w, pktline.DefaultSize)
 		useSideband = true
 	}
 
@@ -723,7 +722,8 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 
 	// Send pack data wrapped in sideband (client switches to sideband demux after
 	// seeing the "packfile" marker in v2 fetch response). Matches reference git wire.
-	writer := sideband.NewMuxer(sideband.Sideband64k, w)
+	// Protocol v2 always negotiates sideband-64k.
+	writer := pktline.NewSidebandWriter(w, pktline.MaxSize)
 
 	var packWindow uint
 	if opts.SkipDeltaCompression {

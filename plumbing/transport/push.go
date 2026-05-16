@@ -79,19 +79,19 @@ func SendPack(
 
 	var r io.Reader = reader
 	if req.Progress != nil {
-		max := 0
+		maxSize := 0
 		switch {
 		case upreq.Capabilities.Supports(capability.Sideband64k):
-			max = pktline.MaxSize
+			maxSize = pktline.MaxSize
 		case upreq.Capabilities.Supports(capability.Sideband):
-			max = pktline.DefaultSize
+			maxSize = pktline.DefaultSize
 		}
-		if max > 0 {
+		if maxSize > 0 {
 			progress := req.Progress
 			if upreq.Capabilities.Supports(capability.Quiet) {
 				progress = nil
 			}
-			r = pktline.NewSidebandReader(reader, progress, max)
+			r = pktline.NewSidebandReader(reader, progress, maxSize)
 		}
 	}
 
