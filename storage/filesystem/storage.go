@@ -129,12 +129,20 @@ type Options struct {
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
+//
+// The cache is keyed by object hash only; passing the same
+// [cache.Object] across multiple Storage instances is safe because
+// every storage-level read gates its cache lookup on a successful
+// pack-membership probe, so a hit from another storage's pack cannot
+// be served here. See [ObjectStorage.EncodedObject] and
+// TestGetFromObjectFileSharedCache.
 func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 	return NewStorageWithOptions(fs, cache, Options{})
 }
 
 // NewStorageWithOptions returns a new Storage with extra options,
-// backed by a given `fs.Filesystem` and cache.
+// backed by a given `fs.Filesystem` and cache. See [NewStorage] for
+// the cross-Storage cache safety contract.
 // Returns an error if an explicit ObjectFormat is provided via options
 // but conflicts with an existing config in the filesystem.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {

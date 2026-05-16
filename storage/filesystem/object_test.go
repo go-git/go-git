@@ -157,6 +157,66 @@ func (s *FsSuite) TestMismatchIdxFile() {
 	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
 }
 
+// TestMismatchIdxFile_LooseFallback exercises the degraded-store path:
+// when the only .idx fails to load (here via a packfile-mismatch
+// corruption), a loose object that lives under .git/objects must
+// still resolve. Pre-fix, requireIndex returned the malformed-idx
+// error from HasEncodedObject / EncodedObjectSize / EncodedObject
+// before the loose path ran, hiding a perfectly good object.
+func (s *FsSuite) TestMismatchIdxFile_LooseFallback() {
+	f := fixtures.Basic().ByTag(".git").ByObjectFormat("sha1").One()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
+	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+	defer func() { _ = o.Close() }()
+
+	// Plant a loose object and capture its hash before corrupting
+	// the on-disk idx so the populateIndex call below fails for
+	// reasons unrelated to this object.
+	obj := o.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	s.Require().NoError(err)
+	_, err = w.Write([]byte("loose object behind a broken idx\n"))
+	s.Require().NoError(err)
+	s.Require().NoError(w.Close())
+	loose, err := o.SetEncodedObject(obj)
+	s.Require().NoError(err)
+
+	// Corrupt the only idx in the same way TestMismatchIdxFile does.
+	fix2 := firstNonMatching(f.PackfileHash)
+	s.Require().NotNil(fix2)
+	idx, err := fs.OpenFile(fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash), os.O_TRUNC|os.O_WRONLY, 0o600)
+	s.Require().NoError(err)
+	idx2, err := fix2.Idx()
+	s.Require().NoError(err)
+	_, err = io.Copy(idx, idx2)
+	s.Require().NoError(err)
+	s.Require().NoError(idx.Close())
+	s.Require().NoError(idx2.Close())
+
+	// Cold storage so requireIndex actually runs against the
+	// corrupted idx on the first read.
+	o2 := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+	defer func() { _ = o2.Close() }()
+
+	s.Require().NoError(o2.HasEncodedObject(loose),
+		"loose object must answer existence even when the idx is broken")
+	size, err := o2.EncodedObjectSize(loose)
+	s.Require().NoError(err)
+	s.Greater(size, int64(0))
+	got, err := o2.EncodedObject(plumbing.AnyObject, loose)
+	s.Require().NoError(err)
+	s.Equal(loose, got.Hash())
+
+	// Sanity: a hash not present anywhere still surfaces the
+	// idx error so genuine on-disk corruption is not silently
+	// swallowed when there is no answer to give the caller.
+	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	err = o2.HasEncodedObject(missing)
+	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
+}
+
 func (s *FsSuite) TestGetSizeOfObjectFile() {
 	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)
@@ -613,6 +673,11 @@ func (s *FsSuite) TestGetFromUnpackedCachesObjects() {
 }
 
 func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
+	// The "unpacked" fixture contains both packed and loose copies
+	// of the same objects. EncodedObject routes packed reads
+	// through the pack path (which caches independently of size),
+	// so to test the LargeObjectThreshold behaviour we exercise
+	// getFromUnpacked directly.
 	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)
 	objectCache := cache.NewObjectLRUDefault()
@@ -623,8 +688,8 @@ func (s *FsSuite) TestGetFromUnpackedDoesNotCacheLargeObjects() {
 	_, ok := objectCache.Get(hash)
 	s.False(ok)
 
-	// Load the object
-	obj, err := objectStorage.EncodedObject(plumbing.AnyObject, hash)
+	// Load the object via the loose path.
+	obj, err := objectStorage.getFromUnpacked(hash)
 	s.Require().NoError(err)
 	s.Equal(hash, obj.Hash())
 
@@ -951,6 +1016,14 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		iter.Close()
 		require.NotEmpty(t, hashes)
 
+		// Single-goroutine warm-up: the default loose-first probe calls
+		// dotgit.hasIncomingObjects(), which lazily initialises
+		// incomingChecked without a lock. One serial lookup here
+		// ensures the field is set before the concurrent herd,
+		// sidestepping the pre-existing race in hasIncomingObjects.
+		_, err = s.EncodedObject(plumbing.AnyObject, hashes[0])
+		require.NoError(t, err)
+
 		var wg sync.WaitGroup
 		var failures atomic.Int32
 
@@ -1114,6 +1187,14 @@ func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
 	iter.Close()
 	h := obj.Hash()
 
+	// Single-goroutine warm-up: the default loose-first probe calls
+	// dotgit.hasIncomingObjects(), which lazily writes incomingChecked
+	// without a lock. One serial call here ensures the field is set
+	// before the concurrent herd, avoiding a pre-existing race in
+	// hasIncomingObjects on cold startup.
+	_, err = s.EncodedObject(plumbing.AnyObject, h)
+	require.NoError(t, err)
+
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Go(func() {
@@ -1126,4 +1207,106 @@ func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
 	s.muI.RLock()
 	defer s.muI.RUnlock()
 	assert.NotNil(t, s.index, "after the herd s.index must be populated")
+}
+
+func TestEncodedObject_PackedRoundTrip(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Warm the index so EncodedObject doesn't race through the
+	// cold dotgit path (matches the convention of existing tests).
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	got, err := s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+	assert.Equal(t, obj.Hash(), got.Hash())
+}
+
+func TestEncodedObject_LooseRoundTrip(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Write a fresh loose object; pack-membership-first must route
+	// the read through the loose path because the new blob isn't
+	// in any pack.
+	o := s.NewEncodedObject()
+	o.SetType(plumbing.BlobObject)
+	w, err := o.Writer()
+	require.NoError(t, err)
+	_, err = w.Write([]byte("loose-prefer-test"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	h, err := s.SetEncodedObject(o)
+	require.NoError(t, err)
+
+	got, err := s.EncodedObject(plumbing.AnyObject, h)
+	require.NoError(t, err)
+	assert.Equal(t, h, got.Hash())
+}
+
+func TestEncodedObject_NotFound(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Warm index to avoid the cold dotgit race.
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	iter.Close()
+
+	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	_, err = s.EncodedObject(plumbing.AnyObject, missing)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+}
+
+func TestEncodedObjectSize_NotFound(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Warm index to avoid the cold dotgit race.
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	iter.Close()
+
+	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+	_, err = s.EncodedObjectSize(missing)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+}
+
+func TestEncodedObjectSize_Packed(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	size, err := s.EncodedObjectSize(obj.Hash())
+	require.NoError(t, err)
+	assert.Greater(t, size, int64(0))
 }

@@ -191,15 +191,6 @@ func findInAlternates[T any](s *ObjectStorage, fn func(*ObjectStorage) (T, error
 	return foundVal, nil
 }
 
-// indexLoaded reports whether s.index has been populated. Safe for
-// concurrent use: reads s.index under the read half of s.muI.
-func (s *ObjectStorage) indexLoaded() bool {
-	s.muI.RLock()
-	loaded := s.index != nil
-	s.muI.RUnlock()
-	return loaded
-}
-
 // requireIndex ensures s.index is populated, performing a cold-load
 // on first access. Concurrent first-readers are coalesced via
 // singleflight so populateIndex runs once per thundering herd; the
@@ -476,25 +467,29 @@ func (s *ObjectStorage) LazyWriter() (w io.WriteCloser, wh func(typ plumbing.Obj
 // HasEncodedObject returns nil if the object exists, without actually
 // reading the object data from storage.
 func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
-	// Check unpacked objects
-	f, err := s.dir.Object(h)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return err
+	// Pack-membership-first when the index is healthy: a hit on
+	// the in-memory fanout shortcut avoids a loose Stat. If the
+	// index fails to load (e.g. a corrupt .idx on disk), fall
+	// through so a loose object can still answer the probe and
+	// the lookup degrades to loose-only — mirrors canonical Git's
+	// tolerance of partial pack-store corruption.
+	idxErr := s.requireIndex()
+	if idxErr == nil {
+		if _, _, offset := s.findObjectInPackfile(h); offset != -1 {
+			return nil
 		}
-		// Fall through to check packed objects.
-	} else {
-		defer ioutil.CheckClose(f, &err)
-		return nil
 	}
 
-	// Check packed objects.
-	if err := s.requireIndex(); err != nil {
-		return err
-	}
-	_, _, offset := s.findObjectInPackfile(h)
-	if offset != -1 {
+	// Existence-only on the loose path: Stat instead of Open
+	// avoids a per-call open()+close() pair when the object lives
+	// in loose.
+	if _, statErr := s.dir.ObjectStat(h); statErr == nil {
 		return nil
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	if idxErr != nil {
+		return idxErr
 	}
 
 	_, err = findInAlternates(s, func(alt *ObjectStorage) (struct{}, error) {
@@ -571,20 +566,38 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int
 // EncodedObjectSize returns the plaintext size of the given object,
 // without actually reading the full object data from storage.
 func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err error) {
-	size, err = s.encodedObjectSizeFromUnpacked(h)
-	if err != nil && !errors.Is(err, plumbing.ErrObjectNotFound) {
-		return 0, err
-	} else if err == nil {
-		return size, nil
+	// Pack-membership-first when the index is healthy: a single
+	// in-memory fanout probe routes packed reads through the pack
+	// reader and skips the loose Stat. If the index fails to load
+	// (e.g. corrupt .idx), fall through to loose so the lookup
+	// degrades gracefully — same shape as HasEncodedObject.
+	idxErr := s.requireIndex()
+	if idxErr == nil {
+		if pack, _, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash && offset != -1 {
+			if cached, ok := s.objectCache.Get(h); ok {
+				return cached.Size(), nil
+			}
+			size, err = s.encodedObjectSizeFromPackfile(h)
+			if err == nil {
+				return size, nil
+			}
+			if !errors.Is(err, plumbing.ErrObjectNotFound) {
+				return 0, err
+			}
+			// Membership claimed the hash but the pack lost it —
+			// fall through to loose and alternates.
+		}
 	}
 
-	size, err = s.encodedObjectSizeFromPackfile(h)
+	size, err = s.encodedObjectSizeFromUnpacked(h)
 	if err == nil {
 		return size, nil
 	}
-
 	if !errors.Is(err, plumbing.ErrObjectNotFound) {
 		return 0, err
+	}
+	if idxErr != nil {
+		return 0, idxErr
 	}
 
 	return findInAlternates(s, func(alt *ObjectStorage) (int64, error) {
@@ -598,22 +611,39 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	var obj plumbing.EncodedObject
 	var err error
 
-	if s.indexLoaded() {
-		obj, err = s.getFromPackfile(h, false)
-		if errors.Is(err, plumbing.ErrObjectNotFound) {
-			obj, err = s.getFromUnpacked(h)
-		}
-	} else {
-		obj, err = s.getFromUnpacked(h)
-		if errors.Is(err, plumbing.ErrObjectNotFound) {
+	// Pack-membership-first when the index is healthy: see
+	// EncodedObjectSize for the routing rationale. The shared
+	// object cache is keyed by hash only — gating the cache
+	// check on findObjectInPackfile keeps reads safe when callers
+	// share a cache across ObjectStorages (see
+	// TestGetFromObjectFileSharedCache). A failed requireIndex
+	// (corrupt .idx) degrades to loose-only rather than failing
+	// the whole read.
+	idxErr := s.requireIndex()
+	routed := false
+	if idxErr == nil {
+		if pack, _, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash && offset != -1 {
+			routed = true
+			if cached, ok := s.objectCache.Get(h); ok {
+				if t == plumbing.AnyObject || cached.Type() == t {
+					return cached, nil
+				}
+				return nil, plumbing.ErrObjectNotFound
+			}
 			obj, err = s.getFromPackfile(h, false)
 		}
+	}
+	if !routed {
+		obj, err = s.getFromUnpacked(h)
 	}
 
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		obj, err = findInAlternates(s, func(alt *ObjectStorage) (plumbing.EncodedObject, error) {
 			return alt.EncodedObject(t, h)
 		})
+		if errors.Is(err, plumbing.ErrObjectNotFound) && idxErr != nil {
+			return nil, idxErr
+		}
 	}
 
 	if err != nil {
@@ -1048,6 +1078,20 @@ func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
+// Also drops the in-memory s.index entry for the removed pack so subsequent
+// routing decisions in findObjectInPackfile no longer claim membership for
+// a hash that lives only in the now-deleted pack.
 func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
-	return s.dir.DeleteOldObjectPackAndIndex(h, t)
+	if err := s.dir.DeleteOldObjectPackAndIndex(h, t); err != nil {
+		return err
+	}
+	s.muI.Lock()
+	if idx, ok := s.index[h]; ok {
+		delete(s.index, h)
+		if c, ok := idx.(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
+	s.muI.Unlock()
+	return nil
 }

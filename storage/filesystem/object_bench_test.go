@@ -674,3 +674,50 @@ func BenchmarkFindObjectInPackfile_FanoutMiss(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkEncodedObject_LooseHit measures EncodedObject latency
+// when the target lives in a loose object. With pack-membership-
+// first, findObjectInPackfile reports the loose-only hash as
+// not-in-packs in O(1) and the read routes straight to the loose
+// path: one Stat + open + decompress, no wasted pack probing.
+// Setup: a packed fixture plus one freshly-written loose object.
+func BenchmarkEncodedObject_LooseHit(b *testing.B) {
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Write a fresh loose object so the hit-path is observable.
+	o := s.NewEncodedObject()
+	o.SetType(plumbing.BlobObject)
+	w, err := o.Writer()
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := w.Write([]byte("loose-bench-payload")); err != nil {
+		b.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		b.Fatal(err)
+	}
+	h, err := s.SetEncodedObject(o)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Warm the index so the per-iteration call doesn't pay a
+	// cold-load.
+	if err := s.HasEncodedObject(h); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
