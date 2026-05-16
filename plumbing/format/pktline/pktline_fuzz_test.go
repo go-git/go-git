@@ -73,6 +73,30 @@ func FuzzReadLine(f *testing.F) {
 	})
 }
 
+func FuzzSidebandReader(f *testing.F) {
+	f.Add([]byte{})
+	f.Add([]byte("0000"))
+	f.Add([]byte("0005\x01"))
+	f.Add([]byte("000a\x01hello"))
+	f.Add([]byte("000a\x02prog\n"))
+	f.Add([]byte("000a\x03oops"))
+	f.Add([]byte("0007\x02hi"))
+	f.Add(append([]byte("0008\x01ab"), []byte("0000")...))
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		for _, max := range []int{DefaultSize, MaxSize} {
+			r := NewSidebandReader(bytes.NewReader(data), nil, max)
+			buf := make([]byte, 64)
+			for range 100 {
+				_, err := r.Read(buf)
+				if err != nil {
+					break
+				}
+			}
+		}
+	})
+}
+
 func FuzzSidebandScanner(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("0000"))
