@@ -637,3 +637,40 @@ func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkFindObjectInPackfile_FanoutMiss measures the per-pack
+// probe cost when the target hash lives in only one of N indexes.
+// With MayContain in place, N-1 packs reject via a cheap branch;
+// pre-fix, every pack pays a FindOffset call (mutex + ReadAt +
+// binary search).
+func BenchmarkFindObjectInPackfile_FanoutMiss(b *testing.B) {
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	b.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		b.Fatal(err)
+	}
+	obj, err := iter.Next()
+	iter.Close()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Warm.
+	if _, err := s.EncodedObject(plumbing.AnyObject, obj.Hash()); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := s.EncodedObject(plumbing.AnyObject, obj.Hash()); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

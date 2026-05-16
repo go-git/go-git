@@ -142,6 +142,10 @@ func (idx *singleEntryIndex) EntriesByOffset() (idxfile.EntryIter, error) {
 	return &singleEntryIter{entry: idx.entry}, nil
 }
 
+func (idx *singleEntryIndex) MayContain(h plumbing.Hash) bool {
+	return idx.entry.Hash.Equal(h)
+}
+
 func (idx *singleEntryIndex) Close() error { return nil }
 
 type singleEntryIter struct {

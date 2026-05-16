@@ -109,6 +109,36 @@ func TestIndexSuite(t *testing.T) {
 	suite.Run(t, new(IndexSuite))
 }
 
+func (s *IndexSuite) TestMayContain() {
+	idx, err := fixtureIndex()
+	s.NoError(err)
+
+	// Positive: every known hash must report true.
+	for _, h := range fixtureHashes {
+		s.True(idx.MayContain(h), "expected MayContain=true for %s", h)
+	}
+
+	// Negative: find a FanoutMapping entry set to noMapping (-1) and
+	// craft a hash starting with that byte; result must be false.
+	// FanoutMapping is an exported field so no internal access needed.
+	emptyByte := -1
+	for b, mapped := range idx.FanoutMapping {
+		if mapped == -1 {
+			emptyByte = b
+			break
+		}
+	}
+	s.Require().NotEqual(-1, emptyByte,
+		"fixture must have at least one empty fanout bucket")
+
+	var miss plumbing.Hash
+	hashBytes := make([]byte, 20)
+	hashBytes[0] = byte(emptyByte)
+	miss = plumbing.NewHash(fmt.Sprintf("%x", hashBytes))
+	s.False(idx.MayContain(miss),
+		"expected MayContain=false for hash starting with 0x%02x", emptyByte)
+}
+
 func (s *IndexSuite) TestFindHash() {
 	idx, err := fixtureIndex()
 	s.NoError(err)

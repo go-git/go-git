@@ -43,6 +43,41 @@ func (s *LazyIndexSuite) TestContains() {
 	s.False(ok)
 }
 
+func (s *LazyIndexSuite) TestMayContain() {
+	idx, err := fixtureLazyIndex(true)
+	s.Require().NoError(err)
+	defer idx.Close()
+
+	// Positive: every known hash must report true.
+	for _, h := range fixtureHashes {
+		s.True(idx.MayContain(h), "expected MayContain=true for %s", h)
+	}
+
+	// Negative: find an empty fanout bucket and craft a hash that
+	// starts with that byte; the result must be false.
+	emptyByte := -1
+	for b := range 256 {
+		var prev uint32
+		if b > 0 {
+			prev = idx.fanout[b-1]
+		}
+		if idx.fanout[b] == prev {
+			emptyByte = b
+			break
+		}
+	}
+	s.Require().NotEqual(-1, emptyByte,
+		"fixture must have at least one empty fanout bucket")
+
+	var miss plumbing.Hash
+	miss.ResetBySize(20)
+	hashBytes := make([]byte, 20)
+	hashBytes[0] = byte(emptyByte)
+	_, _ = miss.Write(hashBytes)
+	s.False(idx.MayContain(miss),
+		"expected MayContain=false for hash starting with 0x%02x", emptyByte)
+}
+
 func (s *LazyIndexSuite) TestFindOffset() {
 	idx, err := fixtureLazyIndex(true)
 	s.Require().NoError(err)

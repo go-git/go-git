@@ -46,6 +46,17 @@ type Index interface {
 	// EntriesByOffset returns an iterator to retrieve all index entries ordered
 	// by offset.
 	EntriesByOffset() (EntryIter, error)
+	// MayContain reports whether the index might contain h. A false
+	// return is authoritative ("h is definitely not in this pack")
+	// based on the idx fanout table; true means the caller should
+	// call Contains or FindOffset for a definitive answer.
+	//
+	// Implementations must be O(1) and I/O-free. Callers route
+	// every read through MayContain to gate further index work
+	// (see storage/filesystem.ObjectStorage.findObjectInPackfile);
+	// an implementation that performs I/O or scales with index
+	// size silently regresses every storage-level read.
+	MayContain(h plumbing.Hash) bool
 	// Close releases any resources held by the index. Implementations
 	// backed by on-disk files must close their file descriptors; pure
 	// in-memory implementations must return nil. Close is idempotent.
@@ -135,6 +146,13 @@ func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
 	}
 
 	return 0, false
+}
+
+// MayContain implements the Index interface. It reports whether the
+// index might contain h using the in-memory fanout mapping. Returns
+// false iff h's first byte falls in an empty fanout bucket.
+func (idx *MemoryIndex) MayContain(h plumbing.Hash) bool {
+	return idx.FanoutMapping[h.Bytes()[0]] != noMapping
 }
 
 // Contains implements the Index interface.

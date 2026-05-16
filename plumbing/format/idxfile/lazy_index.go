@@ -211,6 +211,20 @@ func (s *LazyIndex) Contains(h plumbing.Hash) (bool, error) {
 	return found, err
 }
 
+// MayContain implements the Index interface. It reports whether the
+// index might contain h, using the cached fanout table loaded at
+// construction time. No I/O, no lock. False is authoritative ("h is
+// not in this pack"); true means call Contains or FindOffset for a
+// definitive answer.
+func (s *LazyIndex) MayContain(h plumbing.Hash) bool {
+	first := int(h.Bytes()[0])
+	var prev uint32
+	if first > 0 {
+		prev = s.fanout[first-1]
+	}
+	return s.fanout[first] > prev
+}
+
 // FindOffset returns the packfile offset for the object with the given hash.
 // It returns plumbing.ErrObjectNotFound if the hash is not in the index.
 func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {

@@ -782,6 +782,9 @@ func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, pl
 	defer s.muI.RUnlock()
 
 	for packfile, index := range s.index {
+		if !index.MayContain(h) {
+			continue
+		}
 		offset, err := index.FindOffset(h)
 		if err == nil {
 			return packfile, h, offset
