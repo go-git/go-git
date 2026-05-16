@@ -905,8 +905,6 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 
 	seen := hashListAsMap(hashes)
 
-	// TODO: This could be faster with some idxfile changes,
-	// or diving into the packfile.
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
@@ -924,7 +922,7 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 	s.muI.RUnlock()
 
 	for _, index := range indexes {
-		ei, err := index.Entries()
+		ei, err := index.EntriesWithPrefix(prefix)
 		if err != nil {
 			return nil, err
 		}
@@ -936,13 +934,11 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 				_ = ei.Close()
 				return nil, err
 			}
-			if e.Hash.HasPrefix(prefix) {
-				if _, ok := seen[e.Hash]; ok {
-					continue
-				}
-				seen[e.Hash] = struct{}{}
-				hashes = append(hashes, e.Hash)
+			if _, ok := seen[e.Hash]; ok {
+				continue
 			}
+			seen[e.Hash] = struct{}{}
+			hashes = append(hashes, e.Hash)
 		}
 		_ = ei.Close()
 	}

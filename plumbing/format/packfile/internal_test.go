@@ -142,6 +142,13 @@ func (idx *singleEntryIndex) EntriesByOffset() (idxfile.EntryIter, error) {
 	return &singleEntryIter{entry: idx.entry}, nil
 }
 
+func (idx *singleEntryIndex) EntriesWithPrefix(prefix []byte) (idxfile.EntryIter, error) {
+	if len(prefix) == 0 || idx.entry.Hash.HasPrefix(prefix) {
+		return &singleEntryIter{entry: idx.entry}, nil
+	}
+	return &singleEntryIter{done: true}, nil
+}
+
 func (idx *singleEntryIndex) MayContain(h plumbing.Hash) bool {
 	return idx.entry.Hash.Equal(h)
 }

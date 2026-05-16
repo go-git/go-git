@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -226,6 +228,175 @@ func (s *MemoryIndexSuite) TestSatisfiesIndexInterface() {
 	// Close must be reachable via the interface.
 	var idx idxfile.Index = idxfile.NewMemoryIndex(crypto.SHA1.Size())
 	s.NoError(idx.Close())
+}
+
+func TestMemoryIndex_EntriesWithPrefix_Empty(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureIndex()
+	require.NoError(t, err)
+
+	iter, err := idx.EntriesWithPrefix(nil)
+	require.NoError(t, err)
+	defer iter.Close()
+
+	// Empty prefix returns all entries (same as Entries()).
+	n := 0
+	for {
+		_, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		n++
+	}
+	assert.Equal(t, len(fixtureHashes), n)
+}
+
+func TestMemoryIndex_EntriesWithPrefix_OneByteMatch(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureIndex()
+	require.NoError(t, err)
+
+	// Pick the first byte of a known hash; the iterator should yield
+	// every entry in that bucket.
+	target := fixtureHashes[0]
+	prefix := target.Bytes()[:1]
+
+	iter, err := idx.EntriesWithPrefix(prefix)
+	require.NoError(t, err)
+	defer iter.Close()
+
+	var got []plumbing.Hash
+	for {
+		e, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		got = append(got, e.Hash)
+	}
+
+	// Cross-check: every yielded hash must start with prefix.
+	for _, h := range got {
+		assert.True(t, bytes.HasPrefix(h.Bytes(), prefix),
+			"hash %v should start with prefix %x", h, prefix)
+	}
+	// And the seed hash must be among the yielded entries.
+	assert.Contains(t, got, target)
+}
+
+func TestMemoryIndex_EntriesWithPrefix_MultiByte(t *testing.T) {
+	t.Parallel()
+
+	// Synthetic index with five entries all in fanout bucket 0x42,
+	// sorted by full hash. The matching entries for prefix
+	// [0x42, 0x05] are a contiguous run in the middle of the bucket,
+	// so the iterator must skip past 0x42_00 before yielding.
+	makeHash := func(b1, b2, b3 byte) plumbing.Hash {
+		raw := make([]byte, 20)
+		raw[0] = b1
+		raw[1] = b2
+		raw[2] = b3
+		return plumbing.NewHash(fmt.Sprintf("%x", raw))
+	}
+
+	hashes := []plumbing.Hash{
+		makeHash(0x42, 0x00, 0xaa),
+		makeHash(0x42, 0x05, 0xab),
+		makeHash(0x42, 0x05, 0xbb),
+		makeHash(0x42, 0x05, 0xcc),
+		makeHash(0x42, 0x07, 0xdd),
+	}
+
+	w := &idxfile.Writer{}
+	require.NoError(t, w.OnHeader(uint32(len(hashes))))
+	for i, h := range hashes {
+		w.Add(h, uint64(100+i), uint32(i))
+	}
+	require.NoError(t, w.OnFooter(
+		plumbing.NewHash("0000000000000000000000000000000000000001")))
+
+	idx, err := w.Index()
+	require.NoError(t, err)
+
+	collect := func(t *testing.T, prefix []byte) []plumbing.Hash {
+		t.Helper()
+		iter, err := idx.EntriesWithPrefix(prefix)
+		require.NoError(t, err)
+		defer iter.Close()
+		var got []plumbing.Hash
+		for {
+			e, err := iter.Next()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			got = append(got, e.Hash)
+		}
+		return got
+	}
+
+	t.Run("middle run", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x05})
+		require.Len(t, got, 3)
+		for _, h := range got {
+			assert.True(t, bytes.HasPrefix(h.Bytes(), []byte{0x42, 0x05}))
+		}
+	})
+
+	t.Run("end of bucket", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x07})
+		require.Len(t, got, 1)
+		assert.Equal(t, hashes[4], got[0])
+	})
+
+	t.Run("start of bucket", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x00})
+		require.Len(t, got, 1)
+		assert.Equal(t, hashes[0], got[0])
+	})
+
+	t.Run("no match in populated bucket", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x06})
+		assert.Empty(t, got)
+	})
+
+	t.Run("three-byte refinement", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x05, 0xbb})
+		require.Len(t, got, 1)
+		assert.Equal(t, hashes[2], got[0])
+	})
+}
+
+func TestMemoryIndex_EntriesWithPrefix_NoMatch(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureIndex()
+	require.NoError(t, err)
+
+	// Find an empty fanout bucket (FanoutMapping == noMapping == -1).
+	var emptyByte byte
+	found := false
+	for b := range 256 {
+		if idx.FanoutMapping[b] == -1 {
+			emptyByte = byte(b)
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Skip("fixture has objects in every fanout bucket")
+	}
+
+	iter, err := idx.EntriesWithPrefix([]byte{emptyByte})
+	require.NoError(t, err)
+	defer iter.Close()
+	_, err = iter.Next()
+	assert.Equal(t, io.EOF, err)
 }
 
 func TestOffsetHashConcurrentPopulation(t *testing.T) {

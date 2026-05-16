@@ -1,6 +1,7 @@
 package idxfile
 
 import (
+	"bytes"
 	"crypto"
 	encbin "encoding/binary"
 	"fmt"
@@ -46,6 +47,13 @@ type Index interface {
 	// EntriesByOffset returns an iterator to retrieve all index entries ordered
 	// by offset.
 	EntriesByOffset() (EntryIter, error)
+	// EntriesWithPrefix returns an iterator over index entries whose
+	// hashes start with prefix. Implementations use the fanout table
+	// to bound the search when len(prefix) >= 1; an empty prefix
+	// returns all entries (equivalent to Entries). The returned
+	// iterator must be Closed by the caller to release any held
+	// resources.
+	EntriesWithPrefix(prefix []byte) (EntryIter, error)
 	// MayContain reports whether the index might contain h. A false
 	// return is authoritative ("h is definitely not in this pack")
 	// based on the idx fanout table; true means the caller should
@@ -303,6 +311,57 @@ func (idx *MemoryIndex) Entries() (EntryIter, error) {
 	return &idxfileEntryIter{idx, 0, 0, 0}, nil
 }
 
+// EntriesWithPrefix implements the Index interface. It returns an
+// iterator over entries whose hashes start with prefix. When prefix
+// is empty the call is equivalent to Entries; otherwise the
+// iterator visits only the fanout bucket selected by prefix[0] and
+// stops as soon as the sorted-by-hash bucket walks past prefix.
+//
+// For a multi-byte prefix the matching entries form a contiguous
+// run somewhere within the bucket; binary-search positions the
+// iterator at the start of that run so the linear walk only spans
+// matches. This mirrors upstream Git's for_each_prefixed_object_in_pack
+// which calls bsearch_pack to position before walking forward.
+func (idx *MemoryIndex) EntriesWithPrefix(prefix []byte) (EntryIter, error) {
+	if len(prefix) == 0 {
+		return idx.Entries()
+	}
+	bucket := idx.FanoutMapping[prefix[0]]
+	if bucket == noMapping {
+		return &idxfilePrefixIter{done: true}, nil
+	}
+	idSize := idx.idSize()
+	names := idx.Names[bucket]
+	n := len(names) / idSize
+
+	// Find the leftmost entry whose hash is >= prefix (padded with
+	// zeros to hash size). All matching entries, if any, start at
+	// this position; the iterator's stop-on-first-mismatch then
+	// terminates correctly once the run ends.
+	target := make([]byte, idSize)
+	copy(target, prefix)
+	lo, hi := 0, n
+	for lo < hi {
+		mid := (lo + hi) >> 1
+		slot := names[mid*idSize : (mid+1)*idSize]
+		if bytes.Compare(slot, target) < 0 {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+
+	return &idxfilePrefixIter{
+		idSize:   idSize,
+		prefix:   prefix,
+		names:    names,
+		offset32: idx.Offset32[bucket],
+		crc32:    idx.CRC32[bucket],
+		offset64: idx.Offset64,
+		pos:      lo,
+	}, nil
+}
+
 // EntriesByOffset implements the Index interface.
 func (idx *MemoryIndex) EntriesByOffset() (EntryIter, error) {
 	count, err := idx.Count()
@@ -389,6 +448,93 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 
 func (i *idxfileEntryIter) Close() error {
 	i.firstLevel = fanout
+	return nil
+}
+
+// idxfilePrefixIter walks a single fanout bucket, yielding entries
+// whose hash starts with prefix. The bucket is sorted by hash, so
+// once a name is read whose first bytes do not match prefix the
+// iterator stops.
+//
+// The iterator references the bucket's per-slot slices directly
+// (names, offset32, crc32) plus the shared offset64 table, so it
+// does not retain a reference to the parent MemoryIndex. This keeps
+// the iterator footprint to just the cursor state and the slice
+// headers it actually reads from.
+//
+// Lifetime: the slice headers are views into the parent
+// MemoryIndex's per-bucket storage. The iterator is invalid after
+// the parent Index is closed or reindexed — callers must consume
+// (or Close) the iterator before discarding the Index.
+type idxfilePrefixIter struct {
+	idSize   int
+	prefix   []byte
+	names    []byte // bucket's hash bytes
+	offset32 []byte // bucket's 32-bit offset table
+	crc32    []byte // bucket's CRC32 table
+	offset64 []byte // shared 64-bit offset overflow table
+	pos      int    // entries already yielded
+	done     bool
+}
+
+func (i *idxfilePrefixIter) Next() (*Entry, error) {
+	if i.done {
+		return nil, io.EOF
+	}
+
+	offset := i.pos * i.idSize
+	if offset+i.idSize > len(i.names) {
+		i.done = true
+		return nil, io.EOF
+	}
+	hashBytes := i.names[offset : offset+i.idSize]
+	if !bytes.HasPrefix(hashBytes, i.prefix) {
+		// Bucket is sorted by hash, so the first mismatch ends the run.
+		i.done = true
+		return nil, io.EOF
+	}
+
+	entry := new(Entry)
+	entry.Hash.ResetBySize(i.idSize)
+	if _, err := entry.Hash.Write(hashBytes); err != nil {
+		return nil, fmt.Errorf("cannot write entry hash: %w", err)
+	}
+
+	o, err := i.bucketOffset(i.pos)
+	if err != nil {
+		return nil, err
+	}
+	entry.Offset = o
+	entry.CRC32 = i.bucketCRC32(i.pos)
+	i.pos++
+	return entry, nil
+}
+
+// bucketOffset mirrors MemoryIndex.getOffset using only the per-
+// bucket Offset32/Offset64 slices the iterator holds, so callers
+// do not need to retain a reference to the parent MemoryIndex.
+func (i *idxfilePrefixIter) bucketOffset(pos int) (uint64, error) {
+	off := pos << 2
+	ofs := encbin.BigEndian.Uint32(i.offset32[off : off+4])
+	if (uint64(ofs) & isO64Mask) != 0 {
+		o64 := 8 * (uint64(ofs) & ^isO64Mask)
+		if l := uint64(len(i.offset64)); l < 8 || o64 > l-8 {
+			return 0, fmt.Errorf("%w: offset64 index out of range", ErrMalformedIdxFile)
+		}
+		return encbin.BigEndian.Uint64(i.offset64[o64 : o64+8]), nil
+	}
+	return uint64(ofs), nil
+}
+
+// bucketCRC32 mirrors MemoryIndex.getCRC32 using only the per-bucket
+// CRC32 slice the iterator holds.
+func (i *idxfilePrefixIter) bucketCRC32(pos int) uint32 {
+	off := pos << 2
+	return encbin.BigEndian.Uint32(i.crc32[off : off+4])
+}
+
+func (i *idxfilePrefixIter) Close() error {
+	i.done = true
 	return nil
 }
 
