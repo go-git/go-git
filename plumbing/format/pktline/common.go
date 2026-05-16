@@ -27,12 +27,33 @@ const (
 	// See https://git-scm.com/docs/protocol-common#_pkt_line_format
 	MaxPayloadSize = MaxSize - LenSize
 
-	// MaxSize is the maximum packet size of a pkt-line in bytes.
+	// MaxSize is the maximum packet size of a pkt-line in bytes
+	// (LARGE_PACKET_MAX in canonical Git).
 	// See https://git-scm.com/docs/protocol-common#_pkt_line_format
 	MaxSize = 65520
 
+	// DefaultSize is the maximum pkt-line size for legacy side-band
+	// (DEFAULT_PACKET_MAX in canonical Git). Includes the 4-byte length
+	// header.
+	DefaultSize = 1000
+
+	// DefaultPayloadSize is the maximum payload size for legacy side-band
+	// (DefaultSize minus the 4-byte length header).
+	DefaultPayloadSize = DefaultSize - LenSize
+
 	// LenSize is the size of the packet length in bytes.
 	LenSize = 4
+)
+
+// Sideband channel identifiers. These are the first byte of the pkt-line
+// payload in sideband-framed streams.
+const (
+	// BandData carries primary pack data.
+	BandData byte = 1
+	// BandProgress carries informational progress messages.
+	BandProgress byte = 2
+	// BandError carries a fatal error message; the stream aborts after this.
+	BandError byte = 3
 )
 
 var (
