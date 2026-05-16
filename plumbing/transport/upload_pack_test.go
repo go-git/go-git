@@ -16,10 +16,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -279,7 +279,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	var srv packp.ServerResponse
 	s.Require().NoError(srv.Decode(rd), "decode server response")
 
-	demux := sideband.NewDemuxer(sideband.Sideband64k, rd)
+	demux := pktline.NewSidebandReader(rd, io.Discard, pktline.MaxSize)
 	var signature [4]byte
 	_, err = io.ReadFull(demux, signature[:])
 	s.Require().NoError(err, "read PACK signature through sideband demuxer")
