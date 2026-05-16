@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -37,6 +38,15 @@ const indexSFKey = "populate"
 // against each other.
 const reindexSFKey = "reindex"
 
+// packEntry pairs a pack hash with its idxfile.Index for inclusion
+// in ObjectStorage.packs. The slice is always reassigned (never
+// modified in place) so readers can hold a stable snapshot of the
+// slice header after releasing muI.RLock.
+type packEntry struct {
+	h   plumbing.Hash
+	idx idxfile.Index
+}
+
 // ObjectStorage implements object storage backed by the filesystem.
 type ObjectStorage struct {
 	options Options
@@ -47,11 +57,28 @@ type ObjectStorage struct {
 
 	dir   *dotgit.DotGit
 	index map[plumbing.Hash]idxfile.Index
+	// packs mirrors s.index as a slice of (hash, idx) pairs,
+	// written in lockstep with s.index under muI.Lock and always
+	// reassigned (never modified in place). Readers can snapshot
+	// the slice header under RLock and release the lock before
+	// any per-pack I/O — the backing array and the embedded idx
+	// pointers stay valid for the snapshot's lifetime, so slow
+	// LazyIndex FindOffset calls do not block a concurrent
+	// Reindex on muI.Lock.
+	packs []packEntry
 	muI   sync.RWMutex
 
 	// indexSF coalesces concurrent first-readers so populateIndex
 	// runs once per cold-load even under thundering-herd contention.
 	indexSF singleflight.Group
+
+	// lastHitPackIdx records the s.packs index that served the most
+	// recent successful findObjectInPackfile probe, encoded as the
+	// slice position plus one (0 = no hint). Storing an Int32 instead
+	// of a *plumbing.Hash eliminates the per-call escape-to-heap of
+	// the previous MRU pointer design. Stale entries cost one
+	// MayContain + FindOffset but never misroute lookups.
+	lastHitPackIdx atomic.Int32
 
 	oh *plumbing.ObjectHasher
 
@@ -215,7 +242,7 @@ func (s *ObjectStorage) requireIndex() error {
 		}
 		s.muI.RUnlock()
 
-		local, err := s.populateIndex()
+		local, entries, err := s.populateIndex()
 		if err != nil {
 			return nil, err
 		}
@@ -223,6 +250,7 @@ func (s *ObjectStorage) requireIndex() error {
 		s.muI.Lock()
 		if s.index == nil {
 			s.index = local
+			s.packs = entries
 		} else {
 			// A racing winner published while we were loading.
 			// Close any indexes we built so SharedFile refcounts
@@ -240,8 +268,9 @@ func (s *ObjectStorage) requireIndex() error {
 }
 
 // Reindex re-populates s.index from disk and atomically swaps the
-// freshly-loaded map in, so the next read is a hot-cache hit.
-// Call when the on-disk pack inventory has changed externally.
+// freshly-loaded map and packs slice in, so the next read is a
+// hot-cache hit. Call when the on-disk pack inventory has changed
+// externally.
 //
 // Concurrent Reindex calls coalesce through indexSF on reindexSFKey:
 // one goroutine performs populateIndex and the swap, the rest block
@@ -258,15 +287,21 @@ func (s *ObjectStorage) requireIndex() error {
 // LRU eviction (pool mode) once they fall out of use. This mirrors
 // canonical Git's reprepare model where packfile_store_reprepare
 // leaves existing packs in place and only the FD-level LRU evicts.
+//
+// The MRU hint indexes into the previous packs slice and is reset
+// after the swap so a stale hint cannot misroute a probe against
+// the new slice.
 func (s *ObjectStorage) Reindex() error {
 	_, err, _ := s.indexSF.Do(reindexSFKey, func() (any, error) {
-		local, err := s.populateIndex()
+		local, entries, err := s.populateIndex()
 		if err != nil {
 			return nil, err
 		}
 
 		s.muI.Lock()
 		s.index = local
+		s.packs = entries
+		s.lastHitPackIdx.Store(0)
 		s.muI.Unlock()
 
 		return nil, nil
@@ -278,29 +313,25 @@ func (s *ObjectStorage) Reindex() error {
 // resulting map. The caller is responsible for publishing the map
 // into s.index under s.muI.Lock; populateIndex itself takes no
 // locks on s.muI, so callers must not hold it while invoking.
-func (s *ObjectStorage) populateIndex() (map[plumbing.Hash]idxfile.Index, error) {
-	packs, err := s.dir.ObjectPacks()
+func (s *ObjectStorage) populateIndex() (map[plumbing.Hash]idxfile.Index, []packEntry, error) {
+	packHashes, err := s.dir.ObjectPacks()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var (
-		mu    sync.Mutex
-		local = make(map[plumbing.Hash]idxfile.Index, len(packs))
-	)
-
+	// Per-pack writes target disjoint slice positions, so no mutex
+	// is needed across the errgroup workers.
+	entries := make([]packEntry, len(packHashes))
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
-	for _, h := range packs {
+	for i, h := range packHashes {
 		g.Go(func() error {
 			idx, err := s.loadIdx(h)
 			if err != nil {
 				return err
 			}
-			mu.Lock()
-			local[h] = idx
-			mu.Unlock()
+			entries[i] = packEntry{h: h, idx: idx}
 			return nil
 		})
 	}
@@ -308,14 +339,22 @@ func (s *ObjectStorage) populateIndex() (map[plumbing.Hash]idxfile.Index, error)
 		// Best-effort cleanup of indexes that did finish before
 		// the failing one: close any that hold descriptors so we
 		// do not leak SharedFile refcounts on the error path.
-		for _, idx := range local {
-			if c, ok := idx.(io.Closer); ok {
+		for _, e := range entries {
+			if e.idx == nil {
+				continue
+			}
+			if c, ok := e.idx.(io.Closer); ok {
 				_ = c.Close()
 			}
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return local, nil
+
+	local := make(map[plumbing.Hash]idxfile.Index, len(entries))
+	for _, e := range entries {
+		local[e.h] = e.idx
+	}
+	return local, entries, nil
 }
 
 // loadIdx loads a single pack's idx and returns the constructed
@@ -413,6 +452,15 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 			return
 		}
 		s.muI.Lock()
+		if _, existed := s.index[h]; !existed {
+			// Copy-on-grow rather than append-in-place so any
+			// reader that snapshotted the old slice header keeps
+			// seeing a stable backing array.
+			next := make([]packEntry, len(s.packs)+1)
+			copy(next, s.packs)
+			next[len(s.packs)] = packEntry{h: h, idx: index}
+			s.packs = next
+		}
 		s.index[h] = index
 		s.muI.Unlock()
 	}
@@ -530,39 +578,6 @@ func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfi
 	), nil
 }
 
-func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int64, err error) {
-	if err := s.requireIndex(); err != nil {
-		return 0, err
-	}
-
-	pack, _, offset := s.findObjectInPackfile(h)
-	if offset == -1 {
-		return 0, plumbing.ErrObjectNotFound
-	}
-
-	s.muI.RLock()
-	idx := s.index[pack]
-	s.muI.RUnlock()
-
-	hash, err := idx.FindHash(offset)
-	if err == nil {
-		obj, ok := s.objectCache.Get(hash)
-		if ok {
-			return obj.Size(), nil
-		}
-	} else if err != nil && !errors.Is(err, plumbing.ErrObjectNotFound) {
-		return 0, err
-	}
-
-	p, err := s.packfile(idx, pack)
-	if err != nil {
-		return 0, err
-	}
-	defer ioutil.CheckClose(p, &err)
-
-	return p.GetSizeByOffset(offset)
-}
-
 // EncodedObjectSize returns the plaintext size of the given object,
 // without actually reading the full object data from storage.
 func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err error) {
@@ -573,11 +588,15 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 	// degrades gracefully — same shape as HasEncodedObject.
 	idxErr := s.requireIndex()
 	if idxErr == nil {
-		if pack, _, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash && offset != -1 {
+		if pack, idx, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash {
 			if cached, ok := s.objectCache.Get(h); ok {
 				return cached.Size(), nil
 			}
-			size, err = s.encodedObjectSizeFromPackfile(h)
+			p, perr := s.packfile(idx, pack)
+			if perr != nil {
+				return 0, perr
+			}
+			size, err = p.GetSizeByOffset(offset)
 			if err == nil {
 				return size, nil
 			}
@@ -622,7 +641,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	idxErr := s.requireIndex()
 	routed := false
 	if idxErr == nil {
-		if pack, _, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash && offset != -1 {
+		if pack, idx, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash {
 			routed = true
 			if cached, ok := s.objectCache.Get(h); ok {
 				if t == plumbing.AnyObject || cached.Type() == t {
@@ -630,7 +649,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 				}
 				return nil, plumbing.ErrObjectNotFound
 			}
-			obj, err = s.getFromPackfile(h, false)
+			obj, err = s.getFromPackfileAt(pack, idx, h, offset, false)
 		}
 	}
 	if !routed {
@@ -729,22 +748,25 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 	return obj, nil
 }
 
-// Get returns the object with the given hash, by searching for it in
-// the packfile.
+// getFromPackfile resolves h via the packfile path: cheap pack-
+// membership probe, then fetch from the located pack.
 func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (plumbing.EncodedObject, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
 
-	pack, hash, offset := s.findObjectInPackfile(h)
+	pack, idx, offset := s.findObjectInPackfile(h)
 	if offset == -1 {
 		return nil, plumbing.ErrObjectNotFound
 	}
+	return s.getFromPackfileAt(pack, idx, h, offset, canBeDelta)
+}
 
-	s.muI.RLock()
-	idx := s.index[pack]
-	s.muI.RUnlock()
-
+// getFromPackfileAt fetches the object at a pre-located pack
+// position, skipping the membership probe. Used by callers that
+// already ran findObjectInPackfile (e.g. EncodedObject's pack-
+// membership-first fast path) so the lookup is not repeated.
+func (s *ObjectStorage) getFromPackfileAt(pack plumbing.Hash, idx idxfile.Index, h plumbing.Hash, offset int64, canBeDelta bool) (plumbing.EncodedObject, error) {
 	p, err := s.packfile(idx, pack)
 	if err != nil {
 		return nil, err
@@ -752,9 +774,8 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (plumb
 	defer ioutil.CheckClose(p, &err)
 
 	if canBeDelta {
-		return s.decodeDeltaObjectAt(p, offset, hash)
+		return s.decodeDeltaObjectAt(p, offset, h)
 	}
-
 	return p.GetByOffset(offset)
 }
 
@@ -807,21 +828,71 @@ func (s *ObjectStorage) decodeDeltaObjectAt(
 	return newDeltaObject(obj, hash, base, header.Size), nil
 }
 
-func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, plumbing.Hash, int64) {
+// findObjectInPackfile locates h across the storage's packs and
+// returns (pack-hash, idx, offset). offset == -1 means not found
+// in any pack; the returned idx is then nil. Snapshots s.packs
+// under RLock and releases the lock before calling MayContain /
+// FindOffset, so slow LazyIndex I/O does not block concurrent
+// Reindex / requireIndex publish on muI.Lock.
+//
+// MRU policy diverges from canonical Git's find_pack_entry
+// (packfile.c), which moves the hit pack to the head of the
+// packed_git linked list so every subsequent walk starts there.
+// go-git stores a single-slot atomic hint instead. A true reorder
+// would require write-locking s.packs on every successful find,
+// defeating the snapshot-under-RLock pattern that the rest of the
+// read path relies on. The hint can go stale under concurrent
+// Reindex / PackfileWriter.Notify; staleness costs at most one
+// extra MayContain + FindOffset probe and never misroutes, since
+// FindOffset's contract returns an offset only for the hash it
+// was asked about.
+func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, idxfile.Index, int64) {
 	s.muI.RLock()
-	defer s.muI.RUnlock()
+	packs := s.packs
+	s.muI.RUnlock()
 
-	for packfile, index := range s.index {
-		if !index.MayContain(h) {
+	if len(packs) == 0 {
+		return plumbing.ZeroHash, nil, -1
+	}
+
+	// MRU: probe the last successfully-hit pack first. The hint is
+	// encoded as packs index + 1; 0 means no hint. A stale entry
+	// costs one MayContain + FindOffset but never misroutes.
+	hint := int(s.lastHitPackIdx.Load()) - 1
+	if hint >= 0 && hint < len(packs) {
+		pe := packs[hint]
+		if pe.idx != nil && pe.idx.MayContain(h) {
+			if offset, err := pe.idx.FindOffset(h); err == nil {
+				return pe.h, pe.idx, offset
+			}
+		}
+	} else {
+		hint = -1
+	}
+
+	for i, pe := range packs {
+		if i == hint {
+			// Skip the MRU pack — we already tried it above.
 			continue
 		}
-		offset, err := index.FindOffset(h)
+		if !pe.idx.MayContain(h) {
+			continue
+		}
+		offset, err := pe.idx.FindOffset(h)
 		if err == nil {
-			return packfile, h, offset
+			// Update the hint only when it actually changed.
+			// Saves a no-op atomic Store on the hot stay-on-pack
+			// pattern (caught by the MRU probe above) and avoids
+			// any allocation — the encoded value is a small int.
+			next := int32(i + 1)
+			if s.lastHitPackIdx.Load() != next {
+				s.lastHitPackIdx.Store(next)
+			}
+			return pe.h, pe.idx, offset
 		}
 	}
 
-	return plumbing.ZeroHash, plumbing.ZeroHash, -1
+	return plumbing.ZeroHash, nil, -1
 }
 
 // HashesWithPrefix returns all objects with a hash that starts with a prefix by searching for
@@ -1078,20 +1149,47 @@ func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
-// Also drops the in-memory s.index entry for the removed pack so subsequent
-// routing decisions in findObjectInPackfile no longer claim membership for
-// a hash that lives only in the now-deleted pack.
+// Also drops the in-memory s.index map entry and the matching s.packs
+// slice entry for the removed pack so subsequent routing decisions in
+// findObjectInPackfile no longer claim membership for a hash that
+// lives only in the now-deleted pack. If the MRU hint pointed at the
+// deleted slot, invalidate it.
 func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
 	if err := s.dir.DeleteOldObjectPackAndIndex(h, t); err != nil {
 		return err
 	}
 	s.muI.Lock()
-	if idx, ok := s.index[h]; ok {
-		delete(s.index, h)
-		if c, ok := idx.(io.Closer); ok {
-			_ = c.Close()
-		}
+	defer s.muI.Unlock()
+
+	idx, ok := s.index[h]
+	if !ok {
+		return nil
 	}
-	s.muI.Unlock()
+	delete(s.index, h)
+
+	// Drop the matching s.packs entry. Allocate a fresh slice and
+	// copy the rest (mirror of PackfileWriter.Notify's copy-on-grow)
+	// so readers holding the old slice header keep a stable view.
+	for i, pe := range s.packs {
+		if pe.h != h {
+			continue
+		}
+		next := make([]packEntry, 0, len(s.packs)-1)
+		next = append(next, s.packs[:i]...)
+		next = append(next, s.packs[i+1:]...)
+		s.packs = next
+		// Invalidate the MRU hint if it pointed at the deleted slot.
+		// findObjectInPackfile's bounds check + FindOffset contract
+		// make a stale hint safe, but resetting under the lock here
+		// removes the staleness window entirely.
+		if s.lastHitPackIdx.Load() == int32(i+1) {
+			s.lastHitPackIdx.Store(0)
+		}
+		break
+	}
+
+	if c, ok := idx.(io.Closer); ok {
+		_ = c.Close()
+	}
 	return nil
 }

@@ -1310,3 +1310,36 @@ func TestEncodedObjectSize_Packed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, size, int64(0))
 }
+
+func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Pre-warm the index (cold dotgit race avoidance).
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	// Initially no hint (encoded as 0).
+	require.Equal(t, int32(0), s.lastHitPackIdx.Load())
+
+	// First lookup seeds the hint.
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+
+	hint := s.lastHitPackIdx.Load()
+	require.NotEqual(t, int32(0), hint,
+		"first successful lookup should seed lastHitPackIdx")
+
+	// Second lookup should not change the hint (still the same pack).
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+	assert.Equal(t, hint, s.lastHitPackIdx.Load(),
+		"single-pack fixture: hint should stay stable")
+}

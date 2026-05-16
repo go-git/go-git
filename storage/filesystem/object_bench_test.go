@@ -721,3 +721,44 @@ func BenchmarkEncodedObject_LooseHit(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkFindObjectInPackfile_MRU_Hit reads the same hash 100
+// times after a single warm-up. With MRU, the second and
+// subsequent reads hit the cached pack in O(1) MayContain checks
+// instead of paying random map iteration (N/2 misses on average
+// for repos with N packs). The basic fixture is single-pack, so
+// this benchmark stresses the MRU fast-path overhead more than
+// the multi-pack savings — but it still exposes MRU-induced
+// regressions and the atomic.Load cost.
+func BenchmarkFindObjectInPackfile_MRU_Hit(b *testing.B) {
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	b.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		b.Fatal(err)
+	}
+	obj, err := iter.Next()
+	iter.Close()
+	if err != nil {
+		b.Fatal(err)
+	}
+	h := obj.Hash()
+
+	// Warm: this also seeds lastHitPack.
+	if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
