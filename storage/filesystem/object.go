@@ -444,7 +444,10 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int
 		return 0, plumbing.ErrObjectNotFound
 	}
 
+	s.muI.RLock()
 	idx := s.index[pack]
+	s.muI.RUnlock()
+
 	hash, err := idx.FindHash(offset)
 	if err == nil {
 		obj, ok := s.objectCache.Get(hash)
@@ -791,8 +794,11 @@ func (s *ObjectStorage) buildPackfileIters(
 			if err != nil {
 				return nil, err
 			}
+			s.muI.RLock()
+			idx := s.index[h]
+			s.muI.RUnlock()
 			return newPackfileIter(
-				s.dir.Fs(), pack, t, seen, s.index[h],
+				s.dir.Fs(), pack, t, seen, idx,
 				s.objectCache, false, h.Size(),
 			)
 		},
