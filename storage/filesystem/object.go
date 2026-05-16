@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -24,6 +25,18 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// indexSFKey is the singleflight key used by [ObjectStorage.requireIndex]
+// to coalesce concurrent first-readers around a single populateIndex
+// scan. The literal value is opaque; only its uniqueness within
+// indexSF matters.
+const indexSFKey = "populate"
+
+// reindexSFKey is the singleflight key used by [ObjectStorage.Reindex]
+// to collapse concurrent rescans. Kept distinct from indexSFKey so a
+// cold first-load and an externally-driven rescan do not deduplicate
+// against each other.
+const reindexSFKey = "reindex"
+
 // ObjectStorage implements object storage backed by the filesystem.
 type ObjectStorage struct {
 	options Options
@@ -35,6 +48,10 @@ type ObjectStorage struct {
 	dir   *dotgit.DotGit
 	index map[plumbing.Hash]idxfile.Index
 	muI   sync.RWMutex
+
+	// indexSF coalesces concurrent first-readers so populateIndex
+	// runs once per cold-load even under thundering-herd contention.
+	indexSF singleflight.Group
 
 	oh *plumbing.ObjectHasher
 
@@ -183,6 +200,11 @@ func (s *ObjectStorage) indexLoaded() bool {
 	return loaded
 }
 
+// requireIndex ensures s.index is populated, performing a cold-load
+// on first access. Concurrent first-readers are coalesced via
+// singleflight so populateIndex runs once per thundering herd; the
+// winning goroutine publishes the local map under s.muI.Lock and
+// joiners block in singleflight.Do until the in-flight call returns.
 func (s *ObjectStorage) requireIndex() error {
 	s.muI.RLock()
 	if s.index != nil {
@@ -191,54 +213,133 @@ func (s *ObjectStorage) requireIndex() error {
 	}
 	s.muI.RUnlock()
 
-	s.muI.Lock()
-	defer s.muI.Unlock()
-
-	// Re-check after upgrading to write lock: a concurrent goroutine
-	// may have built the index between our RUnlock and Lock above.
-	if s.index != nil {
-		return nil
-	}
-
-	s.index = make(map[plumbing.Hash]idxfile.Index)
-	packs, err := s.dir.ObjectPacks()
-	if err != nil {
-		return err
-	}
-
-	for _, h := range packs {
-		if err := s.loadIdxFile(h); err != nil {
-			return err
+	_, err, _ := s.indexSF.Do(indexSFKey, func() (any, error) {
+		// Re-check inside the singleflight window: a racing winner
+		// may have already published, in which case there is
+		// nothing for this caller to do.
+		s.muI.RLock()
+		if s.index != nil {
+			s.muI.RUnlock()
+			return nil, nil
 		}
-	}
+		s.muI.RUnlock()
 
-	return nil
-}
+		local, err := s.populateIndex()
+		if err != nil {
+			return nil, err
+		}
 
-// Reindex indexes again all packfiles. Useful if git changed packfiles externally
-func (s *ObjectStorage) Reindex() {
-	s.index = nil
-}
-
-func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
-	if s.options.UseInMemoryIdx {
-		return s.loadMemoryIndex(h)
-	}
-
-	// Use LazyIndex on a best-effort basis.
-	if idx, err := s.loadLazyIndex(h); err == nil {
-		// If an index already exists, and implements io.Closer, try to close it.
-		if i, found := s.index[h]; found && i != nil {
-			if closer, ok := i.(io.Closer); ok {
-				_ = closer.Close()
+		s.muI.Lock()
+		if s.index == nil {
+			s.index = local
+		} else {
+			// A racing winner published while we were loading.
+			// Close any indexes we built so SharedFile refcounts
+			// (held by LazyIndex) do not leak.
+			for _, idx := range local {
+				if c, ok := idx.(io.Closer); ok {
+					_ = c.Close()
+				}
 			}
 		}
+		s.muI.Unlock()
+		return nil, nil
+	})
+	return err
+}
 
-		s.index[h] = idx
-		return nil
+// Reindex re-populates s.index from disk and atomically swaps the
+// freshly-loaded map in, so the next read is a hot-cache hit.
+// Call when the on-disk pack inventory has changed externally.
+//
+// Concurrent Reindex calls coalesce through indexSF on reindexSFKey:
+// one goroutine performs populateIndex and the swap, the rest block
+// in singleflight.Do and observe the same outcome. Without this the
+// callers would each scan the disk and race to publish, producing
+// duplicate I/O.
+//
+// populateIndex runs before the swap so s.index is never nil during
+// Reindex: a concurrent PackfileWriter.Notify can rely on s.index
+// being a writable map under muI.Lock. Previously-cached LazyIndex
+// entries are not closed here; in-flight readers that borrowed an
+// entry before the swap keep using it, and the underlying
+// SharedFile FDs close via the grace timer (no-pool mode) or fdpool
+// LRU eviction (pool mode) once they fall out of use. This mirrors
+// canonical Git's reprepare model where packfile_store_reprepare
+// leaves existing packs in place and only the FD-level LRU evicts.
+func (s *ObjectStorage) Reindex() error {
+	_, err, _ := s.indexSF.Do(reindexSFKey, func() (any, error) {
+		local, err := s.populateIndex()
+		if err != nil {
+			return nil, err
+		}
+
+		s.muI.Lock()
+		s.index = local
+		s.muI.Unlock()
+
+		return nil, nil
+	})
+	return err
+}
+
+// populateIndex loads every pack's idx in parallel and returns the
+// resulting map. The caller is responsible for publishing the map
+// into s.index under s.muI.Lock; populateIndex itself takes no
+// locks on s.muI, so callers must not hold it while invoking.
+func (s *ObjectStorage) populateIndex() (map[plumbing.Hash]idxfile.Index, error) {
+	packs, err := s.dir.ObjectPacks()
+	if err != nil {
+		return nil, err
 	}
 
-	return s.loadMemoryIndex(h)
+	var (
+		mu    sync.Mutex
+		local = make(map[plumbing.Hash]idxfile.Index, len(packs))
+	)
+
+	g := new(errgroup.Group)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	for _, h := range packs {
+		g.Go(func() error {
+			idx, err := s.loadIdx(h)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			local[h] = idx
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		// Best-effort cleanup of indexes that did finish before
+		// the failing one: close any that hold descriptors so we
+		// do not leak SharedFile refcounts on the error path.
+		for _, idx := range local {
+			if c, ok := idx.(io.Closer); ok {
+				_ = c.Close()
+			}
+		}
+		return nil, err
+	}
+	return local, nil
+}
+
+// loadIdx loads a single pack's idx and returns the constructed
+// idxfile.Index. It does not mutate s.index; callers are
+// responsible for installation.
+func (s *ObjectStorage) loadIdx(h plumbing.Hash) (idxfile.Index, error) {
+	if !s.options.UseInMemoryIdx {
+		// Use LazyIndex on a best-effort basis; fall through to
+		// MemoryIndex if construction fails (e.g. a malformed
+		// .rev file), matching the legacy loadIdxFile path.
+		if idx, err := s.loadLazyIndex(h); err == nil {
+			return idx, nil
+		}
+	}
+	return s.loadMemoryIndexValue(h)
 }
 
 func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, error) {
@@ -252,10 +353,13 @@ func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, erro
 	return idxfile.NewLazyIndex(openIdx, openRev, h)
 }
 
-func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
+// loadMemoryIndexValue decodes a pack's idx into a MemoryIndex and
+// returns it. Unlike the now-removed loadMemoryIndex helper it does
+// not write into s.index; the caller installs the returned value.
+func (s *ObjectStorage) loadMemoryIndexValue(h plumbing.Hash) (idx idxfile.Index, err error) {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer ioutil.CheckClose(f, &err)
@@ -270,16 +374,15 @@ func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 	idxf := idxfile.NewMemoryIndex(h.Size())
 	d := idxfile.NewDecoder(f, hasher)
 	if err = d.Decode(idxf); err != nil {
-		return err
+		return nil, err
 	}
 
 	if idxf.PackfileChecksum != h {
-		return fmt.Errorf("%w: packfile mismatch: target is %q not %q",
+		return nil, fmt.Errorf("%w: packfile mismatch: target is %q not %q",
 			idxfile.ErrMalformedIdxFile, idxf.PackfileChecksum.String(), h.String())
 	}
 
-	s.index[h] = idxf
-	return err
+	return idxf, err
 }
 
 // RawObjectWriter returns a writer for a new loose object of the given type and size.

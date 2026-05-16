@@ -266,3 +266,75 @@ func benchWarmPack(b *testing.B, fs billy.Filesystem) {
 		return // warm the first pack only
 	}
 }
+
+// BenchmarkObjectStorage_ColdEncodedObject measures end-to-end
+// first-read latency on a freshly-constructed Storage against a
+// multi-pack fixture. Each iteration pays the populateIndex
+// cold-load (which loads every pack's idx in parallel via
+// errgroup) plus the per-object decode for a single read.
+//
+// Storage construction is in the timed window because b.Loop
+// forbids stopping the timer at iteration boundaries; the cost
+// is bounded (a struct alloc + dotgit pointer setup, no I/O) and
+// the multi-pack fixture ensures populateIndex is the dominant
+// per-iteration cost rather than the decode.
+//
+// The parallel-vs-serial populateIndex win is a property of the
+// code (errgroup.SetLimit(GOMAXPROCS)) — to quantify it use
+// benchstat against a baseline recording on main; in-bench -cpu
+// scaling is masked by the per-iteration decode cost.
+func BenchmarkObjectStorage_ColdEncodedObject(b *testing.B) {
+	const (
+		nPacks     = 32
+		objPerPack = 8
+	)
+	diskFS, perPack := makeMultiPackFixture(b, nPacks, objPerPack)
+
+	// Pick a hash from the last pack so the lookup actually
+	// iterates s.packs rather than hitting whichever pack happens
+	// to be first in the (randomised) map iteration order.
+	target := perPack[nPacks-1][0]
+
+	b.ReportAllocs()
+	for b.Loop() {
+		s := NewStorage(diskFS, cache.NewObjectLRUDefault())
+		if _, err := s.EncodedObject(plumbing.AnyObject, target); err != nil {
+			b.Fatal(err)
+		}
+		_ = s.Close()
+	}
+}
+
+// BenchmarkObjectStorage_ReindexThenRead measures Reindex + read.
+// Pre-fix: Reindex returns fast but the next read pays the cold
+// bootstrap. Post-fix: Reindex pre-warms s.index synchronously so
+// the next read is hot.
+func BenchmarkObjectStorage_ReindexThenRead(b *testing.B) {
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	b.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		b.Fatal(err)
+	}
+	obj, err := iter.Next()
+	iter.Close()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if err := s.Reindex(); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := s.EncodedObject(plumbing.AnyObject, obj.Hash()); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
