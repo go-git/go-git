@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -1438,4 +1439,25 @@ func TestIssue55(t *testing.T) {
 			assert.True(t, ro, "file %q is not read-only", path)
 		})
 	}
+}
+
+// TestDotGit_HasIncomingObjects_NoRace exercises the lazy
+// initialisation in hasIncomingObjects under concurrent callers.
+// Before the sync.Once fix, two goroutines racing through Object()
+// would write the cache fields without synchronisation; the race
+// detector flagged this reliably under -race -count=10.
+func TestDotGit_HasIncomingObjects_NoRace(t *testing.T) {
+	t.Parallel()
+	fs := osfs.New(t.TempDir())
+	require.NoError(t, fs.MkdirAll("objects", 0o755))
+	d := New(fs)
+
+	hash := plumbing.NewHash("0000000000000000000000000000000000000000")
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			_, _ = d.Object(hash)
+		})
+	}
+	wg.Wait()
 }
