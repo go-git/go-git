@@ -50,14 +50,12 @@ func TestSidebandScanner_BandData(t *testing.T) {
 	}
 }
 
-func TestSidebandScanner_ProgressLineBuffering(t *testing.T) {
+func TestSidebandScanner_ProgressRawBytesPassthrough(t *testing.T) {
 	t.Parallel()
 	var src bytes.Buffer
-	// "Counting" split across two band-2 packets; full line only completes
-	// at the trailing '\n' in the second packet.
+	// Split a progress line across two packets; mix CR-delimited fragments.
 	src.Write(sbPkt(t, pktline.BandProgress, []byte("Counti")))
 	src.Write(sbPkt(t, pktline.BandProgress, []byte("ng objects\n")))
-	// Two CR-delimited progress fragments in a single band-2 packet.
 	src.Write(sbPkt(t, pktline.BandProgress, []byte("Resolving deltas: 50%\rResolving deltas: 100%\r")))
 	src.Write(sbPkt(t, pktline.BandData, []byte("pack")))
 
@@ -74,17 +72,17 @@ func TestSidebandScanner_ProgressLineBuffering(t *testing.T) {
 	if string(data) != "pack" {
 		t.Fatalf("data = %q", data)
 	}
-	want := "remote: Counting objects\nremote: Resolving deltas: 50%\rremote: Resolving deltas: 100%\r"
+	// Scanner now hands progress the raw bytes verbatim, no prefix, no buffering.
+	want := "Counting objects\nResolving deltas: 50%\rResolving deltas: 100%\r"
 	if progress.String() != want {
 		t.Fatalf("progress = %q\nwant      %q", progress.String(), want)
 	}
 }
 
-func TestSidebandScanner_ResidualProgressFlushedOnEOF(t *testing.T) {
+func TestSidebandScanner_ProgressNotBufferedAtEOF(t *testing.T) {
 	t.Parallel()
 	var src bytes.Buffer
 	src.Write(sbPkt(t, pktline.BandProgress, []byte("trailing")))
-	// stream ends without a newline.
 
 	var progress bytes.Buffer
 	s := pktline.NewSidebandScanner(&src, &progress, pktline.MaxSize)
@@ -93,7 +91,9 @@ func TestSidebandScanner_ResidualProgressFlushedOnEOF(t *testing.T) {
 	if err := s.Err(); err != nil {
 		t.Fatalf("Err: %v", err)
 	}
-	if progress.String() != "remote: trailing" {
+	// No internal buffering: bytes go to progress as-is, no extra
+	// "flush on EOF" handling needed (or wanted) at this layer.
+	if progress.String() != "trailing" {
 		t.Fatalf("progress = %q", progress.String())
 	}
 }
@@ -122,7 +122,7 @@ func TestSidebandScanner_BandError(t *testing.T) {
 	}
 }
 
-func TestSidebandScanner_ResidualProgressFlushedOnBand3(t *testing.T) {
+func TestSidebandScanner_ProgressDeliveredBeforeBand3(t *testing.T) {
 	t.Parallel()
 	var src bytes.Buffer
 	src.Write(sbPkt(t, pktline.BandProgress, []byte("midline")))
@@ -136,7 +136,7 @@ func TestSidebandScanner_ResidualProgressFlushedOnBand3(t *testing.T) {
 	if !errors.As(s.Err(), &se) {
 		t.Fatalf("Err = %v", s.Err())
 	}
-	if progress.String() != "remote: midline" {
+	if progress.String() != "midline" {
 		t.Fatalf("progress = %q", progress.String())
 	}
 }

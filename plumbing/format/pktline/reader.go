@@ -32,19 +32,23 @@ func NewReader(r io.Reader) *Reader {
 }
 
 // NewSidebandReader returns a Reader that demultiplexes sideband
-// packets. [BandData] is returned via Read; [BandProgress] is
-// line-buffered, prefixed with "remote: ", and written to progress
-// (nil progress is treated as io.Discard); [BandError] causes Read to
-// return a [*SidebandError]. The maxSize parameter is the maximum on-wire
-// pkt-line size: use [DefaultSize] for legacy side-band or [MaxSize]
-// for sideband-64k.
+// packets. [BandData] is returned via Read; [BandProgress] payloads are
+// written verbatim (raw bytes, no buffering or prefix) to progress as
+// they arrive on the wire (nil progress is treated as io.Discard);
+// [BandError] causes Read to return a [*SidebandError]. The maxSize
+// parameter is the maximum on-wire pkt-line size: use [DefaultSize] for
+// legacy side-band or [MaxSize] for sideband-64k.
+//
+// To render the raw band-2 stream as human-facing progress with a
+// "remote: " prefix and terminal-aware carriage-return handling, wrap
+// the progress destination with [NewProgressWriter].
 func NewSidebandReader(r io.Reader, progress io.Writer, maxSize int) *Reader {
 	return &Reader{s: NewSidebandScanner(r, progress, maxSize)}
 }
 
 // NewReaderFromScanner returns a Reader that drains pkt-line payloads
 // from s. The caller retains ownership of s and may interleave
-// packet-level access (Scan, Len, Type) with Reader.Read between calls,
+// packet-level access (Scan, Len, Bytes) with Reader.Read between calls,
 // but must not call s.Scan while a payload is partially consumed by
 // Read (when that happens, Read has buffered the remainder of the
 // current packet and the next Scan would drop it).

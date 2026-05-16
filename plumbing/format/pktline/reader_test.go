@@ -131,7 +131,7 @@ func TestSidebandReader_Concatenates(t *testing.T) {
 	if string(got) != "PACKdata" {
 		t.Fatalf("data = %q", got)
 	}
-	if progress.String() != "remote: counting\n" {
+	if progress.String() != "counting\n" {
 		t.Fatalf("progress = %q", progress.String())
 	}
 }
