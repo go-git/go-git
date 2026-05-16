@@ -3,6 +3,7 @@ package pktline
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -68,6 +69,34 @@ func FuzzReadLine(f *testing.F) {
 			_, _, err := ReadLine(r)
 			if err != nil || r.Len() == 0 || r.Len() == before {
 				break
+			}
+		}
+	})
+}
+
+func FuzzSidebandRoundTrip(f *testing.F) {
+	f.Add([]byte{}, uint8(1))
+	f.Add([]byte("hello"), uint8(1))
+	f.Add([]byte("progress\n"), uint8(2))
+	f.Add(bytes.Repeat([]byte("a"), MaxPayloadSize+10), uint8(1))
+	f.Add(bytes.Repeat([]byte("b"), DefaultSize*2), uint8(1))
+
+	f.Fuzz(func(t *testing.T, payload []byte, b uint8) {
+		band := byte(b%3) + 1
+		for _, max := range []int{DefaultSize, MaxSize} {
+			var buf bytes.Buffer
+			if _, err := WriteSideband(&buf, band, payload, max); err != nil {
+				continue
+			}
+			s := NewSidebandScanner(&buf, io.Discard, max)
+			var got []byte
+			for s.Scan() {
+				got = append(got, s.Bytes()...)
+			}
+			if band == BandData {
+				if !bytes.Equal(got, payload) {
+					t.Fatalf("round-trip mismatch: got %d bytes, want %d (max=%d)", len(got), len(payload), max)
+				}
 			}
 		}
 	})
