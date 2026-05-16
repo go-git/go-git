@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -79,17 +79,19 @@ func SendPack(
 
 	var r io.Reader = reader
 	if req.Progress != nil {
-		var d *sideband.Demuxer
-		if upreq.Capabilities.Supports(capability.Sideband64k) {
-			d = sideband.NewDemuxer(sideband.Sideband64k, reader)
-		} else if upreq.Capabilities.Supports(capability.Sideband) {
-			d = sideband.NewDemuxer(sideband.Sideband, reader)
+		max := 0
+		switch {
+		case upreq.Capabilities.Supports(capability.Sideband64k):
+			max = pktline.MaxSize
+		case upreq.Capabilities.Supports(capability.Sideband):
+			max = pktline.DefaultSize
 		}
-		if d != nil {
-			if !upreq.Capabilities.Supports(capability.Quiet) {
-				d.Progress = req.Progress
+		if max > 0 {
+			progress := req.Progress
+			if upreq.Capabilities.Supports(capability.Quiet) {
+				progress = nil
 			}
-			r = d
+			r = pktline.NewSidebandReader(reader, progress, max)
 		}
 	}
 
