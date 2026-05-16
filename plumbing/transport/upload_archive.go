@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -55,7 +54,7 @@ func UploadArchive(
 		return fmt.Errorf("upload-archive: writing flush: %w", err)
 	}
 
-	mux := sideband.NewMuxer(sideband.Sideband64k, w)
+	mux := pktline.NewSidebandWriter(w, pktline.MaxSize)
 
 	format := "tar"
 	prefix := ""
@@ -184,10 +183,10 @@ func writeNACK(w io.Writer, reason string) {
 
 // muxError writes an error to the sideband error channel and flushes.
 // Returns the original error for convenience.
-func muxError(mux *sideband.Muxer, w io.Writer, err error) error {
+func muxError(mux *pktline.Writer, w io.Writer, err error) error {
 	errMsg := fmt.Sprintf("upload-archive: %s", err.Error())
-	_, _ = mux.WriteChannel(sideband.ErrorMessage, []byte(errMsg))
-	_ = pktline.WriteFlush(w)
+	_, _ = pktline.WriteSideband(w, pktline.BandError, []byte(errMsg), pktline.MaxSize)
+	_ = mux.Flush()
 	return err
 }
 
