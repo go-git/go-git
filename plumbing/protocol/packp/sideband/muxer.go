@@ -8,6 +8,11 @@ import (
 
 // Muxer multiplex the packfile along with the progress messages and the error
 // information. The multiplex is perform using pktline format.
+//
+// Deprecated: use [pktline.NewSidebandWriter] instead. Note that the
+// pktline writer enforces the negotiated on-wire pkt-line size strictly,
+// whereas this Muxer emitted 1005-byte pkt-lines on legacy side-band
+// streams.
 type Muxer struct {
 	max int
 	w   io.Writer
@@ -20,6 +25,8 @@ const chLen = 1
 // If t is equal to `Sideband` the max pack size is set to MaxPackedSize, in any
 // other value is given, max pack is set to MaxPackedSize64k, that is the
 // maximum length of a line in pktline format.
+//
+// Deprecated: use [pktline.NewSidebandWriter] instead.
 func NewMuxer(t Type, w io.Writer) *Muxer {
 	maxSize := MaxPackedSize64k
 	if t == Sideband {

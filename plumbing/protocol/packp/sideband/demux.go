@@ -31,6 +31,11 @@ type Progress interface {
 // written at `Progress` (if any), if any message is retrieved from the
 // ErrorMessage channel an error is returned and we can assume that the
 // connection has been closed.
+//
+// Deprecated: use [pktline.NewSidebandReader] (for an io.Reader) or
+// [pktline.NewSidebandScanner] (for a packet-oriented scanner) instead.
+// The pktline equivalents line-buffer progress with a "remote: " prefix
+// matching git(1)'s user-facing output.
 type Demuxer struct {
 	t Type
 	r io.Reader
@@ -44,6 +49,8 @@ type Demuxer struct {
 }
 
 // NewDemuxer returns a new Demuxer for the given t and read from r
+//
+// Deprecated: use [pktline.NewSidebandReader] instead.
 func NewDemuxer(t Type, r io.Reader) *Demuxer {
 	maxSize := MaxPackedSize64k
 	if t == Sideband {
