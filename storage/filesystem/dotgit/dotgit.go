@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -114,8 +115,10 @@ type DotGit struct {
 	options Options
 	fs      billy.Filesystem
 
-	// incoming object directory information
-	incomingChecked bool
+	// incoming object directory information. incomingDirName is written
+	// exactly once inside incomingOnce.Do; sync.Once provides the
+	// happens-before guarantee that lets readers observe it lock-free.
+	incomingOnce    sync.Once
 	incomingDirName string
 
 	objectList []plumbing.Hash // sorted
@@ -726,9 +729,11 @@ func (d *DotGit) incomingObjectPath(h plumbing.Hash) string {
 }
 
 // hasIncomingObjects searches for an incoming directory and keeps its name
-// so it doesn't have to be found each time an object is accessed.
+// so it doesn't have to be found each time an object is accessed. The
+// lazy initialisation runs under sync.Once so concurrent callers cannot
+// race on the cached fields.
 func (d *DotGit) hasIncomingObjects() bool {
-	if !d.incomingChecked {
+	d.incomingOnce.Do(func() {
 		directoryContents, err := d.fs.ReadDir(objectsPath)
 		if err == nil {
 			for _, file := range directoryContents {
@@ -739,9 +744,7 @@ func (d *DotGit) hasIncomingObjects() bool {
 				}
 			}
 		}
-
-		d.incomingChecked = true
-	}
+	})
 
 	return d.incomingDirName != ""
 }
