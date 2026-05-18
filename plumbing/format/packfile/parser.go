@@ -33,6 +33,10 @@ var (
 // dynamically as data is written; this is purely a hint cap.
 const maxObjectPreallocBytes = 1 << 30 // 1 GiB
 
+// Match upstream Git's pack depth ceiling: pack-objects.h OE_DEPTH_BITS,
+// enforced in builtin/pack-objects.c as (1 << OE_DEPTH_BITS) - 1.
+const maxDeltaChainDepth = 4095
+
 // growHint returns a non-negative int64 size, clamped to a sane upper bound,
 // suitable for passing to bytes.Buffer.Grow.
 func growHint(n int64) int {
@@ -297,11 +301,31 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return fmt.Errorf("unsupported delta type: %v", oh.Type)
 	}
 
+	if err := checkDeltaChainDepth(oh); err != nil {
+		return err
+	}
+
 	if err := p.ensureContent(oh); err != nil {
 		return err
 	}
 
 	return p.storeOrCache(oh)
+}
+
+func checkDeltaChainDepth(oh *ObjectHeader) error {
+	var depth int
+	for current := oh; current != nil && current.isDeltaOnDisk(); current = current.parent {
+		depth++
+		if depth > maxDeltaChainDepth {
+			return fmt.Errorf("%w: delta chain depth exceeds %d", ErrMalformedPackfile, maxDeltaChainDepth)
+		}
+	}
+
+	return nil
+}
+
+func (oh *ObjectHeader) isDeltaOnDisk() bool {
+	return oh.Type.IsDelta() || oh.diskType.IsDelta()
 }
 
 // parentReader returns a [io.ReaderAt] for the decompressed contents
