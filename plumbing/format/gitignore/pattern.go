@@ -471,6 +471,9 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 		if !wildmatch(p.pattern[0], name) {
 			continue
 		}
+		if p.dirOnly && p.inclusion {
+			return isDir && i == len(path)-1
+		}
 		if p.dirOnly && !isDir && i == len(path)-1 {
 			return false
 		}
