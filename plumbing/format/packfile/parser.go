@@ -38,6 +38,10 @@ const maxObjectPreallocBytes = 1 << 30 // 1 GiB
 // organically beyond this hint.
 const maxObjectsPrealloc = 1 << 16 // 64 Ki entries
 
+// Match upstream Git's pack depth ceiling: pack-objects.h OE_DEPTH_BITS,
+// enforced in builtin/pack-objects.c as (1 << OE_DEPTH_BITS) - 1.
+const maxDeltaChainDepth = 4095
+
 // growHint returns a non-negative int64 size, clamped to a sane upper bound,
 // suitable for passing to bytes.Buffer.Grow.
 func growHint(n int64) int {
@@ -353,6 +357,10 @@ func (p *Parser) resolveDeltas() error {
 	defer sync.PutBytesBuffer(buf)
 
 	for _, obj := range p.oi {
+		if err := checkDeltaChainDepth(obj); err != nil {
+			return err
+		}
+
 		buf.Reset()
 		buf.Grow(growHint(obj.Length))
 		err := p.get(obj, buf)
@@ -373,6 +381,9 @@ func (p *Parser) resolveDeltas() error {
 			// create it once and reuse across all children.
 			r := bytes.NewReader(buf.Bytes())
 			for _, child := range obj.Children {
+				if err := checkDeltaChainDepth(child); err != nil {
+					return err
+				}
 				// Even though we are discarding the output, we still need to read it to
 				// so that the scanner can advance to the next object, and the SHA1 can be
 				// calculated.
@@ -389,6 +400,17 @@ func (p *Parser) resolveDeltas() error {
 		}
 	}
 
+	return nil
+}
+
+func checkDeltaChainDepth(o *objectInfo) error {
+	var depth int
+	for current := o; current != nil && current.DiskType.IsDelta(); current = current.Parent {
+		depth++
+		if depth > maxDeltaChainDepth {
+			return fmt.Errorf("%w: delta chain depth exceeds %d", ErrMalformedPackFile, maxDeltaChainDepth)
+		}
+	}
 	return nil
 }
 
