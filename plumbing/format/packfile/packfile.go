@@ -250,6 +250,9 @@ func (p *Packfile) headerFromOffset(offset int64) (*ObjectHeader, error) {
 	}
 
 	if !p.scanner.Scan() {
+		if err := p.scanner.Error(); err != nil {
+			return nil, err
+		}
 		return nil, plumbing.ErrObjectNotFound
 	}
 
