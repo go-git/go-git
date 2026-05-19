@@ -7,10 +7,9 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/x/plugin"
-	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 type OptionsSuite struct {
@@ -121,11 +120,7 @@ func (s *OptionsSuite) TestCloneOptionsValidate_RelativeDotDot() {
 // given config as the global config. It returns a cleanup function that
 // restores the default test ConfigSource.
 func (s *OptionsSuite) registerGlobalConfig(cfg *config.Config) func() {
-	resetPluginEntry("config-loader")
-	err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
-		return xconfig.NewStatic(*cfg, *config.NewConfig())
-	})
-	s.NoError(err)
+	testconfig.Register(*cfg, *config.NewConfig())
 
 	return func() {
 		registerTestConfigLoader()
