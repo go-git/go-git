@@ -34,6 +34,19 @@ func (s *UpdReqDecodeSuite) TestInvalidPktlines() {
 	s.Regexp(regexp.MustCompile("invalid pkt-len found"), r.Decode(input))
 }
 
+func (s *UpdReqDecodeSuite) TestShallowNoOpPush() {
+	hash := plumbing.NewHash("93e0db17d1f45054b842e7316dd66f94268dc87e")
+
+	payloads := []string{
+		"shallow 93e0db17d1f45054b842e7316dd66f94268dc87e",
+		"",
+	}
+
+	req := s.testDecodeOK(payloads)
+	s.Equal([]plumbing.Hash{hash}, req.Shallows)
+	s.Empty(req.Commands)
+}
+
 func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 	payloads := []string{
 		"shallow",
