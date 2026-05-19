@@ -5,10 +5,13 @@ import (
 	"crypto"
 	"fmt"
 	"io"
+	"io/fs"
 	"sync"
+	"sync/atomic"
 
 	billy "github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -30,9 +33,12 @@ var (
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
-	fs      billy.Filesystem
-	file    billy.File
-	scanner *Scanner
+	fs         billy.Filesystem
+	file       billy.File
+	packHash   plumbing.Hash
+	h          *packhandle.PackHandle
+	scanReader packhandle.PackReader
+	scanner    *Scanner
 
 	cache cache.Object
 	rbuf  *bufio.Reader
@@ -43,12 +49,20 @@ type Packfile struct {
 
 	once    sync.Once
 	onceErr error
+
+	closed atomic.Bool
 }
 
 // NewPackfile returns a packfile representation for the given packfile file
 // and packfile idx.
 // If the filesystem is provided, the packfile will return FSObjects, otherwise
 // it will return MemoryObjects.
+//
+// When both [WithFs] and [WithPackHash] are supplied, the .pack file's
+// descriptor is managed by an internal pooled handle that reopens the
+// file lazily through fs. The file argument is closed by NewPackfile,
+// as it becomes redundant. Without both options, file is used as-is
+// and closed by [Packfile.Close].
 func NewPackfile(
 	file billy.File,
 	opts ...PackfileOption,
@@ -61,16 +75,34 @@ func NewPackfile(
 		opt(p)
 	}
 
+	if p.fs != nil && !p.packHash.IsZero() && file != nil {
+		h, err := packhandle.New(
+			packhandle.Sources{Pack: packhandle.PathSource(p.fs, file.Name())},
+			p.packHash,
+		)
+		if err == nil {
+			_ = file.Close()
+			p.file = nil
+			p.h = h
+		}
+	}
+
 	return p
 }
 
 // Get retrieves the encoded object in the packfile with the given hash.
 func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
+	if p.closed.Load() {
+		return nil, fs.ErrClosed
+	}
 	if err := p.init(); err != nil {
 		return nil, err
 	}
 	p.m.Lock()
 	defer p.m.Unlock()
+	if p.closed.Load() {
+		return nil, fs.ErrClosed
+	}
 
 	return p.get(h)
 }
@@ -78,11 +110,17 @@ func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 // GetByOffset retrieves the encoded object from the packfile at the given
 // offset.
 func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
+	if p.closed.Load() {
+		return nil, fs.ErrClosed
+	}
 	if err := p.init(); err != nil {
 		return nil, err
 	}
 	p.m.Lock()
 	defer p.m.Unlock()
+	if p.closed.Load() {
+		return nil, fs.ErrClosed
+	}
 
 	return p.getByOffset(offset)
 }
@@ -90,6 +128,9 @@ func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
 // GetSizeByOffset retrieves the size of the encoded object from the
 // packfile with the given offset.
 func (p *Packfile) GetSizeByOffset(offset int64) (size int64, err error) {
+	if p.closed.Load() {
+		return 0, fs.ErrClosed
+	}
 	if err := p.init(); err != nil {
 		return 0, err
 	}
@@ -111,6 +152,9 @@ func (p *Packfile) GetAll() (storer.EncodedObjectIter, error) {
 
 // GetByType returns all the objects of the given type.
 func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+	if p.closed.Load() {
+		return nil, fs.ErrClosed
+	}
 	if err := p.init(); err != nil {
 		return nil, err
 	}
@@ -142,6 +186,9 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 // to avoid exposing the package internals and to improve its thread-safety.
 // TODO: Remove Scanner method
 func (p *Packfile) Scanner() (*Scanner, error) {
+	if p.closed.Load() {
+		return nil, fs.ErrClosed
+	}
 	if err := p.init(); err != nil {
 		return nil, err
 	}
@@ -198,7 +245,7 @@ func (p *Packfile) getByOffset(offset int64) (plumbing.EncodedObject, error) {
 
 func (p *Packfile) init() error {
 	p.once.Do(func() {
-		if p.file == nil {
+		if p.h == nil && p.file == nil {
 			p.onceErr = fmt.Errorf("file is not set")
 			return
 		}
@@ -216,23 +263,44 @@ func (p *Packfile) init() error {
 			opts = append(opts, WithSHA256())
 		}
 
-		p.scanner = NewScanner(p.file, opts...)
+		var scanSrc io.Reader
+		if p.h != nil {
+			r, err := p.h.OpenPackReader()
+			if err != nil {
+				p.onceErr = fmt.Errorf("packfile: open pack reader: %w", err)
+				return
+			}
+			p.scanReader = r
+			scanSrc = r
+		} else {
+			scanSrc = p.file
+		}
+
+		p.scanner = NewScanner(scanSrc, opts...)
 		// Validate packfile signature.
 		if !p.scanner.Scan() {
 			p.onceErr = p.scanner.Error()
 			return
 		}
 
-		_, err := p.scanner.Seek(-int64(p.objectIDSize), io.SeekEnd)
-		if err != nil {
-			p.onceErr = err
-			return
-		}
-
-		p.id.ResetBySize(p.objectIDSize)
-		_, err = p.id.ReadFrom(p.scanner)
-		if err != nil {
-			p.onceErr = err
+		if p.h != nil {
+			meta, err := p.h.Meta()
+			if err != nil {
+				p.onceErr = fmt.Errorf("packfile: read pack meta: %w", err)
+				return
+			}
+			p.id = meta.ID
+		} else {
+			_, err := p.scanner.Seek(-int64(p.objectIDSize), io.SeekEnd)
+			if err != nil {
+				p.onceErr = err
+				return
+			}
+			p.id.ResetBySize(p.objectIDSize)
+			_, err = p.id.ReadFrom(p.scanner)
+			if err != nil {
+				p.onceErr = err
+			}
 		}
 
 		if p.cache == nil {
@@ -260,12 +328,30 @@ func (p *Packfile) headerFromOffset(offset int64) (*ObjectHeader, error) {
 	return &oh, nil
 }
 
-// Close the packfile and its resources.
+// Close the packfile and its resources. Subsequent calls to [Packfile.Get],
+// [Packfile.GetByOffset], and the other entry points return [fs.ErrClosed].
+// Close is idempotent.
 func (p *Packfile) Close() error {
+	if !p.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 	p.m.Lock()
 	defer p.m.Unlock()
 
 	gogitsync.PutBufioReader(p.rbuf)
+
+	if p.h != nil {
+		var scanErr error
+		if p.scanReader != nil {
+			scanErr = p.scanReader.Close()
+			p.scanReader = nil
+		}
+		hErr := p.h.Close()
+		if hErr != nil {
+			return hErr
+		}
+		return scanErr
+	}
 
 	closer, ok := p.file.(io.Closer)
 	if !ok {
@@ -283,20 +369,35 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 	// If we have filesystem, and the object is not a delta type, return a FSObject.
 	// This avoids having to inflate the object more than once.
 	if !oh.Type.IsDelta() && p.fs != nil {
-		fs := NewFSObject(
-			oh.ID(),
-			oh.Type,
-			oh.ContentOffset,
-			oh.Size,
-			p.Index,
-			p.fs,
-			p.file,
-			p.file.Name(),
-			p.cache,
-		)
+		var fsObj *FSObject
+		if p.h != nil {
+			h := p.h
+			fsObj = &FSObject{
+				hash:          oh.ID(),
+				offset:        oh.ContentOffset,
+				size:          oh.Size,
+				typ:           oh.Type,
+				index:         p.Index,
+				fs:            p.fs,
+				cache:         p.cache,
+				acquireRandom: func() (packhandle.RandomReader, error) { return h.OpenRandomReader() },
+			}
+		} else {
+			fsObj = NewFSObject(
+				oh.ID(),
+				oh.Type,
+				oh.ContentOffset,
+				oh.Size,
+				p.Index,
+				p.fs,
+				p.file,
+				p.file.Name(),
+				p.cache,
+			)
+		}
 
-		p.cache.Put(fs)
-		return fs, nil
+		p.cache.Put(fsObj)
+		return fsObj, nil
 	}
 
 	return p.getMemoryObject(oh)

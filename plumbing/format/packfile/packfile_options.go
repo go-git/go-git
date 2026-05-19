@@ -3,6 +3,7 @@ package packfile
 import (
 	billy "github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )
@@ -40,5 +41,17 @@ func WithFs(fs billy.Filesystem) PackfileOption {
 func WithObjectIDSize(sz int) PackfileOption {
 	return func(p *Packfile) {
 		p.objectIDSize = sz
+	}
+}
+
+// WithPackHash sets the .pack file's SHA-1 (or SHA-256) checksum.
+// When combined with WithFs, the Packfile routes all .pack file
+// access through a refcounted, grace-period-closing FD owner that
+// reopens the file lazily via the filesystem. Callers that do not
+// set both options fall back to direct access on the file passed
+// to NewPackfile.
+func WithPackHash(h plumbing.Hash) PackfileOption {
+	return func(p *Packfile) {
+		p.packHash = h
 	}
 }
