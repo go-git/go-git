@@ -32,14 +32,17 @@ type ObjectStorage struct {
 	// loaded loose objects.
 	objectCache cache.Object
 
-	dir   *dotgit.DotGit
+	dir *dotgit.DotGit
+
+	// index maps pack file hashes to their decoded indices.
 	index map[plumbing.Hash]idxfile.Index
+	muI   sync.RWMutex // Protects index map
 
 	packList    []plumbing.Hash
 	packListIdx int
-	packfiles   map[plumbing.Hash]*packfile.Packfile
-	muI         sync.RWMutex
-	muP         sync.RWMutex
+	// packfiles caches open packfile handles when KeepDescriptors is enabled.
+	packfiles map[plumbing.Hash]*packfile.Packfile
+	muP       sync.RWMutex // Protects packfiles map and packList
 
 	oh *plumbing.ObjectHasher
 
@@ -207,7 +210,9 @@ func (s *ObjectStorage) requireIndex() error {
 
 // Reindex indexes again all packfiles. Useful if git changed packfiles externally
 func (s *ObjectStorage) Reindex() {
+	s.muI.Lock()
 	s.index = nil
+	s.muI.Unlock()
 }
 
 func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
@@ -306,7 +311,9 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 	w.Notify = func(h plumbing.Hash, writer *idxfile.Writer) {
 		index, err := writer.Index()
 		if err == nil {
+			s.muI.Lock()
 			s.index[h] = index
+			s.muI.Unlock()
 		}
 	}
 
@@ -542,7 +549,11 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	var obj plumbing.EncodedObject
 	var err error
 
-	if s.index != nil {
+	s.muI.RLock()
+	hasIndex := s.index != nil
+	s.muI.RUnlock()
+
+	if hasIndex {
 		obj, err = s.getFromPackfile(h, false)
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			obj, err = s.getFromUnpacked(h)
@@ -753,7 +764,16 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
-	for _, index := range s.index {
+
+	// Copy index values into slice while holding lock to avoid races during iteration
+	s.muI.RLock()
+	indices := make([]idxfile.Index, 0, len(s.index))
+	for _, v := range s.index {
+		indices = append(indices, v)
+	}
+	s.muI.RUnlock()
+
+	for _, index := range indices {
 		ei, err := index.Entries()
 		if err != nil {
 			return nil, err
@@ -842,8 +862,11 @@ func (s *ObjectStorage) buildPackfileIters(
 			if err != nil {
 				return nil, err
 			}
+			s.muI.RLock()
+			idx := s.index[h]
+			s.muI.RUnlock()
 			return newPackfileIter(
-				s.dir.Fs(), pack, t, seen, s.index[h],
+				s.dir.Fs(), pack, t, seen, idx,
 				s.objectCache, s.options.KeepDescriptors, h.Size(),
 			)
 		},
