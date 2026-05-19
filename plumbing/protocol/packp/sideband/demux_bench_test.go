@@ -8,6 +8,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
+const benchmarkReadSize = 16
+
 func BenchmarkDemuxer(b *testing.B) {
 	cases := []struct {
 		name        string
@@ -26,7 +28,7 @@ func BenchmarkDemuxer(b *testing.B) {
 		input, want := benchmarkDemuxerInput(b, tc.payloadSize, tc.packets)
 
 		b.Run(tc.name, func(b *testing.B) {
-			buf := make([]byte, 16)
+			buf := make([]byte, benchmarkReadSize)
 			b.ReportAllocs()
 			b.SetBytes(want)
 
