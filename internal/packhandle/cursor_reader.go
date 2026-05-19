@@ -7,22 +7,6 @@ import (
 	"sync/atomic"
 )
 
-// PackReader supports streaming access (Read+Seek+Close).
-// Declared here temporarily; the next change extracts it to pack_reader.go.
-type PackReader interface {
-	io.Reader
-	io.Seeker
-	io.Closer
-}
-
-// RandomReader supports random access (ReadAt+Close). Deliberately
-// excludes io.Reader — callers wanting streaming use PackReader.
-// Declared here temporarily; the next change extracts it to pack_reader.go.
-type RandomReader interface {
-	io.ReaderAt
-	io.Closer
-}
-
 // cursorReader is the concrete reader returned by both
 // [PackHandle.OpenPackReader] and [PackHandle.OpenRandomReader].
 // Each cursor holds its own offset and one [sharedFile] reference
