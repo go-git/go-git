@@ -1,6 +1,7 @@
 package packhandle
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"sync"
@@ -135,16 +136,7 @@ func (h *PackHandle) doClose() error {
 		idxErr = idx.Close()
 	}
 
-	if packErr == nil && idxErr == nil {
-		return nil
-	}
-	if packErr == nil {
-		return idxErr
-	}
-	if idxErr == nil {
-		return packErr
-	}
-	return fmt.Errorf("packhandle: close: pack=%v idx=%v", packErr, idxErr)
+	return errors.Join(packErr, idxErr)
 }
 
 // Meta reads and verifies the .pack header and footer hash. The
