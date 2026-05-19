@@ -18,8 +18,8 @@ func BenchmarkDemuxer(b *testing.B) {
 		{name: "small_1000", payloadSize: 64, packets: 1000},
 		{name: "medium_100", payloadSize: 4096, packets: 100},
 		{name: "medium_1000", payloadSize: 4096, packets: 1000},
-		{name: "large_100", payloadSize: MaxPackedSize64k - 1, packets: 100},
-		{name: "large_1000", payloadSize: MaxPackedSize64k - 1, packets: 1000},
+		{name: "large_100", payloadSize: pktline.MaxPayloadSize - 1, packets: 100},
+		{name: "large_1000", payloadSize: pktline.MaxPayloadSize - 1, packets: 1000},
 	}
 
 	for _, tc := range cases {
