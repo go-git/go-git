@@ -260,6 +260,7 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 
 func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	path := path.Join(n.path, file.Name())
+	isDir := file.IsDir()
 
 	node := &node{
 		fs:          n.fs,
@@ -270,7 +271,7 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		options:     n.options,
 
 		path:    path,
-		isDir:   file.IsDir(),
+		isDir:   isDir,
 		size:    file.Size(),
 		mode:    file.Mode(),
 		modTime: file.ModTime(),
@@ -278,9 +279,26 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 
 	if _, isSubmodule := n.submodules[path]; isSubmodule {
 		node.isDir = false
+	} else if isDir {
+		isBoundary, err := n.isNestedGitRepository(path)
+		if err != nil {
+			return nil, err
+		}
+		node.isDir = !isBoundary
 	}
 
 	return node, nil
+}
+
+func (n *node) isNestedGitRepository(dir string) (bool, error) {
+	_, err := n.fs.Stat(path.Join(dir, ".git"))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (n *node) calculateHash() {
