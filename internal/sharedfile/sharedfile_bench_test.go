@@ -3,6 +3,9 @@ package sharedfile
 import (
 	"bytes"
 	"testing"
+	"time"
+
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
 // BenchmarkSharedFileAcquireRelease measures the cost of one
@@ -56,5 +59,32 @@ func BenchmarkSharedFileAcquireReleaseLastDrop(b *testing.B) {
 			b.Fatal(err)
 		}
 		sf.Release() // refs drops to 0 every iteration
+	}
+}
+
+// BenchmarkSharedFileAcquireReleaseWithPool measures the
+// Touch-on-Acquire overhead introduced by the pool wiring. The
+// pool capacity exceeds the working set (one member), so every
+// Touch is an LRU hit. Compared to BenchmarkSharedFileAcquire
+// Release this isolates the cost of the pool notification.
+func BenchmarkSharedFileAcquireReleaseWithPool(b *testing.B) {
+	opener := func() (ReadAtCloser, error) {
+		return &memCloser{Reader: bytes.NewReader([]byte("hello"))}, nil
+	}
+	pool := fdpool.New(64)
+	sf := NewWithPool(opener, time.Hour, pool)
+	b.Cleanup(func() { _ = sf.Close() })
+
+	if _, err := sf.Acquire(); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { sf.Release() })
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := sf.Acquire(); err != nil {
+			b.Fatal(err)
+		}
+		sf.Release()
 	}
 }
