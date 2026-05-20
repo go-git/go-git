@@ -315,9 +315,12 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 
 	w.Notify = func(h plumbing.Hash, writer *idxfile.Writer) {
 		index, err := writer.Index()
-		if err == nil {
-			s.index[h] = index
+		if err != nil {
+			return
 		}
+		s.muI.Lock()
+		s.index[h] = index
+		s.muI.Unlock()
 	}
 
 	return w, nil
