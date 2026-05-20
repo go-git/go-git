@@ -7,11 +7,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -832,4 +836,149 @@ func (s *FsSuite) TestObjectStorageAlternatesInitError() {
 	_, err = storage.EncodedObject(plumbing.AnyObject, commitHash)
 	s.Error(err)
 	s.NotErrorIs(err, plumbing.ErrObjectNotFound)
+}
+
+// TestObjectStorageCloseIdleDescriptors groups the cases for the
+// ObjectStorage-layer soft-close.
+func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DropsPackFDsButPreservesReadability", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		// Get one hash to read.
+		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		require.NoError(t, err)
+		obj1, err := iter.Next()
+		require.NoError(t, err)
+		iter.Close()
+
+		// Read once to warm caches.
+		_, err = s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		require.NoError(t, err)
+
+		require.NoError(t, s.CloseIdleDescriptors())
+
+		// Second read still works.
+		obj2, err := s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		require.NoError(t, err)
+		assert.Equal(t, obj1.Hash(), obj2.Hash())
+	})
+
+	t.Run("PreservesIndexMap", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		// Force population of s.index.
+		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		require.NoError(t, err)
+		obj1, err := iter.Next()
+		require.NoError(t, err)
+		iter.Close()
+
+		_, err = s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		require.NoError(t, err)
+
+		s.muI.RLock()
+		idxBefore := make(map[plumbing.Hash]struct{}, len(s.index))
+		for h := range s.index {
+			idxBefore[h] = struct{}{}
+		}
+		s.muI.RUnlock()
+
+		require.NoError(t, s.CloseIdleDescriptors())
+
+		s.muI.RLock()
+		assert.Equal(t, len(idxBefore), len(s.index))
+		for h := range idxBefore {
+			_, ok := s.index[h]
+			assert.True(t, ok, "index entry %s should survive", h)
+		}
+		s.muI.RUnlock()
+	})
+
+	t.Run("TwiceInARow", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		require.NoError(t, s.CloseIdleDescriptors())
+		require.NoError(t, s.CloseIdleDescriptors())
+	})
+
+	t.Run("AfterClose_NoOp", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		require.NoError(t, s.Close())
+		require.NoError(t, s.CloseIdleDescriptors())
+		require.NoError(t, s.CloseIdleDescriptors())
+	})
+
+	t.Run("ConcurrentWithReads", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		// Collect a working set of hashes.
+		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		require.NoError(t, err)
+		var hashes []plumbing.Hash
+		for range 16 {
+			obj, err := iter.Next()
+			if err != nil {
+				break
+			}
+			hashes = append(hashes, obj.Hash())
+		}
+		iter.Close()
+		require.NotEmpty(t, hashes)
+
+		var wg sync.WaitGroup
+		var failures atomic.Int32
+
+		for range 8 {
+			wg.Go(func() {
+				for _, h := range hashes {
+					obj, err := s.EncodedObject(plumbing.AnyObject, h)
+					if err != nil || obj == nil {
+						failures.Add(1)
+						// Continue rather than return so a single
+						// transient failure does not mask later
+						// reads from this goroutine.
+						continue
+					}
+				}
+			})
+		}
+		for range 4 {
+			wg.Go(func() {
+				for range 16 {
+					if err := s.CloseIdleDescriptors(); err != nil {
+						failures.Add(1)
+					}
+				}
+			})
+		}
+		wg.Wait()
+		assert.Equal(t, int32(0), failures.Load(),
+			"no read or release should fail under concurrent load")
+	})
 }
