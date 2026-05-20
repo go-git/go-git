@@ -353,6 +353,22 @@ func TestSupportsExtension(t *testing.T) {
 	}
 }
 
+// TestStorage_ImplementsIdleReleaser pins the public relationship
+// between *Storage and the storer.IdleReleaser interface. The
+// compile-time assertion in storage.go enforces this at build
+// time; the test re-asserts it in test form for visibility, and
+// exercises the no-op path against an empty in-memory FS.
+func TestStorage_ImplementsIdleReleaser(t *testing.T) {
+	t.Parallel()
+	var _ storer.IdleReleaser = (*filesystem.Storage)(nil)
+
+	s := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	assert.NoError(t, s.CloseIdleDescriptors())
+	assert.NoError(t, s.CloseIdleDescriptors())
+}
+
 func getExplicitSHA1(t testing.TB) billy.Filesystem {
 	fs := osfs.New(t.TempDir())
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())

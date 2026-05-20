@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -30,6 +31,17 @@ type Storage struct {
 	ModuleStorage
 	ReflogStorage
 }
+
+// Compile-time assertions pin both *Storage and *dotgit.DotGit to
+// [storer.IdleReleaser]. *Storage promotes CloseIdleDescriptors
+// from the embedded [ObjectStorage] via Go's method-set promotion
+// rules; *dotgit.DotGit defines the method directly. A future
+// rename or signature change on either side breaks the build
+// immediately.
+var (
+	_ storer.IdleReleaser = (*Storage)(nil)
+	_ storer.IdleReleaser = (*dotgit.DotGit)(nil)
+)
 
 // Options holds configuration for the storage.
 type Options struct {
