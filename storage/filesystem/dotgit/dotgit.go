@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -126,6 +127,11 @@ type DotGit struct {
 	packList   []plumbing.Hash
 	packMap    map[plumbing.Hash]struct{}
 
+	// packHandles caches one [*packhandle.PackHandle] per pack hash,
+	// guarded by packHandlesMu. Lazy-initialised on first use.
+	packHandlesMu sync.Mutex
+	packHandles   map[plumbing.Hash]*packhandle.PackHandle
+
 	files map[plumbing.Hash]billy.File
 }
 
@@ -191,11 +197,30 @@ func (d *DotGit) Close() error {
 		d.files = nil
 	}
 
-	if firstError != nil {
-		return firstError
+	d.packHandlesMu.Lock()
+	handles := d.packHandles
+	d.packHandles = nil
+	d.packHandlesMu.Unlock()
+
+	var phErrs []error
+	for _, h := range handles {
+		if err := h.Close(); err != nil {
+			phErrs = append(phErrs, err)
+		}
 	}
 
-	return nil
+	d.packMap = nil
+
+	if firstError == nil && len(phErrs) == 0 {
+		return nil
+	}
+	if firstError == nil {
+		return errors.Join(phErrs...)
+	}
+	if len(phErrs) == 0 {
+		return firstError
+	}
+	return errors.Join(append([]error{firstError}, phErrs...)...)
 }
 
 // ConfigWriter returns a file pointer for write to the config file
@@ -462,13 +487,86 @@ func newBytesReadAtCloser(data []byte) *bytesReadAtCloser {
 
 func (b *bytesReadAtCloser) Close() error { return nil }
 
+// packHandle returns the cached [packhandle.PackHandle] for the
+// given pack hash, constructing one on first access. Rev is
+// served through [DotGit.OpenPackRev] so the in-memory fallback
+// applies when the .rev file is absent or [Options.ReadReverseIndex]
+// is false. Returns [ErrPackfileNotFound] when the .pack file
+// cannot be located.
+func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) {
+	d.packHandlesMu.Lock()
+	defer d.packHandlesMu.Unlock()
+
+	if h, ok := d.packHandles[hash]; ok {
+		return h, nil
+	}
+
+	if err := d.hasPack(hash); err != nil {
+		return nil, err
+	}
+
+	packPath := d.objectPackPath(hash, "pack")
+	idxPath := d.objectPackPath(hash, "idx")
+
+	sources := packhandle.Sources{
+		Pack: packhandle.Source{
+			Open: func() (packhandle.ReadAtCloser, error) {
+				return d.ObjectPack(hash)
+			},
+			Size: func() (int64, error) {
+				fi, err := d.fs.Stat(packPath)
+				if err != nil {
+					return 0, err
+				}
+				return fi.Size(), nil
+			},
+		},
+		Idx: packhandle.Source{
+			Open: func() (packhandle.ReadAtCloser, error) {
+				return d.ObjectPackIdx(hash)
+			},
+			Size: func() (int64, error) {
+				fi, err := d.fs.Stat(idxPath)
+				if err != nil {
+					return 0, err
+				}
+				return fi.Size(), nil
+			},
+		},
+		Rev: packhandle.Source{
+			Open: func() (packhandle.ReadAtCloser, error) {
+				return d.OpenPackRev(hash)
+			},
+			// Rev may be served from an in-memory buffer with no
+			// stat-able size. [idxfile.LazyIndex] does not consult
+			// Rev.Size, so a zero stub is correct here.
+			Size: func() (int64, error) { return 0, nil },
+		},
+	}
+
+	ph, err := packhandle.New(sources, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	if d.packHandles == nil {
+		d.packHandles = make(map[plumbing.Hash]*packhandle.PackHandle)
+	}
+	d.packHandles[hash] = ph
+	return ph, nil
+}
+
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
+// The .pack, .idx and .rev files are each attempted independently; any
+// failures are joined into the returned error so a partial failure cannot
+// leave orphaned siblings on disk. A missing .rev is not an error — the
+// reverse index is optional and may have been generated only in memory.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	d.cleanPackList()
 
-	path := d.objectPackPath(hash, `pack`)
+	packPath := d.objectPackPath(hash, `pack`)
 	if !t.IsZero() {
-		fi, err := d.fs.Stat(path)
+		fi, err := d.fs.Stat(packPath)
 		if err != nil {
 			return err
 		}
@@ -477,11 +575,27 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 			return nil
 		}
 	}
-	err := d.fs.Remove(path)
-	if err != nil {
-		return err
+
+	var errs []error
+	for _, ext := range []string{`pack`, `idx`, `rev`} {
+		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
+			if ext == `rev` && os.IsNotExist(err) {
+				continue
+			}
+			errs = append(errs, err)
+		}
 	}
-	return d.fs.Remove(d.objectPackPath(hash, `idx`))
+
+	d.packHandlesMu.Lock()
+	ph, ok := d.packHandles[hash]
+	if ok {
+		delete(d.packHandles, hash)
+	}
+	d.packHandlesMu.Unlock()
+	if ok {
+		_ = ph.Close()
+	}
+	return errors.Join(errs...)
 }
 
 // NewObject return a writer for a new object file.
@@ -663,6 +777,17 @@ func (d *DotGit) hasObject(h plumbing.Hash) error {
 func (d *DotGit) cleanPackList() {
 	d.packMap = nil
 	d.packList = nil
+
+	// A pack-set mutation may have invalidated any cached handle's
+	// underlying files, so drop them all. Idle readers finish
+	// normally; their cursor Close becomes a no-op release.
+	d.packHandlesMu.Lock()
+	handles := d.packHandles
+	d.packHandles = nil
+	d.packHandlesMu.Unlock()
+	for _, h := range handles {
+		_ = h.Close()
+	}
 }
 
 func (d *DotGit) genPackList() error {
