@@ -2,7 +2,9 @@ package dotgit
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -24,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
@@ -1421,4 +1425,122 @@ func TestDotGit_HasIncomingObjects_NoRace(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// fakePackHandleSource returns a Source whose Open and Size always
+// fail. walkPackHandles never calls these (it only invokes fn on
+// each cached *PackHandle), so the fakes satisfy New without
+// requiring on-disk pack files.
+func fakePackHandleSource() packhandle.Source {
+	return packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) {
+			return nil, errors.New("fake source: not used")
+		},
+		Size: func() (int64, error) {
+			return 0, errors.New("fake source: not used")
+		},
+	}
+}
+
+// newFakePackHandle returns a new *packhandle.PackHandle whose
+// sources all fail when opened. Suitable for tests that only
+// exercise catalog-walk behaviour.
+func newFakePackHandle(t *testing.T, i int) *packhandle.PackHandle {
+	t.Helper()
+	var h plumbing.Hash
+	h.ResetBySize(20) // SHA-1 size
+	_, _ = h.Write(bytes.Repeat([]byte{byte(i + 1)}, 20))
+	src := fakePackHandleSource()
+	ph, err := packhandle.New(packhandle.Sources{Pack: src, Idx: src, Rev: src}, h)
+	require.NoError(t, err)
+	return ph
+}
+
+// seedPackHandles installs n fake PackHandles into d.packHandles
+// under the catalog lock, returning the hashes used as keys.
+func seedPackHandles(t *testing.T, d *DotGit, n int) []plumbing.Hash {
+	t.Helper()
+	d.packHandlesMu.Lock()
+	defer d.packHandlesMu.Unlock()
+	if d.packHandles == nil {
+		d.packHandles = make(map[plumbing.Hash]*packhandle.PackHandle)
+	}
+	hashes := make([]plumbing.Hash, n)
+	for i := range n {
+		var h plumbing.Hash
+		h.ResetBySize(20) // SHA-1 size
+		_, _ = h.Write(bytes.Repeat([]byte{byte(i + 1)}, 20))
+		hashes[i] = h
+		d.packHandles[h] = newFakePackHandle(t, i)
+	}
+	return hashes
+}
+
+// TestWalkPackHandles_SnapshotsCatalog verifies that walkPackHandles
+// iterates a snapshot taken under the lock, so a concurrent mutation
+// of the catalog (e.g. eviction) does not panic or skip entries the
+// snapshot already captured.
+func TestWalkPackHandles_SnapshotsCatalog(t *testing.T) {
+	t.Parallel()
+	fs, err := fixtures.Basic().One().DotGit()
+	require.NoError(t, err)
+	d := New(fs)
+	t.Cleanup(func() { _ = d.Close() })
+
+	const seedN = 3
+	hashes := seedPackHandles(t, d, seedN)
+
+	d.packHandlesMu.Lock()
+	expectedCount := len(d.packHandles)
+	d.packHandlesMu.Unlock()
+	require.GreaterOrEqual(t, expectedCount, seedN,
+		"catalog must hold at least the seeded entries")
+
+	var seen atomic.Int32
+	var evictDone atomic.Bool
+	victim := hashes[0]
+	err = d.walkPackHandles(func(_ *packhandle.PackHandle) error {
+		seen.Add(1)
+		if evictDone.CompareAndSwap(false, true) {
+			d.packHandlesMu.Lock()
+			delete(d.packHandles, victim)
+			d.packHandlesMu.Unlock()
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(expectedCount), seen.Load(),
+		"walk should visit every snapshot entry, even after mid-walk catalog mutation")
+}
+
+// TestWalkPackHandles_JoinsErrors verifies that fn errors are
+// joined and returned, but do not stop the walk.
+func TestWalkPackHandles_JoinsErrors(t *testing.T) {
+	t.Parallel()
+	fs, err := fixtures.Basic().One().DotGit()
+	require.NoError(t, err)
+	d := New(fs)
+	t.Cleanup(func() { _ = d.Close() })
+
+	const seedN = 3
+	_ = seedPackHandles(t, d, seedN)
+
+	d.packHandlesMu.Lock()
+	totalEntries := len(d.packHandles)
+	d.packHandlesMu.Unlock()
+	require.GreaterOrEqual(t, totalEntries, seedN)
+
+	sentinel := errors.New("walk-fn-error")
+	var visits atomic.Int32
+	err = d.walkPackHandles(func(_ *packhandle.PackHandle) error {
+		visits.Add(1)
+		return sentinel
+	})
+	require.Error(t, err)
+	// Every visited entry returns sentinel; errors.Is unwraps the
+	// joined chain and finds it.
+	assert.ErrorIs(t, err, sentinel)
+	// Crucially: the walk did not stop on the first error.
+	assert.Equal(t, int32(totalEntries), visits.Load(),
+		"walk should not stop on first error")
 }

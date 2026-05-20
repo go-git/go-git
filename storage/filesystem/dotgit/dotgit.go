@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -515,6 +517,34 @@ func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) 
 	}
 	d.packHandles[hash] = ph
 	return ph, nil
+}
+
+// walkPackHandles snapshots the [packhandle.PackHandle] catalog
+// under packHandlesMu and invokes fn on each entry with the lock
+// released. The snapshot shortens the critical section so
+// concurrent [DotGit.PackHandle] lookups do not block on slow
+// per-handle work such as file-close syscalls.
+//
+// The catalog is left intact; fn observes the same PackHandle
+// pointers that subsequent lookups return. Callers that want to
+// drain the catalog must do so separately — Close and
+// cleanPackList keep their inline snapshot-with-clear because
+// they need the drain to be atomic with the snapshot.
+//
+// Errors returned by fn are joined; the walk continues past a
+// failing entry so one bad pack does not strand FDs in others.
+func (d *DotGit) walkPackHandles(fn func(*packhandle.PackHandle) error) error {
+	d.packHandlesMu.Lock()
+	handles := slices.Collect(maps.Values(d.packHandles))
+	d.packHandlesMu.Unlock()
+
+	var errs []error
+	for _, h := range handles {
+		if err := fn(h); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
