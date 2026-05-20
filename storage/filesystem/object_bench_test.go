@@ -16,13 +16,15 @@ import (
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
-// BenchmarkAlternatesObjectLookup measures object lookup performance when using
-// alternates. This benchmark tests the improvement from caching alternate
-// ObjectStorage instances.
+// BenchmarkAlternatesObjectLookup measures object lookup performance
+// when using alternates. Setup mirrors what PlainClone(Shared:true)
+// produces in the public API: a work .git that points at a template
+// via objects/info/alternates. We can't call PlainClone here due to
+// an import cycle (repository.go imports storage/filesystem), so we
+// build the alternate manually and construct a Storage via
+// NewStorageWithOptions — the same path PlainClone takes. This is
+// what wires the FD pool through to the alternate's PackHandles.
 func BenchmarkAlternatesObjectLookup(b *testing.B) {
-	// Setup: Create a shared clone using alternates
-	// Note: We can't use PlainClone with Shared:true here due to import cycle
-	// (repository.go imports storage/filesystem), so we set up alternates manually.
 	baseDir := b.TempDir()
 
 	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(
@@ -46,9 +48,9 @@ func BenchmarkAlternatesObjectLookup(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
-	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
-	b.Cleanup(func() { storage.Close() })
+	storage := NewStorageWithOptions(workFs, cache.NewObjectLRUDefault(),
+		Options{AlternatesFS: rootFs})
+	b.Cleanup(func() { _ = storage.Close() })
 
 	commitHashes := []plumbing.Hash{
 		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
