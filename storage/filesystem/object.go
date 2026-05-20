@@ -350,7 +350,7 @@ func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, erro
 		return s.dir.OpenPackRev(h)
 	}
 
-	return idxfile.NewLazyIndex(openIdx, openRev, h)
+	return idxfile.NewLazyIndexWithPool(openIdx, openRev, h, s.options.Pool)
 }
 
 // loadMemoryIndexValue decodes a pack's idx into a MemoryIndex and

@@ -13,7 +13,13 @@ import (
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
+
+// defaultMaxOpenDescriptors is the FD pool capacity selected when
+// [Options.MaxOpenDescriptors] is zero. It accommodates roughly 85
+// concurrently-hot packs (3 FDs per pack: pack + idx + rev).
+const defaultMaxOpenDescriptors = 256
 
 // Storage is an implementation of git.Storer that stores data on disk in the
 // standard git format (this is, the .git directory). Zero values of this type
@@ -48,6 +54,19 @@ type Options struct {
 	// ExclusiveAccess means that the filesystem is not modified externally
 	// while the repo is open.
 	ExclusiveAccess bool
+	// MaxOpenDescriptors is the capacity of the storage-wide LRU FD
+	// pool. The pool bounds the number of open .pack/.idx/.rev file
+	// descriptors across the entire Storage. When a Storage exceeds
+	// this capacity, the least-recently-used [sharedFile]'s FD is
+	// closed (via [sharedFile.ReleaseNow]) and reopens on the next
+	// read.
+	//
+	// Zero (the default) selects [defaultMaxOpenDescriptors] (256),
+	// which accommodates roughly 85 concurrently-hot packs (3 FDs
+	// per pack: pack + idx + rev). Negative values disable pooling:
+	// pool-less sharedFiles fall back to their grace-period close
+	// on quiescence.
+	MaxOpenDescriptors int
 	// LargeObjectThreshold maximum object size (in bytes) that will be read in to memory.
 	// If left unset or set to 0 there is no limit
 	LargeObjectThreshold int64
@@ -74,6 +93,15 @@ type Options struct {
 	// IndexCache provides an optional cache implementation for index data.
 	// If left as nil, a default stat-based implementation is created automatically.
 	IndexCache IndexCache
+
+	// Pool, when non-nil, replaces the per-Storage FD pool that
+	// NewStorageWithOptions would otherwise construct. Multiple
+	// Storages sharing a pool share a single bounded FD budget
+	// across the process — useful for GitOps controllers and
+	// other applications that spawn many short-lived Storages
+	// concurrently. When non-nil, MaxOpenDescriptors is ignored
+	// (the shared pool's existing capacity governs).
+	Pool *fdpool.Pool
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -106,12 +134,27 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
 
+	// Construct the FD pool unless the caller injected one. Zero
+	// MaxOpenDescriptors selects the default capacity; negative
+	// capacity yields a no-op pool whose Touch and Forget are
+	// no-ops, so pool-less sharedFiles fall back to their grace
+	// timer on quiescence.
+	pool := ops.Pool
+	if pool == nil {
+		poolCap := ops.MaxOpenDescriptors
+		if poolCap == 0 {
+			poolCap = defaultMaxOpenDescriptors
+		}
+		pool = fdpool.New(poolCap)
+	}
+
 	dirOps := dotgit.Options{
 		ExclusiveAccess:   ops.ExclusiveAccess,
 		AlternatesFS:      ops.AlternatesFS,
 		ObjectFormat:      ops.ObjectFormat,
 		ReadReverseIndex:  readRevIdx,
 		WriteReverseIndex: writeRevIdx,
+		Pool:              pool,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
