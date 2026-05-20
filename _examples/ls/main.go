@@ -37,7 +37,7 @@ func main() {
 		CheckIfError(err)
 	}
 
-	s := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{KeepDescriptors: true})
+	s := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	r, err := git.Open(s, fs)
 	CheckIfError(err)
 	defer s.Close()

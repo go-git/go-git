@@ -153,79 +153,6 @@ func (s *FsSuite) TestMismatchIdxFile() {
 	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
 }
 
-func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
-	for _, f := range fixtures.Basic().ByTag(".git").ByObjectFormat("sha1") {
-		fs, err := f.DotGit()
-		s.Require().NoError(err)
-		dg := dotgit.NewWithOptions(fs, dotgit.Options{KeepDescriptors: true})
-		o := NewObjectStorageWithOptions(dg, cache.NewObjectLRUDefault(), Options{KeepDescriptors: true})
-
-		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
-		s.Require().NoError(err)
-		s.Equal(expected, obj.Hash())
-
-		packfiles, err := dg.ObjectPacks()
-		s.Require().NoError(err)
-
-		pack1, err := dg.ObjectPack(packfiles[0])
-		s.Require().NoError(err)
-
-		pack1.Seek(42, io.SeekStart)
-
-		err = o.Close()
-		s.Require().NoError(err)
-
-		pack2, err := dg.ObjectPack(packfiles[0])
-		s.Require().NoError(err)
-
-		offset, err := pack2.Seek(0, io.SeekCurrent)
-		s.Require().NoError(err)
-		s.Equal(int64(0), offset)
-	}
-}
-
-func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptors() {
-	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
-	s.Require().NoError(err)
-	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{MaxOpenDescriptors: 1})
-
-	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
-	obj, err := o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
-	obj, err = o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	err = o.Close()
-	s.Require().NoError(err)
-}
-
-func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold() {
-	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
-	s.Require().NoError(err)
-	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{
-		MaxOpenDescriptors:   1,
-		LargeObjectThreshold: 1,
-	})
-
-	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
-	obj, err := o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
-	obj, err = o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	err = o.Close()
-	s.Require().NoError(err)
-}
-
 func (s *FsSuite) TestGetSizeOfObjectFile() {
 	fs, err := fixtures.ByTag(".git").ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)
@@ -455,49 +382,6 @@ func (s *FsSuite) TestPackfileReindex() {
 		// Now check that the test object can be retrieved
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
 		s.Require().NoError(err)
-	}
-}
-
-func (s *FsSuite) TestPackfileIterKeepDescriptors() {
-	for _, f := range fixtures.ByTag(".git") {
-		fs, err := f.DotGit()
-		s.Require().NoError(err)
-		ops := dotgit.Options{KeepDescriptors: true}
-		dg := dotgit.NewWithOptions(fs, ops)
-		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
-
-		for _, t := range objectTypes {
-			ph, err := dg.ObjectPacks()
-			s.Require().NoError(err)
-
-			for _, h := range ph {
-				f, err := dg.ObjectPack(h)
-				s.Require().NoError(err)
-
-				idxf, err := dg.ObjectPackIdx(h)
-				s.Require().NoError(err)
-
-				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, objectIDSize)
-				s.Require().NoError(err)
-
-				if err != nil {
-					continue
-				}
-
-				err = iter.ForEach(func(o plumbing.EncodedObject) error {
-					s.Equal(t, o.Type())
-					return nil
-				})
-				s.Require().NoError(err)
-
-				// test twice to check that packfiles are not closed
-				err = iter.ForEach(func(o plumbing.EncodedObject) error {
-					s.Equal(t, o.Type())
-					return nil
-				})
-				s.Require().NoError(err)
-			}
-		}
 	}
 }
 

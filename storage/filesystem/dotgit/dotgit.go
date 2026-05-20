@@ -91,9 +91,6 @@ type Options struct {
 	// ExclusiveAccess means that the filesystem is not modified externally
 	// while the repo is open.
 	ExclusiveAccess bool
-	// KeepDescriptors makes the file descriptors to be reused but they will
-	// need to be manually closed calling Close().
-	KeepDescriptors bool
 	// AlternatesFS provides the billy filesystem to be used for Git Alternates.
 	// If none is provided, it falls back to using the underlying instance used for
 	// DotGit.
@@ -131,8 +128,6 @@ type DotGit struct {
 	// guarded by packHandlesMu. Lazy-initialised on first use.
 	packHandlesMu sync.Mutex
 	packHandles   map[plumbing.Hash]*packhandle.PackHandle
-
-	files map[plumbing.Hash]billy.File
 }
 
 // New returns a DotGit value ready to be used. The path argument must
@@ -184,19 +179,6 @@ func (d *DotGit) Initialize() error {
 
 // Close closes all opened files.
 func (d *DotGit) Close() error {
-	var firstError error
-	if d.files != nil {
-		for _, f := range d.files {
-			err := f.Close()
-			if err != nil && firstError == nil {
-				firstError = err
-				continue
-			}
-		}
-
-		d.files = nil
-	}
-
 	d.packHandlesMu.Lock()
 	handles := d.packHandles
 	d.packHandles = nil
@@ -211,16 +193,10 @@ func (d *DotGit) Close() error {
 
 	d.packMap = nil
 
-	if firstError == nil && len(phErrs) == 0 {
+	if len(phErrs) == 0 {
 		return nil
 	}
-	if firstError == nil {
-		return errors.Join(phErrs...)
-	}
-	if len(phErrs) == 0 {
-		return firstError
-	}
-	return errors.Join(append([]error{firstError}, phErrs...)...)
+	return errors.Join(phErrs...)
 }
 
 // ConfigWriter returns a file pointer for write to the config file
@@ -366,17 +342,6 @@ func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
 }
 
 func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
-	if d.options.KeepDescriptors && extension == "pack" {
-		if d.files == nil {
-			d.files = make(map[plumbing.Hash]billy.File)
-		}
-
-		f, ok := d.files[hash]
-		if ok {
-			return f, nil
-		}
-	}
-
 	err := d.hasPack(hash)
 	if err != nil {
 		return nil, err
@@ -390,10 +355,6 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 		}
 
 		return nil, err
-	}
-
-	if d.options.KeepDescriptors && extension == "pack" {
-		d.files[hash] = pack
 	}
 
 	return pack, nil
