@@ -1513,6 +1513,66 @@ func TestWalkPackHandles_SnapshotsCatalog(t *testing.T) {
 		"walk should visit every snapshot entry, even after mid-walk catalog mutation")
 }
 
+// TestDotGitCloseIdleDescriptors groups the DotGit-layer cases for
+// the catalog walk that releases FDs without evicting the
+// PackHandle entries.
+func TestDotGitCloseIdleDescriptors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WalksCatalog", func(t *testing.T) {
+		t.Parallel()
+		fs, err := fixtures.Basic().One().DotGit()
+		require.NoError(t, err)
+		d := New(fs)
+		t.Cleanup(func() { _ = d.Close() })
+
+		packs, err := d.ObjectPacks()
+		require.NoError(t, err)
+		require.NotEmpty(t, packs)
+
+		// Populate catalog and capture each PackHandle pointer.
+		before := make(map[plumbing.Hash]*packhandle.PackHandle, len(packs))
+		for _, h := range packs {
+			ph, err := d.packHandle(h)
+			require.NoError(t, err)
+			before[h] = ph
+			// Touch the pack so an FD is actually opened.
+			pr, err := ph.OpenPackReader()
+			require.NoError(t, err)
+			require.NoError(t, pr.Close())
+		}
+
+		require.NoError(t, d.CloseIdleDescriptors())
+
+		// Catalog map is intact and PackHandle pointers are the same.
+		for _, h := range packs {
+			ph, err := d.packHandle(h)
+			require.NoError(t, err)
+			assert.Same(t, before[h], ph,
+				"PackHandle pointer should survive CloseIdleDescriptors")
+		}
+	})
+
+	t.Run("EmptyCatalog", func(t *testing.T) {
+		t.Parallel()
+		fs, err := fixtures.Basic().One().DotGit()
+		require.NoError(t, err)
+		d := New(fs)
+		t.Cleanup(func() { _ = d.Close() })
+		// No packHandle() calls; catalog stays nil.
+		require.NoError(t, d.CloseIdleDescriptors())
+	})
+
+	t.Run("AfterClose_NoOp", func(t *testing.T) {
+		t.Parallel()
+		fs, err := fixtures.Basic().One().DotGit()
+		require.NoError(t, err)
+		d := New(fs)
+		require.NoError(t, d.Close())
+		require.NoError(t, d.CloseIdleDescriptors())
+	})
+}
+
 // TestWalkPackHandles_JoinsErrors verifies that fn errors are
 // joined and returned, but do not stop the walk.
 func TestWalkPackHandles_JoinsErrors(t *testing.T) {

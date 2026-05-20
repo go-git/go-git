@@ -522,7 +522,7 @@ func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) 
 // walkPackHandles snapshots the [packhandle.PackHandle] catalog
 // under packHandlesMu and invokes fn on each entry with the lock
 // released. The snapshot shortens the critical section so
-// concurrent [DotGit.PackHandle] lookups do not block on slow
+// concurrent [DotGit.packHandle] lookups do not block on slow
 // per-handle work such as file-close syscalls.
 //
 // The catalog is left intact; fn observes the same PackHandle
@@ -545,6 +545,21 @@ func (d *DotGit) walkPackHandles(fn func(*packhandle.PackHandle) error) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// CloseIdleDescriptors releases the FDs held by every cached
+// [packhandle.PackHandle] without evicting them from the
+// catalog. The catalog and each PackHandle's cached state
+// (`PackMeta`, `LazyIndex`) survive the call; subsequent
+// operations reopen FDs on demand.
+//
+// Idempotent and safe to call concurrently with other DotGit
+// operations. After [DotGit.Close] the catalog is empty, so the
+// call is a no-op.
+func (d *DotGit) CloseIdleDescriptors() error {
+	return d.walkPackHandles(func(ph *packhandle.PackHandle) error {
+		return ph.CloseIdleDescriptors()
+	})
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
