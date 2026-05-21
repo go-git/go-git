@@ -31,12 +31,13 @@ type SharedFile struct {
 	open        func() (ReadAtCloser, error)
 	gracePeriod time.Duration
 
-	file     ReadAtCloser
-	refs     int
-	gen      uint64
-	timer    *time.Timer
-	closed   bool
-	isClosed atomic.Bool
+	file           ReadAtCloser
+	refs           int
+	gen            uint64
+	timer          *time.Timer
+	closed         bool
+	isClosed       atomic.Bool
+	immediateClose bool // set by ReleaseNow when refs>0; consumed by Release
 }
 
 // New returns a new SharedFile that opens files via open and
@@ -90,6 +91,17 @@ func (s *SharedFile) Release() {
 		return
 	}
 
+	// Soft-close via ReleaseNow latches immediateClose; fire that
+	// inline now instead of scheduling the grace timer. The flag
+	// clears on the close transition, restoring normal grace-timer
+	// behaviour for future Releases.
+	if s.immediateClose {
+		s.immediateClose = false
+		_ = s.file.Close()
+		s.file = nil
+		return
+	}
+
 	gen := s.gen
 	s.timer = time.AfterFunc(s.gracePeriod, func() {
 		s.mu.Lock()
@@ -135,4 +147,55 @@ func (s *SharedFile) Close() error {
 		s.file = nil
 	}
 	return err
+}
+
+// ReleaseNow closes the underlying file without marking the
+// [SharedFile] permanently closed. The next [SharedFile.Acquire]
+// reopens via the constructor's open function.
+//
+// The FD closes inline when refs==0, bypassing the grace timer.
+// When refs>0 the SharedFile latches an immediate-close flag:
+// in-flight readers complete normally, the FD closes the instant
+// the last [SharedFile.Release] drops refs to zero, and
+// subsequent Acquires reopen and resume normal grace-timer
+// behaviour.
+//
+// Idempotent and safe to call concurrently. A no-op on a
+// SharedFile already permanently closed (returns nil); the
+// terminal [SharedFile.Close] path has already disposed the FD.
+// ReleaseNow never sets s.closed.
+//
+// The returned error covers only the inline-close case (refs==0).
+// When the latch fires via a subsequent Release, any error from
+// the deferred Close is discarded — Release has no return value
+// and the original ReleaseNow caller is no longer on the stack.
+func (s *SharedFile) ReleaseNow() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil
+	}
+
+	// Cancel any pending grace-period close and invalidate any
+	// already-queued timer callback via the gen bump.
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	s.gen++
+
+	if s.refs == 0 {
+		if s.file == nil {
+			return nil
+		}
+		err := s.file.Close()
+		s.file = nil
+		return err
+	}
+
+	// refs > 0: latch immediate close for the next refs == 0
+	// transition. In-flight readers complete normally.
+	s.immediateClose = true
+	return nil
 }
