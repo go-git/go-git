@@ -369,31 +369,21 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 	// If we have filesystem, and the object is not a delta type, return a FSObject.
 	// This avoids having to inflate the object more than once.
 	if !oh.Type.IsDelta() && p.fs != nil {
-		var fsObj *FSObject
+		fsObj := &FSObject{
+			hash:   oh.ID(),
+			offset: oh.ContentOffset,
+			size:   oh.Size,
+			typ:    oh.Type,
+			index:  p.Index,
+			fs:     p.fs,
+			cache:  p.cache,
+		}
 		if p.h != nil {
 			h := p.h
-			fsObj = &FSObject{
-				hash:          oh.ID(),
-				offset:        oh.ContentOffset,
-				size:          oh.Size,
-				typ:           oh.Type,
-				index:         p.Index,
-				fs:            p.fs,
-				cache:         p.cache,
-				acquireRandom: func() (packhandle.RandomReader, error) { return h.OpenRandomReader() },
-			}
+			fsObj.acquireRandom = func() (packhandle.RandomReader, error) { return h.OpenRandomReader() }
 		} else {
-			fsObj = NewFSObject(
-				oh.ID(),
-				oh.Type,
-				oh.ContentOffset,
-				oh.Size,
-				p.Index,
-				p.fs,
-				p.file,
-				p.file.Name(),
-				p.cache,
-			)
+			fsObj.pack = p.file
+			fsObj.packPath = p.file.Name()
 		}
 
 		p.cache.Put(fsObj)
