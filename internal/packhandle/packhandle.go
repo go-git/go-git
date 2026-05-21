@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
 // defaultGracePeriod is the idle window after the last cursor
@@ -69,6 +70,28 @@ type PackHandle struct {
 // [PackHandle.Index] returns [ErrSourceUnconfigured] when either
 // is absent.
 func New(sources Sources, packHash plumbing.Hash) (*PackHandle, error) {
+	return NewWithPool(sources, packHash, nil)
+}
+
+// NewWithPool is like [New] but registers the .pack
+// [sharedfile.SharedFile] with the given [*fdpool.Pool]. The pool
+// governs LRU eviction of the pack FD across many PackHandles so
+// a storage-wide budget bounds the open .pack descriptors. Pass
+// nil for pool to disable pooling (equivalent to [New]).
+//
+// When pool is non-nil the [defaultGracePeriod] timer is inert:
+// the FD stays open and registered with the pool until the LRU
+// evicts it (or [PackHandle.Close] tears it down). When pool is
+// nil the grace timer governs FD lifetime as in [New].
+//
+// Neither this constructor nor the cursor entry points
+// ([PackHandle.OpenPackReader], [PackHandle.OpenRandomReader])
+// accept a [context.Context]. Pack reads are pure ReadAt I/O
+// without cancellation hooks, matching the context-free
+// convention of the storage, plumbing/format, and
+// plumbing/storer layers; callers requiring cancellation
+// enforce it at the call-site in the layer above.
+func NewWithPool(sources Sources, packHash plumbing.Hash, pool *fdpool.Pool) (*PackHandle, error) {
 	if sources.Pack.Open == nil || sources.Pack.Size == nil {
 		return nil, ErrPackSourceRequired
 	}
@@ -78,7 +101,7 @@ func New(sources Sources, packHash plumbing.Hash) (*PackHandle, error) {
 	h := &PackHandle{
 		sources:  sources,
 		packHash: packHash,
-		pack:     sharedfile.New(sources.Pack.Open, defaultGracePeriod),
+		pack:     sharedfile.NewWithPool(sources.Pack.Open, defaultGracePeriod, pool),
 	}
 	h.closeFn = sync.OnceValue(h.doClose)
 	return h, nil
