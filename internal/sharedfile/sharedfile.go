@@ -110,10 +110,11 @@ func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	pool := s.pool
 	s.mu.Unlock()
 
-	// Touch after releasing s.mu: pool.Touch acquires pool.mu,
-	// and the eviction path acquires Member.mu under pool.mu
-	// release. Keeping Member→Pool as the only lock-acquire
-	// direction avoids the deadlock noted in fdpool.New's docs.
+	// Touch after releasing s.mu: SharedFile never holds s.mu
+	// while calling into the pool (see Acquire and Close), so
+	// the inverse Pool→Member locking via Pinned() during
+	// eviction is deadlock-free. See fdpool/pool.go's eviction
+	// comment for the full invariant.
 	if pool != nil {
 		pool.Touch(s)
 	}
@@ -177,6 +178,26 @@ func (s *SharedFile) Release() {
 // after teardown without depending on the underlying
 // ReadAtCloser's post-Close error semantics.
 func (s *SharedFile) IsClosed() bool { return s.isClosed.Load() }
+
+// Pinned reports whether the SharedFile has active acquirers
+// (refs > 0). Implements [fdpool.Pinnable] so a Pool can prefer
+// unpinned victims when capacity is exceeded; pinned SharedFiles
+// are still evictable as a fallback when every Member is pinned.
+//
+// The reported state is observational — refs may transition the
+// instant Pinned returns. The pool's eviction policy treats the
+// answer as a hint.
+func (s *SharedFile) Pinned() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refs > 0
+}
+
+// Compile-time assertion that SharedFile satisfies
+// [fdpool.Pinnable]; statically anchors the interface binding
+// so a future signature drift on either side breaks the build
+// rather than degrading to non-Pinnable fallback at runtime.
+var _ fdpool.Pinnable = (*SharedFile)(nil)
 
 // Close stops any pending grace timer and closes the underlying
 // file synchronously. Subsequent Acquire calls return

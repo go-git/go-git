@@ -346,3 +346,115 @@ func TestPool_EvictionFailureCounted(t *testing.T) {
 	require.Equal(t, uint64(1), got.EvictionFailures,
 		"failing ReleaseNow should bump EvictionFailures")
 }
+
+// pinnableMember is a Member that also implements Pinnable so the
+// pool's two-pass eviction can be exercised independently of the
+// SharedFile wiring.
+type pinnableMember struct {
+	released atomic.Int32
+	pinned   atomic.Bool
+}
+
+func (m *pinnableMember) ReleaseNow() error {
+	m.released.Add(1)
+	return nil
+}
+
+func (m *pinnableMember) Pinned() bool {
+	return m.pinned.Load()
+}
+
+func (m *pinnableMember) releaseCount() int32 {
+	return m.released.Load()
+}
+
+// TestPool_EvictsUnpinnedFirst verifies that Touch's eviction
+// walks the LRU back-to-front and prefers an unpinned victim,
+// leaving pinned LRU members alone when an unpinned candidate
+// exists further forward.
+func TestPool_EvictsUnpinnedFirst(t *testing.T) {
+	t.Parallel()
+	p := New(2)
+
+	pinned := &pinnableMember{}
+	pinned.pinned.Store(true)
+	unpinned := &pinnableMember{}
+
+	// Insert order: pinned (LRU tail), unpinned (head).
+	p.Touch(pinned)
+	p.Touch(unpinned)
+
+	// One more Touch triggers eviction. The LRU tail (pinned) must
+	// be skipped in favour of unpinned, even though unpinned is
+	// further forward in the list.
+	overflow := &pinnableMember{}
+	p.Touch(overflow)
+
+	require.Equal(t, int32(0), pinned.releaseCount(),
+		"pinned member must not be evicted while an unpinned candidate exists")
+	require.Equal(t, int32(1), unpinned.releaseCount(),
+		"unpinned LRU candidate should be the evicted victim")
+
+	got := p.Stats()
+	require.Equal(t, uint64(1), got.Evictions)
+	require.Equal(t, uint64(1), got.PinnedSkips,
+		"the walk past pinned should be counted")
+}
+
+// TestPool_AllPinned_FallsBackToLRU verifies that when every
+// Member is pinned, Touch falls back to evicting the LRU tail
+// anyway — matching canonical Git's find_lru_pack policy
+// (packfile.c:482-530) where the inuse_cnt preference is a
+// soft hint, not a guarantee.
+func TestPool_AllPinned_FallsBackToLRU(t *testing.T) {
+	t.Parallel()
+	p := New(2)
+
+	tail := &pinnableMember{}
+	tail.pinned.Store(true)
+	head := &pinnableMember{}
+	head.pinned.Store(true)
+
+	p.Touch(tail) // LRU tail
+	p.Touch(head) // MRU front
+
+	overflow := &pinnableMember{}
+	p.Touch(overflow)
+
+	require.Equal(t, int32(1), tail.releaseCount(),
+		"with all members pinned, LRU tail must still be evicted")
+	require.Equal(t, int32(0), head.releaseCount(),
+		"MRU front must not be evicted ahead of LRU tail")
+
+	got := p.Stats()
+	require.Equal(t, uint64(1), got.Evictions)
+	require.Equal(t, uint64(2), got.PinnedSkips,
+		"both pinned members should appear in the walk count")
+}
+
+// TestPool_MemberWithoutPinnable_PreservesLRU verifies that
+// Members that do not implement the optional Pinnable interface
+// receive unconditional-LRU eviction (the pre-Pinnable behaviour).
+// fakeMember does not implement Pinnable; the LRU tail must be
+// evicted regardless of any inflight state.
+func TestPool_MemberWithoutPinnable_PreservesLRU(t *testing.T) {
+	t.Parallel()
+	p := New(2)
+
+	tail := &fakeMember{}
+	head := &fakeMember{}
+	p.Touch(tail)
+	p.Touch(head)
+
+	overflow := &fakeMember{}
+	p.Touch(overflow)
+
+	require.Equal(t, int32(1), tail.releaseCount(),
+		"LRU tail must be evicted when Member does not implement Pinnable")
+	require.Equal(t, int32(0), head.releaseCount())
+
+	got := p.Stats()
+	require.Equal(t, uint64(1), got.Evictions)
+	require.Equal(t, uint64(0), got.PinnedSkips,
+		"non-Pinnable Members must not appear in the walk count")
+}

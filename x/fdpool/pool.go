@@ -34,6 +34,22 @@ type Member interface {
 	ReleaseNow() error
 }
 
+// Pinnable is an optional Member-side interface that the Pool
+// consults during eviction. When evicting because capacity is
+// exceeded, the Pool walks the LRU back-to-front and skips
+// Members whose Pinned reports true; if every Member is pinned,
+// the Pool falls back to evicting the LRU tail unconditionally.
+// This matches canonical Git's find_lru_pack policy
+// (packfile.c:482-530), where the in-use preference is a hint
+// rather than a guarantee.
+//
+// Members that do not implement Pinnable are treated as unpinned,
+// preserving the unconditional-LRU behaviour from the pool's
+// first release.
+type Pinnable interface {
+	Pinned() bool
+}
+
 // Stats captures a snapshot of the pool's runtime state. The
 // values are observational — they may change immediately after
 // Stats returns.
@@ -56,6 +72,14 @@ type Stats struct {
 	// regardless); the counter exists so operators can distinguish
 	// clean evictions from those that hit a Close error.
 	EvictionFailures uint64
+	// PinnedSkips is the cumulative count of Pinnable Members the
+	// eviction walk skipped because Pinned() reported true. The
+	// counter is incremented in both cases: when an unpinned
+	// victim was eventually found further forward, and when every
+	// Member was pinned and the walk fell back to evicting the
+	// LRU tail anyway. Useful for spotting churn under sustained
+	// concurrent load.
+	PinnedSkips uint64
 }
 
 // Pool is a fixed-capacity LRU of Members. The zero value is not
@@ -68,6 +92,7 @@ type Pool struct {
 	hits             uint64
 	evictions        uint64
 	evictionFailures uint64
+	pinnedSkips      uint64
 }
 
 // New constructs a Pool with the given capacity. capacity <= 0
@@ -107,22 +132,42 @@ func (p *Pool) Touch(m Member) {
 	elem := p.lru.PushFront(m)
 	p.elements[m] = elem
 
-	// Evict the LRU tail if we exceeded capacity. The eviction
-	// target cannot be m (we just inserted it at the front) so
-	// this never evicts the caller's own Member.
+	// Evict if we exceeded capacity. Two-pass victim selection:
+	// walk the LRU back-to-front and prefer the LRU-most Member
+	// whose Pinnable.Pinned reports false; fall back to evicting
+	// the LRU tail unconditionally if every Member is pinned.
+	// Matches canonical Git's find_lru_pack (packfile.c:482-530).
+	// Members that do not implement Pinnable are treated as
+	// unpinned, preserving the unconditional-LRU behaviour from
+	// the pool's first release. The eviction target cannot be m
+	// (we just inserted it at the front) so this never evicts
+	// the caller's own Member.
 	if p.lru.Len() > p.capacity {
-		tail := p.lru.Back()
-		if tail != nil {
-			victim := tail.Value.(Member)
-			p.lru.Remove(tail)
+		var victimElem *list.Element
+		for e := p.lru.Back(); e != nil && e != elem; e = e.Prev() {
+			m := e.Value.(Member)
+			if pn, ok := m.(Pinnable); !ok || !pn.Pinned() {
+				victimElem = e
+				break
+			}
+			p.pinnedSkips++
+		}
+		if victimElem == nil {
+			victimElem = p.lru.Back()
+		}
+		if victimElem != nil {
+			victim := victimElem.Value.(Member)
+			p.lru.Remove(victimElem)
 			delete(p.elements, victim)
 			p.evictions++
 			// Release the lock while calling ReleaseNow to avoid
 			// a lock-ordering hazard against the Member's own
-			// mutex (SharedFile.mu in the real wiring). Callers
-			// take p.mu briefly; the pool releases p.mu before
-			// touching member locks, so Member→Pool is the only
-			// direction of lock acquisition.
+			// mutex (SharedFile.mu in the real wiring). The rule
+			// is: Member calls into Pool only after releasing
+			// Member.mu (see SharedFile.Acquire and Close). The
+			// new Pool→Member call through Pinned above is
+			// deadlock-free because no Member call holds s.mu
+			// while waiting for p.mu.
 			//
 			// ReleaseNow's error is intentionally discarded per
 			// the Member contract above: eviction is best-effort.
@@ -173,5 +218,6 @@ func (p *Pool) Stats() Stats {
 		Hits:             p.hits,
 		Evictions:        p.evictions,
 		EvictionFailures: p.evictionFailures,
+		PinnedSkips:      p.pinnedSkips,
 	}
 }
