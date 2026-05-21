@@ -217,9 +217,11 @@ func TestSharedFileGracePeriod(t *testing.T) {
 	assert.Equal(t, int32(1), opens.Load(), "should reuse FD within grace period")
 	sf.release()
 
-	// Wait for grace period to expire.
-	time.Sleep(100 * time.Millisecond)
-	assert.True(t, tf.closed.Load(), "file should close after grace period")
+	// Wait for grace period to expire. Poll rather than relying on
+	// a fixed sleep, since AfterFunc scheduling under load on
+	// Windows can lag the fire time.
+	assert.Eventually(t, tf.closed.Load, time.Second, 10*time.Millisecond,
+		"file should close after grace period")
 
 	// Next acquire reopens.
 	_, err = sf.acquire()
