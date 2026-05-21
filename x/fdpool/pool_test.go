@@ -39,7 +39,7 @@ func TestPool_ZeroCapacity_NoOp(t *testing.T) {
 		"ReleaseNow must not be invoked on a no-op pool")
 
 	got := p.Stats()
-	require.Equal(t, Stats{Capacity: 0, Active: 0, Hits: 0, Evictions: 0}, got)
+	require.Equal(t, Stats{Capacity: 0, Active: 0, Hits: 0, Evictions: 0, EvictionFailures: 0}, got)
 }
 
 func TestPool_NegativeCapacity_NoOp(t *testing.T) {
@@ -308,4 +308,41 @@ func TestPool_ConcurrentTouch(t *testing.T) {
 	}
 	require.Equal(t, int32(got.Evictions), totalReleased,
 		"sum of ReleaseNow calls must equal Evictions")
+}
+
+// failingMember returns a sentinel error from ReleaseNow so
+// TestPool_EvictionFailureCounted can assert the pool recorded the
+// failure in Stats.EvictionFailures.
+type failingMember struct{}
+
+func (failingMember) ReleaseNow() error {
+	return errReleaseNowFailed
+}
+
+var errReleaseNowFailed = fakeError("release now failed")
+
+type fakeError string
+
+func (e fakeError) Error() string { return string(e) }
+
+// TestPool_EvictionFailureCounted verifies that a non-nil error
+// return from a Member's ReleaseNow bumps Stats.EvictionFailures
+// once per failed eviction. Stats.Evictions still counts the
+// eviction itself — failure does not retract the LRU/map update.
+func TestPool_EvictionFailureCounted(t *testing.T) {
+	t.Parallel()
+	p := New(1)
+
+	// Insert a failing member, then insert a clean one to trigger
+	// eviction of the failing tail.
+	failing := failingMember{}
+	clean := &fakeMember{}
+	p.Touch(failing)
+	p.Touch(clean)
+
+	got := p.Stats()
+	require.Equal(t, uint64(1), got.Evictions,
+		"eviction should still count")
+	require.Equal(t, uint64(1), got.EvictionFailures,
+		"failing ReleaseNow should bump EvictionFailures")
 }

@@ -50,17 +50,24 @@ type Stats struct {
 	// Evictions is the cumulative count of Members evicted via
 	// ReleaseNow because capacity was exceeded.
 	Evictions uint64
+	// EvictionFailures is the cumulative count of evictions whose
+	// Member.ReleaseNow returned a non-nil error. The eviction
+	// itself still completes (the Member is removed from the LRU
+	// regardless); the counter exists so operators can distinguish
+	// clean evictions from those that hit a Close error.
+	EvictionFailures uint64
 }
 
 // Pool is a fixed-capacity LRU of Members. The zero value is not
 // usable; construct via New.
 type Pool struct {
-	mu        sync.Mutex
-	capacity  int
-	lru       *list.List // front = MRU, back = LRU; values are Member
-	elements  map[Member]*list.Element
-	hits      uint64
-	evictions uint64
+	mu               sync.Mutex
+	capacity         int
+	lru              *list.List // front = MRU, back = LRU; values are Member
+	elements         map[Member]*list.Element
+	hits             uint64
+	evictions        uint64
+	evictionFailures uint64
 }
 
 // New constructs a Pool with the given capacity. capacity <= 0
@@ -123,8 +130,11 @@ func (p *Pool) Touch(m Member) {
 			// elsewhere (e.g. packhandle.doClose) and is recorded
 			// here so the asymmetry doesn't read as an oversight.
 			p.mu.Unlock()
-			_ = victim.ReleaseNow()
+			err := victim.ReleaseNow()
 			p.mu.Lock()
+			if err != nil {
+				p.evictionFailures++
+			}
 		}
 	}
 }
@@ -158,9 +168,10 @@ func (p *Pool) Stats() Stats {
 		active = p.lru.Len()
 	}
 	return Stats{
-		Capacity:  p.capacity,
-		Active:    active,
-		Hits:      p.hits,
-		Evictions: p.evictions,
+		Capacity:         p.capacity,
+		Active:           active,
+		Hits:             p.hits,
+		Evictions:        p.evictions,
+		EvictionFailures: p.evictionFailures,
 	}
 }
