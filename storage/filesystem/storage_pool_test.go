@@ -94,9 +94,10 @@ func TestStorage_FDPool_AlternatesShareParentPool(t *testing.T) {
 
 // TestStorage_FDPool_SharedAcrossStorages verifies that callers
 // can inject one *fdpool.Pool into multiple Storages so the FD
-// budget is bounded process-wide rather than per-Storage. This
-// is the pattern GitOps controllers (e.g. Flux) need when they
-// spawn many short-lived Storages concurrently.
+// budget is bounded process-wide rather than per-Storage —
+// useful for servers handling concurrent per-request
+// repositories, batch tools iterating many repos, or any
+// process that opens many Storages concurrently.
 func TestStorage_FDPool_SharedAcrossStorages(t *testing.T) {
 	t.Parallel()
 

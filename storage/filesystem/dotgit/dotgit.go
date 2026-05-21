@@ -112,6 +112,12 @@ type Options struct {
 	// descriptors held by [packhandle.PackHandle] instances
 	// constructed by this DotGit. Nil disables pooling for the
 	// pack-FD lifecycle (grace-period close on quiescence).
+	//
+	// The Pool field's API stability tracks [fdpool.Pool]'s, not
+	// this package's. Per the x/ package policy, the fdpool API
+	// may change without following semantic versioning; consumers
+	// reading this field should treat it as experimental on the
+	// same timeline.
 	Pool *fdpool.Pool
 }
 

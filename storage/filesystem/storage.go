@@ -55,17 +55,36 @@ type Options struct {
 	// while the repo is open.
 	ExclusiveAccess bool
 	// MaxOpenDescriptors is the capacity of the storage-wide LRU FD
-	// pool. The pool bounds the number of open .pack/.idx/.rev file
+	// pool. The pool bounds the read-side .pack/.idx/.rev file
 	// descriptors across the entire Storage. When a Storage exceeds
-	// this capacity, the least-recently-used [sharedFile]'s FD is
-	// closed (via [sharedFile.ReleaseNow]) and reopens on the next
-	// read.
+	// this capacity, the least-recently-used `sharedFile`'s FD is
+	// closed (via `sharedFile.ReleaseNow`) and reopens on the next
+	// read. Pack-write FDs ([PackWriter]) are short-lived and not
+	// pooled.
 	//
 	// Zero (the default) selects [defaultMaxOpenDescriptors] (256),
 	// which accommodates roughly 85 concurrently-hot packs (3 FDs
-	// per pack: pack + idx + rev). Negative values disable pooling:
-	// pool-less sharedFiles fall back to their grace-period close
-	// on quiescence.
+	// per pack: pack + idx + rev). The 256 default assumes go-git
+	// is responsible for the dominant share of FDs in the process;
+	// applications running other FD-heavy subsystems (network
+	// servers, large connection pools) should size this against
+	// their full FD budget rather than rely on the default.
+	// Negative values disable pooling: pool-less sharedFiles fall
+	// back to their grace-period close on quiescence.
+	//
+	// The field name is reused from a pre-v6 option that capped
+	// concurrently-open packs without an eviction policy; the v6
+	// pool governs the same FD-budget concern with LRU eviction
+	// across all .pack/.idx/.rev descriptors. The v5
+	// KeepDescriptors flag (which pinned every pack FD open) is
+	// removed; callers migrating from it can leave this field at
+	// zero for the LRU default.
+	//
+	// To request mmap-backed read FDs (read-only, where the
+	// platform supports it) construct the underlying billy
+	// filesystem with [github.com/go-git/go-billy/v6/osfs.WithMmap]
+	// before handing it to [NewStorageWithOptions]. The pool
+	// governs that file equally whether it is FD- or mmap-backed.
 	MaxOpenDescriptors int
 	// LargeObjectThreshold maximum object size (in bytes) that will be read in to memory.
 	// If left unset or set to 0 there is no limit
@@ -97,10 +116,27 @@ type Options struct {
 	// Pool, when non-nil, replaces the per-Storage FD pool that
 	// NewStorageWithOptions would otherwise construct. Multiple
 	// Storages sharing a pool share a single bounded FD budget
-	// across the process — useful for GitOps controllers and
-	// other applications that spawn many short-lived Storages
-	// concurrently. When non-nil, MaxOpenDescriptors is ignored
-	// (the shared pool's existing capacity governs).
+	// across the process — useful when a single process opens
+	// many Storages and wants the FD budget bounded process-wide
+	// rather than per Storage (servers handling concurrent
+	// requests, batch tools iterating many repositories, etc.).
+	// When non-nil, MaxOpenDescriptors is ignored (the shared
+	// pool's existing capacity governs).
+	//
+	// To share a pool across Storage instances, construct the
+	// pool explicitly and pass it via this field to
+	// [NewStorageWithOptions], then open repositories with
+	// [git.Open], [git.Clone], or [git.Init] using the resulting
+	// Storer. The path-based wrappers (all Plain* functions:
+	// PlainOpen, PlainClone, PlainInit) construct their own
+	// Storage internally and so do not accept an injected pool;
+	// that is by design.
+	//
+	// The Pool field's API stability tracks [fdpool.Pool]'s, not
+	// this package's. Per the x/ package policy, the fdpool API
+	// may change without following semantic versioning; consumers
+	// reading this field should treat it as experimental on the
+	// same timeline.
 	Pool *fdpool.Pool
 }
 
