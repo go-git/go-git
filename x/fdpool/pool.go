@@ -116,6 +116,12 @@ func (p *Pool) Touch(m Member) {
 			// take p.mu briefly; the pool releases p.mu before
 			// touching member locks, so Member→Pool is the only
 			// direction of lock acquisition.
+			//
+			// ReleaseNow's error is intentionally discarded per
+			// the Member contract above: eviction is best-effort.
+			// This contrasts with the errors.Join pattern used
+			// elsewhere (e.g. packhandle.doClose) and is recorded
+			// here so the asymmetry doesn't read as an oversight.
 			p.mu.Unlock()
 			_ = victim.ReleaseNow()
 			p.mu.Lock()
