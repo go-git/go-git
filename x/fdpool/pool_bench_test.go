@@ -45,9 +45,16 @@ func BenchmarkFDPool_WorkingSetFitsInPool(b *testing.B) {
 	}
 
 	// Sanity: no evictions should have occurred during the timed
-	// section (capacity >> working set).
-	if got := p.Stats().Evictions; got != 0 {
-		b.Fatalf("unexpected evictions: %d", got)
+	// section (capacity >> working set), and Active must never
+	// exceed capacity — a regression where Touch lets the LRU
+	// grow past the cap would slip silently past the evictions
+	// check alone.
+	stats := p.Stats()
+	if stats.Evictions != 0 {
+		b.Fatalf("unexpected evictions: %d", stats.Evictions)
+	}
+	if stats.Active > capacity {
+		b.Fatalf("active %d exceeds capacity %d", stats.Active, capacity)
 	}
 }
 
@@ -74,8 +81,15 @@ func BenchmarkFDPool_Eviction_WorkingSetExceedsPool(b *testing.B) {
 	}
 
 	// Sanity: we must have evicted members given working set >
-	// capacity and round-robin access with no re-Touches.
-	if got := p.Stats().Evictions; got == 0 {
+	// capacity and round-robin access with no re-Touches; and
+	// Active must respect capacity throughout — a regression where
+	// Touch lets the LRU grow past the cap would slip silently
+	// past the evictions check alone.
+	stats := p.Stats()
+	if stats.Evictions == 0 {
 		b.Fatal("expected evictions under exceeded working set")
+	}
+	if stats.Active > capacity {
+		b.Fatalf("active %d exceeds capacity %d", stats.Active, capacity)
 	}
 }
