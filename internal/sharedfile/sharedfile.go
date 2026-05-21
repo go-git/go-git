@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
 // ReadAtCloser is the interface a SharedFile manages: any
@@ -37,11 +39,18 @@ var ErrClosed = fs.ErrClosed
 //     handed out before Close see [fs.ErrClosed] on the next
 //     read, since the OS-level FD has been released.
 //
+// When constructed with a non-nil [*fdpool.Pool], the grace timer
+// is bypassed at refs==0: the FD stays open and registered, and
+// the pool decides when to evict via [SharedFile.ReleaseNow].
+// This lets a single pool govern the storage-wide FD budget
+// across many SharedFiles.
+//
 // All methods are safe for concurrent use.
 type SharedFile struct {
 	mu          sync.Mutex
 	open        func() (ReadAtCloser, error)
 	gracePeriod time.Duration
+	pool        *fdpool.Pool
 
 	file           ReadAtCloser
 	refs           int
@@ -55,17 +64,30 @@ type SharedFile struct {
 // New returns a new SharedFile that opens files via open and
 // closes the descriptor after gracePeriod of idle time.
 func New(open func() (ReadAtCloser, error), gracePeriod time.Duration) *SharedFile {
-	return &SharedFile{open: open, gracePeriod: gracePeriod}
+	return NewWithPool(open, gracePeriod, nil)
+}
+
+// NewWithPool returns a SharedFile registered with the given
+// [*fdpool.Pool]. The pool governs FD eviction across many
+// SharedFiles via [SharedFile.ReleaseNow]; the grace timer is
+// bypassed at refs==0 so the FD stays open and registered until
+// the pool evicts or [SharedFile.Close] is called. Pass nil for
+// pool to disable pooling (equivalent to [New]).
+func NewWithPool(open func() (ReadAtCloser, error), gracePeriod time.Duration, pool *fdpool.Pool) *SharedFile {
+	return &SharedFile{open: open, gracePeriod: gracePeriod, pool: pool}
 }
 
 // Acquire bumps the refcount and returns the underlying file,
 // opening it via the constructor's open function on first need.
 // Each Acquire must be balanced by exactly one Release.
+//
+// If a pool is configured, every Acquire calls [fdpool.Pool.Touch]
+// after the FD is in hand, which registers the SharedFile on first
+// open and refreshes its LRU position on every subsequent acquire.
 func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.closed {
+		s.mu.Unlock()
 		return nil, ErrClosed
 	}
 
@@ -77,18 +99,34 @@ func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	if s.file == nil {
 		f, err := s.open()
 		if err != nil {
+			s.mu.Unlock()
 			return nil, err
 		}
 		s.file = f
 	}
 	s.refs++
 	s.gen++
-	return s.file, nil
+	file := s.file
+	pool := s.pool
+	s.mu.Unlock()
+
+	// Touch after releasing s.mu: pool.Touch acquires pool.mu,
+	// and the eviction path acquires Member.mu under pool.mu
+	// release. Keeping Member→Pool as the only lock-acquire
+	// direction avoids the deadlock noted in fdpool.New's docs.
+	if pool != nil {
+		pool.Touch(s)
+	}
+	return file, nil
 }
 
 // Release decrements the refcount. When it reaches zero the
 // grace-period timer is started; the file is closed when the
 // timer fires unless another Acquire happens first.
+//
+// If a pool is configured, the grace timer is skipped at refs==0:
+// the FD stays open and registered. The pool drives the eventual
+// close via [SharedFile.ReleaseNow] when capacity is exceeded.
 func (s *SharedFile) Release() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -111,6 +149,12 @@ func (s *SharedFile) Release() {
 		s.immediateClose = false
 		_ = s.file.Close()
 		s.file = nil
+		return
+	}
+
+	// Pool drives eviction: keep the FD open and registered so the
+	// pool's LRU governs when it closes. No timer.
+	if s.pool != nil {
 		return
 	}
 
@@ -137,11 +181,14 @@ func (s *SharedFile) IsClosed() bool { return s.isClosed.Load() }
 // Close stops any pending grace timer and closes the underlying
 // file synchronously. Subsequent Acquire calls return
 // [ErrClosed]. Close is idempotent.
+//
+// If a pool is configured, the SharedFile is forgotten from the
+// pool's LRU before Close returns, so a racing eviction cannot
+// observe a freed Member.
 func (s *SharedFile) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
@@ -157,6 +204,12 @@ func (s *SharedFile) Close() error {
 	if s.file != nil {
 		err = s.file.Close()
 		s.file = nil
+	}
+	pool := s.pool
+	s.mu.Unlock()
+
+	if pool != nil {
+		pool.Forget(s)
 	}
 	return err
 }
