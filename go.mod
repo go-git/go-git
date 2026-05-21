@@ -10,7 +10,7 @@ require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.2
-	github.com/go-git/go-billy/v6 v6.0.0-alpha.1
+	github.com/go-git/go-billy/v6 v6.0.0-alpha.1.0.20260519112248-0095b064a6c6
 	github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.6.0

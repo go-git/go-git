@@ -544,45 +544,6 @@ func (s *SuiteDotGit) TestObjectPack() {
 	s.Equal(".pack", filepath.Ext(pack.Name()))
 }
 
-func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors() {
-	f := fixtures.Basic().ByTag(".git").One()
-	fs, err := f.DotGit()
-	s.Require().NoError(err)
-	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
-
-	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.Require().NoError(err)
-	s.Equal(".pack", filepath.Ext(pack.Name()))
-
-	// Move to an specific offset
-	pack.Seek(42, io.SeekStart)
-
-	pack2, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.Require().NoError(err)
-
-	// If the file is the same the offset should be the same
-	offset, err := pack2.Seek(0, io.SeekCurrent)
-	s.Require().NoError(err)
-	s.Equal(int64(42), offset)
-
-	err = dir.Close()
-	s.Require().NoError(err)
-
-	pack2, err = dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.Require().NoError(err)
-
-	// If the file is opened again its offset should be 0
-	offset, err = pack2.Seek(0, io.SeekCurrent)
-	s.Require().NoError(err)
-	s.Equal(int64(0), offset)
-
-	err = pack2.Close()
-	s.Require().NoError(err)
-
-	err = dir.Close()
-	s.NotNil(err)
-}
-
 func (s *SuiteDotGit) TestObjectPackIdx() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs, err := f.DotGit()

@@ -9,6 +9,7 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -27,6 +28,10 @@ type FSObject struct {
 	pack     billy.File
 	packPath string
 	cache    cache.Object
+	// acquireRandom, when set, supersedes pack/packPath/fs in
+	// [FSObject.Reader]: each call yields a fresh cursor that
+	// Close releases.
+	acquireRandom func() (packhandle.RandomReader, error)
 }
 
 // NewFSObject creates a new filesystem object.
@@ -70,22 +75,36 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		return reader, nil
 	}
 
-	pack := o.pack
-	var file io.Closer
+	var (
+		pack io.ReaderAt
+		file io.Closer
+	)
 
-	// Probe with a 1-byte ReadAt to detect a closed file descriptor without
-	// modifying any shared state. A zero-length read cannot be used because
-	// some implementations (e.g. os.File) return (0, nil) for empty reads
-	// even on closed files.
-	_, err := pack.ReadAt(make([]byte, 1), o.offset)
-	if err != nil && errors.Is(err, os.ErrClosed) {
-		pack, err = o.fs.Open(o.packPath)
+	if o.acquireRandom != nil {
+		cur, err := o.acquireRandom()
 		if err != nil {
 			return nil, err
 		}
-		file = pack
-	} else if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
+		pack = cur
+		file = cur
+	} else {
+		pack = o.pack
+
+		// Probe with a 1-byte ReadAt to detect a closed descriptor
+		// without mutating shared state. A zero-length read is not
+		// usable: some implementations (e.g. [os.File]) return
+		// (0, nil) on a closed file.
+		_, err := pack.ReadAt(make([]byte, 1), o.offset)
+		if err != nil && errors.Is(err, os.ErrClosed) {
+			reopened, oerr := o.fs.Open(o.packPath)
+			if oerr != nil {
+				return nil, oerr
+			}
+			pack = reopened
+			file = reopened
+		} else if err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
 	}
 
 	// SectionReader provides a standalone io.Reader backed by ReadAt. Each

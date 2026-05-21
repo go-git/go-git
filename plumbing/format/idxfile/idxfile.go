@@ -38,6 +38,10 @@ type Index interface {
 	// EntriesByOffset returns an iterator to retrieve all index entries ordered
 	// by offset.
 	EntriesByOffset() (EntryIter, error)
+	// Close releases any resources held by the index. Implementations
+	// backed by on-disk files must close their file descriptors; pure
+	// in-memory implementations must return nil. Close is idempotent.
+	Close() error
 }
 
 // MemoryIndex is the in memory representation of an idx file.
@@ -74,6 +78,9 @@ type MemoryIndex struct {
 }
 
 var _ Index = (*MemoryIndex)(nil)
+
+// Close is a no-op. MemoryIndex holds no external resources.
+func (idx *MemoryIndex) Close() error { return nil }
 
 // NewMemoryIndex returns an instance of a new MemoryIndex.
 func NewMemoryIndex(objectIDSize int) *MemoryIndex {
