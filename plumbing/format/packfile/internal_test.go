@@ -138,6 +138,8 @@ func (idx *singleEntryIndex) EntriesByOffset() (idxfile.EntryIter, error) {
 	return &singleEntryIter{entry: idx.entry}, nil
 }
 
+func (idx *singleEntryIndex) Close() error { return nil }
+
 type singleEntryIter struct {
 	entry *idxfile.Entry
 	done  bool
