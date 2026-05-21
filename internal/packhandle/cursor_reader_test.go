@@ -8,7 +8,62 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-git/v6/internal/sharedfile"
 )
+
+// fakeBackend is a ReadAtCloser whose ReadAt does NOT return
+// fs.ErrClosed after Close — it returns a generic error. We use
+// it to prove the cursor's error type is determined by
+// SharedFile.IsClosed, not by the backend.
+type fakeBackend struct {
+	data   []byte
+	closed bool
+}
+
+func (f *fakeBackend) Read(p []byte) (int, error) {
+	if f.closed {
+		return 0, errors.New("fake backend: read after close")
+	}
+	n := copy(p, f.data)
+	return n, nil
+}
+
+func (f *fakeBackend) ReadAt(p []byte, off int64) (int, error) {
+	if f.closed {
+		return 0, errors.New("fake backend: read after close")
+	}
+	if off >= int64(len(f.data)) {
+		return 0, nil
+	}
+	n := copy(p, f.data[off:])
+	return n, nil
+}
+
+func (f *fakeBackend) Close() error { f.closed = true; return nil }
+
+func TestCursor_ReadAfterSharedFileClose_ReturnsFSErrClosed(t *testing.T) {
+	t.Parallel()
+
+	body := bytes.Repeat([]byte{0xAB}, 64)
+	be := &fakeBackend{data: body}
+
+	sf := sharedfile.New(func() (sharedfile.ReadAtCloser, error) { return be, nil }, time.Second)
+	cur, err := newCursorReader(sf, int64(len(body)))
+	if err != nil {
+		t.Fatalf("newCursorReader: %v", err)
+	}
+
+	if err := sf.Close(); err != nil {
+		t.Fatalf("sf.Close: %v", err)
+	}
+
+	buf := make([]byte, 8)
+	_, err = cur.ReadAt(buf, 0)
+	if !errors.Is(err, fs.ErrClosed) {
+		t.Errorf("want errors.Is(err, fs.ErrClosed); got %v", err)
+	}
+}
 
 func TestCursorReader_ReadAdvancesOffset(t *testing.T) {
 	t.Parallel()

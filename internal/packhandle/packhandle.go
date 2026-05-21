@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 )
@@ -29,7 +30,7 @@ const defaultGracePeriod = 1 * time.Second
 type PackHandle struct {
 	sources  Sources
 	packHash plumbing.Hash
-	pack     *sharedFile
+	pack     *sharedfile.SharedFile
 
 	closed atomic.Bool
 
@@ -63,7 +64,7 @@ func New(sources Sources, packHash plumbing.Hash) (*PackHandle, error) {
 	h := &PackHandle{
 		sources:  sources,
 		packHash: packHash,
-		pack:     newSharedFile(sources.Pack.Open, defaultGracePeriod),
+		pack:     sharedfile.New(sources.Pack.Open, defaultGracePeriod),
 	}
 	h.closeFn = sync.OnceValue(h.doClose)
 	return h, nil
@@ -112,8 +113,8 @@ func (h *PackHandle) packSize() (int64, error) {
 	return size, nil
 }
 
-// Close releases the .pack [sharedFile] and closes any cached
-// index. Idempotent.
+// Close releases the .pack [sharedfile.SharedFile] and closes any
+// cached index. Idempotent.
 func (h *PackHandle) Close() error {
 	return h.closeFn()
 }

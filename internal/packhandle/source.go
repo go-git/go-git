@@ -1,19 +1,15 @@
 package packhandle
 
 import (
-	"io"
-
 	billy "github.com/go-git/go-billy/v6"
+
+	"github.com/go-git/go-git/v6/internal/sharedfile"
 )
 
-// ReadAtCloser is the minimal contract on files returned by a
-// [Source]: random-access reads via [io.ReaderAt], plus
-// [io.Reader] and [io.Closer]. [billy.File] satisfies it
-// implicitly.
-type ReadAtCloser interface {
-	io.ReaderAt
-	io.ReadCloser
-}
+// ReadAtCloser is the file shape returned by Source.Open.
+// It is an alias for [sharedfile.ReadAtCloser]; both names
+// refer to the same type at compile time.
+type ReadAtCloser = sharedfile.ReadAtCloser
 
 // Source describes how to obtain one file of a pack triple. Open
 // is invoked lazily on first need and again after each

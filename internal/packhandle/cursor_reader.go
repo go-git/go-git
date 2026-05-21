@@ -5,25 +5,27 @@ import (
 	"io"
 	"io/fs"
 	"sync/atomic"
+
+	"github.com/go-git/go-git/v6/internal/sharedfile"
 )
 
 // cursorReader is the concrete reader returned by both
 // [PackHandle.OpenPackReader] and [PackHandle.OpenRandomReader].
-// Each cursor holds its own offset and one [sharedFile] reference
-// that Close releases.
+// Each cursor holds its own offset and one [sharedfile.SharedFile]
+// reference that Close releases.
 //
 // Read and Seek mutate the cursor offset and are not safe to call
 // concurrently on the same cursor. ReadAt is safe to call
 // concurrently with itself.
 type cursorReader struct {
-	sf     *sharedFile
+	sf     *sharedfile.SharedFile
 	file   ReadAtCloser
 	size   int64
 	offset int64
 	closed atomic.Bool
 }
 
-func newCursorReader(sf *sharedFile, size int64) (*cursorReader, error) {
+func newCursorReader(sf *sharedfile.SharedFile, size int64) (*cursorReader, error) {
 	f, err := sf.Acquire()
 	if err != nil {
 		return nil, err
@@ -32,7 +34,7 @@ func newCursorReader(sf *sharedFile, size int64) (*cursorReader, error) {
 }
 
 func (c *cursorReader) Read(p []byte) (int, error) {
-	if c.closed.Load() {
+	if c.closed.Load() || c.sf.IsClosed() {
 		return 0, fs.ErrClosed
 	}
 	if c.offset >= c.size {
@@ -47,14 +49,14 @@ func (c *cursorReader) Read(p []byte) (int, error) {
 }
 
 func (c *cursorReader) ReadAt(p []byte, off int64) (int, error) {
-	if c.closed.Load() {
+	if c.closed.Load() || c.sf.IsClosed() {
 		return 0, fs.ErrClosed
 	}
 	return c.file.ReadAt(p, off)
 }
 
 func (c *cursorReader) Seek(offset int64, whence int) (int64, error) {
-	if c.closed.Load() {
+	if c.closed.Load() || c.sf.IsClosed() {
 		return 0, fs.ErrClosed
 	}
 	var abs int64
@@ -75,7 +77,7 @@ func (c *cursorReader) Seek(offset int64, whence int) (int64, error) {
 	return abs, nil
 }
 
-// Close releases the underlying [sharedFile] reference. Idempotent.
+// Close releases the underlying [sharedfile.SharedFile] reference. Idempotent.
 func (c *cursorReader) Close() error {
 	if !c.closed.CompareAndSwap(false, true) {
 		return nil
