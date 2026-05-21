@@ -1,6 +1,8 @@
 package sharedfile
 
 import (
+	"bytes"
+	"sync"
 	"testing"
 	"time"
 
@@ -154,4 +156,73 @@ func TestSharedFile_NoPool_ImmediateClose(t *testing.T) {
 	assert.Equal(t, int64(2), opens.Load(),
 		"second Acquire must reopen after grace-period close")
 	sf.Release()
+}
+
+// TestSharedFile_Pool_ReadsDuringEviction stresses the refcount +
+// immediateClose latch contract under sustained concurrent I/O.
+// N reader goroutines do Acquire → ReadAt → verify bytes → Release
+// in a tight loop while M evictor goroutines fire ReleaseNow
+// concurrently. The refcount guarantees the FD is valid for the
+// duration of a held Acquire; ReleaseNow with refs > 0 must latch
+// immediateClose rather than close the FD out from under the
+// reader. A successful ReadAt confirms the latch worked.
+func TestSharedFile_Pool_ReadsDuringEviction(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte("PACKfile-bytes-for-ReadAt-mid-eviction-stress")
+	open, _, _ := newOpener(t, payload)
+
+	pool := fdpool.New(8)
+	sf := NewWithPool(open, time.Hour, pool)
+	defer sf.Close()
+
+	const (
+		readers     = 16
+		evictors    = 4
+		readsPerGo  = 256
+		evictsPerGo = 128
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(readers + evictors)
+
+	for range readers {
+		go func() {
+			defer wg.Done()
+			buf := make([]byte, len(payload))
+			for range readsPerGo {
+				f, err := sf.Acquire()
+				if err != nil {
+					t.Errorf("Acquire: %v", err)
+					return
+				}
+				n, err := f.ReadAt(buf, 0)
+				if err != nil {
+					t.Errorf("ReadAt: %v", err)
+					sf.Release()
+					return
+				}
+				if n != len(payload) || !bytes.Equal(buf, payload) {
+					t.Errorf("ReadAt returned wrong bytes: got %q", buf[:n])
+					sf.Release()
+					return
+				}
+				sf.Release()
+			}
+		}()
+	}
+
+	for range evictors {
+		go func() {
+			defer wg.Done()
+			for range evictsPerGo {
+				if err := sf.ReleaseNow(); err != nil {
+					t.Errorf("ReleaseNow: %v", err)
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 }
