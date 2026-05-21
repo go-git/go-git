@@ -130,6 +130,52 @@ func BenchmarkPackHandleAcquireGrace(b *testing.B) {
 	}
 }
 
+// BenchmarkPackHandleCloseIdleReopen measures one full
+// soft-close + reopen cycle: `OpenPackReader → ReadAt → Close →
+// CloseIdleDescriptors → repeat`. Compared against the warm
+// `BenchmarkPackHandleAcquireGrace` baseline, the per-iteration
+// delta is the cost of one pack-`SharedFile` reopen. Load-bearing
+// for callers deciding how often to invoke the soft-close
+// between read bursts.
+func BenchmarkPackHandleCloseIdleReopen(b *testing.B) {
+	ph := newEmbedFixturePackHandle(b)
+	b.Cleanup(func() { _ = ph.Close() })
+
+	packSize := packSizeFromFixture(b)
+	validRange := packSize - 64
+	if validRange <= 0 {
+		b.Fatalf("pack too small: %d bytes", packSize)
+	}
+
+	// Warm-up so the first iteration is not biased by initial
+	// mmap setup.
+	warm, err := ph.OpenPackReader()
+	if err != nil {
+		b.Fatal(err)
+	}
+	_ = warm.Close()
+
+	buf := make([]byte, 64)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r, err := ph.OpenPackReader()
+		if err != nil {
+			b.Fatal(err)
+		}
+		off := int64(i) % validRange
+		if _, err := r.(io.ReaderAt).ReadAt(buf, off); err != nil && err != io.EOF {
+			b.Fatal(err)
+		}
+		_ = r.Close()
+
+		if err := ph.CloseIdleDescriptors(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkPackHandleParallelReadAt measures concurrent ReadAt against one
 // PackHandle (sibling cursorReaders, one per goroutine) versus a direct
 // (*os.File).ReadAt ceiling on the same underlying file. The baseline shows
