@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
 type LazyIndexSuite struct {
@@ -563,4 +564,68 @@ func buildTestRevFile(idx *MemoryIndex) ([]byte, error) {
 	// LazyIndex doesn't validate the rev trailer).
 	buf.Write(make([]byte, crypto.SHA1.Size()*2))
 	return buf.Bytes(), nil
+}
+
+// TestLazyIndex_WithPool_EvictionAndReopen verifies that
+// NewLazyIndexWithPool registers both idx and rev SharedFiles
+// with the pool, that exceeding capacity triggers eviction, and
+// that a subsequent read against an evicted LazyIndex reopens its
+// FDs via the stored openers without error.
+func TestLazyIndex_WithPool_EvictionAndReopen(t *testing.T) {
+	t.Parallel()
+	idxBytes, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(fixtureLarge4GB)))
+	require.NoError(t, err)
+
+	memIdx := new(MemoryIndex)
+	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	require.NoError(t, d.Decode(memIdx))
+
+	revBytes, err := buildTestRevFile(memIdx)
+	require.NoError(t, err)
+
+	openIdx := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(idxBytes)}, nil
+	}
+	openRev := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(revBytes)}, nil
+	}
+
+	// Capacity 2: a single LazyIndex registers idx + rev = 2
+	// members. Constructing two LazyIndexes forces eviction on the
+	// second construction.
+	pool := fdpool.New(2)
+	first, err := NewLazyIndexWithPool(openIdx, openRev, memIdx.PackfileChecksum, pool)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = first.Close() })
+
+	// init() Acquires idx and rev, reads headers, then Releases.
+	// Both SharedFiles are pool-registered with refs == 0.
+	require.Equal(t, 2, pool.Stats().Active,
+		"first LazyIndex should register idx and rev SharedFiles")
+
+	second, err := NewLazyIndexWithPool(openIdx, openRev, memIdx.PackfileChecksum, pool)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = second.Close() })
+
+	// Second LazyIndex Acquire/Release forced evictions on the
+	// first LazyIndex's SharedFiles (since they were the LRU
+	// tail with refs == 0).
+	got := pool.Stats()
+	require.Equal(t, uint64(2), got.Evictions,
+		"both of first LazyIndex's SharedFiles (idx + rev) should be evicted")
+
+	// Now read through the (potentially) evicted first LazyIndex.
+	// FindHash exercises both SharedFiles (idx and rev) so the
+	// reopen-on-closed-FD path is verified for both openers.
+	iter, err := memIdx.Entries()
+	require.NoError(t, err)
+	defer iter.Close()
+	entry, err := iter.Next()
+	require.NoError(t, err)
+
+	gotHash, err := first.FindHash(int64(entry.Offset))
+	require.NoError(t, err,
+		"FindHash on an evicted LazyIndex must transparently reopen both idx and rev")
+	require.Equal(t, entry.Hash, gotHash,
+		"FindHash must return the same hash MemoryIndex has at this offset")
 }
