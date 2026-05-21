@@ -293,6 +293,20 @@ func (s *LazyIndex) Close() error {
 	return errors.Join(s.idx.Close(), s.rev.Close())
 }
 
+// CloseIdleDescriptors releases the idx and rev file descriptors
+// without disabling the [LazyIndex]. The FDs close inline when no
+// readers are active; otherwise each [sharedfile.SharedFile]
+// latches an immediate close on the next refs==0 transition.
+// In-flight readers complete normally; subsequent operations
+// reopen the FDs on demand and resume normal grace-timer
+// behaviour.
+//
+// Returns the joined error of the inline closes; latched closes
+// that fire later are not reported.
+func (s *LazyIndex) CloseIdleDescriptors() error {
+	return errors.Join(s.idx.ReleaseNow(), s.rev.ReleaseNow())
+}
+
 // --- internal helpers; all take an io.ReaderAt so the caller controls
 //     the acquire/release lifecycle. ---
 
