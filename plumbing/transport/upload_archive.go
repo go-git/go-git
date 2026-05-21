@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -55,7 +54,7 @@ func UploadArchive(
 		return fmt.Errorf("upload-archive: writing flush: %w", err)
 	}
 
-	mux := sideband.NewMuxer(sideband.Sideband64k, w)
+	mux := pktline.NewSidebandWriter(w, pktline.MaxSize)
 
 	format := "tar"
 	prefix := ""
@@ -151,23 +150,28 @@ const maxArchiveArgs = 64
 // readArchiveArgs reads "argument <arg>\n" pkt-lines until flush.
 func readArchiveArgs(r io.Reader) ([]string, error) {
 	var args []string
-	for {
-		l, line, err := pktline.ReadLine(r)
-		if err != nil {
-			return nil, fmt.Errorf("upload-archive: reading argument: %w", err)
-		}
-		if l == pktline.Flush {
+	sc := pktline.NewScanner(r)
+	flushed := false
+	for sc.Scan() {
+		if sc.Len() == pktline.Flush {
+			flushed = true
 			break
 		}
 		if len(args) >= maxArchiveArgs {
 			return nil, fmt.Errorf("upload-archive: too many arguments (>%d)", maxArchiveArgs)
 		}
 
-		s := strings.TrimSuffix(string(line), "\n")
-		if !strings.HasPrefix(s, "argument ") {
-			return nil, fmt.Errorf("upload-archive: expected 'argument' token, got: %s", s)
+		line := strings.TrimSuffix(sc.Text(), "\n")
+		if !strings.HasPrefix(line, "argument ") {
+			return nil, fmt.Errorf("upload-archive: expected 'argument' token, got: %s", line)
 		}
-		args = append(args, s[len("argument "):])
+		args = append(args, line[len("argument "):])
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("upload-archive: reading argument: %w", err)
+	}
+	if !flushed {
+		return nil, fmt.Errorf("upload-archive: reading argument: %w", io.ErrUnexpectedEOF)
 	}
 	return args, nil
 }
@@ -179,10 +183,10 @@ func writeNACK(w io.Writer, reason string) {
 
 // muxError writes an error to the sideband error channel and flushes.
 // Returns the original error for convenience.
-func muxError(mux *sideband.Muxer, w io.Writer, err error) error {
+func muxError(mux *pktline.Writer, w io.Writer, err error) error {
 	errMsg := fmt.Sprintf("upload-archive: %s", err.Error())
-	_, _ = mux.WriteChannel(sideband.ErrorMessage, []byte(errMsg))
-	_ = pktline.WriteFlush(w)
+	_, _ = pktline.WriteSideband(w, pktline.BandError, []byte(errMsg), pktline.MaxSize)
+	_ = mux.Flush()
 	return err
 }
 

@@ -5,9 +5,9 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -23,17 +23,18 @@ func FetchPack(
 ) error {
 	packf = ioutil.NewContextReadCloser(ctx, packf)
 
-	var demuxer *sideband.Demuxer
 	var reader io.Reader = packf
-	if caps.Supports(capability.Sideband64k) {
-		demuxer = sideband.NewDemuxer(sideband.Sideband64k, reader)
-	} else if caps.Supports(capability.Sideband) {
-		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
-	}
-
-	if demuxer != nil && req.Progress != nil {
-		demuxer.Progress = req.Progress
-		reader = demuxer
+	if req.Progress != nil {
+		maxSize := 0
+		switch {
+		case caps.Supports(capability.Sideband64k):
+			maxSize = pktline.MaxSize
+		case caps.Supports(capability.Sideband):
+			maxSize = pktline.DefaultSize
+		}
+		if maxSize > 0 {
+			reader = pktline.NewSidebandReader(reader, req.Progress, maxSize)
+		}
 	}
 
 	if err := packfile.UpdateObjectStorage(st, reader); err != nil {
