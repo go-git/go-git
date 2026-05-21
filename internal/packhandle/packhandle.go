@@ -174,3 +174,39 @@ func (h *PackHandle) Meta() (PackMeta, error) {
 	h.metaVal = &meta
 	return meta, nil
 }
+
+// CloseIdleDescriptors releases the .pack file descriptor and
+// the idx/rev descriptors of any cached [idxfile.LazyIndex]
+// without marking the [PackHandle] closed. Active acquired
+// readers continue to work; FDs held by in-flight readers close
+// the instant the last refcount drops to zero. Subsequent
+// [PackHandle.OpenPackReader] and [PackHandle.Index] operations
+// reopen FDs on demand and resume normal grace-timer behaviour.
+//
+// Idempotent and safe to call concurrently with the open paths
+// and itself. A no-op after [PackHandle.Close]; the closed flag
+// short-circuits before touching either [sharedfile.SharedFile].
+//
+// PackHandle-level caches survive: the cached [PackMeta] and
+// the cached [idxfile.LazyIndex] pointer are not reset. A
+// caller that wants to discard the PackHandle entirely uses
+// Close; a subsequent Close after CloseIdleDescriptors still
+// flips each underlying [sharedfile.SharedFile]'s closed flag
+// exactly once via its idempotent Close.
+func (h *PackHandle) CloseIdleDescriptors() error {
+	if h.closed.Load() {
+		return nil
+	}
+
+	packErr := h.pack.ReleaseNow()
+
+	h.indexMu.Lock()
+	idx := h.indexVal
+	h.indexMu.Unlock()
+
+	var idxErr error
+	if idx != nil {
+		idxErr = idx.CloseIdleDescriptors()
+	}
+	return errors.Join(packErr, idxErr)
+}

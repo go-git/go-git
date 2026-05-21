@@ -355,3 +355,125 @@ func TestPackSize_FailureNotCached(t *testing.T) {
 		t.Fatalf("Pack.Size called %d times; want 2 (first fails, second succeeds and caches; third hits cache)", got)
 	}
 }
+
+// countingOpen wraps a Source.Open with an open-counter so tests
+// can assert reopen behaviour after CloseIdleDescriptors.
+func countingOpen(src packhandle.Source, ctr *atomic.Int64) packhandle.Source {
+	return packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) {
+			ctr.Add(1)
+			return src.Open()
+		},
+		Size: src.Size,
+	}
+}
+
+// TestCloseIdleDescriptors_ReleasesAndAllowsReuse drives the
+// soft-close end to end: it acquires the .pack (via a cursor)
+// and the LazyIndex (via Index()), invokes
+// CloseIdleDescriptors, and verifies that subsequent operations
+// re-open every FD without erroring. The check rests on
+// Source.Open counters — bytes-Reader fixtures otherwise don't
+// observe Close.
+func TestCloseIdleDescriptors_ReleasesAndAllowsReuse(t *testing.T) {
+	t.Parallel()
+	srcs, hash := validSourcesFromFixture(t)
+
+	var packOpens, idxOpens, revOpens atomic.Int64
+	srcs.Pack = countingOpen(srcs.Pack, &packOpens)
+	srcs.Idx = countingOpen(srcs.Idx, &idxOpens)
+	srcs.Rev = countingOpen(srcs.Rev, &revOpens)
+
+	h, err := packhandle.New(srcs, hash)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer h.Close()
+
+	// Force a .pack open + an Index() materialisation (which
+	// opens idx and rev via LazyIndex.init).
+	r, err := h.OpenRandomReader()
+	if err != nil {
+		t.Fatalf("OpenRandomReader: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close cursor: %v", err)
+	}
+	if _, err := h.Index(); err != nil {
+		t.Fatalf("Index: %v", err)
+	}
+
+	packBefore := packOpens.Load()
+	idxBefore := idxOpens.Load()
+	revBefore := revOpens.Load()
+	if packBefore == 0 || idxBefore == 0 || revBefore == 0 {
+		t.Fatalf("setup: open counters pack=%d idx=%d rev=%d, want all >0",
+			packBefore, idxBefore, revBefore)
+	}
+
+	if err := h.CloseIdleDescriptors(); err != nil {
+		t.Fatalf("CloseIdleDescriptors: %v", err)
+	}
+
+	// Subsequent .pack read reopens the .pack FD.
+	r2, err := h.OpenRandomReader()
+	if err != nil {
+		t.Fatalf("OpenRandomReader after CloseIdleDescriptors: %v", err)
+	}
+	var buf [4]byte
+	if _, err := r2.ReadAt(buf[:], 0); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadAt after CloseIdleDescriptors: %v", err)
+	}
+	_ = r2.Close()
+
+	// Subsequent LazyIndex query reopens idx and rev via
+	// EntriesByOffset, which acquires both shared files.
+	idx, err := h.Index()
+	if err != nil {
+		t.Fatalf("Index after CloseIdleDescriptors: %v", err)
+	}
+	iter, err := idx.EntriesByOffset()
+	if err != nil {
+		t.Fatalf("Index.EntriesByOffset: %v", err)
+	}
+	if _, err := iter.Next(); err != nil {
+		t.Fatalf("iter.Next: %v", err)
+	}
+	if err := iter.Close(); err != nil {
+		t.Fatalf("iter.Close: %v", err)
+	}
+
+	if packOpens.Load() <= packBefore {
+		t.Fatalf(".pack open counter did not advance: before=%d after=%d",
+			packBefore, packOpens.Load())
+	}
+	if idxOpens.Load() <= idxBefore {
+		t.Fatalf(".idx open counter did not advance: before=%d after=%d",
+			idxBefore, idxOpens.Load())
+	}
+	if revOpens.Load() <= revBefore {
+		t.Fatalf(".rev open counter did not advance: before=%d after=%d",
+			revBefore, revOpens.Load())
+	}
+}
+
+// TestCloseIdleDescriptors_AfterCloseIsNoop verifies the no-op
+// fast path on closed PackHandles: the closed flag
+// short-circuits before touching either SharedFile.
+func TestCloseIdleDescriptors_AfterCloseIsNoop(t *testing.T) {
+	t.Parallel()
+	srcs, hash := validSourcesFromFixture(t)
+	h, err := packhandle.New(srcs, hash)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := h.CloseIdleDescriptors(); err != nil {
+		t.Fatalf("CloseIdleDescriptors after Close: %v", err)
+	}
+	if err := h.CloseIdleDescriptors(); err != nil {
+		t.Fatalf("CloseIdleDescriptors repeat after Close: %v", err)
+	}
+}
