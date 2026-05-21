@@ -821,12 +821,27 @@ func getHavesFromRef(
 		return nil
 	}
 
-	commit, err := object.GetCommit(s, h)
+	// The pack protocol requires `have <obj-id>` to name a commit, so we
+	// peel annotated-tag refs down to their underlying commit and skip
+	// refs that point at trees or blobs.
+	obj, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
-		if !errors.Is(err, plumbing.ErrObjectNotFound) {
-			// Ignore the error if this isn't a commit.
-			haves[ref.Hash()] = true
+		// Object isn't present locally (e.g. shallow clone).
+		return nil
+	}
+	var commit *object.Commit
+	switch obj.Type() {
+	case plumbing.CommitObject:
+		commit, err = object.DecodeCommit(s, obj)
+		if err != nil {
+			return nil
 		}
+	case plumbing.TagObject:
+		commit, err = peelToCommit(s, h)
+		if err != nil || commit == nil {
+			return nil
+		}
+	default:
 		return nil
 	}
 
@@ -854,6 +869,35 @@ func getHavesFromRef(
 	})
 
 	return nil
+}
+
+// maxTagPeelDepth bounds tag-chain peeling in peelToCommit to guard against
+// pathological or cyclic tag-of-tag chains. Real-world annotated tags rarely
+// chain more than once or twice.
+const maxTagPeelDepth = 16
+
+// peelToCommit resolves an object hash that is expected to be reachable
+// through a tag chain down to its underlying commit. It follows
+// Tag.TargetType / Tag.Target through nested annotated tags. If the chain
+// terminates at something other than a commit (a tree or blob), or the
+// chain is missing/malformed, peelToCommit returns (nil, nil) so callers
+// can treat the ref as unadvertisable without surfacing a hard error.
+func peelToCommit(s storage.Storer, h plumbing.Hash) (*object.Commit, error) {
+	for i := 0; i < maxTagPeelDepth; i++ {
+		tag, err := object.GetTag(s, h)
+		if err != nil {
+			return nil, nil
+		}
+		switch tag.TargetType {
+		case plumbing.CommitObject:
+			return object.GetCommit(s, tag.Target)
+		case plumbing.TagObject:
+			h = tag.Target
+		default:
+			return nil, nil
+		}
+	}
+	return nil, nil
 }
 
 func getHaves(

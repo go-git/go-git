@@ -1394,6 +1394,112 @@ func (s *RemoteSuite) TestGetHaves() {
 	s.Len(l, 2)
 }
 
+// storeHavesCommit encodes a Commit with the given message into sto and
+// returns its hash. The commit has no parents and a zero tree, which is
+// sufficient for getHaves negotiation tests because the walker simply stops
+// at missing parents.
+func storeHavesCommit(s *RemoteSuite, sto storage.Storer, message string) plumbing.Hash {
+	when := time.Unix(0, 0).UTC()
+	commit := &object.Commit{
+		Author:    object.Signature{Name: "Author", Email: "author@example.local", When: when},
+		Committer: object.Signature{Name: "Committer", Email: "committer@example.local", When: when},
+		Message:   message,
+	}
+	obj := &plumbing.MemoryObject{}
+	s.Require().NoError(commit.Encode(obj))
+	h, err := sto.SetEncodedObject(obj)
+	s.Require().NoError(err)
+	return h
+}
+
+// storeHavesTag encodes an annotated Tag pointing at target with the given
+// target type and returns its hash.
+func storeHavesTag(s *RemoteSuite, sto storage.Storer, target plumbing.Hash, targetType plumbing.ObjectType, name string) plumbing.Hash {
+	tag := &object.Tag{
+		Name:       name,
+		Tagger:     object.Signature{Name: "Tagger", Email: "tagger@example.local", When: time.Unix(0, 0).UTC()},
+		Message:    name + "\n",
+		TargetType: targetType,
+		Target:     target,
+	}
+	obj := &plumbing.MemoryObject{}
+	s.Require().NoError(tag.Encode(obj))
+	h, err := sto.SetEncodedObject(obj)
+	s.Require().NoError(err)
+	return h
+}
+
+// storeHavesBlob writes a blob of the given content and returns its hash.
+func storeHavesBlob(s *RemoteSuite, sto storage.Storer, content string) plumbing.Hash {
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.BlobObject)
+	_, err := obj.Write([]byte(content))
+	s.Require().NoError(err)
+	h, err := sto.SetEncodedObject(obj)
+	s.Require().NoError(err)
+	return h
+}
+
+func (s *RemoteSuite) TestGetHavesPeelsAnnotatedTag() {
+	sto := memory.NewStorage()
+	commitHash := storeHavesCommit(s, sto, "tagged commit\n")
+	tagHash := storeHavesTag(s, sto, commitHash, plumbing.CommitObject, "v1.0")
+
+	localRefs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0", tagHash.String()),
+	}
+
+	l, err := getHaves(localRefs, memory.NewStorage(), sto, 0)
+	s.NoError(err)
+	s.Contains(l, commitHash)
+	s.NotContains(l, tagHash)
+}
+
+func (s *RemoteSuite) TestGetHavesPeelsNestedAnnotatedTag() {
+	sto := memory.NewStorage()
+	commitHash := storeHavesCommit(s, sto, "deeply tagged commit\n")
+	inner := storeHavesTag(s, sto, commitHash, plumbing.CommitObject, "inner")
+	outer := storeHavesTag(s, sto, inner, plumbing.TagObject, "outer")
+
+	localRefs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/tags/outer", outer.String()),
+	}
+
+	l, err := getHaves(localRefs, memory.NewStorage(), sto, 0)
+	s.NoError(err)
+	s.Contains(l, commitHash)
+	s.NotContains(l, inner)
+	s.NotContains(l, outer)
+}
+
+func (s *RemoteSuite) TestGetHavesSkipsTagToBlob() {
+	sto := memory.NewStorage()
+	blobHash := storeHavesBlob(s, sto, "blob contents")
+	tagHash := storeHavesTag(s, sto, blobHash, plumbing.BlobObject, "blob-tag")
+
+	localRefs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", tagHash.String()),
+	}
+
+	l, err := getHaves(localRefs, memory.NewStorage(), sto, 0)
+	s.NoError(err)
+	s.Empty(l)
+}
+
+func (s *RemoteSuite) TestGetHavesSkipsTagToMissingObject() {
+	sto := memory.NewStorage()
+	missing := plumbing.NewHash("1111111111111111111111111111111111111111")
+	tagHash := storeHavesTag(s, sto, missing, plumbing.CommitObject, "dangling")
+
+	localRefs := []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/tags/dangling", tagHash.String()),
+	}
+
+	l, err := getHaves(localRefs, memory.NewStorage(), sto, 0)
+	s.NoError(err)
+	s.Empty(l)
+}
+
 func (s *RemoteSuite) TestList() {
 	repo := fixtures.Basic().One()
 	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
