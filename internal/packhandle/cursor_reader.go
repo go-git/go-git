@@ -9,6 +9,15 @@ import (
 	"github.com/go-git/go-git/v6/internal/sharedfile"
 )
 
+// ErrInvalidSeekWhence is returned by [cursorReader.Seek] when
+// whence is not one of [io.SeekStart], [io.SeekCurrent], or
+// [io.SeekEnd].
+var ErrInvalidSeekWhence = errors.New("packhandle: invalid whence")
+
+// ErrNegativeSeekPosition is returned by [cursorReader.Seek]
+// when the resolved absolute offset would be negative.
+var ErrNegativeSeekPosition = errors.New("packhandle: negative seek position")
+
 // cursorReader is the concrete reader returned by both
 // [PackHandle.OpenPackReader] and [PackHandle.OpenRandomReader].
 // Each cursor holds its own offset and one [sharedfile.SharedFile]
@@ -68,10 +77,10 @@ func (c *cursorReader) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		abs = c.size + offset
 	default:
-		return 0, errors.New("packhandle: invalid whence")
+		return 0, ErrInvalidSeekWhence
 	}
 	if abs < 0 {
-		return 0, errors.New("packhandle: negative seek position")
+		return 0, ErrNegativeSeekPosition
 	}
 	c.offset = abs
 	return abs, nil
