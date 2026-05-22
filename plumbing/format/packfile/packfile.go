@@ -101,6 +101,8 @@ func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 	}
 	p.m.Lock()
 	defer p.m.Unlock()
+	// Re-check after Lock: Close may have flipped closed and torn
+	// down the scanner between the early Load and the Lock.
 	if p.closed.Load() {
 		return nil, fs.ErrClosed
 	}
@@ -119,6 +121,8 @@ func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
 	}
 	p.m.Lock()
 	defer p.m.Unlock()
+	// Re-check after Lock: Close may have flipped closed and torn
+	// down the scanner between the early Load and the Lock.
 	if p.closed.Load() {
 		return nil, fs.ErrClosed
 	}
