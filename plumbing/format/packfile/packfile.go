@@ -3,6 +3,7 @@ package packfile
 import (
 	"bufio"
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -346,11 +347,7 @@ func (p *Packfile) Close() error {
 			scanErr = p.scanReader.Close()
 			p.scanReader = nil
 		}
-		hErr := p.h.Close()
-		if hErr != nil {
-			return hErr
-		}
-		return scanErr
+		return errors.Join(scanErr, p.h.Close())
 	}
 
 	closer, ok := p.file.(io.Closer)
