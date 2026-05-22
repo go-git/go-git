@@ -807,3 +807,52 @@ func BenchmarkFindObjectInPackfile_MRU_Hit(b *testing.B) {
 		i++
 	}
 }
+
+// BenchmarkFindObjectInPackfile_MRU_Churn measures the steady-state
+// cost when reads cycle a working set of K hot packs in round-robin
+// order. With a single-slot MRU hint, the hint is correct on 1 of
+// every K iterations and stale on the rest; the stale-hint cost is
+// one MayContain probe before the linear scan finds the right pack.
+// Slots between MRU_Hit (K=1, perfect reuse) and FanoutMiss (K=N, no
+// reuse) to make the hint's degradation curve visible to benchstat.
+//
+// K=4 was picked to match realistic GC-time pack counts where a
+// reader walks a tree spread across a small hot set. Cache disabled
+// (cache.NewObjectLRU(0)) so the object cache cannot serve the hot
+// loop and every iteration traverses findObjectInPackfile.
+func BenchmarkFindObjectInPackfile_MRU_Churn(b *testing.B) {
+	const (
+		nPacks     = 32
+		objPerPack = 8
+		hotPacks   = 4
+	)
+	diskFS, perPack := makeMultiPackFixture(b, nPacks, objPerPack)
+
+	// One hash per hot pack so consecutive reads switch packs in a
+	// fixed cycle; the MRU hint always trails by one position.
+	hashes := make([]plumbing.Hash, hotPacks)
+	for i := range hotPacks {
+		hashes[i] = perPack[i][0]
+	}
+
+	s := NewStorage(diskFS, cache.NewObjectLRU(0))
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Warm: ensure every hot pack's idx is loaded so the timed loop
+	// is not paying a cold populate on the first cycle.
+	for _, h := range hashes {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ReportAllocs()
+	var i int
+	for b.Loop() {
+		h := hashes[i%hotPacks]
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
