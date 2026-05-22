@@ -115,6 +115,13 @@ func (h *PackHandle) OpenRandomReader() (RandomReader, error) {
 // immutable post-creation and its on-disk identity is pinned via
 // packHash, so the size is invariant for the lifetime of this
 // handle. Failures are not cached; the next call retries.
+//
+// The cache uses an [atomic.Int64] with zero as the unset
+// sentinel. Pack sizes are never zero — every valid pack carries
+// at least a 12-byte header and a footer hash — so a zero load
+// unambiguously means "not yet cached." If that invariant ever
+// changes, this loop will re-Size on every call and the cache
+// becomes dead code.
 func (h *PackHandle) packSize() (int64, error) {
 	if v := h.sizeVal.Load(); v != 0 {
 		return v, nil
