@@ -66,10 +66,9 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 // snapshot consistent with the cursor's reads should derive size
 // from prior reads rather than re-Stat through this method.
 //
-// The handle holds a [billy.Filesystem] reference only for Stat;
-// it does not retain a pointer back to its parent [DotGit]. That
-// kept the DotGit → cache → PackHandle → readOnlyPackFile cycle
-// open and made the lifetime story harder to reason about.
+// The handle holds a [billy.Filesystem] reference for Stat
+// rather than a back-pointer to [DotGit]; this avoids a
+// DotGit → cache → PackHandle → readOnlyPackFile reference cycle.
 type readOnlyPackFile struct {
 	cursor packhandle.PackReader
 	ra     io.ReaderAt
