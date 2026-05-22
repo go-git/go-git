@@ -256,9 +256,7 @@ func (s *ObjectStorage) requireIndex() error {
 			// Close any indexes we built so SharedFile refcounts
 			// (held by LazyIndex) do not leak.
 			for _, idx := range local {
-				if c, ok := idx.(io.Closer); ok {
-					_ = c.Close()
-				}
+				_ = idx.Close()
 			}
 		}
 		s.muI.Unlock()
@@ -343,9 +341,7 @@ func (s *ObjectStorage) populateIndex() (map[plumbing.Hash]idxfile.Index, []pack
 			if e.idx == nil {
 				continue
 			}
-			if c, ok := e.idx.(io.Closer); ok {
-				_ = c.Close()
-			}
+			_ = e.idx.Close()
 		}
 		return nil, nil, err
 	}
@@ -1031,16 +1027,13 @@ func (s *ObjectStorage) Close() error {
 	}
 	s.muA.RUnlock()
 
-	// If the index being used implements io.Closer, make sure we call it.
-	// LazyIndex.Close permanently disables the index and releases any
-	// idle file descriptors. The same pattern applies to other Index
-	// implementations that hold resources.
+	// Close each cached Index. LazyIndex.Close releases idle file
+	// descriptors and permanently disables the index; MemoryIndex's
+	// Close is a no-op.
 	s.muI.RLock()
 	for _, idx := range s.index {
-		if closer, ok := idx.(io.Closer); ok {
-			if err := closer.Close(); firstError == nil && err != nil {
-				firstError = err
-			}
+		if err := idx.Close(); firstError == nil && err != nil {
+			firstError = err
 		}
 	}
 	s.muI.RUnlock()
@@ -1184,8 +1177,6 @@ func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time
 		break
 	}
 
-	if c, ok := idx.(io.Closer); ok {
-		_ = c.Close()
-	}
+	_ = idx.Close()
 	return nil
 }
