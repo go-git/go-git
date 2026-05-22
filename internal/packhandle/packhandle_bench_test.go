@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
@@ -118,6 +119,68 @@ func BenchmarkPackHandleAcquireGrace(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		r, err := ph.OpenPackReader()
+		if err != nil {
+			b.Fatal(err)
+		}
+		off := int64(i) % validRange
+		if _, err := r.(io.ReaderAt).ReadAt(buf, off); err != nil && err != io.EOF {
+			b.Fatal(err)
+		}
+		_ = r.Close()
+	}
+}
+
+// BenchmarkPackHandleAcquireAfterGraceExpiry measures the
+// cold-reopen cost when the SharedFile's grace timer naturally
+// fires between accesses. Each iteration sleeps past the
+// grace window with the timer paused (StopTimer/StartTimer) so
+// only the subsequent OpenPackReader → ReadAt → Close is
+// counted: the timed delta against
+// `BenchmarkPackHandleAcquireGrace` (warm) is one full
+// pack-`SharedFile` reopen including the close that the grace
+// timer fired off-band.
+//
+// At the default `-benchtime=1s` each iteration's mandatory
+// sleep dominates the wall clock, so the testing framework
+// runs the loop body once. Run with `-benchtime=Nx` (e.g.
+// `-benchtime=10x`) to gather a meaningful sample.
+//
+// `BenchmarkPackHandleCloseIdleReopen` exercises the same cold
+// path with the grace timer fast-forwarded via soft-close; this
+// bench is the wall-clock-accurate variant that includes the
+// time.AfterFunc-driven close callback.
+func BenchmarkPackHandleAcquireAfterGraceExpiry(b *testing.B) {
+	ph := newEmbedFixturePackHandle(b)
+	b.Cleanup(func() { _ = ph.Close() })
+
+	packSize := packSizeFromFixture(b)
+	validRange := packSize - 64
+	if validRange <= 0 {
+		b.Fatalf("pack too small: %d bytes", packSize)
+	}
+
+	// Sleep margin past `defaultGracePeriod` (1s in packhandle.go) so
+	// the timer has fired before the next timed iteration starts.
+	const sleep = 1200 * time.Millisecond
+
+	// Warm the SharedFile so the first iteration's sleep covers a
+	// real timer fire rather than the initial open.
+	warm, err := ph.OpenPackReader()
+	if err != nil {
+		b.Fatal(err)
+	}
+	_ = warm.Close()
+
+	buf := make([]byte, 64)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		time.Sleep(sleep)
+		b.StartTimer()
+
 		r, err := ph.OpenPackReader()
 		if err != nil {
 			b.Fatal(err)
