@@ -25,6 +25,18 @@ var ErrClosed = fs.ErrClosed
 // shared across concurrent acquirers, and closed after a grace
 // period once the refcount drops to zero.
 //
+// Lifecycle contract:
+//
+//   - [SharedFile.Acquire] pins the underlying file descriptor
+//     until the matching [SharedFile.Release]. While at least one
+//     reference is held the FD cannot be torn down by the grace
+//     timer or [SharedFile.ReleaseNow].
+//   - [SharedFile.Close] is synchronous: it returns only after
+//     the underlying FD has been closed. Acquires that race a
+//     Close return [ErrClosed]; ReadAt calls on a descriptor
+//     handed out before Close see [fs.ErrClosed] on the next
+//     read, since the OS-level FD has been released.
+//
 // All methods are safe for concurrent use.
 type SharedFile struct {
 	mu          sync.Mutex

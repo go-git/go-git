@@ -49,6 +49,16 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 }
 
 // readOnlyPackFile adapts a packhandle cursor into a [billy.File].
+//
+// The embedded cursor pins one [sharedfile.SharedFile] reference
+// for the lifetime of this handle: Read, ReadAt, and Seek route
+// through the cursor, so the .pack FD stays live until Close.
+// [readOnlyPackFile.Stat] is the exception — it goes through the
+// filesystem on each call and may report a result that diverges
+// from the cursor's view if the underlying pack was mutated or
+// deleted out from under the handle. Callers that need a
+// snapshot consistent with the cursor's reads should derive size
+// from prior reads rather than re-Stat through this method.
 type readOnlyPackFile struct {
 	cursor packhandle.PackReader
 	ra     io.ReaderAt

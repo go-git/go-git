@@ -26,6 +26,20 @@ const defaultGracePeriod = 1 * time.Second
 // idle grace period. .idx and .rev descriptors are owned by the
 // returned [idxfile.Index].
 //
+// Lifecycle contract:
+//
+//   - Each cursor returned by [PackHandle.OpenPackReader] or
+//     [PackHandle.OpenRandomReader] acquires one reference on the
+//     underlying [sharedfile.SharedFile]; cursor.Close releases
+//     it. While at least one cursor is live the .pack FD cannot
+//     be torn down by the grace timer.
+//   - [PackHandle.Close] is synchronous: the .pack FD and any
+//     cached [idxfile.LazyIndex] FDs are closed before the call
+//     returns. Cursors opened before Close keep working until
+//     their own Close releases the last reference; calls on a
+//     cursor whose underlying FD has been closed see
+//     [fs.ErrClosed].
+//
 // All methods are safe for concurrent use.
 type PackHandle struct {
 	sources  Sources
