@@ -34,6 +34,12 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	// [packhandle.PackReader] is declared as
+	// Reader+Seeker+Closer; ReadAt is not in the interface, so
+	// the assertion is a real runtime check rather than a static
+	// guarantee. The current concrete (cursorReader) satisfies
+	// it; the dynamic assert exists to catch a future PackReader
+	// implementation that does not.
 	ra, ok := pr.(io.ReaderAt)
 	if !ok {
 		_ = pr.Close()
