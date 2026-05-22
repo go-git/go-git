@@ -195,9 +195,6 @@ func (d *DotGit) Close() error {
 
 	d.packMap = nil
 
-	if len(phErrs) == 0 {
-		return nil
-	}
 	return errors.Join(phErrs...)
 }
 
@@ -292,8 +289,15 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
-	d.cleanPackList()
-	return newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	cleanErr := d.cleanPackList()
+	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	if err != nil {
+		return nil, errors.Join(cleanErr, err)
+	}
+	if cleanErr != nil {
+		return nil, cleanErr
+	}
+	return pw, nil
 }
 
 // ObjectPacks returns the list of availables packfiles
@@ -568,21 +572,24 @@ func (d *DotGit) CloseIdleDescriptors() error {
 // leave orphaned siblings on disk. A missing .rev is not an error — the
 // reverse index is optional and may have been generated only in memory.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
-	d.cleanPackList()
+	var errs []error
+	if err := d.cleanPackList(); err != nil {
+		errs = append(errs, err)
+	}
 
 	packPath := d.objectPackPath(hash, `pack`)
 	if !t.IsZero() {
 		fi, err := d.fs.Stat(packPath)
 		if err != nil {
-			return err
+			errs = append(errs, err)
+			return errors.Join(errs...)
 		}
 		// too new, skip deletion.
 		if !fi.ModTime().Before(t) {
-			return nil
+			return errors.Join(errs...)
 		}
 	}
 
-	var errs []error
 	for _, ext := range []string{`pack`, `idx`, `rev`} {
 		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
 			if ext == `rev` && os.IsNotExist(err) {
@@ -599,7 +606,9 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 	}
 	d.packHandlesMu.Unlock()
 	if ok {
-		_ = ph.Close()
+		if err := ph.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -780,20 +789,32 @@ func (d *DotGit) hasObject(h plumbing.Hash) error {
 	return nil
 }
 
-func (d *DotGit) cleanPackList() {
+// cleanPackList resets the pack catalog and drops every cached
+// [packhandle.PackHandle]. A pack-set mutation may have
+// invalidated the handles' underlying files, so they cannot
+// safely be reused. Idle readers finish normally; their cursor
+// Close becomes a no-op release.
+//
+// PackHandle.Close owns the underlying sharedfile and LazyIndex
+// FDs, so a close failure here means an FD has not been released.
+// The errors are joined and returned so callers can surface them
+// rather than silently masking I/O failures during cleanup.
+func (d *DotGit) cleanPackList() error {
 	d.packMap = nil
 	d.packList = nil
 
-	// A pack-set mutation may have invalidated any cached handle's
-	// underlying files, so drop them all. Idle readers finish
-	// normally; their cursor Close becomes a no-op release.
 	d.packHandlesMu.Lock()
 	handles := d.packHandles
 	d.packHandles = nil
 	d.packHandlesMu.Unlock()
+
+	var errs []error
 	for _, h := range handles {
-		_ = h.Close()
+		if err := h.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
 func (d *DotGit) genPackList() error {
