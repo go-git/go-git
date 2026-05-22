@@ -44,7 +44,7 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 		cursor: pr,
 		ra:     ra,
 		name:   d.objectPackPath(hash, "pack"),
-		dg:     d,
+		fs:     d.fs,
 	}, nil
 }
 
@@ -59,11 +59,16 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 // deleted out from under the handle. Callers that need a
 // snapshot consistent with the cursor's reads should derive size
 // from prior reads rather than re-Stat through this method.
+//
+// The handle holds a [billy.Filesystem] reference only for Stat;
+// it does not retain a pointer back to its parent [DotGit]. That
+// kept the DotGit → cache → PackHandle → readOnlyPackFile cycle
+// open and made the lifetime story harder to reason about.
 type readOnlyPackFile struct {
 	cursor packhandle.PackReader
 	ra     io.ReaderAt
 	name   string
-	dg     *DotGit
+	fs     billy.Filesystem
 }
 
 func (f *readOnlyPackFile) Read(p []byte) (int, error) { return f.cursor.Read(p) }
@@ -78,7 +83,7 @@ func (f *readOnlyPackFile) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (f *readOnlyPackFile) Stat() (fs.FileInfo, error) {
-	return f.dg.fs.Stat(f.name)
+	return f.fs.Stat(f.name)
 }
 
 func (f *readOnlyPackFile) Write(_ []byte) (int, error) { return 0, errReadOnlyPack }
