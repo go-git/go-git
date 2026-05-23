@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +25,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
+
+var knownHostsEnvMu sync.Mutex
 
 func startSSHServer(t *testing.T) *net.TCPAddr {
 	t.Helper()
@@ -221,6 +224,37 @@ func TestSSHTransport_NoConfig(t *testing.T) {
 
 	_, err := tr.Connect(context.Background(), req)
 	require.Error(t, err)
+}
+
+func TestSSHTransport_CustomHostKeyCallbackWithoutKnownHosts(t *testing.T) {
+	knownHostsEnvMu.Lock()
+	t.Cleanup(knownHostsEnvMu.Unlock)
+	t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "missing-known-hosts"))
+
+	dialErr := errors.New("dial reached")
+	tr := NewTransport(Options{
+		ClientConfig: func(_ context.Context, _ *transport.Request) (*stdssh.ClientConfig, error) {
+			return &stdssh.ClientConfig{
+				User:            "git",
+				HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+			}, nil
+		},
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			return nil, dialErr
+		},
+	})
+
+	req := &transport.Request{
+		URL: &url.URL{
+			Scheme: "ssh",
+			Host:   "example.com",
+			Path:   "/repo.git",
+		},
+		Command: "git-upload-pack",
+	}
+
+	_, err := tr.Connect(context.Background(), req)
+	require.ErrorIs(t, err, dialErr)
 }
 
 func TestSSHTransport_Archive(t *testing.T) {
