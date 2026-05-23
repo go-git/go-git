@@ -56,9 +56,9 @@ type node struct {
 	idx        *index.Index
 	idxMap     map[string]*index.Entry
 	// trackedDirs holds every directory path that has at least one entry
-	// in the index. It is populated only when IgnoreMatcher is set so the
-	// walker can keep tracked entries even if their parent directory
-	// matches an ignore rule.
+	// in the index. It lets the walker keep tracked entries even if their
+	// parent directory matches an ignore rule, and avoids nested repository
+	// checks for directories already represented by tracked descendants.
 	trackedDirs map[string]struct{}
 
 	options *Options
@@ -67,6 +67,7 @@ type node struct {
 	hash     []byte
 	children []noder.Noder
 	isDir    bool
+	boundary bool
 	mode     os.FileMode
 	size     int64
 	modTime  time.Time
@@ -112,15 +113,13 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreMatcher != nil {
-			trackedDirs = make(map[string]struct{})
-			for _, entry := range options.Index.Entries {
-				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
-					if _, ok := trackedDirs[parent]; ok {
-						break
-					}
-					trackedDirs[parent] = struct{}{}
+		trackedDirs = make(map[string]struct{})
+		for _, entry := range options.Index.Entries {
+			for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
+				if _, ok := trackedDirs[parent]; ok {
+					break
 				}
+				trackedDirs[parent] = struct{}{}
 			}
 		}
 	}
@@ -182,7 +181,7 @@ func (n *node) NumChildren() (int, error) {
 }
 
 func (n *node) calculateChildren() error {
-	if !n.IsDir() {
+	if !n.IsDir() || n.boundary {
 		return nil
 	}
 
@@ -279,15 +278,26 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 
 	if _, isSubmodule := n.submodules[path]; isSubmodule {
 		node.isDir = false
-	} else if isDir {
+	} else if isDir && !n.hasTrackedDescendant(path) {
 		isBoundary, err := n.isNestedGitRepository(path)
 		if err != nil {
 			return nil, err
 		}
-		node.isDir = !isBoundary
+		if isBoundary {
+			node.boundary = true
+			node.isDir = false
+		}
 	}
 
 	return node, nil
+}
+
+func (n *node) hasTrackedDescendant(dir string) bool {
+	if n.trackedDirs == nil {
+		return false
+	}
+	_, ok := n.trackedDirs[dir]
+	return ok
 }
 
 func (n *node) isNestedGitRepository(dir string) (bool, error) {
@@ -302,6 +312,10 @@ func (n *node) isNestedGitRepository(dir string) (bool, error) {
 }
 
 func (n *node) calculateHash() {
+	if n.boundary {
+		n.hash = plumbing.ZeroHash.Bytes()
+		return
+	}
 	if n.isDir {
 		n.hash = make([]byte, 24)
 		return
