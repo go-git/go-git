@@ -232,6 +232,41 @@ func (s *NoderSuite) TestDiffDirectory() {
 	s.Equal(merkletrie.Modify, a)
 }
 
+func (s *NoderSuite) TestNestedRepositoryDetectionIsOptIn() {
+	fs := memfs.New()
+	s.Require().NoError(fs.MkdirAll("nested", 0o755))
+	s.Require().NoError(WriteFile(fs, "nested/.git", []byte("gitdir: ../.git/worktrees/nested\n"), 0o644))
+	s.Require().NoError(WriteFile(fs, "nested/file.txt", []byte("nested\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{})
+	children, err := root.Children()
+	s.Require().NoError(err)
+	s.Require().Len(children, 1)
+	s.True(children[0].IsDir(), "nested repositories should only become boundaries when explicitly requested")
+
+	grandchildren, err := children[0].Children()
+	s.Require().NoError(err)
+	s.Require().Len(grandchildren, 1, ".git is ignored while ordinary children are still walked")
+	s.Equal("file.txt", grandchildren[0].Name())
+}
+
+func (s *NoderSuite) TestDetectNestedRepositoryBoundary() {
+	fs := memfs.New()
+	s.Require().NoError(fs.MkdirAll("nested", 0o755))
+	s.Require().NoError(WriteFile(fs, "nested/.git", []byte("gitdir: ../.git/worktrees/nested\n"), 0o644))
+	s.Require().NoError(WriteFile(fs, "nested/file.txt", []byte("nested\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{DetectNestedRepositories: true})
+	children, err := root.Children()
+	s.Require().NoError(err)
+	s.Require().Len(children, 1)
+	s.False(children[0].IsDir(), "nested repository boundary should be file-like so status reports the boundary path")
+
+	grandchildren, err := children[0].Children()
+	s.Require().NoError(err)
+	s.Empty(grandchildren)
+}
+
 func (s *NoderSuite) TestSocket() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("socket files do not exist on windows")

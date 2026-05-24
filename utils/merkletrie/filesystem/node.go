@@ -43,6 +43,11 @@ type Options struct {
 	// reported. Requires Index to be set: without an index there is no way
 	// to identify tracked entries, so the matcher is treated as a no-op.
 	IgnoreMatcher gitignore.Matcher
+
+	// DetectNestedRepositories stops traversal at untracked directories
+	// containing a .git entry. It is disabled by default because it requires
+	// an extra lookup for each untracked directory candidate.
+	DetectNestedRepositories bool
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -278,7 +283,7 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 
 	if _, isSubmodule := n.submodules[path]; isSubmodule {
 		node.isDir = false
-	} else if isDir && !n.hasTrackedDescendant(path) {
+	} else if isDir && n.detectNestedRepositories() && !n.hasTrackedDescendant(path) {
 		isBoundary, err := n.isNestedGitRepository(path)
 		if err != nil {
 			return nil, err
@@ -290,6 +295,10 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	}
 
 	return node, nil
+}
+
+func (n *node) detectNestedRepositories() bool {
+	return n.options != nil && n.options.DetectNestedRepositories
 }
 
 func (n *node) hasTrackedDescendant(dir string) bool {
