@@ -68,6 +68,9 @@ type sessionBase struct {
 // Handshake implements transport.Transport. GETs /info/refs to discover
 // refs and detects smart vs dumb HTTP.
 func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
+	if err := transport.CheckRequest(req); err != nil {
+		return nil, err
+	}
 	service := req.Command
 	// The caller's URL with its path in the spelling the requests will carry;
 	// everything downstream compares against this base. See effectiveBase.
