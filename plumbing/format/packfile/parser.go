@@ -206,18 +206,8 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, err
 	}
 
-	for _, oh := range pendingDeltaREFs {
-		err := p.processDelta(oh)
-		if err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("processing ref-delta at offset %v: %w", oh.Offset, err)
-		}
-	}
-
-	for _, oh := range pendingDeltas {
-		err := p.processDelta(oh)
-		if err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("processing ofs-delta at offset %v: %w", oh.Offset, err)
-		}
+	if err := p.resolveDeltas(pendingDeltas, pendingDeltaREFs); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
 	// Return to pool all objects used.
@@ -272,6 +262,105 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 	return nil
 }
 
+// resolveDeltas walks the pack's delta DAG depth-first from each
+// non-delta base, processing OFS and REF delta children of every parent
+// together. Mirrors canonical Git's threaded_second_pass in
+// builtin/index-pack.c[1], which advances both kinds of children from
+// each in-progress parent in a single walk.
+//
+// Splitting REF and OFS resolution into separate passes (REF first, OFS
+// second) is incorrect: a REF-delta whose base is an OFS-delta in the
+// same pack would look up its base hash before the OFS-delta has been
+// applied, since the OFS-delta's resolved hash is unknown at scan time.
+// The lookup would then misclassify the in-pack base as a thin-pack
+// external reference and the chain would fail to resolve.
+//
+// Any REF-delta not reached through the depth-first walk has a base
+// outside this pack and is processed via the external-reference
+// placeholder path. An OFS-delta whose recorded negative offset does
+// not match any in-pack object header is rejected as malformed input.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/builtin/index-pack.c#L1103
+func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
+	// Map sizes correspond to the count of distinct parent offsets /
+	// hashes, not the count of delta entries. Real packs cluster many
+	// children under one parent (chains and wide trees), so a hint
+	// sized to len(deltas) consistently overshoots. Let the maps grow.
+	ofsChildren := map[int64][]*ObjectHeader{}
+	for _, d := range ofsDeltas {
+		ofsChildren[d.OffsetReference] = append(ofsChildren[d.OffsetReference], d)
+	}
+	refChildren := map[plumbing.Hash][]*ObjectHeader{}
+	for _, d := range refDeltas {
+		refChildren[d.Reference] = append(refChildren[d.Reference], d)
+	}
+
+	var visit func(*ObjectHeader) error
+	visit = func(parent *ObjectHeader) error {
+		for _, c := range refChildren[parent.Hash] {
+			// Two non-delta entries with identical content (or an
+			// OFS-delta that resolves to the same hash as a non-delta
+			// elsewhere in the pack) make this child reachable from
+			// more than one parent; only the first reach resolves it.
+			if c.parent != nil {
+				continue
+			}
+			if err := p.processDelta(c); err != nil {
+				return fmt.Errorf("processing ref-delta at offset %v: %w", c.Offset, err)
+			}
+			if err := visit(c); err != nil {
+				return err
+			}
+		}
+		for _, c := range ofsChildren[parent.Offset] {
+			if c.parent != nil {
+				continue
+			}
+			if err := p.processDelta(c); err != nil {
+				return fmt.Errorf("processing ofs-delta at offset %v: %w", c.Offset, err)
+			}
+			if err := visit(c); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Snapshot the non-delta bases before walking, since processDelta
+	// appends resolved deltas to p.cache.oi via storeOrCache. The
+	// non-delta fraction of a real pack is small (typical 5-20%), so
+	// preallocating to len(p.cache.oi) would waste most of the slot.
+	var bases []*ObjectHeader
+	for _, oh := range p.cache.oi {
+		if !oh.Type.IsDelta() {
+			bases = append(bases, oh)
+		}
+	}
+	for _, base := range bases {
+		if err := visit(base); err != nil {
+			return err
+		}
+	}
+
+	for _, d := range refDeltas {
+		if d.parent != nil {
+			continue
+		}
+		if err := p.processDelta(d); err != nil {
+			return fmt.Errorf("processing ref-delta at offset %v: %w", d.Offset, err)
+		}
+	}
+
+	for _, d := range ofsDeltas {
+		if d.parent != nil {
+			continue
+		}
+		return fmt.Errorf("processing ofs-delta at offset %v: %w", d.Offset, plumbing.ErrObjectNotFound)
+	}
+
+	return nil
+}
+
 func (p *Parser) processDelta(oh *ObjectHeader) error {
 	switch oh.Type {
 	case plumbing.OFSDeltaObject:
@@ -295,6 +384,9 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		} else {
 			oh.parent = pa
 		}
+		// For a thin-pack external reference, store the placeholder so
+		// subsequent REF-deltas naming the same external hash chain
+		// through this entry. For an in-pack base the write is a no-op.
 		p.cache.oiByHash[oh.Reference] = oh.parent
 
 	default:
