@@ -4,11 +4,13 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -250,6 +252,35 @@ func TestSSHTransport_CustomHostKeyCallbackWithoutKnownHosts(t *testing.T) {
 
 	_, err := tr.Connect(context.Background(), req)
 	require.ErrorIs(t, err, dialErr)
+}
+
+func TestSSHTransport_CustomHostKeyCallbackUsesKnownHostsAlgorithms(t *testing.T) {
+	callbackErr := errors.New("custom callback reached")
+	config := &stdssh.ClientConfig{
+		User: "git",
+		HostKeyCallback: func(string, net.Addr, stdssh.PublicKey) error {
+			return callbackErr
+		},
+	}
+	tr := NewTransport(Options{})
+	tr.knownHostsFiles = []string{writeKnownHostsFile(t, "example.com")}
+
+	require.NoError(t, tr.configureHostKeys(config, "example.com:22"))
+	require.Equal(t, []string{stdssh.KeyAlgoED25519}, config.HostKeyAlgorithms)
+	require.ErrorIs(t, config.HostKeyCallback("", nil, nil), callbackErr)
+}
+
+func writeKnownHostsFile(t *testing.T, host string) string {
+	t.Helper()
+
+	signer, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
+	require.NoError(t, err)
+
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	key := signer.PublicKey()
+	line := fmt.Sprintf("%s %s %s\n", host, key.Type(), base64.StdEncoding.EncodeToString(key.Marshal()))
+	require.NoError(t, os.WriteFile(path, []byte(line), 0o644))
+	return path
 }
 
 func TestSSHTransport_Archive(t *testing.T) {
