@@ -3,7 +3,6 @@ package packfile
 import (
 	"bufio"
 	"crypto"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,7 +11,6 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
-	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -34,11 +32,15 @@ var (
 // Packfile allows retrieving information from inside a packfile.
 type Packfile struct {
 	idxfile.Index
-	fs         billy.Filesystem
-	file       billy.File
-	packHash   plumbing.Hash
-	h          *packhandle.PackHandle
-	scanReader packhandle.PackReader
+	fs   billy.Filesystem
+	file billy.File
+
+	// handle is the resolved PackHandle once init has run; nil
+	// in legacy mode. See NewPackfile for the modes.
+	handle        PackHandle
+	resolveHandle PackHandleResolver
+
+	scanReader io.ReadSeekCloser
 	scanner    *Scanner
 
 	cache cache.Object
@@ -54,16 +56,15 @@ type Packfile struct {
 	closed atomic.Bool
 }
 
-// NewPackfile returns a packfile representation for the given packfile file
-// and packfile idx.
-// If the filesystem is provided, the packfile will return FSObjects, otherwise
-// it will return MemoryObjects.
+// NewPackfile returns a packfile representation for the given .pack
+// file and idx. If [WithFs] is set the packfile returns [FSObject]s;
+// otherwise it returns [plumbing.MemoryObject]s.
 //
-// When both [WithFs] and [WithPackHash] are supplied, the .pack file's
-// descriptor is managed by an internal pooled handle that reopens the
-// file lazily through fs. The file argument is closed by NewPackfile,
-// as it becomes redundant. Without both options, file is used as-is
-// and closed by [Packfile.Close].
+// When [WithPackHandle] is supplied, the resolver owns the pack
+// file descriptor and the file argument is redundant; the
+// constructor closes it and [Packfile.Close] does not close the
+// resolver-owned handle. Otherwise the file argument is used as-is
+// and is closed by [Packfile.Close].
 func NewPackfile(
 	file billy.File,
 	opts ...PackfileOption,
@@ -76,16 +77,9 @@ func NewPackfile(
 		opt(p)
 	}
 
-	if p.fs != nil && !p.packHash.IsZero() && file != nil {
-		h, err := packhandle.New(
-			packhandle.Sources{Pack: packhandle.PathSource(p.fs, file.Name())},
-			p.packHash,
-		)
-		if err == nil {
-			_ = file.Close()
-			p.file = nil
-			p.h = h
-		}
+	if p.resolveHandle != nil && file != nil {
+		_ = file.Close()
+		p.file = nil
 	}
 
 	return p
@@ -250,7 +244,16 @@ func (p *Packfile) getByOffset(offset int64) (plumbing.EncodedObject, error) {
 
 func (p *Packfile) init() error {
 	p.once.Do(func() {
-		if p.h == nil && p.file == nil {
+		if p.handle == nil && p.resolveHandle != nil {
+			h, err := p.resolveHandle()
+			if err != nil {
+				p.onceErr = fmt.Errorf("packfile: resolve pack handle: %w", err)
+				return
+			}
+			p.handle = h
+		}
+
+		if p.handle == nil && p.file == nil {
 			p.onceErr = fmt.Errorf("file is not set")
 			return
 		}
@@ -269,8 +272,8 @@ func (p *Packfile) init() error {
 		}
 
 		var scanSrc io.Reader
-		if p.h != nil {
-			r, err := p.h.OpenPackReader()
+		if p.handle != nil {
+			r, err := p.handle.OpenPackReader()
 			if err != nil {
 				p.onceErr = fmt.Errorf("packfile: open pack reader: %w", err)
 				return
@@ -288,13 +291,13 @@ func (p *Packfile) init() error {
 			return
 		}
 
-		if p.h != nil {
-			meta, err := p.h.Meta()
+		if p.handle != nil {
+			id, err := p.handle.PackHash()
 			if err != nil {
-				p.onceErr = fmt.Errorf("packfile: read pack meta: %w", err)
+				p.onceErr = fmt.Errorf("packfile: read pack hash: %w", err)
 				return
 			}
-			p.id = meta.ID
+			p.id = id
 		} else {
 			_, err := p.scanner.Seek(-int64(p.objectIDSize), io.SeekEnd)
 			if err != nil {
@@ -345,13 +348,14 @@ func (p *Packfile) Close() error {
 
 	gogitsync.PutBufioReader(p.rbuf)
 
-	if p.h != nil {
-		var scanErr error
+	if p.handle != nil {
+		// The resolver owns the handle; close only the scanner cursor.
 		if p.scanReader != nil {
-			scanErr = p.scanReader.Close()
+			err := p.scanReader.Close()
 			p.scanReader = nil
+			return err
 		}
-		return errors.Join(scanErr, p.h.Close())
+		return nil
 	}
 
 	closer, ok := p.file.(io.Closer)
@@ -370,21 +374,30 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 	// If we have filesystem, and the object is not a delta type, return a FSObject.
 	// This avoids having to inflate the object more than once.
 	if !oh.Type.IsDelta() && p.fs != nil {
-		fsObj := &FSObject{
-			hash:   oh.ID(),
-			offset: oh.ContentOffset,
-			size:   oh.Size,
-			typ:    oh.Type,
-			index:  p.Index,
-			fs:     p.fs,
-			cache:  p.cache,
-		}
-		if p.h != nil {
-			h := p.h
-			fsObj.acquireRandom = func() (packhandle.RandomReader, error) { return h.OpenRandomReader() }
+		var fsObj *FSObject
+		if p.handle != nil {
+			fsObj = &FSObject{
+				hash:          oh.ID(),
+				offset:        oh.ContentOffset,
+				size:          oh.Size,
+				typ:           oh.Type,
+				index:         p.Index,
+				fs:            p.fs,
+				cache:         p.cache,
+				acquireRandom: p.openRandomReader,
+			}
 		} else {
-			fsObj.pack = p.file
-			fsObj.packPath = p.file.Name()
+			fsObj = NewFSObject(
+				oh.ID(),
+				oh.Type,
+				oh.ContentOffset,
+				oh.Size,
+				p.Index,
+				p.fs,
+				p.file,
+				p.file.Name(),
+				p.cache,
+			)
 		}
 
 		p.cache.Put(fsObj)

@@ -10,7 +10,6 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
-	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -72,7 +71,7 @@ type FSObject struct {
 	// acquireRandom, when set, supersedes pack/packPath/fs in
 	// [FSObject.Reader]: each call yields a fresh cursor that
 	// Close releases.
-	acquireRandom func() (packhandle.RandomReader, error)
+	acquireRandom func() (RandomReader, error)
 }
 
 // NewFSObject creates a new filesystem object.
@@ -102,9 +101,10 @@ func NewFSObject(
 
 // Reader implements the plumbing.EncodedObject interface.
 //
-// Reader is safe for concurrent use: it uses ReadAt (which does not modify the
-// file's seek cursor) instead of Seek+Read, so multiple goroutines can call
-// Reader on FSObjects that share the same underlying packfile handle.
+// Reader is safe for concurrent use: it uses ReadAt (which does
+// not modify the file's seek cursor) instead of Seek+Read, so
+// multiple goroutines can call Reader on FSObjects that share the
+// same underlying packfile handle.
 func (o *FSObject) Reader() (io.ReadCloser, error) {
 	obj, ok := o.cache.Get(o.hash)
 	if ok && obj != o {

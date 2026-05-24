@@ -2,6 +2,8 @@ package packfile_test
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -13,6 +15,33 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 )
+
+// stagePackOnDisk copies the fixture's .pack file into a temp
+// directory at the canonical objects/pack/pack-<hash>.pack path so
+// callers can reopen it through a billy filesystem rooted at the
+// returned directory.
+func stagePackOnDisk(t *testing.T, f *fixtures.Fixture) (string, plumbing.Hash, string) {
+	t.Helper()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, "objects", "pack")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	name := "pack-" + f.PackfileHash + ".pack"
+	dst := filepath.Join(dir, name)
+
+	src, err := f.Packfile()
+	require.NoError(t, err)
+	defer src.Close()
+
+	out, err := os.Create(dst)
+	require.NoError(t, err)
+	_, err = io.Copy(out, src)
+	require.NoError(t, err)
+	require.NoError(t, out.Close())
+
+	return root, plumbing.NewHash(f.PackfileHash), filepath.ToSlash(filepath.Join("objects", "pack", name))
+}
 
 // TestPackMeta_ParityWithScanner asserts that
 // packhandle.parsePackMeta extracts the same trailing pack hash
