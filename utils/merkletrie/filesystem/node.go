@@ -165,6 +165,10 @@ func (n *node) IsDir() bool {
 	return n.isDir
 }
 
+func (n *node) IsTraversalBoundary() bool {
+	return n.boundary
+}
+
 func (n *node) Skip() bool {
 	return false
 }
@@ -290,7 +294,6 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		}
 		if isBoundary {
 			node.boundary = true
-			node.isDir = false
 		}
 	}
 

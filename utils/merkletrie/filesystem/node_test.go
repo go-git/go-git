@@ -260,11 +260,20 @@ func (s *NoderSuite) TestDetectNestedRepositoryBoundary() {
 	children, err := root.Children()
 	s.Require().NoError(err)
 	s.Require().Len(children, 1)
-	s.False(children[0].IsDir(), "nested repository boundary should be file-like so status reports the boundary path")
+	s.True(children[0].IsDir(), "nested repository boundary should preserve filesystem directory semantics")
 
 	grandchildren, err := children[0].Children()
 	s.Require().NoError(err)
 	s.Empty(grandchildren)
+
+	changes, err := merkletrie.DiffTree(NewRootNode(memfs.New(), nil), root, IsEquals)
+	s.Require().NoError(err)
+	s.Require().Len(changes, 1, "nested repository boundary should still be reported as an inserted path")
+
+	action, err := changes[0].Action()
+	s.Require().NoError(err)
+	s.Equal(merkletrie.Insert, action)
+	s.Equal("nested", changes[0].To.String())
 }
 
 func (s *NoderSuite) TestSocket() {
