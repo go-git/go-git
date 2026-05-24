@@ -67,6 +67,25 @@ func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
 }
 
+// repoConfig returns the storer's loaded config, used to resolve
+// protocol.<name>.allow and protocol.allow for transport policy gating.
+// A nil config with a nil error means the Remote has no storer to read
+// from; the policy gate then falls back to the built-in defaults. A read
+// error is returned to the caller rather than swallowed, so that a
+// restrictive policy is never silently replaced by those defaults.
+//
+// This is the repository configuration alone. Git resolves protocol.allow
+// against the global and system files too, so a policy set only in
+// ~/.gitconfig does not reach the gate here: reading those requires a
+// registered config plugin, which ConfigScoped needs and Storer.Config
+// does not use.
+func (r *Remote) repoConfig() (*config.Config, error) {
+	if r.s == nil {
+		return nil, nil
+	}
+	return r.s.Config()
+}
+
 func (r *Remote) String() string {
 	var fetch, push string
 	if len(r.c.URLs) > 0 {
@@ -128,7 +147,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		o.RemoteURL = r.c.URLs[len(r.c.URLs)-1]
 	}
 
-	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
+	cfg, err := r.repoConfig()
+	if err != nil {
+		return err
+	}
+
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, cfg)
 	if err != nil {
 		return err
 	}
@@ -495,7 +519,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RemoteURL = r.c.URLs[0]
 	}
 
-	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
+	cfg, err := r.repoConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -735,12 +764,15 @@ func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
 	return false, nil
 }
 
-func newClient(rawURL string, opts []client.Option) (*client.Client, *transport.Request, error) {
+func newClient(rawURL string, opts []client.Option, cfg *config.Config) (*client.Client, *transport.Request, error) {
 	u, err := transport.ParseURL(rawURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	if cfg != nil {
+		opts = append([]client.Option{client.WithProtocolPolicy(cfg)}, opts...)
+	}
 	cl := client.New(opts...)
 	return cl, &transport.Request{URL: u}, nil
 }
@@ -1609,7 +1641,12 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, ErrEmptyUrls
 	}
 
-	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions)
+	cfg, err := r.repoConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions, cfg)
 	if err != nil {
 		return nil, err
 	}
