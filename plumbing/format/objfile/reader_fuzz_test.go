@@ -23,6 +23,10 @@ func FuzzReader(f *testing.F) {
 	addSeed([]byte("tree 0\x00"))
 	addSeed([]byte("commit 0\x00"))
 	addSeed([]byte("tag 0\x00"))
+	// Header longer than the MAX_HEADER_LEN-equivalent cap, so the reader
+	// must refuse it rather than draining the inflated stream.
+	addSeed(bytes.Repeat([]byte{'b'}, 1024))
+	addSeed(append([]byte("blob "), bytes.Repeat([]byte{'0'}, 1024)...))
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {

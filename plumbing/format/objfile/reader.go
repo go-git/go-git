@@ -15,9 +15,17 @@ import (
 var (
 	ErrClosed        = errors.New("objfile: already closed")
 	ErrHeader        = errors.New("objfile: invalid header")
+	ErrHeaderTooLong = errors.New("objfile: header exceeds maximum length")
 	ErrHeaderNotRead = errors.New("objfile: Header must be called before Read")
 	ErrNegativeSize  = errors.New("objfile: negative object size")
 )
+
+// maxHeaderLen mirrors canonical Git's MAX_HEADER_LEN [1]. The type,
+// delimiter, size, and trailing NUL of a loose-object header must fit
+// within this many inflated bytes.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/object-file.c#L34
+const maxHeaderLen = 32
 
 // Reader reads and decodes compressed objfile data from a provided io.Reader.
 // Reader implements io.ReadCloser. Close should be called when finished with
@@ -46,8 +54,10 @@ func NewReader(r io.Reader, objectFormat format.ObjectFormat) (*Reader, error) {
 
 // Header reads the type and the size of object, and prepares the reader for read
 func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
+	budget := maxHeaderLen
+
 	var raw []byte
-	raw, err = r.readUntil(' ')
+	raw, budget, err = r.readUntil(' ', budget)
 	if err != nil {
 		return t, size, err
 	}
@@ -57,7 +67,7 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 		return t, size, err
 	}
 
-	raw, err = r.readUntil(0)
+	raw, _, err = r.readUntil(0, budget)
 	if err != nil {
 		return t, size, err
 	}
@@ -72,21 +82,27 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 	return t, size, err
 }
 
-// readSlice reads one byte at a time from r until it encounters delim or an
-// error.
-func (r *Reader) readUntil(delim byte) ([]byte, error) {
+// readUntil reads one inflated byte at a time from r.zlib until it encounters
+// delim, the budget is exhausted, or an error. budget caps the total number
+// of bytes consumed from r.zlib, including delim; it mirrors canonical Git's
+// MAX_HEADER_LEN bound applied across the full loose-object header.
+func (r *Reader) readUntil(delim byte, budget int) ([]byte, int, error) {
 	var buf [1]byte
 	value := make([]byte, 0, 16)
 	for {
+		if budget <= 0 {
+			return nil, 0, ErrHeaderTooLong
+		}
 		if n, err := r.zlib.Read(buf[:]); err != nil && (err != io.EOF || n == 0) {
 			if err == io.EOF {
-				return nil, ErrHeader
+				return nil, 0, ErrHeader
 			}
-			return nil, err
+			return nil, 0, err
 		}
+		budget--
 
 		if buf[0] == delim {
-			return value, nil
+			return value, budget, nil
 		}
 
 		value = append(value, buf[0])
