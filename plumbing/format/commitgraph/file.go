@@ -25,6 +25,10 @@ var (
 	// ErrMalformedCommitGraphFile is returned by OpenFileIndex when the commit
 	// graph file is corrupted.
 	ErrMalformedCommitGraphFile = errors.New("malformed commit graph file")
+	// ErrTooManyChunks is returned by Encoder.Encode when the assembled
+	// chunk-table configuration would not fit the uint8 the on-disk
+	// header stores at byte 6.
+	ErrTooManyChunks = errors.New("commitgraph: too many chunks")
 
 	commitFileSignature = []byte{'C', 'G', 'P', 'H'}
 
