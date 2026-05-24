@@ -43,25 +43,35 @@ func NewWriter(w io.Writer, objectFormat format.ObjectFormat) *Writer {
 	}
 }
 
-// WriteHeader writes the type and the size and prepares to accept the object's
-// contents. If an invalid t is provided, plumbing.ErrInvalidType is returned. If a
-// negative size is provided, ErrNegativeSize is returned.
+// WriteHeader writes the type and the size and prepares to accept the
+// object's contents. If an invalid t is provided, plumbing.ErrInvalidType
+// is returned. If a negative size is provided, ErrNegativeSize is
+// returned. If the encoded header exceeds maxHeaderLen,
+// ErrHeaderTooLong is returned, mirroring the reader's bound.
 func (w *Writer) WriteHeader(t plumbing.ObjectType, size int64) error {
 	if !t.Valid() {
 		return plumbing.ErrInvalidType
 	}
+	return w.writeHeader(t, t.Bytes(), size)
+}
+
+func (w *Writer) writeHeader(t plumbing.ObjectType, typeBytes []byte, size int64) error {
 	if size < 0 {
 		return ErrNegativeSize
 	}
 
-	b := t.Bytes()
+	b := make([]byte, 0, maxHeaderLen)
+	b = append(b, typeBytes...)
 	b = append(b, ' ')
-	b = append(b, []byte(strconv.FormatInt(size, 10))...)
+	b = strconv.AppendInt(b, size, 10)
 	b = append(b, 0)
+
+	if len(b) > maxHeaderLen {
+		return ErrHeaderTooLong
+	}
 
 	defer w.prepareForWrite(t, size)
 	_, err := w.zlib.Write(b)
-
 	return err
 }
 
