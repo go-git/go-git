@@ -6,6 +6,7 @@ import (
 	encbin "encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -44,6 +45,24 @@ const (
 	lenFanout = 256
 )
 
+type sizer interface {
+	Size() int64
+}
+
+// readerSize returns the byte length reachable from r. It honours bytes.Reader
+// (Size()) and any io.Seeker (Seek to SeekEnd). When neither is available
+// the size is reported as 0 with a non-nil error so callers can decide
+// whether to skip the size-dependent checks.
+func readerSize(r io.ReaderAt) (int64, error) {
+	if s, ok := r.(sizer); ok {
+		return s.Size(), nil
+	}
+	if s, ok := r.(io.Seeker); ok {
+		return s.Seek(0, io.SeekEnd)
+	}
+	return 0, errors.New("commitgraph: cannot determine reader size")
+}
+
 type fileIndex struct {
 	reader                ReaderAtCloser
 	fanout                [lenFanout]uint32
@@ -52,6 +71,8 @@ type fileIndex struct {
 	hasGenerationV2       bool
 	minimumNumberOfHashes uint32
 	objSize               int
+	numChunks             uint8
+	fileSize              int64
 }
 
 // ReaderAtCloser is an interface that combines io.ReaderAt and io.Closer.
@@ -61,13 +82,13 @@ type ReaderAtCloser interface {
 }
 
 // OpenFileIndex opens a serialized commit graph file in the format described at
-// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.adoc
+// https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
 func OpenFileIndex(reader ReaderAtCloser) (Index, error) {
 	return OpenFileIndexWithParent(reader, nil)
 }
 
 // OpenFileIndexWithParent opens a serialized commit graph file in the format described at
-// https://github.com/git/git/blob/master/Documentation/technical/commit-graph-format.adoc
+// https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
 func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error) {
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
@@ -75,6 +96,9 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 	fi := &fileIndex{reader: reader, parent: parent, objSize: config.SHA1Size}
 
 	if err := fi.verifyFileHeader(); err != nil {
+		return nil, err
+	}
+	if err := fi.verifyFileSize(); err != nil {
 		return nil, err
 	}
 	if err := fi.readChunkHeaders(); err != nil {
@@ -134,31 +158,128 @@ func (fi *fileIndex) verifyFileHeader() error {
 		// Unknown hash type / unsupported hash type
 		return ErrUnsupportedHash
 	}
+	fi.numChunks = header[2]
 
 	return nil
 }
 
+// verifyFileSize records the reader's byte length on fi.fileSize and
+// mirrors canonical Git's parse_commit_graph_v1 check [1] that the
+// file is large enough to hold the header, the full chunk table of
+// contents (including the zero terminator), the fanout table, and
+// the trailing hash trailer.
+//
+// If the reader satisfies neither sizer nor io.Seeker the size is
+// left at zero and the precheck is skipped; the per-chunk reads in
+// readChunkHeaders still detect truncation reactively.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L419
+func (fi *fileIndex) verifyFileSize() error {
+	size, err := readerSize(fi.reader)
+	if err != nil {
+		// Without a size we fall back on per-chunk reads to detect
+		// truncation. The reader interface only requires io.ReaderAt
+		// and io.Closer, so this branch is taken by exotic callers
+		// only; the in-tree filesystem and in-memory paths both
+		// satisfy sizer or io.Seeker.
+		return nil
+	}
+	fi.fileSize = size
+
+	minSize := int64(szSignature+szHeader) +
+		int64(uint16(fi.numChunks)+1)*int64(szChunkSig+szUint64) +
+		int64(lenFanout*szUint32) +
+		int64(fi.objSize)
+	if size < minSize {
+		return ErrMalformedCommitGraphFile
+	}
+	return nil
+}
+
+// readChunkHeaders parses the chunk table of contents. The number of
+// non-terminating entries is taken from the file header (byte 6), mirroring
+// canonical Git's parse_commit_graph_v1 [1] which passes that count to
+// read_table_of_contents [2]; the latter iterates exactly num_chunks times
+// and rejects both an early zero chunk-id and a non-zero terminator entry.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L414
+// [2]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L117
 func (fi *fileIndex) readChunkHeaders() error {
-	// The chunk table is a list of 4-byte chunk signatures and uint64 offsets into the file
-	chunkID := make([]byte, szChunkSig)
-	for i := 0; ; i++ {
-		chunkHeader := io.NewSectionReader(fi.reader, szSignature+szHeader+(int64(i)*(szChunkSig+szUint64)), szChunkSig+szUint64)
-		if _, err := io.ReadAtLeast(chunkHeader, chunkID, szChunkSig); err != nil {
+	tocBase := int64(szSignature + szHeader)
+	const tocEntrySize = szChunkSig + szUint64
+	chunkID := make([]byte, szChunkSig) // reused across loop iterations
+	var prevOffset int64
+
+	// Canonical Git's read_table_of_contents [2] validates each chunk's
+	// offset against mfile_size - hash_size (upper bound) and the
+	// previous offset (monotonicity). Mirror that check here.
+	upperBound := fi.fileSize - int64(fi.objSize)
+	if fi.fileSize == 0 {
+		// verifyFileSize was unable to determine the file size; skip
+		// the upper-bound check, the per-chunk ReadAt will catch
+		// out-of-range offsets reactively.
+		upperBound = math.MaxInt64
+	}
+
+	// Track every chunk-id seen so far (known and unknown). Canonical
+	// Git's read_table_of_contents scans cf->chunks[0..chunks_nr-1] for
+	// the incoming id and returns -1 on the first match [2]. Use a map
+	// instead of a linear scan; the semantics are identical.
+	seen := make(map[[szChunkSig]byte]struct{}, int(fi.numChunks))
+
+	for i := range int(fi.numChunks) {
+		entry := io.NewSectionReader(fi.reader, tocBase+int64(i)*tocEntrySize, tocEntrySize)
+		if _, err := io.ReadAtLeast(entry, chunkID, szChunkSig); err != nil {
 			return err
 		}
-		chunkOffset, err := binary.ReadUint64(chunkHeader)
+		chunkOffset, err := binary.ReadUint64(entry)
 		if err != nil {
 			return err
 		}
+
+		// Validate the offset before classifying the chunk-id, mirroring
+		// canonical Git's read_table_of_contents which checks the offset
+		// against the previous one and the upper bound before any
+		// per-chunk dispatch.
+		if int64(chunkOffset) > upperBound || int64(chunkOffset) < prevOffset {
+			return ErrMalformedCommitGraphFile
+		}
+		prevOffset = int64(chunkOffset)
+
+		// Reject duplicate chunk-ids (known and unknown alike), matching
+		// canonical Git's "duplicate chunk ID" check [2].
+		var id [szChunkSig]byte
+		copy(id[:], chunkID)
+		if _, ok := seen[id]; ok {
+			return ErrMalformedCommitGraphFile
+		}
+		seen[id] = struct{}{}
 
 		chunkType, ok := ChunkTypeFromBytes(chunkID)
 		if !ok {
 			continue
 		}
-		if chunkType == ZeroChunk || int(chunkType) >= len(fi.offsets) {
-			break
+		// A zero chunk-id inside the declared count is the same condition
+		// canonical Git reports as "terminating chunk id appears earlier
+		// than expected".
+		if chunkType == ZeroChunk {
+			return ErrMalformedCommitGraphFile
+		}
+		if int(chunkType) >= len(fi.offsets) {
+			continue
 		}
 		fi.offsets[chunkType] = int64(chunkOffset)
+	}
+
+	// The table is followed by a single terminator entry whose chunk-id
+	// is zero. Reading anything else means the declared count does not
+	// match the table contents.
+	terminator := io.NewSectionReader(fi.reader, tocBase+int64(fi.numChunks)*tocEntrySize, tocEntrySize)
+	if _, err := io.ReadAtLeast(terminator, chunkID, szChunkSig); err != nil {
+		return err
+	}
+	if !bytes.Equal(chunkID, ZeroChunk.Signature()) {
+		return ErrMalformedCommitGraphFile
 	}
 
 	if fi.offsets[OIDFanoutChunk] <= 0 || fi.offsets[OIDLookupChunk] <= 0 || fi.offsets[CommitDataChunk] <= 0 {
