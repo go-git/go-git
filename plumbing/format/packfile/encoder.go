@@ -216,7 +216,14 @@ func (e *Encoder) writeBaseIfDelta(o *ObjectToPack) error {
 }
 
 func (e *Encoder) writeDeltaHeader(o *ObjectToPack) error {
-	// Write offset deltas by default
+	// Every delta in an encoded pack uses the same kind — all OFS_DELTA
+	// by default, or all REF_DELTA when useRefDeltas is set. The parser
+	// (see Parser.resolveDeltas) accepts packs that mix OFS_DELTA and
+	// REF_DELTA in a single chain, because mixed-kind packs occur in
+	// the wild (repacks across servers with differing
+	// --delta-base-offset settings, thin-pack splices, third-party
+	// tooling); the encoder deliberately doesn't introduce that
+	// complexity on the write side.
 	t := plumbing.OFSDeltaObject
 	if e.useRefDeltas {
 		t = plumbing.REFDeltaObject
