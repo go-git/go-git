@@ -26,8 +26,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
-var knownHostsEnvMu sync.Mutex
-
 func startSSHServer(t *testing.T) *net.TCPAddr {
 	t.Helper()
 
@@ -227,10 +225,6 @@ func TestSSHTransport_NoConfig(t *testing.T) {
 }
 
 func TestSSHTransport_CustomHostKeyCallbackWithoutKnownHosts(t *testing.T) {
-	knownHostsEnvMu.Lock()
-	t.Cleanup(knownHostsEnvMu.Unlock)
-	t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "missing-known-hosts"))
-
 	dialErr := errors.New("dial reached")
 	tr := NewTransport(Options{
 		ClientConfig: func(_ context.Context, _ *transport.Request) (*stdssh.ClientConfig, error) {
@@ -243,6 +237,7 @@ func TestSSHTransport_CustomHostKeyCallbackWithoutKnownHosts(t *testing.T) {
 			return nil, dialErr
 		},
 	})
+	tr.knownHostsFiles = []string{filepath.Join(t.TempDir(), "missing-known-hosts")}
 
 	req := &transport.Request{
 		URL: &url.URL{

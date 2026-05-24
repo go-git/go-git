@@ -49,7 +49,8 @@ type Options struct {
 
 // Transport implements the ssh:// transport protocol.
 type Transport struct {
-	opts Options
+	opts            Options
+	knownHostsFiles []string
 }
 
 // NewTransport creates an SSH transport with the given options.
@@ -80,7 +81,7 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	// Only derive host key algorithms from known_hosts when using the default
 	// callback. A custom callback may not be backed by known_hosts.
 	if config.HostKeyCallback == nil {
-		db, err := newKnownHostsDb()
+		db, err := newKnownHostsDb(t.knownHostsFiles...)
 		if err != nil {
 			return nil, err
 		}
