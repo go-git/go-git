@@ -705,3 +705,31 @@ func buildRefOnOfsDeltaChainPack(t *testing.T) (pack []byte, midHash, leafHash p
 
 	return buf.Bytes(), midHash, leafHash
 }
+
+// TestParserParseRejectsSecondCall pins the single-shot Parser invariant
+// documented on the Parser type: once Parse has been called (whether it
+// returned successfully or with an error mid-walk), a subsequent call
+// against the same instance must fail loudly rather than silently
+// running over the prior call's leftover state.
+func TestParserParseRejectsSecondCall(t *testing.T) {
+	t.Parallel()
+
+	// Build a minimal valid pack with zero objects (header + count=0 +
+	// SHA-1 trailer over the header). Parse accepts this and returns
+	// the pack checksum; the test then asserts the second call against
+	// the same Parser is rejected.
+	var buf bytes.Buffer
+	h := sha1.New()
+	w := io.MultiWriter(&buf, h)
+	_, _ = w.Write([]byte{'P', 'A', 'C', 'K'})
+	_ = binary.Write(w, binary.BigEndian, uint32(2))
+	_ = binary.Write(w, binary.BigEndian, uint32(0))
+	_, _ = buf.Write(h.Sum(nil))
+
+	p := packfile.NewParser(bytes.NewReader(buf.Bytes()))
+	_, err := p.Parse()
+	require.NoError(t, err, "first Parse on the empty-object pack should succeed")
+
+	_, err = p.Parse()
+	assert.ErrorIs(t, err, packfile.ErrParserConsumed, "second Parse must return ErrParserConsumed")
+}

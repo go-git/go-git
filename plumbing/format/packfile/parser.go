@@ -25,6 +25,12 @@ var (
 
 	// ErrDeltaNotCached is returned when the delta could not be found in cache.
 	ErrDeltaNotCached = errors.New("delta could not be found in cache")
+
+	// ErrParserConsumed is returned by Parse when called against a Parser
+	// instance that has already been consumed by a prior Parse call,
+	// whether that call returned successfully or with an error. Parsers
+	// are single-shot; construct a new one per pack.
+	ErrParserConsumed = errors.New("parser already consumed")
 )
 
 // maxObjectPreallocBytes caps the up-front size hint passed to
@@ -52,6 +58,14 @@ func growHint(n int64) int {
 
 // Parser decodes a packfile and calls any observer associated to it. Is used
 // to generate indexes.
+//
+// A Parser is single-shot: Parse may be called at most once per
+// instance. The cache maps and the per-delta parent pointers built up
+// during a Parse call are not reset on entry, so a second call would
+// observe the prior call's state — successful or not — and produce
+// undefined results; the second call therefore returns
+// ErrParserConsumed without running. Construct a new Parser for each
+// pack you intend to decode.
 type Parser struct {
 	storage       storer.EncodedObjectStorer
 	cache         *parserCache
@@ -65,6 +79,7 @@ type Parser struct {
 
 	checksum plumbing.Hash
 	m        stdsync.Mutex
+	parsed   bool
 }
 
 // LowMemoryCapable is implemented by storage types that are capable of
@@ -160,6 +175,11 @@ func (p *Parser) resetCache(qty int) {
 func (p *Parser) Parse() (plumbing.Hash, error) {
 	p.m.Lock()
 	defer p.m.Unlock()
+
+	if p.parsed {
+		return plumbing.ZeroHash, ErrParserConsumed
+	}
+	p.parsed = true
 
 	var pendingDeltas []*ObjectHeader
 	var pendingDeltaREFs []*ObjectHeader
