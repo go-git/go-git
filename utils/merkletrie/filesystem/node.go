@@ -45,8 +45,7 @@ type Options struct {
 	IgnoreMatcher gitignore.Matcher
 
 	// DetectNestedRepositories stops traversal at untracked directories
-	// containing a .git entry. It is disabled by default because it requires
-	// an extra lookup for each untracked directory candidate.
+	// containing a .git entry.
 	DetectNestedRepositories bool
 }
 
@@ -206,6 +205,11 @@ func (n *node) calculateChildren() error {
 		return err
 	}
 
+	if n.isNestedRepositoryBoundary(files) {
+		n.boundary = true
+		return nil
+	}
+
 	for _, file := range files {
 		if _, ok := ignore[file.Name()]; ok {
 			continue
@@ -287,17 +291,21 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 
 	if _, isSubmodule := n.submodules[path]; isSubmodule {
 		node.isDir = false
-	} else if isDir && n.detectNestedRepositories() && !n.hasTrackedDescendant(path) {
-		isBoundary, err := n.isNestedGitRepository(path)
-		if err != nil {
-			return nil, err
-		}
-		if isBoundary {
-			node.boundary = true
-		}
 	}
 
 	return node, nil
+}
+
+func (n *node) isNestedRepositoryBoundary(files []os.DirEntry) bool {
+	if !n.detectNestedRepositories() || n.path == "" || n.hasTrackedDescendant(n.path) {
+		return false
+	}
+	for _, file := range files {
+		if file.Name() == ".git" {
+			return true
+		}
+	}
+	return false
 }
 
 func (n *node) detectNestedRepositories() bool {
@@ -310,17 +318,6 @@ func (n *node) hasTrackedDescendant(dir string) bool {
 	}
 	_, ok := n.trackedDirs[dir]
 	return ok
-}
-
-func (n *node) isNestedGitRepository(dir string) (bool, error) {
-	_, err := n.fs.Stat(path.Join(dir, ".git"))
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
 }
 
 func (n *node) calculateHash() {

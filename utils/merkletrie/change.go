@@ -129,6 +129,10 @@ func (l *Changes) addRecursive(root noder.Path, ctor noderToChangeFn) error {
 		return ErrEmptyFileName
 	}
 
+	if err := detectTraversalBoundary(root); err != nil {
+		return err
+	}
+
 	if !root.IsDir() || isTraversalBoundary(root) {
 		if !root.Skip() {
 			l.Add(ctor(root))
@@ -149,12 +153,25 @@ func (l *Changes) addRecursive(root noder.Path, ctor noderToChangeFn) error {
 			}
 			return err
 		}
+		if !current.Skip() {
+			if err = detectTraversalBoundary(current); err != nil {
+				return err
+			}
+		}
 		if current.Skip() || (current.IsDir() && !isTraversalBoundary(current)) {
 			continue
 		}
 		l.Add(ctor(current))
 	}
 
+	return nil
+}
+
+func detectTraversalBoundary(n noder.Noder) error {
+	if n.IsDir() && !isTraversalBoundary(n) {
+		_, err := n.NumChildren()
+		return err
+	}
 	return nil
 }
 
