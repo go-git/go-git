@@ -180,7 +180,12 @@ func (o *ondemandObject) resolveMetadata() error {
 		if err != nil {
 			return fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		if negativeOffset <= 0 || negativeOffset > o.offset {
+		// Mirrors canonical Git in packfile.c[1]:
+		// base_offset = delta_obj_offset - base_offset;
+		// reject base_offset <= 0 || base_offset >= delta_obj_offset.
+		//
+		// [1]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1289-L1290
+		if negativeOffset <= 0 || negativeOffset >= o.offset {
 			return fmt.Errorf("%w: invalid OFS delta offset", packfile.ErrMalformedPackfile)
 		}
 		baseOffset := uint64(o.offset) - uint64(negativeOffset)
@@ -266,7 +271,12 @@ func (o *ondemandObject) resolveDelta() (io.ReadCloser, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		if negativeOffset <= 0 || negativeOffset > o.offset {
+		// Mirrors canonical Git in packfile.c[1]:
+		// base_offset = delta_obj_offset - base_offset;
+		// reject base_offset <= 0 || base_offset >= delta_obj_offset.
+		//
+		// [1]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1289-L1290
+		if negativeOffset <= 0 || negativeOffset >= o.offset {
 			return nil, fmt.Errorf("%w: invalid OFS delta offset", packfile.ErrMalformedPackfile)
 		}
 		baseOffset = uint64(o.offset) - uint64(negativeOffset)

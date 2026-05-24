@@ -482,10 +482,19 @@ func objectEntry(r *Scanner) (stateFn, error) {
 				return nil, err
 			}
 			// An OFS-delta references a base object that appears
-			// earlier in the pack; the negative offset must be
-			// strictly positive and not larger than the current
-			// object's offset.
-			if no <= 0 || no > oh.Offset {
+			// earlier in the pack. The negative offset must be
+			// strictly positive and strictly less than the current
+			// object's offset, so the resolved base offset
+			// (oh.Offset - no) stays inside the object stream
+			// (i.e. > 0, past the 12-byte pack header). Mirrors
+			// canonical Git in packfile.c[1]:
+			//
+			//	base_offset = delta_obj_offset - base_offset;
+			//	if (base_offset <= 0 || base_offset >= delta_obj_offset)
+			//		return 0;  /* out of bound */
+			//
+			// [1]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1289-L1290
+			if no <= 0 || no >= oh.Offset {
 				return nil, fmt.Errorf("%w: invalid OFS delta offset", ErrMalformedPackfile)
 			}
 			oh.OffsetReference = oh.Offset - no
