@@ -2,6 +2,7 @@ package commitgraph_test
 
 import (
 	"bytes"
+	encbin "encoding/binary"
 	"errors"
 	"io"
 	"os"
@@ -447,5 +448,147 @@ func (s *CommitgraphSuite) TestReencodeInMemory() {
 		tmpIndex := testReadIndex(s, dotgit, tmpName)
 		defer tmpIndex.Close()
 		testDecodeHelper(s, tmpIndex)
+	}
+}
+
+// TestGetCommitDataRejectsExtraEdgesPastChunk verifies that
+// GetCommitDataByIndex refuses an octopus parent2 whose extra-edge index
+// falls outside the declared EDGE chunk. Canonical Git's
+// fill_commit_in_graph validates parent_data_pos against
+// chunk_extra_edges_size / sizeof(uint32_t) (commit-graph.c v2.54.0);
+// go-git must follow suit and return ErrMalformedCommitGraphFile.
+//
+// The test loads the real "commit-graph" fixture (which contains an octopus
+// merge at 6f6c5d2b with two EDGE entries), reads its raw bytes, and patches
+// the octopus commit's parent2 field to encode an index of 100 — far past
+// the two-entry EDGE chunk. The patched file is re-opened and the octopus
+// commit looked up; the bound guard must fire before any read past the chunk.
+func (s *CommitgraphSuite) TestGetCommitDataRejectsExtraEdgesPastChunk() {
+	const octopusHash = "6f6c5d2be7852c782be1dd13e36496dd7ad39560"
+	// parentOctopusUsed (bit 31) | out-of-bounds edge index 100.
+	const badParent2 = uint32(0x80000000 | 100)
+
+	for _, f := range fixtures.ByTag("commit-graph") {
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+
+		// Read the raw commit-graph bytes.
+		cgPath := dotgit.Join("objects", "info", "commit-graph")
+		rdr, err := dotgit.Open(cgPath)
+		s.Require().NoError(err)
+		sz, err := rdr.Seek(0, io.SeekEnd)
+		s.Require().NoError(err)
+		_, err = rdr.Seek(0, io.SeekStart)
+		s.Require().NoError(err)
+		raw := make([]byte, sz)
+		_, err = io.ReadFull(rdr, raw)
+		s.Require().NoError(err)
+		rdr.Close()
+
+		// Locate the octopus commit's index in the OID-lookup chunk so we
+		// can compute the byte offset of its parent2 field in the CDAT chunk.
+		//
+		// File layout (SHA-1, from the fixture's TOC):
+		//   header:  8 bytes
+		//   TOC:     (numChunks+1) * 12 bytes
+		//   OIDF chunk at tocEntry[0].offset
+		//   OIDL chunk at tocEntry[1].offset
+		//   CDAT chunk at tocEntry[2].offset
+		//   EDGE chunk at tocEntry[3].offset
+		//   terminator at tocEntry[4].offset  (= end of chunk data)
+		numChunks := int(raw[6])
+		const tocBase = 8
+		const tocEntrySize = 12
+		const sha1Size = 20
+
+		readU64 := func(off int) uint64 {
+			return encbin.BigEndian.Uint64(raw[off:])
+		}
+
+		var oidlOffset, cdatOffset int
+		for i := range numChunks {
+			base := tocBase + i*tocEntrySize
+			id := string(raw[base : base+4])
+			off := int(readU64(base + 4))
+			switch id {
+			case "OIDL":
+				oidlOffset = off
+			case "CDAT":
+				cdatOffset = off
+			}
+		}
+		s.Require().Greater(oidlOffset, 0, "OIDL chunk not found in fixture")
+		s.Require().Greater(cdatOffset, 0, "CDAT chunk not found in fixture")
+
+		// Find the octopus commit's position in the sorted OID-lookup table.
+		// fanout[255] sits in the four bytes immediately preceding OIDL,
+		// regardless of how many other chunks precede the fanout.
+		octHash := plumbing.NewHash(octopusHash)
+		fanout255 := int(encbin.BigEndian.Uint32(raw[oidlOffset-4:]))
+		octIdx := -1
+		for i := range fanout255 {
+			start := oidlOffset + i*sha1Size
+			if bytes.Equal(raw[start:start+sha1Size], octHash.Bytes()) {
+				octIdx = i
+				break
+			}
+		}
+		s.Require().GreaterOrEqual(octIdx, 0, "octopus commit not found in OIDL")
+
+		// CDAT entry layout: sha1Size tree-hash + 4 parent1 + 4 parent2 + 8 genAndTime.
+		const cdatEntrySize = sha1Size + 4 + 4 + 8
+		parent2Off := cdatOffset + octIdx*cdatEntrySize + sha1Size + 4
+
+		// Clone and patch.
+		patched := make([]byte, len(raw))
+		copy(patched, raw)
+		encbin.BigEndian.PutUint32(patched[parent2Off:], badParent2)
+
+		// Opening the patched file should succeed: the corrupt field is inside
+		// the CDAT chunk and is not read during header/fanout parsing.
+		idx, err := openIndexBytes(patched)
+		s.Require().NoError(err)
+
+		// GetCommitDataByIndex for the octopus commit must reject the
+		// out-of-bounds edge pointer before reading past the EDGE chunk.
+		nodeIdx, err := idx.GetIndexByHash(octHash)
+		s.Require().NoError(err)
+		_, err = idx.GetCommitDataByIndex(nodeIdx)
+		s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
+			"expected ErrMalformedCommitGraphFile for out-of-bounds edge index")
+		idx.Close()
+	}
+}
+
+// TestGetCommitDataAcceptsValidOctopusParents complements the negative
+// extra-edge test by exercising the happy path through the same bound:
+// loading the unmodified fixture and reading the octopus commit must
+// still return all three parent hashes. Without this, an off-by-one
+// regression in the EDGE chunk cap would silently shrink legitimate
+// octopus walks.
+func (s *CommitgraphSuite) TestGetCommitDataAcceptsValidOctopusParents() {
+	const octopusHash = "6f6c5d2be7852c782be1dd13e36496dd7ad39560"
+
+	for _, f := range fixtures.ByTag("commit-graph") {
+		dotgit, err := f.DotGit()
+		s.Require().NoError(err)
+
+		cgPath := dotgit.Join("objects", "info", "commit-graph")
+		rdr, err := dotgit.Open(cgPath)
+		s.Require().NoError(err)
+		idx, err := commitgraph.OpenFileIndex(rdr)
+		s.Require().NoError(err)
+
+		octHash := plumbing.NewHash(octopusHash)
+		nodeIdx, err := idx.GetIndexByHash(octHash)
+		s.Require().NoError(err)
+
+		data, err := idx.GetCommitDataByIndex(nodeIdx)
+		s.Require().NoError(err)
+		s.Require().Greater(len(data.ParentHashes), 2,
+			"fixture's octopus commit should expose more than two parents")
+		s.Equal(len(data.ParentHashes), len(data.ParentIndexes))
+
+		idx.Close()
 	}
 }

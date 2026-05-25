@@ -71,6 +71,7 @@ type fileIndex struct {
 	reader                ReaderAtCloser
 	fanout                [lenFanout]uint32
 	offsets               [lenChunks]int64
+	sizes                 [lenChunks]int64 // byte length of each known chunk
 	parent                Index
 	hasGenerationV2       bool
 	minimumNumberOfHashes uint32
@@ -200,11 +201,26 @@ func (fi *fileIndex) verifyFileSize() error {
 	return nil
 }
 
+// chunkAssignment records the file offset of a known chunk type in
+// table-of-contents order, so that readChunkHeaders can derive each
+// chunk's byte length from adjacent offsets once the terminator is found.
+type chunkAssignment struct {
+	ct     ChunkType
+	offset int64
+}
+
 // readChunkHeaders parses the chunk table of contents. The number of
 // non-terminating entries is taken from the file header (byte 6), mirroring
 // canonical Git's parse_commit_graph_v1 [1] which passes that count to
 // read_table_of_contents [2]; the latter iterates exactly num_chunks times
 // and rejects both an early zero chunk-id and a non-zero terminator entry.
+//
+// After the terminator offset is known, the byte length of every known chunk
+// is computed as the difference between its starting offset and that of the
+// next entry in table-of-contents order (or the terminator for the last
+// one). These lengths are stored in fi.sizes and used by GetCommitDataByIndex
+// to bound the octopus extra-edge walk, mirroring canonical Git's
+// chunk_extra_edges_size / sizeof(uint32_t) guard in fill_commit_in_graph.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L414
 // [2]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L117
@@ -230,6 +246,11 @@ func (fi *fileIndex) readChunkHeaders() error {
 	// the incoming id and returns -1 on the first match [2]. Use a map
 	// instead of a linear scan; the semantics are identical.
 	seen := make(map[[szChunkSig]byte]struct{}, int(fi.numChunks))
+
+	// assigned records, in file order, every chunk whose offset was stored in
+	// fi.offsets. After the terminator offset is known, a second pass derives
+	// fi.sizes from consecutive offset differences.
+	assigned := make([]chunkAssignment, 0, int(fi.numChunks))
 
 	for i := range int(fi.numChunks) {
 		entry := io.NewSectionReader(fi.reader, tocBase+int64(i)*tocEntrySize, tocEntrySize)
@@ -273,6 +294,7 @@ func (fi *fileIndex) readChunkHeaders() error {
 			continue
 		}
 		fi.offsets[chunkType] = int64(chunkOffset)
+		assigned = append(assigned, chunkAssignment{ct: chunkType, offset: int64(chunkOffset)})
 	}
 
 	// The table is followed by a single terminator entry whose chunk-id
@@ -284,6 +306,21 @@ func (fi *fileIndex) readChunkHeaders() error {
 	}
 	if !bytes.Equal(chunkID, ZeroChunk.Signature()) {
 		return ErrMalformedCommitGraphFile
+	}
+	// The terminator entry's offset marks the end of all chunk data. Use it
+	// together with the per-chunk start offsets to derive chunk byte lengths.
+	terminatorOffset, err := binary.ReadUint64(terminator)
+	if err != nil {
+		return err
+	}
+	for i, a := range assigned {
+		var end int64
+		if i+1 < len(assigned) {
+			end = assigned[i+1].offset
+		} else {
+			end = int64(terminatorOffset)
+		}
+		fi.sizes[a.ct] = end - a.offset
 	}
 
 	if fi.offsets[OIDFanoutChunk] <= 0 || fi.offsets[OIDLookupChunk] <= 0 || fi.offsets[CommitDataChunk] <= 0 {
@@ -393,12 +430,23 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 	var parentIndexes []uint32
 	switch {
 	case parent2&parentOctopusUsed == parentOctopusUsed:
-		// Octopus merge - Look-up the extra parents from the extra edge list
-		// The extra edge list is a list of uint32s, each of which is an index into the Commit Data table, terminated by a index with the most significant bit on.
+		// Octopus merge — look up extra parents from the EDGE chunk. Canonical
+		// Git's fill_commit_in_graph bounds parent_data_pos against
+		// chunk_extra_edges_size / sizeof(uint32_t) on every iteration
+		// (commit-graph.c v2.54.0); mirror that to refuse out-of-range
+		// pointers and sentinel-less runaway reads.
+		edgeCount := fi.sizes[ExtraEdgeListChunk] / szUint32
+		pos := int64(parent2 & parentOctopusMask)
+		if pos >= edgeCount {
+			return nil, ErrMalformedCommitGraphFile
+		}
 		parentIndexes = []uint32{parent1 & parentOctopusMask}
-		offset := fi.offsets[ExtraEdgeListChunk] + szUint32*int64(parent2&parentOctopusMask)
+		offset := fi.offsets[ExtraEdgeListChunk] + szUint32*pos
 		buf := make([]byte, szUint32)
 		for {
+			if pos >= edgeCount {
+				return nil, ErrMalformedCommitGraphFile
+			}
 			_, err := fi.reader.ReadAt(buf, offset)
 			if err != nil {
 				return nil, err
@@ -406,6 +454,7 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 
 			parent := encbin.BigEndian.Uint32(buf)
 			offset += szUint32
+			pos++
 			parentIndexes = append(parentIndexes, parent&parentOctopusMask)
 			if parent&parentLast == parentLast {
 				break
