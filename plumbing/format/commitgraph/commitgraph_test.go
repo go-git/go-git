@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
@@ -644,6 +645,42 @@ func (s *CommitgraphSuite) TestGetCommitDataRejectsGenerationOverflowPastChunk()
 	_, err = idx.GetCommitDataByIndex(0)
 	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
 		"expected ErrMalformedCommitGraphFile for out-of-bounds overflow index")
+}
+
+// TestGetCommitDataReadsGenerationOverflow complements the rejection
+// test by exercising the happy path through the same bound: a graph
+// whose commit's GenerationV2Data exceeds MaxUint32 must round-trip
+// the overflow value through the GDO2 chunk. Without this, an
+// off-by-one tightening of the overflow cap would silently shrink
+// legitimate overflow reads.
+func (s *CommitgraphSuite) TestGetCommitDataReadsGenerationOverflow() {
+	// Use Unix epoch as the commit time so the encoder's
+	// (generation<<34 | unixTime) packing leaves the lower 34 bits at
+	// zero; the reader's `generationV2 = uint64(genAndTime & 0x3FFFFFFFF)`
+	// then equals When.Unix(), and `+= overflow_value` returns the
+	// caller-set GenerationV2 unchanged.
+	want := uint64(0x100000001)
+	mem := commitgraph.NewMemoryIndex()
+	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		&commitgraph.CommitData{
+			TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			Generation:   1,
+			GenerationV2: want,
+			When:         time.Unix(0, 0),
+		})
+
+	var buf bytes.Buffer
+	s.Require().NoError(commitgraph.NewEncoder(&buf).Encode(mem))
+
+	idx, err := commitgraph.OpenFileIndex(
+		discardCloseReader{bytes.NewReader(buf.Bytes())})
+	s.Require().NoError(err)
+	defer idx.Close()
+
+	data, err := idx.GetCommitDataByIndex(0)
+	s.Require().NoError(err)
+	s.Equal(want, data.GenerationV2,
+		"GenerationV2 should round-trip through the GDO2 overflow chunk")
 }
 
 // patchTOCOffset rewrites the file offset of the TOC entry whose
