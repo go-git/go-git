@@ -133,16 +133,17 @@ func TestStorage_FDPool_SharedAcrossStorages(t *testing.T) {
 		"shared pool should track FDs across all storages")
 }
 
-// TestStorage_FDPool_Disabled verifies negative MaxOpenDescriptors
-// yields a working Storage: pool-less sharedFiles fall back to the
-// grace-period close on quiescence, reads still succeed.
+// TestStorage_FDPool_Disabled verifies that injecting a no-op Pool
+// (capacity <= 0) yields a working Storage: pool-less SharedFiles
+// fall back to the grace-period close on quiescence, reads still
+// succeed.
 func TestStorage_FDPool_Disabled(t *testing.T) {
 	t.Parallel()
 	fixture := fixtures.Basic().One()
 	dir, err := fixture.DotGit()
 	require.NoError(t, err)
 	s := filesystem.NewStorageWithOptions(dir, cache.NewObjectLRUDefault(),
-		filesystem.Options{MaxOpenDescriptors: -1})
+		filesystem.Options{Pool: fdpool.New(0)})
 	t.Cleanup(func() { _ = s.Close() })
 
 	iter, err := s.IterEncodedObjects(plumbing.AnyObject)

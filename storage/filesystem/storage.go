@@ -16,10 +16,10 @@ import (
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
-// defaultMaxOpenDescriptors is the FD pool capacity selected when
-// [Options.MaxOpenDescriptors] is zero. It accommodates roughly 85
-// concurrently-hot packs (3 FDs per pack: pack + idx + rev).
-const defaultMaxOpenDescriptors = 256
+// defaultPoolCapacity is the FD pool capacity selected when
+// [Options.Pool] is nil. It accommodates roughly 85 concurrently-hot
+// packs (3 FDs per pack: pack + idx + rev).
+const defaultPoolCapacity = 256
 
 // Storage is an implementation of git.Storer that stores data on disk in the
 // standard git format (this is, the .git directory). Zero values of this type
@@ -54,38 +54,6 @@ type Options struct {
 	// ExclusiveAccess means that the filesystem is not modified externally
 	// while the repo is open.
 	ExclusiveAccess bool
-	// MaxOpenDescriptors is the capacity of the storage-wide LRU FD
-	// pool. The pool bounds the read-side .pack/.idx/.rev file
-	// descriptors across the entire Storage. When a Storage exceeds
-	// this capacity, the least-recently-used `sharedFile`'s FD is
-	// closed (via `sharedFile.ReleaseNow`) and reopens on the next
-	// read. Pack-write FDs ([PackWriter]) are short-lived and not
-	// pooled.
-	//
-	// Zero (the default) selects [defaultMaxOpenDescriptors] (256),
-	// which accommodates roughly 85 concurrently-hot packs (3 FDs
-	// per pack: pack + idx + rev). The 256 default assumes go-git
-	// is responsible for the dominant share of FDs in the process;
-	// applications running other FD-heavy subsystems (network
-	// servers, large connection pools) should size this against
-	// their full FD budget rather than rely on the default.
-	// Negative values disable pooling: pool-less sharedFiles fall
-	// back to their grace-period close on quiescence.
-	//
-	// The field name is reused from a pre-v6 option that capped
-	// concurrently-open packs without an eviction policy; the v6
-	// pool governs the same FD-budget concern with LRU eviction
-	// across all .pack/.idx/.rev descriptors. The v5
-	// KeepDescriptors flag (which pinned every pack FD open) is
-	// removed; callers migrating from it can leave this field at
-	// zero for the LRU default.
-	//
-	// To request mmap-backed read FDs (read-only, where the
-	// platform supports it) construct the underlying billy
-	// filesystem with [github.com/go-git/go-billy/v6/osfs.WithMmap]
-	// before handing it to [NewStorageWithOptions]. The pool
-	// governs that file equally whether it is FD- or mmap-backed.
-	MaxOpenDescriptors int
 	// LargeObjectThreshold maximum object size (in bytes) that will be read in to memory.
 	// If left unset or set to 0 there is no limit
 	LargeObjectThreshold int64
@@ -113,24 +81,44 @@ type Options struct {
 	// If left as nil, a default stat-based implementation is created automatically.
 	IndexCache IndexCache
 
-	// Pool, when non-nil, replaces the per-Storage FD pool that
-	// NewStorageWithOptions would otherwise construct. Multiple
-	// Storages sharing a pool share a single bounded FD budget
-	// across the process — useful when a single process opens
-	// many Storages and wants the FD budget bounded process-wide
-	// rather than per Storage (servers handling concurrent
-	// requests, batch tools iterating many repositories, etc.).
-	// When non-nil, MaxOpenDescriptors is ignored (the shared
-	// pool's existing capacity governs).
+	// Pool governs LRU eviction of the read-side .pack/.idx/.rev
+	// file descriptors that this Storage opens. When a Storage
+	// exceeds the pool capacity the least-recently-used SharedFile
+	// is closed (via ReleaseNow) and reopens on the next read.
+	// Pack-write FDs ([PackWriter]) are short-lived and are not
+	// pooled.
 	//
-	// To share a pool across Storage instances, construct the
-	// pool explicitly and pass it via this field to
+	// A nil Pool selects a per-Storage pool sized at the package
+	// default (currently 256 entries, accommodating roughly 85
+	// concurrently-hot packs at 3 FDs per pack). The default
+	// assumes go-git owns the dominant share of FDs in the
+	// process; applications running other FD-heavy subsystems
+	// (network servers, large connection pools) should construct
+	// a pool sized against their full FD budget and pass it here
+	// rather than rely on the default.
+	//
+	// Sharing one Pool across multiple Storages bounds the FD
+	// budget process-wide rather than per Storage — useful for
+	// servers handling concurrent per-request repositories or
+	// batch tools iterating many repos. Construct the pool with
+	// [fdpool.New], pass it via this field to
 	// [NewStorageWithOptions], then open repositories with
 	// [git.Open], [git.Clone], or [git.Init] using the resulting
 	// Storer. The path-based wrappers (all Plain* functions:
 	// PlainOpen, PlainClone, PlainInit) construct their own
 	// Storage internally and so do not accept an injected pool;
 	// that is by design.
+	//
+	// To disable pooling, pass [fdpool.New](0) (or any non-positive
+	// capacity): the resulting no-op Pool causes pool-less
+	// SharedFiles to fall back to their grace-period close on
+	// quiescence.
+	//
+	// To request mmap-backed read FDs (read-only, where the
+	// platform supports it) construct the underlying billy
+	// filesystem with [github.com/go-git/go-billy/v6/osfs.WithMmap]
+	// before handing it to [NewStorageWithOptions]. The pool
+	// governs that file equally whether it is FD- or mmap-backed.
 	//
 	// The Pool field's API stability tracks [fdpool.Pool]'s, not
 	// this package's. Per the x/ package policy, the fdpool API
@@ -170,18 +158,12 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
 
-	// Construct the FD pool unless the caller injected one. Zero
-	// MaxOpenDescriptors selects the default capacity; negative
-	// capacity yields a no-op pool whose Touch and Forget are
-	// no-ops, so pool-less sharedFiles fall back to their grace
-	// timer on quiescence.
+	// Construct a per-Storage FD pool at the package default
+	// capacity unless the caller injected one. Pass a non-positive-
+	// capacity Pool via Options.Pool to disable pooling.
 	pool := ops.Pool
 	if pool == nil {
-		poolCap := ops.MaxOpenDescriptors
-		if poolCap == 0 {
-			poolCap = defaultMaxOpenDescriptors
-		}
-		pool = fdpool.New(poolCap)
+		pool = fdpool.New(defaultPoolCapacity)
 	}
 
 	dirOps := dotgit.Options{
