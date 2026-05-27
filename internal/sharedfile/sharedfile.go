@@ -51,6 +51,7 @@ type SharedFile struct {
 	open        func() (ReadAtCloser, error)
 	gracePeriod time.Duration
 	pool        *fdpool.Pool
+	poolHandle  fdpool.Handle // pool's per-Member token; zero until first Touch
 
 	file           ReadAtCloser
 	refs           int
@@ -116,7 +117,7 @@ func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	// eviction is deadlock-free. See fdpool/pool.go's eviction
 	// comment for the full invariant.
 	if pool != nil {
-		pool.Touch(s)
+		pool.Touch(s, &s.poolHandle)
 	}
 	return file, nil
 }
@@ -230,7 +231,7 @@ func (s *SharedFile) Close() error {
 	s.mu.Unlock()
 
 	if pool != nil {
-		pool.Forget(s)
+		pool.Forget(&s.poolHandle)
 	}
 	return err
 }

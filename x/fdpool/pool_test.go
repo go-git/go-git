@@ -10,9 +10,11 @@ import (
 
 // fakeMember is a stub Member that records how many times
 // ReleaseNow has been invoked. The counter uses sync/atomic so
-// the concurrent test can assert on it without racing.
+// the concurrent test can assert on it without racing. The
+// embedded Handle is the Pool's per-Member registration token.
 type fakeMember struct {
 	released atomic.Int32
+	h        Handle
 }
 
 func (f *fakeMember) ReleaseNow() error {
@@ -31,9 +33,9 @@ func TestPool_ZeroCapacity_NoOp(t *testing.T) {
 
 	// Touch and Forget must be no-ops; in particular Touch must
 	// not call ReleaseNow on its own argument.
-	p.Touch(m)
-	p.Touch(m)
-	p.Forget(m)
+	p.Touch(m, &m.h)
+	p.Touch(m, &m.h)
+	p.Forget(&m.h)
 
 	require.Equal(t, int32(0), m.releaseCount(),
 		"ReleaseNow must not be invoked on a no-op pool")
@@ -47,8 +49,8 @@ func TestPool_NegativeCapacity_NoOp(t *testing.T) {
 	p := New(-5)
 	m := &fakeMember{}
 
-	p.Touch(m)
-	p.Forget(m)
+	p.Touch(m, &m.h)
+	p.Forget(&m.h)
 
 	require.Equal(t, int32(0), m.releaseCount())
 	got := p.Stats()
@@ -59,9 +61,12 @@ func TestPool_NegativeCapacity_NoOp(t *testing.T) {
 func TestPool_NilMember_NoOp(t *testing.T) {
 	t.Parallel()
 	p := New(2)
-	// Should not panic.
-	p.Touch(nil)
+	// Should not panic for either nil Member or nil Handle.
+	p.Touch(nil, nil)
+	var h Handle
+	p.Touch(nil, &h)
 	p.Forget(nil)
+	p.Forget(&h)
 
 	got := p.Stats()
 	require.Equal(t, 2, got.Capacity)
@@ -74,11 +79,11 @@ func TestPool_Capacity1_EvictsOnInsert(t *testing.T) {
 	m1 := &fakeMember{}
 	m2 := &fakeMember{}
 
-	p.Touch(m1)
+	p.Touch(m1, &m1.h)
 	require.Equal(t, int32(0), m1.releaseCount())
 	require.Equal(t, 1, p.Stats().Active)
 
-	p.Touch(m2)
+	p.Touch(m2, &m2.h)
 	// m1 must be evicted exactly once; m2 stays.
 	require.Equal(t, int32(1), m1.releaseCount(),
 		"m1 must be evicted exactly once when m2 is inserted")
@@ -97,7 +102,7 @@ func TestPool_WorkingSetWithinCapacity_NoEviction(t *testing.T) {
 	members := make([]*fakeMember, capacity)
 	for i := range members {
 		members[i] = &fakeMember{}
-		p.Touch(members[i])
+		p.Touch(members[i], &members[i].h)
 	}
 
 	// All four registered, no evictions yet.
@@ -113,7 +118,7 @@ func TestPool_WorkingSetWithinCapacity_NoEviction(t *testing.T) {
 	// Re-Touch existing members: should register as Hits and
 	// produce no evictions.
 	for _, m := range members {
-		p.Touch(m)
+		p.Touch(m, &m.h)
 	}
 	got = p.Stats()
 	require.Equal(t, capacity, got.Active)
@@ -131,26 +136,26 @@ func TestPool_OldestEvictsFirst(t *testing.T) {
 	m3 := &fakeMember{}
 	m4 := &fakeMember{}
 
-	p.Touch(m1)
-	p.Touch(m2)
-	p.Touch(m3)
+	p.Touch(m1, &m1.h)
+	p.Touch(m2, &m2.h)
+	p.Touch(m3, &m3.h)
 
 	// LRU order from MRU to LRU: m3, m2, m1.
 	// Inserting m4 evicts m1.
-	p.Touch(m4)
+	p.Touch(m4, &m4.h)
 	require.Equal(t, int32(1), m1.releaseCount(), "m1 should evict first")
 	require.Equal(t, int32(0), m2.releaseCount())
 	require.Equal(t, int32(0), m3.releaseCount())
 	require.Equal(t, int32(0), m4.releaseCount())
 
 	// Now Touch m2 to make it MRU; LRU is m3.
-	p.Touch(m2)
+	p.Touch(m2, &m2.h)
 	require.Equal(t, uint64(1), p.Stats().Hits)
 
 	// Insert a fresh m5; m3 should evict next (m2 is MRU, m4 is
 	// middle, m3 is LRU).
 	m5 := &fakeMember{}
-	p.Touch(m5)
+	p.Touch(m5, &m5.h)
 	require.Equal(t, int32(1), m3.releaseCount(),
 		"after re-touching m2 the LRU tail is m3, which must evict")
 	require.Equal(t, int32(0), m2.releaseCount())
@@ -170,7 +175,7 @@ func TestPool_EvictionNeverTargetsJustTouched(t *testing.T) {
 	members := make([]*fakeMember, total)
 	for i := range members {
 		members[i] = &fakeMember{}
-		p.Touch(members[i])
+		p.Touch(members[i], &members[i].h)
 	}
 
 	// Exactly the oldest member (m0) must be evicted. The
@@ -188,24 +193,52 @@ func TestPool_EvictionNeverTargetsJustTouched(t *testing.T) {
 	require.Equal(t, uint64(1), got.Evictions)
 }
 
+// TestPool_EvictedMemberReregistersCleanly asserts that after the
+// Pool evicts a Member, a subsequent Touch on the same Member
+// re-registers it: the LRU contains the Member again and Active
+// reflects it. This exercises the eviction path's clearing of
+// victim.h.elem under p.mu; without that clear, the re-Touch would
+// see h.elem != nil and call MoveToFront on the removed element,
+// silently leaving the Member unregistered while its Handle claimed
+// otherwise.
+func TestPool_EvictedMemberReregistersCleanly(t *testing.T) {
+	t.Parallel()
+	p := New(1)
+	a := &fakeMember{}
+	b := &fakeMember{}
+
+	p.Touch(a, &a.h)
+	p.Touch(b, &b.h) // evicts a
+	require.Equal(t, int32(1), a.releaseCount(), "a must have been evicted")
+	require.Equal(t, 1, p.Stats().Active)
+
+	// Re-Touch the evicted member; it must register fresh.
+	p.Touch(a, &a.h) // evicts b
+	require.Equal(t, int32(1), b.releaseCount(), "b must now be the evicted tail")
+	require.Equal(t, 1, p.Stats().Active,
+		"after re-Touch the evicted member must be back in the LRU")
+	require.Equal(t, uint64(0), p.Stats().Hits,
+		"the re-Touch must register fresh, not record as a hit")
+}
+
 func TestPool_Forget_Idempotent(t *testing.T) {
 	t.Parallel()
 	p := New(4)
 
 	// Forget on a never-registered Member: no-op, no panic.
 	never := &fakeMember{}
-	p.Forget(never)
+	p.Forget(&never.h)
 	require.Equal(t, int32(0), never.releaseCount())
 	require.Equal(t, 0, p.Stats().Active)
 
 	// Register, Forget, and Forget again.
 	m := &fakeMember{}
-	p.Touch(m)
+	p.Touch(m, &m.h)
 	require.Equal(t, 1, p.Stats().Active)
-	p.Forget(m)
+	p.Forget(&m.h)
 	require.Equal(t, 0, p.Stats().Active)
 	// Double Forget is a no-op.
-	p.Forget(m)
+	p.Forget(&m.h)
 	require.Equal(t, 0, p.Stats().Active)
 
 	// Forget must not call ReleaseNow.
@@ -220,11 +253,11 @@ func TestPool_Forget_FreesSlotForNewInsert(t *testing.T) {
 	m2 := &fakeMember{}
 	m3 := &fakeMember{}
 
-	p.Touch(m1)
-	p.Touch(m2)
-	p.Forget(m1)
+	p.Touch(m1, &m1.h)
+	p.Touch(m2, &m2.h)
+	p.Forget(&m1.h)
 	// Active dropped to 1, so inserting m3 fits without eviction.
-	p.Touch(m3)
+	p.Touch(m3, &m3.h)
 	require.Equal(t, int32(0), m1.releaseCount(),
 		"Forget must not release; m1 must remain unreleased")
 	require.Equal(t, int32(0), m2.releaseCount())
@@ -242,10 +275,10 @@ func TestPool_Stats_Snapshot(t *testing.T) {
 	m2 := &fakeMember{}
 	m3 := &fakeMember{}
 
-	p.Touch(m1)
-	p.Touch(m2)
-	p.Touch(m1) // hit
-	p.Touch(m3) // evicts m2
+	p.Touch(m1, &m1.h)
+	p.Touch(m2, &m2.h)
+	p.Touch(m1, &m1.h) // hit
+	p.Touch(m3, &m3.h) // evicts m2
 
 	got := p.Stats()
 	require.Equal(t, 2, got.Capacity)
@@ -280,9 +313,9 @@ func TestPool_ConcurrentTouch(t *testing.T) {
 			// different offset.
 			for i := range iters {
 				m := pool[(seed+i)%members]
-				p.Touch(m)
+				p.Touch(m, &m.h)
 				if i%17 == 0 {
-					p.Forget(m)
+					p.Forget(&m.h)
 				}
 			}
 		}(g)
@@ -312,10 +345,16 @@ func TestPool_ConcurrentTouch(t *testing.T) {
 
 // failingMember returns a sentinel error from ReleaseNow so
 // TestPool_EvictionFailureCounted can assert the pool recorded the
-// failure in Stats.EvictionFailures.
-type failingMember struct{}
+// failure in Stats.EvictionFailures. The embedded []byte makes the
+// concrete type non-comparable on purpose: the Handle-based
+// registration must accept Members the Go runtime cannot use as a
+// map key.
+type failingMember struct {
+	_ []byte // forces non-comparable concrete type
+	h Handle
+}
 
-func (failingMember) ReleaseNow() error {
+func (*failingMember) ReleaseNow() error {
 	return errReleaseNowFailed
 }
 
@@ -328,17 +367,22 @@ func (e fakeError) Error() string { return string(e) }
 // TestPool_EvictionFailureCounted verifies that a non-nil error
 // return from a Member's ReleaseNow bumps Stats.EvictionFailures
 // once per failed eviction. Stats.Evictions still counts the
-// eviction itself — failure does not retract the LRU/map update.
+// eviction itself — failure does not retract the LRU update.
+//
+// The failing Member is deliberately a non-comparable concrete
+// type; pre-Handle the map[Member]*list.Element registration would
+// panic at hash time. Asserting clean registration here doubles as
+// regression cover for that hazard.
 func TestPool_EvictionFailureCounted(t *testing.T) {
 	t.Parallel()
 	p := New(1)
 
 	// Insert a failing member, then insert a clean one to trigger
 	// eviction of the failing tail.
-	failing := failingMember{}
+	failing := &failingMember{}
 	clean := &fakeMember{}
-	p.Touch(failing)
-	p.Touch(clean)
+	p.Touch(failing, &failing.h)
+	p.Touch(clean, &clean.h)
 
 	got := p.Stats()
 	require.Equal(t, uint64(1), got.Evictions,
@@ -353,6 +397,7 @@ func TestPool_EvictionFailureCounted(t *testing.T) {
 type pinnableMember struct {
 	released atomic.Int32
 	pinned   atomic.Bool
+	h        Handle
 }
 
 func (m *pinnableMember) ReleaseNow() error {
@@ -381,14 +426,14 @@ func TestPool_EvictsUnpinnedFirst(t *testing.T) {
 	unpinned := &pinnableMember{}
 
 	// Insert order: pinned (LRU tail), unpinned (head).
-	p.Touch(pinned)
-	p.Touch(unpinned)
+	p.Touch(pinned, &pinned.h)
+	p.Touch(unpinned, &unpinned.h)
 
 	// One more Touch triggers eviction. The LRU tail (pinned) must
 	// be skipped in favour of unpinned, even though unpinned is
 	// further forward in the list.
 	overflow := &pinnableMember{}
-	p.Touch(overflow)
+	p.Touch(overflow, &overflow.h)
 
 	require.Equal(t, int32(0), pinned.releaseCount(),
 		"pinned member must not be evicted while an unpinned candidate exists")
@@ -415,11 +460,11 @@ func TestPool_AllPinned_FallsBackToLRU(t *testing.T) {
 	head := &pinnableMember{}
 	head.pinned.Store(true)
 
-	p.Touch(tail) // LRU tail
-	p.Touch(head) // MRU front
+	p.Touch(tail, &tail.h) // LRU tail
+	p.Touch(head, &head.h) // MRU front
 
 	overflow := &pinnableMember{}
-	p.Touch(overflow)
+	p.Touch(overflow, &overflow.h)
 
 	require.Equal(t, int32(1), tail.releaseCount(),
 		"with all members pinned, LRU tail must still be evicted")
@@ -443,11 +488,11 @@ func TestPool_MemberWithoutPinnable_PreservesLRU(t *testing.T) {
 
 	tail := &fakeMember{}
 	head := &fakeMember{}
-	p.Touch(tail)
-	p.Touch(head)
+	p.Touch(tail, &tail.h)
+	p.Touch(head, &head.h)
 
 	overflow := &fakeMember{}
-	p.Touch(overflow)
+	p.Touch(overflow, &overflow.h)
 
 	require.Equal(t, int32(1), tail.releaseCount(),
 		"LRU tail must be evicted when Member does not implement Pinnable")

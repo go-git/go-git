@@ -17,13 +17,9 @@ import (
 	"sync"
 )
 
-// Member is the interface a pool entry must implement. The pool
-// holds Member references in an internal LRU list and calls
-// ReleaseNow on the tail Member when capacity is exceeded.
-//
-// Implementations must be comparable (typically a pointer-receiver
-// type), since Members are used as keys in the pool's internal
-// O(1)-lookup map.
+// Member is the interface a pool entry must implement. On eviction
+// the Pool calls ReleaseNow on the Member; the per-Member
+// registration token is the [Handle] the caller passes alongside.
 //
 // ReleaseNow must close the underlying FD without permanently
 // invalidating the Member: a subsequent acquire from the Member's
@@ -48,6 +44,34 @@ type Member interface {
 // first release.
 type Pinnable interface {
 	Pinned() bool
+}
+
+// Handle is the per-Member registration token that the Pool uses
+// to locate a Member in its internal LRU. Each Member instance
+// owns exactly one Handle and passes a pointer to it alongside
+// the Member on every [Pool.Touch] and [Pool.Forget] call.
+//
+// The zero value is valid and reports "not yet registered". The
+// Pool reads and writes Handle fields exclusively under its
+// internal mutex; callers must not touch them directly.
+//
+// Using a per-Member Handle (rather than the Member itself as a
+// map key) removes the implicit "Member must be comparable"
+// requirement that an internal map[Member]*list.Element would
+// impose — a Member with a non-comparable concrete type would
+// otherwise panic on registration.
+type Handle struct {
+	elem *list.Element
+}
+
+// entry is the per-Member record stored in the LRU list. Holding
+// a back-pointer to the Member's Handle lets eviction clear
+// h.elem before invoking ReleaseNow, so a concurrent re-Touch on
+// the evicted Member observes h.elem == nil and re-registers
+// cleanly.
+type entry struct {
+	m Member
+	h *Handle
 }
 
 // Stats captures a snapshot of the pool's runtime state. The
@@ -87,8 +111,7 @@ type Stats struct {
 type Pool struct {
 	mu               sync.Mutex
 	capacity         int
-	lru              *list.List // front = MRU, back = LRU; values are Member
-	elements         map[Member]*list.Element
+	lru              *list.List // front = MRU, back = LRU; values are *entry
 	hits             uint64
 	evictions        uint64
 	evictionFailures uint64
@@ -106,31 +129,31 @@ func New(capacity int) *Pool {
 	return &Pool{
 		capacity: capacity,
 		lru:      list.New(),
-		elements: make(map[Member]*list.Element, capacity),
 	}
 }
 
 // Touch reports an FD-active transition on m: either the first
 // acquire (m is newly registered) or a subsequent acquire on an
-// already-registered Member (m moves to MRU front). If the
-// resulting active count exceeds the capacity, the LRU tail is
-// evicted via Member.ReleaseNow. Eviction never targets m itself.
+// already-registered Member (m moves to MRU front). The Handle h
+// identifies m in the LRU; the same h must be passed on every
+// Touch/Forget for the same Member. If the resulting active count
+// exceeds the capacity, the LRU tail is evicted via
+// Member.ReleaseNow. Eviction never targets m itself.
 //
 // Touch is safe to call from multiple goroutines.
-func (p *Pool) Touch(m Member) {
-	if p.capacity <= 0 || m == nil {
+func (p *Pool) Touch(m Member, h *Handle) {
+	if p.capacity <= 0 || m == nil || h == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if elem, ok := p.elements[m]; ok {
-		p.lru.MoveToFront(elem)
+	if h.elem != nil {
+		p.lru.MoveToFront(h.elem)
 		p.hits++
 		return
 	}
-	elem := p.lru.PushFront(m)
-	p.elements[m] = elem
+	h.elem = p.lru.PushFront(&entry{m: m, h: h})
 
 	// Evict if we exceeded capacity. Two-pass victim selection:
 	// walk the LRU back-to-front and prefer the LRU-most Member
@@ -144,9 +167,9 @@ func (p *Pool) Touch(m Member) {
 	// the caller's own Member.
 	if p.lru.Len() > p.capacity {
 		var victimElem *list.Element
-		for e := p.lru.Back(); e != nil && e != elem; e = e.Prev() {
-			m := e.Value.(Member)
-			if pn, ok := m.(Pinnable); !ok || !pn.Pinned() {
+		for e := p.lru.Back(); e != nil && e != h.elem; e = e.Prev() {
+			ent := e.Value.(*entry)
+			if pn, ok := ent.m.(Pinnable); !ok || !pn.Pinned() {
 				victimElem = e
 				break
 			}
@@ -156,16 +179,23 @@ func (p *Pool) Touch(m Member) {
 			victimElem = p.lru.Back()
 		}
 		if victimElem != nil {
-			victim := victimElem.Value.(Member)
+			victimEnt := victimElem.Value.(*entry)
 			p.lru.Remove(victimElem)
-			delete(p.elements, victim)
+			// Clear the victim's Handle before dropping p.mu so a
+			// concurrent re-Touch on the same Member observes
+			// h.elem == nil and re-registers cleanly. Without
+			// this clear the re-Touch would call MoveToFront on
+			// the removed element (a no-op in container/list),
+			// silently leaving the Member unregistered while its
+			// Handle still claimed it was.
+			victimEnt.h.elem = nil
 			p.evictions++
 			// Release the lock while calling ReleaseNow to avoid
 			// a lock-ordering hazard against the Member's own
 			// mutex (SharedFile.mu in the real wiring). The rule
 			// is: Member calls into Pool only after releasing
 			// Member.mu (see SharedFile.Acquire and Close). The
-			// new Pool→Member call through Pinned above is
+			// Pool→Member call through Pinned above is
 			// deadlock-free because no Member call holds s.mu
 			// while waiting for p.mu.
 			//
@@ -175,7 +205,7 @@ func (p *Pool) Touch(m Member) {
 			// elsewhere (e.g. packhandle.doClose) and is recorded
 			// here so the asymmetry doesn't read as an oversight.
 			p.mu.Unlock()
-			err := victim.ReleaseNow()
+			err := victimEnt.m.ReleaseNow()
 			p.mu.Lock()
 			if err != nil {
 				p.evictionFailures++
@@ -184,22 +214,25 @@ func (p *Pool) Touch(m Member) {
 	}
 }
 
-// Forget removes m from the LRU without invoking ReleaseNow.
-// Used when m is permanently closed by its owner.
+// Forget removes the Handle's Member from the LRU without invoking
+// ReleaseNow. Used when the Member is permanently closed by its
+// owner.
 //
-// Forget is idempotent: calling it on a Member that was never
-// registered, or that has already been Forgotten, is a no-op.
-func (p *Pool) Forget(m Member) {
-	if p.capacity <= 0 || m == nil {
+// Forget is idempotent: calling it with a Handle that was never
+// registered, or that has already been Forgotten or evicted, is a
+// no-op.
+func (p *Pool) Forget(h *Handle) {
+	if p.capacity <= 0 || h == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if elem, ok := p.elements[m]; ok {
-		p.lru.Remove(elem)
-		delete(p.elements, m)
+	if h.elem == nil {
+		return
 	}
+	p.lru.Remove(h.elem)
+	h.elem = nil
 }
 
 // Stats returns a snapshot of the pool's current statistics.

@@ -7,9 +7,11 @@ import (
 
 // benchMember is a stub Member for pool benchmarks. ReleaseNow
 // increments a counter so the eviction sanity checks can verify
-// the pool called it at least once (or not at all).
+// the pool called it at least once (or not at all). The embedded
+// Handle is the Pool's per-Member registration token.
 type benchMember struct {
 	releases atomic.Int32
+	h        Handle
 }
 
 func (m *benchMember) ReleaseNow() error {
@@ -34,13 +36,14 @@ func BenchmarkFDPool_WorkingSetFitsInPool(b *testing.B) {
 	// Warm: insert all members once so subsequent iterations hit
 	// the MoveToFront (cache-hit) path exclusively.
 	for _, m := range members {
-		p.Touch(m)
+		p.Touch(m, &m.h)
 	}
 
 	b.ReportAllocs()
 	var i int
 	for b.Loop() {
-		p.Touch(members[i%wset])
+		m := members[i%wset]
+		p.Touch(m, &m.h)
 		i++
 	}
 
@@ -76,7 +79,8 @@ func BenchmarkFDPool_Eviction_WorkingSetExceedsPool(b *testing.B) {
 	b.ReportAllocs()
 	var i int
 	for b.Loop() {
-		p.Touch(members[i%wset])
+		m := members[i%wset]
+		p.Touch(m, &m.h)
 		i++
 	}
 
