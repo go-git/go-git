@@ -645,3 +645,117 @@ func (s *CommitgraphSuite) TestGetCommitDataRejectsGenerationOverflowPastChunk()
 	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
 		"expected ErrMalformedCommitGraphFile for out-of-bounds overflow index")
 }
+
+// patchTOCOffset rewrites the file offset of the TOC entry whose
+// 4-byte signature matches sig. Returns false if no entry matches.
+func patchTOCOffset(raw, sig []byte, newOffset uint64) bool {
+	if len(raw) < 8 || len(sig) != 4 {
+		return false
+	}
+	numChunks := int(raw[6])
+	const tocBase = 8
+	const tocEntrySize = 12
+	for i := 0; i <= numChunks; i++ {
+		base := tocBase + i*tocEntrySize
+		if base+12 > len(raw) {
+			return false
+		}
+		if bytes.Equal(raw[base:base+4], sig) {
+			encbin.BigEndian.PutUint64(raw[base+4:], newOffset)
+			return true
+		}
+	}
+	return false
+}
+
+// findTOCOffset reads back the file offset of the TOC entry with the
+// given 4-byte signature.
+func findTOCOffset(raw, sig []byte) (uint64, bool) {
+	if len(raw) < 8 || len(sig) != 4 {
+		return 0, false
+	}
+	numChunks := int(raw[6])
+	const tocBase = 8
+	const tocEntrySize = 12
+	for i := 0; i <= numChunks; i++ {
+		base := tocBase + i*tocEntrySize
+		if base+12 > len(raw) {
+			return 0, false
+		}
+		if bytes.Equal(raw[base:base+4], sig) {
+			return encbin.BigEndian.Uint64(raw[base+4:]), true
+		}
+	}
+	return 0, false
+}
+
+// buildSimpleEncoded encodes a one-commit graph with no octopus and
+// no generation-v2 data, exercising only OIDF/OIDL/CDAT chunks.
+func buildSimpleEncoded() ([]byte, error) {
+	mem := commitgraph.NewMemoryIndex()
+	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		&commitgraph.CommitData{
+			TreeHash:   plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			Generation: 1,
+		})
+	var buf bytes.Buffer
+	if err := commitgraph.NewEncoder(&buf).Encode(mem); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// TestOpenFileIndexRejectsFanoutWrongSize verifies the OIDFanout
+// chunk's byte length is asserted to be exactly 256 * uint32.
+// Canonical Git: graph_read_oid_fanout, commit-graph.c v2.54.0.
+func (s *CommitgraphSuite) TestOpenFileIndexRejectsFanoutWrongSize() {
+	raw, err := buildSimpleEncoded()
+	s.Require().NoError(err)
+
+	// Shift OIDL's TOC offset up by 4 bytes; OIDF's derived size becomes
+	// 1028, not 1024.
+	oidlOff, ok := findTOCOffset(raw, []byte("OIDL"))
+	s.Require().True(ok, "OIDL TOC entry not present")
+	s.Require().True(patchTOCOffset(raw, []byte("OIDL"), oidlOff+4))
+
+	_, err = openIndexBytes(raw)
+	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
+		"expected ErrMalformedCommitGraphFile for OIDF size != 1024")
+}
+
+// TestOpenFileIndexRejectsLookupCardinality verifies the OIDLookup
+// chunk's byte length is asserted to equal numCommits * hashSize.
+// Canonical Git: graph_read_oid_lookup, commit-graph.c v2.54.0.
+func (s *CommitgraphSuite) TestOpenFileIndexRejectsLookupCardinality() {
+	raw, err := buildSimpleEncoded()
+	s.Require().NoError(err)
+
+	// Shift CDAT's TOC offset up by one hash size; OIDL's derived size
+	// becomes numCommits*hashSize + hashSize, no longer a multiple match.
+	cdatOff, ok := findTOCOffset(raw, []byte("CDAT"))
+	s.Require().True(ok, "CDAT TOC entry not present")
+	s.Require().True(patchTOCOffset(raw, []byte("CDAT"), cdatOff+20))
+
+	_, err = openIndexBytes(raw)
+	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
+		"expected ErrMalformedCommitGraphFile for OIDL cardinality mismatch")
+}
+
+// TestOpenFileIndexRejectsCommitDataCardinality verifies the
+// CommitData chunk's byte length is asserted to equal
+// numCommits * (hashSize + szCommitData).
+// Canonical Git: graph_read_commit_data, commit-graph.c v2.54.0.
+func (s *CommitgraphSuite) TestOpenFileIndexRejectsCommitDataCardinality() {
+	raw, err := buildSimpleEncoded()
+	s.Require().NoError(err)
+
+	// Shift the terminator's offset up by one CDAT-entry stride; CDAT's
+	// derived size becomes numCommits*entrySize + entrySize.
+	termOff, ok := findTOCOffset(raw, []byte{0, 0, 0, 0})
+	s.Require().True(ok, "terminator TOC entry not present")
+	s.Require().True(patchTOCOffset(raw, []byte{0, 0, 0, 0}, termOff+36))
+
+	_, err = openIndexBytes(raw)
+	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
+		"expected ErrMalformedCommitGraphFile for CDAT cardinality mismatch")
+}

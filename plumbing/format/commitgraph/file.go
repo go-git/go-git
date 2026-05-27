@@ -109,6 +109,9 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 	if err := fi.readChunkHeaders(); err != nil {
 		return nil, err
 	}
+	if err := fi.verifyChunkSizes(); err != nil {
+		return nil, err
+	}
 	if err := fi.readFanout(); err != nil {
 		return nil, err
 	}
@@ -327,6 +330,50 @@ func (fi *fileIndex) readChunkHeaders() error {
 		return ErrMalformedCommitGraphFile
 	}
 
+	return nil
+}
+
+// verifyChunkSizes asserts the byte length of every required chunk
+// against the fanout-derived commit count. Canonical Git applies the
+// same cardinality checks at parse time so that truncated or
+// hand-edited files fail once during OpenFileIndex rather than mid-
+// walk (commit-graph.c v2.54.0, graph_read_oid_fanout [1],
+// graph_read_oid_lookup [2], graph_read_commit_data [3], and
+// graph_read_generation_data [4]).
+//
+// numCommits is fanout[255]; reading the single uint32 at the end of
+// the fanout chunk avoids depending on readFanout's later pass.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L288
+// [2]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L311
+// [3]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L320
+// [4]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L330
+func (fi *fileIndex) verifyChunkSizes() error {
+	if fi.sizes[OIDFanoutChunk] != lenFanout*szUint32 {
+		return ErrMalformedCommitGraphFile
+	}
+
+	var buf [szUint32]byte
+	off := fi.offsets[OIDFanoutChunk] + (lenFanout-1)*szUint32
+	if _, err := fi.reader.ReadAt(buf[:], off); err != nil {
+		return err
+	}
+	numCommits := int64(encbin.BigEndian.Uint32(buf[:]))
+	if numCommits > 0x7fffffff {
+		return ErrMalformedCommitGraphFile
+	}
+
+	hashSize := int64(fi.objSize)
+	if fi.sizes[OIDLookupChunk] != numCommits*hashSize {
+		return ErrMalformedCommitGraphFile
+	}
+	if fi.sizes[CommitDataChunk] != numCommits*(hashSize+szCommitData) {
+		return ErrMalformedCommitGraphFile
+	}
+	if fi.offsets[GenerationDataChunk] > 0 &&
+		fi.sizes[GenerationDataChunk] != numCommits*szUint32 {
+		return ErrMalformedCommitGraphFile
+	}
 	return nil
 }
 
