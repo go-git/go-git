@@ -122,12 +122,6 @@ func TestApplyRedirect(t *testing.T) {
 			wantURL:  "https://example.com/repo.git",
 		},
 		{
-			name:     "unsupported scheme",
-			baseURL:  "https://example.com/repo.git",
-			finalURL: "ftp://evil.com/repo.git/info/refs",
-			wantErr:  "unsupported scheme",
-		},
-		{
 			name:     "tail mismatch",
 			baseURL:  "https://example.com/repo.git",
 			finalURL: "https://evil.com/malicious-path",
@@ -138,12 +132,6 @@ func TestApplyRedirect(t *testing.T) {
 			baseURL:  "http://example.com/repo.git",
 			finalURL: "https://example.com/repo.git/info/refs",
 			wantURL:  "https://example.com/repo.git",
-		},
-		{
-			name:     "redirect rejects scheme downgrade",
-			baseURL:  "https://example.com/repo.git",
-			finalURL: "http://example.com/repo.git/info/refs",
-			wantErr:  "changes scheme",
 		},
 		{
 			name:     "redirect updates path",

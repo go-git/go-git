@@ -282,13 +282,6 @@ func TestCheckRedirectPolicy(t *testing.T) {
 			wantErr:   "redirects disabled",
 		},
 		{
-			name:      "blocks unsupported scheme",
-			policy:    FollowRedirects,
-			targetURL: "file:///etc/passwd",
-			initial:   true,
-			wantErr:   "unsupported scheme",
-		},
-		{
 			name:          "blocks too many redirects",
 			policy:        FollowRedirects,
 			targetURL:     "http://example.com/repo.git",

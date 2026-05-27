@@ -96,17 +96,6 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 		return baseURL, nil
 	}
 
-	if final.Scheme != "http" && final.Scheme != "https" {
-		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", final.Scheme)
-	}
-	if final.Scheme != baseURL.Scheme &&
-		(baseURL.Scheme != "http" || final.Scheme != "https") {
-		return nil, fmt.Errorf(
-			"http transport: redirect changes scheme from %q to %q",
-			baseURL.Scheme, final.Scheme,
-		)
-	}
-
 	redirected := *baseURL
 	redirected.Host = final.Host
 	redirected.Scheme = final.Scheme

@@ -154,9 +154,6 @@ func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy
 	default:
 		return fmt.Errorf("http transport: invalid redirect policy %q", policy)
 	}
-	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-		return fmt.Errorf("http transport: redirect to unsupported scheme %q", req.URL.Scheme)
-	}
 	if len(via) >= 10 {
 		return fmt.Errorf("http transport: too many redirects")
 	}

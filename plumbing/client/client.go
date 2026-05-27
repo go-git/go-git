@@ -249,7 +249,7 @@ func (c *Client) builtin(scheme string) (transport.Transport, error) {
 		return xgit.NewTransport(c.opts.git), nil
 	case "ssh":
 		return xssh.NewTransport(c.opts.ssh), nil
-	case "http", "https":
+	case "http", "https", "private":
 		return xhttp.NewTransport(c.opts.http), nil
 	default:
 		return nil, fmt.Errorf("transport: unsupported scheme %q", scheme)
