@@ -2,11 +2,13 @@ package commitgraph
 
 import (
 	"bytes"
+	encbin "encoding/binary"
 	"io"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -54,6 +56,9 @@ func FuzzOpenFileIndex(f *testing.F) {
 		OIDFanoutChunk, OIDLookupChunk, CommitDataChunk,
 		GenerationDataChunk, ExtraEdgeListChunk,
 	}))
+	// Generation-data overflow pointer past the GDO2 chunk; mirrors
+	// the shape rejected by TestGetCommitDataRejectsGenerationOverflowPastChunk.
+	f.Add(fuzzSeedGenerationOverflowPastChunk())
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
@@ -80,4 +85,37 @@ func FuzzOpenFileIndex(f *testing.F) {
 			_, _ = idx.GetCommitDataByIndex(uint32(i))
 		}
 	})
+}
+
+// fuzzSeedGenerationOverflowPastChunk encodes a one-commit graph whose
+// GenerationV2 value forces overflow encoding (>= 0x80000000 and above
+// MaxUint32), then surgically rewrites the GDA2 entry to point at the
+// largest representable overflow index. GetCommitDataByIndex must
+// reject before reading past the single-entry GDO2 chunk.
+func fuzzSeedGenerationOverflowPastChunk() []byte {
+	mem := NewMemoryIndex()
+	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		&CommitData{
+			TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			Generation:   1,
+			GenerationV2: 0x100000001,
+		})
+	var buf bytes.Buffer
+	if err := NewEncoder(&buf).Encode(mem); err != nil {
+		return nil
+	}
+	raw := buf.Bytes()
+
+	numChunks := int(raw[6])
+	const tocBase = 8
+	const tocEntrySize = 12
+	for i := 0; i < numChunks; i++ {
+		base := tocBase + i*tocEntrySize
+		if string(raw[base:base+4]) == "GDA2" {
+			gda2Offset := int(encbin.BigEndian.Uint64(raw[base+4:]))
+			encbin.BigEndian.PutUint32(raw[gda2Offset:], 0x80000000|0x7FFFFFFF)
+			break
+		}
+	}
+	return raw
 }

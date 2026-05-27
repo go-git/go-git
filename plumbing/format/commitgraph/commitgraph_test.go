@@ -592,3 +592,56 @@ func (s *CommitgraphSuite) TestGetCommitDataAcceptsValidOctopusParents() {
 		idx.Close()
 	}
 }
+
+// TestGetCommitDataRejectsGenerationOverflowPastChunk verifies that
+// GetCommitDataByIndex refuses a GDA2 overflow pointer whose index
+// falls outside the declared GDO2 chunk. Canonical Git's
+// fill_commit_graph_info validates the offset_pos against
+// chunk_generation_data_overflow_size / sizeof(uint64_t)
+// (commit-graph.c v2.54.0); go-git must follow suit and return
+// ErrMalformedCommitGraphFile rather than reading past the chunk.
+func (s *CommitgraphSuite) TestGetCommitDataRejectsGenerationOverflowPastChunk() {
+	// Build a one-commit graph whose generation value forces overflow
+	// encoding (GenerationV2Data must exceed math.MaxUint32 to trip
+	// Encoder.prepare and >= 0x80000000 to trip the GDA2 overflow
+	// branch). Encode it, then surgically rewrite the GDA2 entry to
+	// point past the single-entry GDO2 chunk.
+	mem := commitgraph.NewMemoryIndex()
+	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		&commitgraph.CommitData{
+			TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			Generation:   1,
+			GenerationV2: 0x100000001, // > MaxUint32 and well above 0x80000000
+		})
+
+	var buf bytes.Buffer
+	s.Require().NoError(commitgraph.NewEncoder(&buf).Encode(mem))
+	raw := buf.Bytes()
+
+	// Locate GDA2 chunk via the TOC. numChunks is the uint8 at byte 6;
+	// every TOC entry is a 4-byte signature + uint64 offset.
+	numChunks := int(raw[6])
+	const tocBase = 8
+	const tocEntrySize = 12
+	gda2Offset := 0
+	for i := range numChunks {
+		base := tocBase + i*tocEntrySize
+		if string(raw[base:base+4]) == "GDA2" {
+			gda2Offset = int(encbin.BigEndian.Uint64(raw[base+4:]))
+			break
+		}
+	}
+	s.Require().Greater(gda2Offset, 0, "GDA2 chunk not present in encoded graph")
+
+	// Rewrite the first GDA2 entry to mark overflow at the largest
+	// representable index, well past the one-entry GDO2 chunk.
+	encbin.BigEndian.PutUint32(raw[gda2Offset:], 0x80000000|0x7FFFFFFF)
+
+	idx, err := openIndexBytes(raw)
+	s.Require().NoError(err)
+	defer idx.Close()
+
+	_, err = idx.GetCommitDataByIndex(0)
+	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
+		"expected ErrMalformedCommitGraphFile for out-of-bounds overflow index")
+}

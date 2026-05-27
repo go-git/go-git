@@ -487,8 +487,19 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 
 		// check if the data is an overflow that needs to be looked up in the overflow chunk
 		if genV2Data&0x80000000 > 0 {
-			// Overflow
-			offset := fi.offsets[GenerationDataOverflowChunk] + int64(genV2Data&0x7fffffff)*szUint64
+			// Overflow — look up the corrected commit date from the GDO2
+			// chunk. Canonical Git's fill_commit_graph_info refuses an
+			// offset_pos that falls past
+			// chunk_generation_data_overflow_size / sizeof(uint64_t)
+			// (commit-graph.c v2.54.0); mirror that to keep an
+			// out-of-range pointer from reading adjacent chunk bytes
+			// or past EOF.
+			pos := int64(genV2Data & 0x7fffffff)
+			overflowCount := fi.sizes[GenerationDataOverflowChunk] / szUint64
+			if pos >= overflowCount {
+				return nil, ErrMalformedCommitGraphFile
+			}
+			offset := fi.offsets[GenerationDataOverflowChunk] + pos*szUint64
 			buf := make([]byte, 8)
 			if _, err := fi.reader.ReadAt(buf, offset); err != nil {
 				return nil, err
