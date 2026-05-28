@@ -13,27 +13,66 @@ import (
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
-// fuzzSeedMismatchedChunkCount builds a commit-graph file whose header declares
-// fewer chunks than the chunk table-of-contents actually holds, with no
-// terminator entry. It exercises the bound that pins iteration to the
-// declared count.
-func fuzzSeedMismatchedChunkCount(declared uint8, entries []ChunkType) []byte {
-	var buf bytes.Buffer
-	buf.WriteString("CGPH")
-	buf.WriteByte(1)        // header version
-	buf.WriteByte(1)        // hash version
-	buf.WriteByte(declared) // declared num_chunks
-	buf.WriteByte(0)        // base graphs
-	offset := uint64(8 + len(entries)*12)
-	for _, c := range entries {
-		buf.Write(c.Signature())
-		_ = binary.WriteUint64(&buf, offset)
-		offset += 16
-	}
-	return buf.Bytes()
-}
-
 func FuzzOpenFileIndex(f *testing.F) {
+	// Seed builders are inlined here because OSS-Fuzz extracts the
+	// FuzzXxx target into a standalone non-test file and strips the
+	// rest of _test.go, so any package-level helper a fuzz target
+	// references would be undefined at compile time.
+
+	// seedMismatchedChunkCount builds a commit-graph file whose header
+	// declares fewer chunks than the chunk table-of-contents actually
+	// holds, with no terminator entry. It exercises the bound that
+	// pins iteration to the declared count.
+	seedMismatchedChunkCount := func(declared uint8, entries []ChunkType) []byte {
+		var buf bytes.Buffer
+		buf.WriteString("CGPH")
+		buf.WriteByte(1)        // header version
+		buf.WriteByte(1)        // hash version
+		buf.WriteByte(declared) // declared num_chunks
+		buf.WriteByte(0)        // base graphs
+		offset := uint64(8 + len(entries)*12)
+		for _, c := range entries {
+			buf.Write(c.Signature())
+			_ = binary.WriteUint64(&buf, offset)
+			offset += 16
+		}
+		return buf.Bytes()
+	}
+
+	// seedGenerationOverflowPastChunk encodes a one-commit graph whose
+	// GenerationV2 value forces overflow encoding (>= 0x80000000 and
+	// above MaxUint32), then surgically rewrites the GDA2 entry to
+	// point at the largest representable overflow index.
+	// GetCommitDataByIndex must reject before reading past the single-
+	// entry GDO2 chunk.
+	seedGenerationOverflowPastChunk := func() []byte {
+		mem := NewMemoryIndex()
+		mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			&CommitData{
+				TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+				Generation:   1,
+				GenerationV2: 0x100000001,
+			})
+		var buf bytes.Buffer
+		if err := NewEncoder(&buf).Encode(mem); err != nil {
+			return nil
+		}
+		raw := buf.Bytes()
+
+		numChunks := int(raw[6])
+		const tocBase = 8
+		const tocEntrySize = 12
+		for i := range numChunks {
+			base := tocBase + i*tocEntrySize
+			if string(raw[base:base+4]) == "GDA2" {
+				gda2Offset := int(encbin.BigEndian.Uint64(raw[base+4:]))
+				encbin.BigEndian.PutUint32(raw[gda2Offset:], 0x80000000|0x7FFFFFFF)
+				break
+			}
+		}
+		return raw
+	}
+
 	// Seed from real commit-graph fixture when available.
 	for _, fix := range fixtures.ByTag("commit-graph") {
 		if dotgit, err := fix.DotGit(); err == nil {
@@ -53,13 +92,13 @@ func FuzzOpenFileIndex(f *testing.F) {
 	// Header declares fewer chunks than the chunk table-of-contents
 	// holds, so the parser must iterate by the declared count and
 	// reject the missing terminator.
-	f.Add(fuzzSeedMismatchedChunkCount(2, []ChunkType{
+	f.Add(seedMismatchedChunkCount(2, []ChunkType{
 		OIDFanoutChunk, OIDLookupChunk, CommitDataChunk,
 		GenerationDataChunk, ExtraEdgeListChunk,
 	}))
 	// Generation-data overflow pointer past the GDO2 chunk; mirrors
 	// the shape rejected by TestGetCommitDataRejectsGenerationOverflowPastChunk.
-	f.Add(fuzzSeedGenerationOverflowPastChunk())
+	f.Add(seedGenerationOverflowPastChunk())
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
@@ -86,39 +125,6 @@ func FuzzOpenFileIndex(f *testing.F) {
 			_, _ = idx.GetCommitDataByIndex(uint32(i))
 		}
 	})
-}
-
-// fuzzSeedGenerationOverflowPastChunk encodes a one-commit graph whose
-// GenerationV2 value forces overflow encoding (>= 0x80000000 and above
-// MaxUint32), then surgically rewrites the GDA2 entry to point at the
-// largest representable overflow index. GetCommitDataByIndex must
-// reject before reading past the single-entry GDO2 chunk.
-func fuzzSeedGenerationOverflowPastChunk() []byte {
-	mem := NewMemoryIndex()
-	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		&CommitData{
-			TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-			Generation:   1,
-			GenerationV2: 0x100000001,
-		})
-	var buf bytes.Buffer
-	if err := NewEncoder(&buf).Encode(mem); err != nil {
-		return nil
-	}
-	raw := buf.Bytes()
-
-	numChunks := int(raw[6])
-	const tocBase = 8
-	const tocEntrySize = 12
-	for i := range numChunks {
-		base := tocBase + i*tocEntrySize
-		if string(raw[base:base+4]) == "GDA2" {
-			gda2Offset := int(encbin.BigEndian.Uint64(raw[base+4:]))
-			encbin.BigEndian.PutUint32(raw[gda2Offset:], 0x80000000|0x7FFFFFFF)
-			break
-		}
-	}
-	return raw
 }
 
 // FuzzEncoderRoundTrip drives the encoder with a small randomly-shaped
