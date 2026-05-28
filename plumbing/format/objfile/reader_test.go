@@ -2,6 +2,7 @@ package objfile
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -139,6 +140,85 @@ func (s *SuiteReader) TestReaderReadBeforeHeader() {
 			s.Equal(tt.wantSize, h.Size())
 		})
 	}
+}
+
+func (s *SuiteReader) TestHeaderRejectsOverlongInflatedBytes() {
+	// The inflated stream contains 1 KiB of payload with neither the type
+	// delimiter (' ') nor the trailing NUL inside the first 32 bytes. The
+	// reader must refuse to consume the full payload looking for a
+	// delimiter, matching canonical Git's MAX_HEADER_LEN.
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	_, err := w.Write(bytes.Repeat([]byte{'b'}, 1024))
+	s.Require().NoError(err)
+	s.Require().NoError(w.Close())
+
+	r, err := NewReader(&buf, format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.ErrorIs(err, ErrHeaderTooLong)
+}
+
+func (s *SuiteReader) TestHeaderRejectsOverlongSizeField() {
+	// Type field fits, but the size field has no NUL within budget.
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	payload := append([]byte("blob "), bytes.Repeat([]byte{'0'}, 1024)...)
+	_, err := w.Write(payload)
+	s.Require().NoError(err)
+	s.Require().NoError(w.Close())
+
+	r, err := NewReader(&buf, format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.ErrorIs(err, ErrHeaderTooLong)
+}
+
+func (s *SuiteReader) TestHeaderAcceptsExactMaxLength() {
+	// "blob " (5) + 26 size digits + NUL = 32 bytes exactly. Canonical Git
+	// accepts this; the cap is on excess, not equality.
+	payload := append([]byte("blob "), bytes.Repeat([]byte{'0'}, 26)...)
+	payload = append(payload, 0)
+	s.Require().Len(payload, 32)
+
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	_, err := w.Write(payload)
+	s.Require().NoError(err)
+	s.Require().NoError(w.Close())
+
+	r, err := NewReader(&buf, format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	t, size, err := r.Header()
+	s.Require().NoError(err)
+	s.Equal(plumbing.BlobObject, t)
+	s.Equal(int64(0), size)
+}
+
+func (s *SuiteReader) TestHeaderRejectsOneByteOverMaxLength() {
+	// 33-byte header: cap exceeded by exactly one byte.
+	payload := append([]byte("blob "), bytes.Repeat([]byte{'0'}, 27)...)
+	payload = append(payload, 0)
+	s.Require().Len(payload, 33)
+
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	_, err := w.Write(payload)
+	s.Require().NoError(err)
+	s.Require().NoError(w.Close())
+
+	r, err := NewReader(&buf, format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.ErrorIs(err, ErrHeaderTooLong)
 }
 
 func (s *SuiteReader) TestReaderReadAfterHeaderError() {

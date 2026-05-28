@@ -112,6 +112,9 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 }
 
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
+	if chunkCount > 255 {
+		return ErrTooManyChunks
+	}
 	if _, err = e.Write(commitFileSignature); err == nil {
 		version := byte(1)
 		if crypto.Hash(e.hash.Size()) == crypto.Hash(crypto.SHA256.Size()) {

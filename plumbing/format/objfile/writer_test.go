@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -104,4 +106,33 @@ func (s *SuiteWriter) TestNewWriterInvalidSize() {
 	s.ErrorIs(err, ErrNegativeSize)
 	err = w.WriteHeader(plumbing.BlobObject, -1651860)
 	s.ErrorIs(err, ErrNegativeSize)
+}
+
+func (s *SuiteWriter) TestWriteHeaderRejectsOversizeTypeBytes() {
+	// Mirror the reader's MAX_HEADER_LEN-equivalent bound on the writer.
+	// The largest valid type name today (e.g. "ofs-delta") plus the space,
+	// a 19-digit size, and the NUL trailer is well under 32 bytes; this
+	// test injects a longer type to confirm the guard fires.
+	var buf bytes.Buffer
+	w := NewWriter(&buf, format.SHA1)
+	longType := bytes.Repeat([]byte("x"), maxHeaderLen)
+	err := w.writeHeader(plumbing.BlobObject, longType, 0)
+	s.ErrorIs(err, ErrHeaderTooLong)
+}
+
+func TestWriteHeaderBoundIsConstantForKnownTypes(t *testing.T) {
+	t.Parallel()
+	// Sanity guard: every currently-valid ObjectType plus a 19-digit size,
+	// space, and trailing NUL must fit in maxHeaderLen. If anyone widens
+	// ObjectType.Bytes() output past the cap this test breaks.
+	for _, ot := range []plumbing.ObjectType{
+		plumbing.BlobObject, plumbing.TreeObject,
+		plumbing.CommitObject, plumbing.TagObject,
+		plumbing.OFSDeltaObject, plumbing.REFDeltaObject,
+	} {
+		n := len(ot.Bytes()) + 1 + len(strconv.FormatInt(math.MaxInt64, 10)) + 1
+		if n > maxHeaderLen {
+			t.Fatalf("ObjectType %q produces %d-byte header, exceeds cap %d", ot, n, maxHeaderLen)
+		}
+	}
 }
