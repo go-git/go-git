@@ -34,6 +34,12 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	// [packhandle.PackReader] is declared as
+	// Reader+Seeker+Closer; ReadAt is not in the interface, so
+	// the assertion is a real runtime check rather than a static
+	// guarantee. The current concrete (cursorReader) satisfies
+	// it; the dynamic assert exists to catch a future PackReader
+	// implementation that does not.
 	ra, ok := pr.(io.ReaderAt)
 	if !ok {
 		_ = pr.Close()
@@ -44,16 +50,30 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 		cursor: pr,
 		ra:     ra,
 		name:   d.objectPackPath(hash, "pack"),
-		dg:     d,
+		fs:     d.fs,
 	}, nil
 }
 
 // readOnlyPackFile adapts a packhandle cursor into a [billy.File].
+//
+// The embedded cursor pins one [sharedfile.SharedFile] reference
+// for the lifetime of this handle: Read, ReadAt, and Seek route
+// through the cursor, so the .pack FD stays live until Close.
+// [readOnlyPackFile.Stat] is the exception — it goes through the
+// filesystem on each call and may report a result that diverges
+// from the cursor's view if the underlying pack was mutated or
+// deleted out from under the handle. Callers that need a
+// snapshot consistent with the cursor's reads should derive size
+// from prior reads rather than re-Stat through this method.
+//
+// The handle holds a [billy.Filesystem] reference for Stat
+// rather than a back-pointer to [DotGit]; this avoids a
+// DotGit → cache → PackHandle → readOnlyPackFile reference cycle.
 type readOnlyPackFile struct {
 	cursor packhandle.PackReader
 	ra     io.ReaderAt
 	name   string
-	dg     *DotGit
+	fs     billy.Filesystem
 }
 
 func (f *readOnlyPackFile) Read(p []byte) (int, error) { return f.cursor.Read(p) }
@@ -68,7 +88,7 @@ func (f *readOnlyPackFile) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (f *readOnlyPackFile) Stat() (fs.FileInfo, error) {
-	return f.dg.fs.Stat(f.name)
+	return f.fs.Stat(f.name)
 }
 
 func (f *readOnlyPackFile) Write(_ []byte) (int, error) { return 0, errReadOnlyPack }

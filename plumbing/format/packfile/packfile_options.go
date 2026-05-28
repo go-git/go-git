@@ -45,11 +45,20 @@ func WithObjectIDSize(sz int) PackfileOption {
 }
 
 // WithPackHash sets the .pack file's SHA-1 (or SHA-256) checksum.
-// When combined with WithFs, the Packfile routes all .pack file
-// access through a refcounted, grace-period-closing FD owner that
-// reopens the file lazily via the filesystem. Callers that do not
-// set both options fall back to direct access on the file passed
-// to NewPackfile.
+// When combined with [WithFs], the Packfile builds a private,
+// refcounted, grace-period-closing FD owner that reopens the .pack
+// file lazily via the filesystem; the file argument to NewPackfile
+// is closed and replaced by the private owner. Without both
+// options, the file is used as-is and closed by [Packfile.Close].
+//
+// Do not set this option when the file passed to NewPackfile is
+// already a cursor on a pack-handle managed elsewhere (for example,
+// the [billy.File] returned by storage/filesystem/dotgit's
+// OpenPackForReading): wiring it in that case would spin up a
+// second, parallel FD owner per Packfile, sidestepping the
+// caller-owned catalog and its idle-FD release hooks. Such callers
+// should leave the option unset so the cursor wrapper is consumed
+// directly.
 func WithPackHash(h plumbing.Hash) PackfileOption {
 	return func(p *Packfile) {
 		p.packHash = h

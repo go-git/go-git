@@ -827,6 +827,64 @@ func (s *ObjectStorage) Close() error {
 	return firstError
 }
 
+// CloseIdleDescriptors releases the FDs held by this
+// [ObjectStorage] and every cached alternate. The object cache,
+// the packfile cache, the alternates cache, and the `s.index`
+// map (with the [idxfile.LazyIndex] entries inside it) all
+// survive — only the file descriptors backing those LazyIndex
+// entries are released.
+//
+// The call fans out across three independent FD owners: the
+// [dotgit.DotGit] `PackHandle` catalog (.pack and the
+// `LazyIndex` inside each `PackHandle`), the ObjectStorage-level
+// idx map (which holds its own LazyIndex per pack, distinct
+// from the one inside the `PackHandle`), and any cached
+// alternate `ObjectStorage`.
+//
+// Idempotent and safe to call concurrently with reads. In-flight
+// reads complete normally; the FDs they hold refcounts on close
+// the instant the last reader releases. After
+// [ObjectStorage.Close] the call is a no-op.
+//
+// Parent storage is released before alternates — a deliberate
+// divergence from Close, which goes alternates-first. The
+// parent-first order favours OS reclaim of this storage's FDs
+// when an alternate's release is slow (e.g. a network FS).
+func (s *ObjectStorage) CloseIdleDescriptors() error {
+	var errs []error
+
+	if err := s.dir.CloseIdleDescriptors(); err != nil {
+		errs = append(errs, err)
+	}
+
+	// ObjectStorage maintains a separate idxfile cache in s.index
+	// (populated by loadIdxFile → loadLazyIndex). LazyIndex
+	// entries own .idx/.rev FDs distinct from those inside the
+	// dotgit PackHandle catalog; they need their own soft-close
+	// fan-out. The storer.IdleReleaser assertion picks up
+	// LazyIndex automatically and silently skips index
+	// implementations that hold no FDs (notably MemoryIndex).
+	s.muI.RLock()
+	for _, idx := range s.index {
+		if r, ok := idx.(storer.IdleReleaser); ok {
+			if err := r.CloseIdleDescriptors(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	s.muI.RUnlock()
+
+	s.muA.RLock()
+	for _, alt := range s.alternates {
+		if err := alt.CloseIdleDescriptors(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	s.muA.RUnlock()
+
+	return errors.Join(errs...)
+}
+
 func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]struct{} {
 	m := make(map[plumbing.Hash]struct{}, len(l))
 	for _, h := range l {

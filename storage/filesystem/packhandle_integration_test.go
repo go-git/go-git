@@ -3,6 +3,7 @@ package filesystem
 import (
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -235,4 +236,133 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 	_, err = storage.EncodedObject(plumbing.AnyObject, target)
 	assert.Error(t, err,
 		"EncodedObject should fail after the pack is deleted")
+}
+
+// TestIntegration_CloseIdleDescriptorsDropsAndReopens uses real-process
+// FD counting to verify that CloseIdleDescriptors drops the FDs and
+// the next read reopens. The fixture is copied to a real osfs path so
+// pack/idx opens go through the OS file table (the in-memory
+// embed.FS-backed fixture is not observable via /proc/self/fd or
+// /dev/fd).
+//
+//nolint:paralleltest // process-wide FD count must not race with other tests
+func TestIntegration_CloseIdleDescriptorsDropsAndReopens(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("FD counting: linux/darwin only")
+	}
+	fixture := fixtures.Basic().One()
+	scratchDir := t.TempDir()
+	originalFS, err := fixture.DotGit()
+	require.NoError(t, err)
+	scratchFS := osfs.New(scratchDir)
+	copyDotGit(t, originalFS, scratchFS)
+
+	storage := NewStorage(scratchFS, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = storage.Close() })
+
+	// Warm: read enough objects to open every pack's FDs.
+	iter, err := storage.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	var probe plumbing.Hash
+	for range 8 {
+		obj, err := iter.Next()
+		if err != nil {
+			break
+		}
+		if probe.IsZero() {
+			probe = obj.Hash()
+		}
+	}
+	iter.Close()
+	require.False(t, probe.IsZero(), "fixture must contain at least one object")
+
+	// Touch the object via EncodedObject to ensure pack and idx
+	// sharedFiles have been Acquired and their FDs are open in
+	// the grace window.
+	_, err = storage.EncodedObject(plumbing.AnyObject, probe)
+	require.NoError(t, err)
+
+	warm := openFDCount(t)
+	require.NoError(t, storage.CloseIdleDescriptors())
+
+	// CloseIdleDescriptors closes FDs inline when refs==0 (no
+	// async work to wait for), so the FD count drops before this
+	// call returns.
+	after := openFDCount(t)
+	assert.Less(t, after, warm, "CloseIdleDescriptors should drop FDs")
+
+	// Subsequent reads pay a reopen but succeed.
+	_, err = storage.EncodedObject(plumbing.AnyObject, probe)
+	require.NoError(t, err)
+}
+
+// openFDCount returns the number of open file descriptors for the
+// current process on linux/darwin; skips elsewhere. Uses
+// Readdirnames to avoid the per-entry stat that fails for the
+// listing FD on darwin's /dev/fd.
+func openFDCount(t *testing.T) int {
+	t.Helper()
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("openFDCount: linux/darwin only")
+	}
+	var dir string
+	switch runtime.GOOS {
+	case "linux":
+		dir = "/proc/self/fd"
+	case "darwin":
+		dir = "/dev/fd"
+	}
+	f, err := os.Open(dir)
+	require.NoError(t, err)
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	require.NoError(t, err)
+	return len(names)
+}
+
+// copyDotGit copies the essential .git contents from src to dst.
+// Best-effort; sufficient for read-only tests.
+func copyDotGit(t *testing.T, src, dst billy.Filesystem) {
+	t.Helper()
+	for _, p := range []string{"HEAD", "config", "packed-refs"} {
+		copyOne(t, src, dst, p)
+	}
+	copyDir(t, src, dst, "refs")
+	copyDir(t, src, dst, "objects")
+}
+
+func copyOne(t *testing.T, src, dst billy.Filesystem, path string) {
+	t.Helper()
+	rf, err := src.Open(path)
+	if err != nil {
+		return
+	}
+	defer rf.Close()
+	data, err := io.ReadAll(rf)
+	if err != nil {
+		return
+	}
+	_ = dst.MkdirAll(filepath.Dir(path), 0o755)
+	wf, err := dst.Create(path)
+	require.NoError(t, err)
+	defer wf.Close()
+	_, err = wf.Write(data)
+	require.NoError(t, err)
+}
+
+func copyDir(t *testing.T, src, dst billy.Filesystem, dir string) {
+	t.Helper()
+	entries, err := src.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	_ = dst.MkdirAll(dir, 0o755)
+	for _, e := range entries {
+		p := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			copyDir(t, src, dst, p)
+		} else {
+			copyOne(t, src, dst, p)
+		}
+	}
 }

@@ -400,6 +400,59 @@ func readerAtOpener(data []byte) func() (ReadAtCloser, error) {
 	}
 }
 
+// TestLazyIndexCloseIdleDescriptors verifies that
+// CloseIdleDescriptors releases idx and rev FDs without disabling
+// the index. A subsequent FindHash must succeed and trigger a
+// re-open of both shared files.
+func TestLazyIndexCloseIdleDescriptors(t *testing.T) {
+	t.Parallel()
+
+	idxBytes, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(fixtureLarge4GB)))
+	require.NoError(t, err)
+
+	memIdx := new(MemoryIndex)
+	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	require.NoError(t, d.Decode(memIdx))
+
+	revBytes, err := buildTestRevFile(memIdx)
+	require.NoError(t, err)
+
+	var idxOpens, revOpens int
+	openIdx := func() (ReadAtCloser, error) {
+		idxOpens++
+		return nopCloserReaderAt{bytes.NewReader(idxBytes)}, nil
+	}
+	openRev := func() (ReadAtCloser, error) {
+		revOpens++
+		return nopCloserReaderAt{bytes.NewReader(revBytes)}, nil
+	}
+
+	idx, err := NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	// init counted as one open on each.
+	idxOpensAfterInit, revOpensAfterInit := idxOpens, revOpens
+	require.Equal(t, 1, idxOpensAfterInit)
+	require.Equal(t, 1, revOpensAfterInit)
+
+	// CloseIdleDescriptors drops the cached FDs without disabling.
+	require.NoError(t, idx.CloseIdleDescriptors())
+
+	// Subsequent operation must succeed and trigger fresh opens on
+	// both shared files. Use FindHash on a known fixture offset
+	// (idx and rev both consulted) rather than Contains (idx only).
+	h, err := idx.FindHash(fixtureOffsets[0])
+	require.NoError(t, err)
+	require.False(t, h.IsZero())
+	require.Greater(t, idxOpens, idxOpensAfterInit, "idx FD should have reopened")
+	require.Greater(t, revOpens, revOpensAfterInit, "rev FD should have reopened")
+
+	// CloseIdleDescriptors is idempotent under repeat.
+	require.NoError(t, idx.CloseIdleDescriptors())
+	require.NoError(t, idx.CloseIdleDescriptors())
+}
+
 func BenchmarkScannerFindHash(b *testing.B) {
 	idx, err := fixtureLazyIndex(true)
 	if err != nil {

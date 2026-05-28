@@ -312,15 +312,34 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 	return p.storeOrCache(oh)
 }
 
+// checkDeltaChainDepth verifies that the delta chain rooted at oh
+// stays within [maxDeltaChainDepth] links. The result is cached on
+// [ObjectHeader.chainDepth] so a subsequent walk that crosses the
+// same parent reuses the work — every entry on the chain ends up
+// with its depth set once, which keeps the verification linear in
+// the number of distinct objects rather than quadratic in the
+// chain length. This mirrors the cached `oe->depth` field that
+// upstream Git carries on the object entry in
+// `builtin/pack-objects.c`.
 func checkDeltaChainDepth(oh *ObjectHeader) error {
+	if oh.chainDepth > 0 {
+		return nil
+	}
 	var depth int
 	for current := oh; current != nil && current.isDeltaOnDisk(); current = current.parent {
+		if current.chainDepth > 0 {
+			depth += current.chainDepth
+			if depth > maxDeltaChainDepth {
+				return fmt.Errorf("%w: delta chain depth exceeds %d", ErrMalformedPackfile, maxDeltaChainDepth)
+			}
+			break
+		}
 		depth++
 		if depth > maxDeltaChainDepth {
 			return fmt.Errorf("%w: delta chain depth exceeds %d", ErrMalformedPackfile, maxDeltaChainDepth)
 		}
 	}
-
+	oh.chainDepth = depth
 	return nil
 }
 

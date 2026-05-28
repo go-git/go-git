@@ -23,3 +23,15 @@ type Initializer interface {
 type FilesystemStorer interface {
 	Filesystem() billy.Filesystem
 }
+
+// IdleReleaser is implemented by storers that can drop idle
+// file descriptors (or other I/O resources) without becoming
+// unusable. Callers detect via this interface and call
+// [IdleReleaser.CloseIdleDescriptors] at a known quiet point —
+// for example between reconcile bursts.
+//
+// Implementations must remain fully usable after the call;
+// subsequent operations reopen resources on demand.
+type IdleReleaser interface {
+	CloseIdleDescriptors() error
+}

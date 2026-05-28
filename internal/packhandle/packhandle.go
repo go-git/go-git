@@ -26,6 +26,20 @@ const defaultGracePeriod = 1 * time.Second
 // idle grace period. .idx and .rev descriptors are owned by the
 // returned [idxfile.Index].
 //
+// Lifecycle contract:
+//
+//   - Each cursor returned by [PackHandle.OpenPackReader] or
+//     [PackHandle.OpenRandomReader] acquires one reference on the
+//     underlying [sharedfile.SharedFile]; cursor.Close releases
+//     it. While at least one cursor is live the .pack FD cannot
+//     be torn down by the grace timer.
+//   - [PackHandle.Close] is synchronous: the .pack FD and any
+//     cached [idxfile.LazyIndex] FDs are closed before the call
+//     returns. Cursors opened before Close keep working until
+//     their own Close releases the last reference; calls on a
+//     cursor whose underlying FD has been closed see
+//     [fs.ErrClosed].
+//
 // All methods are safe for concurrent use.
 type PackHandle struct {
 	sources  Sources
@@ -101,6 +115,13 @@ func (h *PackHandle) OpenRandomReader() (RandomReader, error) {
 // immutable post-creation and its on-disk identity is pinned via
 // packHash, so the size is invariant for the lifetime of this
 // handle. Failures are not cached; the next call retries.
+//
+// The cache uses an [atomic.Int64] with zero as the unset
+// sentinel. Pack sizes are never zero — every valid pack carries
+// at least a 12-byte header and a footer hash — so a zero load
+// unambiguously means "not yet cached." If that invariant ever
+// changes, this loop will re-Size on every call and the cache
+// becomes dead code.
 func (h *PackHandle) packSize() (int64, error) {
 	if v := h.sizeVal.Load(); v != 0 {
 		return v, nil
@@ -173,4 +194,40 @@ func (h *PackHandle) Meta() (PackMeta, error) {
 	}
 	h.metaVal = &meta
 	return meta, nil
+}
+
+// CloseIdleDescriptors releases the .pack file descriptor and
+// the idx/rev descriptors of any cached [idxfile.LazyIndex]
+// without marking the [PackHandle] closed. Active acquired
+// readers continue to work; FDs held by in-flight readers close
+// the instant the last refcount drops to zero. Subsequent
+// [PackHandle.OpenPackReader] and [PackHandle.Index] operations
+// reopen FDs on demand and resume normal grace-timer behaviour.
+//
+// Idempotent and safe to call concurrently with the open paths
+// and itself. A no-op after [PackHandle.Close]; the closed flag
+// short-circuits before touching either [sharedfile.SharedFile].
+//
+// PackHandle-level caches survive: the cached [PackMeta] and
+// the cached [idxfile.LazyIndex] pointer are not reset. A
+// caller that wants to discard the PackHandle entirely uses
+// Close; a subsequent Close after CloseIdleDescriptors still
+// flips each underlying [sharedfile.SharedFile]'s closed flag
+// exactly once via its idempotent Close.
+func (h *PackHandle) CloseIdleDescriptors() error {
+	if h.closed.Load() {
+		return nil
+	}
+
+	packErr := h.pack.ReleaseNow()
+
+	h.indexMu.Lock()
+	idx := h.indexVal
+	h.indexMu.Unlock()
+
+	var idxErr error
+	if idx != nil {
+		idxErr = idx.CloseIdleDescriptors()
+	}
+	return errors.Join(packErr, idxErr)
 }

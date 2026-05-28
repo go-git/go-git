@@ -3,6 +3,7 @@ package packfile
 import (
 	"bufio"
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -100,6 +101,8 @@ func (p *Packfile) Get(h plumbing.Hash) (plumbing.EncodedObject, error) {
 	}
 	p.m.Lock()
 	defer p.m.Unlock()
+	// Re-check after Lock: Close may have flipped closed and torn
+	// down the scanner between the early Load and the Lock.
 	if p.closed.Load() {
 		return nil, fs.ErrClosed
 	}
@@ -118,6 +121,8 @@ func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
 	}
 	p.m.Lock()
 	defer p.m.Unlock()
+	// Re-check after Lock: Close may have flipped closed and torn
+	// down the scanner between the early Load and the Lock.
 	if p.closed.Load() {
 		return nil, fs.ErrClosed
 	}
@@ -346,11 +351,7 @@ func (p *Packfile) Close() error {
 			scanErr = p.scanReader.Close()
 			p.scanReader = nil
 		}
-		hErr := p.h.Close()
-		if hErr != nil {
-			return hErr
-		}
-		return scanErr
+		return errors.Join(scanErr, p.h.Close())
 	}
 
 	closer, ok := p.file.(io.Closer)
@@ -369,31 +370,21 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 	// If we have filesystem, and the object is not a delta type, return a FSObject.
 	// This avoids having to inflate the object more than once.
 	if !oh.Type.IsDelta() && p.fs != nil {
-		var fsObj *FSObject
+		fsObj := &FSObject{
+			hash:   oh.ID(),
+			offset: oh.ContentOffset,
+			size:   oh.Size,
+			typ:    oh.Type,
+			index:  p.Index,
+			fs:     p.fs,
+			cache:  p.cache,
+		}
 		if p.h != nil {
 			h := p.h
-			fsObj = &FSObject{
-				hash:          oh.ID(),
-				offset:        oh.ContentOffset,
-				size:          oh.Size,
-				typ:           oh.Type,
-				index:         p.Index,
-				fs:            p.fs,
-				cache:         p.cache,
-				acquireRandom: func() (packhandle.RandomReader, error) { return h.OpenRandomReader() },
-			}
+			fsObj.acquireRandom = func() (packhandle.RandomReader, error) { return h.OpenRandomReader() }
 		} else {
-			fsObj = NewFSObject(
-				oh.ID(),
-				oh.Type,
-				oh.ContentOffset,
-				oh.Size,
-				p.Index,
-				p.fs,
-				p.file,
-				p.file.Name(),
-				p.cache,
-			)
+			fsObj.pack = p.file
+			fsObj.packPath = p.file.Name()
 		}
 
 		p.cache.Put(fsObj)

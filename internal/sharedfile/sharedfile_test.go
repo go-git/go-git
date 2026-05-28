@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -330,4 +331,205 @@ func TestSharedFile_GracePeriodCancelledByClose(t *testing.T) {
 	// Close cancels the grace timer and closes immediately.
 	require.NoError(t, sf.Close())
 	assert.True(t, tf.closed.Load())
+}
+
+// TestSharedFile_ReleaseNow groups the cases for the soft-close
+// primitive that closes the FD now and (when refs>0) latches the
+// next refs==0 transition to close immediately.
+func TestSharedFile_ReleaseNow(t *testing.T) {
+	t.Parallel()
+
+	newReleaseNowOpener := func() (opener func() (ReadAtCloser, error), opens *atomic.Int32, tf *memCloser) {
+		var counter atomic.Int32
+		file := &memCloser{Reader: bytes.NewReader([]byte("data"))}
+		return func() (ReadAtCloser, error) {
+			counter.Add(1)
+			file.closed.Store(false)
+			return file, nil
+		}, &counter, file
+	}
+
+	t.Run("NoRefs_FileNil_IsNoop", func(t *testing.T) {
+		t.Parallel()
+		opener, opens, tf := newReleaseNowOpener()
+		sf := New(opener, 0) // gracePeriod = 0
+		defer sf.Close()
+
+		_, err := sf.Acquire()
+		require.NoError(t, err)
+		sf.Release()
+		// With zero grace period, Release scheduled an
+		// AfterFunc(0); poll for the async close so the next
+		// ReleaseNow observes refs==0 && file==nil.
+		assert.Eventually(t, tf.closed.Load, time.Second, 10*time.Millisecond,
+			"file should close after grace period")
+
+		// Strict no-op: no opener invocation, no error, no panic.
+		require.NoError(t, sf.ReleaseNow())
+		assert.Equal(t, int32(1), opens.Load())
+	})
+
+	t.Run("NoRefs_ClosesInline_GracePending", func(t *testing.T) {
+		t.Parallel()
+		opener, opens, tf := newReleaseNowOpener()
+		sf := New(opener, time.Minute) // long, so the timer won't fire
+		defer sf.Close()
+
+		_, err := sf.Acquire()
+		require.NoError(t, err)
+		sf.Release()
+		// Grace timer pending; FD still open.
+		assert.False(t, tf.closed.Load())
+
+		// ReleaseNow cancels the timer and closes the FD inline.
+		require.NoError(t, sf.ReleaseNow())
+		assert.True(t, tf.closed.Load())
+		assert.Equal(t, int32(1), opens.Load())
+
+		// SharedFile is reusable.
+		_, err = sf.Acquire()
+		require.NoError(t, err)
+		assert.Equal(t, int32(2), opens.Load())
+		sf.Release()
+	})
+
+	t.Run("WithRefs_LatchesCloseOnZero", func(t *testing.T) {
+		t.Parallel()
+		opener, opens, tf := newReleaseNowOpener()
+		sf := New(opener, time.Minute)
+		defer sf.Close()
+
+		_, err := sf.Acquire()
+		require.NoError(t, err)
+		// refs=1; FD open.
+
+		require.NoError(t, sf.ReleaseNow())
+		// Refs still 1, so FD stays open.
+		assert.False(t, tf.closed.Load())
+
+		sf.Release()
+		// Refs reached 0; latch fired; FD closed immediately (no
+		// grace period observed).
+		assert.True(t, tf.closed.Load())
+		assert.Equal(t, int32(1), opens.Load())
+
+		// Subsequent Acquire reopens.
+		_, err = sf.Acquire()
+		require.NoError(t, err)
+		assert.Equal(t, int32(2), opens.Load())
+		sf.Release()
+	})
+
+	t.Run("LatchSurvivesReacquire", func(t *testing.T) {
+		t.Parallel()
+		opener, opens, tf := newReleaseNowOpener()
+		sf := New(opener, time.Minute)
+		defer sf.Close()
+
+		_, err := sf.Acquire()
+		require.NoError(t, err)
+		// refs=1.
+
+		require.NoError(t, sf.ReleaseNow())
+		// Latch set; refs=1.
+
+		_, err = sf.Acquire()
+		require.NoError(t, err)
+		// refs=2. Acquire does not clear the latch.
+		assert.Equal(t, int32(1), opens.Load(), "should reuse existing FD")
+		assert.False(t, tf.closed.Load())
+
+		sf.Release()
+		// refs=1; not yet zero.
+		assert.False(t, tf.closed.Load())
+
+		sf.Release()
+		// refs=0; latch fires; FD closes.
+		assert.True(t, tf.closed.Load())
+
+		// Next Acquire reopens (latch cleared on close).
+		_, err = sf.Acquire()
+		require.NoError(t, err)
+		assert.Equal(t, int32(2), opens.Load())
+		sf.Release()
+	})
+
+	t.Run("PreservesGraceBehaviourAfterLatchedClose", func(t *testing.T) {
+		t.Parallel()
+		synctest.Test(t, func(t *testing.T) {
+			opener, opens, tf := newReleaseNowOpener()
+			sf := New(opener, 100*time.Millisecond)
+			defer sf.Close()
+
+			// Round 1: latch path. The latch fires inline from
+			// Release; no async work to wait for.
+			_, err := sf.Acquire()
+			require.NoError(t, err)
+			require.NoError(t, sf.ReleaseNow())
+			sf.Release()
+			assert.True(t, tf.closed.Load(), "latch should close FD on refs=0")
+
+			// Round 2: fresh Acquire+Release should observe the
+			// normal grace-timer path (FD still open immediately
+			// after Release; closes only after the grace window).
+			_, err = sf.Acquire()
+			require.NoError(t, err)
+			assert.Equal(t, int32(2), opens.Load(), "Acquire should reopen")
+			sf.Release()
+
+			// FD still open: grace timer is pending.
+			assert.False(t, tf.closed.Load(), "grace timer should be pending after normal Release")
+
+			// Advance past the grace window.
+			time.Sleep(150 * time.Millisecond)
+			synctest.Wait()
+			assert.True(t, tf.closed.Load(), "grace timer should fire")
+		})
+	})
+
+	t.Run("AfterClose_NoOp", func(t *testing.T) {
+		t.Parallel()
+		opener, _, _ := newReleaseNowOpener()
+		sf := New(opener, 0)
+
+		_, err := sf.Acquire()
+		require.NoError(t, err)
+		sf.Release()
+		require.NoError(t, sf.Close())
+
+		// Strict no-op after Close; idempotent under repeat.
+		require.NoError(t, sf.ReleaseNow())
+		require.NoError(t, sf.ReleaseNow())
+	})
+
+	t.Run("Concurrent", func(t *testing.T) {
+		t.Parallel()
+		opener, _, _ := newReleaseNowOpener()
+		sf := New(opener, 10*time.Millisecond)
+		defer sf.Close()
+
+		const goroutines = 32
+		const iters = 64
+
+		var wg sync.WaitGroup
+		for range goroutines {
+			wg.Go(func() {
+				for range iters {
+					_, err := sf.Acquire()
+					if err != nil {
+						return
+					}
+					sf.Release()
+				}
+			})
+		}
+		for range 4 {
+			wg.Go(func() {
+				for range iters {
+					_ = sf.ReleaseNow()
+				}
+			})
+		}
+		wg.Wait()
+	})
 }
