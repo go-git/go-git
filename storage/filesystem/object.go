@@ -808,7 +808,20 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
-	for _, index := range s.index {
+	// Snapshot the index map under muI.RLock so the iteration
+	// below is safe against a concurrent Reindex swap or a
+	// PackfileWriter.Notify insert. The borrowed LazyIndex values
+	// stay alive for the duration of the loop via this slice; the
+	// underlying SharedFile FDs are governed by their refcount and
+	// the fdpool, not by removal from s.index.
+	s.muI.RLock()
+	indexes := make([]idxfile.Index, 0, len(s.index))
+	for _, idx := range s.index {
+		indexes = append(indexes, idx)
+	}
+	s.muI.RUnlock()
+
+	for _, index := range indexes {
 		ei, err := index.Entries()
 		if err != nil {
 			return nil, err
