@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -1383,23 +1384,25 @@ func findMatchInFiles(fileiter *object.FileIter, treeName string, opts *GrepOpti
 // findMatchInFile takes a single File, worktree name and GrepOptions,
 // and returns a slice of GrepResult containing the result of regex pattern
 // matching in the given file.
-func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]GrepResult, error) {
-	var grepResults []GrepResult
-
-	content, err := file.Contents()
+func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) (grepResults []GrepResult, err error) {
+	reader, err := file.Reader()
 	if err != nil {
 		return grepResults, err
 	}
+	defer ioutil.CheckClose(reader, &err)
 
-	// Split the file content and parse line-by-line.
-	contentByLine := strings.Split(content, "\n")
-	for lineNum, cnt := range contentByLine {
+	lr := bufio.NewScanner(reader)
+
+	lineNum := -1
+	for lr.Scan() {
+		lineNum++
 		addToResult := false
+		cnt := lr.Bytes()
 
 		// Match the patterns and content. Break out of the loop once a
 		// match is found.
 		for _, pattern := range opts.Patterns {
-			if pattern != nil && pattern.MatchString(cnt) {
+			if pattern != nil && pattern.Match(cnt) {
 				// Add to result only if invert match is not enabled.
 				if !opts.InvertMatch {
 					addToResult = true
@@ -1417,10 +1420,13 @@ func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]G
 			grepResults = append(grepResults, GrepResult{
 				FileName:   file.Name,
 				LineNumber: lineNum + 1,
-				Content:    cnt,
+				Content:    string(cnt),
 				TreeName:   treeName,
 			})
 		}
+	}
+	if err := lr.Err(); err != nil {
+		return grepResults, err
 	}
 
 	return grepResults, nil
