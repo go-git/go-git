@@ -65,3 +65,42 @@ func TestDecodeLEB128FromReaderOverflow(t *testing.T) {
 	_, err := packutil.DecodeLEB128FromReader(bytes.NewReader(input))
 	require.ErrorIs(t, err, packutil.ErrLengthOverflow)
 }
+
+func TestEncodeLEB128Roundtrip(t *testing.T) {
+	t.Parallel()
+
+	cases := []uint{
+		0,
+		1,
+		0x7F,
+		0x80,
+		127,
+		128,
+		16384,
+		1<<21 - 1,
+		1 << 21,
+		1<<28 - 1,
+		1 << 28,
+		1<<32 - 1,
+	}
+	for _, want := range cases {
+		encoded := packutil.EncodeLEB128(want)
+		got, rest, err := packutil.DecodeLEB128(encoded)
+		require.NoError(t, err)
+		assert.Equal(t, want, got, "encoded=%x", encoded)
+		assert.Empty(t, rest, "encoded=%x", encoded)
+	}
+}
+
+func TestEncodeLEB128ToWriterRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	cases := []uint{0, 1, 0x7F, 0x80, 16384, 1 << 28}
+	for _, want := range cases {
+		var buf bytes.Buffer
+		require.NoError(t, packutil.EncodeLEB128ToWriter(&buf, want))
+		got, err := packutil.DecodeLEB128FromReader(&buf)
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	}
+}

@@ -72,6 +72,27 @@ func ObjectType(b byte) plumbing.ObjectType {
 	return plumbing.ObjectType((b & maskType) >> firstLengthBits)
 }
 
+// EncodeLEB128 encodes num as an unsigned LEB128 byte sequence and
+// returns it. Inverse of DecodeLEB128.
+func EncodeLEB128(num uint) []byte {
+	var out []byte
+	for {
+		b := byte(num & maskPayload)
+		num >>= 7
+		if num == 0 {
+			return append(out, b)
+		}
+		out = append(out, b|maskContinue)
+	}
+}
+
+// EncodeLEB128ToWriter encodes num as an unsigned LEB128 byte sequence
+// and writes it to writer. Inverse of DecodeLEB128FromReader.
+func EncodeLEB128ToWriter(writer io.Writer, num uint) error {
+	_, err := writer.Write(EncodeLEB128(num))
+	return err
+}
+
 // DecodeLEB128 decodes a number encoded as an unsigned LEB128 at the
 // start of some binary data and returns the decoded number, the rest
 // of the bytes, and an error if the encoded value does not fit in a

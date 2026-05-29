@@ -481,12 +481,8 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			if err != nil {
 				return nil, err
 			}
-			// An OFS-delta references a base object that appears
-			// earlier in the pack; the negative offset must be
-			// strictly positive and not larger than the current
-			// object's offset.
-			if no <= 0 || no > oh.Offset {
-				return nil, fmt.Errorf("%w: invalid OFS delta offset", ErrMalformedPackfile)
+			if err := ValidateOFSDeltaBase(oh.Offset, no); err != nil {
+				return nil, err
 			}
 			oh.OffsetReference = oh.Offset - no
 		} else {
