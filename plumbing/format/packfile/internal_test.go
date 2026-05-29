@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	gogitbinary "github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -197,22 +198,15 @@ func buildTestPack(t *testing.T, objects ...testPackObject) ([]byte, []int64) {
 	return body.Bytes(), offsets
 }
 
-func writeTestObjectHeader(w io.ByteWriter, typ plumbing.ObjectType, size int64) {
-	remaining := uint64(size)
-	first := byte(typ)<<4 | byte(remaining&0x0f)
-	remaining >>= 4
-	if remaining > 0 {
+func writeTestObjectHeader(w io.Writer, typ plumbing.ObjectType, size int64) {
+	first := byte(typ)<<4 | byte(size&0x0f)
+	rest := uint(size >> 4)
+	if rest != 0 {
 		first |= 0x80
 	}
-	_ = w.WriteByte(first)
-
-	for remaining > 0 {
-		next := byte(remaining & 0x7f)
-		remaining >>= 7
-		if remaining > 0 {
-			next |= 0x80
-		}
-		_ = w.WriteByte(next)
+	_, _ = w.Write([]byte{first})
+	if rest != 0 {
+		_ = packutil.EncodeLEB128ToWriter(w, rest)
 	}
 }
 
