@@ -320,8 +320,13 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		return err
 	}
 
+	cfg, err := w.r.Config()
+	if err != nil {
+		return err
+	}
+
 	if opts.Mode == MergeReset {
-		unstaged, err := w.containsUnstagedChanges()
+		unstaged, err := w.containsUnstagedChanges(cfg)
 		if err != nil {
 			return err
 		}
@@ -376,13 +381,13 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == MergeReset && len(removedFiles) > 0 {
-		if err := w.resetWorktree(t, removedFiles); err != nil {
+		if err := w.resetWorktree(cfg, t, removedFiles); err != nil {
 			return err
 		}
 	}
 
 	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		if err := w.resetWorktreeToTree(prevTree, t, opts.Files); err != nil {
+		if err := w.resetWorktreeToTree(cfg, prevTree, t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -659,7 +664,7 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 //     file with SkipWorktree=true must not exist in the worktree.
 //
 // files optionally restricts the operation to a specific subset of paths.
-func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []string) error {
+func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *object.Tree, files []string) error {
 	filesMap := buildFilePathMap(files)
 
 	// Step 1: delete files removed from the tracked tree.
@@ -697,7 +702,7 @@ func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []st
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffStagingWithWorktree(true, true)
+	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true)
 	if err != nil {
 		return err
 	}
@@ -729,7 +734,7 @@ func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []st
 			}
 		}
 
-		if err := w.checkoutChange(ch, toTree, b); err != nil {
+		if err := w.checkoutChange(cfg, ch, toTree, b); err != nil {
 			return err
 		}
 	}
@@ -766,8 +771,8 @@ func (w *Worktree) resetWorktreeToTree(fromTree, toTree *object.Tree, files []st
 // from the index in this same Reset is no longer in idxMap, so the
 // noder's IgnoreMatcher would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
-func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
-	changes, err := w.diffStagingWithWorktree(true, false)
+func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []string) error {
+	changes, err := w.diffStagingWithWorktree(cfg, true, false)
 	if err != nil {
 		return err
 	}
@@ -798,7 +803,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 			}
 		}
 
-		if err := w.checkoutChange(ch, t, b); err != nil {
+		if err := w.checkoutChange(cfg, ch, t, b); err != nil {
 			return err
 		}
 	}
@@ -807,7 +812,7 @@ func (w *Worktree) resetWorktree(t *object.Tree, files []string) error {
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
+func (w *Worktree) checkoutChange(cfg *config.Config, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
 	a, err := ch.Action()
 	if err != nil {
 		return err
@@ -845,11 +850,11 @@ func (w *Worktree) checkoutChange(ch merkletrie.Change, t *object.Tree, idx *ind
 		return w.checkoutChangeSubmodule(name, a, e, idx)
 	}
 
-	return w.checkoutChangeRegularFile(name, a, t, e, idx)
+	return w.checkoutChangeRegularFile(cfg, name, a, t, e, idx)
 }
 
-func (w *Worktree) containsUnstagedChanges() (bool, error) {
-	ch, err := w.diffStagingWithWorktree(false, true)
+func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
+	ch, err := w.diffStagingWithWorktree(cfg, false, true)
 	if err != nil {
 		return false, err
 	}
@@ -927,7 +932,8 @@ func (w *Worktree) checkoutChangeSubmodule(name string,
 	return nil
 }
 
-func (w *Worktree) checkoutChangeRegularFile(name string,
+func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
+	name string,
 	a merkletrie.Action,
 	t *object.Tree,
 	e *object.TreeEntry,
@@ -950,7 +956,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 			return err
 		}
 
-		if err := w.checkoutFile(f); err != nil {
+		if err := w.checkoutFile(cfg, f); err != nil {
 			return err
 		}
 
@@ -960,7 +966,7 @@ func (w *Worktree) checkoutChangeRegularFile(name string,
 	return nil
 }
 
-func (w *Worktree) checkoutFile(f *object.File) (err error) {
+func (w *Worktree) checkoutFile(cfg *config.Config, f *object.File) (err error) {
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
 		return err
@@ -976,15 +982,10 @@ func (w *Worktree) checkoutFile(f *object.File) (err error) {
 	}
 	defer ioutil.CheckClose(dstFile, &err)
 
-	return w.copyObjectToWorktree(f, dstFile)
+	return w.copyObjectToWorktree(cfg, f, dstFile)
 }
 
-func (w *Worktree) copyObjectToWorktree(object *object.File, file billy.File) (err error) {
-	cfg, err := w.r.Config()
-	if err != nil {
-		return err
-	}
-
+func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File, file billy.File) (err error) {
 	var src io.ReadCloser
 	var dst io.Writer = file
 
@@ -1151,15 +1152,20 @@ func resolveModuleURL(originURL, moduleURL string) (string, error) {
 
 // Submodules returns all the available submodules
 func (w *Worktree) Submodules() (Submodules, error) {
+	cfg, err := w.r.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	return w.submodulesWithConfig(cfg)
+}
+
+// submodulesWithConfig returns all the available submodules using an already-loaded config.
+func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) {
 	l := make(Submodules, 0)
 	m, err := w.readGitmodulesFile()
 	if err != nil || m == nil {
 		return l, err
-	}
-
-	c, err := w.r.Config()
-	if err != nil {
-		return nil, err
 	}
 
 	var originURL string
@@ -1170,13 +1176,13 @@ func (w *Worktree) Submodules() (Submodules, error) {
 	}
 
 	for _, s := range m.Submodules {
-		sub := w.newSubmodule(s, c.Submodules[s.Name])
-		cfg := sub.Config()
-		resolvedURL, err := resolveModuleURL(originURL, cfg.URL)
+		sub := w.newSubmodule(s, cfg.Submodules[s.Name])
+		subCfg := sub.Config()
+		resolvedURL, err := resolveModuleURL(originURL, subCfg.URL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve submodule URL %q: %w", s.URL, err)
 		}
-		cfg.URL = resolvedURL
+		subCfg.URL = resolvedURL
 		l = append(l, sub)
 	}
 

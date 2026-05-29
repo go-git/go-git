@@ -197,6 +197,11 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 }
 
 func (w *Worktree) autoAddModifiedAndDeleted() error {
+	cfg, err := w.r.Config()
+	if err != nil {
+		return err
+	}
+
 	s, err := w.Status()
 	if err != nil {
 		return err
@@ -212,7 +217,7 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 			continue
 		}
 
-		if _, _, err := w.doAddFile(idx, s, path, nil); err != nil {
+		if _, _, err := w.doAddFile(cfg, idx, s, path, nil); err != nil {
 			return err
 		}
 	}
