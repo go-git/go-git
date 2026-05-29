@@ -7,8 +7,8 @@ import (
 	"io"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
+	stdsync "sync"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -50,9 +50,11 @@ type Tree struct {
 	Entries []TreeEntry
 	Hash    plumbing.Hash
 
-	s             storer.EncodedObjectStorer
-	t             map[string]*Tree // tree path cache
-	entriesSorted bool
+	s storer.EncodedObjectStorer
+	m map[string]*TreeEntry // entry name lookup map, lazily initialized
+	t stdsync.Map           // tree path cache, concurrent-safe
+
+	initOnce stdsync.Once // ensures m is initialized exactly once
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -159,10 +161,6 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	if err := pathutil.ValidTreePath(path); err != nil {
 		return nil, err
 	}
-	if t.t == nil {
-		t.t = make(map[string]*Tree)
-	}
-
 	pathParts := strings.Split(path, "/")
 	startingTree := t
 	pathCurrent := ""
@@ -171,9 +169,8 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	for i := len(pathParts) - 1; i >= 1; i-- {
 		path := filepath.Join(pathParts[:i]...)
 
-		tree, ok := t.t[path]
-		if ok {
-			startingTree = tree
+		if cached, ok := t.t.Load(path); ok {
+			startingTree = cached.(*Tree)
 			pathParts = pathParts[i:]
 			pathCurrent = path
 
@@ -189,7 +186,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
-		t.t[pathCurrent] = tree
+		t.t.Store(pathCurrent, tree)
 	}
 
 	return tree.entry(pathParts[0])
@@ -213,43 +210,24 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	if t.entriesSorted {
-		if entry := t.searchEntry(baseName); entry != nil {
-			return entry, nil
-		}
+	// Use sync.Once to ensure map is built exactly once, even under concurrent access
+	t.initOnce.Do(func() {
+		t.buildMap()
+	})
+
+	entry, ok := t.m[baseName]
+	if !ok {
 		return nil, ErrEntryNotFound
 	}
 
-	pastName := baseName + "/"
+	return entry, nil
+}
+
+func (t *Tree) buildMap() {
+	t.m = make(map[string]*TreeEntry, len(t.Entries))
 	for i := range t.Entries {
-		entry := &t.Entries[i]
-		if entry.Name == baseName {
-			return entry, nil
-		}
-		if treeEntrySortName(entry) > pastName {
-			break
-		}
+		t.m[t.Entries[i].Name] = &t.Entries[i]
 	}
-
-	return nil, ErrEntryNotFound
-}
-
-func (t *Tree) searchEntry(baseName string) *TreeEntry {
-	if i := t.searchEntryIndex(baseName); i < len(t.Entries) && t.Entries[i].Name == baseName {
-		return &t.Entries[i]
-	}
-
-	if i := t.searchEntryIndex(baseName + "/"); i < len(t.Entries) && t.Entries[i].Name == baseName {
-		return &t.Entries[i]
-	}
-
-	return nil
-}
-
-func (t *Tree) searchEntryIndex(name string) int {
-	return sort.Search(len(t.Entries), func(i int) bool {
-		return treeEntrySortName(&t.Entries[i]) >= name
-	})
 }
 
 // Files returns a FileIter allowing to iterate over the Tree
@@ -283,11 +261,14 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	t.reset()
 	t.Hash = o.Hash()
-	// assume tree is sorted as a valid tree should always be sorted.
-	t.entriesSorted = true
 	if o.Size() == 0 {
 		return nil
 	}
+
+	t.Entries = nil
+	t.m = nil
+	t.t = stdsync.Map{}         // discard stale path cache from previous decode
+	t.initOnce = stdsync.Once{} // allow re-initialization after re-decode
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -298,7 +279,6 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
-	var prevSortName string
 	for {
 		str, err := r.ReadString(' ')
 		if err != nil {
@@ -345,11 +325,6 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 			Mode: mode,
 			Name: baseName,
 		}
-		sortName := treeEntrySortName(&entry)
-		if len(t.Entries) != 0 && prevSortName > sortName {
-			t.entriesSorted = false
-		}
-		prevSortName = sortName
 		t.Entries = append(t.Entries, entry)
 	}
 
