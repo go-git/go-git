@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
 	gsync "github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
 const defaultCloseGracePeriod = time.Second
@@ -66,6 +67,29 @@ var _ Index = (*LazyIndex)(nil)
 // are shared across concurrent readers and released automatically when
 // idle.
 func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbing.Hash) (*LazyIndex, error) {
+	return NewLazyIndexWithPool(openIdx, openRev, packHash, nil)
+}
+
+// NewLazyIndexWithPool is like [NewLazyIndex] but registers the
+// idx and rev [sharedfile.SharedFile]s with the given
+// [*fdpool.Pool]. The pool governs LRU eviction across many
+// LazyIndexes so a storage-wide FD budget covers the .idx and
+// .rev descriptors. Pass nil to disable pooling (equivalent to
+// [NewLazyIndex]).
+//
+// When pool is non-nil the [defaultCloseGracePeriod] timer is
+// inert: each FD stays open and registered with the pool until
+// the LRU evicts it (or [LazyIndex.Close] tears it down). When
+// pool is nil the grace timer governs FD lifetime as in
+// [NewLazyIndex].
+//
+// Neither this constructor nor the [Index] methods accept a
+// [context.Context]. Index lookups are pure ReadAt I/O without
+// cancellation hooks, matching the context-free convention of
+// the storage, plumbing/format, and plumbing/storer layers;
+// callers requiring cancellation enforce it at the call-site
+// in the layer above.
+func NewLazyIndexWithPool(openIdx, openRev func() (ReadAtCloser, error), packHash plumbing.Hash, pool *fdpool.Pool) (*LazyIndex, error) {
 	if openIdx == nil {
 		return nil, errors.New("idx opener is nil")
 	}
@@ -74,8 +98,8 @@ func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbi
 	}
 
 	s := &LazyIndex{
-		idx: sharedfile.New(openIdx, defaultCloseGracePeriod),
-		rev: sharedfile.New(openRev, defaultCloseGracePeriod),
+		idx: sharedfile.NewWithPool(openIdx, defaultCloseGracePeriod, pool),
+		rev: sharedfile.NewWithPool(openRev, defaultCloseGracePeriod, pool),
 	}
 
 	if err := s.init(packHash); err != nil {

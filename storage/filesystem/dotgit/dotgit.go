@@ -31,6 +31,7 @@ import (
 	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
 const (
@@ -107,6 +108,17 @@ type Options struct {
 	// WriteReverseIndex controls whether .rev files are written when
 	// creating new packfiles. Defaults to true.
 	WriteReverseIndex bool
+	// Pool, when non-nil, governs the LRU eviction of file
+	// descriptors held by [packhandle.PackHandle] instances
+	// constructed by this DotGit. Nil disables pooling for the
+	// pack-FD lifecycle (grace-period close on quiescence).
+	//
+	// The Pool field's API stability tracks [fdpool.Pool]'s, not
+	// this package's. Per the x/ package policy, the fdpool API
+	// may change without following semantic versioning; consumers
+	// reading this field should treat it as experimental on the
+	// same timeline.
+	Pool *fdpool.Pool
 }
 
 // The DotGit type represents a local git repository on disk. This
@@ -511,7 +523,7 @@ func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) 
 		},
 	}
 
-	ph, err := packhandle.New(sources, hash)
+	ph, err := packhandle.NewWithPool(sources, hash, d.options.Pool)
 	if err != nil {
 		return nil, err
 	}
@@ -1529,7 +1541,17 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot chroot %q: %w", path, err)
 		}
-		alternates = append(alternates, New(afs))
+		// Inherit the parent DotGit's ObjectFormat so the alternate
+		// reads and writes hashes at the same width as the
+		// repository it serves. Inherit the FD pool too so the
+		// storage-wide budget covers alternate packs and idxes.
+		// Other Options keep their defaults from New.
+		alternates = append(alternates, NewWithOptions(afs, Options{
+			ObjectFormat:      d.options.ObjectFormat,
+			ReadReverseIndex:  true,
+			WriteReverseIndex: true,
+			Pool:              d.options.Pool,
+		}))
 	}
 
 	if err = scanner.Err(); err != nil {

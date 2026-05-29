@@ -982,3 +982,148 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 			"no read or release should fail under concurrent load")
 	})
 }
+
+// TestObjectStorage_PopulateIndex_FirstReadHotMap asserts that the
+// first observable read leaves s.index populated, i.e. requireIndex
+// publishes the local map into the shared field under the lock.
+func TestObjectStorage_PopulateIndex_FirstReadHotMap(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+
+	s.muI.RLock()
+	defer s.muI.RUnlock()
+	assert.NotNil(t, s.index, "first read should publish s.index")
+	assert.NotEmpty(t, s.index, "fixture must contribute at least one pack")
+}
+
+// TestObjectStorage_ReindexPrewarms verifies that Reindex leaves
+// s.index in a hot, non-nil state so the next read does not pay a
+// cold-load. The pre-Phase-3 implementation niled s.index and
+// deferred reload to the next read.
+func TestObjectStorage_ReindexPrewarms(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+
+	require.NoError(t, s.Reindex())
+
+	// Reindex must synchronously re-populate s.index.
+	s.muI.RLock()
+	idxPopulated := len(s.index) > 0
+	s.muI.RUnlock()
+	assert.True(t, idxPopulated,
+		"Reindex should leave s.index pre-warmed for the next read")
+
+	// And the next read should still succeed.
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+}
+
+// TestObjectStorage_ConcurrentReindex_NoRace runs many concurrent
+// Reindex calls against the same Storage and asserts that the
+// singleflight wrapper keeps the operation safe: every call returns
+// nil, s.index stays non-empty and consistent throughout, and reads
+// after the herd still succeed. Without singleflight the goroutines
+// would each populate independently and race on the map swap,
+// producing duplicate disk I/O and a window where a reader could
+// observe a partially-published map.
+func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Pre-warm so a concurrent reader can RLock muI without first
+	// racing requireIndex against the Reindex herd.
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+	h := obj.Hash()
+
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			assert.NoError(t, s.Reindex())
+		})
+	}
+	// A few readers in parallel exercise the muI.RLock fast-path
+	// during the Reindex herd.
+	for range 8 {
+		wg.Go(func() {
+			_, err := s.EncodedObject(plumbing.AnyObject, h)
+			assert.NoError(t, err)
+		})
+	}
+	wg.Wait()
+
+	s.muI.RLock()
+	assert.NotEmpty(t, s.index, "after the Reindex herd s.index must be populated")
+	s.muI.RUnlock()
+
+	_, err = s.EncodedObject(plumbing.AnyObject, h)
+	require.NoError(t, err, "reads after the Reindex herd must still succeed")
+}
+
+// TestObjectStorage_ConcurrentEncodedObject_NoRace slams many
+// goroutines at the same storage and verifies the read path is
+// race-free under -race. The map is pre-warmed by IterEncodedObjects
+// before the herd, so the herd exercises the RLock fast-path of
+// requireIndex (singleflight coalescing is exercised separately by
+// the cold-load benchmark).
+func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+	h := obj.Hash()
+
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			_, err := s.EncodedObject(plumbing.AnyObject, h)
+			assert.NoError(t, err)
+		})
+	}
+	wg.Wait()
+
+	s.muI.RLock()
+	defer s.muI.RUnlock()
+	assert.NotNil(t, s.index, "after the herd s.index must be populated")
+}
