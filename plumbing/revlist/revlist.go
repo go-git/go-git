@@ -3,54 +3,36 @@
 package revlist
 
 import (
+	"context"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
-// objectWalker can be implemented by storers that provide a specialized
-// revlist object walk for a wants/haves query.
-type objectWalker interface {
-	RevListObjects(wants, haves []plumbing.Hash) ([]plumbing.Hash, error)
-}
-
 // Objects computes object hashes reachable from wants while excluding
-// commits reachable from haves.
-//
-// If s implements objectWalker, its RevListObjects method is used.
-// Otherwise, Objects expands haves first to establish commit boundaries,
-// then walks wants in the same object store.
-func Objects(
-	s storer.EncodedObjectStorer,
-	wants,
-	haves []plumbing.Hash,
-) ([]plumbing.Hash, error) {
-	if walker, ok := s.(objectWalker); ok {
-		return walker.RevListObjects(wants, haves)
-	}
+// commits reachable from haves. Equivalent to draining Stream into a
+// slice.
+func Objects(s storer.EncodedObjectStorer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	out := make(chan Entry, 64)
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := Stream(context.Background(), s, wants, haves, out)
+		errCh <- err
+	}()
 
-	w, err := newObjectWalk(s)
-	if err != nil {
+	var hashes []plumbing.Hash
+	for e := range out {
+		hashes = append(hashes, e.Hash)
+	}
+	if err := <-errCh; err != nil {
 		return nil, err
 	}
-	if err := w.seedHaves(haves); err != nil {
-		return nil, err
-	}
-	if err := w.seedWants(wants); err != nil {
-		return nil, err
-	}
-	if err := w.walk(); err != nil {
-		return nil, err
-	}
-	return w.result, nil
+	return hashes, nil
 }
 
 // ObjectsWithRef returns a map from each reachable object hash to the
 // list of want hashes that can reach it.
-func ObjectsWithRef(
-	s storer.EncodedObjectStorer,
-	wants,
-	haves []plumbing.Hash,
-) (map[plumbing.Hash][]plumbing.Hash, error) {
+func ObjectsWithRef(s storer.EncodedObjectStorer, wants, haves []plumbing.Hash) (map[plumbing.Hash][]plumbing.Hash, error) {
 	all := map[plumbing.Hash][]plumbing.Hash{}
 	for _, want := range wants {
 		hashes, err := Objects(s, []plumbing.Hash{want}, haves)
