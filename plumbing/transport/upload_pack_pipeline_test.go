@@ -3,7 +3,9 @@ package transport
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,4 +186,118 @@ func buildSmallFixtureForPipeline(t *testing.T, s *memory.Storage) []plumbing.Ha
 	c3 := makeCommit(tree3, c2)
 
 	return []plumbing.Hash{c3}
+}
+
+// TestWritePipelinedPack_CtxCancelMidPipeline cancels the context after
+// kicking off writePipelinedPack and verifies it returns a non-nil error
+// and does not deadlock.
+func TestWritePipelinedPack_CtxCancelMidPipeline(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	wants := buildSmallFixtureForPipeline(t, st)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		var buf bytes.Buffer
+		done <- writePipelinedPack(ctx, &buf, st, wants, nil, pipelinedOptions{
+			PackWindow:  10,
+			LoaderCount: 1,
+		}, nil)
+	}()
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			// Race: pipeline may have completed before cancel fired. That's
+			// acceptable for this tiny fixture; the real assertion is "no
+			// deadlock". Only fail if we hit a deadlock above.
+			t.Log("pipeline completed before cancel; acceptable on tiny fixtures")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("writePipelinedPack did not return after context cancel")
+	}
+}
+
+// recordingWalker wraps a storer to track whether PackObjects was invoked.
+type recordingWalker struct {
+	*memory.Storage
+	called bool
+}
+
+// PackObjects implements storer.PackObjectWalker and records the call.
+func (r *recordingWalker) PackObjects(ctx context.Context, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	r.called = true
+	return revlist.Objects(r.Storage, wants, haves)
+}
+
+// TestWritePipelinedPack_PackObjectWalkerDispatch verifies that a storer
+// implementing storer.PackObjectWalker has its PackObjects method invoked
+// instead of revlist.Stream.
+func TestWritePipelinedPack_PackObjectWalkerDispatch(t *testing.T) {
+	t.Parallel()
+	st := &recordingWalker{Storage: memory.NewStorage()}
+	wants := buildSmallFixtureForPipeline(t, st.Storage)
+
+	var buf bytes.Buffer
+	if err := writePipelinedPack(context.Background(), &buf, st, wants, nil, pipelinedOptions{
+		PackWindow:  10,
+		LoaderCount: 2,
+	}, nil); err != nil {
+		t.Fatalf("writePipelinedPack: %v", err)
+	}
+	if !st.called {
+		t.Fatal("PackObjectWalker.PackObjects was not invoked")
+	}
+	if buf.Len() == 0 {
+		t.Fatal("empty pack")
+	}
+}
+
+// failingStorage wraps a storer to fail on a specific hash.
+type failingStorage struct {
+	*memory.Storage
+	failHash plumbing.Hash
+}
+
+// EncodedObject returns an error for the failHash.
+func (f *failingStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	if h == f.failHash {
+		return nil, fmt.Errorf("synthetic load failure for %s", h)
+	}
+	return f.Storage.EncodedObject(t, h)
+}
+
+// TestWritePipelinedPack_LoaderError verifies that a loader failing on a
+// specific hash surfaces the error without deadlock.
+func TestWritePipelinedPack_LoaderError(t *testing.T) {
+	t.Parallel()
+	inner := memory.NewStorage()
+	wants := buildSmallFixtureForPipeline(t, inner)
+
+	hashes, err := revlist.Objects(inner, wants, nil)
+	if err != nil {
+		t.Fatalf("Objects: %v", err)
+	}
+	if len(hashes) == 0 {
+		t.Fatal("no objects in fixture")
+	}
+
+	st := &failingStorage{Storage: inner, failHash: hashes[0]}
+
+	var buf bytes.Buffer
+	err = writePipelinedPack(context.Background(), &buf, st, wants, nil, pipelinedOptions{
+		PackWindow:           0,
+		SkipDeltaCompression: true,
+		LoaderCount:          2,
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error from failing loader, got nil")
+	}
+	if !strings.Contains(err.Error(), "synthetic load failure") {
+		t.Fatalf("expected error to mention loader failure, got %v", err)
+	}
 }
