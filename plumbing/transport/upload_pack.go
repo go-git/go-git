@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"runtime"
+	"time"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	cfgformat "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -255,39 +257,59 @@ func UploadPack(
 		return fmt.Errorf("closing reader: %w", err)
 	}
 
-	objs, err := objectsToUpload(st, wants, haves)
-	if err != nil {
-		_ = w.Close()
-		return fmt.Errorf("getting objects to upload: %w", err)
-	}
-
+	// Sideband mux setup (shared across all paths).
 	var (
 		useSideband bool
-		writer      io.Writer = w
+		dataWriter  io.Writer = w
+		bandWriter  io.Writer
 	)
+	noProgress := caps.Supports(capability.NoProgress)
 	if caps.Supports(capability.Sideband64k) {
-		writer = sideband.NewMuxer(sideband.Sideband64k, w)
+		mux := sideband.NewMuxer(sideband.Sideband64k, w)
+		dataWriter = mux
+		if !noProgress {
+			bandWriter = sidebandProgressWriter{mux: mux}
+		}
 		useSideband = true
 	} else if caps.Supports(capability.Sideband) {
-		writer = sideband.NewMuxer(sideband.Sideband, w)
+		mux := sideband.NewMuxer(sideband.Sideband, w)
+		dataWriter = mux
+		if !noProgress {
+			bandWriter = sidebandProgressWriter{mux: mux}
+		}
 		useSideband = true
 	}
 
-	// TODO: Support shallow-file
-	// TODO: Support thin-pack
-	var packWindow uint
-	if opts.SkipDeltaCompression {
-		packWindow = 0
-	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
-		packWindow = cfg.Pack.Window
-	} else {
-		packWindow = config.DefaultPackWindow
+	progress := newProgressWriter(bandWriter, 250*time.Millisecond)
+
+	pwOpts := storer.PackStreamOptions{
+		ThinPack:             caps.Supports(capability.ThinPack),
+		SkipDeltaCompression: opts.SkipDeltaCompression,
+		PackWindow:           resolvePackWindow(opts, st),
+		ObjectFormat:         resolveObjectFormat(st),
+		Shallow:              append([]plumbing.Hash(nil), upreq.Shallows...),
+		Progress:             bandWriter,
 	}
 
-	e := packfile.NewEncoder(writer, st, false)
-	_, err = e.Encode(objs, packWindow)
-	if err != nil {
-		return fmt.Errorf("encoding packfile: %w", err)
+	path := chooseUploadPackPath(st)
+	switch path.kind {
+	case pathPackStreamer:
+		// Storage owns progress on this path; close the transport-side
+		// progress writer before delegation so it never fires.
+		progress.Close()
+		if err := path.streamer.StreamPack(ctx, dataWriter, wants, haves, pwOpts); err != nil {
+			return fmt.Errorf("stream pack: %w", err)
+		}
+	default:
+		err := writePipelinedPack(ctx, dataWriter, st, wants, haves, pipelinedOptions{
+			PackWindow:           pwOpts.PackWindow,
+			SkipDeltaCompression: pwOpts.SkipDeltaCompression,
+			LoaderCount:          runtime.GOMAXPROCS(0),
+		}, progress)
+		progress.Close()
+		if err != nil {
+			return fmt.Errorf("write pipelined pack: %w", err)
+		}
 	}
 
 	if useSideband {
@@ -303,8 +325,38 @@ func UploadPack(
 	return nil
 }
 
-func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
-	return revlist.Objects(st, wants, haves)
+// sidebandProgressWriter adapts a sideband.Muxer to io.Writer, routing
+// every Write into the progress (band 2) channel.
+type sidebandProgressWriter struct {
+	mux *sideband.Muxer
+}
+
+func (s sidebandProgressWriter) Write(p []byte) (int, error) {
+	return s.mux.WriteChannel(sideband.ProgressMessage, p)
+}
+
+func resolveObjectFormat(st storage.Storer) cfgformat.ObjectFormat {
+	c, ok := st.(config.ConfigStorer)
+	if !ok {
+		return cfgformat.SHA1
+	}
+	cfg, err := c.Config()
+	if err != nil || cfg == nil {
+		return cfgformat.SHA1
+	}
+	return cfg.Extensions.ObjectFormat
+}
+
+func resolvePackWindow(opts *UploadPackRequest, st storage.Storer) uint {
+	if opts.SkipDeltaCompression {
+		return 0
+	}
+	if c, ok := st.(config.ConfigStorer); ok {
+		if cfg, err := c.Config(); err == nil && cfg != nil {
+			return cfg.Pack.Window
+		}
+	}
+	return config.DefaultPackWindow
 }
 
 func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {

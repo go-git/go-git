@@ -98,7 +98,14 @@ func writePipelinedPack(
 
 	var hashes []plumbing.Hash
 	for obj := range loaded {
-		hashes = append(hashes, obj.Hash())
+		h := obj.Hash()
+		// DeltaObject.Hash() returns the hash of the raw delta bytes, not
+		// the full object. Use ActualHash() when available to get the
+		// content-addressed hash the encoder expects.
+		if d, ok := obj.(plumbing.DeltaObject); ok {
+			h = d.ActualHash()
+		}
+		hashes = append(hashes, h)
 	}
 
 	if err := <-enumErrCh; err != nil {

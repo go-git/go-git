@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -342,4 +344,95 @@ func TestChooseUploadPackPath_FallsBackToRevlist(t *testing.T) {
 	if p.kind != pathRevlist {
 		t.Fatalf("expected revlist fallback, got %v", p.kind)
 	}
+}
+
+func TestUploadPack_DelegatesToPackStreamer(t *testing.T) {
+	t.Parallel()
+	rec := &recordingStreamerForUploadPack{Storage: memory.NewStorage()}
+	wants := buildSmallFixtureForUploadPack(t, rec.Storage)
+
+	// Build a minimal v0/v1 upload-pack request: one `want`, then flush,
+	// then `done`. No sideband.
+	var reqBuf bytes.Buffer
+	for _, h := range wants {
+		pktline.Writef(&reqBuf, "want %s\n", h)
+	}
+	pktline.WriteFlush(&reqBuf)
+	pktline.Writef(&reqBuf, "done\n")
+
+	r := io.NopCloser(&reqBuf)
+	var w bytes.Buffer
+	wc := nopWriteCloser{&w}
+
+	if err := UploadPack(context.Background(), rec, r, wc, &UploadPackRequest{StatelessRPC: true}); err != nil {
+		t.Fatalf("UploadPack: %v", err)
+	}
+
+	if !rec.streamCalled {
+		t.Fatal("PackStreamer.StreamPack was not invoked")
+	}
+	if w.Len() == 0 {
+		t.Fatal("UploadPack produced no output")
+	}
+}
+
+type recordingStreamerForUploadPack struct {
+	*memory.Storage
+	streamCalled bool
+}
+
+func (r *recordingStreamerForUploadPack) StreamPack(_ context.Context, w io.Writer, _ []plumbing.Hash, _ []plumbing.Hash, _ storer.PackStreamOptions) error {
+	r.streamCalled = true
+	// Emit a minimal valid empty pack: "PACK" + version 2 + count 0 + SHA-1 of header bytes.
+	return writeEmptyPack(w)
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+func writeEmptyPack(w io.Writer) error {
+	h := sha1.New()
+	header := []byte{
+		'P', 'A', 'C', 'K',
+		0, 0, 0, 2, // version
+		0, 0, 0, 0, // count
+	}
+	if _, err := h.Write(header); err != nil {
+		return err
+	}
+	if _, err := w.Write(header); err != nil {
+		return err
+	}
+	if _, err := w.Write(h.Sum(nil)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func buildSmallFixtureForUploadPack(t *testing.T, s *memory.Storage) []plumbing.Hash {
+	// Smallest possible: one commit with an empty tree.
+	t.Helper()
+
+	// empty tree
+	treeObj := s.NewEncodedObject()
+	treeObj.SetType(plumbing.TreeObject)
+	if _, err := s.SetEncodedObject(treeObj); err != nil {
+		t.Fatalf("set tree: %v", err)
+	}
+
+	c := &object.Commit{
+		Author:    object.Signature{Name: "t", Email: "t@example.com"},
+		Committer: object.Signature{Name: "t", Email: "t@example.com"},
+		Message:   "init\n",
+		TreeHash:  treeObj.Hash(),
+	}
+	cObj := s.NewEncodedObject()
+	if err := c.Encode(cObj); err != nil {
+		t.Fatalf("encode commit: %v", err)
+	}
+	if _, err := s.SetEncodedObject(cObj); err != nil {
+		t.Fatalf("set commit: %v", err)
+	}
+	return []plumbing.Hash{cObj.Hash()}
 }
