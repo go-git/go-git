@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -302,4 +303,43 @@ func prefixHex(b []byte, n int) string {
 		}
 	}
 	return sb.String()
+}
+
+type streamerOnly struct{ *memory.Storage }
+
+func (streamerOnly) StreamPack(context.Context, io.Writer, []plumbing.Hash, []plumbing.Hash, storer.PackStreamOptions) error {
+	return nil
+}
+
+type walkerOnly struct{ *memory.Storage }
+
+func (walkerOnly) PackObjects(context.Context, []plumbing.Hash, []plumbing.Hash) ([]plumbing.Hash, error) {
+	return nil, nil
+}
+
+func TestChooseUploadPackPath_PrefersStreamer(t *testing.T) {
+	t.Parallel()
+	st := streamerOnly{Storage: memory.NewStorage()}
+	p := chooseUploadPackPath(st)
+	if p.kind != pathPackStreamer {
+		t.Fatalf("expected PackStreamer, got %v", p.kind)
+	}
+}
+
+func TestChooseUploadPackPath_FallsBackToWalker(t *testing.T) {
+	t.Parallel()
+	st := walkerOnly{Storage: memory.NewStorage()}
+	p := chooseUploadPackPath(st)
+	if p.kind != pathPackObjectWalker {
+		t.Fatalf("expected PackObjectWalker, got %v", p.kind)
+	}
+}
+
+func TestChooseUploadPackPath_FallsBackToRevlist(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	p := chooseUploadPackPath(st)
+	if p.kind != pathRevlist {
+		t.Fatalf("expected revlist fallback, got %v", p.kind)
+	}
 }

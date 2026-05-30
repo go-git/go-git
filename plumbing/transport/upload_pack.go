@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -373,4 +374,32 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 	}
 
 	return nil
+}
+
+type uploadPackPathKind int
+
+const (
+	pathRevlist uploadPackPathKind = iota
+	pathPackObjectWalker
+	pathPackStreamer
+)
+
+type uploadPackPath struct {
+	kind     uploadPackPathKind
+	streamer storer.PackStreamer
+	walker   storer.PackObjectWalker
+}
+
+// chooseUploadPackPath inspects st for optional capability interfaces and
+// returns the most specialised path available. Order of preference:
+// PackStreamer (full takeover) > PackObjectWalker (fast enumerate) >
+// generic revlist walk.
+func chooseUploadPackPath(st storage.Storer) uploadPackPath {
+	if s, ok := st.(storer.PackStreamer); ok {
+		return uploadPackPath{kind: pathPackStreamer, streamer: s}
+	}
+	if w, ok := st.(storer.PackObjectWalker); ok {
+		return uploadPackPath{kind: pathPackObjectWalker, walker: w}
+	}
+	return uploadPackPath{kind: pathRevlist}
 }
