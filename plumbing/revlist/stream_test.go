@@ -2,6 +2,7 @@ package revlist_test
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 	"time"
@@ -45,6 +46,39 @@ func TestStreamParityWithObjects(t *testing.T) {
 	sortHashes(streamed)
 	if !equalHashes(expected, streamed) {
 		t.Fatalf("Stream and Objects disagree:\n want: %v\n got:  %v", expected, streamed)
+	}
+}
+
+// TestStreamYieldsCorrectTypes verifies that every Entry emitted by Stream
+// has a Type that matches the actual stored object type. This catches bugs
+// where the wrong type is emitted while the hash is correct.
+func TestStreamYieldsCorrectTypes(t *testing.T) {
+	t.Parallel()
+
+	storer := memory.NewStorage()
+	wants, haves := buildSmallFixture(t, storer)
+
+	out := make(chan revlist.Entry, 16)
+	streamErr := make(chan error, 1)
+	go func() {
+		_, err := revlist.Stream(context.Background(), storer, wants, haves, out)
+		streamErr <- err
+	}()
+
+	for e := range out {
+		obj, err := storer.EncodedObject(plumbing.AnyObject, e.Hash)
+		if err != nil {
+			t.Fatalf("failed to retrieve object %s: %v", e.Hash, err)
+		}
+		actualType := obj.Type()
+		if e.Type != actualType {
+			t.Fatalf("Entry %s has Type %v but stored object has Type %v",
+				e.Hash, e.Type, actualType)
+		}
+	}
+
+	if err := <-streamErr; err != nil {
+		t.Fatalf("Stream: %v", err)
 	}
 }
 
@@ -155,4 +189,47 @@ func equalHashes(a, b []plumbing.Hash) bool {
 		}
 	}
 	return true
+}
+
+// TestStreamContextCancelled verifies that canceling the context unblocks
+// a stalled walker. This is critical for T6's loader pool, which will cancel
+// contexts to interrupt in-flight walks.
+func TestStreamContextCancelled(t *testing.T) {
+	t.Parallel()
+	s := memory.NewStorage()
+	wants, _ := buildSmallFixture(t, s)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	out := make(chan revlist.Entry) // unbuffered so writer blocks on first emit
+	streamErr := make(chan error, 1)
+	go func() {
+		_, err := revlist.Stream(ctx, s, wants, nil, out)
+		streamErr <- err
+	}()
+
+	// Read one entry to make sure the walker has started, then cancel.
+	select {
+	case _, ok := <-out:
+		if !ok {
+			t.Fatal("channel closed before any entry")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stream produced no entries within 2s")
+	}
+	cancel()
+
+	// Drain remaining entries; the walker may have produced a few more
+	// before observing the cancel.
+	for range out {
+	}
+
+	select {
+	case err := <-streamErr:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stream did not return after context cancel")
+	}
 }
