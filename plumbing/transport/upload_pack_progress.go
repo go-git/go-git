@@ -65,13 +65,15 @@ func (p *progressWriter) Flush(format string, args ...interface{}) {
 		return
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
+		p.mu.Unlock()
 		return
 	}
 	line := fmt.Sprintf(format, args...) + "\n"
-	_, _ = p.w.Write([]byte(line))
 	p.pending = ""
+	p.mu.Unlock()
+
+	_, _ = p.w.Write([]byte(line))
 }
 
 // Close stops the rate-limit goroutine. Safe to call multiple times.

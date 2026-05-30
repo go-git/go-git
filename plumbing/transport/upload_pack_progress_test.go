@@ -43,6 +43,37 @@ func TestProgressWriter_NilWriterIsNoop(t *testing.T) {
 	p.Close()
 }
 
+func TestProgressWriter_FlushEmitsLineAndClearsPending(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	w := &syncWriter{w: &buf, mu: &mu}
+
+	p := newProgressWriter(w, 25*time.Millisecond)
+
+	p.Update("Counting objects: 1")
+	p.Flush("Counting objects: 1, done.")
+
+	// Allow the ticker an opportunity to fire after Flush; it should
+	// observe empty pending and emit nothing more.
+	time.Sleep(80 * time.Millisecond)
+	p.Close()
+
+	mu.Lock()
+	defer mu.Unlock()
+	got := buf.String()
+	if !strings.Contains(got, "Counting objects: 1, done.\n") {
+		t.Fatalf("expected flush newline-terminated line, got %q", got)
+	}
+	// After Flush, any further emissions would be the rolling \r form.
+	// We tolerate one prior \r frame from the pre-Flush Update window
+	// (the ticker may or may not have fired in time), but not anything
+	// after Flush. A simple proxy: the buffer ends with \n.
+	if got[len(got)-1] != '\n' {
+		t.Fatalf("expected buffer to end with newline (no post-Flush emit), got %q", got)
+	}
+}
+
 type syncWriter struct {
 	w  *bytes.Buffer
 	mu *sync.Mutex
