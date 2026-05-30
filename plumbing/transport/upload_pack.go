@@ -281,6 +281,7 @@ func UploadPack(
 	}
 
 	progress := newProgressWriter(bandWriter, 250*time.Millisecond)
+	defer progress.Close()
 
 	pwOpts := storer.PackStreamOptions{
 		ThinPack:             caps.Supports(capability.ThinPack),
@@ -295,19 +296,18 @@ func UploadPack(
 	switch path.kind {
 	case pathPackStreamer:
 		// Storage owns progress on this path; close the transport-side
-		// progress writer before delegation so it never fires.
+		// ticker before delegation so it doesn't race with storage's
+		// emissions. The deferred Close above is idempotent.
 		progress.Close()
 		if err := path.streamer.StreamPack(ctx, dataWriter, wants, haves, pwOpts); err != nil {
 			return fmt.Errorf("stream pack: %w", err)
 		}
 	default:
-		err := writePipelinedPack(ctx, dataWriter, st, wants, haves, pipelinedOptions{
+		if err := writePipelinedPack(ctx, dataWriter, st, wants, haves, pipelinedOptions{
 			PackWindow:           pwOpts.PackWindow,
 			SkipDeltaCompression: pwOpts.SkipDeltaCompression,
 			LoaderCount:          runtime.GOMAXPROCS(0),
-		}, progress)
-		progress.Close()
-		if err != nil {
+		}, progress); err != nil {
 			return fmt.Errorf("write pipelined pack: %w", err)
 		}
 	}
