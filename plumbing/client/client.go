@@ -73,6 +73,21 @@ func WithSSHAuth(a SSHAuth) Option {
 	}
 }
 
+// WithSSHConfig configures SSH from an effective config: an Identity (login
+// user and auth methods) and a HostConfig (host key policy, known_hosts and
+// timeout). Build the arguments directly or via the ssh auth builders
+// (ssh.KeyAuth, ssh.AgentAuth).
+func WithSSHConfig(id *xssh.Identity, host *xssh.HostConfig) Option {
+	return func(opts *options) {
+		if host == nil {
+			host = &xssh.HostConfig{}
+		}
+		opts.ssh.ClientConfig = func(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, error) {
+			return host.ClientConfig(ctx, req, id)
+		}
+	}
+}
+
 // WithHTTPAuth sets HTTP authentication. The auth type's Authorizer method
 // is called for each outgoing HTTP request.
 func WithHTTPAuth(a HTTPAuth) Option {
