@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing"
+	format "github.com/go-git/go-git/v5/plumbing/format/config"
 	. "gopkg.in/check.v1"
 )
 
@@ -89,6 +90,13 @@ func (s *ConfigSuite) TestUnmarshal(c *C) {
 	c.Assert(cfg.Branches["master"].Merge, Equals, plumbing.ReferenceName("refs/heads/master"))
 	c.Assert(cfg.Branches["master"].Description, Equals, "Add support for branch description.\n\nEdit branch description: git branch --edit-description\n")
 	c.Assert(cfg.Init.DefaultBranch, Equals, "main")
+}
+
+func (s *ConfigSuite) TestUnmarshalRepositoryFormatVersion(c *C) {
+	input := []byte("[core]\n\trepositoryformatversion = 1\n")
+	cfg := NewConfig()
+	c.Assert(cfg.Unmarshal(input), IsNil)
+	c.Assert(cfg.Core.RepositoryFormatVersion, Equals, format.RepositoryFormatVersion(format.Version_1))
 }
 
 func (s *ConfigSuite) TestMarshal(c *C) {
@@ -394,4 +402,3 @@ func (s *ConfigSuite) TestUnmarshalRemotes(c *C) {
 	c.Assert(cfg.Remotes["origin"].URLs[0], Equals, "https://git.sr.ht/~mcepl/go-git")
 	c.Assert(cfg.Remotes["origin"].URLs[1], Equals, "git@git.sr.ht:~mcepl/go-git.git")
 }
-
