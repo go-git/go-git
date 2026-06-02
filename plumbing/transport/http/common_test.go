@@ -122,10 +122,16 @@ func TestApplyRedirect(t *testing.T) {
 			wantURL:  "https://example.com/repo.git",
 		},
 		{
-			name:     "unsupported scheme",
+			name:     "rejects redirect to a foreign scheme",
 			baseURL:  "https://example.com/repo.git",
 			finalURL: "ftp://evil.com/repo.git/info/refs",
-			wantErr:  "unsupported scheme",
+			wantErr:  "changes scheme",
+		},
+		{
+			name:     "allows redirect within a custom scheme",
+			baseURL:  "private://pool/old-repo.git",
+			finalURL: "private://pool/new-repo.git/info/refs",
+			wantURL:  "private://pool/new-repo.git",
 		},
 		{
 			name:     "tail mismatch",

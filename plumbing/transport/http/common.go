@@ -74,10 +74,12 @@ const infoRefsPath = "/info/refs"
 // because a mismatch could let a malicious server rewrite the base URL
 // to an unrelated repository.
 //
-// Scheme is validated to prevent SSRF via unsupported protocols (e.g.
-// a redirect to file:// or gopher://). Cross-scheme redirects only
-// permit an upgrade from http to https; downgrades must not influence
-// the session base URL used for subsequent requests.
+// A redirect may not switch to a different scheme; the only permitted
+// transition is an upgrade from http to https. This blocks SSRF via
+// protocol escalation (e.g. a redirect from https to file:// or
+// gopher://) without hardcoding an http/https allowlist, so callers
+// that register a custom transport under their own scheme can still
+// follow redirects that stay within that scheme.
 func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	if resp.Request == nil {
 		return baseURL, nil
@@ -96,9 +98,6 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 		return baseURL, nil
 	}
 
-	if final.Scheme != "http" && final.Scheme != "https" {
-		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", final.Scheme)
-	}
 	if final.Scheme != baseURL.Scheme &&
 		(baseURL.Scheme != "http" || final.Scheme != "https") {
 		return nil, fmt.Errorf(
