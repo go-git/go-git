@@ -118,6 +118,12 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		}
 	}
 
+	// A shallow-only no-op push (e.g. from a shallow clone with nothing to push)
+	// sends shallow lines followed immediately by a flush packet with no commands.
+	if length == pktline.Flush {
+		return nil
+	}
+
 	// The first command line must contain capabilities separated by a null byte
 	before, after, ok := bytes.Cut(payload, []byte{0})
 	if !ok {
@@ -160,7 +166,12 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		return errMalformedRequest("unexpected data after flush")
 	}
 
-	return validateUpdateRequests(req)
+	for _, c := range req.Commands {
+		if err := c.validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func parseCommand(b []byte) (*Command, error) {
