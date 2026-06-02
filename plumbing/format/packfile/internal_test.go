@@ -5,10 +5,13 @@ import (
 	"compress/zlib"
 	"crypto/sha1"
 	"encoding/binary"
+	"errors"
 	"io"
 	"os"
+	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -239,4 +242,89 @@ func writeTestPackFile(t *testing.T, pack []byte) *os.File {
 	_, err = file.Seek(0, io.SeekStart)
 	require.NoError(t, err)
 	return file
+}
+
+// TestNewPackfile_CloseReturnsScannerError verifies that
+// Packfile.Close surfaces the scanner cursor's close error in
+// resolver mode. The resolver-owned handle is not closed by
+// Packfile.Close (its lifetime belongs to the resolver), so the
+// scanner cursor is the only error source.
+func TestNewPackfile_CloseReturnsScannerError(t *testing.T) {
+	t.Parallel()
+
+	scanErr := errors.New("scan-fail")
+
+	cases := []struct {
+		name    string
+		scanErr error
+		wantNil bool
+	}{
+		{name: "scan succeeds", scanErr: nil, wantNil: true},
+		{name: "scan fails", scanErr: scanErr, wantNil: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := &Packfile{}
+			p.handle = stubPackHandle{}
+			p.scanReader = stubCloser{err: tc.scanErr}
+
+			err := p.Close()
+			if tc.wantNil {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, scanErr)
+		})
+	}
+}
+
+// stubCloser is a minimal io.ReadSeekCloser that returns a
+// configured error from Close.
+type stubCloser struct{ err error }
+
+func (s stubCloser) Read([]byte) (int, error)       { return 0, io.EOF }
+func (s stubCloser) Seek(int64, int) (int64, error) { return 0, nil }
+func (s stubCloser) Close() error                   { return s.err }
+
+// stubPackHandle is a minimal PackHandle for tests that don't
+// exercise its methods.
+type stubPackHandle struct{}
+
+func (stubPackHandle) OpenPackReader() (io.ReadSeekCloser, error) { panic("unused") }
+func (stubPackHandle) OpenRandomReader() (RandomReader, error)    { panic("unused") }
+func (stubPackHandle) PackHash() (plumbing.Hash, error)           { panic("unused") }
+
+// TestNewPackfile_ExternalResolverNotClosed verifies that
+// Packfile.Close does not invoke any close path against a handle
+// supplied via WithPackHandle. The resolver-owned handle must
+// outlive the Packfile that consumed it; only the scanner cursor
+// (held in p.scanReader) is closed.
+func TestNewPackfile_ExternalResolverNotClosed(t *testing.T) {
+	t.Parallel()
+
+	// Track invocations through the resolver. The resolver
+	// itself is invoked exactly once during init (by the
+	// scanner-init path), but here we close before init runs so
+	// it should NOT be invoked at all.
+	var resolverCalls atomic.Int32
+	stub := stubPackHandle{}
+
+	resolver := PackHandleResolver(func() (PackHandle, error) {
+		resolverCalls.Add(1)
+		return stub, nil
+	})
+
+	p := NewPackfile(nil, WithPackHandle(resolver))
+	// Close without init — exercises the WithPackHandle path
+	// directly. p.handle is still nil (init hasn't run);
+	// p.scanReader is nil. Close must be a no-op.
+	require.NoError(t, p.Close())
+	assert.Zero(t, resolverCalls.Load(),
+		"resolver must not be invoked during Close on an unused Packfile")
+
+	// Second close is idempotent.
+	require.NoError(t, p.Close())
 }

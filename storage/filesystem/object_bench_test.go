@@ -548,3 +548,92 @@ func BenchmarkStorage_PackHandleCacheContention(b *testing.B) {
 		})
 	})
 }
+
+// BenchmarkObjectStorage_FSObjectReader measures the FSObject
+// Reader materialisation path (the regression vector for
+// go-git#2153). Each iteration: EncodedObject lookup + Reader
+// open + full Copy to io.Discard + Close, across fd vs mmap.
+func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
+	hashes := []plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+	}
+
+	setup := func(b *testing.B, withMmap bool) *ObjectStorage {
+		b.Helper()
+		dir := b.TempDir()
+		_, err := fixtures.Basic().ByTag(".git").One().DotGit(
+			fixtures.WithTargetDir(func() string { return dir }))
+		if err != nil {
+			b.Fatalf("fixture DotGit: %v", err)
+		}
+
+		var fs billy.Filesystem
+		if withMmap {
+			fs = osfs.New(dir, osfs.WithMmap())
+		} else {
+			fs = osfs.New(dir)
+		}
+
+		dg := dotgit.New(fs)
+		stor := NewObjectStorage(dg, cache.NewObjectLRUDefault())
+		b.Cleanup(func() { _ = stor.Close() })
+
+		benchWarmPack(b, fs)
+
+		// Serial warm-up: build the index and prime FSObject caches.
+		for _, h := range hashes {
+			obj, err := stor.EncodedObject(plumbing.AnyObject, h)
+			if err != nil {
+				b.Fatalf("warm-up EncodedObject: %v", err)
+			}
+			r, err := obj.Reader()
+			if err != nil {
+				b.Fatalf("warm-up Reader: %v", err)
+			}
+			if _, err := io.Copy(io.Discard, r); err != nil {
+				b.Fatalf("warm-up Copy: %v", err)
+			}
+			if err := r.Close(); err != nil {
+				b.Fatalf("warm-up Close: %v", err)
+			}
+		}
+		return stor
+	}
+
+	for _, mode := range []struct {
+		name string
+		mmap bool
+	}{
+		{"fd", false},
+		{"mmap", true},
+	} {
+		b.Run("Reader/G=1/"+mode.name, func(b *testing.B) {
+			stor := setup(b, mode.mmap)
+			b.ReportAllocs()
+			b.ResetTimer()
+			var i int
+			for b.Loop() {
+				obj, err := stor.EncodedObject(
+					plumbing.AnyObject, hashes[i%len(hashes)])
+				if err != nil {
+					b.Fatal(err)
+				}
+				r, err := obj.Reader()
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, err := io.Copy(io.Discard, r); err != nil {
+					b.Fatal(err)
+				}
+				if err := r.Close(); err != nil {
+					b.Fatal(err)
+				}
+				i++
+			}
+		})
+	}
+}

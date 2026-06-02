@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage"
@@ -576,6 +577,41 @@ func (d *DotGit) CloseIdleDescriptors() error {
 	return d.walkPackHandles(func(ph *packhandle.PackHandle) error {
 		return ph.CloseIdleDescriptors()
 	})
+}
+
+// PackHandle returns the cached [packfile.PackHandle] for the
+// given pack hash, constructing one on first access. The returned
+// interface does not expose Close; dotgit owns the handle's
+// lifetime and tears it down via [DotGit.Close] or
+// [DotGit.cleanPackList].
+func (d *DotGit) PackHandle(hash plumbing.Hash) (packfile.PackHandle, error) {
+	ph, err := d.packHandle(hash)
+	if err != nil {
+		return nil, err
+	}
+	return packHandleAdapter{ph}, nil
+}
+
+// packHandleAdapter satisfies [packfile.PackHandle] by delegating
+// to the dotgit-owned [packhandle.PackHandle]. Unexported so
+// callers cannot type-assert back to the concrete type and reach
+// [packhandle.PackHandle.Close].
+type packHandleAdapter struct{ ph *packhandle.PackHandle }
+
+func (a packHandleAdapter) OpenPackReader() (io.ReadSeekCloser, error) {
+	return a.ph.OpenPackReader()
+}
+
+func (a packHandleAdapter) OpenRandomReader() (packfile.RandomReader, error) {
+	return a.ph.OpenRandomReader()
+}
+
+func (a packHandleAdapter) PackHash() (plumbing.Hash, error) {
+	m, err := a.ph.Meta()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return m.ID, nil
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.

@@ -524,12 +524,10 @@ func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int
 }
 
 func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfile.Packfile, error) {
-	f, err := s.dir.OpenPackForReading(pack)
-	if err != nil {
-		return nil, err
-	}
-
-	return packfile.NewPackfile(f,
+	return packfile.NewPackfile(nil,
+		packfile.WithPackHandle(func() (packfile.PackHandle, error) {
+			return s.dir.PackHandle(pack)
+		}),
 		packfile.WithIdx(idx),
 		packfile.WithFs(s.dir.Fs()),
 		packfile.WithCache(s.objectCache),
