@@ -253,6 +253,9 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 			&transport.Endpoint{Protocol: "https"},
 			&transport.Endpoint{Protocol: "https"},
 			".*changes scheme.*"},
+		{"private://pool/foo.git/info/refs",
+			&transport.Endpoint{Protocol: "private", Host: "pool"},
+			&transport.Endpoint{Protocol: "private", Host: "pool", Path: "/foo.git"}, ""},
 	}
 
 	for _, d := range data {

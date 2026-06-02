@@ -370,9 +370,12 @@ func (s *session) ModifyEndpointIfRedirect(res *http.Response) error {
 	if !strings.HasSuffix(r.URL.Path, infoRefsPath) {
 		return fmt.Errorf("http redirect: target %q does not end with %s", r.URL.Path, infoRefsPath)
 	}
-	if r.URL.Scheme != "http" && r.URL.Scheme != "https" {
-		return fmt.Errorf("http redirect: unsupported scheme %q", r.URL.Scheme)
-	}
+	// A redirect may not switch to a different scheme; the only permitted
+	// transition is an upgrade from http to https. This blocks SSRF via
+	// protocol escalation (e.g. a redirect from https to file://) without
+	// hardcoding an http/https allowlist, so callers that register a custom
+	// transport under their own scheme can still follow redirects that stay
+	// within that scheme.
 	if r.URL.Scheme != s.endpoint.Protocol &&
 		!(s.endpoint.Protocol == "http" && r.URL.Scheme == "https") {
 		return fmt.Errorf("http redirect: changes scheme from %q to %q", s.endpoint.Protocol, r.URL.Scheme)
