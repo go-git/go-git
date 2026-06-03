@@ -1239,3 +1239,19 @@ func TestGPGConfig(t *testing.T) {
 		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
 	})
 }
+
+func TestUnmarshalProtocol_RejectsInvalidAllow(t *testing.T) {
+	t.Parallel()
+	raw := []byte("[protocol]\n\tallow = sometimes\n")
+	cfg := NewConfig()
+	err := cfg.Unmarshal(raw)
+	require.Error(t, err)
+}
+
+func TestUnmarshalProtocol_RejectsInvalidPerSchemeAllow(t *testing.T) {
+	t.Parallel()
+	raw := []byte("[protocol \"file\"]\n\tallow = perhaps\n")
+	cfg := NewConfig()
+	err := cfg.Unmarshal(raw)
+	require.Error(t, err)
+}

@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -260,4 +261,30 @@ func fetchToStorage(t testing.TB, repoPath string, storage *filesystem.Storage, 
 		Wants: []plumbing.Hash{want},
 	})
 	require.NoError(t, err)
+}
+
+// The built-in default for http:// is ProtocolAlways, so a stock
+// Request would not exercise the gate. Drive it via
+// `protocol.http.allow=never` to verify the gate fires at the
+// transport boundary even when a caller bypasses plumbing/client.
+// HTTP does not implement Connector so only Handshake is tested.
+//
+// Reference: https://github.com/git/git/blob/v2.54.0/transport.c#L1146-L1149
+func TestTransport_HandshakeRespectsProtocolNever(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cfg.Protocol.AllowByName = map[string]string{"http": config.ProtocolNever}
+
+	u, err := url.Parse("http://localhost/repo")
+	require.NoError(t, err)
+
+	tr := NewTransport(Options{})
+	_, err = tr.Handshake(context.Background(), &transport.Request{
+		URL:     u,
+		Command: transport.UploadPackService,
+		Config:  cfg,
+	})
+	require.True(t, errors.Is(err, transport.ErrProtocolNotAllowed),
+		"err=%v want ErrProtocolNotAllowed", err)
 }

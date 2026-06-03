@@ -39,6 +39,9 @@ func NewTransport(opts Options) *Transport {
 
 // Connect opens a raw connection to the Git protocol server.
 func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
+	if err := transport.CheckRequest(req); err != nil {
+		return nil, err
+	}
 	host := req.URL.Hostname()
 	port := req.URL.Port()
 	if port == "" {

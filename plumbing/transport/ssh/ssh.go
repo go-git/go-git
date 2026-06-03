@@ -57,6 +57,9 @@ func NewTransport(opts Options) *Transport {
 
 // Connect implements transport.Connector.
 func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
+	if err := transport.CheckRequest(req); err != nil {
+		return nil, err
+	}
 	conn, err := t.connect(ctx, req)
 	if err != nil {
 		return nil, err
