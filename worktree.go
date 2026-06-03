@@ -951,7 +951,7 @@ func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
 
 		fallthrough
 	case merkletrie.Insert:
-		f, err := t.File(name)
+		f, err := t.FileFromEntry(name, e)
 		if err != nil {
 			return err
 		}

@@ -102,6 +102,27 @@ func (t *Tree) File(path string) (*File, error) {
 	return NewFile(path, e.Mode, blob), nil
 }
 
+// FileFromEntry creates a File from a TreeEntry without performing a FindEntry lookup.
+// This is useful when you already have a TreeEntry and want to avoid redundant lookups.
+// The path parameter is used for the File's Name field.
+func (t *Tree) FileFromEntry(path string, e *TreeEntry) (*File, error) {
+	if e == nil {
+		return nil, ErrFileNotFound
+	}
+	if err := pathutil.ValidTreePath(path); err != nil {
+		return nil, err
+	}
+	blob, err := GetBlob(t.s, e.Hash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+
+	return NewFile(path, e.Mode, blob), nil
+}
+
 // Size returns the plaintext size of an object, without reading it
 // into memory.
 func (t *Tree) Size(path string) (int64, error) {
@@ -127,25 +148,6 @@ func (t *Tree) Tree(path string) (*Tree, error) {
 	}
 
 	return tree, err
-}
-
-// TreeEntryFile returns the *File for a given *TreeEntry.
-//
-// The entry's name is validated against pathutil.ValidTreePath for
-// the same reason FindEntry validates: TreeEntryFile is a boundary
-// where attacker-controlled tree data leaves the trusted store as a
-// *File whose Name a caller can hand to filesystem ops.
-func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
-	if err := pathutil.ValidTreePath(e.Name); err != nil {
-		return nil, err
-	}
-
-	blob, err := GetBlob(t.s, e.Hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFile(e.Name, e.Mode, blob), nil
 }
 
 // FindEntry search a TreeEntry in this tree or any subtree.
