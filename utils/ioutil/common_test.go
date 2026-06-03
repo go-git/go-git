@@ -63,7 +63,8 @@ func (s *CommonSuite) TestNewContextReader() {
 	buf := bytes.NewBuffer([]byte("12"))
 	ctx, cancel := context.WithCancel(context.Background())
 
-	r := NewContextReader(ctx, buf)
+	r := NewContextReadCloser(ctx, buf)
+	s.T().Cleanup(func() { _ = r.Close() })
 
 	b := make([]byte, 1)
 	n, err := r.Read(b)
@@ -99,14 +100,15 @@ func (s *CommonSuite) TestNewContextWriter() {
 	buf := bytes.NewBuffer(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	r := NewContextWriter(ctx, buf)
+	w := NewContextWriteCloser(ctx, buf)
+	s.T().Cleanup(func() { _ = w.Close() })
 
-	n, err := r.Write([]byte("1"))
+	n, err := w.Write([]byte("1"))
 	s.Equal(1, n)
 	s.NoError(err)
 
 	cancel()
-	n, err = r.Write([]byte("1"))
+	n, err = w.Write([]byte("1"))
 	s.Equal(0, n)
 	s.NotNil(err)
 }
@@ -155,7 +157,7 @@ func (s *CommonSuite) TestNewReadCloserOnError() {
 	})
 
 	cancel()
-	w.Read(nil)
+	w.Read(make([]byte, 1))
 
 	s.NotNil(called)
 }

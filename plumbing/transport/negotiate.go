@@ -77,11 +77,13 @@ func NegotiatePack(
 	caps capability.List,
 	statelessRPC bool,
 	reader io.Reader,
-	writer io.WriteCloser,
+	writeCloser io.WriteCloser,
 	req *FetchRequest,
 ) (shallowInfo *packp.ShallowUpdate, err error) {
-	reader = ioutil.NewContextReader(ctx, reader)
-	writer = ioutil.NewContextWriteCloser(ctx, writer)
+	ctxReader := ioutil.NewContextReadCloser(ctx, reader)
+	ctxWriter := ioutil.NewContextWriteCloser(ctx, writeCloser)
+	defer ioutil.CheckClose(ctxReader, &err)
+	defer ioutil.CheckClose(ctxWriter, &err)
 
 	upreq := &packp.UploadRequest{}
 	multiAck := caps.Supports(capability.MultiACK)
@@ -176,10 +178,10 @@ func NegotiatePack(
 	}
 
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
-		if err := pktline.WriteFlush(writer); err != nil {
+		if err := pktline.WriteFlush(ctxWriter); err != nil {
 			return nil, err
 		}
-		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+		if err := writeCloser.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 		return nil, ErrNoChange
@@ -224,35 +226,35 @@ func NegotiatePack(
 		uphav.Done = done
 
 		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
-			if err := pktline.WriteFlush(writer); err != nil {
+			if err := pktline.WriteFlush(ctxWriter); err != nil {
 				return nil, err
 			}
-			if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+			if err := writeCloser.Close(); err != nil && !errors.Is(err, io.EOF) {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
 			return nil, ErrNoChange
 		}
 
 		if firstRound || statelessRPC {
-			if err := upreq.Encode(writer); err != nil {
+			if err := upreq.Encode(ctxWriter); err != nil {
 				return nil, fmt.Errorf("sending upload-request: %w", err)
 			}
 		}
 
 		readc := make(chan error)
 		if !statelessRPC {
-			go func() { readc <- readShallows(statelessRPC, reader, req, &shallowInfo, firstRound) }()
+			go func() { readc <- readShallows(statelessRPC, ctxReader, req, &shallowInfo, firstRound) }()
 		}
 
-		if err := uphav.Encode(writer); err != nil {
+		if err := uphav.Encode(ctxWriter); err != nil {
 			return nil, fmt.Errorf("sending upload-haves: %w", err)
 		}
 
 		if statelessRPC {
-			if err := writer.Close(); err != nil {
+			if err := writeCloser.Close(); err != nil {
 				return nil, fmt.Errorf("closing writer: %w", err)
 			}
-			if err := readShallows(statelessRPC, reader, req, &shallowInfo, firstRound); err != nil {
+			if err := readShallows(statelessRPC, ctxReader, req, &shallowInfo, firstRound); err != nil {
 				return nil, err
 			}
 		} else {
@@ -265,7 +267,7 @@ func NegotiatePack(
 			defer close(readc)
 			if done || len(uphav.Haves) > 0 {
 				var srvrs packp.ServerResponse
-				if err := srvrs.Decode(reader); err != nil {
+				if err := srvrs.Decode(ctxReader); err != nil {
 					readc <- fmt.Errorf("decoding server-response: %w", err)
 					return
 				}
@@ -289,7 +291,7 @@ func NegotiatePack(
 	}
 
 	if !statelessRPC {
-		if err := writer.Close(); err != nil && !errors.Is(err, io.EOF) {
+		if err := writeCloser.Close(); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("closing writer: %w", err)
 		}
 	}
