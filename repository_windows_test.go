@@ -1,0 +1,73 @@
+//go:build !plan9 && !unix && windows
+
+package git
+
+import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+	"testing"
+
+	"github.com/go-git/go-billy/v6/util"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/storage/memory"
+)
+
+// preReceiveHook returns the bytes of a pre-receive hook script
+// that prints m before exiting successfully
+func preReceiveHook(m string) []byte {
+	return fmt.Appendf(nil, "#!C:/Program\\ Files/Git/usr/bin/sh.exe\nprintf '%s'\n", m)
+}
+
+func TestCloneFileUrlWindows(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	err = util.WriteFile(r.wt, "foo", nil, 0o755)
+	require.NoError(t, err)
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	_, err = w.Add("foo")
+	require.NoError(t, err)
+
+	_, err = w.Commit("foo", &CommitOptions{
+		Author:    defaultSignature(),
+		Committer: defaultSignature(),
+	})
+	require.NoError(t, err)
+
+	tests := []struct {
+		url     string
+		pattern string
+	}{
+		{
+			url:     "file://" + filepath.ToSlash(dir),
+			pattern: `^file://[A-Z]:/(?:[^/]+/)*\d+$`,
+		},
+		{
+			url:     "file:///" + filepath.ToSlash(dir),
+			pattern: `^file:///[A-Z]:/(?:[^/]+/)*\d+$`,
+		},
+	}
+
+	for _, tc := range tests {
+		assert.Regexp(t, regexp.MustCompile(tc.pattern), tc.url)
+		clonedRepo, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+			URL: tc.url,
+		})
+
+		assert.NoError(t, err, "url: %q", tc.url)
+		if clonedRepo != nil {
+			_ = clonedRepo.Close()
+		}
+	}
+}

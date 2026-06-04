@@ -1,0 +1,120 @@
+package config
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// Option defines a key/value entity in a config file.
+type Option struct {
+	// Key preserving original caseness.
+	// Use IsKey instead to compare key regardless of caseness.
+	Key string
+	// Original value as string, could be not normalized.
+	Value string
+}
+
+// Options is a collection of Option.
+type Options []*Option
+
+// IsKey returns true if the given key matches
+// this option's key in a case-insensitive comparison.
+func (o *Option) IsKey(key string) bool {
+	return strings.EqualFold(o.Key, key)
+}
+
+// GoString returns a Go-syntax representation of Options.
+func (opts Options) GoString() string {
+	strs := make([]string, 0, len(opts))
+	for _, opt := range opts {
+		strs = append(strs, fmt.Sprintf("%#v", opt))
+	}
+
+	return strings.Join(strs, ", ")
+}
+
+// Get gets the value for the given key if set,
+// otherwise it returns the empty string.
+//
+// # Note that there is no difference
+//
+// This matches git behaviour since git v1.8.1-rc1,
+// if there are multiple definitions of a key, the
+// last one wins.
+//
+// See: http://article.gmane.org/gmane.linux.kernel/1407184
+//
+// In order to get all possible values for the same key,
+// use GetAll.
+func (opts Options) Get(key string) string {
+	for i := len(opts) - 1; i >= 0; i-- {
+		o := opts[i]
+		if o.IsKey(key) {
+			return o.Value
+		}
+	}
+	return ""
+}
+
+// Has checks if an Option exist with the given key.
+func (opts Options) Has(key string) bool {
+	for _, o := range opts {
+		if o.IsKey(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAll returns all possible values for the same key.
+func (opts Options) GetAll(key string) []string {
+	result := []string{}
+	for _, o := range opts {
+		if o.IsKey(key) {
+			result = append(result, o.Value)
+		}
+	}
+	return result
+}
+
+func (opts Options) withoutOption(key string) Options {
+	result := Options{}
+	for _, o := range opts {
+		if !o.IsKey(key) {
+			result = append(result, o)
+		}
+	}
+	return result
+}
+
+func (opts Options) withAddedOption(key, value string) Options {
+	return append(opts, &Option{key, value})
+}
+
+func (opts Options) withSettedOption(key string, values ...string) Options {
+	var result Options
+	var added []string
+	for _, o := range opts {
+		if !o.IsKey(key) {
+			result = append(result, o)
+			continue
+		}
+
+		if slices.Contains(values, o.Value) {
+			added = append(added, o.Value)
+			result = append(result, o)
+			continue
+		}
+	}
+
+	for _, value := range values {
+		if slices.Contains(added, value) {
+			continue
+		}
+
+		result = result.withAddedOption(key, value)
+	}
+
+	return result
+}

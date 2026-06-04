@@ -1,0 +1,152 @@
+// Package util provides low-level helpers for packfile encoding and decoding.
+package util
+
+import (
+	"errors"
+	"io"
+
+	"github.com/go-git/go-git/v6/plumbing"
+)
+
+const (
+	firstLengthBits = uint8(4)   // the first byte into object header has 4 bits to store the length
+	maskPayload     = 0x7f       // 0111 1111
+	maskContinue    = 0x80       // 1000 0000
+	maskType        = uint8(112) // 0111 0000
+)
+
+// ErrLengthOverflow is returned when a variable-length integer would not fit
+// into a uint64 because the input declares more continuation bytes than the
+// type can hold.
+var ErrLengthOverflow = errors.New("variable-length integer overflow")
+
+// VariableLengthSize reads a variable length size from first, and uses reader
+// to continue on reading until the full size is determined.
+func VariableLengthSize(first byte, reader io.ByteReader) (uint64, error) {
+	// Extract the first part of the size (last 3 bits of the first byte).
+	size := uint64(first & 0x0F)
+
+	// |  001xxxx | xxxxxxxx | xxxxxxxx | ...
+	//
+	//	 ^^^       ^^^^^^^^   ^^^^^^^^
+	//	Type      Size Part 1   Size Part 2
+	//
+	// Check if more bytes are needed to fully determine the size.
+	if first&maskContinue != 0 {
+		shift := uint(4)
+
+		if reader == nil {
+			return 0, errors.New("reader is nil")
+		}
+
+		for {
+			// Mirrors unpack_object_header_buffer in canonical Git's
+			// packfile.c: a continuation byte at shift > 64-7 cannot
+			// contribute without overflowing a uint64.
+			if shift > 64-7 {
+				return 0, ErrLengthOverflow
+			}
+
+			b, err := reader.ReadByte()
+			if err != nil {
+				return 0, err
+			}
+
+			// Add the next 7 bits to the size.
+			size |= uint64(b&0x7F) << shift
+
+			// Check if the continuation bit is set.
+			if b&maskContinue == 0 {
+				break
+			}
+
+			// Prepare for the next byte.
+			shift += 7
+		}
+	}
+	return size, nil
+}
+
+// ObjectType returns the plumbing.ObjectType which is represented by b.
+func ObjectType(b byte) plumbing.ObjectType {
+	return plumbing.ObjectType((b & maskType) >> firstLengthBits)
+}
+
+// EncodeLEB128 encodes num as an unsigned LEB128 byte sequence and
+// returns it. Inverse of DecodeLEB128.
+func EncodeLEB128(num uint) []byte {
+	var out []byte
+	for {
+		b := byte(num & maskPayload)
+		num >>= 7
+		if num == 0 {
+			return append(out, b)
+		}
+		out = append(out, b|maskContinue)
+	}
+}
+
+// EncodeLEB128ToWriter encodes num as an unsigned LEB128 byte sequence
+// and writes it to writer. Inverse of DecodeLEB128FromReader.
+func EncodeLEB128ToWriter(writer io.Writer, num uint) error {
+	_, err := writer.Write(EncodeLEB128(num))
+	return err
+}
+
+// DecodeLEB128 decodes a number encoded as an unsigned LEB128 at the
+// start of some binary data and returns the decoded number, the rest
+// of the bytes, and an error if the encoded value does not fit in a
+// uint.
+func DecodeLEB128(input []byte) (uint, []byte, error) {
+	if len(input) == 0 {
+		return 0, input, nil
+	}
+
+	var num, sz uint
+	var b byte
+	for {
+		// A continuation byte at shift > uintSize-7 cannot contribute
+		// without overflowing the accumulator.
+		if sz*7 > uintBits-7 {
+			return 0, input, ErrLengthOverflow
+		}
+
+		b = input[sz]
+		num |= (uint(b) & maskPayload) << (sz * 7) // concats 7 bits chunks
+		sz++
+
+		if uint(b)&maskContinue == 0 || sz == uint(len(input)) {
+			break
+		}
+	}
+
+	return num, input[sz:], nil
+}
+
+// DecodeLEB128FromReader decodes a number encoded as an unsigned LEB128
+// from a byte reader and returns the decoded number.
+func DecodeLEB128FromReader(input io.ByteReader) (uint, error) {
+	var num, sz uint
+	for {
+		if sz*7 > uintBits-7 {
+			return 0, ErrLengthOverflow
+		}
+
+		b, err := input.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+
+		num |= (uint(b) & maskPayload) << (sz * 7) // concats 7 bits chunks
+		sz++
+
+		if uint(b)&maskContinue == 0 {
+			break
+		}
+	}
+
+	return num, nil
+}
+
+// uintBits is the bit width of uint on the current platform (32 or 64).
+const uintBits = 32 << (^uint(0) >> 63)

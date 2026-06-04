@@ -1,0 +1,65 @@
+package packp
+
+import (
+	"fmt"
+)
+
+const (
+	sha1HexSize   = 40
+	sha256HexSize = 64
+)
+
+var (
+	// common
+	sp  = []byte(" ")
+	eol = []byte("\n")
+
+	// advertised-refs
+	null       = []byte("\x00")
+	noHeadMark = []byte(" capabilities^{}\x00")
+
+	// upload-request
+	want            = []byte("want ")
+	shallow         = []byte("shallow ")
+	deepen          = []byte("deepen")
+	deepenCommits   = []byte("deepen ")
+	deepenSince     = []byte("deepen-since ")
+	deepenReference = []byte("deepen-not ")
+
+	// shallow-update
+	unshallow = []byte("unshallow ")
+
+	// server-response
+	ack = []byte("ACK")
+	nak = []byte("NAK")
+
+	// updreq
+	shallowNoSp = []byte("shallow")
+)
+
+func isFlush(payload []byte) bool {
+	return len(payload) == 0
+}
+
+// ErrNilWriter is returned when a nil writer is passed to the encoder.
+var ErrNilWriter = fmt.Errorf("nil writer")
+
+// ErrUnexpectedData represents an unexpected data decoding a message
+type ErrUnexpectedData struct {
+	Msg  string
+	Data []byte
+}
+
+// NewErrUnexpectedData returns a new ErrUnexpectedData containing the data and
+// the message given
+func NewErrUnexpectedData(msg string, data []byte) error {
+	return &ErrUnexpectedData{Msg: msg, Data: data}
+}
+
+func (err *ErrUnexpectedData) Error() string {
+	if len(err.Data) == 0 {
+		return err.Msg
+	}
+
+	return fmt.Sprintf("%s (%s)", err.Msg, err.Data)
+}

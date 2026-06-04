@@ -1,0 +1,315 @@
+package pktline_test
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+)
+
+type SuiteWriter struct {
+	suite.Suite
+}
+
+func TestSuiteWriter(t *testing.T) {
+	t.Parallel()
+	suite.Run(t, new(SuiteWriter))
+}
+
+func (s *SuiteWriter) TestFlush() {
+	var buf bytes.Buffer
+	err := pktline.WriteFlush(&buf)
+	s.NoError(err)
+
+	obtained := buf.Bytes()
+	s.Equal([]byte("0000"), obtained)
+}
+
+func (s *SuiteWriter) TestNilWriter() {
+	for _, test := range []struct {
+		name  string
+		write func() error
+	}{
+		{
+			name: "write",
+			write: func() error {
+				_, err := pktline.Write(nil, []byte("payload"))
+				return err
+			},
+		},
+		{
+			name: "write string",
+			write: func() error {
+				_, err := pktline.WriteString(nil, "payload")
+				return err
+			},
+		},
+		{
+			name: "write line",
+			write: func() error {
+				_, err := pktline.Writeln(nil, "payload")
+				return err
+			},
+		},
+		{
+			name: "write format",
+			write: func() error {
+				_, err := pktline.Writef(nil, "%s", "payload")
+				return err
+			},
+		},
+		{
+			name: "write error",
+			write: func() error {
+				_, err := pktline.WriteError(nil, io.EOF)
+				return err
+			},
+		},
+		{
+			name: "write flush",
+			write: func() error {
+				return pktline.WriteFlush(nil)
+			},
+		},
+		{
+			name: "write delim",
+			write: func() error {
+				return pktline.WriteDelim(nil)
+			},
+		},
+		{
+			name: "write response end",
+			write: func() error {
+				return pktline.WriteResponseEnd(nil)
+			},
+		},
+	} {
+		s.Run(test.name, func() {
+			var err error
+			if s.NotPanics(func() {
+				err = test.write()
+			}) {
+				s.ErrorIs(err, pktline.ErrNilWriter)
+			}
+		})
+	}
+}
+
+func (s *SuiteWriter) TestWriteErrorInvalidInput() {
+	for _, test := range []struct {
+		name     string
+		writer   io.Writer
+		err      error
+		expected error
+	}{
+		{name: "nil writer", writer: nil, err: nil, expected: pktline.ErrNilWriter},
+		{name: "nil error", writer: io.Discard, err: nil, expected: pktline.ErrNilError},
+	} {
+		s.Run(test.name, func() {
+			var (
+				n   int
+				err error
+			)
+			if s.NotPanics(func() {
+				n, err = pktline.WriteError(test.writer, test.err)
+			}) {
+				s.Zero(n)
+				s.ErrorIs(err, test.expected)
+			}
+		})
+	}
+}
+
+func (s *SuiteWriter) TestEncode() {
+	for i, test := range [...]struct {
+		input    [][]byte
+		expected []byte
+	}{
+		{
+			input: [][]byte{
+				[]byte("hello\n"),
+			},
+			expected: []byte("000ahello\n"),
+		}, {
+			input: [][]byte{
+				[]byte("hello\n"),
+				{},
+			},
+			expected: []byte("000ahello\n0000"),
+		}, {
+			input: [][]byte{
+				[]byte("hello\n"),
+				[]byte("world!\n"),
+				[]byte("foo"),
+			},
+			expected: []byte("000ahello\n000bworld!\n0007foo"),
+		}, {
+			input: [][]byte{
+				[]byte("hello\n"),
+				{},
+				[]byte("world!\n"),
+				[]byte("foo"),
+				{},
+			},
+			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
+		}, {
+			input: [][]byte{
+				[]byte(strings.Repeat("a", pktline.MaxPayloadSize)),
+			},
+			expected: []byte(
+				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize)),
+		}, {
+			input: [][]byte{
+				[]byte(strings.Repeat("a", pktline.MaxPayloadSize)),
+				[]byte(strings.Repeat("b", pktline.MaxPayloadSize)),
+			},
+			expected: []byte(
+				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize) +
+					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize)),
+		},
+	} {
+		comment := fmt.Sprintf("input %d = %s\n", i, test.input)
+
+		var buf bytes.Buffer
+
+		for _, p := range test.input {
+			var err error
+			if len(p) == 0 {
+				err = pktline.WriteFlush(&buf)
+			} else {
+				_, err = pktline.Write(&buf, p)
+			}
+			s.NoError(err, comment)
+		}
+
+		s.Equal(string(test.expected), buf.String(), comment)
+	}
+}
+
+func (s *SuiteWriter) TestEncodeErrPayloadTooLong() {
+	for i, input := range [...][][]byte{
+		{
+			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
+		},
+		{
+			[]byte("hello world!"),
+			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
+		},
+		{
+			[]byte("hello world!"),
+			[]byte(strings.Repeat("a", pktline.MaxPayloadSize+1)),
+			[]byte("foo"),
+		},
+	} {
+		comment := fmt.Sprintf("input %d = %v\n", i, input)
+
+		var buf bytes.Buffer
+		_, err := pktline.Write(&buf, bytes.Join(input, nil))
+		s.Equal(pktline.ErrPayloadTooLong, err, comment)
+	}
+}
+
+func (s *SuiteWriter) TestWritePacketStrings() {
+	for i, test := range [...]struct {
+		input    []string
+		expected []byte
+	}{
+		{
+			input: []string{
+				"hello\n",
+			},
+			expected: []byte("000ahello\n"),
+		}, {
+			input: []string{
+				"hello\n",
+				"",
+			},
+			expected: []byte("000ahello\n0000"),
+		}, {
+			input: []string{
+				"hello\n",
+				"world!\n",
+				"foo",
+			},
+			expected: []byte("000ahello\n000bworld!\n0007foo"),
+		}, {
+			input: []string{
+				"hello\n",
+				"",
+				"world!\n",
+				"foo",
+				"",
+			},
+			expected: []byte("000ahello\n0000000bworld!\n0007foo0000"),
+		}, {
+			input: []string{
+				strings.Repeat("a", pktline.MaxPayloadSize),
+			},
+			expected: []byte(
+				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize)),
+		}, {
+			input: []string{
+				strings.Repeat("a", pktline.MaxPayloadSize),
+				strings.Repeat("b", pktline.MaxPayloadSize),
+			},
+			expected: []byte(
+				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize) +
+					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize)),
+		},
+	} {
+		comment := fmt.Sprintf("input %d = %v\n", i, test.input)
+
+		var buf bytes.Buffer
+		for _, p := range test.input {
+			var err error
+			if p == "" {
+				err = pktline.WriteFlush(&buf)
+			} else {
+				_, err = pktline.WriteString(&buf, p)
+			}
+			s.NoError(err, comment)
+		}
+		s.Equal(string(test.expected), buf.String(), comment)
+	}
+}
+
+func (s *SuiteWriter) TestWritePacketStringErrPayloadTooLong() {
+	for i, input := range [...][]string{
+		{
+			strings.Repeat("a", pktline.MaxPayloadSize+1),
+		},
+		{
+			"hello world!",
+			strings.Repeat("a", pktline.MaxPayloadSize+1),
+		},
+		{
+			"hello world!",
+			strings.Repeat("a", pktline.MaxPayloadSize+1),
+			"foo",
+		},
+	} {
+		comment := fmt.Sprintf("input %d = %v\n", i, input)
+
+		var buf bytes.Buffer
+		_, err := pktline.WriteString(&buf, strings.Join(input, ""))
+		s.Equal(pktline.ErrPayloadTooLong, err, comment)
+	}
+}
+
+func (s *SuiteWriter) TestFormatString() {
+	format := " %s %d\n"
+	str := "foo"
+	d := 42
+
+	var buf bytes.Buffer
+	_, err := pktline.Writef(&buf, format, str, d)
+	s.NoError(err)
+
+	expected := []byte("000c foo 42\n")
+	s.Equal(expected, buf.Bytes())
+}

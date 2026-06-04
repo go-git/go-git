@@ -1,0 +1,403 @@
+package git
+
+import (
+	"errors"
+	"fmt"
+	"path"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/go-git/go-billy/v6"
+
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/merkletrie"
+	"github.com/go-git/go-git/v6/utils/trace"
+	"github.com/go-git/go-git/v6/x/plugin"
+)
+
+var (
+	// ErrEmptyCommit occurs when a commit is attempted using a clean
+	// working tree, with no changes to be committed.
+	ErrEmptyCommit = errors.New("cannot create empty commit: clean working tree")
+	// ErrCannotCherryPickWithoutCommitOptions happens when no commitOptions is not provided for cherry-picking commit
+	ErrCannotCherryPickWithoutCommitOptions = errors.New("cannot cherry-pick without commit options")
+
+	// characters to be removed from user name and/or email before using them to build a commit object
+	// See https://git-scm.com/docs/git-commit#_commit_information
+	invalidCharactersRe = regexp.MustCompile(`[<>\n]`)
+)
+
+// Commit stores the current contents of the index in a new commit along with
+// a log message from the user describing the changes.
+func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error) {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: git command: git commit", time.Since(start).Seconds())
+		}()
+	}
+
+	if err := opts.Validate(w.r); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	if opts.All {
+		if err := w.autoAddModifiedAndDeleted(); err != nil {
+			return plumbing.ZeroHash, err
+		}
+	}
+
+	if opts.Amend {
+		head, err := w.r.Head()
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+		headCommit, err := w.r.CommitObject(head.Hash())
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+
+		opts.Parents = headCommit.ParentHashes
+	}
+
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	// First handle the case of the first commit in the repository being empty.
+	if len(opts.Parents) == 0 && len(idx.Entries) == 0 && !opts.AllowEmptyCommits {
+		return plumbing.ZeroHash, ErrEmptyCommit
+	}
+
+	h := &buildTreeHelper{
+		fs: w.filesystem,
+		s:  w.r.Storer,
+	}
+
+	treeHash, err := h.BuildTree(idx, opts)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	previousTree := plumbing.ZeroHash
+	if len(opts.Parents) > 0 {
+		parentCommit, err := w.r.CommitObject(opts.Parents[0])
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+		previousTree = parentCommit.TreeHash
+	}
+
+	if treeHash == previousTree && !opts.AllowEmptyCommits {
+		return plumbing.ZeroHash, ErrEmptyCommit
+	}
+
+	commit, err := w.buildCommitObject(msg, opts, treeHash)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return commit, w.updateHEAD(commit)
+}
+
+// CherryPick cherry picks commits and merge them into the worktree based on the selected
+// merge strategy. Each commit sits on the top of worktree's current head.
+// It resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option [theirs,ours]`
+func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMergeStrategyOption, commits ...*object.Commit) error {
+	if commitOpts == nil {
+		return ErrCannotCherryPickWithoutCommitOptions
+	}
+
+	for _, commit := range commits {
+		var changes object.Changes
+		headRef, err := w.r.Head()
+		if err != nil {
+			return err
+		}
+		headCommit, err := w.r.CommitObject(headRef.Hash())
+		if err != nil {
+			return err
+		}
+		currentTree, err := headCommit.Tree()
+		if err != nil {
+			return err
+		}
+
+		commitTree, err := commit.Tree()
+		if err != nil {
+			return err
+		}
+
+		switch ortStrategyOption {
+		case TheirsMergeStrategy:
+			changes, err = currentTree.Diff(commitTree)
+		case OursMergeStrategy:
+			changes, err = commitTree.Diff(currentTree)
+		}
+
+		if err != nil {
+			return err
+		}
+		for _, change := range changes {
+			action, err := change.Action()
+			if err != nil {
+				return err
+			}
+
+			switch action {
+			case merkletrie.Delete:
+				if _, err := w.Remove(change.From.Name); err != nil {
+					return err
+				}
+			case merkletrie.Insert, merkletrie.Modify:
+				_, to, err := change.Files()
+				if err != nil {
+					return err
+				}
+				if to == nil {
+					continue
+				}
+				content, err := to.Contents()
+				if err != nil {
+					return err
+				}
+				name := change.To.Name
+				dstFile, err := w.filesystem.Create(name)
+				if err != nil {
+					return err
+				}
+				_, err = dstFile.Write([]byte(content))
+				if err != nil {
+					return err
+				}
+				if _, err := w.Add(name); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = w.Commit(commit.Message, &CommitOptions{
+			Author:            &commit.Author,
+			Committer:         commitOpts.Committer,
+			Signer:            commitOpts.Signer,
+			AllowEmptyCommits: commitOpts.AllowEmptyCommits,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Worktree) autoAddModifiedAndDeleted() error {
+	cfg, err := w.r.Config()
+	if err != nil {
+		return err
+	}
+
+	s, err := w.Status()
+	if err != nil {
+		return err
+	}
+
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+
+	for path, fs := range s {
+		if fs.Worktree != Modified && fs.Worktree != Deleted {
+			continue
+		}
+
+		if _, _, err := w.doAddFile(cfg, idx, s, path, nil); err != nil {
+			return err
+		}
+	}
+
+	return w.r.Storer.SetIndex(idx)
+}
+
+func (w *Worktree) updateHEAD(commit plumbing.Hash) error {
+	head, err := w.r.Storer.Reference(plumbing.HEAD)
+	if err != nil {
+		return err
+	}
+
+	name := plumbing.HEAD
+	if head.Type() != plumbing.HashReference {
+		name = head.Target()
+	}
+
+	ref := plumbing.NewHashReference(name, commit)
+	return w.r.Storer.SetReference(ref)
+}
+
+func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumbing.Hash) (plumbing.Hash, error) {
+	commit := &object.Commit{
+		Author:       w.sanitize(*opts.Author),
+		Committer:    w.sanitize(*opts.Committer),
+		Message:      msg,
+		TreeHash:     tree,
+		ParentHashes: opts.Parents,
+	}
+
+	signer := opts.Signer
+	if signer == nil {
+		cfg, err := w.r.ConfigScoped(config.SystemScope)
+		if err == nil && cfg != nil && cfg.Commit.GpgSign.IsTrue() {
+			// Use Has before Get so the key is not frozen when no plugin is
+			// registered, allowing callers to register one later.
+			if !plugin.Has(plugin.ObjectSigner()) {
+				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign commit: disable commit.gpgSign or register an ObjectSigner plugin")
+			}
+
+			signer, err = plugin.Get(plugin.ObjectSigner())
+			if err != nil {
+				return plumbing.ZeroHash, fmt.Errorf("get object signer: %w", err)
+			}
+		}
+	}
+
+	if signer != nil {
+		sig, err := signObject(signer, commit)
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+		commit.Signature = string(sig)
+	}
+
+	obj := w.r.Storer.NewEncodedObject()
+	if err := commit.Encode(obj); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return w.r.Storer.SetEncodedObject(obj)
+}
+
+func (w *Worktree) sanitize(signature object.Signature) object.Signature {
+	return object.Signature{
+		Name:  invalidCharactersRe.ReplaceAllString(signature.Name, ""),
+		Email: invalidCharactersRe.ReplaceAllString(signature.Email, ""),
+		When:  signature.When,
+	}
+}
+
+// buildTreeHelper converts a given index.Index file into multiple git objects
+// reading the blobs from the given filesystem and creating the trees from the
+// index structure. The created objects are pushed to a given Storer.
+type buildTreeHelper struct {
+	fs billy.Filesystem
+	s  storage.Storer
+
+	trees   map[string]*object.Tree
+	entries map[string]*object.TreeEntry
+}
+
+// BuildTree builds the tree objects and push its to the storer, the hash
+// of the root tree is returned.
+func (h *buildTreeHelper) BuildTree(idx *index.Index, _ *CommitOptions) (plumbing.Hash, error) {
+	const rootNode = ""
+	h.trees = map[string]*object.Tree{rootNode: {}}
+	h.entries = map[string]*object.TreeEntry{}
+
+	for _, e := range idx.Entries {
+		if err := h.commitIndexEntry(e); err != nil {
+			return plumbing.ZeroHash, err
+		}
+	}
+
+	return h.copyTreeToStorageRecursive(rootNode, h.trees[rootNode])
+}
+
+func (h *buildTreeHelper) commitIndexEntry(e *index.Entry) error {
+	// Index entries with a zero hash point at no object — Tree.Encode
+	// (through Tree.Validate) refuses to write them, and the pre-fsck
+	// behavior of #1773 was to accept the entry but never reach a
+	// healthy tree. Skip them here so the resulting tree is well-formed.
+	if e.Hash.IsZero() {
+		return nil
+	}
+
+	parts := strings.Split(e.Name, "/")
+
+	var fullpath string
+	for _, part := range parts {
+		parent := fullpath
+		fullpath = path.Join(fullpath, part)
+
+		h.doBuildTree(e, parent, fullpath)
+	}
+
+	return nil
+}
+
+func (h *buildTreeHelper) doBuildTree(e *index.Entry, parent, fullpath string) {
+	if _, ok := h.trees[fullpath]; ok {
+		return
+	}
+
+	if _, ok := h.entries[fullpath]; ok {
+		return
+	}
+
+	te := object.TreeEntry{Name: path.Base(fullpath)}
+
+	if fullpath == e.Name {
+		te.Mode = e.Mode
+		te.Hash = e.Hash
+	} else {
+		te.Mode = filemode.Dir
+		h.trees[fullpath] = &object.Tree{}
+	}
+
+	h.trees[parent].Entries = append(h.trees[parent].Entries, te)
+}
+
+type sortableEntries []object.TreeEntry
+
+func (sortableEntries) sortName(te object.TreeEntry) string {
+	if te.Mode == filemode.Dir {
+		return te.Name + "/"
+	}
+	return te.Name
+}
+func (se sortableEntries) Len() int           { return len(se) }
+func (se sortableEntries) Less(i, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
+func (se sortableEntries) Swap(i, j int)      { se[i], se[j] = se[j], se[i] }
+
+func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
+	sort.Sort(sortableEntries(t.Entries))
+	for i, e := range t.Entries {
+		if e.Mode != filemode.Dir {
+			continue
+		}
+
+		path := path.Join(parent, e.Name)
+
+		var err error
+		e.Hash, err = h.copyTreeToStorageRecursive(path, h.trees[path])
+		if err != nil {
+			return plumbing.ZeroHash, err
+		}
+
+		t.Entries[i] = e
+	}
+
+	o := h.s.NewEncodedObject()
+	if err := t.Encode(o); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	hash := o.Hash()
+	if h.s.HasEncodedObject(hash) == nil {
+		return hash, nil
+	}
+	return h.s.SetEncodedObject(o)
+}

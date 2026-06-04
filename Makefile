@@ -1,0 +1,71 @@
+# General
+WORKDIR = $(PWD)
+
+# Go parameters
+GOCMD = go
+GOTEST = $(GOCMD) test
+
+# Git config
+GIT_VERSION ?=
+GIT_DIST_PATH ?= $(PWD)/.git-dist
+GIT_REPOSITORY = http://github.com/git/git.git
+
+# Coverage
+COVERAGE_REPORT = coverage.out
+COVERAGE_MODE = count
+
+# renovate: datasource=github-tags depName=golangci/golangci-lint
+GOLANGCI_VERSION ?= v2.11.4
+TOOLS_BIN := $(shell mkdir -p build/tools && realpath build/tools)
+
+GOLANGCI = $(TOOLS_BIN)/golangci-lint-$(GOLANGCI_VERSION)
+$(GOLANGCI):
+	rm -f $(TOOLS_BIN)/golangci-lint*
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_VERSION)/install.sh | sh -s -- -b $(TOOLS_BIN) $(GOLANGCI_VERSION)
+	mv $(TOOLS_BIN)/golangci-lint $(TOOLS_BIN)/golangci-lint-$(GOLANGCI_VERSION)
+
+# Defines the maximum time each fuzz target will be executed for.
+FUZZ_TIME ?= 10s
+FUZZ_PKGS = $(shell grep -r --include='**_test.go' --files-with-matches 'func Fuzz' . | xargs -I{} dirname {})
+
+build-git:
+	@if [ -f $(GIT_DIST_PATH)/git ]; then \
+		echo "nothing to do, using cache $(GIT_DIST_PATH)"; \
+	else \
+		git clone $(GIT_REPOSITORY) -b $(GIT_VERSION) --depth 1 --single-branch $(GIT_DIST_PATH); \
+		cd $(GIT_DIST_PATH); \
+		make configure; \
+		./configure; \
+		make all; \
+	fi
+
+test:
+	@echo "running against `git version`"; \
+	$(GOTEST) -race ./...
+	$(GOTEST) -v _examples/common_test.go _examples/common.go --examples
+
+test-coverage:
+	@echo "running against `git version`"; \
+	echo "" > $(COVERAGE_REPORT); \
+	$(GOTEST) -coverprofile=$(COVERAGE_REPORT) -coverpkg=./... -covermode=$(COVERAGE_MODE) ./...
+
+clean:
+	rm -rf $(GIT_DIST_PATH)
+
+fuzz:
+	@for path in $(FUZZ_PKGS); do \
+		go test -fuzz=Fuzz -fuzztime=$(FUZZ_TIME) $$path; \
+	done
+
+validate: validate-lint validate-dirty ## Run validation checks.
+
+validate-lint: $(GOLANGCI)
+	$(GOLANGCI) run
+
+validate-dirty:
+ifneq ($(shell git status --porcelain --untracked-files=no),)
+	@echo worktree is dirty
+	@git --no-pager status
+	@git --no-pager diff
+	@exit 1
+endif

@@ -1,0 +1,177 @@
+package transport
+
+import (
+	"io"
+	"strings"
+	"testing"
+
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
+)
+
+type ServerInfoSuite struct {
+	suite.Suite
+}
+
+func TestServerInfoSuite(t *testing.T) {
+	t.Parallel()
+	suite.Run(t, new(ServerInfoSuite))
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoInit() {
+	fs := memfs.New()
+	st := memory.NewStorage()
+	err := UpdateServerInfo(st, fs)
+	s.NoError(err)
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
+	fixture := fixtures.Basic().One()
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
+	defer func() { _ = st.Close() }()
+	fs := memfs.New()
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
+	fixture := fixtures.Basic().One()
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
+	defer func() { _ = st.Close() }()
+	fs := memfs.New()
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
+	fixture := fixtures.Basic().One()
+	dotgit, err := fixture.DotGit()
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dotgit, nil)
+	defer func() { _ = st.Close() }()
+	fs := memfs.New()
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+
+	head, err := st.Reference(plumbing.HEAD)
+	s.NoError(err)
+
+	ref := plumbing.NewHashReference("refs/heads/my-branch", head.Hash())
+	err = st.SetReference(ref)
+	s.NoError(err)
+
+	tag := plumbing.NewHashReference("refs/tags/test-tag", head.Hash())
+	err = st.SetReference(tag)
+	s.NoError(err)
+
+	err = UpdateServerInfo(st, fs)
+	s.NoError(err)
+	assertInfoRefs(s, st, fs)
+	assertObjectPacks(s, st, fs)
+}
+
+func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) {
+	f, err := fs.Open("info/refs")
+	s.NoError(err)
+	defer f.Close()
+
+	bts, err := io.ReadAll(f)
+	s.NoError(err)
+
+	localRefs := make(map[plumbing.ReferenceName]plumbing.Hash)
+	for line := range strings.SplitSeq(string(bts), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		s.Len(parts, 2)
+		hash := plumbing.NewHash(parts[0])
+		name := plumbing.ReferenceName(parts[1])
+		localRefs[name] = hash
+	}
+
+	refs, err := st.IterReferences()
+	s.NoError(err)
+
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		name := ref.Name()
+		hash := ref.Hash()
+		switch ref.Type() {
+		case plumbing.SymbolicReference:
+			if name == plumbing.HEAD {
+				return nil
+			}
+			ref, err := st.Reference(ref.Target())
+			s.NoError(err)
+			hash = ref.Hash()
+			fallthrough
+		case plumbing.HashReference:
+			h, ok := localRefs[name]
+			s.True(ok)
+			s.Equal(hash, h)
+			if name.IsTag() {
+				tag, err := object.GetTag(st, hash)
+				if err == nil {
+					t, ok := localRefs[name+"^{}"]
+					s.True(ok)
+					s.Equal(tag.Target, t)
+				}
+			}
+		}
+		return nil
+	})
+	s.NoError(err)
+}
+
+func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) {
+	f, err := fs.Open("objects/info/packs")
+	s.NoError(err)
+	defer f.Close()
+
+	bts, err := io.ReadAll(f)
+	s.NoError(err)
+
+	pos, ok := st.(storer.PackedObjectStorer)
+	s.True(ok)
+	localPacks := make(map[string]struct{})
+	packs, err := pos.ObjectPacks()
+	s.NoError(err)
+
+	for line := range strings.SplitSeq(string(bts), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, " ")
+		s.Len(parts, 2)
+		pack := strings.TrimPrefix(parts[1], "pack-")
+		pack = strings.TrimSuffix(pack, ".pack")
+		localPacks[pack] = struct{}{}
+	}
+
+	for _, p := range packs {
+		_, ok := localPacks[p.String()]
+		s.True(ok)
+	}
+}

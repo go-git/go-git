@@ -1,0 +1,29 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>go-git/.github"],
+  "baseBranchPatterns": [
+    "main", 
+    "releases/v5.x"
+  ],
+  "packageRules": [
+    {
+      "description": "Disable non-security bumps for the v5 release line",
+      "enabled": false,
+      "matchBaseBranches": [
+        "releases/v5.x"
+      ]
+    },
+    {
+      "description": "Enable minor and patch updates for go-billy",
+      "matchPackageNames": [
+        "github.com/go-git/go-billy",
+      ],
+      "matchUpdateTypes": ["minor", "patch"],
+      "enabled": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "osvVulnerabilityAlerts": true
+}

@@ -1,0 +1,122 @@
+// Package index provides a merkletrie noder implementation for git index entries.
+package index
+
+import (
+	"path"
+	"strings"
+
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
+)
+
+// The node represents a index.Entry or a directory inferred from the path
+// of all entries. It implements the interface noder.Noder of merkletrie
+// package.
+//
+// This implementation implements a "standard" hash method being able to be
+// compared with any other noder.Noder implementation inside of go-git
+type node struct {
+	path     string
+	entry    *index.Entry
+	children []noder.Noder
+	isDir    bool
+	skip     bool
+
+	upholdExecutableBit bool
+}
+
+// RootNodeOptions contains configuration for the root node.
+type RootNodeOptions struct {
+	UpholdExecutableBit bool
+}
+
+// NewRootNode returns the root node of a computed tree from a index.Index,
+func NewRootNode(idx *index.Index) noder.Noder {
+	return NewRootNodeWithOptions(idx, RootNodeOptions{UpholdExecutableBit: true})
+}
+
+// NewRootNodeWithOptions returns the root node of a computed tree from a index.Index,
+func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Noder {
+	const rootNode = ""
+
+	m := map[string]*node{rootNode: {isDir: true}}
+
+	for _, e := range idx.Entries {
+		parts := strings.Split(e.Name, string("/"))
+
+		var fullpath string
+		for _, part := range parts {
+			parent := fullpath
+			fullpath = path.Join(fullpath, part)
+
+			// It's possible that the first occurrence of subdirectory is skipped.
+			// The parent node can be created with SkipWorktree set to true, but
+			// if any future children do not skip their subtree, the entire lineage
+			// of the tree needs to have this value set to false so that subdirectories
+			// are not ignored.
+			if parentNode, ok := m[fullpath]; ok {
+				if !e.SkipWorktree {
+					parentNode.skip = false
+				}
+				continue
+			}
+
+			n := &node{path: fullpath, skip: e.SkipWorktree, upholdExecutableBit: options.UpholdExecutableBit}
+			if fullpath == e.Name {
+				n.entry = e
+			} else {
+				n.isDir = true
+			}
+
+			m[n.path] = n
+			m[parent].children = append(m[parent].children, n)
+		}
+	}
+
+	return m[rootNode]
+}
+
+func (n *node) String() string {
+	return n.path
+}
+
+func (n *node) Skip() bool {
+	return n.skip
+}
+
+// Hash the hash of a filesystem is a 24-byte slice, is the result of
+// concatenating the computed plumbing.Hash of the file as a Blob and its
+// plumbing.FileMode; that way the difftree algorithm will detect changes in the
+// contents of files and also in their mode.
+//
+// If the node is computed and not based on a index.Entry the hash is equals
+// to a 24-bytes slices of zero values.
+func (n *node) Hash() []byte {
+	if n.entry == nil {
+		return make([]byte, 24)
+	}
+
+	mode := n.entry.Mode
+	if mode == filemode.Executable && !n.upholdExecutableBit {
+		mode = filemode.Regular
+	}
+
+	return append(n.entry.Hash.Bytes(), mode.Bytes()...)
+}
+
+func (n *node) Name() string {
+	return path.Base(n.path)
+}
+
+func (n *node) IsDir() bool {
+	return n.isDir
+}
+
+func (n *node) Children() ([]noder.Noder, error) {
+	return n.children, nil
+}
+
+func (n *node) NumChildren() (int, error) {
+	return len(n.children), nil
+}
