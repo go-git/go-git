@@ -198,6 +198,8 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		ReflogStorage:    ReflogStorage{dir: dir},
 	}
 
+	setupLeakCheck(s)
+
 	return s
 }
 

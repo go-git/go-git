@@ -1,9 +1,9 @@
 package git
 
 import (
-	"os"
 	"testing"
 
+	"github.com/go-git/go-git/v6/internal/testutil"
 	"github.com/go-git/go-git/v6/internal/trace"
 )
 
@@ -16,6 +16,6 @@ func TestMain(m *testing.M) {
 	// "no config loader registered".
 	registerTestConfigLoader()
 
-	// Run the tests.
-	os.Exit(m.Run())
+	// Run the tests with leak detection enabled.
+	testutil.RunWithLeakCheck(m)
 }

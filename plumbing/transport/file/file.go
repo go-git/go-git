@@ -65,7 +65,9 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 	if err != nil {
 		return nil, err
 	}
-	return &fileConn{r: sr, w: pw, close: closeAll}, nil
+	conn := &fileConn{r: sr, w: pw, close: closeAll}
+	setupLeakCheck(conn)
+	return conn, nil
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Reader, *io.PipeWriter, func() error, error) {
@@ -117,13 +119,17 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 
 // fileConn implements transport.Conn over in-process pipes.
 type fileConn struct {
-	r     io.Reader
-	w     io.WriteCloser
-	close func() error
+	r      io.Reader
+	w      io.WriteCloser
+	close  func() error
+	closed bool
 }
 
 var _ transport.Conn = (*fileConn)(nil)
 
 func (c *fileConn) Reader() io.Reader      { return c.r }
 func (c *fileConn) Writer() io.WriteCloser { return c.w }
-func (c *fileConn) Close() error           { return c.close() }
+func (c *fileConn) Close() error {
+	c.closed = true
+	return c.close()
+}

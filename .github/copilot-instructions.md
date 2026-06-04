@@ -45,6 +45,7 @@ When reviewing pull requests in this repository, focus on correctness, maintaina
 - **Repository cleanup**: All `Repository` instances created with `PlainClone`, `PlainInit`, `PlainOpen`, `Clone`, or `Open` must have a corresponding `defer func() { _ = repo.Close() }()` immediately after error checking.
   - Flag any repository creation where the instance is discarded with `_`. These must assign to a variable and add `defer Close()`.
   - Rationale: Prevents file handle leaks that cause intermittent Windows test failures.
+  - Leak detection is available via `-tags leakcheck` which will panic with a clear message if repositories are garbage collected without calling `Close()`.
 - **Storage cleanup**: All `Storage` instances created with `filesystem.NewStorage` must have a corresponding `defer func() { _ = storage.Close() }()` immediately after creation, **except** when the storage is passed to a repository creation function.
   - **Repository takes ownership**: When storage is passed to `Init`, `Open`, `PlainInit`, `PlainOpen`, `Clone`, `PlainClone`, or `newRepository`, do NOT add a separate `defer storage.Close()`. The repository takes ownership and will close the storage when `repo.Close()` is called.
   - **Other uses require explicit close**: When storage is passed to types like `Remote` (via `NewRemote`) or used directly without creating a repository, you MUST add `defer func() { _ = storage.Close() }()`.
