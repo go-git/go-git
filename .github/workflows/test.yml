@@ -74,7 +74,7 @@ jobs:
         go-version: ${{ matrix.go-version }}
 
     - name: Install Wasmtime
-      uses: bytecodealliance/actions/wasmtime/setup@v1
+      uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
 
     - name: Build
       run: |

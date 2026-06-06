@@ -36,4 +36,5 @@ func main() {
 		}
 		return nil
 	})
+	CheckIfError(err)
 }

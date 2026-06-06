@@ -41,6 +41,7 @@ func (s *proxySuite) TestAdvertisedReferencesHTTP() {
 	prepareRepo(s.T(), fixtures.Basic().One(), base, "basic.git")
 
 	proxyURL, err := url.Parse(httpProxyAddr)
+	s.Require().NoError(err)
 	proxyURL.User = url.UserPassword("user", "pass")
 	s.Require().NoError(err)
 	tr := NewTransport(Options{
@@ -69,6 +70,7 @@ func (s *proxySuite) TestAdvertisedReferencesHTTPS() {
 	httpsProxyAddr := setupProxyServer(s.T(), proxy, true, true)
 
 	proxyURL, err := url.Parse(httpsProxyAddr)
+	s.Require().NoError(err)
 	proxyURL.User = url.UserPassword("user", "pass")
 	s.Require().NoError(err)
 	tr := NewTransport(Options{
