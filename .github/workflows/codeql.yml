@@ -43,12 +43,57 @@ jobs:
           languages: ${{ matrix.language }}
           # xref: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
           # xref: https://codeql.github.com/codeql-query-help/go/
-          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
+        env:
+          CODEQL_EXTRACTOR_GO_OPTION_EXTRACT_TESTS: true
 
       - name: Manual Build
-        run: go build ./...
+        run: |
+          go build ./...
+          # Compile test files for CodeQL analysis
+          mkdir -p /tmp/codeql-build
+          for pkg in $(go list ./...); do
+            go test -c "$pkg" -o "/tmp/codeql-build/$(basename $pkg).test" || true
+          done
+          # Compile examples (ignored by ./... due to _ prefix)
+          # Build from example directories to ensure proper module context
+          find _examples -type d -mindepth 1 -maxdepth 2 | while read dir; do
+            if [ -f "$dir/main.go" ]; then
+              echo "Building example: $dir"
+              (cd "$dir" && go build -o "/tmp/codeql-build/$(basename $dir)" .) || true
+            fi
+          done
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@014f16e7ab1402f30e7c3329d33797e7948572db # v4.31.3
         with:
           category: "/language:${{matrix.language}}"
+          output: sarif-results
+          upload: always
+
+      - name: Display CodeQL Results
+        if: always()
+        run: |
+          echo "=== CodeQL Analysis Results ==="
+          if [ -d "sarif-results" ]; then
+            result_count=0
+            for sarif in sarif-results/*.sarif; do
+              if [ -f "$sarif" ]; then
+                echo "Processing $sarif..."
+                # Output as GitHub Actions annotations and echo location to logs
+                jq -r '.runs[].results[] |
+                  "::\(.level // "warning") file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine),title=\(.ruleId)::\(.message.text | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A"))\n" +
+                  "at \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' "$sarif" 2>/dev/null || echo "No results in $sarif"
+                # Count results
+                count=$(jq '[.runs[].results[]] | length' "$sarif" 2>/dev/null || echo "0")
+                result_count=$((result_count + count))
+              fi
+            done
+            if [ $result_count -gt 10 ]; then
+              echo "::notice::Found $result_count CodeQL result(s) - GitHub Actions limits annotations to 10, see logs for complete results"
+            else
+              echo "::notice::Found $result_count CodeQL result(s)"
+            fi
+          else
+            echo "::warning::No SARIF results directory found"
+          fi

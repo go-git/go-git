@@ -40,6 +40,7 @@ func main() {
 	if err != nil {
 		CheckIfError(err)
 	}
+	defer func() { _ = sr.Close() }()
 
 	sw, err := sr.Worktree()
 	if err != nil {
