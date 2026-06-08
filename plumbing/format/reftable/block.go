@@ -43,6 +43,10 @@ func readBlock(raw []byte, fileHeaderSize int) (*blockReader, error) {
 	blockType := raw[fileHeaderSize]
 	blockLen := int(raw[fileHeaderSize+1])<<16 | int(raw[fileHeaderSize+2])<<8 | int(raw[fileHeaderSize+3])
 
+	if blockLen < fileHeaderSize+blockHeaderSize {
+		return nil, fmt.Errorf("%w: invalid blockLen %d", ErrCorruptBlock, blockLen)
+	}
+
 	headerStart := fileHeaderSize
 	br := &blockReader{
 		blockType: blockType,
@@ -78,10 +82,21 @@ func readBlock(raw []byte, fileHeaderSize int) (*blockReader, error) {
 		recordData = raw[headerStart+blockHeaderSize : dataEnd]
 	}
 
+	restarts, recordDataClean, err := parseRestartTable(recordData)
+	if err != nil {
+		return nil, err
+	}
+	br.data = recordDataClean
+	br.restarts = restarts
+
+	return br, nil
+}
+
+func parseRestartTable(recordData []byte) ([]uint32, []byte, error) {
 	// Parse the restart table from the end of recordData.
 	// Last 2 bytes: uint16 restart_count.
 	if len(recordData) < 2 {
-		return nil, fmt.Errorf("%w: block data too small for restart count", ErrCorruptBlock)
+		return nil, nil, fmt.Errorf("%w: block data too small for restart count", ErrCorruptBlock)
 	}
 
 	restartCount := int(binary.BigEndian.Uint16(recordData[len(recordData)-2:]))
@@ -89,7 +104,7 @@ func readBlock(raw []byte, fileHeaderSize int) (*blockReader, error) {
 	// Before the restart_count, there are restartCount * 3 bytes of uint24 offsets.
 	restartTableSize := restartCount*3 + 2
 	if restartTableSize > len(recordData) {
-		return nil, fmt.Errorf("%w: restart table exceeds block data", ErrCorruptBlock)
+		return nil, nil, fmt.Errorf("%w: restart table exceeds block data", ErrCorruptBlock)
 	}
 
 	restartBase := len(recordData) - restartTableSize
@@ -99,11 +114,7 @@ func readBlock(raw []byte, fileHeaderSize int) (*blockReader, error) {
 		restarts[i] = uint32(recordData[off])<<16 | uint32(recordData[off+1])<<8 | uint32(recordData[off+2])
 	}
 
-	// Record data is everything before the restart table.
-	br.data = recordData[:restartBase]
-	br.restarts = restarts
-
-	return br, nil
+	return restarts, recordData[:restartBase], nil
 }
 
 // seek finds the record with the given key using binary search over restart

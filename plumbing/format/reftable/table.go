@@ -1,6 +1,8 @@
 package reftable
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -432,38 +434,124 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 		return nil // no log blocks
 	}
 
-	// Log blocks start at logPos. They are not aligned (variable size).
-	// We need to decompress each one and walk through them.
-	// For simplicity, read the log section as one chunk.
 	logStart := int64(t.footer.logPos)
 	logEnd := t.size - int64(t.footerSize())
 	if t.footer.logIndexPos > 0 {
 		logEnd = int64(t.footer.logIndexPos)
 	}
 
-	// Read the first log block. Log blocks are zlib-compressed with
-	// variable size, so advancing to subsequent blocks requires tracking
-	// the zlib reader's consumed byte count. For now we read one block
-	// which covers the common single-block case.
-	if logStart+blockHeaderSize > logEnd {
-		return nil
+	offset := logStart
+	for offset < logEnd {
+		if offset+blockHeaderSize > logEnd {
+			break
+		}
+
+		var header [blockHeaderSize]byte
+		if err := t.readAt(header[:], offset); err != nil {
+			return fmt.Errorf("reftable: reading log block header: %w", err)
+		}
+
+		bt := header[0]
+		blockLen := int(header[1])<<16 | int(header[2])<<8 | int(header[3])
+
+		if bt != blockTypeLog {
+			break
+		}
+
+		if blockLen < blockHeaderSize {
+			return fmt.Errorf("%w: invalid log block len %d", ErrCorruptBlock, blockLen)
+		}
+
+		compressedDataSize := logEnd - (offset + blockHeaderSize)
+		if compressedDataSize <= 0 {
+			break
+		}
+
+		compressedData := make([]byte, compressedDataSize)
+		if err := t.readAt(compressedData, offset+blockHeaderSize); err != nil {
+			return fmt.Errorf("reftable: reading compressed log block: %w", err)
+		}
+
+		bytesReader := bytes.NewReader(compressedData)
+		cbr := &countingByteReader{r: bytesReader}
+		zr, err := zlib.NewReader(cbr)
+		if err != nil {
+			return fmt.Errorf("%w: zlib init: %v", ErrCorruptBlock, err)
+		}
+
+		inflatedSize := blockLen - blockHeaderSize
+		inflated := make([]byte, inflatedSize)
+		_, err = io.ReadFull(zr, inflated)
+		_ = zr.Close()
+		if err != nil {
+			return fmt.Errorf("%w: zlib inflate: %v", ErrCorruptBlock, err)
+		}
+
+		restarts, recordDataClean, err := parseRestartTable(inflated)
+		if err != nil {
+			return err
+		}
+
+		br := &blockReader{
+			blockType: blockTypeLog,
+			data:      recordDataClean,
+			restarts:  restarts,
+			headerLen: blockHeaderSize,
+		}
+
+		stop := false
+		err = br.iterLogRecords(t.hashSize, func(rec LogRecord) bool {
+			if !fn(rec) {
+				stop = true
+				return false
+			}
+			return true
+		})
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+
+		offset += blockHeaderSize + cbr.n
 	}
 
-	raw := make([]byte, logEnd-logStart)
-	if err := t.readAt(raw, logStart); err != nil {
-		return fmt.Errorf("reftable: reading log block: %w", err)
+	return nil
+}
+
+type countingByteReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingByteReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (c *countingByteReader) ReadByte() (byte, error) {
+	if br, ok := c.r.(io.ByteReader); ok {
+		b, err := br.ReadByte()
+		if err == nil {
+			c.n++
+		}
+		return b, err
 	}
-	br, err := readBlock(raw, 0)
+	var buf [1]byte
+	n, err := c.r.Read(buf[:])
+	if n == 1 {
+		c.n++
+		return buf[0], nil
+	}
+	if err == io.EOF && n == 0 {
+		return 0, io.EOF
+	}
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if br.blockType != blockTypeLog {
-		return nil
-	}
-
-	return br.iterLogRecords(t.hashSize, func(rec LogRecord) bool {
-		return fn(rec)
-	})
+	return 0, io.ErrUnexpectedEOF
 }
 
 // LogsFor returns all log records for the given reference name, newest first.

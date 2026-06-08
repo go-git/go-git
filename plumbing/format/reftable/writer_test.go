@@ -3,8 +3,10 @@ package reftable
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash/crc32"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -156,9 +158,9 @@ func TestWriterMultiBlockRoundTrip(t *testing.T) {
 	const numRefs = 200
 	const blockSize = 512
 
-	var refs []RefRecord
-	for i := 0; i < numRefs; i++ {
-		h := sha1.Sum([]byte(fmt.Sprintf("ref-%04d", i)))
+	refs := make([]RefRecord, 0, numRefs)
+	for i := range numRefs {
+		h := sha1.Sum(fmt.Appendf(nil, "ref-%04d", i))
 		refs = append(refs, RefRecord{
 			RefName:     fmt.Sprintf("refs/heads/branch-%04d", i),
 			ValueType:   refValueVal1,
@@ -202,4 +204,104 @@ func TestWriterMultiBlockRoundTrip(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, names, numRefs)
+}
+
+func TestTableIterLogsMultiBlock(t *testing.T) {
+	t.Parallel()
+
+	// 1. Create table A with log A
+	var bufA bytes.Buffer
+	wA := NewWriter(&bufA, WriterOptions{
+		MinUpdateIndex: 1,
+		MaxUpdateIndex: 1,
+	})
+	wA.AddLog(LogRecord{
+		RefName:     "refs/heads/main",
+		UpdateIndex: 1,
+		LogType:     logValueUpdate,
+		Name:        "User A",
+		Message:     "commit A",
+	})
+	require.NoError(t, wA.Close())
+
+	// 2. Create table B with log B
+	var bufB bytes.Buffer
+	wB := NewWriter(&bufB, WriterOptions{
+		MinUpdateIndex: 2,
+		MaxUpdateIndex: 2,
+	})
+	wB.AddLog(LogRecord{
+		RefName:     "refs/heads/main",
+		UpdateIndex: 2,
+		LogType:     logValueUpdate,
+		Name:        "User B",
+		Message:     "commit B",
+	})
+	require.NoError(t, wB.Close())
+
+	// Open table A to find log Pos and size
+	tblA, err := OpenTable(newBytesReaderAt(bufA.Bytes()), int64(bufA.Len()))
+	require.NoError(t, err)
+	logStartA := tblA.footer.logPos
+	logEndA := uint64(bufA.Len() - footerSizeV1)
+	logBytesA := bufA.Bytes()[logStartA:logEndA]
+
+	// Open table B to find log Pos and size
+	tblB, err := OpenTable(newBytesReaderAt(bufB.Bytes()), int64(bufB.Len()))
+	require.NoError(t, err)
+	logStartB := tblB.footer.logPos
+	logEndB := uint64(bufB.Len() - footerSizeV1)
+	logBytesB := bufB.Bytes()[logStartB:logEndB]
+
+	// 3. Assemble combined bytes:
+	// - Everything up to logStartA from table A
+	// - logBytesA
+	// - logBytesB
+	// - New footer with updated logPos and CRC
+	combined := append([]byte(nil), bufA.Bytes()[:logStartA]...)
+	combined = append(combined, logBytesA...)
+	combined = append(combined, logBytesB...)
+
+	// Update footer.
+	newFooterPos := len(combined)
+	footerData := make([]byte, footerSizeV1)
+
+	copy(footerData, magic[:])
+	footerData[4] = versionV1
+
+	// block size (uint24)
+	footerData[5] = byte(tblA.footer.blockSize >> 16)
+	footerData[6] = byte(tblA.footer.blockSize >> 8)
+	footerData[7] = byte(tblA.footer.blockSize)
+
+	binary.BigEndian.PutUint64(footerData[8:], tblA.footer.minUpdateIndex)
+	binary.BigEndian.PutUint64(footerData[16:], tblB.footer.maxUpdateIndex) // update max update index
+	binary.BigEndian.PutUint64(footerData[24:], 0)                          // ref index pos
+
+	objData := uint64(0) // no obj index
+	binary.BigEndian.PutUint64(footerData[32:], objData)
+	binary.BigEndian.PutUint64(footerData[40:], 0)                 // obj index pos
+	binary.BigEndian.PutUint64(footerData[48:], uint64(logStartA)) // logPos starts at logStartA
+	binary.BigEndian.PutUint64(footerData[56:], 0)                 // log index pos
+
+	// CRC
+	crc := crc32.ChecksumIEEE(footerData[:footerSizeV1-4])
+	binary.BigEndian.PutUint32(footerData[footerSizeV1-4:], crc)
+
+	combined = append(combined, footerData...)
+
+	// Read back
+	tblCombined, err := OpenTable(newBytesReaderAt(combined), int64(newFooterPos+footerSizeV1))
+	require.NoError(t, err)
+
+	// Verify we can read both logs!
+	var logs []LogRecord
+	err = tblCombined.IterLogs(func(rec LogRecord) bool {
+		logs = append(logs, rec)
+		return true
+	})
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+	assert.Equal(t, "User A", logs[0].Name)
+	assert.Equal(t, "User B", logs[1].Name)
 }

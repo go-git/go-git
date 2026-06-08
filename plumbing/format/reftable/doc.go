@@ -1,4 +1,4 @@
-// Package reftable implements a read-only parser for the reftable binary
+// Package reftable implements reading and writing for the reftable binary
 // reference storage format.
 //
 // The reftable format stores Git references and reflogs in a compact binary

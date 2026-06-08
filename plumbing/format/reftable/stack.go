@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -113,8 +114,8 @@ func (s *Stack) reload() error {
 // Returns nil, nil if the reference is not found.
 func (s *Stack) Ref(name string) (*RefRecord, error) {
 	// Search newest to oldest.
-	for i := len(s.tables) - 1; i >= 0; i-- {
-		rec, err := s.tables[i].Ref(name)
+	for _, v := range slices.Backward(s.tables) {
+		rec, err := v.Ref(name)
 		if err != nil {
 			return nil, err
 		}
@@ -206,34 +207,6 @@ func (s *Stack) nextUpdateIndex() uint64 {
 // SetRef writes or updates a reference in the reftable stack by creating
 // a new table containing the ref record and updating tables.list.
 func (s *Stack) SetRef(rec RefRecord) error {
-	idx := s.nextUpdateIndex()
-	rec.UpdateIndex = idx
-
-	return s.writeNewTable([]RefRecord{rec}, nil, idx, idx)
-}
-
-// RemoveRef removes a reference by writing a deletion tombstone.
-func (s *Stack) RemoveRef(name string) error {
-	idx := s.nextUpdateIndex()
-	rec := RefRecord{
-		RefName:     name,
-		UpdateIndex: idx,
-		ValueType:   refValueDeletion,
-	}
-	return s.writeNewTable([]RefRecord{rec}, nil, idx, idx)
-}
-
-// AddLog writes a log record to the reftable stack.
-func (s *Stack) AddLog(rec LogRecord) error {
-	idx := s.nextUpdateIndex()
-	rec.UpdateIndex = idx
-
-	return s.writeNewTable(nil, []LogRecord{rec}, idx, idx)
-}
-
-// writeNewTable creates a new reftable file with the given records,
-// appends it to the stack, and updates tables.list.
-func (s *Stack) writeNewTable(refs []RefRecord, logs []LogRecord, minIdx, maxIdx uint64) error {
 	lk, err := s.lock()
 	if err != nil {
 		return err
@@ -244,6 +217,54 @@ func (s *Stack) writeNewTable(refs []RefRecord, logs []LogRecord, minIdx, maxIdx
 		return err
 	}
 
+	idx := s.nextUpdateIndex()
+	rec.UpdateIndex = idx
+
+	return s.writeNewTableLocked([]RefRecord{rec}, nil, idx, idx)
+}
+
+// RemoveRef removes a reference by writing a deletion tombstone.
+func (s *Stack) RemoveRef(name string) error {
+	lk, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer s.unlock(lk)
+
+	if err := s.reload(); err != nil {
+		return err
+	}
+
+	idx := s.nextUpdateIndex()
+	rec := RefRecord{
+		RefName:     name,
+		UpdateIndex: idx,
+		ValueType:   refValueDeletion,
+	}
+	return s.writeNewTableLocked([]RefRecord{rec}, nil, idx, idx)
+}
+
+// AddLog writes a log record to the reftable stack.
+func (s *Stack) AddLog(rec LogRecord) error {
+	lk, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer s.unlock(lk)
+
+	if err := s.reload(); err != nil {
+		return err
+	}
+
+	idx := s.nextUpdateIndex()
+	rec.UpdateIndex = idx
+
+	return s.writeNewTableLocked(nil, []LogRecord{rec}, idx, idx)
+}
+
+// writeNewTableLocked creates a new reftable file with the given records,
+// appends it to the stack, and updates tables.list. Assumes the lock is held.
+func (s *Stack) writeNewTableLocked(refs []RefRecord, logs []LogRecord, minIdx, maxIdx uint64) error {
 	// Generate a unique table name.
 	tableName, err := generateTableName(minIdx, maxIdx)
 	if err != nil {
@@ -458,7 +479,7 @@ type stackLock struct {
 func (s *Stack) lock() (*stackLock, error) {
 	s.mu.Lock()
 
-	f, err := s.fs.OpenFile("tables.list.lock", os.O_CREATE|os.O_RDWR, 0666)
+	f, err := s.fs.OpenFile("tables.list.lock", os.O_CREATE|os.O_RDWR, 0o666)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("reftable: opening lock file: %w", err)

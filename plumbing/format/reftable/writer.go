@@ -27,14 +27,13 @@ type WriterOptions struct {
 
 // Writer writes a single reftable file.
 type Writer struct {
-	w              io.Writer
-	opts           WriterOptions
-	blockSize      int
-	hashSize       int
-	restartFreq    int
-	headerWritten  bool
-	refBlockOffset int64
-	totalWritten   int64
+	w             io.Writer
+	opts          WriterOptions
+	blockSize     int
+	hashSize      int
+	restartFreq   int
+	headerWritten bool
+	totalWritten  int64
 
 	// Collected records to write.
 	refs []RefRecord
@@ -423,7 +422,7 @@ func encodeLogRecord(rec *LogRecord, prevKey string, hashSize int) []byte {
 	return out
 }
 
-func (w *Writer) writeFooter(_ int64, logPos uint64, refIndexPos uint64) error {
+func (w *Writer) writeFooter(_ int64, logPos, refIndexPos uint64) error {
 	footer := make([]byte, footerSizeV1)
 
 	copy(footer[0:4], magic[:])
@@ -481,6 +480,7 @@ func (w *Writer) writeIndexBlocks(recs []indexRecord) (uint64, error) {
 	var buf bytes.Buffer
 	var restarts []uint32
 	prevKey := ""
+	lastKeyInBlock := ""
 	recordCount := 0
 
 	flushIndex := func() error {
@@ -493,9 +493,8 @@ func (w *Writer) writeIndexBlocks(recs []indexRecord) (uint64, error) {
 			return err
 		}
 
-		lastKey := recs[recordCount-1].LastKey
 		parentRecs = append(parentRecs, indexRecord{
-			LastKey:       lastKey,
+			LastKey:       lastKeyInBlock,
 			BlockPosition: startOffset,
 		})
 		return nil
@@ -513,9 +512,8 @@ func (w *Writer) writeIndexBlocks(recs []indexRecord) (uint64, error) {
 			}
 			buf.Reset()
 			restarts = nil
-			prevKey = ""
+			lastKeyInBlock = ""
 			recordCount = 0
-			encoded = encodeIndexRecord(*rec, "")
 		}
 
 		if recordCount%w.restartFreq == 0 {
@@ -525,6 +523,7 @@ func (w *Writer) writeIndexBlocks(recs []indexRecord) (uint64, error) {
 
 		buf.Write(encoded)
 		prevKey = rec.LastKey
+		lastKeyInBlock = rec.LastKey
 		recordCount++
 	}
 
@@ -574,10 +573,11 @@ func (w *Writer) flushIndexBlock(data []byte, restarts []uint32) error {
 
 func encodeIndexRecord(rec indexRecord, prevKey string) []byte {
 	var buf [10]byte
-	var out []byte
 
 	prefixLen := commonPrefix(prevKey, rec.LastKey)
 	suffix := rec.LastKey[prefixLen:]
+
+	out := make([]byte, 0, 30+len(suffix))
 
 	n := gbinary.PutVarInt(buf[:], uint64(prefixLen))
 	out = append(out, buf[:n]...)
@@ -597,7 +597,7 @@ func encodeIndexRecord(rec indexRecord, prevKey string) []byte {
 // commonPrefix returns the length of the common prefix between a and b.
 func commonPrefix(a, b string) int {
 	n := min(len(a), len(b))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if a[i] != b[i] {
 			return i
 		}

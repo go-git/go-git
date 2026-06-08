@@ -88,6 +88,7 @@ func TestStackLogsFor(t *testing.T) {
 }
 
 func TestStackCompaction(t *testing.T) {
+	t.Parallel()
 	fs := memfs.New()
 	stack, err := OpenStack(fs)
 	require.NoError(t, err)
@@ -131,6 +132,7 @@ func TestStackCompaction(t *testing.T) {
 }
 
 func TestStackAutoCompaction(t *testing.T) {
+	t.Parallel()
 	fs := memfs.New()
 	stack, err := OpenStack(fs)
 	require.NoError(t, err)
@@ -138,9 +140,9 @@ func TestStackAutoCompaction(t *testing.T) {
 
 	for i := 1; i <= 6; i++ {
 		err = stack.SetRef(RefRecord{
-			RefName:     fmt.Sprintf("refs/heads/branch-%d", i),
-			ValueType:   refValueVal1,
-			Value:       []byte(fmt.Sprintf("%020d", i)),
+			RefName:   fmt.Sprintf("refs/heads/branch-%d", i),
+			ValueType: refValueVal1,
+			Value:     fmt.Appendf(nil, "%020d", i),
 		})
 		require.NoError(t, err)
 	}
@@ -159,6 +161,7 @@ func TestStackAutoCompaction(t *testing.T) {
 }
 
 func TestStackConcurrentWrites(t *testing.T) {
+	t.Parallel()
 	fs := memfs.New()
 	stack, err := OpenStack(fs)
 	require.NoError(t, err)
@@ -170,14 +173,14 @@ func TestStackConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
-	for g := 0; g < numGoroutines; g++ {
+	for g := range numGoroutines {
 		go func(gid int) {
 			defer wg.Done()
-			for i := 0; i < writesPerGoroutine; i++ {
+			for i := range writesPerGoroutine {
 				err := stack.SetRef(RefRecord{
-					RefName:     fmt.Sprintf("refs/heads/g-%d-%d", gid, i),
-					ValueType:   refValueVal1,
-					Value:       []byte("11111111111111111111"),
+					RefName:   fmt.Sprintf("refs/heads/g-%d-%d", gid, i),
+					ValueType: refValueVal1,
+					Value:     []byte("11111111111111111111"),
 				})
 				if err != nil {
 					t.Errorf("SetRef failed: %v", err)
@@ -189,8 +192,8 @@ func TestStackConcurrentWrites(t *testing.T) {
 	wg.Wait()
 
 	// Verify all refs are present and correct.
-	for g := 0; g < numGoroutines; g++ {
-		for i := 0; i < writesPerGoroutine; i++ {
+	for g := range numGoroutines {
+		for i := range writesPerGoroutine {
 			name := fmt.Sprintf("refs/heads/g-%d-%d", g, i)
 			ref, err := stack.Ref(name)
 			require.NoError(t, err)

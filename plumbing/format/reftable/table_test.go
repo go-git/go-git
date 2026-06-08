@@ -133,4 +133,3 @@ func TestTableIterLogs(t *testing.T) {
 		assert.NotEmpty(t, e.RefName, "log entry should have a ref name")
 	}
 }
-
