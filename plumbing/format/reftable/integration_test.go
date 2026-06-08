@@ -96,7 +96,7 @@ func checkGitReftableSupport(t *testing.T) {
 	}
 
 	// Check git version supports reftable.
-	out, err := exec.Command(gitPath, "init", "--ref-format=reftable", t.TempDir()).CombinedOutput()
+	out, err := exec.Command(gitPath, "init", "--initial-branch=main", "--ref-format=reftable", t.TempDir()).CombinedOutput()
 	if err != nil {
 		t.Skipf("git does not support --ref-format=reftable: %s", out)
 	}
@@ -105,9 +105,12 @@ func checkGitReftableSupport(t *testing.T) {
 func setupReftableRepo(t *testing.T, dir string) {
 	t.Helper()
 
+	gitPath, err := exec.LookPath("git")
+	require.NoError(t, err)
+
 	run := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		cmd := exec.Command(gitPath, args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(),
 			"GIT_AUTHOR_NAME=Test User",
@@ -119,7 +122,7 @@ func setupReftableRepo(t *testing.T, dir string) {
 		require.NoError(t, err, "git %v failed: %s", args, out)
 	}
 
-	run("init", "--ref-format=reftable")
+	run("init", "--initial-branch=main", "--ref-format=reftable")
 	run("config", "user.name", "Test User")
 	run("config", "user.email", "test@example.com")
 
