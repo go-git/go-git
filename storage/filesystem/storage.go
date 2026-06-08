@@ -411,6 +411,20 @@ func (s *Storage) DeleteReflog(name plumbing.ReferenceName) error {
 	return s.reflogStorage.DeleteReflog(name)
 }
 
+// Close closes all open resources, releasing the reftable stack and object storage.
+func (s *Storage) Close() error {
+	var firstError error
+	if s.reftableStack != nil {
+		if err := s.reftableStack.Close(); err != nil {
+			firstError = err
+		}
+	}
+	if err := s.ObjectStorage.Close(); err != nil && firstError == nil {
+		firstError = err
+	}
+	return firstError
+}
+
 type brokenReferenceStorage struct {
 	err error
 }

@@ -21,7 +21,7 @@ import (
 type Stack struct {
 	fs     billy.Filesystem
 	tables []*Table // ordered oldest to newest
-	mu     sync.Mutex
+	mu     sync.RWMutex
 }
 
 // OpenStack opens a reftable stack from the given filesystem (the reftable/
@@ -113,6 +113,9 @@ func (s *Stack) reload() error {
 // Ref looks up a reference by name, searching tables from newest to oldest.
 // Returns nil, nil if the reference is not found.
 func (s *Stack) Ref(name string) (*RefRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	// Search newest to oldest.
 	for _, v := range slices.Backward(s.tables) {
 		rec, err := v.Ref(name)
@@ -133,6 +136,13 @@ func (s *Stack) Ref(name string) (*RefRecord, error) {
 // IterRefs iterates all references, deduplicating by name (newest wins)
 // and filtering out deletion tombstones.
 func (s *Stack) IterRefs(fn func(RefRecord) bool) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.iterRefsLocked(fn)
+}
+
+func (s *Stack) iterRefsLocked(fn func(RefRecord) bool) error {
 	// Collect all refs from all tables, then deduplicate.
 	// A ref in a newer table (higher index) overrides older ones.
 	type refEntry struct {
@@ -174,6 +184,9 @@ func (s *Stack) IterRefs(fn func(RefRecord) bool) error {
 
 // LogsFor returns all log records for the given reference, newest first.
 func (s *Stack) LogsFor(name string) ([]LogRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var all []LogRecord
 
 	// Collect from all tables (each table stores logs newest-first).
@@ -389,7 +402,7 @@ func (s *Stack) compact() error {
 	}
 
 	var refs []RefRecord
-	err := s.IterRefs(func(rec RefRecord) bool {
+	err := s.iterRefsLocked(func(rec RefRecord) bool {
 		refs = append(refs, rec)
 		return true
 	})

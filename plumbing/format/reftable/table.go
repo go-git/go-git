@@ -510,7 +510,11 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 			return nil
 		}
 
-		offset += blockHeaderSize + cbr.n
+		if t.footer.blockSize > 0 {
+			offset += int64(t.footer.blockSize)
+		} else {
+			offset += blockHeaderSize + cbr.n
+		}
 	}
 
 	return nil

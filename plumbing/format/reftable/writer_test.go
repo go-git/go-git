@@ -107,7 +107,8 @@ func TestWriterWithLogs(t *testing.T) {
 	t.Parallel()
 
 	hashBytes := func(s string) []byte {
-		b, _ := hex.DecodeString(s)
+		b, err := hex.DecodeString(s)
+		require.NoError(t, err)
 		return b
 	}
 
@@ -156,7 +157,7 @@ func TestWriterMultiBlockRoundTrip(t *testing.T) {
 
 	// Create enough refs to span multiple blocks with a small block size.
 	const numRefs = 200
-	const blockSize = 512
+	const blockSize = 1024
 
 	refs := make([]RefRecord, 0, numRefs)
 	for i := range numRefs {

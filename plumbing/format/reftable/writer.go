@@ -73,6 +73,13 @@ func (w *Writer) AddLog(rec LogRecord) {
 // Close writes the reftable file (header, ref blocks, log blocks, footer)
 // and flushes. After Close, the Writer must not be reused.
 func (w *Writer) Close() error {
+	if w.blockSize > 0xffffff {
+		return fmt.Errorf("reftable: block size %d exceeds 24-bit limit", w.blockSize)
+	}
+	if w.opts.BlockSize > 0 && w.opts.BlockSize < 1024 {
+		return fmt.Errorf("reftable: block size %d is too small (minimum 1024)", w.opts.BlockSize)
+	}
+
 	// Sort refs by name.
 	sort.Slice(w.refs, func(i, j int) bool {
 		return w.refs[i].RefName < w.refs[j].RefName
@@ -90,13 +97,11 @@ func (w *Writer) Close() error {
 	}
 
 	// Write ref blocks.
-	refEndPos := w.totalWritten
 	var indexRecs []indexRecord
 	if len(w.refs) > 0 {
 		if err := w.writeRefBlocks(&indexRecs); err != nil {
 			return err
 		}
-		refEndPos = w.totalWritten
 	}
 
 	// Write index blocks if we have more than 1 ref block.
@@ -119,7 +124,7 @@ func (w *Writer) Close() error {
 	}
 
 	// Write footer.
-	return w.writeFooter(refEndPos, logPos, refIndexPos)
+	return w.writeFooter(logPos, refIndexPos)
 }
 
 func (w *Writer) writeHeader() error {
@@ -310,7 +315,7 @@ func (w *Writer) writeLogBlocks() error {
 
 	for i, rec := range w.logs {
 		if i%w.restartFreq == 0 {
-			restarts = append(restarts, uint32(recordBuf.Len()))
+			restarts = append(restarts, uint32(blockHeaderSize+recordBuf.Len()))
 			prevKey = "" // no prefix compression at restart
 		}
 		encoded := encodeLogRecord(&rec, prevKey, w.hashSize)
@@ -340,6 +345,10 @@ func (w *Writer) writeLogBlocks() error {
 		return fmt.Errorf("reftable: zlib close: %w", err)
 	}
 
+	if w.blockSize > 0 && blockHeaderSize+compressed.Len() > w.blockSize {
+		return fmt.Errorf("reftable: compressed log block size %d exceeds block size %d", blockHeaderSize+compressed.Len(), w.blockSize)
+	}
+
 	// Block header: type + uint24(inflated size + header size).
 	inflatedBlockLen := blockHeaderSize + len(inflated)
 	if inflatedBlockLen > 0xffffff {
@@ -360,7 +369,24 @@ func (w *Writer) writeLogBlocks() error {
 
 	n, err = w.w.Write(compressed.Bytes())
 	w.totalWritten += int64(n)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if w.blockSize > 0 {
+		written := blockHeaderSize + compressed.Len()
+		padding := w.blockSize - (written % w.blockSize)
+		if padding < w.blockSize {
+			padBytes := make([]byte, padding)
+			n, err = w.w.Write(padBytes)
+			w.totalWritten += int64(n)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func encodeLogRecord(rec *LogRecord, prevKey string, hashSize int) []byte {
@@ -425,7 +451,7 @@ func encodeLogRecord(rec *LogRecord, prevKey string, hashSize int) []byte {
 	return out
 }
 
-func (w *Writer) writeFooter(_ int64, logPos, refIndexPos uint64) error {
+func (w *Writer) writeFooter(logPos, refIndexPos uint64) error {
 	footer := make([]byte, footerSizeV1)
 
 	copy(footer[0:4], magic[:])
