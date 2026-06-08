@@ -55,15 +55,15 @@ func (r *ReftableReflogStorage) AppendReflog(name plumbing.ReferenceName, entry 
 	tzMinutes := int16(tzOffset / 60)
 
 	rec := reftable.LogRecord{
-		RefName: string(name),
-		LogType: 1, // update
-		OldHash: entry.OldHash.Bytes(),
-		NewHash: entry.NewHash.Bytes(),
-		Name:    entry.Committer.Name,
-		Email:   entry.Committer.Email,
-		Time:    entry.Committer.When,
+		RefName:  string(name),
+		LogType:  1, // update
+		OldHash:  entry.OldHash.Bytes(),
+		NewHash:  entry.NewHash.Bytes(),
+		Name:     entry.Committer.Name,
+		Email:    entry.Committer.Email,
+		Time:     entry.Committer.When,
 		TZOffset: tzMinutes,
-		Message: entry.Message,
+		Message:  entry.Message,
 	}
 
 	return r.stack.AddLog(rec)

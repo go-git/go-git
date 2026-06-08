@@ -206,16 +206,40 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 	if refStorage == formatcfg.RefStorageReftable {
 		reftableFS, err := chrootIfExists(fs, "reftable")
-		if err == nil && reftableFS != nil {
+		switch {
+		case err != nil:
+			s.referenceStorage = &brokenReferenceStorage{err: err}
+			s.reflogStorage = &brokenReflogStorage{err: err}
+		case reftableFS != nil:
 			stack, err := reftable.OpenStack(reftableFS)
-			if err == nil {
+			if err != nil {
+				s.referenceStorage = &brokenReferenceStorage{err: err}
+				s.reflogStorage = &brokenReflogStorage{err: err}
+			} else {
 				s.reftableStack = stack
 				s.referenceStorage = &ReftableReferenceStorage{stack: stack}
 				s.reflogStorage = &ReftableReflogStorage{stack: stack}
 			}
+		default:
+			// reftableFS is nil. If the repo is configured for reftables, we must create
+			// the directory and open the stack rather than falling back to loose refs.
+			err := fs.MkdirAll("reftable", 0o755)
+			if err != nil {
+				s.referenceStorage = &brokenReferenceStorage{err: err}
+				s.reflogStorage = &brokenReflogStorage{err: err}
+			} else {
+				reftableFS = chroot.New(fs, "reftable")
+				stack, err := reftable.OpenStack(reftableFS)
+				if err != nil {
+					s.referenceStorage = &brokenReferenceStorage{err: err}
+					s.reflogStorage = &brokenReflogStorage{err: err}
+				} else {
+					s.reftableStack = stack
+					s.referenceStorage = &ReftableReferenceStorage{stack: stack}
+					s.reflogStorage = &ReftableReflogStorage{stack: stack}
+				}
+			}
 		}
-		// If reftable setup fails, fall through to default dotgit storage.
-		// This handles the case where a repo has the config but no reftable dir yet.
 	}
 
 	if s.referenceStorage == nil {
@@ -385,4 +409,52 @@ func (s *Storage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry)
 // DeleteReflog removes the entire reflog for the given reference.
 func (s *Storage) DeleteReflog(name plumbing.ReferenceName) error {
 	return s.reflogStorage.DeleteReflog(name)
+}
+
+type brokenReferenceStorage struct {
+	err error
+}
+
+func (b *brokenReferenceStorage) SetReference(_ *plumbing.Reference) error {
+	return b.err
+}
+
+func (b *brokenReferenceStorage) CheckAndSetReference(_, _ *plumbing.Reference) error {
+	return b.err
+}
+
+func (b *brokenReferenceStorage) Reference(_ plumbing.ReferenceName) (*plumbing.Reference, error) {
+	return nil, b.err
+}
+
+func (b *brokenReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
+	return nil, b.err
+}
+
+func (b *brokenReferenceStorage) RemoveReference(_ plumbing.ReferenceName) error {
+	return b.err
+}
+
+func (b *brokenReferenceStorage) CountLooseRefs() (int, error) {
+	return 0, b.err
+}
+
+func (b *brokenReferenceStorage) PackRefs() error {
+	return b.err
+}
+
+type brokenReflogStorage struct {
+	err error
+}
+
+func (b *brokenReflogStorage) Reflog(_ plumbing.ReferenceName) ([]*reflog.Entry, error) {
+	return nil, b.err
+}
+
+func (b *brokenReflogStorage) AppendReflog(_ plumbing.ReferenceName, _ *reflog.Entry) error {
+	return b.err
+}
+
+func (b *brokenReflogStorage) DeleteReflog(_ plumbing.ReferenceName) error {
+	return b.err
 }

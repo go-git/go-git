@@ -1662,6 +1662,7 @@ func isHexAlpha(b byte) bool {
 func incBytes(in []byte) (out []byte, overflow bool) {
 	out = make([]byte, len(in))
 	copy(out, in)
+	//nolint:modernize // slices.Backward cannot be used as we mutate elements in-place
 	for i := len(out) - 1; i >= 0; i-- {
 		out[i]++
 		if out[i] != 0 {
