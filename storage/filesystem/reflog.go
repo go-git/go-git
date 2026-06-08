@@ -3,17 +3,25 @@ package filesystem
 import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // ReflogStorage implements storer.ReflogStorer backed by the filesystem.
+// It embeds storer.ReflogStorer to allow delegating to either a file-based
+// or reftable-based reflog storer.
 type ReflogStorage struct {
+	storer.ReflogStorer
+}
+
+// fileReflogStorage implements storer.ReflogStorer backed by the filesystem.
+type fileReflogStorage struct {
 	dir *dotgit.DotGit
 }
 
 // Reflog returns all reflog entries for the given reference, oldest first.
-func (r *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+func (r *fileReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
 	f, err := r.dir.ReflogReader(name)
 	if f == nil || err != nil {
 		return nil, err
@@ -25,7 +33,7 @@ func (r *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, er
 }
 
 // AppendReflog appends a single entry to the reflog for the given reference.
-func (r *ReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+func (r *fileReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
 	f, err := r.dir.ReflogWriter(name)
 	if err != nil {
 		return err
@@ -36,6 +44,6 @@ func (r *ReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.
 }
 
 // DeleteReflog removes the entire reflog for the given reference.
-func (r *ReflogStorage) DeleteReflog(name plumbing.ReferenceName) error {
+func (r *fileReflogStorage) DeleteReflog(name plumbing.ReferenceName) error {
 	return r.dir.DeleteReflog(name)
 }

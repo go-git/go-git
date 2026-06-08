@@ -324,7 +324,9 @@ func (s *Stack) writeNewTableLocked(refs []RefRecord, logs []LogRecord, minIdx, 
 
 	// Auto-compact if stack has more than 5 tables.
 	if len(s.tables) > 5 {
-		_ = s.compact()
+		if err := s.compact(); err != nil {
+			return fmt.Errorf("reftable: auto-compactor failed: %w", err)
+		}
 	}
 
 	return nil

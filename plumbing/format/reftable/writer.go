@@ -102,6 +102,10 @@ func (w *Writer) Close() error {
 		if err := w.writeRefBlocks(&indexRecs); err != nil {
 			return err
 		}
+	} else {
+		if err := w.flushRefBlock(nil, nil, true); err != nil {
+			return err
+		}
 	}
 
 	// Write index blocks if we have more than 1 ref block.
@@ -308,22 +312,62 @@ func encodeRefRecord(rec *RefRecord, prevName string, hashSize int, minUpdateInd
 }
 
 func (w *Writer) writeLogBlocks() error {
-	// Encode all log records into a single buffer, then zlib-compress.
+	logs := w.logs
+	for len(logs) > 0 {
+		k := 1
+		var lastCompressed []byte
+		var lastInflatedLen int
+
+		for k <= len(logs) {
+			compressed, inflatedLen, err := w.tryCompressLogs(logs[:k])
+			if err != nil {
+				return err
+			}
+
+			if w.blockSize > 0 && blockHeaderSize+len(compressed) > w.blockSize {
+				if k == 1 {
+					lastCompressed = compressed
+					lastInflatedLen = inflatedLen
+					break
+				}
+				k--
+				break
+			}
+
+			lastCompressed = compressed
+			lastInflatedLen = inflatedLen
+
+			if k == len(logs) {
+				break
+			}
+			k++
+		}
+
+		if err := w.writeCompressedLogBlock(lastCompressed, lastInflatedLen); err != nil {
+			return err
+		}
+
+		logs = logs[k:]
+	}
+	return nil
+}
+
+func (w *Writer) tryCompressLogs(logs []LogRecord) ([]byte, int, error) {
 	var recordBuf bytes.Buffer
 	prevKey := ""
 	var restarts []uint32
 
-	for i, rec := range w.logs {
+	for i := range logs {
+		rec := &logs[i]
 		if i%w.restartFreq == 0 {
 			restarts = append(restarts, uint32(blockHeaderSize+recordBuf.Len()))
-			prevKey = "" // no prefix compression at restart
+			prevKey = ""
 		}
-		encoded := encodeLogRecord(&rec, prevKey, w.hashSize)
+		encoded := encodeLogRecord(rec, prevKey, w.hashSize)
 		recordBuf.Write(encoded)
 		prevKey = logKey(rec.RefName, rec.UpdateIndex)
 	}
 
-	// Build restart table.
 	restartTable := make([]byte, len(restarts)*3+2)
 	for i, r := range restarts {
 		restartTable[i*3] = byte(r >> 16)
@@ -332,25 +376,23 @@ func (w *Writer) writeLogBlocks() error {
 	}
 	binary.BigEndian.PutUint16(restartTable[len(restarts)*3:], uint16(len(restarts)))
 
-	// The inflated data = records + restart table.
 	inflated := append(recordBuf.Bytes(), restartTable...)
+	inflatedLen := len(inflated)
 
-	// Zlib compress.
 	var compressed bytes.Buffer
 	zw := zlib.NewWriter(&compressed)
 	if _, err := zw.Write(inflated); err != nil {
-		return fmt.Errorf("reftable: zlib compress log: %w", err)
+		return nil, 0, err
 	}
 	if err := zw.Close(); err != nil {
-		return fmt.Errorf("reftable: zlib close: %w", err)
+		return nil, 0, err
 	}
 
-	if w.blockSize > 0 && blockHeaderSize+compressed.Len() > w.blockSize {
-		return fmt.Errorf("reftable: compressed log block size %d exceeds block size %d", blockHeaderSize+compressed.Len(), w.blockSize)
-	}
+	return compressed.Bytes(), inflatedLen, nil
+}
 
-	// Block header: type + uint24(inflated size + header size).
-	inflatedBlockLen := blockHeaderSize + len(inflated)
+func (w *Writer) writeCompressedLogBlock(compressed []byte, inflatedLen int) error {
+	inflatedBlockLen := blockHeaderSize + inflatedLen
 	if inflatedBlockLen > 0xffffff {
 		return fmt.Errorf("reftable: log block inflated size %d exceeds 24-bit limit", inflatedBlockLen)
 	}
@@ -367,14 +409,14 @@ func (w *Writer) writeLogBlocks() error {
 		return err
 	}
 
-	n, err = w.w.Write(compressed.Bytes())
+	n, err = w.w.Write(compressed)
 	w.totalWritten += int64(n)
 	if err != nil {
 		return err
 	}
 
 	if w.blockSize > 0 {
-		written := blockHeaderSize + compressed.Len()
+		written := blockHeaderSize + len(compressed)
 		padding := w.blockSize - (written % w.blockSize)
 		if padding < w.blockSize {
 			padBytes := make([]byte, padding)

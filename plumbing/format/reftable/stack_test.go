@@ -173,10 +173,10 @@ func TestStackConcurrentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
-	for g := range numGoroutines {
+	for g := 0; g < numGoroutines; g++ { //nolint:modernize
 		go func(gid int) {
 			defer wg.Done()
-			for i := range writesPerGoroutine {
+			for i := 0; i < writesPerGoroutine; i++ { //nolint:modernize
 				err := stack.SetRef(RefRecord{
 					RefName:   fmt.Sprintf("refs/heads/g-%d-%d", gid, i),
 					ValueType: refValueVal1,
@@ -192,8 +192,8 @@ func TestStackConcurrentWrites(t *testing.T) {
 	wg.Wait()
 
 	// Verify all refs are present and correct.
-	for g := range numGoroutines {
-		for i := range writesPerGoroutine {
+	for g := 0; g < numGoroutines; g++ { //nolint:modernize
+		for i := 0; i < writesPerGoroutine; i++ { //nolint:modernize
 			name := fmt.Sprintf("refs/heads/g-%d-%d", g, i)
 			ref, err := stack.Ref(name)
 			require.NoError(t, err)

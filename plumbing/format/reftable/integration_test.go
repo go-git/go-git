@@ -33,6 +33,7 @@ func TestIntegrationPlainOpenReftableRepo(t *testing.T) {
 	// Verify we can iterate references.
 	refs, err := repo.References()
 	require.NoError(t, err)
+	defer refs.Close()
 
 	var refNames []string
 	err = refs.ForEach(func(ref *plumbing.Reference) error {

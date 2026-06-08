@@ -87,17 +87,21 @@ func (r *ReftableReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbin
 // IterReferences returns an iterator over all references in the reftable stack.
 func (r *ReftableReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	var refs []*plumbing.Reference
-
+	var firstErr error
 	err := r.stack.IterRefs(func(rec reftable.RefRecord) bool {
 		ref, err := refRecordToReference(&rec)
 		if err != nil {
-			return true // skip invalid records
+			firstErr = err
+			return false
 		}
 		refs = append(refs, ref)
 		return true
 	})
 	if err != nil {
 		return nil, err
+	}
+	if firstErr != nil {
+		return nil, firstErr
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil
