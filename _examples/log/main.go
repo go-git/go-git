@@ -23,6 +23,7 @@ func main() {
 		URL: "https://github.com/src-d/go-siva",
 	})
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	// Gets the HEAD history from HEAD, just like this command:
 	Info("git log")

@@ -8,23 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-billy/v6/osfs"
-
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
-	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
-	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -111,22 +107,19 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		o.RemoteURL = r.c.URLs[len(r.c.URLs)-1]
 	}
 
-	c, ep, err := newClient(o.RemoteURL, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
 	if err != nil {
 		return err
 	}
 
-	s, err := c.NewSession(r.s, ep, o.Auth)
+	req.Command = transport.ReceivePackService
+	sess, err := cl.Handshake(ctx, req)
 	if err != nil {
 		return err
 	}
+	defer ioutil.CheckClose(sess, &err)
 
-	conn, err := s.Handshake(ctx, transport.ReceivePackService)
-	if err != nil {
-		return err
-	}
-
-	rRefs, err := conn.GetRemoteRefs(ctx)
+	rRefs, err := sess.GetRemoteRefs(ctx)
 	if err != nil {
 		return err
 	}
@@ -136,10 +129,10 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return err
 	}
 
-	return r.sendPack(ctx, conn, remoteRefs, o)
+	return r.sendPack(ctx, sess, remoteRefs, o)
 }
 
-func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remoteRefs storer.ReferenceStorer, o *PushOptions) error {
+func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRefs storer.ReferenceStorer, o *PushOptions) error {
 	isDelete := false
 	allDelete := true
 	for _, rs := range o.RefSpecs {
@@ -154,7 +147,7 @@ func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remote
 	}
 
 	// TODO: support delete-refs
-	caps := conn.Capabilities() // server capabilities
+	caps := sess.Capabilities() // server capabilities
 	if isDelete && !caps.Supports(capability.DeleteRefs) {
 		return ErrDeleteRefNotSupported
 	}
@@ -206,17 +199,7 @@ func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remote
 	var hashesToPush []plumbing.Hash
 	// Avoid the expensive revlist operation if we're only doing deletes.
 	if !allDelete {
-		if url.IsLocalEndpoint(o.RemoteURL) {
-			// If we're are pushing to a local repo, it might be much
-			// faster to use a local storage layer to get the commits
-			// to ignore, when calculating the object revlist.
-			localStorer := filesystem.NewStorage(
-				osfs.New(o.RemoteURL, osfs.WithBoundOS()), cache.NewObjectLRUDefault())
-			hashesToPush, err = revlist.ObjectsWithStorageForIgnores(
-				r.s, localStorer, objects, haves)
-		} else {
-			hashesToPush, err = revlist.Objects(r.s, objects, haves)
-		}
+		hashesToPush, err = revlist.Objects(r.s, objects, haves)
 		if err != nil {
 			return err
 		}
@@ -232,7 +215,7 @@ func (r *Remote) sendPack(ctx context.Context, conn transport.Connection, remote
 		}
 	}
 
-	if err := pushHashes(ctx, conn, r.s, cmds, hashesToPush, allDelete, o); err != nil {
+	if err := pushHashes(ctx, sess, r.s, cmds, hashesToPush, allDelete, o); err != nil {
 		return err
 	}
 
@@ -389,26 +372,23 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RemoteURL = r.c.URLs[0]
 	}
 
-	c, ep, err := newClient(o.RemoteURL, o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	sess, err := c.NewSession(r.s, ep, o.Auth)
+	req.Command = transport.UploadPackService
+	sess, err := cl.Handshake(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	defer ioutil.CheckClose(sess, &err)
 
-	conn, err := sess.Handshake(ctx, transport.UploadPackService)
-	if err != nil {
+	if err := r.isSupportedRefSpec(o.RefSpecs, sess.Capabilities()); err != nil {
 		return nil, err
 	}
 
-	if err := r.isSupportedRefSpec(o.RefSpecs, conn.Capabilities()); err != nil {
-		return nil, err
-	}
-
-	rRefs, err := conn.GetRemoteRefs(ctx)
+	rRefs, err := sess.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -478,15 +458,11 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			Filter:      o.Filter,
 		}
 
-		if err := conn.Fetch(ctx, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
+		if err := sess.Fetch(ctx, r.s, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
 			// Note: We receive ErrNoChange when remote is the same as local. At
 			// this point, we have everything we're asking for.
 			return nil, err
 		}
-	}
-
-	if err := conn.Close(); err != nil {
-		return nil, fmt.Errorf("error closing connection: %w", err)
 	}
 
 	var updatedPrune bool
@@ -561,21 +537,14 @@ func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
 	return false, nil
 }
 
-func newClient(url string, insecure bool, cabundle []byte, proxyOpts transport.ProxyOptions) (transport.Transport, *transport.Endpoint, error) {
-	ep, err := transport.NewEndpoint(url)
-	if err != nil {
-		return nil, nil, err
-	}
-	ep.InsecureSkipTLS = insecure
-	ep.CaBundle = cabundle
-	ep.Proxy = proxyOpts
-
-	c, err := transport.Get(ep.Scheme)
+func newClient(rawURL string, opts []client.Option) (*client.Client, *transport.Request, error) {
+	u, err := transport.ParseURL(rawURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return c, ep, err
+	cl := client.New(opts...)
+	return cl, &transport.Request{URL: u}, nil
 }
 
 func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer) (bool, error) {
@@ -1315,24 +1284,20 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, ErrEmptyUrls
 	}
 
-	c, ep, err := newClient(r.c.URLs[0], o.InsecureSkipTLS, o.CABundle, o.ProxyOptions)
+	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	s, err := c.NewSession(r.s, ep, o.Auth)
+	req.Command = transport.UploadPackService
+	sess, err := cl.Handshake(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := s.Handshake(ctx, transport.UploadPackService)
-	if err != nil {
-		return nil, err
-	}
+	defer ioutil.CheckClose(sess, &err)
 
-	defer ioutil.CheckClose(conn, &err)
-
-	allRefs, err := conn.GetRemoteRefs(ctx)
+	allRefs, err := sess.GetRemoteRefs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1392,14 +1357,14 @@ func referencesToHashes(refs storer.ReferenceStorer) ([]plumbing.Hash, error) {
 
 func pushHashes(
 	ctx context.Context,
-	conn transport.Connection,
+	sess transport.Session,
 	s storage.Storer,
 	cmds []*packp.Command,
 	hs []plumbing.Hash,
 	allDelete bool,
 	o *PushOptions,
 ) error {
-	useRefDeltas := !conn.Capabilities().Supports(capability.OFSDelta)
+	useRefDeltas := !sess.Capabilities().Supports(capability.OFSDelta)
 	rd, wr := io.Pipe()
 
 	config, err := s.Config()
@@ -1434,7 +1399,7 @@ func pushHashes(
 		close(done)
 	}
 
-	if err := conn.Push(ctx, req); err != nil {
+	if err := sess.Push(ctx, s, req); err != nil {
 		// close the pipe to unlock encode write
 		_ = rd.Close()
 		return err

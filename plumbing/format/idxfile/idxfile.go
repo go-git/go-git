@@ -21,6 +21,14 @@ const (
 var idxHeader = []byte{255, 't', 'O', 'c'}
 
 // Index represents an index of a packfile.
+//
+// Implementations satisfy a [io.Closer] contract via [Index.Close]:
+// on-disk implementations release file descriptors, pure
+// in-memory implementations return nil. Downstream callers
+// holding their own concrete [Index] implementations must
+// supply a [Close] method to satisfy this interface; a no-op
+// `func (*MyIndex) Close() error { return nil }` is sufficient
+// for in-memory backends.
 type Index interface {
 	// Contains checks whether the given hash is in the index.
 	Contains(h plumbing.Hash) (bool, error)
@@ -38,6 +46,10 @@ type Index interface {
 	// EntriesByOffset returns an iterator to retrieve all index entries ordered
 	// by offset.
 	EntriesByOffset() (EntryIter, error)
+	// Close releases any resources held by the index. Implementations
+	// backed by on-disk files must close their file descriptors; pure
+	// in-memory implementations must return nil. Close is idempotent.
+	Close() error
 }
 
 // MemoryIndex is the in memory representation of an idx file.
@@ -74,6 +86,9 @@ type MemoryIndex struct {
 }
 
 var _ Index = (*MemoryIndex)(nil)
+
+// Close is a no-op. MemoryIndex holds no external resources.
+func (idx *MemoryIndex) Close() error { return nil }
 
 // NewMemoryIndex returns an instance of a new MemoryIndex.
 func NewMemoryIndex(objectIDSize int) *MemoryIndex {
@@ -141,7 +156,10 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 		return 0, plumbing.ErrObjectNotFound
 	}
 
-	offset := idx.getOffset(k, i)
+	offset, err := idx.getOffset(k, i)
+	if err != nil {
+		return 0, err
+	}
 
 	// Save the offset for reverse lookup
 	idx.mu.Lock()
@@ -156,17 +174,19 @@ func (idx *MemoryIndex) FindOffset(h plumbing.Hash) (int64, error) {
 
 const isO64Mask = uint64(1) << 31
 
-func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) uint64 {
+func (idx *MemoryIndex) getOffset(firstLevel, secondLevel int) (uint64, error) {
 	offset := secondLevel << 2
 	ofs := encbin.BigEndian.Uint32(idx.Offset32[firstLevel][offset : offset+4])
 
 	if (uint64(ofs) & isO64Mask) != 0 {
 		offset := 8 * (uint64(ofs) & ^isO64Mask)
-		n := encbin.BigEndian.Uint64(idx.Offset64[offset : offset+8])
-		return n
+		if l := uint64(len(idx.Offset64)); l < 8 || offset > l-8 {
+			return 0, fmt.Errorf("%w: offset64 index out of range", ErrMalformedIdxFile)
+		}
+		return encbin.BigEndian.Uint64(idx.Offset64[offset : offset+8]), nil
 	}
 
-	return uint64(ofs)
+	return uint64(ofs), nil
 }
 
 // FindCRC32 implements the Index interface.
@@ -239,8 +259,11 @@ func (idx *MemoryIndex) genOffsetHash() error {
 				return fmt.Errorf("cannot write name to hash: %w", err)
 			}
 
-			offset := int64(idx.getOffset(mappedFirstLevel, int(secondLevel)))
-			offsetHash[offset] = hash
+			off, err := idx.getOffset(mappedFirstLevel, int(secondLevel))
+			if err != nil {
+				return err
+			}
+			offsetHash[int64(off)] = hash
 			secondLevel++
 		}
 	}
@@ -333,7 +356,10 @@ func (i *idxfileEntryIter) Next() (*Entry, error) {
 			return nil, fmt.Errorf("cannot write entry hash: %w", err)
 		}
 
-		entry.Offset = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
+		entry.Offset, err = i.idx.getOffset(mappedFirstLevel, i.secondLevel)
+		if err != nil {
+			return nil, err
+		}
 		entry.CRC32 = i.idx.getCRC32(mappedFirstLevel, i.secondLevel)
 
 		i.secondLevel++

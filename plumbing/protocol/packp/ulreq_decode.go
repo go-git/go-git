@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -9,244 +10,177 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
-// Decode reads the next upload-request form its input and
+// ErrDeepenMutuallyExclusive is returned when a request contains both deepen
+// and deepen-since/deepen-not specifications.
+var ErrDeepenMutuallyExclusive = errors.New("deepen and deepen-since (or deepen-not) cannot be used together")
+
+// Decode reads the next upload-request from its input and
 // stores it in the UploadRequest.
 func (req *UploadRequest) Decode(r io.Reader) error {
-	d := newUlReqDecoder(r)
-	return d.Decode(req)
-}
-
-type ulReqDecoder struct {
-	r     io.Reader      // a pkt-line scanner from the input stream
-	line  []byte         // current pkt-line contents, use parser.nextLine() to make it advance
-	nLine int            // current pkt-line number for debugging, begins at 1
-	err   error          // sticky error, use the parser.error() method to fill this out
-	data  *UploadRequest // parsed data is stored here
-}
-
-func newUlReqDecoder(r io.Reader) *ulReqDecoder {
-	return &ulReqDecoder{
-		r: r,
-	}
-}
-
-func (d *ulReqDecoder) Decode(v *UploadRequest) error {
-	d.data = v
-
-	for state := d.decodeFirstWant; state != nil; {
-		state = state()
-	}
-
-	return d.err
-}
-
-// fills out the parser sticky error
-func (d *ulReqDecoder) error(format string, a ...any) {
-	msg := fmt.Sprintf(
-		"pkt-line %d: %s", d.nLine,
-		fmt.Sprintf(format, a...),
+	var (
+		nLine         int
+		line          []byte
+		deepenRevList bool
 	)
 
-	d.err = NewErrUnexpectedData(msg, d.line)
-}
-
-// Reads a new pkt-line from the scanner, makes its payload available as
-// p.line and increments p.nLine.  A successful invocation returns true,
-// otherwise, false is returned and the sticky error is filled out
-// accordingly.  Trims eols at the end of the payloads.
-func (d *ulReqDecoder) nextLine() bool {
-	d.nLine++
-
-	_, p, err := pktline.ReadLine(d.r)
-	if err == io.EOF {
-		d.error("EOF")
-		return false
-	}
-	if err != nil || len(p) == 0 {
-		d.err = err
-		return false
+	nextLine := func() (hasData bool, err error) {
+		nLine++
+		l, p, err := pktline.ReadLine(r)
+		if err == io.EOF {
+			return false, NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: EOF", nLine), line)
+		}
+		if err != nil {
+			return false, err
+		}
+		if l == pktline.Flush {
+			return false, nil
+		}
+		line = bytes.TrimSuffix(p, eol)
+		return true, nil
 	}
 
-	d.line = p
-	d.line = bytes.TrimSuffix(d.line, eol)
-
-	return true
-}
-
-// Expected format: want <hash>[ capabilities]
-func (d *ulReqDecoder) decodeFirstWant() stateFn {
-	if ok := d.nextLine(); !ok {
-		return nil
+	decodeError := func(format string, a ...any) error {
+		msg := fmt.Sprintf("pkt-line %d: %s", nLine, fmt.Sprintf(format, a...))
+		return NewErrUnexpectedData(msg, line)
 	}
 
-	if !bytes.HasPrefix(d.line, want) {
-		d.error("missing 'want ' prefix")
-		return nil
+	readHash := func() (plumbing.Hash, error) {
+		h, err := hashFrom(line)
+		if err != nil {
+			return plumbing.ZeroHash, fmt.Errorf("malformed hash: %v", line)
+		}
+		line = line[h.HexSize():]
+		return h, nil
 	}
-	d.line = bytes.TrimPrefix(d.line, want)
 
-	hash, ok := d.readHash()
-	if !ok {
-		return nil
-	}
-	d.data.Wants = append(d.data.Wants, hash)
-
-	return d.decodeCaps
-}
-
-func (d *ulReqDecoder) readHash() (plumbing.Hash, bool) {
-	h, err := hashFrom(d.line)
+	// First want line: want <hash>[ capabilities]
+	ok, err := nextLine()
 	if err != nil {
-		d.err = fmt.Errorf("malformed hash: %v", d.line)
-		return plumbing.ZeroHash, false
+		return err
 	}
-
-	d.line = d.line[h.HexSize():]
-
-	return h, true
-}
-
-// Expected format: sp cap1 sp cap2 sp cap3...
-func (d *ulReqDecoder) decodeCaps() stateFn {
-	d.line = bytes.TrimPrefix(d.line, sp)
-	if err := d.data.Capabilities.Decode(d.line); err != nil {
-		d.error("invalid capabilities: %s", err)
-	}
-
-	return d.decodeOtherWants
-}
-
-// Expected format: want <hash>
-func (d *ulReqDecoder) decodeOtherWants() stateFn {
-	if ok := d.nextLine(); !ok {
-		return nil
-	}
-
-	if bytes.HasPrefix(d.line, shallow) {
-		return d.decodeShallow
-	}
-
-	if bytes.HasPrefix(d.line, deepen) {
-		return d.decodeDeepen
-	}
-
-	if len(d.line) == 0 {
-		return nil
-	}
-
-	if !bytes.HasPrefix(d.line, want) {
-		d.error("unexpected payload while expecting a want: %q", d.line)
-		return nil
-	}
-	d.line = bytes.TrimPrefix(d.line, want)
-
-	hash, ok := d.readHash()
 	if !ok {
-		return nil
-	}
-	d.data.Wants = append(d.data.Wants, hash)
-
-	return d.decodeOtherWants
-}
-
-// Expected format: shallow <hash>
-func (d *ulReqDecoder) decodeShallow() stateFn {
-	if bytes.HasPrefix(d.line, deepen) {
-		return d.decodeDeepen
+		return fmt.Errorf("empty input")
 	}
 
-	if len(d.line) == 0 {
-		return nil
+	if !bytes.HasPrefix(line, want) {
+		return decodeError("missing 'want ' prefix")
+	}
+	line = bytes.TrimPrefix(line, want)
+
+	hash, err := readHash()
+	if err != nil {
+		return err
+	}
+	req.Wants = append(req.Wants, hash)
+
+	// Capabilities (if present after SP)
+	line = bytes.TrimPrefix(line, sp)
+	capability.DecodeList(line, &req.Capabilities)
+
+	// Additional want lines
+	for {
+		ok, err := nextLine()
+		if err != nil {
+			return err
+		}
+		if !ok || len(line) == 0 {
+			return nil
+		}
+
+		if !bytes.HasPrefix(line, want) {
+			break
+		}
+
+		line = bytes.TrimPrefix(line, want)
+		h, err := readHash()
+		if err != nil {
+			return err
+		}
+		req.Wants = append(req.Wants, h)
 	}
 
-	if !bytes.HasPrefix(d.line, shallow) {
-		d.error("unexpected payload while expecting a shallow: %q", d.line)
-		return nil
-	}
-	d.line = bytes.TrimPrefix(d.line, shallow)
+	for bytes.HasPrefix(line, shallow) {
+		line = bytes.TrimPrefix(line, shallow)
 
-	hash, ok := d.readHash()
-	if !ok {
-		return nil
-	}
-	d.data.Shallows = append(d.data.Shallows, hash)
+		h, err := readHash()
+		if err != nil {
+			return err
+		}
+		req.Shallows = append(req.Shallows, h)
 
-	if ok := d.nextLine(); !ok {
-		return nil
-	}
-
-	return d.decodeShallow
-}
-
-// Expected format: deepen <n> / deepen-since <ul> / deepen-not <ref>
-func (d *ulReqDecoder) decodeDeepen() stateFn {
-	if bytes.HasPrefix(d.line, deepenCommits) {
-		return d.decodeDeepenCommits
+		ok, err := nextLine()
+		if err != nil {
+			return err
+		}
+		if !ok || len(line) == 0 {
+			return nil
+		}
 	}
 
-	if bytes.HasPrefix(d.line, deepenSince) {
-		return d.decodeDeepenSince
+	for bytes.HasPrefix(line, deepen) {
+		switch {
+		case bytes.HasPrefix(line, deepenCommits):
+			if deepenRevList {
+				return ErrDeepenMutuallyExclusive
+			}
+			line = bytes.TrimPrefix(line, deepenCommits)
+			n, err := strconv.Atoi(string(line))
+			if err != nil {
+				return err
+			}
+			if n < 0 {
+				return fmt.Errorf("negative depth")
+			}
+			req.Depth = DepthRequest{Deepen: n}
+		case bytes.HasPrefix(line, deepenSince):
+			if req.Depth.Deepen > 0 {
+				return ErrDeepenMutuallyExclusive
+			}
+			line = bytes.TrimPrefix(line, deepenSince)
+			secs, err := strconv.ParseInt(string(line), 10, 64)
+			if err != nil {
+				return err
+			}
+			req.Depth.DeepenSince = time.Unix(secs, 0).UTC()
+			deepenRevList = true
+		case bytes.HasPrefix(line, deepenReference):
+			if req.Depth.Deepen > 0 {
+				return ErrDeepenMutuallyExclusive
+			}
+			line = bytes.TrimPrefix(line, deepenReference)
+			req.Depth.DeepenNot = append(req.Depth.DeepenNot, string(line))
+			deepenRevList = true
+		default:
+			return decodeError("unexpected deepen specification: %q", line)
+		}
+
+		ok, err := nextLine()
+		if err != nil {
+			return err
+		}
+		if !ok || len(line) == 0 {
+			return nil
+		}
+
+		// After deepen <n>, only flush-pkt is valid
+		if req.Depth.Deepen > 0 {
+			if bytes.HasPrefix(line, deepenSince) || bytes.HasPrefix(line, deepenReference) {
+				return ErrDeepenMutuallyExclusive
+			}
+			return decodeError("unexpected payload while expecting a flush-pkt: %q", line)
+		}
+		// After deepen-since/deepen-not, only deepen-since/deepen-not or flush is valid
+		if deepenRevList && bytes.HasPrefix(line, deepen) && !bytes.HasPrefix(line, deepenSince) && !bytes.HasPrefix(line, deepenReference) {
+			return ErrDeepenMutuallyExclusive
+		}
 	}
 
-	if bytes.HasPrefix(d.line, deepenReference) {
-		return d.decodeDeepenReference
-	}
-
-	if len(d.line) == 0 {
-		return nil
-	}
-
-	d.error("unexpected deepen specification: %q", d.line)
-	return nil
-}
-
-func (d *ulReqDecoder) decodeDeepenCommits() stateFn {
-	d.line = bytes.TrimPrefix(d.line, deepenCommits)
-
-	var n int
-	if n, d.err = strconv.Atoi(string(d.line)); d.err != nil {
-		return nil
-	}
-	if n < 0 {
-		d.err = fmt.Errorf("negative depth")
-		return nil
-	}
-	d.data.Depth = DepthCommits(n)
-
-	return d.decodeFlush
-}
-
-func (d *ulReqDecoder) decodeDeepenSince() stateFn {
-	d.line = bytes.TrimPrefix(d.line, deepenSince)
-
-	var secs int64
-	secs, d.err = strconv.ParseInt(string(d.line), 10, 64)
-	if d.err != nil {
-		return nil
-	}
-	t := time.Unix(secs, 0).UTC()
-	d.data.Depth = DepthSince(t)
-
-	return d.decodeFlush
-}
-
-func (d *ulReqDecoder) decodeDeepenReference() stateFn {
-	d.line = bytes.TrimPrefix(d.line, deepenReference)
-
-	d.data.Depth = DepthReference(string(d.line))
-
-	return d.decodeFlush
-}
-
-func (d *ulReqDecoder) decodeFlush() stateFn {
-	if ok := d.nextLine(); !ok {
-		return nil
-	}
-
-	if len(d.line) != 0 {
-		d.err = fmt.Errorf("unexpected payload while expecting a flush-pkt: %q", d.line)
+	// Unexpected payload after shallows or wants
+	if len(line) != 0 {
+		return decodeError("unexpected payload while expecting a flush-pkt: %q", line)
 	}
 
 	return nil

@@ -161,17 +161,41 @@ var fixtureOffsets = []int64{
 }
 
 func fixtureIndex() (*idxfile.MemoryIndex, error) {
-	f := bytes.NewBufferString(fixtureLarge4GB)
+	raw, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(fixtureLarge4GB)))
+	if err != nil {
+		return nil, fmt.Errorf("unexpected error decoding fixture: %s", err)
+	}
 
 	idx := new(idxfile.MemoryIndex)
 
-	d := idxfile.NewDecoder(base64.NewDecoder(base64.StdEncoding, f), hash.New(crypto.SHA1))
-	err := d.Decode(idx)
-	if err != nil {
+	d := idxfile.NewDecoder(idxfile.FromBytes(raw), hash.New(crypto.SHA1))
+	if err := d.Decode(idx); err != nil {
 		return nil, fmt.Errorf("unexpected error decoding index: %s", err)
 	}
 
 	return idx, nil
+}
+
+type MemoryIndexSuite struct {
+	suite.Suite
+}
+
+func TestMemoryIndexSuite(t *testing.T) {
+	t.Parallel()
+	suite.Run(t, new(MemoryIndexSuite))
+}
+
+func (s *MemoryIndexSuite) TestCloseIsNoOp() {
+	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	s.NoError(idx.Close())
+	// Calling Close repeatedly is fine.
+	s.NoError(idx.Close())
+}
+
+func (s *MemoryIndexSuite) TestSatisfiesIndexInterface() {
+	// Close must be reachable via the interface.
+	var idx idxfile.Index = idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	s.NoError(idx.Close())
 }
 
 func TestOffsetHashConcurrentPopulation(t *testing.T) {

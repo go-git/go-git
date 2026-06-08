@@ -8,7 +8,7 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -30,9 +30,7 @@ func TestConfigSuite(t *testing.T) {
 }
 
 func (s *ConfigSuite) SetupTest() {
-	tmp, err := util.TempDir(osfs.Default, "", "go-git-filestystem-config")
-	s.Require().NoError(err)
-
+	tmp := s.T().TempDir()
 	s.dir = dotgit.New(osfs.New(tmp))
 	s.path = tmp
 }

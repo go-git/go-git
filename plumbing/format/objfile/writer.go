@@ -1,7 +1,6 @@
 package objfile
 
 import (
-	"compress/zlib"
 	"errors"
 	"io"
 	"strconv"
@@ -18,10 +17,11 @@ var ErrOverflow = errors.New("objfile: declared data length exceeded (overflow)"
 // io.Writer. Close should be called when finished with the Writer. Close will
 // not close the underlying io.Writer.
 type Writer struct {
-	raw    io.Writer
-	hasher plumbing.Hasher
-	multi  io.Writer
-	zlib   *zlib.Writer
+	raw          io.Writer
+	hasher       plumbing.Hasher
+	multi        io.Writer
+	zlib         sync.ZlibWriter
+	objectFormat format.ObjectFormat
 
 	closed  bool
 	pending int64 // number of unwritten bytes
@@ -29,44 +29,56 @@ type Writer struct {
 	closeErr error
 }
 
-// NewWriter returns a new Writer writing to w.
+// NewWriter returns a new Writer writing to w and hashing objects with the
+// given object format.
 //
 // The returned Writer implements io.WriteCloser. Close should be called when
 // finished with the Writer. Close will not close the underlying io.Writer.
-func NewWriter(w io.Writer) *Writer {
+func NewWriter(w io.Writer, objectFormat format.ObjectFormat) *Writer {
 	zlib := sync.GetZlibWriter(w)
 	return &Writer{
-		raw:  w,
-		zlib: zlib,
+		raw:          w,
+		zlib:         zlib,
+		objectFormat: objectFormat,
 	}
 }
 
-// WriteHeader writes the type and the size and prepares to accept the object's
-// contents. If an invalid t is provided, plumbing.ErrInvalidType is returned. If a
-// negative size is provided, ErrNegativeSize is returned.
+// WriteHeader writes the type and the size and prepares to accept the
+// object's contents. If an invalid t is provided, plumbing.ErrInvalidType
+// is returned. If a negative size is provided, ErrNegativeSize is
+// returned. If the encoded header exceeds maxHeaderLen,
+// ErrHeaderTooLong is returned, mirroring the reader's bound.
 func (w *Writer) WriteHeader(t plumbing.ObjectType, size int64) error {
 	if !t.Valid() {
 		return plumbing.ErrInvalidType
 	}
+	return w.writeHeader(t, t.Bytes(), size)
+}
+
+func (w *Writer) writeHeader(t plumbing.ObjectType, typeBytes []byte, size int64) error {
 	if size < 0 {
 		return ErrNegativeSize
 	}
 
-	b := t.Bytes()
+	b := make([]byte, 0, maxHeaderLen)
+	b = append(b, typeBytes...)
 	b = append(b, ' ')
-	b = append(b, []byte(strconv.FormatInt(size, 10))...)
+	b = strconv.AppendInt(b, size, 10)
 	b = append(b, 0)
+
+	if len(b) > maxHeaderLen {
+		return ErrHeaderTooLong
+	}
 
 	defer w.prepareForWrite(t, size)
 	_, err := w.zlib.Write(b)
-
 	return err
 }
 
 func (w *Writer) prepareForWrite(t plumbing.ObjectType, size int64) {
 	w.pending = size
 
-	w.hasher = plumbing.NewHasher(format.SHA1, t, size)
+	w.hasher = plumbing.NewHasher(w.objectFormat, t, size)
 	w.multi = io.MultiWriter(w.zlib, w.hasher)
 }
 

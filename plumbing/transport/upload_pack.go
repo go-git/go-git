@@ -13,16 +13,16 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// UploadPackOptions is a set of options for the UploadPack service.
-type UploadPackOptions struct {
+// UploadPackRequest is a set of options for the UploadPack service.
+type UploadPackRequest struct {
 	GitProtocol   string
 	AdvertiseRefs bool
 	StatelessRPC  bool
@@ -41,7 +41,7 @@ func UploadPack(
 	st storage.Storer,
 	r io.ReadCloser,
 	w io.WriteCloser,
-	opts *UploadPackOptions,
+	opts *UploadPackRequest,
 ) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
@@ -50,7 +50,7 @@ func UploadPack(
 	w = ioutil.NewContextWriteCloser(ctx, w)
 
 	if opts == nil {
-		opts = &UploadPackOptions{}
+		opts = &UploadPackRequest{}
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
@@ -65,7 +65,7 @@ func UploadPack(
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
 		}
 
-		if err := AdvertiseReferences(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
+		if err := AdvertiseRefs(ctx, st, w, UploadPackService, opts.StatelessRPC); err != nil {
 			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
@@ -99,13 +99,14 @@ func UploadPack(
 	var upreq *packp.UploadRequest
 	var havesWithRef map[plumbing.Hash][]plumbing.Hash
 	var multiAck, multiAckDetailed bool
-	var caps *capability.List
+	var caps capability.List
 	var wants []plumbing.Hash
+	var ack packp.ACK
 	firstRound := true
 	for !done {
 		writec := make(chan error)
 		if firstRound || opts.StatelessRPC {
-			upreq = packp.NewUploadRequest()
+			upreq = &packp.UploadRequest{}
 			if err := upreq.Decode(rd); err != nil {
 				return fmt.Errorf("decoding upload-request: %w", err)
 			}
@@ -131,14 +132,13 @@ func UploadPack(
 				// TODO: support deepen-since, and deepen-not
 				var shupd packp.ShallowUpdate
 				if !upreq.Depth.IsZero() {
-					switch depth := upreq.Depth.(type) {
-					case packp.DepthCommits:
-						if err := getShallowCommits(st, wants, int(depth), &shupd); err != nil {
+					if upreq.Depth.Deepen > 0 {
+						if err := getShallowCommits(st, wants, upreq.Depth.Deepen, &shupd); err != nil {
 							writec <- fmt.Errorf("getting shallow commits: %w", err)
 							return
 						}
-					default:
-						writec <- fmt.Errorf("unsupported depth type %T", upreq.Depth)
+					} else {
+						writec <- fmt.Errorf("unsupported depth: %+v", upreq.Depth)
 						return
 					}
 
@@ -150,10 +150,10 @@ func UploadPack(
 
 				writec <- nil
 			}()
-		}
 
-		if err := <-writec; err != nil {
-			return err
+			if err := <-writec; err != nil {
+				return err
+			}
 		}
 
 		var uphav packp.UploadHaves
@@ -168,16 +168,9 @@ func UploadPack(
 		haves = append(haves, uphav.Haves...)
 		done = uphav.Done
 
-		common := map[plumbing.Hash]struct{}{}
-		var ack packp.ACK
 		var acks []packp.ACK
 		for _, hu := range uphav.Haves {
-			refs, ok := havesWithRef[hu]
-			if ok {
-				for _, ref := range refs {
-					common[ref] = struct{}{}
-				}
-			}
+			_, ok := havesWithRef[hu]
 
 			var status packp.ACKStatus
 			if multiAckDetailed {
@@ -228,8 +221,16 @@ func UploadPack(
 					writec <- fmt.Errorf("sending final ack server-response: %w", err)
 					return
 				}
-			case ack.Hash.IsZero():
-				// We don't have multi-ack and there are no haves. Encode a NAK.
+			case ack.Hash.IsZero() && len(haves) == 0:
+				// No haves were sent. Emit the single terminal NAK.
+				//
+				// When haves *were* sent, the ServerResponse{ACKs: acks}
+				// write above already emitted a NAK (encodeServerResponse
+				// writes NAK when ACKs is empty). Emitting another one here
+				// would produce two consecutive "0008NAK\n" pktlines;
+				// ServerResponse.Decode consumes only the first, and the
+				// second would then be misread by the sideband demuxer as
+				// a frame with channel byte 'N' ("unknown channel NAK").
 				srvrsp := packp.ServerResponse{}
 				if err := srvrsp.Encode(w); err != nil {
 					writec <- fmt.Errorf("sending final nak server-response: %w", err)

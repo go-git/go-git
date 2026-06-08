@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,7 +17,7 @@ import (
 func TestEncode(t *testing.T) {
 	t.Parallel()
 
-	fixture := fixtures.ByTag("packfile-sha256").One()
+	fixture := fixtures.ByTag("packfile").ByObjectFormat("sha256").One()
 	idxf, err := fixture.Idx()
 	require.NoError(t, err)
 	require.NotNil(t, idxf)
@@ -86,7 +86,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}{
 		{
 			name:    "sha256 packfile",
-			fixture: fixtures.ByTag("packfile-sha256").One(),
+			fixture: fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
 			hasher:  crypto.SHA256,
 		},
 		{

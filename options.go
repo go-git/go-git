@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -10,11 +11,12 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
+	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
-	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // SubmoduleRecursivity defines how depth will affect any submodule recursive
@@ -38,8 +40,10 @@ var ErrMissingURL = errors.New("URL field is required")
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
 	URL string
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	// Use client.WithSSHAuth, client.WithHTTPAuth, client.WithInsecureSkipTLS,
+	// client.WithCABundle, client.WithProxyURL, etc.
+	ClientOptions []client.Option
 	// Name of the remote to be added, by default `origin`.
 	RemoteName string
 	// Remote branch to clone.
@@ -72,12 +76,6 @@ type CloneOptions struct {
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is AllTags.
 	Tags plumbing.TagMode
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// When the repository to clone is on the local machine, instead of
 	// using hard links, automatically setup .git/objects/info/alternates
 	// to share the objects with the source repository.
@@ -140,6 +138,22 @@ func (o *CloneOptions) Validate() error {
 		return ErrMissingURL
 	}
 
+	// Resolve ..-relative local paths to absolute paths before they reach
+	// the transport layer. The billy chroot-based FilesystemLoader rejects
+	// any path whose clean form starts with ".." with "chroot boundary
+	// crossed". Real git resolves such paths against the working directory
+	// at the command level, before any transport code runs.
+	if giturl.IsLocalEndpoint(o.URL) && !filepath.IsAbs(o.URL) {
+		cleaned := filepath.Clean(o.URL)
+		if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+			abs, err := filepath.Abs(o.URL)
+			if err != nil {
+				return fmt.Errorf("resolve local clone URL %q to absolute path: %w", o.URL, err)
+			}
+			o.URL = abs
+		}
+	}
+
 	if o.RemoteName == "" {
 		o.RemoteName = DefaultRemoteName
 	}
@@ -167,8 +181,8 @@ type PullOptions struct {
 	SingleBranch bool
 	// Limit fetching to the specified number of commits.
 	Depth int
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// RecurseSubmodules controls if new commits of all populated submodules
 	// should be fetched too.
 	RecurseSubmodules SubmoduleRecursivity
@@ -179,12 +193,6 @@ type PullOptions struct {
 	// Force allows the pull to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 }
 
 // Validate validates the fields and sets the default values.
@@ -224,8 +232,8 @@ type FetchOptions struct {
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
@@ -236,12 +244,6 @@ type FetchOptions struct {
 	// Force allows the fetch to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// Prune specify that local refs that match given RefSpecs and that do
 	// not exist remotely will be removed.
 	Prune bool
@@ -284,8 +286,8 @@ type PushOptions struct {
 	//
 	// A refspec with empty src can be used to delete a reference.
 	RefSpecs []config.RefSpec
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored.
 	Progress sideband.Progress
@@ -295,10 +297,6 @@ type PushOptions struct {
 	// Force allows the push to update a remote branch even when the local
 	// branch does not descend from it.
 	Force bool
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
 	// RequireRemoteRefs only allows a remote ref to be updated if its current
 	// value is the one specified here.
 	RequireRemoteRefs []config.RefSpec
@@ -311,8 +309,6 @@ type PushOptions struct {
 	Options []string
 	// Atomic sets option to be an atomic push
 	Atomic bool
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// Quiet indicates whether the server should suppress human-readable
 	// output.
 	Quiet bool
@@ -363,8 +359,8 @@ type SubmoduleUpdateOptions struct {
 	// the current repository but also in any nested submodules inside those
 	// submodules (and so on). Until the SubmoduleRecursivity is reached.
 	RecurseSubmodules SubmoduleRecursivity
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
@@ -739,17 +735,11 @@ func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
 
 // ListOptions describes how a remote list should be performed.
 type ListOptions struct {
-	// Auth credentials, if required, to use with the remote repository.
-	Auth transport.AuthMethod
-	// InsecureSkipTLS skips ssl verify if protocol is https
-	InsecureSkipTLS bool
-	// CABundle specify additional ca bundle with system cert pool
-	CABundle []byte
+	// ClientOptions configures the transport client used for this operation.
+	ClientOptions []client.Option
 	// PeelingOption defines how peeled objects are handled during a
 	// remote list.
 	PeelingOption PeelingOption
-	// ProxyOptions provides info required for connecting to a proxy.
-	ProxyOptions transport.ProxyOptions
 	// Timeout specifies the timeout in seconds for list operations
 	Timeout int
 }

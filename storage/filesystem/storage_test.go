@@ -6,7 +6,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -51,6 +51,7 @@ func TestNewStorageShouldNotAddAnyContentsToDir(t *testing.T) {
 		fs,
 		cache.NewObjectLRUDefault(),
 		filesystem.Options{ExclusiveAccess: true})
+	defer func() { _ = sto.Close() }()
 	assert.NotNil(t, sto)
 
 	fis, err := fs.ReadDir("/")
@@ -130,6 +131,7 @@ func TestSetObjectFormat(t *testing.T) {
 				cache.NewObjectLRUDefault(),
 				filesystem.Options{ObjectFormat: tt.initialFormat},
 			)
+			defer func() { _ = sto.Close() }()
 			require.NoError(t, sto.Init())
 
 			err := sto.SetObjectFormat(tt.targetFormat)
@@ -169,7 +171,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 		},
 		{
 			name:             "existing SHA256 repo, unset opts format",
-			fs:               mustDotGit(t, fixtures.ByTag(".git-sha256").One()),
+			fs:               mustDotGit(t, fixtures.ByTag(".git").ByObjectFormat("sha256").One()),
 			inObjectFormat:   formatcfg.UnsetObjectFormat,
 			wantObjectFormat: formatcfg.SHA256,
 		},
@@ -187,7 +189,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 		},
 		{
 			name:             "existing SHA256 repo, SHA256 opts format",
-			fs:               mustDotGit(t, fixtures.ByTag(".git-sha256").One()),
+			fs:               mustDotGit(t, fixtures.ByTag(".git").ByObjectFormat("sha256").One()),
 			inObjectFormat:   formatcfg.SHA256,
 			wantObjectFormat: formatcfg.SHA256,
 		},
@@ -199,7 +201,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 		},
 		{
 			name:             "existing SHA256 repo, SHA1 opts format",
-			fs:               mustDotGit(t, fixtures.ByTag(".git-sha256").One()),
+			fs:               mustDotGit(t, fixtures.ByTag(".git").ByObjectFormat("sha256").One()),
 			inObjectFormat:   formatcfg.SHA1,
 			wantObjectFormat: formatcfg.SHA256,
 		},
@@ -232,6 +234,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 				cache.NewObjectLRUDefault(),
 				filesystem.Options{ObjectFormat: tt.inObjectFormat},
 			)
+			defer func() { _ = sto.Close() }()
 
 			cfg, err := sto.Config()
 			require.NoError(t, err)
@@ -247,26 +250,31 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 	tests := []struct {
 		name         string
 		tag          string
+		fixOF        string
 		targetFormat formatcfg.ObjectFormat
 	}{
 		{
 			name:         "change to SHA256 with existing packfiles",
 			tag:          ".git",
+			fixOF:        "sha1",
 			targetFormat: formatcfg.SHA256,
 		},
 		{
 			name:         "set same format SHA1 with existing packfiles",
 			tag:          ".git",
+			fixOF:        "sha1",
 			targetFormat: formatcfg.SHA1,
 		},
 		{
 			name:         "change to SHA1 with existing SHA256 packfiles",
-			tag:          ".git-sha256",
+			tag:          ".git",
 			targetFormat: formatcfg.SHA1,
+			fixOF:        "sha256",
 		},
 		{
 			name:         "set same format SHA256 with existing packfiles",
-			tag:          ".git-sha256",
+			tag:          ".git",
+			fixOF:        "sha256",
 			targetFormat: formatcfg.SHA256,
 		},
 	}
@@ -275,9 +283,10 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			fs, err := fixtures.ByTag(tt.tag).One().DotGit()
+			fs, err := fixtures.ByTag(tt.tag).ByObjectFormat(tt.fixOF).One().DotGit()
 			require.NoError(t, err)
 			sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			defer func() { _ = sto.Close() }()
 
 			packs, err := sto.ObjectPacks()
 			require.NoError(t, err)
@@ -337,10 +346,27 @@ func TestSupportsExtension(t *testing.T) {
 			t.Parallel()
 
 			sto := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+			defer func() { _ = sto.Close() }()
 			got := sto.SupportsExtension(tt.ext, tt.value)
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestStorage_ImplementsIdleReleaser pins the public relationship
+// between *Storage and the storer.IdleReleaser interface. The
+// compile-time assertion in storage.go enforces this at build
+// time; the test re-asserts it in test form for visibility, and
+// exercises the no-op path against an empty in-memory FS.
+func TestStorage_ImplementsIdleReleaser(t *testing.T) {
+	t.Parallel()
+	var _ storer.IdleReleaser = (*filesystem.Storage)(nil)
+
+	s := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	assert.NoError(t, s.CloseIdleDescriptors())
+	assert.NoError(t, s.CloseIdleDescriptors())
 }
 
 func getExplicitSHA1(t testing.TB) billy.Filesystem {
@@ -354,5 +380,6 @@ func getExplicitSHA1(t testing.TB) billy.Filesystem {
 	err = st.SetConfig(cfg)
 	require.NoError(t, err)
 
+	_ = st.Close()
 	return fs
 }

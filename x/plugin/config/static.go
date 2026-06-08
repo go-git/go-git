@@ -5,12 +5,11 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 // NewStatic returns a ConfigSource that always returns read-only
 // ConfigStorers backed by copies of the provided global and system configs.
-func NewStatic(global, system config.Config) plugin.ConfigSource {
+func NewStatic(global, system config.Config) *static { //nolint:revive
 	return &static{global: global, system: system}
 }
 

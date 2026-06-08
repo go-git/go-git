@@ -13,35 +13,51 @@ import (
 
 // Errors returned by the objfile package.
 var (
-	ErrClosed       = errors.New("objfile: already closed")
-	ErrHeader       = errors.New("objfile: invalid header")
-	ErrNegativeSize = errors.New("objfile: negative object size")
+	ErrClosed        = errors.New("objfile: already closed")
+	ErrHeader        = errors.New("objfile: invalid header")
+	ErrHeaderTooLong = errors.New("objfile: header exceeds maximum length")
+	ErrHeaderNotRead = errors.New("objfile: Header must be called before Read")
+	ErrNegativeSize  = errors.New("objfile: negative object size")
 )
+
+// maxHeaderLen mirrors canonical Git's MAX_HEADER_LEN [1]. The type,
+// delimiter, size, and trailing NUL of a loose-object header must fit
+// within this many inflated bytes.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/object-file.c#L34
+const maxHeaderLen = 32
 
 // Reader reads and decodes compressed objfile data from a provided io.Reader.
 // Reader implements io.ReadCloser. Close should be called when finished with
 // the Reader. Close will not close the underlying io.Reader.
 type Reader struct {
-	multi  io.Reader
-	zlib   *sync.ZLibReader
-	hasher plumbing.Hasher
-	closed bool
+	multi        io.Reader
+	zlib         *sync.ZLibReader
+	hasher       plumbing.Hasher
+	objectFormat format.ObjectFormat
+	closed       bool
 }
 
-// NewReader returns a new Reader reading from r.
-func NewReader(r io.Reader) (*Reader, error) {
+// NewReader returns a new Reader reading from r and hashing objects with the
+// given object format.
+func NewReader(r io.Reader, objectFormat format.ObjectFormat) (*Reader, error) {
 	zlib, err := sync.GetZlibReader(r)
 	if err != nil {
 		return nil, packfile.ErrZLib.AddDetails("%s", err.Error())
 	}
 
-	return &Reader{zlib: zlib}, nil
+	return &Reader{
+		zlib:         zlib,
+		objectFormat: objectFormat,
+	}, nil
 }
 
 // Header reads the type and the size of object, and prepares the reader for read
 func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
+	budget := maxHeaderLen
+
 	var raw []byte
-	raw, err = r.readUntil(' ')
+	raw, budget, err = r.readUntil(' ', budget)
 	if err != nil {
 		return t, size, err
 	}
@@ -51,7 +67,7 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 		return t, size, err
 	}
 
-	raw, err = r.readUntil(0)
+	raw, _, err = r.readUntil(0, budget)
 	if err != nil {
 		return t, size, err
 	}
@@ -66,21 +82,27 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 	return t, size, err
 }
 
-// readSlice reads one byte at a time from r until it encounters delim or an
-// error.
-func (r *Reader) readUntil(delim byte) ([]byte, error) {
+// readUntil reads one inflated byte at a time from r.zlib until it encounters
+// delim, the budget is exhausted, or an error. budget caps the total number
+// of bytes consumed from r.zlib, including delim; it mirrors canonical Git's
+// MAX_HEADER_LEN bound applied across the full loose-object header.
+func (r *Reader) readUntil(delim byte, budget int) ([]byte, int, error) {
 	var buf [1]byte
 	value := make([]byte, 0, 16)
 	for {
+		if budget <= 0 {
+			return nil, 0, ErrHeaderTooLong
+		}
 		if n, err := r.zlib.Read(buf[:]); err != nil && (err != io.EOF || n == 0) {
 			if err == io.EOF {
-				return nil, ErrHeader
+				return nil, 0, ErrHeader
 			}
-			return nil, err
+			return nil, 0, err
 		}
+		budget--
 
 		if buf[0] == delim {
-			return value, nil
+			return value, budget, nil
 		}
 
 		value = append(value, buf[0])
@@ -88,7 +110,7 @@ func (r *Reader) readUntil(delim byte) ([]byte, error) {
 }
 
 func (r *Reader) prepareForRead(t plumbing.ObjectType, size int64) {
-	r.hasher = plumbing.NewHasher(format.SHA1, t, size)
+	r.hasher = plumbing.NewHasher(r.objectFormat, t, size)
 	r.multi = io.TeeReader(r.zlib, r.hasher)
 }
 
@@ -99,12 +121,26 @@ func (r *Reader) prepareForRead(t plumbing.ObjectType, size int64) {
 //
 // If Read encounters the end of the data stream it will return err == io.EOF,
 // either in the current call if n > 0 or in a subsequent call.
+//
+// Read returns ErrHeaderNotRead if Header has not been called successfully.
 func (r *Reader) Read(p []byte) (n int, err error) {
+	if r.multi == nil {
+		return 0, ErrHeaderNotRead
+	}
 	return r.multi.Read(p)
 }
 
 // Hash returns the hash of the object data stream that has been read so far.
+// It returns a zero plumbing.Hash carrying the Reader's configured object
+// format if Header has not been called successfully — the format matters
+// because [plumbing.Hash] encodes it internally and the result feeds
+// serialisers that emit a format-sized byte slice.
 func (r *Reader) Hash() plumbing.Hash {
+	if r.multi == nil {
+		var h plumbing.Hash
+		h.ResetBySize(r.objectFormat.Size())
+		return h
+	}
 	return r.hasher.Sum()
 }
 

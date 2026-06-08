@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -129,7 +129,7 @@ func TestDecodeEntries(t *testing.T) {
 		{
 			name: "Version 2 - sha256",
 			input: func() io.ReadCloser {
-				dotgit, err := fixtures.ByTag(".git-sha256").One().DotGit()
+				dotgit, err := fixtures.ByTag(".git").ByObjectFormat("sha256").One().DotGit()
 				require.NoError(t, err)
 				f, err := dotgit.Open("index")
 				require.NoError(t, err)

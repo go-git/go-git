@@ -34,10 +34,6 @@ func (g *GitProtoRequest) validate() error {
 		return fmt.Errorf("%w: empty request command", ErrInvalidGitProtoRequest)
 	}
 
-	if g.Pathname == "" {
-		return fmt.Errorf("%w: empty pathname", ErrInvalidGitProtoRequest)
-	}
-
 	return nil
 }
 

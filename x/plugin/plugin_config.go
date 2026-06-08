@@ -1,6 +1,17 @@
 package plugin
 
-import "github.com/go-git/go-git/v6/config"
+import (
+	"github.com/go-git/go-git/v6/config"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
+)
+
+func init() {
+	// Registers the Auto config by default, aligning go-git's
+	// behaviour with Git.
+	_ = Register(ConfigLoader(), func() ConfigSource {
+		return xconfig.NewAuto()
+	})
+}
 
 const configLoaderPlugin Name = "config-loader"
 

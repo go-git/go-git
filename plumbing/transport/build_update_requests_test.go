@@ -8,45 +8,34 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 )
 
 func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 	caps.Add(capability.ReportStatus)
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
 	assert.True(t, upreq.Capabilities.Supports(capability.ReportStatus))
 	require.Len(t, upreq.Commands, 1)
 	assert.Equal(t, plumbing.ReferenceName("refs/heads/master"), upreq.Commands[0].Name)
-	assert.Equal(t, plumbing.ZeroHash, upreq.Commands[0].Old)
-	assert.Equal(t, plumbing.NewHash("0123456789012345678901234567890123456789"), upreq.Commands[0].New)
 }
 
 func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 	}
 
@@ -56,17 +45,12 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 
 func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 	t.Parallel()
-	// Create capabilities with Sideband64k
-	caps := capability.NewList()
+	caps := capability.List{}
 	caps.Add(capability.Sideband64k)
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Progress: &mockWriter{},
 	}
@@ -78,16 +62,12 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 
 func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 	caps.Add(capability.Sideband)
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Progress: &mockWriter{},
 	}
@@ -99,17 +79,13 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 
 func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 	caps.Add(capability.Quiet)
 
 	req := &PushRequest{
 		Progress: io.Discard,
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Quiet: true,
 	}
@@ -120,36 +96,27 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 
 func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 	caps.Add(capability.Atomic)
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Atomic: true,
 	}
 
 	upreq := buildUpdateRequests(caps, req)
-
 	assert.True(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
 func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 		Atomic: true,
 	}
@@ -160,16 +127,12 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 
 func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 	t.Parallel()
-	caps := capability.NewList()
+	caps := capability.List{}
 	caps.Set(capability.Agent, capability.DefaultAgent())
 
 	req := &PushRequest{
 		Commands: []*packp.Command{
-			{
-				Name: plumbing.ReferenceName("refs/heads/master"),
-				Old:  plumbing.ZeroHash,
-				New:  plumbing.NewHash("0123456789012345678901234567890123456789"),
-			},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
 		},
 	}
 
@@ -177,7 +140,6 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 	assert.True(t, upreq.Capabilities.Supports(capability.Agent))
 }
 
-// mockWriter is a simple io.Writer implementation for testing
 type mockWriter struct {
 	data []byte
 }

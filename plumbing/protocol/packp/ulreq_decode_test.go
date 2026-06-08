@@ -2,7 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"regexp"
 	"sort"
@@ -13,7 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 type UlReqDecodeSuite struct {
@@ -26,11 +25,10 @@ func TestUlReqDecodeSuite(t *testing.T) {
 }
 
 func (s *UlReqDecodeSuite) TestEmpty() {
-	ur := NewUploadRequest()
+	ur := &UploadRequest{}
 	var buf bytes.Buffer
-	d := newUlReqDecoder(&buf)
 
-	err := d.Decode(ur)
+	err := ur.Decode(&buf)
 	s.ErrorContains(err, "pkt-line 1: EOF")
 }
 
@@ -44,10 +42,8 @@ func (s *UlReqDecodeSuite) TestNoWant() {
 }
 
 func (s *UlReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
-	ur := NewUploadRequest()
-	d := newUlReqDecoder(input)
-
-	err := d.Decode(ur)
+	ur := &UploadRequest{}
+	err := ur.Decode(input)
 	s.Regexp(regexp.MustCompile(pattern), err)
 }
 
@@ -83,10 +79,8 @@ func (s *UlReqDecodeSuite) testDecodeOK(payloads []string, expectedHaveCalls int
 		}
 	}
 
-	ur := NewUploadRequest()
-	d := newUlReqDecoder(&buf)
-
-	s.Nil(d.Decode(ur))
+	ur := &UploadRequest{}
+	s.Nil(ur.Decode(&buf))
 
 	haves := []plumbing.Hash{}
 	nbCall := 0
@@ -441,10 +435,7 @@ func (s *UlReqDecodeSuite) TestDeepenCommits() {
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
 
-	s.IsType(DepthCommits(0), ur.Depth)
-	commits, ok := ur.Depth.(DepthCommits)
-	s.True(ok)
-	s.Equal(1234, int(commits))
+	s.Equal(DepthRequest{Deepen: 1234}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteImplicit() {
@@ -455,10 +446,7 @@ func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteImplicit() {
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
 
-	s.IsType(DepthCommits(0), ur.Depth)
-	commits, ok := ur.Depth.(DepthCommits)
-	s.True(ok)
-	s.Equal(0, int(commits))
+	s.Equal(DepthRequest{}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteExplicit() {
@@ -468,10 +456,7 @@ func (s *UlReqDecodeSuite) TestDeepenCommitsInfiniteExplicit() {
 	}
 	ur, _ := s.testDecodeOK(payloads, 0)
 
-	s.IsType(DepthCommits(0), ur.Depth)
-	commits, ok := ur.Depth.(DepthCommits)
-	s.True(ok)
-	s.Equal(0, int(commits))
+	s.Equal(DepthRequest{}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestMalformedDeepenCommits() {
@@ -504,11 +489,7 @@ func (s *UlReqDecodeSuite) TestDeepenSince() {
 
 	expected := time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)
 
-	s.IsType(DepthSince(time.Now()), ur.Depth)
-	since, ok := ur.Depth.(DepthSince)
-	s.True(ok)
-	s.True(time.Time(since).Equal(expected),
-		fmt.Sprintf("obtained=%s\nexpected=%s", time.Time(since), expected))
+	s.Equal(DepthRequest{DeepenSince: expected}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestDeepenReference() {
@@ -521,10 +502,51 @@ func (s *UlReqDecodeSuite) TestDeepenReference() {
 
 	expected := "refs/heads/master"
 
-	s.IsType(DepthReference(""), ur.Depth)
-	reference, ok := ur.Depth.(DepthReference)
-	s.True(ok)
-	s.Equal(expected, string(reference))
+	s.Equal(DepthRequest{DeepenNot: []string{expected}}, ur.Depth)
+}
+
+func (s *UlReqDecodeSuite) TestDeepenCommitsWithSinceError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen 10",
+		"deepen-since 1420167845",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqDecodeSuite) TestDeepenCommitsWithNotRefsError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen 10",
+		"deepen-not refs/heads/master",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqDecodeSuite) TestDeepenSinceWithCommitsError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen-since 1420167845",
+		"deepen 10",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
+}
+
+func (s *UlReqDecodeSuite) TestDeepenNotWithCommitsError() {
+	payloads := []string{
+		"want 3333333333333333333333333333333333333333 ofs-delta multi_ack",
+		"deepen-not refs/heads/master",
+		"deepen 10",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	s.testDecoderErrorMatches(r, ".*deepen and deepen-since.*cannot be used together.*")
 }
 
 func (s *UlReqDecodeSuite) TestAll() {
@@ -575,10 +597,7 @@ func (s *UlReqDecodeSuite) TestAll() {
 	sort.Sort(byHash(ur.Shallows))
 	s.Equal(expectedShallows, ur.Shallows)
 
-	s.IsType(DepthCommits(0), ur.Depth)
-	commits, ok := ur.Depth.(DepthCommits)
-	s.True(ok)
-	s.Equal(1234, int(commits))
+	s.Equal(DepthRequest{Deepen: 1234}, ur.Depth)
 }
 
 func (s *UlReqDecodeSuite) TestExtraData() {

@@ -86,6 +86,16 @@ type Config struct {
 		FileMode bool
 		// HooksPath is the path to look for hooks instead of $GIT_DIR/hooks.
 		HooksPath string
+		// ProtectNTFS controls whether NTFS-specific path protections are
+		// applied (e.g. rejecting .git trailing spaces/periods, alternate
+		// data streams, 8.3 short names). When unset, defaults to true on
+		// Windows.
+		ProtectNTFS OptBool
+		// ProtectHFS controls whether HFS+-specific path protections are
+		// applied (e.g. rejecting .git with Unicode zero-width or
+		// directional characters that HFS+ would normalize away).
+		// When unset, defaults to true on macOS.
+		ProtectHFS OptBool
 	}
 
 	User user
@@ -152,6 +162,13 @@ type Config struct {
 		// e.g. when initializing a new repository or when cloning
 		// an empty repository.
 		DefaultBranch string
+	}
+
+	UploadArchive struct {
+		// AllowUnreachable when true allows clients to request archives
+		// using arbitrary SHA-1 expressions. When false (the default),
+		// only direct ref names are allowed.
+		AllowUnreachable OptBool
 	}
 
 	Extensions struct {
@@ -341,9 +358,9 @@ func ReadConfig(r io.Reader) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadConfig loads a config file from a given scope. The returned Config,
-// contains exclusively information from the given scope. If it couldn't find a
-// config file to the given scope, an empty one is returned.
+// LoadConfig loads a config file from a given scope.
+//
+// Deprecated: Use the ConfigLoader plugin instead. This will be removed in v7.
 func LoadConfig(scope Scope) (*Config, error) {
 	if scope == LocalScope {
 		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer")
@@ -372,6 +389,9 @@ func LoadConfig(scope Scope) (*Config, error) {
 }
 
 // Paths returns the config file location for a given scope.
+//
+// Deprecated: Use the ConfigLoader plugin instead.
+// This will be removed in v7.
 func Paths(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
@@ -463,11 +483,15 @@ const (
 	autoCRLFKey                = "autocrlf"
 	fileModeKey                = "filemode"
 	hooksPathKey               = "hooksPath"
+	protectNTFSKey             = "protectNTFS"
+	protectHFSKey              = "protectHFS"
 	indexSection               = "index"
 	skipHashKey                = "skipHash"
 	formatKey                  = "format"
 	allowedSignersFileKey      = "allowedSignersFile"
 	gpgSignKey                 = "gpgSign"
+	uploadArchiveSection       = "uploadArchive"
+	allowUnreachableKey        = "allowUnreachable"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -494,6 +518,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	c.unmarshalUser()
 	c.unmarshalGPG()
 	c.unmarshalInit()
+	c.unmarshalUploadArchive()
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
@@ -524,6 +549,14 @@ func (c *Config) unmarshalCore() {
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
 	c.Core.HooksPath = s.Options.Get(hooksPathKey)
+
+	if parsed := parseConfigBool(s.Options.Get(protectNTFSKey)); parsed.IsSet() {
+		c.Core.ProtectNTFS = parsed
+	}
+
+	if parsed := parseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
+		c.Core.ProtectHFS = parsed
+	}
 
 	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
 		c.Core.FileMode = false
@@ -657,7 +690,8 @@ func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
 		m := &Submodule{}
 		m.unmarshal(sub)
 
-		if errors.Is(m.Validate(), ErrModuleBadPath) {
+		if err := m.Validate(); errors.Is(err, ErrModuleBadPath) ||
+			errors.Is(err, ErrModuleBadName) {
 			continue
 		}
 
@@ -710,6 +744,14 @@ func (c *Config) unmarshalInit() {
 	c.Init.DefaultBranch = s.Options.Get(defaultBranchKey)
 }
 
+func (c *Config) unmarshalUploadArchive() {
+	s := c.Raw.Section(uploadArchiveSection)
+	v, err := strconv.ParseBool(s.Options.Get(allowUnreachableKey))
+	if err == nil {
+		c.UploadArchive.AllowUnreachable = NewOptBool(v)
+	}
+}
+
 // Marshal returns Config encoded as a git-config file.
 //
 // This call populates the field Raw with the current values of
@@ -733,6 +775,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalURLs()
 	c.marshalProtocol()
 	c.marshalInit()
+	c.marshalUploadArchive()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
@@ -761,6 +804,14 @@ func (c *Config) marshalCore() {
 
 	if c.Core.HooksPath != "" {
 		s.SetOption(hooksPathKey, c.Core.HooksPath)
+	}
+
+	if c.Core.ProtectNTFS.IsSet() {
+		s.SetOption(protectNTFSKey, c.Core.ProtectNTFS.FormatBool())
+	}
+
+	if c.Core.ProtectHFS.IsSet() {
+		s.SetOption(protectHFSKey, c.Core.ProtectHFS.FormatBool())
 	}
 }
 
@@ -968,6 +1019,13 @@ func (c *Config) marshalInit() {
 	s := c.Raw.Section(initSection)
 	if c.Init.DefaultBranch != "" {
 		s.SetOption(defaultBranchKey, c.Init.DefaultBranch)
+	}
+}
+
+func (c *Config) marshalUploadArchive() {
+	if c.UploadArchive.AllowUnreachable.IsSet() {
+		s := c.Raw.Section(uploadArchiveSection)
+		s.SetOption(allowUnreachableKey, c.UploadArchive.AllowUnreachable.FormatBool())
 	}
 }
 

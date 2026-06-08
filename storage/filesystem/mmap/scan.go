@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 )
 
@@ -139,6 +140,9 @@ func (s *PackScanner) getObject(h plumbing.Hash, offset uint64) (plumbing.Encode
 	typ := s.packMmap[offset]
 	size, err := packutil.VariableLengthSize(typ, bytes.NewReader(s.packMmap[offset+1:]))
 	if err != nil {
+		if errors.Is(err, packutil.ErrLengthOverflow) {
+			return nil, fmt.Errorf("%w: %w", packfile.ErrMalformedPackfile, err)
+		}
 		return nil, err
 	}
 

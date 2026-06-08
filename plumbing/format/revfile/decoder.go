@@ -131,6 +131,10 @@ func readHashFunction(d *decoder) (stateFn, error) {
 		return nil, ErrUnsupportedHashFunction
 	}
 
+	if !d.hasher.Available() {
+		return nil, fmt.Errorf("%w: %v not registered", ErrUnsupportedHashFunction, d.hasher)
+	}
+
 	d.hash = d.hasher.New()
 	err = binary.Write(d.hash, revHeader, d.version, hf)
 	if err != nil {

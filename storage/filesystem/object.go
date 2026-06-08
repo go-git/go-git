@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -24,6 +25,18 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// indexSFKey is the singleflight key used by [ObjectStorage.requireIndex]
+// to coalesce concurrent first-readers around a single populateIndex
+// scan. The literal value is opaque; only its uniqueness within
+// indexSF matters.
+const indexSFKey = "populate"
+
+// reindexSFKey is the singleflight key used by [ObjectStorage.Reindex]
+// to collapse concurrent rescans. Kept distinct from indexSFKey so a
+// cold first-load and an externally-driven rescan do not deduplicate
+// against each other.
+const reindexSFKey = "reindex"
+
 // ObjectStorage implements object storage backed by the filesystem.
 type ObjectStorage struct {
 	options Options
@@ -34,12 +47,11 @@ type ObjectStorage struct {
 
 	dir   *dotgit.DotGit
 	index map[plumbing.Hash]idxfile.Index
+	muI   sync.RWMutex
 
-	packList    []plumbing.Hash
-	packListIdx int
-	packfiles   map[plumbing.Hash]*packfile.Packfile
-	muI         sync.RWMutex
-	muP         sync.RWMutex
+	// indexSF coalesces concurrent first-readers so populateIndex
+	// runs once per cold-load even under thundering-herd contention.
+	indexSF singleflight.Group
 
 	oh *plumbing.ObjectHasher
 
@@ -179,6 +191,20 @@ func findInAlternates[T any](s *ObjectStorage, fn func(*ObjectStorage) (T, error
 	return foundVal, nil
 }
 
+// indexLoaded reports whether s.index has been populated. Safe for
+// concurrent use: reads s.index under the read half of s.muI.
+func (s *ObjectStorage) indexLoaded() bool {
+	s.muI.RLock()
+	loaded := s.index != nil
+	s.muI.RUnlock()
+	return loaded
+}
+
+// requireIndex ensures s.index is populated, performing a cold-load
+// on first access. Concurrent first-readers are coalesced via
+// singleflight so populateIndex runs once per thundering herd; the
+// winning goroutine publishes the local map under s.muI.Lock and
+// joiners block in singleflight.Do until the in-flight call returns.
 func (s *ObjectStorage) requireIndex() error {
 	s.muI.RLock()
 	if s.index != nil {
@@ -187,48 +213,133 @@ func (s *ObjectStorage) requireIndex() error {
 	}
 	s.muI.RUnlock()
 
-	s.muI.Lock()
-	defer s.muI.Unlock()
-
-	s.index = make(map[plumbing.Hash]idxfile.Index)
-	packs, err := s.dir.ObjectPacks()
-	if err != nil {
-		return err
-	}
-
-	for _, h := range packs {
-		if err := s.loadIdxFile(h); err != nil {
-			return err
+	_, err, _ := s.indexSF.Do(indexSFKey, func() (any, error) {
+		// Re-check inside the singleflight window: a racing winner
+		// may have already published, in which case there is
+		// nothing for this caller to do.
+		s.muI.RLock()
+		if s.index != nil {
+			s.muI.RUnlock()
+			return nil, nil
 		}
-	}
+		s.muI.RUnlock()
 
-	return nil
-}
+		local, err := s.populateIndex()
+		if err != nil {
+			return nil, err
+		}
 
-// Reindex indexes again all packfiles. Useful if git changed packfiles externally
-func (s *ObjectStorage) Reindex() {
-	s.index = nil
-}
-
-func (s *ObjectStorage) loadIdxFile(h plumbing.Hash) error {
-	if s.options.UseInMemoryIdx {
-		return s.loadMemoryIndex(h)
-	}
-
-	// Use LazyIndex on a best-effort basis.
-	if idx, err := s.loadLazyIndex(h); err == nil {
-		// If an index already exists, and implements io.Closer, try to close it.
-		if i, found := s.index[h]; found && i != nil {
-			if closer, ok := i.(io.Closer); ok {
-				_ = closer.Close()
+		s.muI.Lock()
+		if s.index == nil {
+			s.index = local
+		} else {
+			// A racing winner published while we were loading.
+			// Close any indexes we built so SharedFile refcounts
+			// (held by LazyIndex) do not leak.
+			for _, idx := range local {
+				if c, ok := idx.(io.Closer); ok {
+					_ = c.Close()
+				}
 			}
 		}
+		s.muI.Unlock()
+		return nil, nil
+	})
+	return err
+}
 
-		s.index[h] = idx
-		return nil
+// Reindex re-populates s.index from disk and atomically swaps the
+// freshly-loaded map in, so the next read is a hot-cache hit.
+// Call when the on-disk pack inventory has changed externally.
+//
+// Concurrent Reindex calls coalesce through indexSF on reindexSFKey:
+// one goroutine performs populateIndex and the swap, the rest block
+// in singleflight.Do and observe the same outcome. Without this the
+// callers would each scan the disk and race to publish, producing
+// duplicate I/O.
+//
+// populateIndex runs before the swap so s.index is never nil during
+// Reindex: a concurrent PackfileWriter.Notify can rely on s.index
+// being a writable map under muI.Lock. Previously-cached LazyIndex
+// entries are not closed here; in-flight readers that borrowed an
+// entry before the swap keep using it, and the underlying
+// SharedFile FDs close via the grace timer (no-pool mode) or fdpool
+// LRU eviction (pool mode) once they fall out of use. This mirrors
+// canonical Git's reprepare model where packfile_store_reprepare
+// leaves existing packs in place and only the FD-level LRU evicts.
+func (s *ObjectStorage) Reindex() error {
+	_, err, _ := s.indexSF.Do(reindexSFKey, func() (any, error) {
+		local, err := s.populateIndex()
+		if err != nil {
+			return nil, err
+		}
+
+		s.muI.Lock()
+		s.index = local
+		s.muI.Unlock()
+
+		return nil, nil
+	})
+	return err
+}
+
+// populateIndex loads every pack's idx in parallel and returns the
+// resulting map. The caller is responsible for publishing the map
+// into s.index under s.muI.Lock; populateIndex itself takes no
+// locks on s.muI, so callers must not hold it while invoking.
+func (s *ObjectStorage) populateIndex() (map[plumbing.Hash]idxfile.Index, error) {
+	packs, err := s.dir.ObjectPacks()
+	if err != nil {
+		return nil, err
 	}
 
-	return s.loadMemoryIndex(h)
+	var (
+		mu    sync.Mutex
+		local = make(map[plumbing.Hash]idxfile.Index, len(packs))
+	)
+
+	g := new(errgroup.Group)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	for _, h := range packs {
+		g.Go(func() error {
+			idx, err := s.loadIdx(h)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			local[h] = idx
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		// Best-effort cleanup of indexes that did finish before
+		// the failing one: close any that hold descriptors so we
+		// do not leak SharedFile refcounts on the error path.
+		for _, idx := range local {
+			if c, ok := idx.(io.Closer); ok {
+				_ = c.Close()
+			}
+		}
+		return nil, err
+	}
+	return local, nil
+}
+
+// loadIdx loads a single pack's idx and returns the constructed
+// idxfile.Index. It does not mutate s.index; callers are
+// responsible for installation.
+func (s *ObjectStorage) loadIdx(h plumbing.Hash) (idxfile.Index, error) {
+	if !s.options.UseInMemoryIdx {
+		// Use LazyIndex on a best-effort basis; fall through to
+		// MemoryIndex if construction fails (e.g. a malformed
+		// .rev file), matching the legacy loadIdxFile path.
+		if idx, err := s.loadLazyIndex(h); err == nil {
+			return idx, nil
+		}
+	}
+	return s.loadMemoryIndexValue(h)
 }
 
 func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, error) {
@@ -239,13 +350,16 @@ func (s *ObjectStorage) loadLazyIndex(h plumbing.Hash) (*idxfile.LazyIndex, erro
 		return s.dir.OpenPackRev(h)
 	}
 
-	return idxfile.NewLazyIndex(openIdx, openRev, h)
+	return idxfile.NewLazyIndexWithPool(openIdx, openRev, h, s.options.Pool)
 }
 
-func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
+// loadMemoryIndexValue decodes a pack's idx into a MemoryIndex and
+// returns it. Unlike the now-removed loadMemoryIndex helper it does
+// not write into s.index; the caller installs the returned value.
+func (s *ObjectStorage) loadMemoryIndexValue(h plumbing.Hash) (idx idxfile.Index, err error) {
 	f, err := s.dir.ObjectPackIdx(h)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer ioutil.CheckClose(f, &err)
@@ -260,16 +374,15 @@ func (s *ObjectStorage) loadMemoryIndex(h plumbing.Hash) (err error) {
 	idxf := idxfile.NewMemoryIndex(h.Size())
 	d := idxfile.NewDecoder(f, hasher)
 	if err = d.Decode(idxf); err != nil {
-		return err
+		return nil, err
 	}
 
 	if idxf.PackfileChecksum != h {
-		return fmt.Errorf("%w: packfile mismatch: target is %q not %q",
+		return nil, fmt.Errorf("%w: packfile mismatch: target is %q not %q",
 			idxfile.ErrMalformedIdxFile, idxf.PackfileChecksum.String(), h.String())
 	}
 
-	s.index[h] = idxf
-	return err
+	return idxf, err
 }
 
 // RawObjectWriter returns a writer for a new loose object of the given type and size.
@@ -305,9 +418,12 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 
 	w.Notify = func(h plumbing.Hash, writer *idxfile.Writer) {
 		index, err := writer.Index()
-		if err == nil {
-			s.index[h] = index
+		if err != nil {
+			return
 		}
+		s.muI.Lock()
+		s.index[h] = index
+		s.muI.Unlock()
 	}
 
 	return w, nil
@@ -397,7 +513,7 @@ func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int
 		return 0, err
 	}
 
-	r, err := objfile.NewReader(f)
+	r, err := objfile.NewReader(f, s.options.ObjectFormat)
 	if err != nil {
 		return 0, err
 	}
@@ -408,75 +524,15 @@ func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int
 }
 
 func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfile.Packfile, error) {
-	if p := s.packfileFromCache(pack); p != nil {
-		return p, nil
-	}
-
-	f, err := s.dir.ObjectPack(pack)
-	if err != nil {
-		return nil, err
-	}
-
-	p := packfile.NewPackfile(f,
+	return packfile.NewPackfile(nil,
+		packfile.WithPackHandle(func() (packfile.PackHandle, error) {
+			return s.dir.PackHandle(pack)
+		}),
 		packfile.WithIdx(idx),
 		packfile.WithFs(s.dir.Fs()),
 		packfile.WithCache(s.objectCache),
 		packfile.WithObjectIDSize(pack.Size()),
-	)
-	return p, s.storePackfileInCache(pack, p)
-}
-
-func (s *ObjectStorage) packfileFromCache(hash plumbing.Hash) *packfile.Packfile {
-	s.muP.Lock()
-	defer s.muP.Unlock()
-
-	if s.packfiles == nil {
-		if s.options.KeepDescriptors {
-			s.packfiles = make(map[plumbing.Hash]*packfile.Packfile)
-		} else if s.options.MaxOpenDescriptors > 0 {
-			s.packList = make([]plumbing.Hash, s.options.MaxOpenDescriptors)
-			s.packfiles = make(map[plumbing.Hash]*packfile.Packfile, s.options.MaxOpenDescriptors)
-		}
-	}
-
-	return s.packfiles[hash]
-}
-
-func (s *ObjectStorage) storePackfileInCache(hash plumbing.Hash, p *packfile.Packfile) error {
-	s.muP.Lock()
-	defer s.muP.Unlock()
-
-	if s.options.KeepDescriptors {
-		s.packfiles[hash] = p
-		return nil
-	}
-
-	if s.options.MaxOpenDescriptors <= 0 {
-		return nil
-	}
-
-	// start over as the limit of packList is hit
-	if s.packListIdx >= len(s.packList) {
-		s.packListIdx = 0
-	}
-
-	// close the existing packfile if open
-	if next := s.packList[s.packListIdx]; !next.IsZero() {
-		open := s.packfiles[next]
-		delete(s.packfiles, next)
-		if open != nil {
-			if err := open.Close(); err != nil {
-				return err
-			}
-		}
-	}
-
-	// cache newly open packfile
-	s.packList[s.packListIdx] = hash
-	s.packfiles[hash] = p
-	s.packListIdx++
-
-	return nil
+	), nil
 }
 
 func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int64, err error) {
@@ -489,7 +545,10 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int
 		return 0, plumbing.ErrObjectNotFound
 	}
 
+	s.muI.RLock()
 	idx := s.index[pack]
+	s.muI.RUnlock()
+
 	hash, err := idx.FindHash(offset)
 	if err == nil {
 		obj, ok := s.objectCache.Get(hash)
@@ -504,10 +563,7 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (size int
 	if err != nil {
 		return 0, err
 	}
-
-	if !s.options.KeepDescriptors && s.options.MaxOpenDescriptors == 0 {
-		defer ioutil.CheckClose(p, &err)
-	}
+	defer ioutil.CheckClose(p, &err)
 
 	return p.GetSizeByOffset(offset)
 }
@@ -542,7 +598,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	var obj plumbing.EncodedObject
 	var err error
 
-	if s.index != nil {
+	if s.indexLoaded() {
 		obj, err = s.getFromPackfile(h, false)
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			obj, err = s.getFromUnpacked(h)
@@ -605,7 +661,7 @@ func (s *ObjectStorage) getFromUnpacked(h plumbing.Hash) (obj plumbing.EncodedOb
 		return cacheObj, nil
 	}
 
-	r, err := objfile.NewReader(f)
+	r, err := objfile.NewReader(f, s.options.ObjectFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -663,10 +719,7 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (plumb
 	if err != nil {
 		return nil, err
 	}
-
-	if !s.options.KeepDescriptors && s.options.MaxOpenDescriptors == 0 {
-		defer ioutil.CheckClose(p, &err)
-	}
+	defer ioutil.CheckClose(p, &err)
 
 	if canBeDelta {
 		return s.decodeDeltaObjectAt(p, offset, hash)
@@ -725,8 +778,8 @@ func (s *ObjectStorage) decodeDeltaObjectAt(
 }
 
 func (s *ObjectStorage) findObjectInPackfile(h plumbing.Hash) (plumbing.Hash, plumbing.Hash, int64) {
-	defer s.muI.Unlock()
-	s.muI.Lock()
+	s.muI.RLock()
+	defer s.muI.RUnlock()
 
 	for packfile, index := range s.index {
 		offset, err := index.FindOffset(h)
@@ -753,7 +806,20 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
-	for _, index := range s.index {
+	// Snapshot the index map under muI.RLock so the iteration
+	// below is safe against a concurrent Reindex swap or a
+	// PackfileWriter.Notify insert. The borrowed LazyIndex values
+	// stay alive for the duration of the loop via this slice; the
+	// underlying SharedFile FDs are governed by their refcount and
+	// the fdpool, not by removal from s.index.
+	s.muI.RLock()
+	indexes := make([]idxfile.Index, 0, len(s.index))
+	for _, idx := range s.index {
+		indexes = append(indexes, idx)
+	}
+	s.muI.RUnlock()
+
+	for _, index := range indexes {
 		ei, err := index.Entries()
 		if err != nil {
 			return nil, err
@@ -763,16 +829,37 @@ func (s *ObjectStorage) HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
 			if err == io.EOF {
 				break
 			} else if err != nil {
+				_ = ei.Close()
 				return nil, err
 			}
 			if e.Hash.HasPrefix(prefix) {
 				if _, ok := seen[e.Hash]; ok {
 					continue
 				}
+				seen[e.Hash] = struct{}{}
 				hashes = append(hashes, e.Hash)
 			}
 		}
 		_ = ei.Close()
+	}
+
+	if err := s.initAlternates(); err != nil {
+		return nil, err
+	}
+	s.muA.RLock()
+	defer s.muA.RUnlock()
+	for _, alt := range s.alternates {
+		altHashes, err := alt.HashesWithPrefix(prefix)
+		if err != nil {
+			return nil, err
+		}
+		for _, h := range altHashes {
+			if _, ok := seen[h]; ok {
+				continue
+			}
+			seen[h] = struct{}{}
+			hashes = append(hashes, h)
+		}
 	}
 
 	return hashes, nil
@@ -817,13 +904,16 @@ func (s *ObjectStorage) buildPackfileIters(
 	return &lazyPackfilesIter{
 		hashes: packs,
 		open: func(h plumbing.Hash) (storer.EncodedObjectIter, error) {
-			pack, err := s.dir.ObjectPack(h)
+			pack, err := s.dir.OpenPackForReading(h)
 			if err != nil {
 				return nil, err
 			}
+			s.muI.RLock()
+			idx := s.index[h]
+			s.muI.RUnlock()
 			return newPackfileIter(
-				s.dir.Fs(), pack, t, seen, s.index[h],
-				s.objectCache, s.options.KeepDescriptors, crypto.SHA1.Size(),
+				s.dir.Fs(), pack, t, seen, idx,
+				s.objectCache, false, h.Size(),
 			)
 		},
 	}, nil
@@ -841,18 +931,6 @@ func (s *ObjectStorage) Close() error {
 	}
 	s.muA.RUnlock()
 
-	s.muP.RLock()
-	defer s.muP.RUnlock()
-
-	if s.options.KeepDescriptors || s.options.MaxOpenDescriptors > 0 {
-		for _, packfile := range s.packfiles {
-			err := packfile.Close()
-			if firstError == nil && err != nil {
-				firstError = err
-			}
-		}
-	}
-
 	// If the index being used implements io.Closer, make sure we call it.
 	// LazyIndex.Close permanently disables the index and releases any
 	// idle file descriptors. The same pattern applies to other Index
@@ -867,10 +945,67 @@ func (s *ObjectStorage) Close() error {
 	}
 	s.muI.RUnlock()
 
-	s.packfiles = nil
 	_ = s.dir.Close()
 
 	return firstError
+}
+
+// CloseIdleDescriptors releases the FDs held by this
+// [ObjectStorage] and every cached alternate. The object cache,
+// the packfile cache, the alternates cache, and the `s.index`
+// map (with the [idxfile.LazyIndex] entries inside it) all
+// survive — only the file descriptors backing those LazyIndex
+// entries are released.
+//
+// The call fans out across three independent FD owners: the
+// [dotgit.DotGit] `PackHandle` catalog (.pack and the
+// `LazyIndex` inside each `PackHandle`), the ObjectStorage-level
+// idx map (which holds its own LazyIndex per pack, distinct
+// from the one inside the `PackHandle`), and any cached
+// alternate `ObjectStorage`.
+//
+// Idempotent and safe to call concurrently with reads. In-flight
+// reads complete normally; the FDs they hold refcounts on close
+// the instant the last reader releases. After
+// [ObjectStorage.Close] the call is a no-op.
+//
+// Parent storage is released before alternates — a deliberate
+// divergence from Close, which goes alternates-first. The
+// parent-first order favours OS reclaim of this storage's FDs
+// when an alternate's release is slow (e.g. a network FS).
+func (s *ObjectStorage) CloseIdleDescriptors() error {
+	var errs []error
+
+	if err := s.dir.CloseIdleDescriptors(); err != nil {
+		errs = append(errs, err)
+	}
+
+	// ObjectStorage maintains a separate idxfile cache in s.index
+	// (populated by loadIdxFile → loadLazyIndex). LazyIndex
+	// entries own .idx/.rev FDs distinct from those inside the
+	// dotgit PackHandle catalog; they need their own soft-close
+	// fan-out. The storer.IdleReleaser assertion picks up
+	// LazyIndex automatically and silently skips index
+	// implementations that hold no FDs (notably MemoryIndex).
+	s.muI.RLock()
+	for _, idx := range s.index {
+		if r, ok := idx.(storer.IdleReleaser); ok {
+			if err := r.CloseIdleDescriptors(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	s.muI.RUnlock()
+
+	s.muA.RLock()
+	for _, alt := range s.alternates {
+		if err := alt.CloseIdleDescriptors(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	s.muA.RUnlock()
+
+	return errors.Join(errs...)
 }
 
 func hashListAsMap(l []plumbing.Hash) map[plumbing.Hash]struct{} {

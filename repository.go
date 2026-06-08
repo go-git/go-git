@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,14 +17,17 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/internal/revision"
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -153,10 +157,16 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	if err := initStorer(s); err != nil {
+		if closer, ok := s.(io.Closer); ok {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 
 	if err := options.defaultBranch.Validate(); err != nil {
+		if closer, ok := s.(io.Closer); ok {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 
@@ -165,8 +175,10 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	switch err {
 	case plumbing.ErrReferenceNotFound:
 	case nil:
+		_ = r.Close()
 		return nil, ErrTargetDirNotEmpty
 	default:
+		_ = r.Close()
 		return nil, err
 	}
 
@@ -176,6 +188,7 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
 	if err := s.SetReference(h); err != nil {
+		_ = r.Close()
 		return nil, err
 	}
 
@@ -373,11 +386,13 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 
 	cfg, err := r.Config()
 	if err != nil {
+		_ = r.Close()
 		return nil, err
 	}
 
 	err = r.Storer.SetConfig(cfg)
 	if err != nil {
+		_ = r.Close()
 		return nil, err
 	}
 
@@ -441,7 +456,12 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 
 	s := filesystem.NewStorage(repositoryFs, cache.NewObjectLRUDefault())
 
-	return Open(s, wt)
+	r, err := Open(s, wt)
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return r, nil
 }
 
 func dotGitToOSFilesystems(path string, detect bool) (dot, wt billy.Filesystem, err error) {
@@ -612,6 +632,7 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 		if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
 			return r, nil
 		}
+		_ = r.Close()
 		if dirPreexisted {
 			// Restore the directory to its original empty state.
 			_ = os.RemoveAll(filepath.Join(path, GitDirName))
@@ -626,11 +647,13 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
-	return &Repository{
+	repo := &Repository{
 		Storer: s,
 		wt:     worktree,
 		r:      make(map[string]*Remote),
 	}
+
+	return repo
 }
 
 func checkTargetDirIsEmpty(path string) (empty bool, err error) {
@@ -1093,6 +1116,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to open remote repository: %w", err)
 		}
+		defer func() { _ = remoteRepo.Close() }()
 		conf, err := remoteRepo.Config()
 		if err != nil {
 			return fmt.Errorf("failed to read remote repository configuration: %w", err)
@@ -1106,16 +1130,13 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	ref, err := r.fetchAndUpdateReferences(ctx, &FetchOptions{
-		RefSpecs:        c.Fetch,
-		Depth:           o.Depth,
-		Auth:            o.Auth,
-		Progress:        o.Progress,
-		Tags:            o.Tags,
-		RemoteName:      o.RemoteName,
-		InsecureSkipTLS: o.InsecureSkipTLS,
-		CABundle:        o.CABundle,
-		ProxyOptions:    o.ProxyOptions,
-		Filter:          o.Filter,
+		RefSpecs:      c.Fetch,
+		Depth:         o.Depth,
+		ClientOptions: o.ClientOptions,
+		Progress:      o.Progress,
+		Tags:          o.Tags,
+		RemoteName:    o.RemoteName,
+		Filter:        o.Filter,
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
@@ -1159,7 +1180,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 					}
 					return 0
 				}(),
-				Auth: o.Auth,
+				ClientOptions: o.ClientOptions,
 			}); err != nil {
 				return err
 			}
@@ -1433,6 +1454,86 @@ func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
 	}
 
 	return remote.PushContext(ctx, o)
+}
+
+// ArchiveOptions stores the options for the Archive operation.
+type ArchiveOptions struct {
+	// Format is the archive format.
+	// Archive supports tar, tar.gz, tgz, and zip locally.
+	// ArchiveRemote passes the format through to the remote server, so
+	// supported values are server-dependent.
+	// Defaults to tar.
+	Format string
+	// Prefix is an optional prefix to prepend to each pathname.
+	Prefix string
+	// Treeish is the tree-ish object to archive (commit, tag, or tree).
+	Treeish string
+	// Paths is an optional list of paths to include in the archive.
+	// If empty, all paths are included.
+	Paths []string
+	// ClientOptions are options for the transport client (used by ArchiveRemote).
+	ClientOptions []client.Option
+	// Progress receives human-readable status from the remote server.
+	// Only used by ArchiveRemote, ignored by Archive.
+	Progress sideband.Progress
+}
+
+// Validate validates the ArchiveOptions.
+func (o *ArchiveOptions) Validate() error {
+	if o.Treeish == "" {
+		return errors.New("tree-ish is required")
+	}
+
+	if o.Prefix != "" && archive.HasInvalidPrefix(o.Prefix) {
+		return fmt.Errorf("%w: %s", archive.ErrInvalidPrefix, o.Prefix)
+	}
+
+	return nil
+}
+
+// Archive creates an archive from the local repository.
+// It returns an io.ReadCloser that yields the archive data.
+// The caller must close the returned ReadCloser.
+func (r *Repository) Archive(o *ArchiveOptions) (io.ReadCloser, error) {
+	return r.ArchiveContext(context.Background(), o)
+}
+
+// ArchiveContext creates an archive from the local repository.
+// The provided Context can be used to cancel the operation.
+func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.ReadCloser, error) {
+	if o == nil {
+		o = &ArchiveOptions{}
+	}
+	if err := o.Validate(); err != nil {
+		return nil, err
+	}
+
+	format := o.Format
+	if format == "" {
+		format = "tar"
+	}
+
+	if !slices.Contains(archive.SupportedFormats(), format) {
+		return nil, fmt.Errorf("%w: %s", archive.ErrUnsupportedFormat, format)
+	}
+
+	// Always allow unreachable refs for local archives.
+	tree, commitHash, commitTime, err := archive.ResolveTreeish(r.Storer, o.Treeish, true)
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := o.Prefix
+	paths := slices.Clone(o.Paths)
+
+	pr, pw := io.Pipe()
+	cw := ioutil.NewContextWriter(ctx, pw)
+	go func() {
+		err := archive.WriteArchive(r.Storer, cw, tree, commitHash, commitTime, format, prefix, paths)
+		_ = pw.CloseWithError(err)
+	}()
+
+	return pr, nil
 }
 
 // Log returns the commit history from the given LogOptions.
@@ -1725,7 +1826,18 @@ func (r *Repository) Worktree() (*Worktree, error) {
 		return nil, ErrIsBareRepository
 	}
 
-	return &Worktree{r: r, Filesystem: r.wt}, nil
+	protectNTFS := defaultProtectNTFS()
+	protectHFS := defaultProtectHFS()
+	if cfg, err := r.Config(); err == nil {
+		if cfg.Core.ProtectNTFS.IsSet() {
+			protectNTFS = cfg.Core.ProtectNTFS.IsTrue()
+		}
+		if cfg.Core.ProtectHFS.IsSet() {
+			protectHFS = cfg.Core.ProtectHFS.IsTrue()
+		}
+	}
+
+	return &Worktree{r: r, filesystem: newWorktreeFilesystem(r.wt, protectNTFS, protectHFS)}, nil
 }
 
 func expandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {

@@ -12,24 +12,14 @@ import (
 // InfoRefs represents the information of the references advertised by an
 // HTTP dumb server.
 type InfoRefs struct {
-	// References are the hash references.
-	References map[string]plumbing.Hash
-	// Peeled are the peeled hash references.
-	Peeled map[string]plumbing.Hash
-}
-
-func (i *InfoRefs) init() {
-	if i.References == nil {
-		i.References = make(map[string]plumbing.Hash)
-	}
-	if i.Peeled == nil {
-		i.Peeled = make(map[string]plumbing.Hash)
-	}
+	// References are the hash references, including peeled refs (whose
+	// names end in ^{}). They are stored in the order received from the
+	// server.
+	References []*plumbing.Reference
 }
 
 // Decode decodes an InfoRefs from reader.
 func (i *InfoRefs) Decode(r io.Reader) error {
-	i.init()
 	s := bufio.NewScanner(r)
 	for s.Scan() {
 		parts := strings.SplitN(s.Text(), "\t", 2)
@@ -39,11 +29,9 @@ func (i *InfoRefs) Decode(r io.Reader) error {
 
 		hash := plumbing.NewHash(parts[0])
 		refname := parts[1]
-		if name, found := strings.CutSuffix(refname, string(peeled)); found {
-			i.Peeled[name] = hash
-		} else {
-			i.References[refname] = hash
-		}
+		i.References = append(i.References, plumbing.NewHashReference(
+			plumbing.ReferenceName(refname), hash,
+		))
 	}
 
 	return s.Err()
@@ -51,17 +39,11 @@ func (i *InfoRefs) Decode(r io.Reader) error {
 
 // Encode encodes an InfoRefs to writer.
 func (i *InfoRefs) Encode(w io.Writer) error {
-	sortedRefs := sortRefs(i.References)
-	for _, ref := range sortedRefs {
-		hash := i.References[ref]
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", hash.String(), ref); err != nil {
+	for _, ref := range i.References {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", ref.Hash().String(), ref.Name().String()); err != nil {
 			return err
 		}
-		if peeled, ok := i.Peeled[ref]; ok {
-			if _, err := fmt.Fprintf(w, "%s\t%s%s\n", peeled.String(), ref, peeled); err != nil {
-				return err
-			}
-		}
 	}
+
 	return nil
 }

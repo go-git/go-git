@@ -21,6 +21,7 @@ func main() {
 	// We instantiate a new repository targeting the given path (the .git folder)
 	r, err := git.PlainOpen(path)
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	// Update the server info files & save them to the file-system.
 	fs := r.Storer.(*filesystem.Storage).Filesystem()

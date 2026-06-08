@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"slices"
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -20,12 +20,8 @@ const (
 	beginpgp       string = "-----BEGIN PGP SIGNATURE-----"
 	endpgp         string = "-----END PGP SIGNATURE-----"
 	headerpgp      string = "gpgsig"
+	headerpgp256   string = "gpgsig-sha256"
 	headerencoding string = "encoding"
-
-	// https://github.com/git/git/blob/bcb6cae2966cc407ca1afc77413b3ef11103c175/Documentation/gitformat-signature.txt#L153
-	// When a merge commit is created from a signed tag, the tag is embedded in
-	// the commit with the "mergetag" header.
-	headermergetag string = "mergetag"
 
 	defaultUtf8CommitMessageEncoding MessageEncoding = "UTF-8"
 )
@@ -41,6 +37,11 @@ type MessageEncoding string
 // in time, such as a timestamp, the author of the changes since the last
 // commit, a pointer to the previous commit(s), etc.
 // http://shafiulazam.com/gitbook/1_the_git_object_model.html
+//
+// When a Commit is populated by Decode it retains a reference to the source
+// plumbing.EncodedObject so that EncodeWithoutSignature can reproduce the
+// exact bytes the signature was computed over. Refer to EncodeWithoutSignature
+// for more information.
 type Commit struct {
 	// Hash of the commit object.
 	Hash plumbing.Hash
@@ -49,11 +50,12 @@ type Commit struct {
 	// Committer is the one performing the commit, might be different from
 	// Author.
 	Committer Signature
-	// MergeTag is the embedded tag object when a merge commit is created by
-	// merging a signed tag.
-	MergeTag string
 	// Signature is the cryptographic signature of the commit (e.g. SSH, X.509).
 	Signature string
+	// SignatureSHA256 is the SHA-256 cryptographic signature of the commit,
+	// stored under the "gpgsig-sha256" header. It may be present alongside
+	// Signature on commits produced in hash-algorithm compatibility mode.
+	SignatureSHA256 string
 	// Message is the commit message, contains arbitrary text.
 	Message string
 	// TreeHash is the hash of the root tree of the commit.
@@ -66,6 +68,9 @@ type Commit struct {
 	ExtraHeaders []ExtraHeader
 
 	s storer.EncodedObjectStorer
+	// src holds the encoded object this Commit was decoded from, used by
+	// EncodeWithoutSignature to recover the canonical signed bytes.
+	src plumbing.EncodedObject
 }
 
 // ExtraHeader holds any non-standard header
@@ -181,6 +186,11 @@ func (c *Commit) NumParents() int {
 // ErrParentNotFound is returned when the parent commit is not found.
 var ErrParentNotFound = errors.New("commit parent not found")
 
+// ErrMalformedCommit is returned when a commit object cannot be decoded
+// because its standard headers (tree, parent, author, committer) are missing,
+// duplicated, or out of order.
+var ErrMalformedCommit = errors.New("malformed commit")
+
 // Parent returns the ith parent of a commit.
 func (c *Commit) Parent(i int) (*Commit, error) {
 	if len(c.ParentHashes) == 0 || i > len(c.ParentHashes)-1 {
@@ -227,14 +237,23 @@ func (c *Commit) Type() plumbing.ObjectType {
 	return plumbing.CommitObject
 }
 
+func (c *Commit) reset() {
+	storer := c.s
+	*c = Commit{
+		Encoding: defaultUtf8CommitMessageEncoding,
+		s:        storer,
+	}
+}
+
 // Decode transforms a plumbing.EncodedObject into a Commit struct.
 func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.CommitObject {
 		return ErrUnsupportedObject
 	}
 
+	c.reset()
 	c.Hash = o.Hash()
-	c.Encoding = defaultUtf8CommitMessageEncoding
+	c.src = o
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -245,94 +264,17 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
-	var message bool
-	var mergetag bool
-	var pgpsig bool
-	var msgbuf bytes.Buffer
-	var extraheader *ExtraHeader
-	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil && err != io.EOF {
+	s := &commitScanner{r: r, c: c}
+	for state := scanTree; state != nil; {
+		state, err = state(s)
+		if err != nil {
 			return err
 		}
-
-		if mergetag {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.MergeTag += string(line)
-				continue
-			}
-			mergetag = false
-		}
-
-		if pgpsig {
-			if len(line) > 0 && line[0] == ' ' {
-				line = bytes.TrimLeft(line, " ")
-				c.Signature += string(line)
-				continue
-			}
-			pgpsig = false
-		}
-
-		if extraheader != nil {
-			if len(line) > 0 && line[0] == ' ' {
-				extraheader.Value += string(line[1:])
-				continue
-			}
-			extraheader.Value = strings.TrimRight(extraheader.Value, "\n")
-			c.ExtraHeaders = append(c.ExtraHeaders, *extraheader)
-			extraheader = nil
-		}
-
-		if !message {
-			originalLine := line
-			line = bytes.TrimSpace(line)
-			if len(line) == 0 {
-				message = true
-				continue
-			}
-
-			split := bytes.SplitN(line, []byte{' '}, 2)
-
-			var data []byte
-			if len(split) == 2 {
-				data = split[1]
-			}
-
-			switch string(split[0]) {
-			case "tree":
-				c.TreeHash = plumbing.NewHash(string(data))
-			case "parent":
-				c.ParentHashes = append(c.ParentHashes, plumbing.NewHash(string(data)))
-			case "author":
-				c.Author.Decode(data)
-			case "committer":
-				c.Committer.Decode(data)
-			case headermergetag:
-				c.MergeTag += string(data) + "\n"
-				mergetag = true
-			case headerencoding:
-				c.Encoding = MessageEncoding(data)
-			case headerpgp:
-				c.Signature += string(data) + "\n"
-				pgpsig = true
-			default:
-				h, maybecontinued := parseExtraHeader(originalLine)
-				if maybecontinued {
-					extraheader = &h
-				} else {
-					c.ExtraHeaders = append(c.ExtraHeaders, h)
-				}
-			}
-		} else {
-			msgbuf.Write(line)
-		}
-
-		if err == io.EOF {
-			break
-		}
 	}
-	c.Message = msgbuf.String()
+	if !s.sawTree {
+		return fmt.Errorf("%w: missing tree header", ErrMalformedCommit)
+	}
+	c.Message = s.msgbuf.String()
 	return nil
 }
 
@@ -341,9 +283,71 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 	return c.encode(o, true)
 }
 
-// EncodeWithoutSignature export a Commit into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
+// EncodeWithoutSignature exports a Commit into a plumbing.EncodedObject
+// without any signature headers, producing the payload that PGP/GPG
+// signatures are computed over.
+//
+// Behaviour depends on how the Commit was created:
+//
+//   - For Commits populated by Decode whose exported fields still match the
+//     source object, the payload is streamed from the raw source bytes with
+//     gpgsig and gpgsig-sha256 headers (and their continuation lines)
+//     stripped verbatim. This preserves the exact bytes the signature was
+//     computed over, regardless of any normalization performed by Decode.
+//
+//   - For Commits constructed in memory, or for decoded Commits whose
+//     exported fields have been mutated, the payload is derived from the
+//     current struct fields. Mutation is detected by re-decoding the source
+//     object and comparing exported fields; if any differ, the in-memory
+//     representation prevails.
 func (c *Commit) EncodeWithoutSignature(o plumbing.EncodedObject) error {
+	if c.matchesSource() {
+		return stripObjectSignatures(o, c.src, plumbing.CommitObject)
+	}
 	return c.encode(o, false)
+}
+
+// matchesSource reports whether c.src is set and re-decoding it produces a
+// Commit whose payload-affecting exported fields are identical to those of
+// c. It is the auto-detection used by EncodeWithoutSignature to decide
+// between the raw bytes and the struct-encoded payload.
+//
+// Signature and SignatureSHA256 are intentionally excluded from the
+// comparison: neither path emits them, so mutating them must not trigger a
+// switch to struct-encode (which would change the byte layout the caller is
+// trying to verify against).
+func (c *Commit) matchesSource() bool {
+	if c.src == nil {
+		return false
+	}
+	fresh := &Commit{}
+	if err := fresh.Decode(c.src); err != nil {
+		return false
+	}
+	return c.Hash == fresh.Hash &&
+		signatureEqual(c.Author, fresh.Author) &&
+		signatureEqual(c.Committer, fresh.Committer) &&
+		c.Message == fresh.Message &&
+		c.TreeHash == fresh.TreeHash &&
+		c.Encoding == fresh.Encoding &&
+		slices.Equal(c.ParentHashes, fresh.ParentHashes) &&
+		slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders)
+}
+
+func signatureEqual(a, b Signature) bool {
+	return a.Name == b.Name &&
+		a.Email == b.Email &&
+		a.When.Unix() == b.When.Unix() &&
+		a.When.Format("-0700") == b.When.Format("-0700")
+}
+
+func isStandardHeader(key string) bool {
+	switch key {
+	case "tree", "parent", "author", "committer",
+		headerencoding, headerpgp, headerpgp256:
+		return true
+	}
+	return false
 }
 
 func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
@@ -381,22 +385,6 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if c.MergeTag != "" {
-		if _, err = fmt.Fprint(w, "\n"+headermergetag+" "); err != nil {
-			return err
-		}
-
-		// Split tag information lines and re-write with a left padding and
-		// newline. Use join for this so it's clear that a newline should not be
-		// added after this section. The newline will be added either as part of
-		// the PGP signature or the commit message.
-		mergetag := strings.TrimSuffix(c.MergeTag, "\n")
-		lines := strings.Split(mergetag, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
-			return err
-		}
-	}
-
 	if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
 		if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
 			return err
@@ -404,6 +392,9 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	for _, header := range c.ExtraHeaders {
+		if isStandardHeader(header.Key) {
+			continue
+		}
 		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
 			return err
 		}
@@ -419,6 +410,18 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		// added after this section, as it will be added when the message is
 		// printed.
 		signature := strings.TrimSuffix(c.Signature, "\n")
+		lines := strings.Split(signature, "\n")
+		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+			return err
+		}
+	}
+
+	if c.SignatureSHA256 != "" && includeSig {
+		if _, err = fmt.Fprint(w, "\n"+headerpgp256+" "); err != nil {
+			return err
+		}
+
+		signature := strings.TrimSuffix(c.SignatureSHA256, "\n")
 		lines := strings.Split(signature, "\n")
 		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
 			return err
@@ -474,9 +477,21 @@ func (c *Commit) String() string {
 	)
 }
 
+// ErrMultipleSignatures is returned by Verify when the commit carries more
+// than one armored signature block. Mirrors upstream's parse_gpg_output
+// rejection of GOODSIG/BADSIG status lines after the first
+// (gpg-interface.c:257-269): multi-signature commits are intentionally
+// unsupported because their provenance cannot be reduced to a single
+// authoritative signer.
+var ErrMultipleSignatures = errors.New("commit has multiple signatures")
+
 // Verify performs PGP verification of the commit with a provided armored
 // keyring and returns openpgp.Entity associated with verifying key on success.
 func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
+	if countSignatureBlocks([]byte(c.Signature)) > 1 {
+		return nil, ErrMultipleSignatures
+	}
+
 	keyRingReader := strings.NewReader(armoredKeyRing)
 	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
 	if err != nil {

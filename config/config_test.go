@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -328,11 +326,9 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	cfg.User.Name = "foo"
 	cfg.User.Email = "foo@foo.com"
 
-	tmp, err := util.TempDir(osfs.Default, "", "test-commit-options")
-	s.NoError(err)
-	defer util.RemoveAll(osfs.Default, tmp)
+	tmp := s.T().TempDir()
 
-	err = osfs.Default.MkdirAll(filepath.Join(tmp, "git"), 0o777)
+	err := os.MkdirAll(filepath.Join(tmp, "git"), 0o777)
 	s.NoError(err)
 
 	os.Setenv("XDG_CONFIG_HOME", tmp)
@@ -344,7 +340,7 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.NoError(err)
 
 	cfgFile := filepath.Join(tmp, "git/config")
-	err = util.WriteFile(osfs.Default, cfgFile, content, 0o777)
+	err = os.WriteFile(cfgFile, content, 0o777)
 	s.NoError(err)
 
 	cfg, err = LoadConfig(GlobalScope)

@@ -82,6 +82,7 @@ func TestVerifyExtensions(t *testing.T) {
 			tt.setup(t, cfg)
 			require.NoError(t, st.SetConfig(cfg))
 
+			_ = r.Close()
 			r, err = Open(st, nil)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -90,6 +91,7 @@ func TestVerifyExtensions(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.NotNil(t, r)
+				defer func() { _ = r.Close() }()
 			}
 		})
 	}

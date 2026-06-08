@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +27,7 @@ func TestEncode(t *testing.T) {
 
 	validIdxFn := func() *MemoryIndex {
 		idx := NewMemoryIndex(crypto.SHA1.Size())
-		d := NewDecoder(bytes.NewBuffer(expected), hash.New(crypto.SHA1))
+		d := NewDecoder(FromBytes(expected), hash.New(crypto.SHA1))
 		err := d.Decode(idx)
 		require.NoError(t, err)
 		return idx
@@ -130,12 +130,12 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			// This does not mean idxfile supports sha256. That will take place
 			// when Version 3 is implemented.
 			name:    "sha256 packfile",
-			fixture: fixtures.ByTag("packfile-sha256").One(),
+			fixture: fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
 			hasher:  crypto.SHA256,
 		},
 		{
 			name:    "sha1 packfile",
-			fixture: fixtures.Basic().One(),
+			fixture: fixtures.Basic().ByObjectFormat("sha1").One(),
 			hasher:  crypto.SHA1,
 		},
 	}
@@ -152,7 +152,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			idx := NewMemoryIndex(tc.hasher.Size())
-			d := NewDecoder(bytes.NewBuffer(expected), hash.New(tc.hasher))
+			d := NewDecoder(FromBytes(expected), hash.New(tc.hasher))
 			err = d.Decode(idx)
 			require.NoError(t, err)
 
@@ -181,7 +181,7 @@ func TestDecodeEncode(t *testing.T) {
 		}
 
 		idx := NewMemoryIndex(h.Size())
-		d := NewDecoder(bytes.NewBuffer(expected), hash.New(h))
+		d := NewDecoder(FromBytes(expected), hash.New(h))
 		err = d.Decode(idx)
 		require.NoError(t, err)
 

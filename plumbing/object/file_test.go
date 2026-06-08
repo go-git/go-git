@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -58,6 +58,7 @@ func (s *FileSuite) TestIter() {
 		dotgit, err := f.DotGit()
 		s.Require().NoError(err)
 		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -121,6 +122,7 @@ func (s *FileSuite) TestContents() {
 		dotgit, err := f.DotGit()
 		s.Require().NoError(err)
 		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -176,6 +178,7 @@ func (s *FileSuite) TestLines() {
 		dotgit, err := f.DotGit()
 		s.Require().NoError(err)
 		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -212,6 +215,7 @@ func (s *FileSuite) TestIgnoreEmptyDirEntries() {
 		dotgit, err := f.DotGit()
 		s.Require().NoError(err)
 		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
 		commit, err := GetCommit(sto, h)
@@ -268,6 +272,7 @@ func (s *FileSuite) TestFileIterSubmodule() {
 	dotgit, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
 	s.Require().NoError(err)
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
 	commit, err := GetCommit(st, hash)

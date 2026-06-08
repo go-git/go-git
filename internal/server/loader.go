@@ -3,10 +3,11 @@ package server
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -19,7 +20,7 @@ type fixturesLoader struct {
 
 var _ transport.Loader = &fixturesLoader{}
 
-func (f *fixturesLoader) Load(_ *transport.Endpoint) (storage.Storer, error) {
+func (f *fixturesLoader) Load(_ *url.URL) (storage.Storer, error) {
 	if f.dot == nil {
 		return nil, fmt.Errorf("cannot load endpoint: fixture not set")
 	}

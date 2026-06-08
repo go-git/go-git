@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -30,6 +30,9 @@ func (s *DiffTreeSuite) SetupSuite() {
 	dotgit, err := s.Fixture.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() {
+		_ = sto.Close()
+	})
 	s.Storer = sto
 	s.cache = make(map[string]storer.EncodedObjectStorer)
 }

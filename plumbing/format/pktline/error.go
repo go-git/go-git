@@ -10,8 +10,14 @@ var (
 	// error line.
 	ErrInvalidErrorLine = errors.New("expected an error-line")
 
-	// ErrNilWriter is returned when a nil writer is passed to WritePacket.
+	// ErrNilWriter is returned when a nil writer is passed to a write function.
 	ErrNilWriter = errors.New("nil writer")
+
+	// ErrNilReader is returned when a nil reader is passed to a read function.
+	ErrNilReader = errors.New("nil reader")
+
+	// ErrNilError is returned when a nil error is passed to WriteError.
+	ErrNilError = errors.New("nil error")
 
 	errPrefix = []byte("ERR ")
 )

@@ -17,7 +17,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/reftable"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
+
+// defaultPoolCapacity is the FD pool capacity selected when
+// [Options.Pool] is nil. It accommodates roughly 85 concurrently-hot
+// packs (3 FDs per pack: pack + idx + rev).
+const defaultPoolCapacity = 256
 
 // Storage is an implementation of git.Storer that stores data on disk in the
 // standard git format (this is, the .git directory). Zero values of this type
@@ -38,17 +44,22 @@ type Storage struct {
 	reftableStack *reftable.Stack // non-nil when using reftable backend
 }
 
+// Compile-time assertions pin both *Storage and *dotgit.DotGit to
+// [storer.IdleReleaser]. *Storage promotes CloseIdleDescriptors
+// from the embedded [ObjectStorage] via Go's method-set promotion
+// rules; *dotgit.DotGit defines the method directly. A future
+// rename or signature change on either side breaks the build
+// immediately.
+var (
+	_ storer.IdleReleaser = (*Storage)(nil)
+	_ storer.IdleReleaser = (*dotgit.DotGit)(nil)
+)
+
 // Options holds configuration for the storage.
 type Options struct {
 	// ExclusiveAccess means that the filesystem is not modified externally
 	// while the repo is open.
 	ExclusiveAccess bool
-	// KeepDescriptors makes the file descriptors to be reused but they will
-	// need to be manually closed calling Close().
-	KeepDescriptors bool
-	// MaxOpenDescriptors is the max number of file descriptors to keep
-	// open. If KeepDescriptors is true, all file descriptors will remain open.
-	MaxOpenDescriptors int
 	// LargeObjectThreshold maximum object size (in bytes) that will be read in to memory.
 	// If left unset or set to 0 there is no limit
 	LargeObjectThreshold int64
@@ -75,6 +86,52 @@ type Options struct {
 	// IndexCache provides an optional cache implementation for index data.
 	// If left as nil, a default stat-based implementation is created automatically.
 	IndexCache IndexCache
+
+	// Pool governs LRU eviction of the read-side .pack/.idx/.rev
+	// file descriptors that this Storage opens. When a Storage
+	// exceeds the pool capacity the least-recently-used SharedFile
+	// is closed (via ReleaseNow) and reopens on the next read.
+	// Pack-write FDs ([PackWriter]) are short-lived and are not
+	// pooled.
+	//
+	// A nil Pool selects a per-Storage pool sized at the package
+	// default (currently 256 entries, accommodating roughly 85
+	// concurrently-hot packs at 3 FDs per pack). The default
+	// assumes go-git owns the dominant share of FDs in the
+	// process; applications running other FD-heavy subsystems
+	// (network servers, large connection pools) should construct
+	// a pool sized against their full FD budget and pass it here
+	// rather than rely on the default.
+	//
+	// Sharing one Pool across multiple Storages bounds the FD
+	// budget process-wide rather than per Storage — useful for
+	// servers handling concurrent per-request repositories or
+	// batch tools iterating many repos. Construct the pool with
+	// [fdpool.New], pass it via this field to
+	// [NewStorageWithOptions], then open repositories with
+	// [git.Open], [git.Clone], or [git.Init] using the resulting
+	// Storer. The path-based wrappers (all Plain* functions:
+	// PlainOpen, PlainClone, PlainInit) construct their own
+	// Storage internally and so do not accept an injected pool;
+	// that is by design.
+	//
+	// To disable pooling, pass [fdpool.New](0) (or any non-positive
+	// capacity): the resulting no-op Pool causes pool-less
+	// SharedFiles to fall back to their grace-period close on
+	// quiescence.
+	//
+	// To request mmap-backed read FDs (read-only, where the
+	// platform supports it) construct the underlying billy
+	// filesystem with [github.com/go-git/go-billy/v6/osfs.WithMmap]
+	// before handing it to [NewStorageWithOptions]. The pool
+	// governs that file equally whether it is FD- or mmap-backed.
+	//
+	// The Pool field's API stability tracks [fdpool.Pool]'s, not
+	// this package's. Per the x/ package policy, the fdpool API
+	// may change without following semantic versioning; consumers
+	// reading this field should treat it as experimental on the
+	// same timeline.
+	Pool *fdpool.Pool
 }
 
 // NewStorage returns a new Storage backed by a given `fs.Filesystem` and cache.
@@ -109,13 +166,21 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
 
+	// Construct a per-Storage FD pool at the package default
+	// capacity unless the caller injected one. Pass a non-positive-
+	// capacity Pool via Options.Pool to disable pooling.
+	pool := ops.Pool
+	if pool == nil {
+		pool = fdpool.New(defaultPoolCapacity)
+	}
+
 	dirOps := dotgit.Options{
 		ExclusiveAccess:   ops.ExclusiveAccess,
 		AlternatesFS:      ops.AlternatesFS,
-		KeepDescriptors:   ops.KeepDescriptors,
 		ObjectFormat:      ops.ObjectFormat,
 		ReadReverseIndex:  readRevIdx,
 		WriteReverseIndex: writeRevIdx,
+		Pool:              pool,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
@@ -136,7 +201,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		IndexStorage:   IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage: ShallowStorage{dir: dir},
 		ConfigStorage:  ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
-		ModuleStorage:  ModuleStorage{dir: dir},
+		ModuleStorage:  ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
 	}
 
 	if refStorage == formatcfg.RefStorageReftable {
@@ -214,6 +279,10 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 			return fmt.Errorf("cannot set object format on dotgit: %w", err)
 		}
 
+		s.ConfigStorage.objectFormat = of
+		s.ModuleStorage.objectFormat = of
+		s.options.ObjectFormat = of
+		s.oh = plumbing.FromObjectFormat(of)
 		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
 		s.h = s.hasher.Hash
 	}

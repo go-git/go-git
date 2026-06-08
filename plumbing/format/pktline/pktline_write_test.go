@@ -3,6 +3,7 @@ package pktline_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -27,6 +28,101 @@ func (s *SuiteWriter) TestFlush() {
 
 	obtained := buf.Bytes()
 	s.Equal([]byte("0000"), obtained)
+}
+
+func (s *SuiteWriter) TestNilWriter() {
+	for _, test := range []struct {
+		name  string
+		write func() error
+	}{
+		{
+			name: "write",
+			write: func() error {
+				_, err := pktline.Write(nil, []byte("payload"))
+				return err
+			},
+		},
+		{
+			name: "write string",
+			write: func() error {
+				_, err := pktline.WriteString(nil, "payload")
+				return err
+			},
+		},
+		{
+			name: "write line",
+			write: func() error {
+				_, err := pktline.Writeln(nil, "payload")
+				return err
+			},
+		},
+		{
+			name: "write format",
+			write: func() error {
+				_, err := pktline.Writef(nil, "%s", "payload")
+				return err
+			},
+		},
+		{
+			name: "write error",
+			write: func() error {
+				_, err := pktline.WriteError(nil, io.EOF)
+				return err
+			},
+		},
+		{
+			name: "write flush",
+			write: func() error {
+				return pktline.WriteFlush(nil)
+			},
+		},
+		{
+			name: "write delim",
+			write: func() error {
+				return pktline.WriteDelim(nil)
+			},
+		},
+		{
+			name: "write response end",
+			write: func() error {
+				return pktline.WriteResponseEnd(nil)
+			},
+		},
+	} {
+		s.Run(test.name, func() {
+			var err error
+			if s.NotPanics(func() {
+				err = test.write()
+			}) {
+				s.ErrorIs(err, pktline.ErrNilWriter)
+			}
+		})
+	}
+}
+
+func (s *SuiteWriter) TestWriteErrorInvalidInput() {
+	for _, test := range []struct {
+		name     string
+		writer   io.Writer
+		err      error
+		expected error
+	}{
+		{name: "nil writer", writer: nil, err: nil, expected: pktline.ErrNilWriter},
+		{name: "nil error", writer: io.Discard, err: nil, expected: pktline.ErrNilError},
+	} {
+		s.Run(test.name, func() {
+			var (
+				n   int
+				err error
+			)
+			if s.NotPanics(func() {
+				n, err = pktline.WriteError(test.writer, test.err)
+			}) {
+				s.Zero(n)
+				s.ErrorIs(err, test.expected)
+			}
+		})
+	}
 }
 
 func (s *SuiteWriter) TestEncode() {

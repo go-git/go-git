@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -82,6 +82,11 @@ func forEachStorage(t *testing.T, tc func(sto Storer, t *testing.T)) {
 		sto, name := factory(t)
 
 		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if closer, ok := sto.(io.Closer); ok {
+					_ = closer.Close()
+				}
+			}()
 			tc(sto, t)
 		})
 	}
@@ -598,10 +603,20 @@ func TestModule(t *testing.T) {
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		storer, err := sto.Module("foo")
 		require.NoError(t, err)
+		defer func() {
+			if closer, ok := storer.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}()
 		assert.NotNil(t, storer)
 
-		storer, err = sto.Module("foo")
+		storer2, err := sto.Module("foo")
 		require.NoError(t, err)
-		assert.NotNil(t, storer)
+		defer func() {
+			if closer, ok := storer2.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}()
+		assert.NotNil(t, storer2)
 	})
 }

@@ -15,6 +15,11 @@ const (
 	maskType        = uint8(112) // 0111 0000
 )
 
+// ErrLengthOverflow is returned when a variable-length integer would not fit
+// into a uint64 because the input declares more continuation bytes than the
+// type can hold.
+var ErrLengthOverflow = errors.New("variable-length integer overflow")
+
 // VariableLengthSize reads a variable length size from first, and uses reader
 // to continue on reading until the full size is determined.
 func VariableLengthSize(first byte, reader io.ByteReader) (uint64, error) {
@@ -35,6 +40,13 @@ func VariableLengthSize(first byte, reader io.ByteReader) (uint64, error) {
 		}
 
 		for {
+			// Mirrors unpack_object_header_buffer in canonical Git's
+			// packfile.c: a continuation byte at shift > 64-7 cannot
+			// contribute without overflowing a uint64.
+			if shift > 64-7 {
+				return 0, ErrLengthOverflow
+			}
+
 			b, err := reader.ReadByte()
 			if err != nil {
 				return 0, err
@@ -60,17 +72,45 @@ func ObjectType(b byte) plumbing.ObjectType {
 	return plumbing.ObjectType((b & maskType) >> firstLengthBits)
 }
 
+// EncodeLEB128 encodes num as an unsigned LEB128 byte sequence and
+// returns it. Inverse of DecodeLEB128.
+func EncodeLEB128(num uint) []byte {
+	var out []byte
+	for {
+		b := byte(num & maskPayload)
+		num >>= 7
+		if num == 0 {
+			return append(out, b)
+		}
+		out = append(out, b|maskContinue)
+	}
+}
+
+// EncodeLEB128ToWriter encodes num as an unsigned LEB128 byte sequence
+// and writes it to writer. Inverse of DecodeLEB128FromReader.
+func EncodeLEB128ToWriter(writer io.Writer, num uint) error {
+	_, err := writer.Write(EncodeLEB128(num))
+	return err
+}
+
 // DecodeLEB128 decodes a number encoded as an unsigned LEB128 at the
-// start of some binary data and returns the decoded number and the rest
-// of the bytes.
-func DecodeLEB128(input []byte) (uint, []byte) {
+// start of some binary data and returns the decoded number, the rest
+// of the bytes, and an error if the encoded value does not fit in a
+// uint.
+func DecodeLEB128(input []byte) (uint, []byte, error) {
 	if len(input) == 0 {
-		return 0, input
+		return 0, input, nil
 	}
 
 	var num, sz uint
 	var b byte
 	for {
+		// A continuation byte at shift > uintSize-7 cannot contribute
+		// without overflowing the accumulator.
+		if sz*7 > uintBits-7 {
+			return 0, input, ErrLengthOverflow
+		}
+
 		b = input[sz]
 		num |= (uint(b) & maskPayload) << (sz * 7) // concats 7 bits chunks
 		sz++
@@ -80,7 +120,7 @@ func DecodeLEB128(input []byte) (uint, []byte) {
 		}
 	}
 
-	return num, input[sz:]
+	return num, input[sz:], nil
 }
 
 // DecodeLEB128FromReader decodes a number encoded as an unsigned LEB128
@@ -88,6 +128,10 @@ func DecodeLEB128(input []byte) (uint, []byte) {
 func DecodeLEB128FromReader(input io.ByteReader) (uint, error) {
 	var num, sz uint
 	for {
+		if sz*7 > uintBits-7 {
+			return 0, ErrLengthOverflow
+		}
+
 		b, err := input.ReadByte()
 		if err != nil {
 			return 0, err
@@ -103,3 +147,6 @@ func DecodeLEB128FromReader(input io.ByteReader) (uint, error) {
 
 	return num, nil
 }
+
+// uintBits is the bit width of uint on the current platform (32 or 64).
+const uintBits = 32 << (^uint(0) >> 63)

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -30,6 +30,9 @@ func (s *BaseObjectsSuite) SetupSuite(t *testing.T) {
 	dotgit, err := s.Fixture.DotGit()
 	require.NoError(t, err)
 	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	t.Cleanup(func() {
+		_ = storer.Close()
+	})
 	s.Storer = storer
 	s.t = t
 }
@@ -100,11 +103,11 @@ func (s *ObjectsSuite) TestParseTree() {
 
 	s.Len(tree.Entries, 8)
 
-	tree.buildMap()
-	s.Len(tree.m, 8)
-	s.Equal(".gitignore", tree.m[".gitignore"].Name)
-	s.Equal(filemode.Regular, tree.m[".gitignore"].Mode)
-	s.Equal("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88", tree.m[".gitignore"].Hash.String())
+	entry, err := tree.entry(".gitignore")
+	s.NoError(err)
+	s.Equal(".gitignore", entry.Name)
+	s.Equal(filemode.Regular, entry.Mode)
+	s.Equal("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88", entry.Hash.String())
 
 	count := 0
 	iter := tree.Files()

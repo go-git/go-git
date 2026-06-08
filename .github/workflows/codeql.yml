@@ -4,7 +4,13 @@ on:
     branches:
     - releases/v5.x
     - main
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
   pull_request:
+    paths-ignore:
+    - '**.md'
+    - 'rfcs/**'
 
   schedule:
     - cron: '00 5 * * 1'

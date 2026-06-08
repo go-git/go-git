@@ -21,7 +21,7 @@ func TestReportStatusSuite(t *testing.T) {
 }
 
 func (s *ReportStatusSuite) TestError() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "ok"
 	s.Nil(rs.Error())
 	rs.UnpackStatus = "OK"
@@ -51,14 +51,14 @@ func (s *ReportStatusSuite) testEncodeDecodeOk(rs *ReportStatus, lines ...string
 
 func (s *ReportStatusSuite) testDecodeOk(expected *ReportStatus, lines ...string) {
 	r := toPktLines(s.T(), lines)
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	s.Nil(rs.Decode(r))
 	s.Equal(expected, rs)
 }
 
 func (s *ReportStatusSuite) testDecodeError(errorMatch string, lines ...string) {
 	r := toPktLines(s.T(), lines)
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	s.Regexp(regexp.MustCompile(errorMatch), rs.Decode(r))
 }
 
@@ -74,7 +74,7 @@ func (s *ReportStatusSuite) testEncodeOk(input *ReportStatus, lines ...string) {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkOneReference() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "ok"
 	rs.CommandStatuses = []*CommandStatus{{
 		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
@@ -89,7 +89,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkOneReference() {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkOneReferenceFailed() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "my error"
 	rs.CommandStatuses = []*CommandStatus{{
 		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
@@ -104,7 +104,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkOneReferenceFailed() {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferences() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "ok"
 	rs.CommandStatuses = []*CommandStatus{{
 		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
@@ -127,7 +127,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferences() {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferencesFailed() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "my error"
 	rs.CommandStatuses = []*CommandStatus{{
 		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
@@ -150,7 +150,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkMoreReferencesFailed() {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkUnpackWithFailedCommands() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "ok"
 	rs.CommandStatuses = []*CommandStatus{{
 		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
@@ -176,7 +176,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkUnpackWithFailedCommands() {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferences() {
-	expected := NewReportStatus()
+	expected := &ReportStatus{}
 	expected.UnpackStatus = "ok"
 
 	s.testEncodeDecodeOk(expected,
@@ -186,7 +186,7 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferences() {
 }
 
 func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferencesFailed() {
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "my error"
 
 	s.testEncodeDecodeOk(rs,
@@ -196,13 +196,6 @@ func (s *ReportStatusSuite) TestEncodeDecodeOkNoReferencesFailed() {
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorOneReferenceNoFlush() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("missing flush",
 		"unpack ok\n",
 		"ok refs/heads/master\n",
@@ -210,24 +203,10 @@ func (s *ReportStatusSuite) TestDecodeErrorOneReferenceNoFlush() {
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorEmpty() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("unexpected EOF")
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorMalformed() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("malformed unpack status: unpackok",
 		"unpackok\n",
 		"",
@@ -235,13 +214,6 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformed() {
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorMalformed2() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("malformed unpack status: UNPACK OK",
 		"UNPACK OK\n",
 		"",
@@ -249,13 +221,6 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformed2() {
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorMalformedCommandStatus() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("malformed command status: ko refs/heads/master",
 		"unpack ok\n",
 		"ko refs/heads/master\n",
@@ -264,13 +229,6 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformedCommandStatus() {
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorMalformedCommandStatus2() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("malformed command status: ng refs/heads/master",
 		"unpack ok\n",
 		"ng refs/heads/master\n",
@@ -279,13 +237,6 @@ func (s *ReportStatusSuite) TestDecodeErrorMalformedCommandStatus2() {
 }
 
 func (s *ReportStatusSuite) TestDecodeErrorPrematureFlush() {
-	expected := NewReportStatus()
-	expected.UnpackStatus = "ok"
-	expected.CommandStatuses = []*CommandStatus{{
-		ReferenceName: plumbing.ReferenceName("refs/heads/master"),
-		Status:        "ok",
-	}}
-
 	s.testDecodeError("premature flush",
 		"",
 	)
@@ -303,7 +254,7 @@ func (s *ReportStatusSuite) TestCommandStatusError() {
 	s.Regexp(regexp.MustCompile("command error on refs/heads/master: command error"), cs.Error())
 
 	// Create a ReportStatus with a failed command but ok unpack status
-	rs := NewReportStatus()
+	rs := &ReportStatus{}
 	rs.UnpackStatus = "ok"
 	rs.CommandStatuses = append(rs.CommandStatuses, cs)
 

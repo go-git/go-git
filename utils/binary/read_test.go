@@ -67,6 +67,32 @@ func (s *BinarySuite) TestReadVariableWidthIntShort() {
 	s.Equal(int64(19), i)
 }
 
+func (s *BinarySuite) TestReadVariableWidthIntOverflow() {
+	// A continuation byte every iteration accumulates 7 bits and a +1
+	// adjustment per byte; eleven such bytes pushes the running int64
+	// past its bound and the decoder must reject the input.
+	buf := bytes.NewBuffer(bytes.Repeat([]byte{0xFF}, 11))
+
+	_, err := ReadVariableWidthInt(buf)
+	s.ErrorIs(err, ErrIntegerOverflow)
+}
+
+func (s *BinarySuite) TestReadVariableWidthIntBoundary() {
+	// Crafted input that drives the running accumulator to exactly
+	// (math.MaxInt64-127)>>7 — the largest pre-increment value for
+	// which the next iteration would still fit in int64. Seven 0xFE
+	// bytes followed by 0xFF land v at exactly the bound; an eighth
+	// continuation byte forces the next iteration. With a strict
+	// "greater than" check the bound was off by one and the
+	// subsequent v++ <<7 wrapped through MinInt64.
+	buf := bytes.NewBuffer([]byte{
+		0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFF, 0x00,
+	})
+
+	_, err := ReadVariableWidthInt(buf)
+	s.ErrorIs(err, ErrIntegerOverflow)
+}
+
 func (s *BinarySuite) TestReadUint32() {
 	buf := bytes.NewBuffer(nil)
 	err := binary.Write(buf, binary.BigEndian, uint32(42))

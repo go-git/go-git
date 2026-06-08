@@ -22,6 +22,7 @@ func main() {
 	Info("git init")
 	r, err := git.Init(memory.NewStorage())
 	CheckIfError(err)
+	defer func() { _ = r.Close() }()
 
 	// Add a new remote, with the default fetch refspec
 	Info("git remote add example https://github.com/git-fixtures/basic.git")

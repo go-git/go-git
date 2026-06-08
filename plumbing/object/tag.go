@@ -1,9 +1,8 @@
 package object
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -13,6 +12,10 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
+
+// ErrMalformedTag is returned when a tag object cannot be decoded because
+// its required headers (object, type, tag) are missing or out of order.
+var ErrMalformedTag = errors.New("malformed tag")
 
 // Tag represents an annotated tag object. It points to a single git object of
 // any type, but tags typically are applied to commit or blob objects. It
@@ -32,14 +35,21 @@ type Tag struct {
 	Tagger Signature
 	// Message is an arbitrary text message.
 	Message string
-	// Signature is the cryptographic signature of the tag (e.g. SSH, X.509).
+	// Signature is the cryptographic signature appended after the message
+	// body. This is the canonical tag signature in upstream Git.
 	Signature string
+	// SignatureSHA256 is the cryptographic signature stored under the
+	// "gpgsig-sha256" header.
+	SignatureSHA256 string
 	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
 	// Target is the hash of the target object.
 	Target plumbing.Hash
 
 	s storer.EncodedObjectStorer
+	// src holds the encoded object this Tag was decoded from, used by
+	// EncodeWithoutSignature to recover the canonical signed bytes.
+	src plumbing.EncodedObject
 }
 
 // GetTag gets a tag from an object storer and decodes it.
@@ -78,13 +88,20 @@ func (t *Tag) Type() plumbing.ObjectType {
 	return plumbing.TagObject
 }
 
+func (t *Tag) reset() {
+	storer := t.s
+	*t = Tag{s: storer}
+}
+
 // Decode transforms a plumbing.EncodedObject into a Tag struct.
 func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.TagObject {
 		return ErrUnsupportedObject
 	}
 
+	t.reset()
 	t.Hash = o.Hash()
+	t.src = o
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -95,42 +112,15 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
-	for {
-		var line []byte
-		line, err = r.ReadBytes('\n')
-		if err != nil && err != io.EOF {
+	s := &tagScanner{r: r, t: t}
+	for state := scanTagObject; state != nil; {
+		state, err = state(s)
+		if err != nil {
 			return err
 		}
-
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			break // Start of message
-		}
-
-		split := bytes.SplitN(line, []byte{' '}, 2)
-		switch string(split[0]) {
-		case "object":
-			t.Target = plumbing.NewHash(string(split[1]))
-		case "type":
-			t.TargetType, err = plumbing.ParseObjectType(string(split[1]))
-			if err != nil {
-				return err
-			}
-		case "tag":
-			t.Name = string(split[1])
-		case "tagger":
-			t.Tagger.Decode(split[1])
-		}
-
-		if err == io.EOF {
-			return nil
-		}
 	}
 
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
+	data := s.msgbuf.Bytes()
 	if sm, _ := parseSignedBytes(data); sm >= 0 {
 		t.Signature = string(data[sm:])
 		data = data[:sm]
@@ -145,9 +135,52 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 	return t.encode(o, true)
 }
 
-// EncodeWithoutSignature export a Tag into a plumbing.EncodedObject without the signature (correspond to the payload of the PGP signature).
+// EncodeWithoutSignature exports a Tag into a plumbing.EncodedObject without
+// any signature data, producing the payload that PGP/GPG signatures are
+// computed over.
+//
+// Behaviour mirrors Commit.EncodeWithoutSignature:
+//
+//   - For Tags populated by Decode whose exported fields still match the
+//     source object, the payload is streamed from the raw source bytes with
+//     the inline trailing signature truncated and gpgsig/gpgsig-sha256
+//     headers (and their continuation lines) stripped verbatim. This
+//     preserves the exact bytes the signature was computed over, regardless
+//     of any normalization performed by Decode.
+//
+//   - For Tags constructed in memory, or for decoded Tags whose exported
+//     fields have been mutated, the payload is derived from the current
+//     struct fields. Mutation is detected by re-decoding the source object
+//     and comparing exported fields; if any differ, the in-memory
+//     representation prevails.
 func (t *Tag) EncodeWithoutSignature(o plumbing.EncodedObject) error {
+	if t.matchesSource() {
+		return stripObjectSignatures(o, t.src, plumbing.TagObject)
+	}
 	return t.encode(o, false)
+}
+
+// matchesSource reports whether t.src is set and re-decoding it produces a
+// Tag whose payload-affecting exported fields are identical to those of t.
+//
+// Signature and SignatureSHA256 are intentionally excluded from the
+// comparison: neither path emits them as part of the verification payload,
+// so mutating them must not trigger a switch to struct-encode (which would
+// change the byte layout the caller is trying to verify against).
+func (t *Tag) matchesSource() bool {
+	if t.src == nil {
+		return false
+	}
+	fresh := &Tag{}
+	if err := fresh.Decode(t.src); err != nil {
+		return false
+	}
+	return t.Hash == fresh.Hash &&
+		t.Name == fresh.Name &&
+		signatureEqual(t.Tagger, fresh.Tagger) &&
+		t.Message == fresh.Message &&
+		t.TargetType == fresh.TargetType &&
+		t.Target == fresh.Target
 }
 
 func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
@@ -159,16 +192,44 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	defer ioutil.CheckClose(w, &err)
 
 	if _, err = fmt.Fprintf(w,
-		"object %s\ntype %s\ntag %s\ntagger ",
+		"object %s\ntype %s\ntag %s\n",
 		t.Target.String(), t.TargetType.Bytes(), t.Name); err != nil {
 		return err
 	}
 
-	if err = t.Tagger.Encode(w); err != nil {
-		return err
+	if !isZeroSignature(t.Tagger) {
+		if _, err = fmt.Fprint(w, "tagger "); err != nil {
+			return err
+		}
+
+		if err = t.Tagger.Encode(w); err != nil {
+			return err
+		}
+
+		if _, err = fmt.Fprint(w, "\n"); err != nil {
+			return err
+		}
 	}
 
-	if _, err = fmt.Fprint(w, "\n\n"); err != nil {
+	// gpgsig-sha256 is emitted between the tagger line and the blank line
+	// that separates headers from the body, matching upstream's
+	// add_header_signature insertion point (commit.c:1142-1171), which
+	// builtin/tag.c:do_sign reuses when signing tags in compat mode.
+	if t.SignatureSHA256 != "" && includeSig {
+		if _, err = fmt.Fprint(w, headerpgp256+" "); err != nil {
+			return err
+		}
+		sig := strings.TrimSuffix(t.SignatureSHA256, "\n")
+		lines := strings.Split(sig, "\n")
+		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+			return err
+		}
+		if _, err = fmt.Fprint(w, "\n"); err != nil {
+			return err
+		}
+	}
+
+	if _, err = fmt.Fprint(w, "\n"); err != nil {
 		return err
 	}
 
@@ -176,11 +237,12 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	// Note that this is highly sensitive to what it sent along in the message.
-	// Message *always* needs to end with a newline, or else the message and the
-	// signature will be concatenated into a corrupt object. Since this is a
-	// lower-level method, we assume you know what you are doing and have already
-	// done the needful on the message in the caller.
+	// Note that this is highly sensitive to what is sent along in the
+	// message. Message *always* needs to end with a newline, or else the
+	// message and the trailing signature will be concatenated into a
+	// corrupt object. Since this is a lower-level method, we assume you
+	// know what you are doing and have already done the needful on the
+	// message in the caller.
 	if includeSig {
 		if _, err = fmt.Fprint(w, t.Signature); err != nil {
 			return err
@@ -188,6 +250,10 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	return err
+}
+
+func isZeroSignature(s Signature) bool {
+	return s.Name == "" && s.Email == "" && s.When.IsZero()
 }
 
 // Commit returns the commit pointed to by the tag. If the tag points to a
@@ -257,7 +323,8 @@ func (t *Tag) String() string {
 }
 
 // Verify performs PGP verification of the tag with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
+// keyring and returns openpgp.Entity associated with verifying key on
+// success.
 func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	keyRingReader := strings.NewReader(armoredKeyRing)
 	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -41,6 +41,7 @@ func (s *PruneSuite) testPrune(deleteTime time.Time) {
 	r, err := Open(sto, srcFs)
 	s.NoError(err)
 	s.NotNil(r)
+	defer func() { _ = r.Close() }()
 
 	// Remove a branch so we can prune some objects.
 	err = sto.RemoveReference(plumbing.ReferenceName("refs/heads/v4"))

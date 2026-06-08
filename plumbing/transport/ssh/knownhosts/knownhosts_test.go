@@ -47,7 +47,8 @@ func TestNewDB(t *testing.T) {
 
 	// Append a @cert-authority line to the valid known_hosts file
 	// Valid path should still return a non-nil HostKeyDB and no error
-	appendCertTestKnownHosts(t, khPath, "*", ssh.KeyAlgoECDSA256)
+	certKeys := make(map[string]ssh.PublicKey)
+	appendCertTestKnownHosts(t, certKeys, khPath, "*", ssh.KeyAlgoECDSA256)
 	if kh, err := NewDB(khPath); kh == nil || err != nil {
 		t.Errorf("Unexpected return from NewDB on valid known_hosts path containing a cert: %v, %v", kh, err)
 	}
@@ -55,7 +56,7 @@ func TestNewDB(t *testing.T) {
 	// Write a second valid known_hosts file
 	// Supplying both valid paths should still return a non-nil HostKeyDB and no
 	// error
-	appendCertTestKnownHosts(t, khPath+"2", "*.certy.test", ssh.KeyAlgoED25519)
+	appendCertTestKnownHosts(t, certKeys, khPath+"2", "*.certy.test", ssh.KeyAlgoED25519)
 	if kh, err := NewDB(khPath+"2", khPath); kh == nil || err != nil {
 		t.Errorf("Unexpected return from NewDB on two valid known_hosts paths: %v, %v", kh, err)
 	}
@@ -168,9 +169,10 @@ func TestWithCertLines(t *testing.T) {
 	t.Parallel()
 	khPath := getTestKnownHosts(t)
 	khPath2 := khPath + "2"
-	appendCertTestKnownHosts(t, khPath, "*.certy.test", ssh.KeyAlgoRSA)
-	appendCertTestKnownHosts(t, khPath2, "*", ssh.KeyAlgoECDSA256)
-	appendCertTestKnownHosts(t, khPath2, "*.certy.test", ssh.KeyAlgoED25519)
+	certKeys := make(map[string]ssh.PublicKey)
+	appendCertTestKnownHosts(t, certKeys, khPath, "*.certy.test", ssh.KeyAlgoRSA)
+	appendCertTestKnownHosts(t, certKeys, khPath2, "*", ssh.KeyAlgoECDSA256)
+	appendCertTestKnownHosts(t, certKeys, khPath2, "*.certy.test", ssh.KeyAlgoED25519)
 
 	// Test behavior of HostKeyCallback type, which doesn't properly handle
 	// @cert-authority lines but shouldn't error on them. It should just return
@@ -434,28 +436,11 @@ func TestFakePublicKey(t *testing.T) {
 	}
 }
 
-var testKnownHostsContents []byte
-
 // getTestKnownHosts returns a path to a test known_hosts file. The file path
-// will differ between test functions, but the contents are always the same,
-// containing keys generated upon the first invocation. The file is removed
-// upon test completion.
+// will differ between test functions, but the contents are always the same.
+// The file is removed upon test completion.
 func getTestKnownHosts(t *testing.T) string {
-	// Re-use previously memoized result
-	if len(testKnownHostsContents) > 0 {
-		dir := t.TempDir()
-		khPath := filepath.Join(dir, "known_hosts")
-		if err := os.WriteFile(khPath, testKnownHostsContents, 0o600); err != nil {
-			t.Fatalf("Unable to write to %s: %v", khPath, err)
-		}
-		return khPath
-	}
-
-	khPath := writeTestKnownHosts(t)
-	if contents, err := os.ReadFile(khPath); err == nil {
-		testKnownHostsContents = contents
-	}
-	return khPath
+	return writeTestKnownHosts(t)
 }
 
 // writeTestKnownHosts generates the test known_hosts file and returns the
@@ -491,21 +476,18 @@ func writeTestKnownHosts(t *testing.T) string {
 	return khPath
 }
 
-var testCertKeys = make(map[string]ssh.PublicKey) // key string format is "hostpattern keytype"
-
 // appendCertTestKnownHosts adds a @cert-authority line to the file at the
 // supplied path, creating it if it does not exist yet. The keyType must be one
 // of ssh.KeyAlgoRSA, ssh.KeyAlgoECDSA256, or ssh.KeyAlgoED25519; while all
 // valid algos are supported by this package, the test logic hasn't been
-// written for other algos here yet. Generated keys are memoized to avoid
-// slow test performance.
-func appendCertTestKnownHosts(t *testing.T, filePath, hostPattern, keyType string) {
+// written for other algos here yet. certKeys memoizes generated keys within a
+// single test to avoid redundant key generation.
+func appendCertTestKnownHosts(t *testing.T, certKeys map[string]ssh.PublicKey, filePath, hostPattern, keyType string) {
 	t.Helper()
 
-	var pubKey ssh.PublicKey
-	var ok bool
 	cacheKey := hostPattern + " " + keyType
-	if pubKey, ok = testCertKeys[cacheKey]; !ok {
+	pubKey, ok := certKeys[cacheKey]
+	if !ok {
 		switch keyType {
 		case ssh.KeyAlgoRSA:
 			pubKey = generatePubKeyRSA(t)
@@ -516,7 +498,7 @@ func appendCertTestKnownHosts(t *testing.T, filePath, hostPattern, keyType strin
 		default:
 			t.Fatalf("test logic does not support generating key of type %s yet", keyType)
 		}
-		testCertKeys[cacheKey] = pubKey
+		certKeys[cacheKey] = pubKey
 	}
 
 	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
