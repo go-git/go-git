@@ -77,7 +77,10 @@ func NewDecoder(r io.Reader, h hash.Hash, opts ...Option) *Decoder {
 }
 
 // Decode reads the whole index object from its input and stores it in the
-// value pointed to by idx.
+// value pointed to by idx. Note that if the stored checksum in the index is
+// all-zero (which native Git writes when `index.skipHash` is enabled),
+// verification is skipped and the index is accepted unconditionally to match
+// Git's behavior.
 func (d *Decoder) Decode(idx *Index) error {
 	var err error
 	idx.Version, err = validateHeader(d.r)
@@ -384,7 +387,8 @@ func (d *Decoder) readChecksum(expected []byte) error {
 	}
 
 	// Git writes an all-zero checksum when index.skipHash is enabled.
-	// Accept these unconditionally, matching native Git behavior.
+	// Accept these unconditionally on read to match native Git behavior and
+	// support reading repositories where skipHash was enabled during writing.
 	if h.IsZero() {
 		trace.Internal.Printf("index: stored checksum is all-zero (skipHash index), accepting")
 		return nil

@@ -325,9 +325,7 @@ func (t *Table) seekRefLinear(name string) (*RefRecord, error) {
 		if t.footer.blockSize > 0 {
 			offset += int64(t.footer.blockSize)
 		} else {
-			// Unaligned: we'd need to track actual block size.
-			// For now, this shouldn't happen with ref blocks (they're always aligned when blockSize > 0).
-			break
+			offset += int64(br.blockLen)
 		}
 		headerSize = 0 // only first block has file header
 	}
@@ -420,7 +418,7 @@ func (t *Table) IterRefs(fn func(RefRecord) bool) error {
 		if t.footer.blockSize > 0 {
 			offset += int64(t.footer.blockSize)
 		} else {
-			break
+			offset += int64(br.blockLen)
 		}
 		headerSize = 0
 	}

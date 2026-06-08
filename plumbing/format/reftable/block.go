@@ -26,6 +26,7 @@ type blockReader struct {
 	data      []byte // uncompressed record data (between header and restart table)
 	restarts  []uint32
 	headerLen int // length of the block header (including file header for first block)
+	blockLen  int // raw block length from block header
 }
 
 // readBlock reads and parses a single block from data starting at the given
@@ -51,6 +52,7 @@ func readBlock(raw []byte, fileHeaderSize int) (*blockReader, error) {
 	br := &blockReader{
 		blockType: blockType,
 		headerLen: fileHeaderSize + blockHeaderSize,
+		blockLen:  blockLen,
 	}
 
 	var recordData []byte

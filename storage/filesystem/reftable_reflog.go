@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -33,7 +34,11 @@ func (r *ReftableReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.E
 		if rec.LogType == 0 { // deletion tombstone
 			break
 		}
-		active = append(active, logRecordToEntry(&rec))
+		entry, err := logRecordToEntry(&rec)
+		if err != nil {
+			return nil, err
+		}
+		active = append(active, entry)
 	}
 
 	if len(active) == 0 {
@@ -80,7 +85,13 @@ func (r *ReftableReflogStorage) DeleteReflog(name plumbing.ReferenceName) error 
 	return r.stack.AddLog(rec)
 }
 
-func logRecordToEntry(rec *reftable.LogRecord) *reflog.Entry {
+func logRecordToEntry(rec *reftable.LogRecord) (*reflog.Entry, error) {
+	if len(rec.OldHash) != 20 && len(rec.OldHash) != 32 {
+		return nil, fmt.Errorf("reftable: invalid old hash length: %d", len(rec.OldHash))
+	}
+	if len(rec.NewHash) != 20 && len(rec.NewHash) != 32 {
+		return nil, fmt.Errorf("reftable: invalid new hash length: %d", len(rec.NewHash))
+	}
 	return &reflog.Entry{
 		OldHash: plumbing.NewHash(hex.EncodeToString(rec.OldHash)),
 		NewHash: plumbing.NewHash(hex.EncodeToString(rec.NewHash)),
@@ -90,5 +101,5 @@ func logRecordToEntry(rec *reftable.LogRecord) *reflog.Entry {
 			When:  rec.Time,
 		},
 		Message: rec.Message,
-	}
+	}, nil
 }

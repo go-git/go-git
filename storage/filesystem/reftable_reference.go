@@ -2,7 +2,9 @@ package filesystem
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/reftable"
@@ -86,25 +88,97 @@ func (r *ReftableReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbin
 
 // IterReferences returns an iterator over all references in the reftable stack.
 func (r *ReftableReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
-	var refs []*plumbing.Reference
-	var firstErr error
-	err := r.stack.IterRefs(func(rec reftable.RefRecord) bool {
-		ref, err := refRecordToReference(&rec)
+	ch := make(chan *plumbing.Reference, 64)
+	errCh := make(chan error, 1)
+	closeChan := make(chan struct{})
+
+	go func() {
+		defer close(ch)
+		err := r.stack.IterRefs(func(rec reftable.RefRecord) bool {
+			select {
+			case <-closeChan:
+				return false
+			default:
+			}
+
+			ref, err := refRecordToReference(&rec)
+			if err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				return false
+			}
+
+			select {
+			case ch <- ref:
+				return true
+			case <-closeChan:
+				return false
+			}
+		})
 		if err != nil {
-			firstErr = err
-			return false
+			select {
+			case errCh <- err:
+			default:
+			}
 		}
-		refs = append(refs, ref)
-		return true
-	})
-	if err != nil {
+	}()
+
+	return &reftableReferenceIter{
+		ch:    ch,
+		errCh: errCh,
+		close: closeChan,
+	}, nil
+}
+
+type reftableReferenceIter struct {
+	ch    chan *plumbing.Reference
+	errCh chan error
+	close chan struct{}
+}
+
+func (it *reftableReferenceIter) Next() (*plumbing.Reference, error) {
+	select {
+	case ref, ok := <-it.ch:
+		if !ok {
+			select {
+			case err := <-it.errCh:
+				if err != nil {
+					return nil, err
+				}
+			default:
+			}
+			return nil, io.EOF
+		}
+		return ref, nil
+	case err := <-it.errCh:
 		return nil, err
 	}
-	if firstErr != nil {
-		return nil, firstErr
-	}
+}
 
-	return storer.NewReferenceSliceIter(refs), nil
+func (it *reftableReferenceIter) ForEach(fn func(*plumbing.Reference) error) error {
+	defer it.Close()
+	for {
+		ref, err := it.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		if err := fn(ref); err != nil {
+			return err
+		}
+	}
+}
+
+func (it *reftableReferenceIter) Close() {
+	select {
+	case <-it.close:
+	default:
+		close(it.close)
+	}
 }
 
 // RemoveReference removes a reference from the reftable stack.

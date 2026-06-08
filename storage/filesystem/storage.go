@@ -260,12 +260,15 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 // chrootIfExists returns a chrooted filesystem if the directory exists.
 func chrootIfExists(fs billy.Filesystem, path string) (billy.Filesystem, error) {
-	_, err := fs.Stat(path)
+	info, err := fs.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("reftable: %s is not a directory", path)
 	}
 	return chroot.New(fs, path), nil
 }
