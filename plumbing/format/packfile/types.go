@@ -40,6 +40,14 @@ type ObjectHeader struct {
 	parent      *ObjectHeader
 	diskType    plumbing.ObjectType
 	externalRef bool
+
+	// chainDepth caches the result of [checkDeltaChainDepth] for
+	// this header. A positive value is the number of delta links
+	// from this object down to (but not including) the first
+	// non-delta base. Zero means either "not yet computed" or
+	// "this header is not a delta"; both cases collapse to a
+	// constant-time re-check, so the dual meaning is harmless.
+	chainDepth int
 }
 
 // ID returns the object ID.

@@ -21,6 +21,14 @@ const (
 var idxHeader = []byte{255, 't', 'O', 'c'}
 
 // Index represents an index of a packfile.
+//
+// Implementations satisfy a [io.Closer] contract via [Index.Close]:
+// on-disk implementations release file descriptors, pure
+// in-memory implementations return nil. Downstream callers
+// holding their own concrete [Index] implementations must
+// supply a [Close] method to satisfy this interface; a no-op
+// `func (*MyIndex) Close() error { return nil }` is sufficient
+// for in-memory backends.
 type Index interface {
 	// Contains checks whether the given hash is in the index.
 	Contains(h plumbing.Hash) (bool, error)
@@ -38,6 +46,10 @@ type Index interface {
 	// EntriesByOffset returns an iterator to retrieve all index entries ordered
 	// by offset.
 	EntriesByOffset() (EntryIter, error)
+	// Close releases any resources held by the index. Implementations
+	// backed by on-disk files must close their file descriptors; pure
+	// in-memory implementations must return nil. Close is idempotent.
+	Close() error
 }
 
 // MemoryIndex is the in memory representation of an idx file.
@@ -74,6 +86,9 @@ type MemoryIndex struct {
 }
 
 var _ Index = (*MemoryIndex)(nil)
+
+// Close is a no-op. MemoryIndex holds no external resources.
+func (idx *MemoryIndex) Close() error { return nil }
 
 // NewMemoryIndex returns an instance of a new MemoryIndex.
 func NewMemoryIndex(objectIDSize int) *MemoryIndex {

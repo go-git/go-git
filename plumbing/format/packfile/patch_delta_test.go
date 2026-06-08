@@ -90,8 +90,8 @@ func TestDecodeLEB128(t *testing.T) {
 // header and a sequence of pre-encoded operations.
 func buildDelta(srcSz, targetSz int, ops ...[]byte) []byte {
 	var b bytes.Buffer
-	b.Write(deltaEncodeSize(srcSz))
-	b.Write(deltaEncodeSize(targetSz))
+	b.Write(packutil.EncodeLEB128(uint(srcSz)))
+	b.Write(packutil.EncodeLEB128(uint(targetSz)))
 	for _, op := range ops {
 		b.Write(op)
 	}

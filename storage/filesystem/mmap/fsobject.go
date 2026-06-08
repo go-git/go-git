@@ -180,8 +180,8 @@ func (o *ondemandObject) resolveMetadata() error {
 		if err != nil {
 			return fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		if negativeOffset <= 0 || negativeOffset > o.offset {
-			return fmt.Errorf("%w: invalid OFS delta offset", packfile.ErrMalformedPackfile)
+		if err := packfile.ValidateOFSDeltaBase(o.offset, negativeOffset); err != nil {
+			return err
 		}
 		baseOffset := uint64(o.offset) - uint64(negativeOffset)
 		consumed := len(o.scanner.packMmap[pos:]) - reader.Len()
@@ -266,8 +266,8 @@ func (o *ondemandObject) resolveDelta() (io.ReadCloser, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		if negativeOffset <= 0 || negativeOffset > o.offset {
-			return nil, fmt.Errorf("%w: invalid OFS delta offset", packfile.ErrMalformedPackfile)
+		if err := packfile.ValidateOFSDeltaBase(o.offset, negativeOffset); err != nil {
+			return nil, err
 		}
 		baseOffset = uint64(o.offset) - uint64(negativeOffset)
 

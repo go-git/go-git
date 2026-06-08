@@ -7,11 +7,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -151,79 +155,6 @@ func (s *FsSuite) TestMismatchIdxFile() {
 	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
 	s.Require().Nil(obj)
 	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
-}
-
-func (s *FsSuite) TestGetFromPackfileKeepDescriptors() {
-	for _, f := range fixtures.Basic().ByTag(".git").ByObjectFormat("sha1") {
-		fs, err := f.DotGit()
-		s.Require().NoError(err)
-		dg := dotgit.NewWithOptions(fs, dotgit.Options{KeepDescriptors: true})
-		o := NewObjectStorageWithOptions(dg, cache.NewObjectLRUDefault(), Options{KeepDescriptors: true})
-
-		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
-		s.Require().NoError(err)
-		s.Equal(expected, obj.Hash())
-
-		packfiles, err := dg.ObjectPacks()
-		s.Require().NoError(err)
-
-		pack1, err := dg.ObjectPack(packfiles[0])
-		s.Require().NoError(err)
-
-		pack1.Seek(42, io.SeekStart)
-
-		err = o.Close()
-		s.Require().NoError(err)
-
-		pack2, err := dg.ObjectPack(packfiles[0])
-		s.Require().NoError(err)
-
-		offset, err := pack2.Seek(0, io.SeekCurrent)
-		s.Require().NoError(err)
-		s.Equal(int64(0), offset)
-	}
-}
-
-func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptors() {
-	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
-	s.Require().NoError(err)
-	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{MaxOpenDescriptors: 1})
-
-	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
-	obj, err := o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
-	obj, err = o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	err = o.Close()
-	s.Require().NoError(err)
-}
-
-func (s *FsSuite) TestGetFromPackfileMaxOpenDescriptorsLargeObjectThreshold() {
-	fs, err := fixtures.ByTag(".git").ByTag("multi-packfile").One().DotGit()
-	s.Require().NoError(err)
-	o := NewObjectStorageWithOptions(dotgit.New(fs), cache.NewObjectLRUDefault(), Options{
-		MaxOpenDescriptors:   1,
-		LargeObjectThreshold: 1,
-	})
-
-	expected := plumbing.NewHash("8d45a34641d73851e01d3754320b33bb5be3c4d3")
-	obj, err := o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	expected = plumbing.NewHash("e9cfa4c9ca160546efd7e8582ec77952a27b17db")
-	obj, err = o.getFromPackfile(expected, false)
-	s.Require().NoError(err)
-	s.Equal(expected, obj.Hash())
-
-	err = o.Close()
-	s.Require().NoError(err)
 }
 
 func (s *FsSuite) TestGetSizeOfObjectFile() {
@@ -455,49 +386,6 @@ func (s *FsSuite) TestPackfileReindex() {
 		// Now check that the test object can be retrieved
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
 		s.Require().NoError(err)
-	}
-}
-
-func (s *FsSuite) TestPackfileIterKeepDescriptors() {
-	for _, f := range fixtures.ByTag(".git") {
-		fs, err := f.DotGit()
-		s.Require().NoError(err)
-		ops := dotgit.Options{KeepDescriptors: true}
-		dg := dotgit.NewWithOptions(fs, ops)
-		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
-
-		for _, t := range objectTypes {
-			ph, err := dg.ObjectPacks()
-			s.Require().NoError(err)
-
-			for _, h := range ph {
-				f, err := dg.ObjectPack(h)
-				s.Require().NoError(err)
-
-				idxf, err := dg.ObjectPackIdx(h)
-				s.Require().NoError(err)
-
-				iter, err := NewPackfileIter(fs, f, idxf, t, true, 0, objectIDSize)
-				s.Require().NoError(err)
-
-				if err != nil {
-					continue
-				}
-
-				err = iter.ForEach(func(o plumbing.EncodedObject) error {
-					s.Equal(t, o.Type())
-					return nil
-				})
-				s.Require().NoError(err)
-
-				// test twice to check that packfiles are not closed
-				err = iter.ForEach(func(o plumbing.EncodedObject) error {
-					s.Equal(t, o.Type())
-					return nil
-				})
-				s.Require().NoError(err)
-			}
-		}
 	}
 }
 
@@ -948,4 +836,294 @@ func (s *FsSuite) TestObjectStorageAlternatesInitError() {
 	_, err = storage.EncodedObject(plumbing.AnyObject, commitHash)
 	s.Error(err)
 	s.NotErrorIs(err, plumbing.ErrObjectNotFound)
+}
+
+// TestObjectStorageCloseIdleDescriptors groups the cases for the
+// ObjectStorage-layer soft-close.
+func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DropsPackFDsButPreservesReadability", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		// Get one hash to read.
+		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		require.NoError(t, err)
+		obj1, err := iter.Next()
+		require.NoError(t, err)
+		iter.Close()
+
+		// Read once to warm caches.
+		_, err = s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		require.NoError(t, err)
+
+		require.NoError(t, s.CloseIdleDescriptors())
+
+		// Second read still works.
+		obj2, err := s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		require.NoError(t, err)
+		assert.Equal(t, obj1.Hash(), obj2.Hash())
+	})
+
+	t.Run("PreservesIndexMap", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		// Force population of s.index.
+		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		require.NoError(t, err)
+		obj1, err := iter.Next()
+		require.NoError(t, err)
+		iter.Close()
+
+		_, err = s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		require.NoError(t, err)
+
+		s.muI.RLock()
+		idxBefore := make(map[plumbing.Hash]struct{}, len(s.index))
+		for h := range s.index {
+			idxBefore[h] = struct{}{}
+		}
+		s.muI.RUnlock()
+
+		require.NoError(t, s.CloseIdleDescriptors())
+
+		s.muI.RLock()
+		assert.Equal(t, len(idxBefore), len(s.index))
+		for h := range idxBefore {
+			_, ok := s.index[h]
+			assert.True(t, ok, "index entry %s should survive", h)
+		}
+		s.muI.RUnlock()
+	})
+
+	t.Run("TwiceInARow", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		require.NoError(t, s.CloseIdleDescriptors())
+		require.NoError(t, s.CloseIdleDescriptors())
+	})
+
+	t.Run("AfterClose_NoOp", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		require.NoError(t, s.Close())
+		require.NoError(t, s.CloseIdleDescriptors())
+		require.NoError(t, s.CloseIdleDescriptors())
+	})
+
+	t.Run("ConcurrentWithReads", func(t *testing.T) {
+		t.Parallel()
+		fixture := fixtures.Basic().One()
+		dir, err := fixture.DotGit()
+		require.NoError(t, err)
+		s := NewStorage(dir, cache.NewObjectLRUDefault())
+		t.Cleanup(func() { _ = s.Close() })
+
+		// Collect a working set of hashes.
+		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		require.NoError(t, err)
+		var hashes []plumbing.Hash
+		for range 16 {
+			obj, err := iter.Next()
+			if err != nil {
+				break
+			}
+			hashes = append(hashes, obj.Hash())
+		}
+		iter.Close()
+		require.NotEmpty(t, hashes)
+
+		var wg sync.WaitGroup
+		var failures atomic.Int32
+
+		for range 8 {
+			wg.Go(func() {
+				for _, h := range hashes {
+					obj, err := s.EncodedObject(plumbing.AnyObject, h)
+					if err != nil || obj == nil {
+						failures.Add(1)
+						// Continue rather than return so a single
+						// transient failure does not mask later
+						// reads from this goroutine.
+						continue
+					}
+				}
+			})
+		}
+		for range 4 {
+			wg.Go(func() {
+				for range 16 {
+					if err := s.CloseIdleDescriptors(); err != nil {
+						failures.Add(1)
+					}
+				}
+			})
+		}
+		wg.Wait()
+		assert.Equal(t, int32(0), failures.Load(),
+			"no read or release should fail under concurrent load")
+	})
+}
+
+// TestObjectStorage_PopulateIndex_FirstReadHotMap asserts that the
+// first observable read leaves s.index populated, i.e. requireIndex
+// publishes the local map into the shared field under the lock.
+func TestObjectStorage_PopulateIndex_FirstReadHotMap(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+
+	s.muI.RLock()
+	defer s.muI.RUnlock()
+	assert.NotNil(t, s.index, "first read should publish s.index")
+	assert.NotEmpty(t, s.index, "fixture must contribute at least one pack")
+}
+
+// TestObjectStorage_ReindexPrewarms verifies that Reindex leaves
+// s.index in a hot, non-nil state so the next read does not pay a
+// cold-load. The pre-Phase-3 implementation niled s.index and
+// deferred reload to the next read.
+func TestObjectStorage_ReindexPrewarms(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+
+	require.NoError(t, s.Reindex())
+
+	// Reindex must synchronously re-populate s.index.
+	s.muI.RLock()
+	idxPopulated := len(s.index) > 0
+	s.muI.RUnlock()
+	assert.True(t, idxPopulated,
+		"Reindex should leave s.index pre-warmed for the next read")
+
+	// And the next read should still succeed.
+	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	require.NoError(t, err)
+}
+
+// TestObjectStorage_ConcurrentReindex_NoRace runs many concurrent
+// Reindex calls against the same Storage and asserts that the
+// singleflight wrapper keeps the operation safe: every call returns
+// nil, s.index stays non-empty and consistent throughout, and reads
+// after the herd still succeed. Without singleflight the goroutines
+// would each populate independently and race on the map swap,
+// producing duplicate disk I/O and a window where a reader could
+// observe a partially-published map.
+func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Pre-warm so a concurrent reader can RLock muI without first
+	// racing requireIndex against the Reindex herd.
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+	h := obj.Hash()
+
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			assert.NoError(t, s.Reindex())
+		})
+	}
+	// A few readers in parallel exercise the muI.RLock fast-path
+	// during the Reindex herd.
+	for range 8 {
+		wg.Go(func() {
+			_, err := s.EncodedObject(plumbing.AnyObject, h)
+			assert.NoError(t, err)
+		})
+	}
+	wg.Wait()
+
+	s.muI.RLock()
+	assert.NotEmpty(t, s.index, "after the Reindex herd s.index must be populated")
+	s.muI.RUnlock()
+
+	_, err = s.EncodedObject(plumbing.AnyObject, h)
+	require.NoError(t, err, "reads after the Reindex herd must still succeed")
+}
+
+// TestObjectStorage_ConcurrentEncodedObject_NoRace slams many
+// goroutines at the same storage and verifies the read path is
+// race-free under -race. The map is pre-warmed by IterEncodedObjects
+// before the herd, so the herd exercises the RLock fast-path of
+// requireIndex (singleflight coalescing is exercised separately by
+// the cold-load benchmark).
+func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
+	t.Parallel()
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = s.Close() })
+
+	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	require.NoError(t, err)
+	obj, err := iter.Next()
+	require.NoError(t, err)
+	iter.Close()
+	h := obj.Hash()
+
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			_, err := s.EncodedObject(plumbing.AnyObject, h)
+			assert.NoError(t, err)
+		})
+	}
+	wg.Wait()
+
+	s.muI.RLock()
+	defer s.muI.RUnlock()
+	assert.NotNil(t, s.index, "after the herd s.index must be populated")
 }

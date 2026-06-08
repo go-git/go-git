@@ -76,6 +76,22 @@ func TestScan(t *testing.T) {
 	})
 }
 
+func TestScannerRejectsReservedObjectType(t *testing.T) {
+	t.Parallel()
+
+	pack, _ := buildTestPack(t, testPackObject{
+		typ:     plumbing.ObjectType(5),
+		content: nil,
+	})
+	scanner := NewScanner(bytes.NewReader(pack))
+
+	for scanner.Scan() {
+	}
+
+	require.ErrorIs(t, scanner.Error(), ErrMalformedPackfile)
+	require.ErrorContains(t, scanner.Error(), "invalid object type")
+}
+
 func BenchmarkScannerBasic(b *testing.B) {
 	f := mustPackfile(b, fixtures.Basic().One())
 	scanner := NewScanner(f)
@@ -487,3 +503,82 @@ type readCloserFn struct {
 }
 
 func (r readCloserFn) Close() error { return r.closeFn() }
+
+// TestScannerOFSDeltaBaseBoundary pins both halves of the OFS-delta
+// negative-offset predicate. An entry whose encoded offset equals its own
+// pack offset resolves to a base offset of zero, which points at the PACK
+// signature byte instead of a real object header; canonical Git rejects
+// such entries (see packfile.c:1289-1290 in v2.54.0 (94f057755b)). One
+// byte short of that boundary, the predicate must accept the value —
+// otherwise the test cannot distinguish the post-fix `>=` from the
+// pre-fix strict `>`.
+func TestScannerOFSDeltaBaseBoundary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		negativeOffset byte
+		wantAccept     bool
+	}{
+		{
+			// delta_obj_offset - base_offset = 12 - 12 = 0; out of bounds.
+			name:           "rejects_at_own_offset",
+			negativeOffset: 0x0C,
+			wantAccept:     false,
+		},
+		{
+			// delta_obj_offset - base_offset = 12 - 11 = 1; one byte
+			// short of the boundary. The resolved base offset still
+			// falls inside the 12-byte pack header (which is invalid
+			// for a real object), but the scanner's predicate is
+			// strictly "base_offset > 0 AND < delta_obj_offset", and
+			// 1 satisfies both halves. Higher layers reject the bogus
+			// base when they fail to find an object at that offset;
+			// this test pins the predicate only.
+			name:           "accepts_one_byte_short_of_own_offset",
+			negativeOffset: 0x0B,
+			wantAccept:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			h := sha1.New()
+			w := io.MultiWriter(&buf, h)
+
+			// Pack header: magic, version=2, count=1.
+			_, _ = w.Write([]byte{'P', 'A', 'C', 'K'})
+			_ = binary.Write(w, binary.BigEndian, uint32(2))
+			_ = binary.Write(w, binary.BigEndian, uint32(1))
+
+			// Object header at offset 12: OFS-delta type (6), size 0,
+			// no size continuation.
+			_, _ = w.Write([]byte{byte(plumbing.OFSDeltaObject) << firstLengthBits})
+
+			_, _ = w.Write([]byte{tc.negativeOffset})
+
+			// A valid empty zlib stream so any code path past the
+			// validation has well-formed payload bytes to consume.
+			zw := zlib.NewWriter(w)
+			require.NoError(t, zw.Close())
+
+			// SHA-1 trailer over everything written so far.
+			_, _ = buf.Write(h.Sum(nil))
+
+			s := NewScanner(bytes.NewReader(buf.Bytes()))
+			require.True(t, s.Scan(), "expected header section")
+			got := s.Scan()
+			if tc.wantAccept {
+				require.True(t, got, "expected scanner to accept boundary-minus-one")
+				require.NoError(t, s.Error())
+			} else {
+				require.False(t, got, "OFS-delta with self-referencing offset must be rejected")
+				assert.ErrorIs(t, s.Error(), ErrMalformedPackfile)
+				assert.ErrorContains(t, s.Error(), "invalid OFS delta offset")
+			}
+		})
+	}
+}

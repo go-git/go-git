@@ -11,7 +11,7 @@ import (
 
 type DeltaSelectorSuite struct {
 	suite.Suite
-	ds     *deltaSelector
+	ds     *DeltaSelector
 	store  *memory.Storage
 	hashes map[string]plumbing.Hash
 }
@@ -24,7 +24,7 @@ func TestDeltaSelectorSuite(t *testing.T) {
 func (s *DeltaSelectorSuite) SetupTest() {
 	s.store = memory.NewStorage()
 	s.createTestObjects()
-	s.ds = newDeltaSelector(s.store)
+	s.ds = NewDeltaSelector(s.store)
 }
 
 func (s *DeltaSelectorSuite) TestSort() {

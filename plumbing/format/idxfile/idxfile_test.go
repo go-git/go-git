@@ -176,6 +176,28 @@ func fixtureIndex() (*idxfile.MemoryIndex, error) {
 	return idx, nil
 }
 
+type MemoryIndexSuite struct {
+	suite.Suite
+}
+
+func TestMemoryIndexSuite(t *testing.T) {
+	t.Parallel()
+	suite.Run(t, new(MemoryIndexSuite))
+}
+
+func (s *MemoryIndexSuite) TestCloseIsNoOp() {
+	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	s.NoError(idx.Close())
+	// Calling Close repeatedly is fine.
+	s.NoError(idx.Close())
+}
+
+func (s *MemoryIndexSuite) TestSatisfiesIndexInterface() {
+	// Close must be reachable via the interface.
+	var idx idxfile.Index = idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	s.NoError(idx.Close())
+}
+
 func TestOffsetHashConcurrentPopulation(t *testing.T) {
 	t.Parallel()
 	idx, err := fixtureIndex()
