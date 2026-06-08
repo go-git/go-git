@@ -571,7 +571,7 @@ func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
 	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
-	c.Extensions.RefStorage = format.RefStorage(s.Options.Get(refStorageKey))
+	c.Extensions.RefStorage = format.RefStorage(strings.ToLower(s.Options.Get(refStorageKey)))
 }
 
 func (c *Config) unmarshalTag() {

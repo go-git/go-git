@@ -134,7 +134,7 @@ func decodeRefRecord(buf []byte, prefixName string, hashSize int, minUpdateIndex
 			return RefRecord{}, 0, fmt.Errorf("%w: truncated symref target length", ErrCorruptBlock)
 		}
 		pos += n
-		if pos+int(targetLen) > len(buf) {
+		if targetLen > math.MaxInt || targetLen > uint64(len(buf)-pos) {
 			return RefRecord{}, 0, fmt.Errorf("%w: symref target extends beyond block", ErrCorruptBlock)
 		}
 		rec.Target = string(buf[pos : pos+int(targetLen)])
@@ -227,7 +227,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated name_length", ErrCorruptBlock)
 	}
 	pos += n
-	if pos+int(nameLen) > len(buf) {
+	if nameLen > math.MaxInt || nameLen > uint64(len(buf)-pos) {
 		return LogRecord{}, 0, fmt.Errorf("%w: name extends beyond block", ErrCorruptBlock)
 	}
 	rec.Name = string(buf[pos : pos+int(nameLen)])
@@ -239,7 +239,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated email_length", ErrCorruptBlock)
 	}
 	pos += n
-	if pos+int(emailLen) > len(buf) {
+	if emailLen > math.MaxInt || emailLen > uint64(len(buf)-pos) {
 		return LogRecord{}, 0, fmt.Errorf("%w: email extends beyond block", ErrCorruptBlock)
 	}
 	rec.Email = string(buf[pos : pos+int(emailLen)])
@@ -270,7 +270,7 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 		return LogRecord{}, 0, fmt.Errorf("%w: truncated message_length", ErrCorruptBlock)
 	}
 	pos += n
-	if pos+int(msgLen) > len(buf) {
+	if msgLen > math.MaxInt || msgLen > uint64(len(buf)-pos) {
 		return LogRecord{}, 0, fmt.Errorf("%w: message extends beyond block", ErrCorruptBlock)
 	}
 	rec.Message = string(buf[pos : pos+int(msgLen)])
