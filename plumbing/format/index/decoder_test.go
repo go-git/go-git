@@ -466,13 +466,15 @@ func TestDecodeSkipHash(t *testing.T) {
 			_, err = buf.Write(make([]byte, hashSize))
 			require.NoError(t, err)
 
-			// Without SkipHash, decoding must fail (checksum mismatch).
+			// A null (all-zero) trailing checksum is accepted without
+			// opting in, matching git's index.skipHash read behaviour.
 			out := &Index{}
 			d := NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New())
 			err = d.Decode(out)
-			assert.ErrorIs(t, err, ErrInvalidChecksum)
+			require.NoError(t, err)
+			assert.Len(t, out.Entries, 1)
 
-			// With SkipHash, decoding must succeed.
+			// WithSkipHash also decodes successfully.
 			out = &Index{}
 			d = NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New(), WithSkipHash())
 			err = d.Decode(out)
