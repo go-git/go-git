@@ -2,6 +2,7 @@ package reftable
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	gbinary "github.com/go-git/go-git/v6/utils/binary"
@@ -75,19 +76,21 @@ func decodeRefRecord(buf []byte, prefixName string, hashSize int, minUpdateIndex
 	pos += n
 
 	valueType := uint8(suffixTypeVal & refValueTypeMask)
-	suffixLen := int(suffixTypeVal >> refValueTypeBits)
+	suffixLenU := suffixTypeVal >> refValueTypeBits
 
 	if valueType > refValueTypeMax {
 		return RefRecord{}, 0, fmt.Errorf("%w: unknown ref value type %d", ErrCorruptBlock, valueType)
 	}
 
-	// Reconstruct full name.
-	if int(prefixLen) > len(prefixName) {
+	// Validate varint-decoded sizes before uint64→int conversion to prevent
+	// overflow on 32-bit platforms.
+	if prefixLen > uint64(len(prefixName)) {
 		return RefRecord{}, 0, fmt.Errorf("%w: prefix_length %d exceeds previous name length %d", ErrCorruptBlock, prefixLen, len(prefixName))
 	}
-	if pos+suffixLen > len(buf) {
+	if suffixLenU > math.MaxInt || suffixLenU > uint64(len(buf)-pos) {
 		return RefRecord{}, 0, fmt.Errorf("%w: suffix extends beyond block", ErrCorruptBlock)
 	}
+	suffixLen := int(suffixLenU)
 
 	name := prefixName[:prefixLen] + string(buf[pos:pos+suffixLen])
 	pos += suffixLen
@@ -167,15 +170,16 @@ func decodeLogRecord(buf []byte, prefixKey string, hashSize int) (LogRecord, int
 	pos += n
 
 	logType := uint8(suffixTypeVal & 0x7)
-	suffixLen := int(suffixTypeVal >> 3)
+	suffixLenU := suffixTypeVal >> 3
 
-	// Reconstruct full key: refname \0 reverse_int64(update_index)
-	if int(prefixLen) > len(prefixKey) {
+	// Validate varint-decoded sizes before uint64→int conversion.
+	if prefixLen > uint64(len(prefixKey)) {
 		return LogRecord{}, 0, fmt.Errorf("%w: prefix_length %d exceeds previous key length %d", ErrCorruptBlock, prefixLen, len(prefixKey))
 	}
-	if pos+suffixLen > len(buf) {
+	if suffixLenU > math.MaxInt || suffixLenU > uint64(len(buf)-pos) {
 		return LogRecord{}, 0, fmt.Errorf("%w: suffix extends beyond block", ErrCorruptBlock)
 	}
+	suffixLen := int(suffixLenU)
 
 	key := prefixKey[:prefixLen] + string(buf[pos:pos+suffixLen])
 	pos += suffixLen
@@ -324,14 +328,16 @@ func decodeIndexRecord(buf []byte, prefixKey string) (indexRecord, int, error) {
 	pos += n
 
 	// Type is always 0 for index records.
-	suffixLen := int(suffixTypeVal >> 3)
+	suffixLenU := suffixTypeVal >> 3
 
-	if int(prefixLen) > len(prefixKey) {
+	// Validate varint-decoded sizes before uint64→int conversion.
+	if prefixLen > uint64(len(prefixKey)) {
 		return indexRecord{}, 0, fmt.Errorf("%w: prefix_length exceeds previous key", ErrCorruptBlock)
 	}
-	if pos+suffixLen > len(buf) {
+	if suffixLenU > math.MaxInt || suffixLenU > uint64(len(buf)-pos) {
 		return indexRecord{}, 0, fmt.Errorf("%w: suffix extends beyond block", ErrCorruptBlock)
 	}
+	suffixLen := int(suffixLenU)
 
 	key := prefixKey[:prefixLen] + string(buf[pos:pos+suffixLen])
 	pos += suffixLen

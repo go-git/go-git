@@ -6,8 +6,9 @@
 // specified at https://git-scm.com/docs/reftable.
 //
 // A repository using the reftable backend stores its data in a reftable/
-// directory containing a tables.list file and one or more .ref and .log
-// table files. The tables.list file lists all active tables from oldest
+// directory containing a tables.list file and one or more table files
+// (with a .ref extension) that contain both references and reflogs.
+// The tables.list file lists all active tables from oldest
 // to newest. References are looked up by searching tables in reverse
 // order (newest first), with the first match winning.
 package reftable

@@ -70,7 +70,7 @@ func ReadVarInt(r io.ByteReader) (uint64, error) {
 	n := 1
 	for b&0x80 != 0 {
 		if n >= maxVarIntLen {
-			return 0, fmt.Errorf("varint overflow: more than %d continuation bytes", maxVarIntLen)
+			return 0, fmt.Errorf("varint overflow: encoded length exceeds %d bytes", maxVarIntLen)
 		}
 		b, err = r.ReadByte()
 		if err != nil {
