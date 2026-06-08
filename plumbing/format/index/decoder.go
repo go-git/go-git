@@ -378,6 +378,15 @@ func (d *Decoder) readChecksum(expected []byte) error {
 		return err
 	}
 
+	// A null (all-zero) trailing hash means the checksum was skipped when
+	// the index was written (git's index.skipHash, 2.40+). Upstream git
+	// disables verification in this case, so match that even when the
+	// caller did not opt in via WithSkipHash.
+	if h.IsZero() {
+		trace.Internal.Printf("index: null trailing checksum, skipping verification")
+		return nil
+	}
+
 	if d.skipHash {
 		trace.Internal.Printf("index: skipping checksum verification (skipHash)")
 		return nil

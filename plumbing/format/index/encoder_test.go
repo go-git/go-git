@@ -262,11 +262,13 @@ func TestEncodeSkipHash(t *testing.T) {
 			checksum := raw[len(raw)-hashSize:]
 			assert.Equal(t, make([]byte, hashSize), checksum)
 
-			// A normal decoder must reject the null checksum.
+			// A normal decoder accepts the null checksum, matching git's
+			// index.skipHash read behaviour.
 			output := &Index{}
 			d := NewDecoder(bytes.NewReader(raw), tc.hash.New())
 			err = d.Decode(output)
-			assert.ErrorIs(t, err, ErrInvalidChecksum)
+			require.NoError(t, err)
+			assert.EqualExportedValues(t, idx, output)
 
 			// A skipHash decoder must accept it and recover the entries.
 			output = &Index{}
