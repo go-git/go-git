@@ -183,6 +183,7 @@ func TestWriterMultiBlockRoundTrip(t *testing.T) {
 
 	tbl, err := OpenTable(newBytesReaderAt(data), int64(len(data)))
 	require.NoError(t, err)
+	assert.True(t, tbl.footer.refIndexPos > 0, "expected non-zero refIndexPos for multi-block table")
 
 	// Verify every ref can be looked up individually.
 	for _, ref := range refs {

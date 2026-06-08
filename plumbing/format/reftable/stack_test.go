@@ -1,9 +1,12 @@
 package reftable
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	"github.com/go-git/go-billy/v6/memfs"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,5 +84,118 @@ func TestStackLogsFor(t *testing.T) {
 	if len(logs) > 1 {
 		// Should be newest first.
 		assert.GreaterOrEqual(t, logs[0].UpdateIndex, logs[1].UpdateIndex)
+	}
+}
+
+func TestStackCompaction(t *testing.T) {
+	fs := memfs.New()
+	stack, err := OpenStack(fs)
+	require.NoError(t, err)
+	defer func() { _ = stack.Close() }()
+
+	err = stack.SetRef(RefRecord{RefName: "refs/heads/branch-1", ValueType: refValueVal1, Value: []byte("11111111111111111111")})
+	require.NoError(t, err)
+
+	err = stack.SetRef(RefRecord{RefName: "refs/heads/branch-2", ValueType: refValueVal1, Value: []byte("22222222222222222222")})
+	require.NoError(t, err)
+
+	err = stack.SetRef(RefRecord{RefName: "refs/heads/branch-3", ValueType: refValueVal1, Value: []byte("33333333333333333333")})
+	require.NoError(t, err)
+
+	assert.Len(t, stack.tables, 3)
+
+	r1, err := stack.Ref("refs/heads/branch-1")
+	require.NoError(t, err)
+	assert.NotNil(t, r1)
+	assert.Equal(t, []byte("11111111111111111111"), r1.Value)
+
+	r2, err := stack.Ref("refs/heads/branch-2")
+	require.NoError(t, err)
+	assert.NotNil(t, r2)
+	assert.Equal(t, []byte("22222222222222222222"), r2.Value)
+
+	err = stack.Compact()
+	require.NoError(t, err)
+
+	assert.Len(t, stack.tables, 1)
+
+	r1Merged, err := stack.Ref("refs/heads/branch-1")
+	require.NoError(t, err)
+	assert.NotNil(t, r1Merged)
+	assert.Equal(t, []byte("11111111111111111111"), r1Merged.Value)
+
+	r3Merged, err := stack.Ref("refs/heads/branch-3")
+	require.NoError(t, err)
+	assert.NotNil(t, r3Merged)
+	assert.Equal(t, []byte("33333333333333333333"), r3Merged.Value)
+}
+
+func TestStackAutoCompaction(t *testing.T) {
+	fs := memfs.New()
+	stack, err := OpenStack(fs)
+	require.NoError(t, err)
+	defer func() { _ = stack.Close() }()
+
+	for i := 1; i <= 6; i++ {
+		err = stack.SetRef(RefRecord{
+			RefName:     fmt.Sprintf("refs/heads/branch-%d", i),
+			ValueType:   refValueVal1,
+			Value:       []byte(fmt.Sprintf("%020d", i)),
+		})
+		require.NoError(t, err)
+	}
+
+	assert.Len(t, stack.tables, 1)
+
+	r1, err := stack.Ref("refs/heads/branch-1")
+	require.NoError(t, err)
+	assert.NotNil(t, r1)
+	assert.Equal(t, []byte("00000000000000000001"), r1.Value)
+
+	r6, err := stack.Ref("refs/heads/branch-6")
+	require.NoError(t, err)
+	assert.NotNil(t, r6)
+	assert.Equal(t, []byte("00000000000000000006"), r6.Value)
+}
+
+func TestStackConcurrentWrites(t *testing.T) {
+	fs := memfs.New()
+	stack, err := OpenStack(fs)
+	require.NoError(t, err)
+	defer func() { _ = stack.Close() }()
+
+	const numGoroutines = 10
+	const writesPerGoroutine = 5
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for g := 0; g < numGoroutines; g++ {
+		go func(gid int) {
+			defer wg.Done()
+			for i := 0; i < writesPerGoroutine; i++ {
+				err := stack.SetRef(RefRecord{
+					RefName:     fmt.Sprintf("refs/heads/g-%d-%d", gid, i),
+					ValueType:   refValueVal1,
+					Value:       []byte("11111111111111111111"),
+				})
+				if err != nil {
+					t.Errorf("SetRef failed: %v", err)
+				}
+			}
+		}(g)
+	}
+
+	wg.Wait()
+
+	// Verify all refs are present and correct.
+	for g := 0; g < numGoroutines; g++ {
+		for i := 0; i < writesPerGoroutine; i++ {
+			name := fmt.Sprintf("refs/heads/g-%d-%d", g, i)
+			ref, err := stack.Ref(name)
+			require.NoError(t, err)
+			require.NotNil(t, ref, "ref %s was lost", name)
+			assert.Equal(t, []byte("11111111111111111111"), ref.Value)
+		}
 	}
 }

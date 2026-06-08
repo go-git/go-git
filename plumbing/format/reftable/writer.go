@@ -92,11 +92,22 @@ func (w *Writer) Close() error {
 
 	// Write ref blocks.
 	refEndPos := w.totalWritten
+	var indexRecs []indexRecord
 	if len(w.refs) > 0 {
-		if err := w.writeRefBlocks(); err != nil {
+		if err := w.writeRefBlocks(&indexRecs); err != nil {
 			return err
 		}
 		refEndPos = w.totalWritten
+	}
+
+	// Write index blocks if we have more than 1 ref block.
+	var refIndexPos uint64
+	if len(indexRecs) > 1 {
+		var err error
+		refIndexPos, err = w.writeIndexBlocks(indexRecs)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Write log blocks.
@@ -109,7 +120,7 @@ func (w *Writer) Close() error {
 	}
 
 	// Write footer.
-	return w.writeFooter(refEndPos, logPos)
+	return w.writeFooter(refEndPos, logPos, refIndexPos)
 }
 
 func (w *Writer) writeHeader() error {
@@ -133,7 +144,7 @@ func (w *Writer) writeHeader() error {
 	return err
 }
 
-func (w *Writer) writeRefBlocks() error {
+func (w *Writer) writeRefBlocks(indexRecs *[]indexRecord) error {
 	var buf bytes.Buffer
 	prevName := ""
 	recordCount := 0
@@ -144,9 +155,22 @@ func (w *Writer) writeRefBlocks() error {
 		if buf.Len() == 0 {
 			return nil
 		}
+		startOffset := uint64(w.totalWritten)
+		if isFirstBlock {
+			startOffset = 0
+		}
 		err := w.flushRefBlock(buf.Bytes(), restarts, isFirstBlock)
 		isFirstBlock = false
-		return err
+		if err != nil {
+			return err
+		}
+		// Record the last key of this block.
+		lastKey := prevName
+		*indexRecs = append(*indexRecs, indexRecord{
+			LastKey:       lastKey,
+			BlockPosition: startOffset,
+		})
+		return nil
 	}
 
 	for i := range w.refs {
@@ -399,7 +423,7 @@ func encodeLogRecord(rec *LogRecord, prevKey string, hashSize int) []byte {
 	return out
 }
 
-func (w *Writer) writeFooter(_ int64, logPos uint64) error {
+func (w *Writer) writeFooter(_ int64, logPos uint64, refIndexPos uint64) error {
 	footer := make([]byte, footerSizeV1)
 
 	copy(footer[0:4], magic[:])
@@ -416,8 +440,8 @@ func (w *Writer) writeFooter(_ int64, logPos uint64) error {
 	binary.BigEndian.PutUint64(footer[16:24], w.opts.MaxUpdateIndex)
 
 	pos := 24
-	// ref_index_position = 0 (no index for small tables).
-	binary.BigEndian.PutUint64(footer[pos:], 0)
+	// ref_index_position.
+	binary.BigEndian.PutUint64(footer[pos:], refIndexPos)
 	pos += 8
 
 	// obj_position << 5 | obj_id_len = 0.
@@ -443,6 +467,131 @@ func (w *Writer) writeFooter(_ int64, logPos uint64) error {
 	n, err := w.w.Write(footer)
 	w.totalWritten += int64(n)
 	return err
+}
+
+func (w *Writer) writeIndexBlocks(recs []indexRecord) (uint64, error) {
+	if len(recs) == 0 {
+		return 0, nil
+	}
+	if len(recs) == 1 {
+		return recs[0].BlockPosition, nil
+	}
+
+	var parentRecs []indexRecord
+	var buf bytes.Buffer
+	var restarts []uint32
+	prevKey := ""
+	recordCount := 0
+
+	flushIndex := func() error {
+		if buf.Len() == 0 {
+			return nil
+		}
+		startOffset := uint64(w.totalWritten)
+		err := w.flushIndexBlock(buf.Bytes(), restarts)
+		if err != nil {
+			return err
+		}
+
+		lastKey := recs[recordCount-1].LastKey
+		parentRecs = append(parentRecs, indexRecord{
+			LastKey:       lastKey,
+			BlockPosition: startOffset,
+		})
+		return nil
+	}
+
+	for i := range recs {
+		rec := &recs[i]
+		encoded := encodeIndexRecord(*rec, prevKey)
+
+		restartTableSize := (len(restarts) + 1) * 3
+		totalSize := blockHeaderSize + buf.Len() + len(encoded) + restartTableSize + 2
+		if buf.Len() > 0 && totalSize > w.blockSize {
+			if err := flushIndex(); err != nil {
+				return 0, err
+			}
+			buf.Reset()
+			restarts = nil
+			prevKey = ""
+			recordCount = 0
+			encoded = encodeIndexRecord(*rec, "")
+		}
+
+		if recordCount%w.restartFreq == 0 {
+			restarts = append(restarts, uint32(blockHeaderSize+buf.Len()))
+			encoded = encodeIndexRecord(*rec, "")
+		}
+
+		buf.Write(encoded)
+		prevKey = rec.LastKey
+		recordCount++
+	}
+
+	if err := flushIndex(); err != nil {
+		return 0, err
+	}
+
+	return w.writeIndexBlocks(parentRecs)
+}
+
+func (w *Writer) flushIndexBlock(data []byte, restarts []uint32) error {
+	restartTable := make([]byte, len(restarts)*3+2)
+	for i, r := range restarts {
+		restartTable[i*3] = byte(r >> 16)
+		restartTable[i*3+1] = byte(r >> 8)
+		restartTable[i*3+2] = byte(r)
+	}
+	binary.BigEndian.PutUint16(restartTable[len(restarts)*3:], uint16(len(restarts)))
+
+	contentLen := blockHeaderSize + len(data) + len(restartTable)
+	blockLen := contentLen
+
+	padding := 0
+	if w.blockSize > 0 && blockLen < w.blockSize {
+		padding = w.blockSize - blockLen
+	}
+
+	header := [blockHeaderSize]byte{
+		blockTypeIndex,
+		byte(blockLen >> 16),
+		byte(blockLen >> 8),
+		byte(blockLen),
+	}
+
+	totalBlock := make([]byte, 0, contentLen+padding)
+	totalBlock = append(totalBlock, header[:]...)
+	totalBlock = append(totalBlock, data...)
+	totalBlock = append(totalBlock, restartTable...)
+	if padding > 0 {
+		totalBlock = append(totalBlock, make([]byte, padding)...)
+	}
+
+	n, err := w.w.Write(totalBlock)
+	w.totalWritten += int64(n)
+	return err
+}
+
+func encodeIndexRecord(rec indexRecord, prevKey string) []byte {
+	var buf [10]byte
+	var out []byte
+
+	prefixLen := commonPrefix(prevKey, rec.LastKey)
+	suffix := rec.LastKey[prefixLen:]
+
+	n := gbinary.PutVarInt(buf[:], uint64(prefixLen))
+	out = append(out, buf[:n]...)
+
+	suffixType := uint64(len(suffix)) << 3
+	n = gbinary.PutVarInt(buf[:], suffixType)
+	out = append(out, buf[:n]...)
+
+	out = append(out, suffix...)
+
+	n = gbinary.PutVarInt(buf[:], rec.BlockPosition)
+	out = append(out, buf[:n]...)
+
+	return out
 }
 
 // commonPrefix returns the length of the common prefix between a and b.

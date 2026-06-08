@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -19,6 +20,7 @@ import (
 type Stack struct {
 	fs     billy.Filesystem
 	tables []*Table // ordered oldest to newest
+	mu     sync.Mutex
 }
 
 // OpenStack opens a reftable stack from the given filesystem (the reftable/
@@ -36,7 +38,11 @@ func (s *Stack) reload() error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Empty stack.
+			oldTables := s.tables
 			s.tables = nil
+			for _, t := range oldTables {
+				_ = t.Close()
+			}
 			return nil
 		}
 		return fmt.Errorf("reftable: opening tables.list: %w", err)
@@ -95,7 +101,11 @@ func (s *Stack) reload() error {
 		tables = append(tables, tbl)
 	}
 
+	oldTables := s.tables
 	s.tables = tables
+	for _, t := range oldTables {
+		_ = t.Close()
+	}
 	return nil
 }
 
@@ -224,6 +234,16 @@ func (s *Stack) AddLog(rec LogRecord) error {
 // writeNewTable creates a new reftable file with the given records,
 // appends it to the stack, and updates tables.list.
 func (s *Stack) writeNewTable(refs []RefRecord, logs []LogRecord, minIdx, maxIdx uint64) error {
+	lk, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer s.unlock(lk)
+
+	if err := s.reload(); err != nil {
+		return err
+	}
+
 	// Generate a unique table name.
 	tableName, err := generateTableName(minIdx, maxIdx)
 	if err != nil {
@@ -251,19 +271,29 @@ func (s *Stack) writeNewTable(refs []RefRecord, logs []LogRecord, minIdx, maxIdx
 
 	if err := w.Close(); err != nil {
 		_ = f.Close()
+		_ = s.fs.Remove(tableName)
 		return fmt.Errorf("reftable: writing table: %w", err)
 	}
 	if err := f.Close(); err != nil {
+		_ = s.fs.Remove(tableName)
 		return fmt.Errorf("reftable: closing table: %w", err)
 	}
 
-	// Atomically update tables.list by writing to a temp file and renaming.
 	if err := s.appendTablesList(tableName); err != nil {
+		_ = s.fs.Remove(tableName)
 		return err
 	}
 
-	// Reload the stack to pick up the new table.
-	return s.reload()
+	if err := s.reload(); err != nil {
+		return err
+	}
+
+	// Auto-compact if stack has more than 5 tables.
+	if len(s.tables) > 5 {
+		_ = s.compact()
+	}
+
+	return nil
 }
 
 // appendTablesList appends a table name to the tables.list file.
@@ -286,37 +316,182 @@ func (s *Stack) appendTablesList(tableName string) error {
 	}
 
 	names = append(names, tableName)
+	return s.writeTablesListAtomic(names)
+}
 
-	// Write updated tables.list.
+func (s *Stack) writeTablesListAtomic(names []string) error {
 	var buf bytes.Buffer
 	for _, name := range names {
 		fmt.Fprintln(&buf, name)
 	}
 
-	wf, err := s.fs.Create("tables.list")
+	tmpName := "tables.list.tmp"
+	wf, err := s.fs.Create(tmpName)
 	if err != nil {
-		return fmt.Errorf("reftable: creating tables.list: %w", err)
+		return fmt.Errorf("reftable: creating tables.list.tmp: %w", err)
 	}
 	if _, err := wf.Write(buf.Bytes()); err != nil {
 		_ = wf.Close()
-		return fmt.Errorf("reftable: writing tables.list: %w", err)
+		_ = s.fs.Remove(tmpName)
+		return fmt.Errorf("reftable: writing tables.list.tmp: %w", err)
 	}
-	return wf.Close()
+	if err := wf.Close(); err != nil {
+		_ = s.fs.Remove(tmpName)
+		return fmt.Errorf("reftable: closing tables.list.tmp: %w", err)
+	}
+
+	if err := s.fs.Rename(tmpName, "tables.list"); err != nil {
+		_ = s.fs.Remove(tmpName)
+		return fmt.Errorf("reftable: renaming tables.list.tmp to tables.list: %w", err)
+	}
+	return nil
 }
 
-// generateTableName creates a reftable filename in the format:
-// 0xMIN-0xMAX-RANDOM.ref
-func generateTableName(minIdx, maxIdx uint64) (string, error) {
-	var randBytes [4]byte
-	if _, err := rand.Read(randBytes[:]); err != nil {
-		return "", err
+// Compact merges all tables in the stack into a single table.
+func (s *Stack) Compact() error {
+	lk, err := s.lock()
+	if err != nil {
+		return err
 	}
-	return fmt.Sprintf("0x%012x-0x%012x-%s.ref",
-		minIdx, maxIdx, hex.EncodeToString(randBytes[:])), nil
+	defer s.unlock(lk)
+
+	if err := s.reload(); err != nil {
+		return err
+	}
+
+	return s.compact()
+}
+
+func (s *Stack) compact() error {
+	if len(s.tables) <= 1 {
+		return nil
+	}
+
+	var refs []RefRecord
+	err := s.IterRefs(func(rec RefRecord) bool {
+		refs = append(refs, rec)
+		return true
+	})
+	if err != nil {
+		return fmt.Errorf("reftable: compaction: iterating refs: %w", err)
+	}
+
+	var logs []LogRecord
+	for _, tbl := range s.tables {
+		err := tbl.IterLogs(func(rec LogRecord) bool {
+			logs = append(logs, rec)
+			return true
+		})
+		if err != nil {
+			return fmt.Errorf("reftable: compaction: iterating logs: %w", err)
+		}
+	}
+
+	minIdx := s.tables[0].footer.minUpdateIndex
+	maxIdx := s.tables[len(s.tables)-1].footer.maxUpdateIndex
+
+	tableName, err := generateTableName(minIdx, maxIdx)
+	if err != nil {
+		return fmt.Errorf("reftable: compaction: generating table name: %w", err)
+	}
+
+	f, err := s.fs.Create(tableName)
+	if err != nil {
+		return fmt.Errorf("reftable: compaction: creating table %s: %w", tableName, err)
+	}
+
+	w := NewWriter(f, WriterOptions{
+		MinUpdateIndex: minIdx,
+		MaxUpdateIndex: maxIdx,
+		HashSize:       20,
+	})
+
+	for i := range refs {
+		w.AddRef(refs[i])
+	}
+	for i := range logs {
+		w.AddLog(logs[i])
+	}
+
+	if err := w.Close(); err != nil {
+		_ = f.Close()
+		_ = s.fs.Remove(tableName)
+		return fmt.Errorf("reftable: compaction: writing table: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = s.fs.Remove(tableName)
+		return fmt.Errorf("reftable: compaction: closing table: %w", err)
+	}
+
+	var oldNames []string
+	tf, err := s.fs.Open("tables.list")
+	if err == nil {
+		scanner := bufio.NewScanner(tf)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" && !strings.HasPrefix(line, "#") {
+				oldNames = append(oldNames, line)
+			}
+		}
+		_ = tf.Close()
+	}
+
+	if err := s.writeTablesListAtomic([]string{tableName}); err != nil {
+		_ = s.fs.Remove(tableName)
+		return err
+	}
+
+	if err := s.reload(); err != nil {
+		return err
+	}
+
+	for _, name := range oldNames {
+		_ = s.fs.Remove(name)
+	}
+	return nil
+}
+
+type stackLock struct {
+	f billy.File
+}
+
+func (s *Stack) lock() (*stackLock, error) {
+	s.mu.Lock()
+
+	f, err := s.fs.OpenFile("tables.list.lock", os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("reftable: opening lock file: %w", err)
+	}
+
+	if locker, ok := f.(billy.Locker); ok {
+		if err := locker.Lock(); err != nil {
+			_ = f.Close()
+			s.mu.Unlock()
+			return nil, fmt.Errorf("reftable: locking lock file: %w", err)
+		}
+	}
+	return &stackLock{f: f}, nil
+}
+
+func (s *Stack) unlock(lk *stackLock) {
+	if lk == nil {
+		return
+	}
+	if locker, ok := lk.f.(billy.Locker); ok {
+		_ = locker.Unlock()
+	}
+	_ = lk.f.Close()
+	s.mu.Unlock()
 }
 
 // Close closes all open table files.
 func (s *Stack) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tables {
+		_ = t.Close()
+	}
 	s.tables = nil
 	return nil
 }
@@ -352,3 +527,14 @@ func (f *fileInfoSize) Mode() os.FileMode  { return 0 }
 func (f *fileInfoSize) ModTime() time.Time { return time.Time{} }
 func (f *fileInfoSize) IsDir() bool        { return false }
 func (f *fileInfoSize) Sys() any           { return nil }
+
+// generateTableName creates a reftable filename in the format:
+// 0xMIN-0xMAX-RANDOM.ref
+func generateTableName(minIdx, maxIdx uint64) (string, error) {
+	var randBytes [4]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("0x%012x-0x%012x-%s.ref",
+		minIdx, maxIdx, hex.EncodeToString(randBytes[:])), nil
+}

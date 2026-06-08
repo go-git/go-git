@@ -26,11 +26,24 @@ func (r *ReftableReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.E
 		return nil, nil
 	}
 
-	// Reftable returns records newest-first, but the ReflogStorer interface
-	// expects oldest-first. Reverse the slice.
-	entries := make([]*reflog.Entry, len(records))
-	for i, rec := range records {
-		entries[len(records)-1-i] = logRecordToEntry(&rec)
+	// Reftable returns records newest-first. Process them and stop if we see
+	// a deletion tombstone (LogType == 0).
+	var active []*reflog.Entry
+	for _, rec := range records {
+		if rec.LogType == 0 { // deletion tombstone
+			break
+		}
+		active = append(active, logRecordToEntry(&rec))
+	}
+
+	if len(active) == 0 {
+		return nil, nil
+	}
+
+	// Reverse to return oldest-first.
+	entries := make([]*reflog.Entry, len(active))
+	for i := range active {
+		entries[len(active)-1-i] = active[i]
 	}
 
 	return entries, nil

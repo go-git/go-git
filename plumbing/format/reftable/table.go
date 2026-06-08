@@ -492,3 +492,11 @@ func (t *Table) MinUpdateIndex() uint64 {
 func (t *Table) MaxUpdateIndex() uint64 {
 	return t.footer.maxUpdateIndex
 }
+
+// Close closes the underlying reader if it implements io.Closer.
+func (t *Table) Close() error {
+	if closer, ok := t.r.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}

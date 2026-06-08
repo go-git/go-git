@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/reftable"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 )
 
 // ReftableReferenceStorage implements storer.ReferenceStorer backed by a
@@ -31,19 +32,18 @@ func (r *ReftableReferenceStorage) CheckAndSetReference(newRef, old *plumbing.Re
 		if err != nil {
 			return err
 		}
-		if current == nil {
-			return fmt.Errorf("reference %s not found", old.Name())
+
+		var currentHash plumbing.Hash
+		if current != nil {
+			currentRef, err := refRecordToReference(current)
+			if err != nil {
+				return err
+			}
+			currentHash = currentRef.Hash()
 		}
 
-		// Verify old value matches.
-		currentRef, err := refRecordToReference(current)
-		if err != nil {
-			return err
-		}
-		if old.Type() == plumbing.HashReference {
-			if currentRef.Hash() != old.Hash() {
-				return fmt.Errorf("reference %s has changed", old.Name())
-			}
+		if currentHash != old.Hash() {
+			return storage.ErrReferenceHasChanged
 		}
 	}
 
