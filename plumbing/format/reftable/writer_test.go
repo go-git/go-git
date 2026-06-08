@@ -306,3 +306,61 @@ func TestTableIterLogsMultiBlock(t *testing.T) {
 	assert.Equal(t, "User A", logs[0].Name)
 	assert.Equal(t, "User B", logs[1].Name)
 }
+
+func TestWriterSHA256(t *testing.T) {
+	t.Parallel()
+
+	hashBytes := func(s string) []byte {
+		b, err := hex.DecodeString(s)
+		require.NoError(t, err)
+		return b
+	}
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf, WriterOptions{
+		MinUpdateIndex: 1,
+		MaxUpdateIndex: 2,
+		HashSize:       32, // SHA-256
+	})
+
+	w.AddRef(RefRecord{
+		RefName:     "refs/heads/main",
+		ValueType:   refValueVal1,
+		Value:       hashBytes("057b41687e44e63ac774d827e64f95b8a383912a057b41687e44e63ac774d827"),
+		UpdateIndex: 1,
+	})
+	w.AddLog(LogRecord{
+		RefName:     "refs/heads/main",
+		UpdateIndex: 2,
+		LogType:     logValueUpdate,
+		OldHash:     make([]byte, 32),
+		NewHash:     hashBytes("057b41687e44e63ac774d827e64f95b8a383912a057b41687e44e63ac774d827"),
+		Name:        "SHA256 User",
+		Message:     "sha256 commit",
+	})
+
+	require.NoError(t, w.Close())
+
+	data := buf.Bytes()
+	tbl, err := OpenTable(newBytesReaderAt(data), int64(len(data)))
+	require.NoError(t, err)
+
+	assert.Equal(t, versionV2, tbl.footer.version)
+	assert.Equal(t, 32, tbl.hashSize)
+
+	rec, err := tbl.Ref("refs/heads/main")
+	require.NoError(t, err)
+	require.NotNil(t, rec)
+	assert.Equal(t, uint8(refValueVal1), rec.ValueType)
+	assert.Equal(t, 32, len(rec.Value))
+
+	var logs []LogRecord
+	err = tbl.IterLogs(func(log LogRecord) bool {
+		logs = append(logs, log)
+		return true
+	})
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	assert.Equal(t, "SHA256 User", logs[0].Name)
+	assert.Equal(t, 32, len(logs[0].NewHash))
+}

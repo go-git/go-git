@@ -430,6 +430,9 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 	if t.footer.logPos == 0 {
 		return nil // no log blocks
 	}
+	if t.footer.blockSize == 0 {
+		return fmt.Errorf("%w: unaligned log blocks (blockSize == 0) are not supported", ErrCorruptBlock)
+	}
 
 	logStart := int64(t.footer.logPos)
 	logEnd := t.size - int64(t.footerSize())
@@ -459,14 +462,13 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 			return fmt.Errorf("%w: invalid log block len %d", ErrCorruptBlock, blockLen)
 		}
 
-		compressedDataSize := logEnd - (offset + blockHeaderSize)
+		compressedDataSize := min(int64(t.footer.blockSize), logEnd-offset) - blockHeaderSize
 		if compressedDataSize <= 0 {
 			break
 		}
 
 		sectionReader := io.NewSectionReader(t.r, offset+blockHeaderSize, compressedDataSize)
-		cbr := &countingByteReader{r: sectionReader}
-		zr, err := zlib.NewReader(cbr)
+		zr, err := zlib.NewReader(sectionReader)
 		if err != nil {
 			return fmt.Errorf("%w: zlib init: %v", ErrCorruptBlock, err)
 		}
@@ -506,52 +508,10 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 			return nil
 		}
 
-		if t.footer.blockSize > 0 {
-			offset += int64(t.footer.blockSize)
-		} else {
-			offset += blockHeaderSize + cbr.n
-		}
+		offset += int64(t.footer.blockSize)
 	}
 
 	return nil
-}
-
-type countingByteReader struct {
-	r   io.Reader
-	buf [4096]byte
-	pos int
-	lim int
-	n   int64
-}
-
-func (c *countingByteReader) Read(p []byte) (int, error) {
-	if c.pos < c.lim {
-		n := copy(p, c.buf[c.pos:c.lim])
-		c.pos += n
-		c.n += int64(n)
-		return n, nil
-	}
-	n, err := c.r.Read(p)
-	c.n += int64(n)
-	return n, err
-}
-
-func (c *countingByteReader) ReadByte() (byte, error) {
-	if c.pos >= c.lim {
-		n, err := c.r.Read(c.buf[:])
-		if n == 0 {
-			if err != nil {
-				return 0, err
-			}
-			return 0, io.EOF
-		}
-		c.pos = 0
-		c.lim = n
-	}
-	b := c.buf[c.pos]
-	c.pos++
-	c.n++
-	return b, nil
 }
 
 // LogsFor returns all log records for the given reference name, newest first.

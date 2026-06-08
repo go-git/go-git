@@ -73,6 +73,20 @@ func (w *Writer) AddLog(rec LogRecord) {
 // Close writes the reftable file (header, ref blocks, log blocks, footer)
 // and flushes. After Close, the Writer must not be reused.
 func (w *Writer) Close() error {
+	if w.opts.MinUpdateIndex > w.opts.MaxUpdateIndex {
+		return fmt.Errorf("reftable: invalid update index range [%d, %d]", w.opts.MinUpdateIndex, w.opts.MaxUpdateIndex)
+	}
+	for _, rec := range w.refs {
+		if rec.UpdateIndex < w.opts.MinUpdateIndex || rec.UpdateIndex > w.opts.MaxUpdateIndex {
+			return fmt.Errorf("reftable: ref %s update index %d outside of file range [%d, %d]", rec.RefName, rec.UpdateIndex, w.opts.MinUpdateIndex, w.opts.MaxUpdateIndex)
+		}
+	}
+	for _, rec := range w.logs {
+		if rec.UpdateIndex < w.opts.MinUpdateIndex || rec.UpdateIndex > w.opts.MaxUpdateIndex {
+			return fmt.Errorf("reftable: log %s update index %d outside of file range [%d, %d]", rec.RefName, rec.UpdateIndex, w.opts.MinUpdateIndex, w.opts.MaxUpdateIndex)
+		}
+	}
+
 	if w.blockSize > 0xffffff {
 		return fmt.Errorf("reftable: block size %d exceeds 24-bit limit", w.blockSize)
 	}
@@ -131,10 +145,30 @@ func (w *Writer) Close() error {
 	return w.writeFooter(logPos, refIndexPos)
 }
 
+func (w *Writer) headerSize() int {
+	if w.hashSize == 32 {
+		return headerSizeV2
+	}
+	return headerSizeV1
+}
+
+func (w *Writer) footerSize() int {
+	if w.hashSize == 32 {
+		return footerSizeV2
+	}
+	return footerSizeV1
+}
+
 func (w *Writer) writeHeader() error {
-	header := make([]byte, headerSizeV1)
+	version := versionV1
+	hSize := w.headerSize()
+	if w.hashSize == 32 {
+		version = versionV2
+	}
+
+	header := make([]byte, hSize)
 	copy(header[0:4], magic[:])
-	header[4] = versionV1
+	header[4] = byte(version)
 
 	// Block size as uint24.
 	bs := uint32(w.blockSize)
@@ -145,6 +179,11 @@ func (w *Writer) writeHeader() error {
 	// Min/max update index.
 	binary.BigEndian.PutUint64(header[8:16], w.opts.MinUpdateIndex)
 	binary.BigEndian.PutUint64(header[16:24], w.opts.MaxUpdateIndex)
+
+	if version == versionV2 {
+		// hashID: "s256" (0x73323536)
+		binary.BigEndian.PutUint32(header[24:28], 0x73323536)
+	}
 
 	n, err := w.w.Write(header)
 	w.totalWritten += int64(n)
@@ -157,7 +196,7 @@ func (w *Writer) writeRefBlocks(indexRecs *[]indexRecord) error {
 	prevName := ""
 	recordCount := 0
 	var restarts []uint32
-	isFirstBlock := (w.totalWritten == int64(headerSizeV1))
+	isFirstBlock := (w.totalWritten == int64(w.headerSize()))
 
 	flush := func() error {
 		if buf.Len() == 0 {
@@ -188,7 +227,7 @@ func (w *Writer) writeRefBlocks(indexRecs *[]indexRecord) error {
 		// Compute the total block size including all overhead.
 		fileHeaderOverhead := 0
 		if isFirstBlock {
-			fileHeaderOverhead = headerSizeV1
+			fileHeaderOverhead = w.headerSize()
 		}
 		restartTableSize := (len(restarts) + 1) * 3 // +1 for potential new restart
 		totalSize := fileHeaderOverhead + blockHeaderSize + buf.Len() + len(encoded) + restartTableSize + 2
@@ -209,7 +248,7 @@ func (w *Writer) writeRefBlocks(indexRecs *[]indexRecord) error {
 			// For subsequent blocks, the block starts at the block boundary.
 			restartBase := 0
 			if isFirstBlock {
-				restartBase = headerSizeV1
+				restartBase = w.headerSize()
 			}
 			restarts = append(restarts, uint32(restartBase+blockHeaderSize+buf.Len()))
 			encoded = encodeRefRecord(rec, "", w.hashSize, w.opts.MinUpdateIndex)
@@ -237,7 +276,7 @@ func (w *Writer) flushRefBlock(data []byte, restarts []uint32, isFirstBlock bool
 	// the start of the raw block data (including file header for the first block).
 	fileHeaderSize := 0
 	if isFirstBlock {
-		fileHeaderSize = headerSizeV1
+		fileHeaderSize = w.headerSize()
 	}
 	contentLen := blockHeaderSize + len(data) + len(restartTable)
 	blockLen := fileHeaderSize + contentLen
@@ -494,10 +533,16 @@ func encodeLogRecord(rec *LogRecord, prevKey string, hashSize int) []byte {
 }
 
 func (w *Writer) writeFooter(logPos, refIndexPos uint64) error {
-	footer := make([]byte, footerSizeV1)
+	version := versionV1
+	fSize := w.footerSize()
+	if w.hashSize == 32 {
+		version = versionV2
+	}
+
+	footer := make([]byte, fSize)
 
 	copy(footer[0:4], magic[:])
-	footer[4] = versionV1
+	footer[4] = byte(version)
 
 	// Block size as uint24.
 	bs := uint32(w.blockSize)
@@ -510,6 +555,12 @@ func (w *Writer) writeFooter(logPos, refIndexPos uint64) error {
 	binary.BigEndian.PutUint64(footer[16:24], w.opts.MaxUpdateIndex)
 
 	pos := 24
+	if version == versionV2 {
+		// hashID: "s256" (0x73323536)
+		binary.BigEndian.PutUint32(footer[pos:], 0x73323536)
+		pos += 4
+	}
+
 	// ref_index_position.
 	binary.BigEndian.PutUint64(footer[pos:], refIndexPos)
 	pos += 8

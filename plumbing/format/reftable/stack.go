@@ -19,15 +19,19 @@ import (
 
 // Stack reads references from a reftable stack (tables.list + table files).
 type Stack struct {
-	fs     billy.Filesystem
-	tables []*Table // ordered oldest to newest
-	mu     sync.RWMutex
+	fs       billy.Filesystem
+	tables   []*Table // ordered oldest to newest
+	mu       sync.RWMutex
+	hashSize int
 }
 
 // OpenStack opens a reftable stack from the given filesystem (the reftable/
 // directory). It reads tables.list and opens all listed table files.
-func OpenStack(fs billy.Filesystem) (*Stack, error) {
-	s := &Stack{fs: fs}
+func OpenStack(fs billy.Filesystem, hashSize int) (*Stack, error) {
+	if hashSize != 20 && hashSize != 32 {
+		return nil, fmt.Errorf("reftable: unsupported hash size %d", hashSize)
+	}
+	s := &Stack{fs: fs, hashSize: hashSize}
 	if err := s.reload(); err != nil {
 		return nil, err
 	}
@@ -97,6 +101,12 @@ func (s *Stack) reload() error {
 				_ = closer.Close()
 			}
 			return fmt.Errorf("reftable: parsing table %s: %w", name, err)
+		}
+		if tbl.hashSize != s.hashSize {
+			if closer, ok := tf.(io.Closer); ok {
+				_ = closer.Close()
+			}
+			return fmt.Errorf("reftable: table %s hash size %d does not match stack hash size %d", name, tbl.hashSize, s.hashSize)
 		}
 
 		tables = append(tables, tbl)
@@ -293,7 +303,7 @@ func (s *Stack) writeNewTableLocked(refs []RefRecord, logs []LogRecord, minIdx, 
 	w := NewWriter(f, WriterOptions{
 		MinUpdateIndex: minIdx,
 		MaxUpdateIndex: maxIdx,
-		HashSize:       20, // SHA-1
+		HashSize:       s.hashSize,
 	})
 
 	for i := range refs {
@@ -337,7 +347,12 @@ func (s *Stack) appendTablesList(tableName string) error {
 	// Read existing tables.list.
 	var names []string
 	f, err := s.fs.Open("tables.list")
-	if err == nil {
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("reftable: opening tables.list: %w", err)
+		}
+	} else {
+		defer func() { _ = f.Close() }()
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -345,7 +360,6 @@ func (s *Stack) appendTablesList(tableName string) error {
 				names = append(names, line)
 			}
 		}
-		_ = f.Close()
 		if err := scanner.Err(); err != nil {
 			return fmt.Errorf("reftable: reading tables.list: %w", err)
 		}
@@ -439,7 +453,7 @@ func (s *Stack) compact() error {
 	w := NewWriter(f, WriterOptions{
 		MinUpdateIndex: minIdx,
 		MaxUpdateIndex: maxIdx,
-		HashSize:       20,
+		HashSize:       s.hashSize,
 	})
 
 	for i := range refs {
@@ -461,7 +475,13 @@ func (s *Stack) compact() error {
 
 	var oldNames []string
 	tf, err := s.fs.Open("tables.list")
-	if err == nil {
+	if err != nil {
+		if !os.IsNotExist(err) {
+			_ = s.fs.Remove(tableName)
+			return fmt.Errorf("reftable: compaction: opening tables.list: %w", err)
+		}
+	} else {
+		defer func() { _ = tf.Close() }()
 		scanner := bufio.NewScanner(tf)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -469,7 +489,10 @@ func (s *Stack) compact() error {
 				oldNames = append(oldNames, line)
 			}
 		}
-		_ = tf.Close()
+		if err := scanner.Err(); err != nil {
+			_ = s.fs.Remove(tableName)
+			return fmt.Errorf("reftable: compaction: reading tables.list: %w", err)
+		}
 	}
 
 	if err := s.writeTablesListAtomic([]string{tableName}); err != nil {

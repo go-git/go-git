@@ -20,7 +20,7 @@ func openFixtureStack(t *testing.T) *Stack {
 	reftableDir, err := dotgit.Chroot("reftable")
 	require.NoError(t, err)
 
-	stack, err := OpenStack(reftableDir)
+	stack, err := OpenStack(reftableDir, 20)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = stack.Close() })
 	return stack
@@ -90,7 +90,7 @@ func TestStackLogsFor(t *testing.T) {
 func TestStackCompaction(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
-	stack, err := OpenStack(fs)
+	stack, err := OpenStack(fs, 20)
 	require.NoError(t, err)
 	defer func() { _ = stack.Close() }()
 
@@ -134,7 +134,7 @@ func TestStackCompaction(t *testing.T) {
 func TestStackAutoCompaction(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
-	stack, err := OpenStack(fs)
+	stack, err := OpenStack(fs, 20)
 	require.NoError(t, err)
 	defer func() { _ = stack.Close() }()
 
@@ -163,7 +163,7 @@ func TestStackAutoCompaction(t *testing.T) {
 func TestStackConcurrentWrites(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
-	stack, err := OpenStack(fs)
+	stack, err := OpenStack(fs, 20)
 	require.NoError(t, err)
 	defer func() { _ = stack.Close() }()
 

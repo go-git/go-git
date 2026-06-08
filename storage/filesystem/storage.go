@@ -214,7 +214,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 			refStorer = &brokenReferenceStorage{err: err}
 			logStorer = &brokenReflogStorage{err: err}
 		case reftableFS != nil:
-			stack, err := reftable.OpenStack(reftableFS)
+			stack, err := reftable.OpenStack(reftableFS, hasher.Size())
 			if err != nil {
 				refStorer = &brokenReferenceStorage{err: err}
 				logStorer = &brokenReflogStorage{err: err}
@@ -232,7 +232,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 				logStorer = &brokenReflogStorage{err: err}
 			} else {
 				reftableFS = chroot.New(fs, "reftable")
-				stack, err := reftable.OpenStack(reftableFS)
+				stack, err := reftable.OpenStack(reftableFS, hasher.Size())
 				if err != nil {
 					refStorer = &brokenReferenceStorage{err: err}
 					logStorer = &brokenReflogStorage{err: err}
