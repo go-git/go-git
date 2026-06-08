@@ -1,6 +1,13 @@
 package binary
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
+
+// maxVarIntLen is the maximum number of bytes a varint-encoded uint64
+// can occupy. Decoding more than this many bytes indicates malformed input.
+const maxVarIntLen = 10
 
 // GetVarInt decodes a Git variable-width integer from buf.
 // Returns the decoded value and the number of bytes consumed.
@@ -21,6 +28,9 @@ func GetVarInt(buf []byte) (val uint64, n int) {
 	for buf[n-1]&0x80 != 0 {
 		if n >= len(buf) {
 			return 0, 0 // truncated
+		}
+		if n >= maxVarIntLen {
+			return 0, 0 // overflow: too many continuation bytes
 		}
 		val = ((val + 1) << 7) | uint64(buf[n]&0x7f)
 		n++
@@ -57,12 +67,17 @@ func ReadVarInt(r io.ByteReader) (uint64, error) {
 	}
 
 	val := uint64(b) & 0x7f
+	n := 1
 	for b&0x80 != 0 {
+		if n >= maxVarIntLen {
+			return 0, fmt.Errorf("varint overflow: more than %d continuation bytes", maxVarIntLen)
+		}
 		b, err = r.ReadByte()
 		if err != nil {
 			return 0, err
 		}
 		val = ((val + 1) << 7) | uint64(b&0x7f)
+		n++
 	}
 
 	return val, nil

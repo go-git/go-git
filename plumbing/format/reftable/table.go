@@ -474,6 +474,9 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 		}
 
 		inflatedSize := blockLen - blockHeaderSize
+		if uint32(inflatedSize) > t.footer.blockSize {
+			return fmt.Errorf("%w: inflated log block size %d exceeds block size %d", ErrCorruptBlock, inflatedSize, t.footer.blockSize)
+		}
 		inflated := make([]byte, inflatedSize)
 		_, err = io.ReadFull(zr, inflated)
 		_ = zr.Close()

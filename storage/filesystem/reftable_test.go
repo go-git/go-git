@@ -67,6 +67,7 @@ func TestReftableStorage(t *testing.T) {
 	// Test IterReferences
 	it, err := sto.IterReferences()
 	require.NoError(t, err)
+	defer it.Close()
 	var refNames []string
 	err = it.ForEach(func(r *plumbing.Reference) error {
 		refNames = append(refNames, r.Name().String())
