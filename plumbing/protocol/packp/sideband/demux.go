@@ -1,6 +1,7 @@
 package sideband
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ type Progress interface {
 type Demuxer struct {
 	t Type
 	r io.Reader
+	s *pktline.Scanner
 
 	max     int
 	pending []byte
@@ -51,6 +53,7 @@ func NewDemuxer(t Type, r io.Reader) *Demuxer {
 	return &Demuxer{
 		t:   t,
 		r:   r,
+		s:   pktline.NewScanner(r),
 		max: maxSize,
 	}
 }
@@ -84,7 +87,7 @@ func (d *Demuxer) doRead(b []byte) (int, error) {
 	wanted := len(b)
 
 	if size > wanted {
-		d.pending = read[wanted:]
+		d.pending = bytes.Clone(read[wanted:])
 	}
 
 	if wanted > size {
@@ -101,20 +104,21 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return content, nil
 	}
 
-	l, p, err := pktline.ReadLine(d.r)
-	if err != nil {
-		return nil, err
+	if !d.s.Scan() {
+		if err := d.s.Err(); err != nil {
+			return nil, err
+		}
+		return nil, io.EOF
 	}
 
-	content = p
+	l := d.s.Len()
 	if l == pktline.Flush {
-		// Done demultiplex sidebands. Use io.EOF to indicate the end of
-		// sideband packets.
 		return nil, io.EOF
 	} else if l > d.max {
 		return nil, ErrMaxPackedExceeded
 	}
 
+	content = d.s.Bytes()
 	if len(content) < 1 {
 		return nil, fmt.Errorf("invalid sideband pktline %04x %q", l, content)
 	}
