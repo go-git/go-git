@@ -298,10 +298,10 @@ func encodeRefRecord(rec *RefRecord, prevName string, hashSize int, minUpdateInd
 	case refValueDeletion:
 		// No value.
 	case refValueVal1:
-		out = append(out, rec.Value[:hashSize]...)
+		out = appendHashBytes(out, rec.Value, hashSize)
 	case refValueVal2:
-		out = append(out, rec.Value[:hashSize]...)
-		out = append(out, rec.TargetValue[:hashSize]...)
+		out = appendHashBytes(out, rec.Value, hashSize)
+		out = appendHashBytes(out, rec.TargetValue, hashSize)
 	case refValueSymref:
 		n = gbinary.PutVarInt(buf[:], uint64(len(rec.Target)))
 		out = append(out, buf[:n]...)
@@ -309,6 +309,14 @@ func encodeRefRecord(rec *RefRecord, prevName string, hashSize int, minUpdateInd
 	}
 
 	return out
+}
+
+func appendHashBytes(out, hash []byte, hashSize int) []byte {
+	if len(hash) >= hashSize {
+		return append(out, hash[:hashSize]...)
+	}
+	out = append(out, hash...)
+	return append(out, make([]byte, hashSize-len(hash))...)
 }
 
 func (w *Writer) writeLogBlocks() error {
@@ -457,16 +465,8 @@ func encodeLogRecord(rec *LogRecord, prevKey string, hashSize int) []byte {
 	}
 
 	// old_hash, new_hash.
-	if len(rec.OldHash) >= hashSize {
-		out = append(out, rec.OldHash[:hashSize]...)
-	} else {
-		out = append(out, make([]byte, hashSize)...)
-	}
-	if len(rec.NewHash) >= hashSize {
-		out = append(out, rec.NewHash[:hashSize]...)
-	} else {
-		out = append(out, make([]byte, hashSize)...)
-	}
+	out = appendHashBytes(out, rec.OldHash, hashSize)
+	out = appendHashBytes(out, rec.NewHash, hashSize)
 
 	// name.
 	n = gbinary.PutVarInt(buf[:], uint64(len(rec.Name)))

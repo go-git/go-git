@@ -119,14 +119,6 @@ func parseRestartTable(recordData []byte) ([]uint32, []byte, error) {
 	return restarts, recordData[:restartBase], nil
 }
 
-// seek finds the record with the given key using binary search over restart
-// points, then linear scan. Returns the position within br.data where the
-// record starts, or -1 if not found.
-// The keyCompare function should compare the reconstructed record key with the
-// target: negative if record < target, 0 if equal, positive if record > target.
-//
-// For ref blocks, the offset in the restart table is relative to the start of
-// the file, but our data starts after the header. We need to adjust offsets.
 func (br *blockReader) seek(target string) int {
 	if len(br.restarts) == 0 {
 		return -1
@@ -135,16 +127,10 @@ func (br *blockReader) seek(target string) int {
 	// Binary search over restart points to find the last restart <= target.
 	// Restart offsets are relative to the start of the block in the file,
 	// so we subtract br.headerLen to get positions within br.data.
-	adjustedRestarts := make([]int, len(br.restarts))
-	for i, r := range br.restarts {
-		adj := max(int(r)-br.headerLen, 0)
-		adjustedRestarts[i] = adj
-	}
-
-	lo, hi := 0, len(adjustedRestarts)-1
+	lo, hi := 0, len(br.restarts)-1
 	for lo < hi {
 		mid := lo + (hi-lo+1)/2
-		pos := adjustedRestarts[mid]
+		pos := max(int(br.restarts[mid])-br.headerLen, 0)
 		if pos >= len(br.data) {
 			hi = mid - 1
 			continue
@@ -159,7 +145,7 @@ func (br *blockReader) seek(target string) int {
 		}
 	}
 
-	return adjustedRestarts[lo]
+	return max(int(br.restarts[lo])-br.headerLen, 0)
 }
 
 // readKeyAtRestart reads the key at a restart point (where prefix_length == 0).

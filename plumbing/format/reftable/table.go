@@ -1,7 +1,6 @@
 package reftable
 
 import (
-	"bufio"
 	"compress/zlib"
 	"encoding/binary"
 	"fmt"
@@ -466,8 +465,7 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 		}
 
 		sectionReader := io.NewSectionReader(t.r, offset+blockHeaderSize, compressedDataSize)
-		bufReader := bufio.NewReader(sectionReader)
-		cbr := &countingByteReader{r: bufReader}
+		cbr := &countingByteReader{r: sectionReader}
 		zr, err := zlib.NewReader(cbr)
 		if err != nil {
 			return fmt.Errorf("%w: zlib init: %v", ErrCorruptBlock, err)
@@ -519,37 +517,41 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 }
 
 type countingByteReader struct {
-	r io.Reader
-	n int64
+	r   io.Reader
+	buf [4096]byte
+	pos int
+	lim int
+	n   int64
 }
 
 func (c *countingByteReader) Read(p []byte) (int, error) {
+	if c.pos < c.lim {
+		n := copy(p, c.buf[c.pos:c.lim])
+		c.pos += n
+		c.n += int64(n)
+		return n, nil
+	}
 	n, err := c.r.Read(p)
 	c.n += int64(n)
 	return n, err
 }
 
 func (c *countingByteReader) ReadByte() (byte, error) {
-	if br, ok := c.r.(io.ByteReader); ok {
-		b, err := br.ReadByte()
-		if err == nil {
-			c.n++
+	if c.pos >= c.lim {
+		n, err := c.r.Read(c.buf[:])
+		if n == 0 {
+			if err != nil {
+				return 0, err
+			}
+			return 0, io.EOF
 		}
-		return b, err
+		c.pos = 0
+		c.lim = n
 	}
-	var buf [1]byte
-	n, err := c.r.Read(buf[:])
-	if n == 1 {
-		c.n++
-		return buf[0], nil
-	}
-	if err == io.EOF && n == 0 {
-		return 0, io.EOF
-	}
-	if err != nil {
-		return 0, err
-	}
-	return 0, io.ErrUnexpectedEOF
+	b := c.buf[c.pos]
+	c.pos++
+	c.n++
+	return b, nil
 }
 
 // LogsFor returns all log records for the given reference name, newest first.
