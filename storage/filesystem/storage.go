@@ -329,7 +329,7 @@ func (s *Storage) SupportsExtension(name, value string) bool {
 			return true
 		}
 	case "refstorage":
-		if value == "reftable" {
+		if value == "reftable" || value == "files" {
 			return true
 		}
 	}

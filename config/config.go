@@ -477,7 +477,7 @@ const (
 	repositoryFormatVersionKey = "repositoryformatversion"
 	objectFormatKey            = "objectformat"
 	worktreeConfigKey          = "worktreeConfig"
-	refStorageKey              = "refstorage"
+	refStorageKey              = "refStorage"
 	mirrorKey                  = "mirror"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"

@@ -1,7 +1,7 @@
 package reftable
 
 import (
-	"bytes"
+	"bufio"
 	"compress/zlib"
 	"encoding/binary"
 	"fmt"
@@ -467,13 +467,9 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 			break
 		}
 
-		compressedData := make([]byte, compressedDataSize)
-		if err := t.readAt(compressedData, offset+blockHeaderSize); err != nil {
-			return fmt.Errorf("reftable: reading compressed log block: %w", err)
-		}
-
-		bytesReader := bytes.NewReader(compressedData)
-		cbr := &countingByteReader{r: bytesReader}
+		sectionReader := io.NewSectionReader(t.r, offset+blockHeaderSize, compressedDataSize)
+		bufReader := bufio.NewReader(sectionReader)
+		cbr := &countingByteReader{r: bufReader}
 		zr, err := zlib.NewReader(cbr)
 		if err != nil {
 			return fmt.Errorf("%w: zlib init: %v", ErrCorruptBlock, err)

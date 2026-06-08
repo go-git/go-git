@@ -342,6 +342,9 @@ func (w *Writer) writeLogBlocks() error {
 
 	// Block header: type + uint24(inflated size + header size).
 	inflatedBlockLen := blockHeaderSize + len(inflated)
+	if inflatedBlockLen > 0xffffff {
+		return fmt.Errorf("reftable: log block inflated size %d exceeds 24-bit limit", inflatedBlockLen)
+	}
 	header := [blockHeaderSize]byte{
 		blockTypeLog,
 		byte(inflatedBlockLen >> 16),

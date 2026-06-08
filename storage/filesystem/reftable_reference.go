@@ -28,22 +28,43 @@ func (r *ReftableReferenceStorage) SetReference(ref *plumbing.Reference) error {
 // CheckAndSetReference stores a reference after verifying the old value matches.
 func (r *ReftableReferenceStorage) CheckAndSetReference(newRef, old *plumbing.Reference) error {
 	if old != nil {
-		current, err := r.stack.Ref(string(old.Name()))
+		if newRef.Name() != old.Name() {
+			return fmt.Errorf("reference name mismatch: %s != %s", newRef.Name(), old.Name())
+		}
+
+		current, err := r.stack.Ref(string(newRef.Name()))
 		if err != nil {
 			return err
 		}
 
-		var currentHash plumbing.Hash
+		var currentRef *plumbing.Reference
 		if current != nil {
-			currentRef, err := refRecordToReference(current)
+			currentRef, err = refRecordToReference(current)
 			if err != nil {
 				return err
 			}
-			currentHash = currentRef.Hash()
 		}
 
-		if currentHash != old.Hash() {
-			return storage.ErrReferenceHasChanged
+		if currentRef == nil {
+			if old.Type() != plumbing.HashReference || !old.Hash().IsZero() {
+				return storage.ErrReferenceHasChanged
+			}
+		} else {
+			if currentRef.Type() != old.Type() {
+				return storage.ErrReferenceHasChanged
+			}
+			switch old.Type() {
+			case plumbing.HashReference:
+				if currentRef.Hash() != old.Hash() {
+					return storage.ErrReferenceHasChanged
+				}
+			case plumbing.SymbolicReference:
+				if currentRef.Target() != old.Target() {
+					return storage.ErrReferenceHasChanged
+				}
+			default:
+				return storage.ErrReferenceHasChanged
+			}
 		}
 	}
 
