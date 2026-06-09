@@ -3,6 +3,7 @@ package commitgraph
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -103,10 +104,24 @@ func (s *commitScanner) readLine() (line []byte, atEnd bool) {
 		s.pending = nil
 		return line, false
 	}
-	line, err := s.r.ReadBytes('\n')
+	line, err := s.r.ReadSlice('\n')
 	switch {
 	case errors.Is(err, io.EOF):
 		return line, true
+	case errors.Is(err, bufio.ErrBufferFull):
+		// Line longer than the bufio buffer: fall back to a copy so the
+		// full line is still returned. Rare for commit headers.
+		buf := append([]byte(nil), line...)
+		rest, rerr := s.r.ReadBytes('\n')
+		buf = append(buf, rest...)
+		switch {
+		case errors.Is(rerr, io.EOF):
+			return buf, true
+		case rerr != nil:
+			s.err = fmt.Errorf("read commit line: %w", rerr)
+			return nil, true
+		}
+		return buf, false
 	case err != nil:
 		s.err = fmt.Errorf("read commit line: %w", err)
 		return nil, true
@@ -132,7 +147,7 @@ func scanCommitTree(s *commitScanner) commitState {
 		return s.fail(errors.New("malformed commit: missing tree header"))
 	}
 	key, data := splitHeader(line)
-	if key != "tree" {
+	if string(key) != "tree" {
 		return s.fail(errors.New("malformed commit: tree header must be first"))
 	}
 	h, ok := hashFromHex(data)
@@ -156,7 +171,7 @@ func scanCommitParents(s *commitScanner) commitState {
 		return nil
 	}
 	key, data := splitHeader(line)
-	if key == "parent" {
+	if string(key) == "parent" {
 		h, ok := hashFromHex(data)
 		if !ok {
 			return s.fail(errors.New("invalid parent hash"))
@@ -180,7 +195,7 @@ func scanCommitAuthor(s *commitScanner) commitState {
 		return nil
 	}
 	key, data := splitHeader(line)
-	if key == "author" {
+	if string(key) == "author" {
 		w, ok := parseWhen(data)
 		if !ok {
 			return s.fail(errors.New("invalid author line"))
@@ -204,7 +219,7 @@ func scanCommitCommitter(s *commitScanner) commitState {
 		return nil
 	}
 	key, data := splitHeader(line)
-	if key == "committer" {
+	if string(key) == "committer" {
 		w, ok := parseWhen(data)
 		if !ok {
 			return s.fail(errors.New("invalid committer line"))
@@ -218,13 +233,13 @@ func isBlankLine(line []byte) bool {
 	return len(line) == 1 && line[0] == '\n'
 }
 
-func splitHeader(line []byte) (string, []byte) {
+func splitHeader(line []byte) (key, value []byte) {
 	trimmed := bytes.TrimRight(line, "\n")
-	key, value, ok := bytes.Cut(trimmed, []byte{' '})
+	k, v, ok := bytes.Cut(trimmed, []byte{' '})
 	if !ok {
-		return string(trimmed), nil
+		return trimmed, nil
 	}
-	return string(key), value
+	return k, v
 }
 
 // parseWhen extracts the timestamp and timezone from a git signature line.
@@ -328,8 +343,18 @@ func fixedZone(offset int) *time.Location {
 }
 
 func hashFromHex(in []byte) (plumbing.Hash, bool) {
-	if len(in) != 40 && len(in) != 64 {
+	var raw [32]byte
+	var n int
+	switch len(in) {
+	case 40:
+		n = 20
+	case 64:
+		n = 32
+	default:
 		return plumbing.ZeroHash, false
 	}
-	return plumbing.FromHex(string(in))
+	if _, err := hex.Decode(raw[:n], in); err != nil {
+		return plumbing.ZeroHash, false
+	}
+	return plumbing.FromBytes(raw[:n])
 }
