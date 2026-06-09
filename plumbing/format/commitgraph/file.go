@@ -389,6 +389,15 @@ func (fi *fileIndex) readFanout() error {
 		if fanoutValue > 0x7fffffff {
 			return ErrMalformedCommitGraphFile
 		}
+		// The fanout is cumulative, so it must be monotonically
+		// non-decreasing. Canonical Git rejects an out-of-order fanout in
+		// graph_read_oid_fanout (commit-graph.c v2.54.0, "commit-graph
+		// fanout values out of order"); mirror that, both to reject
+		// corrupt files and to keep GetIndexByHash's binary search bound
+		// (high = fanout[b]) within the OID lookup chunk.
+		if i > 0 && fanoutValue < fi.fanout[i-1] {
+			return ErrMalformedCommitGraphFile
+		}
 		fi.fanout[i] = fanoutValue
 	}
 	return nil
