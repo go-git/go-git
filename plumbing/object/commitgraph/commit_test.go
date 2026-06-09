@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -120,4 +121,39 @@ func TestDecodeCommitMissingTree(t *testing.T) {
 
 	_, err := DecodeCommit(encodedCommit(t, content))
 	require.Error(t, err)
+}
+
+func TestDecodeCommitInvalidTreeHash(t *testing.T) {
+	t.Parallel()
+
+	content := "tree zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n" +
+		"author Alice <alice@example.com> 1136239445 +0000\n" +
+		"committer Bob <bob@example.com> 1136300000 +0000\n"
+
+	_, err := DecodeCommit(encodedCommit(t, content))
+	require.Error(t, err)
+}
+
+func TestDecodeCommitLongHeaderLines(t *testing.T) {
+	t.Parallel()
+
+	// Names longer than the bufio buffer (4096 bytes) force the line reader
+	// past a single buffered slice; the base fields must still decode.
+	longName := strings.Repeat("a", 9000)
+	content := "tree " + treeHex + "\n" +
+		"parent " + parent1Hex + "\n" +
+		"author " + longName + " <a@example.com> 1136239445 +0100\n" +
+		"committer " + longName + " <b@example.com> 1136300000 -0500\n" +
+		"\n" +
+		"body\n"
+
+	c, err := DecodeCommit(encodedCommit(t, content))
+	require.NoError(t, err)
+
+	require.Equal(t, plumbing.NewHash(treeHex), c.Tree())
+	require.Equal(t, []plumbing.Hash{plumbing.NewHash(parent1Hex)}, c.Parents())
+	require.Equal(t, int64(1136300000), c.When().Unix())
+	_, committerOffset := c.When().Zone()
+	require.Equal(t, -5*60*60, committerOffset)
+	require.Equal(t, int64(1136239445), c.AuthorWhen().Unix())
 }
