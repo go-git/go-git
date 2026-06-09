@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -41,6 +42,41 @@ func (s *LazyIndexSuite) TestContains() {
 	ok, err := idx.Contains(plumbing.NewHash("0000000000000000000000000000000000000000"))
 	s.NoError(err)
 	s.False(ok)
+}
+
+func (s *LazyIndexSuite) TestMayContain() {
+	idx, err := fixtureLazyIndex(true)
+	s.Require().NoError(err)
+	defer idx.Close()
+
+	// Positive: every known hash must report true.
+	for _, h := range fixtureHashes {
+		s.True(idx.MayContain(h), "expected MayContain=true for %s", h)
+	}
+
+	// Negative: find an empty fanout bucket and craft a hash that
+	// starts with that byte; the result must be false.
+	emptyByte := -1
+	for b := range 256 {
+		var prev uint32
+		if b > 0 {
+			prev = idx.fanout[b-1]
+		}
+		if idx.fanout[b] == prev {
+			emptyByte = b
+			break
+		}
+	}
+	s.Require().NotEqual(-1, emptyByte,
+		"fixture must have at least one empty fanout bucket")
+
+	var miss plumbing.Hash
+	miss.ResetBySize(20)
+	hashBytes := make([]byte, 20)
+	hashBytes[0] = byte(emptyByte)
+	_, _ = miss.Write(hashBytes)
+	s.False(idx.MayContain(miss),
+		"expected MayContain=false for hash starting with 0x%02x", emptyByte)
 }
 
 func (s *LazyIndexSuite) TestFindOffset() {
@@ -488,6 +524,202 @@ func BenchmarkScannerFindOffset(b *testing.B) {
 			}
 		}
 	}
+}
+
+func TestLazyIndex_EntriesWithPrefix_Empty(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureLazyIndex(true)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	iter, err := idx.EntriesWithPrefix(nil)
+	require.NoError(t, err)
+	defer iter.Close()
+
+	// Empty prefix returns all entries (same as Entries()).
+	n := 0
+	for {
+		_, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		n++
+	}
+	assert.Equal(t, len(fixtureHashes), n)
+}
+
+func TestLazyIndex_EntriesWithPrefix_OneByteMatch(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureLazyIndex(true)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	// Pick the first byte of a known hash; the iterator should yield
+	// every entry in that bucket.
+	target := fixtureHashes[0]
+	prefix := target.Bytes()[:1]
+
+	iter, err := idx.EntriesWithPrefix(prefix)
+	require.NoError(t, err)
+	defer iter.Close()
+
+	var got []plumbing.Hash
+	for {
+		e, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		got = append(got, e.Hash)
+	}
+
+	for _, h := range got {
+		assert.True(t, bytes.HasPrefix(h.Bytes(), prefix),
+			"hash %v should start with prefix %x", h, prefix)
+	}
+	assert.Contains(t, got, target)
+}
+
+func TestLazyIndex_EntriesWithPrefix_NoMatch(t *testing.T) {
+	t.Parallel()
+	idx, err := fixtureLazyIndex(true)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	// Find an empty fanout bucket (fanout[b] == fanout[b-1]).
+	emptyByte := -1
+	for b := range 256 {
+		var prev uint32
+		if b > 0 {
+			prev = idx.fanout[b-1]
+		}
+		if idx.fanout[b] == prev {
+			emptyByte = b
+			break
+		}
+	}
+	if emptyByte == -1 {
+		t.Skip("fixture has objects in every fanout bucket")
+	}
+
+	iter, err := idx.EntriesWithPrefix([]byte{byte(emptyByte)})
+	require.NoError(t, err)
+	defer iter.Close()
+	_, err = iter.Next()
+	assert.Equal(t, io.EOF, err)
+}
+
+func TestLazyIndex_EntriesWithPrefix_MultiByte(t *testing.T) {
+	t.Parallel()
+
+	// Synthetic index with five entries all in fanout bucket 0x42,
+	// encoded to .idx bytes and read back through LazyIndex. The
+	// matching run for prefix [0x42, 0x05] sits in the middle of
+	// the bucket; the iterator must bsearch past 0x42_00 before
+	// yielding.
+	makeHash := func(b1, b2, b3 byte) plumbing.Hash {
+		raw := make([]byte, 20)
+		raw[0] = b1
+		raw[1] = b2
+		raw[2] = b3
+		var h plumbing.Hash
+		_, _ = h.Write(raw)
+		return h
+	}
+
+	hashes := []plumbing.Hash{
+		makeHash(0x42, 0x00, 0xaa),
+		makeHash(0x42, 0x05, 0xab),
+		makeHash(0x42, 0x05, 0xbb),
+		makeHash(0x42, 0x05, 0xcc),
+		makeHash(0x42, 0x07, 0xdd),
+	}
+
+	w := &Writer{}
+	require.NoError(t, w.OnHeader(uint32(len(hashes))))
+	for i, h := range hashes {
+		w.Add(h, uint64(100+i), uint32(i))
+	}
+	var packChecksum plumbing.Hash
+	packChecksum.ResetBySize(crypto.SHA1.Size())
+	csum := make([]byte, crypto.SHA1.Size())
+	csum[0] = 0x01
+	_, _ = packChecksum.Write(csum)
+	require.NoError(t, w.OnFooter(packChecksum))
+
+	memIdx, err := w.Index()
+	require.NoError(t, err)
+
+	var idxBuf bytes.Buffer
+	require.NoError(t, Encode(&idxBuf, hash.New(crypto.SHA1), memIdx))
+	idxBytes := idxBuf.Bytes()
+
+	revBytes, err := buildTestRevFile(memIdx)
+	require.NoError(t, err)
+
+	openIdx := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(idxBytes)}, nil
+	}
+	openRev := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(revBytes)}, nil
+	}
+	idx, err := NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = idx.Close() })
+
+	collect := func(t *testing.T, prefix []byte) []plumbing.Hash {
+		t.Helper()
+		iter, err := idx.EntriesWithPrefix(prefix)
+		require.NoError(t, err)
+		defer iter.Close()
+		var got []plumbing.Hash
+		for {
+			e, err := iter.Next()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			got = append(got, e.Hash)
+		}
+		return got
+	}
+
+	t.Run("middle run", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x05})
+		require.Len(t, got, 3)
+		for _, h := range got {
+			assert.True(t, bytes.HasPrefix(h.Bytes(), []byte{0x42, 0x05}))
+		}
+	})
+
+	t.Run("end of bucket", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x07})
+		require.Len(t, got, 1)
+		assert.Equal(t, hashes[4], got[0])
+	})
+
+	t.Run("start of bucket", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x00})
+		require.Len(t, got, 1)
+		assert.Equal(t, hashes[0], got[0])
+	})
+
+	t.Run("no match in populated bucket", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x06})
+		assert.Empty(t, got)
+	})
+
+	t.Run("three-byte refinement", func(t *testing.T) {
+		t.Parallel()
+		got := collect(t, []byte{0x42, 0x05, 0xbb})
+		require.Len(t, got, 1)
+		assert.Equal(t, hashes[2], got[0])
+	})
 }
 
 func fixtureLazyIndex(withRev bool) (*LazyIndex, error) {

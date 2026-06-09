@@ -637,3 +637,222 @@ func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkFindObjectInPackfile_FanoutMiss measures the per-pack
+// probe cost when the target hash lives in only one of N indexes.
+// With MayContain in place, N-1 packs reject via a cheap fanout
+// check; pre-fix, every pack pays a FindOffset call (mutex +
+// ReadAt + binary search).
+//
+// Workload: cycle through one hash per pack so each lookup
+// targets a different pack, defeating the MRU fast path. Reads
+// use cache.NewObjectLRU(0) so the object cache cannot serve the
+// hot loop and every iteration traverses the membership probe.
+func BenchmarkFindObjectInPackfile_FanoutMiss(b *testing.B) {
+	const (
+		nPacks     = 32
+		objPerPack = 8
+	)
+	diskFS, perPack := makeMultiPackFixture(b, nPacks, objPerPack)
+
+	// One hash per pack so consecutive iterations always switch
+	// packs; MRU hint is invalidated on every read.
+	hashes := make([]plumbing.Hash, nPacks)
+	for i, p := range perPack {
+		hashes[i] = p[0]
+	}
+
+	s := NewStorage(diskFS, cache.NewObjectLRU(0))
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Warm: ensure every pack's idx is loaded so the timed loop
+	// is not paying a cold populate on iteration 1.
+	for _, h := range hashes {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ReportAllocs()
+	var i int
+	for b.Loop() {
+		h := hashes[i%len(hashes)]
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+// BenchmarkEncodedObject_LooseHit measures EncodedObject latency
+// when the target lives in a loose object. With pack-membership-
+// first, findObjectInPackfile reports the loose-only hash as
+// not-in-packs in O(1) and the read routes straight to the loose
+// path: one Stat + open + decompress, no wasted pack probing.
+// Setup: a packed fixture plus one freshly-written loose object.
+func BenchmarkEncodedObject_LooseHit(b *testing.B) {
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := NewStorage(dir, cache.NewObjectLRUDefault())
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Write a fresh loose object so the hit-path is observable.
+	o := s.NewEncodedObject()
+	o.SetType(plumbing.BlobObject)
+	w, err := o.Writer()
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := w.Write([]byte("loose-bench-payload")); err != nil {
+		b.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		b.Fatal(err)
+	}
+	h, err := s.SetEncodedObject(o)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Warm the index so the per-iteration call doesn't pay a
+	// cold-load.
+	if err := s.HasEncodedObject(h); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkHashesWithPrefix_TwoByte measures the cost of a short
+// prefix lookup against a multi-pack fixture. Pre-fix: O(N*M)
+// walking every entry of every pack per call. Post-fix:
+// O(N * (log M + matches)) via fanout-bounded EntriesWithPrefix
+// — only the relevant fanout bucket is scanned in each pack.
+//
+// The 2-byte prefix is picked from a real hash so at least one
+// pack returns a match; the remaining packs reject via empty
+// fanout buckets.
+func BenchmarkHashesWithPrefix_TwoByte(b *testing.B) {
+	const (
+		nPacks     = 32
+		objPerPack = 32
+	)
+	diskFS, perPack := makeMultiPackFixture(b, nPacks, objPerPack)
+
+	// Use a hash from the last pack so the lookup walks every
+	// pack's idx (no MRU short-circuit).
+	prefix := perPack[nPacks-1][0].Bytes()[:2]
+
+	s := NewStorage(diskFS, cache.NewObjectLRUDefault())
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Warm the index so per-iteration cost excludes cold populate.
+	if _, err := s.HashesWithPrefix(prefix); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := s.HashesWithPrefix(prefix); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkFindObjectInPackfile_MRU_Hit reads hashes that all
+// live in the same pack against a multi-pack fixture. With MRU,
+// the lastHitPackIdx hint resolves the right pack in O(1) on the
+// fast path; without MRU, the map iteration is randomised and
+// the average lookup pays N/2 MayContain rejects before finding
+// the right pack.
+//
+// Uses cache.NewObjectLRU(0) so the object cache cannot serve
+// the hot loop — each iteration must traverse findObjectInPackfile.
+func BenchmarkFindObjectInPackfile_MRU_Hit(b *testing.B) {
+	const (
+		nPacks     = 32
+		objPerPack = 8
+	)
+	diskFS, perPack := makeMultiPackFixture(b, nPacks, objPerPack)
+
+	// All hashes in pack 0 — repeated reads keep the MRU hint
+	// pointing at the same pack.
+	hashes := perPack[0]
+
+	s := NewStorage(diskFS, cache.NewObjectLRU(0))
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Warm: seeds lastHitPackIdx on pack 0.
+	for _, h := range hashes {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ReportAllocs()
+	var i int
+	for b.Loop() {
+		h := hashes[i%len(hashes)]
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+// BenchmarkFindObjectInPackfile_MRU_Churn measures the steady-state
+// cost when reads cycle a working set of K hot packs in round-robin
+// order. With a single-slot MRU hint, the hint is correct on 1 of
+// every K iterations and stale on the rest; the stale-hint cost is
+// one MayContain probe before the linear scan finds the right pack.
+// Slots between MRU_Hit (K=1, perfect reuse) and FanoutMiss (K=N, no
+// reuse) to make the hint's degradation curve visible to benchstat.
+//
+// K=4 was picked to match realistic GC-time pack counts where a
+// reader walks a tree spread across a small hot set. Cache disabled
+// (cache.NewObjectLRU(0)) so the object cache cannot serve the hot
+// loop and every iteration traverses findObjectInPackfile.
+func BenchmarkFindObjectInPackfile_MRU_Churn(b *testing.B) {
+	const (
+		nPacks     = 32
+		objPerPack = 8
+		hotPacks   = 4
+	)
+	diskFS, perPack := makeMultiPackFixture(b, nPacks, objPerPack)
+
+	// One hash per hot pack so consecutive reads switch packs in a
+	// fixed cycle; the MRU hint always trails by one position.
+	hashes := make([]plumbing.Hash, hotPacks)
+	for i := range hotPacks {
+		hashes[i] = perPack[i][0]
+	}
+
+	s := NewStorage(diskFS, cache.NewObjectLRU(0))
+	b.Cleanup(func() { _ = s.Close() })
+
+	// Warm: ensure every hot pack's idx is loaded so the timed loop
+	// is not paying a cold populate on the first cycle.
+	for _, h := range hashes {
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ReportAllocs()
+	var i int
+	for b.Loop() {
+		h := hashes[i%hotPacks]
+		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
