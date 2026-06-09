@@ -632,11 +632,11 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // inspection-only callers that need to enumerate raw, unvalidated
 // names can read Tree.Entries directly.
 //
-// In the current implementation any objects which cannot be found in the
-// underlying repository will be skipped automatically. It is possible that this
-// may change in future versions.
+// A recursive walk loads the subtree object behind each directory entry
+// in order to descend into it, and returns the lookup error (e.g.
+// plumbing.ErrObjectNotFound) if it is not available. A non-recursive
+// walk does not load subtree objects.
 func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
-	var obj *Tree
 	for {
 		current := len(w.stack) - 1
 		if current < 0 {
@@ -672,30 +672,23 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			return name, entry, err
 		}
 
-		if entry.Mode == filemode.Dir {
-			obj, err = GetTree(w.s, entry.Hash)
-		}
-
 		name = simpleJoin(w.base, entry.Name)
 
-		if err != nil {
-			err = io.EOF
-			return name, entry, err
+		// The subtree object is only needed to descend into a directory,
+		// so it is loaded only for a recursive walk; enumerating a tree's
+		// direct entries must not depend on its children being present.
+		if w.recursive && entry.Mode == filemode.Dir {
+			var obj *Tree
+			if obj, err = GetTree(w.s, entry.Hash); err != nil {
+				return name, entry, fmt.Errorf("loading subtree %q: %w", name, err)
+			}
+
+			w.stack = append(w.stack, &treeEntryIter{obj, 0})
+			w.base = name
 		}
 
-		break
-	}
-
-	if !w.recursive {
 		return name, entry, err
 	}
-
-	if obj != nil {
-		w.stack = append(w.stack, &treeEntryIter{obj, 0})
-		w.base = simpleJoin(w.base, entry.Name)
-	}
-
-	return name, entry, err
 }
 
 // Tree returns the tree that the tree walker most recently operated on.

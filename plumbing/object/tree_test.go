@@ -497,6 +497,66 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive() {
 	s.Equal(8, count)
 }
 
+// TestTreeWalkerMissingSubtree checks that when a directory entry's
+// subtree object is absent from the storer, a non-recursive walk still
+// enumerates all direct entries and a recursive walk surfaces the lookup
+// error.
+func (s *TreeSuite) TestTreeWalkerMissingSubtree() {
+	// a8d315b2 has 8 direct entries; "go" (a39771a7) is its first
+	// directory entry, sorted after the four leading blobs.
+	treeHash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	missing := plumbing.NewHash("a39771a7651f97faf5c72e08224d857fc35133db")
+
+	// A storer holding the parent tree object but NOT the "go" subtree.
+	st := memory.NewStorage()
+	src, err := s.Storer.EncodedObject(plumbing.TreeObject, treeHash)
+	s.Require().NoError(err)
+	_, err = st.SetEncodedObject(src)
+	s.Require().NoError(err)
+
+	_, err = st.EncodedObject(plumbing.TreeObject, missing)
+	s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+	tree, err := GetTree(st, treeHash)
+	s.Require().NoError(err)
+
+	// Non-recursive: every direct entry is enumerated; the missing
+	// subtree is never loaded.
+	var names []string
+	nonRecursive := NewTreeWalker(tree, false, nil)
+	defer nonRecursive.Close()
+	for {
+		name, _, err := nonRecursive.Next()
+		if err == io.EOF {
+			break
+		}
+		s.Require().NoError(err)
+		names = append(names, name)
+	}
+	s.Equal([]string{
+		".gitignore", "CHANGELOG", "LICENSE", "binary.jpg",
+		"go", "json", "php", "vendor",
+	}, names)
+
+	// Recursive: descending into "go" surfaces the lookup error rather
+	// than silently ending the walk.
+	recursive := NewTreeWalker(tree, true, nil)
+	defer recursive.Close()
+	var walkErr error
+	for {
+		_, _, err := recursive.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			walkErr = err
+			break
+		}
+	}
+	s.ErrorIs(walkErr, plumbing.ErrObjectNotFound)
+	s.ErrorContains(walkErr, "go") // the failing entry's path
+}
+
 func (s *TreeSuite) TestPatchContext_ToNil() {
 	commit := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	tree, err := commit.Tree()
