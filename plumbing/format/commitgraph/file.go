@@ -77,6 +77,7 @@ type fileIndex struct {
 	minimumNumberOfHashes uint32
 	objSize               int
 	numChunks             uint8
+	numBaseGraphs         uint8
 	fileSize              int64
 }
 
@@ -102,6 +103,20 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 
 	if err := fi.verifyFileHeader(); err != nil {
 		return nil, err
+	}
+	// The base-graph count in the header must match the actual chain
+	// depth: zero for a standalone graph, parent-depth+1 within a chain.
+	// Canonical Git cross-checks this when loading a split commit-graph.
+	expectedBaseGraphs := 0
+	if p, ok := parent.(*fileIndex); ok {
+		expectedBaseGraphs = int(p.numBaseGraphs) + 1
+	} else if parent != nil {
+		// Non-fileIndex parent (exotic caller): chain depth is unknown,
+		// so accept whatever the header declares.
+		expectedBaseGraphs = int(fi.numBaseGraphs)
+	}
+	if int(fi.numBaseGraphs) != expectedBaseGraphs {
+		return nil, ErrMalformedCommitGraphFile
 	}
 	if err := fi.verifyFileSize(); err != nil {
 		return nil, err
@@ -167,6 +182,10 @@ func (fi *fileIndex) verifyFileHeader() error {
 		return ErrUnsupportedHash
 	}
 	fi.numChunks = header[2]
+	// header[3] is the number of base commit-graphs (the chain depth
+	// below this file); validated against the actual parent chain in
+	// OpenFileIndexWithParent.
+	fi.numBaseGraphs = header[3]
 
 	return nil
 }

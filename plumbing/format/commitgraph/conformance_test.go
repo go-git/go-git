@@ -27,6 +27,21 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsNonMonotonicFanout() {
 		"expected ErrMalformedCommitGraphFile for non-monotonic fanout")
 }
 
+// TestOpenFileIndexRejectsBadBaseGraphCount verifies the header's base
+// commit-graph count (byte 7) is cross-checked against the actual chain
+// depth: a standalone file must declare zero base graphs.
+func (s *CommitgraphSuite) TestOpenFileIndexRejectsBadBaseGraphCount() {
+	raw, err := buildSimpleEncoded()
+	s.Require().NoError(err)
+
+	// raw[7] is the number-of-base-commit-graphs byte.
+	raw[7] = 1
+
+	_, err = openIndexBytes(raw)
+	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
+		"expected ErrMalformedCommitGraphFile when a standalone graph declares base graphs")
+}
+
 // TestOpenChainFileNoTrailingNewline verifies a chain file whose final
 // hash lacks a trailing newline is fully parsed (the last entry must not
 // be silently dropped), and that a normally-terminated file yields the
