@@ -130,12 +130,20 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	if err != nil {
 		return nil, err
 	}
-	// V2 client support is partial (server v2 is fully supported for HTTP e2e with git CLI).
-	// If ver==V2 the subsequent AdvRefs decode will typically yield empty refs for
-	// a real v2 advertisement (refs come via ls-refs); GetRemoteRefs will surface
-	// an appropriate error. Explicit V2 requests from go-git remain best-effort.
 	switch ver {
-	case protocol.V1, protocol.V0, protocol.V2:
+	case protocol.V2:
+		var caps packp.V2Capabilities
+		if err := caps.DecodeList(rd); err != nil {
+			return nil, err
+		}
+		runner := &httpRunner{
+			client:     client,
+			baseURL:    req.URL,
+			service:    req.Command,
+			authorizer: authorizer,
+		}
+		return transport.NewV2Session(runner, caps, req.Command, true), nil
+	case protocol.V1, protocol.V0:
 	}
 
 	ar := &packp.AdvRefs{}

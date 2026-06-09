@@ -15,21 +15,24 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// commandRunner sends a single fully-encoded protocol v2 command request and
+// CommandRunner sends a single fully-encoded protocol v2 command request and
 // returns a reader over the server's response. Stream transports write to the
 // persistent connection and read the reply back; HTTP performs one POST per
 // call (stateless RPC). The returned reader is read until the command's
 // terminating flush packet; Close releases any per-call resource (a no-op for
 // stream transports, which keep the connection open for the next command).
-type commandRunner interface {
+type CommandRunner interface {
 	Run(ctx context.Context, requestBody []byte) (io.ReadCloser, error)
+	// Close releases the runner's resources. For stream transports this
+	// closes the underlying connection; for HTTP it is a no-op.
+	Close() error
 }
 
 // v2Session implements Session over Git wire protocol version 2. It supports
 // the fetch side only (ls-refs and fetch); push has no v2 equivalent and
 // always uses v0/v1.
 type v2Session struct {
-	runner       commandRunner
+	runner       CommandRunner
 	caps         packp.V2Capabilities
 	svc          string
 	statelessRPC bool
@@ -37,7 +40,10 @@ type v2Session struct {
 	refs *packp.LsRefsResponse
 }
 
-func newV2Session(runner commandRunner, caps packp.V2Capabilities, service string, statelessRPC bool) *v2Session {
+// NewV2Session creates a Session that speaks Git wire protocol version 2
+// over the given CommandRunner. Stream transports pass statelessRPC=false;
+// HTTP passes true so wants and accumulated haves are resent each round.
+func NewV2Session(runner CommandRunner, caps packp.V2Capabilities, service string, statelessRPC bool) Session {
 	return &v2Session{
 		runner:       runner,
 		caps:         caps,
@@ -233,6 +239,6 @@ func (s *v2Session) Push(_ context.Context, _ storage.Storer, _ *PushRequest) er
 	return fmt.Errorf("push is not supported over protocol v2")
 }
 
-// Close implements Session. The connection (if any) is owned by the transport
-// that created the runner.
-func (s *v2Session) Close() error { return nil }
+// Close implements Session by closing the runner, which releases the
+// underlying connection for stream transports.
+func (s *v2Session) Close() error { return s.runner.Close() }

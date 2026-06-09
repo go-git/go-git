@@ -32,7 +32,7 @@ type StreamSession struct {
 // For pack services (upload-pack, receive-pack), it reads the version
 // and advertised refs from the stream. For upload-archive, it skips
 // that — the archive protocol has no ref advertisement.
-func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
+func NewStreamSession(conn Conn, service string) (Session, error) {
 	r := bufio.NewReader(conn.Reader())
 	w := conn.Writer()
 
@@ -54,10 +54,15 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 	}
 
 	switch ver {
-	case protocol.V1, protocol.V0, protocol.V2:
-		// V2 is accepted; full client v2 negotiation (ls-refs/fetch commands)
-		// not yet implemented for stream transports. Advertise/decode will
-		// proceed and may result in empty refs for pure v2 servers.
+	case protocol.V2:
+		var caps packp.V2Capabilities
+		if err := caps.DecodeList(r); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		runner := &streamRunner{conn: conn, r: r, w: w}
+		return NewV2Session(runner, caps, service, false), nil
+	case protocol.V1, protocol.V0:
 	}
 
 	ar := &packp.AdvRefs{}
@@ -161,3 +166,25 @@ var (
 	_ Session  = (*StreamSession)(nil)
 	_ Archiver = (*StreamSession)(nil)
 )
+
+// streamRunner is the protocol v2 CommandRunner for stream transports
+// (SSH, Git TCP, file). Each command request is written to the persistent
+// connection and its response read back from the same stream.
+type streamRunner struct {
+	conn Conn
+	r    io.Reader
+	w    io.WriteCloser
+}
+
+var _ CommandRunner = (*streamRunner)(nil)
+
+func (s *streamRunner) Run(ctx context.Context, requestBody []byte) (io.ReadCloser, error) {
+	if _, err := s.w.Write(requestBody); err != nil {
+		return nil, err
+	}
+	return io.NopCloser(ioutil.NewContextReader(ctx, s.r)), nil
+}
+
+// Close closes the underlying connection. The connection stays open across
+// individual commands; it is released only when the session is closed.
+func (s *streamRunner) Close() error { return s.conn.Close() }

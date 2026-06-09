@@ -39,6 +39,8 @@ func (f *fakeRunner) Run(_ context.Context, req []byte) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(resp)), nil
 }
 
+func (f *fakeRunner) Close() error { return nil }
+
 func capsFor(t interface{ Fatal(...any) }, lines ...string) packp.V2Capabilities {
 	buf := bytes.NewBuffer(nil)
 	_, _ = pktline.Writeln(buf, "version 2")
@@ -54,9 +56,10 @@ func capsFor(t interface{ Fatal(...any) }, lines ...string) packp.V2Capabilities
 }
 
 func emptyPack() []byte {
-	header := []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0}
-	sum := sha1.Sum(header)
-	return append(header, sum[:]...)
+	pack := make([]byte, 12, 12+sha1.Size)
+	copy(pack, []byte{'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 0})
+	sum := sha1.Sum(pack)
+	return append(pack, sum[:]...)
 }
 
 // packfileResponse builds a fetch response whose only section is a
@@ -78,7 +81,7 @@ func (s *V2SessionSuite) TestGetRemoteRefs() {
 
 	runner := &fakeRunner{responses: [][]byte{resp.Bytes()}}
 	caps := capsFor(s.T(), "ls-refs=unborn", "object-format=sha1")
-	sess := newV2Session(runner, caps, UploadPackService, false)
+	sess := NewV2Session(runner, caps, UploadPackService, false)
 
 	refs, err := sess.GetRemoteRefs(context.Background())
 	s.Require().NoError(err)
@@ -110,7 +113,7 @@ func (s *V2SessionSuite) TestFetchClone() {
 	want := "1111111111111111111111111111111111111111"
 	runner := &fakeRunner{responses: [][]byte{packfileResponse(emptyPack())}}
 	caps := capsFor(s.T(), "fetch=shallow filter", "object-format=sha1")
-	sess := newV2Session(runner, caps, UploadPackService, false)
+	sess := NewV2Session(runner, caps, UploadPackService, false)
 
 	st := memory.NewStorage()
 	err := sess.Fetch(context.Background(), st, &FetchRequest{
@@ -128,7 +131,7 @@ func (s *V2SessionSuite) TestFetchClone() {
 func (s *V2SessionSuite) TestFetchFilterUnsupported() {
 	runner := &fakeRunner{}
 	caps := capsFor(s.T(), "fetch=shallow", "object-format=sha1")
-	sess := newV2Session(runner, caps, UploadPackService, false)
+	sess := NewV2Session(runner, caps, UploadPackService, false)
 
 	err := sess.Fetch(context.Background(), memory.NewStorage(), &FetchRequest{
 		Wants:  []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
@@ -139,7 +142,7 @@ func (s *V2SessionSuite) TestFetchFilterUnsupported() {
 }
 
 func (s *V2SessionSuite) TestPushUnsupported() {
-	sess := newV2Session(&fakeRunner{}, capsFor(s.T()), UploadPackService, false)
+	sess := NewV2Session(&fakeRunner{}, capsFor(s.T()), UploadPackService, false)
 	err := sess.Push(context.Background(), memory.NewStorage(), &PushRequest{})
 	s.Require().Error(err)
 }

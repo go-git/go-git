@@ -24,8 +24,6 @@ type V2Capabilities struct {
 // Decode reads a capability advertisement from r. The advertisement must
 // start with a "version 2" line and is terminated by a flush packet.
 func (c *V2Capabilities) Decode(r io.Reader) error {
-	c.m = make(map[string]string)
-
 	_, line, err := pktline.ReadLine(r)
 	if err != nil {
 		return err
@@ -33,6 +31,15 @@ func (c *V2Capabilities) Decode(r io.Reader) error {
 	if strings.TrimSpace(string(line)) != "version 2" {
 		return ErrInvalidV2Advertisement
 	}
+
+	return c.DecodeList(r)
+}
+
+// DecodeList reads the capability lines of a v2 advertisement, terminated by
+// a flush packet. It is used when the leading "version 2" line has already
+// been consumed (for example by transport.DiscoverVersion).
+func (c *V2Capabilities) DecodeList(r io.Reader) error {
+	c.m = make(map[string]string)
 
 	for {
 		l, line, err := pktline.ReadLine(r)

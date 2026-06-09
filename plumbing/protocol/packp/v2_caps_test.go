@@ -55,6 +55,20 @@ func (s *V2CapabilitiesSuite) TestDecode() {
 	s.False(c.SupportsArgument("ls-refs", "symrefs"))
 }
 
+func (s *V2CapabilitiesSuite) TestDecodeList() {
+	buf := bytes.NewBuffer(nil)
+	_, err := pktline.Writeln(buf, "agent=git/2.40.1")
+	s.Require().NoError(err)
+	_, err = pktline.Writeln(buf, "fetch=shallow filter")
+	s.Require().NoError(err)
+	s.Require().NoError(pktline.WriteFlush(buf))
+
+	var c V2Capabilities
+	s.Require().NoError(c.DecodeList(buf))
+	s.Equal("git/2.40.1", c.Get("agent"))
+	s.True(c.SupportsArgument("fetch", "filter"))
+}
+
 func (s *V2CapabilitiesSuite) TestDecodeMissingVersion() {
 	buf := s.advertisement("agent=git/2.40.1")
 
