@@ -85,7 +85,7 @@ func (e *Encoder) encodeHeader(idx *Index) error {
 }
 
 func (e *Encoder) encodeEntries(idx *Index) error {
-	sort.Sort(byName(idx.Entries))
+	sort.Sort(byNameAndStage(idx.Entries))
 
 	for _, entry := range idx.Entries {
 		if err := e.encodeEntry(idx, entry); err != nil {
@@ -263,8 +263,13 @@ func (e *Encoder) encodeFooter() error {
 	return binary.Write(e.w, e.hash.Sum(nil))
 }
 
-type byName []*Entry
+type byNameAndStage []*Entry
 
-func (l byName) Len() int           { return len(l) }
-func (l byName) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
-func (l byName) Less(i, j int) bool { return l[i].Name < l[j].Name }
+func (l byNameAndStage) Len() int      { return len(l) }
+func (l byNameAndStage) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
+func (l byNameAndStage) Less(i, j int) bool {
+	if l[i].Name == l[j].Name {
+		return l[i].Stage < l[j].Stage
+	}
+	return l[i].Name < l[j].Name
+}
