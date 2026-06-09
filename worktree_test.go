@@ -3022,6 +3022,30 @@ func (s *WorktreeSuite) TestAddGlob() {
 	s.Equal(Unmodified, file.Worktree)
 }
 
+func (s *WorktreeSuite) TestAddGlobSkipsDotGitDirectory() {
+	dir := s.T().TempDir()
+	r, err := PlainInit(dir, false)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	err = os.WriteFile(filepath.Join(dir, "newfile"), []byte("hello"), 0o644)
+	s.Require().NoError(err)
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	err = w.AddWithOptions(&AddOptions{Glob: "*"})
+	s.Require().NoError(err)
+
+	idx, err := r.Storer.Index()
+	s.Require().NoError(err)
+	s.Require().Len(idx.Entries, 1)
+	s.Equal("newfile", idx.Entries[0].Name)
+
+	err = w.AddWithOptions(&AddOptions{Path: ".git"})
+	s.ErrorContains(err, "invalid path component")
+}
+
 func (s *WorktreeSuite) TestAddFilenameStartingWithDot() {
 	fs := memfs.New()
 	w := &Worktree{
