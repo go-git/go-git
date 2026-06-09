@@ -640,6 +640,32 @@ func (s *WorktreeSuite) TestCheckoutSparse() {
 	}
 }
 
+func (s *WorktreeSuite) TestCheckoutSparseRelativeDirs() {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL:        s.GetBasicLocalRepositoryURL(),
+		NoCheckout: true,
+	})
+	s.NoError(err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	wantDirs := []string{"go", "json", "php"}
+	s.NoError(w.Checkout(&CheckoutOptions{
+		SparseCheckoutDirectories: []string{"./go", "./json", "./php"},
+	}))
+
+	fis, err := fs.ReadDir("/")
+	s.NoError(err)
+	s.Len(fis, len(wantDirs))
+	for _, fi := range fis {
+		s.True(fi.IsDir())
+		s.Contains(wantDirs, fi.Name())
+	}
+}
+
 func (s *WorktreeSuite) TestCheckoutCRLF() {
 	runTest := func(t *testing.T, autoCRLF string) (result []byte) {
 		r := NewRepositoryWithEmptyWorktree(fixtures.Basic().One())

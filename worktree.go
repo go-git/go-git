@@ -345,8 +345,9 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		return err
 	}
 
-	if len(opts.SparseDirs) > 0 && !opts.SkipSparseDirValidation {
-		if !treeContainsDirs(t, opts.SparseDirs) {
+	sparseDirs := cleanSparseDirs(opts.SparseDirs)
+	if len(sparseDirs) > 0 && !opts.SkipSparseDirValidation {
+		if !treeContainsDirs(t, sparseDirs) {
 			return ErrSparseResetDirectoryNotFound
 		}
 	}
@@ -364,7 +365,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == KeepReset {
-		if err := w.checkKeepResetConflicts(prevTree, t, opts.SparseDirs, opts.Files); err != nil {
+		if err := w.checkKeepResetConflicts(prevTree, t, sparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -375,7 +376,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 
 	var removedFiles []string
 	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset || opts.Mode == KeepReset {
-		if removedFiles, err = w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
+		if removedFiles, err = w.resetIndex(t, sparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -393,6 +394,18 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	return nil
+}
+
+func cleanSparseDirs(dirs []string) []string {
+	if len(dirs) == 0 {
+		return nil
+	}
+
+	cleaned := make([]string, len(dirs))
+	for i, dir := range dirs {
+		cleaned[i] = filepath.ToSlash(filepath.Clean(dir))
+	}
+	return cleaned
 }
 
 // treeContainsDirs checks if the given tree contains all the directories.
