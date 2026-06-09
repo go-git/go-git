@@ -150,6 +150,32 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	assert.False(t, ok, "untracked file inside an ignored directory must not surface in Status")
 }
 
+func TestStatusIgnoresFileUnderDirectoryOnlyInclusion(t *testing.T) {
+	t.Parallel()
+
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	write := func(name string, data []byte) {
+		require.NoError(t, wt.Filesystem().MkdirAll(filepath.Dir(name), 0o755))
+		require.NoError(t, util.WriteFile(wt.Filesystem(), name, data, 0o644))
+	}
+
+	write(".gitignore", []byte("*\n!my-dir/\n"))
+	write("my-dir/sub/file.txt", []byte("test\n"))
+
+	st, err := wt.Status()
+	require.NoError(t, err)
+
+	_, ok := st["my-dir/sub/file.txt"]
+	assert.False(t, ok, "file under directory-only inclusion must remain ignored")
+}
+
 func BenchmarkWorktreeStatus(b *testing.B) {
 	b.StopTimer()
 
