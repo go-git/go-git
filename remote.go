@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
@@ -378,6 +379,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	req.Command = transport.UploadPackService
+	req.Protocol = r.transportProtocol()
 	sess, err := cl.Handshake(ctx, req)
 	if err != nil {
 		return nil, err
@@ -545,6 +547,21 @@ func newClient(rawURL string, opts []client.Option) (*client.Client, *transport.
 
 	cl := client.New(opts...)
 	return cl, &transport.Request{URL: u}, nil
+}
+
+// transportProtocol returns the wire protocol version configured for this
+// remote's repository (the protocol.version setting), defaulting to
+// config.DefaultProtocolVersion. It is used for ref discovery and fetch;
+// push always uses v0/v1, since protocol v2 has no push.
+func (r *Remote) transportProtocol() protocol.Version {
+	if r.s == nil {
+		return config.DefaultProtocolVersion
+	}
+	cfg, err := r.s.Config()
+	if err != nil || cfg == nil {
+		return config.DefaultProtocolVersion
+	}
+	return cfg.Protocol.Version
 }
 
 func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer) (bool, error) {
@@ -1290,6 +1307,7 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 	}
 
 	req.Command = transport.UploadPackService
+	req.Protocol = r.transportProtocol()
 	sess, err := cl.Handshake(ctx, req)
 	if err != nil {
 		return nil, err
