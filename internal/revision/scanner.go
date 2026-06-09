@@ -88,7 +88,24 @@ func (s *scanner) scan() (token, string, error) {
 	case '-':
 		return minus, string(ch), nil
 	case '@':
-		return at, string(ch), nil
+		next, _, err := s.r.ReadRune()
+		if err == io.EOF || next == zeroRune {
+			return at, string(ch), nil
+		}
+
+		if err != nil {
+			return tokenError, "", err
+		}
+
+		if err := s.r.UnreadRune(); err != nil {
+			return tokenError, "", err
+		}
+
+		if next == '{' {
+			return at, string(ch), nil
+		}
+
+		return word, string(ch), nil
 	case '\\':
 		return aslash, string(ch), nil
 	case '?':

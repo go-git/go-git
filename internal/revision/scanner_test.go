@@ -133,6 +133,24 @@ func (s *ScannerSuite) TestReadAt() {
 	s.Equal(at, tok)
 }
 
+func (s *ScannerSuite) TestReadAtBeforeBrace() {
+	scanner := newScanner(bytes.NewBufferString("@{1}"))
+	tok, data, err := scanner.scan()
+
+	s.NoError(err)
+	s.Equal("@", data)
+	s.Equal(at, tok)
+}
+
+func (s *ScannerSuite) TestReadAtAsWord() {
+	scanner := newScanner(bytes.NewBufferString("@scope"))
+	tok, data, err := scanner.scan()
+
+	s.NoError(err)
+	s.Equal("@", data)
+	s.Equal(word, tok)
+}
+
 func (s *ScannerSuite) TestReadAntislash() {
 	scanner := newScanner(bytes.NewBufferString("\\"))
 	tok, data, err := scanner.scan()
