@@ -2,6 +2,7 @@ package commitgraph_test
 
 import (
 	encbin "encoding/binary"
+	"strings"
 
 	commitgraph "github.com/go-git/go-git/v6/plumbing/format/commitgraph"
 )
@@ -24,4 +25,21 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsNonMonotonicFanout() {
 	_, err = openIndexBytes(raw)
 	s.ErrorIs(err, commitgraph.ErrMalformedCommitGraphFile,
 		"expected ErrMalformedCommitGraphFile for non-monotonic fanout")
+}
+
+// TestOpenChainFileNoTrailingNewline verifies a chain file whose final
+// hash lacks a trailing newline is fully parsed (the last entry must not
+// be silently dropped), and that a normally-terminated file yields the
+// same result with no spurious empty entry.
+func (s *CommitgraphSuite) TestOpenChainFileNoTrailingNewline() {
+	h1 := strings.Repeat("a", 40)
+	h2 := strings.Repeat("b", 40)
+
+	chain, err := commitgraph.OpenChainFile(strings.NewReader(h1 + "\n" + h2))
+	s.Require().NoError(err)
+	s.Equal([]string{h1, h2}, chain)
+
+	chain, err = commitgraph.OpenChainFile(strings.NewReader(h1 + "\n" + h2 + "\n"))
+	s.Require().NoError(err)
+	s.Equal([]string{h1, h2}, chain)
 }
