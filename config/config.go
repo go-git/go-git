@@ -1023,7 +1023,8 @@ type RemoteConfig struct {
 	// Name of the remote
 	Name string
 	// URLs the URLs of a remote repository. It must be non-empty. Fetch will
-	// always use the first URL, while push will use all of them.
+	// always use the first URL. Push will use PushURLs when set, otherwise
+	// pushInsteadOf-derived URLs when any match, otherwise all URLs.
 	URLs []string
 	// PushURLs are the explicit push URLs of a remote repository.
 	PushURLs []string

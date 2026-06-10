@@ -775,6 +775,7 @@ func expectedBranchReferences(t testing.TB, refs storer.ReferenceStorer) map[str
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer iter.Close()
 
 	expected := make(map[string]string)
 	err = iter.ForEach(func(ref *plumbing.Reference) error {
