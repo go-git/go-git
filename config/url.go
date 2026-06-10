@@ -60,7 +60,7 @@ func (u *URL) marshal() *format.Subsection {
 	return u.raw
 }
 
-func findLongestURLMatch(remoteURL string, urls map[string]*URL, prefixes func(*URL) []string) (*URL, string) {
+func rewriteLongestURLMatch(remoteURL string, urls map[string]*URL, prefixes func(*URL) []string) (string, bool) {
 	var longestMatch *URL
 	var longestPrefix string
 	var longestMatchLength int
@@ -82,7 +82,11 @@ func findLongestURLMatch(remoteURL string, urls map[string]*URL, prefixes func(*
 		}
 	}
 
-	return longestMatch, longestPrefix
+	if longestMatch == nil {
+		return remoteURL, false
+	}
+
+	return longestMatch.Name + remoteURL[len(longestPrefix):], true
 }
 
 // ApplyInsteadOf applies the URL rewrite rules to the given URL.
@@ -96,16 +100,8 @@ func (u *URL) ApplyPushInsteadOf(url string) string {
 }
 
 func (u *URL) apply(url string, prefixes []string) string {
-	var longestPrefix string
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(url, prefix) && len(prefix) > len(longestPrefix) {
-			longestPrefix = prefix
-		}
-	}
-
-	if longestPrefix == "" {
-		return url
-	}
-
-	return u.Name + url[len(longestPrefix):]
+	rewritten, _ := rewriteLongestURLMatch(url, map[string]*URL{u.Name: u}, func(*URL) []string {
+		return prefixes
+	})
+	return rewritten
 }

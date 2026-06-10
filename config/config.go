@@ -1180,18 +1180,10 @@ func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
 		regularURLCount -= len(c.PushURLs)
 	}
 
-	rewriteInsteadOf := func(url string) (string, bool) {
-		match, prefix := findLongestURLMatch(url, urlRules, func(u *URL) []string {
-			return u.InsteadOfs
-		})
-		if match == nil {
-			return url, false
-		}
-		return match.Name + url[len(prefix):], true
-	}
-
 	for i, url := range c.URLs {
-		if rewritten, matched := rewriteInsteadOf(url); matched {
+		if rewritten, matched := rewriteLongestURLMatch(url, urlRules, func(u *URL) []string {
+			return u.InsteadOfs
+		}); matched {
 			c.URLs[i] = rewritten
 			c.insteadOfRulesApplied = true
 		}
@@ -1201,7 +1193,9 @@ func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
 		copy(c.PushURLs, c.URLs[regularURLCount:])
 	} else {
 		for i, url := range c.PushURLs {
-			if rewritten, matched := rewriteInsteadOf(url); matched {
+			if rewritten, matched := rewriteLongestURLMatch(url, urlRules, func(u *URL) []string {
+				return u.InsteadOfs
+			}); matched {
 				c.PushURLs[i] = rewritten
 				c.insteadOfRulesApplied = true
 			}
@@ -1214,10 +1208,10 @@ func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
 		// URL after insteadOf rewriting.
 		// I could not find docs for this but I manually tested it. Logic in the source:
 		// https://github.com/git/git/blob/1ff279f3404a482a83fb04c7457e41ab26884aea/remote.c#L616-L621
-		if matchingURLRule, prefix := findLongestURLMatch(url, urlRules, func(u *URL) []string {
+		if rewritten, matched := rewriteLongestURLMatch(url, urlRules, func(u *URL) []string {
 			return u.PushInsteadOfs
-		}); matchingURLRule != nil {
-			c.pushInsteadOfURLs = append(c.pushInsteadOfURLs, matchingURLRule.Name+url[len(prefix):])
+		}); matched {
+			c.pushInsteadOfURLs = append(c.pushInsteadOfURLs, rewritten)
 		}
 	}
 
