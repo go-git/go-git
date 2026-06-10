@@ -67,6 +67,59 @@ func (s *ModeSuite) TestNewErrors() {
 	}
 }
 
+func (s *ModeSuite) TestFromBytes() {
+	for _, test := range [...]struct {
+		input    string
+		expected FileMode
+	}{
+		{input: "40000", expected: Dir},
+		{input: "100644", expected: Regular},
+		{input: "100664", expected: Deprecated},
+		{input: "100755", expected: Executable},
+		{input: "120000", expected: Symlink},
+		{input: "160000", expected: Submodule},
+		{input: "000000", expected: Empty},
+		{input: "040000", expected: Dir},
+		{input: "0", expected: Empty},
+		{input: "42", expected: FileMode(0o42)},
+	} {
+		comment := fmt.Sprintf("input = %q", test.input)
+		obtained, err := FromBytes([]byte(test.input))
+		s.Equal(test.expected, obtained, comment)
+		s.NoError(err, comment)
+	}
+}
+
+func (s *ModeSuite) TestFromBytesErrors() {
+	for _, input := range [...]string{
+		"",         // empty
+		"9",        // non-octal digit
+		"09",       // non-octal digit
+		"mode",     // letters
+		"12345678", // too long (>7 chars)
+		"0x81a4",   // hex prefix
+		"-100644",  // negative
+	} {
+		comment := fmt.Sprintf("input = %q", input)
+		obtained, err := FromBytes([]byte(input))
+		s.Equal(Empty, obtained, comment)
+		s.NotNil(err, comment)
+	}
+}
+
+func (s *ModeSuite) TestFromBytesEquivalence() {
+	// FromBytes should produce the same results as New for valid git modes
+	for _, m := range [...]string{
+		"40000", "100644", "100664", "100755", "120000", "160000",
+	} {
+		expected, err1 := New(m)
+		s.NoError(err1)
+		got, err2 := FromBytes([]byte(m))
+		s.NoError(err2)
+		s.Equal(expected, got, "mismatch for mode %q", m)
+	}
+}
+
 // fixtures for testing NewModeFromOSFileMode
 type fixture struct {
 	input    os.FileMode
