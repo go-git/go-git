@@ -86,7 +86,7 @@ func rewriteLongestURLMatch(remoteURL string, urls map[string]*URL, prefixes fun
 		return remoteURL, false
 	}
 
-	return longestMatch.Name + remoteURL[len(longestPrefix):], true
+	return longestMatch.Name + remoteURL[longestMatchLength:], true
 }
 
 // ApplyInsteadOf applies the URL rewrite rules to the given URL.
