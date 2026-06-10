@@ -81,6 +81,8 @@ func (w *ctxWriter) Write(buf []byte) (int, error) {
 
 		select {
 		case <-w.ctx.Done():
+			// Wait for the in-flight write to complete.
+			<-ret
 			return total, w.ctx.Err()
 		case write := <-ret:
 			if err := w.ctx.Err(); err != nil {
