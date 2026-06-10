@@ -612,6 +612,100 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 	AssertReferences(s.T(), server, expected)
 }
 
+func (s *RemoteSuite) TestPushToAllPushURLs() {
+	fetchURL := s.T().TempDir()
+	fetchServer, err := PlainInit(fetchURL, true)
+	s.NoError(err)
+	defer func() { _ = fetchServer.Close() }()
+
+	pushURL1 := s.T().TempDir()
+	pushServer1, err := PlainInit(pushURL1, true)
+	s.NoError(err)
+	defer func() { _ = pushServer1.Close() }()
+
+	pushURL2 := s.T().TempDir()
+	pushServer2, err := PlainInit(pushURL2, true)
+	s.NoError(err)
+	defer func() { _ = pushServer2.Close() }()
+
+	srcFs, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name:     DefaultRemoteName,
+		URLs:     []string{fetchURL},
+		PushURLs: []string{pushURL1, pushURL2},
+	})
+
+	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{rs},
+	})
+	s.NoError(err)
+
+	expected := expectedBranchReferences(s.T(), r.s)
+	AssertReferences(s.T(), pushServer1, expected)
+	AssertReferences(s.T(), pushServer2, expected)
+}
+
+func (s *RemoteSuite) TestPushToAllRemoteURLsWhenPushURLsAreUnset() {
+	url1 := s.T().TempDir()
+	server1, err := PlainInit(url1, true)
+	s.NoError(err)
+	defer func() { _ = server1.Close() }()
+
+	url2 := s.T().TempDir()
+	server2, err := PlainInit(url2, true)
+	s.NoError(err)
+	defer func() { _ = server2.Close() }()
+
+	srcFs, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url1, url2},
+	})
+
+	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	err = r.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{rs},
+	})
+	s.NoError(err)
+
+	expected := expectedBranchReferences(s.T(), r.s)
+	AssertReferences(s.T(), server1, expected)
+	AssertReferences(s.T(), server2, expected)
+}
+
+func expectedBranchReferences(t testing.TB, refs storer.ReferenceStorer) map[string]string {
+	t.Helper()
+
+	iter, err := refs.IterReferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := make(map[string]string)
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if !ref.Name().IsBranch() {
+			return nil
+		}
+
+		expected[ref.Name().String()] = ref.Hash().String()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return expected
+}
+
 func (s *RemoteSuite) TestPushContext() {
 	url := s.T().TempDir()
 	server, err := PlainInit(url, true)

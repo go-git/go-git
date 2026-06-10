@@ -1038,6 +1038,9 @@ type RemoteConfig struct {
 	originalPushURLs []string
 	// pushInsteadOfURLs are the push URLs derived from pushInsteadOf rules.
 	pushInsteadOfURLs []string
+	// pushURLsAppendedToURLs records that PushURLs were appended to URLs during
+	// unmarshaling for backward compatibility.
+	pushURLsAppendedToURLs bool
 
 	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
@@ -1086,7 +1089,10 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.Name = c.raw.Name
 	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
 	c.PushURLs = append([]string(nil), c.raw.Options.GetAll(pushurlKey)...)
-	c.URLs = append(c.URLs, c.PushURLs...)
+	if len(c.PushURLs) > 0 {
+		c.URLs = append(c.URLs, c.PushURLs...)
+		c.pushURLsAppendedToURLs = true
+	}
 	c.Fetch = fetch
 	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
 
@@ -1140,19 +1146,23 @@ func (c *RemoteConfig) PushURL() string {
 	// Matches `git remote get-url --push`: an explicit pushurl wins over
 	// pushInsteadOf, which wins over the remote's regular URL.
 	// See https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtpushInsteadOf.
-	if len(c.PushURLs) > 0 {
-		return c.PushURLs[0]
-	}
-
-	if len(c.pushInsteadOfURLs) > 0 {
-		return c.pushInsteadOfURLs[0]
-	}
-
-	if len(c.URLs) > 0 {
-		return c.URLs[0]
+	if pushURLs := c.pushURLsForPush(); len(pushURLs) > 0 {
+		return pushURLs[0]
 	}
 
 	return ""
+}
+
+func (c *RemoteConfig) pushURLsForPush() []string {
+	if len(c.PushURLs) > 0 {
+		return c.PushURLs
+	}
+
+	if len(c.pushInsteadOfURLs) > 0 {
+		return c.pushInsteadOfURLs
+	}
+
+	return c.URLs
 }
 
 func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
@@ -1208,7 +1218,7 @@ func (c *RemoteConfig) urlsAndPushURLsForMarshal() ([]string, []string) {
 		pushURLs = c.originalPushURLs
 	}
 
-	if len(pushURLs) > 0 && hasStringSuffix(urls, pushURLs) {
+	if c.pushURLsAppendedToURLs && len(pushURLs) > 0 && hasStringSuffix(urls, pushURLs) {
 		urls = urls[:len(urls)-len(pushURLs)]
 	}
 

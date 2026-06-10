@@ -210,6 +210,28 @@ func (s *ConfigSuite) TestMarshalRemotePushURLs() {
 	s.Equal(string(expected), string(actual))
 }
 
+func (s *ConfigSuite) TestMarshalRemotePushURLsDoesNotDropMatchingFetchURL() {
+	expected := []byte(`[core]
+	bare = false
+	filemode = true
+[remote "origin"]
+	url = https://example.com/repo.git
+	url = ssh://example.com/repo.git
+	pushurl = ssh://example.com/repo.git
+`)
+
+	cfg := NewConfig()
+	cfg.Remotes["origin"] = &RemoteConfig{
+		Name:     "origin",
+		URLs:     []string{"https://example.com/repo.git", "ssh://example.com/repo.git"},
+		PushURLs: []string{"ssh://example.com/repo.git"},
+	}
+
+	actual, err := cfg.Marshal()
+	s.NoError(err)
+	s.Equal(string(expected), string(actual))
+}
+
 func TestUnmarshalMarshal(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

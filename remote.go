@@ -103,10 +103,53 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
 
-	if o.RemoteURL == "" && len(r.c.URLs) > 0 {
-		o.RemoteURL = r.c.PushURL()
+	allUpToDate := true
+	for _, remoteURL := range r.pushURLs(o.RemoteURL) {
+		pushOptions := *o
+		pushOptions.RemoteURL = remoteURL
+		pushOptions.RefSpecs = append([]config.RefSpec(nil), o.RefSpecs...)
+
+		if err := r.pushToURL(ctx, &pushOptions); err != nil {
+			if err == NoErrAlreadyUpToDate {
+				continue
+			}
+
+			return err
+		}
+
+		allUpToDate = false
 	}
 
+	if allUpToDate {
+		return NoErrAlreadyUpToDate
+	}
+
+	return nil
+}
+
+func (r *Remote) pushURLs(remoteURL string) []string {
+	if remoteURL != "" {
+		return []string{remoteURL}
+	}
+
+	if len(r.c.PushURLs) > 0 {
+		return r.c.PushURLs
+	}
+
+	if pushURL := r.c.PushURL(); pushURL != "" {
+		if len(r.c.URLs) == 0 || pushURL != r.c.URLs[0] {
+			return []string{pushURL}
+		}
+	}
+
+	if len(r.c.URLs) > 0 {
+		return r.c.URLs
+	}
+
+	return []string{""}
+}
+
+func (r *Remote) pushToURL(ctx context.Context, o *PushOptions) (err error) {
 	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
 	if err != nil {
 		return err
