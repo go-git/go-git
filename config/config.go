@@ -1141,15 +1141,15 @@ func (c *RemoteConfig) PushURL() string {
 	// pushInsteadOf, which wins over the remote's regular URL.
 	// See https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtpushInsteadOf.
 	if len(c.PushURLs) > 0 {
-		return c.PushURLs[len(c.PushURLs)-1]
+		return c.PushURLs[0]
 	}
 
 	if len(c.pushInsteadOfURLs) > 0 {
-		return c.pushInsteadOfURLs[len(c.pushInsteadOfURLs)-1]
+		return c.pushInsteadOfURLs[0]
 	}
 
 	if len(c.URLs) > 0 {
-		return c.URLs[len(c.URLs)-1]
+		return c.URLs[0]
 	}
 
 	return ""
@@ -1163,16 +1163,20 @@ func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
 	copy(originalPushURLs, c.PushURLs)
 
 	regularURLCount := len(c.URLs) - len(c.PushURLs)
-	if regularURLCount < 0 {
+	if !hasStringSuffix(c.URLs, c.PushURLs) {
 		regularURLCount = len(c.URLs)
 	}
 
-	for i := 0; i < regularURLCount; i++ {
+	for i, remoteURL := range c.URLs {
 		url := c.URLs[i]
 		if matchingURLRule, prefix := findLongestURLMatch(url, urlRules, func(u *URL) []string {
 			return u.InsteadOfs
 		}); matchingURLRule != nil {
-			c.URLs[i] = matchingURLRule.Name + url[len(prefix):]
+			rewrittenURL := matchingURLRule.Name + remoteURL[len(prefix):]
+			c.URLs[i] = rewrittenURL
+			if i >= regularURLCount {
+				c.PushURLs[i-regularURLCount] = rewrittenURL
+			}
 			c.insteadOfRulesApplied = true
 		}
 	}
@@ -1186,11 +1190,7 @@ func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
 		if matchingURLRule, prefix := findLongestURLMatch(url, urlRules, func(u *URL) []string {
 			return u.PushInsteadOfs
 		}); matchingURLRule != nil {
-			if c.pushInsteadOfURLs == nil {
-				c.pushInsteadOfURLs = make([]string, len(c.URLs))
-				copy(c.pushInsteadOfURLs, c.URLs)
-			}
-			c.pushInsteadOfURLs[i] = matchingURLRule.Name + url[len(prefix):]
+			c.pushInsteadOfURLs = append(c.pushInsteadOfURLs, matchingURLRule.Name+url[len(prefix):])
 		}
 	}
 

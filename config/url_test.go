@@ -166,6 +166,24 @@ func (b *URLSuite) TestApplyInsteadOf() {
 	b.Equal("ssh://github.com/myrepo", urlRule.ApplyInsteadOf("http://github.com/myrepo"))
 }
 
+func (b *URLSuite) TestApplyInsteadOfUsesLongestMatch() {
+	urlRule := URL{
+		Name:       "ssh://github.com/",
+		InsteadOfs: []string{"https://example.com/", "https://example.com/team/"},
+	}
+
+	b.Equal("ssh://github.com/repo.git", urlRule.ApplyInsteadOf("https://example.com/team/repo.git"))
+}
+
+func (b *URLSuite) TestApplyPushInsteadOfUsesLongestMatch() {
+	urlRule := URL{
+		Name:           "ssh://github.com/",
+		PushInsteadOfs: []string{"https://example.com/", "https://example.com/team/"},
+	}
+
+	b.Equal("ssh://github.com/repo.git", urlRule.ApplyPushInsteadOf("https://example.com/team/repo.git"))
+}
+
 func (b *URLSuite) TestFindLongestInsteadOfMatch() {
 	urlRules := map[string]*URL{
 		"ssh://github.com": {

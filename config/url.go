@@ -96,11 +96,16 @@ func (u *URL) ApplyPushInsteadOf(url string) string {
 }
 
 func (u *URL) apply(url string, prefixes []string) string {
+	var longestPrefix string
 	for _, prefix := range prefixes {
-		if strings.HasPrefix(url, prefix) {
-			return u.Name + url[len(prefix):]
+		if strings.HasPrefix(url, prefix) && len(prefix) > len(longestPrefix) {
+			longestPrefix = prefix
 		}
 	}
 
-	return url
+	if longestPrefix == "" {
+		return url
+	}
+
+	return u.Name + url[len(longestPrefix):]
 }
