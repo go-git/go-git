@@ -4,10 +4,12 @@ package binary
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
 	"math"
+	"sync"
 )
 
 // ErrIntegerOverflow is returned when a Git-format variable-width integer
@@ -153,23 +155,30 @@ func ReadUint16(r io.Reader) (uint16, error) {
 
 const sniffLen = 8000
 
+// sniffPool reuses sniff-window buffers across IsBinary calls so the hot diff
+// path (one call per file, per side) does not allocate one per invocation.
+var sniffPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, sniffLen)
+		return &b
+	},
+}
+
 // IsBinary detects if data is a binary value based on:
 // http://git.kernel.org/cgit/git/git.git/tree/xdiff-interface.c?id=HEAD#n198
 func IsBinary(r io.Reader) (bool, error) {
-	reader := bufio.NewReader(r)
-	for range sniffLen {
-		b, err := reader.ReadByte()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return false, err
-		}
+	// Read the sniff window in one block and scan it with bytes.IndexByte
+	// rather than a byte at a time through a bufio.Reader: this runs per file
+	// (both sides) on the diff hot path, where the per-ReadByte overhead
+	// dominated. The buffer comes from a pool, so there is no per-call
+	// allocation, and only the bytes actually read (buf[:n]) are scanned.
+	bufp := sniffPool.Get().(*[]byte)
+	defer sniffPool.Put(bufp)
 
-		if b == byte(0) {
-			return true, nil
-		}
+	n, err := io.ReadFull(r, *bufp)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false, err
 	}
 
-	return false, nil
+	return bytes.IndexByte((*bufp)[:n], 0) >= 0, nil
 }
