@@ -8,7 +8,9 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -26,6 +28,7 @@ func AdvertiseRefs(
 	w io.Writer,
 	service string,
 	smart bool,
+	version protocol.Version,
 ) error {
 	switch service {
 	case UploadPackService, ReceivePackService:
@@ -90,7 +93,49 @@ func AdvertiseRefs(
 		}
 	}
 
+	// Emit explicit version packet for V1 (all) and V2 upload-pack.
+	// For HTTP this appears after the "# service=..." smart reply (correct wire order).
+	// For stateful transports (git://, ssh) it appears at the start of the advertisement.
+	if version == protocol.V1 || (version == protocol.V2 && service == UploadPackService) {
+		if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
+			return err
+		}
+	}
+
+	if version == protocol.V2 && service == UploadPackService {
+		return writeV2Advertisement(w, st)
+	}
+
 	return ar.Encode(w)
+}
+
+func writeV2Advertisement(w io.Writer, st storage.Storer) error {
+	// Emit protocol v2 capability advertisement (no refs here; use ls-refs to retrieve them).
+	caps := make([]string, 0, 5)
+	caps = append(
+		caps,
+		"agent="+capability.DefaultAgent(),
+		"ls-refs=unborn",
+		"fetch=shallow wait-for-done",
+		"server-option",
+	)
+
+	// object format
+	var objectformat config.ObjectFormat
+	if cfg, err := st.Config(); err == nil && cfg != nil {
+		objectformat = cfg.Extensions.ObjectFormat
+	}
+	if objectformat == config.UnsetObjectFormat {
+		objectformat = config.DefaultObjectFormat
+	}
+	caps = append(caps, "object-format="+objectformat.String())
+
+	for _, c := range caps {
+		if _, err := pktline.Writef(w, "%s\n", c); err != nil {
+			return err
+		}
+	}
+	return pktline.WriteFlush(w)
 }
 
 func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
