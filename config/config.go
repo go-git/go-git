@@ -1023,8 +1023,11 @@ type RemoteConfig struct {
 	// Name of the remote
 	Name string
 	// URLs the URLs of a remote repository. It must be non-empty. Fetch will
-	// always use the first URL, while push will use all of them.
+	// always use the first URL. Push will use PushURLs when set, otherwise
+	// pushInsteadOf-derived URLs when any match, otherwise all URLs.
 	URLs []string
+	// PushURLs are the explicit push URLs of a remote repository.
+	PushURLs []string
 	// Mirror indicates that the repository is a mirror of remote.
 	Mirror bool
 
@@ -1032,6 +1035,13 @@ type RemoteConfig struct {
 	insteadOfRulesApplied bool
 	// originalURLs are the urls before applying insteadOf rules
 	originalURLs []string
+	// originalPushURLs are the explicit push URLs before applying URL rules.
+	originalPushURLs []string
+	// pushInsteadOfURLs are the push URLs derived from pushInsteadOf rules.
+	pushInsteadOfURLs []string
+	// pushURLsAppendedToURLs records that PushURLs were appended to URLs during
+	// unmarshaling for backward compatibility.
+	pushURLsAppendedToURLs bool
 
 	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
@@ -1079,7 +1089,11 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 
 	c.Name = c.raw.Name
 	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
-	c.URLs = append(c.URLs, c.raw.Options.GetAll(pushurlKey)...)
+	c.PushURLs = append([]string(nil), c.raw.Options.GetAll(pushurlKey)...)
+	if len(c.PushURLs) > 0 {
+		c.URLs = append(c.URLs, c.PushURLs...)
+		c.pushURLsAppendedToURLs = true
+	}
 	c.Fetch = fetch
 	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
 
@@ -1092,15 +1106,17 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 	}
 
 	c.raw.Name = c.Name
-	if len(c.URLs) == 0 {
+	urls, pushURLs := c.urlsAndPushURLsForMarshal()
+	if len(urls) == 0 {
 		c.raw.RemoveOption(urlKey)
 	} else {
-		urls := c.URLs
-		if c.insteadOfRulesApplied {
-			urls = c.originalURLs
-		}
-
 		c.raw.SetOption(urlKey, urls...)
+	}
+
+	if len(pushURLs) == 0 {
+		c.raw.RemoveOption(pushurlKey)
+	} else {
+		c.raw.SetOption(pushurlKey, pushURLs...)
 	}
 
 	if len(c.Fetch) == 0 {
@@ -1126,19 +1142,111 @@ func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }
 
+// ResolvedPushURL returns the URL to use for push operations. See
+// ResolvedPushURLs for the full list when more than one push target applies.
+func (c *RemoteConfig) ResolvedPushURL() string {
+	if pushURLs := c.ResolvedPushURLs(); len(pushURLs) > 0 {
+		return pushURLs[0]
+	}
+
+	return ""
+}
+
+// ResolvedPushURLs returns every URL that a push should target, after
+// resolving explicit pushurls and pushInsteadOf rewrites. Explicit pushurls
+// take precedence over pushInsteadOf, which takes precedence over the
+// remote's fetch URLs.
+func (c *RemoteConfig) ResolvedPushURLs() []string {
+	// See https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtpushInsteadOf
+	// for docs on the precedence.
+	if len(c.PushURLs) > 0 {
+		return c.PushURLs
+	}
+
+	if len(c.pushInsteadOfURLs) > 0 {
+		return c.pushInsteadOfURLs
+	}
+
+	return c.URLs
+}
+
 func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
-	// save original urls
-	originalURLs := make([]string, len(c.URLs))
-	copy(originalURLs, c.URLs)
+	originalURLs := append([]string(nil), c.URLs...)
+	originalPushURLs := append([]string(nil), c.PushURLs...)
+
+	pushURLsAreURLsSuffix := hasStringSuffix(c.URLs, c.PushURLs)
+	regularURLCount := len(c.URLs)
+	if pushURLsAreURLsSuffix {
+		regularURLCount -= len(c.PushURLs)
+	}
 
 	for i, url := range c.URLs {
-		if matchingURLRule := findLongestInsteadOfMatch(url, urlRules); matchingURLRule != nil {
-			c.URLs[i] = matchingURLRule.ApplyInsteadOf(c.URLs[i])
+		if rewritten, matched := rewriteLongestURLMatch(url, urlRules, func(u *URL) []string {
+			return u.InsteadOfs
+		}); matched {
+			c.URLs[i] = rewritten
 			c.insteadOfRulesApplied = true
+		}
+	}
+	if pushURLsAreURLsSuffix {
+		// Keep the appended-pushurls suffix of c.URLs in sync with c.PushURLs.
+		copy(c.PushURLs, c.URLs[regularURLCount:])
+	} else {
+		for i, url := range c.PushURLs {
+			if rewritten, matched := rewriteLongestURLMatch(url, urlRules, func(u *URL) []string {
+				return u.InsteadOfs
+			}); matched {
+				c.PushURLs[i] = rewritten
+				c.insteadOfRulesApplied = true
+			}
+		}
+	}
+
+	for i := 0; i < regularURLCount; i++ {
+		url := originalURLs[i]
+		// Git applies pushInsteadOf to the configured fetch URL, not to the
+		// URL after insteadOf rewriting.
+		// I could not find docs for this but I manually tested it. Logic in the source:
+		// https://github.com/git/git/blob/1ff279f3404a482a83fb04c7457e41ab26884aea/remote.c#L616-L621
+		if rewritten, matched := rewriteLongestURLMatch(url, urlRules, func(u *URL) []string {
+			return u.PushInsteadOfs
+		}); matched {
+			c.pushInsteadOfURLs = append(c.pushInsteadOfURLs, rewritten)
 		}
 	}
 
 	if c.insteadOfRulesApplied {
 		c.originalURLs = originalURLs
+		c.originalPushURLs = originalPushURLs
 	}
+}
+
+func (c *RemoteConfig) urlsAndPushURLsForMarshal() ([]string, []string) {
+	urls := c.URLs
+	pushURLs := c.PushURLs
+	if c.insteadOfRulesApplied {
+		urls = c.originalURLs
+		pushURLs = c.originalPushURLs
+	}
+
+	if c.pushURLsAppendedToURLs && len(pushURLs) > 0 && hasStringSuffix(urls, pushURLs) {
+		urls = urls[:len(urls)-len(pushURLs)]
+	}
+
+	return urls, pushURLs
+}
+
+func hasStringSuffix(values, suffix []string) bool {
+	if len(suffix) > len(values) {
+		return false
+	}
+
+	offset := len(values) - len(suffix)
+	for i := range suffix {
+		if values[offset+i] != suffix[i] {
+			return false
+		}
+	}
+
+	return true
 }
