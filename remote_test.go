@@ -682,6 +682,92 @@ func (s *RemoteSuite) TestPushToAllRemoteURLsWhenPushURLsAreUnset() {
 	AssertReferences(s.T(), server2, expected)
 }
 
+// Regression test: when two fetch URLs each match a different pushInsteadOf
+// rule, push must fan out to every rewritten URL rather than just the first.
+func (s *RemoteSuite) TestPushWithMultiplePushInsteadOfFansOut() {
+	pushURL1 := s.T().TempDir()
+	pushServer1, err := PlainInit(pushURL1, true)
+	s.NoError(err)
+	defer func() { _ = pushServer1.Close() }()
+
+	pushURL2 := s.T().TempDir()
+	pushServer2, err := PlainInit(pushURL2, true)
+	s.NoError(err)
+	defer func() { _ = pushServer2.Close() }()
+
+	configText := fmt.Sprintf(`[remote "origin"]
+	url = https://example1.invalid/repo.git
+	url = https://example2.invalid/repo.git
+[url "%s"]
+	pushInsteadOf = https://example1.invalid/repo.git
+[url "%s"]
+	pushInsteadOf = https://example2.invalid/repo.git
+`, pushURL1, pushURL2)
+
+	cfg := config.NewConfig()
+	s.Require().NoError(cfg.Unmarshal([]byte(configText)))
+
+	srcFs, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
+
+	r := NewRemote(sto, cfg.Remotes["origin"])
+
+	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{rs}})
+	s.NoError(err)
+
+	expected := expectedBranchReferences(s.T(), r.s)
+	AssertReferences(s.T(), pushServer1, expected)
+	AssertReferences(s.T(), pushServer2, expected)
+}
+
+// Regression test: when a pushInsteadOf rule rewrites to a value equal to
+// URLs[0], push must still target only the rewritten URL and not fall through
+// to the remaining fetch URLs.
+func (s *RemoteSuite) TestPushWithPushInsteadOfMatchingFirstURL() {
+	pushTarget := s.T().TempDir()
+	pushServer, err := PlainInit(pushTarget, true)
+	s.NoError(err)
+	defer func() { _ = pushServer.Close() }()
+
+	// A real bare repo at a second URL that push should NOT touch.
+	untouched := s.T().TempDir()
+	untouchedServer, err := PlainInit(untouched, true)
+	s.NoError(err)
+	defer func() { _ = untouchedServer.Close() }()
+
+	// URLs[0] == pushTarget, and pushInsteadOf also rewrites URLs[0] -> pushTarget.
+	// So PushURL() returns a value equal to URLs[0].
+	configText := fmt.Sprintf(`[remote "origin"]
+	url = %s
+	url = %s
+[url "%s"]
+	pushInsteadOf = %s
+`, pushTarget, untouched, pushTarget, pushTarget)
+
+	cfg := config.NewConfig()
+	s.Require().NoError(cfg.Unmarshal([]byte(configText)))
+
+	srcFs, err := fixtures.Basic().One().DotGit()
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
+
+	r := NewRemote(sto, cfg.Remotes["origin"])
+
+	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{rs}})
+	s.NoError(err)
+
+	expected := expectedBranchReferences(s.T(), r.s)
+	AssertReferences(s.T(), pushServer, expected)
+
+	untouchedRefs := expectedBranchReferences(s.T(), untouchedServer.Storer)
+	s.Empty(untouchedRefs, "second fetch URL should not have been pushed to")
+}
+
 func expectedBranchReferences(t testing.TB, refs storer.ReferenceStorer) map[string]string {
 	t.Helper()
 

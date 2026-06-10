@@ -1141,19 +1141,23 @@ func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }
 
-// PushURL returns the URL to use for push operations.
-func (c *RemoteConfig) PushURL() string {
-	// Matches `git remote get-url --push`: an explicit pushurl wins over
-	// pushInsteadOf, which wins over the remote's regular URL.
-	// See https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtpushInsteadOf.
-	if pushURLs := c.pushURLsForPush(); len(pushURLs) > 0 {
+// ResolvedPushURL returns the URL to use for push operations. See
+// ResolvedPushURLs for the full list when more than one push target applies.
+func (c *RemoteConfig) ResolvedPushURL() string {
+	if pushURLs := c.ResolvedPushURLs(); len(pushURLs) > 0 {
 		return pushURLs[0]
 	}
 
 	return ""
 }
 
-func (c *RemoteConfig) pushURLsForPush() []string {
+// ResolvedPushURLs returns every URL that a push should target, after
+// resolving explicit pushurls and pushInsteadOf rewrites. Explicit pushurls
+// take precedence over pushInsteadOf, which takes precedence over the
+// remote's fetch URLs.
+func (c *RemoteConfig) ResolvedPushURLs() []string {
+	// See https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtpushInsteadOf
+	// for docs on the precedence.
 	if len(c.PushURLs) > 0 {
 		return c.PushURLs
 	}
@@ -1166,28 +1170,40 @@ func (c *RemoteConfig) pushURLsForPush() []string {
 }
 
 func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
-	// save original urls
-	originalURLs := make([]string, len(c.URLs))
-	copy(originalURLs, c.URLs)
-	originalPushURLs := make([]string, len(c.PushURLs))
-	copy(originalPushURLs, c.PushURLs)
+	originalURLs := append([]string(nil), c.URLs...)
+	originalPushURLs := append([]string(nil), c.PushURLs...)
 
-	regularURLCount := len(c.URLs) - len(c.PushURLs)
-	if !hasStringSuffix(c.URLs, c.PushURLs) {
-		regularURLCount = len(c.URLs)
+	pushURLsAreURLsSuffix := hasStringSuffix(c.URLs, c.PushURLs)
+	regularURLCount := len(c.URLs)
+	if pushURLsAreURLsSuffix {
+		regularURLCount -= len(c.PushURLs)
 	}
 
-	for i, remoteURL := range c.URLs {
-		url := c.URLs[i]
-		if matchingURLRule, prefix := findLongestURLMatch(url, urlRules, func(u *URL) []string {
+	rewriteInsteadOf := func(url string) (string, bool) {
+		match, prefix := findLongestURLMatch(url, urlRules, func(u *URL) []string {
 			return u.InsteadOfs
-		}); matchingURLRule != nil {
-			rewrittenURL := matchingURLRule.Name + remoteURL[len(prefix):]
-			c.URLs[i] = rewrittenURL
-			if i >= regularURLCount {
-				c.PushURLs[i-regularURLCount] = rewrittenURL
-			}
+		})
+		if match == nil {
+			return url, false
+		}
+		return match.Name + url[len(prefix):], true
+	}
+
+	for i, url := range c.URLs {
+		if rewritten, matched := rewriteInsteadOf(url); matched {
+			c.URLs[i] = rewritten
 			c.insteadOfRulesApplied = true
+		}
+	}
+	if pushURLsAreURLsSuffix {
+		// Keep the appended-pushurls suffix of c.URLs in sync with c.PushURLs.
+		copy(c.PushURLs, c.URLs[regularURLCount:])
+	} else {
+		for i, url := range c.PushURLs {
+			if rewritten, matched := rewriteInsteadOf(url); matched {
+				c.PushURLs[i] = rewritten
+				c.insteadOfRulesApplied = true
+			}
 		}
 	}
 

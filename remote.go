@@ -69,7 +69,7 @@ func (r *Remote) String() string {
 	var fetch, push string
 	if len(r.c.URLs) > 0 {
 		fetch = r.c.URLs[0]
-		push = r.c.PushURL()
+		push = r.c.ResolvedPushURL()
 	}
 
 	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
@@ -132,18 +132,8 @@ func (r *Remote) pushURLs(remoteURL string) []string {
 		return []string{remoteURL}
 	}
 
-	if len(r.c.PushURLs) > 0 {
-		return r.c.PushURLs
-	}
-
-	if pushURL := r.c.PushURL(); pushURL != "" {
-		if len(r.c.URLs) == 0 || pushURL != r.c.URLs[0] {
-			return []string{pushURL}
-		}
-	}
-
-	if len(r.c.URLs) > 0 {
-		return r.c.URLs
+	if pushURLs := r.c.ResolvedPushURLs(); len(pushURLs) > 0 {
+		return pushURLs
 	}
 
 	return []string{""}
