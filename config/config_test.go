@@ -189,6 +189,27 @@ func (s *ConfigSuite) TestMarshal() {
 	s.Equal(string(output), string(b))
 }
 
+func (s *ConfigSuite) TestMarshalRemotePushURLs() {
+	expected := []byte(`[core]
+	bare = false
+	filemode = true
+[remote "origin"]
+	url = https://example.com/repo.git
+	pushurl = ssh://example.com/repo.git
+`)
+
+	cfg := NewConfig()
+	cfg.Remotes["origin"] = &RemoteConfig{
+		Name:     "origin",
+		URLs:     []string{"https://example.com/repo.git"},
+		PushURLs: []string{"ssh://example.com/repo.git"},
+	}
+
+	actual, err := cfg.Marshal()
+	s.NoError(err)
+	s.Equal(string(expected), string(actual))
+}
+
 func TestUnmarshalMarshal(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -525,6 +546,63 @@ func (s *ConfigSuite) TestUnmarshalRemotes() {
 
 	s.Equal("https://git.sr.ht/~mcepl/go-git", cfg.Remotes["origin"].URLs[0])
 	s.Equal("git@git.sr.ht:~mcepl/go-git.git", cfg.Remotes["origin"].URLs[1])
+	s.Equal([]string{"git@git.sr.ht:~mcepl/go-git.git"}, cfg.Remotes["origin"].PushURLs)
+	s.Equal("git@git.sr.ht:~mcepl/go-git.git", cfg.Remotes["origin"].PushURL())
+}
+
+func (s *ConfigSuite) TestUnmarshalRemotePushInsteadOf() {
+	input := []byte(`[remote "origin"]
+	url = https://example.com/repo.git
+[url "ssh://fetch.example/"]
+	insteadOf = https://example.com/
+[url "ssh://push.example/"]
+	pushInsteadOf = https://example.com/
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	s.NoError(err)
+
+	remote := cfg.Remotes["origin"]
+	s.Equal([]string{"ssh://fetch.example/repo.git"}, remote.URLs)
+	s.Empty(remote.PushURLs)
+	s.Equal("ssh://push.example/repo.git", remote.PushURL())
+}
+
+func (s *ConfigSuite) TestUnmarshalRemotePushURLIgnoresURLRules() {
+	input := []byte(`[remote "origin"]
+	url = https://example.com/repo.git
+	pushurl = https://pushurl.example/repo.git
+[url "ssh://fetch.example/"]
+	insteadOf = https://example.com/
+[url "ssh://push.example/"]
+	pushInsteadOf = https://example.com/
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	s.NoError(err)
+
+	remote := cfg.Remotes["origin"]
+	s.Equal([]string{"ssh://fetch.example/repo.git", "https://pushurl.example/repo.git"}, remote.URLs)
+	s.Equal([]string{"https://pushurl.example/repo.git"}, remote.PushURLs)
+	s.Equal("https://pushurl.example/repo.git", remote.PushURL())
+}
+
+func (s *ConfigSuite) TestUnmarshalRemotePushInsteadOfLongestMatch() {
+	input := []byte(`[remote "origin"]
+	url = https://example.com/team/repo.git
+[url "ssh://short/"]
+	pushInsteadOf = https://example.com/
+[url "ssh://long/"]
+	pushInsteadOf = https://example.com/team/
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	s.NoError(err)
+
+	s.Equal("ssh://long/repo.git", cfg.Remotes["origin"].PushURL())
 }
 
 func (s *ConfigSuite) TestUnmarshalRemotesUnnamedFirst() {

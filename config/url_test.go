@@ -20,8 +20,13 @@ func (b *URLSuite) TestValidateInsteadOf() {
 		Name:       "ssh://github.com",
 		InsteadOfs: []string{"http://github.com"},
 	}
+	goodPushURL := URL{
+		Name:           "ssh://github.com",
+		PushInsteadOfs: []string{"http://github.com"},
+	}
 	badURL := URL{}
 	b.Nil(goodURL.Validate())
+	b.Nil(goodPushURL.Validate())
 	b.NotNil(badURL.Validate())
 }
 
@@ -64,6 +69,25 @@ func (b *URLSuite) TestMarshalMultipleInsteadOf() {
 	b.Equal(string(expected), string(actual))
 }
 
+func (b *URLSuite) TestMarshalPushInsteadOf() {
+	expected := []byte(`[core]
+	bare = false
+	filemode = true
+[url "ssh://git@github.com/"]
+	pushInsteadOf = https://github.com/
+`)
+
+	cfg := NewConfig()
+	cfg.URLs["ssh://git@github.com/"] = &URL{
+		Name:           "ssh://git@github.com/",
+		PushInsteadOfs: []string{"https://github.com/"},
+	}
+
+	actual, err := cfg.Marshal()
+	b.NoError(err)
+	b.Equal(string(expected), string(actual))
+}
+
 func (b *URLSuite) TestUnmarshal() {
 	input := []byte(`[core]
 	bare = false
@@ -95,6 +119,22 @@ func (b *URLSuite) TestUnmarshalMultipleInsteadOf() {
 
 	b.Equal("ssh://git@github.com/foobar", url.ApplyInsteadOf("https://github.com/foobar"))
 	b.Equal("ssh://git@github.com/foobar", url.ApplyInsteadOf("https://google.com/foobar"))
+}
+
+func (b *URLSuite) TestUnmarshalPushInsteadOf() {
+	input := []byte(`[core]
+	bare = false
+[url "ssh://git@github.com/"]
+	pushInsteadOf = https://github.com/
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	b.NoError(err)
+	url := cfg.URLs["ssh://git@github.com/"]
+	b.Equal("ssh://git@github.com/", url.Name)
+	b.Equal("https://github.com/", url.PushInsteadOfs[0])
+	b.Equal("ssh://git@github.com/foobar", url.ApplyPushInsteadOf("https://github.com/foobar"))
 }
 
 func (b *URLSuite) TestUnmarshalDuplicateUrls() {
@@ -138,7 +178,9 @@ func (b *URLSuite) TestFindLongestInsteadOfMatch() {
 		},
 	}
 
-	longestURL := findLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
+	longestURL, _ := findLongestURLMatch("http://github.com/foobar/bingbash.git", urlRules, func(u *URL) []string {
+		return u.InsteadOfs
+	})
 
 	b.Equal("ssh://somethingelse.com", longestURL.Name)
 }

@@ -16,6 +16,9 @@ type URL struct {
 	// Any URL that starts with this value will be rewritten to start, instead, with <base>.
 	// When more than one insteadOf strings match a given URL, the longest match is used.
 	InsteadOfs []string
+	// Any URL that starts with this value will be rewritten to start, instead, with <base>
+	// for pushes only. This does not apply when a remote has an explicit pushurl.
+	PushInsteadOfs []string
 
 	// raw representation of the subsection, filled by marshal or unmarshal are
 	// called.
@@ -24,7 +27,7 @@ type URL struct {
 
 // Validate validates fields of branch.
 func (u *URL) Validate() error {
-	if len(u.InsteadOfs) == 0 {
+	if len(u.InsteadOfs) == 0 && len(u.PushInsteadOfs) == 0 {
 		return errURLEmptyInsteadOf
 	}
 
@@ -32,7 +35,8 @@ func (u *URL) Validate() error {
 }
 
 const (
-	insteadOfKey = "insteadOf"
+	insteadOfKey     = "insteadOf"
+	pushInsteadOfKey = "pushInsteadOf"
 )
 
 func (u *URL) unmarshal(s *format.Subsection) error {
@@ -40,6 +44,7 @@ func (u *URL) unmarshal(s *format.Subsection) error {
 
 	u.Name = s.Name
 	u.InsteadOfs = u.raw.OptionAll(insteadOfKey)
+	u.PushInsteadOfs = u.raw.OptionAll(pushInsteadOfKey)
 	return nil
 }
 
@@ -50,38 +55,50 @@ func (u *URL) marshal() *format.Subsection {
 
 	u.raw.Name = u.Name
 	u.raw.SetOption(insteadOfKey, u.InsteadOfs...)
+	u.raw.SetOption(pushInsteadOfKey, u.PushInsteadOfs...)
 
 	return u.raw
 }
 
-func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
+func findLongestURLMatch(remoteURL string, urls map[string]*URL, prefixes func(*URL) []string) (*URL, string) {
 	var longestMatch *URL
+	var longestPrefix string
 	var longestMatchLength int
 
 	for _, u := range urls {
-		for _, currentInsteadOf := range u.InsteadOfs {
-			if !strings.HasPrefix(remoteURL, currentInsteadOf) {
+		for _, currentPrefix := range prefixes(u) {
+			if !strings.HasPrefix(remoteURL, currentPrefix) {
 				continue
 			}
 
-			lengthCurrentInsteadOf := len(currentInsteadOf)
+			lengthCurrentPrefix := len(currentPrefix)
 
 			// according to spec if there is more than one match, take the longest
-			if longestMatch == nil || longestMatchLength < lengthCurrentInsteadOf {
+			if longestMatch == nil || longestMatchLength < lengthCurrentPrefix {
 				longestMatch = u
-				longestMatchLength = lengthCurrentInsteadOf
+				longestPrefix = currentPrefix
+				longestMatchLength = lengthCurrentPrefix
 			}
 		}
 	}
 
-	return longestMatch
+	return longestMatch, longestPrefix
 }
 
 // ApplyInsteadOf applies the URL rewrite rules to the given URL.
 func (u *URL) ApplyInsteadOf(url string) string {
-	for _, j := range u.InsteadOfs {
-		if strings.HasPrefix(url, j) {
-			return u.Name + url[len(j):]
+	return u.apply(url, u.InsteadOfs)
+}
+
+// ApplyPushInsteadOf applies the push URL rewrite rules to the given URL.
+func (u *URL) ApplyPushInsteadOf(url string) string {
+	return u.apply(url, u.PushInsteadOfs)
+}
+
+func (u *URL) apply(url string, prefixes []string) string {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(url, prefix) {
+			return u.Name + url[len(prefix):]
 		}
 	}
 

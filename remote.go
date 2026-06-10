@@ -69,7 +69,7 @@ func (r *Remote) String() string {
 	var fetch, push string
 	if len(r.c.URLs) > 0 {
 		fetch = r.c.URLs[0]
-		push = r.c.URLs[len(r.c.URLs)-1]
+		push = r.c.PushURL()
 	}
 
 	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
@@ -104,7 +104,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	}
 
 	if o.RemoteURL == "" && len(r.c.URLs) > 0 {
-		o.RemoteURL = r.c.URLs[len(r.c.URLs)-1]
+		o.RemoteURL = r.c.PushURL()
 	}
 
 	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
