@@ -178,10 +178,10 @@ func (s *ConfigSuite) TestMarshal() {
 		Description: "Add support for branch description.\n\nEdit branch description: git branch --edit-description\n",
 	}
 
-	cfg.URLs["ssh://git@github.com/"] = &URL{
+	cfg.URLs = append(cfg.URLs, &URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/"},
-	}
+	})
 
 	b, err := cfg.Marshal()
 	s.NoError(err)

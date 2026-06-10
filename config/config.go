@@ -210,8 +210,8 @@ type Config struct {
 	// equal Branch.Name
 	Branches map[string]*Branch
 	// URLs list of url rewrite rules, if repo url starts with URL.InsteadOf value, it will be replaced with the
-	// key instead.
-	URLs map[string]*URL
+	// URL.Name instead. Ordered by appearance in config file.
+	URLs []*URL
 	// Raw contains the raw information of a config file. The main goal is
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
@@ -326,7 +326,7 @@ func NewConfig() *Config {
 		Remotes:    make(map[string]*RemoteConfig),
 		Submodules: make(map[string]*Submodule),
 		Branches:   make(map[string]*Branch),
-		URLs:       make(map[string]*URL),
+		URLs:       make([]*URL, 0),
 		Raw:        format.New(),
 	}
 
@@ -666,13 +666,14 @@ func (c *Config) unmarshalRemotes() error {
 
 func (c *Config) unmarshalURLs() error {
 	s := c.Raw.Section(urlSection)
+	c.URLs = make([]*URL, 0, len(s.Subsections))
 	for _, sub := range s.Subsections {
 		r := &URL{}
 		if err := r.unmarshal(sub); err != nil {
 			return err
 		}
 
-		c.URLs[r.Name] = r
+		c.URLs = append(c.URLs, r)
 	}
 
 	return nil
@@ -1126,14 +1127,14 @@ func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }
 
-func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
+func (c *RemoteConfig) applyURLRules(urlRules []*URL) {
 	// save original urls
 	originalURLs := make([]string, len(c.URLs))
 	copy(originalURLs, c.URLs)
 
 	for i, url := range c.URLs {
-		if matchingURLRule := findLongestInsteadOfMatch(url, urlRules); matchingURLRule != nil {
-			c.URLs[i] = matchingURLRule.ApplyInsteadOf(c.URLs[i])
+		if rewrittenURL, matched := applyLongestInsteadOfMatch(url, urlRules); matched {
+			c.URLs[i] = rewrittenURL
 			c.insteadOfRulesApplied = true
 		}
 	}
