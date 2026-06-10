@@ -3,7 +3,6 @@ package diff
 import (
 	"fmt"
 	"io"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -14,8 +13,6 @@ import (
 const DefaultContextLines = 3
 
 var (
-	splitLinesRegexp = regexp.MustCompile(`[^\n]*(\n|$)`)
-
 	operationChar = map[Operation]byte{
 		Add:    '+',
 		Delete: '-',
@@ -297,7 +294,11 @@ func (g *hunksGenerator) processEqualsLines(ls []string, i int) {
 }
 
 func splitLines(s string) []string {
-	out := splitLinesRegexp.FindAllString(s, -1)
+	// strings.SplitAfter keeps the trailing newline on each line, matching the
+	// previous `[^\n]*(\n|$)` regexp but without the backtracking cost — line
+	// splitting dominated the unified-diff encode hot path. A string ending in
+	// "\n" yields a trailing "" element, which we drop to preserve behaviour.
+	out := strings.SplitAfter(s, "\n")
 	if out[len(out)-1] == "" {
 		out = out[:len(out)-1]
 	}
