@@ -1,3 +1,5 @@
+//go:build ignore
+
 // This is a simple standalone HTTP git server using the pure go-git backend
 // (no cgi-bin, no git-http-backend). It is intended for manual testing.
 //
