@@ -111,12 +111,14 @@ func AdvertiseRefs(
 
 func writeV2Advertisement(w io.Writer, st storage.Storer) error {
 	// Emit protocol v2 capability advertisement (no refs here; use ls-refs to retrieve them).
-	caps := []string{
-		"agent=" + capability.DefaultAgent(),
+	caps := make([]string, 0, 5)
+	caps = append(
+		caps,
+		"agent="+capability.DefaultAgent(),
 		"ls-refs=unborn",
 		"fetch=shallow wait-for-done",
 		"server-option",
-	}
+	)
 
 	// object format
 	var objectformat config.ObjectFormat

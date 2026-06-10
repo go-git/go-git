@@ -1,0 +1,216 @@
+package http
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/stretchr/testify/require"
+
+	internalhttp "github.com/go-git/go-git/v6/internal/server/http"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/memory"
+)
+
+// run executes a git (or other) command in the given dir and fails the test on error.
+// Output is captured for diagnostics.
+func run(t testing.TB, dir, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s %v failed in %s: %s", name, args, dir, string(out))
+}
+
+// runV2 is like run but forces GIT_PROTOCOL=version=2. This ensures the git CLI
+// uses (and the test exercises) the v2 paths on our server. Without this, the test
+// could pass even if the v2 wire protocol was broken (as happened with manual
+// tests that had history and triggered haves+ready negotiation).
+func runV2(t testing.TB, dir, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_PROTOCOL=version=2")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s %v failed in %s: %s", name, args, dir, string(out))
+}
+
+// setupGoGitBackendServer starts an HTTP server using go-git's internal backend
+// (no cgi, no git-http-backend) serving a filesystem loader rooted at tmp.
+// The bare repo "testrepo.git" is first created and seeded using the git CLI
+// (as required) so that git CLI clients can speak real protocol (v2 for upload-pack)
+// against our server implementation.
+func setupGoGitBackendServer(t testing.TB) (baseURL, repoName string) {
+	t.Helper()
+
+	tmp := t.TempDir()
+	repoName = "testrepo.git"
+	repoDir := filepath.Join(tmp, repoName)
+	require.NoError(t, os.MkdirAll(repoDir, 0o755))
+
+	// Seed with git CLI (init, commit, push to bare) — exercises git CLI + our server later.
+	run(t, tmp, "git", "init", "--bare", repoName)
+	run(t, repoDir, "git", "config", "http.receivepack", "true")
+	run(t, repoDir, "git", "config", "http.uploadpack", "true")
+
+	work := filepath.Join(tmp, "work")
+	require.NoError(t, os.MkdirAll(work, 0o755))
+	run(t, work, "git", "init", "-b", "main")
+	run(t, work, "git", "config", "user.name", "tester")
+	run(t, work, "git", "config", "user.email", "tester@test")
+	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello from go-git backend e2e test\n"), 0o644))
+	run(t, work, "git", "add", "README.md")
+	run(t, work, "git", "commit", "-m", "initial")
+	run(t, work, "git", "remote", "add", "origin", "file://"+repoDir)
+	run(t, work, "git", "push", "-u", "origin", "main")
+
+	// Serve using go-git's backend. Loader base is tmp so that /testrepo.git resolves.
+	loader := transport.NewFilesystemLoader(osfs.New(tmp), false)
+	srv, err := internalhttp.FromLoader(loader)
+	require.NoError(t, err)
+	ep, err := srv.Start()
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = srv.Close() })
+
+	return ep, repoName
+}
+
+// TestBackend_HTTP_E2E_ClonePullPush tests cloning, pull and push using the
+// HTTP transport against go-git's own backend server (explicitly not cgi-bin).
+// The repo is created/seeded/operated with the git CLI (as required).
+// git CLI operations explicitly force GIT_PROTOCOL=version=2 (via runV2) so that
+// this test actually exercises the v2 wire protocol on the server and would catch
+// bugs like the previous "packfile after ready" negotiation issues.
+// go-git HTTP transport is exercised via low-level Session for the transport requirement
+// (these use classic format; v2 client send is not yet implemented).
+func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git CLI not found in PATH; required for e2e")
+	}
+
+	base, name := setupGoGitBackendServer(t)
+	authed := fmt.Sprintf("http://u:p@%s/%s", strings.TrimPrefix(base, "http://"), name)
+	pu, err := url.Parse(authed)
+	require.NoError(t, err)
+
+	// --- git CLI clone (exercises v2 ls-refs + fetch against our UploadPack v2 path) ---
+	cloneCLI := t.TempDir()
+	runV2(t, cloneCLI, "git", "clone", authed, "cloned")
+	// Force a main branch for subsequent ops (git may default to master in the worktree).
+	run(t, filepath.Join(cloneCLI, "cloned"), "git", "branch", "-M", "main")
+
+	// Verify objects arrived (pack present after v2 fetch).
+	packGlob := filepath.Join(cloneCLI, "cloned", ".git", "objects", "pack", "pack-*.pack")
+	matches, _ := filepath.Glob(packGlob)
+	require.NotEmpty(t, matches, "v2 fetch via git CLI should have produced a pack")
+
+	// --- git CLI modify + push (exercises receive-pack path on our server) ---
+	workDir := filepath.Join(cloneCLI, "cloned")
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "from-cli.txt"), []byte("from cli over http\n"), 0o644))
+	run(t, workDir, "git", "add", "from-cli.txt")
+	run(t, workDir, "git", "commit", "-m", "cli push test")
+	// Force auth header (git can be picky with userinfo on POST to custom backends).
+	runV2(t, workDir, "git", "-c", "http.extraHeader=Authorization: Basic dTpw", "push", "--force", authed, "HEAD:main")
+
+	// --- go-git HTTP transport low-level fetch (directly tests the http transport + our server) ---
+	// Note: we do not set Protocol: V2 here because the go-git client does not yet
+	// implement the v2 send path (command=fetch etc.). These low-level calls use
+	// the classic format (no Git-Protocol header -> v0 on server). The v2 server
+	// implementation is exercised (and would fail the test if broken) by the
+	// forced-v2 git CLI calls above and below.
+	tr := NewTransport(Options{})
+	sess, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     pu,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer sess.Close()
+
+	refs, err := sess.GetRemoteRefs(context.Background())
+	require.NoError(t, err)
+	require.NotEmpty(t, refs)
+
+	var want plumbing.Hash
+	for _, r := range refs {
+		if r.Name() == "refs/heads/main" {
+			want = r.Hash()
+			break
+		}
+	}
+	require.False(t, want.IsZero())
+
+	st := memory.NewStorage()
+	require.NoError(t, sess.Fetch(context.Background(), st, &transport.FetchRequest{Wants: []plumbing.Hash{want}}))
+
+	// Verify by decoding the tip commit/tree (Fetch populates objects; no ref update at this layer).
+	cobj, err := st.EncodedObject(plumbing.CommitObject, want)
+	require.NoError(t, err)
+	c, err := object.DecodeCommit(st, cobj)
+	require.NoError(t, err)
+	tobj, err := st.EncodedObject(plumbing.TreeObject, c.TreeHash)
+	require.NoError(t, err)
+	trr, err := object.DecodeTree(st, tobj)
+	require.NoError(t, err)
+	found := false
+	for _, e := range trr.Entries {
+		if e.Name == "README.md" || e.Name == "from-cli.txt" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "go-git http transport fetch should have delivered objects from server")
+
+	// --- go-git HTTP transport fetch after the CLI push (exercises "pull" using the http transport) ---
+	sess3, err := tr.Handshake(context.Background(), &transport.Request{URL: pu, Command: transport.UploadPackService})
+	require.NoError(t, err)
+	refs3, err := sess3.GetRemoteRefs(context.Background())
+	require.NoError(t, err)
+	var tip3 plumbing.Hash
+	for _, r := range refs3 {
+		if r.Name() == "refs/heads/main" {
+			tip3 = r.Hash()
+			break
+		}
+	}
+	require.False(t, tip3.IsZero())
+	st3 := memory.NewStorage()
+	require.NoError(t, sess3.Fetch(context.Background(), st3, &transport.FetchRequest{Wants: []plumbing.Hash{tip3}}))
+	sess3.Close()
+
+	// Confirm the blob added by the CLI push is reachable in the newly fetched objects.
+	cobj3, err := st3.EncodedObject(plumbing.CommitObject, tip3)
+	require.NoError(t, err)
+	c3, err := object.DecodeCommit(st3, cobj3)
+	require.NoError(t, err)
+	tobj3, err := st3.EncodedObject(plumbing.TreeObject, c3.TreeHash)
+	require.NoError(t, err)
+	t3, err := object.DecodeTree(st3, tobj3)
+	require.NoError(t, err)
+	foundCLI := false
+	for _, e := range t3.Entries {
+		if e.Name == "from-cli.txt" {
+			foundCLI = true
+			break
+		}
+	}
+	require.True(t, foundCLI, "go-git http transport fetch after push should see the object added by CLI push")
+
+	// Also do a git CLI pull (using the http transport under the covers) to keep the workdir in sync.
+	// This pull has local history (from clone + prior ops), so the client will send haves,
+	// exercising the v2 acks/ready + delim + packfile path that was previously buggy.
+	runV2(t, workDir, "git", "-c", "http.extraHeader=Authorization: Basic dTpw", "pull", "--ff-only", authed, "main")
+
+	// Success: git CLI (v2 ls-refs/fetch + receive-pack) + go-git HTTP transport (fetch for clone + post-push pull)
+	// against a pure go-git backend server (no cgi).
+}

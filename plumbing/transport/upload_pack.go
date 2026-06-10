@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"strings"
 
@@ -431,7 +430,7 @@ func readV2Request(rd *bufio.Reader) (cmd string, kvs, args []string, err error)
 		l, line, rerr := pktline.ReadLine(rd)
 		if rerr != nil {
 			err = rerr
-			return
+			return cmd, kvs, args, err
 		}
 		if l == pktline.Flush {
 			return cmd, kvs, args, nil
@@ -445,8 +444,8 @@ func readV2Request(rd *bufio.Reader) (cmd string, kvs, args []string, err error)
 			continue
 		}
 		if !seenDelim {
-			if strings.HasPrefix(s, "command=") {
-				cmd = strings.TrimPrefix(s, "command=")
+			if after, ok := strings.CutPrefix(s, "command="); ok {
+				cmd = after
 				continue
 			}
 			// header line (agent, object-format, etc)
@@ -459,7 +458,7 @@ func readV2Request(rd *bufio.Reader) (cmd string, kvs, args []string, err error)
 }
 
 // serveLsRefsV2 responds to a ls-refs command.
-func serveLsRefsV2(ctx context.Context, st storage.Storer, w io.Writer, kvs, args []string) error {
+func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, kvs, args []string) error {
 	_ = kvs // unused for now; could check object-format
 	peel := false
 	symrefs := false
@@ -472,8 +471,8 @@ func serveLsRefsV2(ctx context.Context, st storage.Storer, w io.Writer, kvs, arg
 		case "symrefs":
 			symrefs = true
 		default:
-			if strings.HasPrefix(a, "ref-prefix ") {
-				prefixes = append(prefixes, strings.TrimPrefix(a, "ref-prefix "))
+			if after, ok := strings.CutPrefix(a, "ref-prefix "); ok {
+				prefixes = append(prefixes, after)
 			}
 		}
 	}
@@ -557,7 +556,7 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 }
 
 // serveFetchV2 handles command=fetch for v2.
-func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, rd *bufio.Reader, kvs, args []string, opts *UploadPackRequest) error {
+func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *bufio.Reader, kvs, args []string, opts *UploadPackRequest) error {
 	_ = kvs
 	var wants, haves []plumbing.Hash
 	deepen := 0
@@ -573,7 +572,7 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, rd *
 				haves = append(haves, h)
 			}
 		case strings.HasPrefix(a, "deepen "):
-			fmt.Sscanf(a, "deepen %d", &deepen)
+			_, _ = fmt.Sscanf(a, "deepen %d", &deepen)
 		case a == "done":
 			done = true
 		}
@@ -590,8 +589,8 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, rd *
 	// to send the packfile after "ready". This matches what current git clients
 	// expect during pulls (they may omit "done" on the first fetch command when
 	// they have provided haves and expect the objects in the same response).
-	if !done && len(haves) > 0 {
-		log.Printf("v2 fetch: no 'done' but haves present (%d), sending acknowledgments + ready then will send pack (fallthrough)", len(haves))
+	switch {
+	case !done && len(haves) > 0:
 		// send acknowledgments section
 		if _, err := pktline.Writef(w, "acknowledgments\n"); err != nil {
 			return err
@@ -617,10 +616,8 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, rd *
 		// immediately in the same stream. This satisfies both "packfile must appear
 		// after 'ready'" and avoids "unexpected acknowledgment line: 'packfile'".
 		_ = pktline.WriteDelim(w)
-	} else if done {
-		log.Printf("v2 fetch: 'done' seen, will send pack directly")
-	} else {
-		log.Printf("v2 fetch: no haves, sending pack directly (clone-like)")
+	case done:
+	default:
 	}
 
 	// Compute what to send
@@ -631,7 +628,6 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, rd *
 	}
 
 	// Write packfile section header
-	log.Printf("v2 fetch: writing 'packfile' section (after acks/ready + delim)")
 	if _, err := pktline.Writef(w, "packfile\n"); err != nil {
 		return err
 	}
