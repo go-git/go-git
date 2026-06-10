@@ -1,7 +1,6 @@
 package object
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"strings"
@@ -36,12 +35,12 @@ func (f *File) Contents() (content string, err error) {
 	}
 	defer ioutil.CheckClose(reader, &err)
 
-	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(reader); err != nil {
+	buf := make([]byte, f.Size)
+	if _, err := io.ReadFull(reader, buf); err != nil {
 		return "", err
 	}
 
-	return buf.String(), nil
+	return string(buf), nil
 }
 
 // IsBinary returns if the file is binary or not
