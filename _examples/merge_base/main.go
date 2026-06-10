@@ -3,9 +3,14 @@ package main
 import (
 	"os"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
+
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
 type exitCode int
@@ -77,8 +82,23 @@ func main() {
 		}
 	}
 
-	// Open a git repository from current directory
-	repo, err := git.PlainOpen(path)
+	// Build a billy filesystem rooted at the git dir, wrapped to mmap
+	// read-only files. Open the repository with KeepDescriptors so packfile
+	// descriptors are kept open (and thus their mmap regions remain valid)
+	// for the lifetime of the storage.
+	var fs billy.Filesystem = newMmapFS(osfs.New(path))
+	if _, err := fs.Stat(git.GitDirName); err == nil {
+		fs, err = fs.Chroot(git.GitDirName)
+		checkIfError(err, exitCodeCouldNotOpenRepository, "could not chroot into .git")
+	}
+
+	storage := filesystem.NewStorageWithOptions(
+		fs, cache.NewObjectLRUDefault(),
+		filesystem.Options{KeepDescriptors: true},
+	)
+	defer storage.Close()
+
+	repo, err := git.Open(storage, fs)
 	checkIfError(err, exitCodeCouldNotOpenRepository, "not in a git repository")
 	defer func() { _ = repo.Close() }()
 
