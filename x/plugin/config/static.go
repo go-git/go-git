@@ -66,19 +66,19 @@ func cloneRemotes(m map[string]*config.RemoteConfig) map[string]*config.RemoteCo
 	return cp
 }
 
-func cloneURLs(m map[string]*config.URL) map[string]*config.URL {
-	if m == nil {
+func cloneURLs(s []*config.URL) []*config.URL {
+	if s == nil {
 		return nil
 	}
-	cp := make(map[string]*config.URL, len(m))
-	for k, v := range m {
+	cp := make([]*config.URL, len(s))
+	for i, v := range s {
 		if v == nil {
-			cp[k] = nil
+			cp[i] = nil
 			continue
 		}
 		cloned := *v
 		cloned.InsteadOfs = cloneSlice(v.InsteadOfs)
-		cp[k] = &cloned
+		cp[i] = &cloned
 	}
 	return cp
 }
