@@ -316,6 +316,36 @@ func (s *UpdReqDecodeSuite) testDecodeOK(payloads []string) *UpdateRequests {
 	return r
 }
 
+func (s *UpdReqDecodeSuite) TestShallowNoOpPush() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Shallows = []plumbing.Hash{hash1}
+
+	payloads := []string{
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestShallowNoOpPushMultipleShallows() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Shallows = []plumbing.Hash{hash1, hash2}
+
+	payloads := []string{
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"shallow 2ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
+}
+
 func (s *UpdReqDecodeSuite) TestMultipleShallowLines() {
 	hash1 := plumbing.NewHash("0c22e5ae8f25b3b070c9cad6e998ab388c636091")
 	hash2 := plumbing.NewHash("1a129f5ef8baf66eaf9fc391c8104d0e7d6f95f5")
