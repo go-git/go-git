@@ -215,6 +215,16 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = SoftReset
 	}
 
+	// For HardReset and KeepReset, capture the current tree BEFORE updating
+	// HEAD. This ensures resetWorktreeToTree correctly diffs from where we
+	// actually are, not from where HEAD will point after the update.
+	if ro.Mode == HardReset || ro.Mode == KeepReset {
+		ro.fromTree, err = w.headTree()
+		if err != nil {
+			return err
+		}
+	}
+
 	if !opts.Hash.IsZero() && !opts.Create {
 		err = w.setHEADToCommit(opts.Hash)
 	} else {
@@ -355,11 +365,20 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	// resetting HEAD. resetWorktreeToTree will diff prevTree→t and apply only
 	// those changes to the worktree. Since the diff is tree-to-tree, untracked
 	// files are invisible and are never deleted — matching real git reset --hard.
+	//
+	// If opts.fromTree is set (by Checkout), use that instead of calling
+	// headTree(). This handles the case where HEAD was already updated before
+	// Reset was called (e.g., in Checkout), ensuring we diff from the actual
+	// previous state rather than the new HEAD.
 	var prevTree *object.Tree
 	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		prevTree, err = w.headTree()
-		if err != nil {
-			return err
+		if opts.fromTree != nil {
+			prevTree = opts.fromTree
+		} else {
+			prevTree, err = w.headTree()
+			if err != nil {
+				return err
+			}
 		}
 	}
 

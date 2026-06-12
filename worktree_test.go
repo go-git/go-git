@@ -1043,6 +1043,101 @@ func (s *WorktreeSuite) TestCheckoutForceSparseUntrackedPreserved() {
 	s.NotEmpty(phpFiles, "expected php/ files after sparse checkout switch")
 }
 
+// TestCheckoutSuccessiveBranchesFromSameCommit verifies that when creating
+// and checking out multiple branches from the same base commit, each branch
+// gets a clean worktree without files from previous iterations.
+// This is a regression test for issue #2124.
+func (s *WorktreeSuite) TestCheckoutSuccessiveBranchesFromSameCommit() {
+	fs := memfs.New()
+	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	// Record the initial HEAD hash
+	head, err := r.Head()
+	s.Require().NoError(err)
+	baseHash := head.Hash()
+
+	// Helper to create a branch, checkout, add a file, and commit
+	createBranchWithFile := func(branchName, fileName string) {
+		// Create and set the branch reference to the base hash
+		branchRef := plumbing.NewBranchReferenceName(branchName)
+		ref := plumbing.NewHashReference(branchRef, baseHash)
+		err := r.Storer.SetReference(ref)
+		s.Require().NoError(err)
+
+		// Force checkout the branch
+		err = w.Checkout(&CheckoutOptions{
+			Branch: branchRef,
+			Force:  true,
+		})
+		s.Require().NoError(err)
+
+		// Verify HEAD points to the branch
+		head, err := r.Head()
+		s.Require().NoError(err)
+		s.Equal(branchRef.String(), head.Name().String())
+		s.Equal(baseHash, head.Hash())
+
+		// Create and add a file
+		f, err := w.Filesystem().Create(fileName)
+		s.Require().NoError(err)
+		_, err = f.Write([]byte("content of " + fileName))
+		s.Require().NoError(err)
+		s.Require().NoError(f.Close())
+
+		_, err = w.Add(fileName)
+		s.Require().NoError(err)
+
+		_, err = w.Commit("Add "+fileName, &CommitOptions{
+			Author: &object.Signature{
+				Name:  "Test",
+				Email: "test@example.com",
+				When:  time.Now(),
+			},
+		})
+		s.Require().NoError(err)
+	}
+
+	// Iteration 1: Create branch1 with test1.txt
+	createBranchWithFile("branch1", "test1.txt")
+
+	// Verify test1.txt exists
+	_, err = w.Filesystem().Stat("test1.txt")
+	s.Require().NoError(err, "test1.txt should exist after committing to branch1")
+
+	// Iteration 2: Create branch2 with test2.txt
+	// This should start from the base commit, NOT from branch1's commit
+	createBranchWithFile("branch2", "test2.txt")
+
+	// Critical assertion: test1.txt should NOT exist in branch2's worktree
+	// because branch2 was created from baseHash which doesn't have test1.txt
+	_, err = w.Filesystem().Stat("test1.txt")
+	s.Require().Error(err, "test1.txt should NOT exist after checking out branch2 (issue #2124)")
+
+	// Verify only test2.txt exists
+	_, err = w.Filesystem().Stat("test2.txt")
+	s.Require().NoError(err, "test2.txt should exist after committing to branch2")
+
+	// Iteration 3: Create branch3 with test3.txt
+	createBranchWithFile("branch3", "test3.txt")
+
+	// Neither test1.txt nor test2.txt should exist
+	_, err = w.Filesystem().Stat("test1.txt")
+	s.Require().Error(err, "test1.txt should NOT exist in branch3")
+	_, err = w.Filesystem().Stat("test2.txt")
+	s.Require().Error(err, "test2.txt should NOT exist in branch3")
+
+	// Only test3.txt should exist
+	_, err = w.Filesystem().Stat("test3.txt")
+	s.Require().NoError(err, "test3.txt should exist after committing to branch3")
+}
+
 func (s *WorktreeSuite) TestCheckoutCreateWithHash() {
 	w := &Worktree{
 		r:          s.Repository,

@@ -460,6 +460,12 @@ type ResetOptions struct {
 
 	// SkipSparseDirValidation will skip the validation for SparseDirs.
 	SkipSparseDirValidation bool
+
+	// fromTree is used internally by Checkout to pass the tree that the
+	// worktree is currently at, before HEAD is updated. This ensures that
+	// HardReset and KeepReset properly diff from the actual previous state
+	// rather than the new HEAD.
+	fromTree *object.Tree
 }
 
 // Validate validates the fields and sets the default values.
