@@ -202,3 +202,45 @@ func TestStackConcurrentWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestStackReloadCaching(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	stack, err := OpenStack(fs, 20)
+	require.NoError(t, err)
+	defer func() { _ = stack.Close() }()
+
+	err = stack.SetRef(RefRecord{RefName: "refs/heads/branch-1", ValueType: refValueVal1, Value: []byte("11111111111111111111")})
+	require.NoError(t, err)
+	assert.Len(t, stack.tables, 1)
+	t1 := stack.tables[0]
+
+	err = stack.SetRef(RefRecord{RefName: "refs/heads/branch-2", ValueType: refValueVal1, Value: []byte("22222222222222222222")})
+	require.NoError(t, err)
+	assert.Len(t, stack.tables, 2)
+
+	assert.Same(t, t1, stack.tables[0])
+}
+
+func TestSuggestCompactionSegment(t *testing.T) {
+	t.Parallel()
+
+	tc := []struct {
+		sizes []uint64
+		wantS int
+		wantE int
+	}{
+		{[]uint64{100, 100}, 0, 1},
+		{[]uint64{1000, 100, 50}, -1, -1},
+		{[]uint64{1000, 100, 200}, 1, 2},
+		{[]uint64{10000, 1000, 100, 50, 20}, -1, -1},
+		{[]uint64{10, 5, 2}, -1, -1},
+		{[]uint64{10, 5, 2, 3}, 0, 3},
+	}
+
+	for _, tt := range tc {
+		s, e := suggestCompactionSegment(tt.sizes)
+		assert.Equal(t, tt.wantS, s, "sizes: %v", tt.sizes)
+		assert.Equal(t, tt.wantE, e, "sizes: %v", tt.sizes)
+	}
+}

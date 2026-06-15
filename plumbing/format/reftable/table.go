@@ -37,6 +37,7 @@ type footer struct {
 
 // Table reads a single reftable file.
 type Table struct {
+	name     string
 	r        io.ReaderAt
 	size     int64
 	footer   footer
@@ -519,19 +520,161 @@ func (t *Table) IterLogs(fn func(LogRecord) bool) error {
 
 // LogsFor returns all log records for the given reference name, newest first.
 func (t *Table) LogsFor(name string) ([]LogRecord, error) {
-	var records []LogRecord
+	if t.footer.logPos == 0 {
+		return nil, nil
+	}
+	if t.footer.blockSize == 0 {
+		return nil, fmt.Errorf("%w: unaligned log blocks (blockSize == 0) are not supported", ErrCorruptBlock)
+	}
 
-	err := t.IterLogs(func(rec LogRecord) bool {
-		if rec.RefName == name {
-			records = append(records, rec)
-		}
-		return true
-	})
+	br, offset, err := t.seekLogBlock(name)
 	if err != nil {
 		return nil, err
 	}
+	if br == nil {
+		return nil, nil
+	}
+
+	var records []LogRecord
+	targetKey := name + "\x00"
+
+	logEnd := t.size - int64(t.footerSize())
+	if t.footer.logIndexPos > 0 {
+		logEnd = int64(t.footer.logIndexPos)
+	}
+
+	for offset < logEnd {
+		if br == nil {
+			bt, err := t.blockTypeAt(offset, 0)
+			if err != nil {
+				return nil, err
+			}
+			if bt != blockTypeLog {
+				break
+			}
+			br, err = t.blockAt(offset, 0)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		pos := 0
+		if offset == int64(t.footer.logPos) || br.blockType == blockTypeLog {
+			startPos := br.seek(targetKey)
+			if startPos > 0 {
+				pos = startPos
+			}
+		}
+
+		prevKey := ""
+		if pos > 0 {
+			p := 0
+			for p < pos && p < len(br.data) {
+				rec, n, err := decodeLogRecord(br.data[p:], prevKey, t.hashSize)
+				if err != nil || n == 0 {
+					break
+				}
+				prevKey = logKey(rec.RefName, rec.UpdateIndex)
+				p += n
+			}
+		}
+
+		stop := false
+		for pos < len(br.data) {
+			rec, n, err := decodeLogRecord(br.data[pos:], prevKey, t.hashSize)
+			if err != nil {
+				return nil, err
+			}
+			if n == 0 {
+				break
+			}
+			pos += n
+			prevKey = logKey(rec.RefName, rec.UpdateIndex)
+
+			if rec.RefName == name {
+				records = append(records, rec)
+			} else if rec.RefName > name {
+				stop = true
+				break
+			}
+		}
+
+		if stop {
+			break
+		}
+
+		offset += int64(t.footer.blockSize)
+		br = nil
+	}
 
 	return records, nil
+}
+
+func (t *Table) seekLogBlock(refName string) (*blockReader, int64, error) {
+	targetKey := refName + "\x00"
+
+	if t.footer.logIndexPos > 0 {
+		br, err := t.blockAt(int64(t.footer.logIndexPos), 0)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		var targetPos uint64
+		for br.blockType == blockTypeIndex {
+			targetPos = 0
+			found := false
+
+			err = br.iterIndexRecords(func(rec indexRecord) bool {
+				if targetKey <= rec.LastKey {
+					targetPos = rec.BlockPosition
+					found = true
+					return false
+				}
+				targetPos = rec.BlockPosition
+				return true
+			})
+			if err != nil {
+				return nil, 0, err
+			}
+			if !found && targetPos == 0 {
+				return nil, 0, nil
+			}
+
+			br, err = t.blockAt(int64(targetPos), 0)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
+
+		return br, int64(targetPos), nil
+	}
+
+	offset := int64(t.footer.logPos)
+	logEnd := t.size - int64(t.footerSize())
+
+	for offset < logEnd {
+		bt, err := t.blockTypeAt(offset, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+		if bt != blockTypeLog {
+			break
+		}
+
+		br, err := t.blockAt(offset, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		startPos := br.seek(targetKey)
+		if startPos >= 0 && startPos < len(br.data) {
+			return br, offset, nil
+		}
+
+		offset += int64(t.footer.blockSize)
+	}
+
+	return nil, 0, nil
 }
 
 // MinUpdateIndex returns the minimum update index of the table.

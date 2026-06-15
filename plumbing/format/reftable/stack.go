@@ -67,8 +67,20 @@ func (s *Stack) reload() error {
 		return fmt.Errorf("reftable: reading tables.list: %w", err)
 	}
 
+	// Create a map of existing open tables to reuse.
+	existing := make(map[string]*Table)
+	for _, t := range s.tables {
+		existing[t.name] = t
+	}
+
 	tables := make([]*Table, 0, len(names))
 	for _, name := range names {
+		if t, ok := existing[name]; ok {
+			tables = append(tables, t)
+			delete(existing, name) // remove so we don't close it
+			continue
+		}
+
 		tf, err := s.fs.Open(name)
 		if err != nil {
 			// Per spec: if a file is missing, retry from the beginning.
@@ -109,12 +121,12 @@ func (s *Stack) reload() error {
 			return fmt.Errorf("reftable: table %s hash size %d does not match stack hash size %d", name, tbl.hashSize, s.hashSize)
 		}
 
+		tbl.name = name
 		tables = append(tables, tbl)
 	}
 
-	oldTables := s.tables
 	s.tables = tables
-	for _, t := range oldTables {
+	for _, t := range existing {
 		_ = t.Close()
 	}
 	return nil
@@ -332,11 +344,8 @@ func (s *Stack) writeNewTableLocked(refs []RefRecord, logs []LogRecord, minIdx, 
 		return err
 	}
 
-	// Auto-compact if stack has more than 5 tables.
-	if len(s.tables) > 5 {
-		if err := s.compact(); err != nil {
-			return fmt.Errorf("reftable: auto-compactor failed: %w", err)
-		}
+	if err := s.autoCompact(); err != nil {
+		return fmt.Errorf("reftable: auto-compactor failed: %w", err)
 	}
 
 	return nil
@@ -398,6 +407,7 @@ func (s *Stack) writeTablesListAtomic(names []string) error {
 }
 
 // Compact merges all tables in the stack into a single table.
+// Compact merges all tables in the stack into a single table.
 func (s *Stack) Compact() error {
 	lk, err := s.lock()
 	if err != nil {
@@ -409,36 +419,99 @@ func (s *Stack) Compact() error {
 		return err
 	}
 
-	return s.compact()
-}
-
-func (s *Stack) compact() error {
 	if len(s.tables) <= 1 {
 		return nil
 	}
 
-	var refs []RefRecord
-	err := s.iterRefsLocked(func(rec RefRecord) bool {
-		refs = append(refs, rec)
-		return true
-	})
-	if err != nil {
-		return fmt.Errorf("reftable: compaction: iterating refs: %w", err)
+	return s.compactRange(0, len(s.tables)-1)
+}
+
+func (s *Stack) autoCompact() error {
+	if len(s.tables) <= 5 {
+		return nil
 	}
 
-	var logs []LogRecord
-	for _, tbl := range s.tables {
-		err := tbl.IterLogs(func(rec LogRecord) bool {
-			logs = append(logs, rec)
+	sizes := make([]uint64, len(s.tables))
+	for i, t := range s.tables {
+		sizes[i] = uint64(t.size)
+	}
+
+	start, end := suggestCompactionSegment(sizes)
+	if start >= 0 && end >= 0 {
+		return s.compactRange(start, end)
+	}
+	return nil
+}
+
+// compactRange merges tables in the range [start, end] (inclusive) into a single table.
+func (s *Stack) compactRange(start, end int) error {
+	if start < 0 || end < 0 || start >= end || end >= len(s.tables) {
+		return fmt.Errorf("reftable: invalid compaction range [%d, %d]", start, end)
+	}
+
+	type refEntry struct {
+		rec        RefRecord
+		tableIndex int
+	}
+
+	refMap := make(map[string]refEntry)
+	for i := start; i <= end; i++ {
+		err := s.tables[i].IterRefs(func(rec RefRecord) bool {
+			refMap[rec.RefName] = refEntry{rec: rec, tableIndex: i}
 			return true
 		})
 		if err != nil {
-			return fmt.Errorf("reftable: compaction: iterating logs: %w", err)
+			return fmt.Errorf("reftable: compaction: iterating refs of table %d: %w", i, err)
 		}
 	}
 
-	minIdx := s.tables[0].footer.minUpdateIndex
-	maxIdx := s.tables[len(s.tables)-1].footer.maxUpdateIndex
+	var refs []RefRecord
+	refNames := make([]string, 0, len(refMap))
+	for name := range refMap {
+		refNames = append(refNames, name)
+	}
+	sort.Strings(refNames)
+	for _, name := range refNames {
+		refs = append(refs, refMap[name].rec)
+	}
+
+	type logKeyStruct struct {
+		refName string
+		idx     uint64
+	}
+	logMap := make(map[logKeyStruct]LogRecord)
+	for i := start; i <= end; i++ {
+		err := s.tables[i].IterLogs(func(rec LogRecord) bool {
+			key := logKeyStruct{refName: rec.RefName, idx: rec.UpdateIndex}
+			logMap[key] = rec
+			return true
+		})
+		if err != nil {
+			return fmt.Errorf("reftable: compaction: iterating logs of table %d: %w", i, err)
+		}
+	}
+
+	var logs []LogRecord
+	type logSortEntry struct {
+		key logKeyStruct
+		rec LogRecord
+	}
+	var sortedLogs []logSortEntry
+	for k, v := range logMap {
+		sortedLogs = append(sortedLogs, logSortEntry{key: k, rec: v})
+	}
+	sort.Slice(sortedLogs, func(i, j int) bool {
+		if sortedLogs[i].key.refName != sortedLogs[j].key.refName {
+			return sortedLogs[i].key.refName < sortedLogs[j].key.refName
+		}
+		return sortedLogs[i].key.idx > sortedLogs[j].key.idx
+	})
+	for _, entry := range sortedLogs {
+		logs = append(logs, entry.rec)
+	}
+
+	minIdx := s.tables[start].footer.minUpdateIndex
+	maxIdx := s.tables[end].footer.maxUpdateIndex
 
 	tableName, err := generateTableName(minIdx, maxIdx)
 	if err != nil {
@@ -473,41 +546,85 @@ func (s *Stack) compact() error {
 		return fmt.Errorf("reftable: compaction: closing table: %w", err)
 	}
 
-	var oldNames []string
+	var names []string
 	tf, err := s.fs.Open("tables.list")
 	if err != nil {
-		if !os.IsNotExist(err) {
-			_ = s.fs.Remove(tableName)
-			return fmt.Errorf("reftable: compaction: opening tables.list: %w", err)
+		_ = s.fs.Remove(tableName)
+		return fmt.Errorf("reftable: compaction: opening tables.list: %w", err)
+	}
+	defer func() { _ = tf.Close() }()
+	scanner := bufio.NewScanner(tf)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" && !strings.HasPrefix(line, "#") {
+			names = append(names, line)
 		}
-	} else {
-		defer func() { _ = tf.Close() }()
-		scanner := bufio.NewScanner(tf)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line != "" && !strings.HasPrefix(line, "#") {
-				oldNames = append(oldNames, line)
-			}
-		}
-		if err := scanner.Err(); err != nil {
+	}
+	if err := scanner.Err(); err != nil {
+		_ = s.fs.Remove(tableName)
+		return fmt.Errorf("reftable: compaction: reading tables.list: %w", err)
+	}
+
+	if len(names) < len(s.tables) {
+		_ = s.fs.Remove(tableName)
+		return fmt.Errorf("reftable: compaction: tables.list changed concurrently")
+	}
+	for i := start; i <= end; i++ {
+		if names[i] != s.tables[i].name {
 			_ = s.fs.Remove(tableName)
-			return fmt.Errorf("reftable: compaction: reading tables.list: %w", err)
+			return fmt.Errorf("reftable: compaction: tables.list changed concurrently at index %d", i)
 		}
 	}
 
-	if err := s.writeTablesListAtomic([]string{tableName}); err != nil {
+	newNames := make([]string, 0, len(names)-(end-start))
+	newNames = append(newNames, names[:start]...)
+	newNames = append(newNames, tableName)
+	newNames = append(newNames, names[end+1:]...)
+
+	if err := s.writeTablesListAtomic(newNames); err != nil {
 		_ = s.fs.Remove(tableName)
 		return err
+	}
+
+	var toDelete []string
+	for i := start; i <= end; i++ {
+		toDelete = append(toDelete, s.tables[i].name)
 	}
 
 	if err := s.reload(); err != nil {
 		return err
 	}
 
-	for _, name := range oldNames {
+	for _, name := range toDelete {
 		_ = s.fs.Remove(name)
 	}
 	return nil
+}
+
+func suggestCompactionSegment(sizes []uint64) (int, int) {
+	n := len(sizes)
+	if n <= 1 {
+		return -1, -1
+	}
+
+	var bytes uint64
+	bytes = sizes[n-1]
+	compactionStart := -1
+
+	for i := n - 2; i >= 0; i-- {
+		if sizes[i] < 2*bytes {
+			compactionStart = i
+			bytes += sizes[i]
+		} else {
+			break
+		}
+	}
+
+	if compactionStart >= 0 {
+		return compactionStart, n - 1
+	}
+
+	return -1, -1
 }
 
 type stackLock struct {
