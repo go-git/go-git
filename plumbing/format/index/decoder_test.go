@@ -502,9 +502,11 @@ func TestDecodeSkipHashWithKnownAndUnknownExtensions(t *testing.T) {
 	// Strip the trailing checksum, keeping header + entries + TREE extension.
 	body := raw[:len(raw)-hashSize]
 
-	// Append unknown optional extensions (matching UNTR + FSMN scenario).
+	// Append unknown optional extensions. The signatures start with an
+	// uppercase letter, marking them optional so the decoder skips their
+	// payload rather than failing on the unknown data.
 	var extra bytes.Buffer
-	for _, sig := range []string{"UNTR", "FSMN"} {
+	for _, sig := range []string{"ZZZZ", "YYYY"} {
 		extra.Write([]byte(sig))
 		extData := bytes.Repeat([]byte{0x42}, 128)
 		require.NoError(t, binary.WriteUint32(&extra, uint32(len(extData))))
