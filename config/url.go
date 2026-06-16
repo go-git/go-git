@@ -54,7 +54,10 @@ func (u *URL) marshal() *format.Subsection {
 	return u.raw
 }
 
-func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
+// FindLongestInsteadOfMatch returns the URL rule that provides the longest
+// insteadOf match for the given remote URL. Returns nil if no match is found.
+// When multiple insteadOf strings match, the longest match is used per git spec.
+func FindLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
 	var longestMatch *URL
 	var longestMatchLength int
 
