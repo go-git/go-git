@@ -11,11 +11,8 @@
 // one-second idle grace period once no cursors remain. .idx and
 // .rev descriptors are owned by the returned [idxfile.Index].
 //
-// The package is internal and its surface is provisional: types
-// and contracts here are expected to be revisited once
-// [idxfile.Index] is reworked, at which point the current split
-// FD ownership between this package and idxfile may collapse.
-// Consumers must not surface any packhandle identifier on their
-// own exported APIs; hold *PackHandle as a private named field
-// (embedding is forbidden because it leaks the method set).
+// The package is internal: consumers must not surface any
+// packhandle identifier on their own exported APIs; hold
+// *PackHandle as a private named field (embedding is forbidden
+// because it leaks the method set).
 package packhandle

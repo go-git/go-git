@@ -211,6 +211,20 @@ func (s *LazyIndex) Contains(h plumbing.Hash) (bool, error) {
 	return found, err
 }
 
+// MayContain implements the Index interface. It reports whether the
+// index might contain h, using the cached fanout table loaded at
+// construction time. No I/O, no lock. False is authoritative ("h is
+// not in this pack"); true means call Contains or FindOffset for a
+// definitive answer.
+func (s *LazyIndex) MayContain(h plumbing.Hash) bool {
+	first := int(h.Bytes()[0])
+	var prev uint32
+	if first > 0 {
+		prev = s.fanout[first-1]
+	}
+	return s.fanout[first] > prev
+}
+
 // FindOffset returns the packfile offset for the object with the given hash.
 // It returns plumbing.ErrObjectNotFound if the hash is not in the index.
 func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {
@@ -289,6 +303,76 @@ func (s *LazyIndex) Entries() (EntryIter, error) {
 		return nil, err
 	}
 	return &scannerEntryIter{s: s, idx: idx}, nil
+}
+
+// EntriesWithPrefix implements the Index interface. It returns an
+// iterator over entries whose hashes start with prefix. When prefix
+// is empty the call is equivalent to Entries; otherwise the
+// iterator visits only the fanout-bounded names-table slice
+// selected by prefix[0] and stops as soon as a name without prefix
+// is read (the names table is sorted by hash).
+//
+// For a multi-byte prefix the matching entries form a contiguous
+// run somewhere within the bucket; binary-search positions the
+// iterator at the start of that run so the linear walk only spans
+// matches. This mirrors upstream Git's for_each_prefixed_object_in_pack
+// which calls bsearch_pack to position before walking forward.
+//
+// The returned iterator holds an acquired reference to the idx
+// SharedFile which is released on Close.
+func (s *LazyIndex) EntriesWithPrefix(prefix []byte) (EntryIter, error) {
+	if len(prefix) == 0 {
+		return s.Entries()
+	}
+	first := int(prefix[0])
+	var lo int
+	if first > 0 {
+		lo = int(s.fanout[first-1])
+	}
+	hi := int(s.fanout[first])
+	if lo >= hi {
+		return &lazyPrefixIter{}, nil
+	}
+	idx, err := s.idx.Acquire()
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the leftmost entry in [lo, hi) whose hash is >= prefix
+	// (padded with zeros to hash size). All matching entries, if
+	// any, start at this position; the iterator's
+	// stop-on-first-mismatch then terminates correctly once the
+	// run ends.
+	target := make([]byte, s.hashSize)
+	copy(target, prefix)
+	var arr [32]byte
+	buf := arr[:s.hashSize]
+	bsLo, bsHi := lo, hi
+	for bsLo < bsHi {
+		mid := (bsLo + bsHi) >> 1
+		nameOff := int64(s.namesStart + mid*s.hashSize)
+		if _, err := idx.ReadAt(buf, nameOff); err != nil {
+			s.idx.Release()
+			return nil, fmt.Errorf("read name at pos %d: %w", mid, err)
+		}
+		if bytes.Compare(buf, target) < 0 {
+			bsLo = mid + 1
+		} else {
+			bsHi = mid
+		}
+	}
+	if bsLo >= hi {
+		s.idx.Release()
+		return &lazyPrefixIter{}, nil
+	}
+
+	return &lazyPrefixIter{
+		s:      s,
+		idx:    idx,
+		prefix: prefix,
+		pos:    bsLo,
+		end:    hi,
+	}, nil
 }
 
 // EntriesByOffset returns an iterator over all index entries sorted by
@@ -590,6 +674,55 @@ func (it *revEntryIter) Close() error {
 	if it.rev != nil {
 		it.s.rev.Release()
 		it.rev = nil
+	}
+	return nil
+}
+
+// lazyPrefixIter walks the LazyIndex names table from pos to end,
+// yielding entries whose hash starts with prefix. It stops the run
+// when a hash without the prefix is read (the table is sorted). It
+// holds an acquired reference to the idx SharedFile released on
+// Close.
+//
+// Lifetime: Next may release the iterator's SharedFile reference
+// eagerly when the first prefix-mismatched entry is observed —
+// further matches are impossible in the sorted table, so holding
+// the reference would only add pool pressure. Callers should
+// defer Close unconditionally; it is idempotent and the eager
+// release is purely an optimisation.
+type lazyPrefixIter struct {
+	s      *LazyIndex
+	idx    io.ReaderAt
+	prefix []byte
+	pos    int
+	end    int
+}
+
+func (it *lazyPrefixIter) Next() (*Entry, error) {
+	if it.idx == nil {
+		return nil, io.EOF
+	}
+	if it.pos >= it.end {
+		return nil, io.EOF
+	}
+	e, err := it.s.entryAt(it.idx, it.pos)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.HasPrefix(e.Hash.Bytes(), it.prefix) {
+		// Past the prefix in the sorted names table; close out so the
+		// SharedFile reference is released eagerly.
+		_ = it.Close()
+		return nil, io.EOF
+	}
+	it.pos++
+	return e, nil
+}
+
+func (it *lazyPrefixIter) Close() error {
+	if it.idx != nil {
+		it.s.idx.Release()
+		it.idx = nil
 	}
 	return nil
 }
