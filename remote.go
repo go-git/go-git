@@ -69,7 +69,7 @@ func (r *Remote) String() string {
 	var fetch, push string
 	if len(r.c.URLs) > 0 {
 		fetch = r.c.URLs[0]
-		push = r.c.URLs[len(r.c.URLs)-1]
+		push = r.c.ResolvedPushURL()
 	}
 
 	return fmt.Sprintf("%s\t%s (fetch)\n%[1]s\t%[3]s (push)", r.c.Name, fetch, push)
@@ -103,10 +103,43 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		return fmt.Errorf("remote names don't match: %s != %s", o.RemoteName, r.c.Name)
 	}
 
-	if o.RemoteURL == "" && len(r.c.URLs) > 0 {
-		o.RemoteURL = r.c.URLs[len(r.c.URLs)-1]
+	allUpToDate := true
+	for _, remoteURL := range r.pushURLs(o.RemoteURL) {
+		pushOptions := *o
+		pushOptions.RemoteURL = remoteURL
+		pushOptions.RefSpecs = append([]config.RefSpec(nil), o.RefSpecs...)
+
+		if err := r.pushToURL(ctx, &pushOptions); err != nil {
+			if err == NoErrAlreadyUpToDate {
+				continue
+			}
+
+			return err
+		}
+
+		allUpToDate = false
 	}
 
+	if allUpToDate {
+		return NoErrAlreadyUpToDate
+	}
+
+	return nil
+}
+
+func (r *Remote) pushURLs(remoteURL string) []string {
+	if remoteURL != "" {
+		return []string{remoteURL}
+	}
+
+	if pushURLs := r.c.ResolvedPushURLs(); len(pushURLs) > 0 {
+		return pushURLs
+	}
+
+	return []string{""}
+}
+
+func (r *Remote) pushToURL(ctx context.Context, o *PushOptions) (err error) {
 	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
 	if err != nil {
 		return err
