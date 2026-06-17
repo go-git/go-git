@@ -90,6 +90,43 @@ func (s *SuiteDotGit) TestInitialize() {
 	s.Require().NoError(err)
 }
 
+func (s *SuiteDotGit) TestRemoveRefAndParentDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	name := plumbing.ReferenceName("refs/heads/bugfix/issue-1")
+	ref := plumbing.NewHashReference(name, plumbing.NewHash("e238dc365d7870404092b774df102d99723ecb65"))
+
+	err := dir.SetRef(ref, nil)
+	s.NoError(err)
+
+	// Check file exists
+	_, err = fs.Stat("refs/heads/bugfix/issue-1")
+	s.NoError(err)
+
+	// Check dir exists
+	_, err = fs.Stat("refs/heads/bugfix")
+	s.NoError(err)
+
+	// Remove ref
+	err = dir.RemoveRef(name)
+	s.NoError(err)
+
+	// Check file is gone
+	_, err = fs.Stat("refs/heads/bugfix/issue-1")
+	s.Error(err)
+
+	// Check dir is gone
+	_, err = fs.Stat("refs/heads/bugfix")
+	s.Error(err)
+
+	// Try to create a ref named refs/heads/bugfix
+	name2 := plumbing.ReferenceName("refs/heads/bugfix")
+	ref2 := plumbing.NewHashReference(name2, plumbing.NewHash("e238dc365d7870404092b774df102d99723ecb65"))
+	err = dir.SetRef(ref2, nil)
+	s.NoError(err)
+}
+
 func (s *SuiteDotGit) TestSetRefs() {
 	fs := s.EmptyFS()
 
