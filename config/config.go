@@ -488,6 +488,12 @@ const (
 	uploadArchiveSection       = "uploadArchive"
 	allowUnreachableKey        = "allowUnreachable"
 
+	// featureSection is a Git meta-setting that expands to multiple
+	// other config keys. See git-config(1).
+	featureSection  = "feature"
+	manyFilesKey    = "manyFiles"
+	experimentalKey = "experimental"
+
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
@@ -726,11 +732,32 @@ func (c *Config) unmarshalProtocol() error {
 }
 
 func (c *Config) unmarshalIndex() {
+	// Literal index.skipHash takes precedence over the feature.* aliases.
+	if c.parseIndexSkipHash() {
+		return
+	}
+	// Git's feature.manyFiles and feature.experimental meta-settings
+	// implicitly enable index.skipHash (among other settings). Infer the
+	// alias when the literal key is absent, so that reading an index from
+	// a repository using these features does not fail with a checksum
+	// error. See git-config(1) and #2196.
+	feat := c.Raw.Section(featureSection)
+	if strings.EqualFold(feat.Options.Get(manyFilesKey), "true") ||
+		strings.EqualFold(feat.Options.Get(experimentalKey), "true") {
+		c.Index.SkipHash = OptBoolTrue
+	}
+}
+
+// parseIndexSkipHash reads the literal [index] skipHash option. It returns
+// true if the option was present and parsed (so callers can short-circuit).
+func (c *Config) parseIndexSkipHash() bool {
 	s := c.Raw.Section(indexSection)
 	v, err := strconv.ParseBool(s.Options.Get(skipHashKey))
-	if err == nil {
-		c.Index.SkipHash = NewOptBool(v)
+	if err != nil {
+		return false
 	}
+	c.Index.SkipHash = NewOptBool(v)
+	return true
 }
 
 func (c *Config) unmarshalInit() {
