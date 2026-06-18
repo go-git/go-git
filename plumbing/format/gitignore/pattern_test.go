@@ -18,6 +18,9 @@ func TestPatternSuite(t *testing.T) {
 func (s *PatternSuite) TestSimpleMatch_inclusion() {
 	p := ParsePattern("!vul?ano", nil)
 	r := p.Match([]string{"value", "vulkano", "tail"}, false)
+	s.Equal(NoMatch, r)
+
+	r = p.Match([]string{"value", "vulkano"}, true)
 	s.Equal(Include, r)
 }
 
