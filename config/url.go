@@ -54,7 +54,7 @@ func (u *URL) marshal() *format.Subsection {
 	return u.raw
 }
 
-func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
+func applyLongestInsteadOfMatch(remoteURL string, urls []*URL) (rewrittenURL string, matched bool) {
 	var longestMatch *URL
 	var longestMatchLength int
 
@@ -67,6 +67,7 @@ func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
 			lengthCurrentInsteadOf := len(currentInsteadOf)
 
 			// according to spec if there is more than one match, take the longest
+			// when lengths are equal, use config file order (first match wins)
 			if longestMatch == nil || longestMatchLength < lengthCurrentInsteadOf {
 				longestMatch = u
 				longestMatchLength = lengthCurrentInsteadOf
@@ -74,16 +75,16 @@ func findLongestInsteadOfMatch(remoteURL string, urls map[string]*URL) *URL {
 		}
 	}
 
-	return longestMatch
+	if longestMatchLength > 0 {
+		return longestMatch.Name + remoteURL[longestMatchLength:], true
+	}
+
+	return remoteURL, false
 }
 
 // ApplyInsteadOf applies the URL rewrite rules to the given URL.
+// When multiple insteadOf values match, the longest match is used.
 func (u *URL) ApplyInsteadOf(url string) string {
-	for _, j := range u.InsteadOfs {
-		if strings.HasPrefix(url, j) {
-			return u.Name + url[len(j):]
-		}
-	}
-
-	return url
+	rewrittenURL, _ := applyLongestInsteadOfMatch(url, []*URL{u})
+	return rewrittenURL
 }
