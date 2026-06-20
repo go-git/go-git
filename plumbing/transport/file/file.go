@@ -61,6 +61,9 @@ func NewTransport(opts Options) *Transport {
 
 // Connect opens a raw connection to the file transport process.
 func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
+	if err := transport.CheckRequest(req); err != nil {
+		return nil, err
+	}
 	sr, pw, closeAll, err := t.connect(ctx, req)
 	if err != nil {
 		return nil, err

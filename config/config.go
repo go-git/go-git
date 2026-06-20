@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -198,6 +199,16 @@ type Config struct {
 		// version string in the initial response from the server.
 		//   2 - Wire protocol version 2.
 		Version protocol.Version
+		// Allow is the fallback policy for protocols that have no
+		// per-scheme entry in AllowByName. Accepts "always", "never",
+		// or "user" (case-insensitive). An empty value means the
+		// built-in defaults apply: http/https/git/ssh -> always,
+		// ext -> never, file and unknown schemes -> user.
+		Allow string
+		// AllowByName holds per-scheme policies, keyed by URL scheme
+		// (e.g. "file", "ssh"). Each value must be one of "always",
+		// "never", or "user"; an empty value defers to Allow.
+		AllowByName map[string]string
 	}
 
 	// Remotes list of repository remotes, the key of the map is the name
@@ -487,6 +498,7 @@ const (
 	gpgSignKey                 = "gpgSign"
 	uploadArchiveSection       = "uploadArchive"
 	allowUnreachableKey        = "allowUnreachable"
+	allowKey                   = "allow"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -545,11 +557,11 @@ func (c *Config) unmarshalCore() {
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
 	c.Core.HooksPath = s.Options.Get(hooksPathKey)
 
-	if parsed := parseConfigBool(s.Options.Get(protectNTFSKey)); parsed.IsSet() {
+	if parsed := ParseConfigBool(s.Options.Get(protectNTFSKey)); parsed.IsSet() {
 		c.Core.ProtectNTFS = parsed
 	}
 
-	if parsed := parseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
+	if parsed := ParseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
 		c.Core.ProtectHFS = parsed
 	}
 
@@ -721,6 +733,27 @@ func (c *Config) unmarshalProtocol() error {
 			return err
 		}
 		c.Protocol.Version = v
+	}
+
+	if rv := s.Options.Get(allowKey); rv != "" {
+		if err := ValidateProtocolPolicy("protocol.allow", rv); err != nil {
+			return err
+		}
+		c.Protocol.Allow = rv
+	}
+
+	for _, sub := range s.Subsections {
+		rv := sub.Options.Get(allowKey)
+		if rv == "" {
+			continue
+		}
+		if err := ValidateProtocolPolicy("protocol."+sub.Name+".allow", rv); err != nil {
+			return err
+		}
+		if c.Protocol.AllowByName == nil {
+			c.Protocol.AllowByName = make(map[string]string, len(s.Subsections))
+		}
+		c.Protocol.AllowByName[sub.Name] = rv
 	}
 
 	return nil
@@ -991,10 +1024,28 @@ func (c *Config) marshalURLs() {
 }
 
 func (c *Config) marshalProtocol() {
-	// Only marshal protocol section if a version was set.
 	if c.Protocol.Version != DefaultProtocolVersion {
 		s := c.Raw.Section(protocolSection)
 		s.SetOption(versionKey, c.Protocol.Version.String())
+	}
+
+	if c.Protocol.Allow != "" {
+		s := c.Raw.Section(protocolSection)
+		s.SetOption(allowKey, c.Protocol.Allow)
+	}
+
+	if len(c.Protocol.AllowByName) > 0 {
+		s := c.Raw.Section(protocolSection)
+		// Drop existing per-scheme subsections so removed entries do
+		// not linger in the marshalled output.
+		s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
+			_, replaced := c.Protocol.AllowByName[sub.Name]
+			return replaced
+		})
+		for name, v := range c.Protocol.AllowByName {
+			sub := s.Subsection(name)
+			sub.SetOption(allowKey, v)
+		}
 	}
 }
 

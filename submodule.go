@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -183,6 +184,38 @@ func (s *Submodule) Repository() (*Repository, error) {
 	return r, nil
 }
 
+// submoduleClientOptions returns the caller's ClientOptions extended
+// with the protocol-policy defaults that apply to submodule fetches:
+// WithUserInitiated(false), so the gate evaluates the fetch as
+// non-user-initiated, and WithProtocolPolicy taken from the
+// submodule's own storer, so its `protocol.<scheme>.allow`
+// resolution governs the clone — matching canonical Git's
+// submodule-subprocess model[1], which reads the subprocess's own
+// local config plus global/system. Callers may flip either bit
+// back by appending their own option later: client.Option
+// resolution is last-wins.
+//
+// Security: a caller can override WithUserInitiated(false)
+// by appending WithUserInitiated(true) to ClientOptions,
+// which re-enables user-only protocols (default for file://) for the
+// submodule fetch. Do so only when the submodule URL is trusted —
+// canonical Git provides no such escape hatch from the `git submodule
+// update` shell wrapper.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/git-submodule.sh#L29-L30
+func (s *Submodule) submoduleClientOptions(subRepo *Repository, opts []client.Option) []client.Option {
+	// Capacity: WithUserInitiated + optional WithProtocolPolicy + caller opts.
+	out := make([]client.Option, 0, len(opts)+2)
+	out = append(out, client.WithUserInitiated(false))
+	if subRepo != nil {
+		if cfg, err := subRepo.Config(); err == nil {
+			out = append(out, client.WithProtocolPolicy(cfg))
+		}
+	}
+	out = append(out, opts...)
+	return out
+}
+
 // defaultRemote returns the remote that relative submodule URLs are
 // resolved against, mirroring canonical Git's repo_default_remote
 // (remote.c) and resolve_relative_url (builtin/submodule--helper.c):
@@ -311,8 +344,23 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
+	// Submodule URLs are resolved from the worktree's `.gitmodules`
+	// and are not selected directly by the user, so the resulting
+	// fetch is gated by the transport-policy "user" tier. Submodule
+	// fetches must opt out of that tier explicitly; without this the
+	// `protocol.<scheme>.allow=user` default would silently let any
+	// scheme through. Canonical Git models the same constraint by
+	// exporting `GIT_PROTOCOL_FROM_USER=0` from git-submodule.sh[1].
+	// The submodule's own config supplies the
+	// `protocol.<scheme>.allow` resolution, mirroring the subprocess
+	// model where the spawned `git fetch` reads the submodule's local
+	// config plus global/system — not the parent's local config.
+	//
+	// [1]: https://github.com/git/git/blob/v2.54.0/git-submodule.sh#L29-L30
+	subOpts := s.submoduleClientOptions(r, o.ClientOptions)
+
 	if !o.NoFetch {
-		err := r.FetchContext(ctx, &FetchOptions{ClientOptions: o.ClientOptions, Depth: o.Depth})
+		err := r.FetchContext(ctx, &FetchOptions{ClientOptions: subOpts, Depth: o.Depth})
 		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 			return err
 		}
@@ -332,7 +380,7 @@ func (s *Submodule) fetchAndCheckout(
 			refSpec := config.RefSpec("+" + hash.String() + ":" + hash.String())
 
 			err := r.FetchContext(ctx, &FetchOptions{
-				ClientOptions: o.ClientOptions,
+				ClientOptions: subOpts,
 				RefSpecs:      []config.RefSpec{refSpec},
 				Depth:         o.Depth,
 			})
