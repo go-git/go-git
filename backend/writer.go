@@ -45,27 +45,34 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	var n int64
 	p := make([]byte, f.chunkSize)
 	for {
-		nr, err := r.Read(p)
-		if errors.Is(err, io.EOF) {
-			break
+		nr, rerr := r.Read(p)
+		// An io.Reader may return data together with io.EOF, so write what was
+		// read before acting on the error — breaking on EOF first would drop
+		// the final chunk and truncate the response.
+		if nr > 0 {
+			nw, werr := f.Write(p[:nr])
+			n += int64(nw)
+			if werr != nil {
+				// Body partially written; renderStatusError would race the writer.
+				f.log.Printf("error writing response: %v", werr)
+				return n, werr
+			}
+			if nw != nr {
+				return n, io.ErrShortWrite
+			}
+			if ferr := flusher.Flush(); ferr != nil {
+				f.log.Printf("error flushing response: %v", ferr)
+				return n, fmt.Errorf("flush response: %w", ferr)
+			}
 		}
-		nw, err := f.Write(p[:nr])
-		if err != nil {
-			// Body partially written; renderStatusError would race the writer.
-			f.log.Printf("error writing response: %v", err)
-			return n, err
-		}
-		if nr != nw {
-			return n, err
-		}
-		n += int64(nr)
-		if err := flusher.Flush(); err != nil {
-			f.log.Printf("mismatched bytes written: expected %d, wrote %d", nr, nw)
-			return n, fmt.Errorf("%w: error while flush", err)
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				return n, nil
+			}
+			f.log.Printf("error reading source: %v", rerr)
+			return n, rerr
 		}
 	}
-
-	return n, nil
 }
 
 // Close implements io.Closer. It is a no-op.
