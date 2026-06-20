@@ -3,7 +3,6 @@ package ioutil
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"io"
 )
@@ -136,18 +135,6 @@ func CheckClose(c io.Closer, err *error) {
 	if cerr := c.Close(); cerr != nil && *err == nil {
 		*err = cerr
 	}
-}
-
-// NewContextWriteCloser as NewContextWriter but with io.Closer interface.
-func NewContextWriteCloser(ctx context.Context, w io.WriteCloser) io.WriteCloser {
-	ctxw := NewContextWriter(ctx, w)
-	return NewWriteCloser(ctxw, w)
-}
-
-// NewContextReadCloser as NewContextReader but with io.Closer interface.
-func NewContextReadCloser(ctx context.Context, r io.ReadCloser) io.ReadCloser {
-	ctxr := NewContextReader(ctx, r)
-	return NewReadCloser(ctxr, r)
 }
 
 type readerOnError struct {
