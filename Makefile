@@ -41,8 +41,8 @@ build-git:
 
 test:
 	@echo "running against `git version`"; \
-	$(GOTEST) -race ./...
-	$(GOTEST) -v _examples/common_test.go _examples/common.go --examples
+	$(GOTEST) -race -tags leakcheck ./...
+	$(GOTEST) -tags leakcheck -v _examples/common_test.go _examples/common.go --examples
 
 test-coverage:
 	@echo "running against `git version`"; \

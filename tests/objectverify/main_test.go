@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/testutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
@@ -30,7 +31,9 @@ type gpgEnv struct {
 var gpg *gpgEnv
 
 func TestMain(m *testing.M) {
-	os.Exit(runMain(m))
+	exitCode := runMain(m)
+	testutil.TriggerLeakDetection()
+	os.Exit(exitCode)
 }
 
 // This test verifies that current ways of signing objects didn't change in

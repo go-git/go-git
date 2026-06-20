@@ -89,6 +89,9 @@ type ObjectStorage struct {
 	alternatesInit bool
 	alternatesErr  error
 	muA            sync.RWMutex
+
+	// closed tracks whether Close() has been called (used by leak detection)
+	closed bool
 }
 
 // NewObjectStorage creates a new ObjectStorage with the given .git directory and cache.
@@ -1017,6 +1020,9 @@ func (s *ObjectStorage) buildPackfileIters(
 
 // Close closes all opened files including cached alternate storages.
 func (s *ObjectStorage) Close() error {
+	// Mark as closed for leak detection (used by finalizer when compiled with -tags leakcheck)
+	s.closed = true
+
 	var firstError error
 
 	s.muA.RLock()
