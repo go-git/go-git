@@ -20,6 +20,7 @@ func main() {
 
 	dotgitFs := osfs.New(filepath.Join(path, ".git"), osfs.WithBoundOS())
 	dotgit := filesystem.NewStorageWithOptions(dotgitFs, nil, filesystem.Options{})
+	defer func() { _ = dotgit.Close() }()
 
 	w, err := xworktree.New(dotgit)
 	CheckIfError(err)

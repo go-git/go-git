@@ -3,7 +3,6 @@ package test
 
 import (
 	"context"
-	"io"
 	"net/url"
 	"time"
 
@@ -27,15 +26,6 @@ type UploadPackSuite struct {
 	EmptyStorer         storage.Storer
 	NonExistentStorer   storage.Storer
 	Transport           transport.Transport
-}
-
-// TearDownTest closes all storers.
-func (s *UploadPackSuite) TearDownTest() {
-	for _, st := range []storage.Storer{s.Storer, s.EmptyStorer, s.NonExistentStorer} {
-		if c, ok := st.(io.Closer); ok {
-			_ = c.Close()
-		}
-	}
 }
 
 func (s *UploadPackSuite) packClient() transport.Transport {

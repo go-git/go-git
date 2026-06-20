@@ -1,0 +1,7 @@
+name: "CodeQL Config"
+
+queries:
+  - name: Security and Quality
+    uses: security-and-quality
+  - name: Unclosed Resources
+    uses: AriehSchneier/go-git-x/codeql/queries/unclosed-resources.ql@improve-unclosed-resources-query
