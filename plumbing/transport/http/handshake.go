@@ -225,7 +225,15 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
-	neg.closeResponse()
+	// Only close the response on success. On error (especially context
+	// cancellation), the context-wrapper read goroutine inside FetchPack may
+	// still be reading the response body; closeResponse niling current.resp
+	// here would race that read (mirrors Push below). On the cancellation path
+	// the underlying request context unblocks the in-flight read, so the body
+	// is not leaked.
+	if err == nil {
+		neg.closeResponse()
+	}
 	return err
 }
 
