@@ -30,6 +30,9 @@ type Options struct {
 	// ClientConfig provides SSH client configuration for each request.
 	// If nil, SSH agent authentication is used with the username from the
 	// URL (falling back to DefaultUsername).
+	// When ClientConfig provides a custom HostKeyCallback and no
+	// HostKeyAlgorithms, known_hosts is used for algorithm preference when
+	// available, but missing known_hosts files do not fail the connection.
 	ClientConfig func(context.Context, *transport.Request) (*gossh.ClientConfig, error)
 
 	// DialContext is the function used to establish TCP connections.
@@ -47,7 +50,8 @@ type Options struct {
 
 // Transport implements the ssh:// transport protocol.
 type Transport struct {
-	opts Options
+	opts            Options
+	knownHostsFiles []string
 }
 
 // NewTransport creates an SSH transport with the given options.
@@ -75,22 +79,15 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		return nil, err
 	}
 
-	if config.HostKeyCallback == nil {
-		db, err := newKnownHostsDb()
-		if err != nil {
-			return nil, err
-		}
-		config.HostKeyCallback = db.HostKeyCallback()
-		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
-	} else if len(config.HostKeyAlgorithms) == 0 {
-		db, err := newKnownHostsDb()
-		if err != nil {
-			return nil, err
-		}
-		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
+	if err := t.configureHostKeys(config, hostWithPort); err != nil {
+		return nil, err
 	}
 
-	trace.SSH.Printf("ssh: host key algorithms %s", strings.Join(config.HostKeyAlgorithms, ", "))
+	if len(config.HostKeyAlgorithms) == 0 {
+		trace.SSH.Printf("ssh: host key algorithms (default)")
+	} else {
+		trace.SSH.Printf("ssh: host key algorithms %s", strings.Join(config.HostKeyAlgorithms, ", "))
+	}
 
 	client, err := t.dial(ctx, "tcp", hostWithPort, config)
 	if err != nil {
@@ -150,6 +147,28 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	}
 
 	return conn, nil
+}
+
+func (t *Transport) configureHostKeys(config *gossh.ClientConfig, hostWithPort string) error {
+	if config.HostKeyCallback != nil && len(config.HostKeyAlgorithms) != 0 {
+		return nil
+	}
+
+	db, err := newKnownHostsDb(t.knownHostsFiles...)
+	if err != nil {
+		if config.HostKeyCallback != nil && errors.Is(err, errNoKnownHostsFiles) {
+			return nil
+		}
+		return err
+	}
+
+	if config.HostKeyCallback == nil {
+		config.HostKeyCallback = db.HostKeyCallback()
+	}
+	if len(config.HostKeyAlgorithms) == 0 {
+		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
+	}
+	return nil
 }
 
 func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, error) {

@@ -17,6 +17,8 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
+var errNoKnownHostsFiles = errors.New("unable to find any valid known_hosts file, set SSH_KNOWN_HOSTS env variable")
+
 // The names of the auth method implementations.
 const (
 	keyboardInteractiveName = "ssh-keyboard-interactive"
@@ -281,7 +283,7 @@ func filterKnownHostsFiles(files ...string) ([]string, error) {
 	}
 
 	if len(out) == 0 {
-		return nil, fmt.Errorf("unable to find any valid known_hosts file, set SSH_KNOWN_HOSTS env variable")
+		return nil, errNoKnownHostsFiles
 	}
 
 	return out, nil
