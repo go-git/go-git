@@ -147,8 +147,17 @@ func (p *Parser) Parse() ([]Revisioner, error) {
 		}
 
 		switch tok {
-		case at:
+	case at:
+		// Check if @ starts an @{...} statement
+		peekTok, _, _ := p.s.scan()
+		p.unscan()
+		if peekTok == obrace {
 			rev, err = p.parseAt()
+		} else {
+			// @ is part of reference name, not special syntax
+			p.unscan()
+			rev, err = p.parseRef()
+		}
 		case tilde:
 			rev, err = p.parseTilde()
 		case caret:
