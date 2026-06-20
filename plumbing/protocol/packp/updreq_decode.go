@@ -118,6 +118,12 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		}
 	}
 
+	// A shallow-clone no-op push sends shallow lines followed directly by
+	// a flush with no commands. This is valid per the Git protocol.
+	if length == pktline.Flush {
+		return nil
+	}
+
 	// The first command line must contain capabilities separated by a null byte
 	before, after, ok := bytes.Cut(payload, []byte{0})
 	if !ok {
