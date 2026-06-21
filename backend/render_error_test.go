@@ -25,7 +25,9 @@ func (errorLoader) Load(*url.URL) (storage.Storer, error) {
 // settable) from a mid-stream one (status already committed; closing/erroring
 // would race the writer).
 func TestFlushResponseWriterMarksStarted(t *testing.T) {
+	t.Parallel()
 	t.Run("Write", func(t *testing.T) {
+		t.Parallel()
 		rec := httptest.NewRecorder()
 		frw := &flushResponseWriter{ResponseWriter: rec, log: log.Default(), chunkSize: defaultChunkSize}
 		require.False(t, frw.started, "started must be false before any write")
@@ -34,6 +36,7 @@ func TestFlushResponseWriterMarksStarted(t *testing.T) {
 		require.True(t, frw.started, "started must be true after Write")
 	})
 	t.Run("WriteHeader", func(t *testing.T) {
+		t.Parallel()
 		rec := httptest.NewRecorder()
 		frw := &flushResponseWriter{ResponseWriter: rec, log: log.Default(), chunkSize: defaultChunkSize}
 		require.False(t, frw.started, "started must be false before WriteHeader")
@@ -47,6 +50,7 @@ func TestFlushResponseWriterMarksStarted(t *testing.T) {
 // implicit 200. Guards the Copilot review note on the renderStatusError
 // suppression.
 func TestInfoRefsLoadErrorBeforeStreamReturnsErrorStatus(t *testing.T) {
+	t.Parallel()
 	h := New(errorLoader{})
 	req := httptest.NewRequest("GET", "/basic.git/info/refs?service=git-upload-pack", nil)
 	w := httptest.NewRecorder()
