@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync/atomic"
 )
 
 const defaultChunkSize = 4096
@@ -16,6 +17,33 @@ type flushResponseWriter struct {
 	http.ResponseWriter
 	log       *log.Logger
 	chunkSize int
+	// started records whether the response status line has been committed
+	// (first WriteHeader, or first Write — which implicitly commits a 200).
+	// Once true, an error surfacing afterwards can only be logged:
+	// renderStatusError would both race the concurrent writer and be unable to
+	// change the already-sent status. While still false the caller may safely
+	// render a real error status instead of an implicit 200.
+	//
+	// It is atomic because Write/WriteHeader may run on a different goroutine
+	// from the handler that reads it: the server wraps this writer in a
+	// context writer (utils/ioutil) that drives the underlying Write from a
+	// spawned goroutine. That goroutine is joined before Serve returns, so the
+	// read is already ordered after the write — atomic keeps it sound without
+	// relying on that non-local happens-before.
+	started atomic.Bool
+}
+
+// WriteHeader records that the response has started, then delegates.
+func (f *flushResponseWriter) WriteHeader(code int) {
+	f.started.Store(true)
+	f.ResponseWriter.WriteHeader(code)
+}
+
+// Write records that the response has started (the first Write commits a 200
+// status if WriteHeader was not called), then delegates.
+func (f *flushResponseWriter) Write(p []byte) (int, error) {
+	f.started.Store(true)
+	return f.ResponseWriter.Write(p)
 }
 
 // ReadFrom implements io.ReaderFrom.
@@ -25,28 +53,34 @@ func (f *flushResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	var n int64
 	p := make([]byte, f.chunkSize)
 	for {
-		nr, err := r.Read(p)
-		if errors.Is(err, io.EOF) {
-			break
+		nr, rerr := r.Read(p)
+		// An io.Reader may return data together with io.EOF, so write what was
+		// read before acting on the error — breaking on EOF first would drop
+		// the final chunk and truncate the response.
+		if nr > 0 {
+			nw, werr := f.Write(p[:nr])
+			n += int64(nw)
+			if werr != nil {
+				// Body partially written; renderStatusError would race the writer.
+				f.log.Printf("error writing response: %v", werr)
+				return n, werr
+			}
+			if nw != nr {
+				return n, io.ErrShortWrite
+			}
+			if ferr := flusher.Flush(); ferr != nil {
+				f.log.Printf("error flushing response: %v", ferr)
+				return n, fmt.Errorf("flush response: %w", ferr)
+			}
 		}
-		nw, err := f.Write(p[:nr])
-		if err != nil {
-			f.log.Printf("error writing response: %v", err)
-			renderStatusError(f.ResponseWriter, http.StatusInternalServerError)
-			return n, err
-		}
-		if nr != nw {
-			return n, err
-		}
-		n += int64(nr)
-		if err := flusher.Flush(); err != nil {
-			f.log.Printf("mismatched bytes written: expected %d, wrote %d", nr, nw)
-			renderStatusError(f.ResponseWriter, http.StatusInternalServerError)
-			return n, fmt.Errorf("%w: error while flush", err)
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				return n, nil
+			}
+			f.log.Printf("error reading source: %v", rerr)
+			return n, rerr
 		}
 	}
-
-	return n, nil
 }
 
 // Close implements io.Closer. It is a no-op.
