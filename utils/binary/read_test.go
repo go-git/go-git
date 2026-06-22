@@ -136,3 +136,38 @@ func (s *BinarySuite) TestIsBinary() {
 	s.NoError(err)
 	s.False(ok)
 }
+
+// BenchmarkIsBinary measures NUL sniffing on the two cases that matter:
+// a full sniff window with no NUL (text, scans all sniffLen bytes) and an
+// early NUL (binary, exits on the first chunk). The reader is reset rather
+// than reallocated each iteration so the reported allocations are IsBinary's
+// own — which are zero, because the sniff buffer comes from a sync.Pool
+// rather than a per-call make([]byte, ...).
+func BenchmarkIsBinary(b *testing.B) {
+	b.Run("text", func(b *testing.B) {
+		data := bytes.Repeat([]byte{'a'}, 10*1024)
+		r := bytes.NewReader(nil)
+
+		b.ReportAllocs()
+		for b.Loop() {
+			r.Reset(data)
+			if _, err := IsBinary(r); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("binary", func(b *testing.B) {
+		data := bytes.Repeat([]byte{'a'}, sniffLen)
+		data[20] = 0
+		r := bytes.NewReader(nil)
+
+		b.ReportAllocs()
+		for b.Loop() {
+			r.Reset(data)
+			if _, err := IsBinary(r); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
