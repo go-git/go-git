@@ -3,6 +3,7 @@ package diff
 import (
 	"bytes"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -1118,5 +1119,23 @@ func TestSplitLines(t *testing.T) {
 				t.Errorf("splitLines(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// BenchmarkSplitLines measures line splitting on a representative
+// multi-line input. splitLines runs once per diff chunk and dominated
+// the unified-diff encode hot path under the previous regexp-based
+// implementation; this guards against regressing the strings.SplitAfter
+// fast path back into per-line allocation and backtracking.
+func BenchmarkSplitLines(b *testing.B) {
+	var sb strings.Builder
+	for range 200 {
+		sb.WriteString("the quick brown fox jumps over the lazy dog\n")
+	}
+	text := sb.String()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		splitLines(text)
 	}
 }
