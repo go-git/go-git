@@ -104,7 +104,7 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 		StatelessRPC: true,
 	}); err != nil {
 		b.logf("error processing request: %v", err)
-		if !frw.started {
+		if !frw.started.Load() {
 			// Failure before any byte was written — the status line is still
 			// ours, so surface a real error instead of an implicit 200.
 			renderStatusError(w, http.StatusInternalServerError)
@@ -154,7 +154,7 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, f
 		StatelessRPC:  true,
 	}); err != nil {
 		b.logf("error processing request: %v", err)
-		if !frw.started {
+		if !frw.started.Load() {
 			// Advertisement failed before any byte was written — the headers set
 			// above are not yet committed, so a real error status can still be
 			// sent instead of an implicit 200.
@@ -243,7 +243,7 @@ func (b *Backend) handleDumbSendFile(w http.ResponseWriter, _ *http.Request, rep
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
 	if _, err := ioutil.CopyBufferPool(frw, f); err != nil {
 		b.logf("error writing response: %v", err)
-		if !frw.started {
+		if !frw.started.Load() {
 			// Failed before writing any byte — the headers set above are not yet
 			// committed, so surface a real error instead of an implicit 200.
 			renderStatusError(w, http.StatusInternalServerError)

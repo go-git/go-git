@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync/atomic"
 )
 
 const defaultChunkSize = 4096
@@ -22,19 +23,26 @@ type flushResponseWriter struct {
 	// renderStatusError would both race the concurrent writer and be unable to
 	// change the already-sent status. While still false the caller may safely
 	// render a real error status instead of an implicit 200.
-	started bool
+	//
+	// It is atomic because Write/WriteHeader may run on a different goroutine
+	// from the handler that reads it: the server wraps this writer in a
+	// context writer (utils/ioutil) that drives the underlying Write from a
+	// spawned goroutine. That goroutine is joined before Serve returns, so the
+	// read is already ordered after the write — atomic keeps it sound without
+	// relying on that non-local happens-before.
+	started atomic.Bool
 }
 
 // WriteHeader records that the response has started, then delegates.
 func (f *flushResponseWriter) WriteHeader(code int) {
-	f.started = true
+	f.started.Store(true)
 	f.ResponseWriter.WriteHeader(code)
 }
 
 // Write records that the response has started (the first Write commits a 200
 // status if WriteHeader was not called), then delegates.
 func (f *flushResponseWriter) Write(p []byte) (int, error) {
-	f.started = true
+	f.started.Store(true)
 	return f.ResponseWriter.Write(p)
 }
 

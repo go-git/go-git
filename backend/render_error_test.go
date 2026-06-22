@@ -30,18 +30,18 @@ func TestFlushResponseWriterMarksStarted(t *testing.T) {
 		t.Parallel()
 		rec := httptest.NewRecorder()
 		frw := &flushResponseWriter{ResponseWriter: rec, log: log.Default(), chunkSize: defaultChunkSize}
-		require.False(t, frw.started, "started must be false before any write")
+		require.False(t, frw.started.Load(), "started must be false before any write")
 		_, err := frw.Write([]byte("hi"))
 		require.NoError(t, err)
-		require.True(t, frw.started, "started must be true after Write")
+		require.True(t, frw.started.Load(), "started must be true after Write")
 	})
 	t.Run("WriteHeader", func(t *testing.T) {
 		t.Parallel()
 		rec := httptest.NewRecorder()
 		frw := &flushResponseWriter{ResponseWriter: rec, log: log.Default(), chunkSize: defaultChunkSize}
-		require.False(t, frw.started, "started must be false before WriteHeader")
+		require.False(t, frw.started.Load(), "started must be false before WriteHeader")
 		frw.WriteHeader(http.StatusTeapot)
-		require.True(t, frw.started, "started must be true after WriteHeader")
+		require.True(t, frw.started.Load(), "started must be true after WriteHeader")
 	})
 }
 
