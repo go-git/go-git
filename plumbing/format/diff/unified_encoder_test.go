@@ -2,6 +2,7 @@ package diff
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -1088,4 +1089,34 @@ type fixture struct {
 	color   ColorConfig
 	diff    string
 	patch   Patch
+}
+
+func TestSplitLines(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"empty string", "", []string{}},
+		{"single newline", "\n", []string{"\n"}},
+		{"two blank lines", "\n\n", []string{"\n", "\n"}},
+		{"single line no trailing newline", "a", []string{"a"}},
+		{"single line with trailing newline", "a\n", []string{"a\n"}},
+		{"two lines no trailing newline", "a\nb", []string{"a\n", "b"}},
+		{"two lines with trailing newline", "a\nb\n", []string{"a\n", "b\n"}},
+		{"leading blank line", "\na", []string{"\n", "a"}},
+		{"blank line in the middle", "a\n\nb", []string{"a\n", "\n", "b"}},
+		{"trailing blank line keeps one empty line", "a\n\n", []string{"a\n", "\n"}},
+		{"CRLF rides on the line", "a\r\nb\r\n", []string{"a\r\n", "b\r\n"}},
+		{"lone CR is not a separator", "a\rb", []string{"a\rb"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := splitLines(tc.in); !slices.Equal(got, tc.want) {
+				t.Errorf("splitLines(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
 }
