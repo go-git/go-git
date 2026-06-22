@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -28,6 +29,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	filetransport "github.com/go-git/go-git/v6/plumbing/transport/file"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 func TestSmartMultiRoundFetch(t *testing.T) {
@@ -145,6 +147,74 @@ func TestHTTPNegotiatorNoRounds(t *testing.T) {
 
 	err = neg.Close()
 	assert.NoError(t, err)
+}
+
+// TestFetchBodyReadRespectsCancellation exercises the precondition that
+// smartPackSession.Fetch relies on when it skips closeResponse on a cancelled
+// context: a context-wrapped read over a stuck upload-pack response body — the
+// same NewContextReadCloser pattern FetchPack uses — must unblock promptly on
+// cancel rather than deadlock against the hung server.
+func TestFetchBodyReadRespectsCancellation(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	serving := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("0008NAK\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		once.Do(func() { close(serving) })
+		<-release // hang with the body still open
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	session := &smartPackSession{
+		client:  srv.Client(),
+		baseURL: u,
+		service: transport.UploadPackService,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	neg := &httpNegotiator{session: session, ctx: ctx}
+
+	_, err = neg.Write([]byte("0000"))
+	require.NoError(t, err)
+	require.NoError(t, neg.Close()) // fires the POST; response headers received
+
+	<-serving // server streamed headers + NAK and is now hanging
+
+	// Mirror FetchPack: read the body through a context reader.
+	r := ioutil.NewContextReadCloser(ctx, io.NopCloser(neg))
+	done := make(chan error, 1)
+	go func() {
+		_, readErr := io.ReadAll(r)
+		done <- readErr
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("read returned before cancellation while the server was hanging")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+
+	select {
+	case readErr := <-done:
+		require.ErrorIs(t, readErr, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("context-wrapped body read deadlocked after cancellation")
+	}
 }
 
 type uploadPackRequests struct {
