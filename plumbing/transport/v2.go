@@ -70,6 +70,12 @@ func (s *v2Session) Capabilities() *capability.List {
 	if agent := s.caps.Get(capability.Agent); agent != "" {
 		caps.Set(capability.Agent, agent)
 	}
+	// The client-side exact-SHA1 gate (ErrExactSHA1NotSupported) only applies
+	// to protocol v0/v1, where requesting an unadvertised object by OID requires
+	// the server to advertise allow-*-sha1-in-want. In protocol v2, fetch accepts
+	// "want <oid>" without that capability gate.
+	caps.Set(capability.AllowReachableSHA1InWant)
+	caps.Set(capability.AllowTipSHA1InWant)
 	return caps
 }
 
