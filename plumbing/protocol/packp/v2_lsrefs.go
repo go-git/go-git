@@ -31,13 +31,13 @@ type LsRefsRequest struct {
 // Encode writes the ls-refs command request to w.
 func (r *LsRefsRequest) Encode(w io.Writer) error {
 	if err := writeCommand(w, "ls-refs", r.Capabilities, func(w io.Writer) error {
-		if r.Symrefs {
-			if _, err := pktline.Writeln(w, "symrefs"); err != nil {
+		if r.Peel {
+			if _, err := pktline.Writeln(w, "peel"); err != nil {
 				return err
 			}
 		}
-		if r.Peel {
-			if _, err := pktline.Writeln(w, "peel"); err != nil {
+		if r.Symrefs {
+			if _, err := pktline.Writeln(w, "symrefs"); err != nil {
 				return err
 			}
 		}

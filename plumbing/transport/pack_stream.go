@@ -87,8 +87,9 @@ func NewStreamSession(conn Conn, service string) (Session, error) {
 // Capabilities implements PackSession.
 func (s *StreamSession) Capabilities() *capability.List { return &s.caps }
 
-// GetRemoteRefs implements PackSession.
-func (s *StreamSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
+// GetRemoteRefs implements PackSession. The protocol v0/v1 advertisement is
+// always complete, so req (and any ref-prefix scoping) is ignored.
+func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *RefsRequest) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, ErrEmptyRemoteRepository
 	}

@@ -204,7 +204,9 @@ type smartPackSession struct {
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
 
-func (s *smartPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
+// GetRemoteRefs returns the advertised refs. Smart HTTP discovery is a
+// complete v0/v1 advertisement, so req (ref-prefix scoping) is ignored.
+func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.RefsRequest) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -381,7 +383,9 @@ type dumbPackSession struct {
 
 func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
 
-func (s *dumbPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
+// GetRemoteRefs returns the advertised refs. Dumb HTTP has no ref-prefix
+// support, so req is ignored.
+func (s *dumbPackSession) GetRemoteRefs(_ context.Context, _ *transport.RefsRequest) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}

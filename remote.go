@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -120,7 +121,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	}
 	defer ioutil.CheckClose(sess, &err)
 
-	rRefs, err := sess.GetRemoteRefs(ctx)
+	rRefs, err := sess.GetRemoteRefs(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -336,6 +337,45 @@ func (r *Remote) FetchContext(ctx context.Context, o *FetchOptions) error {
 	return err
 }
 
+// fetchRefPrefixes derives the ls-refs "ref-prefix" hints for a fetch from its
+// refspecs and tag mode, mirroring canonical git (builtin/fetch.c,
+// builtin/clone.c). HEAD is always included so default-branch resolution keeps
+// working (e.g. on clone), and refs/tags/ is added when tags are being
+// followed.
+//
+// ref-prefix is purely an optimization, so the returned prefixes must cover
+// every ref the fetch could match. When a refspec cannot be safely turned into
+// a prefix (an exact-OID source) or there are no refspecs, it returns nil to
+// request the full advertisement rather than risk under-scoping it.
+func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
+	if len(specs) == 0 {
+		return nil
+	}
+
+	prefixes := make([]string, 0, len(specs)+2)
+	for _, rs := range specs {
+		if rs.IsExactSHA1() {
+			return nil
+		}
+		src := rs.Src()
+		if src == "" {
+			return nil
+		}
+		if i := strings.IndexByte(src, '*'); i >= 0 {
+			src = src[:i]
+		}
+		prefixes = append(prefixes, src)
+	}
+
+	// Order matches canonical git: refspec prefixes, then refs/tags/, then
+	// HEAD last (builtin/clone.c, builtin/fetch.c).
+	if tags == plumbing.AllTags || tags == plumbing.TagFollowing {
+		prefixes = append(prefixes, "refs/tags/")
+	}
+	prefixes = append(prefixes, "HEAD")
+	return prefixes
+}
+
 // Fetch fetches references along with the objects necessary to complete their
 // histories.
 //
@@ -390,7 +430,9 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	rRefs, err := sess.GetRemoteRefs(ctx)
+	rRefs, err := sess.GetRemoteRefs(ctx, &transport.RefsRequest{
+		Prefixes: fetchRefPrefixes(o.RefSpecs, o.Tags),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1028,6 +1070,12 @@ func getWants(localStorer storage.Storer, refs memory.ReferenceStorage, depth in
 		result = append(result, h)
 	}
 
+	// Sort for a deterministic want order; iterating the set above is
+	// otherwise non-deterministic across runs.
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].String() < result[j].String()
+	})
+
 	return result, nil
 }
 
@@ -1315,7 +1363,7 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 
 	defer ioutil.CheckClose(sess, &err)
 
-	allRefs, err := sess.GetRemoteRefs(ctx)
+	allRefs, err := sess.GetRemoteRefs(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

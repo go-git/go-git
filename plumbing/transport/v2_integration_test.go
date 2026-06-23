@@ -83,7 +83,7 @@ func (s *V2IntegrationSuite) TestStreamLsRefs() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	refs, err := sess.GetRemoteRefs(ctx)
+	refs, err := sess.GetRemoteRefs(ctx, nil)
 	s.Require().NoError(err)
 
 	byName := map[string]*plumbing.Reference{}
@@ -105,7 +105,7 @@ func (s *V2IntegrationSuite) TestStreamFetch() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	refs, err := sess.GetRemoteRefs(ctx)
+	refs, err := sess.GetRemoteRefs(ctx, nil)
 	s.Require().NoError(err)
 
 	var want plumbing.Hash

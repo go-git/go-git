@@ -54,7 +54,7 @@ func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	refs, err := conn.GetRemoteRefs(context.TODO())
+	refs, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().Len(refs, 0)
 }
@@ -73,11 +73,11 @@ func (s *ReceivePackSuite) TestCallAdvertisedReferenceTwice() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	refs1, err := conn.GetRemoteRefs(context.TODO())
+	refs1, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(refs1)
 
-	refs2, err := conn.GetRemoteRefs(context.TODO())
+	refs2, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().Equal(refs1, refs2)
 }
@@ -89,7 +89,7 @@ func (s *ReceivePackSuite) TestDefaultBranch() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	refs, err := conn.GetRemoteRefs(context.TODO())
+	refs, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	ok := false
 	var ref *plumbing.Reference
@@ -261,7 +261,7 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *url.URL,
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	if callAdvertisedReferences {
-		info, err := conn.GetRemoteRefs(ctx)
+		info, err := conn.GetRemoteRefs(ctx, nil)
 		s.Require().NoError(err, comment)
 		s.Require().NotNil(info, comment)
 	}
@@ -315,7 +315,7 @@ func (s *ReceivePackSuite) checkRemoteReference(ep *url.URL,
 	pc := s.packClient()
 	conn, err := pc.Handshake(ctx, &transport.Request{URL: ep, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
-	ar, err := conn.GetRemoteRefs(ctx)
+	ar, err := conn.GetRemoteRefs(ctx, nil)
 	s.Require().NoError(err, fmt.Sprintf("endpoint: %s", ep.String()))
 	ok := false
 	var ref *plumbing.Reference
@@ -348,7 +348,7 @@ func (s *ReceivePackSuite) testSendPackAddReference() {
 	conn, err := pc.Handshake(ctx, &transport.Request{URL: s.Endpoint, Command: transport.ReceivePackService})
 	s.Require().NoError(err)
 
-	refs, err := conn.GetRemoteRefs(ctx)
+	refs, err := conn.GetRemoteRefs(ctx, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(refs)
 	s.Require().NoError(conn.Close())
@@ -371,7 +371,7 @@ func (s *ReceivePackSuite) testSendPackDeleteReference() {
 	s.Require().NoError(err)
 
 	caps := conn.Capabilities()
-	refs, err := conn.GetRemoteRefs(ctx)
+	refs, err := conn.GetRemoteRefs(ctx, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(refs)
 	s.Require().NoError(conn.Close())

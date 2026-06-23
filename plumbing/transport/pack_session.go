@@ -18,7 +18,7 @@ type Transport interface {
 // Session is returned by Transport.Handshake.
 type Session interface {
 	Capabilities() *capability.List
-	GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error)
+	GetRemoteRefs(ctx context.Context, req *RefsRequest) ([]*plumbing.Reference, error)
 	Fetch(ctx context.Context, st storage.Storer, req *FetchRequest) error
 	Push(ctx context.Context, st storage.Storer, req *PushRequest) error
 	Close() error

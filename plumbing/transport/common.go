@@ -41,6 +41,19 @@ func NewRemoteError(reason string) error {
 	return &RemoteError{Reason: reason}
 }
 
+// RefsRequest contains the parameters for remote reference discovery,
+// mirroring how Fetch and Push take a request value.
+type RefsRequest struct {
+	// Prefixes optionally restricts the advertisement to references whose
+	// name begins with one of the given prefixes (the protocol v2 ls-refs
+	// "ref-prefix" feature). It is an optimization hint only: a server may
+	// still return references outside these prefixes, so callers must filter
+	// the result regardless. A nil or empty slice requests the full
+	// advertisement. Transports that cannot scope the advertisement
+	// (protocol v0/v1) ignore this field.
+	Prefixes []string
+}
+
 // FetchRequest contains the parameters for a fetch-pack request.
 // This is used during the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation

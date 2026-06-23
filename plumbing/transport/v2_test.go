@@ -109,7 +109,7 @@ func (s *V2SessionSuite) TestGetRemoteRefs() {
 	caps := capsFor(s.T(), "ls-refs=unborn", "object-format=sha1")
 	sess := NewV2Session(runner, caps, UploadPackService, false)
 
-	refs, err := sess.GetRemoteRefs(context.Background())
+	refs, err := sess.GetRemoteRefs(context.Background(), nil)
 	s.Require().NoError(err)
 
 	names := map[string]string{}
@@ -130,9 +130,55 @@ func (s *V2SessionSuite) TestGetRemoteRefs() {
 	s.Contains(req, "unborn")
 
 	// Second call must be cached (no extra request).
-	_, err = sess.GetRemoteRefs(context.Background())
+	_, err = sess.GetRemoteRefs(context.Background(), nil)
 	s.Require().NoError(err)
 	s.Len(runner.requests, 1)
+}
+
+func (s *V2SessionSuite) lsRefsResponse() []byte {
+	main := "1111111111111111111111111111111111111111"
+	resp := bytes.NewBuffer(nil)
+	_, _ = pktline.Writeln(resp, main+" refs/heads/main")
+	_ = pktline.WriteFlush(resp)
+	return resp.Bytes()
+}
+
+func (s *V2SessionSuite) TestGetRemoteRefsWithPrefixes() {
+	runner := &fakeRunner{responses: [][]byte{s.lsRefsResponse()}}
+	sess := NewV2Session(runner, capsFor(s.T(), "ls-refs=unborn", "object-format=sha1"), UploadPackService, false)
+
+	_, err := sess.GetRemoteRefs(context.Background(), &RefsRequest{
+		Prefixes: []string{"refs/heads/", "HEAD"},
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(runner.requests, 1)
+	req := string(runner.requests[0])
+	s.Contains(req, "ref-prefix refs/heads/")
+	s.Contains(req, "ref-prefix HEAD")
+}
+
+// A prefix-scoped request must not be served from (or populate) the cache that
+// backs the unscoped advertisement.
+func (s *V2SessionSuite) TestGetRemoteRefsPrefixBypassesCache() {
+	runner := &fakeRunner{responses: [][]byte{
+		s.lsRefsResponse(),
+		s.lsRefsResponse(),
+	}}
+	sess := NewV2Session(runner, capsFor(s.T(), "object-format=sha1"), UploadPackService, false)
+
+	_, err := sess.GetRemoteRefs(context.Background(), nil) // caches the full advert
+	s.Require().NoError(err)
+	s.Require().Len(runner.requests, 1)
+
+	_, err = sess.GetRemoteRefs(context.Background(), &RefsRequest{Prefixes: []string{"refs/heads/"}})
+	s.Require().NoError(err)
+	s.Require().Len(runner.requests, 2) // scoped request bypasses the cache
+	s.Contains(string(runner.requests[1]), "ref-prefix refs/heads/")
+
+	_, err = sess.GetRemoteRefs(context.Background(), nil) // still served from cache
+	s.Require().NoError(err)
+	s.Len(runner.requests, 2)
 }
 
 func (s *V2SessionSuite) TestFetchClone() {

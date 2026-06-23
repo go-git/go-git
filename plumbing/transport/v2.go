@@ -98,22 +98,32 @@ func (s *v2Session) commandCapabilities() ([]string, error) {
 	return caps, nil
 }
 
-// GetRemoteRefs runs ls-refs once and caches the result.
-func (s *v2Session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
-	if s.refs == nil {
+// GetRemoteRefs runs ls-refs and returns the advertised references. The full
+// (unscoped) advertisement is cached so repeated discovery is free; a
+// prefix-scoped request always issues a fresh ls-refs so a narrowed result is
+// never served to an unscoped caller, or vice versa.
+func (s *v2Session) GetRemoteRefs(ctx context.Context, req *RefsRequest) ([]*plumbing.Reference, error) {
+	var prefixes []string
+	if req != nil {
+		prefixes = req.Prefixes
+	}
+
+	refs := s.refs
+	if len(prefixes) > 0 || refs == nil {
 		caps, err := s.commandCapabilities()
 		if err != nil {
 			return nil, err
 		}
-		req := &packp.LsRefsRequest{
+		lsreq := &packp.LsRefsRequest{
 			Capabilities: caps,
 			Symrefs:      true,
 			Peel:         true,
 			Unborn:       s.caps.SupportsArgument("ls-refs", "unborn"),
+			RefPrefixes:  prefixes,
 		}
 
 		var buf bytes.Buffer
-		if err := req.Encode(&buf); err != nil {
+		if err := lsreq.Encode(&buf); err != nil {
 			return nil, err
 		}
 
@@ -127,13 +137,16 @@ func (s *v2Session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, e
 		if err := lr.Decode(resp); err != nil {
 			return nil, err
 		}
-		s.refs = &lr
+		refs = &lr
+		if len(prefixes) == 0 {
+			s.refs = refs
+		}
 	}
 
-	if len(s.refs.References) == 0 {
+	if len(refs.References) == 0 {
 		return nil, ErrEmptyRemoteRepository
 	}
-	return s.refs.References, nil
+	return refs.References, nil
 }
 
 // Fetch negotiates and downloads a packfile using the v2 fetch command.

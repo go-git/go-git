@@ -64,7 +64,7 @@ func TestRedirectPath(t *testing.T) {
 	require.NoError(t, err)
 	defer session.Close()
 
-	info, err := session.GetRemoteRefs(context.Background())
+	info, err := session.GetRemoteRefs(context.Background(), nil)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 }
@@ -109,7 +109,7 @@ func TestRedirectSchema(t *testing.T) {
 	require.NoError(t, err)
 	defer session.Close()
 
-	info, err := session.GetRemoteRefs(context.Background())
+	info, err := session.GetRemoteRefs(context.Background(), nil)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 }
@@ -162,7 +162,7 @@ func TestRedirectPathWithFetch(t *testing.T) {
 	defer session.Close()
 
 	// Verify that refs are available
-	refs, err := session.GetRemoteRefs(context.Background())
+	refs, err := session.GetRemoteRefs(context.Background(), nil)
 	require.NoError(t, err)
 	require.NotNil(t, refs)
 
@@ -444,7 +444,7 @@ func fetchWithRedirectedPost(t *testing.T, opts Options) error {
 	require.NoError(t, err)
 	defer session.Close()
 
-	refs, err := session.GetRemoteRefs(context.Background())
+	refs, err := session.GetRemoteRefs(context.Background(), nil)
 	require.NoError(t, err)
 	require.NotNil(t, refs)
 

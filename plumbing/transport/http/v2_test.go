@@ -48,7 +48,7 @@ func TestHTTPv2LsRefs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	refs, err := session.GetRemoteRefs(ctx)
+	refs, err := session.GetRemoteRefs(ctx, nil)
 	require.NoError(t, err)
 
 	byName := map[string]*plumbing.Reference{}
@@ -68,7 +68,7 @@ func TestHTTPv2Fetch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	refs, err := session.GetRemoteRefs(ctx)
+	refs, err := session.GetRemoteRefs(ctx, nil)
 	require.NoError(t, err)
 
 	var want plumbing.Hash
