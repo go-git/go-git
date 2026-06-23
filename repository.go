@@ -999,7 +999,8 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 		return "", err
 	}
 
-	b, err := signer.Sign(rdr)
+	// TODO: thread a caller-supplied context once CreateTag accepts one.
+	b, err := signer.Sign(context.TODO(), rdr)
 	if err != nil {
 		return "", err
 	}

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -16,7 +17,7 @@ type b64signer struct{}
 
 // This is not secure, and is only used as an example for testing purposes.
 // Please don't do this.
-func (b64signer) Sign(message io.Reader) ([]byte, error) {
+func (b64signer) Sign(_ context.Context, message io.Reader) ([]byte, error) {
 	b, err := io.ReadAll(message)
 	if err != nil {
 		return nil, err

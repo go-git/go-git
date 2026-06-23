@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -1149,7 +1150,7 @@ type mockSigner struct {
 
 const mockSignature = "-----BEGIN PGP SIGNATURE-----\n\nmock-signature\n-----END PGP SIGNATURE-----"
 
-func (m *mockSigner) Sign(_ io.Reader) ([]byte, error) {
+func (m *mockSigner) Sign(_ context.Context, _ io.Reader) ([]byte, error) {
 	m.called = true
 	return []byte(mockSignature), nil
 }

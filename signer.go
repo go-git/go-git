@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -13,10 +14,12 @@ type signableObject interface {
 
 // Signer is an interface for signing git objects.
 // message is a reader containing the encoded object to be signed.
+// ctx cancels signers that perform external or remote work; purely local
+// signers may ignore it.
 // Implementors should return the encoded signature and an error if any.
 // See https://git-scm.com/docs/gitformat-signature for more information.
 type Signer interface {
-	Sign(message io.Reader) ([]byte, error)
+	Sign(ctx context.Context, message io.Reader) ([]byte, error)
 }
 
 func signObject(signer Signer, obj signableObject) ([]byte, error) {
@@ -29,5 +32,6 @@ func signObject(signer Signer, obj signableObject) ([]byte, error) {
 		return nil, err
 	}
 
-	return signer.Sign(r)
+	// TODO: thread a caller-supplied context once Worktree.Commit accepts one.
+	return signer.Sign(context.TODO(), r)
 }
