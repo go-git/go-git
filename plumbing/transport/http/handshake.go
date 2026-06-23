@@ -319,7 +319,7 @@ func (r *httpRequester) doPost() error {
 	}
 	if r.resp.StatusCode != http.StatusOK {
 		_ = r.resp.Body.Close()
-		return fmt.Errorf("http transport: POST %s unexpected status %d", serviceURL, r.resp.StatusCode)
+		return fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(httpReq.URL), r.resp.StatusCode)
 	}
 	return nil
 }

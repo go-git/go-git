@@ -53,7 +53,7 @@ func (r *httpRunner) Run(ctx context.Context, requestBody []byte) (io.ReadCloser
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("http transport: POST %s unexpected status %d", serviceURL, resp.StatusCode)
+		return nil, fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(httpReq.URL), resp.StatusCode)
 	}
 
 	return resp.Body, nil

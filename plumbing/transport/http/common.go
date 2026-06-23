@@ -24,9 +24,9 @@ func (e *Err) StatusCode() int { return e.Status }
 func (e *Err) Error() string {
 	format := "unexpected requesting %q status code: %d"
 	if e.Reason != "" {
-		return fmt.Sprintf(format+": %s", e.URL, e.Status, e.Reason)
+		return fmt.Sprintf(format+": %s", redactedURL(e.URL), e.Status, e.Reason)
 	}
-	return fmt.Sprintf(format, e.URL, e.Status)
+	return fmt.Sprintf(format, redactedURL(e.URL), e.Status)
 }
 
 // checkError maps HTTP response status codes to typed transport errors.

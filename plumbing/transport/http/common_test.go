@@ -92,6 +92,20 @@ func TestCheckError_WithReason(t *testing.T) {
 	assert.Contains(t, err.Error(), "server error details")
 }
 
+func TestErrErrorRedactsCredentials(t *testing.T) {
+	t.Parallel()
+	req, _ := http.NewRequest("GET", "https://user:s3cr3t@example.com/repo.git", nil)
+	resp := &http.Response{
+		Request:    req,
+		StatusCode: http.StatusUnauthorized,
+		Body:       io.NopCloser(strings.NewReader("auth needed")),
+	}
+	err := checkError(resp)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "s3cr3t")
+	assert.Contains(t, err.Error(), "user:REDACTED@example.com")
+}
+
 func TestApplyRedirect(t *testing.T) {
 	t.Parallel()
 
