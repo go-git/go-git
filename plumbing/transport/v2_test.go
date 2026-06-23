@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -296,4 +297,38 @@ func (s *V2SessionSuite) TestFetchAgentGatedOnAdvertisement() {
 
 	s.Contains(fetch(capsFor(s.T(), "agent=git/2.40.1", "object-format=sha1")), "agent=")
 	s.NotContains(fetch(capsFor(s.T(), "object-format=sha1")), "agent=")
+}
+
+// v2Advertisement encodes a protocol v2 capability advertisement as a stream
+// server emits it: a "version 2" line, capability lines, then a flush.
+func v2Advertisement(t *testing.T, caps ...string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	_, err := pktline.Writeln(&buf, "version 2")
+	require.NoError(t, err)
+	for _, c := range caps {
+		_, err := pktline.Writeln(&buf, c)
+		require.NoError(t, err)
+	}
+	require.NoError(t, pktline.WriteFlush(&buf))
+	return buf.Bytes()
+}
+
+// TestNewStreamSessionV2 is the counterpart to the v0/v1 fallback in
+// TestNewStreamSessionVersionFallback: when the server advertises protocol v2,
+// NewStreamSession must build a v2 session rather than decoding a v0/v1
+// advertisement.
+func TestNewStreamSessionV2(t *testing.T) {
+	t.Parallel()
+	conn := &testConn{
+		r:     bytes.NewReader(v2Advertisement(t, "agent=git/test", "ls-refs=unborn", "object-format=sha1")),
+		w:     nopWriteCloser{io.Discard},
+		close: func() error { return nil },
+	}
+
+	session, err := NewStreamSession(conn, UploadPackService)
+	require.NoError(t, err)
+
+	_, ok := session.(*v2Session)
+	require.True(t, ok, "expected *v2Session, got %T", session)
 }
