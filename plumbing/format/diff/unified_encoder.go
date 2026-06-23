@@ -3,6 +3,7 @@ package diff
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -367,6 +368,7 @@ func (h *hunk) AddOp(t Operation, ss ...string) {
 		h.fromCount += n
 	}
 
+	h.ops = slices.Grow(h.ops, n)
 	for _, s := range ss {
 		h.ops = append(h.ops, &op{s, t})
 	}
