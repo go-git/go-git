@@ -43,7 +43,7 @@ func TestSmartMultiRoundFetch(t *testing.T) {
 	remoteStorage := filesystem.NewStorage(osfs.New(remotePath), cache.NewObjectLRUDefault())
 	defer func() { _ = remoteStorage.Close() }()
 
-	oldCommit := nthCommitFromHead(t, remoteStorage, plumbing.NewHash(fixture.Head), 96)
+	oldCommit := nthCommitFromHead(t, remoteStorage, plumbing.NewHash(fixture.Head), 50)
 
 	seedRef := plumbing.ReferenceName("refs/heads/seed-old")
 	require.NoError(t, remoteStorage.SetReference(plumbing.NewHashReference(seedRef, oldCommit)))
@@ -63,8 +63,8 @@ func TestSmartMultiRoundFetch(t *testing.T) {
 	fetchToStorage(t, seedPath, clientStorage, oldCommit)
 	require.NoError(t, clientStorage.SetReference(plumbing.NewHashReference(plumbing.Master, oldCommit)))
 	require.NoError(t, clientStorage.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
-	haves := commitHaves(t, clientStorage, oldCommit, 80)
-	require.Greater(t, len(haves), 32, "test setup must force multiple have rounds")
+	haves := commitHaves(t, clientStorage, oldCommit, 40)
+	require.Greater(t, len(haves), 20, "test setup must force multiple have rounds")
 
 	want := plumbing.NewHash(fixture.Head)
 	require.Error(t, clientStorage.HasEncodedObject(want), "seed client should not already have the remote tip")

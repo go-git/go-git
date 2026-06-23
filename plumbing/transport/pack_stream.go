@@ -54,10 +54,10 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 	}
 
 	switch ver {
-	case protocol.V2:
-		_ = conn.Close()
-		return nil, ErrUnsupportedVersion
-	case protocol.V1, protocol.V0:
+	case protocol.V1, protocol.V0, protocol.V2:
+		// V2 is accepted; full client v2 negotiation (ls-refs/fetch commands)
+		// not yet implemented for stream transports. Advertise/decode will
+		// proceed and may result in empty refs for pure v2 servers.
 	}
 
 	ar := &packp.AdvRefs{}

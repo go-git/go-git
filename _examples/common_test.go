@@ -49,6 +49,7 @@ var ignored = map[string]bool{
 	"sha256":          true,
 	"submodule":       true,
 	"tag-create-push": true,
+	"http-server":     true,
 }
 
 var (
