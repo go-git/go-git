@@ -118,9 +118,11 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		}
 	}
 
-	// A shallow-only no-op push (e.g. from a shallow clone with nothing to push)
-	// sends shallow lines followed immediately by a flush packet with no commands.
-	if length == pktline.Flush {
+	// A shallow-only no-op push (shallow lines followed immediately by a
+	// flush, with no commands) is a valid empty request, e.g. from a shallow
+	// clone with nothing to push. A bare flush with no shallows is still
+	// treated as malformed.
+	if length == pktline.Flush && len(req.Shallows) > 0 {
 		return nil
 	}
 
@@ -166,12 +168,7 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		return errMalformedRequest("unexpected data after flush")
 	}
 
-	for _, c := range req.Commands {
-		if err := c.validate(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return validateUpdateRequests(req)
 }
 
 func parseCommand(b []byte) (*Command, error) {

@@ -346,6 +346,13 @@ func (s *UpdReqDecodeSuite) TestShallowNoOpPushMultipleShallows() {
 	s.testDecodeOkExpected(expected, payloads)
 }
 
+func (s *UpdReqDecodeSuite) TestBareFlushNoShallowsIsMalformed() {
+	payloads := []string{
+		"",
+	}
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "capabilities delimiter not found")
+}
+
 func (s *UpdReqDecodeSuite) TestMultipleShallowLines() {
 	hash1 := plumbing.NewHash("0c22e5ae8f25b3b070c9cad6e998ab388c636091")
 	hash2 := plumbing.NewHash("1a129f5ef8baf66eaf9fc391c8104d0e7d6f95f5")
