@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -70,6 +71,31 @@ func packfileResponse(pack []byte) []byte {
 	_, _ = pktline.Write(buf, append([]byte{1}, pack...))
 	_ = pktline.WriteFlush(buf)
 	return buf.Bytes()
+}
+
+// acksResponse builds a fetch response carrying only an acknowledgments
+// section (no packfile), so negotiation continues for another round. With no
+// acks it reports NAK.
+func acksResponse(acks ...string) []byte {
+	buf := bytes.NewBuffer(nil)
+	_, _ = pktline.Writeln(buf, "acknowledgments")
+	if len(acks) == 0 {
+		_, _ = pktline.Writeln(buf, "NAK")
+	}
+	for _, a := range acks {
+		_, _ = pktline.Writeln(buf, "ACK "+a)
+	}
+	_ = pktline.WriteFlush(buf)
+	return buf.Bytes()
+}
+
+// hashes returns n distinct hashes derived from their index.
+func hashes(n int) []plumbing.Hash {
+	out := make([]plumbing.Hash, n)
+	for i := range out {
+		out[i] = plumbing.NewHash(fmt.Sprintf("%040x", i+1))
+	}
+	return out
 }
 
 func (s *V2SessionSuite) TestGetRemoteRefs() {
@@ -145,4 +171,83 @@ func (s *V2SessionSuite) TestPushUnsupported() {
 	sess := NewV2Session(&fakeRunner{}, capsFor(s.T()), UploadPackService, false)
 	err := sess.Push(context.Background(), memory.NewStorage(), &PushRequest{})
 	s.Require().Error(err)
+}
+
+// Protocol v2 is stateless server-side even on a persistent stream
+// connection, so acknowledged common commits must be resent every round
+// regardless of transport.
+func (s *V2SessionSuite) TestFetchStreamResendsCommon() {
+	hs := hashes(18)
+	ack := hs[0].String()
+	runner := &fakeRunner{responses: [][]byte{
+		acksResponse(ack),
+		packfileResponse(emptyPack()),
+	}}
+	caps := capsFor(s.T(), "fetch", "object-format=sha1")
+	sess := NewV2Session(runner, caps, UploadPackService, false)
+
+	err := sess.Fetch(context.Background(), memory.NewStorage(), &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+		Haves: hs,
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(runner.requests, 2)
+	// The hash acknowledged in round 1 must be resent as a have in round 2,
+	// even though this is a (non-stateless) stream session.
+	s.Contains(string(runner.requests[1]), "have "+ack)
+}
+
+// Once a common base is acknowledged, the client stops negotiating and asks
+// for the pack after maxInVein haves are sent without further progress,
+// rather than draining every local have.
+func (s *V2SessionSuite) TestFetchMaxInVain() {
+	runner := &fakeRunner{responses: [][]byte{
+		acksResponse(hashes(1)[0].String()), // round 1: establish a common base
+		acksResponse(),                      // round 2: NAK
+		acksResponse(),                      // round 3: NAK
+		acksResponse(),                      // round 4: NAK
+		packfileResponse(emptyPack()),       // round 5: done -> pack
+	}}
+	caps := capsFor(s.T(), "fetch", "object-format=sha1")
+	sess := NewV2Session(runner, caps, UploadPackService, false)
+
+	err := sess.Fetch(context.Background(), memory.NewStorage(), &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+		Haves: hashes(400),
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(runner.requests, 5)
+	s.Contains(string(runner.requests[4]), "done")
+}
+
+func (s *V2SessionSuite) TestFetchUnsupportedObjectFormat() {
+	runner := &fakeRunner{}
+	caps := capsFor(s.T(), "fetch", "object-format=sha999")
+	sess := NewV2Session(runner, caps, UploadPackService, false)
+
+	err := sess.Fetch(context.Background(), memory.NewStorage(), &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "object-format")
+	s.Empty(runner.requests)
+}
+
+// The agent capability must only be sent when the server advertised it.
+func (s *V2SessionSuite) TestFetchAgentGatedOnAdvertisement() {
+	fetch := func(caps packp.V2Capabilities) string {
+		runner := &fakeRunner{responses: [][]byte{packfileResponse(emptyPack())}}
+		sess := NewV2Session(runner, caps, UploadPackService, false)
+		err := sess.Fetch(context.Background(), memory.NewStorage(), &FetchRequest{
+			Wants: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+		})
+		s.Require().NoError(err)
+		s.Require().Len(runner.requests, 1)
+		return string(runner.requests[0])
+	}
+
+	s.Contains(fetch(capsFor(s.T(), "agent=git/2.40.1", "object-format=sha1")), "agent=")
+	s.NotContains(fetch(capsFor(s.T(), "object-format=sha1")), "agent=")
 }

@@ -57,11 +57,6 @@ func (r *FetchRequestV2) Encode(w io.Writer) error {
 			}
 		}
 
-		for _, want := range r.Wants {
-			if _, err := pktline.Writeln(w, "want "+want.String()); err != nil {
-				return err
-			}
-		}
 		for _, shallow := range r.Shallows {
 			if _, err := pktline.Writeln(w, "shallow "+shallow.String()); err != nil {
 				return err
@@ -74,6 +69,11 @@ func (r *FetchRequestV2) Encode(w io.Writer) error {
 		}
 		if r.Filter != "" {
 			if _, err := pktline.Writeln(w, "filter "+string(r.Filter)); err != nil {
+				return err
+			}
+		}
+		for _, want := range r.Wants {
+			if _, err := pktline.Writeln(w, "want "+want.String()); err != nil {
 				return err
 			}
 		}

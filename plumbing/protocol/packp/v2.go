@@ -1,7 +1,6 @@
 package packp
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -11,11 +10,14 @@ import (
 //
 //	command=<name> LF
 //	*( capability LF )
-//	[ delim-pkt *( command-specific-arg ) ]
+//	delim-pkt
+//	*( command-specific-arg )
 //	flush-pkt
 //
-// The delimiter packet and arguments are only emitted when writeArgs
-// produces output, matching the grammar where command-args is optional.
+// The delimiter packet is always emitted, even when there are no
+// command-specific arguments. The v2 grammar makes the delim-pkt
+// mandatory (only command-args is optional), and upstream Git always
+// sends it (connect.c, fetch-pack.c).
 func writeCommand(w io.Writer, name string, capabilities []string, writeArgs func(io.Writer) error) error {
 	if _, err := pktline.Writeln(w, "command="+name); err != nil {
 		return err
@@ -26,18 +28,11 @@ func writeCommand(w io.Writer, name string, capabilities []string, writeArgs fun
 		}
 	}
 
-	var args bytes.Buffer
-	if writeArgs != nil {
-		if err := writeArgs(&args); err != nil {
-			return err
-		}
+	if err := pktline.WriteDelim(w); err != nil {
+		return err
 	}
-
-	if args.Len() > 0 {
-		if err := pktline.WriteDelim(w); err != nil {
-			return err
-		}
-		if _, err := w.Write(args.Bytes()); err != nil {
+	if writeArgs != nil {
+		if err := writeArgs(w); err != nil {
 			return err
 		}
 	}

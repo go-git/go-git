@@ -80,7 +80,9 @@ func (s *LsRefsSuite) TestEncodeNoArgs() {
 	s.Require().NoError(req.Encode(buf))
 
 	tokens := readPktTokens(s.T(), buf)
-	s.Equal([]string{"command=ls-refs", "<flush>"}, tokens)
+	// The delim-pkt is mandatory in the v2 grammar and always emitted,
+	// even when there are no command-specific arguments.
+	s.Equal([]string{"command=ls-refs", "<delim>", "<flush>"}, tokens)
 }
 
 func (s *LsRefsSuite) TestDecode() {

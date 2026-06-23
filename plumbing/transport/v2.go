@@ -7,7 +7,9 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -41,8 +43,11 @@ type v2Session struct {
 }
 
 // NewV2Session creates a Session that speaks Git wire protocol version 2
-// over the given CommandRunner. Stream transports pass statelessRPC=false;
-// HTTP passes true so wants and accumulated haves are resent each round.
+// over the given CommandRunner. Stream transports pass statelessRPC=false
+// and HTTP passes true; the flag only tunes how aggressively the have batch
+// grows between rounds (see nextFlush). Wants and acknowledged common commits
+// are resent every round regardless, since v2 servers are stateless per
+// command even on a persistent connection.
 func NewV2Session(runner CommandRunner, caps packp.V2Capabilities, service string, statelessRPC bool) Session {
 	return &v2Session{
 		runner:       runner,
@@ -69,20 +74,39 @@ func (s *v2Session) Capabilities() *capability.List {
 }
 
 // commandCapabilities returns the capability lines sent with every v2 command
-// request (agent and, when the server advertised it, object-format).
-func (s *v2Session) commandCapabilities() []string {
-	caps := []string{"agent=" + capability.DefaultAgent()}
+// request. The agent capability is only sent when the server advertised it
+// (the spec forbids sending it otherwise), and object-format is echoed back
+// only after validating that go-git supports the advertised algorithm.
+func (s *v2Session) commandCapabilities() ([]string, error) {
+	var caps []string
+
+	// gitprotocol-v2: a client MUST NOT send the agent capability unless
+	// the server advertised it. Matches upstream's server_supports_v2("agent").
+	if s.caps.Supports(capability.Agent) {
+		caps = append(caps, "agent="+capability.DefaultAgent())
+	}
+
+	// Reject an object-format we cannot speak rather than echoing it back
+	// blindly; upstream dies on an unknown/mismatched algorithm.
 	if of := s.caps.Get(capability.ObjectFormat); of != "" {
+		if _, err := hash.FromObjectFormat(format.ObjectFormat(of)); err != nil {
+			return nil, fmt.Errorf("server advertised unsupported object-format %q: %w", of, err)
+		}
 		caps = append(caps, "object-format="+of)
 	}
-	return caps
+
+	return caps, nil
 }
 
 // GetRemoteRefs runs ls-refs once and caches the result.
 func (s *v2Session) GetRemoteRefs(ctx context.Context) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
+		caps, err := s.commandCapabilities()
+		if err != nil {
+			return nil, err
+		}
 		req := &packp.LsRefsRequest{
-			Capabilities: s.commandCapabilities(),
+			Capabilities: caps,
 			Symrefs:      true,
 			Peel:         true,
 			Unborn:       s.caps.SupportsArgument("ls-refs", "unborn"),
@@ -143,8 +167,13 @@ func (s *v2Session) Fetch(ctx context.Context, st storage.Storer, req *FetchRequ
 // buildFetchRequest assembles the static parts of the fetch request shared
 // across negotiation rounds.
 func (s *v2Session) buildFetchRequest(st storage.Storer, req *FetchRequest) (*packp.FetchRequestV2, error) {
+	caps, err := s.commandCapabilities()
+	if err != nil {
+		return nil, err
+	}
+
 	fr := &packp.FetchRequestV2{
-		Capabilities: s.commandCapabilities(),
+		Capabilities: caps,
 		Wants:        req.Wants,
 		OfsDelta:     true,
 		NoProgress:   req.Progress == nil,
@@ -181,20 +210,31 @@ func (s *v2Session) negotiate(ctx context.Context, base *packp.FetchRequestV2, r
 	var common []plumbing.Hash
 	var shallowInfo *packp.ShallowUpdate
 	flushAt := initialFlush
+	inVein := 0
+	var seenAck bool
 
 	for {
 		fr := *base
-		fr.Haves = nil
-		if s.statelessRPC {
-			fr.Haves = append(fr.Haves, common...)
-		}
 
-		batch := flushAt
-		for i := 0; i < batch && len(haves) > 0; i++ {
+		// Protocol v2 is stateless server-side even on a persistent
+		// connection: upload-pack reinitializes its set of haves on every
+		// fetch command. The previously acknowledged common commits must be
+		// resent each round so the server can find the cut point, regardless
+		// of transport. This mirrors upstream's unconditional add_common.
+		fr.Haves = append([]plumbing.Hash(nil), common...)
+
+		havesAdded := 0
+		for i := 0; i < flushAt && len(haves) > 0; i++ {
 			fr.Haves = append(fr.Haves, haves[0])
 			haves = haves[1:]
+			havesAdded++
 		}
-		fr.Done = len(haves) == 0
+		inVein += havesAdded
+
+		// Give up negotiating and ask for the pack once the local haves are
+		// exhausted, or once we have an acknowledged base and have sent
+		// maxInVein haves without further progress (matches upstream).
+		fr.Done = havesAdded == 0 || (seenAck && inVein >= maxInVein)
 
 		var buf bytes.Buffer
 		if err := fr.Encode(&buf); err != nil {
@@ -218,7 +258,11 @@ func (s *v2Session) negotiate(ctx context.Context, base *packp.FetchRequestV2, r
 				Unshallows: fres.Unshallows,
 			}
 		}
-		common = append(common, fres.Acks...)
+		if len(fres.Acks) > 0 {
+			inVein = 0
+			seenAck = true
+			common = append(common, fres.Acks...)
+		}
 
 		if fres.HasPackfile {
 			return shallowInfo, resp, nil
