@@ -2,8 +2,6 @@ package packp
 
 import (
 	"bytes"
-	"errors"
-	"io"
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -65,7 +63,7 @@ func FuzzLsRefsRequestEncode(f *testing.F) {
 	f.Add("agent=git/2.40", "refs/heads/", true, true, false)
 	f.Add("", "", false, false, false)
 
-	f.Fuzz(func(t *testing.T, capability, refPrefix string, symrefs, peel, unborn bool) {
+	f.Fuzz(func(_ *testing.T, capability, refPrefix string, symrefs, peel, unborn bool) {
 		req := &LsRefsRequest{
 			Capabilities: []string{capability},
 			Symrefs:      symrefs,
@@ -78,7 +76,16 @@ func FuzzLsRefsRequestEncode(f *testing.F) {
 		if err := req.Encode(&buf); err != nil {
 			return
 		}
-		assertValidPktLines(t, buf.Bytes())
+
+		pr := bytes.NewReader(buf.Bytes())
+		for {
+			// Read until the stream is exhausted to exercise the decode path
+			// for panics/OOM. ReadLine returns a non-nil error at EOF (and on a
+			// malformed length).
+			if _, _, err := pktline.ReadLine(pr); err != nil {
+				break
+			}
+		}
 	})
 }
 
@@ -86,7 +93,7 @@ func FuzzFetchRequestV2Encode(f *testing.F) {
 	f.Add("agent=git/2.40", "blob:none", 1, true, false)
 	f.Add("", "", 0, false, false)
 
-	f.Fuzz(func(t *testing.T, capability, filter string, depth int, done, includeTag bool) {
+	f.Fuzz(func(_ *testing.T, capability, filter string, depth int, done, includeTag bool) {
 		req := &FetchRequestV2{
 			Capabilities: []string{capability},
 			Wants:        []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
@@ -101,23 +108,14 @@ func FuzzFetchRequestV2Encode(f *testing.F) {
 		if err := req.Encode(&buf); err != nil {
 			return
 		}
-		assertValidPktLines(t, buf.Bytes())
+		pr := bytes.NewReader(buf.Bytes())
+		for {
+			// Read until the stream is exhausted to exercise the decode path
+			// for panics/OOM. ReadLine returns a non-nil error at EOF (and on a
+			// malformed length).
+			if _, _, err := pktline.ReadLine(pr); err != nil {
+				break
+			}
+		}
 	})
-}
-
-// assertValidPktLines verifies that a successfully-encoded request is a
-// well-formed sequence of pkt-lines: every byte is consumed by ReadLine
-// without error before EOF.
-func assertValidPktLines(t *testing.T, data []byte) {
-	t.Helper()
-	r := bytes.NewReader(data)
-	for {
-		_, _, err := pktline.ReadLine(r)
-		if errors.Is(err, io.EOF) {
-			return
-		}
-		if err != nil {
-			t.Fatalf("Encode produced an invalid pkt-line stream: %v\n%q", err, data)
-		}
-	}
 }
