@@ -364,6 +364,12 @@ func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
 		if i := strings.IndexByte(src, '*'); i >= 0 {
 			src = src[:i]
 		}
+		// A leading wildcard trims to an empty prefix, which would emit an
+		// invalid "ref-prefix " argument. Treat it as non-convertible and
+		// request the full advertisement instead of under-scoping it.
+		if src == "" {
+			return nil
+		}
 		prefixes = append(prefixes, src)
 	}
 

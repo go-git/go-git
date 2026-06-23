@@ -58,6 +58,12 @@ func TestFetchRefPrefixes(t *testing.T) {
 			tags:  plumbing.AllTags,
 			want:  nil,
 		},
+		{
+			name:  "leading wildcard source requests full advertisement",
+			specs: specs("*:refs/remotes/origin/*"),
+			tags:  plumbing.NoTags,
+			want:  nil,
+		},
 	}
 
 	for _, tc := range cases {

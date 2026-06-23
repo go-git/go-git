@@ -248,7 +248,7 @@ func (s *V2SessionSuite) TestFetchStreamResendsCommon() {
 // Once a common base is acknowledged, the client stops negotiating and asks
 // for the pack after maxInVein haves are sent without further progress,
 // rather than draining every local have.
-func (s *V2SessionSuite) TestFetchMaxInVain() {
+func (s *V2SessionSuite) TestFetchMaxInVein() {
 	runner := &fakeRunner{responses: [][]byte{
 		acksResponse(hashes(1)[0].String()), // round 1: establish a common base
 		acksResponse(),                      // round 2: NAK
