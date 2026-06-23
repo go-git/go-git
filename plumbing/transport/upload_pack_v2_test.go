@@ -79,13 +79,12 @@ func TestUploadPackV2AdvertisementCapabilities(t *testing.T) {
 
 	require.Contains(t, adv, "version 2")
 	require.Contains(t, adv, "ls-refs")
-	require.Contains(t, adv, "fetch")
+	require.Contains(t, adv, "fetch=shallow")
 	require.Contains(t, adv, "object-format=")
 
 	// Capabilities the server does not implement must not be advertised,
-	// otherwise clients request features (e.g. --depth) that are silently
-	// dropped or produce malformed responses.
-	require.NotContains(t, adv, "shallow")
+	// otherwise clients request features that are silently dropped or
+	// produce malformed responses.
 	require.NotContains(t, adv, "wait-for-done")
 	require.NotContains(t, adv, "unborn")
 	require.NotContains(t, adv, "server-option")
@@ -102,6 +101,66 @@ func TestUploadPackV2LsRefsPeeledInline(t *testing.T) {
 	// advertisement format).
 	require.Contains(t, out, "peeled:")
 	require.NotContains(t, out, "^{}")
+}
+
+func TestUploadPackV2FetchShallowDeepen(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	// A depth-1 fetch: the tip is the shallow boundary. The response carries a
+	// shallow-info section (shallow <tip>) before the packfile.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"deepen 1",
+		"done",
+	}))
+
+	require.Contains(t, out, "shallow-info")
+	require.Contains(t, out, "shallow "+head.Hash().String())
+	require.Contains(t, out, "packfile")
+	require.Less(t, strings.Index(out, "shallow-info"), strings.Index(out, "packfile"),
+		"shallow-info must precede the packfile section")
+}
+
+func TestObjectsToUploadShallowBounded(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	c, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
+	parent := c.ParentHashes[0]
+
+	full, err := objectsToUpload(st, []plumbing.Hash{head.Hash()}, nil)
+	require.NoError(t, err)
+	require.Contains(t, full, parent, "unbounded pack should include the parent commit")
+
+	bounded, err := objectsToUpload(
+		&shallowBoundaryStorer{Storer: st, boundary: []plumbing.Hash{head.Hash()}},
+		[]plumbing.Hash{head.Hash()}, nil,
+	)
+	require.NoError(t, err)
+	require.Contains(t, bounded, head.Hash(), "shallow boundary commit must be included")
+	require.NotContains(t, bounded, parent, "depth-1 pack must exclude the boundary's parent")
+	require.Less(t, len(bounded), len(full), "shallow pack must be smaller than the full pack")
+}
+
+func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"done",
+	}))
+
+	require.NotContains(t, out, "shallow-info")
+	require.Contains(t, out, "packfile")
 }
 
 func TestUploadPackV2FetchCloneNoHaves(t *testing.T) {

@@ -591,7 +591,8 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 // serveFetchV2 handles command=fetch for v2.
 func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *bufio.Reader, kvs, args []string, opts *UploadPackRequest) error {
 	_ = kvs
-	var wants, haves []plumbing.Hash
+	var wants, haves, clientShallows []plumbing.Hash
+	depth := 0
 	done := false
 	for _, a := range args {
 		switch {
@@ -603,6 +604,21 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 			if h := plumbing.NewHash(a[5:]); !h.IsZero() {
 				haves = append(haves, h)
 			}
+		case strings.HasPrefix(a, "shallow "):
+			// The client's current shallow boundary; used to scope unshallows.
+			if h := plumbing.NewHash(a[8:]); !h.IsZero() {
+				clientShallows = append(clientShallows, h)
+			}
+		case strings.HasPrefix(a, "deepen "):
+			if _, err := fmt.Sscanf(a, "deepen %d", &depth); err != nil {
+				_ = w.Close()
+				return fmt.Errorf("parsing deepen argument %q: %w", a, err)
+			}
+		case a == "deepen-relative", strings.HasPrefix(a, "deepen-since "), strings.HasPrefix(a, "deepen-not "):
+			// Advertised under "shallow" but not implemented yet, as in v0/v1.
+			// Fail loudly rather than silently ignore an advertised feature.
+			_ = w.Close()
+			return fmt.Errorf("unsupported deepen argument: %q", a)
 		case a == "done":
 			done = true
 		}
@@ -672,8 +688,29 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 		}
 	}
 
+	// shallow-info section, emitted before the packfile when the client
+	// requested a shallow fetch (e.g. clone --depth N), reusing the v0/v1
+	// boundary computation. The boundary also bounds the packfile to that
+	// depth (see shallowBoundaryStorer).
+	//
+	// Note: deepening an already-shallow clone (the client sends its own
+	// "shallow" lines plus haves) is not handled — the haves would exclude the
+	// deepened ancestors. Only fresh shallow fetches are bounded here.
+	packSt := st
+	if depth > 0 {
+		var shupd packp.ShallowUpdate
+		if err := getShallowCommits(st, wants, depth, &shupd); err != nil {
+			_ = w.Close()
+			return fmt.Errorf("computing shallow commits: %w", err)
+		}
+		if err := writeV2ShallowInfo(w, &shupd, clientShallows); err != nil {
+			return err
+		}
+		packSt = &shallowBoundaryStorer{Storer: st, boundary: shupd.Shallows}
+	}
+
 	// Compute what to send
-	objs, err := objectsToUpload(st, wants, haves)
+	objs, err := objectsToUpload(packSt, wants, haves)
 	if err != nil {
 		_ = w.Close()
 		return fmt.Errorf("getting objects to upload: %w", err)
@@ -708,6 +745,59 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 	}
 
 	return w.Close()
+}
+
+// shallowBoundaryStorer reports an additional set of shallow commits (the
+// per-request boundary) on top of any the repository already has. revlist's
+// object walk stops at shallow commits while still collecting their full trees,
+// so wrapping the storer bounds a shallow fetch's packfile to the requested
+// depth — the boundary commits ship complete, their ancestors are omitted —
+// without the blob loss a plain have-exclusion would cause.
+type shallowBoundaryStorer struct {
+	storage.Storer
+	boundary []plumbing.Hash
+}
+
+func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
+	base, err := s.Storer.Shallow()
+	if err != nil {
+		return nil, err
+	}
+	if len(s.boundary) == 0 {
+		return base, nil
+	}
+	return append(append([]plumbing.Hash(nil), base...), s.boundary...), nil
+}
+
+// writeV2ShallowInfo emits the protocol v2 fetch "shallow-info" section: the
+// header, a "shallow <oid>" line per boundary commit and an "unshallow <oid>"
+// line per previously-shallow client commit that is now complete, terminated
+// by a delim-pkt separating it from the packfile section (upstream
+// send_shallow_info). Unshallows are scoped to the client's reported shallow
+// set, so a fresh clone never receives spurious unshallow lines.
+func writeV2ShallowInfo(w io.Writer, upd *packp.ShallowUpdate, clientShallows []plumbing.Hash) error {
+	if _, err := pktline.Writef(w, "shallow-info\n"); err != nil {
+		return err
+	}
+	for _, h := range upd.Shallows {
+		if _, err := pktline.Writef(w, "shallow %s\n", h); err != nil {
+			return err
+		}
+	}
+	if len(clientShallows) > 0 {
+		client := make(map[plumbing.Hash]struct{}, len(clientShallows))
+		for _, h := range clientShallows {
+			client[h] = struct{}{}
+		}
+		for _, h := range upd.Unshallows {
+			if _, ok := client[h]; ok {
+				if _, err := pktline.Writef(w, "unshallow %s\n", h); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return pktline.WriteDelim(w)
 }
 
 // wantsReachableFromHaves reports whether every want is reachable from the set

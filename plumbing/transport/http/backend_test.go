@@ -214,3 +214,72 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	// Success: git CLI (v2 ls-refs/fetch + receive-pack) + go-git HTTP transport (fetch for clone + post-push pull)
 	// against a pure go-git backend server (no cgi).
 }
+
+// gitOut runs a git command and returns its trimmed combined output, failing on error.
+func gitOut(t testing.TB, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v in %s: %s", args, dir, out)
+	return strings.TrimSpace(string(out))
+}
+
+// TestBackend_HTTP_E2E_ShallowClone verifies that a real git CLI "clone --depth 1"
+// over protocol v2 against the go-git backend produces a properly shallow clone:
+// the server's shallow-info section must be framed correctly (before the packfile)
+// and the client must end up grafted at the tip, even though the server's packfile
+// is not yet truncated to the boundary.
+func TestBackend_HTTP_E2E_ShallowClone(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git CLI not found in PATH; required for e2e")
+	}
+
+	tmp := t.TempDir()
+	repoName := "shallowrepo.git"
+	repoDir := filepath.Join(tmp, repoName)
+	require.NoError(t, os.MkdirAll(repoDir, 0o755))
+	run(t, tmp, "git", "init", "--bare", repoName)
+	run(t, repoDir, "git", "config", "http.uploadpack", "true")
+
+	work := filepath.Join(tmp, "work")
+	require.NoError(t, os.MkdirAll(work, 0o755))
+	run(t, work, "git", "init", "-b", "main")
+	run(t, work, "git", "config", "user.name", "tester")
+	run(t, work, "git", "config", "user.email", "tester@test")
+	for i := 1; i <= 3; i++ {
+		require.NoError(t, os.WriteFile(filepath.Join(work, "f.txt"), fmt.Appendf(nil, "commit %d\n", i), 0o644))
+		run(t, work, "git", "add", "f.txt")
+		run(t, work, "git", "commit", "-m", fmt.Sprintf("c%d", i))
+	}
+	run(t, work, "git", "remote", "add", "origin", "file://"+repoDir)
+	run(t, work, "git", "push", "-u", "origin", "main")
+
+	loader := transport.NewFilesystemLoader(osfs.New(tmp), false)
+	srv, err := internalhttp.FromLoader(loader)
+	require.NoError(t, err)
+	ep, err := srv.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = srv.Close() })
+
+	authed := fmt.Sprintf("http://u:p@%s/%s", strings.TrimPrefix(ep, "http://"), repoName)
+
+	cloneDir := t.TempDir()
+	runV2(t, cloneDir, "git", "clone", "--depth", "1", authed, "shallow")
+	cloned := filepath.Join(cloneDir, "shallow")
+
+	// The clone is grafted shallow: rev-list stops at the tip (depth 1), even
+	// though the unbounded packfile carried the full history's objects.
+	require.FileExists(t, filepath.Join(cloned, ".git", "shallow"))
+	require.Equal(t, "1", gitOut(t, cloned, "rev-list", "--count", "HEAD"),
+		"a --depth 1 clone must graft the tip as shallow")
+
+	// Bounding: the parent commit's objects were never transferred (the pack is
+	// truncated to the boundary, not merely grafted).
+	parent := gitOut(t, work, "rev-parse", "HEAD~1")
+	catFile := exec.Command("git", "cat-file", "-e", parent)
+	catFile.Dir = cloned
+	require.Error(t, catFile.Run(), "parent commit %s must be absent from a bounded --depth 1 clone", parent)
+}

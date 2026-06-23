@@ -114,9 +114,11 @@ func writeV2Advertisement(w io.Writer, st storage.Storer) error {
 	// not listed here (clients retrieve them via ls-refs). Advertising a feature
 	// that isn't handled makes clients request it and then mis-handle the reply.
 	//
+	// The fetch "shallow" feature covers the deepen family; only "deepen <n>"
+	// is handled today (deepen-since/-not/-relative are rejected, as in v0/v1).
+	//
 	// TODO: advertise these once implemented:
 	//   - ls-refs=unborn       report an unborn HEAD on an empty repository
-	//   - fetch=shallow        shallow/deepen (--depth, deepen-since, deepen-not, deepen-relative)
 	//   - fetch=filter         partial-clone object filters
 	//   - fetch=ref-in-want    want-ref negotiation
 	//   - fetch=sideband-all   sideband for the entire response, not just the packfile
@@ -129,7 +131,7 @@ func writeV2Advertisement(w io.Writer, st storage.Storer) error {
 		caps,
 		"agent="+capability.DefaultAgent(),
 		"ls-refs",
-		"fetch",
+		"fetch=shallow",
 	)
 
 	// object format
