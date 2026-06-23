@@ -11,6 +11,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/gitcli"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -61,9 +62,7 @@ func (c *uploadPackConn) Close() error {
 }
 
 func (s *V2IntegrationSuite) repoPath() string {
-	if _, err := exec.LookPath("git"); err != nil {
-		s.T().Skip("git not installed")
-	}
+	gitcli.SkipIfProtocolV2Unsupported(s.T())
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	return dot.Root()

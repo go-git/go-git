@@ -3,13 +3,13 @@ package http
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"testing"
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/gitcli"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
@@ -18,9 +18,7 @@ import (
 
 func v2Session(t *testing.T) (transport.Session, func()) {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
+	gitcli.SkipIfProtocolV2Unsupported(t)
 
 	base, addr := setupSmartServer(t)
 	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
