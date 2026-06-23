@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,6 +44,30 @@ func runV2(t testing.TB, dir, name string, args ...string) {
 	require.NoError(t, err, "%s %v failed in %s: %s", name, args, dir, string(out))
 }
 
+// requireGitV2 skips the test unless the git CLI in PATH supports protocol v2
+// (introduced in git 2.18). Against older clients the GIT_PROTOCOL=version=2
+// hint is ignored and the wire silently falls back to v0, so these v2 e2e tests
+// would not exercise what they claim to.
+func requireGitV2(t testing.TB) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git CLI not found in PATH; required for e2e")
+	}
+	fields := strings.Fields(gitOut(t, t.TempDir(), "version")) // e.g. "git version 2.39.2"
+	if len(fields) < 3 {
+		t.Skipf("cannot parse git version %q", strings.Join(fields, " "))
+	}
+	parts := strings.SplitN(fields[2], ".", 3)
+	major, errMaj := strconv.Atoi(parts[0])
+	minor := 0
+	if len(parts) > 1 {
+		minor, _ = strconv.Atoi(parts[1])
+	}
+	if errMaj != nil || major < 2 || (major == 2 && minor < 18) {
+		t.Skipf("git %s does not support protocol v2 (need >= 2.18)", fields[2])
+	}
+}
+
 // setupGoGitBackendServer starts an HTTP server using go-git's internal backend
 // (no cgi, no git-http-backend) serving a filesystem loader rooted at tmp.
 // The bare repo "testrepo.git" is first created and seeded using the git CLI
@@ -58,12 +83,19 @@ func setupGoGitBackendServer(t testing.TB) (baseURL, repoName string) {
 
 	// Seed with git CLI (init, commit, push to bare) — exercises git CLI + our server later.
 	run(t, tmp, "git", "init", "--bare", repoName)
+	// Pin the bare repo's default branch to main regardless of the ambient
+	// init.defaultBranch (CI may default to master); otherwise its HEAD dangles
+	// at a branch we never push and clients can't resolve the default branch.
+	run(t, repoDir, "git", "symbolic-ref", "HEAD", "refs/heads/main")
 	run(t, repoDir, "git", "config", "http.receivepack", "true")
 	run(t, repoDir, "git", "config", "http.uploadpack", "true")
 
 	work := filepath.Join(tmp, "work")
 	require.NoError(t, os.MkdirAll(work, 0o755))
-	run(t, work, "git", "init", "-b", "main")
+	run(t, work, "git", "init")
+	// "git init -b" needs git >= 2.28; symbolic-ref sets the initial branch on
+	// any version (the test already requires v2 via requireGitV2, i.e. >= 2.18).
+	run(t, work, "git", "symbolic-ref", "HEAD", "refs/heads/main")
 	run(t, work, "git", "config", "user.name", "tester")
 	run(t, work, "git", "config", "user.email", "tester@test")
 	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello from go-git backend e2e test\n"), 0o644))
@@ -95,9 +127,7 @@ func setupGoGitBackendServer(t testing.TB) (baseURL, repoName string) {
 func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	t.Parallel()
 
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git CLI not found in PATH; required for e2e")
-	}
+	requireGitV2(t)
 
 	base, name := setupGoGitBackendServer(t)
 	authed := fmt.Sprintf("http://u:p@%s/%s", strings.TrimPrefix(base, "http://"), name)
@@ -233,20 +263,22 @@ func gitOut(t testing.TB, dir string, args ...string) string {
 func TestBackend_HTTP_E2E_ShallowClone(t *testing.T) {
 	t.Parallel()
 
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git CLI not found in PATH; required for e2e")
-	}
+	requireGitV2(t)
 
 	tmp := t.TempDir()
 	repoName := "shallowrepo.git"
 	repoDir := filepath.Join(tmp, repoName)
 	require.NoError(t, os.MkdirAll(repoDir, 0o755))
 	run(t, tmp, "git", "init", "--bare", repoName)
+	run(t, repoDir, "git", "symbolic-ref", "HEAD", "refs/heads/main")
 	run(t, repoDir, "git", "config", "http.uploadpack", "true")
 
 	work := filepath.Join(tmp, "work")
 	require.NoError(t, os.MkdirAll(work, 0o755))
-	run(t, work, "git", "init", "-b", "main")
+	run(t, work, "git", "init")
+	// "git init -b" needs git >= 2.28; symbolic-ref sets the initial branch on
+	// any version (the test already requires v2 via requireGitV2, i.e. >= 2.18).
+	run(t, work, "git", "symbolic-ref", "HEAD", "refs/heads/main")
 	run(t, work, "git", "config", "user.name", "tester")
 	run(t, work, "git", "config", "user.email", "tester@test")
 	for i := 1; i <= 3; i++ {
