@@ -110,14 +110,26 @@ func AdvertiseRefs(
 }
 
 func writeV2Advertisement(w io.Writer, st storage.Storer) error {
-	// Emit protocol v2 capability advertisement (no refs here; use ls-refs to retrieve them).
-	caps := make([]string, 0, 5)
+	// Advertise only the v2 commands/features this server implements; refs are
+	// not listed here (clients retrieve them via ls-refs). Advertising a feature
+	// that isn't handled makes clients request it and then mis-handle the reply.
+	//
+	// TODO: advertise these once implemented:
+	//   - ls-refs=unborn       report an unborn HEAD on an empty repository
+	//   - fetch=shallow        shallow/deepen (--depth, deepen-since, deepen-not, deepen-relative)
+	//   - fetch=filter         partial-clone object filters
+	//   - fetch=ref-in-want    want-ref negotiation
+	//   - fetch=sideband-all   sideband for the entire response, not just the packfile
+	//   - fetch=packfile-uris  offload pack data to out-of-band URIs
+	//   - fetch=wait-for-done  negotiate-only fetch (git fetch --negotiate-only)
+	//   - server-option        process client "server-option" lines
+	//   - object-info          object size/type queries without a fetch
+	caps := make([]string, 0, 4)
 	caps = append(
 		caps,
 		"agent="+capability.DefaultAgent(),
-		"ls-refs=unborn",
-		"fetch=shallow wait-for-done",
-		"server-option",
+		"ls-refs",
+		"fetch",
 	)
 
 	// object format

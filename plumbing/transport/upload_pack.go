@@ -489,11 +489,15 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, kvs, args 
 		return nil
 	})
 
-	// Always include HEAD first if present (mirrors common behavior)
+	// HEAD is emitted first, but only when it passes the ref-prefix filter,
+	// matching upstream's send_possibly_unborn_head -> send_ref (ls-refs.c),
+	// where HEAD is subject to ref_match like every other ref.
 	for _, r := range refs {
 		if r.Name() == plumbing.HEAD {
-			if err := writeV2Ref(w, st, r, symrefs, peel); err != nil {
-				return err
+			if len(prefixes) == 0 || refMatchesAnyPrefix(r.Name().String(), prefixes) {
+				if err := writeV2Ref(w, st, r, symrefs, peel); err != nil {
+					return err
+				}
 			}
 			break
 		}
@@ -538,28 +542,56 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 	if hash.IsZero() {
 		return nil
 	}
+	// Protocol v2 ls-refs grammar:
+	//   ref = obj-id SP refname *(SP ref-attribute) LF
+	//   ref-attribute = (symref | peeled)
+	// Both symref-target and peeled are attributes on the ref's own line
+	// (symref-target first, matching upstream's send_ref ordering), not
+	// separate lines as in the v0/v1 advertisement format.
 	line := fmt.Sprintf("%s %s", hash, r.Name())
 	if symrefs && target != "" {
 		line += " symref-target:" + target
 	}
+	if peel {
+		// Peel any ref whose object is (a chain of) annotated tags, not just
+		// refs/tags/*, and resolve all the way to the underlying non-tag object
+		// — matching upstream's reference_get_peeled_oid (ls-refs.c). Lightweight
+		// tags and branches don't point at tag objects, so they emit no attribute.
+		if peeled, ok := peelToNonTag(st, hash); ok {
+			line += " peeled:" + peeled.String()
+		}
+	}
 	if _, err := pktline.Writef(w, "%s\n", line); err != nil {
 		return err
 	}
-	if peel && r.Name().IsTag() {
-		if tag, err := object.GetTag(st, hash); err == nil {
-			// emit peeled
-			peeled := fmt.Sprintf("%s %s^{}", tag.Target, r.Name())
-			_, _ = pktline.Writef(w, "%s\n", peeled)
-		}
-	}
 	return nil
+}
+
+// peelToNonTag follows annotated-tag objects from h down to the first non-tag
+// object, mirroring upstream's reference_get_peeled_oid. It returns the peeled
+// hash and true when h points at one or more tag objects; false when h is not a
+// tag (a lightweight tag, branch, etc.) so no "peeled" attribute is emitted.
+func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
+	tag, err := object.GetTag(st, h)
+	if err != nil {
+		return plumbing.ZeroHash, false
+	}
+	for {
+		next := tag.Target
+		inner, err := object.GetTag(st, next)
+		if err != nil {
+			// next is a non-tag object (or missing); return it as the peeled
+			// value, as upstream's peel does.
+			return next, true
+		}
+		tag = inner
+	}
 }
 
 // serveFetchV2 handles command=fetch for v2.
 func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *bufio.Reader, kvs, args []string, opts *UploadPackRequest) error {
 	_ = kvs
 	var wants, haves []plumbing.Hash
-	deepen := 0
 	done := false
 	for _, a := range args {
 		switch {
@@ -571,53 +603,73 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 			if h := plumbing.NewHash(a[5:]); !h.IsZero() {
 				haves = append(haves, h)
 			}
-		case strings.HasPrefix(a, "deepen "):
-			_, _ = fmt.Sscanf(a, "deepen %d", &deepen)
 		case a == "done":
 			done = true
 		}
 	}
 
-	// If nothing wanted, just flush
+	// No 'want' lines: the client guessed it didn't want anything. Upstream
+	// emits no response at all here (upload-pack.c, UPLOAD_DONE), so write
+	// nothing and just close the stream — no stray flush packet.
 	if len(wants) == 0 {
-		_ = pktline.WriteFlush(w)
 		return w.Close()
 	}
 
-	// For v2, if the client sent haves, we must send an acknowledgments section.
-	// If "done" was also present, or the command has ended (0000), we proceed
-	// to send the packfile after "ready". This matches what current git clients
-	// expect during pulls (they may omit "done" on the first fetch command when
-	// they have provided haves and expect the objects in the same response).
-	switch {
-	case !done && len(haves) > 0:
-		// send acknowledgments section
+	// Negotiation (acknowledgments section), per gitprotocol-v2 "fetch":
+	//
+	//   - done            -> no acknowledgments section; packfile follows.
+	//   - no haves        -> clone-like; no acknowledgments section; packfile follows.
+	//   - haves and !done -> emit an acknowledgments section. ACK every common
+	//                        object. "ready" is sent only once every want is
+	//                        reachable from the common haves (upstream's
+	//                        ok_to_give_up); then the section ends with a
+	//                        delim-pkt and the packfile follows. Otherwise the
+	//                        section ends with a flush-pkt and NO packfile, and
+	//                        the client negotiates again with more haves (NAK
+	//                        when there is no common object at all).
+	if !done && len(haves) > 0 {
 		if _, err := pktline.Writef(w, "acknowledgments\n"); err != nil {
 			return err
 		}
-		// naive: ack any common we have
-		known := map[plumbing.Hash]bool{}
+		var common []plumbing.Hash
 		for _, h := range haves {
 			if _, err := st.EncodedObject(plumbing.AnyObject, h); err == nil {
-				known[h] = true
+				common = append(common, h)
 				if _, err := pktline.Writef(w, "ACK %s\n", h); err != nil {
 					return err
 				}
 			}
 		}
-		if len(known) > 0 {
-			_, _ = pktline.Writef(w, "ready\n")
+		if len(common) == 0 {
+			// No common object at all: NAK and end the section with a flush. No
+			// packfile this round; the client negotiates again with more haves.
+			if _, err := pktline.Writef(w, "NAK\n"); err != nil {
+				return err
+			}
+			if err := pktline.WriteFlush(w); err != nil {
+				return err
+			}
+			return w.Close()
 		}
-		// End the acknowledgments section with a delimiter packet (0001), not a flush.
-		// Per protocol-v2 grammar: [acknowledgments delim-pkt] ... packfile flush-pkt
-		// This tells the client's acks parser that the acks section is complete
-		// (so "packfile" won't be misinterpreted as an ack line), but does *not*
-		// end the overall fetch response, allowing the packfile section to follow
-		// immediately in the same stream. This satisfies both "packfile must appear
-		// after 'ready'" and avoids "unexpected acknowledgment line: 'packfile'".
-		_ = pktline.WriteDelim(w)
-	case done:
-	default:
+		// "ready" is withheld until every want is reachable from the common
+		// haves (upstream's ok_to_give_up). Declaring it on the first common
+		// have would force single-round negotiation and a larger pack. When not
+		// ready, the ACK'd commons stand but the section ends with a flush so
+		// the client can refine its haves in the next request.
+		if !wantsReachableFromHaves(st, wants, common) {
+			if err := pktline.WriteFlush(w); err != nil {
+				return err
+			}
+			return w.Close()
+		}
+		// Ready: separate the acknowledgments section from the packfile section
+		// with a delim-pkt (the packfile follows in the same response).
+		if _, err := pktline.Writef(w, "ready\n"); err != nil {
+			return err
+		}
+		if err := pktline.WriteDelim(w); err != nil {
+			return err
+		}
 	}
 
 	// Compute what to send
@@ -656,4 +708,71 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 	}
 
 	return w.Close()
+}
+
+// wantsReachableFromHaves reports whether every want is reachable from the set
+// of common haves — upstream's ok_to_give_up (upload-pack.c). A want is anchored
+// when a common have is the want itself or one of its ancestors, i.e. the want
+// can reach a have by walking parents. Tags are peeled to commits first, as the
+// ancestry walk operates on commits. Returns false (keep negotiating) if any
+// want cannot be resolved to a commit or is not yet anchored.
+func wantsReachableFromHaves(st storage.Storer, wants, commonHaves []plumbing.Hash) bool {
+	haveSet := make(map[plumbing.Hash]struct{}, len(commonHaves))
+	haveCommits := make([]*object.Commit, 0, len(commonHaves))
+	for _, h := range commonHaves {
+		haveSet[h] = struct{}{}
+		if c, ok := peelToCommit(st, h); ok {
+			haveCommits = append(haveCommits, c)
+		}
+	}
+
+	for _, wHash := range wants {
+		wc, ok := peelToCommit(st, wHash)
+		if !ok {
+			return false
+		}
+		if _, ok := haveSet[wc.Hash]; ok {
+			continue
+		}
+		anchored := false
+		for _, hc := range haveCommits {
+			if hc.Hash == wc.Hash {
+				anchored = true
+				break
+			}
+			if isAnc, err := hc.IsAncestor(wc); err == nil && isAnc {
+				anchored = true
+				break
+			}
+		}
+		if !anchored {
+			return false
+		}
+	}
+	return true
+}
+
+// peelToCommit resolves h to a commit, following annotated tags. It returns
+// false when h is missing or does not peel to a commit.
+func peelToCommit(st storage.Storer, h plumbing.Hash) (*object.Commit, bool) {
+	obj, err := st.EncodedObject(plumbing.AnyObject, h)
+	if err != nil {
+		return nil, false
+	}
+	switch obj.Type() {
+	case plumbing.CommitObject:
+		c, err := object.GetCommit(st, h)
+		if err != nil {
+			return nil, false
+		}
+		return c, true
+	case plumbing.TagObject:
+		tag, err := object.GetTag(st, h)
+		if err != nil {
+			return nil, false
+		}
+		return peelToCommit(st, tag.Target)
+	default:
+		return nil, false
+	}
 }
