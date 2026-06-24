@@ -105,7 +105,7 @@ func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOp
 		if err != nil {
 			return nil, err
 		}
-		if !forPush && len(refs) == 0 {
+		if !forPush && !internal.HasHashRef(refs) {
 			return nil, ErrEmptyRemoteRepository
 		}
 		return NewRemoteRefs(refs), nil
@@ -173,7 +173,7 @@ func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRe
 // server's object-format), so callers only provide the command arguments.
 //
 // Command is only valid on a session that negotiated Protocol v2.
-func (s *StreamSession) Command(_ context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
 	if s.version != protocol.V2 {
 		return ErrUnsupportedVersion
 	}
@@ -184,12 +184,12 @@ func (s *StreamSession) Command(_ context.Context, cmd string, req packp.Command
 		Args:         req,
 	}
 
-	if err := cr.Encode(s.w); err != nil {
+	if err := cr.Encode(ioutil.NewContextWriter(ctx, s.w)); err != nil {
 		return s.wrapStderr(err)
 	}
 
 	if resp != nil {
-		if err := resp.Decode(s.r); err != nil {
+		if err := resp.Decode(ioutil.NewContextReader(ctx, s.r)); err != nil {
 			return s.wrapStderr(err)
 		}
 	}

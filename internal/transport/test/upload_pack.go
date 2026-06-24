@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -23,6 +24,7 @@ type UploadPackSuite struct {
 	Endpoint            *url.URL
 	EmptyEndpoint       *url.URL
 	NonExistentEndpoint *url.URL
+	Protocol            protocol.Version
 	Storer              storage.Storer
 	EmptyStorer         storage.Storer
 	NonExistentStorer   storage.Storer
@@ -42,10 +44,16 @@ func (s *UploadPackSuite) packClient() transport.Transport {
 	return s.Transport
 }
 
+// request builds an upload-pack handshake request for the suite's protocol
+// version, so the same suite runs against v0, v1, and v2.
+func (s *UploadPackSuite) request(url *url.URL, command string) *transport.Request {
+	return &transport.Request{URL: url, Command: command, Protocol: s.Protocol}
+}
+
 // TestAdvertisedReferencesEmpty tests advertised references on an empty repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.EmptyEndpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.EmptyEndpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -57,14 +65,14 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 // TestAdvertisedReferencesNotExists tests advertised references on a non-existent repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	pc := s.packClient()
-	_, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.NonExistentEndpoint, Command: transport.UploadPackService})
+	_, err := pc.Handshake(context.TODO(), s.request(s.NonExistentEndpoint, transport.UploadPackService))
 	s.Require().Error(err)
 }
 
 // TestCallAdvertisedReferenceTwice tests that calling advertised references twice returns the same result.
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -79,13 +87,29 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 // TestDefaultBranch tests that the default branch is correctly advertised.
 func (s *UploadPackSuite) TestDefaultBranch() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
+
+	if s.Protocol == protocol.V2 {
+		// v2 reports the default branch via the ls-refs symref-target, surfaced
+		// as a symbolic HEAD reference, not a capability.
+		var head *plumbing.Reference
+		for _, ref := range info.References {
+			if ref.Name() == plumbing.HEAD {
+				head = ref
+			}
+		}
+		s.Require().NotNil(head)
+		s.Require().Equal(plumbing.SymbolicReference, head.Type())
+		s.Require().Equal(plumbing.ReferenceName("refs/heads/master"), head.Target())
+		return
+	}
+
 	symrefs := conn.Capabilities().Get(capability.SymRef)
 	s.Require().Len(symrefs, 1)
 	s.Require().Equal("HEAD:refs/heads/master", symrefs[0])
@@ -94,20 +118,28 @@ func (s *UploadPackSuite) TestDefaultBranch() {
 // TestAdvertisedReferencesFilterUnsupported tests filtering unsupported capabilities.
 func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
+	if s.Protocol == protocol.V2 {
+		// A negotiated v2 session advertises commands (fetch/ls-refs), not the
+		// v0/v1 multi_ack capability. Asserting this confirms the wire really is
+		// v2 rather than a silent fallback.
+		s.Require().True(conn.Capabilities().Supports(capability.FetchCmd))
+		s.Require().False(conn.Capabilities().Supports(capability.MultiACK))
+		return
+	}
 	s.Require().True(conn.Capabilities().Supports(capability.MultiACK))
 }
 
 // TestCapabilities tests that capabilities are correctly reported.
 func (s *UploadPackSuite) TestCapabilities() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -120,7 +152,7 @@ func (s *UploadPackSuite) TestCapabilities() {
 // TestUploadPack tests a basic upload-pack fetch.
 func (s *UploadPackSuite) TestUploadPack() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -141,7 +173,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	defer cancel()
 
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -162,7 +194,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -181,7 +213,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 // TestUploadPackFull tests a full upload-pack fetch with advertised references.
 func (s *UploadPackSuite) TestUploadPackFull() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -203,7 +235,7 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 // TestUploadPackInvalidReq tests upload-pack with an invalid request.
 func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -217,7 +249,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 // TestUploadPackNoChanges tests upload-pack when there are no changes.
 func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -247,7 +279,7 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 
 func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expectedObjects int) {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -264,7 +296,7 @@ func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expec
 // TestFetchError tests that fetching a non-existent object returns an error.
 func (s *UploadPackSuite) TestFetchError() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), &transport.Request{URL: s.Endpoint, Command: transport.UploadPackService})
+	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 

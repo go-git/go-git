@@ -13,7 +13,14 @@ import (
 
 func TestUploadPackSuite(t *testing.T) {
 	t.Parallel()
-	suite.Run(t, new(uploadPackSuite))
+	for _, v := range test.UploadPackVersions(true) {
+		t.Run(v.String(), func(t *testing.T) {
+			t.Parallel()
+			s := new(uploadPackSuite)
+			s.Protocol = v
+			suite.Run(t, s)
+		})
+	}
 }
 
 type uploadPackSuite struct {
