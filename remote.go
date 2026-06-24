@@ -119,12 +119,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	}
 	defer ioutil.CheckClose(sess, &err)
 
-	rRefs, err := sess.GetRemoteRefs(ctx)
+	rRefs, err := sess.GetRemoteRefs(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	remoteRefs := referenceStorageFromRefs(rRefs, true)
+	remoteRefs := referenceStorageFromRefs(rRefs.References, true)
 	if err := r.checkRequireRemoteRefs(o.RequireRemoteRefs, remoteRefs); err != nil {
 		return err
 	}
@@ -388,12 +388,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	rRefs, err := sess.GetRemoteRefs(ctx)
+	rRefs, err := sess.GetRemoteRefs(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	remoteRefs := referenceStorageFromRefs(rRefs, true)
+	remoteRefs := referenceStorageFromRefs(rRefs.References, true)
 	localRefs, err := reference.References(r.s)
 	if err != nil {
 		return nil, err
@@ -1297,13 +1297,13 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 
 	defer ioutil.CheckClose(sess, &err)
 
-	allRefs, err := sess.GetRemoteRefs(ctx)
+	allRefs, err := sess.GetRemoteRefs(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var resultRefs []*plumbing.Reference
-	for _, ref := range allRefs {
+	for _, ref := range allRefs.References {
 		isPeeled := strings.HasSuffix(ref.Name().String(), peeledSuffix)
 		switch o.PeelingOption {
 		case IgnorePeeled:
