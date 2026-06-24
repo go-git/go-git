@@ -25,6 +25,9 @@ type StreamSession struct {
 	version protocol.Version
 	caps    capability.List
 	refs    *packp.AdvRefs
+	// v2 holds the Protocol v2 capability advertisement when the server
+	// negotiated version 2. It is nil for v0/v1.
+	v2 *packp.CapabilityAdv
 }
 
 // NewStreamSession creates a session from an open Conn.
@@ -52,11 +55,21 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
-	switch ver {
-	case protocol.V1, protocol.V0, protocol.V2:
-		// V2 is accepted; full client v2 negotiation (ls-refs/fetch commands)
-		// not yet implemented for stream transports. Advertise/decode will
-		// proceed and may result in empty refs for pure v2 servers.
+	s.version = ver
+
+	if ver == protocol.V2 {
+		// Protocol v2: the server sends a capability advertisement
+		// (version line + capability lines) instead of the v0/v1 ref
+		// advertisement. References are retrieved lazily via the ls-refs
+		// command, so nothing is read here beyond the advertisement.
+		adv := &packp.CapabilityAdv{}
+		if err := adv.Decode(r); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		s.v2 = adv
+		s.caps = adv.Capabilities
+		return s, nil
 	}
 
 	ar := &packp.AdvRefs{}
@@ -71,7 +84,6 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
-	s.version = ver
 	s.caps = ar.Capabilities
 	s.refs = ar
 
@@ -119,6 +131,51 @@ func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRe
 	return nil
 }
 
+// Command implements Commander. It builds a Protocol v2 request envelope for
+// the named command, encodes it, and decodes the response. The request
+// carries the capabilities collected during the handshake (the agent and the
+// server's object-format), so callers only provide the command arguments.
+//
+// Command is only valid on a session that negotiated Protocol v2.
+func (s *StreamSession) Command(_ context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+	if s.version != protocol.V2 {
+		return ErrUnsupportedVersion
+	}
+
+	cr := &packp.CommandRequest{
+		Command:      cmd,
+		Capabilities: s.commandCapabilities(),
+		Args:         req,
+	}
+
+	if err := cr.Encode(s.w); err != nil {
+		return s.wrapStderr(err)
+	}
+
+	if resp != nil {
+		if err := resp.Decode(s.r); err != nil {
+			return s.wrapStderr(err)
+		}
+	}
+
+	return nil
+}
+
+// commandCapabilities returns the capabilities the client sends with each v2
+// command. It always advertises the agent and echoes the object-format the
+// server advertised during the handshake so both sides agree on the hash
+// algorithm.
+func (s *StreamSession) commandCapabilities() capability.List {
+	var caps capability.List
+	caps.Set(capability.Agent, capability.DefaultAgent())
+	if s.v2 != nil {
+		if of := s.v2.Capabilities.Get(capability.ObjectFormat); len(of) > 0 {
+			caps.Set(capability.ObjectFormat, of[0])
+		}
+	}
+	return caps
+}
+
 // wrapStderr checks if the underlying connection has stderr output and
 // returns it as a RemoteError so that remote error messages surface at
 // the operation site rather than at Close time.
@@ -158,6 +215,7 @@ func (s *StreamSession) Archive(ctx context.Context, req *ArchiveRequest) (io.Re
 }
 
 var (
-	_ Session  = (*StreamSession)(nil)
-	_ Archiver = (*StreamSession)(nil)
+	_ Session   = (*StreamSession)(nil)
+	_ Archiver  = (*StreamSession)(nil)
+	_ Commander = (*StreamSession)(nil)
 )
