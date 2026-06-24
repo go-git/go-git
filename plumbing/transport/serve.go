@@ -21,7 +21,13 @@ import (
 var ErrUpdateReference = errors.New("failed to update ref")
 
 // AdvertiseRefs is a server command that implements the reference
-// discovery phase of the Git transfer protocol.
+// discovery phase of the v0/v1 Git transfer protocol. Protocol v2 advertises
+// capabilities only, via [AdvertiseCapabilities]; the sole reason this function
+// accepts protocol.V2 is the receive-pack fallback: v2 has no push, so when a
+// client requests v2 for receive-pack git ignores it and serves a classic
+// advertisement (builtin/receive-pack.c), while http-backend still suppresses
+// the "# service=..." smart-reply line for the v2 request (http-backend.c
+// get_info_refs). Both behaviours are reproduced below.
 func AdvertiseRefs(
 	_ context.Context,
 	st storage.Storer,
@@ -60,17 +66,7 @@ func AdvertiseRefs(
 		ar.Capabilities.Set(capability.Sideband)
 		ar.Capabilities.Set(capability.NoProgress)
 		ar.Capabilities.Set(capability.Shallow)
-
-		cfg, err := st.Config()
-		var objectformat config.ObjectFormat
-		if err == nil && cfg != nil {
-			objectformat = cfg.Extensions.ObjectFormat
-		}
-
-		if objectformat == config.UnsetObjectFormat {
-			objectformat = config.DefaultObjectFormat
-		}
-		ar.Capabilities.Set(capability.ObjectFormat, objectformat.String())
+		ar.Capabilities.Set(capability.ObjectFormat, objectFormat(st).String())
 	}
 
 	// Set references
@@ -83,7 +79,10 @@ func AdvertiseRefs(
 		return fmt.Errorf("invalid capabilities: %w", err)
 	}
 
-	if smart {
+	// git's http-backend omits the "# service=..." smart reply whenever the
+	// requested protocol is v2, even for receive-pack which then falls back to
+	// a v0 advertisement (http-backend.c get_info_refs).
+	if smart && version != protocol.V2 {
 		smartReply := packp.SmartReply{
 			Service: service,
 		}
@@ -93,63 +92,73 @@ func AdvertiseRefs(
 		}
 	}
 
-	// Emit explicit version packet for V1 (all) and V2 upload-pack.
-	// For HTTP this appears after the "# service=..." smart reply (correct wire order).
-	// For stateful transports (git://, ssh) it appears at the start of the advertisement.
-	if version == protocol.V1 || (version == protocol.V2 && service == UploadPackService) {
+	// V1 prefixes the advertisement with an explicit version packet. For HTTP
+	// this appears after the "# service=..." smart reply (correct wire order);
+	// for stateful transports (git://, ssh) it appears at the start.
+	if version == protocol.V1 {
 		if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
 			return err
 		}
 	}
 
-	if version == protocol.V2 && service == UploadPackService {
-		return writeV2Advertisement(w, st)
-	}
-
 	return ar.Encode(w)
 }
 
-func writeV2Advertisement(w io.Writer, st storage.Storer) error {
-	// Advertise only the v2 commands/features this server implements; refs are
-	// not listed here (clients retrieve them via ls-refs). Advertising a feature
-	// that isn't handled makes clients request it and then mis-handle the reply.
-	//
-	// The fetch "shallow" feature covers the deepen family; only "deepen <n>"
-	// is handled today (deepen-since/-not/-relative are rejected, as in v0/v1).
-	//
-	// TODO: advertise these once implemented:
-	//   - ls-refs=unborn       report an unborn HEAD on an empty repository
-	//   - fetch=filter         partial-clone object filters
-	//   - fetch=ref-in-want    want-ref negotiation
-	//   - fetch=sideband-all   sideband for the entire response, not just the packfile
-	//   - fetch=packfile-uris  offload pack data to out-of-band URIs
-	//   - fetch=wait-for-done  negotiate-only fetch (git fetch --negotiate-only)
-	//   - server-option        process client "server-option" lines
-	//   - object-info          object size/type queries without a fetch
-	caps := make([]string, 0, 4)
-	caps = append(
-		caps,
-		"agent="+capability.DefaultAgent(),
-		"ls-refs",
-		"fetch=shallow",
-	)
+// AdvertiseCapabilities implements the Protocol v2 capability advertisement for
+// the upload-pack service. Unlike the v0/v1 [AdvertiseRefs], it does not list
+// references (clients retrieve them with the ls-refs command) and it does not
+// emit the smart-HTTP "# service=..." prefix: git omits that line for v2
+// (http-backend.c get_info_refs), the response starts directly with the version
+// packet.
+func AdvertiseCapabilities(_ context.Context, st storage.Storer, w io.Writer, service string) error {
+	if service != UploadPackService {
+		return fmt.Errorf("%w: %s", ErrUnsupportedService, service)
+	}
 
-	// object format
-	var objectformat config.ObjectFormat
-	if cfg, err := st.Config(); err == nil && cfg != nil {
-		objectformat = cfg.Extensions.ObjectFormat
+	adv := &packp.CapabilityAdv{
+		Version:      protocol.V2,
+		Capabilities: serverV2Capabilities(st),
 	}
-	if objectformat == config.UnsetObjectFormat {
-		objectformat = config.DefaultObjectFormat
-	}
-	caps = append(caps, "object-format="+objectformat.String())
+	return adv.Encode(w)
+}
 
-	for _, c := range caps {
-		if _, err := pktline.Writef(w, "%s\n", c); err != nil {
-			return err
-		}
+// serverV2Capabilities builds the v2 capabilities this server implements. Only
+// commands and features that are actually handled are advertised: advertising a
+// feature that isn't handled makes clients request it and then mis-handle the
+// reply.
+//
+// The fetch "shallow" feature covers the deepen family; only "deepen <n>" is
+// handled today (deepen-since/-not/-relative are rejected, as in v0/v1).
+//
+// TODO: advertise these once implemented:
+//   - ls-refs=unborn       report an unborn HEAD on an empty repository
+//   - fetch=filter         partial-clone object filters
+//   - fetch=ref-in-want    want-ref negotiation
+//   - fetch=sideband-all   sideband for the entire response, not just the packfile
+//   - fetch=packfile-uris  offload pack data to out-of-band URIs
+//   - fetch=wait-for-done  negotiate-only fetch (git fetch --negotiate-only)
+//   - server-option        process client "server-option" lines
+//   - object-info          object size/type queries without a fetch
+func serverV2Capabilities(st storage.Storer) capability.List {
+	var caps capability.List
+	caps.Set(capability.Agent, capability.DefaultAgent())
+	caps.Set(capability.LsRefs)
+	caps.Set(capability.FetchCmd, "shallow")
+	caps.Set(capability.ObjectFormat, objectFormat(st).String())
+	return caps
+}
+
+// objectFormat returns the repository's configured object format, defaulting to
+// the package default when the config is missing or unset.
+func objectFormat(st storage.Storer) config.ObjectFormat {
+	cfg, err := st.Config()
+	if err != nil || cfg == nil {
+		return config.DefaultObjectFormat
 	}
-	return pktline.WriteFlush(w)
+	if cfg.Extensions.ObjectFormat == config.UnsetObjectFormat {
+		return config.DefaultObjectFormat
+	}
+	return cfg.Extensions.ObjectFormat
 }
 
 func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {

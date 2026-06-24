@@ -43,7 +43,7 @@ func newV2Session(t testing.TB, serve func(serverConn net.Conn) error) *StreamSe
 func serveUploadPackV2Once(st storage.Storer) func(net.Conn) error {
 	return func(serverConn net.Conn) error {
 		defer func() { _ = serverConn.Close() }()
-		if err := AdvertiseRefs(context.TODO(), st, serverConn, UploadPackService, false, protocol.V2); err != nil {
+		if err := AdvertiseCapabilities(context.TODO(), st, serverConn, UploadPackService); err != nil {
 			return err
 		}
 		return serveUploadPackV2(

@@ -212,6 +212,19 @@ func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV2() {
 	testAdvertise(s.T(), ReceivePack, "version=2", false)
 }
 
+// TestReceivePackAdvertiseV2SmartHTTP verifies the receive-pack fallback when a
+// client requests protocol v2 over smart HTTP. Protocol v2 has no push, so git
+// ignores the request and serves a classic v0 advertisement (no version line),
+// while http-backend still omits the "# service=..." smart reply for the v2
+// request (builtin/receive-pack.c, http-backend.c get_info_refs).
+func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV2SmartHTTP() {
+	adv := testAdvertise(s.T(), ReceivePack, "version=2", true).String()
+	s.NotContains(adv, "# service=")
+	s.NotContains(adv, "version 2")
+	s.NotContains(adv, "version 1")
+	s.Contains(adv, "refs/heads/master")
+}
+
 func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV1() {
 	buf := testAdvertise(s.T(), ReceivePack, "version=1", false)
 	s.Contains(buf.String(), "version 1")

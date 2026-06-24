@@ -21,7 +21,7 @@ func TestStreamSessionV2Handshake(t *testing.T) {
 	st := basicV2Storage(t)
 
 	var adv bytes.Buffer
-	require.NoError(t, AdvertiseRefs(context.TODO(), st, &adv, UploadPackService, false, protocol.V2))
+	require.NoError(t, AdvertiseCapabilities(context.TODO(), st, &adv, UploadPackService))
 
 	conn := &testConn{
 		r:     &adv,
@@ -94,7 +94,7 @@ func TestStreamSessionCommandLsRefsEndToEnd(t *testing.T) {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		if err := AdvertiseRefs(context.TODO(), st, serverConn, UploadPackService, false, protocol.V2); err != nil {
+		if err := AdvertiseCapabilities(context.TODO(), st, serverConn, UploadPackService); err != nil {
 			serveErr <- err
 			return
 		}
