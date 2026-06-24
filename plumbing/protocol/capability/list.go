@@ -2,14 +2,11 @@ package capability
 
 import (
 	"bytes"
-	"fmt"
-	"strings"
 )
 
 // List represents a list of capabilities. The zero value is safe to use;
-// the internal map is lazily initialized on first write.
-//
-// Note that the List is not thread safe.
+// the internal map is lazily initialized on first write. List is not safe for
+// concurrent use.
 type List struct {
 	m    map[string]*entry
 	sort []string
@@ -37,22 +34,41 @@ func DecodeList(raw []byte, l *List) {
 	}
 
 	raw = bytes.TrimSpace(raw)
-
 	if len(raw) == 0 {
 		return
 	}
 
-	for data := range bytes.SplitSeq(raw, []byte{' '}) {
-		pair := bytes.SplitN(data, []byte{'='}, 2)
+	for len(raw) > 0 {
+		var chunk []byte
+		if i := bytes.IndexByte(raw, ' '); i >= 0 {
+			chunk = raw[:i]
+			raw = raw[i+1:]
+		} else {
+			chunk = raw
+			raw = nil
+		}
 
-		c := string(pair[0])
-		if len(pair) == 1 {
-			l.Add(c)
+		if len(chunk) == 0 {
 			continue
 		}
 
-		l.Add(c, string(pair[1]))
+		if before, after, ok := bytes.Cut(chunk, []byte{'='}); ok {
+			l.Add(string(before), string(after))
+		} else {
+			l.Add(string(chunk))
+		}
 	}
+}
+
+// EncodeList encodes the List into a v0/v1 space-separated capability string.
+// This is the format used in advertise-refs, upload-request, and
+// update-request messages.
+func EncodeList(l *List) []byte {
+	if l == nil {
+		return nil
+	}
+	b, _ := l.MarshalText()
+	return b
 }
 
 // Get returns the values for a capability
@@ -135,24 +151,50 @@ func (l *List) All() []string {
 	return cs
 }
 
-// String generates the capabilities strings, the capabilities are sorted in
-// insertion order
-func (l *List) String() string {
-	var o []string
+// MarshalText implements encoding.TextMarshaler.
+func (l *List) MarshalText() ([]byte, error) {
+	return l.AppendText(nil)
+}
+
+// AppendText implements encoding.TextAppender.
+func (l *List) AppendText(b []byte) ([]byte, error) {
+	first := true
 	for _, key := range l.sort {
 		if l.m == nil {
 			continue
 		}
 		c := l.m[key]
 		if len(c.Values) == 0 {
-			o = append(o, key)
+			if !first {
+				b = append(b, ' ')
+			}
+			first = false
+			b = append(b, key...)
 			continue
 		}
 
 		for _, value := range c.Values {
-			o = append(o, fmt.Sprintf("%s=%s", key, value))
+			if !first {
+				b = append(b, ' ')
+			}
+			first = false
+			b = append(b, key...)
+			b = append(b, '=')
+			b = append(b, value...)
 		}
 	}
+	return b, nil
+}
 
-	return strings.Join(o, " ")
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (l *List) UnmarshalText(text []byte) error {
+	DecodeList(text, l)
+	return nil
+}
+
+// String generates the capabilities strings, the capabilities are sorted in
+// insertion order.
+func (l *List) String() string {
+	b, _ := l.MarshalText()
+	return string(b)
 }

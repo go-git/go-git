@@ -2,24 +2,38 @@ package capability
 
 import (
 	"fmt"
+	"os"
 	"strings"
-	"testing"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
-func TestDefaultAgent(t *testing.T) {
-	t.Setenv("GO_GIT_USER_AGENT_EXTRA", "")
+func (s *SuiteCapabilities) TestDefaultAgent() {
+	defer restoreEnv("GO_GIT_USER_AGENT_EXTRA")()
+	os.Unsetenv("GO_GIT_USER_AGENT_EXTRA")
 	ua := DefaultAgent()
-	assert.Equal(t, userAgent, ua)
+	s.Equal(userAgent, ua)
 }
 
-func TestEnvAgent(t *testing.T) {
-	t.Setenv("GO_GIT_USER_AGENT_EXTRA", "abc xyz")
+func (s *SuiteCapabilities) TestEnvAgent() {
+	defer restoreEnv("GO_GIT_USER_AGENT_EXTRA")()
+	os.Setenv("GO_GIT_USER_AGENT_EXTRA", "abc xyz")
 	ua := DefaultAgent()
-	assert.Equal(t, fmt.Sprintf("%s %s", userAgent, "abc xyz"), ua)
+	s.Equal(fmt.Sprintf("%s %s", userAgent, "abc xyz"), ua)
+}
+
+// restoreEnv captures the current value of key and returns a function that
+// restores it, so a test can mutate the variable without leaking into other
+// tests. The capability suite runs with t.Parallel, which rules out t.Setenv.
+func restoreEnv(key string) func() {
+	old, had := os.LookupEnv(key)
+	return func() {
+		if had {
+			_ = os.Setenv(key, old)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+	}
 }
 
 func (s *SuiteCapabilities) TestValidate() {
