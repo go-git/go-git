@@ -60,13 +60,17 @@ func UploadPack(
 		v := ProtocolVersion(opts.GitProtocol)
 		switch v {
 		case protocol.V0, protocol.V1, protocol.V2:
-			// V0/V1 share the same classic negotiation format after the
-			// (optional) version line. We only branch for V2 below.
+			// V0/V1 share the classic advertisement; V2 advertises
+			// capabilities only (refs come via ls-refs).
 		default:
 			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, v)
 		}
 
-		if err := AdvertiseRefs(ctx, st, w, UploadPackService, opts.StatelessRPC, v); err != nil {
+		if v == protocol.V2 {
+			if err := AdvertiseCapabilities(ctx, st, w, UploadPackService); err != nil {
+				return fmt.Errorf("advertising v2 capabilities: %w", err)
+			}
+		} else if err := AdvertiseRefs(ctx, st, w, UploadPackService, opts.StatelessRPC, v); err != nil {
 			return fmt.Errorf("advertising references: %w", err)
 		}
 	}
@@ -386,97 +390,64 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 // It is used when the client requests version=2 via GIT_PROTOCOL.
 func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader, w io.WriteCloser, opts *UploadPackRequest) error {
 	for {
-		cmd, kvs, args, err := readV2Request(rd)
+		// Peek the command line to choose the argument decoder, then decode the
+		// whole request envelope through packp.CommandRequest (the same type the
+		// client encodes).
+		l, line, err := pktline.PeekLine(rd)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
 		}
-		if cmd == "" {
-			// flush ended the request
+		if l == pktline.Flush {
+			// A lone flush-pkt ends the request.
+			_, _, _ = pktline.ReadLine(rd)
 			return nil
 		}
+
+		cmd := strings.TrimPrefix(strings.TrimSuffix(string(line), "\n"), "command=")
+
+		req := &packp.CommandRequest{}
 		switch cmd {
 		case "ls-refs":
-			if err := serveLsRefsV2(ctx, st, w, kvs, args); err != nil {
-				return err
-			}
-			// For stateless (HTTP) a single command per request; for stateful may continue but clients typically close.
-			if opts.StatelessRPC {
-				return nil
-			}
+			req.Args = &packp.LsRefsArgs{}
 		case "fetch":
-			return serveFetchV2(ctx, st, w, rd, kvs, args, opts)
+			req.Args = &packp.FetchArgs{}
 		default:
 			_, _ = pktline.Writef(w, "error unknown-command %s\n", cmd)
 			_ = pktline.WriteFlush(w)
 			return fmt.Errorf("unsupported v2 command %q", cmd)
 		}
+
+		if err := req.Decode(rd); err != nil {
+			return fmt.Errorf("decoding %s request: %w", cmd, err)
+		}
+
+		switch cmd {
+		case "ls-refs":
+			if err := serveLsRefsV2(ctx, st, w, req.Args.(*packp.LsRefsArgs)); err != nil {
+				return err
+			}
+			// Stateless (HTTP) carries a single command per request; stateful
+			// transports may continue, but clients typically close after.
+			if opts.StatelessRPC {
+				return nil
+			}
+		case "fetch":
+			return serveFetchV2(ctx, st, w, req.Args.(*packp.FetchArgs), opts)
+		}
 	}
 }
 
-// readV2Request reads a v2 command request consisting of:
-//   - command=xxx
-//   - zero or more key=value or agent=... header lines
-//   - delim (0001)
-//   - zero or more argument lines (e.g. "want <oid>", "have <oid>", "done", "peel")
-//   - flush (0000)
+// serveLsRefsV2 responds to a ls-refs command using the decoded arguments.
 //
-// It returns the command name, header kvs (as "k=v" or raw), and the post-delim args.
-func readV2Request(rd *bufio.Reader) (cmd string, kvs, args []string, err error) {
-	seenDelim := false
-	for {
-		l, line, rerr := pktline.ReadLine(rd)
-		if rerr != nil {
-			err = rerr
-			return cmd, kvs, args, err
-		}
-		if l == pktline.Flush {
-			return cmd, kvs, args, nil
-		}
-		if l == pktline.Delim {
-			seenDelim = true
-			continue
-		}
-		s := strings.TrimSuffix(string(line), "\n")
-		if s == "" {
-			continue
-		}
-		if !seenDelim {
-			if after, ok := strings.CutPrefix(s, "command="); ok {
-				cmd = after
-				continue
-			}
-			// header line (agent, object-format, etc)
-			kvs = append(kvs, s)
-			continue
-		}
-		// after delim: args
-		args = append(args, s)
-	}
-}
-
-// serveLsRefsV2 responds to a ls-refs command.
-func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, kvs, args []string) error {
-	_ = kvs // unused for now; could check object-format
-	peel := false
-	symrefs := false
-	// unborn not directly used for listing
-	prefixes := []string{}
-	for _, a := range args {
-		switch a {
-		case "peel":
-			peel = true
-		case "symrefs":
-			symrefs = true
-		default:
-			if after, ok := strings.CutPrefix(a, "ref-prefix "); ok {
-				prefixes = append(prefixes, after)
-			}
-		}
-	}
-
+// The reference lines are encoded by writeV2Ref rather than packp.LsRefsOutput:
+// a v2 HEAD line carries both a resolved object id and a symref-target
+// attribute, which a single plumbing.Reference (hash XOR symbolic) cannot
+// represent. writeV2Ref resolves the symref's hash from the storer, matching
+// upstream git's send_ref.
+func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *packp.LsRefsArgs) error {
 	iter, err := st.IterReferences()
 	if err != nil {
 		return err
@@ -489,13 +460,15 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, kvs, args 
 		return nil
 	})
 
+	prefixes := args.RefPrefixes
+
 	// HEAD is emitted first, but only when it passes the ref-prefix filter,
 	// matching upstream's send_possibly_unborn_head -> send_ref (ls-refs.c),
 	// where HEAD is subject to ref_match like every other ref.
 	for _, r := range refs {
 		if r.Name() == plumbing.HEAD {
 			if len(prefixes) == 0 || refMatchesAnyPrefix(r.Name().String(), prefixes) {
-				if err := writeV2Ref(w, st, r, symrefs, peel); err != nil {
+				if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel); err != nil {
 					return err
 				}
 			}
@@ -510,7 +483,7 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, kvs, args 
 		if len(prefixes) > 0 && !refMatchesAnyPrefix(r.Name().String(), prefixes) {
 			continue
 		}
-		if err := writeV2Ref(w, st, r, symrefs, peel); err != nil {
+		if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel); err != nil {
 			return err
 		}
 	}
@@ -588,48 +561,32 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 	}
 }
 
-// serveFetchV2 handles command=fetch for v2.
-func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *bufio.Reader, kvs, args []string, opts *UploadPackRequest) error {
-	_ = kvs
-	var wants, haves, clientShallows []plumbing.Hash
-	depth := 0
-	done := false
-	for _, a := range args {
-		switch {
-		case strings.HasPrefix(a, "want "):
-			if h := plumbing.NewHash(a[5:]); !h.IsZero() {
-				wants = append(wants, h)
-			}
-		case strings.HasPrefix(a, "have "):
-			if h := plumbing.NewHash(a[5:]); !h.IsZero() {
-				haves = append(haves, h)
-			}
-		case strings.HasPrefix(a, "shallow "):
-			// The client's current shallow boundary; used to scope unshallows.
-			if h := plumbing.NewHash(a[8:]); !h.IsZero() {
-				clientShallows = append(clientShallows, h)
-			}
-		case strings.HasPrefix(a, "deepen "):
-			if _, err := fmt.Sscanf(a, "deepen %d", &depth); err != nil {
-				_ = w.Close()
-				return fmt.Errorf("parsing deepen argument %q: %w", a, err)
-			}
-		case a == "deepen-relative", strings.HasPrefix(a, "deepen-since "), strings.HasPrefix(a, "deepen-not "):
-			// Advertised under "shallow" but not implemented yet, as in v0/v1.
-			// Fail loudly rather than silently ignore an advertised feature.
-			_ = w.Close()
-			return fmt.Errorf("unsupported deepen argument: %q", a)
-		case a == "done":
-			done = true
-		}
+// serveFetchV2 handles command=fetch for v2 using the decoded arguments. The
+// acknowledgments, shallow-info, and packfile-header sections are emitted
+// through packp.FetchOutput; this function streams the packfile data after the
+// header, matching the caller-owned streaming on the client side.
+func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *packp.FetchArgs, opts *UploadPackRequest) error {
+	if args.DeepenRelative || !args.DeepenSince.IsZero() || len(args.DeepenNot) > 0 {
+		// Advertised under "shallow" but not implemented yet, as in v0/v1.
+		// Fail loudly rather than silently ignore an advertised feature.
+		_ = w.Close()
+		return fmt.Errorf("unsupported deepen argument")
 	}
+
+	wants := args.Wants
+	haves := args.Haves
+	clientShallows := args.Shallows
+	depth := args.Deepen
+	done := args.Done
 
 	// No 'want' lines: the client guessed it didn't want anything. Upstream
 	// emits no response at all here (upload-pack.c, UPLOAD_DONE), so write
-	// nothing and just close the stream — no stray flush packet.
+	// nothing and just close the stream, no stray flush packet.
 	if len(wants) == 0 {
 		return w.Close()
 	}
+
+	out := &packp.FetchOutput{}
 
 	// Negotiation (acknowledgments section), per gitprotocol-v2 "fetch":
 	//
@@ -638,54 +595,32 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 	//   - haves and !done -> emit an acknowledgments section. ACK every common
 	//                        object. "ready" is sent only once every want is
 	//                        reachable from the common haves (upstream's
-	//                        ok_to_give_up); then the section ends with a
-	//                        delim-pkt and the packfile follows. Otherwise the
-	//                        section ends with a flush-pkt and NO packfile, and
-	//                        the client negotiates again with more haves (NAK
-	//                        when there is no common object at all).
+	//                        ok_to_give_up); then the packfile follows in the
+	//                        same response. Otherwise the section ends without a
+	//                        packfile and the client negotiates again with more
+	//                        haves (NAK when there is no common object at all).
 	if !done && len(haves) > 0 {
-		if _, err := pktline.Writef(w, "acknowledgments\n"); err != nil {
-			return err
-		}
 		var common []plumbing.Hash
 		for _, h := range haves {
 			if _, err := st.EncodedObject(plumbing.AnyObject, h); err == nil {
 				common = append(common, h)
-				if _, err := pktline.Writef(w, "ACK %s\n", h); err != nil {
-					return err
-				}
 			}
 		}
-		if len(common) == 0 {
-			// No common object at all: NAK and end the section with a flush. No
-			// packfile this round; the client negotiates again with more haves.
-			if _, err := pktline.Writef(w, "NAK\n"); err != nil {
-				return err
-			}
-			if err := pktline.WriteFlush(w); err != nil {
-				return err
-			}
-			return w.Close()
-		}
+		out.Acknowledgments = &packp.Acknowledgments{ACKs: common}
+
 		// "ready" is withheld until every want is reachable from the common
 		// haves (upstream's ok_to_give_up). Declaring it on the first common
 		// have would force single-round negotiation and a larger pack. When not
-		// ready, the ACK'd commons stand but the section ends with a flush so
-		// the client can refine its haves in the next request.
-		if !wantsReachableFromHaves(st, wants, common) {
-			if err := pktline.WriteFlush(w); err != nil {
+		// ready (including no common object at all, which encodes as NAK), the
+		// acknowledgments section stands alone and the client refines its haves
+		// in the next request.
+		if len(common) == 0 || !wantsReachableFromHaves(st, wants, common) {
+			if err := out.Encode(w); err != nil {
 				return err
 			}
 			return w.Close()
 		}
-		// Ready: separate the acknowledgments section from the packfile section
-		// with a delim-pkt (the packfile follows in the same response).
-		if _, err := pktline.Writef(w, "ready\n"); err != nil {
-			return err
-		}
-		if err := pktline.WriteDelim(w); err != nil {
-			return err
-		}
+		out.Acknowledgments.Ready = true
 	}
 
 	// shallow-info section, emitted before the packfile when the client
@@ -694,7 +629,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 	// depth (see shallowBoundaryStorer).
 	//
 	// Note: deepening an already-shallow clone (the client sends its own
-	// "shallow" lines plus haves) is not handled — the haves would exclude the
+	// "shallow" lines plus haves) is not handled, the haves would exclude the
 	// deepened ancestors. Only fresh shallow fetches are bounded here.
 	packSt := st
 	if depth > 0 {
@@ -703,26 +638,27 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 			_ = w.Close()
 			return fmt.Errorf("computing shallow commits: %w", err)
 		}
-		if err := writeV2ShallowInfo(w, &shupd, clientShallows); err != nil {
-			return err
+		out.ShallowInfo = &packp.ShallowInfo{
+			Shallows:   shupd.Shallows,
+			Unshallows: scopeUnshallows(shupd.Unshallows, clientShallows),
 		}
 		packSt = &shallowBoundaryStorer{Storer: st, boundary: shupd.Shallows}
 	}
 
-	// Compute what to send
+	// Compute what to send.
 	objs, err := objectsToUpload(packSt, wants, haves)
 	if err != nil {
 		_ = w.Close()
 		return fmt.Errorf("getting objects to upload: %w", err)
 	}
 
-	// Write packfile section header
-	if _, err := pktline.Writef(w, "packfile\n"); err != nil {
+	// Emit the metadata sections and the "packfile" section header. The client
+	// switches to sideband demux after seeing the header, matching reference git.
+	out.Packfile = true
+	if err := out.Encode(w); err != nil {
 		return err
 	}
 
-	// Send pack data wrapped in sideband (client switches to sideband demux after
-	// seeing the "packfile" marker in v2 fetch response). Matches reference git wire.
 	writer := sideband.NewMuxer(sideband.Sideband64k, w)
 
 	var packWindow uint
@@ -739,12 +675,32 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 		return fmt.Errorf("encoding packfile: %w", err)
 	}
 
-	// Terminate sideband stream and v2 fetch response.
+	// Terminate the sideband stream and the v2 fetch response.
 	if err := pktline.WriteFlush(w); err != nil {
 		return err
 	}
 
 	return w.Close()
+}
+
+// scopeUnshallows restricts the unshallow set to commits the client reported as
+// shallow, so a fresh clone never receives spurious unshallow lines (upstream
+// send_shallow_info).
+func scopeUnshallows(unshallows, clientShallows []plumbing.Hash) []plumbing.Hash {
+	if len(clientShallows) == 0 {
+		return nil
+	}
+	client := make(map[plumbing.Hash]struct{}, len(clientShallows))
+	for _, h := range clientShallows {
+		client[h] = struct{}{}
+	}
+	var scoped []plumbing.Hash
+	for _, h := range unshallows {
+		if _, ok := client[h]; ok {
+			scoped = append(scoped, h)
+		}
+	}
+	return scoped
 }
 
 // shallowBoundaryStorer reports an additional set of shallow commits (the
@@ -767,37 +723,6 @@ func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
 		return base, nil
 	}
 	return append(append([]plumbing.Hash(nil), base...), s.boundary...), nil
-}
-
-// writeV2ShallowInfo emits the protocol v2 fetch "shallow-info" section: the
-// header, a "shallow <oid>" line per boundary commit and an "unshallow <oid>"
-// line per previously-shallow client commit that is now complete, terminated
-// by a delim-pkt separating it from the packfile section (upstream
-// send_shallow_info). Unshallows are scoped to the client's reported shallow
-// set, so a fresh clone never receives spurious unshallow lines.
-func writeV2ShallowInfo(w io.Writer, upd *packp.ShallowUpdate, clientShallows []plumbing.Hash) error {
-	if _, err := pktline.Writef(w, "shallow-info\n"); err != nil {
-		return err
-	}
-	for _, h := range upd.Shallows {
-		if _, err := pktline.Writef(w, "shallow %s\n", h); err != nil {
-			return err
-		}
-	}
-	if len(clientShallows) > 0 {
-		client := make(map[plumbing.Hash]struct{}, len(clientShallows))
-		for _, h := range clientShallows {
-			client[h] = struct{}{}
-		}
-		for _, h := range upd.Unshallows {
-			if _, ok := client[h]; ok {
-				if _, err := pktline.Writef(w, "unshallow %s\n", h); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return pktline.WriteDelim(w)
 }
 
 // wantsReachableFromHaves reports whether every want is reachable from the set
