@@ -26,25 +26,26 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		deepenRevList bool
 	)
 
+	s := pktline.NewScanner(r)
+
 	nextLine := func() (hasData bool, err error) {
 		nLine++
-		l, p, err := pktline.ReadLine(r)
-		if err == io.EOF {
-			return false, NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: EOF", nLine), line)
+		if !s.Scan() {
+			if s.Err() == nil {
+				return false, NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: EOF", nLine), bytes.Clone(line))
+			}
+			return false, s.Err()
 		}
-		if err != nil {
-			return false, err
-		}
-		if l == pktline.Flush {
+		if s.Len() == pktline.Flush {
 			return false, nil
 		}
-		line = bytes.TrimSuffix(p, eol)
+		line = bytes.TrimSuffix(s.Bytes(), eol)
 		return true, nil
 	}
 
 	decodeError := func(format string, a ...any) error {
 		msg := fmt.Sprintf("pkt-line %d: %s", nLine, fmt.Sprintf(format, a...))
-		return NewErrUnexpectedData(msg, line)
+		return NewErrUnexpectedData(msg, bytes.Clone(line))
 	}
 
 	readHash := func() (plumbing.Hash, error) {
