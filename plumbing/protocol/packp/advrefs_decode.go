@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
@@ -62,6 +64,26 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 	}
 
 	// Check for empty repository (flush packet)
+	if isFlush(line) {
+		return ErrEmptyAdvRefs
+	}
+
+	if line := string(line); strings.HasPrefix(line, "version ") {
+		if v, _ := protocol.Parse(line[8:]); v > a.Version {
+			a.Version = protocol.Version(v)
+		}
+
+		if !nextLine() {
+			return err
+		}
+	}
+
+	if a.Version != protocol.V0 && a.Version != protocol.V1 {
+		return decodeError("unsupported protocol version: %s", a.Version)
+	}
+
+	// Check for empty repository (flush packet), which may appear
+	// either as the first line or after the version line.
 	if isFlush(line) {
 		return ErrEmptyAdvRefs
 	}
