@@ -749,8 +749,10 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 		}
 
 		dir, _ := filepath.Split(file)
-		if err := w.removeEmptyDirectory(dir); err != nil {
-			return err
+		if dir != "" {
+			if err := w.removeEmptyDirectory(dir); err != nil {
+				return err
+			}
 		}
 	}
 
