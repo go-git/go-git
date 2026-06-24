@@ -34,8 +34,22 @@ type BaseSuite struct {
 
 func (s *BaseSuite) SetupSuite() {
 	s.buildBasicRepository()
+	r := s.Repository
+	s.T().Cleanup(func() {
+		if r != nil {
+			_ = r.Close()
+		}
+	})
 
 	s.cache = make(map[string]*Repository)
+	cache := s.cache
+	s.T().Cleanup(func() {
+		for _, r := range cache {
+			if r != nil {
+				_ = r.Close()
+			}
+		}
+	})
 }
 
 // registerTestConfigLoader registers a static ConfigSource plugin with
@@ -227,7 +241,7 @@ func CommitNewFile(t *testing.T, repo *Repository, fileName string) plumbing.Has
 	wt, err := repo.Worktree()
 	assert.NoError(t, err)
 
-	fd, err := wt.Filesystem.Create(fileName)
+	fd, err := wt.filesystem.Create(fileName)
 	assert.NoError(t, err)
 
 	_, err = fd.Write([]byte("# test file"))

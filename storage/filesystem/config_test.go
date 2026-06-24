@@ -30,9 +30,7 @@ func TestConfigSuite(t *testing.T) {
 }
 
 func (s *ConfigSuite) SetupTest() {
-	tmp, err := util.TempDir(osfs.Default, "", "go-git-filestystem-config")
-	s.Require().NoError(err)
-
+	tmp := s.T().TempDir()
 	s.dir = dotgit.New(osfs.New(tmp))
 	s.path = tmp
 }

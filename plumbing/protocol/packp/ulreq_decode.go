@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,6 +12,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
+
+// ErrDeepenMutuallyExclusive is returned when a request contains both deepen
+// and deepen-since/deepen-not specifications.
+var ErrDeepenMutuallyExclusive = errors.New("deepen and deepen-since (or deepen-not) cannot be used together")
 
 // Decode reads the next upload-request from its input and
 // stores it in the UploadRequest.
@@ -125,7 +130,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		switch {
 		case bytes.HasPrefix(line, deepenCommits):
 			if deepenRevList {
-				return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+				return ErrDeepenMutuallyExclusive
 			}
 			line = bytes.TrimPrefix(line, deepenCommits)
 			n, err := strconv.Atoi(string(line))
@@ -138,7 +143,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 			req.Depth = DepthRequest{Deepen: n}
 		case bytes.HasPrefix(line, deepenSince):
 			if req.Depth.Deepen > 0 {
-				return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+				return ErrDeepenMutuallyExclusive
 			}
 			line = bytes.TrimPrefix(line, deepenSince)
 			secs, err := strconv.ParseInt(string(line), 10, 64)
@@ -149,7 +154,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 			deepenRevList = true
 		case bytes.HasPrefix(line, deepenReference):
 			if req.Depth.Deepen > 0 {
-				return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+				return ErrDeepenMutuallyExclusive
 			}
 			line = bytes.TrimPrefix(line, deepenReference)
 			req.Depth.DeepenNot = append(req.Depth.DeepenNot, string(line))
@@ -169,13 +174,13 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		// After deepen <n>, only flush-pkt is valid
 		if req.Depth.Deepen > 0 {
 			if bytes.HasPrefix(line, deepenSince) || bytes.HasPrefix(line, deepenReference) {
-				return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+				return ErrDeepenMutuallyExclusive
 			}
 			return decodeError("unexpected payload while expecting a flush-pkt: %q", line)
 		}
 		// After deepen-since/deepen-not, only deepen-since/deepen-not or flush is valid
 		if deepenRevList && bytes.HasPrefix(line, deepen) && !bytes.HasPrefix(line, deepenSince) && !bytes.HasPrefix(line, deepenReference) {
-			return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+			return ErrDeepenMutuallyExclusive
 		}
 	}
 

@@ -67,6 +67,32 @@ func (s *BinarySuite) TestReadVariableWidthIntShort() {
 	s.Equal(int64(19), i)
 }
 
+func (s *BinarySuite) TestReadVariableWidthIntOverflow() {
+	// A continuation byte every iteration accumulates 7 bits and a +1
+	// adjustment per byte; eleven such bytes pushes the running int64
+	// past its bound and the decoder must reject the input.
+	buf := bytes.NewBuffer(bytes.Repeat([]byte{0xFF}, 11))
+
+	_, err := ReadVariableWidthInt(buf)
+	s.ErrorIs(err, ErrIntegerOverflow)
+}
+
+func (s *BinarySuite) TestReadVariableWidthIntBoundary() {
+	// Crafted input that drives the running accumulator to exactly
+	// (math.MaxInt64-127)>>7 — the largest pre-increment value for
+	// which the next iteration would still fit in int64. Seven 0xFE
+	// bytes followed by 0xFF land v at exactly the bound; an eighth
+	// continuation byte forces the next iteration. With a strict
+	// "greater than" check the bound was off by one and the
+	// subsequent v++ <<7 wrapped through MinInt64.
+	buf := bytes.NewBuffer([]byte{
+		0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFF, 0x00,
+	})
+
+	_, err := ReadVariableWidthInt(buf)
+	s.ErrorIs(err, ErrIntegerOverflow)
+}
+
 func (s *BinarySuite) TestReadUint32() {
 	buf := bytes.NewBuffer(nil)
 	err := binary.Write(buf, binary.BigEndian, uint32(42))
@@ -109,4 +135,39 @@ func (s *BinarySuite) TestIsBinary() {
 	ok, err = IsBinary(buf)
 	s.NoError(err)
 	s.False(ok)
+}
+
+// BenchmarkIsBinary measures NUL sniffing on the two cases that matter:
+// a full sniff window with no NUL (text, scans all sniffLen bytes) and an
+// early NUL (binary, exits on the first chunk). The reader is reset rather
+// than reallocated each iteration so the reported allocations are IsBinary's
+// own — which are zero, because the sniff buffer comes from a sync.Pool
+// rather than a per-call make([]byte, ...).
+func BenchmarkIsBinary(b *testing.B) {
+	b.Run("text", func(b *testing.B) {
+		data := bytes.Repeat([]byte{'a'}, 10*1024)
+		r := bytes.NewReader(nil)
+
+		b.ReportAllocs()
+		for b.Loop() {
+			r.Reset(data)
+			if _, err := IsBinary(r); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("binary", func(b *testing.B) {
+		data := bytes.Repeat([]byte{'a'}, sniffLen)
+		data[20] = 0
+		r := bytes.NewReader(nil)
+
+		b.ReportAllocs()
+		for b.Loop() {
+			r.Reset(data)
+			if _, err := IsBinary(r); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

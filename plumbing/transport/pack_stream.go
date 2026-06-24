@@ -12,9 +12,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// StreamSession implements PackSession over a full-duplex stream.
+// StreamSession implements Session over a full-duplex stream.
 // Stream transports (SSH, Git TCP, file) call NewStreamSession from
 // their Handshake implementation.
 type StreamSession struct {
@@ -27,11 +28,24 @@ type StreamSession struct {
 	refs    *packp.AdvRefs
 }
 
-// NewStreamSession reads version + adv-refs from the session and
-// returns a ready StreamSession.
+// NewStreamSession creates a session from an open Conn.
+// For pack services (upload-pack, receive-pack), it reads the version
+// and advertised refs from the stream. For upload-archive, it skips
+// that — the archive protocol has no ref advertisement.
 func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 	r := bufio.NewReader(conn.Reader())
 	w := conn.Writer()
+
+	s := &StreamSession{
+		conn: conn,
+		r:    r,
+		w:    w,
+		svc:  service,
+	}
+
+	if service == UploadArchiveService {
+		return s, nil
+	}
 
 	ver, err := DiscoverVersion(r)
 	if err != nil {
@@ -40,10 +54,10 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 	}
 
 	switch ver {
-	case protocol.V2:
-		_ = conn.Close()
-		return nil, ErrUnsupportedVersion
-	case protocol.V1, protocol.V0:
+	case protocol.V1, protocol.V0, protocol.V2:
+		// V2 is accepted; full client v2 negotiation (ls-refs/fetch commands)
+		// not yet implemented for stream transports. Advertise/decode will
+		// proceed and may result in empty refs for pure v2 servers.
 	}
 
 	ar := &packp.AdvRefs{}
@@ -52,15 +66,17 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
-	return &StreamSession{
-		conn:    conn,
-		r:       r,
-		w:       w,
-		svc:     service,
-		version: ver,
-		caps:    ar.Capabilities,
-		refs:    ar,
-	}, nil
+	// Validate capabilities before returning the session.
+	if err := capability.Validate(&ar.Capabilities); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	s.version = ver
+	s.caps = ar.Capabilities
+	s.refs = ar
+
+	return s, nil
 }
 
 // Capabilities implements PackSession.
@@ -121,7 +137,27 @@ func (s *StreamSession) wrapStderr(err error) error {
 	return err
 }
 
-// Close implements PackSession.
+// Close implements Session.
 func (s *StreamSession) Close() error { return s.conn.Close() }
 
-var _ Session = (*StreamSession)(nil)
+// Archive implements Archiver. It speaks the git-upload-archive wire
+// protocol over the session's existing connection.
+func (s *StreamSession) Archive(ctx context.Context, req *ArchiveRequest) (io.ReadCloser, error) {
+	if s.svc != UploadArchiveService {
+		return nil, ErrArchiveUnsupported
+	}
+
+	rc := ioutil.NewReadCloser(s.conn.Reader(), s.conn)
+	archive, err := Archive(ctx, s.conn.Writer(), rc, req)
+	if err != nil {
+		_ = rc.Close()
+		return nil, err
+	}
+
+	return archive, nil
+}
+
+var (
+	_ Session  = (*StreamSession)(nil)
+	_ Archiver = (*StreamSession)(nil)
+)

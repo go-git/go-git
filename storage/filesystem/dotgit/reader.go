@@ -35,7 +35,7 @@ func (e *EncodedObject) Reader() (io.ReadCloser, error) {
 
 		return nil, err
 	}
-	r, err := objfile.NewReader(f)
+	r, err := objfile.NewReader(f, e.dir.options.ObjectFormat)
 	if err != nil {
 		return nil, err
 	}

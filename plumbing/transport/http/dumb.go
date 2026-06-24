@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -258,7 +259,7 @@ func (r *fetchWalker) fetchObject(objHash plumbing.Hash, obj plumbing.EncodedObj
 		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
 
-	rd, err := objfile.NewReader(res.Body)
+	rd, err := objfile.NewReader(res.Body, objectFormatFromHash(objHash))
 	if err != nil {
 		return err
 	}
@@ -283,6 +284,13 @@ func (r *fetchWalker) fetchObject(objHash plumbing.Hash, obj plumbing.EncodedObj
 	}
 
 	return nil
+}
+
+func objectFormatFromHash(h plumbing.Hash) formatcfg.ObjectFormat {
+	if h.HexSize() == formatcfg.SHA256HexSize {
+		return formatcfg.SHA256
+	}
+	return formatcfg.SHA1
 }
 
 func (r *fetchWalker) fetch() error {

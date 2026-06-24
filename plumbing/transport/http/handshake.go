@@ -130,14 +130,21 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	if err != nil {
 		return nil, err
 	}
+	// V2 client support is partial (server v2 is fully supported for HTTP e2e with git CLI).
+	// If ver==V2 the subsequent AdvRefs decode will typically yield empty refs for
+	// a real v2 advertisement (refs come via ls-refs); GetRemoteRefs will surface
+	// an appropriate error. Explicit V2 requests from go-git remain best-effort.
 	switch ver {
-	case protocol.V2:
-		return nil, transport.ErrUnsupportedVersion
-	case protocol.V1, protocol.V0:
+	case protocol.V1, protocol.V0, protocol.V2:
 	}
 
 	ar := &packp.AdvRefs{}
 	if err := ar.Decode(rd); err != nil && !errors.Is(err, packp.ErrEmptyAdvRefs) {
+		return nil, err
+	}
+
+	// Validate capabilities before returning the session.
+	if err := capability.Validate(&ar.Capabilities); err != nil {
 		return nil, err
 	}
 
@@ -220,7 +227,18 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
-	neg.closeResponse()
+	// Close the response unless the context was cancelled. The race this guards
+	// against only exists on cancellation: a ctxReader goroutine inside
+	// FetchPack can still be blocked in the underlying Read after the
+	// <-ctx.Done() branch, so niling current.resp here would race it. On a
+	// non-cancellation error (or success) FetchPack's last Read returned via the
+	// result channel and its goroutine is quiescent, so closing is safe — and
+	// necessary, otherwise the response body/connection leaks. On the
+	// cancellation path the request context unblocks the in-flight read, so the
+	// body is not leaked.
+	if ctx.Err() == nil {
+		neg.closeResponse()
+	}
 	return err
 }
 

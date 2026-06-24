@@ -18,6 +18,7 @@ var (
 // Transport capability and support errors.
 var (
 	ErrConnectUnsupported        = errors.New("transport does not support raw connections")
+	ErrArchiveUnsupported        = errors.New("transport does not support archive")
 	ErrCommandUnsupported        = errors.New("command is not supported by transport")
 	ErrProtocolUnsupported       = errors.New("protocol version is not supported")
 	ErrUnsupportedVersion        = errors.New("unsupported protocol version")

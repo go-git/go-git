@@ -32,6 +32,8 @@ func (f *fixturesLoader) Load(ep *url.URL) (storage.Storer, error) {
 		return nil, err
 	}
 	st := filesystem.NewStorage(dot, nil)
+	// Any storage returned by Load in the application need to be closed by the caller,
+	// do not add close here otherwise you will either double close, or hide a missing close
 	return st, nil
 }
 
@@ -102,7 +104,12 @@ type tagLoader struct {
 var _ transport.Loader = &tagLoader{}
 
 func (l *tagLoader) Load(_ *url.URL) (storage.Storer, error) {
-	fix := fixtures.ByTag(l.tag).One()
+	of := l.objectFormat
+	if of == "" {
+		of = "sha1"
+	}
+
+	fix := fixtures.ByTag(l.tag).ByObjectFormat(of).One()
 	require.NotNil(l.TB, fix, "fixture not found for tag %s", l.tag)
 
 	dot, err := fix.DotGit(fixtures.WithTargetDir(l.TempDir))
@@ -110,12 +117,18 @@ func (l *tagLoader) Load(_ *url.URL) (storage.Storer, error) {
 		return nil, err
 	}
 	st := filesystem.NewStorage(dot, nil)
+	// Any storage returned by Load in the application need to be closed by the caller,
+	// do not add close here otherwise you will either double close, or hide a missing close
 
 	if l.objectFormat != "" {
 		cfg, err := st.Config()
 		require.NoError(l.TB, err)
 
-		require.Equal(l.TB, config.UnsetObjectFormat, cfg.Extensions.ObjectFormat)
+		want := config.ObjectFormat(l.objectFormat)
+		if want == config.SHA1 {
+			want = config.UnsetObjectFormat
+		}
+		require.Equal(l.TB, want, cfg.Extensions.ObjectFormat)
 	}
 
 	return st, nil
@@ -142,9 +155,10 @@ func TestSmartInfoRefsObjectFormat(t *testing.T) {
 			wantObjectFormat:  "sha1",
 		},
 		{
-			name:             "sha256",
-			tag:              ".git-sha256",
-			wantObjectFormat: "sha256",
+			name:              "sha256",
+			tag:               ".git",
+			forceObjectFormat: "sha256",
+			wantObjectFormat:  "sha256",
 		},
 	}
 

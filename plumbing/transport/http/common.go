@@ -85,6 +85,13 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 
 	final := resp.Request.URL
 	if !strings.HasSuffix(final.Path, infoRefsPath) {
+		// Azure DevOps redirects unauthenticated requests for private repos
+		// to /_signin. Treat that as an authentication-required condition
+		// rather than a transport failure so callers can detect it via
+		// errors.Is(err, transport.ErrAuthenticationRequired). See issue #2200.
+		if strings.HasSuffix(final.Path, "/_signin") {
+			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, final.Path)
+		}
 		return nil, fmt.Errorf(
 			"http transport: redirect target %q does not end with %s",
 			final.Path, infoRefsPath,

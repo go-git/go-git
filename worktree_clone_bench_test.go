@@ -28,6 +28,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 
 	sourceRepo, err := PlainInit(sourceDir, false)
 	require.NoError(b, err)
+	b.Cleanup(func() { _ = sourceRepo.Close() })
 
 	sourceWt, err := sourceRepo.Worktree()
 	require.NoError(b, err)
@@ -41,12 +42,12 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 		wg.Go(func() {
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
-				err := sourceWt.Filesystem.MkdirAll(dir, 0o755)
+				err := sourceWt.filesystem.MkdirAll(dir, 0o755)
 				if err != nil {
 					b.Errorf("failed to create directory %s: %v", dir, err)
 					continue
 				}
-				err = util.WriteFile(sourceWt.Filesystem, filePath, content, 0o644)
+				err = util.WriteFile(sourceWt.filesystem, filePath, content, 0o644)
 				if err != nil {
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
@@ -83,13 +84,14 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	i := 0
 	for b.Loop() {
 		cloneDir := filepath.Join(tmpDir, fmt.Sprintf("clone-%d", i))
-		_, err := PlainClone(cloneDir, &CloneOptions{
+		clonedRepo, err := PlainClone(cloneDir, &CloneOptions{
 			URL:    sourceDir,
 			Shared: true,
 		})
 		if err != nil {
 			b.Fatalf("failed to clone repository: %v", err)
 		}
+		_ = clonedRepo.Close()
 		i++
 	}
 }
@@ -108,6 +110,7 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 
 	sourceRepo, err := PlainInit(sourceDir, false)
 	require.NoError(b, err)
+	b.Cleanup(func() { _ = sourceRepo.Close() })
 
 	sourceWt, err := sourceRepo.Worktree()
 	require.NoError(b, err)
@@ -121,12 +124,12 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 		wg.Go(func() {
 			for filePath := range fileChan {
 				dir := filepath.Dir(filePath)
-				err := sourceWt.Filesystem.MkdirAll(dir, 0o755)
+				err := sourceWt.filesystem.MkdirAll(dir, 0o755)
 				if err != nil {
 					b.Errorf("failed to create directory %s: %v", dir, err)
 					continue
 				}
-				err = util.WriteFile(sourceWt.Filesystem, filePath, content, 0o644)
+				err = util.WriteFile(sourceWt.filesystem, filePath, content, 0o644)
 				if err != nil {
 					b.Errorf("failed to write file %s: %v", filePath, err)
 				}
@@ -164,13 +167,14 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	i := 0
 	for b.Loop() {
 		cloneDir := filepath.Join(tmpDir, fmt.Sprintf("clone-%d", i))
-		_, err := PlainClone(cloneDir, &CloneOptions{
+		clonedRepo, err := PlainClone(cloneDir, &CloneOptions{
 			URL:    sourceDir,
 			Shared: true,
 		})
 		if err != nil {
 			b.Fatalf("failed to clone repository: %v", err)
 		}
+		_ = clonedRepo.Close()
 		i++
 	}
 }

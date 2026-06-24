@@ -77,6 +77,52 @@ The default hash functions can be changed by calling `hash.RegisterHash`.
 
 New `SHA1` or `SHA256` hash functions that implement the `hash.RegisterHash` interface can be registered by calling `RegisterHash`.
 
+## Compression
+
+`go-git` uses zlib compression for loose objects and packfile entries. By default it uses the Go standard library's `compress/zlib`, registered at init time as the [`plugin.Zlib()`](x/plugin/plugin_zlib.go) provider. Register an alternative `plugin.ZlibProvider` — for example [`github.com/klauspost/compress/zlib`](https://github.com/klauspost/compress) — to swap the implementation without `go-git` taking a direct dependency on it.
+
+Register a provider during program init, before any `go-git` operation runs. Registration uses the [plugin system](#plugin-system-experimental) so it follows the same freeze-on-first-use lifecycle as other plugins:
+
+```go
+import (
+    "fmt"
+    "io"
+
+    kpzlib "github.com/klauspost/compress/zlib"
+
+    "github.com/go-git/go-git/v6/x/plugin"
+)
+
+type klauspostProvider struct{}
+
+func (klauspostProvider) NewReader(r io.Reader) (plugin.ZlibReader, error) {
+    zr, err := kpzlib.NewReader(r)
+    if err != nil {
+        return nil, err
+    }
+    zlr, ok := zr.(plugin.ZlibReader)
+    if !ok {
+        return nil, fmt.Errorf("klauspost reader %T does not implement plugin.ZlibReader", zr)
+    }
+    return zlr, nil
+}
+
+func (klauspostProvider) NewWriter(w io.Writer) plugin.ZlibWriter {
+    return kpzlib.NewWriter(w)
+}
+
+func init() {
+    err := plugin.Register(plugin.Zlib(), func() plugin.ZlibProvider {
+        return klauspostProvider{}
+    })
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+Registering after `go-git` has already resolved the zlib provider (on the first pool miss or `sync.NewZlibWriter` call) returns `plugin.ErrFrozen` and the existing provider stays in effect.
+
 ## Plugin System (Experimental)
 
 > **Note:** The plugin system is experimental and its API may change in future releases.

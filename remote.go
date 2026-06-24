@@ -117,6 +117,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 	if err != nil {
 		return err
 	}
+	defer ioutil.CheckClose(sess, &err)
 
 	rRefs, err := sess.GetRemoteRefs(ctx)
 	if err != nil {
@@ -381,6 +382,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	if err != nil {
 		return nil, err
 	}
+	defer ioutil.CheckClose(sess, &err)
 
 	if err := r.isSupportedRefSpec(o.RefSpecs, sess.Capabilities()); err != nil {
 		return nil, err
@@ -461,10 +463,6 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			// this point, we have everything we're asking for.
 			return nil, err
 		}
-	}
-
-	if err := sess.Close(); err != nil {
-		return nil, fmt.Errorf("error closing connection: %w", err)
 	}
 
 	var updatedPrune bool

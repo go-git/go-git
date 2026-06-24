@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
 )
@@ -19,9 +20,6 @@ const (
 	// https://github.com/git/git/blob/f7466e94375b3be27f229c78873f0acf8301c0a5/diff-delta.c#L428
 	// Max size of a copy operation (64KB).
 	maxCopySize = 64 * 1024
-
-	// Min size of a copy operation.
-	minCopySize = 4
 )
 
 // GetDelta returns an EncodedObject of type OFSDeltaObject. Base and Target object,
@@ -84,8 +82,8 @@ func DiffDelta(src, tgt []byte) []byte {
 func diffDelta(index *deltaIndex, src, tgt []byte) []byte {
 	buf := sync.GetBytesBuffer()
 	defer sync.PutBytesBuffer(buf)
-	buf.Write(deltaEncodeSize(len(src)))
-	buf.Write(deltaEncodeSize(len(tgt)))
+	buf.Write(packutil.EncodeLEB128(uint(len(src))))
+	buf.Write(packutil.EncodeLEB128(uint(len(tgt))))
 
 	if len(index.entries) == 0 {
 		index.init(src)
@@ -157,20 +155,6 @@ func encodeInsertOperation(ibuf, buf *bytes.Buffer) {
 	buf.Write(b[o : o+s])
 
 	ibuf.Reset()
-}
-
-func deltaEncodeSize(size int) []byte {
-	var ret []byte
-	c := size & 0x7f
-	size >>= 7
-	for size != 0 {
-		ret = append(ret, byte(c|0x80))
-		c = size & 0x7f
-		size >>= 7
-	}
-	ret = append(ret, byte(c))
-
-	return ret
 }
 
 func encodeCopyOperation(offset, length int) []byte {

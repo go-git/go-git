@@ -281,6 +281,11 @@ func (s *ReflogSuite) TestTransactionalStorageDoesNotExposeReflogWithoutSupport(
 	temporal := noReflogStorage{sto: memory.NewStorage()}
 
 	st := NewStorage(base, temporal)
+	defer func() {
+		if closer, ok := st.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}()
 	_, ok := st.(interface {
 		Reflog(plumbing.ReferenceName) ([]*reflog.Entry, error)
 	})

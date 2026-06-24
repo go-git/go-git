@@ -8,8 +8,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
 	"github.com/kevinburke/ssh_config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,14 +39,10 @@ func TestNewPublicKeysFromFile(t *testing.T) {
 	}
 	t.Parallel()
 
-	f, err := util.TempFile(osfs.Default, "", "ssh-test-key")
-	require.NoError(t, err)
-	_, err = f.Write(testdata.PEMBytes["rsa"])
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-	defer util.RemoveAll(osfs.Default, f.Name())
+	path := filepath.Join(t.TempDir(), "ssh-test-key")
+	require.NoError(t, os.WriteFile(path, testdata.PEMBytes["rsa"], 0o600))
 
-	auth, err := NewPublicKeysFromFile("git", f.Name(), "")
+	auth, err := NewPublicKeysFromFile("git", path, "")
 	require.NoError(t, err)
 	require.NotNil(t, auth)
 }
@@ -82,14 +76,10 @@ func TestNewKnownHostsCallback(t *testing.T) {
 	}
 	t.Parallel()
 
-	f, err := util.TempFile(osfs.Default, "", "known-hosts")
-	require.NoError(t, err)
-	_, err = f.Write([]byte(`github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==`))
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-	defer util.RemoveAll(osfs.Default, f.Name())
+	path := filepath.Join(t.TempDir(), "known-hosts")
+	require.NoError(t, os.WriteFile(path, []byte(`github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==`), 0o600))
 
-	clb, err := NewKnownHostsCallback(f.Name())
+	clb, err := NewKnownHostsCallback(path)
 	require.NoError(t, err)
 	require.NotNil(t, clb)
 }

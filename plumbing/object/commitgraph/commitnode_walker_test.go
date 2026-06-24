@@ -20,6 +20,7 @@ func TestCommitNodeIter(t *testing.T) {
 	f := fixtures.ByTag("commit-graph-chain-2").One()
 
 	storer := newUnpackRepository(f)
+	defer func() { _ = storer.Close() }()
 
 	index, err := commitgraph.OpenChainOrFileIndex(storer.Filesystem())
 	assert.NoError(t, err)

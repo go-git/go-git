@@ -127,6 +127,14 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		}
 	}
 
+	// A shallow-only no-op push (shallow lines followed immediately by a
+	// flush, with no commands) is a valid empty request, e.g. from a shallow
+	// clone with nothing to push. A bare flush with no shallows is still
+	// treated as malformed.
+	if length == pktline.Flush && len(req.Shallows) > 0 {
+		return nil
+	}
+
 	// The first command line must contain capabilities separated by a null byte
 	before, after, ok := bytes.Cut(payload, []byte{0})
 	if !ok {

@@ -2,8 +2,27 @@
 package capability
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+)
+
+var (
+	// ErrArguments is returned when a capability is given an argument but
+	// doesn't accept any.
+	ErrArguments = errors.New("capability does not accept arguments")
+	// ErrArgumentsRequired is returned when a capability requires an argument
+	// but none was provided.
+	ErrArgumentsRequired = errors.New("capability requires an argument")
+	// ErrMultipleArguments is returned when a capability accepts only one argument
+	// but multiple were provided.
+	ErrMultipleArguments = errors.New("capability accepts only one argument")
+	// ErrEmptyArgument is returned when an argument is empty.
+	ErrEmptyArgument = errors.New("capability argument cannot be empty")
 )
 
 // Capability describes a server or client capability.
@@ -247,6 +266,10 @@ const (
 	// Filter if present, fetch-pack may send "filter" commands to request a
 	// partial clone or partial fetch and request that the server omit various objects from the packfile
 	Filter Capability = "filter"
+	// SessionID the server may advertise a session ID that can be used to
+	// identify this process across multiple requests. The client may advertise
+	// its own session ID back to the server as well.
+	SessionID Capability = "session-id"
 )
 
 // V2 command capabilities are advertised by the server in protocol v2
@@ -269,9 +292,6 @@ const (
 	// V2 non-command capabilities.
 	// ServerOption indicates the server supports the server-option capability.
 	ServerOption Capability = "server-option"
-	// SessionID indicates the server supports session-id for correlating
-	// requests and responses in stateless RPC (HTTP).
-	SessionID Capability = "session-id"
 	// WaitForDone is a v2 fetch sub-feature indicating the server supports
 	// the wait-for-done argument in the fetch command.
 	WaitForDone Capability = "wait-for-done"
@@ -281,8 +301,109 @@ const userAgent = "go-git/6.x"
 
 // DefaultAgent provides the user agent string.
 func DefaultAgent() string {
-	if envUserAgent, ok := os.LookupEnv("GO_GIT_USER_AGENT_EXTRA"); ok {
+	if envUserAgent, ok := os.LookupEnv("GO_GIT_USER_AGENT_EXTRA"); ok && strings.TrimSpace(envUserAgent) != "" {
 		return fmt.Sprintf("%s %s", userAgent, envUserAgent)
 	}
 	return userAgent
+}
+
+// Validate validates that all capabilities in the list are valid v0/v1
+// capabilities and that they have proper arguments.
+func Validate(l *List) error {
+	for _, c := range l.All() {
+		values := l.Get(c)
+		if err := validateCapability(c, values); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCapability(c Capability, values []string) error {
+	if err := validateNoEmptyArgs(values); err != nil {
+		return err
+	}
+
+	if !isKnown(c) {
+		return fmt.Errorf("unknown capability: %s", c)
+	}
+
+	if requiresArgument(c) && len(values) == 0 {
+		return ErrArgumentsRequired
+	}
+
+	if !requiresArgument(c) && len(values) != 0 {
+		return ErrArguments
+	}
+
+	if !allowsMultipleArguments(c) && len(values) > 1 {
+		return ErrMultipleArguments
+	}
+
+	if c == SessionID && len(values) == 1 {
+		if err := validateSessionID(values[0]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// isKnown reports whether the capability is a known v0/v1 capability.
+func isKnown(c Capability) bool {
+	switch c {
+	case MultiACK, MultiACKDetailed, NoDone, ThinPack, NoThin, Sideband,
+		Sideband64k, OFSDelta, Agent, Shallow, DeepenSince, DeepenNot,
+		DeepenRelative, NoProgress, IncludeTag, ReportStatus, ReportStatusV2,
+		DeleteRefs, Quiet, Atomic, PushOptions, SymRef, AllowTipSHA1InWant,
+		AllowReachableSHA1InWant, PushCert, Filter, ObjectFormat, SessionID:
+		return true
+	default:
+		return false
+	}
+}
+
+// requiresArgument reports whether the capability requires an argument.
+func requiresArgument(c Capability) bool {
+	switch c {
+	case Agent, PushCert, SymRef, ObjectFormat, SessionID:
+		return true
+	default:
+		return false
+	}
+}
+
+// allowsMultipleArguments reports whether the capability accepts multiple arguments.
+func allowsMultipleArguments(c Capability) bool {
+	switch c {
+	case SymRef:
+		return true
+	default:
+		return false
+	}
+}
+
+// validateNoEmptyArgs validates that no argument is empty.
+func validateNoEmptyArgs(values []string) error {
+	if slices.Contains(values, "") {
+		return ErrEmptyArgument
+	}
+	return nil
+}
+
+// validateSessionID validates that the session ID is not empty and only
+// contains printable ASCII characters except space.
+func validateSessionID(sessionID string) error {
+	if sessionID == "" {
+		return ErrEmptyArgument
+	}
+	if len(sessionID) > pktline.MaxPayloadSize {
+		return fmt.Errorf("session ID is too long: %d bytes", len(sessionID))
+	}
+	if strings.ContainsFunc(sessionID, func(r rune) bool {
+		return r <= 32 || r >= 127 // Non-printable ASCII characters and space
+	}) {
+		return fmt.Errorf("session ID contains invalid characters: %q", sessionID)
+	}
+	return nil
 }

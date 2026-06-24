@@ -62,7 +62,7 @@ func (req *UploadRequest) Encode(w io.Writer) error {
 	// Depth
 	depth := req.Depth
 	if depth.Deepen > 0 && (!depth.DeepenSince.IsZero() || len(depth.DeepenNot) > 0) {
-		return fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
+		return ErrDeepenMutuallyExclusive
 	}
 	if depth.Deepen > 0 {
 		if _, err := pktline.Writef(w, "deepen %d\n", depth.Deepen); err != nil {

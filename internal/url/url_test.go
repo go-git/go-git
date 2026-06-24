@@ -1,6 +1,7 @@
 package url
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -101,5 +102,49 @@ func (s *URLSuite) TestFindScpLikeComponents() {
 		s.Equal(tc.host, host, tc.url)
 		s.Equal(tc.port, port, tc.url)
 		s.Equal(tc.path, path, tc.url)
+	}
+}
+
+func (s *URLSuite) TestMatchesScpLikeRejectsLocalPaths() {
+	// Cases that look superficially SCP-like but are actually local
+	// paths per canonical Git's url_is_local_not_ssh — a `/` before
+	// the first `:` means a local path. See
+	// https://github.com/git/git/blob/v2.54.0/connect.c#L710-L716.
+	for _, url := range []string{
+		"/abs/path/with:colon/file",
+		"./relative:path",
+		"./relative/with:colon",
+		"sub/dir:foo",
+	} {
+		s.False(MatchesScpLike(url), url)
+	}
+}
+
+func (s *URLSuite) TestMatchesScpLikeWindowsDrivePrefix() {
+	// On Windows, drive-letter paths (`C:foo`, `C:/foo`, `C:\foo`)
+	// match the SCP regex's host=`C` pattern but are local. Canonical
+	// Git rejects them via has_dos_drive_prefix; we mirror that.
+	if runtime.GOOS != "windows" {
+		s.T().Skip("Windows-only: drive-prefix disambiguation is platform-specific")
+	}
+	for _, url := range []string{
+		"C:foo",
+		"C:/path/to/repo",
+		`C:\path\to\repo`,
+		"d:relative",
+	} {
+		s.False(MatchesScpLike(url), url)
+	}
+}
+
+func (s *URLSuite) TestMatchesScpLikeStillAcceptsRealSCP() {
+	// Regression-guard: the new disambiguation logic must not reject
+	// canonical SCP forms.
+	for _, url := range []string{
+		"git@github.com:james/bond",
+		"user@host.example.com:path/to/repo.git",
+		"host:path",
+	} {
+		s.True(MatchesScpLike(url), url)
 	}
 }

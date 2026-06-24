@@ -29,6 +29,7 @@ func (s *ChangeSuite) SetupSuite() {
 	dotgit, err := s.Fixture.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() { _ = sto.Close() })
 	s.Storer = sto
 }
 
@@ -260,6 +261,7 @@ func (s *ChangeSuite) TestNoFileFilemodes() {
 	dotgit, err := f.DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
 	s.NoError(err)

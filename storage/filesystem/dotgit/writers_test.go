@@ -177,7 +177,6 @@ func TestPackWriterPermissions(t *testing.T) {
 		fs   billy.Filesystem
 	}{
 		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
-		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -220,9 +219,7 @@ func TestPackWriterExistingReadOnly(t *testing.T) {
 		writeRev bool
 	}{
 		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS()), false},
-		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS()), false},
 		{"BoundOS_Rev", osfs.New(t.TempDir(), osfs.WithBoundOS()), true},
-		{"ChrootOS_Rev", osfs.New(t.TempDir(), osfs.WithChrootOS()), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -338,7 +335,6 @@ func TestObjectWriterPermissions(t *testing.T) {
 		fs   billy.Filesystem
 	}{
 		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
-		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

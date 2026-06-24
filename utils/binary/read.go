@@ -4,9 +4,18 @@ package binary
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
+	"math"
+	"sync"
 )
+
+// ErrIntegerOverflow is returned when a Git-format variable-width integer
+// would not fit into an int64 because the input declares more continuation
+// bytes than the type can hold.
+var ErrIntegerOverflow = errors.New("variable-width integer overflow")
 
 // Read reads structured binary data from r into data. Bytes are read and
 // decoded in BigEndian order
@@ -89,6 +98,14 @@ func ReadVariableWidthInt(r io.Reader) (int64, error) {
 
 	v := int64(c & maskLength)
 	for c&maskContinue > 0 {
+		// Reject input that, after the v++ and shift below, would
+		// not fit in an int64. With v < (MaxInt64-127)>>7, the
+		// post-increment v is at most (MaxInt64-127)>>7 and the
+		// final (v << 7) + (c & 0x7F) stays within int64.
+		if v >= (math.MaxInt64-int64(maskLength))>>lengthBits {
+			return 0, ErrIntegerOverflow
+		}
+
 		v++
 		if err := Read(r, &c); err != nil {
 			return 0, err
@@ -138,21 +155,50 @@ func ReadUint16(r io.Reader) (uint16, error) {
 
 const sniffLen = 8000
 
+// sniffPool reuses sniff-window buffers across IsBinary calls so the hot diff
+// path (one call per file, per side) does not allocate one per invocation.
+var sniffPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, sniffLen)
+		return &b
+	},
+}
+
 // IsBinary detects if data is a binary value based on:
 // http://git.kernel.org/cgit/git/git.git/tree/xdiff-interface.c?id=HEAD#n198
 func IsBinary(r io.Reader) (bool, error) {
-	reader := bufio.NewReader(r)
-	for range sniffLen {
-		b, err := reader.ReadByte()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return false, err
+	// Scan up to sniffLen bytes for a NUL, reading in chunks and checking each
+	// with bytes.IndexByte. Returning as soon as a NUL is found preserves the
+	// early-exit of the previous byte-at-a-time loop — a binary blob with an
+	// early NUL is not forced to read (or block on) the rest of the window —
+	// while bytes.IndexByte avoids that loop's per-byte overhead. The buffer
+	// comes from a pool, so there is no per-call allocation.
+	bufp := sniffPool.Get().(*[]byte)
+	defer sniffPool.Put(bufp)
+	buf := *bufp
+
+	for remaining := sniffLen; remaining > 0; {
+		chunk := buf
+		if len(chunk) > remaining {
+			chunk = chunk[:remaining]
 		}
 
-		if b == byte(0) {
+		n, err := r.Read(chunk)
+		if bytes.IndexByte(chunk[:n], 0) >= 0 {
 			return true, nil
+		}
+		remaining -= n
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return false, nil
+			}
+			return false, err
+		}
+		if n == 0 {
+			// A compliant io.Reader should not return (0, nil); treat it as
+			// "no more data" rather than spinning.
+			return false, nil
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 )
@@ -58,15 +59,24 @@ type Index struct {
 	ModTime time.Time
 }
 
-// Add creates a new Entry and returns it. The caller should first check that
-// another entry with the same path does not exist.
-func (i *Index) Add(path string) *Entry {
+// Add creates a new Entry and returns it. The caller should first check
+// that another entry with the same path does not exist.
+//
+// The path is validated against pathutil.ValidTreePath: the index feeds
+// future trees, so a name that the tree-side gates would reject must
+// not enter the index in the first place. Mirrors the FindEntry /
+// TreeWalker / TreeEntryFile chokepoints on the read side.
+func (i *Index) Add(path string) (*Entry, error) {
+	if err := pathutil.ValidTreePath(path); err != nil {
+		return nil, err
+	}
+
 	e := &Entry{
 		Name: filepath.ToSlash(path),
 	}
 
 	i.Entries = append(i.Entries, e)
-	return e
+	return e, nil
 }
 
 // Entry returns the entry that match the given path, if any.

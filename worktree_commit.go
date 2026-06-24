@@ -78,7 +78,7 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 	}
 
 	h := &buildTreeHelper{
-		fs: w.Filesystem,
+		fs: w.filesystem,
 		s:  w.r.Storer,
 	}
 
@@ -162,11 +162,15 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				if err != nil {
 					return err
 				}
+				if to == nil {
+					continue
+				}
 				content, err := to.Contents()
 				if err != nil {
 					return err
 				}
-				dstFile, err := w.Filesystem.Create(to.Name)
+				name := change.To.Name
+				dstFile, err := w.filesystem.Create(name)
 				if err != nil {
 					return err
 				}
@@ -174,7 +178,7 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				if err != nil {
 					return err
 				}
-				if _, err := w.Add(to.Name); err != nil {
+				if _, err := w.Add(name); err != nil {
 					return err
 				}
 			}
@@ -193,6 +197,11 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 }
 
 func (w *Worktree) autoAddModifiedAndDeleted() error {
+	cfg, err := w.r.Config()
+	if err != nil {
+		return err
+	}
+
 	s, err := w.Status()
 	if err != nil {
 		return err
@@ -208,7 +217,7 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 			continue
 		}
 
-		if _, _, err := w.doAddFile(idx, s, path, nil); err != nil {
+		if _, _, err := w.doAddFile(cfg, idx, s, path, nil); err != nil {
 			return err
 		}
 	}
@@ -308,6 +317,14 @@ func (h *buildTreeHelper) BuildTree(idx *index.Index, _ *CommitOptions) (plumbin
 }
 
 func (h *buildTreeHelper) commitIndexEntry(e *index.Entry) error {
+	// Index entries with a zero hash point at no object — Tree.Encode
+	// (through Tree.Validate) refuses to write them, and the pre-fsck
+	// behavior of #1773 was to accept the entry but never reach a
+	// healthy tree. Skip them here so the resulting tree is well-formed.
+	if e.Hash.IsZero() {
+		return nil
+	}
+
 	parts := strings.Split(e.Name, "/")
 
 	var fullpath string

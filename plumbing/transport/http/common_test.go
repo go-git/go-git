@@ -96,12 +96,13 @@ func TestApplyRedirect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		baseURL   string
-		finalURL  string
-		wantURL   string
-		wantErr   string
-		noRequest bool
+		name             string
+		baseURL          string
+		finalURL         string
+		wantURL          string
+		wantErr          string
+		wantAuthRequired bool
+		noRequest        bool
 	}{
 		{
 			name:      "no redirect",
@@ -157,6 +158,13 @@ func TestApplyRedirect(t *testing.T) {
 			finalURL: "https://example.com/repo.git",
 			wantErr:  "does not end with",
 		},
+		{
+			name:             "azure devops _signin redirect is auth required",
+			baseURL:          "https://dev.azure.com/org/project/_git/repo",
+			finalURL:         "https://dev.azure.com/org/_signin",
+			wantErr:          "redirect to",
+			wantAuthRequired: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +185,10 @@ func TestApplyRedirect(t *testing.T) {
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
+				if tt.wantAuthRequired {
+					assert.True(t, errors.Is(err, transport.ErrAuthenticationRequired),
+						"expected error to wrap transport.ErrAuthenticationRequired")
+				}
 				return
 			}
 

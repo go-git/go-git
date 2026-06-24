@@ -8,7 +8,9 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -26,6 +28,7 @@ func AdvertiseRefs(
 	w io.Writer,
 	service string,
 	smart bool,
+	version protocol.Version,
 ) error {
 	switch service {
 	case UploadPackService, ReceivePackService:
@@ -75,6 +78,11 @@ func AdvertiseRefs(
 		return err
 	}
 
+	// Validate capabilities before sending the response.
+	if err := capability.Validate(&ar.Capabilities); err != nil {
+		return fmt.Errorf("invalid capabilities: %w", err)
+	}
+
 	if smart {
 		smartReply := packp.SmartReply{
 			Service: service,
@@ -85,7 +93,63 @@ func AdvertiseRefs(
 		}
 	}
 
+	// Emit explicit version packet for V1 (all) and V2 upload-pack.
+	// For HTTP this appears after the "# service=..." smart reply (correct wire order).
+	// For stateful transports (git://, ssh) it appears at the start of the advertisement.
+	if version == protocol.V1 || (version == protocol.V2 && service == UploadPackService) {
+		if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
+			return err
+		}
+	}
+
+	if version == protocol.V2 && service == UploadPackService {
+		return writeV2Advertisement(w, st)
+	}
+
 	return ar.Encode(w)
+}
+
+func writeV2Advertisement(w io.Writer, st storage.Storer) error {
+	// Advertise only the v2 commands/features this server implements; refs are
+	// not listed here (clients retrieve them via ls-refs). Advertising a feature
+	// that isn't handled makes clients request it and then mis-handle the reply.
+	//
+	// The fetch "shallow" feature covers the deepen family; only "deepen <n>"
+	// is handled today (deepen-since/-not/-relative are rejected, as in v0/v1).
+	//
+	// TODO: advertise these once implemented:
+	//   - ls-refs=unborn       report an unborn HEAD on an empty repository
+	//   - fetch=filter         partial-clone object filters
+	//   - fetch=ref-in-want    want-ref negotiation
+	//   - fetch=sideband-all   sideband for the entire response, not just the packfile
+	//   - fetch=packfile-uris  offload pack data to out-of-band URIs
+	//   - fetch=wait-for-done  negotiate-only fetch (git fetch --negotiate-only)
+	//   - server-option        process client "server-option" lines
+	//   - object-info          object size/type queries without a fetch
+	caps := make([]string, 0, 4)
+	caps = append(
+		caps,
+		"agent="+capability.DefaultAgent(),
+		"ls-refs",
+		"fetch=shallow",
+	)
+
+	// object format
+	var objectformat config.ObjectFormat
+	if cfg, err := st.Config(); err == nil && cfg != nil {
+		objectformat = cfg.Extensions.ObjectFormat
+	}
+	if objectformat == config.UnsetObjectFormat {
+		objectformat = config.DefaultObjectFormat
+	}
+	caps = append(caps, "object-format="+objectformat.String())
+
+	for _, c := range caps {
+		if _, err := pktline.Writef(w, "%s\n", c); err != nil {
+			return err
+		}
+	}
+	return pktline.WriteFlush(w)
 }
 
 func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {

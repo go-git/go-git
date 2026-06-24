@@ -81,6 +81,9 @@ func (s *RevListSuite) SetupTest() {
 	dotgit, err := fixtures.Basic().One().DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() {
+		_ = sto.Close()
+	})
 	s.Storer = sto
 }
 
@@ -92,6 +95,7 @@ func (s *RevListSuite) TestRevListObjects_Submodules() {
 	subDotgit, err := fixtures.ByTag("submodule").One().DotGit()
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	ref, err := storer.ResolveReference(sto, plumbing.HEAD)
 	s.NoError(err)
@@ -158,6 +162,7 @@ func (s *RevListSuite) TestRevListObjectsTagObject() {
 			s.Require().NoError(err)
 			return d
 		}(), cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	expected := map[string]bool{
 		"70846e9a10ef7b41064b40f07713d5b8b9a8fc73": true,
@@ -531,6 +536,7 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaveAncestor() {
 	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 
 	t := s.T()
 	license := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
@@ -610,6 +616,7 @@ func (s *RevListSuite) TestRevListObjects_MissingHaveAncestorIsTolerated() {
 	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 	t := s.T()
 
 	haveTree := testMakeTree(t, sto, []object.TreeEntry{
@@ -644,6 +651,7 @@ func (s *RevListSuite) TestRevListObjects_MissingWantAncestorErrors() {
 	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
 	t := s.T()
 
 	// Unrelated have — no shared ancestry with want, so it cannot
@@ -862,8 +870,13 @@ func benchFixture(b *testing.B) (storer.EncodedObjectStorer, plumbing.Hash, plum
 
 func BenchmarkObjects(b *testing.B) {
 	s, want, have := benchFixture(b)
+	b.Cleanup(func() {
+		if closer, ok := s.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	})
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		_, err := Objects(s, []plumbing.Hash{want}, []plumbing.Hash{have})
 		if err != nil {
 			b.Fatal(err)

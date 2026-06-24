@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -278,9 +277,40 @@ func (c *sshConn) Stderr() io.Reader {
 
 func buildCommand(req *transport.Request) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s '%s'", req.Command, req.URL.Path)
+	b.WriteString(req.Command)
+	b.WriteByte(' ')
+	writeShellQuote(&b, req.URL.Path)
 	for _, arg := range req.Args {
-		fmt.Fprintf(&b, " '%s'", arg)
+		b.WriteByte(' ')
+		writeShellQuote(&b, arg)
 	}
 	return b.String()
+}
+
+// writeShellQuote writes s to b, wrapped in single quotes with
+// embedded single quotes and exclamation marks escaped using the
+// POSIX close-escape-reopen idiom:
+//
+//	' becomes '\''
+//	! becomes '\!'
+//
+// It is a direct port of canonical Git's sq_quote_buf (quote.c).
+// The bang escape keeps the result safe when re-evaluated under
+// csh-derived shells that perform history expansion. The output is
+// safe to pass as a single argument through any POSIX shell and
+// round-trips through git-shell's sq_dequote_to_argv.
+func writeShellQuote(b *strings.Builder, s string) {
+	b.Grow(len(s) + 2)
+	b.WriteByte('\'')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\'' || c == '!' {
+			b.WriteString(`'\`)
+			b.WriteByte(c)
+			b.WriteByte('\'')
+			continue
+		}
+		b.WriteByte(c)
+	}
+	b.WriteByte('\'')
 }

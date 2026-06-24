@@ -10,8 +10,10 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	. "github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -40,6 +42,7 @@ func (s *EncoderAdvancedSuite) TestEncodeDecode() {
 		dotgit, err := f.DotGit()
 		s.Require().NoError(err)
 		storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = storage.Close() }()
 		s.testEncodeDecode(storage, 10)
 	}
 }
@@ -57,6 +60,7 @@ func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression() {
 		dotgit, err := f.DotGit()
 		s.Require().NoError(err)
 		storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+		defer func() { _ = storage.Close() }()
 		s.testEncodeDecode(storage, 0)
 	}
 }
@@ -65,6 +69,17 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	storage storer.Storer,
 	packWindow uint,
 ) {
+	objectFormat := formatcfg.DefaultObjectFormat
+	if cs, ok := storage.(interface {
+		Config() (*config.Config, error)
+	}); ok {
+		cfg, err := cs.Config()
+		s.Require().NoError(err)
+		if cfg.Extensions.ObjectFormat != formatcfg.UnsetObjectFormat {
+			objectFormat = cfg.Extensions.ObjectFormat
+		}
+	}
+
 	objIter, err := storage.IterEncodedObjects(plumbing.AnyObject)
 	s.NoError(err)
 
@@ -101,7 +116,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	s.NoError(err)
 
 	w := new(idxfile.Writer)
-	parser := NewParser(NewScanner(f), WithScannerObservers(w))
+	parser := NewParser(NewScanner(f), WithScannerObservers(w), WithObjectFormat(objectFormat))
 
 	_, err = parser.Parse()
 	s.NoError(err)
@@ -111,7 +126,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	_, err = f.Seek(0, io.SeekStart)
 	s.NoError(err)
 
-	p := NewPackfile(f, WithIdx(index), WithFs(fs))
+	p := NewPackfile(f, WithIdx(index), WithFs(fs), WithObjectIDSize(objectFormat.Size()))
 
 	decodeHash, err := p.ID()
 	s.NoError(err)

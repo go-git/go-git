@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -158,4 +159,19 @@ func TestPerKeyFreezeIsolation(t *testing.T) { //nolint:paralleltest // modifies
 
 	assert.ErrorIs(t, Register(a, func() string { return "ay" }), ErrFrozen)
 	assert.NoError(t, Register(b, func() string { return "by" }))
+}
+
+func TestRegisterRunsValidator(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	resetGlobal()
+
+	wantErr := errors.New("invalid plugin")
+	key := newKeyWithValidator("validated", func(v string) error {
+		if v == "bad" {
+			return wantErr
+		}
+		return nil
+	})
+
+	assert.ErrorIs(t, Register(key, func() string { return "bad" }), wantErr)
+	assert.NoError(t, Register(key, func() string { return "good" }))
 }

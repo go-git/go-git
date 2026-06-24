@@ -25,6 +25,7 @@ func (s *PatchSuite) TestStatsWithSubmodules() {
 	subDotgit, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
 	s.Require().NoError(err)
 	storer := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = storer.Close() }()
 
 	commit, err := GetCommit(storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
 	s.NoError(err)

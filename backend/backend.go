@@ -88,6 +88,11 @@ func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closer, ok := st.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	switch req.Service {
 	case transport.UploadPackService:
@@ -102,6 +107,8 @@ func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 			AdvertiseRefs: req.AdvertiseRefs,
 			StatelessRPC:  req.StatelessRPC,
 		})
+	case transport.UploadArchiveService:
+		return transport.UploadArchive(ctx, st, r, w, &transport.UploadArchiveRequest{})
 	default:
 		return fmt.Errorf("%w: %s", transport.ErrUnsupportedService, req.Service)
 	}

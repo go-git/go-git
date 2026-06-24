@@ -6,10 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
+	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
 	gsync "github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/x/fdpool"
 )
+
+const defaultCloseGracePeriod = time.Second
 
 const (
 	idxHeaderSize = 8 // 4 magic + 4 version
@@ -22,17 +27,9 @@ const (
 )
 
 // ReadAtCloser is the interface required for files used by LazyIndex.
-// It combines random-access reads with sequential read/seek/close.
-// [billy.File] satisfies this interface.
-type ReadAtCloser interface {
-	io.ReaderAt
-	io.ReadCloser
-}
-
-// openFileFunc opens a file for reading. Each call must return a fresh,
-// independently closeable handle. The caller is responsible for closing
-// the returned ReadAtCloser.
-type openFileFunc func() (ReadAtCloser, error)
+// It is an alias for [sharedfile.ReadAtCloser]; both names refer
+// to the same type at compile time.
+type ReadAtCloser = sharedfile.ReadAtCloser
 
 // LazyIndex implements the Index interface by reading directly from
 // .idx and .rev files via ReadAt, without loading all data into memory.
@@ -45,6 +42,7 @@ type openFileFunc func() (ReadAtCloser, error)
 type LazyIndex struct {
 	hashSize int
 	count    int
+	count64  int
 
 	// Section byte offsets within the idx file.
 	fanoutStart int
@@ -53,8 +51,8 @@ type LazyIndex struct {
 	off32Start  int
 	off64Start  int
 
-	idx *sharedFile
-	rev *sharedFile
+	idx *sharedfile.SharedFile
+	rev *sharedfile.SharedFile
 
 	fanout [256]uint32 // cached from idx; small enough to keep in memory
 }
@@ -69,6 +67,29 @@ var _ Index = (*LazyIndex)(nil)
 // are shared across concurrent readers and released automatically when
 // idle.
 func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbing.Hash) (*LazyIndex, error) {
+	return NewLazyIndexWithPool(openIdx, openRev, packHash, nil)
+}
+
+// NewLazyIndexWithPool is like [NewLazyIndex] but registers the
+// idx and rev [sharedfile.SharedFile]s with the given
+// [*fdpool.Pool]. The pool governs LRU eviction across many
+// LazyIndexes so a storage-wide FD budget covers the .idx and
+// .rev descriptors. Pass nil to disable pooling (equivalent to
+// [NewLazyIndex]).
+//
+// When pool is non-nil the [defaultCloseGracePeriod] timer is
+// inert: each FD stays open and registered with the pool until
+// the LRU evicts it (or [LazyIndex.Close] tears it down). When
+// pool is nil the grace timer governs FD lifetime as in
+// [NewLazyIndex].
+//
+// Neither this constructor nor the [Index] methods accept a
+// [context.Context]. Index lookups are pure ReadAt I/O without
+// cancellation hooks, matching the context-free convention of
+// the storage, plumbing/format, and plumbing/storer layers;
+// callers requiring cancellation enforce it at the call-site
+// in the layer above.
+func NewLazyIndexWithPool(openIdx, openRev func() (ReadAtCloser, error), packHash plumbing.Hash, pool *fdpool.Pool) (*LazyIndex, error) {
 	if openIdx == nil {
 		return nil, errors.New("idx opener is nil")
 	}
@@ -77,8 +98,8 @@ func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbi
 	}
 
 	s := &LazyIndex{
-		idx: newSharedFile(openIdx),
-		rev: newSharedFile(openRev),
+		idx: sharedfile.NewWithPool(openIdx, defaultCloseGracePeriod, pool),
+		rev: sharedfile.NewWithPool(openRev, defaultCloseGracePeriod, pool),
 	}
 
 	if err := s.init(packHash); err != nil {
@@ -93,17 +114,17 @@ func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbi
 // sharedFile so the grace period keeps them warm for the first real
 // operation.
 func (s *LazyIndex) init(packHash plumbing.Hash) error {
-	idxRA, err := s.idx.acquire()
+	idxRA, err := s.idx.Acquire()
 	if err != nil {
 		return fmt.Errorf("cannot open idx: %w", err)
 	}
-	defer s.idx.release()
+	defer s.idx.Release()
 
-	revRA, err := s.rev.acquire()
+	revRA, err := s.rev.Acquire()
 	if err != nil {
 		return fmt.Errorf("cannot open rev: %w", err)
 	}
-	defer s.rev.release()
+	defer s.rev.Release()
 
 	var hdr [idxHeaderSize]byte
 	if _, err := idxRA.ReadAt(hdr[:], 0); err != nil {
@@ -157,6 +178,7 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 	if err != nil {
 		return err
 	}
+	s.count64 = n64
 
 	// The pack checksum sits right after the 64-bit offset table.
 	packBuf := make([]byte, s.hashSize)
@@ -179,24 +201,38 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 // Contains reports whether the given hash exists in the index by
 // binary-searching the idx names table.
 func (s *LazyIndex) Contains(h plumbing.Hash) (bool, error) {
-	idx, err := s.idx.acquire()
+	idx, err := s.idx.Acquire()
 	if err != nil {
 		return false, err
 	}
-	defer s.idx.release()
+	defer s.idx.Release()
 
 	_, found, err := s.findHashPos(idx, h)
 	return found, err
 }
 
+// MayContain implements the Index interface. It reports whether the
+// index might contain h, using the cached fanout table loaded at
+// construction time. No I/O, no lock. False is authoritative ("h is
+// not in this pack"); true means call Contains or FindOffset for a
+// definitive answer.
+func (s *LazyIndex) MayContain(h plumbing.Hash) bool {
+	first := int(h.Bytes()[0])
+	var prev uint32
+	if first > 0 {
+		prev = s.fanout[first-1]
+	}
+	return s.fanout[first] > prev
+}
+
 // FindOffset returns the packfile offset for the object with the given hash.
 // It returns plumbing.ErrObjectNotFound if the hash is not in the index.
 func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {
-	idx, err := s.idx.acquire()
+	idx, err := s.idx.Acquire()
 	if err != nil {
 		return 0, err
 	}
-	defer s.idx.release()
+	defer s.idx.Release()
 
 	pos, found, err := s.findHashPos(idx, h)
 	if err != nil {
@@ -217,11 +253,11 @@ func (s *LazyIndex) FindOffset(h plumbing.Hash) (int64, error) {
 // FindCRC32 returns the CRC32 checksum of the object with the given hash.
 // It returns plumbing.ErrObjectNotFound if the hash is not in the index.
 func (s *LazyIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
-	idx, err := s.idx.acquire()
+	idx, err := s.idx.Acquire()
 	if err != nil {
 		return 0, err
 	}
-	defer s.idx.release()
+	defer s.idx.Release()
 
 	pos, found, err := s.findHashPos(idx, h)
 	if err != nil {
@@ -238,17 +274,17 @@ func (s *LazyIndex) FindCRC32(h plumbing.Hash) (uint32, error) {
 // by binary-searching the .rev reverse index.
 // It returns plumbing.ErrObjectNotFound if no object exists at that offset.
 func (s *LazyIndex) FindHash(o int64) (plumbing.Hash, error) {
-	idx, err := s.idx.acquire()
+	idx, err := s.idx.Acquire()
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	defer s.idx.release()
+	defer s.idx.Release()
 
-	rev, err := s.rev.acquire()
+	rev, err := s.rev.Acquire()
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	defer s.rev.release()
+	defer s.rev.Release()
 
 	return s.findHashViaRev(idx, rev, o)
 }
@@ -262,11 +298,81 @@ func (s *LazyIndex) Count() (int64, error) {
 // The caller must call Close on the returned iterator to release the
 // underlying file reference.
 func (s *LazyIndex) Entries() (EntryIter, error) {
-	idx, err := s.idx.acquire()
+	idx, err := s.idx.Acquire()
 	if err != nil {
 		return nil, err
 	}
 	return &scannerEntryIter{s: s, idx: idx}, nil
+}
+
+// EntriesWithPrefix implements the Index interface. It returns an
+// iterator over entries whose hashes start with prefix. When prefix
+// is empty the call is equivalent to Entries; otherwise the
+// iterator visits only the fanout-bounded names-table slice
+// selected by prefix[0] and stops as soon as a name without prefix
+// is read (the names table is sorted by hash).
+//
+// For a multi-byte prefix the matching entries form a contiguous
+// run somewhere within the bucket; binary-search positions the
+// iterator at the start of that run so the linear walk only spans
+// matches. This mirrors upstream Git's for_each_prefixed_object_in_pack
+// which calls bsearch_pack to position before walking forward.
+//
+// The returned iterator holds an acquired reference to the idx
+// SharedFile which is released on Close.
+func (s *LazyIndex) EntriesWithPrefix(prefix []byte) (EntryIter, error) {
+	if len(prefix) == 0 {
+		return s.Entries()
+	}
+	first := int(prefix[0])
+	var lo int
+	if first > 0 {
+		lo = int(s.fanout[first-1])
+	}
+	hi := int(s.fanout[first])
+	if lo >= hi {
+		return &lazyPrefixIter{}, nil
+	}
+	idx, err := s.idx.Acquire()
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the leftmost entry in [lo, hi) whose hash is >= prefix
+	// (padded with zeros to hash size). All matching entries, if
+	// any, start at this position; the iterator's
+	// stop-on-first-mismatch then terminates correctly once the
+	// run ends.
+	target := make([]byte, s.hashSize)
+	copy(target, prefix)
+	var arr [32]byte
+	buf := arr[:s.hashSize]
+	bsLo, bsHi := lo, hi
+	for bsLo < bsHi {
+		mid := (bsLo + bsHi) >> 1
+		nameOff := int64(s.namesStart + mid*s.hashSize)
+		if _, err := idx.ReadAt(buf, nameOff); err != nil {
+			s.idx.Release()
+			return nil, fmt.Errorf("read name at pos %d: %w", mid, err)
+		}
+		if bytes.Compare(buf, target) < 0 {
+			bsLo = mid + 1
+		} else {
+			bsHi = mid
+		}
+	}
+	if bsLo >= hi {
+		s.idx.Release()
+		return &lazyPrefixIter{}, nil
+	}
+
+	return &lazyPrefixIter{
+		s:      s,
+		idx:    idx,
+		prefix: prefix,
+		pos:    bsLo,
+		end:    hi,
+	}, nil
 }
 
 // EntriesByOffset returns an iterator over all index entries sorted by
@@ -276,13 +382,13 @@ func (s *LazyIndex) Entries() (EntryIter, error) {
 // The caller must call Close on the returned iterator to release the
 // underlying file references.
 func (s *LazyIndex) EntriesByOffset() (EntryIter, error) {
-	idx, err := s.idx.acquire()
+	idx, err := s.idx.Acquire()
 	if err != nil {
 		return nil, err
 	}
-	rev, err := s.rev.acquire()
+	rev, err := s.rev.Acquire()
 	if err != nil {
-		s.idx.release()
+		s.idx.Release()
 		return nil, err
 	}
 	return &revEntryIter{s: s, idx: idx, rev: rev}, nil
@@ -293,6 +399,20 @@ func (s *LazyIndex) EntriesByOffset() (EntryIter, error) {
 // the file descriptors close when the last reader is done.
 func (s *LazyIndex) Close() error {
 	return errors.Join(s.idx.Close(), s.rev.Close())
+}
+
+// CloseIdleDescriptors releases the idx and rev file descriptors
+// without disabling the [LazyIndex]. The FDs close inline when no
+// readers are active; otherwise each [sharedfile.SharedFile]
+// latches an immediate close on the next refs==0 transition.
+// In-flight readers complete normally; subsequent operations
+// reopen the FDs on demand and resume normal grace-timer
+// behaviour.
+//
+// Returns the joined error of the inline closes; latched closes
+// that fire later are not reported.
+func (s *LazyIndex) CloseIdleDescriptors() error {
+	return errors.Join(s.idx.ReleaseNow(), s.rev.ReleaseNow())
 }
 
 // --- internal helpers; all take an io.ReaderAt so the caller controls
@@ -349,6 +469,10 @@ func (s *LazyIndex) offset(idx io.ReaderAt, pos int) (uint64, error) {
 	off32 := binary.BigEndian.Uint32(buf[:])
 	if uint64(off32)&is64bitsMask != 0 {
 		loIndex := int(uint64(off32) & ^is64bitsMask)
+		if loIndex >= s.count64 {
+			return 0, fmt.Errorf("%w: offset64 index %d out of range (have %d entries)",
+				ErrMalformedIdxFile, loIndex, s.count64)
+		}
 		var buf64 [off64Size]byte
 		off64Pos := int64(s.off64Start + loIndex*off64Size)
 		if _, err := idx.ReadAt(buf64[:], off64Pos); err != nil {
@@ -479,7 +603,7 @@ type scannerEntryIter struct {
 
 func (it *scannerEntryIter) Next() (*Entry, error) {
 	if it.idx == nil {
-		return nil, errSharedFileClosed
+		return nil, sharedfile.ErrClosed
 	}
 	if it.pos >= it.s.count {
 		return nil, io.EOF
@@ -496,7 +620,7 @@ func (it *scannerEntryIter) Next() (*Entry, error) {
 func (it *scannerEntryIter) Close() error {
 	it.pos = it.s.count
 	if it.idx != nil {
-		it.s.idx.release()
+		it.s.idx.Release()
 		it.idx = nil
 	}
 	return nil
@@ -514,7 +638,7 @@ type revEntryIter struct {
 
 func (it *revEntryIter) Next() (*Entry, error) {
 	if it.idx == nil || it.rev == nil {
-		return nil, errSharedFileClosed
+		return nil, sharedfile.ErrClosed
 	}
 	if it.pos >= it.s.count {
 		return nil, io.EOF
@@ -544,12 +668,61 @@ func (it *revEntryIter) Next() (*Entry, error) {
 func (it *revEntryIter) Close() error {
 	it.pos = it.s.count
 	if it.idx != nil {
-		it.s.idx.release()
+		it.s.idx.Release()
 		it.idx = nil
 	}
 	if it.rev != nil {
-		it.s.rev.release()
+		it.s.rev.Release()
 		it.rev = nil
+	}
+	return nil
+}
+
+// lazyPrefixIter walks the LazyIndex names table from pos to end,
+// yielding entries whose hash starts with prefix. It stops the run
+// when a hash without the prefix is read (the table is sorted). It
+// holds an acquired reference to the idx SharedFile released on
+// Close.
+//
+// Lifetime: Next may release the iterator's SharedFile reference
+// eagerly when the first prefix-mismatched entry is observed —
+// further matches are impossible in the sorted table, so holding
+// the reference would only add pool pressure. Callers should
+// defer Close unconditionally; it is idempotent and the eager
+// release is purely an optimisation.
+type lazyPrefixIter struct {
+	s      *LazyIndex
+	idx    io.ReaderAt
+	prefix []byte
+	pos    int
+	end    int
+}
+
+func (it *lazyPrefixIter) Next() (*Entry, error) {
+	if it.idx == nil {
+		return nil, io.EOF
+	}
+	if it.pos >= it.end {
+		return nil, io.EOF
+	}
+	e, err := it.s.entryAt(it.idx, it.pos)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.HasPrefix(e.Hash.Bytes(), it.prefix) {
+		// Past the prefix in the sorted names table; close out so the
+		// SharedFile reference is released eagerly.
+		_ = it.Close()
+		return nil, io.EOF
+	}
+	it.pos++
+	return e, nil
+}
+
+func (it *lazyPrefixIter) Close() error {
+	if it.idx != nil {
+		it.s.idx.Release()
+		it.idx = nil
 	}
 	return nil
 }

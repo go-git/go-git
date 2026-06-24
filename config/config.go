@@ -86,6 +86,16 @@ type Config struct {
 		FileMode bool
 		// HooksPath is the path to look for hooks instead of $GIT_DIR/hooks.
 		HooksPath string
+		// ProtectNTFS controls whether NTFS-specific path protections are
+		// applied (e.g. rejecting .git trailing spaces/periods, alternate
+		// data streams, 8.3 short names). When unset, defaults to true on
+		// Windows.
+		ProtectNTFS OptBool
+		// ProtectHFS controls whether HFS+-specific path protections are
+		// applied (e.g. rejecting .git with Unicode zero-width or
+		// directional characters that HFS+ would normalize away).
+		// When unset, defaults to true on macOS.
+		ProtectHFS OptBool
 	}
 
 	User user
@@ -154,6 +164,13 @@ type Config struct {
 		DefaultBranch string
 	}
 
+	UploadArchive struct {
+		// AllowUnreachable when true allows clients to request archives
+		// using arbitrary SHA-1 expressions. When false (the default),
+		// only direct ref names are allowed.
+		AllowUnreachable OptBool
+	}
+
 	Extensions struct {
 		// ObjectFormat specifies the hash algorithm to use. The
 		// acceptable values are sha1 and sha256. If not specified,
@@ -193,8 +210,8 @@ type Config struct {
 	// equal Branch.Name
 	Branches map[string]*Branch
 	// URLs list of url rewrite rules, if repo url starts with URL.InsteadOf value, it will be replaced with the
-	// key instead.
-	URLs map[string]*URL
+	// URL.Name instead. Ordered by appearance in config file.
+	URLs []*URL
 	// Raw contains the raw information of a config file. The main goal is
 	// preserve the parsed information from the original format, to avoid
 	// dropping unsupported fields.
@@ -309,7 +326,7 @@ func NewConfig() *Config {
 		Remotes:    make(map[string]*RemoteConfig),
 		Submodules: make(map[string]*Submodule),
 		Branches:   make(map[string]*Branch),
-		URLs:       make(map[string]*URL),
+		URLs:       make([]*URL, 0),
 		Raw:        format.New(),
 	}
 
@@ -461,11 +478,15 @@ const (
 	autoCRLFKey                = "autocrlf"
 	fileModeKey                = "filemode"
 	hooksPathKey               = "hooksPath"
+	protectNTFSKey             = "protectNTFS"
+	protectHFSKey              = "protectHFS"
 	indexSection               = "index"
 	skipHashKey                = "skipHash"
 	formatKey                  = "format"
 	allowedSignersFileKey      = "allowedSignersFile"
 	gpgSignKey                 = "gpgSign"
+	uploadArchiveSection       = "uploadArchive"
+	allowUnreachableKey        = "allowUnreachable"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -492,6 +513,7 @@ func (c *Config) Unmarshal(b []byte) error {
 	c.unmarshalUser()
 	c.unmarshalGPG()
 	c.unmarshalInit()
+	c.unmarshalUploadArchive()
 	if err := c.unmarshalPack(); err != nil {
 		return err
 	}
@@ -522,6 +544,14 @@ func (c *Config) unmarshalCore() {
 	c.Core.CommentChar = s.Options.Get(commentCharKey)
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
 	c.Core.HooksPath = s.Options.Get(hooksPathKey)
+
+	if parsed := parseConfigBool(s.Options.Get(protectNTFSKey)); parsed.IsSet() {
+		c.Core.ProtectNTFS = parsed
+	}
+
+	if parsed := parseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
+		c.Core.ProtectHFS = parsed
+	}
 
 	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
 		c.Core.FileMode = false
@@ -636,13 +666,14 @@ func (c *Config) unmarshalRemotes() error {
 
 func (c *Config) unmarshalURLs() error {
 	s := c.Raw.Section(urlSection)
+	c.URLs = make([]*URL, 0, len(s.Subsections))
 	for _, sub := range s.Subsections {
 		r := &URL{}
 		if err := r.unmarshal(sub); err != nil {
 			return err
 		}
 
-		c.URLs[r.Name] = r
+		c.URLs = append(c.URLs, r)
 	}
 
 	return nil
@@ -654,7 +685,8 @@ func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
 		m := &Submodule{}
 		m.unmarshal(sub)
 
-		if errors.Is(m.Validate(), ErrModuleBadPath) {
+		if err := m.Validate(); errors.Is(err, ErrModuleBadPath) ||
+			errors.Is(err, ErrModuleBadName) {
 			continue
 		}
 
@@ -707,6 +739,14 @@ func (c *Config) unmarshalInit() {
 	c.Init.DefaultBranch = s.Options.Get(defaultBranchKey)
 }
 
+func (c *Config) unmarshalUploadArchive() {
+	s := c.Raw.Section(uploadArchiveSection)
+	v, err := strconv.ParseBool(s.Options.Get(allowUnreachableKey))
+	if err == nil {
+		c.UploadArchive.AllowUnreachable = NewOptBool(v)
+	}
+}
+
 // Marshal returns Config encoded as a git-config file.
 //
 // This call populates the field Raw with the current values of
@@ -730,6 +770,7 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalURLs()
 	c.marshalProtocol()
 	c.marshalInit()
+	c.marshalUploadArchive()
 
 	buf := bytes.NewBuffer(nil)
 	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
@@ -758,6 +799,14 @@ func (c *Config) marshalCore() {
 
 	if c.Core.HooksPath != "" {
 		s.SetOption(hooksPathKey, c.Core.HooksPath)
+	}
+
+	if c.Core.ProtectNTFS.IsSet() {
+		s.SetOption(protectNTFSKey, c.Core.ProtectNTFS.FormatBool())
+	}
+
+	if c.Core.ProtectHFS.IsSet() {
+		s.SetOption(protectHFSKey, c.Core.ProtectHFS.FormatBool())
 	}
 }
 
@@ -963,6 +1012,13 @@ func (c *Config) marshalInit() {
 	}
 }
 
+func (c *Config) marshalUploadArchive() {
+	if c.UploadArchive.AllowUnreachable.IsSet() {
+		s := c.Raw.Section(uploadArchiveSection)
+		s.SetOption(allowUnreachableKey, c.UploadArchive.AllowUnreachable.FormatBool())
+	}
+}
+
 // RemoteConfig contains the configuration for a given remote repository.
 type RemoteConfig struct {
 	// Name of the remote
@@ -1071,14 +1127,14 @@ func (c *RemoteConfig) IsFirstURLLocal() bool {
 	return url.IsLocalEndpoint(c.URLs[0])
 }
 
-func (c *RemoteConfig) applyURLRules(urlRules map[string]*URL) {
+func (c *RemoteConfig) applyURLRules(urlRules []*URL) {
 	// save original urls
 	originalURLs := make([]string, len(c.URLs))
 	copy(originalURLs, c.URLs)
 
 	for i, url := range c.URLs {
-		if matchingURLRule := findLongestInsteadOfMatch(url, urlRules); matchingURLRule != nil {
-			c.URLs[i] = matchingURLRule.ApplyInsteadOf(c.URLs[i])
+		if rewrittenURL, matched := applyLongestInsteadOfMatch(url, urlRules); matched {
+			c.URLs[i] = rewrittenURL
 			c.insteadOfRulesApplied = true
 		}
 	}

@@ -1,9 +1,12 @@
 package git
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -33,7 +36,7 @@ func startDaemon(t *testing.T, base string, port int) {
 	t.Helper()
 	daemon := exec.Command("git", "daemon",
 		fmt.Sprintf("--base-path=%s", base),
-		"--export-all", "--enable=receive-pack", "--reuseaddr",
+		"--export-all", "--enable=receive-pack", "--enable=upload-archive", "--reuseaddr",
 		fmt.Sprintf("--port=%d", port),
 		"--max-connections=1", "--listen=127.0.0.1",
 	)
@@ -138,4 +141,53 @@ func TestGitTransport_ConnectFail(t *testing.T) {
 
 	_, err := tr.Connect(context.Background(), req)
 	require.Error(t, err)
+}
+
+func TestGitTransport_Archive(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip(windowsSkipMsg)
+	}
+
+	port := freePort(t)
+	base := filepath.Join(t.TempDir(), fmt.Sprintf("git-proto-%d", port))
+	_ = test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
+	startDaemon(t, base, port)
+
+	tr := NewTransport(Options{})
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL: &url.URL{
+			Scheme: "git",
+			Host:   fmt.Sprintf("localhost:%d", port),
+			Path:   "/basic.git",
+		},
+		Command: transport.UploadArchiveService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	a, ok := session.(transport.Archiver)
+	require.True(t, ok, "session should implement Archiver")
+
+	rc, err := a.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "master"},
+	})
+	require.NoError(t, err)
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Greater(t, len(data), 0)
+
+	tarR := tar.NewReader(bytes.NewReader(data))
+	var names []string
+	for {
+		hdr, err := tarR.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, hdr.Name)
+	}
+	assert.Greater(t, len(names), 0)
 }

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -29,7 +30,19 @@ var (
 	ErrDirectoryNotFound = errors.New("directory not found")
 	ErrEntryNotFound     = errors.New("entry not found")
 	ErrEntriesNotSorted  = errors.New("entries in tree are not sorted")
+	ErrMalformedTree     = errors.New("malformed tree")
+	ErrDuplicateEntry    = errors.New("duplicate entry in tree")
+	ErrInvalidTree       = errors.New("invalid tree")
 )
+
+// maxTreeEntryNameLen mirrors the default of upstream Git's
+// `fsck.treeEntryLargeName.maxTreeEntryLen` configuration (fsck.c
+// in v2.54.0[1]). 4096 bytes is well above any realistic tree-entry
+// name; entries longer than this almost always indicate a malformed
+// or hand-crafted tree object.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/fsck.c#L26
+const maxTreeEntryNameLen = 4096
 
 // Tree is basically like a directory - it references a bunch of other trees
 // and/or blobs (i.e. files and sub-directories)
@@ -37,9 +50,9 @@ type Tree struct {
 	Entries []TreeEntry
 	Hash    plumbing.Hash
 
-	s storer.EncodedObjectStorer
-	m map[string]*TreeEntry
-	t map[string]*Tree // tree path cache
+	s             storer.EncodedObjectStorer
+	t             map[string]*Tree // tree path cache
+	entriesSorted bool
 }
 
 // GetTree gets a tree from an object storer and decodes it.
@@ -117,7 +130,16 @@ func (t *Tree) Tree(path string) (*Tree, error) {
 }
 
 // TreeEntryFile returns the *File for a given *TreeEntry.
+//
+// The entry's name is validated against pathutil.ValidTreePath for
+// the same reason FindEntry validates: TreeEntryFile is a boundary
+// where attacker-controlled tree data leaves the trusted store as a
+// *File whose Name a caller can hand to filesystem ops.
 func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
+	if err := pathutil.ValidTreePath(e.Name); err != nil {
+		return nil, err
+	}
+
 	blob, err := GetBlob(t.s, e.Hash)
 	if err != nil {
 		return nil, err
@@ -127,7 +149,16 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 }
 
 // FindEntry search a TreeEntry in this tree or any subtree.
+//
+// The lookup path is validated against pathutil.ValidTreePath to
+// prevent attacker-controlled tree contents from leaking past this
+// boundary as `.git`-shaped or path-traversal-shaped names. Callers
+// that legitimately need to look up unsafe paths should walk the
+// tree manually.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
+	if err := pathutil.ValidTreePath(path); err != nil {
+		return nil, err
+	}
 	if t.t == nil {
 		t.t = make(map[string]*Tree)
 	}
@@ -182,16 +213,43 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
-	if t.m == nil {
-		t.buildMap()
-	}
-
-	entry, ok := t.m[baseName]
-	if !ok {
+	if t.entriesSorted {
+		if entry := t.searchEntry(baseName); entry != nil {
+			return entry, nil
+		}
 		return nil, ErrEntryNotFound
 	}
 
-	return entry, nil
+	pastName := baseName + "/"
+	for i := range t.Entries {
+		entry := &t.Entries[i]
+		if entry.Name == baseName {
+			return entry, nil
+		}
+		if treeEntrySortName(entry) > pastName {
+			break
+		}
+	}
+
+	return nil, ErrEntryNotFound
+}
+
+func (t *Tree) searchEntry(baseName string) *TreeEntry {
+	if i := t.searchEntryIndex(baseName); i < len(t.Entries) && t.Entries[i].Name == baseName {
+		return &t.Entries[i]
+	}
+
+	if i := t.searchEntryIndex(baseName + "/"); i < len(t.Entries) && t.Entries[i].Name == baseName {
+		return &t.Entries[i]
+	}
+
+	return nil
+}
+
+func (t *Tree) searchEntryIndex(name string) int {
+	return sort.Search(len(t.Entries), func(i int) bool {
+		return treeEntrySortName(&t.Entries[i]) >= name
+	})
 }
 
 // Files returns a FileIter allowing to iterate over the Tree
@@ -212,19 +270,24 @@ func (t *Tree) Type() plumbing.ObjectType {
 	return plumbing.TreeObject
 }
 
+func (t *Tree) reset() {
+	storer := t.s
+	*t = Tree{s: storer}
+}
+
 // Decode transform an plumbing.EncodedObject into a Tree struct
 func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Type() != plumbing.TreeObject {
 		return ErrUnsupportedObject
 	}
 
+	t.reset()
 	t.Hash = o.Hash()
+	// assume tree is sorted as a valid tree should always be sorted.
+	t.entriesSorted = true
 	if o.Size() == 0 {
 		return nil
 	}
-
-	t.Entries = nil
-	t.m = nil
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -235,10 +298,14 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
+	var prevSortName string
 	for {
 		str, err := r.ReadString(' ')
 		if err != nil {
 			if err == io.EOF {
+				if len(str) != 0 {
+					return fmt.Errorf("%w: missing mode terminator", ErrMalformedTree)
+				}
 				break
 			}
 
@@ -248,26 +315,42 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 		mode, err := filemode.New(str)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: malformed mode", ErrMalformedTree)
 		}
+		mode = canonicalTreeMode(mode)
 
 		name, err := r.ReadString(0)
-		if err != nil && err != io.EOF {
+		if err != nil {
+			if err == io.EOF {
+				return fmt.Errorf("%w: missing filename terminator", ErrMalformedTree)
+			}
 			return err
+		}
+		if len(name) == 1 {
+			return fmt.Errorf("%w: empty filename", ErrMalformedTree)
 		}
 
 		var hash plumbing.Hash
 		hash.ResetBySize(t.Hash.Size())
 		if _, err = hash.ReadFrom(r); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return fmt.Errorf("%w: truncated object id", ErrMalformedTree)
+			}
 			return err
 		}
 
 		baseName := name[:len(name)-1]
-		t.Entries = append(t.Entries, TreeEntry{
+		entry := TreeEntry{
 			Hash: hash,
 			Mode: mode,
 			Name: baseName,
-		})
+		}
+		sortName := treeEntrySortName(&entry)
+		if len(t.Entries) != 0 && prevSortName > sortName {
+			t.entriesSorted = false
+		}
+		prevSortName = sortName
+		t.Entries = append(t.Entries, entry)
 	}
 
 	return nil
@@ -281,24 +364,52 @@ func (s TreeEntrySorter) Len() int {
 }
 
 func (s TreeEntrySorter) Less(i, j int) bool {
-	name1 := s[i].Name
-	name2 := s[j].Name
-	if s[i].Mode == filemode.Dir {
-		name1 += "/"
-	}
-	if s[j].Mode == filemode.Dir {
-		name2 += "/"
-	}
-	return name1 < name2
+	return treeEntrySortName(&s[i]) < treeEntrySortName(&s[j])
 }
 
 func (s TreeEntrySorter) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
+// Git compares tree entries as if directory names had a trailing slash.
+func treeEntrySortName(e *TreeEntry) string {
+	if e.Mode == filemode.Dir {
+		return e.Name + "/"
+	}
+	return e.Name
+}
+
+func canonicalTreeMode(mode filemode.FileMode) filemode.FileMode {
+	switch mode & 0o170000 {
+	case 0o040000:
+		return filemode.Dir
+	case 0o100000:
+		if mode&0o111 != 0 {
+			return filemode.Executable
+		}
+		return filemode.Regular
+	case 0o120000:
+		return filemode.Symlink
+	default:
+		return filemode.Submodule
+	}
+}
+
 // Encode transforms a Tree into a plumbing.EncodedObject.
-// The tree entries must be sorted by name.
+//
+// The tree is run through Tree.Validate before any bytes are written,
+// so the encoder cannot produce a tree object containing components
+// such as ".git", "..", control characters, HFS+/NTFS variants of
+// ".git", null entry hashes, oversize names, mis-sorted or duplicate
+// entries, or symlinks disguised as ".gitmodules"/".gitattributes"/
+// ".gitignore"/".mailmap". Callers that need to emit such bytes for
+// testing or recovery should write them directly via
+// plumbing.EncodedObject rather than through this method.
 func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
+	if err := t.Validate(); err != nil {
+		return err
+	}
+
 	o.SetType(plumbing.TreeObject)
 	w, err := o.Writer()
 	if err != nil {
@@ -307,14 +418,7 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 
 	defer ioutil.CheckClose(w, &err)
 
-	if !sort.IsSorted(TreeEntrySorter(t.Entries)) {
-		return ErrEntriesNotSorted
-	}
-
 	for _, entry := range t.Entries {
-		if strings.IndexByte(entry.Name, 0) != -1 {
-			return fmt.Errorf("malformed filename %q", entry.Name)
-		}
 		if _, err = fmt.Fprintf(w, "%o %s", entry.Mode, entry.Name); err != nil {
 			return err
 		}
@@ -331,11 +435,110 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 	return err
 }
 
-func (t *Tree) buildMap() {
-	t.m = make(map[string]*TreeEntry)
-	for i := 0; i < len(t.Entries); i++ {
-		t.m[t.Entries[i].Name] = &t.Entries[i]
+// Validate reports whether the tree object obeys the same structural
+// rules upstream Git's fsck_tree[1] enforces. It is the read-side
+// counterpart to Tree.Encode's producer-side gate: Decode is permissive
+// so that inspection and recovery tools can read trees with unusual
+// entries, and callers that want fsck-shaped reporting call Validate.
+//
+// The returned error wraps ErrInvalidTree (and, where applicable,
+// ErrEntriesNotSorted, ErrDuplicateEntry, or pathutil.ErrInvalidPath)
+// so callers can match either the umbrella or specific rule with
+// errors.Is. When multiple rules are violated they are reported
+// together via errors.Join.
+//
+// Two fsck_tree warnings — zero-padded modes and the non-canonical
+// 0100664 bits — are not surfaced here. Both rely on inspecting the
+// original octal string from the wire, which canonicalTreeMode
+// discards during Decode. Detecting them would require a parallel
+// raw-mode field on TreeEntry; the structural rules below are the
+// load-bearing ones for refusing malformed trees.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/fsck.c#L616-L800
+func (t *Tree) Validate() error {
+	var errs []error
+	add := func(err error) {
+		errs = append(errs, fmt.Errorf("%w: %w", ErrInvalidTree, err))
 	}
+
+	seen := make(map[string]struct{}, len(t.Entries))
+	var prevSortName string
+
+	for i := range t.Entries {
+		e := &t.Entries[i]
+
+		if e.Hash.IsZero() {
+			add(fmt.Errorf("entry %q points to null hash", e.Name))
+		}
+
+		switch {
+		case e.Name == "":
+			add(errors.New("contains empty entry name"))
+		case strings.ContainsRune(e.Name, '/'):
+			add(fmt.Errorf("entry name %q contains a slash", e.Name))
+		default:
+			if err := pathutil.ValidTreePath(e.Name); err != nil {
+				add(err)
+			}
+			if _, dup := seen[e.Name]; dup {
+				add(fmt.Errorf("%w: %q", ErrDuplicateEntry, e.Name))
+			}
+			seen[e.Name] = struct{}{}
+
+			if len(e.Name) > maxTreeEntryNameLen {
+				add(fmt.Errorf("entry name length %d exceeds %d", len(e.Name), maxTreeEntryNameLen))
+			}
+		}
+
+		// Mode validation against the canonical set. Decode normalises
+		// the wire bytes via canonicalTreeMode, so this rule mainly
+		// catches programmatically-built trees with garbage modes;
+		// the zero-padded-mode and non-canonical-bit checks fsck_tree
+		// runs against the raw wire form are out of reach without
+		// retaining the original octal string.
+		if !isValidTreeMode(e.Mode) {
+			add(fmt.Errorf("entry %q has bad mode %o", e.Name, e.Mode))
+		}
+
+		// Symlink-disguised metadata files. Mirrors the four FSCK_MSG_*
+		// _SYMLINK reports in fsck_tree.
+		if e.Mode == filemode.Symlink {
+			switch {
+			case pathutil.IsHFSDotGitmodules(e.Name) || pathutil.IsNTFSDotGitmodules(e.Name):
+				add(errors.New(".gitmodules is a symlink"))
+			case pathutil.IsHFSDotGitattributes(e.Name) || pathutil.IsNTFSDotGitattributes(e.Name):
+				add(errors.New(".gitattributes is a symlink"))
+			case pathutil.IsHFSDotGitignore(e.Name) || pathutil.IsNTFSDotGitignore(e.Name):
+				add(errors.New(".gitignore is a symlink"))
+			case pathutil.IsHFSDotMailmap(e.Name) || pathutil.IsNTFSDotMailmap(e.Name):
+				add(errors.New(".mailmap is a symlink"))
+			}
+		}
+
+		sortName := treeEntrySortName(e)
+		if i > 0 && prevSortName > sortName {
+			add(ErrEntriesNotSorted)
+		}
+		prevSortName = sortName
+	}
+
+	return errors.Join(errs...)
+}
+
+// isValidTreeMode reports whether mode is one of the canonical tree
+// modes upstream Git accepts in fsck_tree, including the non-canonical
+// 0100664 that upstream tolerates outside --strict mode.
+func isValidTreeMode(mode filemode.FileMode) bool {
+	switch mode {
+	case filemode.Regular,
+		filemode.Executable,
+		filemode.Symlink,
+		filemode.Dir,
+		filemode.Submodule,
+		filemode.Deprecated:
+		return true
+	}
+	return false
 }
 
 // Diff returns a list of changes between this tree and the provided one
@@ -421,6 +624,14 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // and subtrees are included. After the last object has been returned further
 // calls to Next() will return io.EOF.
 //
+// Each entry's name is validated against pathutil.ValidTreePath as it
+// surfaces, so callers that funnel the returned name into filesystem
+// or archive output can trust it is free of `.git`-shaped components,
+// HFS+/NTFS variants, Windows reserved names, and traversal sequences.
+// A malformed entry stops the walk with the validator's error;
+// inspection-only callers that need to enumerate raw, unvalidated
+// names can read Tree.Entries directly.
+//
 // In the current implementation any objects which cannot be found in the
 // underlying repository will be skipped automatically. It is possible that this
 // may change in future versions.
@@ -455,6 +666,10 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 
 		if w.seen[entry.Hash] {
 			continue
+		}
+
+		if err := pathutil.ValidTreePath(entry.Name); err != nil {
+			return name, entry, err
 		}
 
 		if entry.Mode == filemode.Dir {

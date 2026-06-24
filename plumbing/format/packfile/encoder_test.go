@@ -125,6 +125,69 @@ func (s *EncoderSuite) TestDecodeEncodeWithCycleOFS() {
 	s.deltaOverDeltaCyclicTest()
 }
 
+// fixedSelector is a test ObjectSelector that returns a fixed
+// []*ObjectToPack from ObjectsToPack, regardless of its arguments.
+// Mirrors the passthrough pattern callers use after running
+// DeltaSelector.ObjectsToPack ahead of time and feeding the result
+// back via WithObjectSelector.
+type fixedSelector struct{ objects []*ObjectToPack }
+
+func (f fixedSelector) ObjectsToPack(_ []plumbing.Hash, _ uint) ([]*ObjectToPack, error) {
+	return f.objects, nil
+}
+
+// TestWithObjectSelectorMatchesDefault asserts that running delta
+// selection externally and feeding the result back via
+// WithObjectSelector produces a byte-identical pack to the default
+// Encode path. This is the contract callers streaming over slow
+// transports rely on: pre-run selection, then stream the pack without
+// an internal selection delay.
+func (s *EncoderSuite) TestWithObjectSelectorMatchesDefault() {
+	o1 := newObject(plumbing.BlobObject, []byte("hello"))
+	o2 := newObject(plumbing.BlobObject, []byte("hello world"))
+	o3 := newObject(plumbing.BlobObject, []byte("goodbye"))
+	for _, o := range []plumbing.EncodedObject{o1, o2, o3} {
+		_, err := s.store.SetEncodedObject(o)
+		s.NoError(err)
+	}
+	hashes := []plumbing.Hash{o1.Hash(), o2.Hash(), o3.Hash()}
+
+	// Default path: encoder runs selection internally.
+	defaultBuf := bytes.NewBuffer(nil)
+	defaultEnc := NewEncoder(defaultBuf, s.store, false)
+	defaultHash, err := defaultEnc.Encode(hashes, 10)
+	s.NoError(err)
+
+	// Precomputed path: caller runs selection ahead of time, then
+	// feeds the result back via a passthrough ObjectSelector.
+	sel := NewDeltaSelector(s.store)
+	objects, err := sel.ObjectsToPack(hashes, 10)
+	s.NoError(err)
+
+	precomputedBuf := bytes.NewBuffer(nil)
+	precomputedEnc := NewEncoder(precomputedBuf, s.store, false,
+		WithObjectSelector(fixedSelector{objects: objects}))
+	precomputedHash, err := precomputedEnc.Encode(hashes, 10)
+	s.NoError(err)
+
+	s.Equal(defaultHash, precomputedHash)
+	s.Equal(defaultBuf.Bytes(), precomputedBuf.Bytes())
+}
+
+// TestWithObjectSelectorNilPreservesDefault asserts that
+// WithObjectSelector(nil) is a no-op — the encoder keeps its own
+// DeltaSelector. Defensive against callers building options lists
+// conditionally.
+func (s *EncoderSuite) TestWithObjectSelectorNilPreservesDefault() {
+	o := newObject(plumbing.BlobObject, []byte("x"))
+	_, err := s.store.SetEncodedObject(o)
+	s.NoError(err)
+
+	enc := NewEncoder(bytes.NewBuffer(nil), s.store, false, WithObjectSelector(nil))
+	_, err = enc.Encode([]plumbing.Hash{o.Hash()}, 10)
+	s.NoError(err)
+}
+
 func (s *EncoderSuite) simpleDeltaTest() {
 	srcObject := newObject(plumbing.BlobObject, []byte("0"))
 	targetObject := newObject(plumbing.BlobObject, []byte("01"))

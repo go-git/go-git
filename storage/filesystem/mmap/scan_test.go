@@ -18,7 +18,7 @@ func TestNewPackScanner(t *testing.T) {
 	t.Parallel()
 
 	fixture := fixtures.NewOSFixture(
-		fixtures.ByTag("packfile-sha256").One(),
+		fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
 		t.TempDir(),
 	)
 
@@ -110,7 +110,7 @@ func TestPackScannerClose(t *testing.T) {
 	t.Parallel()
 
 	fixture := fixtures.NewOSFixture(
-		fixtures.ByTag("packfile-sha256").One(),
+		fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
 		t.TempDir(),
 	)
 

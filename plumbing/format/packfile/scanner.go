@@ -34,7 +34,96 @@ var (
 	ErrUnsupportedVersion = NewError("unsupported packfile version")
 	// ErrSeekNotSupported returned if seek is not support.
 	ErrSeekNotSupported = NewError("not seek support")
+	// ErrInflatedSizeMismatch is returned when a packfile object inflates to
+	// more bytes than the size declared in its object header. A well-formed
+	// packfile never produces more data than the declared size; exceeding it
+	// indicates a structurally invalid entry.
+	ErrInflatedSizeMismatch = errors.New("packfile: inflated object exceeds declared size")
 )
+
+// boundedWriter passes writes through to w up to limit bytes total, then
+// returns ErrInflatedSizeMismatch. It is used to enforce that a packfile
+// object's inflated length does not exceed the size declared in its header.
+type boundedWriter struct {
+	w     io.Writer
+	limit int64
+	n     int64
+}
+
+// Write forwards p to the underlying writer while keeping the running total
+// at or below limit. On overrun it forwards the legal prefix and reports
+// the number of bytes actually consumed alongside ErrInflatedSizeMismatch,
+// matching the contract in io.Writer. A write error from the underlying
+// writer during overrun-handling is joined with ErrInflatedSizeMismatch so
+// it is not silently dropped.
+func (b *boundedWriter) Write(p []byte) (int, error) {
+	if b.n+int64(len(p)) > b.limit {
+		remain := int(b.limit - b.n)
+		err := error(ErrInflatedSizeMismatch)
+		if remain > 0 {
+			n, werr := b.w.Write(p[:remain])
+			b.n += int64(n)
+			if werr != nil {
+				err = errors.Join(ErrInflatedSizeMismatch, werr)
+			}
+			return n, err
+		}
+		return 0, err
+	}
+	n, err := b.w.Write(p)
+	b.n += int64(n)
+	return n, err
+}
+
+// BoundedReadCloser wraps a ReadCloser and reports ErrInflatedSizeMismatch
+// once more than limit bytes have been read. It is used by the on-demand
+// object readers to enforce the same bound that the scanner applies during
+// a forward scan, so a lazy Read of a packfile object cannot stream past
+// its declared inflated size.
+//
+// The implementation builds on io.LimitedReader with the standard
+// overrun-detection trick: request limit+1 bytes from the underlying so
+// that the moment the sentinel byte materializes (LimitedReader.N drops
+// to zero) we know the source produced more than limit bytes.
+type BoundedReadCloser struct {
+	lr      io.LimitedReader
+	closer  io.Closer
+	overrun bool
+}
+
+// NewBoundedReadCloser wraps rc so that the cumulative bytes returned from
+// Read never exceed limit. The first call that would have returned a byte
+// past limit instead returns ErrInflatedSizeMismatch; subsequent calls
+// keep returning the same error. A negative limit is treated as zero, so
+// the first byte produced by rc surfaces ErrInflatedSizeMismatch.
+func NewBoundedReadCloser(rc io.ReadCloser, limit int64) *BoundedReadCloser {
+	if limit < 0 {
+		limit = 0
+	}
+	return &BoundedReadCloser{
+		lr:     io.LimitedReader{R: rc, N: limit + 1},
+		closer: rc,
+	}
+}
+
+// Read forwards Read up to the configured byte limit. When the underlying
+// stream produces the limit+1 sentinel byte, the legal prefix is returned
+// alongside ErrInflatedSizeMismatch; on subsequent calls only the error
+// is returned.
+func (b *BoundedReadCloser) Read(p []byte) (int, error) {
+	if b.overrun {
+		return 0, ErrInflatedSizeMismatch
+	}
+	n, err := b.lr.Read(p)
+	if b.lr.N == 0 {
+		b.overrun = true
+		return n - 1, ErrInflatedSizeMismatch
+	}
+	return n, err
+}
+
+// Close closes the underlying ReadCloser.
+func (b *BoundedReadCloser) Close() error { return b.closer.Close() }
 
 // Scanner provides sequential access to the data stored in a Git packfile.
 //
@@ -228,7 +317,7 @@ func (r *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 		return plumbing.ErrObjectNotFound
 	}
 
-	err := r.inflateContent(oh.ContentOffset, writer)
+	err := r.inflateContent(oh.ContentOffset, writer, oh.Size)
 	if err != nil {
 		return ErrReferenceDeltaNotFound
 	}
@@ -236,7 +325,8 @@ func (r *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	return nil
 }
 
-func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
+func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer, declaredSize int64) error {
+	bounded := &boundedWriter{w: writer, limit: declaredSize}
 	_, err := r.Seek(contentOffset, io.SeekStart)
 	if err != nil {
 		return err
@@ -244,11 +334,11 @@ func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer) error {
 
 	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
-		return fmt.Errorf("zlib reset error: %s", err)
+		return fmt.Errorf("zlib reset error: %w", err)
 	}
 	defer gogitsync.PutZlibReader(zr)
 
-	_, err = ioutil.CopyBufferPool(writer, zr)
+	_, err = ioutil.CopyBufferPool(bounded, zr)
 	return err
 }
 
@@ -368,6 +458,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 
 	size, err := packutil.VariableLengthSize(b[0], r)
 	if err != nil {
+		if errors.Is(err, packutil.ErrLengthOverflow) {
+			return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
+		}
 		return nil, err
 	}
 
@@ -388,6 +481,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			if err != nil {
 				return nil, err
 			}
+			if err := ValidateOFSDeltaBase(oh.Offset, no); err != nil {
+				return nil, err
+			}
 			oh.OffsetReference = oh.Offset - no
 		} else {
 			oh.Reference.ResetBySize(r.objectIDSize)
@@ -402,7 +498,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 
 	zr, err := gogitsync.GetZlibReader(r.scannerReader)
 	if err != nil {
-		return nil, fmt.Errorf("zlib reset error: %s", err)
+		return nil, fmt.Errorf("zlib reset error: %w", err)
 	}
 	defer gogitsync.PutZlibReader(zr)
 
@@ -428,6 +524,13 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		oh.content = gogitsync.GetBytesBuffer()
 		mw = io.MultiWriter(mw, oh.content)
 	}
+
+	// Bind the inflated stream by the size declared in the object header.
+	// A well-formed packfile never produces more inflated bytes than that
+	// value, so any overrun signals a malformed entry. For delta entries
+	// the declared size is the size of the delta instruction stream, not
+	// the resolved object.
+	mw = &boundedWriter{w: mw, limit: oh.Size}
 
 	_, err = ioutil.CopyBufferPool(mw, zr)
 	if err != nil {

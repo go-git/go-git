@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -9,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -67,6 +71,7 @@ func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	fs := memfs.New()
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -93,6 +98,7 @@ func (s *WorktreeSuite) TestCommitInitial() {
 
 	r, err := Init(storage, WithWorkTree(fs))
 	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -109,11 +115,121 @@ func (s *WorktreeSuite) TestCommitInitial() {
 	assertStorageStatus(s, r, 1, 1, 1, expected)
 }
 
+func (s *WorktreeSuite) TestCommitInitialObjectFormats() {
+	tests := []struct {
+		name         string
+		objectFormat formatcfg.ObjectFormat
+		expectedHash string
+	}{
+		{
+			name:         "sha1",
+			objectFormat: formatcfg.SHA1,
+			expectedHash: "98c4ac7c29c913f7461eae06e024dc18e80d23a4",
+		},
+		{
+			name:         "sha256",
+			objectFormat: formatcfg.SHA256,
+			expectedHash: "9b86829db2f5159fe91032056e9aa60fc400c233bb2fc91ed7e966b996b2cd30",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			expected := plumbing.NewHash(tt.expectedHash)
+			fs := memfs.New()
+			storage := memory.NewStorage(memory.WithObjectFormat(tt.objectFormat))
+
+			r, err := Init(storage, WithWorkTree(fs), WithObjectFormat(tt.objectFormat))
+			s.Require().NoError(err)
+			defer func() { _ = r.Close() }()
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add("foo")
+			s.Require().NoError(err)
+
+			hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+			s.Equal(expected, hash)
+			s.Len(hash.String(), tt.objectFormat.HexSize())
+			s.Require().NoError(storage.HasEncodedObject(hash))
+
+			commit, err := r.CommitObject(hash)
+			s.Require().NoError(err)
+			s.Equal(hash, commit.Hash)
+			s.Equal("foo\n", commit.Message)
+			s.Len(commit.TreeHash.String(), tt.objectFormat.HexSize())
+			s.Require().NoError(storage.HasEncodedObject(commit.TreeHash))
+
+			tree, err := commit.Tree()
+			s.Require().NoError(err)
+			file, err := tree.File("foo")
+			s.Require().NoError(err)
+			s.Len(file.Hash.String(), tt.objectFormat.HexSize())
+			s.Require().NoError(storage.HasEncodedObject(file.Hash))
+			content, err := file.Contents()
+			s.Require().NoError(err)
+			s.Equal("foo", content)
+
+			assertStorageStatus(s, r, 1, 1, 1, hash)
+		})
+	}
+}
+
+func (s *WorktreeSuite) TestSetReferencesInSHA256Repository() {
+	fs := memfs.New()
+	storage := memory.NewStorage(memory.WithObjectFormat(formatcfg.SHA256))
+
+	r, err := Init(storage, WithWorkTree(fs), WithObjectFormat(formatcfg.SHA256))
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
+	s.Require().NoError(err)
+
+	_, err = w.Add("foo")
+	s.Require().NoError(err)
+
+	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+	s.Len(hash.String(), formatcfg.SHA256.HexSize())
+
+	tests := []struct {
+		name string
+		ref  plumbing.ReferenceName
+	}{
+		{name: "branch", ref: plumbing.ReferenceName("refs/heads/feature")},
+		{name: "tag", ref: plumbing.ReferenceName("refs/tags/v1.0.0")},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ref := plumbing.NewHashReference(tt.ref, hash)
+			err := r.Storer.SetReference(ref)
+			s.Require().NoError(err)
+
+			got, err := r.Reference(tt.ref, false)
+			s.Require().NoError(err)
+			s.Equal(ref.Name(), got.Name())
+			s.Equal(hash, got.Hash())
+			s.Len(got.Hash().String(), formatcfg.SHA256.HexSize())
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestNothingToCommit() {
 	expected := plumbing.NewHash("838ea833ce893e8555907e5ef224aa076f5e274a")
 
 	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -131,6 +247,7 @@ func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo() {
 	fs := memfs.New()
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -154,6 +271,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitToMakeEmptyRepo() {
 	fs := memfs.New()
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -183,7 +301,7 @@ func (s *WorktreeSuite) TestCommitParent() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -206,7 +324,7 @@ func (s *WorktreeSuite) TestCommitAmendWithoutChanges() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -241,7 +359,7 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -292,7 +410,7 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -320,6 +438,7 @@ func TestCount(t *testing.T) {
 	t.Parallel()
 	f := fixtures.Basic().One()
 	r := NewRepositoryWithEmptyWorktree(f)
+	defer func() { _ = r.Close() }()
 
 	iter, err := r.CommitObjects()
 	require.NoError(t, err)
@@ -369,9 +488,10 @@ func TestAddAndCommitWithSkipStatus(t *testing.T) {
 	f := fixtures.Basic().One()
 	fs := memfs.New()
 	r := NewRepositoryWithEmptyWorktree(f)
+	defer func() { _ = r.Close() }()
 	w := &Worktree{
 		r:          r,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -423,7 +543,7 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -509,7 +629,7 @@ func (s *WorktreeSuite) TestCommitAll() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -535,7 +655,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 	fs := memfs.New()
 	w := &Worktree{
 		r:          s.Repository,
-		Filesystem: fs,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
 	err := w.Checkout(&CheckoutOptions{})
@@ -570,6 +690,7 @@ func (s *WorktreeSuite) TestCherryPick() {
 
 	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err, "init the repository")
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -677,22 +798,132 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.ErrorIs(err, ErrCannotCherryPickWithoutCommitOptions)
 }
 
+func (s *WorktreeSuite) TestCherryPickRejectsInvalidPaths() {
+	fs := memfs.New()
+
+	storage := memory.NewStorage()
+	r, err := Init(storage, WithWorkTree(fs))
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
+	s.Require().NoError(err)
+	_, err = w.Add("foo")
+	s.Require().NoError(err)
+
+	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	initCommit, err := r.CommitObject(initHash)
+	s.Require().NoError(err)
+
+	badContent := []byte("content")
+	blobHash := s.storeBlob(storage, badContent)
+
+	for _, name := range []string{
+		".git/config",
+		".git/objects/pack/file",
+		"../file",
+	} {
+		badCommit := s.buildChildCommit(storage, initCommit, initHash, name, blobHash)
+
+		err = w.Checkout(&CheckoutOptions{Hash: initHash})
+		s.Require().NoError(err)
+
+		err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, badCommit)
+		s.Error(err, "expected cherry-pick to reject path %q", name)
+	}
+}
+
+func (s *WorktreeSuite) storeBlob(storage *memory.Storage, content []byte) plumbing.Hash {
+	s.T().Helper()
+
+	obj := storage.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	obj.SetSize(int64(len(content)))
+	bw, err := obj.Writer()
+	s.Require().NoError(err)
+	_, err = bw.Write(content)
+	s.Require().NoError(err)
+	s.Require().NoError(bw.Close())
+	h, err := storage.SetEncodedObject(obj)
+	s.Require().NoError(err)
+	return h
+}
+
+func (s *WorktreeSuite) buildChildCommit(storage *memory.Storage, parent *object.Commit, parentHash plumbing.Hash, filename string, blobHash plumbing.Hash) *object.Commit {
+	s.T().Helper()
+
+	parentTree, err := parent.Tree()
+	s.Require().NoError(err)
+
+	entries := slices.Clone(parentTree.Entries)
+	entries = append(entries, object.TreeEntry{
+		Name: filename,
+		Mode: filemode.Regular,
+		Hash: blobHash,
+	})
+	sort.Sort(object.TreeEntrySorter(entries))
+
+	// Tree.Encode validates entry names through pathutil.ValidTreePath
+	// and would refuse a path component like ".git/config" — the precise
+	// shape this test needs to plant. Assemble the tree object bytes
+	// directly so the malicious tree reaches the cherry-pick boundary.
+	var buf bytes.Buffer
+	for _, e := range entries {
+		fmt.Fprintf(&buf, "%o %s", e.Mode, e.Name)
+		buf.WriteByte(0)
+		buf.Write(e.Hash.Bytes())
+	}
+	treeObj := storage.NewEncodedObject()
+	treeObj.SetType(plumbing.TreeObject)
+	tw, err := treeObj.Writer()
+	s.Require().NoError(err)
+	_, err = tw.Write(buf.Bytes())
+	s.Require().NoError(err)
+	s.Require().NoError(tw.Close())
+	treeHash, err := storage.SetEncodedObject(treeObj)
+	s.Require().NoError(err)
+
+	commit := &object.Commit{
+		Author:       *defaultSignature(),
+		Committer:    *defaultSignature(),
+		Message:      "add " + filename + "\n",
+		TreeHash:     treeHash,
+		ParentHashes: []plumbing.Hash{parentHash},
+	}
+	commitObj := storage.NewEncodedObject()
+	err = commit.Encode(commitObj)
+	s.Require().NoError(err)
+	commitHash, err := storage.SetEncodedObject(commitObj)
+	s.Require().NoError(err)
+
+	result, err := object.GetCommit(storage, commitHash)
+	s.Require().NoError(err)
+	return result
+}
+
 func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	_, err := Init(st)
+	rInit, err := Init(st)
 	s.Require().NoError(err)
+	defer func() { _ = rInit.Close() }()
 
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: fs.Root(),
 	})
 	s.ErrorIs(err, transport.ErrEmptyRemoteRepository)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
 
-	mfs := w.Filesystem
+	mfs := w.filesystem
 
 	err = mfs.MkdirAll("delta", 0o755)
 	s.Require().NoError(err)
@@ -733,6 +964,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 
 	r, err := Init(storage, WithWorkTree(fs))
 	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.Require().NoError(err)
@@ -785,16 +1017,19 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	f := fixtures.Basic().One()
 	s.Repository = NewRepositoryWithEmptyWorktree(f)
+	r1 := s.Repository
+	s.T().Cleanup(func() { _ = r1.Close() })
 
 	expected := plumbing.NewHash("e8eecef2524c3a37cf0f0996603162f81e0373f1")
 
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, WithWorkTree(fs))
+	r2, err := Init(storage, WithWorkTree(fs))
 	s.Require().NoError(err)
+	defer func() { _ = r2.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r2.Worktree()
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
@@ -806,10 +1041,10 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	s.Equal(expected, hash)
 	s.Require().NoError(err)
 
-	assertStorageStatus(s, r, 1, 1, 1, expected)
+	assertStorageStatus(s, r2, 1, 1, 1, expected)
 
 	// Check HEAD commit contains author informations with '<', '>' and '\n' stripped
-	lr, err := r.Log(&LogOptions{})
+	lr, err := r2.Log(&LogOptions{})
 	s.Require().NoError(err)
 
 	commit, err := lr.Next()
@@ -839,7 +1074,7 @@ func BenchmarkCommit(b *testing.B) {
 		for range b.N {
 			b.StopTimer()
 			fileName := filepath.Join("dir0", fmt.Sprintf("bench_%d.txt", seq))
-			err := util.WriteFile(wt.Filesystem, fileName, fmt.Appendf(nil, "content %d", seq), 0o644)
+			err := util.WriteFile(wt.filesystem, fileName, fmt.Appendf(nil, "content %d", seq), 0o644)
 			require.NoError(b, err)
 
 			_, err = wt.Add(fileName)
@@ -915,7 +1150,7 @@ type mockSigner struct {
 
 const mockSignature = "-----BEGIN PGP SIGNATURE-----\n\nmock-signature\n-----END PGP SIGNATURE-----"
 
-func (m *mockSigner) Sign(_ io.Reader) ([]byte, error) {
+func (m *mockSigner) Sign(_ context.Context, _ io.Reader) ([]byte, error) {
 	m.called = true
 	return []byte(mockSignature), nil
 }
@@ -991,6 +1226,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 			fs := memfs.New()
 			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 			require.NoError(t, err)
+			defer func() { _ = r.Close() }()
 
 			cfg, err := r.Config()
 			require.NoError(t, err)

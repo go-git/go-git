@@ -34,10 +34,10 @@ func (b *URLSuite) TestMarshal() {
 `)
 
 	cfg := NewConfig()
-	cfg.URLs["ssh://git@github.com/"] = &URL{
+	cfg.URLs = append(cfg.URLs, &URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/"},
-	}
+	})
 
 	actual, err := cfg.Marshal()
 	b.Nil(err)
@@ -54,10 +54,10 @@ func (b *URLSuite) TestMarshalMultipleInsteadOf() {
 `)
 
 	cfg := NewConfig()
-	cfg.URLs["ssh://git@github.com/"] = &URL{
+	cfg.URLs = append(cfg.URLs, &URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/", "https://google.com/"},
-	}
+	})
 
 	actual, err := cfg.Marshal()
 	b.NoError(err)
@@ -74,7 +74,9 @@ func (b *URLSuite) TestUnmarshal() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	url := cfg.URLs["ssh://git@github.com/"]
+	b.Require().Len(cfg.URLs, 1)
+	url := cfg.URLs[0]
+	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 	b.Equal("https://github.com/", url.InsteadOfs[0])
 }
@@ -90,7 +92,9 @@ func (b *URLSuite) TestUnmarshalMultipleInsteadOf() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.Nil(err)
-	url := cfg.URLs["ssh://git@github.com/"]
+	b.Require().Len(cfg.URLs, 1)
+	url := cfg.URLs[0]
+	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 
 	b.Equal("ssh://git@github.com/foobar", url.ApplyInsteadOf("https://github.com/foobar"))
@@ -109,7 +113,9 @@ func (b *URLSuite) TestUnmarshalDuplicateUrls() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.Nil(err)
-	url := cfg.URLs["ssh://git@github.com/"]
+	b.Require().Len(cfg.URLs, 1)
+	url := cfg.URLs[0]
+	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 
 	b.Equal("ssh://git@github.com/foobar", url.ApplyInsteadOf("https://github.com/foobar"))
@@ -126,19 +132,82 @@ func (b *URLSuite) TestApplyInsteadOf() {
 	b.Equal("ssh://github.com/myrepo", urlRule.ApplyInsteadOf("http://github.com/myrepo"))
 }
 
-func (b *URLSuite) TestFindLongestInsteadOfMatch() {
-	urlRules := map[string]*URL{
-		"ssh://github.com": {
+func (b *URLSuite) TestApplyLongestInsteadOfMatch() {
+	urlRules := []*URL{
+		{
 			Name:       "ssh://github.com",
 			InsteadOfs: []string{"http://github.com"},
 		},
-		"ssh://somethingelse.com": {
+		{
 			Name:       "ssh://somethingelse.com",
 			InsteadOfs: []string{"http://github.com/foobar"},
 		},
 	}
 
-	longestURL := findLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
+	rewrittenURL, matched := applyLongestInsteadOfMatch("http://github.com/foobar/bingbash.git", urlRules)
 
-	b.Equal("ssh://somethingelse.com", longestURL.Name)
+	b.True(matched, "Should find a match")
+	b.Equal("ssh://somethingelse.com/bingbash.git", rewrittenURL)
+}
+
+func (b *URLSuite) TestApplyInsteadOfLongestMatchWithinSameURL() {
+	// Test the edge case where a single URL has multiple insteadOf values
+	// and both match the given URL - the longest should win
+	url := &URL{
+		Name: "ssh://git@github.com/",
+		InsteadOfs: []string{
+			"https://github.com/",
+			"https://github.com/enterprise/",
+		},
+	}
+
+	// Both insteadOf values match, but the longer one should be used
+	result := url.ApplyInsteadOf("https://github.com/enterprise/user/repo.git")
+	b.Equal("ssh://git@github.com/user/repo.git", result)
+
+	// Also test with the shorter match
+	result = url.ApplyInsteadOf("https://github.com/user/repo.git")
+	b.Equal("ssh://git@github.com/user/repo.git", result)
+}
+
+func (b *URLSuite) TestApplyInsteadOfLongestMatchIntegration() {
+	// Integration test: verify longest match within a URL's insteadOf list
+	input := []byte(`[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
+	insteadOf = https://github.com/enterprise/
+[remote "origin"]
+	url = https://github.com/enterprise/user/repo.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	b.NoError(err)
+
+	// The longer insteadOf should be used
+	origin := cfg.Remotes["origin"]
+	b.NotNil(origin)
+	b.Equal([]string{"ssh://git@github.com/user/repo.git"}, origin.URLs)
+}
+
+func (b *URLSuite) TestApplyInsteadOfDuplicateInsteadOfValues() {
+	// When multiple URLs have the same insteadOf value (same length),
+	// use config file order (first wins), matching git's behavior.
+	input := []byte(`[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+[remote "origin"]
+	url = https://github.com/user/repo.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+`)
+
+	cfg := NewConfig()
+	err := cfg.Unmarshal(input)
+	b.NoError(err)
+
+	// First URL in config file should be used
+	origin := cfg.Remotes["origin"]
+	b.NotNil(origin)
+	b.Equal([]string{"ssh://git@github.com/user/repo.git"}, origin.URLs)
 }

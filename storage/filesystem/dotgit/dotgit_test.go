@@ -2,7 +2,9 @@ package dotgit
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,6 +14,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -23,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
@@ -38,6 +43,31 @@ func TestSuiteDotGit(t *testing.T) {
 }
 
 func (s *SuiteDotGit) EmptyFS() (fs billy.Filesystem) { return memfs.New() }
+
+func (s *SuiteDotGit) TestModuleRejectsEscapingNames() {
+	d := New(s.EmptyFS())
+	// Only true path-traversal cases — names like "/etc" or
+	// "modules/../escape" land inside modules/ once Join cleans
+	// them, so the containment check correctly accepts those.
+	bad := []string{
+		"..",
+		"../x",
+		"foo/../..",
+		"a/b/c/../../../..",
+	}
+	for _, n := range bad {
+		_, err := d.Module(n)
+		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
+	}
+}
+
+func (s *SuiteDotGit) TestModuleAcceptsBenignNames() {
+	d := New(s.EmptyFS())
+	for _, n := range []string{"foo", "lib/foo", "x.y"} {
+		_, err := d.Module(n)
+		s.Require().NoError(err, "name %q", n)
+	}
+}
 
 func (s *SuiteDotGit) TestInitialize() {
 	fs := s.EmptyFS()
@@ -516,45 +546,6 @@ func (s *SuiteDotGit) TestObjectPack() {
 	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
 	s.Require().NoError(err)
 	s.Equal(".pack", filepath.Ext(pack.Name()))
-}
-
-func (s *SuiteDotGit) TestObjectPackWithKeepDescriptors() {
-	f := fixtures.Basic().ByTag(".git").One()
-	fs, err := f.DotGit()
-	s.Require().NoError(err)
-	dir := NewWithOptions(fs, Options{KeepDescriptors: true})
-
-	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.Require().NoError(err)
-	s.Equal(".pack", filepath.Ext(pack.Name()))
-
-	// Move to an specific offset
-	pack.Seek(42, io.SeekStart)
-
-	pack2, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.Require().NoError(err)
-
-	// If the file is the same the offset should be the same
-	offset, err := pack2.Seek(0, io.SeekCurrent)
-	s.Require().NoError(err)
-	s.Equal(int64(42), offset)
-
-	err = dir.Close()
-	s.Require().NoError(err)
-
-	pack2, err = dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
-	s.Require().NoError(err)
-
-	// If the file is opened again its offset should be 0
-	offset, err = pack2.Seek(0, io.SeekCurrent)
-	s.Require().NoError(err)
-	s.Equal(int64(0), offset)
-
-	err = pack2.Close()
-	s.Require().NoError(err)
-
-	err = dir.Close()
-	s.NotNil(err)
 }
 
 func (s *SuiteDotGit) TestObjectPackIdx() {
@@ -1151,6 +1142,66 @@ func TestAlternatesDupes(t *testing.T) {
 	assert.Len(t, dotgits, 1)
 }
 
+func TestAlternatesAbsolutePathOutsideAlternatesFSRoot(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	altRoot := filepath.Join(base, "alt-root")
+	outsideObjects := filepath.Join(base, "outside", ".git", "objects")
+
+	require.NoError(t, os.MkdirAll(altRoot, 0o700))
+	require.NoError(t, os.MkdirAll(outsideObjects, 0o700))
+
+	altFS := osfs.New(altRoot)
+	dotFS, err := altFS.Chroot("repo")
+	require.NoError(t, err)
+
+	dir := NewWithOptions(dotFS, Options{AlternatesFS: altFS})
+	require.NoError(t, dir.Initialize())
+
+	require.NoError(t, altFS.MkdirAll(filepath.Join("outside", ".git", "objects"), 0o700))
+
+	altpath := dotFS.Join("objects", "info", "alternates")
+	f, err := dotFS.Create(altpath)
+	require.NoError(t, err)
+	_, err = f.Write([]byte(outsideObjects + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	dotgits, err := dir.Alternates()
+	require.Error(t, err)
+	assert.Nil(t, dotgits)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestAlternatesDefaultAbsolutePathOutsideDotGitRoot(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	dotRoot := filepath.Join(base, "repo", ".git")
+	alternateRoot := filepath.Join(base, "alternate", ".git")
+	alternateObjects := filepath.Join(alternateRoot, "objects")
+
+	require.NoError(t, os.MkdirAll(dotRoot, 0o700))
+	require.NoError(t, os.MkdirAll(alternateObjects, 0o700))
+
+	dotFS := osfs.New(dotRoot)
+	dir := NewWithOptions(dotFS, Options{AlternatesFS: osfs.New(alternateRoot)})
+	require.NoError(t, dir.Initialize())
+
+	altpath := dotFS.Join("objects", "info", "alternates")
+	f, err := dotFS.Create(altpath)
+	require.NoError(t, err)
+	_, err = f.Write([]byte(alternateObjects + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	dotgits, err := dir.Alternates()
+	require.NoError(t, err)
+	require.Len(t, dotgits, 1)
+	assert.Equal(t, alternateRoot, dotgits[0].fs.Root())
+}
+
 type norwfs struct {
 	billy.Filesystem
 }
@@ -1328,7 +1379,6 @@ func TestIssue55(t *testing.T) {
 		fs   billy.Filesystem
 	}{
 		{"BoundOS", osfs.New(t.TempDir(), osfs.WithBoundOS())},
-		{"ChrootOS", osfs.New(t.TempDir(), osfs.WithChrootOS())},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -1354,4 +1404,203 @@ func TestIssue55(t *testing.T) {
 			assert.True(t, ro, "file %q is not read-only", path)
 		})
 	}
+}
+
+// TestDotGit_HasIncomingObjects_NoRace exercises the lazy
+// initialisation in hasIncomingObjects under concurrent callers.
+// Before the sync.Once fix, two goroutines racing through Object()
+// would write the cache fields without synchronisation; the race
+// detector flagged this reliably under -race -count=10.
+func TestDotGit_HasIncomingObjects_NoRace(t *testing.T) {
+	t.Parallel()
+	fs := osfs.New(t.TempDir())
+	require.NoError(t, fs.MkdirAll("objects", 0o755))
+	d := New(fs)
+
+	hash := plumbing.NewHash("0000000000000000000000000000000000000000")
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Go(func() {
+			_, _ = d.Object(hash)
+		})
+	}
+	wg.Wait()
+}
+
+// fakePackHandleSource returns a Source whose Open and Size always
+// fail. walkPackHandles never calls these (it only invokes fn on
+// each cached *PackHandle), so the fakes satisfy New without
+// requiring on-disk pack files.
+func fakePackHandleSource() packhandle.Source {
+	return packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) {
+			return nil, errors.New("fake source: not used")
+		},
+		Size: func() (int64, error) {
+			return 0, errors.New("fake source: not used")
+		},
+	}
+}
+
+// newFakePackHandle returns a new *packhandle.PackHandle whose
+// sources all fail when opened. Suitable for tests that only
+// exercise catalog-walk behaviour.
+func newFakePackHandle(t *testing.T, i int) *packhandle.PackHandle {
+	t.Helper()
+	var h plumbing.Hash
+	h.ResetBySize(20) // SHA-1 size
+	_, _ = h.Write(bytes.Repeat([]byte{byte(i + 1)}, 20))
+	src := fakePackHandleSource()
+	ph, err := packhandle.New(packhandle.Sources{Pack: src, Idx: src, Rev: src}, h)
+	require.NoError(t, err)
+	return ph
+}
+
+// seedPackHandles installs n fake PackHandles into d.packHandles
+// under the catalog lock, returning the hashes used as keys.
+func seedPackHandles(t *testing.T, d *DotGit, n int) []plumbing.Hash {
+	t.Helper()
+	d.packHandlesMu.Lock()
+	defer d.packHandlesMu.Unlock()
+	if d.packHandles == nil {
+		d.packHandles = make(map[plumbing.Hash]*packhandle.PackHandle)
+	}
+	hashes := make([]plumbing.Hash, n)
+	for i := range n {
+		var h plumbing.Hash
+		h.ResetBySize(20) // SHA-1 size
+		_, _ = h.Write(bytes.Repeat([]byte{byte(i + 1)}, 20))
+		hashes[i] = h
+		d.packHandles[h] = newFakePackHandle(t, i)
+	}
+	return hashes
+}
+
+// TestWalkPackHandles_SnapshotsCatalog verifies that walkPackHandles
+// iterates a snapshot taken under the lock, so a concurrent mutation
+// of the catalog (e.g. eviction) does not panic or skip entries the
+// snapshot already captured.
+func TestWalkPackHandles_SnapshotsCatalog(t *testing.T) {
+	t.Parallel()
+	fs, err := fixtures.Basic().One().DotGit()
+	require.NoError(t, err)
+	d := New(fs)
+	t.Cleanup(func() { _ = d.Close() })
+
+	const seedN = 3
+	hashes := seedPackHandles(t, d, seedN)
+
+	d.packHandlesMu.Lock()
+	expectedCount := len(d.packHandles)
+	d.packHandlesMu.Unlock()
+	require.GreaterOrEqual(t, expectedCount, seedN,
+		"catalog must hold at least the seeded entries")
+
+	var seen atomic.Int32
+	var evictDone atomic.Bool
+	victim := hashes[0]
+	err = d.walkPackHandles(func(_ *packhandle.PackHandle) error {
+		seen.Add(1)
+		if evictDone.CompareAndSwap(false, true) {
+			d.packHandlesMu.Lock()
+			delete(d.packHandles, victim)
+			d.packHandlesMu.Unlock()
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(expectedCount), seen.Load(),
+		"walk should visit every snapshot entry, even after mid-walk catalog mutation")
+}
+
+// TestDotGitCloseIdleDescriptors groups the DotGit-layer cases for
+// the catalog walk that releases FDs without evicting the
+// PackHandle entries.
+func TestDotGitCloseIdleDescriptors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WalksCatalog", func(t *testing.T) {
+		t.Parallel()
+		fs, err := fixtures.Basic().One().DotGit()
+		require.NoError(t, err)
+		d := New(fs)
+		t.Cleanup(func() { _ = d.Close() })
+
+		packs, err := d.ObjectPacks()
+		require.NoError(t, err)
+		require.NotEmpty(t, packs)
+
+		// Populate catalog and capture each PackHandle pointer.
+		before := make(map[plumbing.Hash]*packhandle.PackHandle, len(packs))
+		for _, h := range packs {
+			ph, err := d.packHandle(h)
+			require.NoError(t, err)
+			before[h] = ph
+			// Touch the pack so an FD is actually opened.
+			pr, err := ph.OpenPackReader()
+			require.NoError(t, err)
+			require.NoError(t, pr.Close())
+		}
+
+		require.NoError(t, d.CloseIdleDescriptors())
+
+		// Catalog map is intact and PackHandle pointers are the same.
+		for _, h := range packs {
+			ph, err := d.packHandle(h)
+			require.NoError(t, err)
+			assert.Same(t, before[h], ph,
+				"PackHandle pointer should survive CloseIdleDescriptors")
+		}
+	})
+
+	t.Run("EmptyCatalog", func(t *testing.T) {
+		t.Parallel()
+		fs, err := fixtures.Basic().One().DotGit()
+		require.NoError(t, err)
+		d := New(fs)
+		t.Cleanup(func() { _ = d.Close() })
+		// No packHandle() calls; catalog stays nil.
+		require.NoError(t, d.CloseIdleDescriptors())
+	})
+
+	t.Run("AfterClose_NoOp", func(t *testing.T) {
+		t.Parallel()
+		fs, err := fixtures.Basic().One().DotGit()
+		require.NoError(t, err)
+		d := New(fs)
+		require.NoError(t, d.Close())
+		require.NoError(t, d.CloseIdleDescriptors())
+	})
+}
+
+// TestWalkPackHandles_JoinsErrors verifies that fn errors are
+// joined and returned, but do not stop the walk.
+func TestWalkPackHandles_JoinsErrors(t *testing.T) {
+	t.Parallel()
+	fs, err := fixtures.Basic().One().DotGit()
+	require.NoError(t, err)
+	d := New(fs)
+	t.Cleanup(func() { _ = d.Close() })
+
+	const seedN = 3
+	_ = seedPackHandles(t, d, seedN)
+
+	d.packHandlesMu.Lock()
+	totalEntries := len(d.packHandles)
+	d.packHandlesMu.Unlock()
+	require.GreaterOrEqual(t, totalEntries, seedN)
+
+	sentinel := errors.New("walk-fn-error")
+	var visits atomic.Int32
+	err = d.walkPackHandles(func(_ *packhandle.PackHandle) error {
+		visits.Add(1)
+		return sentinel
+	})
+	require.Error(t, err)
+	// Every visited entry returns sentinel; errors.Is unwraps the
+	// joined chain and finds it.
+	assert.ErrorIs(t, err, sentinel)
+	// Crucially: the walk did not stop on the first error.
+	assert.Equal(t, int32(totalEntries), visits.Load(),
+		"walk should not stop on first error")
 }

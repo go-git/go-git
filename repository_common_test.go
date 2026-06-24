@@ -34,7 +34,7 @@ func createCommit(t *testing.T, r *Repository) plumbing.Hash {
 	wt, err := r.Worktree()
 	require.NoError(t, err)
 
-	f, err := wt.Filesystem.Create("foo.txt")
+	f, err := wt.filesystem.Create("foo.txt")
 	require.NoError(t, err)
 
 	defer f.Close()

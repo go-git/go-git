@@ -45,18 +45,16 @@ func ReceivePack(
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
-		switch version := ProtocolVersion(opts.GitProtocol); version {
-		case protocol.V1:
-			if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
-				return err
-			}
-		// TODO: support version 2
-		case protocol.V0, protocol.V2:
+		v := ProtocolVersion(opts.GitProtocol)
+		switch v {
+		case protocol.V0, protocol.V1, protocol.V2:
+			// version emission (if any) is handled inside AdvertiseRefs for correct
+			// ordering with the HTTP smart-reply prefix when applicable.
 		default:
-			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, version)
+			return fmt.Errorf("%w: %q", ErrUnsupportedVersion, v)
 		}
 
-		if err := AdvertiseRefs(ctx, st, w, ReceivePackService, opts.StatelessRPC); err != nil {
+		if err := AdvertiseRefs(ctx, st, w, ReceivePackService, opts.StatelessRPC, v); err != nil {
 			return err
 		}
 	}
@@ -123,7 +121,7 @@ func ReceivePack(
 	}
 
 	// Report status if the client supports it
-	if !updreq.Capabilities.Supports(capability.ReportStatus) {
+	if !updreq.Capabilities.Supports(capability.ReportStatus) && !updreq.Capabilities.Supports(capability.ReportStatusV2) {
 		return unpackErr
 	}
 
