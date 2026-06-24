@@ -52,6 +52,25 @@ type RefsRequest struct {
 	// advertisement. Transports that cannot scope the advertisement
 	// (protocol v0/v1) ignore this field.
 	Prefixes []string
+
+	// DefaultBranch is the client's configured default branch
+	// (init.defaultBranch, a short name such as "main"). It is preferred when
+	// resolving a detached remote HEAD to a symbolic reference, matching
+	// upstream's guess_remote_head. Empty falls back to refs/heads/master then
+	// the first matching ref.
+	DefaultBranch string
+}
+
+// DefaultBranchRef returns the full branch ref name of req's configured default
+// branch, or the empty ref name when req is nil or unset.
+func DefaultBranchRef(req *RefsRequest) plumbing.ReferenceName {
+	if req == nil || req.DefaultBranch == "" {
+		return ""
+	}
+	if name := plumbing.ReferenceName(req.DefaultBranch); name.IsBranch() {
+		return name
+	}
+	return plumbing.NewBranchReferenceName(req.DefaultBranch)
 }
 
 // FetchRequest contains the parameters for a fetch-pack request.

@@ -371,6 +371,15 @@ func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
 			return nil
 		}
 		prefixes = append(prefixes, src)
+
+		// A HEAD source (single-branch clone, "+HEAD:...") resolves through a
+		// symref to a branch under refs/heads/. Advertise that namespace too,
+		// otherwise a v2 server that strictly honours ref-prefix omits the
+		// resolved branch and it cannot be fetched. Matches git clone, which
+		// requests ref-prefix refs/heads/ alongside HEAD.
+		if src == "HEAD" {
+			prefixes = append(prefixes, "refs/heads/")
+		}
 	}
 
 	// Order matches canonical git: refspec prefixes, then refs/tags/, then
@@ -436,8 +445,15 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	var defaultBranch string
+	if r.s != nil {
+		if cfg, cerr := r.s.Config(); cerr == nil && cfg != nil {
+			defaultBranch = cfg.Init.DefaultBranch
+		}
+	}
 	rRefs, err := sess.GetRemoteRefs(ctx, &transport.RefsRequest{
-		Prefixes: fetchRefPrefixes(o.RefSpecs, o.Tags),
+		Prefixes:      fetchRefPrefixes(o.RefSpecs, o.Tags),
+		DefaultBranch: defaultBranch,
 	})
 	if err != nil {
 		return nil, err

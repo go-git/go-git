@@ -407,7 +407,18 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 				return nil
 			}
 		case "fetch":
-			return serveFetchV2(ctx, st, w, rd, kvs, args, opts)
+			err := serveFetchV2(ctx, st, w, rd, kvs, args, opts)
+			if errors.Is(err, errFetchMoreRounds) {
+				// Non-ready negotiation round: the connection stays open. On a
+				// stateful stream the client issues another fetch command with
+				// more haves; for stateless HTTP each round is a separate
+				// request, so end this one.
+				if opts.StatelessRPC {
+					return nil
+				}
+				continue
+			}
+			return err
 		default:
 			_, _ = pktline.Writef(w, "error unknown-command %s\n", cmd)
 			_ = pktline.WriteFlush(w)
@@ -588,6 +599,12 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 	}
 }
 
+// errFetchMoreRounds signals that a v2 fetch command ended with a non-ready
+// acknowledgments round (no packfile sent). The connection is left open so the
+// caller can read the client's next negotiation round. It is a control signal,
+// not a failure, and never escapes serveUploadPackV2.
+var errFetchMoreRounds = errors.New("fetch: negotiation continues")
+
 // serveFetchV2 handles command=fetch for v2.
 func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *bufio.Reader, kvs, args []string, opts *UploadPackRequest) error {
 	_ = kvs
@@ -665,7 +682,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 			if err := pktline.WriteFlush(w); err != nil {
 				return err
 			}
-			return w.Close()
+			return errFetchMoreRounds
 		}
 		// "ready" is withheld until every want is reachable from the common
 		// haves (upstream's ok_to_give_up). Declaring it on the first common
@@ -676,7 +693,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 			if err := pktline.WriteFlush(w); err != nil {
 				return err
 			}
-			return w.Close()
+			return errFetchMoreRounds
 		}
 		// Ready: separate the acknowledgments section from the packfile section
 		// with a delim-pkt (the packfile follows in the same response).

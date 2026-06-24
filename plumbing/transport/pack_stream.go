@@ -88,8 +88,9 @@ func NewStreamSession(conn Conn, service string) (Session, error) {
 func (s *StreamSession) Capabilities() *capability.List { return &s.caps }
 
 // GetRemoteRefs implements PackSession. The protocol v0/v1 advertisement is
-// always complete, so req (and any ref-prefix scoping) is ignored.
-func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *RefsRequest) ([]*plumbing.Reference, error) {
+// always complete, so ref-prefix scoping is ignored; only the default-branch
+// hint (for detached-HEAD resolution) is honoured.
+func (s *StreamSession) GetRemoteRefs(_ context.Context, req *RefsRequest) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, ErrEmptyRemoteRepository
 	}
@@ -98,6 +99,7 @@ func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *RefsRequest) ([]*plu
 		return nil, ErrEmptyRemoteRepository
 	}
 
+	s.refs.DefaultBranch = DefaultBranchRef(req)
 	refs, err := s.refs.ResolvedReferences()
 	if err != nil {
 		return nil, err

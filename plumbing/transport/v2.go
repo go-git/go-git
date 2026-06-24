@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // CommandRunner sends a single fully-encoded protocol v2 command request and
@@ -143,6 +144,11 @@ func (s *v2Session) GetRemoteRefs(ctx context.Context, req *RefsRequest) ([]*plu
 		if err := lr.Decode(resp); err != nil {
 			return nil, err
 		}
+		// ls-refs only reports a symref-target for a symbolic HEAD. When the
+		// remote HEAD is detached the server sends a bare hash, so apply the
+		// same hash→branch heuristic the v0/v1 advertisement uses, otherwise a
+		// clone would record a detached HEAD instead of a symbolic one.
+		resolveDetachedHead(lr.References, DefaultBranchRef(req))
 		refs = &lr
 		if len(prefixes) == 0 {
 			s.refs = refs
@@ -155,8 +161,25 @@ func (s *v2Session) GetRemoteRefs(ctx context.Context, req *RefsRequest) ([]*plu
 	return refs.References, nil
 }
 
+// resolveDetachedHead rewrites a hash-reference HEAD in place to the symbolic
+// reference produced by packp.ResolveHeadFromHashHeuristic, so a detached
+// remote HEAD still yields a symbolic local HEAD on clone. defaultBranch is the
+// branch to prefer (the client's init.defaultBranch), or empty.
+func resolveDetachedHead(refs []*plumbing.Reference, defaultBranch plumbing.ReferenceName) {
+	for i, r := range refs {
+		if r.Name() == plumbing.HEAD && r.Type() == plumbing.HashReference {
+			refs[i] = packp.ResolveHeadFromHashHeuristic(r, refs, defaultBranch)
+			return
+		}
+	}
+}
+
 // Fetch negotiates and downloads a packfile using the v2 fetch command.
 func (s *v2Session) Fetch(ctx context.Context, st storage.Storer, req *FetchRequest) error {
+	if err := s.reconcileObjectFormat(st); err != nil {
+		return err
+	}
+
 	base, err := s.buildFetchRequest(st, req)
 	if err != nil {
 		return err
@@ -219,6 +242,60 @@ func (s *v2Session) buildFetchRequest(st storage.Storer, req *FetchRequest) (*pa
 	}
 
 	return fr, nil
+}
+
+// reconcileObjectFormat aligns the storer's object format with the server's
+// advertised one before the packfile is written. On a fresh clone the storer's
+// format is unset (HEAD points at refs/heads/.invalid) and the server's sha256
+// is adopted; otherwise a mismatch is a hard error, since indexing a sha256
+// pack as sha1 (or vice versa) corrupts the store and fails checksum
+// validation. Mirrors NegotiatePack's handling for the v0/v1 path.
+func (s *v2Session) reconcileObjectFormat(st storage.Storer) error {
+	var clientFormat format.ObjectFormat
+	if cfg, err := st.Config(); err == nil {
+		clientFormat = cfg.Extensions.ObjectFormat
+	}
+
+	advertised := s.caps.Get(capability.ObjectFormat)
+	if advertised == "" {
+		// Server advertised no object-format, so it only speaks sha1. Upstream
+		// (fetch-pack.c) errors when the client repo uses a different
+		// algorithm rather than letting it fail later on a checksum mismatch.
+		if clientFormat != format.UnsetObjectFormat && clientFormat != format.SHA1 {
+			return fmt.Errorf("the server does not support algorithm '%s'", clientFormat)
+		}
+		return nil
+	}
+
+	var serverFormat format.ObjectFormat
+	switch format.ObjectFormat(advertised) {
+	case format.SHA1, format.SHA256:
+		serverFormat = format.ObjectFormat(advertised)
+	default:
+		return nil
+	}
+
+	// Adopt the server format on a fresh clone: unset client + sha256 server,
+	// with HEAD still at the clone placeholder.
+	if clientFormat == format.UnsetObjectFormat && serverFormat == format.SHA256 {
+		if ref, err := st.Reference(plumbing.HEAD); err == nil && ref.Target().String() == "refs/heads/.invalid" {
+			if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
+				if err := setter.SetObjectFormat(serverFormat); err != nil {
+					return fmt.Errorf("unable to set object format: %w", err)
+				}
+				clientFormat = serverFormat
+			}
+		}
+	}
+
+	if clientFormat == format.UnsetObjectFormat {
+		clientFormat = format.SHA1
+	}
+
+	if serverFormat != clientFormat {
+		return fmt.Errorf("mismatched algorithms: client %s; server %s", clientFormat, serverFormat)
+	}
+	return nil
 }
 
 // negotiate runs the fetch negotiation loop until the server returns a

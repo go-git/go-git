@@ -383,3 +383,72 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug() {
 
 	s.test(input, expected, false)
 }
+
+func TestResolveHeadFromHashHeuristic(t *testing.T) {
+	t.Parallel()
+	h := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+	other := plumbing.NewHash("8dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+	head := plumbing.NewHashReference(plumbing.HEAD, h)
+	branch := func(name string, hash plumbing.Hash) *plumbing.Reference {
+		return plumbing.NewHashReference(plumbing.NewBranchReferenceName(name), hash)
+	}
+
+	tests := []struct {
+		name          string
+		refs          []*plumbing.Reference
+		defaultBranch plumbing.ReferenceName
+		wantTarget    plumbing.ReferenceName
+		wantSymbolic  bool
+	}{
+		{
+			name:          "prefers default branch over master",
+			refs:          []*plumbing.Reference{branch("master", h), branch("main", h)},
+			defaultBranch: plumbing.NewBranchReferenceName("main"),
+			wantTarget:    plumbing.NewBranchReferenceName("main"),
+			wantSymbolic:  true,
+		},
+		{
+			name:         "falls back to master when default unset",
+			refs:         []*plumbing.Reference{branch("topic", h), branch("master", h)},
+			wantTarget:   plumbing.Master,
+			wantSymbolic: true,
+		},
+		{
+			name:          "default branch ignored when its hash differs",
+			refs:          []*plumbing.Reference{branch("main", other), branch("master", h)},
+			defaultBranch: plumbing.NewBranchReferenceName("main"),
+			wantTarget:    plumbing.Master,
+			wantSymbolic:  true,
+		},
+		{
+			name:         "first advertised match when neither default nor master",
+			refs:         []*plumbing.Reference{branch("zeta", h), branch("alpha", h)},
+			wantTarget:   plumbing.NewBranchReferenceName("zeta"),
+			wantSymbolic: true,
+		},
+		{
+			name:         "unchanged when no ref matches",
+			refs:         []*plumbing.Reference{branch("master", other)},
+			wantSymbolic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := ResolveHeadFromHashHeuristic(head, tt.refs, tt.defaultBranch)
+			if !tt.wantSymbolic {
+				if got.Type() != plumbing.HashReference {
+					t.Fatalf("expected HEAD unchanged (hash ref), got %v", got)
+				}
+				return
+			}
+			if got.Type() != plumbing.SymbolicReference {
+				t.Fatalf("expected symbolic HEAD, got %v", got)
+			}
+			if got.Target() != tt.wantTarget {
+				t.Fatalf("HEAD target = %q, want %q", got.Target(), tt.wantTarget)
+			}
+		})
+	}
+}

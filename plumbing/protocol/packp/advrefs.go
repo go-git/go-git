@@ -21,6 +21,10 @@ type AdvRefs struct {
 	References []*plumbing.Reference
 	// Shallows are the shallow object ids.
 	Shallows []plumbing.Hash
+	// DefaultBranch is the branch the detached-HEAD heuristic should prefer
+	// (the client's init.defaultBranch, as a full ref name), tried before
+	// refs/heads/master. Empty disables the preference.
+	DefaultBranch plumbing.ReferenceName
 }
 
 // Head returns the HEAD reference. It checks the first reference in
@@ -136,28 +140,39 @@ func (a *AdvRefs) symRefMap() (map[plumbing.ReferenceName]plumbing.ReferenceName
 //   - If not, scan references in alphabetical order for a matching hash.
 //   - If no match is found, HEAD is returned unchanged.
 func (a *AdvRefs) resolvedHeadFromHeuristic(head *plumbing.Reference) *plumbing.Reference {
+	return ResolveHeadFromHashHeuristic(head, a.References, a.DefaultBranch)
+}
+
+// ResolveHeadFromHashHeuristic converts a detached (HashReference) HEAD into a
+// SymbolicReference pointing at a branch that shares its hash, mirroring
+// upstream's guess_remote_head (remote.c): prefer defaultBranch (the client's
+// init.defaultBranch), then refs/heads/master, then the first advertised ref
+// that points there (in wire order). HEAD is returned unchanged if no ref
+// matches. Used by both the v0/v1 advertisement and the protocol v2 ls-refs
+// path, which only emits a symref-target for a symbolic HEAD.
+func ResolveHeadFromHashHeuristic(head *plumbing.Reference, refs []*plumbing.Reference, defaultBranch plumbing.ReferenceName) *plumbing.Reference {
 	headHash := head.Hash()
 
-	for _, ref := range a.References {
-		if ref.Name() == plumbing.Master && ref.Type() == plumbing.HashReference && ref.Hash() == headHash {
-			return plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)
+	for _, name := range []plumbing.ReferenceName{defaultBranch, plumbing.Master} {
+		if name == "" {
+			continue
+		}
+		for _, ref := range refs {
+			if ref.Name() == name && ref.Type() == plumbing.HashReference && ref.Hash() == headHash {
+				return plumbing.NewSymbolicReference(plumbing.HEAD, name)
+			}
 		}
 	}
 
-	candidates := make([]*plumbing.Reference, 0, len(a.References))
-	for _, ref := range a.References {
+	// No preferred branch matched; take the first advertised ref that points
+	// at HEAD's hash, preserving wire order as upstream does.
+	for _, ref := range refs {
 		if ref.Name() == plumbing.HEAD || ref.Name().IsPeeled() {
 			continue
 		}
 		if ref.Type() == plumbing.HashReference && ref.Hash() == headHash {
-			candidates = append(candidates, ref)
+			return plumbing.NewSymbolicReference(plumbing.HEAD, ref.Name())
 		}
-	}
-	if len(candidates) > 0 {
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].Name() < candidates[j].Name()
-		})
-		return plumbing.NewSymbolicReference(plumbing.HEAD, candidates[0].Name())
 	}
 
 	return head

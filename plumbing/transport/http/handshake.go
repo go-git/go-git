@@ -205,8 +205,9 @@ type smartPackSession struct {
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
 
 // GetRemoteRefs returns the advertised refs. Smart HTTP discovery is a
-// complete v0/v1 advertisement, so req (ref-prefix scoping) is ignored.
-func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.RefsRequest) ([]*plumbing.Reference, error) {
+// complete v0/v1 advertisement, so ref-prefix scoping is ignored; only the
+// default-branch hint (for detached-HEAD resolution) is honoured.
+func (s *smartPackSession) GetRemoteRefs(_ context.Context, req *transport.RefsRequest) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -214,6 +215,7 @@ func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.RefsReq
 	if !forPush && s.refs.IsEmpty() {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
+	s.refs.DefaultBranch = transport.DefaultBranchRef(req)
 	refs, err := s.refs.ResolvedReferences()
 	if err != nil {
 		return nil, err
@@ -384,11 +386,13 @@ type dumbPackSession struct {
 func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
 
 // GetRemoteRefs returns the advertised refs. Dumb HTTP has no ref-prefix
-// support, so req is ignored.
-func (s *dumbPackSession) GetRemoteRefs(_ context.Context, _ *transport.RefsRequest) ([]*plumbing.Reference, error) {
+// support; only the default-branch hint (for detached-HEAD resolution) is
+// honoured.
+func (s *dumbPackSession) GetRemoteRefs(_ context.Context, req *transport.RefsRequest) ([]*plumbing.Reference, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
+	s.refs.DefaultBranch = transport.DefaultBranchRef(req)
 	refs, err := s.refs.ResolvedReferences()
 	if err != nil {
 		return nil, err
