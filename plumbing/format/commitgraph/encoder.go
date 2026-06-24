@@ -13,21 +13,30 @@ import (
 // Encoder writes MemoryIndex structs to an output stream.
 type Encoder struct {
 	io.Writer
+	out  io.Writer
 	hash hash.Hash
 }
 
-// NewEncoder returns a new stream encoder that writes to w.
+// NewEncoder returns a new stream encoder that writes to w. The object
+// format defaults to SHA-1 and is upgraded to SHA-256 by Encode when the
+// index being written holds SHA-256 object IDs.
 func NewEncoder(w io.Writer) *Encoder {
-	// TODO: Support passing an ObjectFormat (sha256)
 	h := hash.New(crypto.SHA1)
-	mw := io.MultiWriter(w, h)
-	return &Encoder{mw, h}
+	return &Encoder{Writer: io.MultiWriter(w, h), out: w, hash: h}
 }
 
 // Encode writes an index into the commit-graph file
 func (e *Encoder) Encode(idx Index) error {
 	// Get all the hashes in the input index
 	hashes := idx.Hashes()
+
+	// Match the index's object format. The encoder defaults to SHA-1;
+	// switch to SHA-256 when the index holds 32-byte object IDs so the
+	// header hash version, OID widths and chunk sizes are all consistent.
+	if len(hashes) > 0 && hashes[0].Size() == crypto.SHA256.Size() {
+		e.hash = hash.New(crypto.SHA256)
+		e.Writer = io.MultiWriter(e.out, e.hash)
+	}
 
 	// Sort the input and prepare helper structures we'll need for encoding
 	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount := e.prepare(idx, hashes)

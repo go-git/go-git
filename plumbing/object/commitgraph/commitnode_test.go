@@ -102,7 +102,7 @@ func testCommitAndTree(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
 	s.Equal(merge3commit.ID().String(), merge3node.ID().String())
 	tree, err := merge3node.Tree()
 	s.NoError(err)
-	s.Equal(merge3commit.TreeHash.String(), tree.ID().String())
+	s.Equal(merge3commit.Tree().String(), tree.ID().String())
 }
 
 func (s *CommitNodeSuite) TestObjectGraph() {
