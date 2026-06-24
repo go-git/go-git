@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -453,12 +454,25 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			Wants:       wants,
 			Haves:       haves,
 			Depth:       o.Depth,
-			Progress:    o.Progress,
 			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
 			Filter:      o.Filter,
 		}
 
-		if err := sess.Fetch(ctx, r.s, req); err != nil && !errors.Is(err, transport.ErrNoChange) {
+		// Render raw band-2 sideband bytes as git-style "remote: "
+		// prefixed, terminal-aware progress. Only set Progress when the
+		// caller asked for it, so sideband negotiation stays disabled
+		// otherwise (and to avoid a typed-nil interface value).
+		var progress *pktline.ProgressWriter
+		if o.Progress != nil {
+			progress = pktline.NewProgressWriter(o.Progress, nil)
+			req.Progress = progress
+		}
+
+		err := sess.Fetch(ctx, r.s, req)
+		if progress != nil {
+			_ = progress.Close()
+		}
+		if err != nil && !errors.Is(err, transport.ErrNoChange) {
 			// Note: We receive ErrNoChange when remote is the same as local. At
 			// this point, we have everything we're asking for.
 			return nil, err
@@ -1378,10 +1392,19 @@ func pushHashes(
 	done := make(chan error, 1)
 	req := &transport.PushRequest{
 		Commands: cmds,
-		Progress: o.Progress,
 		Options:  o.Options,
 		Atomic:   o.Atomic,
 		Quiet:    o.Quiet,
+	}
+
+	// Render raw band-2 sideband bytes as git-style "remote: " prefixed,
+	// terminal-aware progress. Only set Progress when the caller asked for
+	// it, so sideband negotiation stays disabled otherwise (and to avoid a
+	// typed-nil interface value).
+	var progress *pktline.ProgressWriter
+	if o.Progress != nil {
+		progress = pktline.NewProgressWriter(o.Progress, nil)
+		req.Progress = progress
 	}
 
 	if !allDelete {
@@ -1400,9 +1423,16 @@ func pushHashes(
 	}
 
 	if err := sess.Push(ctx, s, req); err != nil {
+		if progress != nil {
+			_ = progress.Close()
+		}
 		// close the pipe to unlock encode write
 		_ = rd.Close()
 		return err
+	}
+
+	if progress != nil {
+		_ = progress.Close()
 	}
 
 	if err := <-done; err != nil {
