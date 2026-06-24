@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -129,12 +130,23 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	if err != nil {
 		return nil, err
 	}
-	// V2 client support is partial (server v2 is fully supported for HTTP e2e with git CLI).
-	// If ver==V2 the subsequent AdvRefs decode will typically yield empty refs for
-	// a real v2 advertisement (refs come via ls-refs); GetRemoteRefs will surface
-	// an appropriate error. Explicit V2 requests from go-git remain best-effort.
-	switch ver {
-	case protocol.V1, protocol.V0, protocol.V2:
+
+	if ver == protocol.V2 {
+		// Protocol v2: the server sends a capability advertisement instead of
+		// the v0/v1 ref advertisement. References are retrieved lazily via the
+		// ls-refs command, so refs stays nil here.
+		adv := &packp.CapabilityAdv{}
+		if err := adv.Decode(rd); err != nil {
+			return nil, err
+		}
+		return &smartPackSession{
+			client:     client,
+			baseURL:    req.URL,
+			service:    req.Command,
+			authorizer: authorizer,
+			version:    ver,
+			caps:       adv.Capabilities,
+		}, nil
 	}
 
 	ar := &packp.AdvRefs{}
@@ -181,7 +193,10 @@ func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Cli
 
 // --- smart HTTP pack session ---
 
-var _ transport.Session = (*smartPackSession)(nil)
+var (
+	_ transport.Session   = (*smartPackSession)(nil)
+	_ transport.Commander = (*smartPackSession)(nil)
+)
 
 type smartPackSession struct {
 	client     *http.Client
@@ -195,11 +210,26 @@ type smartPackSession struct {
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
 
-func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
+func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
+	forPush := s.service == transport.ReceivePackService
+	if s.version == protocol.V2 {
+		var prefixes []string
+		if opts != nil {
+			prefixes = opts.RefPrefixes
+		}
+		refs, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
+		if err != nil {
+			return nil, err
+		}
+		if !forPush && len(refs) == 0 {
+			return nil, transport.ErrEmptyRemoteRepository
+		}
+		return transport.NewRemoteRefs(refs), nil
+	}
+
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
-	forPush := s.service == transport.ReceivePackService
 	if !forPush && s.refs.IsEmpty() {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -210,7 +240,42 @@ func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemo
 	return transport.NewRemoteRefs(refs), nil
 }
 
+// Command implements transport.Commander. It runs a Protocol v2 command as a
+// single stateless HTTP POST: the request envelope is buffered and sent, and
+// the response is decoded from the response body. Fetch uses its own round
+// instead so it can stream the packfile from the body; Command is for
+// non-streaming commands such as ls-refs.
+func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+	if s.version != protocol.V2 {
+		return transport.ErrUnsupportedVersion
+	}
+
+	r := &httpRequester{session: s, ctx: ctx}
+	cr := &packp.CommandRequest{
+		Command:      cmd,
+		Capabilities: internal.ClientCapabilities(s.caps),
+		Args:         req,
+	}
+	if err := cr.Encode(r); err != nil {
+		return err
+	}
+	if resp != nil {
+		if err := resp.Decode(r); err != nil {
+			return err
+		}
+	}
+	if r.resp != nil {
+		_, _ = io.Copy(io.Discard, r.resp.Body)
+		_ = r.resp.Body.Close()
+	}
+	return nil
+}
+
 func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
+	if s.version == protocol.V2 {
+		return s.fetchV2(ctx, st, req)
+	}
+
 	neg := &httpNegotiator{session: s, ctx: ctx}
 
 	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
@@ -239,6 +304,42 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		neg.closeResponse()
 	}
 	return err
+}
+
+// fetchV2 fetches over Protocol v2. Each negotiation round is a fresh stateless
+// POST; internal.FetchV2 decodes the metadata via FetchOutput and, once the
+// server commits to a packfile, streams it from that round's response body.
+func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
+	if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
+		return transport.ErrFilterNotSupported
+	}
+	if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
+		return transport.ErrShallowNotSupported
+	}
+
+	round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
+		r := &httpRequester{session: s, ctx: ctx}
+		cr := &packp.CommandRequest{
+			Command:      "fetch",
+			Capabilities: internal.ClientCapabilities(s.caps),
+			Args:         args,
+		}
+		if err := cr.Encode(r); err != nil {
+			return nil, nil, err
+		}
+		out := &packp.FetchOutput{}
+		if err := out.Decode(r); err != nil {
+			return nil, nil, err
+		}
+		if r.resp == nil {
+			return nil, nil, fmt.Errorf("http transport: fetch command produced no response")
+		}
+		// The response body is positioned at the packfile (when out.Packfile);
+		// internal.FetchV2 streams it and closes the body via io.Closer.
+		return out, r.resp.Body, nil
+	}
+
+	return internal.FetchV2(ctx, st, req, round)
 }
 
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
@@ -293,6 +394,9 @@ func (r *httpRequester) doPost() error {
 	httpReq.Header.Set("Content-Type", fmt.Sprintf("application/x-%s-request", r.session.service))
 	httpReq.Header.Set("Accept", fmt.Sprintf("application/x-%s-result", r.session.service))
 	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
+	if gp := transport.GitProtocolEnv(r.session.version); gp != "" {
+		httpReq.Header.Set("Git-Protocol", gp)
+	}
 	if r.session.baseURL.User != nil {
 		password, _ := r.session.baseURL.User.Password()
 		httpReq.SetBasicAuth(r.session.baseURL.User.Username(), password)

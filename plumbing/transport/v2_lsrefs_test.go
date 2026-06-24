@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -135,7 +136,7 @@ func TestV2GetRemoteRefsUnbornHead(t *testing.T) {
 	}
 
 	s := newV2Session(t, serve)
-	require.True(t, s.lsRefsSupportsUnborn())
+	require.Contains(t, s.caps.Get(capability.LsRefs), "unborn")
 
 	rr, err := s.GetRemoteRefs(context.TODO(), nil)
 	require.NoError(t, err)
