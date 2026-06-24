@@ -2,24 +2,22 @@ package capability
 
 import (
 	"fmt"
+	"os"
 	"strings"
-	"testing"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
-func TestDefaultAgent(t *testing.T) {
-	t.Setenv("GO_GIT_USER_AGENT_EXTRA", "")
+func (s *SuiteCapabilities) TestDefaultAgent() {
+	os.Unsetenv("GO_GIT_USER_AGENT_EXTRA")
 	ua := DefaultAgent()
-	assert.Equal(t, userAgent, ua)
+	s.Equal(userAgent, ua)
 }
 
-func TestEnvAgent(t *testing.T) {
-	t.Setenv("GO_GIT_USER_AGENT_EXTRA", "abc xyz")
+func (s *SuiteCapabilities) TestEnvAgent() {
+	os.Setenv("GO_GIT_USER_AGENT_EXTRA", "abc xyz")
 	ua := DefaultAgent()
-	assert.Equal(t, fmt.Sprintf("%s %s", userAgent, "abc xyz"), ua)
+	s.Equal(fmt.Sprintf("%s %s", userAgent, "abc xyz"), ua)
 }
 
 func (s *SuiteCapabilities) TestValidate() {

@@ -272,6 +272,31 @@ const (
 	SessionID Capability = "session-id"
 )
 
+// V2 command capabilities are advertised by the server in protocol v2
+// capability advertisements.
+const (
+	// LsRefs is a v2 command capability indicating the server supports
+	// the ls-refs command for reference discovery.
+	LsRefs Capability = "ls-refs"
+	// FetchCmd is a v2 command capability indicating the server supports
+	// the fetch command. Named FetchCmd to avoid collision with the
+	// transport-level Fetch method.
+	FetchCmd Capability = "fetch"
+	// ObjectInfo is a v2 command capability indicating the server supports
+	// the object-info command.
+	ObjectInfo Capability = "object-info"
+	// BundleURI is a v2 command capability indicating the server supports
+	// the bundle-uri command.
+	BundleURI Capability = "bundle-uri"
+
+	// V2 non-command capabilities.
+	// ServerOption indicates the server supports the server-option capability.
+	ServerOption Capability = "server-option"
+	// WaitForDone is a v2 fetch sub-feature indicating the server supports
+	// the wait-for-done argument in the fetch command.
+	WaitForDone Capability = "wait-for-done"
+)
+
 const userAgent = "go-git/6.x"
 
 // DefaultAgent provides the user agent string.

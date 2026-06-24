@@ -56,6 +56,8 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		return h, nil
 	}
 
+	// --- Want lines ---
+
 	// First want line: want <hash>[ capabilities]
 	ok, err := nextLine()
 	if err != nil {
@@ -102,6 +104,8 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		req.Wants = append(req.Wants, h)
 	}
 
+	// --- Shallow lines ---
+
 	for bytes.HasPrefix(line, shallow) {
 		line = bytes.TrimPrefix(line, shallow)
 
@@ -119,6 +123,8 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 			return nil
 		}
 	}
+
+	// --- Deepen lines ---
 
 	for bytes.HasPrefix(line, deepen) {
 		switch {
