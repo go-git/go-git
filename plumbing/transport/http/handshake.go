@@ -237,7 +237,7 @@ func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.Ge
 		if err != nil {
 			return nil, err
 		}
-		if !forPush && len(refs) == 0 {
+		if !forPush && !internal.HasHashRef(refs) {
 			return nil, transport.ErrEmptyRemoteRepository
 		}
 		return transport.NewRemoteRefs(refs), nil

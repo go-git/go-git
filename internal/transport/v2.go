@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -15,6 +16,12 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
+
+// ErrNoChange is returned by FetchV2 when every wanted object is already present
+// in the client's haves and no shallow change was requested, mirroring git's
+// everything_local short-circuit in do_fetch_pack_v2. transport.ErrNoChange
+// aliases this value.
+var ErrNoChange = errors.New("no change")
 
 // Negotiation pacing, mirroring git's fetch-pack.c (INITIAL_FLUSH, LARGE_FLUSH,
 // MAX_IN_VAIN). v2 is stateless per command, so the stateless schedule applies.
@@ -88,6 +95,37 @@ func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPre
 	return out.References, nil
 }
 
+// HasHashRef reports whether refs contains at least one hash (non-symbolic)
+// reference. A v2 ls-refs result with only a symbolic or unborn HEAD and no
+// hash references corresponds to an empty repository, so callers treat the
+// absence of hash references the same as the v0/v1 empty advertisement.
+func HasHashRef(refs []*plumbing.Reference) bool {
+	for _, r := range refs {
+		if r.Type() == plumbing.HashReference {
+			return true
+		}
+	}
+	return false
+}
+
+// wantsLocal reports whether every wanted object is already present in haves, so
+// the fetch has nothing to retrieve.
+func wantsLocal(wants, haves []plumbing.Hash) bool {
+	if len(wants) == 0 {
+		return false
+	}
+	have := make(map[plumbing.Hash]struct{}, len(haves))
+	for _, h := range haves {
+		have[h] = struct{}{}
+	}
+	for _, w := range wants {
+		if _, ok := have[w]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // FetchRound runs a single fetch command round. When the returned output has
 // Packfile set, packReader is positioned at the first packfile pkt-line so the
 // caller can stream it. If packReader implements io.Closer, Fetch closes it
@@ -105,6 +143,12 @@ type FetchRound func(args *packp.FetchArgs) (out *packp.FetchOutput, packReader 
 // The caller is responsible for validating optional features against the server
 // advertisement (see FetchSupports) before requesting Filter or Depth.
 func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round FetchRound) error {
+	// Everything wanted is already local and no shallow change was requested:
+	// short-circuit before opening negotiation, matching git's everything_local.
+	if req.Depth == 0 && wantsLocal(req.Wants, req.Haves) {
+		return ErrNoChange
+	}
+
 	baseArgs := &packp.FetchArgs{
 		Wants:      req.Wants,
 		OFSDelta:   true,
