@@ -98,3 +98,27 @@ func FuzzPushOptionsDecode(f *testing.F) {
 		_ = po.Decode(bytes.NewReader(data))
 	})
 }
+
+func FuzzFetchArgsDecode(f *testing.F) {
+	f.Add([]byte("0032want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n0009done\n0000"))
+	f.Add([]byte("0000"))
+	f.Add([]byte{})
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		fa := &FetchArgs{}
+		_ = fa.Decode(bytes.NewReader(data))
+	})
+}
+
+func FuzzFetchOutputDecode(f *testing.F) {
+	// Negotiation round (acknowledgments flush-pkt, no packfile).
+	f.Add([]byte("0012acknowledgments\n0008NAK\n0000"))
+	// Final round (acknowledgments delim-pkt ... packfile flush-pkt).
+	f.Add([]byte("0012acknowledgments\n000aready\n00010009packfile\n0000"))
+	f.Add([]byte{})
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		fo := &FetchOutput{}
+		_ = fo.Decode(bytes.NewReader(data))
+	})
+}
