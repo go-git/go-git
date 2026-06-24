@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -20,7 +19,7 @@ type ArchiveRequest struct {
 	Args []string
 
 	// Progress receives human-readable status from the server (sideband channel 2).
-	Progress sideband.Progress
+	Progress io.Writer
 }
 
 // Archiver is implemented by Sessions that support git-upload-archive.

@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 )
 
 // SubmoduleRecursivity defines how depth will affect any submodule recursive
@@ -72,7 +72,7 @@ type CloneOptions struct {
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
-	Progress sideband.Progress
+	Progress io.Writer
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is AllTags.
 	Tags plumbing.TagMode
@@ -189,7 +189,7 @@ type PullOptions struct {
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
-	Progress sideband.Progress
+	Progress io.Writer
 	// Force allows the pull to update a local branch even when the remote
 	// branch does not descend from it.
 	Force bool
@@ -237,7 +237,7 @@ type FetchOptions struct {
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored and the capability (if supported)
 	// no-progress, is sent to the server to avoid send this information.
-	Progress sideband.Progress
+	Progress io.Writer
 	// Tags describe how the tags will be fetched from the remote repository,
 	// by default is TagFollowing.
 	Tags plumbing.TagMode
@@ -290,7 +290,7 @@ type PushOptions struct {
 	ClientOptions []client.Option
 	// Progress is where the human readable information sent by the server is
 	// stored, if nil nothing is stored.
-	Progress sideband.Progress
+	Progress io.Writer
 	// Prune specify that remote refs that match given RefSpecs and that do
 	// not exist locally will be removed.
 	Prune bool

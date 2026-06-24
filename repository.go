@@ -27,7 +27,6 @@ import (
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -1476,7 +1475,7 @@ type ArchiveOptions struct {
 	ClientOptions []client.Option
 	// Progress receives human-readable status from the remote server.
 	// Only used by ArchiveRemote, ignored by Archive.
-	Progress sideband.Progress
+	Progress io.Writer
 }
 
 // Validate validates the ArchiveOptions.
