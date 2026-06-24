@@ -4,13 +4,16 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
 
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -153,6 +156,10 @@ func (s *StreamSession) lsRefsSupportsUnborn() bool {
 
 // Fetch implements PackSession.
 func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *FetchRequest) error {
+	if s.version == protocol.V2 {
+		return s.fetchV2(ctx, st, req)
+	}
+
 	shallows, err := NegotiatePack(ctx, st, s.caps, false, s.r, s.w, req)
 	if err != nil {
 		return s.wrapStderr(err)
@@ -161,6 +168,113 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 		return s.wrapStderr(err)
 	}
 	return nil
+}
+
+// fetchV2 fetches a packfile using the Protocol v2 fetch command. It runs the
+// fetch command, advancing negotiation rounds until the server commits to a
+// packfile, then streams that packfile (always sideband-64k muxed in v2) into
+// storage. Packfile streaming is owned here, not by the FetchOutput type.
+func (s *StreamSession) fetchV2(ctx context.Context, st storage.Storer, req *FetchRequest) error {
+	args, err := s.buildFetchArgs(st, req)
+	if err != nil {
+		return err
+	}
+
+	var shallowInfo *packp.ShallowUpdate
+	for {
+		out := &packp.FetchOutput{}
+		if err := s.Command(ctx, "fetch", args, out); err != nil {
+			return s.wrapStderr(err)
+		}
+
+		if out.ShallowInfo != nil {
+			shallowInfo = &packp.ShallowUpdate{
+				Shallows:   out.ShallowInfo.Shallows,
+				Unshallows: out.ShallowInfo.Unshallows,
+			}
+		}
+
+		if out.Packfile {
+			break
+		}
+
+		// The acknowledgments section ended with a flush-pkt: no packfile this
+		// round. We send every known have up front, so there is nothing more to
+		// offer; declare done to force the server to send a packfile next round.
+		if args.Done {
+			return fmt.Errorf("transport: server sent no packfile after done")
+		}
+		args.Done = true
+	}
+
+	if err := s.streamPackfileV2(ctx, st, req); err != nil {
+		return s.wrapStderr(err)
+	}
+
+	if shallowInfo != nil {
+		if err := updateShallow(st, shallowInfo); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// streamPackfileV2 reads the v2 fetch packfile section, which the reader is
+// positioned at after FetchOutput decoding. The packfile is always
+// demultiplexed from the sideband-64k channel.
+func (s *StreamSession) streamPackfileV2(ctx context.Context, st storage.Storer, req *FetchRequest) error {
+	reader := ioutil.NewContextReader(ctx, s.r)
+	demuxer := sideband.NewDemuxer(sideband.Sideband64k, reader)
+	if req.Progress != nil {
+		demuxer.Progress = req.Progress
+	}
+	return packfile.UpdateObjectStorage(st, demuxer)
+}
+
+// buildFetchArgs maps a FetchRequest to the v2 fetch command arguments,
+// validating that optional features (filters, shallow) are advertised by the
+// server before requesting them.
+func (s *StreamSession) buildFetchArgs(st storage.Storer, req *FetchRequest) (*packp.FetchArgs, error) {
+	args := &packp.FetchArgs{
+		Wants:      req.Wants,
+		Haves:      req.Haves,
+		OFSDelta:   true,
+		NoProgress: req.Progress == nil,
+		IncludeTag: req.IncludeTags,
+	}
+
+	if req.Filter != "" {
+		if !s.fetchSupports("filter") {
+			return nil, ErrFilterNotSupported
+		}
+		args.Filter = req.Filter
+	}
+
+	if req.Depth > 0 {
+		if !s.fetchSupports("shallow") {
+			return nil, ErrShallowNotSupported
+		}
+		args.Deepen = req.Depth
+		shallows, err := st.Shallow()
+		if err != nil {
+			return nil, err
+		}
+		args.Shallows = shallows
+	}
+
+	return args, nil
+}
+
+// fetchSupports reports whether the server advertised the given fetch feature
+// in its v2 capability advertisement (fetch=<feature>...).
+func (s *StreamSession) fetchSupports(feature string) bool {
+	for _, v := range s.caps.Get(capability.FetchCmd) {
+		if slices.Contains(strings.Fields(v), feature) {
+			return true
+		}
+	}
+	return false
 }
 
 // Push implements PackSession.
