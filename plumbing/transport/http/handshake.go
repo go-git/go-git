@@ -26,12 +26,22 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	baseURL := req.URL
 	forceDumb := t.opts.ForceDumb
 
+	// git archive over HTTP discovers protocol support through the upload-pack
+	// info/refs endpoint and requires Protocol v2 (remote-curl.c). The archive
+	// request itself is later POSTed to the git-upload-archive endpoint.
+	discoverService := service
+	discoverProtocol := req.Protocol
+	if service == transport.UploadArchiveService {
+		discoverService = transport.UploadPackService
+		discoverProtocol = protocol.V2
+	}
+
 	infoURL, err := url.JoinPath(baseURL.String(), "info/refs")
 	if err != nil {
 		return nil, err
 	}
 	if !forceDumb {
-		infoURL += "?service=" + service
+		infoURL += "?service=" + discoverService
 	}
 
 	// Mark this as the initial request so checkRedirect allows
@@ -45,7 +55,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 
 	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
 	if !forceDumb {
-		if gp := transport.GitProtocolEnv(req.Protocol); gp != "" {
+		if gp := transport.GitProtocolEnv(discoverProtocol); gp != "" {
 			httpReq.Header.Set("Git-Protocol", gp)
 		}
 	}
@@ -99,16 +109,16 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		return handshakeDumb(resp, &sessReq, client, authorizer)
 	}
 
-	expected := fmt.Sprintf("application/x-%s-advertisement", service)
+	expected := fmt.Sprintf("application/x-%s-advertisement", discoverService)
 	isSmart := resp.Header.Get("Content-Type") == expected
 
 	if isSmart {
-		return handshakeSmart(resp, &sessReq, client, authorizer)
+		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer)
 	}
 	return handshakeDumb(resp, &sessReq, client, authorizer)
 }
 
-func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
+func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
@@ -121,7 +131,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 		if err := reply.Decode(rd); err != nil {
 			return nil, err
 		}
-		if reply.Service != req.Command {
+		if reply.Service != discoverService {
 			return nil, fmt.Errorf("unexpected service name: %w", transport.ErrInvalidResponse)
 		}
 	}
@@ -129,6 +139,11 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	ver, err := transport.DiscoverVersion(rd)
 	if err != nil {
 		return nil, err
+	}
+
+	// git archive over HTTP is only available when the server speaks v2.
+	if req.Command == transport.UploadArchiveService && ver != protocol.V2 {
+		return nil, transport.ErrArchiveUnsupported
 	}
 
 	if ver == protocol.V2 {
@@ -196,6 +211,7 @@ func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Cli
 var (
 	_ transport.Session   = (*smartPackSession)(nil)
 	_ transport.Commander = (*smartPackSession)(nil)
+	_ transport.Archiver  = (*smartPackSession)(nil)
 )
 
 type smartPackSession struct {
@@ -355,6 +371,40 @@ func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *tra
 }
 
 func (s *smartPackSession) Close() error { return nil }
+
+// Archive implements transport.Archiver. git archive over HTTP is a v2-only,
+// stateless operation (remote-curl.c): the archive request is POSTed to the
+// git-upload-archive endpoint and the response carries the ACK/NACK and the
+// sideband-encoded archive stream.
+func (s *smartPackSession) Archive(ctx context.Context, req *transport.ArchiveRequest) (io.ReadCloser, error) {
+	if s.version != protocol.V2 {
+		return nil, transport.ErrArchiveUnsupported
+	}
+
+	rt := &httpRequester{session: s, ctx: ctx}
+	body := &httpArchiveBody{req: rt}
+	archive, err := transport.Archive(ctx, rt, body, req)
+	if err != nil {
+		_ = body.Close()
+		return nil, err
+	}
+	return archive, nil
+}
+
+// httpArchiveBody adapts an httpRequester to the io.ReadCloser the archive
+// client reads from: reads come from the POST response body, and Close closes
+// that body. The paired httpRequester is passed to transport.Archive as the
+// writer, whose Close fires the POST.
+type httpArchiveBody struct{ req *httpRequester }
+
+func (b *httpArchiveBody) Read(p []byte) (int, error) { return b.req.Read(p) }
+
+func (b *httpArchiveBody) Close() error {
+	if b.req.resp != nil {
+		return b.req.resp.Body.Close()
+	}
+	return nil
+}
 
 // httpRequester buffers writes and fires a POST on first Read or Close.
 type httpRequester struct {

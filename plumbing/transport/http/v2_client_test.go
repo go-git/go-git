@@ -1,8 +1,12 @@
 package http
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -72,4 +76,49 @@ func TestBackend_HTTP_V2_GoGitClient(t *testing.T) {
 		require.True(t, strings.HasPrefix(r.Name().String(), "refs/heads/"),
 			"ref-prefix filter should drop %s", r.Name())
 	}
+}
+
+// TestBackend_HTTP_V2_Archive exercises git archive over HTTP, which is a
+// v2-only operation: the go-git client discovers v2 via upload-pack and POSTs
+// the archive request to git-upload-archive against go-git's own backend.
+func TestBackend_HTTP_V2_Archive(t *testing.T) {
+	t.Parallel()
+	requireGitV2(t)
+
+	base, name := setupGoGitBackendServer(t)
+	pu, err := url.Parse(fmt.Sprintf("http://u:p@%s/%s", strings.TrimPrefix(base, "http://"), name))
+	require.NoError(t, err)
+
+	tr := NewTransport(Options{})
+	sess, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     pu,
+		Command: transport.UploadArchiveService,
+	})
+	require.NoError(t, err)
+	defer func() { _ = sess.Close() }()
+
+	archiver, ok := sess.(transport.Archiver)
+	require.True(t, ok, "session should implement Archiver")
+
+	rc, err := archiver.Archive(context.Background(), &transport.ArchiveRequest{
+		Args: []string{"--format=tar", "main"},
+	})
+	require.NoError(t, err)
+	defer func() { _ = rc.Close() }()
+
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+
+	tarR := tar.NewReader(bytes.NewReader(data))
+	var names []string
+	for {
+		hdr, err := tarR.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, hdr.Name)
+	}
+	require.Contains(t, names, "README.md")
 }
