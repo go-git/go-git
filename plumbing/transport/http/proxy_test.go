@@ -55,7 +55,7 @@ func (s *proxySuite) TestAdvertisedReferencesHTTP() {
 	s.Require().NoError(err)
 	defer session.Close()
 
-	info, err := session.GetRemoteRefs(context.Background())
+	info, err := session.GetRemoteRefs(context.Background(), nil)
 	s.NoError(err)
 	s.NotNil(info)
 
@@ -85,7 +85,7 @@ func (s *proxySuite) TestAdvertisedReferencesHTTPS() {
 	s.Require().NoError(err)
 	defer session.Close()
 
-	info, err := session.GetRemoteRefs(context.Background())
+	info, err := session.GetRemoteRefs(context.Background(), nil)
 	s.NoError(err)
 	s.NotNil(info)
 
