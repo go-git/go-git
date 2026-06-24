@@ -3,9 +3,12 @@ package packp
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 type PushOptionsSuite struct {
@@ -48,16 +51,24 @@ func (s *PushOptionsSuite) TestPushOptionsEncodeEmpty() {
 
 func (s *PushOptionsSuite) TestPushOptionsEncodeInvalidOption() {
 	cases := []struct {
-		name    string
-		options []string
+		name     string
+		options  []string
+		wantErrs []error
 	}{
 		{
-			name:    "option with newline",
-			options: []string{"SomeKey=SomeValue\n"},
+			name:     "option with newline",
+			options:  []string{"SomeKey=SomeValue\n"},
+			wantErrs: []error{ErrInvalidPushOption},
 		},
 		{
-			name:    "option with null byte",
-			options: []string{"SomeKey=SomeValue\x00"},
+			name:     "option with null byte",
+			options:  []string{"SomeKey=SomeValue\x00"},
+			wantErrs: []error{ErrInvalidPushOption},
+		},
+		{
+			name:     "option exceeding max payload size",
+			options:  []string{strings.Repeat("a", pktline.MaxPayloadSize+1)},
+			wantErrs: []error{ErrInvalidPushOption, pktline.ErrPayloadTooLong},
 		},
 	}
 
@@ -69,7 +80,9 @@ func (s *PushOptionsSuite) TestPushOptionsEncodeInvalidOption() {
 			var buf bytes.Buffer
 			err := r.Encode(&buf)
 			s.Require().Error(err)
-			s.Require().True(errors.Is(err, ErrInvalidPushOption))
+			for _, wantErr := range c.wantErrs {
+				s.Require().ErrorIs(err, wantErr)
+			}
 		})
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -24,10 +23,13 @@ type PushOptions struct {
 
 // Encode encodes the push options into the given writer.
 func (opts *PushOptions) Encode(w io.Writer) error {
-	if slices.ContainsFunc(opts.Options, func(opt string) bool {
-		return strings.ContainsFunc(opt, isNotGraphic) || len(opt) > pktline.MaxPayloadSize
-	}) {
-		return fmt.Errorf("%w: contains invalid character", ErrInvalidPushOption)
+	for _, opt := range opts.Options {
+		if strings.ContainsFunc(opt, isNotGraphic) {
+			return fmt.Errorf("%w: contains invalid character", ErrInvalidPushOption)
+		}
+		if len(opt) > pktline.MaxPayloadSize {
+			return fmt.Errorf("%w: %w", ErrInvalidPushOption, pktline.ErrPayloadTooLong)
+		}
 	}
 
 	for _, opt := range opts.Options {
