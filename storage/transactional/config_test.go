@@ -20,7 +20,7 @@ type ConfigSuite struct {
 
 func (s *ConfigSuite) TestSetConfigBase() {
 	cfg := config.NewConfig()
-	cfg.Core.Worktree = "foo"
+	cfg.SetWorktree("foo")
 
 	base := memory.NewStorage()
 	err := base.SetConfig(cfg)
@@ -31,12 +31,12 @@ func (s *ConfigSuite) TestSetConfigBase() {
 
 	cfg, err = cs.Config()
 	s.NoError(err)
-	s.Equal("foo", cfg.Core.Worktree)
+	s.Equal("foo", cfg.Core().Worktree)
 }
 
 func (s *ConfigSuite) TestSetConfigTemporal() {
 	cfg := config.NewConfig()
-	cfg.Core.Worktree = "foo"
+	cfg.SetWorktree("foo")
 
 	base := memory.NewStorage()
 	err := base.SetConfig(cfg)
@@ -45,7 +45,7 @@ func (s *ConfigSuite) TestSetConfigTemporal() {
 	temporal := memory.NewStorage()
 
 	cfg = config.NewConfig()
-	cfg.Core.Worktree = "bar"
+	cfg.SetWorktree("bar")
 
 	cs := NewConfigStorage(base, temporal)
 	err = cs.SetConfig(cfg)
@@ -53,20 +53,20 @@ func (s *ConfigSuite) TestSetConfigTemporal() {
 
 	baseCfg, err := base.Config()
 	s.NoError(err)
-	s.Equal("foo", baseCfg.Core.Worktree)
+	s.Equal("foo", baseCfg.Core().Worktree)
 
 	temporalCfg, err := temporal.Config()
 	s.NoError(err)
-	s.Equal("bar", temporalCfg.Core.Worktree)
+	s.Equal("bar", temporalCfg.Core().Worktree)
 
 	cfg, err = cs.Config()
 	s.NoError(err)
-	s.Equal("bar", cfg.Core.Worktree)
+	s.Equal("bar", cfg.Core().Worktree)
 }
 
 func (s *ConfigSuite) TestCommit() {
 	cfg := config.NewConfig()
-	cfg.Core.Worktree = "foo"
+	cfg.SetWorktree("foo")
 
 	base := memory.NewStorage()
 	err := base.SetConfig(cfg)
@@ -75,7 +75,7 @@ func (s *ConfigSuite) TestCommit() {
 	temporal := memory.NewStorage()
 
 	cfg = config.NewConfig()
-	cfg.Core.Worktree = "bar"
+	cfg.SetWorktree("bar")
 
 	cs := NewConfigStorage(base, temporal)
 	err = cs.SetConfig(cfg)
@@ -86,5 +86,5 @@ func (s *ConfigSuite) TestCommit() {
 
 	baseCfg, err := base.Config()
 	s.NoError(err)
-	s.Equal("bar", baseCfg.Core.Worktree)
+	s.Equal("bar", baseCfg.Core().Worktree)
 }

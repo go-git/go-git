@@ -148,7 +148,7 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	}
 
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
-		UpholdExecutableBit: cfg.Core.FileMode,
+		UpholdExecutableBit: cfg.Core().FileMode,
 	})
 	submodules, err := w.getSubmodulesStatus(cfg)
 	if err != nil {
@@ -156,7 +156,7 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		AutoCRLF: cfg.Core().AutoCRLF == "true" || cfg.Core().AutoCRLF == "input",
 		Index:    idx,
 	}
 
@@ -552,7 +552,7 @@ func (w *Worktree) fillEncodedObjectFromFile(cfg *config.Config, dst io.Writer, 
 	}
 	defer ioutil.CheckClose(file, &err)
 
-	switch cfg.Core.AutoCRLF {
+	switch cfg.Core().AutoCRLF {
 	case "true", "input":
 		br := sync.GetBufioReader(file)
 		defer sync.PutBufioReader(br)

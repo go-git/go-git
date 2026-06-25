@@ -2,7 +2,8 @@ package config
 
 import (
 	"strconv"
-	"strings"
+
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 // OptBool is a tri-state boolean: unset, explicitly false, or explicitly true.
@@ -50,33 +51,21 @@ func (o OptBool) FormatBool() string {
 	return strconv.FormatBool(o.IsTrue())
 }
 
-// parseConfigBool mirrors upstream Git's git_parse_maybe_bool: it
-// accepts true/yes/on (→ OptBoolTrue) and false/no/off (→
-// OptBoolFalse) case-insensitively, plus any decimal integer (zero
-// → OptBoolFalse, non-zero → OptBoolTrue). Empty or otherwise
-// unrecognised values return OptBoolUnset, leaving the caller's
-// platform default in place. The empty-string handling is the only
-// intentional divergence from upstream, which returns false for
-// empty: in our unmarshalCore caller, an empty value means the key
-// is unset and the platform default should apply.
+// parseConfigBool parses a Git boolean into an OptBool, preserving the
+// tri-state distinction the struct API relies on. The boolean grammar is
+// shared with the rest of go-git via format.ParseBool (true/yes/on and
+// false/no/off case-insensitively, plus any integer). An empty value, which
+// go-git uses to mean "key absent" here, and any unrecognised value leave the
+// result unset so the caller's platform default applies.
 //
-// Reference: upstream Git git_parse_maybe_bool_text at parse.c
-// L157-L173 and git_parse_maybe_bool at parse.c L174-L182 in tag
-// v2.54.0[1].
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/parse.c#L157-L182
+// Reference: upstream Git git_parse_maybe_bool at parse.c.
 func parseConfigBool(v string) OptBool {
-	switch strings.ToLower(v) {
-	case "true", "yes", "on":
-		return OptBoolTrue
-	case "false", "no", "off":
-		return OptBoolFalse
+	if v == "" {
+		return OptBoolUnset
 	}
-	if i, err := strconv.Atoi(v); err == nil {
-		if i != 0 {
-			return OptBoolTrue
-		}
-		return OptBoolFalse
+	b, err := format.ParseBool(v)
+	if err != nil {
+		return OptBoolUnset
 	}
-	return OptBoolUnset
+	return NewOptBool(b)
 }

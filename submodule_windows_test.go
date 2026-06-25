@@ -34,10 +34,10 @@ func TestSubmoduleWindowsAbsoluteURLNotJoined(t *testing.T) {
 			}
 			cfg, err := parent.Config()
 			require.NoError(t, err)
-			cfg.Remotes["origin"] = &config.RemoteConfig{
+			cfg.SetRemote(&config.RemoteConfig{
 				Name: "origin",
 				URLs: []string{"file:///parent/origin"},
-			}
+			})
 			require.NoError(t, parent.Storer.SetConfig(cfg))
 
 			sub := &Submodule{

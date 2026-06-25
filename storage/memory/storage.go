@@ -63,8 +63,8 @@ func NewStorage(o ...StorageOption) *Storage {
 
 	if opts.objectFormat != formatcfg.UnsetObjectFormat {
 		cfg, _ := s.Config()
-		cfg.Extensions.ObjectFormat = opts.objectFormat
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		cfg.SetObjectFormat(opts.objectFormat)
+		cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 		s.oh = plumbing.FromObjectFormat(opts.objectFormat)
 	} else {
 		s.oh = plumbing.FromObjectFormat(formatcfg.DefaultObjectFormat)
@@ -97,8 +97,8 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	}
 
 	cfg, _ := s.Config()
-	cfg.Extensions.ObjectFormat = of
-	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.SetObjectFormat(of)
+	cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 	s.options.objectFormat = of
 	s.oh = plumbing.FromObjectFormat(of)
 	return nil

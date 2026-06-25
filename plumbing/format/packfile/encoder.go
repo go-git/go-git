@@ -78,7 +78,7 @@ func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool, op
 	if c, ok := s.(config.ConfigStorer); ok {
 		cfg, err := c.Config()
 		if err == nil {
-			of = cfg.Extensions.ObjectFormat
+			of = cfg.Extensions().ObjectFormat
 		}
 	}
 

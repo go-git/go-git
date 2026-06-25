@@ -1388,7 +1388,7 @@ func pushHashes(
 		req.Packfile = rd
 		go func() {
 			e := packfile.NewEncoder(wr, s, useRefDeltas)
-			if _, err := e.Encode(hs, config.Pack.Window); err != nil {
+			if _, err := e.Encode(hs, config.Pack().Window); err != nil {
 				done <- wr.CloseWithError(err)
 				return
 			}

@@ -310,7 +310,7 @@ func initBareStorage(t testing.TB, path string) *filesystem.Storage {
 	require.NoError(t, os.MkdirAll(path, 0o755))
 	st := filesystem.NewStorage(osfs.New(path), cache.NewObjectLRUDefault())
 	cfg := config.NewConfig()
-	cfg.Core.IsBare = true
+	cfg.SetBare(true)
 	require.NoError(t, st.SetConfig(cfg))
 	return st
 }

@@ -338,23 +338,23 @@ func memAuto(t *testing.T, files map[string]string) *auto {
 }
 
 // loadUserName is a convenience that loads the given scope and returns
-// cfg.User.Name.
+// cfg.User().Name.
 func loadUserName(t *testing.T, src *auto, scope config.Scope) string {
 	t.Helper()
 	s, err := src.Load(scope)
 	require.NoError(t, err)
 	cfg, err := s.Config()
 	require.NoError(t, err)
-	return cfg.User.Name
+	return cfg.User().Name
 }
 
 // loadUserEmail is a convenience that loads the given scope and returns
-// cfg.User.Email.
+// cfg.User().Email.
 func loadUserEmail(t *testing.T, src *auto, scope config.Scope) string {
 	t.Helper()
 	s, err := src.Load(scope)
 	require.NoError(t, err)
 	cfg, err := s.Config()
 	require.NoError(t, err)
-	return cfg.User.Email
+	return cfg.User().Email
 }

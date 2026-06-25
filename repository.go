@@ -264,7 +264,7 @@ func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error 
 		return err
 	}
 
-	cfg.Core.Worktree = path
+	cfg.SetWorktree(path)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -769,8 +769,8 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 		return nil, err
 	}
 
-	c, ok := cfg.Remotes[name]
-	if !ok {
+	c := cfg.Remote(name)
+	if c == nil {
 		return nil, ErrRemoteNotFound
 	}
 
@@ -784,10 +784,11 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 		return nil, err
 	}
 
-	remotes := make([]*Remote, len(cfg.Remotes))
+	all := cfg.Remotes()
+	remotes := make([]*Remote, len(all))
 
 	var i int
-	for _, c := range cfg.Remotes {
+	for _, c := range all {
 		remotes[i] = NewRemote(r.Storer, c)
 		i++
 	}
@@ -808,11 +809,11 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 		return nil, err
 	}
 
-	if _, ok := cfg.Remotes[c.Name]; ok {
+	if cfg.Remote(c.Name) != nil {
 		return nil, ErrRemoteExists
 	}
 
-	cfg.Remotes[c.Name] = c
+	cfg.SetRemote(c)
 	return remote, r.Storer.SetConfig(cfg)
 }
 
@@ -839,11 +840,11 @@ func (r *Repository) DeleteRemote(name string) error {
 		return err
 	}
 
-	if _, ok := cfg.Remotes[name]; !ok {
+	if cfg.Remote(name) == nil {
 		return ErrRemoteNotFound
 	}
 
-	delete(cfg.Remotes, name)
+	cfg.RemoveRemote(name)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -854,8 +855,8 @@ func (r *Repository) Branch(name string) (*config.Branch, error) {
 		return nil, err
 	}
 
-	b, ok := cfg.Branches[name]
-	if !ok {
+	b := cfg.Branch(name)
+	if b == nil {
 		return nil, ErrBranchNotFound
 	}
 
@@ -873,11 +874,11 @@ func (r *Repository) CreateBranch(c *config.Branch) error {
 		return err
 	}
 
-	if _, ok := cfg.Branches[c.Name]; ok {
+	if cfg.Branch(c.Name) != nil {
 		return ErrBranchExists
 	}
 
-	cfg.Branches[c.Name] = c
+	cfg.SetBranch(c)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -890,11 +891,11 @@ func (r *Repository) DeleteBranch(name string) error {
 		return err
 	}
 
-	if _, ok := cfg.Branches[name]; !ok {
+	if cfg.Branch(name) == nil {
 		return ErrBranchNotFound
 	}
 
-	delete(cfg.Branches, name)
+	cfg.RemoveBranch(name)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -957,7 +958,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	signer := opts.Signer
 	if signer == nil {
 		cfg, err := r.ConfigScoped(config.SystemScope)
-		if err == nil && cfg != nil && cfg.Tag.GpgSign.IsTrue() {
+		if err == nil && cfg != nil && cfg.Tag().GpgSign.IsTrue() {
 			// Use Has before Get so the key is not frozen when no plugin is
 			// registered, allowing callers to register one later.
 			if !plugin.Has(plugin.ObjectSigner()) {
@@ -1122,7 +1123,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to read remote repository configuration: %w", err)
 		}
-		if !conf.Core.IsBare {
+		if !conf.Core().IsBare {
 			altpath = path.Join(altpath, GitDirName)
 		}
 		if err := r.Storer.AddAlternate(altpath); err != nil {
@@ -1250,7 +1251,7 @@ func (r *Repository) setIsBare(isBare bool) error {
 		return err
 	}
 
-	cfg.Core.IsBare = isBare
+	cfg.SetBare(isBare)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -1266,7 +1267,7 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 		return err
 	}
 
-	cfg.Remotes[c.Name] = c
+	cfg.SetRemote(c)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -1830,11 +1831,12 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	protectNTFS := defaultProtectNTFS()
 	protectHFS := defaultProtectHFS()
 	if cfg, err := r.Config(); err == nil {
-		if cfg.Core.ProtectNTFS.IsSet() {
-			protectNTFS = cfg.Core.ProtectNTFS.IsTrue()
+		core := cfg.Core()
+		if core.ProtectNTFS.IsSet() {
+			protectNTFS = core.ProtectNTFS.IsTrue()
 		}
-		if cfg.Core.ProtectHFS.IsSet() {
-			protectHFS = cfg.Core.ProtectHFS.IsTrue()
+		if core.ProtectHFS.IsSet() {
+			protectHFS = core.ProtectHFS.IsTrue()
 		}
 	}
 
@@ -2141,7 +2143,7 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 		return h, err
 	}
 	enc := packfile.NewEncoder(wc, r.Storer, cfg.UseRefDeltas)
-	h, err = enc.Encode(objs, scfg.Pack.Window)
+	h, err = enc.Encode(objs, scfg.Pack().Window)
 	if err != nil {
 		return h, err
 	}

@@ -114,7 +114,7 @@ func NegotiatePack(
 
 		cfg, err := st.Config()
 		if err == nil {
-			clientFormat = cfg.Extensions.ObjectFormat
+			clientFormat = cfg.Extensions().ObjectFormat
 		}
 
 		if clientFormat == config.UnsetObjectFormat && serverFormat == config.SHA256 {

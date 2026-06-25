@@ -68,8 +68,7 @@ func registerTestConfigLoader() {
 
 func defaultTestConfig() config.Config {
 	cfg := config.NewConfig()
-	cfg.User.Name = "Test User"
-	cfg.User.Email = "test@example.com"
+	cfg.SetUser(config.User{Name: "Test User", Email: "test@example.com"})
 	return *cfg
 }
 

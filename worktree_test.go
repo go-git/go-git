@@ -255,7 +255,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Submodules, 2)
+	s.Len(cfg.Submodules(), 2)
 }
 
 func (s *RepositorySuite) TestPullAdd() {
@@ -647,7 +647,7 @@ func (s *WorktreeSuite) TestCheckoutCRLF() {
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
-		cfg.Core.AutoCRLF = autoCRLF
+		cfg.SetAutoCRLF(autoCRLF)
 		require.NoError(t, r.SetConfig(cfg))
 
 		wt, err := r.Worktree()
@@ -2271,7 +2271,7 @@ func (s *WorktreeSuite) TestStatusFileMode() {
 		cfg, err := r.Config()
 		require.NoError(t, err)
 
-		cfg.Core.FileMode = fileMode
+		cfg.SetFileMode(fileMode)
 		err = r.SetConfig(cfg)
 		require.NoError(t, err)
 
@@ -2598,7 +2598,7 @@ func (s *WorktreeSuite) TestAddCRLF() {
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
-		cfg.Core.AutoCRLF = autoCRLF
+		cfg.SetAutoCRLF(autoCRLF)
 		require.NoError(t, r.SetConfig(cfg))
 
 		wt, err := r.Worktree()

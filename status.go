@@ -131,7 +131,7 @@ func preloadStatus(w *Worktree) (Status, error) {
 	}
 
 	idxRoot := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
-		UpholdExecutableBit: c.Core.FileMode,
+		UpholdExecutableBit: c.Core().FileMode,
 	})
 	nodes := []noder.Noder{idxRoot}
 

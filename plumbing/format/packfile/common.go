@@ -43,7 +43,7 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	if c, ok := s.(config.ConfigStorer); ok {
 		cfg, err := c.Config()
 		if err == nil {
-			of = cfg.Extensions.ObjectFormat
+			of = cfg.Extensions().ObjectFormat
 		}
 	}
 

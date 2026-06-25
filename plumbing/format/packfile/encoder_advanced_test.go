@@ -75,8 +75,8 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	}); ok {
 		cfg, err := cs.Config()
 		s.Require().NoError(err)
-		if cfg.Extensions.ObjectFormat != formatcfg.UnsetObjectFormat {
-			objectFormat = cfg.Extensions.ObjectFormat
+		if cfg.Extensions().ObjectFormat != formatcfg.UnsetObjectFormat {
+			objectFormat = cfg.Extensions().ObjectFormat
 		}
 	}
 

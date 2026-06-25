@@ -58,12 +58,12 @@ func (b *BranchSuite) TestMarshal() {
 `)
 
 	cfg := NewConfig()
-	cfg.Branches["branch-tracking-on-clone"] = &Branch{
+	cfg.SetBranch(&Branch{
 		Name:   "branch-tracking-on-clone",
 		Remote: "fork",
 		Merge:  plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"),
 		Rebase: "interactive",
-	}
+	})
 
 	actual, err := cfg.Marshal()
 	b.NoError(err)
@@ -82,7 +82,7 @@ func (b *BranchSuite) TestUnmarshal() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	branch := cfg.Branches["branch-tracking-on-clone"]
+	branch := cfg.Branches()["branch-tracking-on-clone"]
 	b.Equal("branch-tracking-on-clone", branch.Name)
 	b.Equal("fork", branch.Remote)
 	b.Equal(plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"), branch.Merge)
@@ -120,7 +120,7 @@ func (b *BranchSuite) TestUnmarshalNonRefsPrefix() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	branch := cfg.Branches["foo"]
+	branch := cfg.Branches()["foo"]
 	b.Equal("foo", branch.Name)
 	b.Equal("origin", branch.Remote)
 	b.Equal(plumbing.ReferenceName("main"), branch.Merge)

@@ -25,5 +25,5 @@ func TestPlainInitFileMode(t *testing.T) {
 
 	cfg, err := r.Config()
 	require.NoError(t, err)
-	assert.True(t, cfg.Core.FileMode)
+	assert.True(t, cfg.Core().FileMode)
 }

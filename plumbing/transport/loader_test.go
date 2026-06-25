@@ -25,7 +25,7 @@ func TestFilesystemLoader_Load(t *testing.T) {
 	require.NoError(t, st.Init())
 	cfg, err := st.Config()
 	require.NoError(t, err)
-	cfg.Core.IsBare = true
+	cfg.SetBare(true)
 	require.NoError(t, st.SetConfig(cfg))
 
 	loader := NewFilesystemLoader(osfs.New(dir), false)
@@ -50,7 +50,7 @@ func TestFilesystemLoader_LoadBare(t *testing.T) {
 	require.NoError(t, st.Init())
 	cfg, err := st.Config()
 	require.NoError(t, err)
-	cfg.Core.IsBare = true
+	cfg.SetBare(true)
 	require.NoError(t, st.SetConfig(cfg))
 
 	loader := NewFilesystemLoader(osfs.New(dir), false)

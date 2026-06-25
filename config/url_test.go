@@ -34,7 +34,7 @@ func (b *URLSuite) TestMarshal() {
 `)
 
 	cfg := NewConfig()
-	cfg.URLs = append(cfg.URLs, &URL{
+	cfg.AddURL(&URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/"},
 	})
@@ -54,7 +54,7 @@ func (b *URLSuite) TestMarshalMultipleInsteadOf() {
 `)
 
 	cfg := NewConfig()
-	cfg.URLs = append(cfg.URLs, &URL{
+	cfg.AddURL(&URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/", "https://google.com/"},
 	})
@@ -74,8 +74,8 @@ func (b *URLSuite) TestUnmarshal() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	b.Require().Len(cfg.URLs, 1)
-	url := cfg.URLs[0]
+	b.Require().Len(cfg.URLs(), 1)
+	url := cfg.URLs()[0]
 	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 	b.Equal("https://github.com/", url.InsteadOfs[0])
@@ -92,8 +92,8 @@ func (b *URLSuite) TestUnmarshalMultipleInsteadOf() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.Nil(err)
-	b.Require().Len(cfg.URLs, 1)
-	url := cfg.URLs[0]
+	b.Require().Len(cfg.URLs(), 1)
+	url := cfg.URLs()[0]
 	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 
@@ -113,8 +113,8 @@ func (b *URLSuite) TestUnmarshalDuplicateUrls() {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(input)
 	b.Nil(err)
-	b.Require().Len(cfg.URLs, 1)
-	url := cfg.URLs[0]
+	b.Require().Len(cfg.URLs(), 1)
+	url := cfg.URLs()[0]
 	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 
@@ -185,7 +185,7 @@ func (b *URLSuite) TestApplyInsteadOfLongestMatchIntegration() {
 	b.NoError(err)
 
 	// The longer insteadOf should be used
-	origin := cfg.Remotes["origin"]
+	origin := cfg.Remotes()["origin"]
 	b.NotNil(origin)
 	b.Equal([]string{"ssh://git@github.com/user/repo.git"}, origin.URLs)
 }
@@ -207,7 +207,7 @@ func (b *URLSuite) TestApplyInsteadOfDuplicateInsteadOfValues() {
 	b.NoError(err)
 
 	// First URL in config file should be used
-	origin := cfg.Remotes["origin"]
+	origin := cfg.Remotes()["origin"]
 	b.NotNil(origin)
 	b.Equal([]string{"ssh://git@github.com/user/repo.git"}, origin.URLs)
 }

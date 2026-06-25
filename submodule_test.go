@@ -34,8 +34,8 @@ func TestSubmoduleInit(t *testing.T) {
 		cfg, err := r.Config()
 		require.NoError(t, err)
 
-		require.Len(t, cfg.Submodules, 1)
-		require.NotNil(t, cfg.Submodules[primaryFixtureSubmoduleName(f)])
+		require.Len(t, cfg.Submodules(), 1)
+		require.NotNil(t, cfg.Submodules()[primaryFixtureSubmoduleName(f)])
 
 		status, err := sm.Status()
 		require.NoError(t, err)
@@ -447,13 +447,13 @@ func TestDefaultRemote(t *testing.T) {
 			cfg, err := r.Config()
 			require.NoError(t, err)
 			for name, url := range tc.remotes {
-				cfg.Remotes[name] = &config.RemoteConfig{
+				cfg.SetRemote(&config.RemoteConfig{
 					Name: name,
 					URLs: []string{url},
-				}
+				})
 			}
 			for name, remote := range tc.branches {
-				cfg.Branches[name] = &config.Branch{Name: name, Remote: remote}
+				cfg.SetBranch(&config.Branch{Name: name, Remote: remote})
 			}
 			require.NoError(t, r.Storer.SetConfig(cfg))
 
@@ -488,14 +488,14 @@ func TestSubmoduleRelativeURLPicksOrigin(t *testing.T) {
 		}
 		cfg, err := parent.Config()
 		require.NoError(t, err)
-		cfg.Remotes["origin"] = &config.RemoteConfig{
+		cfg.SetRemote(&config.RemoteConfig{
 			Name: "origin",
 			URLs: []string{"file:///parent/origin"},
-		}
-		cfg.Remotes["upstream"] = &config.RemoteConfig{
+		})
+		cfg.SetRemote(&config.RemoteConfig{
 			Name: "upstream",
 			URLs: []string{"file:///parent/upstream"},
-		}
+		})
 		require.NoError(t, parent.Storer.SetConfig(cfg))
 
 		sub := &Submodule{
@@ -538,7 +538,7 @@ func TestSubmoduleRelativeURLRemoteWithoutURLs(t *testing.T) {
 	}
 	cfg, err := parent.Config()
 	require.NoError(t, err)
-	cfg.Remotes["origin"] = &config.RemoteConfig{Name: "origin", URLs: nil}
+	cfg.SetRemote(&config.RemoteConfig{Name: "origin", URLs: nil})
 
 	sub := &Submodule{
 		initialized: true,

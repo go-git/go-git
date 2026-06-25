@@ -64,7 +64,7 @@ func AdvertiseRefs(
 		cfg, err := st.Config()
 		var objectformat config.ObjectFormat
 		if err == nil && cfg != nil {
-			objectformat = cfg.Extensions.ObjectFormat
+			objectformat = cfg.Extensions().ObjectFormat
 		}
 
 		if objectformat == config.UnsetObjectFormat {
@@ -137,7 +137,7 @@ func writeV2Advertisement(w io.Writer, st storage.Storer) error {
 	// object format
 	var objectformat config.ObjectFormat
 	if cfg, err := st.Config(); err == nil && cfg != nil {
-		objectformat = cfg.Extensions.ObjectFormat
+		objectformat = cfg.Extensions().ObjectFormat
 	}
 	if objectformat == config.UnsetObjectFormat {
 		objectformat = config.DefaultObjectFormat

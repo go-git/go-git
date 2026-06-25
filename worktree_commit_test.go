@@ -1231,7 +1231,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 			cfg, err := r.Config()
 			require.NoError(t, err)
 
-			cfg.Commit.GpgSign = tt.commitSignGpg
+			cfg.SetCommitGpgSign(tt.commitSignGpg)
 			err = r.SetConfig(cfg)
 			require.NoError(t, err)
 

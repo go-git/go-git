@@ -40,7 +40,7 @@ func TestParseConfigBool(t *testing.T) {
 		// Arbitrary integers, mirroring upstream's !!v on git_parse_int.
 		{"2", OptBoolTrue},
 		{"-1", OptBoolTrue},
-		{"010", OptBoolTrue}, // strconv.Atoi parses decimal, not octal.
+		{"010", OptBoolTrue}, // Git parses with base 0, so this is octal 8.
 		{"99999", OptBoolTrue},
 		{"-0", OptBoolFalse},
 		{"0000", OptBoolFalse},
@@ -53,7 +53,7 @@ func TestParseConfigBool(t *testing.T) {
 		{"T", OptBoolUnset},
 		{"f", OptBoolUnset},
 		{"F", OptBoolUnset},
-		{"0x1", OptBoolUnset},      // not decimal
+		{"0x1", OptBoolTrue},       // Git parses with base 0, so this is hex 1.
 		{"1.5", OptBoolUnset},      // not an integer
 		{"  true  ", OptBoolUnset}, // trimming is the caller's job.
 	}
@@ -92,8 +92,8 @@ func TestUnmarshalProtectNTFSAcceptsGitStyleBooleans(t *testing.T) {
 			cfg := NewConfig()
 			err := cfg.Unmarshal(body)
 			assert.NoError(t, err)
-			assert.Equal(t, tc.want, cfg.Core.ProtectNTFS, "protectNTFS")
-			assert.Equal(t, tc.want, cfg.Core.ProtectHFS, "protectHFS")
+			assert.Equal(t, tc.want, cfg.Core().ProtectNTFS, "protectNTFS")
+			assert.Equal(t, tc.want, cfg.Core().ProtectHFS, "protectHFS")
 		})
 	}
 }
@@ -105,8 +105,8 @@ func TestUnmarshalProtectNTFSUnsetForUnrecognised(t *testing.T) {
 	cfg := NewConfig()
 	err := cfg.Unmarshal(body)
 	assert.NoError(t, err)
-	assert.Equal(t, OptBoolUnset, cfg.Core.ProtectNTFS,
+	assert.Equal(t, OptBoolUnset, cfg.Core().ProtectNTFS,
 		"unrecognised value should leave protectNTFS unset")
-	assert.Equal(t, OptBoolUnset, cfg.Core.ProtectHFS,
+	assert.Equal(t, OptBoolUnset, cfg.Core().ProtectHFS,
 		"unrecognised value should leave protectHFS unset")
 }

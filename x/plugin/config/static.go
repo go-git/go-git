@@ -33,81 +33,13 @@ func (s *static) Load(scope config.Scope) (config.ConfigStorer, error) {
 }
 
 // cloneConfig returns an independent deep copy of c so that mutations to the
-// returned config cannot affect the original.
+// returned config cannot affect the original. Raw is the single source of
+// truth, so cloning it is sufficient.
 func cloneConfig(c *config.Config) *config.Config {
-	cp := *c
-
-	cp.Remotes = cloneRemotes(c.Remotes)
-	cp.Submodules = cloneMapShallow(c.Submodules)
-	cp.Branches = cloneMapShallow(c.Branches)
-	cp.URLs = cloneURLs(c.URLs)
-
+	cp := &config.Config{}
 	if c.Raw != nil {
 		cp.Raw = cloneRawConfig(c.Raw)
 	}
-	return &cp
-}
-
-func cloneRemotes(m map[string]*config.RemoteConfig) map[string]*config.RemoteConfig {
-	if m == nil {
-		return nil
-	}
-	cp := make(map[string]*config.RemoteConfig, len(m))
-	for k, v := range m {
-		if v == nil {
-			cp[k] = nil
-			continue
-		}
-		cloned := *v
-		cloned.URLs = cloneSlice(v.URLs)
-		cloned.Fetch = cloneSlice(v.Fetch)
-		cp[k] = &cloned
-	}
-	return cp
-}
-
-func cloneURLs(s []*config.URL) []*config.URL {
-	if s == nil {
-		return nil
-	}
-	cp := make([]*config.URL, len(s))
-	for i, v := range s {
-		if v == nil {
-			cp[i] = nil
-			continue
-		}
-		cloned := *v
-		cloned.InsteadOfs = cloneSlice(v.InsteadOfs)
-		cp[i] = &cloned
-	}
-	return cp
-}
-
-// cloneMapShallow copies a map of pointers, making an independent copy of each
-// pointed-to struct. Suitable for types whose exported fields contain no
-// slices or maps (e.g. Branch, Submodule).
-func cloneMapShallow[K comparable, V any](m map[K]*V) map[K]*V {
-	if m == nil {
-		return nil
-	}
-	cp := make(map[K]*V, len(m))
-	for k, v := range m {
-		if v == nil {
-			cp[k] = nil
-			continue
-		}
-		cloned := *v
-		cp[k] = &cloned
-	}
-	return cp
-}
-
-func cloneSlice[T any](s []T) []T {
-	if s == nil {
-		return nil
-	}
-	cp := make([]T, len(s))
-	copy(cp, s)
 	return cp
 }
 

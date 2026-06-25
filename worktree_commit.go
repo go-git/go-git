@@ -252,7 +252,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 	signer := opts.Signer
 	if signer == nil {
 		cfg, err := w.r.ConfigScoped(config.SystemScope)
-		if err == nil && cfg != nil && cfg.Commit.GpgSign.IsTrue() {
+		if err == nil && cfg != nil && cfg.Commit().GpgSign.IsTrue() {
 			// Use Has before Get so the key is not frozen when no plugin is
 			// registered, allowing callers to register one later.
 			if !plugin.Has(plugin.ObjectSigner()) {

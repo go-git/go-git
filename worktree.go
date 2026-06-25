@@ -995,7 +995,7 @@ func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File,
 	}
 	defer ioutil.CheckClose(src, &err)
 
-	if cfg.Core.AutoCRLF == "true" {
+	if cfg.Core().AutoCRLF == "true" {
 		br := sync.GetBufioReader(src)
 		defer sync.PutBufioReader(br)
 
@@ -1176,7 +1176,7 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 	}
 
 	for _, s := range m.Submodules {
-		sub := w.newSubmodule(s, cfg.Submodules[s.Name])
+		sub := w.newSubmodule(s, cfg.Submodule(s.Name))
 		subCfg := sub.Config()
 		resolvedURL, err := resolveModuleURL(originURL, subCfg.URL)
 		if err != nil {

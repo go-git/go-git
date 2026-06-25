@@ -47,8 +47,7 @@ func (s *OptionsSuite) TestCommitOptionsCommitter() {
 
 func (s *OptionsSuite) TestCommitOptionsLoadGlobalConfigUser() {
 	cfg := config.NewConfig()
-	cfg.User.Name = "foo"
-	cfg.User.Email = "foo@foo.com"
+	cfg.SetUser(config.User{Name: "foo", Email: "foo@foo.com"})
 
 	clean := s.registerGlobalConfig(cfg)
 	defer clean()
@@ -65,10 +64,8 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalConfigUser() {
 
 func (s *OptionsSuite) TestCommitOptionsLoadGlobalCommitter() {
 	cfg := config.NewConfig()
-	cfg.User.Name = "foo"
-	cfg.User.Email = "foo@foo.com"
-	cfg.Committer.Name = "bar"
-	cfg.Committer.Email = "bar@bar.com"
+	cfg.SetUser(config.User{Name: "foo", Email: "foo@foo.com"})
+	cfg.SetCommitter(config.Identity{Name: "bar", Email: "bar@bar.com"})
 
 	clean := s.registerGlobalConfig(cfg)
 	defer clean()
@@ -85,8 +82,7 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalCommitter() {
 
 func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal() {
 	cfg := config.NewConfig()
-	cfg.User.Name = "foo"
-	cfg.User.Email = "foo@foo.com"
+	cfg.SetUser(config.User{Name: "foo", Email: "foo@foo.com"})
 
 	clean := s.registerGlobalConfig(cfg)
 	defer clean()

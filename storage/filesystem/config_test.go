@@ -44,7 +44,7 @@ func (s *ConfigSuite) TestRemotes() {
 	cfg, err := storer.Config()
 	s.Require().NoError(err)
 
-	remotes := cfg.Remotes
+	remotes := cfg.Remotes()
 	s.Len(remotes, 1)
 	remote := remotes["origin"]
 	s.Equal("origin", remote.Name)
@@ -87,9 +87,9 @@ func TestWorktreeConfigRead(t *testing.T) {
 		cfg, err := newDualStorer(commonFs, wtFs).Config()
 		require.NoError(t, err)
 
-		assert.Equal(t, "wt-user", cfg.User.Name)
-		assert.Equal(t, "base@example.com", cfg.User.Email)
-		assert.True(t, cfg.Extensions.WorktreeConfig)
+		assert.Equal(t, "wt-user", cfg.User().Name)
+		assert.Equal(t, "base@example.com", cfg.User().Email)
+		assert.True(t, cfg.Extensions().WorktreeConfig)
 	})
 
 	t.Run("returns base config when config.worktree is absent", func(t *testing.T) {
@@ -101,9 +101,9 @@ func TestWorktreeConfigRead(t *testing.T) {
 		cfg, err := newDualStorer(commonFs, wtFs).Config()
 		require.NoError(t, err)
 
-		assert.Equal(t, "base-user", cfg.User.Name)
-		assert.Equal(t, "base@example.com", cfg.User.Email)
-		assert.True(t, cfg.Extensions.WorktreeConfig)
+		assert.Equal(t, "base-user", cfg.User().Name)
+		assert.Equal(t, "base@example.com", cfg.User().Email)
+		assert.True(t, cfg.Extensions().WorktreeConfig)
 	})
 
 	t.Run("ignores config.worktree when extension is disabled", func(t *testing.T) {
@@ -118,8 +118,8 @@ func TestWorktreeConfigRead(t *testing.T) {
 		cfg, err := newDualStorer(commonFs, wtFs).Config()
 		require.NoError(t, err)
 
-		assert.Equal(t, "base-user", cfg.User.Name)
-		assert.False(t, cfg.Extensions.WorktreeConfig)
+		assert.Equal(t, "base-user", cfg.User().Name)
+		assert.False(t, cfg.Extensions().WorktreeConfig)
 	})
 }
 
@@ -140,7 +140,9 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		cfg, err := cs.Config()
 		require.NoError(t, err)
 
-		cfg.User.Email = "written@example.com"
+		user := cfg.User()
+		user.Email = "written@example.com"
+		cfg.SetUser(user)
 		require.NoError(t, cs.SetConfig(cfg))
 
 		data, err := util.ReadFile(commonFs, "config")
@@ -164,8 +166,10 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		cfg, err := cs.Config()
 		require.NoError(t, err)
 
-		cfg.Core.Worktree = "/new/path"
-		cfg.Author.Name = "Worktree Author"
+		cfg.SetWorktree("/new/path")
+		author := cfg.Author()
+		author.Name = "Worktree Author"
+		cfg.SetAuthor(author)
 
 		require.NoError(t, cs.SetConfig(cfg))
 
@@ -201,7 +205,7 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		cfg, err := cs.Config()
 		require.NoError(t, err)
 
-		cfg.Core.Worktree = "/new/path"
+		cfg.SetWorktree("/new/path")
 		require.NoError(t, cs.SetConfig(cfg))
 
 		data, err := util.ReadFile(commonFs, "config")

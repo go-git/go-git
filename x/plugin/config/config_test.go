@@ -32,9 +32,9 @@ func TestEmptySystem(t *testing.T) {
 func TestStaticGlobalAndSystem(t *testing.T) {
 	t.Parallel()
 	global := config.NewConfig()
-	global.User.Name = "GlobalUser"
+	global.SetUser(config.User{Name: "GlobalUser"})
 	system := config.NewConfig()
-	system.User.Name = "SystemUser"
+	system.SetUser(config.User{Name: "SystemUser"})
 
 	src := NewStatic(*global, *system)
 
@@ -42,23 +42,23 @@ func TestStaticGlobalAndSystem(t *testing.T) {
 	require.NoError(t, err)
 	got, err := gs.Config()
 	require.NoError(t, err)
-	assert.Equal(t, "GlobalUser", got.User.Name)
+	assert.Equal(t, "GlobalUser", got.User().Name)
 
 	ss, err := src.Load(config.SystemScope)
 	require.NoError(t, err)
 	got, err = ss.Config()
 	require.NoError(t, err)
-	assert.Equal(t, "SystemUser", got.User.Name)
+	assert.Equal(t, "SystemUser", got.User().Name)
 }
 
 func TestStaticReturnsCopies(t *testing.T) {
 	t.Parallel()
 	global := config.NewConfig()
-	global.User.Name = "Original"
-	global.Remotes["origin"] = &config.RemoteConfig{
+	global.SetUser(config.User{Name: "Original"})
+	global.SetRemote(&config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{"https://example.com/repo.git"},
-	}
+	})
 
 	src := NewStatic(*global, *config.NewConfig())
 
@@ -66,17 +66,17 @@ func TestStaticReturnsCopies(t *testing.T) {
 	require.NoError(t, err)
 	first, err := gs.Config()
 	require.NoError(t, err)
-	first.User.Name = "Mutated"
-	first.Remotes["upstream"] = &config.RemoteConfig{Name: "upstream"}
-	delete(first.Remotes, "origin")
+	first.SetUser(config.User{Name: "Mutated"})
+	first.SetRemote(&config.RemoteConfig{Name: "upstream"})
+	first.RemoveRemote("origin")
 
 	gs2, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
 	second, err := gs2.Config()
 	require.NoError(t, err)
-	assert.Equal(t, "Original", second.User.Name)
-	assert.Contains(t, second.Remotes, "origin")
-	assert.NotContains(t, second.Remotes, "upstream")
+	assert.Equal(t, "Original", second.User().Name)
+	assert.Contains(t, second.Remotes(), "origin")
+	assert.NotContains(t, second.Remotes(), "upstream")
 }
 
 func TestStaticZeroValues(t *testing.T) {

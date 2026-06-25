@@ -285,7 +285,7 @@ func UploadPack(
 	if opts.SkipDeltaCompression {
 		packWindow = 0
 	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
-		packWindow = cfg.Pack.Window
+		packWindow = cfg.Pack().Window
 	} else {
 		packWindow = config.DefaultPackWindow
 	}
@@ -729,7 +729,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, _ *buf
 	if opts.SkipDeltaCompression {
 		packWindow = 0
 	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
-		packWindow = cfg.Pack.Window
+		packWindow = cfg.Pack().Window
 	} else {
 		packWindow = config.DefaultPackWindow
 	}

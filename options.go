@@ -634,26 +634,26 @@ func (o *CommitOptions) loadConfigAuthorAndCommitter(r *Repository) error {
 		return err
 	}
 
-	if o.Author == nil && cfg.Author.Email != "" && cfg.Author.Name != "" {
+	if o.Author == nil && cfg.Author().Email != "" && cfg.Author().Name != "" {
 		o.Author = &object.Signature{
-			Name:  cfg.Author.Name,
-			Email: cfg.Author.Email,
+			Name:  cfg.Author().Name,
+			Email: cfg.Author().Email,
 			When:  time.Now(),
 		}
 	}
 
-	if o.Committer == nil && cfg.Committer.Email != "" && cfg.Committer.Name != "" {
+	if o.Committer == nil && cfg.Committer().Email != "" && cfg.Committer().Name != "" {
 		o.Committer = &object.Signature{
-			Name:  cfg.Committer.Name,
-			Email: cfg.Committer.Email,
+			Name:  cfg.Committer().Name,
+			Email: cfg.Committer().Email,
 			When:  time.Now(),
 		}
 	}
 
-	if o.Author == nil && cfg.User.Email != "" && cfg.User.Name != "" {
+	if o.Author == nil && cfg.User().Email != "" && cfg.User().Name != "" {
 		o.Author = &object.Signature{
-			Name:  cfg.User.Name,
-			Email: cfg.User.Email,
+			Name:  cfg.User().Name,
+			Email: cfg.User().Email,
 			When:  time.Now(),
 		}
 	}
@@ -710,18 +710,18 @@ func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
 		return err
 	}
 
-	if o.Tagger == nil && cfg.Author.Email != "" && cfg.Author.Name != "" {
+	if o.Tagger == nil && cfg.Author().Email != "" && cfg.Author().Name != "" {
 		o.Tagger = &object.Signature{
-			Name:  cfg.Author.Name,
-			Email: cfg.Author.Email,
+			Name:  cfg.Author().Name,
+			Email: cfg.Author().Email,
 			When:  time.Now(),
 		}
 	}
 
-	if o.Tagger == nil && cfg.User.Email != "" && cfg.User.Name != "" {
+	if o.Tagger == nil && cfg.User().Email != "" && cfg.User().Name != "" {
 		o.Tagger = &object.Signature{
-			Name:  cfg.User.Name,
-			Email: cfg.User.Email,
+			Name:  cfg.User().Name,
+			Email: cfg.User().Email,
 			When:  time.Now(),
 		}
 	}

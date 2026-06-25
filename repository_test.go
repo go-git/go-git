@@ -91,8 +91,8 @@ func TestInit(t *testing.T) {
 
 				cfg, err := r.Config()
 				require.NoError(t, err)
-				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
-				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
+				assert.Equal(t, tc.wantBare, cfg.Core().IsBare)
+				assert.Equal(t, of, cfg.Extensions().ObjectFormat, "object format mismatch")
 
 				if !tc.wantBare {
 					h := createCommit(t, r)
@@ -159,7 +159,7 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 
 				cfg, err := r.Config()
 				require.NoError(t, err)
-				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
+				assert.Equal(t, tc.wantBare, cfg.Core().IsBare)
 
 				if !tc.wantBare {
 					h := createCommit(t, r)
@@ -231,7 +231,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Equal(cfg.Core.Worktree, filepath.Join("..", "worktree"))
+	s.Equal(cfg.Core().Worktree, filepath.Join("..", "worktree"))
 }
 
 func (s *RepositorySuite) TestInitStandardDotGit() {
@@ -251,7 +251,7 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Equal("", cfg.Core.Worktree)
+	s.Equal("", cfg.Core().Worktree)
 }
 
 func (s *RepositorySuite) TestInitAlreadyExists() {
@@ -389,7 +389,7 @@ func TestCloneAll(t *testing.T) {
 				cfg, err := r.Config()
 				require.NoError(t, err)
 
-				assert.Equal(t, tc.format, cfg.Extensions.ObjectFormat)
+				assert.Equal(t, tc.format, cfg.Extensions().ObjectFormat)
 
 				ref, err := r.Head()
 				require.NoError(t, err, "failed to get repository HEAD ref")
@@ -869,9 +869,9 @@ func (s *RepositorySuite) TestCloneMirror() {
 	cfg, err := r.Config()
 	s.NoError(err)
 
-	s.True(cfg.Core.IsBare)
-	s.Nil(cfg.Remotes[DefaultRemoteName].Validate())
-	s.True(cfg.Remotes[DefaultRemoteName].Mirror)
+	s.True(cfg.Core().IsBare)
+	s.Nil(cfg.Remotes()[DefaultRemoteName].Validate())
+	s.True(cfg.Remotes()[DefaultRemoteName].Mirror)
 }
 
 func (s *RepositorySuite) TestCloneWithTags() {
@@ -1037,8 +1037,8 @@ func (s *RepositorySuite) TestCreateBranchAndBranch() {
 	s.NoError(err)
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	branch := cfg.Branches["foo"]
+	s.Len(cfg.Branches(), 1)
+	branch := cfg.Branches()["foo"]
 	s.Equal(testBranch.Name, branch.Name)
 	s.Equal(testBranch.Remote, branch.Remote)
 	s.Equal(testBranch.Merge, branch.Merge)
@@ -1163,17 +1163,17 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 	defer func() { _ = r.Close() }()
 
 	expected := []byte(`[core]
-	bare = true
 	filemode = true
+	bare = true
 [remote "foo"]
 	url = http://foo/foo.git
 	fetch = +refs/heads/*:refs/remotes/foo/*
-[branch "foo"]
-	remote = origin
-	merge = refs/heads/foo
 [branch "master"]
 	remote = origin
 	merge = refs/heads/master
+[branch "foo"]
+	remote = origin
+	merge = refs/heads/foo
 `)
 
 	_, err := r.CreateRemote(&config.RemoteConfig{
@@ -1486,8 +1486,8 @@ func (s *RepositorySuite) TestPlainClone() {
 	s.Len(remotes, 1)
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	s.Equal("master", cfg.Branches["master"].Name)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("master", cfg.Branches()["master"].Name)
 }
 
 func (s *RepositorySuite) TestPlainCloneBareAndShared() {
@@ -1514,8 +1514,8 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	s.Equal("master", cfg.Branches["master"].Name)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("master", cfg.Branches()["master"].Name)
 }
 
 func (s *RepositorySuite) TestPlainCloneShared() {
@@ -1541,8 +1541,8 @@ func (s *RepositorySuite) TestPlainCloneShared() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	s.Equal("master", cfg.Branches["master"].Name)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("master", cfg.Branches()["master"].Name)
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError() {
@@ -1751,9 +1751,9 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
-		assert.Len(t, cfg.Remotes, 1)
-		assert.Len(t, cfg.Branches, 1)
-		assert.Len(t, cfg.Submodules, 2)
+		assert.Len(t, cfg.Remotes(), 1)
+		assert.Len(t, cfg.Branches(), 1)
+		assert.Len(t, cfg.Submodules(), 2)
 	})
 }
 
@@ -1975,12 +1975,12 @@ func (s *RepositorySuite) TestCloneConfig() {
 	cfg, err := r.Config()
 	s.NoError(err)
 
-	s.True(cfg.Core.IsBare)
-	s.Len(cfg.Remotes, 1)
-	s.Equal("origin", cfg.Remotes["origin"].Name)
-	s.Len(cfg.Remotes["origin"].URLs, 1)
-	s.Len(cfg.Branches, 1)
-	s.Equal("master", cfg.Branches["master"].Name)
+	s.True(cfg.Core().IsBare)
+	s.Len(cfg.Remotes(), 1)
+	s.Equal("origin", cfg.Remotes()["origin"].Name)
+	s.Len(cfg.Remotes()["origin"].URLs, 1)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("master", cfg.Branches()["master"].Name)
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD() {
@@ -2013,10 +2013,10 @@ func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	s.Equal("branch", cfg.Branches["branch"].Name)
-	s.Equal("origin", cfg.Branches["branch"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/branch"), cfg.Branches["branch"].Merge)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("branch", cfg.Branches()["branch"].Name)
+	s.Equal("origin", cfg.Branches()["branch"].Remote)
+	s.Equal(plumbing.ReferenceName("refs/heads/branch"), cfg.Branches()["branch"].Merge)
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2057,10 +2057,10 @@ func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	s.Equal("main", cfg.Branches["main"].Name)
-	s.Equal("origin", cfg.Branches["main"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/main"), cfg.Branches["main"].Merge)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("main", cfg.Branches()["main"].Name)
+	s.Equal("origin", cfg.Branches()["main"].Remote)
+	s.Equal(plumbing.ReferenceName("refs/heads/main"), cfg.Branches()["main"].Merge)
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2101,10 +2101,10 @@ func (s *RepositorySuite) TestCloneSingleBranch() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 1)
-	s.Equal("master", cfg.Branches["master"].Name)
-	s.Equal("origin", cfg.Branches["master"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/master"), cfg.Branches["master"].Merge)
+	s.Len(cfg.Branches(), 1)
+	s.Equal("master", cfg.Branches()["master"].Name)
+	s.Equal("origin", cfg.Branches()["master"].Remote)
+	s.Equal(plumbing.ReferenceName("refs/heads/master"), cfg.Branches()["master"].Merge)
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2139,7 +2139,7 @@ func (s *RepositorySuite) TestCloneSingleTag() {
 
 	conf, err := r.Config()
 	s.NoError(err)
-	originRemote := conf.Remotes["origin"]
+	originRemote := conf.Remotes()["origin"]
 	s.NotNil(originRemote)
 	s.Len(originRemote.Fetch, 1)
 	s.Equal("+refs/tags/commit-tag:refs/tags/commit-tag", originRemote.Fetch[0].String())
@@ -2156,7 +2156,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 0)
+	s.Len(cfg.Branches(), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2183,7 +2183,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndSingle() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 0)
+	s.Len(cfg.Branches(), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2215,7 +2215,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 0)
+	s.Len(cfg.Branches(), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2241,7 +2241,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches, 0)
+	s.Len(cfg.Branches(), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -3065,11 +3065,11 @@ func (s *RepositorySuite) TestConfigScoped() {
 
 	cfg, err := r.ConfigScoped(config.LocalScope)
 	s.NoError(err)
-	s.Equal("", cfg.User.Email)
+	s.Equal("", cfg.User().Email)
 
 	cfg, err = r.ConfigScoped(config.SystemScope)
 	s.NoError(err)
-	s.NotEqual("", cfg.User.Email)
+	s.NotEqual("", cfg.User().Email)
 }
 
 func (s *RepositorySuite) TestCommit() {
@@ -4173,7 +4173,7 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 			cfg, err := r.Config()
 			require.NoError(t, err)
 
-			cfg.Tag.GpgSign = tt.tagSignGpg
+			cfg.SetTagGpgSign(tt.tagSignGpg)
 			err = r.SetConfig(cfg)
 			require.NoError(t, err)
 

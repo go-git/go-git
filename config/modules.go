@@ -62,6 +62,21 @@ func (m *Modules) Unmarshal(b []byte) error {
 	return nil
 }
 
+func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
+	s := fc.Section(submoduleSection)
+	for _, sub := range s.Subsections {
+		m := &Submodule{}
+		m.unmarshal(sub)
+
+		if err := m.Validate(); errors.Is(err, ErrModuleBadPath) ||
+			errors.Is(err, ErrModuleBadName) {
+			continue
+		}
+
+		submodules[m.Name] = m
+	}
+}
+
 // Marshal returns Modules encoded as a git-config file.
 func (m *Modules) Marshal() ([]byte, error) {
 	s := m.raw.Section(submoduleSection)

@@ -30,8 +30,8 @@ func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 			cfg := config.NewConfig()
 
 			if c.objectFormat != formatcfg.SHA1 {
-				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
-				cfg.Extensions.ObjectFormat = c.objectFormat
+				cfg.SetRepositoryFormatVersion(formatcfg.Version1)
+				cfg.SetObjectFormat(c.objectFormat)
 			}
 
 			return cfg, nil
@@ -46,7 +46,7 @@ func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	if !cfg.Extensions.WorktreeConfig {
+	if !cfg.Extensions().WorktreeConfig {
 		return cfg, nil
 	}
 
@@ -84,7 +84,7 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) (err error) {
 		return err
 	}
 
-	if cfg.Extensions.WorktreeConfig {
+	if cfg.Extensions().WorktreeConfig {
 		wf, wtErr := c.dir.ConfigWorktree()
 		if wtErr == nil {
 			_ = wf.Close()
@@ -117,14 +117,6 @@ func (c *ConfigStorage) setWorktreeConfig(cfg *config.Config) error {
 	baseCfg, err := c.readBaseConfig()
 	if err != nil {
 		return err
-	}
-
-	// Ensure Raw reflects struct state.
-	if _, err := baseCfg.Marshal(); err != nil {
-		return fmt.Errorf("marshal base config: %w", err)
-	}
-	if _, err := cfg.Marshal(); err != nil {
-		return fmt.Errorf("marshal updated config: %w", err)
 	}
 
 	f, err := c.dir.ConfigWorktreeWriter()

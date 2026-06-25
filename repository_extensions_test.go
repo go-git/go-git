@@ -22,7 +22,7 @@ func TestVerifyExtensions(t *testing.T) {
 		{
 			name: "repositoryformatversion=0: invalid extension",
 			setup: func(_ *testing.T, cfg *config.Config) {
-				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				cfg.SetRepositoryFormatVersion(formatcfg.Version0)
 				cfg.Raw.Section("extensions").SetOption("unknown", "foo")
 				cfg.Raw.Section("extensions").SetOption("objectformat", "sha1")
 			},
@@ -31,7 +31,7 @@ func TestVerifyExtensions(t *testing.T) {
 		{
 			name: "repositoryformatversion=0: allows supported noop",
 			setup: func(_ *testing.T, cfg *config.Config) {
-				cfg.Core.RepositoryFormatVersion = formatcfg.Version0
+				cfg.SetRepositoryFormatVersion(formatcfg.Version0)
 				cfg.Raw.Section("extensions").SetOption("noop", "bar")
 			},
 		},
@@ -44,7 +44,7 @@ func TestVerifyExtensions(t *testing.T) {
 		{
 			name: "repositoryformatversion=1: rejects unknown extensions",
 			setup: func(_ *testing.T, cfg *config.Config) {
-				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+				cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 				cfg.Raw.Section("extensions").SetOption("unknownext", "true")
 			},
 			wantErr: "unknown extension: unknownext",
@@ -52,7 +52,7 @@ func TestVerifyExtensions(t *testing.T) {
 		{
 			name: "repositoryformatversion=1: allows known extension",
 			setup: func(_ *testing.T, cfg *config.Config) {
-				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+				cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 				cfg.Raw.Section("extensions").SetOption("NOOP", "foo")
 				cfg.Raw.Section("extensions").SetOption("noop-v1", "bar")
 			},
@@ -60,7 +60,7 @@ func TestVerifyExtensions(t *testing.T) {
 		{
 			name: "repositoryformatversion=1: allows objectformat=sha1",
 			setup: func(_ *testing.T, cfg *config.Config) {
-				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+				cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 				cfg.Raw.Section("extensions").SetOption("objectformat", "sha1")
 			},
 		},

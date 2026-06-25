@@ -155,10 +155,10 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	if err == nil {
 		cfg, err := config.ReadConfig(f)
 		if err == nil {
-			ops.ObjectFormat = cfg.Extensions.ObjectFormat
-			readRevIdx = cfg.Pack.ReadReverseIndex
-			writeRevIdx = cfg.Pack.WriteReverseIndex
-			skipHash = cfg.Index.SkipHash.IsTrue()
+			ops.ObjectFormat = cfg.Extensions().ObjectFormat
+			readRevIdx = cfg.Pack().ReadReverseIndex
+			writeRevIdx = cfg.Pack().WriteReverseIndex
+			skipHash = cfg.Index().SkipHash.IsTrue()
 		}
 
 		_ = f.Close()
@@ -235,9 +235,9 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		return err
 	}
 
-	if cfg.Extensions.ObjectFormat != of {
-		cfg.Extensions.ObjectFormat = of
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	if cfg.Extensions().ObjectFormat != of {
+		cfg.SetObjectFormat(of)
+		cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 		err = s.SetConfig(cfg)
 		if err != nil {
 			return fmt.Errorf("cannot set object format on config: %w", err)

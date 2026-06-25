@@ -239,7 +239,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 			cfg, err := sto.Config()
 			require.NoError(t, err)
 
-			assert.Equal(t, tt.wantObjectFormat, cfg.Extensions.ObjectFormat)
+			assert.Equal(t, tt.wantObjectFormat, cfg.Extensions().ObjectFormat)
 		})
 	}
 }
@@ -375,8 +375,8 @@ func getExplicitSHA1(t testing.TB) billy.Filesystem {
 	cfg, err := st.Config()
 	require.NoError(t, err)
 
-	cfg.Extensions.ObjectFormat = formatcfg.SHA1
-	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.SetObjectFormat(formatcfg.SHA1)
+	cfg.SetRepositoryFormatVersion(formatcfg.Version1)
 	err = st.SetConfig(cfg)
 	require.NoError(t, err)
 

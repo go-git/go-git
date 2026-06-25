@@ -46,14 +46,13 @@ func (s *Submodule) Init() error {
 		return err
 	}
 
-	_, ok := cfg.Submodules[s.c.Name]
-	if ok {
+	if cfg.Submodule(s.c.Name) != nil {
 		return ErrSubmoduleAlreadyInitialized
 	}
 
 	s.initialized = true
 
-	cfg.Submodules[s.c.Name] = s.c
+	cfg.SetSubmodule(s.c)
 	return s.w.r.Storer.SetConfig(cfg)
 }
 
@@ -204,13 +203,13 @@ func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
 	if ref, err := r.Reference(plumbing.HEAD, false); err == nil &&
 		ref.Type() == plumbing.SymbolicReference &&
 		ref.Target().IsBranch() {
-		if b, ok := cfg.Branches[ref.Target().Short()]; ok && b.Remote != "" {
+		if b := cfg.Branch(ref.Target().Short()); b != nil && b.Remote != "" {
 			return lookupRemote(cfg, b.Remote)
 		}
 	}
 
-	if len(cfg.Remotes) == 1 {
-		for name := range cfg.Remotes {
+	if remotes := cfg.Remotes(); len(remotes) == 1 {
+		for name := range remotes {
 			return lookupRemote(cfg, name)
 		}
 	}
@@ -219,8 +218,8 @@ func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
 }
 
 func lookupRemote(cfg *config.Config, name string) (*config.RemoteConfig, error) {
-	rc, ok := cfg.Remotes[name]
-	if !ok {
+	rc := cfg.Remote(name)
+	if rc == nil {
 		return nil, fmt.Errorf("remote %q not found", name)
 	}
 	if len(rc.URLs) == 0 {

@@ -128,7 +128,7 @@ func (l *tagLoader) Load(_ *url.URL) (storage.Storer, error) {
 		if want == config.SHA1 {
 			want = config.UnsetObjectFormat
 		}
-		require.Equal(l.TB, want, cfg.Extensions.ObjectFormat)
+		require.Equal(l.TB, want, cfg.Extensions().ObjectFormat)
 	}
 
 	return st, nil

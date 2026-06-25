@@ -82,17 +82,18 @@ func extensions(cfg *config.Config) []extension {
 func verifyExtensions(st storage.Storer, cfg *config.Config) error {
 	needed := extensions(cfg)
 
-	switch cfg.Core.RepositoryFormatVersion {
+	rfv := cfg.Core().RepositoryFormatVersion
+	switch rfv {
 	case "", cfgformat.Version0, cfgformat.Version1:
 	default:
 		return fmt.Errorf("%w: %q",
 			ErrUnsupportedRepositoryFormatVersion,
-			cfg.Core.RepositoryFormatVersion)
+			rfv)
 	}
 
 	if len(needed) > 0 {
-		if cfg.Core.RepositoryFormatVersion == cfgformat.Version0 ||
-			cfg.Core.RepositoryFormatVersion == "" {
+		if rfv == cfgformat.Version0 ||
+			rfv == "" {
 			var unsupported []string
 			for _, ext := range needed {
 				if _, ok := extensionsValidForV0[ext.name]; !ok {

@@ -1183,8 +1183,8 @@ func TestWorktreeConfig(t *testing.T) {
 
 		cfg, err := storer.Config()
 		require.NoError(t, err)
-		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
-		cfg.Extensions.WorktreeConfig = true
+		cfg.SetRepositoryFormatVersion(formatcfg.Version1)
+		cfg.SetWorktreeConfig(true)
 		err = storer.SetConfig(cfg)
 		require.NoError(t, err)
 
@@ -1206,9 +1206,9 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
-		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
+		assert.Equal(t, customWorktreePath, repoCfg.Core().Worktree)
 
-		assert.Contains(t, repoCfg.Remotes, "origin") // check base repo config
+		assert.Contains(t, repoCfg.Remotes(), "origin") // check base repo config
 	})
 
 	t.Run("config.worktree absent", func(t *testing.T) {
@@ -1239,7 +1239,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
-		assert.Empty(t, repoCfg.Core.Worktree)
+		assert.Empty(t, repoCfg.Core().Worktree)
 	})
 
 	t.Run("extension disabled config.worktree ignored", func(t *testing.T) {
@@ -1268,7 +1268,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
-		assert.Empty(t, repoCfg.Core.Worktree)
+		assert.Empty(t, repoCfg.Core().Worktree)
 	})
 
 	t.Run("boundOS linked worktree reads config.worktree", func(t *testing.T) {
@@ -1303,7 +1303,7 @@ func TestWorktreeConfig(t *testing.T) {
 
 		repoCfg, err := repo.Config()
 		require.NoError(t, err)
-		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
+		assert.Equal(t, customWorktreePath, repoCfg.Core().Worktree)
 	})
 }
 

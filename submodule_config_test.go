@@ -23,8 +23,7 @@ func TestSubmoduleRepositoryConfigIsIndependentFromParent(t *testing.T) {
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
-		cfg.User.Name = "repo-user"
-		cfg.User.Email = "repo@example.com"
+		cfg.SetUser(config.User{Name: "repo-user", Email: "repo@example.com"})
 		require.NoError(t, r.SetConfig(cfg))
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
@@ -36,8 +35,8 @@ func TestSubmoduleRepositoryConfigIsIndependentFromParent(t *testing.T) {
 
 		subCfg, err := subRepo.Config()
 		require.NoError(t, err)
-		assert.Empty(t, subCfg.User.Name)
-		assert.Empty(t, subCfg.User.Email)
+		assert.Empty(t, subCfg.User().Name)
+		assert.Empty(t, subCfg.User().Email)
 	})
 }
 
@@ -66,8 +65,8 @@ func TestSubmoduleRepositoryConfigPersistsObjectFormatOnReopen(t *testing.T) {
 
 		reopenedCfg, err := reopened.Config()
 		require.NoError(t, err)
-		assert.Equal(t, cfg.Core.RepositoryFormatVersion, reopenedCfg.Core.RepositoryFormatVersion)
-		assert.Equal(t, cfg.Extensions.ObjectFormat, reopenedCfg.Extensions.ObjectFormat)
+		assert.Equal(t, cfg.Core().RepositoryFormatVersion, reopenedCfg.Core().RepositoryFormatVersion)
+		assert.Equal(t, cfg.Extensions().ObjectFormat, reopenedCfg.Extensions().ObjectFormat)
 	})
 }
 
@@ -95,13 +94,13 @@ func TestSubmoduleRepositoryCreateRemoteWritesModuleConfig(t *testing.T) {
 
 		parentCfg, err := r.Config()
 		require.NoError(t, err)
-		_, ok := parentCfg.Remotes["module-only"]
+		_, ok := parentCfg.Remotes()["module-only"]
 		assert.False(t, ok)
 
 		repoPath := wt.Filesystem().Root()
 		moduleCfg := readConfigFile(t, filepath.Join(repoPath, ".git", "modules", sm.c.Name, "config"))
-		require.Contains(t, moduleCfg.Remotes, "module-only")
-		assert.Equal(t, []string{"https://example.com/submodule.git"}, moduleCfg.Remotes["module-only"].URLs)
+		require.Contains(t, moduleCfg.Remotes(), "module-only")
+		assert.Equal(t, []string{"https://example.com/submodule.git"}, moduleCfg.Remotes()["module-only"].URLs)
 	})
 }
 
