@@ -8,7 +8,6 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -34,8 +33,8 @@ func TestSubmoduleInit(t *testing.T) {
 		cfg, err := r.Config()
 		require.NoError(t, err)
 
-		require.Len(t, cfg.Submodules(), 1)
-		require.NotNil(t, cfg.Submodules()[primaryFixtureSubmoduleName(f)])
+		require.Len(t, submoduleConfigs(cfg), 1)
+		require.NotNil(t, submoduleConfigs(cfg)[primaryFixtureSubmoduleName(f)])
 
 		status, err := sm.Status()
 		require.NoError(t, err)
@@ -352,7 +351,7 @@ func TestSubmoduleParseScp(t *testing.T) {
 			w:           worktree,
 		}
 
-		submodule.c = &config.Submodule{
+		submodule.c = &SubmoduleConfig{
 			Name: "submodule_repo",
 			Path: "deps/submodule_repo",
 			URL:  "git@github.com:username/submodule_repo",
@@ -447,13 +446,13 @@ func TestDefaultRemote(t *testing.T) {
 			cfg, err := r.Config()
 			require.NoError(t, err)
 			for name, url := range tc.remotes {
-				cfg.SetRemote(&config.RemoteConfig{
+				setRemoteConfig(cfg, &RemoteConfig{
 					Name: name,
 					URLs: []string{url},
 				})
 			}
 			for name, remote := range tc.branches {
-				cfg.SetBranch(&config.Branch{Name: name, Remote: remote})
+				setBranchConfig(cfg, &Branch{Name: name, Remote: remote})
 			}
 			require.NoError(t, r.Storer.SetConfig(cfg))
 
@@ -488,11 +487,11 @@ func TestSubmoduleRelativeURLPicksOrigin(t *testing.T) {
 		}
 		cfg, err := parent.Config()
 		require.NoError(t, err)
-		cfg.SetRemote(&config.RemoteConfig{
+		setRemoteConfig(cfg, &RemoteConfig{
 			Name: "origin",
 			URLs: []string{"file:///parent/origin"},
 		})
-		cfg.SetRemote(&config.RemoteConfig{
+		setRemoteConfig(cfg, &RemoteConfig{
 			Name: "upstream",
 			URLs: []string{"file:///parent/upstream"},
 		})
@@ -501,7 +500,7 @@ func TestSubmoduleRelativeURLPicksOrigin(t *testing.T) {
 		sub := &Submodule{
 			initialized: true,
 			w:           &Worktree{filesystem: newWorktreeFilesystem(memfs.New(), true, true), r: parent},
-			c: &config.Submodule{
+			c: &SubmoduleConfig{
 				Name: "child",
 				Path: "child",
 				URL:  "../child",
@@ -538,12 +537,12 @@ func TestSubmoduleRelativeURLRemoteWithoutURLs(t *testing.T) {
 	}
 	cfg, err := parent.Config()
 	require.NoError(t, err)
-	cfg.SetRemote(&config.RemoteConfig{Name: "origin", URLs: nil})
+	setRemoteConfig(cfg, &RemoteConfig{Name: "origin", URLs: nil})
 
 	sub := &Submodule{
 		initialized: true,
 		w:           &Worktree{filesystem: newWorktreeFilesystem(memfs.New(), defaultProtectNTFS(), defaultProtectHFS()), r: parent},
-		c: &config.Submodule{
+		c: &SubmoduleConfig{
 			Name: "child",
 			Path: "child",
 			URL:  "../child",
@@ -592,7 +591,7 @@ func newSubmoduleForRelativeURL(t *testing.T, parentRemoteURL, submoduleName, su
 		wt:     memfs.New(),
 	}
 	if parentRemoteURL != "" {
-		_, err := repo.CreateRemote(&config.RemoteConfig{
+		_, err := repo.CreateRemote(&RemoteConfig{
 			Name: DefaultRemoteName,
 			URLs: []string{parentRemoteURL},
 		})
@@ -604,7 +603,7 @@ func newSubmoduleForRelativeURL(t *testing.T, parentRemoteURL, submoduleName, su
 	}
 	return &Submodule{
 		initialized: true,
-		c: &config.Submodule{
+		c: &SubmoduleConfig{
 			Name: submoduleName,
 			Path: submoduleName,
 			URL:  submoduleURL,
@@ -699,7 +698,7 @@ func TestSubmoduleRepositoryRejectsEscapingName(t *testing.T) {
 
 	sm := &Submodule{
 		initialized: true,
-		c: &config.Submodule{
+		c: &SubmoduleConfig{
 			Name: "..",
 			Path: "deps/x",
 			URL:  "https://example.com/",

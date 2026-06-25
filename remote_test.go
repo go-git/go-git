@@ -19,7 +19,6 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -41,38 +40,38 @@ func TestRemoteSuite(t *testing.T) {
 }
 
 func (s *RemoteSuite) TestFetchInvalidEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
 	err := r.Fetch(&FetchOptions{RemoteName: "foo"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestFetchNonExistentEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
 	err := r.Fetch(&FetchOptions{})
 	s.NotNil(err)
 }
 
 func (s *RemoteSuite) TestFetchInvalidSchemaEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	err := r.Fetch(&FetchOptions{})
 	s.ErrorContains(err, "unsupported scheme")
 }
 
 func (s *RemoteSuite) TestFetchOverriddenEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://perfectly-valid-url.example.com"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"http://perfectly-valid-url.example.com"}})
 	err := r.Fetch(&FetchOptions{RemoteURL: "http://\\"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestFetchInvalidFetchOptions() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	invalid := plumbing.RefSpec("^*$ñ")
 	err := r.Fetch(&FetchOptions{RefSpecs: []plumbing.RefSpec{invalid}})
 	s.ErrorIs(err, plumbing.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestFetchWildcard() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -88,7 +87,7 @@ func (s *RemoteSuite) TestFetchWildcard() {
 }
 
 func (s *RemoteSuite) TestFetchExactSHA1() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
 
@@ -102,7 +101,7 @@ func (s *RemoteSuite) TestFetchExactSHA1() {
 }
 
 func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -116,7 +115,7 @@ func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
 }
 
 func (s *RemoteSuite) TestFetchWildcardTags() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -136,7 +135,7 @@ func (s *RemoteSuite) TestFetchWildcardTags() {
 }
 
 func (s *RemoteSuite) TestFetch() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -150,7 +149,7 @@ func (s *RemoteSuite) TestFetch() {
 }
 
 func (s *RemoteSuite) TestFetchToNewBranch() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -176,7 +175,7 @@ func (s *RemoteSuite) TestFetchToNewBranch() {
 }
 
 func (s *RemoteSuite) TestFetchToNewBranchWithAllTags() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -206,7 +205,7 @@ func (s *RemoteSuite) TestFetchToNewBranchWithAllTags() {
 }
 
 func (s *RemoteSuite) TestFetchNonExistentReference() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -220,7 +219,7 @@ func (s *RemoteSuite) TestFetchNonExistentReference() {
 }
 
 func (s *RemoteSuite) TestFetchContext() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -236,7 +235,7 @@ func (s *RemoteSuite) TestFetchContext() {
 }
 
 func (s *RemoteSuite) TestFetchContextCanceled() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -252,7 +251,7 @@ func (s *RemoteSuite) TestFetchContextCanceled() {
 }
 
 func (s *RemoteSuite) TestFetchWithAllTags() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -272,7 +271,7 @@ func (s *RemoteSuite) TestFetchWithAllTags() {
 }
 
 func (s *RemoteSuite) TestFetchWithNoTags() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
@@ -291,7 +290,7 @@ func (s *RemoteSuite) TestFetchWithDepth() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -314,7 +313,7 @@ func (s *RemoteSuite) TestFetchWithDepthChange() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -393,7 +392,7 @@ func (s *RemoteSuite) TestFetchWithProgress() {
 	sto := memory.NewStorage()
 	buf := bytes.NewBuffer(nil)
 
-	r := NewRemote(sto, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
+	r := NewRemote(sto, &RemoteConfig{Name: "foo", URLs: []string{url}})
 
 	refspec := plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
@@ -425,7 +424,7 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter() {
 	mock := &mockPackfileWriter{Storer: fss}
 
 	url := s.GetBasicLocalRepositoryURL()
-	r := NewRemote(mock, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
+	r := NewRemote(mock, &RemoteConfig{Name: "foo", URLs: []string{url}})
 
 	refspec := plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
@@ -453,7 +452,7 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate() {
 }
 
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateButStillUpdateLocalRemoteRefs() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -490,7 +489,7 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateWithNonCommitObjects() {
 }
 
 func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(url string) {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{URLs: []string{url}})
+	r := NewRemote(memory.NewStorage(), &RemoteConfig{URLs: []string{url}})
 
 	o := &FetchOptions{
 		RefSpecs: []plumbing.RefSpec{
@@ -505,7 +504,7 @@ func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(url string) {
 }
 
 func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
@@ -561,7 +560,7 @@ func (s *RemoteSuite) TestFetchFastForwardFS() {
 }
 
 func (s *RemoteSuite) TestString() {
-	r := NewRemote(nil, &config.RemoteConfig{
+	r := NewRemote(nil, &RemoteConfig{
 		Name: "foo",
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
@@ -584,7 +583,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -623,7 +622,7 @@ func (s *RemoteSuite) TestPushContext() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -654,7 +653,7 @@ func (s *RemoteSuite) TestPushPushOptions() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -693,7 +692,7 @@ func (s *RemoteSuite) TestPushContextCanceled() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -724,7 +723,7 @@ func (s *RemoteSuite) TestPushTags() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -755,7 +754,7 @@ func (s *RemoteSuite) TestPushTagsByOID() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -793,7 +792,7 @@ func (s *RemoteSuite) testPushByOID(oid, refName string) {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -829,7 +828,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -886,7 +885,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{fs.Root()},
 	})
@@ -996,7 +995,7 @@ func (s *RemoteSuite) TestPushForce() {
 	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 	defer func() { _ = dstSto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{dstFs.Root()},
 	})
@@ -1027,7 +1026,7 @@ func (s *RemoteSuite) TestPushForceWithOption() {
 	dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 	defer func() { _ = dstSto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{dstFs.Root()},
 	})
@@ -1094,7 +1093,7 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 		s.NoError(err)
 		s.T().Log(ref.String())
 
-		r := NewRemote(sto, &config.RemoteConfig{
+		r := NewRemote(sto, &RemoteConfig{
 			Name: DefaultRemoteName,
 			URLs: []string{dstFs.Root()},
 		})
@@ -1162,7 +1161,7 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 			),
 		))
 
-		r := NewRemote(sto, &config.RemoteConfig{
+		r := NewRemote(sto, &RemoteConfig{
 			Name: DefaultRemoteName,
 			URLs: []string{dstFs.Root()},
 		})
@@ -1309,38 +1308,38 @@ func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch() {
 }
 
 func (s *RemoteSuite) TestPushInvalidEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
 	err := r.Push(&PushOptions{RemoteName: "foo"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestPushNonExistentEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
 	err := r.Push(&PushOptions{})
 	s.NotNil(err)
 }
 
 func (s *RemoteSuite) TestPushOverriddenEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{"http://perfectly-valid-url.example.com"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "origin", URLs: []string{"http://perfectly-valid-url.example.com"}})
 	err := r.Push(&PushOptions{RemoteURL: "http://\\"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestPushInvalidSchemaEndpoint() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{"qux://foo"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "origin", URLs: []string{"qux://foo"}})
 	err := r.Push(&PushOptions{})
 	s.ErrorContains(err, "unsupported scheme")
 }
 
 func (s *RemoteSuite) TestPushInvalidFetchOptions() {
-	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
+	r := NewRemote(nil, &RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	invalid := plumbing.RefSpec("^*$ñ")
 	err := r.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{invalid}})
 	s.ErrorIs(err, plumbing.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestPushInvalidRefSpec() {
-	r := NewRemote(nil, &config.RemoteConfig{
+	r := NewRemote(nil, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{"some-url"},
 	})
@@ -1353,7 +1352,7 @@ func (s *RemoteSuite) TestPushInvalidRefSpec() {
 }
 
 func (s *RemoteSuite) TestPushWrongRemoteName() {
-	r := NewRemote(nil, &config.RemoteConfig{
+	r := NewRemote(nil, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{"some-url"},
 	})
@@ -1396,7 +1395,7 @@ func (s *RemoteSuite) TestGetHaves() {
 
 func (s *RemoteSuite) TestList() {
 	repo := fixtures.Basic().One()
-	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	remote := NewRemote(memory.NewStorage(), &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{repo.URL},
 	})
@@ -1426,7 +1425,7 @@ func (s *RemoteSuite) TestList() {
 }
 
 func (s *RemoteSuite) TestListPeeling() {
-	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	remote := NewRemote(memory.NewStorage(), &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{"https://github.com/git-fixtures/tags.git"},
 	})
@@ -1471,7 +1470,7 @@ func (s *RemoteSuite) TestListTimeout() {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	remote := NewRemote(memory.NewStorage(), &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{srv.URL},
 	})
@@ -1507,7 +1506,7 @@ func (s *RemoteSuite) TestUpdateShallows() {
 		{nil, hashes[0:6]},
 	}
 
-	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	remote := NewRemote(memory.NewStorage(), &RemoteConfig{
 		Name: DefaultRemoteName,
 	})
 
@@ -1544,7 +1543,7 @@ func (s *RemoteSuite) TestUseRefDeltas() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -1571,7 +1570,7 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 	defer func() { _ = dstSto.Close() }()
 
 	url := dstFs.Root()
-	r := NewRemote(sto, &config.RemoteConfig{
+	r := NewRemote(sto, &RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{url},
 	})
@@ -1746,7 +1745,7 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 
 	sha := CommitNewFile(s.T(), repo, "README.md")
 
-	gitremote, err := repo.CreateRemote(&config.RemoteConfig{
+	gitremote, err := repo.CreateRemote(&RemoteConfig{
 		Name: "local",
 		URLs: []string{filepath.Join(d, "remote")},
 	})

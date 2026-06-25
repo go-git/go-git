@@ -55,10 +55,8 @@ func TestStaticReturnsCopies(t *testing.T) {
 	t.Parallel()
 	global := config.NewConfig()
 	global.SetUser(config.User{Name: "Original"})
-	global.SetRemote(&config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{"https://example.com/repo.git"},
-	})
+	global.Raw.Section("remote").Subsection("origin").
+		SetOption("url", "https://example.com/repo.git")
 
 	src := NewStatic(*global, *config.NewConfig())
 
@@ -67,16 +65,16 @@ func TestStaticReturnsCopies(t *testing.T) {
 	first, err := gs.Config()
 	require.NoError(t, err)
 	first.SetUser(config.User{Name: "Mutated"})
-	first.SetRemote(&config.RemoteConfig{Name: "upstream"})
-	first.RemoveRemote("origin")
+	first.Raw.Section("remote").Subsection("upstream").SetOption("url", "x")
+	first.Raw.RemoveSubsection("remote", "origin")
 
 	gs2, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
 	second, err := gs2.Config()
 	require.NoError(t, err)
 	assert.Equal(t, "Original", second.User().Name)
-	assert.Contains(t, second.Remotes(), "origin")
-	assert.NotContains(t, second.Remotes(), "upstream")
+	assert.True(t, second.Raw.Section("remote").HasSubsection("origin"))
+	assert.False(t, second.Raw.Section("remote").HasSubsection("upstream"))
 }
 
 func TestStaticZeroValues(t *testing.T) {

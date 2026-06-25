@@ -536,10 +536,8 @@ func TestSetConfigAndConfig(t *testing.T) {
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		expected := config.NewConfig()
 		expected.SetBare(true)
-		expected.SetRemote(&config.RemoteConfig{
-			Name: "foo",
-			URLs: []string{"http://foo/bar.git"},
-		})
+		expected.Raw.Section("remote").Subsection("foo").
+			SetOption("url", "http://foo/bar.git")
 
 		err := sto.SetConfig(expected)
 		require.NoError(t, err)
@@ -548,7 +546,8 @@ func TestSetConfigAndConfig(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, expected.Core().IsBare, cfg.Core().IsBare)
-		assert.Equal(t, expected.Remotes(), cfg.Remotes())
+		assert.Equal(t, "http://foo/bar.git",
+			cfg.Raw.Section("remote").Subsection("foo").Option("url"))
 	})
 }
 
@@ -590,7 +589,8 @@ func TestSetConfigInvalid(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		cfg := config.NewConfig()
-		cfg.SetRemote(&config.RemoteConfig{})
+		cfg.Raw.Section("remote").Subsection("foo").
+			SetOption("fetch", "this is not a valid refspec")
 
 		err := sto.SetConfig(cfg)
 		assert.Error(t, err)

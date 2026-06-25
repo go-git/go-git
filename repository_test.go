@@ -461,7 +461,7 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 				require.NoError(t, err)
 				defer func() { _ = r.Close() }()
 
-				_, err = r.CreateRemote(&config.RemoteConfig{
+				_, err = r.CreateRemote(&RemoteConfig{
 					Name: DefaultRemoteName,
 					URLs: []string{endpoint},
 				})
@@ -870,8 +870,8 @@ func (s *RepositorySuite) TestCloneMirror() {
 	s.NoError(err)
 
 	s.True(cfg.Core().IsBare)
-	s.Nil(cfg.Remotes()[DefaultRemoteName].Validate())
-	s.True(cfg.Remotes()[DefaultRemoteName].Mirror)
+	s.Nil(remoteConfigs(cfg)[DefaultRemoteName].Validate())
+	s.True(remoteConfigs(cfg)[DefaultRemoteName].Mirror)
 }
 
 func (s *RepositorySuite) TestCloneWithTags() {
@@ -932,7 +932,7 @@ func (s *RepositorySuite) TestCloneSparse() {
 func (s *RepositorySuite) TestCreateRemoteAndRemote() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemote(&config.RemoteConfig{
+	remote, err := r.CreateRemote(&RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
 	})
@@ -949,16 +949,16 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote() {
 func (s *RepositorySuite) TestCreateRemoteInvalid() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemote(&config.RemoteConfig{})
+	remote, err := r.CreateRemote(&RemoteConfig{})
 
-	s.ErrorIs(err, config.ErrRemoteConfigEmptyName)
+	s.ErrorIs(err, ErrRemoteConfigEmptyName)
 	s.Nil(remote)
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymous() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
+	remote, err := r.CreateRemoteAnonymous(&RemoteConfig{
 		Name: "anonymous",
 		URLs: []string{"http://foo/foo.git"},
 	})
@@ -970,7 +970,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymous() {
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
+	remote, err := r.CreateRemoteAnonymous(&RemoteConfig{
 		Name: "not_anonymous",
 		URLs: []string{"http://foo/foo.git"},
 	})
@@ -982,16 +982,16 @@ func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{})
+	remote, err := r.CreateRemoteAnonymous(&RemoteConfig{})
 
-	s.ErrorIs(err, config.ErrRemoteConfigEmptyName)
+	s.ErrorIs(err, ErrRemoteConfigEmptyName)
 	s.Nil(remote)
 }
 
 func (s *RepositorySuite) TestDeleteRemote() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
 	})
@@ -1009,7 +1009,7 @@ func (s *RepositorySuite) TestDeleteRemote() {
 func (s *RepositorySuite) TestEmptyCreateBranch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{})
+	err := r.CreateBranch(&Branch{})
 
 	s.NotNil(err)
 }
@@ -1017,7 +1017,7 @@ func (s *RepositorySuite) TestEmptyCreateBranch() {
 func (s *RepositorySuite) TestInvalidCreateBranch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{
+	err := r.CreateBranch(&Branch{
 		Name: "-foo",
 	})
 
@@ -1027,7 +1027,7 @@ func (s *RepositorySuite) TestInvalidCreateBranch() {
 func (s *RepositorySuite) TestCreateBranchAndBranch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	testBranch := &config.Branch{
+	testBranch := &Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
@@ -1037,8 +1037,8 @@ func (s *RepositorySuite) TestCreateBranchAndBranch() {
 	s.NoError(err)
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	branch := cfg.Branches()["foo"]
+	s.Len(branchConfigs(cfg), 1)
+	branch := branchConfigs(cfg)["foo"]
 	s.Equal(testBranch.Name, branch.Name)
 	s.Equal(testBranch.Remote, branch.Remote)
 	s.Equal(testBranch.Merge, branch.Merge)
@@ -1176,17 +1176,17 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 	merge = refs/heads/foo
 `)
 
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
 	})
 	s.NoError(err)
-	testBranch1 := &config.Branch{
+	testBranch1 := &Branch{
 		Name:   "master",
 		Remote: "origin",
 		Merge:  "refs/heads/master",
 	}
-	testBranch2 := &config.Branch{
+	testBranch2 := &Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
@@ -1215,11 +1215,11 @@ func (s *RepositorySuite) TestBranchInvalid() {
 func (s *RepositorySuite) TestCreateBranchInvalid() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{})
+	err := r.CreateBranch(&Branch{})
 
 	s.NotNil(err)
 
-	testBranch := &config.Branch{
+	testBranch := &Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
@@ -1233,7 +1233,7 @@ func (s *RepositorySuite) TestCreateBranchInvalid() {
 func (s *RepositorySuite) TestDeleteBranch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	testBranch := &config.Branch{
+	testBranch := &Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
@@ -1256,7 +1256,7 @@ func (s *RepositorySuite) TestDeleteBranch() {
 func (s *RepositorySuite) TestDeleteBranchFullRefName() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	testBranch := &config.Branch{
+	testBranch := &Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
@@ -1486,8 +1486,8 @@ func (s *RepositorySuite) TestPlainClone() {
 	s.Len(remotes, 1)
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("master", cfg.Branches()["master"].Name)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("master", branchConfigs(cfg)["master"].Name)
 }
 
 func (s *RepositorySuite) TestPlainCloneBareAndShared() {
@@ -1514,8 +1514,8 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("master", cfg.Branches()["master"].Name)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("master", branchConfigs(cfg)["master"].Name)
 }
 
 func (s *RepositorySuite) TestPlainCloneShared() {
@@ -1541,8 +1541,8 @@ func (s *RepositorySuite) TestPlainCloneShared() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("master", cfg.Branches()["master"].Name)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("master", branchConfigs(cfg)["master"].Name)
 }
 
 func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError() {
@@ -1751,9 +1751,9 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
-		assert.Len(t, cfg.Remotes(), 1)
-		assert.Len(t, cfg.Branches(), 1)
-		assert.Len(t, cfg.Submodules(), 2)
+		assert.Len(t, remoteConfigs(cfg), 1)
+		assert.Len(t, branchConfigs(cfg), 1)
+		assert.Len(t, submoduleConfigs(cfg), 2)
 	})
 }
 
@@ -1832,7 +1832,7 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 func (s *RepositorySuite) TestFetch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -1856,7 +1856,7 @@ func (s *RepositorySuite) TestFetch() {
 func (s *RepositorySuite) TestFetchContext() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -1871,7 +1871,7 @@ func (s *RepositorySuite) TestFetchContext() {
 func (s *RepositorySuite) TestFetchWithFilters() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -1886,7 +1886,7 @@ func (s *RepositorySuite) TestFetchWithFilters() {
 func (s *RepositorySuite) TestFetchWithFiltersReal() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
@@ -1976,11 +1976,11 @@ func (s *RepositorySuite) TestCloneConfig() {
 	s.NoError(err)
 
 	s.True(cfg.Core().IsBare)
-	s.Len(cfg.Remotes(), 1)
-	s.Equal("origin", cfg.Remotes()["origin"].Name)
-	s.Len(cfg.Remotes()["origin"].URLs, 1)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("master", cfg.Branches()["master"].Name)
+	s.Len(remoteConfigs(cfg), 1)
+	s.Equal("origin", remoteConfigs(cfg)["origin"].Name)
+	s.Len(remoteConfigs(cfg)["origin"].URLs, 1)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("master", branchConfigs(cfg)["master"].Name)
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchAndNonHEAD() {
@@ -2013,10 +2013,10 @@ func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("branch", cfg.Branches()["branch"].Name)
-	s.Equal("origin", cfg.Branches()["branch"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/branch"), cfg.Branches()["branch"].Merge)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("branch", branchConfigs(cfg)["branch"].Name)
+	s.Equal("origin", branchConfigs(cfg)["branch"].Remote)
+	s.Equal(plumbing.ReferenceName("refs/heads/branch"), branchConfigs(cfg)["branch"].Merge)
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2057,10 +2057,10 @@ func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("main", cfg.Branches()["main"].Name)
-	s.Equal("origin", cfg.Branches()["main"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/main"), cfg.Branches()["main"].Merge)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("main", branchConfigs(cfg)["main"].Name)
+	s.Equal("origin", branchConfigs(cfg)["main"].Remote)
+	s.Equal(plumbing.ReferenceName("refs/heads/main"), branchConfigs(cfg)["main"].Merge)
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2101,10 +2101,10 @@ func (s *RepositorySuite) TestCloneSingleBranch() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 1)
-	s.Equal("master", cfg.Branches()["master"].Name)
-	s.Equal("origin", cfg.Branches()["master"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/master"), cfg.Branches()["master"].Merge)
+	s.Len(branchConfigs(cfg), 1)
+	s.Equal("master", branchConfigs(cfg)["master"].Name)
+	s.Equal("origin", branchConfigs(cfg)["master"].Remote)
+	s.Equal(plumbing.ReferenceName("refs/heads/master"), branchConfigs(cfg)["master"].Merge)
 
 	head, err = r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2139,7 +2139,7 @@ func (s *RepositorySuite) TestCloneSingleTag() {
 
 	conf, err := r.Config()
 	s.NoError(err)
-	originRemote := conf.Remotes()["origin"]
+	originRemote := remoteConfigs(conf)["origin"]
 	s.NotNil(originRemote)
 	s.Len(originRemote.Fetch, 1)
 	s.Equal("+refs/tags/commit-tag:refs/tags/commit-tag", originRemote.Fetch[0].String())
@@ -2156,7 +2156,7 @@ func (s *RepositorySuite) TestCloneDetachedHEAD() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 0)
+	s.Len(branchConfigs(cfg), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2183,7 +2183,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndSingle() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 0)
+	s.Len(branchConfigs(cfg), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2215,7 +2215,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 0)
+	s.Len(branchConfigs(cfg), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2241,7 +2241,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Branches(), 0)
+	s.Len(branchConfigs(cfg), 0)
 
 	head, err := r.Reference(plumbing.HEAD, false)
 	s.NoError(err)
@@ -2276,7 +2276,7 @@ func (s *RepositorySuite) TestPush() {
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
-	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+	_, err = s.Repository.CreateRemote(&RemoteConfig{
 		Name: "test",
 		URLs: []string{url},
 	})
@@ -2304,7 +2304,7 @@ func (s *RepositorySuite) TestPushContext() {
 	s.NoError(err)
 	_ = server.Close()
 
-	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+	_, err = s.Repository.CreateRemote(&RemoteConfig{
 		Name: "foo",
 		URLs: []string{url},
 	})
@@ -2349,7 +2349,7 @@ func (s *RepositorySuite) TestPushWithProgress() {
 	m := "Receiving..."
 	installPreReceiveHook(s, fs, path, m)
 
-	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+	_, err = s.Repository.CreateRemote(&RemoteConfig{
 		Name: "bar",
 		URLs: []string{url},
 	})
@@ -3959,7 +3959,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 		"packfile/encoder.go")
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})

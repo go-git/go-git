@@ -1,4 +1,4 @@
-package config
+package git
 
 import (
 	"testing"
@@ -16,7 +16,7 @@ func TestModulesSuite(t *testing.T) {
 }
 
 func (s *ModulesSuite) TestValidateMissingURL() {
-	m := &Submodule{Name: "foo", Path: "foo"}
+	m := &SubmoduleConfig{Name: "foo", Path: "foo"}
 	s.Equal(ErrModuleEmptyURL, m.Validate())
 }
 
@@ -35,7 +35,7 @@ func (s *ModulesSuite) TestValidateBadPath() {
 	}
 
 	for _, p := range input {
-		m := &Submodule{
+		m := &SubmoduleConfig{
 			Name: "ok",
 			Path: p,
 			URL:  "https://example.com/",
@@ -45,7 +45,7 @@ func (s *ModulesSuite) TestValidateBadPath() {
 }
 
 func (s *ModulesSuite) TestValidateMissingName() {
-	m := &Submodule{Name: "ok", URL: "bar"}
+	m := &SubmoduleConfig{Name: "ok", URL: "bar"}
 	s.Equal(ErrModuleEmptyPath, m.Validate())
 }
 
@@ -85,7 +85,7 @@ func (s *ModulesSuite) TestValidateBadName() {
 		"a/.. /b",
 	}
 	for _, n := range input {
-		m := &Submodule{
+		m := &SubmoduleConfig{
 			Name: n,
 			Path: "ok",
 			URL:  "https://example.com/",
@@ -99,7 +99,7 @@ func (s *ModulesSuite) TestValidateBadName() {
 
 func (s *ModulesSuite) TestValidateGoodName() {
 	for _, n := range []string{"foo", "lib-foo", "deps/x", "x.y"} {
-		m := &Submodule{
+		m := &SubmoduleConfig{
 			Name: n,
 			Path: "ok",
 			URL:  "https://example.com/",
@@ -116,7 +116,7 @@ func (s *ModulesSuite) TestMarshal() {
 `)
 
 	cfg := NewModules()
-	cfg.Submodules["qux"] = &Submodule{Path: "qux", URL: "baz", Branch: "bar"}
+	cfg.Submodules["qux"] = &SubmoduleConfig{Path: "qux", URL: "baz", Branch: "bar"}
 
 	output, err := cfg.Marshal()
 	s.NoError(err)

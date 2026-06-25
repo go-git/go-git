@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 )
@@ -36,169 +35,12 @@ func configValueWith(setup func(*Config)) Config {
 	return *configWith(setup)
 }
 
-func (s *ConfigSuite) TestUnmarshal() {
-	input := []byte(`[core]
-		bare = true
-		worktree = foo
-		commentchar = bar
-		autocrlf = true
-		filemode = false
-		hooksPath = custom-hooks
-[user]
-		name = John Doe
-		email = john@example.com
-[author]
-		name = Jane Roe
-		email = jane@example.com
-[committer]
-		name = Richard Roe
-		email = richard@example.com
-[pack]
-		window = 20
-[remote "origin"]
-		url = git@github.com:mcuadros/go-git.git
-		fetch = +refs/heads/*:refs/remotes/origin/*
-[remote "alt"]
-		url = git@github.com:mcuadros/go-git.git
-		url = git@github.com:src-d/go-git.git
-		fetch = +refs/heads/*:refs/remotes/origin/*
-		fetch = +refs/pull/*:refs/remotes/origin/pull/*
-[remote "insteadOf"]
-		url = https://github.com/kostyay/go-git.git
-[remote "win-local"]
-		url = X:\\Git\\
-[submodule "qux"]
-		path = qux
-		url = https://github.com/foo/qux.git
-		branch = bar
-[branch "master"]
-		remote = origin
-		merge = refs/heads/master
-		description = "Add support for branch description.\\n\\nEdit branch description: git branch --edit-description\\n"
-[init]
-		defaultBranch = main
-[url "ssh://git@github.com/"]
-	insteadOf = https://github.com/
-`)
-
-	cfg := NewConfig()
-	err := cfg.Unmarshal(input)
-	s.NoError(err)
-
-	s.True(cfg.Core().IsBare)
-	s.Equal("foo", cfg.Core().Worktree)
-	s.Equal("bar", cfg.Core().CommentChar)
-	s.Equal("true", cfg.Core().AutoCRLF)
-	s.False(cfg.Core().FileMode)
-	s.Equal("custom-hooks", cfg.Core().HooksPath)
-	s.Equal("John Doe", cfg.User().Name)
-	s.Equal("john@example.com", cfg.User().Email)
-	s.Equal("Jane Roe", cfg.Author().Name)
-	s.Equal("jane@example.com", cfg.Author().Email)
-	s.Equal("Richard Roe", cfg.Committer().Name)
-	s.Equal("richard@example.com", cfg.Committer().Email)
-	s.Equal(uint(20), cfg.Pack().Window)
-	s.Len(cfg.Remotes(), 4)
-	s.Equal("origin", cfg.Remotes()["origin"].Name)
-	s.Equal([]string{"git@github.com:mcuadros/go-git.git"}, cfg.Remotes()["origin"].URLs)
-	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, cfg.Remotes()["origin"].Fetch)
-	s.Equal("alt", cfg.Remotes()["alt"].Name)
-	s.Equal([]string{"git@github.com:mcuadros/go-git.git", "git@github.com:src-d/go-git.git"}, cfg.Remotes()["alt"].URLs)
-	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"}, cfg.Remotes()["alt"].Fetch)
-	s.Equal("win-local", cfg.Remotes()["win-local"].Name)
-	s.Equal([]string{"X:\\Git\\"}, cfg.Remotes()["win-local"].URLs)
-	s.Equal([]string{"ssh://git@github.com/kostyay/go-git.git"}, cfg.Remotes()["insteadOf"].URLs)
-	s.Len(cfg.Submodules(), 1)
-	s.Equal("qux", cfg.Submodules()["qux"].Name)
-	s.Equal("https://github.com/foo/qux.git", cfg.Submodules()["qux"].URL)
-	s.Equal("bar", cfg.Submodules()["qux"].Branch)
-	s.Equal("origin", cfg.Branches()["master"].Remote)
-	s.Equal(plumbing.ReferenceName("refs/heads/master"), cfg.Branches()["master"].Merge)
-	s.Equal("Add support for branch description.\n\nEdit branch description: git branch --edit-description\n", cfg.Branches()["master"].Description)
-	s.Equal("main", cfg.Init().DefaultBranch)
+func setRawRemote(c *Config, name string, urls ...string) {
+	c.Raw.Section("remote").Subsection(name).SetOption("url", urls...)
 }
 
-func (s *ConfigSuite) TestMarshal() {
-	output := []byte(`[core]
-	filemode = true
-	bare = true
-	worktree = bar
-	autocrlf = true
-	hooksPath = custom-hooks
-[pack]
-	window = 20
-[init]
-	defaultBranch = main
-[remote "origin"]
-	url = git@github.com:mcuadros/go-git.git
-[remote "alt"]
-	url = git@github.com:mcuadros/go-git.git
-	url = git@github.com:src-d/go-git.git
-	fetch = +refs/heads/*:refs/remotes/origin/*
-	fetch = +refs/pull/*:refs/remotes/origin/pull/*
-[remote "win-local"]
-	url = "X:\\Git\\"
-[remote "insteadOf"]
-	url = https://github.com/kostyay/go-git.git
-[submodule "qux"]
-	url = https://github.com/foo/qux.git
-[branch "master"]
-	remote = origin
-	merge = refs/heads/master
-	description = "Add support for branch description.\\n\\nEdit branch description: git branch --edit-description\\n"
-[url "ssh://git@github.com/"]
-	insteadOf = https://github.com/
-`)
-
-	cfg := NewConfig()
-	cfg.SetBare(true)
-	cfg.SetWorktree("bar")
-	cfg.SetAutoCRLF("true")
-	cfg.SetHooksPath("custom-hooks")
-	cfg.SetPackWindow(20)
-	cfg.SetInitDefaultBranch("main")
-	cfg.SetRemote(&RemoteConfig{
-		Name: "origin",
-		URLs: []string{"git@github.com:mcuadros/go-git.git"},
-	})
-
-	cfg.SetRemote(&RemoteConfig{
-		Name:  "alt",
-		URLs:  []string{"git@github.com:mcuadros/go-git.git", "git@github.com:src-d/go-git.git"},
-		Fetch: []plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"},
-	})
-
-	cfg.SetRemote(&RemoteConfig{
-		Name: "win-local",
-		URLs: []string{"X:\\Git\\"},
-	})
-
-	cfg.SetRemote(&RemoteConfig{
-		Name: "insteadOf",
-		URLs: []string{"https://github.com/kostyay/go-git.git"},
-	})
-
-	cfg.SetSubmodule(&Submodule{
-		Name: "qux",
-		URL:  "https://github.com/foo/qux.git",
-	})
-
-	cfg.SetBranch(&Branch{
-		Name:        "master",
-		Remote:      "origin",
-		Merge:       "refs/heads/master",
-		Description: "Add support for branch description.\n\nEdit branch description: git branch --edit-description\n",
-	})
-
-	cfg.AddURL(&URL{
-		Name:       "ssh://git@github.com/",
-		InsteadOfs: []string{"https://github.com/"},
-	})
-
-	b, err := cfg.Marshal()
-	s.NoError(err)
-
-	s.Equal(string(output), string(b))
+func setRawBranch(c *Config, name string) {
+	c.Raw.Section("branch").Subsection(name)
 }
 
 func TestUnmarshalMarshal(t *testing.T) {
@@ -360,109 +202,10 @@ func (s *ConfigSuite) TestLoadConfigXDG() {
 	s.Equal("foo@foo.com", cfg.User().Email)
 }
 
-func (s *ConfigSuite) TestValidateConfig() {
-	config := configWith(func(c *Config) {
-		c.SetRemote(&RemoteConfig{
-			Name: "bar",
-			URLs: []string{"http://foo/bar"},
-		})
-		c.SetBranch(&Branch{
-			Name: "bar",
-		})
-		c.SetBranch(&Branch{
-			Name:   "foo",
-			Remote: "origin",
-			Merge:  plumbing.ReferenceName("refs/heads/foo"),
-		})
-	})
-
-	s.NoError(config.Validate())
-}
-
-func (s *ConfigSuite) TestValidateInvalidRemote() {
-	config := configWith(func(c *Config) {
-		c.SetRemote(&RemoteConfig{Name: "foo"})
-	})
-
-	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyURL)
-}
-
-func (s *ConfigSuite) TestRemoteConfigValidateMissingURL() {
-	config := &RemoteConfig{Name: "foo"}
-	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyURL)
-}
-
-func (s *ConfigSuite) TestRemoteConfigValidateMissingName() {
-	config := &RemoteConfig{}
-	s.ErrorIs(config.Validate(), ErrRemoteConfigEmptyName)
-}
-
-func (s *ConfigSuite) TestRemoteConfigValidateDefault() {
-	config := &RemoteConfig{Name: "foo", URLs: []string{"http://foo/bar"}}
-	s.NoError(config.Validate())
-
-	fetch := config.Fetch
-	s.Len(fetch, 1)
-	s.Equal("+refs/heads/*:refs/remotes/foo/*", fetch[0].String())
-}
-
-func (s *ConfigSuite) TestValidateBranchNonRefsPrefix() {
-	// Real git allows any value for branch.*.merge, including values
-	// without a refs/ prefix. Validate should accept them.
-	config := configWith(func(c *Config) {
-		c.SetBranch(&Branch{
-			Name:   "bar",
-			Remote: "origin",
-			Merge:  plumbing.ReferenceName("refs/heads/bar"),
-		})
-		c.SetBranch(&Branch{
-			Name:   "foo",
-			Remote: "origin",
-			Merge:  plumbing.ReferenceName("baz"),
-		})
-	})
-
-	s.NoError(config.Validate())
-}
-
-func (s *ConfigSuite) TestRemoteConfigDefaultValues() {
-	config := NewConfig()
-
-	s.Len(config.Remotes(), 0)
-	s.Len(config.Branches(), 0)
-	s.Len(config.Submodules(), 0)
-	s.NotNil(config.Raw)
-	s.Equal(DefaultPackWindow, config.Pack().Window)
-}
-
 func (s *ConfigSuite) TestLoadConfigLocalScope() {
 	cfg, err := LoadConfig(LocalScope)
 	s.NotNil(err)
 	s.Nil(cfg)
-}
-
-func (s *ConfigSuite) TestRemoveUrlOptions() {
-	buf := []byte(`
-[remote "alt"]
-	url = git@github.com:mcuadros/go-git.git
-	url = git@github.com:src-d/go-git.git
-	fetch = +refs/heads/*:refs/remotes/origin/*
-	fetch = +refs/pull/*:refs/remotes/origin/pull/*`)
-
-	cfg := NewConfig()
-	err := cfg.Unmarshal(buf)
-	s.NoError(err)
-	s.Len(cfg.Remotes(), 1)
-	alt := cfg.Remote("alt")
-	alt.URLs = []string{}
-	cfg.SetRemote(alt)
-
-	buf, err = cfg.Marshal()
-	s.NoError(err)
-	if strings.Contains(string(buf), "url") {
-		s.Fail("config should not contain any url sections")
-	}
-	s.NoError(err)
 }
 
 func (s *ConfigSuite) TestProtocol() {
@@ -483,79 +226,6 @@ func (s *ConfigSuite) TestProtocol() {
 		s.Fail("marshal did not update version")
 	}
 	s.NoError(err)
-}
-
-func (s *ConfigSuite) TestUnmarshalRemotes() {
-	input := []byte(`[core]
-	bare = true
-	worktree = foo
-	custom = ignored
-[user]
-	name = John Doe
-	email = john@example.com
-[remote "origin"]
-	url = https://git.sr.ht/~mcepl/go-git
-	pushurl = git@git.sr.ht:~mcepl/go-git.git
-	fetch = +refs/heads/*:refs/remotes/origin/*
-	mirror = true
-`)
-
-	cfg := NewConfig()
-	err := cfg.Unmarshal(input)
-	s.NoError(err)
-
-	s.Equal("https://git.sr.ht/~mcepl/go-git", cfg.Remotes()["origin"].URLs[0])
-	s.Equal("git@git.sr.ht:~mcepl/go-git.git", cfg.Remotes()["origin"].URLs[1])
-}
-
-func (s *ConfigSuite) TestUnmarshalRemotesUnnamedFirst() {
-	input := []byte(`
-[remote ""]
-  url = https://github.com/CLBRITTON2/go-git.git
-  fetch = +refs/heads/*:refs/remotes/origin/*
-[remote "upstream"]
-	url = https://github.com/go-git/go-git.git
-	fetch = +refs/heads/*:refs/remotes/upstream/*
-	`)
-
-	cfg := NewConfig()
-	err := cfg.Unmarshal(input)
-	s.NoError(err)
-
-	unnamedRemote, ok := cfg.Remotes()[""]
-	s.True(ok, "Expected unnamed remote to be present")
-	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
-	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
-
-	namedRemote, ok := cfg.Remotes()["upstream"]
-	s.True(ok, "Expected named remote 'upstream' to be present")
-	s.Equal([]string{"https://github.com/go-git/go-git.git"}, namedRemote.URLs)
-	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
-}
-
-func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
-	input := []byte(`
-[remote "upstream"]
-	url = https://github.com/go-git/go-git.git
-	fetch = +refs/heads/*:refs/remotes/upstream/*
-[remote ""]
-  url = https://github.com/CLBRITTON2/go-git.git
-  fetch = +refs/heads/*:refs/remotes/origin/*
-	`)
-
-	cfg := NewConfig()
-	err := cfg.Unmarshal(input)
-	s.NoError(err)
-
-	namedRemote, ok := cfg.Remotes()["upstream"]
-	s.True(ok, "Expected a named remote 'upstream' to be present")
-	s.Equal([]string{"https://github.com/go-git/go-git.git"}, namedRemote.URLs)
-	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
-
-	unnamedRemote, ok := cfg.Remotes()[""]
-	s.True(ok, "Expected an unnamed remote to be present")
-	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
-	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
 }
 
 func TestUnmarshalPackReverseIndex(t *testing.T) {
@@ -828,59 +498,59 @@ func TestMerge(t *testing.T) {
 			name: "src nil map preserves dst map",
 			input: []*Config{
 				configWith(func(c *Config) {
-					c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://example.com/repo.git"}})
+					setRawRemote(c, "origin", "https://example.com/repo.git")
 				}),
 				configWith(func(c *Config) {
-					// Remotes is nil (zero value)
-					c.SetBranch(&Branch{Name: "main"})
+					// Only the branch subsection is present.
+					setRawBranch(c, "main")
 				}),
 			},
 			want: configValueWith(func(c *Config) {
-				c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://example.com/repo.git"}})
-				c.SetBranch(&Branch{Name: "main"})
+				setRawRemote(c, "origin", "https://example.com/repo.git")
+				setRawBranch(c, "main")
 			}),
 		},
 		{
 			name: "src empty map preserves dst map",
 			input: []*Config{
 				configWith(func(c *Config) {
-					c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://example.com/repo.git"}})
+					setRawRemote(c, "origin", "https://example.com/repo.git")
 				}),
 				configWith(func(_ *Config) {
-					// Remotes is explicitly initialised but empty (mirrors NewConfig behaviour).
+					// No remote subsection is present.
 				}),
 			},
 			want: configValueWith(func(c *Config) {
-				c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://example.com/repo.git"}})
+				setRawRemote(c, "origin", "https://example.com/repo.git")
 			}),
 		},
 		{
 			name: "merge maps with disjoint keys",
 			input: []*Config{
 				configWith(func(c *Config) {
-					c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://example.com/repo.git"}})
+					setRawRemote(c, "origin", "https://example.com/repo.git")
 				}),
 				configWith(func(c *Config) {
-					c.SetRemote(&RemoteConfig{Name: "upstream", URLs: []string{"https://upstream.com/repo.git"}})
+					setRawRemote(c, "upstream", "https://upstream.com/repo.git")
 				}),
 			},
 			want: configValueWith(func(c *Config) {
-				c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://example.com/repo.git"}})
-				c.SetRemote(&RemoteConfig{Name: "upstream", URLs: []string{"https://upstream.com/repo.git"}})
+				setRawRemote(c, "origin", "https://example.com/repo.git")
+				setRawRemote(c, "upstream", "https://upstream.com/repo.git")
 			}),
 		},
 		{
 			name: "src map entry overrides dst map entry",
 			input: []*Config{
 				configWith(func(c *Config) {
-					c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://old.com/repo.git"}})
+					setRawRemote(c, "origin", "https://old.com/repo.git")
 				}),
 				configWith(func(c *Config) {
-					c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://new.com/repo.git"}})
+					setRawRemote(c, "origin", "https://new.com/repo.git")
 				}),
 			},
 			want: configValueWith(func(c *Config) {
-				c.SetRemote(&RemoteConfig{Name: "origin", URLs: []string{"https://new.com/repo.git"}})
+				setRawRemote(c, "origin", "https://new.com/repo.git")
 			}),
 		},
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -44,12 +43,12 @@ func (s *ConfigSuite) TestRemotes() {
 	cfg, err := storer.Config()
 	s.Require().NoError(err)
 
-	remotes := cfg.Remotes()
-	s.Len(remotes, 1)
-	remote := remotes["origin"]
-	s.Equal("origin", remote.Name)
-	s.Equal([]string{"https://github.com/git-fixtures/basic"}, remote.URLs)
-	s.Equal([]plumbing.RefSpec{plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*")}, remote.Fetch)
+	remotes := cfg.Raw.Section("remote")
+	s.Len(remotes.Subsections, 1)
+	origin := remotes.Subsection("origin")
+	s.Equal("origin", origin.Name)
+	s.Equal([]string{"https://github.com/git-fixtures/basic"}, origin.OptionAll("url"))
+	s.Equal([]string{"+refs/heads/*:refs/remotes/origin/*"}, origin.OptionAll("fetch"))
 }
 
 func (s *ConfigSuite) TearDownTest() {

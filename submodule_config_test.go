@@ -86,7 +86,7 @@ func TestSubmoduleRepositoryCreateRemoteWritesModuleConfig(t *testing.T) {
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		_, err = subRepo.CreateRemote(&config.RemoteConfig{
+		_, err = subRepo.CreateRemote(&RemoteConfig{
 			Name: "module-only",
 			URLs: []string{"https://example.com/submodule.git"},
 		})
@@ -94,13 +94,13 @@ func TestSubmoduleRepositoryCreateRemoteWritesModuleConfig(t *testing.T) {
 
 		parentCfg, err := r.Config()
 		require.NoError(t, err)
-		_, ok := parentCfg.Remotes()["module-only"]
+		_, ok := remoteConfigs(parentCfg)["module-only"]
 		assert.False(t, ok)
 
 		repoPath := wt.Filesystem().Root()
 		moduleCfg := readConfigFile(t, filepath.Join(repoPath, ".git", "modules", sm.c.Name, "config"))
-		require.Contains(t, moduleCfg.Remotes(), "module-only")
-		assert.Equal(t, []string{"https://example.com/submodule.git"}, moduleCfg.Remotes()["module-only"].URLs)
+		require.Contains(t, remoteConfigs(moduleCfg), "module-only")
+		assert.Equal(t, []string{"https://example.com/submodule.git"}, remoteConfigs(moduleCfg)["module-only"].URLs)
 	})
 }
 

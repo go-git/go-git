@@ -26,7 +26,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -73,7 +72,7 @@ func (s *WorktreeSuite) TestPullCheckout() {
 	fs := memfs.New()
 	r, _ := Init(memory.NewStorage(), WithWorkTree(fs))
 	defer func() { _ = r.Close() }()
-	r.CreateRemote(&config.RemoteConfig{
+	r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -150,7 +149,7 @@ func (s *WorktreeSuite) TestPullNonFastForward() {
 func (s *WorktreeSuite) TestPullUpdateReferencesIfNeeded() {
 	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	defer func() { _ = r.Close() }()
-	r.CreateRemote(&config.RemoteConfig{
+	r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -214,7 +213,7 @@ func (s *WorktreeSuite) TestPullProgress() {
 	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	defer func() { _ = r.Close() }()
 
-	r.CreateRemote(&config.RemoteConfig{
+	r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -240,7 +239,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion() {
 
 	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
 	defer func() { _ = r.Close() }()
-	r.CreateRemote(&config.RemoteConfig{
+	r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{path},
 	})
@@ -255,7 +254,7 @@ func (s *WorktreeSuite) TestPullProgressWithRecursion() {
 
 	cfg, err := r.Config()
 	s.NoError(err)
-	s.Len(cfg.Submodules(), 2)
+	s.Len(submoduleConfigs(cfg), 2)
 }
 
 func (s *RepositorySuite) TestPullAdd() {
@@ -2399,7 +2398,7 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 			defer func() { _ = r.Close() }()
 			s.NoError(err)
 
-			_, err = r.CreateRemote(&config.RemoteConfig{
+			_, err = r.CreateRemote(&RemoteConfig{
 				Name: "origin",
 				URLs: []string{tc.originURL},
 			})

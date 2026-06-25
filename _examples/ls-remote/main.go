@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -18,7 +17,7 @@ func main() {
 	Info("git ls-remote --tags %s", url)
 
 	// Create the remote with repository URL
-	rem := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	rem := git.NewRemote(memory.NewStorage(), &git.RemoteConfig{
 		Name: "origin",
 		URLs: []string{url},
 	})

@@ -1,4 +1,4 @@
-package config
+package git
 
 import (
 	"bytes"
@@ -30,7 +30,7 @@ var dotdotPath = regexp.MustCompile(`(^|[/\\])\.\.([/\\]|$)`)
 // https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
 type Modules struct {
 	// Submodules is a map of submodules being the key the name of the submodule.
-	Submodules map[string]*Submodule
+	Submodules map[string]*SubmoduleConfig
 
 	raw *format.Config
 }
@@ -38,7 +38,7 @@ type Modules struct {
 // NewModules returns a new empty Modules
 func NewModules() *Modules {
 	return &Modules{
-		Submodules: make(map[string]*Submodule),
+		Submodules: make(map[string]*SubmoduleConfig),
 		raw:        format.New(),
 	}
 }
@@ -62,10 +62,10 @@ func (m *Modules) Unmarshal(b []byte) error {
 	return nil
 }
 
-func unmarshalSubmodules(fc *format.Config, submodules map[string]*Submodule) {
+func unmarshalSubmodules(fc *format.Config, submodules map[string]*SubmoduleConfig) {
 	s := fc.Section(submoduleSection)
 	for _, sub := range s.Subsections {
-		m := &Submodule{}
+		m := &SubmoduleConfig{}
 		m.unmarshal(sub)
 
 		if err := m.Validate(); errors.Is(err, ErrModuleBadPath) ||
@@ -96,8 +96,8 @@ func (m *Modules) Marshal() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Submodule defines a submodule.
-type Submodule struct {
+// SubmoduleConfig defines a submodule.
+type SubmoduleConfig struct {
 	// Name module name
 	Name string
 	// Path defines the path, relative to the top-level directory of the Git
@@ -115,7 +115,7 @@ type Submodule struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (m *Submodule) Validate() error {
+func (m *SubmoduleConfig) Validate() error {
 	if err := validSubmoduleName(m.Name); err != nil {
 		return fmt.Errorf("%w: %q", ErrModuleBadName, m.Name)
 	}
@@ -179,7 +179,7 @@ func validSubmoduleName(name string) error {
 
 func isPathSep(r rune) bool { return r == '/' || r == '\\' }
 
-func (m *Submodule) unmarshal(s *format.Subsection) {
+func (m *SubmoduleConfig) unmarshal(s *format.Subsection) {
 	m.raw = s
 
 	m.Name = m.raw.Name
@@ -188,7 +188,7 @@ func (m *Submodule) unmarshal(s *format.Subsection) {
 	m.Branch = m.raw.Option(branchKey)
 }
 
-func (m *Submodule) marshal() *format.Subsection {
+func (m *SubmoduleConfig) marshal() *format.Subsection {
 	if m.raw == nil {
 		m.raw = &format.Subsection{}
 	}

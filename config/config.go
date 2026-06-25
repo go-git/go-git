@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-git/go-billy/v6/osfs"
 
-	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -43,16 +42,8 @@ type ConfigStorer interface { //nolint:revive // stutters but is a well-establis
 	SetConfig(*Config) error
 }
 
-var (
-	// ErrInvalid is returned when a config key is invalid.
-	ErrInvalid = errors.New("config invalid key in remote or branch")
-	// ErrRemoteConfigNotFound is returned when a remote config is not found.
-	ErrRemoteConfigNotFound = errors.New("remote config not found")
-	// ErrRemoteConfigEmptyURL is returned when a remote config has an empty URL.
-	ErrRemoteConfigEmptyURL = errors.New("remote config: empty URL")
-	// ErrRemoteConfigEmptyName is returned when a remote config has an empty name.
-	ErrRemoteConfigEmptyName = errors.New("remote config: empty name")
-)
+// ErrInvalid is returned when a config key is invalid.
+var ErrInvalid = errors.New("config invalid key in remote or branch")
 
 // Scope defines the scope of a config file, such as local, global or system.
 type Scope int
@@ -62,20 +53,6 @@ const (
 	LocalScope Scope = iota
 	GlobalScope
 	SystemScope
-)
-
-const (
-	remoteSection    = "remote"
-	submoduleSection = "submodule"
-	branchSection    = "branch"
-	urlSection       = "url"
-	fetchKey         = "fetch"
-	urlKey           = "url"
-	pushurlKey       = "pushurl"
-	mirrorKey        = "mirror"
-	mergeKey         = "merge"
-	rebaseKey        = "rebase"
-	descriptionKey   = "description"
 )
 
 // Config is a Git configuration, backed by a flat set of string keys in the
@@ -405,147 +382,6 @@ func (c *Config) SetProtocolVersion(v protocol.Version) {
 	c.Raw.Set("protocol.version", v.String())
 }
 
-// Remotes returns the [remote] subsections keyed by name, with url.insteadOf
-// rewrite rules applied to their URLs.
-func (c *Config) Remotes() map[string]*RemoteConfig {
-	m, _ := c.remotes()
-	return m
-}
-
-// Remote returns the named remote or nil if it does not exist.
-func (c *Config) Remote(name string) *RemoteConfig {
-	return c.Remotes()[name]
-}
-
-func (c *Config) remotes() (map[string]*RemoteConfig, error) {
-	out := make(map[string]*RemoteConfig)
-	urls := c.urls()
-	s := c.Raw.Section(remoteSection)
-	for _, sub := range s.Subsections {
-		r := &RemoteConfig{}
-		if err := r.unmarshal(sub); err != nil {
-			return nil, err
-		}
-		r.applyURLRules(urls)
-		out[r.Name] = r
-	}
-	if len(s.Options) > 0 {
-		r := &RemoteConfig{}
-		if err := r.unmarshal(&format.Subsection{Name: "", Options: s.Options}); err != nil {
-			return nil, err
-		}
-		r.applyURLRules(urls)
-		out[r.Name] = r
-	}
-	return out, nil
-}
-
-// SetRemote writes the remote into Raw, replacing any existing remote of the
-// same name.
-func (c *Config) SetRemote(r *RemoteConfig) {
-	c.setSubsection(remoteSection, r.Name, r.marshal())
-}
-
-// RemoveRemote removes the named remote.
-func (c *Config) RemoveRemote(name string) { c.Raw.RemoveSubsection(remoteSection, name) }
-
-// Branches returns the [branch] subsections keyed by name.
-func (c *Config) Branches() map[string]*Branch {
-	m, _ := c.branches()
-	return m
-}
-
-// Branch returns the named branch or nil if it does not exist.
-func (c *Config) Branch(name string) *Branch {
-	return c.Branches()[name]
-}
-
-func (c *Config) branches() (map[string]*Branch, error) {
-	out := make(map[string]*Branch)
-	s := c.Raw.Section(branchSection)
-	for _, sub := range s.Subsections {
-		b := &Branch{}
-		if err := b.unmarshal(sub); err != nil {
-			return nil, err
-		}
-		out[b.Name] = b
-	}
-	return out, nil
-}
-
-// SetBranch writes the branch into Raw, replacing any existing branch of the
-// same name.
-func (c *Config) SetBranch(b *Branch) {
-	c.setSubsection(branchSection, b.Name, b.marshal())
-}
-
-// RemoveBranch removes the named branch.
-func (c *Config) RemoveBranch(name string) { c.Raw.RemoveSubsection(branchSection, name) }
-
-// Submodules returns the [submodule] subsections keyed by name, skipping any
-// with an invalid name or path.
-func (c *Config) Submodules() map[string]*Submodule {
-	out := make(map[string]*Submodule)
-	s := c.Raw.Section(submoduleSection)
-	for _, sub := range s.Subsections {
-		m := &Submodule{}
-		m.unmarshal(sub)
-		if err := m.Validate(); errors.Is(err, ErrModuleBadPath) ||
-			errors.Is(err, ErrModuleBadName) {
-			continue
-		}
-		out[m.Name] = m
-	}
-	return out
-}
-
-// Submodule returns the named submodule or nil if it does not exist.
-func (c *Config) Submodule(name string) *Submodule {
-	return c.Submodules()[name]
-}
-
-// SetSubmodule writes the submodule into Raw, replacing any existing submodule
-// of the same name. The path option is not stored in the repository config.
-func (c *Config) SetSubmodule(m *Submodule) {
-	sub := m.marshal()
-	sub.RemoveOption(pathKey)
-	c.setSubsection(submoduleSection, m.Name, sub)
-}
-
-// URLs returns the [url] subsections in file order.
-func (c *Config) URLs() []*URL {
-	return c.urls()
-}
-
-func (c *Config) urls() []*URL {
-	s := c.Raw.Section(urlSection)
-	out := make([]*URL, 0, len(s.Subsections))
-	for _, sub := range s.Subsections {
-		u := &URL{}
-		_ = u.unmarshal(sub)
-		out = append(out, u)
-	}
-	return out
-}
-
-// AddURL appends a url rewrite rule.
-func (c *Config) AddURL(u *URL) {
-	c.setSubsection(urlSection, u.Name, u.marshal())
-}
-
-// setSubsection replaces a subsection of the same name within section, or
-// appends it if absent.
-func (c *Config) setSubsection(section, name string, sub *format.Subsection) {
-	s := c.Raw.Section(section)
-	for i, ss := range s.Subsections {
-		if ss.IsName(name) {
-			s.Subsections[i] = sub
-			return
-		}
-	}
-	s.Subsections = append(s.Subsections, sub)
-}
-
 // Merge combines all the src Config objects into one. The objects are processed
 // in the order they are passed on; later sources override values from earlier
 // ones for the same key or subsection. Nil configs are ignored.
@@ -562,10 +398,21 @@ func (c *Config) merge(src *Config) {
 			ds.SetOption(o.Key, o.Value)
 		}
 		for _, sub := range s.Subsections {
-			c.setSubsection(s.Name, sub.Name, &format.Subsection{
+			merged := &format.Subsection{
 				Name:    sub.Name,
 				Options: append(format.Options(nil), sub.Options...),
-			})
+			}
+			replaced := false
+			for i, existing := range ds.Subsections {
+				if existing.IsName(sub.Name) {
+					ds.Subsections[i] = merged
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				ds.Subsections = append(ds.Subsections, merged)
+			}
 		}
 	}
 }
@@ -656,33 +503,17 @@ func Paths(scope Scope) ([]string, error) {
 }
 
 // Validate validates the remotes and branches and sets default values.
+// Validate validates the remote fetch refspecs stored in the config. Higher
+// level validation of remotes, branches and submodules is performed by the
+// porcelain layer that owns those types.
 func (c *Config) Validate() error {
-	remotes, err := c.remotes()
-	if err != nil {
-		return err
-	}
-	for name, r := range remotes {
-		if r.Name != name {
-			return ErrInvalid
-		}
-		if err := r.Validate(); err != nil {
-			return err
+	for _, sub := range c.Raw.Section("remote").Subsections {
+		for _, f := range sub.Options.GetAll("fetch") {
+			if err := plumbing.RefSpec(f).Validate(); err != nil {
+				return err
+			}
 		}
 	}
-
-	branches, err := c.branches()
-	if err != nil {
-		return err
-	}
-	for name, b := range branches {
-		if b.Name != name {
-			return ErrInvalid
-		}
-		if err := b.Validate(); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -701,14 +532,8 @@ func (c *Config) Unmarshal(b []byte) error {
 			return err
 		}
 	}
-	if _, err := c.remotes(); err != nil {
-		return err
-	}
-	if _, err := c.branches(); err != nil {
-		return err
-	}
 
-	return nil
+	return c.Validate()
 }
 
 // Marshal returns Config encoded as a git-config file. Because Raw is the
@@ -743,133 +568,4 @@ func setOptBool(raw *format.Config, key string, v OptBool) {
 		return
 	}
 	raw.Unset(key)
-}
-
-// RemoteConfig contains the configuration for a given remote repository.
-type RemoteConfig struct {
-	// Name of the remote
-	Name string
-	// URLs the URLs of a remote repository. It must be non-empty. Fetch will
-	// always use the first URL, while push will use all of them.
-	URLs []string
-	// Mirror indicates that the repository is a mirror of remote.
-	Mirror bool
-
-	// insteadOfRulesApplied have urls been modified
-	insteadOfRulesApplied bool
-	// originalURLs are the urls before applying insteadOf rules
-	originalURLs []string
-
-	// Fetch the default set of "refspec" for fetch operation
-	Fetch []plumbing.RefSpec
-
-	// raw representation of the subsection, filled by marshal or unmarshal are
-	// called
-	raw *format.Subsection
-}
-
-// Validate validates the fields and sets the default values.
-func (c *RemoteConfig) Validate() error {
-	if c.Name == "" {
-		return ErrRemoteConfigEmptyName
-	}
-
-	if len(c.URLs) == 0 {
-		return ErrRemoteConfigEmptyURL
-	}
-
-	for _, r := range c.Fetch {
-		if err := r.Validate(); err != nil {
-			return err
-		}
-	}
-
-	if len(c.Fetch) == 0 {
-		c.Fetch = []plumbing.RefSpec{plumbing.RefSpec(fmt.Sprintf(DefaultFetchRefSpec, c.Name))}
-	}
-
-	return plumbing.NewRemoteHEADReferenceName(c.Name).Validate()
-}
-
-func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
-	c.raw = s
-
-	fetch := []plumbing.RefSpec{}
-	for _, f := range c.raw.Options.GetAll(fetchKey) {
-		rs := plumbing.RefSpec(f)
-		if err := rs.Validate(); err != nil {
-			return err
-		}
-
-		fetch = append(fetch, rs)
-	}
-
-	c.Name = c.raw.Name
-	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
-	c.URLs = append(c.URLs, c.raw.Options.GetAll(pushurlKey)...)
-	c.Fetch = fetch
-	if c.raw.Options.Has(mirrorKey) {
-		if b, err := format.ParseBool(c.raw.Options.Get(mirrorKey)); err == nil {
-			c.Mirror = b
-		}
-	}
-
-	return nil
-}
-
-func (c *RemoteConfig) marshal() *format.Subsection {
-	if c.raw == nil {
-		c.raw = &format.Subsection{}
-	}
-
-	c.raw.Name = c.Name
-	if len(c.URLs) == 0 {
-		c.raw.RemoveOption(urlKey)
-	} else {
-		urls := c.URLs
-		if c.insteadOfRulesApplied {
-			urls = c.originalURLs
-		}
-
-		c.raw.SetOption(urlKey, urls...)
-	}
-
-	if len(c.Fetch) == 0 {
-		c.raw.RemoveOption(fetchKey)
-	} else {
-		values := make([]string, 0, len(c.Fetch))
-		for _, rs := range c.Fetch {
-			values = append(values, rs.String())
-		}
-
-		c.raw.SetOption(fetchKey, values...)
-	}
-
-	if c.Mirror {
-		c.raw.SetOption(mirrorKey, strconv.FormatBool(c.Mirror))
-	}
-
-	return c.raw
-}
-
-// IsFirstURLLocal returns true if the first URL is a local path.
-func (c *RemoteConfig) IsFirstURLLocal() bool {
-	return url.IsLocalEndpoint(c.URLs[0])
-}
-
-func (c *RemoteConfig) applyURLRules(urlRules []*URL) {
-	// save original urls
-	originalURLs := make([]string, len(c.URLs))
-	copy(originalURLs, c.URLs)
-
-	for i, u := range c.URLs {
-		if rewrittenURL, matched := applyLongestInsteadOfMatch(u, urlRules); matched {
-			c.URLs[i] = rewrittenURL
-			c.insteadOfRulesApplied = true
-		}
-	}
-
-	if c.insteadOfRulesApplied {
-		c.originalURLs = originalURLs
-	}
 }

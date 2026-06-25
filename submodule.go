@@ -29,12 +29,12 @@ type Submodule struct {
 	// initialized defines if a submodule was already initialized.
 	initialized bool
 
-	c *config.Submodule
+	c *SubmoduleConfig
 	w *Worktree
 }
 
 // Config returns the submodule config
-func (s *Submodule) Config() *config.Submodule {
+func (s *Submodule) Config() *SubmoduleConfig {
 	return s.c
 }
 
@@ -46,13 +46,13 @@ func (s *Submodule) Init() error {
 		return err
 	}
 
-	if cfg.Submodule(s.c.Name) != nil {
+	if submoduleConfig(cfg, s.c.Name) != nil {
 		return ErrSubmoduleAlreadyInitialized
 	}
 
 	s.initialized = true
 
-	cfg.SetSubmodule(s.c)
+	setSubmoduleConfig(cfg, s.c)
 	return s.w.r.Storer.SetConfig(cfg)
 }
 
@@ -170,7 +170,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 		*moduleEndpoint = *rootEndpoint
 	}
 
-	_, err = r.CreateRemote(&config.RemoteConfig{
+	_, err = r.CreateRemote(&RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{moduleEndpoint.String()},
 	})
@@ -194,7 +194,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 // Each rule falls through unconditionally: a branch lookup that
 // finds the branch but with an empty Remote does not short-circuit
 // rule (2). Returns an error when the chosen remote is not configured.
-func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
+func defaultRemote(r *Repository) (*RemoteConfig, error) {
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
@@ -203,12 +203,12 @@ func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
 	if ref, err := r.Reference(plumbing.HEAD, false); err == nil &&
 		ref.Type() == plumbing.SymbolicReference &&
 		ref.Target().IsBranch() {
-		if b := cfg.Branch(ref.Target().Short()); b != nil && b.Remote != "" {
+		if b := branchConfig(cfg, ref.Target().Short()); b != nil && b.Remote != "" {
 			return lookupRemote(cfg, b.Remote)
 		}
 	}
 
-	if remotes := cfg.Remotes(); len(remotes) == 1 {
+	if remotes := remoteConfigs(cfg); len(remotes) == 1 {
 		for name := range remotes {
 			return lookupRemote(cfg, name)
 		}
@@ -217,8 +217,8 @@ func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
 	return lookupRemote(cfg, DefaultRemoteName)
 }
 
-func lookupRemote(cfg *config.Config, name string) (*config.RemoteConfig, error) {
-	rc := cfg.Remote(name)
+func lookupRemote(cfg *config.Config, name string) (*RemoteConfig, error) {
+	rc := remoteConfig(cfg, name)
 	if rc == nil {
 		return nil, fmt.Errorf("remote %q not found", name)
 	}

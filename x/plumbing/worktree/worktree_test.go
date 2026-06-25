@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -1074,7 +1073,7 @@ func TestWorktreeIsolation(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = remoteRepo.Close() }()
 
-	_, err = mainRepo.CreateRemote(&config.RemoteConfig{
+	_, err = mainRepo.CreateRemote(&git.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remoteDir},
 	})
@@ -1208,7 +1207,7 @@ func TestWorktreeConfig(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, customWorktreePath, repoCfg.Core().Worktree)
 
-		assert.Contains(t, repoCfg.Remotes(), "origin") // check base repo config
+		assert.True(t, repoCfg.Raw.Section("remote").HasSubsection("origin")) // check base repo config
 	})
 
 	t.Run("config.worktree absent", func(t *testing.T) {

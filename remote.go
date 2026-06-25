@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -49,19 +48,19 @@ const (
 
 // Remote represents a connection to a remote repository.
 type Remote struct {
-	c *config.RemoteConfig
+	c *RemoteConfig
 	s storage.Storer
 }
 
 // NewRemote creates a new Remote.
 // The intended purpose is to use the Remote for tasks such as listing remote references (like using git ls-remote).
 // Otherwise Remotes should be created via the use of a Repository.
-func NewRemote(s storage.Storer, c *config.RemoteConfig) *Remote {
+func NewRemote(s storage.Storer, c *RemoteConfig) *Remote {
 	return &Remote{s: s, c: c}
 }
 
 // Config returns the RemoteConfig object used to instantiate this Remote.
-func (r *Remote) Config() *config.RemoteConfig {
+func (r *Remote) Config() *RemoteConfig {
 	return r.c
 }
 

@@ -769,7 +769,7 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 		return nil, err
 	}
 
-	c := cfg.Remote(name)
+	c := remoteConfig(cfg, name)
 	if c == nil {
 		return nil, ErrRemoteNotFound
 	}
@@ -784,7 +784,7 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 		return nil, err
 	}
 
-	all := cfg.Remotes()
+	all := remoteConfigs(cfg)
 	remotes := make([]*Remote, len(all))
 
 	var i int
@@ -797,7 +797,7 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 }
 
 // CreateRemote creates a new remote
-func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
+func (r *Repository) CreateRemote(c *RemoteConfig) (*Remote, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -809,17 +809,17 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 		return nil, err
 	}
 
-	if cfg.Remote(c.Name) != nil {
+	if remoteConfig(cfg, c.Name) != nil {
 		return nil, ErrRemoteExists
 	}
 
-	cfg.SetRemote(c)
+	setRemoteConfig(cfg, c)
 	return remote, r.Storer.SetConfig(cfg)
 }
 
 // CreateRemoteAnonymous creates a new anonymous remote. c.Name must be "anonymous".
 // It's used like 'git fetch git@github.com:src-d/go-git.git master:master'.
-func (r *Repository) CreateRemoteAnonymous(c *config.RemoteConfig) (*Remote, error) {
+func (r *Repository) CreateRemoteAnonymous(c *RemoteConfig) (*Remote, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -840,22 +840,22 @@ func (r *Repository) DeleteRemote(name string) error {
 		return err
 	}
 
-	if cfg.Remote(name) == nil {
+	if remoteConfig(cfg, name) == nil {
 		return ErrRemoteNotFound
 	}
 
-	cfg.RemoveRemote(name)
+	cfg.Raw.RemoveSubsection("remote", name)
 	return r.Storer.SetConfig(cfg)
 }
 
 // Branch return a Branch if exists
-func (r *Repository) Branch(name string) (*config.Branch, error) {
+func (r *Repository) Branch(name string) (*Branch, error) {
 	cfg, err := r.Config()
 	if err != nil {
 		return nil, err
 	}
 
-	b := cfg.Branch(name)
+	b := branchConfig(cfg, name)
 	if b == nil {
 		return nil, ErrBranchNotFound
 	}
@@ -864,7 +864,7 @@ func (r *Repository) Branch(name string) (*config.Branch, error) {
 }
 
 // CreateBranch creates a new Branch
-func (r *Repository) CreateBranch(c *config.Branch) error {
+func (r *Repository) CreateBranch(c *Branch) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -874,11 +874,11 @@ func (r *Repository) CreateBranch(c *config.Branch) error {
 		return err
 	}
 
-	if cfg.Branch(c.Name) != nil {
+	if branchConfig(cfg, c.Name) != nil {
 		return ErrBranchExists
 	}
 
-	cfg.SetBranch(c)
+	setBranchConfig(cfg, c)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -891,11 +891,11 @@ func (r *Repository) DeleteBranch(name string) error {
 		return err
 	}
 
-	if cfg.Branch(name) == nil {
+	if branchConfig(cfg, name) == nil {
 		return ErrBranchNotFound
 	}
 
-	cfg.RemoveBranch(name)
+	cfg.Raw.RemoveSubsection("branch", name)
 	return r.Storer.SetConfig(cfg)
 }
 
@@ -1095,7 +1095,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		r.wt = o.worktree
 	}
 
-	c := &config.RemoteConfig{
+	c := &RemoteConfig{
 		Name:   o.RemoteName,
 		URLs:   []string{o.URL},
 		Fetch:  r.cloneRefSpec(o),
@@ -1197,7 +1197,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		branchRef := ref.Name()
 		branchName := strings.Split(string(branchRef), "refs/heads/")[1]
 
-		b := &config.Branch{
+		b := &Branch{
 			Name:  branchName,
 			Merge: branchRef,
 		}
@@ -1255,7 +1255,7 @@ func (r *Repository) setIsBare(isBare bool) error {
 	return r.Storer.SetConfig(cfg)
 }
 
-func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.RemoteConfig, _ *plumbing.Reference) error {
+func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *RemoteConfig, _ *plumbing.Reference) error {
 	if !o.SingleBranch {
 		return nil
 	}
@@ -1267,7 +1267,7 @@ func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.Remot
 		return err
 	}
 
-	cfg.SetRemote(c)
+	setRemoteConfig(cfg, c)
 	return r.Storer.SetConfig(cfg)
 }
 

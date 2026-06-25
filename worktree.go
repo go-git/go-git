@@ -1176,7 +1176,7 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 	}
 
 	for _, s := range m.Submodules {
-		sub := w.newSubmodule(s, cfg.Submodule(s.Name))
+		sub := w.newSubmodule(s, submoduleConfig(cfg, s.Name))
 		subCfg := sub.Config()
 		resolvedURL, err := resolveModuleURL(originURL, subCfg.URL)
 		if err != nil {
@@ -1189,7 +1189,7 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 	return l, nil
 }
 
-func (w *Worktree) newSubmodule(fromModules, fromConfig *config.Submodule) *Submodule {
+func (w *Worktree) newSubmodule(fromModules, fromConfig *SubmoduleConfig) *Submodule {
 	m := &Submodule{w: w}
 	m.initialized = fromConfig != nil
 
@@ -1210,7 +1210,7 @@ func (w *Worktree) isSymlink(path string) bool {
 	return false
 }
 
-func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
+func (w *Worktree) readGitmodulesFile() (*Modules, error) {
 	if w.isSymlink(gitmodulesFile) {
 		return nil, ErrGitModulesSymlink
 	}
@@ -1230,7 +1230,7 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 		return nil, err
 	}
 
-	m := config.NewModules()
+	m := NewModules()
 	if err := m.Unmarshal(input); err != nil {
 		return nil, err
 	}

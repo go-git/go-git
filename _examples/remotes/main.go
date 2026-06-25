@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -26,7 +25,7 @@ func main() {
 
 	// Add a new remote, with the default fetch refspec
 	Info("git remote add example https://github.com/git-fixtures/basic.git")
-	_, err = r.CreateRemote(&config.RemoteConfig{
+	_, err = r.CreateRemote(&git.RemoteConfig{
 		Name: "example",
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})

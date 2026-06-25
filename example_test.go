@@ -10,7 +10,6 @@ import (
 	"github.com/go-git/go-billy/v6/memfs"
 
 	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
@@ -169,7 +168,7 @@ func ExampleRepository_CreateRemote() {
 	defer func() { _ = r.Close() }()
 
 	// Add a new remote, with the default fetch refspec
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(&git.RemoteConfig{
 		Name: "example",
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})

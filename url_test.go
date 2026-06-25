@@ -1,9 +1,11 @@
-package config
+package git
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/config"
 )
 
 type URLSuite struct {
@@ -33,8 +35,8 @@ func (b *URLSuite) TestMarshal() {
 	insteadOf = https://github.com/
 `)
 
-	cfg := NewConfig()
-	cfg.AddURL(&URL{
+	cfg := config.NewConfig()
+	addURLConfig(cfg, &URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/"},
 	})
@@ -53,8 +55,8 @@ func (b *URLSuite) TestMarshalMultipleInsteadOf() {
 	insteadOf = https://google.com/
 `)
 
-	cfg := NewConfig()
-	cfg.AddURL(&URL{
+	cfg := config.NewConfig()
+	addURLConfig(cfg, &URL{
 		Name:       "ssh://git@github.com/",
 		InsteadOfs: []string{"https://github.com/", "https://google.com/"},
 	})
@@ -71,11 +73,11 @@ func (b *URLSuite) TestUnmarshal() {
 	insteadOf = https://github.com/
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	b.Require().Len(cfg.URLs(), 1)
-	url := cfg.URLs()[0]
+	b.Require().Len(urlConfigs(cfg), 1)
+	url := urlConfigs(cfg)[0]
 	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 	b.Equal("https://github.com/", url.InsteadOfs[0])
@@ -89,11 +91,11 @@ func (b *URLSuite) TestUnmarshalMultipleInsteadOf() {
 	insteadOf = https://google.com/
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.Nil(err)
-	b.Require().Len(cfg.URLs(), 1)
-	url := cfg.URLs()[0]
+	b.Require().Len(urlConfigs(cfg), 1)
+	url := urlConfigs(cfg)[0]
 	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 
@@ -110,11 +112,11 @@ func (b *URLSuite) TestUnmarshalDuplicateUrls() {
 	insteadOf = https://google.com/
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.Nil(err)
-	b.Require().Len(cfg.URLs(), 1)
-	url := cfg.URLs()[0]
+	b.Require().Len(urlConfigs(cfg), 1)
+	url := urlConfigs(cfg)[0]
 	b.NotNil(url)
 	b.Equal("ssh://git@github.com/", url.Name)
 
@@ -180,12 +182,12 @@ func (b *URLSuite) TestApplyInsteadOfLongestMatchIntegration() {
 	fetch = +refs/heads/*:refs/remotes/origin/*
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
 
 	// The longer insteadOf should be used
-	origin := cfg.Remotes()["origin"]
+	origin := remoteConfigs(cfg)["origin"]
 	b.NotNil(origin)
 	b.Equal([]string{"ssh://git@github.com/user/repo.git"}, origin.URLs)
 }
@@ -202,12 +204,12 @@ func (b *URLSuite) TestApplyInsteadOfDuplicateInsteadOfValues() {
 	fetch = +refs/heads/*:refs/remotes/origin/*
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
 
 	// First URL in config file should be used
-	origin := cfg.Remotes()["origin"]
+	origin := remoteConfigs(cfg)["origin"]
 	b.NotNil(origin)
 	b.Equal([]string{"ssh://git@github.com/user/repo.git"}, origin.URLs)
 }

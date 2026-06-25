@@ -1,10 +1,11 @@
-package config
+package git
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
@@ -57,8 +58,8 @@ func (b *BranchSuite) TestMarshal() {
 	rebase = interactive
 `)
 
-	cfg := NewConfig()
-	cfg.SetBranch(&Branch{
+	cfg := config.NewConfig()
+	setBranchConfig(cfg, &Branch{
 		Name:   "branch-tracking-on-clone",
 		Remote: "fork",
 		Merge:  plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"),
@@ -79,10 +80,10 @@ func (b *BranchSuite) TestUnmarshal() {
 	rebase = interactive
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	branch := cfg.Branches()["branch-tracking-on-clone"]
+	branch := branchConfigs(cfg)["branch-tracking-on-clone"]
 	b.Equal("branch-tracking-on-clone", branch.Name)
 	b.Equal("fork", branch.Remote)
 	b.Equal(plumbing.ReferenceName("refs/heads/branch-tracking-on-clone"), branch.Merge)
@@ -117,10 +118,10 @@ func (b *BranchSuite) TestUnmarshalNonRefsPrefix() {
 	merge = main
 `)
 
-	cfg := NewConfig()
+	cfg := config.NewConfig()
 	err := cfg.Unmarshal(input)
 	b.NoError(err)
-	branch := cfg.Branches()["foo"]
+	branch := branchConfigs(cfg)["foo"]
 	b.Equal("foo", branch.Name)
 	b.Equal("origin", branch.Remote)
 	b.Equal(plumbing.ReferenceName("main"), branch.Merge)

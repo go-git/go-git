@@ -34,7 +34,7 @@ func TestSubmoduleWindowsAbsoluteURLNotJoined(t *testing.T) {
 			}
 			cfg, err := parent.Config()
 			require.NoError(t, err)
-			cfg.SetRemote(&config.RemoteConfig{
+			setRemoteConfig(cfg, &RemoteConfig{
 				Name: "origin",
 				URLs: []string{"file:///parent/origin"},
 			})
@@ -43,7 +43,7 @@ func TestSubmoduleWindowsAbsoluteURLNotJoined(t *testing.T) {
 			sub := &Submodule{
 				initialized: true,
 				w:           &Worktree{filesystem: newWorktreeFilesystem(memfs.New(), defaultProtectNTFS(), defaultProtectHFS()), r: parent},
-				c: &config.Submodule{
+				c: &SubmoduleConfig{
 					Name: "child",
 					Path: "child",
 					URL:  url,
