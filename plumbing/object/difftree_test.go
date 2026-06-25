@@ -1,6 +1,7 @@
 package object
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -385,4 +387,120 @@ func (s *DiffTreeSuite) TestIssue279() {
 		mode: filemode.Deprecated,
 	}
 	s.NotEqual(bb.Hash(), b.Hash())
+}
+
+// DiffTree computes a diff in memory and never materialises entry names into a
+// worktree, so it must not reject trees whose entry names contain bytes that
+// upstream Git's verify_path accepts — a control character such as a newline is
+// a valid pathname byte on disk (only '/' and NUL are forbidden in a tree entry
+// name). The path-safety validation in TreeWalker.Next is for callers that hand
+// names to the filesystem; the diff walk opts out of it.
+func TestDiffTreeAllowsControlCharInPath(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("IO.puts(\"hi\")\n"))
+
+	const ctrlName = "foo\n.exs"
+	empty := storeTestTree(t, st, nil)
+	withFile := storeTestTree(t, st, []TreeEntry{
+		{Name: ctrlName, Mode: filemode.Regular, Hash: blob},
+	})
+
+	from, err := GetTree(st, empty)
+	if err != nil {
+		t.Fatalf("GetTree(empty) = %v", err)
+	}
+	to, err := GetTree(st, withFile)
+	if err != nil {
+		t.Fatalf("GetTree(withFile) = %v", err)
+	}
+
+	changes, err := DiffTree(from, to)
+	if err != nil {
+		t.Fatalf("DiffTree on a tree with a control-char path = %v; want nil", err)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("len(changes) = %d, want 1", len(changes))
+	}
+	if got := changes[0].To.Name; got != ctrlName {
+		t.Fatalf("change name = %q, want %q", got, ctrlName)
+	}
+}
+
+// The diff walk opting out of path validation must not weaken the default
+// TreeWalker, which materialising callers (archive, FileIter) rely on to reject
+// names that are unsafe to write to disk.
+func TestTreeWalkerValidatesControlCharByDefault(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("x\n"))
+	withFile := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo\n.exs", Mode: filemode.Regular, Hash: blob},
+	})
+	tree, err := GetTree(st, withFile)
+	if err != nil {
+		t.Fatalf("GetTree = %v", err)
+	}
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+	_, _, err = w.Next()
+	if !errors.Is(err, pathutil.ErrInvalidPath) {
+		t.Fatalf("TreeWalker.Next error = %v, want pathutil.ErrInvalidPath", err)
+	}
+}
+
+func storeTestObject(t *testing.T, st storer.EncodedObjectStorer, typ plumbing.ObjectType, content []byte) plumbing.Hash {
+	t.Helper()
+	o := st.NewEncodedObject()
+	o.SetType(typ)
+	w, err := o.Writer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h, err := st.SetEncodedObject(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+// storeTestTree writes a raw tree object, bypassing Tree.Encode's Validate gate
+// so a tree with an otherwise-rejected entry name can be created — mirroring how
+// such a tree arrives off the wire and is read back via the permissive Decode.
+func storeTestTree(t *testing.T, st storer.EncodedObjectStorer, entries []TreeEntry) plumbing.Hash {
+	t.Helper()
+	o := st.NewEncodedObject()
+	o.SetType(plumbing.TreeObject)
+	w, err := o.Writer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if _, err := fmt.Fprintf(w, "%o %s", e.Mode, e.Name); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte{0x00}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.Hash.WriteTo(w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h, err := st.SetEncodedObject(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
 }
