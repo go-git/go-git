@@ -1082,7 +1082,7 @@ func TestWorktreeIsolation(t *testing.T) {
 
 	err = mainRepo.Push(&git.PushOptions{
 		RemoteName: "origin",
-		RefSpecs:   []config.RefSpec{"refs/heads/master:refs/heads/master"},
+		RefSpecs:   []plumbing.RefSpec{"refs/heads/master:refs/heads/master"},
 	})
 	require.NoError(t, err)
 
@@ -1121,7 +1121,7 @@ func TestWorktreeIsolation(t *testing.T) {
 	// Push worktree changes to the remote.
 	err = wtRepo.Push(&git.PushOptions{
 		RemoteName: "origin",
-		RefSpecs:   []config.RefSpec{"refs/heads/feature-branch:refs/heads/feature-branch"},
+		RefSpecs:   []plumbing.RefSpec{"refs/heads/feature-branch:refs/heads/feature-branch"},
 	})
 	require.NoError(t, err)
 

@@ -156,7 +156,7 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		for i := 0; i < len(o.RefSpecs); i++ {
 			rs := &o.RefSpecs[i]
 			if !rs.IsForceUpdate() && !rs.IsDelete() {
-				o.RefSpecs[i] = config.RefSpec("+" + rs.String())
+				o.RefSpecs[i] = plumbing.RefSpec("+" + rs.String())
 			}
 		}
 	}
@@ -547,7 +547,7 @@ func newClient(rawURL string, opts []client.Option) (*client.Client, *transport.
 	return cl, &transport.Request{URL: u}, nil
 }
 
-func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer) (bool, error) {
+func (r *Remote) pruneRemotes(specs []plumbing.RefSpec, localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer) (bool, error) {
 	var updatedPrune bool
 	for _, spec := range specs {
 		rev := spec.Reverse()
@@ -569,7 +569,7 @@ func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Refe
 }
 
 func (r *Remote) addReferencesToUpdate(
-	refspecs []config.RefSpec,
+	refspecs []plumbing.RefSpec,
 	localRefs []*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
 	cmds *[]*packp.Command,
@@ -605,7 +605,7 @@ func (r *Remote) addReferencesToUpdate(
 }
 
 func (r *Remote) addOrUpdateReferences(
-	rs config.RefSpec,
+	rs plumbing.RefSpec,
 	localRefs []*plumbing.Reference,
 	refsDict map[string]*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
@@ -637,7 +637,7 @@ func (r *Remote) addOrUpdateReferences(
 	return nil
 }
 
-func (r *Remote) deleteReferences(rs config.RefSpec,
+func (r *Remote) deleteReferences(rs plumbing.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	refsDict map[string]*plumbing.Reference,
 	cmds *[]*packp.Command,
@@ -676,7 +676,7 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 	})
 }
 
-func (r *Remote) addObject(rs config.RefSpec,
+func (r *Remote) addObject(rs plumbing.RefSpec,
 	remoteRefs storer.ReferenceStorer, localObject plumbing.Hash,
 	cmds *[]*packp.Command,
 ) error {
@@ -713,7 +713,7 @@ func (r *Remote) addObject(rs config.RefSpec,
 	return nil
 }
 
-func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
+func (r *Remote) addReferenceIfRefSpecMatches(rs plumbing.RefSpec,
 	remoteRefs storer.ReferenceStorer, localRef *plumbing.Reference,
 	cmds *[]*packp.Command, forceWithLease *ForceWithLease,
 ) error {
@@ -898,7 +898,7 @@ func getHaves(
 const refspecAllTags = "+refs/tags/*:refs/tags/*"
 
 func calculateRefs(
-	spec []config.RefSpec,
+	spec []plumbing.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	tagMode plumbing.TagMode,
 ) (memory.ReferenceStorage, [][]*plumbing.Reference, error) {
@@ -921,7 +921,7 @@ func calculateRefs(
 }
 
 func doCalculateRefs(
-	s config.RefSpec,
+	s plumbing.RefSpec,
 	remoteRefs storer.ReferenceStorer,
 	refs memory.ReferenceStorage,
 ) ([]*plumbing.Reference, error) {
@@ -1120,7 +1120,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, sha
 	return found, nil
 }
 
-func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List) error {
+func (r *Remote) isSupportedRefSpec(refs []plumbing.RefSpec, caps *capability.List) error {
 	var containsIsExact bool
 	for _, ref := range refs {
 		if ref.IsExactSHA1() {
@@ -1141,7 +1141,7 @@ func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List
 }
 
 func (r *Remote) updateLocalReferenceStorage(
-	specs []config.RefSpec,
+	specs []plumbing.RefSpec,
 	fetchedRefs, remoteRefs memory.ReferenceStorage,
 	specToRefs [][]*plumbing.Reference,
 	tagMode plumbing.TagMode,
@@ -1412,7 +1412,7 @@ func pushHashes(
 	return nil
 }
 
-func (r *Remote) checkRequireRemoteRefs(requires []config.RefSpec, remoteRefs storer.ReferenceStorer) error {
+func (r *Remote) checkRequireRemoteRefs(requires []plumbing.RefSpec, remoteRefs storer.ReferenceStorer) error {
 	for _, require := range requires {
 		if require.IsWildcard() {
 			return fmt.Errorf("wildcards not supported in RequireRemoteRefs, got %s", require.String())

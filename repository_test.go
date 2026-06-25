@@ -540,11 +540,11 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 	// Step 2: fetch the specific commit by hash using "+<hash>:<hash>".
 	// This is the standard refspec for fetching an arbitrary commit that is not
 	// the tip of a branch or tag.
-	refSpec := config.RefSpec("+" + commitSHA + ":" + commitSHA)
+	refSpec := plumbing.RefSpec("+" + commitSHA + ":" + commitSHA)
 	err = r.Fetch(&FetchOptions{
 		Depth:    1,
 		Force:    true,
-		RefSpecs: []config.RefSpec{refSpec},
+		RefSpecs: []plumbing.RefSpec{refSpec},
 		Tags:     NoTags,
 	})
 	require.NoError(t, err, "fetch should succeed")
@@ -3967,7 +3967,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 
 	s.NoError(r.Fetch(&FetchOptions{
 		Depth:    2,
-		RefSpecs: []config.RefSpec{config.RefSpec("refs/heads/master:refs/heads/master")},
+		RefSpecs: []plumbing.RefSpec{plumbing.RefSpec("refs/heads/master:refs/heads/master")},
 	}))
 
 	shallows, err := r.Storer.Shallow()
@@ -3992,7 +3992,7 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 
 	s.NoError(r.Fetch(&FetchOptions{
 		Depth:    5,
-		RefSpecs: []config.RefSpec{config.RefSpec("refs/heads/*:refs/heads/*")},
+		RefSpecs: []plumbing.RefSpec{plumbing.RefSpec("refs/heads/*:refs/heads/*")},
 	}))
 
 	shallows, err = r.Storer.Shallow()

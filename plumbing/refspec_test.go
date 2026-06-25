@@ -1,12 +1,10 @@
-package config
+package plumbing
 
 import (
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-
-	"github.com/go-git/go-git/v6/plumbing"
 )
 
 type RefSpecSuite struct {
@@ -96,22 +94,22 @@ func (s *RefSpecSuite) TestRefSpecSrc() {
 
 func (s *RefSpecSuite) TestRefSpecMatch() {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
-	s.False(spec.Match(plumbing.ReferenceName("refs/heads/foo")))
-	s.True(spec.Match(plumbing.ReferenceName("refs/heads/master")))
+	s.False(spec.Match(ReferenceName("refs/heads/foo")))
+	s.True(spec.Match(ReferenceName("refs/heads/master")))
 
 	spec = RefSpec("+refs/heads/master:refs/remotes/origin/master")
-	s.False(spec.Match(plumbing.ReferenceName("refs/heads/foo")))
-	s.True(spec.Match(plumbing.ReferenceName("refs/heads/master")))
+	s.False(spec.Match(ReferenceName("refs/heads/foo")))
+	s.True(spec.Match(ReferenceName("refs/heads/master")))
 
 	spec = RefSpec(":refs/heads/master")
-	s.True(spec.Match(plumbing.ReferenceName("")))
-	s.False(spec.Match(plumbing.ReferenceName("refs/heads/master")))
+	s.True(spec.Match(ReferenceName("")))
+	s.False(spec.Match(ReferenceName("refs/heads/master")))
 
 	spec = RefSpec("refs/heads/love+hate:heads/love+hate")
-	s.True(spec.Match(plumbing.ReferenceName("refs/heads/love+hate")))
+	s.True(spec.Match(ReferenceName("refs/heads/love+hate")))
 
 	spec = RefSpec("+refs/heads/love+hate:heads/love+hate")
-	s.True(spec.Match(plumbing.ReferenceName("refs/heads/love+hate")))
+	s.True(spec.Match(ReferenceName("refs/heads/love+hate")))
 }
 
 func (s *RefSpecSuite) TestRefSpecMatchGlob() {
@@ -141,7 +139,7 @@ func (s *RefSpecSuite) TestRefSpecMatchGlob() {
 		spec := RefSpec(specStr)
 		for ref, matches := range data {
 			s.Equal(matches,
-				spec.Match(plumbing.ReferenceName(ref)),
+				spec.Match(ReferenceName(ref)),
 				fmt.Sprintf("while matching spec %q against ref %q", specStr, ref),
 			)
 		}
@@ -151,7 +149,7 @@ func (s *RefSpecSuite) TestRefSpecMatchGlob() {
 func (s *RefSpecSuite) TestRefSpecDst() {
 	spec := RefSpec("refs/heads/master:refs/remotes/origin/master")
 	s.Equal("refs/remotes/origin/master",
-		spec.Dst(plumbing.ReferenceName("refs/heads/master")).String())
+		spec.Dst(ReferenceName("refs/heads/master")).String())
 }
 
 func (s *RefSpecSuite) TestRefSpecDstBlob() {
@@ -177,7 +175,7 @@ func (s *RefSpecSuite) TestRefSpecDstBlob() {
 	for specStr, dst := range tests {
 		spec := RefSpec(specStr)
 		s.Equal(dst,
-			spec.Dst(plumbing.ReferenceName(ref)).String(),
+			spec.Dst(ReferenceName(ref)).String(),
 			fmt.Sprintf("while getting dst from spec %q with ref %q", specStr, ref),
 		)
 	}
@@ -194,7 +192,7 @@ func (s *RefSpecSuite) TestMatchAny() {
 		"refs/heads/foo:refs/remotes/origin/bar",
 	}
 
-	s.True(MatchAny(specs, plumbing.ReferenceName("refs/heads/foo")))
-	s.True(MatchAny(specs, plumbing.ReferenceName("refs/heads/bar")))
-	s.False(MatchAny(specs, plumbing.ReferenceName("refs/heads/master")))
+	s.True(MatchAny(specs, ReferenceName("refs/heads/foo")))
+	s.True(MatchAny(specs, ReferenceName("refs/heads/bar")))
+	s.False(MatchAny(specs, ReferenceName("refs/heads/master")))
 }

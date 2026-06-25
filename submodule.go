@@ -328,11 +328,11 @@ func (s *Submodule) fetchAndCheckout(
 	// [1]: https://git-scm.com/docs/protocol-capabilities#_allow_reachable_sha1_in_want
 	if !o.NoFetch {
 		if _, err := w.r.Object(plumbing.AnyObject, hash); err != nil {
-			refSpec := config.RefSpec("+" + hash.String() + ":" + hash.String())
+			refSpec := plumbing.RefSpec("+" + hash.String() + ":" + hash.String())
 
 			err := r.FetchContext(ctx, &FetchOptions{
 				ClientOptions: o.ClientOptions,
-				RefSpecs:      []config.RefSpec{refSpec},
+				RefSpecs:      []plumbing.RefSpec{refSpec},
 				Depth:         o.Depth,
 			})
 			if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) && !errors.Is(err, ErrExactSHA1NotSupported) {

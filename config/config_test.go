@@ -101,10 +101,10 @@ func (s *ConfigSuite) TestUnmarshal() {
 	s.Len(cfg.Remotes(), 4)
 	s.Equal("origin", cfg.Remotes()["origin"].Name)
 	s.Equal([]string{"git@github.com:mcuadros/go-git.git"}, cfg.Remotes()["origin"].URLs)
-	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, cfg.Remotes()["origin"].Fetch)
+	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, cfg.Remotes()["origin"].Fetch)
 	s.Equal("alt", cfg.Remotes()["alt"].Name)
 	s.Equal([]string{"git@github.com:mcuadros/go-git.git", "git@github.com:src-d/go-git.git"}, cfg.Remotes()["alt"].URLs)
-	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"}, cfg.Remotes()["alt"].Fetch)
+	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"}, cfg.Remotes()["alt"].Fetch)
 	s.Equal("win-local", cfg.Remotes()["win-local"].Name)
 	s.Equal([]string{"X:\\Git\\"}, cfg.Remotes()["win-local"].URLs)
 	s.Equal([]string{"ssh://git@github.com/kostyay/go-git.git"}, cfg.Remotes()["insteadOf"].URLs)
@@ -165,7 +165,7 @@ func (s *ConfigSuite) TestMarshal() {
 	cfg.SetRemote(&RemoteConfig{
 		Name:  "alt",
 		URLs:  []string{"git@github.com:mcuadros/go-git.git", "git@github.com:src-d/go-git.git"},
-		Fetch: []RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"},
+		Fetch: []plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*", "+refs/pull/*:refs/remotes/origin/pull/*"},
 	})
 
 	cfg.SetRemote(&RemoteConfig{
@@ -525,12 +525,12 @@ func (s *ConfigSuite) TestUnmarshalRemotesUnnamedFirst() {
 	unnamedRemote, ok := cfg.Remotes()[""]
 	s.True(ok, "Expected unnamed remote to be present")
 	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
-	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
+	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
 
 	namedRemote, ok := cfg.Remotes()["upstream"]
 	s.True(ok, "Expected named remote 'upstream' to be present")
 	s.Equal([]string{"https://github.com/go-git/go-git.git"}, namedRemote.URLs)
-	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
+	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
 }
 
 func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
@@ -550,12 +550,12 @@ func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
 	namedRemote, ok := cfg.Remotes()["upstream"]
 	s.True(ok, "Expected a named remote 'upstream' to be present")
 	s.Equal([]string{"https://github.com/go-git/go-git.git"}, namedRemote.URLs)
-	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
+	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/upstream/*"}, namedRemote.Fetch)
 
 	unnamedRemote, ok := cfg.Remotes()[""]
 	s.True(ok, "Expected an unnamed remote to be present")
 	s.Equal([]string{"https://github.com/CLBRITTON2/go-git.git"}, unnamedRemote.URLs)
-	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
+	s.Equal([]plumbing.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
 }
 
 func TestUnmarshalPackReverseIndex(t *testing.T) {

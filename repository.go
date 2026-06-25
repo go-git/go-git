@@ -1222,25 +1222,25 @@ const (
 	refspecSingleBranchHEAD = "+HEAD:refs/remotes/%s/HEAD"
 )
 
-func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
+func (r *Repository) cloneRefSpec(o *CloneOptions) []plumbing.RefSpec {
 	switch {
 	case o.Mirror:
-		return []config.RefSpec{"+refs/*:refs/*"}
+		return []plumbing.RefSpec{"+refs/*:refs/*"}
 	case o.ReferenceName.IsTag():
-		return []config.RefSpec{
-			config.RefSpec(fmt.Sprintf(refspecTag, o.ReferenceName.Short())),
+		return []plumbing.RefSpec{
+			plumbing.RefSpec(fmt.Sprintf(refspecTag, o.ReferenceName.Short())),
 		}
 	case o.SingleBranch && o.ReferenceName == plumbing.HEAD:
-		return []config.RefSpec{
-			config.RefSpec(fmt.Sprintf(refspecSingleBranchHEAD, o.RemoteName)),
+		return []plumbing.RefSpec{
+			plumbing.RefSpec(fmt.Sprintf(refspecSingleBranchHEAD, o.RemoteName)),
 		}
 	case o.SingleBranch:
-		return []config.RefSpec{
-			config.RefSpec(fmt.Sprintf(refspecSingleBranch, o.ReferenceName.Short(), o.RemoteName)),
+		return []plumbing.RefSpec{
+			plumbing.RefSpec(fmt.Sprintf(refspecSingleBranch, o.ReferenceName.Short(), o.RemoteName)),
 		}
 	default:
-		return []config.RefSpec{
-			config.RefSpec(fmt.Sprintf(config.DefaultFetchRefSpec, o.RemoteName)),
+		return []plumbing.RefSpec{
+			plumbing.RefSpec(fmt.Sprintf(config.DefaultFetchRefSpec, o.RemoteName)),
 		}
 	}
 }
@@ -1313,7 +1313,7 @@ func (r *Repository) fetchAndUpdateReferences(
 	return resolvedRef, nil
 }
 
-func (r *Repository) updateReferences(spec []config.RefSpec,
+func (r *Repository) updateReferences(spec []plumbing.RefSpec,
 	resolvedRef *plumbing.Reference,
 ) (updated bool, err error) {
 	if !resolvedRef.Name().IsBranch() {
@@ -1350,7 +1350,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 	return updated, err
 }
 
-func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
+func (r *Repository) calculateRemoteHeadReference(spec []plumbing.RefSpec,
 	resolvedHead *plumbing.Reference,
 ) []*plumbing.Reference {
 	var refs []*plumbing.Reference

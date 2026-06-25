@@ -66,9 +66,9 @@ func (s *RemoteSuite) TestFetchOverriddenEndpoint() {
 
 func (s *RemoteSuite) TestFetchInvalidFetchOptions() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
-	invalid := config.RefSpec("^*$ñ")
-	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{invalid}})
-	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
+	invalid := plumbing.RefSpec("^*$ñ")
+	err := r.Fetch(&FetchOptions{RefSpecs: []plumbing.RefSpec{invalid}})
+	s.ErrorIs(err, plumbing.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestFetchWildcard() {
@@ -77,8 +77,8 @@ func (s *RemoteSuite) TestFetchWildcard() {
 	})
 
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -93,8 +93,8 @@ func (s *RemoteSuite) TestFetchExactSHA1() {
 	})
 
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/foo", "35e85108805c84807bc66a02d91535e1e24b38b9"),
@@ -107,8 +107,8 @@ func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
 	})
 
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
 		},
 	})
 
@@ -121,8 +121,8 @@ func (s *RemoteSuite) TestFetchWildcardTags() {
 	})
 
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 		Tags: AllTags,
 	}, []*plumbing.Reference{
@@ -141,8 +141,8 @@ func (s *RemoteSuite) TestFetch() {
 	})
 
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
@@ -155,15 +155,15 @@ func (s *RemoteSuite) TestFetchToNewBranch() {
 	})
 
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			// qualified branch to unqualified branch
 			"refs/heads/master:foo",
 			// unqualified branch to unqualified branch
 			"+master:bar",
 			// unqualified tag to unqualified branch
-			config.RefSpec("tree-tag:tree-tag"),
+			plumbing.RefSpec("tree-tag:tree-tag"),
 			// unqualified tag to qualified tag
-			config.RefSpec("+commit-tag:refs/tags/renamed-tag"),
+			plumbing.RefSpec("+commit-tag:refs/tags/renamed-tag"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
@@ -182,15 +182,15 @@ func (s *RemoteSuite) TestFetchToNewBranchWithAllTags() {
 
 	s.testFetch(r, &FetchOptions{
 		Tags: AllTags,
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			// qualified branch to unqualified branch
 			"+refs/heads/master:foo",
 			// unqualified branch to unqualified branch
 			"master:bar",
 			// unqualified tag to unqualified branch
-			config.RefSpec("+tree-tag:tree-tag"),
+			plumbing.RefSpec("+tree-tag:tree-tag"),
 			// unqualified tag to qualified tag
-			config.RefSpec("commit-tag:refs/tags/renamed-tag"),
+			plumbing.RefSpec("commit-tag:refs/tags/renamed-tag"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/foo", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
@@ -211,8 +211,8 @@ func (s *RemoteSuite) TestFetchNonExistentReference() {
 	})
 
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/foo:refs/remotes/origin/foo"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/foo:refs/remotes/origin/foo"),
 		},
 	})
 
@@ -228,8 +228,8 @@ func (s *RemoteSuite) TestFetchContext() {
 	defer cancel()
 
 	err := r.FetchContext(ctx, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
 	})
 	s.NoError(err)
@@ -244,8 +244,8 @@ func (s *RemoteSuite) TestFetchContextCanceled() {
 	cancel()
 
 	err := r.FetchContext(ctx, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
 	})
 	s.ErrorIs(err, context.Canceled)
@@ -258,8 +258,8 @@ func (s *RemoteSuite) TestFetchWithAllTags() {
 
 	s.testFetch(r, &FetchOptions{
 		Tags: AllTags,
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
@@ -278,8 +278,8 @@ func (s *RemoteSuite) TestFetchWithNoTags() {
 
 	s.testFetch(r, &FetchOptions{
 		Tags: NoTags,
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
@@ -297,8 +297,8 @@ func (s *RemoteSuite) TestFetchWithDepth() {
 
 	s.testFetch(r, &FetchOptions{
 		Depth: 1,
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -320,8 +320,8 @@ func (s *RemoteSuite) TestFetchWithDepthChange() {
 
 	s.testFetch(r, &FetchOptions{
 		Depth: 1,
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("refs/heads/master:refs/heads/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("refs/heads/master:refs/heads/master"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -330,8 +330,8 @@ func (s *RemoteSuite) TestFetchWithDepthChange() {
 
 	s.testFetch(r, &FetchOptions{
 		Depth: 3,
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("refs/heads/master:refs/heads/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("refs/heads/master:refs/heads/master"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -395,9 +395,9 @@ func (s *RemoteSuite) TestFetchWithProgress() {
 
 	r := NewRemote(sto, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
 
-	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	refspec := plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
+		RefSpecs: []plumbing.RefSpec{refspec},
 		Progress: buf,
 	})
 
@@ -427,9 +427,9 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter() {
 	url := s.GetBasicLocalRepositoryURL()
 	r := NewRemote(mock, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
 
-	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	refspec := plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
+		RefSpecs: []plumbing.RefSpec{refspec},
 	})
 
 	s.NoError(err)
@@ -458,8 +458,8 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateButStillUpdateLocalRemoteRefs
 	})
 
 	o := &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}
 
@@ -493,8 +493,8 @@ func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(url string) {
 	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{URLs: []string{url}})
 
 	o := &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	}
 
@@ -510,8 +510,8 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 	})
 
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/master:refs/heads/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/master:refs/heads/master"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -519,16 +519,16 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 
 	// First make sure that we error correctly when a force is required.
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("refs/heads/branch:refs/heads/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("refs/heads/branch:refs/heads/master"),
 		},
 	})
 	s.ErrorIs(err, ErrForceNeeded)
 
 	// And that forcing it fixes the problem.
 	err = r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("+refs/heads/branch:refs/heads/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("+refs/heads/branch:refs/heads/master"),
 		},
 	})
 	s.NoError(err)
@@ -538,8 +538,8 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 		"refs/heads/master", "918c48b83bd081e863dbe1b80f8998f058cd8294",
 	))
 	s.testFetch(r, &FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("refs/heads/master:refs/heads/master"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("refs/heads/master:refs/heads/master"),
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
@@ -589,9 +589,9 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 		URLs: []string{url},
 	})
 
-	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	rs := plumbing.RefSpec("refs/heads/*:refs/heads/*")
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
+		RefSpecs: []plumbing.RefSpec{rs},
 	})
 	s.NoError(err)
 
@@ -634,7 +634,7 @@ func (s *RemoteSuite) TestPushContext() {
 	numGoroutines := runtime.NumGoroutine()
 
 	err = r.PushContext(ctx, &PushOptions{
-		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
+		RefSpecs: []plumbing.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	s.NoError(err)
 
@@ -704,7 +704,7 @@ func (s *RemoteSuite) TestPushContextCanceled() {
 	numGoroutines := runtime.NumGoroutine()
 
 	err = r.PushContext(ctx, &PushOptions{
-		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
+		RefSpecs: []plumbing.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	s.ErrorIs(err, context.Canceled)
 
@@ -730,7 +730,7 @@ func (s *RemoteSuite) TestPushTags() {
 	})
 
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
+		RefSpecs: []plumbing.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	s.NoError(err)
 
@@ -761,7 +761,7 @@ func (s *RemoteSuite) TestPushTagsByOID() {
 	})
 
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f:refs/tags/lightweight-tag-copy",
 			"b742a2a9fa0afcfa9a6fad080980fbc26b007c69:refs/tags/annotated-tag-copy",
 			"ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc:refs/tags/commit-tag-copy",
@@ -799,8 +799,8 @@ func (s *RemoteSuite) testPushByOID(oid, refName string) {
 	})
 
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec(oid + ":" + refName),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec(oid + ":" + refName),
 		},
 		FollowTags: false,
 	})
@@ -864,7 +864,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 	s.NoError(err)
 
 	err = r.Push(&PushOptions{
-		RefSpecs:   []config.RefSpec{"+refs/heads/branch:refs/heads/branch"},
+		RefSpecs:   []plumbing.RefSpec{"+refs/heads/branch:refs/heads/branch"},
 		FollowTags: true,
 	})
 	s.NoError(err)
@@ -892,7 +892,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate() {
 	})
 
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"},
+		RefSpecs: []plumbing.RefSpec{"refs/heads/*:refs/heads/*"},
 	})
 	s.ErrorIs(err, NoErrAlreadyUpToDate)
 }
@@ -914,7 +914,7 @@ func (s *RemoteSuite) TestPushDeleteReference() {
 	s.NoError(err)
 
 	err = remote.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{":refs/heads/branch"},
+		RefSpecs: []plumbing.RefSpec{":refs/heads/branch"},
 	})
 	s.NoError(err)
 
@@ -943,7 +943,7 @@ func (s *RemoteSuite) TestForcePushDeleteReference() {
 	s.NoError(err)
 
 	err = remote.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{":refs/heads/branch"},
+		RefSpecs: []plumbing.RefSpec{":refs/heads/branch"},
 		Force:    true,
 	})
 	s.NoError(err)
@@ -974,7 +974,7 @@ func (s *RemoteSuite) TestPushRejectNonFastForward() {
 	s.NoError(err)
 	s.NotNil(oldRef)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		"refs/heads/master:refs/heads/branch",
 	}})
 	s.ErrorContains(err, "non-fast-forward update: refs/heads/branch")
@@ -1005,8 +1005,8 @@ func (s *RemoteSuite) TestPushForce() {
 	s.NoError(err)
 	s.NotNil(oldRef)
 
-	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
-		config.RefSpec("+refs/heads/master:refs/heads/branch"),
+	err = r.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
+		plumbing.RefSpec("+refs/heads/master:refs/heads/branch"),
 	}})
 	s.NoError(err)
 
@@ -1037,7 +1037,7 @@ func (s *RemoteSuite) TestPushForceWithOption() {
 	s.NotNil(oldRef)
 
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RefSpecs: []plumbing.RefSpec{"refs/heads/master:refs/heads/branch"},
 		Force:    true,
 	})
 	s.NoError(err)
@@ -1104,7 +1104,7 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 		s.NotNil(oldRef)
 
 		s.NoError(r.Push(&PushOptions{
-			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
+			RefSpecs:       []plumbing.RefSpec{"refs/heads/branch:refs/heads/branch"},
 			ForceWithLease: &ForceWithLease{},
 		}))
 
@@ -1172,7 +1172,7 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 		s.NotNil(oldRef)
 
 		err = r.Push(&PushOptions{
-			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
+			RefSpecs:       []plumbing.RefSpec{"refs/heads/branch:refs/heads/branch"},
 			ForceWithLease: &ForceWithLease{},
 		})
 
@@ -1209,8 +1209,8 @@ func (s *RemoteSuite) TestPushPrune() {
 	s.NoError(err)
 
 	err = remote.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("refs/heads/*:refs/heads/*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("refs/heads/*:refs/heads/*"),
 		},
 		Prune: true,
 	})
@@ -1221,8 +1221,8 @@ func (s *RemoteSuite) TestPushPrune() {
 	})
 
 	err = remote.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec("*:*"),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec("*:*"),
 		},
 		Prune: true,
 	})
@@ -1258,7 +1258,7 @@ func (s *RemoteSuite) TestPushNewReference() {
 	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		"refs/heads/master:refs/heads/branch2",
 	}})
 	s.NoError(err)
@@ -1290,7 +1290,7 @@ func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch() {
 	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		"refs/heads/master:refs/heads/branch2",
 		":refs/heads/branch",
 	}})
@@ -1334,9 +1334,9 @@ func (s *RemoteSuite) TestPushInvalidSchemaEndpoint() {
 
 func (s *RemoteSuite) TestPushInvalidFetchOptions() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
-	invalid := config.RefSpec("^*$ñ")
-	err := r.Push(&PushOptions{RefSpecs: []config.RefSpec{invalid}})
-	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
+	invalid := plumbing.RefSpec("^*$ñ")
+	err := r.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{invalid}})
+	s.ErrorIs(err, plumbing.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestPushInvalidRefSpec() {
@@ -1345,11 +1345,11 @@ func (s *RemoteSuite) TestPushInvalidRefSpec() {
 		URLs: []string{"some-url"},
 	})
 
-	rs := config.RefSpec("^*$**")
+	rs := plumbing.RefSpec("^*$**")
 	err := r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
+		RefSpecs: []plumbing.RefSpec{rs},
 	})
-	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
+	s.ErrorIs(err, plumbing.ErrRefSpecMalformedSeparator)
 }
 
 func (s *RemoteSuite) TestPushWrongRemoteName() {
@@ -1585,8 +1585,8 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 	s.NotNil(otherRef)
 
 	err = r.Push(&PushOptions{
-		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
-		RequireRemoteRefs: []config.RefSpec{config.RefSpec(otherRef.Hash().String() + ":refs/heads/branch")},
+		RefSpecs:          []plumbing.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RequireRemoteRefs: []plumbing.RefSpec{plumbing.RefSpec(otherRef.Hash().String() + ":refs/heads/branch")},
 	})
 	s.ErrorContains(err, "remote ref refs/heads/branch required to be 6ecf0ef2c2dffb796033e5a02219af86ec6584e5 but is e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
@@ -1595,8 +1595,8 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 	s.Equal(oldRef, newRef)
 
 	err = r.Push(&PushOptions{
-		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
-		RequireRemoteRefs: []config.RefSpec{config.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
+		RefSpecs:          []plumbing.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RequireRemoteRefs: []plumbing.RefSpec{plumbing.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
 	})
 	s.ErrorContains(err, "non-fast-forward update: ")
 
@@ -1605,8 +1605,8 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 	s.Equal(oldRef, newRef)
 
 	err = r.Push(&PushOptions{
-		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
-		RequireRemoteRefs: []config.RefSpec{config.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
+		RefSpecs:          []plumbing.RefSpec{"refs/heads/master:refs/heads/branch"},
+		RequireRemoteRefs: []plumbing.RefSpec{plumbing.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
 		Force:             true,
 	})
 	s.NoError(err)
@@ -1639,7 +1639,7 @@ func (s *RemoteSuite) TestFetchPrune() {
 	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		"refs/heads/master:refs/heads/branch",
 	}})
 	s.NoError(err)
@@ -1656,7 +1656,7 @@ func (s *RemoteSuite) TestFetchPrune() {
 		"refs/remotes/origin/branch": ref.Hash().String(),
 	})
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		":refs/heads/branch",
 	}})
 	s.NoError(err)
@@ -1695,7 +1695,7 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		"refs/heads/master:refs/tags/v1",
 	}})
 	s.NoError(err)
@@ -1712,7 +1712,7 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 		"refs/tags/v1": ref.Hash().String(),
 	})
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(&PushOptions{RefSpecs: []plumbing.RefSpec{
 		":refs/tags/v1",
 	}})
 	s.NoError(err)
@@ -1721,7 +1721,7 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 		"refs/tags/v1": ref.Hash().String(),
 	})
 
-	err = rSave.Fetch(&FetchOptions{Prune: true, RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"}})
+	err = rSave.Fetch(&FetchOptions{Prune: true, RefSpecs: []plumbing.RefSpec{"refs/tags/*:refs/tags/*"}})
 	s.NoError(err)
 
 	_, err = rSave.Reference("refs/tags/v1", true)
@@ -1757,9 +1757,9 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 
 	err = gitremote.Push(&PushOptions{
 		RemoteName: "local",
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			// TODO: check with short hashes that this is still respected
-			config.RefSpec(sha.String() + ":refs/heads/branch"),
+			plumbing.RefSpec(sha.String() + ":refs/heads/branch"),
 		},
 	})
 	s.NoError(err)
@@ -1811,7 +1811,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 		Depth: 2,
 		Tags:  plumbing.NoTags,
 
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			"+refs/heads/master:refs/heads/master",
 			"+refs/heads/master:refs/remotes/origin/master",
 		},
@@ -1831,7 +1831,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 		Depth: 1,
 		Tags:  plumbing.NoTags,
 
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			"+refs/heads/master:refs/heads/master",
 			"+refs/heads/master:refs/remotes/origin/master",
 		},
@@ -1889,7 +1889,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	err = r.Fetch(&FetchOptions{
 		Depth: 1,
 		Tags:  plumbing.NoTags,
-		RefSpecs: []config.RefSpec{
+		RefSpecs: []plumbing.RefSpec{
 			// No leading '+' — this is a fast-forward-only refspec.
 			"refs/heads/master:refs/heads/master",
 			"refs/heads/master:refs/remotes/origin/master",
@@ -1932,8 +1932,8 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	}
 	defer func() { _ = localRepo.Close() }()
 	if err := localRepo.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{
-			config.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
+		RefSpecs: []plumbing.RefSpec{
+			plumbing.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -1952,16 +1952,16 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
-		config.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
+	err = remote.Fetch(&FetchOptions{RefSpecs: []plumbing.RefSpec{
+		plumbing.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
 	}})
 	if !errors.Is(err, ErrForceNeeded) {
 		t.Errorf("expected %v, got %v", ErrForceNeeded, err)
 	}
 
 	// 6. Fetch with force
-	err = remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
-		config.RefSpec(fmt.Sprintf("+%s:%s", customRef, customRef)),
+	err = remote.Fetch(&FetchOptions{RefSpecs: []plumbing.RefSpec{
+		plumbing.RefSpec(fmt.Sprintf("+%s:%s", customRef, customRef)),
 	}})
 	if err != nil {
 		t.Errorf("unexpected error %v", err)

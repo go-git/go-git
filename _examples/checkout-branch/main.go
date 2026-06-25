@@ -68,9 +68,9 @@ func fetchOrigin(repo *git.Repository, refSpecStr string) error {
 	remote, err := repo.Remote("origin")
 	CheckIfError(err)
 
-	var refSpecs []config.RefSpec
+	var refSpecs []plumbing.RefSpec
 	if refSpecStr != "" {
-		refSpecs = []config.RefSpec{config.RefSpec(refSpecStr)}
+		refSpecs = []plumbing.RefSpec{plumbing.RefSpec(refSpecStr)}
 	}
 
 	if err = remote.Fetch(&git.FetchOptions{

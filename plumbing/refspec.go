@@ -1,10 +1,8 @@
-package config
+package plumbing
 
 import (
 	"errors"
 	"strings"
-
-	"github.com/go-git/go-git/v6/plumbing"
 )
 
 const (
@@ -63,7 +61,7 @@ func (s RefSpec) IsDelete() bool {
 
 // IsExactSHA1 returns true if the source is a SHA1 hash.
 func (s RefSpec) IsExactSHA1() bool {
-	return plumbing.IsHash(s.Src())
+	return IsHash(s.Src())
 }
 
 // Src returns the src side.
@@ -81,8 +79,8 @@ func (s RefSpec) Src() string {
 	return spec[start:end]
 }
 
-// Match match the given plumbing.ReferenceName against the source.
-func (s RefSpec) Match(n plumbing.ReferenceName) bool {
+// Match match the given ReferenceName against the source.
+func (s RefSpec) Match(n ReferenceName) bool {
 	if !s.IsWildcard() {
 		return s.matchExact(n)
 	}
@@ -95,11 +93,11 @@ func (s RefSpec) IsWildcard() bool {
 	return strings.Contains(string(s), refSpecWildcard)
 }
 
-func (s RefSpec) matchExact(n plumbing.ReferenceName) bool {
+func (s RefSpec) matchExact(n ReferenceName) bool {
 	return s.Src() == n.String()
 }
 
-func (s RefSpec) matchGlob(n plumbing.ReferenceName) bool {
+func (s RefSpec) matchGlob(n ReferenceName) bool {
 	src := s.Src()
 	name := n.String()
 	wildcard := strings.Index(src, refSpecWildcard)
@@ -116,14 +114,14 @@ func (s RefSpec) matchGlob(n plumbing.ReferenceName) bool {
 }
 
 // Dst returns the destination for the given remote reference.
-func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
+func (s RefSpec) Dst(n ReferenceName) ReferenceName {
 	spec := string(s)
 	start := strings.Index(spec, refSpecSeparator) + 1
 	dst := spec[start:]
 	src := s.Src()
 
 	if !s.IsWildcard() {
-		return plumbing.ReferenceName(dst)
+		return ReferenceName(dst)
 	}
 
 	name := n.String()
@@ -131,7 +129,7 @@ func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
 	before, after, _ := strings.Cut(dst, refSpecWildcard)
 	match := name[ws : len(name)-(len(src)-(ws+1))]
 
-	return plumbing.ReferenceName(before + match + after)
+	return ReferenceName(before + match + after)
 }
 
 // Reverse returns the RefSpec with source and destination swapped.
@@ -147,7 +145,7 @@ func (s RefSpec) String() string {
 }
 
 // MatchAny returns true if any of the RefSpec match with the given ReferenceName.
-func MatchAny(l []RefSpec, n plumbing.ReferenceName) bool {
+func MatchAny(l []RefSpec, n ReferenceName) bool {
 	for _, r := range l {
 		if r.Match(n) {
 			return true

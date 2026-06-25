@@ -228,7 +228,7 @@ type FetchOptions struct {
 	RemoteName string
 	// RemoteURL overrides the remote repo address with a custom URL
 	RemoteURL string
-	RefSpecs  []config.RefSpec
+	RefSpecs  []plumbing.RefSpec
 	// Depth limit fetching to the specified number of commits from the tip of
 	// each remote branch history.
 	Depth int
@@ -285,7 +285,7 @@ type PushOptions struct {
 	// The <dst> tells which ref on the remote side is updated with this push.
 	//
 	// A refspec with empty src can be used to delete a reference.
-	RefSpecs []config.RefSpec
+	RefSpecs []plumbing.RefSpec
 	// ClientOptions configures the transport client used for this operation.
 	ClientOptions []client.Option
 	// Progress is where the human readable information sent by the server is
@@ -299,7 +299,7 @@ type PushOptions struct {
 	Force bool
 	// RequireRemoteRefs only allows a remote ref to be updated if its current
 	// value is the one specified here.
-	RequireRemoteRefs []config.RefSpec
+	RequireRemoteRefs []plumbing.RefSpec
 	// FollowTags will send any annotated tags with a commit target reachable from
 	// the refs already being pushed
 	FollowTags bool
@@ -334,8 +334,8 @@ func (o *PushOptions) Validate() error {
 	}
 
 	if len(o.RefSpecs) == 0 {
-		o.RefSpecs = []config.RefSpec{
-			config.RefSpec(config.DefaultPushRefSpec),
+		o.RefSpecs = []plumbing.RefSpec{
+			plumbing.RefSpec(config.DefaultPushRefSpec),
 		}
 	}
 

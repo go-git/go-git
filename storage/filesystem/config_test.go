@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -49,7 +49,7 @@ func (s *ConfigSuite) TestRemotes() {
 	remote := remotes["origin"]
 	s.Equal("origin", remote.Name)
 	s.Equal([]string{"https://github.com/git-fixtures/basic"}, remote.URLs)
-	s.Equal([]config.RefSpec{config.RefSpec("+refs/heads/*:refs/remotes/origin/*")}, remote.Fetch)
+	s.Equal([]plumbing.RefSpec{plumbing.RefSpec("+refs/heads/*:refs/remotes/origin/*")}, remote.Fetch)
 }
 
 func (s *ConfigSuite) TearDownTest() {

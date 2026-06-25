@@ -761,7 +761,7 @@ type RemoteConfig struct {
 	originalURLs []string
 
 	// Fetch the default set of "refspec" for fetch operation
-	Fetch []RefSpec
+	Fetch []plumbing.RefSpec
 
 	// raw representation of the subsection, filled by marshal or unmarshal are
 	// called
@@ -785,7 +785,7 @@ func (c *RemoteConfig) Validate() error {
 	}
 
 	if len(c.Fetch) == 0 {
-		c.Fetch = []RefSpec{RefSpec(fmt.Sprintf(DefaultFetchRefSpec, c.Name))}
+		c.Fetch = []plumbing.RefSpec{plumbing.RefSpec(fmt.Sprintf(DefaultFetchRefSpec, c.Name))}
 	}
 
 	return plumbing.NewRemoteHEADReferenceName(c.Name).Validate()
@@ -794,9 +794,9 @@ func (c *RemoteConfig) Validate() error {
 func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.raw = s
 
-	fetch := []RefSpec{}
+	fetch := []plumbing.RefSpec{}
 	for _, f := range c.raw.Options.GetAll(fetchKey) {
-		rs := RefSpec(f)
+		rs := plumbing.RefSpec(f)
 		if err := rs.Validate(); err != nil {
 			return err
 		}
