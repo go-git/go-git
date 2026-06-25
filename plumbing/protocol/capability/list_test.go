@@ -21,203 +21,103 @@ func (s *SuiteCapabilities) TestIsEmpty() {
 }
 
 func (s *SuiteCapabilities) TestDecode() {
-	cases := []struct {
-		name         string
-		add          [][]string
-		wantLen      int
-		wantGet      map[string][]string
-		wantSupports []string
-		wantIsEmpty  bool
-	}{
-		{
-			name:        "empty",
-			wantIsEmpty: true,
-		},
-		{
-			name: "symref and thin-pack",
-			add: [][]string{
-				{SymRef, "foo", "qux"},
-				{ThinPack},
-			},
-			wantLen: 2,
-			wantGet: map[string][]string{
-				SymRef:   {"foo", "qux"},
-				ThinPack: nil,
-			},
-		},
-		{
-			name: "with leading space",
-			add: [][]string{
-				{ReportStatus},
-			},
-			wantLen: 1,
-			wantSupports: []string{
-				ReportStatus,
-			},
-		},
-		{
-			name: "with equal in argument",
-			add: [][]string{
-				{Agent, "foo=bar"},
-			},
-			wantLen: 1,
-			wantGet: map[string][]string{
-				Agent: {"foo=bar"},
-			},
-		},
-		{
-			name: "unknown capability",
-			add: [][]string{
-				{"foo"},
-			},
-			wantSupports: []string{
-				"foo",
-			},
-		},
-		{
-			name: "unknown capability with argument",
-			add: [][]string{
-				{"oldref", "HEAD:refs/heads/v2"},
-				{ThinPack},
-			},
-			wantLen: 2,
-			wantGet: map[string][]string{
-				"oldref": {"HEAD:refs/heads/v2"},
-				ThinPack: nil,
-			},
-		},
-		{
-			name: "unknown capability with multiple arguments",
-			add: [][]string{
-				{"foo", "HEAD:refs/heads/v2", "HEAD:refs/heads/v1"},
-				{ThinPack},
-			},
-			wantLen: 2,
-			wantGet: map[string][]string{
-				"foo":    {"HEAD:refs/heads/v2", "HEAD:refs/heads/v1"},
-				ThinPack: nil,
-			},
-		},
-	}
+	caps := &List{}
+	// symref=foo symref=qux thin-pack
+	caps.Add("symref", "foo", "qux")
+	caps.Add("thin-pack")
 
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			caps := &List{}
-			for _, args := range tc.add {
-				caps.Add(args[0], args[1:]...)
-			}
+	s.Len(caps.m, 2)
+	s.Equal([]string{"foo", "qux"}, caps.Get(SymRef))
+	s.Nil(caps.Get(ThinPack))
+}
 
-			if tc.wantLen > 0 {
-				s.Len(caps.m, tc.wantLen)
-			}
-			if tc.wantIsEmpty {
-				s.True(caps.IsEmpty())
-			}
-			for name, want := range tc.wantGet {
-				if want == nil {
-					s.Nil(caps.Get(name))
-				} else {
-					s.Equal(want, caps.Get(name))
-				}
-			}
-			for _, name := range tc.wantSupports {
-				s.True(caps.Supports(name))
-			}
-		})
-	}
+func (s *SuiteCapabilities) TestDecodeWithLeadingSpace() {
+	caps := &List{}
+	caps.Add("report-status")
+
+	s.Len(caps.m, 1)
+	s.True(caps.Supports(ReportStatus))
+}
+
+func (s *SuiteCapabilities) TestDecodeEmpty() {
+	caps := &List{}
+	s.Equal(&List{}, caps)
+}
+
+func (s *SuiteCapabilities) TestDecodeWithEqual() {
+	caps := &List{}
+	caps.Add("agent", "foo=bar")
+
+	s.Len(caps.m, 1)
+	s.Equal([]string{"foo=bar"}, caps.Get(Agent))
+}
+
+func (s *SuiteCapabilities) TestDecodeWithUnknownCapability() {
+	caps := &List{}
+	caps.Add("foo")
+	s.True(caps.Supports("foo"))
+}
+
+func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithArgument() {
+	caps := &List{}
+	caps.Add("oldref", "HEAD:refs/heads/v2")
+	caps.Add("thin-pack")
+
+	s.Len(caps.m, 2)
+	s.Equal([]string{"HEAD:refs/heads/v2"}, caps.Get("oldref"))
+	s.Nil(caps.Get(ThinPack))
+}
+
+func (s *SuiteCapabilities) TestDecodeWithUnknownCapabilityWithMultipleArgument() {
+	caps := &List{}
+	caps.Add("foo", "HEAD:refs/heads/v2", "HEAD:refs/heads/v1")
+	caps.Add("thin-pack")
+
+	s.Len(caps.m, 2)
+	s.Equal([]string{"HEAD:refs/heads/v2", "HEAD:refs/heads/v1"}, caps.Get("foo"))
+	s.Nil(caps.Get(ThinPack))
 }
 
 func (s *SuiteCapabilities) TestString() {
-	cases := []struct {
-		name       string
-		set        [][]string
-		wantString string
-	}{
-		{
-			name: "sorted output",
-			set: [][]string{
-				{Agent, "bar"},
-				{SymRef, "foo:qux"},
-				{ThinPack},
-			},
-			wantString: "agent=bar symref=foo:qux thin-pack",
-		},
-	}
+	caps := &List{}
+	caps.Set(Agent, "bar")
+	caps.Set(SymRef, "foo:qux")
+	caps.Set(ThinPack)
 
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			caps := &List{}
-			for _, args := range tc.set {
-				caps.Set(args[0], args[1:]...)
-			}
+	s.Equal("agent=bar symref=foo:qux thin-pack", caps.String())
+}
 
-			s.Equal(tc.wantString, caps.String())
-		})
-	}
+func (s *SuiteCapabilities) TestStringSort() {
+	caps := &List{}
+	caps.Set(Agent, "bar")
+	caps.Set(SymRef, "foo:qux")
+	caps.Set(ThinPack)
+
+	s.Equal("agent=bar symref=foo:qux thin-pack", caps.String())
 }
 
 func (s *SuiteCapabilities) TestSet() {
-	cases := []struct {
-		name       string
-		add        [][]string
-		set        [][]string
-		wantLen    int
-		wantGet    map[string][]string
-		wantString string
-	}{
-		{
-			name: "overwrites add",
-			add: [][]string{
-				{SymRef, "foo", "qux"},
-			},
-			set: [][]string{
-				{SymRef, "bar"},
-			},
-			wantLen: 1,
-			wantGet: map[string][]string{
-				SymRef: {"bar"},
-			},
-		},
-		{
-			name: "with argument",
-			set: [][]string{
-				{Agent, "bar"},
-			},
-			wantGet: map[string][]string{
-				Agent: {"bar"},
-			},
-		},
-		{
-			name: "duplicate set keeps last",
-			set: [][]string{
-				{Agent, "baz"},
-				{Agent, "bar"},
-			},
-			wantString: "agent=bar",
-		},
-	}
+	caps := &List{}
+	caps.Add(SymRef, "foo", "qux")
+	caps.Set(SymRef, "bar")
 
-	for _, tc := range cases {
-		s.Run(tc.name, func() {
-			caps := &List{}
-			for _, args := range tc.add {
-				caps.Add(args[0], args[1:]...)
-			}
-			for _, args := range tc.set {
-				caps.Set(args[0], args[1:]...)
-			}
+	s.Len(caps.m, 1)
+	s.Equal([]string{"bar"}, caps.Get(SymRef))
+}
 
-			if tc.wantLen > 0 {
-				s.Len(caps.m, tc.wantLen)
-			}
-			for name, want := range tc.wantGet {
-				s.Equal(want, caps.Get(name))
-			}
-			if tc.wantString != "" {
-				s.Equal(tc.wantString, caps.String())
-			}
-		})
-	}
+func (s *SuiteCapabilities) TestSetEmpty() {
+	caps := &List{}
+	caps.Set(Agent, "bar")
+
+	s.Len(caps.Get(Agent), 1)
+}
+
+func (s *SuiteCapabilities) TestSetDuplicate() {
+	caps := &List{}
+	caps.Set(Agent, "baz")
+	caps.Set(Agent, "bar")
+
+	s.Equal("agent=bar", caps.String())
 }
 
 func (s *SuiteCapabilities) TestGetEmpty() {
