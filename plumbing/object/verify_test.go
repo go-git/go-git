@@ -30,7 +30,10 @@ type fakeVerifier struct {
 }
 
 func (f *fakeVerifier) Verify(_ context.Context, message io.Reader, signature []byte) (*plugin.Verification, error) {
-	b, _ := io.ReadAll(message)
+	b, err := io.ReadAll(message)
+	if err != nil {
+		return nil, err
+	}
 	f.gotMessage = b
 	f.gotSignature = signature
 	return f.result, f.err
@@ -110,4 +113,19 @@ func TestVerifyWithoutVerifierOrPlugin(t *testing.T) { //nolint:paralleltest // 
 
 	_, err := signedCommit(testSignature).Verify(context.Background())
 	assert.True(t, errors.Is(err, plugin.ErrNotFound))
+}
+
+func TestVerifyDoesNotFreezeUnregisteredVerifier(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	resetPluginEntry(objectVerifierPluginName)
+
+	// A Verify with nothing registered must not freeze the plugin entry, so a
+	// later Register still succeeds (regression: plugin.Get would freeze it).
+	_, err := signedCommit(testSignature).Verify(context.Background())
+	require.ErrorIs(t, err, plugin.ErrNotFound)
+
+	fv := &fakeVerifier{result: &plugin.Verification{}}
+	require.NoError(t, plugin.Register(plugin.ObjectVerifier(), func() plugin.Verifier { return fv }))
+
+	_, err = signedCommit(testSignature).Verify(context.Background())
+	require.NoError(t, err)
 }

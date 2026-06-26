@@ -46,6 +46,12 @@ func verifyObject(ctx context.Context, obj signedObject, signature []byte, opts 
 
 	v := cfg.verifier
 	if v == nil {
+		// Check Has before Get so the entry is not frozen when no verifier is
+		// registered, allowing callers to register one later.
+		if !plugin.Has(plugin.ObjectVerifier()) {
+			return nil, plugin.ErrNotFound
+		}
+
 		var err error
 		if v, err = plugin.Get(plugin.ObjectVerifier()); err != nil {
 			return nil, err
