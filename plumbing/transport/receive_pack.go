@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -131,10 +130,10 @@ func ReceivePack(
 	)
 	if !caps.Supports(capability.NoProgress) {
 		if caps.Supports(capability.Sideband64k) {
-			writer = sideband.NewMuxer(sideband.Sideband64k, w)
+			writer = pktline.NewSidebandWriter(w, pktline.MaxSize)
 			useSideband = true
 		} else if caps.Supports(capability.Sideband) {
-			writer = sideband.NewMuxer(sideband.Sideband, w)
+			writer = pktline.NewSidebandWriter(w, pktline.DefaultSize)
 			useSideband = true
 		}
 	}

@@ -16,10 +16,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -230,7 +230,7 @@ func (s *ReceivePackServeSuite) TestReceivePackAdvertiseV1() {
 // "unknown channel NAK".
 //
 // A caller consuming the response with the standard go-git client pipeline
-// (ServerResponse.Decode + sideband.Demuxer) cannot recover.
+// (ServerResponse.Decode + pktline.NewSidebandReader) cannot recover.
 func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSingleNAK() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
@@ -274,12 +274,12 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	)
 
 	// Second: end-to-end assertion using the standard client pipeline.
-	// ServerResponse.Decode + sideband.Demuxer + PACK signature read.
+	// ServerResponse.Decode + pktline sideband reader + PACK signature read.
 	rd := bytes.NewReader(raw)
 	var srv packp.ServerResponse
 	s.Require().NoError(srv.Decode(rd), "decode server response")
 
-	demux := sideband.NewDemuxer(sideband.Sideband64k, rd)
+	demux := pktline.NewSidebandReader(rd, io.Discard, pktline.MaxSize)
 	var signature [4]byte
 	_, err = io.ReadFull(demux, signature[:])
 	s.Require().NoError(err, "read PACK signature through sideband demuxer")

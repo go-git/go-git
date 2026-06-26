@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 )
 
 // DialContextFunc is the function signature for dialing network connections.
@@ -46,7 +45,7 @@ func NewRemoteError(reason string) error {
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
 type FetchRequest struct {
 	// Progress is the progress sideband.
-	Progress sideband.Progress
+	Progress io.Writer
 
 	// Wants is the list of object hashes the client wants to fetch.
 	// The caller selects which remote refs to fetch (refspec matching)
@@ -84,7 +83,7 @@ type PushRequest struct {
 	Commands []*packp.Command
 
 	// Progress is the progress sideband.
-	Progress sideband.Progress
+	Progress io.Writer
 
 	// Options is a set of push-options to be sent to the server during push.
 	Options []string

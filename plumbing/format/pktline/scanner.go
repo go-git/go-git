@@ -2,6 +2,7 @@ package pktline
 
 import (
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -20,18 +21,63 @@ import (
 // from Bytes; Len returns the pkt-line length, which equals the
 // corresponding constant (Flush=0, Delim=1, ResponseEnd=2).
 //
+// When constructed with [NewSidebandScanner], the Scanner demultiplexes
+// sideband packets: [BandData] payloads are returned via Bytes (with the
+// band byte stripped); [BandProgress] payloads are written to the
+// configured progress writer as raw byte chunks (no buffering, no
+// prefix); [BandError] terminates scanning and is surfaced via Err as
+// a [*SidebandError].
+//
+// For human-facing progress with line buffering, a "remote: " prefix,
+// and carriage-return / terminal handling, wrap the destination with
+// [NewProgressWriter] and pass that as the progress argument.
+//
 // Scanning stops at EOF or the first I/O error.
 type Scanner struct {
 	r   io.Reader     // The reader provided by the client
 	err error         // Sticky error
 	buf [MaxSize]byte // Buffer used to read the pktlines
 	n   int           // Number of bytes read in the last read
+
+	sideband bool      // when true, Scan demultiplexes sideband
+	maxSize  int       // maxSize on-wire pkt-line size (DefaultSize or MaxSize)
+	progress io.Writer // destination for band-2 (progress) data
 }
 
 // NewScanner returns a new Scanner to read from r.
 func NewScanner(r io.Reader) *Scanner {
 	return &Scanner{
 		r: r,
+	}
+}
+
+// NewSidebandScanner returns a Scanner that demultiplexes sideband
+// packets. The maxSize parameter is the maximum on-wire pkt-line size
+// for the negotiated sideband variant: use [DefaultSize] for legacy
+// side-band or [MaxSize] for sideband-64k. If progress is nil, band-2
+// progress data is discarded.
+//
+// Band-1 data is returned via Bytes (with the band byte stripped);
+// band-2 progress payloads are written to progress as raw byte chunks
+// in the order they arrive on the wire (no buffering, no prefix);
+// band-3 errors are returned from Err as [*SidebandError].
+//
+// Progress writes are best-effort: errors from the progress writer are
+// ignored and never abort scanning, matching canonical Git's handling
+// of band-2 output (write_in_full to stderr in recv_sideband).
+//
+// To turn the raw band-2 byte stream into human-facing output with a
+// "remote: " prefix, line buffering, and TTY-aware carriage-return
+// semantics, wrap the destination with [NewProgressWriter].
+func NewSidebandScanner(r io.Reader, progress io.Writer, maxSize int) *Scanner {
+	if progress == nil {
+		progress = io.Discard
+	}
+	return &Scanner{
+		r:        r,
+		sideband: true,
+		maxSize:  maxSize,
+		progress: progress,
 	}
 }
 
@@ -45,16 +91,69 @@ func (s *Scanner) Err() error {
 // or the first I/O error.  After Scan returns false, the Err method
 // will return any error that occurred during scanning, except that if
 // it was io.EOF, Err will return nil.
+//
+// In sideband mode, band-2 (progress) packets are consumed transparently
+// and Scan loops to the next packet; band-3 (error) packets terminate
+// scanning with a [*SidebandError] surfaced via Err.
 func (s *Scanner) Scan() bool {
 	if s.r == nil {
 		return false
 	}
-	s.n, s.err = Read(s.r, s.buf[:])
-	if errors.Is(s.err, io.EOF) {
-		s.err = nil
-		return false
+	if !s.sideband {
+		s.n, s.err = Read(s.r, s.buf[:])
+		if errors.Is(s.err, io.EOF) {
+			s.err = nil
+			return false
+		}
+		return s.err == nil
 	}
-	return s.err == nil
+	return s.scanSideband()
+}
+
+// scanSideband reads the next sideband pkt-line, routing band-2 progress
+// data to s.progress and surfacing band-3 errors via s.err. It loops over
+// band-2 packets until a band-1, special, or terminal event is observed.
+func (s *Scanner) scanSideband() bool {
+	for {
+		s.n, s.err = Read(s.r, s.buf[:])
+		if errors.Is(s.err, io.EOF) {
+			s.err = nil
+			return false
+		}
+		if s.err != nil {
+			return false
+		}
+
+		if s.n > s.maxSize {
+			s.err = ErrMaxPacketExceeded
+			return false
+		}
+
+		switch s.n {
+		case Flush, Delim, ResponseEnd:
+			return true
+		}
+
+		if s.n < LenSize+1 {
+			s.err = errors.New("pktline: sideband packet missing band byte")
+			return false
+		}
+
+		band := s.buf[LenSize]
+		switch band {
+		case BandData:
+			return true
+		case BandProgress:
+			_, _ = s.progress.Write(s.buf[LenSize+1 : s.n])
+			continue
+		case BandError:
+			s.err = &SidebandError{Msg: string(s.buf[LenSize+1 : s.n])}
+			return false
+		default:
+			s.err = fmt.Errorf("pktline: unknown sideband channel %d", band)
+			return false
+		}
+	}
 }
 
 // Bytes returns the payload of the most recent pkt-line as a slice
@@ -64,11 +163,17 @@ func (s *Scanner) Scan() bool {
 //
 // Bytes does no allocation. It returns nil for special pkt-lines
 // ([Flush], [Delim], [ResponseEnd]); use [Len] to distinguish them.
+//
+// In sideband mode, Bytes returns the band-1 payload with the leading
+// band byte stripped.
 func (s *Scanner) Bytes() []byte {
-	if s.n >= LenSize {
-		return s.buf[LenSize:s.n]
+	if s.n < LenSize {
+		return nil
 	}
-	return nil
+	if s.sideband {
+		return s.buf[LenSize+1 : s.n]
+	}
+	return s.buf[LenSize:s.n]
 }
 
 // Text returns the most recent packet generated by a call to Scan.
@@ -78,8 +183,9 @@ func (s *Scanner) Text() string {
 
 // Len returns the pkt-line length of the most recent pkt-line. For data
 // lines this is the length of the entire pkt-line including the 4-byte
-// length prefix. For special pkt-lines, Len returns the corresponding
-// constant: [Flush] (0), [Delim] (1), or [ResponseEnd] (2).
+// length prefix (and, in sideband mode, the 1-byte band prefix). For
+// special pkt-lines, Len returns the corresponding constant: [Flush] (0),
+// [Delim] (1), or [ResponseEnd] (2).
 func (s *Scanner) Len() int {
 	return s.n
 }

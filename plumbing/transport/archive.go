@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -20,7 +19,7 @@ type ArchiveRequest struct {
 	Args []string
 
 	// Progress receives human-readable status from the server (sideband channel 2).
-	Progress sideband.Progress
+	Progress io.Writer
 }
 
 // Archiver is implemented by Sessions that support git-upload-archive.
@@ -89,10 +88,7 @@ func Archive(ctx context.Context, w io.WriteCloser, r io.ReadCloser, req *Archiv
 		return nil, fmt.Errorf("archive: expected flush after ACK, got data")
 	}
 
-	demuxer := sideband.NewDemuxer(sideband.Sideband64k, rd)
-	if req.Progress != nil {
-		demuxer.Progress = req.Progress
-	}
+	demuxed := pktline.NewSidebandReader(rd, req.Progress, pktline.MaxSize)
 
-	return ioutil.NewReadCloser(demuxer, r), nil
+	return ioutil.NewReadCloser(demuxed, r), nil
 }
