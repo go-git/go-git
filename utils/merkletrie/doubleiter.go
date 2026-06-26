@@ -138,8 +138,6 @@ const (
 // Compare returns the comparison between the current elements in the
 // merkletries.
 func (d *doubleIter) compare() (s comparison, err error) {
-	s.sameHash = d.hashEqual(d.from.current, d.to.current)
-
 	fromIsDir := d.from.current.IsDir()
 	toIsDir := d.to.current.IsDir()
 
@@ -159,6 +157,7 @@ func (d *doubleIter) compare() (s comparison, err error) {
 
 	s.fromIsEmptyDir = fromIsDir && fromNumChildren == 0
 	s.toIsEmptyDir = toIsDir && toNumChildren == 0
+	s.sameHash = d.hashEqual(d.from.current, d.to.current)
 
 	return s, err
 }

@@ -43,6 +43,10 @@ type Options struct {
 	// reported. Requires Index to be set: without an index there is no way
 	// to identify tracked entries, so the matcher is treated as a no-op.
 	IgnoreMatcher gitignore.Matcher
+
+	// DetectNestedRepositories stops traversal at untracked directories
+	// containing a .git entry.
+	DetectNestedRepositories bool
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -56,9 +60,9 @@ type node struct {
 	idx        *index.Index
 	idxMap     map[string]*index.Entry
 	// trackedDirs holds every directory path that has at least one entry
-	// in the index. It is populated only when IgnoreMatcher is set so the
-	// walker can keep tracked entries even if their parent directory
-	// matches an ignore rule.
+	// in the index. It lets the walker keep tracked entries even if their
+	// parent directory matches an ignore rule, and avoids nested repository
+	// checks for directories already represented by tracked descendants.
 	trackedDirs map[string]struct{}
 
 	options *Options
@@ -67,6 +71,7 @@ type node struct {
 	hash     []byte
 	children []noder.Noder
 	isDir    bool
+	boundary bool
 	mode     os.FileMode
 	size     int64
 	modTime  time.Time
@@ -112,15 +117,13 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreMatcher != nil {
-			trackedDirs = make(map[string]struct{})
-			for _, entry := range options.Index.Entries {
-				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
-					if _, ok := trackedDirs[parent]; ok {
-						break
-					}
-					trackedDirs[parent] = struct{}{}
+		trackedDirs = make(map[string]struct{})
+		for _, entry := range options.Index.Entries {
+			for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
+				if _, ok := trackedDirs[parent]; ok {
+					break
 				}
+				trackedDirs[parent] = struct{}{}
 			}
 		}
 	}
@@ -161,6 +164,10 @@ func (n *node) IsDir() bool {
 	return n.isDir
 }
 
+func (n *node) IsTraversalBoundary() bool {
+	return n.boundary
+}
+
 func (n *node) Skip() bool {
 	return false
 }
@@ -182,7 +189,7 @@ func (n *node) NumChildren() (int, error) {
 }
 
 func (n *node) calculateChildren() error {
-	if !n.IsDir() {
+	if !n.IsDir() || n.boundary {
 		return nil
 	}
 
@@ -196,6 +203,11 @@ func (n *node) calculateChildren() error {
 			return nil
 		}
 		return err
+	}
+
+	if n.isNestedRepositoryBoundary(files) {
+		n.boundary = true
+		return nil
 	}
 
 	for _, file := range files {
@@ -260,6 +272,7 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 
 func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	path := path.Join(n.path, file.Name())
+	isDir := file.IsDir()
 
 	node := &node{
 		fs:          n.fs,
@@ -270,7 +283,7 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		options:     n.options,
 
 		path:    path,
-		isDir:   file.IsDir(),
+		isDir:   isDir,
 		size:    file.Size(),
 		mode:    file.Mode(),
 		modTime: file.ModTime(),
@@ -283,7 +296,35 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	return node, nil
 }
 
+func (n *node) isNestedRepositoryBoundary(files []os.DirEntry) bool {
+	if !n.detectNestedRepositories() || n.path == "" || n.hasTrackedDescendant(n.path) {
+		return false
+	}
+	for _, file := range files {
+		if file.Name() == ".git" {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *node) detectNestedRepositories() bool {
+	return n.options != nil && n.options.DetectNestedRepositories
+}
+
+func (n *node) hasTrackedDescendant(dir string) bool {
+	if n.trackedDirs == nil {
+		return false
+	}
+	_, ok := n.trackedDirs[dir]
+	return ok
+}
+
 func (n *node) calculateHash() {
+	if n.boundary {
+		n.hash = plumbing.ZeroHash.Bytes()
+		return
+	}
 	if n.isDir {
 		n.hash = make([]byte, 24)
 		return
