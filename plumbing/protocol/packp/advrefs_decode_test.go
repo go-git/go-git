@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
@@ -71,7 +72,7 @@ func (s *AdvRefsDecodeSuite) TestZeroId() {
 	}
 	ar := s.testDecodeOK(payloads)
 	_, err := ar.Head()
-	s.ErrorIs(plumbing.ErrReferenceNotFound, err)
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
 func (s *AdvRefsDecodeSuite) testDecodeOK(payloads []string) *AdvRefs {
@@ -127,7 +128,7 @@ func (s *AdvRefsDecodeSuite) TestFirstIsNotHead() {
 	}
 	ar := s.testDecodeOK(payloads)
 	_, err := ar.Head()
-	s.Equal(plumbing.ErrReferenceNotFound, err)
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 	refs := make(map[string]plumbing.Hash)
 	for _, ref := range ar.References {
 		refs[ref.Name().String()] = ref.Hash()
@@ -493,6 +494,81 @@ func (s *AdvRefsDecodeSuite) TestEOFRefs() {
 		"00355dc01c595e6c6ec9ccda4f6ffbf614e4d92bb0c7 refs/foo\n",
 	)
 	s.testDecoderErrorMatches(input, ".*invalid pkt-len.*")
+}
+
+func (s *AdvRefsDecodeSuite) TestVersion1Decode() {
+	payloads := []string{
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
+		"",
+	}
+	ar := s.testDecodeOK(payloads)
+	s.Equal(protocol.V1, ar.Version)
+	head, err := ar.Head()
+	s.NoError(err)
+	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), head.Hash())
+}
+
+func (s *AdvRefsDecodeSuite) TestVersion1WithRefsAndShallows() {
+	payloads := []string{
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:refs/heads/master\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+		"shallow 1111111111111111111111111111111111111111\n",
+		"",
+	}
+	ar := s.testDecodeOK(payloads)
+	s.Equal(protocol.V1, ar.Version)
+	s.Equal(4, len(ar.References))
+	s.Equal(1, len(ar.Shallows))
+}
+
+func (s *AdvRefsDecodeSuite) TestVersion1EmptyRepo() {
+	payloads := []string{
+		"version 1\n",
+		"0000000000000000000000000000000000000000 capabilities^{}\x00multi_ack thin-pack\n",
+		"",
+	}
+	ar := s.testDecodeOK(payloads)
+	s.Equal(protocol.V1, ar.Version)
+	_, err := ar.Head()
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+}
+
+func (s *AdvRefsDecodeSuite) TestVersion2Unsupported() {
+	payloads := []string{
+		"version 2\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	ar := &AdvRefs{}
+	err := ar.Decode(r)
+	s.Error(err)
+	s.Contains(err.Error(), "unsupported protocol version")
+}
+
+func (s *AdvRefsDecodeSuite) TestVersionUnparseableErrors() {
+	payloads := []string{
+		"version 999\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
+		"",
+	}
+	r := toPktLines(s.T(), payloads)
+	ar := &AdvRefs{}
+	err := ar.Decode(r)
+	s.Error(err)
+}
+
+func (s *AdvRefsDecodeSuite) TestVersionNoLineIsV0() {
+	payloads := []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
+		"",
+	}
+	ar := s.testDecodeOK(payloads)
+	s.Equal(protocol.V0, ar.Version)
 }
 
 func (s *AdvRefsDecodeSuite) TestEOFShallows() {

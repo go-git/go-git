@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
@@ -230,4 +231,95 @@ func (s *AdvRefsEncodeSuite) TestErrorTooLong() {
 	var buf bytes.Buffer
 	err := ar.Encode(&buf)
 	s.Regexp(regexp.MustCompile(".*payload is too long.*"), err)
+}
+
+func (s *AdvRefsEncodeSuite) TestVersion0NoVersionLine() {
+	ar := &AdvRefs{
+		Version: protocol.V0,
+		References: []*plumbing.Reference{
+			plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")),
+		},
+	}
+
+	expected := pktlines(s.T(),
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00\n",
+		"",
+	)
+
+	testEncode(s, ar, expected)
+}
+
+func (s *AdvRefsEncodeSuite) TestVersion1WritesVersionLine() {
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	ar := &AdvRefs{
+		Version: protocol.V1,
+		References: []*plumbing.Reference{
+			plumbing.NewHashReference(plumbing.HEAD, hash),
+		},
+	}
+
+	expected := pktlines(s.T(),
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00\n",
+		"",
+	)
+
+	testEncode(s, ar, expected)
+}
+
+func (s *AdvRefsEncodeSuite) TestVersion1WithRefsAndShallows() {
+	capabilities := capability.List{}
+	capabilities.Add(capability.OFSDelta)
+	capabilities.Add(capability.SymRef, "HEAD:refs/heads/master")
+
+	shallows := []plumbing.Hash{
+		plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("2222222222222222222222222222222222222222"),
+	}
+
+	ar := &AdvRefs{
+		Version:      protocol.V1,
+		Capabilities: capabilities,
+		References: []*plumbing.Reference{
+			plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")),
+			plumbing.NewHashReference("refs/heads/master", plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7")),
+		},
+		Shallows: shallows,
+	}
+
+	expected := pktlines(s.T(),
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00ofs-delta symref=HEAD:refs/heads/master\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"shallow 1111111111111111111111111111111111111111\n",
+		"shallow 2222222222222222222222222222222222222222\n",
+		"",
+	)
+
+	testEncode(s, ar, expected)
+}
+
+func (s *AdvRefsEncodeSuite) TestVersion2Unsupported() {
+	ar := &AdvRefs{
+		Version: protocol.V2,
+	}
+
+	var buf bytes.Buffer
+	err := ar.Encode(&buf)
+	s.Error(err)
+	s.Contains(err.Error(), "unsupported protocol version")
+}
+
+func (s *AdvRefsEncodeSuite) TestVersion1EmptyRepo() {
+	ar := &AdvRefs{
+		Version: protocol.V1,
+	}
+
+	expected := pktlines(s.T(),
+		"version 1\n",
+		"0000000000000000000000000000000000000000 capabilities^{}\x00\n",
+		"",
+	)
+
+	testEncode(s, ar, expected)
 }

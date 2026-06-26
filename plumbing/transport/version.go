@@ -11,6 +11,9 @@ import (
 // DiscoverVersion reads the first pktline from the reader to determine the
 // protocol version. This is used by the client to determine the protocol
 // version of the server.
+//
+// Note that the discovered version is not consumed from the reader, so the
+// caller can read it again after discovering the version.
 func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
 	ver := protocol.V0
 	_, pktb, err := pktline.PeekLine(r)
@@ -20,10 +23,6 @@ func DiscoverVersion(r ioutil.ReadPeeker) (protocol.Version, error) {
 
 	pkt := strings.TrimSpace(string(pktb))
 	if strings.HasPrefix(pkt, "version ") {
-		// Consume the version packet
-		if _, _, err := pktline.ReadLine(r); err != nil {
-			return ver, err
-		}
 		if v, _ := protocol.Parse(pkt[8:]); v > ver {
 			ver = protocol.Version(v)
 		}

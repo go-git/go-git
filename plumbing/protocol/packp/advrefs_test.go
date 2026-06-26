@@ -383,3 +383,67 @@ func (s *AdvRefsDecodeEncodeSuite) TestAllSmartBug() {
 
 	s.test(input, expected, false)
 }
+
+func (s *AdvRefsDecodeEncodeSuite) TestVersion1RoundTrip() {
+	input := []string{
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+		"shallow 1111111111111111111111111111111111111111\n",
+		"shallow 2222222222222222222222222222222222222222\n",
+		"",
+	}
+
+	expected := []string{
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c refs/tags/v2.6.11-tree\n",
+		"c39ae07f393806ccf406ef966e9a15afc43cc36a refs/tags/v2.6.11-tree^{}\n",
+		"shallow 1111111111111111111111111111111111111111\n",
+		"shallow 2222222222222222222222222222222222222222\n",
+		"",
+	}
+
+	s.test(input, expected, false)
+}
+
+func (s *AdvRefsDecodeEncodeSuite) TestVersion1EmptyRepoRoundTrip() {
+	input := []string{
+		"version 1\n",
+		"0000000000000000000000000000000000000000 capabilities^{}\x00report-status\n",
+		"",
+	}
+
+	expected := []string{
+		"version 1\n",
+		"0000000000000000000000000000000000000000 capabilities^{}\x00report-status\n",
+		"",
+	}
+
+	s.test(input, expected, true)
+}
+
+func (s *AdvRefsDecodeEncodeSuite) TestVersion1SmartRoundTrip() {
+	input := []string{
+		"# service=git-upload-pack\n",
+		"",
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"",
+	}
+
+	expected := []string{
+		"# service=git-upload-pack\n",
+		"",
+		"version 1\n",
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00symref=HEAD:/refs/heads/master ofs-delta multi_ack\n",
+		"a6930aaee06755d1bdcfd943fbf614e4d92bb0c7 refs/heads/master\n",
+		"",
+	}
+
+	s.test(input, expected, false)
+}

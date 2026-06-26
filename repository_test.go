@@ -1465,6 +1465,42 @@ func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit() {
 	s.Nil(r)
 }
 
+func (s *RepositorySuite) TestPlainOpenAlternatesFS() {
+	root := s.T().TempDir()
+	src := filepath.Join(root, "src")
+	shared := filepath.Join(root, "shared")
+
+	srcRepo, err := PlainClone(src, &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	s.Require().NoError(err)
+
+	head, err := srcRepo.Head()
+	s.Require().NoError(err)
+
+	_, err = PlainInit(shared, false)
+	s.Require().NoError(err)
+
+	infoDir := filepath.Join(shared, GitDirName, "objects", "info")
+	s.Require().NoError(os.MkdirAll(infoDir, 0o755))
+	altLine := filepath.Join(src, GitDirName, "objects") + "\n"
+	s.Require().NoError(os.WriteFile(filepath.Join(infoDir, "alternates"), []byte(altLine), 0o644))
+
+	// Without AlternatesFS the absolute alternate path cannot be resolved
+	// from within the .git filesystem.
+	r, err := PlainOpen(shared)
+	s.Require().NoError(err)
+	_, err = r.CommitObject(head.Hash())
+	s.Error(err)
+
+	r, err = PlainOpenWithOptions(shared, &PlainOpenOptions{
+		AlternatesFS: osfs.New(root),
+	})
+	s.Require().NoError(err)
+
+	commit, err := r.CommitObject(head.Hash())
+	s.NoError(err)
+	s.NotNil(commit)
+}
+
 func (s *RepositorySuite) TestPlainClone() {
 	dir := "rel-dir"
 	err := os.Mkdir(dir, 0o755)

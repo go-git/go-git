@@ -49,7 +49,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	ar, err := conn.GetRemoteRefs(context.TODO())
+	ar, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().ErrorIs(err, transport.ErrEmptyRemoteRepository)
 	s.Require().Nil(ar)
 }
@@ -68,10 +68,10 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	ar1, err := conn.GetRemoteRefs(context.TODO())
+	ar1, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(ar1)
-	ar2, err := conn.GetRemoteRefs(context.TODO())
+	ar2, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().Equal(ar1, ar2)
 }
@@ -83,7 +83,7 @@ func (s *UploadPackSuite) TestDefaultBranch() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
+	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 	symrefs := conn.Capabilities().Get(capability.SymRef)
@@ -98,7 +98,7 @@ func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
+	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 	s.Require().True(conn.Capabilities().Supports(capability.MultiACK))
@@ -111,7 +111,7 @@ func (s *UploadPackSuite) TestCapabilities() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
+	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 	s.Require().Len(conn.Capabilities().Get(capability.Agent), 1)
@@ -145,7 +145,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
+	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
@@ -166,7 +166,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
+	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
@@ -185,7 +185,7 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO())
+	info, err := conn.GetRemoteRefs(context.TODO(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 

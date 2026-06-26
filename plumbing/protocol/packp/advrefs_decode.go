@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
@@ -28,28 +30,33 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 		err   error
 	)
 
+	s := pktline.NewScanner(r)
+
 	nextLine := func() bool {
 		nLine++
-		_, p, e := pktline.ReadLine(r)
-		if e != nil {
-			if errors.Is(e, io.EOF) {
+		if !s.Scan() {
+			if s.Err() == nil {
 				if nLine == 1 {
 					err = ErrEmptyInput
 				} else {
-					err = NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: unexpected EOF", nLine), line)
+					err = NewErrUnexpectedData(fmt.Sprintf("pkt-line %d: unexpected EOF", nLine), bytes.Clone(line))
 				}
 			} else {
-				err = e
+				err = s.Err()
 			}
 			return false
 		}
-		line = bytes.TrimSuffix(p, eol)
+		if s.Len() == pktline.Flush {
+			line = nil
+			return true
+		}
+		line = bytes.TrimSuffix(s.Bytes(), eol)
 		return true
 	}
 
 	decodeError := func(format string, a ...any) error {
 		msg := fmt.Sprintf("pkt-line %d: %s", nLine, fmt.Sprintf(format, a...))
-		return NewErrUnexpectedData(msg, line)
+		return NewErrUnexpectedData(msg, bytes.Clone(line))
 	}
 
 	if !nextLine() {
@@ -57,6 +64,28 @@ func (a *AdvRefs) Decode(r io.Reader) error {
 	}
 
 	// Check for empty repository (flush packet)
+	if isFlush(line) {
+		return ErrEmptyAdvRefs
+	}
+
+	if line := string(line); strings.HasPrefix(line, "version ") {
+		v, perr := protocol.Parse(line[len("version "):])
+		if perr != nil {
+			return perr
+		}
+		a.Version = v
+
+		if !nextLine() {
+			return err
+		}
+	}
+
+	if a.Version != protocol.V0 && a.Version != protocol.V1 {
+		return decodeError("unsupported protocol version: %d", a.Version)
+	}
+
+	// Check for empty repository (flush packet), which may appear
+	// either as the first line or after the version line.
 	if isFlush(line) {
 		return ErrEmptyAdvRefs
 	}
