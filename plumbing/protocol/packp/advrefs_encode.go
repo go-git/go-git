@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 )
 
 // Encode writes the AdvRefs encoding to a writer.
@@ -16,6 +17,16 @@ import (
 // references and shallows are written in alphabetical order, except for
 // peeled references that always follow their corresponding references.
 func (a *AdvRefs) Encode(w io.Writer) error {
+	switch a.Version {
+	case protocol.V0:
+	case protocol.V1:
+		if _, err := pktline.Writef(w, "version %d\n", a.Version); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported protocol version: %d", a.Version)
+	}
+
 	// Find HEAD or use first ref
 	firstName, firstHash := a.firstRef()
 

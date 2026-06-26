@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
@@ -14,6 +15,9 @@ import (
 // advertised-refs message. The zero value is safe to use; References
 // and Shallows can be populated via append.
 type AdvRefs struct {
+	// Version is the protocol version. The only acceptable values are V0 and
+	// V1, any other value is considered invalid.
+	Version protocol.Version
 	// Capabilities are the capabilities.
 	Capabilities capability.List
 	// References are the hash references, including HEAD and peeled refs
