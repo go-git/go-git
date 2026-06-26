@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -82,8 +81,9 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 // Capabilities implements PackSession.
 func (s *StreamSession) Capabilities() *capability.List { return &s.caps }
 
-// GetRemoteRefs implements PackSession.
-func (s *StreamSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
+// GetRemoteRefs implements Session. For v0/v1 the server advertises every
+// reference during the handshake, so opts is ignored.
+func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *GetRemoteRefsOptions) (*RemoteRefs, error) {
 	if s.refs == nil {
 		return nil, ErrEmptyRemoteRepository
 	}
@@ -96,7 +96,7 @@ func (s *StreamSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference,
 	if err != nil {
 		return nil, err
 	}
-	return refs, nil
+	return NewRemoteRefs(refs), nil
 }
 
 // Fetch implements PackSession.
