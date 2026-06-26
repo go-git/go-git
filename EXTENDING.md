@@ -155,6 +155,67 @@ type Signer interface {
 }
 ```
 
+### Object Verification
+
+Verification is the counterpart to signing and is scheme-agnostic: the same API
+supports OpenPGP, SSH, X.509 and any other format. A `Verifier` validates a
+detached signature over a message and is unaware of Git framing — it deals only
+with the signed bytes and the signature:
+
+```go
+type Verifier interface {
+    Verify(ctx context.Context, message io.Reader, signature []byte) (*Verification, error)
+}
+```
+
+A non-nil error means the signature is invalid or untrusted. On success it
+returns a `*plugin.Verification`, an extensible result carrying the verified
+identity, the scheme, and scheme-specific `Details` (for example an
+`*openpgp.Entity`):
+
+```go
+type Verification struct {
+    Signer  string        // scheme-neutral identity (fingerprint, principal, ...)
+    Method  SignatureType // OpenPGP / SSH / X509
+    Details any           // scheme-specific data; type-assert on Method
+}
+```
+
+Composition such as a chain of keys, or dispatching on the signature scheme, is
+the responsibility of an implementation rather than the interface.
+
+Register a `Verifier` to make it the default for verifying commits and tags:
+
+```go
+import (
+    "github.com/go-git/go-git/v6/x/plugin"
+    "github.com/go-git/x/plugin/objectverifier/gpg"
+)
+
+func init() {
+    plugin.Register(plugin.ObjectVerifier(), func() plugin.Verifier {
+        v, _ := gpg.FromKeyRing(myKeyRing)
+        return v
+    })
+}
+```
+
+`Commit.Verify` and `Tag.Verify` reproduce the signed bytes and delegate the
+cryptographic check. With no option they use the registered `ObjectVerifier`;
+pass `object.WithVerifier` to supply one explicitly:
+
+```go
+v, err := commit.Verify(ctx)                              // registered verifier
+v, err := tag.Verify(ctx, object.WithVerifier(myVerifier)) // explicit verifier
+```
+
+go-git core ships only the verification contract and is scheme-agnostic.
+Concrete verifiers live off-tree in the [`go-git/x`](https://github.com/go-git/x)
+repository — `objectverifier/gpg` (OpenPGP) and `objectverifier/ssh` (sshsig) —
+mirroring the object signers. Scheme-specific policy, such as rejecting
+multi-signature payloads, is enforced in those implementations, not in the
+object layer.
+
 ### Config Loader
 
 The `ConfigLoader` plugin controls how global and system-level Git configuration are loaded. By default, the Auto plugin is registered, mimicking Git behaviour.

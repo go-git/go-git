@@ -271,7 +271,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-		commit.Signature = string(sig)
+		commit.Signature = sig
 	}
 
 	obj := w.r.Storer.NewEncodedObject()

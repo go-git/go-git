@@ -1255,7 +1255,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 
 			commit, err := r.CommitObject(hash)
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantSignature, commit.Signature)
+			assert.Equal(t, tt.wantSignature, string(commit.Signature))
 
 			if tt.wantPluginUsed {
 				require.NotNil(t, pluginSigner)

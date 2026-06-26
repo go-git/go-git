@@ -208,10 +208,10 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
 			Message:    "Signed tag\n",
 			TargetType: plumbing.CommitObject,
 			Target:     plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45e"),
-			Signature: "-----BEGIN PGP SIGNATURE-----\n" +
+			Signature: []byte("-----BEGIN PGP SIGNATURE-----\n" +
 				"\n" +
 				"inlineSig=\n" +
-				"-----END PGP SIGNATURE-----\n",
+				"-----END PGP SIGNATURE-----\n"),
 		},
 		{
 			// Compat mode in a SHA-1 primary repo: the SHA-256 sig is
@@ -223,15 +223,15 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
 			Message:    "Compat-mode tag, primary SHA-1\n",
 			TargetType: plumbing.CommitObject,
 			Target:     plumbing.NewHash("c029517f6300c2da0f4b651b8642506cd6aaf45e"),
-			SignatureSHA256: "-----BEGIN PGP SIGNATURE-----\n" +
+			SignatureSHA256: []byte("-----BEGIN PGP SIGNATURE-----\n" +
 				"\n" +
 				"sha256line1\n" +
 				"sha256line2\n" +
-				"-----END PGP SIGNATURE-----\n",
-			Signature: "-----BEGIN PGP SIGNATURE-----\n" +
+				"-----END PGP SIGNATURE-----\n"),
+			Signature: []byte("-----BEGIN PGP SIGNATURE-----\n" +
 				"\n" +
 				"inlineSHA1=\n" +
-				"-----END PGP SIGNATURE-----\n",
+				"-----END PGP SIGNATURE-----\n"),
 		},
 	}
 	for _, tag := range tags {
@@ -289,8 +289,8 @@ func (s *TagSuite) TestTagDecodeClearsExistingState() {
 		Name:            "stale",
 		Tagger:          Signature{Name: "Stale", Email: "stale@example.local", When: time.Unix(1, 0).UTC()},
 		Message:         "stale message",
-		Signature:       "stale signature",
-		SignatureSHA256: "stale sha256 signature",
+		Signature:       []byte("stale signature"),
+		SignatureSHA256: []byte("stale sha256 signature"),
 		TargetType:      plumbing.BlobObject,
 		Target:          plumbing.NewHash("2222222222222222222222222222222222222222"),
 		s:               store,
@@ -307,8 +307,8 @@ func (s *TagSuite) TestTagDecodeClearsExistingState() {
 	s.Equal("fresh", tag.Name)
 	s.Equal(Signature{}, tag.Tagger)
 	s.Equal("fresh message\n", tag.Message)
-	s.Equal("", tag.Signature)
-	s.Equal("", tag.SignatureSHA256)
+	s.Equal("", string(tag.Signature))
+	s.Equal("", string(tag.SignatureSHA256))
 	s.Equal(plumbing.CommitObject, tag.TargetType)
 	s.Equal("c029517f6300c2da0f4b651b8642506cd6aaf45e", tag.Target.String())
 	s.Equal(store, tag.s)
@@ -348,7 +348,7 @@ func (s *TagSuite) TestTagDecodeRoundTrip() {
 			raw:  headers + "\nTag body\n" + inlineB,
 			assert: func(t *Tag) {
 				s.Equal("Tag body\n", t.Message)
-				s.Equal(inlineB, t.Signature)
+				s.Equal(inlineB, string(t.Signature))
 				s.Empty(t.SignatureSHA256)
 			},
 		},
@@ -361,7 +361,7 @@ func (s *TagSuite) TestTagDecodeRoundTrip() {
 			raw:  headers + sha256Block + "\nTag body, header sig only\n",
 			assert: func(t *Tag) {
 				s.Equal("Tag body, header sig only\n", t.Message)
-				s.Equal(sha256B, t.SignatureSHA256)
+				s.Equal(sha256B, string(t.SignatureSHA256))
 				s.Empty(t.Signature)
 			},
 		},
@@ -373,8 +373,8 @@ func (s *TagSuite) TestTagDecodeRoundTrip() {
 			raw:  headers + sha256Block + "\nDual-signed tag body\n" + inlineB,
 			assert: func(t *Tag) {
 				s.Equal("Dual-signed tag body\n", t.Message)
-				s.Equal(sha256B, t.SignatureSHA256)
-				s.Equal(inlineB, t.Signature)
+				s.Equal(sha256B, string(t.SignatureSHA256))
+				s.Equal(inlineB, string(t.Signature))
 			},
 		},
 		{
@@ -397,7 +397,7 @@ func (s *TagSuite) TestTagDecodeRoundTrip() {
 				)
 				s.Equal(
 					"-----BEGIN PGP SIGNATURE-----\nrealline\n-----END PGP SIGNATURE-----\n",
-					t.Signature,
+					string(t.Signature),
 				)
 				s.Empty(t.SignatureSHA256)
 			},
@@ -553,21 +553,21 @@ func (s *TagSuite) TestDecodeFirstOccurrenceWins() {
 				"gpgsig-sha256 firstline\n morefirst\n" +
 				"gpgsig-sha256 secondline\n moresecond\n\nmsg\n",
 			assert: func(t *Tag) {
-				s.Equal("firstline\nmorefirst\nsecondline\nmoresecond\n", t.SignatureSHA256)
+				s.Equal("firstline\nmorefirst\nsecondline\nmoresecond\n", string(t.SignatureSHA256))
 			},
 		},
 		{
 			name: "single-line gpgsig-sha256 (no continuation)",
 			raw:  canonical + "gpgsig-sha256 short\n\nmsg\n",
 			assert: func(t *Tag) {
-				s.Equal("short\n", t.SignatureSHA256)
+				s.Equal("short\n", string(t.SignatureSHA256))
 			},
 		},
 		{
 			name: "gpgsig-sha256 with empty value",
 			raw:  canonical + "gpgsig-sha256\n\nmsg\n",
 			assert: func(t *Tag) {
-				s.Equal("\n", t.SignatureSHA256)
+				s.Equal("\n", string(t.SignatureSHA256))
 			},
 		},
 		{
@@ -612,7 +612,7 @@ func (s *TagSuite) TestDecodeFirstOccurrenceWins() {
 			name: "EOF mid-gpgsig-sha256 continuation",
 			raw:  canonical + "gpgsig-sha256 line1\n line2\n line3\n",
 			assert: func(t *Tag) {
-				s.Equal("line1\nline2\nline3\n", t.SignatureSHA256)
+				s.Equal("line1\nline2\nline3\n", string(t.SignatureSHA256))
 				s.Empty(t.Message)
 			},
 		},
@@ -733,14 +733,14 @@ RUysgqjcpT8+iQM1PblGfHR4XAhuOqN5Fx06PSaFZhqvWFezJ28/CLyX5q+oIVk=
 =EFTF
 -----END PGP SIGNATURE-----
 `
-	tag.Signature = pgpsignature
+	tag.Signature = []byte(pgpsignature)
 
 	err := tag.Encode(encoded)
 	s.NoError(err)
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(pgpsignature, decoded.Signature)
+	s.Equal(pgpsignature, string(decoded.Signature))
 }
 
 func (s *TagSuite) TestSSHSignatureSerialization() {
@@ -754,139 +754,14 @@ U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANXgKzFfp
 AAAAQIYHMhSVV9L2xwJuV8eWMLjThya8yXgCHDzw3p01D19KirrabW0veiichPB5m+Ihtr
 MKEQruIQWJb+8HVXwssA4=
 -----END SSH SIGNATURE-----`
-	tag.Signature = signature
+	tag.Signature = []byte(signature)
 
 	err := tag.Encode(encoded)
 	s.NoError(err)
 
 	err = decoded.Decode(encoded)
 	s.NoError(err)
-	s.Equal(signature, decoded.Signature)
-}
-
-func (s *TagSuite) TestVerify() {
-	ts := time.Unix(1617403017, 0)
-	loc, _ := time.LoadLocation("UTC")
-	tag := &Tag{
-		Name:   "v0.2",
-		Tagger: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
-		Message: `This is a signed tag
-`,
-		TargetType: plumbing.CommitObject,
-		Target:     plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
-		Signature: `
------BEGIN PGP SIGNATURE-----
-
-iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGeciQAKCRCMmmmF4LuV
-8ZoDAP4j9msumYymfHgS3y7jpxPcSyiOMlXjipr2upspvXJ6ewD+K+OPC4pGW7Aq
-8UDK8r6qhaloxATcV/LUrvAW2yz4PwM=
-=PD+s
------END PGP SIGNATURE-----
-`,
-	}
-
-	armoredKeyRing := `
------BEGIN PGP PUBLIC KEY BLOCK-----
-
-mDMEYGeSihYJKwYBBAHaRw8BAQdAIs9A3YD/EghhAOkHDkxlUkpqYrXUXebLfmmX
-+pdEK6C0D2dvLWdpdCB0ZXN0IGtleYiPBBMWCgA3FiEEzKlNMnEN3+oNzzKFjJpp
-heC7lfEFAmBnkooCGyMECwkIBwUVCgkICwUWAwIBAAIeAQIXgAAKCRCMmmmF4LuV
-8a3jAQCi4hSqjj6J3ch290FvQaYPGwR+EMQTMBG54t+NN6sDfgD/aZy41+0dnFKl
-qM/wLW5Wr9XvwH+1zXXbuSvfxasHowq4OARgZ5KKEgorBgEEAZdVAQUBAQdAXoQz
-VTYug16SisAoSrxFnOmxmFu6efYgCAwXu0ZuvzsDAQgHiHgEGBYKACAWIQTMqU0y
-cQ3f6g3PMoWMmmmF4LuV8QUCYGeSigIbDAAKCRCMmmmF4LuV8Q4QAQCKW5FnEdWW
-lHYKeByw3JugnlZ0U3V/R20bCwDglst5UQEAtkN2iZkHtkPly9xapsfNqnrt2gTt
-YIefGtzXfldDxg4=
-=Psht
------END PGP PUBLIC KEY BLOCK-----
-`
-
-	e, err := tag.Verify(armoredKeyRing)
-	s.NoError(err)
-
-	_, ok := e.Identities["go-git test key"]
-	s.True(ok)
-}
-
-func (s *TagSuite) TestDecodeAndVerify() {
-	objectText := `object f6685df0aac4b5adf9eeb760e6d447145c5d0b56
-type commit
-tag v1.5
-tagger Máximo Cuadros <mcuadros@gmail.com> 1618566233 +0200
-
-signed tag
------BEGIN PGP SIGNATURE-----
-
-iQGzBAABCAAdFiEE/h5sbbqJFh9j1AdUSqtFFGopTmwFAmB5XFkACgkQSqtFFGop
-TmxvgAv+IPjX5WCLFUIMx8hquMZp1VkhQrseE7rljUYaYpga8gZ9s4kseTGhy7Un
-61U3Ro6cTPEiQF/FkAGzSdPuGqv0ARBqHDX2tUI9+Zs/K8aG8tN+JTaof0gBcTyI
-BLbZVYDTxbS9whxSDewQd0OvBG1m9ISLUhjXo6mbaVvrKXNXTHg40MPZ8ZxjR/vN
-hxXXoUVnFyEDo+v6nK56mYtapThDaQQHHzD6D3VaCq3Msog7qAh9/ZNBmgb88aQ3
-FoK8PHMyr5elsV3mE9bciZBUc+dtzjOvp94uQ5ZKUXaPusXaYXnKpVnzhyer6RBI
-gJLWtPwAinqmN41rGJ8jDAGrpPNjaRrMhGtbyVUPUf19OxuUIroe77sIIKTP0X2o
-Wgp56dYpTst0JcGv/FYCeau/4pTRDfwHAOcDiBQ/0ag9IrZp9P8P9zlKmzNPEraV
-pAe1/EFuhv2UDLucAiWM8iDZIcw8iN0OYMOGUmnk0WuGIo7dzLeqMGY+ND5n5Z8J
-sZC//k6m
-=VhHy
------END PGP SIGNATURE-----
-`
-
-	armoredKeyRing := `
------BEGIN PGP PUBLIC KEY BLOCK-----
-
-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
-=oYTT
------END PGP PUBLIC KEY BLOCK-----
-`
-
-	tagEncodedObject := &plumbing.MemoryObject{}
-
-	_, err := tagEncodedObject.Write([]byte(objectText))
-	tagEncodedObject.SetType(plumbing.TagObject)
-	s.NoError(err)
-
-	tag := &Tag{}
-	err = tag.Decode(tagEncodedObject)
-	s.NoError(err)
-
-	_, err = tag.Verify(armoredKeyRing)
-	s.NoError(err)
+	s.Equal(signature, string(decoded.Signature))
 }
 
 func (s *TagSuite) TestEncodeWithoutSignature() {
@@ -1001,8 +876,8 @@ tag message
 				"inlineline1\n" +
 				"-----END PGP SIGNATURE-----\n",
 			mutate: func(t *Tag) {
-				t.Signature = "different signature value"
-				t.SignatureSHA256 = "different sha256 sig"
+				t.Signature = []byte("different signature value")
+				t.SignatureSHA256 = []byte("different sha256 sig")
 			},
 			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
 type commit
@@ -1075,11 +950,7 @@ tag message
 				tc.mutate(tag)
 			}
 
-			encoded := &plumbing.MemoryObject{}
-			err = tag.EncodeWithoutSignature(encoded)
-			s.NoError(err)
-
-			er, err := encoded.Reader()
+			er, err := tag.EncodeWithoutSignature()
 			s.NoError(err)
 
 			payload, err := io.ReadAll(er)
