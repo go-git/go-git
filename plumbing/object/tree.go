@@ -598,6 +598,13 @@ type TreeWalker struct {
 	recursive bool
 	seen      map[plumbing.Hash]bool
 
+	// skipPathValidation disables the pathutil.ValidTreePath check in Next.
+	// It is set by inspection-only callers (e.g. the diff treeNoder) that
+	// never funnel entry names into the filesystem and must enumerate trees
+	// faithfully, including entries with names upstream Git accepts but that
+	// are unsafe to materialise (control characters, `.git`-shaped names).
+	skipPathValidation bool
+
 	s storer.EncodedObjectStorer
 	t *Tree
 }
@@ -630,7 +637,7 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // HFS+/NTFS variants, Windows reserved names, and traversal sequences.
 // A malformed entry stops the walk with the validator's error;
 // inspection-only callers that need to enumerate raw, unvalidated
-// names can read Tree.Entries directly.
+// names can read Tree.Entries directly or set skipPathValidation.
 //
 // In the current implementation any objects which cannot be found in the
 // underlying repository will be skipped automatically. It is possible that this
@@ -668,8 +675,10 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			continue
 		}
 
-		if err := pathutil.ValidTreePath(entry.Name); err != nil {
-			return name, entry, err
+		if !w.skipPathValidation {
+			if err := pathutil.ValidTreePath(entry.Name); err != nil {
+				return name, entry, err
+			}
 		}
 
 		if entry.Mode == filemode.Dir {

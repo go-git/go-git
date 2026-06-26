@@ -176,20 +176,24 @@ func TestGitServer_Timeout(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	// Stay idle past the configured Timeout; the server must close
-	// the connection, surfacing as a Read error.
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 	buf := make([]byte, 1)
+
+	// Send a single byte to anchor the server's idle clock close to
+	// the client's start of measurement. The pkt-line decoder needs
+	// 4 bytes for the length header, so the server consumes this byte
+	// and then re-enters Read for the next byte, arming a fresh idle
+	// deadline at approximately wall-clock parity with the client.
+	// Recording start before the write means elapsed includes the
+	// brief Write/scheduling latency, so the lower-bound assertion is
+	// robust against goroutine scheduling skew on shared CI runners.
 	start := time.Now()
+	_, err = conn.Write([]byte{'0'})
+	require.NoError(t, err)
+
 	_, err = conn.Read(buf)
 	elapsed := time.Since(start)
 	assert.Error(t, err, "server should close idle connection past Timeout")
-	// Allow a generous tolerance for timer/scheduling jitter on shared
-	// CI runners. We measure elapsed from the client's perspective but
-	// the server arms its deadline a few ms earlier (during accept and
-	// the first Read), so client-measured elapsed underestimates the
-	// real server timeout. A 30ms tolerance still catches a server that
-	// closes substantially earlier than configured.
 	assert.GreaterOrEqual(t, elapsed, srv.Timeout-30*time.Millisecond, "server should not close before Timeout elapses")
 }
 

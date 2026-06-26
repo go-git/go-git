@@ -71,9 +71,9 @@ func (s *ServerSuite) TestUploadPack() {
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { s.Require().NoError(sess.Close()) })
 
-	refs, err := sess.GetRemoteRefs(context.Background())
+	refs, err := sess.GetRemoteRefs(context.Background(), nil)
 	s.Require().NoError(err)
-	s.Greater(len(refs), 0, "server should advertise refs")
+	s.Greater(len(refs.References), 0, "server should advertise refs")
 }
 
 func (s *ServerSuite) TestUnsupportedService() {

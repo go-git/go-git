@@ -813,6 +813,10 @@ type PlainOpenOptions struct {
 	// DetectDotGit defines whether parent directories should be
 	// walked until a .git directory or file is found.
 	DetectDotGit bool
+	// AlternatesFS provides the billy filesystem to be used for Git Alternates.
+	// If none is provided, it falls back to the repository's .git directory
+	// filesystem.
+	AlternatesFS billy.Filesystem
 }
 
 // Validate validates the fields and sets the default values.

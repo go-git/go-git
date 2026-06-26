@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -196,7 +195,7 @@ type smartPackSession struct {
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
 
-func (s *smartPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
+func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -208,7 +207,7 @@ func (s *smartPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Referen
 	if err != nil {
 		return nil, err
 	}
-	return refs, nil
+	return transport.NewRemoteRefs(refs), nil
 }
 
 func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
@@ -373,7 +372,7 @@ type dumbPackSession struct {
 
 func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
 
-func (s *dumbPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Reference, error) {
+func (s *dumbPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -381,7 +380,7 @@ func (s *dumbPackSession) GetRemoteRefs(_ context.Context) ([]*plumbing.Referenc
 	if err != nil {
 		return nil, err
 	}
-	return refs, nil
+	return transport.NewRemoteRefs(refs), nil
 }
 
 func (s *dumbPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {

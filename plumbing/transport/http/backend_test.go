@@ -167,12 +167,12 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	require.NoError(t, err)
 	defer sess.Close()
 
-	refs, err := sess.GetRemoteRefs(context.Background())
+	refs, err := sess.GetRemoteRefs(context.Background(), nil)
 	require.NoError(t, err)
-	require.NotEmpty(t, refs)
+	require.NotEmpty(t, refs.References)
 
 	var want plumbing.Hash
-	for _, r := range refs {
+	for _, r := range refs.References {
 		if r.Name() == "refs/heads/main" {
 			want = r.Hash()
 			break
@@ -204,10 +204,10 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	// --- go-git HTTP transport fetch after the CLI push (exercises "pull" using the http transport) ---
 	sess3, err := tr.Handshake(context.Background(), &transport.Request{URL: pu, Command: transport.UploadPackService})
 	require.NoError(t, err)
-	refs3, err := sess3.GetRemoteRefs(context.Background())
+	refs3, err := sess3.GetRemoteRefs(context.Background(), nil)
 	require.NoError(t, err)
 	var tip3 plumbing.Hash
-	for _, r := range refs3 {
+	for _, r := range refs3.References {
 		if r.Name() == "refs/heads/main" {
 			tip3 = r.Hash()
 			break

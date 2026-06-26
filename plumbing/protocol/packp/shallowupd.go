@@ -22,25 +22,19 @@ type ShallowUpdate struct {
 
 // Decode parses shallow update information from the reader.
 func (r *ShallowUpdate) Decode(reader io.Reader) error {
-	var (
-		p   []byte
-		err error
-		l   int
-	)
-	for {
-		l, p, err = pktline.ReadLine(reader)
-		if err != nil {
-			break
+	s := pktline.NewScanner(reader)
+	for s.Scan() {
+		if s.Len() == pktline.Flush {
+			return nil
 		}
 
-		line := bytes.TrimSpace(p)
+		line := bytes.TrimSpace(s.Bytes())
+		var err error
 		switch {
 		case bytes.HasPrefix(line, shallow):
 			err = r.decodeShallowLine(line)
 		case bytes.HasPrefix(line, unshallow):
 			err = r.decodeUnshallowLine(line)
-		case l == pktline.Flush:
-			return nil
 		default:
 			err = fmt.Errorf("unexpected shallow line: %q", line)
 		}
@@ -50,11 +44,7 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 		}
 	}
 
-	if err == io.EOF {
-		return nil
-	}
-
-	return err
+	return s.Err()
 }
 
 func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
