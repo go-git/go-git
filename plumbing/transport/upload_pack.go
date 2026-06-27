@@ -435,7 +435,15 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 				return nil
 			}
 		case "fetch":
-			return serveFetchV2(ctx, st, w, req.Args.(*packp.FetchArgs), opts)
+			concluded, err := serveFetchV2(ctx, st, w, req.Args.(*packp.FetchArgs), opts)
+			if err != nil {
+				return err
+			}
+			if concluded {
+				return nil
+			}
+			// Stateful transport: the round was acknowledgments-only and the
+			// negotiation continues. Loop to read the client's next command.
 		}
 	}
 }
@@ -565,12 +573,19 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 // acknowledgments, shallow-info, and packfile-header sections are emitted
 // through packp.FetchOutput; this function streams the packfile data after the
 // header, matching the caller-owned streaming on the client side.
-func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *packp.FetchArgs, opts *UploadPackRequest) error {
+//
+// It reports whether the fetch concluded. A packfile (or a terminal no-op)
+// returns concluded=true and the connection is closed. An acknowledgments-only
+// round on a stateful transport returns concluded=false with the connection
+// left open, so the caller loops to read the client's next command=fetch round
+// (the stateful negotiation continues until the server is ready). A stateless
+// (HTTP) round always concludes, since the client re-POSTs each round.
+func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *packp.FetchArgs, opts *UploadPackRequest) (concluded bool, err error) {
 	if args.DeepenRelative || !args.DeepenSince.IsZero() || len(args.DeepenNot) > 0 {
 		// Advertised under "shallow" but not implemented yet, as in v0/v1.
 		// Fail loudly rather than silently ignore an advertised feature.
 		_ = w.Close()
-		return fmt.Errorf("unsupported deepen argument")
+		return true, fmt.Errorf("unsupported deepen argument")
 	}
 
 	wants := args.Wants
@@ -583,7 +598,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	// emits no response at all here (upload-pack.c, UPLOAD_DONE), so write
 	// nothing and just close the stream, no stray flush packet.
 	if len(wants) == 0 {
-		return w.Close()
+		return true, w.Close()
 	}
 
 	out := &packp.FetchOutput{}
@@ -616,9 +631,16 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		// in the next request.
 		if len(common) == 0 || !wantsReachableFromHaves(st, wants, common) {
 			if err := out.Encode(w); err != nil {
-				return err
+				return true, err
 			}
-			return w.Close()
+			// Stateless (HTTP) carries one round per request: this response is
+			// complete and the client re-POSTs the next round. A stateful
+			// transport keeps the connection open so the client can send its
+			// next command=fetch with refined haves.
+			if opts.StatelessRPC {
+				return true, w.Close()
+			}
+			return false, nil
 		}
 		out.Acknowledgments.Ready = true
 	}
@@ -636,7 +658,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		var shupd packp.ShallowUpdate
 		if err := getShallowCommits(st, wants, depth, &shupd); err != nil {
 			_ = w.Close()
-			return fmt.Errorf("computing shallow commits: %w", err)
+			return true, fmt.Errorf("computing shallow commits: %w", err)
 		}
 		out.ShallowInfo = &packp.ShallowInfo{
 			Shallows:   shupd.Shallows,
@@ -649,14 +671,14 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	objs, err := objectsToUpload(packSt, wants, haves)
 	if err != nil {
 		_ = w.Close()
-		return fmt.Errorf("getting objects to upload: %w", err)
+		return true, fmt.Errorf("getting objects to upload: %w", err)
 	}
 
 	// Emit the metadata sections and the "packfile" section header. The client
 	// switches to sideband demux after seeing the header, matching reference git.
 	out.Packfile = true
 	if err := out.Encode(w); err != nil {
-		return err
+		return true, err
 	}
 
 	writer := sideband.NewMuxer(sideband.Sideband64k, w)
@@ -672,15 +694,15 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 
 	e := packfile.NewEncoder(writer, st, false)
 	if _, err := e.Encode(objs, packWindow); err != nil {
-		return fmt.Errorf("encoding packfile: %w", err)
+		return true, fmt.Errorf("encoding packfile: %w", err)
 	}
 
 	// Terminate the sideband stream and the v2 fetch response.
 	if err := pktline.WriteFlush(w); err != nil {
-		return err
+		return true, err
 	}
 
-	return w.Close()
+	return true, w.Close()
 }
 
 // scopeUnshallows restricts the unshallow set to commits the client reported as
