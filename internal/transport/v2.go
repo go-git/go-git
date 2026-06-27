@@ -48,9 +48,16 @@ type CommandFunc func(ctx context.Context, cmd string, req packp.CommandArgs, re
 // command: the agent and the server's object-format echoed back so both sides
 // agree on the hash algorithm. server is the capability advertisement the
 // server sent during the handshake.
+//
+// Both are gated on the server having advertised them: upstream git only sends
+// agent when the server advertised agent, and object-format when the server
+// advertised object-format (fetch-pack.c). This keeps the client a conformant
+// peer that never sends a capability the server did not offer.
 func ClientCapabilities(server capability.List) capability.List {
 	var caps capability.List
-	caps.Set(capability.Agent, capability.DefaultAgent())
+	if agent := server.Get(capability.Agent); len(agent) > 0 {
+		caps.Set(capability.Agent, capability.DefaultAgent())
+	}
 	if of := server.Get(capability.ObjectFormat); len(of) > 0 {
 		caps.Set(capability.ObjectFormat, of[0])
 	}
