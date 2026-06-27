@@ -642,6 +642,12 @@ func (r *FetchOutput) decodePackfileURIs(rd io.Reader) (int, error) {
 	}
 }
 
+// encodeAcknowledgments writes the acknowledgments body following upstream
+// send_acks (upload-pack.c): the ACK lines first, then a single "ready" when
+// the server is ready to send a packfile (and nothing after it), otherwise a
+// lone "NAK" when there were no common objects. The grammar is
+// (nak | *ack) (ready): NAK is mutually exclusive with ACKs and is suppressed
+// once ready is sent, and ready always comes last.
 func (r *FetchOutput) encodeAcknowledgments(w io.Writer) error {
 	for _, h := range r.Acknowledgments.ACKs {
 		if _, err := pktline.Writef(w, "ACK %s\n", h); err != nil {
@@ -652,6 +658,7 @@ func (r *FetchOutput) encodeAcknowledgments(w io.Writer) error {
 		if _, err := pktline.WriteString(w, "ready\n"); err != nil {
 			return err
 		}
+		return nil
 	}
 	if len(r.Acknowledgments.ACKs) == 0 {
 		if _, err := pktline.WriteString(w, "NAK\n"); err != nil {
