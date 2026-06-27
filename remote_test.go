@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -102,11 +103,21 @@ func (s *RemoteSuite) TestFetchExactSHA1() {
 }
 
 func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	// The client-side exact-SHA1 gate (ErrExactSHA1NotSupported) only applies
+	// to v0/v1, where the server must advertise allow-*-sha1-in-want. Protocol
+	// v2's fetch command accepts any "want <oid>", so there is no unsupported
+	// case to assert there; pin this to v0.
+	st := memory.NewStorage()
+	cfg, err := st.Config()
+	s.Require().NoError(err)
+	cfg.Protocol.Version = protocol.V0
+	s.Require().NoError(st.SetConfig(cfg))
+
+	r := NewRemote(st, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err := r.Fetch(&FetchOptions{
+	err = r.Fetch(&FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
 		},
