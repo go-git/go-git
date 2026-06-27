@@ -140,16 +140,28 @@ func (a *AdvRefs) symRefMap() (map[plumbing.ReferenceName]plumbing.ReferenceName
 //   - If not, scan references in alphabetical order for a matching hash.
 //   - If no match is found, HEAD is returned unchanged.
 func (a *AdvRefs) resolvedHeadFromHeuristic(head *plumbing.Reference) *plumbing.Reference {
+	return ResolveHeadFromHashHeuristic(head, a.References)
+}
+
+// ResolveHeadFromHashHeuristic converts a detached HEAD (a HashReference) into a
+// SymbolicReference pointing to the branch that shares its hash, scanning refs.
+// It is shared by the v0/v1 advertisement resolution and the Protocol v2 ls-refs
+// path, so a detached remote HEAD still yields a symbolic local HEAD on clone,
+// matching reference git's pre-symref heuristic:
+//   - Prefer refs/heads/master when it has the same hash as HEAD.
+//   - Otherwise pick the alphabetically-first non-peeled ref with that hash.
+//   - If nothing matches, HEAD is returned unchanged.
+func ResolveHeadFromHashHeuristic(head *plumbing.Reference, refs []*plumbing.Reference) *plumbing.Reference {
 	headHash := head.Hash()
 
-	for _, ref := range a.References {
+	for _, ref := range refs {
 		if ref.Name() == plumbing.Master && ref.Type() == plumbing.HashReference && ref.Hash() == headHash {
 			return plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)
 		}
 	}
 
-	candidates := make([]*plumbing.Reference, 0, len(a.References))
-	for _, ref := range a.References {
+	candidates := make([]*plumbing.Reference, 0, len(refs))
+	for _, ref := range refs {
 		if ref.Name() == plumbing.HEAD || ref.Name().IsPeeled() {
 			continue
 		}

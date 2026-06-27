@@ -68,6 +68,17 @@ type RemoteRefs struct {
 // detecting an unborn HEAD: a symbolic HEAD whose target has no
 // corresponding hash reference in the advertisement.
 func NewRemoteRefs(refs []*plumbing.Reference) *RemoteRefs {
+	// A detached remote HEAD is advertised as a bare hash. The v0/v1
+	// advertisement resolves it to a symbolic HEAD during decode; the v2
+	// ls-refs path does not, so apply the same hash→branch heuristic here so a
+	// clone records a symbolic HEAD rather than a detached one (matching git).
+	for i, ref := range refs {
+		if ref.Name() == plumbing.HEAD && ref.Type() == plumbing.HashReference {
+			refs[i] = packp.ResolveHeadFromHashHeuristic(ref, refs)
+			break
+		}
+	}
+
 	rr := &RemoteRefs{References: refs}
 
 	var headTarget plumbing.ReferenceName
