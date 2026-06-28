@@ -58,6 +58,40 @@ func TestEncode(t *testing.T) {
 	assert.Equal(t, "foo", output.Entries[2].Name)
 }
 
+func TestEncodeTreeCacheInvalidatedEntry(t *testing.T) {
+	t.Parallel()
+	rootHash := plumbing.NewHash("e25b29c8946e0e192fae2edc1dabf7be71e8ecf3")
+	subHash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	// The invalidated entry (negative entry count) is placed between two valid
+	// entries. It carries no object name, so the encoder must not write a SHA
+	// for it; otherwise the stray bytes shift the stream and corrupt decoding of
+	// the following entry.
+	idx := &Index{
+		Version: 2,
+		Entries: []*Entry{{Name: "foo", Size: 42, Hash: rootHash}},
+		Cache: &Tree{Entries: []TreeEntry{
+			{Path: "", Entries: 2, Trees: 2, Hash: rootHash},
+			{Path: "stale", Entries: -1, Trees: 0},
+			{Path: "sub", Entries: 1, Trees: 0, Hash: subHash},
+		}},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	require.NoError(t, NewEncoder(buf, crypto.SHA1.New()).Encode(idx))
+
+	output := &Index{}
+	require.NoError(t, NewDecoder(buf, crypto.SHA1.New()).Decode(output))
+
+	require.NotNil(t, output.Cache)
+	// The invalidated entry is dropped on decode; the two valid entries survive
+	// with their paths and object names intact.
+	require.Len(t, output.Cache.Entries, 2)
+	assert.Equal(t, "", output.Cache.Entries[0].Path)
+	assert.Equal(t, rootHash, output.Cache.Entries[0].Hash)
+	assert.Equal(t, "sub", output.Cache.Entries[1].Path)
+	assert.Equal(t, subHash, output.Cache.Entries[1].Hash)
+}
+
 func TestEncodeLongName(t *testing.T) {
 	t.Parallel()
 

@@ -307,8 +307,12 @@ func (e *Encoder) encodeTREE(ext *Tree) error {
 		if _, err := fmt.Fprintf(buf, "%d %d\n", i.Entries, i.Trees); err != nil {
 			return err
 		}
-		if _, err := buf.Write(i.Hash.Bytes()); err != nil {
-			return err
+		// An invalidated entry (negative entry count) carries no object name; the
+		// SHA is omitted, matching git and the decoder which skips it for i.Entries < 0.
+		if i.Entries >= 0 {
+			if _, err := buf.Write(i.Hash.Bytes()); err != nil {
+				return err
+			}
 		}
 	}
 
