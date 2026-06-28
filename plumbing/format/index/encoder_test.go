@@ -92,6 +92,33 @@ func TestEncodeTreeCacheInvalidatedEntry(t *testing.T) {
 	assert.Equal(t, subHash, output.Cache.Entries[1].Hash)
 }
 
+func TestEncodeStableOrderForEqualNames(t *testing.T) {
+	t.Parallel()
+	// Split-index replacement entries all carry a zero-length name and must keep
+	// their input (base-position) order through encoding. A stable sort preserves it.
+	idx := &Index{
+		Version: 2,
+		Entries: []*Entry{
+			{Name: "", Size: 10},
+			{Name: "", Size: 20},
+			{Name: "", Size: 30},
+			{Name: "z", Size: 99},
+		},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	require.NoError(t, NewEncoder(buf, crypto.SHA1.New()).Encode(idx))
+
+	output := &Index{}
+	require.NoError(t, NewDecoder(buf, crypto.SHA1.New()).Decode(output))
+
+	require.Len(t, output.Entries, 4)
+	assert.Equal(t, uint32(10), output.Entries[0].Size)
+	assert.Equal(t, uint32(20), output.Entries[1].Size)
+	assert.Equal(t, uint32(30), output.Entries[2].Size)
+	assert.Equal(t, "z", output.Entries[3].Name)
+}
+
 func TestEncodeLongName(t *testing.T) {
 	t.Parallel()
 

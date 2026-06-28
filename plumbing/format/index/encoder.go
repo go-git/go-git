@@ -89,7 +89,11 @@ func (e *Encoder) encodeHeader(idx *Index) error {
 }
 
 func (e *Encoder) encodeEntries(idx *Index) error {
-	sort.Sort(byName(idx.Entries))
+	// Stable sort so entries that compare equal by name keep their input order.
+	// Split-index replacement entries all carry a zero-length name and must stay in
+	// base-position order to align with the replace bitmap; an unstable sort would
+	// scramble them. (Also preserves stage order for same-name conflict entries.)
+	sort.Stable(byName(idx.Entries))
 
 	for _, entry := range idx.Entries {
 		if err := e.encodeEntry(idx, entry); err != nil {
