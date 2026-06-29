@@ -23,10 +23,38 @@ type ReceivePackRequest struct {
 	GitProtocol   string
 	AdvertiseRefs bool
 	StatelessRPC  bool
+
+	// Hooks, if set, are invoked between packfile unpack and ref update
+	// (PreReceive) and after ref update (PostReceive). A non-nil PreReceive
+	// error rejects every ref in the push with that error as the
+	// report-status reason; refs are not updated and PostReceive is not run.
+	Hooks *ReceivePackHooks
+}
+
+// ReceivePackHooks holds server-side callbacks for ReceivePack.
+//
+// These are the in-process equivalent of git's pre-receive and post-receive
+// hooks. They run after the packfile has been unpacked into st but before
+// (PreReceive) and after (PostReceive) ref updates, so a server can enforce
+// branch protection, signed-commit checks, or other policy without
+// reimplementing receive-pack.
+type ReceivePackHooks struct {
+	// PreReceive runs after the packfile is unpacked into st but before any
+	// ref is updated. cmds are the proposed updates. progress writes to the
+	// sideband progress channel (band 2) when the client negotiated
+	// side-band/side-band-64k, or is discarded otherwise; write human-readable
+	// lines for the client's `remote:` output. Returning a non-nil error
+	// refuses every ref with err.Error() as the report-status reason.
+	PreReceive func(ctx context.Context, st storage.Storer, cmds []*packp.Command, progress io.Writer) error
+
+	// PostReceive runs after refs are updated. cmds are the same commands
+	// passed to PreReceive. The hook itself must handle any failure it cares
+	// about; nothing is surfaced to the client and the function does not
+	// return an error.
+	PostReceive func(ctx context.Context, st storage.Storer, cmds []*packp.Command)
 }
 
 // ReceivePack is a server command that serves the receive-pack service.
-// TODO: support hooks
 func ReceivePack(
 	ctx context.Context,
 	st storage.Storer,
@@ -128,13 +156,18 @@ func ReceivePack(
 	var (
 		useSideband bool
 		writer      io.Writer = w
+		progress              = io.Writer(io.Discard)
 	)
 	if !caps.Supports(capability.NoProgress) {
+		var mux *sideband.Muxer
 		if caps.Supports(capability.Sideband64k) {
-			writer = sideband.NewMuxer(sideband.Sideband64k, w)
-			useSideband = true
+			mux = sideband.NewMuxer(sideband.Sideband64k, w)
 		} else if caps.Supports(capability.Sideband) {
-			writer = sideband.NewMuxer(sideband.Sideband, w)
+			mux = sideband.NewMuxer(sideband.Sideband, w)
+		}
+		if mux != nil {
+			writer = mux
+			progress = sidebandProgress{mux}
 			useSideband = true
 		}
 	}
@@ -146,9 +179,36 @@ func ReceivePack(
 		return res
 	}
 
+	if opts.Hooks != nil && opts.Hooks.PreReceive != nil {
+		if hookErr := opts.Hooks.PreReceive(ctx, st, updreq.Commands, progress); hookErr != nil {
+			rejected := make(map[plumbing.ReferenceName]error, len(updreq.Commands))
+			for _, cmd := range updreq.Commands {
+				rejected[cmd.Name] = hookErr
+			}
+			if err := sendReportStatus(writeCloser, nil, rejected); err != nil {
+				_ = closeWriter(w)
+				return err
+			}
+			if useSideband {
+				if err := pktline.WriteFlush(w); err != nil {
+					_ = closeWriter(w)
+					return fmt.Errorf("flushing sideband: %w", err)
+				}
+			}
+			if err := closeWriter(w); err != nil {
+				return err
+			}
+			return hookErr
+		}
+	}
+
 	var firstErr error
 	cmdStatus := make(map[plumbing.ReferenceName]error)
 	updateReferences(st, updreq, cmdStatus, &firstErr)
+
+	if opts.Hooks != nil && opts.Hooks.PostReceive != nil {
+		opts.Hooks.PostReceive(ctx, st, updreq.Commands)
+	}
 
 	if err := sendReportStatus(writeCloser, firstErr, cmdStatus); err != nil {
 		return err
@@ -163,6 +223,12 @@ func ReceivePack(
 		return firstErr
 	}
 	return closeWriter(w)
+}
+
+type sidebandProgress struct{ mux *sideband.Muxer }
+
+func (p sidebandProgress) Write(b []byte) (int, error) {
+	return p.mux.WriteChannel(sideband.ProgressMessage, b)
 }
 
 func closeWriter(w io.WriteCloser) error {
