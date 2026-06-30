@@ -34,8 +34,10 @@ var (
 type Stage int
 
 const (
-	// Merged is the default stage, fully merged
-	Merged Stage = 1
+	// Merged is the default stage, fully merged. Git encodes a non-conflicted
+	// entry with stage bits 0; stages 1-3 are reserved for the unmerged slots
+	// below, so a merged entry must be 0.
+	Merged Stage = 0
 	// AncestorMode is the base revision
 	AncestorMode Stage = 1
 	// OurMode is the first tree revision, ours
