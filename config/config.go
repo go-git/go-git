@@ -490,9 +490,8 @@ const (
 
 	// featureSection is a Git meta-setting that expands to multiple
 	// other config keys. See git-config(1).
-	featureSection  = "feature"
-	manyFilesKey    = "manyFiles"
-	experimentalKey = "experimental"
+	featureSection = "feature"
+	manyFilesKey   = "manyFiles"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -732,18 +731,16 @@ func (c *Config) unmarshalProtocol() error {
 }
 
 func (c *Config) unmarshalIndex() {
-	// Literal index.skipHash takes precedence over the feature.* aliases.
+	// Literal index.skipHash takes precedence over the feature.manyFiles alias.
 	if c.parseIndexSkipHash() {
 		return
 	}
-	// Git's feature.manyFiles and feature.experimental meta-settings
-	// implicitly enable index.skipHash (among other settings). Infer the
-	// alias when the literal key is absent, so that reading an index from
-	// a repository using these features does not fail with a checksum
-	// error. See git-config(1) and #2196.
+	// Git's feature.manyFiles meta-setting implicitly enables index.skipHash
+	// (among other settings). Infer the alias when the literal key is absent,
+	// so that reading an index from a repository using this feature does not
+	// fail with a checksum error. See git-config(1) and #2196.
 	feat := c.Raw.Section(featureSection)
-	if strings.EqualFold(feat.Options.Get(manyFilesKey), "true") ||
-		strings.EqualFold(feat.Options.Get(experimentalKey), "true") {
+	if strings.EqualFold(feat.Options.Get(manyFilesKey), "true") {
 		c.Index.SkipHash = OptBoolTrue
 	}
 }

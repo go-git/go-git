@@ -760,11 +760,6 @@ func TestUnmarshalIndexSkipHash(t *testing.T) {
 			want:  OptBoolTrue,
 		},
 		{
-			name:  "feature.experimental enables skipHash",
-			input: "[feature]\n\texperimental = true\n",
-			want:  OptBoolTrue,
-		},
-		{
 			name:  "feature.manyFiles=false does not enable skipHash",
 			input: "[feature]\n\tmanyFiles = false\n",
 			want:  OptBoolUnset,
