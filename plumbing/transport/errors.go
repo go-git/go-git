@@ -1,12 +1,16 @@
 package transport
 
-import "errors"
+import (
+	"errors"
+
+	internal "github.com/go-git/go-git/v6/internal/transport"
+)
 
 // Transport errors.
 var (
 	ErrRepositoryNotFound     = errors.New("repository not found")
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
-	ErrNoChange               = errors.New("no change")
+	ErrNoChange               = internal.ErrNoChange
 	ErrAuthenticationRequired = errors.New("authentication required")
 	ErrAuthorizationFailed    = errors.New("authorization failed")
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")

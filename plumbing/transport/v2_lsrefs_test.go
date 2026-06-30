@@ -101,6 +101,7 @@ func TestV2GetRemoteRefsUnbornHead(t *testing.T) {
 	t.Parallel()
 
 	const unbornTarget = "refs/heads/main"
+	const devHash = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 
 	serve := func(serverConn net.Conn) (err error) {
 		defer func() { _ = serverConn.Close() }()
@@ -129,7 +130,12 @@ func TestV2GetRemoteRefsUnbornHead(t *testing.T) {
 			return errors.New("server did not receive unborn request")
 		}
 
+		// An unborn HEAD alongside a real branch: HEAD points at a branch with
+		// no commit yet, but the repository is not empty.
 		if _, err := pktline.Writef(w, "unborn HEAD symref-target:%s\n", unbornTarget); err != nil {
+			return err
+		}
+		if _, err := pktline.Writef(w, "%s refs/heads/dev\n", devHash); err != nil {
 			return err
 		}
 		return pktline.WriteFlush(w)
@@ -141,4 +147,37 @@ func TestV2GetRemoteRefsUnbornHead(t *testing.T) {
 	rr, err := s.GetRemoteRefs(context.TODO(), nil)
 	require.NoError(t, err)
 	require.Equal(t, plumbing.ReferenceName(unbornTarget), rr.Unborn)
+}
+
+func TestV2GetRemoteRefsUnbornOnlyIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	serve := func(serverConn net.Conn) (err error) {
+		defer func() { _ = serverConn.Close() }()
+
+		w := serverConn
+		for _, line := range []string{"version 2\n", "agent=test\n", "ls-refs=unborn\n", "object-format=sha1\n"} {
+			if _, err := pktline.WriteString(w, line); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteFlush(w); err != nil {
+			return err
+		}
+
+		req := &packp.CommandRequest{Args: &packp.LsRefsArgs{}}
+		if err := req.Decode(bufio.NewReader(serverConn)); err != nil {
+			return err
+		}
+
+		// Only an unborn HEAD, no hash references: an empty repository.
+		if _, err := pktline.WriteString(w, "unborn HEAD symref-target:refs/heads/main\n"); err != nil {
+			return err
+		}
+		return pktline.WriteFlush(w)
+	}
+
+	s := newV2Session(t, serve)
+	_, err := s.GetRemoteRefs(context.TODO(), nil)
+	require.ErrorIs(t, err, ErrEmptyRemoteRepository)
 }
