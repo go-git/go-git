@@ -222,11 +222,12 @@ func TestFetchOutputDecode(t *testing.T) {
 
 	t.Run("NAK only", func(t *testing.T) {
 		t.Parallel()
+		// A NAK (no common objects) acknowledgments section is a negotiation
+		// round: it is not ready and ends the response with a flush-pkt, so no
+		// packfile follows and the client negotiates again.
 		var buf bytes.Buffer
 		pktline.WriteString(&buf, "acknowledgments\n")
 		pktline.WriteString(&buf, "NAK\n")
-		pktline.WriteDelim(&buf)
-		pktline.WriteString(&buf, "packfile\n")
 		pktline.WriteFlush(&buf)
 
 		got := &FetchOutput{}
@@ -234,6 +235,7 @@ func TestFetchOutputDecode(t *testing.T) {
 		require.NotNil(t, got.Acknowledgments)
 		assert.Empty(t, got.Acknowledgments.ACKs)
 		assert.False(t, got.Acknowledgments.Ready)
+		assert.False(t, got.Packfile)
 	})
 
 	t.Run("full response with shallow-info", func(t *testing.T) {
@@ -286,10 +288,9 @@ func TestFetchOutputDecode(t *testing.T) {
 
 	t.Run("packfile-uris section", func(t *testing.T) {
 		t.Parallel()
+		// The acknowledgments section is optional in the packfile-bearing
+		// response; here it is absent and packfile-uris precedes the packfile.
 		var buf bytes.Buffer
-		pktline.WriteString(&buf, "acknowledgments\n")
-		pktline.WriteString(&buf, "NAK\n")
-		pktline.WriteDelim(&buf)
 		pktline.WriteString(&buf, "packfile-uris\n")
 		pktline.WriteString(&buf, "https://example.com/pack-123.pack\n")
 		pktline.WriteDelim(&buf)
@@ -319,7 +320,8 @@ func TestFetchOutputDecode(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
 		pktline.WriteString(&buf, "acknowledgments\n")
-		pktline.WriteString(&buf, "NAK\n")
+		pktline.Writef(&buf, "ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+		pktline.WriteString(&buf, "ready\n")
 		pktline.WriteDelim(&buf)
 		pktline.WriteString(&buf, "packfile\n")
 		// Write some packfile data
