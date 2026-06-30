@@ -181,6 +181,11 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		return nil, err
 	}
 
+	// Source the advertisement's version from the version DiscoverVersion
+	// already established, keeping the session the single source of truth
+	// rather than AdvRefs.Decode's independent parse of the same line.
+	ar.Version = ver
+
 	return &smartPackSession{
 		client:     client,
 		baseURL:    req.URL,

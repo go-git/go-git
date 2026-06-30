@@ -15,8 +15,11 @@ import (
 // advertised-refs message. The zero value is safe to use; References
 // and Shallows can be populated via append.
 type AdvRefs struct {
-	// Version is the protocol version. The only acceptable values are V0 and
-	// V1, any other value is considered invalid.
+	// Version is the protocol version of the advertisement. The only acceptable
+	// values are V0 and V1; any other value is invalid. Decode parses it from
+	// the leading "version" pkt-line (absent for V0) and Encode emits that line
+	// from it. Within the transport it is set from the version the handshake
+	// negotiated (DiscoverVersion), which is the single source of truth.
 	Version protocol.Version
 	// Capabilities are the capabilities.
 	Capabilities capability.List

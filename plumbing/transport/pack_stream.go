@@ -88,6 +88,10 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
+	// Source the advertisement's version from the version DiscoverVersion
+	// already established, so s.version is the single source of truth rather
+	// than relying on AdvRefs.Decode's independent parse of the same line.
+	ar.Version = ver
 	s.caps = ar.Capabilities
 	s.refs = ar
 

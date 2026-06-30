@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -92,13 +91,13 @@ func AdvertiseRefs(
 		}
 	}
 
-	// V1 prefixes the advertisement with an explicit version packet. For HTTP
-	// this appears after the "# service=..." smart reply (correct wire order);
-	// for stateful transports (git://, ssh) it appears at the start.
+	// V1 prefixes the advertisement with an explicit version packet (V0 emits
+	// none). AdvRefs.Encode writes it from ar.Version, so set the field rather
+	// than writing the line by hand — a single source for the encoded version.
+	// A v2 request with no v2 service (e.g. receive-pack) falls back to a v0
+	// advertisement, so only V1 sets the field here; V2 stays at the V0 default.
 	if version == protocol.V1 {
-		if _, err := pktline.Writef(w, "version %d\n", version); err != nil {
-			return err
-		}
+		ar.Version = protocol.V1
 	}
 
 	return ar.Encode(w)
