@@ -25,6 +25,15 @@ type LsRefsArgs struct {
 // written as a separate pkt-line. The caller is responsible for writing
 // the delim-pkt before and the flush-pkt after these arguments.
 func (r *LsRefsArgs) Encode(w io.Writer) error {
+	// Validate every ref-prefix before writing anything, so an invalid prefix
+	// can never leave a partially-written arguments section on the stream
+	// (Encode is all-or-nothing on a validation error).
+	for _, p := range r.RefPrefixes {
+		if err := validateRefPrefix(p); err != nil {
+			return err
+		}
+	}
+
 	if r.Peel {
 		if _, err := pktline.WriteString(w, "peel\n"); err != nil {
 			return err
@@ -41,9 +50,6 @@ func (r *LsRefsArgs) Encode(w io.Writer) error {
 		}
 	}
 	for _, p := range r.RefPrefixes {
-		if err := validateRefPrefix(p); err != nil {
-			return err
-		}
 		if _, err := pktline.Writef(w, "ref-prefix %s\n", p); err != nil {
 			return err
 		}

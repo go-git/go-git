@@ -258,6 +258,23 @@ func TestLsRefsArgsEncodeRejectsInvalidRefPrefix(t *testing.T) {
 	}
 }
 
+func TestLsRefsArgsEncodeInvalidRefPrefixIsAllOrNothing(t *testing.T) {
+	t.Parallel()
+
+	// An invalid prefix after valid ones (and after the peel/symrefs flags) must
+	// leave nothing on the stream: validation happens before any write.
+	args := &LsRefsArgs{
+		Peel:        true,
+		Symrefs:     true,
+		RefPrefixes: []string{"refs/heads/", "refs/tags/", "refs/heads/\n0000evil"},
+	}
+	var buf bytes.Buffer
+	err := args.Encode(&buf)
+	require.Error(t, err)
+	assert.Empty(t, buf.Bytes(),
+		"Encode must not write the earlier valid arguments before rejecting a later prefix")
+}
+
 func TestLsRefsArgsEncodeValidRefPrefix(t *testing.T) {
 	t.Parallel()
 
