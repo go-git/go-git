@@ -352,11 +352,17 @@ func ReconcileObjectFormatV2(st storage.Storer, caps capability.List) error {
 	}
 
 	var serverFormat config.ObjectFormat
-	switch config.ObjectFormat(advertised[0]) {
+	switch v := config.ObjectFormat(advertised[0]); v {
 	case config.SHA1, config.SHA256:
-		serverFormat = config.ObjectFormat(advertised[0])
-	default:
+		serverFormat = v
+	case config.UnsetObjectFormat:
+		// An empty value carries no algorithm; treat it as if the server did
+		// not advertise object-format at all.
 		return nil
+	default:
+		// An algorithm go-git does not speak. Fail fast rather than proceed
+		// with the wrong hash format, matching NegotiatePack's v0/v1 handling.
+		return fmt.Errorf("server advertised unsupported object-format %q", v)
 	}
 
 	// Adopt the server format on a fresh clone: unset client + sha256 server,
