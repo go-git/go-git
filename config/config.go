@@ -488,11 +488,6 @@ const (
 	uploadArchiveSection       = "uploadArchive"
 	allowUnreachableKey        = "allowUnreachable"
 
-	// featureSection is a Git meta-setting that expands to multiple
-	// other config keys. See git-config(1).
-	featureSection = "feature"
-	manyFilesKey   = "manyFiles"
-
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
 	DefaultPackWindow = uint(10)
@@ -739,8 +734,8 @@ func (c *Config) unmarshalIndex() {
 	// (among other settings). Infer the alias when the literal key is absent,
 	// so that reading an index from a repository using this feature does not
 	// fail with a checksum error. See git-config(1) and #2196.
-	feat := c.Raw.Section(featureSection)
-	if strings.EqualFold(feat.Options.Get(manyFilesKey), "true") {
+	feat := c.Raw.Section("feature")
+	if strings.EqualFold(feat.Options.Get("manyFiles"), "true") {
 		c.Index.SkipHash = OptBoolTrue
 	}
 }
