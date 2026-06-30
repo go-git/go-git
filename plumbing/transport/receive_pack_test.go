@@ -21,11 +21,11 @@ import (
 
 const receivePackTestHash = "0123456789012345678901234567890123456789"
 
-// receivePackRequest builds a wire-format receive-pack body for a Delete of
-// the named ref at hash, with ReportStatus advertised plus any extra caps.
-// Delete-only requests skip the packfile, which keeps tests focused on the
-// hook plumbing rather than pack handling.
-func receivePackRequest(t *testing.T, ref plumbing.ReferenceName, hash plumbing.Hash, extra ...capability.Capability) io.ReadCloser {
+// receivePackRequest builds a wire-format receive-pack body for the given
+// commands, with ReportStatus advertised plus any extra caps. Tests use
+// Delete-only commands so no packfile follows, which keeps focus on hook
+// plumbing rather than pack handling.
+func receivePackRequest(t *testing.T, cmds []*packp.Command, extra ...capability.Capability) io.ReadCloser {
 	t.Helper()
 
 	caps := capability.List{}
@@ -36,16 +36,16 @@ func receivePackRequest(t *testing.T, ref plumbing.ReferenceName, hash plumbing.
 
 	req := &packp.UpdateRequests{
 		Capabilities: caps,
-		Commands: []*packp.Command{{
-			Name: ref,
-			Old:  hash,
-			New:  plumbing.ZeroHash,
-		}},
+		Commands:     cmds,
 	}
 
 	var buf bytes.Buffer
 	require.NoError(t, req.Encode(&buf))
 	return io.NopCloser(&buf)
+}
+
+func deleteCmd(ref plumbing.ReferenceName, hash plumbing.Hash) *packp.Command {
+	return &packp.Command{Name: ref, Old: hash, New: plumbing.ZeroHash}
 }
 
 func seedRef(t *testing.T, ref plumbing.ReferenceName, hash plumbing.Hash) storage.Storer {
@@ -66,7 +66,7 @@ func TestReceivePackNilHooksDeleteRef(t *testing.T) {
 	err := ReceivePack(
 		context.Background(),
 		st,
-		receivePackRequest(t, ref, hash),
+		receivePackRequest(t, []*packp.Command{deleteCmd(ref, hash)}),
 		ioutil.WriteNopCloser(&out),
 		&ReceivePackRequest{StatelessRPC: true},
 	)
@@ -87,21 +87,19 @@ func TestReceivePackPreReceiveAllowsUpdate(t *testing.T) {
 	st := seedRef(t, ref, hash)
 
 	var (
-		out      bytes.Buffer
-		seen     []*packp.Command
-		gotStore storage.Storer
+		out  bytes.Buffer
+		info *PreReceiveInfo
 	)
 	err := ReceivePack(
 		context.Background(),
 		st,
-		receivePackRequest(t, ref, hash),
+		receivePackRequest(t, []*packp.Command{deleteCmd(ref, hash)}),
 		ioutil.WriteNopCloser(&out),
 		&ReceivePackRequest{
 			StatelessRPC: true,
-			Hooks: &ReceivePackHooks{
-				PreReceive: func(_ context.Context, s storage.Storer, cmds []*packp.Command, _ io.Writer) error {
-					gotStore = s
-					seen = cmds
+			Hooks: ReceivePackHooks{
+				PreReceive: func(_ context.Context, i *PreReceiveInfo) error {
+					info = i
 					return nil
 				},
 			},
@@ -109,10 +107,13 @@ func TestReceivePackPreReceiveAllowsUpdate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assert.Same(t, st, gotStore)
-	require.Len(t, seen, 1)
-	assert.Equal(t, ref, seen[0].Name)
-	assert.Equal(t, packp.Delete, seen[0].Action())
+	require.NotNil(t, info)
+	assert.Same(t, st, info.Storer)
+	assert.NotNil(t, info.Progress)
+	assert.Empty(t, info.PushOptions)
+	require.Len(t, info.Commands, 1)
+	assert.Equal(t, ref, info.Commands[0].Name)
+	assert.Equal(t, packp.Delete, info.Commands[0].Action())
 	assert.Contains(t, out.String(), "ok refs/heads/main")
 }
 
@@ -128,16 +129,17 @@ func TestReceivePackPreReceiveRejectsRef(t *testing.T) {
 	err := ReceivePack(
 		context.Background(),
 		st,
-		receivePackRequest(t, ref, hash),
+		receivePackRequest(t, []*packp.Command{deleteCmd(ref, hash)}),
 		ioutil.WriteNopCloser(&out),
 		&ReceivePackRequest{
 			StatelessRPC: true,
-			Hooks: &ReceivePackHooks{
-				PreReceive: func(context.Context, storage.Storer, []*packp.Command, io.Writer) error {
+			Hooks: ReceivePackHooks{
+				PreReceive: func(context.Context, *PreReceiveInfo) error {
 					return errors.New("policy blocks main")
 				},
-				PostReceive: func(context.Context, storage.Storer, []*packp.Command) {
+				PostReceive: func(context.Context, *PostReceiveInfo) error {
 					postReceiveCalled = true
+					return nil
 				},
 			},
 		},
@@ -163,30 +165,74 @@ func TestReceivePackPostReceiveRunsAfterUpdate(t *testing.T) {
 
 	var (
 		out        bytes.Buffer
-		postCmds   []*packp.Command
+		info       *PostReceiveInfo
 		refMissing bool
 	)
 	err := ReceivePack(
 		context.Background(),
 		st,
-		receivePackRequest(t, ref, hash),
+		receivePackRequest(t, []*packp.Command{deleteCmd(ref, hash)}),
 		ioutil.WriteNopCloser(&out),
 		&ReceivePackRequest{
 			StatelessRPC: true,
-			Hooks: &ReceivePackHooks{
-				PostReceive: func(_ context.Context, s storage.Storer, cmds []*packp.Command) {
-					postCmds = cmds
-					_, refErr := s.Reference(ref)
+			Hooks: ReceivePackHooks{
+				PostReceive: func(_ context.Context, i *PostReceiveInfo) error {
+					info = i
+					_, refErr := i.Storer.Reference(ref)
 					refMissing = errors.Is(refErr, plumbing.ErrReferenceNotFound)
+					return nil
 				},
 			},
 		},
 	)
 	require.NoError(t, err)
 
-	require.Len(t, postCmds, 1)
-	assert.Equal(t, ref, postCmds[0].Name)
+	require.NotNil(t, info)
+	require.Len(t, info.Commands, 1)
+	assert.Equal(t, ref, info.Commands[0].Name)
+	assert.NotNil(t, info.Progress)
 	assert.True(t, refMissing, "ref must be gone by the time PostReceive runs")
+}
+
+func TestReceivePackPostReceivePartialSuccess(t *testing.T) {
+	t.Parallel()
+
+	good := plumbing.ReferenceName("refs/heads/good")
+	bad := plumbing.ReferenceName("refs/heads/bad")
+	hash := plumbing.NewHash(receivePackTestHash)
+	// Only seed `good`; deleting `bad` will fail with ErrUpdateReference.
+	st := seedRef(t, good, hash)
+
+	var (
+		out  bytes.Buffer
+		info *PostReceiveInfo
+	)
+	err := ReceivePack(
+		context.Background(),
+		st,
+		receivePackRequest(t, []*packp.Command{
+			deleteCmd(good, hash),
+			deleteCmd(bad, hash),
+		}),
+		ioutil.WriteNopCloser(&out),
+		&ReceivePackRequest{
+			StatelessRPC: true,
+			Hooks: ReceivePackHooks{
+				PostReceive: func(_ context.Context, i *PostReceiveInfo) error {
+					info = i
+					return nil
+				},
+			},
+		},
+	)
+	require.ErrorIs(t, err, ErrUpdateReference)
+
+	require.NotNil(t, info)
+	require.Len(t, info.Commands, 1, "PostReceive must only see refs that applied")
+	assert.Equal(t, good, info.Commands[0].Name)
+
+	assert.Contains(t, out.String(), "ok refs/heads/good")
+	assert.Contains(t, out.String(), "ng refs/heads/bad")
 }
 
 func TestReceivePackPreReceiveWritesProgressOnSideband(t *testing.T) {
@@ -200,13 +246,13 @@ func TestReceivePackPreReceiveWritesProgressOnSideband(t *testing.T) {
 	err := ReceivePack(
 		context.Background(),
 		st,
-		receivePackRequest(t, ref, hash, capability.Sideband64k),
+		receivePackRequest(t, []*packp.Command{deleteCmd(ref, hash)}, capability.Sideband64k),
 		ioutil.WriteNopCloser(&out),
 		&ReceivePackRequest{
 			StatelessRPC: true,
-			Hooks: &ReceivePackHooks{
-				PreReceive: func(_ context.Context, _ storage.Storer, _ []*packp.Command, progress io.Writer) error {
-					_, _ = io.WriteString(progress, "policy check passed\n")
+			Hooks: ReceivePackHooks{
+				PreReceive: func(_ context.Context, info *PreReceiveInfo) error {
+					_, _ = io.WriteString(info.Progress, "policy check passed\n")
 					return nil
 				},
 			},
@@ -229,8 +275,7 @@ func readSideband(t *testing.T, r io.Reader) sidebandPayload {
 	var p sidebandPayload
 	demux := sideband.NewDemuxer(sideband.Sideband64k, r)
 	demux.Progress = &p.progress
-	if _, err := io.Copy(&p.data, demux); err != nil && !errors.Is(err, io.EOF) {
-		require.NoError(t, err)
-	}
+	_, err := io.Copy(&p.data, demux)
+	require.NoError(t, err)
 	return p
 }

@@ -24,34 +24,57 @@ type ReceivePackRequest struct {
 	AdvertiseRefs bool
 	StatelessRPC  bool
 
-	// Hooks, if set, are invoked between packfile unpack and ref update
-	// (PreReceive) and after ref update (PostReceive). A non-nil PreReceive
-	// error rejects every ref in the push with that error as the
-	// report-status reason; refs are not updated and PostReceive is not run.
-	Hooks *ReceivePackHooks
+	// Hooks are optional server-side callbacks. The zero value installs none.
+	Hooks ReceivePackHooks
 }
 
 // ReceivePackHooks holds server-side callbacks for ReceivePack.
 //
 // These are the in-process equivalent of git's pre-receive and post-receive
-// hooks. They run after the packfile has been unpacked into st but before
-// (PreReceive) and after (PostReceive) ref updates, so a server can enforce
-// branch protection, signed-commit checks, or other policy without
+// hooks. They run after the packfile has been unpacked into the storer but
+// before (PreReceive) and after (PostReceive) ref updates, so a server can
+// enforce branch protection, signed-commit checks, or other policy without
 // reimplementing receive-pack.
 type ReceivePackHooks struct {
-	// PreReceive runs after the packfile is unpacked into st but before any
-	// ref is updated. cmds are the proposed updates. progress writes to the
-	// sideband progress channel (band 2) when the client negotiated
-	// side-band/side-band-64k, or is discarded otherwise; write human-readable
-	// lines for the client's `remote:` output. Returning a non-nil error
-	// refuses every ref with err.Error() as the report-status reason.
-	PreReceive func(ctx context.Context, st storage.Storer, cmds []*packp.Command, progress io.Writer) error
+	// PreReceive runs after the packfile is unpacked but before any ref is
+	// updated. Returning a non-nil error refuses every ref with err.Error()
+	// as the report-status reason; refs are not updated and PostReceive is
+	// not run.
+	PreReceive func(context.Context, *PreReceiveInfo) error
 
-	// PostReceive runs after refs are updated. cmds are the same commands
-	// passed to PreReceive. The hook itself must handle any failure it cares
-	// about; nothing is surfaced to the client and the function does not
-	// return an error.
-	PostReceive func(ctx context.Context, st storage.Storer, cmds []*packp.Command)
+	// PostReceive runs after refs are updated. Any returned error is ignored
+	// for transport purposes: the refs have already moved and the
+	// report-status sent to the client reflects the ref-update outcome, not
+	// this error. The hook itself must handle or log failures it cares about.
+	PostReceive func(context.Context, *PostReceiveInfo) error
+}
+
+// PreReceiveInfo carries the inputs to a PreReceive hook.
+type PreReceiveInfo struct {
+	// Storer reads the proposed new state: the objects from this push are
+	// already present alongside the existing repository.
+	Storer storage.Storer
+	// Commands are the proposed ref updates. Treat as read-only.
+	Commands []*packp.Command
+	// PushOptions are the client's push options (empty if none).
+	PushOptions []string
+	// Progress writes to the client's sideband progress channel (band 2) when
+	// negotiated, or is io.Discard otherwise. Valid only during the call.
+	Progress io.Writer
+}
+
+// PostReceiveInfo carries the inputs to a PostReceive hook.
+type PostReceiveInfo struct {
+	// Storer reads the committed repository state.
+	Storer storage.Storer
+	// Commands are the ref updates that were applied successfully. Refs whose
+	// update failed are omitted. Treat as read-only.
+	Commands []*packp.Command
+	// PushOptions are the client's push options (empty if none).
+	PushOptions []string
+	// Progress writes to the client's sideband progress channel (band 2) when
+	// negotiated, or is io.Discard otherwise. Valid only during the call.
+	Progress io.Writer
 }
 
 // ReceivePack is a server command that serves the receive-pack service.
@@ -121,7 +144,6 @@ func ReceivePack(
 		pushOpts     packp.PushOptions
 	)
 
-	// TODO: Pass the options to the server-side hooks.
 	if updreq.Capabilities.Supports(capability.PushOptions) {
 		if err := pushOpts.Decode(rd); err != nil {
 			return fmt.Errorf("decoding push-options: %w", err)
@@ -179,8 +201,14 @@ func ReceivePack(
 		return res
 	}
 
-	if opts.Hooks != nil && opts.Hooks.PreReceive != nil {
-		if hookErr := opts.Hooks.PreReceive(ctx, st, updreq.Commands, progress); hookErr != nil {
+	if opts.Hooks.PreReceive != nil {
+		info := &PreReceiveInfo{
+			Storer:      st,
+			Commands:    updreq.Commands,
+			PushOptions: pushOpts.Options,
+			Progress:    progress,
+		}
+		if hookErr := opts.Hooks.PreReceive(ctx, info); hookErr != nil {
 			rejected := make(map[plumbing.ReferenceName]error, len(updreq.Commands))
 			for _, cmd := range updreq.Commands {
 				rejected[cmd.Name] = hookErr
@@ -206,8 +234,20 @@ func ReceivePack(
 	cmdStatus := make(map[plumbing.ReferenceName]error)
 	updateReferences(st, updreq, cmdStatus, &firstErr)
 
-	if opts.Hooks != nil && opts.Hooks.PostReceive != nil {
-		opts.Hooks.PostReceive(ctx, st, updreq.Commands)
+	if opts.Hooks.PostReceive != nil {
+		applied := make([]*packp.Command, 0, len(updreq.Commands))
+		for _, cmd := range updreq.Commands {
+			if cmdStatus[cmd.Name] == nil {
+				applied = append(applied, cmd)
+			}
+		}
+		info := &PostReceiveInfo{
+			Storer:      st,
+			Commands:    applied,
+			PushOptions: pushOpts.Options,
+			Progress:    progress,
+		}
+		_ = opts.Hooks.PostReceive(ctx, info)
 	}
 
 	if err := sendReportStatus(writeCloser, firstErr, cmdStatus); err != nil {
