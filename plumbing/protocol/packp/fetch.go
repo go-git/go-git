@@ -12,6 +12,14 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
+// maxSectionLines bounds how many entries a single fetch section (want, have,
+// shallow, ACK, wanted-ref, ...) may contribute on decode. It is a defensive
+// backstop against a hostile peer streaming unbounded lines into an in-memory
+// slice; it sits far above any legitimate request or response (a single
+// negotiation round carries at most a flush-batch of haves, and real repos have
+// far fewer than four million refs). It is a var only so tests can lower it.
+var maxSectionLines = 1 << 22
+
 // MalformedResponseError reports a server response that violates the
 // gitprotocol-v2 grammar: a malformed pkt-line, an unrecognized line within a
 // section, an unexpected/repeated/out-of-order section, or a section terminator
@@ -193,12 +201,18 @@ func (r *FetchArgs) Decode(rd io.Reader) error {
 			if !ok {
 				return fmt.Errorf("malformed want hash: %q", line[5:])
 			}
+			if len(r.Wants) >= maxSectionLines {
+				return fmt.Errorf("too many want lines (limit %d)", maxSectionLines)
+			}
 			r.Wants = append(r.Wants, h)
 
 		case strings.HasPrefix(line, "have "):
 			h, ok := parseFullHash(line[5:])
 			if !ok {
 				return fmt.Errorf("malformed have hash: %q", line[5:])
+			}
+			if len(r.Haves) >= maxSectionLines {
+				return fmt.Errorf("too many have lines (limit %d)", maxSectionLines)
 			}
 			r.Haves = append(r.Haves, h)
 
@@ -221,6 +235,9 @@ func (r *FetchArgs) Decode(rd io.Reader) error {
 			h, ok := parseFullHash(line[8:])
 			if !ok {
 				return fmt.Errorf("malformed shallow hash: %q", line[8:])
+			}
+			if len(r.Shallows) >= maxSectionLines {
+				return fmt.Errorf("too many shallow lines (limit %d)", maxSectionLines)
 			}
 			r.Shallows = append(r.Shallows, h)
 
@@ -600,6 +617,9 @@ func (r *FetchOutput) decodeAcknowledgments(rd io.Reader) (int, error) {
 			if !ok {
 				return 0, &MalformedResponseError{Reason: fmt.Sprintf("malformed ACK hash: %q", parts[1])}
 			}
+			if len(r.Acknowledgments.ACKs) >= maxSectionLines {
+				return 0, &MalformedResponseError{Reason: fmt.Sprintf("too many ACK lines (limit %d)", maxSectionLines)}
+			}
 			r.Acknowledgments.ACKs = append(r.Acknowledgments.ACKs, h)
 
 		case line == "NAK":
@@ -633,12 +653,18 @@ func (r *FetchOutput) decodeShallowInfo(rd io.Reader) (int, error) {
 			if !ok {
 				return 0, &MalformedResponseError{Reason: fmt.Sprintf("malformed shallow hash: %q", line)}
 			}
+			if len(r.ShallowInfo.Shallows) >= maxSectionLines {
+				return 0, &MalformedResponseError{Reason: fmt.Sprintf("too many shallow lines (limit %d)", maxSectionLines)}
+			}
 			r.ShallowInfo.Shallows = append(r.ShallowInfo.Shallows, h)
 
 		case strings.HasPrefix(line, "unshallow "):
 			h, ok := parseFullHash(line[10:])
 			if !ok {
 				return 0, &MalformedResponseError{Reason: fmt.Sprintf("malformed unshallow hash: %q", line)}
+			}
+			if len(r.ShallowInfo.Unshallows) >= maxSectionLines {
+				return 0, &MalformedResponseError{Reason: fmt.Sprintf("too many unshallow lines (limit %d)", maxSectionLines)}
 			}
 			r.ShallowInfo.Unshallows = append(r.ShallowInfo.Unshallows, h)
 
@@ -671,6 +697,9 @@ func (r *FetchOutput) decodeWantedRefs(rd io.Reader) (int, error) {
 			return 0, &MalformedResponseError{Reason: fmt.Sprintf("malformed wanted-refs hash: %q", parts[0])}
 		}
 
+		if len(r.WantedRefs.Refs) >= maxSectionLines {
+			return 0, &MalformedResponseError{Reason: fmt.Sprintf("too many wanted-refs lines (limit %d)", maxSectionLines)}
+		}
 		r.WantedRefs.Refs = append(r.WantedRefs.Refs,
 			plumbing.NewHashReference(plumbing.ReferenceName(parts[1]), h),
 		)

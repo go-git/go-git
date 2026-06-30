@@ -112,3 +112,55 @@ func TestFetchOutputDecodeConformantShapesAccepted(t *testing.T) {
 		})
 	}
 }
+
+func TestLsRefsArgsDecodeTooManyPrefixes(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	for i := 0; i < tooManyRefPrefixes+1; i++ {
+		pktline.Writef(&buf, "ref-prefix refs/heads/x\n")
+	}
+	pktline.WriteFlush(&buf)
+
+	var args LsRefsArgs
+	require.NoError(t, args.Decode(&buf))
+	require.Nil(t, args.RefPrefixes,
+		"more than TOO_MANY_PREFIXES ref-prefixes must fall back to advertising all refs")
+}
+
+func TestFetchArgsDecodeTooManyWants(t *testing.T) {
+	// Not parallel: temporarily lowers the package-wide section cap.
+	old := maxSectionLines
+	maxSectionLines = 3
+	defer func() { maxSectionLines = old }()
+
+	var buf bytes.Buffer
+	for i := 0; i < maxSectionLines+2; i++ {
+		pktline.WriteString(&buf, "want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+	}
+	pktline.WriteFlush(&buf)
+
+	var args FetchArgs
+	err := args.Decode(&buf)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too many want")
+}
+
+func TestFetchOutputDecodeTooManyACKs(t *testing.T) {
+	// Not parallel: temporarily lowers the package-wide section cap.
+	old := maxSectionLines
+	maxSectionLines = 2
+	defer func() { maxSectionLines = old }()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "acknowledgments\n")
+	for i := 0; i < maxSectionLines+2; i++ {
+		pktline.WriteString(&buf, "ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+	}
+	pktline.WriteFlush(&buf)
+
+	out := &FetchOutput{}
+	err := out.Decode(&buf)
+	require.Error(t, err)
+	var mre *MalformedResponseError
+	require.True(t, errors.As(err, &mre), "want MalformedResponseError, got %T", err)
+}

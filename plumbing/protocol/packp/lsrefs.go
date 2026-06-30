@@ -68,8 +68,14 @@ func validateRefPrefix(p string) error {
 	return nil
 }
 
+// tooManyRefPrefixes mirrors ls-refs.c TOO_MANY_PREFIXES: past this many
+// ref-prefix arguments, upstream clears the list and advertises every ref, both
+// to bound memory and because prefix filtering stops paying off.
+const tooManyRefPrefixes = 65536
+
 // Decode reads ls-refs arguments from a reader until a flush-pkt is encountered.
 func (r *LsRefsArgs) Decode(rd io.Reader) error {
+	tooMany := false
 	for {
 		l, pkt, err := pktline.ReadLine(rd)
 		if err != nil {
@@ -97,7 +103,16 @@ func (r *LsRefsArgs) Decode(rd io.Reader) error {
 		case line == "unborn":
 			r.Unborn = true
 		case strings.HasPrefix(line, "ref-prefix "):
+			if tooMany {
+				continue
+			}
 			r.RefPrefixes = append(r.RefPrefixes, line[len("ref-prefix "):])
+			if len(r.RefPrefixes) >= tooManyRefPrefixes {
+				// Too many prefixes: drop them and advertise every ref, as
+				// upstream ls-refs.c does, instead of growing without bound.
+				r.RefPrefixes = nil
+				tooMany = true
+			}
 		}
 	}
 }
