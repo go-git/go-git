@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -94,8 +95,14 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 func (s *StreamSession) Capabilities() *capability.List { return &s.caps }
 
 // GetRemoteRefs implements Session. For v0/v1 the server advertises every
-// reference during the handshake, so opts is ignored.
-func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *GetRemoteRefsOptions) (*RemoteRefs, error) {
+// reference during the handshake, so opts is ignored. For v2 the references
+// are retrieved on demand via the ls-refs command, honoring the ref-prefix
+// filters in opts.
+func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOptions) (*RemoteRefs, error) {
+	if s.version == protocol.V2 {
+		return s.getRemoteRefsV2(ctx, opts)
+	}
+
 	if s.refs == nil {
 		return nil, ErrEmptyRemoteRepository
 	}
@@ -109,6 +116,39 @@ func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *GetRemoteRefsOptions
 		return nil, err
 	}
 	return NewRemoteRefs(refs), nil
+}
+
+// getRemoteRefsV2 lists references using the v2 ls-refs command. It always
+// requests peeled tags and symref targets so HEAD resolves to its branch, and
+// requests unborn HEAD reporting when the server advertises support for it.
+func (s *StreamSession) getRemoteRefsV2(ctx context.Context, opts *GetRemoteRefsOptions) (*RemoteRefs, error) {
+	args := &packp.LsRefsArgs{
+		Peel:    true,
+		Symrefs: true,
+		Unborn:  s.lsRefsSupportsUnborn(),
+	}
+	if opts != nil {
+		args.RefPrefixes = opts.RefPrefixes
+	}
+
+	out := &packp.LsRefsOutput{}
+	if err := s.Command(ctx, "ls-refs", args, out); err != nil {
+		return nil, err
+	}
+
+	forPush := s.svc == ReceivePackService
+	if !forPush && len(out.References) == 0 {
+		return nil, ErrEmptyRemoteRepository
+	}
+
+	return NewRemoteRefs(out.References), nil
+}
+
+// lsRefsSupportsUnborn reports whether the server advertised the ls-refs
+// "unborn" feature (ls-refs=unborn), allowing the client to request an unborn
+// HEAD on an otherwise empty repository.
+func (s *StreamSession) lsRefsSupportsUnborn() bool {
+	return slices.Contains(s.caps.Get(capability.LsRefs), "unborn")
 }
 
 // Fetch implements PackSession.
