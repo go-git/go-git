@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"strconv"
@@ -11,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -162,4 +165,73 @@ func TestIncludeReachableTags(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, without, tagHash,
 		"annotated tag whose target is not packed must be omitted")
+}
+
+func TestUploadPackV2FetchDeepenExistingShallow(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	c, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
+	parent := c.ParentHashes[0]
+
+	// The client has a depth-1 shallow clone (boundary = tip) and deepens to 2:
+	// it offers the tip as want and have, reports its shallow boundary, and asks
+	// for deepen 2. The server must extend the boundary to the parent and mark
+	// the tip unshallow, rather than ignoring the deepen.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"have " + head.Hash().String(),
+		"shallow " + head.Hash().String(),
+		"deepen 2",
+		"done",
+	}))
+
+	require.Contains(t, out, "shallow-info")
+	require.Contains(t, out, "shallow "+parent.String(),
+		"the deepened boundary (depth 2) must be the parent")
+	require.Contains(t, out, "unshallow "+head.Hash().String(),
+		"the previously-shallow tip is now interior and must be unshallowed")
+}
+
+func TestUploadPackV2FetchNoProgressEmitsNoProgressBand(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	require.NoError(t, UploadPack(context.TODO(), st,
+		v2Request(t, "fetch", nil, []string{
+			"want " + head.Hash().String(),
+			"no-progress",
+			"done",
+		}),
+		ioutil.WriteNopCloser(&buf),
+		&UploadPackRequest{GitProtocol: "version=2", StatelessRPC: true},
+	))
+
+	// Advance to the packfile section header.
+	rd := bufio.NewReader(&buf)
+	for {
+		_, line, err := pktline.ReadLine(rd)
+		require.NoError(t, err)
+		if strings.TrimRight(string(line), "\n") == "packfile" {
+			break
+		}
+	}
+	// Every sideband packet that follows must be on the data band (1), never the
+	// progress band (2): the v2 server emits no progress, so no-progress holds.
+	for {
+		l, line, err := pktline.ReadLine(rd)
+		if l == pktline.Flush {
+			break
+		}
+		require.NoError(t, err)
+		require.NotEmpty(t, line)
+		require.NotEqual(t, byte(sideband.ProgressMessage), line[0],
+			"upload-pack must not write a sideband progress band")
+	}
 }

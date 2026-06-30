@@ -639,19 +639,15 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		out.Acknowledgments.Ready = true
 	}
 
-	// shallow-info section, emitted before the packfile for a shallow fetch.
-	// Three boundary forms, mirroring upstream send_shallow_list (upload-pack.c):
+	// shallow-info: a shallow fetch bounds the history sent. The boundary forms
+	// mirror upstream send_shallow_list (upload-pack.c):
 	//   - deepen <n>: a depth boundary from the wants (getShallowCommits).
-	//   - deepen-since / deepen-not: a date/ref boundary computed by walking the
-	//     reachable set (getShallowCommitsByRevList, mirroring deepen_by_rev_list).
+	//   - deepen-since / deepen-not: a date/ref boundary (getShallowCommitsByRevList,
+	//     mirroring deepen_by_rev_list).
 	// Upstream forbids combining deepen with deepen-since/deepen-not, and so do we.
 	// deepen-relative only changes how depth is counted relative to the client's
-	// existing shallows; serveFetchV2 bounds only fresh fetches (no haves), where
-	// relative and absolute depth coincide, so the deepen path covers it.
-	//
-	// Note: deepening an already-shallow clone (the client sends its own
-	// "shallow" lines plus haves) is not handled, the haves would exclude the
-	// deepened ancestors. Only fresh shallow fetches are bounded here.
+	// existing shallows; for a fresh fetch (no client shallows) relative and
+	// absolute depth coincide, so the deepen path covers it.
 	since := args.DeepenSince
 	notTips, err := resolveDeepenNot(st, args.DeepenNot)
 	if err != nil {
@@ -664,7 +660,9 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		return true, fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 	}
 
-	packSt := st
+	// newBoundary is the requested shallow boundary, or nil for a non-shallow
+	// fetch. It is reported to the client and bounds the packfile.
+	var newBoundary []plumbing.Hash
 	if depth > 0 || revList {
 		var shupd packp.ShallowUpdate
 		if revList {
@@ -676,18 +674,55 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 			_ = w.Close()
 			return true, fmt.Errorf("computing shallow commits: %w", err)
 		}
-		out.ShallowInfo = &packp.ShallowInfo{
-			Shallows:   shupd.Shallows,
-			Unshallows: scopeUnshallows(shupd.Unshallows, clientShallows),
-		}
-		packSt = &shallowBoundaryStorer{Storer: st, boundary: shupd.Shallows}
+		newBoundary = shupd.Shallows
 	}
 
-	// Compute what to send.
-	objs, err := objectsToUpload(packSt, wants, haves)
-	if err != nil {
-		_ = w.Close()
-		return true, fmt.Errorf("getting objects to upload: %w", err)
+	var objs []plumbing.Hash
+	if len(clientShallows) > 0 {
+		// The client already has a shallow view (it sent "shallow" lines).
+		// A single object walk cannot graft the wanted history at the new
+		// boundary while also grafting the client's have-history at its existing
+		// boundary, so compute two views and send their difference:
+		//   newView    = objects reachable from the wants, grafted at the new
+		//                boundary (the client's deepened view).
+		//   clientView = objects the client already has, reachable from its haves
+		//                grafted at its existing shallow boundary.
+		// newView \ clientView is exactly what the client is missing. It never
+		// omits a needed object; at worst it re-sends one the client has, which
+		// is harmless. This is what bounds a deepen of an already-shallow clone.
+		boundary := newBoundary
+		if boundary == nil {
+			// A plain fetch on a shallow clone keeps the existing boundary.
+			boundary = clientShallows
+		}
+		newView, nerr := objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: boundary}, wants, nil)
+		if nerr != nil {
+			_ = w.Close()
+			return true, fmt.Errorf("getting objects to upload: %w", nerr)
+		}
+		clientView, cerr := objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: clientShallows}, haves, nil)
+		if cerr != nil {
+			_ = w.Close()
+			return true, fmt.Errorf("getting client objects: %w", cerr)
+		}
+		objs = hashDifference(newView, clientView)
+		if newBoundary != nil {
+			out.ShallowInfo = &packp.ShallowInfo{
+				Shallows:   newBoundary,
+				Unshallows: unshallowedCommits(clientShallows, newBoundary, newView),
+			}
+		}
+	} else {
+		packSt := st
+		if newBoundary != nil {
+			out.ShallowInfo = &packp.ShallowInfo{Shallows: newBoundary}
+			packSt = &shallowBoundaryStorer{Storer: st, boundary: newBoundary}
+		}
+		objs, err = objectsToUpload(packSt, wants, haves)
+		if err != nil {
+			_ = w.Close()
+			return true, fmt.Errorf("getting objects to upload: %w", err)
+		}
 	}
 
 	// include-tag: add annotated tags whose target is in the pack (auto-tag
@@ -707,6 +742,9 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		return true, err
 	}
 
+	// The packfile is muxed on sideband-64k band 1. This server never writes the
+	// progress band (band 2), so the client's no-progress request (args.NoProgress)
+	// is honored by construction; there is nothing to suppress.
 	writer := sideband.NewMuxer(sideband.Sideband64k, w)
 
 	var packWindow uint
@@ -731,24 +769,47 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	return true, w.Close()
 }
 
-// scopeUnshallows restricts the unshallow set to commits the client reported as
-// shallow, so a fresh clone never receives spurious unshallow lines (upstream
-// send_shallow_info).
-func scopeUnshallows(unshallows, clientShallows []plumbing.Hash) []plumbing.Hash {
-	if len(clientShallows) == 0 {
-		return nil
+// hashDifference returns the elements of a that are not in b, preserving a's
+// order. It computes the objects a deepened client is missing (newView minus the
+// client's existing view).
+func hashDifference(a, b []plumbing.Hash) []plumbing.Hash {
+	set := make(map[plumbing.Hash]struct{}, len(b))
+	for _, h := range b {
+		set[h] = struct{}{}
 	}
-	client := make(map[plumbing.Hash]struct{}, len(clientShallows))
-	for _, h := range clientShallows {
-		client[h] = struct{}{}
-	}
-	var scoped []plumbing.Hash
-	for _, h := range unshallows {
-		if _, ok := client[h]; ok {
-			scoped = append(scoped, h)
+	var out []plumbing.Hash
+	for _, h := range a {
+		if _, ok := set[h]; !ok {
+			out = append(out, h)
 		}
 	}
-	return scoped
+	return out
+}
+
+// unshallowedCommits returns the client's shallow commits that the deepened view
+// now includes as interior commits (their parents are being sent), so the client
+// can clear their shallow mark. Commits still on the new boundary stay shallow.
+// Mirrors upstream send_unshallow (upload-pack.c).
+func unshallowedCommits(clientShallows, newBoundary, newView []plumbing.Hash) []plumbing.Hash {
+	inView := make(map[plumbing.Hash]struct{}, len(newView))
+	for _, h := range newView {
+		inView[h] = struct{}{}
+	}
+	boundary := make(map[plumbing.Hash]struct{}, len(newBoundary))
+	for _, h := range newBoundary {
+		boundary[h] = struct{}{}
+	}
+	var out []plumbing.Hash
+	for _, cs := range clientShallows {
+		if _, ok := inView[cs]; !ok {
+			continue // not part of the deepened view
+		}
+		if _, ok := boundary[cs]; ok {
+			continue // still a boundary commit
+		}
+		out = append(out, cs)
+	}
+	return out
 }
 
 // resolveDeepenNot resolves each deepen-not argument (a ref name or an object
