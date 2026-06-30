@@ -116,7 +116,7 @@ func TestFetchOutputDecodeConformantShapesAccepted(t *testing.T) {
 func TestLsRefsArgsDecodeTooManyPrefixes(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	for i := 0; i < tooManyRefPrefixes+1; i++ {
+	for range tooManyRefPrefixes + 1 {
 		pktline.Writef(&buf, "ref-prefix refs/heads/x\n")
 	}
 	pktline.WriteFlush(&buf)
@@ -127,14 +127,17 @@ func TestLsRefsArgsDecodeTooManyPrefixes(t *testing.T) {
 		"more than TOO_MANY_PREFIXES ref-prefixes must fall back to advertising all refs")
 }
 
+// TestFetchArgsDecodeTooManyWants mutates the package-wide maxSectionLines, so
+// it cannot run in parallel with other tests that read it.
+//
+//nolint:paralleltest // mutates the shared maxSectionLines cap
 func TestFetchArgsDecodeTooManyWants(t *testing.T) {
-	// Not parallel: temporarily lowers the package-wide section cap.
 	old := maxSectionLines
 	maxSectionLines = 3
 	defer func() { maxSectionLines = old }()
 
 	var buf bytes.Buffer
-	for i := 0; i < maxSectionLines+2; i++ {
+	for range maxSectionLines + 2 {
 		pktline.WriteString(&buf, "want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
 	}
 	pktline.WriteFlush(&buf)
@@ -145,15 +148,18 @@ func TestFetchArgsDecodeTooManyWants(t *testing.T) {
 	require.Contains(t, err.Error(), "too many want")
 }
 
+// TestFetchOutputDecodeTooManyACKs mutates the package-wide maxSectionLines, so
+// it cannot run in parallel with other tests that read it.
+//
+//nolint:paralleltest // mutates the shared maxSectionLines cap
 func TestFetchOutputDecodeTooManyACKs(t *testing.T) {
-	// Not parallel: temporarily lowers the package-wide section cap.
 	old := maxSectionLines
 	maxSectionLines = 2
 	defer func() { maxSectionLines = old }()
 
 	var buf bytes.Buffer
 	pktline.WriteString(&buf, "acknowledgments\n")
-	for i := 0; i < maxSectionLines+2; i++ {
+	for range maxSectionLines + 2 {
 		pktline.WriteString(&buf, "ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
 	}
 	pktline.WriteFlush(&buf)
