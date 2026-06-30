@@ -220,10 +220,10 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 			s.sawEncoding = true
 		}
 	case headerpgp:
-		s.c.Signature += string(data) + "\n"
+		s.c.Signature = append(append(s.c.Signature, data...), '\n')
 		next = scanPgpCont
 	case headerpgp256:
-		s.c.SignatureSHA256 += string(data) + "\n"
+		s.c.SignatureSHA256 = append(append(s.c.SignatureSHA256, data...), '\n')
 		next = scanPgp256Cont
 	default:
 		h, multiline := parseExtraHeader(originalLine)
@@ -257,13 +257,13 @@ func scanPgp256Cont(s *commitScanner) (commitState, error) {
 	return continuationCont(s, &s.c.SignatureSHA256, scanPgp256Cont)
 }
 
-func continuationCont(s *commitScanner, dst *string, self commitState) (commitState, error) {
+func continuationCont(s *commitScanner, dst *[]byte, self commitState) (commitState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
-		*dst += string(line[1:])
+		*dst = append(*dst, line[1:]...)
 		if err == io.EOF {
 			return nil, nil
 		}

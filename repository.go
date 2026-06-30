@@ -990,24 +990,16 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	return r.Storer.SetEncodedObject(obj)
 }
 
-func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := tag.Encode(encoded); err != nil {
-		return "", err
-	}
-
-	rdr, err := encoded.Reader()
+func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) ([]byte, error) {
+	// The tag has no signature yet, so its signature-stripped encoding is the
+	// payload to sign. Stream it rather than buffering the whole tag.
+	rdr, err := tag.EncodeWithoutSignature()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// TODO: thread a caller-supplied context once CreateTag accepts one.
-	b, err := signer.Sign(context.TODO(), rdr)
-	if err != nil {
-		return "", err
-	}
-
-	return string(b), nil
+	return signer.Sign(context.TODO(), rdr)
 }
 
 // Tag returns a tag from the repository.

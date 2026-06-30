@@ -17,6 +17,11 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
+const (
+	beginpgp string = "-----BEGIN PGP SIGNATURE-----"
+	endpgp   string = "-----END PGP SIGNATURE-----"
+)
+
 type SuiteCommit struct {
 	suite.Suite
 	BaseObjectsSuite
@@ -54,8 +59,8 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 		Hash:            plumbing.NewHash("1111111111111111111111111111111111111111"),
 		Author:          Signature{Name: "Stale Author", Email: "author@example.local", When: time.Unix(1, 0).UTC()},
 		Committer:       Signature{Name: "Stale Committer", Email: "committer@example.local", When: time.Unix(2, 0).UTC()},
-		Signature:       "stale signature",
-		SignatureSHA256: "stale sha256 signature",
+		Signature:       []byte("stale signature"),
+		SignatureSHA256: []byte("stale sha256 signature"),
 		Message:         "stale message",
 		TreeHash:        plumbing.NewHash("2222222222222222222222222222222222222222"),
 		ParentHashes: []plumbing.Hash{
@@ -78,8 +83,8 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 	s.Equal(obj.Hash(), commit.Hash)
 	s.Equal(Signature{}, commit.Author)
 	s.Equal(Signature{}, commit.Committer)
-	s.Equal("", commit.Signature)
-	s.Equal("", commit.SignatureSHA256)
+	s.Equal("", string(commit.Signature))
+	s.Equal("", string(commit.SignatureSHA256))
 	s.Equal("fresh message\n", commit.Message)
 	s.Equal("eba74343e2f15d62adedfd8c883ee0262b5c8021", commit.TreeHash.String())
 	s.Nil(commit.ParentHashes)
@@ -322,7 +327,7 @@ change
 			ExtraHeaders: []ExtraHeader{
 				{Key: "mergetag", Value: strings.TrimRight(tag, "\n")},
 			},
-			Signature: pgpsignature,
+			Signature: []byte(pgpsignature),
 			Encoding:  defaultUtf8CommitMessageEncoding,
 		},
 	}
@@ -463,8 +468,8 @@ TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			commit := *s.Commit
-			commit.Signature = tc.sig
-			commit.SignatureSHA256 = tc.sig256
+			commit.Signature = []byte(tc.sig)
+			commit.SignatureSHA256 = []byte(tc.sig256)
 			if tc.authorName != "" {
 				commit.Author.Name = tc.authorName
 			}
@@ -482,16 +487,18 @@ TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
 
 			decoded := &Commit{}
 			s.NoError(decoded.Decode(encoded))
-			s.Equal(tc.sig, decoded.Signature)
-			s.Equal(tc.sig256, decoded.SignatureSHA256)
+			s.Equal(tc.sig, string(decoded.Signature))
+			s.Equal(tc.sig256, string(decoded.SignatureSHA256))
 			if tc.authorName != "" {
 				s.Equal(tc.authorName, decoded.Author.Name)
 			}
 
 			if tc.sig != "" || tc.sig256 != "" {
-				stripped := &plumbing.MemoryObject{}
-				s.NoError(commit.EncodeWithoutSignature(stripped))
-				s.NotContains(readAll(s.T(), stripped), "gpgsig")
+				er, err := commit.EncodeWithoutSignature()
+				s.NoError(err)
+				payload, err := io.ReadAll(er)
+				s.NoError(err)
+				s.NotContains(string(payload), "gpgsig")
 			}
 		})
 	}
@@ -534,51 +541,6 @@ func (s *SuiteCommit) TestStat() {
 	s.Equal(259, fileStats[1].Addition)
 	s.Equal(0, fileStats[1].Deletion)
 	s.Equal(" php/crappy.php | 259 +++++++++++++++++++++++++++++++++++++++++++++++++++++\n", fileStats[1].String())
-}
-
-func (s *SuiteCommit) TestVerify() {
-	ts := time.Unix(1617402711, 0)
-	loc, _ := time.LoadLocation("UTC")
-	commit := &Commit{
-		Hash:      plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
-		Author:    Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
-		Committer: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
-		Message: `test
-`,
-		TreeHash:     plumbing.NewHash("52a266a58f2c028ad7de4dfd3a72fdf76b0d4e24"),
-		ParentHashes: []plumbing.Hash{plumbing.NewHash("e4fbb611cd14149c7a78e9c08425f59f4b736a9a")},
-		Signature: `
------BEGIN PGP SIGNATURE-----
-
-iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGebVwAKCRCMmmmF4LuV
-8VtyAP9LbuXAhtK6FQqOjKybBwlV70rLcXVP24ubDuz88VVwSgD+LuObsasWq6/U
-TssDKHUR2taa53bQYjkZQBpvvwOrLgc=
-=YQUf
------END PGP SIGNATURE-----
-`,
-	}
-
-	armoredKeyRing := `
------BEGIN PGP PUBLIC KEY BLOCK-----
-
-mDMEYGeSihYJKwYBBAHaRw8BAQdAIs9A3YD/EghhAOkHDkxlUkpqYrXUXebLfmmX
-+pdEK6C0D2dvLWdpdCB0ZXN0IGtleYiPBBMWCgA3FiEEzKlNMnEN3+oNzzKFjJpp
-heC7lfEFAmBnkooCGyMECwkIBwUVCgkICwUWAwIBAAIeAQIXgAAKCRCMmmmF4LuV
-8a3jAQCi4hSqjj6J3ch290FvQaYPGwR+EMQTMBG54t+NN6sDfgD/aZy41+0dnFKl
-qM/wLW5Wr9XvwH+1zXXbuSvfxasHowq4OARgZ5KKEgorBgEEAZdVAQUBAQdAXoQz
-VTYug16SisAoSrxFnOmxmFu6efYgCAwXu0ZuvzsDAQgHiHgEGBYKACAWIQTMqU0y
-cQ3f6g3PMoWMmmmF4LuV8QUCYGeSigIbDAAKCRCMmmmF4LuV8Q4QAQCKW5FnEdWW
-lHYKeByw3JugnlZ0U3V/R20bCwDglst5UQEAtkN2iZkHtkPly9xapsfNqnrt2gTt
-YIefGtzXfldDxg4=
-=Psht
------END PGP PUBLIC KEY BLOCK-----
-`
-
-	e, err := commit.Verify(armoredKeyRing)
-	s.NoError(err)
-
-	_, ok := e.Identities["go-git test key"]
-	s.True(ok)
 }
 
 func (s *SuiteCommit) TestPatchCancel() {
@@ -763,7 +725,7 @@ func (s *SuiteCommit) TestDecodeFirstOccurrenceWins() {
 				"\ncommitter " + identCommit +
 				"\ngpgsig firstline\n morefirst\ngpgsig secondline\n moresecond\n\nmsg\n",
 			assert: func(c *Commit) {
-				s.Equal("firstline\nmorefirst\nsecondline\nmoresecond\n", c.Signature)
+				s.Equal("firstline\nmorefirst\nsecondline\nmoresecond\n", string(c.Signature))
 			},
 		},
 		{
@@ -772,7 +734,7 @@ func (s *SuiteCommit) TestDecodeFirstOccurrenceWins() {
 				"\ncommitter " + identCommit +
 				"\ngpgsig-sha256 firstline\n morefirst\ngpgsig-sha256 secondline\n moresecond\n\nmsg\n",
 			assert: func(c *Commit) {
-				s.Equal("firstline\nmorefirst\nsecondline\nmoresecond\n", c.SignatureSHA256)
+				s.Equal("firstline\nmorefirst\nsecondline\nmoresecond\n", string(c.SignatureSHA256))
 			},
 		},
 		{
@@ -812,7 +774,7 @@ func (s *SuiteCommit) TestMalformedHeader() {
 	decoded := &Commit{}
 	commit := *s.Commit
 
-	commit.Signature = "\n"
+	commit.Signature = []byte("\n")
 	commit.Author.Name = "\n"
 	commit.Author.Email = "\n"
 	commit.Committer.Name = "\n"
@@ -974,8 +936,8 @@ gpgsig-sha256 -----BEGIN PGP SIGNATURE-----
 initial commit
 `,
 			mutate: func(c *Commit) {
-				c.Signature = "different signature value"
-				c.SignatureSHA256 = "different sha256 sig"
+				c.Signature = []byte("different signature value")
+				c.SignatureSHA256 = []byte("different sha256 sig")
 			},
 			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 author John Doe <john.doe@example.com> 1755280730 -0700
@@ -1078,11 +1040,7 @@ rewritten message
 				tc.mutate(commit)
 			}
 
-			encoded := &plumbing.MemoryObject{}
-			err = commit.EncodeWithoutSignature(encoded)
-			s.NoError(err)
-
-			er, err := encoded.Reader()
+			er, err := commit.EncodeWithoutSignature()
 			s.NoError(err)
 
 			payload, err := io.ReadAll(er)
@@ -1135,10 +1093,7 @@ initial commit
 	})
 
 	// Similar to TestString since no signature
-	encoded := &plumbing.MemoryObject{}
-	err = commit.EncodeWithoutSignature(encoded)
-	s.NoError(err)
-	er, err := encoded.Reader()
+	er, err := commit.EncodeWithoutSignature()
 	s.NoError(err)
 	payload, err := io.ReadAll(er)
 	s.NoError(err)
