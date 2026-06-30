@@ -111,14 +111,88 @@ func FuzzFetchArgsDecode(f *testing.F) {
 }
 
 func FuzzFetchOutputDecode(f *testing.F) {
+	const oid = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	const delim, flush = "0001", "0000"
 	// Negotiation round (acknowledgments flush-pkt, no packfile).
-	f.Add([]byte("0012acknowledgments\n0008NAK\n0000"))
+	f.Add([]byte(pkt("acknowledgments") + pkt("NAK") + flush))
 	// Final round (acknowledgments delim-pkt ... packfile flush-pkt).
-	f.Add([]byte("0012acknowledgments\n000aready\n00010009packfile\n0000"))
+	f.Add([]byte(pkt("acknowledgments") + pkt("ready") + delim + pkt("packfile") + flush))
+	// shallow-info section before the packfile.
+	f.Add([]byte(pkt("shallow-info") + pkt("shallow "+oid) + delim + pkt("packfile") + flush))
+	// wanted-refs section before the packfile.
+	f.Add([]byte(pkt("wanted-refs") + pkt(oid+" refs/heads/main") + delim + pkt("packfile") + flush))
+	// packfile-uris section before the packfile.
+	f.Add([]byte(pkt("packfile-uris") + pkt(oid+" https://example/p.pack") + delim + pkt("packfile") + flush))
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		fo := &FetchOutput{}
 		_ = fo.Decode(bytes.NewReader(data))
 	})
+}
+
+func FuzzCommandRequestDecode(f *testing.F) {
+	const delim, flush = "0001", "0000"
+	// command=ls-refs + one capability, delim, a ls-refs arg, flush.
+	f.Add([]byte(pkt("command=ls-refs") + pkt("object-format=sha1") +
+		delim + pkt("ref-prefix HEAD") + flush))
+	f.Add([]byte(flush))
+	f.Add([]byte{})
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		cr := &CommandRequest{Args: &LsRefsArgs{}}
+		_ = cr.Decode(bytes.NewReader(data))
+	})
+}
+
+func FuzzCapabilityAdvDecode(f *testing.F) {
+	const flush = "0000"
+	f.Add([]byte(pkt("version 2") + pkt("ls-refs") + pkt("object-format=sha1") + flush))
+	f.Add([]byte(pkt("version 2") + flush))
+	f.Add([]byte{})
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		ca := &CapabilityAdv{}
+		_ = ca.Decode(bytes.NewReader(data))
+	})
+}
+
+func FuzzLsRefsArgsDecode(f *testing.F) {
+	const flush = "0000"
+	f.Add([]byte(pkt("peel") + pkt("symrefs") + pkt("ref-prefix HEAD") + flush))
+	f.Add([]byte(flush))
+	f.Add([]byte{})
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		la := &LsRefsArgs{}
+		_ = la.Decode(bytes.NewReader(data))
+	})
+}
+
+func FuzzLsRefsOutputDecode(f *testing.F) {
+	const oid = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	f.Add([]byte(pkt(oid+" refs/heads/main") + pkt(oid+" HEAD symref-target:refs/heads/main") + "0000"))
+	f.Add([]byte{})
+
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		lo := &LsRefsOutput{}
+		_ = lo.Decode(bytes.NewReader(data))
+	})
+}
+
+func FuzzParseLsRefsLine(f *testing.F) {
+	const oid = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	f.Add(oid + " refs/heads/main")
+	f.Add(oid + " HEAD symref-target:refs/heads/main")
+	f.Add(oid + " refs/tags/v1 peeled:" + oid)
+	f.Add("")
+
+	f.Fuzz(func(_ *testing.T, line string) {
+		_, _ = parseLsRefsLine(line)
+	})
+}
+
+// pkt frames s with a trailing LF as a single pkt-line, for fuzz seeds.
+func pkt(s string) string {
+	return fmt.Sprintf("%04x%s\n", len(s)+5, s)
 }
