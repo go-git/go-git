@@ -66,6 +66,13 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 			return nil, err
 		}
 		s.caps = adv.Capabilities
+		// Protocol v2 fetch accepts "want <oid>" without the server
+		// advertising allow-*-sha1-in-want, so surface the gate as
+		// satisfied for exact-SHA1 refspecs (isSupportedRefSpec). The
+		// v2 client only sends agent/object-format on the wire, so these
+		// never leak into the request (internal.ClientCapabilities).
+		s.caps.Set(capability.AllowReachableSHA1InWant)
+		s.caps.Set(capability.AllowTipSHA1InWant)
 		return s, nil
 	}
 
@@ -81,6 +88,10 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
+	// Source the advertisement's version from the version DiscoverVersion
+	// already established, so s.version is the single source of truth rather
+	// than relying on AdvRefs.Decode's independent parse of the same line.
+	ar.Version = ver
 	s.caps = ar.Capabilities
 	s.refs = ar
 
@@ -133,6 +144,9 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 		}
 		if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
 			return ErrShallowNotSupported
+		}
+		if err := ReconcileObjectFormatV2(st, s.caps); err != nil {
+			return err
 		}
 		// Each negotiation round reuses the persistent stream: Command writes
 		// the request and decodes the metadata, leaving s.r at the packfile.

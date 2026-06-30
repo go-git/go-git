@@ -154,6 +154,13 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		if err := adv.Decode(rd); err != nil {
 			return nil, err
 		}
+		// Protocol v2 fetch accepts "want <oid>" without the server
+		// advertising allow-*-sha1-in-want, so surface the gate as
+		// satisfied for exact-SHA1 refspecs (isSupportedRefSpec). The
+		// v2 client only sends agent/object-format on the wire, so these
+		// never leak into the request (internal.ClientCapabilities).
+		adv.Capabilities.Set(capability.AllowReachableSHA1InWant)
+		adv.Capabilities.Set(capability.AllowTipSHA1InWant)
 		return &smartPackSession{
 			client:     client,
 			baseURL:    req.URL,
@@ -173,6 +180,11 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 	if err := capability.Validate(&ar.Capabilities); err != nil {
 		return nil, err
 	}
+
+	// Source the advertisement's version from the version DiscoverVersion
+	// already established, keeping the session the single source of truth
+	// rather than AdvRefs.Decode's independent parse of the same line.
+	ar.Version = ver
 
 	return &smartPackSession{
 		client:     client,
@@ -331,6 +343,9 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 	}
 	if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
 		return transport.ErrShallowNotSupported
+	}
+	if err := transport.ReconcileObjectFormatV2(st, s.caps); err != nil {
+		return err
 	}
 
 	round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {

@@ -396,3 +396,35 @@ func (rw *mockWriteCloser) Close() error {
 	rw.closed = true
 	return rw.closeErr
 }
+
+func TestReconcileObjectFormatV2(t *testing.T) {
+	t.Parallel()
+
+	withFormat := func(v string) capability.List {
+		var caps capability.List
+		caps.Set(capability.ObjectFormat, v)
+		return caps
+	}
+
+	t.Run("unknown algorithm is rejected", func(t *testing.T) {
+		t.Parallel()
+		err := ReconcileObjectFormatV2(memory.NewStorage(), withFormat("sha999"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported object-format")
+	})
+
+	t.Run("empty value is accepted", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("")))
+	})
+
+	t.Run("sha1 server with unset client is accepted", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("sha1")))
+	})
+
+	t.Run("no advertisement is accepted for an sha1 client", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), capability.List{}))
+	})
+}

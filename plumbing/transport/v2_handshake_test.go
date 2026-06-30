@@ -45,6 +45,7 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 	t.Parallel()
 
 	serverCaps := capability.List{}
+	serverCaps.Set(capability.Agent, "git/test")
 	serverCaps.Set(capability.ObjectFormat, "sha1")
 
 	var out bytes.Buffer

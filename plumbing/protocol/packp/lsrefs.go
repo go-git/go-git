@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -24,6 +25,15 @@ type LsRefsArgs struct {
 // written as a separate pkt-line. The caller is responsible for writing
 // the delim-pkt before and the flush-pkt after these arguments.
 func (r *LsRefsArgs) Encode(w io.Writer) error {
+	// Validate every ref-prefix before writing anything, so an invalid prefix
+	// can never leave a partially-written arguments section on the stream
+	// (Encode is all-or-nothing on a validation error).
+	for _, p := range r.RefPrefixes {
+		if err := validateRefPrefix(p); err != nil {
+			return err
+		}
+	}
+
 	if r.Peel {
 		if _, err := pktline.WriteString(w, "peel\n"); err != nil {
 			return err
@@ -47,8 +57,31 @@ func (r *LsRefsArgs) Encode(w io.Writer) error {
 	return nil
 }
 
+// validateRefPrefix rejects a ref-prefix that cannot be safely framed as a
+// "ref-prefix <p>" pkt-line. An empty prefix would emit a stray "ref-prefix "
+// argument, and whitespace or control bytes (notably LF and NUL) would break
+// the pkt-line framing or let a caller inject extra lines. No valid Git
+// reference contains such characters, so this only rejects malformed input.
+func validateRefPrefix(p string) error {
+	if p == "" {
+		return fmt.Errorf("invalid ref-prefix: empty")
+	}
+	for _, c := range p {
+		if c == 0 || unicode.IsControl(c) || unicode.IsSpace(c) {
+			return fmt.Errorf("invalid ref-prefix %q: contains whitespace or control character", p)
+		}
+	}
+	return nil
+}
+
+// tooManyRefPrefixes mirrors ls-refs.c TOO_MANY_PREFIXES: past this many
+// ref-prefix arguments, upstream clears the list and advertises every ref, both
+// to bound memory and because prefix filtering stops paying off.
+const tooManyRefPrefixes = 65536
+
 // Decode reads ls-refs arguments from a reader until a flush-pkt is encountered.
 func (r *LsRefsArgs) Decode(rd io.Reader) error {
+	tooMany := false
 	for {
 		l, pkt, err := pktline.ReadLine(rd)
 		if err != nil {
@@ -76,7 +109,16 @@ func (r *LsRefsArgs) Decode(rd io.Reader) error {
 		case line == "unborn":
 			r.Unborn = true
 		case strings.HasPrefix(line, "ref-prefix "):
+			if tooMany {
+				continue
+			}
 			r.RefPrefixes = append(r.RefPrefixes, line[len("ref-prefix "):])
+			if len(r.RefPrefixes) >= tooManyRefPrefixes {
+				// Too many prefixes: drop them and advertise every ref, as
+				// upstream ls-refs.c does, instead of growing without bound.
+				r.RefPrefixes = nil
+				tooMany = true
+			}
 		}
 	}
 }

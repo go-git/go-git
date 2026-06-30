@@ -31,7 +31,7 @@ const (
 	// should be marshalled or not.
 	// Note that this does not need to align with the default protocol
 	// version from plumbing/protocol.
-	DefaultProtocolVersion = protocol.V0 // go-git only supports V0 at the moment
+	DefaultProtocolVersion = protocol.V2
 )
 
 // ConfigStorer is a generic storage of Config object.
