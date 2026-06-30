@@ -14,12 +14,15 @@ import (
 // built-in Fetch and Push operations.
 //
 // Sessions that negotiate Protocol v2 (version 2) implement this interface.
-// The Command method executes a named v2 command, encoding the request
-// via req.Encode and decoding the response via resp.Decode. The transport
-// layer handles the v2 envelope (command name, capabilities, delim-pkt,
-// flush-pkt, and for HTTP, response-end).
+// The Command method executes a named v2 command: req carries the
+// command-specific arguments and is encoded into the request, while resp
+// decodes the response. For example, GetRemoteRefs runs
+// Command(ctx, "ls-refs", lsRefsArgs, lsRefsOutput). The session builds the v2
+// request envelope (command name, the capabilities collected during the
+// handshake, delim-pkt, the arguments, and flush-pkt) and, for HTTP, handles
+// the response-end packet.
 type Commander interface {
-	Command(ctx context.Context, cmd string, req packp.Encoder, resp packp.Decoder) error
+	Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error
 }
 
 // Transport is implemented by transports that speak the Git pack
