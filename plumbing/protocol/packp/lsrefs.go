@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -40,8 +41,28 @@ func (r *LsRefsArgs) Encode(w io.Writer) error {
 		}
 	}
 	for _, p := range r.RefPrefixes {
+		if err := validateRefPrefix(p); err != nil {
+			return err
+		}
 		if _, err := pktline.Writef(w, "ref-prefix %s\n", p); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validateRefPrefix rejects a ref-prefix that cannot be safely framed as a
+// "ref-prefix <p>" pkt-line. An empty prefix would emit a stray "ref-prefix "
+// argument, and whitespace or control bytes (notably LF and NUL) would break
+// the pkt-line framing or let a caller inject extra lines. No valid Git
+// reference contains such characters, so this only rejects malformed input.
+func validateRefPrefix(p string) error {
+	if p == "" {
+		return fmt.Errorf("invalid ref-prefix: empty")
+	}
+	for _, c := range p {
+		if c == 0 || unicode.IsControl(c) || unicode.IsSpace(c) {
+			return fmt.Errorf("invalid ref-prefix %q: contains whitespace or control character", p)
 		}
 	}
 	return nil
