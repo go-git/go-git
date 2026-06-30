@@ -33,7 +33,6 @@ func TestStreamSessionV2Handshake(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, protocol.V2, s.version)
-	require.NotNil(t, s.v2)
 	require.Nil(t, s.refs)
 
 	caps := s.Capabilities()
@@ -52,7 +51,7 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 	s := &StreamSession{
 		version: protocol.V2,
 		w:       ioutil.WriteNopCloser(&out),
-		v2:      &packp.CapabilityAdv{Version: protocol.V2, Capabilities: serverCaps},
+		caps:    serverCaps,
 	}
 
 	req := &packp.LsRefsArgs{

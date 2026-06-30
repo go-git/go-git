@@ -37,6 +37,69 @@ func TestV2FetchClone(t *testing.T) {
 	require.Equal(t, want, obj.Hash())
 }
 
+func TestV2FetchManyRounds(t *testing.T) {
+	t.Parallel()
+	serverSt := basicV2Storage(t)
+	want := plumbing.NewHash(basicMasterHash)
+
+	// More haves than the initial batch (16) so negotiation needs several
+	// rounds: round 1 sends 16, round 2 the remainder, round 3 sends "done".
+	haves := make([]plumbing.Hash, 20)
+	for i := range haves {
+		haves[i] = plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d")
+	}
+
+	var rounds int
+	serve := func(serverConn net.Conn) (err error) {
+		defer func() { _ = serverConn.Close() }()
+
+		w := serverConn
+		for _, line := range []string{"version 2\n", "agent=test\n", "fetch=shallow\n", "object-format=sha1\n"} {
+			if _, err := pktline.WriteString(w, line); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteFlush(w); err != nil {
+			return err
+		}
+
+		rd := bufio.NewReader(serverConn)
+		for {
+			req := &packp.CommandRequest{Args: &packp.FetchArgs{}}
+			if err := req.Decode(rd); err != nil {
+				return err
+			}
+			rounds++
+			args := req.Args.(*packp.FetchArgs)
+			if args.Done {
+				return writeV2PackfileSection(w, serverSt, args.Wants, args.Haves)
+			}
+			if _, err := pktline.WriteString(w, "acknowledgments\n"); err != nil {
+				return err
+			}
+			if _, err := pktline.WriteString(w, "NAK\n"); err != nil {
+				return err
+			}
+			if err := pktline.WriteFlush(w); err != nil {
+				return err
+			}
+		}
+	}
+
+	clientSt := memory.NewStorage()
+	s := newV2Session(t, serve)
+
+	err := s.Fetch(context.TODO(), clientSt, &FetchRequest{
+		Wants: []plumbing.Hash{want},
+		Haves: haves,
+	})
+	require.NoError(t, err)
+	require.Greater(t, rounds, 2, "incremental have batching should take more than two rounds")
+
+	_, err = clientSt.EncodedObject(plumbing.CommitObject, want)
+	require.NoError(t, err)
+}
+
 func TestV2FetchNegotiationRounds(t *testing.T) {
 	t.Parallel()
 	serverSt := basicV2Storage(t)
@@ -102,18 +165,19 @@ func TestV2FetchNegotiationRounds(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestV2BuildFetchArgsUnsupportedFeatures(t *testing.T) {
+func TestV2FetchUnsupportedFeatures(t *testing.T) {
 	t.Parallel()
 
+	// A v2 session whose server advertised no fetch features.
 	s := &StreamSession{version: protocol.V2}
 
-	_, err := s.buildFetchArgs(memory.NewStorage(), &FetchRequest{
+	err := s.Fetch(context.TODO(), memory.NewStorage(), &FetchRequest{
 		Wants:  []plumbing.Hash{plumbing.NewHash(basicMasterHash)},
 		Filter: "blob:none",
 	})
 	require.ErrorIs(t, err, ErrFilterNotSupported)
 
-	_, err = s.buildFetchArgs(memory.NewStorage(), &FetchRequest{
+	err = s.Fetch(context.TODO(), memory.NewStorage(), &FetchRequest{
 		Wants: []plumbing.Hash{plumbing.NewHash(basicMasterHash)},
 		Depth: 1,
 	})
