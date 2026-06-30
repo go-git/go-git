@@ -24,17 +24,16 @@ func WithVerifier(v plugin.Verifier) VerifyOption {
 	return func(c *verifyConfig) { c.verifier = v }
 }
 
-// signedObject is a Git object that carries an embedded signature and can
-// provide a reader over the bytes the signature was computed over.
-type signedObject interface {
-	EncodeWithoutSignature() (io.Reader, error)
-}
-
-// verifyObject reproduces the signed bytes of obj via EncodeWithoutSignature
-// and delegates the cryptographic check of signature to the configured
-// Verifier. The verifier comes from WithVerifier, or, when none is given, from
-// the plugin registered through plugin.ObjectVerifier.
-func verifyObject(ctx context.Context, obj signedObject, signature []byte, opts ...VerifyOption) (*plugin.Verification, error) {
+// Verify checks signature, a detached cryptographic signature, against the
+// bytes read from payload. The Verifier comes from WithVerifier, or, when none
+// is given, from the plugin registered through plugin.ObjectVerifier. It
+// returns ErrNotSigned when signature is empty.
+//
+// payload must yield the exact bytes the signature was computed over. For a Git
+// object that is its signature-stripped encoding, available as SignedPayload(o)
+// for a stored object or (*Commit).EncodeWithoutSignature /
+// (*Tag).EncodeWithoutSignature for an in-memory one.
+func Verify(ctx context.Context, payload io.Reader, signature []byte, opts ...VerifyOption) (*plugin.Verification, error) {
 	if len(signature) == 0 {
 		return nil, ErrNotSigned
 	}
@@ -58,10 +57,5 @@ func verifyObject(ctx context.Context, obj signedObject, signature []byte, opts 
 		}
 	}
 
-	message, err := obj.EncodeWithoutSignature()
-	if err != nil {
-		return nil, err
-	}
-
-	return v.Verify(ctx, message, signature)
+	return v.Verify(ctx, payload, signature)
 }

@@ -155,14 +155,20 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 //     representation prevails.
 func (t *Tag) EncodeWithoutSignature() (io.Reader, error) {
 	if t.matchesSource() {
-		src := t.src
-		return &signedReader{writeTo: func(w io.Writer) error {
-			return stripObjectSignatures(w, src, plumbing.TagObject)
-		}}, nil
+		return t.sourcePayload(), nil
 	}
 	return &signedReader{writeTo: func(w io.Writer) error {
 		return t.encodeTo(w, false)
 	}}, nil
+}
+
+// sourcePayload returns a reader over the source object's signature-stripped
+// bytes. See Commit.sourcePayload. The caller must ensure t.src is set.
+func (t *Tag) sourcePayload() io.Reader {
+	src := t.src
+	return &signedReader{writeTo: func(w io.Writer) error {
+		return stripObjectSignatures(w, src, plumbing.TagObject)
+	}}
 }
 
 // matchesSource reports whether t.src is set and re-decoding it produces a
@@ -238,11 +244,14 @@ func (t *Tag) encodeTo(w io.Writer, includeSig bool) (err error) {
 		}
 	}
 
-	if _, err = fmt.Fprint(w, "\n"); err != nil {
+	if _, err = io.WriteString(w, "\n"); err != nil {
 		return err
 	}
 
-	if _, err = fmt.Fprint(w, t.Message); err != nil {
+	// Write the message via io.WriteString rather than fmt: fmt copies the
+	// whole (potentially large) message into an internal buffer, whereas
+	// io.WriteString streams it straight to a StringWriter sink.
+	if _, err = io.WriteString(w, t.Message); err != nil {
 		return err
 	}
 
@@ -336,7 +345,11 @@ func (t *Tag) String() string {
 // plugin.ObjectVerifier. It returns ErrNotSigned when the tag carries no
 // signature.
 func (t *Tag) Verify(ctx context.Context, opts ...VerifyOption) (*plugin.Verification, error) {
-	return verifyObject(ctx, t, t.Signature, opts...)
+	payload, err := t.EncodeWithoutSignature()
+	if err != nil {
+		return nil, err
+	}
+	return Verify(ctx, payload, t.Signature, opts...)
 }
 
 // TagIter provides an iterator for a set of tags.

@@ -2,8 +2,34 @@ package object
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
+
+func Test_lastSignatureBlockOffset(t *testing.T) {
+	t.Parallel()
+	// lastSignatureBlockOffset must agree with parseSignedBytes on every input,
+	// including a message body longer than the bufio buffer (which forces the
+	// ReadSlice ErrBufferFull path).
+	inputs := [][]byte{
+		[]byte("Some message"),
+		[]byte("signed tag\n-----BEGIN PGP SIGNATURE-----\n\nx\n-----END PGP SIGNATURE-----"),
+		[]byte("msg\n-----BEGIN PGP SIGNATURE-----\na\n-----END PGP SIGNATURE-----\n" +
+			"-----BEGIN SSH SIGNATURE-----\nb\n-----END SSH SIGNATURE-----"),
+		[]byte(strings.Repeat("a", 70000) + "\n-----BEGIN PGP SIGNATURE-----\nx\n-----END PGP SIGNATURE-----"),
+		[]byte("-----BEGIN PGP SIGNATURE-----\nonly\n-----END PGP SIGNATURE-----"),
+		[]byte(""),
+	}
+	for i, in := range inputs {
+		got, err := lastSignatureBlockOffset(bytes.NewReader(in))
+		if err != nil {
+			t.Fatalf("input %d: %v", i, err)
+		}
+		if want := parseSignedBytes(in); got != want {
+			t.Errorf("input %d: lastSignatureBlockOffset() = %d, want %d", i, got, want)
+		}
+	}
+}
 
 func Test_isSignatureStart(t *testing.T) {
 	t.Parallel()

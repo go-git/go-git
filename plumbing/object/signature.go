@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 
@@ -14,6 +15,13 @@ import (
 // locate where a signature starts within an object; distinguishing the
 // specific scheme is the concern of a signature verifier, not of object
 // encoding.
+//
+// This list must cover every scheme Git appends inline to a tag: tag signature
+// stripping locates the trailing signature solely by these markers, so a tag
+// signed with an armor format not listed here would not be truncated and its
+// signature would leak into the signed payload. (Commit signatures are immune:
+// they live in the gpgsig/gpgsig-sha256 header and are stripped by header name,
+// regardless of scheme.)
 var signatureBegins = [][]byte{
 	[]byte("-----BEGIN PGP SIGNATURE-----"),
 	[]byte("-----BEGIN PGP MESSAGE-----"),
@@ -57,6 +65,14 @@ type countWriter struct {
 
 func (c *countWriter) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// WriteString forwards to the wrapped writer so a StringWriter sink (the
+// common case for the streaming WriteTo path) avoids a string-to-[]byte copy.
+func (c *countWriter) WriteString(s string) (int, error) {
+	n, err := io.WriteString(c.w, s)
 	c.n += int64(n)
 	return n, err
 }
@@ -131,6 +147,25 @@ func isSignatureHeader(line []byte) bool {
 		bytes.HasPrefix(line, []byte(headerpgp256+" "))
 }
 
+// SignedPayload returns a reader over the signature-stripped bytes of o — the
+// payload a commit or tag signature is computed over — read directly from o as
+// stored. The stripping rules are selected from o.Type(): a commit's signature
+// headers are dropped; a tag's inline trailing signature is truncated. The
+// returned reader streams via WriteTo, so the payload is never buffered, making
+// it suitable for verifying objects read straight from a store.
+//
+// It returns ErrUnsupportedObject for object types that carry no signature.
+func SignedPayload(o plumbing.EncodedObject) (io.Reader, error) {
+	switch o.Type() {
+	case plumbing.CommitObject, plumbing.TagObject:
+		return &signedReader{writeTo: func(w io.Writer) error {
+			return stripObjectSignatures(w, o, o.Type())
+		}}, nil
+	default:
+		return nil, ErrUnsupportedObject
+	}
+}
+
 // stripObjectSignatures streams src into dst, producing the byte sequence
 // over which a PGP/GPG signature is computed:
 //
@@ -143,11 +178,37 @@ func isSignatureHeader(line []byte) bool {
 //
 // The stripped bytes are streamed to w. Used by both
 // Commit.EncodeWithoutSignature and Tag.EncodeWithoutSignature to reproduce the
-// exact bytes the signature was computed over.
-//
-// Commit stripping is fully streaming (line by line). Tag stripping must read
-// the source in full to locate the trailing signature block before truncating.
+// exact bytes the signature was computed over. Both object types stream without
+// holding the payload in memory.
 func stripObjectSignatures(w io.Writer, src plumbing.EncodedObject, objType plumbing.ObjectType) (err error) {
+	if objType == plumbing.TagObject {
+		return stripTagSignature(w, src)
+	}
+
+	r, err := src.Reader()
+	if err != nil {
+		return err
+	}
+	defer ioutil.CheckClose(r, &err)
+
+	return stripHeaderSignatures(w, r)
+}
+
+// stripTagSignature streams src to w with the trailing inline signature
+// truncated and any gpgsig headers removed. The trailing signature can only be
+// located after seeing the whole object, so a first pass scans for it without
+// buffering any line, and a second pass streams the payload up to it.
+func stripTagSignature(w io.Writer, src plumbing.EncodedObject) (err error) {
+	scan, err := src.Reader()
+	if err != nil {
+		return err
+	}
+	sm, serr := lastSignatureBlockOffset(scan)
+	ioutil.CheckClose(scan, &serr)
+	if serr != nil {
+		return serr
+	}
+
 	r, err := src.Reader()
 	if err != nil {
 		return err
@@ -155,55 +216,100 @@ func stripObjectSignatures(w io.Writer, src plumbing.EncodedObject, objType plum
 	defer ioutil.CheckClose(r, &err)
 
 	var input io.Reader = r
-	if objType == plumbing.TagObject {
-		raw, err := io.ReadAll(r)
-		if err != nil {
-			return err
-		}
-		if sm := parseSignedBytes(raw); sm >= 0 {
-			raw = raw[:sm]
-		}
-		input = bytes.NewReader(raw)
+	if sm >= 0 {
+		input = io.LimitReader(r, int64(sm))
 	}
-
 	return stripHeaderSignatures(w, input)
+}
+
+// lastSignatureBlockOffset reports the byte offset of the last armored
+// signature block that starts at a line boundary in r, or -1 if there is none.
+// It scans with ReadSlice so no per-line allocation is made, even for large
+// single-line message bodies.
+func lastSignatureBlockOffset(r io.Reader) (int, error) {
+	br := sync.GetBufioReader(r)
+	defer sync.PutBufioReader(br)
+
+	offset, last := 0, -1
+	lineStart := true
+	for {
+		slice, err := br.ReadSlice('\n')
+		if len(slice) > 0 {
+			if lineStart && isSignatureStart(slice) {
+				last = offset
+			}
+			offset += len(slice)
+			// A nil error means the slice ended at '\n', so the next read
+			// begins a new line; ErrBufferFull means the line continues.
+			lineStart = err == nil
+		}
+
+		switch err {
+		case nil, bufio.ErrBufferFull:
+			continue
+		case io.EOF:
+			return last, nil
+		default:
+			return 0, err
+		}
+	}
 }
 
 // stripHeaderSignatures copies r to w, dropping canonical signature header
 // lines (gpgsig and gpgsig-sha256) and their continuation lines. Lines
 // past the blank line that closes the header block are copied verbatim.
+//
+// It scans with ReadSlice so no per-line allocation is made: the header lines
+// are read into the bufio reader's buffer and written straight through, and the
+// body is streamed with WriteTo. The skip/keep decision is taken only at a line
+// boundary; for a line split across reads (ErrBufferFull) the decision carries
+// to its remaining chunks.
 func stripHeaderSignatures(w io.Writer, r io.Reader) error {
 	br := sync.GetBufioReader(r)
 	defer sync.PutBufioReader(br)
 
-	var inBody, skipping bool
+	lineStart, skipping := true, false
 	for {
-		line, rerr := br.ReadBytes('\n')
-		if rerr != nil && rerr != io.EOF {
+		slice, rerr := br.ReadSlice('\n')
+		if rerr != nil && rerr != io.EOF && rerr != bufio.ErrBufferFull {
 			return rerr
 		}
 
-		write := true
-		if !inBody {
-			switch {
-			case skipping && len(line) > 0 && line[0] == ' ':
-				write = false
-			case isSignatureHeader(line):
-				skipping = true
-				write = false
-			case len(line) == 1 && line[0] == '\n':
-				skipping = false
-				inBody = true
-			default:
-				skipping = false
+		if len(slice) > 0 {
+			if lineStart {
+				switch {
+				case skipping && slice[0] == ' ':
+					// Continuation line of a skipped signature header.
+				case isSignatureHeader(slice):
+					skipping = true
+				case slice[0] == '\n':
+					// Blank line closes the header block. Emit it, then stream
+					// the body verbatim with WriteTo instead of reading it line
+					// by line, which would buffer large message lines.
+					if _, werr := w.Write(slice); werr != nil {
+						return werr
+					}
+					if rerr == io.EOF {
+						return nil
+					}
+					_, werr := br.WriteTo(w)
+					return werr
+				default:
+					skipping = false
+				}
 			}
+
+			if !skipping {
+				if _, werr := w.Write(slice); werr != nil {
+					return werr
+				}
+			}
+
+			// A nil error means the slice ended at '\n', so the next read begins
+			// a new line; ErrBufferFull means the current line continues.
+			lineStart = rerr == nil
 		}
 
-		if write && len(line) > 0 {
-			if _, werr := w.Write(line); werr != nil {
-				return werr
-			}
-		}
 		if rerr == io.EOF {
 			return nil
 		}

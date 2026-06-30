@@ -299,14 +299,23 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 //     representation prevails.
 func (c *Commit) EncodeWithoutSignature() (io.Reader, error) {
 	if c.matchesSource() {
-		src := c.src
-		return &signedReader{writeTo: func(w io.Writer) error {
-			return stripObjectSignatures(w, src, plumbing.CommitObject)
-		}}, nil
+		return c.sourcePayload(), nil
 	}
 	return &signedReader{writeTo: func(w io.Writer) error {
 		return c.encodeTo(w, false)
 	}}, nil
+}
+
+// sourcePayload returns a reader over the source object's signature-stripped
+// bytes. It reads the object exactly as stored, bypassing the mutation re-check
+// that EncodeWithoutSignature performs (a full re-decode of the source). The
+// caller must ensure c.src is set; EncodeWithoutSignature gates this behind
+// matchesSource, and ReadCommit pins a freshly decoded, immutable commit.
+func (c *Commit) sourcePayload() io.Reader {
+	src := c.src
+	return &signedReader{writeTo: func(w io.Writer) error {
+		return stripObjectSignatures(w, src, plumbing.CommitObject)
+	}}
 }
 
 // matchesSource reports whether c.src is set and re-decoding it produces a
@@ -432,7 +441,13 @@ func (c *Commit) encodeTo(w io.Writer, includeSig bool) (err error) {
 		}
 	}
 
-	if _, err = fmt.Fprintf(w, "\n\n%s", c.Message); err != nil {
+	if _, err = io.WriteString(w, "\n\n"); err != nil {
+		return err
+	}
+	// Write the message via io.WriteString rather than fmt: fmt copies the
+	// whole (potentially large) message into an internal buffer, whereas
+	// io.WriteString streams it straight to a StringWriter sink.
+	if _, err = io.WriteString(w, c.Message); err != nil {
 		return err
 	}
 
@@ -486,7 +501,11 @@ func (c *Commit) String() string {
 // plugin.ObjectVerifier. It returns ErrNotSigned when the commit carries no
 // signature.
 func (c *Commit) Verify(ctx context.Context, opts ...VerifyOption) (*plugin.Verification, error) {
-	return verifyObject(ctx, c, c.Signature, opts...)
+	payload, err := c.EncodeWithoutSignature()
+	if err != nil {
+		return nil, err
+	}
+	return Verify(ctx, payload, c.Signature, opts...)
 }
 
 // Less defines a compare function to determine which commit is 'earlier' by:

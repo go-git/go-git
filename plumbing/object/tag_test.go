@@ -832,6 +832,53 @@ tag message
 `,
 		},
 		{
+			// SSH-signed tag (gpg.format=ssh): the signature is an inline
+			// trailing sshsig block. Stripping is located by armor marker,
+			// so a non-PGP scheme must still be truncated.
+			name: "inline trailing SSH signature",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgij/EfHS8tCjolj5uEANX
+MKEQruIQWJb+8HVXwssA4=
+-----END SSH SIGNATURE-----
+`,
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
+			// X.509-signed tag (gpg.format=x509): the signature is an inline
+			// trailing PKCS#7 block armored as "SIGNED MESSAGE".
+			name: "inline trailing X.509 signature",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+-----BEGIN SIGNED MESSAGE-----
+MIIDZjCCAk6gAwIBAgIJALZ9Z3Z9Z3Z9MA0GCSqGSIb3DQEBCwUAMIGIMQswCQYD
+VQQGEwJTRTEOMAwGA1UECAwFVGV4YXM=
+-----END SIGNED MESSAGE-----
+`,
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+		},
+		{
 			// Compat-mode primary SHA-1 layout: gpgsig-sha256 header
 			// (SHA-256 sig) plus inline trailing PGP block (SHA-1 sig).
 			// Both are stripped to produce the verification payload.
