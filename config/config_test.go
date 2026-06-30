@@ -754,6 +754,21 @@ func TestUnmarshalIndexSkipHash(t *testing.T) {
 			input: "[core]\n\tbare = false\n",
 			want:  OptBoolUnset,
 		},
+		{
+			name:  "feature.manyFiles enables skipHash",
+			input: "[feature]\n\tmanyFiles = true\n",
+			want:  OptBoolTrue,
+		},
+		{
+			name:  "feature.manyFiles=false does not enable skipHash",
+			input: "[feature]\n\tmanyFiles = false\n",
+			want:  OptBoolUnset,
+		},
+		{
+			name:  "explicit index.skipHash overrides feature.manyFiles",
+			input: "[index]\n\tskipHash = false\n[feature]\n\tmanyFiles = true\n",
+			want:  OptBoolFalse,
+		},
 	}
 
 	for _, tc := range tests {
