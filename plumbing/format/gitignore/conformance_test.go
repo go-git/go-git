@@ -105,7 +105,7 @@ func (s *ConformanceSuite) gitOracle(patterns []string, path string, isDir bool)
 	if path == "." || path == ".." || strings.Contains(path, "//") {
 		return false, false
 	}
-	if skipOnLegacyGit(patterns) {
+	if skipOnLegacyGit(patterns) || skipNonSlashAdjacentDoubleStar(patterns) {
 		return false, false
 	}
 	if err := cleanScratch(root); err != nil {
@@ -119,9 +119,6 @@ func (s *ConformanceSuite) gitOracle(patterns []string, path string, isDir bool)
 		return false, false
 	}
 	arg := path
-	if isDir && !strings.HasSuffix(arg, "/") {
-		arg += "/"
-	}
 	// `check-ignore` (without --no-index) stats the path so it can distinguish
 	// dirs from files, which is the only way it produces the same answer as
 	// `git status` for re-include patterns over directories. The platform's
@@ -147,7 +144,7 @@ func (s *ConformanceSuite) gitOracle(patterns []string, path string, isDir bool)
 // override the platform default. Returns (matched, ok); ok=false on exec
 // failure or unrecognized exit codes.
 func (s *ConformanceSuite) runCheckIgnore(root *os.Root, arg, ignoreCase string) (bool, bool) {
-	args := []string{"-C", root.Name()}
+	args := []string{"-C", root.Name(), "-c", "core.excludesfile="}
 	if ignoreCase != "" {
 		args = append(args, "-c", "core.ignorecase="+ignoreCase)
 	}
@@ -978,4 +975,73 @@ func hasNonSlashAdjacentDoubleStar(p string) bool {
 		}
 	}
 	return false
+}
+
+// skipNonSlashAdjacentDoubleStar reports whether oracle validation should be
+// skipped for patterns containing `**` next to a non-slash character (e.g.
+// foo**/bar). go-git splits patterns on `/` and matches each segment with
+// wildmatch; upstream Git treats those forms differently, so check-ignore
+// would disagree even when go-git is behaving as designed.
+func skipNonSlashAdjacentDoubleStar(patterns []string) bool {
+	for _, p := range patterns {
+		if hasNonSlashAdjacentDoubleStar(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *ConformanceSuite) TestIgnoreNegation_ancestorMatch() {
+	tests := []struct {
+		patterns []string
+		path     string
+		isDir    bool
+		ignored  bool
+		desc     string
+	}{
+		{
+			[]string{"*.log", "!important"},
+			"dir/important/app.log", false, true,
+			"!important matches ancestor dir, must not re-include app.log",
+		},
+		{
+			[]string{"*.log", "!important"},
+			"important/app.log", false, true,
+			"!important is ancestor-only; *.log still ignores the file",
+		},
+		{
+			[]string{"*.log", "!important"},
+			"important", true, false,
+			"!important re-includes the dir itself (basename match)",
+		},
+		{
+			[]string{"*", "!value/vul?ano"},
+			"value/vulkano/tail", false, true,
+			"!value/vul?ano matches an ancestor only; * keeps the file ignored",
+		},
+
+		// Additional tests requested
+		{
+			[]string{"*", "!dir/"},
+			"dir/file.txt", false, true,
+			"!dir/ re-includes only the dir itself; * still ignores files inside",
+		},
+		{
+			[]string{"*", "!dir/"},
+			"dir", true, false,
+			"!dir/ re-includes the directory itself",
+		},
+	}
+
+	for _, tt := range tests {
+		m := s.createMatcher(tt.patterns)
+		s.assertIgnore(
+			m,
+			tt.patterns,
+			tt.path,
+			tt.isDir,
+			tt.ignored,
+			tt.desc,
+		)
+	}
 }

@@ -474,6 +474,9 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 		if p.dirOnly && !isDir && i == len(path)-1 {
 			return false
 		}
+		if i < len(path)-1 && p.inclusion {
+			continue
+		}
 		return true
 	}
 	return false
@@ -530,9 +533,15 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 			}
 		}
 	}
+
 	// Check dirOnly: either we consumed all path (len(path) == 0) or we matched a trailing **
-	if matched && p.dirOnly && !isDir && (len(path) == 0 || trailingStar) {
+	if matched && (len(path) == 0 || trailingStar) {
+		if p.dirOnly && !isDir {
+			matched = false
+		}
+	} else if matched && p.inclusion {
 		matched = false
 	}
+
 	return matched
 }
