@@ -3399,6 +3399,27 @@ func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted() {
 	s.Equal(Deleted, status.File("json/long.json").Staging)
 }
 
+func (s *WorktreeSuite) TestRemoveGlobRootFile() {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.NoError(err)
+
+	err = util.WriteFile(fs, "README", []byte("hello"), 0o644)
+	s.NoError(err)
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	_, err = w.Add("README")
+	s.NoError(err)
+
+	err = w.RemoveGlob("*")
+	s.NoError(err)
+
+	_, err = fs.Stat("README")
+	s.True(os.IsNotExist(err))
+}
+
 func (s *WorktreeSuite) TestMove() {
 	fs := memfs.New()
 	w := &Worktree{
