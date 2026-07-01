@@ -293,6 +293,10 @@ func (d *DotGit) ReflogWriter(name plumbing.ReferenceName) (billy.File, error) {
 func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 	p := d.fs.Join(logsPath, string(name))
 	err := d.fs.Remove(p)
+	if err == nil {
+		_ = d.removeEmptyParentDirs(p)
+	}
+
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -1147,6 +1151,9 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	_, err := d.fs.Stat(path)
 	if err == nil {
 		err = d.fs.Remove(path)
+		if err == nil {
+			_ = d.removeEmptyParentDirs(path)
+		}
 		// Drop down to remove it from the packed refs file, too.
 	}
 
@@ -1155,6 +1162,62 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	}
 
 	return d.rewritePackedRefsWithoutRef(name)
+}
+
+func (d *DotGit) removeEmptyParentDirs(path string) error {
+	for {
+		path = filepath.Dir(path)
+		if path == "." || path == "/" {
+			break
+		}
+
+		if d.isProtectedPath(path) {
+			break
+		}
+
+		files, err := d.fs.ReadDir(path)
+		if err != nil {
+			return err
+		}
+
+		if len(files) > 0 {
+			break
+		}
+
+		if err := d.fs.Remove(path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *DotGit) isProtectedPath(p string) bool {
+	// We use ToSlash to ensure we can compare it with our protected list
+	// regardless of the OS separator.
+	p = filepath.ToSlash(p)
+
+	protected := []string{
+		"refs/heads",
+		"refs/tags",
+		"refs/remotes",
+		"logs/refs/heads",
+		"logs/refs/tags",
+		"logs/refs/remotes",
+		"objects/info",
+		"objects/pack",
+		"refs",
+		"logs",
+		"objects",
+	}
+
+	for _, pt := range protected {
+		if p == pt {
+			return true
+		}
+	}
+
+	return false
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
