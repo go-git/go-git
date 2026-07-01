@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	maxTreeDepth      = 1024
-	startingStackSize = 8
+	maxTreeDepth           = 1024
+	startingStackSize      = 8
+	maxTreeEntriesPrealloc = 1 << 16 // 65536 entries ≈ 4.7 MiB worst case
 )
 
 // New errors defined by this package.
@@ -289,6 +290,14 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 	if o.Size() == 0 {
 		return nil
 	}
+
+	// Estimate number of entries based on object size and hash type.
+	// Entry format: mode(~6) + space(1) + name(~12 avg) + null(1) + hash.
+	hashSize := t.Hash.Size() // 20 for SHA1, 32 for SHA256
+	avgBytesPerEntry := 20 + hashSize
+	estimatedEntries := int(o.Size())*105/(avgBytesPerEntry*100) + 4
+	estimatedEntries = min(estimatedEntries, maxTreeEntriesPrealloc)
+	t.Entries = make([]TreeEntry, 0, estimatedEntries)
 
 	reader, err := o.Reader()
 	if err != nil {
