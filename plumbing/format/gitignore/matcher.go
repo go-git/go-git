@@ -25,6 +25,43 @@ func (m *matcher) Match(path []string, isDir bool) bool {
 		if match := m.patterns[i].Match(path, isDir); match > NoMatch {
 			return match == Exclude
 		}
+		// A directory-only inclusion such as !dir/ matches dir itself,
+		// but it can also reopen descendants ignored only by dir-only rules.
+		if dirOnlyInclusionMatchesAncestor(m.patterns[i], path) {
+			var hasDirOnlyExclusion bool
+			for j := i - 1; j >= 0; j-- {
+				if match := m.patterns[j].Match(path, isDir); match == Exclude {
+					if !isDirOnlyExclusion(m.patterns[j]) {
+						return true
+					}
+					hasDirOnlyExclusion = true
+				}
+			}
+
+			if hasDirOnlyExclusion {
+				return false
+			}
+		}
 	}
 	return false
+}
+
+func dirOnlyInclusionMatchesAncestor(p Pattern, path []string) bool {
+	pattern, ok := p.(*pattern)
+	if !ok || !pattern.dirOnly || !pattern.inclusion {
+		return false
+	}
+
+	for i := 1; i < len(path); i++ {
+		if pattern.Match(path[:i], true) == Include {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isDirOnlyExclusion(p Pattern) bool {
+	pattern, ok := p.(*pattern)
+	return ok && pattern.dirOnly && !pattern.inclusion
 }
