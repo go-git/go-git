@@ -179,6 +179,7 @@ type hunksGenerator struct {
 	current                     *hunk
 	hunks                       []*hunk
 	beforeContext, afterContext []string
+	funcName                    string
 }
 
 func newHunksGenerator(chunks []Chunk, ctxLines int) *hunksGenerator {
@@ -228,15 +229,14 @@ func (g *hunksGenerator) processHunk(i int, op Operation) {
 		return
 	}
 
-	var ctxPrefix string
 	linesBefore := len(g.beforeContext)
 	if linesBefore > g.ctxLines {
-		ctxPrefix = g.beforeContext[linesBefore-g.ctxLines-1]
+		g.funcName = g.findFuncName(linesBefore-g.ctxLines-1, g.funcName)
 		g.beforeContext = g.beforeContext[linesBefore-g.ctxLines:]
 		linesBefore = g.ctxLines
 	}
 
-	g.current = &hunk{ctxPrefix: strings.TrimSuffix(ctxPrefix, "\n")}
+	g.current = &hunk{ctxPrefix: strings.TrimSuffix(g.funcName, "\n")}
 	g.current.AddOp(Equal, g.beforeContext...)
 
 	switch op {
@@ -247,6 +247,28 @@ func (g *hunksGenerator) processHunk(i int, op Operation) {
 	}
 
 	g.beforeContext = nil
+}
+
+// findFuncName searches g.beforeContext backwards from idx for a line that
+// looks like a function or section header, matching git's default heuristic
+// (a line starting with a letter, '_' or '$'). If none is found, prev is kept,
+// so a hunk keeps the enclosing header found before an earlier hunk.
+func (g *hunksGenerator) findFuncName(idx int, prev string) string {
+	for i := idx; i >= 0; i-- {
+		if line := g.beforeContext[i]; isFuncLine(line) {
+			return line
+		}
+	}
+	return prev
+}
+
+func isFuncLine(line string) bool {
+	if line == "" {
+		return false
+	}
+	c := line[0]
+	return c == '_' || c == '$' ||
+		('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
 // addLineNumbers obtains the line numbers in a new chunk.
