@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -15,14 +16,17 @@ import (
 //
 // Sessions that negotiate Protocol v2 (version 2) implement this interface.
 // The Command method executes a named v2 command: req carries the
-// command-specific arguments and is encoded into the request, while resp
-// decodes the response. For example, GetRemoteRefs runs
-// Command(ctx, "ls-refs", lsRefsArgs, lsRefsOutput). The session builds the v2
+// command-specific arguments and is encoded into the request. It returns a
+// reader positioned at the response; the caller decodes the response and, for
+// streaming commands such as fetch, reads the packfile from the same reader,
+// then closes it. For example, ls-refs is run as
+// Command(ctx, "ls-refs", lsRefsArgs) followed by decoding a
+// packp.LsRefsOutput from the returned reader. The session builds the v2
 // request envelope (command name, the capabilities collected during the
-// handshake, delim-pkt, the arguments, and flush-pkt) and, for HTTP, handles
-// the response-end packet.
+// handshake, delim-pkt, the arguments, and flush-pkt). Closing the reader
+// releases the underlying transport resources (for HTTP, the response body).
 type Commander interface {
-	Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error
+	Command(ctx context.Context, cmd string, req packp.CommandArgs) (io.ReadCloser, error)
 }
 
 // Transport is implemented by transports that speak the Git pack

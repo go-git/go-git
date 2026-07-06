@@ -114,7 +114,7 @@ func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOp
 		}
 		refs, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
 		if err != nil {
-			return nil, err
+			return nil, s.wrapStderr(err)
 		}
 		if !forPush && !internal.HasHashRef(refs) {
 			return nil, ErrEmptyRemoteRepository
@@ -149,13 +149,19 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 			return err
 		}
 		// Each negotiation round reuses the persistent stream: Command writes
-		// the request and decodes the metadata, leaving s.r at the packfile.
+		// the request and returns a reader; decoding the metadata leaves it
+		// positioned at the packfile.
 		round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
-			out := &packp.FetchOutput{}
-			if err := s.Command(ctx, "fetch", args, out); err != nil {
+			rc, err := s.Command(ctx, "fetch", args)
+			if err != nil {
 				return nil, nil, err
 			}
-			return out, s.r, nil
+			out := &packp.FetchOutput{}
+			if err := out.Decode(rc); err != nil {
+				_ = rc.Close()
+				return nil, nil, err
+			}
+			return out, rc, nil
 		}
 		if err := internal.FetchV2(ctx, st, req, round); err != nil {
 			return s.wrapStderr(err)
@@ -182,14 +188,18 @@ func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRe
 }
 
 // Command implements Commander. It builds a Protocol v2 request envelope for
-// the named command, encodes it, and decodes the response. The request
-// carries the capabilities collected during the handshake (the agent and the
-// server's object-format), so callers only provide the command arguments.
+// the named command and encodes it, then returns a reader positioned at the
+// response. The request carries the capabilities collected during the
+// handshake (the agent and the server's object-format), so callers only
+// provide the command arguments. The caller decodes the response from the
+// returned reader and closes it when done; on a stream transport the reader
+// wraps the persistent connection, so Close is a no-op and the stream stays
+// open for the next command.
 //
 // Command is only valid on a session that negotiated Protocol v2.
-func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.CommandArgs) (io.ReadCloser, error) {
 	if s.version != protocol.V2 {
-		return ErrUnsupportedVersion
+		return nil, ErrUnsupportedVersion
 	}
 
 	cr := &packp.CommandRequest{
@@ -199,16 +209,10 @@ func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.Comma
 	}
 
 	if err := cr.Encode(ioutil.NewContextWriter(ctx, s.w)); err != nil {
-		return s.wrapStderr(err)
+		return nil, s.wrapStderr(err)
 	}
 
-	if resp != nil {
-		if err := resp.Decode(ioutil.NewContextReader(ctx, s.r)); err != nil {
-			return s.wrapStderr(err)
-		}
-	}
-
-	return nil
+	return ioutil.NewContextReadCloser(ctx, io.NopCloser(s.r)), nil
 }
 
 // commandCapabilities returns the capabilities the client sends with each v2
