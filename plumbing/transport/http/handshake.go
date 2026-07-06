@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -113,12 +114,12 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	isSmart := resp.Header.Get("Content-Type") == expected
 
 	if isSmart {
-		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer)
+		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer, &t.opts)
 	}
 	return handshakeDumb(resp, &sessReq, client, authorizer)
 }
 
-func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
+func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error, opts *Options) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
@@ -168,6 +169,9 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 			authorizer: authorizer,
 			version:    ver,
 			caps:       adv.Capabilities,
+
+			lowSpeedLimit: opts.LowSpeedLimit,
+			lowSpeedTime:  opts.LowSpeedTime,
 		}, nil
 	}
 
@@ -194,6 +198,9 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		version:    ver,
 		caps:       ar.Capabilities,
 		refs:       ar,
+
+		lowSpeedLimit: opts.LowSpeedLimit,
+		lowSpeedTime:  opts.LowSpeedTime,
 	}, nil
 }
 
@@ -234,6 +241,9 @@ type smartPackSession struct {
 	version    protocol.Version
 	caps       capability.List
 	refs       *packp.AdvRefs
+
+	lowSpeedLimit int64
+	lowSpeedTime  time.Duration
 }
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
@@ -393,19 +403,45 @@ func (s *smartPackSession) Archive(ctx context.Context, req *transport.ArchiveRe
 
 // httpResponseBody adapts an httpRequester to an io.ReadCloser positioned at
 // the POST response body: reads stream the body (firing the POST lazily on the
-// first read), and Close closes that body. If no POST fired (nothing was read),
-// Close is a no-op: there is no body to release. It is used both by Archive and
-// by the v2 Command reader. The paired httpRequester is the write side, whose
-// own Close fires the POST.
+// first read). Close releases the body without reading it, so an early Close
+// after a partial read never triggers a large download — this is the behaviour
+// the public Command and Archive readers expose to callers. If no POST fired
+// (nothing was read), Close is a no-op: there is no body to release. The paired
+// httpRequester is the write side, whose own Close fires the POST.
+//
+// DrainClose is the keep-alive variant used only on internal negotiation paths;
+// see its doc. httpResponseBody satisfies internal.DrainCloser so those paths
+// can opt into draining via a type assertion.
 type httpResponseBody struct{ req *httpRequester }
+
+var _ internal.DrainCloser = (*httpResponseBody)(nil)
 
 func (b *httpResponseBody) Read(p []byte) (int, error) { return b.req.Read(p) }
 
 func (b *httpResponseBody) Close() error {
-	if b.req.resp != nil {
-		return b.req.resp.Body.Close()
+	if b.req.resp == nil {
+		return nil
 	}
-	return nil
+	return b.req.resp.Body.Close()
+}
+
+// DrainClose drains any unread response bytes to EOF before closing, so
+// net/http can reuse the keep-alive connection for the next stateless-RPC
+// round. It is used only on internal keep-alive paths (v2 negotiation rounds
+// and ls-refs), where the response is a small metadata reply — never on the
+// packfile stream, error paths, or the public Command/Archive readers.
+//
+// Draining an incomplete or malformed response could block indefinitely under
+// a deadline-less context; this is bounded by the transport's low-speed guard
+// (Options.LowSpeedLimit/LowSpeedTime) when configured. The drain is
+// best-effort, so its error is ignored — a stalled drain simply forfeits
+// connection reuse.
+func (b *httpResponseBody) DrainClose() error {
+	if b.req.resp == nil {
+		return nil
+	}
+	_, _ = io.Copy(io.Discard, b.req.resp.Body)
+	return b.req.resp.Body.Close()
 }
 
 // httpRequester buffers writes and fires a POST on first Read or Close.
@@ -465,6 +501,9 @@ func (r *httpRequester) doPost() error {
 	if r.resp.StatusCode != http.StatusOK {
 		_ = r.resp.Body.Close()
 		return fmt.Errorf("http transport: POST %s unexpected status %d", serviceURL, r.resp.StatusCode)
+	}
+	if r.session.lowSpeedLimit > 0 && r.session.lowSpeedTime > 0 {
+		r.resp.Body = newLowSpeedBody(r.resp.Body, r.session.lowSpeedLimit, r.session.lowSpeedTime)
 	}
 	return nil
 }

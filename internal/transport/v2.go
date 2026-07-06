@@ -106,7 +106,7 @@ func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPre
 		_ = rc.Close()
 		return nil, err
 	}
-	_ = rc.Close()
+	drainClose(rc)
 
 	return out.References, nil
 }
@@ -233,14 +233,20 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 
 		if out.Packfile {
 			streamErr := streamPackfile(ctx, st, packReader, req.Progress)
-			closeReader(packReader)
 			if streamErr != nil {
+				// The stream aborted mid-packfile: the unread remainder may be
+				// a large partial pack, so close without draining.
+				closeReader(packReader)
 				return streamErr
 			}
+			// The pack was read in full; the remaining bytes are the sideband
+			// terminator. Drain them (best-effort, for connection reuse — not
+			// protocol validation) so the connection returns to the pool.
+			drainClose(packReader)
 			break
 		}
 
-		closeReader(packReader)
+		drainClose(packReader)
 		if args.Done {
 			return fmt.Errorf("transport: server sent no packfile after done")
 		}
@@ -272,6 +278,29 @@ func closeReader(r io.Reader) {
 	if c, ok := r.(io.Closer); ok {
 		_ = c.Close()
 	}
+}
+
+// DrainCloser is an io.Closer whose DrainClose consumes any unread bytes before
+// closing, so a pooled connection can be reused for the next request. The HTTP
+// transport implements it on its response body; stream transports (ssh, git,
+// file) do not, so drainClose falls back to a plain, non-draining Close for
+// them and never disturbs their persistent reader.
+type DrainCloser interface {
+	io.Closer
+	DrainClose() error
+}
+
+// drainClose drains and closes r on transports that support it (HTTP), enabling
+// keep-alive reuse for the next stateless-RPC round; on all other readers it is
+// a plain Close. It is used only where the unread remainder is a small metadata
+// reply (negotiation rounds, ls-refs) — never on the packfile stream or error
+// paths, where draining could download a large body.
+func drainClose(r io.Reader) {
+	if dc, ok := r.(DrainCloser); ok {
+		_ = dc.DrainClose()
+		return
+	}
+	closeReader(r)
 }
 
 // updateShallow merges a shallow-info update into st's shallow boundary.
