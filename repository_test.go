@@ -3279,6 +3279,48 @@ func (s *RepositorySuite) TestRepackObjectsWithNoDelete(c *C) {
 	s.testRepackObjects(c, time.Unix(0, 1), 3)
 }
 
+func (s *RepositorySuite) TestObjectLookupRefreshesPackIndexAfterExternalRepack(c *C) {
+	if testing.Short() {
+		c.Skip("skipping test in short mode.")
+	}
+
+	path := c.MkDir()
+	runGitOnPathC(c, path, "init", "-q")
+	runGitOnPathC(c, path, "config", "user.name", "go-git tests")
+	runGitOnPathC(c, path, "config", "user.email", "go-git@example.com")
+
+	c.Assert(os.WriteFile(filepath.Join(path, "f"), []byte("one\n"), 0o644), IsNil)
+	runGitOnPathC(c, path, "add", "f")
+	runGitOnPathC(c, path, "-c", "maintenance.auto=false", "commit", "-qm", "A")
+	runGitOnPathC(c, path, "repack", "-adq")
+
+	c.Assert(os.WriteFile(filepath.Join(path, "f"), []byte("two\n"), 0o644), IsNil)
+	runGitOnPathC(c, path, "add", "f")
+	runGitOnPathC(c, path, "-c", "maintenance.auto=false", "commit", "-qm", "B")
+
+	repo, err := PlainOpen(path)
+	c.Assert(err, IsNil)
+
+	head, err := repo.Head()
+	c.Assert(err, IsNil)
+	commitB, err := repo.CommitObject(head.Hash())
+	c.Assert(err, IsNil)
+	_, err = commitB.Parent(0)
+	c.Assert(err, IsNil)
+
+	runGitOnPathC(c, path, "repack", "-adq")
+
+	tree, err := commitB.Tree()
+	c.Assert(err, IsNil)
+	c.Assert(tree.Type(), Equals, plumbing.TreeObject)
+}
+
+func runGitOnPathC(c *C, path string, args ...string) {
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	out, err := cmd.CombinedOutput()
+	c.Assert(err, IsNil, Commentf("git %v: %s", args, out))
+}
+
 func ExecuteOnPath(c *C, path string, cmds ...string) error {
 	for _, cmd := range cmds {
 		err := executeOnPath(path, cmd)
