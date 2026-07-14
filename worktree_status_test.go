@@ -6,9 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,4 +89,30 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 
 	// Check whether the index was updated with the two new line breaks.
 	assert.Equal(t, uint32(len(content)+2), idx.Entries[0].Size)
+}
+
+// TestAddSubdirectoryForwardSlash verifies that Add("dir/foo") stores the
+// index entry with a forward-slash path. On Windows filepath.Clean converts
+// "dir/foo" to "dir\foo"; without filepath.ToSlash the cleaned path reaches
+// a filesystem, i.e. billy, which can treat the backslash as a literal
+// character rather than a separator.
+func TestAddSubdirectoryForwardSlash(t *testing.T) {
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), fs)
+	require.NoError(t, err)
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	err = util.WriteFile(w.Filesystem, "dir/foo", []byte("content"), 0644)
+	require.NoError(t, err)
+
+	_, err = w.Add("dir/foo")
+	require.NoError(t, err)
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	e, err := idx.Entry("dir/foo")
+	require.NoError(t, err)
+	assert.Equal(t, "dir/foo", e.Name)
 }
