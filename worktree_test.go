@@ -576,7 +576,7 @@ func (s *WorktreeSuite) TestCheckoutReplacesBlockingFinalSymlink() {
 		blob, err := object.DecodeBlob(blobObj)
 		require.NoError(t, err)
 
-		err = w.checkoutFile(&config.Config{}, w.filesystem, object.NewFile("tracked.txt", filemode.Regular, blob))
+		_, err = w.checkoutFile(&config.Config{}, w.filesystem, object.NewFile("tracked.txt", filemode.Regular, blob))
 		require.NoError(t, err)
 
 		got, err := fs.Open("tracked.txt")
