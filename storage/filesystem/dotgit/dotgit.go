@@ -86,35 +86,37 @@ var (
 	ErrReferenceNameEscape = errors.New("reference name escapes the reference storage")
 )
 
-// validReferenceName rejects reference names that cannot be safely turned
-// into a path under the .git directory. A loose reference is stored verbatim
-// at ".git/<name>", so a name carrying a "." or ".." path component, a volume
-// prefix, or a control character would let a crafted name — for instance one
-// advertised by a malicious remote — climb out of its reference sub-tree and
-// read, overwrite, or delete unrelated metadata such as .git/config. This is a
-// defence-in-depth check at the storage choke point, mirroring the containment
-// applied to submodule names in validSubmoduleName and canonical Git's
-// check_refname_format.
+// isPathSep reports whether r is a path separator in reference names.
+// It treats both '/' and '\\' as separators to harden against cross-OS paths.
+func isPathSep(r rune) bool { return r == '/' || r == '\\' }
+
+// validReferenceName rejects reference names that cannot be safely turned into
+// a path under the .git directory. A loose reference is stored verbatim at
+// ".git/<name>", so a crafted name — for instance one advertised by a malicious
+// remote — could climb out of its reference sub-tree and read, overwrite, or
+// delete unrelated metadata such as .git/config.
 //
-// The per-component check is delegated to pathutil.IsHFSDot and
-// pathutil.IsNTFSDot with "." as the needle, exactly as validSubmoduleName
-// does: besides the bare "." and ".." cases, these reject components that
-// still resolve to ".." after HFS+ Unicode normalisation (ignored code
-// points, e.g. ".<U+200C>.") or NTFS trailing-space/period/ADS
-// canonicalisation (e.g. ".. ", "..::$INDEX_ALLOCATION"). Because a name
-// can be authored on one OS and reach this layer on another, both checks
-// run unconditionally regardless of host OS.
+// The storage-safety gate is plumbing.ReferenceName.IsSafe, mirroring Git's
+// refname_is_safe: a name must be under refs/ without escaping it, or be a
+// [A-Z_] pseudo-ref. This alone rejects absolute, drive-prefixed, escaping and
+// single-level metadata names. On top of it, this adds filesystem-specific
+// hardening that IsSafe's literal check does not cover: control characters, and
+// components a case-insensitive/NTFS/HFS+ filesystem would fold back to "." or
+// ".." (trailing dots/spaces, Alternate Data Streams, ignorable Unicode code
+// points), delegated to pathutil.IsHFSDot and pathutil.IsNTFSDot with "." as
+// the needle — as validSubmoduleName does — and run regardless of host OS.
 func validReferenceName(name plumbing.ReferenceName) error {
+	if !name.IsSafe() {
+		return fmt.Errorf("%w: %q is not under refs/ nor a valid pseudo-ref", ErrReferenceNameEscape, string(name))
+	}
+
 	s := string(name)
 	for i := 0; i < len(s); i++ {
 		if s[i] < 0x20 || s[i] == 0x7f {
 			return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
 		}
 	}
-	if filepath.VolumeName(s) != "" {
-		return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
-	}
-	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
+	for _, part := range strings.FieldsFunc(s, isPathSep) {
 		// IsNTFSDot/IsHFSDot with a "." needle match ".." and its disguises
 		// but not a bare ".", so reject that component explicitly too.
 		if part == "." || pathutil.IsHFSDot(part, ".") || pathutil.IsNTFSDot(part, ".", "") {

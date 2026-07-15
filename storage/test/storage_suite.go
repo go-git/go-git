@@ -261,100 +261,100 @@ func (s *BaseStorageSuite) TestObjectStorerTxSetObjectAndRollback(c *C) {
 
 func (s *BaseStorageSuite) TestSetReferenceAndGetReference(c *C) {
 	err := s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
 	err = s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+		plumbing.NewReferenceFromStrings("refs/bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, IsNil)
 
-	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	e, err := s.Storer.Reference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
 func (s *BaseStorageSuite) TestCheckAndSetReference(c *C) {
 	err := s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+		plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, IsNil)
 
 	err = s.Storer.CheckAndSetReference(
-		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
-		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, IsNil)
 
-	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	e, err := s.Storer.Reference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
 func (s *BaseStorageSuite) TestCheckAndSetReferenceNil(c *C) {
 	err := s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+		plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, IsNil)
 
 	err = s.Storer.CheckAndSetReference(
-		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		nil,
 	)
 	c.Assert(err, IsNil)
 
-	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	e, err := s.Storer.Reference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
 func (s *BaseStorageSuite) TestCheckAndSetReferenceError(c *C) {
 	err := s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
+		plumbing.NewReferenceFromStrings("refs/foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
 	)
 	c.Assert(err, IsNil)
 
 	err = s.Storer.CheckAndSetReference(
-		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
-		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	c.Assert(err, Equals, storage.ErrReferenceHasChanged)
 
-	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	e, err := s.Storer.Reference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 }
 
 func (s *BaseStorageSuite) TestRemoveReference(c *C) {
 	err := s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
-	err = s.Storer.RemoveReference(plumbing.ReferenceName("foo"))
+	err = s.Storer.RemoveReference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, IsNil)
 
-	_, err = s.Storer.Reference(plumbing.ReferenceName("foo"))
+	_, err = s.Storer.Reference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 }
 
 func (s *BaseStorageSuite) TestRemoveReferenceNonExistent(c *C) {
 	err := s.Storer.SetReference(
-		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 	)
 	c.Assert(err, IsNil)
 
-	err = s.Storer.RemoveReference(plumbing.ReferenceName("nonexistent"))
+	err = s.Storer.RemoveReference(plumbing.ReferenceName("refs/nonexistent"))
 	c.Assert(err, IsNil)
 
-	e, err := s.Storer.Reference(plumbing.ReferenceName("foo"))
+	e, err := s.Storer.Reference(plumbing.ReferenceName("refs/foo"))
 	c.Assert(err, IsNil)
 	c.Assert(e.Hash().String(), Equals, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 }
 
 func (s *BaseStorageSuite) TestGetReferenceNotFound(c *C) {
-	r, err := s.Storer.Reference(plumbing.ReferenceName("bar"))
+	r, err := s.Storer.Reference(plumbing.ReferenceName("refs/bar"))
 	c.Assert(err, Equals, plumbing.ErrReferenceNotFound)
 	c.Assert(r, IsNil)
 }
