@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v5/internal/pathutil"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/storage"
@@ -79,7 +80,49 @@ var (
 	// resolve outside the modules/ subtree, mirroring canonical Git's
 	// "ignoring suspicious submodule name" defence.
 	ErrModuleNameEscape = errors.New("submodule name escapes modules/ directory")
+	// ErrReferenceNameEscape is returned when a reference name would
+	// resolve outside its reference sub-tree once turned into a path
+	// under the .git directory (e.g. a name with a ".." component).
+	ErrReferenceNameEscape = errors.New("reference name escapes the reference storage")
 )
+
+// validReferenceName rejects reference names that cannot be safely turned
+// into a path under the .git directory. A loose reference is stored verbatim
+// at ".git/<name>", so a name carrying a "." or ".." path component, a volume
+// prefix, or a control character would let a crafted name — for instance one
+// advertised by a malicious remote — climb out of its reference sub-tree and
+// read, overwrite, or delete unrelated metadata such as .git/config. This is a
+// defence-in-depth check at the storage choke point, mirroring the containment
+// applied to submodule names in validSubmoduleName and canonical Git's
+// check_refname_format.
+//
+// The per-component check is delegated to pathutil.IsHFSDot and
+// pathutil.IsNTFSDot with "." as the needle, exactly as validSubmoduleName
+// does: besides the bare "." and ".." cases, these reject components that
+// still resolve to ".." after HFS+ Unicode normalisation (ignored code
+// points, e.g. ".<U+200C>.") or NTFS trailing-space/period/ADS
+// canonicalisation (e.g. ".. ", "..::$INDEX_ALLOCATION"). Because a name
+// can be authored on one OS and reach this layer on another, both checks
+// run unconditionally regardless of host OS.
+func validReferenceName(name plumbing.ReferenceName) error {
+	s := string(name)
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
+		}
+	}
+	if filepath.VolumeName(s) != "" {
+		return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
+	}
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
+		// IsNTFSDot/IsHFSDot with a "." needle match ".." and its disguises
+		// but not a bare ".", so reject that component explicitly too.
+		if part == "." || pathutil.IsHFSDot(part, ".") || pathutil.IsNTFSDot(part, ".", "") {
+			return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
+		}
+	}
+	return nil
+}
 
 // Options holds configuration for the storage.
 type Options struct {
@@ -706,6 +749,10 @@ func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference
 }
 
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
+	if err := validReferenceName(r.Name()); err != nil {
+		return err
+	}
+
 	var content string
 	switch r.Type() {
 	case plumbing.SymbolicReference:
@@ -741,6 +788,10 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 
 // Ref returns the reference for a given reference name.
 func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if err := validReferenceName(name); err != nil {
+		return nil, err
+	}
+
 	ref, err := d.readReferenceFile(".", name.String())
 	if err == nil {
 		return ref, nil
@@ -804,6 +855,10 @@ func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, er
 
 // RemoveRef removes a reference by name.
 func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
+	if err := validReferenceName(name); err != nil {
+		return err
+	}
+
 	path := d.fs.Join(".", name.String())
 	_, err := d.fs.Stat(path)
 	if err == nil {
