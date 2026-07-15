@@ -69,6 +69,16 @@ func (s ObjectID) HexSize() int {
 	return s.format.HexSize()
 }
 
+// Format returns the object format of the ID. An ID created without an
+// explicit format reports the default object format, consistent with Size
+// and HexSize.
+func (s ObjectID) Format() format.ObjectFormat {
+	if s.format == format.UnsetObjectFormat {
+		return format.DefaultObjectFormat
+	}
+	return s.format
+}
+
 // Size returns the length of the resulting hash.
 func (s ObjectID) Size() int {
 	return s.format.Size()

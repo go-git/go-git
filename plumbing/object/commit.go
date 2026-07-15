@@ -37,9 +37,8 @@ type MessageEncoding string
 // http://shafiulazam.com/gitbook/1_the_git_object_model.html
 //
 // When a Commit is populated by Decode it retains a reference to the source
-// plumbing.EncodedObject so that EncodeWithoutSignature can reproduce the
-// exact bytes the signature was computed over. Refer to EncodeWithoutSignature
-// for more information.
+// plumbing.EncodedObject so that Verify can reproduce the exact bytes its
+// signature was computed over. Refer to Verify for more information.
 type Commit struct {
 	// Hash of the commit object.
 	Hash plumbing.Hash
@@ -67,8 +66,27 @@ type Commit struct {
 
 	s storer.EncodedObjectStorer
 	// src holds the encoded object this Commit was decoded from, used by
-	// EncodeWithoutSignature to recover the canonical signed bytes.
+	// Verify to recover the exact bytes the signature was computed over.
 	src plumbing.EncodedObject
+	// snap pins the payload-affecting field values captured by Decode, so
+	// Verify can prove the exported fields still mirror src without
+	// re-decoding it. Only captured for signed commits.
+	snap *commitSnapshot
+}
+
+// commitSnapshot holds the payload-affecting field values of a Commit as they
+// were decoded. Signature and SignatureSHA256 are excluded: they are not part
+// of the signed payload, so replacing them must not stop Verify from using
+// the stored source bytes.
+type commitSnapshot struct {
+	hash         plumbing.Hash
+	author       Signature
+	committer    Signature
+	message      string
+	treeHash     plumbing.Hash
+	encoding     MessageEncoding
+	parentHashes []plumbing.Hash
+	extraHeaders []ExtraHeader
 }
 
 // ExtraHeader holds any non-standard header
@@ -273,6 +291,22 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 		return fmt.Errorf("%w: missing tree header", ErrMalformedCommit)
 	}
 	c.Message = s.msgbuf.String()
+
+	// Only signed commits can take Verify's stored-bytes path, so the
+	// snapshot backing its mutation check is skipped for unsigned ones,
+	// keeping their decode allocation-free.
+	if len(c.Signature) > 0 || len(c.SignatureSHA256) > 0 {
+		c.snap = &commitSnapshot{
+			hash:         c.Hash,
+			author:       c.Author,
+			committer:    c.Committer,
+			message:      c.Message,
+			treeHash:     c.TreeHash,
+			encoding:     c.Encoding,
+			parentHashes: slices.Clone(c.ParentHashes),
+			extraHeaders: slices.Clone(c.ExtraHeaders),
+		}
+	}
 	return nil
 }
 
@@ -281,66 +315,35 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 	return c.encode(o, true)
 }
 
-// EncodeWithoutSignature returns a reader over the Commit's bytes without any
-// signature headers, i.e. the payload that signatures are computed over.
+// EncodeWithoutSignature returns a reader over the canonical encoding of the
+// Commit without any signature headers — the payload an object signature is
+// computed over when signing.
 //
-// Behaviour depends on how the Commit was created:
-//
-//   - For Commits populated by Decode whose exported fields still match the
-//     source object, the payload is streamed from the raw source bytes with
-//     gpgsig and gpgsig-sha256 headers (and their continuation lines)
-//     stripped verbatim. This preserves the exact bytes the signature was
-//     computed over, regardless of any normalization performed by Decode.
-//
-//   - For Commits constructed in memory, or for decoded Commits whose
-//     exported fields have been mutated, the payload is derived from the
-//     current struct fields. Mutation is detected by re-decoding the source
-//     object and comparing exported fields; if any differ, the in-memory
-//     representation prevails.
+// The payload is always derived from the current struct fields, matching the
+// bytes Encode stores: a signature computed over it stays verifiable after
+// the commit is encoded and stored. To reproduce the signed payload of an
+// object exactly as stored — what verification needs — use SignedPayload;
+// Verify does so automatically.
 func (c *Commit) EncodeWithoutSignature() (io.Reader, error) {
-	if c.matchesSource() {
-		src := c.src
-		return &signedReader{writeTo: func(w io.Writer) error {
-			return stripObjectSignatures(w, src, plumbing.CommitObject)
-		}}, nil
-	}
 	return &signedReader{writeTo: func(w io.Writer) error {
 		return c.encodeTo(w, false)
 	}}, nil
 }
 
-// matchesSource reports whether c.src is set and re-decoding it produces a
-// Commit whose payload-affecting exported fields are identical to those of
-// c. It is the auto-detection used by EncodeWithoutSignature to decide
-// between the raw bytes and the struct-encoded payload.
-//
-// Signature and SignatureSHA256 are intentionally excluded from the
-// comparison: neither path emits them, so mutating them must not trigger a
-// switch to struct-encode (which would change the byte layout the caller is
-// trying to verify against).
-func (c *Commit) matchesSource() bool {
-	if c.src == nil {
-		return false
-	}
-	fresh := &Commit{}
-	if err := fresh.Decode(c.src); err != nil {
-		return false
-	}
-	return c.Hash == fresh.Hash &&
-		signatureEqual(c.Author, fresh.Author) &&
-		signatureEqual(c.Committer, fresh.Committer) &&
-		c.Message == fresh.Message &&
-		c.TreeHash == fresh.TreeHash &&
-		c.Encoding == fresh.Encoding &&
-		slices.Equal(c.ParentHashes, fresh.ParentHashes) &&
-		slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders)
-}
-
-func signatureEqual(a, b Signature) bool {
-	return a.Name == b.Name &&
-		a.Email == b.Email &&
-		a.When.Unix() == b.When.Unix() &&
-		a.When.Format("-0700") == b.When.Format("-0700")
+// matchesSnapshot reports whether the payload-affecting exported fields still
+// equal the values captured when the commit was decoded, meaning c.src holds
+// the exact bytes the current field values were read from.
+func (c *Commit) matchesSnapshot() bool {
+	s := c.snap
+	return s != nil &&
+		c.Hash == s.hash &&
+		c.Author == s.author &&
+		c.Committer == s.committer &&
+		c.Message == s.message &&
+		c.TreeHash == s.treeHash &&
+		c.Encoding == s.encoding &&
+		slices.Equal(c.ParentHashes, s.parentHashes) &&
+		slices.Equal(c.ExtraHeaders, s.extraHeaders)
 }
 
 func isStandardHeader(key string) bool {
@@ -432,7 +435,13 @@ func (c *Commit) encodeTo(w io.Writer, includeSig bool) (err error) {
 		}
 	}
 
-	if _, err = fmt.Fprintf(w, "\n\n%s", c.Message); err != nil {
+	if _, err = io.WriteString(w, "\n\n"); err != nil {
+		return err
+	}
+	// Write the message via io.WriteString rather than fmt: fmt copies the
+	// whole (potentially large) message into an internal buffer, whereas
+	// io.WriteString streams it straight to a StringWriter sink.
+	if _, err = io.WriteString(w, c.Message); err != nil {
 		return err
 	}
 
@@ -485,8 +494,30 @@ func (c *Commit) String() string {
 // opts, or, when none is given, the verifier registered through
 // plugin.ObjectVerifier. It returns ErrNotSigned when the commit carries no
 // signature.
+//
+// For a commit populated by Decode whose exported fields have not been
+// mutated since, the payload is streamed from the source bytes exactly as
+// stored, the returned Verification attests the commit's object id in Object,
+// and ErrObjectIntegrity is returned if the source bytes no longer hash to
+// that id. For a commit built in memory — or mutated after decoding — the
+// payload is the canonical encoding of the current fields, the same bytes
+// signing covers, and Object is left zero.
 func (c *Commit) Verify(ctx context.Context, opts ...VerifyOption) (*plugin.Verification, error) {
-	return verifyObject(ctx, c, c.Signature, opts...)
+	sig := signatureForFormat(c.Hash.Format(), c.Signature, c.SignatureSHA256)
+	if c.matchesSnapshot() {
+		v, err := Verify(ctx, attestedPayload(c.src, c.Hash), sig, opts...)
+		if err != nil {
+			return nil, err
+		}
+		v.Object = c.Hash
+		return v, nil
+	}
+
+	payload, err := c.EncodeWithoutSignature()
+	if err != nil {
+		return nil, err
+	}
+	return Verify(ctx, payload, sig, opts...)
 }
 
 // Less defines a compare function to determine which commit is 'earlier' by:

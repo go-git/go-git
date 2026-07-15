@@ -340,6 +340,7 @@ change
 		s.NoError(err)
 		commit.Hash = obj.Hash()
 		commit.src = obj
+		commit.snap = newCommit.snap
 		s.Equal(commit, newCommit)
 	}
 }
@@ -922,7 +923,7 @@ initial commit
 `,
 		},
 		{
-			name: "raw bytes preserved when only Signature is mutated",
+			name: "signature-only mutation does not affect the payload",
 			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 author John Doe <john.doe@example.com> 1755280730 -0700
 committer John Doe <john.doe@example.com> 1755280730 -0700
@@ -947,7 +948,7 @@ initial commit
 `,
 		},
 		{
-			name: "timezone-only change triggers struct-encode",
+			name: "timezone change is reflected in the payload",
 			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 author John Doe <john.doe@example.com> 1755280730 -0700
 committer John Doe <john.doe@example.com> 1755280730 -0700
@@ -970,7 +971,7 @@ initial commit
 `,
 		},
 		{
-			name: "field mutation triggers struct-encode",
+			name: "field mutation is reflected in the payload",
 			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 author John Doe <john.doe@example.com> 1755280730 -0700
 committer John Doe <john.doe@example.com> 1755280730 -0700

@@ -66,6 +66,24 @@ func benchSignedTag(tb testing.TB, bodySize int) *Tag {
 	return decoded
 }
 
+// payloadLen returns the number of bytes the verifier processes for obj (the
+// signature-stripped payload), used as the throughput basis via b.SetBytes.
+func payloadLen(tb testing.TB, obj interface {
+	EncodeWithoutSignature() (io.Reader, error)
+},
+) int64 {
+	tb.Helper()
+	r, err := obj.EncodeWithoutSignature()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	n, err := io.Copy(io.Discard, r)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return n
+}
+
 var benchSizes = []int{200, 4 << 10, 256 << 10}
 
 func BenchmarkCommitVerify(b *testing.B) {
@@ -73,6 +91,7 @@ func BenchmarkCommitVerify(b *testing.B) {
 	for _, size := range benchSizes {
 		c := benchSignedCommit(b, size)
 		b.Run(fmt.Sprintf("body=%d", size), func(b *testing.B) {
+			b.SetBytes(payloadLen(b, c))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
@@ -89,6 +108,7 @@ func BenchmarkTagVerify(b *testing.B) {
 	for _, size := range benchSizes {
 		tag := benchSignedTag(b, size)
 		b.Run(fmt.Sprintf("body=%d", size), func(b *testing.B) {
+			b.SetBytes(payloadLen(b, tag))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {

@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"io"
+
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 const objectVerifierPlugin Name = "object-verifier"
@@ -34,6 +36,14 @@ type Verification struct {
 	// Details carries scheme-specific data, for example an *openpgp.Entity
 	// for OpenPGP signatures. Callers type-assert on it based on Method.
 	Details any
+	// Object is the ID of the stored object whose bytes were verified. The
+	// object verification entry points (object.Commit.Verify and
+	// object.Tag.Verify) set it only when the payload was streamed from a
+	// stored object and its bytes were confirmed to hash to this ID. A zero
+	// Object means the payload was the canonical re-encoding of in-memory
+	// state, which no stored object is known to correspond to. Verifier
+	// implementations leave it unset.
+	Object plumbing.Hash
 }
 
 // Verifier validates a detached signature over message and returns information

@@ -178,11 +178,16 @@ type Verification struct {
     Signer  string        // scheme-neutral identity (fingerprint, principal, ...)
     Method  SignatureType // OpenPGP / SSH / X509
     Details any           // scheme-specific data; type-assert on Method
+    Object  plumbing.Hash // id of the stored object the verification attests
 }
 ```
 
 Composition such as a chain of keys, or dispatching on the signature scheme, is
-the responsibility of an implementation rather than the interface.
+the responsibility of an implementation rather than the interface. So is
+signature-block policy: go-git core does not inspect the signature it hands
+over, so a verifier that must reject payloads carrying multiple concatenated
+signature blocks — as upstream Git and the off-tree OpenPGP verifier do — has
+to enforce that itself.
 
 Register a `Verifier` to make it the default for verifying commits and tags:
 
@@ -208,6 +213,13 @@ pass `object.WithVerifier` to supply one explicitly:
 v, err := commit.Verify(ctx)                              // registered verifier
 v, err := tag.Verify(ctx, object.WithVerifier(myVerifier)) // explicit verifier
 ```
+
+When the object was decoded from a store and its fields have not been mutated,
+`Verify` streams the payload from the stored bytes, confirms they still hash to
+the object id (returning `object.ErrObjectIntegrity` otherwise), and sets
+`Verification.Object` to the attested id. Callers that must bind decisions to a
+specific object should check that field rather than the struct's mutable
+fields. A zero `Object` means the payload was re-encoded from in-memory state.
 
 go-git core ships only the verification contract and is scheme-agnostic.
 Concrete verifiers live off-tree in the [`go-git/x`](https://github.com/go-git/x)
