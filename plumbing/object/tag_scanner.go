@@ -187,7 +187,7 @@ func scanTagHeaders(s *tagScanner) (tagState, error) {
 		// Out-of-canonical-position duplicates are dropped, mirroring the
 		// strict ordering of upstream's parse_tag_buffer.
 	case headerpgp256:
-		s.t.SignatureSHA256 += string(data) + "\n"
+		s.t.SignatureSHA256 = append(append(s.t.SignatureSHA256, data...), '\n')
 		next = scanTagPgp256Cont
 	default:
 		// Unknown header — silently dropped (the Tag struct does not
@@ -212,7 +212,7 @@ func scanTagPgp256Cont(s *tagScanner) (tagState, error) {
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
-		s.t.SignatureSHA256 += string(line[1:])
+		s.t.SignatureSHA256 = append(s.t.SignatureSHA256, line[1:]...)
 		if err == io.EOF {
 			return nil, nil
 		}

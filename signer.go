@@ -3,13 +3,11 @@ package git
 import (
 	"context"
 	"io"
-
-	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // signableObject is an object which can be signed.
 type signableObject interface {
-	EncodeWithoutSignature(o plumbing.EncodedObject) error
+	EncodeWithoutSignature() (io.Reader, error)
 }
 
 // Signer is an interface for signing git objects.
@@ -23,15 +21,11 @@ type Signer interface {
 }
 
 func signObject(signer Signer, obj signableObject) ([]byte, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := obj.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	r, err := encoded.Reader()
+	message, err := obj.EncodeWithoutSignature()
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: thread a caller-supplied context once Worktree.Commit accepts one.
-	return signer.Sign(context.TODO(), r)
+	return signer.Sign(context.TODO(), message)
 }

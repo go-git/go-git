@@ -5,20 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
-
-	"github.com/ProtonMail/go-crypto/openpgp"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 const (
-	beginpgp       string = "-----BEGIN PGP SIGNATURE-----"
-	endpgp         string = "-----END PGP SIGNATURE-----"
 	headerpgp      string = "gpgsig"
 	headerpgp256   string = "gpgsig-sha256"
 	headerencoding string = "encoding"
@@ -51,11 +49,11 @@ type Commit struct {
 	// Author.
 	Committer Signature
 	// Signature is the cryptographic signature of the commit (e.g. SSH, X.509).
-	Signature string
+	Signature []byte
 	// SignatureSHA256 is the SHA-256 cryptographic signature of the commit,
 	// stored under the "gpgsig-sha256" header. It may be present alongside
 	// Signature on commits produced in hash-algorithm compatibility mode.
-	SignatureSHA256 string
+	SignatureSHA256 []byte
 	// Message is the commit message, contains arbitrary text.
 	Message string
 	// TreeHash is the hash of the root tree of the commit.
@@ -283,9 +281,8 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 	return c.encode(o, true)
 }
 
-// EncodeWithoutSignature exports a Commit into a plumbing.EncodedObject
-// without any signature headers, producing the payload that PGP/GPG
-// signatures are computed over.
+// EncodeWithoutSignature returns a reader over the Commit's bytes without any
+// signature headers, i.e. the payload that signatures are computed over.
 //
 // Behaviour depends on how the Commit was created:
 //
@@ -300,11 +297,16 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 //     current struct fields. Mutation is detected by re-decoding the source
 //     object and comparing exported fields; if any differ, the in-memory
 //     representation prevails.
-func (c *Commit) EncodeWithoutSignature(o plumbing.EncodedObject) error {
+func (c *Commit) EncodeWithoutSignature() (io.Reader, error) {
 	if c.matchesSource() {
-		return stripObjectSignatures(o, c.src, plumbing.CommitObject)
+		src := c.src
+		return &signedReader{writeTo: func(w io.Writer) error {
+			return stripObjectSignatures(w, src, plumbing.CommitObject)
+		}}, nil
 	}
-	return c.encode(o, false)
+	return &signedReader{writeTo: func(w io.Writer) error {
+		return c.encodeTo(w, false)
+	}}, nil
 }
 
 // matchesSource reports whether c.src is set and re-decoding it produces a
@@ -359,6 +361,12 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 
 	defer ioutil.CheckClose(w, &err)
 
+	return c.encodeTo(w, includeSig)
+}
+
+// encodeTo writes the commit's canonical bytes to w, including the gpgsig and
+// gpgsig-sha256 signature headers only when includeSig is true.
+func (c *Commit) encodeTo(w io.Writer, includeSig bool) (err error) {
 	if _, err = fmt.Fprintf(w, "tree %s\n", c.TreeHash.String()); err != nil {
 		return err
 	}
@@ -400,7 +408,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		}
 	}
 
-	if c.Signature != "" && includeSig {
+	if len(c.Signature) > 0 && includeSig {
 		if _, err = fmt.Fprint(w, "\n"+headerpgp+" "); err != nil {
 			return err
 		}
@@ -409,21 +417,17 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		// newline. Use join for this so it's clear that a newline should not be
 		// added after this section, as it will be added when the message is
 		// printed.
-		signature := strings.TrimSuffix(c.Signature, "\n")
-		lines := strings.Split(signature, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+		if _, err = w.Write(indentSignature(c.Signature)); err != nil {
 			return err
 		}
 	}
 
-	if c.SignatureSHA256 != "" && includeSig {
+	if len(c.SignatureSHA256) > 0 && includeSig {
 		if _, err = fmt.Fprint(w, "\n"+headerpgp256+" "); err != nil {
 			return err
 		}
 
-		signature := strings.TrimSuffix(c.SignatureSHA256, "\n")
-		lines := strings.Split(signature, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+		if _, err = w.Write(indentSignature(c.SignatureSHA256)); err != nil {
 			return err
 		}
 	}
@@ -477,41 +481,12 @@ func (c *Commit) String() string {
 	)
 }
 
-// ErrMultipleSignatures is returned by Verify when the commit carries more
-// than one armored signature block. Mirrors upstream's parse_gpg_output
-// rejection of GOODSIG/BADSIG status lines after the first
-// (gpg-interface.c:257-269): multi-signature commits are intentionally
-// unsupported because their provenance cannot be reduced to a single
-// authoritative signer.
-var ErrMultipleSignatures = errors.New("commit has multiple signatures")
-
-// Verify performs PGP verification of the commit with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on success.
-func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	if countSignatureBlocks([]byte(c.Signature)) > 1 {
-		return nil, ErrMultipleSignatures
-	}
-
-	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract signature.
-	signature := strings.NewReader(c.Signature)
-
-	encoded := &plumbing.MemoryObject{}
-	// Encode commit components, excluding signature and get a reader object.
-	if err := c.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	er, err := encoded.Reader()
-	if err != nil {
-		return nil, err
-	}
-
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+// Verify checks the signature of the commit using the Verifier provided via
+// opts, or, when none is given, the verifier registered through
+// plugin.ObjectVerifier. It returns ErrNotSigned when the commit carries no
+// signature.
+func (c *Commit) Verify(ctx context.Context, opts ...VerifyOption) (*plugin.Verification, error) {
+	return verifyObject(ctx, c, c.Signature, opts...)
 }
 
 // Less defines a compare function to determine which commit is 'earlier' by:
