@@ -17,6 +17,10 @@ var ErrNotSigned = errors.New("object: object is not signed")
 // substituted object.
 var ErrObjectIntegrity = errors.New("object: source bytes do not hash to the object id")
 
+// ErrNilVerification is returned when a Verifier reports success but yields a
+// nil Verification, breaking the plugin.Verifier contract.
+var ErrNilVerification = errors.New("object: verifier returned nil verification")
+
 // VerifyOption configures signature verification.
 type VerifyOption func(*verifyConfig)
 
@@ -63,7 +67,14 @@ func Verify(ctx context.Context, payload io.Reader, signature []byte, opts ...Ve
 		}
 	}
 
-	return v.Verify(ctx, payload, signature)
+	verification, err := v.Verify(ctx, payload, signature)
+	if err != nil {
+		return nil, err
+	}
+	if verification == nil {
+		return nil, ErrNilVerification
+	}
+	return verification, nil
 }
 
 // signatureForFormat returns the embedded commit signature that covers an

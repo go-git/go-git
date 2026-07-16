@@ -365,6 +365,34 @@ func signedTag(signature []byte) *Tag {
 	}
 }
 
+func TestCommitVerifyNilVerification(t *testing.T) {
+	t.Parallel()
+
+	enc := &plumbing.MemoryObject{}
+	require.NoError(t, signedCommit(testSignature).Encode(enc))
+	decoded := &Commit{}
+	require.NoError(t, decoded.Decode(enc))
+
+	// A broken verifier returning (nil, nil) must surface as an error, not a
+	// panic when the stored-bytes path attests the object id.
+	fv := &fakeVerifier{}
+	_, err := decoded.Verify(context.Background(), WithVerifier(fv))
+	assert.ErrorIs(t, err, ErrNilVerification)
+}
+
+func TestTagVerifyNilVerification(t *testing.T) {
+	t.Parallel()
+
+	enc := &plumbing.MemoryObject{}
+	require.NoError(t, signedTag(testSignature).Encode(enc))
+	decoded := &Tag{}
+	require.NoError(t, decoded.Decode(enc))
+
+	fv := &fakeVerifier{}
+	_, err := decoded.Verify(context.Background(), WithVerifier(fv))
+	assert.ErrorIs(t, err, ErrNilVerification)
+}
+
 func TestCommitVerifyAttestsStoredObject(t *testing.T) {
 	t.Parallel()
 

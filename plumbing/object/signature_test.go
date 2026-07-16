@@ -171,3 +171,21 @@ func FuzzParseSignedBytes(f *testing.F) {
 		parseSignedBytes(input)
 	})
 }
+
+func FuzzLastSignatureBlockOffset(f *testing.F) {
+	for _, begin := range signatureBegins {
+		f.Add(begin)
+	}
+	f.Add([]byte("msg\n-----BEGIN PGP SIGNATURE-----\na\n-----END PGP SIGNATURE-----\n"))
+	f.Add([]byte("\n\n-----BEGIN SSH SIGNATURE-----"))
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+		got, err := lastSignatureBlockOffset(bytes.NewReader(input))
+		if err != nil {
+			t.Fatalf("lastSignatureBlockOffset() error = %v", err)
+		}
+		if want := parseSignedBytes(input); got != want {
+			t.Errorf("lastSignatureBlockOffset() = %d, parseSignedBytes() = %d", got, want)
+		}
+	})
+}
