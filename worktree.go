@@ -1030,6 +1030,31 @@ func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File,
 	defer ioutil.CheckClose(src, &err)
 
 	if cfg.Core.AutoCRLF == "true" {
+		const maxBufferedBlob = 1 << 20
+
+		if object.Size > maxBufferedBlob {
+			br := sync.GetBufioReader(src)
+			defer sync.PutBufioReader(br)
+
+			stat, err := convert.GetStat(br)
+			if err != nil {
+				return err
+			}
+
+			src, err = object.Reader()
+			if err != nil {
+				return err
+			}
+			defer ioutil.CheckClose(src, &err)
+
+			if !stat.IsBinary() {
+				dst = convert.NewCRLFWriter(dst)
+			}
+
+			_, err = ioutil.CopyBufferPool(dst, src)
+			return err
+		}
+
 		buf := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(buf)
 

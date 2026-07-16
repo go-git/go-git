@@ -15,13 +15,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-func setupAutoCRLFCheckoutRepo(b *testing.B) (files []*object.File, cfg *config.Config) {
+func setupAutoCRLFCheckoutRepo(b *testing.B, numFiles, fileSize int) (files []*object.File, cfg *config.Config) {
 	b.Helper()
-
-	const (
-		numFiles = 200
-		fileSize = 256 << 10
-	)
 
 	sourceDir := filepath.Join(b.TempDir(), "source")
 	sourceRepo, err := PlainInit(sourceDir, false)
@@ -65,9 +60,8 @@ func setupAutoCRLFCheckoutRepo(b *testing.B) (files []*object.File, cfg *config.
 	return files, cfg
 }
 
-func BenchmarkCheckoutAutoCRLF(b *testing.B) {
-	files, cfg := setupAutoCRLFCheckoutRepo(b)
-
+func checkoutAutoCRLFBench(b *testing.B, files []*object.File, cfg *config.Config) {
+	b.Helper()
 	b.ReportAllocs()
 	b.ResetTimer()
 
@@ -80,4 +74,14 @@ func BenchmarkCheckoutAutoCRLF(b *testing.B) {
 			require.NoError(b, dst.Close())
 		}
 	}
+}
+
+func BenchmarkCheckoutAutoCRLF(b *testing.B) {
+	files, cfg := setupAutoCRLFCheckoutRepo(b, 200, 256<<10)
+	checkoutAutoCRLFBench(b, files, cfg)
+}
+
+func BenchmarkCheckoutAutoCRLFLarge(b *testing.B) {
+	files, cfg := setupAutoCRLFCheckoutRepo(b, 8, 4<<20)
+	checkoutAutoCRLFBench(b, files, cfg)
 }
