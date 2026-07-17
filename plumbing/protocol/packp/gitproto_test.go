@@ -102,3 +102,25 @@ func TestValidateEmptyGitProtoRequest(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestEncodeGitProtoRequestRejectsControlBytes(t *testing.T) {
+	t.Parallel()
+	// A git:// URL such as "git://host/repo%00host=evil%00%00version=2"
+	// decodes to this Pathname; encoding it verbatim would append a second
+	// host= selector and extra parameters to the single daemon request.
+	cases := []GitProtoRequest{
+		{RequestCommand: "git-upload-pack", Pathname: "/repo\x00host=evil"},
+		{RequestCommand: "git-upload-pack", Pathname: "/repo", Host: "host\x00evil"},
+		{RequestCommand: "git-upload-pack", Pathname: "/repo\nhost=evil"},
+		{RequestCommand: "git-upload-pack", Pathname: "/repo", ExtraParams: []string{"version=2\x00inject"}},
+	}
+	for _, p := range cases {
+		var buf bytes.Buffer
+		if err := p.Encode(&buf); err == nil {
+			t.Fatalf("expected error for %+v, got encoded %q", p, buf.String())
+		}
+		if buf.Len() != 0 {
+			t.Fatalf("expected no bytes written on rejection, got %q", buf.String())
+		}
+	}
+}

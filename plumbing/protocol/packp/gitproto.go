@@ -33,6 +33,42 @@ func (g *GitProtoRequest) validate() error {
 		return fmt.Errorf("%w: empty request command", ErrInvalidGitProtoRequest)
 	}
 
+	// The request is a single pkt-line whose fields are separated by NUL
+	// bytes ("<command> <pathname>\x00host=<host>\x00\x00<params>..."). A
+	// control byte in any field breaks that framing or splices in extra
+	// NUL-delimited fields (a second host=, additional parameters) that the
+	// caller never set. A git:// URL with a percent-encoded NUL, for example
+	// "git://host/repo%00host=evil", decodes into exactly such a Pathname, so
+	// refuse control bytes in every field before encoding.
+	if err := validateGitProtoField("request command", g.RequestCommand); err != nil {
+		return err
+	}
+	if err := validateGitProtoField("pathname", g.Pathname); err != nil {
+		return err
+	}
+	if err := validateGitProtoField("host", g.Host); err != nil {
+		return err
+	}
+	for _, p := range g.ExtraParams {
+		if err := validateGitProtoField("extra parameter", p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateGitProtoField rejects a request field containing an ASCII control
+// byte (0x00-0x1f or 0x7f). Such a byte would break the NUL-framed pkt-line or
+// inject additional fields; no valid command, path, host, or parameter
+// contains one. The rejected range matches the worktree path validator.
+func validateGitProtoField(name, value string) error {
+	for i := 0; i < len(value); i++ {
+		if value[i] < 0x20 || value[i] == 0x7f {
+			return fmt.Errorf("%w: %s contains control byte %#02x",
+				ErrInvalidGitProtoRequest, name, value[i])
+		}
+	}
 	return nil
 }
 
