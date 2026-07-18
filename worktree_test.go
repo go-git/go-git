@@ -556,6 +556,64 @@ func (s *WorktreeSuite) TestCheckoutSymlink() {
 	s.NoError(err)
 }
 
+func (s *WorktreeSuite) TestCheckoutReplacesBlockingFinalSymlink() {
+	run := func(t *testing.T, fs billy.Filesystem) {
+		t.Helper()
+
+		w := &Worktree{
+			r:          s.Repository,
+			filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+		}
+
+		require.NoError(t, util.WriteFile(fs, "target.txt", []byte("keep"), 0o644))
+		require.NoError(t, fs.Symlink("target.txt", "tracked.txt"))
+
+		blobObj := &plumbing.MemoryObject{}
+		blobObj.SetType(plumbing.BlobObject)
+		_, err := blobObj.Write([]byte("replacement"))
+		require.NoError(t, err)
+
+		blob, err := object.DecodeBlob(blobObj)
+		require.NoError(t, err)
+
+		err = w.checkoutFile(&config.Config{}, w.filesystem, object.NewFile("tracked.txt", filemode.Regular, blob))
+		require.NoError(t, err)
+
+		got, err := fs.Open("tracked.txt")
+		require.NoError(t, err)
+		defer func() { _ = got.Close() }()
+
+		content, err := io.ReadAll(got)
+		require.NoError(t, err)
+		assert.Equal(t, "replacement", string(content))
+
+		target, err := fs.Open("target.txt")
+		require.NoError(t, err)
+		defer func() { _ = target.Close() }()
+
+		targetContent, err := io.ReadAll(target)
+		require.NoError(t, err)
+		assert.Equal(t, "keep", string(targetContent))
+
+		fi, err := fs.Lstat("tracked.txt")
+		require.NoError(t, err)
+		assert.Zero(t, fi.Mode()&os.ModeSymlink)
+	}
+
+	s.Run("memfs", func() {
+		run(s.T(), memfs.New())
+	})
+
+	s.Run("osfs", func() {
+		if runtime.GOOS == "windows" {
+			s.T().Skip("git doesn't support symlinks by default in windows")
+		}
+
+		dir := s.T().TempDir()
+		run(s.T(), osfs.New(dir))
+	})
+}
+
 func TestCheckoutSymlinkArbitraryTarget(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git doesn't support symlinks by default in windows")
