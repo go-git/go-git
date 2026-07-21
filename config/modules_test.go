@@ -15,33 +15,114 @@ func TestModulesSuite(t *testing.T) {
 	suite.Run(t, new(ModulesSuite))
 }
 
+// dotdotDisguises are the spellings a filesystem folds back to a
+// parent hop. Both a submodule name and a submodule path must refuse
+// every one of them, so both tables consume this slice.
+//
+// The two tables are deliberately not otherwise symmetric: a name is
+// held to the stricter rule because it becomes a directory under
+// .git/modules via dotgit.DotGit.Module, while a path is held to
+// ValidTreePath's rule because Submodule.Repository runs
+// ValidTreePath on it. A component of periods alone is therefore
+// rejected as a name and accepted as a path.
+var dotdotDisguises = []string{
+	// Literal, at every position and with both separators.
+	`..`,
+	`../`,
+	`../bar`,
+	`/..`,
+	`/../bar`,
+	`foo/..`,
+	`foo/../`,
+	`foo/../bar`,
+	`.\..\foo`,
+
+	// HFS+ drops ignorable code points during normalisation, so
+	// these all resolve to ".." on macOS.
+	".\u200c.",
+	"\u200c..",
+	"..\u200c",
+	"\u200c.\u200d.\u200e",
+	"foo/.\u200c.",
+	"a/.\u200c./b",
+
+	// NTFS strips trailing spaces and an alternate-data-stream
+	// suffix during canonicalisation, so these all resolve to ".."
+	// on Windows.
+	".. ",
+	"..  ",
+	".. .",
+	"..:foo",
+	"..::$INDEX_ALLOCATION",
+	"foo/.. /bar",
+	"a/.. /b",
+}
+
 func (s *ModulesSuite) TestValidateMissingURL() {
 	m := &Submodule{Name: "foo", Path: "foo"}
 	s.Equal(ErrModuleEmptyURL, m.Validate())
 }
 
 func (s *ModulesSuite) TestValidateBadPath() {
-	input := []string{
-		`..`,
-		`../`,
-		`../bar`,
-
-		`/..`,
-		`/../bar`,
-
-		`foo/..`,
-		`foo/../`,
-		`foo/../bar`,
-	}
-
-	for _, p := range input {
+	for _, p := range dotdotDisguises {
 		m := &Submodule{
 			Name: "ok",
 			Path: p,
 			URL:  "https://example.com/",
 		}
-		s.Equal(ErrModuleBadPath, m.Validate())
+		s.Equal(ErrModuleBadPath, m.Validate(), "path %q", p)
 	}
+}
+
+func (s *ModulesSuite) TestValidateGoodPath() {
+	// The boundary rows: a component of periods alone, and a ".."
+	// prefix whose tail does not fold, are legitimate names that
+	// C Git accepts on POSIX. ValidTreePath accepts them too, and
+	// this loop must agree with it because Submodule.Repository runs
+	// ValidTreePath on the same string.
+	for _, p := range []string{
+		"foo", "foo/bar", "a..b", "deps/x.y", "lib-foo/sub",
+		"...", "....", "a/.../b", "x..", "foo..", "..x", ".. x",
+		". ", ". .",
+	} {
+		m := &Submodule{
+			Name: "ok",
+			Path: p,
+			URL:  "https://example.com/",
+		}
+		s.NoError(m.Validate(), "path %q", p)
+	}
+}
+
+// unmarshalSubmodules drops a stanza only on ErrModuleBadPath or
+// ErrModuleBadName, so an unsafe Path must be reported as
+// ErrModuleBadPath even when a required field is also missing.
+// Otherwise the stanza is retained with the unsafe Path intact.
+func (s *ModulesSuite) TestValidateBadPathBeatsEmptyURL() {
+	m := &Submodule{Name: "ok", Path: "..", URL: ""}
+	s.Equal(ErrModuleBadPath, m.Validate())
+}
+
+func (s *ModulesSuite) TestValidateBadPathBeatsEmptyURLDisguised() {
+	m := &Submodule{Name: "ok", Path: ".. ", URL: ""}
+	s.Equal(ErrModuleBadPath, m.Validate())
+}
+
+func (s *ModulesSuite) TestValidateEmptyPathStillReportsEmptyPath() {
+	m := &Submodule{Name: "ok", Path: "", URL: ""}
+	s.Equal(ErrModuleEmptyPath, m.Validate())
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsBadPathStanzaWithMissingURL() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \"m\"]\n\tpath = ..\n")))
+	s.Empty(m.Submodules, "stanza with an unsafe path must be dropped")
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsDisguisedBadPathStanzaWithMissingURL() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \"m\"]\n\tpath = .. \n")))
+	s.Empty(m.Submodules, "stanza with a disguised unsafe path must be dropped")
 }
 
 func (s *ModulesSuite) TestValidateMissingName() {
@@ -50,40 +131,22 @@ func (s *ModulesSuite) TestValidateMissingName() {
 }
 
 func (s *ModulesSuite) TestValidateBadName() {
-	input := []string{
-		// Plain shapes the parser must reject regardless of OS.
+	// A submodule name becomes a directory under .git/modules, so it
+	// is held to a stricter rule than a path: a component of periods
+	// alone folds to ".." on NTFS and there is no repository C Git
+	// wrote that go-git must accept one to read.
+	input := append([]string{
 		"",
 		".",
-		"..",
-		"../x",
-		"a/../../b",
+		"....",
 		"/abs",
 		`C:\win`,
 		"x\x00y",
 		"x/",
 		"/x",
-		`.\..\foo`,
 		"modules/../escape",
-
-		// HFS+ ignores certain Unicode code points during path
-		// normalisation, so these all resolve to ".." on macOS.
-		".\u200c.",             // ZWNJ between dots
-		"\u200c..",             // leading ZWNJ
-		"..\u200c",             // trailing ZWNJ
-		"\u200c.\u200d.\u200e", // ZWNJ + ZWJ + LRM
-		"a/.\u200c./b",         // hidden ".." mid-path
-
-		// NTFS strips trailing spaces, dots, and an alternate-data
-		// -stream suffix during canonicalisation, so these all
-		// resolve to ".." on Windows.
-		".. ",
-		"..  ",
-		"....",
-		".. .",
-		"..::$INDEX_ALLOCATION",
-		"..:foo",
-		"a/.. /b",
-	}
+		"a/../../b",
+	}, dotdotDisguises...)
 	for _, n := range input {
 		m := &Submodule{
 			Name: n,

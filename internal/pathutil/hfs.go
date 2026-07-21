@@ -93,6 +93,12 @@ func IsHFSDot(part, needle string) bool {
 // IsHFSDotGit reports whether part is an HFS+ equivalent of ".git".
 func IsHFSDotGit(part string) bool { return IsHFSDot(part, "git") }
 
+// IsHFSDotDot reports whether part is an HFS+ equivalent of "..".
+// HFS+ drops a fixed set of ignorable code points during
+// normalisation, so ".<U+200C>." names the parent directory on an
+// HFS+ volume.
+func IsHFSDotDot(part string) bool { return IsHFSDot(part, ".") }
+
 // IsHFSDotGitmodules reports whether part is an HFS+ equivalent of
 // ".gitmodules", catching attempts to plant the file via Unicode
 // code points that HFS+ would strip during normalisation.

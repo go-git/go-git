@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -22,9 +21,6 @@ var (
 	// for use as a path component.
 	ErrModuleBadName = errors.New("ignoring suspicious submodule name")
 )
-
-// Matches module paths with dotdot ".." components.
-var dotdotPath = regexp.MustCompile(`(^|[/\\])\.\.([/\\]|$)`)
 
 // Modules defines the submodules properties, represents a .gitmodules file
 // https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
@@ -105,16 +101,31 @@ func (m *Submodule) Validate() error {
 		return fmt.Errorf("%w: %q", ErrModuleBadName, m.Name)
 	}
 
+	// The path check runs ahead of the empty-field checks because
+	// unmarshalSubmodules drops a stanza only on ErrModuleBadPath or
+	// ErrModuleBadName: a stanza carrying `path = ..` and no `url =`
+	// would otherwise be reported as ErrModuleEmptyURL and retained
+	// with its unsafe Path intact. An empty Path yields no segments,
+	// so it falls through to ErrModuleEmptyPath below.
+	//
+	// The per-segment predicate is pathutil.IsDotOrDotDotName, the
+	// same one ValidTreePath applies to this Path at
+	// Submodule.Repository: a literal ".." and the NTFS and HFS+
+	// spellings a filesystem folds back to a parent hop. m.Path is
+	// worktree-relative and attacker-controlled via .gitmodules, so
+	// the check runs regardless of host OS.
+	for _, seg := range strings.FieldsFunc(m.Path, isPathSep) {
+		if pathutil.IsDotOrDotDotName(seg) {
+			return ErrModuleBadPath
+		}
+	}
+
 	if m.Path == "" {
 		return ErrModuleEmptyPath
 	}
 
 	if m.URL == "" {
 		return ErrModuleEmptyURL
-	}
-
-	if dotdotPath.MatchString(m.Path) {
-		return ErrModuleBadPath
 	}
 
 	return nil

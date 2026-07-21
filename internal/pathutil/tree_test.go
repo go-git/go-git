@@ -26,6 +26,25 @@ func TestValidTreePath(t *testing.T) {
 		{"reject ..", "a/../b", true},
 		{"reject .", ".", true},
 		{"reject empty", "", true},
+
+		// NTFS folds trailing spaces/dots and an ADS suffix back to "..".
+		{"reject .. trailing space", ".. /x", true},
+		{"reject nested .. trailing space", "a/.. /b", true},
+		// Three periods and two spaces. The tail after ".." contains
+		// a space, so the component folds to ".." on NTFS.
+		{"reject .. periods then spaces", "...  /x", true},
+		{"reject ..:: ADS", "..::$INDEX_ALLOCATION/x", true},
+		// HFS+ ignores certain code points, so these resolve to "..".
+		{"reject .zwnj. hfs", ".\u200c./x", true},
+		{"reject nested .zwnj. hfs", "a/.\u200c./b", true},
+		{"reject ..:$DATA ADS", "..:$DATA/x", true},
+		{"reject ..:x ADS", "..:x/x", true},
+		{"reject ..zwnj hfs", "..\u200c/x", true},
+		{"reject zwnj.. hfs", "\u200c../x", true},
+		// ValidTreePath treats '\' as a separator too, so a disguise
+		// behind a backslash must be refused as well.
+		{"reject backslash .. trailing space", "a\\.. \\b", true},
+		{"reject backslash .zwnj. hfs", "a\\.\u200c.\\b", true},
 		{"reject control char SOH", "a\x01b", true},
 		{"reject DEL", "foo\x7fbar", true},
 
@@ -56,6 +75,22 @@ func TestValidTreePath(t *testing.T) {
 		{"allow CON file", "CON/file", false},
 		{"allow CON.txt", "CON.txt", false},
 		{"allow nested NUL", "dir/NUL", false},
+		// A component of periods alone is well-formed on filesystems
+		// other than NTFS and C Git 2.54.0 accepts it in a tree and
+		// in an index on POSIX. WindowsValidPath refuses it at the
+		// materialisation boundary under core.protectNTFS.
+		{"allow ... component", ".../x", false},
+		{"allow .... component", "....", false},
+		{"allow nested ...", "a/.../b", false},
+		{"allow x..", "x../y", false},
+		{"allow foo..", "foo..", false},
+		{"allow ..x", "..x/y", false},
+		{"allow .. x", ".. x", false},
+		// These fold to "." rather than to "..", so they cause no
+		// parent hop and are deliberately accepted.
+		{"allow . space", ". /x", false},
+		{"allow . space .", ". .", false},
+		{"allow .zwnj", ".\u200c", false},
 	}
 
 	for _, tc := range tests {

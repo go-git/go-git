@@ -43,6 +43,35 @@ func IsNTFSDotGit(part string) bool {
 	return true
 }
 
+// IsNTFSDotDot reports whether part is an NTFS spelling of ".."
+// that a comparison against the literal ".." misses: ".." followed
+// by a tail of spaces and periods containing at least one space, or
+// ".." followed by an Alternate Data Stream colon. ".. ", ".. .",
+// "..:$DATA" and "..::$INDEX_ALLOCATION" match. ".." itself does
+// not; the literal comparison in IsDotOrDotDotName owns that.
+//
+// A tail of periods alone ("...", "....") does not match. NTFS
+// strips trailing periods too, so such a name does fold to ".."
+// there, but it is a well-formed name on every other filesystem and
+// upstream Git accepts it in a tree and in an index on POSIX.
+// Rejecting it at an always-on cross-platform layer would make a
+// repository carrying one unreadable, so WindowsValidPath refuses it
+// at the materialisation boundary under core.protectNTFS instead --
+// which is where upstream's own is_valid_win32_path sits.
+func IsNTFSDotDot(part string) bool {
+	// IsNTFSDot with a "." needle matches ".." followed by any run
+	// of spaces and periods, optionally terminated by an ADS colon.
+	// Only its first pattern can match a needle this short: the
+	// second needs len(dotgit) >= 6 and the third returns early on
+	// len(shortnamePrefix) < 6. That pattern requires part[0] and
+	// part[1] to be periods, so the tail starts at index 2 and the
+	// slice below needs no length guard.
+	if !IsNTFSDot(part, ".", "") {
+		return false
+	}
+	return strings.ContainsAny(part[2:], " :")
+}
+
 // WindowsValidPath reports whether part is a valid Windows / NTFS
 // path component for the worktree filesystem abstraction. It rejects
 // NTFS-disguised variants of `.git` and `git~1` (trailing spaces,

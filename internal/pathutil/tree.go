@@ -6,35 +6,44 @@ import (
 	"strings"
 )
 
-// ErrInvalidPath is returned by ValidTreePath when its argument is
-// not a safe path to materialise into the worktree.
+// ErrInvalidPath is returned by ValidTreePath, and wrapped by the
+// worktree filesystem wrapper's own path refusals, when a path is not
+// safe to materialise into the worktree.
 var ErrInvalidPath = fmt.Errorf("invalid path")
 
 // ValidTreePath rejects path strings that, if materialised into a
 // worktree, would let an attacker-controlled tree entry escape the
 // worktree or rewrite repository metadata. It rejects:
 //
-//   - control characters (< 0x20, 0x7f);
-//   - empty paths and "." / ".." components;
-//   - Windows volume name prefixes (e.g. C:);
-//   - .git, its 8.3 NTFS short-name git~1, plus their HFS+ and NTFS
-//     variants — at every position, not just the root.
+//   - empty paths and control bytes (< 0x20, 0x7f);
+//   - "." and ".." components, and the NTFS and HFS+ spellings
+//     IsDotOrDotDotName folds back to them;
+//   - .git, its 8.3 NTFS short name git~1, and their HFS+ and NTFS
+//     variants — at every position, not just the root;
+//   - Windows volume name prefixes (e.g. C:), which
+//     filepath.VolumeName recognises only on Windows.
 //
-// HFS+/NTFS variants of `.git` are always rejected at this layer
-// regardless of runtime config: tree paths are canonical UTF-8 with
-// no zero-width characters or NTFS short-name forms, so an entry
-// that looks like a disguised `.git` is suspicious anywhere. Windows
-// reserved device names (CON, NUL, etc.) are not policed here — they
-// are legitimate filenames on non-Windows filesystems and upstream
-// Git accepts them. The wrapper layer (validPath in package git)
-// rejects them at materialisation time when core.protectNTFS is on.
+// Both slash forms separate components. Every rule applies regardless
+// of core.protectHFS and core.protectNTFS: tree paths are canonical
+// UTF-8 with no zero-width characters or NTFS short-name forms, so an
+// entry that looks like a disguise is suspicious anywhere. That is
+// stricter than C Git, which gates the disguise checks on those two
+// settings and can store such names on POSIX.
 //
-// Mirrors upstream Git's verify_path_internal at read-cache.c#L987
-// in tag v2.54.0[1] with protect_hfs / protect_ntfs treated as
-// always-on for `.git`-disguise detection (tree paths are not
-// application-supplied) and is_valid_win32_path left to the wrapper.
+// Windows reserved device names (CON, NUL, etc.) are not policed
+// here: they are legitimate filenames on non-Windows and upstream Git
+// accepts them. A component of periods alone passes for the same
+// reason. The wrapper layer (validPath in package git) applies those
+// rules at materialisation time.
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
+// A rejected entry interrupts tree iteration and checkout; entries
+// yielded before it have already been seen by the caller.
+//
+// Mirrors upstream Git's verify_path_internal at read-cache.c#L987-L1048
+// in tag v2.54.0[1], with protect_hfs and protect_ntfs treated as
+// always-on and is_valid_win32_path left to the wrapper.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987-L1048
 func ValidTreePath(p string) error {
 	for i := 0; i < len(p); i++ {
 		if p[i] < 0x20 || p[i] == 0x7f {
@@ -47,13 +56,14 @@ func ValidTreePath(p string) error {
 		return fmt.Errorf("%w: %q", ErrInvalidPath, p)
 	}
 
-	// Volume names are not supported, in both formats: \\ and <DRIVE_LETTER>:.
+	// Volume names are not supported, in both formats: \\ and
+	// <DRIVE_LETTER>:.
 	if vol := filepath.VolumeName(p); vol != "" {
 		return fmt.Errorf("%w: %q", ErrInvalidPath, p)
 	}
 
 	for _, part := range parts {
-		if part == "." || part == ".." {
+		if IsDotOrDotDotName(part) {
 			return fmt.Errorf("%w %q: cannot use %q", ErrInvalidPath, p, part)
 		}
 
