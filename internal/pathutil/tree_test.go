@@ -26,6 +26,15 @@ func TestValidTreePath(t *testing.T) {
 		{"reject ..", "a/../b", true},
 		{"reject .", ".", true},
 		{"reject empty", "", true},
+
+		// NTFS folds trailing spaces/dots and an ADS suffix back to "..".
+		{"reject .. trailing space", ".. /x", true},
+		{"reject nested .. trailing space", "a/.. /b", true},
+		{"reject .. trailing dots", "...  /x", true},
+		{"reject ..:: ADS", "..::$INDEX_ALLOCATION/x", true},
+		// HFS+ ignores certain code points, so these resolve to "..".
+		{"reject .zwnj. hfs", ".\u200c./x", true},
+		{"reject nested .zwnj. hfs", "a/.\u200c./b", true},
 		{"reject control char SOH", "a\x01b", true},
 		{"reject DEL", "foo\x7fbar", true},
 
