@@ -62,7 +62,7 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 	// Fetch the object.
 	obj, err := object.GetObject(p.Storer, hash)
 	if err != nil {
-		return fmt.Errorf("getting object %s failed: %v", hash, err)
+		return fmt.Errorf("getting object %s failed: %w", hash, err)
 	}
 	// Walk all children depending on object type.
 	switch obj := obj.(type) {
