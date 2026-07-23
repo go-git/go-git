@@ -98,6 +98,65 @@ func TestEncodeLongName(t *testing.T) {
 	assert.Equal(t, uint32(2), output.Entries[1].Size)
 }
 
+func TestEncodeSortedByNameThenStage(t *testing.T) {
+	t.Parallel()
+	idx := &Index{
+		Version: 2,
+		Entries: []*Entry{{
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
+			Name:       "foo",
+			Stage:      TheirMode,
+		}, {
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
+			Name:       "foo",
+			Stage:      OurMode,
+		}, {
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
+			Name:       "foo",
+			Stage:      AncestorMode,
+		}, {
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
+			Name:       "bar",
+			Stage:      Merged,
+		}, {
+			CreatedAt:  time.Now(),
+			ModifiedAt: time.Now(),
+			Name:       "baz",
+			Stage:      OurMode,
+		}},
+	}
+
+	buf := bytes.NewBuffer(nil)
+	e := NewEncoder(buf, crypto.SHA1.New())
+	err := e.Encode(idx)
+	assert.NoError(t, err)
+
+	output := &Index{}
+	d := NewDecoder(buf, crypto.SHA1.New())
+	err = d.Decode(output)
+	assert.NoError(t, err)
+
+	require.Len(t, output.Entries, 5)
+	assert.Equal(t, "bar", output.Entries[0].Name)
+	assert.Equal(t, Merged, output.Entries[0].Stage)
+
+	assert.Equal(t, "baz", output.Entries[1].Name)
+	assert.Equal(t, OurMode, output.Entries[1].Stage)
+
+	assert.Equal(t, "foo", output.Entries[2].Name)
+	assert.Equal(t, AncestorMode, output.Entries[2].Stage)
+
+	assert.Equal(t, "foo", output.Entries[3].Name)
+	assert.Equal(t, OurMode, output.Entries[3].Stage)
+
+	assert.Equal(t, "foo", output.Entries[4].Name)
+	assert.Equal(t, TheirMode, output.Entries[4].Stage)
+}
+
 func TestEncodeV4(t *testing.T) {
 	t.Parallel()
 	idx := &Index{
