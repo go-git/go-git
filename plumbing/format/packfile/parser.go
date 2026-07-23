@@ -470,7 +470,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 	// from either cache or storage, else we would need to inflate
 	// it to then inflate the current object, which could go on
 	// indefinitely.
-	if p.storage != nil && parent.Hash != plumbing.ZeroHash {
+	if p.storage != nil && !parent.Hash.IsZero() {
 		obj, err := p.storage.EncodedObject(parent.Type, parent.Hash)
 		if err == nil {
 			// Ensure that external references have the correct type and size.

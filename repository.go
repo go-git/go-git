@@ -1578,7 +1578,7 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 
 func (r *Repository) log(from plumbing.Hash, commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
 	h := from
-	if from == plumbing.ZeroHash {
+	if from.IsZero() {
 		head, err := r.Head()
 		if err != nil {
 			return nil, err

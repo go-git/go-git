@@ -57,15 +57,20 @@ type Command struct {
 
 // Action returns the action type of the command.
 func (c *Command) Action() Action {
-	if c.Old == plumbing.ZeroHash && c.New == plumbing.ZeroHash {
+	// Compare with IsZero rather than == plumbing.ZeroHash: the latter also
+	// matches on the object-format field, and a zero object id decoded from
+	// the wire carries the negotiated format (e.g. sha256 for a 64-hex id)
+	// while plumbing.ZeroHash is format-unset. IsZero looks only at the
+	// bytes, mirroring Git's is_null_oid.
+	if c.Old.IsZero() && c.New.IsZero() {
 		return Invalid
 	}
 
-	if c.Old == plumbing.ZeroHash {
+	if c.Old.IsZero() {
 		return Create
 	}
 
-	if c.New == plumbing.ZeroHash {
+	if c.New.IsZero() {
 		return Delete
 	}
 
