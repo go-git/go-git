@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"context"
 	"io"
 	iofs "io/fs"
 	"os"
@@ -150,12 +151,12 @@ func TestAdd(t *testing.T) {
 				w, err := New(st)
 				require.NoError(t, err)
 
-				repo, err := w.Open(wt)
+				repo, err := w.Open(t.Context(), wt)
 				require.NoError(t, err)
 				defer func() { _ = repo.Close() }()
 
 				// Verify HEAD points to the commit (detached).
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
 				assert.Equal(t, plumbing.ReferenceName("HEAD"), head.Name())
@@ -179,17 +180,17 @@ func TestAdd(t *testing.T) {
 				w, err := New(st)
 				require.NoError(t, err)
 
-				repo, err := w.Open(wt)
+				repo, err := w.Open(t.Context(), wt)
 				require.NoError(t, err)
 				defer func() { _ = repo.Close() }()
 
 				// Verify HEAD points to the branch.
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
 				assert.Equal(t, plumbing.NewBranchReferenceName("branch-worktree"), head.Name())
 
-				branchRef, err := repo.Reference(plumbing.NewBranchReferenceName("branch-worktree"), true)
+				branchRef, err := repo.Reference(t.Context(), plumbing.NewBranchReferenceName("branch-worktree"), true)
 				require.NoError(t, err)
 				assert.Equal(t, "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branchRef.Hash().String())
 			},
@@ -204,7 +205,7 @@ func TestAdd(t *testing.T) {
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "existing-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(t.Context(), wtFS, "existing-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -230,7 +231,7 @@ func TestAdd(t *testing.T) {
 				t.Fatalf("failed to create worktree: %v", err)
 			}
 
-			err = w.Add(wt, tt.name, tt.opts...)
+			err = w.Add(t.Context(), wt, tt.name, tt.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Add() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -282,14 +283,14 @@ func checkWorktree(t *testing.T, storage, wt billy.Filesystem, path string) {
 	commonDir := storage
 	stor := filesystem.NewStorage(dotgit.NewRepositoryFilesystem(gitDir, commonDir),
 		cache.NewObjectLRUDefault())
-	r, err := git.Open(stor, wt)
+	r, err := git.Open(t.Context(), stor, wt)
 	require.NoError(t, err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(t.Context())
 	require.NoError(t, err)
 
-	st, err := w.Status()
+	st, err := w.Status(t.Context())
 	require.NoError(t, err)
 
 	assert.True(t, st.IsClean(), "worktree is not clean")
@@ -347,7 +348,7 @@ func TestRemove(t *testing.T) {
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "test-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(t.Context(), wtFS, "test-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -370,7 +371,7 @@ func TestRemove(t *testing.T) {
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "test-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(t.Context(), wtFS, "test-worktree", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -448,7 +449,7 @@ func TestRemove(t *testing.T) {
 				require.NoError(t, err)
 
 				wtFS := memfs.New()
-				err = w.Add(wtFS, "test-dash-name", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+				err = w.Add(t.Context(), wtFS, "test-dash-name", WithCommit(plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
 
 				return storer
@@ -518,7 +519,7 @@ func TestList(t *testing.T) {
 				w, err := New(storer)
 				require.NoError(t, err)
 
-				err = w.Add(memfs.New(), "worktree-1",
+				err = w.Add(t.Context(), memfs.New(), "worktree-1",
 					WithCommit(
 						plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
 				require.NoError(t, err)
@@ -540,7 +541,7 @@ func TestList(t *testing.T) {
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 				for _, name := range []string{"worktree-1", "worktree-2", "worktree-3"} {
-					err = w.Add(memfs.New(), name, WithCommit(commit))
+					err = w.Add(t.Context(), memfs.New(), name, WithCommit(commit))
 					require.NoError(t, err)
 				}
 
@@ -560,10 +561,10 @@ func TestList(t *testing.T) {
 
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
-				err = w.Add(memfs.New(), "feature-a", WithCommit(commit))
+				err = w.Add(t.Context(), memfs.New(), "feature-a", WithCommit(commit))
 				require.NoError(t, err)
 
-				err = w.Add(memfs.New(), "feature-b", WithCommit(commit))
+				err = w.Add(t.Context(), memfs.New(), "feature-b", WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer
@@ -583,7 +584,7 @@ func TestList(t *testing.T) {
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 				for _, name := range []string{"wt-1", "wt-2", "wt-3"} {
-					err = w.Add(memfs.New(), name, WithCommit(commit))
+					err = w.Add(t.Context(), memfs.New(), name, WithCommit(commit))
 					require.NoError(t, err)
 				}
 
@@ -640,7 +641,7 @@ func TestOpen(t *testing.T) {
 				wtFS := memfs.New()
 				name := "test-worktree"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS
@@ -649,11 +650,11 @@ func TestOpen(t *testing.T) {
 			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
-				wt, err := repo.Worktree()
+				wt, err := repo.Worktree(t.Context())
 				require.NoError(t, err)
 				require.NotNil(t, wt)
 
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
 			},
@@ -670,7 +671,7 @@ func TestOpen(t *testing.T) {
 				wtFS := memfs.New()
 				name := "test-worktree"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS
@@ -679,11 +680,11 @@ func TestOpen(t *testing.T) {
 			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
-				wt, err := repo.Worktree()
+				wt, err := repo.Worktree(t.Context())
 				require.NoError(t, err)
 				require.NotNil(t, wt)
 
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
 			},
@@ -712,7 +713,7 @@ func TestOpen(t *testing.T) {
 			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
-				_, err := repo.Head()
+				_, err := repo.Head(t.Context())
 				require.NoError(t, err)
 			},
 		},
@@ -728,7 +729,7 @@ func TestOpen(t *testing.T) {
 				wtFS := memfs.New()
 				name := "feature-branch"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS
@@ -741,11 +742,11 @@ func TestOpen(t *testing.T) {
 				require.NoError(t, err)
 				assert.False(t, fi.IsDir(), ".git should be a file, not a directory in linked worktree")
 
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
 
-				commit, err := repo.CommitObject(head.Hash())
+				commit, err := repo.CommitObject(t.Context(), head.Hash())
 				require.NoError(t, err)
 				require.NotNil(t, commit)
 			},
@@ -761,29 +762,29 @@ func TestOpen(t *testing.T) {
 
 				wtFS1 := memfs.New()
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS1, "worktree-1", WithCommit(commit))
+				err = w.Add(t.Context(), wtFS1, "worktree-1", WithCommit(commit))
 				require.NoError(t, err)
 
-				r, err := w.Open(wtFS1)
+				r, err := w.Open(t.Context(), wtFS1)
 				require.NoError(t, err)
 				defer func() { _ = r.Close() }()
 
-				wt, err := r.Worktree()
+				wt, err := r.Worktree(t.Context())
 				require.NoError(t, err)
 
 				err = util.WriteFile(wtFS1, "newfile.txt", []byte("foobar"), 0o644)
 				require.NoError(t, err)
 
-				_, err = wt.Add("newfile.txt")
+				_, err = wt.Add(t.Context(), "newfile.txt")
 				require.NoError(t, err)
 
-				_, err = wt.Commit("test commit", &git.CommitOptions{
+				_, err = wt.Commit(t.Context(), "test commit", &git.CommitOptions{
 					Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
 				})
 				require.NoError(t, err)
 
 				wtFS2 := memfs.New()
-				err = w.Add(wtFS2, "worktree-2", WithCommit(commit))
+				err = w.Add(t.Context(), wtFS2, "worktree-2", WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, wtFS1
@@ -792,7 +793,7 @@ func TestOpen(t *testing.T) {
 			checkRepo: func(t *testing.T, repo *git.Repository, _ billy.Filesystem) {
 				require.NotNil(t, repo, "repository should not be nil")
 
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.NotEqual(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
 			},
@@ -808,7 +809,7 @@ func TestOpen(t *testing.T) {
 			w, err := New(storer)
 			require.NoError(t, err)
 
-			repo, err := w.Open(wtFS)
+			repo, err := w.Open(t.Context(), wtFS)
 			if tt.wantErr {
 				require.Error(t, err, "Open() should return an error")
 				if tt.errContains != "" {
@@ -851,7 +852,7 @@ func TestInit(t *testing.T) {
 				wtFS := memfs.New()
 				name := "test-init"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -863,7 +864,7 @@ func TestInit(t *testing.T) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
-				repo, err := w.Open(wt)
+				repo, err := w.Open(t.Context(), wt)
 				require.NoError(t, err)
 				defer func() { _ = repo.Close() }()
 				require.NotNil(t, repo)
@@ -885,7 +886,7 @@ func TestInit(t *testing.T) {
 				wtFS := memfs.New()
 				name := "cross-fs-init"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -897,7 +898,7 @@ func TestInit(t *testing.T) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
-				repo, err := w.Open(wt)
+				repo, err := w.Open(t.Context(), wt)
 				require.NoError(t, err)
 				defer func() { _ = repo.Close() }()
 				require.NotNil(t, repo)
@@ -906,7 +907,7 @@ func TestInit(t *testing.T) {
 				require.NoError(t, err)
 				assert.False(t, fi.IsDir(), ".git should be a file")
 
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "af2d6a6954d532f8ffb47615169c8fdf9d383a1a", head.Hash().String())
 			},
@@ -923,7 +924,7 @@ func TestInit(t *testing.T) {
 				wtFS := memfs.New()
 				name := "reverse-cross-fs"
 				commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -935,7 +936,7 @@ func TestInit(t *testing.T) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
-				repo, err := w.Open(wt)
+				repo, err := w.Open(t.Context(), wt)
 				require.NoError(t, err)
 				defer func() { _ = repo.Close() }()
 				require.NotNil(t, repo)
@@ -982,7 +983,7 @@ func TestInit(t *testing.T) {
 				wtFS := memfs.New()
 				name := "specific-commit"
 				commit := plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294")
-				err = w.Add(wtFS, name, WithCommit(commit))
+				err = w.Add(t.Context(), wtFS, name, WithCommit(commit))
 				require.NoError(t, err)
 
 				return storer, name
@@ -994,17 +995,17 @@ func TestInit(t *testing.T) {
 				w, err := New(storage)
 				require.NoError(t, err)
 
-				repo, err := w.Open(wt)
+				repo, err := w.Open(t.Context(), wt)
 				require.NoError(t, err)
 				defer func() { _ = repo.Close() }()
 
-				head, err := repo.Head()
+				head, err := repo.Head(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, "918c48b83bd081e863dbe1b80f8998f058cd8294", head.Hash().String())
 
-				wtObj, err := repo.Worktree()
+				wtObj, err := repo.Worktree(t.Context())
 				require.NoError(t, err)
-				status, err := wtObj.Status()
+				status, err := wtObj.Status(t.Context())
 				require.NoError(t, err)
 
 				assert.False(t, status.IsClean())
@@ -1046,20 +1047,20 @@ func TestWorktreeIsolation(t *testing.T) {
 	mainRepoDir := t.TempDir()
 	mainRepoFS := osfs.New(mainRepoDir, osfs.WithBoundOS())
 
-	mainRepo, err := git.PlainInit(mainRepoDir, false)
+	mainRepo, err := git.PlainInit(t.Context(), mainRepoDir, false)
 	require.NoError(t, err)
 	defer func() { _ = mainRepo.Close() }()
 
-	mainWt, err := mainRepo.Worktree()
+	mainWt, err := mainRepo.Worktree(t.Context())
 	require.NoError(t, err)
 
 	err = util.WriteFile(mainRepoFS, "README.md", []byte("# Main Repo\n"), 0o644)
 	require.NoError(t, err)
 
-	_, err = mainWt.Add("README.md")
+	_, err = mainWt.Add(t.Context(), "README.md")
 	require.NoError(t, err)
 
-	initialCommit, err := mainWt.Commit("Initial commit", &git.CommitOptions{
+	initialCommit, err := mainWt.Commit(t.Context(), "Initial commit", &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "Test User",
 			Email: "test@example.com",
@@ -1070,17 +1071,17 @@ func TestWorktreeIsolation(t *testing.T) {
 
 	// Create a remote repository.
 	remoteDir := t.TempDir()
-	remoteRepo, err := git.PlainInit(remoteDir, true)
+	remoteRepo, err := git.PlainInit(t.Context(), remoteDir, true)
 	require.NoError(t, err)
 	defer func() { _ = remoteRepo.Close() }()
 
-	_, err = mainRepo.CreateRemote(&config.RemoteConfig{
+	_, err = mainRepo.CreateRemote(t.Context(), &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remoteDir},
 	})
 	require.NoError(t, err)
 
-	err = mainRepo.Push(&git.PushOptions{
+	err = mainRepo.Push(t.Context(), &git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{"refs/heads/master:refs/heads/master"},
 	})
@@ -1093,23 +1094,23 @@ func TestWorktreeIsolation(t *testing.T) {
 	w, err := New(mainRepo.Storer)
 	require.NoError(t, err)
 
-	err = w.Add(worktreeFS, "feature-branch", WithCommit(initialCommit))
+	err = w.Add(t.Context(), worktreeFS, "feature-branch", WithCommit(initialCommit))
 	require.NoError(t, err)
 
-	wtRepo, err := w.Open(worktreeFS)
+	wtRepo, err := w.Open(t.Context(), worktreeFS)
 	require.NoError(t, err)
 	defer func() { _ = wtRepo.Close() }()
 
-	wtWorkTree, err := wtRepo.Worktree()
+	wtWorkTree, err := wtRepo.Worktree(t.Context())
 	require.NoError(t, err)
 
 	err = util.WriteFile(worktreeFS, "feature.txt", []byte("Feature implementation\n"), 0o644)
 	require.NoError(t, err)
 
-	_, err = wtWorkTree.Add("feature.txt")
+	_, err = wtWorkTree.Add(t.Context(), "feature.txt")
 	require.NoError(t, err)
 
-	featureCommit, err := wtWorkTree.Commit("Add feature", &git.CommitOptions{
+	featureCommit, err := wtWorkTree.Commit(t.Context(), "Add feature", &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "Test User",
 			Email: "test@example.com",
@@ -1119,13 +1120,13 @@ func TestWorktreeIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Push worktree changes to the remote.
-	err = wtRepo.Push(&git.PushOptions{
+	err = wtRepo.Push(t.Context(), &git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{"refs/heads/feature-branch:refs/heads/feature-branch"},
 	})
 	require.NoError(t, err)
 
-	wtHead, err := wtRepo.Head()
+	wtHead, err := wtRepo.Head(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, featureCommit.String(), wtHead.Hash().String(), "worktree should point to feature commit")
 
@@ -1133,7 +1134,7 @@ func TestWorktreeIsolation(t *testing.T) {
 	require.NoError(t, err, "feature.txt should exist in worktree")
 
 	// Main repository must remain unchanged, with HEAD at the initial commit.
-	mainHead, err := mainRepo.Head()
+	mainHead, err := mainRepo.Head(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, initialCommit.String(), mainHead.Hash().String(), "main repo should still point to initial commit")
 
@@ -1145,11 +1146,11 @@ func TestWorktreeIsolation(t *testing.T) {
 	assert.Equal(t, "# Main Repo\n", string(readmeContent), "README.md should be unchanged in main repo")
 
 	// remote must have both branches.
-	remoteRefs, err := remoteRepo.References()
+	remoteRefs, err := remoteRepo.References(t.Context())
 	require.NoError(t, err)
 
 	var foundMaster, foundFeature bool
-	err = remoteRefs.ForEach(func(ref *plumbing.Reference) error {
+	err = remoteRefs.ForEach(t.Context(), func(ref *plumbing.Reference) error {
 		if ref.Name() == plumbing.NewBranchReferenceName("master") {
 			foundMaster = true
 			assert.Equal(t, initialCommit.String(), ref.Hash().String(), "remote master should point to initial commit")
@@ -1181,11 +1182,11 @@ func TestWorktreeConfig(t *testing.T) {
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 		defer func() { _ = storer.Close() }()
 
-		cfg, err := storer.Config()
+		cfg, err := storer.Config(t.Context())
 		require.NoError(t, err)
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 		cfg.Extensions.WorktreeConfig = true
-		err = storer.SetConfig(cfg)
+		err = storer.SetConfig(t.Context(), cfg)
 		require.NoError(t, err)
 
 		w, err := New(storer)
@@ -1193,18 +1194,18 @@ func TestWorktreeConfig(t *testing.T) {
 
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		err = w.Add(t.Context(), wtFS, worktreeName, WithCommit(commit))
 		require.NoError(t, err)
 
 		cfgWorktreePath := filepath.Join("worktrees", worktreeName, "config.worktree")
 		err = util.WriteFile(storer.Filesystem(), cfgWorktreePath, []byte(worktreeConfigContent), 0o644)
 		require.NoError(t, err)
 
-		repo, err := w.Open(wtFS)
+		repo, err := w.Open(t.Context(), wtFS)
 		require.NoError(t, err)
 		defer func() { _ = repo.Close() }()
 
-		repoCfg, err := repo.Config()
+		repoCfg, err := repo.Config(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
 
@@ -1219,10 +1220,10 @@ func TestWorktreeConfig(t *testing.T) {
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 		defer func() { _ = storer.Close() }()
 
-		cfg, err := storer.Config()
+		cfg, err := storer.Config(t.Context())
 		require.NoError(t, err)
 		cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
-		err = storer.SetConfig(cfg)
+		err = storer.SetConfig(t.Context(), cfg)
 		require.NoError(t, err)
 
 		w, err := New(storer)
@@ -1230,14 +1231,14 @@ func TestWorktreeConfig(t *testing.T) {
 
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		err = w.Add(t.Context(), wtFS, worktreeName, WithCommit(commit))
 		require.NoError(t, err)
 
-		repo, err := w.Open(wtFS)
+		repo, err := w.Open(t.Context(), wtFS)
 		require.NoError(t, err)
 		defer func() { _ = repo.Close() }()
 
-		repoCfg, err := repo.Config()
+		repoCfg, err := repo.Config(t.Context())
 		require.NoError(t, err)
 		assert.Empty(t, repoCfg.Core.Worktree)
 	})
@@ -1255,18 +1256,18 @@ func TestWorktreeConfig(t *testing.T) {
 
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		err = w.Add(t.Context(), wtFS, worktreeName, WithCommit(commit))
 		require.NoError(t, err)
 
 		cfgWorktreePath := filepath.Join("worktrees", worktreeName, "config.worktree")
 		err = util.WriteFile(storer.Filesystem(), cfgWorktreePath, []byte("[core]\n\tworktree = /ignored/path\n"), 0o644)
 		require.NoError(t, err)
 
-		repo, err := w.Open(wtFS)
+		repo, err := w.Open(t.Context(), wtFS)
 		require.NoError(t, err)
 		defer func() { _ = repo.Close() }()
 
-		repoCfg, err := repo.Config()
+		repoCfg, err := repo.Config(t.Context())
 		require.NoError(t, err)
 		assert.Empty(t, repoCfg.Core.Worktree)
 	})
@@ -1279,10 +1280,10 @@ func TestWorktreeConfig(t *testing.T) {
 		storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 		defer func() { _ = storer.Close() }()
 
-		cfg, err := storer.Config()
+		cfg, err := storer.Config(t.Context())
 		require.NoError(t, err)
 		cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
-		err = storer.SetConfig(cfg)
+		err = storer.SetConfig(t.Context(), cfg)
 		require.NoError(t, err)
 
 		w, err := New(storer)
@@ -1290,23 +1291,25 @@ func TestWorktreeConfig(t *testing.T) {
 
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-		err = w.Add(wtFS, worktreeName, WithCommit(commit))
+		err = w.Add(t.Context(), wtFS, worktreeName, WithCommit(commit))
 		require.NoError(t, err)
 
 		cfgWorktreePath := filepath.Join("worktrees", worktreeName, "config.worktree")
 		err = util.WriteFile(storer.Filesystem(), cfgWorktreePath, []byte(worktreeConfigContent), 0o644)
 		require.NoError(t, err)
 
-		repo, err := w.Open(wtFS)
+		repo, err := w.Open(t.Context(), wtFS)
 		require.NoError(t, err)
 		defer func() { _ = repo.Close() }()
 
-		repoCfg, err := repo.Config()
+		repoCfg, err := repo.Config(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
 	})
 }
 
+// The fuzz targets use context.Background instead of t.Context: OSS-Fuzz
+// builds them with a shim testing.T that has no Context method.
 func FuzzAdd(f *testing.F) {
 	f.Add("test")
 	f.Add("test-worktree")
@@ -1337,7 +1340,7 @@ func FuzzAdd(f *testing.F) {
 		wtFS := memfs.New()
 		commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
-		_ = w.Add(wtFS, name, WithCommit(commit), WithDetachedHead())
+		_ = w.Add(context.Background(), wtFS, name, WithCommit(commit), WithDetachedHead())
 	})
 }
 
@@ -1368,7 +1371,7 @@ func FuzzOpen(f *testing.F) {
 		err = util.WriteFile(wtFS, ".git", []byte(gitFileContent), 0o644)
 		require.NoError(t, err, "failed to write .git file")
 
-		repo, err := w.Open(wtFS)
+		repo, err := w.Open(context.Background(), wtFS)
 		if repo != nil {
 			defer func() { _ = repo.Close() }()
 		}
@@ -1396,19 +1399,19 @@ func ExampleWorktree_Open() {
 	commit := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
 
 	// Create linked worktree.
-	err = w.Add(worktreeFS, "feature-branch", WithCommit(commit))
+	err = w.Add(context.Background(), worktreeFS, "feature-branch", WithCommit(commit))
 	if err != nil {
 		panic(err)
 	}
 
 	// Open linked worktree repository.
-	r, err := w.Open(worktreeFS)
+	r, err := w.Open(context.Background(), worktreeFS)
 	if err != nil {
 		panic(err)
 	}
 	defer func() { _ = r.Close() }()
 
-	_, _ = r.Head()
+	_, _ = r.Head(context.Background())
 
 	// The linked worktree repository is now ready to be used.
 }
@@ -1452,12 +1455,12 @@ func ExampleWorktree_Init() {
 	}
 
 	// Open the worktree with the new filesystem.
-	r, err := w.Open(freshWtFS)
+	r, err := w.Open(context.Background(), freshWtFS)
 	if err != nil {
 		panic(err)
 	}
 	defer func() { _ = r.Close() }()
 
 	// The worktree is now connected and can be used.
-	_, _ = r.Head()
+	_, _ = r.Head(context.Background())
 }

@@ -2,6 +2,7 @@
 package filesystem
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -215,7 +216,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 //
 // If the storage is empty and the new ObjectFormat is the same as the
 // current, this call will be treated as a no-op.
-func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
+func (s *Storage) SetObjectFormat(ctx context.Context, of formatcfg.ObjectFormat) error {
 	switch of {
 	case formatcfg.SHA1, formatcfg.SHA256:
 	default:
@@ -230,7 +231,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		return errors.New("cannot change object format of existing object storage")
 	}
 
-	cfg, err := s.Config()
+	cfg, err := s.Config(ctx)
 	if err != nil {
 		return err
 	}
@@ -238,7 +239,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	if cfg.Extensions.ObjectFormat != of {
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
-		err = s.SetConfig(cfg)
+		err = s.SetConfig(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("cannot set object format on config: %w", err)
 		}
@@ -283,13 +284,23 @@ func (s *Storage) Filesystem() billy.Filesystem {
 }
 
 // Init initializes .git directory
-func (s *Storage) Init() error {
+//
+// TODO(ctx): propagate ctx into dotgit; it currently stops at this boundary.
+func (s *Storage) Init(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	return s.dir.Initialize()
 }
 
 // AddAlternate adds an alternate object directory and resets the cached
 // alternate state so that subsequent object lookups pick up the new alternate.
-func (s *Storage) AddAlternate(remote string) error {
+func (s *Storage) AddAlternate(ctx context.Context, remote string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if err := s.dir.AddAlternate(remote); err != nil {
 		return err
 	}

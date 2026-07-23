@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -304,7 +305,7 @@ func (s *RenameSuite) TestRenameExactManyAddsManyDeletesNoGaps() {
 }
 
 func detectRenames(s *RenameSuite, changes Changes, opts *DiffTreeOptions, expectedResults int) Changes {
-	result, err := DetectRenames(changes, opts)
+	result, err := DetectRenames(s.T().Context(), changes, opts)
 	s.NoError(err)
 	s.Len(result, expectedResults)
 	return result
@@ -330,22 +331,22 @@ func (s *SimilarityIndexSuite) SetupSuite() {
 
 func (s *SimilarityIndexSuite) TestScoreFiles() {
 	tree := s.tree(plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"))
-	binary, err := tree.File("binary.jpg")
+	binary, err := tree.File(s.T().Context(), "binary.jpg")
 	s.NoError(err)
 	binIndex, err := fileSimilarityIndex(binary)
 	s.NoError(err)
 
-	long, err := tree.File("json/long.json")
+	long, err := tree.File(s.T().Context(), "json/long.json")
 	s.NoError(err)
 	longIndex, err := fileSimilarityIndex(long)
 	s.NoError(err)
 
-	short, err := tree.File("json/short.json")
+	short, err := tree.File(s.T().Context(), "json/short.json")
 	s.NoError(err)
 	shortIndex, err := fileSimilarityIndex(short)
 	s.NoError(err)
 
-	php, err := tree.File("php/crappy.php")
+	php, err := tree.File(s.T().Context(), "php/crappy.php")
 	s.NoError(err)
 	phpIndex, err := fileSimilarityIndex(php)
 	s.NoError(err)
@@ -491,7 +492,7 @@ func makeFile(s *RenameSuite, name string, mode filemode.FileMode, content strin
 
 func makeChangeEntry(f *File) ChangeEntry {
 	sto := memory.NewStorage()
-	sto.SetEncodedObject(f.obj)
+	sto.SetEncodedObject(context.Background(), f.obj)
 	tree := &Tree{s: sto}
 
 	return ChangeEntry{

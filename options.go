@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -463,16 +464,16 @@ type ResetOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *ResetOptions) Validate(r *Repository) error {
+func (o *ResetOptions) Validate(ctx context.Context, r *Repository) error {
 	if o.Commit == plumbing.ZeroHash {
-		ref, err := r.Head()
+		ref, err := r.Head(ctx)
 		if err != nil {
 			return err
 		}
 
 		o.Commit = ref.Hash()
 	} else {
-		_, err := r.CommitObject(o.Commit)
+		_, err := r.CommitObject(ctx, o.Commit)
 		if err != nil {
 			return fmt.Errorf("invalid reset option: %w", err)
 		}
@@ -595,7 +596,7 @@ type CommitOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *CommitOptions) Validate(r *Repository) error {
+func (o *CommitOptions) Validate(ctx context.Context, r *Repository) error {
 	if o.All && o.Amend {
 		return errors.New("all and amend cannot be used together")
 	}
@@ -605,7 +606,7 @@ func (o *CommitOptions) Validate(r *Repository) error {
 	}
 
 	if o.Author == nil {
-		if err := o.loadConfigAuthorAndCommitter(r); err != nil {
+		if err := o.loadConfigAuthorAndCommitter(ctx, r); err != nil {
 			return err
 		}
 	}
@@ -615,7 +616,7 @@ func (o *CommitOptions) Validate(r *Repository) error {
 	}
 
 	if len(o.Parents) == 0 {
-		head, err := r.Head()
+		head, err := r.Head(ctx)
 		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return err
 		}
@@ -628,8 +629,8 @@ func (o *CommitOptions) Validate(r *Repository) error {
 	return nil
 }
 
-func (o *CommitOptions) loadConfigAuthorAndCommitter(r *Repository) error {
-	cfg, err := r.ConfigScoped(config.SystemScope)
+func (o *CommitOptions) loadConfigAuthorAndCommitter(ctx context.Context, r *Repository) error {
+	cfg, err := r.ConfigScoped(ctx, config.SystemScope)
 	if err != nil {
 		return err
 	}
@@ -687,9 +688,9 @@ type CreateTagOptions struct {
 }
 
 // Validate validates the fields and sets the default values.
-func (o *CreateTagOptions) Validate(r *Repository, _ plumbing.Hash) error {
+func (o *CreateTagOptions) Validate(ctx context.Context, r *Repository, _ plumbing.Hash) error {
 	if o.Tagger == nil {
-		if err := o.loadConfigTagger(r); err != nil {
+		if err := o.loadConfigTagger(ctx, r); err != nil {
 			return err
 		}
 	}
@@ -704,8 +705,8 @@ func (o *CreateTagOptions) Validate(r *Repository, _ plumbing.Hash) error {
 	return nil
 }
 
-func (o *CreateTagOptions) loadConfigTagger(r *Repository) error {
-	cfg, err := r.ConfigScoped(config.SystemScope)
+func (o *CreateTagOptions) loadConfigTagger(ctx context.Context, r *Repository) error {
+	cfg, err := r.ConfigScoped(ctx, config.SystemScope)
 	if err != nil {
 		return err
 	}
@@ -785,11 +786,11 @@ var ErrHashOrReference = errors.New("ambiguous options, only one of CommitHash o
 // Validate validates the fields and sets the default values.
 //
 // TODO: deprecate in favor of Validate(r *Repository) in v6.
-func (o *GrepOptions) Validate(w *Worktree) error {
-	return o.validate(w.r)
+func (o *GrepOptions) Validate(ctx context.Context, w *Worktree) error {
+	return o.validate(ctx, w.r)
 }
 
-func (o *GrepOptions) validate(r *Repository) error {
+func (o *GrepOptions) validate(ctx context.Context, r *Repository) error {
 	if !o.CommitHash.IsZero() && o.ReferenceName != "" {
 		return ErrHashOrReference
 	}
@@ -797,7 +798,7 @@ func (o *GrepOptions) validate(r *Repository) error {
 	// If none of CommitHash and ReferenceName are provided, set commit hash of
 	// the repository's head.
 	if o.CommitHash.IsZero() && o.ReferenceName == "" {
-		ref, err := r.Head()
+		ref, err := r.Head(ctx)
 		if err != nil {
 			return err
 		}

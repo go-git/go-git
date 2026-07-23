@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"os"
@@ -15,27 +16,29 @@ import (
 
 // Example of how create a tag and push it to a remote.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<ssh-url>", "<directory>", "<tag>", "<name>", "<email>", "<public-key>")
 	url := os.Args[1]
 	directory := os.Args[2]
 	tag := os.Args[3]
 	key := os.Args[6]
 
-	r, err := cloneRepo(url, directory, key)
+	r, err := cloneRepo(ctx, url, directory, key)
 	if err != nil {
 		log.Printf("clone repo error: %s", err)
 		return
 	}
 	defer func() { _ = r.Close() }()
 
-	created, err := setTag(r, tag)
+	created, err := setTag(ctx, r, tag)
 	if err != nil {
 		log.Printf("create tag error: %s", err)
 		return
 	}
 
 	if created {
-		err = pushTags(r, key)
+		err = pushTags(ctx, r, key)
 		if err != nil {
 			log.Printf("push tag error: %s", err)
 			return
@@ -43,7 +46,7 @@ func main() {
 	}
 }
 
-func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
+func cloneRepo(ctx context.Context, url, dir, publicKeyPath string) (*git.Repository, error) {
 	log.Printf("cloning %s into %s", url, dir)
 	auth, keyErr := publicKey(publicKeyPath)
 	if keyErr != nil {
@@ -51,7 +54,7 @@ func cloneRepo(url, dir, publicKeyPath string) (*git.Repository, error) {
 	}
 
 	Info("git clone %s", url)
-	r, err := git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(ctx, dir, &git.CloneOptions{
 		Progress:      os.Stdout,
 		URL:           url,
 		ClientOptions: []client.Option{client.WithSSHAuth(auth)},
@@ -74,16 +77,16 @@ func publicKey(filePath string) (*ssh.PublicKeys, error) {
 	return publicKey, err
 }
 
-func tagExists(tag string, r *git.Repository) bool {
+func tagExists(ctx context.Context, tag string, r *git.Repository) bool {
 	tagFoundErr := "tag was found"
 	Info("git show-ref --tag")
-	tags, err := r.TagObjects()
+	tags, err := r.TagObjects(ctx)
 	if err != nil {
 		log.Printf("get tags error: %s", err)
 		return false
 	}
 	res := false
-	err = tags.ForEach(func(t *object.Tag) error {
+	err = tags.ForEach(ctx, func(t *object.Tag) error {
 		if t.Name == tag {
 			res = true
 			return errors.New(tagFoundErr)
@@ -97,19 +100,19 @@ func tagExists(tag string, r *git.Repository) bool {
 	return res
 }
 
-func setTag(r *git.Repository, tag string) (bool, error) {
-	if tagExists(tag, r) {
+func setTag(ctx context.Context, r *git.Repository, tag string) (bool, error) {
+	if tagExists(ctx, tag, r) {
 		log.Printf("tag %s already exists", tag)
 		return false, nil
 	}
 	log.Printf("Set tag %s", tag)
-	h, err := r.Head()
+	h, err := r.Head(ctx)
 	if err != nil {
 		log.Printf("get HEAD error: %s", err)
 		return false, err
 	}
 	Info("git tag -a %s %s -m \"%s\"", tag, h.Hash(), tag)
-	_, err = r.CreateTag(tag, h.Hash(), &git.CreateTagOptions{
+	_, err = r.CreateTag(ctx, tag, h.Hash(), &git.CreateTagOptions{
 		Message: tag,
 	})
 	if err != nil {
@@ -120,7 +123,7 @@ func setTag(r *git.Repository, tag string) (bool, error) {
 	return true, nil
 }
 
-func pushTags(r *git.Repository, publicKeyPath string) error {
+func pushTags(ctx context.Context, r *git.Repository, publicKeyPath string) error {
 	auth, _ := publicKey(publicKeyPath)
 
 	po := &git.PushOptions{
@@ -130,7 +133,7 @@ func pushTags(r *git.Repository, publicKeyPath string) error {
 		ClientOptions: []client.Option{client.WithSSHAuth(auth)},
 	}
 	Info("git push --tags")
-	err := r.Push(po)
+	err := r.Push(ctx, po)
 	if err != nil {
 		if errors.Is(err, git.NoErrAlreadyUpToDate) {
 			log.Print("origin remote was up to date, no push done")

@@ -84,12 +84,12 @@ func TestInit(t *testing.T) {
 				t.Parallel()
 
 				opts := append(tc.opts(), WithObjectFormat(of))
-				r, err := Init(memory.NewStorage(memory.WithObjectFormat(of)), opts...)
+				r, err := Init(t.Context(), memory.NewStorage(memory.WithObjectFormat(of)), opts...)
 				require.NotNil(t, r)
 				require.NoError(t, err)
 				defer func() { _ = r.Close() }()
 
-				cfg, err := r.Config()
+				cfg, err := r.Config(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
 				assert.Equal(t, of, cfg.Extensions.ObjectFormat, "object format mismatch")
@@ -103,7 +103,7 @@ func TestInit(t *testing.T) {
 						wantBranch = plumbing.Master.String()
 					}
 
-					ref, err := r.Head()
+					ref, err := r.Head(t.Context())
 					require.NoError(t, err)
 					require.Equal(t, wantBranch, ref.Name().String())
 				}
@@ -152,12 +152,12 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 				opts := append(tc.opts(), WithObjectFormat(of))
 				rdir := t.TempDir()
 
-				r, err := PlainInit(rdir, tc.wantBare, opts...)
+				r, err := PlainInit(t.Context(), rdir, tc.wantBare, opts...)
 				require.NotNil(t, r)
 				require.NoError(t, err)
 				defer func() { _ = r.Close() }()
 
-				cfg, err := r.Config()
+				cfg, err := r.Config(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, tc.wantBare, cfg.Core.IsBare)
 
@@ -170,18 +170,18 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 						wantBranch = plumbing.Master.String()
 					}
 
-					ref, err := r.Head()
+					ref, err := r.Head(t.Context())
 					require.NoError(t, err)
 					require.Equal(t, wantBranch, ref.Name().String())
 				}
 
-				ro, err := PlainOpen(rdir)
+				ro, err := PlainOpen(t.Context(), rdir)
 				require.NotNil(t, ro)
 				require.NoError(t, err)
 				defer func() { _ = ro.Close() }()
 
 				if !tc.wantBare {
-					ref, err := ro.Head()
+					ref, err := ro.Head(t.Context())
 					require.NoError(t, err)
 					assert.Equal(t, of.HexSize(), len(ref.Hash().String()))
 				}
@@ -200,7 +200,7 @@ func TestRepositorySuite(t *testing.T) {
 }
 
 func (s *RepositorySuite) TestInitWithInvalidDefaultBranch() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()),
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(memfs.New()),
 		WithDefaultBranch("foo"),
 	)
 	if r != nil {
@@ -216,7 +216,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit() {
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
 	wt, _ := fs.Chroot("worktree")
-	r, err := Init(st, WithWorkTree(wt))
+	r, err := Init(s.T().Context(), st, WithWorkTree(wt))
 	s.NoError(err)
 	s.NotNil(r)
 	defer func() { _ = r.Close() }()
@@ -229,7 +229,7 @@ func (s *RepositorySuite) TestInitNonStandardDotGit() {
 	s.NoError(err)
 	s.Equal(string(all), fmt.Sprintf("gitdir: %s\n", filepath.Join("..", "storage")))
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Equal(cfg.Core.Worktree, filepath.Join("..", "worktree"))
 }
@@ -240,7 +240,7 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 	dot, _ := fs.Chroot(".git")
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 
-	r, err := Init(st, WithWorkTree(fs))
+	r, err := Init(s.T().Context(), st, WithWorkTree(fs))
 	s.NoError(err)
 	s.NotNil(r)
 	defer func() { _ = r.Close() }()
@@ -249,7 +249,7 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 	s.NoError(err)
 	s.True(len(l) > 0)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Equal("", cfg.Core.Worktree)
 }
@@ -257,12 +257,12 @@ func (s *RepositorySuite) TestInitStandardDotGit() {
 func (s *RepositorySuite) TestInitAlreadyExists() {
 	st := memory.NewStorage()
 
-	r, err := Init(st)
+	r, err := Init(s.T().Context(), st)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
-	r, err = Init(st)
+	r, err = Init(s.T().Context(), st)
 	if r != nil {
 		defer func() { _ = r.Close() }()
 	}
@@ -273,12 +273,12 @@ func (s *RepositorySuite) TestInitAlreadyExists() {
 func (s *RepositorySuite) TestOpen() {
 	st := memory.NewStorage()
 
-	r, err := Init(st, WithWorkTree(memfs.New()))
+	r, err := Init(s.T().Context(), st, WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
-	r, err = Open(st, memfs.New())
+	r, err = Open(s.T().Context(), st, memfs.New())
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -287,12 +287,12 @@ func (s *RepositorySuite) TestOpen() {
 func (s *RepositorySuite) TestOpenBare() {
 	st := memory.NewStorage()
 
-	r, err := Init(st)
+	r, err := Init(s.T().Context(), st)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
-	r, err = Open(st, nil)
+	r, err = Open(s.T().Context(), st, nil)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -301,32 +301,32 @@ func (s *RepositorySuite) TestOpenBare() {
 func (s *RepositorySuite) TestOpenBareMissingWorktree() {
 	st := memory.NewStorage()
 
-	r, err := Init(st, WithWorkTree(memfs.New()))
+	r, err := Init(s.T().Context(), st, WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
-	r, err = Open(st, nil)
+	r, err = Open(s.T().Context(), st, nil)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 }
 
 func (s *RepositorySuite) TestOpenNotExists() {
-	r, err := Open(memory.NewStorage(), nil)
+	r, err := Open(s.T().Context(), memory.NewStorage(), nil)
 	s.ErrorIs(err, ErrRepositoryNotExists)
 	s.Nil(r)
 }
 
 func (s *RepositorySuite) TestClone() {
-	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+	r, err := Clone(s.T().Context(), memory.NewStorage(), nil, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 }
@@ -362,9 +362,9 @@ func TestCloneAll(t *testing.T) {
 
 				var r *Repository
 				if tc.plainClone {
-					r, err = PlainClone(t.TempDir(), &CloneOptions{URL: endpoint})
+					r, err = PlainClone(t.Context(), t.TempDir(), &CloneOptions{URL: endpoint})
 				} else {
-					r, err = Clone(memory.NewStorage(), nil, &CloneOptions{
+					r, err = Clone(t.Context(), memory.NewStorage(), nil, &CloneOptions{
 						URL: endpoint,
 					})
 				}
@@ -372,29 +372,29 @@ func TestCloneAll(t *testing.T) {
 				require.NotNil(t, r, "repository must not be nil")
 				defer func() { _ = r.Close() }()
 
-				remotes, err := r.Remotes()
+				remotes, err := r.Remotes(t.Context())
 				require.NoError(t, err)
 				assert.Len(t, remotes, 1)
 
-				iter, err := r.References()
+				iter, err := r.References(t.Context())
 				require.NoError(t, err)
 
 				refs := 0
-				iter.ForEach(func(_ *plumbing.Reference) error {
+				iter.ForEach(t.Context(), func(_ *plumbing.Reference) error {
 					refs++
 					return nil
 				})
 				assert.Equal(t, tc.refs, refs)
 
-				cfg, err := r.Config()
+				cfg, err := r.Config(t.Context())
 				require.NoError(t, err)
 
 				assert.Equal(t, tc.format, cfg.Extensions.ObjectFormat)
 
-				ref, err := r.Head()
+				ref, err := r.Head(t.Context())
 				require.NoError(t, err, "failed to get repository HEAD ref")
 
-				c, err := r.CommitObject(ref.Hash())
+				c, err := r.CommitObject(t.Context(), ref.Hash())
 				require.NoError(t, err, "failed to get commit object")
 				assert.NotNil(t, c)
 			}
@@ -457,17 +457,17 @@ func TestFetchMustNotUpdateObjectFormat(t *testing.T) {
 					st = memory.NewStorage(memory.WithObjectFormat(tc.clientFormat))
 				}
 
-				r, err := Init(st)
+				r, err := Init(t.Context(), st)
 				require.NoError(t, err)
 				defer func() { _ = r.Close() }()
 
-				_, err = r.CreateRemote(&config.RemoteConfig{
+				_, err = r.CreateRemote(t.Context(), &config.RemoteConfig{
 					Name: DefaultRemoteName,
 					URLs: []string{endpoint},
 				})
 				require.NoError(t, err)
 
-				err = r.Fetch(&FetchOptions{})
+				err = r.Fetch(t.Context(), &FetchOptions{})
 				if tc.wantErr {
 					require.Error(t, err)
 					assert.Contains(t, err.Error(), "mismatched algorithms")
@@ -525,7 +525,7 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 
 	// Step 1: clone the default branch at depth=1.
 	// commitSHA is a deep ancestor excluded by the shallow depth limit.
-	r, err := PlainClone(tmp, &CloneOptions{
+	r, err := PlainClone(t.Context(), tmp, &CloneOptions{
 		URL:   repoURL,
 		Depth: 1,
 		Tags:  NoTags,
@@ -534,14 +534,14 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 	defer func() { _ = r.Close() }()
 
 	// Confirm the target commit is not yet available.
-	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
+	_, err = r.CommitObject(t.Context(), plumbing.NewHash(commitSHA))
 	require.Error(t, err, "commit should NOT be present in a shallow clone of master")
 
 	// Step 2: fetch the specific commit by hash using "+<hash>:<hash>".
 	// This is the standard refspec for fetching an arbitrary commit that is not
 	// the tip of a branch or tag.
 	refSpec := config.RefSpec("+" + commitSHA + ":" + commitSHA)
-	err = r.Fetch(&FetchOptions{
+	err = r.Fetch(t.Context(), &FetchOptions{
 		Depth:    1,
 		Force:    true,
 		RefSpecs: []config.RefSpec{refSpec},
@@ -550,7 +550,7 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 	require.NoError(t, err, "fetch should succeed")
 
 	// Step 3: the commit object MUST now be present in the object store.
-	_, err = r.CommitObject(plumbing.NewHash(commitSHA))
+	_, err = r.CommitObject(t.Context(), plumbing.NewHash(commitSHA))
 	assert.NoError(t, err,
 		"commit object must be present in the object store after a successful Fetch with '+<hash>:<hash>'",
 	)
@@ -558,14 +558,14 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 	// Step 4: regression 2 — no spurious refs/heads/<sha> must be created.
 	// Before the fix, updateLocalReferenceStorage created refs/heads/<sha>
 	// pointing to the zero hash for any bare-hash dst refspec.
-	_, refErr := r.Storer.Reference(plumbing.NewBranchReferenceName(commitSHA))
+	_, refErr := r.Storer.Reference(t.Context(), plumbing.NewBranchReferenceName(commitSHA))
 	assert.Error(t, refErr,
 		"fetching by hash must NOT create a branch named after the hash")
 
 	// Step 5: the commit must also be resolvable as a revision.
 	// Before the fix, the spurious branch caused ResolveRevision to return
 	// the zero hash.
-	hash, err := r.ResolveRevision(plumbing.Revision(commitSHA))
+	hash, err := r.ResolveRevision(t.Context(), plumbing.Revision(commitSHA))
 	assert.NoError(t, err,
 		"ResolveRevision with a full SHA must succeed when the commit object is present",
 	)
@@ -574,9 +574,9 @@ func TestFetchByHashThenResolveRevision(t *testing.T) {
 	}
 
 	// Step 6: downstream effect — Worktree.Checkout must also succeed.
-	w, err := r.Worktree()
+	w, err := r.Worktree(t.Context())
 	require.NoError(t, err)
-	err = w.Checkout(&CheckoutOptions{
+	err = w.Checkout(t.Context(), &CheckoutOptions{
 		Hash:  plumbing.NewHash(commitSHA),
 		Force: true,
 	})
@@ -597,7 +597,7 @@ func TestPlainCloneContext_FailedCloneRemovesCreatedDirectory(t *testing.T) {
 	// dest does not exist yet; PlainCloneContext must create and then remove it.
 	dest := filepath.Join(t.TempDir(), "repo")
 
-	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+	_, err := PlainClone(context.Background(), dest, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	require.Error(t, err)
@@ -616,7 +616,7 @@ func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *test
 	// dest exists and is empty before the clone attempt.
 	dest := t.TempDir()
 
-	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+	_, err := PlainClone(context.Background(), dest, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	require.Error(t, err)
@@ -637,12 +637,12 @@ func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
 	t.Parallel()
 
 	remote := filepath.Join(t.TempDir(), "remote.git")
-	remoteRepo, err := PlainInit(remote, true)
+	remoteRepo, err := PlainInit(t.Context(), remote, true)
 	require.NoError(t, err)
 	_ = remoteRepo.Close()
 
 	dest := filepath.Join(t.TempDir(), "clone")
-	_, err = PlainCloneContext(context.Background(), dest, &CloneOptions{
+	_, err = PlainClone(context.Background(), dest, &CloneOptions{
 		URL: remote,
 	})
 	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
@@ -655,12 +655,12 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 
 	// Create a bare empty repository to use as the remote.
 	remote := filepath.Join(t.TempDir(), "remote.git")
-	remoteRepo, err := PlainInit(remote, true)
+	remoteRepo, err := PlainInit(t.Context(), remote, true)
 	require.NoError(t, err)
 	defer func() { _ = remoteRepo.Close() }()
 
 	dest := filepath.Join(t.TempDir(), "clone")
-	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+	r, err := PlainClone(context.Background(), dest, &CloneOptions{
 		URL:            remote,
 		AllowEmptyRepo: true,
 	})
@@ -669,7 +669,7 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	defer func() { _ = r.Close() }()
 
 	// The cloned repo should have the "origin" remote configured.
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(t.Context())
 	require.NoError(t, err)
 	require.Len(t, remotes, 1)
 	assert.Equal(t, "origin", remotes[0].Config().Name)
@@ -681,7 +681,7 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 
 	// HEAD must be a valid symbolic reference (not .invalid), because
 	// AllowEmptyRepo skips withPartialInit and fully initialises the repo.
-	head, err := r.Reference(plumbing.HEAD, false)
+	head, err := r.Reference(t.Context(), plumbing.HEAD, false)
 	require.NoError(t, err)
 	assert.Equal(t, plumbing.SymbolicReference, head.Type())
 	assert.NotEqual(t, plumbing.Invalid, head.Target(),
@@ -689,10 +689,10 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 
 	// The repository should be re-openable — a fully initialised repo has
 	// its config persisted (unlike a partialInit repo).
-	reopened, err := PlainOpen(dest)
+	reopened, err := PlainOpen(t.Context(), dest)
 	require.NoError(t, err)
 	defer func() { _ = reopened.Close() }()
-	reopenedRemotes, err := reopened.Remotes()
+	reopenedRemotes, err := reopened.Remotes(t.Context())
 	require.NoError(t, err)
 	require.Len(t, reopenedRemotes, 1)
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
@@ -712,34 +712,34 @@ func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
 	// ── Build the source repo using PlainInit + Worktree.Commit ──────────
 	// Self-contained: no network access required.
 	srcDir := t.TempDir()
-	src, err := PlainInit(srcDir, false)
+	src, err := PlainInit(t.Context(), srcDir, false)
 	require.NoError(t, err)
 	defer func() { _ = src.Close() }()
 
-	wt, err := src.Worktree()
+	wt, err := src.Worktree(t.Context())
 	require.NoError(t, err)
 
 	// Write a file and create an initial commit so HEAD resolves to a real hash.
 	err = os.WriteFile(filepath.Join(srcDir, "README.md"), []byte("hello"), 0o644)
 	require.NoError(t, err)
-	_, err = wt.Add("README.md")
+	_, err = wt.Add(t.Context(), "README.md")
 	require.NoError(t, err)
-	commitHash, err := wt.Commit("initial commit", &CommitOptions{
+	commitHash, err := wt.Commit(t.Context(), "initial commit", &CommitOptions{
 		Author: &object.Signature{Name: "Test", Email: "t@t.com"},
 	})
 	require.NoError(t, err)
 
 	// Verify HEAD is a symbolic reference before detaching.
-	rawHead, err := src.Storer.Reference(plumbing.HEAD)
+	rawHead, err := src.Storer.Reference(t.Context(), plumbing.HEAD)
 	require.NoError(t, err)
 	require.Equal(t, plumbing.SymbolicReference, rawHead.Type(),
 		"HEAD should be a symbolic ref after commit")
 
 	// Detach HEAD by checking out by hash.
-	err = wt.Checkout(&CheckoutOptions{Hash: commitHash, Force: true})
+	err = wt.Checkout(t.Context(), &CheckoutOptions{Hash: commitHash, Force: true})
 	require.NoError(t, err)
 
-	detachedHead, err := src.Storer.Reference(plumbing.HEAD)
+	detachedHead, err := src.Storer.Reference(t.Context(), plumbing.HEAD)
 	require.NoError(t, err)
 	require.Equal(t, plumbing.HashReference, detachedHead.Type(),
 		"HEAD must be a hash-reference (detached) after Checkout{Hash:...}")
@@ -750,7 +750,7 @@ func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
 	// `git clone` does — by advertising the available refs rather than
 	// requiring HEAD to be symbolic.
 	dstDir := filepath.Join(t.TempDir(), "dst")
-	dst, err := PlainCloneContext(context.Background(), dstDir, &CloneOptions{
+	dst, err := PlainClone(context.Background(), dstDir, &CloneOptions{
 		URL: srcDir,
 	})
 	assert.NoError(t, err,
@@ -762,12 +762,12 @@ func TestPlainCloneContext_DetachedHeadSource(t *testing.T) {
 	require.NotNil(t, dst, "cloned repository must not be nil")
 	defer func() { _ = dst.Close() }()
 
-	rawClonedHead, err := dst.Storer.Reference(plumbing.HEAD)
+	rawClonedHead, err := dst.Storer.Reference(t.Context(), plumbing.HEAD)
 	require.NoError(t, err)
 	assert.Equal(t, plumbing.SymbolicReference, rawClonedHead.Type(),
 		"cloned repo HEAD must be a symbolic ref (as git clone produces), not detached")
 
-	resolvedHead, err := dst.Head()
+	resolvedHead, err := dst.Head(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, commitHash, resolvedHead.Hash(),
 		"cloned repo HEAD must resolve to the same commit as the source")
@@ -801,7 +801,7 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 			_, okGetter := storage.Storer(st).(xstorage.ExtensionChecker)
 			assert.False(t, okGetter, "sha1OnlyStorage must not implement ExtensionChecker")
 
-			r, err := Clone(st, nil, &CloneOptions{URL: endpoint})
+			r, err := Clone(t.Context(), st, nil, &CloneOptions{URL: endpoint})
 			if r != nil {
 				defer func() { _ = r.Close() }()
 			}
@@ -825,7 +825,7 @@ func TestFailSafeUnsupportedStorage(t *testing.T) {
 		_, okGetter := storage.Storer(wrapped).(xstorage.ExtensionChecker)
 		assert.False(t, okGetter, "sha1OnlyStorage must not implement ExtensionChecker")
 
-		r, err := Open(wrapped, nil)
+		r, err := Open(t.Context(), wrapped, nil)
 		assert.Error(t, err)
 		assert.Nil(t, r)
 	})
@@ -835,7 +835,7 @@ func (s *RepositorySuite) TestCloneContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	r, err := CloneContext(ctx, memory.NewStorage(), nil, &CloneOptions{
+	r, err := Clone(ctx, memory.NewStorage(), nil, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
@@ -845,7 +845,7 @@ func (s *RepositorySuite) TestCloneContext() {
 }
 
 func (s *RepositorySuite) TestCloneMirror() {
-	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+	r, err := Clone(s.T().Context(), memory.NewStorage(), nil, &CloneOptions{
 		URL:    fixtures.Basic().One().URL,
 		Mirror: true,
 	})
@@ -853,9 +853,9 @@ func (s *RepositorySuite) TestCloneMirror() {
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	refs, err := r.References()
+	refs, err := r.References(s.T().Context())
 	var count int
-	refs.ForEach(func(r *plumbing.Reference) error { s.T().Log(r); count++; return nil })
+	refs.ForEach(s.T().Context(), func(r *plumbing.Reference) error { s.T().Log(r); count++; return nil })
 	s.NoError(err)
 	// 6 refs total from github.com/git-fixtures/basic.git:
 	//  - HEAD
@@ -866,7 +866,7 @@ func (s *RepositorySuite) TestCloneMirror() {
 	//  - refs/pull/2/merge
 	s.Equal(6, count)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 
 	s.True(cfg.Core.IsBare)
@@ -879,37 +879,37 @@ func (s *RepositorySuite) TestCloneWithTags() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, err := Clone(memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: NoTags})
+	r, err := Clone(s.T().Context(), memory.NewStorage(), nil, &CloneOptions{URL: url, Tags: NoTags})
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 
-	i, err := r.References()
+	i, err := r.References(s.T().Context())
 	s.NoError(err)
 
 	var count int
-	i.ForEach(func(*plumbing.Reference) error { count++; return nil })
+	i.ForEach(s.T().Context(), func(*plumbing.Reference) error { count++; return nil })
 
 	s.Equal(3, count)
 }
 
 func (s *RepositorySuite) TestCloneSparse() {
 	fs := memfs.New()
-	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+	r, err := Clone(s.T().Context(), memory.NewStorage(), fs, &CloneOptions{
 		URL:        s.GetBasicLocalRepositoryURL(),
 		NoCheckout: true,
 	})
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.NoError(err)
 
 	sparseCheckoutDirectories := []string{"go", "json", "php"}
-	s.NoError(w.Checkout(&CheckoutOptions{
+	s.NoError(w.Checkout(s.T().Context(), &CheckoutOptions{
 		Branch:                    "refs/heads/master",
 		SparseCheckoutDirectories: sparseCheckoutDirectories,
 	}))
@@ -930,9 +930,9 @@ func (s *RepositorySuite) TestCloneSparse() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAndRemote() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemote(&config.RemoteConfig{
+	remote, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
 	})
@@ -940,23 +940,23 @@ func (s *RepositorySuite) TestCreateRemoteAndRemote() {
 	s.NoError(err)
 	s.Equal("foo", remote.Config().Name)
 
-	alt, err := r.Remote("foo")
+	alt, err := r.Remote(s.T().Context(), "foo")
 	s.NoError(err)
 	s.NotSame(remote, alt)
 	s.Equal("foo", alt.Config().Name)
 }
 
 func (s *RepositorySuite) TestCreateRemoteInvalid() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	remote, err := r.CreateRemote(&config.RemoteConfig{})
+	remote, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{})
 
 	s.ErrorIs(err, config.ErrRemoteConfigEmptyName)
 	s.Nil(remote)
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymous() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
 		Name: "anonymous",
@@ -968,7 +968,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymous() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{
 		Name: "not_anonymous",
@@ -980,7 +980,7 @@ func (s *RepositorySuite) TestCreateRemoteAnonymousInvalidName() {
 }
 
 func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	remote, err := r.CreateRemoteAnonymous(&config.RemoteConfig{})
 
@@ -989,35 +989,35 @@ func (s *RepositorySuite) TestCreateRemoteAnonymousInvalid() {
 }
 
 func (s *RepositorySuite) TestDeleteRemote() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
 	})
 
 	s.NoError(err)
 
-	err = r.DeleteRemote("foo")
+	err = r.DeleteRemote(s.T().Context(), "foo")
 	s.NoError(err)
 
-	alt, err := r.Remote("foo")
+	alt, err := r.Remote(s.T().Context(), "foo")
 	s.ErrorIs(err, ErrRemoteNotFound)
 	s.Nil(alt)
 }
 
 func (s *RepositorySuite) TestEmptyCreateBranch() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{})
+	err := r.CreateBranch(s.T().Context(), &config.Branch{})
 
 	s.NotNil(err)
 }
 
 func (s *RepositorySuite) TestInvalidCreateBranch() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{
+	err := r.CreateBranch(s.T().Context(), &config.Branch{
 		Name: "-foo",
 	})
 
@@ -1025,17 +1025,17 @@ func (s *RepositorySuite) TestInvalidCreateBranch() {
 }
 
 func (s *RepositorySuite) TestCreateBranchAndBranch() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	testBranch := &config.Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
 	}
-	err := r.CreateBranch(testBranch)
+	err := r.CreateBranch(s.T().Context(), testBranch)
 
 	s.NoError(err)
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	branch := cfg.Branches["foo"]
@@ -1043,7 +1043,7 @@ func (s *RepositorySuite) TestCreateBranchAndBranch() {
 	s.Equal(testBranch.Remote, branch.Remote)
 	s.Equal(testBranch.Merge, branch.Merge)
 
-	branch, err = r.Branch("foo")
+	branch, err = r.Branch(s.T().Context(), "foo")
 	s.NoError(err)
 	s.Equal(testBranch.Name, branch.Name)
 	s.Equal(testBranch.Remote, branch.Remote)
@@ -1051,7 +1051,7 @@ func (s *RepositorySuite) TestCreateBranchAndBranch() {
 }
 
 func (s *RepositorySuite) TestMergeFF() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 	defer func() { _ = r.Close() }()
@@ -1061,11 +1061,11 @@ func (s *RepositorySuite) TestMergeFF() {
 	createCommit(s.T(), r)
 	lastCommit := createCommit(s.T(), r)
 
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(s.T().Context())
 	s.NoError(err)
 
 	targetBranch := plumbing.NewBranchReferenceName("foo")
-	err = wt.Checkout(&CheckoutOptions{
+	err = wt.Checkout(s.T().Context(), &CheckoutOptions{
 		Hash:   lastCommit,
 		Create: true,
 		Branch: targetBranch,
@@ -1076,30 +1076,30 @@ func (s *RepositorySuite) TestMergeFF() {
 	fooHash := createCommit(s.T(), r)
 
 	// Checkout the master branch so that we can try to merge foo into it.
-	err = wt.Checkout(&CheckoutOptions{
+	err = wt.Checkout(s.T().Context(), &CheckoutOptions{
 		Branch: plumbing.Master,
 	})
 	s.NoError(err)
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.NoError(err)
 	s.Equal(lastCommit, head.Hash())
 
 	targetRef := plumbing.NewHashReference(targetBranch, fooHash)
 	s.NotNil(targetRef)
 
-	err = r.Merge(*targetRef, MergeOptions{
+	err = r.Merge(s.T().Context(), *targetRef, MergeOptions{
 		Strategy: FastForwardMerge,
 	})
 	s.NoError(err)
 
-	head, err = r.Head()
+	head, err = r.Head(s.T().Context())
 	s.NoError(err)
 	s.Equal(fooHash, head.Hash())
 }
 
 func (s *RepositorySuite) TestMergeFF_Invalid() {
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.NoError(err)
 	s.NotNil(r)
 	defer func() { _ = r.Close() }()
@@ -1112,11 +1112,11 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 	createCommit(s.T(), r)
 	lastCommit := createCommit(s.T(), r)
 
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(s.T().Context())
 	s.NoError(err)
 
 	targetBranch := plumbing.NewBranchReferenceName("foo")
-	err = wt.Checkout(&CheckoutOptions{
+	err = wt.Checkout(s.T().Context(), &CheckoutOptions{
 		Hash:   firstCommit,
 		Create: true,
 		Branch: targetBranch,
@@ -1128,38 +1128,38 @@ func (s *RepositorySuite) TestMergeFF_Invalid() {
 	h := createCommit(s.T(), r)
 
 	// Checkout the master branch so that we can try to merge foo into it.
-	err = wt.Checkout(&CheckoutOptions{
+	err = wt.Checkout(s.T().Context(), &CheckoutOptions{
 		Branch: plumbing.Master,
 	})
 	s.NoError(err)
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.NoError(err)
 	s.Equal(lastCommit, head.Hash())
 
 	targetRef := plumbing.NewHashReference(targetBranch, h)
 	s.NotNil(targetRef)
 
-	err = r.Merge(*targetRef, MergeOptions{
+	err = r.Merge(s.T().Context(), *targetRef, MergeOptions{
 		Strategy: MergeStrategy(10),
 	})
 	s.ErrorIs(err, ErrUnsupportedMergeStrategy)
 
 	// Failed merge operations must not change HEAD.
-	head, err = r.Head()
+	head, err = r.Head(s.T().Context())
 	s.NoError(err)
 	s.Equal(lastCommit, head.Hash())
 
-	err = r.Merge(*targetRef, MergeOptions{})
+	err = r.Merge(s.T().Context(), *targetRef, MergeOptions{})
 	s.ErrorIs(err, ErrFastForwardMergeNotPossible)
 
-	head, err = r.Head()
+	head, err = r.Head(s.T().Context())
 	s.NoError(err)
 	s.Equal(lastCommit, head.Hash())
 }
 
 func (s *RepositorySuite) TestCreateBranchUnmarshal() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
 	expected := []byte(`[core]
@@ -1176,7 +1176,7 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 	merge = refs/heads/master
 `)
 
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "foo",
 		URLs: []string{"http://foo/foo.git"},
 	})
@@ -1191,12 +1191,12 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
 	}
-	err = r.CreateBranch(testBranch1)
+	err = r.CreateBranch(s.T().Context(), testBranch1)
 	s.NoError(err)
-	err = r.CreateBranch(testBranch2)
+	err = r.CreateBranch(s.T().Context(), testBranch2)
 	s.NoError(err)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	marshaled, err := cfg.Marshal()
 	s.NoError(err)
@@ -1204,18 +1204,18 @@ func (s *RepositorySuite) TestCreateBranchUnmarshal() {
 }
 
 func (s *RepositorySuite) TestBranchInvalid() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	branch, err := r.Branch("foo")
+	branch, err := r.Branch(s.T().Context(), "foo")
 
 	s.NotNil(err)
 	s.Nil(branch)
 }
 
 func (s *RepositorySuite) TestCreateBranchInvalid() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{})
+	err := r.CreateBranch(s.T().Context(), &config.Branch{})
 
 	s.NotNil(err)
 
@@ -1224,62 +1224,62 @@ func (s *RepositorySuite) TestCreateBranchInvalid() {
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
 	}
-	err = r.CreateBranch(testBranch)
+	err = r.CreateBranch(s.T().Context(), testBranch)
 	s.NoError(err)
-	err = r.CreateBranch(testBranch)
+	err = r.CreateBranch(s.T().Context(), testBranch)
 	s.NotNil(err)
 }
 
 func (s *RepositorySuite) TestDeleteBranch() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	testBranch := &config.Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
 	}
-	err := r.CreateBranch(testBranch)
+	err := r.CreateBranch(s.T().Context(), testBranch)
 
 	s.NoError(err)
 
-	err = r.DeleteBranch("foo")
+	err = r.DeleteBranch(s.T().Context(), "foo")
 	s.NoError(err)
 
-	b, err := r.Branch("foo")
+	b, err := r.Branch(s.T().Context(), "foo")
 	s.ErrorIs(err, ErrBranchNotFound)
 	s.Nil(b)
 
-	err = r.DeleteBranch("foo")
+	err = r.DeleteBranch(s.T().Context(), "foo")
 	s.ErrorIs(err, ErrBranchNotFound)
 }
 
 func (s *RepositorySuite) TestDeleteBranchFullRefName() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	testBranch := &config.Branch{
 		Name:   "foo",
 		Remote: "origin",
 		Merge:  "refs/heads/foo",
 	}
-	err := r.CreateBranch(testBranch)
+	err := r.CreateBranch(s.T().Context(), testBranch)
 	s.NoError(err)
 
-	err = r.DeleteBranch("refs/heads/foo")
+	err = r.DeleteBranch(s.T().Context(), "refs/heads/foo")
 	s.NoError(err)
 
-	b, err := r.Branch("foo")
+	b, err := r.Branch(s.T().Context(), "foo")
 	s.ErrorIs(err, ErrBranchNotFound)
 	s.Nil(b)
 }
 
 func (s *RepositorySuite) TestPlainInitAlreadyExists() {
 	dir := s.T().TempDir()
-	r, err := PlainInit(dir, true)
+	r, err := PlainInit(s.T().Context(), dir, true)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
-	r, err = PlainInit(dir, true)
+	r, err = PlainInit(s.T().Context(), dir, true)
 	s.ErrorIs(err, ErrTargetDirNotEmpty)
 	s.Nil(r)
 }
@@ -1288,7 +1288,7 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 	dir, clean := s.TemporalHomeDir()
 	defer clean()
 
-	r, err := PlainInit(dir, false)
+	r, err := PlainInit(s.T().Context(), dir, false)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -1302,7 +1302,7 @@ func (s *RepositorySuite) TestPlainOpenTildePath() {
 	for _, home := range homes {
 		path := strings.Replace(dir, strings.Split(dir, ".tmp")[0], home, 1)
 
-		r, err = PlainOpen(path)
+		r, err = PlainOpen(s.T().Context(), path)
 		s.NoError(err)
 		s.NotNil(r)
 		_ = r.Close()
@@ -1315,7 +1315,7 @@ func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
 	dir, err := util.TempDir(fs, "", "plain-open")
 	s.NoError(err)
 
-	r, err := PlainInit(fs.Join(fs.Root(), dir), true)
+	r, err := PlainInit(s.T().Context(), fs.Join(fs.Root(), dir), true)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -1330,7 +1330,7 @@ func (s *RepositorySuite) testPlainOpenGitFile(f func(string, string) string) {
 
 	s.NoError(err)
 
-	r, err = PlainOpen(fs.Join(fs.Root(), altDir))
+	r, err = PlainOpen(s.T().Context(), fs.Join(fs.Root(), altDir))
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -1370,7 +1370,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage() {
 	dir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
 
-	r, err := PlainInit(dir, true)
+	r, err := PlainInit(s.T().Context(), dir, true)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -1384,7 +1384,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileTrailingGarbage() {
 	)
 	s.NoError(err)
 
-	r2, err := PlainOpen(altDir)
+	r2, err := PlainOpen(s.T().Context(), altDir)
 	s.ErrorIs(err, ErrRepositoryNotExists)
 	s.Nil(r2)
 }
@@ -1395,7 +1395,7 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix() {
 	dir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
 
-	r, err := PlainInit(fs.Join(fs.Root(), dir), true)
+	r, err := PlainInit(s.T().Context(), fs.Join(fs.Root(), dir), true)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
@@ -1409,13 +1409,13 @@ func (s *RepositorySuite) TestPlainOpenBareRelativeGitDirFileBadPrefix() {
 
 	s.NoError(err)
 
-	r, err = PlainOpen(fs.Join(fs.Root(), altDir))
+	r, err = PlainOpen(s.T().Context(), fs.Join(fs.Root(), altDir))
 	s.ErrorContains(err, "gitdir")
 	s.Nil(r)
 }
 
 func (s *RepositorySuite) TestPlainOpenNotExists() {
-	r, err := PlainOpen("/not-exists/")
+	r, err := PlainOpen(s.T().Context(), "/not-exists/")
 	s.ErrorIs(err, ErrRepositoryNotExists)
 	s.Nil(r)
 }
@@ -1435,24 +1435,24 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 	s.NoError(err)
 	f.Close()
 
-	r, err := PlainInit(fs.Join(fs.Root(), dir), false)
+	r, err := PlainInit(s.T().Context(), fs.Join(fs.Root(), dir), false)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
 	opt := &PlainOpenOptions{DetectDotGit: true}
-	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), subdir), opt)
+	r, err = PlainOpenWithOptions(s.T().Context(), fs.Join(fs.Root(), subdir), opt)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
-	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), file), opt)
+	r, err = PlainOpenWithOptions(s.T().Context(), fs.Join(fs.Root(), file), opt)
 	s.NoError(err)
 	s.NotNil(r)
 	_ = r.Close()
 
 	optnodetect := &PlainOpenOptions{DetectDotGit: false}
-	r, err = PlainOpenWithOptions(fs.Join(fs.Root(), file), optnodetect)
+	r, err = PlainOpenWithOptions(s.T().Context(), fs.Join(fs.Root(), file), optnodetect)
 	s.NotNil(err)
 	s.Nil(r)
 }
@@ -1460,7 +1460,7 @@ func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 func (s *RepositorySuite) TestPlainOpenNotExistsDetectDotGit() {
 	dir := s.T().TempDir()
 	opt := &PlainOpenOptions{DetectDotGit: true}
-	r, err := PlainOpenWithOptions(dir, opt)
+	r, err := PlainOpenWithOptions(s.T().Context(), dir, opt)
 	s.ErrorIs(err, ErrRepositoryNotExists)
 	s.Nil(r)
 }
@@ -1470,13 +1470,13 @@ func (s *RepositorySuite) TestPlainOpenAlternatesFS() {
 	src := filepath.Join(root, "src")
 	shared := filepath.Join(root, "shared")
 
-	srcRepo, err := PlainClone(src, &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	srcRepo, err := PlainClone(s.T().Context(), src, &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
 
-	head, err := srcRepo.Head()
+	head, err := srcRepo.Head(s.T().Context())
 	s.Require().NoError(err)
 
-	_, err = PlainInit(shared, false)
+	_, err = PlainInit(s.T().Context(), shared, false)
 	s.Require().NoError(err)
 
 	infoDir := filepath.Join(shared, GitDirName, "objects", "info")
@@ -1486,17 +1486,17 @@ func (s *RepositorySuite) TestPlainOpenAlternatesFS() {
 
 	// Without AlternatesFS the absolute alternate path cannot be resolved
 	// from within the .git filesystem.
-	r, err := PlainOpen(shared)
+	r, err := PlainOpen(s.T().Context(), shared)
 	s.Require().NoError(err)
-	_, err = r.CommitObject(head.Hash())
+	_, err = r.CommitObject(s.T().Context(), head.Hash())
 	s.Error(err)
 
-	r, err = PlainOpenWithOptions(shared, &PlainOpenOptions{
+	r, err = PlainOpenWithOptions(s.T().Context(), shared, &PlainOpenOptions{
 		AlternatesFS: osfs.New(root),
 	})
 	s.Require().NoError(err)
 
-	commit, err := r.CommitObject(head.Hash())
+	commit, err := r.CommitObject(s.T().Context(), head.Hash())
 	s.NoError(err)
 	s.NotNil(commit)
 }
@@ -1510,17 +1510,17 @@ func (s *RepositorySuite) TestPlainClone() {
 		os.RemoveAll(dir)
 	})
 
-	r, err := PlainClone(dir, &CloneOptions{
+	r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	s.Equal("master", cfg.Branches["master"].Name)
@@ -1530,7 +1530,7 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared() {
 	dir := s.T().TempDir()
 	remote := s.GetBasicLocalRepositoryURL()
 
-	r, err := PlainClone(dir, &CloneOptions{
+	r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 		Bare:   true,
@@ -1548,7 +1548,7 @@ func (s *RepositorySuite) TestPlainCloneBareAndShared() {
 	line := path.Join(remote, GitDirName, "objects") + "\n"
 	s.Equal(line, string(data))
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	s.Equal("master", cfg.Branches["master"].Name)
@@ -1558,7 +1558,7 @@ func (s *RepositorySuite) TestPlainCloneShared() {
 	dir := s.T().TempDir()
 	remote := s.GetBasicLocalRepositoryURL()
 
-	r, err := PlainClone(dir, &CloneOptions{
+	r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1575,7 +1575,7 @@ func (s *RepositorySuite) TestPlainCloneShared() {
 	line := path.Join(remote, GitDirName, "objects") + "\n"
 	s.Equal(line, string(data))
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	s.Equal("master", cfg.Branches["master"].Name)
@@ -1585,7 +1585,7 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpShouldReturnError() {
 	dir := s.T().TempDir()
 	remote := "http://somerepo"
 
-	_, err := PlainClone(dir, &CloneOptions{
+	_, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1596,7 +1596,7 @@ func (s *RepositorySuite) TestPlainCloneSharedHttpsShouldReturnError() {
 	dir := s.T().TempDir()
 	remote := "https://somerepo"
 
-	_, err := PlainClone(dir, &CloneOptions{
+	_, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1607,7 +1607,7 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError() {
 	dir := s.T().TempDir()
 	remote := "ssh://somerepo"
 
-	_, err := PlainClone(dir, &CloneOptions{
+	_, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:    remote,
 		Shared: true,
 	})
@@ -1616,7 +1616,7 @@ func (s *RepositorySuite) TestPlainCloneSharedSSHShouldReturnError() {
 
 func (s *RepositorySuite) TestPlainCloneWithRemoteName() {
 	dir := s.T().TempDir()
-	r, err := PlainClone(dir, &CloneOptions{
+	r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:        s.GetBasicLocalRepositoryURL(),
 		RemoteName: "test",
 	})
@@ -1624,19 +1624,19 @@ func (s *RepositorySuite) TestPlainCloneWithRemoteName() {
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote("test")
+	remote, err := r.Remote(s.T().Context(), "test")
 	s.NoError(err)
 	s.NotNil(remote)
 }
 
 func (s *RepositorySuite) TestPlainCloneOverExistingGitDirectory() {
 	dir := s.T().TempDir()
-	r, err := PlainInit(dir, false)
+	r, err := PlainInit(s.T().Context(), dir, false)
 	s.NotNil(r)
 	s.NoError(err)
 	_ = r.Close()
 
-	r, err = PlainClone(dir, &CloneOptions{
+	r, err = PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	s.Nil(r)
@@ -1648,11 +1648,14 @@ func (s *RepositorySuite) TestPlainCloneContextCancel() {
 	cancel()
 
 	dir := s.T().TempDir()
-	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
+	r, err := PlainClone(ctx, dir, &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
-	s.NotNil(r)
+	// With ctx-first storers the cancellation is observed before the
+	// repository is initialized, so no partially-initialized repository
+	// is returned.
+	s.Nil(r)
 	s.ErrorIs(err, context.Canceled)
 }
 
@@ -1665,7 +1668,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir() {
 	dir, err := util.TempDir(fs, "", "")
 	s.NoError(err)
 
-	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
+	r, err := PlainClone(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.NotNil(r)
@@ -1690,7 +1693,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir() {
 
 	repoDir := filepath.Join(tmpDir, "repoDir")
 
-	r, err := PlainCloneContext(ctx, repoDir, &CloneOptions{
+	r, err := PlainClone(ctx, repoDir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.NotNil(r)
@@ -1715,7 +1718,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNotDir() {
 	s.NoError(err)
 	s.Nil(f.Close())
 
-	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
+	r, err := PlainClone(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.Nil(r)
@@ -1743,7 +1746,7 @@ func (s *RepositorySuite) TestPlainCloneContextFailedClonePreservesExistingDir()
 	err = util.WriteFile(fs, dummyFile, []byte("dummyContent"), 0o644)
 	s.NoError(err)
 
-	r, err := PlainCloneContext(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
+	r, err := PlainClone(ctx, fs.Join(fs.Root(), repoDir), &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.Nil(r)
@@ -1758,12 +1761,12 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistingOverExistingGitDirecto
 	defer cancel()
 
 	dir := s.T().TempDir()
-	r, err := PlainInit(dir, false)
+	r, err := PlainInit(s.T().Context(), dir, false)
 	s.NotNil(r)
 	s.NoError(err)
 	_ = r.Close()
 
-	r, err = PlainCloneContext(ctx, dir, &CloneOptions{
+	r, err = PlainClone(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
 	s.Nil(r)
@@ -1778,14 +1781,14 @@ func (s *RepositorySuite) TestPlainCloneWithRecurseSubmodules() {
 	fixtures.ByTag("submodule").Run(s.T(), func(t *testing.T, f *fixtures.Fixture) {
 		t.Parallel()
 
-		r, err := PlainClone(t.TempDir(), &CloneOptions{
+		r, err := PlainClone(s.T().Context(), t.TempDir(), &CloneOptions{
 			URL:               s.GetLocalRepositoryURL(f),
 			RecurseSubmodules: DefaultSubmoduleRecursionDepth,
 		})
 		require.NoError(t, err)
 		defer func() { _ = r.Close() }()
 
-		cfg, err := r.Config()
+		cfg, err := r.Config(s.T().Context())
 		require.NoError(t, err)
 		assert.Len(t, cfg.Remotes, 1)
 		assert.Len(t, cfg.Branches, 1)
@@ -1807,7 +1810,7 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 		t.Parallel()
 
 		dir := t.TempDir()
-		mainRepo, err := PlainClone(dir, &CloneOptions{
+		mainRepo, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 			URL:               s.GetLocalRepositoryURL(f),
 			RecurseSubmodules: 1,
 			ShallowSubmodules: true,
@@ -1815,21 +1818,21 @@ func (s *RepositorySuite) TestPlainCloneWithShallowSubmodules() {
 		require.NoError(t, err)
 		defer func() { _ = mainRepo.Close() }()
 
-		mainWorktree, err := mainRepo.Worktree()
+		mainWorktree, err := mainRepo.Worktree(s.T().Context())
 		require.NoError(t, err)
 
-		submodule, err := mainWorktree.Submodule(primaryFixtureSubmoduleName(f))
+		submodule, err := mainWorktree.Submodule(s.T().Context(), primaryFixtureSubmoduleName(f))
 		require.NoError(t, err)
 
-		subRepo, err := submodule.Repository()
+		subRepo, err := submodule.Repository(s.T().Context())
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		lr, err := subRepo.Log(&LogOptions{})
+		lr, err := subRepo.Log(s.T().Context(), &LogOptions{})
 		require.NoError(t, err)
 
 		commitCount := 0
-		for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+		for _, err := lr.Next(s.T().Context()); err == nil; _, err = lr.Next(s.T().Context()) {
 			commitCount++
 		}
 		require.NoError(t, err)
@@ -1843,7 +1846,7 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 
 		dir := t.TempDir()
 
-		r, err := PlainClone(dir, &CloneOptions{
+		r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 			URL:               s.GetLocalRepositoryURL(f),
 			NoCheckout:        true,
 			RecurseSubmodules: DefaultSubmoduleRecursionDepth,
@@ -1851,7 +1854,7 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 		require.NoError(t, err)
 		defer func() { _ = r.Close() }()
 
-		h, err := r.Head()
+		h, err := r.Head(s.T().Context())
 		require.NoError(t, err)
 		if f.Head != "" {
 			assert.Equal(t, f.Head, h.Hash().String())
@@ -1866,23 +1869,23 @@ func (s *RepositorySuite) TestPlainCloneNoCheckout() {
 }
 
 func (s *RepositorySuite) TestFetch() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 	s.NoError(err)
-	s.Nil(r.Fetch(&FetchOptions{}))
+	s.Nil(r.Fetch(s.T().Context(), &FetchOptions{}))
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 
-	_, err = r.Head()
+	_, err = r.Head(s.T().Context())
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 
-	branch, err := r.Reference("refs/remotes/origin/master", false)
+	branch, err := r.Reference(s.T().Context(), "refs/remotes/origin/master", false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal(plumbing.HashReference, branch.Type())
@@ -1890,9 +1893,9 @@ func (s *RepositorySuite) TestFetch() {
 }
 
 func (s *RepositorySuite) TestFetchContext() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
@@ -1901,37 +1904,37 @@ func (s *RepositorySuite) TestFetchContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	s.NotNil(r.FetchContext(ctx, &FetchOptions{}))
+	s.NotNil(r.Fetch(ctx, &FetchOptions{}))
 }
 
 func (s *RepositorySuite) TestFetchWithFilters() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 	s.NoError(err)
 
-	err = r.Fetch(&FetchOptions{
+	err = r.Fetch(s.T().Context(), &FetchOptions{
 		Filter: packp.FilterBlobNone(),
 	})
 	s.ErrorIs(err, transport.ErrFilterNotSupported)
 }
 
 func (s *RepositorySuite) TestFetchWithFiltersReal() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
 	s.NoError(err)
-	err = r.Fetch(&FetchOptions{
+	err = r.Fetch(s.T().Context(), &FetchOptions{
 		Filter: packp.FilterBlobNone(),
 	})
 	s.NoError(err)
-	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
+	blob, err := r.BlobObject(s.T().Context(), plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
 	s.NotNil(err)
 	s.Nil(blob)
 }
@@ -1943,7 +1946,7 @@ func (s *RepositorySuite) TestCloneWithProgress() {
 	fs := memfs.New()
 
 	buf := bytes.NewBuffer(nil)
-	r, err := Clone(memory.NewStorage(), fs, &CloneOptions{
+	r, err := Clone(s.T().Context(), memory.NewStorage(), fs, &CloneOptions{
 		URL:      s.GetBasicLocalRepositoryURL(),
 		Progress: buf,
 	})
@@ -1955,10 +1958,10 @@ func (s *RepositorySuite) TestCloneWithProgress() {
 
 func (s *RepositorySuite) TestCloneDeep() {
 	fs := memfs.New()
-	r, _ := Init(memory.NewStorage(), WithWorkTree(fs))
+	r, _ := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(fs))
 	defer func() { _ = r.Close() }()
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 	s.Nil(head)
 
@@ -1968,22 +1971,22 @@ func (s *RepositorySuite) TestCloneDeep() {
 
 	s.NoError(err)
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 
-	head, err = r.Reference(plumbing.HEAD, false)
+	head, err = r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.SymbolicReference, head.Type())
 	s.Equal("refs/heads/master", head.Target().String())
 
-	branch, err := r.Reference(head.Target(), false)
+	branch, err := r.Reference(s.T().Context(), head.Target(), false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branch.Hash().String())
 
-	branch, err = r.Reference("refs/remotes/origin/master", false)
+	branch, err = r.Reference(s.T().Context(), "refs/remotes/origin/master", false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal(plumbing.HashReference, branch.Type())
@@ -1995,10 +1998,10 @@ func (s *RepositorySuite) TestCloneDeep() {
 }
 
 func (s *RepositorySuite) TestCloneConfig() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 	s.Nil(head)
 
@@ -2008,7 +2011,7 @@ func (s *RepositorySuite) TestCloneConfig() {
 
 	s.NoError(err)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 
 	s.True(cfg.Core.IsBare)
@@ -2028,10 +2031,10 @@ func (s *RepositorySuite) TestCloneSingleBranchAndNonHEADAndNonFull() {
 }
 
 func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 	s.Nil(head)
 
@@ -2043,29 +2046,29 @@ func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
 
 	s.NoError(err)
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	s.Equal("branch", cfg.Branches["branch"].Name)
 	s.Equal("origin", cfg.Branches["branch"].Remote)
 	s.Equal(plumbing.ReferenceName("refs/heads/branch"), cfg.Branches["branch"].Merge)
 
-	head, err = r.Reference(plumbing.HEAD, false)
+	head, err = r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.SymbolicReference, head.Type())
 	s.Equal("refs/heads/branch", head.Target().String())
 
-	branch, err := r.Reference(head.Target(), false)
+	branch, err := r.Reference(s.T().Context(), head.Target(), false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", branch.Hash().String())
 
-	branch, err = r.Reference("refs/remotes/origin/branch", false)
+	branch, err = r.Reference(s.T().Context(), "refs/remotes/origin/branch", false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal(plumbing.HashReference, branch.Type())
@@ -2073,10 +2076,10 @@ func (s *RepositorySuite) testCloneSingleBranchAndNonHEADReference(ref string) {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 	s.Nil(head)
 
@@ -2087,29 +2090,29 @@ func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
 
 	s.NoError(err)
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	s.Equal("main", cfg.Branches["main"].Name)
 	s.Equal("origin", cfg.Branches["main"].Remote)
 	s.Equal(plumbing.ReferenceName("refs/heads/main"), cfg.Branches["main"].Merge)
 
-	head, err = r.Reference(plumbing.HEAD, false)
+	head, err = r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.SymbolicReference, head.Type())
 	s.Equal("refs/heads/main", head.Target().String())
 
-	branch, err := r.Reference(head.Target(), false)
+	branch, err := r.Reference(s.T().Context(), head.Target(), false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal("786dafbd351e587da1ae97e5fb9fbdf868b4a28f", branch.Hash().String())
 
-	branch, err = r.Reference("refs/remotes/origin/HEAD", false)
+	branch, err = r.Reference(s.T().Context(), "refs/remotes/origin/HEAD", false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal(plumbing.HashReference, branch.Type())
@@ -2117,10 +2120,10 @@ func (s *RepositorySuite) TestCloneSingleBranchHEADMain() {
 }
 
 func (s *RepositorySuite) TestCloneSingleBranch() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
-	head, err := r.Head()
+	head, err := r.Head(s.T().Context())
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 	s.Nil(head)
 
@@ -2131,31 +2134,31 @@ func (s *RepositorySuite) TestCloneSingleBranch() {
 
 	s.NoError(err)
 
-	remotes, err := r.Remotes()
+	remotes, err := r.Remotes(s.T().Context())
 	s.NoError(err)
 	s.Len(remotes, 1)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 1)
 	s.Equal("master", cfg.Branches["master"].Name)
 	s.Equal("origin", cfg.Branches["master"].Remote)
 	s.Equal(plumbing.ReferenceName("refs/heads/master"), cfg.Branches["master"].Merge)
 
-	head, err = r.Reference(plumbing.HEAD, false)
+	head, err = r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.SymbolicReference, head.Type())
 	s.Equal("refs/heads/master", head.Target().String())
 
-	branch, err := r.Reference(head.Target(), false)
+	branch, err := r.Reference(s.T().Context(), head.Target(), false)
 	s.NoError(err)
 	s.NotNil(branch)
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branch.Hash().String())
 }
 
 func (s *RepositorySuite) TestCloneSingleTag() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
 	url := s.GetLocalRepositoryURL(
@@ -2169,11 +2172,11 @@ func (s *RepositorySuite) TestCloneSingleTag() {
 	})
 	s.NoError(err)
 
-	branch, err := r.Reference("refs/tags/commit-tag", false)
+	branch, err := r.Reference(s.T().Context(), "refs/tags/commit-tag", false)
 	s.NoError(err)
 	s.NotNil(branch)
 
-	conf, err := r.Config()
+	conf, err := r.Config(s.T().Context())
 	s.NoError(err)
 	originRemote := conf.Remotes["origin"]
 	s.NotNil(originRemote)
@@ -2182,7 +2185,7 @@ func (s *RepositorySuite) TestCloneSingleTag() {
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEAD() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
@@ -2190,25 +2193,25 @@ func (s *RepositorySuite) TestCloneDetachedHEAD() {
 	})
 	s.NoError(err)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 0)
 
-	head, err := r.Reference(plumbing.HEAD, false)
+	head, err := r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.HashReference, head.Type())
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
 
 	count := 0
-	objects, err := r.Objects()
+	objects, err := r.Objects(s.T().Context())
 	s.NoError(err)
-	objects.ForEach(func(object.Object) error { count++; return nil })
+	objects.ForEach(s.T().Context(), func(object.Object) error { count++; return nil })
 	s.Equal(28, count)
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEADAndSingle() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
@@ -2217,20 +2220,20 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndSingle() {
 	})
 	s.NoError(err)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 0)
 
-	head, err := r.Reference(plumbing.HEAD, false)
+	head, err := r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.HashReference, head.Type())
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
 
 	count := 0
-	objects, err := r.Objects()
+	objects, err := r.Objects(s.T().Context())
 	s.NoError(err)
-	objects.ForEach(func(object.Object) error { count++; return nil })
+	objects.ForEach(s.T().Context(), func(object.Object) error { count++; return nil })
 	s.Equal(28, count)
 }
 
@@ -2239,7 +2242,7 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
-	r, _ := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	r, _ := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(memfs.New()))
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetBasicLocalRepositoryURL(),
@@ -2249,25 +2252,25 @@ func (s *RepositorySuite) TestCloneDetachedHEADAndShallow() {
 
 	s.NoError(err)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 0)
 
-	head, err := r.Reference(plumbing.HEAD, false)
+	head, err := r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.HashReference, head.Type())
 	s.Equal("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", head.Hash().String())
 
 	count := 0
-	objects, err := r.Objects()
+	objects, err := r.Objects(s.T().Context())
 	s.NoError(err)
-	objects.ForEach(func(object.Object) error { count++; return nil })
+	objects.ForEach(s.T().Context(), func(object.Object) error { count++; return nil })
 	s.Equal(15, count)
 }
 
 func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL:           s.GetLocalRepositoryURL(fixtures.ByTag("tags").One()),
@@ -2275,25 +2278,25 @@ func (s *RepositorySuite) TestCloneDetachedHEADAnnotatedTag() {
 	})
 	s.NoError(err)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(s.T().Context())
 	s.NoError(err)
 	s.Len(cfg.Branches, 0)
 
-	head, err := r.Reference(plumbing.HEAD, false)
+	head, err := r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.NotNil(head)
 	s.Equal(plumbing.HashReference, head.Type())
 	s.Equal("f7b877701fbf855b44c0a9e86f3fdce2c298b07f", head.Hash().String())
 
 	count := 0
-	objects, err := r.Objects()
+	objects, err := r.Objects(s.T().Context())
 	s.NoError(err)
-	objects.ForEach(func(object.Object) error { count++; return nil })
+	objects.ForEach(s.T().Context(), func(object.Object) error { count++; return nil })
 	s.Equal(7, count)
 }
 
 func (s *RepositorySuite) TestCloneWithFilter() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
 	err := r.clone(context.Background(), &CloneOptions{
@@ -2301,24 +2304,24 @@ func (s *RepositorySuite) TestCloneWithFilter() {
 		Filter: packp.FilterTreeDepth(0),
 	})
 	s.Require().NoError(err)
-	blob, err := r.BlobObject(plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
+	blob, err := r.BlobObject(s.T().Context(), plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492"))
 	s.Require().Error(err)
 	s.Nil(blob)
 }
 
 func (s *RepositorySuite) TestPush() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
-	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+	_, err = s.Repository.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "test",
 		URLs: []string{url},
 	})
 	s.NoError(err)
 
-	err = s.Repository.Push(&PushOptions{
+	err = s.Repository.Push(s.T().Context(), &PushOptions{
 		RemoteName: "test",
 	})
 	s.NoError(err)
@@ -2336,11 +2339,11 @@ func (s *RepositorySuite) TestPush() {
 
 func (s *RepositorySuite) TestPushContext() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	_ = server.Close()
 
-	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+	_, err = s.Repository.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "foo",
 		URLs: []string{url},
 	})
@@ -2349,7 +2352,7 @@ func (s *RepositorySuite) TestPushContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = s.Repository.PushContext(ctx, &PushOptions{
+	err = s.Repository.Push(ctx, &PushOptions{
 		RemoteName: "foo",
 	})
 	s.NotNil(err)
@@ -2378,21 +2381,21 @@ func (s *RepositorySuite) TestPushWithProgress() {
 
 	url := fs.Join(fs.Root(), path)
 
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
 	m := "Receiving..."
 	installPreReceiveHook(s, fs, path, m)
 
-	_, err = s.Repository.CreateRemote(&config.RemoteConfig{
+	_, err = s.Repository.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "bar",
 		URLs: []string{url},
 	})
 	s.NoError(err)
 
 	var p bytes.Buffer
-	err = s.Repository.Push(&PushOptions{
+	err = s.Repository.Push(s.T().Context(), &PushOptions{
 		RemoteName: "bar",
 		Progress:   &p,
 	})
@@ -2407,13 +2410,13 @@ func (s *RepositorySuite) TestPushWithProgress() {
 }
 
 func (s *RepositorySuite) TestPushDepth() {
-	server, err := PlainClone(s.T().TempDir(), &CloneOptions{
+	server, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	s.Require().NoError(err)
 	defer func() { _ = server.Close() }()
 
-	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	r, err := Clone(s.T().Context(), memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL:   server.wt.Root(),
 		Depth: 1,
 	})
@@ -2423,19 +2426,19 @@ func (s *RepositorySuite) TestPushDepth() {
 	err = util.WriteFile(r.wt, "foo", nil, 0o755)
 	s.NoError(err)
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.NoError(err)
 
-	hash, err := w.Commit("foo", &CommitOptions{
+	hash, err := w.Commit(s.T().Context(), "foo", &CommitOptions{
 		Author:    defaultSignature(),
 		Committer: defaultSignature(),
 	})
 	s.NoError(err)
 
-	err = r.Push(&PushOptions{})
+	err = r.Push(s.T().Context(), &PushOptions{})
 	s.NoError(err)
 
 	AssertReferences(s.T(), server, map[string]string{
@@ -2452,16 +2455,16 @@ func (s *RepositorySuite) TestPushNonExistentRemote() {
 	s.Require().NoError(err)
 	sto := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 
-	r, err := Open(sto, srcFs)
+	r, err := Open(s.T().Context(), sto, srcFs)
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	err = r.Push(&PushOptions{RemoteName: "myremote"})
+	err = r.Push(s.T().Context(), &PushOptions{RemoteName: "myremote"})
 	s.ErrorContains(err, "remote not found")
 }
 
 func (s *RepositorySuite) TestLog() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2469,7 +2472,7 @@ func (s *RepositorySuite) TestLog() {
 
 	s.NoError(err)
 
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		From: plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"),
 	})
 
@@ -2481,34 +2484,34 @@ func (s *RepositorySuite) TestLog() {
 	}
 
 	for _, o := range commitOrder {
-		commit, err := cIter.Next()
+		commit, err := cIter.Next(s.T().Context())
 		s.NoError(err)
 		s.Equal(o, commit.Hash)
 	}
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 }
 
 func (s *RepositorySuite) TestLogAll() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	s.NoError(err)
 
-	rIter, err := r.Storer.IterReferences()
+	rIter, err := r.Storer.IterReferences(s.T().Context())
 	s.NoError(err)
 
 	refCount := 0
-	err = rIter.ForEach(func(*plumbing.Reference) error {
+	err = rIter.ForEach(s.T().Context(), func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
 	s.NoError(err)
 	s.Equal(5, refCount)
 
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		All: true,
 	})
 	s.NoError(err)
@@ -2526,70 +2529,70 @@ func (s *RepositorySuite) TestLogAll() {
 	}
 
 	for _, o := range commitOrder {
-		commit, err := cIter.Next()
+		commit, err := cIter.Next(s.T().Context())
 		s.NoError(err)
 		s.Equal(o, commit.Hash)
 	}
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	cIter.Close()
 }
 
 func (s *RepositorySuite) TestLogAllMissingReferences() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	s.NoError(err)
-	err = r.Storer.RemoveReference(plumbing.HEAD)
+	err = r.Storer.RemoveReference(s.T().Context(), plumbing.HEAD)
 	s.NoError(err)
 
-	rIter, err := r.Storer.IterReferences()
+	rIter, err := r.Storer.IterReferences(s.T().Context())
 	s.NoError(err)
 
 	refCount := 0
-	err = rIter.ForEach(func(*plumbing.Reference) error {
+	err = rIter.ForEach(s.T().Context(), func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
 	s.NoError(err)
 	s.Equal(4, refCount)
 
-	err = r.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("DUMMY"), plumbing.NewHash("DUMMY")))
+	err = r.Storer.SetReference(s.T().Context(), plumbing.NewHashReference(plumbing.ReferenceName("DUMMY"), plumbing.NewHash("DUMMY")))
 	s.NoError(err)
 
-	rIter, err = r.Storer.IterReferences()
+	rIter, err = r.Storer.IterReferences(s.T().Context())
 	s.NoError(err)
 
 	refCount = 0
-	err = rIter.ForEach(func(*plumbing.Reference) error {
+	err = rIter.ForEach(s.T().Context(), func(*plumbing.Reference) error {
 		refCount++
 		return nil
 	})
 	s.NoError(err)
 	s.Equal(5, refCount)
 
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		All: true,
 	})
 	s.NotNil(cIter)
 	s.NoError(err)
 
 	cCount := 0
-	cIter.ForEach(func(*object.Commit) error {
+	cIter.ForEach(s.T().Context(), func(*object.Commit) error {
 		cCount++
 		return nil
 	})
 	s.Equal(9, cCount)
 
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	cIter.Close()
 }
 
 func (s *RepositorySuite) TestLogAllOrderByTime() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2597,7 +2600,7 @@ func (s *RepositorySuite) TestLogAllOrderByTime() {
 
 	s.NoError(err)
 
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		Order: LogOrderCommitterTime,
 		All:   true,
 	})
@@ -2616,17 +2619,17 @@ func (s *RepositorySuite) TestLogAllOrderByTime() {
 	}
 
 	for _, o := range commitOrder {
-		commit, err := cIter.Next()
+		commit, err := cIter.Next(s.T().Context())
 		s.NoError(err)
 		s.Equal(o, commit.Hash)
 	}
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	cIter.Close()
 }
 
 func (s *RepositorySuite) TestLogHead() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2634,7 +2637,7 @@ func (s *RepositorySuite) TestLogHead() {
 
 	s.NoError(err)
 
-	cIter, err := r.Log(&LogOptions{})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{})
 
 	s.NoError(err)
 
@@ -2650,16 +2653,16 @@ func (s *RepositorySuite) TestLogHead() {
 	}
 
 	for _, o := range commitOrder {
-		commit, err := cIter.Next()
+		commit, err := cIter.Next(s.T().Context())
 		s.NoError(err)
 		s.Equal(o, commit.Hash)
 	}
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 }
 
 func (s *RepositorySuite) TestLogError() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2667,14 +2670,14 @@ func (s *RepositorySuite) TestLogError() {
 
 	s.NoError(err)
 
-	_, err = r.Log(&LogOptions{
+	_, err = r.Log(s.T().Context(), &LogOptions{
 		From: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 	})
 	s.NotNil(err)
 }
 
 func (s *RepositorySuite) TestLogFileNext() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2683,7 +2686,7 @@ func (s *RepositorySuite) TestLogFileNext() {
 	s.NoError(err)
 
 	fileName := "vendor/foo.go"
-	cIter, err := r.Log(&LogOptions{FileName: &fileName})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{FileName: &fileName})
 
 	s.NoError(err)
 
@@ -2692,16 +2695,16 @@ func (s *RepositorySuite) TestLogFileNext() {
 	}
 
 	for _, o := range commitOrder {
-		commit, err := cIter.Next()
+		commit, err := cIter.Next(s.T().Context())
 		s.NoError(err)
 		s.Equal(o, commit.Hash)
 	}
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 }
 
 func (s *RepositorySuite) TestLogFileForEach() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2710,7 +2713,7 @@ func (s *RepositorySuite) TestLogFileForEach() {
 	s.NoError(err)
 
 	fileName := "php/crappy.php"
-	cIter, err := r.Log(&LogOptions{FileName: &fileName})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{FileName: &fileName})
 	s.NoError(err)
 	defer cIter.Close()
 
@@ -2719,7 +2722,7 @@ func (s *RepositorySuite) TestLogFileForEach() {
 	}
 
 	expectedIndex := 0
-	err = cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(s.T().Context(), func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		s.Equal(expectedCommitHash.String(), commit.Hash.String())
 		expectedIndex++
@@ -2730,7 +2733,7 @@ func (s *RepositorySuite) TestLogFileForEach() {
 }
 
 func (s *RepositorySuite) TestLogNonHeadFile() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2739,16 +2742,16 @@ func (s *RepositorySuite) TestLogNonHeadFile() {
 	s.NoError(err)
 
 	fileName := "README"
-	cIter, err := r.Log(&LogOptions{FileName: &fileName})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{FileName: &fileName})
 	s.NoError(err)
 	defer cIter.Close()
 
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 }
 
 func (s *RepositorySuite) TestLogAllFileForEach() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2757,7 +2760,7 @@ func (s *RepositorySuite) TestLogAllFileForEach() {
 	s.NoError(err)
 
 	fileName := "README"
-	cIter, err := r.Log(&LogOptions{FileName: &fileName, All: true})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{FileName: &fileName, All: true})
 	s.NoError(err)
 	defer cIter.Close()
 
@@ -2766,7 +2769,7 @@ func (s *RepositorySuite) TestLogAllFileForEach() {
 	}
 
 	expectedIndex := 0
-	err = cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(s.T().Context(), func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		s.Equal(expectedCommitHash.String(), commit.Hash.String())
 		expectedIndex++
@@ -2777,7 +2780,7 @@ func (s *RepositorySuite) TestLogAllFileForEach() {
 }
 
 func (s *RepositorySuite) TestLogInvalidFile() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2786,17 +2789,17 @@ func (s *RepositorySuite) TestLogInvalidFile() {
 
 	// Throwing in a file that does not exist
 	fileName := "vendor/foo12.go"
-	cIter, err := r.Log(&LogOptions{FileName: &fileName})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{FileName: &fileName})
 	// Not raising an error since `git log -- vendor/foo12.go` responds silently
 	s.NoError(err)
 	defer cIter.Close()
 
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 }
 
 func (s *RepositorySuite) TestLogFileInitialCommit() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2804,7 +2807,7 @@ func (s *RepositorySuite) TestLogFileInitialCommit() {
 	s.NoError(err)
 
 	fileName := "LICENSE"
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		Order:    LogOrderCommitterTime,
 		FileName: &fileName,
 	})
@@ -2816,7 +2819,7 @@ func (s *RepositorySuite) TestLogFileInitialCommit() {
 	}
 
 	expectedIndex := 0
-	err = cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(s.T().Context(), func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		s.Equal(expectedCommitHash.String(), commit.Hash.String())
 		expectedIndex++
@@ -2827,7 +2830,7 @@ func (s *RepositorySuite) TestLogFileInitialCommit() {
 }
 
 func (s *RepositorySuite) TestLogFileWithOtherParamsFail() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2835,7 +2838,7 @@ func (s *RepositorySuite) TestLogFileWithOtherParamsFail() {
 	s.NoError(err)
 
 	fileName := "vendor/foo.go"
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		Order:    LogOrderCommitterTime,
 		FileName: &fileName,
 		From:     plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
@@ -2843,12 +2846,12 @@ func (s *RepositorySuite) TestLogFileWithOtherParamsFail() {
 	s.NoError(err)
 	defer cIter.Close()
 
-	_, iterErr := cIter.Next()
+	_, iterErr := cIter.Next(s.T().Context())
 	s.Equal(io.EOF, iterErr)
 }
 
 func (s *RepositorySuite) TestLogFileWithOtherParamsPass() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2856,27 +2859,27 @@ func (s *RepositorySuite) TestLogFileWithOtherParamsPass() {
 	s.NoError(err)
 
 	fileName := "LICENSE"
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		Order:    LogOrderCommitterTime,
 		FileName: &fileName,
 		From:     plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
 	})
 	s.NoError(err)
-	commitVal, iterErr := cIter.Next()
+	commitVal, iterErr := cIter.Next(s.T().Context())
 	s.Equal(nil, iterErr)
 	s.Equal("b029517f6300c2da0f4b651b8642506cd6aaf45d", commitVal.Hash.String())
 
-	_, iterErr = cIter.Next()
+	_, iterErr = cIter.Next(s.T().Context())
 	s.Equal(io.EOF, iterErr)
 }
 
 type mockErrCommitIter struct{}
 
-func (m *mockErrCommitIter) Next() (*object.Commit, error) {
+func (m *mockErrCommitIter) Next(context.Context) (*object.Commit, error) {
 	return nil, errors.New("mock next error")
 }
 
-func (m *mockErrCommitIter) ForEach(func(*object.Commit) error) error {
+func (m *mockErrCommitIter) ForEach(context.Context, func(*object.Commit) error) error {
 	return errors.New("mock foreach error")
 }
 
@@ -2887,7 +2890,7 @@ func (s *RepositorySuite) TestLogFileWithError() {
 	cIter := object.NewCommitFileIterFromIter(fileName, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(*object.Commit) error {
+	err := cIter.ForEach(s.T().Context(), func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2901,7 +2904,7 @@ func (s *RepositorySuite) TestLogPathWithError() {
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(*object.Commit) error {
+	err := cIter.ForEach(s.T().Context(), func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2915,7 +2918,7 @@ func (s *RepositorySuite) TestLogPathRegexpWithError() {
 	cIter := object.NewCommitPathIterFromIter(pathIter, &mockErrCommitIter{}, false)
 	defer cIter.Close()
 
-	err := cIter.ForEach(func(*object.Commit) error {
+	err := cIter.ForEach(s.T().Context(), func(*object.Commit) error {
 		return nil
 	})
 	s.NotNil(err)
@@ -2927,7 +2930,7 @@ func (s *RepositorySuite) TestLogPathFilterRegexp() {
 		return pathRE.MatchString(path)
 	}
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2940,14 +2943,14 @@ func (s *RepositorySuite) TestLogPathFilterRegexp() {
 	}
 	commitIDs := []string{}
 
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		PathFilter: pathIter,
 		From:       plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
 	s.NoError(err)
 	defer cIter.Close()
 
-	cIter.ForEach(func(commit *object.Commit) error {
+	cIter.ForEach(s.T().Context(), func(commit *object.Commit) error {
 		commitIDs = append(commitIDs, commit.ID().String())
 		return nil
 	})
@@ -2958,7 +2961,7 @@ func (s *RepositorySuite) TestLogPathFilterRegexp() {
 }
 
 func (s *RepositorySuite) TestLogLimitNext() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2967,7 +2970,7 @@ func (s *RepositorySuite) TestLogLimitNext() {
 	s.NoError(err)
 
 	since := time.Date(2015, 4, 1, 0, 0, 0, 0, time.UTC)
-	cIter, err := r.Log(&LogOptions{Since: &since})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{Since: &since})
 
 	s.NoError(err)
 
@@ -2976,16 +2979,16 @@ func (s *RepositorySuite) TestLogLimitNext() {
 	}
 
 	for _, o := range commitOrder {
-		commit, err := cIter.Next()
+		commit, err := cIter.Next(s.T().Context())
 		s.NoError(err)
 		s.Equal(o, commit.Hash)
 	}
-	_, err = cIter.Next()
+	_, err = cIter.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 }
 
 func (s *RepositorySuite) TestLogLimitForEach() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -2995,7 +2998,7 @@ func (s *RepositorySuite) TestLogLimitForEach() {
 
 	since := time.Date(2015, 3, 31, 11, 54, 0, 0, time.UTC)
 	until := time.Date(2015, 4, 1, 0, 0, 0, 0, time.UTC)
-	cIter, err := r.Log(&LogOptions{Since: &since, Until: &until})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{Since: &since, Until: &until})
 	s.NoError(err)
 	defer cIter.Close()
 
@@ -3004,7 +3007,7 @@ func (s *RepositorySuite) TestLogLimitForEach() {
 	}
 
 	expectedIndex := 0
-	err = cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(s.T().Context(), func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		s.Equal(expectedCommitHash.String(), commit.Hash.String())
 		expectedIndex++
@@ -3015,7 +3018,7 @@ func (s *RepositorySuite) TestLogLimitForEach() {
 }
 
 func (s *RepositorySuite) TestLogAllLimitForEach() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -3025,7 +3028,7 @@ func (s *RepositorySuite) TestLogAllLimitForEach() {
 
 	since := time.Date(2015, 3, 31, 11, 54, 0, 0, time.UTC)
 	until := time.Date(2015, 4, 1, 0, 0, 0, 0, time.UTC)
-	cIter, err := r.Log(&LogOptions{Since: &since, Until: &until, All: true})
+	cIter, err := r.Log(s.T().Context(), &LogOptions{Since: &since, Until: &until, All: true})
 	s.NoError(err)
 	defer cIter.Close()
 
@@ -3035,7 +3038,7 @@ func (s *RepositorySuite) TestLogAllLimitForEach() {
 	}
 
 	expectedIndex := 0
-	err = cIter.ForEach(func(commit *object.Commit) error {
+	err = cIter.ForEach(s.T().Context(), func(commit *object.Commit) error {
 		expectedCommitHash := commitOrder[expectedIndex]
 		s.Equal(expectedCommitHash.String(), commit.Hash.String())
 		expectedIndex++
@@ -3046,7 +3049,7 @@ func (s *RepositorySuite) TestLogAllLimitForEach() {
 }
 
 func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -3054,7 +3057,7 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
 	s.NoError(err)
 
 	since := time.Date(2015, 3, 31, 11, 54, 0, 0, time.UTC)
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		Order: LogOrderCommitterTime,
 		Since: &since,
 		From:  plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
@@ -3062,12 +3065,12 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
 	s.NoError(err)
 	defer cIter.Close()
 
-	_, iterErr := cIter.Next()
+	_, iterErr := cIter.Next(s.T().Context())
 	s.Equal(io.EOF, iterErr)
 }
 
 func (s *RepositorySuite) TestLogLimitWithOtherParamsPass() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -3075,7 +3078,7 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsPass() {
 	s.NoError(err)
 
 	until := time.Date(2015, 3, 31, 11, 43, 0, 0, time.UTC)
-	cIter, err := r.Log(&LogOptions{
+	cIter, err := r.Log(s.T().Context(), &LogOptions{
 		Order: LogOrderCommitterTime,
 		Until: &until,
 		From:  plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
@@ -3083,33 +3086,33 @@ func (s *RepositorySuite) TestLogLimitWithOtherParamsPass() {
 	s.NoError(err)
 	defer cIter.Close()
 
-	commitVal, iterErr := cIter.Next()
+	commitVal, iterErr := cIter.Next(s.T().Context())
 	s.Equal(nil, iterErr)
 	s.Equal("b029517f6300c2da0f4b651b8642506cd6aaf45d", commitVal.Hash.String())
 
-	_, iterErr = cIter.Next()
+	_, iterErr = cIter.Next(s.T().Context())
 	s.Equal(io.EOF, iterErr)
 }
 
 func (s *RepositorySuite) TestConfigScoped() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 	s.NoError(err)
 
-	cfg, err := r.ConfigScoped(config.LocalScope)
+	cfg, err := r.ConfigScoped(s.T().Context(), config.LocalScope)
 	s.NoError(err)
 	s.Equal("", cfg.User.Email)
 
-	cfg, err = r.ConfigScoped(config.SystemScope)
+	cfg, err = r.ConfigScoped(s.T().Context(), config.SystemScope)
 	s.NoError(err)
 	s.NotEqual("", cfg.User.Email)
 }
 
 func (s *RepositorySuite) TestCommit() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -3118,7 +3121,7 @@ func (s *RepositorySuite) TestCommit() {
 	s.NoError(err)
 
 	hash := plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47")
-	commit, err := r.CommitObject(hash)
+	commit, err := r.CommitObject(s.T().Context(), hash)
 	s.NoError(err)
 
 	s.False(commit.Hash.IsZero())
@@ -3126,24 +3129,25 @@ func (s *RepositorySuite) TestCommit() {
 	s.Equal(hash, commit.Hash)
 	s.Equal(plumbing.CommitObject, commit.Type())
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 	s.False(tree.Hash.IsZero())
 
 	s.Equal("daniel@lordran.local", commit.Author.Email)
 }
 
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *RepositorySuite) TestCommits() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	count := 0
-	commits, err := r.CommitObjects()
+	commits, err := r.CommitObjects(s.T().Context())
 	s.NoError(err)
 	for {
-		commit, err := commits.Next()
+		commit, err := commits.Next(s.T().Context())
 		if err != nil {
 			break
 		}
@@ -3158,7 +3162,7 @@ func (s *RepositorySuite) TestCommits() {
 }
 
 func (s *RepositorySuite) TestBlob() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -3166,12 +3170,12 @@ func (s *RepositorySuite) TestBlob() {
 
 	s.NoError(err)
 
-	blob, err := r.BlobObject(plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"))
+	blob, err := r.BlobObject(s.T().Context(), plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"))
 	s.NotNil(err)
 	s.Nil(blob)
 
 	blobHash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err = r.BlobObject(blobHash)
+	blob, err = r.BlobObject(s.T().Context(), blobHash)
 	s.NoError(err)
 
 	s.False(blob.Hash.IsZero())
@@ -3180,17 +3184,18 @@ func (s *RepositorySuite) TestBlob() {
 	s.Equal(plumbing.BlobObject, blob.Type())
 }
 
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *RepositorySuite) TestBlobs() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	count := 0
-	blobs, err := r.BlobObjects()
+	blobs, err := r.BlobObjects(s.T().Context())
 	s.NoError(err)
 	for {
-		blob, err := blobs.Next()
+		blob, err := blobs.Next(s.T().Context())
 		if err != nil {
 			break
 		}
@@ -3209,13 +3214,13 @@ func (s *RepositorySuite) TestTagObject() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
 	hash := plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")
-	tag, err := r.TagObject(hash)
+	tag, err := r.TagObject(s.T().Context(), hash)
 	s.NoError(err)
 
 	s.False(tag.Hash.IsZero())
@@ -3223,21 +3228,22 @@ func (s *RepositorySuite) TestTagObject() {
 	s.Equal(plumbing.TagObject, tag.Type())
 }
 
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *RepositorySuite) TestTags() {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
 	count := 0
-	tags, err := r.Tags()
+	tags, err := r.Tags(s.T().Context())
 	s.NoError(err)
 
-	tags.ForEach(func(tag *plumbing.Reference) error {
+	tags.ForEach(s.T().Context(), func(tag *plumbing.Reference) error {
 		count++
 		s.False(tag.Hash().IsZero())
 		s.True(tag.Name().IsTag())
@@ -3252,19 +3258,19 @@ func (s *RepositorySuite) TestCreateTagLightweight() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	expected, err := r.Head()
+	expected, err := r.Head(s.T().Context())
 	s.NoError(err)
 
-	ref, err := r.CreateTag("foobar", expected.Hash(), nil)
+	ref, err := r.CreateTag(s.T().Context(), "foobar", expected.Hash(), nil)
 	s.NoError(err)
 	s.NotNil(ref)
 
-	actual, err := r.Tag("foobar")
+	actual, err := r.Tag(s.T().Context(), "foobar")
 	s.NoError(err)
 
 	s.Equal(actual.Hash(), expected.Hash())
@@ -3275,15 +3281,15 @@ func (s *RepositorySuite) TestCreateTagLightweightExists() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	expected, err := r.Head()
+	expected, err := r.Head(s.T().Context())
 	s.NoError(err)
 
-	ref, err := r.CreateTag("lightweight-tag", expected.Hash(), nil)
+	ref, err := r.CreateTag(s.T().Context(), "lightweight-tag", expected.Hash(), nil)
 	s.Nil(ref)
 	s.ErrorIs(err, ErrTagExists)
 }
@@ -3293,26 +3299,26 @@ func (s *RepositorySuite) TestCreateTagAnnotated() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	h, err := r.Head()
+	h, err := r.Head(s.T().Context())
 	s.NoError(err)
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{
+	ref, err := r.CreateTag(s.T().Context(), "foobar", expectedHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 	})
 	s.NoError(err)
 
-	tag, err := r.Tag("foobar")
+	tag, err := r.Tag(s.T().Context(), "foobar")
 	s.NoError(err)
 
-	obj, err := r.TagObject(tag.Hash())
+	obj, err := r.TagObject(s.T().Context(), tag.Hash())
 	s.NoError(err)
 
 	s.Equal(tag, ref)
@@ -3326,17 +3332,17 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadOpts() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	h, err := r.Head()
+	h, err := r.Head(s.T().Context())
 	s.NoError(err)
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{})
+	ref, err := r.CreateTag(s.T().Context(), "foobar", expectedHash, &CreateTagOptions{})
 	s.Nil(ref)
 	s.ErrorIs(err, ErrMissingMessage)
 }
@@ -3346,12 +3352,12 @@ func (s *RepositorySuite) TestCreateTagAnnotatedBadHash() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	ref, err := r.CreateTag("foobar", plumbing.ZeroHash, &CreateTagOptions{
+	ref, err := r.CreateTag(s.T().Context(), "foobar", plumbing.ZeroHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 	})
@@ -3364,24 +3370,24 @@ func (s *RepositorySuite) TestCreateTagCanonicalize() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	h, err := r.Head()
+	h, err := r.Head(s.T().Context())
 	s.NoError(err)
 
-	_, err = r.CreateTag("foobar", h.Hash(), &CreateTagOptions{
+	_, err = r.CreateTag(s.T().Context(), "foobar", h.Hash(), &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "\n\nfoo bar baz qux\n\nsome message here",
 	})
 	s.NoError(err)
 
-	tag, err := r.Tag("foobar")
+	tag, err := r.Tag(s.T().Context(), "foobar")
 	s.NoError(err)
 
-	obj, err := r.TagObject(tag.Hash())
+	obj, err := r.TagObject(s.T().Context(), tag.Hash())
 	s.NoError(err)
 
 	// Assert the new canonicalized message.
@@ -3393,14 +3399,14 @@ func (s *RepositorySuite) TestTagLightweight() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
 	expected := plumbing.NewHash("f7b877701fbf855b44c0a9e86f3fdce2c298b07f")
 
-	tag, err := r.Tag("lightweight-tag")
+	tag, err := r.Tag(s.T().Context(), "lightweight-tag")
 	s.NoError(err)
 
 	actual := tag.Hash()
@@ -3412,12 +3418,12 @@ func (s *RepositorySuite) TestTagLightweightMissingTag() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	tag, err := r.Tag("lightweight-tag-tag")
+	tag, err := r.Tag(s.T().Context(), "lightweight-tag-tag")
 	s.Nil(tag)
 	s.ErrorIs(err, ErrTagNotFound)
 }
@@ -3427,15 +3433,15 @@ func (s *RepositorySuite) TestDeleteTag() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	err = r.DeleteTag("lightweight-tag")
+	err = r.DeleteTag(s.T().Context(), "lightweight-tag")
 	s.NoError(err)
 
-	_, err = r.Tag("lightweight-tag")
+	_, err = r.Tag(s.T().Context(), "lightweight-tag")
 	s.ErrorIs(err, ErrTagNotFound)
 }
 
@@ -3444,12 +3450,12 @@ func (s *RepositorySuite) TestDeleteTagMissingTag() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	err = r.DeleteTag("lightweight-tag-tag")
+	err = r.DeleteTag(s.T().Context(), "lightweight-tag-tag")
 	s.ErrorIs(err, ErrTagNotFound)
 }
 
@@ -3462,42 +3468,44 @@ func (s *RepositorySuite) TestDeleteTagAnnotated() {
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, _ := Init(fss)
+	r, _ := Init(s.T().Context(), fss)
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	ref, err := r.Tag("annotated-tag")
+	ref, err := r.Tag(s.T().Context(), "annotated-tag")
 	s.NotNil(ref)
 	s.NoError(err)
 
-	obj, err := r.TagObject(ref.Hash())
+	obj, err := r.TagObject(s.T().Context(), ref.Hash())
 	s.NotNil(obj)
 	s.NoError(err)
 
-	err = r.DeleteTag("annotated-tag")
+	err = r.DeleteTag(s.T().Context(), "annotated-tag")
 	s.NoError(err)
 
-	_, err = r.Tag("annotated-tag")
+	_, err = r.Tag(s.T().Context(), "annotated-tag")
 	s.ErrorIs(err, ErrTagNotFound)
 
 	// Run a prune (and repack, to ensure that we are GCing everything regardless
 	// of the fixture in use) and try to get the tag object again.
 	//
 	// The repo needs to be re-opened after the repack.
-	err = r.Prune(PruneOptions{Handler: r.DeleteObject})
+	err = r.Prune(s.T().Context(), PruneOptions{Handler: func(h plumbing.Hash) error {
+		return r.DeleteObject(s.T().Context(), h)
+	}})
 	s.NoError(err)
 
-	err = r.RepackObjects(&RepackConfig{})
+	err = r.RepackObjects(s.T().Context(), &RepackConfig{})
 	s.NoError(err)
 
 	_ = r.Close()
-	r, err = PlainOpen(fs.Root())
+	r, err = PlainOpen(s.T().Context(), fs.Root())
 	s.NotNil(r)
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
 	// Now check to see if the GC was effective in removing the tag object.
-	obj, err = r.TagObject(ref.Hash())
+	obj, err = r.TagObject(s.T().Context(), ref.Hash())
 	s.Nil(obj)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
@@ -3511,7 +3519,7 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked() {
 
 	fss := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
-	r, _ := Init(fss)
+	r, _ := Init(s.T().Context(), fss)
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
@@ -3520,43 +3528,45 @@ func (s *RepositorySuite) TestDeleteTagAnnotatedUnpacked() {
 	// object will be unpacked (as we aren't doing anything that should pack it),
 	// so that we can effectively test that a prune deletes it, without having to
 	// resort to a repack.
-	h, err := r.Head()
+	h, err := r.Head(s.T().Context())
 	s.NoError(err)
 
 	expectedHash := h.Hash()
 
-	ref, err := r.CreateTag("foobar", expectedHash, &CreateTagOptions{
+	ref, err := r.CreateTag(s.T().Context(), "foobar", expectedHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "foo bar baz qux",
 	})
 	s.NoError(err)
 
-	tag, err := r.Tag("foobar")
+	tag, err := r.Tag(s.T().Context(), "foobar")
 	s.NoError(err)
 
-	obj, err := r.TagObject(tag.Hash())
+	obj, err := r.TagObject(s.T().Context(), tag.Hash())
 	s.NotNil(obj)
 	s.NoError(err)
 
-	err = r.DeleteTag("foobar")
+	err = r.DeleteTag(s.T().Context(), "foobar")
 	s.NoError(err)
 
-	_, err = r.Tag("foobar")
+	_, err = r.Tag(s.T().Context(), "foobar")
 	s.ErrorIs(err, ErrTagNotFound)
 
 	// As mentioned, only run a prune. We are not testing for packed objects
 	// here.
-	err = r.Prune(PruneOptions{Handler: r.DeleteObject})
+	err = r.Prune(s.T().Context(), PruneOptions{Handler: func(h plumbing.Hash) error {
+		return r.DeleteObject(s.T().Context(), h)
+	}})
 	s.NoError(err)
 
 	// Now check to see if the GC was effective in removing the tag object.
-	obj, err = r.TagObject(ref.Hash())
+	obj, err = r.TagObject(s.T().Context(), ref.Hash())
 	s.Nil(obj)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
 func (s *RepositorySuite) TestInvalidTagName() {
-	r, err := Init(memory.NewStorage())
+	r, err := Init(s.T().Context(), memory.NewStorage())
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 	for i, name := range []string{
@@ -3565,7 +3575,7 @@ func (s *RepositorySuite) TestInvalidTagName() {
 		"foo\tbar",
 		"foo\nbar",
 	} {
-		_, err = r.CreateTag(name, plumbing.ZeroHash, nil)
+		_, err = r.CreateTag(s.T().Context(), name, plumbing.ZeroHash, nil)
 		s.Error(err, fmt.Sprintf("case %d %q", i, name))
 	}
 }
@@ -3577,15 +3587,15 @@ func (s *RepositorySuite) TestBranches() {
 	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
 	dotgit2, err := f.DotGit()
 	s.Require().NoError(err)
-	r, err := Open(sto, dotgit2)
+	r, err := Open(s.T().Context(), sto, dotgit2)
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
 	count := 0
-	branches, err := r.Branches()
+	branches, err := r.Branches(s.T().Context())
 	s.NoError(err)
 
-	branches.ForEach(func(branch *plumbing.Reference) error {
+	branches.ForEach(s.T().Context(), func(branch *plumbing.Reference) error {
 		count++
 		s.False(branch.Hash().IsZero())
 		s.True(branch.Name().IsBranch())
@@ -3595,22 +3605,23 @@ func (s *RepositorySuite) TestBranches() {
 	s.Equal(8, count)
 }
 
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *RepositorySuite) TestNotes() {
 	// TODO add fixture with Notes
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
 	count := 0
-	notes, err := r.Notes()
+	notes, err := r.Notes(s.T().Context())
 	s.NoError(err)
 
-	notes.ForEach(func(note *plumbing.Reference) error {
+	notes.ForEach(s.T().Context(), func(note *plumbing.Reference) error {
 		count++
 		s.False(note.Hash().IsZero())
 		s.True(note.Name().IsNote())
@@ -3621,7 +3632,7 @@ func (s *RepositorySuite) TestNotes() {
 }
 
 func (s *RepositorySuite) TestTree() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{
 		URL: s.GetBasicLocalRepositoryURL(),
@@ -3629,12 +3640,12 @@ func (s *RepositorySuite) TestTree() {
 	s.NoError(err)
 
 	invalidHash := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	tree, err := r.TreeObject(invalidHash)
+	tree, err := r.TreeObject(s.T().Context(), invalidHash)
 	s.Nil(tree)
 	s.NotNil(err)
 
 	hash := plumbing.NewHash("dbd3641b371024f44d0e469a9c8f5457b0660de1")
-	tree, err = r.TreeObject(hash)
+	tree, err = r.TreeObject(s.T().Context(), hash)
 	s.NoError(err)
 
 	s.False(tree.Hash.IsZero())
@@ -3645,16 +3656,16 @@ func (s *RepositorySuite) TestTree() {
 }
 
 func (s *RepositorySuite) TestTrees() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	count := 0
-	trees, err := r.TreeObjects()
+	trees, err := r.TreeObjects(s.T().Context())
 	s.NoError(err)
 	for {
-		tree, err := trees.Next()
+		tree, err := trees.Next(s.T().Context())
 		if err != nil {
 			break
 		}
@@ -3674,16 +3685,16 @@ func (s *RepositorySuite) TestTagObjects() {
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
 	count := 0
-	tags, err := r.TagObjects()
+	tags, err := r.TagObjects(s.T().Context())
 	s.NoError(err)
 
-	tags.ForEach(func(tag *object.Tag) error {
+	tags.ForEach(s.T().Context(), func(tag *object.Tag) error {
 		count++
 
 		s.False(tag.Hash.IsZero())
@@ -3691,8 +3702,8 @@ func (s *RepositorySuite) TestTagObjects() {
 		return nil
 	})
 
-	refs, _ := r.References()
-	refs.ForEach(func(*plumbing.Reference) error {
+	refs, _ := r.References(s.T().Context())
+	refs.ForEach(s.T().Context(), func(*plumbing.Reference) error {
 		return nil
 	})
 
@@ -3700,52 +3711,52 @@ func (s *RepositorySuite) TestTagObjects() {
 }
 
 func (s *RepositorySuite) TestCommitIterClosePanic() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
-	commits, err := r.CommitObjects()
+	commits, err := r.CommitObjects(s.T().Context())
 	s.NoError(err)
 	commits.Close()
 }
 
 func (s *RepositorySuite) TestRef() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
-	ref, err := r.Reference(plumbing.HEAD, false)
+	ref, err := r.Reference(s.T().Context(), plumbing.HEAD, false)
 	s.NoError(err)
 	s.Equal(plumbing.HEAD, ref.Name())
 
-	ref, err = r.Reference(plumbing.HEAD, true)
+	ref, err = r.Reference(s.T().Context(), plumbing.HEAD, true)
 	s.NoError(err)
 	s.Equal(plumbing.ReferenceName("refs/heads/master"), ref.Name())
 }
 
 func (s *RepositorySuite) TestRefs() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	s.NoError(err)
 
-	iter, err := r.References()
+	iter, err := r.References(s.T().Context())
 	s.NoError(err)
 	s.NotNil(iter)
 }
 
 func (s *RepositorySuite) TestObject() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	o, err := r.Object(plumbing.CommitObject, hash)
+	o, err := r.Object(s.T().Context(), plumbing.CommitObject, hash)
 	s.NoError(err)
 
 	s.False(o.ID().IsZero())
@@ -3753,16 +3764,16 @@ func (s *RepositorySuite) TestObject() {
 }
 
 func (s *RepositorySuite) TestObjects() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	count := 0
-	objects, err := r.Objects()
+	objects, err := r.Objects(s.T().Context())
 	s.NoError(err)
 	for {
-		o, err := objects.Next()
+		o, err := objects.Next(s.T().Context())
 		if err != nil {
 			break
 		}
@@ -3776,30 +3787,30 @@ func (s *RepositorySuite) TestObjects() {
 }
 
 func (s *RepositorySuite) TestObjectNotFound() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.NoError(err)
 
 	hash := plumbing.NewHash("0a3fb06ff80156fb153bcdcc58b5e16c2d27625c")
-	tag, err := r.Object(plumbing.TagObject, hash)
+	tag, err := r.Object(s.T().Context(), plumbing.TagObject, hash)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 	s.Nil(tag)
 }
 
 func (s *RepositorySuite) TestWorktree() {
 	def := memfs.New()
-	r, _ := Init(memory.NewStorage(), WithWorkTree(def))
+	r, _ := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(def))
 	defer func() { _ = r.Close() }()
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.NoError(err)
 	s.Equal(def, w.Filesystem())
 }
 
 func (s *RepositorySuite) TestWorktreeBare() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.ErrorIs(err, ErrIsBareRepository)
 	s.Nil(w)
 }
@@ -3811,7 +3822,7 @@ func (s *RepositorySuite) TestResolveRevision() {
 	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
 	dotgit2, err := f.DotGit()
 	s.Require().NoError(err)
-	r, err := Open(sto, dotgit2)
+	r, err := Open(s.T().Context(), sto, dotgit2)
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
@@ -3840,7 +3851,7 @@ func (s *RepositorySuite) TestResolveRevision() {
 	}
 
 	for rev, hash := range datas {
-		h, err := r.ResolveRevision(plumbing.Revision(rev))
+		h, err := r.ResolveRevision(s.T().Context(), plumbing.Revision(rev))
 
 		s.NoError(err, fmt.Sprintf("while checking %s", rev))
 		s.Equal(hash, h.String(), fmt.Sprintf("while checking %s", rev))
@@ -3854,7 +3865,7 @@ func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	sto := filesystem.NewStorage(dotgit1, cache.NewObjectLRUDefault())
 	dotgit2, err := f.DotGit()
 	s.Require().NoError(err)
-	r, err := Open(sto, dotgit2)
+	r, err := Open(s.T().Context(), sto, dotgit2)
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
@@ -3864,7 +3875,7 @@ func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	}
 
 	for rev, hash := range datas {
-		h, err := r.ResolveRevision(plumbing.Revision(rev))
+		h, err := r.ResolveRevision(s.T().Context(), plumbing.Revision(rev))
 
 		s.NoError(err, fmt.Sprintf("while checking %s", rev))
 		s.Equal(hash, h.String(), fmt.Sprintf("while checking %s", rev))
@@ -3876,16 +3887,16 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
 	)
 
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
 	err := r.clone(context.Background(), &CloneOptions{URL: url})
 	s.NoError(err)
 
-	headRef, err := r.Head()
+	headRef, err := r.Head(s.T().Context())
 	s.NoError(err)
 
 	ref := plumbing.NewHashReference("refs/heads/918c48b83bd081e863dbe1b80f8998f058cd8294", headRef.Hash())
-	err = r.Storer.SetReference(ref)
+	err = r.Storer.SetReference(s.T().Context(), ref)
 	s.NoError(err)
 
 	datas := map[string]string{
@@ -3896,7 +3907,7 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 	}
 
 	for rev, rerr := range datas {
-		_, err := r.ResolveRevision(plumbing.Revision(rev))
+		_, err := r.ResolveRevision(s.T().Context(), plumbing.Revision(rev))
 		s.NotNil(err)
 		s.Equal(rerr, err.Error())
 	}
@@ -3911,7 +3922,7 @@ func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks 
 	s.NotNil(los)
 
 	numLooseStart := 0
-	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
+	err = los.ForEachObjectHash(s.T().Context(), func(_ plumbing.Hash) error {
 		numLooseStart++
 		return nil
 	})
@@ -3921,30 +3932,30 @@ func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks 
 	pos := sto.(storer.PackedObjectStorer)
 	s.NotNil(los)
 
-	packs, err := pos.ObjectPacks()
+	packs, err := pos.ObjectPacks(s.T().Context())
 	s.NoError(err)
 	numPacksStart := len(packs)
 	s.True(numPacksStart > 1)
 
-	r, err := Open(sto, srcFs)
+	r, err := Open(s.T().Context(), sto, srcFs)
 	s.NoError(err)
 	s.NotNil(r)
 	defer func() { _ = r.Close() }()
 
-	err = r.RepackObjects(&RepackConfig{
+	err = r.RepackObjects(s.T().Context(), &RepackConfig{
 		OnlyDeletePacksOlderThan: deleteTime,
 	})
 	s.NoError(err)
 
 	numLooseEnd := 0
-	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
+	err = los.ForEachObjectHash(s.T().Context(), func(_ plumbing.Hash) error {
 		numLooseEnd++
 		return nil
 	})
 	s.NoError(err)
 	s.Equal(0, numLooseEnd)
 
-	packs, err = pos.ObjectPacks()
+	packs, err = pos.ObjectPacks(s.T().Context())
 	s.NoError(err)
 	numPacksEnd := len(packs)
 	s.Equal(expectedPacks, numPacksEnd)
@@ -3993,29 +4004,29 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 		"yet. Since we're using local repositories here, the test will use the" +
 		"server-side implementation. See transport/upload_pack.go and" +
 		"packfile/encoder.go")
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 	s.NoError(err)
 
-	s.NoError(r.Fetch(&FetchOptions{
+	s.NoError(r.Fetch(s.T().Context(), &FetchOptions{
 		Depth:    2,
 		RefSpecs: []config.RefSpec{config.RefSpec("refs/heads/master:refs/heads/master")},
 	}))
 
-	shallows, err := r.Storer.Shallow()
+	shallows, err := r.Storer.Shallow(s.T().Context())
 	s.NoError(err)
 	s.Len(shallows, 1)
 
-	ref, err := r.Reference("refs/heads/master", true)
+	ref, err := r.Reference(s.T().Context(), "refs/heads/master", true)
 	s.NoError(err)
-	cobj, err := r.CommitObject(ref.Hash())
+	cobj, err := r.CommitObject(s.T().Context(), ref.Hash())
 	s.NoError(err)
 	s.NotNil(cobj)
-	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
+	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(s.T().Context(), func(c *object.Commit) error {
 		for _, ph := range c.ParentHashes {
 			if slices.Contains(shallows, ph) {
 				return storer.ErrStop
@@ -4026,21 +4037,21 @@ func (s *RepositorySuite) TestBrokenMultipleShallowFetch() {
 	})
 	s.NoError(err)
 
-	s.NoError(r.Fetch(&FetchOptions{
+	s.NoError(r.Fetch(s.T().Context(), &FetchOptions{
 		Depth:    5,
 		RefSpecs: []config.RefSpec{config.RefSpec("refs/heads/*:refs/heads/*")},
 	}))
 
-	shallows, err = r.Storer.Shallow()
+	shallows, err = r.Storer.Shallow(s.T().Context())
 	s.NoError(err)
 	s.Len(shallows, 3)
 
-	ref, err = r.Reference("refs/heads/master", true)
+	ref, err = r.Reference(s.T().Context(), "refs/heads/master", true)
 	s.NoError(err)
-	cobj, err = r.CommitObject(ref.Hash())
+	cobj, err = r.CommitObject(s.T().Context(), ref.Hash())
 	s.NoError(err)
 	s.NotNil(cobj)
-	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(func(c *object.Commit) error {
+	err = object.NewCommitPreorderIter(cobj, nil, nil).ForEach(s.T().Context(), func(c *object.Commit) error {
 		for _, ph := range c.ParentHashes {
 			if slices.Contains(shallows, ph) {
 				return storer.ErrStop
@@ -4058,9 +4069,9 @@ func (s *RepositorySuite) TestDotGitToOSFilesystemsInvalidPath() {
 }
 
 func (s *RepositorySuite) TestIssue674() {
-	r, _ := Init(memory.NewStorage())
+	r, _ := Init(s.T().Context(), memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	h, err := r.ResolveRevision(plumbing.Revision(""))
+	h, err := r.ResolveRevision(s.T().Context(), plumbing.Revision(""))
 
 	s.NotNil(err)
 	s.NotNil(h)
@@ -4085,20 +4096,20 @@ func BenchmarkObjects(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			repo, err := Open(st, worktree)
+			repo, err := Open(b.Context(), st, worktree)
 			if err != nil {
 				b.Fatal(err)
 			}
 			defer func() { _ = repo.Close() }()
 
 			for b.Loop() {
-				iter, err := repo.Objects()
+				iter, err := repo.Objects(b.Context())
 				if err != nil {
 					b.Fatal(err)
 				}
 
 				for {
-					_, err := iter.Next()
+					_, err := iter.Next(b.Context())
 					if err == io.EOF {
 						break
 					}
@@ -4117,7 +4128,7 @@ func BenchmarkObjects(b *testing.B) {
 func BenchmarkPlainClone(b *testing.B) {
 	b.StopTimer()
 	clone := func(b *testing.B) {
-		r, err := PlainClone(b.TempDir(), &CloneOptions{
+		r, err := PlainClone(b.Context(), b.TempDir(), &CloneOptions{
 			URL:          "https://github.com/go-git/go-git.git",
 			Depth:        1,
 			Tags:         plumbing.NoTags,
@@ -4202,25 +4213,25 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 			// This must happen before registering the plugin signer,
 			// otherwise buildCommitObject would call the plugin signer.
 			fs := memfs.New()
-			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			r, err := Init(t.Context(), memory.NewStorage(), WithWorkTree(fs))
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			cfg, err := r.Config()
+			cfg, err := r.Config(t.Context())
 			require.NoError(t, err)
 
 			cfg.Tag.GpgSign = tt.tagSignGpg
-			err = r.SetConfig(cfg)
+			err = r.SetConfig(t.Context(), cfg)
 			require.NoError(t, err)
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(t.Context())
 			require.NoError(t, err)
 
 			util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
-			_, err = w.Add("file.txt")
+			_, err = w.Add(t.Context(), "file.txt")
 			require.NoError(t, err)
 
-			commitHash, err := w.Commit("initial commit\n", &CommitOptions{
+			commitHash, err := w.Commit(t.Context(), "initial commit\n", &CommitOptions{
 				Author: defaultSignature(),
 			})
 			require.NoError(t, err)
@@ -4232,7 +4243,7 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 				require.NoError(t, err)
 			}
 
-			_, err = r.CreateTag("test-tag", commitHash, &CreateTagOptions{
+			_, err = r.CreateTag(t.Context(), "test-tag", commitHash, &CreateTagOptions{
 				Tagger:  defaultSignature(),
 				Message: "tag message",
 				Signer:  tt.optionsSigner,
@@ -4244,10 +4255,10 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 				return // no need to carry on
 			}
 
-			tagRef, err := r.Tag("test-tag")
+			tagRef, err := r.Tag(t.Context(), "test-tag")
 			require.NoError(t, err)
 
-			tagObj, err := r.TagObject(tagRef.Hash())
+			tagObj, err := r.TagObject(t.Context(), tagRef.Hash())
 			require.NoError(t, err)
 
 			if tt.wantSignature {
@@ -4387,7 +4398,7 @@ func TestRepository_Archive(t *testing.T) {
 			r := setupArchiveRepo(t)
 			defer func() { _ = r.Close() }()
 
-			rc, err := r.Archive(&tt.opts)
+			rc, err := r.Archive(t.Context(), &tt.opts)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -4426,14 +4437,14 @@ func TestRepository_ArchiveContext_Cancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	ar, err := r.ArchiveContext(ctx, &ArchiveOptions{
+	ar, err := r.Archive(ctx, &ArchiveOptions{
 		Format:  "tar",
 		Treeish: "master",
 	})
-	assert.NoError(t, err)
-	t.Cleanup(func() { ar.Close() })
-	_, err = io.Copy(io.Discard, ar)
+	// With ctx-first storers, a canceled context now fails at treeish
+	// resolution instead of surfacing later during streaming.
 	assert.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, ar)
 }
 
 // archiveFileNames extracts file names from an archive based on format.
@@ -4493,7 +4504,7 @@ func setupArchiveRepo(t *testing.T) *Repository {
 	dotgit, err := f.DotGit()
 	require.NoError(t, err)
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
-	r, err := Open(st, memfs.New())
+	r, err := Open(t.Context(), st, memfs.New())
 	require.NoError(t, err)
 	return r
 }

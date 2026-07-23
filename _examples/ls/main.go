@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,8 @@ import (
 
 // Example how to resolve a revision into its commit counterpart
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<path>", "<revision>", "<tree path>")
 
 	path := os.Args[1]
@@ -38,7 +41,7 @@ func main() {
 	}
 
 	s := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	r, err := git.Open(s, fs)
+	r, err := git.Open(ctx, s, fs)
 	CheckIfError(err)
 	defer s.Close()
 
@@ -46,16 +49,16 @@ func main() {
 	// look at the doc to get more details
 	Info("git rev-parse %s", revision)
 
-	h, err := r.ResolveRevision(plumbing.Revision(revision))
+	h, err := r.ResolveRevision(ctx, plumbing.Revision(revision))
 	CheckIfError(err)
 
-	commit, err := r.CommitObject(*h)
+	commit, err := r.CommitObject(ctx, *h)
 	CheckIfError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(ctx)
 	CheckIfError(err)
 	if treePath != "" {
-		tree, err = tree.Tree(treePath)
+		tree, err = tree.Tree(ctx, treePath)
 		CheckIfError(err)
 	}
 
@@ -69,10 +72,10 @@ func main() {
 		defer file.Close()
 	}
 
-	commitNode, err := commitNodeIndex.Get(*h)
+	commitNode, err := commitNodeIndex.Get(ctx, *h)
 	CheckIfError(err)
 
-	revs, err := getLastCommitForPaths(commitNode, treePath, paths)
+	revs, err := getLastCommitForPaths(ctx, commitNode, treePath, paths)
 	CheckIfError(err)
 	for path, rev := range revs {
 		// Print one line per file (name hash message)
@@ -103,15 +106,15 @@ type commitAndPaths struct {
 	hashes map[string]plumbing.Hash
 }
 
-func getCommitTree(c commitgraph.CommitNode, treePath string) (*object.Tree, error) {
-	tree, err := c.Tree()
+func getCommitTree(ctx context.Context, c commitgraph.CommitNode, treePath string) (*object.Tree, error) {
+	tree, err := c.Tree(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Optimize deep traversals by focusing only on the specific tree
 	if treePath != "" {
-		tree, err = tree.Tree(treePath)
+		tree, err = tree.Tree(ctx, treePath)
 		if err != nil {
 			return nil, err
 		}
@@ -130,8 +133,8 @@ func getFullPath(treePath, path string) string {
 	return path
 }
 
-func getFileHashes(c commitgraph.CommitNode, treePath string, paths []string) (map[string]plumbing.Hash, error) {
-	tree, err := getCommitTree(c, treePath)
+func getFileHashes(ctx context.Context, c commitgraph.CommitNode, treePath string, paths []string) (map[string]plumbing.Hash, error) {
+	tree, err := getCommitTree(ctx, c, treePath)
 	if errors.Is(err, object.ErrDirectoryNotFound) {
 		// The whole tree didn't exist, so return empty map
 		return make(map[string]plumbing.Hash), nil
@@ -143,7 +146,7 @@ func getFileHashes(c commitgraph.CommitNode, treePath string, paths []string) (m
 	hashes := make(map[string]plumbing.Hash)
 	for _, path := range paths {
 		if path != "" {
-			entry, err := tree.FindEntry(path)
+			entry, err := tree.FindEntry(ctx, path)
 			if err == nil {
 				hashes[path] = entry.Hash
 			}
@@ -155,7 +158,7 @@ func getFileHashes(c commitgraph.CommitNode, treePath string, paths []string) (m
 	return hashes, nil
 }
 
-func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []string) (map[string]*object.Commit, error) {
+func getLastCommitForPaths(ctx context.Context, c commitgraph.CommitNode, treePath string, paths []string) (map[string]*object.Commit, error) {
 	// We do a tree traversal with nodes sorted by commit time
 	heap := binaryheap.NewWith(func(a, b any) int {
 		if a.(*commitAndPaths).commit.CommitTime().Before(b.(*commitAndPaths).commit.CommitTime()) {
@@ -165,7 +168,7 @@ func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []st
 	})
 
 	resultNodes := make(map[string]commitgraph.CommitNode)
-	initialHashes, err := getFileHashes(c, treePath, paths)
+	initialHashes, err := getFileHashes(ctx, c, treePath, paths)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +187,7 @@ func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []st
 		numParents := current.commit.NumParents()
 		var parents []commitgraph.CommitNode
 		for i := range numParents {
-			parent, err := current.commit.ParentNode(i)
+			parent, err := current.commit.ParentNode(ctx, i)
 			if err != nil {
 				break
 			}
@@ -195,7 +198,7 @@ func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []st
 		pathUnchanged := make([]bool, len(current.paths))
 		parentHashes := make([]map[string]plumbing.Hash, len(parents))
 		for j, parent := range parents {
-			parentHashes[j], err = getFileHashes(parent, treePath, current.paths)
+			parentHashes[j], err = getFileHashes(ctx, parent, treePath, current.paths)
 			if err != nil {
 				break
 			}
@@ -263,7 +266,7 @@ func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []st
 	result := make(map[string]*object.Commit)
 	for path, commitNode := range resultNodes {
 		var err error
-		result[path], err = commitNode.Commit()
+		result[path], err = commitNode.Commit(ctx)
 		if err != nil {
 			return nil, err
 		}

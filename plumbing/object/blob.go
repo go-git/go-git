@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -19,8 +20,8 @@ type Blob struct {
 }
 
 // GetBlob gets a blob from an object storer and decodes it.
-func GetBlob(s storer.EncodedObjectStorer, h plumbing.Hash) (*Blob, error) {
-	o, err := s.EncodedObject(plumbing.BlobObject, h)
+func GetBlob(ctx context.Context, s storer.EncodedObjectStorer, h plumbing.Hash) (*Blob, error) {
+	o, err := s.EncodedObject(ctx, plumbing.BlobObject, h)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +111,9 @@ func NewBlobIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *B
 
 // Next moves the iterator to the next blob and returns a pointer to it. If
 // there are no more blobs, it returns io.EOF.
-func (iter *BlobIter) Next() (*Blob, error) {
+func (iter *BlobIter) Next(ctx context.Context) (*Blob, error) {
 	for {
-		obj, err := iter.EncodedObjectIter.Next()
+		obj, err := iter.EncodedObjectIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -128,8 +129,8 @@ func (iter *BlobIter) Next() (*Blob, error) {
 // ForEach call the cb function for each blob contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *BlobIter) ForEach(cb func(*Blob) error) error {
-	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
+func (iter *BlobIter) ForEach(ctx context.Context, cb func(*Blob) error) error {
+	return iter.EncodedObjectIter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
 		if obj.Type() != plumbing.BlobObject {
 			return nil
 		}

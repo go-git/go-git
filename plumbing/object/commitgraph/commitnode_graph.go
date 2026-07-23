@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -40,7 +41,7 @@ func NewGraphCommitNodeIndex(commitGraph commitgraph.Index, s storer.EncodedObje
 	return &graphCommitNodeIndex{commitGraph, s}
 }
 
-func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
+func (gci *graphCommitNodeIndex) Get(ctx context.Context, hash plumbing.Hash) (CommitNode, error) {
 	if gci.commitGraph != nil {
 		// Check the commit graph first
 		parentIndex, err := gci.commitGraph.GetIndexByHash(hash)
@@ -60,7 +61,7 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 	}
 
 	// Fallback to loading full commit object
-	commit, err := object.GetCommit(gci.s, hash)
+	commit, err := object.GetCommit(ctx, gci.s, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +76,8 @@ func (c *graphCommitNode) ID() plumbing.Hash {
 	return c.hash
 }
 
-func (c *graphCommitNode) Tree() (*object.Tree, error) {
-	return object.GetTree(c.gci.s, c.commitData.TreeHash)
+func (c *graphCommitNode) Tree(ctx context.Context) (*object.Tree, error) {
+	return object.GetTree(ctx, c.gci.s, c.commitData.TreeHash)
 }
 
 func (c *graphCommitNode) CommitTime() time.Time {
@@ -91,7 +92,7 @@ func (c *graphCommitNode) ParentNodes() CommitNodeIter {
 	return newParentgraphCommitNodeIter(c)
 }
 
-func (c *graphCommitNode) ParentNode(i int) (CommitNode, error) {
+func (c *graphCommitNode) ParentNode(_ context.Context, i int) (CommitNode, error) {
 	if i < 0 || i >= len(c.commitData.ParentIndexes) {
 		return nil, object.ErrParentNotFound
 	}
@@ -127,8 +128,8 @@ func (c *graphCommitNode) GenerationV2() uint64 {
 	return c.commitData.GenerationV2
 }
 
-func (c *graphCommitNode) Commit() (*object.Commit, error) {
-	return object.GetCommit(c.gci.s, c.hash)
+func (c *graphCommitNode) Commit(ctx context.Context) (*object.Commit, error) {
+	return object.GetCommit(ctx, c.gci.s, c.hash)
 }
 
 func (c *graphCommitNode) String() string {

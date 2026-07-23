@@ -63,29 +63,29 @@ func TestBuildTreeHelper_1773(t *testing.T) {
 		},
 	}
 
-	_, err := h.BuildTree(idx, &CommitOptions{})
+	_, err := h.BuildTree(t.Context(), idx, &CommitOptions{})
 	require.NoError(t, err)
 }
 
 func (s *WorktreeSuite) TestCommitEmptyOptions() {
 	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("foo", &CommitOptions{Author: defaultSignature()})
+	hash, err := w.Commit(s.T().Context(), "foo", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 	s.False(hash.IsZero())
 
-	commit, err := r.CommitObject(hash)
+	commit, err := r.CommitObject(s.T().Context(), hash)
 	s.Require().NoError(err)
 	s.NotEqual("", commit.Author.Name)
 }
@@ -96,19 +96,19 @@ func (s *WorktreeSuite) TestCommitInitial() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r, err := Init(storage, WithWorkTree(fs))
+	r, err := Init(s.T().Context(), storage, WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	hash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(expected, hash)
 	s.Require().NoError(err)
 
@@ -139,38 +139,38 @@ func (s *WorktreeSuite) TestCommitInitialObjectFormats() {
 			fs := memfs.New()
 			storage := memory.NewStorage(memory.WithObjectFormat(tt.objectFormat))
 
-			r, err := Init(storage, WithWorkTree(fs), WithObjectFormat(tt.objectFormat))
+			r, err := Init(s.T().Context(), storage, WithWorkTree(fs), WithObjectFormat(tt.objectFormat))
 			s.Require().NoError(err)
 			defer func() { _ = r.Close() }()
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(s.T().Context())
 			s.Require().NoError(err)
 
 			err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 			s.Require().NoError(err)
 
-			_, err = w.Add("foo")
+			_, err = w.Add(s.T().Context(), "foo")
 			s.Require().NoError(err)
 
-			hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+			hash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 			s.Require().NoError(err)
 			s.Equal(expected, hash)
 			s.Len(hash.String(), tt.objectFormat.HexSize())
-			s.Require().NoError(storage.HasEncodedObject(hash))
+			s.Require().NoError(storage.HasEncodedObject(s.T().Context(), hash))
 
-			commit, err := r.CommitObject(hash)
+			commit, err := r.CommitObject(s.T().Context(), hash)
 			s.Require().NoError(err)
 			s.Equal(hash, commit.Hash)
 			s.Equal("foo\n", commit.Message)
 			s.Len(commit.TreeHash.String(), tt.objectFormat.HexSize())
-			s.Require().NoError(storage.HasEncodedObject(commit.TreeHash))
+			s.Require().NoError(storage.HasEncodedObject(s.T().Context(), commit.TreeHash))
 
-			tree, err := commit.Tree()
+			tree, err := commit.Tree(s.T().Context())
 			s.Require().NoError(err)
-			file, err := tree.File("foo")
+			file, err := tree.File(s.T().Context(), "foo")
 			s.Require().NoError(err)
 			s.Len(file.Hash.String(), tt.objectFormat.HexSize())
-			s.Require().NoError(storage.HasEncodedObject(file.Hash))
+			s.Require().NoError(storage.HasEncodedObject(s.T().Context(), file.Hash))
 			content, err := file.Contents()
 			s.Require().NoError(err)
 			s.Equal("foo", content)
@@ -184,20 +184,20 @@ func (s *WorktreeSuite) TestSetReferencesInSHA256Repository() {
 	fs := memfs.New()
 	storage := memory.NewStorage(memory.WithObjectFormat(formatcfg.SHA256))
 
-	r, err := Init(storage, WithWorkTree(fs), WithObjectFormat(formatcfg.SHA256))
+	r, err := Init(s.T().Context(), storage, WithWorkTree(fs), WithObjectFormat(formatcfg.SHA256))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	hash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 	s.Len(hash.String(), formatcfg.SHA256.HexSize())
 
@@ -212,10 +212,10 @@ func (s *WorktreeSuite) TestSetReferencesInSHA256Repository() {
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
 			ref := plumbing.NewHashReference(tt.ref, hash)
-			err := r.Storer.SetReference(ref)
+			err := r.Storer.SetReference(s.T().Context(), ref)
 			s.Require().NoError(err)
 
-			got, err := r.Reference(tt.ref, false)
+			got, err := r.Reference(s.T().Context(), tt.ref, false)
 			s.Require().NoError(err)
 			s.Equal(ref.Name(), got.Name())
 			s.Equal(hash, got.Hash())
@@ -227,71 +227,71 @@ func (s *WorktreeSuite) TestSetReferencesInSHA256Repository() {
 func (s *WorktreeSuite) TestNothingToCommit() {
 	expected := plumbing.NewHash("838ea833ce893e8555907e5ef224aa076f5e274a")
 
-	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(memfs.New()))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("failed empty commit\n", &CommitOptions{Author: defaultSignature()})
+	hash, err := w.Commit(s.T().Context(), "failed empty commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(plumbing.ZeroHash, hash)
 	s.ErrorIs(err, ErrEmptyCommit)
 
-	hash, err = w.Commit("enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+	hash, err = w.Commit(s.T().Context(), "enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
 	s.Equal(expected, hash)
 	s.Require().NoError(err)
 }
 
 func (s *WorktreeSuite) TestNothingToCommitNonEmptyRepo() {
 	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
 
-	w.Add("foo")
-	_, err = w.Commit("previous commit\n", &CommitOptions{Author: defaultSignature()})
+	w.Add(s.T().Context(), "foo")
+	_, err = w.Commit(s.T().Context(), "previous commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("failed empty commit\n", &CommitOptions{Author: defaultSignature()})
+	hash, err := w.Commit(s.T().Context(), "failed empty commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(plumbing.ZeroHash, hash)
 	s.ErrorIs(err, ErrEmptyCommit)
 
-	_, err = w.Commit("enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+	_, err = w.Commit(s.T().Context(), "enable empty commits\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
 	s.Require().NoError(err)
 }
 
 func (s *WorktreeSuite) TestRemoveAndCommitToMakeEmptyRepo() {
 	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	_, err = w.Commit("Add in Repo\n", &CommitOptions{Author: defaultSignature()})
+	_, err = w.Commit(s.T().Context(), "Add in Repo\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
 	err = fs.Remove("foo")
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	_, err = w.Commit("Remove foo\n", &CommitOptions{Author: defaultSignature()})
+	_, err = w.Commit(s.T().Context(), "Remove foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 }
 
@@ -304,16 +304,16 @@ func (s *WorktreeSuite) TestCommitParent() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	hash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Equal(expected, hash)
 	s.Require().NoError(err)
 
@@ -327,28 +327,28 @@ func (s *WorktreeSuite) TestCommitAmendWithoutChanges() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	prevHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	prevHash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
-	amendedHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
+	amendedHash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
 	s.Require().NoError(err)
 
-	headRef, err := w.r.Head()
+	headRef, err := w.r.Head(s.T().Context())
 	s.Require().NoError(err)
 
 	s.Equal(headRef.Hash(), amendedHash)
 	s.Equal(prevHash, amendedHash)
 
-	commit, err := w.r.CommitObject(headRef.Hash())
+	commit, err := w.r.CommitObject(s.T().Context(), headRef.Hash())
 	s.Require().NoError(err)
 	s.Equal("foo\n", commit.Message)
 
@@ -362,36 +362,36 @@ func (s *WorktreeSuite) TestCommitAmendWithChanges() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	_, err = w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	_, err = w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "bar", []byte("bar"), 0o644)
 
-	_, err = w.Add("bar")
+	_, err = w.Add(s.T().Context(), "bar")
 	s.Require().NoError(err)
 
-	amendedHash, err := w.Commit("bar\n", &CommitOptions{Author: defaultSignature(), Amend: true})
+	amendedHash, err := w.Commit(s.T().Context(), "bar\n", &CommitOptions{Author: defaultSignature(), Amend: true})
 	s.Require().NoError(err)
 
-	headRef, err := w.r.Head()
+	headRef, err := w.r.Head(s.T().Context())
 	s.Require().NoError(err)
 
 	s.Equal(headRef.Hash(), amendedHash)
 
-	commit, err := w.r.CommitObject(headRef.Hash())
+	commit, err := w.r.CommitObject(s.T().Context(), headRef.Hash())
 	s.Require().NoError(err)
 	s.Equal("bar\n", commit.Message)
 	s.Equal(1, commit.NumParents())
 
-	stats, err := commit.Stats()
+	stats, err := commit.Stats(s.T().Context())
 	s.Require().NoError(err)
 	s.Len(stats, 2)
 	s.Equal(object.FileStat{
@@ -413,22 +413,22 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	prevHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature()})
+	prevHash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
-	_, err = w.Commit("bar\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+	_, err = w.Commit(s.T().Context(), "bar\n", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
 	s.Require().NoError(err)
 
-	amendedHash, err := w.Commit("foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
+	amendedHash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: defaultSignature(), Amend: true})
 	s.T().Log(prevHash, amendedHash)
 	s.ErrorIs(err, ErrEmptyCommit)
 	s.Equal(plumbing.ZeroHash, amendedHash)
@@ -437,44 +437,44 @@ func (s *WorktreeSuite) TestCommitAmendNothingToCommit() {
 func TestCount(t *testing.T) {
 	t.Parallel()
 	f := fixtures.Basic().One()
-	r := NewRepositoryWithEmptyWorktree(f)
+	r := NewRepositoryWithEmptyWorktree(t.Context(), f)
 	defer func() { _ = r.Close() }()
 
-	iter, err := r.CommitObjects()
+	iter, err := r.CommitObjects(t.Context())
 	require.NoError(t, err)
 
 	count := 0
-	iter.ForEach(func(*object.Commit) error {
+	iter.ForEach(t.Context(), func(*object.Commit) error {
 		count++
 		return nil
 	})
 	assert.Equal(t, 9, count, "commits mismatch")
 
-	trees, err := r.TreeObjects()
+	trees, err := r.TreeObjects(t.Context())
 	require.NoError(t, err)
 
 	count = 0
-	trees.ForEach(func(*object.Tree) error {
+	trees.ForEach(t.Context(), func(*object.Tree) error {
 		count++
 		return nil
 	})
 	assert.Equal(t, 12, count, "trees mismatch")
 
-	blobs, err := r.BlobObjects()
+	blobs, err := r.BlobObjects(t.Context())
 	require.NoError(t, err)
 
 	count = 0
-	blobs.ForEach(func(*object.Blob) error {
+	blobs.ForEach(t.Context(), func(*object.Blob) error {
 		count++
 		return nil
 	})
 	assert.Equal(t, 10, count, "blobs mismatch")
 
-	objects, err := r.Objects()
+	objects, err := r.Objects(t.Context())
 	require.NoError(t, err)
 
 	count = 0
-	objects.ForEach(func(object.Object) error {
+	objects.ForEach(t.Context(), func(object.Object) error {
 		count++
 		return nil
 	})
@@ -487,26 +487,26 @@ func TestAddAndCommitWithSkipStatus(t *testing.T) {
 
 	f := fixtures.Basic().One()
 	fs := memfs.New()
-	r := NewRepositoryWithEmptyWorktree(f)
+	r := NewRepositoryWithEmptyWorktree(t.Context(), f)
 	defer func() { _ = r.Close() }()
 	w := &Worktree{
 		r:          r,
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(t.Context(), &CheckoutOptions{})
 	require.NoError(t, err)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	err = w.AddWithOptions(&AddOptions{
+	err = w.AddWithOptions(t.Context(), &AddOptions{
 		Path:       "foo",
 		SkipStatus: true,
 	})
 	require.NoError(t, err)
 
-	hash, err := w.Commit("commit foo only\n", &CommitOptions{
+	hash, err := w.Commit(t.Context(), "commit foo only\n", &CommitOptions{
 		Author: defaultSignature(),
 	})
 
@@ -520,18 +520,19 @@ func assertStorage(
 	t *testing.T, r *Repository,
 	treesCount, blobCount, commitCount int, head plumbing.Hash,
 ) {
-	trees, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
+	ctx := t.Context()
+	trees, err := r.Storer.IterEncodedObjects(ctx, plumbing.TreeObject)
 	require.NoError(t, err)
-	blobs, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
+	blobs, err := r.Storer.IterEncodedObjects(ctx, plumbing.BlobObject)
 	require.NoError(t, err)
-	commits, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
+	commits, err := r.Storer.IterEncodedObjects(ctx, plumbing.CommitObject)
 	require.NoError(t, err)
 
-	assert.Equal(t, treesCount, lenIterEncodedObjects(trees), "trees count mismatch")
-	assert.Equal(t, blobCount, lenIterEncodedObjects(blobs), "blobs count mismatch")
-	assert.Equal(t, commitCount, lenIterEncodedObjects(commits), "commits count mismatch")
+	assert.Equal(t, treesCount, lenIterEncodedObjects(ctx, trees), "trees count mismatch")
+	assert.Equal(t, blobCount, lenIterEncodedObjects(ctx, blobs), "blobs count mismatch")
+	assert.Equal(t, commitCount, lenIterEncodedObjects(ctx, commits), "commits count mismatch")
 
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, head.String(), ref.Hash().String())
 }
@@ -546,40 +547,40 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	status, err := w.Status()
+	status, err := w.Status(s.T().Context())
 	s.Require().NoError(err)
 	foo := status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
 
-	err = w.AddWithOptions(&AddOptions{
+	err = w.AddWithOptions(s.T().Context(), &AddOptions{
 		Path:       "foo",
 		SkipStatus: true,
 	})
 	s.Require().NoError(err)
 
-	status, err = w.Status()
+	status, err = w.Status(s.T().Context())
 	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Added, foo.Staging)
 	s.Equal(Unmodified, foo.Worktree)
 
-	hash, err := w.Commit("commit foo only\n", &CommitOptions{
+	hash, err := w.Commit(s.T().Context(), "commit foo only\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
 	s.Equal(expected, hash)
 	s.Require().NoError(err)
 
-	commit1, err := w.r.CommitObject(hash)
+	commit1, err := w.r.CommitObject(s.T().Context(), hash)
 	s.Require().NoError(err)
 
-	status, err = w.Status()
+	status, err = w.Status(s.T().Context())
 	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Untracked, foo.Staging)
@@ -587,35 +588,35 @@ func (s *WorktreeSuite) TestAddAndCommitWithSkipStatusPathNotModified() {
 
 	assertStorageStatus(s, s.Repository, 13, 11, 10, expected)
 
-	err = w.AddWithOptions(&AddOptions{
+	err = w.AddWithOptions(s.T().Context(), &AddOptions{
 		Path:       "foo",
 		SkipStatus: true,
 	})
 	s.Require().NoError(err)
 
-	status, err = w.Status()
+	status, err = w.Status(s.T().Context())
 	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
 
-	hash, err = w.Commit("commit with no changes\n", &CommitOptions{
+	hash, err = w.Commit(s.T().Context(), "commit with no changes\n", &CommitOptions{
 		Author:            defaultSignature(),
 		AllowEmptyCommits: true,
 	})
 	s.Equal(expected2, hash)
 	s.Require().NoError(err)
 
-	commit2, err := w.r.CommitObject(hash)
+	commit2, err := w.r.CommitObject(s.T().Context(), hash)
 	s.Require().NoError(err)
 
-	status, err = w.Status()
+	status, err = w.Status(s.T().Context())
 	s.Require().NoError(err)
 	foo = status.File("foo")
 	s.Equal(Untracked, foo.Staging)
 	s.Equal(Untracked, foo.Worktree)
 
-	patch, err := commit2.Patch(commit1)
+	patch, err := commit2.Patch(s.T().Context(), commit1)
 	s.Require().NoError(err)
 	files := patch.FilePatches()
 	s.Nil(files)
@@ -632,13 +633,13 @@ func (s *WorktreeSuite) TestCommitAll() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "LICENSE", []byte("foo"), 0o644)
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	hash, err := w.Commit("foo\n", &CommitOptions{
+	hash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
@@ -658,14 +659,14 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
 	}
 
-	err := w.Checkout(&CheckoutOptions{})
+	err := w.Checkout(s.T().Context(), &CheckoutOptions{})
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	_, errFirst := w.Commit("Add in Repo\n", &CommitOptions{
+	_, errFirst := w.Commit(s.T().Context(), "Add in Repo\n", &CommitOptions{
 		Author: defaultSignature(),
 	})
 	s.Nil(errFirst)
@@ -673,7 +674,7 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 	errRemove := fs.Remove("foo")
 	s.Nil(errRemove)
 
-	hash, errSecond := w.Commit("Remove foo\n", &CommitOptions{
+	hash, errSecond := w.Commit(s.T().Context(), "Remove foo\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
@@ -688,18 +689,18 @@ func (s *WorktreeSuite) TestRemoveAndCommitAll() {
 func (s *WorktreeSuite) TestCherryPick() {
 	fs := memfs.New()
 
-	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	r, err := Init(s.T().Context(), memory.NewStorage(), WithWorkTree(fs))
 	s.Require().NoError(err, "init the repository")
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 	// add README.md to the worktree
 	err = util.WriteFile(fs, "README.md", []byte("README File"), 0o644)
 	s.Require().NoError(err)
-	w.Add("README.md")
+	w.Add(s.T().Context(), "README.md")
 
-	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	initHash, err := w.Commit(s.T().Context(), "initial commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
 	// add two files to worktree
@@ -709,30 +710,30 @@ func (s *WorktreeSuite) TestCherryPick() {
 	err = util.WriteFile(fs, "foobar", []byte("foo**bar"), 0o644)
 	s.Require().NoError(err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
-	_, err = w.Add("foobar")
+	_, err = w.Add(s.T().Context(), "foobar")
 	s.Require().NoError(err)
 
 	// commit the changes
-	commitHash1, err := w.Commit("commit 1\n", &CommitOptions{Author: defaultSignature()})
+	commitHash1, err := w.Commit(s.T().Context(), "commit 1\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 	s.False(commitHash1.IsZero(), "commit hash is zero")
 	// modify the "foo" file
 	err = util.WriteFile(fs, "foo", []byte("foo=bar"), 0o644)
 	s.Require().NoError(err)
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 	// commit the new changes to "foo" file
-	commitHash2, err := w.Commit("commit 2\n", &CommitOptions{Author: defaultSignature()})
+	commitHash2, err := w.Commit(s.T().Context(), "commit 2\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 	s.False(commitHash2.IsZero(), "commit hash is zero")
 	// get commit objects to do cherry picking
-	commit1, err := r.CommitObject(commitHash1)
+	commit1, err := r.CommitObject(s.T().Context(), commitHash1)
 	s.Require().NoError(err)
 	s.NotEmpty(commit1)
 
-	commit2, err := r.CommitObject(commitHash2)
+	commit2, err := r.CommitObject(s.T().Context(), commitHash2)
 	s.Require().NoError(err)
 	s.NotEmpty(commit2)
 
@@ -740,17 +741,17 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.Require().NoError(err)
 	s.Equal("foo**bar", string(foobarFileContent))
 
-	err = w.Checkout(&CheckoutOptions{Hash: initHash})
+	err = w.Checkout(s.T().Context(), &CheckoutOptions{Hash: initHash})
 	s.Require().NoError(err, "checkout to the default branch")
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit1)
+	err = w.CherryPick(s.T().Context(), &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit1)
 	s.Require().NoError(err)
 
 	foobarFileContent, err = util.ReadFile(fs, "foobar")
 	s.Require().NoError(err)
 	s.Equal("foo**bar", string(foobarFileContent))
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit2)
+	err = w.CherryPick(s.T().Context(), &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, commit2)
 	s.Require().NoError(err)
 
 	fooFileContent, err := util.ReadFile(fs, "foo")
@@ -758,23 +759,23 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.Equal("foo=bar", string(fooFileContent))
 
 	// delete the file
-	rmHash, err := w.Remove("foo")
+	rmHash, err := w.Remove(s.T().Context(), "foo")
 	s.Require().NoError(err)
 	s.False(rmHash.IsZero())
 
-	rmCommitHash, err := w.Commit("remove the file\n", &CommitOptions{Author: defaultSignature()})
+	rmCommitHash, err := w.Commit(s.T().Context(), "remove the file\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
-	rmCommit, err := r.CommitObject(rmCommitHash)
+	rmCommit, err := r.CommitObject(s.T().Context(), rmCommitHash)
 	s.Require().NoError(err)
 
 	// go back to commit 2 and cherry pick the latest commit
-	err = w.Checkout(&CheckoutOptions{
+	err = w.Checkout(s.T().Context(), &CheckoutOptions{
 		Hash: commitHash2,
 	})
 	s.Require().NoError(err)
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, rmCommit)
+	err = w.CherryPick(s.T().Context(), &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, rmCommit)
 	s.Require().NoError(err)
 
 	fooFileContent, err = util.ReadFile(fs, "foo")
@@ -782,19 +783,19 @@ func (s *WorktreeSuite) TestCherryPick() {
 	s.Nil(fooFileContent)
 
 	// go back to commit 1 and cherry pick with "ours" strategy option
-	err = w.Checkout(&CheckoutOptions{
+	err = w.Checkout(s.T().Context(), &CheckoutOptions{
 		Hash: commitHash1,
 	})
 	s.Require().NoError(err)
 
-	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, OursMergeStrategy, rmCommit)
+	err = w.CherryPick(s.T().Context(), &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, OursMergeStrategy, rmCommit)
 	s.Require().NoError(err)
 	fooFileContent, err = util.ReadFile(fs, "foo")
 	s.Require().NoError(err)
 	s.Equal("foo", string(fooFileContent))
 
 	// cherry-pick with no commit options
-	err = w.CherryPick(nil, OursMergeStrategy, rmCommit)
+	err = w.CherryPick(s.T().Context(), nil, OursMergeStrategy, rmCommit)
 	s.ErrorIs(err, ErrCannotCherryPickWithoutCommitOptions)
 }
 
@@ -802,22 +803,22 @@ func (s *WorktreeSuite) TestCherryPickRejectsInvalidPaths() {
 	fs := memfs.New()
 
 	storage := memory.NewStorage()
-	r, err := Init(storage, WithWorkTree(fs))
+	r, err := Init(s.T().Context(), storage, WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	err = util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 	s.Require().NoError(err)
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	initHash, err := w.Commit(s.T().Context(), "initial commit\n", &CommitOptions{Author: defaultSignature()})
 	s.Require().NoError(err)
 
-	initCommit, err := r.CommitObject(initHash)
+	initCommit, err := r.CommitObject(s.T().Context(), initHash)
 	s.Require().NoError(err)
 
 	badContent := []byte("content")
@@ -830,10 +831,10 @@ func (s *WorktreeSuite) TestCherryPickRejectsInvalidPaths() {
 	} {
 		badCommit := s.buildChildCommit(storage, initCommit, initHash, name, blobHash)
 
-		err = w.Checkout(&CheckoutOptions{Hash: initHash})
+		err = w.Checkout(s.T().Context(), &CheckoutOptions{Hash: initHash})
 		s.Require().NoError(err)
 
-		err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, badCommit)
+		err = w.CherryPick(s.T().Context(), &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, badCommit)
 		s.Error(err, "expected cherry-pick to reject path %q", name)
 	}
 }
@@ -849,7 +850,7 @@ func (s *WorktreeSuite) storeBlob(storage *memory.Storage, content []byte) plumb
 	_, err = bw.Write(content)
 	s.Require().NoError(err)
 	s.Require().NoError(bw.Close())
-	h, err := storage.SetEncodedObject(obj)
+	h, err := storage.SetEncodedObject(s.T().Context(), obj)
 	s.Require().NoError(err)
 	return h
 }
@@ -857,7 +858,7 @@ func (s *WorktreeSuite) storeBlob(storage *memory.Storage, content []byte) plumb
 func (s *WorktreeSuite) buildChildCommit(storage *memory.Storage, parent *object.Commit, parentHash plumbing.Hash, filename string, blobHash plumbing.Hash) *object.Commit {
 	s.T().Helper()
 
-	parentTree, err := parent.Tree()
+	parentTree, err := parent.Tree(s.T().Context())
 	s.Require().NoError(err)
 
 	entries := slices.Clone(parentTree.Entries)
@@ -885,7 +886,7 @@ func (s *WorktreeSuite) buildChildCommit(storage *memory.Storage, parent *object
 	_, err = tw.Write(buf.Bytes())
 	s.Require().NoError(err)
 	s.Require().NoError(tw.Close())
-	treeHash, err := storage.SetEncodedObject(treeObj)
+	treeHash, err := storage.SetEncodedObject(s.T().Context(), treeObj)
 	s.Require().NoError(err)
 
 	commit := &object.Commit{
@@ -898,10 +899,10 @@ func (s *WorktreeSuite) buildChildCommit(storage *memory.Storage, parent *object
 	commitObj := storage.NewEncodedObject()
 	err = commit.Encode(commitObj)
 	s.Require().NoError(err)
-	commitHash, err := storage.SetEncodedObject(commitObj)
+	commitHash, err := storage.SetEncodedObject(s.T().Context(), commitObj)
 	s.Require().NoError(err)
 
-	result, err := object.GetCommit(storage, commitHash)
+	result, err := object.GetCommit(s.T().Context(), storage, commitHash)
 	s.Require().NoError(err)
 	return result
 }
@@ -910,17 +911,17 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 	fs := s.TemporalFilesystem()
 
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	rInit, err := Init(st)
+	rInit, err := Init(s.T().Context(), st)
 	s.Require().NoError(err)
 	defer func() { _ = rInit.Close() }()
 
-	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	r, err := Clone(s.T().Context(), memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: fs.Root(),
 	})
 	s.ErrorIs(err, transport.ErrEmptyRemoteRepository)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	mfs := w.filesystem
@@ -930,17 +931,17 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 
 	for _, p := range []string{"delta_last", "Gamma", "delta/middle", "Beta", "delta-first", "alpha"} {
 		util.WriteFile(mfs, p, []byte("foo"), 0o644)
-		_, err = w.Add(p)
+		_, err = w.Add(s.T().Context(), p)
 		s.Require().NoError(err)
 	}
 
-	_, err = w.Commit("foo\n", &CommitOptions{
+	_, err = w.Commit(s.T().Context(), "foo\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
 	s.Require().NoError(err)
 
-	err = r.Push(&PushOptions{})
+	err = r.Push(s.T().Context(), &PushOptions{})
 	s.Require().NoError(err)
 
 	cmd := exec.Command("git", "fsck")
@@ -962,20 +963,20 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	s.Require().NoError(err)
 	storage := filesystem.NewStorage(fsDotgit, cache.NewObjectLRUDefault())
 
-	r, err := Init(storage, WithWorkTree(fs))
+	r, err := Init(s.T().Context(), storage, WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	// Step 1: Write LICENSE
 	util.WriteFile(fs, "LICENSE", []byte("license"), 0o644)
-	hLicense, err := w.Add("LICENSE")
+	hLicense, err := w.Add(s.T().Context(), "LICENSE")
 	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("0484eba0d41636ba71fa612c78559cd6c3006cde"), hLicense)
 
-	hash, err := w.Commit("commit 1\n", &CommitOptions{
+	hash, err := w.Commit(s.T().Context(), "commit 1\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
@@ -988,11 +989,11 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 	// Step 2: Write foo.
 	time.Sleep(5 * time.Millisecond) // uncool, but we need to get different timestamps...
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
-	hFoo, err := w.Add("foo")
+	hFoo, err := w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("19102815663d23f8b75a47e7a01965dcdc96468c"), hFoo)
 
-	hash, err = w.Commit("commit 2\n", &CommitOptions{
+	hash, err = w.Commit(s.T().Context(), "commit 2\n", &CommitOptions{
 		All:    true,
 		Author: defaultSignature(),
 	})
@@ -1016,7 +1017,7 @@ func (s *WorktreeSuite) TestJustStoreObjectsNotAlreadyStored() {
 
 func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	f := fixtures.Basic().One()
-	s.Repository = NewRepositoryWithEmptyWorktree(f)
+	s.Repository = NewRepositoryWithEmptyWorktree(s.T().Context(), f)
 	r1 := s.Repository
 	s.T().Cleanup(func() { _ = r1.Close() })
 
@@ -1025,29 +1026,29 @@ func (s *WorktreeSuite) TestCommitInvalidCharactersInAuthorInfos() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
 
-	r2, err := Init(storage, WithWorkTree(fs))
+	r2, err := Init(s.T().Context(), storage, WithWorkTree(fs))
 	s.Require().NoError(err)
 	defer func() { _ = r2.Close() }()
 
-	w, err := r2.Worktree()
+	w, err := r2.Worktree(s.T().Context())
 	s.Require().NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo"), 0o644)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(s.T().Context(), "foo")
 	s.Require().NoError(err)
 
-	hash, err := w.Commit("foo\n", &CommitOptions{Author: invalidSignature()})
+	hash, err := w.Commit(s.T().Context(), "foo\n", &CommitOptions{Author: invalidSignature()})
 	s.Equal(expected, hash)
 	s.Require().NoError(err)
 
 	assertStorageStatus(s, r2, 1, 1, 1, expected)
 
 	// Check HEAD commit contains author informations with '<', '>' and '\n' stripped
-	lr, err := r2.Log(&LogOptions{})
+	lr, err := r2.Log(s.T().Context(), &LogOptions{})
 	s.Require().NoError(err)
 
-	commit, err := lr.Next()
+	commit, err := lr.Next(s.T().Context())
 	s.Require().NoError(err)
 
 	s.Equal("foo bad", commit.Author.Name)
@@ -1077,14 +1078,14 @@ func BenchmarkCommit(b *testing.B) {
 			err := util.WriteFile(wt.filesystem, fileName, fmt.Appendf(nil, "content %d", seq), 0o644)
 			require.NoError(b, err)
 
-			_, err = wt.Add(fileName)
+			_, err = wt.Add(b.Context(), fileName)
 			require.NoError(b, err)
 
 			sig.When = time.Now()
 
 			// Isolate the benchmark to the commit operation.
 			b.StartTimer()
-			_, err = wt.Commit(fmt.Sprintf("commit %d\n", seq), &CommitOptions{
+			_, err = wt.Commit(b.Context(), fmt.Sprintf("commit %d\n", seq), &CommitOptions{
 				Author:    sig,
 				Committer: sig,
 			})
@@ -1100,25 +1101,26 @@ func assertStorageStatus(
 	s *WorktreeSuite, r *Repository,
 	treesCount, blobCount, commitCount int, head plumbing.Hash,
 ) {
-	trees, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
+	ctx := s.T().Context()
+	trees, err := r.Storer.IterEncodedObjects(ctx, plumbing.TreeObject)
 	s.Require().NoError(err)
-	blobs, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
+	blobs, err := r.Storer.IterEncodedObjects(ctx, plumbing.BlobObject)
 	s.Require().NoError(err)
-	commits, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
+	commits, err := r.Storer.IterEncodedObjects(ctx, plumbing.CommitObject)
 	s.Require().NoError(err)
 
-	s.Equal(treesCount, lenIterEncodedObjects(trees))
-	s.Equal(blobCount, lenIterEncodedObjects(blobs))
-	s.Equal(commitCount, lenIterEncodedObjects(commits))
+	s.Equal(treesCount, lenIterEncodedObjects(ctx, trees))
+	s.Equal(blobCount, lenIterEncodedObjects(ctx, blobs))
+	s.Equal(commitCount, lenIterEncodedObjects(ctx, commits))
 
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	s.Require().NoError(err)
 	s.Equal(head, ref.Hash())
 }
 
-func lenIterEncodedObjects(iter storer.EncodedObjectIter) int {
+func lenIterEncodedObjects(ctx context.Context, iter storer.EncodedObjectIter) int {
 	count := 0
-	iter.ForEach(func(plumbing.EncodedObject) error {
+	iter.ForEach(ctx, func(plumbing.EncodedObject) error {
 		count++
 		return nil
 	})
@@ -1224,25 +1226,25 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 			}
 
 			fs := memfs.New()
-			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			r, err := Init(t.Context(), memory.NewStorage(), WithWorkTree(fs))
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			cfg, err := r.Config()
+			cfg, err := r.Config(t.Context())
 			require.NoError(t, err)
 
 			cfg.Commit.GpgSign = tt.commitSignGpg
-			err = r.SetConfig(cfg)
+			err = r.SetConfig(t.Context(), cfg)
 			require.NoError(t, err)
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(t.Context())
 			require.NoError(t, err)
 
 			util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
-			_, err = w.Add("file.txt")
+			_, err = w.Add(t.Context(), "file.txt")
 			require.NoError(t, err)
 
-			hash, err := w.Commit("test commit\n", &CommitOptions{
+			hash, err := w.Commit(t.Context(), "test commit\n", &CommitOptions{
 				Author: defaultSignature(),
 				Signer: tt.optionsSigner,
 			})
@@ -1253,7 +1255,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 				return // no need to carry on
 			}
 
-			commit, err := r.CommitObject(hash)
+			commit, err := r.CommitObject(t.Context(), hash)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantSignature, commit.Signature)
 

@@ -43,32 +43,32 @@ func TestRemoteSuite(t *testing.T) {
 
 func (s *RemoteSuite) TestFetchInvalidEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
-	err := r.Fetch(&FetchOptions{RemoteName: "foo"})
+	err := r.Fetch(s.T().Context(), &FetchOptions{RemoteName: "foo"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestFetchNonExistentEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
-	err := r.Fetch(&FetchOptions{})
+	err := r.Fetch(s.T().Context(), &FetchOptions{})
 	s.NotNil(err)
 }
 
 func (s *RemoteSuite) TestFetchInvalidSchemaEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
-	err := r.Fetch(&FetchOptions{})
+	err := r.Fetch(s.T().Context(), &FetchOptions{})
 	s.ErrorContains(err, "unsupported scheme")
 }
 
 func (s *RemoteSuite) TestFetchOverriddenEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://perfectly-valid-url.example.com"}})
-	err := r.Fetch(&FetchOptions{RemoteURL: "http://\\"})
+	err := r.Fetch(s.T().Context(), &FetchOptions{RemoteURL: "http://\\"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestFetchInvalidFetchOptions() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	invalid := config.RefSpec("^*$ñ")
-	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{invalid}})
+	err := r.Fetch(s.T().Context(), &FetchOptions{RefSpecs: []config.RefSpec{invalid}})
 	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
 }
 
@@ -108,16 +108,16 @@ func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
 	// v2's fetch command accepts any "want <oid>", so there is no unsupported
 	// case to assert there; pin this to v0.
 	st := memory.NewStorage()
-	cfg, err := st.Config()
+	cfg, err := st.Config(s.T().Context())
 	s.Require().NoError(err)
 	cfg.Protocol.Version = protocol.V0
-	s.Require().NoError(st.SetConfig(cfg))
+	s.Require().NoError(st.SetConfig(s.T().Context(), cfg))
 
 	r := NewRemote(st, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err = r.Fetch(&FetchOptions{
+	err = r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
 		},
@@ -221,7 +221,7 @@ func (s *RemoteSuite) TestFetchNonExistentReference() {
 		URLs: []string{s.GetLocalRepositoryURL(fixtures.ByTag("tags").One())},
 	})
 
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/foo:refs/remotes/origin/foo"),
 		},
@@ -238,7 +238,7 @@ func (s *RemoteSuite) TestFetchContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := r.FetchContext(ctx, &FetchOptions{
+	err := r.Fetch(ctx, &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
@@ -254,7 +254,7 @@ func (s *RemoteSuite) TestFetchContextCanceled() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := r.FetchContext(ctx, &FetchOptions{
+	err := r.Fetch(ctx, &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/master:refs/remotes/origin/master"),
 		},
@@ -287,7 +287,7 @@ func (s *RemoteSuite) TestFetchDoesNotClobberExistingTag() {
 
 	// A tag the user has already pinned to a specific object.
 	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
-	s.Require().NoError(sto.SetReference(pinned))
+	s.Require().NoError(sto.SetReference(s.T().Context(), pinned))
 
 	r := NewRemote(sto, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -295,14 +295,14 @@ func (s *RemoteSuite) TestFetchDoesNotClobberExistingTag() {
 
 	// The remote advertises refs/tags/v1.0.0 at a different object. A default
 	// fetch auto-follows tags, but must not move a tag that already exists.
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
 		},
 	})
 	s.NoError(err)
 
-	got, err := sto.Reference("refs/tags/v1.0.0")
+	got, err := sto.Reference(s.T().Context(), "refs/tags/v1.0.0")
 	s.Require().NoError(err)
 	s.Equal(pinned.Hash(), got.Hash())
 }
@@ -311,20 +311,20 @@ func (s *RemoteSuite) TestFetchTagRefSpecDoesNotClobberExistingTag() {
 	sto := memory.NewStorage()
 
 	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
-	s.Require().NoError(sto.SetReference(pinned))
+	s.Require().NoError(sto.SetReference(s.T().Context(), pinned))
 
 	r := NewRemote(sto, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("refs/tags/*:refs/tags/*"),
 		},
 	})
 	s.ErrorIs(err, ErrForceNeeded)
 
-	got, err := sto.Reference("refs/tags/v1.0.0")
+	got, err := sto.Reference(s.T().Context(), "refs/tags/v1.0.0")
 	s.Require().NoError(err)
 	s.Equal(pinned.Hash(), got.Hash())
 }
@@ -333,7 +333,7 @@ func (s *RemoteSuite) TestFetchForcedTagRefSpecClobbersExistingTag() {
 	sto := memory.NewStorage()
 
 	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
-	s.Require().NoError(sto.SetReference(pinned))
+	s.Require().NoError(sto.SetReference(s.T().Context(), pinned))
 
 	r := NewRemote(sto, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
@@ -341,14 +341,14 @@ func (s *RemoteSuite) TestFetchForcedTagRefSpecClobbersExistingTag() {
 
 	// A forced tag refspec is the user asking for the update, so it must still
 	// move an existing tag.
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/tags/*:refs/tags/*"),
 		},
 	})
 	s.NoError(err)
 
-	got, err := sto.Reference("refs/tags/v1.0.0")
+	got, err := sto.Reference(s.T().Context(), "refs/tags/v1.0.0")
 	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), got.Hash())
 }
@@ -357,13 +357,13 @@ func (s *RemoteSuite) TestFetchAllTagsDoesNotClobberExistingTag() {
 	sto := memory.NewStorage()
 
 	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
-	s.Require().NoError(sto.SetReference(pinned))
+	s.Require().NoError(sto.SetReference(s.T().Context(), pinned))
 
 	r := NewRemote(sto, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		Tags: AllTags,
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
@@ -371,7 +371,7 @@ func (s *RemoteSuite) TestFetchAllTagsDoesNotClobberExistingTag() {
 	})
 	s.ErrorIs(err, ErrForceNeeded)
 
-	got, err := sto.Reference("refs/tags/v1.0.0")
+	got, err := sto.Reference(s.T().Context(), "refs/tags/v1.0.0")
 	s.Require().NoError(err)
 	s.Equal(pinned.Hash(), got.Hash())
 }
@@ -380,13 +380,13 @@ func (s *RemoteSuite) TestFetchForcedAllTagsClobbersExistingTag() {
 	sto := memory.NewStorage()
 
 	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
-	s.Require().NoError(sto.SetReference(pinned))
+	s.Require().NoError(sto.SetReference(s.T().Context(), pinned))
 
 	r := NewRemote(sto, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		Force: true,
 		Tags:  AllTags,
 		RefSpecs: []config.RefSpec{
@@ -395,7 +395,7 @@ func (s *RemoteSuite) TestFetchForcedAllTagsClobbersExistingTag() {
 	})
 	s.NoError(err)
 
-	got, err := sto.Reference("refs/tags/v1.0.0")
+	got, err := sto.Reference(s.T().Context(), "refs/tags/v1.0.0")
 	s.Require().NoError(err)
 	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), got.Hash())
 }
@@ -470,19 +470,19 @@ func (s *RemoteSuite) TestFetchWithDepthChange() {
 
 func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing.Reference) {
 	s.T().Helper()
-	err := r.Fetch(o)
+	err := r.Fetch(s.T().Context(), o)
 	s.NoError(err)
 
 	var refs int
-	l, err := r.s.IterReferences()
+	l, err := r.s.IterReferences(s.T().Context())
 	s.Require().NoError(err)
-	err = l.ForEach(func(*plumbing.Reference) error { refs++; return nil })
+	err = l.ForEach(s.T().Context(), func(*plumbing.Reference) error { refs++; return nil })
 	s.Require().NoError(err)
 
 	s.Len(expected, refs)
 
 	for _, exp := range expected {
-		r, err := r.s.Reference(exp.Name())
+		r, err := r.s.Reference(s.T().Context(), exp.Name())
 		s.Require().NoError(err)
 		s.Equal(exp.String(), r.String())
 	}
@@ -495,20 +495,20 @@ func (s *RemoteSuite) TestFetchOfMissingObjects() {
 
 	storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
-	r, err := Open(storage, nil)
+	r, err := Open(s.T().Context(), storage, nil)
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
 	// Confirm we are missing a commit
-	_, err = r.CommitObject(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	_, err = r.CommitObject(s.T().Context(), plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
 
 	// Refetch to get all the missing objects
-	err = r.Fetch(&FetchOptions{})
+	err = r.Fetch(s.T().Context(), &FetchOptions{})
 	s.NoError(err)
 
 	// Confirm we now have the commit
-	_, err = r.CommitObject(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	_, err = r.CommitObject(s.T().Context(), plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	s.NoError(err)
 }
 
@@ -525,7 +525,7 @@ func (s *RemoteSuite) TestFetchWithProgress() {
 	r := NewRemote(sto, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{refspec},
 		Progress: buf,
 	})
@@ -541,9 +541,9 @@ type mockPackfileWriter struct {
 	PackfileWriterCalled bool
 }
 
-func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
+func (m *mockPackfileWriter) PackfileWriter(ctx context.Context) (io.WriteCloser, error) {
 	m.PackfileWriterCalled = true
-	return m.Storer.(storer.PackfileWriter).PackfileWriter()
+	return m.Storer.(storer.PackfileWriter).PackfileWriter(ctx)
 }
 
 func (s *RemoteSuite) TestFetchWithPackfileWriter() {
@@ -557,17 +557,17 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter() {
 	r := NewRemote(mock, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{refspec},
 	})
 
 	s.NoError(err)
 
 	var count int
-	iter, err := mock.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := mock.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 	s.NoError(err)
 
-	iter.ForEach(func(plumbing.EncodedObject) error {
+	iter.ForEach(s.T().Context(), func(plumbing.EncodedObject) error {
 		count++
 		return nil
 	})
@@ -592,22 +592,22 @@ func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDateButStillUpdateLocalRemoteRefs
 		},
 	}
 
-	err := r.Fetch(o)
+	err := r.Fetch(s.T().Context(), o)
 	s.NoError(err)
 
 	// Simulate an out of date remote ref even though we have the new commit locally
-	r.s.SetReference(plumbing.NewReferenceFromStrings(
+	r.s.SetReference(s.T().Context(), plumbing.NewReferenceFromStrings(
 		"refs/remotes/origin/master", "918c48b83bd081e863dbe1b80f8998f058cd8294",
 	))
 
-	err = r.Fetch(o)
+	err = r.Fetch(s.T().Context(), o)
 	s.NoError(err)
 
 	exp := plumbing.NewReferenceFromStrings(
 		"refs/remotes/origin/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	)
 
-	ref, err := r.s.Reference("refs/remotes/origin/master")
+	ref, err := r.s.Reference(s.T().Context(), "refs/remotes/origin/master")
 	s.NoError(err)
 	s.Equal(ref.String(), exp.String())
 }
@@ -627,9 +627,9 @@ func (s *RemoteSuite) doTestFetchNoErrAlreadyUpToDate(url string) {
 		},
 	}
 
-	err := r.Fetch(o)
+	err := r.Fetch(s.T().Context(), o)
 	s.NoError(err)
-	err = r.Fetch(o)
+	err = r.Fetch(s.T().Context(), o)
 	s.ErrorIs(err, NoErrAlreadyUpToDate)
 }
 
@@ -647,7 +647,7 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 	})
 
 	// First make sure that we error correctly when a force is required.
-	err := r.Fetch(&FetchOptions{
+	err := r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("refs/heads/branch:refs/heads/master"),
 		},
@@ -655,7 +655,7 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 	s.ErrorIs(err, ErrForceNeeded)
 
 	// And that forcing it fixes the problem.
-	err = r.Fetch(&FetchOptions{
+	err = r.Fetch(s.T().Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("+refs/heads/branch:refs/heads/master"),
 		},
@@ -663,7 +663,7 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 	s.NoError(err)
 
 	// Now test that a fast-forward, non-force fetch works.
-	r.s.SetReference(plumbing.NewReferenceFromStrings(
+	r.s.SetReference(s.T().Context(), plumbing.NewReferenceFromStrings(
 		"refs/heads/master", "918c48b83bd081e863dbe1b80f8998f058cd8294",
 	))
 	s.testFetch(r, &FetchOptions{
@@ -704,7 +704,7 @@ func (s *RemoteSuite) TestString() {
 
 func (s *RemoteSuite) TestPushToEmptyRepository() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -719,16 +719,16 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 	})
 
 	rs := config.RefSpec("refs/heads/*:refs/heads/*")
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{rs},
 	})
 	s.NoError(err)
 
-	iter, err := r.s.IterReferences()
+	iter, err := r.s.IterReferences(s.T().Context())
 	s.NoError(err)
 
 	expected := make(map[string]string)
-	iter.ForEach(func(ref *plumbing.Reference) error {
+	iter.ForEach(s.T().Context(), func(ref *plumbing.Reference) error {
 		if !ref.Name().IsBranch() {
 			return nil
 		}
@@ -743,7 +743,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 
 func (s *RemoteSuite) TestPushContext() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -762,7 +762,7 @@ func (s *RemoteSuite) TestPushContext() {
 
 	numGoroutines := runtime.NumGoroutine()
 
-	err = r.PushContext(ctx, &PushOptions{
+	err = r.Push(ctx, &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	s.NoError(err)
@@ -774,7 +774,7 @@ func (s *RemoteSuite) TestPushContext() {
 
 func (s *RemoteSuite) TestPushPushOptions() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.Require().NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -790,7 +790,7 @@ func (s *RemoteSuite) TestPushPushOptions() {
 
 	// TODO: Validate the push options was received by the server and implement
 	// server-side hooks.
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		Options: []string{
 			"iam-a-push-option",
 		},
@@ -813,7 +813,7 @@ func eventually(s *RemoteSuite, condition func() bool) {
 
 func (s *RemoteSuite) TestPushContextCanceled() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -832,7 +832,7 @@ func (s *RemoteSuite) TestPushContextCanceled() {
 
 	numGoroutines := runtime.NumGoroutine()
 
-	err = r.PushContext(ctx, &PushOptions{
+	err = r.Push(ctx, &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	s.ErrorIs(err, context.Canceled)
@@ -844,7 +844,7 @@ func (s *RemoteSuite) TestPushContextCanceled() {
 
 func (s *RemoteSuite) TestPushTags() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -858,7 +858,7 @@ func (s *RemoteSuite) TestPushTags() {
 		URLs: []string{url},
 	})
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
 	})
 	s.NoError(err)
@@ -875,7 +875,7 @@ func (s *RemoteSuite) TestPushTags() {
 func (s *RemoteSuite) TestPushTagsByOID() {
 	url := s.T().TempDir()
 
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -889,7 +889,7 @@ func (s *RemoteSuite) TestPushTagsByOID() {
 		URLs: []string{url},
 	})
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{
 			"f7b877701fbf855b44c0a9e86f3fdce2c298b07f:refs/tags/lightweight-tag-copy",
 			"b742a2a9fa0afcfa9a6fad080980fbc26b007c69:refs/tags/annotated-tag-copy",
@@ -913,7 +913,7 @@ func (s *RemoteSuite) TestPushTagsByOID() {
 func (s *RemoteSuite) testPushByOID(oid, refName string) {
 	url := s.T().TempDir()
 
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -927,7 +927,7 @@ func (s *RemoteSuite) testPushByOID(oid, refName string) {
 		URLs: []string{url},
 	})
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec(oid + ":" + refName),
 		},
@@ -950,7 +950,7 @@ func (s *RemoteSuite) TestPushTreeByOID() {
 
 func (s *RemoteSuite) TestPushFollowTags() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -966,6 +966,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 	localRepo := newRepository(sto, fs)
 	defer func() { _ = localRepo.Close() }()
 	tipTag, err := localRepo.CreateTag(
+		s.T().Context(),
 		"tip",
 		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
 		&CreateTagOptions{
@@ -975,6 +976,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 	s.NoError(err)
 
 	initialTag, err := localRepo.CreateTag(
+		s.T().Context(),
 		"initial-commit",
 		plumbing.NewHash("b029517f6300c2da0f4b651b8642506cd6aaf45d"),
 		&CreateTagOptions{
@@ -984,6 +986,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 	s.NoError(err)
 
 	_, err = localRepo.CreateTag(
+		s.T().Context(),
 		"master-tag",
 		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 		&CreateTagOptions{
@@ -992,7 +995,7 @@ func (s *RemoteSuite) TestPushFollowTags() {
 	)
 	s.NoError(err)
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs:   []config.RefSpec{"+refs/heads/branch:refs/heads/branch"},
 		FollowTags: true,
 	})
@@ -1020,7 +1023,7 @@ func (s *RemoteSuite) TestPushNoErrAlreadyUpToDate() {
 		URLs: []string{fs.Root()},
 	})
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"},
 	})
 	s.ErrorIs(err, NoErrAlreadyUpToDate)
@@ -1032,25 +1035,25 @@ func (s *RemoteSuite) TestPushDeleteReference() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+	r, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{
 		URL:  fs.Root(),
 		Bare: true,
 	})
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{
+	err = remote.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{":refs/heads/branch"},
 	})
 	s.NoError(err)
 
-	_, err = sto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	_, err = sto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 
-	_, err = r.Storer.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	_, err = r.Storer.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
@@ -1061,26 +1064,26 @@ func (s *RemoteSuite) TestForcePushDeleteReference() {
 	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+	r, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{
 		URL:  fs.Root(),
 		Bare: true,
 	})
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{
+	err = remote.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{":refs/heads/branch"},
 		Force:    true,
 	})
 	s.NoError(err)
 
-	_, err = sto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	_, err = sto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 
-	_, err = r.Storer.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	_, err = r.Storer.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
@@ -1091,24 +1094,24 @@ func (s *RemoteSuite) TestPushRejectNonFastForward() {
 	server := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = server.Close() }()
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: fs.Root(), Bare: true})
+	r, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{URL: fs.Root(), Bare: true})
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.Require().NoError(err)
 
 	branch := plumbing.ReferenceName("refs/heads/branch")
-	oldRef, err := server.Reference(branch)
+	oldRef, err := server.Reference(s.T().Context(), branch)
 	s.NoError(err)
 	s.NotNil(oldRef)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/heads/master:refs/heads/branch",
 	}})
 	s.ErrorContains(err, "non-fast-forward update: refs/heads/branch")
 
-	newRef, err := server.Reference(branch)
+	newRef, err := server.Reference(s.T().Context(), branch)
 	s.NoError(err)
 	s.Equal(oldRef, newRef)
 }
@@ -1116,10 +1119,10 @@ func (s *RemoteSuite) TestPushRejectNonFastForward() {
 func (s *RemoteSuite) TestPushRejectExistingTagUpdate() {
 	server, local, remote, oldHash, newHash := s.newPushExistingTagUpdate()
 
-	err := local.Storer.SetReference(plumbing.NewHashReference("refs/tags/v1", newHash))
+	err := local.Storer.SetReference(s.T().Context(), plumbing.NewHashReference("refs/tags/v1", newHash))
 	s.Require().NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/tags/v1:refs/tags/v1",
 	}})
 	s.ErrorContains(err, "tag already exists: refs/tags/v1")
@@ -1132,7 +1135,7 @@ func (s *RemoteSuite) TestPushRejectExistingTagUpdate() {
 func (s *RemoteSuite) TestPushRejectExistingTagUpdateByOID() {
 	server, _, remote, oldHash, newHash := s.newPushExistingTagUpdate()
 
-	err := remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err := remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		config.RefSpec(newHash.String() + ":refs/tags/v1"),
 	}})
 	s.ErrorContains(err, "tag already exists: refs/tags/v1")
@@ -1145,13 +1148,13 @@ func (s *RemoteSuite) TestPushRejectExistingTagUpdateByOID() {
 func (s *RemoteSuite) TestPushRejectExistingTagUpdateToAnnotatedTag() {
 	server, local, remote, oldHash, newHash := s.newPushExistingTagUpdate()
 
-	_, err := local.CreateTag("v1-annotated", newHash, &CreateTagOptions{
+	_, err := local.CreateTag(s.T().Context(), "v1-annotated", newHash, &CreateTagOptions{
 		Tagger:  defaultSignature(),
 		Message: "annotated tag",
 	})
 	s.Require().NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/tags/v1-annotated:refs/tags/v1",
 	}})
 	s.ErrorContains(err, "tag already exists: refs/tags/v1")
@@ -1164,10 +1167,10 @@ func (s *RemoteSuite) TestPushRejectExistingTagUpdateToAnnotatedTag() {
 func (s *RemoteSuite) TestPushForceUpdatesExistingTag() {
 	server, local, remote, _, newHash := s.newPushExistingTagUpdate()
 
-	err := local.Storer.SetReference(plumbing.NewHashReference("refs/tags/v1", newHash))
+	err := local.Storer.SetReference(s.T().Context(), plumbing.NewHashReference("refs/tags/v1", newHash))
 	s.Require().NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"+refs/tags/v1:refs/tags/v1",
 	}})
 	s.NoError(err)
@@ -1183,27 +1186,27 @@ func (s *RemoteSuite) newPushExistingTagUpdate() (*Repository, *Repository, *Rem
 	dir := s.T().TempDir()
 	remoteURL := filepath.Join(dir, "remote")
 
-	server, err := PlainInit(remoteURL, true)
+	server, err := PlainInit(s.T().Context(), remoteURL, true)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = server.Close() })
 
-	local, err := PlainInit(filepath.Join(dir, "local"), false)
+	local, err := PlainInit(s.T().Context(), filepath.Join(dir, "local"), false)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = local.Close() })
 
 	oldHash := CommitNewFile(s.T(), local, "old")
 	newHash := CommitNewFile(s.T(), local, "new")
 
-	_, err = local.CreateTag("v1", oldHash, nil)
+	_, err = local.CreateTag(s.T().Context(), "v1", oldHash, nil)
 	s.Require().NoError(err)
 
-	remote, err := local.CreateRemote(&config.RemoteConfig{
+	remote, err := local.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{remoteURL},
 	})
 	s.Require().NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/tags/v1:refs/tags/v1",
 	}})
 	s.Require().NoError(err)
@@ -1228,16 +1231,16 @@ func (s *RemoteSuite) TestPushForce() {
 		URLs: []string{dstFs.Root()},
 	})
 
-	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	oldRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.NotNil(oldRef)
 
-	err = r.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = r.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		config.RefSpec("+refs/heads/master:refs/heads/branch"),
 	}})
 	s.NoError(err)
 
-	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	newRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.NotEqual(oldRef, newRef)
 }
@@ -1259,17 +1262,17 @@ func (s *RemoteSuite) TestPushForceWithOption() {
 		URLs: []string{dstFs.Root()},
 	})
 
-	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	oldRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.NotNil(oldRef)
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{"refs/heads/master:refs/heads/branch"},
 		Force:    true,
 	})
 	s.NoError(err)
 
-	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	newRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.NotEqual(oldRef, newRef)
 }
@@ -1315,9 +1318,9 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 		newCommit := plumbing.NewHashReference(
 			"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
 		)
-		s.Nil(sto.SetReference(newCommit))
+		s.Nil(sto.SetReference(s.T().Context(), newCommit))
 
-		ref, err := sto.Reference("refs/heads/branch")
+		ref, err := sto.Reference(s.T().Context(), "refs/heads/branch")
 		s.NoError(err)
 		s.T().Log(ref.String())
 
@@ -1326,16 +1329,16 @@ func (s *RemoteSuite) TestPushForceWithLease_success() {
 			URLs: []string{dstFs.Root()},
 		})
 
-		oldRef, err := dstSto.Reference("refs/heads/branch")
+		oldRef, err := dstSto.Reference(s.T().Context(), "refs/heads/branch")
 		s.NoError(err)
 		s.NotNil(oldRef)
 
-		s.NoError(r.Push(&PushOptions{
+		s.NoError(r.Push(s.T().Context(), &PushOptions{
 			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
 			ForceWithLease: &ForceWithLease{},
 		}))
 
-		newRef, err := dstSto.Reference("refs/heads/branch")
+		newRef, err := dstSto.Reference(s.T().Context(), "refs/heads/branch")
 		s.NoError(err)
 		s.Equal(newCommit, newRef)
 	}
@@ -1374,7 +1377,7 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 		sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 		defer func() { _ = sto.Close() }()
 		s.NoError(sto.SetReference(
-			plumbing.NewHashReference(
+			s.T().Context(), plumbing.NewHashReference(
 				"refs/heads/branch", plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
 			),
 		))
@@ -1384,7 +1387,7 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 		dstSto := filesystem.NewStorage(dstFs, cache.NewObjectLRUDefault())
 		defer func() { _ = dstSto.Close() }()
 		s.NoError(dstSto.SetReference(
-			plumbing.NewHashReference(
+			s.T().Context(), plumbing.NewHashReference(
 				"refs/heads/branch", plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
 			),
 		))
@@ -1394,48 +1397,48 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 			URLs: []string{dstFs.Root()},
 		})
 
-		oldRef, err := dstSto.Reference("refs/heads/branch")
+		oldRef, err := dstSto.Reference(s.T().Context(), "refs/heads/branch")
 		s.NoError(err)
 		s.NotNil(oldRef)
 
-		err = r.Push(&PushOptions{
+		err = r.Push(s.T().Context(), &PushOptions{
 			RefSpecs:       []config.RefSpec{"refs/heads/branch:refs/heads/branch"},
 			ForceWithLease: &ForceWithLease{},
 		})
 
 		s.ErrorContains(err, "non-fast-forward update: refs/heads/branch")
 
-		newRef, err := dstSto.Reference("refs/heads/branch")
+		newRef, err := dstSto.Reference(s.T().Context(), "refs/heads/branch")
 		s.NoError(err)
 		s.NotEqual(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"), newRef)
 	}
 }
 
 func (s *RemoteSuite) TestPushPrune() {
-	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	server, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
 	defer func() { _ = server.Close() }()
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+	r, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{
 		URL:  server.wt.Root(),
 		Bare: true,
 	})
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	tag, err := r.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
+	tag, err := r.Reference(s.T().Context(), plumbing.ReferenceName("refs/tags/v1.0.0"), true)
 	s.NoError(err)
 
-	err = r.DeleteTag("v1.0.0")
+	err = r.DeleteTag(s.T().Context(), "v1.0.0")
 	s.NoError(err)
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	ref, err := r.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{
+	err = remote.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("refs/heads/*:refs/heads/*"),
 		},
@@ -1447,7 +1450,7 @@ func (s *RemoteSuite) TestPushPrune() {
 		"refs/tags/v1.0.0": tag.Hash().String(),
 	})
 
-	err = remote.Push(&PushOptions{
+	err = remote.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("*:*"),
 		},
@@ -1463,29 +1466,29 @@ func (s *RemoteSuite) TestPushPrune() {
 		"refs/remotes/origin/master": ref.Hash().String(),
 	})
 
-	_, err = server.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"), true)
+	_, err = server.Reference(s.T().Context(), plumbing.ReferenceName("refs/tags/v1.0.0"), true)
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
 func (s *RemoteSuite) TestPushNewReference() {
-	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	server, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
 	defer func() { _ = server.Close() }()
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+	r, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{
 		URL:  server.wt.Root(),
 		Bare: true,
 	})
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	ref, err := r.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/heads/master:refs/heads/branch2",
 	}})
 	s.NoError(err)
@@ -1500,24 +1503,24 @@ func (s *RemoteSuite) TestPushNewReference() {
 }
 
 func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch() {
-	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	server, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
 	defer func() { _ = server.Close() }()
 
-	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+	r, err := PlainClone(s.T().Context(), s.T().TempDir(), &CloneOptions{
 		URL:  server.wt.Root(),
 		Bare: true,
 	})
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	ref, err := r.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/heads/master:refs/heads/branch2",
 		":refs/heads/branch",
 	}})
@@ -1531,38 +1534,38 @@ func (s *RemoteSuite) TestPushNewReferenceAndDeleteInBatch() {
 		"refs/remotes/origin/branch2": ref.Hash().String(),
 	})
 
-	_, err = server.Storer.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	_, err = server.Storer.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
 func (s *RemoteSuite) TestPushInvalidEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"http://\\"}})
-	err := r.Push(&PushOptions{RemoteName: "foo"})
+	err := r.Push(s.T().Context(), &PushOptions{RemoteName: "foo"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestPushNonExistentEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
-	err := r.Push(&PushOptions{})
+	err := r.Push(s.T().Context(), &PushOptions{})
 	s.NotNil(err)
 }
 
 func (s *RemoteSuite) TestPushOverriddenEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{"http://perfectly-valid-url.example.com"}})
-	err := r.Push(&PushOptions{RemoteURL: "http://\\"})
+	err := r.Push(s.T().Context(), &PushOptions{RemoteURL: "http://\\"})
 	s.ErrorContains(err, "invalid character")
 }
 
 func (s *RemoteSuite) TestPushInvalidSchemaEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{"qux://foo"}})
-	err := r.Push(&PushOptions{})
+	err := r.Push(s.T().Context(), &PushOptions{})
 	s.ErrorContains(err, "unsupported scheme")
 }
 
 func (s *RemoteSuite) TestPushInvalidFetchOptions() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"qux://foo"}})
 	invalid := config.RefSpec("^*$ñ")
-	err := r.Push(&PushOptions{RefSpecs: []config.RefSpec{invalid}})
+	err := r.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{invalid}})
 	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
 }
 
@@ -1573,7 +1576,7 @@ func (s *RemoteSuite) TestPushInvalidRefSpec() {
 	})
 
 	rs := config.RefSpec("^*$**")
-	err := r.Push(&PushOptions{
+	err := r.Push(s.T().Context(), &PushOptions{
 		RefSpecs: []config.RefSpec{rs},
 	})
 	s.ErrorIs(err, config.ErrRefSpecMalformedSeparator)
@@ -1585,7 +1588,7 @@ func (s *RemoteSuite) TestPushWrongRemoteName() {
 		URLs: []string{"some-url"},
 	})
 
-	err := r.Push(&PushOptions{
+	err := r.Push(s.T().Context(), &PushOptions{
 		RemoteName: "other-remote",
 	})
 	s.ErrorContains(err, "remote names don't match")
@@ -1616,7 +1619,7 @@ func (s *RemoteSuite) TestGetHaves() {
 		),
 	}
 
-	l, err := getHaves(localRefs, memory.NewStorage(), sto, 0)
+	l, err := getHaves(s.T().Context(), localRefs, memory.NewStorage(), sto, 0)
 	s.NoError(err)
 	s.Len(l, 2)
 }
@@ -1628,7 +1631,7 @@ func (s *RemoteSuite) TestList() {
 		URLs: []string{repo.URL},
 	})
 
-	refs, err := remote.List(&ListOptions{})
+	refs, err := remote.List(s.T().Context(), &ListOptions{})
 	s.NoError(err)
 
 	expected := []*plumbing.Reference{
@@ -1667,7 +1670,7 @@ func (s *RemoteSuite) TestListPeeling() {
 		{peelingOption: IgnorePeeled, expectPeeled: false, expectNonPeeled: true},
 		{peelingOption: OnlyPeeled, expectPeeled: true, expectNonPeeled: false},
 	} {
-		refs, err := remote.List(&ListOptions{
+		refs, err := remote.List(s.T().Context(), &ListOptions{
 			PeelingOption: tc.peelingOption,
 		})
 		s.NoError(err)
@@ -1703,7 +1706,7 @@ func (s *RemoteSuite) TestListTimeout() {
 		URLs: []string{srv.URL},
 	})
 
-	_, err := remote.ListContext(ctx, &ListOptions{})
+	_, err := remote.List(ctx, &ListOptions{})
 	s.ErrorIs(err, context.DeadlineExceeded)
 }
 
@@ -1762,7 +1765,7 @@ func (s *RemoteSuite) TestUpdateShallows() {
 
 func (s *RemoteSuite) TestUseRefDeltas() {
 	url := s.T().TempDir()
-	server, err := PlainInit(url, true)
+	server, err := PlainInit(s.T().Context(), url, true)
 	s.NoError(err)
 	defer func() { _ = server.Close() }()
 
@@ -1803,49 +1806,49 @@ func (s *RemoteSuite) TestPushRequireRemoteRefs() {
 		URLs: []string{url},
 	})
 
-	oldRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	oldRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.NotNil(oldRef)
 
-	otherRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/master"))
+	otherRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/master"))
 	s.NoError(err)
 	s.NotNil(otherRef)
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
 		RequireRemoteRefs: []config.RefSpec{config.RefSpec(otherRef.Hash().String() + ":refs/heads/branch")},
 	})
 	s.ErrorContains(err, "remote ref refs/heads/branch required to be 6ecf0ef2c2dffb796033e5a02219af86ec6584e5 but is e8d3ffab552895c19b9fcf7aa264d277cde33881")
 
-	newRef, err := dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	newRef, err := dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.Equal(oldRef, newRef)
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
 		RequireRemoteRefs: []config.RefSpec{config.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
 	})
 	s.ErrorContains(err, "non-fast-forward update: ")
 
-	newRef, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	newRef, err = dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.Equal(oldRef, newRef)
 
-	err = r.Push(&PushOptions{
+	err = r.Push(s.T().Context(), &PushOptions{
 		RefSpecs:          []config.RefSpec{"refs/heads/master:refs/heads/branch"},
 		RequireRemoteRefs: []config.RefSpec{config.RefSpec(oldRef.Hash().String() + ":refs/heads/branch")},
 		Force:             true,
 	})
 	s.NoError(err)
 
-	newRef, err = dstSto.Reference(plumbing.ReferenceName("refs/heads/branch"))
+	newRef, err = dstSto.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"))
 	s.NoError(err)
 	s.NotEqual(oldRef, newRef)
 }
 
 func (s *RemoteSuite) TestFetchPrune() {
 	url := s.T().TempDir()
-	urlRepo, err := PlainClone(url, &CloneOptions{
+	urlRepo, err := PlainClone(s.T().Context(), url, &CloneOptions{
 		URL:  s.GetBasicLocalRepositoryURL(),
 		Bare: true,
 	})
@@ -1853,26 +1856,26 @@ func (s *RemoteSuite) TestFetchPrune() {
 	defer func() { _ = urlRepo.Close() }()
 
 	dir := s.T().TempDir()
-	r, err := PlainClone(dir, &CloneOptions{
+	r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:  url,
 		Bare: true,
 	})
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	ref, err := r.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/heads/master:refs/heads/branch",
 	}})
 	s.NoError(err)
 
 	dirSave := s.T().TempDir()
-	rSave, err := PlainClone(dirSave, &CloneOptions{
+	rSave, err := PlainClone(s.T().Context(), dirSave, &CloneOptions{
 		URL:  url,
 		Bare: true,
 	})
@@ -1883,7 +1886,7 @@ func (s *RemoteSuite) TestFetchPrune() {
 		"refs/remotes/origin/branch": ref.Hash().String(),
 	})
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		":refs/heads/branch",
 	}})
 	s.NoError(err)
@@ -1892,16 +1895,16 @@ func (s *RemoteSuite) TestFetchPrune() {
 		"refs/remotes/origin/branch": ref.Hash().String(),
 	})
 
-	err = rSave.Fetch(&FetchOptions{Prune: true})
+	err = rSave.Fetch(s.T().Context(), &FetchOptions{Prune: true})
 	s.NoError(err)
 
-	_, err = rSave.Reference("refs/remotes/origin/branch", true)
+	_, err = rSave.Reference(s.T().Context(), "refs/remotes/origin/branch", true)
 	s.ErrorContains(err, "reference not found")
 }
 
 func (s *RemoteSuite) TestFetchPruneTags() {
 	url := s.T().TempDir()
-	urlRepo, err := PlainClone(url, &CloneOptions{
+	urlRepo, err := PlainClone(s.T().Context(), url, &CloneOptions{
 		URL:  s.GetBasicLocalRepositoryURL(),
 		Bare: true,
 	})
@@ -1909,26 +1912,26 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 	defer func() { _ = urlRepo.Close() }()
 
 	dir := s.T().TempDir()
-	r, err := PlainClone(dir, &CloneOptions{
+	r, err := PlainClone(s.T().Context(), dir, &CloneOptions{
 		URL:  url,
 		Bare: true,
 	})
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	remote, err := r.Remote(DefaultRemoteName)
+	remote, err := r.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 
-	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	ref, err := r.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/master"), true)
 	s.NoError(err)
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		"refs/heads/master:refs/tags/v1",
 	}})
 	s.NoError(err)
 
 	dirSave := s.T().TempDir()
-	rSave, err := PlainClone(dirSave, &CloneOptions{
+	rSave, err := PlainClone(s.T().Context(), dirSave, &CloneOptions{
 		URL:  url,
 		Bare: true,
 	})
@@ -1939,7 +1942,7 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 		"refs/tags/v1": ref.Hash().String(),
 	})
 
-	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+	err = remote.Push(s.T().Context(), &PushOptions{RefSpecs: []config.RefSpec{
 		":refs/tags/v1",
 	}})
 	s.NoError(err)
@@ -1948,10 +1951,10 @@ func (s *RemoteSuite) TestFetchPruneTags() {
 		"refs/tags/v1": ref.Hash().String(),
 	})
 
-	err = rSave.Fetch(&FetchOptions{Prune: true, RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"}})
+	err = rSave.Fetch(s.T().Context(), &FetchOptions{Prune: true, RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"}})
 	s.NoError(err)
 
-	_, err = rSave.Reference("refs/tags/v1", true)
+	_, err = rSave.Reference(s.T().Context(), "refs/tags/v1", true)
 	s.ErrorContains(err, "reference not found")
 }
 
@@ -1961,19 +1964,19 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 	// remote currently forces a plain path for path based remotes inside the PushContext function.
 	// This makes it impossible, in the current state to use memfs.
 	// For the sake of readability, use the same osFS everywhere and use plain git repositories on temporary files
-	remote, err := PlainInit(filepath.Join(d, "remote"), true)
+	remote, err := PlainInit(s.T().Context(), filepath.Join(d, "remote"), true)
 	s.NoError(err)
 	s.NotNil(remote)
 	defer func() { _ = remote.Close() }()
 
-	repo, err := PlainInit(filepath.Join(d, "repo"), false)
+	repo, err := PlainInit(s.T().Context(), filepath.Join(d, "repo"), false)
 	s.NoError(err)
 	s.NotNil(repo)
 	defer func() { _ = repo.Close() }()
 
 	sha := CommitNewFile(s.T(), repo, "README.md")
 
-	gitremote, err := repo.CreateRemote(&config.RemoteConfig{
+	gitremote, err := repo.CreateRemote(s.T().Context(), &config.RemoteConfig{
 		Name: "local",
 		URLs: []string{filepath.Join(d, "remote")},
 	})
@@ -1982,7 +1985,7 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 		return
 	}
 
-	err = gitremote.Push(&PushOptions{
+	err = gitremote.Push(s.T().Context(), &PushOptions{
 		RemoteName: "local",
 		RefSpecs: []config.RefSpec{
 			// TODO: check with short hashes that this is still respected
@@ -1994,7 +1997,7 @@ func (s *RemoteSuite) TestCanPushShasToReference() {
 		return
 	}
 
-	ref, err := remote.Reference(plumbing.ReferenceName("refs/heads/branch"), false)
+	ref, err := remote.Reference(s.T().Context(), plumbing.ReferenceName("refs/heads/branch"), false)
 	s.NoError(err)
 	if err != nil {
 		return
@@ -2008,7 +2011,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	repoDir := filepath.Join(tempDir, "repo")
 
 	// Create a new repo and add more than 1 commit (so we can have a shallow commit)
-	remote, err := PlainInit(remoteURL, false)
+	remote, err := PlainInit(s.T().Context(), remoteURL, false)
 	s.Require().NoError(err)
 	s.Require().NotNil(remote)
 	defer func() { _ = remote.Close() }()
@@ -2017,7 +2020,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	_ = CommitNewFile(s.T(), remote, "File2")
 
 	// Clone the repo with a depth of 1
-	repo, err := PlainClone(repoDir, &CloneOptions{
+	repo, err := PlainClone(s.T().Context(), repoDir, &CloneOptions{
 		URL:           remoteURL,
 		Depth:         1,
 		Tags:          plumbing.NoTags,
@@ -2032,7 +2035,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	sha4 := CommitNewFile(s.T(), remote, "File4")
 
 	// Try fetch with depth of 1 again (note, we need to ensure no remote branch remains pointing at the old commit)
-	r, err := repo.Remote(DefaultRemoteName)
+	r, err := repo.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 	s.testFetch(r, &FetchOptions{
 		Depth: 2,
@@ -2052,7 +2055,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 	sha5 := CommitNewFile(s.T(), remote, "File5")
 
 	// Try fetch with depth of 2 this time (to reach a commit that we don't have locally)
-	r, err = repo.Remote(DefaultRemoteName)
+	r, err = repo.Remote(s.T().Context(), DefaultRemoteName)
 	s.NoError(err)
 	s.testFetch(r, &FetchOptions{
 		Depth: 1,
@@ -2085,14 +2088,14 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	repoDir := filepath.Join(tempDir, "repo")
 
 	// Build a remote with two commits so we can take a shallow clone.
-	remoteRepo, err := PlainInit(remoteURL, false)
+	remoteRepo, err := PlainInit(s.T().Context(), remoteURL, false)
 	s.Require().NoError(err)
 	defer func() { _ = remoteRepo.Close() }()
 	_ = CommitNewFile(s.T(), remoteRepo, "File1")
 	_ = CommitNewFile(s.T(), remoteRepo, "File2")
 
 	// Shallow clone at depth=1 — only the latest commit is stored locally.
-	repo, err := PlainClone(repoDir, &CloneOptions{
+	repo, err := PlainClone(s.T().Context(), repoDir, &CloneOptions{
 		URL:           remoteURL,
 		Depth:         1,
 		Tags:          plumbing.NoTags,
@@ -2110,10 +2113,10 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	// This means only File4's commit is fetched; File3's commit is absent
 	// locally, so the ancestry walk from sha4 back to our current tip would
 	// hit a missing object without the fix.
-	r, err := repo.Remote(DefaultRemoteName)
+	r, err := repo.Remote(s.T().Context(), DefaultRemoteName)
 	s.Require().NoError(err)
 
-	err = r.Fetch(&FetchOptions{
+	err = r.Fetch(s.T().Context(), &FetchOptions{
 		Depth: 1,
 		Tags:  plumbing.NoTags,
 		RefSpecs: []config.RefSpec{
@@ -2125,7 +2128,7 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	s.Require().NoError(err, "shallow fetch with non-force refspec must not return an error")
 
 	// Confirm the local branch was updated to the new tip.
-	head, err := repo.Reference(plumbing.NewBranchReferenceName("master"), true)
+	head, err := repo.Reference(s.T().Context(), plumbing.NewBranchReferenceName("master"), true)
 	s.Require().NoError(err)
 	s.Equal(sha4, head.Hash(), "local master must point to the new remote tip")
 }
@@ -2135,7 +2138,7 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	customRef := "refs/custom/branch"
 	// 1. Set up a remote with a URL
 	remoteURL := t.TempDir()
-	remoteRepo, err := PlainInit(remoteURL, true)
+	remoteRepo, err := PlainInit(t.Context(), remoteURL, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2145,20 +2148,20 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	emptyTreeID := writeEmptyTree(t, remoteRepo)
 	writeCommitToRef(t, remoteRepo, "refs/heads/master", emptyTreeID, time.Now())
 	writeCommitToRef(t, remoteRepo, customRef, emptyTreeID, time.Now())
-	if err := remoteRepo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/master")); err != nil {
+	if err := remoteRepo.Storer.SetReference(t.Context(), plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/master")); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Clone repo, then fetch the custom ref
 	// Note that using custom ref in ReferenceName has an IsBranch issue
-	localRepo, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+	localRepo, err := Clone(t.Context(), memory.NewStorage(), memfs.New(), &CloneOptions{
 		URL: remoteURL,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = localRepo.Close() }()
-	if err := localRepo.Fetch(&FetchOptions{
+	if err := localRepo.Fetch(t.Context(), &FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
 		},
@@ -2174,12 +2177,12 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	writeCommitToRef(t, localRepo, customRef, emptyTreeID, time.Now().Add(time.Second))
 
 	// 5. Try to fetch with fast-forward only mode
-	remote, err := localRepo.Remote(DefaultRemoteName)
+	remote, err := localRepo.Remote(t.Context(), DefaultRemoteName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
+	err = remote.Fetch(t.Context(), &FetchOptions{RefSpecs: []config.RefSpec{
 		config.RefSpec(fmt.Sprintf("%s:%s", customRef, customRef)),
 	}})
 	if !errors.Is(err, ErrForceNeeded) {
@@ -2187,7 +2190,7 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	}
 
 	// 6. Fetch with force
-	err = remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
+	err = remote.Fetch(t.Context(), &FetchOptions{RefSpecs: []config.RefSpec{
 		config.RefSpec(fmt.Sprintf("+%s:%s", customRef, customRef)),
 	}})
 	if err != nil {
@@ -2195,7 +2198,7 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	}
 
 	// 7. Assert commit ID matches
-	ref, err := localRepo.Reference(plumbing.ReferenceName(customRef), true)
+	ref, err := localRepo.Reference(t.Context(), plumbing.ReferenceName(customRef), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2215,7 +2218,7 @@ func writeEmptyTree(t *testing.T, repo *Repository) plumbing.Hash {
 		t.Fatal(err)
 	}
 
-	treeID, err := repo.Storer.SetEncodedObject(obj)
+	treeID, err := repo.Storer.SetEncodedObject(t.Context(), obj)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2226,14 +2229,14 @@ func writeEmptyTree(t *testing.T, repo *Repository) plumbing.Hash {
 func writeCommitToRef(t *testing.T, repo *Repository, refName string, treeID plumbing.Hash, when time.Time) plumbing.Hash {
 	t.Helper()
 
-	ref, err := repo.Reference(plumbing.ReferenceName(refName), true)
+	ref, err := repo.Reference(t.Context(), plumbing.ReferenceName(refName), true)
 	if err != nil {
 		if errors.Is(err, plumbing.ErrReferenceNotFound) {
-			if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName(refName), plumbing.ZeroHash)); err != nil {
+			if err := repo.Storer.SetReference(t.Context(), plumbing.NewHashReference(plumbing.ReferenceName(refName), plumbing.ZeroHash)); err != nil {
 				t.Fatal(err)
 			}
 
-			ref, err = repo.Reference(plumbing.ReferenceName(refName), true)
+			ref, err = repo.Reference(t.Context(), plumbing.ReferenceName(refName), true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2257,13 +2260,13 @@ func writeCommitToRef(t *testing.T, repo *Repository, refName string, treeID plu
 		t.Fatal(err)
 	}
 
-	commitID, err := repo.Storer.SetEncodedObject(obj)
+	commitID, err := repo.Storer.SetEncodedObject(t.Context(), obj)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	newRef := plumbing.NewHashReference(plumbing.ReferenceName(refName), commitID)
-	if err := repo.Storer.CheckAndSetReference(newRef, ref); err != nil {
+	if err := repo.Storer.CheckAndSetReference(t.Context(), newRef, ref); err != nil {
 		t.Fatal(err)
 	}
 

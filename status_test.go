@@ -72,11 +72,11 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+			r, err := Init(t.Context(), memory.NewStorage(), WithWorkTree(memfs.New()))
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(t.Context())
 			require.NoError(t, err)
 
 			for _, fname := range files {
@@ -87,11 +87,11 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 				require.NoError(t, err)
 				file.Close()
 
-				_, err = w.Add(file.Name())
+				_, err = w.Add(t.Context(), file.Name())
 				require.NoError(t, err)
 			}
 
-			_, err = w.Commit("foo", &CommitOptions{All: true})
+			_, err = w.Commit(t.Context(), "foo", &CommitOptions{All: true})
 			require.NoError(t, err)
 
 			if tc.doChange {
@@ -108,7 +108,7 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 			}
 
 			status, err := w.StatusWithOptions(
-				StatusOptions{
+				t.Context(), StatusOptions{
 					Strategy: tc.strategy,
 				},
 			)

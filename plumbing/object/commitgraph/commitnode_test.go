@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"context"
 	"path"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestCommitNodeSuite(t *testing.T) {
 	suite.Run(t, new(CommitNodeSuite))
 }
 
-func unpackRepository(f *fixtures.Fixture) *filesystem.Storage {
+func unpackRepository(ctx context.Context, f *fixtures.Fixture) *filesystem.Storage {
 	dotgit, err := f.DotGit()
 	if err != nil {
 		panic(err)
@@ -34,12 +35,12 @@ func unpackRepository(f *fixtures.Fixture) *filesystem.Storage {
 		panic(err)
 	}
 	defer p.Close()
-	packfile.UpdateObjectStorage(storer, p)
+	packfile.UpdateObjectStorage(ctx, storer, p)
 	return storer
 }
 
 func testWalker(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
-	head, err := nodeIndex.Get(plumbing.NewHash("b9d69064b190e7aedccf84731ca1d917871f8a1c"))
+	head, err := nodeIndex.Get(s.T().Context(), plumbing.NewHash("b9d69064b190e7aedccf84731ca1d917871f8a1c"))
 	s.NoError(err)
 
 	iter := NewCommitNodeIterCTime(
@@ -49,7 +50,7 @@ func testWalker(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
 	)
 
 	var commits []CommitNode
-	iter.ForEach(func(c CommitNode) error {
+	iter.ForEach(s.T().Context(), func(c CommitNode) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -73,11 +74,11 @@ func testWalker(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
 }
 
 func testParents(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
-	merge3, err := nodeIndex.Get(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
+	merge3, err := nodeIndex.Get(s.T().Context(), plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
 	s.NoError(err)
 
 	var parents []CommitNode
-	merge3.ParentNodes().ForEach(func(c CommitNode) error {
+	merge3.ParentNodes().ForEach(s.T().Context(), func(c CommitNode) error {
 		parents = append(parents, c)
 		return nil
 	})
@@ -95,19 +96,19 @@ func testParents(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
 }
 
 func testCommitAndTree(s *CommitNodeSuite, nodeIndex CommitNodeIndex) {
-	merge3node, err := nodeIndex.Get(plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
+	merge3node, err := nodeIndex.Get(s.T().Context(), plumbing.NewHash("6f6c5d2be7852c782be1dd13e36496dd7ad39560"))
 	s.NoError(err)
-	merge3commit, err := merge3node.Commit()
+	merge3commit, err := merge3node.Commit(s.T().Context())
 	s.NoError(err)
 	s.Equal(merge3commit.ID().String(), merge3node.ID().String())
-	tree, err := merge3node.Tree()
+	tree, err := merge3node.Tree(s.T().Context())
 	s.NoError(err)
 	s.Equal(merge3commit.TreeHash.String(), tree.ID().String())
 }
 
 func (s *CommitNodeSuite) TestObjectGraph() {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := unpackRepository(f)
+	storer := unpackRepository(s.T().Context(), f)
 	defer func() { _ = storer.Close() }()
 
 	nodeIndex := NewObjectCommitNodeIndex(storer)
@@ -118,7 +119,7 @@ func (s *CommitNodeSuite) TestObjectGraph() {
 
 func (s *CommitNodeSuite) TestCommitGraph() {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := unpackRepository(f)
+	storer := unpackRepository(s.T().Context(), f)
 	defer func() { _ = storer.Close() }()
 	reader, err := storer.Filesystem().Open(path.Join("objects", "info", "commit-graph"))
 	s.NoError(err)
@@ -135,7 +136,7 @@ func (s *CommitNodeSuite) TestCommitGraph() {
 
 func (s *CommitNodeSuite) TestMixedGraph() {
 	f := fixtures.ByTag("commit-graph").One()
-	storer := unpackRepository(f)
+	storer := unpackRepository(s.T().Context(), f)
 	defer func() { _ = storer.Close() }()
 
 	// Take the commit-graph file and copy it to memory index without the last commit

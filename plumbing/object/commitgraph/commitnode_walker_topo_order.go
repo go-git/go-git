@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -44,7 +45,7 @@ func NewCommitNodeIterTopoOrder(c CommitNode,
 	}
 }
 
-func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
+func (iter *commitNodeIteratorTopological) Next(ctx context.Context) (CommitNode, error) {
 	var next CommitNode
 	for {
 		var ok bool
@@ -65,7 +66,7 @@ func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
 
 	parents := make([]CommitNode, 0, len(next.ParentHashes()))
 	for i := range next.ParentHashes() {
-		pc, err := next.ParentNode(i)
+		pc, err := next.ParentNode(ctx, i)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +113,7 @@ func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
 			iter.inCounts[h]++
 
 			if iter.inCounts[h] == 1 {
-				pc, err := toExplore.ParentNode(i)
+				pc, err := toExplore.ParentNode(ctx, i)
 				if err != nil {
 					return nil, err
 				}
@@ -137,9 +138,9 @@ func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
 	return next, nil
 }
 
-func (iter *commitNodeIteratorTopological) ForEach(cb func(CommitNode) error) error {
+func (iter *commitNodeIteratorTopological) ForEach(ctx context.Context, cb func(CommitNode) error) error {
 	for {
-		obj, err := iter.Next()
+		obj, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil

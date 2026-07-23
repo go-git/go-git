@@ -161,7 +161,7 @@ func ReceivePack(
 	// Receive the packfile
 	var unpackErr error
 	if needPackfile {
-		unpackErr = packfile.UpdateObjectStorage(st, rd)
+		unpackErr = packfile.UpdateObjectStorage(ctx, st, rd)
 	}
 
 	// Done with the request, now close the reader
@@ -232,7 +232,7 @@ func ReceivePack(
 
 	var firstErr error
 	cmdStatus := make(map[plumbing.ReferenceName]error)
-	updateReferences(st, updreq, cmdStatus, &firstErr)
+	updateReferences(ctx, st, updreq, cmdStatus, &firstErr)
 
 	if opts.Hooks.PostReceive != nil {
 		applied := make([]*packp.Command, 0, len(updreq.Commands))
@@ -311,8 +311,8 @@ func setStatus(cmdStatus map[plumbing.ReferenceName]error, firstErr *error, ref 
 	}
 }
 
-func referenceExists(s storer.ReferenceStorer, n plumbing.ReferenceName) (bool, error) {
-	_, err := s.Reference(n)
+func referenceExists(ctx context.Context, s storer.ReferenceStorer, n plumbing.ReferenceName) (bool, error) {
+	_, err := s.Reference(ctx, n)
 	if err == plumbing.ErrReferenceNotFound {
 		return false, nil
 	}
@@ -320,9 +320,9 @@ func referenceExists(s storer.ReferenceStorer, n plumbing.ReferenceName) (bool, 
 	return err == nil, err
 }
 
-func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus map[plumbing.ReferenceName]error, firstErr *error) {
+func updateReferences(ctx context.Context, st storage.Storer, req *packp.UpdateRequests, cmdStatus map[plumbing.ReferenceName]error, firstErr *error) {
 	for _, cmd := range req.Commands {
-		exists, err := referenceExists(st, cmd.Name)
+		exists, err := referenceExists(ctx, st, cmd.Name)
 		if err != nil {
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 			continue
@@ -336,7 +336,7 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 			}
 
 			ref := plumbing.NewHashReference(cmd.Name, cmd.New)
-			err := st.SetReference(ref)
+			err := st.SetReference(ctx, ref)
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		case packp.Delete:
 			if !exists {
@@ -344,7 +344,7 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 				continue
 			}
 
-			err := st.RemoveReference(cmd.Name)
+			err := st.RemoveReference(ctx, cmd.Name)
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		case packp.Update:
 			if !exists {
@@ -353,7 +353,7 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 			}
 
 			ref := plumbing.NewHashReference(cmd.Name, cmd.New)
-			err := st.SetReference(ref)
+			err := st.SetReference(ctx, ref)
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		}
 	}

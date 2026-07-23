@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"context"
 	"crypto"
 	"errors"
 	"fmt"
@@ -20,7 +21,7 @@ import (
 // order, including any delta relationships. The default selector is
 // *DeltaSelector.
 type ObjectSelector interface {
-	ObjectsToPack(hashes []plumbing.Hash, packWindow uint) ([]*ObjectToPack, error)
+	ObjectsToPack(ctx context.Context, hashes []plumbing.Hash, packWindow uint) ([]*ObjectToPack, error)
 }
 
 // Encoder gets the data from the storage and write it into the writer in PACK
@@ -73,10 +74,10 @@ func WithObjectSelector(s ObjectSelector) EncoderOption {
 // Optional EncoderOptions configure encoder behavior; see
 // WithObjectSelector for the main use case (precomputed selection for
 // streaming output).
-func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool, opts ...EncoderOption) *Encoder {
+func NewEncoder(ctx context.Context, w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool, opts ...EncoderOption) *Encoder {
 	var of cfgformat.ObjectFormat
 	if c, ok := s.(config.ConfigStorer); ok {
-		cfg, err := c.Config()
+		cfg, err := c.Config(ctx)
 		if err == nil {
 			of = cfg.Extensions.ObjectFormat
 		}
@@ -117,24 +118,25 @@ func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool, op
 // used for recovery operations during the write phase regardless of
 // the configured selector.
 func (e *Encoder) Encode(
+	ctx context.Context,
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) (plumbing.Hash, error) {
-	objects, err := e.objectSelector.ObjectsToPack(hashes, packWindow)
+	objects, err := e.objectSelector.ObjectsToPack(ctx, hashes, packWindow)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	return e.encode(objects)
+	return e.encode(ctx, objects)
 }
 
-func (e *Encoder) encode(objects []*ObjectToPack) (plumbing.Hash, error) {
+func (e *Encoder) encode(ctx context.Context, objects []*ObjectToPack) (plumbing.Hash, error) {
 	if err := e.head(len(objects)); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
 	for _, o := range objects {
-		if err := e.entry(o); err != nil {
+		if err := e.entry(ctx, o); err != nil {
 			return plumbing.ZeroHash, err
 		}
 	}
@@ -151,14 +153,14 @@ func (e *Encoder) head(numEntries int) error {
 	)
 }
 
-func (e *Encoder) entry(o *ObjectToPack) (err error) {
+func (e *Encoder) entry(ctx context.Context, o *ObjectToPack) (err error) {
 	if o.WantWrite() {
 		// A cycle exists in this delta chain. This should only occur if a
 		// selected object representation disappeared during writing
 		// (for example due to a concurrent repack) and a different base
 		// was chosen, forcing a cycle. Select something other than a
 		// delta, and write this object.
-		if err := e.deltaSelector.restoreOriginal(o); err != nil {
+		if err := e.deltaSelector.restoreOriginal(ctx, o); err != nil {
 			return err
 		}
 		o.BackToOriginal()
@@ -170,7 +172,7 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 
 	o.MarkWantWrite()
 
-	if err := e.writeBaseIfDelta(o); err != nil {
+	if err := e.writeBaseIfDelta(ctx, o); err != nil {
 		return err
 	}
 
@@ -206,10 +208,10 @@ func (e *Encoder) entry(o *ObjectToPack) (err error) {
 	return err
 }
 
-func (e *Encoder) writeBaseIfDelta(o *ObjectToPack) error {
+func (e *Encoder) writeBaseIfDelta(ctx context.Context, o *ObjectToPack) error {
 	if o.IsDelta() && !o.Base.IsWritten() {
 		// We must write base first
-		return e.entry(o.Base)
+		return e.entry(ctx, o.Base)
 	}
 
 	return nil

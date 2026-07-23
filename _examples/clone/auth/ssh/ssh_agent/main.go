@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,6 +12,8 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>", "<directory>")
 	url, directory := os.Args[1], os.Args[2]
 
@@ -19,7 +22,7 @@ func main() {
 
 	Info("git clone %s ", url)
 
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	r, err := git.PlainClone(ctx, directory, &git.CloneOptions{
 		URL:      url,
 		Progress: os.Stdout,
 		ClientOptions: []client.Option{
@@ -29,9 +32,9 @@ func main() {
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
-	commit, err := r.CommitObject(ref.Hash())
+	commit, err := r.CommitObject(ctx, ref.Hash())
 	CheckIfError(err)
 
 	fmt.Println(commit)

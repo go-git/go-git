@@ -11,13 +11,8 @@ import (
 // ArchiveRemote creates an archive from a remote repository.
 // It returns an io.ReadCloser that yields the archive data.
 // The caller must close the returned ReadCloser.
-func ArchiveRemote(url string, o *ArchiveOptions) (io.ReadCloser, error) {
-	return ArchiveRemoteContext(context.Background(), url, o)
-}
-
-// ArchiveRemoteContext creates an archive from a remote repository.
 // The provided Context can be used to cancel the operation.
-func ArchiveRemoteContext(ctx context.Context, url string, o *ArchiveOptions) (io.ReadCloser, error) {
+func ArchiveRemote(ctx context.Context, url string, o *ArchiveOptions) (io.ReadCloser, error) {
 	if o == nil {
 		o = &ArchiveOptions{}
 	}

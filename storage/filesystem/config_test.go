@@ -41,7 +41,7 @@ func (s *ConfigSuite) TestRemotes() {
 	dir := dotgit.New(dotgitFs)
 	storer := &ConfigStorage{dir: dir}
 
-	cfg, err := storer.Config()
+	cfg, err := storer.Config(s.T().Context())
 	s.Require().NoError(err)
 
 	remotes := cfg.Remotes
@@ -84,7 +84,7 @@ func TestWorktreeConfigRead(t *testing.T) {
 		require.NoError(t, util.WriteFile(commonFs, "config", []byte(baseConfig), 0o644))
 		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(wtConfig), 0o644))
 
-		cfg, err := newDualStorer(commonFs, wtFs).Config()
+		cfg, err := newDualStorer(commonFs, wtFs).Config(t.Context())
 		require.NoError(t, err)
 
 		assert.Equal(t, "wt-user", cfg.User.Name)
@@ -98,7 +98,7 @@ func TestWorktreeConfigRead(t *testing.T) {
 		commonFs, wtFs := memfs.New(), memfs.New()
 		require.NoError(t, util.WriteFile(commonFs, "config", []byte(baseConfig), 0o644))
 
-		cfg, err := newDualStorer(commonFs, wtFs).Config()
+		cfg, err := newDualStorer(commonFs, wtFs).Config(t.Context())
 		require.NoError(t, err)
 
 		assert.Equal(t, "base-user", cfg.User.Name)
@@ -115,7 +115,7 @@ func TestWorktreeConfigRead(t *testing.T) {
 		require.NoError(t, util.WriteFile(commonFs, "config", []byte(noExtBase), 0o644))
 		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(wtConfig), 0o644))
 
-		cfg, err := newDualStorer(commonFs, wtFs).Config()
+		cfg, err := newDualStorer(commonFs, wtFs).Config(t.Context())
 		require.NoError(t, err)
 
 		assert.Equal(t, "base-user", cfg.User.Name)
@@ -137,11 +137,11 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		require.NoError(t, util.WriteFile(commonFs, "config", []byte(baseConfig), 0o644))
 
 		cs := newDualStorer(commonFs, wtFs)
-		cfg, err := cs.Config()
+		cfg, err := cs.Config(t.Context())
 		require.NoError(t, err)
 
 		cfg.User.Email = "written@example.com"
-		require.NoError(t, cs.SetConfig(cfg))
+		require.NoError(t, cs.SetConfig(t.Context(), cfg))
 
 		data, err := util.ReadFile(commonFs, "config")
 		require.NoError(t, err)
@@ -161,13 +161,13 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(existingWTConfig), 0o644))
 
 		cs := newDualStorer(commonFs, wtFs)
-		cfg, err := cs.Config()
+		cfg, err := cs.Config(t.Context())
 		require.NoError(t, err)
 
 		cfg.Core.Worktree = "/new/path"
 		cfg.Author.Name = "Worktree Author"
 
-		require.NoError(t, cs.SetConfig(cfg))
+		require.NoError(t, cs.SetConfig(t.Context(), cfg))
 
 		data, err := util.ReadFile(wtFs, "config.worktree")
 		require.NoError(t, err)
@@ -198,11 +198,11 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(existingWTConfig), 0o644))
 
 		cs := newDualStorer(commonFs, wtFs)
-		cfg, err := cs.Config()
+		cfg, err := cs.Config(t.Context())
 		require.NoError(t, err)
 
 		cfg.Core.Worktree = "/new/path"
-		require.NoError(t, cs.SetConfig(cfg))
+		require.NoError(t, cs.SetConfig(t.Context(), cfg))
 
 		data, err := util.ReadFile(commonFs, "config")
 		require.NoError(t, err)

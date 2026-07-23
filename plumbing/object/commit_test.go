@@ -38,7 +38,7 @@ func (s *SuiteCommit) SetupSuite() {
 
 func (s *SuiteCommit) TestDecodeNonCommit() {
 	hash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err := s.Storer.EncodedObject(plumbing.AnyObject, hash)
+	blob, err := s.Storer.EncodedObject(s.T().Context(), plumbing.AnyObject, hash)
 	s.NoError(err)
 
 	commit := &Commit{}
@@ -94,7 +94,7 @@ func (s *SuiteCommit) TestType() {
 }
 
 func (s *SuiteCommit) TestTree() {
-	tree, err := s.Commit.Tree()
+	tree, err := s.Commit.Tree(s.T().Context())
 	s.NoError(err)
 	s.Equal("eba74343e2f15d62adedfd8c883ee0262b5c8021", tree.ID().String())
 }
@@ -107,7 +107,7 @@ func (s *SuiteCommit) TestParents() {
 
 	var output []string
 	i := s.Commit.Parents()
-	err := i.ForEach(func(commit *Commit) error {
+	err := i.ForEach(s.T().Context(), func(commit *Commit) error {
 		output = append(output, commit.ID().String())
 		return nil
 	})
@@ -119,13 +119,13 @@ func (s *SuiteCommit) TestParents() {
 }
 
 func (s *SuiteCommit) TestParent() {
-	commit, err := s.Commit.Parent(1)
+	commit, err := s.Commit.Parent(s.T().Context(), 1)
 	s.NoError(err)
 	s.Equal("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69", commit.Hash.String())
 }
 
 func (s *SuiteCommit) TestParentNotFound() {
-	commit, err := s.Commit.Parent(42)
+	commit, err := s.Commit.Parent(s.T().Context(), 42)
 	s.ErrorIs(err, ErrParentNotFound)
 	s.Nil(commit)
 }
@@ -134,7 +134,7 @@ func (s *SuiteCommit) TestPatch() {
 	from := s.commit(plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 	to := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	patch, err := from.Patch(to)
+	patch, err := from.Patch(s.T().Context(), to)
 	s.NoError(err)
 
 	buf := bytes.NewBuffer(nil)
@@ -161,7 +161,7 @@ index 0000000000000000000000000000000000000000..9dea2395f5403188298c1dabe8bdafe5
 	from = s.commit(plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"))
 	to = s.commit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 
-	patch, err = from.Patch(to)
+	patch, err = from.Patch(s.T().Context(), to)
 	s.NoError(err)
 
 	buf.Reset()
@@ -185,65 +185,10 @@ Binary files /dev/null and b/binary.jpg differ
 	s.Equal(patch.String(), buf.String())
 }
 
-func (s *SuiteCommit) TestPatchContext() {
-	from := s.commit(plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
-	to := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-
-	patch, err := from.PatchContext(context.Background(), to)
-	s.NoError(err)
-
-	buf := bytes.NewBuffer(nil)
-	err = patch.Encode(buf)
-	s.NoError(err)
-
-	s.Equal(`diff --git a/vendor/foo.go b/vendor/foo.go
-new file mode 100644
-index 0000000000000000000000000000000000000000..9dea2395f5403188298c1dabe8bdafe562c491e3
---- /dev/null
-+++ b/vendor/foo.go
-@@ -0,0 +1,7 @@
-+package main
-+
-+import "fmt"
-+
-+func main() {
-+	fmt.Println("Hello, playground")
-+}
-`,
-		buf.String())
-	s.Equal(patch.String(), buf.String())
-
-	from = s.commit(plumbing.NewHash("b8e471f58bcbca63b07bda20e428190409c2db47"))
-	to = s.commit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
-
-	patch, err = from.PatchContext(context.Background(), to)
-	s.NoError(err)
-
-	buf.Reset()
-	err = patch.Encode(buf)
-	s.NoError(err)
-
-	s.Equal(`diff --git a/CHANGELOG b/CHANGELOG
-deleted file mode 100644
-index d3ff53e0564a9f87d8e84b6e28e5060e517008aa..0000000000000000000000000000000000000000
---- a/CHANGELOG
-+++ /dev/null
-@@ -1 +0,0 @@
--Initial changelog
-diff --git a/binary.jpg b/binary.jpg
-new file mode 100644
-index 0000000000000000000000000000000000000000..d5c0f4ab811897cadf03aec358ae60d21f91c50d
-Binary files /dev/null and b/binary.jpg differ
-`,
-		buf.String())
-
-	s.Equal(patch.String(), buf.String())
-}
-
-func (s *SuiteCommit) TestPatchContext_ToNil() {
+func (s *SuiteCommit) TestPatchToNil() {
 	from := s.commit(plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 
-	patch, err := from.PatchContext(context.Background(), nil)
+	patch, err := from.Patch(s.T().Context(), nil)
 	s.NoError(err)
 
 	s.Equal(242679, len(patch.String()))
@@ -340,7 +285,7 @@ change
 }
 
 func (s *SuiteCommit) TestFile() {
-	file, err := s.Commit.File("CHANGELOG")
+	file, err := s.Commit.File(s.T().Context(), "CHANGELOG")
 	s.NoError(err)
 	s.Equal("CHANGELOG", file.Name)
 }
@@ -370,7 +315,7 @@ func (s *SuiteCommit) TestStringMultiLine() {
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	o, err := sto.EncodedObject(plumbing.CommitObject, hash)
+	o, err := sto.EncodedObject(s.T().Context(), plumbing.CommitObject, hash)
 	s.NoError(err)
 	commit, err := DecodeCommit(sto, o)
 	s.NoError(err)
@@ -392,15 +337,15 @@ func (s *SuiteCommit) TestStringMultiLine() {
 func (s *SuiteCommit) TestCommitIterNext() {
 	i := s.Commit.Parents()
 
-	commit, err := i.Next()
+	commit, err := i.Next(s.T().Context())
 	s.NoError(err)
 	s.Equal("35e85108805c84807bc66a02d91535e1e24b38b9", commit.ID().String())
 
-	commit, err = i.Next()
+	commit, err = i.Next(s.T().Context())
 	s.NoError(err)
 	s.Equal("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69", commit.ID().String())
 
-	commit, err = i.Next()
+	commit, err = i.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	s.Nil(commit)
 }
@@ -512,7 +457,7 @@ func readAll(t *testing.T, o *plumbing.MemoryObject) string {
 
 func (s *SuiteCommit) TestStat() {
 	aCommit := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	fileStats, err := aCommit.Stats()
+	fileStats, err := aCommit.Stats(s.T().Context())
 	s.NoError(err)
 
 	s.Equal("vendor/foo.go", fileStats[0].Name)
@@ -522,7 +467,7 @@ func (s *SuiteCommit) TestStat() {
 
 	// Stats for another commit.
 	aCommit = s.commit(plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
-	fileStats, err = aCommit.Stats()
+	fileStats, err = aCommit.Stats(s.T().Context())
 	s.NoError(err)
 
 	s.Equal("go/example.go", fileStats[0].Name)
@@ -585,11 +530,13 @@ func (s *SuiteCommit) TestPatchCancel() {
 	from := s.commit(plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 	to := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.T().Context())
 	cancel()
-	patch, err := from.PatchContext(ctx, to)
+	patch, err := from.Patch(ctx, to)
 	s.Nil(patch)
-	s.ErrorContains(err, "operation canceled")
+	// The already-canceled ctx is observed by the storer at the first
+	// storage read, before the merkletrie walk begins.
+	s.ErrorIs(err, context.Canceled)
 }
 
 func (s *SuiteCommit) TestDecodeRequiresTreeFirst() {

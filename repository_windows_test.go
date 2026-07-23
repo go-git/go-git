@@ -26,20 +26,20 @@ func TestCloneFileUrlWindows(t *testing.T) {
 
 	dir := t.TempDir()
 
-	r, err := PlainInit(dir, false)
+	r, err := PlainInit(t.Context(), dir, false)
 	require.NoError(t, err)
 	defer func() { _ = r.Close() }()
 
 	err = util.WriteFile(r.wt, "foo", nil, 0o755)
 	require.NoError(t, err)
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(t.Context())
 	require.NoError(t, err)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(t.Context(), "foo")
 	require.NoError(t, err)
 
-	_, err = w.Commit("foo", &CommitOptions{
+	_, err = w.Commit(t.Context(), "foo", &CommitOptions{
 		Author:    defaultSignature(),
 		Committer: defaultSignature(),
 	})
@@ -61,7 +61,7 @@ func TestCloneFileUrlWindows(t *testing.T) {
 
 	for _, tc := range tests {
 		assert.Regexp(t, regexp.MustCompile(tc.pattern), tc.url)
-		clonedRepo, err := Clone(memory.NewStorage(), nil, &CloneOptions{
+		clonedRepo, err := Clone(t.Context(), memory.NewStorage(), nil, &CloneOptions{
 			URL: tc.url,
 		})
 

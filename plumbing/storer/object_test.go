@@ -1,6 +1,7 @@
 package storer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"testing"
@@ -49,7 +50,7 @@ func (s *ObjectSuite) TestMultiObjectIterNext() {
 	})
 
 	var i int
-	iter.ForEach(func(o plumbing.EncodedObject) error {
+	iter.ForEach(s.T().Context(), func(o plumbing.EncodedObject) error {
 		s.Equal(expected[i], o)
 		i++
 		return nil
@@ -70,7 +71,7 @@ func (s *ObjectSuite) TestObjectLookupIter() {
 
 	storage := &MockObjectStorage{s.Objects}
 	i := NewEncodedObjectLookupIter(storage, plumbing.CommitObject, s.Hash)
-	err := i.ForEach(func(o plumbing.EncodedObject) error {
+	err := i.ForEach(s.T().Context(), func(o plumbing.EncodedObject) error {
 		s.NotNil(o)
 		s.Equal(s.Hash[count].String(), o.Hash().String())
 		count++
@@ -85,7 +86,7 @@ func (s *ObjectSuite) TestObjectSliceIter() {
 	var count int
 
 	i := NewEncodedObjectSliceIter(s.Objects)
-	err := i.ForEach(func(o plumbing.EncodedObject) error {
+	err := i.ForEach(s.T().Context(), func(o plumbing.EncodedObject) error {
 		s.NotNil(o)
 		s.Equal(s.Hash[count].String(), o.Hash().String())
 		count++
@@ -101,7 +102,7 @@ func (s *ObjectSuite) TestObjectSliceIterStop() {
 	i := NewEncodedObjectSliceIter(s.Objects)
 
 	count := 0
-	err := i.ForEach(func(o plumbing.EncodedObject) error {
+	err := i.ForEach(s.T().Context(), func(o plumbing.EncodedObject) error {
 		s.NotNil(o)
 		s.Equal(s.Hash[count].String(), o.Hash().String())
 		count++
@@ -117,7 +118,7 @@ func (s *ObjectSuite) TestObjectSliceIterError() {
 		s.buildObject([]byte("foo")),
 	})
 
-	err := i.ForEach(func(plumbing.EncodedObject) error {
+	err := i.ForEach(s.T().Context(), func(plumbing.EncodedObject) error {
 		return fmt.Errorf("a random error")
 	})
 
@@ -128,7 +129,7 @@ type MockObjectStorage struct {
 	db []plumbing.EncodedObject
 }
 
-func (o *MockObjectStorage) RawObjectWriter(_ plumbing.ObjectType, _ int64) (w io.WriteCloser, err error) {
+func (o *MockObjectStorage) RawObjectWriter(_ context.Context, _ plumbing.ObjectType, _ int64) (w io.WriteCloser, err error) {
 	return nil, nil
 }
 
@@ -136,11 +137,11 @@ func (o *MockObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 	return nil
 }
 
-func (o *MockObjectStorage) SetEncodedObject(_ plumbing.EncodedObject) (plumbing.Hash, error) {
+func (o *MockObjectStorage) SetEncodedObject(_ context.Context, _ plumbing.EncodedObject) (plumbing.Hash, error) {
 	return plumbing.ZeroHash, nil
 }
 
-func (o *MockObjectStorage) HasEncodedObject(h plumbing.Hash) error {
+func (o *MockObjectStorage) HasEncodedObject(_ context.Context, h plumbing.Hash) error {
 	for _, o := range o.db {
 		if o.Hash() == h {
 			return nil
@@ -149,7 +150,7 @@ func (o *MockObjectStorage) HasEncodedObject(h plumbing.Hash) error {
 	return plumbing.ErrObjectNotFound
 }
 
-func (o *MockObjectStorage) EncodedObjectSize(h plumbing.Hash) (
+func (o *MockObjectStorage) EncodedObjectSize(_ context.Context, h plumbing.Hash) (
 	size int64, err error,
 ) {
 	for _, o := range o.db {
@@ -160,7 +161,7 @@ func (o *MockObjectStorage) EncodedObjectSize(h plumbing.Hash) (
 	return 0, plumbing.ErrObjectNotFound
 }
 
-func (o *MockObjectStorage) EncodedObject(_ plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+func (o *MockObjectStorage) EncodedObject(_ context.Context, _ plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	for _, o := range o.db {
 		if o.Hash() == h {
 			return o, nil
@@ -169,14 +170,14 @@ func (o *MockObjectStorage) EncodedObject(_ plumbing.ObjectType, h plumbing.Hash
 	return nil, plumbing.ErrObjectNotFound
 }
 
-func (o *MockObjectStorage) IterEncodedObjects(_ plumbing.ObjectType) (EncodedObjectIter, error) {
+func (o *MockObjectStorage) IterEncodedObjects(_ context.Context, _ plumbing.ObjectType) (EncodedObjectIter, error) {
 	return nil, nil
 }
 
-func (o *MockObjectStorage) Begin() Transaction {
+func (o *MockObjectStorage) Begin(_ context.Context) Transaction {
 	return nil
 }
 
-func (o *MockObjectStorage) AddAlternate(_ string) error {
+func (o *MockObjectStorage) AddAlternate(_ context.Context, _ string) error {
 	return nil
 }

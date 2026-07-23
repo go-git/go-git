@@ -32,13 +32,13 @@ func TestSubmoduleWindowsAbsoluteURLNotJoined(t *testing.T) {
 				Storer: memory.NewStorage(),
 				wt:     memfs.New(),
 			}
-			cfg, err := parent.Config()
+			cfg, err := parent.Config(t.Context())
 			require.NoError(t, err)
 			cfg.Remotes["origin"] = &config.RemoteConfig{
 				Name: "origin",
 				URLs: []string{"file:///parent/origin"},
 			}
-			require.NoError(t, parent.Storer.SetConfig(cfg))
+			require.NoError(t, parent.Storer.SetConfig(t.Context(), cfg))
 
 			sub := &Submodule{
 				initialized: true,
@@ -50,11 +50,11 @@ func TestSubmoduleWindowsAbsoluteURLNotJoined(t *testing.T) {
 				},
 			}
 
-			subRepo, err := sub.Repository()
+			subRepo, err := sub.Repository(t.Context())
 			require.NoError(t, err)
 			defer func() { _ = subRepo.Close() }()
 
-			remotes, err := subRepo.Remotes()
+			remotes, err := subRepo.Remotes(t.Context())
 			require.NoError(t, err)
 			require.Len(t, remotes, 1)
 

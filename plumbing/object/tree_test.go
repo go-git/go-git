@@ -53,7 +53,7 @@ func (s *TreeSuite) TestDecode() {
 
 func (s *TreeSuite) TestDecodeNonTree() {
 	hash := plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
-	blob, err := s.Storer.EncodedObject(plumbing.BlobObject, hash)
+	blob, err := s.Storer.EncodedObject(s.T().Context(), plumbing.BlobObject, hash)
 	s.NoError(err)
 
 	tree := &Tree{}
@@ -70,56 +70,56 @@ func (s *TreeSuite) TestTree() {
 	s.NoError(err)
 	expected := expectedEntry.Hash
 
-	obtainedTree, err := s.Tree.Tree("vendor")
+	obtainedTree, err := s.Tree.Tree(s.T().Context(), "vendor")
 	s.NoError(err)
 	s.Equal(expected, obtainedTree.Hash)
 }
 
 func (s *TreeSuite) TestTreeNotFound() {
-	d, err := s.Tree.Tree("not-found")
+	d, err := s.Tree.Tree(s.T().Context(), "not-found")
 	s.Nil(d)
 	s.ErrorIs(err, ErrDirectoryNotFound)
 }
 
 func (s *TreeSuite) TestTreeFailsWithExistingFiles() {
-	_, err := s.Tree.File("LICENSE")
+	_, err := s.Tree.File(s.T().Context(), "LICENSE")
 	s.NoError(err)
 
-	d, err := s.Tree.Tree("LICENSE")
+	d, err := s.Tree.Tree(s.T().Context(), "LICENSE")
 	s.Nil(d)
 	s.ErrorIs(err, ErrDirectoryNotFound)
 }
 
 func (s *TreeSuite) TestFile() {
-	f, err := s.Tree.File("LICENSE")
+	f, err := s.Tree.File(s.T().Context(), "LICENSE")
 	s.NoError(err)
 	s.Equal("LICENSE", f.Name)
 }
 
 func (s *TreeSuite) TestFileNotFound() {
-	f, err := s.Tree.File("not-found")
+	f, err := s.Tree.File(s.T().Context(), "not-found")
 	s.Nil(f)
 	s.ErrorIs(err, ErrFileNotFound)
 }
 
 func (s *TreeSuite) TestFileFailsWithExistingTrees() {
-	_, err := s.Tree.Tree("vendor")
+	_, err := s.Tree.Tree(s.T().Context(), "vendor")
 	s.NoError(err)
 
-	f, err := s.Tree.File("vendor")
+	f, err := s.Tree.File(s.T().Context(), "vendor")
 	s.Nil(f)
 	s.ErrorIs(err, ErrFileNotFound)
 }
 
 func (s *TreeSuite) TestSize() {
-	size, err := s.Tree.Size("LICENSE")
+	size, err := s.Tree.Size(s.T().Context(), "LICENSE")
 	s.NoError(err)
 	s.Equal(int64(1072), size)
 }
 
 func (s *TreeSuite) TestFiles() {
 	var count int
-	err := s.Tree.Files().ForEach(func(_ *File) error {
+	err := s.Tree.Files().ForEach(s.T().Context(), func(_ *File) error {
 		count++
 		return nil
 	})
@@ -129,16 +129,16 @@ func (s *TreeSuite) TestFiles() {
 }
 
 func (s *TreeSuite) TestFindEntry() {
-	e, err := s.Tree.FindEntry("vendor/foo.go")
+	e, err := s.Tree.FindEntry(s.T().Context(), "vendor/foo.go")
 	s.NoError(err)
 	s.Equal("foo.go", e.Name)
 }
 
 func (s *TreeSuite) TestFindEntryNotFound() {
-	e, err := s.Tree.FindEntry("not-found")
+	e, err := s.Tree.FindEntry(s.T().Context(), "not-found")
 	s.Nil(e)
 	s.ErrorIs(err, ErrEntryNotFound)
-	e, err = s.Tree.FindEntry("not-found/not-found/not-found")
+	e, err = s.Tree.FindEntry(s.T().Context(), "not-found/not-found/not-found")
 	s.Nil(e)
 	s.ErrorIs(err, ErrDirectoryNotFound)
 }
@@ -156,20 +156,22 @@ func newCountingStorer(s storer.EncodedObjectStorer) *countingStorer {
 	}
 }
 
-func (cs *countingStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+func (cs *countingStorer) EncodedObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	cs.calls[h]++
-	return cs.EncodedObjectStorer.EncodedObject(t, h)
+	return cs.EncodedObjectStorer.EncodedObject(ctx, t, h)
 }
 
 // TestFindEntryCacheDepth1 verifies that the tree path cache works for
 // paths with only one directory level (e.g., "vendor/foo.go").
 // This test ensures that repeated lookups in the same directory reuse
 // the cached subtree instead of fetching it from the storer each time.
+//
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *TreeSuite) TestFindEntryCacheDepth1() {
 	cs := newCountingStorer(s.Storer)
 
 	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
-	tree, err := GetTree(cs, hash)
+	tree, err := GetTree(s.T().Context(), cs, hash)
 	s.Require().NoError(err)
 
 	vendorEntry, err := tree.entry("vendor")
@@ -179,13 +181,13 @@ func (s *TreeSuite) TestFindEntryCacheDepth1() {
 	// Previous calls to GetTree and entry may pollute the "calls" state, reset it to start afresh.
 	cs.calls = make(map[plumbing.Hash]int)
 
-	e1, err := tree.FindEntry("vendor/foo.go")
+	e1, err := tree.FindEntry(s.T().Context(), "vendor/foo.go")
 	s.Require().NoError(err)
 	s.Equal("foo.go", e1.Name)
 
 	s.Equal(1, cs.calls[vendorHash], "first FindEntry should fetch vendor tree once")
 
-	e2, err := tree.FindEntry("vendor/foo.go")
+	e2, err := tree.FindEntry(s.T().Context(), "vendor/foo.go")
 	s.Require().NoError(err)
 	s.Equal("foo.go", e2.Name)
 
@@ -197,11 +199,13 @@ func (s *TreeSuite) TestFindEntryCacheDepth1() {
 // and "json/long.json") .
 // This complements TestFindEntryCacheDepth1 by testing multiple access with
 // different path in the same directory.
+//
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *TreeSuite) TestFindEntryCacheDepth2() {
 	cs := newCountingStorer(s.Storer)
 
 	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
-	tree, err := GetTree(cs, hash)
+	tree, err := GetTree(s.T().Context(), cs, hash)
 	s.Require().NoError(err)
 
 	jsonEntry, err := tree.entry("json")
@@ -210,13 +214,13 @@ func (s *TreeSuite) TestFindEntryCacheDepth2() {
 
 	cs.calls = make(map[plumbing.Hash]int)
 
-	e1, err := tree.FindEntry("json/short.json")
+	e1, err := tree.FindEntry(s.T().Context(), "json/short.json")
 	s.Require().NoError(err)
 	s.Equal("short.json", e1.Name)
 
 	s.Equal(1, cs.calls[jsonHash], "first FindEntry should fetch json tree once")
 
-	e2, err := tree.FindEntry("json/long.json")
+	e2, err := tree.FindEntry(s.T().Context(), "json/long.json")
 	s.Require().NoError(err)
 	s.Equal("long.json", e2.Name)
 
@@ -231,11 +235,11 @@ type fakeStorer struct {
 	fake fakeEncodedObject
 }
 
-func (fs fakeStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+func (fs fakeStorer) EncodedObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	if fs.hash == h {
 		return fs.fake, nil
 	}
-	return fs.EncodedObjectStorer.EncodedObject(t, h)
+	return fs.EncodedObjectStorer.EncodedObject(ctx, t, h)
 }
 
 // Overrides reader of plumbing.EncodedObject to simulate read error
@@ -246,16 +250,16 @@ func (fe fakeEncodedObject) Reader() (io.ReadCloser, error) {
 }
 
 func (s *TreeSuite) TestDir() {
-	vendor, err := s.Tree.dir("vendor")
+	vendor, err := s.Tree.dir(s.T().Context(), "vendor")
 	s.NoError(err)
 
-	t, err := GetTree(s.Tree.s, s.Tree.ID())
+	t, err := GetTree(s.T().Context(), s.Tree.s, s.Tree.ID())
 	s.NoError(err)
-	o, err := t.s.EncodedObject(plumbing.AnyObject, vendor.ID())
+	o, err := t.s.EncodedObject(s.T().Context(), plumbing.AnyObject, vendor.ID())
 	s.NoError(err)
 
 	t.s = fakeStorer{t.s, vendor.ID(), fakeEncodedObject{o}}
-	_, err = t.dir("vendor")
+	_, err = t.dir(s.T().Context(), "vendor")
 	s.NotNil(err)
 }
 
@@ -364,37 +368,37 @@ func (s *TreeSuite) TestTreeDiff() {
 	s.Require().NoError(err)
 	storer := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	defer func() { _ = storer.Close() }()
-	commit, err := GetCommit(storer, plumbing.NewHash("89f8bda31d29767a6d6ba8f9d0dfb941d598e843"))
+	commit, err := GetCommit(s.T().Context(), storer, plumbing.NewHash("89f8bda31d29767a6d6ba8f9d0dfb941d598e843"))
 	s.NoError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
-	parentCommit, err := commit.Parent(0)
+	parentCommit, err := commit.Parent(s.T().Context(), 0)
 	s.NoError(err)
 
-	parentTree, err := parentCommit.Tree()
+	parentTree, err := parentCommit.Tree(s.T().Context())
 	s.NoError(err)
 
-	ch, err := parentTree.Diff(tree)
+	ch, err := parentTree.Diff(s.T().Context(), tree)
 	s.NoError(err)
 
 	s.Len(ch, 3)
 	s.Equal("examples/object_storage/main.go", ch[0].From.Name)
 	s.Equal("examples/storage/main.go", ch[0].To.Name)
 
-	ch, err = parentTree.DiffContext(context.Background(), tree)
+	ch, err = parentTree.Diff(s.T().Context(), tree)
 	s.NoError(err)
 	s.Len(ch, 3)
 }
 
 func (s *TreeSuite) TestTreeIter() {
-	encIter, err := s.Storer.IterEncodedObjects(plumbing.TreeObject)
+	encIter, err := s.Storer.IterEncodedObjects(s.T().Context(), plumbing.TreeObject)
 	s.NoError(err)
 	iter := NewTreeIter(s.Storer, encIter)
 
 	trees := []*Tree{}
-	iter.ForEach(func(t *Tree) error {
+	iter.ForEach(s.T().Context(), func(t *Tree) error {
 		t.s = nil
 		trees = append(trees, t)
 		return nil
@@ -403,13 +407,13 @@ func (s *TreeSuite) TestTreeIter() {
 	s.True(len(trees) > 0)
 	iter.Close()
 
-	encIter, err = s.Storer.IterEncodedObjects(plumbing.TreeObject)
+	encIter, err = s.Storer.IterEncodedObjects(s.T().Context(), plumbing.TreeObject)
 	s.NoError(err)
 	iter = NewTreeIter(s.Storer, encIter)
 
 	i := 0
 	for {
-		t, err := iter.Next()
+		t, err := iter.Next(s.T().Context())
 		if err == io.EOF {
 			break
 		}
@@ -424,14 +428,14 @@ func (s *TreeSuite) TestTreeIter() {
 }
 
 func (s *TreeSuite) TestTreeWalkerNext() {
-	commit, err := GetCommit(s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	commit, err := GetCommit(s.T().Context(), s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	s.NoError(err)
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	walker := NewTreeWalker(tree, true, nil)
 	for _, e := range treeWalkerExpects {
-		name, entry, err := walker.Next()
+		name, entry, err := walker.Next(s.T().Context())
 		if err == io.EOF {
 			break
 		}
@@ -447,9 +451,9 @@ func (s *TreeSuite) TestTreeWalkerNext() {
 }
 
 func (s *TreeSuite) TestTreeWalkerNextSkipSeen() {
-	commit, err := GetCommit(s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	commit, err := GetCommit(s.T().Context(), s.Storer, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	s.NoError(err)
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	seen := map[plumbing.Hash]bool{
@@ -457,7 +461,7 @@ func (s *TreeSuite) TestTreeWalkerNextSkipSeen() {
 	}
 	walker := NewTreeWalker(tree, true, seen)
 	for _, e := range treeWalkerExpects[1:] {
-		name, entry, err := walker.Next()
+		name, entry, err := walker.Next(s.T().Context())
 		if err == io.EOF {
 			break
 		}
@@ -474,13 +478,13 @@ func (s *TreeSuite) TestTreeWalkerNextSkipSeen() {
 
 func (s *TreeSuite) TestTreeWalkerNextNonRecursive() {
 	commit := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	var count int
 	walker := NewTreeWalker(tree, false, nil)
 	for {
-		name, entry, err := walker.Next()
+		name, entry, err := walker.Next(s.T().Context())
 		if err == io.EOF {
 			break
 		}
@@ -497,12 +501,12 @@ func (s *TreeSuite) TestTreeWalkerNextNonRecursive() {
 	s.Equal(8, count)
 }
 
-func (s *TreeSuite) TestPatchContext_ToNil() {
+func (s *TreeSuite) TestPatchToNil() {
 	commit := s.commit(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
-	patch, err := tree.PatchContext(context.Background(), nil)
+	patch, err := tree.Patch(s.T().Context(), nil)
 	s.NoError(err)
 
 	s.Equal(242971, len(patch.String()))
@@ -515,10 +519,10 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule() {
 	defer func() { _ = st.Close() }()
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
-	commit, err := GetCommit(st, hash)
+	commit, err := GetCommit(s.T().Context(), st, hash)
 	s.NoError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	expected := []string{
@@ -533,7 +537,7 @@ func (s *TreeSuite) TestTreeWalkerNextSubmodule() {
 	defer walker.Close()
 
 	for {
-		name, entry, err := walker.Next()
+		name, entry, err := walker.Next(s.T().Context())
 		if err == io.EOF {
 			break
 		}
@@ -1890,13 +1894,13 @@ func TestTreeDecodeClearsPathCache(t *testing.T) {
 	oldSubtree := newRawTreeObject(t, encodeRawTreeEntries(
 		rawTreeEntry{"100644", "old", oldFileHash},
 	))
-	oldSubtreeHash, err := store.SetEncodedObject(oldSubtree)
+	oldSubtreeHash, err := store.SetEncodedObject(t.Context(), oldSubtree)
 	require.NoError(t, err)
 
 	oldDir := newRawTreeObject(t, encodeRawTreeEntries(
 		rawTreeEntry{"40000", "sub", oldSubtreeHash.Bytes()},
 	))
-	oldDirHash, err := store.SetEncodedObject(oldDir)
+	oldDirHash, err := store.SetEncodedObject(t.Context(), oldDir)
 	require.NoError(t, err)
 
 	oldRoot := newRawTreeObject(t, encodeRawTreeEntries(
@@ -1906,13 +1910,13 @@ func TestTreeDecodeClearsPathCache(t *testing.T) {
 	newSubtree := newRawTreeObject(t, encodeRawTreeEntries(
 		rawTreeEntry{"100644", "new", newFileHash},
 	))
-	newSubtreeHash, err := store.SetEncodedObject(newSubtree)
+	newSubtreeHash, err := store.SetEncodedObject(t.Context(), newSubtree)
 	require.NoError(t, err)
 
 	newDir := newRawTreeObject(t, encodeRawTreeEntries(
 		rawTreeEntry{"40000", "sub", newSubtreeHash.Bytes()},
 	))
-	newDirHash, err := store.SetEncodedObject(newDir)
+	newDirHash, err := store.SetEncodedObject(t.Context(), newDir)
 	require.NoError(t, err)
 
 	newRoot := newRawTreeObject(t, encodeRawTreeEntries(
@@ -1921,12 +1925,12 @@ func TestTreeDecodeClearsPathCache(t *testing.T) {
 
 	tree := &Tree{s: store}
 	require.NoError(t, tree.Decode(oldRoot))
-	got, err := tree.FindEntry("dir/sub/old")
+	got, err := tree.FindEntry(t.Context(), "dir/sub/old")
 	require.NoError(t, err)
 	assert.Equal(t, 0, got.Hash.Compare(oldFileHash))
 
 	require.NoError(t, tree.Decode(newRoot))
-	got, err = tree.FindEntry("dir/sub/new")
+	got, err = tree.FindEntry(t.Context(), "dir/sub/new")
 	require.NoError(t, err)
 	assert.Equal(t, 0, got.Hash.Compare(newFileHash))
 }
@@ -2022,7 +2026,7 @@ func TestTreeFindEntryDuplicates(t *testing.T) {
 			require.Len(t, tree.Entries, tc.wantCount,
 				"all duplicate entries must be preserved in storage order")
 
-			got, err := tree.FindEntry(tc.lookup)
+			got, err := tree.FindEntry(t.Context(), tc.lookup)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantMode, got.Mode)
 			assert.Equal(t, 0, bytes.Compare(tc.wantHash, got.Hash.Bytes()),
@@ -2053,7 +2057,7 @@ func TestTreeFindEntryStopsAtUnsortedEntryPastName(t *testing.T) {
 	var tree Tree
 	require.NoError(t, tree.Decode(obj))
 
-	got, err := tree.FindEntry("foo")
+	got, err := tree.FindEntry(t.Context(), "foo")
 	require.ErrorIs(t, err, ErrEntryNotFound)
 	assert.Nil(t, got)
 }
@@ -2079,7 +2083,7 @@ func TestTreeFindEntryFindsDirectoryAfterLexicallyEarlierFile(t *testing.T) {
 	var tree Tree
 	require.NoError(t, tree.Decode(obj))
 
-	got, err := tree.FindEntry("foo")
+	got, err := tree.FindEntry(t.Context(), "foo")
 	require.NoError(t, err)
 	assert.Equal(t, filemode.Dir, got.Mode)
 	assert.Equal(t, 0, bytes.Compare(hashB, got.Hash.Bytes()))
@@ -2186,7 +2190,7 @@ func TestTreeEntryFileRejectsDangerousNames(t *testing.T) {
 	_, err = bw.Write([]byte("payload"))
 	require.NoError(t, err)
 	require.NoError(t, bw.Close())
-	blobHash, err := store.SetEncodedObject(blob)
+	blobHash, err := store.SetEncodedObject(t.Context(), blob)
 	require.NoError(t, err)
 
 	cases := []struct {
@@ -2212,7 +2216,7 @@ func TestTreeEntryFileRejectsDangerousNames(t *testing.T) {
 			t.Parallel()
 
 			tree := &Tree{s: store}
-			f, err := tree.TreeEntryFile(&TreeEntry{
+			f, err := tree.TreeEntryFile(t.Context(), &TreeEntry{
 				Name: tc.entryName,
 				Mode: filemode.Regular,
 				Hash: blobHash,
@@ -2261,7 +2265,7 @@ func TestTreeWalkerNextRejectsDangerousNames(t *testing.T) {
 			walker := NewTreeWalker(tree, true, nil)
 			defer walker.Close()
 
-			_, _, err := walker.Next()
+			_, _, err := walker.Next(t.Context())
 			assert.ErrorIs(t, err, pathutil.ErrInvalidPath)
 		})
 	}

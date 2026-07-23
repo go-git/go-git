@@ -14,7 +14,7 @@ func TestEmptyGlobal(t *testing.T) {
 	src := NewEmpty()
 	s, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
-	cfg, err := s.Config()
+	cfg, err := s.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, config.NewConfig(), cfg)
 }
@@ -24,7 +24,7 @@ func TestEmptySystem(t *testing.T) {
 	src := NewEmpty()
 	s, err := src.Load(config.SystemScope)
 	require.NoError(t, err)
-	cfg, err := s.Config()
+	cfg, err := s.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, config.NewConfig(), cfg)
 }
@@ -40,13 +40,13 @@ func TestStaticGlobalAndSystem(t *testing.T) {
 
 	gs, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
-	got, err := gs.Config()
+	got, err := gs.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "GlobalUser", got.User.Name)
 
 	ss, err := src.Load(config.SystemScope)
 	require.NoError(t, err)
-	got, err = ss.Config()
+	got, err = ss.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "SystemUser", got.User.Name)
 }
@@ -64,7 +64,7 @@ func TestStaticReturnsCopies(t *testing.T) {
 
 	gs, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
-	first, err := gs.Config()
+	first, err := gs.Config(t.Context())
 	require.NoError(t, err)
 	first.User.Name = "Mutated"
 	first.Remotes["upstream"] = &config.RemoteConfig{Name: "upstream"}
@@ -72,7 +72,7 @@ func TestStaticReturnsCopies(t *testing.T) {
 
 	gs2, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
-	second, err := gs2.Config()
+	second, err := gs2.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "Original", second.User.Name)
 	assert.Contains(t, second.Remotes, "origin")
@@ -85,13 +85,13 @@ func TestStaticZeroValues(t *testing.T) {
 
 	gs, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
-	got, err := gs.Config()
+	got, err := gs.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, config.NewConfig(), got)
 
 	ss, err := src.Load(config.SystemScope)
 	require.NoError(t, err)
-	got, err = ss.Config()
+	got, err = ss.Config(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, config.NewConfig(), got)
 }
@@ -111,6 +111,6 @@ func TestReadOnlyStorerRejectsWrite(t *testing.T) {
 	s, err := src.Load(config.GlobalScope)
 	require.NoError(t, err)
 
-	err = s.SetConfig(config.NewConfig())
+	err = s.SetConfig(t.Context(), config.NewConfig())
 	require.ErrorIs(t, err, ErrReadOnly)
 }

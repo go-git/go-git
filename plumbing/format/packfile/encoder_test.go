@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"testing"
 
@@ -28,11 +29,11 @@ func TestEncoderSuite(t *testing.T) {
 func (s *EncoderSuite) SetupTest() {
 	s.buf = bytes.NewBuffer(nil)
 	s.store = memory.NewStorage()
-	s.enc = NewEncoder(s.buf, s.store, false)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, false)
 }
 
 func (s *EncoderSuite) TestCorrectPackHeader() {
-	h, err := s.enc.Encode([]plumbing.Hash{}, 10)
+	h, err := s.enc.Encode(s.T().Context(), []plumbing.Hash{}, 10)
 	s.NoError(err)
 
 	hb := h.Bytes()
@@ -51,10 +52,10 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 	o := &plumbing.MemoryObject{}
 	o.SetType(plumbing.CommitObject)
 	o.SetSize(0)
-	_, err := s.store.SetEncodedObject(o)
+	_, err := s.store.SetEncodedObject(s.T().Context(), o)
 	s.NoError(err)
 
-	h, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
+	h, err := s.enc.Encode(s.T().Context(), []plumbing.Hash{o.Hash()}, 10)
 	s.NoError(err)
 
 	// + HASH
@@ -81,47 +82,47 @@ func (s *EncoderSuite) TestMaxObjectSize() {
 	o := s.store.NewEncodedObject()
 	o.SetSize(9223372036854775807)
 	o.SetType(plumbing.CommitObject)
-	_, err := s.store.SetEncodedObject(o)
+	_, err := s.store.SetEncodedObject(s.T().Context(), o)
 	s.NoError(err)
-	hash, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
+	hash, err := s.enc.Encode(s.T().Context(), []plumbing.Hash{o.Hash()}, 10)
 	s.NoError(err)
 	s.NotEqual(true, hash.IsZero())
 }
 
 func (s *EncoderSuite) TestHashNotFound() {
-	h, err := s.enc.Encode([]plumbing.Hash{plumbing.NewHash("BAD")}, 10)
+	h, err := s.enc.Encode(s.T().Context(), []plumbing.Hash{plumbing.NewHash("BAD")}, 10)
 	s.Equal(plumbing.ZeroHash, h)
 	s.NotNil(err)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeREF() {
-	s.enc = NewEncoder(s.buf, s.store, true)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, true)
 	s.simpleDeltaTest()
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeOFS() {
-	s.enc = NewEncoder(s.buf, s.store, false)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, false)
 	s.simpleDeltaTest()
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeREF() {
-	s.enc = NewEncoder(s.buf, s.store, true)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, true)
 	s.deltaOverDeltaTest()
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithDeltasDecodeOFS() {
-	s.enc = NewEncoder(s.buf, s.store, false)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, false)
 	s.deltaOverDeltaTest()
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithCycleREF() {
-	s.enc = NewEncoder(s.buf, s.store, true)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, true)
 	s.deltaOverDeltaCyclicTest()
 }
 
 func (s *EncoderSuite) TestDecodeEncodeWithCycleOFS() {
-	s.enc = NewEncoder(s.buf, s.store, false)
+	s.enc = NewEncoder(s.T().Context(), s.buf, s.store, false)
 	s.deltaOverDeltaCyclicTest()
 }
 
@@ -132,7 +133,7 @@ func (s *EncoderSuite) TestDecodeEncodeWithCycleOFS() {
 // back via WithObjectSelector.
 type fixedSelector struct{ objects []*ObjectToPack }
 
-func (f fixedSelector) ObjectsToPack(_ []plumbing.Hash, _ uint) ([]*ObjectToPack, error) {
+func (f fixedSelector) ObjectsToPack(_ context.Context, _ []plumbing.Hash, _ uint) ([]*ObjectToPack, error) {
 	return f.objects, nil
 }
 
@@ -147,27 +148,27 @@ func (s *EncoderSuite) TestWithObjectSelectorMatchesDefault() {
 	o2 := newObject(plumbing.BlobObject, []byte("hello world"))
 	o3 := newObject(plumbing.BlobObject, []byte("goodbye"))
 	for _, o := range []plumbing.EncodedObject{o1, o2, o3} {
-		_, err := s.store.SetEncodedObject(o)
+		_, err := s.store.SetEncodedObject(s.T().Context(), o)
 		s.NoError(err)
 	}
 	hashes := []plumbing.Hash{o1.Hash(), o2.Hash(), o3.Hash()}
 
 	// Default path: encoder runs selection internally.
 	defaultBuf := bytes.NewBuffer(nil)
-	defaultEnc := NewEncoder(defaultBuf, s.store, false)
-	defaultHash, err := defaultEnc.Encode(hashes, 10)
+	defaultEnc := NewEncoder(s.T().Context(), defaultBuf, s.store, false)
+	defaultHash, err := defaultEnc.Encode(s.T().Context(), hashes, 10)
 	s.NoError(err)
 
 	// Precomputed path: caller runs selection ahead of time, then
 	// feeds the result back via a passthrough ObjectSelector.
 	sel := NewDeltaSelector(s.store)
-	objects, err := sel.ObjectsToPack(hashes, 10)
+	objects, err := sel.ObjectsToPack(s.T().Context(), hashes, 10)
 	s.NoError(err)
 
 	precomputedBuf := bytes.NewBuffer(nil)
-	precomputedEnc := NewEncoder(precomputedBuf, s.store, false,
+	precomputedEnc := NewEncoder(s.T().Context(), precomputedBuf, s.store, false,
 		WithObjectSelector(fixedSelector{objects: objects}))
-	precomputedHash, err := precomputedEnc.Encode(hashes, 10)
+	precomputedHash, err := precomputedEnc.Encode(s.T().Context(), hashes, 10)
 	s.NoError(err)
 
 	s.Equal(defaultHash, precomputedHash)
@@ -180,11 +181,11 @@ func (s *EncoderSuite) TestWithObjectSelectorMatchesDefault() {
 // conditionally.
 func (s *EncoderSuite) TestWithObjectSelectorNilPreservesDefault() {
 	o := newObject(plumbing.BlobObject, []byte("x"))
-	_, err := s.store.SetEncodedObject(o)
+	_, err := s.store.SetEncodedObject(s.T().Context(), o)
 	s.NoError(err)
 
-	enc := NewEncoder(bytes.NewBuffer(nil), s.store, false, WithObjectSelector(nil))
-	_, err = enc.Encode([]plumbing.Hash{o.Hash()}, 10)
+	enc := NewEncoder(s.T().Context(), bytes.NewBuffer(nil), s.store, false, WithObjectSelector(nil))
+	_, err = enc.Encode(s.T().Context(), []plumbing.Hash{o.Hash()}, 10)
 	s.NoError(err)
 }
 
@@ -196,7 +197,7 @@ func (s *EncoderSuite) simpleDeltaTest() {
 	s.NoError(err)
 
 	srcToPack := newObjectToPack(srcObject)
-	encHash, err := s.enc.encode([]*ObjectToPack{
+	encHash, err := s.enc.encode(s.T().Context(), []*ObjectToPack{
 		srcToPack,
 		newDeltaObjectToPack(srcToPack, targetObject, deltaObject),
 	})
@@ -233,7 +234,7 @@ func (s *EncoderSuite) deltaOverDeltaTest() {
 
 	srcToPack := newObjectToPack(srcObject)
 	targetToPack := newObjectToPack(targetObject)
-	encHash, err := s.enc.encode([]*ObjectToPack{
+	encHash, err := s.enc.encode(s.T().Context(), []*ObjectToPack{
 		targetToPack,
 		srcToPack,
 		newDeltaObjectToPack(srcToPack, targetObject, deltaObject),
@@ -267,13 +268,13 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest() {
 	o3 := newObject(plumbing.BlobObject, []byte("011111"))
 	o4 := newObject(plumbing.BlobObject, []byte("01111100000"))
 
-	_, err := s.store.SetEncodedObject(o1)
+	_, err := s.store.SetEncodedObject(s.T().Context(), o1)
 	s.NoError(err)
-	_, err = s.store.SetEncodedObject(o2)
+	_, err = s.store.SetEncodedObject(s.T().Context(), o2)
 	s.NoError(err)
-	_, err = s.store.SetEncodedObject(o3)
+	_, err = s.store.SetEncodedObject(s.T().Context(), o3)
 	s.NoError(err)
-	_, err = s.store.SetEncodedObject(o4)
+	_, err = s.store.SetEncodedObject(s.T().Context(), o4)
 	s.NoError(err)
 
 	d2, err := GetDelta(o1, o2)
@@ -305,7 +306,7 @@ func (s *EncoderSuite) deltaOverDeltaCyclicTest() {
 
 	pd4.SetOriginal(pd4.Original)
 
-	encHash, err := s.enc.encode([]*ObjectToPack{
+	encHash, err := s.enc.encode(s.T().Context(), []*ObjectToPack{
 		po1,
 		pd2,
 		pd3,
@@ -379,7 +380,7 @@ func packfileFromReader(s *EncoderSuite, buf *bytes.Buffer) (*Packfile, func()) 
 	w := new(idxfile.Writer)
 	p := NewParser(scanner, WithScannerObservers(w))
 
-	_, err = p.Parse()
+	_, err = p.Parse(s.T().Context())
 	s.NoError(err)
 
 	index, err := w.Index()

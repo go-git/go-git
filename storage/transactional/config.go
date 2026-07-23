@@ -1,6 +1,10 @@
 package transactional
 
-import "github.com/go-git/go-git/v6/config"
+import (
+	"context"
+
+	"github.com/go-git/go-git/v6/config"
+)
 
 // ConfigStorage implements the storer.ConfigStorage for the transactional package.
 type ConfigStorage struct {
@@ -17,8 +21,8 @@ func NewConfigStorage(s, temporal config.ConfigStorer) *ConfigStorage {
 }
 
 // SetConfig honors the storer.ConfigStorer interface.
-func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
-	if err := c.temporal.SetConfig(cfg); err != nil {
+func (c *ConfigStorage) SetConfig(ctx context.Context, cfg *config.Config) error {
+	if err := c.temporal.SetConfig(ctx, cfg); err != nil {
 		return err
 	}
 
@@ -27,24 +31,24 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) error {
 }
 
 // Config honors the storer.ConfigStorer interface.
-func (c *ConfigStorage) Config() (*config.Config, error) {
+func (c *ConfigStorage) Config(ctx context.Context) (*config.Config, error) {
 	if !c.set {
-		return c.ConfigStorer.Config()
+		return c.ConfigStorer.Config(ctx)
 	}
 
-	return c.temporal.Config()
+	return c.temporal.Config(ctx)
 }
 
 // Commit it copies the config from the temporal storage into the base storage.
-func (c *ConfigStorage) Commit() error {
+func (c *ConfigStorage) Commit(ctx context.Context) error {
 	if !c.set {
 		return nil
 	}
 
-	cfg, err := c.temporal.Config()
+	cfg, err := c.temporal.Config(ctx)
 	if err != nil {
 		return err
 	}
 
-	return c.ConfigStorer.SetConfig(cfg)
+	return c.ConfigStorer.SetConfig(ctx, cfg)
 }

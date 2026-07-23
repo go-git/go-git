@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-git/go-billy/v6"
@@ -15,7 +16,7 @@ import (
 // It generates a list of available refs for the repository.
 // Used by git http transport (dumb), for more information refer to:
 // https://git-scm.com/book/id/v2/Git-Internals-Transfer-Protocols#_the_dumb_protocol
-func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
+func UpdateServerInfo(ctx context.Context, s storage.Storer, fs billy.Filesystem) error {
 	pos, ok := s.(storer.PackedObjectStorer)
 	if !ok {
 		return ErrPackedObjectsNotSupported
@@ -28,14 +29,14 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 
 	defer func() { _ = infoRefs.Close() }()
 
-	refsIter, err := s.IterReferences()
+	refsIter, err := s.IterReferences(ctx)
 	if err != nil {
 		return err
 	}
 
 	defer refsIter.Close()
 
-	if err := repository.WriteInfoRefs(infoRefs, s); err != nil {
+	if err := repository.WriteInfoRefs(ctx, infoRefs, s); err != nil {
 		return fmt.Errorf("failed to write info/refs: %w", err)
 	}
 
@@ -46,7 +47,7 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 
 	defer func() { _ = infoPacks.Close() }()
 
-	if err := repository.WriteObjectsInfoPacks(infoPacks, pos); err != nil {
+	if err := repository.WriteObjectsInfoPacks(ctx, infoPacks, pos); err != nil {
 		return fmt.Errorf("failed to write objects/info/packs: %w", err)
 	}
 

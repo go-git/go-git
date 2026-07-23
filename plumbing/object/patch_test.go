@@ -27,10 +27,10 @@ func (s *PatchSuite) TestStatsWithSubmodules() {
 	storer := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
 	defer func() { _ = storer.Close() }()
 
-	commit, err := GetCommit(storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
+	commit, err := GetCommit(s.T().Context(), storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
 	s.NoError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	e, err := tree.entry("basic")
@@ -49,7 +49,7 @@ func (s *PatchSuite) TestStatsWithSubmodules() {
 		},
 	}
 
-	p, err := getPatch("", ch)
+	p, err := getPatch(s.T().Context(), "", ch)
 	s.NoError(err)
 	s.NotNil(p)
 }
@@ -60,10 +60,10 @@ func (s *PatchSuite) TestPatchWithSubmodule() {
 	storer := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
 	defer func() { _ = storer.Close() }()
 
-	commit, err := GetCommit(storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
+	commit, err := GetCommit(s.T().Context(), storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
 	s.Require().NoError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.Require().NoError(err)
 
 	e, err := tree.entry("basic")
@@ -79,7 +79,7 @@ func (s *PatchSuite) TestPatchWithSubmodule() {
 		},
 	}
 
-	p, err := getPatch("", added)
+	p, err := getPatch(s.T().Context(), "", added)
 	s.Require().NoError(err)
 
 	got := p.String()
@@ -105,7 +105,7 @@ func (s *PatchSuite) TestPatchWithSubmodule() {
 		},
 	}
 
-	p, err = getPatch("", updated)
+	p, err = getPatch(s.T().Context(), "", updated)
 	s.Require().NoError(err)
 
 	got = p.String()

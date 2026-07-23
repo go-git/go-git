@@ -83,8 +83,8 @@ func (s *dumbUploadPackSuite) SetupTest() {
 
 	s.Transport = NewTransport(Options{ForceDumb: true})
 
-	require.NoError(s.T(), transport.UpdateServerInfo(s.Storer, basicFS))
-	require.NoError(s.T(), transport.UpdateServerInfo(s.EmptyStorer, emptyFS))
+	require.NoError(s.T(), transport.UpdateServerInfo(s.T().Context(), s.Storer, basicFS))
+	require.NoError(s.T(), transport.UpdateServerInfo(s.T().Context(), s.EmptyStorer, emptyFS))
 }
 
 func (*dumbUploadPackSuite) TestDefaultBranch()                         {}

@@ -2,6 +2,7 @@ package object
 
 import (
 	"container/list"
+	"context"
 	"errors"
 	"io"
 
@@ -17,9 +18,9 @@ type commitPreIterator struct {
 	start        *Commit
 }
 
-func forEachCommit(next func() (*Commit, error), cb func(*Commit) error) error {
+func forEachCommit(ctx context.Context, next func(context.Context) (*Commit, error), cb func(*Commit) error) error {
 	for {
-		c, err := next()
+		c, err := next(ctx)
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -63,7 +64,7 @@ func NewCommitPreorderIter(
 	}
 }
 
-func (w *commitPreIterator) Next() (*Commit, error) {
+func (w *commitPreIterator) Next(ctx context.Context) (*Commit, error) {
 	var c *Commit
 	for {
 		if w.start != nil {
@@ -76,7 +77,7 @@ func (w *commitPreIterator) Next() (*Commit, error) {
 			}
 
 			var err error
-			c, err = w.stack[current].Next()
+			c, err = w.stack[current].Next(ctx)
 			if err == io.EOF {
 				w.stack = w.stack[:current]
 				continue
@@ -114,8 +115,8 @@ func filteredParentIter(c *Commit, seen map[plumbing.Hash]bool) CommitIter {
 	)
 }
 
-func (w *commitPreIterator) ForEach(cb func(*Commit) error) error {
-	return forEachCommit(w.Next, cb)
+func (w *commitPreIterator) ForEach(ctx context.Context, cb func(*Commit) error) error {
+	return forEachCommit(ctx, w.Next, cb)
 }
 
 func (w *commitPreIterator) Close() {}
@@ -142,7 +143,7 @@ func NewCommitPostorderIter(c *Commit, ignore []plumbing.Hash) CommitIter {
 	}
 }
 
-func (w *commitPostIterator) Next() (*Commit, error) {
+func (w *commitPostIterator) Next(ctx context.Context) (*Commit, error) {
 	for {
 		if len(w.stack) == 0 {
 			return nil, io.EOF
@@ -157,15 +158,15 @@ func (w *commitPostIterator) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		return c, c.Parents().ForEach(func(p *Commit) error {
+		return c, c.Parents().ForEach(ctx, func(p *Commit) error {
 			w.stack = append(w.stack, p)
 			return nil
 		})
 	}
 }
 
-func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
-	return forEachCommit(w.Next, cb)
+func (w *commitPostIterator) ForEach(ctx context.Context, cb func(*Commit) error) error {
+	return forEachCommit(ctx, w.Next, cb)
 }
 
 func (w *commitPostIterator) Close() {}
@@ -193,7 +194,7 @@ func NewCommitPostorderIterFirstParent(c *Commit, ignore []plumbing.Hash) Commit
 	}
 }
 
-func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
+func (w *commitPostIteratorFirstParent) Next(ctx context.Context) (*Commit, error) {
 	for {
 		if len(w.stack) == 0 {
 			return nil, io.EOF
@@ -208,7 +209,7 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		return c, c.Parents().ForEach(func(p *Commit) error {
+		return c, c.Parents().ForEach(ctx, func(p *Commit) error {
 			if len(c.ParentHashes) > 0 && p.Hash == c.ParentHashes[0] {
 				w.stack = append(w.stack, p)
 			}
@@ -217,8 +218,8 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 	}
 }
 
-func (w *commitPostIteratorFirstParent) ForEach(cb func(*Commit) error) error {
-	return forEachCommit(w.Next, cb)
+func (w *commitPostIteratorFirstParent) ForEach(ctx context.Context, cb func(*Commit) error) error {
+	return forEachCommit(ctx, w.Next, cb)
 }
 
 func (w *commitPostIteratorFirstParent) Close() {}
@@ -232,12 +233,12 @@ type commitAllIterator struct {
 // NewCommitAllIter returns a new commit iterator for all refs.
 // repoStorer is a repo Storer used to get commits and references.
 // commitIterFunc is a commit iterator function, used to iterate through ref commits in chosen order
-func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) CommitIter) (CommitIter, error) {
+func NewCommitAllIter(ctx context.Context, repoStorer storage.Storer, commitIterFunc func(*Commit) CommitIter) (CommitIter, error) {
 	commitsPath := list.New()
 	commitsLookup := make(map[plumbing.Hash]*list.Element)
-	head, err := storer.ResolveReference(repoStorer, plumbing.HEAD)
+	head, err := storer.ResolveReference(ctx, repoStorer, plumbing.HEAD)
 	if err == nil {
-		err = addReference(repoStorer, commitIterFunc, head, commitsPath, commitsLookup)
+		err = addReference(ctx, repoStorer, commitIterFunc, head, commitsPath, commitsLookup)
 	}
 
 	if err != nil && err != plumbing.ErrReferenceNotFound {
@@ -245,14 +246,14 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 	}
 
 	// add all references along with the HEAD
-	refIter, err := repoStorer.IterReferences()
+	refIter, err := repoStorer.IterReferences(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer refIter.Close()
 
 	for {
-		ref, err := refIter.Next()
+		ref, err := refIter.Next(ctx)
 		if err == io.EOF {
 			break
 		}
@@ -265,7 +266,7 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 			return nil, err
 		}
 
-		if err = addReference(repoStorer, commitIterFunc, ref, commitsPath, commitsLookup); err != nil {
+		if err = addReference(ctx, repoStorer, commitIterFunc, ref, commitsPath, commitsLookup); err != nil {
 			return nil, err
 		}
 	}
@@ -274,6 +275,7 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 }
 
 func addReference(
+	ctx context.Context,
 	repoStorer storage.Storer,
 	commitIterFunc func(*Commit) CommitIter,
 	ref *plumbing.Reference,
@@ -286,7 +288,7 @@ func addReference(
 		return nil
 	}
 
-	refCommit, _ := GetCommit(repoStorer, ref.Hash())
+	refCommit, _ := GetCommit(ctx, repoStorer, ref.Hash())
 	if refCommit == nil {
 		// if it's not a commit - skip it.
 		return nil
@@ -298,13 +300,13 @@ func addReference(
 	)
 	// collect all ref commits to add
 	commitIter := commitIterFunc(refCommit)
-	for c, e := commitIter.Next(); e == nil; {
+	for c, e := commitIter.Next(ctx); e == nil; {
 		parent, exists = commitsLookup[c.Hash]
 		if exists {
 			break
 		}
 		refCommits = append(refCommits, c)
-		c, e = commitIter.Next()
+		c, e = commitIter.Next(ctx)
 	}
 	commitIter.Close()
 
@@ -328,7 +330,7 @@ func addReference(
 	return nil
 }
 
-func (it *commitAllIterator) Next() (*Commit, error) {
+func (it *commitAllIterator) Next(_ context.Context) (*Commit, error) {
 	if it.currCommit == nil {
 		return nil, io.EOF
 	}
@@ -339,8 +341,8 @@ func (it *commitAllIterator) Next() (*Commit, error) {
 	return c, nil
 }
 
-func (it *commitAllIterator) ForEach(cb func(*Commit) error) error {
-	return forEachCommit(it.Next, cb)
+func (it *commitAllIterator) ForEach(ctx context.Context, cb func(*Commit) error) error {
+	return forEachCommit(ctx, it.Next, cb)
 }
 
 func (it *commitAllIterator) Close() {

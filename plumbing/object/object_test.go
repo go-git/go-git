@@ -38,19 +38,19 @@ func (s *BaseObjectsSuite) SetupSuite(t *testing.T) {
 }
 
 func (s *BaseObjectsSuite) tag(h plumbing.Hash) *Tag {
-	t, err := GetTag(s.Storer, h)
+	t, err := GetTag(s.t.Context(), s.Storer, h)
 	assert.NoError(s.t, err)
 	return t
 }
 
 func (s *BaseObjectsSuite) tree(h plumbing.Hash) *Tree {
-	t, err := GetTree(s.Storer, h)
+	t, err := GetTree(s.t.Context(), s.Storer, h)
 	assert.NoError(s.t, err)
 	return t
 }
 
 func (s *BaseObjectsSuite) commit(h plumbing.Hash) *Commit {
-	commit, err := GetCommit(s.Storer, h)
+	commit, err := GetCommit(s.t.Context(), s.Storer, h)
 	assert.NoError(s.t, err)
 	return commit
 }
@@ -76,16 +76,16 @@ func (s *ObjectsSuite) TestNewCommit() {
 	s.Equal(commit.ID(), commit.Hash)
 	s.Equal("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69", commit.Hash.String())
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.t.Context())
 	s.NoError(err)
 	s.Equal("c2d30fa8ef288618f65f6eed6e168e0d514886f4", tree.Hash.String())
 
 	parents := commit.Parents()
-	parentCommit, err := parents.Next()
+	parentCommit, err := parents.Next(s.t.Context())
 	s.NoError(err)
 	s.Equal("b029517f6300c2da0f4b651b8642506cd6aaf45d", parentCommit.Hash.String())
 
-	parentCommit, err = parents.Next()
+	parentCommit, err = parents.Next(s.t.Context())
 	s.NoError(err)
 	s.Equal("b8e471f58bcbca63b07bda20e428190409c2db47", parentCommit.Hash.String())
 
@@ -98,7 +98,7 @@ func (s *ObjectsSuite) TestNewCommit() {
 
 func (s *ObjectsSuite) TestParseTree() {
 	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
-	tree, err := GetTree(s.Storer, hash)
+	tree, err := GetTree(s.t.Context(), s.Storer, hash)
 	s.NoError(err)
 
 	s.Len(tree.Entries, 8)
@@ -112,7 +112,7 @@ func (s *ObjectsSuite) TestParseTree() {
 	count := 0
 	iter := tree.Files()
 	defer iter.Close()
-	for f, err := iter.Next(); err == nil; f, err = iter.Next() {
+	for f, err := iter.Next(s.t.Context()); err == nil; f, err = iter.Next(s.t.Context()) {
 		count++
 		if f.Name == "go/example.go" {
 			reader, err := f.Reader()
@@ -186,12 +186,12 @@ func (s *ObjectsSuite) TestParseSignature() {
 }
 
 func (s *ObjectsSuite) TestObjectIter() {
-	encIter, err := s.Storer.IterEncodedObjects(plumbing.AnyObject)
+	encIter, err := s.Storer.IterEncodedObjects(s.t.Context(), plumbing.AnyObject)
 	s.NoError(err)
 	iter := NewObjectIter(s.Storer, encIter)
 
 	objects := []Object{}
-	iter.ForEach(func(o Object) error {
+	iter.ForEach(s.t.Context(), func(o Object) error {
 		objects = append(objects, o)
 		return nil
 	})
@@ -199,13 +199,13 @@ func (s *ObjectsSuite) TestObjectIter() {
 	s.True(len(objects) > 0)
 	iter.Close()
 
-	encIter, err = s.Storer.IterEncodedObjects(plumbing.AnyObject)
+	encIter, err = s.Storer.IterEncodedObjects(s.t.Context(), plumbing.AnyObject)
 	s.NoError(err)
 	iter = NewObjectIter(s.Storer, encIter)
 
 	i := 0
 	for {
-		o, err := iter.Next()
+		o, err := iter.Next(s.t.Context())
 		if err == io.EOF {
 			break
 		}

@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -11,6 +12,8 @@ import (
 
 // ShallowStorage where the shallow commits are stored, an internal to
 // manipulate the shallow file
+//
+// TODO(ctx): propagate ctx into dotgit; it currently stops at this boundary.
 type ShallowStorage struct {
 	dir *dotgit.DotGit
 }
@@ -18,7 +21,11 @@ type ShallowStorage struct {
 // SetShallow save the shallows in the shallow file in the .git folder as one
 // commit per line represented by 40-byte hexadecimal object terminated by a
 // newline.
-func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
+func (s *ShallowStorage) SetShallow(ctx context.Context, commits []plumbing.Hash) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	f, err := s.dir.ShallowWriter()
 	if err != nil {
 		return err
@@ -35,7 +42,11 @@ func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
 }
 
 // Shallow returns the shallow commits reading from shallo file from .git
-func (s *ShallowStorage) Shallow() ([]plumbing.Hash, error) {
+func (s *ShallowStorage) Shallow(ctx context.Context) ([]plumbing.Hash, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	f, err := s.dir.Shallow()
 	if f == nil || err != nil {
 		return nil, err

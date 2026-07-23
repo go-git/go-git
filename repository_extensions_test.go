@@ -72,18 +72,18 @@ func TestVerifyExtensions(t *testing.T) {
 
 			st := memory.NewStorage()
 
-			r, err := Init(st)
+			r, err := Init(t.Context(), st)
 			require.NoError(t, err)
 			require.NotNil(t, r)
 
-			cfg, err := st.Config()
+			cfg, err := st.Config(t.Context())
 			require.NoError(t, err)
 
 			tt.setup(t, cfg)
-			require.NoError(t, st.SetConfig(cfg))
+			require.NoError(t, st.SetConfig(t.Context(), cfg))
 
 			_ = r.Close()
-			r, err = Open(st, nil)
+			r, err = Open(t.Context(), st, nil)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

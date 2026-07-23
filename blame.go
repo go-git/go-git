@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"container/heap"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +30,7 @@ type BlameResult struct {
 
 // Blame returns a BlameResult with the information about the last author of
 // each line from file `path` at commit `c`.
-func Blame(c *object.Commit, path string) (*BlameResult, error) {
+func Blame(ctx context.Context, c *object.Commit, path string) (*BlameResult, error) {
 	// The file to blame is identified by the input arguments:
 	// commit and path. commit is a Commit object obtained from a Repository. Path
 	// represents a path to a specific file contained in the repository.
@@ -51,7 +52,7 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 	b.path = path
 	b.q = new(priorityQueue)
 
-	file, err := b.fRev.File(path)
+	file, err := b.fRev.File(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 				break
 			}
 		}
-		finished, err := b.addBlames(items)
+		finished, err := b.addBlames(ctx, items)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +173,7 @@ type lineMap struct {
 	FromParentNo int
 }
 
-func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
+func (b *blame) addBlames(ctx context.Context, curItems []*queueItem) (bool, error) {
 	curItem := curItems[0]
 
 	// Simple optimisation to merge paths, there is potential to go a bit further here and check for any duplicates
@@ -243,18 +244,18 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		curItem.Child = nil
 	}
 
-	parents, err := parentsContainingPath(curItem.path, curItem.Commit)
+	parents, err := parentsContainingPath(ctx, curItem.path, curItem.Commit)
 	if err != nil {
 		return false, err
 	}
 
 	anyPushed := false
 	for parnetNo, prev := range parents {
-		currentHash, err := blobHash(curItem.path, curItem.Commit)
+		currentHash, err := blobHash(ctx, curItem.path, curItem.Commit)
 		if err != nil {
 			return false, err
 		}
-		prevHash, err := blobHash(prev.Path, prev.Commit)
+		prevHash, err := blobHash(ctx, prev.Path, prev.Commit)
 		if err != nil {
 			return false, err
 		}
@@ -287,7 +288,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		}
 
 		// get the contents of the file
-		file, err := prev.Commit.File(prev.Path)
+		file, err := prev.Commit.File(ctx, prev.Path)
 		if err != nil {
 			return false, err
 		}
@@ -533,24 +534,24 @@ type parentCommit struct {
 	Path   string
 }
 
-func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error) {
+func parentsContainingPath(ctx context.Context, path string, c *object.Commit) ([]parentCommit, error) {
 	// TODO: benchmark this method making git.object.Commit.parent public instead of using
 	// an iterator
 	var result []parentCommit
 	iter := c.Parents()
 	for {
-		parent, err := iter.Next()
+		parent, err := iter.Next(ctx)
 		if err == io.EOF {
 			return result, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-		if _, err := parent.File(path); err == nil {
+		if _, err := parent.File(ctx, path); err == nil {
 			result = append(result, parentCommit{parent, path})
 		} else {
 			// look for renames
-			patch, err := parent.Patch(c)
+			patch, err := parent.Patch(ctx, c)
 			if err != nil {
 				return nil, err
 			} else if patch != nil {
@@ -566,8 +567,8 @@ func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error
 	}
 }
 
-func blobHash(path string, commit *object.Commit) (plumbing.Hash, error) {
-	file, err := commit.File(path)
+func blobHash(ctx context.Context, path string, commit *object.Commit) (plumbing.Hash, error) {
+	file, err := commit.File(ctx, path)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}

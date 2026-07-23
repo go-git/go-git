@@ -27,19 +27,19 @@ func (s *ReferenceSuite) TestReference() {
 	refA := plumbing.NewReferenceFromStrings("refs/a", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	refB := plumbing.NewReferenceFromStrings("refs/b", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
-	err := base.SetReference(refA)
+	err := base.SetReference(s.T().Context(), refA)
 	s.NoError(err)
 
-	err = rs.SetReference(refB)
+	err = rs.SetReference(s.T().Context(), refB)
 	s.NoError(err)
 
-	_, err = rs.Reference("refs/a")
+	_, err = rs.Reference(s.T().Context(), "refs/a")
 	s.NoError(err)
 
-	_, err = rs.Reference("refs/b")
+	_, err = rs.Reference(s.T().Context(), "refs/b")
 	s.NoError(err)
 
-	_, err = base.Reference("refs/b")
+	_, err = base.Reference(s.T().Context(), "refs/b")
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
@@ -50,13 +50,13 @@ func (s *ReferenceSuite) TestRemoveReferenceTemporal() {
 	ref := plumbing.NewReferenceFromStrings("refs/a", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
 	rs := NewReferenceStorage(base, temporal)
-	err := rs.SetReference(ref)
+	err := rs.SetReference(s.T().Context(), ref)
 	s.NoError(err)
 
-	err = rs.RemoveReference("refs/a")
+	err = rs.RemoveReference(s.T().Context(), "refs/a")
 	s.NoError(err)
 
-	_, err = rs.Reference("refs/a")
+	_, err = rs.Reference(s.T().Context(), "refs/a")
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
@@ -67,13 +67,13 @@ func (s *ReferenceSuite) TestRemoveReferenceBase() {
 	ref := plumbing.NewReferenceFromStrings("refs/a", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
 	rs := NewReferenceStorage(base, temporal)
-	err := base.SetReference(ref)
+	err := base.SetReference(s.T().Context(), ref)
 	s.NoError(err)
 
-	err = rs.RemoveReference("refs/a")
+	err = rs.RemoveReference(s.T().Context(), "refs/a")
 	s.NoError(err)
 
-	_, err = rs.Reference("refs/a")
+	_, err = rs.Reference(s.T().Context(), "refs/a")
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
@@ -82,18 +82,18 @@ func (s *ReferenceSuite) TestCheckAndSetReferenceInBase() {
 	temporal := memory.NewStorage()
 	rs := NewReferenceStorage(base, temporal)
 
-	err := base.SetReference(
+	err := base.SetReference(s.T().Context(),
 		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	s.NoError(err)
 
-	err = rs.CheckAndSetReference(
+	err = rs.CheckAndSetReference(s.T().Context(),
 		plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 	)
 	s.NoError(err)
 
-	e, err := rs.Reference(plumbing.ReferenceName("foo"))
+	e, err := rs.Reference(s.T().Context(), plumbing.ReferenceName("foo"))
 	s.NoError(err)
 	s.Equal("bc9968d75e48de59f0870ffb71f5e160bbbdcf52", e.Hash().String())
 }
@@ -107,18 +107,18 @@ func (s *ReferenceSuite) TestCommit() {
 	refC := plumbing.NewReferenceFromStrings("refs/c", "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 
 	rs := NewReferenceStorage(base, temporal)
-	s.Nil(rs.SetReference(refA))
-	s.Nil(rs.SetReference(refB))
-	s.Nil(rs.SetReference(refC))
+	s.Nil(rs.SetReference(s.T().Context(), refA))
+	s.Nil(rs.SetReference(s.T().Context(), refB))
+	s.Nil(rs.SetReference(s.T().Context(), refC))
 
-	err := rs.Commit()
+	err := rs.Commit(s.T().Context())
 	s.NoError(err)
 
-	iter, err := base.IterReferences()
+	iter, err := base.IterReferences(s.T().Context())
 	s.NoError(err)
 
 	var count int
-	iter.ForEach(func(*plumbing.Reference) error {
+	iter.ForEach(s.T().Context(), func(*plumbing.Reference) error {
 		count++
 		return nil
 	})
@@ -135,30 +135,30 @@ func (s *ReferenceSuite) TestCommitDelete() {
 	refC := plumbing.NewReferenceFromStrings("refs/c", "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 
 	rs := NewReferenceStorage(base, temporal)
-	s.Nil(base.SetReference(refA))
-	s.Nil(base.SetReference(refB))
-	s.Nil(base.SetReference(refC))
+	s.Nil(base.SetReference(s.T().Context(), refA))
+	s.Nil(base.SetReference(s.T().Context(), refB))
+	s.Nil(base.SetReference(s.T().Context(), refC))
 
-	s.Nil(rs.RemoveReference(refA.Name()))
-	s.Nil(rs.RemoveReference(refB.Name()))
-	s.Nil(rs.RemoveReference(refC.Name()))
-	s.Nil(rs.SetReference(refC))
+	s.Nil(rs.RemoveReference(s.T().Context(), refA.Name()))
+	s.Nil(rs.RemoveReference(s.T().Context(), refB.Name()))
+	s.Nil(rs.RemoveReference(s.T().Context(), refC.Name()))
+	s.Nil(rs.SetReference(s.T().Context(), refC))
 
-	err := rs.Commit()
+	err := rs.Commit(s.T().Context())
 	s.NoError(err)
 
-	iter, err := base.IterReferences()
+	iter, err := base.IterReferences(s.T().Context())
 	s.NoError(err)
 
 	var count int
-	iter.ForEach(func(*plumbing.Reference) error {
+	iter.ForEach(s.T().Context(), func(*plumbing.Reference) error {
 		count++
 		return nil
 	})
 
 	s.Equal(1, count)
 
-	ref, err := rs.Reference(refC.Name())
+	ref, err := rs.Reference(s.T().Context(), refC.Name())
 	s.NoError(err)
 	s.Equal("c3f4688a08fd86f1bf8e055724c84b7a40a09733", ref.Hash().String())
 }

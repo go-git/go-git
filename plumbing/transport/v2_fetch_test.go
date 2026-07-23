@@ -29,10 +29,10 @@ func TestV2FetchClone(t *testing.T) {
 	clientSt := memory.NewStorage()
 	s := newV2Session(t, serveUploadPackV2Once(serverSt))
 
-	err := s.Fetch(context.TODO(), clientSt, &FetchRequest{Wants: []plumbing.Hash{want}})
+	err := s.Fetch(t.Context(), clientSt, &FetchRequest{Wants: []plumbing.Hash{want}})
 	require.NoError(t, err)
 
-	obj, err := clientSt.EncodedObject(plumbing.CommitObject, want)
+	obj, err := clientSt.EncodedObject(t.Context(), plumbing.CommitObject, want)
 	require.NoError(t, err)
 	require.Equal(t, want, obj.Hash())
 }
@@ -72,7 +72,7 @@ func TestV2FetchManyRounds(t *testing.T) {
 			rounds++
 			args := req.Args.(*packp.FetchArgs)
 			if args.Done {
-				return writeV2PackfileSection(w, serverSt, args.Wants, args.Haves)
+				return writeV2PackfileSection(t.Context(), w, serverSt, args.Wants, args.Haves)
 			}
 			if _, err := pktline.WriteString(w, "acknowledgments\n"); err != nil {
 				return err
@@ -89,14 +89,14 @@ func TestV2FetchManyRounds(t *testing.T) {
 	clientSt := memory.NewStorage()
 	s := newV2Session(t, serve)
 
-	err := s.Fetch(context.TODO(), clientSt, &FetchRequest{
+	err := s.Fetch(t.Context(), clientSt, &FetchRequest{
 		Wants: []plumbing.Hash{want},
 		Haves: haves,
 	})
 	require.NoError(t, err)
 	require.Greater(t, rounds, 2, "incremental have batching should take more than two rounds")
 
-	_, err = clientSt.EncodedObject(plumbing.CommitObject, want)
+	_, err = clientSt.EncodedObject(t.Context(), plumbing.CommitObject, want)
 	require.NoError(t, err)
 }
 
@@ -148,20 +148,20 @@ func TestV2FetchNegotiationRounds(t *testing.T) {
 		if !args.Done {
 			return errors.New("expected done on second round")
 		}
-		return writeV2PackfileSection(w, serverSt, args.Wants, args.Haves)
+		return writeV2PackfileSection(t.Context(), w, serverSt, args.Wants, args.Haves)
 	}
 
 	clientSt := memory.NewStorage()
 	s := newV2Session(t, serve)
 
-	err := s.Fetch(context.TODO(), clientSt, &FetchRequest{
+	err := s.Fetch(t.Context(), clientSt, &FetchRequest{
 		Wants: []plumbing.Hash{want},
 		Haves: []plumbing.Hash{have},
 	})
 	require.NoError(t, err)
 	require.True(t, sawNegotiation)
 
-	_, err = clientSt.EncodedObject(plumbing.CommitObject, want)
+	_, err = clientSt.EncodedObject(t.Context(), plumbing.CommitObject, want)
 	require.NoError(t, err)
 }
 
@@ -171,30 +171,30 @@ func TestV2FetchUnsupportedFeatures(t *testing.T) {
 	// A v2 session whose server advertised no fetch features.
 	s := &StreamSession{version: protocol.V2}
 
-	err := s.Fetch(context.TODO(), memory.NewStorage(), &FetchRequest{
+	err := s.Fetch(t.Context(), memory.NewStorage(), &FetchRequest{
 		Wants:  []plumbing.Hash{plumbing.NewHash(basicMasterHash)},
 		Filter: "blob:none",
 	})
 	require.ErrorIs(t, err, ErrFilterNotSupported)
 
-	err = s.Fetch(context.TODO(), memory.NewStorage(), &FetchRequest{
+	err = s.Fetch(t.Context(), memory.NewStorage(), &FetchRequest{
 		Wants: []plumbing.Hash{plumbing.NewHash(basicMasterHash)},
 		Depth: 1,
 	})
 	require.ErrorIs(t, err, ErrShallowNotSupported)
 }
 
-func writeV2PackfileSection(w net.Conn, st storage.Storer, wants, haves []plumbing.Hash) error {
+func writeV2PackfileSection(ctx context.Context, w net.Conn, st storage.Storer, wants, haves []plumbing.Hash) error {
 	if _, err := pktline.WriteString(w, "packfile\n"); err != nil {
 		return err
 	}
-	objs, err := objectsToUpload(st, wants, haves)
+	objs, err := objectsToUpload(ctx, st, wants, haves)
 	if err != nil {
 		return err
 	}
 	mux := sideband.NewMuxer(sideband.Sideband64k, w)
-	e := packfile.NewEncoder(mux, st, false)
-	if _, err := e.Encode(objs, 10); err != nil {
+	e := packfile.NewEncoder(ctx, mux, st, false)
+	if _, err := e.Encode(ctx, objs, 10); err != nil {
 		return err
 	}
 	return pktline.WriteFlush(w)

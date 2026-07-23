@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -13,6 +14,8 @@ import (
 
 // Basic example of how to clone a repository using clone options.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>")
 	url := os.Args[1]
 
@@ -21,7 +24,7 @@ func main() {
 
 	wt := memfs.New()
 	storer := memory.NewStorage()
-	r, err := git.Clone(storer, wt, &git.CloneOptions{
+	r, err := git.Clone(ctx, storer, wt, &git.CloneOptions{
 		URL: url,
 	})
 
@@ -29,10 +32,10 @@ func main() {
 	defer func() { _ = r.Close() }()
 
 	// ... retrieving the branch being pointed by HEAD
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
 	// ... retrieving the commit object
-	commit, err := r.CommitObject(ref.Hash())
+	commit, err := r.CommitObject(ctx, ref.Hash())
 	CheckIfError(err)
 
 	fmt.Println(commit)

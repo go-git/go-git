@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto"
 	"crypto/sha1"
 	"fmt"
@@ -17,6 +18,8 @@ import (
 
 // Expands the Basic example focusing in performance.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>", "<directory>")
 	url := os.Args[1]
 	directory := os.Args[2]
@@ -48,7 +51,7 @@ func main() {
 		HighMemoryMode: true,
 	})
 
-	r, err := git.Clone(storer, fs, &git.CloneOptions{
+	r, err := git.Clone(ctx, storer, fs, &git.CloneOptions{
 		URL: url,
 		// Differently than the git CLI, by default go-git downloads
 		// all tags and its related objects. To avoid unnecessary
@@ -66,9 +69,9 @@ func main() {
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
-	commit, err := r.CommitObject(ref.Hash())
+	commit, err := r.CommitObject(ctx, ref.Hash())
 	CheckIfError(err)
 
 	fmt.Println(commit)

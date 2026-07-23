@@ -23,13 +23,13 @@ func (s *IndexSuite) TestSetIndexBase() {
 	idx.Version = 2
 
 	base := memory.NewStorage()
-	err := base.SetIndex(idx)
+	err := base.SetIndex(s.T().Context(), idx)
 	s.NoError(err)
 
 	temporal := memory.NewStorage()
 	cs := NewIndexStorage(base, temporal)
 
-	idx, err = cs.Index()
+	idx, err = cs.Index(s.T().Context())
 	s.NoError(err)
 	s.Equal(uint32(2), idx.Version)
 }
@@ -39,7 +39,7 @@ func (s *IndexSuite) TestCommit() {
 	idx.Version = 2
 
 	base := memory.NewStorage()
-	err := base.SetIndex(idx)
+	err := base.SetIndex(s.T().Context(), idx)
 	s.NoError(err)
 
 	temporal := memory.NewStorage()
@@ -48,13 +48,13 @@ func (s *IndexSuite) TestCommit() {
 	idx.Version = 3
 
 	is := NewIndexStorage(base, temporal)
-	err = is.SetIndex(idx)
+	err = is.SetIndex(s.T().Context(), idx)
 	s.NoError(err)
 
-	err = is.Commit()
+	err = is.Commit(s.T().Context())
 	s.NoError(err)
 
-	baseIndex, err := base.Index()
+	baseIndex, err := base.Index(s.T().Context())
 	s.NoError(err)
 	s.Equal(uint32(3), baseIndex.Version)
 }

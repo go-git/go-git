@@ -1,7 +1,11 @@
 // Package storage provides extended storage interfaces for experimental features.
 package storage
 
-import "github.com/go-git/go-git/v6/plumbing/format/config"
+import (
+	"context"
+
+	"github.com/go-git/go-git/v6/plumbing/format/config"
+)
 
 // ObjectFormatSetter is implemented by storage backends that support
 // configuring the object format (hash algorithm) used for the repository.
@@ -13,7 +17,7 @@ import "github.com/go-git/go-git/v6/plumbing/format/config"
 // For more info refer to #1832.
 type ObjectFormatSetter interface {
 	// SetObjectFormat configures the object format (hash algorithm) for this storage.
-	SetObjectFormat(config.ObjectFormat) error
+	SetObjectFormat(ctx context.Context, of config.ObjectFormat) error
 }
 
 // ExtensionChecker expands a Storer enabling it to confirm whether it supports

@@ -96,20 +96,10 @@ func (w *Worktree) reusableRootFS() (*worktreeFilesystem, func()) {
 // no changes to be fetched, or an error.
 //
 // Pull only supports merges where the can be resolved as a fast-forward.
-func (w *Worktree) Pull(o *PullOptions) error {
-	return w.PullContext(context.Background(), o)
-}
-
-// PullContext incorporates changes from a remote repository into the current
-// branch. Returns nil if the operation is successful, NoErrAlreadyUpToDate if
-// there are no changes to be fetched, or an error.
-//
-// Pull only supports merges where the can be resolved as a fast-forward.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
+// operation is complete, an error is returned.
+func (w *Worktree) Pull(ctx context.Context, o *PullOptions) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -121,7 +111,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	remote, err := w.r.Remote(o.RemoteName)
+	remote, err := w.r.Remote(ctx, o.RemoteName)
 	if err != nil {
 		return err
 	}
@@ -142,17 +132,17 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	ref, err := storer.ResolveReference(fetchHead, o.ReferenceName)
+	ref, err := storer.ResolveReference(ctx, fetchHead, o.ReferenceName)
 	if err != nil {
 		return err
 	}
 
-	head, err := w.r.Head()
+	head, err := w.r.Head(ctx)
 	if err == nil {
 		// if we don't have a shallows list, just ignore it
-		shallowList, _ := w.r.Storer.Shallow()
+		shallowList, _ := w.r.Storer.Shallow(ctx)
 
-		headAheadOfRef, err := isFastForward(w.r.Storer, ref.Hash(), head.Hash(), shallowList)
+		headAheadOfRef, err := isFastForward(ctx, w.r.Storer, ref.Hash(), head.Hash(), shallowList)
 		if err != nil {
 			return err
 		}
@@ -161,7 +151,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 			return NoErrAlreadyUpToDate
 		}
 
-		ff, err := isFastForward(w.r.Storer, head.Hash(), ref.Hash(), shallowList)
+		ff, err := isFastForward(ctx, w.r.Storer, head.Hash(), ref.Hash(), shallowList)
 		if err != nil {
 			return err
 		}
@@ -175,11 +165,11 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	if err := w.updateHEAD(ref.Hash()); err != nil {
+	if err := w.updateHEAD(ctx, ref.Hash()); err != nil {
 		return err
 	}
 
-	if err := w.Reset(&ResetOptions{
+	if err := w.Reset(ctx, &ResetOptions{
 		Mode:   MergeReset,
 		Commit: ref.Hash(),
 	}); err != nil {
@@ -197,16 +187,16 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 }
 
 func (w *Worktree) updateSubmodules(ctx context.Context, o *SubmoduleUpdateOptions) error {
-	s, err := w.Submodules()
+	s, err := w.Submodules(ctx)
 	if err != nil {
 		return err
 	}
 	o.Init = true
-	return s.UpdateContext(ctx, o)
+	return s.Update(ctx, o)
 }
 
 // Checkout switch branches or restore working tree files.
-func (w *Worktree) Checkout(opts *CheckoutOptions) error {
+func (w *Worktree) Checkout(ctx context.Context, opts *CheckoutOptions) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -219,12 +209,12 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	}
 
 	if opts.Create {
-		if err := w.createBranch(opts); err != nil {
+		if err := w.createBranch(ctx, opts); err != nil {
 			return err
 		}
 	}
 
-	c, err := w.getCommitFromCheckoutOptions(opts)
+	c, err := w.getCommitFromCheckoutOptions(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -241,24 +231,24 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	}
 
 	if !opts.Hash.IsZero() && !opts.Create {
-		err = w.setHEADToCommit(opts.Hash)
+		err = w.setHEADToCommit(ctx, opts.Hash)
 	} else {
-		err = w.setHEADToBranch(opts.Branch, c)
+		err = w.setHEADToBranch(ctx, opts.Branch, c)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	return w.Reset(ro)
+	return w.Reset(ctx, ro)
 }
 
-func (w *Worktree) createBranch(opts *CheckoutOptions) error {
+func (w *Worktree) createBranch(ctx context.Context, opts *CheckoutOptions) error {
 	if err := opts.Branch.Validate(); err != nil {
 		return err
 	}
 
-	_, err := w.r.Storer.Reference(opts.Branch)
+	_, err := w.r.Storer.Reference(ctx, opts.Branch)
 	if err == nil {
 		return fmt.Errorf("a branch named %q already exists", opts.Branch)
 	}
@@ -268,7 +258,7 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 	}
 
 	if opts.Hash.IsZero() {
-		ref, err := w.r.Head()
+		ref, err := w.r.Head(ctx)
 		if err != nil {
 			return err
 		}
@@ -277,14 +267,15 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 	}
 
 	return w.r.Storer.SetReference(
+		ctx,
 		plumbing.NewHashReference(opts.Branch, opts.Hash),
 	)
 }
 
-func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing.Hash, error) {
+func (w *Worktree) getCommitFromCheckoutOptions(ctx context.Context, opts *CheckoutOptions) (plumbing.Hash, error) {
 	hash := opts.Hash
 	if hash.IsZero() {
-		b, err := w.r.Reference(opts.Branch, true)
+		b, err := w.r.Reference(ctx, opts.Branch, true)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -292,7 +283,7 @@ func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing
 		hash = b.Hash()
 	}
 
-	o, err := w.r.Object(plumbing.AnyObject, hash)
+	o, err := w.r.Object(ctx, plumbing.AnyObject, hash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -311,13 +302,13 @@ func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing
 	return plumbing.ZeroHash, fmt.Errorf("%w: %q", object.ErrUnsupportedObject, o.Type())
 }
 
-func (w *Worktree) setHEADToCommit(commit plumbing.Hash) error {
+func (w *Worktree) setHEADToCommit(ctx context.Context, commit plumbing.Hash) error {
 	head := plumbing.NewHashReference(plumbing.HEAD, commit)
-	return w.r.Storer.SetReference(head)
+	return w.r.Storer.SetReference(ctx, head)
 }
 
-func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbing.Hash) error {
-	target, err := w.r.Storer.Reference(branch)
+func (w *Worktree) setHEADToBranch(ctx context.Context, branch plumbing.ReferenceName, commit plumbing.Hash) error {
+	target, err := w.r.Storer.Reference(ctx, branch)
 	if err != nil {
 		return err
 	}
@@ -329,11 +320,11 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 		head = plumbing.NewHashReference(plumbing.HEAD, commit)
 	}
 
-	return w.r.Storer.SetReference(head)
+	return w.r.Storer.SetReference(ctx, head)
 }
 
 // Reset the worktree to a specified state.
-func (w *Worktree) Reset(opts *ResetOptions) error {
+func (w *Worktree) Reset(ctx context.Context, opts *ResetOptions) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -341,17 +332,17 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}()
 	}
 
-	if err := opts.Validate(w.r); err != nil {
+	if err := opts.Validate(ctx, w.r); err != nil {
 		return err
 	}
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.Config(ctx)
 	if err != nil {
 		return err
 	}
 
 	if opts.Mode == MergeReset {
-		unstaged, err := w.containsUnstagedChanges(cfg)
+		unstaged, err := w.containsUnstagedChanges(ctx, cfg)
 		if err != nil {
 			return err
 		}
@@ -362,16 +353,16 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == SoftReset {
-		return w.setHEADCommit(opts.Commit)
+		return w.setHEADCommit(ctx, opts.Commit)
 	}
 
-	t, err := w.r.getTreeFromCommitHash(opts.Commit)
+	t, err := w.r.getTreeFromCommitHash(ctx, opts.Commit)
 	if err != nil {
 		return err
 	}
 
 	if len(opts.SparseDirs) > 0 && !opts.SkipSparseDirValidation {
-		if !treeContainsDirs(t, opts.SparseDirs) {
+		if !treeContainsDirs(ctx, t, opts.SparseDirs) {
 			return ErrSparseResetDirectoryNotFound
 		}
 	}
@@ -382,37 +373,37 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	// files are invisible and are never deleted — matching real git reset --hard.
 	var prevTree *object.Tree
 	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		prevTree, err = w.headTree()
+		prevTree, err = w.headTree(ctx)
 		if err != nil {
 			return err
 		}
 	}
 
 	if opts.Mode == KeepReset {
-		if err := w.checkKeepResetConflicts(prevTree, t, opts.SparseDirs, opts.Files); err != nil {
+		if err := w.checkKeepResetConflicts(ctx, prevTree, t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
 
-	if err := w.setHEADCommit(opts.Commit); err != nil {
+	if err := w.setHEADCommit(ctx, opts.Commit); err != nil {
 		return err
 	}
 
 	var removedFiles []string
 	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset || opts.Mode == KeepReset {
-		if removedFiles, err = w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
+		if removedFiles, err = w.resetIndex(ctx, t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
 	}
 
 	if opts.Mode == MergeReset && len(removedFiles) > 0 {
-		if err := w.resetWorktree(cfg, t, removedFiles); err != nil {
+		if err := w.resetWorktree(ctx, cfg, t, removedFiles); err != nil {
 			return err
 		}
 	}
 
 	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		if err := w.resetWorktreeToTree(cfg, prevTree, t, opts.Files); err != nil {
+		if err := w.resetWorktreeToTree(ctx, cfg, prevTree, t, opts.Files); err != nil {
 			return err
 		}
 	}
@@ -422,13 +413,13 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 
 // treeContainsDirs checks if the given tree contains all the directories.
 // if dirs is empty, it returns false.
-func treeContainsDirs(tree *object.Tree, dirs []string) bool {
+func treeContainsDirs(ctx context.Context, tree *object.Tree, dirs []string) bool {
 	if len(dirs) == 0 {
 		return false
 	}
 
 	for _, dir := range dirs {
-		entry, err := tree.FindEntry(dir)
+		entry, err := tree.FindEntry(ctx, dir)
 		if err != nil {
 			return false
 		}
@@ -451,7 +442,7 @@ func treeContainsDirs(tree *object.Tree, dirs []string) bool {
 // tree while leaving the stage untouched is not currently supported.
 //
 // Restore with no files specified will return ErrNoRestorePaths.
-func (w *Worktree) Restore(o *RestoreOptions) error {
+func (w *Worktree) Restore(ctx context.Context, o *RestoreOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -469,21 +460,21 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 			opts.Mode = MixedReset
 		}
 
-		return w.Reset(opts)
+		return w.Reset(ctx, opts)
 	}
 
 	return ErrRestoreWorktreeOnlyNotSupported
 }
 
-func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, error) {
-	idx, err := w.r.Storer.Index()
+func (w *Worktree) resetIndex(ctx context.Context, t *object.Tree, dirs, files []string) ([]string, error) {
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	b := newIndexBuilder(idx)
 
-	changes, err := w.diffTreeWithStaging(t, true)
+	changes, err := w.diffTreeWithStaging(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +493,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		switch a {
 		case merkletrie.Modify, merkletrie.Insert:
 			name = ch.To.String()
-			e, err = t.FindEntry(name)
+			e, err = t.FindEntry(ctx, name)
 			if err != nil {
 				return nil, err
 			}
@@ -536,7 +527,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		idx.SkipUnless(dirs)
 	}
 
-	return removedFiles, w.r.Storer.SetIndex(idx)
+	return removedFiles, w.r.Storer.SetIndex(ctx, idx)
 }
 
 // inFiles checks if the given file is in the list of files. The incoming filepaths in files should be cleaned before calling this function.
@@ -548,19 +539,19 @@ func inFiles(files map[string]struct{}, v string) bool {
 
 // headTree returns the tree for the current HEAD commit.
 // Returns nil, nil if there is no HEAD yet (e.g. an unborn branch).
-func (w *Worktree) headTree() (*object.Tree, error) {
-	head, err := w.r.Head()
+func (w *Worktree) headTree(ctx context.Context) (*object.Tree, error) {
+	head, err := w.r.Head(ctx)
 	if err != nil {
 		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	c, err := w.r.CommitObject(head.Hash())
+	c, err := w.r.CommitObject(ctx, head.Hash())
 	if err != nil {
 		return nil, err
 	}
-	return c.Tree()
+	return c.Tree(ctx)
 }
 
 // checkKeepResetConflicts implements the safety check for KeepReset
@@ -577,8 +568,8 @@ func (w *Worktree) headTree() (*object.Tree, error) {
 //     become SkipWorktree because their path is no longer under any of the new
 //     sparse directories. Step 3 of resetWorktreeToTree removes them from disk,
 //     so KeepReset must refuse if they carry local modifications.
-func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparseDirs, files []string) error {
-	changes, err := diffTrees(fromTree, toTree)
+func (w *Worktree) checkKeepResetConflicts(ctx context.Context, fromTree, toTree *object.Tree, sparseDirs, files []string) error {
+	changes, err := diffTrees(ctx, fromTree, toTree)
 	if err != nil {
 		return err
 	}
@@ -617,7 +608,7 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 	// falls outside the new sparse set will be removed from disk by step 3 of
 	// resetWorktreeToTree. KeepReset must refuse if such a file has local mods.
 	if len(sparseDirs) > 0 {
-		idx, err := w.r.Storer.Index()
+		idx, err := w.r.Storer.Index(ctx)
 		if err != nil {
 			return err
 		}
@@ -646,7 +637,7 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 	}
 
 	// Check worktree status for local modifications on touched paths.
-	status, err := w.Status()
+	status, err := w.Status(ctx)
 	if err != nil {
 		return err
 	}
@@ -689,14 +680,14 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 //     file with SkipWorktree=true must not exist in the worktree.
 //
 // files optionally restricts the operation to a specific subset of paths.
-func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *object.Tree, files []string) error {
+func (w *Worktree) resetWorktreeToTree(ctx context.Context, cfg *config.Config, fromTree, toTree *object.Tree, files []string) error {
 	filesMap := buildFilePathMap(files)
 
 	fs, closeFS := w.reusableRootFS()
 	defer closeFS()
 
 	// Step 1: delete files removed from the tracked tree.
-	treeChanges, err := diffTrees(fromTree, toTree)
+	treeChanges, err := diffTrees(ctx, fromTree, toTree)
 	if err != nil {
 		return err
 	}
@@ -730,12 +721,12 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true)
+	worktreeChanges, err := w.diffStagingWithWorktree(ctx, cfg, true, true)
 	if err != nil {
 		return err
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return err
 	}
@@ -762,7 +753,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 			}
 		}
 
-		if err := w.checkoutChange(cfg, fs, ch, toTree, b); err != nil {
+		if err := w.checkoutChange(ctx, cfg, fs, ch, toTree, b); err != nil {
 			return err
 		}
 	}
@@ -787,7 +778,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.r.Storer.SetIndex(ctx, idx)
 }
 
 // resetWorktree updates the worktree to match the staging area.
@@ -799,13 +790,13 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 // from the index in this same Reset is no longer in idxMap, so the
 // noder's IgnoreMatcher would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
-func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []string) error {
-	changes, err := w.diffStagingWithWorktree(cfg, true, false)
+func (w *Worktree) resetWorktree(ctx context.Context, cfg *config.Config, t *object.Tree, files []string) error {
+	changes, err := w.diffStagingWithWorktree(ctx, cfg, true, false)
 	if err != nil {
 		return err
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return err
 	}
@@ -834,16 +825,16 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []str
 			}
 		}
 
-		if err := w.checkoutChange(cfg, fs, ch, t, b); err != nil {
+		if err := w.checkoutChange(ctx, cfg, fs, ch, t, b); err != nil {
 			return err
 		}
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.r.Storer.SetIndex(ctx, idx)
 }
 
-func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
+func (w *Worktree) checkoutChange(ctx context.Context, cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
 	a, err := ch.Action()
 	if err != nil {
 		return err
@@ -859,7 +850,7 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 		// FindEntry validates name via pathutil.ValidTreePath, so a
 		// dangerous tree-derived path is refused at the lookup
 		// boundary before we materialise anything.
-		e, err = t.FindEntry(name)
+		e, err = t.FindEntry(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -878,14 +869,14 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 	}
 
 	if isSubmodule {
-		return w.checkoutChangeSubmodule(fs, name, a, e, idx)
+		return w.checkoutChangeSubmodule(ctx, fs, name, a, e, idx)
 	}
 
-	return w.checkoutChangeRegularFile(cfg, fs, name, a, t, e, idx)
+	return w.checkoutChangeRegularFile(ctx, cfg, fs, name, a, t, e, idx)
 }
 
-func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
-	ch, err := w.diffStagingWithWorktree(cfg, false, true)
+func (w *Worktree) containsUnstagedChanges(ctx context.Context, cfg *config.Config) (bool, error) {
+	ch, err := w.diffStagingWithWorktree(ctx, cfg, false, true)
 	if err != nil {
 		return false, err
 	}
@@ -906,18 +897,18 @@ func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
 	return false, nil
 }
 
-func (w *Worktree) setHEADCommit(commit plumbing.Hash) error {
-	head, err := w.r.Reference(plumbing.HEAD, false)
+func (w *Worktree) setHEADCommit(ctx context.Context, commit plumbing.Hash) error {
+	head, err := w.r.Reference(ctx, plumbing.HEAD, false)
 	if err != nil {
 		return err
 	}
 
 	if head.Type() == plumbing.HashReference {
 		head = plumbing.NewHashReference(plumbing.HEAD, commit)
-		return w.r.Storer.SetReference(head)
+		return w.r.Storer.SetReference(ctx, head)
 	}
 
-	branch, err := w.r.Reference(head.Target(), false)
+	branch, err := w.r.Reference(ctx, head.Target(), false)
 	if err != nil {
 		return err
 	}
@@ -927,10 +918,10 @@ func (w *Worktree) setHEADCommit(commit plumbing.Hash) error {
 	}
 
 	branch = plumbing.NewHashReference(branch.Name(), commit)
-	return w.r.Storer.SetReference(branch)
+	return w.r.Storer.SetReference(ctx, branch)
 }
 
-func (w *Worktree) checkoutChangeSubmodule(fs *worktreeFilesystem,
+func (w *Worktree) checkoutChangeSubmodule(ctx context.Context, fs *worktreeFilesystem,
 	name string,
 	a merkletrie.Action,
 	e *object.TreeEntry,
@@ -938,7 +929,7 @@ func (w *Worktree) checkoutChangeSubmodule(fs *worktreeFilesystem,
 ) error {
 	switch a {
 	case merkletrie.Modify:
-		sub, err := w.Submodule(name)
+		sub, err := w.Submodule(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -964,7 +955,7 @@ func (w *Worktree) checkoutChangeSubmodule(fs *worktreeFilesystem,
 	return nil
 }
 
-func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
+func (w *Worktree) checkoutChangeRegularFile(ctx context.Context, cfg *config.Config,
 	fs *worktreeFilesystem,
 	name string,
 	a merkletrie.Action,
@@ -984,7 +975,7 @@ func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
 
 		fallthrough
 	case merkletrie.Insert:
-		f, err := t.File(name)
+		f, err := t.File(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -1129,13 +1120,13 @@ func (w *Worktree) addIndexFromFile(fs *worktreeFilesystem, name string, h plumb
 	return nil
 }
 
-func (r *Repository) getTreeFromCommitHash(commit plumbing.Hash) (*object.Tree, error) {
-	c, err := r.CommitObject(commit)
+func (r *Repository) getTreeFromCommitHash(ctx context.Context, commit plumbing.Hash) (*object.Tree, error) {
+	c, err := r.CommitObject(ctx, commit)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.Tree()
+	return c.Tree(ctx)
 }
 
 var fillSystemInfo func(e *index.Entry, sys any)
@@ -1143,8 +1134,8 @@ var fillSystemInfo func(e *index.Entry, sys any)
 const gitmodulesFile = ".gitmodules"
 
 // Submodule returns the submodule with the given name
-func (w *Worktree) Submodule(name string) (*Submodule, error) {
-	l, err := w.Submodules()
+func (w *Worktree) Submodule(ctx context.Context, name string) (*Submodule, error) {
+	l, err := w.Submodules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1184,17 +1175,17 @@ func resolveModuleURL(originURL, moduleURL string) (string, error) {
 }
 
 // Submodules returns all the available submodules
-func (w *Worktree) Submodules() (Submodules, error) {
-	cfg, err := w.r.Config()
+func (w *Worktree) Submodules(ctx context.Context) (Submodules, error) {
+	cfg, err := w.r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return w.submodulesWithConfig(cfg)
+	return w.submodulesWithConfig(ctx, cfg)
 }
 
 // submodulesWithConfig returns all the available submodules using an already-loaded config.
-func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) {
+func (w *Worktree) submodulesWithConfig(ctx context.Context, cfg *config.Config) (Submodules, error) {
 	l := make(Submodules, 0)
 	m, err := w.readGitmodulesFile()
 	if err != nil || m == nil {
@@ -1202,7 +1193,7 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 	}
 
 	var originURL string
-	if origin, err := w.r.Remote(DefaultRemoteName); err == nil {
+	if origin, err := w.r.Remote(ctx, DefaultRemoteName); err == nil {
 		if origin.c != nil && len(origin.c.URLs) > 0 {
 			originURL = origin.c.URLs[0]
 		}
@@ -1273,8 +1264,8 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 
 // Clean the worktree by removing untracked files.
 // An empty dir could be removed - this is what  `git clean -f -d .` does.
-func (w *Worktree) Clean(opts *CleanOptions) error {
-	s, err := w.Status()
+func (w *Worktree) Clean(ctx context.Context, opts *CleanOptions) error {
+	s, err := w.Status(ctx)
 	if err != nil {
 		return err
 	}
@@ -1341,8 +1332,8 @@ func (gr GrepResult) String() string {
 }
 
 // Grep performs grep on a repository.
-func (r *Repository) Grep(opts *GrepOptions) ([]GrepResult, error) {
-	if err := opts.validate(r); err != nil {
+func (r *Repository) Grep(ctx context.Context, opts *GrepOptions) ([]GrepResult, error) {
+	if err := opts.validate(ctx, r); err != nil {
 		return nil, err
 	}
 
@@ -1352,7 +1343,7 @@ func (r *Repository) Grep(opts *GrepOptions) ([]GrepResult, error) {
 	var treeName string
 
 	if opts.ReferenceName != "" {
-		ref, err := r.Reference(opts.ReferenceName, true)
+		ref, err := r.Reference(ctx, opts.ReferenceName, true)
 		if err != nil {
 			return nil, err
 		}
@@ -1365,27 +1356,27 @@ func (r *Repository) Grep(opts *GrepOptions) ([]GrepResult, error) {
 
 	// Obtain a tree from the commit hash and get a tracked files iterator from
 	// the tree.
-	tree, err := r.getTreeFromCommitHash(commitHash)
+	tree, err := r.getTreeFromCommitHash(ctx, commitHash)
 	if err != nil {
 		return nil, err
 	}
 	fileiter := tree.Files()
 
-	return findMatchInFiles(fileiter, treeName, opts)
+	return findMatchInFiles(ctx, fileiter, treeName, opts)
 }
 
 // Grep performs grep on a worktree.
-func (w *Worktree) Grep(opts *GrepOptions) ([]GrepResult, error) {
-	return w.r.Grep(opts)
+func (w *Worktree) Grep(ctx context.Context, opts *GrepOptions) ([]GrepResult, error) {
+	return w.r.Grep(ctx, opts)
 }
 
 // findMatchInFiles takes a FileIter, worktree name and GrepOptions, and
 // returns a slice of GrepResult containing the result of regex pattern matching
 // in content of all the files.
-func findMatchInFiles(fileiter *object.FileIter, treeName string, opts *GrepOptions) ([]GrepResult, error) {
+func findMatchInFiles(ctx context.Context, fileiter *object.FileIter, treeName string, opts *GrepOptions) ([]GrepResult, error) {
 	var results []GrepResult
 
-	err := fileiter.ForEach(func(file *object.File) error {
+	err := fileiter.ForEach(ctx, func(file *object.File) error {
 		var fileInPathSpec bool
 
 		// When no pathspecs are provided, search all the files.

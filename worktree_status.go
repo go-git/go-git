@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -42,8 +43,8 @@ var (
 )
 
 // Status returns the working tree status.
-func (w *Worktree) Status() (Status, error) {
-	return w.StatusWithOptions(StatusOptions{Strategy: defaultStatusStrategy})
+func (w *Worktree) Status(ctx context.Context) (Status, error) {
+	return w.StatusWithOptions(ctx, StatusOptions{Strategy: defaultStatusStrategy})
 }
 
 // StatusOptions defines the options for Worktree.StatusWithOptions().
@@ -52,10 +53,10 @@ type StatusOptions struct {
 }
 
 // StatusWithOptions returns the working tree status.
-func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
+func (w *Worktree) StatusWithOptions(ctx context.Context, o StatusOptions) (Status, error) {
 	var hash plumbing.Hash
 
-	ref, err := w.r.Head()
+	ref, err := w.r.Head(ctx)
 	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, err
 	}
@@ -64,21 +65,21 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		hash = ref.Hash()
 	}
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return w.status(cfg, o.Strategy, hash)
+	return w.status(ctx, cfg, o.Strategy, hash)
 }
 
-func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
-	s, err := ss.new(w)
+func (w *Worktree) status(ctx context.Context, cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
+	s, err := ss.new(ctx, w)
 	if err != nil {
 		return nil, err
 	}
 
-	left, err := w.diffCommitWithStaging(commit, false)
+	left, err := w.diffCommitWithStaging(ctx, commit, false)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +103,7 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 		}
 	}
 
-	right, err := w.diffStagingWithWorktree(cfg, false, true)
+	right, err := w.diffStagingWithWorktree(ctx, cfg, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +142,8 @@ func nameFromAction(ch *merkletrie.Change) string {
 	return name
 }
 
-func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
-	idx, err := w.r.Storer.Index()
+func (w *Worktree) diffStagingWithWorktree(ctx context.Context, cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: cfg.Core.FileMode,
 	})
-	submodules, err := w.getSubmodulesStatus(cfg)
+	submodules, err := w.getSubmodulesStatus(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -176,9 +177,9 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	to := filesystem.NewRootNodeWithOptions(w.filesystem, submodules, fsOpts)
 
 	if reverse {
-		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
+		return merkletrie.DiffTreeContext(ctx, to, from, diffTreeIsEquals)
 	}
-	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
+	return merkletrie.DiffTreeContext(ctx, from, to, diffTreeIsEquals)
 }
 
 func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
@@ -189,15 +190,15 @@ func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
 	return append(patterns, w.Excludes...)
 }
 
-func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.Hash, error) {
+func (w *Worktree) getSubmodulesStatus(ctx context.Context, cfg *config.Config) (map[string]plumbing.Hash, error) {
 	o := map[string]plumbing.Hash{}
 
-	sub, err := w.submodulesWithConfig(cfg)
+	sub, err := w.submodulesWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	status, err := sub.Status()
+	status, err := sub.Status(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -214,30 +215,30 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 	return o, nil
 }
 
-func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffCommitWithStaging(ctx context.Context, commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
 	var t *object.Tree
 	if !commit.IsZero() {
-		c, err := w.r.CommitObject(commit)
+		c, err := w.r.CommitObject(ctx, commit)
 		if err != nil {
 			return nil, err
 		}
 
-		t, err = c.Tree()
+		t, err = c.Tree(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return w.diffTreeWithStaging(t, reverse)
+	return w.diffTreeWithStaging(ctx, t, reverse)
 }
 
-func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffTreeWithStaging(ctx context.Context, t *object.Tree, reverse bool) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
 		from = object.NewTreeRootNode(t)
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -245,15 +246,15 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 	to := mindex.NewRootNode(idx)
 
 	if reverse {
-		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
+		return merkletrie.DiffTreeContext(ctx, to, from, diffTreeIsEquals)
 	}
 
-	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
+	return merkletrie.DiffTreeContext(ctx, from, to, diffTreeIsEquals)
 }
 
 // diffTrees returns the changes between two tree objects.
 // Either tree may be nil, which is treated as the empty tree.
-func diffTrees(from, to *object.Tree) (merkletrie.Changes, error) {
+func diffTrees(ctx context.Context, from, to *object.Tree) (merkletrie.Changes, error) {
 	var fromNode, toNode noder.Noder
 	if from != nil {
 		fromNode = object.NewTreeRootNode(from)
@@ -261,7 +262,7 @@ func diffTrees(from, to *object.Tree) (merkletrie.Changes, error) {
 	if to != nil {
 		toNode = object.NewTreeRootNode(to)
 	}
-	return merkletrie.DiffTree(fromNode, toNode, diffTreeIsEquals)
+	return merkletrie.DiffTreeContext(ctx, fromNode, toNode, diffTreeIsEquals)
 }
 
 var emptyNoderHash = make([]byte, 24)
@@ -289,12 +290,12 @@ func diffTreeIsEquals(a, b noder.Hasher) bool {
 // directory given, adds the files and all his sub-directories recursively in
 // the worktree to the index. If any of the files is already staged in the index
 // no error is returned. When path is a file, the blob.Hash is returned.
-func (w *Worktree) Add(path string) (plumbing.Hash, error) {
+func (w *Worktree) Add(ctx context.Context, path string) (plumbing.Hash, error) {
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
-	return w.doAdd(path, make([]gitignore.Pattern, 0), false)
+	return w.doAdd(ctx, path, make([]gitignore.Pattern, 0), false)
 }
 
-func (w *Worktree) doAddDirectory(cfg *config.Config, idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
+func (w *Worktree) doAddDirectory(ctx context.Context, cfg *config.Config, idx *index.Index, s Status, directory string, ignorePattern []gitignore.Pattern) (added bool, err error) {
 	if len(ignorePattern) > 0 {
 		m := gitignore.NewMatcher(ignorePattern)
 		matchPath := strings.Split(directory, string(os.PathSeparator))
@@ -312,7 +313,7 @@ func (w *Worktree) doAddDirectory(cfg *config.Config, idx *index.Index, s Status
 		}
 
 		var a bool
-		a, _, err = w.doAddFile(cfg, idx, s, name, ignorePattern)
+		a, _, err = w.doAddFile(ctx, cfg, idx, s, name, ignorePattern)
 		if err != nil {
 			return added, err
 		}
@@ -335,25 +336,25 @@ func isPathInDirectory(path, directory string) bool {
 // some options it can also be used to add content with only part of the changes
 // made to the working tree files applied, or remove paths that do not exist in
 // the working tree anymore.
-func (w *Worktree) AddWithOptions(opts *AddOptions) error {
+func (w *Worktree) AddWithOptions(ctx context.Context, opts *AddOptions) error {
 	if err := opts.Validate(w.r); err != nil {
 		return err
 	}
 
 	if opts.All {
-		_, err := w.doAdd(".", w.Excludes, false)
+		_, err := w.doAdd(ctx, ".", w.Excludes, false)
 		return err
 	}
 
 	if opts.Glob != "" {
-		return w.AddGlob(opts.Glob)
+		return w.AddGlob(ctx, opts.Glob)
 	}
 
-	_, err := w.doAdd(opts.Path, make([]gitignore.Pattern, 0), opts.SkipStatus)
+	_, err := w.doAdd(ctx, opts.Path, make([]gitignore.Pattern, 0), opts.SkipStatus)
 	return err
 }
 
-func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipStatus bool) (plumbing.Hash, error) {
+func (w *Worktree) doAdd(ctx context.Context, path string, ignorePattern []gitignore.Pattern, skipStatus bool) (plumbing.Hash, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -361,12 +362,12 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		}()
 	}
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.Config(ctx)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -380,7 +381,7 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	var s Status
 	var err2 error
 	if !skipStatus || fi == nil || fi.IsDir() {
-		s, err2 = w.Status()
+		s, err2 = w.Status(ctx)
 		if err2 != nil {
 			return plumbing.ZeroHash, err2
 		}
@@ -401,9 +402,9 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	path = filepath.ToSlash(path)
 
 	if err != nil || !fi.IsDir() {
-		added, h, err = w.doAddFile(cfg, idx, s, path, ignorePattern)
+		added, h, err = w.doAddFile(ctx, cfg, idx, s, path, ignorePattern)
 	} else {
-		added, err = w.doAddDirectory(cfg, idx, s, path, ignorePattern)
+		added, err = w.doAddDirectory(ctx, cfg, idx, s, path, ignorePattern)
 	}
 
 	if err != nil {
@@ -414,13 +415,13 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		return h, nil
 	}
 
-	return h, w.r.Storer.SetIndex(idx)
+	return h, w.r.Storer.SetIndex(ctx, idx)
 }
 
 // AddGlob adds all paths, matching pattern, to the index. If pattern matches a
 // directory path, all directory contents are added to the index recursively. No
 // error is returned if all matching paths are already staged in index.
-func (w *Worktree) AddGlob(pattern string) error {
+func (w *Worktree) AddGlob(ctx context.Context, pattern string) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -438,17 +439,17 @@ func (w *Worktree) AddGlob(pattern string) error {
 		return ErrGlobNoMatches
 	}
 
-	cfg, err := w.r.Config()
+	cfg, err := w.r.Config(ctx)
 	if err != nil {
 		return err
 	}
 
-	s, err := w.Status()
+	s, err := w.Status(ctx)
 	if err != nil {
 		return err
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return err
 	}
@@ -462,9 +463,9 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 		var added bool
 		if fi.IsDir() {
-			added, err = w.doAddDirectory(cfg, idx, s, file, make([]gitignore.Pattern, 0))
+			added, err = w.doAddDirectory(ctx, cfg, idx, s, file, make([]gitignore.Pattern, 0))
 		} else {
-			added, _, err = w.doAddFile(cfg, idx, s, file, make([]gitignore.Pattern, 0))
+			added, _, err = w.doAddFile(ctx, cfg, idx, s, file, make([]gitignore.Pattern, 0))
 		}
 
 		if err != nil {
@@ -477,7 +478,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 	}
 
 	if saveIndex {
-		return w.r.Storer.SetIndex(idx)
+		return w.r.Storer.SetIndex(ctx, idx)
 	}
 
 	return nil
@@ -486,7 +487,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 // doAddFile create a new blob from path and update the index, added is true if
 // the file added is different from the index.
 // if s status is nil will skip the status check and update the index anyway
-func (w *Worktree) doAddFile(cfg *config.Config, idx *index.Index, s Status, path string, ignorePattern []gitignore.Pattern) (added bool, h plumbing.Hash, err error) {
+func (w *Worktree) doAddFile(ctx context.Context, cfg *config.Config, idx *index.Index, s Status, path string, ignorePattern []gitignore.Pattern) (added bool, h plumbing.Hash, err error) {
 	if s != nil && s.File(path).Worktree == Unmodified {
 		return false, h, nil
 	}
@@ -499,7 +500,7 @@ func (w *Worktree) doAddFile(cfg *config.Config, idx *index.Index, s Status, pat
 		}
 	}
 
-	h, err = w.copyFileToStorage(cfg, path)
+	h, err = w.copyFileToStorage(ctx, cfg, path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			added = true
@@ -516,7 +517,7 @@ func (w *Worktree) doAddFile(cfg *config.Config, idx *index.Index, s Status, pat
 	return true, h, err
 }
 
-func (w *Worktree) copyFileToStorage(cfg *config.Config, path string) (hash plumbing.Hash, err error) {
+func (w *Worktree) copyFileToStorage(ctx context.Context, cfg *config.Config, path string) (hash plumbing.Hash, err error) {
 	fi, err := w.filesystem.Lstat(path)
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -543,7 +544,7 @@ func (w *Worktree) copyFileToStorage(cfg *config.Config, path string) (hash plum
 		return plumbing.ZeroHash, err
 	}
 
-	return w.r.Storer.SetEncodedObject(obj)
+	return w.r.Storer.SetEncodedObject(ctx, obj)
 }
 
 func (w *Worktree) fillEncodedObjectFromFile(cfg *config.Config, dst io.Writer, path string, _ os.FileInfo) (err error) {
@@ -631,9 +632,9 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 }
 
 // Remove removes files from the working tree and from the index.
-func (w *Worktree) Remove(path string) (plumbing.Hash, error) {
+func (w *Worktree) Remove(ctx context.Context, path string) (plumbing.Hash, error) {
 	// TODO(mcuadros): remove plumbing.Hash from signature at v5.
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -650,7 +651,7 @@ func (w *Worktree) Remove(path string) (plumbing.Hash, error) {
 		return h, err
 	}
 
-	return h, w.r.Storer.SetIndex(idx)
+	return h, w.r.Storer.SetIndex(ctx, idx)
 }
 
 func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (removed bool, err error) {
@@ -728,8 +729,8 @@ func (w *Worktree) deleteFromFilesystem(path string) error {
 // RemoveGlob removes all paths, matching pattern, from the index. If pattern
 // matches a directory path, all directory contents are removed from the index
 // recursively.
-func (w *Worktree) RemoveGlob(pattern string) error {
-	idx, err := w.r.Storer.Index()
+func (w *Worktree) RemoveGlob(ctx context.Context, pattern string) error {
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return err
 	}
@@ -755,12 +756,12 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 		}
 	}
 
-	return w.r.Storer.SetIndex(idx)
+	return w.r.Storer.SetIndex(ctx, idx)
 }
 
 // Move moves or rename a file in the worktree and the index, directories are
 // not supported.
-func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
+func (w *Worktree) Move(ctx context.Context, from, to string) (plumbing.Hash, error) {
 	// TODO(mcuadros): support directories and/or implement support for glob
 	if _, err := w.filesystem.Lstat(from); err != nil {
 		return plumbing.ZeroHash, err
@@ -770,7 +771,7 @@ func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
 		return plumbing.ZeroHash, ErrDestinationExists
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -788,5 +789,5 @@ func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
 		return hash, err
 	}
 
-	return hash, w.r.Storer.SetIndex(idx)
+	return hash, w.r.Storer.SetIndex(ctx, idx)
 }

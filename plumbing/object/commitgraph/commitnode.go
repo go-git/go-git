@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"context"
 	"errors"
 	"io"
 	"time"
@@ -16,7 +17,7 @@ type CommitNode interface {
 	// ID returns the Commit object id referenced by the commit graph node.
 	ID() plumbing.Hash
 	// Tree returns the Tree referenced by the commit graph node.
-	Tree() (*object.Tree, error)
+	Tree(ctx context.Context) (*object.Tree, error)
 	// CommitTime returns the Committer.When time of the Commit referenced by the commit graph node.
 	CommitTime() time.Time
 	// NumParents returns the number of parents in a commit.
@@ -24,7 +25,7 @@ type CommitNode interface {
 	// ParentNodes return a CommitNodeIter for parents of specified node.
 	ParentNodes() CommitNodeIter
 	// ParentNode returns the ith parent of a commit.
-	ParentNode(i int) (CommitNode, error)
+	ParentNode(ctx context.Context, i int) (CommitNode, error)
 	// ParentHashes returns hashes of the parent commits for a specified node
 	ParentHashes() []plumbing.Hash
 	// Generation returns the generation of the commit for reachability analysis.
@@ -35,19 +36,19 @@ type CommitNode interface {
 	// with the commit time portion of the CDAT section.
 	GenerationV2() uint64
 	// Commit returns the full commit object from the node
-	Commit() (*object.Commit, error)
+	Commit(ctx context.Context) (*object.Commit, error)
 }
 
 // CommitNodeIndex is generic interface encapsulating an index of CommitNode objects
 type CommitNodeIndex interface {
 	// Get returns a commit node from a commit hash
-	Get(hash plumbing.Hash) (CommitNode, error)
+	Get(ctx context.Context, hash plumbing.Hash) (CommitNode, error)
 }
 
 // CommitNodeIter is a generic closable interface for iterating over commit nodes.
 type CommitNodeIter interface {
-	Next() (CommitNode, error)
-	ForEach(func(CommitNode) error) error
+	Next(ctx context.Context) (CommitNode, error)
+	ForEach(ctx context.Context, cb func(CommitNode) error) error
 	Close()
 }
 
@@ -63,8 +64,8 @@ func newParentgraphCommitNodeIter(node CommitNode) CommitNodeIter {
 
 // Next moves the iterator to the next commit and returns a pointer to it. If
 // there are no more commits, it returns io.EOF.
-func (iter *parentCommitNodeIter) Next() (CommitNode, error) {
-	obj, err := iter.node.ParentNode(iter.i)
+func (iter *parentCommitNodeIter) Next(ctx context.Context) (CommitNode, error) {
+	obj, err := iter.node.ParentNode(ctx, iter.i)
 	if errors.Is(err, object.ErrParentNotFound) {
 		return nil, io.EOF
 	}
@@ -78,9 +79,9 @@ func (iter *parentCommitNodeIter) Next() (CommitNode, error) {
 // ForEach call the cb function for each commit contained on this iter until
 // an error appends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stopped but no error is returned. The iterator is closed.
-func (iter *parentCommitNodeIter) ForEach(cb func(CommitNode) error) error {
+func (iter *parentCommitNodeIter) ForEach(ctx context.Context, cb func(CommitNode) error) error {
 	for {
-		obj, err := iter.Next()
+		obj, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil

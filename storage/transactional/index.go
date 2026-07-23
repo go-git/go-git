@@ -1,6 +1,8 @@
 package transactional
 
 import (
+	"context"
+
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
@@ -23,8 +25,8 @@ func NewIndexStorage(s, temporal storer.IndexStorer) *IndexStorage {
 }
 
 // SetIndex honors the storer.IndexStorer interface.
-func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
-	if err := s.temporal.SetIndex(idx); err != nil {
+func (s *IndexStorage) SetIndex(ctx context.Context, idx *index.Index) (err error) {
+	if err := s.temporal.SetIndex(ctx, idx); err != nil {
 		return err
 	}
 
@@ -33,24 +35,24 @@ func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 }
 
 // Index honors the storer.IndexStorer interface.
-func (s *IndexStorage) Index() (*index.Index, error) {
+func (s *IndexStorage) Index(ctx context.Context) (*index.Index, error) {
 	if !s.set {
-		return s.IndexStorer.Index()
+		return s.IndexStorer.Index(ctx)
 	}
 
-	return s.temporal.Index()
+	return s.temporal.Index(ctx)
 }
 
 // Commit it copies the index from the temporal storage into the base storage.
-func (s *IndexStorage) Commit() error {
+func (s *IndexStorage) Commit(ctx context.Context) error {
 	if !s.set {
 		return nil
 	}
 
-	idx, err := s.temporal.Index()
+	idx, err := s.temporal.Index(ctx)
 	if err != nil {
 		return err
 	}
 
-	return s.IndexStorer.SetIndex(idx)
+	return s.IndexStorer.SetIndex(ctx, idx)
 }

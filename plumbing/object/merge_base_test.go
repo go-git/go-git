@@ -80,6 +80,7 @@ func (s *mergeBaseSuite) SetupSuite() {
 		_ = sto.Close()
 	})
 	s.Storer = sto
+	s.t = s.T()
 }
 
 var revisionIndex = map[string]plumbing.Hash{
@@ -129,7 +130,7 @@ func (s *mergeBaseSuite) AssertMergeBase(revs, expectedRevs []string) {
 	commits, err := s.commitsFromRevs(revs)
 	s.NoError(err)
 
-	results, err := commits[0].MergeBase(commits[1])
+	results, err := commits[0].MergeBase(s.T().Context(), commits[1])
 	s.NoError(err)
 
 	expected, err := s.commitsFromRevs(expectedRevs)
@@ -149,7 +150,7 @@ func (s *mergeBaseSuite) AssertIndependents(revs, expectedRevs []string) {
 	commits, err := s.commitsFromRevs(revs)
 	s.NoError(err)
 
-	results, err := Independents(commits)
+	results, err := Independents(s.T().Context(), commits)
 	s.NoError(err)
 
 	expected, err := s.commitsFromRevs(expectedRevs)
@@ -171,7 +172,7 @@ func (s *mergeBaseSuite) AssertAncestor(revs []string, shouldBeAncestor bool) {
 	commits, err := s.commitsFromRevs(revs)
 	s.NoError(err)
 
-	isAncestor, err := commits[0].IsAncestor(commits[1])
+	isAncestor, err := commits[0].IsAncestor(s.T().Context(), commits[1])
 	s.NoError(err)
 	s.Equal(shouldBeAncestor, isAncestor)
 }

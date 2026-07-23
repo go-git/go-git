@@ -1,6 +1,8 @@
 package storer
 
 import (
+	"context"
+
 	"github.com/go-git/go-billy/v6"
 )
 
@@ -15,7 +17,7 @@ type Storer interface {
 type Initializer interface {
 	// Init performs initialization of the storer and returns the error, if
 	// any.
-	Init() error
+	Init(ctx context.Context) error
 }
 
 // FilesystemStorer is a storer that can be used to store objects and references

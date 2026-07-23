@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -127,11 +128,11 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	return p
 }
 
-func (p *Parser) storeOrCache(oh *ObjectHeader) error {
+func (p *Parser) storeOrCache(ctx context.Context, oh *ObjectHeader) error {
 	// Only need to store deltas, as the scanner already stored non-delta
 	// objects.
 	if p.storage != nil && oh.diskType.IsDelta() {
-		w, err := p.storage.RawObjectWriter(oh.Type, oh.Size)
+		w, err := p.storage.RawObjectWriter(ctx, oh.Type, oh.Size)
 		if err != nil {
 			return err
 		}
@@ -172,7 +173,7 @@ func (p *Parser) resetCache(qty int) {
 }
 
 // Parse start decoding phase of the packfile.
-func (p *Parser) Parse() (plumbing.Hash, error) {
+func (p *Parser) Parse(ctx context.Context) (plumbing.Hash, error) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
@@ -180,6 +181,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, ErrParserConsumed
 	}
 	p.parsed = true
+	p.scanner.ctx = ctx
 
 	var pendingDeltas []*ObjectHeader
 	var pendingDeltaREFs []*ObjectHeader
@@ -211,7 +213,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 				oh.content = nil
 			}
 
-			_ = p.storeOrCache(&oh)
+			_ = p.storeOrCache(ctx, &oh)
 
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
@@ -226,7 +228,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, err
 	}
 
-	if err := p.resolveDeltas(pendingDeltas, pendingDeltaREFs); err != nil {
+	if err := p.resolveDeltas(ctx, pendingDeltas, pendingDeltaREFs); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
@@ -243,7 +245,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 	return p.checksum, p.onFooter(p.checksum)
 }
 
-func (p *Parser) ensureContent(oh *ObjectHeader) error {
+func (p *Parser) ensureContent(ctx context.Context, oh *ObjectHeader) error {
 	// Skip if this object already has the correct content.
 	if oh.content != nil && oh.content.Len() == int(oh.Size) && !oh.Hash.IsZero() {
 		return nil
@@ -261,7 +263,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 
 		defer sync.PutBytesBuffer(source)
 
-		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
+		err = p.applyPatchBaseHeader(ctx, oh, source, oh.content, nil)
 	case p.scanner.seeker != nil:
 		deltaData := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(deltaData)
@@ -271,7 +273,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 			return fmt.Errorf("inflating content at offset %v: %w", oh.ContentOffset, err)
 		}
 
-		err = p.applyPatchBaseHeader(oh, deltaData, oh.content, nil)
+		err = p.applyPatchBaseHeader(ctx, oh, deltaData, oh.content, nil)
 	default:
 		return fmt.Errorf("can't ensure content: %w", plumbing.ErrObjectNotFound)
 	}
@@ -301,7 +303,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 // not match any in-pack object header is rejected as malformed input.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/builtin/index-pack.c#L1103
-func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
+func (p *Parser) resolveDeltas(ctx context.Context, ofsDeltas, refDeltas []*ObjectHeader) error {
 	// Map sizes correspond to the count of distinct parent offsets /
 	// hashes, not the count of delta entries. Real packs cluster many
 	// children under one parent (chains and wide trees), so a hint
@@ -325,7 +327,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 			if c.parent != nil {
 				continue
 			}
-			if err := p.processDelta(c); err != nil {
+			if err := p.processDelta(ctx, c); err != nil {
 				return fmt.Errorf("processing ref-delta at offset %v: %w", c.Offset, err)
 			}
 			if err := visit(c); err != nil {
@@ -336,7 +338,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 			if c.parent != nil {
 				continue
 			}
-			if err := p.processDelta(c); err != nil {
+			if err := p.processDelta(ctx, c); err != nil {
 				return fmt.Errorf("processing ofs-delta at offset %v: %w", c.Offset, err)
 			}
 			if err := visit(c); err != nil {
@@ -366,7 +368,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 		if d.parent != nil {
 			continue
 		}
-		if err := p.processDelta(d); err != nil {
+		if err := p.processDelta(ctx, d); err != nil {
 			return fmt.Errorf("processing ref-delta at offset %v: %w", d.Offset, err)
 		}
 	}
@@ -381,7 +383,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 	return nil
 }
 
-func (p *Parser) processDelta(oh *ObjectHeader) error {
+func (p *Parser) processDelta(ctx context.Context, oh *ObjectHeader) error {
 	switch oh.Type {
 	case plumbing.OFSDeltaObject:
 		pa, ok := p.cache.oiByOffset[oh.OffsetReference]
@@ -417,11 +419,11 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return err
 	}
 
-	if err := p.ensureContent(oh); err != nil {
+	if err := p.ensureContent(ctx, oh); err != nil {
 		return err
 	}
 
-	return p.storeOrCache(oh)
+	return p.storeOrCache(ctx, oh)
 }
 
 // checkDeltaChainDepth verifies that the delta chain rooted at oh
@@ -461,7 +463,7 @@ func (oh *ObjectHeader) isDeltaOnDisk() bool {
 
 // parentReader returns a [io.ReaderAt] for the decompressed contents
 // of the parent.
-func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
+func (p *Parser) parentReader(ctx context.Context, parent *ObjectHeader) (io.ReaderAt, error) {
 	if parent.content != nil && parent.content.Len() > 0 {
 		return bytes.NewReader(parent.content.Bytes()), nil
 	}
@@ -471,7 +473,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 	// it to then inflate the current object, which could go on
 	// indefinitely.
 	if p.storage != nil && parent.Hash != plumbing.ZeroHash {
-		obj, err := p.storage.EncodedObject(parent.Type, parent.Hash)
+		obj, err := p.storage.EncodedObject(ctx, parent.Type, parent.Hash)
 		if err == nil {
 			// Ensure that external references have the correct type and size.
 			parent.Type = obj.Type()
@@ -517,12 +519,12 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 	return bytes.NewReader(parent.content.Bytes()), nil
 }
 
-func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
+func (p *Parser) applyPatchBaseHeader(ctx context.Context, ota *ObjectHeader, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
 	if target == nil {
 		return fmt.Errorf("cannot apply patch against nil target")
 	}
 
-	parentContents, err := p.parentReader(ota.parent)
+	parentContents, err := p.parentReader(ctx, ota.parent)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"context"
 	"crypto"
 	"io"
 
@@ -20,7 +21,7 @@ type lazyPackfilesIter struct {
 	cur    storer.EncodedObjectIter
 }
 
-func (it *lazyPackfilesIter) Next() (plumbing.EncodedObject, error) {
+func (it *lazyPackfilesIter) Next(ctx context.Context) (plumbing.EncodedObject, error) {
 	for {
 		if it.cur == nil {
 			if len(it.hashes) == 0 {
@@ -37,7 +38,7 @@ func (it *lazyPackfilesIter) Next() (plumbing.EncodedObject, error) {
 			}
 			it.cur = sub
 		}
-		ob, err := it.cur.Next()
+		ob, err := it.cur.Next(ctx)
 		if err == io.EOF {
 			it.cur.Close()
 			it.cur = nil
@@ -51,8 +52,8 @@ func (it *lazyPackfilesIter) Next() (plumbing.EncodedObject, error) {
 	}
 }
 
-func (it *lazyPackfilesIter) ForEach(cb func(plumbing.EncodedObject) error) error {
-	return storer.ForEachIterator(it, cb)
+func (it *lazyPackfilesIter) ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error {
+	return storer.ForEachIterator(ctx, it, cb)
 }
 
 func (it *lazyPackfilesIter) Close() {
@@ -138,9 +139,9 @@ func newPackfileIter(
 	}, nil
 }
 
-func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
+func (iter *packfileIter) Next(ctx context.Context) (plumbing.EncodedObject, error) {
 	for {
-		obj, err := iter.iter.Next()
+		obj, err := iter.iter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -154,10 +155,10 @@ func (iter *packfileIter) Next() (plumbing.EncodedObject, error) {
 	}
 }
 
-func (iter *packfileIter) ForEach(cb func(plumbing.EncodedObject) error) error {
+func (iter *packfileIter) ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error {
 	defer iter.Close()
 	for {
-		o, err := iter.Next()
+		o, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil
@@ -184,7 +185,7 @@ type objectsIter struct {
 	h []plumbing.Hash
 }
 
-func (iter *objectsIter) Next() (plumbing.EncodedObject, error) {
+func (iter *objectsIter) Next(ctx context.Context) (plumbing.EncodedObject, error) {
 	if len(iter.h) == 0 {
 		return nil, io.EOF
 	}
@@ -197,16 +198,16 @@ func (iter *objectsIter) Next() (plumbing.EncodedObject, error) {
 	}
 
 	if iter.t != plumbing.AnyObject && iter.t != obj.Type() {
-		return iter.Next()
+		return iter.Next(ctx)
 	}
 
 	return obj, err
 }
 
-func (iter *objectsIter) ForEach(cb func(plumbing.EncodedObject) error) error {
+func (iter *objectsIter) ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error {
 	defer iter.Close()
 	for {
-		o, err := iter.Next()
+		o, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil

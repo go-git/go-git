@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/go-git/go-git/v6"
@@ -42,6 +43,8 @@ options:
 // Command that mimics `git merge-base --is-ancestor <baseRev> <headRev>`
 // Command that mimics `git merge-base --independent <commitRev>...`
 func main() {
+	ctx := context.Background()
+
 	if len(os.Args) == 1 {
 		helpAndExit("Returns the merge-base between two commits:", helpShortMsg, exitCodeSuccess)
 	}
@@ -78,14 +81,14 @@ func main() {
 	}
 
 	// Open a git repository from current directory
-	repo, err := git.PlainOpen(path)
+	repo, err := git.PlainOpen(ctx, path)
 	checkIfError(err, exitCodeCouldNotOpenRepository, "not in a git repository")
 	defer func() { _ = repo.Close() }()
 
 	// Get the hashes of the passed revisions
 	var hashes []*plumbing.Hash
 	for _, rev := range commitRevs {
-		hash, err := repo.ResolveRevision(plumbing.Revision(rev))
+		hash, err := repo.ResolveRevision(ctx, plumbing.Revision(rev))
 		checkIfError(err, exitCodeCouldNotParseRevision, "could not parse revision '%s'", rev)
 		hashes = append(hashes, hash)
 	}
@@ -93,13 +96,13 @@ func main() {
 	// Get the commits identified by the passed hashes
 	var commits []*object.Commit
 	for _, hash := range hashes {
-		commit, err := repo.CommitObject(*hash)
+		commit, err := repo.CommitObject(ctx, *hash)
 		checkIfError(err, exitCodeUnexpected, "could not find commit '%s'", hash.String())
 		commits = append(commits, commit)
 	}
 
 	if modeAncestor {
-		isAncestor, err := commits[0].IsAncestor(commits[1])
+		isAncestor, err := commits[0].IsAncestor(ctx, commits[1])
 		checkIfError(err, exitCodeUnexpected, "could not traverse the repository history")
 
 		if !isAncestor {
@@ -110,10 +113,10 @@ func main() {
 	}
 
 	if modeIndependent {
-		res, err = object.Independents(commits)
+		res, err = object.Independents(ctx, commits)
 		checkIfError(err, exitCodeUnexpected, "could not traverse the repository history")
 	} else {
-		res, err = commits[0].MergeBase(commits[1])
+		res, err = commits[0].MergeBase(ctx, commits[1])
 		checkIfError(err, exitCodeUnexpected, "could not traverse the repository history")
 
 		if len(res) == 0 {

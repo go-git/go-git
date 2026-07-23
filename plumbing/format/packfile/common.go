@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
@@ -27,7 +28,7 @@ const (
 
 // UpdateObjectStorage updates the storer with the objects in the given
 // packfile.
-func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
+func UpdateObjectStorage(ctx context.Context, s storer.Storer, packfile io.Reader) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -36,29 +37,30 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	}
 
 	if pw, ok := s.(storer.PackfileWriter); ok {
-		return WritePackfileToObjectStorage(pw, packfile)
+		return WritePackfileToObjectStorage(ctx, pw, packfile)
 	}
 
 	of := formatcfg.DefaultObjectFormat
 	if c, ok := s.(config.ConfigStorer); ok {
-		cfg, err := c.Config()
+		cfg, err := c.Config(ctx)
 		if err == nil {
 			of = cfg.Extensions.ObjectFormat
 		}
 	}
 
 	p := NewParser(packfile, WithStorage(s), WithObjectFormat(of))
-	_, err := p.Parse()
+	_, err := p.Parse(ctx)
 	return err
 }
 
 // WritePackfileToObjectStorage writes all the packfile objects into the given
 // object storage.
 func WritePackfileToObjectStorage(
+	ctx context.Context,
 	sw storer.PackfileWriter,
 	packfile io.Reader,
 ) (err error) {
-	w, err := sw.PackfileWriter()
+	w, err := sw.PackfileWriter(ctx)
 	if err != nil {
 		return err
 	}

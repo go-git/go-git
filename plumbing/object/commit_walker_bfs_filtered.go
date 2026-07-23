@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -63,7 +64,7 @@ type filterCommitIter struct {
 // Next returns the next commit of the CommitIter.
 // It will return io.EOF if there are no more commits to visit,
 // or an error if the history could not be traversed.
-func (w *filterCommitIter) Next() (*Commit, error) {
+func (w *filterCommitIter) Next(ctx context.Context) (*Commit, error) {
 	var commit *Commit
 	var err error
 	for {
@@ -75,7 +76,7 @@ func (w *filterCommitIter) Next() (*Commit, error) {
 		w.visited[commit.Hash] = struct{}{}
 
 		if !w.isLimit(commit) {
-			err = w.addToQueue(commit.s, commit.ParentHashes...)
+			err = w.addToQueue(ctx, commit.s, commit.ParentHashes...)
 			if err != nil {
 				return nil, w.close(err)
 			}
@@ -89,9 +90,9 @@ func (w *filterCommitIter) Next() (*Commit, error) {
 
 // ForEach runs the passed callback over each Commit returned by the CommitIter
 // until the callback returns an error or there is no more commits to traverse.
-func (w *filterCommitIter) ForEach(cb func(*Commit) error) error {
+func (w *filterCommitIter) ForEach(ctx context.Context, cb func(*Commit) error) error {
 	for {
-		commit, err := w.Next()
+		commit, err := w.Next(ctx)
 		if err == io.EOF {
 			break
 		}
@@ -156,6 +157,7 @@ func (w *filterCommitIter) popNewFromQueue() (*Commit, error) {
 // addToQueue adds the passed commits to the internal fifo queue if they weren't seen
 // or returns an error if the passed hashes could not be used to get valid commits
 func (w *filterCommitIter) addToQueue(
+	ctx context.Context,
 	store storer.EncodedObjectStorer,
 	hashes ...plumbing.Hash,
 ) error {
@@ -164,7 +166,7 @@ func (w *filterCommitIter) addToQueue(
 			continue
 		}
 
-		commit, err := GetCommit(store, hash)
+		commit, err := GetCommit(ctx, store, hash)
 		if err != nil {
 			return err
 		}

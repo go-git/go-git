@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"context"
 	"crypto"
 	"errors"
 	"fmt"
@@ -73,7 +74,9 @@ func (w *PackWriter) buildIndex() {
 		packfile.WithScannerObservers(w.writer),
 		packfile.WithObjectFormat(w.format))
 
-	h, err := w.parser.Parse()
+	// TODO(ctx): dotgit does not thread contexts yet; the index build
+	// goroutine runs detached from any caller context.
+	h, err := w.parser.Parse(context.Background())
 	if err != nil {
 		w.result <- err
 		return

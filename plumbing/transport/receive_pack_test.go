@@ -51,7 +51,7 @@ func deleteCmd(ref plumbing.ReferenceName, hash plumbing.Hash) *packp.Command {
 func seedRef(t *testing.T, ref plumbing.ReferenceName, hash plumbing.Hash) storage.Storer {
 	t.Helper()
 	st := memory.NewStorage()
-	require.NoError(t, st.SetReference(plumbing.NewHashReference(ref, hash)))
+	require.NoError(t, st.SetReference(t.Context(), plumbing.NewHashReference(ref, hash)))
 	return st
 }
 
@@ -75,7 +75,7 @@ func TestReceivePackNilHooksDeleteRef(t *testing.T) {
 	assert.Contains(t, out.String(), "unpack ok")
 	assert.Contains(t, out.String(), "ok refs/heads/main")
 
-	_, err = st.Reference(ref)
+	_, err = st.Reference(t.Context(), ref)
 	assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 }
 
@@ -151,7 +151,7 @@ func TestReceivePackPreReceiveRejectsRef(t *testing.T) {
 	assert.Contains(t, out.String(), "ng refs/heads/main policy blocks main")
 	assert.False(t, postReceiveCalled, "PostReceive must not run when PreReceive rejects")
 
-	got, err := st.Reference(ref)
+	got, err := st.Reference(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Equal(t, hash, got.Hash(), "ref must not move when PreReceive rejects")
 }
@@ -178,7 +178,7 @@ func TestReceivePackPostReceiveRunsAfterUpdate(t *testing.T) {
 			Hooks: ReceivePackHooks{
 				PostReceive: func(_ context.Context, i *PostReceiveInfo) error {
 					info = i
-					_, refErr := i.Storer.Reference(ref)
+					_, refErr := i.Storer.Reference(t.Context(), ref)
 					refMissing = errors.Is(refErr, plumbing.ErrReferenceNotFound)
 					return nil
 				},

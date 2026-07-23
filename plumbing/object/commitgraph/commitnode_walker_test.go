@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestCommitNodeIter(t *testing.T) {
 
 	f := fixtures.ByTag("commit-graph-chain-2").One()
 
-	storer := newUnpackRepository(f)
+	storer := newUnpackRepository(t.Context(), f)
 	defer func() { _ = storer.Close() }()
 
 	index, err := commitgraph.OpenChainOrFileIndex(storer.Filesystem())
@@ -27,7 +28,7 @@ func TestCommitNodeIter(t *testing.T) {
 
 	nodeIndex := NewGraphCommitNodeIndex(index, storer)
 
-	head, err := nodeIndex.Get(plumbing.NewHash("ec6f456c0e8c7058a29611429965aa05c190b54b"))
+	head, err := nodeIndex.Get(t.Context(), plumbing.NewHash("ec6f456c0e8c7058a29611429965aa05c190b54b"))
 	assert.NoError(t, err)
 
 	testTopoOrder(t, head)
@@ -35,7 +36,7 @@ func TestCommitNodeIter(t *testing.T) {
 	testAuthorDateOrder(t, head)
 }
 
-func newUnpackRepository(f *fixtures.Fixture) *filesystem.Storage {
+func newUnpackRepository(ctx context.Context, f *fixtures.Fixture) *filesystem.Storage {
 	dotgit, err := f.DotGit()
 	if err != nil {
 		panic(err)
@@ -46,7 +47,7 @@ func newUnpackRepository(f *fixtures.Fixture) *filesystem.Storage {
 		panic(err)
 	}
 	defer p.Close()
-	packfile.UpdateObjectStorage(storer, p)
+	packfile.UpdateObjectStorage(ctx, storer, p)
 	return storer
 }
 
@@ -58,7 +59,7 @@ func testTopoOrder(t *testing.T, head CommitNode) {
 	)
 
 	var commits []string
-	iter.ForEach(func(c CommitNode) error {
+	iter.ForEach(t.Context(), func(c CommitNode) error {
 		commits = append(commits, c.ID().String())
 		return nil
 	})
@@ -111,7 +112,7 @@ func testDateOrder(t *testing.T, head CommitNode) {
 	)
 
 	var commits []string
-	iter.ForEach(func(c CommitNode) error {
+	iter.ForEach(t.Context(), func(c CommitNode) error {
 		commits = append(commits, c.ID().String())
 		return nil
 	})
@@ -158,13 +159,14 @@ c088fd6a7e1a38e9d5a9815265cb575bb08d08ff
 
 func testAuthorDateOrder(t *testing.T, head CommitNode) {
 	iter := NewCommitNodeIterAuthorDateOrder(
+		t.Context(),
 		head,
 		nil,
 		nil,
 	)
 
 	var commits []string
-	iter.ForEach(func(c CommitNode) error {
+	iter.ForEach(t.Context(), func(c CommitNode) error {
 		commits = append(commits, c.ID().String())
 		return nil
 	})

@@ -2,6 +2,7 @@ package object
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -87,9 +88,9 @@ func NewFileIter(s storer.EncodedObjectStorer, t *Tree) *FileIter {
 
 // Next moves the iterator to the next file and returns a pointer to it. If
 // there are no more files, it returns io.EOF.
-func (iter *FileIter) Next() (*File, error) {
+func (iter *FileIter) Next(ctx context.Context) (*File, error) {
 	for {
-		name, entry, err := iter.w.Next()
+		name, entry, err := iter.w.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +99,7 @@ func (iter *FileIter) Next() (*File, error) {
 			continue
 		}
 
-		blob, err := GetBlob(iter.s, entry.Hash)
+		blob, err := GetBlob(ctx, iter.s, entry.Hash)
 		if err != nil {
 			return nil, err
 		}
@@ -110,11 +111,11 @@ func (iter *FileIter) Next() (*File, error) {
 // ForEach call the cb function for each file contained in this iter until
 // an error happens or the end of the iter is reached. If plumbing.ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *FileIter) ForEach(cb func(*File) error) error {
+func (iter *FileIter) ForEach(ctx context.Context, cb func(*File) error) error {
 	defer iter.Close()
 
 	for {
-		f, err := iter.Next()
+		f, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil

@@ -134,12 +134,12 @@ func UploadArchive(
 		return muxError(mux, w, fmt.Errorf("no tree-ish specified"))
 	}
 
-	tree, commitHash, commitTime, err := archive.ResolveTreeish(st, treeish, allowUnreachable)
+	tree, commitHash, commitTime, err := archive.ResolveTreeish(ctx, st, treeish, allowUnreachable)
 	if err != nil {
 		return muxError(mux, w, err)
 	}
 
-	if err = archive.WriteArchive(st, mux, tree, commitHash, commitTime, format, prefix, paths); err != nil {
+	if err = archive.WriteArchive(ctx, st, mux, tree, commitHash, commitTime, format, prefix, paths); err != nil {
 		return muxError(mux, w, err)
 	}
 

@@ -3,6 +3,7 @@ package packfile
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto"
 	"encoding/hex"
 	"errors"
@@ -182,6 +183,11 @@ type Scanner struct {
 	// storage is optional, and when set is used to store full objects found.
 	// Note that delta objects are not stored.
 	storage storer.EncodedObjectStorer
+	// ctx is the context of the in-progress scan operation. Scan is a
+	// state machine driven step-by-step by callers (io.Closer-style, no
+	// per-call context parameter), so the operation context is carried
+	// here; Parser.Parse sets it for the duration of the parse.
+	ctx context.Context
 
 	*scannerReader
 	rbuf *bufio.Reader
@@ -195,6 +201,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	packhash := gogithash.New(crypto.SHA1)
 
 	r := &Scanner{
+		ctx:      context.Background(),
 		objIndex: -1,
 		hasher:   plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
 		crc:      crc,
@@ -507,7 +514,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		r.hasher.Reset(oh.Type, oh.Size)
 		mw = r.hasher
 		if r.storage != nil {
-			w, err := r.storage.RawObjectWriter(oh.Type, oh.Size)
+			w, err := r.storage.RawObjectWriter(r.ctx, oh.Type, oh.Size)
 			if err != nil {
 				return nil, err
 			}

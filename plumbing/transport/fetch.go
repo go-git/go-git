@@ -36,7 +36,7 @@ func FetchPack(
 		reader = demuxer
 	}
 
-	if err := packfile.UpdateObjectStorage(st, reader); err != nil {
+	if err := packfile.UpdateObjectStorage(ctx, st, reader); err != nil {
 		return err
 	}
 
@@ -45,7 +45,7 @@ func FetchPack(
 	}
 
 	if shallowInfo != nil {
-		if err := updateShallow(st, shallowInfo); err != nil {
+		if err := updateShallow(ctx, st, shallowInfo); err != nil {
 			return err
 		}
 	}
@@ -53,8 +53,8 @@ func FetchPack(
 	return nil
 }
 
-func updateShallow(st storage.Storer, shallowInfo *packp.ShallowUpdate) error {
-	shallows, err := st.Shallow()
+func updateShallow(ctx context.Context, st storage.Storer, shallowInfo *packp.ShallowUpdate) error {
+	shallows, err := st.Shallow(ctx)
 	if err != nil {
 		return err
 	}
@@ -78,5 +78,5 @@ outer:
 		}
 	}
 
-	return st.SetShallow(shallows)
+	return st.SetShallow(ctx, shallows)
 }

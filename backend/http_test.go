@@ -121,7 +121,7 @@ func (l *tagLoader) Load(_ *url.URL) (storage.Storer, error) {
 	// do not add close here otherwise you will either double close, or hide a missing close
 
 	if l.objectFormat != "" {
-		cfg, err := st.Config()
+		cfg, err := st.Config(l.Context())
 		require.NoError(l.TB, err)
 
 		want := config.ObjectFormat(l.objectFormat)

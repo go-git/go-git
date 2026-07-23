@@ -72,12 +72,12 @@ func (s *BlobsSuite) TestBlobDecodeEncodeIdempotent() {
 }
 
 func (s *BlobsSuite) TestBlobIter() {
-	encIter, err := s.Storer.IterEncodedObjects(plumbing.BlobObject)
+	encIter, err := s.Storer.IterEncodedObjects(s.T().Context(), plumbing.BlobObject)
 	s.NoError(err)
 	iter := NewBlobIter(s.Storer, encIter)
 
 	blobs := []*Blob{}
-	iter.ForEach(func(b *Blob) error {
+	iter.ForEach(s.T().Context(), func(b *Blob) error {
 		blobs = append(blobs, b)
 		return nil
 	})
@@ -85,13 +85,13 @@ func (s *BlobsSuite) TestBlobIter() {
 	s.True(len(blobs) > 0)
 	iter.Close()
 
-	encIter, err = s.Storer.IterEncodedObjects(plumbing.BlobObject)
+	encIter, err = s.Storer.IterEncodedObjects(s.T().Context(), plumbing.BlobObject)
 	s.NoError(err)
 	iter = NewBlobIter(s.Storer, encIter)
 
 	i := 0
 	for {
-		b, err := iter.Next()
+		b, err := iter.Next(s.T().Context())
 		if err == io.EOF {
 			break
 		}

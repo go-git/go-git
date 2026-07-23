@@ -27,24 +27,24 @@ func (s *ObjectSuite) TestHasEncodedObject() {
 	commit := base.NewEncodedObject()
 	commit.SetType(plumbing.CommitObject)
 
-	ch, err := base.SetEncodedObject(commit)
+	ch, err := base.SetEncodedObject(s.T().Context(), commit)
 	s.False(ch.IsZero())
 	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
-	th, err := os.SetEncodedObject(tree)
+	th, err := os.SetEncodedObject(s.T().Context(), tree)
 	s.False(th.IsZero())
 	s.NoError(err)
 
-	err = os.HasEncodedObject(th)
+	err = os.HasEncodedObject(s.T().Context(), th)
 	s.NoError(err)
 
-	err = os.HasEncodedObject(ch)
+	err = os.HasEncodedObject(s.T().Context(), ch)
 	s.NoError(err)
 
-	err = base.HasEncodedObject(th)
+	err = base.HasEncodedObject(s.T().Context(), th)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
@@ -57,37 +57,37 @@ func (s *ObjectSuite) TestEncodedObjectAndEncodedObjectSize() {
 	commit := base.NewEncodedObject()
 	commit.SetType(plumbing.CommitObject)
 
-	ch, err := base.SetEncodedObject(commit)
+	ch, err := base.SetEncodedObject(s.T().Context(), commit)
 	s.False(ch.IsZero())
 	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
-	th, err := os.SetEncodedObject(tree)
+	th, err := os.SetEncodedObject(s.T().Context(), tree)
 	s.False(th.IsZero())
 	s.NoError(err)
 
-	otree, err := os.EncodedObject(plumbing.TreeObject, th)
+	otree, err := os.EncodedObject(s.T().Context(), plumbing.TreeObject, th)
 	s.NoError(err)
 	s.Equal(tree.Hash(), otree.Hash())
 
-	treeSz, err := os.EncodedObjectSize(th)
+	treeSz, err := os.EncodedObjectSize(s.T().Context(), th)
 	s.NoError(err)
 	s.Equal(int64(0), treeSz)
 
-	ocommit, err := os.EncodedObject(plumbing.CommitObject, ch)
+	ocommit, err := os.EncodedObject(s.T().Context(), plumbing.CommitObject, ch)
 	s.NoError(err)
 	s.Equal(commit.Hash(), ocommit.Hash())
 
-	commitSz, err := os.EncodedObjectSize(ch)
+	commitSz, err := os.EncodedObjectSize(s.T().Context(), ch)
 	s.NoError(err)
 	s.Equal(int64(0), commitSz)
 
-	_, err = base.EncodedObject(plumbing.TreeObject, th)
+	_, err = base.EncodedObject(s.T().Context(), plumbing.TreeObject, th)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
-	_, err = base.EncodedObjectSize(th)
+	_, err = base.EncodedObjectSize(s.T().Context(), th)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
@@ -100,22 +100,22 @@ func (s *ObjectSuite) TestIterEncodedObjects() {
 	commit := base.NewEncodedObject()
 	commit.SetType(plumbing.CommitObject)
 
-	ch, err := base.SetEncodedObject(commit)
+	ch, err := base.SetEncodedObject(s.T().Context(), commit)
 	s.False(ch.IsZero())
 	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
-	th, err := os.SetEncodedObject(tree)
+	th, err := os.SetEncodedObject(s.T().Context(), tree)
 	s.False(th.IsZero())
 	s.NoError(err)
 
-	iter, err := os.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := os.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 	s.NoError(err)
 
 	var hashes []plumbing.Hash
-	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+	err = iter.ForEach(s.T().Context(), func(obj plumbing.EncodedObject) error {
 		hashes = append(hashes, obj.Hash())
 		return nil
 	})
@@ -135,23 +135,23 @@ func (s *ObjectSuite) TestCommit() {
 	commit := base.NewEncodedObject()
 	commit.SetType(plumbing.CommitObject)
 
-	_, err := os.SetEncodedObject(commit)
+	_, err := os.SetEncodedObject(s.T().Context(), commit)
 	s.NoError(err)
 
 	tree := base.NewEncodedObject()
 	tree.SetType(plumbing.TreeObject)
 
-	_, err = os.SetEncodedObject(tree)
+	_, err = os.SetEncodedObject(s.T().Context(), tree)
 	s.NoError(err)
 
-	err = os.Commit()
+	err = os.Commit(s.T().Context())
 	s.NoError(err)
 
-	iter, err := base.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := base.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 	s.NoError(err)
 
 	var hashes []plumbing.Hash
-	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+	err = iter.ForEach(s.T().Context(), func(obj plumbing.EncodedObject) error {
 		hashes = append(hashes, obj.Hash())
 		return nil
 	})

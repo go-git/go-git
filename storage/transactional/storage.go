@@ -1,6 +1,7 @@
 package transactional
 
 import (
+	"context"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -17,7 +18,7 @@ import (
 // not considered stable nor production ready.
 type Storage interface {
 	storage.Storer
-	Commit() error
+	Commit(ctx context.Context) error
 }
 
 // basic implements the Storage interface.
@@ -92,13 +93,13 @@ func NewStorage(base, temporal storage.Storer) Storage {
 }
 
 // Module it honors the storage.ModuleStorer interface.
-func (s *basic) Module(name string) (storage.Storer, error) {
-	base, err := s.s.Module(name)
+func (s *basic) Module(ctx context.Context, name string) (storage.Storer, error) {
+	base, err := s.s.Module(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	temporal, err := s.temporal.Module(name)
+	temporal, err := s.temporal.Module(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -107,21 +108,23 @@ func (s *basic) Module(name string) (storage.Storer, error) {
 }
 
 // Commit it copies the content of the temporal storage into the base storage.
-func (s *basic) Commit() error {
-	for _, c := range []interface{ Commit() error }{
+func (s *basic) Commit(ctx context.Context) error {
+	for _, c := range []interface {
+		Commit(ctx context.Context) error
+	}{
 		s.ObjectStorage,
 		s.ReferenceStorage,
 		s.IndexStorage,
 		s.ShallowStorage,
 		s.ConfigStorage,
 	} {
-		if err := c.Commit(); err != nil {
+		if err := c.Commit(ctx); err != nil {
 			return err
 		}
 	}
 
 	if s.reflog != nil {
-		if err := s.reflog.Commit(); err != nil {
+		if err := s.reflog.Commit(ctx); err != nil {
 			return err
 		}
 	}
@@ -144,23 +147,23 @@ func (s *basic) Close() error {
 }
 
 // PackfileWriter honors storage.PackfileWriter.
-func (s *packageWriter) PackfileWriter() (io.WriteCloser, error) {
-	return s.pw.PackfileWriter()
+func (s *packageWriter) PackfileWriter(ctx context.Context) (io.WriteCloser, error) {
+	return s.pw.PackfileWriter(ctx)
 }
 
-func (s *reflogBasic) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
-	return s.reflog.Reflog(name)
+func (s *reflogBasic) Reflog(ctx context.Context, name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+	return s.reflog.Reflog(ctx, name)
 }
 
-func (s *reflogBasic) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
-	return s.reflog.AppendReflog(name, entry)
+func (s *reflogBasic) AppendReflog(ctx context.Context, name plumbing.ReferenceName, entry *reflog.Entry) error {
+	return s.reflog.AppendReflog(ctx, name, entry)
 }
 
-func (s *reflogBasic) DeleteReflog(name plumbing.ReferenceName) error {
-	return s.reflog.DeleteReflog(name)
+func (s *reflogBasic) DeleteReflog(ctx context.Context, name plumbing.ReferenceName) error {
+	return s.reflog.DeleteReflog(ctx, name)
 }
 
 // PackfileWriter honors storer.PackfileWriter.
-func (s *reflogPackageWriter) PackfileWriter() (io.WriteCloser, error) {
-	return s.pw.PackfileWriter()
+func (s *reflogPackageWriter) PackfileWriter(ctx context.Context) (io.WriteCloser, error) {
+	return s.pw.PackfileWriter(ctx)
 }

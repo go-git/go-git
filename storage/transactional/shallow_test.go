@@ -27,18 +27,18 @@ func (s *ShallowSuite) TestShallow() {
 	commitA := plumbing.NewHash("bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	commitB := plumbing.NewHash("aa9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
-	err := base.SetShallow([]plumbing.Hash{commitA})
+	err := base.SetShallow(s.T().Context(), []plumbing.Hash{commitA})
 	s.NoError(err)
 
-	err = rs.SetShallow([]plumbing.Hash{commitB})
+	err = rs.SetShallow(s.T().Context(), []plumbing.Hash{commitB})
 	s.NoError(err)
 
-	commits, err := rs.Shallow()
+	commits, err := rs.Shallow(s.T().Context())
 	s.NoError(err)
 	s.Len(commits, 1)
 	s.Equal(commitB, commits[0])
 
-	commits, err = base.Shallow()
+	commits, err = base.Shallow(s.T().Context())
 	s.NoError(err)
 	s.Len(commits, 1)
 	s.Equal(commitA, commits[0])
@@ -53,17 +53,17 @@ func (s *ShallowSuite) TestCommit() {
 	commitA := plumbing.NewHash("bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	commitB := plumbing.NewHash("aa9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
-	s.Nil(base.SetShallow([]plumbing.Hash{commitA}))
-	s.Nil(rs.SetShallow([]plumbing.Hash{commitB}))
+	s.Nil(base.SetShallow(s.T().Context(), []plumbing.Hash{commitA}))
+	s.Nil(rs.SetShallow(s.T().Context(), []plumbing.Hash{commitB}))
 
-	s.Nil(rs.Commit())
+	s.Nil(rs.Commit(s.T().Context()))
 
-	commits, err := rs.Shallow()
+	commits, err := rs.Shallow(s.T().Context())
 	s.NoError(err)
 	s.Len(commits, 1)
 	s.Equal(commitB, commits[0])
 
-	commits, err = base.Shallow()
+	commits, err = base.Shallow(s.T().Context())
 	s.NoError(err)
 	s.Len(commits, 1)
 	s.Equal(commitB, commits[0])

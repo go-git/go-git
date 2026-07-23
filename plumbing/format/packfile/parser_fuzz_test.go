@@ -3,6 +3,7 @@ package packfile
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"crypto/sha1"
 	"encoding/binary"
 	"io"
@@ -91,6 +92,8 @@ func FuzzParser(f *testing.F) {
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		p := NewParser(bytes.NewReader(data))
-		_, _ = p.Parse()
+		// context.Background instead of t.Context: OSS-Fuzz builds fuzz
+		// targets with a shim testing.T that has no Context method.
+		_, _ = p.Parse(context.Background())
 	})
 }

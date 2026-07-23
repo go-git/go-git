@@ -2,6 +2,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -13,12 +14,12 @@ import (
 )
 
 // ExpandRef resolves a reference name using git ref parsing rules.
-func ExpandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
+func ExpandRef(ctx context.Context, s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
 	// For improving troubleshooting, this preserves the error for the provided `ref`,
 	// and returns the error for that specific ref in case all parse rules fails.
 	var ret error
 	for _, rule := range plumbing.RefRevParseRules {
-		resolvedRef, err := storer.ResolveReference(s, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
+		resolvedRef, err := storer.ResolveReference(ctx, s, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
 
 		if err == nil {
 			return resolvedRef, nil
@@ -34,14 +35,14 @@ func ExpandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.
 // It generates a list of available refs for the repository.
 // Used by git http transport (dumb), for more information refer to:
 // https://git-scm.com/book/id/v2/Git-Internals-Transfer-Protocols#_the_dumb_protocol
-func WriteInfoRefs(w io.Writer, s storage.Storer) error {
-	refsIter, err := s.IterReferences()
+func WriteInfoRefs(ctx context.Context, w io.Writer, s storage.Storer) error {
+	refsIter, err := s.IterReferences(ctx)
 	if err != nil {
 		return err
 	}
 
 	var refs []*plumbing.Reference
-	if err := refsIter.ForEach(func(ref *plumbing.Reference) error {
+	if err := refsIter.ForEach(ctx, func(ref *plumbing.Reference) error {
 		refs = append(refs, ref)
 		return nil
 	}); err != nil {
@@ -57,7 +58,7 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 			if name == plumbing.HEAD {
 				continue
 			}
-			ref, err := s.Reference(ref.Target())
+			ref, err := s.Reference(ctx, ref.Target())
 			if err != nil {
 				return err
 			}
@@ -69,7 +70,7 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 				return fmt.Errorf("writing info reference: %w", err)
 			}
 			if name.IsTag() {
-				tag, err := object.GetTag(s, hash)
+				tag, err := object.GetTag(ctx, s, hash)
 				if err == nil {
 					if _, err := fmt.Fprintf(w, "%s\t%s^{}\n", tag.Target, name); err != nil {
 						return fmt.Errorf("writing info tag reference: %w", err)
@@ -86,8 +87,8 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 // It generates a list of available packs for the repository.
 // Used by git http transport (dumb), for more information refer to:
 // https://git-scm.com/book/id/v2/Git-Internals-Transfer-Protocols#_the_dumb_protocol
-func WriteObjectsInfoPacks(w io.Writer, s storer.PackedObjectStorer) error {
-	packs, err := s.ObjectPacks()
+func WriteObjectsInfoPacks(ctx context.Context, w io.Writer, s storer.PackedObjectStorer) error {
+	packs, err := s.ObjectPacks(ctx)
 	if err != nil {
 		return err
 	}

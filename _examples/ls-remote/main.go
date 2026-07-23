@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -12,6 +13,8 @@ import (
 
 // Retrieve remote tags without cloning repository
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>")
 	url := os.Args[1]
 
@@ -26,7 +29,7 @@ func main() {
 	log.Print("Fetching tags...")
 
 	// We can then use every Remote functions to retrieve wanted information
-	refs, err := rem.List(&git.ListOptions{
+	refs, err := rem.List(ctx, &git.ListOptions{
 		// Returns all references, including peeled references.
 		PeelingOption: git.AppendPeeled,
 	})

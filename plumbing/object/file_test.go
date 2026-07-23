@@ -61,16 +61,16 @@ func (s *FileSuite) TestIter() {
 		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
-		commit, err := GetCommit(sto, h)
+		commit, err := GetCommit(s.T().Context(), sto, h)
 		s.NoError(err, fmt.Sprintf("subtest %d: %v (%s)", i, err, t.commit))
 
-		tree, err := commit.Tree()
+		tree, err := commit.Tree(s.T().Context())
 		s.NoError(err)
 
 		iter := NewFileIter(sto, tree)
 		for k := 0; k < len(t.files); k++ {
 			exp := t.files[k]
-			file, err := iter.Next()
+			file, err := iter.Next(s.T().Context())
 			s.NoError(err, fmt.Sprintf("subtest %d, iter %d, err=%v", i, k, err))
 			s.Equal(filemode.Regular, file.Mode)
 			s.False(file.Hash.IsZero())
@@ -78,7 +78,7 @@ func (s *FileSuite) TestIter() {
 			s.Equal(exp.Name, file.Name, fmt.Sprintf("subtest %d, iter %d, name=%s, expected=%s", i, k, file.Name, exp.Hash))
 			s.Equal(exp.Hash, file.Hash.String(), fmt.Sprintf("subtest %d, iter %d, hash=%v, expected=%s", i, k, file.Hash.String(), exp.Hash))
 		}
-		_, err = iter.Next()
+		_, err = iter.Next(s.T().Context())
 		s.ErrorIs(err, io.EOF)
 	}
 }
@@ -116,6 +116,7 @@ hs_err_pid*
 	},
 }
 
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *FileSuite) TestContents() {
 	for i, t := range contentsTests {
 		f := fixtures.ByURL(t.repo).One()
@@ -125,10 +126,10 @@ func (s *FileSuite) TestContents() {
 		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
-		commit, err := GetCommit(sto, h)
+		commit, err := GetCommit(s.T().Context(), sto, h)
 		s.NoError(err, fmt.Sprintf("subtest %d: %v (%s)", i, err, t.commit))
 
-		file, err := commit.File(t.path)
+		file, err := commit.File(s.T().Context(), t.path)
 		s.NoError(err)
 		content, err := file.Contents()
 		s.NoError(err)
@@ -172,6 +173,7 @@ var linesTests = []struct {
 	},
 }
 
+//nolint:dupl // intentional parallel structure with its sibling test
 func (s *FileSuite) TestLines() {
 	for i, t := range linesTests {
 		f := fixtures.ByURL(t.repo).One()
@@ -181,10 +183,10 @@ func (s *FileSuite) TestLines() {
 		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
-		commit, err := GetCommit(sto, h)
+		commit, err := GetCommit(s.T().Context(), sto, h)
 		s.NoError(err, fmt.Sprintf("subtest %d: %v (%s)", i, err, t.commit))
 
-		file, err := commit.File(t.path)
+		file, err := commit.File(s.T().Context(), t.path)
 		s.NoError(err)
 		lines, err := file.Lines()
 		s.NoError(err)
@@ -218,15 +220,15 @@ func (s *FileSuite) TestIgnoreEmptyDirEntries() {
 		defer func() { _ = sto.Close() }()
 
 		h := plumbing.NewHash(t.commit)
-		commit, err := GetCommit(sto, h)
+		commit, err := GetCommit(s.T().Context(), sto, h)
 		s.NoError(err, fmt.Sprintf("subtest %d: %v (%s)", i, err, t.commit))
 
-		tree, err := commit.Tree()
+		tree, err := commit.Tree(s.T().Context())
 		s.NoError(err)
 
 		iter := tree.Files()
 		defer iter.Close()
-		for file, err := iter.Next(); err == nil; file, err = iter.Next() {
+		for file, err := iter.Next(s.T().Context()); err == nil; file, err = iter.Next(s.T().Context()) {
 			_, _ = file.Contents()
 			// this would probably panic if we are not ignoring empty dirs
 		}
@@ -235,10 +237,10 @@ func (s *FileSuite) TestIgnoreEmptyDirEntries() {
 
 func (s *FileSuite) TestFileIter() {
 	hash := plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea")
-	commit, err := GetCommit(s.Storer, hash)
+	commit, err := GetCommit(s.T().Context(), s.Storer, hash)
 	s.NoError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	expected := []string{
@@ -250,7 +252,7 @@ func (s *FileSuite) TestFileIter() {
 
 	var count int
 	i := tree.Files()
-	i.ForEach(func(f *File) error {
+	i.ForEach(s.T().Context(), func(f *File) error {
 		s.Equal(expected[count], f.Name)
 		count++
 		return nil
@@ -260,7 +262,7 @@ func (s *FileSuite) TestFileIter() {
 
 	count = 0
 	i = tree.Files()
-	i.ForEach(func(_ *File) error {
+	i.ForEach(s.T().Context(), func(_ *File) error {
 		count++
 		return storer.ErrStop
 	})
@@ -275,10 +277,10 @@ func (s *FileSuite) TestFileIterSubmodule() {
 	defer func() { _ = st.Close() }()
 
 	hash := plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4")
-	commit, err := GetCommit(st, hash)
+	commit, err := GetCommit(s.T().Context(), st, hash)
 	s.NoError(err)
 
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(s.T().Context())
 	s.NoError(err)
 
 	expected := []string{
@@ -288,7 +290,7 @@ func (s *FileSuite) TestFileIterSubmodule() {
 
 	var count int
 	i := tree.Files()
-	i.ForEach(func(f *File) error {
+	i.ForEach(s.T().Context(), func(f *File) error {
 		s.Equal(expected[count], f.Name)
 		count++
 		return nil

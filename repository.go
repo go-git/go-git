@@ -141,7 +141,7 @@ func withPartialInit() InitOption {
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
 // the given storer is not empty ErrTargetDirNotEmpty is returned
-func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
+func Init(ctx context.Context, s storage.Storer, opts ...InitOption) (*Repository, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -156,7 +156,7 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 		}
 	}
 
-	if err := initStorer(s); err != nil {
+	if err := initStorer(ctx, s); err != nil {
 		if closer, ok := s.(io.Closer); ok {
 			_ = closer.Close()
 		}
@@ -171,7 +171,7 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	r := newRepository(s, options.workTree)
-	_, err := r.Reference(plumbing.HEAD, false)
+	_, err := r.Reference(ctx, plumbing.HEAD, false)
 	switch err {
 	case plumbing.ErrReferenceNotFound:
 	case nil:
@@ -183,29 +183,29 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	if options.partialInit {
-		return r.setInvalidHEAD()
+		return r.setInvalidHEAD(ctx)
 	}
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
-	if err := s.SetReference(h); err != nil {
+	if err := s.SetReference(ctx, h); err != nil {
 		_ = r.Close()
 		return nil, err
 	}
 
-	return r, r.setWorktreeAndStoragePaths()
+	return r, r.setWorktreeAndStoragePaths(ctx)
 }
 
-func initStorer(s storer.Storer) error {
+func initStorer(ctx context.Context, s storer.Storer) error {
 	if i, ok := s.(storer.Initializer); ok {
-		return i.Init()
+		return i.Init(ctx)
 	}
 
 	return nil
 }
 
-func (r *Repository) setWorktreeAndStoragePaths() error {
+func (r *Repository) setWorktreeAndStoragePaths(ctx context.Context) error {
 	if r.wt == nil {
-		_ = r.setIsBare(true)
+		_ = r.setIsBare(ctx, true)
 		return nil
 	}
 
@@ -224,7 +224,7 @@ func (r *Repository) setWorktreeAndStoragePaths() error {
 		return err
 	}
 
-	return setConfigWorktree(r, r.wt, fs.Filesystem())
+	return setConfigWorktree(ctx, r, r.wt, fs.Filesystem())
 }
 
 func createDotGitFile(worktree, storage billy.Filesystem) error {
@@ -248,7 +248,7 @@ func createDotGitFile(worktree, storage billy.Filesystem) error {
 	return err
 }
 
-func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error {
+func setConfigWorktree(ctx context.Context, r *Repository, worktree, storage billy.Filesystem) error {
 	path, err := filepath.Rel(storage.Root(), worktree.Root())
 	if err != nil {
 		path = worktree.Root()
@@ -259,13 +259,13 @@ func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error 
 		return nil
 	}
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return err
 	}
 
 	cfg.Core.Worktree = path
-	return r.Storer.SetConfig(cfg)
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
 // Open opens a git repository using the given Storer and worktree filesystem,
@@ -273,7 +273,7 @@ func setConfigWorktree(r *Repository, worktree, storage billy.Filesystem) error 
 // The worktree can be nil when the repository being opened is bare, if the
 // repository is a normal one (not bare) and worktree is nil the err
 // ErrWorktreeNotProvided is returned
-func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
+func Open(ctx context.Context, s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -281,12 +281,12 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		}()
 	}
 
-	_, err := s.Reference(plumbing.HEAD)
+	_, err := s.Reference(ctx, plumbing.HEAD)
 	if err == plumbing.ErrReferenceNotFound {
 		return nil, ErrRepositoryNotExists
 	}
 
-	cfg, err := s.Config()
+	cfg, err := s.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -302,21 +302,13 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 // Clone a repository into the given Storer and worktree Filesystem with the
 // given options, if worktree is nil a bare repository is created. If the given
 // storer is not empty ErrTargetDirNotEmpty is returned.
-func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
-	return CloneContext(context.Background(), s, worktree, o)
-}
-
-// CloneContext a repository into the given Storer and worktree Filesystem with
-// the given options, if worktree is nil a bare repository is created. If the
-// given storer is not empty ErrTargetDirNotEmpty is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func CloneContext(
+// operation is complete, an error is returned.
+func Clone(
 	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
 ) (*Repository, error) {
-	r, err := Init(s, withPartialInit())
+	r, err := Init(ctx, s, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +324,7 @@ func CloneContext(
 // PlainInit create an empty git repository at the given path. isBare defines
 // if the repository will have worktree (non-bare) or not (bare), if the path
 // is not empty ErrTargetDirNotEmpty is returned.
-func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, error) {
+func PlainInit(ctx context.Context, path string, isBare bool, options ...InitOption) (*Repository, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -360,7 +352,7 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	if isBare {
 		dot = osfs.New(path, osfs.WithBoundOS())
 		initFn = func(s *filesystem.Storage) (*Repository, error) {
-			return Init(s, options...)
+			return Init(ctx, s, options...)
 		}
 	} else {
 		wt = osfs.New(path, osfs.WithBoundOS())
@@ -369,7 +361,7 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 			oo := make([]InitOption, 0, 1+len(options))
 			oo = append(oo, WithWorkTree(wt))
 			oo = append(oo, options...)
-			return Init(s, oo...)
+			return Init(ctx, s, oo...)
 		}
 	}
 	s := filesystem.NewStorageWithOptions(dot, cache.NewObjectLRUDefault(), filesystem.Options{
@@ -381,16 +373,16 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	}
 
 	if o.partialInit {
-		return r.setInvalidHEAD()
+		return r.setInvalidHEAD(ctx)
 	}
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		_ = r.Close()
 		return nil, err
 	}
 
-	err = r.Storer.SetConfig(cfg)
+	err = r.Storer.SetConfig(ctx, cfg)
 	if err != nil {
 		_ = r.Close()
 		return nil, err
@@ -408,10 +400,10 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 //     repository - regardless of its ObjectFormat being set explicitly or not.
 //
 // https://github.com/git/git/blob/ab380cb80b0727f7f2d7f6b17592ae6783e9820c/builtin/clone.c#L1216C60-L1216C68
-func (r *Repository) setInvalidHEAD() (*Repository, error) {
+func (r *Repository) setInvalidHEAD(ctx context.Context) (*Repository, error) {
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Invalid)
 
-	err := r.Storer.SetReference(h)
+	err := r.Storer.SetReference(ctx, h)
 	if err != nil {
 		return nil, err
 	}
@@ -422,13 +414,13 @@ func (r *Repository) setInvalidHEAD() (*Repository, error) {
 // PlainOpen opens a git repository from the given path. It detects if the
 // repository is bare or a normal one. If the path doesn't contain a valid
 // repository ErrRepositoryNotExists is returned
-func PlainOpen(path string) (*Repository, error) {
-	return PlainOpenWithOptions(path, &PlainOpenOptions{})
+func PlainOpen(ctx context.Context, path string) (*Repository, error) {
+	return PlainOpenWithOptions(ctx, path, &PlainOpenOptions{})
 }
 
 // PlainOpenWithOptions opens a git repository from the given path with specific
 // options. See PlainOpen for more info.
-func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error) {
+func PlainOpenWithOptions(ctx context.Context, path string, o *PlainOpenOptions) (*Repository, error) {
 	if o == nil {
 		o = &PlainOpenOptions{}
 	}
@@ -458,7 +450,7 @@ func PlainOpenWithOptions(path string, o *PlainOpenOptions) (*Repository, error)
 		AlternatesFS: o.AlternatesFS,
 	})
 
-	r, err := Open(s, wt)
+	r, err := Open(ctx, s, wt)
 	if err != nil {
 		_ = s.Close()
 		return nil, err
@@ -589,18 +581,10 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 // PlainClone a repository into the path with the given options, isBare defines
 // if the new repository will be bare or normal. If the path is not empty
 // ErrTargetDirNotEmpty is returned.
-func PlainClone(path string, o *CloneOptions) (*Repository, error) {
-	return PlainCloneContext(context.Background(), path, o)
-}
-
-// PlainCloneContext a repository into the path with the given options, isBare
-// defines if the new repository will be bare or normal. If the path is not empty
-// ErrTargetDirNotEmpty is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repository, error) {
+// operation is complete, an error is returned.
+func PlainClone(ctx context.Context, path string, o *CloneOptions) (*Repository, error) {
 	empty, err := checkTargetDirIsEmpty(path)
 	if err != nil {
 		return nil, err
@@ -625,7 +609,7 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 		initOptions = append(initOptions, withPartialInit())
 	}
 
-	r, err := PlainInit(path, isBare, initOptions...)
+	r, err := PlainInit(ctx, path, isBare, initOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -696,25 +680,25 @@ func (r *Repository) Close() error {
 
 // Config return the repository config. In a filesystem backed repository this
 // means read the `.git/config`.
-func (r *Repository) Config() (*config.Config, error) {
-	return r.Storer.Config()
+func (r *Repository) Config(ctx context.Context) (*config.Config, error) {
+	return r.Storer.Config(ctx)
 }
 
 // SetConfig marshall and writes the repository config. In a filesystem backed
 // repository this means write the `.git/config`. This function should be called
 // with the result of `Repository.Config` and never with the output of
 // `Repository.ConfigScoped`.
-func (r *Repository) SetConfig(cfg *config.Config) error {
-	return r.Storer.SetConfig(cfg)
+func (r *Repository) SetConfig(ctx context.Context, cfg *config.Config) error {
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
 // ConfigScoped returns the repository config, merged with requested scope and
 // lower. For example if, config.GlobalScope is given the local and global config
 // are returned merged in one config value.
-func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
+func (r *Repository) ConfigScoped(ctx context.Context, scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
 
-	local, err := r.Storer.Config()
+	local, err := r.Storer.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -742,7 +726,7 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		system, err = ss.Config()
+		system, err = ss.Config(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -754,7 +738,7 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		global, err = gs.Config()
+		global, err = gs.Config(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -765,8 +749,8 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 }
 
 // Remote return a remote if exists
-func (r *Repository) Remote(name string) (*Remote, error) {
-	cfg, err := r.Config()
+func (r *Repository) Remote(ctx context.Context, name string) (*Remote, error) {
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -780,8 +764,8 @@ func (r *Repository) Remote(name string) (*Remote, error) {
 }
 
 // Remotes returns a list with all the remotes
-func (r *Repository) Remotes() ([]*Remote, error) {
-	cfg, err := r.Config()
+func (r *Repository) Remotes(ctx context.Context) ([]*Remote, error) {
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -798,14 +782,14 @@ func (r *Repository) Remotes() ([]*Remote, error) {
 }
 
 // CreateRemote creates a new remote
-func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
+func (r *Repository) CreateRemote(ctx context.Context, c *config.RemoteConfig) (*Remote, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 
 	remote := NewRemote(r.Storer, c)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -815,7 +799,7 @@ func (r *Repository) CreateRemote(c *config.RemoteConfig) (*Remote, error) {
 	}
 
 	cfg.Remotes[c.Name] = c
-	return remote, r.Storer.SetConfig(cfg)
+	return remote, r.Storer.SetConfig(ctx, cfg)
 }
 
 // CreateRemoteAnonymous creates a new anonymous remote. c.Name must be "anonymous".
@@ -835,8 +819,8 @@ func (r *Repository) CreateRemoteAnonymous(c *config.RemoteConfig) (*Remote, err
 }
 
 // DeleteRemote delete a remote from the repository and delete the config
-func (r *Repository) DeleteRemote(name string) error {
-	cfg, err := r.Config()
+func (r *Repository) DeleteRemote(ctx context.Context, name string) error {
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return err
 	}
@@ -846,12 +830,12 @@ func (r *Repository) DeleteRemote(name string) error {
 	}
 
 	delete(cfg.Remotes, name)
-	return r.Storer.SetConfig(cfg)
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
 // Branch return a Branch if exists
-func (r *Repository) Branch(name string) (*config.Branch, error) {
-	cfg, err := r.Config()
+func (r *Repository) Branch(ctx context.Context, name string) (*config.Branch, error) {
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -865,12 +849,12 @@ func (r *Repository) Branch(name string) (*config.Branch, error) {
 }
 
 // CreateBranch creates a new Branch
-func (r *Repository) CreateBranch(c *config.Branch) error {
+func (r *Repository) CreateBranch(ctx context.Context, c *config.Branch) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return err
 	}
@@ -880,14 +864,14 @@ func (r *Repository) CreateBranch(c *config.Branch) error {
 	}
 
 	cfg.Branches[c.Name] = c
-	return r.Storer.SetConfig(cfg)
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
 // DeleteBranch delete a Branch from the repository and delete the config
-func (r *Repository) DeleteBranch(name string) error {
+func (r *Repository) DeleteBranch(ctx context.Context, name string) error {
 	name = strings.TrimPrefix(name, "refs/heads/")
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return err
 	}
@@ -897,18 +881,18 @@ func (r *Repository) DeleteBranch(name string) error {
 	}
 
 	delete(cfg.Branches, name)
-	return r.Storer.SetConfig(cfg)
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
 // CreateTag creates a tag. If opts is included, the tag is an annotated tag,
 // otherwise a lightweight tag is created.
-func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
+func (r *Repository) CreateTag(ctx context.Context, name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
 	rname := plumbing.NewTagReferenceName(name)
 	if err := rname.Validate(); err != nil {
 		return nil, err
 	}
 
-	_, err := r.Storer.Reference(rname)
+	_, err := r.Storer.Reference(ctx, rname)
 	switch err {
 	case nil:
 		// Tag exists, this is an error
@@ -922,7 +906,7 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagO
 
 	var target plumbing.Hash
 	if opts != nil {
-		target, err = r.createTagObject(name, hash, opts)
+		target, err = r.createTagObject(ctx, name, hash, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -931,19 +915,19 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagO
 	}
 
 	ref := plumbing.NewHashReference(rname, target)
-	if err = r.Storer.SetReference(ref); err != nil {
+	if err = r.Storer.SetReference(ctx, ref); err != nil {
 		return nil, err
 	}
 
 	return ref, nil
 }
 
-func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
-	if err := opts.Validate(r, hash); err != nil {
+func (r *Repository) createTagObject(ctx context.Context, name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
+	if err := opts.Validate(ctx, r, hash); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	rawobj, err := object.GetObject(r.Storer, hash)
+	rawobj, err := object.GetObject(ctx, r.Storer, hash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -958,7 +942,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 
 	signer := opts.Signer
 	if signer == nil {
-		cfg, err := r.ConfigScoped(config.SystemScope)
+		cfg, err := r.ConfigScoped(ctx, config.SystemScope)
 		if err == nil && cfg != nil && cfg.Tag.GpgSign.IsTrue() {
 			// Use Has before Get so the key is not frozen when no plugin is
 			// registered, allowing callers to register one later.
@@ -974,7 +958,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	}
 
 	if signer != nil {
-		sig, err := r.buildTagSignature(tag, signer)
+		sig, err := r.buildTagSignature(ctx, tag, signer)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -987,10 +971,10 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 		return plumbing.ZeroHash, err
 	}
 
-	return r.Storer.SetEncodedObject(obj)
+	return r.Storer.SetEncodedObject(ctx, obj)
 }
 
-func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, error) {
+func (r *Repository) buildTagSignature(ctx context.Context, tag *object.Tag, signer Signer) (string, error) {
 	encoded := &plumbing.MemoryObject{}
 	if err := tag.Encode(encoded); err != nil {
 		return "", err
@@ -1001,8 +985,7 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 		return "", err
 	}
 
-	// TODO: thread a caller-supplied context once CreateTag accepts one.
-	b, err := signer.Sign(context.TODO(), rdr)
+	b, err := signer.Sign(ctx, rdr)
 	if err != nil {
 		return "", err
 	}
@@ -1015,12 +998,12 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash of the reference in ForEach:
 //
-//	ref, err := r.Tag("v0.1.0")
+//	ref, err := r.Tag(ctx, "v0.1.0")
 //	if err != nil {
 //	  // Handle error
 //	}
 //
-//	obj, err := r.TagObject(ref.Hash())
+//	obj, err := r.TagObject(ctx, ref.Hash())
 //	switch err {
 //	case nil:
 //	  // Tag object present
@@ -1029,8 +1012,8 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 //	default:
 //	  // Some other error
 //	}
-func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
-	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
+func (r *Repository) Tag(ctx context.Context, name string) (*plumbing.Reference, error) {
+	ref, err := r.Reference(ctx, plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
 	if err != nil {
 		if err == plumbing.ErrReferenceNotFound {
 			// Return a friendly error for this one, versus just ReferenceNotFound.
@@ -1044,17 +1027,17 @@ func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 }
 
 // DeleteTag deletes a tag from the repository.
-func (r *Repository) DeleteTag(name string) error {
-	_, err := r.Tag(name)
+func (r *Repository) DeleteTag(ctx context.Context, name string) error {
+	_, err := r.Tag(ctx, name)
 	if err != nil {
 		return err
 	}
 
-	return r.Storer.RemoveReference(plumbing.ReferenceName(path.Join("refs", "tags", name)))
+	return r.Storer.RemoveReference(ctx, plumbing.ReferenceName(path.Join("refs", "tags", name)))
 }
 
-func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error) {
-	obj, err := r.Storer.EncodedObject(plumbing.AnyObject, h)
+func (r *Repository) resolveToCommitHash(ctx context.Context, h plumbing.Hash) (plumbing.Hash, error) {
+	obj, err := r.Storer.EncodedObject(ctx, plumbing.AnyObject, h)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -1064,7 +1047,7 @@ func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-		return r.resolveToCommitHash(t.Target)
+		return r.resolveToCommitHash(ctx, t.Target)
 	case plumbing.CommitObject:
 		return h, nil
 	default:
@@ -1103,7 +1086,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Mirror: o.Mirror,
 	}
 
-	if _, err := r.CreateRemote(c); err != nil {
+	if _, err := r.CreateRemote(ctx, c); err != nil {
 		return err
 	}
 
@@ -1115,19 +1098,19 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 			return ErrAlternatePathNotSupported
 		}
 		altpath := o.URL
-		remoteRepo, err := PlainOpen(o.URL)
+		remoteRepo, err := PlainOpen(ctx, o.URL)
 		if err != nil {
 			return fmt.Errorf("failed to open remote repository: %w", err)
 		}
 		defer func() { _ = remoteRepo.Close() }()
-		conf, err := remoteRepo.Config()
+		conf, err := remoteRepo.Config(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read remote repository configuration: %w", err)
 		}
 		if !conf.Core.IsBare {
 			altpath = path.Join(altpath, GitDirName)
 		}
-		if err := r.Storer.AddAlternate(altpath); err != nil {
+		if err := r.Storer.AddAlternate(ctx, altpath); err != nil {
 			return fmt.Errorf("failed to add alternate file to git objects dir: %w", err)
 		}
 	}
@@ -1142,32 +1125,32 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Filter:        o.Filter,
 	}, o.ReferenceName)
 
-	hr, err1 := r.Storer.Reference(plumbing.HEAD)
+	hr, err1 := r.Storer.Reference(ctx, plumbing.HEAD)
 	if err1 == nil && hr.Target() == plumbing.Invalid {
-		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+		_ = r.Storer.SetReference(ctx, plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
 	}
 
 	if err != nil {
 		return err
 	}
 
-	err = r.setWorktreeAndStoragePaths()
+	err = r.setWorktreeAndStoragePaths(ctx)
 	if err != nil {
 		return err
 	}
 
 	if r.wt != nil && !o.NoCheckout {
-		w, err := r.Worktree()
+		w, err := r.Worktree(ctx)
 		if err != nil {
 			return err
 		}
 
-		head, err := r.Head()
+		head, err := r.Head(ctx)
 		if err != nil {
 			return err
 		}
 
-		if err := w.Reset(&ResetOptions{
+		if err := w.Reset(ctx, &ResetOptions{
 			Mode:   MergeReset,
 			Commit: head.Hash(),
 		}); err != nil {
@@ -1190,7 +1173,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		}
 	}
 
-	if err := r.updateRemoteConfigIfNeeded(o, c, ref); err != nil {
+	if err := r.updateRemoteConfigIfNeeded(ctx, o, c, ref); err != nil {
 		return err
 	}
 
@@ -1209,7 +1192,7 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 			b.Remote = o.RemoteName
 		}
 
-		if err := r.CreateBranch(b); err != nil {
+		if err := r.CreateBranch(ctx, b); err != nil {
 			return err
 		}
 	}
@@ -1246,30 +1229,30 @@ func (r *Repository) cloneRefSpec(o *CloneOptions) []config.RefSpec {
 	}
 }
 
-func (r *Repository) setIsBare(isBare bool) error {
-	cfg, err := r.Config()
+func (r *Repository) setIsBare(ctx context.Context, isBare bool) error {
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return err
 	}
 
 	cfg.Core.IsBare = isBare
-	return r.Storer.SetConfig(cfg)
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
-func (r *Repository) updateRemoteConfigIfNeeded(o *CloneOptions, c *config.RemoteConfig, _ *plumbing.Reference) error {
+func (r *Repository) updateRemoteConfigIfNeeded(ctx context.Context, o *CloneOptions, c *config.RemoteConfig, _ *plumbing.Reference) error {
 	if !o.SingleBranch {
 		return nil
 	}
 
 	c.Fetch = r.cloneRefSpec(o)
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return err
 	}
 
 	cfg.Remotes[c.Name] = c
-	return r.Storer.SetConfig(cfg)
+	return r.Storer.SetConfig(ctx, cfg)
 }
 
 func (r *Repository) fetchAndUpdateReferences(
@@ -1279,7 +1262,7 @@ func (r *Repository) fetchAndUpdateReferences(
 		return nil, err
 	}
 
-	remote, err := r.Remote(o.RemoteName)
+	remote, err := r.Remote(ctx, o.RemoteName)
 	if err != nil {
 		return nil, err
 	}
@@ -1297,12 +1280,12 @@ func (r *Repository) fetchAndUpdateReferences(
 		return nil, err
 	}
 
-	resolvedRef, err := expandRef(remoteRefs, ref)
+	resolvedRef, err := expandRef(ctx, remoteRefs, ref)
 	if err != nil {
 		return nil, err
 	}
 
-	refsUpdated, err := r.updateReferences(remote.c.Fetch, resolvedRef)
+	refsUpdated, err := r.updateReferences(ctx, remote.c.Fetch, resolvedRef)
 	if err != nil {
 		return nil, err
 	}
@@ -1314,20 +1297,20 @@ func (r *Repository) fetchAndUpdateReferences(
 	return resolvedRef, nil
 }
 
-func (r *Repository) updateReferences(spec []config.RefSpec,
+func (r *Repository) updateReferences(ctx context.Context, spec []config.RefSpec,
 	resolvedRef *plumbing.Reference,
 ) (updated bool, err error) {
 	if !resolvedRef.Name().IsBranch() {
 		// Detached HEAD mode
-		h, err := r.resolveToCommitHash(resolvedRef.Hash())
+		h, err := r.resolveToCommitHash(ctx, resolvedRef.Hash())
 		if err != nil {
 			return false, err
 		}
 		head := plumbing.NewHashReference(plumbing.HEAD, h)
-		return updateReferenceStorerIfNeeded(r.Storer, head)
+		return updateReferenceStorerIfNeeded(ctx, r.Storer, head)
 	}
 
-	remoteHeadRefs := r.calculateRemoteHeadReference(spec, resolvedRef)
+	remoteHeadRefs := r.calculateRemoteHeadReference(ctx, spec, resolvedRef)
 	refs := make([]*plumbing.Reference, 0, 2+len(remoteHeadRefs))
 	refs = append(refs,
 		// Create local reference for the resolved ref
@@ -1338,7 +1321,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 	refs = append(refs, remoteHeadRefs...)
 
 	for _, ref := range refs {
-		u, err := updateReferenceStorerIfNeeded(r.Storer, ref)
+		u, err := updateReferenceStorerIfNeeded(ctx, r.Storer, ref)
 		if err != nil {
 			return updated, err
 		}
@@ -1351,7 +1334,7 @@ func (r *Repository) updateReferences(spec []config.RefSpec,
 	return updated, err
 }
 
-func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
+func (r *Repository) calculateRemoteHeadReference(ctx context.Context, spec []config.RefSpec,
 	resolvedHead *plumbing.Reference,
 ) []*plumbing.Reference {
 	var refs []*plumbing.Reference
@@ -1365,7 +1348,7 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 		}
 
 		name = rs.Dst(name)
-		_, err := r.Storer.Reference(name)
+		_, err := r.Storer.Reference(ctx, name)
 		if err == plumbing.ErrReferenceNotFound {
 			refs = append(refs, plumbing.NewHashReference(name, resolvedHead.Hash()))
 		}
@@ -1375,17 +1358,17 @@ func (r *Repository) calculateRemoteHeadReference(spec []config.RefSpec,
 }
 
 func checkAndUpdateReferenceStorerIfNeeded(
-	s storer.ReferenceStorer, r, old *plumbing.Reference) (
+	ctx context.Context, s storer.ReferenceStorer, r, old *plumbing.Reference) (
 	updated bool, err error,
 ) {
-	p, err := s.Reference(r.Name())
+	p, err := s.Reference(ctx, r.Name())
 	if err != nil && err != plumbing.ErrReferenceNotFound {
 		return false, err
 	}
 
 	// we use the string method to compare references, is the easiest way
 	if err == plumbing.ErrReferenceNotFound || r.String() != p.String() {
-		if err := s.CheckAndSetReference(r, old); err != nil {
+		if err := s.CheckAndSetReference(ctx, r, old); err != nil {
 			return false, err
 		}
 
@@ -1396,9 +1379,9 @@ func checkAndUpdateReferenceStorerIfNeeded(
 }
 
 func updateReferenceStorerIfNeeded(
-	s storer.ReferenceStorer, r *plumbing.Reference,
+	ctx context.Context, s storer.ReferenceStorer, r *plumbing.Reference,
 ) (updated bool, err error) {
-	return checkAndUpdateReferenceStorerIfNeeded(s, r, nil)
+	return checkAndUpdateReferenceStorerIfNeeded(ctx, s, r, nil)
 }
 
 // Fetch fetches references along with the objects necessary to complete
@@ -1406,57 +1389,39 @@ func updateReferenceStorerIfNeeded(
 //
 // Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
 // no changes to be fetched, or an error.
-func (r *Repository) Fetch(o *FetchOptions) error {
-	return r.FetchContext(context.Background(), o)
-}
-
-// FetchContext fetches references along with the objects necessary to complete
-// their histories, from the remote named as FetchOptions.RemoteName.
-//
-// Returns nil if the operation is successful, NoErrAlreadyUpToDate if there are
-// no changes to be fetched, or an error.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func (r *Repository) FetchContext(ctx context.Context, o *FetchOptions) error {
+// operation is complete, an error is returned.
+func (r *Repository) Fetch(ctx context.Context, o *FetchOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
 
-	remote, err := r.Remote(o.RemoteName)
+	remote, err := r.Remote(ctx, o.RemoteName)
 	if err != nil {
 		return err
 	}
 
-	return remote.FetchContext(ctx, o)
+	return remote.Fetch(ctx, o)
 }
 
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if
 // the remote was already up-to-date, from the remote named as
 // FetchOptions.RemoteName.
-func (r *Repository) Push(o *PushOptions) error {
-	return r.PushContext(context.Background(), o)
-}
-
-// PushContext performs a push to the remote. Returns NoErrAlreadyUpToDate if
-// the remote was already up-to-date, from the remote named as
-// FetchOptions.RemoteName.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func (r *Repository) PushContext(ctx context.Context, o *PushOptions) error {
+// operation is complete, an error is returned.
+func (r *Repository) Push(ctx context.Context, o *PushOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
 
-	remote, err := r.Remote(o.RemoteName)
+	remote, err := r.Remote(ctx, o.RemoteName)
 	if err != nil {
 		return err
 	}
 
-	return remote.PushContext(ctx, o)
+	return remote.Push(ctx, o)
 }
 
 // ArchiveOptions stores the options for the Archive operation.
@@ -1497,13 +1462,8 @@ func (o *ArchiveOptions) Validate() error {
 // Archive creates an archive from the local repository.
 // It returns an io.ReadCloser that yields the archive data.
 // The caller must close the returned ReadCloser.
-func (r *Repository) Archive(o *ArchiveOptions) (io.ReadCloser, error) {
-	return r.ArchiveContext(context.Background(), o)
-}
-
-// ArchiveContext creates an archive from the local repository.
 // The provided Context can be used to cancel the operation.
-func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.ReadCloser, error) {
+func (r *Repository) Archive(ctx context.Context, o *ArchiveOptions) (io.ReadCloser, error) {
 	if o == nil {
 		o = &ArchiveOptions{}
 	}
@@ -1521,7 +1481,7 @@ func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.
 	}
 
 	// Always allow unreachable refs for local archives.
-	tree, commitHash, commitTime, err := archive.ResolveTreeish(r.Storer, o.Treeish, true)
+	tree, commitHash, commitTime, err := archive.ResolveTreeish(ctx, r.Storer, o.Treeish, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1532,7 +1492,7 @@ func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.
 	pr, pw := io.Pipe()
 	cw := ioutil.NewContextWriter(ctx, pw)
 	go func() {
-		err := archive.WriteArchive(r.Storer, cw, tree, commitHash, commitTime, format, prefix, paths)
+		err := archive.WriteArchive(ctx, r.Storer, cw, tree, commitHash, commitTime, format, prefix, paths)
 		_ = pw.CloseWithError(err)
 	}()
 
@@ -1540,7 +1500,7 @@ func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.
 }
 
 // Log returns the commit history from the given LogOptions.
-func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
+func (r *Repository) Log(ctx context.Context, o *LogOptions) (object.CommitIter, error) {
 	fn := commitIterFunc(o.Order)
 	if fn == nil {
 		return nil, fmt.Errorf("invalid Order=%v", o.Order)
@@ -1551,9 +1511,9 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		err error
 	)
 	if o.All {
-		it, err = r.logAll(fn)
+		it, err = r.logAll(ctx, fn)
 	} else {
-		it, err = r.log(o.From, fn)
+		it, err = r.log(ctx, o.From, fn)
 	}
 
 	if err != nil {
@@ -1576,10 +1536,10 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 	return it, nil
 }
 
-func (r *Repository) log(from plumbing.Hash, commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
+func (r *Repository) log(ctx context.Context, from plumbing.Hash, commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
 	h := from
 	if from == plumbing.ZeroHash {
-		head, err := r.Head()
+		head, err := r.Head(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1587,15 +1547,15 @@ func (r *Repository) log(from plumbing.Hash, commitIterFunc func(*object.Commit)
 		h = head.Hash()
 	}
 
-	commit, err := r.CommitObject(h)
+	commit, err := r.CommitObject(ctx, h)
 	if err != nil {
 		return nil, err
 	}
 	return commitIterFunc(commit), nil
 }
 
-func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
-	return object.NewCommitAllIter(r.Storer, commitIterFunc)
+func (r *Repository) logAll(ctx context.Context, commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
+	return object.NewCommitAllIter(ctx, r.Storer, commitIterFunc)
 }
 
 func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {
@@ -1655,13 +1615,13 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash Reference passed in through ForEach:
 //
-//	iter, err := r.Tags()
+//	iter, err := r.Tags(ctx)
 //	if err != nil {
 //	  // Handle error
 //	}
 //
-//	if err := iter.ForEach(func (ref *plumbing.Reference) error {
-//	  obj, err := r.TagObject(ref.Hash())
+//	if err := iter.ForEach(ctx, func (ref *plumbing.Reference) error {
+//	  obj, err := r.TagObject(ctx, ref.Hash())
 //	  switch err {
 //	  case nil:
 //	    // Tag object present
@@ -1674,8 +1634,8 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 //	}); err != nil {
 //	  // Handle outer iterator error
 //	}
-func (r *Repository) Tags() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+func (r *Repository) Tags(ctx context.Context) (storer.ReferenceIter, error) {
+	refIter, err := r.Storer.IterReferences(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1687,8 +1647,8 @@ func (r *Repository) Tags() (storer.ReferenceIter, error) {
 }
 
 // Branches returns all the References that are Branches.
-func (r *Repository) Branches() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+func (r *Repository) Branches(ctx context.Context) (storer.ReferenceIter, error) {
+	refIter, err := r.Storer.IterReferences(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1701,8 +1661,8 @@ func (r *Repository) Branches() (storer.ReferenceIter, error) {
 
 // Notes returns all the References that are notes. For more information:
 // https://git-scm.com/docs/git-notes
-func (r *Repository) Notes() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+func (r *Repository) Notes(ctx context.Context) (storer.ReferenceIter, error) {
+	refIter, err := r.Storer.IterReferences(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1715,13 +1675,13 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 
 // TreeObject return a Tree with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned
-func (r *Repository) TreeObject(h plumbing.Hash) (*object.Tree, error) {
-	return object.GetTree(r.Storer, h)
+func (r *Repository) TreeObject(ctx context.Context, h plumbing.Hash) (*object.Tree, error) {
+	return object.GetTree(ctx, r.Storer, h)
 }
 
 // TreeObjects returns an unsorted TreeIter with all the trees in the repository
-func (r *Repository) TreeObjects() (*object.TreeIter, error) {
-	iter, err := r.Storer.IterEncodedObjects(plumbing.TreeObject)
+func (r *Repository) TreeObjects(ctx context.Context) (*object.TreeIter, error) {
+	iter, err := r.Storer.IterEncodedObjects(ctx, plumbing.TreeObject)
 	if err != nil {
 		return nil, err
 	}
@@ -1731,13 +1691,13 @@ func (r *Repository) TreeObjects() (*object.TreeIter, error) {
 
 // CommitObject return a Commit with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned.
-func (r *Repository) CommitObject(h plumbing.Hash) (*object.Commit, error) {
-	return object.GetCommit(r.Storer, h)
+func (r *Repository) CommitObject(ctx context.Context, h plumbing.Hash) (*object.Commit, error) {
+	return object.GetCommit(ctx, r.Storer, h)
 }
 
 // CommitObjects returns an unsorted CommitIter with all the commits in the repository.
-func (r *Repository) CommitObjects() (object.CommitIter, error) {
-	iter, err := r.Storer.IterEncodedObjects(plumbing.CommitObject)
+func (r *Repository) CommitObjects(ctx context.Context) (object.CommitIter, error) {
+	iter, err := r.Storer.IterEncodedObjects(ctx, plumbing.CommitObject)
 	if err != nil {
 		return nil, err
 	}
@@ -1747,13 +1707,13 @@ func (r *Repository) CommitObjects() (object.CommitIter, error) {
 
 // BlobObject returns a Blob with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned.
-func (r *Repository) BlobObject(h plumbing.Hash) (*object.Blob, error) {
-	return object.GetBlob(r.Storer, h)
+func (r *Repository) BlobObject(ctx context.Context, h plumbing.Hash) (*object.Blob, error) {
+	return object.GetBlob(ctx, r.Storer, h)
 }
 
 // BlobObjects returns an unsorted BlobIter with all the blobs in the repository.
-func (r *Repository) BlobObjects() (*object.BlobIter, error) {
-	iter, err := r.Storer.IterEncodedObjects(plumbing.BlobObject)
+func (r *Repository) BlobObjects(ctx context.Context) (*object.BlobIter, error) {
+	iter, err := r.Storer.IterEncodedObjects(ctx, plumbing.BlobObject)
 	if err != nil {
 		return nil, err
 	}
@@ -1764,14 +1724,14 @@ func (r *Repository) BlobObjects() (*object.BlobIter, error) {
 // TagObject returns a Tag with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned. This method only returns
 // annotated Tags, no lightweight Tags.
-func (r *Repository) TagObject(h plumbing.Hash) (*object.Tag, error) {
-	return object.GetTag(r.Storer, h)
+func (r *Repository) TagObject(ctx context.Context, h plumbing.Hash) (*object.Tag, error) {
+	return object.GetTag(ctx, r.Storer, h)
 }
 
 // TagObjects returns a unsorted TagIter that can step through all of the annotated
 // tags in the repository.
-func (r *Repository) TagObjects() (*object.TagIter, error) {
-	iter, err := r.Storer.IterEncodedObjects(plumbing.TagObject)
+func (r *Repository) TagObjects(ctx context.Context) (*object.TagIter, error) {
+	iter, err := r.Storer.IterEncodedObjects(ctx, plumbing.TagObject)
 	if err != nil {
 		return nil, err
 	}
@@ -1781,18 +1741,18 @@ func (r *Repository) TagObjects() (*object.TagIter, error) {
 
 // Object returns an Object with the given hash. If not found
 // plumbing.ErrObjectNotFound is returned.
-func (r *Repository) Object(t plumbing.ObjectType, h plumbing.Hash) (object.Object, error) {
-	obj, err := r.Storer.EncodedObject(t, h)
+func (r *Repository) Object(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (object.Object, error) {
+	obj, err := r.Storer.EncodedObject(ctx, t, h)
 	if err != nil {
 		return nil, err
 	}
 
-	return object.DecodeObject(r.Storer, obj)
+	return object.DecodeObject(ctx, r.Storer, obj)
 }
 
 // Objects returns an unsorted ObjectIter with all the objects in the repository.
-func (r *Repository) Objects() (*object.ObjectIter, error) {
-	iter, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
+func (r *Repository) Objects(ctx context.Context) (*object.ObjectIter, error) {
+	iter, err := r.Storer.IterEncodedObjects(ctx, plumbing.AnyObject)
 	if err != nil {
 		return nil, err
 	}
@@ -1801,37 +1761,37 @@ func (r *Repository) Objects() (*object.ObjectIter, error) {
 }
 
 // Head returns the reference where HEAD is pointing to.
-func (r *Repository) Head() (*plumbing.Reference, error) {
-	return storer.ResolveReference(r.Storer, plumbing.HEAD)
+func (r *Repository) Head(ctx context.Context) (*plumbing.Reference, error) {
+	return storer.ResolveReference(ctx, r.Storer, plumbing.HEAD)
 }
 
 // Reference returns the reference for a given reference name. If resolved is
 // true, any symbolic reference will be resolved.
-func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
+func (r *Repository) Reference(ctx context.Context, name plumbing.ReferenceName, resolved bool) (
 	*plumbing.Reference, error,
 ) {
 	if resolved {
-		return storer.ResolveReference(r.Storer, name)
+		return storer.ResolveReference(ctx, r.Storer, name)
 	}
 
-	return r.Storer.Reference(name)
+	return r.Storer.Reference(ctx, name)
 }
 
 // References returns an unsorted ReferenceIter for all references.
-func (r *Repository) References() (storer.ReferenceIter, error) {
-	return r.Storer.IterReferences()
+func (r *Repository) References(ctx context.Context) (storer.ReferenceIter, error) {
+	return r.Storer.IterReferences(ctx)
 }
 
 // Worktree returns a worktree based on the given fs, if nil the default
 // worktree will be used.
-func (r *Repository) Worktree() (*Worktree, error) {
+func (r *Repository) Worktree(ctx context.Context) (*Worktree, error) {
 	if r.wt == nil {
 		return nil, ErrIsBareRepository
 	}
 
 	protectNTFS := defaultProtectNTFS()
 	protectHFS := defaultProtectHFS()
-	if cfg, err := r.Config(); err == nil {
+	if cfg, err := r.Config(ctx); err == nil {
 		if cfg.Core.ProtectNTFS.IsSet() {
 			protectNTFS = cfg.Core.ProtectNTFS.IsTrue()
 		}
@@ -1843,12 +1803,12 @@ func (r *Repository) Worktree() (*Worktree, error) {
 	return &Worktree{r: r, filesystem: newWorktreeFilesystem(r.wt, protectNTFS, protectHFS)}, nil
 }
 
-func expandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
+func expandRef(ctx context.Context, s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.Reference, error) {
 	// For improving troubleshooting, this preserves the error for the provided `ref`,
 	// and returns the error for that specific ref in case all parse rules fails.
 	var ret error
 	for _, rule := range plumbing.RefRevParseRules {
-		resolvedRef, err := storer.ResolveReference(s, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
+		resolvedRef, err := storer.ResolveReference(ctx, s, plumbing.ReferenceName(fmt.Sprintf(rule, ref)))
 
 		if err == nil {
 			return resolvedRef, nil
@@ -1865,7 +1825,7 @@ func expandRef(s storer.ReferenceStorer, ref plumbing.ReferenceName) (*plumbing.
 //
 // Implemented resolvers : HEAD, branch, tag, heads/branch, refs/heads/branch,
 // refs/tags/tag, refs/remotes/origin/branch, refs/remotes/origin/HEAD, tilde and caret (HEAD~1, master~^, tag~2, ref/heads/master~1, ...), selection by text (HEAD^{/fix nasty bug}), hash (prefix and full)
-func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, error) {
+func (r *Repository) ResolveRevision(ctx context.Context, in plumbing.Revision) (*plumbing.Hash, error) {
 	rev := in.String()
 	if rev == "" {
 		return &plumbing.ZeroHash, plumbing.ErrReferenceNotFound
@@ -1886,9 +1846,9 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 			var tryHashes []plumbing.Hash
 
-			tryHashes = append(tryHashes, r.resolveHashPrefix(string(revisionRef))...)
+			tryHashes = append(tryHashes, r.resolveHashPrefix(ctx, string(revisionRef))...)
 
-			ref, err := expandRef(r.Storer, plumbing.ReferenceName(revisionRef))
+			ref, err := expandRef(ctx, r.Storer, plumbing.ReferenceName(revisionRef))
 			if err == nil {
 				tryHashes = append(tryHashes, ref.Hash())
 			}
@@ -1900,19 +1860,19 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			// priority that git would.
 			gotOne := false
 			for _, hash := range tryHashes {
-				commitObj, err := r.CommitObject(hash)
+				commitObj, err := r.CommitObject(ctx, hash)
 				if err == nil {
 					commit = commitObj
 					gotOne = true
 					break
 				}
 
-				tagObj, err := r.TagObject(hash)
+				tagObj, err := r.TagObject(ctx, hash)
 				if err == nil {
 					// If the tag target lookup fails here, this most likely
 					// represents some sort of repo corruption, so let the
 					// error bubble up.
-					tagCommit, err := tagObj.Commit()
+					tagCommit, err := tagObj.Commit(ctx)
 					if err != nil {
 						return &plumbing.ZeroHash, err
 					}
@@ -1935,7 +1895,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 			iter := commit.Parents()
 
-			c, err := iter.Next()
+			c, err := iter.Next(ctx)
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1946,7 +1906,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 				break
 			}
 
-			c, err = iter.Next()
+			c, err = iter.Next(ctx)
 			if err != nil {
 				return &plumbing.ZeroHash, err
 			}
@@ -1954,7 +1914,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 			commit = c
 		case revision.TildePath:
 			for i := 0; i < item.Depth; i++ {
-				c, err := commit.Parents().Next()
+				c, err := commit.Parents().Next(ctx)
 				if err != nil {
 					return &plumbing.ZeroHash, err
 				}
@@ -1969,7 +1929,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 			var c *object.Commit
 
-			err := history.ForEach(func(hc *object.Commit) error {
+			err := history.ForEach(ctx, func(hc *object.Commit) error {
 				if !negate && re.MatchString(hc.Message) {
 					c = hc
 					return storer.ErrStop
@@ -2003,7 +1963,7 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 // resolveHashPrefix returns a list of potential hashes that the given string
 // is a prefix of. It quietly swallows errors, returning nil.
-func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
+func (r *Repository) resolveHashPrefix(ctx context.Context, hashStr string) []plumbing.Hash {
 	// Handle complete and partial hashes.
 	// plumbing.NewHash forces args into a full 20 byte hash, which isn't suitable
 	// for partial hashes since they will become zero-filled.
@@ -2026,7 +1986,7 @@ func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
 	if err != nil {
 		return nil
 	}
-	candidates := expandPartialHash(r.Storer, hexb)
+	candidates := expandPartialHash(ctx, r.Storer, hexb)
 	if len(evenHex) == len(hashStr) {
 		// The prefix was an exact number of bytes.
 		return candidates
@@ -2052,20 +2012,20 @@ type RepackConfig struct {
 }
 
 // RepackObjects repacks all objects in the repository into a single packfile.
-func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
+func (r *Repository) RepackObjects(ctx context.Context, cfg *RepackConfig) (err error) {
 	pos, ok := r.Storer.(storer.PackedObjectStorer)
 	if !ok {
 		return ErrPackedObjectsNotSupported
 	}
 
 	// Get the existing object packs.
-	hs, err := pos.ObjectPacks()
+	hs, err := pos.ObjectPacks(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Create a new pack.
-	nh, err := r.createNewObjectPack(cfg)
+	nh, err := r.createNewObjectPack(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -2076,7 +2036,7 @@ func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 		if h == nh {
 			continue
 		}
-		err = pos.DeleteOldObjectPackAndIndex(h, cfg.OnlyDeletePacksOlderThan)
+		err = pos.DeleteOldObjectPackAndIndex(ctx, h, cfg.OnlyDeletePacksOlderThan)
 		if err != nil {
 			return err
 		}
@@ -2091,20 +2051,20 @@ func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 // the HEAD for the current branch. Possible errors include:
 //   - The merge strategy is not supported.
 //   - The specific strategy cannot be used (e.g. using FastForwardMerge when one is not possible).
-func (r *Repository) Merge(ref plumbing.Reference, opts MergeOptions) error {
+func (r *Repository) Merge(ctx context.Context, ref plumbing.Reference, opts MergeOptions) error {
 	if opts.Strategy != FastForwardMerge {
 		return ErrUnsupportedMergeStrategy
 	}
 
 	// Ignore error as not having a shallow list is optional here.
-	shallowList, _ := r.Storer.Shallow()
+	shallowList, _ := r.Storer.Shallow(ctx)
 
-	head, err := r.Head()
+	head, err := r.Head(ctx)
 	if err != nil {
 		return err
 	}
 
-	ff, err := isFastForward(r.Storer, head.Hash(), ref.Hash(), shallowList)
+	ff, err := isFastForward(ctx, r.Storer, head.Hash(), ref.Hash(), shallowList)
 	if err != nil {
 		return err
 	}
@@ -2113,15 +2073,15 @@ func (r *Repository) Merge(ref plumbing.Reference, opts MergeOptions) error {
 		return ErrFastForwardMergeNotPossible
 	}
 
-	return r.Storer.SetReference(plumbing.NewHashReference(head.Name(), ref.Hash()))
+	return r.Storer.SetReference(ctx, plumbing.NewHashReference(head.Name(), ref.Hash()))
 }
 
 // createNewObjectPack is a helper for RepackObjects taking care
 // of creating a new pack. It is used so the PackfileWriter
 // deferred close has the right scope.
-func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, err error) {
+func (r *Repository) createNewObjectPack(ctx context.Context, cfg *RepackConfig) (h plumbing.Hash, err error) {
 	ow := newObjectWalker(r.Storer)
-	err = ow.walkAllRefs()
+	err = ow.walkAllRefs(ctx)
 	if err != nil {
 		return h, err
 	}
@@ -2133,26 +2093,26 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	if !ok {
 		return h, fmt.Errorf("Repository storer is not a storer.PackfileWriter")
 	}
-	wc, err := pfw.PackfileWriter()
+	wc, err := pfw.PackfileWriter(ctx)
 	if err != nil {
 		return h, err
 	}
 	defer ioutil.CheckClose(wc, &err)
-	scfg, err := r.Config()
+	scfg, err := r.Config(ctx)
 	if err != nil {
 		return h, err
 	}
-	enc := packfile.NewEncoder(wc, r.Storer, cfg.UseRefDeltas)
-	h, err = enc.Encode(objs, scfg.Pack.Window)
+	enc := packfile.NewEncoder(ctx, wc, r.Storer, cfg.UseRefDeltas)
+	h, err = enc.Encode(ctx, objs, scfg.Pack.Window)
 	if err != nil {
 		return h, err
 	}
 
 	// Delete the packed, loose objects.
 	if los, ok := r.Storer.(storer.LooseObjectStorer); ok {
-		err = los.ForEachObjectHash(func(hash plumbing.Hash) error {
+		err = los.ForEachObjectHash(ctx, func(hash plumbing.Hash) error {
 			if ow.isSeen(hash) {
-				err = los.DeleteLooseObject(hash)
+				err = los.DeleteLooseObject(ctx, hash)
 				if err != nil {
 					return err
 				}
@@ -2167,7 +2127,7 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	return h, err
 }
 
-func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []plumbing.Hash) {
+func expandPartialHash(ctx context.Context, st storer.EncodedObjectStorer, prefix []byte) (hashes []plumbing.Hash) {
 	// The fast version is implemented by storage/filesystem.ObjectStorage.
 	type fastIter interface {
 		HashesWithPrefix(prefix []byte) ([]plumbing.Hash, error)
@@ -2181,11 +2141,11 @@ func expandPartialHash(st storer.EncodedObjectStorer, prefix []byte) (hashes []p
 	}
 
 	// Slow path.
-	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := st.IterEncodedObjects(ctx, plumbing.AnyObject)
 	if err != nil {
 		return nil
 	}
-	_ = iter.ForEach(func(obj plumbing.EncodedObject) error {
+	_ = iter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
 		h := obj.Hash()
 		if h.HasPrefix(prefix) {
 			hashes = append(hashes, h)

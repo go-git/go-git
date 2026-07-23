@@ -89,7 +89,7 @@ func TestSetObjectFormat(t *testing.T) {
 
 			sto := memory.NewStorage(memory.WithObjectFormat(tt.initialFormat))
 
-			err := sto.SetObjectFormat(tt.targetFormat)
+			err := sto.SetObjectFormat(t.Context(), tt.targetFormat)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -146,10 +146,10 @@ func TestSetObjectFormatWithExistingObjects(t *testing.T) {
 
 			obj := sto.NewEncodedObject()
 			obj.SetType(plumbing.BlobObject)
-			_, err := sto.SetEncodedObject(obj)
+			_, err := sto.SetEncodedObject(t.Context(), obj)
 			require.NoError(t, err)
 
-			err = sto.SetObjectFormat(tt.targetFormat)
+			err = sto.SetObjectFormat(t.Context(), tt.targetFormat)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "cannot change object format")
@@ -216,7 +216,7 @@ func TestReflogStorage(t *testing.T) {
 	ref := plumbing.ReferenceName("refs/heads/main")
 
 	// Empty initially.
-	entries, err := s.Reflog(ref)
+	entries, err := s.Reflog(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 
@@ -242,18 +242,18 @@ func TestReflogStorage(t *testing.T) {
 		Message: "commit: second",
 	}
 
-	require.NoError(t, s.AppendReflog(ref, e1))
-	require.NoError(t, s.AppendReflog(ref, e2))
+	require.NoError(t, s.AppendReflog(t.Context(), ref, e1))
+	require.NoError(t, s.AppendReflog(t.Context(), ref, e2))
 
-	entries, err = s.Reflog(ref)
+	entries, err = s.Reflog(t.Context(), ref)
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	assert.Equal(t, "commit: first", entries[0].Message)
 	assert.Equal(t, "commit: second", entries[1].Message)
 
 	// Delete.
-	require.NoError(t, s.DeleteReflog(ref))
-	entries, err = s.Reflog(ref)
+	require.NoError(t, s.DeleteReflog(t.Context(), ref))
+	entries, err = s.Reflog(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 }

@@ -115,7 +115,7 @@ func TestFileTransport_Integration_V2(t *testing.T) {
 		Wants: []plumbing.Hash{master},
 	}))
 
-	obj, err := st.EncodedObject(plumbing.CommitObject, master)
+	obj, err := st.EncodedObject(t.Context(), plumbing.CommitObject, master)
 	require.NoError(t, err)
 	require.Equal(t, master, obj.Hash())
 }

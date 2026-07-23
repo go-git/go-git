@@ -1,6 +1,7 @@
 package revlist
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -37,7 +38,7 @@ type delegatedObjectStorer struct {
 	result []plumbing.Hash
 }
 
-func (s *delegatedObjectStorer) RevListObjects(wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+func (s *delegatedObjectStorer) RevListObjects(_ context.Context, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
 	s.called = true
 	s.wants = append([]plumbing.Hash(nil), wants...)
 	s.haves = append([]plumbing.Hash(nil), haves...)
@@ -97,10 +98,10 @@ func (s *RevListSuite) TestRevListObjects_Submodules() {
 	sto := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	ref, err := storer.ResolveReference(sto, plumbing.HEAD)
+	ref, err := storer.ResolveReference(s.T().Context(), sto, plumbing.HEAD)
 	s.NoError(err)
 
-	revList, err := Objects(sto, []plumbing.Hash{ref.Hash()}, nil)
+	revList, err := Objects(s.T().Context(), sto, []plumbing.Hash{ref.Hash()}, nil)
 	s.NoError(err)
 	for _, h := range revList {
 		s.False(submodules[h.String()])
@@ -117,7 +118,7 @@ func (s *RevListSuite) TestRevListObjects_DelegatesToObjectWalker() {
 		result:              expected,
 	}
 
-	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	got, err := Objects(s.T().Context(), sto, []plumbing.Hash{want}, []plumbing.Hash{have})
 	s.Require().NoError(err)
 
 	s.True(sto.called)
@@ -140,11 +141,11 @@ func (s *RevListSuite) TestRevListObjects() {
 		"d3ff53e0564a9f87d8e84b6e28e5060e517008aa": true, // CHANGELOG
 	}
 
-	localHist, err := Objects(s.Storer,
+	localHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(initialCommit)}, nil)
 	s.NoError(err)
 
-	remoteHist, err := Objects(s.Storer,
+	remoteHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, localHist)
 	s.NoError(err)
 
@@ -171,7 +172,7 @@ func (s *RevListSuite) TestRevListObjectsTagObject() {
 		"f7b877701fbf855b44c0a9e86f3fdce2c298b07f": true,
 	}
 
-	hist, err := Objects(sto, []plumbing.Hash{plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")}, nil)
+	hist, err := Objects(s.T().Context(), sto, []plumbing.Hash{plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc")}, nil)
 	s.NoError(err)
 
 	for _, h := range hist {
@@ -182,11 +183,11 @@ func (s *RevListSuite) TestRevListObjectsTagObject() {
 }
 
 func (s *RevListSuite) TestRevListObjectsReverse() {
-	localHist, err := Objects(s.Storer,
+	localHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, nil)
 	s.NoError(err)
 
-	remoteHist, err := Objects(s.Storer,
+	remoteHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(initialCommit)}, localHist)
 	s.NoError(err)
 
@@ -194,11 +195,11 @@ func (s *RevListSuite) TestRevListObjectsReverse() {
 }
 
 func (s *RevListSuite) TestRevListObjectsSameCommit() {
-	localHist, err := Objects(s.Storer,
+	localHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, nil)
 	s.NoError(err)
 
-	remoteHist, err := Objects(s.Storer,
+	remoteHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, localHist)
 	s.NoError(err)
 
@@ -211,12 +212,12 @@ func (s *RevListSuite) TestRevListObjectsSameCommit() {
 // * 918c48b some code
 // -----
 func (s *RevListSuite) TestRevListObjectsNewBranch() {
-	localHist, err := Objects(s.Storer,
+	localHist, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(someCommit)}, nil)
 	s.NoError(err)
 
 	remoteHist, err := Objects(
-		s.Storer, []plumbing.Hash{
+		s.T().Context(), s.Storer, []plumbing.Hash{
 			plumbing.NewHash(someCommitBranch),
 			plumbing.NewHash(someCommitOtherBranch),
 		}, localHist)
@@ -253,7 +254,7 @@ func (s *RevListSuite) TestRevListObjectsNewBranch() {
 // |/
 // * b029517 Initial commit
 func (s *RevListSuite) TestReachableObjectsNoRevisit() {
-	got, err := Objects(s.Storer,
+	got, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")},
 		[]plumbing.Hash{plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9")})
 	s.NoError(err)
@@ -262,7 +263,7 @@ func (s *RevListSuite) TestReachableObjectsNoRevisit() {
 	// b8e471f) are included despite 35e8510 being in haves.
 	gotSet := make(map[plumbing.Hash]bool)
 	for _, h := range got {
-		if _, err := object.GetCommit(s.Storer, h); err == nil {
+		if _, err := object.GetCommit(s.T().Context(), s.Storer, h); err == nil {
 			gotSet[h] = true
 		}
 	}
@@ -287,7 +288,7 @@ func (s *RevListSuite) TestRevListObjectsNoIgnore() {
 		"c192bd6a24ea1ab01d78686e417c8bdc7c3d197f": true, // .gitignore
 	}
 
-	got, err := Objects(s.Storer,
+	got, err := Objects(s.T().Context(), s.Storer,
 		[]plumbing.Hash{plumbing.NewHash(initialCommit)}, nil)
 	s.NoError(err)
 
@@ -300,7 +301,7 @@ func (s *RevListSuite) TestRevListObjectsNoIgnore() {
 func (s *RevListSuite) TestRevListObjectsBlobWant() {
 	// Pushing a bare blob by OID should return just that blob.
 	blobHash := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88") // LICENSE
-	got, err := Objects(s.Storer, []plumbing.Hash{blobHash}, nil)
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{blobHash}, nil)
 	s.NoError(err)
 	s.Equal([]plumbing.Hash{blobHash}, got)
 }
@@ -308,7 +309,7 @@ func (s *RevListSuite) TestRevListObjectsBlobWant() {
 func (s *RevListSuite) TestRevListObjectsTreeWant() {
 	// Pushing a bare tree by OID should return the tree and all its contents.
 	treeHash := plumbing.NewHash("aa9b383c260e1d05fbbf6b30a02914555e20c725") // root tree of initial commit
-	got, err := Objects(s.Storer, []plumbing.Hash{treeHash}, nil)
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{treeHash}, nil)
 	s.NoError(err)
 
 	gotSet := make(map[string]bool, len(got))
@@ -338,7 +339,7 @@ func testMakeTree(t *testing.T, s storer.EncodedObjectStorer, entries []object.T
 	obj := s.NewEncodedObject()
 	obj.SetType(plumbing.TreeObject)
 	require.NoError(t, tree.Encode(obj))
-	hash, err := s.SetEncodedObject(obj)
+	hash, err := s.SetEncodedObject(t.Context(), obj)
 	require.NoError(t, err)
 	return hash
 }
@@ -362,7 +363,7 @@ func testMakeCommitAt(t *testing.T, s storer.EncodedObjectStorer, treeHash plumb
 	obj := s.NewEncodedObject()
 	obj.SetType(plumbing.CommitObject)
 	require.NoError(t, c.Encode(obj))
-	hash, err := s.SetEncodedObject(obj)
+	hash, err := s.SetEncodedObject(t.Context(), obj)
 	require.NoError(t, err)
 	return hash
 }
@@ -379,7 +380,7 @@ func (s *RevListSuite) makeCommitAt(treeHash plumbing.Hash, when time.Time, pare
 	obj := s.Storer.NewEncodedObject()
 	obj.SetType(plumbing.CommitObject)
 	s.Require().NoError(c.Encode(obj))
-	hash, err := s.Storer.SetEncodedObject(obj)
+	hash, err := s.Storer.SetEncodedObject(s.T().Context(), obj)
 	s.Require().NoError(err)
 	return hash
 }
@@ -426,7 +427,7 @@ func (s *RevListSuite) TestRevListObjects_RevertedSubtreeMatchesRoot() {
 	})
 	cC := s.makeCommit(treeC, cP)
 
-	got, err := Objects(s.Storer, []plumbing.Hash{cC}, nil)
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{cC}, nil)
 	s.NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -484,7 +485,7 @@ func (s *RevListSuite) TestRevListObjects_SeenSubtreeDifferentParent() {
 	})
 	cNewer := s.makeCommit(treeNewer, cPNew)
 
-	got, err := Objects(s.Storer, []plumbing.Hash{cNewer}, nil)
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{cNewer}, nil)
 	s.NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -515,7 +516,7 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaves() {
 	// Re-add LICENSE — same tree hash as initial commit.
 	cReAdd := s.makeCommit(initialTree, cRemove)
 
-	got, err := Objects(s.Storer, []plumbing.Hash{cReAdd}, []plumbing.Hash{haveCommit})
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{cReAdd}, []plumbing.Hash{haveCommit})
 	s.NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -559,7 +560,7 @@ func (s *RevListSuite) TestRevListObjects_ReintroducedBlobInHaveAncestor() {
 	})
 	want := testMakeCommit(t, sto, wantTree, have)
 
-	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	got, err := Objects(s.T().Context(), sto, []plumbing.Hash{want}, []plumbing.Hash{have})
 	s.NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -630,7 +631,7 @@ func (s *RevListSuite) TestRevListObjects_MissingHaveAncestorIsTolerated() {
 	})
 	want := testMakeCommit(t, sto, wantTree, have)
 
-	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	got, err := Objects(s.T().Context(), sto, []plumbing.Hash{want}, []plumbing.Hash{have})
 	s.NoError(err, "missing haves ancestors should be tolerated")
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -673,7 +674,7 @@ func (s *RevListSuite) TestRevListObjects_MissingWantAncestorErrors() {
 	s.Require().Error(gitErr, "git rev-list must error on missing want ancestor (otherwise this test's premise is wrong)")
 
 	// Objects() should match git's behavior and return an error.
-	_, err = Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	_, err = Objects(s.T().Context(), sto, []plumbing.Hash{want}, []plumbing.Hash{have})
 	s.Error(err, "Objects must error on missing want ancestor to match git rev-list")
 }
 
@@ -686,7 +687,7 @@ func (s *RevListSuite) TestRevListObjects_MissingWantParentTreeReturnsError() {
 	})
 	want := s.makeCommit(wantTree, parent)
 
-	_, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{parent})
+	_, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{want}, []plumbing.Hash{parent})
 	s.Error(err, "missing trees for reachable want parents must not be ignored")
 }
 
@@ -712,7 +713,7 @@ func (s *RevListSuite) TestRevListObjects_SkewedCommitTimesDoNotResendCommonBase
 	})
 	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC), base)
 
-	got, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
 	s.Require().NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -736,7 +737,7 @@ func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {
 	_, err = blobWriter.Write([]byte("README\n"))
 	s.Require().NoError(err)
 	s.Require().NoError(blobWriter.Close())
-	blob, err := sto.SetEncodedObject(blobObj)
+	blob, err := sto.SetEncodedObject(s.T().Context(), blobObj)
 	s.Require().NoError(err)
 
 	tree := &object.Tree{Entries: []object.TreeEntry{
@@ -745,7 +746,7 @@ func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {
 	treeObj := sto.NewEncodedObject()
 	treeObj.SetType(plumbing.TreeObject)
 	s.Require().NoError(tree.Encode(treeObj))
-	treeHash, err := sto.SetEncodedObject(treeObj)
+	treeHash, err := sto.SetEncodedObject(s.T().Context(), treeObj)
 	s.Require().NoError(err)
 
 	missingParent := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -760,9 +761,9 @@ func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {
 	commitObj := sto.NewEncodedObject()
 	commitObj.SetType(plumbing.CommitObject)
 	s.Require().NoError(commit.Encode(commitObj))
-	commitHash, err := sto.SetEncodedObject(commitObj)
+	commitHash, err := sto.SetEncodedObject(s.T().Context(), commitObj)
 	s.Require().NoError(err)
-	s.Require().NoError(sto.SetShallow([]plumbing.Hash{commitHash}))
+	s.Require().NoError(sto.SetShallow(s.T().Context(), []plumbing.Hash{commitHash}))
 
 	tag := &object.Tag{
 		Name:       "v0.0.1",
@@ -774,10 +775,10 @@ func (s *RevListSuite) TestRevListObjects_ShallowTaggedCommitStopsAtBoundary() {
 	tagObj := sto.NewEncodedObject()
 	tagObj.SetType(plumbing.TagObject)
 	s.Require().NoError(tag.Encode(tagObj))
-	tagHash, err := sto.SetEncodedObject(tagObj)
+	tagHash, err := sto.SetEncodedObject(s.T().Context(), tagObj)
 	s.Require().NoError(err)
 
-	got, err := Objects(sto, []plumbing.Hash{tagHash}, nil)
+	got, err := Objects(s.T().Context(), sto, []plumbing.Hash{tagHash}, nil)
 	s.Require().NoError(err)
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -824,7 +825,7 @@ func (s *RevListSuite) TestRevListObjects_ClockSkewedHaveAncestorMissingParentTo
 	})
 	want := s.makeCommitAt(wantTree, time.Date(2024, 1, 1, 0, 10, 0, 0, time.UTC), b)
 
-	got, err := Objects(s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
+	got, err := Objects(s.T().Context(), s.Storer, []plumbing.Hash{want}, []plumbing.Hash{have})
 	s.NoError(err, "missing parent of clock-skewed haves ancestor must be tolerated")
 
 	gotSet := make(map[plumbing.Hash]bool, len(got))
@@ -849,7 +850,7 @@ func benchFixture(b *testing.B) (storer.EncodedObjectStorer, plumbing.Hash, plum
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
 	head := plumbing.NewHash("e8788ad9165781196e917292d6055cba1d78664e")
-	c, err := object.GetCommit(sto, head)
+	c, err := object.GetCommit(b.Context(), sto, head)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -859,7 +860,7 @@ func benchFixture(b *testing.B) (storer.EncodedObjectStorer, plumbing.Hash, plum
 		if c.NumParents() == 0 {
 			break
 		}
-		c, err = c.Parent(0)
+		c, err = c.Parent(b.Context(), 0)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -877,7 +878,7 @@ func BenchmarkObjects(b *testing.B) {
 	})
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := Objects(s, []plumbing.Hash{want}, []plumbing.Hash{have})
+		_, err := Objects(b.Context(), s, []plumbing.Hash{want}, []plumbing.Hash{have})
 		if err != nil {
 			b.Fatal(err)
 		}

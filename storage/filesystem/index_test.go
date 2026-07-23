@@ -27,11 +27,11 @@ func TestIndexCacheHit(t *testing.T) {
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
 		},
 	}
-	require.NoError(t, sto.SetIndex(orig))
+	require.NoError(t, sto.SetIndex(t.Context(), orig))
 	assert.Equal(t, 1, spy.sets) // write-through
 
 	// First Index() — cache hit from write-through.
-	idx1, err := sto.Index()
+	idx1, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, idx1.Entries, 1)
 	assert.Equal(t, "foo.go", idx1.Entries[0].Name)
@@ -39,7 +39,7 @@ func TestIndexCacheHit(t *testing.T) {
 	assert.Equal(t, 0, spy.misses)
 
 	// Second Index() — still a cache hit.
-	idx2, err := sto.Index()
+	idx2, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, idx2.Entries, 1)
 	assert.Equal(t, "foo.go", idx1.Entries[0].Name)
@@ -52,19 +52,19 @@ func TestIndexCacheReturnsCopy(t *testing.T) {
 	sto, spy := newIndexStorageWithSpy(t)
 	defer func() { _ = sto.Close() }()
 
-	require.NoError(t, sto.SetIndex(&index.Index{
+	require.NoError(t, sto.SetIndex(t.Context(), &index.Index{
 		Version: 2,
 		Entries: []*index.Entry{
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
 		},
 	}))
 
-	idx1, err := sto.Index()
+	idx1, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, spy.hits)
 	idx1.Version = 99
 
-	idx2, err := sto.Index()
+	idx2, err := sto.Index(t.Context())
 	assert.Equal(t, 2, spy.hits)
 	require.NoError(t, err)
 	assert.NotSame(t, idx1, idx2)
@@ -76,14 +76,14 @@ func TestIndexCacheIsolatesEntrySliceMutation(t *testing.T) {
 	sto, spy := newIndexStorageWithSpy(t)
 	defer func() { _ = sto.Close() }()
 
-	require.NoError(t, sto.SetIndex(&index.Index{
+	require.NoError(t, sto.SetIndex(t.Context(), &index.Index{
 		Version: 2,
 		Entries: []*index.Entry{
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
 		},
 	}))
 
-	idx1, err := sto.Index()
+	idx1, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, spy.hits)
 
@@ -93,7 +93,7 @@ func TestIndexCacheIsolatesEntrySliceMutation(t *testing.T) {
 	})
 	assert.Len(t, idx1.Entries, 2)
 
-	idx2, err := sto.Index()
+	idx2, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 2, spy.hits)
 	assert.Len(t, idx2.Entries, 1)
@@ -111,7 +111,7 @@ func TestIndexCacheIsolatesSetIndexCallerMutation(t *testing.T) {
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
 		},
 	}
-	require.NoError(t, sto.SetIndex(idx))
+	require.NoError(t, sto.SetIndex(t.Context(), idx))
 	assert.Equal(t, 1, spy.sets)
 
 	// Caller mutates the index after SetIndex — simulates worktree code.
@@ -122,7 +122,7 @@ func TestIndexCacheIsolatesSetIndexCallerMutation(t *testing.T) {
 	idx.Version = 3
 
 	// The cache must be unaffected - only SetIndex can update the cached index.
-	got, err := sto.Index()
+	got, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, spy.hits)
 	assert.Equal(t, uint32(2), got.Version)
@@ -135,14 +135,14 @@ func TestIndexCacheInvalidatedByExternalChange(t *testing.T) {
 	sto, spy := newIndexStorageWithSpy(t)
 	defer func() { _ = sto.Close() }()
 
-	require.NoError(t, sto.SetIndex(&index.Index{
+	require.NoError(t, sto.SetIndex(t.Context(), &index.Index{
 		Version: 2,
 		Entries: []*index.Entry{
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
 		},
 	}))
 
-	_, err := sto.Index()
+	_, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, spy.hits)
 
@@ -150,7 +150,7 @@ func TestIndexCacheInvalidatedByExternalChange(t *testing.T) {
 	err = os.Chtimes(filepath.Join(sto.Filesystem().Root(), "index"), lastHour, lastHour)
 	require.NoError(t, err)
 
-	idx, err := sto.Index()
+	idx, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, idx.Entries, 1)
 	assert.Equal(t, 1, spy.hits)
@@ -162,7 +162,7 @@ func TestIndexCacheWriteThrough(t *testing.T) {
 	sto, spy := newIndexStorageWithSpy(t)
 	defer func() { _ = sto.Close() }()
 
-	require.NoError(t, sto.SetIndex(&index.Index{
+	require.NoError(t, sto.SetIndex(t.Context(), &index.Index{
 		Version: 2,
 		Entries: []*index.Entry{
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "a.go"},
@@ -170,7 +170,7 @@ func TestIndexCacheWriteThrough(t *testing.T) {
 	}))
 	assert.Equal(t, 1, spy.sets)
 
-	got, err := sto.Index()
+	got, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, got.Entries, 1)
 	assert.Equal(t, "a.go", got.Entries[0].Name)
@@ -183,7 +183,7 @@ func TestIndexCacheMissingFile(t *testing.T) {
 	sto, spy := newIndexStorageWithSpy(t)
 	defer func() { _ = sto.Close() }()
 
-	idx, err := sto.Index()
+	idx, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, uint32(2), idx.Version)
 	assert.Empty(t, idx.Entries)
@@ -200,23 +200,23 @@ func TestIndexCacheClearedWhenFileDeleted(t *testing.T) {
 	spy := newSpyIndexCache()
 	sto := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{IndexCache: spy})
 	defer func() { _ = sto.Close() }()
-	require.NoError(t, sto.Init())
+	require.NoError(t, sto.Init(t.Context()))
 
-	require.NoError(t, sto.SetIndex(&index.Index{
+	require.NoError(t, sto.SetIndex(t.Context(), &index.Index{
 		Version: 2,
 		Entries: []*index.Entry{
 			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "a.go"},
 		},
 	}))
 
-	_, err := sto.Index()
+	_, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 1, spy.hits)
 
 	err = os.Remove(filepath.Join(sto.Filesystem().Root(), "index"))
 	require.NoError(t, err)
 
-	got, err := sto.Index()
+	got, err := sto.Index(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, uint32(2), got.Version)
 	assert.Empty(t, got.Entries)
@@ -263,7 +263,7 @@ func newIndexStorageWithSpy(t *testing.T) (*filesystem.Storage, *spyIndexCache) 
 	fs := osfs.New(tmp)
 	spy := newSpyIndexCache()
 	sto := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{IndexCache: spy})
-	require.NoError(t, sto.Init())
+	require.NoError(t, sto.Init(t.Context()))
 
 	return sto, spy
 }

@@ -145,7 +145,7 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 		if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
 			return ErrShallowNotSupported
 		}
-		if err := ReconcileObjectFormatV2(st, s.caps); err != nil {
+		if err := ReconcileObjectFormatV2(ctx, st, s.caps); err != nil {
 			return err
 		}
 		// Each negotiation round reuses the persistent stream: Command writes

@@ -1,6 +1,8 @@
 package commitgraph
 
 import (
+	"context"
+
 	"github.com/emirpasic/gods/trees/binaryheap"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -14,7 +16,7 @@ import (
 //
 // This ordering requires that commit objects need to be loaded into memory - thus this
 // ordering is likely to be slower than other orderings.
-func NewCommitNodeIterAuthorDateOrder(c CommitNode,
+func NewCommitNodeIterAuthorDateOrder(ctx context.Context, c CommitNode,
 	seenExternal map[plumbing.Hash]bool,
 	ignore []plumbing.Hash,
 ) CommitNodeIter {
@@ -33,11 +35,11 @@ func NewCommitNodeIterAuthorDateOrder(c CommitNode,
 	exploreHeap.Push(c)
 
 	visitHeap := &commitNodeHeap{binaryheap.NewWith(func(left, right any) int {
-		leftCommit, err := left.(CommitNode).Commit()
+		leftCommit, err := left.(CommitNode).Commit(ctx)
 		if err != nil {
 			return -1
 		}
-		rightCommit, err := right.(CommitNode).Commit()
+		rightCommit, err := right.(CommitNode).Commit(ctx)
 		if err != nil {
 			return -1
 		}

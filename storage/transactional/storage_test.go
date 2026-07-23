@@ -30,20 +30,20 @@ func TestCommit(t *testing.T) {
 	commit := base.NewEncodedObject()
 	commit.SetType(plumbing.CommitObject)
 
-	_, err := st.SetEncodedObject(commit)
+	_, err := st.SetEncodedObject(t.Context(), commit)
 	require.NoError(t, err)
 
 	ref := plumbing.NewHashReference("refs/a", commit.Hash())
-	require.NoError(t, st.SetReference(ref))
+	require.NoError(t, st.SetReference(t.Context(), ref))
 
-	err = st.Commit()
+	err = st.Commit(t.Context())
 	require.NoError(t, err)
 
-	ref, err = base.Reference(ref.Name())
+	ref, err = base.Reference(t.Context(), ref.Name())
 	require.NoError(t, err)
 	assert.Equal(t, commit.Hash(), ref.Hash())
 
-	obj, err := base.EncodedObject(plumbing.AnyObject, commit.Hash())
+	obj, err := base.EncodedObject(t.Context(), plumbing.AnyObject, commit.Hash())
 	require.NoError(t, err)
 	assert.Equal(t, commit.Hash(), obj.Hash())
 }

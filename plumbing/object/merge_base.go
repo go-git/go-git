@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -15,13 +16,13 @@ var errIsReachable = fmt.Errorf("first is reachable from second")
 // MergeBase mimics the behavior of `git merge-base actual other`, returning the
 // best common ancestor between the actual and the passed one.
 // The best common ancestors can not be reached from other common ancestors.
-func (c *Commit) MergeBase(other *Commit) ([]*Commit, error) {
+func (c *Commit) MergeBase(ctx context.Context, other *Commit) ([]*Commit, error) {
 	// use sortedByCommitDateDesc strategy
 	sorted := sortByCommitDateDesc(c, other)
 	newer := sorted[0]
 	older := sorted[1]
 
-	newerHistory, err := ancestorsIndex(older, newer)
+	newerHistory, err := ancestorsIndex(ctx, older, newer)
 	if errors.Is(err, errIsReachable) {
 		return []*Commit{older}, nil
 	}
@@ -33,21 +34,21 @@ func (c *Commit) MergeBase(other *Commit) ([]*Commit, error) {
 	var res []*Commit
 	inNewerHistory := isInIndexCommitFilter(newerHistory)
 	resIter := NewFilterCommitIter(older, &inNewerHistory, &inNewerHistory)
-	_ = resIter.ForEach(func(commit *Commit) error {
+	_ = resIter.ForEach(ctx, func(commit *Commit) error {
 		res = append(res, commit)
 		return nil
 	})
 
-	return Independents(res)
+	return Independents(ctx, res)
 }
 
 // IsAncestor returns true if the actual commit is ancestor of the passed one.
 // It returns an error if the history is not transversable
 // It mimics the behavior of `git merge --is-ancestor actual other`
-func (c *Commit) IsAncestor(other *Commit) (bool, error) {
+func (c *Commit) IsAncestor(ctx context.Context, other *Commit) (bool, error) {
 	found := false
 	iter := NewCommitPreorderIter(other, nil, nil)
-	err := iter.ForEach(func(comm *Commit) error {
+	err := iter.ForEach(ctx, func(comm *Commit) error {
 		if comm.Hash != c.Hash {
 			return nil
 		}
@@ -62,14 +63,14 @@ func (c *Commit) IsAncestor(other *Commit) (bool, error) {
 // ancestorsIndex returns a map with the ancestors of the starting commit if the
 // excluded one is not one of them. It returns errIsReachable if the excluded commit
 // is ancestor of the starting, or another error if the history is not traversable.
-func ancestorsIndex(excluded, starting *Commit) (map[plumbing.Hash]struct{}, error) {
+func ancestorsIndex(ctx context.Context, excluded, starting *Commit) (map[plumbing.Hash]struct{}, error) {
 	if excluded.Hash.String() == starting.Hash.String() {
 		return nil, errIsReachable
 	}
 
 	startingHistory := map[plumbing.Hash]struct{}{}
 	startingIter := NewCommitIterBSF(starting, nil, nil)
-	err := startingIter.ForEach(func(commit *Commit) error {
+	err := startingIter.ForEach(ctx, func(commit *Commit) error {
 		if commit.Hash == excluded.Hash {
 			return errIsReachable
 		}
@@ -86,7 +87,7 @@ func ancestorsIndex(excluded, starting *Commit) (map[plumbing.Hash]struct{}, err
 
 // Independents returns a subset of the passed commits, that are not reachable the others
 // It mimics the behavior of `git merge-base --independent commit...`.
-func Independents(commits []*Commit) ([]*Commit, error) {
+func Independents(ctx context.Context, commits []*Commit) ([]*Commit, error) {
 	// use sortedByCommitDateDesc strategy
 	candidates := sortByCommitDateDesc(commits...)
 	candidates = removeDuplicated(candidates)
@@ -106,7 +107,7 @@ func Independents(commits []*Commit) ([]*Commit, error) {
 		from := candidates[pos]
 		others := remove(candidates, from)
 		fromHistoryIter := NewFilterCommitIter(from, nil, &isLimit)
-		err := fromHistoryIter.ForEach(func(fromAncestor *Commit) error {
+		err := fromHistoryIter.ForEach(ctx, func(fromAncestor *Commit) error {
 			for _, other := range others {
 				if fromAncestor.Hash == other.Hash {
 					candidates = remove(candidates, other)

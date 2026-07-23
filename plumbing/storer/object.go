@@ -1,6 +1,7 @@
 package storer
 
 import (
+	"context"
 	"errors"
 	"io"
 	"time"
@@ -11,11 +12,15 @@ import (
 // ErrStop is used to stop a ForEach function in an Iter
 var ErrStop = errors.New("stop iter")
 
-// EncodedObjectStorer generic storage of objects
+// EncodedObjectStorer generic storage of objects.
+//
+// Implementations should honor cancellation of the provided context where
+// they perform I/O. Methods without a context parameter are guaranteed not
+// to perform I/O.
 type EncodedObjectStorer interface {
 	// RawObjectWriter returns a io.WriterCloser to write the object without the
 	// need of providing a plumbing.EncodedObject.
-	RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error)
+	RawObjectWriter(ctx context.Context, typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error)
 	// NewEncodedObject returns a new plumbing.EncodedObject, the real type
 	// of the object can be a custom implementation or the default one,
 	// plumbing.MemoryObject.
@@ -23,7 +28,7 @@ type EncodedObjectStorer interface {
 	// SetEncodedObject saves an object into the storage, the object should
 	// be created with the NewEncodedObject, method, and file if the type is
 	// not supported.
-	SetEncodedObject(plumbing.EncodedObject) (plumbing.Hash, error)
+	SetEncodedObject(ctx context.Context, obj plumbing.EncodedObject) (plumbing.Hash, error)
 	// EncodedObject gets an object by hash with the given
 	// plumbing.ObjectType. Implementors should return
 	// (nil, plumbing.ErrObjectNotFound) if an object doesn't exist with
@@ -32,18 +37,18 @@ type EncodedObjectStorer interface {
 	// Valid plumbing.ObjectType values are CommitObject, BlobObject, TagObject,
 	// TreeObject and AnyObject. If plumbing.AnyObject is given, the object must
 	// be looked up regardless of its type.
-	EncodedObject(plumbing.ObjectType, plumbing.Hash) (plumbing.EncodedObject, error)
+	EncodedObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error)
 	// IterObjects returns a custom EncodedObjectStorer over all the object
 	// on the storage.
 	//
 	// Valid plumbing.ObjectType values are CommitObject, BlobObject, TagObject,
-	IterEncodedObjects(plumbing.ObjectType) (EncodedObjectIter, error)
+	IterEncodedObjects(ctx context.Context, t plumbing.ObjectType) (EncodedObjectIter, error)
 	// HasEncodedObject returns ErrObjNotFound if the object doesn't
 	// exist.  If the object does exist, it returns nil.
-	HasEncodedObject(plumbing.Hash) error
+	HasEncodedObject(ctx context.Context, h plumbing.Hash) error
 	// EncodedObjectSize returns the plaintext size of the encoded object.
-	EncodedObjectSize(plumbing.Hash) (int64, error)
-	AddAlternate(remote string) error
+	EncodedObjectSize(ctx context.Context, h plumbing.Hash) (int64, error)
+	AddAlternate(ctx context.Context, remote string) error
 }
 
 // DeltaObjectStorer is an EncodedObjectStorer that can return delta
@@ -51,14 +56,14 @@ type EncodedObjectStorer interface {
 type DeltaObjectStorer interface {
 	// DeltaObject is the same as EncodedObject but without resolving deltas.
 	// Deltas will be returned as plumbing.DeltaObject instances.
-	DeltaObject(plumbing.ObjectType, plumbing.Hash) (plumbing.EncodedObject, error)
+	DeltaObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error)
 }
 
 // Transactioner is a optional method for ObjectStorer, it enables transactional read and write
 // operations.
 type Transactioner interface {
 	// Begin starts a transaction.
-	Begin() Transaction
+	Begin(ctx context.Context) Transaction
 }
 
 // LooseObjectStorer is an optional interface for managing "loose"
@@ -68,14 +73,14 @@ type LooseObjectStorer interface {
 	// in the repository without necessarily having to read those objects.
 	// Objects only inside pack files may be omitted.
 	// If ErrStop is sent the iteration is stop but no error is returned.
-	ForEachObjectHash(func(plumbing.Hash) error) error
+	ForEachObjectHash(ctx context.Context, cb func(plumbing.Hash) error) error
 	// LooseObjectTime looks up the (m)time associated with the
 	// loose object (that is not in a pack file). Some
 	// implementations (e.g. without loose objects)
 	// always return an error.
-	LooseObjectTime(plumbing.Hash) (time.Time, error)
+	LooseObjectTime(ctx context.Context, h plumbing.Hash) (time.Time, error)
 	// DeleteLooseObject deletes a loose object if it exists.
-	DeleteLooseObject(plumbing.Hash) error
+	DeleteLooseObject(ctx context.Context, h plumbing.Hash) error
 }
 
 // PackedObjectStorer is an optional interface for managing objects in
@@ -83,10 +88,10 @@ type LooseObjectStorer interface {
 type PackedObjectStorer interface {
 	// ObjectPacks returns hashes of object packs if the underlying
 	// implementation has pack files.
-	ObjectPacks() ([]plumbing.Hash, error)
+	ObjectPacks(ctx context.Context) ([]plumbing.Hash, error)
 	// DeleteOldObjectPackAndIndex deletes an object pack and the corresponding index file if they exist.
 	// Deletion is only performed if the pack is older than the supplied time (or the time is zero).
-	DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error
+	DeleteOldObjectPackAndIndex(ctx context.Context, h plumbing.Hash, t time.Time) error
 }
 
 // PackfileWriter is an optional method for ObjectStorer, it enables directly writing
@@ -96,22 +101,29 @@ type PackfileWriter interface {
 	//
 	// If the Storer not implements PackfileWriter the objects should be written
 	// using the Set method.
-	PackfileWriter() (io.WriteCloser, error)
+	PackfileWriter(ctx context.Context) (io.WriteCloser, error)
 }
 
 // EncodedObjectIter is a generic closable interface for iterating over objects.
+//
+// Close is intentionally context-free: it releases resources and must be
+// callable during cleanup, including after the iteration context has been
+// canceled.
 type EncodedObjectIter interface {
-	Next() (plumbing.EncodedObject, error)
-	ForEach(func(plumbing.EncodedObject) error) error
+	Next(ctx context.Context) (plumbing.EncodedObject, error)
+	ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error
 	Close()
 }
 
 // Transaction is an in-progress storage transaction. A transaction must end
 // with a call to Commit or Rollback.
+//
+// Rollback is intentionally context-free: it must be usable to clean up
+// after the transaction's context has been canceled.
 type Transaction interface {
-	SetEncodedObject(plumbing.EncodedObject) (plumbing.Hash, error)
-	EncodedObject(plumbing.ObjectType, plumbing.Hash) (plumbing.EncodedObject, error)
-	Commit() error
+	SetEncodedObject(ctx context.Context, obj plumbing.EncodedObject) (plumbing.Hash, error)
+	EncodedObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error)
+	Commit(ctx context.Context) error
 	Rollback() error
 }
 
@@ -145,13 +157,13 @@ func NewEncodedObjectLookupIter(
 // the end it will return io.EOF as an error. If the object can't be found in
 // the object storage, it will return plumbing.ErrObjectNotFound as an error.
 // If the object is retrieved successfully error will be nil.
-func (iter *EncodedObjectLookupIter) Next() (plumbing.EncodedObject, error) {
+func (iter *EncodedObjectLookupIter) Next(ctx context.Context) (plumbing.EncodedObject, error) {
 	if iter.pos >= len(iter.series) {
 		return nil, io.EOF
 	}
 
 	hash := iter.series[iter.pos]
-	obj, err := iter.storage.EncodedObject(iter.t, hash)
+	obj, err := iter.storage.EncodedObject(ctx, iter.t, hash)
 	if err == nil {
 		iter.pos++
 	}
@@ -162,8 +174,8 @@ func (iter *EncodedObjectLookupIter) Next() (plumbing.EncodedObject, error) {
 // ForEach call the cb function for each object contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *EncodedObjectLookupIter) ForEach(cb func(plumbing.EncodedObject) error) error {
-	return ForEachIterator(iter, cb)
+func (iter *EncodedObjectLookupIter) ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error {
+	return ForEachIterator(ctx, iter, cb)
 }
 
 // Close releases any resources used by the iterator.
@@ -192,7 +204,7 @@ func NewEncodedObjectSliceIter(series []plumbing.EncodedObject) *EncodedObjectSl
 // Next returns the next object from the iterator. If the iterator has reached
 // the end it will return io.EOF as an error. If the object is retrieved
 // successfully error will be nil.
-func (iter *EncodedObjectSliceIter) Next() (plumbing.EncodedObject, error) {
+func (iter *EncodedObjectSliceIter) Next(_ context.Context) (plumbing.EncodedObject, error) {
 	if len(iter.series) == 0 {
 		return nil, io.EOF
 	}
@@ -206,8 +218,8 @@ func (iter *EncodedObjectSliceIter) Next() (plumbing.EncodedObject, error) {
 // ForEach call the cb function for each object contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *EncodedObjectSliceIter) ForEach(cb func(plumbing.EncodedObject) error) error {
-	return ForEachIterator(iter, cb)
+func (iter *EncodedObjectSliceIter) ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error {
+	return ForEachIterator(ctx, iter, cb)
 }
 
 // Close releases any resources used by the iterator.
@@ -232,16 +244,16 @@ func NewMultiEncodedObjectIter(iters []EncodedObjectIter) EncodedObjectIter {
 
 // Next returns the next object from the iterator, if one iterator reach io.EOF
 // is removed and the next one is used.
-func (iter *MultiEncodedObjectIter) Next() (plumbing.EncodedObject, error) {
+func (iter *MultiEncodedObjectIter) Next(ctx context.Context) (plumbing.EncodedObject, error) {
 	if len(iter.iters) == 0 {
 		return nil, io.EOF
 	}
 
-	obj, err := iter.iters[0].Next()
+	obj, err := iter.iters[0].Next(ctx)
 	if err == io.EOF {
 		iter.iters[0].Close()
 		iter.iters = iter.iters[1:]
-		return iter.Next()
+		return iter.Next(ctx)
 	}
 
 	return obj, err
@@ -250,8 +262,8 @@ func (iter *MultiEncodedObjectIter) Next() (plumbing.EncodedObject, error) {
 // ForEach call the cb function for each object contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *MultiEncodedObjectIter) ForEach(cb func(plumbing.EncodedObject) error) error {
-	return ForEachIterator(iter, cb)
+func (iter *MultiEncodedObjectIter) ForEach(ctx context.Context, cb func(plumbing.EncodedObject) error) error {
+	return ForEachIterator(ctx, iter, cb)
 }
 
 // Close releases any resources used by the iterator.
@@ -262,16 +274,20 @@ func (iter *MultiEncodedObjectIter) Close() {
 }
 
 type bareIterator interface {
-	Next() (plumbing.EncodedObject, error)
+	Next(ctx context.Context) (plumbing.EncodedObject, error)
 	Close()
 }
 
 // ForEachIterator is a helper function to build iterators without need to
 // rewrite the same ForEach function each time.
-func ForEachIterator(iter bareIterator, cb func(plumbing.EncodedObject) error) error {
+func ForEachIterator(ctx context.Context, iter bareIterator, cb func(plumbing.EncodedObject) error) error {
 	defer iter.Close()
 	for {
-		obj, err := iter.Next()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		obj, err := iter.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil

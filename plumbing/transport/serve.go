@@ -28,7 +28,7 @@ var ErrUpdateReference = errors.New("failed to update ref")
 // the "# service=..." smart-reply line for the v2 request (http-backend.c
 // get_info_refs). Both behaviours are reproduced below.
 func AdvertiseRefs(
-	_ context.Context,
+	ctx context.Context,
 	st storage.Storer,
 	w io.Writer,
 	service string,
@@ -65,11 +65,11 @@ func AdvertiseRefs(
 		ar.Capabilities.Set(capability.Sideband)
 		ar.Capabilities.Set(capability.NoProgress)
 		ar.Capabilities.Set(capability.Shallow)
-		ar.Capabilities.Set(capability.ObjectFormat, objectFormat(st).String())
+		ar.Capabilities.Set(capability.ObjectFormat, objectFormat(ctx, st).String())
 	}
 
 	// Set references
-	if err := addReferences(st, ar, !forPush); err != nil {
+	if err := addReferences(ctx, st, ar, !forPush); err != nil {
 		return err
 	}
 
@@ -109,14 +109,14 @@ func AdvertiseRefs(
 // emit the smart-HTTP "# service=..." prefix: git omits that line for v2
 // (http-backend.c get_info_refs), the response starts directly with the version
 // packet.
-func AdvertiseCapabilities(_ context.Context, st storage.Storer, w io.Writer, service string) error {
+func AdvertiseCapabilities(ctx context.Context, st storage.Storer, w io.Writer, service string) error {
 	if service != UploadPackService {
 		return fmt.Errorf("%w: %s", ErrUnsupportedService, service)
 	}
 
 	adv := &packp.CapabilityAdv{
 		Version:      protocol.V2,
-		Capabilities: serverV2Capabilities(st),
+		Capabilities: serverV2Capabilities(ctx, st),
 	}
 	return adv.Encode(w)
 }
@@ -139,19 +139,19 @@ func AdvertiseCapabilities(_ context.Context, st storage.Storer, w io.Writer, se
 //   - fetch=wait-for-done  negotiate-only fetch (git fetch --negotiate-only)
 //   - server-option        process client "server-option" lines
 //   - object-info          object size/type queries without a fetch
-func serverV2Capabilities(st storage.Storer) capability.List {
+func serverV2Capabilities(ctx context.Context, st storage.Storer) capability.List {
 	var caps capability.List
 	caps.Set(capability.Agent, capability.DefaultAgent())
 	caps.Set(capability.LsRefs)
 	caps.Set(capability.FetchCmd, "shallow")
-	caps.Set(capability.ObjectFormat, objectFormat(st).String())
+	caps.Set(capability.ObjectFormat, objectFormat(ctx, st).String())
 	return caps
 }
 
 // objectFormat returns the repository's configured object format, defaulting to
 // the package default when the config is missing or unset.
-func objectFormat(st storage.Storer) config.ObjectFormat {
-	cfg, err := st.Config()
+func objectFormat(ctx context.Context, st storage.Storer) config.ObjectFormat {
+	cfg, err := st.Config(ctx)
 	if err != nil || cfg == nil {
 		return config.DefaultObjectFormat
 	}
@@ -161,17 +161,17 @@ func objectFormat(st storage.Storer) config.ObjectFormat {
 	return cfg.Extensions.ObjectFormat
 }
 
-func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
-	iter, err := st.IterReferences()
+func addReferences(ctx context.Context, st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
+	iter, err := st.IterReferences(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Add references and their peeled values
-	return iter.ForEach(func(r *plumbing.Reference) error {
+	return iter.ForEach(ctx, func(r *plumbing.Reference) error {
 		hash, name := r.Hash(), r.Name()
 		if r.Type() == plumbing.SymbolicReference {
-			ref, err := storer.ResolveReference(st, r.Target())
+			ref, err := storer.ResolveReference(ctx, st, r.Target())
 			if errors.Is(err, plumbing.ErrReferenceNotFound) {
 				return nil
 			}
@@ -196,7 +196,7 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 		}
 		ar.References = append(ar.References, plumbing.NewHashReference(name, hash))
 		if r.Name().IsTag() {
-			if tag, err := object.GetTag(st, hash); err == nil {
+			if tag, err := object.GetTag(ctx, st, hash); err == nil {
 				ar.References = append(ar.References, plumbing.NewHashReference(
 					plumbing.ReferenceName(name.String()+"^{}"), tag.Target,
 				))

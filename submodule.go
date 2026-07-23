@@ -40,8 +40,8 @@ func (s *Submodule) Config() *config.Submodule {
 
 // Init initialize the submodule reading the recorded Entry in the index for
 // the given submodule
-func (s *Submodule) Init() error {
-	cfg, err := s.w.r.Config()
+func (s *Submodule) Init(ctx context.Context) error {
+	cfg, err := s.w.r.Config(ctx)
 	if err != nil {
 		return err
 	}
@@ -54,20 +54,20 @@ func (s *Submodule) Init() error {
 	s.initialized = true
 
 	cfg.Submodules[s.c.Name] = s.c
-	return s.w.r.Storer.SetConfig(cfg)
+	return s.w.r.Storer.SetConfig(ctx, cfg)
 }
 
 // Status returns the status of the submodule.
-func (s *Submodule) Status() (*SubmoduleStatus, error) {
-	idx, err := s.w.r.Storer.Index()
+func (s *Submodule) Status(ctx context.Context) (*SubmoduleStatus, error) {
+	idx, err := s.w.r.Storer.Index(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.status(idx)
+	return s.status(ctx, idx)
 }
 
-func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
+func (s *Submodule) status(ctx context.Context, idx *index.Index) (*SubmoduleStatus, error) {
 	status := &SubmoduleStatus{
 		Path: s.c.Path,
 	}
@@ -85,13 +85,13 @@ func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
 		return status, nil
 	}
 
-	r, err := s.Repository()
+	r, err := s.Repository(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = r.Close() }()
 
-	head, err := r.Head()
+	head, err := r.Head(ctx)
 	if err == nil {
 		status.Current = head.Hash()
 	}
@@ -104,17 +104,17 @@ func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
 }
 
 // Repository returns the Repository represented by this submodule
-func (s *Submodule) Repository() (*Repository, error) {
+func (s *Submodule) Repository(ctx context.Context) (*Repository, error) {
 	if !s.initialized {
 		return nil, ErrSubmoduleNotInitialized
 	}
 
-	storer, err := s.w.r.Storer.Module(s.c.Name)
+	storer, err := s.w.r.Storer.Module(ctx, s.c.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = storer.Reference(plumbing.HEAD)
+	_, err = storer.Reference(ctx, plumbing.HEAD)
 	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return nil, err
 	}
@@ -140,10 +140,10 @@ func (s *Submodule) Repository() (*Repository, error) {
 	}
 
 	if exists {
-		return Open(storer, worktree)
+		return Open(ctx, storer, worktree)
 	}
 
-	r, err := Init(storer, WithWorkTree(worktree))
+	r, err := Init(ctx, storer, WithWorkTree(worktree))
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 	}
 
 	if !path.IsAbs(moduleEndpoint.Path) && !filepath.IsAbs(moduleEndpoint.Path) && moduleEndpoint.Scheme == "file" {
-		base, err := defaultRemote(s.w.r)
+		base, err := defaultRemote(ctx, s.w.r)
 		if err != nil {
 			_ = r.Close()
 			return nil, fmt.Errorf("resolving relative submodule URL: %w", err)
@@ -171,7 +171,7 @@ func (s *Submodule) Repository() (*Repository, error) {
 		*moduleEndpoint = *rootEndpoint
 	}
 
-	_, err = r.CreateRemote(&config.RemoteConfig{
+	_, err = r.CreateRemote(ctx, &config.RemoteConfig{
 		Name: DefaultRemoteName,
 		URLs: []string{moduleEndpoint.String()},
 	})
@@ -195,13 +195,13 @@ func (s *Submodule) Repository() (*Repository, error) {
 // Each rule falls through unconditionally: a branch lookup that
 // finds the branch but with an empty Remote does not short-circuit
 // rule (2). Returns an error when the chosen remote is not configured.
-func defaultRemote(r *Repository) (*config.RemoteConfig, error) {
-	cfg, err := r.Config()
+func defaultRemote(ctx context.Context, r *Repository) (*config.RemoteConfig, error) {
+	cfg, err := r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if ref, err := r.Reference(plumbing.HEAD, false); err == nil &&
+	if ref, err := r.Reference(ctx, plumbing.HEAD, false); err == nil &&
 		ref.Type() == plumbing.SymbolicReference &&
 		ref.Target().IsBranch() {
 		if b, ok := cfg.Branches[ref.Target().Short()]; ok && b.Remote != "" {
@@ -231,19 +231,11 @@ func lookupRemote(cfg *config.Config, name string) (*config.RemoteConfig, error)
 
 // Update the registered submodule to match what the superproject expects, the
 // submodule should be initialized first calling the Init method or setting in
-// the options SubmoduleUpdateOptions.Init equals true
-func (s *Submodule) Update(o *SubmoduleUpdateOptions) error {
-	return s.UpdateContext(context.Background(), o)
-}
-
-// UpdateContext the registered submodule to match what the superproject
-// expects, the submodule should be initialized first calling the Init method or
-// setting in the options SubmoduleUpdateOptions.Init equals true.
+// the options SubmoduleUpdateOptions.Init equals true.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func (s *Submodule) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions) error {
+// operation is complete, an error is returned.
+func (s *Submodule) Update(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	return s.update(ctx, o, plumbing.ZeroHash)
 }
 
@@ -253,12 +245,12 @@ func (s *Submodule) update(ctx context.Context, o *SubmoduleUpdateOptions, force
 	}
 
 	if !s.initialized && o.Init {
-		if err := s.Init(); err != nil {
+		if err := s.Init(ctx); err != nil {
 			return err
 		}
 	}
 
-	idx, err := s.w.r.Storer.Index()
+	idx, err := s.w.r.Storer.Index(ctx)
 	if err != nil {
 		return err
 	}
@@ -273,7 +265,7 @@ func (s *Submodule) update(ctx context.Context, o *SubmoduleUpdateOptions, force
 		hash = e.Hash
 	}
 
-	r, err := s.Repository()
+	r, err := s.Repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -291,12 +283,12 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 		return nil
 	}
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	if err != nil {
 		return err
 	}
 
-	l, err := w.Submodules()
+	l, err := w.Submodules(ctx)
 	if err != nil {
 		return err
 	}
@@ -305,20 +297,20 @@ func (s *Submodule) doRecursiveUpdate(ctx context.Context, r *Repository, o *Sub
 	*opts = *o
 
 	opts.RecurseSubmodules--
-	return l.UpdateContext(ctx, opts)
+	return l.Update(ctx, opts)
 }
 
 func (s *Submodule) fetchAndCheckout(
 	ctx context.Context, r *Repository, o *SubmoduleUpdateOptions, hash plumbing.Hash,
 ) error {
 	if !o.NoFetch {
-		err := r.FetchContext(ctx, &FetchOptions{ClientOptions: o.ClientOptions, Depth: o.Depth})
+		err := r.Fetch(ctx, &FetchOptions{ClientOptions: o.ClientOptions, Depth: o.Depth})
 		if err != nil && !errors.Is(err, NoErrAlreadyUpToDate) {
 			return err
 		}
 	}
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	if err != nil {
 		return err
 	}
@@ -328,10 +320,10 @@ func (s *Submodule) fetchAndCheckout(
 	//
 	// [1]: https://git-scm.com/docs/protocol-capabilities#_allow_reachable_sha1_in_want
 	if !o.NoFetch {
-		if _, err := w.r.Object(plumbing.AnyObject, hash); err != nil {
+		if _, err := w.r.Object(ctx, plumbing.AnyObject, hash); err != nil {
 			refSpec := config.RefSpec("+" + hash.String() + ":" + hash.String())
 
-			err := r.FetchContext(ctx, &FetchOptions{
+			err := r.Fetch(ctx, &FetchOptions{
 				ClientOptions: o.ClientOptions,
 				RefSpecs:      []config.RefSpec{refSpec},
 				Depth:         o.Depth,
@@ -342,21 +334,21 @@ func (s *Submodule) fetchAndCheckout(
 		}
 	}
 
-	if err := w.Checkout(&CheckoutOptions{Hash: hash}); err != nil {
+	if err := w.Checkout(ctx, &CheckoutOptions{Hash: hash}); err != nil {
 		return err
 	}
 
 	head := plumbing.NewHashReference(plumbing.HEAD, hash)
-	return r.Storer.SetReference(head)
+	return r.Storer.SetReference(ctx, head)
 }
 
 // Submodules list of several submodules from the same repository.
 type Submodules []*Submodule
 
 // Init initializes the submodules in this list.
-func (s Submodules) Init() error {
+func (s Submodules) Init(ctx context.Context) error {
 	for _, sub := range s {
-		if err := sub.Init(); err != nil {
+		if err := sub.Init(ctx); err != nil {
 			return err
 		}
 	}
@@ -365,18 +357,12 @@ func (s Submodules) Init() error {
 }
 
 // Update updates all the submodules in this list.
-func (s Submodules) Update(o *SubmoduleUpdateOptions) error {
-	return s.UpdateContext(context.Background(), o)
-}
-
-// UpdateContext updates all the submodules in this list.
 //
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects the
-// transport operations.
-func (s Submodules) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions) error {
+// operation is complete, an error is returned.
+func (s Submodules) Update(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	for _, sub := range s {
-		if err := sub.UpdateContext(ctx, o); err != nil {
+		if err := sub.Update(ctx, o); err != nil {
 			return err
 		}
 	}
@@ -385,7 +371,7 @@ func (s Submodules) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions
 }
 
 // Status returns the status of the submodules.
-func (s Submodules) Status() (SubmodulesStatus, error) {
+func (s Submodules) Status(ctx context.Context) (SubmodulesStatus, error) {
 	var list SubmodulesStatus
 
 	var r *Repository
@@ -394,12 +380,12 @@ func (s Submodules) Status() (SubmodulesStatus, error) {
 			r = sub.w.r
 		}
 
-		idx, err := r.Storer.Index()
+		idx, err := r.Storer.Index(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		status, err := sub.status(idx)
+		status, err := sub.status(ctx, idx)
 		if err != nil {
 			return nil, err
 		}

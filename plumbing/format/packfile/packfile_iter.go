@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"context"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -13,7 +14,11 @@ type objectIter struct {
 	iter idxfile.EntryIter
 }
 
-func (i *objectIter) Next() (plumbing.EncodedObject, error) {
+// Next returns the next object. The Packfile read paths below this
+// boundary do not take a context yet.
+//
+// TODO(ctx): propagate ctx into Packfile reads.
+func (i *objectIter) Next(_ context.Context) (plumbing.EncodedObject, error) {
 	if err := i.p.init(); err != nil {
 		return nil, err
 	}
@@ -62,7 +67,7 @@ func (i *objectIter) next() (plumbing.EncodedObject, error) {
 	}
 }
 
-func (i *objectIter) ForEach(f func(plumbing.EncodedObject) error) error {
+func (i *objectIter) ForEach(ctx context.Context, f func(plumbing.EncodedObject) error) error {
 	if err := i.p.init(); err != nil {
 		return err
 	}
@@ -71,6 +76,10 @@ func (i *objectIter) ForEach(f func(plumbing.EncodedObject) error) error {
 	defer i.p.m.Unlock()
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		o, err := i.next()
 		if err != nil {
 			if err == io.EOF {

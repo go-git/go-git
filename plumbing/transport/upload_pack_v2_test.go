@@ -114,7 +114,7 @@ func TestUploadPackV2LsRefsPeeledInline(t *testing.T) {
 func TestUploadPackV2FetchShallowDeepen(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	// A depth-1 fetch: the tip is the shallow boundary. The response carries a
@@ -135,18 +135,19 @@ func TestUploadPackV2FetchShallowDeepen(t *testing.T) {
 func TestObjectsToUploadShallowBounded(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
 
-	full, err := objectsToUpload(st, []plumbing.Hash{head.Hash()}, nil)
+	full, err := objectsToUpload(t.Context(), st, []plumbing.Hash{head.Hash()}, nil)
 	require.NoError(t, err)
 	require.Contains(t, full, parent, "unbounded pack should include the parent commit")
 
 	bounded, err := objectsToUpload(
+		t.Context(),
 		&shallowBoundaryStorer{Storer: st, boundary: []plumbing.Hash{head.Hash()}},
 		[]plumbing.Hash{head.Hash()}, nil,
 	)
@@ -159,7 +160,7 @@ func TestObjectsToUploadShallowBounded(t *testing.T) {
 func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
@@ -174,7 +175,7 @@ func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
 func TestUploadPackV2FetchCloneNoHaves(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
@@ -190,7 +191,7 @@ func TestUploadPackV2FetchCloneNoHaves(t *testing.T) {
 func TestUploadPackV2FetchReadyWithCommonHave(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
@@ -211,9 +212,9 @@ func TestUploadPackV2FetchReadyWithCommonHave(t *testing.T) {
 func TestUploadPackV2FetchCommonButNotReady(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
@@ -246,7 +247,7 @@ func TestUploadPackV2LsRefsHeadResolvedOID(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
 
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"symrefs"}))
@@ -275,7 +276,7 @@ func TestUploadPackV2LsRefsHeadFilteredByPrefix(t *testing.T) {
 func TestUploadPackV2FetchNotReadyContinuesNegotiation(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	// A have the server does not know about: no common base yet, so the

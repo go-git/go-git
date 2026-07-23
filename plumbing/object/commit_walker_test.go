@@ -27,7 +27,7 @@ func (s *CommitWalkerSuite) TestCommitPreIterator() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitPreorderIter(commit, nil, nil).ForEach(func(c *Commit) error {
+	NewCommitPreorderIter(commit, nil, nil).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -55,7 +55,7 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithIgnore() {
 	var commits []*Commit
 	NewCommitPreorderIter(commit, nil, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -86,7 +86,7 @@ func (s *CommitWalkerSuite) TestCommitLimitIterByTrailingHash() {
 	}
 	NewCommitLimitIterFromIter(commitIter, LogLimitOptions{
 		TailHash: plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -111,7 +111,7 @@ func (s *CommitWalkerSuite) TestCommitLimitIterByTime() {
 	NewCommitLimitIterFromIter(commitIter, LogLimitOptions{
 		Since:    &since,
 		TailHash: plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -129,7 +129,7 @@ func (s *CommitWalkerSuite) TestCommitPreIteratorWithSeenExternal() {
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"): true,
 	}
 	NewCommitPreorderIter(commit, seenExternal, nil).
-		ForEach(func(c *Commit) error {
+		ForEach(s.T().Context(), func(c *Commit) error {
 			commits = append(commits, c)
 			return nil
 		})
@@ -149,7 +149,7 @@ func (s *CommitWalkerSuite) TestCommitPostIterator() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitPostorderIter(commit, nil).ForEach(func(c *Commit) error {
+	NewCommitPostorderIter(commit, nil).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -178,7 +178,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnore() {
 	var commits []*Commit
 	NewCommitPostorderIter(commit, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -198,7 +198,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorFirstParent() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitPostorderIterFirstParent(commit, nil).ForEach(func(c *Commit) error {
+	NewCommitPostorderIterFirstParent(commit, nil).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -225,7 +225,7 @@ func (s *CommitWalkerSuite) TestCommitPostIteratorWithIgnoreFirstParent() {
 	var commits []*Commit
 	NewCommitPostorderIterFirstParent(commit, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -245,7 +245,7 @@ func (s *CommitWalkerSuite) TestCommitCTimeIterator() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitIterCTime(commit, nil, nil).ForEach(func(c *Commit) error {
+	NewCommitIterCTime(commit, nil, nil).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -273,7 +273,7 @@ func (s *CommitWalkerSuite) TestCommitCTimeIteratorWithIgnore() {
 	var commits []*Commit
 	NewCommitIterCTime(commit, nil, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -293,7 +293,7 @@ func (s *CommitWalkerSuite) TestCommitBSFIterator() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitIterBSF(commit, nil, nil).ForEach(func(c *Commit) error {
+	NewCommitIterBSF(commit, nil, nil).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -321,7 +321,7 @@ func (s *CommitWalkerSuite) TestCommitBSFIteratorWithIgnore() {
 	var commits []*Commit
 	NewCommitIterBSF(commit, nil, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
-	}).ForEach(func(c *Commit) error {
+	}).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -347,7 +347,7 @@ func (s *CommitWalkerSuite) TestCommitPathIteratorInitialCommit() {
 		func(path string) bool { return path == fileName },
 		NewCommitIterCTime(commit, nil, nil),
 		true,
-	).ForEach(func(c *Commit) error {
+	).ForEach(s.T().Context(), func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})

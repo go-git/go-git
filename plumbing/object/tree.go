@@ -57,8 +57,8 @@ type Tree struct {
 }
 
 // GetTree gets a tree from an object storer and decodes it.
-func GetTree(s storer.EncodedObjectStorer, h plumbing.Hash) (*Tree, error) {
-	o, err := s.EncodedObject(plumbing.TreeObject, h)
+func GetTree(ctx context.Context, s storer.EncodedObjectStorer, h plumbing.Hash) (*Tree, error) {
+	o, err := s.EncodedObject(ctx, plumbing.TreeObject, h)
 	if err != nil {
 		return nil, err
 	}
@@ -86,13 +86,13 @@ type TreeEntry struct {
 
 // File returns the hash of the file identified by the `path` argument.
 // The path is interpreted as relative to the tree receiver.
-func (t *Tree) File(path string) (*File, error) {
-	e, err := t.FindEntry(path)
+func (t *Tree) File(ctx context.Context, path string) (*File, error) {
+	e, err := t.FindEntry(ctx, path)
 	if err != nil {
 		return nil, ErrFileNotFound
 	}
 
-	blob, err := GetBlob(t.s, e.Hash)
+	blob, err := GetBlob(ctx, t.s, e.Hash)
 	if err != nil {
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			return nil, ErrFileNotFound
@@ -105,24 +105,24 @@ func (t *Tree) File(path string) (*File, error) {
 
 // Size returns the plaintext size of an object, without reading it
 // into memory.
-func (t *Tree) Size(path string) (int64, error) {
-	e, err := t.FindEntry(path)
+func (t *Tree) Size(ctx context.Context, path string) (int64, error) {
+	e, err := t.FindEntry(ctx, path)
 	if err != nil {
 		return 0, ErrEntryNotFound
 	}
 
-	return t.s.EncodedObjectSize(e.Hash)
+	return t.s.EncodedObjectSize(ctx, e.Hash)
 }
 
 // Tree returns the tree identified by the `path` argument.
 // The path is interpreted as relative to the tree receiver.
-func (t *Tree) Tree(path string) (*Tree, error) {
-	e, err := t.FindEntry(path)
+func (t *Tree) Tree(ctx context.Context, path string) (*Tree, error) {
+	e, err := t.FindEntry(ctx, path)
 	if err != nil {
 		return nil, ErrDirectoryNotFound
 	}
 
-	tree, err := GetTree(t.s, e.Hash)
+	tree, err := GetTree(ctx, t.s, e.Hash)
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
 		return nil, ErrDirectoryNotFound
 	}
@@ -136,12 +136,12 @@ func (t *Tree) Tree(path string) (*Tree, error) {
 // the same reason FindEntry validates: TreeEntryFile is a boundary
 // where attacker-controlled tree data leaves the trusted store as a
 // *File whose Name a caller can hand to filesystem ops.
-func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
+func (t *Tree) TreeEntryFile(ctx context.Context, e *TreeEntry) (*File, error) {
 	if err := pathutil.ValidTreePath(e.Name); err != nil {
 		return nil, err
 	}
 
-	blob, err := GetBlob(t.s, e.Hash)
+	blob, err := GetBlob(ctx, t.s, e.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 // boundary as `.git`-shaped or path-traversal-shaped names. Callers
 // that legitimately need to look up unsafe paths should walk the
 // tree manually.
-func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
+func (t *Tree) FindEntry(ctx context.Context, path string) (*TreeEntry, error) {
 	if err := pathutil.ValidTreePath(path); err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	var tree *Tree
 	var err error
 	for tree = startingTree; len(pathParts) > 1; pathParts = pathParts[1:] {
-		if tree, err = tree.dir(pathParts[0]); err != nil {
+		if tree, err = tree.dir(ctx, pathParts[0]); err != nil {
 			return nil, err
 		}
 
@@ -196,13 +196,13 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	return tree.entry(pathParts[0])
 }
 
-func (t *Tree) dir(baseName string) (*Tree, error) {
+func (t *Tree) dir(ctx context.Context, baseName string) (*Tree, error) {
 	entry, err := t.entry(baseName)
 	if err != nil {
 		return nil, ErrDirectoryNotFound
 	}
 
-	obj, err := t.s.EncodedObject(plumbing.TreeObject, entry.Hash)
+	obj, err := t.s.EncodedObject(ctx, plumbing.TreeObject, entry.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -556,39 +556,28 @@ func isValidTreeMode(mode filemode.FileMode) bool {
 }
 
 // Diff returns a list of changes between this tree and the provided one
-func (t *Tree) Diff(to *Tree) (Changes, error) {
-	return t.DiffContext(context.Background(), to)
-}
-
-// DiffContext returns a list of changes between this tree and the provided one
 // Error will be returned if context expires. Provided context must be non nil.
 //
 // NOTE: Since version 5.1.0 the renames are correctly handled, the settings
 // used are the recommended options DefaultDiffTreeOptions.
-func (t *Tree) DiffContext(ctx context.Context, to *Tree) (Changes, error) {
+func (t *Tree) Diff(ctx context.Context, to *Tree) (Changes, error) {
 	return DiffTreeWithOptions(ctx, t, to, DefaultDiffTreeOptions)
 }
 
-// Patch returns a slice of Patch objects with all the changes between trees
-// in chunks. This representation can be used to create several diff outputs.
-func (t *Tree) Patch(to *Tree) (*Patch, error) {
-	return t.PatchContext(context.Background(), to)
-}
-
-// PatchContext returns a slice of Patch objects with all the changes between
+// Patch returns a slice of Patch objects with all the changes between
 // trees in chunks. This representation can be used to create several diff
 // outputs. If context expires, an error will be returned. Provided context must
 // be non-nil.
 //
 // NOTE: Since version 5.1.0 the renames are correctly handled, the settings
 // used are the recommended options DefaultDiffTreeOptions.
-func (t *Tree) PatchContext(ctx context.Context, to *Tree) (*Patch, error) {
-	changes, err := t.DiffContext(ctx, to)
+func (t *Tree) Patch(ctx context.Context, to *Tree) (*Patch, error) {
+	changes, err := t.Diff(ctx, to)
 	if err != nil {
 		return nil, err
 	}
 
-	return changes.PatchContext(ctx)
+	return changes.Patch(ctx)
 }
 
 // treeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
@@ -597,7 +586,7 @@ type treeEntryIter struct {
 	pos int
 }
 
-func (iter *treeEntryIter) Next() (TreeEntry, error) {
+func (iter *treeEntryIter) Next(_ context.Context) (TreeEntry, error) {
 	if iter.pos >= len(iter.t.Entries) {
 		return TreeEntry{}, io.EOF
 	}
@@ -656,7 +645,7 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // In the current implementation any objects which cannot be found in the
 // underlying repository will be skipped automatically. It is possible that this
 // may change in future versions.
-func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
+func (w *TreeWalker) Next(ctx context.Context) (name string, entry TreeEntry, err error) {
 	var obj *Tree
 	for {
 		current := len(w.stack) - 1
@@ -672,7 +661,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			return name, entry, err
 		}
 
-		entry, err = w.stack[current].Next()
+		entry, err = w.stack[current].Next(ctx)
 		if err == io.EOF {
 			// Finished with the current tree, move back up to the parent
 			w.stack = w.stack[:current]
@@ -696,7 +685,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		}
 
 		if entry.Mode == filemode.Dir {
-			obj, err = GetTree(w.s, entry.Hash)
+			obj, err = GetTree(ctx, w.s, entry.Hash)
 		}
 
 		name = simpleJoin(w.base, entry.Name)
@@ -757,9 +746,9 @@ func NewTreeIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *T
 
 // Next moves the iterator to the next tree and returns a pointer to it. If
 // there are no more trees, it returns io.EOF.
-func (iter *TreeIter) Next() (*Tree, error) {
+func (iter *TreeIter) Next(ctx context.Context) (*Tree, error) {
 	for {
-		obj, err := iter.EncodedObjectIter.Next()
+		obj, err := iter.EncodedObjectIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -775,8 +764,8 @@ func (iter *TreeIter) Next() (*Tree, error) {
 // ForEach call the cb function for each tree contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *TreeIter) ForEach(cb func(*Tree) error) error {
-	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
+func (iter *TreeIter) ForEach(ctx context.Context, cb func(*Tree) error) error {
+	return iter.EncodedObjectIter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
 		if obj.Type() != plumbing.TreeObject {
 			return nil
 		}

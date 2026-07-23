@@ -22,11 +22,11 @@ func TestFilesystemLoader_Load(t *testing.T) {
 	repoPath := filepath.Join(dir, "repo.git")
 	st := filesystem.NewStorage(osfs.New(repoPath), nil)
 	defer func() { _ = st.Close() }()
-	require.NoError(t, st.Init())
-	cfg, err := st.Config()
+	require.NoError(t, st.Init(t.Context()))
+	cfg, err := st.Config(t.Context())
 	require.NoError(t, err)
 	cfg.Core.IsBare = true
-	require.NoError(t, st.SetConfig(cfg))
+	require.NoError(t, st.SetConfig(t.Context(), cfg))
 
 	loader := NewFilesystemLoader(osfs.New(dir), false)
 
@@ -47,11 +47,11 @@ func TestFilesystemLoader_LoadBare(t *testing.T) {
 
 	st := filesystem.NewStorage(osfs.New(filepath.Join(dir, "bare.git")), nil)
 	defer func() { _ = st.Close() }()
-	require.NoError(t, st.Init())
-	cfg, err := st.Config()
+	require.NoError(t, st.Init(t.Context()))
+	cfg, err := st.Config(t.Context())
 	require.NoError(t, err)
 	cfg.Core.IsBare = true
-	require.NoError(t, st.SetConfig(cfg))
+	require.NoError(t, st.SetConfig(t.Context(), cfg))
 
 	loader := NewFilesystemLoader(osfs.New(dir), false)
 
@@ -133,7 +133,7 @@ func TestFilesystemLoader_LoadWithConfigDir(t *testing.T) {
 	require.NotNil(t, st)
 
 	// Verify it loaded the correct config
-	cfg, err := st.Config()
+	cfg, err := st.Config(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 }
@@ -169,7 +169,7 @@ func TestFilesystemLoader_LoadWithGitfile(t *testing.T) {
 	require.NotNil(t, st)
 
 	// Verify it loaded the correct config
-	cfg, err := st.Config()
+	cfg, err := st.Config(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 }
@@ -203,7 +203,7 @@ func TestFilesystemLoader_LoadWithRelativeGitfile(t *testing.T) {
 	require.NotNil(t, st)
 
 	// Verify it loaded the correct config
-	cfg, err := st.Config()
+	cfg, err := st.Config(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 }

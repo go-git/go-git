@@ -227,7 +227,7 @@ func (r *fetchWalker) process() error {
 
 	r.queue = append(r.queue, head)
 	for _, ref := range r.refs.References {
-		if r.st.HasEncodedObject(ref.Hash()) != nil {
+		if r.st.HasEncodedObject(r.ctx, ref.Hash()) != nil {
 			r.queue = append(r.queue, ref.Hash())
 		}
 	}
@@ -237,7 +237,7 @@ func (r *fetchWalker) process() error {
 }
 
 func (r *fetchWalker) fetchObject(objHash plumbing.Hash, obj plumbing.EncodedObject) (err error) {
-	if r.st.HasEncodedObject(objHash) == nil {
+	if r.st.HasEncodedObject(r.ctx, objHash) == nil {
 		return nil
 	}
 
@@ -394,7 +394,7 @@ LOOP:
 			return plumbing.ErrInvalidType
 		}
 
-		if _, err := r.st.SetEncodedObject(obj); err != nil {
+		if _, err := r.st.SetEncodedObject(r.ctx, obj); err != nil {
 			return err
 		}
 		processed[objHash.String()] = struct{}{}
@@ -406,7 +406,7 @@ LOOP:
 			return err
 		}
 
-		if err := packfile.UpdateObjectStorage(r.st, f); err != nil {
+		if err := packfile.UpdateObjectStorage(r.ctx, r.st, f); err != nil {
 			_ = f.Close()
 			return err
 		}

@@ -131,7 +131,7 @@ func UploadPack(
 			}
 
 			// Find common commits/objects
-			havesWithRef, err = revlist.ObjectsWithRef(st, wants, nil)
+			havesWithRef, err = revlist.ObjectsWithRef(ctx, st, wants, nil)
 			if err != nil {
 				return fmt.Errorf("getting objects with ref: %w", err)
 			}
@@ -145,7 +145,7 @@ func UploadPack(
 				var shupd packp.ShallowUpdate
 				if !upreq.Depth.IsZero() {
 					if upreq.Depth.Deepen > 0 {
-						if err := getShallowCommits(st, wants, upreq.Depth.Deepen, &shupd); err != nil {
+						if err := getShallowCommits(ctx, st, wants, upreq.Depth.Deepen, &shupd); err != nil {
 							writec <- fmt.Errorf("getting shallow commits: %w", err)
 							return
 						}
@@ -266,7 +266,7 @@ func UploadPack(
 		return fmt.Errorf("closing reader: %w", err)
 	}
 
-	objs, err := objectsToUpload(st, wants, haves)
+	objs, err := objectsToUpload(ctx, st, wants, haves)
 	if err != nil {
 		_ = w.Close()
 		return fmt.Errorf("getting objects to upload: %w", err)
@@ -289,14 +289,14 @@ func UploadPack(
 	var packWindow uint
 	if opts.SkipDeltaCompression {
 		packWindow = 0
-	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
+	} else if cfg, cerr := st.Config(ctx); cerr == nil && cfg != nil {
 		packWindow = cfg.Pack.Window
 	} else {
 		packWindow = config.DefaultPackWindow
 	}
 
-	e := packfile.NewEncoder(writer, st, false)
-	_, err = e.Encode(objs, packWindow)
+	e := packfile.NewEncoder(ctx, writer, st, false)
+	_, err = e.Encode(ctx, objs, packWindow)
 	if err != nil {
 		return fmt.Errorf("encoding packfile: %w", err)
 	}
@@ -314,11 +314,11 @@ func UploadPack(
 	return nil
 }
 
-func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
-	return revlist.Objects(st, wants, haves)
+func objectsToUpload(ctx context.Context, st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	return revlist.Objects(ctx, st, wants, haves)
 }
 
-func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
+func getShallowCommits(ctx context.Context, st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
 	var i, curDepth int
 	var commit *object.Commit
 	depths := map[*object.Commit]int{}
@@ -327,7 +327,7 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 	for commit != nil || i < len(heads) || len(stack) > 0 {
 		if commit == nil {
 			if i < len(heads) {
-				obj, err := st.EncodedObject(plumbing.CommitObject, heads[i])
+				obj, err := st.EncodedObject(ctx, plumbing.CommitObject, heads[i])
 				i++
 				if err != nil {
 					continue
@@ -361,7 +361,7 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 		parents := commit.Parents()
 		commit = nil
 		for {
-			parent, err := parents.Next()
+			parent, err := parents.Next(ctx)
 			if err == io.EOF {
 				break
 			}
@@ -375,7 +375,7 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 
 			depths[parent] = curDepth
 
-			if _, err := parents.Next(); err == nil {
+			if _, err := parents.Next(ctx); err == nil {
 				stack = append(stack, parent)
 			} else {
 				commit = parent
@@ -392,7 +392,7 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 // reachable. It mirrors upstream get_shallows_depth (shallow.c): the value
 // offsets a deepen-relative request so the new depth is measured from the
 // client's existing shallow boundary rather than from the tips.
-func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (int, error) {
+func shallowFrontierDepth(ctx context.Context, st storage.Storer, heads, shallows []plumbing.Hash) (int, error) {
 	shallowSet := make(map[plumbing.Hash]struct{}, len(shallows))
 	for _, h := range shallows {
 		shallowSet[h] = struct{}{}
@@ -406,7 +406,7 @@ func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (i
 	}
 	var stack []frame
 	for _, h := range heads {
-		if c, ok := peelToCommit(st, h); ok {
+		if c, ok := peelToCommit(ctx, st, h); ok {
 			stack = append(stack, frame{c.Hash, 0})
 		}
 	}
@@ -427,7 +427,7 @@ func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (i
 			// walk continues past it, matching upstream get_shallows_or_depth.
 		}
 
-		c, err := object.GetCommit(st, f.hash)
+		c, err := object.GetCommit(ctx, st, f.hash)
 		if err != nil {
 			continue
 		}
@@ -507,15 +507,15 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 // attribute, which a single plumbing.Reference (hash XOR symbolic) cannot
 // represent. writeV2Ref resolves the symref's hash from the storer, matching
 // upstream git's send_ref.
-func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *packp.LsRefsArgs) error {
-	iter, err := st.IterReferences()
+func serveLsRefsV2(ctx context.Context, st storage.Storer, w io.Writer, args *packp.LsRefsArgs) error {
+	iter, err := st.IterReferences(ctx)
 	if err != nil {
 		return err
 	}
 	defer iter.Close()
 
 	var refs []*plumbing.Reference
-	_ = iter.ForEach(func(r *plumbing.Reference) error {
+	_ = iter.ForEach(ctx, func(r *plumbing.Reference) error {
 		refs = append(refs, r)
 		return nil
 	})
@@ -528,7 +528,7 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *pack
 	for _, r := range refs {
 		if r.Name() == plumbing.HEAD {
 			if len(prefixes) == 0 || refMatchesAnyPrefix(r.Name().String(), prefixes) {
-				if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel); err != nil {
+				if err := writeV2Ref(ctx, w, st, r, args.Symrefs, args.Peel); err != nil {
 					return err
 				}
 			}
@@ -543,7 +543,7 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *pack
 		if len(prefixes) > 0 && !refMatchesAnyPrefix(r.Name().String(), prefixes) {
 			continue
 		}
-		if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel); err != nil {
+		if err := writeV2Ref(ctx, w, st, r, args.Symrefs, args.Peel); err != nil {
 			return err
 		}
 	}
@@ -560,11 +560,11 @@ func refMatchesAnyPrefix(name string, prefixes []string) bool {
 	return false
 }
 
-func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, peel bool) error {
+func writeV2Ref(ctx context.Context, w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, peel bool) error {
 	var hash plumbing.Hash
 	var target string
 	if r.Type() == plumbing.SymbolicReference {
-		ref, err := storer.ResolveReference(st, r.Target())
+		ref, err := storer.ResolveReference(ctx, st, r.Target())
 		if err == nil {
 			hash = ref.Hash()
 		}
@@ -590,7 +590,7 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 		// refs/tags/*, and resolve all the way to the underlying non-tag object
 		// — matching upstream's reference_get_peeled_oid (ls-refs.c). Lightweight
 		// tags and branches don't point at tag objects, so they emit no attribute.
-		if peeled, ok := peelToNonTag(st, hash); ok {
+		if peeled, ok := peelToNonTag(ctx, st, hash); ok {
 			line += " peeled:" + peeled.String()
 		}
 	}
@@ -604,14 +604,14 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 // object, mirroring upstream's reference_get_peeled_oid. It returns the peeled
 // hash and true when h points at one or more tag objects; false when h is not a
 // tag (a lightweight tag, branch, etc.) so no "peeled" attribute is emitted.
-func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
-	tag, err := object.GetTag(st, h)
+func peelToNonTag(ctx context.Context, st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
+	tag, err := object.GetTag(ctx, st, h)
 	if err != nil {
 		return plumbing.ZeroHash, false
 	}
 	for {
 		next := tag.Target
-		inner, err := object.GetTag(st, next)
+		inner, err := object.GetTag(ctx, st, next)
 		if err != nil {
 			// next is a non-tag object (or missing); return it as the peeled
 			// value, as upstream's peel does.
@@ -632,7 +632,7 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 // left open, so the caller loops to read the client's next command=fetch round
 // (the stateful negotiation continues until the server is ready). A stateless
 // (HTTP) round always concludes, since the client re-POSTs each round.
-func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *packp.FetchArgs, opts *UploadPackRequest) (concluded bool, err error) {
+func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args *packp.FetchArgs, opts *UploadPackRequest) (concluded bool, err error) {
 	wants := args.Wants
 	haves := args.Haves
 	clientShallows := args.Shallows
@@ -662,7 +662,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	if !done && len(haves) > 0 {
 		var common []plumbing.Hash
 		for _, h := range haves {
-			if _, err := st.EncodedObject(plumbing.AnyObject, h); err == nil {
+			if _, err := st.EncodedObject(ctx, plumbing.AnyObject, h); err == nil {
 				common = append(common, h)
 			}
 		}
@@ -674,7 +674,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		// ready (including no common object at all, which encodes as NAK), the
 		// acknowledgments section stands alone and the client refines its haves
 		// in the next request.
-		if len(common) == 0 || !wantsReachableFromHaves(st, wants, common) {
+		if len(common) == 0 || !wantsReachableFromHaves(ctx, st, wants, common) {
 			if err := out.Encode(w); err != nil {
 				return true, err
 			}
@@ -701,7 +701,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	// already-shallow client the depth is offset by the existing boundary's
 	// distance from the wants (see the deepen-relative handling below).
 	since := args.DeepenSince
-	notTips, err := resolveDeepenNot(st, args.DeepenNot)
+	notTips, err := resolveDeepenNot(ctx, st, args.DeepenNot)
 	if err != nil {
 		_ = w.Close()
 		return true, fmt.Errorf("resolving deepen-not: %w", err)
@@ -724,7 +724,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		var shupd packp.ShallowUpdate
 		computed := true
 		if revList {
-			err = getShallowCommitsByRevList(st, wants, since, notTips, &shupd)
+			err = getShallowCommitsByRevList(ctx, st, wants, since, notTips, &shupd)
 		} else {
 			effectiveDepth := depth
 			if args.DeepenRelative && len(clientShallows) > 0 {
@@ -732,7 +732,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 				// shallow boundary, not from the wants. Mirror upstream
 				// get_shallow_commits (shallow.c): offset the absolute depth by
 				// the depth at which that boundary sits from the wants.
-				cur, derr := shallowFrontierDepth(st, wants, clientShallows)
+				cur, derr := shallowFrontierDepth(ctx, st, wants, clientShallows)
 				if derr != nil {
 					_ = w.Close()
 					return true, fmt.Errorf("computing shallow frontier depth: %w", derr)
@@ -747,7 +747,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 				}
 			}
 			if computed {
-				err = getShallowCommits(st, wants, effectiveDepth, &shupd)
+				err = getShallowCommits(ctx, st, wants, effectiveDepth, &shupd)
 			}
 		}
 		if err != nil {
@@ -779,12 +779,12 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 			// full history grafts nothing and unshallows the old boundary.
 			boundary = newBoundary
 		}
-		newView, nerr := objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: boundary}, wants, nil)
+		newView, nerr := objectsToUpload(ctx, &shallowBoundaryStorer{Storer: st, boundary: boundary}, wants, nil)
 		if nerr != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting objects to upload: %w", nerr)
 		}
-		clientView, cerr := objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: clientShallows}, haves, nil)
+		clientView, cerr := objectsToUpload(ctx, &shallowBoundaryStorer{Storer: st, boundary: clientShallows}, haves, nil)
 		if cerr != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting client objects: %w", cerr)
@@ -802,7 +802,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 			out.ShallowInfo = &packp.ShallowInfo{Shallows: newBoundary}
 			packSt = &shallowBoundaryStorer{Storer: st, boundary: newBoundary}
 		}
-		objs, err = objectsToUpload(packSt, wants, haves)
+		objs, err = objectsToUpload(ctx, packSt, wants, haves)
 		if err != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting objects to upload: %w", err)
@@ -812,7 +812,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	// include-tag: add annotated tags whose target is in the pack (auto-tag
 	// following), mirroring upstream pack-objects --include-tag.
 	if args.IncludeTag {
-		objs, err = includeReachableTags(st, objs)
+		objs, err = includeReachableTags(ctx, st, objs)
 		if err != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("collecting include-tag objects: %w", err)
@@ -834,14 +834,14 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	var packWindow uint
 	if opts.SkipDeltaCompression {
 		packWindow = 0
-	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
+	} else if cfg, cerr := st.Config(ctx); cerr == nil && cfg != nil {
 		packWindow = cfg.Pack.Window
 	} else {
 		packWindow = config.DefaultPackWindow
 	}
 
-	e := packfile.NewEncoder(writer, st, false)
-	if _, err := e.Encode(objs, packWindow); err != nil {
+	e := packfile.NewEncoder(ctx, writer, st, false)
+	if _, err := e.Encode(ctx, objs, packWindow); err != nil {
 		return true, fmt.Errorf("encoding packfile: %w", err)
 	}
 
@@ -899,24 +899,24 @@ func unshallowedCommits(clientShallows, newBoundary, newView []plumbing.Hash) []
 // resolveDeepenNot resolves each deepen-not argument (a ref name or an object
 // id) to a commit hash, peeling annotated tags, mirroring how upstream feeds
 // "--not <oid>" to rev-list (upload-pack.c send_shallow_list).
-func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error) {
+func resolveDeepenNot(ctx context.Context, st storage.Storer, refs []string) ([]plumbing.Hash, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
 	out := make([]plumbing.Hash, 0, len(refs))
 	for _, r := range refs {
 		var h plumbing.Hash
-		if ref, err := storer.ResolveReference(st, plumbing.ReferenceName(r)); err == nil {
+		if ref, err := storer.ResolveReference(ctx, st, plumbing.ReferenceName(r)); err == nil {
 			h = ref.Hash()
 		} else if oid, ok := plumbing.FromHex(r); ok {
-			if _, err := st.EncodedObject(plumbing.AnyObject, oid); err != nil {
+			if _, err := st.EncodedObject(ctx, plumbing.AnyObject, oid); err != nil {
 				return nil, fmt.Errorf("cannot resolve deepen-not %q", r)
 			}
 			h = oid
 		} else {
 			return nil, fmt.Errorf("cannot resolve deepen-not %q", r)
 		}
-		if peeled, ok := peelToNonTag(st, h); ok {
+		if peeled, ok := peelToNonTag(ctx, st, h); ok {
 			h = peeled
 		}
 		out = append(out, h)
@@ -926,7 +926,7 @@ func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error)
 
 // reachableCommits returns the set of commits reachable from tips (inclusive),
 // used as the exclusion set for deepen-not.
-func reachableCommits(st storage.Storer, tips []plumbing.Hash) (map[plumbing.Hash]struct{}, error) {
+func reachableCommits(ctx context.Context, st storage.Storer, tips []plumbing.Hash) (map[plumbing.Hash]struct{}, error) {
 	seen := make(map[plumbing.Hash]struct{})
 	stack := append([]plumbing.Hash(nil), tips...)
 	for len(stack) > 0 {
@@ -936,7 +936,7 @@ func reachableCommits(st storage.Storer, tips []plumbing.Hash) (map[plumbing.Has
 			continue
 		}
 		seen[h] = struct{}{}
-		c, err := object.GetCommit(st, h)
+		c, err := object.GetCommit(ctx, st, h)
 		if err != nil {
 			continue
 		}
@@ -954,8 +954,8 @@ func reachableCommits(st storage.Storer, tips []plumbing.Hash) (map[plumbing.Has
 // Unlike git's rev-list traversal it does not apply the date "slop" used to
 // tolerate out-of-order committer timestamps, so under clock skew the boundary
 // may differ by a few commits; the resulting shallow clone is still valid.
-func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash, upd *packp.ShallowUpdate) error {
-	exclude, err := reachableCommits(st, notTips)
+func getShallowCommitsByRevList(ctx context.Context, st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash, upd *packp.ShallowUpdate) error {
+	exclude, err := reachableCommits(ctx, st, notTips)
 	if err != nil {
 		return err
 	}
@@ -974,7 +974,7 @@ func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since 
 		if _, ex := exclude[h]; ex {
 			continue
 		}
-		c, err := object.GetCommit(st, h)
+		c, err := object.GetCommit(ctx, st, h)
 		if err != nil {
 			continue
 		}
@@ -1002,20 +1002,20 @@ func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since 
 // annotated tag whose (peeled) target is already in objs, it adds the tag
 // object and every tag object along the chain, mirroring upstream pack-objects
 // --include-tag. Lightweight tags have no tag object and are skipped.
-func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.Hash, error) {
+func includeReachableTags(ctx context.Context, st storage.Storer, objs []plumbing.Hash) ([]plumbing.Hash, error) {
 	have := make(map[plumbing.Hash]struct{}, len(objs))
 	for _, h := range objs {
 		have[h] = struct{}{}
 	}
 
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences(ctx)
 	if err != nil {
 		return objs, err
 	}
 	defer iter.Close()
 
 	added := objs
-	err = iter.ForEach(func(ref *plumbing.Reference) error {
+	err = iter.ForEach(ctx, func(ref *plumbing.Reference) error {
 		if ref.Type() != plumbing.HashReference || !ref.Name().IsTag() {
 			return nil
 		}
@@ -1038,7 +1038,7 @@ func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.H
 				break // defend against a tag cycle in a malformed repo
 			}
 			seen[cur] = struct{}{}
-			tag, terr := object.GetTag(st, cur)
+			tag, terr := object.GetTag(ctx, st, cur)
 			if terr != nil {
 				break // non-tag object not in the pack: nothing to add
 			}
@@ -1064,8 +1064,8 @@ type shallowBoundaryStorer struct {
 	boundary []plumbing.Hash
 }
 
-func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
-	base, err := s.Storer.Shallow()
+func (s *shallowBoundaryStorer) Shallow(ctx context.Context) ([]plumbing.Hash, error) {
+	base, err := s.Storer.Shallow(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1081,18 +1081,18 @@ func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
 // can reach a have by walking parents. Tags are peeled to commits first, as the
 // ancestry walk operates on commits. Returns false (keep negotiating) if any
 // want cannot be resolved to a commit or is not yet anchored.
-func wantsReachableFromHaves(st storage.Storer, wants, commonHaves []plumbing.Hash) bool {
+func wantsReachableFromHaves(ctx context.Context, st storage.Storer, wants, commonHaves []plumbing.Hash) bool {
 	haveSet := make(map[plumbing.Hash]struct{}, len(commonHaves))
 	haveCommits := make([]*object.Commit, 0, len(commonHaves))
 	for _, h := range commonHaves {
 		haveSet[h] = struct{}{}
-		if c, ok := peelToCommit(st, h); ok {
+		if c, ok := peelToCommit(ctx, st, h); ok {
 			haveCommits = append(haveCommits, c)
 		}
 	}
 
 	for _, wHash := range wants {
-		wc, ok := peelToCommit(st, wHash)
+		wc, ok := peelToCommit(ctx, st, wHash)
 		if !ok {
 			return false
 		}
@@ -1105,7 +1105,7 @@ func wantsReachableFromHaves(st storage.Storer, wants, commonHaves []plumbing.Ha
 				anchored = true
 				break
 			}
-			if isAnc, err := hc.IsAncestor(wc); err == nil && isAnc {
+			if isAnc, err := hc.IsAncestor(ctx, wc); err == nil && isAnc {
 				anchored = true
 				break
 			}
@@ -1119,24 +1119,24 @@ func wantsReachableFromHaves(st storage.Storer, wants, commonHaves []plumbing.Ha
 
 // peelToCommit resolves h to a commit, following annotated tags. It returns
 // false when h is missing or does not peel to a commit.
-func peelToCommit(st storage.Storer, h plumbing.Hash) (*object.Commit, bool) {
-	obj, err := st.EncodedObject(plumbing.AnyObject, h)
+func peelToCommit(ctx context.Context, st storage.Storer, h plumbing.Hash) (*object.Commit, bool) {
+	obj, err := st.EncodedObject(ctx, plumbing.AnyObject, h)
 	if err != nil {
 		return nil, false
 	}
 	switch obj.Type() {
 	case plumbing.CommitObject:
-		c, err := object.GetCommit(st, h)
+		c, err := object.GetCommit(ctx, st, h)
 		if err != nil {
 			return nil, false
 		}
 		return c, true
 	case plumbing.TagObject:
-		tag, err := object.GetTag(st, h)
+		tag, err := object.GetTag(ctx, st, h)
 		if err != nil {
 			return nil, false
 		}
-		return peelToCommit(st, tag.Target)
+		return peelToCommit(ctx, st, tag.Target)
 	default:
 		return nil, false
 	}

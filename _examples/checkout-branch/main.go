@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,12 +14,14 @@ import (
 
 // Checkout a branch
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>", "<directory>", "<branch>")
 	url, directory, branch := os.Args[1], os.Args[2], os.Args[3]
 
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	r, err := git.PlainClone(ctx, directory, &git.CloneOptions{
 		URL: url,
 	})
 	CheckIfError(err)
@@ -26,12 +29,12 @@ func main() {
 
 	// ... retrieving the commit being pointed by HEAD
 	Info("git show-ref --head HEAD")
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
 
 	fmt.Println(ref.Hash())
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	CheckIfError(err)
 
 	// ... checking out branch
@@ -42,15 +45,15 @@ func main() {
 		Branch: plumbing.ReferenceName(branchRefName),
 		Force:  true,
 	}
-	if err := w.Checkout(&branchCoOpts); err != nil {
+	if err := w.Checkout(ctx, &branchCoOpts); err != nil {
 		Warning("local checkout of branch '%s' failed, will attempt to fetch remote branch of same name.", branch)
 		Warning("like `git checkout <branch>` defaulting to `git checkout -b <branch> --track <remote>/<branch>`")
 
 		mirrorRemoteBranchRefSpec := fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch)
-		err = fetchOrigin(r, mirrorRemoteBranchRefSpec)
+		err = fetchOrigin(ctx, r, mirrorRemoteBranchRefSpec)
 		CheckIfError(err)
 
-		err = w.Checkout(&branchCoOpts)
+		err = w.Checkout(ctx, &branchCoOpts)
 		CheckIfError(err)
 	}
 	CheckIfError(err)
@@ -59,13 +62,13 @@ func main() {
 
 	// ... retrieving the commit being pointed by HEAD (branch now)
 	Info("git show-ref --head HEAD")
-	ref, err = r.Head()
+	ref, err = r.Head(ctx)
 	CheckIfError(err)
 	fmt.Println(ref.Hash())
 }
 
-func fetchOrigin(repo *git.Repository, refSpecStr string) error {
-	remote, err := repo.Remote("origin")
+func fetchOrigin(ctx context.Context, repo *git.Repository, refSpecStr string) error {
+	remote, err := repo.Remote(ctx, "origin")
 	CheckIfError(err)
 
 	var refSpecs []config.RefSpec
@@ -73,7 +76,7 @@ func fetchOrigin(repo *git.Repository, refSpecStr string) error {
 		refSpecs = []config.RefSpec{config.RefSpec(refSpecStr)}
 	}
 
-	if err = remote.Fetch(&git.FetchOptions{
+	if err = remote.Fetch(ctx, &git.FetchOptions{
 		RefSpecs: refSpecs,
 	}); err != nil {
 		if errors.Is(err, git.NoErrAlreadyUpToDate) {

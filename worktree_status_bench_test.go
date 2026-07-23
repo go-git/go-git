@@ -21,11 +21,11 @@ func setupBenchmarkRepo(b *testing.B, numFiles, numSubdirs, numGoroutines int) *
 	tmpDir := b.TempDir()
 	repoDir := filepath.Join(tmpDir, "repo")
 
-	repo, err := PlainInit(repoDir, false)
+	repo, err := PlainInit(b.Context(), repoDir, false)
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = repo.Close() })
 
-	wt, err := repo.Worktree()
+	wt, err := repo.Worktree(b.Context())
 	require.NoError(b, err)
 
 	content := []byte("test content for benchmark\n")
@@ -61,7 +61,7 @@ func setupBenchmarkRepo(b *testing.B, numFiles, numSubdirs, numGoroutines int) *
 	wg.Wait()
 
 	for i := range numSubdirs {
-		err = wt.AddGlob(fmt.Sprintf("dir%d/*", i))
+		err = wt.AddGlob(b.Context(), fmt.Sprintf("dir%d/*", i))
 		require.NoError(b, err)
 	}
 
@@ -70,7 +70,7 @@ func setupBenchmarkRepo(b *testing.B, numFiles, numSubdirs, numGoroutines int) *
 		Email: "benchmark@test.com",
 		When:  time.Now(),
 	}
-	_, err = wt.Commit("Initial commit with many files", &CommitOptions{
+	_, err = wt.Commit(b.Context(), "Initial commit with many files", &CommitOptions{
 		Author:    sig,
 		Committer: sig,
 	})
@@ -100,7 +100,7 @@ func BenchmarkStatus(b *testing.B) {
 func benchmarkStatusClean(wt *Worktree) func(b *testing.B) {
 	return func(b *testing.B) {
 		for b.Loop() {
-			status, err := wt.Status()
+			status, err := wt.Status(b.Context())
 			if err != nil {
 				b.Fatalf("failed to get status: %v", err)
 			}
@@ -132,7 +132,7 @@ func benchmarkStatusModified(wt *Worktree, numFiles, numSubdirs int) func(b *tes
 		}
 
 		for b.Loop() {
-			status, err := wt.Status()
+			status, err := wt.Status(b.Context())
 			if err != nil {
 				b.Fatalf("failed to get status: %v", err)
 			}
@@ -179,11 +179,11 @@ func setupIgnoredDirRepo(b *testing.B, tracked, untracked int) *Worktree {
 	tmpDir := b.TempDir()
 	repoDir := filepath.Join(tmpDir, "repo")
 
-	repo, err := PlainInit(repoDir, false)
+	repo, err := PlainInit(b.Context(), repoDir, false)
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = repo.Close() })
 
-	wt, err := repo.Worktree()
+	wt, err := repo.Worktree(b.Context())
 	require.NoError(b, err)
 
 	for i := range tracked {
@@ -195,8 +195,8 @@ func setupIgnoredDirRepo(b *testing.B, tracked, untracked int) *Worktree {
 	require.NoError(b, util.WriteFile(wt.Filesystem(), ".gitignore",
 		[]byte(ignoredDir+"/\n"), 0o644))
 
-	require.NoError(b, wt.AddGlob("src/*"))
-	_, err = wt.Add(".gitignore")
+	require.NoError(b, wt.AddGlob(b.Context(), "src/*"))
+	_, err = wt.Add(b.Context(), ".gitignore")
 	require.NoError(b, err)
 
 	sig := &object.Signature{
@@ -204,7 +204,7 @@ func setupIgnoredDirRepo(b *testing.B, tracked, untracked int) *Worktree {
 		Email: "bench@test.com",
 		When:  time.Now().Add(-time.Hour), // older than index modtime so the metadata fast-path engages
 	}
-	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	_, err = wt.Commit(b.Context(), "initial", &CommitOptions{Author: sig, Committer: sig})
 	require.NoError(b, err)
 
 	// Drop a large *gitignored* untracked tree. None of these files affect
@@ -243,7 +243,7 @@ func BenchmarkStatusIgnoredDir(b *testing.B) {
 			wt := setupIgnoredDirRepo(b, tracked, tc.untracked)
 			b.ResetTimer()
 			for b.Loop() {
-				s, err := wt.Status()
+				s, err := wt.Status(b.Context())
 				if err != nil {
 					b.Fatalf("status: %v", err)
 				}

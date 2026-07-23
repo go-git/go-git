@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/go-git/go-git/v6"
@@ -10,12 +11,14 @@ import (
 
 // An example of how to create and remove branches or any other kind of reference.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>", "<directory>")
 	url, directory := os.Args[1], os.Args[2]
 
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	r, err := git.PlainClone(ctx, directory, &git.CloneOptions{
 		URL: url,
 	})
 	CheckIfError(err)
@@ -24,7 +27,7 @@ func main() {
 	// Create a new branch to the current HEAD
 	Info("git branch my-branch")
 
-	headRef, err := r.Head()
+	headRef, err := r.Head(ctx)
 	CheckIfError(err)
 
 	// Create a new plumbing.HashReference object with the name of the branch
@@ -36,11 +39,11 @@ func main() {
 	ref := plumbing.NewHashReference("refs/heads/my-branch", headRef.Hash())
 
 	// The created reference is saved in the storage.
-	err = r.Storer.SetReference(ref)
+	err = r.Storer.SetReference(ctx, ref)
 	CheckIfError(err)
 
 	// Or deleted from it.
 	Info("git branch -D my-branch")
-	err = r.Storer.RemoveReference(ref.Name())
+	err = r.Storer.RemoveReference(ctx, ref.Name())
 	CheckIfError(err)
 }

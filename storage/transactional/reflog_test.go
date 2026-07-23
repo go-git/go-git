@@ -1,6 +1,7 @@
 package transactional
 
 import (
+	"context"
 	"io"
 	"testing"
 	"time"
@@ -33,88 +34,88 @@ func (s noReflogStorage) NewEncodedObject() plumbing.EncodedObject {
 	return s.sto.NewEncodedObject()
 }
 
-func (s noReflogStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (io.WriteCloser, error) {
-	return s.sto.RawObjectWriter(typ, sz)
+func (s noReflogStorage) RawObjectWriter(ctx context.Context, typ plumbing.ObjectType, sz int64) (io.WriteCloser, error) {
+	return s.sto.RawObjectWriter(ctx, typ, sz)
 }
 
-func (s noReflogStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
-	return s.sto.SetEncodedObject(obj)
+func (s noReflogStorage) SetEncodedObject(ctx context.Context, obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	return s.sto.SetEncodedObject(ctx, obj)
 }
 
-func (s noReflogStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
-	return s.sto.EncodedObject(t, h)
+func (s noReflogStorage) EncodedObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	return s.sto.EncodedObject(ctx, t, h)
 }
 
-func (s noReflogStorage) EncodedObjectSize(h plumbing.Hash) (int64, error) {
-	return s.sto.EncodedObjectSize(h)
+func (s noReflogStorage) EncodedObjectSize(ctx context.Context, h plumbing.Hash) (int64, error) {
+	return s.sto.EncodedObjectSize(ctx, h)
 }
 
-func (s noReflogStorage) AddAlternate(remote string) error {
-	return s.sto.AddAlternate(remote)
+func (s noReflogStorage) AddAlternate(ctx context.Context, remote string) error {
+	return s.sto.AddAlternate(ctx, remote)
 }
 
-func (s noReflogStorage) HasEncodedObject(h plumbing.Hash) error {
-	return s.sto.HasEncodedObject(h)
+func (s noReflogStorage) HasEncodedObject(ctx context.Context, h plumbing.Hash) error {
+	return s.sto.HasEncodedObject(ctx, h)
 }
 
-func (s noReflogStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
-	return s.sto.IterEncodedObjects(t)
+func (s noReflogStorage) IterEncodedObjects(ctx context.Context, t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+	return s.sto.IterEncodedObjects(ctx, t)
 }
 
-func (s noReflogStorage) SetReference(ref *plumbing.Reference) error {
-	return s.sto.SetReference(ref)
+func (s noReflogStorage) SetReference(ctx context.Context, ref *plumbing.Reference) error {
+	return s.sto.SetReference(ctx, ref)
 }
 
-func (s noReflogStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
-	return s.sto.CheckAndSetReference(ref, old)
+func (s noReflogStorage) CheckAndSetReference(ctx context.Context, ref, old *plumbing.Reference) error {
+	return s.sto.CheckAndSetReference(ctx, ref, old)
 }
 
-func (s noReflogStorage) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
-	return s.sto.Reference(name)
+func (s noReflogStorage) Reference(ctx context.Context, name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	return s.sto.Reference(ctx, name)
 }
 
-func (s noReflogStorage) IterReferences() (storer.ReferenceIter, error) {
-	return s.sto.IterReferences()
+func (s noReflogStorage) IterReferences(ctx context.Context) (storer.ReferenceIter, error) {
+	return s.sto.IterReferences(ctx)
 }
 
-func (s noReflogStorage) CountLooseRefs() (int, error) {
-	return s.sto.CountLooseRefs()
+func (s noReflogStorage) CountLooseRefs(ctx context.Context) (int, error) {
+	return s.sto.CountLooseRefs(ctx)
 }
 
-func (s noReflogStorage) PackRefs() error {
-	return s.sto.PackRefs()
+func (s noReflogStorage) PackRefs(ctx context.Context) error {
+	return s.sto.PackRefs(ctx)
 }
 
-func (s noReflogStorage) RemoveReference(name plumbing.ReferenceName) error {
-	return s.sto.RemoveReference(name)
+func (s noReflogStorage) RemoveReference(ctx context.Context, name plumbing.ReferenceName) error {
+	return s.sto.RemoveReference(ctx, name)
 }
 
-func (s noReflogStorage) SetIndex(idx *index.Index) error {
-	return s.sto.SetIndex(idx)
+func (s noReflogStorage) SetIndex(ctx context.Context, idx *index.Index) error {
+	return s.sto.SetIndex(ctx, idx)
 }
 
-func (s noReflogStorage) Index() (*index.Index, error) {
-	return s.sto.Index()
+func (s noReflogStorage) Index(ctx context.Context) (*index.Index, error) {
+	return s.sto.Index(ctx)
 }
 
-func (s noReflogStorage) SetShallow(commits []plumbing.Hash) error {
-	return s.sto.SetShallow(commits)
+func (s noReflogStorage) SetShallow(ctx context.Context, commits []plumbing.Hash) error {
+	return s.sto.SetShallow(ctx, commits)
 }
 
-func (s noReflogStorage) Shallow() ([]plumbing.Hash, error) {
-	return s.sto.Shallow()
+func (s noReflogStorage) Shallow(ctx context.Context) ([]plumbing.Hash, error) {
+	return s.sto.Shallow(ctx)
 }
 
-func (s noReflogStorage) SetConfig(cfg *config.Config) error {
-	return s.sto.SetConfig(cfg)
+func (s noReflogStorage) SetConfig(ctx context.Context, cfg *config.Config) error {
+	return s.sto.SetConfig(ctx, cfg)
 }
 
-func (s noReflogStorage) Config() (*config.Config, error) {
-	return s.sto.Config()
+func (s noReflogStorage) Config(ctx context.Context) (*config.Config, error) {
+	return s.sto.Config(ctx)
 }
 
-func (s noReflogStorage) Module(name string) (storage.Storer, error) {
-	return s.sto.Module(name)
+func (s noReflogStorage) Module(ctx context.Context, name string) (storage.Storer, error) {
+	return s.sto.Module(ctx, name)
 }
 
 func newEntry(msg string) *reflog.Entry {
@@ -138,12 +139,12 @@ func (s *ReflogSuite) TestReflogReadsMergeBaseAndTemporal() {
 	rs := NewReflogStorage(base, temporal)
 
 	baseEntry := newEntry("commit: base")
-	s.NoError(base.AppendReflog(testRef, baseEntry))
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, baseEntry))
 
 	tempEntry := newEntry("commit: temporal")
-	s.NoError(rs.AppendReflog(testRef, tempEntry))
+	s.NoError(rs.AppendReflog(s.T().Context(), testRef, tempEntry))
 
-	entries, err := rs.Reflog(testRef)
+	entries, err := rs.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Len(entries, 2)
 	s.Equal("commit: base", entries[0].Message)
@@ -155,9 +156,9 @@ func (s *ReflogSuite) TestReflogBaseOnly() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(base.AppendReflog(testRef, newEntry("commit: base")))
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, newEntry("commit: base")))
 
-	entries, err := rs.Reflog(testRef)
+	entries, err := rs.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Len(entries, 1)
 	s.Equal("commit: base", entries[0].Message)
@@ -168,9 +169,9 @@ func (s *ReflogSuite) TestReflogTemporalOnly() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(rs.AppendReflog(testRef, newEntry("commit: temporal")))
+	s.NoError(rs.AppendReflog(s.T().Context(), testRef, newEntry("commit: temporal")))
 
-	entries, err := rs.Reflog(testRef)
+	entries, err := rs.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Len(entries, 1)
 	s.Equal("commit: temporal", entries[0].Message)
@@ -181,7 +182,7 @@ func (s *ReflogSuite) TestReflogEmpty() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	entries, err := rs.Reflog(testRef)
+	entries, err := rs.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Empty(entries)
 }
@@ -191,10 +192,10 @@ func (s *ReflogSuite) TestDeleteHidesBase() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(base.AppendReflog(testRef, newEntry("commit: base")))
-	s.NoError(rs.DeleteReflog(testRef))
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, newEntry("commit: base")))
+	s.NoError(rs.DeleteReflog(s.T().Context(), testRef))
 
-	entries, err := rs.Reflog(testRef)
+	entries, err := rs.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Empty(entries)
 }
@@ -204,11 +205,11 @@ func (s *ReflogSuite) TestDeleteThenAppend() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(base.AppendReflog(testRef, newEntry("commit: old")))
-	s.NoError(rs.DeleteReflog(testRef))
-	s.NoError(rs.AppendReflog(testRef, newEntry("commit: new")))
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, newEntry("commit: old")))
+	s.NoError(rs.DeleteReflog(s.T().Context(), testRef))
+	s.NoError(rs.AppendReflog(s.T().Context(), testRef, newEntry("commit: new")))
 
-	entries, err := rs.Reflog(testRef)
+	entries, err := rs.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Len(entries, 1)
 	s.Equal("commit: new", entries[0].Message)
@@ -219,12 +220,12 @@ func (s *ReflogSuite) TestCommitFlushesAppends() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(base.AppendReflog(testRef, newEntry("commit: base")))
-	s.NoError(rs.AppendReflog(testRef, newEntry("commit: temporal")))
-	s.NoError(rs.Commit())
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, newEntry("commit: base")))
+	s.NoError(rs.AppendReflog(s.T().Context(), testRef, newEntry("commit: temporal")))
+	s.NoError(rs.Commit(s.T().Context()))
 
 	// Base should now have both entries.
-	entries, err := base.Reflog(testRef)
+	entries, err := base.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Len(entries, 2)
 	s.Equal("commit: base", entries[0].Message)
@@ -236,12 +237,12 @@ func (s *ReflogSuite) TestCommitFlushesDeletes() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(base.AppendReflog(testRef, newEntry("commit: base")))
-	s.NoError(rs.DeleteReflog(testRef))
-	s.NoError(rs.Commit())
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, newEntry("commit: base")))
+	s.NoError(rs.DeleteReflog(s.T().Context(), testRef))
+	s.NoError(rs.Commit(s.T().Context()))
 
 	// Base should be empty for this ref.
-	entries, err := base.Reflog(testRef)
+	entries, err := base.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Empty(entries)
 }
@@ -251,13 +252,13 @@ func (s *ReflogSuite) TestCommitDeleteThenAppend() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(base.AppendReflog(testRef, newEntry("commit: old")))
-	s.NoError(rs.DeleteReflog(testRef))
-	s.NoError(rs.AppendReflog(testRef, newEntry("commit: new")))
-	s.NoError(rs.Commit())
+	s.NoError(base.AppendReflog(s.T().Context(), testRef, newEntry("commit: old")))
+	s.NoError(rs.DeleteReflog(s.T().Context(), testRef))
+	s.NoError(rs.AppendReflog(s.T().Context(), testRef, newEntry("commit: new")))
+	s.NoError(rs.Commit(s.T().Context()))
 
 	// Base should have only the new entry (old was deleted).
-	entries, err := base.Reflog(testRef)
+	entries, err := base.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Len(entries, 1)
 	s.Equal("commit: new", entries[0].Message)
@@ -268,10 +269,10 @@ func (s *ReflogSuite) TestBaseUntouchedBeforeCommit() {
 	temporal := memory.NewStorage()
 	rs := NewReflogStorage(base, temporal)
 
-	s.NoError(rs.AppendReflog(testRef, newEntry("commit: temporal")))
+	s.NoError(rs.AppendReflog(s.T().Context(), testRef, newEntry("commit: temporal")))
 
 	// Base should be unaffected before Commit.
-	entries, err := base.Reflog(testRef)
+	entries, err := base.Reflog(s.T().Context(), testRef)
 	s.NoError(err)
 	s.Empty(entries)
 }
@@ -287,7 +288,7 @@ func (s *ReflogSuite) TestTransactionalStorageDoesNotExposeReflogWithoutSupport(
 		}
 	}()
 	_, ok := st.(interface {
-		Reflog(plumbing.ReferenceName) ([]*reflog.Entry, error)
+		Reflog(context.Context, plumbing.ReferenceName) ([]*reflog.Entry, error)
 	})
 	s.False(ok)
 }

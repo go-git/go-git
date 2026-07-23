@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,11 +12,13 @@ import (
 
 // Open an existing repository in a specific folder.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<path>")
 	path := os.Args[1]
 
 	// We instantiate a new repository targeting the given path (the .git folder)
-	r, err := git.PlainOpen(path)
+	r, err := git.PlainOpen(ctx, path)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
@@ -23,16 +26,16 @@ func main() {
 	Info("git rev-list HEAD --count")
 
 	// ... retrieving the HEAD reference
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
 
 	// ... retrieves the commit history
-	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
+	cIter, err := r.Log(ctx, &git.LogOptions{From: ref.Hash()})
 	CheckIfError(err)
 
 	// ... just iterates over the commits
 	var cCount int
-	err = cIter.ForEach(func(c *object.Commit) error {
+	err = cIter.ForEach(ctx, func(c *object.Commit) error {
 		cCount++
 
 		return nil

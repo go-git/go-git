@@ -56,10 +56,10 @@ func (s *BlameSuite) TestBlame() {
 		r := s.NewRepositoryFromPackfile(fixtures.ByURL(t.repo).One())
 
 		exp := s.mockBlame(t, r)
-		commit, err := r.CommitObject(plumbing.NewHash(t.rev))
+		commit, err := r.CommitObject(s.T().Context(), plumbing.NewHash(t.rev))
 		s.Require().NoError(err)
 
-		obt, err := Blame(commit, t.path)
+		obt, err := Blame(s.T().Context(), commit, t.path)
 		s.Require().NoError(err)
 		s.Equal(exp, obt)
 
@@ -70,10 +70,10 @@ func (s *BlameSuite) TestBlame() {
 }
 
 func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) {
-	commit, err := r.CommitObject(plumbing.NewHash(t.rev))
+	commit, err := r.CommitObject(s.T().Context(), plumbing.NewHash(t.rev))
 	s.Require().NoError(err, fmt.Sprintf("%v: repo=%s, rev=%s", err, t.repo, t.rev))
 
-	f, err := commit.File(t.path)
+	f, err := commit.File(s.T().Context(), t.path)
 	s.Require().NoError(err)
 	lines, err := f.Lines()
 	s.Require().NoError(err)
@@ -82,7 +82,7 @@ func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) 
 
 	blamedLines := make([]*Line, 0, len(t.blames))
 	for i := range t.blames {
-		commit, err := r.CommitObject(plumbing.NewHash(t.blames[i]))
+		commit, err := r.CommitObject(s.T().Context(), plumbing.NewHash(t.blames[i]))
 		s.Require().NoError(err)
 		l := &Line{
 			Author:     commit.Author.Email,

@@ -132,7 +132,7 @@ func TestArchiveRemote(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := ArchiveRemote(tt.url, tt.opts)
+			_, err := ArchiveRemote(t.Context(), tt.url, tt.opts)
 			if tt.wantErr == "" {
 				if err != nil {
 					assert.NotContains(t, err.Error(), "unsupported format")
@@ -209,7 +209,7 @@ func TestArchiveRemoteIntegration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rc, err := ArchiveRemote(repoURL, tt.opts)
+			rc, err := ArchiveRemote(t.Context(), repoURL, tt.opts)
 			require.NoError(t, err)
 			t.Cleanup(func() { rc.Close() })
 

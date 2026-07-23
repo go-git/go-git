@@ -32,14 +32,14 @@ func BenchmarkResetHardIgnoredDir(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			wt := setupIgnoredDirRepo(b, tracked, tc.untracked)
-			ref, err := wt.r.Head()
+			ref, err := wt.r.Head(b.Context())
 			if err != nil {
 				b.Fatalf("head: %v", err)
 			}
 			head := ref.Hash()
 			b.ResetTimer()
 			for b.Loop() {
-				if err := wt.Reset(&ResetOptions{Mode: HardReset, Commit: head}); err != nil {
+				if err := wt.Reset(b.Context(), &ResetOptions{Mode: HardReset, Commit: head}); err != nil {
 					b.Fatalf("reset: %v", err)
 				}
 			}

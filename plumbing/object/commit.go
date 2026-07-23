@@ -116,8 +116,8 @@ func parseExtraHeader(line []byte) (ExtraHeader, bool) {
 }
 
 // GetCommit gets a commit from an object storer and decodes it.
-func GetCommit(s storer.EncodedObjectStorer, h plumbing.Hash) (*Commit, error) {
-	o, err := s.EncodedObject(plumbing.CommitObject, h)
+func GetCommit(ctx context.Context, s storer.EncodedObjectStorer, h plumbing.Hash) (*Commit, error) {
+	o, err := s.EncodedObject(ctx, plumbing.CommitObject, h)
 	if err != nil {
 		return nil, err
 	}
@@ -137,38 +137,30 @@ func DecodeCommit(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (*Comm
 }
 
 // Tree returns the Tree from the commit.
-func (c *Commit) Tree() (*Tree, error) {
-	return GetTree(c.s, c.TreeHash)
+func (c *Commit) Tree(ctx context.Context) (*Tree, error) {
+	return GetTree(ctx, c.s, c.TreeHash)
 }
 
-// PatchContext returns the Patch between the actual commit and the provided one.
+// Patch returns the Patch between the actual commit and the provided one.
 // Error will be return if context expires. Provided context must be non-nil.
 //
 // NOTE: Since version 5.1.0 the renames are correctly handled, the settings
 // used are the recommended options DefaultDiffTreeOptions.
-func (c *Commit) PatchContext(ctx context.Context, to *Commit) (*Patch, error) {
-	fromTree, err := c.Tree()
+func (c *Commit) Patch(ctx context.Context, to *Commit) (*Patch, error) {
+	fromTree, err := c.Tree(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var toTree *Tree
 	if to != nil {
-		toTree, err = to.Tree()
+		toTree, err = to.Tree(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return fromTree.PatchContext(ctx, toTree)
-}
-
-// Patch returns the Patch between the actual commit and the provided one.
-//
-// NOTE: Since version 5.1.0 the renames are correctly handled, the settings
-// used are the recommended options DefaultDiffTreeOptions.
-func (c *Commit) Patch(to *Commit) (*Patch, error) {
-	return c.PatchContext(context.Background(), to)
+	return fromTree.Patch(ctx, toTree)
 }
 
 // Parents return a CommitIter to the parent Commits.
@@ -192,29 +184,29 @@ var ErrParentNotFound = errors.New("commit parent not found")
 var ErrMalformedCommit = errors.New("malformed commit")
 
 // Parent returns the ith parent of a commit.
-func (c *Commit) Parent(i int) (*Commit, error) {
+func (c *Commit) Parent(ctx context.Context, i int) (*Commit, error) {
 	if len(c.ParentHashes) == 0 || i > len(c.ParentHashes)-1 {
 		return nil, ErrParentNotFound
 	}
 
-	return GetCommit(c.s, c.ParentHashes[i])
+	return GetCommit(ctx, c.s, c.ParentHashes[i])
 }
 
 // File returns the file with the specified "path" in the commit and a
 // nil error if the file exists. If the file does not exist, it returns
 // a nil file and the ErrFileNotFound error.
-func (c *Commit) File(path string) (*File, error) {
-	tree, err := c.Tree()
+func (c *Commit) File(ctx context.Context, path string) (*File, error) {
+	tree, err := c.Tree(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return tree.File(path)
+	return tree.File(ctx, path)
 }
 
 // Files returns a FileIter allowing to iterate over the Tree
-func (c *Commit) Files() (*FileIter, error) {
-	tree, err := c.Tree()
+func (c *Commit) Files(ctx context.Context) (*FileIter, error) {
+	tree, err := c.Tree(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -435,33 +427,28 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	return err
 }
 
-// Stats returns the stats of a commit.
-func (c *Commit) Stats() (FileStats, error) {
-	return c.StatsContext(context.Background())
-}
-
-// StatsContext returns the stats of a commit. Error will be return if context
+// Stats returns the stats of a commit. Error will be return if context
 // expires. Provided context must be non-nil.
-func (c *Commit) StatsContext(ctx context.Context) (FileStats, error) {
-	fromTree, err := c.Tree()
+func (c *Commit) Stats(ctx context.Context) (FileStats, error) {
+	fromTree, err := c.Tree(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	toTree := &Tree{}
 	if c.NumParents() != 0 {
-		firstParent, err := c.Parents().Next()
+		firstParent, err := c.Parents().Next(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		toTree, err = firstParent.Tree()
+		toTree, err = firstParent.Tree(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	patch, err := toTree.PatchContext(ctx, fromTree)
+	patch, err := toTree.Patch(ctx, fromTree)
 	if err != nil {
 		return nil, err
 	}
@@ -540,8 +527,8 @@ func indent(t string) string {
 
 // CommitIter is a generic closable interface for iterating over commits.
 type CommitIter interface {
-	Next() (*Commit, error)
-	ForEach(func(*Commit) error) error
+	Next(ctx context.Context) (*Commit, error)
+	ForEach(ctx context.Context, cb func(*Commit) error) error
 	Close()
 }
 
@@ -562,8 +549,8 @@ func NewCommitIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) 
 
 // Next moves the iterator to the next commit and returns a pointer to it. If
 // there are no more commits, it returns io.EOF.
-func (iter *storerCommitIter) Next() (*Commit, error) {
-	obj, err := iter.EncodedObjectIter.Next()
+func (iter *storerCommitIter) Next(ctx context.Context) (*Commit, error) {
+	obj, err := iter.EncodedObjectIter.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -574,8 +561,8 @@ func (iter *storerCommitIter) Next() (*Commit, error) {
 // ForEach call the cb function for each commit contained on this iter until
 // an error appends or the end of the iter is reached. If ErrStop is sent
 // the iteration is stopped but no error is returned. The iterator is closed.
-func (iter *storerCommitIter) ForEach(cb func(*Commit) error) error {
-	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
+func (iter *storerCommitIter) ForEach(ctx context.Context, cb func(*Commit) error) error {
+	return iter.EncodedObjectIter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
 		c, err := DecodeCommit(iter.s, obj)
 		if err != nil {
 			return err

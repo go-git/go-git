@@ -34,9 +34,9 @@ func main() {
 
 	Warning("To gracefully stop the clone operation, push Crtl-C.")
 
-	// Using PlainCloneContext we can provide to a context, if the context
-	// is cancelled, the clone operation stops gracefully.
-	r, err := git.PlainCloneContext(ctx, directory, &git.CloneOptions{
+	// PlainClone takes a context; if the context is cancelled, the clone
+	// operation stops gracefully.
+	r, err := git.PlainClone(ctx, directory, &git.CloneOptions{
 		URL:      url,
 		Progress: os.Stdout,
 	})

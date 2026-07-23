@@ -32,7 +32,7 @@ func (s *ChangeAdaptorSuite) SetupSuite() {
 }
 
 func (s *ChangeAdaptorSuite) tree(h plumbing.Hash) *Tree {
-	t, err := GetTree(s.Storer, h)
+	t, err := GetTree(s.T().Context(), s.Storer, h)
 	s.NoError(err)
 	return t
 }
@@ -173,7 +173,7 @@ func (s *ChangeAdaptorSuite) TestEmptyChangeFails() {
 	_, err := change.Action()
 	s.ErrorContains(err, "malformed change")
 
-	_, _, err = change.Files()
+	_, _, err = change.Files(s.T().Context())
 	s.ErrorContains(err, "malformed change")
 
 	str := change.String()
@@ -226,7 +226,7 @@ func (s *ChangeAdaptorSuite) TestChangeFilesInsert() {
 	change.To.TreeEntry.Mode = filemode.Regular
 	change.To.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 
-	from, to, err := change.Files()
+	from, to, err := change.Files(s.T().Context())
 	s.NoError(err)
 	s.Nil(from)
 	s.Equal(change.To.TreeEntry.Hash, to.ID())
@@ -243,7 +243,7 @@ func (s *ChangeAdaptorSuite) TestChangeFilesInsertNotFound() {
 	// there is no object for this hash
 	change.To.TreeEntry.Hash = plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
-	_, _, err := change.Files()
+	_, _, err := change.Files(s.T().Context())
 	s.Error(err)
 }
 
@@ -257,7 +257,7 @@ func (s *ChangeAdaptorSuite) TestChangeFilesDelete() {
 	change.From.TreeEntry.Mode = filemode.Regular
 	change.From.TreeEntry.Hash = plumbing.NewHash("49c6bb89b17060d7b4deacb7b338fcc6ea2352a9")
 
-	from, to, err := change.Files()
+	from, to, err := change.Files(s.T().Context())
 	s.NoError(err)
 	s.Nil(to)
 	s.Equal(change.From.TreeEntry.Hash, from.ID())
@@ -274,7 +274,7 @@ func (s *ChangeAdaptorSuite) TestChangeFilesDeleteNotFound() {
 	// there is no object for this hash
 	change.From.TreeEntry.Hash = plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
-	_, _, err := change.Files()
+	_, _, err := change.Files(s.T().Context())
 	s.Error(err)
 }
 
@@ -293,7 +293,7 @@ func (s *ChangeAdaptorSuite) TestChangeFilesModify() {
 	change.From.TreeEntry.Mode = filemode.Regular
 	change.From.TreeEntry.Hash = plumbing.NewHash("9a48f23120e880dfbe41f7c9b7b708e9ee62a492")
 
-	from, to, err := change.Files()
+	from, to, err := change.Files(s.T().Context())
 	s.NoError(err)
 	s.Equal(change.To.TreeEntry.Hash, to.ID())
 	s.Equal(change.From.TreeEntry.Hash, from.ID())

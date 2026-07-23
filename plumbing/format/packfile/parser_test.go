@@ -108,7 +108,7 @@ func TestParserStorageModes(t *testing.T) {
 				field := reflect.ValueOf(parser).Elem().FieldByName("lowMemoryMode")
 				assert.Equal(t, tc.wantLowMemoryMode, field.Bool())
 
-				_, err := parser.Parse()
+				_, err := parser.Parse(t.Context())
 				require.NoError(t, err)
 
 				assert.Equal(t, f.PackfileHash, obs.checksum)
@@ -139,7 +139,7 @@ func assertParserOutput(t *testing.T, f *fixtures.Fixture, entries map[plumbing.
 
 	parser := packfile.NewParser(pf, opts...)
 
-	_, err := parser.Parse()
+	_, err := parser.Parse(t.Context())
 	require.NoError(t, err)
 
 	assert.Equal(t, f.PackfileHash, obs.checksum)
@@ -160,14 +160,14 @@ func TestParserMalformedPack(t *testing.T) {
 	require.NoError(t, pfErr)
 	parser := packfile.NewParser(io.LimitReader(pf, 300))
 
-	_, err := parser.Parse()
+	_, err := parser.Parse(t.Context())
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }
 
 func TestThinPack(t *testing.T) {
 	t.Parallel()
 	// Initialize an empty repository
-	r, err := git.PlainInit(t.TempDir(), true)
+	r, err := git.PlainInit(t.Context(), t.TempDir(), true)
 	assert.NoError(t, err)
 
 	// Try to parse a thin pack without having the required objects in the repo to
@@ -177,18 +177,18 @@ func TestThinPack(t *testing.T) {
 	require.NoError(t, thinPfErr)
 	parser := packfile.NewParser(thinPf, packfile.WithStorage(r.Storer)) // ParserWithStorage writes to the storer all parsed objects!
 
-	_, err = parser.Parse()
+	_, err = parser.Parse(t.Context())
 	assert.ErrorIs(t, err, packfile.ErrReferenceDeltaNotFound)
 
 	// start over with a clean repo
 	_ = r.Close()
-	r, err = git.PlainInit(t.TempDir(), true)
+	r, err = git.PlainInit(t.Context(), t.TempDir(), true)
 	assert.NoError(t, err)
 	defer func() { _ = r.Close() }()
 
 	// Now unpack a base packfile into our empty repo:
 	f := fixtures.ByURL("https://github.com/spinnaker/spinnaker.git").One()
-	w, err := r.Storer.(storer.PackfileWriter).PackfileWriter()
+	w, err := r.Storer.(storer.PackfileWriter).PackfileWriter(t.Context())
 	assert.NoError(t, err)
 	fPf, fPfErr := f.Packfile()
 	require.NoError(t, fPfErr)
@@ -197,7 +197,7 @@ func TestThinPack(t *testing.T) {
 	assert.NoError(t, w.Close())
 
 	// Check that the test object that will come with our thin pack is *not* in the repo
-	_, err = r.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
+	_, err = r.Storer.EncodedObject(t.Context(), plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 
 	// Now unpack the thin pack:
@@ -205,12 +205,12 @@ func TestThinPack(t *testing.T) {
 	require.NoError(t, thinPf2Err)
 	parser = packfile.NewParser(thinPf2, packfile.WithStorage(r.Storer)) // ParserWithStorage writes to the storer all parsed objects!
 
-	h, err := parser.Parse()
+	h, err := parser.Parse(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, plumbing.NewHash("1288734cbe0b95892e663221d94b95de1f5d7be8"), h)
 
 	// Check that our test object is now accessible
-	_, err = r.Storer.EncodedObject(plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
+	_, err = r.Storer.EncodedObject(t.Context(), plumbing.CommitObject, plumbing.NewHash(thinpack.Head))
 	assert.NoError(t, err)
 }
 
@@ -221,7 +221,7 @@ func TestResolveExternalRefsInThinPack(t *testing.T) {
 
 	parser := packfile.NewParser(extRefsThinPack)
 
-	checksum, err := parser.Parse()
+	checksum, err := parser.Parse(t.Context())
 	assert.NoError(t, err)
 	assert.NotEqual(t, checksum, plumbing.ZeroHash)
 }
@@ -233,7 +233,7 @@ func TestResolveExternalRefs(t *testing.T) {
 
 	parser := packfile.NewParser(extRefsThinPack)
 
-	checksum, err := parser.Parse()
+	checksum, err := parser.Parse(t.Context())
 	assert.NoError(t, err)
 	assert.NotEqual(t, plumbing.ZeroHash, checksum)
 }
@@ -245,7 +245,7 @@ func TestMemoryResolveExternalRefs(t *testing.T) {
 
 	parser := packfile.NewParser(extRefsThinPack, packfile.WithStorage(memory.NewStorage()))
 
-	checksum, err := parser.Parse()
+	checksum, err := parser.Parse(t.Context())
 	assert.NoError(t, err)
 	assert.NotEqual(t, plumbing.ZeroHash, checksum)
 }
@@ -304,7 +304,7 @@ func benchmarkParseBasic(b *testing.B,
 		}
 		parser := packfile.NewParser(scanner, opts...)
 
-		checksum, err := parser.Parse()
+		checksum, err := parser.Parse(b.Context())
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -344,7 +344,7 @@ func BenchmarkParseAlternatingDeltaChain(b *testing.B) {
 			b.SetBytes(int64(len(pack)))
 			for i := 0; i < b.N; i++ {
 				parser := packfile.NewParser(bytes.NewReader(pack))
-				if _, err := parser.Parse(); err != nil {
+				if _, err := parser.Parse(b.Context()); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -498,7 +498,7 @@ func TestChecksumMismatch(t *testing.T) {
 	scanner := packfile.NewScanner(f)
 	parser := packfile.NewParser(scanner)
 
-	_, err = parser.Parse()
+	_, err = parser.Parse(t.Context())
 	require.ErrorContains(t, err, "checksum mismatch")
 }
 
@@ -520,7 +520,7 @@ func TestMalformedPack(t *testing.T) {
 	scanner := packfile.NewScanner(f)
 	parser := packfile.NewParser(scanner)
 
-	_, err = parser.Parse()
+	_, err = parser.Parse(t.Context())
 	require.ErrorContains(t, err, "malformed pack")
 }
 
@@ -544,7 +544,7 @@ func TestParserRejectsOverflowingObjectHeader(t *testing.T) {
 
 	parser := packfile.NewParser(bytes.NewReader(body.Bytes()))
 
-	_, err := parser.Parse()
+	_, err := parser.Parse(t.Context())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "malformed pack")
 }
@@ -647,7 +647,7 @@ func TestParserResolvesRefDeltaOfOfsDelta(t *testing.T) {
 
 			parser := packfile.NewParser(bytes.NewReader(pack), opts...)
 
-			_, err := parser.Parse()
+			_, err := parser.Parse(t.Context())
 			require.NoError(t, err, "parser must resolve REF-delta whose base is an in-pack OFS-delta")
 
 			seen := make(map[plumbing.Hash]bool, len(obs.objects))
@@ -727,9 +727,9 @@ func TestParserParseRejectsSecondCall(t *testing.T) {
 	_, _ = buf.Write(h.Sum(nil))
 
 	p := packfile.NewParser(bytes.NewReader(buf.Bytes()))
-	_, err := p.Parse()
+	_, err := p.Parse(t.Context())
 	require.NoError(t, err, "first Parse on the empty-object pack should succeed")
 
-	_, err = p.Parse()
+	_, err = p.Parse(t.Context())
 	assert.ErrorIs(t, err, packfile.ErrParserConsumed, "second Parse must return ErrParserConsumed")
 }

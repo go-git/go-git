@@ -13,18 +13,18 @@ import (
 
 func (s *RemoteSuite) TestTransportProtocolDefault() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"https://example.com/foo.git"}})
-	s.Equal(config.DefaultProtocolVersion, r.transportProtocol())
+	s.Equal(config.DefaultProtocolVersion, r.transportProtocol(s.T().Context()))
 }
 
 func (s *RemoteSuite) TestTransportProtocolFromConfig() {
 	st := memory.NewStorage()
-	cfg, err := st.Config()
+	cfg, err := st.Config(s.T().Context())
 	s.Require().NoError(err)
 	cfg.Protocol.Version = protocol.V2
-	s.Require().NoError(st.SetConfig(cfg))
+	s.Require().NoError(st.SetConfig(s.T().Context(), cfg))
 
 	r := NewRemote(st, &config.RemoteConfig{Name: "foo", URLs: []string{"https://example.com/foo.git"}})
-	s.Equal(protocol.V2, r.transportProtocol())
+	s.Equal(protocol.V2, r.transportProtocol(s.T().Context()))
 }
 
 func TestFetchRefPrefixes(t *testing.T) {

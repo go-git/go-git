@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -38,11 +39,11 @@ func NewCommitIterBSF(
 	}
 }
 
-func (w *bfsCommitIterator) appendHash(store storer.EncodedObjectStorer, h plumbing.Hash) error {
+func (w *bfsCommitIterator) appendHash(ctx context.Context, store storer.EncodedObjectStorer, h plumbing.Hash) error {
 	if w.seen[h] || w.seenExternal[h] {
 		return nil
 	}
-	c, err := GetCommit(store, h)
+	c, err := GetCommit(ctx, store, h)
 	if err != nil {
 		return err
 	}
@@ -50,7 +51,7 @@ func (w *bfsCommitIterator) appendHash(store storer.EncodedObjectStorer, h plumb
 	return nil
 }
 
-func (w *bfsCommitIterator) Next() (*Commit, error) {
+func (w *bfsCommitIterator) Next(ctx context.Context) (*Commit, error) {
 	var c *Commit
 	for {
 		if len(w.queue) == 0 {
@@ -66,7 +67,7 @@ func (w *bfsCommitIterator) Next() (*Commit, error) {
 		w.seen[c.Hash] = true
 
 		for _, h := range c.ParentHashes {
-			err := w.appendHash(c.s, h)
+			err := w.appendHash(ctx, c.s, h)
 			if err != nil {
 				return nil, err
 			}
@@ -76,9 +77,9 @@ func (w *bfsCommitIterator) Next() (*Commit, error) {
 	}
 }
 
-func (w *bfsCommitIterator) ForEach(cb func(*Commit) error) error {
+func (w *bfsCommitIterator) ForEach(ctx context.Context, cb func(*Commit) error) error {
 	for {
-		c, err := w.Next()
+		c, err := w.Next(ctx)
 		if err == io.EOF {
 			break
 		}

@@ -1,6 +1,7 @@
 package commitgraph
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -51,7 +52,7 @@ func NewCommitNodeIterCTime(
 	}
 }
 
-func (w *commitNodeIteratorByCTime) Next() (CommitNode, error) {
+func (w *commitNodeIteratorByCTime) Next(ctx context.Context) (CommitNode, error) {
 	var c CommitNode
 	for {
 		cIn, ok := w.heap.Pop()
@@ -71,7 +72,7 @@ func (w *commitNodeIteratorByCTime) Next() (CommitNode, error) {
 			if w.seen[h] || w.seenExternal[h] {
 				continue
 			}
-			pc, err := c.ParentNode(i)
+			pc, err := c.ParentNode(ctx, i)
 			if err != nil {
 				return nil, err
 			}
@@ -82,9 +83,9 @@ func (w *commitNodeIteratorByCTime) Next() (CommitNode, error) {
 	}
 }
 
-func (w *commitNodeIteratorByCTime) ForEach(cb func(CommitNode) error) error {
+func (w *commitNodeIteratorByCTime) ForEach(ctx context.Context, cb func(CommitNode) error) error {
 	for {
-		c, err := w.Next()
+		c, err := w.Next(ctx)
 		if err == io.EOF {
 			break
 		}

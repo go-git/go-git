@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-git/go-git/v6"
@@ -18,15 +19,17 @@ import (
 // - Iterate the references again, but only showing hash references, not symbolic ones
 // - Remove remote "example"
 func main() {
+	ctx := context.Background()
+
 	// Create a new repository
 	Info("git init")
-	r, err := git.Init(memory.NewStorage())
+	r, err := git.Init(ctx, memory.NewStorage())
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
 	// Add a new remote, with the default fetch refspec
 	Info("git remote add example https://github.com/git-fixtures/basic.git")
-	_, err = r.CreateRemote(&config.RemoteConfig{
+	_, err = r.CreateRemote(ctx, &config.RemoteConfig{
 		Name: "example",
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
@@ -36,7 +39,7 @@ func main() {
 	// List remotes from a repository
 	Info("git remote -v")
 
-	list, err := r.Remotes()
+	list, err := r.Remotes(ctx)
 	CheckIfError(err)
 
 	for _, r := range list {
@@ -45,7 +48,7 @@ func main() {
 
 	// Fetch using the new remote
 	Info("git fetch example")
-	err = r.Fetch(&git.FetchOptions{
+	err = r.Fetch(ctx, &git.FetchOptions{
 		RemoteName: "example",
 	})
 
@@ -55,10 +58,10 @@ func main() {
 	// > git show-ref
 	Info("git show-ref")
 
-	refs, err := r.References()
+	refs, err := r.References(ctx)
 	CheckIfError(err)
 
-	err = refs.ForEach(func(ref *plumbing.Reference) error {
+	err = refs.ForEach(ctx, func(ref *plumbing.Reference) error {
 		// The HEAD is omitted in a `git show-ref` so we ignore the symbolic
 		// references, the HEAD
 		if ref.Type() == plumbing.SymbolicReference {
@@ -74,6 +77,6 @@ func main() {
 	// Delete the example remote
 	Info("git remote rm example")
 
-	err = r.DeleteRemote("example")
+	err = r.DeleteRemote(ctx, "example")
 	CheckIfError(err)
 }

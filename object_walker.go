@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -22,19 +23,19 @@ func newObjectWalker(s storage.Storer) *objectWalker {
 }
 
 // walkAllRefs walks all (hash) references from the repo.
-func (p *objectWalker) walkAllRefs() error {
+func (p *objectWalker) walkAllRefs(ctx context.Context) error {
 	// Walk over all the references in the repo.
-	it, err := p.Storer.IterReferences()
+	it, err := p.Storer.IterReferences(ctx)
 	if err != nil {
 		return err
 	}
 	defer it.Close()
-	err = it.ForEach(func(ref *plumbing.Reference) error {
+	err = it.ForEach(ctx, func(ref *plumbing.Reference) error {
 		// Exit this iteration early for non-hash references.
 		if ref.Type() != plumbing.HashReference {
 			return nil
 		}
-		return p.walkObjectTree(ref.Hash())
+		return p.walkObjectTree(ctx, ref.Hash())
 	})
 	return err
 }
@@ -51,26 +52,26 @@ func (p *objectWalker) add(hash plumbing.Hash) {
 // walkObjectTree walks over all objects and remembers references
 // to them in the objectWalker. This is used instead of the revlist
 // walks because memory usage is tight with huge repos.
-func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
+func (p *objectWalker) walkObjectTree(ctx context.Context, hash plumbing.Hash) error {
 	// Check if we have already seen, and mark this object
 	if p.isSeen(hash) {
 		return nil
 	}
 	p.add(hash)
 	// Fetch the object.
-	obj, err := object.GetObject(p.Storer, hash)
+	obj, err := object.GetObject(ctx, p.Storer, hash)
 	if err != nil {
 		return fmt.Errorf("getting object %s failed: %v", hash, err)
 	}
 	// Walk all children depending on object type.
 	switch obj := obj.(type) {
 	case *object.Commit:
-		err = p.walkObjectTree(obj.TreeHash)
+		err = p.walkObjectTree(ctx, obj.TreeHash)
 		if err != nil {
 			return err
 		}
 		for _, h := range obj.ParentHashes {
-			err = p.walkObjectTree(h)
+			err = p.walkObjectTree(ctx, h)
 			if err != nil {
 				return err
 			}
@@ -89,13 +90,13 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 				continue
 			}
 			// Normal walk for sub-trees (and symlinks etc).
-			err = p.walkObjectTree(obj.Entries[i].Hash)
+			err = p.walkObjectTree(ctx, obj.Entries[i].Hash)
 			if err != nil {
 				return err
 			}
 		}
 	case *object.Tag:
-		return p.walkObjectTree(obj.Target)
+		return p.walkObjectTree(ctx, obj.Target)
 	default:
 		// Error out on unhandled object types.
 		return fmt.Errorf("unknown object %X %s %T", obj.ID(), obj.Type(), obj)

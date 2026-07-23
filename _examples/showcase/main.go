@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -19,6 +20,8 @@ import (
 // - Print all the commit history with commit messages, short hash and the
 // first line of the commit message
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url> <path>")
 	url := os.Args[1]
 	path := os.Args[2]
@@ -27,7 +30,7 @@ func main() {
 	// and fetching the objects, exactly as:
 	Info("git clone %s %s", url, path)
 
-	r, err := git.PlainClone(path, &git.CloneOptions{URL: url})
+	r, err := git.PlainClone(ctx, path, &git.CloneOptions{URL: url})
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
@@ -35,11 +38,11 @@ func main() {
 	Info("git log -1")
 
 	// ... retrieving the branch being pointed by HEAD
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
 
 	// ... retrieving the commit object
-	commit, err := r.CommitObject(ref.Hash())
+	commit, err := r.CommitObject(ctx, ref.Hash())
 	CheckIfError(err)
 	fmt.Println(commit)
 
@@ -47,11 +50,11 @@ func main() {
 	Info("git ls-tree -r HEAD")
 
 	// ... retrieve the tree from the commit
-	tree, err := commit.Tree()
+	tree, err := commit.Tree(ctx)
 	CheckIfError(err)
 
 	// ... get the files iterator and print the file
-	tree.Files().ForEach(func(f *object.File) error {
+	tree.Files().ForEach(ctx, func(f *object.File) error {
 		fmt.Printf("100644 blob %s    %s\n", f.Hash, f.Name)
 		return nil
 	})
@@ -59,10 +62,10 @@ func main() {
 	// List the history of the repository
 	Info("git log --oneline")
 
-	commitIter, err := r.Log(&git.LogOptions{From: commit.Hash})
+	commitIter, err := r.Log(ctx, &git.LogOptions{From: commit.Hash})
 	CheckIfError(err)
 
-	err = commitIter.ForEach(func(c *object.Commit) error {
+	err = commitIter.ForEach(ctx, func(c *object.Commit) error {
 		hash := c.Hash.String()
 		line := strings.Split(c.Message, "\n")
 		fmt.Println(hash[:7], line[0])

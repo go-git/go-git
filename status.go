@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -109,23 +110,23 @@ const (
 	Preload StatusStrategy = 1
 )
 
-func (s StatusStrategy) new(w *Worktree) (Status, error) {
+func (s StatusStrategy) new(ctx context.Context, w *Worktree) (Status, error) {
 	switch s {
 	case Preload:
-		return preloadStatus(w)
+		return preloadStatus(ctx, w)
 	case Empty:
 		return make(Status), nil
 	}
 	return nil, fmt.Errorf("%w: %+v", ErrUnsupportedStatusStrategy, s)
 }
 
-func preloadStatus(w *Worktree) (Status, error) {
-	idx, err := w.r.Storer.Index()
+func preloadStatus(ctx context.Context, w *Worktree) (Status, error) {
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	c, err := w.r.Config()
+	c, err := w.r.Config(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -63,7 +63,7 @@ func makeMultiPackFixture(tb testing.TB, nPacks, objPerPack int) (billy.Filesyst
 			if err := w.Close(); err != nil {
 				tb.Fatalf("close writer: %v", err)
 			}
-			h, err := stage.SetEncodedObject(o)
+			h, err := stage.SetEncodedObject(tb.Context(), o)
 			if err != nil {
 				tb.Fatalf("stage object: %v", err)
 			}
@@ -75,8 +75,8 @@ func makeMultiPackFixture(tb testing.TB, nPacks, objPerPack int) (billy.Filesyst
 		// disables delta compression — bench fixtures want every
 		// read to resolve in a single offset lookup.
 		var buf bytes.Buffer
-		enc := packfile.NewEncoder(&buf, stage, false)
-		if _, err := enc.Encode(hashes, 0); err != nil {
+		enc := packfile.NewEncoder(tb.Context(), &buf, stage, false)
+		if _, err := enc.Encode(tb.Context(), hashes, 0); err != nil {
 			tb.Fatalf("encode pack %d: %v", p, err)
 		}
 

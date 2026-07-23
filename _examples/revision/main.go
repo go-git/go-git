@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,13 +12,15 @@ import (
 
 // Example how to resolve a revision into its commit counterpart
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<path>", "<revision>")
 
 	path := os.Args[1]
 	revision := os.Args[2]
 
 	// We instantiate a new repository targeting the given path (the .git folder)
-	r, err := git.PlainOpen(path)
+	r, err := git.PlainOpen(ctx, path)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
@@ -25,7 +28,7 @@ func main() {
 	// look at the doc to get more details
 	Info("git rev-parse %s", revision)
 
-	h, err := r.ResolveRevision(plumbing.Revision(revision))
+	h, err := r.ResolveRevision(ctx, plumbing.Revision(revision))
 
 	CheckIfError(err)
 

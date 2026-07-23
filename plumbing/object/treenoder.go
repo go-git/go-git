@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -77,25 +78,31 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 		return t.children, nil
 	}
 
+	// TODO(ctx): the merkletrie noder.Noder interface does not carry a
+	// context, so tree loading performed while expanding children cannot
+	// receive the caller's context without changing merkletrie. This is an
+	// accepted boundary drop; context.Background() is used instead.
+	ctx := context.Background()
+
 	// the parent of the returned children will be ourself as a tree if
 	// we are a not the root treenoder.  The root is special as it
 	// is is own parent.
 	parent := t.parent
 	if !t.isRoot() {
 		var err error
-		if parent, err = t.parent.Tree(t.name); err != nil {
+		if parent, err = t.parent.Tree(ctx, t.name); err != nil {
 			return nil, err
 		}
 	}
 
 	var err error
-	t.children, err = transformChildren(parent)
+	t.children, err = transformChildren(ctx, parent)
 	return t.children, err
 }
 
 // Returns the children of a tree as treenoders.
 // Efficiency is key here.
-func transformChildren(t *Tree) ([]noder.Noder, error) {
+func transformChildren(ctx context.Context, t *Tree) ([]noder.Noder, error) {
 	var err error
 	var e TreeEntry
 
@@ -114,7 +121,7 @@ func transformChildren(t *Tree) ([]noder.Noder, error) {
 	walker.skipPathValidation = true
 	// don't defer walker.Close() for efficiency reasons.
 	for {
-		_, e, err = walker.Next()
+		_, e, err = walker.Next(ctx)
 		if err == io.EOF {
 			break
 		}

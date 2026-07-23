@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -26,29 +27,29 @@ var ErrLooseObjectsNotSupported = errors.New("loose objects not supported")
 
 // DeleteObject deletes an object from a repository.
 // The type conveniently matches PruneHandler.
-func (r *Repository) DeleteObject(hash plumbing.Hash) error {
+func (r *Repository) DeleteObject(ctx context.Context, hash plumbing.Hash) error {
 	los, ok := r.Storer.(storer.LooseObjectStorer)
 	if !ok {
 		return ErrLooseObjectsNotSupported
 	}
 
-	return los.DeleteLooseObject(hash)
+	return los.DeleteLooseObject(ctx, hash)
 }
 
 // Prune removes unreferenced loose objects from the repository.
-func (r *Repository) Prune(opt PruneOptions) error {
+func (r *Repository) Prune(ctx context.Context, opt PruneOptions) error {
 	los, ok := r.Storer.(storer.LooseObjectStorer)
 	if !ok {
 		return ErrLooseObjectsNotSupported
 	}
 
 	pw := newObjectWalker(r.Storer)
-	err := pw.walkAllRefs()
+	err := pw.walkAllRefs(ctx)
 	if err != nil {
 		return err
 	}
 	// Now walk all (loose) objects in storage.
-	return los.ForEachObjectHash(func(hash plumbing.Hash) error {
+	return los.ForEachObjectHash(ctx, func(hash plumbing.Hash) error {
 		// Get out if we have seen this object.
 		if pw.isSeen(hash) {
 			return nil
@@ -58,7 +59,7 @@ func (r *Repository) Prune(opt PruneOptions) error {
 		if !opt.OnlyObjectsOlderThan.IsZero() {
 			// Errors here are non-fatal. The object may be e.g. packed.
 			// Or concurrently deleted. Skip such objects.
-			t, err := los.LooseObjectTime(hash)
+			t, err := los.LooseObjectTime(ctx, hash)
 			if err != nil {
 				return nil
 			}

@@ -1,6 +1,8 @@
 package transactional
 
 import (
+	"context"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -31,7 +33,7 @@ func NewReflogStorage(base, temporal storer.ReflogStorer) *ReflogStorage {
 // Reflog honors the storer.ReflogStorer interface.
 // Returns base entries followed by temporal entries. If the reflog was
 // deleted during this transaction, only temporal entries (if any) are returned.
-func (s *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
+func (s *ReflogStorage) Reflog(ctx context.Context, name plumbing.ReferenceName) ([]*reflog.Entry, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -39,13 +41,13 @@ func (s *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, er
 	var base []*reflog.Entry
 	if _, ok := s.deleted[name]; !ok {
 		var err error
-		base, err = s.base.Reflog(name)
+		base, err = s.base.Reflog(ctx, name)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	temporal, err := s.temporal.Reflog(name)
+	temporal, err := s.temporal.Reflog(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -64,43 +66,43 @@ func (s *ReflogStorage) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, er
 }
 
 // AppendReflog honors the storer.ReflogStorer interface.
-func (s *ReflogStorage) AppendReflog(name plumbing.ReferenceName, entry *reflog.Entry) error {
+func (s *ReflogStorage) AppendReflog(ctx context.Context, name plumbing.ReferenceName, entry *reflog.Entry) error {
 	if s == nil {
 		return nil
 	}
 	s.appended[name] = struct{}{}
-	return s.temporal.AppendReflog(name, entry)
+	return s.temporal.AppendReflog(ctx, name, entry)
 }
 
 // DeleteReflog honors the storer.ReflogStorer interface.
-func (s *ReflogStorage) DeleteReflog(name plumbing.ReferenceName) error {
+func (s *ReflogStorage) DeleteReflog(ctx context.Context, name plumbing.ReferenceName) error {
 	if s == nil {
 		return nil
 	}
 	delete(s.appended, name)
 	s.deleted[name] = struct{}{}
-	return s.temporal.DeleteReflog(name)
+	return s.temporal.DeleteReflog(ctx, name)
 }
 
 // Commit flushes the transactional reflog changes into the base storage.
-func (s *ReflogStorage) Commit() error {
+func (s *ReflogStorage) Commit(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
 
 	for name := range s.deleted {
-		if err := s.base.DeleteReflog(name); err != nil {
+		if err := s.base.DeleteReflog(ctx, name); err != nil {
 			return err
 		}
 	}
 
 	for name := range s.appended {
-		entries, err := s.temporal.Reflog(name)
+		entries, err := s.temporal.Reflog(ctx, name)
 		if err != nil {
 			return err
 		}
 		for _, e := range entries {
-			if err := s.base.AppendReflog(name, e); err != nil {
+			if err := s.base.AppendReflog(ctx, name, e); err != nil {
 				return err
 			}
 		}

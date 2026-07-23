@@ -16,14 +16,14 @@ func TestWasmInit(t *testing.T) {
 	st := memory.NewStorage()
 	wt := memfs.New()
 
-	r, err := Init(st, WithWorkTree(wt))
+	r, err := Init(t.Context(), st, WithWorkTree(wt))
 	require.NoError(t, err)
 	assert.NotNil(t, r)
 
 	h := createCommit(t, r)
 	assert.False(t, h.IsZero())
 
-	ref, err := r.Head()
+	ref, err := r.Head(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, ref)
 	assert.False(t, ref.Hash().IsZero())

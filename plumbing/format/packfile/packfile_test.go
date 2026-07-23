@@ -89,7 +89,7 @@ func TestGetAll(t *testing.T) {
 
 		var objects int
 		for {
-			o, err := iter.Next()
+			o, err := iter.Next(t.Context())
 			if err == io.EOF {
 				break
 			}
@@ -154,7 +154,7 @@ func TestDecodeByTypeRefDelta(t *testing.T) {
 			iter, err := p.GetByType(typ)
 			require.NoError(t, err)
 
-			err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+			err = iter.ForEach(t.Context(), func(obj plumbing.EncodedObject) error {
 				assert.Equal(t, typ, obj.Type())
 				total++
 				return nil
@@ -189,7 +189,7 @@ func TestDecodeByType(t *testing.T) {
 			iter, err := p.GetByType(typ)
 			require.NoError(t, err)
 
-			err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+			err = iter.ForEach(t.Context(), func(obj plumbing.EncodedObject) error {
 				assert.Equal(t, typ, obj.Type())
 				return nil
 			})

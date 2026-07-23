@@ -33,12 +33,12 @@ func TestStorage_FDPool_PoolIsUsed(t *testing.T) {
 	assert.Equal(t, 0, pool.Stats().Active)
 
 	// Trigger a read; this opens at least the .pack and .idx.
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
-	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 
 	assert.Greater(t, pool.Stats().Active, 0,
@@ -82,7 +82,7 @@ func TestStorage_FDPool_AlternatesShareParentPool(t *testing.T) {
 	// Force a lookup that misses on the (empty) primary and falls
 	// through to the alternate.
 	probe := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	_, err = s.EncodedObject(plumbing.AnyObject, probe)
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, probe)
 	require.NoError(t, err)
 
 	// The alternate's PackHandle SharedFiles registered with our
@@ -112,12 +112,12 @@ func TestStorage_FDPool_SharedAcrossStorages(t *testing.T) {
 
 		// Trigger a read so the storage registers its SharedFiles
 		// in the shared pool.
-		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
-		obj, err := iter.Next()
+		obj, err := iter.Next(t.Context())
 		require.NoError(t, err)
 		iter.Close()
-		_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+		_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 		require.NoError(t, err)
 
 		assert.Greater(t, shared.Stats().Active, 0,
@@ -146,9 +146,9 @@ func TestStorage_FDPool_Disabled(t *testing.T) {
 		filesystem.Options{Pool: fdpool.New(0)})
 	t.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	_, err = iter.Next()
+	_, err = iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 }

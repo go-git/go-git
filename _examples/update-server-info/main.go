@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/go-git/go-git/v6"
@@ -15,16 +16,18 @@ import (
 // https://git-scm.com/docs/git-update-server-info
 // https://git-scm.com/book/id/v2/Git-Internals-Transfer-Protocols#_the_dumb_protocol
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<path>")
 	path := os.Args[1]
 
 	// We instantiate a new repository targeting the given path (the .git folder)
-	r, err := git.PlainOpen(path)
+	r, err := git.PlainOpen(ctx, path)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
 	// Update the server info files & save them to the file-system.
 	fs := r.Storer.(*filesystem.Storage).Filesystem()
-	err = transport.UpdateServerInfo(r.Storer, fs)
+	err = transport.UpdateServerInfo(ctx, r.Storer, fs)
 	CheckIfError(err)
 }

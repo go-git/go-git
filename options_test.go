@@ -23,14 +23,14 @@ func TestOptionsSuite(t *testing.T) {
 
 func (s *OptionsSuite) TestCommitOptionsParentsFromHEAD() {
 	o := CommitOptions{Author: &object.Signature{}}
-	err := o.Validate(s.Repository)
+	err := o.Validate(s.T().Context(), s.Repository)
 	s.NoError(err)
 	s.Len(o.Parents, 1)
 }
 
 func (s *OptionsSuite) TestResetOptionsCommitNotFound() {
 	o := ResetOptions{Commit: plumbing.NewHash("ab1b15c6f6487b4db16f10d8ec69bb8bf91dcabd")}
-	err := o.Validate(s.Repository)
+	err := o.Validate(s.T().Context(), s.Repository)
 	s.NotNil(err)
 }
 
@@ -38,7 +38,7 @@ func (s *OptionsSuite) TestCommitOptionsCommitter() {
 	sig := &object.Signature{}
 
 	o := CommitOptions{Author: sig}
-	err := o.Validate(s.Repository)
+	err := o.Validate(s.T().Context(), s.Repository)
 	s.NoError(err)
 
 	s.Equal(o.Author, o.Committer)
@@ -53,7 +53,7 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalConfigUser() {
 	defer clean()
 
 	o := CommitOptions{}
-	err := o.Validate(s.Repository)
+	err := o.Validate(s.T().Context(), s.Repository)
 	s.NoError(err)
 
 	s.Equal("foo", o.Author.Name)
@@ -73,7 +73,7 @@ func (s *OptionsSuite) TestCommitOptionsLoadGlobalCommitter() {
 	defer clean()
 
 	o := CommitOptions{}
-	err := o.Validate(s.Repository)
+	err := o.Validate(s.T().Context(), s.Repository)
 	s.NoError(err)
 
 	s.Equal("foo", o.Author.Name)
@@ -94,7 +94,7 @@ func (s *OptionsSuite) TestCreateTagOptionsLoadGlobal() {
 		Message: "foo",
 	}
 
-	err := o.Validate(s.Repository, plumbing.ZeroHash)
+	err := o.Validate(s.T().Context(), s.Repository, plumbing.ZeroHash)
 	s.NoError(err)
 
 	s.Equal("foo", o.Tagger.Name)

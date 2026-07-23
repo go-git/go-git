@@ -31,7 +31,7 @@ func forEachFormat(t *testing.T, fnT func(*testing.T, formatcfg.ObjectFormat)) {
 
 func createCommit(t *testing.T, r *Repository) plumbing.Hash {
 	// Create a commit so there is a HEAD to check
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(t.Context())
 	require.NoError(t, err)
 
 	f, err := wt.filesystem.Create("foo.txt")
@@ -42,7 +42,7 @@ func createCommit(t *testing.T, r *Repository) plumbing.Hash {
 	_, err = f.Write([]byte("foo text"))
 	require.NoError(t, err)
 
-	_, err = wt.Add("foo.txt")
+	_, err = wt.Add(t.Context(), "foo.txt")
 	require.NoError(t, err)
 
 	author := object.Signature{
@@ -51,7 +51,7 @@ func createCommit(t *testing.T, r *Repository) plumbing.Hash {
 		When:  time.Now(),
 	}
 
-	h, err := wt.Commit("test commit message", &CommitOptions{
+	h, err := wt.Commit(t.Context(), "test commit message", &CommitOptions{
 		All:               true,
 		Author:            &author,
 		Committer:         &author,

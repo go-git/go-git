@@ -46,7 +46,7 @@ func (s *FsSuite) TestGetFromObjectFile() {
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
-	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+	obj, err := o.EncodedObject(s.T().Context(), plumbing.AnyObject, expected)
 	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 }
@@ -58,7 +58,7 @@ func (s *FsSuite) TestGetFromPackfile() {
 		o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 		expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-		obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+		obj, err := o.EncodedObject(s.T().Context(), plumbing.AnyObject, expected)
 		s.Require().NoError(err)
 		s.Equal(expected, obj.Hash())
 	}
@@ -71,12 +71,12 @@ func (s *FsSuite) TestIterEncodedObjectsSHA256HashesRoundTrip() {
 	o := NewStorage(fs, cache.NewObjectLRUDefault())
 	defer func() { _ = o.Close() }()
 
-	iter, err := o.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := o.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 	s.Require().NoError(err)
 	defer iter.Close()
 
-	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
-		roundTrip, err := o.EncodedObject(plumbing.AnyObject, obj.Hash())
+	err = iter.ForEach(s.T().Context(), func(obj plumbing.EncodedObject) error {
+		roundTrip, err := o.EncodedObject(s.T().Context(), plumbing.AnyObject, obj.Hash())
 		s.Require().NoError(err)
 		s.Equal(obj.Hash(), roundTrip.Hash())
 		return nil
@@ -91,7 +91,7 @@ func (s *FsSuite) TestSetEncodedObjectSHA256LooseObjectRoundTrip() {
 		cache.NewObjectLRUDefault(),
 		Options{ObjectFormat: formatcfg.SHA256},
 	)
-	s.Require().NoError(o.Init())
+	s.Require().NoError(o.Init(s.T().Context()))
 	defer func() { _ = o.Close() }()
 
 	obj := o.NewEncodedObject()
@@ -104,13 +104,13 @@ func (s *FsSuite) TestSetEncodedObjectSHA256LooseObjectRoundTrip() {
 	s.Require().NoError(err)
 	s.Require().NoError(writer.Close())
 
-	hash, err := o.SetEncodedObject(obj)
+	hash, err := o.SetEncodedObject(s.T().Context(), obj)
 	s.Require().NoError(err)
 	s.Equal("2928cdcdc8b78c930378ceba09ce9ca8b888fbfe1bffb2cceb42bdff9421cb52", hash.String())
-	s.Require().NoError(o.HasEncodedObject(hash))
+	s.Require().NoError(o.HasEncodedObject(s.T().Context(), hash))
 	s.Require().FileExists(filepath.Join(fs.Root(), "objects", hash.String()[:2], hash.String()[2:]))
 
-	roundTrip, err := o.EncodedObject(plumbing.BlobObject, hash)
+	roundTrip, err := o.EncodedObject(s.T().Context(), plumbing.BlobObject, hash)
 	s.Require().NoError(err)
 	reader, err := roundTrip.Reader()
 	s.Require().NoError(err)
@@ -152,7 +152,7 @@ func (s *FsSuite) TestMismatchIdxFile() {
 	s.Require().NoError(err)
 
 	expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+	obj, err := o.EncodedObject(s.T().Context(), plumbing.AnyObject, expected)
 	s.Require().Nil(obj)
 	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
 }
@@ -180,7 +180,7 @@ func (s *FsSuite) TestMismatchIdxFile_LooseFallback() {
 	_, err = w.Write([]byte("loose object behind a broken idx\n"))
 	s.Require().NoError(err)
 	s.Require().NoError(w.Close())
-	loose, err := o.SetEncodedObject(obj)
+	loose, err := o.SetEncodedObject(s.T().Context(), obj)
 	s.Require().NoError(err)
 
 	// Corrupt the only idx in the same way TestMismatchIdxFile does.
@@ -200,12 +200,12 @@ func (s *FsSuite) TestMismatchIdxFile_LooseFallback() {
 	o2 := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 	defer func() { _ = o2.Close() }()
 
-	s.Require().NoError(o2.HasEncodedObject(loose),
+	s.Require().NoError(o2.HasEncodedObject(s.T().Context(), loose),
 		"loose object must answer existence even when the idx is broken")
-	size, err := o2.EncodedObjectSize(loose)
+	size, err := o2.EncodedObjectSize(s.T().Context(), loose)
 	s.Require().NoError(err)
 	s.Greater(size, int64(0))
-	got, err := o2.EncodedObject(plumbing.AnyObject, loose)
+	got, err := o2.EncodedObject(s.T().Context(), plumbing.AnyObject, loose)
 	s.Require().NoError(err)
 	s.Equal(loose, got.Hash())
 
@@ -213,7 +213,7 @@ func (s *FsSuite) TestMismatchIdxFile_LooseFallback() {
 	// idx error so genuine on-disk corruption is not silently
 	// swallowed when there is no answer to give the caller.
 	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
-	err = o2.HasEncodedObject(missing)
+	err = o2.HasEncodedObject(s.T().Context(), missing)
 	s.ErrorContains(err, "malformed idx file: packfile mismatch: ")
 }
 
@@ -224,7 +224,7 @@ func (s *FsSuite) TestGetSizeOfObjectFile() {
 
 	// Get the size of `tree_walker.go`.
 	expected := plumbing.NewHash("cbd81c47be12341eb1185b379d1c82675aeded6a")
-	size, err := o.EncodedObjectSize(expected)
+	size, err := o.EncodedObjectSize(s.T().Context(), expected)
 	s.Require().NoError(err)
 	s.Equal(int64(2412), size)
 }
@@ -237,7 +237,7 @@ func (s *FsSuite) TestGetSizeFromPackfile() {
 
 		// Get the size of `binary.jpg`.
 		expected := plumbing.NewHash("d5c0f4ab811897cadf03aec358ae60d21f91c50d")
-		size, err := o.EncodedObjectSize(expected)
+		size, err := o.EncodedObjectSize(s.T().Context(), expected)
 		s.Require().NoError(err)
 		s.Equal(int64(76110), size)
 	}
@@ -249,8 +249,8 @@ func (s *FsSuite) TestGetSizeOfAllObjectFiles() {
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 
 	// Get the size of `tree_walker.go`.
-	err = o.ForEachObjectHash(func(h plumbing.Hash) error {
-		size, err := o.EncodedObjectSize(h)
+	err = o.ForEachObjectHash(s.T().Context(), func(h plumbing.Hash) error {
+		size, err := o.EncodedObjectSize(s.T().Context(), h)
 		s.Require().NoError(err)
 		s.NotEqual(int64(0), size)
 		return nil
@@ -297,11 +297,11 @@ func (s *FsSuite) TestIter() {
 		o := NewStorage(fs, cache.NewObjectLRUDefault())
 		defer func() { _ = o.Close() }()
 
-		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := o.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 		s.Require().NoError(err)
 
 		var count int32
-		err = iter.ForEach(func(_ plumbing.EncodedObject) error {
+		err = iter.ForEach(s.T().Context(), func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})
@@ -318,11 +318,11 @@ func (s *FsSuite) TestIterLargeObjectThreshold() {
 		o := NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), Options{LargeObjectThreshold: 1})
 		defer func() { _ = o.Close() }()
 
-		iter, err := o.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := o.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 		s.Require().NoError(err)
 
 		var count int32
-		err = iter.ForEach(func(_ plumbing.EncodedObject) error {
+		err = iter.ForEach(s.T().Context(), func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})
@@ -340,10 +340,10 @@ func (s *FsSuite) TestIterWithType() {
 			o := NewStorage(fs, cache.NewObjectLRUDefault())
 			s.T().Cleanup(func() { _ = o.Close() })
 
-			iter, err := o.IterEncodedObjects(t)
+			iter, err := o.IterEncodedObjects(s.T().Context(), t)
 			s.Require().NoError(err)
 
-			err = iter.ForEach(func(obj plumbing.EncodedObject) error {
+			err = iter.ForEach(s.T().Context(), func(obj plumbing.EncodedObject) error {
 				s.Equal(t, obj.Type())
 				return nil
 			})
@@ -374,7 +374,7 @@ func (s *FsSuite) TestPackfileIter() {
 				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, objectIDSize)
 				s.Require().NoError(err)
 
-				err = iter.ForEach(func(o plumbing.EncodedObject) error {
+				err = iter.ForEach(s.T().Context(), func(o plumbing.EncodedObject) error {
 					s.Equal(t, o.Type())
 					return nil
 				})
@@ -429,7 +429,7 @@ func (s *FsSuite) TestPackfileReindex() {
 		defer func() { _ = storer.Close() }()
 
 		// check that our test object is NOT found
-		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
+		_, err = storer.EncodedObject(s.T().Context(), plumbing.CommitObject, testObjectHash)
 		s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
 		// add the external packfile+idx to the packs folder
@@ -438,13 +438,13 @@ func (s *FsSuite) TestPackfileReindex() {
 		s.Require().NoError(copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", packFilename)), idxFile))
 
 		// check that we cannot still retrieve the test object
-		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
+		_, err = storer.EncodedObject(s.T().Context(), plumbing.CommitObject, testObjectHash)
 		s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
 		storer.Reindex() // actually reindex
 
 		// Now check that the test object can be retrieved
-		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
+		_, err = storer.EncodedObject(s.T().Context(), plumbing.CommitObject, testObjectHash)
 		s.Require().NoError(err)
 	}
 }
@@ -460,11 +460,11 @@ func (s *FsSuite) TestGetFromObjectFileSharedCache() {
 	o2 := NewObjectStorage(dotgit.New(f2), ch)
 
 	expected := plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")
-	obj, err := o1.EncodedObject(plumbing.CommitObject, expected)
+	obj, err := o1.EncodedObject(s.T().Context(), plumbing.CommitObject, expected)
 	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
-	_, err = o2.EncodedObject(plumbing.CommitObject, expected)
+	_, err = o2.EncodedObject(s.T().Context(), plumbing.CommitObject, expected)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
@@ -474,7 +474,7 @@ func (s *FsSuite) TestHashesWithPrefix() {
 	s.Require().NoError(err)
 	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 	expected := plumbing.NewHash("f3dfe29d268303fc6e1bbce268605fc99573406e")
-	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+	obj, err := o.EncodedObject(s.T().Context(), plumbing.AnyObject, expected)
 	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
 
@@ -533,7 +533,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						err = iter.ForEach(func(o plumbing.EncodedObject) error {
+						err = iter.ForEach(b.Context(), func(o plumbing.EncodedObject) error {
 							if o.Type() != t {
 								b.Errorf("expecting %s, got %s", t, o.Type())
 							}
@@ -581,7 +581,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						err = iter.ForEach(func(o plumbing.EncodedObject) error {
+						err = iter.ForEach(b.Context(), func(o plumbing.EncodedObject) error {
 							if o.Type() != t {
 								b.Errorf("expecting %s, got %s", t, o.Type())
 							}
@@ -617,7 +617,7 @@ func BenchmarkGetObjectFromPackfile(b *testing.B) {
 			o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
 			for i := 0; i < b.N; i++ {
 				expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-				obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+				obj, err := o.EncodedObject(b.Context(), plumbing.AnyObject, expected)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -642,7 +642,7 @@ func (s *FsSuite) TestGetFromUnpackedCachesObjects() {
 	s.False(ok)
 
 	// Load the object
-	obj, err := objectStorage.EncodedObject(plumbing.AnyObject, hash)
+	obj, err := objectStorage.EncodedObject(s.T().Context(), plumbing.AnyObject, hash)
 	s.Require().NoError(err)
 	s.Equal(hash, obj.Hash())
 
@@ -726,11 +726,11 @@ func (s *FsSuite) TestObjectStorageMultipleAlternates() {
 	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
 	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
 
-	obj1, err := storage.EncodedObject(plumbing.AnyObject, commitHash1)
+	obj1, err := storage.EncodedObject(s.T().Context(), plumbing.AnyObject, commitHash1)
 	s.Require().NoError(err)
 	s.Equal(commitHash1, obj1.Hash())
 
-	obj2, err := storage.EncodedObject(plumbing.AnyObject, commitHash2)
+	obj2, err := storage.EncodedObject(s.T().Context(), plumbing.AnyObject, commitHash2)
 	s.Require().NoError(err)
 	s.Equal(commitHash2, obj2.Hash())
 
@@ -761,10 +761,10 @@ func (s *FsSuite) TestObjectStorageAlternatesHasEncodedObject() {
 	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
 	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
 
-	err = storage.HasEncodedObject(commitHash)
+	err = storage.HasEncodedObject(s.T().Context(), commitHash)
 	s.NoError(err)
 
-	err = storage.HasEncodedObject(nonExistentHash)
+	err = storage.HasEncodedObject(s.T().Context(), nonExistentHash)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
 	err = storage.Close()
@@ -824,7 +824,7 @@ func (s *FsSuite) TestObjectStorageAlternatesEncodedObjectSize() {
 	dg := dotgit.NewWithOptions(workFs, dotgit.Options{AlternatesFS: rootFs})
 	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
 
-	size, err := storage.EncodedObjectSize(commitHash)
+	size, err := storage.EncodedObjectSize(s.T().Context(), commitHash)
 	s.NoError(err)
 	s.Greater(size, int64(0))
 
@@ -846,18 +846,18 @@ func (s *FsSuite) TestObjectStorageAlternatesReset() {
 
 	storage := NewStorageWithOptions(workFs, cache.NewObjectLRUDefault(), Options{AlternatesFS: rootFs})
 	s.T().Cleanup(func() { storage.Close() })
-	s.Require().NoError(storage.Init())
+	s.Require().NoError(storage.Init(s.T().Context()))
 
-	err = storage.HasEncodedObject(commitHash)
+	err = storage.HasEncodedObject(s.T().Context(), commitHash)
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 
-	err = storage.AddAlternate(templateFs.Root())
+	err = storage.AddAlternate(s.T().Context(), templateFs.Root())
 	s.Require().NoError(err)
 
-	err = storage.HasEncodedObject(commitHash)
+	err = storage.HasEncodedObject(s.T().Context(), commitHash)
 	s.NoError(err)
 
-	obj, err := storage.EncodedObject(plumbing.AnyObject, commitHash)
+	obj, err := storage.EncodedObject(s.T().Context(), plumbing.AnyObject, commitHash)
 	s.NoError(err)
 	s.Equal(commitHash, obj.Hash())
 }
@@ -890,15 +890,15 @@ func (s *FsSuite) TestObjectStorageAlternatesInitError() {
 	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
 	s.T().Cleanup(func() { storage.Close() })
 
-	err = storage.HasEncodedObject(commitHash)
+	err = storage.HasEncodedObject(s.T().Context(), commitHash)
 	s.Error(err)
 	s.NotErrorIs(err, plumbing.ErrObjectNotFound)
 
-	_, err = storage.EncodedObjectSize(commitHash)
+	_, err = storage.EncodedObjectSize(s.T().Context(), commitHash)
 	s.Error(err)
 	s.NotErrorIs(err, plumbing.ErrObjectNotFound)
 
-	_, err = storage.EncodedObject(plumbing.AnyObject, commitHash)
+	_, err = storage.EncodedObject(s.T().Context(), plumbing.AnyObject, commitHash)
 	s.Error(err)
 	s.NotErrorIs(err, plumbing.ErrObjectNotFound)
 }
@@ -917,20 +917,20 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		t.Cleanup(func() { _ = s.Close() })
 
 		// Get one hash to read.
-		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
-		obj1, err := iter.Next()
+		obj1, err := iter.Next(t.Context())
 		require.NoError(t, err)
 		iter.Close()
 
 		// Read once to warm caches.
-		_, err = s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj1.Hash())
 		require.NoError(t, err)
 
 		require.NoError(t, s.CloseIdleDescriptors())
 
 		// Second read still works.
-		obj2, err := s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		obj2, err := s.EncodedObject(t.Context(), plumbing.AnyObject, obj1.Hash())
 		require.NoError(t, err)
 		assert.Equal(t, obj1.Hash(), obj2.Hash())
 	})
@@ -944,13 +944,13 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		t.Cleanup(func() { _ = s.Close() })
 
 		// Force population of s.index.
-		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
-		obj1, err := iter.Next()
+		obj1, err := iter.Next(t.Context())
 		require.NoError(t, err)
 		iter.Close()
 
-		_, err = s.EncodedObject(plumbing.AnyObject, obj1.Hash())
+		_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj1.Hash())
 		require.NoError(t, err)
 
 		s.muI.RLock()
@@ -1003,11 +1003,11 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		t.Cleanup(func() { _ = s.Close() })
 
 		// Collect a working set of hashes.
-		iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
 		var hashes []plumbing.Hash
 		for range 16 {
-			obj, err := iter.Next()
+			obj, err := iter.Next(t.Context())
 			if err != nil {
 				break
 			}
@@ -1021,7 +1021,7 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		// incomingChecked without a lock. One serial lookup here
 		// ensures the field is set before the concurrent herd,
 		// sidestepping the pre-existing race in hasIncomingObjects.
-		_, err = s.EncodedObject(plumbing.AnyObject, hashes[0])
+		_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, hashes[0])
 		require.NoError(t, err)
 
 		var wg sync.WaitGroup
@@ -1030,7 +1030,7 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		for range 8 {
 			wg.Go(func() {
 				for _, h := range hashes {
-					obj, err := s.EncodedObject(plumbing.AnyObject, h)
+					obj, err := s.EncodedObject(t.Context(), plumbing.AnyObject, h)
 					if err != nil || obj == nil {
 						failures.Add(1)
 						// Continue rather than return so a single
@@ -1067,13 +1067,13 @@ func TestObjectStorage_PopulateIndex_FirstReadHotMap(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 
-	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 
 	s.muI.RLock()
@@ -1094,13 +1094,13 @@ func TestObjectStorage_ReindexPrewarms(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 
-	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 
 	require.NoError(t, s.Reindex())
@@ -1113,7 +1113,7 @@ func TestObjectStorage_ReindexPrewarms(t *testing.T) {
 		"Reindex should leave s.index pre-warmed for the next read")
 
 	// And the next read should still succeed.
-	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 }
 
@@ -1135,9 +1135,9 @@ func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
 
 	// Pre-warm so a concurrent reader can RLock muI without first
 	// racing requireIndex against the Reindex herd.
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 	h := obj.Hash()
@@ -1152,7 +1152,7 @@ func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
 	// during the Reindex herd.
 	for range 8 {
 		wg.Go(func() {
-			_, err := s.EncodedObject(plumbing.AnyObject, h)
+			_, err := s.EncodedObject(t.Context(), plumbing.AnyObject, h)
 			assert.NoError(t, err)
 		})
 	}
@@ -1162,7 +1162,7 @@ func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
 	assert.NotEmpty(t, s.index, "after the Reindex herd s.index must be populated")
 	s.muI.RUnlock()
 
-	_, err = s.EncodedObject(plumbing.AnyObject, h)
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, h)
 	require.NoError(t, err, "reads after the Reindex herd must still succeed")
 }
 
@@ -1180,9 +1180,9 @@ func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 	h := obj.Hash()
@@ -1192,13 +1192,13 @@ func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
 	// without a lock. One serial call here ensures the field is set
 	// before the concurrent herd, avoiding a pre-existing race in
 	// hasIncomingObjects on cold startup.
-	_, err = s.EncodedObject(plumbing.AnyObject, h)
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, h)
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Go(func() {
-			_, err := s.EncodedObject(plumbing.AnyObject, h)
+			_, err := s.EncodedObject(t.Context(), plumbing.AnyObject, h)
 			assert.NoError(t, err)
 		})
 	}
@@ -1219,13 +1219,13 @@ func TestEncodedObject_PackedRoundTrip(t *testing.T) {
 
 	// Warm the index so EncodedObject doesn't race through the
 	// cold dotgit path (matches the convention of existing tests).
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 
-	got, err := s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	got, err := s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 	assert.Equal(t, obj.Hash(), got.Hash())
 }
@@ -1248,10 +1248,10 @@ func TestEncodedObject_LooseRoundTrip(t *testing.T) {
 	_, err = w.Write([]byte("loose-prefer-test"))
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
-	h, err := s.SetEncodedObject(o)
+	h, err := s.SetEncodedObject(t.Context(), o)
 	require.NoError(t, err)
 
-	got, err := s.EncodedObject(plumbing.AnyObject, h)
+	got, err := s.EncodedObject(t.Context(), plumbing.AnyObject, h)
 	require.NoError(t, err)
 	assert.Equal(t, h, got.Hash())
 }
@@ -1265,12 +1265,12 @@ func TestEncodedObject_NotFound(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Warm index to avoid the cold dotgit race.
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
 	iter.Close()
 
 	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
-	_, err = s.EncodedObject(plumbing.AnyObject, missing)
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, missing)
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 }
 
@@ -1283,12 +1283,12 @@ func TestEncodedObjectSize_NotFound(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Warm index to avoid the cold dotgit race.
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
 	iter.Close()
 
 	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
-	_, err = s.EncodedObjectSize(missing)
+	_, err = s.EncodedObjectSize(t.Context(), missing)
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 }
 
@@ -1300,13 +1300,13 @@ func TestEncodedObjectSize_Packed(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 
-	size, err := s.EncodedObjectSize(obj.Hash())
+	size, err := s.EncodedObjectSize(t.Context(), obj.Hash())
 	require.NoError(t, err)
 	assert.Greater(t, size, int64(0))
 }
@@ -1320,9 +1320,9 @@ func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Pre-warm the index (cold dotgit race avoidance).
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
-	obj, err := iter.Next()
+	obj, err := iter.Next(t.Context())
 	require.NoError(t, err)
 	iter.Close()
 
@@ -1330,7 +1330,7 @@ func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
 	require.Equal(t, int32(0), s.lastHitPackIdx.Load())
 
 	// First lookup seeds the hint.
-	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 
 	hint := s.lastHitPackIdx.Load()
@@ -1338,7 +1338,7 @@ func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
 		"first successful lookup should seed lastHitPackIdx")
 
 	// Second lookup should not change the hint (still the same pack).
-	_, err = s.EncodedObject(plumbing.AnyObject, obj.Hash())
+	_, err = s.EncodedObject(t.Context(), plumbing.AnyObject, obj.Hash())
 	require.NoError(t, err)
 	assert.Equal(t, hint, s.lastHitPackIdx.Load(),
 		"single-pack fixture: hint should stay stable")

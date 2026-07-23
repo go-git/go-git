@@ -10,17 +10,11 @@ import (
 )
 
 // DiffTree compares the content and mode of the blobs found via two
-// tree objects.
-// DiffTree does not perform rename detection, use DiffTreeWithOptions
-// instead to detect renames.
-func DiffTree(a, b *Tree) (Changes, error) {
-	return DiffTreeContext(context.Background(), a, b)
-}
-
-// DiffTreeContext compares the content and mode of the blobs found via two
 // tree objects. Provided context must be non-nil.
 // An error will be returned if context expires.
-func DiffTreeContext(ctx context.Context, a, b *Tree) (Changes, error) {
+// DiffTree does not perform rename detection, use DiffTreeWithOptions
+// instead to detect renames.
+func DiffTree(ctx context.Context, a, b *Tree) (Changes, error) {
 	return DiffTreeWithOptions(ctx, a, b, nil)
 }
 
@@ -92,7 +86,7 @@ func DiffTreeWithOptions(
 	}
 
 	if opts.DetectRenames {
-		return DetectRenames(changes, opts)
+		return DetectRenames(ctx, changes, opts)
 	}
 
 	return changes, nil

@@ -23,9 +23,9 @@ import (
 func TestUploadPackV2FetchDeepenSince(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 
 	// since == HEAD's committer time: only the tip qualifies; its older parents
@@ -46,9 +46,9 @@ func TestUploadPackV2FetchDeepenSince(t *testing.T) {
 func TestUploadPackV2FetchDeepenNot(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
@@ -68,7 +68,7 @@ func TestUploadPackV2FetchDeepenNot(t *testing.T) {
 func TestUploadPackV2FetchDeepenRelative(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	// deepen-relative with depth 1 on a fresh fetch (no haves) is the same as
@@ -86,7 +86,7 @@ func TestUploadPackV2FetchDeepenRelative(t *testing.T) {
 func TestUploadPackV2FetchDeepenAndSinceConflict(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	var out bytes.Buffer
@@ -107,24 +107,24 @@ func TestUploadPackV2FetchDeepenAndSinceConflict(t *testing.T) {
 func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	since := c.Committer.When
 
 	var upd packp.ShallowUpdate
-	require.NoError(t, getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil, &upd))
+	require.NoError(t, getShallowCommitsByRevList(t.Context(), st, []plumbing.Hash{head.Hash()}, since, nil, &upd))
 
 	require.NotEmpty(t, upd.Shallows)
 	for _, h := range upd.Shallows {
-		sc, err := object.GetCommit(st, h)
+		sc, err := object.GetCommit(t.Context(), st, h)
 		require.NoError(t, err)
 		require.False(t, sc.Committer.When.Before(since),
 			"a shallow commit must satisfy the deepen-since cutoff")
 		olderParent := false
 		for _, p := range sc.ParentHashes {
-			if pc, err := object.GetCommit(st, p); err == nil && pc.Committer.When.Before(since) {
+			if pc, err := object.GetCommit(t.Context(), st, p); err == nil && pc.Committer.When.Before(since) {
 				olderParent = true
 			}
 		}
@@ -137,16 +137,16 @@ func TestIncludeReachableTags(t *testing.T) {
 	st := v2StorageFromFixture(t, fixtures.ByTag("tags").One())
 
 	var tagHash, target plumbing.Hash
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences(t.Context())
 	require.NoError(t, err)
-	_ = iter.ForEach(func(ref *plumbing.Reference) error {
+	_ = iter.ForEach(t.Context(), func(ref *plumbing.Reference) error {
 		if !tagHash.IsZero() || ref.Type() != plumbing.HashReference || !ref.Name().IsTag() {
 			return nil
 		}
-		if _, err := object.GetTag(st, ref.Hash()); err != nil {
+		if _, err := object.GetTag(t.Context(), st, ref.Hash()); err != nil {
 			return nil // lightweight tag
 		}
-		if peeled, ok := peelToNonTag(st, ref.Hash()); ok {
+		if peeled, ok := peelToNonTag(t.Context(), st, ref.Hash()); ok {
 			tagHash, target = ref.Hash(), peeled
 		}
 		return nil
@@ -155,13 +155,13 @@ func TestIncludeReachableTags(t *testing.T) {
 	require.False(t, tagHash.IsZero(), "tags fixture must contain an annotated tag")
 
 	// Target in the pack: the annotated tag is auto-included.
-	withTag, err := includeReachableTags(st, []plumbing.Hash{target})
+	withTag, err := includeReachableTags(t.Context(), st, []plumbing.Hash{target})
 	require.NoError(t, err)
 	require.Contains(t, withTag, tagHash,
 		"annotated tag whose target is packed must be included")
 
 	// Target absent: the tag is not added.
-	without, err := includeReachableTags(st, nil)
+	without, err := includeReachableTags(t.Context(), st, nil)
 	require.NoError(t, err)
 	require.NotContains(t, without, tagHash,
 		"annotated tag whose target is not packed must be omitted")
@@ -170,9 +170,9 @@ func TestIncludeReachableTags(t *testing.T) {
 func TestUploadPackV2FetchDeepenExistingShallow(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
@@ -199,9 +199,9 @@ func TestUploadPackV2FetchDeepenExistingShallow(t *testing.T) {
 func TestUploadPackV2FetchDeepenRelativeExistingShallow(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
@@ -230,9 +230,9 @@ func TestUploadPackV2FetchDeepenRelativeExistingShallow(t *testing.T) {
 func TestUploadPackV2FetchDeepenExistingShallowToFullHistory(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
+	c, err := object.GetCommit(t.Context(), st, head.Hash())
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 
@@ -256,7 +256,7 @@ func TestUploadPackV2FetchDeepenExistingShallowToFullHistory(t *testing.T) {
 func TestUploadPackV2FetchNoProgressEmitsNoProgressBand(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(t.Context(), st, plumbing.HEAD)
 	require.NoError(t, err)
 
 	var buf bytes.Buffer

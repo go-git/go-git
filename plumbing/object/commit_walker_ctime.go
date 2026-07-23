@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -49,7 +50,7 @@ func NewCommitIterCTime(
 	}
 }
 
-func (w *commitIteratorByCTime) Next() (*Commit, error) {
+func (w *commitIteratorByCTime) Next(ctx context.Context) (*Commit, error) {
 	var c *Commit
 	for {
 		cIn, ok := w.heap.Pop()
@@ -68,7 +69,7 @@ func (w *commitIteratorByCTime) Next() (*Commit, error) {
 			if w.seen[h] || w.seenExternal[h] {
 				continue
 			}
-			pc, err := GetCommit(c.s, h)
+			pc, err := GetCommit(ctx, c.s, h)
 			if err != nil {
 				return nil, err
 			}
@@ -79,9 +80,9 @@ func (w *commitIteratorByCTime) Next() (*Commit, error) {
 	}
 }
 
-func (w *commitIteratorByCTime) ForEach(cb func(*Commit) error) error {
+func (w *commitIteratorByCTime) ForEach(ctx context.Context, cb func(*Commit) error) error {
 	for {
-		c, err := w.Next()
+		c, err := w.Next(ctx)
 		if err == io.EOF {
 			break
 		}

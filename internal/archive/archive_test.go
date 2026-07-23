@@ -122,11 +122,11 @@ func TestResolveRef(t *testing.T) {
 	defer func() { _ = storer.Close() }()
 
 	// Get expected hashes from the fixture
-	masterRef, err := storer.Reference(plumbing.ReferenceName("refs/heads/master"))
+	masterRef, err := storer.Reference(t.Context(), plumbing.ReferenceName("refs/heads/master"))
 	require.NoError(t, err)
 	masterHash := masterRef.Hash()
 
-	tagRef, err := storer.Reference(plumbing.ReferenceName("refs/tags/v1.0.0"))
+	tagRef, err := storer.Reference(t.Context(), plumbing.ReferenceName("refs/tags/v1.0.0"))
 	require.NoError(t, err)
 	tagHash := tagRef.Hash()
 
@@ -186,7 +186,7 @@ func TestResolveRef(t *testing.T) {
 
 	for _, tt := range tests { //nolint:paralleltest // avoid parallel test because of shared fixture state
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ResolveRef(storer, tt.ref, tt.allowHash)
+			got, err := ResolveRef(t.Context(), storer, tt.ref, tt.allowHash)
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.errContain != "" {
@@ -241,7 +241,7 @@ func TestResolveTreeish_Errors(t *testing.T) {
 
 	for _, tt := range tests { //nolint:paralleltest // avoid parallel test because of shared fixture state
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
+			_, _, _, err := ResolveTreeish(t.Context(), storer, tt.treeish, tt.allowUnreachable)
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.errIs != nil {
@@ -268,7 +268,7 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 	defer func() { _ = storer.Close() }()
 
 	// Get the master commit hash for testing
-	masterRef, err := storer.Reference(plumbing.ReferenceName("refs/heads/master"))
+	masterRef, err := storer.Reference(t.Context(), plumbing.ReferenceName("refs/heads/master"))
 	require.NoError(t, err)
 	masterHash := masterRef.Hash().String()
 
@@ -373,7 +373,7 @@ func TestResolveTreeish_AllowUnreachable(t *testing.T) {
 
 	for _, tt := range tests { //nolint:paralleltest // avoid parallel test because of shared fixture state
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, _, err := ResolveTreeish(storer, tt.treeish, tt.allowUnreachable)
+			_, _, _, err := ResolveTreeish(t.Context(), storer, tt.treeish, tt.allowUnreachable)
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.errIs != nil {
@@ -406,13 +406,13 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 			name:    "commit target",
 			treeish: "commit-tag",
 			assert: func(t *testing.T, tag *object.Tag) {
-				commit, err := object.GetCommit(storer, tag.Target)
+				commit, err := object.GetCommit(t.Context(), storer, tag.Target)
 				require.NoError(t, err)
 
-				expectedTree, err := commit.Tree()
+				expectedTree, err := commit.Tree(t.Context())
 				require.NoError(t, err)
 
-				tree, commitHash, commitTime, err := ResolveTreeish(storer, "commit-tag", false)
+				tree, commitHash, commitTime, err := ResolveTreeish(t.Context(), storer, "commit-tag", false)
 				require.NoError(t, err)
 				require.NotNil(t, commitHash)
 				assert.Equal(t, expectedTree.Hash, tree.Hash)
@@ -424,10 +424,10 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 			name:    "tree target",
 			treeish: "tree-tag",
 			assert: func(t *testing.T, tag *object.Tag) {
-				expectedTree, err := object.GetTree(storer, tag.Target)
+				expectedTree, err := object.GetTree(t.Context(), storer, tag.Target)
 				require.NoError(t, err)
 
-				tree, commitHash, commitTime, err := ResolveTreeish(storer, "tree-tag", false)
+				tree, commitHash, commitTime, err := ResolveTreeish(t.Context(), storer, "tree-tag", false)
 				require.NoError(t, err)
 				assert.Equal(t, expectedTree.Hash, tree.Hash)
 				assert.Nil(t, commitHash)
@@ -438,7 +438,7 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 			name:    "unsupported target",
 			treeish: "blob-tag",
 			assert: func(t *testing.T, _ *object.Tag) {
-				_, _, _, err := ResolveTreeish(storer, "blob-tag", false)
+				_, _, _, err := ResolveTreeish(t.Context(), storer, "blob-tag", false)
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "unsupported object type for archive")
 			},
@@ -447,10 +447,10 @@ func TestResolveTreeish_AnnotatedTags(t *testing.T) {
 
 	for _, tt := range tests { //nolint:paralleltest // object / storer are not thread safe
 		t.Run(tt.name, func(t *testing.T) {
-			tagRef, err := storer.Reference(plumbing.ReferenceName("refs/tags/" + tt.treeish))
+			tagRef, err := storer.Reference(t.Context(), plumbing.ReferenceName("refs/tags/"+tt.treeish))
 			require.NoError(t, err)
 
-			tag, err := object.GetTag(storer, tagRef.Hash())
+			tag, err := object.GetTag(t.Context(), storer, tagRef.Hash())
 			require.NoError(t, err)
 
 			tt.assert(t, tag)
@@ -467,7 +467,7 @@ func TestWriteTarArchive_RejectsOversizedSymlinkTarget(t *testing.T) {
 	blobObj.SetType(plumbing.BlobObject)
 	_, err := blobObj.Write([]byte(strings.Repeat("a", maxTarSymlinkTargetSize+1)))
 	require.NoError(t, err)
-	blobHash, err := st.SetEncodedObject(blobObj)
+	blobHash, err := st.SetEncodedObject(t.Context(), blobObj)
 	require.NoError(t, err)
 
 	treeObj := &object.Tree{
@@ -483,14 +483,14 @@ func TestWriteTarArchive_RejectsOversizedSymlinkTarget(t *testing.T) {
 	encodedTree := &plumbing.MemoryObject{}
 	encodedTree.SetType(plumbing.TreeObject)
 	require.NoError(t, treeObj.Encode(encodedTree))
-	treeHash, err := st.SetEncodedObject(encodedTree)
+	treeHash, err := st.SetEncodedObject(t.Context(), encodedTree)
 	require.NoError(t, err)
 
-	tree, err := object.GetTree(st, treeHash)
+	tree, err := object.GetTree(t.Context(), st, treeHash)
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
-	err = WriteTarArchive(st, &buf, tree, nil, "", nil, time.Now())
+	err = WriteTarArchive(t.Context(), st, &buf, tree, nil, "", nil, time.Now())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSymlinkTargetTooLarge)
 	assert.Contains(t, err.Error(), "link")

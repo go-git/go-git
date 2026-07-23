@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 	"slices"
@@ -41,15 +42,15 @@ func NewCommitFileIterFromIter(fileName string, commitIter CommitIter, checkPare
 	)
 }
 
-func (c *commitPathIter) Next() (*Commit, error) {
+func (c *commitPathIter) Next(ctx context.Context) (*Commit, error) {
 	if c.currentCommit == nil {
 		var err error
-		c.currentCommit, err = c.sourceIter.Next()
+		c.currentCommit, err = c.sourceIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
 	}
-	commit, commitErr := c.getNextFileCommit()
+	commit, commitErr := c.getNextFileCommit(ctx)
 
 	// Setting current-commit to nil to prevent unwanted states when errors are raised
 	if commitErr != nil {
@@ -58,12 +59,12 @@ func (c *commitPathIter) Next() (*Commit, error) {
 	return commit, commitErr
 }
 
-func (c *commitPathIter) getNextFileCommit() (*Commit, error) {
+func (c *commitPathIter) getNextFileCommit(ctx context.Context) (*Commit, error) {
 	var parentTree, currentTree *Tree
 
 	for {
 		// Parent-commit can be nil if the current-commit is the initial commit
-		parentCommit, parentCommitErr := c.sourceIter.Next()
+		parentCommit, parentCommitErr := c.sourceIter.Next(ctx)
 		if parentCommitErr != nil {
 			// If the parent-commit is beyond the initial commit, keep it nil
 			if parentCommitErr != io.EOF {
@@ -74,7 +75,7 @@ func (c *commitPathIter) getNextFileCommit() (*Commit, error) {
 
 		if parentTree == nil {
 			var currTreeErr error
-			currentTree, currTreeErr = c.currentCommit.Tree()
+			currentTree, currTreeErr = c.currentCommit.Tree(ctx)
 			if currTreeErr != nil {
 				return nil, currTreeErr
 			}
@@ -85,14 +86,14 @@ func (c *commitPathIter) getNextFileCommit() (*Commit, error) {
 
 		if parentCommit != nil {
 			var parentTreeErr error
-			parentTree, parentTreeErr = parentCommit.Tree()
+			parentTree, parentTreeErr = parentCommit.Tree(ctx)
 			if parentTreeErr != nil {
 				return nil, parentTreeErr
 			}
 		}
 
 		// Find diff between current and parent trees
-		changes, diffErr := DiffTree(currentTree, parentTree)
+		changes, diffErr := DiffTree(ctx, currentTree, parentTree)
 		if diffErr != nil {
 			return nil, diffErr
 		}
@@ -140,9 +141,9 @@ func isParentHash(hash plumbing.Hash, commit *Commit) bool {
 	return slices.Contains(commit.ParentHashes, hash)
 }
 
-func (c *commitPathIter) ForEach(cb func(*Commit) error) error {
+func (c *commitPathIter) ForEach(ctx context.Context, cb func(*Commit) error) error {
 	for {
-		commit, nextErr := c.Next()
+		commit, nextErr := c.Next(ctx)
 		if nextErr == io.EOF {
 			break
 		}

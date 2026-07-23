@@ -19,7 +19,7 @@ func TestReflogReadNonExistent(t *testing.T) {
 	sto := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	entries, err := sto.Reflog(plumbing.ReferenceName("refs/heads/no-such-ref"))
+	entries, err := sto.Reflog(t.Context(), plumbing.ReferenceName("refs/heads/no-such-ref"))
 	require.NoError(t, err)
 	assert.Nil(t, entries)
 }
@@ -51,10 +51,10 @@ func TestReflogAppendAndRead(t *testing.T) {
 		Message: "commit: second",
 	}
 
-	require.NoError(t, sto.AppendReflog(ref, e1))
-	require.NoError(t, sto.AppendReflog(ref, e2))
+	require.NoError(t, sto.AppendReflog(t.Context(), ref, e1))
+	require.NoError(t, sto.AppendReflog(t.Context(), ref, e2))
 
-	entries, err := sto.Reflog(ref)
+	entries, err := sto.Reflog(t.Context(), ref)
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 
@@ -70,7 +70,7 @@ func TestReflogDelete(t *testing.T) {
 	defer func() { _ = sto.Close() }()
 	ref := plumbing.ReferenceName("refs/heads/main")
 
-	require.NoError(t, sto.AppendReflog(ref, &reflog.Entry{
+	require.NoError(t, sto.AppendReflog(t.Context(), ref, &reflog.Entry{
 		OldHash: plumbing.ZeroHash,
 		NewHash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		Committer: reflog.Signature{
@@ -81,9 +81,9 @@ func TestReflogDelete(t *testing.T) {
 		Message: "commit (initial): first",
 	}))
 
-	require.NoError(t, sto.DeleteReflog(ref))
+	require.NoError(t, sto.DeleteReflog(t.Context(), ref))
 
-	entries, err := sto.Reflog(ref)
+	entries, err := sto.Reflog(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Nil(t, entries)
 }
@@ -93,6 +93,6 @@ func TestReflogDeleteNonExistent(t *testing.T) {
 	sto := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	err := sto.DeleteReflog(plumbing.ReferenceName("refs/heads/no-such-ref"))
+	err := sto.DeleteReflog(t.Context(), plumbing.ReferenceName("refs/heads/no-such-ref"))
 	assert.NoError(t, err)
 }

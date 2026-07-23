@@ -409,36 +409,36 @@ func TestReconcileObjectFormatV2(t *testing.T) {
 
 	t.Run("unknown algorithm is rejected", func(t *testing.T) {
 		t.Parallel()
-		err := ReconcileObjectFormatV2(memory.NewStorage(), withFormat("sha999"))
+		err := ReconcileObjectFormatV2(t.Context(), memory.NewStorage(), withFormat("sha999"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported object-format")
 	})
 
 	t.Run("empty value is accepted for an sha1 client", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("")))
+		require.NoError(t, ReconcileObjectFormatV2(t.Context(), memory.NewStorage(), withFormat("")))
 	})
 
 	t.Run("empty value rejects a sha256 client", func(t *testing.T) {
 		t.Parallel()
 		st := memory.NewStorage()
-		cfg, err := st.Config()
+		cfg, err := st.Config(t.Context())
 		require.NoError(t, err)
 		cfg.Extensions.ObjectFormat = formatcfg.SHA256
-		require.NoError(t, st.SetConfig(cfg))
+		require.NoError(t, st.SetConfig(t.Context(), cfg))
 
-		err = ReconcileObjectFormatV2(st, withFormat(""))
+		err = ReconcileObjectFormatV2(t.Context(), st, withFormat(""))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "does not support algorithm")
 	})
 
 	t.Run("sha1 server with unset client is accepted", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("sha1")))
+		require.NoError(t, ReconcileObjectFormatV2(t.Context(), memory.NewStorage(), withFormat("sha1")))
 	})
 
 	t.Run("no advertisement is accepted for an sha1 client", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), capability.List{}))
+		require.NoError(t, ReconcileObjectFormatV2(t.Context(), memory.NewStorage(), capability.List{}))
 	})
 }

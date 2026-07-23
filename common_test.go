@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -76,7 +77,7 @@ func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
 
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
-	r, err := Open(st, worktree)
+	r, err := Open(s.T().Context(), st, worktree)
 	s.Require().NoError(err)
 
 	return r
@@ -85,7 +86,7 @@ func (s *BaseSuite) NewRepository(f *fixtures.Fixture) *Repository {
 // NewRepositoryWithEmptyWorktree returns a new repository using the .git folder
 // from the fixture but without a empty memfs worktree, the index and the
 // modules are deleted from the .git folder.
-func NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
+func NewRepositoryWithEmptyWorktree(ctx context.Context, f *fixtures.Fixture) *Repository {
 	dotgit, err := f.DotGit()
 	if err != nil {
 		panic(err)
@@ -104,7 +105,7 @@ func NewRepositoryWithEmptyWorktree(f *fixtures.Fixture) *Repository {
 
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
-	r, err := Open(st, worktree)
+	r, err := Open(ctx, st, worktree)
 	if err != nil {
 		panic(err)
 	}
@@ -123,10 +124,10 @@ func (s *BaseSuite) NewRepositoryFromPackfile(f *fixtures.Fixture) *Repository {
 	s.Require().NoError(err)
 	defer func() { _ = p.Close() }()
 
-	s.Require().NoError(packfile.UpdateObjectStorage(storer, p))
-	s.Require().NoError(storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head))))
+	s.Require().NoError(packfile.UpdateObjectStorage(s.T().Context(), storer, p))
+	s.Require().NoError(storer.SetReference(s.T().Context(), plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(f.Head))))
 
-	r, err := Open(storer, memfs.New())
+	r, err := Open(s.T().Context(), storer, memfs.New())
 	s.Require().NoError(err)
 
 	s.cache[h] = r
@@ -206,7 +207,7 @@ func AssertReferences(t *testing.T, r *Repository, expected map[string]string) {
 	for name, target := range expected {
 		expected := plumbing.NewReferenceFromStrings(name, target)
 
-		obtained, err := r.Reference(expected.Name(), true)
+		obtained, err := r.Reference(t.Context(), expected.Name(), true)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expected, obtained)
@@ -215,14 +216,14 @@ func AssertReferences(t *testing.T, r *Repository, expected map[string]string) {
 
 func AssertReferencesMissing(t *testing.T, r *Repository, expected []string) {
 	for _, name := range expected {
-		_, err := r.Reference(plumbing.ReferenceName(name), false)
+		_, err := r.Reference(t.Context(), plumbing.ReferenceName(name), false)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 	}
 }
 
 func CommitNewFile(t *testing.T, repo *Repository, fileName string) plumbing.Hash {
-	wt, err := repo.Worktree()
+	wt, err := repo.Worktree(t.Context())
 	assert.NoError(t, err)
 
 	fd, err := wt.filesystem.Create(fileName)
@@ -234,10 +235,10 @@ func CommitNewFile(t *testing.T, repo *Repository, fileName string) plumbing.Has
 	err = fd.Close()
 	assert.NoError(t, err)
 
-	_, err = wt.Add(fileName)
+	_, err = wt.Add(t.Context(), fileName)
 	assert.NoError(t, err)
 
-	sha, err := wt.Commit("test commit", &CommitOptions{
+	sha, err := wt.Commit(t.Context(), "test commit", &CommitOptions{
 		Author: &object.Signature{
 			Name:  "test",
 			Email: "test@example.com",

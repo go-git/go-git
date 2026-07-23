@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 	"time"
@@ -29,9 +30,9 @@ func NewCommitLimitIterFromIter(commitIter CommitIter, limitOptions LogLimitOpti
 	return iterator
 }
 
-func (c *commitLimitIter) Next() (*Commit, error) {
+func (c *commitLimitIter) Next(ctx context.Context) (*Commit, error) {
 	for {
-		commit, err := c.sourceIter.Next()
+		commit, err := c.sourceIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -49,9 +50,9 @@ func (c *commitLimitIter) Next() (*Commit, error) {
 	}
 }
 
-func (c *commitLimitIter) ForEach(cb func(*Commit) error) error {
+func (c *commitLimitIter) ForEach(ctx context.Context, cb func(*Commit) error) error {
 	for {
-		commit, nextErr := c.Next()
+		commit, nextErr := c.Next(ctx)
 		if nextErr == io.EOF {
 			break
 		}

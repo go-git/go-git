@@ -22,7 +22,7 @@ type Signer interface {
 	Sign(ctx context.Context, message io.Reader) ([]byte, error)
 }
 
-func signObject(signer Signer, obj signableObject) ([]byte, error) {
+func signObject(ctx context.Context, signer Signer, obj signableObject) ([]byte, error) {
 	encoded := &plumbing.MemoryObject{}
 	if err := obj.EncodeWithoutSignature(encoded); err != nil {
 		return nil, err
@@ -32,6 +32,5 @@ func signObject(signer Signer, obj signableObject) ([]byte, error) {
 		return nil, err
 	}
 
-	// TODO: thread a caller-supplied context once Worktree.Commit accepts one.
-	return signer.Sign(context.TODO(), r)
+	return signer.Sign(ctx, r)
 }

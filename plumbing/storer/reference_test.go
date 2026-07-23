@@ -26,15 +26,15 @@ func (s *ReferenceSuite) TestReferenceSliceIterNext() {
 	}
 
 	i := NewReferenceSliceIter(slice)
-	foo, err := i.Next()
+	foo, err := i.Next(s.T().Context())
 	s.NoError(err)
 	s.True(foo == slice[0])
 
-	bar, err := i.Next()
+	bar, err := i.Next(s.T().Context())
 	s.NoError(err)
 	s.True(bar == slice[1])
 
-	empty, err := i.Next()
+	empty, err := i.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	s.Nil(empty)
 }
@@ -47,7 +47,7 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEach() {
 
 	i := NewReferenceSliceIter(slice)
 	var count int
-	i.ForEach(func(r *plumbing.Reference) error {
+	i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		s.True(r == slice[count])
 		count++
 		return nil
@@ -65,7 +65,7 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachError() {
 	i := NewReferenceSliceIter(slice)
 	var count int
 	exampleErr := errors.New("SOME ERROR")
-	err := i.ForEach(func(r *plumbing.Reference) error {
+	err := i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		s.True(r == slice[count])
 		count++
 		if count == 2 {
@@ -88,7 +88,7 @@ func (s *ReferenceSuite) TestReferenceSliceIterForEachStop() {
 	i := NewReferenceSliceIter(slice)
 
 	var count int
-	i.ForEach(func(r *plumbing.Reference) error {
+	i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		s.True(r == slice[count])
 		count++
 		return ErrStop
@@ -106,12 +106,12 @@ func (s *ReferenceSuite) TestReferenceFilteredIterNext() {
 	i := NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
 		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
-	foo, err := i.Next()
+	foo, err := i.Next(s.T().Context())
 	s.NoError(err)
 	s.False(foo == slice[0])
 	s.True(foo == slice[1])
 
-	empty, err := i.Next()
+	empty, err := i.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	s.Nil(empty)
 }
@@ -126,7 +126,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEach() {
 		return r.Name() == "bar"
 	}, NewReferenceSliceIter(slice))
 	var count int
-	i.ForEach(func(r *plumbing.Reference) error {
+	i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		s.True(r == slice[1])
 		count++
 		return nil
@@ -146,7 +146,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterError() {
 	}, NewReferenceSliceIter(slice))
 	var count int
 	exampleErr := errors.New("SOME ERROR")
-	err := i.ForEach(func(r *plumbing.Reference) error {
+	err := i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		s.True(r == slice[1])
 		count++
 		if count == 1 {
@@ -171,7 +171,7 @@ func (s *ReferenceSuite) TestReferenceFilteredIterForEachStop() {
 	}, NewReferenceSliceIter(slice))
 
 	var count int
-	i.ForEach(func(r *plumbing.Reference) error {
+	i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		s.True(r == slice[1])
 		count++
 		return ErrStop
@@ -193,7 +193,7 @@ func (s *ReferenceSuite) TestMultiReferenceIterForEach() {
 	)
 
 	var result []string
-	err := i.ForEach(func(r *plumbing.Reference) error {
+	err := i.ForEach(s.T().Context(), func(r *plumbing.Reference) error {
 		result = append(result, r.Name().String())
 		return nil
 	})

@@ -102,7 +102,7 @@ func (s *CommitgraphSuite) TestDecodeMultiChain() {
 		s.Require().NoError(err)
 		defer p.Close()
 
-		err = packfile.UpdateObjectStorage(storer, p)
+		err = packfile.UpdateObjectStorage(s.T().Context(), storer, p)
 		s.Require().NoError(err)
 
 		for idx, hash := range index.Hashes() {
@@ -115,7 +115,7 @@ func (s *CommitgraphSuite) TestDecodeMultiChain() {
 
 			commitData, err := index.GetCommitDataByIndex(uint32(idx))
 			s.Require().NoError(err)
-			commit, err := object.GetCommit(storer, hash)
+			commit, err := object.GetCommit(s.T().Context(), storer, hash)
 			s.Require().NoError(err)
 
 			for i, parent := range commit.ParentHashes {

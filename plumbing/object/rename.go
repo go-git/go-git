@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sort"
@@ -17,6 +18,7 @@ import (
 // deletions into modifications when possible.
 // If options is nil, the default diff tree options will be used.
 func DetectRenames(
+	ctx context.Context,
 	changes Changes,
 	opts *DiffTreeOptions,
 ) (Changes, error) {
@@ -46,7 +48,7 @@ func DetectRenames(
 		}
 	}
 
-	return detector.detect()
+	return detector.detect(ctx)
 }
 
 // renameDetector will detect and resolve renames in a set of changes.
@@ -207,14 +209,14 @@ func (d *renameDetector) detectExactRenames() {
 // in the files by building a matrix of pairs between sources and destinations
 // and matching by the highest score.
 // see: https://github.com/eclipse/jgit/blob/master/org.eclipse.jgit/src/org/eclipse/jgit/diff/SimilarityRenameDetector.java
-func (d *renameDetector) detectContentRenames() error {
+func (d *renameDetector) detectContentRenames(ctx context.Context) error {
 	cnt := max(len(d.added), len(d.deleted))
 	if d.renameLimit > 0 && cnt > d.renameLimit {
 		return nil
 	}
 
 	srcs, dsts := d.deleted, d.added
-	matrix, err := buildSimilarityMatrix(srcs, dsts, d.renameScore)
+	matrix, err := buildSimilarityMatrix(ctx, srcs, dsts, d.renameScore)
 	if err != nil {
 		return err
 	}
@@ -246,12 +248,12 @@ func (d *renameDetector) detectContentRenames() error {
 	return nil
 }
 
-func (d *renameDetector) detect() (Changes, error) {
+func (d *renameDetector) detect(ctx context.Context) (Changes, error) {
 	if len(d.added) > 0 && len(d.deleted) > 0 {
 		d.detectExactRenames()
 
 		if !d.onlyExact {
-			if err := d.detectContentRenames(); err != nil {
+			if err := d.detectContentRenames(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -393,7 +395,7 @@ type similarityPair struct {
 
 const maxMatrixSize = 10000
 
-func buildSimilarityMatrix(srcs, dsts []*Change, renameScore int) (similarityMatrix, error) {
+func buildSimilarityMatrix(ctx context.Context, srcs, dsts []*Change, renameScore int) (similarityMatrix, error) {
 	// Allocate for the worst-case scenario where every pair has a score
 	// that we need to consider. We might not need that many.
 	matrixSize := min(len(srcs)*len(dsts), maxMatrixSize)
@@ -431,7 +433,7 @@ outerLoop:
 			var to *File
 			srcSize := srcSizes[srcIdx]
 			if srcSize == 0 {
-				from, _, err = src.Files()
+				from, _, err = src.Files(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -441,7 +443,7 @@ outerLoop:
 
 			dstSize := dstSizes[dstIdx]
 			if dstSize == 0 {
-				_, to, err = dst.Files()
+				_, to, err = dst.Files(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -470,7 +472,7 @@ outerLoop:
 			}
 
 			if to == nil {
-				_, to, err = dst.Files()
+				_, to, err = dst.Files(ctx)
 				if err != nil {
 					return nil, err
 				}

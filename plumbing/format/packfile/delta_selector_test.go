@@ -141,7 +141,7 @@ var testObjects = []*testObject{{
 func (s *DeltaSelectorSuite) createTestObjects() {
 	s.hashes = make(map[string]plumbing.Hash)
 	for _, o := range testObjects {
-		h, err := s.store.SetEncodedObject(o.object)
+		h, err := s.store.SetEncodedObject(s.T().Context(), o.object)
 		if err != nil {
 			panic(err)
 		}
@@ -150,10 +150,11 @@ func (s *DeltaSelectorSuite) createTestObjects() {
 }
 
 func (s *DeltaSelectorSuite) TestObjectsToPack() {
+	ctx := s.T().Context()
 	// Different type
 	hashes := []plumbing.Hash{s.hashes["base"], s.hashes["treeType"]}
 	deltaWindowSize := uint(10)
-	otp, err := s.ds.ObjectsToPack(hashes, deltaWindowSize)
+	otp, err := s.ds.ObjectsToPack(ctx, hashes, deltaWindowSize)
 	s.NoError(err)
 	s.Len(otp, 2)
 	s.Equal(s.store.Objects[s.hashes["base"]], otp[0].Object)
@@ -161,7 +162,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 
 	// Size radically different
 	hashes = []plumbing.Hash{s.hashes["bigBase"], s.hashes["target"]}
-	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
+	otp, err = s.ds.ObjectsToPack(ctx, hashes, deltaWindowSize)
 	s.NoError(err)
 	s.Len(otp, 2)
 	s.Equal(s.store.Objects[s.hashes["bigBase"]], otp[0].Object)
@@ -169,7 +170,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 
 	// Delta Size Limit with no best delta yet
 	hashes = []plumbing.Hash{s.hashes["smallBase"], s.hashes["smallTarget"]}
-	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
+	otp, err = s.ds.ObjectsToPack(ctx, hashes, deltaWindowSize)
 	s.NoError(err)
 	s.Len(otp, 2)
 	s.Equal(s.store.Objects[s.hashes["smallBase"]], otp[0].Object)
@@ -177,7 +178,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 
 	// It will create the delta
 	hashes = []plumbing.Hash{s.hashes["base"], s.hashes["target"]}
-	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
+	otp, err = s.ds.ObjectsToPack(ctx, hashes, deltaWindowSize)
 	s.NoError(err)
 	s.Len(otp, 2)
 	s.Equal(s.store.Objects[s.hashes["target"]], otp[0].Object)
@@ -192,7 +193,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 		s.hashes["o2"],
 		s.hashes["o3"],
 	}
-	otp, err = s.ds.ObjectsToPack(hashes, deltaWindowSize)
+	otp, err = s.ds.ObjectsToPack(ctx, hashes, deltaWindowSize)
 	s.NoError(err)
 	s.Len(otp, 3)
 	s.Equal(s.store.Objects[s.hashes["o1"]], otp[0].Object)
@@ -215,9 +216,9 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 
 	// Don't sort so we can easily check the sliding window without
 	// creating a bunch of new objects.
-	otp, err = s.ds.objectsToPack(hashes, deltaWindowSize)
+	otp, err = s.ds.objectsToPack(ctx, hashes, deltaWindowSize)
 	s.NoError(err)
-	err = s.ds.walk(otp, deltaWindowSize)
+	err = s.ds.walk(ctx, otp, deltaWindowSize)
 	s.NoError(err)
 	s.Len(otp, int(deltaWindowSize)+2)
 	targetIdx := len(otp) - 1
@@ -226,7 +227,7 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 	// Check that no deltas are created, and the objects are unsorted,
 	// if compression is off.
 	hashes = []plumbing.Hash{s.hashes["base"], s.hashes["target"]}
-	otp, err = s.ds.ObjectsToPack(hashes, 0)
+	otp, err = s.ds.ObjectsToPack(ctx, hashes, 0)
 	s.NoError(err)
 	s.Len(otp, 2)
 	s.Equal(s.store.Objects[s.hashes["base"]], otp[0].Object)

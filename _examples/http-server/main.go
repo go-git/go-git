@@ -16,7 +16,7 @@
 // For pushes (receive-pack), the backend performs a basic auth check.
 // Use a URL with credentials or run with -allow-anonymous-receive.
 //
-//	 git clone http://user:pass@localhost:8080/myrepo.git
+//	git clone http://user:pass@localhost:8080/myrepo.git
 //
 // The server supports the Git-Protocol header (version=2) automatically.
 package main
@@ -50,7 +50,6 @@ func main() {
 	if len(flag.Args()) > 0 {
 		*root = flag.Arg(0)
 	}
-
 
 	loader := transport.NewFilesystemLoader(osfs.New(*root), false)
 	b := backend.New(loader)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>")
 	url := os.Args[1]
 
@@ -29,7 +32,7 @@ func main() {
 
 	Info("git clone %s", url)
 
-	r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
+	r, err := git.Clone(ctx, memory.NewStorage(), nil, &git.CloneOptions{
 		URL: url,
 		ClientOptions: []client.Option{
 			client.WithHTTPClient(customClient),
@@ -40,7 +43,7 @@ func main() {
 
 	Info("git rev-parse HEAD")
 
-	head, err := r.Head()
+	head, err := r.Head(ctx)
 	CheckIfError(err)
 	fmt.Println(head.Hash())
 }

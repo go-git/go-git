@@ -32,31 +32,33 @@ func (s *PruneSuite) testPrune(deleteTime time.Time) {
 	s.NotNil(los)
 
 	count := 0
-	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
+	err = los.ForEachObjectHash(s.T().Context(), func(_ plumbing.Hash) error {
 		count++
 		return nil
 	})
 	s.NoError(err)
 
-	r, err := Open(sto, srcFs)
+	r, err := Open(s.T().Context(), sto, srcFs)
 	s.NoError(err)
 	s.NotNil(r)
 	defer func() { _ = r.Close() }()
 
 	// Remove a branch so we can prune some objects.
-	err = sto.RemoveReference(plumbing.ReferenceName("refs/heads/v4"))
+	err = sto.RemoveReference(s.T().Context(), plumbing.ReferenceName("refs/heads/v4"))
 	s.NoError(err)
-	err = sto.RemoveReference(plumbing.ReferenceName("refs/remotes/origin/v4"))
+	err = sto.RemoveReference(s.T().Context(), plumbing.ReferenceName("refs/remotes/origin/v4"))
 	s.NoError(err)
 
-	err = r.Prune(PruneOptions{
+	err = r.Prune(s.T().Context(), PruneOptions{
 		OnlyObjectsOlderThan: deleteTime,
-		Handler:              r.DeleteObject,
+		Handler: func(h plumbing.Hash) error {
+			return r.DeleteObject(s.T().Context(), h)
+		},
 	})
 	s.NoError(err)
 
 	newCount := 0
-	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
+	err = los.ForEachObjectHash(s.T().Context(), func(_ plumbing.Hash) error {
 		newCount++
 		return nil
 	})

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,25 +12,27 @@ import (
 
 // Basic example of how to find if HEAD is tagged.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<path>")
 	path := os.Args[1]
 
 	// We instantiate a new repository targeting the given path (the .git folder)
-	r, err := git.PlainOpen(path)
+	r, err := git.PlainOpen(ctx, path)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
 	// Get HEAD reference to use for comparison later on.
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
 
-	tags, err := r.Tags()
+	tags, err := r.Tags(ctx)
 	CheckIfError(err)
 
 	// List all tags, both lightweight tags and annotated tags and see if some tag points to HEAD reference.
-	err = tags.ForEach(func(t *plumbing.Reference) error {
+	err = tags.ForEach(ctx, func(t *plumbing.Reference) error {
 		// This technique should work for both lightweight and annotated tags.
-		revHash, err := r.ResolveRevision(plumbing.Revision(t.Name()))
+		revHash, err := r.ResolveRevision(ctx, plumbing.Revision(t.Name()))
 		CheckIfError(err)
 		if *revHash == ref.Hash() {
 			fmt.Printf("Found tag %s with hash %s pointing to HEAD %s\n", t.Name().Short(), revHash, ref.Hash())

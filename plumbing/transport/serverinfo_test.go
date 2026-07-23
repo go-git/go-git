@@ -30,7 +30,7 @@ func TestServerInfoSuite(t *testing.T) {
 func (s *ServerInfoSuite) TestUpdateServerInfoInit() {
 	fs := memfs.New()
 	st := memory.NewStorage()
-	err := UpdateServerInfo(st, fs)
+	err := UpdateServerInfo(s.T().Context(), st, fs)
 	s.NoError(err)
 }
 
@@ -42,7 +42,7 @@ func (s *ServerInfoSuite) TestUpdateServerInfoTags() {
 	defer func() { _ = st.Close() }()
 	fs := memfs.New()
 
-	err = UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(s.T().Context(), st, fs)
 	s.NoError(err)
 	assertInfoRefs(s, st, fs)
 	assertObjectPacks(s, st, fs)
@@ -56,7 +56,7 @@ func (s *ServerInfoSuite) TestUpdateServerInfoBasic() {
 	defer func() { _ = st.Close() }()
 	fs := memfs.New()
 
-	err = UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(s.T().Context(), st, fs)
 	s.NoError(err)
 	assertInfoRefs(s, st, fs)
 	assertObjectPacks(s, st, fs)
@@ -70,23 +70,23 @@ func (s *ServerInfoSuite) TestUpdateServerInfoBasicChange() {
 	defer func() { _ = st.Close() }()
 	fs := memfs.New()
 
-	err = UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(s.T().Context(), st, fs)
 	s.NoError(err)
 	assertInfoRefs(s, st, fs)
 	assertObjectPacks(s, st, fs)
 
-	head, err := st.Reference(plumbing.HEAD)
+	head, err := st.Reference(s.T().Context(), plumbing.HEAD)
 	s.NoError(err)
 
 	ref := plumbing.NewHashReference("refs/heads/my-branch", head.Hash())
-	err = st.SetReference(ref)
+	err = st.SetReference(s.T().Context(), ref)
 	s.NoError(err)
 
 	tag := plumbing.NewHashReference("refs/tags/test-tag", head.Hash())
-	err = st.SetReference(tag)
+	err = st.SetReference(s.T().Context(), tag)
 	s.NoError(err)
 
-	err = UpdateServerInfo(st, fs)
+	err = UpdateServerInfo(s.T().Context(), st, fs)
 	s.NoError(err)
 	assertInfoRefs(s, st, fs)
 	assertObjectPacks(s, st, fs)
@@ -112,10 +112,10 @@ func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) 
 		localRefs[name] = hash
 	}
 
-	refs, err := st.IterReferences()
+	refs, err := st.IterReferences(s.T().Context())
 	s.NoError(err)
 
-	err = refs.ForEach(func(ref *plumbing.Reference) error {
+	err = refs.ForEach(s.T().Context(), func(ref *plumbing.Reference) error {
 		name := ref.Name()
 		hash := ref.Hash()
 		switch ref.Type() {
@@ -123,7 +123,7 @@ func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) 
 			if name == plumbing.HEAD {
 				return nil
 			}
-			ref, err := st.Reference(ref.Target())
+			ref, err := st.Reference(s.T().Context(), ref.Target())
 			s.NoError(err)
 			hash = ref.Hash()
 			fallthrough
@@ -132,7 +132,7 @@ func assertInfoRefs(s *ServerInfoSuite, st storage.Storer, fs billy.Filesystem) 
 			s.True(ok)
 			s.Equal(hash, h)
 			if name.IsTag() {
-				tag, err := object.GetTag(st, hash)
+				tag, err := object.GetTag(s.T().Context(), st, hash)
 				if err == nil {
 					t, ok := localRefs[name+"^{}"]
 					s.True(ok)
@@ -156,7 +156,7 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 	pos, ok := st.(storer.PackedObjectStorer)
 	s.True(ok)
 	localPacks := make(map[string]struct{})
-	packs, err := pos.ObjectPacks()
+	packs, err := pos.ObjectPacks(s.T().Context())
 	s.NoError(err)
 
 	for line := range strings.SplitSeq(string(bts), "\n") {

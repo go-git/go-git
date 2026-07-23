@@ -63,7 +63,7 @@ func TestBackend_HTTP_V2_GoGitClient(t *testing.T) {
 	require.NoError(t, sess.Fetch(context.Background(), st, &transport.FetchRequest{
 		Wants: []plumbing.Hash{want},
 	}))
-	cobj, err := st.EncodedObject(plumbing.CommitObject, want)
+	cobj, err := st.EncodedObject(t.Context(), plumbing.CommitObject, want)
 	require.NoError(t, err)
 	require.Equal(t, want, cobj.Hash())
 

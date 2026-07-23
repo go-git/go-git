@@ -28,16 +28,17 @@ func (b64signer) Sign(_ context.Context, message io.Reader) ([]byte, error) {
 }
 
 func ExampleSigner() {
-	repo, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	ctx := context.Background()
+	repo, err := Init(ctx, memory.NewStorage(), WithWorkTree(memfs.New()))
 	if err != nil {
 		panic(err)
 	}
 	defer func() { _ = repo.Close() }()
-	w, err := repo.Worktree()
+	w, err := repo.Worktree(ctx)
 	if err != nil {
 		panic(err)
 	}
-	commit, err := w.Commit("example commit", &CommitOptions{
+	commit, err := w.Commit(ctx, "example commit", &CommitOptions{
 		Author: &object.Signature{
 			Name:  "John Doe",
 			Email: "john@example.com",
@@ -50,7 +51,7 @@ func ExampleSigner() {
 		panic(err)
 	}
 
-	obj, err := repo.CommitObject(commit)
+	obj, err := repo.CommitObject(ctx, commit)
 	if err != nil {
 		panic(err)
 	}

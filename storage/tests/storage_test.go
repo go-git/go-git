@@ -101,7 +101,7 @@ func TestPackfileWriter(t *testing.T) {
 			t.Skip("not a PackfileWriter")
 		}
 
-		pw, err := pwr.PackfileWriter()
+		pw, err := pwr.PackfileWriter(t.Context())
 		assert.NoError(t, err)
 
 		f := fixtures.Basic().One()
@@ -113,11 +113,11 @@ func TestPackfileWriter(t *testing.T) {
 		err = pw.Close()
 		assert.NoError(t, err)
 
-		iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := sto.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		assert.NoError(t, err)
 		objects := 0
 
-		err = iter.ForEach(func(plumbing.EncodedObject) error {
+		err = iter.ForEach(t.Context(), func(plumbing.EncodedObject) error {
 			objects++
 			return nil
 		})
@@ -141,7 +141,7 @@ func TestDeltaObjectStorer(t *testing.T) {
 			t.Skip("not a storer.PackWriter")
 		}
 
-		pw, err := pwr.PackfileWriter()
+		pw, err := pwr.PackfileWriter(t.Context())
 		require.NoError(t, err)
 
 		f := fixtures.Basic().One()
@@ -154,12 +154,12 @@ func TestDeltaObjectStorer(t *testing.T) {
 		require.NoError(t, err)
 
 		h := plumbing.NewHash("32858aad3c383ed1ff0a0f9bdf231d54a00c9e88")
-		obj, err := dos.DeltaObject(plumbing.AnyObject, h)
+		obj, err := dos.DeltaObject(t.Context(), plumbing.AnyObject, h)
 		require.NoError(t, err)
 		assert.Equal(t, plumbing.BlobObject, obj.Type())
 
 		h = plumbing.NewHash("aa9b383c260e1d05fbbf6b30a02914555e20c725")
-		obj, err = dos.DeltaObject(plumbing.AnyObject, h)
+		obj, err = dos.DeltaObject(t.Context(), plumbing.AnyObject, h)
 		require.NoError(t, err)
 		assert.Equal(t, plumbing.OFSDeltaObject.String(), obj.Type().String())
 
@@ -175,15 +175,15 @@ func TestSetEncodedObjectAndEncodedObject(t *testing.T) {
 		for _, to := range testObjects() {
 			comment := fmt.Sprintf("failed for type %s", to.Type.String())
 
-			h, err := sto.SetEncodedObject(to.Object)
+			h, err := sto.SetEncodedObject(t.Context(), to.Object)
 			require.NoError(t, err)
 			require.Equal(t, to.Hash, h.String(), comment)
 
-			o, err := sto.EncodedObject(to.Type, h)
+			o, err := sto.EncodedObject(t.Context(), to.Type, h)
 			require.NoError(t, err)
 			assert.EqualExportedValues(t, to.Object, o)
 
-			o, err = sto.EncodedObject(plumbing.AnyObject, h)
+			o, err = sto.EncodedObject(t.Context(), plumbing.AnyObject, h)
 			require.NoError(t, err)
 			assert.EqualExportedValues(t, to.Object, o)
 
@@ -192,7 +192,7 @@ func TestSetEncodedObjectAndEncodedObject(t *testing.T) {
 					continue
 				}
 
-				o, err = sto.EncodedObject(typ, h)
+				o, err = sto.EncodedObject(t.Context(), typ, h)
 				assert.Nil(t, o)
 				assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 			}
@@ -207,7 +207,7 @@ func TestSetEncodedObjectInvalid(t *testing.T) {
 		o := sto.NewEncodedObject()
 		o.SetType(plumbing.REFDeltaObject)
 
-		_, err := sto.SetEncodedObject(o)
+		_, err := sto.SetEncodedObject(t.Context(), o)
 		assert.Error(t, err)
 	})
 }
@@ -218,30 +218,30 @@ func TestIterEncodedObjects(t *testing.T) {
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		objs := testObjects()
 		for _, o := range objs {
-			h, err := sto.SetEncodedObject(o.Object)
+			h, err := sto.SetEncodedObject(t.Context(), o.Object)
 			require.NoError(t, err)
 			assert.Equal(t, o.Object.Hash(), h)
 		}
 
 		for _, typ := range validTypes() {
 			comment := fmt.Sprintf("failed for type %s)", typ.String())
-			i, err := sto.IterEncodedObjects(typ)
+			i, err := sto.IterEncodedObjects(t.Context(), typ)
 			require.NoError(t, err, comment)
 
-			o, err := i.Next()
+			o, err := i.Next(t.Context())
 			require.NoError(t, err)
 			assert.EqualExportedValues(t, objs[typ].Object, o)
 
-			o, err = i.Next()
+			o, err = i.Next(t.Context())
 			assert.Nil(t, o)
 			assert.ErrorIs(t, err, io.EOF, comment)
 		}
 
-		i, err := sto.IterEncodedObjects(plumbing.AnyObject)
+		i, err := sto.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
 
 		foundObjects := []plumbing.EncodedObject{}
-		i.ForEach(func(o plumbing.EncodedObject) error {
+		i.ForEach(t.Context(), func(o plumbing.EncodedObject) error {
 			foundObjects = append(foundObjects, o)
 			return nil
 		})
@@ -269,26 +269,26 @@ func TestObjectStorerTxSetEncodedObjectAndCommit(t *testing.T) {
 			t.Skip("not a plumbing.ObjectStorerTx")
 		}
 
-		tx := storer.Begin()
+		tx := storer.Begin(t.Context())
 		for _, o := range testObjects() {
-			h, err := tx.SetEncodedObject(o.Object)
+			h, err := tx.SetEncodedObject(t.Context(), o.Object)
 			require.NoError(t, err)
 			assert.Equal(t, o.Hash, h.String())
 		}
 
-		iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := sto.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
-		_, err = iter.Next()
+		_, err = iter.Next(t.Context())
 		assert.ErrorIs(t, err, io.EOF)
 
-		err = tx.Commit()
+		err = tx.Commit(t.Context())
 		require.NoError(t, err)
 
-		iter, err = sto.IterEncodedObjects(plumbing.AnyObject)
+		iter, err = sto.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
 
 		var count int
-		iter.ForEach(func(_ plumbing.EncodedObject) error {
+		iter.ForEach(t.Context(), func(_ plumbing.EncodedObject) error {
 			count++
 			return nil
 		})
@@ -306,13 +306,13 @@ func TestObjectStorerTxSetObjectAndGetObject(t *testing.T) {
 			t.Skip("not a plumbing.ObjectStorerTx")
 		}
 
-		tx := storer.Begin()
+		tx := storer.Begin(t.Context())
 		for _, expected := range testObjects() {
-			h, err := tx.SetEncodedObject(expected.Object)
+			h, err := tx.SetEncodedObject(t.Context(), expected.Object)
 			require.NoError(t, err)
 			assert.Equal(t, expected.Hash, h.String())
 
-			o, err := tx.EncodedObject(expected.Type, plumbing.NewHash(expected.Hash))
+			o, err := tx.EncodedObject(t.Context(), expected.Type, plumbing.NewHash(expected.Hash))
 			require.NoError(t, err)
 			assert.Equal(t, expected.Hash, o.Hash().String())
 		}
@@ -328,8 +328,8 @@ func TestObjectStorerTxGetObjectNotFound(t *testing.T) {
 			t.Skip("not a plumbing.ObjectStorerTx")
 		}
 
-		tx := storer.Begin()
-		o, err := tx.EncodedObject(plumbing.AnyObject, plumbing.ZeroHash)
+		tx := storer.Begin(t.Context())
+		o, err := tx.EncodedObject(t.Context(), plumbing.AnyObject, plumbing.ZeroHash)
 		assert.Nil(t, o)
 		assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 	})
@@ -344,9 +344,9 @@ func TestObjectStorerTxSetObjectAndRollback(t *testing.T) {
 			t.Skip("not a plumbing.ObjectStorerTx")
 		}
 
-		tx := storer.Begin()
+		tx := storer.Begin(t.Context())
 		for _, o := range testObjects() {
-			h, err := tx.SetEncodedObject(o.Object)
+			h, err := tx.SetEncodedObject(t.Context(), o.Object)
 			require.NoError(t, err)
 			assert.Equal(t, o.Hash, h.String())
 		}
@@ -354,9 +354,9 @@ func TestObjectStorerTxSetObjectAndRollback(t *testing.T) {
 		err := tx.Rollback()
 		require.NoError(t, err)
 
-		iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
+		iter, err := sto.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 		require.NoError(t, err)
-		_, err = iter.Next()
+		_, err = iter.Next(t.Context())
 		assert.ErrorIs(t, err, io.EOF)
 	})
 }
@@ -365,17 +365,17 @@ func TestSetReferenceAndGetReference(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
-		err = sto.SetReference(
+		err = sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
+		e, err := sto.Reference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	})
@@ -385,18 +385,18 @@ func TestCheckAndSetReference(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
-		err = sto.CheckAndSetReference(
+		err = sto.CheckAndSetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
+		e, err := sto.Reference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	})
@@ -406,18 +406,18 @@ func TestCheckAndSetReferenceNil(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
-		err = sto.CheckAndSetReference(
+		err = sto.CheckAndSetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 			nil,
 		)
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
+		e, err := sto.Reference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	})
@@ -427,18 +427,18 @@ func TestCheckAndSetReferenceError(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
 		)
 		require.NoError(t, err)
 
-		err = sto.CheckAndSetReference(
+		err = sto.CheckAndSetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		assert.ErrorIs(t, err, storage.ErrReferenceHasChanged)
 
-		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
+		e, err := sto.Reference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 	})
@@ -448,15 +448,15 @@ func TestRemoveReference(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
-		err = sto.RemoveReference(plumbing.ReferenceName("refs/foo"))
+		err = sto.RemoveReference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 
-		_, err = sto.Reference(plumbing.ReferenceName("refs/foo"))
+		_, err = sto.Reference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 	})
 }
@@ -465,15 +465,15 @@ func TestRemoveReferenceNonExistent(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
-		err = sto.RemoveReference(plumbing.ReferenceName("refs/nonexistent"))
+		err = sto.RemoveReference(t.Context(), plumbing.ReferenceName("refs/nonexistent"))
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
+		e, err := sto.Reference(t.Context(), plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52", e.Hash().String())
 	})
@@ -483,7 +483,7 @@ func TestGetReferenceNotFound(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		r, err := sto.Reference(plumbing.ReferenceName("refs/bar"))
+		r, err := sto.Reference(t.Context(), plumbing.ReferenceName("refs/bar"))
 		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 		assert.Nil(t, r)
 	})
@@ -493,19 +493,19 @@ func TestIterReferences(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		err := sto.SetReference(
+		err := sto.SetReference(t.Context(),
 			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
-		i, err := sto.IterReferences()
+		i, err := sto.IterReferences(t.Context())
 		require.NoError(t, err)
 
-		e, err := i.Next()
+		e, err := i.Next(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 
-		e, err = i.Next()
+		e, err = i.Next(t.Context())
 		assert.Nil(t, e)
 		assert.ErrorIs(t, err, io.EOF)
 	})
@@ -521,10 +521,10 @@ func TestSetShallowAndShallow(t *testing.T) {
 			plumbing.NewHash("c78874f116be67ecf54df225a613162b84cc6ebf"),
 		}
 
-		err := sto.SetShallow(expected)
+		err := sto.SetShallow(t.Context(), expected)
 		require.NoError(t, err)
 
-		result, err := sto.Shallow()
+		result, err := sto.Shallow(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, expected, result)
 	})
@@ -541,10 +541,10 @@ func TestSetConfigAndConfig(t *testing.T) {
 			URLs: []string{"http://foo/bar.git"},
 		}
 
-		err := sto.SetConfig(expected)
+		err := sto.SetConfig(t.Context(), expected)
 		require.NoError(t, err)
 
-		cfg, err := sto.Config()
+		cfg, err := sto.Config(t.Context())
 		require.NoError(t, err)
 
 		assert.Equal(t, expected.Core.IsBare, cfg.Core.IsBare)
@@ -559,7 +559,7 @@ func TestIndex(t *testing.T) {
 		expected := &index.Index{}
 		expected.Version = 2
 
-		idx, err := sto.Index()
+		idx, err := sto.Index(t.Context())
 		assert.NoError(t, err)
 		assert.Equal(t, expected, idx)
 	})
@@ -572,10 +572,10 @@ func TestSetIndexAndIndex(t *testing.T) {
 		expected := &index.Index{}
 		expected.Version = 2
 
-		err := sto.SetIndex(expected)
+		err := sto.SetIndex(t.Context(), expected)
 		require.NoError(t, err)
 
-		idx, err := sto.Index()
+		idx, err := sto.Index(t.Context())
 		require.NoError(t, err)
 		assert.NotNil(t, idx)
 
@@ -592,7 +592,7 @@ func TestSetConfigInvalid(t *testing.T) {
 		cfg := config.NewConfig()
 		cfg.Remotes["foo"] = &config.RemoteConfig{}
 
-		err := sto.SetConfig(cfg)
+		err := sto.SetConfig(t.Context(), cfg)
 		assert.Error(t, err)
 	})
 }
@@ -601,7 +601,7 @@ func TestModule(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		storer, err := sto.Module("foo")
+		storer, err := sto.Module(t.Context(), "foo")
 		require.NoError(t, err)
 		defer func() {
 			if closer, ok := storer.(io.Closer); ok {
@@ -610,7 +610,7 @@ func TestModule(t *testing.T) {
 		}()
 		assert.NotNil(t, storer)
 
-		storer2, err := sto.Module("foo")
+		storer2, err := sto.Module(t.Context(), "foo")
 		require.NoError(t, err)
 		defer func() {
 			if closer, ok := storer2.(io.Closer); ok {

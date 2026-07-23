@@ -34,7 +34,7 @@ func (s *ChangeSuite) SetupSuite() {
 }
 
 func (s *ChangeSuite) tree(h plumbing.Hash) *Tree {
-	t, err := GetTree(s.Storer, h)
+	t, err := GetTree(s.T().Context(), s.Storer, h)
 	s.NoError(err)
 	return t
 }
@@ -77,19 +77,19 @@ func (s *ChangeSuite) TestInsert() {
 	s.NoError(err)
 	s.Equal(merkletrie.Insert, action)
 
-	from, to, err := change.Files()
+	from, to, err := change.Files(s.T().Context())
 	s.NoError(err)
 	s.Nil(from)
 	s.Equal(name, to.Name)
 	s.Equal(blob, to.Hash)
 
-	p, err := change.Patch()
+	p, err := change.Patch(s.T().Context())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
 	s.Equal(1, len(p.FilePatches()[0].Chunks()))
 	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[0].Type())
 
-	p, err = change.PatchContext(context.Background())
+	p, err = change.Patch(s.T().Context())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
 	s.Equal(1, len(p.FilePatches()[0].Chunks()))
@@ -135,19 +135,19 @@ func (s *ChangeSuite) TestDelete() {
 	s.NoError(err)
 	s.Equal(merkletrie.Delete, action)
 
-	from, to, err := change.Files()
+	from, to, err := change.Files(s.T().Context())
 	s.NoError(err)
 	s.Nil(to)
 	s.Equal(name, from.Name)
 	s.Equal(blob, from.Hash)
 
-	p, err := change.Patch()
+	p, err := change.Patch(s.T().Context())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
 	s.Equal(1, len(p.FilePatches()[0].Chunks()))
 	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[0].Type())
 
-	p, err = change.PatchContext(context.Background())
+	p, err = change.Patch(s.T().Context())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
 	s.Equal(1, len(p.FilePatches()[0].Chunks()))
@@ -205,7 +205,7 @@ func (s *ChangeSuite) TestModify() {
 	s.NoError(err)
 	s.Equal(merkletrie.Modify, action)
 
-	from, to, err := change.Files()
+	from, to, err := change.Files(s.T().Context())
 	s.NoError(err)
 
 	s.Equal(name, from.Name)
@@ -213,7 +213,7 @@ func (s *ChangeSuite) TestModify() {
 	s.Equal(name, to.Name)
 	s.Equal(toBlob, to.Hash)
 
-	p, err := change.Patch()
+	p, err := change.Patch(s.T().Context())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
 	s.Equal(7, len(p.FilePatches()[0].Chunks()))
@@ -225,7 +225,7 @@ func (s *ChangeSuite) TestModify() {
 	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[5].Type())
 	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[6].Type())
 
-	p, err = change.PatchContext(context.Background())
+	p, err = change.Patch(s.T().Context())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
 	s.Equal(7, len(p.FilePatches()[0].Chunks()))
@@ -247,7 +247,7 @@ func (s *ChangeSuite) TestEmptyChangeFails() {
 	_, err := change.Action()
 	s.ErrorContains(err, "malformed")
 
-	_, _, err = change.Files()
+	_, _, err = change.Files(s.T().Context())
 	s.ErrorContains(err, "malformed")
 
 	str := change.String()
@@ -263,12 +263,12 @@ func (s *ChangeSuite) TestNoFileFilemodes() {
 	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 	defer func() { _ = sto.Close() }()
 
-	iter, err := sto.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := sto.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 	s.NoError(err)
 	var commits []*Commit
-	iter.ForEach(func(o plumbing.EncodedObject) error {
+	iter.ForEach(s.T().Context(), func(o plumbing.EncodedObject) error {
 		if o.Type() == plumbing.CommitObject {
-			commit, err := GetCommit(sto, o.Hash())
+			commit, err := GetCommit(s.T().Context(), sto, o.Hash())
 			s.NoError(err)
 			commits = append(commits, commit)
 		}
@@ -284,14 +284,14 @@ func (s *ChangeSuite) TestNoFileFilemodes() {
 			prev = commit
 			continue
 		}
-		tree, err := commit.Tree()
+		tree, err := commit.Tree(s.T().Context())
 		s.NoError(err)
-		prevTree, err := prev.Tree()
+		prevTree, err := prev.Tree(s.T().Context())
 		s.NoError(err)
-		changes, err := DiffTree(tree, prevTree)
+		changes, err := DiffTree(s.T().Context(), tree, prevTree)
 		s.NoError(err)
 		for _, change := range changes {
-			_, _, err := change.Files()
+			_, _, err := change.Files(s.T().Context())
 			s.NoError(err)
 		}
 
@@ -335,7 +335,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected() {
 		To: ChangeEntry{},
 	}
 
-	_, _, err := change.Files()
+	_, _, err := change.Files(s.T().Context())
 	s.ErrorContains(err, "object not found")
 
 	change = &Change{
@@ -351,7 +351,7 @@ func (s *ChangeSuite) TestErrorsFindingChildsAreDetected() {
 		},
 	}
 
-	_, _, err = change.Files()
+	_, _, err = change.Files(s.T().Context())
 	s.ErrorContains(err, "object not found")
 }
 
@@ -428,9 +428,9 @@ func (s *ChangeSuite) TestCancel() {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.T().Context())
 	cancel()
-	p, err := change.PatchContext(ctx)
+	p, err := change.Patch(ctx)
 	s.Nil(p)
 	s.ErrorContains(err, "operation canceled")
 }

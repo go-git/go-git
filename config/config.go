@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -36,8 +37,8 @@ const (
 
 // ConfigStorer is a generic storage of Config object.
 type ConfigStorer interface { //nolint:revive // stutters but is a well-established name
-	Config() (*Config, error)
-	SetConfig(*Config) error
+	Config(ctx context.Context) (*Config, error)
+	SetConfig(ctx context.Context, c *Config) error
 }
 
 var (

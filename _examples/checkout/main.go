@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,12 +12,14 @@ import (
 
 // Basic example of how to checkout a specific commit.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>", "<directory>", "<commit>")
 	url, directory, commit := os.Args[1], os.Args[2], os.Args[3]
 
 	// Clone the given repository to the given directory
 	Info("git clone %s %s", url, directory)
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	r, err := git.PlainClone(ctx, directory, &git.CloneOptions{
 		URL: url,
 	})
 
@@ -25,16 +28,16 @@ func main() {
 
 	// ... retrieving the commit being pointed by HEAD
 	Info("git show-ref --head HEAD")
-	ref, err := r.Head()
+	ref, err := r.Head(ctx)
 	CheckIfError(err)
 	fmt.Println(ref.Hash())
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	CheckIfError(err)
 
 	// ... checking out to commit
 	Info("git checkout %s", commit)
-	err = w.Checkout(&git.CheckoutOptions{
+	err = w.Checkout(ctx, &git.CheckoutOptions{
 		Hash: plumbing.NewHash(commit),
 	})
 	CheckIfError(err)
@@ -42,7 +45,7 @@ func main() {
 	// ... retrieving the commit being pointed by HEAD, it shows that the
 	// repository is pointing to the giving commit in detached mode
 	Info("git show-ref --head HEAD")
-	ref, err = r.Head()
+	ref, err = r.Head(ctx)
 	CheckIfError(err)
 	fmt.Println(ref.Hash())
 }

@@ -21,20 +21,20 @@ func TestSubmoduleRepositoryConfigIsIndependentFromParent(t *testing.T) {
 		r, wt := cloneFixture(t, f)
 		defer func() { _ = r.Close() }()
 
-		cfg, err := r.Config()
+		cfg, err := r.Config(t.Context())
 		require.NoError(t, err)
 		cfg.User.Name = "repo-user"
 		cfg.User.Email = "repo@example.com"
-		require.NoError(t, r.SetConfig(cfg))
+		require.NoError(t, r.SetConfig(t.Context(), cfg))
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		require.NoError(t, sm.Init())
+		require.NoError(t, sm.Init(t.Context()))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		subCfg, err := subRepo.Config()
+		subCfg, err := subRepo.Config(t.Context())
 		require.NoError(t, err)
 		assert.Empty(t, subCfg.User.Name)
 		assert.Empty(t, subCfg.User.Email)
@@ -51,20 +51,20 @@ func TestSubmoduleRepositoryConfigPersistsObjectFormatOnReopen(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		require.NoError(t, sm.Init())
+		require.NoError(t, sm.Init(t.Context()))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 
-		cfg, err := subRepo.Config()
+		cfg, err := subRepo.Config(t.Context())
 		require.NoError(t, err)
 		require.NoError(t, subRepo.Close())
 
-		reopened, err := sm.Repository()
+		reopened, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 		defer reopened.Close()
 
-		reopenedCfg, err := reopened.Config()
+		reopenedCfg, err := reopened.Config(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, cfg.Core.RepositoryFormatVersion, reopenedCfg.Core.RepositoryFormatVersion)
 		assert.Equal(t, cfg.Extensions.ObjectFormat, reopenedCfg.Extensions.ObjectFormat)
@@ -81,19 +81,19 @@ func TestSubmoduleRepositoryCreateRemoteWritesModuleConfig(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		require.NoError(t, sm.Init())
+		require.NoError(t, sm.Init(t.Context()))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		_, err = subRepo.CreateRemote(&config.RemoteConfig{
+		_, err = subRepo.CreateRemote(t.Context(), &config.RemoteConfig{
 			Name: "module-only",
 			URLs: []string{"https://example.com/submodule.git"},
 		})
 		require.NoError(t, err)
 
-		parentCfg, err := r.Config()
+		parentCfg, err := r.Config(t.Context())
 		require.NoError(t, err)
 		_, ok := parentCfg.Remotes["module-only"]
 		assert.False(t, ok)
@@ -111,10 +111,10 @@ func cloneFixture(t *testing.T, f *fixtures.Fixture) (*Repository, *Worktree) {
 	dotgit, err := f.DotGit(fixtures.WithTargetDir(t.TempDir))
 	require.NoError(t, err)
 
-	r, err := PlainClone(t.TempDir(), &CloneOptions{URL: dotgit.Root()})
+	r, err := PlainClone(t.Context(), t.TempDir(), &CloneOptions{URL: dotgit.Root()})
 	require.NoError(t, err)
 
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(t.Context())
 	require.NoError(t, err)
 
 	return r, wt
@@ -123,7 +123,7 @@ func cloneFixture(t *testing.T, f *fixtures.Fixture) (*Repository, *Worktree) {
 func namedSubmodule(t *testing.T, wt *Worktree, name string) *Submodule {
 	t.Helper()
 
-	sm, err := wt.Submodule(name)
+	sm, err := wt.Submodule(t.Context(), name)
 	require.NoError(t, err)
 	return sm
 }

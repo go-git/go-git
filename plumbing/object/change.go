@@ -41,14 +41,14 @@ func (c *Change) Action() (merkletrie.Action, error) {
 
 // Files returns the files before and after a change.
 // For insertions from will be nil. For deletions to will be nil.
-func (c *Change) Files() (from, to *File, err error) {
+func (c *Change) Files(ctx context.Context) (from, to *File, err error) {
 	action, err := c.Action()
 	if err != nil {
 		return from, to, err
 	}
 
 	if action == merkletrie.Insert || action == merkletrie.Modify {
-		to, err = c.To.Tree.TreeEntryFile(&c.To.TreeEntry)
+		to, err = c.To.Tree.TreeEntryFile(ctx, &c.To.TreeEntry)
 		if !c.To.TreeEntry.Mode.IsFile() {
 			return nil, nil, nil
 		}
@@ -59,7 +59,7 @@ func (c *Change) Files() (from, to *File, err error) {
 	}
 
 	if action == merkletrie.Delete || action == merkletrie.Modify {
-		from, err = c.From.Tree.TreeEntryFile(&c.From.TreeEntry)
+		from, err = c.From.Tree.TreeEntryFile(ctx, &c.From.TreeEntry)
 		if !c.From.TreeEntry.Mode.IsFile() {
 			return nil, nil, nil
 		}
@@ -83,16 +83,10 @@ func (c *Change) String() string {
 
 // Patch returns a Patch with all the file changes in chunks. This
 // representation can be used to create several diff outputs.
-func (c *Change) Patch() (*Patch, error) {
-	return c.PatchContext(context.Background())
-}
-
-// PatchContext returns a Patch with all the file changes in chunks. This
-// representation can be used to create several diff outputs.
 // If context expires, an non-nil error will be returned.
 // Provided context must be non-nil.
-func (c *Change) PatchContext(ctx context.Context) (*Patch, error) {
-	return getPatchContext(ctx, "", c)
+func (c *Change) Patch(ctx context.Context) (*Patch, error) {
+	return getPatch(ctx, "", c)
 }
 
 func (c *Change) name() string {
@@ -146,14 +140,8 @@ func (c Changes) String() string {
 
 // Patch returns a Patch with all the changes in chunks. This
 // representation can be used to create several diff outputs.
-func (c Changes) Patch() (*Patch, error) {
-	return c.PatchContext(context.Background())
-}
-
-// PatchContext returns a Patch with all the changes in chunks. This
-// representation can be used to create several diff outputs.
 // If context expires, an non-nil error will be returned.
 // Provided context must be non-nil.
-func (c Changes) PatchContext(ctx context.Context) (*Patch, error) {
-	return getPatchContext(ctx, "", c...)
+func (c Changes) Patch(ctx context.Context) (*Patch, error) {
+	return getPatch(ctx, "", c...)
 }

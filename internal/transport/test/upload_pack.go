@@ -53,11 +53,11 @@ func (s *UploadPackSuite) request(url *url.URL, command string) *transport.Reque
 // TestAdvertisedReferencesEmpty tests advertised references on an empty repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.EmptyEndpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.EmptyEndpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	ar, err := conn.GetRemoteRefs(context.TODO(), nil)
+	ar, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().ErrorIs(err, transport.ErrEmptyRemoteRepository)
 	s.Require().Nil(ar)
 }
@@ -65,21 +65,21 @@ func (s *UploadPackSuite) TestAdvertisedReferencesEmpty() {
 // TestAdvertisedReferencesNotExists tests advertised references on a non-existent repo.
 func (s *UploadPackSuite) TestAdvertisedReferencesNotExists() {
 	pc := s.packClient()
-	_, err := pc.Handshake(context.TODO(), s.request(s.NonExistentEndpoint, transport.UploadPackService))
+	_, err := pc.Handshake(s.T().Context(), s.request(s.NonExistentEndpoint, transport.UploadPackService))
 	s.Require().Error(err)
 }
 
 // TestCallAdvertisedReferenceTwice tests that calling advertised references twice returns the same result.
 func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	ar1, err := conn.GetRemoteRefs(context.TODO(), nil)
+	ar1, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(ar1)
-	ar2, err := conn.GetRemoteRefs(context.TODO(), nil)
+	ar2, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().Equal(ar1, ar2)
 }
@@ -87,11 +87,11 @@ func (s *UploadPackSuite) TestCallAdvertisedReferenceTwice() {
 // TestDefaultBranch tests that the default branch is correctly advertised.
 func (s *UploadPackSuite) TestDefaultBranch() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO(), nil)
+	info, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
@@ -118,11 +118,11 @@ func (s *UploadPackSuite) TestDefaultBranch() {
 // TestAdvertisedReferencesFilterUnsupported tests filtering unsupported capabilities.
 func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO(), nil)
+	info, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 	if s.Protocol == protocol.V2 {
@@ -139,11 +139,11 @@ func (s *UploadPackSuite) TestAdvertisedReferencesFilterUnsupported() {
 // TestCapabilities tests that capabilities are correctly reported.
 func (s *UploadPackSuite) TestCapabilities() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO(), nil)
+	info, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 	s.Require().Len(conn.Capabilities().Get(capability.Agent), 1)
@@ -152,7 +152,7 @@ func (s *UploadPackSuite) TestCapabilities() {
 // TestUploadPack tests a basic upload-pack fetch.
 func (s *UploadPackSuite) TestUploadPack() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -173,11 +173,11 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	defer cancel()
 
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO(), nil)
+	info, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
@@ -194,11 +194,11 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO(), nil)
+	info, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
@@ -213,11 +213,11 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 // TestUploadPackFull tests a full upload-pack fetch with advertised references.
 func (s *UploadPackSuite) TestUploadPackFull() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
-	info, err := conn.GetRemoteRefs(context.TODO(), nil)
+	info, err := conn.GetRemoteRefs(s.T().Context(), nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(info)
 
@@ -235,7 +235,7 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 // TestUploadPackInvalidReq tests upload-pack with an invalid request.
 func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -249,7 +249,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 // TestUploadPackNoChanges tests upload-pack when there are no changes.
 func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -279,7 +279,7 @@ func (s *UploadPackSuite) TestUploadPackPartial() {
 
 func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expectedObjects int) {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -296,7 +296,7 @@ func (s *UploadPackSuite) testUploadPackFetch(req *transport.FetchRequest, expec
 // TestFetchError tests that fetching a non-existent object returns an error.
 func (s *UploadPackSuite) TestFetchError() {
 	pc := s.packClient()
-	conn, err := pc.Handshake(context.TODO(), s.request(s.Endpoint, transport.UploadPackService))
+	conn, err := pc.Handshake(s.T().Context(), s.request(s.Endpoint, transport.UploadPackService))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(conn.Close()) }()
 
@@ -308,11 +308,12 @@ func (s *UploadPackSuite) TestFetchError() {
 }
 
 func (s *UploadPackSuite) countObjects(st storage.Storer) int {
-	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
+	ctx := s.T().Context()
+	iter, err := st.IterEncodedObjects(ctx, plumbing.AnyObject)
 	s.Require().NoError(err)
 	defer iter.Close()
 	var count int
-	err = iter.ForEach(func(plumbing.EncodedObject) error {
+	err = iter.ForEach(ctx, func(plumbing.EncodedObject) error {
 		count++
 		return nil
 	})

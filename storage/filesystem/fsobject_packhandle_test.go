@@ -81,7 +81,7 @@ func TestIntegration_FSObjectReadsReusePooledFD(t *testing.T) {
 	const iter = 100
 	for range iter {
 		for _, h := range hashes {
-			obj, err := stor.EncodedObject(plumbing.AnyObject, h)
+			obj, err := stor.EncodedObject(t.Context(), plumbing.AnyObject, h)
 			require.NoError(t, err)
 			r, err := obj.Reader()
 			require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestIntegration_FSObjectSurvivesCleanPackList(t *testing.T) {
 	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 
 	// Prime the object cache with an FSObject.
-	obj, err := stor.EncodedObject(plumbing.AnyObject, target)
+	obj, err := stor.EncodedObject(t.Context(), plumbing.AnyObject, target)
 	require.NoError(t, err)
 
 	// Drop every handle in dotgit's pack-handle store the same way
@@ -169,7 +169,7 @@ func TestIntegration_ConcurrentReaderDuringStorageClose(t *testing.T) {
 	// resolver path on the read goroutines.
 	objs := make([]plumbing.EncodedObject, 0, len(hashes))
 	for _, h := range hashes {
-		obj, err := stor.EncodedObject(plumbing.AnyObject, h)
+		obj, err := stor.EncodedObject(t.Context(), plumbing.AnyObject, h)
 		require.NoError(t, err)
 		objs = append(objs, obj)
 	}
@@ -237,7 +237,7 @@ func TestIntegration_PackMissingFromDiskSurfaces(t *testing.T) {
 	// Prime the index — guarantees we find the object in the pack
 	// before we delete the file.
 	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	_, err = stor.EncodedObject(plumbing.AnyObject, target)
+	_, err = stor.EncodedObject(t.Context(), plumbing.AnyObject, target)
 	require.NoError(t, err)
 
 	// Locate and delete the on-disk .pack file.
@@ -258,6 +258,6 @@ func TestIntegration_PackMissingFromDiskSurfaces(t *testing.T) {
 
 	// The lookup must fail — index claims this pack holds the
 	// object, but the .pack file is gone.
-	_, err = stor.EncodedObject(plumbing.AnyObject, target)
+	_, err = stor.EncodedObject(t.Context(), plumbing.AnyObject, target)
 	require.Error(t, err)
 }

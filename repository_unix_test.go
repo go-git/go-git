@@ -19,11 +19,11 @@ func preReceiveHook(m string) []byte {
 func TestPlainInitFileMode(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	r, err := PlainInit(dir, false)
+	r, err := PlainInit(t.Context(), dir, false)
 	require.NoError(t, err)
 	defer func() { _ = r.Close() }()
 
-	cfg, err := r.Config()
+	cfg, err := r.Config(t.Context())
 	require.NoError(t, err)
 	assert.True(t, cfg.Core.FileMode)
 }

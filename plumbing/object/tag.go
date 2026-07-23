@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -53,8 +54,8 @@ type Tag struct {
 }
 
 // GetTag gets a tag from an object storer and decodes it.
-func GetTag(s storer.EncodedObjectStorer, h plumbing.Hash) (*Tag, error) {
-	o, err := s.EncodedObject(plumbing.TagObject, h)
+func GetTag(ctx context.Context, s storer.EncodedObjectStorer, h plumbing.Hash) (*Tag, error) {
+	o, err := s.EncodedObject(ctx, plumbing.TagObject, h)
 	if err != nil {
 		return nil, err
 	}
@@ -258,12 +259,12 @@ func isZeroSignature(s Signature) bool {
 
 // Commit returns the commit pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
-func (t *Tag) Commit() (*Commit, error) {
+func (t *Tag) Commit(ctx context.Context) (*Commit, error) {
 	if t.TargetType != plumbing.CommitObject {
 		return nil, ErrUnsupportedObject
 	}
 
-	o, err := t.s.EncodedObject(plumbing.CommitObject, t.Target)
+	o, err := t.s.EncodedObject(ctx, plumbing.CommitObject, t.Target)
 	if err != nil {
 		return nil, err
 	}
@@ -274,17 +275,17 @@ func (t *Tag) Commit() (*Commit, error) {
 // Tree returns the tree pointed to by the tag. If the tag points to a commit
 // object the tree of that commit will be returned. If the tag does not point
 // to a commit or tree object ErrUnsupportedObject will be returned.
-func (t *Tag) Tree() (*Tree, error) {
+func (t *Tag) Tree(ctx context.Context) (*Tree, error) {
 	switch t.TargetType {
 	case plumbing.CommitObject:
-		c, err := t.Commit()
+		c, err := t.Commit(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		return c.Tree()
+		return c.Tree(ctx)
 	case plumbing.TreeObject:
-		return GetTree(t.s, t.Target)
+		return GetTree(ctx, t.s, t.Target)
 	default:
 		return nil, ErrUnsupportedObject
 	}
@@ -292,28 +293,30 @@ func (t *Tag) Tree() (*Tree, error) {
 
 // Blob returns the blob pointed to by the tag. If the tag points to a
 // different type of object ErrUnsupportedObject will be returned.
-func (t *Tag) Blob() (*Blob, error) {
+func (t *Tag) Blob(ctx context.Context) (*Blob, error) {
 	if t.TargetType != plumbing.BlobObject {
 		return nil, ErrUnsupportedObject
 	}
 
-	return GetBlob(t.s, t.Target)
+	return GetBlob(ctx, t.s, t.Target)
 }
 
 // Object returns the object pointed to by the tag.
-func (t *Tag) Object() (Object, error) {
-	o, err := t.s.EncodedObject(t.TargetType, t.Target)
+func (t *Tag) Object(ctx context.Context) (Object, error) {
+	o, err := t.s.EncodedObject(ctx, t.TargetType, t.Target)
 	if err != nil {
 		return nil, err
 	}
 
-	return DecodeObject(t.s, o)
+	return DecodeObject(ctx, t.s, o)
 }
 
 // String returns the meta information contained in the tag as a formatted
 // string.
 func (t *Tag) String() string {
-	obj, _ := t.Object()
+	// TODO(ctx): String implements fmt.Stringer and cannot accept a
+	// context; the target object lookup falls back to context.Background().
+	obj, _ := t.Object(context.Background())
 
 	return fmt.Sprintf(
 		"%s %s\nTagger: %s\nDate:   %s\n\n%s\n%s",
@@ -365,8 +368,8 @@ func NewTagIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) *Ta
 
 // Next moves the iterator to the next tag and returns a pointer to it. If
 // there are no more tags, it returns io.EOF.
-func (iter *TagIter) Next() (*Tag, error) {
-	obj, err := iter.EncodedObjectIter.Next()
+func (iter *TagIter) Next(ctx context.Context) (*Tag, error) {
+	obj, err := iter.EncodedObjectIter.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -377,8 +380,8 @@ func (iter *TagIter) Next() (*Tag, error) {
 // ForEach call the cb function for each tag contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *TagIter) ForEach(cb func(*Tag) error) error {
-	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
+func (iter *TagIter) ForEach(ctx context.Context, cb func(*Tag) error) error {
+	return iter.EncodedObjectIter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
 		t, err := DecodeTag(iter.s, obj)
 		if err != nil {
 			return err

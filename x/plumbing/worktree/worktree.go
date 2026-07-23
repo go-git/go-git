@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -83,7 +84,7 @@ func New(storer storage.Storer) (*Worktree, error) {
 // worktree, similar to the `git worktree add` command. The worktree will be
 // associated with the repository and can be used to work on a different commit
 // or branch simultaneously.
-func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
+func (w *Worktree) Add(ctx context.Context, wt billy.Filesystem, name string, opts ...Option) error {
 	if wt == nil {
 		return errors.New("cannot add worktree: fs is nil")
 	}
@@ -98,7 +99,7 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 	}
 
 	if o.commit.IsZero() {
-		r, err := git.Open(w.storer.(storage.Storer), nil)
+		r, err := git.Open(ctx, w.storer.(storage.Storer), nil)
 		if err != nil {
 			return fmt.Errorf("unable to open repository: %w", err)
 		}
@@ -107,7 +108,7 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 			_ = r.Close()
 		}()
 
-		ref, err := r.Head()
+		ref, err := r.Head(ctx)
 		if err != nil {
 			return fmt.Errorf("invalid reference: %w", err)
 		}
@@ -142,13 +143,13 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		return err
 	}
 
-	r, err := w.Open(wt)
+	r, err := w.Open(ctx, wt)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = r.Close() }()
 
-	work, err := r.Worktree()
+	work, err := r.Worktree(ctx)
 	if err != nil {
 		return err
 	}
@@ -161,7 +162,7 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		opt.Create = true
 	}
 
-	return work.Checkout(opt)
+	return work.Checkout(ctx, opt)
 }
 
 // Remove deletes a linked worktree by removing its metadata dir within .git.
@@ -223,7 +224,7 @@ func (w *Worktree) List() ([]string, error) {
 //
 // When the target is not a linked worktree, it behaves just like git.Open.
 // This logic is likely going to be moved to git.Open in the future.
-func (w *Worktree) Open(wt billy.Filesystem) (*git.Repository, error) {
+func (w *Worktree) Open(ctx context.Context, wt billy.Filesystem) (*git.Repository, error) {
 	if wt == nil {
 		return nil, errors.New("worktree fs is nil")
 	}
@@ -234,7 +235,7 @@ func (w *Worktree) Open(wt billy.Filesystem) (*git.Repository, error) {
 	}
 
 	stor := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	repo, err := git.Open(stor, wt)
+	repo, err := git.Open(ctx, stor, wt)
 	if err != nil {
 		_ = stor.Close()
 		return nil, err

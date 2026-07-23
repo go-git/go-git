@@ -3,6 +3,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 
 	"github.com/go-git/go-git/v6/config"
@@ -30,5 +31,5 @@ type Storer interface {
 type ModuleStorer interface {
 	// Module returns a Storer representing a submodule, if not exists returns a
 	// new empty Storer is returned
-	Module(name string) (Storer, error)
+	Module(ctx context.Context, name string) (Storer, error)
 }

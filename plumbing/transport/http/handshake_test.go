@@ -50,28 +50,28 @@ func TestSmartMultiRoundFetch(t *testing.T) {
 	oldCommit := nthCommitFromHead(t, remoteStorage, plumbing.NewHash(fixture.Head), 50)
 
 	seedRef := plumbing.ReferenceName("refs/heads/seed-old")
-	require.NoError(t, remoteStorage.SetReference(plumbing.NewHashReference(seedRef, oldCommit)))
+	require.NoError(t, remoteStorage.SetReference(t.Context(), plumbing.NewHashReference(seedRef, oldCommit)))
 	seedPath := filepath.Join(t.TempDir(), "seed.git")
 	seedStorage := initBareStorage(t, seedPath)
 	defer func() { _ = seedStorage.Close() }()
 
 	fetchToStorage(t, remotePath, seedStorage, oldCommit)
-	require.NoError(t, seedStorage.SetReference(plumbing.NewHashReference(plumbing.Master, oldCommit)))
-	require.NoError(t, seedStorage.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
-	require.NoError(t, remoteStorage.RemoveReference(seedRef))
+	require.NoError(t, seedStorage.SetReference(t.Context(), plumbing.NewHashReference(plumbing.Master, oldCommit)))
+	require.NoError(t, seedStorage.SetReference(t.Context(), plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
+	require.NoError(t, remoteStorage.RemoveReference(t.Context(), seedRef))
 
 	clientPath := filepath.Join(t.TempDir(), "client.git")
 	clientStorage := initBareStorage(t, clientPath)
 	defer func() { _ = clientStorage.Close() }()
 
 	fetchToStorage(t, seedPath, clientStorage, oldCommit)
-	require.NoError(t, clientStorage.SetReference(plumbing.NewHashReference(plumbing.Master, oldCommit)))
-	require.NoError(t, clientStorage.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
+	require.NoError(t, clientStorage.SetReference(t.Context(), plumbing.NewHashReference(plumbing.Master, oldCommit)))
+	require.NoError(t, clientStorage.SetReference(t.Context(), plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
 	haves := commitHaves(t, clientStorage, oldCommit, 40)
 	require.Greater(t, len(haves), 20, "test setup must force multiple have rounds")
 
 	want := plumbing.NewHash(fixture.Head)
-	require.Error(t, clientStorage.HasEncodedObject(want), "seed client should not already have the remote tip")
+	require.Error(t, clientStorage.HasEncodedObject(t.Context(), want), "seed client should not already have the remote tip")
 
 	proxyURL, requests := setupCountingProxy(t, backend)
 
@@ -90,7 +90,7 @@ func TestSmartMultiRoundFetch(t *testing.T) {
 
 	err = session.Fetch(context.Background(), clientStorage, req)
 	require.NoError(t, err)
-	require.NoError(t, clientStorage.HasEncodedObject(want))
+	require.NoError(t, clientStorage.HasEncodedObject(t.Context(), want))
 
 	requests.mu.Lock()
 	defer requests.mu.Unlock()
@@ -420,7 +420,7 @@ func setupCountingProxy(t testing.TB, backendAddr *net.TCPAddr) (*url.URL, *uplo
 func nthCommitFromHead(t testing.TB, storage storer.EncodedObjectStorer, head plumbing.Hash, n int) plumbing.Hash {
 	t.Helper()
 
-	commit, err := object.GetCommit(storage, head)
+	commit, err := object.GetCommit(t.Context(), storage, head)
 	require.NoError(t, err)
 
 	iter := object.NewCommitPostorderIterFirstParent(commit, nil)
@@ -430,7 +430,7 @@ func nthCommitFromHead(t testing.TB, storage storer.EncodedObjectStorer, head pl
 		hash  plumbing.Hash
 		count int
 	)
-	err = iter.ForEach(func(c *object.Commit) error {
+	err = iter.ForEach(t.Context(), func(c *object.Commit) error {
 		hash = c.Hash
 		count++
 		if count == n {
@@ -446,14 +446,14 @@ func nthCommitFromHead(t testing.TB, storage storer.EncodedObjectStorer, head pl
 func commitHaves(t testing.TB, storage storer.EncodedObjectStorer, head plumbing.Hash, n int) []plumbing.Hash {
 	t.Helper()
 
-	commit, err := object.GetCommit(storage, head)
+	commit, err := object.GetCommit(t.Context(), storage, head)
 	require.NoError(t, err)
 
 	iter := object.NewCommitPostorderIterFirstParent(commit, nil)
 	defer iter.Close()
 
 	haves := make([]plumbing.Hash, 0, n)
-	err = iter.ForEach(func(c *object.Commit) error {
+	err = iter.ForEach(t.Context(), func(c *object.Commit) error {
 		haves = append(haves, c.Hash)
 		if len(haves) == n {
 			return storer.ErrStop
@@ -471,7 +471,7 @@ func initBareStorage(t testing.TB, path string) *filesystem.Storage {
 	st := filesystem.NewStorage(osfs.New(path), cache.NewObjectLRUDefault())
 	cfg := config.NewConfig()
 	cfg.Core.IsBare = true
-	require.NoError(t, st.SetConfig(cfg))
+	require.NoError(t, st.SetConfig(t.Context(), cfg))
 	return st
 }
 

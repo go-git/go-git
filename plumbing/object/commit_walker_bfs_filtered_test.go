@@ -1,6 +1,7 @@
 package object
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -23,9 +24,9 @@ type filterCommitIterSuite struct {
 	BaseObjectsSuite
 }
 
-func commitsFromIter(iter CommitIter) ([]*Commit, error) {
+func commitsFromIter(ctx context.Context, iter CommitIter) ([]*Commit, error) {
 	var commits []*Commit
-	err := iter.ForEach(func(c *Commit) error {
+	err := iter.ForEach(ctx, func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -91,7 +92,7 @@ func not(filter CommitFilter) CommitFilter {
 func (s *filterCommitIterSuite) TestFilterCommitIter() {
 	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
-	commits, err := commitsFromIter(NewFilterCommitIter(from, nil, nil))
+	commits, err := commitsFromIter(s.T().Context(), NewFilterCommitIter(from, nil, nil))
 	s.NoError(err)
 
 	expected := []string{
@@ -115,7 +116,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithValid() {
 	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
-	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIf, nil))
+	commits, err := commitsFromIter(s.T().Context(), NewFilterCommitIter(from, &validIf, nil))
 	s.NoError(err)
 
 	expected := []string{
@@ -132,7 +133,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalid() {
 
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	validIfNot := not(validIf)
-	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIfNot, nil))
+	commits, err := commitsFromIter(s.T().Context(), NewFilterCommitIter(from, &validIfNot, nil))
 	s.NoError(err)
 
 	expected := []string{
@@ -154,7 +155,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithNoValidCommits() {
 	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	validIf := validIfCommit(plumbing.NewHash("THIS_COMMIT_DOES_NOT_EXIST"))
-	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIf, nil))
+	commits, err := commitsFromIter(s.T().Context(), NewFilterCommitIter(from, &validIf, nil))
 	s.NoError(err)
 	s.Len(commits, 0)
 }
@@ -165,7 +166,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithStopAt() {
 	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	stopAtRule := validIfCommit(plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"))
-	commits, err := commitsFromIter(NewFilterCommitIter(from, nil, &stopAtRule))
+	commits, err := commitsFromIter(s.T().Context(), NewFilterCommitIter(from, nil, &stopAtRule))
 	s.NoError(err)
 
 	expected := []string{
@@ -189,7 +190,7 @@ func (s *filterCommitIterSuite) TestFilterCommitIterWithInvalidAndStopAt() {
 	stopAtRule := validIfCommit(plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"))
 	validIf := validIfCommit(plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"))
 	validIfNot := not(validIf)
-	commits, err := commitsFromIter(NewFilterCommitIter(from, &validIfNot, &stopAtRule))
+	commits, err := commitsFromIter(s.T().Context(), NewFilterCommitIter(from, &validIfNot, &stopAtRule))
 	s.NoError(err)
 
 	expected := []string{
@@ -233,14 +234,14 @@ func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn() {
 	from := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	iter := NewFilterCommitIter(from, nil, nil)
-	err := iter.ForEach(cb)
+	err := iter.ForEach(s.T().Context(), cb)
 	s.NoError(err)
 	expected := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 	}
 	assertHashes(s, visited, expected)
 
-	err = iter.ForEach(cb)
+	err = iter.ForEach(s.T().Context(), cb)
 	s.ErrorIs(err, errUnexpected)
 	expected = []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
@@ -248,7 +249,7 @@ func (s *filterCommitIterSuite) TestIteratorForEachCallbackReturn() {
 	}
 	assertHashes(s, visited, expected)
 
-	err = iter.ForEach(cb)
+	err = iter.ForEach(s.T().Context(), cb)
 	s.NoError(err)
 	expected = []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",

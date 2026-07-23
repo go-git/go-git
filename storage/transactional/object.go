@@ -1,6 +1,7 @@
 package transactional
 
 import (
+	"context"
 	"errors"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -20,48 +21,48 @@ func NewObjectStorage(base, temporal storer.EncodedObjectStorer) *ObjectStorage 
 }
 
 // SetEncodedObject honors the storer.EncodedObjectStorer interface.
-func (o *ObjectStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
-	return o.temporal.SetEncodedObject(obj)
+func (o *ObjectStorage) SetEncodedObject(ctx context.Context, obj plumbing.EncodedObject) (plumbing.Hash, error) {
+	return o.temporal.SetEncodedObject(ctx, obj)
 }
 
 // HasEncodedObject honors the storer.EncodedObjectStorer interface.
-func (o *ObjectStorage) HasEncodedObject(h plumbing.Hash) error {
-	err := o.EncodedObjectStorer.HasEncodedObject(h)
+func (o *ObjectStorage) HasEncodedObject(ctx context.Context, h plumbing.Hash) error {
+	err := o.EncodedObjectStorer.HasEncodedObject(ctx, h)
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return o.temporal.HasEncodedObject(h)
+		return o.temporal.HasEncodedObject(ctx, h)
 	}
 
 	return err
 }
 
 // EncodedObjectSize honors the storer.EncodedObjectStorer interface.
-func (o *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (int64, error) {
-	sz, err := o.EncodedObjectStorer.EncodedObjectSize(h)
+func (o *ObjectStorage) EncodedObjectSize(ctx context.Context, h plumbing.Hash) (int64, error) {
+	sz, err := o.EncodedObjectStorer.EncodedObjectSize(ctx, h)
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return o.temporal.EncodedObjectSize(h)
+		return o.temporal.EncodedObjectSize(ctx, h)
 	}
 
 	return sz, err
 }
 
 // EncodedObject honors the storer.EncodedObjectStorer interface.
-func (o *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
-	obj, err := o.EncodedObjectStorer.EncodedObject(t, h)
+func (o *ObjectStorage) EncodedObject(ctx context.Context, t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := o.EncodedObjectStorer.EncodedObject(ctx, t, h)
 	if errors.Is(err, plumbing.ErrObjectNotFound) {
-		return o.temporal.EncodedObject(t, h)
+		return o.temporal.EncodedObject(ctx, t, h)
 	}
 
 	return obj, err
 }
 
 // IterEncodedObjects honors the storer.EncodedObjectStorer interface.
-func (o *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
-	baseIter, err := o.EncodedObjectStorer.IterEncodedObjects(t)
+func (o *ObjectStorage) IterEncodedObjects(ctx context.Context, t plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+	baseIter, err := o.EncodedObjectStorer.IterEncodedObjects(ctx, t)
 	if err != nil {
 		return nil, err
 	}
 
-	temporalIter, err := o.temporal.IterEncodedObjects(t)
+	temporalIter, err := o.temporal.IterEncodedObjects(ctx, t)
 	if err != nil {
 		return nil, err
 	}
@@ -73,19 +74,19 @@ func (o *ObjectStorage) IterEncodedObjects(t plumbing.ObjectType) (storer.Encode
 }
 
 // Commit it copies the objects of the temporal storage into the base storage.
-func (o *ObjectStorage) Commit() error {
-	iter, err := o.temporal.IterEncodedObjects(plumbing.AnyObject)
+func (o *ObjectStorage) Commit(ctx context.Context) error {
+	iter, err := o.temporal.IterEncodedObjects(ctx, plumbing.AnyObject)
 	if err != nil {
 		return err
 	}
 
-	return iter.ForEach(func(obj plumbing.EncodedObject) error {
-		_, err := o.EncodedObjectStorer.SetEncodedObject(obj)
+	return iter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
+		_, err := o.EncodedObjectStorer.SetEncodedObject(ctx, obj)
 		return err
 	})
 }
 
 // AddAlternate adds an alternate object directory.
-func (o *ObjectStorage) AddAlternate(remote string) error {
-	return o.temporal.AddAlternate(remote)
+func (o *ObjectStorage) AddAlternate(ctx context.Context, remote string) error {
+	return o.temporal.AddAlternate(ctx, remote)
 }

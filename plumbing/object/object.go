@@ -4,6 +4,7 @@ package object
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -48,18 +49,18 @@ type Object interface {
 }
 
 // GetObject gets an object from an object storer and decodes it.
-func GetObject(s storer.EncodedObjectStorer, h plumbing.Hash) (Object, error) {
-	o, err := s.EncodedObject(plumbing.AnyObject, h)
+func GetObject(ctx context.Context, s storer.EncodedObjectStorer, h plumbing.Hash) (Object, error) {
+	o, err := s.EncodedObject(ctx, plumbing.AnyObject, h)
 	if err != nil {
 		return nil, err
 	}
 
-	return DecodeObject(s, o)
+	return DecodeObject(ctx, s, o)
 }
 
 // DecodeObject decodes an encoded object into an Object and associates it to
 // the given object storer.
-func DecodeObject(s storer.EncodedObjectStorer, o plumbing.EncodedObject) (Object, error) {
+func DecodeObject(_ context.Context, s storer.EncodedObjectStorer, o plumbing.EncodedObject) (Object, error) {
 	switch o.Type() {
 	case plumbing.CommitObject:
 		return DecodeCommit(s, o)
@@ -178,9 +179,9 @@ func NewObjectIter(s storer.EncodedObjectStorer, iter storer.EncodedObjectIter) 
 
 // Next moves the iterator to the next object and returns a pointer to it. If
 // there are no more objects, it returns io.EOF.
-func (iter *ObjectIter) Next() (Object, error) {
+func (iter *ObjectIter) Next(ctx context.Context) (Object, error) {
 	for {
-		obj, err := iter.EncodedObjectIter.Next()
+		obj, err := iter.EncodedObjectIter.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -201,8 +202,8 @@ func (iter *ObjectIter) Next() (Object, error) {
 // ForEach call the cb function for each object contained on this iter until
 // an error happens or the end of the iter is reached. If ErrStop is sent
 // the iteration is stop but no error is returned. The iterator is closed.
-func (iter *ObjectIter) ForEach(cb func(Object) error) error {
-	return iter.EncodedObjectIter.ForEach(func(obj plumbing.EncodedObject) error {
+func (iter *ObjectIter) ForEach(ctx context.Context, cb func(Object) error) error {
+	return iter.EncodedObjectIter.ForEach(ctx, func(obj plumbing.EncodedObject) error {
 		o, err := iter.toObject(obj)
 		if errors.Is(err, plumbing.ErrInvalidType) {
 			return nil

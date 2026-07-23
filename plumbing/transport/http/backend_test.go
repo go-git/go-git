@@ -185,11 +185,11 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	require.NoError(t, sess.Fetch(context.Background(), st, &transport.FetchRequest{Wants: []plumbing.Hash{want}}))
 
 	// Verify by decoding the tip commit/tree (Fetch populates objects; no ref update at this layer).
-	cobj, err := st.EncodedObject(plumbing.CommitObject, want)
+	cobj, err := st.EncodedObject(t.Context(), plumbing.CommitObject, want)
 	require.NoError(t, err)
 	c, err := object.DecodeCommit(st, cobj)
 	require.NoError(t, err)
-	tobj, err := st.EncodedObject(plumbing.TreeObject, c.TreeHash)
+	tobj, err := st.EncodedObject(t.Context(), plumbing.TreeObject, c.TreeHash)
 	require.NoError(t, err)
 	trr, err := object.DecodeTree(st, tobj)
 	require.NoError(t, err)
@@ -220,11 +220,11 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	sess3.Close()
 
 	// Confirm the blob added by the CLI push is reachable in the newly fetched objects.
-	cobj3, err := st3.EncodedObject(plumbing.CommitObject, tip3)
+	cobj3, err := st3.EncodedObject(t.Context(), plumbing.CommitObject, tip3)
 	require.NoError(t, err)
 	c3, err := object.DecodeCommit(st3, cobj3)
 	require.NoError(t, err)
-	tobj3, err := st3.EncodedObject(plumbing.TreeObject, c3.TreeHash)
+	tobj3, err := st3.EncodedObject(t.Context(), plumbing.TreeObject, c3.TreeHash)
 	require.NoError(t, err)
 	t3, err := object.DecodeTree(st3, tobj3)
 	require.NoError(t, err)

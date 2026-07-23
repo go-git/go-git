@@ -112,16 +112,16 @@ func NegotiatePack(
 			}
 		}
 
-		cfg, err := st.Config()
+		cfg, err := st.Config(ctx)
 		if err == nil {
 			clientFormat = cfg.Extensions.ObjectFormat
 		}
 
 		if clientFormat == config.UnsetObjectFormat && serverFormat == config.SHA256 {
-			ref, err := st.Reference(plumbing.HEAD)
+			ref, err := st.Reference(ctx, plumbing.HEAD)
 			if err == nil && ref.Target().String() == "refs/heads/.invalid" {
 				if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
-					err := setter.SetObjectFormat(serverFormat)
+					err := setter.SetObjectFormat(ctx, serverFormat)
 					if err != nil {
 						return nil, fmt.Errorf("unable to set object format: %w", err)
 					}
@@ -169,7 +169,7 @@ func NegotiatePack(
 			return nil, ErrShallowNotSupported
 		}
 		upreq.Depth = packp.DepthRequest{Deepen: req.Depth}
-		upreq.Shallows, err = st.Shallow()
+		upreq.Shallows, err = st.Shallow(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -334,9 +334,9 @@ func readShallows(
 // failure. It mirrors NegotiatePack's v0/v1 object-format handling and git's
 // fetch-pack.c, including the case where the server omits object-format (it
 // only speaks sha1) but the client repository uses another algorithm.
-func ReconcileObjectFormatV2(st storage.Storer, caps capability.List) error {
+func ReconcileObjectFormatV2(ctx context.Context, st storage.Storer, caps capability.List) error {
 	var clientFormat config.ObjectFormat
-	if cfg, err := st.Config(); err == nil && cfg != nil {
+	if cfg, err := st.Config(ctx); err == nil && cfg != nil {
 		clientFormat = cfg.Extensions.ObjectFormat
 	}
 
@@ -374,9 +374,9 @@ func ReconcileObjectFormatV2(st storage.Storer, caps capability.List) error {
 	// Adopt the server format on a fresh clone: unset client + sha256 server,
 	// with HEAD still at the clone placeholder.
 	if clientFormat == config.UnsetObjectFormat && serverFormat == config.SHA256 {
-		if ref, err := st.Reference(plumbing.HEAD); err == nil && ref.Target().String() == "refs/heads/.invalid" {
+		if ref, err := st.Reference(ctx, plumbing.HEAD); err == nil && ref.Target().String() == "refs/heads/.invalid" {
 			if setter, ok := st.(xstorage.ObjectFormatSetter); ok {
-				if err := setter.SetObjectFormat(serverFormat); err != nil {
+				if err := setter.SetObjectFormat(ctx, serverFormat); err != nil {
 					return fmt.Errorf("unable to set object format: %w", err)
 				}
 				clientFormat = serverFormat

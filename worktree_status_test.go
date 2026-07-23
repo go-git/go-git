@@ -26,12 +26,12 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	s := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-	r, err := Init(s, WithWorkTree(w))
+	r, err := Init(t.Context(), s, WithWorkTree(w))
 	require.NoError(t, err)
 	require.NotNil(t, r)
 	defer func() { _ = r.Close() }()
 
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, wt)
 
@@ -46,13 +46,13 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	err = f.Close()
 	require.NoError(t, err)
 
-	_, err = wt.Add(file)
+	_, err = wt.Add(t.Context(), file)
 	require.NoError(t, err)
 
-	_, err = wt.Commit("add file", &CommitOptions{})
+	_, err = wt.Commit(t.Context(), "add file", &CommitOptions{})
 	require.NoError(t, err)
 
-	st, err := wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+	st, err := wt.StatusWithOptions(t.Context(), StatusOptions{Strategy: Preload})
 	require.NoError(t, err)
 	assert.Equal(t,
 		&FileStatus{Worktree: Unmodified, Staging: Unmodified},
@@ -72,7 +72,7 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	err = f.Close()
 	require.NoError(t, err)
 
-	_, err = wt.Add(file)
+	_, err = wt.Add(t.Context(), file)
 	assert.NoError(t, err)
 
 	// go-git's Status diverges from "git status", so this check does not
@@ -80,13 +80,13 @@ func TestIndexEntrySizeUpdatedForNonRegularFiles(t *testing.T) {
 	// reports the unstaged file was modified while "git diff" would return
 	// empty, as the files are the same but the index has the incorrect file
 	// size.
-	st, err = wt.StatusWithOptions(StatusOptions{Strategy: Preload})
+	st, err = wt.StatusWithOptions(t.Context(), StatusOptions{Strategy: Preload})
 	assert.NoError(t, err)
 	assert.Equal(t,
 		&FileStatus{Worktree: Unmodified, Staging: Modified},
 		st.File(file))
 
-	idx, err := wt.r.Storer.Index()
+	idx, err := wt.r.Storer.Index(t.Context())
 	assert.NoError(t, err)
 	require.NotNil(t, idx)
 	require.Len(t, idx.Entries, 1)
@@ -105,11 +105,11 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	t.Parallel()
 
 	repoDir := filepath.Join(t.TempDir(), "repo")
-	repo, err := PlainInit(repoDir, false)
+	repo, err := PlainInit(t.Context(), repoDir, false)
 	require.NoError(t, err)
 	defer func() { _ = repo.Close() }()
 
-	wt, err := repo.Worktree()
+	wt, err := repo.Worktree(t.Context())
 	require.NoError(t, err)
 
 	write := func(name string, data []byte) {
@@ -122,12 +122,12 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	write(".gitignore", []byte("vendor/\n"))
 
 	for _, p := range []string{"src/main.go", "vendor/keep.go", ".gitignore"} {
-		_, err := wt.Add(p)
+		_, err := wt.Add(t.Context(), p)
 		require.NoError(t, err)
 	}
 
 	sig := &object.Signature{Name: "test", Email: "test@test.com"}
-	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	_, err = wt.Commit(t.Context(), "initial", &CommitOptions{Author: sig, Committer: sig})
 	require.NoError(t, err)
 
 	// Drop an untracked, ignored file alongside the tracked one. It must
@@ -137,7 +137,7 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	// Modify the tracked-but-ignored file. It MUST appear as Modified.
 	write("vendor/keep.go", []byte("changed\n"))
 
-	st, err := wt.Status()
+	st, err := wt.Status(t.Context())
 	require.NoError(t, err)
 
 	// Status.File auto-inserts a default entry for any path queried, so
@@ -160,20 +160,20 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 	}
 	st := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 
-	r, err := Open(st, memfs.New())
+	r, err := Open(b.Context(), st, memfs.New())
 	require.NoError(b, err)
 	defer func() { _ = r.Close() }()
 
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(b.Context())
 	require.NoError(b, err)
 
-	err = wt.Reset(&ResetOptions{Mode: HardReset})
+	err = wt.Reset(b.Context(), &ResetOptions{Mode: HardReset})
 	require.NoError(b, err)
 
 	b.StartTimer()
 
 	for b.Loop() {
-		wt.Status()
+		wt.Status(b.Context())
 	}
 }
 
@@ -185,20 +185,20 @@ func TestAddSubdirectoryForwardSlash(t *testing.T) {
 	t.Parallel()
 
 	repoDir := filepath.Join(t.TempDir(), "repo")
-	repo, err := PlainInit(repoDir, false)
+	repo, err := PlainInit(t.Context(), repoDir, false)
 	require.NoError(t, err)
 	defer func() { _ = repo.Close() }()
 
-	wt, err := repo.Worktree()
+	wt, err := repo.Worktree(t.Context())
 	require.NoError(t, err)
 
 	require.NoError(t, wt.Filesystem().MkdirAll("dir", 0o755))
 	require.NoError(t, util.WriteFile(wt.Filesystem(), "dir/foo", []byte("content"), 0o644))
 
-	_, err = wt.Add("dir/foo")
+	_, err = wt.Add(t.Context(), "dir/foo")
 	require.NoError(t, err)
 
-	idx, err := repo.Storer.Index()
+	idx, err := repo.Storer.Index(t.Context())
 	require.NoError(t, err)
 	e, err := idx.Entry("dir/foo")
 	require.NoError(t, err)

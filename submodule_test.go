@@ -28,16 +28,16 @@ func TestSubmoduleInit(t *testing.T) {
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 
 		require.False(t, sm.initialized)
-		require.NoError(t, sm.Init())
+		require.NoError(t, sm.Init(t.Context()))
 		require.True(t, sm.initialized)
 
-		cfg, err := r.Config()
+		cfg, err := r.Config(t.Context())
 		require.NoError(t, err)
 
 		require.Len(t, cfg.Submodules, 1)
 		require.NotNil(t, cfg.Submodules[primaryFixtureSubmoduleName(f)])
 
-		status, err := sm.Status()
+		status, err := sm.Status(t.Context())
 		require.NoError(t, err)
 		require.False(t, status.IsClean())
 	})
@@ -57,17 +57,17 @@ func TestSubmoduleUpdate(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
+		require.NoError(t, sm.Update(t.Context(), &SubmoduleUpdateOptions{Init: true}))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		ref, err := subRepo.Reference(plumbing.HEAD, true)
+		ref, err := subRepo.Reference(t.Context(), plumbing.HEAD, true)
 		require.NoError(t, err)
 		require.Equal(t, submoduleHashFromIndex(t, r, primaryFixtureSubmoduleName(f)), ref.Hash())
 
-		status, err := sm.Status()
+		status, err := sm.Status(t.Context())
 		require.NoError(t, err)
 		require.True(t, status.IsClean())
 	})
@@ -84,7 +84,7 @@ func TestSubmoduleRepositoryWithoutInit(t *testing.T) {
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.ErrorIs(t, err, ErrSubmoduleNotInitialized)
 		require.Nil(t, subRepo)
 	})
@@ -100,7 +100,7 @@ func TestSubmoduleUpdateWithoutInit(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		err := sm.Update(&SubmoduleUpdateOptions{})
+		err := sm.Update(t.Context(), &SubmoduleUpdateOptions{})
 		require.ErrorIs(t, err, ErrSubmoduleNotInitialized)
 	})
 }
@@ -115,7 +115,7 @@ func TestSubmoduleUpdateWithNotFetch(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		err := sm.Update(&SubmoduleUpdateOptions{
+		err := sm.Update(t.Context(), &SubmoduleUpdateOptions{
 			Init:    true,
 			NoFetch: true,
 		})
@@ -138,7 +138,7 @@ func TestSubmoduleUpdateWithRecursion(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, "itself")
-		err := sm.Update(&SubmoduleUpdateOptions{
+		err := sm.Update(t.Context(), &SubmoduleUpdateOptions{
 			Init:              true,
 			RecurseSubmodules: 2,
 		})
@@ -164,26 +164,26 @@ func TestSubmoduleUpdateWithInitAndUpdate(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
+		require.NoError(t, sm.Update(t.Context(), &SubmoduleUpdateOptions{Init: true}))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		log, err := subRepo.Log(&LogOptions{})
+		log, err := subRepo.Log(t.Context(), &LogOptions{})
 		require.NoError(t, err)
 
-		_, err = log.Next()
+		_, err = log.Next(t.Context())
 		require.NoError(t, err)
 
-		previousCommit, err := log.Next()
+		previousCommit, err := log.Next(t.Context())
 		require.NoError(t, err)
 
-		subWorktree, err := subRepo.Worktree()
+		subWorktree, err := subRepo.Worktree(t.Context())
 		require.NoError(t, err)
-		require.NoError(t, subWorktree.Reset(&ResetOptions{Mode: HardReset}))
+		require.NoError(t, subWorktree.Reset(t.Context(), &ResetOptions{Mode: HardReset}))
 
-		idx, err := r.Storer.Index()
+		idx, err := r.Storer.Index(t.Context())
 		require.NoError(t, err)
 
 		previousHash := previousCommit.Hash
@@ -194,10 +194,10 @@ func TestSubmoduleUpdateWithInitAndUpdate(t *testing.T) {
 			}
 		}
 
-		require.NoError(t, r.Storer.SetIndex(idx))
-		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{}))
+		require.NoError(t, r.Storer.SetIndex(t.Context(), idx))
+		require.NoError(t, sm.Update(t.Context(), &SubmoduleUpdateOptions{}))
 
-		ref, err := subRepo.Reference(plumbing.HEAD, true)
+		ref, err := subRepo.Reference(t.Context(), plumbing.HEAD, true)
 		require.NoError(t, err)
 		require.Equal(t, previousHash, ref.Hash())
 	})
@@ -212,11 +212,11 @@ func TestSubmodulesInit(t *testing.T) {
 		r, wt := cloneFixture(t, f)
 		defer func() { _ = r.Close() }()
 
-		sm, err := wt.Submodules()
+		sm, err := wt.Submodules(t.Context())
 		require.NoError(t, err)
-		require.NoError(t, sm.Init())
+		require.NoError(t, sm.Init(t.Context()))
 
-		sm, err = wt.Submodules()
+		sm, err = wt.Submodules(t.Context())
 		require.NoError(t, err)
 
 		for _, m := range sm {
@@ -247,7 +247,7 @@ func TestGitSubmodulesSymlink(t *testing.T) {
 		require.NoError(t, fs.Remove(gitmodulesFile))
 		require.NoError(t, fs.Symlink("badfile", gitmodulesFile))
 
-		_, err = wt.Submodules()
+		_, err = wt.Submodules(t.Context())
 		require.ErrorIs(t, err, ErrGitModulesSymlink)
 	})
 }
@@ -261,10 +261,10 @@ func TestSubmodulesStatus(t *testing.T) {
 		r, wt := cloneFixture(t, f)
 		defer func() { _ = r.Close() }()
 
-		sm, err := wt.Submodules()
+		sm, err := wt.Submodules(t.Context())
 		require.NoError(t, err)
 
-		status, err := sm.Status()
+		status, err := sm.Status(t.Context())
 		require.NoError(t, err)
 		require.Len(t, status, 2)
 	})
@@ -283,13 +283,13 @@ func TestSubmodulesUpdateContext(t *testing.T) {
 		r, wt := cloneFixture(t, f)
 		defer func() { _ = r.Close() }()
 
-		sm, err := wt.Submodules()
+		sm, err := wt.Submodules(t.Context())
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		err = sm.UpdateContext(ctx, &SubmoduleUpdateOptions{Init: true})
+		err = sm.Update(ctx, &SubmoduleUpdateOptions{Init: true})
 		require.Error(t, err)
 	})
 }
@@ -312,20 +312,20 @@ func TestSubmodulesFetchDepth(t *testing.T) {
 		defer func() { _ = r.Close() }()
 
 		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
-		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{
+		require.NoError(t, sm.Update(t.Context(), &SubmoduleUpdateOptions{
 			Init:  true,
 			Depth: 1,
 		}))
 
-		subRepo, err := sm.Repository()
+		subRepo, err := sm.Repository(t.Context())
 		require.NoError(t, err)
 		defer subRepo.Close()
 
-		lr, err := subRepo.Log(&LogOptions{})
+		lr, err := subRepo.Log(t.Context(), &LogOptions{})
 		require.NoError(t, err)
 
 		commitCount := 0
-		for _, err := lr.Next(); err == nil; _, err = lr.Next() {
+		for _, err := lr.Next(t.Context()); err == nil; _, err = lr.Next(t.Context()) {
 			commitCount++
 		}
 		require.NoError(t, err)
@@ -358,7 +358,7 @@ func TestSubmoduleParseScp(t *testing.T) {
 			URL:  "git@github.com:username/submodule_repo",
 		}
 
-		subRepo, err := submodule.Repository()
+		subRepo, err := submodule.Repository(t.Context())
 		require.NoError(t, err)
 		defer func() { _ = subRepo.Close() }()
 	})
@@ -444,7 +444,7 @@ func TestDefaultRemote(t *testing.T) {
 			t.Parallel()
 
 			r := &Repository{Storer: memory.NewStorage()}
-			cfg, err := r.Config()
+			cfg, err := r.Config(t.Context())
 			require.NoError(t, err)
 			for name, url := range tc.remotes {
 				cfg.Remotes[name] = &config.RemoteConfig{
@@ -455,13 +455,13 @@ func TestDefaultRemote(t *testing.T) {
 			for name, remote := range tc.branches {
 				cfg.Branches[name] = &config.Branch{Name: name, Remote: remote}
 			}
-			require.NoError(t, r.Storer.SetConfig(cfg))
+			require.NoError(t, r.Storer.SetConfig(t.Context(), cfg))
 
 			if tc.head != nil {
-				require.NoError(t, r.Storer.SetReference(tc.head))
+				require.NoError(t, r.Storer.SetReference(t.Context(), tc.head))
 			}
 
-			got, err := defaultRemote(r)
+			got, err := defaultRemote(t.Context(), r)
 			if tc.wantErrIn != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErrIn)
@@ -486,7 +486,7 @@ func TestSubmoduleRelativeURLPicksOrigin(t *testing.T) {
 			Storer: memory.NewStorage(),
 			wt:     memfs.New(),
 		}
-		cfg, err := parent.Config()
+		cfg, err := parent.Config(t.Context())
 		require.NoError(t, err)
 		cfg.Remotes["origin"] = &config.RemoteConfig{
 			Name: "origin",
@@ -496,7 +496,7 @@ func TestSubmoduleRelativeURLPicksOrigin(t *testing.T) {
 			Name: "upstream",
 			URLs: []string{"file:///parent/upstream"},
 		}
-		require.NoError(t, parent.Storer.SetConfig(cfg))
+		require.NoError(t, parent.Storer.SetConfig(t.Context(), cfg))
 
 		sub := &Submodule{
 			initialized: true,
@@ -508,11 +508,11 @@ func TestSubmoduleRelativeURLPicksOrigin(t *testing.T) {
 			},
 		}
 
-		subRepo, err := sub.Repository()
+		subRepo, err := sub.Repository(t.Context())
 		require.NoError(t, err, "iteration %d", i)
 		defer func() { _ = subRepo.Close() }()
 
-		remotes, err := subRepo.Remotes()
+		remotes, err := subRepo.Remotes(t.Context())
 		require.NoError(t, err)
 		require.Len(t, remotes, 1, "iteration %d", i)
 		require.Equal(t,
@@ -536,7 +536,7 @@ func TestSubmoduleRelativeURLRemoteWithoutURLs(t *testing.T) {
 		Storer: memory.NewStorage(),
 		wt:     memfs.New(),
 	}
-	cfg, err := parent.Config()
+	cfg, err := parent.Config(t.Context())
 	require.NoError(t, err)
 	cfg.Remotes["origin"] = &config.RemoteConfig{Name: "origin", URLs: nil}
 
@@ -550,7 +550,7 @@ func TestSubmoduleRelativeURLRemoteWithoutURLs(t *testing.T) {
 		},
 	}
 
-	subRepo, err := sub.Repository()
+	subRepo, err := sub.Repository(t.Context())
 	require.Error(t, err)
 	require.Nil(t, subRepo)
 	require.ErrorContains(t, err, `remote "origin" has no configured URL`)
@@ -559,7 +559,7 @@ func TestSubmoduleRelativeURLRemoteWithoutURLs(t *testing.T) {
 func submoduleHashFromIndex(t *testing.T, r *Repository, name string) plumbing.Hash {
 	t.Helper()
 
-	idx, err := r.Storer.Index()
+	idx, err := r.Storer.Index(t.Context())
 	require.NoError(t, err)
 
 	for _, entry := range idx.Entries {
@@ -592,7 +592,7 @@ func newSubmoduleForRelativeURL(t *testing.T, parentRemoteURL, submoduleName, su
 		wt:     memfs.New(),
 	}
 	if parentRemoteURL != "" {
-		_, err := repo.CreateRemote(&config.RemoteConfig{
+		_, err := repo.CreateRemote(t.Context(), &config.RemoteConfig{
 			Name: DefaultRemoteName,
 			URLs: []string{parentRemoteURL},
 		})
@@ -659,7 +659,7 @@ func TestSubmoduleRepositoryURLResolution(t *testing.T) {
 
 			sm := newSubmoduleForRelativeURL(t, tc.parentURL, "basic", tc.submoduleURL)
 
-			r, err := sm.Repository()
+			r, err := sm.Repository(t.Context())
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return
@@ -667,7 +667,7 @@ func TestSubmoduleRepositoryURLResolution(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			remotes, err := r.Remotes()
+			remotes, err := r.Remotes(t.Context())
 			require.NoError(t, err)
 			require.Len(t, remotes, 1)
 			require.Equal(t, tc.wantRemote, remotes[0].Config().URLs[0])
@@ -687,14 +687,14 @@ func TestSubmoduleRepositoryRejectsEscapingName(t *testing.T) {
 	dotfs := memfs.New()
 	wtfs := memfs.New()
 	storer := filesystem.NewStorage(dotfs, cache.NewObjectLRUDefault())
-	r, err := Init(storer, WithWorkTree(wtfs))
+	r, err := Init(t.Context(), storer, WithWorkTree(wtfs))
 	require.NoError(t, err)
 	defer func() { _ = r.Close() }()
 
-	wt, err := r.Worktree()
+	wt, err := r.Worktree(t.Context())
 	require.NoError(t, err)
 
-	headBefore, err := storer.Reference(plumbing.HEAD)
+	headBefore, err := storer.Reference(t.Context(), plumbing.HEAD)
 	require.NoError(t, err)
 
 	sm := &Submodule{
@@ -707,12 +707,12 @@ func TestSubmoduleRepositoryRejectsEscapingName(t *testing.T) {
 		w: wt,
 	}
 
-	repo, err := sm.Repository()
+	repo, err := sm.Repository(t.Context())
 	require.Error(t, err)
 	require.ErrorIs(t, err, dotgit.ErrModuleNameEscape)
 	require.Nil(t, repo)
 
-	headAfter, err := storer.Reference(plumbing.HEAD)
+	headAfter, err := storer.Reference(t.Context(), plumbing.HEAD)
 	require.NoError(t, err)
 	require.Equal(t, headBefore.Target(), headAfter.Target(),
 		"parent HEAD must not be overwritten")

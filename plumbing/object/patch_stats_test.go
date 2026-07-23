@@ -27,32 +27,33 @@ func (s *PatchStatsSuite) TestStatsWithRename() {
 		Author: &object.Signature{Name: "Foo", Email: "foo@example.local", When: time.Now()},
 	}
 
+	ctx := s.T().Context()
 	fs := memfs.New()
-	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	r, err := git.Init(ctx, memory.NewStorage(), git.WithWorkTree(fs))
 	s.NoError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	s.NoError(err)
 
 	util.WriteFile(fs, "foo", []byte("foo\nbar\n"), 0o644)
 
-	_, err = w.Add("foo")
+	_, err = w.Add(ctx, "foo")
 	s.NoError(err)
 
-	_, err = w.Commit("foo\n", cm)
+	_, err = w.Commit(ctx, "foo\n", cm)
 	s.NoError(err)
 
-	_, err = w.Move("foo", "bar")
+	_, err = w.Move(ctx, "foo", "bar")
 	s.NoError(err)
 
-	hash, err := w.Commit("rename foo to bar", cm)
+	hash, err := w.Commit(ctx, "rename foo to bar", cm)
 	s.NoError(err)
 
-	commit, err := r.CommitObject(hash)
+	commit, err := r.CommitObject(ctx, hash)
 	s.NoError(err)
 
-	fileStats, err := commit.Stats()
+	fileStats, err := commit.Stats(ctx)
 	s.NoError(err)
 	s.Equal("foo => bar", fileStats[0].Name)
 }

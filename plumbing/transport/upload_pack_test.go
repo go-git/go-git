@@ -55,10 +55,10 @@ func (s *UploadPackServeSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	upreq := &packp.UploadRequest{}
 	upreq.Capabilities.Add(capability.Sideband64k)
 	upreq.Capabilities.Add(capability.NoProgress)
-	iter, err := st.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := st.IterEncodedObjects(s.T().Context(), plumbing.AnyObject)
 	require.NoError(s.T(), err)
 	defer iter.Close()
-	obj, err := iter.Next()
+	obj, err := iter.Next(s.T().Context())
 	require.NoError(s.T(), err)
 	upreq.Wants = append(upreq.Wants, obj.Hash())
 
@@ -84,7 +84,7 @@ func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	defer func() { _ = st.Close() }()
 
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(s.T().Context(), st, plumbing.HEAD)
 	require.NoError(s.T(), err)
 	wantHash := head.Hash()
 
@@ -140,9 +140,9 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	s.T().Cleanup(func() { _ = st.Close() })
 
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(s.T().Context(), st, plumbing.HEAD)
 	s.Require().NoError(err)
-	headCommit, err := object.GetCommit(st, head.Hash())
+	headCommit, err := object.GetCommit(s.T().Context(), st, head.Hash())
 	s.Require().NoError(err)
 	s.Require().NotEmpty(headCommit.ParentHashes)
 	common := headCommit.ParentHashes[0]
@@ -250,7 +250,7 @@ func (s *UploadPackServeSuite) TestUploadPackStatelessRPCUnreachableHavesEmitsSi
 	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
 	defer func() { _ = st.Close() }()
 
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	head, err := storer.ResolveReference(s.T().Context(), st, plumbing.HEAD)
 	s.Require().NoError(err)
 
 	var upreq packp.UploadRequest

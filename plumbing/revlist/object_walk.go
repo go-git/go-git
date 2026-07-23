@@ -1,6 +1,7 @@
 package revlist
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -23,8 +24,8 @@ type objectWalk struct {
 	result     []plumbing.Hash
 }
 
-func newObjectWalk(s storer.EncodedObjectStorer) (*objectWalk, error) {
-	shallows, err := shallowSet(s)
+func newObjectWalk(ctx context.Context, s storer.EncodedObjectStorer) (*objectWalk, error) {
+	shallows, err := shallowSet(ctx, s)
 	if err != nil {
 		return nil, err
 	}
@@ -38,13 +39,13 @@ func newObjectWalk(s storer.EncodedObjectStorer) (*objectWalk, error) {
 	}, nil
 }
 
-func shallowSet(s storer.EncodedObjectStorer) (map[plumbing.Hash]struct{}, error) {
+func shallowSet(ctx context.Context, s storer.EncodedObjectStorer) (map[plumbing.Hash]struct{}, error) {
 	ss, ok := s.(storer.ShallowStorer)
 	if !ok {
 		return map[plumbing.Hash]struct{}{}, nil
 	}
 
-	hashes, err := ss.Shallow()
+	hashes, err := ss.Shallow(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func shallowSet(s storer.EncodedObjectStorer) (map[plumbing.Hash]struct{}, error
 
 // seedWants resolves each want hash and enqueues commits for walking.
 // Non-commit objects (blobs, trees, tags) are added directly to the result.
-func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
+func (w *objectWalk) seedWants(ctx context.Context, wants []plumbing.Hash) error {
 	for i := 0; i < len(wants); i++ {
 		h := wants[i]
 		if _, ok := w.wantsSeen[h]; ok {
@@ -69,7 +70,7 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 			continue
 		}
 
-		o, err := w.s.EncodedObject(plumbing.AnyObject, h)
+		o, err := w.s.EncodedObject(ctx, plumbing.AnyObject, h)
 		if err != nil {
 			return fmt.Errorf("getting wanted object %s: %w", h, err)
 		}
@@ -91,11 +92,11 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 			w.result = append(w.result, tag.Hash)
 			wants = append(wants, tag.Target)
 		case plumbing.TreeObject:
-			t, err := object.GetTree(w.s, h)
+			t, err := object.GetTree(ctx, w.s, h)
 			if err != nil {
 				return fmt.Errorf("getting tree %s: %w", h, err)
 			}
-			if err := collectAllTreeObjects(w.s, t, w.seen, &w.result); err != nil {
+			if err := collectAllTreeObjects(ctx, w.s, t, w.seen, &w.result); err != nil {
 				return err
 			}
 		case plumbing.BlobObject:
@@ -113,7 +114,7 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 // (tags, trees, blobs) are marked as seen so the diff walk skips them.
 // Missing objects (ErrObjectNotFound) are tolerated since the remote
 // may advertise refs we don't have locally.
-func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
+func (w *objectWalk) seedHaves(ctx context.Context, haves []plumbing.Hash) error {
 	for i := 0; i < len(haves); i++ {
 		h := haves[i]
 		if _, ok := w.havesSeen[h]; ok {
@@ -123,7 +124,7 @@ func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
 			continue
 		}
 
-		o, err := w.s.EncodedObject(plumbing.AnyObject, h)
+		o, err := w.s.EncodedObject(ctx, plumbing.AnyObject, h)
 		if err != nil {
 			if errors.Is(err, plumbing.ErrObjectNotFound) {
 				continue
@@ -139,8 +140,8 @@ func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
 			}
 			w.havesSeen[h] = struct{}{}
 			insertSorted(&w.havesQueue, c)
-			if t, err := c.Tree(); err == nil {
-				markTreeSeen(w.s, t, w.seen)
+			if t, err := c.Tree(ctx); err == nil {
+				markTreeSeen(ctx, w.s, t, w.seen)
 			}
 		case plumbing.TagObject:
 			tag, err := object.DecodeTag(w.s, o)
@@ -150,8 +151,8 @@ func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
 			w.seen[tag.Hash] = struct{}{}
 			haves = append(haves, tag.Target)
 		case plumbing.TreeObject:
-			if t, err := object.GetTree(w.s, h); err == nil {
-				markTreeSeen(w.s, t, w.seen)
+			if t, err := object.GetTree(ctx, w.s, h); err == nil {
+				markTreeSeen(ctx, w.s, t, w.seen)
 			}
 		case plumbing.BlobObject:
 			w.seen[h] = struct{}{}
@@ -169,10 +170,10 @@ const (
 )
 
 // walk identifies new commits and collects their tree objects.
-func (w *objectWalk) walk() error {
+func (w *objectWalk) walk(ctx context.Context) error {
 	// Fast path: no haves means we need all reachable objects.
 	if len(w.havesQueue) == 0 {
-		return w.walkFull()
+		return w.walkFull(ctx)
 	}
 
 	// Phase 1: merge wants and haves into a single priority queue
@@ -210,7 +211,7 @@ func (w *objectWalk) walk() error {
 
 		// Propagate this commit's flags to parents.
 		if _, shallow := w.shallows[lc.Hash]; !shallow {
-			if err := w.propagate(&queue, flags, &missing, lc, f); err != nil {
+			if err := w.propagate(ctx, &queue, flags, &missing, lc, f); err != nil {
 				return err
 			}
 		}
@@ -241,7 +242,7 @@ func (w *objectWalk) walk() error {
 		if flags[lc.Hash]&havePaint != 0 {
 			continue
 		}
-		if err := w.processCommitTrees(lc); err != nil {
+		if err := w.processCommitTrees(ctx, lc); err != nil {
 			return err
 		}
 	}
@@ -264,7 +265,7 @@ type missingParent struct {
 // walk, where we can tell whether the child was eventually painted by
 // haves (in which case the missing parent is behind the haves boundary
 // and tolerable, matching Git's behavior).
-func (w *objectWalk) propagate(queue *[]*object.Commit, flags map[plumbing.Hash]uint8, missing *[]missingParent, lc *object.Commit, f uint8) error {
+func (w *objectWalk) propagate(ctx context.Context, queue *[]*object.Commit, flags map[plumbing.Hash]uint8, missing *[]missingParent, lc *object.Commit, f uint8) error {
 	for _, ph := range lc.ParentHashes {
 		pf := flags[ph]
 		if pf|f == pf {
@@ -272,7 +273,7 @@ func (w *objectWalk) propagate(queue *[]*object.Commit, flags map[plumbing.Hash]
 		}
 		flags[ph] = pf | f
 
-		pc, err := object.GetCommit(w.s, ph)
+		pc, err := object.GetCommit(ctx, w.s, ph)
 		if err != nil {
 			if errors.Is(err, plumbing.ErrObjectNotFound) {
 				*missing = append(*missing, missingParent{hash: ph, child: lc.Hash})
@@ -300,7 +301,7 @@ func allStale(queue []*object.Commit, flags map[plumbing.Hash]uint8) bool {
 // walkFull is the fast path when there are no haves. It walks all
 // commits and collects every reachable tree/blob via a simple seen-set
 // traversal — no per-commit tree diffs needed.
-func (w *objectWalk) walkFull() error {
+func (w *objectWalk) walkFull(ctx context.Context) error {
 	for len(w.wantsQueue) > 0 {
 		lc := w.wantsQueue[0]
 		w.wantsQueue = w.wantsQueue[1:]
@@ -311,12 +312,12 @@ func (w *objectWalk) walkFull() error {
 		w.seen[lc.Hash] = struct{}{}
 		w.result = append(w.result, lc.Hash)
 
-		tree, err := lc.Tree()
+		tree, err := lc.Tree(ctx)
 		if err != nil {
 			return fmt.Errorf("getting tree for %s: %w", lc.Hash, err)
 		}
 
-		if err := collectAllTreeObjects(w.s, tree, w.seen, &w.result); err != nil {
+		if err := collectAllTreeObjects(ctx, w.s, tree, w.seen, &w.result); err != nil {
 			return fmt.Errorf("collecting tree objects for %s: %w", lc.Hash, err)
 		}
 
@@ -329,7 +330,7 @@ func (w *objectWalk) walkFull() error {
 				continue
 			}
 			w.wantsSeen[ph] = struct{}{}
-			pc, err := object.GetCommit(w.s, ph)
+			pc, err := object.GetCommit(ctx, w.s, ph)
 			if err != nil {
 				return fmt.Errorf("getting parent commit %s: %w", ph, err)
 			}
@@ -341,34 +342,34 @@ func (w *objectWalk) walkFull() error {
 
 // processCommitTrees collects new tree/blob objects for a commit by
 // diffing its tree against its parents' trees.
-func (w *objectWalk) processCommitTrees(lc *object.Commit) error {
+func (w *objectWalk) processCommitTrees(ctx context.Context, lc *object.Commit) error {
 	if _, ok := w.seen[lc.Hash]; !ok {
 		w.seen[lc.Hash] = struct{}{}
 		w.result = append(w.result, lc.Hash)
 	}
 
-	newTree, err := lc.Tree()
+	newTree, err := lc.Tree(ctx)
 	if err != nil {
 		return fmt.Errorf("getting tree for %s: %w", lc.Hash, err)
 	}
 
 	var oldTrees []*object.Tree
 	for i := 0; i < lc.NumParents(); i++ {
-		parent, err := lc.Parent(i)
+		parent, err := lc.Parent(ctx, i)
 		if err != nil {
 			if errors.Is(err, plumbing.ErrObjectNotFound) {
 				continue // parent may be beyond haves boundary
 			}
 			return fmt.Errorf("getting parent commit %s: %w", lc.ParentHashes[i], err)
 		}
-		pt, err := parent.Tree()
+		pt, err := parent.Tree(ctx)
 		if err != nil {
 			return fmt.Errorf("getting parent tree for %s: %w", parent.Hash, err)
 		}
 		oldTrees = append(oldTrees, pt)
 	}
 
-	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
+	if err := collectChangedTreeObjects(ctx, w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
 		return fmt.Errorf("diffing trees for %s: %w", lc.Hash, err)
 	}
 
@@ -391,6 +392,7 @@ func insertSorted(q *[]*object.Commit, c *object.Commit) {
 // same name with the same hash. Only new or modified tree and blob hashes are
 // added to result.
 func collectChangedTreeObjects(
+	ctx context.Context,
 	s storer.EncodedObjectStorer,
 	newTree *object.Tree,
 	oldTrees []*object.Tree,
@@ -447,19 +449,19 @@ func collectChangedTreeObjects(
 		if e.Mode == filemode.Dir {
 			// Recurse into changed subtree. Collect the old versions of
 			// this subtree from all parents that have it.
-			newSub, err := object.GetTree(s, e.Hash)
+			newSub, err := object.GetTree(ctx, s, e.Hash)
 			if err != nil {
 				return fmt.Errorf("getting subtree %s: %w", e.Hash, err)
 			}
 			var oldSubs []*object.Tree
 			for _, m := range oldEntryMaps {
 				if oh, ok := m[e.Name]; ok {
-					if ot, err := object.GetTree(s, oh); err == nil {
+					if ot, err := object.GetTree(ctx, s, oh); err == nil {
 						oldSubs = append(oldSubs, ot)
 					}
 				}
 			}
-			if err := collectChangedTreeObjects(s, newSub, oldSubs, seen, result); err != nil {
+			if err := collectChangedTreeObjects(ctx, s, newSub, oldSubs, seen, result); err != nil {
 				return err
 			}
 		} else {
@@ -475,6 +477,7 @@ func collectChangedTreeObjects(
 // tree and blob hashes to result. This is faster than collectChangedTreeObjects
 // when we need all objects (no haves to diff against).
 func collectAllTreeObjects(
+	ctx context.Context,
 	s storer.EncodedObjectStorer,
 	t *object.Tree,
 	seen map[plumbing.Hash]struct{},
@@ -494,11 +497,11 @@ func collectAllTreeObjects(
 			continue
 		}
 		if e.Mode == filemode.Dir {
-			sub, err := object.GetTree(s, e.Hash)
+			sub, err := object.GetTree(ctx, s, e.Hash)
 			if err != nil {
 				return fmt.Errorf("getting subtree %s: %w", e.Hash, err)
 			}
-			if err := collectAllTreeObjects(s, sub, seen, result); err != nil {
+			if err := collectAllTreeObjects(ctx, s, sub, seen, result); err != nil {
 				return err
 			}
 		} else {
@@ -512,7 +515,7 @@ func collectAllTreeObjects(
 // markTreeSeen recursively adds all tree and blob hashes in t to seen.
 // Objects added to seen are not added to result — this is used to mark
 // haves-reachable objects so they are skipped during diff walks.
-func markTreeSeen(s storer.EncodedObjectStorer, t *object.Tree, seen map[plumbing.Hash]struct{}) {
+func markTreeSeen(ctx context.Context, s storer.EncodedObjectStorer, t *object.Tree, seen map[plumbing.Hash]struct{}) {
 	if _, ok := seen[t.Hash]; ok {
 		return
 	}
@@ -525,8 +528,8 @@ func markTreeSeen(s storer.EncodedObjectStorer, t *object.Tree, seen map[plumbin
 			continue
 		}
 		if e.Mode == filemode.Dir {
-			if sub, err := object.GetTree(s, e.Hash); err == nil {
-				markTreeSeen(s, sub, seen)
+			if sub, err := object.GetTree(ctx, s, e.Hash); err == nil {
+				markTreeSeen(ctx, s, sub, seen)
 			}
 		} else {
 			seen[e.Hash] = struct{}{}

@@ -47,7 +47,7 @@ func TestPackfileIter_SeenSkips(t *testing.T) {
 			require.NoError(t, err)
 
 			var got int
-			require.NoError(t, iter.ForEach(func(plumbing.EncodedObject) error {
+			require.NoError(t, iter.ForEach(t.Context(), func(plumbing.EncodedObject) error {
 				got++
 				return nil
 			}))
@@ -69,7 +69,7 @@ func TestPackfileIter_SharedSeenDedupsAcrossIterators(t *testing.T) {
 		require.NoError(t, err)
 
 		var n int
-		require.NoError(t, iter.ForEach(func(plumbing.EncodedObject) error {
+		require.NoError(t, iter.ForEach(t.Context(), func(plumbing.EncodedObject) error {
 			n++
 			return nil
 		}))
@@ -127,7 +127,7 @@ func TestPackfileIter_ForEachClosesPack(t *testing.T) {
 			require.NoError(t, err)
 
 			var i int
-			err = iter.ForEach(func(plumbing.EncodedObject) error {
+			err = iter.ForEach(t.Context(), func(plumbing.EncodedObject) error {
 				defer func() { i++ }()
 				return tc.cb(i)
 			})
@@ -151,7 +151,7 @@ func TestPackfileIter_ForEachKeepsPackOpen(t *testing.T) {
 		cache.NewObjectLRUDefault(), true, crypto.SHA1.Size())
 	require.NoError(t, err)
 
-	require.NoError(t, iter.ForEach(func(plumbing.EncodedObject) error { return nil }))
+	require.NoError(t, iter.ForEach(t.Context(), func(plumbing.EncodedObject) error { return nil }))
 	require.Zero(t, pack.closed, "keepPack=true must not close the underlying file")
 }
 
@@ -208,7 +208,7 @@ func TestObjectsIter_ForEachClosesOnError(t *testing.T) {
 			require.NotEmpty(t, objects)
 
 			iter := &objectsIter{s: o, t: plumbing.AnyObject, h: append([]plumbing.Hash{}, objects...)}
-			err = iter.ForEach(tc.cb)
+			err = iter.ForEach(t.Context(), tc.cb)
 			if tc.wantErr == nil {
 				require.NoError(t, err)
 			} else {

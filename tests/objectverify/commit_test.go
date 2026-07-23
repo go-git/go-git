@@ -123,10 +123,10 @@ func TestCommitVerifyAlignment(t *testing.T) {
 			hash := writeLooseObject(t, repo, "commit", signed)
 			gitErr := gitVerifyCommit(t, repo, hash)
 
-			r, err := git.PlainOpen(repo)
+			r, err := git.PlainOpen(t.Context(), repo)
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
-			commit, err := r.CommitObject(hash)
+			commit, err := r.CommitObject(t.Context(), hash)
 			ggDecodeErr := err
 			var ggVerifyErr error
 			if ggDecodeErr == nil {

@@ -46,7 +46,7 @@ func TestParserRejectsDeepDeltaChain(t *testing.T) {
 	pack, _ := buildTestPack(t, objects...)
 	parser := NewParser(bytes.NewReader(pack))
 
-	_, err := parser.Parse()
+	_, err := parser.Parse(t.Context())
 	require.ErrorIs(t, err, ErrMalformedPackfile)
 	require.ErrorContains(t, err, "delta chain depth")
 }
@@ -94,7 +94,7 @@ func TestObjectIterReturnsObjectNotFoundForMissingDeltaBase(t *testing.T) {
 			require.NoError(t, err)
 			defer iter.Close()
 
-			obj, err := iter.Next()
+			obj, err := iter.Next(t.Context())
 			require.Nil(t, obj)
 			require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 		})

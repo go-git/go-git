@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path"
@@ -36,7 +37,7 @@ var (
 
 // Commit stores the current contents of the index in a new commit along with
 // a log message from the user describing the changes.
-func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error) {
+func (w *Worktree) Commit(ctx context.Context, msg string, opts *CommitOptions) (plumbing.Hash, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -44,22 +45,22 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		}()
 	}
 
-	if err := opts.Validate(w.r); err != nil {
+	if err := opts.Validate(ctx, w.r); err != nil {
 		return plumbing.ZeroHash, err
 	}
 
 	if opts.All {
-		if err := w.autoAddModifiedAndDeleted(); err != nil {
+		if err := w.autoAddModifiedAndDeleted(ctx); err != nil {
 			return plumbing.ZeroHash, err
 		}
 	}
 
 	if opts.Amend {
-		head, err := w.r.Head()
+		head, err := w.r.Head(ctx)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-		headCommit, err := w.r.CommitObject(head.Hash())
+		headCommit, err := w.r.CommitObject(ctx, head.Hash())
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -67,7 +68,7 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		opts.Parents = headCommit.ParentHashes
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -82,14 +83,14 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		s:  w.r.Storer,
 	}
 
-	treeHash, err := h.BuildTree(idx, opts)
+	treeHash, err := h.BuildTree(ctx, idx, opts)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
 	previousTree := plumbing.ZeroHash
 	if len(opts.Parents) > 0 {
-		parentCommit, err := w.r.CommitObject(opts.Parents[0])
+		parentCommit, err := w.r.CommitObject(ctx, opts.Parents[0])
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -100,47 +101,47 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		return plumbing.ZeroHash, ErrEmptyCommit
 	}
 
-	commit, err := w.buildCommitObject(msg, opts, treeHash)
+	commit, err := w.buildCommitObject(ctx, msg, opts, treeHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 
-	return commit, w.updateHEAD(commit)
+	return commit, w.updateHEAD(ctx, commit)
 }
 
 // CherryPick cherry picks commits and merge them into the worktree based on the selected
 // merge strategy. Each commit sits on the top of worktree's current head.
 // It resembles `git cherry-pick <commit-hash-1> <commit-hash-2> ... --strategy-option [theirs,ours]`
-func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMergeStrategyOption, commits ...*object.Commit) error {
+func (w *Worktree) CherryPick(ctx context.Context, commitOpts *CommitOptions, ortStrategyOption OrtMergeStrategyOption, commits ...*object.Commit) error {
 	if commitOpts == nil {
 		return ErrCannotCherryPickWithoutCommitOptions
 	}
 
 	for _, commit := range commits {
 		var changes object.Changes
-		headRef, err := w.r.Head()
+		headRef, err := w.r.Head(ctx)
 		if err != nil {
 			return err
 		}
-		headCommit, err := w.r.CommitObject(headRef.Hash())
+		headCommit, err := w.r.CommitObject(ctx, headRef.Hash())
 		if err != nil {
 			return err
 		}
-		currentTree, err := headCommit.Tree()
+		currentTree, err := headCommit.Tree(ctx)
 		if err != nil {
 			return err
 		}
 
-		commitTree, err := commit.Tree()
+		commitTree, err := commit.Tree(ctx)
 		if err != nil {
 			return err
 		}
 
 		switch ortStrategyOption {
 		case TheirsMergeStrategy:
-			changes, err = currentTree.Diff(commitTree)
+			changes, err = currentTree.Diff(ctx, commitTree)
 		case OursMergeStrategy:
-			changes, err = commitTree.Diff(currentTree)
+			changes, err = commitTree.Diff(ctx, currentTree)
 		}
 
 		if err != nil {
@@ -154,11 +155,11 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 
 			switch action {
 			case merkletrie.Delete:
-				if _, err := w.Remove(change.From.Name); err != nil {
+				if _, err := w.Remove(ctx, change.From.Name); err != nil {
 					return err
 				}
 			case merkletrie.Insert, merkletrie.Modify:
-				_, to, err := change.Files()
+				_, to, err := change.Files(ctx)
 				if err != nil {
 					return err
 				}
@@ -178,12 +179,12 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				if err != nil {
 					return err
 				}
-				if _, err := w.Add(name); err != nil {
+				if _, err := w.Add(ctx, name); err != nil {
 					return err
 				}
 			}
 		}
-		_, err = w.Commit(commit.Message, &CommitOptions{
+		_, err = w.Commit(ctx, commit.Message, &CommitOptions{
 			Author:            &commit.Author,
 			Committer:         commitOpts.Committer,
 			Signer:            commitOpts.Signer,
@@ -196,18 +197,18 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 	return nil
 }
 
-func (w *Worktree) autoAddModifiedAndDeleted() error {
-	cfg, err := w.r.Config()
+func (w *Worktree) autoAddModifiedAndDeleted(ctx context.Context) error {
+	cfg, err := w.r.Config(ctx)
 	if err != nil {
 		return err
 	}
 
-	s, err := w.Status()
+	s, err := w.Status(ctx)
 	if err != nil {
 		return err
 	}
 
-	idx, err := w.r.Storer.Index()
+	idx, err := w.r.Storer.Index(ctx)
 	if err != nil {
 		return err
 	}
@@ -217,16 +218,16 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 			continue
 		}
 
-		if _, _, err := w.doAddFile(cfg, idx, s, path, nil); err != nil {
+		if _, _, err := w.doAddFile(ctx, cfg, idx, s, path, nil); err != nil {
 			return err
 		}
 	}
 
-	return w.r.Storer.SetIndex(idx)
+	return w.r.Storer.SetIndex(ctx, idx)
 }
 
-func (w *Worktree) updateHEAD(commit plumbing.Hash) error {
-	head, err := w.r.Storer.Reference(plumbing.HEAD)
+func (w *Worktree) updateHEAD(ctx context.Context, commit plumbing.Hash) error {
+	head, err := w.r.Storer.Reference(ctx, plumbing.HEAD)
 	if err != nil {
 		return err
 	}
@@ -237,10 +238,10 @@ func (w *Worktree) updateHEAD(commit plumbing.Hash) error {
 	}
 
 	ref := plumbing.NewHashReference(name, commit)
-	return w.r.Storer.SetReference(ref)
+	return w.r.Storer.SetReference(ctx, ref)
 }
 
-func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumbing.Hash) (plumbing.Hash, error) {
+func (w *Worktree) buildCommitObject(ctx context.Context, msg string, opts *CommitOptions, tree plumbing.Hash) (plumbing.Hash, error) {
 	commit := &object.Commit{
 		Author:       w.sanitize(*opts.Author),
 		Committer:    w.sanitize(*opts.Committer),
@@ -251,7 +252,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 
 	signer := opts.Signer
 	if signer == nil {
-		cfg, err := w.r.ConfigScoped(config.SystemScope)
+		cfg, err := w.r.ConfigScoped(ctx, config.SystemScope)
 		if err == nil && cfg != nil && cfg.Commit.GpgSign.IsTrue() {
 			// Use Has before Get so the key is not frozen when no plugin is
 			// registered, allowing callers to register one later.
@@ -267,7 +268,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 	}
 
 	if signer != nil {
-		sig, err := signObject(signer, commit)
+		sig, err := signObject(ctx, signer, commit)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -278,7 +279,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 	if err := commit.Encode(obj); err != nil {
 		return plumbing.ZeroHash, err
 	}
-	return w.r.Storer.SetEncodedObject(obj)
+	return w.r.Storer.SetEncodedObject(ctx, obj)
 }
 
 func (w *Worktree) sanitize(signature object.Signature) object.Signature {
@@ -302,7 +303,7 @@ type buildTreeHelper struct {
 
 // BuildTree builds the tree objects and push its to the storer, the hash
 // of the root tree is returned.
-func (h *buildTreeHelper) BuildTree(idx *index.Index, _ *CommitOptions) (plumbing.Hash, error) {
+func (h *buildTreeHelper) BuildTree(ctx context.Context, idx *index.Index, _ *CommitOptions) (plumbing.Hash, error) {
 	const rootNode = ""
 	h.trees = map[string]*object.Tree{rootNode: {}}
 	h.entries = map[string]*object.TreeEntry{}
@@ -313,7 +314,7 @@ func (h *buildTreeHelper) BuildTree(idx *index.Index, _ *CommitOptions) (plumbin
 		}
 	}
 
-	return h.copyTreeToStorageRecursive(rootNode, h.trees[rootNode])
+	return h.copyTreeToStorageRecursive(ctx, rootNode, h.trees[rootNode])
 }
 
 func (h *buildTreeHelper) commitIndexEntry(e *index.Entry) error {
@@ -372,7 +373,7 @@ func (se sortableEntries) Len() int           { return len(se) }
 func (se sortableEntries) Less(i, j int) bool { return se.sortName(se[i]) < se.sortName(se[j]) }
 func (se sortableEntries) Swap(i, j int)      { se[i], se[j] = se[j], se[i] }
 
-func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tree) (plumbing.Hash, error) {
+func (h *buildTreeHelper) copyTreeToStorageRecursive(ctx context.Context, parent string, t *object.Tree) (plumbing.Hash, error) {
 	sort.Sort(sortableEntries(t.Entries))
 	for i, e := range t.Entries {
 		if e.Mode != filemode.Dir {
@@ -382,7 +383,7 @@ func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tr
 		path := path.Join(parent, e.Name)
 
 		var err error
-		e.Hash, err = h.copyTreeToStorageRecursive(path, h.trees[path])
+		e.Hash, err = h.copyTreeToStorageRecursive(ctx, path, h.trees[path])
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
@@ -396,8 +397,8 @@ func (h *buildTreeHelper) copyTreeToStorageRecursive(parent string, t *object.Tr
 	}
 
 	hash := o.Hash()
-	if h.s.HasEncodedObject(hash) == nil {
+	if h.s.HasEncodedObject(ctx, hash) == nil {
 		return hash, nil
 	}
-	return h.s.SetEncodedObject(o)
+	return h.s.SetEncodedObject(ctx, o)
 }

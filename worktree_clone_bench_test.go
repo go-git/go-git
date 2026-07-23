@@ -26,11 +26,11 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	tmpDir := b.TempDir()
 	sourceDir := filepath.Join(tmpDir, "source")
 
-	sourceRepo, err := PlainInit(sourceDir, false)
+	sourceRepo, err := PlainInit(b.Context(), sourceDir, false)
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = sourceRepo.Close() })
 
-	sourceWt, err := sourceRepo.Worktree()
+	sourceWt, err := sourceRepo.Worktree(b.Context())
 	require.NoError(b, err)
 
 	content := []byte("test content for benchmark\n")
@@ -66,7 +66,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 
 	// Add all files to index using AddGlob for each directory as Add is too slow at the moment.
 	for i := range numSubdirs {
-		err = sourceWt.AddGlob(fmt.Sprintf("dir%d/*", i))
+		err = sourceWt.AddGlob(b.Context(), fmt.Sprintf("dir%d/*", i))
 		require.NoError(b, err)
 	}
 
@@ -75,7 +75,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 		Email: "benchmark@test.com",
 		When:  time.Now(),
 	}
-	_, err = sourceWt.Commit("Initial commit with many files", &CommitOptions{
+	_, err = sourceWt.Commit(b.Context(), "Initial commit with many files", &CommitOptions{
 		Author:    sig,
 		Committer: sig,
 	})
@@ -84,7 +84,7 @@ func BenchmarkCloneLargeRepo(b *testing.B) {
 	i := 0
 	for b.Loop() {
 		cloneDir := filepath.Join(tmpDir, fmt.Sprintf("clone-%d", i))
-		clonedRepo, err := PlainClone(cloneDir, &CloneOptions{
+		clonedRepo, err := PlainClone(b.Context(), cloneDir, &CloneOptions{
 			URL:    sourceDir,
 			Shared: true,
 		})
@@ -108,11 +108,11 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	tmpDir := b.TempDir()
 	sourceDir := filepath.Join(tmpDir, "source")
 
-	sourceRepo, err := PlainInit(sourceDir, false)
+	sourceRepo, err := PlainInit(b.Context(), sourceDir, false)
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = sourceRepo.Close() })
 
-	sourceWt, err := sourceRepo.Worktree()
+	sourceWt, err := sourceRepo.Worktree(b.Context())
 	require.NoError(b, err)
 
 	content := []byte("test content for benchmark\n")
@@ -150,7 +150,7 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	wg.Wait()
 
 	// Add all files to index using AddGlob as Add is too slow at the moment.
-	err = sourceWt.AddGlob("level0/*/*/*/*/*")
+	err = sourceWt.AddGlob(b.Context(), "level0/*/*/*/*/*")
 	require.NoError(b, err)
 
 	sig := &object.Signature{
@@ -158,7 +158,7 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 		Email: "benchmark@test.com",
 		When:  time.Now(),
 	}
-	_, err = sourceWt.Commit("Initial commit with many files", &CommitOptions{
+	_, err = sourceWt.Commit(b.Context(), "Initial commit with many files", &CommitOptions{
 		Author:    sig,
 		Committer: sig,
 	})
@@ -167,7 +167,7 @@ func BenchmarkCloneDeepRepo(b *testing.B) {
 	i := 0
 	for b.Loop() {
 		cloneDir := filepath.Join(tmpDir, fmt.Sprintf("clone-%d", i))
-		clonedRepo, err := PlainClone(cloneDir, &CloneOptions{
+		clonedRepo, err := PlainClone(b.Context(), cloneDir, &CloneOptions{
 			URL:    sourceDir,
 			Shared: true,
 		})

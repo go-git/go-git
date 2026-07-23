@@ -343,7 +343,7 @@ func loadUserName(t *testing.T, src *auto, scope config.Scope) string {
 	t.Helper()
 	s, err := src.Load(scope)
 	require.NoError(t, err)
-	cfg, err := s.Config()
+	cfg, err := s.Config(t.Context())
 	require.NoError(t, err)
 	return cfg.User.Name
 }
@@ -354,7 +354,7 @@ func loadUserEmail(t *testing.T, src *auto, scope config.Scope) string {
 	t.Helper()
 	s, err := src.Load(scope)
 	require.NoError(t, err)
-	cfg, err := s.Config()
+	cfg, err := s.Config(t.Context())
 	require.NoError(t, err)
 	return cfg.User.Email
 }

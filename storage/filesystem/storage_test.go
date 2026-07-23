@@ -132,9 +132,9 @@ func TestSetObjectFormat(t *testing.T) {
 				filesystem.Options{ObjectFormat: tt.initialFormat},
 			)
 			defer func() { _ = sto.Close() }()
-			require.NoError(t, sto.Init())
+			require.NoError(t, sto.Init(t.Context()))
 
-			err := sto.SetObjectFormat(tt.targetFormat)
+			err := sto.SetObjectFormat(t.Context(), tt.targetFormat)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -236,7 +236,7 @@ func TestNewStorageWithOptions(t *testing.T) {
 			)
 			defer func() { _ = sto.Close() }()
 
-			cfg, err := sto.Config()
+			cfg, err := sto.Config(t.Context())
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantObjectFormat, cfg.Extensions.ObjectFormat)
@@ -288,11 +288,11 @@ func TestSetObjectFormatWithExistingPackfiles(t *testing.T) {
 			sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 			defer func() { _ = sto.Close() }()
 
-			packs, err := sto.ObjectPacks()
+			packs, err := sto.ObjectPacks(t.Context())
 			require.NoError(t, err)
 			require.Len(t, packs, 1)
 
-			err = sto.SetObjectFormat(tt.targetFormat)
+			err = sto.SetObjectFormat(t.Context(), tt.targetFormat)
 
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "cannot change object format")
@@ -372,12 +372,12 @@ func TestStorage_ImplementsIdleReleaser(t *testing.T) {
 func getExplicitSHA1(t testing.TB) billy.Filesystem {
 	fs := osfs.New(t.TempDir())
 	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	cfg, err := st.Config()
+	cfg, err := st.Config(t.Context())
 	require.NoError(t, err)
 
 	cfg.Extensions.ObjectFormat = formatcfg.SHA1
 	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
-	err = st.SetConfig(cfg)
+	err = st.SetConfig(t.Context(), cfg)
 	require.NoError(t, err)
 
 	_ = st.Close()

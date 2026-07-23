@@ -2,6 +2,7 @@ package packfile_test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"math/rand"
 	"testing"
@@ -43,7 +44,7 @@ func (s *EncoderAdvancedSuite) TestEncodeDecode() {
 		s.Require().NoError(err)
 		storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 		defer func() { _ = storage.Close() }()
-		s.testEncodeDecode(storage, 10)
+		s.testEncodeDecode(s.T().Context(), storage, 10)
 	}
 }
 
@@ -61,31 +62,32 @@ func (s *EncoderAdvancedSuite) TestEncodeDecodeNoDeltaCompression() {
 		s.Require().NoError(err)
 		storage := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
 		defer func() { _ = storage.Close() }()
-		s.testEncodeDecode(storage, 0)
+		s.testEncodeDecode(s.T().Context(), storage, 0)
 	}
 }
 
 func (s *EncoderAdvancedSuite) testEncodeDecode(
+	ctx context.Context,
 	storage storer.Storer,
 	packWindow uint,
 ) {
 	objectFormat := formatcfg.DefaultObjectFormat
 	if cs, ok := storage.(interface {
-		Config() (*config.Config, error)
+		Config(ctx context.Context) (*config.Config, error)
 	}); ok {
-		cfg, err := cs.Config()
+		cfg, err := cs.Config(ctx)
 		s.Require().NoError(err)
 		if cfg.Extensions.ObjectFormat != formatcfg.UnsetObjectFormat {
 			objectFormat = cfg.Extensions.ObjectFormat
 		}
 	}
 
-	objIter, err := storage.IterEncodedObjects(plumbing.AnyObject)
+	objIter, err := storage.IterEncodedObjects(ctx, plumbing.AnyObject)
 	s.NoError(err)
 
 	expectedObjects := map[plumbing.Hash]bool{}
 	var hashes []plumbing.Hash
-	err = objIter.ForEach(func(o plumbing.EncodedObject) error {
+	err = objIter.ForEach(ctx, func(o plumbing.EncodedObject) error {
 		expectedObjects[o.Hash()] = true
 		hashes = append(hashes, o.Hash())
 		return err
@@ -101,8 +103,8 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	hashes = auxHashes
 
 	buf := bytes.NewBuffer(nil)
-	enc := NewEncoder(buf, storage, false)
-	encodeHash, err := enc.Encode(hashes, packWindow)
+	enc := NewEncoder(ctx, buf, storage, false)
+	encodeHash, err := enc.Encode(ctx, hashes, packWindow)
 	s.NoError(err)
 
 	fs := memfs.New()
@@ -118,7 +120,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	w := new(idxfile.Writer)
 	parser := NewParser(NewScanner(f), WithScannerObservers(w), WithObjectFormat(objectFormat))
 
-	_, err = parser.Parse()
+	_, err = parser.Parse(ctx)
 	s.NoError(err)
 	index, err := w.Index()
 	s.NoError(err)
@@ -135,7 +137,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	objIter, err = p.GetAll()
 	s.NoError(err)
 	obtainedObjects := map[plumbing.Hash]bool{}
-	err = objIter.ForEach(func(o plumbing.EncodedObject) error {
+	err = objIter.ForEach(ctx, func(o plumbing.EncodedObject) error {
 		obtainedObjects[o.Hash()] = true
 		return nil
 	})

@@ -86,7 +86,7 @@ func TestIntegration_PackFDIsPooledAcrossCalls(t *testing.T) {
 	// Three separate passes — 12 total lookups.
 	for range 3 {
 		for range 4 {
-			obj, err := storage.EncodedObject(plumbing.AnyObject, target)
+			obj, err := storage.EncodedObject(t.Context(), plumbing.AnyObject, target)
 			require.NoError(t, err)
 			assert.Equal(t, target, obj.Hash())
 		}
@@ -140,7 +140,7 @@ func TestIntegration_ConcurrentObjectReads(t *testing.T) {
 
 	// Warm the PackHandle so the first cursor open is not on the
 	// hot path of any goroutine.
-	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	_, err = storage.EncodedObject(t.Context(), plumbing.AnyObject, target)
 	require.NoError(t, err)
 
 	const perG = 200
@@ -150,7 +150,7 @@ func TestIntegration_ConcurrentObjectReads(t *testing.T) {
 	for range goroutines {
 		wg.Go(func() {
 			for range perG {
-				obj, err := storage.EncodedObject(plumbing.AnyObject, target)
+				obj, err := storage.EncodedObject(t.Context(), plumbing.AnyObject, target)
 				require.NoError(t, err)
 				require.Equal(t, target, obj.Hash())
 			}
@@ -205,11 +205,11 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 
 	// Confirm we can EncodedObject before deletion.
 	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
-	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	_, err = storage.EncodedObject(t.Context(), plumbing.AnyObject, target)
 	require.NoError(t, err, "EncodedObject should succeed before deletion")
 
 	// Delete the pack with a future time so the mod-time check passes.
-	require.NoError(t, storage.DeleteOldObjectPackAndIndex(h, time.Now().Add(time.Hour)))
+	require.NoError(t, storage.DeleteOldObjectPackAndIndex(t.Context(), h, time.Now().Add(time.Hour)))
 
 	// The in-flight reader's underlying sharedFile was closed by
 	// PackHandle.Close. The reader's cursor holds the now-closed
@@ -233,7 +233,7 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 
 	// EncodedObject must also fail since ExclusiveAccess prevents
 	// scanning the now-empty pack directory.
-	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	_, err = storage.EncodedObject(t.Context(), plumbing.AnyObject, target)
 	assert.Error(t, err,
 		"EncodedObject should fail after the pack is deleted")
 }
@@ -261,11 +261,11 @@ func TestIntegration_CloseIdleDescriptorsDropsAndReopens(t *testing.T) {
 	t.Cleanup(func() { _ = storage.Close() })
 
 	// Warm: read enough objects to open every pack's FDs.
-	iter, err := storage.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := storage.IterEncodedObjects(t.Context(), plumbing.AnyObject)
 	require.NoError(t, err)
 	var probe plumbing.Hash
 	for range 8 {
-		obj, err := iter.Next()
+		obj, err := iter.Next(t.Context())
 		if err != nil {
 			break
 		}
@@ -279,7 +279,7 @@ func TestIntegration_CloseIdleDescriptorsDropsAndReopens(t *testing.T) {
 	// Touch the object via EncodedObject to ensure pack and idx
 	// sharedFiles have been Acquired and their FDs are open in
 	// the grace window.
-	_, err = storage.EncodedObject(plumbing.AnyObject, probe)
+	_, err = storage.EncodedObject(t.Context(), plumbing.AnyObject, probe)
 	require.NoError(t, err)
 
 	warm := openFDCount(t)
@@ -292,7 +292,7 @@ func TestIntegration_CloseIdleDescriptorsDropsAndReopens(t *testing.T) {
 	assert.Less(t, after, warm, "CloseIdleDescriptors should drop FDs")
 
 	// Subsequent reads pay a reopen but succeed.
-	_, err = storage.EncodedObject(plumbing.AnyObject, probe)
+	_, err = storage.EncodedObject(t.Context(), plumbing.AnyObject, probe)
 	require.NoError(t, err)
 }
 

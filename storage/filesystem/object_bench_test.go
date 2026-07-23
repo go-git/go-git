@@ -64,7 +64,7 @@ func BenchmarkAlternatesObjectLookup(b *testing.B) {
 	b.Run("EncodedObject", func(b *testing.B) {
 		for b.Loop() {
 			for _, hash := range commitHashes {
-				if _, err := storage.EncodedObject(plumbing.AnyObject, hash); err != nil {
+				if _, err := storage.EncodedObject(b.Context(), plumbing.AnyObject, hash); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -74,7 +74,7 @@ func BenchmarkAlternatesObjectLookup(b *testing.B) {
 	b.Run("HasEncodedObject", func(b *testing.B) {
 		for b.Loop() {
 			for _, hash := range commitHashes {
-				if err := storage.HasEncodedObject(hash); err != nil {
+				if err := storage.HasEncodedObject(b.Context(), hash); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -84,7 +84,7 @@ func BenchmarkAlternatesObjectLookup(b *testing.B) {
 	b.Run("EncodedObjectSize", func(b *testing.B) {
 		for b.Loop() {
 			for _, hash := range commitHashes {
-				if _, err := storage.EncodedObjectSize(hash); err != nil {
+				if _, err := storage.EncodedObjectSize(b.Context(), hash); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -153,7 +153,7 @@ func BenchmarkObjectStorage_PackHandle(b *testing.B) {
 		// Serial warm-up: build the pack index and prime the PackHandle
 		// FD pool before the timed parallel region starts.
 		for _, h := range hashes {
-			if _, err := stor.EncodedObject(plumbing.AnyObject, h); err != nil {
+			if _, err := stor.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 				b.Fatalf("setupStorage warm-up: %v", err)
 			}
 		}
@@ -175,7 +175,7 @@ func BenchmarkObjectStorage_PackHandle(b *testing.B) {
 			b.ResetTimer()
 			var i int
 			for b.Loop() {
-				if _, err := stor.EncodedObject(
+				if _, err := stor.EncodedObject(b.Context(),
 					plumbing.AnyObject,
 					hashes[i%len(hashes)],
 				); err != nil {
@@ -194,7 +194,7 @@ func BenchmarkObjectStorage_PackHandle(b *testing.B) {
 			b.RunParallel(func(pb *testing.PB) {
 				var i int
 				for pb.Next() {
-					if _, err := stor.EncodedObject(
+					if _, err := stor.EncodedObject(b.Context(),
 						plumbing.AnyObject,
 						hashes[i%len(hashes)],
 					); err != nil {
@@ -211,7 +211,7 @@ func BenchmarkObjectStorage_PackHandle(b *testing.B) {
 			b.ResetTimer()
 			var i int
 			for b.Loop() {
-				if err := stor.HasEncodedObject(hashes[i%len(hashes)]); err != nil {
+				if err := stor.HasEncodedObject(b.Context(), hashes[i%len(hashes)]); err != nil {
 					b.Fatal(err)
 				}
 				i++
@@ -227,7 +227,7 @@ func BenchmarkObjectStorage_PackHandle(b *testing.B) {
 			b.RunParallel(func(pb *testing.PB) {
 				var i int
 				for pb.Next() {
-					if err := stor.HasEncodedObject(hashes[i%len(hashes)]); err != nil {
+					if err := stor.HasEncodedObject(b.Context(), hashes[i%len(hashes)]); err != nil {
 						b.Fatal(err)
 					}
 					i++
@@ -301,7 +301,7 @@ func BenchmarkObjectStorage_ColdEncodedObject(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		s := NewStorage(diskFS, cache.NewObjectLRUDefault())
-		if _, err := s.EncodedObject(plumbing.AnyObject, target); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, target); err != nil {
 			b.Fatal(err)
 		}
 		_ = s.Close()
@@ -321,11 +321,11 @@ func BenchmarkObjectStorage_ReindexThenRead(b *testing.B) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	b.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(b.Context(), plumbing.AnyObject)
 	if err != nil {
 		b.Fatal(err)
 	}
-	obj, err := iter.Next()
+	obj, err := iter.Next(b.Context())
 	iter.Close()
 	if err != nil {
 		b.Fatal(err)
@@ -336,7 +336,7 @@ func BenchmarkObjectStorage_ReindexThenRead(b *testing.B) {
 		if err := s.Reindex(); err != nil {
 			b.Fatal(err)
 		}
-		if _, err := s.EncodedObject(plumbing.AnyObject, obj.Hash()); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, obj.Hash()); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -355,13 +355,13 @@ func BenchmarkObjectStorage_ParallelReads(b *testing.B) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	b.Cleanup(func() { _ = s.Close() })
 
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
+	iter, err := s.IterEncodedObjects(b.Context(), plumbing.AnyObject)
 	if err != nil {
 		b.Fatal(err)
 	}
 	var hashes []plumbing.Hash
 	for range 32 {
-		obj, err := iter.Next()
+		obj, err := iter.Next(b.Context())
 		if err != nil {
 			break
 		}
@@ -372,7 +372,7 @@ func BenchmarkObjectStorage_ParallelReads(b *testing.B) {
 		b.Fatal("fixture must have objects")
 	}
 
-	if _, err := s.EncodedObject(plumbing.AnyObject, hashes[0]); err != nil {
+	if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, hashes[0]); err != nil {
 		b.Fatal(err)
 	}
 
@@ -381,7 +381,7 @@ func BenchmarkObjectStorage_ParallelReads(b *testing.B) {
 		var i int64
 		for pb.Next() {
 			h := hashes[i%int64(len(hashes))]
-			if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 				b.Fatal(err)
 			}
 			i++
@@ -442,7 +442,7 @@ func BenchmarkStorage_PoolPressure(b *testing.B) {
 		// s.index so the timed loop is not paying a cold populate
 		// on iteration 1.
 		for _, h := range hashes {
-			if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -453,7 +453,7 @@ func BenchmarkStorage_PoolPressure(b *testing.B) {
 		var i int
 		for b.Loop() {
 			h := hashes[i%len(hashes)]
-			if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 				b.Fatal(err)
 			}
 			i++
@@ -511,7 +511,7 @@ func BenchmarkStorage_PackHandleCacheContention(b *testing.B) {
 		// LazyIndex so the timed loop measures only the cache
 		// lookup + read, not first-touch index loads.
 		for _, h := range hashes {
-			if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -525,7 +525,7 @@ func BenchmarkStorage_PackHandleCacheContention(b *testing.B) {
 		var i int
 		for b.Loop() {
 			h := hashes[i%len(hashes)]
-			if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+			if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 				b.Fatal(err)
 			}
 			i++
@@ -540,7 +540,7 @@ func BenchmarkStorage_PackHandleCacheContention(b *testing.B) {
 			var i int
 			for pb.Next() {
 				h := hashes[i%len(hashes)]
-				if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+				if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 					b.Fatal(err)
 				}
 				i++
@@ -586,7 +586,7 @@ func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
 
 		// Serial warm-up: build the index and prime FSObject caches.
 		for _, h := range hashes {
-			obj, err := stor.EncodedObject(plumbing.AnyObject, h)
+			obj, err := stor.EncodedObject(b.Context(), plumbing.AnyObject, h)
 			if err != nil {
 				b.Fatalf("warm-up EncodedObject: %v", err)
 			}
@@ -617,7 +617,7 @@ func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
 			b.ResetTimer()
 			var i int
 			for b.Loop() {
-				obj, err := stor.EncodedObject(
+				obj, err := stor.EncodedObject(b.Context(),
 					plumbing.AnyObject, hashes[i%len(hashes)])
 				if err != nil {
 					b.Fatal(err)
@@ -668,7 +668,7 @@ func BenchmarkFindObjectInPackfile_FanoutMiss(b *testing.B) {
 	// Warm: ensure every pack's idx is loaded so the timed loop
 	// is not paying a cold populate on iteration 1.
 	for _, h := range hashes {
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -677,7 +677,7 @@ func BenchmarkFindObjectInPackfile_FanoutMiss(b *testing.B) {
 	var i int
 	for b.Loop() {
 		h := hashes[i%len(hashes)]
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 		i++
@@ -712,20 +712,20 @@ func BenchmarkEncodedObject_LooseHit(b *testing.B) {
 	if err := w.Close(); err != nil {
 		b.Fatal(err)
 	}
-	h, err := s.SetEncodedObject(o)
+	h, err := s.SetEncodedObject(b.Context(), o)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	// Warm the index so the per-iteration call doesn't pay a
 	// cold-load.
-	if err := s.HasEncodedObject(h); err != nil {
+	if err := s.HasEncodedObject(b.Context(), h); err != nil {
 		b.Fatal(err)
 	}
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -792,7 +792,7 @@ func BenchmarkFindObjectInPackfile_MRU_Hit(b *testing.B) {
 
 	// Warm: seeds lastHitPackIdx on pack 0.
 	for _, h := range hashes {
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -801,7 +801,7 @@ func BenchmarkFindObjectInPackfile_MRU_Hit(b *testing.B) {
 	var i int
 	for b.Loop() {
 		h := hashes[i%len(hashes)]
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 		i++
@@ -841,7 +841,7 @@ func BenchmarkFindObjectInPackfile_MRU_Churn(b *testing.B) {
 	// Warm: ensure every hot pack's idx is loaded so the timed loop
 	// is not paying a cold populate on the first cycle.
 	for _, h := range hashes {
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -850,7 +850,7 @@ func BenchmarkFindObjectInPackfile_MRU_Churn(b *testing.B) {
 	var i int
 	for b.Loop() {
 		h := hashes[i%hotPacks]
-		if _, err := s.EncodedObject(plumbing.AnyObject, h); err != nil {
+		if _, err := s.EncodedObject(b.Context(), plumbing.AnyObject, h); err != nil {
 			b.Fatal(err)
 		}
 		i++

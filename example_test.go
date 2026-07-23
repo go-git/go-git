@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -25,7 +26,7 @@ func ExampleClone() {
 
 	// Clones the repository into the worktree (fs) and stores all the .git
 	// content into the storer
-	r, err := git.Clone(storer, fs, &git.CloneOptions{
+	r, err := git.Clone(context.Background(), storer, fs, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	if err != nil {
@@ -54,7 +55,7 @@ func ExamplePlainClone() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	r, err := git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(context.Background(), dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	if err != nil {
@@ -84,7 +85,7 @@ func ExamplePlainClone_usernamePassword() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	r, err := git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(context.Background(), dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 		ClientOptions: []client.Option{
 			client.WithHTTPAuth(&http.BasicAuth{
@@ -110,7 +111,7 @@ func ExamplePlainClone_accessToken() {
 	defer os.RemoveAll(dir) // clean up
 
 	// Clones the repository into the given dir, just as a normal git clone does
-	r, err := git.PlainClone(dir, &git.CloneOptions{
+	r, err := git.PlainClone(context.Background(), dir, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 		ClientOptions: []client.Option{
 			client.WithHTTPAuth(&http.BasicAuth{
@@ -127,14 +128,15 @@ func ExamplePlainClone_accessToken() {
 }
 
 func ExampleRepository_References() {
-	r, _ := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
+	ctx := context.Background()
+	r, _ := git.Clone(ctx, memory.NewStorage(), nil, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	defer func() { _ = r.Close() }()
 
 	// simulating a git show-ref
-	refs, _ := r.References()
-	refs.ForEach(func(ref *plumbing.Reference) error {
+	refs, _ := r.References(ctx)
+	refs.ForEach(ctx, func(ref *plumbing.Reference) error {
 		if ref.Type() == plumbing.HashReference {
 			fmt.Println(ref)
 		}
@@ -149,13 +151,14 @@ func ExampleRepository_References() {
 }
 
 func ExampleRepository_Branches() {
-	r, _ := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
+	ctx := context.Background()
+	r, _ := git.Clone(ctx, memory.NewStorage(), nil, &git.CloneOptions{
 		URL: "https://github.com/git-fixtures/basic.git",
 	})
 	defer func() { _ = r.Close() }()
 
-	branches, _ := r.Branches()
-	branches.ForEach(func(branch *plumbing.Reference) error {
+	branches, _ := r.Branches(ctx)
+	branches.ForEach(ctx, func(branch *plumbing.Reference) error {
 		fmt.Println(branch.Hash().String(), branch.Name())
 		return nil
 	})
@@ -165,11 +168,12 @@ func ExampleRepository_Branches() {
 }
 
 func ExampleRepository_CreateRemote() {
-	r, _ := git.Init(memory.NewStorage(), nil)
+	ctx := context.Background()
+	r, _ := git.Init(ctx, memory.NewStorage())
 	defer func() { _ = r.Close() }()
 
 	// Add a new remote, with the default fetch refspec
-	_, err := r.CreateRemote(&config.RemoteConfig{
+	_, err := r.CreateRemote(ctx, &config.RemoteConfig{
 		Name: "example",
 		URLs: []string{"https://github.com/git-fixtures/basic.git"},
 	})
@@ -178,7 +182,7 @@ func ExampleRepository_CreateRemote() {
 		return
 	}
 
-	list, err := r.Remotes()
+	list, err := r.Remotes(ctx)
 	if err != nil {
 		log.Print(err)
 		return

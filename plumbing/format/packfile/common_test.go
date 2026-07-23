@@ -15,7 +15,7 @@ func TestEmptyUpdateObjectStorage(t *testing.T) {
 	var buf bytes.Buffer
 	sto := memory.NewStorage()
 
-	err := UpdateObjectStorage(sto, &buf)
+	err := UpdateObjectStorage(t.Context(), sto, &buf)
 	assert.ErrorIs(t, err, ErrEmptyPackfile)
 }
 

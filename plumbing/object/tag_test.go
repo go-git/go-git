@@ -54,7 +54,7 @@ func (s *TagSuite) TestAnnotated() {
 	tag := s.tag(plumbing.NewHash("b742a2a9fa0afcfa9a6fad080980fbc26b007c69"))
 	s.Equal("example annotated tag\n", tag.Message)
 
-	commit, err := tag.Commit()
+	commit, err := tag.Commit(s.T().Context())
 	s.NoError(err)
 	s.Equal(plumbing.CommitObject, commit.Type())
 	s.Equal("f7b877701fbf855b44c0a9e86f3fdce2c298b07f", commit.ID().String())
@@ -63,7 +63,7 @@ func (s *TagSuite) TestAnnotated() {
 func (s *TagSuite) TestCommitError() {
 	tag := s.tag(plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
 
-	commit, err := tag.Commit()
+	commit, err := tag.Commit(s.T().Context())
 	s.Nil(commit)
 	s.NotNil(err)
 	s.ErrorIs(err, ErrUnsupportedObject)
@@ -73,7 +73,7 @@ func (s *TagSuite) TestCommit() {
 	tag := s.tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	s.Equal("a tagged commit\n", tag.Message)
 
-	commit, err := tag.Commit()
+	commit, err := tag.Commit(s.T().Context())
 	s.NoError(err)
 	s.Equal(plumbing.CommitObject, commit.Type())
 	s.Equal("f7b877701fbf855b44c0a9e86f3fdce2c298b07f", commit.ID().String())
@@ -82,7 +82,7 @@ func (s *TagSuite) TestCommit() {
 func (s *TagSuite) TestBlobError() {
 	tag := s.tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 
-	commit, err := tag.Blob()
+	commit, err := tag.Blob(s.T().Context())
 	s.Nil(commit)
 	s.NotNil(err)
 	s.ErrorIs(err, ErrUnsupportedObject)
@@ -92,7 +92,7 @@ func (s *TagSuite) TestBlob() {
 	tag := s.tag(plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
 	s.Equal("a tagged blob\n", tag.Message)
 
-	blob, err := tag.Blob()
+	blob, err := tag.Blob(s.T().Context())
 	s.NoError(err)
 	s.Equal(plumbing.BlobObject, blob.Type())
 	s.Equal("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", blob.ID().String())
@@ -101,7 +101,7 @@ func (s *TagSuite) TestBlob() {
 func (s *TagSuite) TestTreeError() {
 	tag := s.tag(plumbing.NewHash("fe6cb94756faa81e5ed9240f9191b833db5f40ae"))
 
-	tree, err := tag.Tree()
+	tree, err := tag.Tree(s.T().Context())
 	s.Nil(tree)
 	s.NotNil(err)
 	s.ErrorIs(err, ErrUnsupportedObject)
@@ -111,7 +111,7 @@ func (s *TagSuite) TestTree() {
 	tag := s.tag(plumbing.NewHash("152175bf7e5580299fa1f0ba41ef6474cc043b70"))
 	s.Equal("a tagged tree\n", tag.Message)
 
-	tree, err := tag.Tree()
+	tree, err := tag.Tree(s.T().Context())
 	s.NoError(err)
 	s.Equal(plumbing.TreeObject, tree.Type())
 	s.Equal("70846e9a10ef7b41064b40f07713d5b8b9a8fc73", tree.ID().String())
@@ -121,7 +121,7 @@ func (s *TagSuite) TestTreeFromCommit() {
 	tag := s.tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 	s.Equal("a tagged commit\n", tag.Message)
 
-	tree, err := tag.Tree()
+	tree, err := tag.Tree(s.T().Context())
 	s.NoError(err)
 	s.Equal(plumbing.TreeObject, tree.Type())
 	s.Equal("70846e9a10ef7b41064b40f07713d5b8b9a8fc73", tree.ID().String())
@@ -130,24 +130,24 @@ func (s *TagSuite) TestTreeFromCommit() {
 func (s *TagSuite) TestObject() {
 	tag := s.tag(plumbing.NewHash("ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"))
 
-	obj, err := tag.Object()
+	obj, err := tag.Object(s.T().Context())
 	s.NoError(err)
 	s.Equal(plumbing.CommitObject, obj.Type())
 	s.Equal("f7b877701fbf855b44c0a9e86f3fdce2c298b07f", obj.ID().String())
 }
 
 func (s *TagSuite) TestTagItter() {
-	iter, err := s.Storer.IterEncodedObjects(plumbing.TagObject)
+	iter, err := s.Storer.IterEncodedObjects(s.T().Context(), plumbing.TagObject)
 	s.NoError(err)
 
 	var count int
 	i := NewTagIter(s.Storer, iter)
-	tag, err := i.Next()
+	tag, err := i.Next(s.T().Context())
 	s.NoError(err)
 	s.NotNil(tag)
 	s.Equal(plumbing.TagObject, tag.Type())
 
-	err = i.ForEach(func(t *Tag) error {
+	err = i.ForEach(s.T().Context(), func(t *Tag) error {
 		s.NotNil(t)
 		s.Equal(plumbing.TagObject, t.Type())
 		count++
@@ -158,18 +158,18 @@ func (s *TagSuite) TestTagItter() {
 	s.NoError(err)
 	s.Equal(3, count)
 
-	tag, err = i.Next()
+	tag, err = i.Next(s.T().Context())
 	s.ErrorIs(err, io.EOF)
 	s.Nil(tag)
 }
 
 func (s *TagSuite) TestTagIterError() {
-	iter, err := s.Storer.IterEncodedObjects(plumbing.TagObject)
+	iter, err := s.Storer.IterEncodedObjects(s.T().Context(), plumbing.TagObject)
 	s.NoError(err)
 
 	randomErr := fmt.Errorf("a random error")
 	i := NewTagIter(s.Storer, iter)
-	err = i.ForEach(func(_ *Tag) error {
+	err = i.ForEach(s.T().Context(), func(_ *Tag) error {
 		return randomErr
 	})
 
@@ -674,7 +674,7 @@ func (s *TagSuite) TestStringNonCommit() {
 
 	targetObj := &plumbing.MemoryObject{}
 	target.Encode(targetObj)
-	store.SetEncodedObject(targetObj)
+	store.SetEncodedObject(s.T().Context(), targetObj)
 
 	tag := &Tag{
 		Target:     targetObj.Hash(),
@@ -686,9 +686,9 @@ func (s *TagSuite) TestStringNonCommit() {
 
 	tagObj := &plumbing.MemoryObject{}
 	tag.Encode(tagObj)
-	store.SetEncodedObject(tagObj)
+	store.SetEncodedObject(s.T().Context(), tagObj)
 
-	tag, err := GetTag(store, tagObj.Hash())
+	tag, err := GetTag(s.T().Context(), store, tagObj.Hash())
 	s.NoError(err)
 
 	s.Equal(

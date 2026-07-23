@@ -20,12 +20,7 @@ import (
 // ErrCanceled is returned when the operation is canceled.
 var ErrCanceled = errors.New("operation canceled")
 
-func getPatch(message string, changes ...*Change) (*Patch, error) {
-	ctx := context.Background()
-	return getPatchContext(ctx, message, changes...)
-}
-
-func getPatchContext(ctx context.Context, message string, changes ...*Change) (*Patch, error) {
+func getPatch(ctx context.Context, message string, changes ...*Change) (*Patch, error) {
 	if len(changes) == 0 {
 		return &Patch{message: message}, nil
 	}
@@ -38,7 +33,7 @@ func getPatchContext(ctx context.Context, message string, changes ...*Change) (*
 		default:
 		}
 
-		fp, err := filePatchWithContext(ctx, c)
+		fp, err := filePatch(ctx, c)
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +44,7 @@ func getPatchContext(ctx context.Context, message string, changes ...*Change) (*
 	return &Patch{message, filePatches}, nil
 }
 
-func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, error) {
+func filePatch(ctx context.Context, c *Change) (fdiff.FilePatch, error) {
 	// Submodules (gitlinks) are not blob objects, so their contents cannot be
 	// read as files. Git represents them in a diff by a single
 	// "Subproject commit <hash>" line, so build that content synthetically
@@ -58,7 +53,7 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 		return submoduleFilePatch(ctx, c)
 	}
 
-	from, to, err := c.Files()
+	from, to, err := c.Files(ctx)
 	if err != nil {
 		return nil, err
 	}

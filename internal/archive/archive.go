@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -97,7 +98,7 @@ func ApplyUmaskDir(mode int64) int64 {
 // allowUnreachable is true. See https://git-scm.com/docs/git-upload-archive
 //
 // Returns the tree, commit hash (if applicable), commit time, and any error.
-func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*object.Tree, *plumbing.Hash, time.Time, error) {
+func ResolveTreeish(ctx context.Context, st storage.Storer, treeish string, allowUnreachable bool) (*object.Tree, *plumbing.Hash, time.Time, error) {
 	var subPath string
 	if idx := strings.IndexByte(treeish, ':'); idx >= 0 {
 		subPath = treeish[idx+1:]
@@ -113,12 +114,12 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 		}
 	}
 
-	h, err := ResolveRef(st, treeish, allowUnreachable)
+	h, err := ResolveRef(ctx, st, treeish, allowUnreachable)
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
 
-	obj, err := object.GetObject(st, h)
+	obj, err := object.GetObject(ctx, st, h)
 	if err != nil {
 		return nil, nil, time.Time{}, fmt.Errorf("%w: %s", ErrObjectNotFound, treeish)
 	}
@@ -129,7 +130,7 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 			break
 		}
 
-		obj, err = object.GetObject(st, tag.Target)
+		obj, err = object.GetObject(ctx, st, tag.Target)
 		if err != nil {
 			return nil, nil, time.Time{}, fmt.Errorf("resolve annotated tag: %w", err)
 		}
@@ -143,7 +144,7 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 	case *object.Commit:
 		commitHash = &o.Hash
 		commitTime = o.Committer.When
-		tree, err = o.Tree()
+		tree, err = o.Tree(ctx)
 		if err != nil {
 			return nil, nil, time.Time{}, err
 		}
@@ -163,14 +164,14 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 	}
 
 	if subPath != "" {
-		entry, err := tree.FindEntry(subPath)
+		entry, err := tree.FindEntry(ctx, subPath)
 		if err != nil {
 			return nil, nil, time.Time{}, fmt.Errorf("path not found in tree: %s", subPath)
 		}
 		if entry.Mode != filemode.Dir {
 			return nil, nil, time.Time{}, fmt.Errorf("path is not a directory: %s", subPath)
 		}
-		tree, err = object.GetTree(st, entry.Hash)
+		tree, err = object.GetTree(ctx, st, entry.Hash)
 		if err != nil {
 			return nil, nil, time.Time{}, err
 		}
@@ -180,7 +181,7 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 }
 
 // ResolveRef resolves a ref name to a hash.
-func ResolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, error) {
+func ResolveRef(ctx context.Context, st storage.Storer, name string, allowHash bool) (plumbing.Hash, error) {
 	if allowHash && plumbing.IsHash(name) {
 		return plumbing.NewHash(name), nil
 	}
@@ -190,17 +191,23 @@ func ResolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, 
 		plumbing.ReferenceName("refs/heads/" + name),
 		plumbing.ReferenceName("refs/tags/" + name),
 	} {
-		ref, err := storer.ResolveReference(st, candidate)
+		ref, err := storer.ResolveReference(ctx, st, candidate)
 		if err == nil {
 			return ref.Hash(), nil
 		}
+	}
+
+	// A canceled context makes every candidate lookup fail; report the
+	// cancellation rather than a misleading resolution failure.
+	if err := ctx.Err(); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
 	return plumbing.ZeroHash, fmt.Errorf("cannot resolve %q", name)
 }
 
 // WriteTarArchive writes a tar archive from a tree.
-func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
+func WriteTarArchive(ctx context.Context, st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
 	tw := tar.NewWriter(w)
 
 	// Write PAX global extended header with commit ID if available.
@@ -235,7 +242,7 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 
 	var matchedAny bool
 	for {
-		name, entry, err := walker.Next()
+		name, entry, err := walker.Next(ctx)
 		if err == io.EOF {
 			break
 		}
@@ -265,7 +272,7 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 			continue
 		}
 
-		blob, err := object.GetBlob(st, entry.Hash)
+		blob, err := object.GetBlob(ctx, st, entry.Hash)
 		if err != nil {
 			return err
 		}
@@ -333,7 +340,7 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 }
 
 // WriteZipArchive writes a zip archive from a tree.
-func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
+func WriteZipArchive(ctx context.Context, st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
 	zw := zip.NewWriter(w)
 
 	walker := object.NewTreeWalker(tree, true, nil)
@@ -341,7 +348,7 @@ func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 
 	var matchedAny bool
 	for {
-		name, entry, err := walker.Next()
+		name, entry, err := walker.Next(ctx)
 		if err == io.EOF {
 			break
 		}
@@ -359,7 +366,7 @@ func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 		}
 
 		fullName := prefix + name
-		blob, err := object.GetBlob(st, entry.Hash)
+		blob, err := object.GetBlob(ctx, st, entry.Hash)
 		if err != nil {
 			return err
 		}
@@ -470,22 +477,22 @@ func GetTarCommitID(r io.Reader) (*plumbing.Hash, error) {
 // Supported formats: tar, zip, tar.gz, tgz.
 // The prefix is prepended to all file paths in the archive.
 // The paths slice can be used to filter which files are included.
-func WriteArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, commitTime time.Time, format, prefix string, paths []string) error {
+func WriteArchive(ctx context.Context, st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, commitTime time.Time, format, prefix string, paths []string) error {
 	if HasInvalidPrefix(prefix) {
 		return fmt.Errorf("%w: %s", ErrInvalidPrefix, prefix)
 	}
 
 	switch format {
 	case "tar":
-		return WriteTarArchive(st, w, tree, commitHash, prefix, paths, commitTime)
+		return WriteTarArchive(ctx, st, w, tree, commitHash, prefix, paths, commitTime)
 	case "tar.gz", "tgz":
 		gw := gzip.NewWriter(w)
-		if err := WriteTarArchive(st, gw, tree, commitHash, prefix, paths, commitTime); err != nil {
+		if err := WriteTarArchive(ctx, st, gw, tree, commitHash, prefix, paths, commitTime); err != nil {
 			return err
 		}
 		return gw.Close()
 	case "zip":
-		return WriteZipArchive(st, w, tree, commitHash, prefix, paths, commitTime)
+		return WriteZipArchive(ctx, st, w, tree, commitHash, prefix, paths, commitTime)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedFormat, format)
 	}

@@ -1,6 +1,8 @@
 package transactional
 
 import (
+	"context"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
@@ -21,13 +23,13 @@ func NewShallowStorage(base, temporal storer.ShallowStorer) *ShallowStorage {
 }
 
 // SetShallow honors the storer.ShallowStorer interface.
-func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
-	return s.temporal.SetShallow(commits)
+func (s *ShallowStorage) SetShallow(ctx context.Context, commits []plumbing.Hash) error {
+	return s.temporal.SetShallow(ctx, commits)
 }
 
 // Shallow honors the storer.ShallowStorer interface.
-func (s *ShallowStorage) Shallow() ([]plumbing.Hash, error) {
-	shallow, err := s.temporal.Shallow()
+func (s *ShallowStorage) Shallow(ctx context.Context) ([]plumbing.Hash, error) {
+	shallow, err := s.temporal.Shallow(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -36,16 +38,16 @@ func (s *ShallowStorage) Shallow() ([]plumbing.Hash, error) {
 		return shallow, nil
 	}
 
-	return s.ShallowStorer.Shallow()
+	return s.ShallowStorer.Shallow(ctx)
 }
 
 // Commit it copies the shallow information of the temporal storage into the
 // base storage.
-func (s *ShallowStorage) Commit() error {
-	commits, err := s.temporal.Shallow()
+func (s *ShallowStorage) Commit(ctx context.Context) error {
+	commits, err := s.temporal.Shallow(ctx)
 	if err != nil || len(commits) == 0 {
 		return err
 	}
 
-	return s.ShallowStorer.SetShallow(commits)
+	return s.ShallowStorer.SetShallow(ctx, commits)
 }

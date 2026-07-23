@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,15 +15,17 @@ import (
 // Basic example of how to commit changes to the current branch to an existing
 // repository.
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<directory>")
 	directory := os.Args[1]
 
 	// Opens an already existing repository.
-	r, err := git.PlainOpen(directory)
+	r, err := git.PlainOpen(ctx, directory)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	CheckIfError(err)
 
 	// ... we need a file to commit so let's create a new file inside of the
@@ -34,12 +37,12 @@ func main() {
 
 	// Adds the new file to the staging area.
 	Info("git add example-git-file")
-	_, err = w.Add("example-git-file")
+	_, err = w.Add(ctx, "example-git-file")
 	CheckIfError(err)
 
 	// We can verify the current status of the worktree using the method Status.
 	Info("git status --porcelain")
-	status, err := w.Status()
+	status, err := w.Status(ctx)
 	CheckIfError(err)
 
 	fmt.Println(status)
@@ -49,7 +52,7 @@ func main() {
 	// commit Since version 5.0.1, we can omit the Author signature, being read
 	// from the git config files.
 	Info("git commit -m \"example go-git commit\"")
-	commit, err := w.Commit("example go-git commit", &git.CommitOptions{
+	commit, err := w.Commit(ctx, "example go-git commit", &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "John Doe",
 			Email: "john@doe.org",
@@ -61,7 +64,7 @@ func main() {
 
 	// Prints the current HEAD to verify that all worked well.
 	Info("git show -s")
-	obj, err := r.CommitObject(commit)
+	obj, err := r.CommitObject(ctx, commit)
 	CheckIfError(err)
 
 	fmt.Println(obj)

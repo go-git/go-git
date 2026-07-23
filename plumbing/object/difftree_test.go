@@ -42,7 +42,7 @@ func (s *DiffTreeSuite) SetupSuite() {
 func (s *DiffTreeSuite) commitFromStorer(sto storer.EncodedObjectStorer,
 	h plumbing.Hash,
 ) *Commit {
-	commit, err := GetCommit(sto, h)
+	commit, err := GetCommit(s.T().Context(), sto, h)
 	s.NoError(err)
 	return commit
 }
@@ -61,7 +61,7 @@ func (s *DiffTreeSuite) storageFromPackfile(f *fixtures.Fixture) storer.EncodedO
 	}
 	defer pf.Close()
 
-	if err := packfile.UpdateObjectStorage(storer, pf); err != nil {
+	if err := packfile.UpdateObjectStorage(s.T().Context(), storer, pf); err != nil {
 		panic(err)
 	}
 
@@ -334,22 +334,22 @@ func (s *DiffTreeSuite) TestDiffTree() {
 		var err error
 		if t.commit1 != "" {
 			tree1, err = s.commitFromStorer(sto,
-				plumbing.NewHash(t.commit1)).Tree()
+				plumbing.NewHash(t.commit1)).Tree(s.T().Context())
 			s.NoError(err,
 				fmt.Sprintf("subtest %d: unable to retrieve tree from commit %s and repo %s: %s", i, t.commit1, t.repository, err))
 		}
 
 		if t.commit2 != "" {
 			tree2, err = s.commitFromStorer(sto,
-				plumbing.NewHash(t.commit2)).Tree()
+				plumbing.NewHash(t.commit2)).Tree(s.T().Context())
 			s.NoError(err,
 				fmt.Sprintf("subtest %d: unable to retrieve tree from commit %s and repo %s", i, t.commit2, t.repository))
 		}
 
-		obtained, err := DiffTree(tree1, tree2)
+		obtained, err := DiffTree(s.T().Context(), tree1, tree2)
 		s.NoError(err,
 			fmt.Sprintf("subtest %d: unable to calculate difftree: %s", i, err))
-		obtainedFromMethod, err := tree1.Diff(tree2)
+		obtainedFromMethod, err := tree1.Diff(s.T().Context(), tree2)
 		s.NoError(err,
 			fmt.Sprintf("subtest %d: unable to calculate difftree: %s. Result calling Diff method from Tree object returns an error", i, err))
 
@@ -407,16 +407,16 @@ func TestDiffTreeAllowsControlCharInPath(t *testing.T) {
 		{Name: ctrlName, Mode: filemode.Regular, Hash: blob},
 	})
 
-	from, err := GetTree(st, empty)
+	from, err := GetTree(t.Context(), st, empty)
 	if err != nil {
 		t.Fatalf("GetTree(empty) = %v", err)
 	}
-	to, err := GetTree(st, withFile)
+	to, err := GetTree(t.Context(), st, withFile)
 	if err != nil {
 		t.Fatalf("GetTree(withFile) = %v", err)
 	}
 
-	changes, err := DiffTree(from, to)
+	changes, err := DiffTree(t.Context(), from, to)
 	if err != nil {
 		t.Fatalf("DiffTree on a tree with a control-char path = %v; want nil", err)
 	}
@@ -439,14 +439,14 @@ func TestTreeWalkerValidatesControlCharByDefault(t *testing.T) {
 	withFile := storeTestTree(t, st, []TreeEntry{
 		{Name: "foo\n.exs", Mode: filemode.Regular, Hash: blob},
 	})
-	tree, err := GetTree(st, withFile)
+	tree, err := GetTree(t.Context(), st, withFile)
 	if err != nil {
 		t.Fatalf("GetTree = %v", err)
 	}
 
 	w := NewTreeWalker(tree, true, nil)
 	defer w.Close()
-	_, _, err = w.Next()
+	_, _, err = w.Next(t.Context())
 	if !errors.Is(err, pathutil.ErrInvalidPath) {
 		t.Fatalf("TreeWalker.Next error = %v, want pathutil.ErrInvalidPath", err)
 	}
@@ -466,7 +466,7 @@ func storeTestObject(t *testing.T, st storer.EncodedObjectStorer, typ plumbing.O
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := st.SetEncodedObject(o)
+	h, err := st.SetEncodedObject(t.Context(), o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +498,7 @@ func storeTestTree(t *testing.T, st storer.EncodedObjectStorer, entries []TreeEn
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := st.SetEncodedObject(o)
+	h, err := st.SetEncodedObject(t.Context(), o)
 	if err != nil {
 		t.Fatal(err)
 	}

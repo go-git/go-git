@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/go-git/go-git/v6"
@@ -13,17 +14,19 @@ import (
 // - Set basic local config params
 
 func main() {
+	ctx := context.Background()
+
 	tmp, err := os.MkdirTemp("", "go-git-example")
 	CheckIfError(err)
 	defer os.RemoveAll(tmp)
 
 	Info("git init")
-	r, err := git.PlainInit(tmp, false)
+	r, err := git.PlainInit(ctx, tmp, false)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
 	// Load the configuration
-	cfg, err := r.Config()
+	cfg, err := r.Config(ctx)
 	CheckIfError(err)
 
 	Info("worktree is %s", cfg.Core.Worktree)
@@ -42,5 +45,5 @@ func main() {
 
 	// In order to save the config file, you need to call SetConfig
 	// After calling this go to .git/config and see the custom.name added and the changes to the remote
-	r.Storer.SetConfig(cfg)
+	r.Storer.SetConfig(ctx, cfg)
 }

@@ -25,13 +25,13 @@ func TestCommitStatsSuite(t *testing.T) {
 }
 
 func (s *CommitStatsSuite) TestStats() {
-	r, hash := s.writeHistory([]byte("foo\n"), []byte("foo\nbar\n"))
+	r, hash := s.writeHistory(s.T().Context(), []byte("foo\n"), []byte("foo\nbar\n"))
 	defer func() { _ = r.Close() }()
 
-	aCommit, err := r.CommitObject(hash)
+	aCommit, err := r.CommitObject(s.T().Context(), hash)
 	s.NoError(err)
 
-	fileStats, err := aCommit.StatsContext(context.Background())
+	fileStats, err := aCommit.Stats(s.T().Context())
 	s.NoError(err)
 
 	s.Equal("foo", fileStats[0].Name)
@@ -41,13 +41,13 @@ func (s *CommitStatsSuite) TestStats() {
 }
 
 func (s *CommitStatsSuite) TestStats_RootCommit() {
-	r, hash := s.writeHistory([]byte("foo\n"))
+	r, hash := s.writeHistory(s.T().Context(), []byte("foo\n"))
 	defer func() { _ = r.Close() }()
 
-	aCommit, err := r.CommitObject(hash)
+	aCommit, err := r.CommitObject(s.T().Context(), hash)
 	s.NoError(err)
 
-	fileStats, err := aCommit.Stats()
+	fileStats, err := aCommit.Stats(s.T().Context())
 	s.NoError(err)
 
 	s.Len(fileStats, 1)
@@ -58,13 +58,13 @@ func (s *CommitStatsSuite) TestStats_RootCommit() {
 }
 
 func (s *CommitStatsSuite) TestStats_WithoutNewLine() {
-	r, hash := s.writeHistory([]byte("foo\nbar"), []byte("foo\nbar\n"))
+	r, hash := s.writeHistory(s.T().Context(), []byte("foo\nbar"), []byte("foo\nbar\n"))
 	defer func() { _ = r.Close() }()
 
-	aCommit, err := r.CommitObject(hash)
+	aCommit, err := r.CommitObject(s.T().Context(), hash)
 	s.NoError(err)
 
-	fileStats, err := aCommit.Stats()
+	fileStats, err := aCommit.Stats(s.T().Context())
 	s.NoError(err)
 
 	s.Equal("foo", fileStats[0].Name)
@@ -73,26 +73,26 @@ func (s *CommitStatsSuite) TestStats_WithoutNewLine() {
 	s.Equal(" foo | 2 +-\n", fileStats[0].String())
 }
 
-func (s *CommitStatsSuite) writeHistory(files ...[]byte) (*git.Repository, plumbing.Hash) {
+func (s *CommitStatsSuite) writeHistory(ctx context.Context, files ...[]byte) (*git.Repository, plumbing.Hash) {
 	cm := &git.CommitOptions{
 		Author: &object.Signature{Name: "Foo", Email: "foo@example.local", When: time.Now()},
 	}
 
 	fs := memfs.New()
-	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	r, err := git.Init(ctx, memory.NewStorage(), git.WithWorkTree(fs))
 	s.NoError(err)
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	s.NoError(err)
 
 	var hash plumbing.Hash
 	for _, content := range files {
 		util.WriteFile(fs, "foo", content, 0o644)
 
-		_, err = w.Add("foo")
+		_, err = w.Add(ctx, "foo")
 		s.NoError(err)
 
-		hash, err = w.Commit("foo\n", cm)
+		hash, err = w.Commit(ctx, "foo\n", cm)
 		s.NoError(err)
 	}
 

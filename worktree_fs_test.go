@@ -171,11 +171,11 @@ func TestWorktreeFilesystemReturnsWorktreeFilesystem(t *testing.T) {
 		t.Parallel()
 
 		mfs := memfs.New()
-		r, err := Init(memory.NewStorage(), WithWorkTree(mfs))
+		r, err := Init(t.Context(), memory.NewStorage(), WithWorkTree(mfs))
 		require.NoError(t, err)
 		defer func() { _ = r.Close() }()
 
-		w, err := r.Worktree()
+		w, err := r.Worktree(t.Context())
 		require.NoError(t, err)
 
 		assert.Equal(t, mfs, w.Filesystem())
@@ -515,45 +515,45 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 
 			dir := t.TempDir()
 
-			r1, err := PlainInit(dir, false)
+			r1, err := PlainInit(t.Context(), dir, false)
 			require.NoError(t, err)
 			defer func() { _ = r1.Close() }()
 
-			w, err := r1.Worktree()
+			w, err := r1.Worktree(t.Context())
 			require.NoError(t, err)
 
 			require.NoError(t, util.WriteFile(w.Filesystem(), "README", []byte("init"), 0o644))
-			_, err = w.Add("README")
+			_, err = w.Add(t.Context(), "README")
 			require.NoError(t, err)
 
-			initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+			initHash, err := w.Commit(t.Context(), "initial commit\n", &CommitOptions{Author: defaultSignature()})
 			require.NoError(t, err)
 
 			for k, v := range tc.config {
 				gitConfig(t, dir, k, v)
 			}
 
-			initCommit, err := r1.CommitObject(initHash)
+			initCommit, err := r1.CommitObject(t.Context(), initHash)
 			require.NoError(t, err)
 
 			badCommit := buildCommitWithEntry(t, r1.Storer, initCommit, initHash, tc.path, filemode.Regular)
 
 			// Re-open so config overrides take effect in the worktreeFilesystem.
-			r2, err := PlainOpen(dir)
+			r2, err := PlainOpen(t.Context(), dir)
 			require.NoError(t, err)
 			defer func() { _ = r2.Close() }()
 
-			w, err = r2.Worktree()
+			w, err = r2.Worktree(t.Context())
 			require.NoError(t, err)
 
 			goGitErr := w.CherryPick(
-				&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true},
+				t.Context(), &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true},
 				TheirsMergeStrategy, badCommit,
 			)
 			assert.Error(t, goGitErr, "go-git should reject cherry-pick of %q", tc.path)
 
 			if !tc.skipGit {
-				require.NoError(t, w.Reset(&ResetOptions{Commit: initHash, Mode: HardReset}))
+				require.NoError(t, w.Reset(t.Context(), &ResetOptions{Commit: initHash, Mode: HardReset}))
 
 				gitErr := gitCherryPick(t, dir, badCommit.Hash.String())
 				assert.Error(t, gitErr, "git should reject cherry-pick of %q", tc.path)
@@ -574,7 +574,7 @@ func buildCommitWithEntry(t *testing.T, s storer.Storer, parent *object.Commit, 
 	_, err = bw.Write(content)
 	require.NoError(t, err)
 	require.NoError(t, bw.Close())
-	blobHash, err := s.SetEncodedObject(blobObj)
+	blobHash, err := s.SetEncodedObject(t.Context(), blobObj)
 	require.NoError(t, err)
 
 	// Build nested tree structure from leaf to root.
@@ -587,7 +587,7 @@ func buildCommitWithEntry(t *testing.T, s storer.Storer, parent *object.Commit, 
 		leafMode = filemode.Dir
 	}
 
-	parentTree, err := parent.Tree()
+	parentTree, err := parent.Tree(t.Context())
 	require.NoError(t, err)
 
 	entries := make([]object.TreeEntry, len(parentTree.Entries), len(parentTree.Entries)+1)
@@ -609,10 +609,10 @@ func buildCommitWithEntry(t *testing.T, s storer.Storer, parent *object.Commit, 
 	}
 	commitObj := s.NewEncodedObject()
 	require.NoError(t, commit.Encode(commitObj))
-	commitHash, err := s.SetEncodedObject(commitObj)
+	commitHash, err := s.SetEncodedObject(t.Context(), commitObj)
 	require.NoError(t, err)
 
-	result, err := object.GetCommit(s, commitHash)
+	result, err := object.GetCommit(t.Context(), s, commitHash)
 	require.NoError(t, err)
 	return result
 }
@@ -640,7 +640,7 @@ func storeRawTree(t *testing.T, s storer.Storer, entries []object.TreeEntry) plu
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	hash, err := s.SetEncodedObject(obj)
+	hash, err := s.SetEncodedObject(t.Context(), obj)
 	require.NoError(t, err)
 	return hash
 }
@@ -725,26 +725,26 @@ func TestResetAcceptsLegitPaths(t *testing.T) {
 
 			dir := t.TempDir()
 
-			r, err := PlainInit(dir, false)
+			r, err := PlainInit(t.Context(), dir, false)
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(t.Context())
 			require.NoError(t, err)
 
 			require.NoError(t, util.WriteFile(w.Filesystem(), "README", []byte("init"), 0o644))
-			_, err = w.Add("README")
+			_, err = w.Add(t.Context(), "README")
 			require.NoError(t, err)
 
-			initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+			initHash, err := w.Commit(t.Context(), "initial commit\n", &CommitOptions{Author: defaultSignature()})
 			require.NoError(t, err)
 
-			initCommit, err := r.CommitObject(initHash)
+			initCommit, err := r.CommitObject(t.Context(), initHash)
 			require.NoError(t, err)
 
 			goodCommit := buildCommitWithEntry(t, r.Storer, initCommit, initHash, tc.path, filemode.Regular)
 
-			err = w.Reset(&ResetOptions{Commit: goodCommit.Hash, Mode: HardReset})
+			err = w.Reset(t.Context(), &ResetOptions{Commit: goodCommit.Hash, Mode: HardReset})
 			require.NoError(t, err, "Reset should accept legit path %q", tc.path)
 
 			_, err = os.Stat(filepath.Join(dir, filepath.FromSlash(tc.path)))
@@ -789,11 +789,11 @@ func TestAddRejectsDangerousPaths(t *testing.T) {
 			t.Parallel()
 
 			fs := memfs.New()
-			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			r, err := Init(t.Context(), memory.NewStorage(), WithWorkTree(fs))
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(t.Context())
 			require.NoError(t, err)
 			// Force the wrapper to its most tolerant configuration so
 			// every test case reaches the addOrUpdateFileToIndex gate
@@ -804,7 +804,7 @@ func TestAddRejectsDangerousPaths(t *testing.T) {
 
 			require.NoError(t, util.WriteFile(fs, tc.path, []byte("payload"), 0o644))
 
-			_, err = w.Add(tc.path)
+			_, err = w.Add(t.Context(), tc.path)
 			require.Error(t, err, "Add should reject %q", tc.path)
 			assert.ErrorIs(t, err, pathutil.ErrInvalidPath)
 		})
@@ -834,19 +834,19 @@ func TestMoveRejectsDangerousDestinations(t *testing.T) {
 			t.Parallel()
 
 			fs := memfs.New()
-			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			r, err := Init(t.Context(), memory.NewStorage(), WithWorkTree(fs))
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			w, err := r.Worktree()
+			w, err := r.Worktree(t.Context())
 			require.NoError(t, err)
 			w.filesystem = newWorktreeFilesystem(fs, false, false)
 
 			require.NoError(t, util.WriteFile(fs, "src", []byte("payload"), 0o644))
-			_, err = w.Add("src")
+			_, err = w.Add(t.Context(), "src")
 			require.NoError(t, err)
 
-			_, err = w.Move("src", tc.to)
+			_, err = w.Move(t.Context(), "src", tc.to)
 			require.Error(t, err, "Move should reject destination %q", tc.to)
 			assert.ErrorIs(t, err, pathutil.ErrInvalidPath)
 		})

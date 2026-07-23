@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"context"
 	"sort"
 	"sync"
 
@@ -45,10 +46,11 @@ func NewDeltaSelector(s storer.EncodedObjectStorer) *DeltaSelector {
 // window used to compare objects for delta compression; 0 turns off
 // delta compression entirely.
 func (dw *DeltaSelector) ObjectsToPack(
+	ctx context.Context,
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) ([]*ObjectToPack, error) {
-	otp, err := dw.objectsToPack(hashes, packWindow)
+	otp, err := dw.objectsToPack(ctx, hashes, packWindow)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +78,7 @@ func (dw *DeltaSelector) ObjectsToPack(
 	var once sync.Once
 	for _, objs := range objectGroups {
 		wg.Go(func() {
-			if walkErr := dw.walk(objs, packWindow); walkErr != nil {
+			if walkErr := dw.walk(ctx, objs, packWindow); walkErr != nil {
 				once.Do(func() {
 					err = walkErr
 				})
@@ -93,6 +95,7 @@ func (dw *DeltaSelector) ObjectsToPack(
 }
 
 func (dw *DeltaSelector) objectsToPack(
+	ctx context.Context,
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) ([]*ObjectToPack, error) {
@@ -101,9 +104,9 @@ func (dw *DeltaSelector) objectsToPack(
 		var o plumbing.EncodedObject
 		var err error
 		if packWindow == 0 {
-			o, err = dw.encodedObject(h)
+			o, err = dw.encodedObject(ctx, h)
 		} else {
-			o, err = dw.encodedDeltaObject(h)
+			o, err = dw.encodedDeltaObject(ctx, h)
 		}
 		if err != nil {
 			return nil, err
@@ -121,34 +124,34 @@ func (dw *DeltaSelector) objectsToPack(
 		return objectsToPack, nil
 	}
 
-	if err := dw.fixAndBreakChains(objectsToPack); err != nil {
+	if err := dw.fixAndBreakChains(ctx, objectsToPack); err != nil {
 		return nil, err
 	}
 
 	return objectsToPack, nil
 }
 
-func (dw *DeltaSelector) encodedDeltaObject(h plumbing.Hash) (plumbing.EncodedObject, error) {
+func (dw *DeltaSelector) encodedDeltaObject(ctx context.Context, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	edos, ok := dw.storer.(storer.DeltaObjectStorer)
 	if !ok {
-		return dw.encodedObject(h)
+		return dw.encodedObject(ctx, h)
 	}
 
-	return edos.DeltaObject(plumbing.AnyObject, h)
+	return edos.DeltaObject(ctx, plumbing.AnyObject, h)
 }
 
-func (dw *DeltaSelector) encodedObject(h plumbing.Hash) (plumbing.EncodedObject, error) {
-	return dw.storer.EncodedObject(plumbing.AnyObject, h)
+func (dw *DeltaSelector) encodedObject(ctx context.Context, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	return dw.storer.EncodedObject(ctx, plumbing.AnyObject, h)
 }
 
-func (dw *DeltaSelector) fixAndBreakChains(objectsToPack []*ObjectToPack) error {
+func (dw *DeltaSelector) fixAndBreakChains(ctx context.Context, objectsToPack []*ObjectToPack) error {
 	m := make(map[plumbing.Hash]*ObjectToPack, len(objectsToPack))
 	for _, otp := range objectsToPack {
 		m[otp.Hash()] = otp
 	}
 
 	for _, otp := range objectsToPack {
-		if err := dw.fixAndBreakChainsOne(m, otp); err != nil {
+		if err := dw.fixAndBreakChainsOne(ctx, m, otp); err != nil {
 			return err
 		}
 	}
@@ -156,7 +159,7 @@ func (dw *DeltaSelector) fixAndBreakChains(objectsToPack []*ObjectToPack) error 
 	return nil
 }
 
-func (dw *DeltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*ObjectToPack, otp *ObjectToPack) error {
+func (dw *DeltaSelector) fixAndBreakChainsOne(ctx context.Context, objectsToPack map[plumbing.Hash]*ObjectToPack, otp *ObjectToPack) error {
 	if !otp.Object.Type().IsDelta() {
 		return nil
 	}
@@ -172,17 +175,17 @@ func (dw *DeltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*O
 	if !ok {
 		// if this is not a DeltaObject, then we cannot retrieve its base,
 		// so we have to break the delta chain here.
-		return dw.undeltify(otp)
+		return dw.undeltify(ctx, otp)
 	}
 
 	base, ok := objectsToPack[do.BaseHash()]
 	if !ok {
 		// The base of the delta is not in our list of objects to pack, so
 		// we break the chain.
-		return dw.undeltify(otp)
+		return dw.undeltify(ctx, otp)
 	}
 
-	if err := dw.fixAndBreakChainsOne(objectsToPack, base); err != nil {
+	if err := dw.fixAndBreakChainsOne(ctx, objectsToPack, base); err != nil {
 		return err
 	}
 
@@ -190,7 +193,7 @@ func (dw *DeltaSelector) fixAndBreakChainsOne(objectsToPack map[plumbing.Hash]*O
 	return nil
 }
 
-func (dw *DeltaSelector) restoreOriginal(otp *ObjectToPack) error {
+func (dw *DeltaSelector) restoreOriginal(ctx context.Context, otp *ObjectToPack) error {
 	if otp.Original != nil {
 		return nil
 	}
@@ -199,7 +202,7 @@ func (dw *DeltaSelector) restoreOriginal(otp *ObjectToPack) error {
 		return nil
 	}
 
-	obj, err := dw.encodedObject(otp.Hash())
+	obj, err := dw.encodedObject(ctx, otp.Hash())
 	if err != nil {
 		return err
 	}
@@ -211,8 +214,8 @@ func (dw *DeltaSelector) restoreOriginal(otp *ObjectToPack) error {
 
 // undeltify undeltifies an *ObjectToPack by retrieving the original object from
 // the storer and resetting it.
-func (dw *DeltaSelector) undeltify(otp *ObjectToPack) error {
-	if err := dw.restoreOriginal(otp); err != nil {
+func (dw *DeltaSelector) undeltify(ctx context.Context, otp *ObjectToPack) error {
+	if err := dw.restoreOriginal(ctx, otp); err != nil {
 		return err
 	}
 
@@ -226,6 +229,7 @@ func (dw *DeltaSelector) sort(objectsToPack []*ObjectToPack) {
 }
 
 func (dw *DeltaSelector) walk(
+	ctx context.Context,
 	objectsToPack []*ObjectToPack,
 	packWindow uint,
 ) error {
@@ -267,7 +271,7 @@ func (dw *DeltaSelector) walk(
 				break
 			}
 
-			if err := dw.tryToDeltify(indexMap, base, target); err != nil {
+			if err := dw.tryToDeltify(ctx, indexMap, base, target); err != nil {
 				return err
 			}
 		}
@@ -276,14 +280,14 @@ func (dw *DeltaSelector) walk(
 	return nil
 }
 
-func (dw *DeltaSelector) tryToDeltify(indexMap map[plumbing.Hash]*deltaIndex, base, target *ObjectToPack) error {
+func (dw *DeltaSelector) tryToDeltify(ctx context.Context, indexMap map[plumbing.Hash]*deltaIndex, base, target *ObjectToPack) error {
 	// Original object might not be present if we're reusing a delta, so we
 	// ensure it is restored.
-	if err := dw.restoreOriginal(target); err != nil {
+	if err := dw.restoreOriginal(ctx, target); err != nil {
 		return err
 	}
 
-	if err := dw.restoreOriginal(base); err != nil {
+	if err := dw.restoreOriginal(ctx, base); err != nil {
 		return err
 	}
 

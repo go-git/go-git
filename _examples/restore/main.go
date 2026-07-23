@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,24 +12,24 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-func prepareRepo(w *git.Worktree, directory string) {
+func prepareRepo(ctx context.Context, w *git.Worktree, directory string) {
 	// We need a known state of files inside the worktree for testing revert a modify and delete
 	Info("echo \"hello world! Modify\" > for-modify")
 	err := os.WriteFile(filepath.Join(directory, "for-modify"), []byte("hello world! Modify"), 0o644)
 	CheckIfError(err)
 	Info("git add for-modify")
-	_, err = w.Add("for-modify")
+	_, err = w.Add(ctx, "for-modify")
 	CheckIfError(err)
 
 	Info("echo \"hello world! Delete\" > for-delete")
 	err = os.WriteFile(filepath.Join(directory, "for-delete"), []byte("hello world! Delete"), 0o644)
 	CheckIfError(err)
 	Info("git add for-delete")
-	_, err = w.Add("for-delete")
+	_, err = w.Add(ctx, "for-delete")
 	CheckIfError(err)
 
 	Info("git commit -m \"example go-git commit\"")
-	_, err = w.Commit("example go-git commit", &git.CommitOptions{
+	_, err = w.Commit(ctx, "example go-git commit", &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  "John Doe",
 			Email: "john@doe.org",
@@ -40,64 +41,66 @@ func prepareRepo(w *git.Worktree, directory string) {
 
 // An example of how to restore AKA unstage files
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<directory>")
 	directory := os.Args[1]
 
 	// Opens an already existing repository.
-	r, err := git.PlainOpen(directory)
+	r, err := git.PlainOpen(ctx, directory)
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	CheckIfError(err)
 
-	prepareRepo(w, directory)
+	prepareRepo(ctx, w, directory)
 
 	// Perform the operation and stage them
 	Info("echo \"hello world! Modify 2\" > for-modify")
 	err = os.WriteFile(filepath.Join(directory, "for-modify"), []byte("hello world! Modify 2"), 0o644)
 	CheckIfError(err)
 	Info("git add for-modify")
-	_, err = w.Add("for-modify")
+	_, err = w.Add(ctx, "for-modify")
 	CheckIfError(err)
 
 	Info("echo \"hello world! Add\" > for-add")
 	err = os.WriteFile(filepath.Join(directory, "for-add"), []byte("hello world! Add"), 0o644)
 	CheckIfError(err)
 	Info("git add for-add")
-	_, err = w.Add("for-add")
+	_, err = w.Add(ctx, "for-add")
 	CheckIfError(err)
 
 	Info("rm for-delete")
 	err = os.Remove(filepath.Join(directory, "for-delete"))
 	CheckIfError(err)
 	Info("git add for-delete")
-	_, err = w.Add("for-delete")
+	_, err = w.Add(ctx, "for-delete")
 	CheckIfError(err)
 
 	// We can verify the current status of the worktree using the method Status.
 	Info("git status --porcelain")
-	status, err := w.Status()
+	status, err := w.Status(ctx)
 	CheckIfError(err)
 	fmt.Println(status)
 
 	// Unstage a single file and see the status
 	Info("git restore --staged for-modify")
-	err = w.Restore(&git.RestoreOptions{Staged: true, Files: []string{"for-modify"}})
+	err = w.Restore(ctx, &git.RestoreOptions{Staged: true, Files: []string{"for-modify"}})
 	CheckIfError(err)
 
 	Info("git status --porcelain")
-	status, err = w.Status()
+	status, err = w.Status(ctx)
 	CheckIfError(err)
 	fmt.Println(status)
 
 	// Unstage the other 2 files and see the status
 	Info("git restore --staged for-add for-delete")
-	err = w.Restore(&git.RestoreOptions{Staged: true, Files: []string{"for-add", "for-delete"}})
+	err = w.Restore(ctx, &git.RestoreOptions{Staged: true, Files: []string{"for-add", "for-delete"}})
 	CheckIfError(err)
 
 	Info("git status --porcelain")
-	status, err = w.Status()
+	status, err = w.Status(ctx)
 	CheckIfError(err)
 	fmt.Println(status)
 }

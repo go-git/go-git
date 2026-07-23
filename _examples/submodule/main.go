@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/go-git/go-git/v6"
@@ -10,6 +11,8 @@ import (
 // Basic example of how to clone a repository including a submodule and
 // updating submodule ref
 func main() {
+	ctx := context.Background()
+
 	CheckArgs("<url>", "<directory>", "<submodule>")
 	url := os.Args[1]
 	directory := os.Args[2]
@@ -18,7 +21,7 @@ func main() {
 	// Clone the given repository to the given directory
 	Info("git clone %s %s --recursive", url, directory)
 
-	r, err := git.PlainClone(directory, &git.CloneOptions{
+	r, err := git.PlainClone(ctx, directory, &git.CloneOptions{
 		URL:               url,
 		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 	})
@@ -26,28 +29,28 @@ func main() {
 	CheckIfError(err)
 	defer func() { _ = r.Close() }()
 
-	w, err := r.Worktree()
+	w, err := r.Worktree(ctx)
 	if err != nil {
 		CheckIfError(err)
 	}
 
-	sub, err := w.Submodule(submodule)
+	sub, err := w.Submodule(ctx, submodule)
 	if err != nil {
 		CheckIfError(err)
 	}
 
-	sr, err := sub.Repository()
+	sr, err := sub.Repository(ctx)
 	if err != nil {
 		CheckIfError(err)
 	}
 
-	sw, err := sr.Worktree()
+	sw, err := sr.Worktree(ctx)
 	if err != nil {
 		CheckIfError(err)
 	}
 
 	Info("git submodule update --remote")
-	err = sw.Pull(&git.PullOptions{
+	err = sw.Pull(ctx, &git.PullOptions{
 		RemoteName: "origin",
 	})
 	if err != nil {
