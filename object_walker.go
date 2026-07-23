@@ -73,7 +73,7 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 		}
 		for _, h := range obj.ParentHashes {
 			err = p.walkObjectTree(h)
-			if err != nil {
+			if errors.Is(err, plumbing.ErrObjectNotFound) {
 				shallow, serr := p.Storer.Shallow()
 				if serr != nil {
 					return errors.Join(err, serr)

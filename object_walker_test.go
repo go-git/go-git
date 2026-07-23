@@ -2,12 +2,24 @@ package git
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"testing"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/suite"
 )
+
+type errObjectStorer struct {
+	*memory.Storage
+	err error
+}
+
+func (s *errObjectStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	return nil, s.err
+}
 
 type objectWalkerSuite struct {
 	BaseSuite
@@ -79,4 +91,22 @@ func (s *objectWalkerSuite) TestShallowClonedRepo() {
 	walker := newObjectWalker(r.Storer)
 	err = walker.walkAllRefs()
 	s.Require().NoError(err)
+}
+
+func (s *objectWalkerSuite) TestUnexpectedErrors() {
+	memStorage := memory.NewStorage()
+	hash := plumbing.NewHash("c0ffee00000000000000000000000000000000000")
+	ref := plumbing.NewHashReference(plumbing.HEAD, hash)
+	err := memStorage.SetReference(ref)
+	s.Require().NoError(err)
+
+	errStorer := &errObjectStorer{
+		Storage: memStorage,
+		err:     io.ErrUnexpectedEOF,
+	}
+
+	walker := newObjectWalker(errStorer)
+	err = walker.walkAllRefs()
+	s.Error(err)
+	s.ErrorIs(err, io.ErrUnexpectedEOF)
 }
