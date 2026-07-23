@@ -7,10 +7,11 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/suite"
 )
 
 type errObjectStorer struct {
@@ -33,6 +34,8 @@ type objectWalkerSuite struct {
 }
 
 func TestObjectWalkerSuite(t *testing.T) {
+	t.Parallel()
+
 	suite.Run(t, new(objectWalkerSuite))
 }
 
