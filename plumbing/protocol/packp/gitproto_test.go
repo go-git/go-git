@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -106,13 +107,14 @@ func TestValidateEmptyGitProtoRequest(t *testing.T) {
 func TestEncodeGitProtoRequestRejectsControlBytes(t *testing.T) {
 	t.Parallel()
 	// A git:// URL such as "git://host/repo%00host=evil%00%00version=2"
-	// decodes to this Pathname; encoding it verbatim would append a second
+	// decodes to this Pathname. Encoding it verbatim would append a second
 	// host= selector and extra parameters to the single daemon request.
 	cases := []GitProtoRequest{
 		{RequestCommand: "git-upload-pack", Pathname: "/repo\x00host=evil"},
 		{RequestCommand: "git-upload-pack", Pathname: "/repo", Host: "host\x00evil"},
 		{RequestCommand: "git-upload-pack", Pathname: "/repo\nhost=evil"},
 		{RequestCommand: "git-upload-pack", Pathname: "/repo", ExtraParams: []string{"version=2\x00inject"}},
+		{RequestCommand: "git-upload-pack\x7f", Pathname: "/repo"},
 	}
 	for _, p := range cases {
 		var buf bytes.Buffer
@@ -121,6 +123,26 @@ func TestEncodeGitProtoRequestRejectsControlBytes(t *testing.T) {
 		}
 		if buf.Len() != 0 {
 			t.Fatalf("expected no bytes written on rejection, got %q", buf.String())
+		}
+	}
+}
+
+func TestDecodeGitProtoRequestRejectsControlBytes(t *testing.T) {
+	t.Parallel()
+	// NUL is the field delimiter and cannot appear inside a field, but a peer
+	// can put a newline or other control byte in the pathname or host. The
+	// server forwards these into URL construction and log lines, so a decoded
+	// request carrying one must be rejected.
+	payloads := []string{
+		"git-upload-pack /repo\nhost=evil\x00",
+		"git-upload-pack /repo\x00host=ev\x1bil\x00",
+	}
+	for _, payload := range payloads {
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "%04x%s", len(payload)+4, payload)
+		var p GitProtoRequest
+		if err := p.Decode(&buf); err == nil {
+			t.Fatalf("expected error decoding %q", payload)
 		}
 	}
 }

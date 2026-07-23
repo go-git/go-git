@@ -39,7 +39,7 @@ func (g *GitProtoRequest) validate() error {
 	// NUL-delimited fields (a second host=, additional parameters) that the
 	// caller never set. A git:// URL with a percent-encoded NUL, for example
 	// "git://host/repo%00host=evil", decodes into exactly such a Pathname, so
-	// refuse control bytes in every field before encoding.
+	// refuse control bytes in every field.
 	if err := validateGitProtoField("request command", g.RequestCommand); err != nil {
 		return err
 	}
@@ -60,8 +60,11 @@ func (g *GitProtoRequest) validate() error {
 
 // validateGitProtoField rejects a request field containing an ASCII control
 // byte (0x00-0x1f or 0x7f). Such a byte would break the NUL-framed pkt-line or
-// inject additional fields; no valid command, path, host, or parameter
-// contains one. The rejected range matches the worktree path validator.
+// splice in additional fields. No valid command, path, host, or parameter
+// contains one. This matches upstream git, which forbids newlines in the host
+// and path of a git:// request (git.git a02ea577, CVE-2021-40330), and extends
+// it to the full control range including NUL, which a Go string can carry
+// through where a C string cannot.
 func validateGitProtoField(name, value string) error {
 	for i := 0; i < len(value); i++ {
 		if value[i] < 0x20 || value[i] == 0x7f {
@@ -150,5 +153,10 @@ func (g *GitProtoRequest) Decode(r io.Reader) error {
 		}
 	}
 
-	return nil
+	// A decoded request comes straight off the wire from an untrusted peer.
+	// NUL cannot survive here (it delimits the fields split above), but other
+	// control bytes such as newline or ESC can, and the server forwards these
+	// fields into URL construction and log lines. Reject them symmetrically
+	// with Encode.
+	return g.validate()
 }
