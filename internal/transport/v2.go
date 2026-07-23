@@ -224,7 +224,26 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 
 		if out.Packfile {
 			streamErr := streamPackfile(ctx, st, packReader, req.Progress)
-			closeReader(packReader)
+			// Skip draining/closing on cancellation: streamPackfile wraps
+			// packReader in a NewContextReader, whose background goroutine
+			// can still be blocked in the underlying Read after the
+			// <-ctx.Done() branch returns (see its doc comment). Closing
+			// here would race that goroutine's in-flight Read -- the same
+			// class of race fixed in plumbing/transport/http's Fetch/Push
+			// for the v0/v1 path. On a non-cancellation error or success,
+			// streamPackfile's last Read has already returned via the
+			// result channel and the goroutine is quiescent, so closing is
+			// safe and necessary. On cancellation, a packReader backed by
+			// a context-bound request (e.g. HTTP) gets torn down by that
+			// request's own context handling instead, so it is not leaked.
+			//
+			// Checked against streamErr itself, not ctx.Err(): ctx can be
+			// cancelled an instant after a successful/non-cancel return,
+			// and checking ctx.Err() at that point would skip the close
+			// for a read that was already fully quiescent.
+			if !errors.Is(streamErr, context.Canceled) && !errors.Is(streamErr, context.DeadlineExceeded) {
+				closeReader(packReader)
+			}
 			if streamErr != nil {
 				return streamErr
 			}
