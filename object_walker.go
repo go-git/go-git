@@ -1,9 +1,7 @@
 package git
 
 import (
-	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -17,10 +15,30 @@ type objectWalker struct {
 	// seen map can become huge if walking over large
 	// repos. Thus using struct{} as the value type.
 	seen map[plumbing.Hash]struct{}
+	// shallows is the set of shallow roots, loaded lazily
+	// on the first commit walked.
+	shallows map[plumbing.Hash]struct{}
 }
 
 func newObjectWalker(s storage.Storer) *objectWalker {
-	return &objectWalker{s, map[plumbing.Hash]struct{}{}}
+	return &objectWalker{Storer: s, seen: map[plumbing.Hash]struct{}{}}
+}
+
+// isShallow reports whether hash is a shallow root, meaning its
+// parents are not present in the repository.
+func (p *objectWalker) isShallow(hash plumbing.Hash) (bool, error) {
+	if p.shallows == nil {
+		shallows, err := p.Storer.Shallow()
+		if err != nil {
+			return false, err
+		}
+		p.shallows = make(map[plumbing.Hash]struct{}, len(shallows))
+		for _, h := range shallows {
+			p.shallows[h] = struct{}{}
+		}
+	}
+	_, ok := p.shallows[hash]
+	return ok, nil
 }
 
 // walkAllRefs walks all (hash) references from the repo.
@@ -71,16 +89,18 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 		if err != nil {
 			return err
 		}
+		// Parents of a shallow root are not present in the
+		// repository, so don't attempt to walk them.
+		shallow, err := p.isShallow(obj.ID())
+		if err != nil {
+			return err
+		}
+		if shallow {
+			break
+		}
 		for _, h := range obj.ParentHashes {
 			err = p.walkObjectTree(h)
-			if errors.Is(err, plumbing.ErrObjectNotFound) {
-				shallow, serr := p.Storer.Shallow()
-				if serr != nil {
-					return errors.Join(err, serr)
-				}
-				if slices.Contains(shallow, obj.ID()) {
-					return nil
-				}
+			if err != nil {
 				return err
 			}
 		}
