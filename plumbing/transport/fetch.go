@@ -36,7 +36,7 @@ func FetchPack(
 		reader = demuxer
 	}
 
-	if err := packfile.UpdateObjectStorage(st, reader); err != nil {
+	if err := packfile.UpdateObjectStorageWithStatus(st, reader, req.StatusChan); err != nil {
 		return err
 	}
 

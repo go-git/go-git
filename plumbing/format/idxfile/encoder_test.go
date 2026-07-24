@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 )
@@ -191,5 +192,45 @@ func TestDecodeEncode(t *testing.T) {
 
 		assert.Len(t, expected, result.Len())
 		assert.Equal(t, expected, result.Bytes())
+	}
+}
+
+func TestEncodeWithStatus(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.ByTag("packfile").One()
+	idxFile, err := fixture.Idx()
+	require.NoError(t, err)
+
+	idx := NewMemoryIndex(crypto.SHA1.Size())
+	require.NoError(t, NewDecoder(idxFile, hash.New(crypto.SHA1)).Decode(idx))
+	count, err := idx.Count()
+	require.NoError(t, err)
+	occupiedBuckets := 0
+	var previous uint32
+	for _, cumulative := range idx.Fanout {
+		if cumulative != previous {
+			occupiedBuckets++
+			previous = cumulative
+		}
+	}
+	assert.Greater(t, int(count), occupiedBuckets)
+
+	updates := make(chan plumbing.StatusUpdate, 1024)
+	require.NoError(t, EncodeWithStatus(io.Discard, hash.New(crypto.SHA1), idx, updates))
+	close(updates)
+
+	last := make(map[plumbing.StatusStage]plumbing.StatusUpdate)
+	for update := range updates {
+		last[update.Stage] = update
+	}
+	for _, stage := range []plumbing.StatusStage{
+		plumbing.StatusIndexHash,
+		plumbing.StatusIndexCRC,
+		plumbing.StatusIndexOffset,
+	} {
+		update, ok := last[stage]
+		require.True(t, ok)
+		assert.Equal(t, update.ObjectsTotal, update.ObjectsDone)
 	}
 }

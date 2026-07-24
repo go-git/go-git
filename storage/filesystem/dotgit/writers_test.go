@@ -26,7 +26,7 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	fs := osfs.New(b.TempDir())
 
 	for b.Loop() {
-		w, err := newPackWrite(fs, config.SHA1, false)
+		w, err := newPackWrite(fs, config.SHA1, false, nil)
 
 		require.NoError(b, err)
 		pf, pfErr := f.Packfile()
@@ -159,7 +159,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
-	w, err := newPackWrite(fs, config.SHA1, false)
+	w, err := newPackWrite(fs, config.SHA1, false, nil)
 	require.NoError(t, err)
 
 	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {

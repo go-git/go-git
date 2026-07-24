@@ -433,11 +433,17 @@ func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 
 // PackfileWriter returns a writer for creating a new packfile.
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
+	return s.PackfileWriterWithStatus(nil)
+}
+
+// PackfileWriterWithStatus returns a writer for creating a new packfile and
+// reports progress to statusChan.
+func (s *ObjectStorage) PackfileWriterWithStatus(statusChan plumbing.StatusChan) (io.WriteCloser, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
 
-	w, err := s.dir.NewObjectPack()
+	w, err := s.dir.NewObjectPackWithStatus(statusChan)
 	if err != nil {
 		return nil, err
 	}

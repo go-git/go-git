@@ -42,7 +42,7 @@ func (s *dumbPackSession) fetchDumb(ctx context.Context, st storage.Storer, req 
 	}
 
 	repoFs := fsi.Filesystem()
-	r := newFetchWalker(ctx, s, st, repoFs)
+	r := newFetchWalker(ctx, s, st, repoFs, req.StatusChan)
 	if err := r.process(); err != nil {
 		return err
 	}
@@ -64,9 +64,10 @@ type fetchWalker struct {
 	fs         billy.Filesystem
 	queue      []plumbing.Hash
 	packIdx    map[plumbing.Hash]string
+	statusChan plumbing.StatusChan
 }
 
-func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, fs billy.Filesystem) *fetchWalker {
+func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, fs billy.Filesystem, statusChan plumbing.StatusChan) *fetchWalker {
 	return &fetchWalker{
 		ctx:        ctx,
 		client:     s.client,
@@ -77,6 +78,7 @@ func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, 
 		fs:         fs,
 		queue:      make([]plumbing.Hash, 0),
 		packIdx:    make(map[plumbing.Hash]string),
+		statusChan: statusChan,
 	}
 }
 
@@ -406,7 +408,7 @@ LOOP:
 			return err
 		}
 
-		if err := packfile.UpdateObjectStorage(r.st, f); err != nil {
+		if err := packfile.UpdateObjectStorageWithStatus(r.st, f, r.statusChan); err != nil {
 			_ = f.Close()
 			return err
 		}

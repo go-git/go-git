@@ -127,6 +127,48 @@ func TestPackfileWriter(t *testing.T) {
 	})
 }
 
+func TestPackfileWriterStatusChan(t *testing.T) {
+	t.Parallel()
+
+	forEachStorage(t, func(sto Storer, t *testing.T) {
+		pwr, ok := sto.(storer.PackfileWriterWithStatus)
+		if !ok {
+			t.Skip("not a PackfileWriter")
+		}
+
+		updates := make(chan plumbing.StatusUpdate, 32)
+		drainDone := make(chan struct{})
+		var lastFetch plumbing.StatusUpdate
+		fetchCompletions := 0
+		go func() {
+			defer close(drainDone)
+			for update := range updates {
+				if update.Stage == plumbing.StatusFetch {
+					lastFetch = update
+					if update.ObjectsDone == update.ObjectsTotal {
+						fetchCompletions++
+					}
+				}
+			}
+		}()
+
+		pw, err := pwr.PackfileWriterWithStatus(updates)
+		require.NoError(t, err)
+		pf, err := fixtures.Basic().One().Packfile()
+		require.NoError(t, err)
+		_, err = io.Copy(pw, pf)
+		require.NoError(t, err)
+		require.NoError(t, pw.Close())
+		close(updates)
+		<-drainDone
+
+		assert.Equal(t, plumbing.StatusFetch, lastFetch.Stage)
+		assert.Equal(t, 31, lastFetch.ObjectsTotal)
+		assert.Equal(t, 31, lastFetch.ObjectsDone)
+		assert.Equal(t, 1, fetchCompletions)
+	})
+}
+
 func TestDeltaObjectStorer(t *testing.T) {
 	t.Parallel()
 

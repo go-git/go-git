@@ -883,3 +883,21 @@ func BenchmarkObjects(b *testing.B) {
 		}
 	}
 }
+
+func (s *RevListSuite) TestObjectsWithStatus() {
+	updates := make(chan plumbing.StatusUpdate, 200)
+	result, err := ObjectsWithStatus(s.Storer,
+		[]plumbing.Hash{plumbing.NewHash(secondCommit)}, nil, updates)
+	s.Require().NoError(err)
+	s.NotEmpty(result)
+	close(updates)
+
+	var finalCount plumbing.StatusUpdate
+	for update := range updates {
+		if update.Stage == plumbing.StatusCount {
+			finalCount = update
+		}
+	}
+	s.Equal(plumbing.StatusCount, finalCount.Stage)
+	s.Len(result, finalCount.ObjectsTotal)
+}

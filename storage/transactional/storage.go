@@ -148,6 +148,14 @@ func (s *packageWriter) PackfileWriter() (io.WriteCloser, error) {
 	return s.pw.PackfileWriter()
 }
 
+// PackfileWriterWithStatus honors storer.PackfileWriterWithStatus.
+func (s *packageWriter) PackfileWriterWithStatus(statusChan plumbing.StatusChan) (io.WriteCloser, error) {
+	if pw, ok := s.pw.(storer.PackfileWriterWithStatus); ok {
+		return pw.PackfileWriterWithStatus(statusChan)
+	}
+	return s.pw.PackfileWriter()
+}
+
 func (s *reflogBasic) Reflog(name plumbing.ReferenceName) ([]*reflog.Entry, error) {
 	return s.reflog.Reflog(name)
 }
@@ -162,5 +170,13 @@ func (s *reflogBasic) DeleteReflog(name plumbing.ReferenceName) error {
 
 // PackfileWriter honors storer.PackfileWriter.
 func (s *reflogPackageWriter) PackfileWriter() (io.WriteCloser, error) {
+	return s.pw.PackfileWriter()
+}
+
+// PackfileWriterWithStatus honors storer.PackfileWriterWithStatus.
+func (s *reflogPackageWriter) PackfileWriterWithStatus(statusChan plumbing.StatusChan) (io.WriteCloser, error) {
+	if pw, ok := s.pw.(storer.PackfileWriterWithStatus); ok {
+		return pw.PackfileWriterWithStatus(statusChan)
+	}
 	return s.pw.PackfileWriter()
 }

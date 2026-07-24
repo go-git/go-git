@@ -36,9 +36,10 @@ type PackWriter struct {
 	result   chan error
 	format   formatcfg.ObjectFormat
 	writeRev bool
+	status   plumbing.StatusChan
 }
 
-func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool, statusChan plumbing.StatusChan) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -57,6 +58,7 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 		result:   make(chan error),
 		format:   format,
 		writeRev: writeRev,
+		status:   statusChan,
 	}
 
 	writer.checksum.ResetBySize(format.Size())
@@ -69,8 +71,12 @@ func (w *PackWriter) buildIndex() {
 	w.writer = new(idxfile.Writer)
 	var err error
 
+	observers := []packfile.Observer{w.writer}
+	if w.status != nil {
+		observers = append(observers, packfile.NewStatusObserver(w.status))
+	}
 	w.parser = packfile.NewParser(w.synced,
-		packfile.WithScannerObservers(w.writer),
+		packfile.WithScannerObservers(observers...),
 		packfile.WithObjectFormat(w.format))
 
 	h, err := w.parser.Parse()
@@ -232,7 +238,7 @@ func (w *PackWriter) encodeIdx(writer io.Writer, h hash.Hash) error {
 		return err
 	}
 
-	return idxfile.Encode(writer, h, idx)
+	return idxfile.EncodeWithStatus(writer, h, idx, w.status)
 }
 
 func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
