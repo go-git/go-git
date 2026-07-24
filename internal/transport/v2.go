@@ -259,9 +259,11 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 				closeReader(packReader)
 				return streamErr
 			}
-			// The pack was read in full; drain any remaining bytes
-			// (best-effort, for connection reuse) so the connection returns
-			// to the pool.
+			// The pack was read in full. The sideband demuxer has
+			// already consumed the flush-pkt and returned io.EOF; any
+			// bytes that remain on packReader are HTTP trailers or a
+			// response-end pkt-line (or nothing). Drain them best-effort
+			// so the HTTP connection returns to the pool.
 			drainClose(packReader)
 			break
 		}
