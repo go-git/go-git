@@ -18,12 +18,12 @@ jobs:
    steps:
    - name: Build Fuzzers
      id: build
-     uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@4a92d87b24ac655a05fa6ae539a5f7ea8eb2d74a
+     uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@aa9b1bbbb35c68581047066ca1681ef258c313ae
      with:
        oss-fuzz-project-name: 'go-git'
        language: go
    - name: Run Fuzzers
-     uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@4a92d87b24ac655a05fa6ae539a5f7ea8eb2d74a
+     uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@aa9b1bbbb35c68581047066ca1681ef258c313ae
      with:
        oss-fuzz-project-name: 'go-git'
        language: go
@@ -37,7 +37,7 @@ jobs:
        path: ./out/artifacts
    - name: Upload Sarif
      if: always() && steps.build.outcome == 'success'
-     uses: github/codeql-action/upload-sarif@014f16e7ab1402f30e7c3329d33797e7948572db # v4.31.3
+     uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
      with:
       # Path to SARIF file relative to the root of the repository
       sarif_file: cifuzz-sarif/results.sarif
