@@ -565,6 +565,10 @@ func (p *Parser) parseRef() (Revisioner, error) {
 
 		if endOfRef {
 			p.unscan()
+			if buf == "@" {
+				return Ref("HEAD"), nil
+			}
+
 			return Ref(buf), nil
 		}
 

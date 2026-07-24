@@ -177,6 +177,13 @@ func (s *ParserSuite) TestParseWithValidExpression() {
 			CaretPath{1},
 			CaretPath{1},
 		},
+		"@scope/package@v1.0.1": []Revisioner{
+			Ref("@scope/package@v1.0.1"),
+		},
+		"@scope/package@v1.0.1~1": []Revisioner{
+			Ref("@scope/package@v1.0.1"),
+			TildePath{1},
+		},
 	}
 
 	for d, expected := range datas {
