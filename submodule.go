@@ -247,6 +247,16 @@ func (s *Submodule) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions
 	return s.update(ctx, o, plumbing.ZeroHash)
 }
 
+// indexEntry returns the index entry recorded for the submodule path.
+func (s *Submodule) indexEntry() (*index.Entry, error) {
+	idx, err := s.w.r.Storer.Index()
+	if err != nil {
+		return nil, err
+	}
+
+	return idx.Entry(s.c.Path)
+}
+
 func (s *Submodule) update(ctx context.Context, o *SubmoduleUpdateOptions, forceHash plumbing.Hash) error {
 	if !s.initialized && !o.Init {
 		return ErrSubmoduleNotInitialized
@@ -258,16 +268,11 @@ func (s *Submodule) update(ctx context.Context, o *SubmoduleUpdateOptions, force
 		}
 	}
 
-	idx, err := s.w.r.Storer.Index()
-	if err != nil {
-		return err
-	}
-
 	hash := forceHash
 	if hash.IsZero() {
-		e, err := idx.Entry(s.c.Path)
+		e, err := s.indexEntry()
 		if err != nil {
-			return err
+			return fmt.Errorf("submodule %q: %w", s.c.Name, err)
 		}
 
 		hash = e.Hash
@@ -364,18 +369,33 @@ func (s Submodules) Init() error {
 	return nil
 }
 
-// Update updates all the submodules in this list.
+// Update updates all the submodules in this list. Submodules declared in
+// .gitmodules but missing from the index are skipped, matching the behaviour
+// of the git CLI.
 func (s Submodules) Update(o *SubmoduleUpdateOptions) error {
 	return s.UpdateContext(context.Background(), o)
 }
 
-// UpdateContext updates all the submodules in this list.
+// UpdateContext updates all the submodules in this list. Submodules declared
+// in .gitmodules but missing from the index are skipped, matching the
+// behaviour of the git CLI.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (s Submodules) UpdateContext(ctx context.Context, o *SubmoduleUpdateOptions) error {
 	for _, sub := range s {
+		// A .gitmodules entry whose path has no gitlink in the index is not
+		// a submodule from git's point of view: the git CLI silently ignores
+		// such stale entries on clone, update and status, so skip them here
+		// instead of failing the whole operation.
+		if _, err := sub.indexEntry(); err != nil {
+			if errors.Is(err, index.ErrEntryNotFound) {
+				continue
+			}
+			return err
+		}
+
 		if err := sub.UpdateContext(ctx, o); err != nil {
 			return err
 		}
