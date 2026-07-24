@@ -24,7 +24,12 @@ const (
 
 // Pattern defines a single gitignore pattern.
 type Pattern interface {
-	// Match matches the given path to the pattern.
+	// Match reports how the pattern applies to path. Path is an ordered sequence
+	// of logical path components. Patterns created with ParsePattern match only
+	// paths beginning with their domain. isDir reports whether the final path
+	// component is a directory. For a pattern ending in "/", isDir only
+	// restricts a match at the candidate endpoint; descendants of a matched
+	// directory may still match.
 	Match(path []string, isDir bool) MatchResult
 }
 
@@ -36,7 +41,14 @@ type pattern struct {
 	isGlob    bool
 }
 
-// ParsePattern parses a gitignore pattern string into the Pattern structure.
+// ParsePattern parses a gitignore pattern string into a Pattern. The domain is
+// an ordered prefix of logical path components that scopes the pattern.
+// Matching applies to the components after that prefix. A nil or empty domain
+// applies the pattern without a prefix.
+//
+// ReadPatterns uses the path of the directory containing a .gitignore file as
+// its domain. When the filesystem is rooted at a repository, that path is
+// repository-relative.
 func ParsePattern(p string, domain []string) Pattern {
 	// storing domain, copy it to ensure it isn't changed externally
 	domain = append([]string(nil), domain...)

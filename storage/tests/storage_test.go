@@ -366,16 +366,16 @@ func TestSetReferenceAndGetReference(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		err := sto.SetReference(
-			plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
 		err = sto.SetReference(
-			plumbing.NewReferenceFromStrings("bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+			plumbing.NewReferenceFromStrings("refs/bar", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("foo"))
+		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	})
@@ -386,17 +386,17 @@ func TestCheckAndSetReference(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		err := sto.SetReference(
-			plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
 		err = sto.CheckAndSetReference(
-			plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
-			plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("foo"))
+		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	})
@@ -407,17 +407,17 @@ func TestCheckAndSetReferenceNil(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		err := sto.SetReference(
-			plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		require.NoError(t, err)
 
 		err = sto.CheckAndSetReference(
-			plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 			nil,
 		)
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("foo"))
+		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
 	})
@@ -428,17 +428,17 @@ func TestCheckAndSetReferenceError(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		err := sto.SetReference(
-			plumbing.NewReferenceFromStrings("foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
+			plumbing.NewReferenceFromStrings("refs/foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733"),
 		)
 		require.NoError(t, err)
 
 		err = sto.CheckAndSetReference(
-			plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
-			plumbing.NewReferenceFromStrings("foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
+			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			plumbing.NewReferenceFromStrings("refs/foo", "482e0eada5de4039e6f216b45b3c9b683b83bfa"),
 		)
 		assert.ErrorIs(t, err, storage.ErrReferenceHasChanged)
 
-		e, err := sto.Reference(plumbing.ReferenceName("foo"))
+		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, e.Hash().String(), "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
 	})
@@ -449,14 +449,14 @@ func TestRemoveReference(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		err := sto.SetReference(
-			plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
-		err = sto.RemoveReference(plumbing.ReferenceName("foo"))
+		err = sto.RemoveReference(plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 
-		_, err = sto.Reference(plumbing.ReferenceName("foo"))
+		_, err = sto.Reference(plumbing.ReferenceName("refs/foo"))
 		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 	})
 }
@@ -466,14 +466,14 @@ func TestRemoveReferenceNonExistent(t *testing.T) {
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
 		err := sto.SetReference(
-			plumbing.NewReferenceFromStrings("foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
 		)
 		require.NoError(t, err)
 
-		err = sto.RemoveReference(plumbing.ReferenceName("nonexistent"))
+		err = sto.RemoveReference(plumbing.ReferenceName("refs/nonexistent"))
 		require.NoError(t, err)
 
-		e, err := sto.Reference(plumbing.ReferenceName("foo"))
+		e, err := sto.Reference(plumbing.ReferenceName("refs/foo"))
 		require.NoError(t, err)
 		assert.Equal(t, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52", e.Hash().String())
 	})
@@ -483,7 +483,7 @@ func TestGetReferenceNotFound(t *testing.T) {
 	t.Parallel()
 
 	forEachStorage(t, func(sto Storer, t *testing.T) {
-		r, err := sto.Reference(plumbing.ReferenceName("bar"))
+		r, err := sto.Reference(plumbing.ReferenceName("refs/bar"))
 		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
 		assert.Nil(t, r)
 	})

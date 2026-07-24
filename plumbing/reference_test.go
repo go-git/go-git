@@ -28,6 +28,55 @@ func (s *ReferenceSuite) TestReferenceNameShort() {
 	s.Equal("v4", ExampleReferenceName.Short())
 }
 
+func (s *ReferenceSuite) TestReferenceNameIsSafe() {
+	for _, tc := range []struct {
+		name ReferenceName
+		safe bool
+	}{
+		// One-level pseudo-refs ([A-Z_] only).
+		{"HEAD", true},
+		{"ORIG_HEAD", true},
+		{"FETCH_HEAD", true},
+		{"MERGE_HEAD", true},
+		{"CHERRY_PICK_HEAD", true},
+		// Well-formed refs/ names.
+		{"refs/heads/main", true},
+		{"refs/heads/release-1.2", true},
+		{"refs/tags/v1.0.0", true},
+		{"refs/remotes/origin/HEAD", true},
+		{"refs/stash", true},
+		// Empty, and one-level names that are not pseudo-refs (would land on
+		// top-level .git metadata).
+		{"", false},
+		{"config", false},
+		{"index", false},
+		{"packed-refs", false},
+		{"config.worktree", false},
+		{"bar", false},
+		{"head", false},
+		{"HEAD2", false},
+		// refs/ names that escape or have empty components.
+		{"refs/", false},
+		{"refs/heads/.", false},
+		{"refs/heads/..", false},
+		{"refs/heads/../../config", false},
+		{"refs/heads//main", false},
+		{"refs/heads/", false},
+		// Absolute and drive-prefixed forms.
+		{"/config", false},
+		{"/refs/heads/main", false},
+		{"\\config", false},
+		{"C:config", false},
+		// Backslash inside a refs/ name: a Windows path separator that could
+		// escape the sub-tree or alias another name once turned into a path.
+		{"refs/heads/foo\\bar", false},
+		{"refs/heads\\..\\config", false},
+		{"refs/heads\\foo", false},
+	} {
+		s.Equal(tc.safe, tc.name.IsSafe(), "IsSafe(%q)", tc.name)
+	}
+}
+
 func (s *ReferenceSuite) TestReferenceNameWithSlash() {
 	r := ReferenceName("refs/remotes/origin/feature/AllowSlashes")
 	s.Equal("origin/feature/AllowSlashes", r.Short())

@@ -176,3 +176,31 @@ func BenchmarkWorktreeStatus(b *testing.B) {
 		wt.Status()
 	}
 }
+
+// TestAddSubdirectoryForwardSlash verifies that Add("dir/foo") stores the
+// index entry with a forward-slash path. On Windows filepath.Clean converts
+// "dir/foo" to "dir\foo"; without filepath.ToSlash the cleaned path would be
+// stored in the index rather than the git-canonical forward-slash form.
+func TestAddSubdirectoryForwardSlash(t *testing.T) {
+	t.Parallel()
+
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	require.NoError(t, wt.Filesystem().MkdirAll("dir", 0o755))
+	require.NoError(t, util.WriteFile(wt.Filesystem(), "dir/foo", []byte("content"), 0o644))
+
+	_, err = wt.Add("dir/foo")
+	require.NoError(t, err)
+
+	idx, err := repo.Storer.Index()
+	require.NoError(t, err)
+	e, err := idx.Entry("dir/foo")
+	require.NoError(t, err)
+	assert.Equal(t, "dir/foo", e.Name)
+}

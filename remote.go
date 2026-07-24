@@ -788,6 +788,9 @@ func (r *Remote) addObject(rs config.RefSpec,
 		return nil
 	}
 	if !rs.IsForceUpdate() {
+		if err := checkTagUpdate(cmd); err != nil {
+			return err
+		}
 		if err := checkFastForwardUpdate(r.s, remoteRefs, cmd); err != nil {
 			return err
 		}
@@ -836,6 +839,9 @@ func (r *Remote) addReferenceIfRefSpecMatches(rs config.RefSpec,
 			return err
 		}
 	} else if !rs.IsForceUpdate() {
+		if err := checkTagUpdate(cmd); err != nil {
+			return err
+		}
 		if err := checkFastForwardUpdate(r.s, remoteRefs, cmd); err != nil {
 			return err
 		}
@@ -865,6 +871,14 @@ func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Co
 		if cmd.Old != expectedOID {
 			return fmt.Errorf("non-fast-forward update: %s", cmd.Name.String())
 		}
+	}
+
+	return nil
+}
+
+func checkTagUpdate(cmd *packp.Command) error {
+	if cmd.Name.IsTag() && cmd.Old != plumbing.ZeroHash {
+		return fmt.Errorf("tag already exists: %s", cmd.Name.String())
 	}
 
 	return nil
@@ -979,7 +993,7 @@ func getHaves(
 	return result, nil
 }
 
-const refspecAllTags = "+refs/tags/*:refs/tags/*"
+const refspecAllTags = "refs/tags/*:refs/tags/*"
 
 func calculateRefs(
 	spec []config.RefSpec,
@@ -1108,7 +1122,7 @@ func objectExists(s storer.EncodedObjectStorer, h plumbing.Hash) (bool, error) {
 }
 
 func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.ReferenceStorer, cmd *packp.Command) error {
-	if cmd.Old == plumbing.ZeroHash {
+	if cmd.Old.IsZero() {
 		_, err := remoteRefs.Reference(cmd.Name)
 		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return nil
@@ -1263,6 +1277,11 @@ func (r *Remote) updateLocalReferenceStorage(
 			old, _ := storer.ResolveReference(r.s, localName)
 			newRef := plumbing.NewHashReference(localName, ref.Hash())
 
+			if old != nil && localName.IsTag() && old.Hash() != newRef.Hash() && !force && !spec.IsForceUpdate() {
+				forceNeeded = true
+				continue
+			}
+
 			// If the ref exists locally as a non-tag and force is not
 			// specified, only update if the new ref is an ancestor of the old
 			if old != nil && !old.Name().IsTag() && !force && !spec.IsForceUpdate() {
@@ -1296,13 +1315,16 @@ func (r *Remote) updateLocalReferenceStorage(
 	if isWildcard {
 		tags = remoteRefs
 	}
-	tagUpdated, err := r.buildFetchedTags(tags)
+	tagUpdated, tagForceNeeded, err := r.buildFetchedTags(tags, tagMode == plumbing.AllTags, force)
 	if err != nil {
 		return updated, err
 	}
 
 	if tagUpdated {
 		updated = true
+	}
+	if tagForceNeeded {
+		forceNeeded = true
 	}
 
 	if forceNeeded {
@@ -1312,7 +1334,7 @@ func (r *Remote) updateLocalReferenceStorage(
 	return updated, err
 }
 
-func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, err error) {
+func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force bool) (updated, forceNeeded bool, err error) {
 	for _, ref := range refs {
 		if !ref.Name().IsTag() {
 			continue
@@ -1324,12 +1346,28 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 		}
 
 		if err != nil {
-			return false, err
+			return updated, forceNeeded, err
+		}
+
+		old, err := r.s.Reference(ref.Name())
+		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return updated, forceNeeded, err
+		}
+		if err == nil && old.Hash() != ref.Hash() {
+			if !allTags {
+				// An auto-followed tag only creates one that is missing locally; it
+				// never moves a tag that already points elsewhere.
+				continue
+			}
+			if !force {
+				forceNeeded = true
+				continue
+			}
 		}
 
 		refUpdated, err := updateReferenceStorerIfNeeded(r.s, ref)
 		if err != nil {
-			return updated, err
+			return updated, forceNeeded, err
 		}
 
 		if refUpdated {
@@ -1337,7 +1375,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage) (updated bool, e
 		}
 	}
 
-	return updated, err
+	return updated, forceNeeded, err
 }
 
 // ListContext lists the references on the remote repository.
@@ -1410,7 +1448,7 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 func objectsToPush(commands []*packp.Command) []plumbing.Hash {
 	objects := make([]plumbing.Hash, 0, len(commands))
 	for _, cmd := range commands {
-		if cmd.New == plumbing.ZeroHash {
+		if cmd.New.IsZero() {
 			continue
 		}
 		objects = append(objects, cmd.New)

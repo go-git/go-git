@@ -69,6 +69,142 @@ func (s *SuiteDotGit) TestModuleAcceptsBenignNames() {
 	}
 }
 
+func (s *SuiteDotGit) TestReferenceNameRejectsEscapingNames() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// A ".." component (or a control character) lets a reference name climb
+	// out of its sub-tree into unrelated .git metadata such as config; a
+	// malicious remote can advertise such a name and, after refspec mapping,
+	// have it reach the storage layer.
+	bad := []plumbing.ReferenceName{
+		"refs/heads/../../config",
+		"refs/remotes/origin/../../../config",
+		"refs/heads/..",
+		"refs/heads/foo\x00bar",
+	}
+	for _, n := range bad {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+
+		_, err := d.Ref(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
+
+		s.ErrorIs(d.RemoveRef(n), ErrReferenceNameEscape, "RemoveRef %q", n)
+
+		_, err = d.ReflogWriter(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "ReflogWriter %q", n)
+	}
+
+	// The rejected traversals must not have written .git/config.
+	_, err := d.fs.Stat(configPath)
+	s.Error(err, "traversal must not create .git/config")
+}
+
+func (s *SuiteDotGit) TestReferenceNameRejectsWindowsDisguisedTraversal() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// On NTFS, ".." followed by trailing periods/spaces or an Alternate Data
+	// Stream / $INDEX_ALLOCATION suffix is canonicalised back to "..", so a
+	// literal `== ".."` check would miss these while the filesystem still
+	// performs the parent-directory hop. These are pure-string checks, so the
+	// containment must hold on every host, not only Windows.
+	bad := []plumbing.ReferenceName{
+		"refs/heads/..::$INDEX_ALLOCATION",
+		"refs/heads/..:$DATA",
+		"refs/heads/.. /config",
+		"refs/heads/.../config",
+	}
+	for _, n := range bad {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+
+		_, err := d.Ref(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
+	}
+
+	_, err := d.fs.Stat(configPath)
+	s.Error(err, "traversal must not create .git/config")
+}
+
+func (s *SuiteDotGit) TestReferenceNameRejectsHFSDisguisedTraversal() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// HFS+ strips a set of ignorable Unicode code points during
+	// normalisation, so ".<U+200C>." (zero-width non-joiner) collapses to
+	// ".." on disk. As above, this is a string-level check that must hold
+	// regardless of host OS.
+	n := plumbing.ReferenceName("refs/heads/." + "\u200c" + "./config")
+	ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+	s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+
+	_, err := d.Ref(n)
+	s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
+
+	_, err = d.fs.Stat(configPath)
+	s.Error(err, "traversal must not create .git/config")
+}
+
+func (s *SuiteDotGit) TestReferenceNameRejectsAbsoluteAndDriveNames() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// A leading or trailing separator, or a drive-letter prefix, lets the
+	// name collapse onto a top-level .git file (e.g. "/config" -> .git/config)
+	// once joined. filepath.VolumeName alone would not catch "C:config" off
+	// Windows, so these are rejected host-independently as validSubmoduleName
+	// does.
+	bad := []plumbing.ReferenceName{
+		"/config",
+		"\\config",
+		"C:config",
+		"refs/heads/foo/",
+		"",
+	}
+	for _, n := range bad {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+	}
+
+	_, err := d.fs.Stat(configPath)
+	s.Error(err, "must not create .git/config")
+}
+
+func (s *SuiteDotGit) TestReferenceNameRejectsTopLevelMetadata() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// A single-level name that is neither under refs/ nor a [A-Z_] pseudo-ref
+	// would land on top-level .git metadata once joined; the IsSafe gate
+	// rejects it, matching upstream refname_is_safe.
+	bad := []plumbing.ReferenceName{
+		"config", "config.worktree", "index", "packed-refs",
+		"shallow", "hooks", "objects", "bar", "HEAD2", "head",
+	}
+	for _, n := range bad {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+	}
+
+	_, err := d.fs.Stat(configPath)
+	s.Error(err, "must not create .git/config")
+}
+
+func (s *SuiteDotGit) TestReferenceNameAcceptsBenignNames() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+	for _, n := range []plumbing.ReferenceName{
+		"HEAD", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
+		"refs/heads/main", "refs/heads/release-1.2",
+		"refs/tags/v1.0.0", "refs/remotes/origin/HEAD", "refs/stash",
+	} {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.Require().NoError(d.SetRef(ref, nil), "SetRef %q", n)
+	}
+}
+
 func (s *SuiteDotGit) TestInitialize() {
 	fs := s.EmptyFS()
 
@@ -132,11 +268,14 @@ func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 
 	s.Require().NoError(err)
 
+	// A single-level, non-pseudo-ref name is refused: it is not under refs/
+	// and its spelling is not the [A-Z_] pseudo-ref form (upstream
+	// refname_is_safe rejects it likewise).
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"bar",
 		"e8d3ffab552895c19b9fcf7aa264d277cde33881",
 	), nil)
-	s.Require().NoError(err)
+	s.ErrorIs(err, ErrReferenceNameEscape)
 
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(
 		"refs/heads/feature/baz",
@@ -175,10 +314,9 @@ func testSetRefs(s *SuiteDotGit, dir *DotGit) {
 	s.NotNil(ref)
 	s.Equal("refs/heads/foo", ref.Target().String())
 
-	ref, err = dir.Ref("bar")
-	s.Require().NoError(err)
-	s.NotNil(ref)
-	s.Equal("e8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
+	// "bar" was refused at write time and is refused at read time too.
+	_, err = dir.Ref("bar")
+	s.ErrorIs(err, ErrReferenceNameEscape)
 
 	// Check that SetRef with a non-nil `old` works.
 	err = dir.SetRef(plumbing.NewReferenceFromStrings(

@@ -50,6 +50,14 @@ func getPatchContext(ctx context.Context, message string, changes ...*Change) (*
 }
 
 func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, error) {
+	// Submodules (gitlinks) are not blob objects, so their contents cannot be
+	// read as files. Git represents them in a diff by a single
+	// "Subproject commit <hash>" line, so build that content synthetically
+	// instead of dropping the change from the patch.
+	if isSubmodule(c.From) || isSubmodule(c.To) {
+		return submoduleFilePatch(ctx, c)
+	}
+
 	from, to, err := c.Files()
 	if err != nil {
 		return nil, err
@@ -67,6 +75,57 @@ func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, erro
 	if fIsBinary || tIsBinary {
 		return &textFilePatch{from: c.From, to: c.To}, nil
 	}
+
+	diffs := diff.Do(fromContent, toContent)
+
+	chunks := make([]fdiff.Chunk, 0, len(diffs))
+	for _, d := range diffs {
+		select {
+		case <-ctx.Done():
+			return nil, ErrCanceled
+		default:
+		}
+
+		var op fdiff.Operation
+		switch d.Type {
+		case dmp.DiffEqual:
+			op = fdiff.Equal
+		case dmp.DiffDelete:
+			op = fdiff.Delete
+		case dmp.DiffInsert:
+			op = fdiff.Add
+		}
+
+		chunks = append(chunks, &textChunk{d.Text, op})
+	}
+
+	return &textFilePatch{
+		chunks: chunks,
+		from:   c.From,
+		to:     c.To,
+	}, nil
+}
+
+func isSubmodule(e ChangeEntry) bool {
+	return e != empty && e.TreeEntry.Mode == filemode.Submodule
+}
+
+// submoduleContent returns the textual representation git uses for a submodule
+// (gitlink) in a diff: a single "Subproject commit <hash>" line. It returns an
+// empty string when the entry does not point to a submodule.
+func submoduleContent(e ChangeEntry) string {
+	if !isSubmodule(e) {
+		return ""
+	}
+
+	return fmt.Sprintf("Subproject commit %s\n", e.TreeEntry.Hash)
+}
+
+// submoduleFilePatch builds a file patch for a change that adds, removes or
+// updates a submodule.
+func submoduleFilePatch(ctx context.Context, c *Change) (fdiff.FilePatch, error) {
+	fromContent := submoduleContent(c.From)
+	toContent := submoduleContent(c.To)
 
 	diffs := diff.Do(fromContent, toContent)
 
@@ -157,7 +216,7 @@ type changeEntryWrapper struct {
 }
 
 func (f *changeEntryWrapper) Hash() plumbing.Hash {
-	if !f.ce.TreeEntry.Mode.IsFile() {
+	if f.Empty() {
 		return plumbing.ZeroHash
 	}
 
@@ -169,7 +228,7 @@ func (f *changeEntryWrapper) Mode() filemode.FileMode {
 }
 
 func (f *changeEntryWrapper) Path() string {
-	if !f.ce.TreeEntry.Mode.IsFile() {
+	if f.Empty() {
 		return ""
 	}
 
@@ -177,7 +236,10 @@ func (f *changeEntryWrapper) Path() string {
 }
 
 func (f *changeEntryWrapper) Empty() bool {
-	return !f.ce.TreeEntry.Mode.IsFile()
+	// Submodules (gitlinks) are not files, but they still take part in a diff
+	// and thus must not be treated as empty entries.
+	return !f.ce.TreeEntry.Mode.IsFile() &&
+		f.ce.TreeEntry.Mode != filemode.Submodule
 }
 
 // textFilePatch is an implementation of fdiff.FilePatch interface

@@ -15,6 +15,10 @@
     },
     {
       "description": "Enable minor and patch updates for go-billy",
+      "matchBaseBranches": [
+        "main",
+        "releases/v5.x"
+      ],
       "matchPackageNames": [
         "github.com/go-git/go-billy",
       ],

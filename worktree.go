@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
@@ -64,6 +65,30 @@ type Worktree struct {
 // Filesystem returns the underlying filesystem for the worktree.
 func (w *Worktree) Filesystem() billy.Filesystem {
 	return w.filesystem.Filesystem
+}
+
+// reusableRootFS returns a worktree filesystem to use for a single bulk
+// checkout/reset. When the worktree lives on an OS-backed billy filesystem,
+// it opens one *os.Root for the whole operation and wraps it in the same
+// validating worktreeFilesystem, so each file is opened relative to a
+// reused directory instead of opening and closing a fresh root per call.
+// It falls back to the default filesystem when that is not possible.
+func (w *Worktree) reusableRootFS() (*worktreeFilesystem, func()) {
+	bos, ok := w.filesystem.Filesystem.(*osfs.BoundOS)
+	if !ok {
+		return w.filesystem, func() {}
+	}
+	root, err := os.OpenRoot(bos.Root())
+	if err != nil {
+		return w.filesystem, func() {}
+	}
+	rfs, err := osfs.FromRoot(root)
+	if err != nil {
+		_ = root.Close()
+		return w.filesystem, func() {}
+	}
+	return newWorktreeFilesystem(rfs, w.filesystem.protectNTFS, w.filesystem.protectHFS),
+		func() { _ = root.Close() }
 }
 
 // Pull incorporates changes from a remote repository into the current branch.
@@ -667,6 +692,9 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *object.Tree, files []string) error {
 	filesMap := buildFilePathMap(files)
 
+	fs, closeFS := w.reusableRootFS()
+	defer closeFS()
+
 	// Step 1: delete files removed from the tracked tree.
 	treeChanges, err := diffTrees(fromTree, toTree)
 	if err != nil {
@@ -684,7 +712,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 		if len(files) > 0 && !inFiles(filesMap, name) {
 			continue
 		}
-		if err := rmFileAndDirsIfEmpty(w.filesystem, name); err != nil {
+		if err := rmFileAndDirsIfEmpty(fs, name); err != nil {
 			return err
 		}
 	}
@@ -734,7 +762,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 			}
 		}
 
-		if err := w.checkoutChange(cfg, ch, toTree, b); err != nil {
+		if err := w.checkoutChange(cfg, fs, ch, toTree, b); err != nil {
 			return err
 		}
 	}
@@ -750,10 +778,10 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 		if len(files) > 0 && !inFiles(filesMap, e.Name) {
 			continue
 		}
-		if _, statErr := w.filesystem.Lstat(e.Name); os.IsNotExist(statErr) {
+		if _, statErr := fs.Lstat(e.Name); os.IsNotExist(statErr) {
 			continue
 		}
-		if err := rmFileAndDirsIfEmpty(w.filesystem, e.Name); err != nil {
+		if err := rmFileAndDirsIfEmpty(fs, e.Name); err != nil {
 			return err
 		}
 	}
@@ -783,6 +811,9 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []str
 	}
 	b := newIndexBuilder(idx)
 
+	fs, closeFS := w.reusableRootFS()
+	defer closeFS()
+
 	filesMap := buildFilePathMap(files)
 	for _, ch := range changes {
 		if len(files) > 0 {
@@ -803,7 +834,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []str
 			}
 		}
 
-		if err := w.checkoutChange(cfg, ch, t, b); err != nil {
+		if err := w.checkoutChange(cfg, fs, ch, t, b); err != nil {
 			return err
 		}
 	}
@@ -812,7 +843,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []str
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) checkoutChange(cfg *config.Config, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
+func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
 	a, err := ch.Action()
 	if err != nil {
 		return err
@@ -843,14 +874,14 @@ func (w *Worktree) checkoutChange(cfg *config.Config, ch merkletrie.Change, t *o
 		// fit: we want to be able to clean up legitimately-tracked
 		// shapes like "submodule/.git" rather than abort the whole
 		// reset on a single weird untracked file.
-		return rmFileAndDirsIfEmpty(w.filesystem, ch.From.String())
+		return rmFileAndDirsIfEmpty(fs, ch.From.String())
 	}
 
 	if isSubmodule {
-		return w.checkoutChangeSubmodule(name, a, e, idx)
+		return w.checkoutChangeSubmodule(fs, name, a, e, idx)
 	}
 
-	return w.checkoutChangeRegularFile(cfg, name, a, t, e, idx)
+	return w.checkoutChangeRegularFile(cfg, fs, name, a, t, e, idx)
 }
 
 func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
@@ -899,7 +930,8 @@ func (w *Worktree) setHEADCommit(commit plumbing.Hash) error {
 	return w.r.Storer.SetReference(branch)
 }
 
-func (w *Worktree) checkoutChangeSubmodule(name string,
+func (w *Worktree) checkoutChangeSubmodule(fs *worktreeFilesystem,
+	name string,
 	a merkletrie.Action,
 	e *object.TreeEntry,
 	idx *indexBuilder,
@@ -922,7 +954,7 @@ func (w *Worktree) checkoutChangeSubmodule(name string,
 			return err
 		}
 
-		if err := w.filesystem.MkdirAll(name, mode); err != nil {
+		if err := fs.MkdirAll(name, mode); err != nil {
 			return err
 		}
 
@@ -933,6 +965,7 @@ func (w *Worktree) checkoutChangeSubmodule(name string,
 }
 
 func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
+	fs *worktreeFilesystem,
 	name string,
 	a merkletrie.Action,
 	t *object.Tree,
@@ -945,7 +978,7 @@ func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
 
 		// to apply perm changes the file is deleted, billy doesn't implement
 		// chmod
-		if err := w.filesystem.Remove(name); err != nil {
+		if err := fs.Remove(name); err != nil {
 			return err
 		}
 
@@ -956,27 +989,27 @@ func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
 			return err
 		}
 
-		if err := w.checkoutFile(cfg, f); err != nil {
+		if err := w.checkoutFile(cfg, fs, f); err != nil {
 			return err
 		}
 
-		return w.addIndexFromFile(name, e.Hash, idx)
+		return w.addIndexFromFile(fs, name, e.Hash, idx)
 	}
 
 	return nil
 }
 
-func (w *Worktree) checkoutFile(cfg *config.Config, f *object.File) (err error) {
+func (w *Worktree) checkoutFile(cfg *config.Config, fs *worktreeFilesystem, f *object.File) (err error) {
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
 		return err
 	}
 
 	if mode&os.ModeSymlink != 0 {
-		return w.checkoutFileSymlink(f)
+		return w.checkoutFileSymlink(fs, f)
 	}
 
-	dstFile, err := w.filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
+	dstFile, err := fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return err
 	}
@@ -1019,7 +1052,7 @@ func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File,
 	return err
 }
 
-func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
+func (w *Worktree) checkoutFileSymlink(fs *worktreeFilesystem, f *object.File) (err error) {
 	// .gitmodules symlink rejection (and its NTFS / HFS variants) is
 	// enforced by the worktreeFilesystem wrapper's Symlink method via
 	// validSymlinkName. See https://github.com/git/git/commit/10ecfa7
@@ -1037,14 +1070,14 @@ func (w *Worktree) checkoutFileSymlink(f *object.File) (err error) {
 		return err
 	}
 
-	err = w.filesystem.Symlink(string(bytes), f.Name)
+	err = fs.Symlink(string(bytes), f.Name)
 
 	// On windows, this might fail.
 	// Follow Git on Windows behavior by writing the link as it is.
 	if err != nil && isSymlinkWindowsNonAdmin(err) {
 		mode, _ := f.Mode.ToOSFileMode()
 
-		to, err := w.filesystem.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
+		to, err := fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 		if err != nil {
 			return err
 		}
@@ -1067,9 +1100,9 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 	return nil
 }
 
-func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, idx *indexBuilder) error {
+func (w *Worktree) addIndexFromFile(fs *worktreeFilesystem, name string, h plumbing.Hash, idx *indexBuilder) error {
 	idx.Remove(name)
-	fi, err := w.filesystem.Lstat(name)
+	fi, err := fs.Lstat(name)
 	if err != nil {
 		return err
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -88,7 +89,51 @@ var (
 	// resolve outside the modules/ subtree, mirroring canonical Git's
 	// "ignoring suspicious submodule name" defence.
 	ErrModuleNameEscape = errors.New("submodule name escapes modules/ directory")
+	// ErrReferenceNameEscape is returned when a reference name would
+	// resolve outside its reference sub-tree once turned into a path
+	// under the .git directory (e.g. a name with a ".." component).
+	ErrReferenceNameEscape = errors.New("reference name escapes the reference storage")
 )
+
+func isPathSep(r rune) bool { return r == '/' || r == '\\' }
+
+// validReferenceName rejects reference names that cannot be safely turned into
+// a path under the .git directory. A loose reference (and its reflog) is stored
+// verbatim at ".git/<name>", so a crafted name — for instance one advertised by
+// a malicious remote — could climb out of its reference sub-tree and read,
+// overwrite, or delete unrelated metadata such as .git/config.
+//
+// The storage-safety gate is plumbing.ReferenceName.IsSafe, mirroring Git's
+// refname_is_safe: a name must be under refs/ without escaping it, or be a
+// [A-Z_] pseudo-ref. This alone rejects absolute, drive-prefixed, escaping and
+// single-level metadata names. On top of it, this adds filesystem-specific
+// hardening that IsSafe's literal check does not cover: control characters, and
+// components a case-insensitive/NTFS/HFS+ filesystem would fold back to "." or
+// ".." (trailing dots/spaces, Alternate Data Streams, ignorable Unicode code
+// points). The per-component check is delegated to pathutil.IsHFSDot and
+// pathutil.IsNTFSDot with "." as the needle, exactly as validSubmoduleName
+// does, and runs regardless of host OS because a name can be authored on one OS
+// and reach this layer on another.
+func validReferenceName(name plumbing.ReferenceName) error {
+	if !name.IsSafe() {
+		return fmt.Errorf("%w: %q is not under refs/ nor a valid pseudo-ref", ErrReferenceNameEscape, string(name))
+	}
+
+	s := string(name)
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
+		}
+	}
+	for _, part := range strings.FieldsFunc(s, isPathSep) {
+		// IsNTFSDot/IsHFSDot with a "." needle match ".." and its disguises
+		// but not a bare ".", so reject that component explicitly too.
+		if part == "." || pathutil.IsHFSDot(part, ".") || pathutil.IsNTFSDot(part, ".", "") {
+			return fmt.Errorf("%w: %q", ErrReferenceNameEscape, s)
+		}
+	}
+	return nil
+}
 
 // Options holds configuration for the storage.
 type Options struct {
@@ -268,6 +313,9 @@ func (d *DotGit) Shallow() (billy.File, error) {
 // ReflogReader returns a file pointer for reading the reflog for the given reference.
 // Returns nil, nil if the reflog file does not exist.
 func (d *DotGit) ReflogReader(name plumbing.ReferenceName) (billy.File, error) {
+	if err := validReferenceName(name); err != nil {
+		return nil, err
+	}
 	p := d.fs.Join(logsPath, string(name))
 	f, err := d.fs.Open(p)
 	if err != nil {
@@ -282,6 +330,9 @@ func (d *DotGit) ReflogReader(name plumbing.ReferenceName) (billy.File, error) {
 // ReflogWriter returns a file pointer for appending to the reflog for the given reference.
 // It creates the file and any necessary parent directories if they don't exist.
 func (d *DotGit) ReflogWriter(name plumbing.ReferenceName) (billy.File, error) {
+	if err := validReferenceName(name); err != nil {
+		return nil, err
+	}
 	p := d.fs.Join(logsPath, string(name))
 	if err := d.fs.MkdirAll(filepath.Dir(p), os.ModePerm); err != nil {
 		return nil, err
@@ -291,6 +342,9 @@ func (d *DotGit) ReflogWriter(name plumbing.ReferenceName) (billy.File, error) {
 
 // DeleteReflog removes the reflog file for the given reference.
 func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
+	if err := validReferenceName(name); err != nil {
+		return err
+	}
 	p := d.fs.Join(logsPath, string(name))
 	err := d.fs.Remove(p)
 	if os.IsNotExist(err) {
@@ -1045,6 +1099,10 @@ func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference
 
 // SetRef stores a reference, optionally checking that old matches the current value.
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
+	if err := validReferenceName(r.Name()); err != nil {
+		return err
+	}
+
 	var content string
 	switch r.Type() {
 	case plumbing.SymbolicReference:
@@ -1080,6 +1138,10 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 
 // Ref returns the reference for a given reference name.
 func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if err := validReferenceName(name); err != nil {
+		return nil, err
+	}
+
 	ref, err := d.readReferenceFile(".", name.String())
 	if err == nil {
 		return ref, nil
@@ -1143,6 +1205,10 @@ func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, er
 
 // RemoveRef removes a reference by name.
 func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
+	if err := validReferenceName(name); err != nil {
+		return err
+	}
+
 	path := d.fs.Join(".", name.String())
 	_, err := d.fs.Stat(path)
 	if err == nil {

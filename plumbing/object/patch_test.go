@@ -54,6 +54,65 @@ func (s *PatchSuite) TestStatsWithSubmodules() {
 	s.NotNil(p)
 }
 
+func (s *PatchSuite) TestPatchWithSubmodule() {
+	subDotgit, err := fixtures.ByURL("https://github.com/git-fixtures/submodule.git").One().DotGit()
+	s.Require().NoError(err)
+	storer := filesystem.NewStorage(subDotgit, cache.NewObjectLRUDefault())
+	defer func() { _ = storer.Close() }()
+
+	commit, err := GetCommit(storer, plumbing.NewHash("b685400c1f9316f350965a5993d350bc746b0bf4"))
+	s.Require().NoError(err)
+
+	tree, err := commit.Tree()
+	s.Require().NoError(err)
+
+	e, err := tree.entry("basic")
+	s.Require().NoError(err)
+
+	// Adding a submodule (gitlink) must be reflected in the patch as a
+	// "Subproject commit <hash>" line, mirroring the output of `git diff`.
+	added := &Change{
+		To: ChangeEntry{
+			Name:      "basic",
+			Tree:      tree,
+			TreeEntry: *e,
+		},
+	}
+
+	p, err := getPatch("", added)
+	s.Require().NoError(err)
+
+	got := p.String()
+	s.Contains(got, "diff --git a/basic b/basic")
+	s.Contains(got, "new file mode 160000")
+	s.Contains(got, "+Subproject commit 6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	// Updating the commit a submodule points to must produce a deletion of the
+	// old commit line and an addition of the new one.
+	other, err := tree.entry("itself")
+	s.Require().NoError(err)
+
+	updated := &Change{
+		From: ChangeEntry{
+			Name:      "basic",
+			Tree:      tree,
+			TreeEntry: *e,
+		},
+		To: ChangeEntry{
+			Name:      "basic",
+			Tree:      tree,
+			TreeEntry: TreeEntry{Name: "basic", Mode: other.Mode, Hash: other.Hash},
+		},
+	}
+
+	p, err = getPatch("", updated)
+	s.Require().NoError(err)
+
+	got = p.String()
+	s.Contains(got, "-Subproject commit 6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	s.Contains(got, "+Subproject commit 47770b26e71b0f69c0ecd494b1066f8d1da4fc03")
+}
+
 func (s *PatchSuite) TestFileStatsString() {
 	testCases := []struct {
 		description string
