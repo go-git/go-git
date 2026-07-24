@@ -233,8 +233,6 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 
 		if out.Packfile {
 			streamErr := streamPackfile(ctx, st, packReader, req.Progress)
-<<<<<<< HEAD
-=======
 			// Skip draining/closing on cancellation: streamPackfile wraps
 			// packReader in a NewContextReader, whose background goroutine
 			// can still be blocked in the underlying Read after the
@@ -252,19 +250,18 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 			// cancelled an instant after a successful/non-cancel return,
 			// and checking ctx.Err() at that point would skip the close
 			// for a read that was already fully quiescent.
-			if !errors.Is(streamErr, context.Canceled) && !errors.Is(streamErr, context.DeadlineExceeded) {
-				closeReader(packReader)
+			if errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
+				return streamErr
 			}
->>>>>>> origin/main
 			if streamErr != nil {
 				// The stream aborted mid-packfile: the unread remainder may be
 				// a large partial pack, so close without draining.
 				closeReader(packReader)
 				return streamErr
 			}
-			// The pack was read in full; the remaining bytes are the sideband
-			// terminator. Drain them (best-effort, for connection reuse — not
-			// protocol validation) so the connection returns to the pool.
+			// The pack was read in full; drain any remaining bytes
+			// (best-effort, for connection reuse) so the connection returns
+			// to the pool.
 			drainClose(packReader)
 			break
 		}

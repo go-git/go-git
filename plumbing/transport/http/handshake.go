@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -170,8 +169,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 			version:    ver,
 			caps:       adv.Capabilities,
 
-			lowSpeedLimit: opts.LowSpeedLimit,
-			lowSpeedTime:  opts.LowSpeedTime,
+			lowSpeed: opts.LowSpeed,
 		}, nil
 	}
 
@@ -199,8 +197,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		caps:       ar.Capabilities,
 		refs:       ar,
 
-		lowSpeedLimit: opts.LowSpeedLimit,
-		lowSpeedTime:  opts.LowSpeedTime,
+		lowSpeed: opts.LowSpeed,
 	}, nil
 }
 
@@ -242,8 +239,7 @@ type smartPackSession struct {
 	caps       capability.List
 	refs       *packp.AdvRefs
 
-	lowSpeedLimit int64
-	lowSpeedTime  time.Duration
+	lowSpeed *LowSpeedGuard
 }
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
@@ -444,9 +440,8 @@ func (b *httpResponseBody) Close() error {
 //
 // Draining an incomplete or malformed response could block indefinitely under
 // a deadline-less context; this is bounded by the transport's low-speed guard
-// (Options.LowSpeedLimit/LowSpeedTime) when configured. The drain is
-// best-effort, so its error is ignored — a stalled drain simply forfeits
-// connection reuse.
+// (Options.LowSpeed) when configured. The drain is best-effort, so its error
+// is ignored — a stalled drain simply forfeits connection reuse.
 func (b *httpResponseBody) DrainClose() error {
 	if b.req.resp == nil {
 		return nil
@@ -513,8 +508,8 @@ func (r *httpRequester) doPost() error {
 		_ = r.resp.Body.Close()
 		return fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(r.resp.Request.URL), r.resp.StatusCode)
 	}
-	if r.session.lowSpeedLimit > 0 && r.session.lowSpeedTime > 0 {
-		r.resp.Body = newLowSpeedBody(r.resp.Body, r.session.lowSpeedLimit, r.session.lowSpeedTime)
+	if r.session.lowSpeed.valid() {
+		r.resp.Body = newLowSpeedBody(r.resp.Body, r.session.lowSpeed)
 	}
 	return nil
 }

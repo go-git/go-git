@@ -38,7 +38,7 @@ func TestLowSpeedBody_AbortsStalledRead(t *testing.T) {
 	pr, pw := io.Pipe()
 	defer func() { _ = pw.Close() }()
 
-	b := newLowSpeedBody(pr, 1, 100*time.Millisecond)
+	b := newLowSpeedBody(pr, &LowSpeedGuard{Limit: 1, Time: 100 * time.Millisecond})
 
 	done := make(chan error, 1)
 	go func() {
@@ -57,7 +57,7 @@ func TestLowSpeedBody_AbortsStalledRead(t *testing.T) {
 func TestLowSpeedBody_AbortsSlowTransfer(t *testing.T) {
 	t.Parallel()
 
-	b := newLowSpeedBody(&trickleReader{n: 100, delay: 20 * time.Millisecond}, 1024*1024, 100*time.Millisecond)
+	b := newLowSpeedBody(&trickleReader{n: 100, delay: 20 * time.Millisecond}, &LowSpeedGuard{Limit: 1024 * 1024, Time: 100 * time.Millisecond})
 
 	var err error
 	buf := make([]byte, 1)
@@ -71,7 +71,7 @@ func TestLowSpeedBody_AllowsFastTransfer(t *testing.T) {
 	t.Parallel()
 
 	payload := strings.Repeat("x", 4096)
-	b := newLowSpeedBody(io.NopCloser(strings.NewReader(payload)), 1, time.Second)
+	b := newLowSpeedBody(io.NopCloser(strings.NewReader(payload)), &LowSpeedGuard{Limit: 1, Time: time.Second})
 
 	got, err := io.ReadAll(b)
 	require.NoError(t, err)
