@@ -91,7 +91,10 @@ func (b *lowSpeedBody) Read(p []byte) (int, error) {
 
 func (b *lowSpeedBody) Close() error {
 	b.timer.Stop()
-	return b.rc.Close()
+	if b.aborted.CompareAndSwap(false, true) {
+		return b.rc.Close()
+	}
+	return nil
 }
 
 // trip marks the transfer aborted and closes the underlying body exactly once,
