@@ -51,6 +51,7 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 	var out bytes.Buffer
 	s := &StreamSession{
 		version: protocol.V2,
+		r:       bufio.NewReader(bytes.NewReader(nil)),
 		w:       ioutil.WriteNopCloser(&out),
 		caps:    serverCaps,
 	}
