@@ -311,6 +311,14 @@ func (s *ConformanceSuite) TestWildmatchSlashSemantics() {
 		{"**/bar/**", "deep/foo/bar/baz/", true, "double star with double star continuation"},
 		{"**/bar/*", "deep/foo/bar", false, "double star continuation needs path"},
 		{"**/bar/**", "deep/foo/bar/", true, "double star double star with directory"},
+		{"**/bar/**", "deep/", false, "double star suffix needs the named segment"},
+		{"**/bar/**", "deep/foo/", false, "double star suffix needs the named segment when nested"},
+		{"**/bar/**", "deep/foo/baz/", false, "double star suffix rejects a sibling directory"},
+		{"**/bar/**", "deep/foo/file.txt", false, "double star suffix rejects a file outside the named segment"},
+		{"a/**/*/**", "a/f.txt", false, "double star suffix needs something below the consumed path"},
+		{"a/**/*/**", "a/b/c/f.txt", true, "double star suffix with a path left to cover"},
+		{"a/**/*/**", "a/b/", true, "double star suffix with a directory left to cover"},
+		{"**/*.txt/**", "a/f.txt", false, "double star suffix does not match the segment it follows"},
 		{"**/bar**", "foo/bar/baz", true, "double star with adjacent stars"},
 		{"*/bar/**", "foo/bar/baz/x", true, "mixed single double star"},
 		{"*/bar/**", "deep/foo/bar/baz/x", false, "mixed stars wrong depth"},
@@ -840,6 +848,34 @@ func (s *ConformanceSuite) TestIgnoreRealWorld() {
 		{"backup~", false, true, "backup file"},
 		{"src/main.js", false, false, "normal source file"},
 		{"README.md", false, false, "normal doc file"},
+	}
+	for _, tt := range tests {
+		s.assertIgnore(m, patterns, tt.path, tt.isDir, tt.ignored, tt.desc)
+	}
+}
+
+// TestIgnoreDoubleStarSuffixRequiresSegment verifies that `**/<segment>/**`
+// excludes only paths that actually contain <segment>. Callers such as
+// Worktree.Status stop descending into a directory the matcher excludes, so a
+// directory wrongly reported as ignored hides every untracked file beneath it.
+func (s *ConformanceSuite) TestIgnoreDoubleStarSuffixRequiresSegment() {
+	patterns := []string{"**/node_modules/**"}
+	m := s.createMatcher(patterns)
+
+	tests := []struct {
+		path    string
+		isDir   bool
+		ignored bool
+		desc    string
+	}{
+		{"src", true, false, "sibling directory"},
+		{"src/pkg", true, false, "nested sibling directory"},
+		{"src/pkg/app.go", false, false, "file below a sibling directory"},
+		{"node_modules", true, true, "the named directory"},
+		{"node_modules/react", true, true, "directory below the named directory"},
+		{"node_modules/react/index.js", false, true, "file below the named directory"},
+		{"src/node_modules", true, true, "the named directory nested"},
+		{"src/node_modules/react/index.js", false, true, "file below a nested match"},
 	}
 	for _, tt := range tests {
 		s.assertIgnore(m, patterns, tt.path, tt.isDir, tt.ignored, tt.desc)

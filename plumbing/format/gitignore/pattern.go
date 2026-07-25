@@ -502,11 +502,14 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 		}
 		if pattern == zeroToManyDirs {
 			if i == len(p.pattern)-1 {
-				// Trailing ** matches everything remaining (if there's something left or it's a dir)
-				if len(path) > 0 || isDir {
-					matched = true
-					trailingStar = true
-				}
+				// A trailing `**` matches the entries below whatever the
+				// earlier segments consumed, so it needs either a remaining
+				// component or a directory candidate standing in for them.
+				// Assigning matched rather than only raising it stops an
+				// exhausted path from inheriting the previous segment's
+				// result, which would make `a/**/*/**` match `a/f.txt`.
+				matched = len(path) > 0 || isDir
+				trailingStar = matched
 				break
 			}
 			canTraverse = true
@@ -525,9 +528,14 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 				if wildmatch(pattern, e) {
 					matched = true
 					break
-				} else if len(path) == 0 {
-					// if nothing left then fail
-					matched = false
+				}
+				if len(path) == 0 {
+					// A `**` that never finds the segment following it is a
+					// definitive non-match. Returning here rather than
+					// clearing matched keeps a trailing `**` from reviving
+					// the pattern once the path is exhausted, which would
+					// make `**/bar/**` match directories containing no bar.
+					return false
 				}
 			}
 		} else {
