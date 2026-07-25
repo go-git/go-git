@@ -24,7 +24,8 @@ import (
 // packp.LsRefsOutput from the returned reader. The session builds the v2
 // request envelope (command name, the capabilities collected during the
 // handshake, delim-pkt, the arguments, and flush-pkt). Closing the reader
-// releases the underlying transport resources (for HTTP, the response body).
+// releases per-command resources (for HTTP, the response body); stream
+// transports may keep the underlying connection open for subsequent commands.
 type Commander interface {
 	Command(ctx context.Context, cmd string, req packp.CommandArgs) (io.ReadCloser, error)
 }
