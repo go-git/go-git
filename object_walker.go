@@ -15,10 +15,30 @@ type objectWalker struct {
 	// seen map can become huge if walking over large
 	// repos. Thus using struct{} as the value type.
 	seen map[plumbing.Hash]struct{}
+	// shallows is the set of shallow roots, loaded lazily
+	// on the first commit walked.
+	shallows map[plumbing.Hash]struct{}
 }
 
 func newObjectWalker(s storage.Storer) *objectWalker {
-	return &objectWalker{s, map[plumbing.Hash]struct{}{}}
+	return &objectWalker{Storer: s, seen: map[plumbing.Hash]struct{}{}}
+}
+
+// isShallow reports whether hash is a shallow root, meaning its
+// parents are not present in the repository.
+func (p *objectWalker) isShallow(hash plumbing.Hash) (bool, error) {
+	if p.shallows == nil {
+		shallows, err := p.Storer.Shallow()
+		if err != nil {
+			return false, err
+		}
+		p.shallows = make(map[plumbing.Hash]struct{}, len(shallows))
+		for _, h := range shallows {
+			p.shallows[h] = struct{}{}
+		}
+	}
+	_, ok := p.shallows[hash]
+	return ok, nil
 }
 
 // walkAllRefs walks all (hash) references from the repo.
@@ -60,7 +80,7 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 	// Fetch the object.
 	obj, err := object.GetObject(p.Storer, hash)
 	if err != nil {
-		return fmt.Errorf("getting object %s failed: %v", hash, err)
+		return fmt.Errorf("getting object %s failed: %w", hash, err)
 	}
 	// Walk all children depending on object type.
 	switch obj := obj.(type) {
@@ -68,6 +88,15 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 		err = p.walkObjectTree(obj.TreeHash)
 		if err != nil {
 			return err
+		}
+		// Parents of a shallow root are not present in the
+		// repository, so don't attempt to walk them.
+		shallow, err := p.isShallow(obj.ID())
+		if err != nil {
+			return err
+		}
+		if shallow {
+			break
 		}
 		for _, h := range obj.ParentHashes {
 			err = p.walkObjectTree(h)

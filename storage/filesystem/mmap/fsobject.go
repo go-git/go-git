@@ -176,7 +176,8 @@ func (o *ondemandObject) resolveMetadata() error {
 	var err error
 	if o.diskType == plumbing.OFSDeltaObject {
 		reader := bytes.NewReader(o.scanner.packMmap[pos:])
-		negativeOffset, err := binary.ReadVariableWidthInt(reader)
+		var negativeOffset int64
+		negativeOffset, err = binary.ReadVariableWidthInt(reader)
 		if err != nil {
 			return fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
@@ -187,8 +188,7 @@ func (o *ondemandObject) resolveMetadata() error {
 		consumed := len(o.scanner.packMmap[pos:]) - reader.Len()
 		pos += int64(consumed)
 
-		//nolint:staticcheck
-		base, err = o.scanner.GetByOffset(baseOffset) //nolint:ineffassign
+		base, err = o.scanner.GetByOffset(baseOffset)
 	} else {
 		hashSize := o.scanner.hashSize
 		end := pos + int64(hashSize)

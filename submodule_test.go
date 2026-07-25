@@ -2,6 +2,8 @@ package git
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
@@ -11,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -291,6 +294,119 @@ func TestSubmodulesUpdateContext(t *testing.T) {
 
 		err = sm.UpdateContext(ctx, &SubmoduleUpdateOptions{Init: true})
 		require.Error(t, err)
+	})
+}
+
+// newRepoWithStaleGitmodulesEntry creates a repository whose .gitmodules
+// declares a submodule with no corresponding entry in the index, as left
+// behind when a submodule is removed with `git rm` but its .gitmodules
+// section is not deleted.
+func newRepoWithStaleGitmodulesEntry(t *testing.T) (string, *Repository) {
+	t.Helper()
+
+	dir := t.TempDir()
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+
+	wt, err := r.Worktree()
+	require.NoError(t, err)
+
+	gitmodules := "[submodule \"ghost\"]\n\tpath = ghost\n\turl = https://example.com/ghost.git\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitmodules"), []byte(gitmodules), 0o644))
+
+	_, err = wt.Add(".gitmodules")
+	require.NoError(t, err)
+	_, err = wt.Commit("stale .gitmodules entry", &CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	return dir, r
+}
+
+func TestSubmodulesUpdateSkipsEntryMissingFromIndex(t *testing.T) {
+	t.Parallel()
+
+	_, r := newRepoWithStaleGitmodulesEntry(t)
+	defer func() { _ = r.Close() }()
+
+	wt, err := r.Worktree()
+	require.NoError(t, err)
+
+	sm, err := wt.Submodules()
+	require.NoError(t, err)
+	require.Len(t, sm, 1)
+
+	require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
+
+	// The skipped entry must not have been initialized into .git/config.
+	cfg, err := r.Config()
+	require.NoError(t, err)
+	require.NotContains(t, cfg.Submodules, "ghost")
+}
+
+func TestSubmoduleUpdateEntryMissingFromIndex(t *testing.T) {
+	t.Parallel()
+
+	_, r := newRepoWithStaleGitmodulesEntry(t)
+	defer func() { _ = r.Close() }()
+
+	wt, err := r.Worktree()
+	require.NoError(t, err)
+
+	sm := namedSubmodule(t, wt, "ghost")
+
+	err = sm.Update(&SubmoduleUpdateOptions{Init: true})
+	require.ErrorIs(t, err, index.ErrEntryNotFound)
+	require.ErrorContains(t, err, `submodule "ghost"`)
+}
+
+func TestCloneRecurseSubmodulesSkipsEntryMissingFromIndex(t *testing.T) {
+	t.Parallel()
+
+	dir, r := newRepoWithStaleGitmodulesEntry(t)
+	defer func() { _ = r.Close() }()
+
+	clone, err := PlainClone(t.TempDir(), &CloneOptions{
+		URL:               dir,
+		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+	})
+	require.NoError(t, err)
+	defer func() { _ = clone.Close() }()
+}
+
+func TestSubmodulesUpdateWithStaleGitmodulesEntry(t *testing.T) {
+	t.Parallel()
+
+	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
+
+		if testing.Short() {
+			t.Skip("skipping test in short mode.")
+		}
+
+		r, wt := cloneFixture(t, f)
+		defer func() { _ = r.Close() }()
+
+		// Append a stale entry alongside the fixture's real submodules.
+		file, err := wt.Filesystem().OpenFile(".gitmodules", os.O_APPEND|os.O_WRONLY, 0o644)
+		require.NoError(t, err)
+		_, err = file.Write([]byte("[submodule \"ghost\"]\n\tpath = ghost\n\turl = https://example.com/ghost.git\n"))
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+
+		sm, err := wt.Submodules()
+		require.NoError(t, err)
+
+		require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
+
+		// The real submodule must still have been updated.
+		realSub := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
+		subRepo, err := realSub.Repository()
+		require.NoError(t, err)
+		defer subRepo.Close()
+
+		ref, err := subRepo.Reference(plumbing.HEAD, true)
+		require.NoError(t, err)
+		require.Equal(t, submoduleHashFromIndex(t, r, primaryFixtureSubmoduleName(f)), ref.Hash())
 	})
 }
 

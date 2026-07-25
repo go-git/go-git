@@ -584,7 +584,7 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 	// degrades gracefully — same shape as HasEncodedObject.
 	idxErr := s.requireIndex()
 	if idxErr == nil {
-		if pack, idx, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash {
+		if pack, idx, offset := s.findObjectInPackfile(h); !pack.IsZero() {
 			if cached, ok := s.objectCache.Get(h); ok {
 				return cached.Size(), nil
 			}
@@ -637,7 +637,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	idxErr := s.requireIndex()
 	routed := false
 	if idxErr == nil {
-		if pack, idx, offset := s.findObjectInPackfile(h); pack != plumbing.ZeroHash {
+		if pack, idx, offset := s.findObjectInPackfile(h); !pack.IsZero() {
 			routed = true
 			if cached, ok := s.objectCache.Get(h); ok {
 				if t == plumbing.AnyObject || cached.Type() == t {

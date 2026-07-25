@@ -484,7 +484,7 @@ type ResetOptions struct {
 
 // Validate validates the fields and sets the default values.
 func (o *ResetOptions) Validate(r *Repository) error {
-	if o.Commit == plumbing.ZeroHash {
+	if o.Commit.IsZero() {
 		ref, err := r.Head()
 		if err != nil {
 			return err
