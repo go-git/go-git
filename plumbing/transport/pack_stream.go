@@ -161,7 +161,8 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 				_ = rc.Close()
 				return nil, nil, err
 			}
-			return out, rc, nil
+			_ = rc.Close()
+			return out, io.NopCloser(s.r), nil
 		}
 		if err := internal.FetchV2(ctx, st, req, round); err != nil {
 			return s.wrapStderr(err)
