@@ -2192,11 +2192,11 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 
 	status, _ := w.Status()
 	s.Len(status, 3)
-	_, ok := status["another/file"]
+	_, ok := status["another"]
 	s.True(ok)
-	_, ok = status["vendor/github.com/file"]
+	_, ok = status["vendor/github.com"]
 	s.True(ok)
-	_, ok = status["vendor/gopkg.in/file"]
+	_, ok = status["vendor/gopkg.in"]
 	s.True(ok)
 
 	f, _ = fs.Create(".gitignore")
@@ -2210,11 +2210,11 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 	s.Len(status, 4)
 	_, ok = status[".gitignore"]
 	s.True(ok)
-	_, ok = status["another/file"]
+	_, ok = status["another"]
 	s.True(ok)
 	_, ok = status["vendor/.gitignore"]
 	s.True(ok)
-	_, ok = status["vendor/github.com/file"]
+	_, ok = status["vendor/github.com"]
 	s.True(ok)
 }
 
