@@ -646,7 +646,11 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 	}
 
 	// Check worktree status for local modifications on touched paths.
-	status, err := w.Status()
+	// UntrackedFilesAll: the checks below match exact file paths.
+	status, err := w.StatusWithOptions(StatusOptions{
+		Strategy:       defaultStatusStrategy,
+		UntrackedFiles: UntrackedFilesAll,
+	})
 	if err != nil {
 		return err
 	}
@@ -730,7 +734,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true)
+	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true, UntrackedFilesAll)
 	if err != nil {
 		return err
 	}
@@ -800,7 +804,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 // noder's IgnoreScope would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
 func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []string) error {
-	changes, err := w.diffStagingWithWorktree(cfg, true, false)
+	changes, err := w.diffStagingWithWorktree(cfg, true, false, UntrackedFilesAll)
 	if err != nil {
 		return err
 	}
@@ -885,7 +889,7 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 }
 
 func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
-	ch, err := w.diffStagingWithWorktree(cfg, false, true)
+	ch, err := w.diffStagingWithWorktree(cfg, false, true, UntrackedFilesAll)
 	if err != nil {
 		return false, err
 	}
@@ -1327,7 +1331,11 @@ func (w *Worktree) readGitmodulesFile() (*config.Modules, error) {
 // Clean the worktree by removing untracked files.
 // An empty dir could be removed - this is what  `git clean -f -d .` does.
 func (w *Worktree) Clean(opts *CleanOptions) error {
-	s, err := w.Status()
+	// UntrackedFilesAll: doClean checks IsUntracked per file path.
+	s, err := w.StatusWithOptions(StatusOptions{
+		Strategy:       defaultStatusStrategy,
+		UntrackedFiles: UntrackedFilesAll,
+	})
 	if err != nil {
 		return err
 	}
