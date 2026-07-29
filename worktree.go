@@ -954,6 +954,10 @@ func (w *Worktree) checkoutChangeSubmodule(fs *worktreeFilesystem,
 			return err
 		}
 
+		if err := w.clearBlockingSymlinks(fs, name); err != nil {
+			return err
+		}
+
 		if err := fs.MkdirAll(name, mode); err != nil {
 			return err
 		}
@@ -999,7 +1003,56 @@ func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
 	return nil
 }
 
+// clearBlockingSymlinks removes a symlink that is in the way of
+// materialising name, so the checkout writes a real entry in its place
+// instead of following the link out of the worktree. Two cases:
+//
+//   - a leading directory component that is a symlink (e.g. "s" while
+//     writing "s/config", where "s" links to ".git"): OpenFile/MkdirAll
+//     would traverse it, so the write would land under the link's target.
+//   - the final component itself being a symlink (e.g. writing "s" while
+//     "s" links to ".git/config"): OpenFile with O_TRUNC, or Symlink,
+//     would follow/replace through it and clobber the target.
+//
+// A symlink can never be a legitimate parent of, or the destination for,
+// a tracked entry, so removing it is always correct. This mirrors upstream
+// Git's forced checkout, which unlinks a blocking symlink in the leading
+// path (create_directories) and unlinks an existing entry before
+// write_entry.
+// https://github.com/git/git/blob/v2.54.0/entry.c#L50
+func (w *Worktree) clearBlockingSymlinks(fs *worktreeFilesystem, name string) error {
+	var dirs []string
+	for dir := filepath.Dir(name); dir != "." && dir != "" && dir != string(filepath.Separator); dir = filepath.Dir(dir) {
+		dirs = append(dirs, dir)
+	}
+	// Leading components, shallowest-first: removing the shallowest symlink
+	// invalidates every component beneath it, so a single removal is enough.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		fi, err := fs.Lstat(dirs[i])
+		if err != nil {
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fs.Remove(dirs[i])
+		}
+	}
+	// Final component: an existing symlink here would be followed by the
+	// subsequent OpenFile/Symlink/MkdirAll, so replace it.
+	if fi, err := fs.Lstat(name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fs.Remove(name)
+	}
+	return nil
+}
+
 func (w *Worktree) checkoutFile(cfg *config.Config, fs *worktreeFilesystem, f *object.File) (err error) {
+	// checkoutFile is the materialisation boundary for tracked entries.
+	// Remove any blocking symlink first so the subsequent OpenFile or
+	// Symlink call writes the entry itself instead of following a planted
+	// final-component link in the underlying filesystem.
+	if err := w.clearBlockingSymlinks(fs, f.Name); err != nil {
+		return err
+	}
+
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
 		return err

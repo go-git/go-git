@@ -116,6 +116,18 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 		return ErrCannotCherryPickWithoutCommitOptions
 	}
 
+	cfg, err := w.r.Config()
+	if err != nil {
+		return err
+	}
+
+	// Materialise changes through the same validating filesystem and
+	// checkout path as reset/checkout, so cherry-pick shares their
+	// leading-symlink handling, mode awareness (symlinks, exec bits,
+	// CRLF) and root reuse instead of writing raw bytes via Create.
+	fs, closeFS := w.reusableRootFS()
+	defer closeFS()
+
 	for _, commit := range commits {
 		var changes object.Changes
 		headRef, err := w.r.Head()
@@ -165,20 +177,14 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				if to == nil {
 					continue
 				}
-				content, err := to.Contents()
-				if err != nil {
+				// change.Files names the *File after the tree leaf. The
+				// worktree write needs the full path so it lands at the
+				// right location and is validated by the wrapper.
+				to.Name = change.To.Name
+				if err := w.checkoutFile(cfg, fs, to); err != nil {
 					return err
 				}
-				name := change.To.Name
-				dstFile, err := w.filesystem.Create(name)
-				if err != nil {
-					return err
-				}
-				_, err = dstFile.Write([]byte(content))
-				if err != nil {
-					return err
-				}
-				if _, err := w.Add(name); err != nil {
+				if _, err := w.Add(to.Name); err != nil {
 					return err
 				}
 			}
