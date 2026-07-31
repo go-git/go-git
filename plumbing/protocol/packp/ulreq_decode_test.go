@@ -32,6 +32,15 @@ func (s *UlReqDecodeSuite) TestEmpty() {
 	s.ErrorContains(err, "pkt-line 1: EOF")
 }
 
+func (s *UlReqDecodeSuite) TestFlushOnly() {
+	ur := &UploadRequest{}
+	var buf bytes.Buffer
+	s.NoError(pktline.WriteFlush(&buf))
+
+	s.NoError(ur.Decode(&buf))
+	s.Empty(ur.Wants)
+}
+
 func (s *UlReqDecodeSuite) TestNoWant() {
 	payloads := []string{
 		"foobar",
