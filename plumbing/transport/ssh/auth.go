@@ -115,7 +115,7 @@ func NewPublicKeys(user string, pemBytes []byte, password string) (*PublicKeys, 
 // encoded private key. An encryption password should be given if the file
 // contains a password encrypted PEM block otherwise password should be empty.
 func NewPublicKeysFromFile(user, pemFile, password string) (*PublicKeys, error) {
-	pemData, err := os.ReadFile(pemFile)
+	pemData, err := os.ReadFile(pemFile) //nolint:gosec // pemFile is the explicit input to this file-loading API.
 	if err != nil {
 		return nil, err
 	}

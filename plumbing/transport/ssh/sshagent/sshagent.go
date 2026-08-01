@@ -41,7 +41,7 @@ func New() (agent.Agent, net.Conn, error) {
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
 
 	trace.SSH.Printf("ssh: net.Dial unix sock %s", sshAuthSock)
-	conn, err := net.Dial("unix", sshAuthSock)
+	conn, err := net.Dial("unix", sshAuthSock) //nolint:gosec // SSH_AUTH_SOCK intentionally names a local Unix socket.
 	if err != nil {
 		return nil, nil, fmt.Errorf("error connecting to SSH_AUTH_SOCK: %v", err)
 	}

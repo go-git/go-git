@@ -71,7 +71,7 @@ func NewDB(files ...string) (*HostKeyDB, error) {
 	// logic for reading the file is designed to mimic hostKeyDB.Read from
 	// golang.org/x/crypto/ssh/knownhosts
 	for _, filename := range files {
-		f, err := os.Open(filename)
+		f, err := os.Open(filename) //nolint:gosec // Filenames are the explicit inputs to this file-loading API.
 		if err != nil {
 			return nil, err
 		}

@@ -5,6 +5,7 @@ linters:
     - dupl
     - errcheck
     - gocritic
+    - gosec
     - govet
     - ineffassign
     - misspell
@@ -17,6 +18,12 @@ linters:
     - unused
     - whitespace
   settings:
+    gosec:
+      excludes:
+        - G104 # Duplicates errcheck, which is already enabled.
+        - G115 # TODO: Too broad for Git's conversion-heavy binary formats; conversions require semantic bounds checks instead.
+        - G401 # Git object and pack formats require SHA-1 for compatibility.
+        - G505 # Git object and pack formats require importing SHA-1 for compatibility.
     govet:
       enable-all: true
       disable:
@@ -38,6 +45,7 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+          - gosec
 
 formatters:
   enable:
