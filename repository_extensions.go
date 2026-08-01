@@ -30,26 +30,43 @@ var (
 	// Some extensions are storage-specific, those are defined by the Storers
 	// themselves by implementing the ExtensionChecker interface.
 	builtinExtensions = map[string]struct{}{
-		// noop does not change git’s behavior at all.
+		// noop does not change git's behavior at all.
 		// It is useful only for testing format-1 compatibility.
 		//
 		// This extension is respected regardless of the
 		// core.repositoryFormatVersion setting.
 		"noop": {},
 
-		// noop-v1 does not change git’s behavior at all.
+		// noop-v1 does not change git's behavior at all.
 		// It is useful only for testing format-1 compatibility.
 		"noop-v1": {},
+
+		// worktreeConfig enables per-worktree configuration,
+		// automatically set by git worktree. go-git does not
+		// change behavior for this extension but must not
+		// reject it.
+		"worktreeconfig": {},
+
+		// partialClone enables partial clone (filter by blob
+		// size, etc.). go-git accepts but does not implement
+		// the partial clone protocol.
+		"partialclone": {},
+
+		// preciousObjects marks the repo as a promisor remote
+		// object store that must not be deleted by gc.
+		"preciousobjects": {},
 	}
 
 	// Some Git extensions were supported upstream before the introduction
 	// of repositoryformatversion. These are the only extensions that can be
 	// enabled while core.repositoryformatversion is unset or set to 0.
+	// Keys must be lowercase to match the output of extensions(), which
+	// normalises extension names with strings.ToLower.
 	extensionsValidForV0 = map[string]struct{}{
 		"noop":            {},
-		"partialClone":    {},
-		"preciousObjects": {},
-		"worktreeConfig":  {},
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 )
 
