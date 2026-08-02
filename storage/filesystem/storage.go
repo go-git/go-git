@@ -150,6 +150,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	readRevIdx := true
 	writeRevIdx := true
 	skipHash := false
+	idxVersion := uint32(0)
 
 	f, err := fs.Open("config")
 	if err == nil {
@@ -159,6 +160,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 			readRevIdx = cfg.Pack.ReadReverseIndex
 			writeRevIdx = cfg.Pack.WriteReverseIndex
 			skipHash = cfg.Index.SkipHash.IsTrue()
+			idxVersion = cfg.Index.Version
 		}
 
 		_ = f.Close()
@@ -199,7 +201,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
+		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash, version: idxVersion},
 		ShallowStorage:   ShallowStorage{dir: dir},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},

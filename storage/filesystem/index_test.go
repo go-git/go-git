@@ -1,12 +1,14 @@
 package filesystem_test
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -266,4 +268,103 @@ func newIndexStorageWithSpy(t *testing.T) (*filesystem.Storage, *spyIndexCache) 
 	require.NoError(t, sto.Init())
 
 	return sto, spy
+}
+
+func TestIndexVersionFromConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config string
+		want   uint32
+	}{
+		{
+			name: "no config uses the default version",
+			want: 2,
+		},
+		{
+			name:   "version 4 enables path prefix compression",
+			config: "[index]\n\tversion = 4\n",
+			want:   4,
+		},
+		{
+			name:   "version 3",
+			config: "[index]\n\tversion = 3\n",
+			want:   3,
+		},
+		{
+			name:   "below the supported range falls back to the default",
+			config: "[index]\n\tversion = 1\n",
+			want:   2,
+		},
+		{
+			name:   "above the supported range falls back to the default",
+			config: "[index]\n\tversion = 7\n",
+			want:   2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			if tc.config != "" {
+				require.NoError(t, util.WriteFile(fs, "config", []byte(tc.config), 0o644))
+			}
+
+			sto := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{})
+			defer func() { _ = sto.Close() }()
+
+			idx, err := sto.Index()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, idx.Version)
+
+			// The version has to reach the encoder, not just the in-memory
+			// Index, so check the header that ends up on disk.
+			idx.Entries = []*index.Entry{
+				{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
+			}
+			require.NoError(t, sto.SetIndex(idx))
+
+			raw, err := util.ReadFile(fs, "index")
+			require.NoError(t, err)
+			require.Greater(t, len(raw), 8)
+			assert.Equal(t, tc.want, binary.BigEndian.Uint32(raw[4:8]))
+		})
+	}
+}
+
+func TestIndexVersionKeepsVersionOfExistingIndex(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	require.NoError(t, util.WriteFile(fs, "config", []byte("[index]\n\tversion = 4\n"), 0o644))
+
+	sto := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{})
+	require.NoError(t, sto.SetIndex(&index.Index{
+		Version: 2,
+		Entries: []*index.Entry{
+			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
+		},
+	}))
+	require.NoError(t, sto.Close())
+
+	// A second Storage has no warm cache, so this goes through the decoder.
+	// An index already on disk carries its own version, which git preserves
+	// on rewrite rather than upgrading it to index.version.
+	sto2 := filesystem.NewStorageWithOptions(fs, cache.NewObjectLRUDefault(), filesystem.Options{})
+	defer func() { _ = sto2.Close() }()
+
+	idx, err := sto2.Index()
+	require.NoError(t, err)
+	assert.Equal(t, uint32(2), idx.Version)
+
+	// And the version survives a rewrite, rather than being replaced by the
+	// configured one on the way back out.
+	require.NoError(t, sto2.SetIndex(idx))
+	raw, err := util.ReadFile(fs, "index")
+	require.NoError(t, err)
+	require.Greater(t, len(raw), 8)
+	assert.Equal(t, uint32(2), binary.BigEndian.Uint32(raw[4:8]))
 }
