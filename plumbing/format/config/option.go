@@ -78,6 +78,96 @@ func (opts Options) GetAll(key string) []string {
 	return result
 }
 
+// Lookup returns the last value for key and whether the key was present at all.
+// Unlike Get it lets callers distinguish an absent key from a key with an empty
+// value.
+func (opts Options) Lookup(key string) (string, bool) {
+	for i := len(opts) - 1; i >= 0; i-- {
+		if opts[i].IsKey(key) {
+			return opts[i].Value, true
+		}
+	}
+	return "", false
+}
+
+// String returns the value for key, or def when key is absent.
+func (opts Options) String(key, def string) string {
+	if v, ok := opts.Lookup(key); ok {
+		return v
+	}
+	return def
+}
+
+// Bool returns the boolean value of key, or def when key is absent. A present
+// but unparseable value returns def together with ErrInvalidBool.
+func (opts Options) Bool(key string, def bool) (bool, error) {
+	v, ok := opts.Lookup(key)
+	if !ok {
+		return def, nil
+	}
+	b, err := ParseBool(v)
+	if err != nil {
+		return def, err
+	}
+	return b, nil
+}
+
+// Int returns the integer value of key, or def when key is absent. A present
+// but unparseable value returns def together with an error.
+func (opts Options) Int(key string, def int) (int, error) {
+	v, ok := opts.Lookup(key)
+	if !ok {
+		return def, nil
+	}
+	i, err := ParseInt(v)
+	if err != nil {
+		return def, err
+	}
+	return i, nil
+}
+
+// Int64 returns the int64 value of key, or def when key is absent. A present
+// but unparseable value returns def together with an error.
+func (opts Options) Int64(key string, def int64) (int64, error) {
+	v, ok := opts.Lookup(key)
+	if !ok {
+		return def, nil
+	}
+	i, err := ParseInt64(v)
+	if err != nil {
+		return def, err
+	}
+	return i, nil
+}
+
+// Uint returns the unsigned value of key, or def when key is absent. A present
+// but unparseable value returns def together with an error.
+func (opts Options) Uint(key string, def uint) (uint, error) {
+	v, ok := opts.Lookup(key)
+	if !ok {
+		return def, nil
+	}
+	u, err := ParseUint(v)
+	if err != nil {
+		return def, err
+	}
+	return u, nil
+}
+
+// Uint64 returns the unsigned 64-bit value of key, or def when key is absent. A
+// present but unparseable value returns def together with an error.
+func (opts Options) Uint64(key string, def uint64) (uint64, error) {
+	v, ok := opts.Lookup(key)
+	if !ok {
+		return def, nil
+	}
+	u, err := ParseUint64(v)
+	if err != nil {
+		return def, err
+	}
+	return u, nil
+}
+
 func (opts Options) withoutOption(key string) Options {
 	result := Options{}
 	for _, o := range opts {
