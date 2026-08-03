@@ -150,6 +150,41 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	assert.False(t, ok, "untracked file inside an ignored directory must not surface in Status")
 }
 
+func TestStatusTreatsNestedGitFileAsRepositoryBoundary(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	require.NoError(t, util.WriteFile(wt.Filesystem(), "file.txt", []byte("hello\n"), 0o644))
+	_, err = wt.Add("file.txt")
+	require.NoError(t, err)
+
+	sig := &object.Signature{Name: "test", Email: "test@test.com"}
+	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	nestedWorktree := filepath.Join(repoDir, ".worktrees", "feature")
+	require.NoError(t, os.MkdirAll(nestedWorktree, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(nestedWorktree, ".git"), []byte("gitdir: ../../.git/worktrees/feature\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(nestedWorktree, "file.txt"), []byte("nested\n"), 0o644))
+
+	st, err := wt.Status()
+	require.NoError(t, err)
+
+	boundary, ok := st[".worktrees/feature"]
+	require.True(t, ok, "nested git worktree must be reported at its boundary")
+	assert.Equal(t, Untracked, boundary.Worktree)
+
+	_, ok = st[".worktrees/feature/file.txt"]
+	assert.False(t, ok, "Status must not descend into a nested git worktree")
+}
+
 func BenchmarkWorktreeStatus(b *testing.B) {
 	b.StopTimer()
 

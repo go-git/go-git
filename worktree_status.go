@@ -156,8 +156,9 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
-		Index:    idx,
+		AutoCRLF:                 cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:                    idx,
+		DetectNestedRepositories: true,
 	}
 
 	// When ignored changes are to be filtered out, gather the gitignore

@@ -30,6 +30,18 @@ type NoderSuite struct {
 	suite.Suite
 }
 
+type rejectStatFS struct {
+	billy.Filesystem
+	reject string
+}
+
+func (fs *rejectStatFS) Stat(filename string) (os.FileInfo, error) {
+	if filename == fs.reject {
+		return nil, fmt.Errorf("unexpected Stat(%q)", filename)
+	}
+	return fs.Filesystem.Stat(filename)
+}
+
 func TestNoderSuite(t *testing.T) {
 	t.Parallel()
 	suite.Run(t, new(NoderSuite))
@@ -230,6 +242,67 @@ func (s *NoderSuite) TestDiffDirectory() {
 	a, err := ch[0].Action()
 	s.NoError(err)
 	s.Equal(merkletrie.Modify, a)
+}
+
+func (s *NoderSuite) TestNestedRepositoryDetectionIsOptIn() {
+	fs := memfs.New()
+	s.Require().NoError(fs.MkdirAll("nested", 0o755))
+	s.Require().NoError(WriteFile(fs, "nested/.git", []byte("gitdir: ../.git/worktrees/nested\n"), 0o644))
+	s.Require().NoError(WriteFile(fs, "nested/file.txt", []byte("nested\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{})
+	children, err := root.Children()
+	s.Require().NoError(err)
+	s.Require().Len(children, 1)
+	s.True(children[0].IsDir(), "nested repositories should only become boundaries when explicitly requested")
+
+	grandchildren, err := children[0].Children()
+	s.Require().NoError(err)
+	s.Require().Len(grandchildren, 1, ".git is ignored while ordinary children are still walked")
+	s.Equal("file.txt", grandchildren[0].Name())
+}
+
+func (s *NoderSuite) TestDetectNestedRepositoryBoundary() {
+	fs := memfs.New()
+	s.Require().NoError(fs.MkdirAll("nested", 0o755))
+	s.Require().NoError(WriteFile(fs, "nested/.git", []byte("gitdir: ../.git/worktrees/nested\n"), 0o644))
+	s.Require().NoError(WriteFile(fs, "nested/file.txt", []byte("nested\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{DetectNestedRepositories: true})
+	children, err := root.Children()
+	s.Require().NoError(err)
+	s.Require().Len(children, 1)
+	s.True(children[0].IsDir(), "nested repository boundary should preserve filesystem directory semantics")
+
+	grandchildren, err := children[0].Children()
+	s.Require().NoError(err)
+	s.Empty(grandchildren)
+
+	changes, err := merkletrie.DiffTree(NewRootNode(memfs.New(), nil), root, IsEquals)
+	s.Require().NoError(err)
+	s.Require().Len(changes, 1, "nested repository boundary should still be reported as an inserted path")
+
+	action, err := changes[0].Action()
+	s.Require().NoError(err)
+	s.Equal(merkletrie.Insert, action)
+	s.Equal("nested", changes[0].To.String())
+}
+
+func (s *NoderSuite) TestDetectNestedRepositoryBoundaryUsesDirectoryListing() {
+	base := memfs.New()
+	s.Require().NoError(base.MkdirAll("nested", 0o755))
+	s.Require().NoError(WriteFile(base, "nested/.git", []byte("gitdir: ../.git/worktrees/nested\n"), 0o644))
+	s.Require().NoError(WriteFile(base, "nested/file.txt", []byte("nested\n"), 0o644))
+
+	fs := &rejectStatFS{Filesystem: base, reject: "nested/.git"}
+	root := NewRootNodeWithOptions(fs, nil, Options{DetectNestedRepositories: true})
+	children, err := root.Children()
+	s.Require().NoError(err)
+	s.Require().Len(children, 1)
+
+	grandchildren, err := children[0].Children()
+	s.Require().NoError(err)
+	s.Empty(grandchildren)
 }
 
 func (s *NoderSuite) TestSocket() {
