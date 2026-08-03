@@ -7,7 +7,9 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
+	"sync"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -243,6 +246,93 @@ func TestRedirectStripsCredentials(t *testing.T) {
 	sps, ok := session.(*smartPackSession)
 	require.True(t, ok)
 	assert.Nil(t, sps.baseURL.User)
+}
+
+func TestRedirectDoesNotForwardCredentials(t *testing.T) {
+	t.Parallel()
+
+	base, backend := setupSmartServer(t)
+	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
+
+	backendURL, err := url.Parse(fmt.Sprintf("http://localhost:%d", backend.Port))
+	require.NoError(t, err)
+
+	// The redirect target records what it was sent, then proxies to the
+	// real backend so the handshake still completes.
+	var mu sync.Mutex
+	var received http.Header
+
+	tl := test.ListenTCP(t)
+	taddr := tl.Addr().(*net.TCPAddr)
+	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+	targetServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			received = r.Header.Clone()
+			mu.Unlock()
+			proxy.ServeHTTP(w, r)
+		}),
+	}
+
+	targetDone := make(chan struct{})
+	go func() {
+		defer close(targetDone)
+		require.ErrorIs(t, targetServer.Serve(tl), http.ErrServerClosed)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, targetServer.Close())
+		<-targetDone
+	})
+
+	rl := test.ListenTCP(t)
+	raddr := rl.Addr().(*net.TCPAddr)
+	targetURL := fmt.Sprintf("http://localhost:%d", taddr.Port)
+	redirectServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			target := targetURL + r.URL.Path
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+		}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		require.ErrorIs(t, redirectServer.Serve(rl), http.ErrServerClosed)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, redirectServer.Close())
+		<-done
+	})
+
+	tr := NewTransport(Options{
+		Authorizer: func(r *http.Request) error {
+			r.Header.Set("Private-Token", "super-secret")
+			return nil
+		},
+	})
+	endpoint := &url.URL{
+		Scheme: "http",
+		User:   url.UserPassword("testuser", "testpass"),
+		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
+		Path:   "/basic.git",
+	}
+
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     endpoint,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotNil(t, received)
+	assert.Empty(t, received.Get("Authorization"))
+	assert.Empty(t, received.Get("Private-Token"))
+	assert.Equal(t, capability.DefaultAgent(), received.Get("User-Agent"))
 }
 
 func TestCheckRedirectPolicy(t *testing.T) {
