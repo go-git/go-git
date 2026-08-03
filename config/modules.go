@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -22,9 +21,6 @@ var (
 	// for use as a path component.
 	ErrModuleBadName = errors.New("ignoring suspicious submodule name")
 )
-
-// Matches module paths with dotdot ".." components.
-var dotdotPath = regexp.MustCompile(`(^|[/\\])\.\.([/\\]|$)`)
 
 // Modules defines the submodules properties, represents a .gitmodules file
 // https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
@@ -113,8 +109,16 @@ func (m *Submodule) Validate() error {
 		return ErrModuleEmptyURL
 	}
 
-	if dotdotPath.MatchString(m.Path) {
-		return ErrModuleBadPath
+	// Reject any ".." path component, matching the check
+	// validSubmoduleName already applies to the name: a literal ".."
+	// and the NTFS/HFS+ spellings (trailing spaces/periods, Alternate
+	// Data Streams, ignorable code points) a filesystem folds back to
+	// a parent hop. m.Path is worktree-relative and attacker-controlled
+	// via .gitmodules, so both checks run regardless of host OS.
+	for _, seg := range strings.FieldsFunc(m.Path, isPathSep) {
+		if pathutil.IsHFSDot(seg, ".") || pathutil.IsNTFSDot(seg, ".", "") {
+			return ErrModuleBadPath
+		}
 	}
 
 	return nil

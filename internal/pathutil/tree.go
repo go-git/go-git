@@ -15,18 +15,20 @@ var ErrInvalidPath = fmt.Errorf("invalid path")
 // worktree or rewrite repository metadata. It rejects:
 //
 //   - control characters (< 0x20, 0x7f);
-//   - empty paths and "." / ".." components;
+//   - empty paths and "." / ".." components, including the NTFS and
+//     HFS+ spellings that fold back to ".." (trailing spaces/periods,
+//     Alternate Data Streams, ignorable code points);
 //   - Windows volume name prefixes (e.g. C:);
 //   - .git, its 8.3 NTFS short-name git~1, plus their HFS+ and NTFS
 //     variants — at every position, not just the root.
 //
-// HFS+/NTFS variants of `.git` are always rejected at this layer
-// regardless of runtime config: tree paths are canonical UTF-8 with
-// no zero-width characters or NTFS short-name forms, so an entry
-// that looks like a disguised `.git` is suspicious anywhere. Windows
-// reserved device names (CON, NUL, etc.) are not policed here — they
-// are legitimate filenames on non-Windows filesystems and upstream
-// Git accepts them. The wrapper layer (validPath in package git)
+// HFS+/NTFS variants of `.git` and `..` are always rejected at this
+// layer regardless of runtime config: tree paths are canonical UTF-8
+// with no zero-width characters or NTFS short-name forms, so an entry
+// that looks like a disguised `.git` or `..` is suspicious anywhere.
+// Windows reserved device names (CON, NUL, etc.) are not policed here
+// — they are legitimate filenames on non-Windows filesystems and
+// upstream Git accepts them. The wrapper layer (validPath in package git)
 // rejects them at materialisation time when core.protectNTFS is on.
 //
 // Mirrors upstream Git's verify_path_internal at read-cache.c#L987
@@ -53,7 +55,9 @@ func ValidTreePath(p string) error {
 	}
 
 	for _, part := range parts {
-		if part == "." || part == ".." {
+		// IsHFSDot/IsNTFSDot with a "." needle match ".." and its
+		// disguises but not a bare ".", so reject that explicitly too.
+		if part == "." || IsHFSDot(part, ".") || IsNTFSDot(part, ".", "") {
 			return fmt.Errorf("%w %q: cannot use %q", ErrInvalidPath, p, part)
 		}
 

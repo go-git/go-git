@@ -32,6 +32,20 @@ func (s *ModulesSuite) TestValidateBadPath() {
 		`foo/..`,
 		`foo/../`,
 		`foo/../bar`,
+
+		// HFS+ ignores certain Unicode code points during path
+		// normalisation, so these all resolve to ".." on macOS.
+		".\u200c.",     // ZWNJ between dots
+		"foo/.\u200c.", // hidden ".." mid-path
+
+		// NTFS strips trailing spaces, dots, and an alternate-data
+		// -stream suffix during canonicalisation, so these all
+		// resolve to ".." on Windows.
+		".. ",
+		"..  ",
+		".. .",
+		"..::$INDEX_ALLOCATION",
+		"foo/.. /bar",
 	}
 
 	for _, p := range input {
@@ -40,7 +54,18 @@ func (s *ModulesSuite) TestValidateBadPath() {
 			Path: p,
 			URL:  "https://example.com/",
 		}
-		s.Equal(ErrModuleBadPath, m.Validate())
+		s.Equal(ErrModuleBadPath, m.Validate(), "path %q", p)
+	}
+}
+
+func (s *ModulesSuite) TestValidateGoodPath() {
+	for _, p := range []string{"foo", "foo/bar", "a..b", "deps/x.y", "lib-foo/sub"} {
+		m := &Submodule{
+			Name: "ok",
+			Path: p,
+			URL:  "https://example.com/",
+		}
+		s.NoError(m.Validate(), "path %q", p)
 	}
 }
 
