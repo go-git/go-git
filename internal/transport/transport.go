@@ -15,6 +15,9 @@ type FetchRequest struct {
 	// Progress is the progress sideband.
 	Progress sideband.Progress
 
+	// StatusChan receives structured packfile progress updates.
+	StatusChan plumbing.StatusChan
+
 	// Wants is the list of object hashes the client wants to fetch.
 	// The caller selects which remote refs to fetch (refspec matching)
 	// and extracts their hashes.

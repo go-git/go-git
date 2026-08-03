@@ -223,7 +223,7 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		}
 
 		if out.Packfile {
-			streamErr := streamPackfile(ctx, st, packReader, req.Progress)
+			streamErr := streamPackfile(ctx, st, packReader, req.Progress, req.StatusChan)
 			// Skip draining/closing on cancellation: streamPackfile wraps
 			// packReader in a NewContextReader, whose background goroutine
 			// can still be blocked in the underlying Read after the
@@ -266,13 +266,13 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 }
 
 // streamPackfile demultiplexes the sideband-64k packfile stream into st.
-func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader, progress sideband.Progress) error {
+func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader, progress sideband.Progress, statusChan plumbing.StatusChan) error {
 	reader := ioutil.NewContextReader(ctx, packReader)
 	demuxer := sideband.NewDemuxer(sideband.Sideband64k, reader)
 	if progress != nil {
 		demuxer.Progress = progress
 	}
-	return packfile.UpdateObjectStorage(st, demuxer)
+	return packfile.UpdateObjectStorageWithStatus(st, demuxer, statusChan)
 }
 
 // closeReader drains and closes r when it owns a closable resource (such as an

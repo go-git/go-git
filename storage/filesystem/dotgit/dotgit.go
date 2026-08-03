@@ -356,8 +356,14 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
+	return d.NewObjectPackWithStatus(nil)
+}
+
+// NewObjectPackWithStatus returns a writer for a new packfile and reports
+// progress to statusChan.
+func (d *DotGit) NewObjectPackWithStatus(statusChan plumbing.StatusChan) (*PackWriter, error) {
 	cleanErr := d.cleanPackList()
-	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex, statusChan)
 	if err != nil {
 		return nil, errors.Join(cleanErr, err)
 	}

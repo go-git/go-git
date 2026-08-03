@@ -546,6 +546,11 @@ func (m *mockPackfileWriter) PackfileWriter() (io.WriteCloser, error) {
 	return m.Storer.(storer.PackfileWriter).PackfileWriter()
 }
 
+func (m *mockPackfileWriter) PackfileWriterWithStatus(statusChan plumbing.StatusChan) (io.WriteCloser, error) {
+	m.PackfileWriterCalled = true
+	return m.Storer.(storer.PackfileWriterWithStatus).PackfileWriterWithStatus(statusChan)
+}
+
 func (s *RemoteSuite) TestFetchWithPackfileWriter() {
 	fs := s.TemporalFilesystem()
 
@@ -557,8 +562,10 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter() {
 	r := NewRemote(mock, &config.RemoteConfig{Name: "foo", URLs: []string{url}})
 
 	refspec := config.RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	updates := make(chan plumbing.StatusUpdate, 256)
 	err := r.Fetch(&FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
+		RefSpecs:   []config.RefSpec{refspec},
+		StatusChan: updates,
 	})
 
 	s.NoError(err)
@@ -574,6 +581,16 @@ func (s *RemoteSuite) TestFetchWithPackfileWriter() {
 
 	s.Equal(31, count)
 	s.True(mock.PackfileWriterCalled)
+	close(updates)
+
+	var finalFetch plumbing.StatusUpdate
+	for update := range updates {
+		if update.Stage == plumbing.StatusFetch {
+			finalFetch = update
+		}
+	}
+	s.Equal(31, finalFetch.ObjectsTotal)
+	s.Equal(31, finalFetch.ObjectsDone)
 }
 
 func (s *RemoteSuite) TestFetchNoErrAlreadyUpToDate() {
@@ -719,10 +736,20 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 	})
 
 	rs := config.RefSpec("refs/heads/*:refs/heads/*")
+	updates := make(chan plumbing.StatusUpdate, 512)
 	err = r.Push(&PushOptions{
-		RefSpecs: []config.RefSpec{rs},
+		RefSpecs:   []config.RefSpec{rs},
+		StatusChan: updates,
 	})
 	s.NoError(err)
+	close(updates)
+
+	stages := make(map[plumbing.StatusStage]bool)
+	for update := range updates {
+		stages[update.Stage] = true
+	}
+	s.True(stages[plumbing.StatusCount])
+	s.True(stages[plumbing.StatusSend])
 
 	iter, err := r.s.IterReferences()
 	s.NoError(err)

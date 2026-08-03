@@ -24,11 +24,31 @@ func Objects(
 	wants,
 	haves []plumbing.Hash,
 ) ([]plumbing.Hash, error) {
+	return ObjectsWithStatus(s, wants, haves, nil)
+}
+
+// ObjectsWithStatus computes object hashes reachable from wants while
+// excluding commits reachable from haves and reports progress to statusChan.
+func ObjectsWithStatus(
+	s storer.EncodedObjectStorer,
+	wants,
+	haves []plumbing.Hash,
+	statusChan plumbing.StatusChan,
+) ([]plumbing.Hash, error) {
+	update := plumbing.StatusUpdate{Stage: plumbing.StatusCount}
+	statusChan.SendUpdate(update)
+
 	if walker, ok := s.(objectWalker); ok {
-		return walker.RevListObjects(wants, haves)
+		result, err := walker.RevListObjects(wants, haves)
+		if err != nil {
+			return nil, err
+		}
+		update.ObjectsTotal = len(result)
+		statusChan.SendUpdate(update)
+		return result, nil
 	}
 
-	w, err := newObjectWalk(s)
+	w, err := newObjectWalk(s, statusChan)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +61,8 @@ func Objects(
 	if err := w.walk(); err != nil {
 		return nil, err
 	}
+	update.ObjectsTotal = len(w.result)
+	statusChan.SendUpdate(update)
 	return w.result, nil
 }
 

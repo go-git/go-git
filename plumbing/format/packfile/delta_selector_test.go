@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -215,9 +216,11 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 
 	// Don't sort so we can easily check the sliding window without
 	// creating a bunch of new objects.
-	otp, err = s.ds.objectsToPack(hashes, deltaWindowSize)
+	otp, err = s.ds.objectsToPack(hashes, deltaWindowSize, nil, plumbing.StatusUpdate{})
 	s.NoError(err)
-	err = s.ds.walk(otp, deltaWindowSize)
+	walkUpdate := plumbing.StatusUpdate{}
+	var walkMu sync.Mutex
+	err = s.ds.walk(otp, deltaWindowSize, nil, &walkUpdate, &walkMu)
 	s.NoError(err)
 	s.Len(otp, int(deltaWindowSize)+2)
 	targetIdx := len(otp) - 1
@@ -239,4 +242,22 @@ func (s *DeltaSelectorSuite) TestObjectsToPack() {
 func (s *DeltaSelectorSuite) TestMaxDepth() {
 	dsl := s.ds.deltaSizeLimit(0, 0, int(maxDepth), true)
 	s.Equal(int64(0), dsl)
+}
+
+func (s *DeltaSelectorSuite) TestObjectsToPackWithStatus() {
+	hashes := []plumbing.Hash{s.hashes["base"], s.hashes["target"]}
+	updates := make(chan plumbing.StatusUpdate, 50)
+
+	_, err := s.ds.ObjectsToPackWithStatus(hashes, 10, updates)
+	s.NoError(err)
+	close(updates)
+
+	stages := make(map[plumbing.StatusStage]bool)
+	for update := range updates {
+		stages[update.Stage] = true
+	}
+	s.True(stages[plumbing.StatusRead])
+	s.True(stages[plumbing.StatusFixChains])
+	s.True(stages[plumbing.StatusSort])
+	s.True(stages[plumbing.StatusDelta])
 }

@@ -5,6 +5,7 @@ import (
 	"hash"
 	"io"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -14,15 +15,23 @@ type encoder struct {
 	writer  io.Writer
 	hashSum func() []byte
 	idx     *MemoryIndex
+	status  plumbing.StatusChan
 }
 
 // stateFnEncode defines each individual state within the state machine that
 // represents encoding an idxfile.
 type stateFnEncode func(*encoder) (stateFnEncode, error)
 
-// Encode encodes a MemoryIndex to the writer.
-// This function is safe to call concurrently with different parameters.
+// Encode encodes a MemoryIndex to the writer. This function is safe to call
+// concurrently with different parameters.
 func Encode(w io.Writer, h hash.Hash, idx *MemoryIndex) error {
+	return EncodeWithStatus(w, h, idx, nil)
+}
+
+// EncodeWithStatus encodes a MemoryIndex to the writer and reports progress to
+// statusChan. This function is safe to call concurrently with different
+// parameters.
+func EncodeWithStatus(w io.Writer, h hash.Hash, idx *MemoryIndex, statusChan plumbing.StatusChan) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
@@ -35,6 +44,7 @@ func Encode(w io.Writer, h hash.Hash, idx *MemoryIndex) error {
 		writer:  io.MultiWriter(w, h),
 		hashSum: func() []byte { return h.Sum(nil) },
 		idx:     idx,
+		status:  statusChan,
 	}
 
 	for state := writeHeader; state != nil; {
@@ -76,6 +86,9 @@ func writeFanout(e *encoder) (stateFnEncode, error) {
 }
 
 func writeHashes(e *encoder) (stateFnEncode, error) {
+	update := newIndexStatusUpdate(e.idx, plumbing.StatusIndexHash)
+	e.status.SendUpdate(update)
+
 	for k := range fanout {
 		pos := e.idx.FanoutMapping[k]
 		if pos == noMapping {
@@ -90,12 +103,17 @@ func writeHashes(e *encoder) (stateFnEncode, error) {
 		if err != nil {
 			return nil, err
 		}
+		update.ObjectsDone = int(e.idx.Fanout[k])
+		e.status.SendUpdateIfPossible(update)
 	}
 
 	return writeCRC32, nil
 }
 
 func writeCRC32(e *encoder) (stateFnEncode, error) {
+	update := newIndexStatusUpdate(e.idx, plumbing.StatusIndexCRC)
+	e.status.SendUpdate(update)
+
 	for k := range fanout {
 		pos := e.idx.FanoutMapping[k]
 		if pos == noMapping {
@@ -110,12 +128,17 @@ func writeCRC32(e *encoder) (stateFnEncode, error) {
 		if err != nil {
 			return nil, err
 		}
+		update.ObjectsDone = int(e.idx.Fanout[k])
+		e.status.SendUpdateIfPossible(update)
 	}
 
 	return writeOffsets, nil
 }
 
 func writeOffsets(e *encoder) (stateFnEncode, error) {
+	update := newIndexStatusUpdate(e.idx, plumbing.StatusIndexOffset)
+	e.status.SendUpdate(update)
+
 	for k := range fanout {
 		pos := e.idx.FanoutMapping[k]
 		if pos == noMapping {
@@ -130,6 +153,8 @@ func writeOffsets(e *encoder) (stateFnEncode, error) {
 		if err != nil {
 			return nil, err
 		}
+		update.ObjectsDone = int(e.idx.Fanout[k])
+		e.status.SendUpdateIfPossible(update)
 	}
 
 	if len(e.idx.Offset64) > 0 {
@@ -140,6 +165,14 @@ func writeOffsets(e *encoder) (stateFnEncode, error) {
 	}
 
 	return writeChecksums, nil
+}
+
+func newIndexStatusUpdate(idx *MemoryIndex, stage plumbing.StatusStage) plumbing.StatusUpdate {
+	count, _ := idx.Count()
+	return plumbing.StatusUpdate{
+		Stage:        stage,
+		ObjectsTotal: int(count),
+	}
 }
 
 func writeChecksums(e *encoder) (stateFnEncode, error) {

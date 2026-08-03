@@ -23,6 +23,14 @@ type ObjectSelector interface {
 	ObjectsToPack(hashes []plumbing.Hash, packWindow uint) ([]*ObjectToPack, error)
 }
 
+type statusObjectSelector interface {
+	ObjectsToPackWithStatus(
+		hashes []plumbing.Hash,
+		packWindow uint,
+		statusChan plumbing.StatusChan,
+	) ([]*ObjectToPack, error)
+}
+
 // Encoder gets the data from the storage and write it into the writer in PACK
 // format.
 //
@@ -39,6 +47,7 @@ type Encoder struct {
 	hasher         hash.Hash
 
 	useRefDeltas bool
+	statusChan   plumbing.StatusChan
 }
 
 // EncoderOption configures an Encoder at construction time.
@@ -63,6 +72,14 @@ func WithObjectSelector(s ObjectSelector) EncoderOption {
 		if s != nil {
 			e.objectSelector = s
 		}
+	}
+}
+
+// WithStatusChan configures the encoder to report structured packfile
+// progress to statusChan.
+func WithStatusChan(statusChan plumbing.StatusChan) EncoderOption {
+	return func(e *Encoder) {
+		e.statusChan = statusChan
 	}
 }
 
@@ -120,7 +137,13 @@ func (e *Encoder) Encode(
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) (plumbing.Hash, error) {
-	objects, err := e.objectSelector.ObjectsToPack(hashes, packWindow)
+	var objects []*ObjectToPack
+	var err error
+	if selector, ok := e.objectSelector.(statusObjectSelector); ok && e.statusChan != nil {
+		objects, err = selector.ObjectsToPackWithStatus(hashes, packWindow, e.statusChan)
+	} else {
+		objects, err = e.objectSelector.ObjectsToPack(hashes, packWindow)
+	}
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -129,6 +152,12 @@ func (e *Encoder) Encode(
 }
 
 func (e *Encoder) encode(objects []*ObjectToPack) (plumbing.Hash, error) {
+	update := plumbing.StatusUpdate{
+		Stage:        plumbing.StatusSend,
+		ObjectsTotal: len(objects),
+	}
+	e.statusChan.SendUpdate(update)
+
 	if err := e.head(len(objects)); err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -137,6 +166,8 @@ func (e *Encoder) encode(objects []*ObjectToPack) (plumbing.Hash, error) {
 		if err := e.entry(o); err != nil {
 			return plumbing.ZeroHash, err
 		}
+		update.ObjectsDone++
+		e.statusChan.SendUpdateIfPossible(update)
 	}
 
 	return e.footer()

@@ -95,6 +95,30 @@ func (s *EncoderSuite) TestHashNotFound() {
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 }
 
+func (s *EncoderSuite) TestWithStatusChan() {
+	o := &plumbing.MemoryObject{}
+	o.SetType(plumbing.BlobObject)
+	o.SetSize(0)
+	_, err := s.store.SetEncodedObject(o)
+	s.NoError(err)
+
+	updates := make(chan plumbing.StatusUpdate, 50)
+	s.enc = NewEncoder(s.buf, s.store, false, WithStatusChan(updates))
+	_, err = s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
+	s.NoError(err)
+	close(updates)
+
+	var lastSend plumbing.StatusUpdate
+	for update := range updates {
+		if update.Stage == plumbing.StatusSend {
+			lastSend = update
+		}
+	}
+	s.Equal(plumbing.StatusSend, lastSend.Stage)
+	s.Equal(1, lastSend.ObjectsTotal)
+	s.Equal(1, lastSend.ObjectsDone)
+}
+
 func (s *EncoderSuite) TestDecodeEncodeWithDeltaDecodeREF() {
 	s.enc = NewEncoder(s.buf, s.store, true)
 	s.simpleDeltaTest()

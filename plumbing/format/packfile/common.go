@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -28,6 +29,12 @@ const (
 // UpdateObjectStorage updates the storer with the objects in the given
 // packfile.
 func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
+	return UpdateObjectStorageWithStatus(s, packfile, nil)
+}
+
+// UpdateObjectStorageWithStatus updates the storer with the objects in the
+// given packfile and reports progress to statusChan.
+func UpdateObjectStorageWithStatus(s storer.Storer, packfile io.Reader, statusChan plumbing.StatusChan) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -36,7 +43,7 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	}
 
 	if pw, ok := s.(storer.PackfileWriter); ok {
-		return WritePackfileToObjectStorage(pw, packfile)
+		return WritePackfileToObjectStorageWithStatus(pw, packfile, statusChan)
 	}
 
 	of := formatcfg.DefaultObjectFormat
@@ -47,7 +54,11 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 		}
 	}
 
-	p := NewParser(packfile, WithStorage(s), WithObjectFormat(of))
+	opts := []ParserOption{WithStorage(s), WithObjectFormat(of)}
+	if statusChan != nil {
+		opts = append(opts, WithScannerObservers(NewStatusObserver(statusChan)))
+	}
+	p := NewParser(packfile, opts...)
 	_, err := p.Parse()
 	return err
 }
@@ -57,8 +68,23 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 func WritePackfileToObjectStorage(
 	sw storer.PackfileWriter,
 	packfile io.Reader,
+) error {
+	return WritePackfileToObjectStorageWithStatus(sw, packfile, nil)
+}
+
+// WritePackfileToObjectStorageWithStatus writes all packfile objects to object
+// storage and reports progress to statusChan when the storage supports it.
+func WritePackfileToObjectStorageWithStatus(
+	sw storer.PackfileWriter,
+	packfile io.Reader,
+	statusChan plumbing.StatusChan,
 ) (err error) {
-	w, err := sw.PackfileWriter()
+	var w io.WriteCloser
+	if statusWriter, ok := sw.(storer.PackfileWriterWithStatus); ok {
+		w, err = statusWriter.PackfileWriterWithStatus(statusChan)
+	} else {
+		w, err = sw.PackfileWriter()
+	}
 	if err != nil {
 		return err
 	}

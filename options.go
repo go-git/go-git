@@ -250,6 +250,9 @@ type FetchOptions struct {
 	// Filter requests that the server to send only a subset of the objects.
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
+	// StatusChan receives structured packfile progress updates during fetch.
+	// If nil, no updates are sent.
+	StatusChan plumbing.StatusChan
 }
 
 // Validate validates the fields and sets the default values.
@@ -312,6 +315,9 @@ type PushOptions struct {
 	// Quiet indicates whether the server should suppress human-readable
 	// output.
 	Quiet bool
+	// StatusChan receives structured packfile progress updates during push.
+	// If nil, no updates are sent.
+	StatusChan plumbing.StatusChan
 }
 
 // ForceWithLease sets fields on the lease

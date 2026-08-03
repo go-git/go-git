@@ -99,6 +99,13 @@ type PackfileWriter interface {
 	PackfileWriter() (io.WriteCloser, error)
 }
 
+// PackfileWriterWithStatus is an optional extension to PackfileWriter that
+// reports progress while writing a packfile.
+type PackfileWriterWithStatus interface {
+	PackfileWriter
+	PackfileWriterWithStatus(statusChan plumbing.StatusChan) (io.WriteCloser, error)
+}
+
 // EncodedObjectIter is a generic closable interface for iterating over objects.
 type EncodedObjectIter interface {
 	Next() (plumbing.EncodedObject, error)

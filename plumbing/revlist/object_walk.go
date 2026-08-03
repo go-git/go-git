@@ -21,21 +21,34 @@ type objectWalk struct {
 	havesSeen  map[plumbing.Hash]struct{}
 	seen       map[plumbing.Hash]struct{}
 	result     []plumbing.Hash
+	statusChan plumbing.StatusChan
+	update     plumbing.StatusUpdate
 }
 
-func newObjectWalk(s storer.EncodedObjectStorer) (*objectWalk, error) {
+func newObjectWalk(s storer.EncodedObjectStorer, statusChan plumbing.StatusChan) (*objectWalk, error) {
 	shallows, err := shallowSet(s)
 	if err != nil {
 		return nil, err
 	}
 
 	return &objectWalk{
-		s:         s,
-		shallows:  shallows,
-		wantsSeen: make(map[plumbing.Hash]struct{}),
-		havesSeen: make(map[plumbing.Hash]struct{}),
-		seen:      make(map[plumbing.Hash]struct{}),
+		s:          s,
+		shallows:   shallows,
+		wantsSeen:  make(map[plumbing.Hash]struct{}),
+		havesSeen:  make(map[plumbing.Hash]struct{}),
+		seen:       make(map[plumbing.Hash]struct{}),
+		statusChan: statusChan,
+		update:     plumbing.StatusUpdate{Stage: plumbing.StatusCount},
 	}, nil
+}
+
+func (w *objectWalk) addResult(hash plumbing.Hash) {
+	w.result = append(w.result, hash)
+	if w.statusChan == nil {
+		return
+	}
+	w.update.ObjectsTotal++
+	w.statusChan.SendUpdateIfPossible(w.update)
 }
 
 func shallowSet(s storer.EncodedObjectStorer) (map[plumbing.Hash]struct{}, error) {
@@ -88,19 +101,19 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 				return fmt.Errorf("decoding tag %s: %w", h, err)
 			}
 			w.seen[tag.Hash] = struct{}{}
-			w.result = append(w.result, tag.Hash)
+			w.addResult(tag.Hash)
 			wants = append(wants, tag.Target)
 		case plumbing.TreeObject:
 			t, err := object.GetTree(w.s, h)
 			if err != nil {
 				return fmt.Errorf("getting tree %s: %w", h, err)
 			}
-			if err := collectAllTreeObjects(w.s, t, w.seen, &w.result); err != nil {
+			if err := collectAllTreeObjects(w.s, t, w.seen, w.addResult); err != nil {
 				return err
 			}
 		case plumbing.BlobObject:
 			w.seen[h] = struct{}{}
-			w.result = append(w.result, h)
+			w.addResult(h)
 		default:
 			return fmt.Errorf("unsupported object type %s for %s", o.Type(), h)
 		}
@@ -309,14 +322,14 @@ func (w *objectWalk) walkFull() error {
 			continue
 		}
 		w.seen[lc.Hash] = struct{}{}
-		w.result = append(w.result, lc.Hash)
+		w.addResult(lc.Hash)
 
 		tree, err := lc.Tree()
 		if err != nil {
 			return fmt.Errorf("getting tree for %s: %w", lc.Hash, err)
 		}
 
-		if err := collectAllTreeObjects(w.s, tree, w.seen, &w.result); err != nil {
+		if err := collectAllTreeObjects(w.s, tree, w.seen, w.addResult); err != nil {
 			return fmt.Errorf("collecting tree objects for %s: %w", lc.Hash, err)
 		}
 
@@ -344,7 +357,7 @@ func (w *objectWalk) walkFull() error {
 func (w *objectWalk) processCommitTrees(lc *object.Commit) error {
 	if _, ok := w.seen[lc.Hash]; !ok {
 		w.seen[lc.Hash] = struct{}{}
-		w.result = append(w.result, lc.Hash)
+		w.addResult(lc.Hash)
 	}
 
 	newTree, err := lc.Tree()
@@ -368,7 +381,7 @@ func (w *objectWalk) processCommitTrees(lc *object.Commit) error {
 		oldTrees = append(oldTrees, pt)
 	}
 
-	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
+	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, w.addResult); err != nil {
 		return fmt.Errorf("diffing trees for %s: %w", lc.Hash, err)
 	}
 
@@ -395,7 +408,7 @@ func collectChangedTreeObjects(
 	newTree *object.Tree,
 	oldTrees []*object.Tree,
 	seen map[plumbing.Hash]struct{},
-	result *[]plumbing.Hash,
+	addResult func(plumbing.Hash),
 ) error {
 	// If newTree matches any old tree exactly, nothing changed.
 	for _, ot := range oldTrees {
@@ -406,7 +419,7 @@ func collectChangedTreeObjects(
 
 	if _, ok := seen[newTree.Hash]; !ok {
 		seen[newTree.Hash] = struct{}{}
-		*result = append(*result, newTree.Hash)
+		addResult(newTree.Hash)
 	}
 
 	// Build per-parent entry indexes for O(1) lookup.
@@ -459,12 +472,12 @@ func collectChangedTreeObjects(
 					}
 				}
 			}
-			if err := collectChangedTreeObjects(s, newSub, oldSubs, seen, result); err != nil {
+			if err := collectChangedTreeObjects(s, newSub, oldSubs, seen, addResult); err != nil {
 				return err
 			}
 		} else {
 			seen[e.Hash] = struct{}{}
-			*result = append(*result, e.Hash)
+			addResult(e.Hash)
 		}
 	}
 
@@ -478,13 +491,13 @@ func collectAllTreeObjects(
 	s storer.EncodedObjectStorer,
 	t *object.Tree,
 	seen map[plumbing.Hash]struct{},
-	result *[]plumbing.Hash,
+	addResult func(plumbing.Hash),
 ) error {
 	if _, ok := seen[t.Hash]; ok {
 		return nil
 	}
 	seen[t.Hash] = struct{}{}
-	*result = append(*result, t.Hash)
+	addResult(t.Hash)
 
 	for _, e := range t.Entries {
 		if e.Mode == filemode.Submodule {
@@ -498,12 +511,12 @@ func collectAllTreeObjects(
 			if err != nil {
 				return fmt.Errorf("getting subtree %s: %w", e.Hash, err)
 			}
-			if err := collectAllTreeObjects(s, sub, seen, result); err != nil {
+			if err := collectAllTreeObjects(s, sub, seen, addResult); err != nil {
 				return err
 			}
 		} else {
 			seen[e.Hash] = struct{}{}
-			*result = append(*result, e.Hash)
+			addResult(e.Hash)
 		}
 	}
 	return nil
