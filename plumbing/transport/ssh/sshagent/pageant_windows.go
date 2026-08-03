@@ -120,7 +120,7 @@ func query(msg []byte) ([]byte, error) {
 	}
 	defer func() { _ = syscall.UnmapViewOfFile(ptr) }()
 
-	mmSlice := (*(*[MaxMessageLen]byte)(unsafe.Pointer(ptr)))[:]
+	mmSlice := (*(*[MaxMessageLen]byte)(unsafe.Pointer(ptr)))[:] //nolint:gosec // ptr is a MaxMessageLen+4 byte mapping returned by MapViewOfFile.
 
 	copy(mmSlice, msg)
 
@@ -129,10 +129,10 @@ func query(msg []byte) ([]byte, error) {
 	cds := copyData{
 		dwData: agentCopydataID,
 		cbData: uint32(len(mapNameBytesZ)),
-		lpData: unsafe.Pointer(&(mapNameBytesZ[0])),
+		lpData: unsafe.Pointer(&(mapNameBytesZ[0])), //nolint:gosec // COPYDATASTRUCT requires a pointer to this NUL-terminated byte buffer.
 	}
 
-	resp, _, _ := winSendMessage(paWin, wmCopydata, 0, uintptr(unsafe.Pointer(&cds)))
+	resp, _, _ := winSendMessage(paWin, wmCopydata, 0, uintptr(unsafe.Pointer(&cds))) //nolint:gosec // SendMessageW requires the COPYDATASTRUCT address as LPARAM.
 
 	if resp == 0 {
 		return nil, ErrSendMessage
@@ -151,6 +151,6 @@ func query(msg []byte) ([]byte, error) {
 
 func pageantWindow() uintptr {
 	nameP, _ := syscall.UTF16PtrFromString("Pageant")
-	h, _, _ := winFindWindow(uintptr(unsafe.Pointer(nameP)), uintptr(unsafe.Pointer(nameP)))
+	h, _, _ := winFindWindow(uintptr(unsafe.Pointer(nameP)), uintptr(unsafe.Pointer(nameP))) //nolint:gosec // FindWindowW requires pointers to NUL-terminated UTF-16 strings.
 	return h
 }

@@ -187,7 +187,7 @@ func (s *Server) addConn(conn net.Conn) (context.Context, bool) {
 	if s.MaxConnections > 0 && len(s.conns) >= s.MaxConnections {
 		return nil, false
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // removeConn owns and invokes the stored cancellation function.
 	s.conns[conn] = cancel
 	return ctx, true
 }
