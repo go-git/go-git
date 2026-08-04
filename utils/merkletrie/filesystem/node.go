@@ -43,6 +43,16 @@ type Options struct {
 	// reported. Requires Index to be set: without an index there is no way
 	// to identify tracked entries, so the matcher is treated as a no-op.
 	IgnoreMatcher gitignore.Matcher
+
+	// CollapseUntrackedDirs, when true, makes directories that contain no
+	// tracked entries and at least one visible (non-ignored) file report
+	// as a single change for the directory itself instead of being walked,
+	// matching the default behavior of "git status". Directories without
+	// any visible content produce no change at all, matching git not
+	// listing empty untracked directories. Requires Index to be set:
+	// without an index there is no way to identify tracked entries, so
+	// the option is treated as a no-op.
+	CollapseUntrackedDirs bool
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -112,7 +122,7 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreMatcher != nil {
+		if options.IgnoreMatcher != nil || options.CollapseUntrackedDirs {
 			trackedDirs = make(map[string]struct{})
 			for _, entry := range options.Index.Entries {
 				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
@@ -231,6 +241,13 @@ func (n *node) calculateChildren() error {
 // AND has no entry in the index. Tracked entries are never skipped so
 // modifications to them are still reported.
 func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
+	return n.isIgnoredUntracked(path.Join(n.path, name), isDir)
+}
+
+// isIgnoredUntracked reports whether the entry at childPath should be
+// skipped because it matches the configured ignore matcher AND has no
+// entry in the index.
+func (n *node) isIgnoredUntracked(childPath string, isDir bool) bool {
 	if n.options == nil || n.options.IgnoreMatcher == nil {
 		return false
 	}
@@ -240,7 +257,6 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 	if n.idxMap == nil {
 		return false
 	}
-	childPath := path.Join(n.path, name)
 	if !n.options.IgnoreMatcher.Match(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
@@ -256,6 +272,62 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 		return !hasTrackedDescendant
 	}
 	return true
+}
+
+// Collapse implements noder.Collapser. It reports true when the node is a
+// directory that has no tracked descendants but contains at least one
+// visible (non-ignored) file, so the whole subtree can be represented by
+// a single change for the directory itself. Directories without any
+// visible content are not collapsed: they must produce no change at all,
+// matching git which does not list empty untracked directories.
+func (n *node) Collapse() bool {
+	if n.options == nil || !n.options.CollapseUntrackedDirs || !n.isDir {
+		return false
+	}
+	if n.idxMap == nil {
+		return false
+	}
+	if _, tracked := n.trackedDirs[n.path]; tracked {
+		return false
+	}
+	return n.containsVisibleEntry()
+}
+
+// containsVisibleEntry reports whether the subtree rooted at n contains at
+// least one entry that would surface in a walk: a non-ignored file,
+// symlink included. The scan short-circuits on the first visible entry,
+// so fully untracked directories are usually validated with a single
+// ReadDir per nesting level instead of a full enumeration.
+func (n *node) containsVisibleEntry() bool {
+	dirs := []string{n.path}
+	for len(dirs) > 0 {
+		dir := dirs[len(dirs)-1]
+		dirs = dirs[:len(dirs)-1]
+
+		files, err := n.fs.ReadDir(dir)
+		if err != nil {
+			// Refuse to collapse so the full walk surfaces the error.
+			return false
+		}
+
+		for _, file := range files {
+			if _, ok := ignore[file.Name()]; ok {
+				continue
+			}
+			if file.Type()&os.ModeSocket != 0 {
+				continue
+			}
+			isDir := file.IsDir()
+			if n.isIgnoredUntracked(path.Join(dir, file.Name()), isDir) {
+				continue
+			}
+			if !isDir {
+				return true
+			}
+			dirs = append(dirs, path.Join(dir, file.Name()))
+		}
+	}
+	return false
 }
 
 func (n *node) newChildNode(file os.FileInfo) (*node, error) {

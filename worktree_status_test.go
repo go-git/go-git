@@ -150,6 +150,131 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	assert.False(t, ok, "untracked file inside an ignored directory must not surface in Status")
 }
 
+// setupCollapseStatusRepo builds a repository with one tracked file at the
+// root and a mix of untracked content: a loose file at the root, a fully
+// untracked directory tree under assets/, and an untracked file next to a
+// tracked one under keep/.
+func setupCollapseStatusRepo(t *testing.T) *Worktree {
+	t.Helper()
+
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = repo.Close() })
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	write := func(name string) {
+		require.NoError(t, wt.Filesystem().MkdirAll(filepath.Dir(name), 0o755))
+		require.NoError(t, util.WriteFile(wt.Filesystem(), name, []byte(name+"\n"), 0o644))
+	}
+
+	write("tracked.txt")
+	write("keep/tracked.txt")
+	for _, p := range []string{"tracked.txt", "keep/tracked.txt"} {
+		_, err := wt.Add(p)
+		require.NoError(t, err)
+	}
+
+	sig := &object.Signature{Name: "test", Email: "test@test.com"}
+	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	write("loose.txt")
+	write("assets/img1.png")
+	write("assets/deep/img2.png")
+	write("keep/new.txt")
+
+	return wt
+}
+
+// TestStatusCollapsesUntrackedDirsByDefault verifies that Status() reports
+// a fully untracked directory as a single entry, like "git status" does by
+// default, while untracked files at the root or next to tracked entries
+// are still listed individually.
+func TestStatusCollapsesUntrackedDirsByDefault(t *testing.T) {
+	t.Parallel()
+	wt := setupCollapseStatusRepo(t)
+
+	st, err := wt.Status()
+	require.NoError(t, err)
+
+	assets, ok := st["assets"]
+	require.True(t, ok, "fully untracked directory must be reported as a single entry")
+	assert.Equal(t, Untracked, assets.Worktree)
+	assert.Equal(t, Untracked, assets.Staging)
+
+	_, ok = st["assets/img1.png"]
+	assert.False(t, ok, "files inside a collapsed directory must not be listed")
+	_, ok = st["assets/deep/img2.png"]
+	assert.False(t, ok, "files deep inside a collapsed directory must not be listed")
+
+	_, ok = st["loose.txt"]
+	assert.True(t, ok, "untracked file at the root must be listed")
+
+	_, ok = st["keep/new.txt"]
+	assert.True(t, ok, "untracked file next to a tracked entry must be listed")
+}
+
+// TestStatusUntrackedFilesAll verifies that StatusWithOptions with
+// UntrackedFilesAll restores the historical behavior of listing every
+// untracked file individually.
+func TestStatusUntrackedFilesAll(t *testing.T) {
+	t.Parallel()
+	wt := setupCollapseStatusRepo(t)
+
+	st, err := wt.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
+	require.NoError(t, err)
+
+	for _, p := range []string{"loose.txt", "assets/img1.png", "assets/deep/img2.png", "keep/new.txt"} {
+		fs, ok := st[p]
+		assert.True(t, ok, "%s must be listed", p)
+		assert.Equal(t, Untracked, fs.Worktree)
+	}
+}
+
+// TestStatusUntrackedFilesNo verifies that StatusWithOptions with
+// UntrackedFilesNo omits untracked entries entirely, like "git status
+// -uno", while tracked modifications are still reported.
+func TestStatusUntrackedFilesNo(t *testing.T) {
+	t.Parallel()
+	wt := setupCollapseStatusRepo(t)
+
+	require.NoError(t, util.WriteFile(wt.Filesystem(), "tracked.txt", []byte("changed\n"), 0o644))
+
+	st, err := wt.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesNo})
+	require.NoError(t, err)
+
+	for _, p := range []string{"loose.txt", "assets", "assets/img1.png", "keep/new.txt"} {
+		_, ok := st[p]
+		assert.False(t, ok, "%s must not be listed", p)
+	}
+
+	modified, ok := st["tracked.txt"]
+	require.True(t, ok, "modified tracked file must still be reported")
+	assert.Equal(t, Modified, modified.Worktree)
+}
+
+// TestAddDirectoryWithCollapsedStatus is a regression test: Add on a
+// directory must keep adding every untracked file inside it, even though
+// Status() now collapses untracked directories by default.
+func TestAddDirectoryWithCollapsedStatus(t *testing.T) {
+	t.Parallel()
+	wt := setupCollapseStatusRepo(t)
+
+	_, err := wt.Add("assets")
+	require.NoError(t, err)
+
+	idx, err := wt.r.Storer.Index()
+	require.NoError(t, err)
+
+	for _, p := range []string{"assets/img1.png", "assets/deep/img2.png"} {
+		_, err := idx.Entry(p)
+		assert.NoError(t, err, "%s must have been added to the index", p)
+	}
+}
+
 func BenchmarkWorktreeStatus(b *testing.B) {
 	b.StopTimer()
 
