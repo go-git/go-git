@@ -66,6 +66,21 @@ func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
 }
 
+// repoConfig returns the storer's loaded config, used to resolve
+// protocol.<name>.allow and protocol.allow for transport policy gating.
+// Returns nil when the storer cannot supply a config; the policy gate
+// then falls back to environment defaults.
+func (r *Remote) repoConfig() *config.Config {
+	if r.s == nil {
+		return nil
+	}
+	cfg, err := r.s.Config()
+	if err != nil {
+		return nil
+	}
+	return cfg
+}
+
 func (r *Remote) String() string {
 	var fetch, push string
 	if len(r.c.URLs) > 0 {
@@ -108,7 +123,7 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		o.RemoteURL = r.c.URLs[len(r.c.URLs)-1]
 	}
 
-	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, r.repoConfig())
 	if err != nil {
 		return err
 	}
@@ -438,7 +453,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RemoteURL = r.c.URLs[0]
 	}
 
-	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, r.repoConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -606,12 +621,15 @@ func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
 	return false, nil
 }
 
-func newClient(rawURL string, opts []client.Option) (*client.Client, *transport.Request, error) {
+func newClient(rawURL string, opts []client.Option, cfg *config.Config) (*client.Client, *transport.Request, error) {
 	u, err := transport.ParseURL(rawURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	if cfg != nil {
+		opts = append([]client.Option{client.WithProtocolPolicy(cfg)}, opts...)
+	}
 	cl := client.New(opts...)
 	return cl, &transport.Request{URL: u}, nil
 }
@@ -1406,7 +1424,7 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, ErrEmptyUrls
 	}
 
-	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions)
+	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions, r.repoConfig())
 	if err != nil {
 		return nil, err
 	}

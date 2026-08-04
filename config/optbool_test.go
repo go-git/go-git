@@ -61,8 +61,8 @@ func TestParseConfigBool(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.in, func(t *testing.T) {
 			t.Parallel()
-			got := parseConfigBool(tc.in)
-			assert.Equal(t, tc.want, got, "parseConfigBool(%q)", tc.in)
+			got := ParseConfigBool(tc.in)
+			assert.Equal(t, tc.want, got, "ParseConfigBool(%q)", tc.in)
 		})
 	}
 }
