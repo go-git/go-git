@@ -2625,6 +2625,51 @@ func (s *RepositorySuite) TestLogAllOrderByTime() {
 	cIter.Close()
 }
 
+func (s *RepositorySuite) TestLogAllOrderByTimeWithOrphanHistory() {
+	r, err := Init(memory.NewStorage())
+	s.NoError(err)
+	defer func() { _ = r.Close() }()
+
+	storeCommit := func(when time.Time, parents ...plumbing.Hash) plumbing.Hash {
+		signature := object.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+			When:  when,
+		}
+		commit := &object.Commit{
+			Author:       signature,
+			Committer:    signature,
+			Message:      "commit",
+			TreeHash:     plumbing.NewHash("4b825dc642cb6eb9a060e54bf8d69288fbee4904"),
+			ParentHashes: parents,
+		}
+		encoded := r.Storer.NewEncodedObject()
+		s.NoError(commit.Encode(encoded))
+		hash, err := r.Storer.SetEncodedObject(encoded)
+		s.NoError(err)
+		return hash
+	}
+
+	oldest := storeCommit(time.Unix(10, 0).UTC())
+	newest := storeCommit(time.Unix(30, 0).UTC(), oldest)
+	orphan := storeCommit(time.Unix(20, 0).UTC())
+
+	s.NoError(r.Storer.SetReference(plumbing.NewHashReference("refs/heads/main", newest)))
+	s.NoError(r.Storer.SetReference(plumbing.NewHashReference("refs/heads/orphan", orphan)))
+
+	iter, err := r.Log(&LogOptions{All: true, Order: LogOrderCommitterTime})
+	s.NoError(err)
+	defer iter.Close()
+
+	var commits []plumbing.Hash
+	err = iter.ForEach(func(commit *object.Commit) error {
+		commits = append(commits, commit.Hash)
+		return nil
+	})
+	s.NoError(err)
+	s.Equal([]plumbing.Hash{newest, orphan, oldest}, commits)
+}
+
 func (s *RepositorySuite) TestLogHead() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()

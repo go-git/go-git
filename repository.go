@@ -1551,7 +1551,11 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		err error
 	)
 	if o.All {
-		it, err = r.logAll(fn)
+		if o.Order == LogOrderCommitterTime {
+			it, err = newCommitAllIterCTime(r.Storer)
+		} else {
+			it, err = r.logAll(fn)
+		}
 	} else {
 		it, err = r.log(o.From, fn)
 	}
