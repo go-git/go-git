@@ -727,11 +727,30 @@ func (c *Config) unmarshalProtocol() error {
 }
 
 func (c *Config) unmarshalIndex() {
+	// Literal index.skipHash takes precedence over the feature.manyFiles alias.
+	if c.parseIndexSkipHash() {
+		return
+	}
+	// Git's feature.manyFiles meta-setting implicitly enables index.skipHash
+	// (among other settings). Infer the alias when the literal key is absent,
+	// so that reading an index from a repository using this feature does not
+	// fail with a checksum error. See git-config(1) and #2196.
+	feat := c.Raw.Section("feature")
+	if strings.EqualFold(feat.Options.Get("manyFiles"), "true") {
+		c.Index.SkipHash = OptBoolTrue
+	}
+}
+
+// parseIndexSkipHash reads the literal [index] skipHash option. It returns
+// true if the option was present and parsed (so callers can short-circuit).
+func (c *Config) parseIndexSkipHash() bool {
 	s := c.Raw.Section(indexSection)
 	v, err := strconv.ParseBool(s.Options.Get(skipHashKey))
-	if err == nil {
-		c.Index.SkipHash = NewOptBool(v)
+	if err != nil {
+		return false
 	}
+	c.Index.SkipHash = NewOptBool(v)
+	return true
 }
 
 func (c *Config) unmarshalInit() {
