@@ -455,6 +455,10 @@ func (w *Worktree) AddGlob(pattern string) error {
 
 	var saveIndex bool
 	for _, file := range files {
+		if w.isWorktreeMetadataRoot(file) && !w.isWorktreeMetadataRoot(pattern) {
+			continue
+		}
+
 		fi, err := w.filesystem.Lstat(file)
 		if err != nil {
 			return err
@@ -481,6 +485,18 @@ func (w *Worktree) AddGlob(pattern string) error {
 	}
 
 	return nil
+}
+
+func (w *Worktree) isWorktreeMetadataRoot(path string) bool {
+	path = filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		rel, err := filepath.Rel(w.filesystem.Root(), path)
+		if err == nil {
+			path = rel
+		}
+	}
+
+	return filepath.ToSlash(path) == GitDirName
 }
 
 // doAddFile create a new blob from path and update the index, added is true if
