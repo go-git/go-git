@@ -737,6 +737,81 @@ func (s *WorktreeSuite) TestCheckoutCRLF() {
 	})
 }
 
+type countingEncodedObject struct {
+	*plumbing.MemoryObject
+	reads *int
+}
+
+func (c *countingEncodedObject) Reader() (io.ReadCloser, error) {
+	*c.reads++
+	return c.MemoryObject.Reader()
+}
+
+func newCountingBlob(t *testing.T, content []byte, reads *int) *object.Blob {
+	t.Helper()
+	mo := plumbing.NewMemoryObject(nil)
+	mo.SetType(plumbing.BlobObject)
+	mo.SetSize(int64(len(content)))
+
+	w, err := mo.Writer()
+	require.NoError(t, err)
+	_, err = w.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	blob, err := object.DecodeBlob(&countingEncodedObject{MemoryObject: mo, reads: reads})
+	require.NoError(t, err)
+	return blob
+}
+
+func (s *WorktreeSuite) TestCheckoutAutoCRLFDecompressesBlobOnce() {
+	tests := []struct {
+		name     string
+		content  []byte
+		expected []byte
+	}{
+		{
+			name:     "text gets LF to CRLF conversion",
+			content:  []byte("line1\nline2\n"),
+			expected: []byte("line1\r\nline2\r\n"),
+		},
+		{
+			name:     "binary is written verbatim",
+			content:  []byte("NUL\x00binary\n"),
+			expected: []byte("NUL\x00binary\n"),
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			var reads int
+			blob := newCountingBlob(s.T(), tc.content, &reads)
+
+			fs := memfs.New()
+			f, err := fs.OpenFile("file", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+			require.NoError(s.T(), err)
+
+			cfg := config.NewConfig()
+			cfg.Core.AutoCRLF = "true"
+
+			err = (&Worktree{}).copyObjectToWorktree(
+				cfg, object.NewFile("file", filemode.Regular, blob), f,
+			)
+			require.NoError(s.T(), err)
+			require.NoError(s.T(), f.Close())
+
+			got, err := fs.Open("file")
+			require.NoError(s.T(), err)
+			defer got.Close()
+
+			content, err := io.ReadAll(got)
+			require.NoError(s.T(), err)
+			s.Equal(tc.expected, content)
+			s.Equal(1, reads, "blob should be decompressed exactly once")
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestFilenameNormalization() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("windows paths may contain non utf-8 sequences")
