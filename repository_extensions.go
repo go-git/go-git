@@ -40,16 +40,30 @@ var (
 		// noop-v1 does not change git’s behavior at all.
 		// It is useful only for testing format-1 compatibility.
 		"noop-v1": {},
+
+		// worktreeconfig signals that per-worktree config files
+		// (.git/config.worktree) may be present. go-git reads the
+		// shared config like upstream git would when the extension
+		// is absent; worktree-specific overrides are ignored but do
+		// not prevent the repository from being opened.
+		//
+		// Modern git enables this extension automatically on
+		// `git sparse-checkout set` and `git sparse-checkout disable`,
+		// so rejecting it would break common workflows.
+		"worktreeconfig": {},
 	}
 
 	// Some Git extensions were supported upstream before the introduction
 	// of repositoryformatversion. These are the only extensions that can be
 	// enabled while core.repositoryformatversion is unset or set to 0.
+	//
+	// Keys must be lowercase to match the output of extensions(), which
+	// normalises extension names with strings.ToLower.
 	extensionsValidForV0 = map[string]struct{}{
 		"noop":            {},
-		"partialClone":    {},
-		"preciousObjects": {},
-		"worktreeConfig":  {},
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 )
 
