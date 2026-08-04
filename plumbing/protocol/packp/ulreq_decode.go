@@ -63,7 +63,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("empty input")
+		return nil
 	}
 
 	if !bytes.HasPrefix(line, want) {
