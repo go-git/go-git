@@ -813,6 +813,89 @@ func TestMarshalIndexSkipHash(t *testing.T) {
 	assert.Equal(t, OptBoolTrue, cfg2.Index.SkipHash)
 }
 
+func TestUnmarshalIndexVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    uint32
+		wantErr bool
+	}{
+		{
+			name:  "version 4",
+			input: "[index]\n\tversion = 4\n",
+			want:  4,
+		},
+		{
+			name:  "version 2",
+			input: "[index]\n\tversion = 2\n",
+			want:  2,
+		},
+		{
+			name:  "absent defaults to unset",
+			input: "[core]\n\tbare = false\n",
+			want:  0,
+		},
+		{
+			// git does not range check when reading the config either: an
+			// out of range value is only rejected when the index is written.
+			name:  "out of range is kept as configured",
+			input: "[index]\n\tversion = 7\n",
+			want:  7,
+		},
+		{
+			// git: "fatal: bad numeric config value 'abc' for 'index.version'".
+			name:    "non numeric value errors",
+			input:   "[index]\n\tversion = abc\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			err := cfg.Unmarshal([]byte(tc.input))
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.want, cfg.Index.Version)
+		})
+	}
+}
+
+func TestMarshalIndexVersion(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	cfg.Index.Version = 4
+
+	b, err := cfg.Marshal()
+	require.NoError(t, err)
+	assert.Contains(t, string(b), "version = 4")
+
+	// Round-trip: unmarshal the marshaled output and verify.
+	cfg2 := NewConfig()
+	err = cfg2.Unmarshal(b)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(4), cfg2.Index.Version)
+}
+
+func TestMarshalIndexVersionUnsetIsOmitted(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+
+	b, err := cfg.Marshal()
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "[index]")
+}
+
 func TestMerge(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

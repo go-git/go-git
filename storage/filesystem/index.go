@@ -19,6 +19,29 @@ type IndexStorage struct {
 	h        hash.Hash
 	cache    IndexCache
 	skipHash bool
+	// version holds index.version as configured, and is used when no index
+	// file exists yet. An existing index keeps the version recorded in its
+	// header, matching git, which only consults index.version when it has
+	// no version to preserve.
+	version uint32
+}
+
+// newIndex returns an empty index using the configured format version.
+func (s *IndexStorage) newIndex() *index.Index {
+	return &index.Index{Version: indexVersion(s.version)}
+}
+
+// indexVersion returns the index format version to write for the configured
+// index.version value, falling back to [index.DefaultVersion] when it is unset
+// or names a version that cannot be encoded. This mirrors git's
+// get_index_format_default, which warns and uses INDEX_FORMAT_DEFAULT rather
+// than failing when index.version is out of range.
+func indexVersion(v uint32) uint32 {
+	if v < index.DecodeVersionSupported.Min || v > index.EncodeVersionSupported {
+		return index.DefaultVersion
+	}
+
+	return v
 }
 
 // SetIndex writes the index to disk and updates the cache.
@@ -78,7 +101,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				s.cache.Clear()
-				return &index.Index{Version: 2}, nil
+				return s.newIndex(), nil
 			}
 			return nil, err
 		}
@@ -88,9 +111,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 		}
 	}
 
-	idx := &index.Index{
-		Version: 2,
-	}
+	idx := s.newIndex()
 
 	f, err := s.dir.Index()
 	if err != nil {
