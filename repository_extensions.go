@@ -45,11 +45,13 @@ var (
 	// Some Git extensions were supported upstream before the introduction
 	// of repositoryformatversion. These are the only extensions that can be
 	// enabled while core.repositoryformatversion is unset or set to 0.
+	// Keys must be lowercase to match the output of extensions(), which
+	// normalises extension names with strings.ToLower.
 	extensionsValidForV0 = map[string]struct{}{
 		"noop":            {},
-		"partialClone":    {},
-		"preciousObjects": {},
-		"worktreeConfig":  {},
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 )
 
@@ -106,6 +108,14 @@ func verifyExtensions(st storage.Storer, cfg *config.Config) error {
 		var missing []string
 		for _, ext := range needed {
 			if _, ok := builtinExtensions[ext.name]; ok {
+				continue
+			}
+
+			// Extensions that predate repositoryformatversion (e.g.
+			// worktreeConfig, partialClone, preciousObjects) are known to
+			// Git and safe to ignore; go-git does not need to implement
+			// them in order to open the repository.
+			if _, ok := extensionsValidForV0[ext.name]; ok {
 				continue
 			}
 

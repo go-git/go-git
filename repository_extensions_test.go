@@ -42,6 +42,21 @@ func TestVerifyExtensions(t *testing.T) {
 			},
 		},
 		{
+			name: "repositoryformatversion=0: allows worktreeConfig regardless of case",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows partialClone and preciousObjects",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("partialClone", "origin")
+				cfg.Raw.Section("extensions").SetOption("preciousObjects", "true")
+			},
+		},
+		{
 			name: "repositoryformatversion=1: rejects unknown extensions",
 			setup: func(t *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
