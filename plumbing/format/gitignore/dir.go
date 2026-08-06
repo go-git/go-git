@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
@@ -55,7 +56,22 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 // matching reference git which reads $GIT_DIR/info/exclude of the
 // repository being walked. Ignore files are opened only when present in
 // the directory listing, so directories without them cost a single ReadDir.
+//
+// Excluded directories are not descended into, at any depth below the ignore
+// file declaring the rule, so patterns declared inside an excluded directory
+// are not read and do not appear in the result. See the package documentation
+// for why gitignore(5) makes that equivalent to reading them.
 func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) {
+	return readPatterns(fs, path, nil)
+}
+
+// readPatterns collects the ignore patterns declared at path and below.
+//
+// inherited holds the patterns already in effect from ancestor directories in
+// ascending order of priority. They take part in the decision to descend into
+// a subdirectory, but are not returned, so each pattern reaches the caller
+// exactly once.
+func readPatterns(fs billy.Filesystem, path []string, inherited []Pattern) (ps []Pattern, err error) {
 	fis, err := fs.ReadDir(fs.Join(path...))
 	if err != nil {
 		return nil, err
@@ -80,25 +96,34 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 		ps = append(ps, subps...)
 	}
 
+	// Ancestors first, so the deeper file wins. This deliberately excludes the
+	// patterns that the loop below collects from sibling subtrees: they cannot
+	// apply here, and including them would make the walk order-dependent.
+	inScope := inherited
+	if len(ps) > 0 {
+		inScope = slices.Concat(inherited, ps)
+	}
+	m := NewMatcher(inScope)
+
 	for _, fi := range fis {
-		if fi.IsDir() && fi.Name() != gitDir {
-			if NewMatcher(ps).Match(append(path, fi.Name()), true) {
-				continue
-			}
-
-			var subps []Pattern
-			subps, err = ReadPatterns(fs, append(path, fi.Name()))
-			if err != nil {
-				return ps, err
-			}
-
-			if len(subps) > 0 {
-				ps = append(ps, subps...)
-			}
+		if !fi.IsDir() || fi.Name() == gitDir {
+			continue
 		}
+
+		sub := slices.Concat(path, []string{fi.Name()})
+		if m.Match(sub, true) {
+			continue
+		}
+
+		subps, err := readPatterns(fs, sub, inScope)
+		if err != nil {
+			return ps, err
+		}
+
+		ps = append(ps, subps...)
 	}
 
-	return ps, err
+	return ps, nil
 }
 
 func loadPatterns(fs billy.Filesystem, path string) (ps []Pattern, err error) {
