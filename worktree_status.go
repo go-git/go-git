@@ -199,9 +199,10 @@ func (w *Worktree) ignoreScope() *gitignore.Scope {
 	}
 
 	patterns = append(patterns, w.Excludes...)
-	if len(patterns) == 0 {
-		return nil
-	}
+
+	// An empty root still yields a scope. Rules are read as the walk descends,
+	// so a worktree with no .gitignore at the root may well have one further
+	// down; returning nil here would mean never looking.
 
 	return gitignore.NewScope(patterns)
 }

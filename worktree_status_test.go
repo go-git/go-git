@@ -2,6 +2,7 @@ package git
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -203,4 +204,119 @@ func TestAddSubdirectoryForwardSlash(t *testing.T) {
 	e, err := idx.Entry("dir/foo")
 	require.NoError(t, err)
 	assert.Equal(t, "dir/foo", e.Name)
+}
+
+// TestStatusMatchesReferenceGitForIgnoreLayouts compares the untracked set
+// Status reports against `git ls-files --others --exclude-standard` over
+// layouts that place ignore rules and negations at different depths. Ignore
+// evaluation happens during the walk, so the check belongs at this level and
+// not only against the gitignore package.
+//
+// Skipped under -short or without a git binary. Cases using a negation are
+// skipped against Git 2.11.0, which CI builds and which does not honour
+// re-include patterns in several positions.
+func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("oracle disabled: -short")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("oracle disabled: git not found: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+	}{{
+		name: "negation below an excluded directory, re-excluded by a nested rule",
+		files: map[string]string{
+			".gitignore":               "outer/ignored/\n!outer/ignored/keep.txt\n",
+			"outer/ignored/.gitignore": "keep.txt\n",
+			"outer/ignored/keep.txt":   "x\n",
+		},
+	}, {
+		name: "negation below an excluded directory",
+		files: map[string]string{
+			".gitignore":             "outer/ignored/\n!outer/ignored/keep.txt\n",
+			"outer/ignored/keep.txt": "x\n",
+		},
+	}, {
+		name: "negation inside an excluded directory",
+		files: map[string]string{
+			".gitignore":               "outer/ignored/\n",
+			"outer/ignored/.gitignore": "!keep.txt\n",
+			"outer/ignored/keep.txt":   "x\n",
+		},
+	}, {
+		name: "rule declared in a subdirectory",
+		files: map[string]string{
+			"outer/.gitignore":         "ignored/\n",
+			"outer/ignored/deep/f.txt": "x\n",
+			"outer/keep.txt":           "x\n",
+		},
+	}, {
+		name: "rule names a grandchild",
+		files: map[string]string{
+			".gitignore":               "outer/ignored/\n",
+			"outer/ignored/deep/f.txt": "x\n",
+			"outer/keep.txt":           "x\n",
+		},
+	}, {
+		name: "children excluded but one re-included",
+		files: map[string]string{
+			".gitignore":      "foo/*\n!foo/bar\n",
+			"foo/bar/baz.txt": "x\n",
+			"foo/other.txt":   "x\n",
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if os.Getenv("GIT_VERSION") == "v2.11.0" {
+				for _, content := range tc.files {
+					if strings.Contains(content, "!") {
+						t.Skip("oracle disabled: Git 2.11.0 does not honour re-include patterns")
+					}
+				}
+			}
+
+			dir := filepath.Join(t.TempDir(), "repo")
+			require.NoError(t, os.MkdirAll(dir, 0o755))
+			require.NoError(t, exec.Command("git", "-c", "init.defaultBranch=main", "-C", dir, "init", "-q").Run())
+
+			for p, content := range tc.files {
+				abs := filepath.Join(dir, filepath.FromSlash(p))
+				require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
+				require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
+			}
+
+			out, err := exec.Command("git", "-C", dir, "ls-files", "--others", "--exclude-standard").Output()
+			require.NoError(t, err)
+			want := map[string]bool{}
+			for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+				if line != "" {
+					want[line] = true
+				}
+			}
+
+			repo, err := PlainOpen(dir)
+			require.NoError(t, err)
+			defer func() { _ = repo.Close() }()
+
+			wt, err := repo.Worktree()
+			require.NoError(t, err)
+
+			st, err := wt.Status()
+			require.NoError(t, err)
+
+			got := map[string]bool{}
+			for path, s := range st {
+				if s.Worktree == Untracked {
+					got[path] = true
+				}
+			}
+
+			assert.Equal(t, want, got, "untracked set must match reference git")
+		})
+	}
 }
