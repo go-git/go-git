@@ -3,6 +3,7 @@ package git
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -216,6 +217,160 @@ func setupIgnoredDirRepo(b *testing.B, tracked, untracked int) *Worktree {
 	}
 
 	return wt
+}
+
+// setupNestedIgnoredDirRepo is setupIgnoredDirRepo with the ignored tree one
+// level deeper, so the root rule names a grandchild rather than a direct
+// child. The distinction is invisible to the diff walk, which prunes the
+// directory either way, but it decides whether collecting the ignore patterns
+// beforehand has to descend through the tree first.
+//
+// dirs, not files, is the parameter that matters: pattern collection costs one
+// ReadDir per directory, so a wide shallow tree of empty-ish directories is
+// what separates the approaches.
+func setupNestedIgnoredDirRepo(b *testing.B, tracked, dirs int) *Worktree {
+	b.Helper()
+
+	const ignoredDir = "e2e/artifacts"
+
+	tmpDir := b.TempDir()
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = repo.Close() })
+
+	wt, err := repo.Worktree()
+	require.NoError(b, err)
+
+	for i := range tracked {
+		path := filepath.Join("src", fmt.Sprintf("dir%02d", i%10), fmt.Sprintf("file%04d.go", i))
+		require.NoError(b, wt.Filesystem().MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(b, util.WriteFile(wt.Filesystem(), path, []byte("package main\n"), 0o644))
+	}
+
+	require.NoError(b, util.WriteFile(wt.Filesystem(), ".gitignore",
+		[]byte(ignoredDir+"/\n"), 0o644))
+
+	require.NoError(b, wt.AddGlob("src/*"))
+	_, err = wt.Add(".gitignore")
+	require.NoError(b, err)
+
+	sig := &object.Signature{
+		Name:  "Bench",
+		Email: "bench@test.com",
+		When:  time.Now().Add(-time.Hour), // older than index modtime so the metadata fast-path engages
+	}
+	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(b, err)
+
+	// A wide gitignored tree. None of it affects status.
+	for i := range dirs {
+		path := filepath.Join(ignoredDir, fmt.Sprintf("sub%05d", i), "artifact.txt")
+		require.NoError(b, wt.Filesystem().MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(b, util.WriteFile(wt.Filesystem(), path, []byte("ignored\n"), 0o644))
+	}
+
+	return wt
+}
+
+// BenchmarkStatusNestedIgnoredDir measures Status over a worktree whose
+// ignored tree sits below the directory named by the rule. BenchmarkStatusIgnoredDir
+// cannot show this: its rule names a direct child of the root, which every
+// implementation prunes, and its ignored tree is only 21 directories wide.
+func BenchmarkStatusNestedIgnoredDir(b *testing.B) {
+	const tracked = 100
+
+	for _, dirs := range []int{200, 2000} {
+		b.Run(fmt.Sprintf("IgnoredDirs_%d", dirs), func(b *testing.B) {
+			wt := setupNestedIgnoredDirRepo(b, tracked, dirs)
+			for b.Loop() {
+				s, err := wt.Status()
+				if err != nil {
+					b.Fatalf("status: %v", err)
+				}
+				if !s.IsClean() {
+					b.Fatalf("expected clean status, got %v entries", len(s))
+				}
+			}
+		})
+	}
+}
+
+// setupManyIgnoreFilesRepo builds a worktree where every directory declares
+// its own .gitignore, the shape of a monorepo in which each package carries
+// its own rules. Everything is tracked and nothing is excluded wholesale, so
+// pruning excluded subtrees cannot help: both the pattern collection and the
+// diff walk have to visit every directory regardless.
+//
+// What is left is the cost the flat pattern list imposes. Collecting patterns
+// eagerly yields one list holding every rule in the repository, and each entry
+// the walk considers is tested against all of them. Evaluating per directory
+// instead tests an entry only against the rules on its own ancestor chain, so
+// the two diverge as the number of ignore files grows rather than as the size
+// of any one ignored tree grows.
+func setupManyIgnoreFilesRepo(b *testing.B, dirs, patternsPerDir int) *Worktree {
+	b.Helper()
+
+	tmpDir := b.TempDir()
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = repo.Close() })
+
+	wt, err := repo.Worktree()
+	require.NoError(b, err)
+
+	for i := range dirs {
+		dir := fmt.Sprintf("pkg%04d", i)
+		require.NoError(b, wt.Filesystem().MkdirAll(dir, 0o755))
+
+		// Rules that match nothing present, so every entry is tested against
+		// every one of them without any short-circuiting on a hit.
+		var rules strings.Builder
+		for p := range patternsPerDir {
+			fmt.Fprintf(&rules, "*.generated%02d\n", p)
+		}
+		require.NoError(b, util.WriteFile(wt.Filesystem(),
+			filepath.Join(dir, ".gitignore"), []byte(rules.String()), 0o644))
+		require.NoError(b, util.WriteFile(wt.Filesystem(),
+			filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644))
+	}
+
+	require.NoError(b, wt.AddWithOptions(&AddOptions{All: true}))
+
+	sig := &object.Signature{
+		Name:  "Bench",
+		Email: "bench@test.com",
+		When:  time.Now().Add(-time.Hour), // older than index modtime so the metadata fast-path engages
+	}
+	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(b, err)
+
+	return wt
+}
+
+// BenchmarkStatusManyIgnoreFiles measures the case pruning cannot improve:
+// many ignore files, none of them excluding a subtree. It isolates the cost of
+// holding every rule in the repository in one list.
+func BenchmarkStatusManyIgnoreFiles(b *testing.B) {
+	const patternsPerDir = 5
+
+	for _, dirs := range []int{50, 500} {
+		b.Run(fmt.Sprintf("IgnoreFiles_%d", dirs), func(b *testing.B) {
+			wt := setupManyIgnoreFilesRepo(b, dirs, patternsPerDir)
+			for b.Loop() {
+				s, err := wt.Status()
+				if err != nil {
+					b.Fatalf("status: %v", err)
+				}
+				if !s.IsClean() {
+					b.Fatalf("expected clean status, got %v entries", len(s))
+				}
+			}
+		})
+	}
 }
 
 // BenchmarkStatusIgnoredDir measures the cost of running Status() over a tree

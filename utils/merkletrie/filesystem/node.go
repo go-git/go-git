@@ -42,6 +42,12 @@ type Options struct {
 	// walked even if they match, so modifications to them are still
 	// reported. Requires Index to be set: without an index there is no way
 	// to identify tracked entries, so the matcher is treated as a no-op.
+	//
+	// This skip is independent of the pruning gitignore.ReadPatterns already
+	// applies when collecting the patterns: that one drops excluded subtrees
+	// unconditionally, because a pattern declared inside an excluded directory
+	// cannot change any outcome. The skip here is an optimization constrained
+	// by tracking, so both are needed and neither subsumes the other.
 	IgnoreMatcher gitignore.Matcher
 }
 

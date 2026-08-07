@@ -150,6 +150,55 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 	assert.False(t, ok, "untracked file inside an ignored directory must not surface in Status")
 }
 
+// TestStatusIgnoresReincludedFileInsideIgnoredDirectory verifies that Status
+// does not report an untracked file that a nested .gitignore tries to
+// re-include from inside a directory an ancestor .gitignore already excluded.
+// gitignore(5): "It is not possible to re-include a file if a parent directory
+// of that file is excluded", and `git status` reports nothing here.
+//
+// Two mechanisms independently produce that outcome, and this test asserts the
+// outcome rather than either mechanism: gitignore.ReadPatterns no longer
+// collects the nested negation, and the noder's shouldSkipIgnored would skip
+// keep.txt anyway. It therefore passes both before and after the ReadPatterns
+// fix, and is here to keep Status agreeing with git across that change — not to
+// demonstrate the fix, which plumbing/format/gitignore tests cover.
+func TestStatusIgnoresReincludedFileInsideIgnoredDirectory(t *testing.T) {
+	t.Parallel()
+
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	write := func(name string, data []byte) {
+		require.NoError(t, wt.Filesystem().MkdirAll(filepath.Dir(name), 0o755))
+		require.NoError(t, util.WriteFile(wt.Filesystem(), name, data, 0o644))
+	}
+
+	// The rule names a grandchild, so the excluded directory is not a direct
+	// child of the .gitignore declaring it.
+	write(".gitignore", []byte("outer/ignored/\n"))
+	_, err = wt.Add(".gitignore")
+	require.NoError(t, err)
+
+	sig := &object.Signature{Name: "test", Email: "test@test.com"}
+	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	// Untracked content inside the excluded directory, including a nested
+	// negation that must have no effect.
+	write("outer/ignored/.gitignore", []byte("!keep.txt\n"))
+	write("outer/ignored/keep.txt", []byte("x\n"))
+	write("outer/ignored/deep/other.txt", []byte("x\n"))
+
+	st, err := wt.Status()
+	require.NoError(t, err)
+	assert.True(t, st.IsClean(), "nothing inside an excluded directory may surface in Status, got: %v", st)
+}
+
 func BenchmarkWorktreeStatus(b *testing.B) {
 	b.StopTimer()
 
