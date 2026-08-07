@@ -1266,3 +1266,47 @@ func TestGPGConfig(t *testing.T) {
 		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
 	})
 }
+
+func TestSharedRepositoryRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []SharedRepository{
+		SharedRepositoryGroup,
+		SharedRepositoryAll,
+		SharedRepository("custom"),
+	} {
+		t.Run(string(value), func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			cfg.Core.SharedRepository = value
+
+			b, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			if value == SharedRepositoryUmask {
+				assert.NotContains(t, string(b), sharedRepositoryKey)
+			} else {
+				assert.Contains(t, string(b), string(value))
+			}
+
+			loaded := NewConfig()
+			require.NoError(t, loaded.Unmarshal(b))
+			assert.Equal(t, value, loaded.Core.SharedRepository)
+		})
+	}
+}
+
+func TestSharedRepositoryUmaskDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(`[core]
+	sharedRepository = umask
+`)))
+	assert.Equal(t, SharedRepositoryUmask, cfg.Core.SharedRepository)
+
+	b, err := cfg.Marshal()
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), sharedRepositoryKey)
+}

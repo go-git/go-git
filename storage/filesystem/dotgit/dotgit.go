@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -146,6 +147,13 @@ type Options struct {
 	AlternatesFS billy.Filesystem
 
 	ObjectFormat formatcfg.ObjectFormat
+
+	// SharedRepository controls the permission mode applied to new
+	// files and directories under .git. The default (empty or "umask")
+	// follows the process umask; "group" creates group-writable objects
+	// (0660 files and 2770 directories); "all" is equivalent to "group"
+	// in this implementation.
+	SharedRepository config.SharedRepository
 
 	// ReadReverseIndex controls whether .rev files are read from disk.
 	// When false, a reverse index is generated in memory on demand.
@@ -357,7 +365,7 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	cleanErr := d.cleanPackList()
-	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex, d.options.SharedRepository)
 	if err != nil {
 		return nil, errors.Join(cleanErr, err)
 	}
@@ -719,7 +727,7 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 func (d *DotGit) NewObject() (*ObjectWriter, error) {
 	d.cleanObjectList()
 
-	return newObjectWriter(d.fs, d.options.ObjectFormat)
+	return newObjectWriter(d.fs, d.options.ObjectFormat, d.options.SharedRepository)
 }
 
 // ObjectsWithPrefix returns the hashes of objects that have the given prefix.

@@ -96,6 +96,10 @@ type Config struct {
 		// directional characters that HFS+ would normalize away).
 		// When unset, defaults to true on macOS.
 		ProtectHFS OptBool
+		// SharedRepository controls permissions applied to repository files.
+		// Valid values are "umask" (default), "group", "all" or an octal
+		// mode such as "0660". See git-config documentation for core.sharedRepository.
+		SharedRepository SharedRepository
 	}
 
 	User user
@@ -217,6 +221,18 @@ type Config struct {
 	// dropping unsupported fields.
 	Raw *format.Config
 }
+
+// SharedRepository represents the core.sharedRepository git config value.
+type SharedRepository string
+
+const (
+	// SharedRepositoryUmask uses the umask to determine file permissions.
+	SharedRepositoryUmask SharedRepository = "umask"
+	// SharedRepositoryGroup makes the repository shareable within a group.
+	SharedRepositoryGroup SharedRepository = "group"
+	// SharedRepositoryAll makes the repository readable by everyone.
+	SharedRepositoryAll SharedRepository = "all"
+)
 
 type user struct {
 	// Name is the personal name of the author and the committer of a commit.
@@ -479,6 +495,7 @@ const (
 	fileModeKey                = "filemode"
 	hooksPathKey               = "hooksPath"
 	protectNTFSKey             = "protectNTFS"
+	sharedRepositoryKey        = "sharedRepository"
 	protectHFSKey              = "protectHFS"
 	indexSection               = "index"
 	skipHashKey                = "skipHash"
@@ -556,6 +573,8 @@ func (c *Config) unmarshalCore() {
 	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
 		c.Core.FileMode = false
 	}
+
+	c.Core.SharedRepository = SharedRepository(s.Options.Get(sharedRepositoryKey))
 
 	if s.Options.Get(repositoryFormatVersionKey) == string(format.Version1) {
 		c.Core.RepositoryFormatVersion = format.Version1
@@ -807,6 +826,13 @@ func (c *Config) marshalCore() {
 
 	if c.Core.ProtectHFS.IsSet() {
 		s.SetOption(protectHFSKey, c.Core.ProtectHFS.FormatBool())
+	}
+
+	switch c.Core.SharedRepository {
+	case "", SharedRepositoryUmask:
+		s.RemoveOption(sharedRepositoryKey)
+	default:
+		s.SetOption(sharedRepositoryKey, string(c.Core.SharedRepository))
 	}
 }
 
