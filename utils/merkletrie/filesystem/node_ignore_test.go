@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
+	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
 )
 
 // blobHash returns the hash a Git blob would have for the given content.
@@ -27,9 +28,14 @@ func blobHash(t *testing.T, content []byte) plumbing.Hash {
 	return h.Sum()
 }
 
-// matcher builds a gitignore.Matcher with a single pattern.
-func matcher(pattern string) gitignore.Matcher {
-	return gitignore.NewMatcher([]gitignore.Pattern{gitignore.ParsePattern(pattern, nil)})
+// scope builds a root gitignore.Scope from patterns declared at the top of
+// the walk, as RootPatterns would return them.
+func scope(patterns ...string) *gitignore.Scope {
+	ps := make([]gitignore.Pattern, 0, len(patterns))
+	for _, p := range patterns {
+		ps = append(ps, gitignore.ParsePattern(p, nil))
+	}
+	return gitignore.NewScope(ps)
 }
 
 // TestIgnoredDirIsSkipped verifies that a directory matching the ignore
@@ -48,8 +54,8 @@ func TestIgnoredDirIsSkipped(t *testing.T) {
 	}
 
 	root := NewRootNodeWithOptions(fs, nil, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("vendor/"),
+		Index:       idx,
+		IgnoreScope: scope("vendor/"),
 	})
 
 	children, err := root.Children()
@@ -61,11 +67,11 @@ func TestIgnoredDirIsSkipped(t *testing.T) {
 	}
 
 	require.True(t, names["src"], "src/ should be walked")
-	require.False(t, names["vendor"], "vendor/ should be skipped — it matches the ignore matcher and contains no tracked entries")
+	require.False(t, names["vendor"], "vendor/ should be skipped — it matches the ignore scope and contains no tracked entries")
 }
 
 // TestTrackedFileInIgnoredDirReportsModify verifies that a tracked file
-// inside a directory matching the ignore matcher is still walked, and
+// inside a directory matching the ignore scope is still walked, and
 // modifications to it surface as a Modify change.
 func TestTrackedFileInIgnoredDirReportsModify(t *testing.T) {
 	t.Parallel()
@@ -83,8 +89,8 @@ func TestTrackedFileInIgnoredDirReportsModify(t *testing.T) {
 	}
 
 	to := NewRootNodeWithOptions(fs, nil, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("vendor/"),
+		Index:       idx,
+		IgnoreScope: scope("vendor/"),
 	})
 	from := mindex.NewRootNode(idx)
 
@@ -118,8 +124,8 @@ func TestUntrackedSiblingsInIgnoredDirAreSkipped(t *testing.T) {
 	}
 
 	to := NewRootNodeWithOptions(fs, nil, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("vendor/"),
+		Index:       idx,
+		IgnoreScope: scope("vendor/"),
 	})
 	from := mindex.NewRootNode(idx)
 
@@ -128,18 +134,18 @@ func TestUntrackedSiblingsInIgnoredDirAreSkipped(t *testing.T) {
 	require.Empty(t, changes, "vendor/extra.go is ignored+untracked and must not appear in the diff")
 }
 
-// TestIgnoreMatcherWithoutIndexIsNoop verifies that IgnoreMatcher does not
+// TestIgnoreScopeWithoutIndexIsNoop verifies that IgnoreScope does not
 // take effect when Index is nil. Without an index there is no way to prove
 // that an ignored subtree contains no tracked entries, so the documented
 // contract is that the matcher is ignored.
-func TestIgnoreMatcherWithoutIndexIsNoop(t *testing.T) {
+func TestIgnoreScopeWithoutIndexIsNoop(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
 	require.NoError(t, WriteFile(fs, "src/keep.go", []byte("package main\n"), 0o644))
 	require.NoError(t, WriteFile(fs, "vendor/lib.go", []byte("package vendor\n"), 0o644))
 
 	root := NewRootNodeWithOptions(fs, nil, Options{
-		IgnoreMatcher: matcher("vendor/"),
+		IgnoreScope: scope("vendor/"),
 	})
 
 	children, err := root.Children()
@@ -174,8 +180,8 @@ func TestDeeplyNestedTrackedFileInIgnoredDir(t *testing.T) {
 	}
 
 	to := NewRootNodeWithOptions(fs, nil, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("vendor/"),
+		Index:       idx,
+		IgnoreScope: scope("vendor/"),
 	})
 	from := mindex.NewRootNode(idx)
 
@@ -185,7 +191,7 @@ func TestDeeplyNestedTrackedFileInIgnoredDir(t *testing.T) {
 }
 
 // TestSubmoduleInIgnoredDirIsWalked verifies that a tracked submodule
-// inside a directory matching the ignore matcher is still walked. A
+// inside a directory matching the ignore scope is still walked. A
 // submodule's own path is the index entry, so trackedDirs (which only
 // records *parents* of entries) does not list it; the dir branch of
 // shouldSkipIgnored must also consult idxMap to keep the submodule
@@ -206,8 +212,8 @@ func TestSubmoduleInIgnoredDirIsWalked(t *testing.T) {
 	}
 
 	root := NewRootNodeWithOptions(fs, submodules, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("vendor/"),
+		Index:       idx,
+		IgnoreScope: scope("vendor/"),
 	})
 
 	children, err := root.Children()
@@ -239,8 +245,8 @@ func TestFilePatternIgnoreSkipsUntrackedSiblings(t *testing.T) {
 	}
 
 	to := NewRootNodeWithOptions(fs, nil, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("*.log"),
+		Index:       idx,
+		IgnoreScope: scope("*.log"),
 	})
 	from := mindex.NewRootNode(idx)
 
@@ -265,8 +271,8 @@ func TestEmptyIgnoredDirIsSkipped(t *testing.T) {
 	}
 
 	root := NewRootNodeWithOptions(fs, nil, Options{
-		Index:         idx,
-		IgnoreMatcher: matcher("vendor/"),
+		Index:       idx,
+		IgnoreScope: scope("vendor/"),
 	})
 
 	children, err := root.Children()
@@ -278,4 +284,99 @@ func TestEmptyIgnoredDirIsSkipped(t *testing.T) {
 	}
 	require.True(t, names["src"], "src/ should be walked")
 	require.False(t, names["vendor"], "empty ignored vendor/ must be skipped")
+}
+
+// TestNestedIgnoreFileIsReadDuringWalk verifies that a .gitignore in a
+// subdirectory is picked up by the walk itself. The root scope knows nothing
+// about it, so this only works if each directory derives its own scope from
+// the listing taken for it.
+func TestNestedIgnoreFileIsReadDuringWalk(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "src/keep.go", []byte("package main\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "src/.gitignore", []byte("*.gen.go\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "src/api.gen.go", []byte("package main\n"), 0o644))
+
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{Name: "src/keep.go", Hash: blobHash(t, []byte("package main\n")), Mode: filemode.Regular},
+		},
+	}
+
+	root := NewRootNodeWithOptions(fs, nil, Options{
+		Index: idx,
+		// Deliberately empty: the only rule lives in src/.gitignore.
+		IgnoreScope: scope(),
+	})
+
+	names := childNames(t, root, "src")
+	require.Contains(t, names, "keep.go")
+	require.Contains(t, names, ".gitignore")
+	require.NotContains(t, names, "api.gen.go",
+		"a rule declared in src/.gitignore must apply to src's entries")
+}
+
+// TestExcludedParentBeatsNestedNegation is the case a flat pattern list
+// cannot express. A tracked entry forces the walk into the excluded
+// directory, so its .gitignore is reachable; the negation there must still
+// not re-include keep.txt. Reference git reports outer/ignored/keep.txt as
+// ignored, attributing it to the outer/ignored/ rule, because a file cannot
+// be re-included once a parent directory of it is excluded.
+func TestExcludedParentBeatsNestedNegation(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "outer/ignored/tracked.go", []byte("package ignored\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "outer/ignored/.gitignore", []byte("!keep.txt\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "outer/ignored/keep.txt", []byte("x\n"), 0o644))
+
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{Name: "outer/ignored/tracked.go", Hash: blobHash(t, []byte("package ignored\n")), Mode: filemode.Regular},
+		},
+	}
+
+	root := NewRootNodeWithOptions(fs, nil, Options{
+		Index:       idx,
+		IgnoreScope: scope("outer/ignored/"),
+	})
+
+	names := childNames(t, root, "outer", "ignored")
+
+	require.Contains(t, names, "tracked.go",
+		"a tracked entry is walked even inside an excluded directory")
+	require.NotContains(t, names, "keep.txt",
+		"a negation below an excluded directory cannot re-include a file")
+	require.NotContains(t, names, ".gitignore",
+		"the ignore file itself is untracked and below an excluded directory")
+}
+
+// childNames returns the names of the children of the node reached by
+// following path from root.
+func childNames(t *testing.T, root noder.Noder, path ...string) []string {
+	t.Helper()
+
+	current := root
+	for _, want := range path {
+		children, err := current.Children()
+		require.NoError(t, err)
+
+		var next noder.Noder
+		for _, c := range children {
+			if c.Name() == want {
+				next = c
+				break
+			}
+		}
+		require.NotNil(t, next, "no child %q", want)
+		current = next
+	}
+
+	children, err := current.Children()
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(children))
+	for _, c := range children {
+		names = append(names, c.Name())
+	}
+	return names
 }

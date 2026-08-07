@@ -171,7 +171,7 @@ func BenchmarkStatusLarge(b *testing.B) {
 // `ignoredDir`. The ignored directory is a stand-in for `node_modules`,
 // `vendor`, `.next`, etc. — directories that CLI `git status` skips at the
 // directory level and that go-git also skips via the filesystem walker's
-// IgnoreMatcher.
+// IgnoreScope.
 func setupIgnoredDirRepo(b *testing.B, tracked, untracked int) *Worktree {
 	b.Helper()
 
@@ -378,7 +378,7 @@ func BenchmarkStatusManyIgnoreFiles(b *testing.B) {
 //
 // Compared to BenchmarkStatus, the only difference is that the extra files
 // live in a directory listed in .gitignore. The filesystem walker's
-// IgnoreMatcher skips the directory at enumeration time, so cost should stay
+// IgnoreScope skips the directory at enumeration time, so cost should stay
 // roughly flat as the number of ignored files grows.
 func BenchmarkStatusIgnoredDir(b *testing.B) {
 	const tracked = 100

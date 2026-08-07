@@ -36,37 +36,21 @@ type Options struct {
 	// the function works without the optimization.
 	Index *index.Index
 
-	// IgnoreMatcher, if non-nil, is consulted while walking the tree.
-	// Untracked entries (files or directories) that match the matcher are
-	// excluded from the walk so callers do not have to descend into large
-	// gitignored directories like node_modules. Tracked entries are always
-	// walked even if they match, so modifications to them are still
-	// reported. Requires Index to be set: without an index there is no way
-	// to identify tracked entries, so the matcher is treated as a no-op.
+	// IgnoreScope, if non-nil, is consulted while walking the tree. Untracked
+	// entries (files or directories) that it reports as ignored are excluded
+	// from the walk, so callers do not have to descend into large gitignored
+	// directories like node_modules. Tracked entries are always walked even
+	// when ignored, so modifications to them are still reported.
 	//
-	// This skip is independent of the pruning gitignore.ReadPatterns already
-	// applies when collecting the patterns: that one drops excluded subtrees
-	// unconditionally, because a pattern declared inside an excluded directory
-	// cannot change any outcome. The skip here is an optimization constrained
-	// by tracking, so both are needed and neither subsumes the other.
+	// It is the scope in effect at the root of the walk, normally
+	// gitignore.NewScope of gitignore.RootPatterns plus any patterns the
+	// caller supplies. The walk derives each directory's scope from the
+	// listing it already takes, so a .gitignore is opened only in directories
+	// actually visited and never below an excluded one, and an excluded
+	// directory stays authoritative for everything under it.
 	//
-	// Deprecated: prefer IgnoreScope, which evaluates ignore rules per
-	// directory as the walk descends. A flat Matcher cannot express that a
-	// parent directory is excluded, so it disagrees with git when a negation
-	// targets a path below an excluded directory.
-	IgnoreMatcher gitignore.Matcher
-
-	// IgnoreScope, if non-nil, enables per-directory ignore evaluation and
-	// takes precedence over IgnoreMatcher. It is the scope in effect at the
-	// root of the walk, normally gitignore.NewScope of
-	// gitignore.RootPatterns plus any caller-supplied patterns.
-	//
-	// The walk derives each directory's scope from the listing it already
-	// takes, so a .gitignore is opened only in directories actually visited,
-	// and never below an excluded one. That matches git's prep_exclude and
-	// removes the need to read every ignore file in the worktree up front.
-	//
-	// Requires Index to be set, on the same terms as IgnoreMatcher.
+	// Requires Index to be set: without an index there is no way to identify
+	// tracked entries, so the scope is treated as a no-op.
 	IgnoreScope *gitignore.Scope
 }
 
@@ -81,7 +65,7 @@ type node struct {
 	idx        *index.Index
 	idxMap     map[string]*index.Entry
 	// trackedDirs holds every directory path that has at least one entry
-	// in the index. It is populated only when IgnoreMatcher is set so the
+	// in the index. It is populated only when IgnoreScope is set so the
 	// walker can keep tracked entries even if their parent directory
 	// matches an ignore rule.
 	trackedDirs map[string]struct{}
@@ -145,7 +129,7 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreMatcher != nil || options.IgnoreScope != nil {
+		if options.IgnoreScope != nil {
 			trackedDirs = make(map[string]struct{})
 			for _, entry := range options.Index.Entries {
 				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
@@ -309,34 +293,22 @@ func (n *node) pathComponents() []string {
 	return strings.Split(n.path, "/")
 }
 
-// matchIgnore consults the scope in effect for this directory's entries,
-// falling back to the flat matcher when no scope was supplied.
-func (n *node) matchIgnore(path []string, isDir bool) bool {
-	if n.scope != nil {
-		return n.scope.Match(path, isDir)
-	}
-	return n.options.IgnoreMatcher.Match(path, isDir)
-}
-
 // shouldSkipIgnored reports whether the child entry of n with the given
-// name should be skipped because it matches the ignore rules in effect
+// name should be skipped because it matches the ignore scope in effect
 // AND has no entry in the index. Tracked entries are never skipped so
 // modifications to them are still reported.
 func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
-	if n.options == nil {
-		return false
-	}
-	if n.options.IgnoreScope == nil && n.options.IgnoreMatcher == nil {
+	if n.options == nil || n.options.IgnoreScope == nil {
 		return false
 	}
 	// Without an index we cannot prove that a subtree contains no tracked
 	// entries, so refuse to skip. This matches the documented contract on
-	// Options.IgnoreMatcher.
+	// Options.IgnoreScope.
 	if n.idxMap == nil {
 		return false
 	}
 	childPath := path.Join(n.path, name)
-	if !n.matchIgnore(strings.Split(childPath, "/"), isDir) {
+	if !n.scope.Match(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
 	// An entry whose own path is in the index is tracked, regardless of
