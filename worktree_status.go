@@ -160,17 +160,20 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 		Index:    idx,
 	}
 
-	// When ignored changes are to be filtered out, gather the gitignore
-	// patterns once, build a matcher, and let the filesystem noder skip
-	// ignored, untracked entries during the walk. This avoids descending
-	// into large gitignored directories like node_modules and makes a
-	// post-walk filter unnecessary: tracked entries are still walked even
-	// when their parent matches an ignore rule, so modifications to them
-	// are still reported.
+	// When ignored changes are to be filtered out, hand the noder the ignore
+	// scope in effect at the root and let it evaluate the rest per directory
+	// as it descends. This avoids descending into large gitignored
+	// directories like node_modules and makes a post-walk filter unnecessary:
+	// tracked entries are still walked even when their parent matches an
+	// ignore rule, so modifications to them are still reported.
+	//
+	// The scope is read lazily, so only directories the walk actually visits
+	// pay for their .gitignore, and none below an excluded directory is read
+	// at all. That both removes a second full traversal of the worktree and
+	// keeps an excluded parent authoritative, which a flat pattern list
+	// cannot express.
 	if excludeIgnoredChanges {
-		if patterns := w.collectIgnorePatterns(); len(patterns) > 0 {
-			fsOpts.IgnoreMatcher = gitignore.NewMatcher(patterns)
-		}
+		fsOpts.IgnoreScope = w.ignoreScope()
 	}
 
 	to := filesystem.NewRootNodeWithOptions(w.filesystem, submodules, fsOpts)
@@ -181,12 +184,26 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	return merkletrie.DiffTree(from, to, diffTreeIsEquals)
 }
 
-func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
-	patterns, err := gitignore.ReadPatterns(w.filesystem, nil)
+// ignoreScope builds the ignore scope in effect at the root of the worktree:
+// .git/info/exclude, the root .gitignore, then any patterns supplied by the
+// caller, in ascending order of priority. Ignore files in subdirectories are
+// read by the walk itself, only where it goes.
+func (w *Worktree) ignoreScope() *gitignore.Scope {
+	// A worktree whose root cannot be listed yields no patterns rather than an
+	// error, as collecting them did before: the walk itself already treats a
+	// missing root as an empty tree, and Status should not start failing for
+	// worktrees it used to report on.
+	patterns, err := gitignore.RootPatterns(w.filesystem)
 	if err != nil {
 		patterns = nil
 	}
-	return append(patterns, w.Excludes...)
+
+	patterns = append(patterns, w.Excludes...)
+	if len(patterns) == 0 {
+		return nil
+	}
+
+	return gitignore.NewScope(patterns)
 }
 
 func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.Hash, error) {
