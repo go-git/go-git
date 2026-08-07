@@ -3,6 +3,8 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -148,6 +150,39 @@ func TestStatusReportsModifiedTrackedFileInIgnoredDirectory(t *testing.T) {
 
 	_, ok = st["vendor/extra.go"]
 	assert.False(t, ok, "untracked file inside an ignored directory must not surface in Status")
+}
+
+// TestStatusHonoursGlobalIgnoreFile verifies that Status reads the global
+// excludes file configured in the user's gitconfig for an OS-backed worktree.
+func TestStatusHonoursGlobalIgnoreFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	}
+
+	globalIgnore := filepath.Join(home, ".gitignore_global")
+	require.NoError(t, os.WriteFile(globalIgnore, []byte("*.globalignored\n"), 0o644))
+	gitconfig := filepath.Join(home, ".gitconfig")
+	require.NoError(t, os.WriteFile(gitconfig, []byte("[core]\n\texcludesfile = "+strconv.Quote(globalIgnore)+"\n"), 0o644))
+
+	repoDir := t.TempDir()
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "ignored.globalignored"), []byte("ignored\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "visible.txt"), []byte("visible\n"), 0o644))
+
+	status, err := wt.Status()
+	require.NoError(t, err)
+
+	_, ignored := status["ignored.globalignored"]
+	assert.False(t, ignored, "globally ignored untracked files must not appear in Status")
+	_, visible := status["visible.txt"]
+	assert.True(t, visible, "untracked files not covered by the global ignore file must appear in Status")
 }
 
 func BenchmarkWorktreeStatus(b *testing.B) {
