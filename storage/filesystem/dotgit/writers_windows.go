@@ -9,10 +9,11 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"golang.org/x/sys/windows"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
-func fixPermissions(fs billy.Filesystem, path string) {
+func fixPermissions(fs billy.Filesystem, path string, _ config.SharedRepository) {
 	fullpath := filepath.Join(fs.Root(), path)
 	p, err := windows.UTF16PtrFromString(fullpath)
 	if err != nil {
@@ -37,6 +38,8 @@ func fixPermissions(fs billy.Filesystem, path string) {
 		trace.General.Printf("failed to chmod %s: %v", fullpath, err)
 	}
 }
+
+func fixDirectoryPermissions(fs billy.Filesystem, path string, _ config.SharedRepository) {}
 
 func isReadOnly(fs billy.Filesystem, path string) (bool, error) {
 	fullpath := filepath.Join(fs.Root(), path)

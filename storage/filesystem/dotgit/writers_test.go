@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -15,8 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 )
@@ -26,7 +28,7 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	fs := osfs.New(b.TempDir())
 
 	for b.Loop() {
-		w, err := newPackWrite(fs, config.SHA1, false)
+		w, err := newPackWrite(fs, formatcfg.SHA1, false, config.SharedRepositoryUmask)
 
 		require.NoError(b, err)
 		pf, pfErr := f.Packfile()
@@ -159,7 +161,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
-	w, err := newPackWrite(fs, config.SHA1, false)
+	w, err := newPackWrite(fs, formatcfg.SHA1, false, config.SharedRepositoryUmask)
 	require.NoError(t, err)
 
 	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
@@ -357,6 +359,53 @@ func TestObjectWriterPermissions(t *testing.T) {
 			ro, err := isReadOnly(tc.fs, path)
 			require.NoError(t, err)
 			assert.True(t, ro, "file %q is not read-only", path)
+		})
+	}
+}
+
+func TestObjectWriterPermissionsSharedRepository(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name               string
+		sharedRepository   config.SharedRepository
+		expectedFileMode   os.FileMode
+		expectedDirMode    os.FileMode
+		expectedDirSetgid bool
+	}{
+		{"group", config.SharedRepositoryGroup, 0o660, 0o770, true},
+		{"all", config.SharedRepositoryAll, 0o664, 0o775, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
+			dot := NewWithOptions(fs, Options{SharedRepository: tc.sharedRepository})
+			require.NoError(t, dot.Initialize())
+
+			w, err := dot.NewObject()
+			require.NoError(t, err)
+
+			err = w.WriteHeader(plumbing.BlobObject, 14)
+			require.NoError(t, err)
+
+			_, err = w.Write([]byte("this is a test"))
+			require.NoError(t, err)
+
+			require.NoError(t, w.Close())
+
+			filePath := filepath.Join("objects", "a8", "a940627d132695a9769df883f85992f0ff4a43")
+			fi, err := fs.Stat(filePath)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedFileMode, fi.Mode().Perm(), "file %q permissions", filePath)
+
+			dirPath := filepath.Join("objects", "a8")
+			di, err := fs.Stat(dirPath)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedDirMode, di.Mode().Perm(), "directory %q permissions", dirPath)
+			if runtime.GOOS != "darwin" {
+				assert.Equal(t, tc.expectedDirSetgid, di.Mode()&os.ModeSetgid != 0, "directory %q setgid bit", dirPath)
+			}
 		})
 	}
 }
