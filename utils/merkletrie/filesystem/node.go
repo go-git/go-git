@@ -3,6 +3,7 @@ package filesystem
 
 import (
 	"io"
+	iofs "io/fs"
 	"os"
 	"path"
 	"strings"
@@ -42,7 +43,31 @@ type Options struct {
 	// walked even if they match, so modifications to them are still
 	// reported. Requires Index to be set: without an index there is no way
 	// to identify tracked entries, so the matcher is treated as a no-op.
+	//
+	// This skip is independent of the pruning gitignore.ReadPatterns already
+	// applies when collecting the patterns: that one drops excluded subtrees
+	// unconditionally, because a pattern declared inside an excluded directory
+	// cannot change any outcome. The skip here is an optimization constrained
+	// by tracking, so both are needed and neither subsumes the other.
+	//
+	// Deprecated: prefer IgnoreScope, which evaluates ignore rules per
+	// directory as the walk descends. A flat Matcher cannot express that a
+	// parent directory is excluded, so it disagrees with git when a negation
+	// targets a path below an excluded directory.
 	IgnoreMatcher gitignore.Matcher
+
+	// IgnoreScope, if non-nil, enables per-directory ignore evaluation and
+	// takes precedence over IgnoreMatcher. It is the scope in effect at the
+	// root of the walk, normally gitignore.NewScope of
+	// gitignore.RootPatterns plus any caller-supplied patterns.
+	//
+	// The walk derives each directory's scope from the listing it already
+	// takes, so a .gitignore is opened only in directories actually visited,
+	// and never below an excluded one. That matches git's prep_exclude and
+	// removes the need to read every ignore file in the worktree up front.
+	//
+	// Requires Index to be set, on the same terms as IgnoreMatcher.
+	IgnoreScope *gitignore.Scope
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -62,6 +87,14 @@ type node struct {
 	trackedDirs map[string]struct{}
 
 	options *Options
+
+	// scope is the ignore scope governing this node's entries. On a child it
+	// starts as the parent's scope and is replaced by this directory's own on
+	// the first calculateChildren, which is when the listing that reveals
+	// whether a .gitignore is present becomes available. scopeResolved tracks
+	// that transition; the root node is created already resolved.
+	scope         *gitignore.Scope
+	scopeResolved bool
 
 	path     string
 	hash     []byte
@@ -112,7 +145,7 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreMatcher != nil {
+		if options.IgnoreMatcher != nil || options.IgnoreScope != nil {
 			trackedDirs = make(map[string]struct{})
 			for _, entry := range options.Index.Entries {
 				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
@@ -133,6 +166,10 @@ func NewRootNodeWithOptions(
 		trackedDirs: trackedDirs,
 		options:     &options,
 		isDir:       true,
+		// The root scope already accounts for the root's own ignore files, so
+		// it must not descend again.
+		scope:         options.IgnoreScope,
+		scopeResolved: true,
 	}
 }
 
@@ -198,6 +235,10 @@ func (n *node) calculateChildren() error {
 		return err
 	}
 
+	if err := n.resolveScope(files); err != nil {
+		return err
+	}
+
 	for _, file := range files {
 		if _, ok := ignore[file.Name()]; ok {
 			continue
@@ -226,12 +267,66 @@ func (n *node) calculateChildren() error {
 	return nil
 }
 
+// resolveScope derives this directory's ignore scope from the listing just
+// taken for it. Deferring to this point is the whole benefit of the scoped
+// walk: whether a .gitignore exists is read off a listing the walk needed
+// anyway, the file is opened only in directories actually visited, and
+// Scope.Descend declines to open it at all below an excluded directory.
+func (n *node) resolveScope(files []iofs.DirEntry) error {
+	if n.scopeResolved {
+		return nil
+	}
+	n.scopeResolved = true
+
+	if n.scope == nil {
+		return nil
+	}
+
+	var readOwn func() ([]gitignore.Pattern, error)
+	for _, f := range files {
+		if f.Name() == gitignore.IgnoreFile && !f.IsDir() {
+			dir := n.pathComponents()
+			readOwn = func() ([]gitignore.Pattern, error) {
+				return gitignore.DirPatterns(n.fs, dir)
+			}
+			break
+		}
+	}
+
+	scope, err := n.scope.Descend(n.pathComponents(), readOwn)
+	if err != nil {
+		return err
+	}
+	n.scope = scope
+
+	return nil
+}
+
+func (n *node) pathComponents() []string {
+	if n.path == "" {
+		return nil
+	}
+	return strings.Split(n.path, "/")
+}
+
+// matchIgnore consults the scope in effect for this directory's entries,
+// falling back to the flat matcher when no scope was supplied.
+func (n *node) matchIgnore(path []string, isDir bool) bool {
+	if n.scope != nil {
+		return n.scope.Match(path, isDir)
+	}
+	return n.options.IgnoreMatcher.Match(path, isDir)
+}
+
 // shouldSkipIgnored reports whether the child entry of n with the given
-// name should be skipped because it matches the configured ignore matcher
+// name should be skipped because it matches the ignore rules in effect
 // AND has no entry in the index. Tracked entries are never skipped so
 // modifications to them are still reported.
 func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
-	if n.options == nil || n.options.IgnoreMatcher == nil {
+	if n.options == nil {
+		return false
+	}
+	if n.options.IgnoreScope == nil && n.options.IgnoreMatcher == nil {
 		return false
 	}
 	// Without an index we cannot prove that a subtree contains no tracked
@@ -241,7 +336,7 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 		return false
 	}
 	childPath := path.Join(n.path, name)
-	if !n.options.IgnoreMatcher.Match(strings.Split(childPath, "/"), isDir) {
+	if !n.matchIgnore(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
 	// An entry whose own path is in the index is tracked, regardless of
@@ -268,6 +363,10 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		idxMap:      n.idxMap,
 		trackedDirs: n.trackedDirs,
 		options:     n.options,
+
+		// The child inherits this directory's scope and resolves its own on
+		// its first listing.
+		scope: n.scope,
 
 		path:    path,
 		isDir:   file.IsDir(),
