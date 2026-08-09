@@ -7,4 +7,3 @@ profile.out
 .vscode
 build/tools/
 tests/testdata/
-.DS_Store
