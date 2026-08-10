@@ -16,7 +16,10 @@
 // position p maps to 1<<(p%64) of the word at index p/64 within the run.
 package ewah
 
-import "errors"
+import (
+	"errors"
+	"math/bits"
+)
 
 // ErrCorruptBitmap is returned by ReadFrom when the run/literal layout of the
 // compressed words is inconsistent, for example a run-length word that claims
@@ -155,6 +158,32 @@ func (b *Bitmap) ForEach(fn func(pos uint64) bool) {
 
 		i += literals
 	}
+}
+
+// Count returns the number of set bits in the bitmap. It is computed from the
+// compressed words in O(len(words)) time: a run of set clean words contributes
+// its whole length at once, so a large run does not cost a per-bit iteration
+// the way ForEach would.
+func (b *Bitmap) Count() uint64 {
+	var count uint64
+	var i uint64
+
+	for i < uint64(len(b.words)) {
+		rlw := b.words[i]
+		i++
+
+		if RunBit(rlw) {
+			count += RunningLen(rlw) * 64
+		}
+
+		literals := LiteralWords(rlw)
+		for k := range literals {
+			count += uint64(bits.OnesCount64(b.words[i+k]))
+		}
+		i += literals
+	}
+
+	return count
 }
 
 // NumBits returns the number of bits the compressed words actually encode,

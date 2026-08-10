@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -261,18 +262,20 @@ func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
 		return fmt.Errorf("invalid signature length")
 	}
 
-	_, err := e.w.Write([]byte(signature))
+	size, err := u32(int64(len(data)), fmt.Sprintf("%s extension size", signature))
 	if err != nil {
 		return err
 	}
 
-	err = binary.WriteUint32(e.w, uint32(len(data)))
-	if err != nil {
+	if _, err := e.w.Write([]byte(signature)); err != nil {
 		return err
 	}
 
-	_, err = e.w.Write(data)
-	if err != nil {
+	if err := binary.WriteUint32(e.w, size); err != nil {
+		return err
+	}
+
+	if _, err := e.w.Write(data); err != nil {
 		return err
 	}
 
@@ -280,12 +283,23 @@ func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
 	// written before it. Record this one while tracking is active.
 	if e.extHeaders != nil {
 		e.extHeaders.WriteString(signature)
-		if err := binary.WriteUint32(e.extHeaders, uint32(len(data))); err != nil {
+		if err := binary.WriteUint32(e.extHeaders, size); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// u32 narrows n to a uint32 on-disk index field, failing if it does not fit.
+// Offsets and sizes are 32-bit on disk; a larger value would be written
+// truncated and silently corrupt the file (git would seek to the wrong place),
+// so reject it rather than emit a bad offset.
+func u32(n int64, what string) (uint32, error) {
+	if n < 0 || n > math.MaxUint32 {
+		return 0, fmt.Errorf("%s (%d) exceeds the 32-bit index field", what, n)
+	}
+	return uint32(n), nil
 }
 
 func (e *Encoder) encodeExtensions(idx *Index) error {
@@ -360,8 +374,13 @@ func (e *Encoder) encodeEOIE(extStart int64) error {
 		return err
 	}
 
+	offset, err := u32(extStart, "EOIE offset")
+	if err != nil {
+		return err
+	}
+
 	buf := &bytes.Buffer{}
-	if err := binary.WriteUint32(buf, uint32(extStart)); err != nil {
+	if err := binary.WriteUint32(buf, offset); err != nil {
 		return err
 	}
 	if _, err := h.WriteTo(buf); err != nil {
@@ -605,7 +624,11 @@ func (e *Encoder) encodeFSMN(ext *FSMonitor) error {
 	if err := buf.WriteByte(0); err != nil {
 		return err
 	}
-	if err := binary.WriteUint32(buf, uint32(len(ext.DirtyBitmap))); err != nil {
+	bitmapLen, err := u32(int64(len(ext.DirtyBitmap)), "FSMN dirty bitmap size")
+	if err != nil {
+		return err
+	}
+	if err := binary.WriteUint32(buf, bitmapLen); err != nil {
 		return err
 	}
 	if _, err := buf.Write(ext.DirtyBitmap); err != nil {
@@ -627,11 +650,15 @@ func (e *Encoder) encodeIEOT(ext *EntryOffsetTable) error {
 	// replaying the decoded (now stale) offsets.
 	entry := 0
 	for _, count := range e.ieotBlockCounts(ext) {
-		offset := e.entriesStart
+		blockOffset := e.entriesStart
 		if entry < len(e.entryOffsets) {
-			offset = e.entryOffsets[entry]
+			blockOffset = e.entryOffsets[entry]
 		}
-		if err := binary.Write(buf, uint32(offset)); err != nil {
+		offset, err := u32(blockOffset, "IEOT block offset")
+		if err != nil {
+			return err
+		}
+		if err := binary.Write(buf, offset); err != nil {
 			return err
 		}
 		if err := binary.Write(buf, count); err != nil {

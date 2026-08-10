@@ -140,6 +140,36 @@ func TestBitmap(t *testing.T) {
 	}
 }
 
+func TestCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		words []uint64
+		want  uint64
+	}{
+		{"empty", nil, 0},
+		{"single literal", []uint64{makeRLW(false, 0, 1), 0b10101}, 3},
+		{"run of set words", []uint64{makeRLW(true, 2, 0)}, 128},
+		{"run then literal", []uint64{makeRLW(true, 1, 1), 0b1}, 65},
+		// A huge run must be counted from the word, not bit by bit; if Count
+		// iterated per bit this case would take minutes rather than being
+		// instant.
+		{"large run", []uint64{makeRLW(true, 1<<24, 0)}, (1 << 24) * 64},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := buildEWAH(t, 0, tc.words)
+			b, err := ewah.ReadFrom(bytes.NewReader(raw))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, b.Count())
+		})
+	}
+}
+
 func TestForEachStopsEarly(t *testing.T) {
 	t.Parallel()
 

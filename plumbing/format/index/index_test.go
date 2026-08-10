@@ -488,6 +488,31 @@ func TestExtensions_FSMN(t *testing.T) {
 	assert.Equal(t, idx.FSMonitor.DirtyBitmap, out.FSMonitor.DirtyBitmap)
 }
 
+// TestExtensions_UNTR_RejectsOversizedBitmap verifies that a valid/metadata
+// bitmap claiming more set bits than there are directory entries is rejected.
+// Without the bound, counting a crafted large run would be a decode-time DoS
+// and drive an oversized allocation.
+func TestExtensions_UNTR_RejectsOversizedBitmap(t *testing.T) {
+	t.Parallel()
+	idx := &Index{
+		Version: 4,
+		UntrackedCache: &UntrackedCache{
+			Entries:         []UntrackedCacheEntry{{Name: "", Entries: []string{"f"}}},
+			ValidBitmap:     ewahBytes(5, 0, 1, 2, 3, 4), // 5 set bits, but only 1 entry
+			CheckOnlyBitmap: ewahBytes(5),
+			MetadataBitmap:  ewahBytes(5),
+			Stats:           []UntrackedCacheStats{{}, {}, {}, {}, {}},
+		},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, NewEncoder(&buf, crypto.SHA1.New()).Encode(idx))
+
+	err := NewDecoder(&buf, crypto.SHA1.New()).Decode(&Index{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bitmap")
+}
+
 // TestExtensions_FSMN_V1Rejected verifies that the unsupported version 1 of the
 // fsmonitor extension is rejected rather than silently misread.
 func TestExtensions_FSMN_V1Rejected(t *testing.T) {

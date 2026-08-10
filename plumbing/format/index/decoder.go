@@ -229,7 +229,9 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 
 	var base string
 	if d.lastEntry != nil {
-		if l < 0 || int(l) > len(d.lastEntry.Name) {
+		// Compare in int64: on 32-bit builds int(l) would truncate a large
+		// strip length, slip past the bound check, and panic on the slice.
+		if l < 0 || l > int64(len(d.lastEntry.Name)) {
 			return "", fmt.Errorf("%w: invalid V4 entry name strip length %d (previous name length: %d)",
 				ErrMalformedIndexFile, l, len(d.lastEntry.Name))
 		}
@@ -382,6 +384,20 @@ func (d *Decoder) readExtension(idx *Index) error {
 		if err := extDec.Decode(); err != nil {
 			return err
 		}
+	}
+
+	// Every extension must be fully consumed. Draining the remainder of the
+	// length-bounded reader both validates that (any leftover means the payload
+	// was malformed) and advances the underlying stream to the next extension.
+	// This is done centrally, rather than per decoder via bufio.Buffered(),
+	// because Buffered() only sees the current buffer and misses bytes still in
+	// the underlying reader for extensions larger than the buffer.
+	n, err := io.Copy(io.Discard, r)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return fmt.Errorf("%w: %s extension has %d unparsed bytes", ErrMalformedIndexFile, string(header[:]), n)
 	}
 
 	return nil
@@ -593,8 +609,10 @@ func (d *resolveUndoDecoder) readStage(e *ResolveUndoEntry, s Stage) error {
 	}
 
 	// git writes the octal file mode for each stage; a zero mode marks the
-	// stage as absent from the conflict.
-	mode, err := strconv.ParseInt(string(ascii), 8, 64)
+	// stage as absent from the conflict. Parse as an unsigned 32-bit value
+	// (matching git's strtoul and filemode.FileMode's width) so an oversized
+	// mode is rejected rather than silently truncated on conversion.
+	mode, err := strconv.ParseUint(string(ascii), 8, 32)
 	if err != nil {
 		return err
 	}
@@ -621,11 +639,6 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 	e.Hash.ResetBySize(d.h.Size())
 	if _, err := e.Hash.ReadFrom(d.r); err != nil {
 		return err
-	}
-
-	// Make sure we've consumed the entire extension.
-	if d.r.Buffered() > 0 {
-		return fmt.Errorf("EOIE extension has extra unparsed data")
 	}
 
 	return nil
@@ -672,11 +685,6 @@ func (d *linkExtensionDecoder) Decode(ext *Link) error {
 		return err
 	}
 	ext.ReplaceBitmap = replaceBuffer.Bytes()
-
-	// Make sure we've consumed the entire extension.
-	if d.r.Buffered() > 0 {
-		return fmt.Errorf("LINK extension has extra unparsed data")
-	}
 
 	return nil
 }
@@ -754,11 +762,15 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 			return err
 		}
 
-		validEntries := 0
-		validBitmap.ForEach(func(uint64) bool {
-			validEntries++
-			return true
-		})
+		// The valid bitmap has one bit per directory entry, so its set-bit
+		// count cannot exceed the number of entries. Bounding it here both
+		// rejects a crafted bitmap and keeps the Stats allocation below in
+		// check. Count is O(words), unlike a per-bit scan which a large run
+		// would make pathologically slow.
+		validEntries, err := boundedBitCount(validBitmap, len(ext.Entries), "valid")
+		if err != nil {
+			return err
+		}
 
 		var validBuffer bytes.Buffer
 		if _, err := validBitmap.WriteTo(&validBuffer); err != nil {
@@ -782,11 +794,11 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 			return err
 		}
 
-		metadataEntries := 0
-		metadataBitmap.ForEach(func(uint64) bool {
-			metadataEntries++
-			return true
-		})
+		// Same bound as the valid bitmap: one bit per directory entry.
+		metadataEntries, err := boundedBitCount(metadataBitmap, len(ext.Entries), "metadata")
+		if err != nil {
+			return err
+		}
 
 		var metadataBuffer bytes.Buffer
 		if _, err := metadataBitmap.WriteTo(&metadataBuffer); err != nil {
@@ -795,7 +807,7 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 		ext.MetadataBitmap = metadataBuffer.Bytes()
 
 		ext.Stats = make([]UntrackedCacheStats, validEntries)
-		for i := 0; i < validEntries; i++ {
+		for i := range validEntries {
 			var value UntrackedCacheStats
 			if err := d.decodeUntrackedCacheStats(&value); err != nil {
 				return err
@@ -804,7 +816,7 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 		}
 
 		ext.Hashes = make([]plumbing.Hash, metadataEntries)
-		for i := 0; i < metadataEntries; i++ {
+		for i := range metadataEntries {
 			var value plumbing.Hash
 			value.ResetBySize(d.h.Size())
 			if _, err := value.ReadFrom(d.r); err != nil {
@@ -822,12 +834,21 @@ func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
 		}
 	}
 
-	// Make sure we've consumed the entire extension.
-	if d.r.Buffered() > 0 {
-		return fmt.Errorf("UNTR extension has extra unparsed data")
-	}
-
 	return nil
+}
+
+// boundedBitCount returns the number of set bits in b, failing if it exceeds
+// max. The untracked cache's valid and metadata bitmaps carry one bit per
+// directory entry, so a count above the entry count signals a malformed (or
+// crafted) extension and would otherwise drive an oversized allocation. Count
+// is O(words), so a large run cannot make this pathologically slow.
+func boundedBitCount(b *ewah.Bitmap, limit int, name string) (int, error) {
+	count := b.Count()
+	if count > uint64(limit) {
+		return 0, fmt.Errorf("%w: untracked cache %s bitmap has %d set bits, exceeding %d directory entries",
+			ErrMalformedIndexFile, name, count, limit)
+	}
+	return int(count), nil
 }
 
 func (d *untrackedCacheDecoder) readEntry() (*UntrackedCacheEntry, error) {
@@ -927,11 +948,6 @@ func (d *fsMonitorDecoder) Decode(ext *FSMonitor) error {
 	}
 	ext.DirtyBitmap = bitmap.Bytes()
 
-	// Make sure we've consumed the entire extension.
-	if d.r.Buffered() > 0 {
-		return fmt.Errorf("FSMN extension has extra unparsed data")
-	}
-
 	return nil
 }
 
@@ -947,7 +963,17 @@ func (d *indexEntryOffsetTableDecoder) Decode(table *EntryOffsetTable) error {
 		return err
 	}
 
-	for d.r.Buffered() > 0 {
+	// Read (offset, count) blocks until the extension is exhausted. Peek is
+	// used rather than bufio.Buffered() so the loop sees bytes still in the
+	// underlying reader, not just the current buffer. Otherwise a table larger
+	// than the buffer would be silently truncated.
+	for {
+		if _, err := d.r.Peek(1); err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+
 		var entry EntryOffsetEntry
 
 		entry.Offset, err = binary.ReadUint32(d.r)
@@ -961,11 +987,6 @@ func (d *indexEntryOffsetTableDecoder) Decode(table *EntryOffsetTable) error {
 		}
 
 		table.Entries = append(table.Entries, entry)
-	}
-
-	// Make sure we've consumed the entire extension.
-	if d.r.Buffered() > 0 {
-		return fmt.Errorf("IEOT extension has extra unparsed data")
 	}
 
 	return nil
