@@ -340,35 +340,52 @@ func NewConfig() *Config {
 }
 
 // ReadConfig reads a config file from a io.Reader.
+//
+// Any [include] or [includeIf] directives are read as ordinary options
+// and not followed, because resolving them needs the path of the file
+// being read. Use [ReadConfigWithIncludes] when that path is known.
 func ReadConfig(r io.Reader) (*Config, error) {
+	return ReadConfigWithIncludes(r, nil)
+}
+
+// ReadConfigWithIncludes reads a config file from a io.Reader, resolving
+// [include] and [includeIf] directives with opts. A nil opts behaves
+// like [ReadConfig].
+func ReadConfigWithIncludes(r io.Reader, opts *format.IncludeOptions) (*Config, error) {
 	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := NewConfig()
-	if err = cfg.Unmarshal(b); err != nil {
+	if err = cfg.UnmarshalWithIncludes(b, opts); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
 }
 
-// LoadConfig loads a config file from a given scope.
+// LoadConfig loads a config file from a given scope, resolving any
+// include directives it contains.
+//
+// For [LocalScope] the repository is located from the current working
+// directory, honouring GIT_DIR; an empty config is returned when there
+// is none.
 //
 // Deprecated: Use the ConfigLoader plugin instead. This will be removed in v7.
 func LoadConfig(scope Scope) (*Config, error) {
-	if scope == LocalScope {
-		return nil, fmt.Errorf("LocalScope should be read from the a ConfigStorer")
-	}
-
 	files, err := Paths(scope)
 	if err != nil {
 		return nil, err
 	}
 
+	gitDir, err := scopeGitDir(scope)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, file := range files {
-		f, err := osfs.Default.Open(file)
+		cfg, err := loadConfigFile(file, gitDir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -377,11 +394,77 @@ func LoadConfig(scope Scope) (*Config, error) {
 			return nil, err
 		}
 
-		defer func() { _ = f.Close() }()
-		return ReadConfig(f)
+		return cfg, nil
 	}
 
 	return NewConfig(), nil
+}
+
+// loadConfigFile reads a single config file with includes resolved.
+//
+// "hasconfig:remote.*.url:" conditions match against remotes that may
+// themselves be defined inside included files, so a first pass collects
+// them with every such condition forced true. That pass is only needed
+// when such a condition is actually present, in which case its result is
+// discarded and the file is parsed again for real.
+func loadConfigFile(path, gitDir string) (*Config, error) {
+	b, err := readFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := NewIncludeContext(osfs.Default, gitDir)
+	ctx.UnconditionalRemoteURL = true
+
+	cfg := NewConfig()
+	if err := cfg.UnmarshalWithIncludes(b, ctx.FormatOptions(path)); err != nil {
+		return nil, err
+	}
+
+	if !HasRemoteURLCondition(cfg.Raw) {
+		return cfg, nil
+	}
+
+	ctx.UnconditionalRemoteURL = false
+	ctx.RemoteURLs = RemoteURLs(cfg.Raw)
+
+	final := NewConfig()
+	if err := final.UnmarshalWithIncludes(b, ctx.FormatOptions(path)); err != nil {
+		return nil, err
+	}
+
+	return final, nil
+}
+
+func readFile(path string) ([]byte, error) {
+	f, err := osfs.Default.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	return io.ReadAll(f)
+}
+
+// scopeGitDir locates the repository whose gitdir-dependent include
+// conditions apply. Global and system config are read in the context of
+// the current repository too, since that is what their "gitdir:"
+// conditions are meant to select on.
+func scopeGitDir(_ Scope) (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	gitDir, err := DiscoverGitDir(osfs.Default, wd)
+	if err != nil {
+		if errors.Is(err, ErrGitDirNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	return gitDir, nil
 }
 
 // Paths returns the config file location for a given scope.
@@ -391,6 +474,21 @@ func LoadConfig(scope Scope) (*Config, error) {
 func Paths(scope Scope) ([]string, error) {
 	var files []string
 	switch scope {
+	case LocalScope:
+		gitDir, err := scopeGitDir(scope)
+		if err != nil {
+			return nil, err
+		}
+		if gitDir == "" {
+			return nil, nil
+		}
+
+		p, err := LocalConfigPath(osfs.Default, gitDir)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, p)
+
 	case GlobalScope:
 		xdg := os.Getenv("XDG_CONFIG_HOME")
 		if xdg != "" {
@@ -496,9 +594,22 @@ const (
 )
 
 // Unmarshal parses a git-config file and stores it.
+//
+// Any [include] or [includeIf] directives are stored as ordinary options
+// and not followed. Use [Config.UnmarshalWithIncludes] to resolve them.
 func (c *Config) Unmarshal(b []byte) error {
+	return c.UnmarshalWithIncludes(b, nil)
+}
+
+// UnmarshalWithIncludes parses a git-config file and stores it,
+// resolving [include] and [includeIf] directives with opts. Each
+// included file is expanded at the point its directive appears, so an
+// included value overrides one set earlier in the including file and is
+// overridden by one set after it. A nil opts behaves like
+// [Config.Unmarshal].
+func (c *Config) UnmarshalWithIncludes(b []byte, opts *format.IncludeOptions) error {
 	r := bytes.NewBuffer(b)
-	d := format.NewDecoder(r)
+	d := format.NewDecoderWithIncludes(r, opts)
 
 	c.Raw = format.New()
 	if err := d.Decode(c.Raw); err != nil {
