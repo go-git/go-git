@@ -132,19 +132,6 @@ func cloneRawConfig(c *formatcfg.Config) *formatcfg.Config {
 			}
 		}
 	}
-	if c.Includes != nil {
-		cp.Includes = make(formatcfg.Includes, len(c.Includes))
-		for i, inc := range c.Includes {
-			if inc == nil {
-				continue
-			}
-			cloned := &formatcfg.Include{Path: inc.Path}
-			if inc.Config != nil {
-				cloned.Config = cloneRawConfig(inc.Config)
-			}
-			cp.Includes[i] = cloned
-		}
-	}
 	return cp
 }
 
