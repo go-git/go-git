@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
@@ -182,9 +183,27 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 }
 
 func (w *Worktree) collectIgnorePatterns() []gitignore.Pattern {
-	patterns, err := gitignore.ReadPatterns(w.filesystem, nil)
-	if err != nil {
-		patterns = nil
+	var patterns []gitignore.Pattern
+
+	// Global and system excludes are rooted at the operating system, not at
+	// the repository. Loading them through w.filesystem would turn an absolute
+	// path such as /Users/alice/.gitconfig into a path inside the worktree (and
+	// rejects Windows drive-letter paths entirely). Only OS-backed worktrees
+	// have a meaningful host-level ignore configuration; in-memory and custom
+	// filesystems retain their existing repository-local behavior.
+	if _, ok := w.filesystem.Filesystem.(*osfs.BoundOS); ok {
+		if system, err := gitignore.LoadSystemPatterns(osfs.Default); err == nil {
+			patterns = append(patterns, system...)
+		}
+		if global, err := gitignore.LoadGlobalPatterns(osfs.Default); err == nil {
+			patterns = append(patterns, global...)
+		}
+	}
+
+	// Repository rules have higher precedence than system/global excludes, and
+	// explicit Worktree.Excludes remain the final override as before.
+	if repository, err := gitignore.ReadPatterns(w.filesystem, nil); err == nil {
+		patterns = append(patterns, repository...)
 	}
 	return append(patterns, w.Excludes...)
 }
