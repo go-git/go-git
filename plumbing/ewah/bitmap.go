@@ -16,6 +16,33 @@
 // position p maps to 1<<(p%64) of the word at index p/64 within the run.
 package ewah
 
+import "errors"
+
+// ErrCorruptBitmap is returned by ReadFrom when the run/literal layout of the
+// compressed words is inconsistent, for example a run-length word that claims
+// more literal words than remain in the payload.
+var ErrCorruptBitmap = errors.New("ewah: corrupt bitmap")
+
+// validate walks the run/literal structure of words once and reports whether
+// it is self-consistent: every run-length word must be followed by exactly the
+// number of literal words it declares, and the runs must tile the payload with
+// nothing left over. Callers rely on this so At, ForEach and NumBits can index
+// b.words during iteration without per-access bounds checks.
+func validate(words []uint64) error {
+	n := uint64(len(words))
+	for i := uint64(0); i < n; {
+		// The run-length word at i is followed by LiteralWords(rlw) literal
+		// words. n-i-1 is how many words remain after the run-length word, so
+		// a larger literal count runs off the end of the slice.
+		lit := LiteralWords(words[i])
+		if lit > n-i-1 {
+			return ErrCorruptBitmap
+		}
+		i += 1 + lit
+	}
+	return nil
+}
+
 // A Bitmap represents a read-only EWAH-compressed bitmap.
 type Bitmap struct {
 	// bits is the logical size of the uncompressed bitmap, as stored in the

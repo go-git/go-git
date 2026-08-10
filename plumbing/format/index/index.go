@@ -220,8 +220,21 @@ type ResolveUndo struct {
 
 // ResolveUndoEntry contains the information about a conflict when is resolved
 type ResolveUndoEntry struct {
-	Path   string
-	Stages map[Stage]plumbing.Hash
+	Path string
+	// Stages records, per merge stage that took part in the conflict, the file
+	// mode and object name the entry had before the conflict was resolved. A
+	// stage is present in the map only if it participated in the conflict.
+	Stages map[Stage]ResolveUndoStage
+}
+
+// ResolveUndoStage is the file mode and object name recorded for a single merge
+// stage of a conflicted path in the resolve-undo extension. Git stores the mode
+// as an octal value and uses a zero mode to mean the stage is absent.
+type ResolveUndoStage struct {
+	// Mode is git's octal file mode for this stage.
+	Mode filemode.FileMode
+	// Hash is the object name recorded for this stage.
+	Hash plumbing.Hash
 }
 
 // EndOfIndexEntry is the End of Index Entry (EOIE) is used to locate the end of
@@ -337,10 +350,14 @@ type UntrackedCache struct {
 	// MetadataBitmap marks directories with valid metadata for ignore files.
 	MetadataBitmap []byte
 
-	// Stats holds stat info for per-directory ignore files, aligned with Hashes.
+	// Stats holds stat metadata for the directories whose bit is set in
+	// ValidBitmap, in bitmap order. Its length is the number of set bits in
+	// ValidBitmap, which need not match Hashes.
 	Stats []UntrackedCacheStats
 
-	// Hashes holds hashes of per-directory ignore files, aligned with Stats.
+	// Hashes holds the ignore-file object names for the directories whose bit
+	// is set in MetadataBitmap, in bitmap order. Its length is the number of
+	// set bits in MetadataBitmap, which need not match Stats.
 	Hashes []plumbing.Hash
 }
 
@@ -378,17 +395,15 @@ type UntrackedCacheStats struct {
 //
 // It tracks filesystem changes since the last index update to avoid
 // unnecessary full-index scans.
+//
+// Only version 2 is supported. Version 1 stored an opaque 64-bit token that
+// git no longer writes; go-git rejects it rather than misinterpret it.
 type FSMonitor struct {
-	// Version of the extension [1, 2].
+	// Version of the extension. Only version 2 is supported.
 	Version uint32
 
-	// Since is the timestamp of the last fsmonitor query. This field is only
-	// present and valid in version 1 of the extension.
-	Since time.Time
-
 	// Token is an opaque string provided by the filesystem monitor. It
-	// identifies the last query position in the monitor’s event stream. This
-	// field is only present and valid in version 2 of the extension.
+	// identifies the last query position in the monitor’s event stream.
 	Token string
 
 	// DirtyBitmap is a bitmap of index entries that are known to be dirty. Git

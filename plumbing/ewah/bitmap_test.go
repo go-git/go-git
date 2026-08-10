@@ -172,6 +172,30 @@ func TestReadFromTruncated(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestReadFromHugeCount(t *testing.T) {
+	t.Parallel()
+
+	// A crafted word count of ~4 billion must not trigger a giant allocation:
+	// the short payload has to fail on the read instead.
+	raw := []byte{
+		0x00, 0x00, 0x00, 0x05, // bits
+		0xff, 0xff, 0xff, 0xff, // count
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // a single word, far short of the count
+	}
+	_, err := ewah.ReadFrom(bytes.NewReader(raw))
+	assert.Error(t, err)
+}
+
+func TestReadFromCorruptStructure(t *testing.T) {
+	t.Parallel()
+
+	// The lone run-length word declares three literal words, but none follow.
+	// Without structural validation At/ForEach would index past the slice.
+	raw := buildEWAH(t, 64, []uint64{makeRLW(false, 0, 3)})
+	_, err := ewah.ReadFrom(bytes.NewReader(raw))
+	assert.ErrorIs(t, err, ewah.ErrCorruptBitmap)
+}
+
 // seq returns the integers in [start, end).
 func seq(start, end uint64) []uint64 {
 	out := make([]uint64, 0, end-start)

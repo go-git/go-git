@@ -83,13 +83,17 @@ func TestEncodeTreeCacheInvalidatedEntry(t *testing.T) {
 	require.NoError(t, NewDecoder(buf, crypto.SHA1.New()).Decode(output))
 
 	require.NotNil(t, output.Cache)
-	// The invalidated entry is dropped on decode; the two valid entries survive
-	// with their paths and object names intact.
-	require.Len(t, output.Cache.Entries, 2)
+	// All three entries survive the round trip. The invalidated entry keeps its
+	// negative count and carries no object name; the valid entries keep their
+	// paths and object names intact.
+	require.Len(t, output.Cache.Entries, 3)
 	assert.Equal(t, "", output.Cache.Entries[0].Path)
 	assert.Equal(t, rootHash, output.Cache.Entries[0].Hash)
-	assert.Equal(t, "sub", output.Cache.Entries[1].Path)
-	assert.Equal(t, subHash, output.Cache.Entries[1].Hash)
+	assert.Equal(t, "stale", output.Cache.Entries[1].Path)
+	assert.Equal(t, -1, output.Cache.Entries[1].Entries)
+	assert.True(t, output.Cache.Entries[1].Hash.IsZero())
+	assert.Equal(t, "sub", output.Cache.Entries[2].Path)
+	assert.Equal(t, subHash, output.Cache.Entries[2].Hash)
 }
 
 func TestEncodeStableOrderForEqualNames(t *testing.T) {

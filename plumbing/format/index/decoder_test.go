@@ -61,16 +61,16 @@ func TestDecodeEntries(t *testing.T) {
 					Entries: []ResolveUndoEntry{
 						{
 							Path: "go/example.go",
-							Stages: map[Stage]plumbing.Hash{
-								AncestorMode: plumbing.ZeroHash,
-								OurMode:      plumbing.ZeroHash,
-								TheirMode:    plumbing.ZeroHash,
+							Stages: map[Stage]ResolveUndoStage{
+								AncestorMode: {Mode: filemode.Regular, Hash: plumbing.ZeroHash},
+								OurMode:      {Mode: filemode.Regular, Hash: plumbing.ZeroHash},
+								TheirMode:    {Mode: filemode.Regular, Hash: plumbing.ZeroHash},
 							},
 						}, {
 							Path: "haskal/haskal.hs",
-							Stages: map[Stage]plumbing.Hash{
-								OurMode:   plumbing.ZeroHash,
-								TheirMode: plumbing.ZeroHash,
+							Stages: map[Stage]ResolveUndoStage{
+								OurMode:   {Mode: filemode.Regular, Hash: plumbing.ZeroHash},
+								TheirMode: {Mode: filemode.Regular, Hash: plumbing.ZeroHash},
 							},
 						},
 					},
@@ -900,9 +900,9 @@ func TestTreeExtensionInvalidatedEntry(t *testing.T) {
 	// invalidated (entry_count == -1). The on-disk format per entry is:
 	//   <path>\0<entry_count> <subtree_nr>\n[<OID> only if entry_count >= 0]
 	//
-	// Before the fix, an invalidated entry returned before consuming the
-	// subtree_nr and newline, leaving stale bytes in the stream that
-	// corrupted every subsequent entry.
+	// An invalidated entry must still consume the subtree_nr and newline (but
+	// no OID); otherwise stale bytes in the stream corrupt every subsequent
+	// entry. The entry itself is preserved so the cache tree round-trips.
 	h := crypto.SHA1.New()
 	hashSize := h.Size()
 
@@ -933,16 +933,22 @@ func TestTreeExtensionInvalidatedEntry(t *testing.T) {
 	err := d.Decode(tree)
 	require.NoError(t, err)
 
-	// The invalidated entry is skipped; only the two valid entries remain.
-	require.Len(t, tree.Entries, 2)
+	// All three entries are preserved, including the invalidated one, which
+	// carries no object name.
+	require.Len(t, tree.Entries, 3)
 
 	assert.Equal(t, "", tree.Entries[0].Path)
 	assert.Equal(t, 5, tree.Entries[0].Entries)
 	assert.Equal(t, 2, tree.Entries[0].Trees)
 	assert.Equal(t, rootHash, tree.Entries[0].Hash.Bytes())
 
-	assert.Equal(t, "good", tree.Entries[1].Path)
-	assert.Equal(t, 2, tree.Entries[1].Entries)
+	assert.Equal(t, "stale", tree.Entries[1].Path)
+	assert.Equal(t, -1, tree.Entries[1].Entries)
 	assert.Equal(t, 0, tree.Entries[1].Trees)
-	assert.Equal(t, goodHash, tree.Entries[1].Hash.Bytes())
+	assert.True(t, tree.Entries[1].Hash.IsZero())
+
+	assert.Equal(t, "good", tree.Entries[2].Path)
+	assert.Equal(t, 2, tree.Entries[2].Entries)
+	assert.Equal(t, 0, tree.Entries[2].Trees)
+	assert.Equal(t, goodHash, tree.Entries[2].Hash.Bytes())
 }

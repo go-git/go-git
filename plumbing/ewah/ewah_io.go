@@ -9,6 +9,13 @@ import (
 // ErrNilReader is returned by ReadFrom when called with a nil reader.
 var ErrNilReader = errors.New("ewah: nil reader")
 
+// readChunkWords bounds how many words a single binary.Read pulls from r. The
+// on-disk word count is untrusted, so the payload is read in fixed-size chunks
+// rather than allocated up front. A crafted count then fails on a short read
+// after growing the slice by at most one chunk, instead of demanding a huge
+// allocation from a few header bytes.
+const readChunkWords = 1 << 12
+
 // ReadFrom decodes an EWAH-compressed bitmap from r.
 func ReadFrom(r io.Reader) (*Bitmap, error) {
 	if r == nil {
@@ -25,13 +32,23 @@ func ReadFrom(r io.Reader) (*Bitmap, error) {
 		return nil, err
 	}
 
-	words := make([]uint64, count)
-	if err := binary.Read(r, binary.BigEndian, &words); err != nil {
-		return nil, err
+	words := make([]uint64, 0, min(uint64(count), uint64(readChunkWords)))
+	var buf [readChunkWords]uint64
+	for remaining := uint64(count); remaining > 0; {
+		n := min(remaining, uint64(readChunkWords))
+		if err := binary.Read(r, binary.BigEndian, buf[:n]); err != nil {
+			return nil, err
+		}
+		words = append(words, buf[:n]...)
+		remaining -= n
 	}
 
 	var rlw uint32
 	if err := binary.Read(r, binary.BigEndian, &rlw); err != nil {
+		return nil, err
+	}
+
+	if err := validate(words); err != nil {
 		return nil, err
 	}
 

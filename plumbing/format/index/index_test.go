@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/ewah"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 )
 
 // ewahBytes builds the on-disk representation of an EWAH-compressed bitmap of
@@ -168,7 +169,10 @@ func TestExtensions_EOIE(t *testing.T) {
 	t.Parallel()
 	idx := &Index{
 		Version: 4,
+		Entries: []*Entry{{Name: "a"}, {Name: "b"}, {Name: "c"}},
 		EndOfIndexEntry: &EndOfIndexEntry{
+			// Offset and Hash are ignored on encode and recomputed from the
+			// bytes actually written; the values here are deliberately wrong.
 			Offset: 1234,
 			Hash:   plumbing.NewHash("abcd1234abcd1234abcd1234abcd1234abcd1234"),
 		},
@@ -177,8 +181,19 @@ func TestExtensions_EOIE(t *testing.T) {
 	out := encodeDecode(t, idx)
 	require.NotNil(t, out.EndOfIndexEntry)
 
-	assert.Equal(t, uint32(1234), out.EndOfIndexEntry.Offset)
-	assert.Equal(t, idx.EndOfIndexEntry.Hash, out.EndOfIndexEntry.Hash)
+	// The offset must point at the start of the extension section: the length
+	// of the header and entries. Encoding the same index without the extension
+	// yields that boundary as the buffer length minus the trailing hash.
+	var plain bytes.Buffer
+	noExt := *idx
+	noExt.EndOfIndexEntry = nil
+	require.NoError(t, NewEncoder(&plain, crypto.SHA1.New()).Encode(&noExt))
+	wantOffset := uint32(plain.Len() - crypto.SHA1.Size())
+	assert.Equal(t, wantOffset, out.EndOfIndexEntry.Offset)
+
+	// No extension precedes EOIE, so its hash is over an empty header sequence:
+	// the SHA-1 of the empty string.
+	assert.Equal(t, plumbing.NewHash("da39a3ee5e6b4b0d3255bfef95601890afd80709"), out.EndOfIndexEntry.Hash)
 }
 
 func TestExtensions_TREE(t *testing.T) {
@@ -218,9 +233,10 @@ func TestExtensions_TREE(t *testing.T) {
 
 	require.NotNil(t, out.Cache)
 
-	// The invalidated entry ("docs", entry count -1) is dropped on decode, so
-	// only the valid entries survive the round-trip.
-	want := idx.Cache.Entries[:3]
+	// Every entry survives the round trip, including the invalidated one
+	// ("docs", entry count -1), which is preserved with a zero Hash so the
+	// cache tree stays structurally intact.
+	want := idx.Cache.Entries
 	require.Len(t, out.Cache.Entries, len(want))
 
 	for i := range want {
@@ -238,30 +254,31 @@ func TestExtensions_REUC(t *testing.T) {
 		ResolveUndo: &ResolveUndo{
 			Entries: []ResolveUndoEntry{
 				{
+					// Distinct modes per stage exercise the octal encoding.
 					Path: "a.txt",
-					Stages: map[Stage]plumbing.Hash{
-						AncestorMode: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-						OurMode:      plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-						TheirMode:    plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc"),
+					Stages: map[Stage]ResolveUndoStage{
+						AncestorMode: {Mode: filemode.Regular, Hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+						OurMode:      {Mode: filemode.Executable, Hash: plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
+						TheirMode:    {Mode: filemode.Symlink, Hash: plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")},
 					},
 				},
 				{
 					Path: "b.txt",
-					Stages: map[Stage]plumbing.Hash{
-						AncestorMode: plumbing.NewHash("1111111111111111111111111111111111111111"),
-						OurMode:      plumbing.NewHash("3333333333333333333333333333333333333333"),
+					Stages: map[Stage]ResolveUndoStage{
+						AncestorMode: {Mode: filemode.Regular, Hash: plumbing.NewHash("1111111111111111111111111111111111111111")},
+						OurMode:      {Mode: filemode.Regular, Hash: plumbing.NewHash("3333333333333333333333333333333333333333")},
 					},
 				},
 				{
 					Path: "c.txt",
-					Stages: map[Stage]plumbing.Hash{
-						AncestorMode: plumbing.NewHash("1111111111111111111111111111111111111111"),
-						TheirMode:    plumbing.NewHash("2222222222222222222222222222222222222222"),
+					Stages: map[Stage]ResolveUndoStage{
+						AncestorMode: {Mode: filemode.Regular, Hash: plumbing.NewHash("1111111111111111111111111111111111111111")},
+						TheirMode:    {Mode: filemode.Regular, Hash: plumbing.NewHash("2222222222222222222222222222222222222222")},
 					},
 				},
 				{
 					Path:   "d.txt",
-					Stages: map[Stage]plumbing.Hash{},
+					Stages: map[Stage]ResolveUndoStage{},
 				},
 			},
 		},
@@ -273,9 +290,7 @@ func TestExtensions_REUC(t *testing.T) {
 
 	for i := range idx.ResolveUndo.Entries {
 		assert.Equal(t, idx.ResolveUndo.Entries[i].Path, out.ResolveUndo.Entries[i].Path)
-		assert.Equal(t, idx.ResolveUndo.Entries[i].Stages[AncestorMode], out.ResolveUndo.Entries[i].Stages[AncestorMode])
-		assert.Equal(t, idx.ResolveUndo.Entries[i].Stages[TheirMode], out.ResolveUndo.Entries[i].Stages[TheirMode])
-		assert.Equal(t, idx.ResolveUndo.Entries[i].Stages[OurMode], out.ResolveUndo.Entries[i].Stages[OurMode])
+		assert.Equal(t, idx.ResolveUndo.Entries[i].Stages, out.ResolveUndo.Entries[i].Stages)
 	}
 }
 
@@ -299,6 +314,25 @@ func TestExtensions_LINK(t *testing.T) {
 	assert.Equal(t, idx.Link.ObjectID, out.Link.ObjectID)
 	assert.Equal(t, idx.Link.DeleteBitmap, out.Link.DeleteBitmap)
 	assert.Equal(t, idx.Link.ReplaceBitmap, out.Link.ReplaceBitmap)
+}
+
+// TestExtensions_LINK_ObjectIDOnly covers a split index that deletes and
+// replaces nothing: git writes only the base object ID with no bitmaps, so the
+// decoder must not require them.
+func TestExtensions_LINK_ObjectIDOnly(t *testing.T) {
+	t.Parallel()
+	idx := &Index{
+		Version: 4,
+		Link: &Link{
+			ObjectID: plumbing.NewHash("abcd1234abcd1234abcd1234abcd1234abcd1234"),
+		},
+	}
+
+	out := encodeDecode(t, idx)
+	require.NotNil(t, out.Link)
+	assert.Equal(t, idx.Link.ObjectID, out.Link.ObjectID)
+	assert.Nil(t, out.Link.DeleteBitmap)
+	assert.Nil(t, out.Link.ReplaceBitmap)
 }
 
 func TestExtensions_UNTR(t *testing.T) {
@@ -420,45 +454,46 @@ func TestExtensions_UNTR(t *testing.T) {
 
 func TestExtensions_FSMN(t *testing.T) {
 	t.Parallel()
-	indexes := []*Index{
-		{
-			Version: 4,
-			FSMonitor: &FSMonitor{
-				Version: 1,
-				Since:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local),
+	idx := &Index{
+		Version: 4,
+		FSMonitor: &FSMonitor{
+			Version: 2,
+			Token:   "fsmonitor example token",
 
-				// EWAH bitmap with bits {0, 2, 4} set.
-				DirtyBitmap: ewahBytes(6, 0, 2, 4),
-			},
-		},
-		{
-			Version: 4,
-			FSMonitor: &FSMonitor{
-				Version: 2,
-				Token:   "fsmonitor example token",
-
-				// EWAH bitmap with bits {1, 3, 5} set.
-				DirtyBitmap: ewahBytes(6, 1, 3, 5),
-			},
+			// EWAH bitmap with bits {1, 3, 5} set.
+			DirtyBitmap: ewahBytes(6, 1, 3, 5),
 		},
 	}
 
-	for _, i := range indexes {
-		out := encodeDecode(t, i)
-		require.NotNil(t, out.FSMonitor)
-		assert.Equal(t, i.FSMonitor.Version, out.FSMonitor.Version)
-		assert.Equal(t, i.FSMonitor.Token, out.FSMonitor.Token)
-		assert.Equal(t, i.FSMonitor.Since, out.FSMonitor.Since)
-		assert.Equal(t, i.FSMonitor.DirtyBitmap, out.FSMonitor.DirtyBitmap)
-	}
+	out := encodeDecode(t, idx)
+	require.NotNil(t, out.FSMonitor)
+	assert.Equal(t, idx.FSMonitor.Version, out.FSMonitor.Version)
+	assert.Equal(t, idx.FSMonitor.Token, out.FSMonitor.Token)
+	assert.Equal(t, idx.FSMonitor.DirtyBitmap, out.FSMonitor.DirtyBitmap)
+}
+
+// TestExtensions_FSMN_V1Rejected verifies that the unsupported version 1 of the
+// fsmonitor extension is rejected rather than silently misread.
+func TestExtensions_FSMN_V1Rejected(t *testing.T) {
+	t.Parallel()
+
+	err := NewEncoder(&bytes.Buffer{}, crypto.SHA1.New()).Encode(&Index{
+		Version:   4,
+		FSMonitor: &FSMonitor{Version: 1},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "version")
 }
 
 func TestExtensions_IEOT(t *testing.T) {
 	t.Parallel()
 	idx := &Index{
 		Version: 4,
+		Entries: []*Entry{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
 		IndexEntryOffsetTable: &EntryOffsetTable{
 			Version: 1,
+			// The offsets here are ignored and recomputed on encode; the counts
+			// partition the five entries and are preserved.
 			Entries: []EntryOffsetEntry{
 				{Offset: 100, Count: 2},
 				{Offset: 200, Count: 3},
@@ -470,8 +505,46 @@ func TestExtensions_IEOT(t *testing.T) {
 	require.NotNil(t, out.IndexEntryOffsetTable)
 	assert.Equal(t, uint32(1), out.IndexEntryOffsetTable.Version)
 	require.Len(t, out.IndexEntryOffsetTable.Entries, 2)
-	assert.Equal(t, idx.IndexEntryOffsetTable.Entries[0].Offset, out.IndexEntryOffsetTable.Entries[0].Offset)
-	assert.Equal(t, idx.IndexEntryOffsetTable.Entries[0].Count, out.IndexEntryOffsetTable.Entries[0].Count)
-	assert.Equal(t, idx.IndexEntryOffsetTable.Entries[1].Offset, out.IndexEntryOffsetTable.Entries[1].Offset)
-	assert.Equal(t, idx.IndexEntryOffsetTable.Entries[1].Count, out.IndexEntryOffsetTable.Entries[1].Count)
+
+	assert.Equal(t, uint32(2), out.IndexEntryOffsetTable.Entries[0].Count)
+	assert.Equal(t, uint32(3), out.IndexEntryOffsetTable.Entries[1].Count)
+
+	// Offsets are recomputed to point at real entries: the first block starts
+	// at the first entry, right after the 12-byte header; the second block
+	// starts at the third entry, further into the file.
+	assert.Equal(t, uint32(12), out.IndexEntryOffsetTable.Entries[0].Offset)
+	assert.Greater(t, out.IndexEntryOffsetTable.Entries[1].Offset, uint32(12))
+}
+
+// TestExtensions_RoundTripStable checks that decoding an encoded index and
+// re-encoding it produces byte-identical output. This exercises the
+// recomputed EOIE offset/hash and IEOT offsets: they must be deterministic
+// and consistent across the round trip.
+func TestExtensions_RoundTripStable(t *testing.T) {
+	t.Parallel()
+	idx := &Index{
+		Version: 4,
+		Entries: []*Entry{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}},
+		Cache: &Tree{
+			Entries: []TreeEntry{
+				{Path: "", Entries: 5, Trees: 0, Hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+			},
+		},
+		IndexEntryOffsetTable: &EntryOffsetTable{
+			Version: 1,
+			Entries: []EntryOffsetEntry{{Count: 2}, {Count: 3}},
+		},
+		EndOfIndexEntry: &EndOfIndexEntry{},
+	}
+
+	var buf1 bytes.Buffer
+	require.NoError(t, NewEncoder(&buf1, crypto.SHA1.New()).Encode(idx))
+
+	out := &Index{}
+	require.NoError(t, NewDecoder(bytes.NewReader(buf1.Bytes()), crypto.SHA1.New()).Decode(out))
+
+	var buf2 bytes.Buffer
+	require.NoError(t, NewEncoder(&buf2, crypto.SHA1.New()).Encode(out))
+
+	assert.Equal(t, buf1.Bytes(), buf2.Bytes())
 }
