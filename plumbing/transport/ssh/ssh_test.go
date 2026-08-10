@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -53,6 +54,9 @@ func handlerSSH(s ssh.Session) {
 	}
 
 	cmd := exec.Command(args[0], args[1:]...)
+	// Forward the SSH session environment (notably GIT_PROTOCOL, which the
+	// client sets via Setenv) so git speaks the requested wire version.
+	cmd.Env = append(os.Environ(), s.Environ()...)
 	stdout, _ := cmd.StdoutPipe()
 	stdin, _ := cmd.StdinPipe()
 	stderr, _ := cmd.StderrPipe()

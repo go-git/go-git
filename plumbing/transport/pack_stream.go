@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -52,11 +53,27 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
-	switch ver {
-	case protocol.V1, protocol.V0, protocol.V2:
-		// V2 is accepted; full client v2 negotiation (ls-refs/fetch commands)
-		// not yet implemented for stream transports. Advertise/decode will
-		// proceed and may result in empty refs for pure v2 servers.
+	s.version = ver
+
+	if ver == protocol.V2 {
+		// Protocol v2: the server sends a capability advertisement
+		// (version line + capability lines) instead of the v0/v1 ref
+		// advertisement. References are retrieved lazily via the ls-refs
+		// command, so nothing is read here beyond the advertisement.
+		adv := &packp.CapabilityAdv{}
+		if err := adv.Decode(r); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		s.caps = adv.Capabilities
+		// Protocol v2 fetch accepts "want <oid>" without the server
+		// advertising allow-*-sha1-in-want, so surface the gate as
+		// satisfied for exact-SHA1 refspecs (isSupportedRefSpec). The
+		// v2 client only sends agent/object-format on the wire, so these
+		// never leak into the request (internal.ClientCapabilities).
+		s.caps.Set(capability.AllowReachableSHA1InWant)
+		s.caps.Set(capability.AllowTipSHA1InWant)
+		return s, nil
 	}
 
 	ar := &packp.AdvRefs{}
@@ -71,7 +88,10 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 		return nil, err
 	}
 
-	s.version = ver
+	// Source the advertisement's version from the version DiscoverVersion
+	// already established, so s.version is the single source of truth rather
+	// than relying on AdvRefs.Decode's independent parse of the same line.
+	ar.Version = ver
 	s.caps = ar.Capabilities
 	s.refs = ar
 
@@ -82,12 +102,29 @@ func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
 func (s *StreamSession) Capabilities() *capability.List { return &s.caps }
 
 // GetRemoteRefs implements Session. For v0/v1 the server advertises every
-// reference during the handshake, so opts is ignored.
-func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *GetRemoteRefsOptions) (*RemoteRefs, error) {
+// reference during the handshake, so opts is ignored. For v2 the references
+// are retrieved on demand via the ls-refs command, honoring the ref-prefix
+// filters in opts.
+func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOptions) (*RemoteRefs, error) {
+	forPush := s.svc == ReceivePackService
+	if s.version == protocol.V2 {
+		var prefixes []string
+		if opts != nil {
+			prefixes = opts.RefPrefixes
+		}
+		refs, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
+		if err != nil {
+			return nil, err
+		}
+		if !forPush && !internal.HasHashRef(refs) {
+			return nil, ErrEmptyRemoteRepository
+		}
+		return NewRemoteRefs(refs), nil
+	}
+
 	if s.refs == nil {
 		return nil, ErrEmptyRemoteRepository
 	}
-	forPush := s.svc == ReceivePackService
 	if !forPush && s.refs.IsEmpty() {
 		return nil, ErrEmptyRemoteRepository
 	}
@@ -101,6 +138,31 @@ func (s *StreamSession) GetRemoteRefs(_ context.Context, _ *GetRemoteRefsOptions
 
 // Fetch implements PackSession.
 func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *FetchRequest) error {
+	if s.version == protocol.V2 {
+		if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
+			return ErrFilterNotSupported
+		}
+		if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
+			return ErrShallowNotSupported
+		}
+		if err := ReconcileObjectFormatV2(st, s.caps); err != nil {
+			return err
+		}
+		// Each negotiation round reuses the persistent stream: Command writes
+		// the request and decodes the metadata, leaving s.r at the packfile.
+		round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
+			out := &packp.FetchOutput{}
+			if err := s.Command(ctx, "fetch", args, out); err != nil {
+				return nil, nil, err
+			}
+			return out, s.r, nil
+		}
+		if err := internal.FetchV2(ctx, st, req, round); err != nil {
+			return s.wrapStderr(err)
+		}
+		return nil
+	}
+
 	shallows, err := NegotiatePack(ctx, st, s.caps, false, s.r, s.w, req)
 	if err != nil {
 		return s.wrapStderr(err)
@@ -117,6 +179,45 @@ func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRe
 		return s.wrapStderr(err)
 	}
 	return nil
+}
+
+// Command implements Commander. It builds a Protocol v2 request envelope for
+// the named command, encodes it, and decodes the response. The request
+// carries the capabilities collected during the handshake (the agent and the
+// server's object-format), so callers only provide the command arguments.
+//
+// Command is only valid on a session that negotiated Protocol v2.
+func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+	if s.version != protocol.V2 {
+		return ErrUnsupportedVersion
+	}
+
+	cr := &packp.CommandRequest{
+		Command:      cmd,
+		Capabilities: s.commandCapabilities(),
+		Args:         req,
+	}
+
+	if err := cr.Encode(ioutil.NewContextWriter(ctx, s.w)); err != nil {
+		return s.wrapStderr(err)
+	}
+
+	if resp != nil {
+		if err := resp.Decode(ioutil.NewContextReader(ctx, s.r)); err != nil {
+			return s.wrapStderr(err)
+		}
+	}
+
+	return nil
+}
+
+// commandCapabilities returns the capabilities the client sends with each v2
+// command. Both the agent and the object-format are gated on the server having
+// advertised them (see internal.ClientCapabilities), so the client never sends
+// a capability the server did not offer; the object-format is echoed back so
+// both sides agree on the hash algorithm.
+func (s *StreamSession) commandCapabilities() capability.List {
+	return internal.ClientCapabilities(s.caps)
 }
 
 // wrapStderr checks if the underlying connection has stderr output and
@@ -158,6 +259,7 @@ func (s *StreamSession) Archive(ctx context.Context, req *ArchiveRequest) (io.Re
 }
 
 var (
-	_ Session  = (*StreamSession)(nil)
-	_ Archiver = (*StreamSession)(nil)
+	_ Session   = (*StreamSession)(nil)
+	_ Archiver  = (*StreamSession)(nil)
+	_ Commander = (*StreamSession)(nil)
 )

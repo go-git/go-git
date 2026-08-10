@@ -121,11 +121,12 @@ func (e *Encoder) encodeHeader(idx *Index) error {
 }
 
 func (e *Encoder) encodeEntries(idx *Index) error {
-	// Stable sort so entries that compare equal by name keep their input order.
-	// Split-index replacement entries all carry a zero-length name and must stay in
-	// base-position order to align with the replace bitmap; an unstable sort would
-	// scramble them. (Also preserves stage order for same-name conflict entries.)
-	sort.Stable(byName(idx.Entries))
+	// Stable sort so entries that compare equal keep their input order.
+	// Split-index replacement entries all carry a zero-length name (and the
+	// same stage) and must stay in base-position order to align with the
+	// replace bitmap; an unstable sort would scramble them. byNameAndStage also
+	// orders same-name conflict entries by stage.
+	sort.Stable(byNameAndStage(idx.Entries))
 
 	// Record where the entries begin and the offset of each entry so IEOT
 	// block offsets can be recomputed from the actual byte layout.
@@ -696,8 +697,13 @@ func (e *Encoder) encodeFooter() error {
 	return binary.Write(e.w, e.hash.Sum(nil))
 }
 
-type byName []*Entry
+type byNameAndStage []*Entry
 
-func (l byName) Len() int           { return len(l) }
-func (l byName) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
-func (l byName) Less(i, j int) bool { return l[i].Name < l[j].Name }
+func (l byNameAndStage) Len() int      { return len(l) }
+func (l byNameAndStage) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
+func (l byNameAndStage) Less(i, j int) bool {
+	if l[i].Name == l[j].Name {
+		return l[i].Stage < l[j].Stage
+	}
+	return l[i].Name < l[j].Name
+}

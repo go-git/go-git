@@ -122,8 +122,9 @@ func setupGoGitBackendServer(t testing.TB) (baseURL, repoName string) {
 // git CLI operations explicitly force GIT_PROTOCOL=version=2 (via runV2) so that
 // this test actually exercises the v2 wire protocol on the server and would catch
 // bugs like the previous "packfile after ready" negotiation issues.
-// go-git HTTP transport is exercised via low-level Session for the transport requirement
-// (these use classic format; v2 client send is not yet implemented).
+// The go-git HTTP transport is exercised here via the low-level Session using the
+// classic (v0/v1) format; the go-git v2 client path has its own end-to-end
+// coverage in TestBackend_HTTP_V2_GoGitClient.
 func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	t.Parallel()
 

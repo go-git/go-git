@@ -494,14 +494,41 @@ func (s *ConfigSuite) TestProtocol() {
 	s.NoError(err)
 	s.Equal(protocol.V1, cfg.Protocol.Version)
 
-	cfg.Protocol.Version = protocol.V2
+	// A non-default version is written back out.
+	cfg.Protocol.Version = protocol.V0
 	buf, err = cfg.Marshal()
 	s.NoError(err)
-
-	if !strings.Contains(string(buf), "version = 2") {
+	if !strings.Contains(string(buf), "version = 0") {
 		s.Fail("marshal did not update version")
 	}
+
+	// The default version is omitted from the marshalled config.
+	cfg = NewConfig()
+	cfg.Protocol.Version = DefaultProtocolVersion
+	buf, err = cfg.Marshal()
 	s.NoError(err)
+	if strings.Contains(string(buf), "[protocol]") {
+		s.Fail("marshal should omit the default protocol version")
+	}
+
+	// Resetting a non-default version back to the default clears the stale key
+	// from the raw config so the change persists.
+	cfg = NewConfig()
+	err = cfg.Unmarshal([]byte("[protocol]\n\tversion = 1"))
+	s.NoError(err)
+	s.Equal(protocol.V1, cfg.Protocol.Version)
+	cfg.Protocol.Version = DefaultProtocolVersion
+	buf, err = cfg.Marshal()
+	s.NoError(err)
+	if strings.Contains(string(buf), "version = 1") {
+		s.Fail("marshal should drop the stale protocol version")
+	}
+
+	// The reset round-trips back to the default version.
+	cfg = NewConfig()
+	err = cfg.Unmarshal(buf)
+	s.NoError(err)
+	s.Equal(DefaultProtocolVersion, cfg.Protocol.Version)
 }
 
 func (s *ConfigSuite) TestUnmarshalRemotes() {

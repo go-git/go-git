@@ -14,12 +14,15 @@ import (
 // built-in Fetch and Push operations.
 //
 // Sessions that negotiate Protocol v2 (version 2) implement this interface.
-// The Command method executes a named v2 command, encoding the request
-// via req.Encode and decoding the response via resp.Decode. The transport
-// layer handles the v2 envelope (command name, capabilities, delim-pkt,
-// flush-pkt, and for HTTP, response-end).
+// The Command method executes a named v2 command: req carries the
+// command-specific arguments and is encoded into the request, while resp
+// decodes the response. For example, GetRemoteRefs runs
+// Command(ctx, "ls-refs", lsRefsArgs, lsRefsOutput). The session builds the v2
+// request envelope (command name, the capabilities collected during the
+// handshake, delim-pkt, the arguments, and flush-pkt) and, for HTTP, handles
+// the response-end packet.
 type Commander interface {
-	Command(ctx context.Context, cmd string, req packp.Encoder, resp packp.Decoder) error
+	Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error
 }
 
 // Transport is implemented by transports that speak the Git pack
@@ -65,6 +68,17 @@ type RemoteRefs struct {
 // detecting an unborn HEAD: a symbolic HEAD whose target has no
 // corresponding hash reference in the advertisement.
 func NewRemoteRefs(refs []*plumbing.Reference) *RemoteRefs {
+	// A detached remote HEAD is advertised as a bare hash. The v0/v1
+	// advertisement resolves it to a symbolic HEAD during decode; the v2
+	// ls-refs path does not, so apply the same hash→branch heuristic here so a
+	// clone records a symbolic HEAD rather than a detached one (matching git).
+	for i, ref := range refs {
+		if ref.Name() == plumbing.HEAD && ref.Type() == plumbing.HashReference {
+			refs[i] = packp.ResolveHeadFromHashHeuristic(ref, refs)
+			break
+		}
+	}
+
 	rr := &RemoteRefs{References: refs}
 
 	var headTarget plumbing.ReferenceName

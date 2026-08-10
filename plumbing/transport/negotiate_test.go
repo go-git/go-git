@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -395,4 +396,49 @@ func (rw *mockWriteCloser) Write(p []byte) (int, error) {
 func (rw *mockWriteCloser) Close() error {
 	rw.closed = true
 	return rw.closeErr
+}
+
+func TestReconcileObjectFormatV2(t *testing.T) {
+	t.Parallel()
+
+	withFormat := func(v string) capability.List {
+		var caps capability.List
+		caps.Set(capability.ObjectFormat, v)
+		return caps
+	}
+
+	t.Run("unknown algorithm is rejected", func(t *testing.T) {
+		t.Parallel()
+		err := ReconcileObjectFormatV2(memory.NewStorage(), withFormat("sha999"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported object-format")
+	})
+
+	t.Run("empty value is accepted for an sha1 client", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("")))
+	})
+
+	t.Run("empty value rejects a sha256 client", func(t *testing.T) {
+		t.Parallel()
+		st := memory.NewStorage()
+		cfg, err := st.Config()
+		require.NoError(t, err)
+		cfg.Extensions.ObjectFormat = formatcfg.SHA256
+		require.NoError(t, st.SetConfig(cfg))
+
+		err = ReconcileObjectFormatV2(st, withFormat(""))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "does not support algorithm")
+	})
+
+	t.Run("sha1 server with unset client is accepted", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("sha1")))
+	})
+
+	t.Run("no advertisement is accepted for an sha1 client", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), capability.List{}))
+	})
 }

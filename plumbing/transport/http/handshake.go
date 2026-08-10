@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -25,12 +26,22 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	baseURL := req.URL
 	forceDumb := t.opts.ForceDumb
 
+	// git archive over HTTP discovers protocol support through the upload-pack
+	// info/refs endpoint and requires Protocol v2 (remote-curl.c). The archive
+	// request itself is later POSTed to the git-upload-archive endpoint.
+	discoverService := service
+	discoverProtocol := req.Protocol
+	if service == transport.UploadArchiveService {
+		discoverService = transport.UploadPackService
+		discoverProtocol = protocol.V2
+	}
+
 	infoURL, err := url.JoinPath(baseURL.String(), "info/refs")
 	if err != nil {
 		return nil, err
 	}
 	if !forceDumb {
-		infoURL += "?service=" + service
+		infoURL += "?service=" + discoverService
 	}
 
 	// Mark this as the initial request so checkRedirect allows
@@ -44,7 +55,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 
 	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
 	if !forceDumb {
-		if gp := transport.GitProtocolEnv(req.Protocol); gp != "" {
+		if gp := transport.GitProtocolEnv(discoverProtocol); gp != "" {
 			httpReq.Header.Set("Git-Protocol", gp)
 		}
 	}
@@ -98,16 +109,16 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		return handshakeDumb(resp, &sessReq, client, authorizer)
 	}
 
-	expected := fmt.Sprintf("application/x-%s-advertisement", service)
+	expected := fmt.Sprintf("application/x-%s-advertisement", discoverService)
 	isSmart := resp.Header.Get("Content-Type") == expected
 
 	if isSmart {
-		return handshakeSmart(resp, &sessReq, client, authorizer)
+		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer)
 	}
 	return handshakeDumb(resp, &sessReq, client, authorizer)
 }
 
-func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
+func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
@@ -120,7 +131,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 		if err := reply.Decode(rd); err != nil {
 			return nil, err
 		}
-		if reply.Service != req.Command {
+		if reply.Service != discoverService {
 			return nil, fmt.Errorf("unexpected service name: %w", transport.ErrInvalidResponse)
 		}
 	}
@@ -129,12 +140,35 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	if err != nil {
 		return nil, err
 	}
-	// V2 client support is partial (server v2 is fully supported for HTTP e2e with git CLI).
-	// If ver==V2 the subsequent AdvRefs decode will typically yield empty refs for
-	// a real v2 advertisement (refs come via ls-refs); GetRemoteRefs will surface
-	// an appropriate error. Explicit V2 requests from go-git remain best-effort.
-	switch ver {
-	case protocol.V1, protocol.V0, protocol.V2:
+
+	// git archive over HTTP is only available when the server speaks v2.
+	if req.Command == transport.UploadArchiveService && ver != protocol.V2 {
+		return nil, transport.ErrArchiveUnsupported
+	}
+
+	if ver == protocol.V2 {
+		// Protocol v2: the server sends a capability advertisement instead of
+		// the v0/v1 ref advertisement. References are retrieved lazily via the
+		// ls-refs command, so refs stays nil here.
+		adv := &packp.CapabilityAdv{}
+		if err := adv.Decode(rd); err != nil {
+			return nil, err
+		}
+		// Protocol v2 fetch accepts "want <oid>" without the server
+		// advertising allow-*-sha1-in-want, so surface the gate as
+		// satisfied for exact-SHA1 refspecs (isSupportedRefSpec). The
+		// v2 client only sends agent/object-format on the wire, so these
+		// never leak into the request (internal.ClientCapabilities).
+		adv.Capabilities.Set(capability.AllowReachableSHA1InWant)
+		adv.Capabilities.Set(capability.AllowTipSHA1InWant)
+		return &smartPackSession{
+			client:     client,
+			baseURL:    req.URL,
+			service:    req.Command,
+			authorizer: authorizer,
+			version:    ver,
+			caps:       adv.Capabilities,
+		}, nil
 	}
 
 	ar := &packp.AdvRefs{}
@@ -146,6 +180,11 @@ func handshakeSmart(resp *http.Response, req *transport.Request, client *http.Cl
 	if err := capability.Validate(&ar.Capabilities); err != nil {
 		return nil, err
 	}
+
+	// Source the advertisement's version from the version DiscoverVersion
+	// already established, keeping the session the single source of truth
+	// rather than AdvRefs.Decode's independent parse of the same line.
+	ar.Version = ver
 
 	return &smartPackSession{
 		client:     client,
@@ -181,7 +220,11 @@ func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Cli
 
 // --- smart HTTP pack session ---
 
-var _ transport.Session = (*smartPackSession)(nil)
+var (
+	_ transport.Session   = (*smartPackSession)(nil)
+	_ transport.Commander = (*smartPackSession)(nil)
+	_ transport.Archiver  = (*smartPackSession)(nil)
+)
 
 type smartPackSession struct {
 	client     *http.Client
@@ -195,11 +238,26 @@ type smartPackSession struct {
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
 
-func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
+func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
+	forPush := s.service == transport.ReceivePackService
+	if s.version == protocol.V2 {
+		var prefixes []string
+		if opts != nil {
+			prefixes = opts.RefPrefixes
+		}
+		refs, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
+		if err != nil {
+			return nil, err
+		}
+		if !forPush && !internal.HasHashRef(refs) {
+			return nil, transport.ErrEmptyRemoteRepository
+		}
+		return transport.NewRemoteRefs(refs), nil
+	}
+
 	if s.refs == nil {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
-	forPush := s.service == transport.ReceivePackService
 	if !forPush && s.refs.IsEmpty() {
 		return nil, transport.ErrEmptyRemoteRepository
 	}
@@ -210,7 +268,47 @@ func (s *smartPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemo
 	return transport.NewRemoteRefs(refs), nil
 }
 
+// Command implements transport.Commander. It runs a Protocol v2 command as a
+// single stateless HTTP POST: the request envelope is buffered and sent, and
+// the response is decoded from the response body. Fetch uses its own round
+// instead so it can stream the packfile from the body; Command is for
+// non-streaming commands such as ls-refs.
+func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+	if s.version != protocol.V2 {
+		return transport.ErrUnsupportedVersion
+	}
+
+	r := &httpRequester{session: s, ctx: ctx}
+	cr := &packp.CommandRequest{
+		Command:      cmd,
+		Capabilities: internal.ClientCapabilities(s.caps),
+		Args:         req,
+	}
+	if err := cr.Encode(r); err != nil {
+		return err
+	}
+	// Command consumes the whole response (it never streams the body out), so
+	// drain and close it on every path. A bare return on a decode error would
+	// otherwise leak the response body and its connection.
+	defer func() {
+		if r.resp != nil {
+			_, _ = io.Copy(io.Discard, r.resp.Body)
+			_ = r.resp.Body.Close()
+		}
+	}()
+	if resp != nil {
+		if err := resp.Decode(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
+	if s.version == protocol.V2 {
+		return s.fetchV2(ctx, st, req)
+	}
+
 	neg := &httpNegotiator{session: s, ctx: ctx}
 
 	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
@@ -226,34 +324,124 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
-	// Close the response unless the context was cancelled. The race this guards
-	// against only exists on cancellation: a ctxReader goroutine inside
-	// FetchPack can still be blocked in the underlying Read after the
+	// Close the response unless the read itself was a cancellation. The race
+	// this guards against only exists on cancellation: a ctxReader goroutine
+	// inside FetchPack can still be blocked in the underlying Read after the
 	// <-ctx.Done() branch, so niling current.resp here would race it. On a
 	// non-cancellation error (or success) FetchPack's last Read returned via the
 	// result channel and its goroutine is quiescent, so closing is safe — and
 	// necessary, otherwise the response body/connection leaks. On the
 	// cancellation path the request context unblocks the in-flight read, so the
 	// body is not leaked.
-	if ctx.Err() == nil {
+	//
+	// Classified against err itself via errors.Is, not a fresh ctx.Err() check:
+	// ctx can turn Err() non-nil an instant after FetchPack already returned
+	// with its read fully quiescent, and re-checking ctx.Err() at that later,
+	// independent point would incorrectly skip the close and leak the response
+	// (mirrors FetchV2's round loop).
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		neg.closeResponse()
 	}
 	return err
 }
 
+// fetchV2 fetches over Protocol v2. Each negotiation round is a fresh stateless
+// POST; internal.FetchV2 decodes the metadata via FetchOutput and, once the
+// server commits to a packfile, streams it from that round's response body.
+func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
+	if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
+		return transport.ErrFilterNotSupported
+	}
+	if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
+		return transport.ErrShallowNotSupported
+	}
+	if err := transport.ReconcileObjectFormatV2(st, s.caps); err != nil {
+		return err
+	}
+
+	round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
+		r := &httpRequester{session: s, ctx: ctx}
+		cr := &packp.CommandRequest{
+			Command:      "fetch",
+			Capabilities: internal.ClientCapabilities(s.caps),
+			Args:         args,
+		}
+		if err := cr.Encode(r); err != nil {
+			return nil, nil, err
+		}
+		out := &packp.FetchOutput{}
+		if err := out.Decode(r); err != nil {
+			// The success path returns r.resp.Body for the caller to stream, so
+			// it must stay open; on a decode error nothing downstream will, so
+			// release it here rather than leaking the body and its connection.
+			if r.resp != nil {
+				_ = r.resp.Body.Close()
+			}
+			return nil, nil, err
+		}
+		if r.resp == nil {
+			return nil, nil, fmt.Errorf("http transport: fetch command produced no response")
+		}
+		// The response body is positioned at the packfile (when out.Packfile);
+		// internal.FetchV2 streams it and closes the body via io.Closer.
+		return out, r.resp.Body, nil
+	}
+
+	return internal.FetchV2(ctx, st, req, round)
+}
+
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
 	rwc := &httpRequester{session: s, ctx: ctx}
 	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
-	// Only close the response body on success. On error (especially context
-	// cancellation), context-wrapper goroutines inside SendPack may still
-	// be reading from it.
-	if err == nil && rwc.resp != nil {
+	// Close the response unless the read itself was a cancellation: a ctxReader
+	// goroutine inside SendPack can still be blocked in the underlying Read
+	// after the <-ctx.Done() branch, so closing the body here would race it —
+	// the request context tears the connection down instead. On a
+	// non-cancellation error (or success) SendPack's last Read returned via the
+	// result channel and its goroutine is quiescent, so closing is safe — and
+	// necessary, otherwise the response body/connection leaks (mirrors Fetch
+	// above and FetchV2's round loop).
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && rwc.resp != nil {
 		_ = rwc.resp.Body.Close()
 	}
 	return err
 }
 
 func (s *smartPackSession) Close() error { return nil }
+
+// Archive implements transport.Archiver. git archive over HTTP is a v2-only,
+// stateless operation (remote-curl.c): the archive request is POSTed to the
+// git-upload-archive endpoint and the response carries the ACK/NACK and the
+// sideband-encoded archive stream.
+func (s *smartPackSession) Archive(ctx context.Context, req *transport.ArchiveRequest) (io.ReadCloser, error) {
+	if s.version != protocol.V2 {
+		return nil, transport.ErrArchiveUnsupported
+	}
+
+	rt := &httpRequester{session: s, ctx: ctx}
+	body := &httpArchiveBody{req: rt}
+	archive, err := transport.Archive(ctx, rt, body, req)
+	if err != nil {
+		_ = body.Close()
+		return nil, err
+	}
+	return archive, nil
+}
+
+// httpArchiveBody adapts an httpRequester to the io.ReadCloser the archive
+// client reads from: reads come from the POST response body, and Close closes
+// that body. The paired httpRequester is passed to transport.Archive as the
+// writer, whose Close fires the POST.
+type httpArchiveBody struct{ req *httpRequester }
+
+func (b *httpArchiveBody) Read(p []byte) (int, error) { return b.req.Read(p) }
+
+func (b *httpArchiveBody) Close() error {
+	if b.req.resp != nil {
+		return b.req.resp.Body.Close()
+	}
+	return nil
+}
 
 // httpRequester buffers writes and fires a POST on first Read or Close.
 type httpRequester struct {
@@ -293,6 +481,9 @@ func (r *httpRequester) doPost() error {
 	httpReq.Header.Set("Content-Type", fmt.Sprintf("application/x-%s-request", r.session.service))
 	httpReq.Header.Set("Accept", fmt.Sprintf("application/x-%s-result", r.session.service))
 	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
+	if gp := transport.GitProtocolEnv(r.session.version); gp != "" {
+		httpReq.Header.Set("Git-Protocol", gp)
+	}
 	if r.session.baseURL.User != nil {
 		password, _ := r.session.baseURL.User.Password()
 		httpReq.SetBasicAuth(r.session.baseURL.User.Username(), password)
@@ -308,7 +499,7 @@ func (r *httpRequester) doPost() error {
 	}
 	if r.resp.StatusCode != http.StatusOK {
 		_ = r.resp.Body.Close()
-		return fmt.Errorf("http transport: POST %s unexpected status %d", serviceURL, r.resp.StatusCode)
+		return fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(r.resp.Request.URL), r.resp.StatusCode)
 	}
 	return nil
 }

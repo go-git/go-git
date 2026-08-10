@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -102,11 +103,21 @@ func (s *RemoteSuite) TestFetchExactSHA1() {
 }
 
 func (s *RemoteSuite) TestFetchExactSHA1_NotSupported() {
-	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+	// The client-side exact-SHA1 gate (ErrExactSHA1NotSupported) only applies
+	// to v0/v1, where the server must advertise allow-*-sha1-in-want. Protocol
+	// v2's fetch command accepts any "want <oid>", so there is no unsupported
+	// case to assert there; pin this to v0.
+	st := memory.NewStorage()
+	cfg, err := st.Config()
+	s.Require().NoError(err)
+	cfg.Protocol.Version = protocol.V0
+	s.Require().NoError(st.SetConfig(cfg))
+
+	r := NewRemote(st, &config.RemoteConfig{
 		URLs: []string{s.GetBasicLocalRepositoryURL()},
 	})
 
-	err := r.Fetch(&FetchOptions{
+	err = r.Fetch(&FetchOptions{
 		RefSpecs: []config.RefSpec{
 			config.RefSpec("35e85108805c84807bc66a02d91535e1e24b38b9:refs/heads/foo"),
 		},
@@ -269,6 +280,124 @@ func (s *RemoteSuite) TestFetchWithAllTags() {
 		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
 		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	})
+}
+
+func (s *RemoteSuite) TestFetchDoesNotClobberExistingTag() {
+	sto := memory.NewStorage()
+
+	// A tag the user has already pinned to a specific object.
+	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
+	s.Require().NoError(sto.SetReference(pinned))
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	// The remote advertises refs/tags/v1.0.0 at a different object. A default
+	// fetch auto-follows tags, but must not move a tag that already exists.
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	})
+	s.NoError(err)
+
+	got, err := sto.Reference("refs/tags/v1.0.0")
+	s.Require().NoError(err)
+	s.Equal(pinned.Hash(), got.Hash())
+}
+
+func (s *RemoteSuite) TestFetchTagRefSpecDoesNotClobberExistingTag() {
+	sto := memory.NewStorage()
+
+	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
+	s.Require().NoError(sto.SetReference(pinned))
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/tags/*:refs/tags/*"),
+		},
+	})
+	s.ErrorIs(err, ErrForceNeeded)
+
+	got, err := sto.Reference("refs/tags/v1.0.0")
+	s.Require().NoError(err)
+	s.Equal(pinned.Hash(), got.Hash())
+}
+
+func (s *RemoteSuite) TestFetchForcedTagRefSpecClobbersExistingTag() {
+	sto := memory.NewStorage()
+
+	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
+	s.Require().NoError(sto.SetReference(pinned))
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	// A forced tag refspec is the user asking for the update, so it must still
+	// move an existing tag.
+	err := r.Fetch(&FetchOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/tags/*:refs/tags/*"),
+		},
+	})
+	s.NoError(err)
+
+	got, err := sto.Reference("refs/tags/v1.0.0")
+	s.Require().NoError(err)
+	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), got.Hash())
+}
+
+func (s *RemoteSuite) TestFetchAllTagsDoesNotClobberExistingTag() {
+	sto := memory.NewStorage()
+
+	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
+	s.Require().NoError(sto.SetReference(pinned))
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	err := r.Fetch(&FetchOptions{
+		Tags: AllTags,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	})
+	s.ErrorIs(err, ErrForceNeeded)
+
+	got, err := sto.Reference("refs/tags/v1.0.0")
+	s.Require().NoError(err)
+	s.Equal(pinned.Hash(), got.Hash())
+}
+
+func (s *RemoteSuite) TestFetchForcedAllTagsClobbersExistingTag() {
+	sto := memory.NewStorage()
+
+	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
+	s.Require().NoError(sto.SetReference(pinned))
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	err := r.Fetch(&FetchOptions{
+		Force: true,
+		Tags:  AllTags,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	})
+	s.NoError(err)
+
+	got, err := sto.Reference("refs/tags/v1.0.0")
+	s.Require().NoError(err)
+	s.Equal(plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), got.Hash())
 }
 
 func (s *RemoteSuite) TestFetchWithNoTags() {
@@ -982,6 +1111,104 @@ func (s *RemoteSuite) TestPushRejectNonFastForward() {
 	newRef, err := server.Reference(branch)
 	s.NoError(err)
 	s.Equal(oldRef, newRef)
+}
+
+func (s *RemoteSuite) TestPushRejectExistingTagUpdate() {
+	server, local, remote, oldHash, newHash := s.newPushExistingTagUpdate()
+
+	err := local.Storer.SetReference(plumbing.NewHashReference("refs/tags/v1", newHash))
+	s.Require().NoError(err)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/tags/v1:refs/tags/v1",
+	}})
+	s.ErrorContains(err, "tag already exists: refs/tags/v1")
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/tags/v1": oldHash.String(),
+	})
+}
+
+func (s *RemoteSuite) TestPushRejectExistingTagUpdateByOID() {
+	server, _, remote, oldHash, newHash := s.newPushExistingTagUpdate()
+
+	err := remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		config.RefSpec(newHash.String() + ":refs/tags/v1"),
+	}})
+	s.ErrorContains(err, "tag already exists: refs/tags/v1")
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/tags/v1": oldHash.String(),
+	})
+}
+
+func (s *RemoteSuite) TestPushRejectExistingTagUpdateToAnnotatedTag() {
+	server, local, remote, oldHash, newHash := s.newPushExistingTagUpdate()
+
+	_, err := local.CreateTag("v1-annotated", newHash, &CreateTagOptions{
+		Tagger:  defaultSignature(),
+		Message: "annotated tag",
+	})
+	s.Require().NoError(err)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/tags/v1-annotated:refs/tags/v1",
+	}})
+	s.ErrorContains(err, "tag already exists: refs/tags/v1")
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/tags/v1": oldHash.String(),
+	})
+}
+
+func (s *RemoteSuite) TestPushForceUpdatesExistingTag() {
+	server, local, remote, _, newHash := s.newPushExistingTagUpdate()
+
+	err := local.Storer.SetReference(plumbing.NewHashReference("refs/tags/v1", newHash))
+	s.Require().NoError(err)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"+refs/tags/v1:refs/tags/v1",
+	}})
+	s.NoError(err)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/tags/v1": newHash.String(),
+	})
+}
+
+func (s *RemoteSuite) newPushExistingTagUpdate() (*Repository, *Repository, *Remote, plumbing.Hash, plumbing.Hash) {
+	s.T().Helper()
+
+	dir := s.T().TempDir()
+	remoteURL := filepath.Join(dir, "remote")
+
+	server, err := PlainInit(remoteURL, true)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = server.Close() })
+
+	local, err := PlainInit(filepath.Join(dir, "local"), false)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = local.Close() })
+
+	oldHash := CommitNewFile(s.T(), local, "old")
+	newHash := CommitNewFile(s.T(), local, "new")
+
+	_, err = local.CreateTag("v1", oldHash, nil)
+	s.Require().NoError(err)
+
+	remote, err := local.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{remoteURL},
+	})
+	s.Require().NoError(err)
+
+	err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+		"refs/tags/v1:refs/tags/v1",
+	}})
+	s.Require().NoError(err)
+
+	return server, local, remote, oldHash, newHash
 }
 
 func (s *RemoteSuite) TestPushForce() {

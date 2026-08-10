@@ -398,6 +398,7 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		}
 		path = relPath
 	}
+	path = filepath.ToSlash(path)
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(cfg, idx, s, path, ignorePattern)
@@ -749,8 +750,10 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 		}
 
 		dir, _ := filepath.Split(file)
-		if err := w.removeEmptyDirectory(dir); err != nil {
-			return err
+		if dir != "" {
+			if err := w.removeEmptyDirectory(dir); err != nil {
+				return err
+			}
 		}
 	}
 

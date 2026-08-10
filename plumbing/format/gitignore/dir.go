@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	gofs "io/fs"
 	"os"
 	"strings"
 
@@ -51,16 +50,34 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 // ReadPatterns reads the .git/info/exclude and then the gitignore patterns
 // recursively traversing through the directory structure. The result is in
 // the ascending order of priority (last higher).
+//
+// .git/info/exclude is only consulted at the root of the given filesystem,
+// matching reference git which reads $GIT_DIR/info/exclude of the
+// repository being walked. Ignore files are opened only when present in
+// the directory listing, so directories without them cost a single ReadDir.
 func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) {
-	ps, _ = readIgnoreFile(fs, path, infoExcludeFile)
-
-	subps, _ := readIgnoreFile(fs, path, gitignoreFile)
-	ps = append(ps, subps...)
-
-	var fis []gofs.DirEntry
-	fis, err = fs.ReadDir(fs.Join(path...))
+	fis, err := fs.ReadDir(fs.Join(path...))
 	if err != nil {
-		return ps, err
+		return nil, err
+	}
+
+	var hasGitDir, hasGitignore bool
+	for _, fi := range fis {
+		switch fi.Name() {
+		case gitDir:
+			hasGitDir = true
+		case gitignoreFile:
+			hasGitignore = true
+		}
+	}
+
+	if len(path) == 0 && hasGitDir {
+		ps, _ = readIgnoreFile(fs, path, infoExcludeFile)
+	}
+
+	if hasGitignore {
+		subps, _ := readIgnoreFile(fs, path, gitignoreFile)
+		ps = append(ps, subps...)
 	}
 
 	for _, fi := range fis {

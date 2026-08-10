@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -226,4 +227,61 @@ func TestLsRefsOutputEncode(t *testing.T) {
 		assert.Equal(t, "refs/tags/v1.0^{}", got.References[1].Name().String())
 		assert.Equal(t, plumbing.NewHash("c39ae07f393806ccf406ef966e9a15afc43cc36a"), got.References[1].Hash())
 	})
+}
+
+func TestLsRefsArgsEncodeRejectsInvalidRefPrefix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		prefix string
+	}{
+		{name: "empty", prefix: ""},
+		{name: "newline", prefix: "refs/heads/\n"},
+		{name: "embedded newline injection", prefix: "refs/heads/\n0000evil"},
+		{name: "space", prefix: "refs/heads/ x"},
+		{name: "tab", prefix: "refs/heads/\tx"},
+		{name: "nul", prefix: "refs/heads/\x00"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			args := &LsRefsArgs{RefPrefixes: []string{tc.prefix}}
+			var buf bytes.Buffer
+			err := args.Encode(&buf)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "ref-prefix")
+			// Nothing partial must reach the wire for the rejected prefix.
+			assert.NotContains(t, buf.String(), "evil")
+		})
+	}
+}
+
+func TestLsRefsArgsEncodeInvalidRefPrefixIsAllOrNothing(t *testing.T) {
+	t.Parallel()
+
+	// An invalid prefix after valid ones (and after the peel/symrefs flags) must
+	// leave nothing on the stream: validation happens before any write.
+	args := &LsRefsArgs{
+		Peel:        true,
+		Symrefs:     true,
+		RefPrefixes: []string{"refs/heads/", "refs/tags/", "refs/heads/\n0000evil"},
+	}
+	var buf bytes.Buffer
+	err := args.Encode(&buf)
+	require.Error(t, err)
+	assert.Empty(t, buf.Bytes(),
+		"Encode must not write the earlier valid arguments before rejecting a later prefix")
+}
+
+func TestLsRefsArgsEncodeValidRefPrefix(t *testing.T) {
+	t.Parallel()
+
+	args := &LsRefsArgs{RefPrefixes: []string{"refs/heads/", "HEAD"}}
+	var buf bytes.Buffer
+	require.NoError(t, args.Encode(&buf))
+	assert.Contains(t, buf.String(), "ref-prefix refs/heads/")
+	assert.Contains(t, buf.String(), "ref-prefix HEAD")
+	assert.Equal(t, 2, strings.Count(buf.String(), "ref-prefix "))
 }

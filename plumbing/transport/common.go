@@ -5,7 +5,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/go-git/go-git/v6/plumbing"
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 )
@@ -44,32 +44,10 @@ func NewRemoteError(reason string) error {
 // FetchRequest contains the parameters for a fetch-pack request.
 // This is used during the pack negotiation phase of the fetch operation.
 // See https://git-scm.com/docs/pack-protocol#_packfile_negotiation
-type FetchRequest struct {
-	// Progress is the progress sideband.
-	Progress sideband.Progress
-
-	// Wants is the list of object hashes the client wants to fetch.
-	// The caller selects which remote refs to fetch (refspec matching)
-	// and extracts their hashes.
-	Wants []plumbing.Hash
-
-	// Haves is the list of object hashes the client already has.
-	// TODO: The transport should compute haves internally from the
-	// storer during pack negotiation, matching how canonical git's
-	// fetch-pack walks the local object graph to determine common
-	// ancestors. Once implemented, remove this field.
-	Haves []plumbing.Hash
-
-	// Depth is the depth of the fetch.
-	Depth int
-
-	// Filter holds the filters to be applied when deciding what
-	// objects will be added to the packfile.
-	Filter packp.Filter
-
-	// IncludeTags indicates whether tags should be fetched.
-	IncludeTags bool
-}
+// FetchRequest is the request sent to the remote to fetch objects. It is an
+// alias of the shared internal type so the v0/v1 and v2 fetch paths use the
+// exact same request.
+type FetchRequest = internal.FetchRequest
 
 // PushRequest contains the parameters for a push request.
 type PushRequest struct {

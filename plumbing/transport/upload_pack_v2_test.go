@@ -73,6 +73,7 @@ func TestUploadPackV2AdvertisementCapabilities(t *testing.T) {
 	err := UploadPack(context.TODO(), st, io.NopCloser(bytes.NewBuffer(nil)), ioutil.WriteNopCloser(&out), &UploadPackRequest{
 		GitProtocol:   "version=2",
 		AdvertiseRefs: true,
+		StatelessRPC:  true,
 	})
 	require.NoError(t, err)
 	adv := out.String()
@@ -81,6 +82,13 @@ func TestUploadPackV2AdvertisementCapabilities(t *testing.T) {
 	require.Contains(t, adv, "ls-refs")
 	require.Contains(t, adv, "fetch=shallow")
 	require.Contains(t, adv, "object-format=")
+
+	// git omits the smart-HTTP "# service=..." line for v2 even over HTTP
+	// (http-backend.c get_info_refs): the response starts with the version
+	// packet. Emitting it would diverge from the reference server.
+	require.NotContains(t, adv, "# service=")
+	require.True(t, strings.HasPrefix(adv[4:], "version 2"),
+		"v2 advertisement must start with the version packet, got %q", adv[:32])
 
 	// Capabilities the server does not implement must not be advertised,
 	// otherwise clients request features that are silently dropped or
@@ -232,6 +240,23 @@ func TestUploadPackV2FetchNoWantsEmitsNothing(t *testing.T) {
 	// No want lines: upstream emits no response at all (no stray flush).
 	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{"have " + plumbing.ZeroHash.String()}))
 	require.Empty(t, out)
+}
+
+func TestUploadPackV2LsRefsHeadResolvedOID(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"symrefs"}))
+
+	// Upstream send_ref emits HEAD with its resolved object id and a
+	// symref-target attribute, not a zero id. This is why the server encodes
+	// ls-refs lines directly rather than through packp.LsRefsOutput, whose
+	// symbolic references cannot carry a resolved hash.
+	require.Contains(t, out, head.Hash().String()+" HEAD symref-target:"+head.Name().String())
+	require.NotContains(t, out, plumbing.ZeroHash.String()+" HEAD")
 }
 
 func TestUploadPackV2LsRefsHeadFilteredByPrefix(t *testing.T) {
