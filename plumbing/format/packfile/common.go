@@ -52,6 +52,36 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	return err
 }
 
+// UpdatePromisorObjectStorage is UpdateObjectStorage for a packfile received
+// from a promisor remote, as a filtered (partial clone) fetch returns. The pack
+// is recorded as a promisor pack so that the objects the filter excluded are
+// understood to be promised by that remote rather than missing.
+//
+// Storage that cannot record promisor packs falls back to an unmarked write.
+// That is only safe where git never sees the result, such as in-memory storage;
+// on disk it leaves a repository whose fsck reports broken links and whose gc
+// fails.
+func UpdatePromisorObjectStorage(s storer.Storer, packfile io.Reader, marker string) error {
+	if trace.Performance.Enabled() {
+		start := time.Now()
+		defer func() {
+			trace.Performance.Printf("performance: %.9f s: update_promisor_obj_storage", time.Since(start).Seconds())
+		}()
+	}
+
+	pw, ok := s.(storer.PromisorPackfileWriter)
+	if !ok {
+		return UpdateObjectStorage(s, packfile)
+	}
+
+	w, err := pw.PromisorPackfileWriter(marker)
+	if err != nil {
+		return err
+	}
+
+	return copyPackfile(w, packfile)
+}
+
 // WritePackfileToObjectStorage writes all the packfile objects into the given
 // object storage.
 func WritePackfileToObjectStorage(
@@ -63,6 +93,10 @@ func WritePackfileToObjectStorage(
 		return err
 	}
 
+	return copyPackfile(w, packfile)
+}
+
+func copyPackfile(w io.WriteCloser, packfile io.Reader) (err error) {
 	defer ioutil.CheckClose(w, &err)
 
 	n, err := ioutil.CopyBufferPool(w, packfile)
