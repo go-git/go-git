@@ -2,7 +2,9 @@ package dotgit
 
 import (
 	"io"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -93,4 +95,31 @@ func TestPromisorObjectPacks(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, promisors, "a repository with no promisor pack is not a partial clone, so every missing object is genuinely missing")
 	})
+}
+
+// TestDeleteOldObjectPackAndIndexRemovesMarker pins the sidecar to its pack. A
+// .promisor left behind after its pack is gone claims a pack that no longer
+// exists, and the objects it vouched for stop being understood as promised.
+func TestDeleteOldObjectPackAndIndexRemovesMarker(t *testing.T) {
+	t.Parallel()
+
+	dot, h, fs := createPromisorPack(t, "")
+
+	require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
+
+	for _, ext := range []string{"pack", "idx", "promisor"} {
+		path := fs.Join("objects", "pack", "pack-"+h.String()+"."+ext)
+		_, err := fs.Lstat(path)
+		assert.ErrorIs(t, err, os.ErrNotExist, "%s should have been removed with its pack", ext)
+	}
+}
+
+// TestDeleteOldObjectPackAndIndexWithoutMarker guards the ordinary case: an
+// absent .promisor is normal, and must not be reported as a failure.
+func TestDeleteOldObjectPackAndIndexWithoutMarker(t *testing.T) {
+	t.Parallel()
+
+	dot, h, _ := createPackWithRev(t, Options{})
+
+	require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
 }

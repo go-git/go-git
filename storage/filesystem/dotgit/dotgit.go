@@ -729,10 +729,12 @@ func (a packHandleAdapter) PackHash() (plumbing.Hash, error) {
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
-// The .pack, .idx and .rev files are each attempted independently; any
-// failures are joined into the returned error so a partial failure cannot
+// The .pack, .idx, .rev and .promisor files are each attempted independently;
+// any failures are joined into the returned error so a partial failure cannot
 // leave orphaned siblings on disk. A missing .rev is not an error — the
-// reverse index is optional and may have been generated only in memory.
+// reverse index is optional and may have been generated only in memory — and
+// neither is a missing .promisor, which only packs fetched from a promisor
+// remote carry.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	var errs []error
 	if err := d.cleanPackList(); err != nil {
@@ -752,9 +754,9 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 		}
 	}
 
-	for _, ext := range []string{`pack`, `idx`, `rev`} {
+	for _, ext := range []string{`pack`, `idx`, `rev`, `promisor`} {
 		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
-			if ext == `rev` && os.IsNotExist(err) {
+			if (ext == `rev` || ext == `promisor`) && os.IsNotExist(err) {
 				continue
 			}
 			errs = append(errs, err)
