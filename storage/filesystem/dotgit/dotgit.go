@@ -58,6 +58,13 @@ const (
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
+
+	// promisorExt marks a pack as having been received from a promisor
+	// remote, meaning objects it references but does not contain are
+	// promised by that remote rather than missing. Git refuses to treat
+	// such absences as legitimate without this marker: fsck reports them as
+	// broken links and gc fails outright.
+	promisorExt = ".promisor"
 )
 
 var (
@@ -365,6 +372,59 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 		return nil, cleanErr
 	}
 	return pw, nil
+}
+
+// NewPromisorObjectPack is NewObjectPack for a packfile received from a
+// promisor remote, as a filtered (partial clone) fetch produces. Alongside the
+// pack it writes a .promisor sidecar containing marker, which is how git tells
+// objects the remote deliberately withheld from ones that are genuinely
+// missing. Without it git reports the withheld objects as broken links and
+// refuses to gc the repository.
+//
+// Git writes the fetched ref list as the marker, one "<hash> <ref>" line each,
+// and an empty marker for the pack of an initial clone.
+func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
+	pw, err := d.NewObjectPack()
+	if err != nil {
+		return nil, err
+	}
+
+	pw.promisor = &marker
+	return pw, nil
+}
+
+// PromisorObjectPacks returns the hashes of the packs that were received from a
+// promisor remote, that is those carrying a .promisor marker.
+func (d *DotGit) PromisorObjectPacks() ([]plumbing.Hash, error) {
+	packs, err := d.ObjectPacks()
+	if err != nil {
+		return nil, err
+	}
+
+	var promisors []plumbing.Hash
+	for _, h := range packs {
+		ok, err := d.hasPromisor(h)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			promisors = append(promisors, h)
+		}
+	}
+
+	return promisors, nil
+}
+
+// hasPromisor reports whether the pack carries a .promisor marker.
+func (d *DotGit) hasPromisor(hash plumbing.Hash) (bool, error) {
+	fi, err := d.fs.Lstat(d.objectPackPath(hash, promisorExt[1:]))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return fi.Mode().IsRegular(), nil
 }
 
 // ObjectPacks returns the list of availables packfiles

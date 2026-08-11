@@ -36,6 +36,9 @@ type PackWriter struct {
 	result   chan error
 	format   formatcfg.ObjectFormat
 	writeRev bool
+	// promisor, when non-nil, writes a .promisor sidecar next to the pack
+	// carrying these contents. A nil value leaves the pack unmarked.
+	promisor *string
 }
 
 func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
@@ -190,6 +193,34 @@ func (w *PackWriter) save() error {
 				return err
 			}
 			fixPermissions(w.fs, revPath)
+		}
+	}
+
+	// The marker is written before the pack is moved into place. A pack that
+	// is visible without it looks like an ordinary pack, so anything the
+	// promisor remote filtered out would read as corruption until the marker
+	// landed; crashing in that window must not be able to produce a
+	// repository git refuses to gc.
+	if w.promisor != nil {
+		promisorPath := fmt.Sprintf("%s%s", base, promisorExt)
+		exists, err := fileExists(w.fs, promisorPath)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			f, err := w.fs.Create(promisorPath)
+			if err != nil {
+				return err
+			}
+
+			if _, err := io.WriteString(f, *w.promisor); err != nil {
+				_ = f.Close()
+				return err
+			}
+
+			if err := f.Close(); err != nil {
+				return err
+			}
 		}
 	}
 
