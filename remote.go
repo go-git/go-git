@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -532,6 +533,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			// this point, we have everything we're asking for.
 			return nil, err
 		}
+
+		if o.Filter != "" {
+			if err := r.recordPromisor(o.Filter); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	var updatedPrune bool
@@ -629,6 +636,56 @@ func (r *Remote) transportProtocol() protocol.Version {
 		return config.DefaultProtocolVersion
 	}
 	return cfg.Protocol.Version
+}
+
+// recordPromisor marks this remote as a promisor remote and stores the filter
+// that was used, mirroring what git records for a partial clone.
+//
+// Both keys matter. promisor is what lets git accept that the filtered-out
+// objects are absent on purpose, and partialclonefilter is what makes git
+// reapply the same filter on later fetches. Recording the first without the
+// second leaves the repository fetching unfiltered while missing objects, which
+// fails in index-pack resolving deltas against bases it never receives.
+//
+// Nothing is recorded for a fetch that did not come from a configured remote:
+// an anonymous URL fetch has no remote section to write to, and git leaves the
+// configured remotes alone in that case too.
+func (r *Remote) recordPromisor(filter packp.Filter) error {
+	if r.s == nil || r.c == nil || r.c.Name == "" {
+		return nil
+	}
+
+	cfg, err := r.s.Config()
+	if err != nil {
+		return err
+	}
+
+	remote, ok := cfg.Remotes[r.c.Name]
+	if !ok {
+		return nil
+	}
+
+	if remote.Promisor && remote.PartialCloneFilter == string(filter) {
+		return nil
+	}
+
+	remote.Promisor = true
+	remote.PartialCloneFilter = string(filter)
+
+	// Partial clone is a repository format extension, so the format version
+	// has to allow extensions to be present at all.
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+
+	if err := r.s.SetConfig(cfg); err != nil {
+		return err
+	}
+
+	// Keep the in-memory view consistent with what was just stored, so a
+	// caller holding this Remote sees the recorded filter.
+	r.c.Promisor = remote.Promisor
+	r.c.PartialCloneFilter = remote.PartialCloneFilter
+
+	return nil
 }
 
 func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Reference, remoteRefs storer.ReferenceStorer) (bool, error) {
