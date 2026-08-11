@@ -3,6 +3,7 @@ package filesystem
 
 import (
 	"io"
+	iofs "io/fs"
 	"os"
 	"path"
 	"strings"
@@ -35,14 +36,22 @@ type Options struct {
 	// the function works without the optimization.
 	Index *index.Index
 
-	// IgnoreMatcher, if non-nil, is consulted while walking the tree.
-	// Untracked entries (files or directories) that match the matcher are
-	// excluded from the walk so callers do not have to descend into large
-	// gitignored directories like node_modules. Tracked entries are always
-	// walked even if they match, so modifications to them are still
-	// reported. Requires Index to be set: without an index there is no way
-	// to identify tracked entries, so the matcher is treated as a no-op.
-	IgnoreMatcher gitignore.Matcher
+	// IgnoreScope, if non-nil, is consulted while walking the tree. Untracked
+	// entries (files or directories) that it reports as ignored are excluded
+	// from the walk, so callers do not have to descend into large gitignored
+	// directories like node_modules. Tracked entries are always walked even
+	// when ignored, so modifications to them are still reported.
+	//
+	// It is the scope in effect at the root of the walk, normally
+	// gitignore.NewScope of gitignore.RootPatterns plus any patterns the
+	// caller supplies. The walk derives each directory's scope from the
+	// listing it already takes, so a .gitignore is opened only in directories
+	// actually visited and never below an excluded one, and an excluded
+	// directory stays authoritative for everything under it.
+	//
+	// Requires Index to be set: without an index there is no way to identify
+	// tracked entries, so the scope is treated as a no-op.
+	IgnoreScope *gitignore.Scope
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -56,12 +65,20 @@ type node struct {
 	idx        *index.Index
 	idxMap     map[string]*index.Entry
 	// trackedDirs holds every directory path that has at least one entry
-	// in the index. It is populated only when IgnoreMatcher is set so the
+	// in the index. It is populated only when IgnoreScope is set so the
 	// walker can keep tracked entries even if their parent directory
 	// matches an ignore rule.
 	trackedDirs map[string]struct{}
 
 	options *Options
+
+	// scope is the ignore scope governing this node's entries. On a child it
+	// starts as the parent's scope and is replaced by this directory's own on
+	// the first calculateChildren, which is when the listing that reveals
+	// whether a .gitignore is present becomes available. scopeResolved tracks
+	// that transition; the root node is created already resolved.
+	scope         *gitignore.Scope
+	scopeResolved bool
 
 	path     string
 	hash     []byte
@@ -112,7 +129,7 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreMatcher != nil {
+		if options.IgnoreScope != nil {
 			trackedDirs = make(map[string]struct{})
 			for _, entry := range options.Index.Entries {
 				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
@@ -133,6 +150,10 @@ func NewRootNodeWithOptions(
 		trackedDirs: trackedDirs,
 		options:     &options,
 		isDir:       true,
+		// The root scope already accounts for the root's own ignore files, so
+		// it must not descend again.
+		scope:         options.IgnoreScope,
+		scopeResolved: true,
 	}
 }
 
@@ -198,6 +219,10 @@ func (n *node) calculateChildren() error {
 		return err
 	}
 
+	if err := n.resolveScope(files); err != nil {
+		return err
+	}
+
 	for _, file := range files {
 		if _, ok := ignore[file.Name()]; ok {
 			continue
@@ -226,22 +251,64 @@ func (n *node) calculateChildren() error {
 	return nil
 }
 
+// resolveScope derives this directory's ignore scope from the listing just
+// taken for it. Deferring to this point is the whole benefit of the scoped
+// walk: whether a .gitignore exists is read off a listing the walk needed
+// anyway, the file is opened only in directories actually visited, and
+// Scope.Descend declines to open it at all below an excluded directory.
+func (n *node) resolveScope(files []iofs.DirEntry) error {
+	if n.scopeResolved {
+		return nil
+	}
+	n.scopeResolved = true
+
+	if n.scope == nil {
+		return nil
+	}
+
+	var readOwn func() ([]gitignore.Pattern, error)
+	for _, f := range files {
+		if f.Name() == gitignore.IgnoreFile && !f.IsDir() {
+			dir := n.pathComponents()
+			readOwn = func() ([]gitignore.Pattern, error) {
+				return gitignore.DirPatterns(n.fs, dir)
+			}
+			break
+		}
+	}
+
+	scope, err := n.scope.Descend(n.pathComponents(), readOwn)
+	if err != nil {
+		return err
+	}
+	n.scope = scope
+
+	return nil
+}
+
+func (n *node) pathComponents() []string {
+	if n.path == "" {
+		return nil
+	}
+	return strings.Split(n.path, "/")
+}
+
 // shouldSkipIgnored reports whether the child entry of n with the given
-// name should be skipped because it matches the configured ignore matcher
+// name should be skipped because it matches the ignore scope in effect
 // AND has no entry in the index. Tracked entries are never skipped so
 // modifications to them are still reported.
 func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
-	if n.options == nil || n.options.IgnoreMatcher == nil {
+	if n.options == nil || n.options.IgnoreScope == nil {
 		return false
 	}
 	// Without an index we cannot prove that a subtree contains no tracked
 	// entries, so refuse to skip. This matches the documented contract on
-	// Options.IgnoreMatcher.
+	// Options.IgnoreScope.
 	if n.idxMap == nil {
 		return false
 	}
 	childPath := path.Join(n.path, name)
-	if !n.options.IgnoreMatcher.Match(strings.Split(childPath, "/"), isDir) {
+	if !n.scope.Match(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
 	// An entry whose own path is in the index is tracked, regardless of
@@ -268,6 +335,10 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		idxMap:      n.idxMap,
 		trackedDirs: n.trackedDirs,
 		options:     n.options,
+
+		// The child inherits this directory's scope and resolves its own on
+		// its first listing.
+		scope: n.scope,
 
 		path:    path,
 		isDir:   file.IsDir(),

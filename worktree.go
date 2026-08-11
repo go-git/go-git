@@ -725,7 +725,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	// they are cleaned up in step 3 below.
 	//
 	// excludeIgnoredChanges=true engages the filesystem walker's
-	// IgnoreMatcher so untracked entries inside gitignored directories are
+	// IgnoreScope so untracked entries inside gitignored directories are
 	// pruned at enumeration time rather than walked and then dropped as
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
@@ -797,7 +797,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 // MergeReset, and files contains paths that were just removed from the
 // index by resetIndex. A tracked-but-gitignored path that was removed
 // from the index in this same Reset is no longer in idxMap, so the
-// noder's IgnoreMatcher would prune it from the walk and the Delete
+// noder's IgnoreScope would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
 func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []string) error {
 	changes, err := w.diffStagingWithWorktree(cfg, true, false)

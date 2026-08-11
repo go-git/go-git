@@ -8,9 +8,9 @@ import (
 // that contains a large gitignored directory (e.g. node_modules-like).
 //
 // resetWorktreeToTree walks the worktree to discover tracked files that are
-// missing or stale on disk. Without the IgnoreMatcher optimization, this walk
+// missing or stale on disk. Without the IgnoreScope optimization, this walk
 // descends into every gitignored subtree before the loop body discards the
-// resulting Delete actions. With the matcher engaged, the entire ignored
+// resulting Delete actions. With the scope engaged, the entire ignored
 // subtree is skipped at enumeration time, so cost stays roughly flat as the
 // number of ignored files grows.
 //

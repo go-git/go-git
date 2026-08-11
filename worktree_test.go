@@ -1937,7 +1937,7 @@ func (s *WorktreeSuite) TestResetHardWithGitIgnore() {
 	s.True(status.IsClean())
 }
 
-// TestResetHardTrackedFileInIgnoredDir covers the case the IgnoreMatcher
+// TestResetHardTrackedFileInIgnoredDir covers the case the IgnoreScope
 // optimization actually targets: a tracked file living inside a gitignored
 // directory. The walker must descend into the directory because trackedDirs
 // records it as containing tracked descendants, so the Delete-on-disk shows
@@ -2053,7 +2053,7 @@ func (s *WorktreeSuite) TestResetHardModifiedTrackedFileWithGitIgnore() {
 // the case Copilot flagged on this PR. resetIndex runs immediately before
 // resetWorktree and removes paths from the index, so a tracked path inside
 // a gitignored directory that is being removed by the reset would no
-// longer be in idxMap. If the noder's IgnoreMatcher were engaged here, it
+// longer be in idxMap. If the noder's IgnoreScope were engaged here, it
 // would prune the path during the walk and the Delete action needed to
 // remove the file from disk would never be emitted. resetWorktree must
 // keep excludeIgnoredChanges=false so MergeReset still cleans the file up.
