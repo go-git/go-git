@@ -72,6 +72,12 @@ type Options struct {
 	// ObjectFormat - even if implicitly (e.g. SHA1).
 	ObjectFormat formatcfg.ObjectFormat
 
+	// SharedRepository controls the permission mode applied to new files
+	// and directories under .git. See [config.SharedRepository] for the
+	// supported values. When left as the zero value, the process umask
+	// governs permissions.
+	SharedRepository config.SharedRepository
+
 	// UseInMemoryIdx loads .idx files fully into memory (MemoryIndex) instead
 	// of reading them on demand via ReadAt (LazyIndex). This uses more memory
 	// but avoids keeping file descriptors open. Defaults to false.
@@ -156,6 +162,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		cfg, err := config.ReadConfig(f)
 		if err == nil {
 			ops.ObjectFormat = cfg.Extensions.ObjectFormat
+			ops.SharedRepository = cfg.Core.SharedRepository
 			readRevIdx = cfg.Pack.ReadReverseIndex
 			writeRevIdx = cfg.Pack.WriteReverseIndex
 			skipHash = cfg.Index.SkipHash.IsTrue()
@@ -175,12 +182,13 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	dirOps := dotgit.Options{
-		ExclusiveAccess:   ops.ExclusiveAccess,
-		AlternatesFS:      ops.AlternatesFS,
-		ObjectFormat:      ops.ObjectFormat,
-		ReadReverseIndex:  readRevIdx,
-		WriteReverseIndex: writeRevIdx,
-		Pool:              pool,
+		ExclusiveAccess:    ops.ExclusiveAccess,
+		AlternatesFS:       ops.AlternatesFS,
+		ObjectFormat:       ops.ObjectFormat,
+		SharedRepository:   ops.SharedRepository,
+		ReadReverseIndex:   readRevIdx,
+		WriteReverseIndex:  writeRevIdx,
+		Pool:               pool,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 

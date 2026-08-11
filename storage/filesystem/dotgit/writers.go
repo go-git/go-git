@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -27,18 +29,19 @@ import (
 type PackWriter struct {
 	Notify func(plumbing.Hash, *idxfile.Writer)
 
-	fs       billy.Filesystem
-	fr, fw   billy.File
-	synced   *syncedReader
-	checksum plumbing.Hash
-	parser   *packfile.Parser
-	writer   *idxfile.Writer
-	result   chan error
-	format   formatcfg.ObjectFormat
-	writeRev bool
+	fs               billy.Filesystem
+	fr, fw           billy.File
+	synced           *syncedReader
+	checksum         plumbing.Hash
+	parser           *packfile.Parser
+	writer           *idxfile.Writer
+	result           chan error
+	format           formatcfg.ObjectFormat
+	writeRev         bool
+	sharedRepository config.SharedRepository
 }
 
-func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool, sharedRepository config.SharedRepository) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -50,13 +53,14 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 	}
 
 	writer := &PackWriter{
-		fs:       fs,
-		fw:       fw,
-		fr:       fr,
-		synced:   newSyncedReader(fw, fr),
-		result:   make(chan error),
-		format:   format,
-		writeRev: writeRev,
+		fs:               fs,
+		fw:               fw,
+		fr:               fr,
+		synced:           newSyncedReader(fw, fr),
+		result:           make(chan error),
+		format:           format,
+		writeRev:         writeRev,
+		sharedRepository: sharedRepository,
 	}
 
 	writer.checksum.ResetBySize(format.Size())
@@ -166,7 +170,7 @@ func (w *PackWriter) save() error {
 		if err := idx.Close(); err != nil {
 			return err
 		}
-		fixPermissions(w.fs, idxPath)
+		fixPermissions(w.fs, idxPath, w.sharedRepository)
 	}
 
 	if w.writeRev {
@@ -189,7 +193,7 @@ func (w *PackWriter) save() error {
 			if err := rev.Close(); err != nil {
 				return err
 			}
-			fixPermissions(w.fs, revPath)
+			fixPermissions(w.fs, revPath, w.sharedRepository)
 		}
 	}
 
@@ -202,7 +206,7 @@ func (w *PackWriter) save() error {
 		if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
 			return err
 		}
-		fixPermissions(w.fs, packPath)
+		fixPermissions(w.fs, packPath, w.sharedRepository)
 	} else {
 		// Pack already exists, clean up the temp file.
 		return w.clean()
@@ -334,20 +338,22 @@ func (s *syncedReader) Close() error {
 // ObjectWriter writes a single git object to the filesystem.
 type ObjectWriter struct {
 	objfile.Writer
-	fs billy.Filesystem
-	f  billy.File
+	fs               billy.Filesystem
+	f                billy.File
+	sharedRepository config.SharedRepository
 }
 
-func newObjectWriter(fs billy.Filesystem, objectFormat formatcfg.ObjectFormat) (*ObjectWriter, error) {
+func newObjectWriter(fs billy.Filesystem, objectFormat formatcfg.ObjectFormat, sharedRepository config.SharedRepository) (*ObjectWriter, error) {
 	f, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_obj_")
 	if err != nil {
 		return nil, err
 	}
 
 	return &ObjectWriter{
-		Writer: (*objfile.NewWriter(f, objectFormat)),
-		fs:     fs,
-		f:      f,
+		Writer:           (*objfile.NewWriter(f, objectFormat)),
+		fs:               fs,
+		f:                f,
+		sharedRepository: sharedRepository,
 	}, nil
 }
 
@@ -379,7 +385,8 @@ func (w *ObjectWriter) save() error {
 	if err := w.fs.Rename(w.f.Name(), file); err != nil {
 		return err
 	}
-	fixPermissions(w.fs, file)
+	fixPermissions(w.fs, file, w.sharedRepository)
+	fixDirectoryPermissions(w.fs, filepath.Dir(file), w.sharedRepository)
 
 	return nil
 }
