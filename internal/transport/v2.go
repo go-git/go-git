@@ -223,7 +223,7 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		}
 
 		if out.Packfile {
-			streamErr := streamPackfile(ctx, st, packReader, req.Progress)
+			streamErr := streamPackfile(ctx, st, packReader, req.Progress, req.Filter)
 			// Skip draining/closing on cancellation: streamPackfile wraps
 			// packReader in a NewContextReader, whose background goroutine
 			// can still be blocked in the underlying Read after the
@@ -266,11 +266,21 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 }
 
 // streamPackfile demultiplexes the sideband-64k packfile stream into st.
-func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader, progress sideband.Progress) error {
+//
+// A non-empty filter means the server withheld the objects it matched, so the
+// pack is recorded as coming from a promisor remote. Git reads unmarked
+// absences as corruption: fsck reports broken links to them and gc fails.
+func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader, progress sideband.Progress, filter packp.Filter) error {
 	reader := ioutil.NewContextReader(ctx, packReader)
 	demuxer := sideband.NewDemuxer(sideband.Sideband64k, reader)
 	if progress != nil {
 		demuxer.Progress = progress
+	}
+	if filter != "" {
+		// The marker is left empty. Git fills it with the refs it sought on
+		// this path and leaves it empty when repacking, and accepts either,
+		// because only the file's presence is ever consulted.
+		return packfile.UpdatePromisorObjectStorage(st, demuxer, "")
 	}
 	return packfile.UpdateObjectStorage(st, demuxer)
 }
