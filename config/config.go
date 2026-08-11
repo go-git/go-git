@@ -474,6 +474,8 @@ const (
 	objectFormatKey            = "objectformat"
 	worktreeConfigKey          = "worktreeConfig"
 	mirrorKey                  = "mirror"
+	promisorKey                = "promisor"
+	partialCloneFilterKey      = "partialclonefilter"
 	versionKey                 = "version"
 	autoCRLFKey                = "autocrlf"
 	fileModeKey                = "filemode"
@@ -1050,6 +1052,21 @@ type RemoteConfig struct {
 	// Fetch the default set of "refspec" for fetch operation
 	Fetch []RefSpec
 
+	// Promisor indicates that the remote is a promisor remote: objects it
+	// filtered out of a partial clone are expected to be absent locally and
+	// can be fetched from it on demand. It is what tells git that a missing
+	// object is promised rather than a sign of a corrupt repository, so it
+	// must be set whenever a fetch from this remote used a Filter, alongside
+	// the .promisor marker on each pack received from it.
+	Promisor bool
+
+	// PartialCloneFilter is the object filter last used to fetch from this
+	// remote, in the wire format git records (e.g. "blob:none"). Git reapplies
+	// it to subsequent fetches, so leaving it unset while Promisor is true
+	// makes later fetches ask for objects the local repository is missing the
+	// delta bases for.
+	PartialCloneFilter string
+
 	// raw representation of the subsection, filled by marshal or unmarshal are
 	// called
 	raw *format.Subsection
@@ -1096,6 +1113,8 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.URLs = append(c.URLs, c.raw.Options.GetAll(pushurlKey)...)
 	c.Fetch = fetch
 	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
+	c.Promisor = c.raw.Options.Get(promisorKey) == "true"
+	c.PartialCloneFilter = c.raw.Options.Get(partialCloneFilterKey)
 
 	return nil
 }
@@ -1130,6 +1149,22 @@ func (c *RemoteConfig) marshal() *format.Subsection {
 
 	if c.Mirror {
 		c.raw.SetOption(mirrorKey, strconv.FormatBool(c.Mirror))
+	}
+
+	// Both keys are removed when unset rather than left behind: a stale
+	// promisor = true without a matching partialclonefilter makes git fetch
+	// unfiltered into a repository that is missing objects, which fails while
+	// resolving deltas against bases it never received.
+	if c.Promisor {
+		c.raw.SetOption(promisorKey, strconv.FormatBool(c.Promisor))
+	} else {
+		c.raw.RemoveOption(promisorKey)
+	}
+
+	if c.PartialCloneFilter != "" {
+		c.raw.SetOption(partialCloneFilterKey, c.PartialCloneFilter)
+	} else {
+		c.raw.RemoveOption(partialCloneFilterKey)
 	}
 
 	return c.raw
