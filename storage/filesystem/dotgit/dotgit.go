@@ -381,8 +381,9 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 // missing. Without it git reports the withheld objects as broken links and
 // refuses to gc the repository.
 //
-// Git writes the fetched ref list as the marker, one "<hash> <ref>" line each,
-// and an empty marker for the pack of an initial clone.
+// Git writes the refs it sought as the marker, one "<hash> <ref>" line each,
+// when the pack came from a fetch, and an empty marker when repacking. Either
+// is accepted: only the file's presence is ever consulted, never its contents.
 func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
 	pw, err := d.NewObjectPack()
 	if err != nil {

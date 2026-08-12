@@ -55,9 +55,10 @@ func TestNewPromisorObjectPackWritesMarker(t *testing.T) {
 	assert.Contains(t, packs, h)
 }
 
-// TestNewPromisorObjectPackMarkerContents covers git's own convention: the
-// marker holds the fetched ref list, and is empty for the pack of an initial
-// partial clone.
+// TestNewPromisorObjectPackMarkerContents covers git's own convention for the
+// contents: the refs it sought when the pack came from a fetch, and nothing when
+// repacking. The writer stores whatever it is given, since git consults only the
+// file's presence.
 func TestNewPromisorObjectPackMarkerContents(t *testing.T) {
 	t.Parallel()
 

@@ -110,9 +110,10 @@ type PackfileWriter interface {
 // and refuses to gc the repository.
 type PromisorPackfileWriter interface {
 	// PromisorPackfileWriter returns a writer for a packfile received from a
-	// promisor remote. marker is stored verbatim alongside the pack; git
-	// writes the fetched ref list there, and an empty marker for the pack of
-	// an initial clone.
+	// promisor remote. marker is stored verbatim alongside the pack; git writes
+	// the refs it sought there when the pack came from a fetch, and nothing at
+	// all when repacking. Only the file's presence is ever consulted, so the
+	// contents are free-form.
 	PromisorPackfileWriter(marker string) (io.WriteCloser, error)
 }
 
