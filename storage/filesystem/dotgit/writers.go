@@ -196,18 +196,30 @@ func (w *PackWriter) save() error {
 		}
 	}
 
-	// The marker is written before the pack is moved into place. A pack that
-	// is visible without it looks like an ordinary pack, so anything the
-	// promisor remote filtered out would read as corruption until the marker
-	// landed; crashing in that window must not be able to produce a
-	// repository git refuses to gc.
-	if w.promisor != nil {
+	packPath := fmt.Sprintf("%s.pack", base)
+	exists, err = fileExists(w.fs, packPath)
+	if err != nil {
+		return err
+	}
+
+	// The marker is written before the pack is moved into place, and only for a
+	// pack this writer is placing. A pack visible without its marker looks
+	// ordinary, so whatever the promisor remote withheld would read as
+	// corruption until the marker landed; crashing in that window must not be
+	// able to produce a repository git refuses to gc.
+	//
+	// An identical pack already on disk is left exactly as it is, marked or
+	// not. Packs are content addressed, so the same hash means the same
+	// objects, and nothing is missing that was not missing before; marking it
+	// now would newly declare the repository a partial clone on the strength of
+	// a duplicate.
+	if w.promisor != nil && !exists {
 		promisorPath := fmt.Sprintf("%s%s", base, promisorExt)
-		exists, err := fileExists(w.fs, promisorPath)
+		promisorExists, err := fileExists(w.fs, promisorPath)
 		if err != nil {
 			return err
 		}
-		if !exists {
+		if !promisorExists {
 			f, err := w.fs.Create(promisorPath)
 			if err != nil {
 				return err
@@ -224,11 +236,6 @@ func (w *PackWriter) save() error {
 		}
 	}
 
-	packPath := fmt.Sprintf("%s.pack", base)
-	exists, err = fileExists(w.fs, packPath)
-	if err != nil {
-		return err
-	}
 	if !exists {
 		if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
 			return err
