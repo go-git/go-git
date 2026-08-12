@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -186,8 +187,8 @@ func (s *ConformanceSuite) testMatch(pattern, text string, expected bool, desc s
 
 	if gitGot, ok := s.gitOracle([]string{pattern}, text, isDir); ok {
 		s.Equal(expected, gitGot,
-			"oracle disagrees with expectation: pattern=%q text=%q expected=%v git=%v (%s)",
-			pattern, text, expected, gitGot, desc)
+			"oracle disagrees with expectation: pattern=%q text=%q expected=%v git=%v (%s)%s",
+			pattern, text, expected, gitGot, desc, oracleVersionHint([]string{pattern}))
 	}
 }
 
@@ -217,8 +218,8 @@ func (s *ConformanceSuite) assertIgnore(m Matcher, patterns []string, path strin
 
 	if gitGot, ok := s.gitOracle(patterns, path, isDir); ok {
 		s.Equal(expected, gitGot,
-			"oracle disagrees: patterns=%v path=%q isDir=%v expected=%v git=%v (%s)",
-			patterns, path, isDir, expected, gitGot, desc)
+			"oracle disagrees: patterns=%v path=%q isDir=%v expected=%v git=%v (%s)%s",
+			patterns, path, isDir, expected, gitGot, desc, oracleVersionHint(patterns))
 	}
 }
 
@@ -999,9 +1000,34 @@ func skipOnLegacyGit(patterns []string) bool {
 	return false
 }
 
+// oracleVersionHint returns a note to append when the oracle disagrees about
+// patterns that a Git older than 2.52.0 is known to get wrong, so the reader is
+// pointed at their binary instead of reading the failure as a go-git bug.
+//
+// match_pathname pre-computed a pattern's leading non-wildcard characters and
+// handed only the remainder to fnmatch, which read that remainder as the start
+// of the path: with "foo" cut away, `foo**/bar` compared `**/bar` against
+// `bar`, and `**/` matches zero directories, so `foobar` wrongly matched. Fixed
+// by git 1940a02dc1 ("match_pathname(): give fnmatch one char of prefix
+// context"), released in 2.52.0.
+//
+// Only the message changes. The comparison still runs and still fails, because
+// a disagreement is worth seeing either way: the same shape is separately
+// mishandled by Git 2.11.0, and silencing it would hide a real regression in
+// go-git's own matcher just as effectively.
+func oracleVersionHint(patterns []string) string {
+	if !slices.ContainsFunc(patterns, hasNonSlashAdjacentDoubleStar) {
+		return ""
+	}
+	return "\nnote: `**` beside a non-slash character was mishandled by Git before" +
+		" 2.52.0 (fixed by 1940a02dc1) and is mishandled differently by 2.11.0." +
+		" Check the Git this ran against, which `make test` prints; -short" +
+		" disables the oracle."
+}
+
 // hasNonSlashAdjacentDoubleStar reports whether p contains a `**` whose
 // neighbour on either side is a non-slash character. The form Git 2.11.0
-// mishandles.
+// mishandles, and the form Git mishandles differently before 2.52.0.
 func hasNonSlashAdjacentDoubleStar(p string) bool {
 	for i := 0; i+1 < len(p); i++ {
 		if p[i] != '*' || p[i+1] != '*' {
@@ -1014,4 +1040,25 @@ func hasNonSlashAdjacentDoubleStar(p string) bool {
 		}
 	}
 	return false
+}
+
+// TestOracleVersionHint pins the hint to the pattern shape affected by the Git
+// bugs, so an unrelated disagreement is not mislabelled as a Git version
+// problem and sent off in the wrong direction.
+func TestOracleVersionHint(t *testing.T) {
+	t.Parallel()
+
+	affected := []string{"foo**/bar", "**/bar**", "foo**bar", "**[!te]"}
+	unaffected := []string{"foo/bar", "*.txt", "**/bar", "foo/**", "a/**/b"}
+
+	for _, p := range affected {
+		if oracleVersionHint([]string{p}) == "" {
+			t.Errorf("oracleVersionHint(%q) is empty; the shape is affected and the reader needs the pointer", p)
+		}
+	}
+	for _, p := range unaffected {
+		if got := oracleVersionHint([]string{p}); got != "" {
+			t.Errorf("oracleVersionHint(%q) = %q; the shape is unaffected and must not blame the Git version", p, got)
+		}
+	}
 }
