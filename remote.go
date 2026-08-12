@@ -431,6 +431,15 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	// Fail before opening a connection rather than after the objects have
+	// landed. A filtered fetch stored as an ordinary pack leaves a repository
+	// git reports as corrupt and refuses to gc, so if this storage cannot record
+	// the pack as coming from a promisor remote, the fetch does not start.
+	if o.Filter != "" && !packfile.SupportsPromisorPacks(r.s) {
+		return nil, fmt.Errorf("%w: refusing to fetch with filter %q",
+			packfile.ErrPromisorPacksUnsupported, o.Filter)
+	}
+
 	if len(o.RefSpecs) == 0 {
 		o.RefSpecs = r.c.Fetch
 	}

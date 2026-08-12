@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -52,15 +53,38 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	return err
 }
 
+// ErrPromisorPacksUnsupported is returned when a packfile from a promisor
+// remote would be stored by a storer that writes packfiles but cannot record
+// them as promisor packs. Writing it unmarked would leave a repository whose
+// fsck reports broken links and whose gc fails, so the write is refused.
+var ErrPromisorPacksUnsupported = errors.New("storage writes packfiles but cannot record them as promisor packs")
+
+// SupportsPromisorPacks reports whether a packfile from a promisor remote can be
+// stored without losing the fact that it came from one.
+//
+// Storage that records promisor packs qualifies. So does storage that does not
+// write packfiles at all: it stores objects individually, so there is no pack to
+// mark and nothing to lose — in-memory storage works this way. What does not
+// qualify is storage that writes a packfile but cannot mark it, which is exactly
+// how an unmarked pack of deliberately absent objects reaches disk.
+func SupportsPromisorPacks(s storer.Storer) bool {
+	if _, ok := s.(storer.PromisorPackfileWriter); ok {
+		return true
+	}
+
+	_, writesPacks := s.(storer.PackfileWriter)
+	return !writesPacks
+}
+
 // UpdatePromisorObjectStorage is UpdateObjectStorage for a packfile received
 // from a promisor remote, as a filtered (partial clone) fetch returns. The pack
 // is recorded as a promisor pack so that the objects the filter excluded are
 // understood to be promised by that remote rather than missing.
 //
-// Storage that cannot record promisor packs falls back to an unmarked write.
-// That is only safe where git never sees the result, such as in-memory storage;
-// on disk it leaves a repository whose fsck reports broken links and whose gc
-// fails.
+// Storage that writes packfiles without being able to mark them is refused with
+// ErrPromisorPacksUnsupported rather than silently producing the corruption this
+// marking exists to prevent. Storage that writes no packfiles at all stores the
+// objects individually, where there is no marking to lose.
 func UpdatePromisorObjectStorage(s storer.Storer, packfile io.Reader, marker string) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
@@ -71,6 +95,9 @@ func UpdatePromisorObjectStorage(s storer.Storer, packfile io.Reader, marker str
 
 	pw, ok := s.(storer.PromisorPackfileWriter)
 	if !ok {
+		if !SupportsPromisorPacks(s) {
+			return ErrPromisorPacksUnsupported
+		}
 		return UpdateObjectStorage(s, packfile)
 	}
 
