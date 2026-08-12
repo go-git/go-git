@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,6 +29,66 @@ func requireGitBinary(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("oracle disabled: git not found: %v", err)
 	}
+}
+
+// partialCloneMinGit is the first Git release whose clone accepts --filter.
+// Partial clone landed in 2.19.0, so on anything older the fixture cannot be
+// built at all: `git clone --filter=blob:none` fails with "unknown option".
+// The Git Compatibility workflow builds 2.11.0, which is exactly that case.
+//
+// A version comparison is the right test here, unlike for a behavioural bug a
+// vendor might backport: the option either exists in the CLI or it does not,
+// and no distribution adds partial clone to 2.11.0.
+var partialCloneMinGit = [2]int{2, 19}
+
+// requireGitPartialClone skips unless the git binary can build the fixture
+// these tests need.
+func requireGitPartialClone(t *testing.T) {
+	t.Helper()
+	requireGitBinary(t)
+
+	out, err := exec.Command("git", "version").Output()
+	if err != nil {
+		t.Skipf("cannot determine git version: %v", err)
+	}
+
+	major, minor, ok := parseGitMajorMinor(string(out))
+	if !ok {
+		t.Skipf("cannot parse git version from %q", strings.TrimSpace(string(out)))
+	}
+
+	wantMajor, wantMinor := partialCloneMinGit[0], partialCloneMinGit[1]
+	if major < wantMajor || (major == wantMajor && minor < wantMinor) {
+		t.Skipf("git %d.%d has no clone --filter, so a partial clone cannot be built (needs %d.%d+)",
+			major, minor, wantMajor, wantMinor)
+	}
+}
+
+// parseGitMajorMinor extracts the major and minor version from `git version`
+// output, which carries a variable number of trailing components and, on some
+// platforms, a vendor suffix. ok is false when the output cannot be read, which
+// callers treat as "unknown, skip" rather than assuming a modern Git.
+func parseGitMajorMinor(out string) (major, minor int, ok bool) {
+	fields := strings.Fields(out)
+	if len(fields) < 3 || fields[0] != "git" || fields[1] != "version" {
+		return 0, 0, false
+	}
+
+	parts := strings.Split(fields[2], ".")
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+
+	return major, minor, true
 }
 
 // git runs a git command that is expected to succeed and returns its output.
@@ -163,7 +224,7 @@ var partialCloneFilters = []string{"blob:none", "tree:0"}
 // absences into corruption and cost the repository its ability to gc.
 func TestRepackObjectsOnPartialClone(t *testing.T) {
 	t.Parallel()
-	requireGitBinary(t)
+	requireGitPartialClone(t)
 
 	for _, filter := range partialCloneFilters {
 		t.Run(filter, func(t *testing.T) {
@@ -197,7 +258,7 @@ func TestRepackObjectsOnPartialClone(t *testing.T) {
 // that RepackObjects used to fail in.
 func TestPruneOnPartialClone(t *testing.T) {
 	t.Parallel()
-	requireGitBinary(t)
+	requireGitPartialClone(t)
 
 	for _, filter := range partialCloneFilters {
 		t.Run(filter, func(t *testing.T) {
@@ -223,7 +284,7 @@ func TestPruneOnPartialClone(t *testing.T) {
 // writing into a partial clone, which must leave the existing markers alone.
 func TestPartialCloneMarkersSurviveObjectWrites(t *testing.T) {
 	t.Parallel()
-	requireGitBinary(t)
+	requireGitPartialClone(t)
 
 	dir := newPartialClone(t, "blob:none")
 	before := promisorMarkers(t, dir)
@@ -244,4 +305,46 @@ func TestPartialCloneMarkersSurviveObjectWrites(t *testing.T) {
 
 	assert.ElementsMatch(t, before, promisorMarkers(t, dir))
 	requireFsckClean(t, dir)
+}
+
+// TestParseGitMajorMinor covers the shapes `git version` emits. Misreading it
+// would skip the partial-clone tests on a Git that supports them, or run them
+// on one that does not and fail building the fixture.
+func TestParseGitMajorMinor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		out   string
+		major int
+		minor int
+		ok    bool
+	}{
+		{name: "release", out: "git version 2.19.0\n", major: 2, minor: 19, ok: true},
+		{name: "patch release", out: "git version 2.50.1\n", major: 2, minor: 50, ok: true},
+		{name: "vendor suffix", out: "git version 2.50.1 (Apple Git-155)\n", major: 2, minor: 50, ok: true},
+		{name: "build from master", out: "git version 2.55.0.525.g2c78326f81\n", major: 2, minor: 55, ok: true},
+		{name: "windows suffix", out: "git version 2.51.0.windows.1\n", major: 2, minor: 51, ok: true},
+		{name: "legacy", out: "git version 2.11.0\n", major: 2, minor: 11, ok: true},
+		{name: "empty", out: ""},
+		{name: "truncated", out: "git version\n"},
+		{name: "unexpected prefix", out: "hg version 2.19.0\n"},
+		{name: "single component", out: "git version 2\n"},
+		{name: "non-numeric", out: "git version next.0\n"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			major, minor, ok := parseGitMajorMinor(tc.out)
+			if !tc.ok {
+				assert.False(t, ok, "parseGitMajorMinor(%q) should report failure", tc.out)
+				return
+			}
+			require.True(t, ok, "parseGitMajorMinor(%q) should succeed", tc.out)
+			assert.Equal(t, tc.major, major)
+			assert.Equal(t, tc.minor, minor)
+		})
+	}
 }
