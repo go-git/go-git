@@ -58,6 +58,13 @@ const (
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
+
+	// promisorExt marks a pack as having been received from a promisor
+	// remote, meaning objects it references but does not contain are
+	// promised by that remote rather than missing. Git refuses to treat
+	// such absences as legitimate without this marker: fsck reports them as
+	// broken links and gc fails outright.
+	promisorExt = ".promisor"
 )
 
 var (
@@ -367,6 +374,60 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	return pw, nil
 }
 
+// NewPromisorObjectPack is NewObjectPack for a packfile received from a
+// promisor remote, as a filtered (partial clone) fetch produces. Alongside the
+// pack it writes a .promisor sidecar containing marker, which is how git tells
+// objects the remote deliberately withheld from ones that are genuinely
+// missing. Without it git reports the withheld objects as broken links and
+// refuses to gc the repository.
+//
+// Git writes the refs it sought as the marker, one "<hash> <ref>" line each,
+// when the pack came from a fetch, and an empty marker when repacking. Either
+// is accepted: only the file's presence is ever consulted, never its contents.
+func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
+	pw, err := d.NewObjectPack()
+	if err != nil {
+		return nil, err
+	}
+
+	pw.promisor = &marker
+	return pw, nil
+}
+
+// PromisorObjectPacks returns the hashes of the packs that were received from a
+// promisor remote, that is those carrying a .promisor marker.
+func (d *DotGit) PromisorObjectPacks() ([]plumbing.Hash, error) {
+	packs, err := d.ObjectPacks()
+	if err != nil {
+		return nil, err
+	}
+
+	var promisors []plumbing.Hash
+	for _, h := range packs {
+		ok, err := d.hasPromisor(h)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			promisors = append(promisors, h)
+		}
+	}
+
+	return promisors, nil
+}
+
+// hasPromisor reports whether the pack carries a .promisor marker.
+func (d *DotGit) hasPromisor(hash plumbing.Hash) (bool, error) {
+	fi, err := d.fs.Lstat(d.objectPackPath(hash, promisorExt[1:]))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return fi.Mode().IsRegular(), nil
+}
+
 // ObjectPacks returns the list of availables packfiles
 func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
 	if !d.options.ExclusiveAccess {
@@ -669,10 +730,16 @@ func (a packHandleAdapter) PackHash() (plumbing.Hash, error) {
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
-// The .pack, .idx and .rev files are each attempted independently; any
-// failures are joined into the returned error so a partial failure cannot
+// The .pack, .idx, .rev and .promisor files are each attempted independently;
+// any failures are joined into the returned error so a partial failure cannot
 // leave orphaned siblings on disk. A missing .rev is not an error — the
-// reverse index is optional and may have been generated only in memory.
+// reverse index is optional and may have been generated only in memory — and
+// neither is a missing .promisor, which only packs fetched from a promisor
+// remote carry.
+//
+// The .promisor is the one sibling that is not independent: it is removed only
+// once the pack itself is gone, since a pack left on disk without it reads as
+// corrupt.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	var errs []error
 	if err := d.cleanPackList(); err != nil {
@@ -692,9 +759,28 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 		}
 	}
 
-	for _, ext := range []string{`pack`, `idx`, `rev`} {
+	// The pack goes first, because the .promisor may only outlive it, never the
+	// other way round. A marker removed while its pack is still readable turns
+	// every object the promisor remote withheld into what git reports as a
+	// broken link, so on a removal that leaves the pack behind the marker stays
+	// too. An already-absent pack is a different matter: the marker is then an
+	// orphan vouching for nothing, and goes.
+	packGone := true
+	if err := d.fs.Remove(packPath); err != nil {
+		if !os.IsNotExist(err) {
+			packGone = false
+		}
+		errs = append(errs, err)
+	}
+
+	siblings := []string{`idx`, `rev`}
+	if packGone {
+		siblings = append(siblings, `promisor`)
+	}
+
+	for _, ext := range siblings {
 		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
-			if ext == `rev` && os.IsNotExist(err) {
+			if (ext == `rev` || ext == `promisor`) && os.IsNotExist(err) {
 				continue
 			}
 			errs = append(errs, err)

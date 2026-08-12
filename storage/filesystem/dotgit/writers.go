@@ -36,6 +36,9 @@ type PackWriter struct {
 	result   chan error
 	format   formatcfg.ObjectFormat
 	writeRev bool
+	// promisor, when non-nil, writes a .promisor sidecar next to the pack
+	// carrying these contents. A nil value leaves the pack unmarked.
+	promisor *string
 }
 
 func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
@@ -198,6 +201,41 @@ func (w *PackWriter) save() error {
 	if err != nil {
 		return err
 	}
+
+	// The marker is written before the pack is moved into place, and only for a
+	// pack this writer is placing. A pack visible without its marker looks
+	// ordinary, so whatever the promisor remote withheld would read as
+	// corruption until the marker landed; crashing in that window must not be
+	// able to produce a repository git refuses to gc.
+	//
+	// An identical pack already on disk is left exactly as it is, marked or
+	// not. Packs are content addressed, so the same hash means the same
+	// objects, and nothing is missing that was not missing before; marking it
+	// now would newly declare the repository a partial clone on the strength of
+	// a duplicate.
+	if w.promisor != nil && !exists {
+		promisorPath := fmt.Sprintf("%s%s", base, promisorExt)
+		promisorExists, err := fileExists(w.fs, promisorPath)
+		if err != nil {
+			return err
+		}
+		if !promisorExists {
+			f, err := w.fs.Create(promisorPath)
+			if err != nil {
+				return err
+			}
+
+			if _, err := io.WriteString(f, *w.promisor); err != nil {
+				_ = f.Close()
+				return err
+			}
+
+			if err := f.Close(); err != nil {
+				return err
+			}
+		}
+	}
+
 	if !exists {
 		if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
 			return err

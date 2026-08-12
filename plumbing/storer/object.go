@@ -99,6 +99,36 @@ type PackfileWriter interface {
 	PackfileWriter() (io.WriteCloser, error)
 }
 
+// PromisorPackfileWriter is an optional interface for ObjectStorer
+// implementations that can record a packfile as having come from a promisor
+// remote, which a filtered (partial clone) fetch requires.
+//
+// A pack fetched with a filter is missing the objects the filter excluded, and
+// git only treats those absences as legitimate when the pack is marked. An
+// implementation that cannot record the mark should not be used for filtered
+// fetches that land on disk: git reports the excluded objects as broken links
+// and refuses to gc the repository.
+type PromisorPackfileWriter interface {
+	// PromisorPackfileWriter returns a writer for a packfile received from a
+	// promisor remote. marker is stored verbatim alongside the pack; git writes
+	// the refs it sought there when the pack came from a fetch, and nothing at
+	// all when repacking. Only the file's presence is ever consulted, so the
+	// contents are free-form.
+	PromisorPackfileWriter(marker string) (io.WriteCloser, error)
+}
+
+// PromisorObjectStorer is an optional interface for ObjectStorer
+// implementations that track which packs came from a promisor remote.
+//
+// It lets callers tell a repository that is a partial clone, and whose missing
+// objects are therefore expected, from one that is simply incomplete.
+type PromisorObjectStorer interface {
+	// PromisorObjectPacks returns the hashes of the packs received from a
+	// promisor remote. An empty result means the repository is not a partial
+	// clone, so any missing object is genuinely missing.
+	PromisorObjectPacks() ([]plumbing.Hash, error)
+}
+
 // EncodedObjectIter is a generic closable interface for iterating over objects.
 type EncodedObjectIter interface {
 	Next() (plumbing.EncodedObject, error)

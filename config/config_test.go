@@ -604,6 +604,110 @@ func (s *ConfigSuite) TestUnmarshalRemotesNamedFirst() {
 	s.Equal([]RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, unnamedRemote.Fetch)
 }
 
+// TestUnmarshalRemotePartialClone reads back the partial-clone keys exactly as
+// the git binary writes them for a `clone --filter=blob:none`.
+func TestUnmarshalRemotePartialClone(t *testing.T) {
+	t.Parallel()
+
+	input := []byte(`[core]
+	repositoryformatversion = 1
+[remote "origin"]
+	url = https://github.com/go-git/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	promisor = true
+	partialclonefilter = blob:none
+`)
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal(input))
+
+	origin := cfg.Remotes["origin"]
+	require.NotNil(t, origin)
+	assert.True(t, origin.Promisor)
+	assert.Equal(t, "blob:none", origin.PartialCloneFilter)
+}
+
+func TestMarshalRemotePartialClone(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		promisor bool
+		filter   string
+		want     []string
+		notWant  []string
+	}{
+		{
+			name:     "promisor with filter",
+			promisor: true,
+			filter:   "blob:none",
+			want:     []string{"promisor = true", "partialclonefilter = blob:none"},
+		},
+		{
+			name:     "tree filter",
+			promisor: true,
+			filter:   "tree:0",
+			want:     []string{"promisor = true", "partialclonefilter = tree:0"},
+		},
+		{
+			name:    "neither set writes no partial-clone keys",
+			notWant: []string{"promisor", "partialclonefilter"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			cfg.Remotes["origin"] = &RemoteConfig{
+				Name:               "origin",
+				URLs:               []string{"https://github.com/go-git/go-git.git"},
+				Promisor:           tc.promisor,
+				PartialCloneFilter: tc.filter,
+			}
+
+			b, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			for _, want := range tc.want {
+				assert.Contains(t, string(b), want)
+			}
+			for _, notWant := range tc.notWant {
+				assert.NotContains(t, string(b), notWant)
+			}
+		})
+	}
+}
+
+// TestMarshalRemoteClearsPartialClone covers the state behind the fetch
+// failures this config exists to prevent: a promisor = true left behind without
+// a partialclonefilter makes git fetch unfiltered into a repository that is
+// missing objects, which then fails resolving deltas against absent bases.
+// Clearing either field must remove the key rather than leave it on disk.
+func TestMarshalRemoteClearsPartialClone(t *testing.T) {
+	t.Parallel()
+
+	input := []byte(`[remote "origin"]
+	url = https://github.com/go-git/go-git.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	promisor = true
+	partialclonefilter = blob:none
+`)
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal(input))
+
+	cfg.Remotes["origin"].Promisor = false
+	cfg.Remotes["origin"].PartialCloneFilter = ""
+
+	b, err := cfg.Marshal()
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(b), "promisor")
+	assert.NotContains(t, string(b), "partialclonefilter")
+}
+
 func TestUnmarshalPackReverseIndex(t *testing.T) {
 	t.Parallel()
 

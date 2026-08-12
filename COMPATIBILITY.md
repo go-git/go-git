@@ -167,6 +167,7 @@ compatibility status with go-git.
 | multi-pack-index     | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ❌     |       |
 | pack-\*.rev files    | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ✅     |       |
 | pack-\*.mtimes files | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt)   | ❌     |       |
+| pack-\*.promisor files | [v1](https://github.com/git/git/blob/master/Documentation/gitformat-pack.txt) | ✅     | Written for packs received by a filtered fetch, and preserved across repack. |
 | cruft packs          |                                                                                 | ❌     |       |
 
 ## Capabilities
@@ -198,7 +199,7 @@ compatibility status with go-git.
 | `allow-tip-sha1-in-want`       | ✅           |       |
 | `allow-reachable-sha1-in-want` | ❌           |       |
 | `push-cert=<nonce>`            | ❌           |       |
-| `filter`                       | ❌           |       |
+| `filter`                       | ⚠️ (partial) | Fetching with a filter is supported and records the partial clone (promisor-marked packs, `remote.<name>.promisor` and `partialclonefilter`), so git accepts the result. go-git cannot fetch the withheld objects back on demand, so reading one fails rather than backfilling it. Not offered when serving. |
 | `session-id=<session id>`      | ❌           |       |
 
 ## Transport Schemes

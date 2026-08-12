@@ -433,11 +433,32 @@ func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 
 // PackfileWriter returns a writer for creating a new packfile.
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
+	return s.packfileWriter(func() (*dotgit.PackWriter, error) {
+		return s.dir.NewObjectPack()
+	})
+}
+
+// PromisorPackfileWriter returns a writer for creating a new packfile received
+// from a promisor remote, marking it so that the objects the remote filtered
+// out are understood to be promised rather than missing.
+func (s *ObjectStorage) PromisorPackfileWriter(marker string) (io.WriteCloser, error) {
+	return s.packfileWriter(func() (*dotgit.PackWriter, error) {
+		return s.dir.NewPromisorObjectPack(marker)
+	})
+}
+
+// PromisorObjectPacks returns the hashes of the packs that came from a promisor
+// remote.
+func (s *ObjectStorage) PromisorObjectPacks() ([]plumbing.Hash, error) {
+	return s.dir.PromisorObjectPacks()
+}
+
+func (s *ObjectStorage) packfileWriter(newPack func() (*dotgit.PackWriter, error)) (io.WriteCloser, error) {
 	if err := s.requireIndex(); err != nil {
 		return nil, err
 	}
 
-	w, err := s.dir.NewObjectPack()
+	w, err := newPack()
 	if err != nil {
 		return nil, err
 	}

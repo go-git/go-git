@@ -36,7 +36,21 @@ func FetchPack(
 		reader = demuxer
 	}
 
-	if err := packfile.UpdateObjectStorage(st, reader); err != nil {
+	// A filtered fetch deliberately leaves out objects, so the pack has to be
+	// recorded as coming from a promisor remote. Git otherwise reads those
+	// absences as corruption: fsck reports broken links to them and gc fails
+	// with "unable to read".
+	//
+	// The marker is left empty. Git fills it with the refs it sought on this
+	// path (fetch-pack.c create_promisor_file) and leaves it empty when
+	// repacking (repack-promisor.c), and accepts either, because only the
+	// file's presence is ever consulted — packfile.c tests it with access(2)
+	// and never opens it.
+	if req.Filter != "" {
+		if err := packfile.UpdatePromisorObjectStorage(st, reader, ""); err != nil {
+			return err
+		}
+	} else if err := packfile.UpdateObjectStorage(st, reader); err != nil {
 		return err
 	}
 

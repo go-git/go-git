@@ -2116,6 +2116,30 @@ func (r *Repository) Merge(ref plumbing.Reference, opts MergeOptions) error {
 	return r.Storer.SetReference(plumbing.NewHashReference(head.Name(), ref.Hash()))
 }
 
+// newPackWriter opens a writer for the pack a repack is about to produce.
+//
+// Repacking a partial clone folds objects out of promisor packs into the new
+// one, which therefore has to be marked promisor itself. Left unmarked, the
+// trees it carries would reference blobs the remote withheld with nothing to
+// record that the absence is intended, and git would report them as broken
+// links and refuse to gc the repository — the very state repacking is meant to
+// tidy up.
+func (r *Repository) newPackWriter(promisor bool) (io.WriteCloser, error) {
+	if promisor {
+		ppw, ok := r.Storer.(storer.PromisorPackfileWriter)
+		if !ok {
+			return nil, fmt.Errorf("repository storer cannot record promisor packs, refusing to repack a partial clone")
+		}
+		return ppw.PromisorPackfileWriter("")
+	}
+
+	pfw, ok := r.Storer.(storer.PackfileWriter)
+	if !ok {
+		return nil, fmt.Errorf("Repository storer is not a storer.PackfileWriter")
+	}
+	return pfw.PackfileWriter()
+}
+
 // createNewObjectPack is a helper for RepackObjects taking care
 // of creating a new pack. It is used so the PackfileWriter
 // deferred close has the right scope.
@@ -2125,15 +2149,12 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	if err != nil {
 		return h, err
 	}
-	objs := make([]plumbing.Hash, 0, len(ow.seen))
-	for h := range ow.seen {
-		objs = append(objs, h)
-	}
-	pfw, ok := r.Storer.(storer.PackfileWriter)
-	if !ok {
-		return h, fmt.Errorf("Repository storer is not a storer.PackfileWriter")
-	}
-	wc, err := pfw.PackfileWriter()
+	// Only objects that are actually present can be written out. In a partial
+	// clone the walk reaches objects the promisor remote withheld, and asking
+	// the encoder for those fails with "object not found".
+	objs := ow.present()
+
+	wc, err := r.newPackWriter(ow.promisor)
 	if err != nil {
 		return h, err
 	}
