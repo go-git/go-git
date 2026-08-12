@@ -1060,11 +1060,13 @@ type RemoteConfig struct {
 	// the .promisor marker on each pack received from it.
 	Promisor bool
 
-	// PartialCloneFilter is the object filter last used to fetch from this
-	// remote, in the wire format git records (e.g. "blob:none"). Git reapplies
-	// it to subsequent fetches, so leaving it unset while Promisor is true
-	// makes later fetches ask for objects the local repository is missing the
-	// delta bases for.
+	// PartialCloneFilter is the object filter git reapplies to fetches from this
+	// remote, in the wire format git records (e.g. "blob:none").
+	//
+	// It is the filter the partial clone was first established with, not the one
+	// most recently used: git records it once and treats it as the default from
+	// then on. Leaving it unset while Promisor is true makes later fetches ask
+	// for objects the local repository is missing the delta bases for.
 	PartialCloneFilter string
 
 	// raw representation of the subsection, filled by marshal or unmarshal are
