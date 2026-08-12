@@ -735,6 +735,10 @@ func (a packHandleAdapter) PackHash() (plumbing.Hash, error) {
 // reverse index is optional and may have been generated only in memory — and
 // neither is a missing .promisor, which only packs fetched from a promisor
 // remote carry.
+//
+// The .promisor is the one sibling that is not independent: it is removed only
+// once the pack itself is gone, since a pack left on disk without it reads as
+// corrupt.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	var errs []error
 	if err := d.cleanPackList(); err != nil {
@@ -754,7 +758,26 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 		}
 	}
 
-	for _, ext := range []string{`pack`, `idx`, `rev`, `promisor`} {
+	// The pack goes first, because the .promisor may only outlive it, never the
+	// other way round. A marker removed while its pack is still readable turns
+	// every object the promisor remote withheld into what git reports as a
+	// broken link, so on a removal that leaves the pack behind the marker stays
+	// too. An already-absent pack is a different matter: the marker is then an
+	// orphan vouching for nothing, and goes.
+	packGone := true
+	if err := d.fs.Remove(packPath); err != nil {
+		if !os.IsNotExist(err) {
+			packGone = false
+		}
+		errs = append(errs, err)
+	}
+
+	siblings := []string{`idx`, `rev`}
+	if packGone {
+		siblings = append(siblings, `promisor`)
+	}
+
+	for _, ext := range siblings {
 		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
 			if (ext == `rev` || ext == `promisor`) && os.IsNotExist(err) {
 				continue
