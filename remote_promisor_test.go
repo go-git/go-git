@@ -55,7 +55,11 @@ func TestRecordPromisor(t *testing.T) {
 		assert.Equal(t, "blob:none", rem.Config().PartialCloneFilter)
 	})
 
-	t.Run("updates the filter when it changes", func(t *testing.T) {
+	// Git records the first filter as the default to reapply to later fetches
+	// and does not rewrite it, so a second fetch with a different filter leaves
+	// the recorded one alone. Overwriting it would change what a plain
+	// `git fetch` does from then on.
+	t.Run("keeps the first filter when a later fetch differs", func(t *testing.T) {
 		t.Parallel()
 
 		r := newRepo(t)
@@ -67,6 +71,28 @@ func TestRecordPromisor(t *testing.T) {
 
 		cfg, err := r.Config()
 		require.NoError(t, err)
+		assert.Equal(t, "blob:none", cfg.Remotes[DefaultRemoteName].PartialCloneFilter)
+		assert.Equal(t, "blob:none", rem.Config().PartialCloneFilter)
+	})
+
+	// A remote already flagged promisor but carrying no filter is not the
+	// sticky case: git falls through and records one, and so does this.
+	t.Run("records a filter onto a promisor remote that has none", func(t *testing.T) {
+		t.Parallel()
+
+		r := newRepo(t)
+		cfg, err := r.Config()
+		require.NoError(t, err)
+		cfg.Remotes[DefaultRemoteName].Promisor = true
+		require.NoError(t, r.Storer.SetConfig(cfg))
+
+		rem, err := r.Remote(DefaultRemoteName)
+		require.NoError(t, err)
+		require.NoError(t, rem.recordPromisor(packp.FilterTreeDepth(0)))
+
+		cfg, err = r.Config()
+		require.NoError(t, err)
+		assert.True(t, cfg.Remotes[DefaultRemoteName].Promisor)
 		assert.Equal(t, "tree:0", cfg.Remotes[DefaultRemoteName].PartialCloneFilter)
 	})
 

@@ -647,6 +647,10 @@ func (r *Remote) transportProtocol() protocol.Version {
 // second leaves the repository fetching unfiltered while missing objects, which
 // fails in index-pack resolving deltas against bases it never receives.
 //
+// The filter is recorded once and then left alone, which is git's behaviour: it
+// is the default reapplied to later fetches, not a record of the most recent
+// one.
+//
 // Nothing is recorded for a fetch that did not come from a configured remote:
 // an anonymous URL fetch has no remote section to write to, and git leaves the
 // configured remotes alone in that case too.
@@ -665,16 +669,26 @@ func (r *Remote) recordPromisor(filter packp.Filter) error {
 		return nil
 	}
 
-	if remote.Promisor && remote.PartialCloneFilter == string(filter) {
+	// A filter already recorded for this remote is left alone, even when this
+	// fetch used a different one. Git treats the first filter as the default to
+	// reapply to later fetches and does not rewrite it
+	// (list-objects-filter-options.c partial_clone_register returns early once
+	// the remote has a partialclonefilter), so overwriting it here would change
+	// what an unfiltered `git fetch` does afterwards.
+	if remote.Promisor && remote.PartialCloneFilter != "" {
 		return nil
 	}
 
-	remote.Promisor = true
-	remote.PartialCloneFilter = string(filter)
+	if !remote.Promisor {
+		remote.Promisor = true
 
-	// Partial clone is a repository format extension, so the format version
-	// has to allow extensions to be present at all.
-	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+		// Partial clone is a repository format extension, so the format
+		// version has to allow extensions to be present at all. Git raises it
+		// when first registering the remote, for the same reason.
+		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	}
+
+	remote.PartialCloneFilter = string(filter)
 
 	if err := r.s.SetConfig(cfg); err != nil {
 		return err
