@@ -198,3 +198,53 @@ func (s *RefSpecSuite) TestMatchAny() {
 	s.True(MatchAny(specs, plumbing.ReferenceName("refs/heads/bar")))
 	s.False(MatchAny(specs, plumbing.ReferenceName("refs/heads/master")))
 }
+
+func (s *RefSpecSuite) TestRefSpecIsNegative() {
+	spec := RefSpec("^refs/heads/excluded")
+	s.True(spec.IsNegative())
+
+	spec = RefSpec("^refs/heads/*")
+	s.True(spec.IsNegative())
+
+	spec = RefSpec("refs/heads/*:refs/remotes/origin/*")
+	s.False(spec.IsNegative())
+
+	spec = RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	s.False(spec.IsNegative())
+
+	spec = RefSpec(":refs/heads/master")
+	s.False(spec.IsNegative())
+
+	spec = RefSpec("")
+	s.False(spec.IsNegative())
+}
+
+func (s *RefSpecSuite) TestRefSpecNegativeIsValid() {
+	// Negative refspecs carry no destination, so the "<src>:<dst>" checks
+	// must not apply to them.
+	spec := RefSpec("^refs/heads/some-excluded-branch")
+	s.NoError(spec.Validate())
+
+	spec = RefSpec("^refs/heads/*")
+	s.NoError(spec.Validate())
+
+	// Sanity: a malformed non-negative refspec still fails as before.
+	spec = RefSpec("refs/heads/*")
+	s.ErrorIs(spec.Validate(), ErrRefSpecMalformedSeparator)
+}
+
+func (s *RefSpecSuite) TestRefSpecNegativeAccessors() {
+	spec := RefSpec("^refs/heads/excluded")
+	s.Equal("refs/heads/excluded", spec.Src())
+	s.Equal("", spec.Dst(plumbing.ReferenceName("refs/heads/anything")).String())
+
+	spec = RefSpec("^refs/heads/*")
+	s.Equal("refs/heads/*", spec.Src())
+	s.Equal("", spec.Dst(plumbing.ReferenceName("refs/heads/foo")).String())
+
+	// Negative refspecs are not force updates, not deletes, and not SHA1 refs.
+	spec = RefSpec("^refs/heads/excluded")
+	s.False(spec.IsForceUpdate())
+	s.False(spec.IsDelete())
+	s.False(spec.IsExactSHA1())
+}
