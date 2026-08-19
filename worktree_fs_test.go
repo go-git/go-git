@@ -598,8 +598,8 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			path:    "CON/file",
 			config:  map[string]string{"core.protectNTFS": "true"},
 			skipGit: runtime.GOOS != "windows",
-			// On non-Windows the reserved-name check is a no-op, so
-			// go-git accepts the cherry-pick like upstream git does.
+			// Reserved names are rejected only on Windows, so the
+			// cherry-pick is accepted on non-Windows.
 			acceptGoGitErr: runtime.GOOS != "windows",
 		},
 		{
@@ -607,8 +607,8 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			path:    "NUL",
 			config:  map[string]string{"core.protectNTFS": "true"},
 			skipGit: runtime.GOOS != "windows",
-			// On non-Windows the reserved-name check is a no-op, so
-			// go-git accepts the cherry-pick like upstream git does.
+			// Reserved names are rejected only on Windows, so the
+			// cherry-pick is accepted on non-Windows.
 			acceptGoGitErr: runtime.GOOS != "windows",
 		},
 		{
@@ -1474,17 +1474,20 @@ func TestValidPathProtectNTFS(t *testing.T) {
 	// mirroring upstream Git's is_valid_win32_path which is compiled
 	// only into Windows-native/Cygwin builds. On other platforms these
 	// are legitimate filenames.
-	reservedNames := []struct {
-		path    string
-		wantErr bool
-	}{
-		{"CON", runtime.GOOS == "windows"},
-		{"aux.txt", runtime.GOOS == "windows"},
-		{"sub/NUL", runtime.GOOS == "windows"},
-		{"sub/COM1.txt", runtime.GOOS == "windows"},
-		{"CONIN$", runtime.GOOS == "windows"},
+	for _, name := range pathutil.WindowsReservedNames {
+		tests = append(tests, struct {
+			path    string
+			wantErr bool
+		}{name, runtime.GOOS == "windows"})
 	}
-	tests = append(tests, reservedNames...)
+	// Path forms that exercise the reserved-name matcher's
+	// "followed by a dot or directory separator" rules.
+	for _, name := range []string{"aux.txt", "sub/NUL", "sub/COM1.txt", "CONIN$"} {
+		tests = append(tests, struct {
+			path    string
+			wantErr bool
+		}{name, runtime.GOOS == "windows"})
+	}
 
 	if runtime.GOOS == "windows" {
 		// filepath.VolumeName only parses volume names on Windows.

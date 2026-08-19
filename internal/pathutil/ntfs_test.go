@@ -44,13 +44,7 @@ func TestWindowsValidPath(t *testing.T) {
 	// builds, matching upstream Git's is_valid_win32_path which is
 	// compiled only into Windows-native/Cygwin builds. On other
 	// platforms these are legitimate filenames.
-	reservedNames := []string{
-		"CON", "con", "CON.txt", "CON:ads", "CON ",
-		"PRN", "AUX", "NUL",
-		"COM1", "COM9", "LPT1", "LPT9",
-		"CONIN$", "CONOUT$",
-	}
-	for _, name := range reservedNames {
+	for _, name := range WindowsReservedNames {
 		tests = append(tests, struct {
 			path string
 			want bool
@@ -69,7 +63,7 @@ func TestWindowsValidPath(t *testing.T) {
 func TestIsWindowsReservedName(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"CON", "con", "CON.txt", "CON:ads", "CON ", "PRN", "AUX", "NUL", "COM1", "COM9", "LPT1", "LPT9", "CONIN$", "CONOUT$"} {
+	for _, name := range WindowsReservedNames {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, runtime.GOOS == "windows", IsWindowsReservedName(name))
