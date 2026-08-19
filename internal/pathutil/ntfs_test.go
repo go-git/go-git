@@ -7,6 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// windows reports whether the test binary runs on Windows. The
+// reserved-name check mirrors upstream Git's compile-time
+// is_valid_win32_path gating, so every platform-gated expectation
+// derives from this single expression.
+func windows() bool { return runtime.GOOS == "windows" }
+
 func TestWindowsValidPath(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -48,7 +54,7 @@ func TestWindowsValidPath(t *testing.T) {
 		tests = append(tests, struct {
 			path string
 			want bool
-		}{name, runtime.GOOS != "windows"})
+		}{name, !windows()})
 	}
 
 	for _, tc := range tests {
@@ -66,7 +72,7 @@ func TestIsWindowsReservedName(t *testing.T) {
 	for _, name := range WindowsReservedNames {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, runtime.GOOS == "windows", IsWindowsReservedName(name))
+			assert.Equal(t, windows(), IsWindowsReservedName(name))
 		})
 	}
 

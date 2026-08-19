@@ -26,6 +26,14 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
+// onWindows reports whether the test binary runs on Windows. The
+// reserved-name check mirrors upstream Git's compile-time
+// is_valid_win32_path gating, so every platform-gated expectation
+// derives from this single expression. Named onWindows to avoid
+// colliding with the golang.org/x/sys/windows import in
+// worktree_windows.go.
+func onWindows() bool { return runtime.GOOS == "windows" }
+
 func TestValidPath(t *testing.T) {
 	t.Parallel()
 
@@ -597,19 +605,19 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			name:    "NTFS reserved device name CON",
 			path:    "CON/file",
 			config:  map[string]string{"core.protectNTFS": "true"},
-			skipGit: runtime.GOOS != "windows",
+			skipGit: !onWindows(),
 			// Reserved names are rejected only on Windows, so the
 			// cherry-pick is accepted on non-Windows.
-			acceptGoGitErr: runtime.GOOS != "windows",
+			acceptGoGitErr: !onWindows(),
 		},
 		{
 			name:    "NTFS reserved device name NUL",
 			path:    "NUL",
 			config:  map[string]string{"core.protectNTFS": "true"},
-			skipGit: runtime.GOOS != "windows",
+			skipGit: !onWindows(),
 			// Reserved names are rejected only on Windows, so the
 			// cherry-pick is accepted on non-Windows.
-			acceptGoGitErr: runtime.GOOS != "windows",
+			acceptGoGitErr: !onWindows(),
 		},
 		{
 			name:   "HFS+ zero-width character in .git",
@@ -718,7 +726,7 @@ func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
 	dst := t.TempDir()
 	_, err = PlainClone(dst, &CloneOptions{URL: dir})
 
-	if runtime.GOOS == "windows" {
+	if onWindows() {
 		// On Windows the reserved-name check still applies and the
 		// checkout must fail.
 		assert.Error(t, err, "clone should reject prn.sh on Windows")
@@ -1478,7 +1486,7 @@ func TestValidPathProtectNTFS(t *testing.T) {
 		tests = append(tests, struct {
 			path    string
 			wantErr bool
-		}{name, runtime.GOOS == "windows"})
+		}{name, onWindows()})
 	}
 	// Path forms that exercise the reserved-name matcher's
 	// "followed by a dot or directory separator" rules.
@@ -1486,10 +1494,10 @@ func TestValidPathProtectNTFS(t *testing.T) {
 		tests = append(tests, struct {
 			path    string
 			wantErr bool
-		}{name, runtime.GOOS == "windows"})
+		}{name, onWindows()})
 	}
 
-	if runtime.GOOS == "windows" {
+	if onWindows() {
 		// filepath.VolumeName only parses volume names on Windows.
 		tests = append(tests, []struct {
 			path    string
