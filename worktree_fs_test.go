@@ -536,6 +536,13 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 		// platform (e.g. reserved device names are only checked by
 		// compat/mingw.c, which is not compiled on non-Windows).
 		skipGit bool
+		// acceptGoGitErr is whether go-git's cherry-pick must accept
+		// the path instead of rejecting it. The zero value rejects,
+		// which is correct for every row except reserved device names:
+		// those are rejected only on Windows (matching upstream
+		// is_valid_win32_path), so the rows opt into acceptance on
+		// non-Windows.
+		acceptGoGitErr bool
 	}{
 		{
 			name: ".git at root",
@@ -591,12 +598,18 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			path:    "CON/file",
 			config:  map[string]string{"core.protectNTFS": "true"},
 			skipGit: runtime.GOOS != "windows",
+			// On non-Windows the reserved-name check is a no-op, so
+			// go-git accepts the cherry-pick like upstream git does.
+			acceptGoGitErr: runtime.GOOS != "windows",
 		},
 		{
 			name:    "NTFS reserved device name NUL",
 			path:    "NUL",
 			config:  map[string]string{"core.protectNTFS": "true"},
 			skipGit: runtime.GOOS != "windows",
+			// On non-Windows the reserved-name check is a no-op, so
+			// go-git accepts the cherry-pick like upstream git does.
+			acceptGoGitErr: runtime.GOOS != "windows",
 		},
 		{
 			name:   "HFS+ zero-width character in .git",
@@ -646,7 +659,11 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 				&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true},
 				TheirsMergeStrategy, badCommit,
 			)
-			assert.Error(t, goGitErr, "go-git should reject cherry-pick of %q", tc.path)
+			if tc.acceptGoGitErr {
+				assert.NoError(t, goGitErr, "go-git should accept cherry-pick of %q", tc.path)
+			} else {
+				assert.Error(t, goGitErr, "go-git should reject cherry-pick of %q", tc.path)
+			}
 
 			if !tc.skipGit {
 				require.NoError(t, w.Reset(&ResetOptions{Commit: initHash, Mode: HardReset}))
@@ -656,6 +673,64 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCheckoutWindowsReservedDeviceName reproduces go-git issue #2322:
+// Worktree.Checkout (and PlainClone) rejected files whose base name is
+// a Windows reserved device name (e.g. prn.sh) even on Linux/macOS,
+// where such names are legitimate. The regression shipped in v5.19.1
+// when defaultProtectNTFS() began returning true on every platform and
+// the worktree write path applied WindowsValidPath unconditionally.
+//
+// The tree entry is built via plumbing (not a real on-disk file) so the
+// fixture is platform-independent: a file named prn.sh cannot be created
+// on disk on Windows.
+func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
+	t.Parallel()
+
+	// Build a source repo whose tree contains prn.sh, with the entry
+	// created through plumbing so the fixture works on every platform.
+	dir := t.TempDir()
+
+	r1, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	defer func() { _ = r1.Close() }()
+
+	w, err := r1.Worktree()
+	require.NoError(t, err)
+
+	require.NoError(t, util.WriteFile(w.Filesystem(), "README", []byte("init"), 0o644))
+	_, err = w.Add("README")
+	require.NoError(t, err)
+
+	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	initCommit, err := r1.CommitObject(initHash)
+	require.NoError(t, err)
+
+	badCommit := buildCommitWithEntry(t, r1.Storer, initCommit, initHash, "prn.sh", filemode.Regular)
+
+	// Point the default branch at the commit containing prn.sh so a
+	// subsequent clone sees it.
+	require.NoError(t, r1.Storer.SetReference(plumbing.NewHashReference(plumbing.Master, badCommit.Hash)))
+
+	dst := t.TempDir()
+	_, err = PlainClone(dst, &CloneOptions{URL: dir})
+
+	if runtime.GOOS == "windows" {
+		// On Windows the reserved-name check still applies and the
+		// checkout must fail.
+		assert.Error(t, err, "clone should reject prn.sh on Windows")
+		return
+	}
+
+	// On non-Windows prn.sh is a legitimate filename; the clone must
+	// succeed and the file must be materialised.
+	require.NoError(t, err)
+	info, err := os.Stat(filepath.Join(dst, "prn.sh"))
+	require.NoError(t, err, "prn.sh should be checked out on non-Windows")
+	assert.False(t, info.IsDir())
 }
 
 func TestCherryPickDoesNotWriteThroughLeadingSymlink(t *testing.T) {
@@ -1390,15 +1465,26 @@ func TestValidPathProtectNTFS(t *testing.T) {
 		{".git ", true},
 		{".git.", true},
 		{".git::$INDEX_ALLOCATION", true},
-		{"CON", true},
-		{"aux.txt", true},
-		{"sub/NUL", true},
-		{"sub/COM1.txt", true},
-		{"CONIN$", true},
 		{"readme.md", false},
 		{".gitignore", false},
 		{"CONNECT", false},
 	}
+
+	// Windows reserved device names are rejected only on Windows,
+	// mirroring upstream Git's is_valid_win32_path which is compiled
+	// only into Windows-native/Cygwin builds. On other platforms these
+	// are legitimate filenames.
+	reservedNames := []struct {
+		path    string
+		wantErr bool
+	}{
+		{"CON", runtime.GOOS == "windows"},
+		{"aux.txt", runtime.GOOS == "windows"},
+		{"sub/NUL", runtime.GOOS == "windows"},
+		{"sub/COM1.txt", runtime.GOOS == "windows"},
+		{"CONIN$", runtime.GOOS == "windows"},
+	}
+	tests = append(tests, reservedNames...)
 
 	if runtime.GOOS == "windows" {
 		// filepath.VolumeName only parses volume names on Windows.
