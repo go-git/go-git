@@ -74,6 +74,8 @@ type Commit struct {
 	// encodingHeaderPosition is the one-based position of an explicit encoding
 	// header among ExtraHeaders. Zero means the source had no encoding header.
 	encodingHeaderPosition int
+	authorSource           identSource
+	committerSource        identSource
 }
 
 // ExtraHeader holds any non-standard header
@@ -337,13 +339,6 @@ func (c *Commit) matchesSource() bool {
 		slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders)
 }
 
-func signatureEqual(a, b Signature) bool {
-	return a.Name == b.Name &&
-		a.Email == b.Email &&
-		a.When.Unix() == b.When.Unix() &&
-		a.When.Format("-0700") == b.When.Format("-0700")
-}
-
 func isStandardHeader(key string) bool {
 	switch key {
 	case "tree", "parent", "author", "committer",
@@ -376,7 +371,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if err = c.Author.Encode(w); err != nil {
+	if err = c.authorSource.encode(w, c.Author); err != nil {
 		return err
 	}
 
@@ -384,7 +379,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if err = c.Committer.Encode(w); err != nil {
+	if err = c.committerSource.encode(w, c.Committer); err != nil {
 		return err
 	}
 
