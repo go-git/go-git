@@ -936,7 +936,8 @@ func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Co
 
 	ref, err := storer.ResolveReference(
 		r.s,
-		plumbing.ReferenceName(remotePrefix+strings.ReplaceAll(localRef.Name().String(), "refs/heads/", "")))
+		plumbing.ReferenceName(remotePrefix+strings.ReplaceAll(localRef.Name().String(), "refs/heads/", "")),
+	)
 	if err != nil {
 		return err
 	}

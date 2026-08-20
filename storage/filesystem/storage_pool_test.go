@@ -58,7 +58,8 @@ func TestStorage_FDPool_AlternatesShareParentPool(t *testing.T) {
 	// pool is wired.
 	baseDir := t.TempDir()
 	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(
-		fixtures.WithTargetDir(func() string { return baseDir }))
+		fixtures.WithTargetDir(func() string { return baseDir }),
+	)
 	require.NoError(t, err)
 
 	workDotGit := filepath.Join(baseDir, "work", ".git")

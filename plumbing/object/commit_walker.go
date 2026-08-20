@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 	"io"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -317,8 +318,7 @@ func addReference(
 		}
 	} else {
 		// add ref's commits to the path in reverse order (from the latest)
-		for i := len(refCommits) - 1; i >= 0; i-- {
-			c := refCommits[i]
+		for _, c := range slices.Backward(refCommits) {
 			// insert before found common parent
 			parent = commitsPath.InsertBefore(c, parent)
 			commitsLookup[c.Hash] = parent

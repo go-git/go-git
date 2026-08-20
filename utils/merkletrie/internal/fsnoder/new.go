@@ -125,7 +125,8 @@ func decodeChild(data []byte) (noder.Noder, error) {
 	switch {
 	case fileNameEnd == -1 && dirNameEnd == -1:
 		return nil, fmt.Errorf(
-			"malformed child, no file or dir start mark found")
+			"malformed child, no file or dir start mark found",
+		)
 	case fileNameEnd == -1:
 		return decodeDir(clean, nonRoot)
 	case dirNameEnd == -1:

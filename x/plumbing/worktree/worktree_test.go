@@ -520,7 +520,8 @@ func TestList(t *testing.T) {
 
 				err = w.Add(memfs.New(), "worktree-1",
 					WithCommit(
-						plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a")))
+						plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+					))
 				require.NoError(t, err)
 
 				return storer

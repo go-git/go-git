@@ -62,7 +62,8 @@ func TestIntegration_FSObjectReadsReusePooledFD(t *testing.T) {
 
 	dir := t.TempDir()
 	_, err := fixtures.Basic().ByTag(".git").One().DotGit(
-		fixtures.WithTargetDir(func() string { return dir }))
+		fixtures.WithTargetDir(func() string { return dir }),
+	)
 	require.NoError(t, err)
 
 	cfs := newChrootCountingFS(osfs.New(dir))
@@ -110,7 +111,8 @@ func TestIntegration_FSObjectSurvivesCleanPackList(t *testing.T) {
 
 	dir := t.TempDir()
 	_, err := fixtures.Basic().ByTag(".git").One().DotGit(
-		fixtures.WithTargetDir(func() string { return dir }))
+		fixtures.WithTargetDir(func() string { return dir }),
+	)
 	require.NoError(t, err)
 
 	dg := dotgit.New(osfs.New(dir))
@@ -152,7 +154,8 @@ func TestIntegration_ConcurrentReaderDuringStorageClose(t *testing.T) {
 
 	dir := t.TempDir()
 	_, err := fixtures.Basic().ByTag(".git").One().DotGit(
-		fixtures.WithTargetDir(func() string { return dir }))
+		fixtures.WithTargetDir(func() string { return dir }),
+	)
 	require.NoError(t, err)
 
 	dg := dotgit.New(osfs.New(dir))
@@ -228,7 +231,8 @@ func TestIntegration_PackMissingFromDiskSurfaces(t *testing.T) {
 
 	dir := t.TempDir()
 	_, err := fixtures.Basic().ByTag(".git").One().DotGit(
-		fixtures.WithTargetDir(func() string { return dir }))
+		fixtures.WithTargetDir(func() string { return dir }),
+	)
 	require.NoError(t, err)
 
 	dg := dotgit.New(osfs.New(dir))

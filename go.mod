@@ -1,7 +1,7 @@
 module github.com/go-git/go-git/v6
 
 // go-git supports the last 2 stable Go versions.
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2

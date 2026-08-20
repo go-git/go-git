@@ -314,7 +314,8 @@ func TestMemoryIndex_EntriesWithPrefix_MultiByte(t *testing.T) {
 		w.Add(h, uint64(100+i), uint32(i))
 	}
 	require.NoError(t, w.OnFooter(
-		plumbing.NewHash("0000000000000000000000000000000000000001")))
+		plumbing.NewHash("0000000000000000000000000000000000000001"),
+	))
 
 	idx, err := w.Index()
 	require.NoError(t, err)

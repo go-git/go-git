@@ -35,39 +35,46 @@ func errInvalidHash(hash string) error {
 func errInvalidShallowLineLength(got int) error {
 	return errMalformedRequest(fmt.Sprintf(
 		"invalid shallow line length: expected %d or %d, got %d",
-		len(shallow)+sha1HexSize, len(shallow)+sha256HexSize, got))
+		len(shallow)+sha1HexSize, len(shallow)+sha256HexSize, got,
+	))
 }
 
 func errInvalidCommandCapabilitiesLineLength(got int) error {
 	return errMalformedRequest(fmt.Sprintf(
 		"invalid command and capabilities line length: expected at least %d, got %d",
-		minCommandAndCapsLength, got))
+		minCommandAndCapsLength, got,
+	))
 }
 
 func errInvalidCommandLineLength(got int) error {
 	return errMalformedRequest(fmt.Sprintf(
 		"invalid command line length: expected at least %d, got %d",
-		minCommandLength, got))
+		minCommandLength, got,
+	))
 }
 
 func errInvalidShallowObjID(err error) error {
 	return errMalformedRequest(
-		fmt.Sprintf("invalid shallow object id: %s", err.Error()))
+		fmt.Sprintf("invalid shallow object id: %s", err.Error()),
+	)
 }
 
 func errInvalidOldObjID(err error) error {
 	return errMalformedRequest(
-		fmt.Sprintf("invalid old object id: %s", err.Error()))
+		fmt.Sprintf("invalid old object id: %s", err.Error()),
+	)
 }
 
 func errInvalidNewObjID(err error) error {
 	return errMalformedRequest(
-		fmt.Sprintf("invalid new object id: %s", err.Error()))
+		fmt.Sprintf("invalid new object id: %s", err.Error()),
+	)
 }
 
 func errMalformedCommand(err error) error {
 	return errMalformedRequest(fmt.Sprintf(
-		"malformed command: %s", err.Error()))
+		"malformed command: %s", err.Error(),
+	))
 }
 
 // Decode reads the next update-request message from the reader.

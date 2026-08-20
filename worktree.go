@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -1027,13 +1028,13 @@ func (w *Worktree) clearBlockingSymlinks(fs *worktreeFilesystem, name string) er
 	}
 	// Leading components, shallowest-first: removing the shallowest symlink
 	// invalidates every component beneath it, so a single removal is enough.
-	for i := len(dirs) - 1; i >= 0; i-- {
-		fi, err := fs.Lstat(dirs[i])
+	for _, dir := range slices.Backward(dirs) {
+		fi, err := fs.Lstat(dir)
 		if err != nil {
 			continue
 		}
 		if fi.Mode()&os.ModeSymlink != 0 {
-			return fs.Remove(dirs[i])
+			return fs.Remove(dir)
 		}
 	}
 	// Final component: an existing symlink here would be followed by the

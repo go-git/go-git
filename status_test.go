@@ -95,7 +95,7 @@ func TestStatusReturnsFullPaths(t *testing.T) {
 			require.NoError(t, err)
 
 			if tc.doChange {
-				for _, fname := range (files)[:len(files)-2] {
+				for _, fname := range files[:len(files)-2] {
 					file, err := w.filesystem.Create(fname)
 					require.NoError(t, err)
 

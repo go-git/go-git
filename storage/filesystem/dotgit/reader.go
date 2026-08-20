@@ -10,7 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-var _ (plumbing.EncodedObject) = &EncodedObject{}
+var _ plumbing.EncodedObject = &EncodedObject{}
 
 // EncodedObject is a read-only encoded object backed by the filesystem.
 type EncodedObject struct {

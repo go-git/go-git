@@ -986,7 +986,8 @@ func (s *SuiteDotGit) testObjectWithIncomingDir(incomingDirName string) {
 	file, err := dir.Object(hash)
 	s.Require().NoError(err)
 	s.True(strings.HasSuffix(
-		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e")),
+		file.Name(), fs.Join("objects", "03", "db8e1fbe133a480f2867aac478fd866686d69e"),
+	),
 	)
 	incomingHash := "9d25e0f9bde9f82882b49fe29117b9411cb157b7" // made up hash
 	incomingDirPath := fs.Join("objects", incomingDirName)

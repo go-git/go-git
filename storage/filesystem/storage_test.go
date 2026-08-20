@@ -50,7 +50,8 @@ func TestNewStorageShouldNotAddAnyContentsToDir(t *testing.T) {
 	sto := filesystem.NewStorageWithOptions(
 		fs,
 		cache.NewObjectLRUDefault(),
-		filesystem.Options{ExclusiveAccess: true})
+		filesystem.Options{ExclusiveAccess: true},
+	)
 	defer func() { _ = sto.Close() }()
 	assert.NotNil(t, sto)
 

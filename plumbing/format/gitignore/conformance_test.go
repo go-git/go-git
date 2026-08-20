@@ -165,8 +165,7 @@ func (s *ConformanceSuite) runCheckIgnore(root *os.Root, arg, ignoreCase string)
 }
 
 func exitCode(err error) int {
-	var e *exec.ExitError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*exec.ExitError](err); ok {
 		return e.ExitCode()
 	}
 	return -1
