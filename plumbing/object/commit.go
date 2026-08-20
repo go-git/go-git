@@ -23,6 +23,8 @@ const (
 	headerpgp256   string = "gpgsig-sha256"
 	headerencoding string = "encoding"
 
+	encodingHeaderIndex = -1
+
 	defaultUtf8CommitMessageEncoding MessageEncoding = "UTF-8"
 )
 
@@ -71,6 +73,9 @@ type Commit struct {
 	// src holds the encoded object this Commit was decoded from, used by
 	// EncodeWithoutSignature to recover the canonical signed bytes.
 	src plumbing.EncodedObject
+	// headerOrder holds encodingHeaderIndex and ExtraHeaders indexes in their
+	// decoded order so struct encoding can retain their relative positions.
+	headerOrder []int
 }
 
 // ExtraHeader holds any non-standard header
@@ -385,18 +390,38 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
-		if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
-			return err
+	var headerOrder []int
+	if c.src != nil && len(c.headerOrder) > 0 {
+		fresh := &Commit{}
+		if decodeErr := fresh.Decode(c.src); decodeErr == nil &&
+			c.Encoding == fresh.Encoding &&
+			slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders) {
+			headerOrder = c.headerOrder
 		}
 	}
 
-	for _, header := range c.ExtraHeaders {
-		if isStandardHeader(header.Key) {
+	if headerOrder == nil {
+		if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
+			headerOrder = append(headerOrder, encodingHeaderIndex)
+		}
+		for i := range c.ExtraHeaders {
+			headerOrder = append(headerOrder, i)
+		}
+	}
+
+	for _, index := range headerOrder {
+		if index == encodingHeaderIndex {
+			if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
+				return err
+			}
 			continue
 		}
-		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
-			return err
+
+		header := c.ExtraHeaders[index]
+		if !isStandardHeader(header.Key) {
+			if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
+				return err
+			}
 		}
 	}
 
