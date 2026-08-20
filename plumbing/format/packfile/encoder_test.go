@@ -57,24 +57,30 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject() {
 	h, err := s.enc.Encode([]plumbing.Hash{o.Hash()}, 10)
 	s.NoError(err)
 
-	// + HASH
 	hb := h.Bytes()
 
 	// PACK + VERSION(2) + OBJECT NUMBER(1)
-	expectedResult := make([]byte, 0, 24+len(hb))
-	expectedResult = append(expectedResult, 'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 1)
+	expectedPrefix := make([]byte, 0, 13)
+	expectedPrefix = append(expectedPrefix, 'P', 'A', 'C', 'K', 0, 0, 0, 2, 0, 0, 0, 1)
 	// OBJECT HEADER(TYPE + SIZE)= 0001 0000
-	expectedResult = append(expectedResult, []byte{16}...)
-
-	// Zlib header
-	expectedResult = append(expectedResult,
-		[]byte{120, 156, 1, 0, 0, 255, 255, 0, 0, 0, 1}...)
-
-	expectedResult = append(expectedResult, hb...)
+	expectedPrefix = append(expectedPrefix, 16)
 
 	result := s.buf.Bytes()
 
-	s.Equal(expectedResult, result)
+	s.True(bytes.HasPrefix(result, expectedPrefix))
+	s.Require().GreaterOrEqual(len(result), len(hb))
+	s.Equal(hb, result[len(result)-len(hb):])
+
+	p, cleanup := packfileFromReader(s, s.buf)
+	defer cleanup()
+
+	decHash, err := p.ID()
+	s.NoError(err)
+	s.Equal(h, decHash)
+
+	decoded, err := p.Get(o.Hash())
+	s.NoError(err)
+	objectsEqual(s, decoded, o)
 }
 
 func (s *EncoderSuite) TestMaxObjectSize() {
