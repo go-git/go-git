@@ -102,9 +102,9 @@ func (s *Signature) Decode(b []byte) {
 	s.Name = string(bytes.Trim(b[:open], " "))
 	s.Email = string(b[open+1 : closeBracket])
 
-	hasTime := closeBracket+2 < len(b)
-	if hasTime {
-		s.decodeTimeAndTimeZone(b[closeBracket+2:])
+	timeAndTimeZone := bytes.TrimLeft(b[closeBracket+1:], " \t\n\v\f\r")
+	if len(timeAndTimeZone) > 0 {
+		s.decodeTimeAndTimeZone(timeAndTimeZone)
 	}
 }
 

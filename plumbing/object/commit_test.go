@@ -67,6 +67,9 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 		},
 		s:   s.Storer,
 		src: staleSrc,
+		headerOrder: []int{
+			encodingHeaderIndex,
+		},
 	}
 
 	obj := &plumbing.MemoryObject{}
@@ -87,6 +90,7 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 	s.Nil(commit.ExtraHeaders)
 	s.Equal(s.Storer, commit.s)
 	s.Equal(obj, commit.src)
+	s.Nil(commit.headerOrder)
 }
 
 func (s *SuiteCommit) TestType() {
@@ -335,6 +339,7 @@ change
 		s.NoError(err)
 		commit.Hash = obj.Hash()
 		commit.src = obj
+		commit.headerOrder = newCommit.headerOrder
 		s.Equal(commit, newCommit)
 	}
 }
@@ -1026,6 +1031,54 @@ author John Doe <john.doe@example.com> 1755280730 -0700
 committer John Doe <john.doe@example.com> 1755280730 -0700
 
 rewritten message
+`,
+		},
+		{
+			name: "explicit UTF-8 encoding survives struct-encode",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent 35e85108805c84807bc66a02d91535e1e24b38b9
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+encoding UTF-8
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.ParentHashes[0] = plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+encoding UTF-8
+
+initial commit
+`,
+		},
+		{
+			name: "extra headers retain position relative to encoding",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent 35e85108805c84807bc66a02d91535e1e24b38b9
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+x-before first
+encoding ISO-8859-1
+x-after second
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.ParentHashes[0] = plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+x-before first
+encoding ISO-8859-1
+x-after second
+
+initial commit
 `,
 		},
 		{

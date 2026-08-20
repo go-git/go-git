@@ -217,6 +217,7 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 	case headerencoding:
 		if !s.sawEncoding {
 			s.c.Encoding = MessageEncoding(data)
+			s.c.headerOrder = append(s.c.headerOrder, encodingHeaderIndex)
 			s.sawEncoding = true
 		}
 	case headerpgp:
@@ -232,6 +233,7 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 			next = scanExtraCont
 		} else {
 			s.c.ExtraHeaders = append(s.c.ExtraHeaders, h)
+			s.c.headerOrder = append(s.c.headerOrder, len(s.c.ExtraHeaders)-1)
 		}
 	}
 
@@ -301,6 +303,7 @@ func scanExtraCont(s *commitScanner) (commitState, error) {
 func (s *commitScanner) finaliseExtra() {
 	s.extra.Value = strings.TrimRight(s.extra.Value, "\n")
 	s.c.ExtraHeaders = append(s.c.ExtraHeaders, *s.extra)
+	s.c.headerOrder = append(s.c.headerOrder, len(s.c.ExtraHeaders)-1)
 	s.extra = nil
 }
 
