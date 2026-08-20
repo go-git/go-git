@@ -65,11 +65,9 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 		ExtraHeaders: []ExtraHeader{
 			{Key: "x-stale", Value: "stale"},
 		},
-		s:   s.Storer,
-		src: staleSrc,
-		headerOrder: []int{
-			encodingHeaderIndex,
-		},
+		s:                      s.Storer,
+		src:                    staleSrc,
+		encodingHeaderPosition: 1,
 	}
 
 	obj := &plumbing.MemoryObject{}
@@ -90,7 +88,7 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 	s.Nil(commit.ExtraHeaders)
 	s.Equal(s.Storer, commit.s)
 	s.Equal(obj, commit.src)
-	s.Nil(commit.headerOrder)
+	s.Zero(commit.encodingHeaderPosition)
 }
 
 func (s *SuiteCommit) TestType() {
@@ -339,7 +337,7 @@ change
 		s.NoError(err)
 		commit.Hash = obj.Hash()
 		commit.src = obj
-		commit.headerOrder = newCommit.headerOrder
+		commit.encodingHeaderPosition = newCommit.encodingHeaderPosition
 		s.Equal(commit, newCommit)
 	}
 }
