@@ -46,12 +46,16 @@ func runGit(t *testing.T, dir string, args ...string) string {
 func buildFixtureHome(t *testing.T) (home string, mainCommit plumbing.Hash) {
 	t.Helper()
 
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git CLI not found in PATH; required to build the storage fixture")
+	}
+
 	home = t.TempDir()
 	storageDir := filepath.Join(home, "storage", fakeRID)
 	require.NoError(t, os.MkdirAll(filepath.Dir(storageDir), 0o755))
 	runGit(t, "", "init", "-q", "--bare", storageDir)
-	// "git init -b" needs git >= 2.28; symbolic-ref sets the initial branch
-	// on any version.
+	// symbolic-ref rather than "git init -b", which needs git >= 2.28.
+	// Nothing else here has a version floor worth pinning.
 	runGit(t, "", "--git-dir="+storageDir, "symbolic-ref", "HEAD", "refs/heads/main")
 
 	work := t.TempDir()
