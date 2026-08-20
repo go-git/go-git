@@ -49,10 +49,14 @@ func buildFixtureHome(t *testing.T) (home string, mainCommit plumbing.Hash) {
 	home = t.TempDir()
 	storageDir := filepath.Join(home, "storage", fakeRID)
 	require.NoError(t, os.MkdirAll(filepath.Dir(storageDir), 0o755))
-	runGit(t, "", "init", "--bare", "-b", "main", storageDir)
+	runGit(t, "", "init", "-q", "--bare", storageDir)
+	// "git init -b" needs git >= 2.28; symbolic-ref sets the initial branch
+	// on any version.
+	runGit(t, "", "--git-dir="+storageDir, "symbolic-ref", "HEAD", "refs/heads/main")
 
 	work := t.TempDir()
-	runGit(t, work, "init", "-q", "-b", "main")
+	runGit(t, work, "init", "-q")
+	runGit(t, work, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGit(t, work, "config", "user.email", "rad-test@example.com")
 	runGit(t, work, "config", "user.name", "rad-test")
 	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello\n"), 0o644))

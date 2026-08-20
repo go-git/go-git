@@ -19,24 +19,38 @@ type URL struct {
 	NID string
 }
 
-// parseURL parses u into a URL, accepting exactly the form rad://<rid>[/<nid>]
-// — a host and at most one optional path segment — matching heartwood's
-// Url::from_str. The host is used unmodified as the RID: base58 identifiers
-// are case-sensitive, and url.Parse preserves Host case, so no case
-// normalization happens here. Errors wrap transport.ErrInvalidRequest.
+// parseURL parses u into a URL, accepting only rad://<rid>[/<nid>]: a host,
+// plus either no path or a single non-empty path segment. Looser forms such
+// as userinfo, a query, a fragment or an empty path segment are rejected by
+// the real git-remote-rad helper too.
+//
+// The host is used unmodified as the RID: base58 identifiers are
+// case-sensitive and url.Parse preserves Host case. Errors wrap
+// transport.ErrInvalidRequest.
 func parseURL(u *url.URL) (URL, error) {
+	switch {
+	case u.User != nil:
+		return URL{}, fmt.Errorf("%w: rad URL must not carry userinfo: %q", transport.ErrInvalidRequest, u.Redacted())
+	case u.RawQuery != "":
+		return URL{}, fmt.Errorf("%w: rad URL must not carry a query: %q", transport.ErrInvalidRequest, u.String())
+	case u.Fragment != "":
+		return URL{}, fmt.Errorf("%w: rad URL must not carry a fragment: %q", transport.ErrInvalidRequest, u.String())
+	case u.Opaque != "":
+		return URL{}, fmt.Errorf("%w: rad URL must be rad://<rid>[/<nid>], got %q", transport.ErrInvalidRequest, u.String())
+	}
+
 	rid := u.Host
 	if err := validateID(rid); err != nil {
 		return URL{}, fmt.Errorf("%w: invalid rid %q: %s", transport.ErrInvalidRequest, rid, err)
 	}
 
-	nid := strings.Trim(u.Path, "/")
-	if nid == "" {
+	if u.Path == "" {
 		return URL{RID: rid}, nil
 	}
 
-	if strings.Contains(nid, "/") {
-		return URL{}, fmt.Errorf("%w: too many path segments in %q", transport.ErrInvalidRequest, u.Path)
+	nid, ok := strings.CutPrefix(u.Path, "/")
+	if !ok || nid == "" || strings.Contains(nid, "/") {
+		return URL{}, fmt.Errorf("%w: expected a single path segment naming a nid, got %q", transport.ErrInvalidRequest, u.Path)
 	}
 	if err := validateID(nid); err != nil {
 		return URL{}, fmt.Errorf("%w: invalid nid %q: %s", transport.ErrInvalidRequest, nid, err)

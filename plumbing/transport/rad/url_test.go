@@ -105,3 +105,40 @@ func TestParseURL_RejectsInvalidCharset(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, transport.ErrInvalidRequest)
 }
+
+func TestParseURL_RejectsFormsRadicleRejects(t *testing.T) {
+	t.Parallel()
+
+	// Every form here is rejected by the real git-remote-rad helper, which
+	// splits everything after "rad://" on "/" and accepts only one or two
+	// non-empty components. Accepting them would let this transport resolve
+	// URLs that Radicle itself refuses.
+	const (
+		rid = "z2cK19PnX6cAUgnZfMfwECBNppJ6z"
+		nid = "z6MktoAvnp6XUueF169dr4quTKnFU4v8e8sz3FMLNnpt53Wg"
+	)
+
+	tests := map[string]string{
+		"userinfo":               "rad://user@" + rid,
+		"userinfo/:pass":         "rad://user:pass@" + rid,
+		"query":                  "rad://" + rid + "?x=1",
+		"fragment":               "rad://" + rid + "#f",
+		"trailing slash":         "rad://" + rid + "/",
+		"empty segment":          "rad://" + rid + "//" + nid,
+		"trailing empty segment": "rad://" + rid + "/" + nid + "/",
+		"opaque, no authority":   "rad:" + rid,
+	}
+
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse(raw)
+			require.NoError(t, err)
+
+			_, err = parseURL(u)
+			require.Errorf(t, err, "%q should be rejected", raw)
+			assert.ErrorIs(t, err, transport.ErrInvalidRequest)
+		})
+	}
+}
