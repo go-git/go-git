@@ -23,8 +23,6 @@ const (
 	headerpgp256   string = "gpgsig-sha256"
 	headerencoding string = "encoding"
 
-	encodingHeaderIndex = -1
-
 	defaultUtf8CommitMessageEncoding MessageEncoding = "UTF-8"
 )
 
@@ -73,9 +71,9 @@ type Commit struct {
 	// src holds the encoded object this Commit was decoded from, used by
 	// EncodeWithoutSignature to recover the canonical signed bytes.
 	src plumbing.EncodedObject
-	// headerOrder holds encodingHeaderIndex and ExtraHeaders indexes in their
-	// decoded order so struct encoding can retain their relative positions.
-	headerOrder []int
+	// encodingHeaderPosition is the one-based position of an explicit encoding
+	// header among ExtraHeaders. Zero means the source had no encoding header.
+	encodingHeaderPosition int
 }
 
 // ExtraHeader holds any non-standard header
@@ -390,34 +388,25 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	var headerOrder []int
-	if c.src != nil && len(c.headerOrder) > 0 {
-		fresh := &Commit{}
-		if decodeErr := fresh.Decode(c.src); decodeErr == nil &&
-			c.Encoding == fresh.Encoding &&
-			slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders) {
-			headerOrder = c.headerOrder
-		}
-	}
-
-	if headerOrder == nil {
+	encodingPosition := c.encodingHeaderPosition - 1
+	if encodingPosition < 0 || encodingPosition > len(c.ExtraHeaders) || string(c.Encoding) == "" {
+		encodingPosition = -1
 		if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
-			headerOrder = append(headerOrder, encodingHeaderIndex)
-		}
-		for i := range c.ExtraHeaders {
-			headerOrder = append(headerOrder, i)
+			encodingPosition = 0
 		}
 	}
 
-	for _, index := range headerOrder {
-		if index == encodingHeaderIndex {
+	for i := 0; i <= len(c.ExtraHeaders); i++ {
+		if i == encodingPosition {
 			if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
 				return err
 			}
-			continue
+		}
+		if i == len(c.ExtraHeaders) {
+			break
 		}
 
-		header := c.ExtraHeaders[index]
+		header := c.ExtraHeaders[i]
 		if !isStandardHeader(header.Key) {
 			if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
 				return err
