@@ -50,7 +50,7 @@ func (o OptBool) FormatBool() string {
 	return strconv.FormatBool(o.IsTrue())
 }
 
-// parseConfigBool mirrors upstream Git's git_parse_maybe_bool: it
+// ParseConfigBool mirrors upstream Git's git_parse_maybe_bool: it
 // accepts true/yes/on (→ OptBoolTrue) and false/no/off (→
 // OptBoolFalse) case-insensitively, plus any decimal integer (zero
 // → OptBoolFalse, non-zero → OptBoolTrue). Empty or otherwise
@@ -65,7 +65,7 @@ func (o OptBool) FormatBool() string {
 // v2.54.0[1].
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/parse.c#L157-L182
-func parseConfigBool(v string) OptBool {
+func ParseConfigBool(v string) OptBool {
 	switch strings.ToLower(v) {
 	case "true", "yes", "on":
 		return OptBoolTrue

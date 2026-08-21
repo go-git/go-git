@@ -8,6 +8,9 @@ import (
 
 // Handshake implements transport.Transport.
 func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
+	if err := transport.CheckRequest(req); err != nil {
+		return nil, err
+	}
 	conn, err := t.Connect(ctx, req)
 	if err != nil {
 		return nil, err
