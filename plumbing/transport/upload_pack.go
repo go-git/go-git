@@ -126,6 +126,10 @@ func UploadPack(
 			wants = upreq.Wants
 			caps = upreq.Capabilities
 
+			if err := checkWants(st, wants); err != nil {
+				return err
+			}
+
 			if err := r.Close(); err != nil {
 				return fmt.Errorf("closing reader: %w", err)
 			}
@@ -316,6 +320,73 @@ func UploadPack(
 
 func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
 	return revlist.Objects(st, wants, haves)
+}
+
+// ErrNotOurRef is returned when a client asks for an object id the server did
+// not advertise.
+var ErrNotOurRef = errors.New("not our ref")
+
+// advertisedObjects returns the object ids the advertisement exposes: every
+// reference's value, plus each id along an annotated tag's chain, since a tag
+// is advertised together with its peeled value.
+func advertisedObjects(st storage.Storer) (map[plumbing.Hash]struct{}, error) {
+	iter, err := st.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	adv := make(map[plumbing.Hash]struct{})
+	err = iter.ForEach(func(r *plumbing.Reference) error {
+		h := r.Hash()
+		if r.Type() == plumbing.SymbolicReference {
+			ref, rerr := storer.ResolveReference(st, r.Target())
+			if rerr != nil {
+				// A dangling symref advertises nothing.
+				return nil
+			}
+			h = ref.Hash()
+		}
+		for {
+			if _, ok := adv[h]; ok {
+				// Already recorded; also breaks a tag cycle in a malformed repo.
+				return nil
+			}
+			adv[h] = struct{}{}
+			tag, terr := object.GetTag(st, h)
+			if terr != nil {
+				return nil
+			}
+			h = tag.Target
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return adv, nil
+}
+
+// checkWants refuses want lines naming an object that was never advertised.
+// It mirrors upstream's check_non_tip (upload-pack.c) with
+// uploadpack.allowTipSHA1InWant, allowReachableSHA1InWant and
+// allowAnySHA1InWant left at their default of false: a client may only ask for
+// the ids it was shown.
+func checkWants(st storage.Storer, wants []plumbing.Hash) error {
+	if len(wants) == 0 {
+		return nil
+	}
+
+	adv, err := advertisedObjects(st)
+	if err != nil {
+		return err
+	}
+
+	for _, w := range wants {
+		if _, ok := adv[w]; !ok {
+			return fmt.Errorf("%w %s", ErrNotOurRef, w)
+		}
+	}
+	return nil
 }
 
 func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
@@ -644,6 +715,11 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	// nothing and just close the stream, no stray flush packet.
 	if len(wants) == 0 {
 		return true, w.Close()
+	}
+
+	if err := checkWants(st, wants); err != nil {
+		_ = w.Close()
+		return true, err
 	}
 
 	out := &packp.FetchOutput{}

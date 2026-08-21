@@ -217,6 +217,10 @@ func TestUploadPackV2FetchCommonButNotReady(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
+	// The ancestor needs a ref of its own: a want is only honoured when it was
+	// advertised.
+	require.NoError(t, st.SetReference(
+		plumbing.NewHashReference("refs/heads/ancestor", parent)))
 
 	// want an ancestor, have its descendant (HEAD). HEAD is a known object so it
 	// is ACK'd, but it is not an ancestor of the want, so no want is anchored:
@@ -231,6 +235,30 @@ func TestUploadPackV2FetchCommonButNotReady(t *testing.T) {
 	require.Contains(t, out, "ACK "+head.Hash().String())
 	require.NotContains(t, out, "ready")
 	require.NotContains(t, out, "packfile")
+}
+
+func TestUploadPackV2FetchRejectsUnadvertisedWant(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	c, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
+
+	// An ancestor of an advertised tip is in the object store but was never
+	// advertised, so it is not a valid want.
+	var out bytes.Buffer
+	err = UploadPack(context.TODO(), st, v2Request(t, "fetch", nil, []string{
+		"want " + c.ParentHashes[0].String(),
+		"done",
+	}), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+		GitProtocol:  "version=2",
+		StatelessRPC: true,
+	})
+
+	require.ErrorIs(t, err, ErrNotOurRef)
+	require.NotContains(t, out.String(), "packfile")
 }
 
 func TestUploadPackV2FetchNoWantsEmitsNothing(t *testing.T) {
