@@ -66,3 +66,64 @@ jobs:
             echo "See CONTRIBUTING.md for details."
             exit 1
           fi
+
+  check-ai-attribution:
+    name: Check AI Attribution
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify no commit credits an AI tool as co-author
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # AI tools are disclosed with Assisted-by:, never credited as authors.
+          # A tool cannot give the DCO certification that authorship implies, and
+          # several assistants add the trailer by default, so catch it before
+          # review. Human co-authors are unaffected. See AI_POLICY.md.
+          #
+          # Match a tool's own commit identity: a bot account, an agent mailbox,
+          # or a no-reply address at a vendor. Never a bare vendor domain and
+          # never a bare given name -- people who work at these companies
+          # contribute, someone@anthropic.com is a person, and Claude, Jules and
+          # Devin are names. A false positive accuses a contributor, which is
+          # worse than a miss, so keep every entry specific. Add identities as
+          # tools appear.
+          bots='\+copilot@users\.noreply\.github\.com|cursoragent@|devin-ai-integration|google-labs-jules|gemini-code-assist'
+          noreply='no-?reply@(anthropic|openai|cursor|codeium|windsurf)\.com'
+          models='claude (opus|sonnet|haiku|code)|chatgpt|gpt-[0-9]'
+          found=0
+          while IFS= read -r sha; do
+            credited=$(git log -1 --format="%B" "$sha" |
+              grep -iE "^Co-authored-by:.*($bots|$noreply|$models)" || true)
+            if [ -n "$credited" ]; then
+              echo "AI CO-AUTHOR: $sha $(git log -1 --format='%s' "$sha")"
+              printf '%s\n' "$credited" | sed 's/^/    /'
+              found=1
+            fi
+          done < <(git log --format="%H" "$BASE_SHA..$HEAD_SHA")
+          if [ "$found" -eq 1 ]; then
+            echo ""
+            echo "AI tools must not be credited as co-authors. Disclose them with an"
+            echo "Assisted-by: trailer instead, keeping a human Signed-off-by:"
+            echo ""
+            echo "  Assisted-by: Claude Opus 5"
+            echo "  Signed-off-by: Jane Smith <jane.smith@example.com>"
+            echo ""
+            echo "Drop the Co-Authored-By: lines shown above and force-push:"
+            echo "  git commit --amend              # last commit"
+            echo "  git rebase -i $BASE_SHA         # older commits"
+            echo ""
+            echo "If this flagged a person, say so on the pull request: the"
+            echo "identities are listed in .github/workflows/pr-validation.yml."
+            echo ""
+            echo "See AI_POLICY.md for details."
+            exit 1
+          fi

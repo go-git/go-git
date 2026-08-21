@@ -51,6 +51,16 @@ Assisted-by: Claude Sonnet 4.6
 Assisted-by: ChatGPT o3
 ```
 
+Do not credit an AI tool as a co-author. `Co-Authored-By:` states that the named
+party helped create the contribution, and the
+[DCO](CONTRIBUTING.md#developer-certificate-of-origin) asks the people who create
+a contribution to certify, with a `Signed-off-by:` line, that they have the right
+to submit it. A tool cannot make that certification, so naming one as a
+co-author claims authorship that no sign-off covers. Several assistants add the
+trailer by default, so check for it before opening a PR — `Assisted-by:` is the
+disclosure this project wants. Pull request validation rejects commits that name
+an AI tool as co-author; human co-authors are unaffected.
+
 Disclosure is not a penalty — it is trust infrastructure. It preserves
 transparency, helps reviewers calibrate their attention, and keeps provenance
 clear for the project's long-term health.
