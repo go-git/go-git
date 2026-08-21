@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // Hash SHA1 hashed content
@@ -36,11 +37,11 @@ func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
 	h := Hasher{format: f}
 	switch f {
 	case format.SHA256:
-		h.Hash = crypto.SHA256.New()
+		h.Hash = githash.New(crypto.SHA256)
 	default:
 		// Use SHA1 by default
 		// TODO: return error when format is not supported
-		h.Hash = crypto.SHA1.New()
+		h.Hash = githash.New(crypto.SHA1)
 	}
 	h.Reset(t, size)
 	return h

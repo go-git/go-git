@@ -260,3 +260,18 @@ func benchmarkObjectHashParse(b *testing.B, in string) {
 		b.SetBytes(int64(len(in)))
 	}
 }
+
+func TestObjectIDFormat(t *testing.T) {
+	t.Parallel()
+
+	sha1, ok := FromHex("9dea2395f5403188298c1dabe8bdafe562c491e3")
+	require.True(t, ok)
+	assert.Equal(t, config.SHA1, sha1.Format())
+
+	sha256, ok := FromHex("2c07a4773e3a957c77810e8cc5deb52ad0494858693f4cd7fb9a2d76bfe3d3fe")
+	require.True(t, ok)
+	assert.Equal(t, config.SHA256, sha256.Format())
+
+	assert.Equal(t, config.SHA1, ObjectID{}.Format(),
+		"an id without an explicit format must report the default format")
+}

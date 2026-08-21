@@ -1,16 +1,17 @@
 package object
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
-	"strings"
-
-	"github.com/ProtonMail/go-crypto/openpgp"
+	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 // ErrMalformedTag is returned when a tag object cannot be decoded because
@@ -37,10 +38,10 @@ type Tag struct {
 	Message string
 	// Signature is the cryptographic signature appended after the message
 	// body. This is the canonical tag signature in upstream Git.
-	Signature string
+	Signature []byte
 	// SignatureSHA256 is the cryptographic signature stored under the
 	// "gpgsig-sha256" header.
-	SignatureSHA256 string
+	SignatureSHA256 []byte
 	// TargetType is the object type of the target.
 	TargetType plumbing.ObjectType
 	// Target is the hash of the target object.
@@ -48,8 +49,25 @@ type Tag struct {
 
 	s storer.EncodedObjectStorer
 	// src holds the encoded object this Tag was decoded from, used by
-	// EncodeWithoutSignature to recover the canonical signed bytes.
+	// Verify to recover the exact bytes the signature was computed over.
 	src plumbing.EncodedObject
+	// snap pins the payload-affecting field values captured by Decode, so
+	// Verify can prove the exported fields still mirror src without
+	// re-decoding it. Only captured for signed tags.
+	snap *tagSnapshot
+}
+
+// tagSnapshot holds the payload-affecting field values of a Tag as they were
+// decoded. Signature and SignatureSHA256 are excluded: they are not part of
+// the signed payload, so replacing them must not stop Verify from using the
+// stored source bytes.
+type tagSnapshot struct {
+	hash       plumbing.Hash
+	name       string
+	tagger     Signature
+	message    string
+	targetType plumbing.ObjectType
+	target     plumbing.Hash
 }
 
 // GetTag gets a tag from an object storer and decodes it.
@@ -121,12 +139,25 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 	}
 
 	data := s.msgbuf.Bytes()
-	if sm, _ := parseSignedBytes(data); sm >= 0 {
-		t.Signature = string(data[sm:])
+	if sm := parseSignedBytes(data); sm >= 0 {
+		t.Signature = bytes.Clone(data[sm:])
 		data = data[:sm]
 	}
 	t.Message = string(data)
 
+	// Only signed tags can take Verify's stored-bytes path, so the snapshot
+	// backing its mutation check is skipped for unsigned ones, keeping their
+	// decode allocation-free.
+	if len(t.Signature) > 0 || len(t.SignatureSHA256) > 0 {
+		t.snap = &tagSnapshot{
+			hash:       t.Hash,
+			name:       t.Name,
+			tagger:     t.Tagger,
+			message:    t.Message,
+			targetType: t.TargetType,
+			target:     t.Target,
+		}
+	}
 	return nil
 }
 
@@ -135,52 +166,33 @@ func (t *Tag) Encode(o plumbing.EncodedObject) error {
 	return t.encode(o, true)
 }
 
-// EncodeWithoutSignature exports a Tag into a plumbing.EncodedObject without
-// any signature data, producing the payload that PGP/GPG signatures are
-// computed over.
+// EncodeWithoutSignature returns a reader over the canonical encoding of the
+// Tag without any signature data — the payload an object signature is
+// computed over when signing.
 //
-// Behaviour mirrors Commit.EncodeWithoutSignature:
-//
-//   - For Tags populated by Decode whose exported fields still match the
-//     source object, the payload is streamed from the raw source bytes with
-//     the inline trailing signature truncated and gpgsig/gpgsig-sha256
-//     headers (and their continuation lines) stripped verbatim. This
-//     preserves the exact bytes the signature was computed over, regardless
-//     of any normalization performed by Decode.
-//
-//   - For Tags constructed in memory, or for decoded Tags whose exported
-//     fields have been mutated, the payload is derived from the current
-//     struct fields. Mutation is detected by re-decoding the source object
-//     and comparing exported fields; if any differ, the in-memory
-//     representation prevails.
-func (t *Tag) EncodeWithoutSignature(o plumbing.EncodedObject) error {
-	if t.matchesSource() {
-		return stripObjectSignatures(o, t.src, plumbing.TagObject)
-	}
-	return t.encode(o, false)
+// The payload is always derived from the current struct fields, matching the
+// bytes Encode stores: a signature computed over it stays verifiable after
+// the tag is encoded and stored. To reproduce the signed payload of an object
+// exactly as stored — what verification needs — use SignedPayload; Verify
+// does so automatically.
+func (t *Tag) EncodeWithoutSignature() (io.Reader, error) {
+	return &signedReader{writeTo: func(w io.Writer) error {
+		return t.encodeTo(w, false)
+	}}, nil
 }
 
-// matchesSource reports whether t.src is set and re-decoding it produces a
-// Tag whose payload-affecting exported fields are identical to those of t.
-//
-// Signature and SignatureSHA256 are intentionally excluded from the
-// comparison: neither path emits them as part of the verification payload,
-// so mutating them must not trigger a switch to struct-encode (which would
-// change the byte layout the caller is trying to verify against).
-func (t *Tag) matchesSource() bool {
-	if t.src == nil {
-		return false
-	}
-	fresh := &Tag{}
-	if err := fresh.Decode(t.src); err != nil {
-		return false
-	}
-	return t.Hash == fresh.Hash &&
-		t.Name == fresh.Name &&
-		signatureEqual(t.Tagger, fresh.Tagger) &&
-		t.Message == fresh.Message &&
-		t.TargetType == fresh.TargetType &&
-		t.Target == fresh.Target
+// matchesSnapshot reports whether the payload-affecting exported fields still
+// equal the values captured when the tag was decoded, meaning t.src holds the
+// exact bytes the current field values were read from.
+func (t *Tag) matchesSnapshot() bool {
+	s := t.snap
+	return s != nil &&
+		t.Hash == s.hash &&
+		t.Name == s.name &&
+		t.Tagger == s.tagger &&
+		t.Message == s.message &&
+		t.TargetType == s.targetType &&
+		t.Target == s.target
 }
 
 func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
@@ -191,6 +203,12 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 	defer ioutil.CheckClose(w, &err)
 
+	return t.encodeTo(w, includeSig)
+}
+
+// encodeTo writes the tag's canonical bytes to w, including the signature only
+// when includeSig is true.
+func (t *Tag) encodeTo(w io.Writer, includeSig bool) (err error) {
 	if _, err = fmt.Fprintf(w,
 		"object %s\ntype %s\ntag %s\n",
 		t.Target.String(), t.TargetType.Bytes(), t.Name); err != nil {
@@ -215,13 +233,11 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	// that separates headers from the body, matching upstream's
 	// add_header_signature insertion point (commit.c:1142-1171), which
 	// builtin/tag.c:do_sign reuses when signing tags in compat mode.
-	if t.SignatureSHA256 != "" && includeSig {
+	if len(t.SignatureSHA256) > 0 && includeSig {
 		if _, err = fmt.Fprint(w, headerpgp256+" "); err != nil {
 			return err
 		}
-		sig := strings.TrimSuffix(t.SignatureSHA256, "\n")
-		lines := strings.Split(sig, "\n")
-		if _, err = fmt.Fprint(w, strings.Join(lines, "\n ")); err != nil {
+		if _, err = w.Write(indentSignature(t.SignatureSHA256)); err != nil {
 			return err
 		}
 		if _, err = fmt.Fprint(w, "\n"); err != nil {
@@ -229,11 +245,14 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		}
 	}
 
-	if _, err = fmt.Fprint(w, "\n"); err != nil {
+	if _, err = io.WriteString(w, "\n"); err != nil {
 		return err
 	}
 
-	if _, err = fmt.Fprint(w, t.Message); err != nil {
+	// Write the message via io.WriteString rather than fmt: fmt copies the
+	// whole (potentially large) message into an internal buffer, whereas
+	// io.WriteString streams it straight to a StringWriter sink.
+	if _, err = io.WriteString(w, t.Message); err != nil {
 		return err
 	}
 
@@ -244,7 +263,7 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	// know what you are doing and have already done the needful on the
 	// message in the caller.
 	if includeSig {
-		if _, err = fmt.Fprint(w, t.Signature); err != nil {
+		if _, err = w.Write(t.Signature); err != nil {
 			return err
 		}
 	}
@@ -322,30 +341,42 @@ func (t *Tag) String() string {
 	)
 }
 
-// Verify performs PGP verification of the tag with a provided armored
-// keyring and returns openpgp.Entity associated with verifying key on
-// success.
-func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	keyRingReader := strings.NewReader(armoredKeyRing)
-	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
+// Verify checks the signature of the tag using the Verifier provided via opts,
+// or, when none is given, the verifier registered through
+// plugin.ObjectVerifier. It returns ErrNotSigned when the tag carries no
+// inline signature.
+//
+// The signature checked is always the inline trailing block: Git appends a
+// tag's own signature inline regardless of hash format, and a gpgsig or
+// gpgsig-sha256 header on a tag carries the signature of the object's other
+// rendition in hash compatibility mode, never its own
+// (builtin/tag.c:do_sign). Upstream verification likewise parses only the
+// inline block (gpg-interface.c:parse_signature), so a tag with only a
+// header signature is reported as not signed.
+//
+// For a tag populated by Decode whose exported fields have not been mutated
+// since, the payload is streamed from the source bytes exactly as stored, the
+// returned Verification attests the tag's object id in Object, and
+// ErrObjectIntegrity is returned if the source bytes no longer hash to that
+// id. For a tag built in memory — or mutated after decoding — the payload is
+// the canonical encoding of the current fields, the same bytes signing
+// covers, and Object is left zero.
+func (t *Tag) Verify(ctx context.Context, opts ...VerifyOption) (*plugin.Verification, error) {
+	sig := t.Signature
+	if t.matchesSnapshot() {
+		v, err := Verify(ctx, attestedPayload(t.src, t.Hash), sig, opts...)
+		if err != nil {
+			return nil, err
+		}
+		v.Object = t.Hash
+		return v, nil
+	}
+
+	payload, err := t.EncodeWithoutSignature()
 	if err != nil {
 		return nil, err
 	}
-
-	// Extract signature.
-	signature := strings.NewReader(t.Signature)
-
-	encoded := &plumbing.MemoryObject{}
-	// Encode tag components, excluding signature and get a reader object.
-	if err := t.EncodeWithoutSignature(encoded); err != nil {
-		return nil, err
-	}
-	er, err := encoded.Reader()
-	if err != nil {
-		return nil, err
-	}
-
-	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+	return Verify(ctx, payload, sig, opts...)
 }
 
 // TagIter provides an iterator for a set of tags.
