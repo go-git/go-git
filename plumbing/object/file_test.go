@@ -133,7 +133,8 @@ func (s *FileSuite) TestContents() {
 		content, err := file.Contents()
 		s.NoError(err)
 		s.Equal(t.contents, content, fmt.Sprintf(
-			"subtest %d: commit=%s, path=%s", i, t.commit, t.path))
+			"subtest %d: commit=%s, path=%s", i, t.commit, t.path,
+		))
 	}
 }
 
@@ -189,7 +190,8 @@ func (s *FileSuite) TestLines() {
 		lines, err := file.Lines()
 		s.NoError(err)
 		s.Equal(t.lines, lines, fmt.Sprintf(
-			"subtest %d: commit=%s, path=%s", i, t.commit, t.path))
+			"subtest %d: commit=%s, path=%s", i, t.commit, t.path,
+		))
 	}
 }
 

@@ -673,7 +673,8 @@ func (s *CommitgraphSuite) TestGetCommitDataReadsGenerationOverflow() {
 	s.Require().NoError(commitgraph.NewEncoder(&buf).Encode(mem))
 
 	idx, err := commitgraph.OpenFileIndex(
-		discardCloseReader{bytes.NewReader(buf.Bytes())})
+		discardCloseReader{bytes.NewReader(buf.Bytes())},
+	)
 	s.Require().NoError(err)
 	defer idx.Close()
 

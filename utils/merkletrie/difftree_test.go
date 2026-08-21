@@ -228,7 +228,8 @@ func turnSpaceIntoLiteralSpace(s string) string {
 				return ' '
 			}
 			return r
-		}, s)
+		}, s,
+	)
 }
 
 func (cc changes) Len() int           { return len(cc) }

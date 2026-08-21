@@ -28,7 +28,8 @@ func BenchmarkAlternatesObjectLookup(b *testing.B) {
 	baseDir := b.TempDir()
 
 	templateFs, err := fixtures.Basic().ByTag(".git").One().DotGit(
-		fixtures.WithTargetDir(func() string { return baseDir }))
+		fixtures.WithTargetDir(func() string { return baseDir }),
+	)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -132,7 +133,8 @@ func BenchmarkObjectStorage_PackHandle(b *testing.B) {
 		b.Helper()
 		dir := b.TempDir()
 		_, err := fixtures.Basic().ByTag(".git").One().DotGit(
-			fixtures.WithTargetDir(func() string { return dir }))
+			fixtures.WithTargetDir(func() string { return dir }),
+		)
 		if err != nil {
 			b.Fatalf("fixture DotGit: %v", err)
 		}
@@ -566,7 +568,8 @@ func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
 		b.Helper()
 		dir := b.TempDir()
 		_, err := fixtures.Basic().ByTag(".git").One().DotGit(
-			fixtures.WithTargetDir(func() string { return dir }))
+			fixtures.WithTargetDir(func() string { return dir }),
+		)
 		if err != nil {
 			b.Fatalf("fixture DotGit: %v", err)
 		}
@@ -618,7 +621,8 @@ func BenchmarkObjectStorage_FSObjectReader(b *testing.B) {
 			var i int
 			for b.Loop() {
 				obj, err := stor.EncodedObject(
-					plumbing.AnyObject, hashes[i%len(hashes)])
+					plumbing.AnyObject, hashes[i%len(hashes)],
+				)
 				if err != nil {
 					b.Fatal(err)
 				}

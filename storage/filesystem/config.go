@@ -236,9 +236,7 @@ func diffOptions(
 	var out formatcfg.Options
 
 	// Reverse iteration to preserve last-writer-wins semantics.
-	for i := len(updated) - 1; i >= 0; i-- {
-		opt := updated[i]
-
+	for _, opt := range slices.Backward(updated) {
 		if _, ok := seen[opt.Key]; ok {
 			continue
 		}

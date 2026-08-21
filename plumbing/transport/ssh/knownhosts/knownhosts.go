@@ -125,7 +125,8 @@ func (hkdb *HostKeyDB) HostKeyCallback() ssh.HostKeyCallback {
 	f := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		trace.SSH.Printf(
 			`ssh: wildcard knownhosts for hostname=%s pubkey="%s %s"`,
-			hostname, key.Type(), ssh.FingerprintSHA256(key))
+			hostname, key.Type(), ssh.FingerprintSHA256(key),
+		)
 
 		callbackErr := hkdb.callback(hostname, remote, key)
 		if callbackErr == nil || IsHostKeyChanged(callbackErr) { // hostname has known_host entries as-is

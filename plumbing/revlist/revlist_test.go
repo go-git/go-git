@@ -161,7 +161,8 @@ func (s *RevListSuite) TestRevListObjectsTagObject() {
 			d, err := fixtures.ByTag("tags").ByURL("https://github.com/git-fixtures/tags.git").One().DotGit()
 			s.Require().NoError(err)
 			return d
-		}(), cache.NewObjectLRUDefault())
+		}(), cache.NewObjectLRUDefault(),
+	)
 	defer func() { _ = sto.Close() }()
 
 	expected := map[string]bool{
@@ -219,7 +220,8 @@ func (s *RevListSuite) TestRevListObjectsNewBranch() {
 		s.Storer, []plumbing.Hash{
 			plumbing.NewHash(someCommitBranch),
 			plumbing.NewHash(someCommitOtherBranch),
-		}, localHist)
+		}, localHist,
+	)
 	s.NoError(err)
 
 	revList := map[string]bool{

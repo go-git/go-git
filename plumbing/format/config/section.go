@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -71,8 +72,7 @@ func (s *Section) IsName(name string) bool {
 // Subsection returns a Subsection from the specified Section. If the
 // Subsection does not exists, new one is created and added to Section.
 func (s *Section) Subsection(name string) *Subsection {
-	for i := len(s.Subsections) - 1; i >= 0; i-- {
-		ss := s.Subsections[i]
+	for _, ss := range slices.Backward(s.Subsections) {
 		if ss.IsName(name) {
 			return ss
 		}

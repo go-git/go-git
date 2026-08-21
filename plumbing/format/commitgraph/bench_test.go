@@ -42,7 +42,8 @@ func BenchmarkOpenFileIndex(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
 				fi, err := commitgraph.OpenFileIndex(
-					discardCloseReader{bytes.NewReader(raw)})
+					discardCloseReader{bytes.NewReader(raw)},
+				)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -78,7 +79,8 @@ func BenchmarkGetCommitDataByIndex(b *testing.B) {
 	for _, tc := range cases {
 		raw := buildBenchGraph(b, tc.shape)
 		fi, err := commitgraph.OpenFileIndex(
-			discardCloseReader{bytes.NewReader(raw)})
+			discardCloseReader{bytes.NewReader(raw)},
+		)
 		if err != nil {
 			b.Fatal(err)
 		}

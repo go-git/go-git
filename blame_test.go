@@ -78,7 +78,8 @@ func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) 
 	lines, err := f.Lines()
 	s.Require().NoError(err)
 	s.Len(t.blames, len(lines), fmt.Sprintf(
-		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines))
+		"repo=%s, path=%s, rev=%s: the number of lines in the file and the number of expected blames differ (len(blames)=%d, len(lines)=%d)\nblames=%#q\nlines=%#q", t.repo, t.path, t.rev, len(t.blames), len(lines), t.blames, lines,
+	))
 
 	blamedLines := make([]*Line, 0, len(t.blames))
 	for i := range t.blames {

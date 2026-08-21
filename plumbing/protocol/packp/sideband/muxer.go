@@ -26,8 +26,11 @@ func NewMuxer(t Type, w io.Writer) *Muxer {
 		maxSize = MaxPackedSize
 	}
 
+	// Each pkt-line carries a 4-byte length prefix and a 1-byte sideband
+	// channel identifier. Reserve space for both so the total packet never
+	// exceeds the sideband max size and stays within pktline.MaxPayloadSize.
 	return &Muxer{
-		max: maxSize - chLen,
+		max: maxSize - pktline.LenSize - chLen,
 		w:   w,
 	}
 }

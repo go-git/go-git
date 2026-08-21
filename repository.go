@@ -544,7 +544,7 @@ func dotGitFileToOSFilesystem(path string, fs billy.Filesystem) (bfs billy.Files
 		return nil, fmt.Errorf(".git file has no %s prefix", prefix)
 	}
 
-	gitdir := strings.Split(line[len(prefix):], "\n")[0]
+	gitdir, _, _ := strings.Cut(line[len(prefix):], "\n")
 	gitdir = strings.TrimSpace(gitdir)
 	if filepath.IsAbs(gitdir) {
 		return osfs.New(gitdir, osfs.WithBoundOS()), nil
@@ -1683,7 +1683,8 @@ func (r *Repository) Tags() (storer.ReferenceIter, error) {
 	return storer.NewReferenceFilteredIter(
 		func(r *plumbing.Reference) bool {
 			return r.Name().IsTag()
-		}, refIter), nil
+		}, refIter,
+	), nil
 }
 
 // Branches returns all the References that are Branches.
@@ -1696,7 +1697,8 @@ func (r *Repository) Branches() (storer.ReferenceIter, error) {
 	return storer.NewReferenceFilteredIter(
 		func(r *plumbing.Reference) bool {
 			return r.Name().IsBranch()
-		}, refIter), nil
+		}, refIter,
+	), nil
 }
 
 // Notes returns all the References that are notes. For more information:
@@ -1710,7 +1712,8 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 	return storer.NewReferenceFilteredIter(
 		func(r *plumbing.Reference) bool {
 			return r.Name().IsNote()
-		}, refIter), nil
+		}, refIter,
+	), nil
 }
 
 // TreeObject return a Tree with the given hash. If not found

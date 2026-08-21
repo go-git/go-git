@@ -1,5 +1,7 @@
 package config
 
+import "slices"
+
 // New creates a new config instance.
 func New() *Config {
 	return &Config{}
@@ -32,8 +34,7 @@ const (
 
 // Section returns a existing section with the given name or creates a new one.
 func (c *Config) Section(name string) *Section {
-	for i := len(c.Sections) - 1; i >= 0; i-- {
-		s := c.Sections[i]
+	for _, s := range slices.Backward(c.Sections) {
 		if s.IsName(name) {
 			return s
 		}

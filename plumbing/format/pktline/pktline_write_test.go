@@ -162,7 +162,8 @@ func (s *SuiteWriter) TestEncode() {
 				[]byte(strings.Repeat("a", pktline.MaxPayloadSize)),
 			},
 			expected: []byte(
-				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize)),
+				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize),
+			),
 		}, {
 			input: [][]byte{
 				[]byte(strings.Repeat("a", pktline.MaxPayloadSize)),
@@ -170,7 +171,8 @@ func (s *SuiteWriter) TestEncode() {
 			},
 			expected: []byte(
 				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize) +
-					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize)),
+					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize),
+			),
 		},
 	} {
 		comment := fmt.Sprintf("input %d = %s\n", i, test.input)
@@ -251,7 +253,8 @@ func (s *SuiteWriter) TestWritePacketStrings() {
 				strings.Repeat("a", pktline.MaxPayloadSize),
 			},
 			expected: []byte(
-				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize)),
+				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize),
+			),
 		}, {
 			input: []string{
 				strings.Repeat("a", pktline.MaxPayloadSize),
@@ -259,7 +262,8 @@ func (s *SuiteWriter) TestWritePacketStrings() {
 			},
 			expected: []byte(
 				"fff0" + strings.Repeat("a", pktline.MaxPayloadSize) +
-					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize)),
+					"fff0" + strings.Repeat("b", pktline.MaxPayloadSize),
+			),
 		},
 	} {
 		comment := fmt.Sprintf("input %d = %v\n", i, test.input)

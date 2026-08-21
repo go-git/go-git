@@ -129,7 +129,7 @@ func query(msg []byte) ([]byte, error) {
 	cds := copyData{
 		dwData: agentCopydataID,
 		cbData: uint32(len(mapNameBytesZ)),
-		lpData: unsafe.Pointer(&(mapNameBytesZ[0])),
+		lpData: unsafe.Pointer(&mapNameBytesZ[0]),
 	}
 
 	resp, _, _ := winSendMessage(paWin, wmCopydata, 0, uintptr(unsafe.Pointer(&cds)))

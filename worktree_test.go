@@ -650,7 +650,8 @@ func TestCheckoutSymlinkArbitraryTarget(t *testing.T) {
 
 			require.NoError(t, r.Storer.SetIndex(&index.Index{Version: 2}))
 			w.filesystem = newWorktreeFilesystem(
-				osfs.New(filepath.Join(dir, "worktree-empty")), true, true)
+				osfs.New(filepath.Join(dir, "worktree-empty")), true, true,
+			)
 
 			require.NoError(t, w.Checkout(&CheckoutOptions{}))
 

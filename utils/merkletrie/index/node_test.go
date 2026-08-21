@@ -154,7 +154,8 @@ func (s *NoderSuite) TestDiffFileMode() {
 	ch, err := merkletrie.DiffTree(
 		NewRootNodeWithOptions(indexA, RootNodeOptions{}),
 		NewRootNodeWithOptions(indexB, RootNodeOptions{}),
-		isEquals)
+		isEquals,
+	)
 	s.NoError(err)
 	s.Len(ch, 0)
 

@@ -23,7 +23,7 @@ func WriteVariableWidthInt(w io.Writer, n int64) error {
 	n >>= 7
 	for n != 0 {
 		n--
-		buf = append([]byte{0x80 | (byte(n & 0x7f))}, buf...)
+		buf = append([]byte{0x80 | byte(n&0x7f)}, buf...)
 		n >>= 7
 	}
 

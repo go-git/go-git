@@ -12,7 +12,7 @@ func (s *SidebandSuite) TestMuxerWrite() {
 	n, err := m.Write(bytes.Repeat([]byte{'F'}, (MaxPackedSize-1)*2))
 	s.NoError(err)
 	s.Equal(1998, n)
-	s.Equal(2008, buf.Len())
+	s.Equal(2013, buf.Len())
 }
 
 func (s *SidebandSuite) TestMuxerWriteChannelMultipleChannels() {

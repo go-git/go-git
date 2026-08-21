@@ -52,7 +52,8 @@ func (m *HostKeyCallbackHelper) SetHostKeyCallback(cfg *gossh.ClientConfig) (*go
 func (m *HostKeyCallbackHelper) traceHostKeyCallback(hostname string, remote net.Addr, key gossh.PublicKey) error {
 	trace.SSH.Printf(
 		`ssh: hostkey callback hostname=%s remote=%s pubkey="%s %s"`,
-		hostname, remote, key.Type(), gossh.FingerprintSHA256(key))
+		hostname, remote, key.Type(), gossh.FingerprintSHA256(key),
+	)
 	return m.HostKeyCallback(hostname, remote, key)
 }
 

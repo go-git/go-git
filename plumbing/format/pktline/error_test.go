@@ -77,9 +77,8 @@ func TestPeekErrorLine(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	buf.WriteString("000fERR foobar\n")
-	var e *ErrorLine
 	_, _, err := PeekLine(bufio.NewReader(&buf))
-	if !errors.As(err, &e) {
+	if _, ok := errors.AsType[*ErrorLine](err); !ok {
 		t.Fatalf("expected error line, got: %T: %v", err, err)
 	}
 }

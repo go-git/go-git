@@ -25,7 +25,7 @@ func (s *ServerResponseSuite) TestDecodeNAK() {
 	raw := "0008NAK\n"
 
 	sr := &ServerResponse{}
-	err := sr.Decode((bytes.NewBufferString(raw)))
+	err := sr.Decode(bytes.NewBufferString(raw))
 	s.NoError(err)
 
 	s.Len(sr.ACKs, 0)

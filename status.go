@@ -16,7 +16,7 @@ type Status map[string]*FileStatus
 // File returns the FileStatus for a given path, if the FileStatus doesn't
 // exists a new FileStatus is added to the map using the path as key.
 func (s Status) File(path string) *FileStatus {
-	if _, ok := (s)[path]; !ok {
+	if _, ok := s[path]; !ok {
 		s[path] = &FileStatus{Worktree: Untracked, Staging: Untracked}
 	}
 
@@ -25,7 +25,7 @@ func (s Status) File(path string) *FileStatus {
 
 // IsUntracked checks if file for given path is 'Untracked'
 func (s Status) IsUntracked(path string) bool {
-	stat, ok := (s)[filepath.ToSlash(path)]
+	stat, ok := s[filepath.ToSlash(path)]
 	return ok && stat.Worktree == Untracked
 }
 
