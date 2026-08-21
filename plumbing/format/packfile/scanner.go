@@ -445,18 +445,17 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	r.crc.Reset()
 
-	b := []byte{0}
-	_, err := r.Read(b)
+	b, err := r.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 
-	typ := packutil.ObjectType(b[0])
+	typ := packutil.ObjectType(b)
 	if !typ.Valid() {
-		return nil, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b[0])
+		return nil, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b)
 	}
 
-	size, err := packutil.VariableLengthSize(b[0], r)
+	size, err := packutil.VariableLengthSize(b, r)
 	if err != nil {
 		if errors.Is(err, packutil.ErrLengthOverflow) {
 			return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
