@@ -65,3 +65,5 @@ formatters:
     gofumpt:
       extra:
         group-params: true
+        clothe-returns: true
+        balance-calls: true
