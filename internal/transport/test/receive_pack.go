@@ -243,14 +243,14 @@ func (s *ReceivePackSuite) receivePackNoCheck(ep *url.URL,
 	)
 
 	rootPath := ep.Path
-	stat, err := os.Stat(ep.Path)
+	stat, err := os.Stat(ep.Path) //nolint:gosec // Test endpoint paths intentionally select local fixture repositories.
 	if rootPath != "" && err == nil && stat.IsDir() {
 		objectPath := filepath.Join(rootPath, "objects/pack")
 		files, err := os.ReadDir(objectPath)
 		s.Require().NoError(err)
 		for _, file := range files {
 			path := filepath.Join(objectPath, file.Name())
-			err = os.Chmod(path, 0o644)
+			err = os.Chmod(path, 0o600) //nolint:gosec // Path is confined to the local test repository selected above.
 			s.Require().NoError(err)
 		}
 	}

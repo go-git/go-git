@@ -165,7 +165,7 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 		trace.HTTP.Printf("requesting %s %s %v", req.Method, redactedURL(req.URL), filterHeaders(req.Header))
 	}
 
-	res, err := client.Do(req)
+	res, err := client.Do(req) //nolint:gosec // The caller intentionally selects the Git remote URL.
 	if err != nil {
 		return nil, err
 	}
