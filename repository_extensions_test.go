@@ -58,6 +58,42 @@ func TestVerifyExtensions(t *testing.T) {
 			},
 		},
 		{
+			name: "repositoryformatversion=0: allows worktreeConfig (camelCase input)",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows partialClone (camelCase input)",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("partialClone", "blobmax")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows preciousObjects (camelCase input)",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("preciousObjects", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: allows multiple V0 extensions together",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+				cfg.Raw.Section("extensions").SetOption("partialClone", "blobmax")
+			},
+		},
+		{
+			name: "repositoryformatversion=1: allows worktreeConfig",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+			},
+		},
+		{
 			name: "repositoryformatversion=1: rejects objectformat=sha1", // not supported in go-git/v5
 			setup: func(t *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
