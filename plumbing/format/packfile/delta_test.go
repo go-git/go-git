@@ -1,6 +1,7 @@
 package packfile
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"math"
@@ -215,7 +216,7 @@ func (s *DeltaSuite) TestPatchDeltaWriterOversizedTargetHeader() {
 
 	var dst bytes.Buffer
 	_, _, err := patchDeltaWriter(
-		&dst, bytes.NewReader(nil), &hdr,
+		&dst, bytes.NewReader(nil), bufio.NewReader(&hdr),
 		plumbing.BlobObject, nil, format.SHA1,
 	)
 	s.Error(err)
