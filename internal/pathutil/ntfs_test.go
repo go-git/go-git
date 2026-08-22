@@ -1,10 +1,17 @@
 package pathutil
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// windows reports whether the test binary runs on Windows. The
+// reserved-name check mirrors upstream Git's compile-time
+// is_valid_win32_path gating, so every platform-gated expectation
+// derives from this single expression.
+func windows() bool { return runtime.GOOS == "windows" }
 
 func TestWindowsValidPath(t *testing.T) {
 	t.Parallel()
@@ -24,20 +31,6 @@ func TestWindowsValidPath(t *testing.T) {
 		{"git~1.", false},
 		{"GIT~1 ", false},
 		{"git~1::$DATA", false},
-		{"CON", false},
-		{"con", false},
-		{"CON.txt", false},
-		{"CON:ads", false},
-		{"CON ", false},
-		{"PRN", false},
-		{"AUX", false},
-		{"NUL", false},
-		{"COM1", false},
-		{"COM9", false},
-		{"LPT1", false},
-		{"LPT9", false},
-		{"CONIN$", false},
-		{"CONOUT$", false},
 		{"a", true},
 		{"a\\b", true},
 		{"a/b", true},
@@ -53,11 +46,40 @@ func TestWindowsValidPath(t *testing.T) {
 		{"git~1", true},
 	}
 
+	// Windows reserved device names are rejected only on Windows
+	// builds, matching upstream Git's is_valid_win32_path which is
+	// compiled only into Windows-native/Cygwin builds. On other
+	// platforms these are legitimate filenames.
+	for _, name := range WindowsReservedNames {
+		tests = append(tests, struct {
+			path string
+			want bool
+		}{name, !windows()})
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
 			got := WindowsValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestIsWindowsReservedName(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range WindowsReservedNames {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, windows(), IsWindowsReservedName(name))
+		})
+	}
+
+	for _, name := range []string{"CONNECT", "comic", "COM", "COM0", "LPT0", "readme.md", "prn.sh"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.False(t, IsWindowsReservedName(name))
 		})
 	}
 }

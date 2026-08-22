@@ -46,48 +46,33 @@ func IsNTFSDotGit(part string) bool {
 // WindowsValidPath reports whether part is a valid Windows / NTFS
 // path component for the worktree filesystem abstraction. It rejects
 // NTFS-disguised variants of `.git` and `git~1` (trailing spaces,
-// periods, Alternate Data Streams) and Windows reserved device
-// names. Bare `.git` and `git~1` are allowed at this layer; the
-// caller decides whether they are permissible at the current path
+// periods, Alternate Data Streams) and, on Windows builds, reserved
+// device names. Bare `.git` and `git~1` are allowed at this layer;
+// the caller decides whether they are permissible at the current path
 // position.
+//
+// The reserved-device-name half is scoped to Windows builds, matching
+// upstream Git, whose is_valid_win32_path is compiled only into
+// Windows-native and Cygwin builds (compat/mingw.c). On other
+// platforms names such as prn.sh are legitimate filenames.
 func WindowsValidPath(part string) bool {
 	if IsNTFSDotGit(part) && !IsDotGitName(part) {
 		return false
 	}
-	return !isWindowsReservedName(part)
+	return !IsWindowsReservedName(part)
 }
 
-// windowsReservedNames lists the Windows reserved device names.
+// WindowsReservedNames lists the Windows reserved device names.
 // A path component is reserved if its base name (ignoring trailing
 // spaces, extensions, and NTFS Alternate Data Streams) matches one of
 // these case-insensitively.
 //
 // See upstream Git compat/mingw.c is_valid_win32_path().
-var windowsReservedNames = []string{
+var WindowsReservedNames = []string{
 	"CON", "PRN", "AUX", "NUL",
 	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
 	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 	"CONIN$", "CONOUT$",
-}
-
-func isWindowsReservedName(part string) bool {
-	for _, name := range windowsReservedNames {
-		if len(part) < len(name) {
-			continue
-		}
-		if !strings.EqualFold(part[:len(name)], name) {
-			continue
-		}
-		// Exact match or followed by space, dot, colon (ADS), or separator.
-		if len(part) == len(name) {
-			return true
-		}
-		switch part[len(name)] {
-		case ' ', '.', ':':
-			return true
-		}
-	}
-	return false
 }
 
 // IsNTFSDot ports upstream Git's is_ntfs_dot_generic. It detects NTFS
