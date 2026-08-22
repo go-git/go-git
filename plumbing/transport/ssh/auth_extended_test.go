@@ -2,16 +2,20 @@ package ssh
 
 import (
 	"context"
+	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/kevinburke/ssh_config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/testdata"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -60,6 +64,120 @@ func TestNewSSHAgentAuth(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, auth)
 	assert.Equal(t, "foo", auth.User)
+}
+
+type errorCloser struct {
+	err error
+}
+
+func (c errorCloser) Close() error {
+	return c.err
+}
+
+func TestSSHAgentAuthCloseErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		closeErr error
+		wantErr  error
+	}{
+		{name: "already closed", closeErr: net.ErrClosed},
+		{name: "other error", closeErr: assert.AnError, wantErr: assert.AnError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			auth := &sshAgentAuth{closer: errorCloser{err: tc.closeErr}}
+			err := auth.Close()
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tc.wantErr)
+			}
+			require.NoError(t, auth.Close())
+		})
+	}
+}
+
+func newSSHAgentListener(t *testing.T) net.Listener {
+	t.Helper()
+
+	f, err := os.CreateTemp("", "go-git-agent-")
+	require.NoError(t, err)
+	path := f.Name()
+	require.NoError(t, f.Close())
+	require.NoError(t, os.Remove(path))
+
+	listener, err := net.Listen("unix", path)
+	require.NoError(t, err)
+	return listener
+}
+
+func TestSSHAgentAuthClose(t *testing.T) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "js" {
+		t.Skip("Unix sockets are not available")
+	}
+
+	listener := newSSHAgentListener(t)
+	defer func() { _ = listener.Close() }()
+	t.Setenv("SSH_AUTH_SOCK", listener.Addr().String())
+
+	auth, err := newSSHAgentAuthWithCloser("foo")
+	require.NoError(t, err)
+
+	conn, err := listener.Accept()
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+
+	require.NoError(t, auth.Close())
+	require.NoError(t, auth.Close())
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	_, err = conn.Read(make([]byte, 1))
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestTransportConnectClosesDefaultSSHAgentAuth(t *testing.T) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "js" {
+		t.Skip("Unix sockets are not available")
+	}
+
+	tempDir := t.TempDir()
+	listener := newSSHAgentListener(t)
+	defer func() { _ = listener.Close() }()
+	t.Setenv("SSH_AUTH_SOCK", listener.Addr().String())
+
+	agentErr := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			agentErr <- err
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		agentErr <- agent.ServeAgent(agent.NewKeyring(), conn)
+	}()
+
+	knownHosts := filepath.Join(tempDir, "known_hosts")
+	require.NoError(t, os.WriteFile(knownHosts, nil, 0o600))
+	t.Setenv("SSH_KNOWN_HOSTS", knownHosts)
+
+	sshTransport := NewTransport(Options{
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			return nil, assert.AnError
+		},
+	})
+	_, err := sshTransport.connect(t.Context(), &transport.Request{
+		URL: mustParseURL("ssh://git@example.com/repo.git"),
+	})
+	require.ErrorIs(t, err, assert.AnError)
+
+	select {
+	case err := <-agentErr:
+		require.ErrorIs(t, err, io.EOF)
+	case <-time.After(time.Second):
+		t.Fatal("SSH agent connection was not closed")
+	}
 }
 
 func TestNewSSHAgentAuthNoAgent(t *testing.T) {
