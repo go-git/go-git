@@ -2489,6 +2489,46 @@ func (s *RepositorySuite) TestLog() {
 	s.ErrorIs(err, io.EOF)
 }
 
+func (s *RepositorySuite) TestLogTopoOrder() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+
+	storeCommit := func(message string, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
+		signature := object.Signature{Name: "go-git", Email: "go-git@fake.local", When: when}
+		commit := &object.Commit{
+			Author:       signature,
+			Committer:    signature,
+			Message:      message,
+			ParentHashes: parents,
+			TreeHash:     plumbing.NewHash("4b825dc642cb6eb9a060e54bf8d69288fbee4904"),
+		}
+		encoded := r.Storer.NewEncodedObject()
+		s.Require().NoError(commit.Encode(encoded))
+		hash, err := r.Storer.SetEncodedObject(encoded)
+		s.Require().NoError(err)
+		return hash
+	}
+
+	start := time.Unix(0, 0)
+	initial := storeCommit("initial", start)
+	feature1 := storeCommit("feature 1", start.Add(time.Minute), initial)
+	feature2 := storeCommit("feature 2", start.Add(2*time.Minute), initial)
+	merge1 := storeCommit("merge 1", start.Add(3*time.Minute), initial, feature1)
+	merge2 := storeCommit("merge 2", start.Add(4*time.Minute), merge1, feature2)
+
+	iter, err := r.Log(&LogOptions{From: merge2, Order: LogOrderTopoOrder})
+	s.Require().NoError(err)
+	defer iter.Close()
+
+	var commits []plumbing.Hash
+	s.Require().NoError(iter.ForEach(func(commit *object.Commit) error {
+		commits = append(commits, commit.Hash)
+		return nil
+	}))
+
+	s.Equal([]plumbing.Hash{merge2, feature2, merge1, feature1, initial}, commits)
+}
+
 func (s *RepositorySuite) TestLogAll() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
