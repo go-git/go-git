@@ -155,6 +155,14 @@ type Config struct {
 		// which skips the trailing SHA-1/SHA-256 computation for performance
 		// on large repositories.
 		SkipHash OptBool
+		// Version is the index format version to use when a new index file
+		// is written. This corresponds to git's index.version configuration.
+		// Zero means unset, in which case the writer picks its own default.
+		//
+		// The value is stored as configured, without range checking, mirroring
+		// git's repo-settings.c: it is the writer that decides which versions
+		// it can produce and falls back to its default otherwise.
+		Version uint32
 	}
 
 	Init struct {
@@ -509,7 +517,9 @@ func (c *Config) Unmarshal(b []byte) error {
 
 	c.unmarshalCore()
 	c.unmarshalExtensions()
-	c.unmarshalIndex()
+	if err := c.unmarshalIndex(); err != nil {
+		return err
+	}
 	c.unmarshalTag()
 	c.unmarshalCommit()
 	c.unmarshalUser()
@@ -728,12 +738,22 @@ func (c *Config) unmarshalProtocol() error {
 	return nil
 }
 
-func (c *Config) unmarshalIndex() {
+func (c *Config) unmarshalIndex() error {
 	s := c.Raw.Section(indexSection)
 	v, err := strconv.ParseBool(s.Options.Get(skipHashKey))
 	if err == nil {
 		c.Index.SkipHash = NewOptBool(v)
 	}
+
+	if version := s.Options.Get(versionKey); version != "" {
+		ver, err := strconv.ParseUint(version, 10, 32)
+		if err != nil {
+			return err
+		}
+		c.Index.Version = uint32(ver)
+	}
+
+	return nil
 }
 
 func (c *Config) unmarshalInit() {
@@ -1017,6 +1037,10 @@ func (c *Config) marshalIndex() {
 	if c.Index.SkipHash.IsSet() {
 		s := c.Raw.Section(indexSection)
 		s.SetOption(skipHashKey, c.Index.SkipHash.FormatBool())
+	}
+	if c.Index.Version != 0 {
+		s := c.Raw.Section(indexSection)
+		s.SetOption(versionKey, strconv.FormatUint(uint64(c.Index.Version), 10))
 	}
 }
 
