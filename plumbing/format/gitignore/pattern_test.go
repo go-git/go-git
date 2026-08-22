@@ -21,6 +21,15 @@ func (s *PatternSuite) TestSimpleMatch_inclusion() {
 	s.Equal(Include, r)
 }
 
+func (s *PatternSuite) TestSimpleMatch_dirOnlyInclusionDoesNotMatchDescendants() {
+	p := ParsePattern("!my-dir/", nil)
+
+	s.Equal(Include, p.Match([]string{"my-dir"}, true))
+	s.Equal(NoMatch, p.Match([]string{"my-dir", "file.txt"}, false))
+	s.Equal(NoMatch, p.Match([]string{"my-dir", "sub"}, true))
+	s.Equal(NoMatch, p.Match([]string{"my-dir", "sub", "file.txt"}, false))
+}
+
 func (s *PatternSuite) TestMatch_domainLonger_mismatch() {
 	p := ParsePattern("value", []string{"head", "middle", "tail"})
 	r := p.Match([]string{"head", "middle"}, false)

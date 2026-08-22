@@ -11,6 +11,40 @@ func (s *MatcherSuite) TestMatcher_Match() {
 	s.False(m.Match([]string{"head", "middle", "volcano"}, false))
 }
 
+func (s *MatcherSuite) TestMatcher_DirOnlyInclusionDoesNotOverrideFilePattern() {
+	ps := []Pattern{
+		ParsePattern("*", nil),
+		ParsePattern("!my-dir/", nil),
+	}
+
+	m := NewMatcher(ps)
+	s.False(m.Match([]string{"my-dir"}, true))
+	s.True(m.Match([]string{"my-dir", "sub", "file.txt"}, false))
+}
+
+func (s *MatcherSuite) TestMatcher_DirOnlyInclusionOverridesDirOnlyExclusion() {
+	ps := []Pattern{
+		ParsePattern("my-dir/", nil),
+		ParsePattern("!my-dir/", nil),
+	}
+
+	m := NewMatcher(ps)
+	s.False(m.Match([]string{"my-dir"}, true))
+	s.False(m.Match([]string{"my-dir", "sub", "file.txt"}, false))
+}
+
+func (s *MatcherSuite) TestMatcher_DirOnlyInclusionKeepsFilePatternExcluded() {
+	ps := []Pattern{
+		ParsePattern("*", nil),
+		ParsePattern("my-dir/", nil),
+		ParsePattern("!my-dir/", nil),
+	}
+
+	m := NewMatcher(ps)
+	s.False(m.Match([]string{"my-dir"}, true))
+	s.True(m.Match([]string{"my-dir", "sub", "file.txt"}, false))
+}
+
 // Test that the "exclude everything except" example
 // from https://git-scm.com/docs/gitignore works
 // (copied below):
