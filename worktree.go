@@ -1013,11 +1013,12 @@ func (w *Worktree) checkoutChangeRegularFile(cfg *config.Config,
 			return err
 		}
 
-		if err := w.checkoutFile(cfg, fs, f); err != nil {
+		fi, err := w.checkoutFile(cfg, fs, f)
+		if err != nil {
 			return err
 		}
 
-		return w.addIndexFromFile(fs, name, e.Hash, idx)
+		return w.addIndexFromFile(name, e.Hash, fi, idx)
 	}
 
 	return nil
@@ -1064,18 +1065,18 @@ func (w *Worktree) clearBlockingSymlinks(fs *worktreeFilesystem, name string) er
 	return nil
 }
 
-func (w *Worktree) checkoutFile(cfg *config.Config, fs *worktreeFilesystem, f *object.File) (err error) {
+func (w *Worktree) checkoutFile(cfg *config.Config, fs *worktreeFilesystem, f *object.File) (fi os.FileInfo, err error) {
 	// checkoutFile is the materialisation boundary for tracked entries.
 	// Remove any blocking symlink first so the subsequent OpenFile or
 	// Symlink call writes the entry itself instead of following a planted
 	// final-component link in the underlying filesystem.
 	if err := w.clearBlockingSymlinks(fs, f.Name); err != nil {
-		return err
+		return nil, err
 	}
 
 	mode, err := f.Mode.ToOSFileMode()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if mode&os.ModeSymlink != 0 {
@@ -1084,11 +1085,16 @@ func (w *Worktree) checkoutFile(cfg *config.Config, fs *worktreeFilesystem, f *o
 
 	dstFile, err := fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer ioutil.CheckClose(dstFile, &err)
 
-	return w.copyObjectToWorktree(cfg, f, dstFile)
+	if err := w.copyObjectToWorktree(cfg, f, dstFile); err != nil {
+		return nil, err
+	}
+
+	fi, err = dstFile.Stat()
+	return fi, err
 }
 
 func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File, file billy.File) (err error) {
@@ -1125,7 +1131,7 @@ func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File,
 	return err
 }
 
-func (w *Worktree) checkoutFileSymlink(fs *worktreeFilesystem, f *object.File) (err error) {
+func (w *Worktree) checkoutFileSymlink(fs *worktreeFilesystem, f *object.File) (fi os.FileInfo, err error) {
 	// .gitmodules symlink rejection (and its NTFS / HFS variants) is
 	// enforced by the worktreeFilesystem wrapper's Symlink method via
 	// validSymlinkName. See https://github.com/git/git/commit/10ecfa7
@@ -1133,14 +1139,14 @@ func (w *Worktree) checkoutFileSymlink(fs *worktreeFilesystem, f *object.File) (
 
 	from, err := f.Reader()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer ioutil.CheckClose(from, &err)
 
 	bytes, err := io.ReadAll(from)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = fs.Symlink(string(bytes), f.Name)
@@ -1152,15 +1158,19 @@ func (w *Worktree) checkoutFileSymlink(fs *worktreeFilesystem, f *object.File) (
 
 		to, err := fs.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		defer ioutil.CheckClose(to, &err)
 
-		_, err = to.Write(bytes)
-		return err
+		if _, err = to.Write(bytes); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
 	}
-	return err
+
+	return fs.Lstat(f.Name)
 }
 
 func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *indexBuilder) error {
@@ -1173,12 +1183,8 @@ func (w *Worktree) addIndexFromTreeEntry(name string, f *object.TreeEntry, idx *
 	return nil
 }
 
-func (w *Worktree) addIndexFromFile(fs *worktreeFilesystem, name string, h plumbing.Hash, idx *indexBuilder) error {
+func (w *Worktree) addIndexFromFile(name string, h plumbing.Hash, fi os.FileInfo, idx *indexBuilder) error {
 	idx.Remove(name)
-	fi, err := fs.Lstat(name)
-	if err != nil {
-		return err
-	}
 
 	mode, err := filemode.NewFromOSFileMode(fi.Mode())
 	if err != nil {
