@@ -71,6 +71,11 @@ type Commit struct {
 	// src holds the encoded object this Commit was decoded from, used by
 	// EncodeWithoutSignature to recover the canonical signed bytes.
 	src plumbing.EncodedObject
+	// encodingHeaderPosition is the one-based position of an explicit encoding
+	// header among ExtraHeaders. Zero means the source had no encoding header.
+	encodingHeaderPosition int
+	authorSource           identSource
+	committerSource        identSource
 }
 
 // ExtraHeader holds any non-standard header
@@ -334,13 +339,6 @@ func (c *Commit) matchesSource() bool {
 		slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders)
 }
 
-func signatureEqual(a, b Signature) bool {
-	return a.Name == b.Name &&
-		a.Email == b.Email &&
-		a.When.Unix() == b.When.Unix() &&
-		a.When.Format("-0700") == b.When.Format("-0700")
-}
-
 func isStandardHeader(key string) bool {
 	switch key {
 	case "tree", "parent", "author", "committer",
@@ -373,7 +371,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if err = c.Author.Encode(w); err != nil {
+	if err = c.authorSource.encode(w, c.Author); err != nil {
 		return err
 	}
 
@@ -381,22 +379,33 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if err = c.Committer.Encode(w); err != nil {
+	if err = c.committerSource.encode(w, c.Committer); err != nil {
 		return err
 	}
 
-	if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
-		if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
-			return err
+	encodingPosition := c.encodingHeaderPosition - 1
+	if encodingPosition < 0 || encodingPosition > len(c.ExtraHeaders) || string(c.Encoding) == "" {
+		encodingPosition = -1
+		if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
+			encodingPosition = 0
 		}
 	}
 
-	for _, header := range c.ExtraHeaders {
-		if isStandardHeader(header.Key) {
-			continue
+	for i := 0; i <= len(c.ExtraHeaders); i++ {
+		if i == encodingPosition {
+			if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
+				return err
+			}
 		}
-		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
-			return err
+		if i == len(c.ExtraHeaders) {
+			break
+		}
+
+		header := c.ExtraHeaders[i]
+		if !isStandardHeader(header.Key) {
+			if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
+				return err
+			}
 		}
 	}
 

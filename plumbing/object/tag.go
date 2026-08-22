@@ -50,6 +50,8 @@ type Tag struct {
 	// src holds the encoded object this Tag was decoded from, used by
 	// EncodeWithoutSignature to recover the canonical signed bytes.
 	src plumbing.EncodedObject
+	// taggerSource retains the decoded tagger bytes for byte-exact re-encoding.
+	taggerSource identSource
 }
 
 // GetTag gets a tag from an object storer and decodes it.
@@ -197,12 +199,12 @@ func (t *Tag) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if !isZeroSignature(t.Tagger) {
+	if t.taggerSource.matches(t.Tagger) || !isZeroSignature(t.Tagger) {
 		if _, err = fmt.Fprint(w, "tagger "); err != nil {
 			return err
 		}
 
-		if err = t.Tagger.Encode(w); err != nil {
+		if err = t.taggerSource.encode(w, t.Tagger); err != nil {
 			return err
 		}
 

@@ -65,8 +65,11 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 		ExtraHeaders: []ExtraHeader{
 			{Key: "x-stale", Value: "stale"},
 		},
-		s:   s.Storer,
-		src: staleSrc,
+		s:                      s.Storer,
+		src:                    staleSrc,
+		encodingHeaderPosition: 1,
+		authorSource:           newIdentSource([]byte("Stale Author <author@example.local> 1 +0000")),
+		committerSource:        newIdentSource([]byte("Stale Committer <committer@example.local> 2 +0000")),
 	}
 
 	obj := &plumbing.MemoryObject{}
@@ -87,6 +90,9 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 	s.Nil(commit.ExtraHeaders)
 	s.Equal(s.Storer, commit.s)
 	s.Equal(obj, commit.src)
+	s.Zero(commit.encodingHeaderPosition)
+	s.Zero(commit.authorSource)
+	s.Zero(commit.committerSource)
 }
 
 func (s *SuiteCommit) TestType() {
@@ -335,6 +341,9 @@ change
 		s.NoError(err)
 		commit.Hash = obj.Hash()
 		commit.src = obj
+		commit.encodingHeaderPosition = newCommit.encodingHeaderPosition
+		commit.authorSource = newCommit.authorSource
+		commit.committerSource = newCommit.committerSource
 		s.Equal(commit, newCommit)
 	}
 }
@@ -1029,6 +1038,54 @@ rewritten message
 `,
 		},
 		{
+			name: "explicit UTF-8 encoding survives struct-encode",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent 35e85108805c84807bc66a02d91535e1e24b38b9
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+encoding UTF-8
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.ParentHashes[0] = plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+encoding UTF-8
+
+initial commit
+`,
+		},
+		{
+			name: "extra headers retain position relative to encoding",
+			commitRaw: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent 35e85108805c84807bc66a02d91535e1e24b38b9
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+x-before first
+encoding ISO-8859-1
+x-after second
+
+initial commit
+`,
+			mutate: func(c *Commit) {
+				c.ParentHashes[0] = plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+			},
+			expected: `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69
+author John Doe <john.doe@example.com> 1755280730 -0700
+committer John Doe <john.doe@example.com> 1755280730 -0700
+x-before first
+encoding ISO-8859-1
+x-after second
+
+initial commit
+`,
+		},
+		{
 			// mergetag is intentionally preserved here: in upstream Git
 			// it is just another extra header (not in
 			// standard_header_field), so go-git keeps any "mergetag"
@@ -1091,6 +1148,78 @@ rewritten message
 			s.Equal(tc.expected, string(payload))
 		})
 	}
+}
+
+func (s *SuiteCommit) TestEncodeWithoutSignaturePreservesDecodedIdentBytes() {
+	tests := []struct {
+		name  string
+		ident string
+	}{
+		{name: "no space before date", ident: "A U Thor <author@example.test>1700000000 +0000"},
+		{name: "no space before email", ident: "A U Thor<author@example.test> 1700000000 +0000"},
+		{name: "no timezone", ident: "A U Thor <author@example.test> 1700000000"},
+		{name: "zero-padded timestamp", ident: "A U Thor <author@example.test> 01700000000 +0000"},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			const oldParent = "35e85108805c84807bc66a02d91535e1e24b38b9"
+			const newParent = "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"
+			raw := "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n" +
+				"parent " + oldParent + "\n" +
+				"author " + tc.ident + "\n" +
+				"committer " + tc.ident + "\n\nmessage\n"
+
+			obj := &plumbing.MemoryObject{}
+			obj.SetType(plumbing.CommitObject)
+			_, err := obj.Write([]byte(raw))
+			s.Require().NoError(err)
+
+			commit, err := DecodeCommit(s.Storer, obj)
+			s.Require().NoError(err)
+			commit.ParentHashes[0] = plumbing.NewHash(newParent)
+
+			encoded := &plumbing.MemoryObject{}
+			s.Require().NoError(commit.EncodeWithoutSignature(encoded))
+			r, err := encoded.Reader()
+			s.Require().NoError(err)
+			payload, err := io.ReadAll(r)
+			s.Require().NoError(err)
+			s.Equal(strings.Replace(raw, oldParent, newParent, 1), string(payload))
+		})
+	}
+}
+
+func (s *SuiteCommit) TestEncodeWithoutSignatureCanonicalizesChangedIdent() {
+	const raw = `tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author A U Thor <author@example.test>1700000000 +0000
+committer C O Mitter <committer@example.test>1700000000 +0000
+
+message
+`
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.CommitObject)
+	_, err := obj.Write([]byte(raw))
+	s.Require().NoError(err)
+
+	commit, err := DecodeCommit(s.Storer, obj)
+	s.Require().NoError(err)
+	commit.Author.Name = "Changed Author"
+	commit.Message = "changed message\n"
+
+	encoded := &plumbing.MemoryObject{}
+	s.Require().NoError(commit.EncodeWithoutSignature(encoded))
+	r, err := encoded.Reader()
+	s.Require().NoError(err)
+	payload, err := io.ReadAll(r)
+	s.Require().NoError(err)
+	s.Equal(`tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+author Changed Author <author@example.test> 1700000000 +0000
+committer C O Mitter <committer@example.test>1700000000 +0000
+
+changed message
+`, string(payload))
 }
 
 func (s *SuiteCommit) TestEncodeExtraHeaders() {
