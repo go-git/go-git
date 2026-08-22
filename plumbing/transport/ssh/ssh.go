@@ -65,10 +65,17 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshConn, error) {
-	config, err := t.resolveConfig(ctx, req)
+	config, authCloser, err := t.resolveConfig(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	closeAuth := func() {
+		if authCloser != nil {
+			_ = authCloser.Close()
+			authCloser = nil
+		}
+	}
+	defer closeAuth()
 
 	hostWithPort, err := t.resolveHostWithPort(ctx, req)
 	if err != nil {
@@ -93,6 +100,7 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	trace.SSH.Printf("ssh: host key algorithms %s", strings.Join(config.HostKeyAlgorithms, ", "))
 
 	client, err := t.dial(ctx, "tcp", hostWithPort, config)
+	closeAuth()
 	if err != nil {
 		return nil, err
 	}
@@ -152,9 +160,10 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	return conn, nil
 }
 
-func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, error) {
+func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, io.Closer, error) {
 	if t.opts.ClientConfig != nil {
-		return t.opts.ClientConfig(ctx, req)
+		config, err := t.opts.ClientConfig(ctx, req)
+		return config, nil, err
 	}
 
 	username := DefaultUsername
@@ -166,11 +175,16 @@ func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (
 
 	trace.SSH.Printf("ssh: Using default auth builder (user: %s)", username)
 
-	auth, err := NewSSHAgentAuth(username)
+	auth, err := newSSHAgentAuthWithCloser(username)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return auth.ClientConfig(ctx, req)
+	config, err := auth.ClientConfig(ctx, req)
+	if err != nil {
+		_ = auth.Close()
+		return nil, nil, err
+	}
+	return config, auth, nil
 }
 
 func (t *Transport) dial(ctx context.Context, network, addr string, config *gossh.ClientConfig) (*gossh.Client, error) {

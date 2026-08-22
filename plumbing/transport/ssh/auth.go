@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -142,10 +143,23 @@ type PublicKeysCallback struct {
 	HostKeyCallbackHelper
 }
 
+type sshAgentAuth struct {
+	*PublicKeysCallback
+	closer io.Closer
+}
+
 // NewSSHAgentAuth returns a PublicKeysCallback based on an SSH agent. It opens
 // a pipe with the SSH agent and uses the pipe as the implementer of the public
 // key callback function.
 func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
+	auth, err := newSSHAgentAuthWithCloser(u)
+	if err != nil {
+		return nil, err
+	}
+	return auth.PublicKeysCallback, nil
+}
+
+func newSSHAgentAuthWithCloser(u string) (*sshAgentAuth, error) {
 	var err error
 	if u == "" {
 		u, err = username()
@@ -154,15 +168,31 @@ func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 		}
 	}
 
-	a, _, err := sshagent.New()
+	a, c, err := sshagent.New()
 	if err != nil {
 		return nil, fmt.Errorf("error creating SSH agent: %w", err)
 	}
 
-	return &PublicKeysCallback{
-		User:     u,
-		Callback: a.Signers,
+	return &sshAgentAuth{
+		PublicKeysCallback: &PublicKeysCallback{
+			User:     u,
+			Callback: a.Signers,
+		},
+		closer: c,
 	}, nil
+}
+
+func (a *sshAgentAuth) Close() error {
+	if a == nil || a.closer == nil {
+		return nil
+	}
+	closer := a.closer
+	a.closer = nil
+	err := closer.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 // ClientConfig returns the ssh.ClientConfig for public key callback authentication.
