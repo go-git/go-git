@@ -335,6 +335,24 @@ func TestSupportsExtension(t *testing.T) {
 			want:  false,
 		},
 		{
+			name:  "relativeworktrees enabled",
+			ext:   "relativeworktrees",
+			value: "true",
+			want:  true,
+		},
+		{
+			name:  "relativeworktrees disabled",
+			ext:   "relativeworktrees",
+			value: "false",
+			want:  true,
+		},
+		{
+			name:  "relativeworktrees with unsupported value",
+			ext:   "relativeworktrees",
+			value: "maybe",
+			want:  false,
+		},
+		{
 			name:  "unsupported extension name",
 			ext:   "noop",
 			value: "sha1",
