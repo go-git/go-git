@@ -2,6 +2,7 @@ package commitgraph
 
 import (
 	"crypto"
+	"fmt"
 	"io"
 	"math"
 
@@ -30,7 +31,10 @@ func (e *Encoder) Encode(idx Index) error {
 	hashes := idx.Hashes()
 
 	// Sort the input and prepare helper structures we'll need for encoding
-	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount := e.prepare(idx, hashes)
+	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, err := e.prepare(idx, hashes)
+	if err != nil {
+		return err
+	}
 
 	chunkSignatures := [][]byte{OIDFanoutChunk.Signature(), OIDLookupChunk.Signature(), CommitDataChunk.Signature()}
 	chunkSizes := []uint64{szUint32 * lenFanout, uint64(len(hashes) * e.hash.Size()), uint64(len(hashes) * (e.hash.Size() + szCommitData))}
@@ -80,7 +84,19 @@ func (e *Encoder) Encode(idx Index) error {
 	return e.encodeChecksum()
 }
 
-func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount, generationV2OverflowCount uint32) {
+// lookupParentIndex resolves a parent hash to its position in the file being
+// encoded. A bare map read yields index 0 for an absent hash, which would
+// silently record an arbitrary commit as the parent, so report it instead.
+func lookupParentIndex(hashToIndex map[plumbing.Hash]uint32, h plumbing.Hash) (uint32, error) {
+	i, ok := hashToIndex[h]
+	if !ok {
+		return 0, fmt.Errorf("%w: %s", ErrParentNotInIndex, h)
+	}
+
+	return i, nil
+}
+
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount, generationV2OverflowCount uint32, err error) {
 	// Sort the hashes and build our index
 	plumbing.HashesSort(hashes)
 	hashToIndex = make(map[plumbing.Hash]uint32)
@@ -97,9 +113,14 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 
 	hasGenerationV2 := idx.HasGenerationV2()
 
-	// Find out if we will need extra edge table
+	// Find out if we will need extra edge table. An index that cannot satisfy
+	// the lookup returns a nil CommitData, so the error has to be checked
+	// before v is dereferenced.
 	for i := range len(hashes) {
-		v, _ := idx.GetCommitDataByIndex(uint32(i))
+		v, err := idx.GetCommitDataByIndex(uint32(i))
+		if err != nil {
+			return nil, nil, 0, 0, err
+		}
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
 		}
@@ -108,7 +129,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		}
 	}
 
-	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount
+	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, nil
 }
 
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
@@ -166,8 +187,16 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 		generationV2Data = make([]uint64, 0, len(hashes))
 	}
 	for _, hash := range hashes {
-		origIndex, _ := idx.GetIndexByHash(hash)
-		commitData, _ := idx.GetCommitDataByIndex(origIndex)
+		// Both lookups can fail, and commitData is nil when the second one
+		// does.
+		origIndex, err := idx.GetIndexByHash(hash)
+		if err != nil {
+			return extraEdges, generationV2Data, err
+		}
+		commitData, err := idx.GetCommitDataByIndex(origIndex)
+		if err != nil {
+			return extraEdges, generationV2Data, err
+		}
 		if _, err = e.Write(commitData.TreeHash.Bytes()); err != nil {
 			return extraEdges, generationV2Data, err
 		}
@@ -178,16 +207,28 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 			parent1 = parentNone
 			parent2 = parentNone
 		case 1:
-			parent1 = hashToIndex[commitData.ParentHashes[0]]
+			if parent1, err = lookupParentIndex(hashToIndex, commitData.ParentHashes[0]); err != nil {
+				return extraEdges, generationV2Data, err
+			}
 			parent2 = parentNone
 		case 2:
-			parent1 = hashToIndex[commitData.ParentHashes[0]]
-			parent2 = hashToIndex[commitData.ParentHashes[1]]
+			if parent1, err = lookupParentIndex(hashToIndex, commitData.ParentHashes[0]); err != nil {
+				return extraEdges, generationV2Data, err
+			}
+			if parent2, err = lookupParentIndex(hashToIndex, commitData.ParentHashes[1]); err != nil {
+				return extraEdges, generationV2Data, err
+			}
 		default:
-			parent1 = hashToIndex[commitData.ParentHashes[0]]
+			if parent1, err = lookupParentIndex(hashToIndex, commitData.ParentHashes[0]); err != nil {
+				return extraEdges, generationV2Data, err
+			}
 			parent2 = uint32(len(extraEdges)) | parentOctopusUsed
 			for _, parentHash := range commitData.ParentHashes[1:] {
-				extraEdges = append(extraEdges, hashToIndex[parentHash])
+				extraEdge, err := lookupParentIndex(hashToIndex, parentHash)
+				if err != nil {
+					return extraEdges, generationV2Data, err
+				}
+				extraEdges = append(extraEdges, extraEdge)
 			}
 			extraEdges[len(extraEdges)-1] |= parentLast
 		}

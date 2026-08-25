@@ -29,6 +29,10 @@ var (
 	// chunk-table configuration would not fit the uint8 the on-disk
 	// header stores at byte 6.
 	ErrTooManyChunks = errors.New("commitgraph: too many chunks")
+	// ErrParentNotInIndex is returned by Encoder.Encode when a commit names a
+	// parent that the index being written does not contain, so no edge can be
+	// recorded for it.
+	ErrParentNotInIndex = errors.New("commitgraph: parent is not part of the index being encoded")
 
 	commitFileSignature = []byte{'C', 'G', 'P', 'H'}
 
