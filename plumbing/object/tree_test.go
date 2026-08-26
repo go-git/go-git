@@ -2465,3 +2465,33 @@ func TestTreeValidateReportsAllRules(t *testing.T) {
 	assert.ErrorIs(t, verr, pathutil.ErrInvalidPath)
 	assert.Contains(t, verr.Error(), "null hash")
 }
+
+// TestTreeEntryFileSkipValidationAllowsDangerousNames verifies that
+// TreeEntryFileSkipValidation does not reject dangerous entry names,
+// which is the whole point: callers that obtained the entry via a
+// skipPathValidation walk and have already validated it themselves
+// should be able to materialise the *File.
+func TestTreeEntryFileSkipValidationAllowsDangerousNames(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	blob := &plumbing.MemoryObject{}
+	blob.SetType(plumbing.BlobObject)
+	bw, err := blob.Writer()
+	require.NoError(t, err)
+	_, err = bw.Write([]byte("payload"))
+	require.NoError(t, err)
+	require.NoError(t, bw.Close())
+	blobHash, err := store.SetEncodedObject(blob)
+	require.NoError(t, err)
+
+	tree := &Tree{s: store}
+	f, err := tree.TreeEntryFileSkipValidation(&TreeEntry{
+		Name: ".git",
+		Mode: filemode.Regular,
+		Hash: blobHash,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, f)
+	require.Equal(t, ".git", f.Name)
+}
