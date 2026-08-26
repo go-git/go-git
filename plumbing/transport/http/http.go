@@ -130,11 +130,11 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 // default policy is "initial", where only the GET /info/refs discovery
 // request is allowed to follow redirects.
 //
-// Credential handling on redirect is left to Go's http.Client, which
-// already strips the Authorization header when a redirect crosses to a
-// different host (since Go 1.8) and preserves it for same-host
-// redirects — matching the expected behavior for scheme upgrades and
-// path-only redirects on the same server.
+// Credentials do not survive a redirect that leaves the host they were
+// issued for, matching libcurl's default (CURLOPT_UNRESTRICTED_AUTH
+// off), which is what canonical git relies on, and the host comparison
+// Handshake already applies to the session it builds from the redirect
+// target.
 func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy) error {
 	if len(via) != 0 {
 		prev := via[len(via)-1]
@@ -160,5 +160,38 @@ func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy
 	if len(via) >= 10 {
 		return fmt.Errorf("http transport: too many redirects")
 	}
+	stripCrossHostCredentials(req, via)
 	return nil
+}
+
+// stripCrossHostCredentials drops the credentials the transport put on
+// the original request once a redirect leaves the host they were issued
+// for. Go's http.Client only withholds Authorization when the target is
+// outside the initial host's registered domain, so it keeps sending it
+// to a sibling subdomain or to another port on the same name, and it
+// forwards every other header — including anything an Options.Authorizer
+// added — unconditionally.
+func stripCrossHostCredentials(req *http.Request, via []*http.Request) {
+	if len(via) == 0 || via[0].URL == nil || req.URL.Host == via[0].URL.Host {
+		return
+	}
+
+	for k := range req.Header {
+		if !crossHostSafeHeader(k) {
+			req.Header.Del(k)
+		}
+	}
+}
+
+// crossHostSafeHeader reports whether a header the transport sets is
+// free of credentials and can therefore follow a redirect to another
+// host. Anything not listed is dropped, so an Authorizer that
+// authenticates through a header other than Authorization is covered
+// too.
+func crossHostSafeHeader(key string) bool {
+	switch http.CanonicalHeaderKey(key) {
+	case "Accept", "Content-Type", "Git-Protocol", "User-Agent":
+		return true
+	}
+	return false
 }
