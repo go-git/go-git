@@ -764,6 +764,52 @@ func (s *ConformanceSuite) TestIgnoreDoubleStarPrefix() {
 	}
 }
 
+// TestIgnoreDoubleStarBacktracking verifies that a non-trailing ** retries
+// later expansions when the component first matching the next segment
+// dead-ends further down the pattern — **/a/b must match a/x/a/b even though
+// the leading a/x does not complete the match.
+func (s *ConformanceSuite) TestIgnoreDoubleStarBacktracking() {
+	patterns := []string{"**/a/b"}
+	m := s.createMatcher(patterns)
+
+	tests := []struct {
+		path    string
+		ignored bool
+		desc    string
+	}{
+		{"a/b", true, "zero directories before the segment"},
+		{"a/x/a/b", true, "retry after the leading a dead-ends"},
+		{"z/a/x/a/b", true, "retry below an unrelated prefix"},
+		{"a/x/b", false, "no expansion completes the pattern"},
+		{"a/x/a/c", false, "tail segment differs at every candidate"},
+	}
+	for _, tt := range tests {
+		s.assertIgnore(m, patterns, tt.path, false, tt.ignored, tt.desc)
+	}
+}
+
+// TestIgnoreDoubleStarMiddleBacktracking exercises the same retry for a **
+// between literal segments, where the segment after ** also names a component
+// that appears before the real match.
+func (s *ConformanceSuite) TestIgnoreDoubleStarMiddleBacktracking() {
+	patterns := []string{"a/**/b/c"}
+	m := s.createMatcher(patterns)
+
+	tests := []struct {
+		path    string
+		ignored bool
+		desc    string
+	}{
+		{"a/b/c", true, "zero directories consumed by **"},
+		{"a/b/x/b/c", true, "retry after the first b dead-ends"},
+		{"a/b/b/c", true, "adjacent duplicate segment"},
+		{"a/b/x/c", false, "no b directly above c"},
+	}
+	for _, tt := range tests {
+		s.assertIgnore(m, patterns, tt.path, false, tt.ignored, tt.desc)
+	}
+}
+
 // TestIgnoreTrailingWhitespace verifies t0008's rule that unescaped trailing
 // whitespace in a pattern is stripped.
 func (s *ConformanceSuite) TestIgnoreTrailingWhitespace() {

@@ -87,7 +87,7 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 	}
 
 	path = path[len(p.domain):]
-	if p.isGlob && !p.globMatch(path, isDir) {
+	if p.isGlob && !p.globMatch(p.pattern, path, isDir) {
 		return NoMatch
 	} else if !p.isGlob && !p.simpleNameMatch(path, isDir) {
 		return NoMatch
@@ -491,17 +491,17 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	return false
 }
 
-func (p *pattern) globMatch(path []string, isDir bool) bool {
+func (p *pattern) globMatch(segs, path []string, isDir bool) bool {
 	matched := false
 	canTraverse := false
 	trailingStar := false
-	for i, pattern := range p.pattern {
+	for i, pattern := range segs {
 		if pattern == "" {
 			canTraverse = false
 			continue
 		}
 		if pattern == zeroToManyDirs {
-			if i == len(p.pattern)-1 {
+			if i == len(segs)-1 {
 				// A trailing `**` matches the entries below whatever the
 				// earlier segments consumed, so it needs either a remaining
 				// component or a directory candidate standing in for them.
@@ -521,33 +521,31 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 			return false
 		}
 		if canTraverse {
-			canTraverse = false
-			for len(path) > 0 {
-				e := path[0]
-				path = path[1:]
-				if wildmatch(pattern, e) {
-					matched = true
-					break
-				}
-				if len(path) == 0 {
-					// A `**` that never finds the segment following it is a
-					// definitive non-match. Returning here rather than
-					// clearing matched keeps a trailing `**` from reviving
-					// the pattern once the path is exhausted, which would
-					// make `**/bar/**` match directories containing no bar.
-					return false
+			// A non-trailing `**` matches zero or more components. Locking
+			// onto the first component that matches the next segment is not
+			// enough: with `**/a/b` against a/x/a/b the leading "a"
+			// dead-ends, and only retrying from the later "a" completes the
+			// match. Recurse for every candidate expansion instead.
+			for j := range path {
+				if p.globMatch(segs[i:], path[j:], isDir) {
+					return true
 				}
 			}
-		} else {
-			if !wildmatch(pattern, path[0]) {
-				return false
-			}
-			matched = true
-			path = path[1:]
-			// files matching dir globs, don't match
-			if len(path) == 0 && i < len(p.pattern)-1 {
-				matched = false
-			}
+			// A `**` that never finds the segment following it is a
+			// definitive non-match. Returning here rather than clearing
+			// matched keeps a trailing `**` from reviving the pattern once
+			// the path is exhausted, which would make `**/bar/**` match
+			// directories containing no bar.
+			return false
+		}
+		if !wildmatch(pattern, path[0]) {
+			return false
+		}
+		matched = true
+		path = path[1:]
+		// files matching dir globs, don't match
+		if len(path) == 0 && i < len(segs)-1 {
+			matched = false
 		}
 	}
 	// Check dirOnly: either we consumed all path (len(path) == 0) or we matched a trailing **
