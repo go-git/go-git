@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -1102,23 +1103,49 @@ func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File,
 	defer ioutil.CheckClose(src, &err)
 
 	if cfg.Core.AutoCRLF == "true" {
-		br := sync.GetBufioReader(src)
-		defer sync.PutBufioReader(br)
+		const maxBufferedBlob = 1 << 20
 
-		stat, err := convert.GetStat(br)
-		if err != nil {
+		if object.Size > maxBufferedBlob {
+			br := sync.GetBufioReader(src)
+			defer sync.PutBufioReader(br)
+
+			stat, err := convert.GetStat(br)
+			if err != nil {
+				return err
+			}
+
+			src, err = object.Reader()
+			if err != nil {
+				return err
+			}
+			defer ioutil.CheckClose(src, &err)
+
+			if !stat.IsBinary() {
+				dst = convert.NewCRLFWriter(dst)
+			}
+
+			_, err = ioutil.CopyBufferPool(dst, src)
 			return err
 		}
 
-		src, err = object.Reader()
+		buf := sync.GetBytesBuffer()
+		defer sync.PutBytesBuffer(buf)
+
+		if _, err := io.Copy(buf, src); err != nil {
+			return err
+		}
+
+		stat, err := convert.GetStat(bytes.NewReader(buf.Bytes()))
 		if err != nil {
 			return err
 		}
-		defer ioutil.CheckClose(src, &err)
 
 		if !stat.IsBinary() {
 			dst = convert.NewCRLFWriter(dst)
 		}
+
+		_, err = io.Copy(dst, bytes.NewReader(buf.Bytes()))
+		return err
 	}
 
 	_, err = ioutil.CopyBufferPool(dst, src)
