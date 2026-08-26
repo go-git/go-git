@@ -147,7 +147,8 @@ func scanAuthor(s *commitScanner) (commitState, error) {
 
 	key, data := splitHeader(line)
 	if key == "author" {
-		s.c.Author.Decode(data)
+		s.c.authorSource = newIdentSource(data)
+		s.c.Author = s.c.authorSource.signature
 		s.sawAuthor = true
 		if err == io.EOF {
 			return nil, nil
@@ -175,7 +176,8 @@ func scanCommitter(s *commitScanner) (commitState, error) {
 
 	key, data := splitHeader(line)
 	if key == "committer" {
-		s.c.Committer.Decode(data)
+		s.c.committerSource = newIdentSource(data)
+		s.c.Committer = s.c.committerSource.signature
 		s.sawCommitter = true
 		if err == io.EOF {
 			return nil, nil
@@ -217,6 +219,7 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 	case headerencoding:
 		if !s.sawEncoding {
 			s.c.Encoding = MessageEncoding(data)
+			s.c.encodingHeaderPosition = len(s.c.ExtraHeaders) + 1
 			s.sawEncoding = true
 		}
 	case headerpgp:
