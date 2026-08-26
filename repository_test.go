@@ -648,6 +648,32 @@ func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
 	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
 }
 
+func TestPlainCloneContext_SingleBranchMissingRefIsNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	// A populated remote: one commit on the default branch.
+	src := t.TempDir()
+	repo, err := PlainInit(src, false)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(src, "a.txt"), []byte("hi"), 0o600))
+	_, err = wt.Add("a.txt")
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@example.com", When: time.Now()}
+	_, err = wt.Commit("init", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	dest := t.TempDir()
+	_, err = PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:           "file://" + src,
+		ReferenceName: plumbing.NewBranchReferenceName("no-such-branch"),
+		SingleBranch:  true,
+	})
+	require.ErrorIs(t, err, ErrRemoteRefNotFound)
+	require.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+}
+
 // TestPlainCloneContext_EmptyRemoteDoesNotCleanup verifies that cloning an
 // empty remote repository with AllowEmptyRepo does not remove the directory.
 func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {

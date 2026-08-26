@@ -245,14 +245,14 @@ func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.Ge
 		if opts != nil {
 			prefixes = opts.RefPrefixes
 		}
-		refs, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
+		out, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
 		if err != nil {
 			return nil, err
 		}
-		if !forPush && !internal.HasHashRef(refs) {
+		if !forPush && !out.HasOid {
 			return nil, transport.ErrEmptyRemoteRepository
 		}
-		return transport.NewRemoteRefs(refs), nil
+		return transport.NewRemoteRefs(out.References), nil
 	}
 
 	if s.refs == nil {
