@@ -159,6 +159,30 @@ func TestSharedFile_TerminalCloseStopsTimer(t *testing.T) {
 	}
 }
 
+func TestSharedFile_TerminalCloseDefersActiveDescriptor(t *testing.T) {
+	t.Parallel()
+	data := []byte("PACKtest")
+	open, _, _ := newOpener(t, data)
+	sf := New(open, time.Hour)
+
+	h, err := sf.Acquire()
+	require.NoError(t, err)
+	require.NoError(t, sf.Close())
+	require.False(t, h.(*memCloser).closed.Load(),
+		"Close must not close a descriptor held by an active acquisition")
+
+	_, err = sf.Acquire()
+	require.ErrorIs(t, err, ErrClosed)
+	buf := make([]byte, len(data))
+	_, err = h.ReadAt(buf, 0)
+	require.NoError(t, err)
+	require.Equal(t, data, buf)
+
+	sf.Release()
+	require.True(t, h.(*memCloser).closed.Load(),
+		"the last Release must close a descriptor after terminal Close")
+}
+
 func TestSharedFile_AcquireAfterCloseReturnsClosed(t *testing.T) {
 	t.Parallel()
 	open, _, _ := newOpener(t, []byte("PACKtest"))

@@ -22,28 +22,14 @@ type ReadAtCloser interface {
 // either via errors.Is.
 var ErrClosed = fs.ErrClosed
 
-// SharedFile provides refcounted access to a lazily-opened file.
-// The underlying [ReadAtCloser] is opened on first Acquire,
-// shared across concurrent acquirers, and closed after a grace
-// period once the refcount drops to zero.
+// SharedFile provides reference-counted access to a lazily opened file.
+// Acquire pins the descriptor against idle release until the matching Release.
+// With a pool, the pool selects idle descriptors for release. Without a pool,
+// a grace-period timer releases them.
 //
-// Lifecycle contract:
-//
-//   - [SharedFile.Acquire] pins the underlying file descriptor
-//     until the matching [SharedFile.Release]. While at least one
-//     reference is held the FD cannot be torn down by the grace
-//     timer or [SharedFile.ReleaseNow].
-//   - [SharedFile.Close] is synchronous: it returns only after
-//     the underlying FD has been closed. Acquires that race a
-//     Close return [ErrClosed]; ReadAt calls on a descriptor
-//     handed out before Close see [fs.ErrClosed] on the next
-//     read, since the OS-level FD has been released.
-//
-// When constructed with a non-nil [*fdpool.Pool], the grace timer
-// is bypassed at refs==0: the FD stays open and registered, and
-// the pool decides when to evict via [SharedFile.ReleaseNow].
-// This lets a single pool govern the storage-wide FD budget
-// across many SharedFiles.
+// Close is permanent and rejects later Acquire calls with [ErrClosed]. It
+// closes an idle descriptor before it returns. If acquisitions are active, the
+// last matching Release closes the descriptor.
 //
 // All methods are safe for concurrent use.
 type SharedFile struct {
@@ -59,7 +45,8 @@ type SharedFile struct {
 	timer          *time.Timer
 	closed         bool
 	isClosed       atomic.Bool
-	immediateClose bool // set by ReleaseNow when refs>0; consumed by Release
+	immediateClose bool          // set by ReleaseNow when refs>0; consumed by Release
+	poolCleanup    chan struct{} // blocks Acquire while a pooled close forgets its registration
 }
 
 // New returns a new SharedFile that opens files via open and
@@ -68,13 +55,13 @@ func New(open func() (ReadAtCloser, error), gracePeriod time.Duration) *SharedFi
 	return NewWithPool(open, gracePeriod, nil)
 }
 
-// NewWithPool returns a SharedFile registered with the given
-// [*fdpool.Pool]. The pool governs FD eviction across many
-// SharedFiles via [SharedFile.ReleaseNow]; the grace timer is
-// bypassed at refs==0 so the FD stays open and registered until
-// the pool evicts or [SharedFile.Close] is called. Pass nil for
-// pool to disable pooling (equivalent to [New]).
+// NewWithPool returns a SharedFile registered with pool. A nil or nonpositive-
+// capacity pool disables pooling and uses the grace timer. With an enabled
+// pool, the descriptor stays registered while idle until eviction or Close.
 func NewWithPool(open func() (ReadAtCloser, error), gracePeriod time.Duration, pool *fdpool.Pool) *SharedFile {
+	if pool != nil && pool.Stats().Capacity <= 0 {
+		pool = nil
+	}
 	return &SharedFile{open: open, gracePeriod: gracePeriod, pool: pool}
 }
 
@@ -87,6 +74,12 @@ func NewWithPool(open func() (ReadAtCloser, error), gracePeriod time.Duration, p
 // open and refreshes its LRU position on every subsequent acquire.
 func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	s.mu.Lock()
+	for s.poolCleanup != nil {
+		cleanup := s.poolCleanup
+		s.mu.Unlock()
+		<-cleanup
+		s.mu.Lock()
+	}
 	if s.closed {
 		s.mu.Unlock()
 		return nil, ErrClosed
@@ -118,45 +111,51 @@ func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	// comment for the full invariant.
 	if pool != nil {
 		pool.Touch(s, &s.poolHandle)
+		// Close can run after s.mu is released but before Touch. Remove a
+		// registration that raced with terminal close.
+		if s.IsClosed() {
+			pool.Forget(&s.poolHandle)
+		}
 	}
 	return file, nil
 }
 
-// Release decrements the refcount. When it reaches zero the
-// grace-period timer is started; the file is closed when the
-// timer fires unless another Acquire happens first.
-//
-// If a pool is configured, the grace timer is skipped at refs==0:
-// the FD stays open and registered. The pool drives the eventual
-// close via [SharedFile.ReleaseNow] when capacity is exceeded.
+// Release decrements the refcount. The last release closes after terminal
+// Close or a pending ReleaseNow request. With a pool, an idle descriptor stays
+// registered for eviction. Without a pool, the grace timer closes it unless a
+// new Acquire cancels the timer.
 func (s *SharedFile) Release() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.refs == 0 {
+		s.mu.Unlock()
 		return
 	}
 	s.refs--
 	s.gen++
 
-	if s.refs > 0 || s.closed || s.file == nil {
+	if s.refs > 0 || s.file == nil {
+		s.mu.Unlock()
+		return
+	}
+	if s.closed {
+		_ = s.file.Close()
+		s.file = nil
+		s.mu.Unlock()
 		return
 	}
 
-	// Soft-close via ReleaseNow latches immediateClose; fire that
-	// inline now instead of scheduling the grace timer. The flag
-	// clears on the close transition, restoring normal grace-timer
-	// behaviour for future Releases.
+	// ReleaseNow requests a close as soon as the last acquirer releases.
 	if s.immediateClose {
-		s.immediateClose = false
-		_ = s.file.Close()
-		s.file = nil
+		s.mu.Unlock()
+		_ = s.closeRequestedIfIdle()
 		return
 	}
 
 	// Pool drives eviction: keep the FD open and registered so the
 	// pool's LRU governs when it closes. No timer.
 	if s.pool != nil {
+		s.mu.Unlock()
 		return
 	}
 
@@ -172,6 +171,51 @@ func (s *SharedFile) Release() {
 		s.file = nil
 		s.timer = nil
 	})
+	s.mu.Unlock()
+}
+
+// closeRequestedIfIdle closes a descriptor after ReleaseNow requested it.
+// For pooled files, it blocks new Acquire calls while it removes the current
+// registration without holding s.mu. It then closes the file before it lets a
+// new Acquire reopen and register it.
+func (s *SharedFile) closeRequestedIfIdle() error {
+	s.mu.Lock()
+	if cleanup := s.poolCleanup; cleanup != nil {
+		s.mu.Unlock()
+		<-cleanup
+		return nil
+	}
+	if s.closed || !s.immediateClose || s.refs != 0 || s.file == nil {
+		s.mu.Unlock()
+		return nil
+	}
+
+	if s.pool == nil {
+		s.immediateClose = false
+		err := s.file.Close()
+		s.file = nil
+		s.mu.Unlock()
+		return err
+	}
+
+	cleanup := make(chan struct{})
+	s.poolCleanup = cleanup
+	pool := s.pool
+	s.mu.Unlock()
+
+	pool.Forget(&s.poolHandle)
+
+	s.mu.Lock()
+	var err error
+	if !s.closed && s.immediateClose && s.refs == 0 && s.file != nil {
+		s.immediateClose = false
+		err = s.file.Close()
+		s.file = nil
+	}
+	s.poolCleanup = nil
+	close(cleanup)
+	s.mu.Unlock()
+	return err
 }
 
 // IsClosed reports whether Close has been called. Cursors and
@@ -200,13 +244,17 @@ func (s *SharedFile) Pinned() bool {
 // rather than degrading to non-Pinnable fallback at runtime.
 var _ fdpool.Pinnable = (*SharedFile)(nil)
 
-// Close stops any pending grace timer and closes the underlying
-// file synchronously. Subsequent Acquire calls return
-// [ErrClosed]. Close is idempotent.
+// Close stops any pending grace timer and rejects later Acquire calls with
+// [ErrClosed]. It closes an idle descriptor before it returns. If acquisitions
+// are active, the last matching Release closes the descriptor. Close is
+// idempotent.
 //
-// If a pool is configured, the SharedFile is forgotten from the
-// pool's LRU before Close returns, so a racing eviction cannot
-// observe a freed Member.
+// The returned error covers only a close performed during this call. An error
+// from a close after the last Release is discarded.
+//
+// If a pool is configured, Close removes its current LRU entry. An Acquire that
+// passed the terminal check before Close removes any entry that its later Touch
+// races into the pool.
 func (s *SharedFile) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -223,7 +271,7 @@ func (s *SharedFile) Close() error {
 	}
 
 	var err error
-	if s.file != nil {
+	if s.file != nil && s.refs == 0 {
 		err = s.file.Close()
 		s.file = nil
 	}
@@ -236,31 +284,20 @@ func (s *SharedFile) Close() error {
 	return err
 }
 
-// ReleaseNow closes the underlying file without marking the
-// [SharedFile] permanently closed. The next [SharedFile.Acquire]
-// reopens via the constructor's open function.
+// ReleaseNow requests immediate descriptor release without permanently closing
+// the SharedFile. It closes an idle descriptor during this call or waits for the
+// last active acquirer to release it. A later Acquire reopens the descriptor
+// under the configured pool or grace-period policy. A completed pooled close
+// also removes the descriptor's pool registration.
 //
-// The FD closes inline when refs==0, bypassing the grace timer.
-// When refs>0 the SharedFile latches an immediate-close flag:
-// in-flight readers complete normally, the FD closes the instant
-// the last [SharedFile.Release] drops refs to zero, and
-// subsequent Acquires reopen and resume normal grace-timer
-// behaviour.
-//
-// Idempotent and safe to call concurrently. A no-op on a
-// SharedFile already permanently closed (returns nil); the
-// terminal [SharedFile.Close] path has already disposed the FD.
-// ReleaseNow never sets s.closed.
-//
-// The returned error covers only the inline-close case (refs==0).
-// When the latch fires via a subsequent Release, any error from
-// the deferred Close is discarded — Release has no return value
-// and the original ReleaseNow caller is no longer on the stack.
+// The method is idempotent and safe for concurrent use. It is a no-op after
+// Close. Its returned error covers only a close performed during this call;
+// errors from a close after the last Release are discarded.
 func (s *SharedFile) ReleaseNow() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 
@@ -272,17 +309,19 @@ func (s *SharedFile) ReleaseNow() error {
 	}
 	s.gen++
 
-	if s.refs == 0 {
-		if s.file == nil {
-			return nil
-		}
-		err := s.file.Close()
-		s.file = nil
-		return err
+	if s.file == nil {
+		s.immediateClose = false
+		s.mu.Unlock()
+		return nil
 	}
 
-	// refs > 0: latch immediate close for the next refs == 0
-	// transition. In-flight readers complete normally.
+	// Latch the close request before releasing s.mu. An Acquire that races with
+	// an idle close keeps the file pinned; its last Release completes the close.
 	s.immediateClose = true
-	return nil
+	if s.refs > 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	s.mu.Unlock()
+	return s.closeRequestedIfIdle()
 }

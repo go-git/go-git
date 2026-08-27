@@ -88,7 +88,7 @@ func TestSharedFile_Pool_Close_Forgets(t *testing.T) {
 
 	t.Run("ClosesWithActiveRefs", func(t *testing.T) {
 		t.Parallel()
-		open, _, _ := newOpener(t, []byte("activeref"))
+		open, _, handles := newOpener(t, []byte("activeref"))
 		pool := fdpool.New(8)
 		sf := NewWithPool(open, time.Hour, pool)
 
@@ -97,7 +97,12 @@ func TestSharedFile_Pool_Close_Forgets(t *testing.T) {
 		require.NoError(t, sf.Close())
 		assert.Equal(t, 0, pool.Stats().Active,
 			"Forget must fire on Close even when refs are still active")
+		require.Len(t, *handles, 1)
+		assert.False(t, (*handles)[0].closed.Load(),
+			"Close must keep an actively acquired descriptor open")
 		sf.Release()
+		assert.True(t, (*handles)[0].closed.Load(),
+			"the last Release must close the descriptor")
 	})
 }
 
@@ -132,30 +137,118 @@ func TestSharedFile_Pool_EvictionReleasesFD(t *testing.T) {
 		"evicted member must close its FD")
 }
 
-// TestSharedFile_NoPool_ImmediateClose locks in the pool-less
-// policy: Release with refs==0 closes the FD inline (after the
-// grace timer, which we make short to keep the test fast).
-func TestSharedFile_NoPool_ImmediateClose(t *testing.T) {
+func TestSharedFile_Pool_ReleaseNowForgetsClosedDescriptor(t *testing.T) {
 	t.Parallel()
-	open, opens, handles := newOpener(t, []byte("nopool"))
-	sf := New(open, 5*time.Millisecond)
+
+	open, opens, handles := newOpener(t, []byte("release-now"))
+	pool := fdpool.New(8)
+	sf := NewWithPool(open, time.Hour, pool)
 	defer sf.Close()
 
 	_, err := sf.Acquire()
 	require.NoError(t, err)
 	sf.Release()
+	require.Equal(t, 1, pool.Stats().Active)
 
-	// Wait for the grace timer to fire.
-	assert.Eventually(t, func() bool {
-		return len(*handles) > 0 && (*handles)[0].closed.Load()
-	}, time.Second, 5*time.Millisecond,
-		"pool-less SharedFile must close after grace period")
+	require.NoError(t, sf.ReleaseNow())
+	require.Len(t, *handles, 1)
+	assert.True(t, (*handles)[0].closed.Load())
+	assert.Equal(t, 0, pool.Stats().Active,
+		"ReleaseNow must remove the registration for the closed descriptor")
 
 	_, err = sf.Acquire()
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), opens.Load(),
-		"second Acquire must reopen after grace-period close")
+	assert.Equal(t, int64(2), opens.Load())
+	assert.Equal(t, 1, pool.Stats().Active)
 	sf.Release()
+}
+
+// TestSharedFile_Pool_ReacquireAfterPinnedEvictionForgetsClosedDescriptor
+// reproduces the pool state race without timing. A pinned eviction requests a
+// close, a later Acquire re-registers the same SharedFile, and the last Release
+// then closes its descriptor. The close must also remove that new registration.
+func TestSharedFile_Pool_ReacquireAfterPinnedEvictionForgetsClosedDescriptor(t *testing.T) {
+	t.Parallel()
+
+	openA, opensA, handlesA := newOpener(t, []byte("a"))
+	openB, _, handlesB := newOpener(t, []byte("b"))
+	pool := fdpool.New(1)
+	a := NewWithPool(openA, time.Hour, pool)
+	defer a.Close()
+	b := NewWithPool(openB, time.Hour, pool)
+	defer b.Close()
+
+	_, err := a.Acquire()
+	require.NoError(t, err)
+
+	// Both members are pinned. Registering b evicts a and makes a defer its
+	// close until its last Release.
+	_, err = b.Acquire()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), pool.Stats().Evictions)
+
+	// Reacquiring a registers it again and evicts the still-pinned b.
+	_, err = a.Acquire()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), pool.Stats().Evictions)
+	require.Equal(t, 1, pool.Stats().Active)
+
+	b.Release()
+	a.Release()
+	a.Release()
+
+	require.Len(t, *handlesA, 1)
+	require.Len(t, *handlesB, 1)
+	assert.True(t, (*handlesA)[0].closed.Load())
+	assert.True(t, (*handlesB)[0].closed.Load())
+	assert.Equal(t, 0, pool.Stats().Active,
+		"the pool must not retain a registration for a closed descriptor")
+
+	_, err = a.Acquire()
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), opensA.Load(),
+		"Acquire must reopen the descriptor after the requested close")
+	assert.Equal(t, 1, pool.Stats().Active,
+		"Acquire must register the reopened descriptor")
+	a.Release()
+}
+
+// TestSharedFile_NoOrDisabledPool_ClosesAfterGracePeriod checks that nil and
+// nonpositive pools all use the pool-less timer.
+func TestSharedFile_NoOrDisabledPool_ClosesAfterGracePeriod(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		pool *fdpool.Pool
+	}{
+		{name: "nil"},
+		{name: "zero", pool: fdpool.New(0)},
+		{name: "negative", pool: fdpool.New(-1)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			open, opens, handles := newOpener(t, []byte("nopool"))
+			sf := NewWithPool(open, 5*time.Millisecond, tt.pool)
+			defer sf.Close()
+			require.Nil(t, sf.pool)
+
+			_, err := sf.Acquire()
+			require.NoError(t, err)
+			sf.Release()
+
+			assert.Eventually(t, func() bool {
+				return len(*handles) > 0 && (*handles)[0].closed.Load()
+			}, time.Second, 5*time.Millisecond,
+				"SharedFile must close after its grace period")
+
+			_, err = sf.Acquire()
+			require.NoError(t, err)
+			assert.Equal(t, int64(2), opens.Load(),
+				"second Acquire must reopen after grace-period close")
+			sf.Release()
+		})
+	}
 }
 
 // TestSharedFile_Pool_ReadsDuringEviction stresses the refcount +
