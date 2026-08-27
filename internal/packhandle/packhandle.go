@@ -1,7 +1,6 @@
 package packhandle
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"sync"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
@@ -18,90 +16,47 @@ import (
 // release before the .pack file descriptor is closed.
 const defaultGracePeriod = 1 * time.Second
 
-// PackHandle reads from one pack triple, owning the .pack file
-// descriptor for its lifetime and constructing an [idxfile.Index]
-// over the .idx/.rev pair on demand.
+// PackHandle reads one logical pack.
 //
-// The .pack file descriptor is opened lazily on first cursor
-// request, shared across concurrent readers, and closed after an
-// idle grace period. .idx and .rev descriptors are owned by the
-// returned [idxfile.Index].
+// The pack descriptor opens lazily. Idle release follows the configured pool
+// or grace-period policy. Close is permanent. It invalidates active cursors,
+// and their last Close releases the descriptor. Later cursor operations return
+// [fs.ErrClosed].
 //
-// Lifecycle contract:
-//
-//   - Each cursor returned by [PackHandle.OpenPackReader] or
-//     [PackHandle.OpenRandomReader] acquires one reference on the
-//     underlying [sharedfile.SharedFile]; cursor.Close releases
-//     it. While at least one cursor is live the .pack FD cannot
-//     be torn down by the grace timer.
-//   - [PackHandle.Close] is synchronous: the .pack FD and any
-//     cached [idxfile.LazyIndex] FDs are closed before the call
-//     returns. Cursors opened before Close keep working until
-//     their own Close releases the last reference; calls on a
-//     cursor whose underlying FD has been closed see
-//     [fs.ErrClosed].
-//
-// All methods are safe for concurrent use.
+// PackHandle methods are safe for concurrent use. Read and Seek are not safe to
+// call concurrently on one streaming cursor.
 type PackHandle struct {
-	sources  Sources
+	source   Source
 	packHash plumbing.Hash
 	pack     *sharedfile.SharedFile
 
 	closed atomic.Bool
 
-	metaMu  sync.Mutex
-	metaVal *PackMeta
-
-	indexMu  sync.Mutex
-	indexVal *idxfile.LazyIndex
+	hashMu    sync.Mutex
+	hashValid bool
 
 	sizeVal atomic.Int64
 
 	closeFn func() error
 }
 
-// New constructs a [PackHandle] over the given sources. packHash
-// is pinned to the .pack file's expected footer hash; [PackHandle.Meta]
-// verifies the footer against this value.
+// NewWithPool constructs a PackHandle and registers its shared pack descriptor
+// with pool. Positive capacity keeps the descriptor registered until eviction
+// or Close. A nil or nonpositive-capacity pool uses the grace timer.
 //
-// Returns [ErrPackSourceRequired] if Sources.Pack.Open or
-// Sources.Pack.Size is nil, and [ErrInvalidPackHash] if packHash
-// is the zero hash. Sources.Idx and Sources.Rev are optional;
-// [PackHandle.Index] returns [ErrSourceUnconfigured] when either
-// is absent.
-func New(sources Sources, packHash plumbing.Hash) (*PackHandle, error) {
-	return NewWithPool(sources, packHash, nil)
-}
-
-// NewWithPool is like [New] but registers the .pack
-// [sharedfile.SharedFile] with the given [*fdpool.Pool]. The pool
-// governs LRU eviction of the pack FD across many PackHandles so
-// a storage-wide budget bounds the open .pack descriptors. Pass
-// nil for pool to disable pooling (equivalent to [New]).
-//
-// When pool is non-nil the [defaultGracePeriod] timer is inert:
-// the FD stays open and registered with the pool until the LRU
-// evicts it (or [PackHandle.Close] tears it down). When pool is
-// nil the grace timer governs FD lifetime as in [New].
-//
-// Neither this constructor nor the cursor entry points
-// ([PackHandle.OpenPackReader], [PackHandle.OpenRandomReader])
-// accept a [context.Context]. Pack reads are pure ReadAt I/O
-// without cancellation hooks, matching the context-free
-// convention of the storage, plumbing/format, and
-// plumbing/storer layers; callers requiring cancellation
-// enforce it at the call-site in the layer above.
-func NewWithPool(sources Sources, packHash plumbing.Hash, pool *fdpool.Pool) (*PackHandle, error) {
-	if sources.Pack.Open == nil || sources.Pack.Size == nil {
+// Returns [ErrPackSourceRequired] if Open or Size is nil, and
+// [ErrInvalidPackHash] if packHash is zero.
+func NewWithPool(source Source, packHash plumbing.Hash, pool *fdpool.Pool) (*PackHandle, error) {
+	if source.Open == nil || source.Size == nil {
 		return nil, ErrPackSourceRequired
 	}
 	if packHash.IsZero() {
 		return nil, ErrInvalidPackHash
 	}
 	h := &PackHandle{
-		sources:  sources,
+		source:   source,
 		packHash: packHash,
-		pack:     sharedfile.NewWithPool(sources.Pack.Open, defaultGracePeriod, pool),
+		pack:     sharedfile.NewWithPool(source.Open, defaultGracePeriod, pool),
 	}
 	h.closeFn = sync.OnceValue(h.doClose)
 	return h, nil
@@ -134,7 +89,7 @@ func (h *PackHandle) OpenRandomReader() (RandomReader, error) {
 }
 
 // packSize returns the cached .pack file size, consulting
-// Sources.Pack.Size only on the first call. The .pack file is
+// Source.Size only on the first call. The .pack file is
 // immutable post-creation and its on-disk identity is pinned via
 // packHash, so the size is invariant for the lifetime of this
 // handle. Failures are not cached; the next call retries.
@@ -149,7 +104,7 @@ func (h *PackHandle) packSize() (int64, error) {
 	if v := h.sizeVal.Load(); v != 0 {
 		return v, nil
 	}
-	size, err := h.sources.Pack.Size()
+	size, err := h.source.Size()
 	if err != nil {
 		return 0, err
 	}
@@ -157,100 +112,58 @@ func (h *PackHandle) packSize() (int64, error) {
 	return size, nil
 }
 
-// Close releases the .pack [sharedfile.SharedFile] and closes any
-// cached index. Idempotent.
+// Close permanently releases the shared pack file. It is idempotent.
 func (h *PackHandle) Close() error {
 	return h.closeFn()
 }
 
 func (h *PackHandle) doClose() error {
-	// Set closed before releasing any FDs so a concurrent retry in
-	// Index or Meta sees the flag and bails with fs.ErrClosed
-	// instead of reopening idx/rev FDs against a torn-down pack.
+	// Set closed before release so a concurrent PackHash retry cannot reopen the
+	// descriptor after terminal close.
 	h.closed.Store(true)
-
-	packErr := h.pack.Close()
-
-	h.indexMu.Lock()
-	idx := h.indexVal
-	h.indexVal = nil
-	h.indexMu.Unlock()
-
-	var idxErr error
-	if idx != nil {
-		idxErr = idx.Close()
-	}
-
-	return errors.Join(packErr, idxErr)
+	return h.pack.Close()
 }
 
-// Meta reads and verifies the .pack header and footer hash. The
-// first successful call is cached; transient open or read
-// failures retry on the next call. Returns [fs.ErrClosed] if the
-// [PackHandle] is closed.
-func (h *PackHandle) Meta() (PackMeta, error) {
+// PackHash validates the pack footer against the pinned hash. The first
+// successful validation is cached. A failed validation retries on the next
+// call. PackHash returns [fs.ErrClosed] after Close.
+func (h *PackHandle) PackHash() (plumbing.Hash, error) {
 	if h.closed.Load() {
-		return PackMeta{}, fs.ErrClosed
+		return plumbing.ZeroHash, fs.ErrClosed
 	}
-	h.metaMu.Lock()
-	defer h.metaMu.Unlock()
+	h.hashMu.Lock()
+	defer h.hashMu.Unlock()
 	if h.closed.Load() {
-		return PackMeta{}, fs.ErrClosed
+		return plumbing.ZeroHash, fs.ErrClosed
 	}
-	if h.metaVal != nil {
-		return *h.metaVal, nil
+	if h.hashValid {
+		return h.packHash, nil
 	}
 
 	size, err := h.packSize()
 	if err != nil {
-		return PackMeta{}, fmt.Errorf("packhandle: pack size: %w", err)
+		return plumbing.ZeroHash, fmt.Errorf("packhandle: pack size: %w", err)
 	}
 	src, err := h.pack.Acquire()
 	if err != nil {
-		return PackMeta{}, fmt.Errorf("packhandle: acquire pack: %w", err)
+		return plumbing.ZeroHash, fmt.Errorf("packhandle: acquire pack: %w", err)
 	}
 	defer h.pack.Release()
 
-	meta, err := parsePackMeta(src, size, h.packHash)
-	if err != nil {
-		return PackMeta{}, err
+	if err := validatePackHash(src, size, h.packHash); err != nil {
+		return plumbing.ZeroHash, err
 	}
-	h.metaVal = &meta
-	return meta, nil
+	h.hashValid = true
+	return h.packHash, nil
 }
 
-// CloseIdleDescriptors releases the .pack file descriptor and
-// the idx/rev descriptors of any cached [idxfile.LazyIndex]
-// without marking the [PackHandle] closed. Active acquired
-// readers continue to work; FDs held by in-flight readers close
-// the instant the last refcount drops to zero. Subsequent
-// [PackHandle.OpenPackReader] and [PackHandle.Index] operations
-// reopen FDs on demand and resume normal grace-timer behaviour.
-//
-// Idempotent and safe to call concurrently with the open paths
-// and itself. A no-op after [PackHandle.Close]; the closed flag
-// short-circuits before touching either [sharedfile.SharedFile].
-//
-// PackHandle-level caches survive: the cached [PackMeta] and
-// the cached [idxfile.LazyIndex] pointer are not reset. A
-// caller that wants to discard the PackHandle entirely uses
-// Close; a subsequent Close after CloseIdleDescriptors still
-// flips each underlying [sharedfile.SharedFile]'s closed flag
-// exactly once via its idempotent Close.
+// CloseIdleDescriptors requests release of the idle pack descriptor without
+// closing the PackHandle or clearing its caches. Active readers retain the
+// descriptor until they finish. Later operations reopen it.
 func (h *PackHandle) CloseIdleDescriptors() error {
 	if h.closed.Load() {
 		return nil
 	}
 
-	packErr := h.pack.ReleaseNow()
-
-	h.indexMu.Lock()
-	idx := h.indexVal
-	h.indexMu.Unlock()
-
-	var idxErr error
-	if idx != nil {
-		idxErr = idx.CloseIdleDescriptors()
-	}
-	return errors.Join(packErr, idxErr)
+	return h.pack.ReleaseNow()
 }

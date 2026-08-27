@@ -34,7 +34,9 @@ import (
 	"github.com/go-git/go-git/v6/internal/server"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -3964,6 +3966,113 @@ func (s *RepositorySuite) TestRepackObjectsWithNoDelete() {
 	}
 
 	s.testRepackObjects(time.Unix(0, 1), 3)
+}
+
+func TestTreeWalkerReadsLooseNamedPack(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	r, err := PlainInit(repoDir, true)
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	writeBlob := func(content string) plumbing.Hash {
+		obj := r.Storer.NewEncodedObject()
+		obj.SetType(plumbing.BlobObject)
+		w, err := obj.Writer()
+		require.NoError(t, err)
+		_, err = io.WriteString(w, content)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+		hash, err := r.Storer.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return hash
+	}
+	writeTree := func(entries []object.TreeEntry) plumbing.Hash {
+		obj := r.Storer.NewEncodedObject()
+		tree := &object.Tree{Entries: entries}
+		require.NoError(t, tree.Encode(obj))
+		hash, err := r.Storer.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return hash
+	}
+
+	childBlob := writeBlob("child\n")
+	rootBlob := writeBlob("root\n")
+	childTree := writeTree([]object.TreeEntry{{
+		Name: "child.txt",
+		Mode: filemode.Regular,
+		Hash: childBlob,
+	}})
+	rootTree := writeTree([]object.TreeEntry{
+		{Name: "nested", Mode: filemode.Dir, Hash: childTree},
+		{Name: "root.txt", Mode: filemode.Regular, Hash: rootBlob},
+	})
+
+	packWriterStorer, ok := r.Storer.(storer.PackfileWriter)
+	require.True(t, ok)
+	packWriter, err := packWriterStorer.PackfileWriter()
+	require.NoError(t, err)
+	packHash, err := packfile.NewEncoder(packWriter, r.Storer, false).Encode(
+		[]plumbing.Hash{childTree},
+		0,
+	)
+	require.NoError(t, err)
+	require.NoError(t, packWriter.Close())
+
+	looseStorer, ok := r.Storer.(storer.LooseObjectStorer)
+	require.True(t, ok)
+	require.NoError(t, looseStorer.DeleteLooseObject(childTree))
+	require.NoError(t, r.Close())
+
+	canonicalBase := filepath.Join(repoDir, "objects", "pack", "pack-"+packHash.String())
+	looseBase := filepath.Join(repoDir, "objects", "pack", "loose-"+packHash.String())
+	for _, ext := range []string{"pack", "idx"} {
+		require.NoError(t, os.Rename(canonicalBase+"."+ext, looseBase+"."+ext))
+	}
+	if err := os.Rename(canonicalBase+".rev", looseBase+".rev"); err != nil {
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+
+	childLoosePath := filepath.Join(repoDir, "objects", childTree.String()[:2], childTree.String()[2:])
+	_, err = os.Stat(childLoosePath)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	t.Run("direct child tree", func(t *testing.T) {
+		t.Parallel()
+
+		reopened, err := PlainOpen(repoDir)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+
+		child, err := reopened.TreeObject(childTree)
+		require.NoError(t, err)
+		require.Equal(t, "child.txt", child.Entries[0].Name)
+	})
+
+	t.Run("complete tree walk", func(t *testing.T) {
+		t.Parallel()
+
+		reopened, err := PlainOpen(repoDir)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+
+		root, err := reopened.TreeObject(rootTree)
+		require.NoError(t, err)
+		walker := object.NewTreeWalker(root, true, nil)
+		defer walker.Close()
+
+		var paths []string
+		for {
+			name, _, err := walker.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+			paths = append(paths, name)
+		}
+		require.Equal(t, []string{"nested", "nested/child.txt", "root.txt"}, paths)
+	})
 }
 
 func ExecuteOnPath(t *testing.T, path string, cmds ...string) error {

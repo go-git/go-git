@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -34,48 +35,57 @@ func benchFixtureHash(b *testing.B) plumbing.Hash {
 	return h
 }
 
-// newEmbedFixturePackHandle constructs a PackHandle whose Sources read the
-// basic fixture's pack triple directly from the fixtures embed.FS.
+func benchPathSource(fs billy.Basic, path string) packhandle.Source {
+	return packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) { return fs.Open(path) },
+		Size: func() (int64, error) {
+			info, err := fs.Stat(path)
+			if err != nil {
+				return 0, err
+			}
+			return info.Size(), nil
+		},
+	}
+}
+
+// newEmbedFixturePackHandle constructs a handle over the embedded fixture pack.
 func newEmbedFixturePackHandle(b *testing.B) *packhandle.PackHandle {
 	b.Helper()
 	stem := fixturePackStem(b)
-	ph, err := packhandle.New(packhandle.Sources{
-		Pack: packhandle.PathSource(fixtures.Filesystem, stem+".pack"),
-		Idx:  packhandle.PathSource(fixtures.Filesystem, stem+".idx"),
-		Rev:  packhandle.PathSource(fixtures.Filesystem, stem+".rev"),
-	}, benchFixtureHash(b))
+	ph, err := packhandle.NewWithPool(
+		benchPathSource(fixtures.Filesystem, stem+".pack"),
+		benchFixtureHash(b),
+		nil,
+	)
 	if err != nil {
-		b.Fatalf("packhandle.New: %v", err)
+		b.Fatalf("packhandle.NewWithPool: %v", err)
 	}
 	return ph
 }
 
-// copyFixturePackToTempDir copies the basic fixture's .pack/.idx/.rev into
-// b.TempDir() and returns the directory plus the on-disk file names.
+// copyFixturePackToTempDir copies the basic fixture pack into b.TempDir().
 // The destination is an osfs so util.OpenReaderAt activates the mmap path.
-func copyFixturePackToTempDir(b *testing.B) (dir, pack, idx, rev string) {
+func copyFixturePackToTempDir(b *testing.B) (dir, pack string) {
 	b.Helper()
 	dir = b.TempDir()
 	stem := fixturePackStem(b)
 	dstFS := osfs.New(dir)
 
-	for _, ext := range []string{".pack", ".idx", ".rev"} {
-		src, err := fixtures.Filesystem.Open(stem + ext)
-		if err != nil {
-			b.Fatalf("open fixture %s%s: %v", stem, ext, err)
-		}
-		data, err := io.ReadAll(src)
-		_ = src.Close()
-		if err != nil {
-			b.Fatalf("read fixture %s%s: %v", stem, ext, err)
-		}
-		name := filepath.Base(stem) + ext
-		if err := util.WriteFile(dstFS, name, data, 0o644); err != nil {
-			b.Fatalf("write %s: %v", name, err)
-		}
+	src, err := fixtures.Filesystem.Open(stem + ".pack")
+	if err != nil {
+		b.Fatalf("open fixture pack: %v", err)
+	}
+	data, err := io.ReadAll(src)
+	_ = src.Close()
+	if err != nil {
+		b.Fatalf("read fixture pack: %v", err)
 	}
 	base := filepath.Base(stem)
-	return dir, base + ".pack", base + ".idx", base + ".rev"
+	pack = base + ".pack"
+	if err := util.WriteFile(dstFS, pack, data, 0o644); err != nil {
+		b.Fatalf("write %s: %v", pack, err)
+	}
+	return dir, pack
 }
 
 // packSizeFromFixture returns the on-disk size of the basic fixture's pack
@@ -124,7 +134,7 @@ func BenchmarkPackHandleAcquireGrace(b *testing.B) {
 			b.Fatal(err)
 		}
 		off := int64(i) % validRange
-		if _, err := r.(io.ReaderAt).ReadAt(buf, off); err != nil && err != io.EOF {
+		if _, err := r.ReadAt(buf, off); err != nil && err != io.EOF {
 			b.Fatal(err)
 		}
 		_ = r.Close()
@@ -186,7 +196,7 @@ func BenchmarkPackHandleAcquireAfterGraceExpiry(b *testing.B) {
 			b.Fatal(err)
 		}
 		off := int64(i) % validRange
-		if _, err := r.(io.ReaderAt).ReadAt(buf, off); err != nil && err != io.EOF {
+		if _, err := r.ReadAt(buf, off); err != nil && err != io.EOF {
 			b.Fatal(err)
 		}
 		_ = r.Close()
@@ -228,7 +238,7 @@ func BenchmarkPackHandleCloseIdleReopen(b *testing.B) {
 			b.Fatal(err)
 		}
 		off := int64(i) % validRange
-		if _, err := r.(io.ReaderAt).ReadAt(buf, off); err != nil && err != io.EOF {
+		if _, err := r.ReadAt(buf, off); err != nil && err != io.EOF {
 			b.Fatal(err)
 		}
 		_ = r.Close()
@@ -245,13 +255,13 @@ func BenchmarkPackHandleCloseIdleReopen(b *testing.B) {
 // the mmap pread ceiling; the gap measures PackHandle coordination overhead.
 // Run with `-cpu=1,2,4,8` to see the scaling curve.
 //
-// The pack triple is copied onto osfs.New(b.TempDir()) so util.OpenReaderAt
+// The pack file is copied onto osfs.New(b.TempDir()) so util.OpenReaderAt
 // selects the mmap path. The other benchmarks in this file read from the
 // fixtures embed.FS — fine for measuring cursorReader/SharedFile/Meta
 // paths, but unsuitable for concurrent scaling because embedfs falls back
 // to a serialised wrapper.
 func BenchmarkPackHandleParallelReadAt(b *testing.B) {
-	dir, packName, idxName, revName := copyFixturePackToTempDir(b)
+	dir, packName := copyFixturePackToTempDir(b)
 	packPath := filepath.Join(dir, packName)
 
 	info, err := os.Stat(packPath)
@@ -266,11 +276,11 @@ func BenchmarkPackHandleParallelReadAt(b *testing.B) {
 
 	b.Run("packhandle_readat", func(b *testing.B) {
 		fsys := osfs.New(dir)
-		ph, err := packhandle.New(packhandle.Sources{
-			Pack: packhandle.PathSource(fsys, packName),
-			Idx:  packhandle.PathSource(fsys, idxName),
-			Rev:  packhandle.PathSource(fsys, revName),
-		}, benchFixtureHash(b))
+		ph, err := packhandle.NewWithPool(
+			benchPathSource(fsys, packName),
+			benchFixtureHash(b),
+			nil,
+		)
 		if err != nil {
 			b.Fatalf("packhandle.New: %v", err)
 		}
@@ -291,12 +301,11 @@ func BenchmarkPackHandleParallelReadAt(b *testing.B) {
 				b.Fatal(err)
 			}
 			defer r.Close()
-			ra := r.(io.ReaderAt)
 			buf := make([]byte, 64)
 			var i int64
 			for pb.Next() {
 				off := i % validRange
-				if _, err := ra.ReadAt(buf, off); err != nil && err != io.EOF {
+				if _, err := r.ReadAt(buf, off); err != nil && err != io.EOF {
 					b.Fatal(err)
 				}
 				i++
@@ -326,16 +335,10 @@ func BenchmarkPackHandleParallelReadAt(b *testing.B) {
 	})
 }
 
-// BenchmarkPackHandleMeta measures PackHandle.Meta(). The "first"
-// sub-benchmark constructs a fresh PackHandle per iteration and pays the
-// cold cost: stat + acquire + two ReadAts + release. The "cached"
-// sub-benchmark shares one PackHandle whose sync.Once has already fired,
-// so each iteration is just a struct copy out of the OnceValues closure.
-func BenchmarkPackHandleMeta(b *testing.B) {
+// BenchmarkPackHandleHash measures first and cached footer validation.
+func BenchmarkPackHandleHash(b *testing.B) {
 	stem := fixturePackStem(b)
 	packPath := stem + ".pack"
-	idxPath := stem + ".idx"
-	revPath := stem + ".rev"
 
 	b.Run("first", func(b *testing.B) {
 		// Sanity-check the fixture once outside the loop to avoid
@@ -353,19 +356,19 @@ func BenchmarkPackHandleMeta(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ph, err := packhandle.New(packhandle.Sources{
-				Pack: packhandle.PathSource(fixtures.Filesystem, packPath),
-				Idx:  packhandle.PathSource(fixtures.Filesystem, idxPath),
-				Rev:  packhandle.PathSource(fixtures.Filesystem, revPath),
-			}, hash)
+			ph, err := packhandle.NewWithPool(
+				benchPathSource(fixtures.Filesystem, packPath),
+				hash,
+				nil,
+			)
 			if err != nil {
 				b.Fatal(err)
 			}
-			m, err := ph.Meta()
+			got, err := ph.PackHash()
 			if err != nil {
 				b.Fatal(err)
 			}
-			sink.Store(m.Count)
+			sink.Store(uint32(got.Bytes()[0]))
 			_ = ph.Close()
 		}
 	})
@@ -374,8 +377,7 @@ func BenchmarkPackHandleMeta(b *testing.B) {
 		ph := newEmbedFixturePackHandle(b)
 		b.Cleanup(func() { _ = ph.Close() })
 
-		// Warm the sync.Once.
-		if _, err := ph.Meta(); err != nil {
+		if _, err := ph.PackHash(); err != nil {
 			b.Fatal(err)
 		}
 
@@ -384,11 +386,11 @@ func BenchmarkPackHandleMeta(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			m, err := ph.Meta()
+			got, err := ph.PackHash()
 			if err != nil {
 				b.Fatal(err)
 			}
-			sink.Store(m.Count)
+			sink.Store(uint32(got.Bytes()[0]))
 		}
 	})
 }

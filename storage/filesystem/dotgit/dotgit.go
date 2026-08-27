@@ -1,5 +1,5 @@
-// Package dotgit implements the .git directory layout.
-// https://github.com/git/git/blob/master/Documentation/gitrepository-layout.txt
+// Package dotgit implements the Git repository layout.
+// See https://git-scm.com/docs/gitrepository-layout.
 package dotgit
 
 import (
@@ -56,14 +56,11 @@ const (
 
 	tmpPackedRefsPrefix = "._packed-refs"
 
-	packPrefix = "pack-"
-	packExt    = ".pack"
+	packPrefix      = "pack-"
+	loosePackPrefix = "loose-"
+	packExt         = ".pack"
 
-	// promisorExt marks a pack as having been received from a promisor
-	// remote, meaning objects it references but does not contain are
-	// promised by that remote rather than missing. Git refuses to treat
-	// such absences as legitimate without this marker: fsck reports them as
-	// broken links and gc fails outright.
+	// promisorExt marks a pack as having been received from a promisor remote.
 	promisorExt = ".promisor"
 )
 
@@ -72,7 +69,7 @@ var (
 	ErrNotFound = errors.New("path not found")
 	// ErrIdxNotFound is returned by Idxfile when the idx file is not found
 	ErrIdxNotFound = errors.New("idx file not found")
-	// ErrPackfileNotFound is returned by Packfile when the packfile is not found
+	// ErrPackfileNotFound reports that a requested pack alias or sidecar was not found.
 	ErrPackfileNotFound = errors.New("packfile not found")
 	// ErrConfigNotFound is returned by Config when the config is not found
 	ErrConfigNotFound = errors.New("config file not found")
@@ -154,17 +151,16 @@ type Options struct {
 
 	ObjectFormat formatcfg.ObjectFormat
 
-	// ReadReverseIndex controls whether .rev files are read from disk.
-	// When false, a reverse index is generated in memory on demand.
+	// ReadReverseIndex controls the first source used for a reverse index.
+	// When true, DotGit first opens the selected alias's .rev file. When false,
+	// or when that open fails, DotGit builds the reverse index from .idx.
 	// Defaults to true.
 	ReadReverseIndex bool
 	// WriteReverseIndex controls whether .rev files are written when
 	// creating new packfiles. Defaults to true.
 	WriteReverseIndex bool
-	// Pool, when non-nil, governs the LRU eviction of file
-	// descriptors held by [packhandle.PackHandle] instances
-	// constructed by this DotGit. Nil disables pooling for the
-	// pack-FD lifecycle (grace-period close on quiescence).
+	// Pool governs descriptor eviction when it has positive capacity. Nil or
+	// nonpositive capacity uses grace-period close on quiescence.
 	//
 	// The Pool field's API stability tracks [fdpool.Pool]'s, not
 	// this package's. Per the x/ package policy, the fdpool API
@@ -189,12 +185,17 @@ type DotGit struct {
 	objectList []plumbing.Hash // sorted
 	objectMap  map[plumbing.Hash]struct{}
 	packList   []plumbing.Hash
-	packMap    map[plumbing.Hash]struct{}
+	packMap    map[plumbing.Hash]packDescriptor
 
-	// packHandles caches one [*packhandle.PackHandle] per pack hash,
+	// packHandles caches one pack handle and physical base name per pack hash,
 	// guarded by packHandlesMu. Lazy-initialised on first use.
 	packHandlesMu sync.Mutex
-	packHandles   map[plumbing.Hash]*packhandle.PackHandle
+	packHandles   map[plumbing.Hash]*cachedPackHandle
+}
+
+type cachedPackHandle struct {
+	handle   *packhandle.PackHandle
+	baseName string
 }
 
 // New returns a DotGit value ready to be used. The path argument must
@@ -244,23 +245,9 @@ func (d *DotGit) Initialize() error {
 	return nil
 }
 
-// Close closes all opened files.
+// Close clears the pack catalog and closes all cached pack handles.
 func (d *DotGit) Close() error {
-	d.packHandlesMu.Lock()
-	handles := d.packHandles
-	d.packHandles = nil
-	d.packHandlesMu.Unlock()
-
-	var phErrs []error
-	for _, h := range handles {
-		if err := h.Close(); err != nil {
-			phErrs = append(phErrs, err)
-		}
-	}
-
-	d.packMap = nil
-
-	return errors.Join(phErrs...)
+	return d.cleanPackList()
 }
 
 // ConfigWriter returns a file pointer for write to the config file
@@ -360,30 +347,18 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 	return err
 }
 
-// NewObjectPack return a writer for a new packfile, it saves the packfile to
-// disk and also generates and save the index for the given packfile.
+// NewObjectPack clears cached pack state and returns a writer for a new pack.
+// Closing a used writer installs .pack and .idx and, when enabled, .rev.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
-	cleanErr := d.cleanPackList()
-	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
-	if err != nil {
-		return nil, errors.Join(cleanErr, err)
+	if err := d.cleanPackList(); err != nil {
+		return nil, err
 	}
-	if cleanErr != nil {
-		return nil, cleanErr
-	}
-	return pw, nil
+	return newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
 }
 
-// NewPromisorObjectPack is NewObjectPack for a packfile received from a
-// promisor remote, as a filtered (partial clone) fetch produces. Alongside the
-// pack it writes a .promisor sidecar containing marker, which is how git tells
-// objects the remote deliberately withheld from ones that are genuinely
-// missing. Without it git reports the withheld objects as broken links and
-// refuses to gc the repository.
-//
-// Git writes the refs it sought as the marker, one "<hash> <ref>" line each,
-// when the pack came from a fetch, and an empty marker when repacking. Either
-// is accepted: only the file's presence is ever consulted, never its contents.
+// NewPromisorObjectPack returns a writer that marks the stored pack as a
+// promisor pack. marker supplies free-form sidecar data; Git uses the marker's
+// presence, not its contents.
 func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
 	pw, err := d.NewObjectPack()
 	if err != nil {
@@ -394,21 +369,17 @@ func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
 	return pw, nil
 }
 
-// PromisorObjectPacks returns the hashes of the packs that were received from a
-// promisor remote, that is those carrying a .promisor marker.
+// PromisorObjectPacks returns sorted, unique hashes for recognized .pack/.idx
+// pairs for which any pack- or loose-named alias has a regular .promisor file.
 func (d *DotGit) PromisorObjectPacks() ([]plumbing.Hash, error) {
-	packs, err := d.ObjectPacks()
+	packHashes, packs, err := d.currentPackCatalog()
 	if err != nil {
 		return nil, err
 	}
 
 	var promisors []plumbing.Hash
-	for _, h := range packs {
-		ok, err := d.hasPromisor(h)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
+	for _, h := range packHashes {
+		if packs[h].promisor {
 			promisors = append(promisors, h)
 		}
 	}
@@ -416,72 +387,208 @@ func (d *DotGit) PromisorObjectPacks() ([]plumbing.Hash, error) {
 	return promisors, nil
 }
 
-// hasPromisor reports whether the pack carries a .promisor marker.
-func (d *DotGit) hasPromisor(hash plumbing.Hash) (bool, error) {
-	fi, err := d.fs.Lstat(d.objectPackPath(hash, promisorExt[1:]))
+// ObjectPacks returns sorted, unique hashes for recognized pack- or loose-named
+// .pack/.idx pairs. Duplicate aliases produce one logical pack hash.
+func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
+	packHashes, _, err := d.currentPackCatalog()
 	if err != nil {
+		return nil, err
+	}
+	return packHashes, nil
+}
+
+// ObjectPackNames returns sorted physical .pack basenames for recognized
+// same-basename .pack/.idx pairs. Duplicate aliases remain separate names.
+func (d *DotGit) ObjectPackNames() ([]string, error) {
+	packHashes, packs, err := d.currentPackCatalog()
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, hash := range packHashes {
+		for _, baseName := range packs[hash].baseNames {
+			names = append(names, baseName+packExt)
+		}
+	}
+	slices.Sort(names)
+	return names, nil
+}
+
+// Reindex clears the pack catalog and closes all cached pack handles. The next
+// pack scan selects current physical aliases.
+func (d *DotGit) Reindex() error {
+	return d.cleanPackList()
+}
+
+func (d *DotGit) currentPackCatalog() ([]plumbing.Hash, map[plumbing.Hash]packDescriptor, error) {
+	if d.options.ExclusiveAccess {
+		if err := d.genPackList(); err != nil {
+			return nil, nil, err
+		}
+		return d.packList, d.packMap, nil
+	}
+	return d.objectPackCatalog()
+}
+
+// packDescriptor records the selected physical alias, all complete aliases,
+// and whether any complete alias has a regular promisor marker.
+type packDescriptor struct {
+	baseName  string
+	baseNames []string
+	promisor  bool
+}
+
+// objectPackCatalog reads one snapshot of objects/pack. It recognizes
+// lower-case pack- and loose-named .pack entries only when a same-basename
+// .idx entry exists. It groups aliases by hash, prefers a pack- alias for
+// direct reads, and combines promisor state across complete aliases.
+func (d *DotGit) objectPackCatalog() ([]plumbing.Hash, map[plumbing.Hash]packDescriptor, error) {
+	packDir := d.fs.Join(objectsPath, packPath)
+	files, err := d.fs.ReadDir(packDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, make(map[plumbing.Hash]packDescriptor), nil
+		}
+
+		return nil, nil, err
+	}
+
+	fileNames := make(map[string]os.DirEntry, len(files))
+	for _, f := range files {
+		fileNames[f.Name()] = f
+	}
+
+	selected := make(map[plumbing.Hash]packDescriptor, len(files))
+	for _, f := range files {
+		hash, descriptor, ok := d.parsePackDescriptor(f.Name())
+		if !ok {
+			continue
+		}
+		if _, ok := fileNames[descriptor.baseName+".idx"]; !ok {
+			continue
+		}
+		marker, ok := fileNames[descriptor.baseName+promisorExt]
+		descriptor.promisor = ok && marker.Type().IsRegular()
+
+		current, exists := selected[hash]
+		if !exists {
+			descriptor.baseNames = []string{descriptor.baseName}
+			selected[hash] = descriptor
+			continue
+		}
+
+		current.baseNames = append(current.baseNames, descriptor.baseName)
+		current.promisor = current.promisor || descriptor.promisor
+		if strings.HasPrefix(descriptor.baseName, packPrefix) {
+			current.baseName = descriptor.baseName
+		}
+		selected[hash] = current
+	}
+
+	hashes := make([]plumbing.Hash, 0, len(selected))
+	for hash := range selected {
+		hashes = append(hashes, hash)
+	}
+	plumbing.HashesSort(hashes)
+	return hashes, selected, nil
+}
+
+func (d *DotGit) parsePackDescriptor(name string) (plumbing.Hash, packDescriptor, bool) {
+	if !strings.HasSuffix(name, packExt) {
+		return plumbing.ZeroHash, packDescriptor{}, false
+	}
+
+	baseName := strings.TrimSuffix(name, packExt)
+	var hashText string
+	switch {
+	case strings.HasPrefix(baseName, packPrefix):
+		hashText = strings.TrimPrefix(baseName, packPrefix)
+	case strings.HasPrefix(baseName, loosePackPrefix):
+		hashText = strings.TrimPrefix(baseName, loosePackPrefix)
+	default:
+		return plumbing.ZeroHash, packDescriptor{}, false
+	}
+	if len(hashText) != d.options.ObjectFormat.HexSize() {
+		return plumbing.ZeroHash, packDescriptor{}, false
+	}
+
+	hash, ok := plumbing.FromHex(hashText)
+	if !ok || hash.IsZero() || hashText != hash.String() {
+		return plumbing.ZeroHash, packDescriptor{}, false
+	}
+	return hash, packDescriptor{baseName: baseName}, true
+}
+
+func (d *DotGit) objectPackPathFromBase(baseName, extension string) string {
+	return d.fs.Join(objectsPath, packPath, fmt.Sprintf("%s.%s", baseName, extension))
+}
+
+func (d *DotGit) objectPackPairExists(baseName string) (bool, error) {
+	for _, extension := range []string{"pack", "idx"} {
+		_, err := d.fs.Stat(d.objectPackPathFromBase(baseName, extension))
+		if err == nil {
+			continue
+		}
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return fi.Mode().IsRegular(), nil
+	return true, nil
 }
 
-// ObjectPacks returns the list of availables packfiles
-func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
-	if !d.options.ExclusiveAccess {
-		return d.objectPacks()
+func (d *DotGit) objectPackBaseName(hash plumbing.Hash) (string, error) {
+	if hash.IsZero() || hash.HexSize() != d.options.ObjectFormat.HexSize() {
+		return "", ErrPackfileNotFound
 	}
 
-	err := d.genPackList()
-	if err != nil {
-		return nil, err
+	if d.options.ExclusiveAccess {
+		if err := d.genPackList(); err != nil {
+			return "", err
+		}
+		descriptor, ok := d.packMap[hash]
+		if !ok {
+			return "", ErrPackfileNotFound
+		}
+		return descriptor.baseName, nil
 	}
 
-	return d.packList, nil
+	for _, prefix := range []string{packPrefix, loosePackPrefix} {
+		baseName := prefix + hash.String()
+		exists, err := d.objectPackPairExists(baseName)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return baseName, nil
+		}
+	}
+	return "", ErrPackfileNotFound
 }
 
-func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
-	packDir := d.fs.Join(objectsPath, packPath)
-	files, err := d.fs.ReadDir(packDir)
+func (d *DotGit) objectPackSizeFromBase(baseName, extension string) (int64, error) {
+	path := d.objectPackPathFromBase(baseName, extension)
+	fi, err := d.fs.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return 0, ErrPackfileNotFound
 		}
-
-		return nil, err
+		return 0, err
 	}
-
-	packs := make([]plumbing.Hash, 0, len(files))
-	for _, f := range files {
-		n := f.Name()
-		if !strings.HasSuffix(n, packExt) || !strings.HasPrefix(n, packPrefix) {
-			continue
-		}
-
-		h := plumbing.NewHash(n[5 : len(n)-5]) // pack-(hash).pack
-		if h.IsZero() {
-			// Ignore files with badly-formatted names.
-			continue
-		}
-		packs = append(packs, h)
-	}
-
-	return packs, nil
-}
-
-func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
-	return d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.%s", hash.String(), extension))
+	return fi.Size(), nil
 }
 
 func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
-	err := d.hasPack(hash)
+	baseName, err := d.objectPackBaseName(hash)
 	if err != nil {
 		return nil, err
 	}
+	return d.objectPackOpenFromBase(baseName, extension)
+}
 
-	path := d.objectPackPath(hash, extension)
+func (d *DotGit) objectPackOpenFromBase(baseName, extension string) (billy.File, error) {
+	path := d.objectPackPathFromBase(baseName, extension)
 	pack, err := d.fs.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -494,53 +601,51 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 	return pack, nil
 }
 
-// ObjectPack returns a fs.File of the given packfile.
+// ObjectPack opens the .pack file from the selected complete alias for hash.
+// It prefers pack- and falls back to loose-.
 func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
-	}
-
 	return d.objectPackOpen(hash, `pack`)
 }
 
-// ObjectPackIdx returns a fs.File of the index file for a given packfile.
+// ObjectPackIdx opens the .idx file from the selected complete alias for hash.
+// It prefers pack- and falls back to loose-.
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
-	}
-
 	return d.objectPackOpen(hash, `idx`)
 }
 
-// ObjectPackRev returns a fs.File of the reverse index file for a given packfile.
+// ObjectPackRev opens the .rev file from the selected complete alias for hash.
+// It does not switch aliases when the selected alias has no .rev file.
 func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
-	}
-
 	return d.objectPackOpen(hash, `rev`)
 }
 
-// OpenPackRev returns a [idxfile.ReadAtCloser] for the reverse index of the given
-// packfile. When ReadReverseIndex is true the .rev file is read from disk;
-// otherwise the reverse index is generated in memory on demand.
+// OpenPackRev returns the reverse index for hash. When ReadReverseIndex is true,
+// it first opens the selected alias's .rev file. On any open error, or when the
+// option is false, it builds a reverse index from that alias's .idx file.
 func (d *DotGit) OpenPackRev(hash plumbing.Hash) (idxfile.ReadAtCloser, error) {
+	baseName, err := d.objectPackBaseName(hash)
+	if err != nil {
+		return nil, err
+	}
+	return d.openPackRevFromBase(hash, baseName)
+}
+
+func (d *DotGit) openPackRevFromBase(hash plumbing.Hash, baseName string) (idxfile.ReadAtCloser, error) {
 	if d.options.ReadReverseIndex {
-		r, err := d.ObjectPackRev(hash)
+		r, err := d.objectPackOpenFromBase(baseName, "rev")
 		if err == nil {
 			return r, nil
 		}
 	}
-	return d.generateInMemoryRev(hash)
+	return d.generateInMemoryRevFromBase(hash, baseName)
 }
 
-// generateInMemoryRev builds the reverse index data in memory from the
-// .idx file. A fresh reverse index is generated on every call.
-func (d *DotGit) generateInMemoryRev(h plumbing.Hash) (idxfile.ReadAtCloser, error) {
-	f, err := d.ObjectPackIdx(h)
+// generateInMemoryRevFromBase builds a new reverse index from the selected
+// alias's .idx file on each call.
+func (d *DotGit) generateInMemoryRevFromBase(
+	h plumbing.Hash, baseName string,
+) (idxfile.ReadAtCloser, error) {
+	f, err := d.objectPackOpenFromBase(baseName, "idx")
 	if err != nil {
 		return nil, err
 	}
@@ -583,122 +688,80 @@ func newBytesReadAtCloser(data []byte) *bytesReadAtCloser {
 func (b *bytesReadAtCloser) Close() error { return nil }
 
 // packHandle returns the cached [packhandle.PackHandle] for the
-// given pack hash, constructing one on first access. Rev is
-// served through [DotGit.OpenPackRev] so the in-memory fallback
-// applies when the .rev file is absent or [Options.ReadReverseIndex]
-// is false. Returns [ErrPackfileNotFound] when the .pack file
-// cannot be located.
+// given pack hash, constructing one on first access.
 func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) {
+	cached, err := d.packHandleEntry(hash)
+	if err != nil {
+		return nil, err
+	}
+	return cached.handle, nil
+}
+
+// packHandleEntry binds one cached handle to the physical alias selected when
+// the handle is created. Reindexing and pack-set mutations clear the entry.
+func (d *DotGit) packHandleEntry(hash plumbing.Hash) (*cachedPackHandle, error) {
 	d.packHandlesMu.Lock()
 	defer d.packHandlesMu.Unlock()
 
-	if h, ok := d.packHandles[hash]; ok {
-		return h, nil
+	if cached, ok := d.packHandles[hash]; ok {
+		return cached, nil
 	}
 
-	if err := d.hasPack(hash); err != nil {
-		return nil, err
-	}
-
-	packPath := d.objectPackPath(hash, "pack")
-	idxPath := d.objectPackPath(hash, "idx")
-
-	sources := packhandle.Sources{
-		Pack: packhandle.Source{
-			Open: func() (packhandle.ReadAtCloser, error) {
-				return d.ObjectPack(hash)
-			},
-			Size: func() (int64, error) {
-				fi, err := d.fs.Stat(packPath)
-				if err != nil {
-					return 0, err
-				}
-				return fi.Size(), nil
-			},
-		},
-		Idx: packhandle.Source{
-			Open: func() (packhandle.ReadAtCloser, error) {
-				return d.ObjectPackIdx(hash)
-			},
-			Size: func() (int64, error) {
-				fi, err := d.fs.Stat(idxPath)
-				if err != nil {
-					return 0, err
-				}
-				return fi.Size(), nil
-			},
-		},
-		Rev: packhandle.Source{
-			Open: func() (packhandle.ReadAtCloser, error) {
-				return d.OpenPackRev(hash)
-			},
-			// Rev may be served from an in-memory buffer with no
-			// stat-able size. [idxfile.LazyIndex] does not consult
-			// Rev.Size, so a zero stub is correct here.
-			Size: func() (int64, error) { return 0, nil },
-		},
-	}
-
-	ph, err := packhandle.NewWithPool(sources, hash, d.options.Pool)
+	baseName, err := d.objectPackBaseName(hash)
 	if err != nil {
 		return nil, err
 	}
 
-	if d.packHandles == nil {
-		d.packHandles = make(map[plumbing.Hash]*packhandle.PackHandle)
+	source := packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) {
+			return d.objectPackOpenFromBase(baseName, "pack")
+		},
+		Size: func() (int64, error) {
+			return d.objectPackSizeFromBase(baseName, "pack")
+		},
 	}
-	d.packHandles[hash] = ph
-	return ph, nil
+
+	ph, err := packhandle.NewWithPool(source, hash, d.options.Pool)
+	if err != nil {
+		return nil, err
+	}
+	cached := &cachedPackHandle{handle: ph, baseName: baseName}
+
+	if d.packHandles == nil {
+		d.packHandles = make(map[plumbing.Hash]*cachedPackHandle)
+	}
+	d.packHandles[hash] = cached
+	return cached, nil
 }
 
-// walkPackHandles snapshots the [packhandle.PackHandle] catalog
-// under packHandlesMu and invokes fn on each entry with the lock
-// released. The snapshot shortens the critical section so
-// concurrent [DotGit.packHandle] lookups do not block on slow
-// per-handle work such as file-close syscalls.
-//
-// The catalog is left intact; fn observes the same PackHandle
-// pointers that subsequent lookups return. Callers that want to
-// drain the catalog must do so separately — Close and
-// cleanPackList keep their inline snapshot-with-clear because
-// they need the drain to be atomic with the snapshot.
-//
-// Errors returned by fn are joined; the walk continues past a
-// failing entry so one bad pack does not strand FDs in others.
+// walkPackHandles snapshots the handle catalog, releases the catalog lock,
+// calls fn for each handle, and joins all errors.
 func (d *DotGit) walkPackHandles(fn func(*packhandle.PackHandle) error) error {
 	d.packHandlesMu.Lock()
-	handles := slices.Collect(maps.Values(d.packHandles))
+	entries := slices.Collect(maps.Values(d.packHandles))
 	d.packHandlesMu.Unlock()
 
 	var errs []error
-	for _, h := range handles {
-		if err := fn(h); err != nil {
+	for _, cached := range entries {
+		if err := fn(cached.handle); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// CloseIdleDescriptors releases the FDs held by every cached
-// [packhandle.PackHandle] without evicting them from the
-// catalog. The catalog and each PackHandle's cached state
-// (`PackMeta`, `LazyIndex`) survive the call; subsequent
-// operations reopen FDs on demand.
-//
-// Idempotent and safe to call concurrently with other DotGit
-// operations. After [DotGit.Close] the catalog is empty, so the
-// call is a no-op.
+// CloseIdleDescriptors requests release of idle .pack descriptors in cached
+// pack handles without evicting the handles. Active readers retain their
+// descriptors until they finish. Later reads reopen them.
 func (d *DotGit) CloseIdleDescriptors() error {
 	return d.walkPackHandles(func(ph *packhandle.PackHandle) error {
 		return ph.CloseIdleDescriptors()
 	})
 }
 
-// PackHandle returns the cached [packfile.PackHandle] for the
-// given pack hash, constructing one on first access. The returned
-// interface does not expose Close; dotgit owns the handle's
-// lifetime and tears it down via [DotGit.Close] or
-// [DotGit.cleanPackList].
+// PackHandle returns a cached handle for hash. The handle stays bound to its
+// selected physical alias until DotGit invalidates it. Pack-set mutation or
+// Close can invalidate active cursors; later cursor operations then fail.
 func (d *DotGit) PackHandle(hash plumbing.Hash) (packfile.PackHandle, error) {
 	ph, err := d.packHandle(hash)
 	if err != nil {
@@ -722,82 +785,96 @@ func (a packHandleAdapter) OpenRandomReader() (packfile.RandomReader, error) {
 }
 
 func (a packHandleAdapter) PackHash() (plumbing.Hash, error) {
-	m, err := a.ph.Meta()
-	if err != nil {
-		return plumbing.ZeroHash, err
-	}
-	return m.ID, nil
+	return a.ph.PackHash()
 }
 
-// DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
-// The .pack, .idx, .rev and .promisor files are each attempted independently;
-// any failures are joined into the returned error so a partial failure cannot
-// leave orphaned siblings on disk. A missing .rev is not an error — the
-// reverse index is optional and may have been generated only in memory — and
-// neither is a missing .promisor, which only packs fetched from a promisor
-// remote carry.
+// DeleteOldObjectPackAndIndex checks pack- and loose-named aliases for hash.
+// With a nonzero cutoff, it removes an alias only when its .pack modification
+// time is before the cutoff. A zero cutoff also removes orphan sidecars.
 //
-// The .promisor is the one sibling that is not independent: it is removed only
-// once the pack itself is gone, since a pack left on disk without it reads as
-// corrupt.
+// The method removes .pack first. If that removal fails, it keeps .idx, .rev,
+// and .promisor. It attempts all aliases and joins errors. Any removal clears
+// the pack catalog and closes the cached handle for hash.
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
+	if hash.IsZero() || hash.HexSize() != d.options.ObjectFormat.HexSize() {
+		return ErrPackfileNotFound
+	}
+
 	var errs []error
-	if err := d.cleanPackList(); err != nil {
-		errs = append(errs, err)
-	}
+	found := false
+	removed := false
+	for _, prefix := range []string{packPrefix, loosePackPrefix} {
+		baseName := prefix + hash.String()
+		packPath := d.objectPackPathFromBase(baseName, "pack")
 
-	packPath := d.objectPackPath(hash, `pack`)
-	if !t.IsZero() {
-		fi, err := d.fs.Stat(packPath)
-		if err != nil {
-			errs = append(errs, err)
-			return errors.Join(errs...)
-		}
-		// too new, skip deletion.
-		if !fi.ModTime().Before(t) {
-			return errors.Join(errs...)
-		}
-	}
-
-	// The pack goes first, because the .promisor may only outlive it, never the
-	// other way round. A marker removed while its pack is still readable turns
-	// every object the promisor remote withheld into what git reports as a
-	// broken link, so on a removal that leaves the pack behind the marker stays
-	// too. An already-absent pack is a different matter: the marker is then an
-	// orphan vouching for nothing, and goes.
-	packGone := true
-	if err := d.fs.Remove(packPath); err != nil {
-		if !os.IsNotExist(err) {
-			packGone = false
-		}
-		errs = append(errs, err)
-	}
-
-	siblings := []string{`idx`, `rev`}
-	if packGone {
-		siblings = append(siblings, `promisor`)
-	}
-
-	for _, ext := range siblings {
-		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
-			if (ext == `rev` || ext == `promisor`) && os.IsNotExist(err) {
+		if !t.IsZero() {
+			fi, err := d.fs.Stat(packPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				errs = append(errs, err)
 				continue
 			}
-			errs = append(errs, err)
+			found = true
+			if !fi.ModTime().Before(t) {
+				continue
+			}
+		}
+
+		// Remove .pack first. Keep all sidecars if that removal fails.
+		packGone := true
+		if err := d.fs.Remove(packPath); err != nil {
+			if !os.IsNotExist(err) {
+				packGone = false
+				found = true
+				errs = append(errs, err)
+			}
+		} else {
+			found = true
+			removed = true
+		}
+
+		if !packGone {
+			continue
+		}
+
+		for _, ext := range []string{"idx", "rev", "promisor"} {
+			if err := d.fs.Remove(d.objectPackPathFromBase(baseName, ext)); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				found = true
+				errs = append(errs, err)
+			} else {
+				found = true
+				removed = true
+			}
 		}
 	}
 
+	if !found && len(errs) == 0 {
+		return ErrPackfileNotFound
+	}
+	if !removed {
+		return errors.Join(errs...)
+	}
+
+	d.packMap = nil
+	d.packList = nil
+
 	d.packHandlesMu.Lock()
-	ph, ok := d.packHandles[hash]
+	cached, ok := d.packHandles[hash]
 	if ok {
 		delete(d.packHandles, hash)
 	}
 	d.packHandlesMu.Unlock()
 	if ok {
-		if err := ph.Close(); err != nil {
+		if err := cached.handle.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
+
 	return errors.Join(errs...)
 }
 
@@ -977,16 +1054,9 @@ func (d *DotGit) hasObject(h plumbing.Hash) error {
 	return nil
 }
 
-// cleanPackList resets the pack catalog and drops every cached
-// [packhandle.PackHandle]. A pack-set mutation may have
-// invalidated the handles' underlying files, so they cannot
-// safely be reused. Idle readers finish normally; their cursor
-// Close becomes a no-op release.
-//
-// PackHandle.Close owns the underlying sharedfile and LazyIndex
-// FDs, so a close failure here means an FD has not been released.
-// The errors are joined and returned so callers can surface them
-// rather than silently masking I/O failures during cleanup.
+// cleanPackList resets the pack catalog and closes every cached pack handle.
+// Existing cursors return fs.ErrClosed on later operations. The method joins
+// handle-close errors.
 func (d *DotGit) cleanPackList() error {
 	d.packMap = nil
 	d.packList = nil
@@ -997,8 +1067,8 @@ func (d *DotGit) cleanPackList() error {
 	d.packHandlesMu.Unlock()
 
 	var errs []error
-	for _, h := range handles {
-		if err := h.Close(); err != nil {
+	for _, cached := range handles {
+		if err := cached.handle.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -1010,37 +1080,13 @@ func (d *DotGit) genPackList() error {
 		return nil
 	}
 
-	op, err := d.objectPacks()
+	packList, packMap, err := d.objectPackCatalog()
 	if err != nil {
 		return err
 	}
 
-	d.packMap = make(map[plumbing.Hash]struct{}, len(op))
-	d.packList = nil
-
-	for _, h := range op {
-		d.packList = append(d.packList, h)
-		d.packMap[h] = struct{}{}
-	}
-
-	return nil
-}
-
-func (d *DotGit) hasPack(h plumbing.Hash) error {
-	if !d.options.ExclusiveAccess {
-		return nil
-	}
-
-	err := d.genPackList()
-	if err != nil {
-		return err
-	}
-
-	_, ok := d.packMap[h]
-	if !ok {
-		return ErrPackfileNotFound
-	}
-
+	d.packList = packList
+	d.packMap = packMap
 	return nil
 }
 

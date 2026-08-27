@@ -15,9 +15,8 @@ type PackHandle interface {
 	// OpenRandomReader returns a fresh random-access cursor over
 	// the .pack file. The cursor is closed by the caller.
 	OpenRandomReader() (RandomReader, error)
-	// PackHash returns the .pack file's trailing checksum, which
-	// by canonical-Git construction equals the pack's identity
-	// hash (the hex in pack-<hash>.pack).
+	// PackHash returns the .pack file's trailing checksum. It identifies the
+	// logical pack and supplies the hash in pack- or loose-named aliases.
 	PackHash() (plumbing.Hash, error)
 }
 
@@ -30,21 +29,13 @@ type RandomReader interface {
 	io.Closer
 }
 
-// PackHandleResolver returns the current [PackHandle] for one
-// .pack file. It is invoked on scanner init (once per [Packfile])
-// and on every [FSObject.Reader] call. See [DotGit.PackHandle]
-// for the reference implementation.
+// PackHandleResolver returns a [PackHandle] for one logical pack identity. It
+// runs during scanner initialization and for each [FSObject.Reader] call.
 //
-// Contract:
-//
-//   - Every handle returned for the lifetime of a given [Packfile]
-//     MUST address the same .pack file on disk (same PackHash).
-//     The handle value MAY change across calls. [Packfile] does
-//     NOT re-validate identity on re-resolution.
-//   - Errors propagate to the caller as object-read errors. The
-//     resolver SHOULD NOT retry internally.
-//   - The handle returned MUST remain valid until at least one
-//     cursor obtained from it has been closed by the caller.
+// Every returned handle must report the same PackHash. The physical alias can
+// change between calls. Storage mutation can invalidate a handle and its open
+// cursors; later cursor operations then return an error. Resolver errors
+// propagate as object-read errors.
 type PackHandleResolver func() (PackHandle, error)
 
 // WithPackHandle injects an externally-owned [PackHandle] resolver.

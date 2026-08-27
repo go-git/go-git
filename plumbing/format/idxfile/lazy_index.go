@@ -34,22 +34,20 @@ type ReadAtCloser = sharedfile.ReadAtCloser
 // LazyIndex implements the Index interface by reading directly from
 // .idx and .rev files via ReadAt, without loading all data into memory.
 //
-// File descriptors are managed automatically via reference-counted
-// shared handles: opened lazily on first use, shared across concurrent
-// readers, and closed when no readers remain. This avoids holding
-// descriptors open indefinitely while still sharing a single FD across
-// concurrent operations.
+// Reference-counted handles open descriptors on first use and share them across
+// concurrent readers. The configured pool or grace period releases idle
+// descriptors. Close prevents later use and releases descriptors after active
+// operations finish.
 type LazyIndex struct {
 	hashSize int
 	count    int
 	count64  int
 
 	// Section byte offsets within the idx file.
-	fanoutStart int
-	namesStart  int
-	crcStart    int
-	off32Start  int
-	off64Start  int
+	namesStart int
+	crcStart   int
+	off32Start int
+	off64Start int
 
 	idx *sharedfile.SharedFile
 	rev *sharedfile.SharedFile
@@ -74,14 +72,8 @@ func NewLazyIndex(openIdx, openRev func() (ReadAtCloser, error), packHash plumbi
 // idx and rev [sharedfile.SharedFile]s with the given
 // [*fdpool.Pool]. The pool governs LRU eviction across many
 // LazyIndexes so a storage-wide FD budget covers the .idx and
-// .rev descriptors. Pass nil to disable pooling (equivalent to
-// [NewLazyIndex]).
-//
-// When pool is non-nil the [defaultCloseGracePeriod] timer is
-// inert: each FD stays open and registered with the pool until
-// the LRU evicts it (or [LazyIndex.Close] tears it down). When
-// pool is nil the grace timer governs FD lifetime as in
-// [NewLazyIndex].
+// .rev descriptors. Positive capacity keeps descriptors registered until
+// eviction or Close. A nil or nonpositive-capacity pool uses the grace timer.
 //
 // Neither this constructor nor the [Index] methods accept a
 // [context.Context]. Index lookups are pure ReadAt I/O without
@@ -150,9 +142,8 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 		return fmt.Errorf("%w: unsupported rev file version %d", ErrMalformedIdxFile, v)
 	}
 
-	s.fanoutStart = idxHeaderSize
 	var fanoutBuf [idxFanoutSize]byte
-	if _, err := idxRA.ReadAt(fanoutBuf[:], int64(s.fanoutStart)); err != nil {
+	if _, err := idxRA.ReadAt(fanoutBuf[:], idxHeaderSize); err != nil {
 		return fmt.Errorf("cannot read idx fanout: %w", err)
 	}
 
@@ -167,7 +158,7 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 	s.count = int(s.fanout[255])
 
 	s.hashSize = packHash.Size()
-	s.namesStart = s.fanoutStart + idxFanoutSize
+	s.namesStart = idxHeaderSize + idxFanoutSize
 	s.crcStart = s.namesStart + (s.count * s.hashSize)
 	s.off32Start = s.crcStart + (s.count * 4)
 	s.off64Start = s.off32Start + (s.count * off32Size)
@@ -394,23 +385,16 @@ func (s *LazyIndex) EntriesByOffset() (EntryIter, error) {
 	return &revEntryIter{s: s, idx: idx, rev: rev}, nil
 }
 
-// Close releases the underlying shared file handles, preventing future
-// operations. If there are active readers they will finish normally;
-// the file descriptors close when the last reader is done.
+// Close prevents new operations and releases idle descriptors. An active
+// operation or iterator keeps its descriptor until it releases it.
 func (s *LazyIndex) Close() error {
 	return errors.Join(s.idx.Close(), s.rev.Close())
 }
 
-// CloseIdleDescriptors releases the idx and rev file descriptors
-// without disabling the [LazyIndex]. The FDs close inline when no
-// readers are active; otherwise each [sharedfile.SharedFile]
-// latches an immediate close on the next refs==0 transition.
-// In-flight readers complete normally; subsequent operations
-// reopen the FDs on demand and resume normal grace-timer
-// behaviour.
-//
-// Returns the joined error of the inline closes; latched closes
-// that fire later are not reported.
+// CloseIdleDescriptors requests release of idle idx and rev descriptors without
+// disabling the LazyIndex. Active readers retain descriptors until they finish.
+// Later operations reopen them under the configured pool or grace-period
+// policy. The returned error covers only descriptors closed during this call.
 func (s *LazyIndex) CloseIdleDescriptors() error {
 	return errors.Join(s.idx.ReleaseNow(), s.rev.ReleaseNow())
 }

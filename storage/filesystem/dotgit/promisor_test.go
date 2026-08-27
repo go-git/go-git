@@ -25,6 +25,7 @@ func createPromisorPack(t *testing.T, marker string) (*DotGit, plumbing.Hash, bi
 	f := fixtures.Basic().One()
 	fs := osfs.New(t.TempDir())
 	dot := New(fs)
+	t.Cleanup(func() { require.NoError(t, dot.Close()) })
 	require.NoError(t, dot.Initialize())
 
 	w, err := dot.NewPromisorObjectPack(marker)
@@ -32,6 +33,7 @@ func createPromisorPack(t *testing.T, marker string) (*DotGit, plumbing.Hash, bi
 
 	pf, err := f.Packfile()
 	require.NoError(t, err)
+	defer func() { _ = pf.Close() }()
 	_, err = io.Copy(w, pf)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
@@ -46,7 +48,7 @@ func TestNewPromisorObjectPackWritesMarker(t *testing.T) {
 
 	marker := fs.Join("objects", "pack", "pack-"+h.String()+".promisor")
 	fi, err := fs.Lstat(marker)
-	require.NoError(t, err, "a filtered fetch must leave a .promisor marker: without it git reports the withheld objects as broken links and refuses to gc")
+	require.NoError(t, err, "a promisor write must leave a .promisor marker")
 	assert.True(t, fi.Mode().IsRegular())
 
 	// The pack itself has to be readable as an ordinary pack.
@@ -96,13 +98,32 @@ func TestPromisorObjectPacks(t *testing.T) {
 
 		promisors, err := dot.PromisorObjectPacks()
 		require.NoError(t, err)
-		assert.Empty(t, promisors, "a repository with no promisor pack is not a partial clone, so every missing object is genuinely missing")
+		assert.Empty(t, promisors, "an ordinary pack must not be reported as promisor")
 	})
 }
 
-// TestDeleteOldObjectPackAndIndexRemovesMarker pins the sidecar to its pack. A
-// .promisor left behind after its pack is gone claims a pack that no longer
-// exists, and the objects it vouched for stop being understood as promised.
+func TestPromisorObjectPacksDuplicateAliases(t *testing.T) {
+	t.Parallel()
+
+	dot, hash, fs := createPackWithRev(t, Options{})
+
+	canonicalBase := fs.Join("objects", "pack", packPrefix+hash.String())
+	looseBase := fs.Join("objects", "pack", loosePackPrefix+hash.String())
+	for _, ext := range []string{"pack", "idx"} {
+		copyPackAliasFile(t, fs, canonicalBase+"."+ext, looseBase+"."+ext)
+	}
+
+	marker, err := fs.Create(looseBase + promisorExt)
+	require.NoError(t, err)
+	require.NoError(t, marker.Close())
+
+	promisors, err := dot.PromisorObjectPacks()
+	require.NoError(t, err)
+	require.Equal(t, []plumbing.Hash{hash}, promisors)
+}
+
+// TestDeleteOldObjectPackAndIndexRemovesMarker verifies that deletion removes
+// the promisor sidecar with its pack.
 func TestDeleteOldObjectPackAndIndexRemovesMarker(t *testing.T) {
 	t.Parallel()
 
@@ -127,15 +148,37 @@ func TestDeleteOldObjectPackAndIndexWithoutMarker(t *testing.T) {
 	require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
 }
 
-// TestPromisorMarkerNotAddedToExistingPack covers a duplicate arrival: a pack
-// already on disk unmarked, then the same pack again from a promisor remote.
-//
-// The existing pack must be left alone. Packs are content addressed, so an equal
-// hash means equal objects and nothing is newly absent, while marking it would
-// declare the repository a partial clone on the strength of a duplicate — which
-// makes the object walk tolerate missing objects and every later repack write a
-// promisor pack.
-func TestPromisorMarkerNotAddedToExistingPack(t *testing.T) {
+func TestDeleteOldObjectPackAndIndexLooseName(t *testing.T) {
+	t.Parallel()
+
+	dot, h, fs := createPromisorPack(t, "")
+
+	canonicalBase := fs.Join("objects", "pack", "pack-"+h.String())
+	looseBase := fs.Join("objects", "pack", "loose-"+h.String())
+	for _, ext := range []string{"pack", "idx", "promisor"} {
+		require.NoError(t, fs.Rename(canonicalBase+"."+ext, looseBase+"."+ext))
+	}
+	if err := fs.Rename(canonicalBase+".rev", looseBase+".rev"); err != nil {
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+
+	canonicalIdx, err := fs.Create(canonicalBase + ".idx")
+	require.NoError(t, err)
+	require.NoError(t, canonicalIdx.Close())
+
+	require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
+
+	for _, ext := range []string{"pack", "idx", "rev", "promisor"} {
+		_, err := fs.Lstat(looseBase + "." + ext)
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+	_, err = fs.Lstat(canonicalBase + ".idx")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// TestPromisorMarkerAddedToExistingPack verifies that a duplicate promisor
+// write marks an identical pack that was first written as an ordinary pack.
+func TestPromisorMarkerAddedToExistingPack(t *testing.T) {
 	t.Parallel()
 
 	f := fixtures.Basic().One()
@@ -167,8 +210,7 @@ func TestPromisorMarkerNotAddedToExistingPack(t *testing.T) {
 
 	promisors, err = dot.PromisorObjectPacks()
 	require.NoError(t, err)
-	assert.Empty(t, promisors,
-		"a pack already on disk must keep its marker state; marking it turns the repository into a partial clone because a duplicate arrived")
+	require.Equal(t, []plumbing.Hash{plumbing.NewHash(f.PackfileHash)}, promisors)
 }
 
 // removeFailFS fails Remove for paths with a given suffix, to exercise the case
@@ -186,11 +228,8 @@ func (fs removeFailFS) Remove(path string) error {
 	return fs.Filesystem.Remove(path)
 }
 
-// TestDeleteOldObjectPackKeepsMarkerWhenPackSurvives pins the ordering between
-// a pack and its marker. Removing the marker while the pack is still readable
-// leaves objects the promisor remote withheld looking like broken links, which
-// is the state the marker exists to prevent — so a failed pack removal has to
-// leave the marker in place.
+// TestDeleteOldObjectPackKeepsMarkerWhenPackSurvives verifies that a failed
+// pack removal preserves all files for that physical alias.
 func TestDeleteOldObjectPackKeepsMarkerWhenPackSurvives(t *testing.T) {
 	t.Parallel()
 
@@ -213,10 +252,9 @@ func TestDeleteOldObjectPackKeepsMarkerWhenPackSurvives(t *testing.T) {
 	// The pack cannot be removed, so the call reports failure.
 	require.Error(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
 
-	_, err = fs.Lstat(base + ".pack")
-	require.NoError(t, err, "precondition: the pack should have survived removal")
-
-	_, err = fs.Lstat(base + ".promisor")
-	assert.NoError(t, err,
-		"the marker must outlive a failed pack removal, or the surviving pack's withheld objects read as corruption")
+	for _, extension := range []string{".pack", ".idx", ".rev", ".promisor"} {
+		_, err = fs.Lstat(base + extension)
+		require.NoError(t, err,
+			"%s must survive when the pack cannot be removed", extension)
+	}
 }

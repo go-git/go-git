@@ -53,6 +53,7 @@ func TestCursor_ReadAfterSharedFileClose_ReturnsFSErrClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newCursorReader: %v", err)
 	}
+	defer cur.Close()
 
 	if err := sf.Close(); err != nil {
 		t.Fatalf("sf.Close: %v", err)

@@ -55,18 +55,13 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 
 // ErrPromisorPacksUnsupported is returned when a packfile from a promisor
 // remote would be stored by a storer that writes packfiles but cannot record
-// them as promisor packs. Writing it unmarked would leave a repository whose
-// fsck reports broken links and whose gc fails, so the write is refused.
+// them as promisor packs.
 var ErrPromisorPacksUnsupported = errors.New("storage writes packfiles but cannot record them as promisor packs")
 
 // SupportsPromisorPacks reports whether a packfile from a promisor remote can be
 // stored without losing the fact that it came from one.
 //
-// Storage that records promisor packs qualifies. So does storage that does not
-// write packfiles at all: it stores objects individually, so there is no pack to
-// mark and nothing to lose — in-memory storage works this way. What does not
-// qualify is storage that writes a packfile but cannot mark it, which is exactly
-// how an unmarked pack of deliberately absent objects reaches disk.
+// A storer qualifies if it records promisor packs or does not store packfiles.
 func SupportsPromisorPacks(s storer.Storer) bool {
 	if _, ok := s.(storer.PromisorPackfileWriter); ok {
 		return true
@@ -81,10 +76,9 @@ func SupportsPromisorPacks(s storer.Storer) bool {
 // is recorded as a promisor pack so that the objects the filter excluded are
 // understood to be promised by that remote rather than missing.
 //
-// Storage that writes packfiles without being able to mark them is refused with
-// ErrPromisorPacksUnsupported rather than silently producing the corruption this
-// marking exists to prevent. Storage that writes no packfiles at all stores the
-// objects individually, where there is no marking to lose.
+// A storer that writes packfiles but cannot mark them returns
+// [ErrPromisorPacksUnsupported]. A storer that does not write packfiles stores
+// the objects separately and needs no pack marker.
 func UpdatePromisorObjectStorage(s storer.Storer, packfile io.Reader, marker string) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()

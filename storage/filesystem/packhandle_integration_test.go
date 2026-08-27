@@ -27,14 +27,38 @@ import (
 // method calls are forwarded to the embedded Filesystem unchanged.
 type countingFS struct {
 	billy.Filesystem
-	packOpens atomic.Int32
+	packOpens      atomic.Int32
+	packCloses     atomic.Int32
+	packReads      atomic.Int32
+	failPackReadAt int32
+	failedPackRead atomic.Bool
 }
 
 func (c *countingFS) Open(path string) (billy.File, error) {
-	if filepath.Ext(path) == ".pack" {
-		c.packOpens.Add(1)
+	f, err := c.Filesystem.Open(path)
+	if err != nil || filepath.Ext(path) != ".pack" {
+		return f, err
 	}
-	return c.Filesystem.Open(path)
+	c.packOpens.Add(1)
+	return &countingPackFile{File: f, fs: c}, nil
+}
+
+type countingPackFile struct {
+	billy.File
+	fs *countingFS
+}
+
+func (f *countingPackFile) ReadAt(p []byte, off int64) (int, error) {
+	read := f.fs.packReads.Add(1)
+	if read == f.fs.failPackReadAt && f.fs.failedPackRead.CompareAndSwap(false, true) {
+		return 0, fs.ErrClosed
+	}
+	return f.File.ReadAt(p, off)
+}
+
+func (f *countingPackFile) Close() error {
+	f.fs.packCloses.Add(1)
+	return f.File.Close()
 }
 
 // createCountedStorage builds a fresh writable ObjectStorage backed
@@ -101,6 +125,43 @@ func TestIntegration_PackFDIsPooledAcrossCalls(t *testing.T) {
 		"expected ≤2 .pack opens across 12 lookups, got %d", opens)
 }
 
+func TestIntegration_EncodedObjectSizeReleasesPackCursor(t *testing.T) {
+	t.Parallel()
+
+	counted, storage := createCountedStorage(t, dotgit.Options{})
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	size, err := storage.EncodedObjectSize(target)
+	require.NoError(t, err)
+	require.Positive(t, size)
+	require.Positive(t, counted.packOpens.Load())
+
+	require.NoError(t, storage.CloseIdleDescriptors())
+	assert.Equal(t, counted.packOpens.Load(), counted.packCloses.Load(),
+		"size lookup must release its pack cursor before idle descriptor close")
+}
+
+func TestIntegration_EncodedObjectSizeRetryReleasesPackCursors(t *testing.T) {
+	t.Parallel()
+
+	counted, storage := createCountedStorage(t, dotgit.Options{})
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	// The first ReadAt occurs after the first Packfile has opened its streaming
+	// cursor. The injected close error makes the storage resolve and retry once.
+	counted.failPackReadAt = 1
+
+	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	size, err := storage.EncodedObjectSize(target)
+	require.NoError(t, err)
+	require.Positive(t, size)
+	require.True(t, counted.failedPackRead.Load(), "test must force the closed-cursor retry")
+
+	require.NoError(t, storage.CloseIdleDescriptors())
+	assert.Equal(t, counted.packOpens.Load(), counted.packCloses.Load(),
+		"both size attempts must release their pack cursors")
+}
+
 // TestIntegration_ConcurrentObjectReads verifies that N goroutines
 // reading the same object concurrently all return the correct
 // content without deadlock, error, or data corruption. Perf claims
@@ -159,23 +220,77 @@ func TestIntegration_ConcurrentObjectReads(t *testing.T) {
 	wg.Wait()
 }
 
-// TestIntegration_ReindexInvalidatesPackHandles verifies that calling
-// DeleteOldObjectPackAndIndex closes the cached PackHandle and that
-// subsequent lookups for objects in the now-deleted pack fail. The
-// test also verifies that any reader acquired before the delete sees
-// an error on its next read — the sharedFile underlying the cursor
-// is closed synchronously by PackHandle.Close, so the next ReadAt
-// returns an error even though the cursor was not explicitly closed.
-func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
+func TestIntegration_ReindexRefreshesPackAlias(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	repoDir := t.TempDir()
+	base := osfs.New(repoDir)
+	opts := dotgit.Options{
+		ExclusiveAccess:   true,
+		ReadReverseIndex:  true,
+		WriteReverseIndex: true,
+	}
+	dg := dotgit.NewWithOptions(base, opts)
+	require.NoError(t, dg.Initialize())
+
+	writer, err := dg.NewObjectPack()
+	require.NoError(t, err)
+	pack, err := fixture.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(writer, pack)
+	require.NoError(t, err)
+	require.NoError(t, pack.Close())
+	require.NoError(t, writer.Close())
+
+	storage := NewObjectStorageWithOptions(
+		dg,
+		cache.NewObjectLRUDefault(),
+		Options{ExclusiveAccess: true},
+	)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	packHash := plumbing.NewHash(fixture.PackfileHash)
+	oldReader, err := dg.OpenPackForReading(packHash)
+	require.NoError(t, err)
+
+	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+
+	canonicalBase := filepath.Join("objects", "pack", "pack-"+packHash.String())
+	looseBase := filepath.Join("objects", "pack", "loose-"+packHash.String())
+	for _, extension := range []string{".pack", ".idx", ".rev"} {
+		require.NoError(t, base.Rename(canonicalBase+extension, looseBase+extension))
+	}
+
+	require.NoError(t, storage.Reindex())
+
+	buffer := make([]byte, 4)
+	_, err = oldReader.ReadAt(buffer, 0)
+	require.ErrorIs(t, err, fs.ErrClosed)
+	require.NoError(t, oldReader.Close())
+
+	newReader, err := dg.OpenPackForReading(packHash)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Base(looseBase+".pack"), filepath.Base(newReader.Name()))
+	require.NoError(t, newReader.Close())
+
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+}
+
+// TestIntegration_DeleteInvalidatesPackHandles verifies that deletion closes
+// cached handles and invalidates readers opened before the deletion.
+func TestIntegration_DeleteInvalidatesPackHandles(t *testing.T) {
 	t.Parallel()
 
 	f := fixtures.Basic().One()
 	tmp := t.TempDir()
 	base := osfs.New(tmp)
 
-	// ExclusiveAccess so hasPack consults packMap; after cleanPackList
-	// clears packMap, hasPack returns ErrPackfileNotFound immediately
-	// rather than falling back to a directory scan.
+	// ExclusiveAccess resolves packs from packMap. Deletion clears that map,
+	// so the next lookup rebuilds an empty catalog and reports pack-not-found.
 	opts := dotgit.Options{
 		ExclusiveAccess:   true,
 		ReadReverseIndex:  true,
@@ -211,15 +326,11 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 	// Delete the pack with a future time so the mod-time check passes.
 	require.NoError(t, storage.DeleteOldObjectPackAndIndex(h, time.Now().Add(time.Hour)))
 
-	// The in-flight reader's underlying sharedFile was closed by
-	// PackHandle.Close. The reader's cursor holds the now-closed
-	// os.File; a ReadAt on it returns an error.
+	// Deletion closes the handle that owns this cursor.
 	buf := make([]byte, 4)
 	_, readErr := preBefore.ReadAt(buf, 0)
 	assert.Error(t, readErr,
 		"in-flight reader ReadAt after delete should return an error")
-	// The error wraps fs.ErrClosed because the underlying os.File was
-	// closed by sharedFile.Close().
 	assert.ErrorIs(t, readErr, fs.ErrClosed,
 		"in-flight reader should surface fs.ErrClosed after pack delete")
 
@@ -236,6 +347,63 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 	_, err = storage.EncodedObject(plumbing.AnyObject, target)
 	assert.Error(t, err,
 		"EncodedObject should fail after the pack is deleted")
+}
+
+func TestIntegration_DeleteCutoffRemovesOnlyOldAlias(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	repoDir := t.TempDir()
+	base := osfs.New(repoDir)
+	dg := dotgit.New(base)
+	require.NoError(t, dg.Initialize())
+
+	pw, err := dg.NewObjectPack()
+	require.NoError(t, err)
+	pf, err := fixture.Packfile()
+	require.NoError(t, err)
+	defer func() { _ = pf.Close() }()
+	_, err = io.Copy(pw, pf)
+	require.NoError(t, err)
+	require.NoError(t, pw.Close())
+
+	packHash := plumbing.NewHash(fixture.PackfileHash)
+	canonicalBase := filepath.Join(repoDir, "objects", "pack", "pack-"+packHash.String())
+	looseBase := filepath.Join(repoDir, "objects", "pack", "loose-"+packHash.String())
+	for _, ext := range []string{"pack", "idx"} {
+		source, err := base.Open(filepath.Join("objects", "pack", "pack-"+packHash.String()+"."+ext))
+		require.NoError(t, err)
+		require.NoError(t, copyFile(
+			base,
+			filepath.Join("objects", "pack", "loose-"+packHash.String()+"."+ext),
+			source,
+		))
+		require.NoError(t, source.Close())
+	}
+	cutoff := time.Now()
+	require.NoError(t, os.Chtimes(canonicalBase+".pack", cutoff.Add(-time.Hour), cutoff.Add(-time.Hour)))
+	require.NoError(t, os.Chtimes(looseBase+".pack", cutoff.Add(time.Hour), cutoff.Add(time.Hour)))
+
+	storage := NewObjectStorage(dg, cache.NewObjectLRU(0))
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+
+	// Delete the old canonical alias and retain the newer loose alias.
+	require.NoError(t, storage.DeleteOldObjectPackAndIndex(packHash, cutoff))
+	_, err = os.Stat(canonicalBase + ".pack")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(canonicalBase + ".idx")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(looseBase + ".pack")
+	require.NoError(t, err)
+	_, err = os.Stat(looseBase + ".idx")
+	require.NoError(t, err)
+
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
 }
 
 // TestIntegration_CloseIdleDescriptorsDropsAndReopens uses real-process

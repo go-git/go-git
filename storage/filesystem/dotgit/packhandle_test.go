@@ -1,7 +1,6 @@
 package dotgit
 
 import (
-	"errors"
 	"io"
 	"io/fs"
 	"testing"
@@ -31,33 +30,6 @@ func TestPackHandle_CachedAcrossCalls(t *testing.T) {
 	ph2, err := dot.packHandle(h)
 	require.NoError(t, err)
 	assert.Same(t, ph1, ph2, "packHandle should return the same cached pointer")
-}
-
-func TestPackHandle_UsesInMemoryRevWhenDiskRevAbsent(t *testing.T) {
-	t.Parallel()
-
-	// Create a pack without writing the .rev to disk and request a
-	// DotGit configured to skip disk rev lookup. PackHandle.Index()
-	// must still succeed by routing through OpenPackRev's in-memory
-	// fallback.
-	_, h, fs := createPackWithRev(t, Options{
-		ReadReverseIndex:  false,
-		WriteReverseIndex: false,
-	})
-
-	dot := NewWithOptions(fs, Options{ReadReverseIndex: false})
-	ph, err := dot.packHandle(h)
-	require.NoError(t, err)
-
-	idx, err := ph.Index()
-	require.NoError(t, err)
-	require.NotNil(t, idx)
-
-	count, err := idx.Count()
-	require.NoError(t, err)
-	assert.Positive(t, count, "in-memory rev fallback should yield a usable index")
-
-	require.NoError(t, dot.Close())
 }
 
 func TestPackHandle_InvalidatedOnDelete(t *testing.T) {
@@ -108,8 +80,8 @@ func TestPackHandle_ClosedOnDotGitClose(t *testing.T) {
 	_, err = ph.OpenRandomReader()
 	assert.ErrorIs(t, err, fs.ErrClosed, "cached handle should be closed by DotGit.Close")
 
-	_, metaErr := ph.Meta()
-	assert.ErrorIs(t, metaErr, fs.ErrClosed)
+	_, hashErr := ph.PackHash()
+	assert.ErrorIs(t, hashErr, fs.ErrClosed)
 }
 
 func TestPackHandle_ClosesAllCachedHandles(t *testing.T) {
@@ -167,18 +139,9 @@ func TestPackHandle_ClosesAllCachedHandles(t *testing.T) {
 	}
 }
 
-// TestPackHandle_CleanPackListClosesActiveCursor exercises the
-// cleanPackList-vs-Acquire race window deterministically. A cursor
-// is opened (which acquires a SharedFile reference) and parked
-// before its first ReadAt; cleanPackList then runs to completion,
-// closing every cached PackHandle (and the SharedFiles inside).
-// The parked cursor must surface [fs.ErrClosed] on its next read
-// rather than partial bytes from a torn-down file descriptor.
-//
-// The two phases are sequenced via channels — the test does not
-// rely on sleeps — so failures are reproducible. Run under -race
-// for the read-side guards.
-func TestPackHandle_CleanPackListClosesActiveCursor(t *testing.T) {
+// TestPackHandle_CleanPackListInvalidatesActiveCursor checks that catalog
+// cleanup invalidates a cursor that was opened before the cleanup.
+func TestPackHandle_CleanPackListInvalidatesActiveCursor(t *testing.T) {
 	t.Parallel()
 
 	dot, h, _ := createPackWithRev(t, Options{
@@ -193,55 +156,12 @@ func TestPackHandle_CleanPackListClosesActiveCursor(t *testing.T) {
 	require.NoError(t, err)
 	defer cursor.Close()
 
-	acquired := make(chan struct{})
-	cleaned := make(chan struct{})
-
-	type readResult struct {
-		n   int
-		err error
-	}
-	results := make(chan readResult, 1)
-
-	go func() {
-		close(acquired)
-		<-cleaned
-		buf := make([]byte, 32)
-		n, err := cursor.ReadAt(buf, 0)
-		results <- readResult{n: n, err: err}
-	}()
-
-	<-acquired
 	require.NoError(t, dot.cleanPackList())
-	close(cleaned)
 
-	got := <-results
-	assert.ErrorIs(t, got.err, fs.ErrClosed,
+	buf := make([]byte, 32)
+	n, err := cursor.ReadAt(buf, 0)
+	assert.ErrorIs(t, err, fs.ErrClosed,
 		"ReadAt after cleanPackList must surface fs.ErrClosed")
-	assert.Zero(t, got.n,
+	assert.Zero(t, n,
 		"ReadAt after cleanPackList must not return partial bytes")
-}
-
-// TestPackHandle_IndexUsableOnDiskRev exercises the disk-rev path of
-// packHandle: when both .idx and .rev are on disk, PackHandle.Index()
-// returns a usable index and the cached handle remains live until
-// DotGit.Close. It implicitly covers the Rev.Size stub by exercising
-// the code path that, in idxfile.LazyIndex, never calls it.
-func TestPackHandle_IndexUsableOnDiskRev(t *testing.T) {
-	t.Parallel()
-
-	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
-
-	ph, err := dot.packHandle(h)
-	require.NoError(t, err)
-
-	idx, err := ph.Index()
-	require.NoError(t, err)
-	require.NotNil(t, idx)
-
-	require.NoError(t, dot.Close())
-	_, err = ph.Meta()
-	require.True(t, errors.Is(err, fs.ErrClosed), "Meta after Close should report ErrClosed, got %v", err)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	stdfs "io/fs"
 	"sync/atomic"
 
 	"github.com/go-git/go-billy/v6"
@@ -18,20 +19,17 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 )
 
-// PackWriter is a io.Writer that generates the packfile index simultaneously,
-// a packfile.Decoder is used with a file reader to read the file being written
-// this operation is synchronized with the write operations.
-// The packfile is written in a temp file, when Close is called this file
-// is renamed/moved (depends on the Filesystem implementation) to the final
-// location, if the PackWriter is not used, nothing is written.
+// PackWriter writes a pack to a temporary file and builds its index at the same
+// time. Close saves a nonempty pack and its sidecars. An empty writer only
+// removes its temporary file.
 type PackWriter struct {
+	// Notify runs after Close successfully saves a nonempty pack.
 	Notify func(plumbing.Hash, *idxfile.Writer)
 
 	fs       billy.Filesystem
 	fr, fw   billy.File
 	synced   *syncedReader
 	checksum plumbing.Hash
-	parser   *packfile.Parser
 	writer   *idxfile.Writer
 	result   chan error
 	format   formatcfg.ObjectFormat
@@ -62,21 +60,17 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 		writeRev: writeRev,
 	}
 
-	writer.checksum.ResetBySize(format.Size())
-
 	go writer.buildIndex()
 	return writer, nil
 }
 
 func (w *PackWriter) buildIndex() {
 	w.writer = new(idxfile.Writer)
-	var err error
-
-	w.parser = packfile.NewParser(w.synced,
+	parser := packfile.NewParser(w.synced,
 		packfile.WithScannerObservers(w.writer),
 		packfile.WithObjectFormat(w.format))
 
-	h, err := w.parser.Parse()
+	h, err := parser.Parse()
 	if err != nil {
 		w.result <- err
 		return
@@ -102,17 +96,9 @@ func (w *PackWriter) Write(p []byte) (int, error) {
 	return w.synced.Write(p)
 }
 
-// Close closes all the file descriptors and save the final packfile, if nothing
-// was written, the tempfiles are deleted without writing a packfile.
+// Close finishes the index, saves a nonempty pack, and then calls Notify.
+// It removes the temporary file when no pack was written.
 func (w *PackWriter) Close() error {
-	defer func() {
-		if w.Notify != nil && w.writer != nil && w.writer.Finished() {
-			w.Notify(w.checksum, w.writer)
-		}
-
-		close(w.result)
-	}()
-
 	if err := w.synced.Close(); err != nil {
 		return err
 	}
@@ -129,11 +115,17 @@ func (w *PackWriter) Close() error {
 		return err
 	}
 
-	if w.writer == nil || !w.writer.Finished() {
+	if !w.writer.Finished() {
 		return w.clean()
 	}
 
-	return w.save()
+	if err := w.save(); err != nil {
+		return err
+	}
+	if w.Notify != nil {
+		w.Notify(w.checksum, w.writer)
+	}
+	return nil
 }
 
 func (w *PackWriter) clean() error {
@@ -202,18 +194,10 @@ func (w *PackWriter) save() error {
 		return err
 	}
 
-	// The marker is written before the pack is moved into place, and only for a
-	// pack this writer is placing. A pack visible without its marker looks
-	// ordinary, so whatever the promisor remote withheld would read as
-	// corruption until the marker landed; crashing in that window must not be
-	// able to produce a repository git refuses to gc.
-	//
-	// An identical pack already on disk is left exactly as it is, marked or
-	// not. Packs are content addressed, so the same hash means the same
-	// objects, and nothing is missing that was not missing before; marking it
-	// now would newly declare the repository a partial clone on the strength of
-	// a duplicate.
-	if w.promisor != nil && !exists {
+	// Write the marker before a new pack becomes visible. If the pack exists,
+	// add a missing marker because this successful promisor write has the same
+	// content hash and therefore refers to the same pack.
+	if w.promisor != nil {
 		promisorPath := fmt.Sprintf("%s%s", base, promisorExt)
 		promisorExists, err := fileExists(w.fs, promisorPath)
 		if err != nil {
@@ -256,7 +240,10 @@ func (w *PackWriter) save() error {
 func fileExists(fs billy.Filesystem, path string) (bool, error) {
 	fi, err := fs.Lstat(path)
 	if err != nil {
-		return false, nil
+		if errors.Is(err, stdfs.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
 	}
 	if !fi.Mode().IsRegular() {
 		return false, fmt.Errorf("unexpected file type for %q: %s", path, fi.Mode().Type())

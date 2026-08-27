@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
@@ -43,13 +44,22 @@ func stagePackOnDisk(t *testing.T, f *fixtures.Fixture) (string, plumbing.Hash, 
 	return root, plumbing.NewHash(f.PackfileHash), filepath.ToSlash(filepath.Join("objects", "pack", name))
 }
 
-// TestPackMeta_ParityWithScanner asserts that
-// packhandle.parsePackMeta extracts the same trailing pack hash
-// as the scanner-driven Seek+ReadFrom path that Packfile.init()
-// uses for non-PackHandle constructions. Both paths must agree
-// because Packfile.init() now consults PackHandle.Meta() for
-// the trailing hash when a PackHandle is set.
-func TestPackMeta_ParityWithScanner(t *testing.T) {
+func packSource(fs billy.Basic, path string) packhandle.Source {
+	return packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) { return fs.Open(path) },
+		Size: func() (int64, error) {
+			info, err := fs.Stat(path)
+			if err != nil {
+				return 0, err
+			}
+			return info.Size(), nil
+		},
+	}
+}
+
+// TestPackHash_ParityWithScanner checks that PackHandle and Scanner read the
+// same trailing pack hash.
+func TestPackHash_ParityWithScanner(t *testing.T) {
 	t.Parallel()
 
 	for _, f := range fixtures.Basic().ByTag("packfile") {
@@ -78,23 +88,16 @@ func TestPackMeta_ParityWithScanner(t *testing.T) {
 			_, err = scannerID.ReadFrom(scanner)
 			require.NoError(t, err)
 
-			// Meta-driven path: PackHandle.Meta returns the parsed
-			// header + footer hash.
-			h, err := packhandle.New(packhandle.Sources{
-				Pack: packhandle.PathSource(fs, relPath),
-			}, packHash)
+			h, err := packhandle.NewWithPool(packSource(fs, relPath), packHash, nil)
 			require.NoError(t, err)
 			defer h.Close()
-			meta, err := h.Meta()
+			handleID, err := h.PackHash()
 			require.NoError(t, err)
 
-			// Both paths must agree on the trailing hash.
-			assert.True(t, scannerID.Equal(meta.ID),
-				"scanner=%s meta=%s", scannerID, meta.ID)
-			// Sanity: the meta's ID also matches the fixture's
-			// declared packHash (the value we pinned at New).
-			assert.True(t, packHash.Equal(meta.ID),
-				"packHash=%s meta=%s", packHash, meta.ID)
+			assert.True(t, scannerID.Equal(handleID),
+				"scanner=%s handle=%s", scannerID, handleID)
+			assert.True(t, packHash.Equal(handleID),
+				"packHash=%s handle=%s", packHash, handleID)
 		})
 	}
 }
