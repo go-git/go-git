@@ -63,7 +63,20 @@ type fetchWalker struct {
 	refs       *packp.AdvRefs
 	fs         billy.Filesystem
 	queue      []plumbing.Hash
-	packIdx    map[plumbing.Hash]string
+	packIdx    map[plumbing.Hash]advertisedPack
+}
+
+type advertisedPack struct {
+	hash plumbing.Hash
+	name string
+}
+
+func (p advertisedPack) packPath() string {
+	return path.Join("objects", "pack", p.name)
+}
+
+func (p advertisedPack) idxPath() string {
+	return strings.TrimSuffix(p.packPath(), ".pack") + ".idx"
 }
 
 func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, fs billy.Filesystem) *fetchWalker {
@@ -76,7 +89,7 @@ func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, 
 		refs:       s.refs,
 		fs:         fs,
 		queue:      make([]plumbing.Hash, 0),
-		packIdx:    make(map[plumbing.Hash]string),
+		packIdx:    make(map[plumbing.Hash]advertisedPack),
 	}
 }
 
@@ -95,22 +108,53 @@ func (r *fetchWalker) httpGet(urlPath string) (*http.Response, error) {
 	return doRequest(r.client, req)
 }
 
-func (r *fetchWalker) getInfoPacks() ([]string, error) {
+func (r *fetchWalker) getInfoPacks() ([]advertisedPack, error) {
 	res, err := r.httpGet("objects/info/packs")
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = res.Body.Close() }()
 
-	var packs []string
+	var packs []advertisedPack
 	s := bufio.NewScanner(res.Body)
 	for s.Scan() {
 		line := s.Text()
-		h := strings.TrimPrefix(line, "P pack-")
-		h = strings.TrimSuffix(h, ".pack")
-		packs = append(packs, h)
+		if line == "" {
+			continue
+		}
+		pack, err := parseInfoPack(line)
+		if err != nil {
+			continue
+		}
+		packs = append(packs, pack)
 	}
 	return packs, s.Err()
+}
+
+func parseInfoPack(line string) (advertisedPack, error) {
+	name, ok := strings.CutPrefix(line, "P ")
+	if !ok || path.Base(name) != name || strings.Contains(name, `\`) {
+		return advertisedPack{}, fmt.Errorf("invalid info/packs line: %q", line)
+	}
+
+	stem, ok := strings.CutSuffix(name, ".pack")
+	if !ok {
+		return advertisedPack{}, fmt.Errorf("invalid info/packs line: %q", line)
+	}
+
+	hashText, ok := strings.CutPrefix(stem, "pack-")
+	if !ok {
+		hashText, ok = strings.CutPrefix(stem, "loose-")
+	}
+	if !ok || !plumbing.IsHash(hashText) {
+		return advertisedPack{}, fmt.Errorf("invalid info/packs line: %q", line)
+	}
+
+	hash := plumbing.NewHash(hashText)
+	if hash.IsZero() {
+		return advertisedPack{}, fmt.Errorf("invalid info/packs line: %q", line)
+	}
+	return advertisedPack{hash: hash, name: name}, nil
 }
 
 func (r *fetchWalker) downloadFile(fp string) (rErr error) {
@@ -143,6 +187,15 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 	}
 
 	return r.fs.Rename(f.Name(), fp)
+}
+
+func (r *fetchWalker) downloadFileIfMissing(fp string) error {
+	if _, err := r.fs.Stat(fp); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return r.downloadFile(fp)
 }
 
 func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
@@ -208,21 +261,16 @@ func (r *fetchWalker) process() error {
 		return err
 	}
 
-	for _, h := range infoPacks {
-		ph := plumbing.NewHash(h)
-		if ph.IsZero() {
+	for _, pack := range infoPacks {
+		if _, ok := r.packIdx[pack.hash]; ok {
 			continue
 		}
 
-		packIdx := path.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", h))
-		if _, err := r.fs.Stat(packIdx); errors.Is(err, fs.ErrExist) {
-			r.packIdx[ph] = packIdx
-		} else {
-			if err := r.downloadFile(packIdx); err != nil {
-				return err
-			}
-			r.packIdx[ph] = packIdx
+		packIdx := pack.idxPath()
+		if err := r.downloadFileIfMissing(packIdx); err != nil {
+			return err
 		}
+		r.packIdx[pack.hash] = pack
 	}
 
 	r.queue = append(r.queue, head)
@@ -232,7 +280,6 @@ func (r *fetchWalker) process() error {
 		}
 	}
 
-	r.queue = append(r.queue, head)
 	return nil
 }
 
@@ -315,8 +362,8 @@ LOOP:
 		obj := r.st.NewEncodedObject()
 		err := r.fetchObject(objHash, obj)
 		if errors.Is(err, io.EOF) {
-			for packHash, packIdxPath := range r.packIdx {
-				idxFile, err := r.fs.Open(packIdxPath)
+			for packHash, pack := range r.packIdx {
+				idxFile, err := r.fs.Open(pack.idxPath())
 				if err != nil {
 					return fmt.Errorf("error opening index file: %w", err)
 				}
@@ -336,19 +383,14 @@ LOOP:
 				}
 
 				indicies = append(indicies, idx)
-				packPath := path.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", packHash.String()))
+				packPath := pack.packPath()
 				if ok, err := idx.Contains(objHash); err == nil && ok {
 					processed[objHash.String()] = struct{}{}
 					if _, ok := packs[packPath]; ok {
 						continue LOOP
 					}
 
-					if _, err := r.fs.Stat(packPath); errors.Is(err, fs.ErrExist) {
-						packs[packPath] = struct{}{}
-						continue LOOP
-					}
-
-					if err := r.downloadFile(packPath); err != nil {
+					if err := r.downloadFileIfMissing(packPath); err != nil {
 						return fmt.Errorf("error downloading pack file: %w", err)
 					}
 

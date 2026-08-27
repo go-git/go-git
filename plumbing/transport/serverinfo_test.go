@@ -156,8 +156,6 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 	pos, ok := st.(storer.PackedObjectStorer)
 	s.True(ok)
 	localPacks := make(map[string]struct{})
-	packs, err := pos.ObjectPacks()
-	s.NoError(err)
 
 	for line := range strings.SplitSeq(string(bts), "\n") {
 		if line == "" {
@@ -165,13 +163,17 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 		}
 		parts := strings.Split(line, " ")
 		s.Len(parts, 2)
-		pack := strings.TrimPrefix(parts[1], "pack-")
-		pack = strings.TrimSuffix(pack, ".pack")
-		localPacks[pack] = struct{}{}
+		s.Equal("P", parts[0])
+		localPacks[parts[1]] = struct{}{}
 	}
 
-	for _, p := range packs {
-		_, ok := localPacks[p.String()]
-		s.True(ok)
+	namer, ok := pos.(storer.ObjectPackNamer)
+	s.Require().True(ok)
+	names, err := namer.ObjectPackNames()
+	s.NoError(err)
+	expected := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		expected[name] = struct{}{}
 	}
+	s.Equal(expected, localPacks)
 }
