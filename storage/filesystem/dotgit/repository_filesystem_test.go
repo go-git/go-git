@@ -63,6 +63,24 @@ func (s *SuiteDotGit) TestRepositoryFilesystem() {
 	s.Require().NoError(err)
 	s.Equal("newfile", link)
 
+	crossRootLinkTarget := repositoryFs.Join("refs", "heads", "main")
+	err = repositoryFs.Symlink(crossRootLinkTarget, "cross-root-link")
+	s.Require().NoError(err)
+
+	link, err = repositoryFs.Readlink("cross-root-link")
+	s.Require().NoError(err)
+	s.Equal(crossRootLinkTarget, link)
+
+	_, err = dotGitFs.Lstat("cross-root-link")
+	s.Require().NoError(err)
+
+	link, err = dotGitFs.Readlink("cross-root-link")
+	s.Require().NoError(err)
+	s.Equal(crossRootLinkTarget, link)
+
+	_, err = commonDotGitFs.Lstat("cross-root-link")
+	s.True(os.IsNotExist(err))
+
 	err = repositoryFs.Remove("somelink")
 	s.Require().NoError(err)
 
