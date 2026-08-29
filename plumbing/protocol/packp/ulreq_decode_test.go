@@ -78,6 +78,21 @@ func (s *UlReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern stri
 	s.Regexp(regexp.MustCompile(pattern), err)
 }
 
+func (s *UlReqDecodeSuite) TestDecodeResetsReusedRequest() {
+	var buf bytes.Buffer
+	s.Require().NoError(pktline.WriteFlush(&buf))
+
+	ur := &UploadRequest{
+		Wants:    []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+		Shallows: []plumbing.Hash{plumbing.NewHash("2222222222222222222222222222222222222222")},
+		Depth:    DepthRequest{Deepen: 7},
+	}
+	ur.Capabilities.Add(capability.OFSDelta)
+
+	s.Require().NoError(ur.Decode(&buf))
+	s.Equal(&UploadRequest{}, ur)
+}
+
 func (s *UlReqDecodeSuite) TestMalformedHash() {
 	payloads := []string{
 		"want 6ecf0ef2c2dffb796alberto2219af86ec6584e5\n",
