@@ -130,8 +130,9 @@ func UploadPack(
 				return fmt.Errorf("closing reader: %w", err)
 			}
 
-			// Find common commits/objects. Only membership is needed below,
-			// so walk the wants once as a set instead of once per want.
+			// Collect the objects reachable from the wants. Only membership
+			// is tested later, when a client have is checked against this
+			// set, so walk the wants once instead of once per want.
 			objs, err := revlist.Objects(st, wants, nil)
 			if err != nil {
 				return fmt.Errorf("getting objects: %w", err)

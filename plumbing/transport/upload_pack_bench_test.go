@@ -17,19 +17,20 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// benchRepo builds a linear history of n commits and points w refs at commits
-// spread across it, so that the wants share most of their history. This is the
-// shape of a server hosting a repository with many branches.
-func benchRepo(tb testing.TB, n, w int) (*memory.Storage, []plumbing.Hash) {
+// benchRepo builds a linear history of commits commits, then creates refs
+// references pointing at commits spread across that history, so that the
+// wants share most of their ancestry. This is the shape of a server hosting
+// a repository with many branches over a common history.
+func benchRepo(tb testing.TB, commits, refs int) (*memory.Storage, []plumbing.Hash) {
 	tb.Helper()
 
 	st := memory.NewStorage()
 	sig := object.Signature{Name: "bench", Email: "bench@example.com", When: time.Unix(0, 0).UTC()}
 
 	var parent plumbing.Hash
-	commits := make([]plumbing.Hash, 0, n)
+	history := make([]plumbing.Hash, 0, commits)
 
-	for i := range n {
+	for i := range commits {
 		blob := &plumbing.MemoryObject{}
 		blob.SetType(plumbing.BlobObject)
 		if _, err := fmt.Fprintf(blob, "content-%d", i); err != nil {
@@ -66,13 +67,13 @@ func benchRepo(tb testing.TB, n, w int) (*memory.Storage, []plumbing.Hash) {
 		}
 
 		parent = ch
-		commits = append(commits, ch)
+		history = append(history, ch)
 	}
 
-	wants := make([]plumbing.Hash, 0, w)
-	for i := range w {
-		idx := max(n-1-(i*n/(w*2)), 0)
-		h := commits[idx]
+	wants := make([]plumbing.Hash, 0, refs)
+	for i := range refs {
+		idx := max(commits-1-(i*commits/(refs*2)), 0)
+		h := history[idx]
 
 		name := plumbing.ReferenceName(fmt.Sprintf("refs/heads/branch-%d", i))
 		if err := st.SetReference(plumbing.NewHashReference(name, h)); err != nil {
@@ -81,7 +82,7 @@ func benchRepo(tb testing.TB, n, w int) (*memory.Storage, []plumbing.Hash) {
 		wants = append(wants, h)
 	}
 
-	if err := st.SetReference(plumbing.NewHashReference(plumbing.HEAD, commits[n-1])); err != nil {
+	if err := st.SetReference(plumbing.NewHashReference(plumbing.HEAD, history[commits-1])); err != nil {
 		tb.Fatal(err)
 	}
 
@@ -89,8 +90,10 @@ func benchRepo(tb testing.TB, n, w int) (*memory.Storage, []plumbing.Hash) {
 }
 
 // serveUploadPack runs a full upload-pack exchange for the given wants and
-// returns the bytes written to the client.
-func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) string {
+// returns the number of bytes written to the client. The response is not
+// copied out of the buffer, so that the measurement stays on UploadPack
+// itself rather than on materialising the packfile a second time.
+func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) int {
 	tb.Helper()
 
 	var upreq packp.UploadRequest
@@ -115,7 +118,7 @@ func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) s
 		tb.Fatal(err)
 	}
 
-	return out.String()
+	return out.Len()
 }
 
 func benchmarkUploadPack(b *testing.B, commits, wants int) {
@@ -125,7 +128,7 @@ func benchmarkUploadPack(b *testing.B, commits, wants int) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		if serveUploadPack(b, st, w) == "" {
+		if serveUploadPack(b, st, w) == 0 {
 			b.Fatal("no output produced")
 		}
 	}
