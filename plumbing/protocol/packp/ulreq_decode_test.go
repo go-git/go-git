@@ -24,21 +24,52 @@ func TestUlReqDecodeSuite(t *testing.T) {
 	suite.Run(t, new(UlReqDecodeSuite))
 }
 
-func (s *UlReqDecodeSuite) TestEmpty() {
-	ur := &UploadRequest{}
-	var buf bytes.Buffer
-
-	err := ur.Decode(&buf)
-	s.ErrorContains(err, "pkt-line 1: EOF")
-}
-
-func (s *UlReqDecodeSuite) TestNoWant() {
-	payloads := []string{
-		"foobar",
-		"",
+func (s *UlReqDecodeSuite) TestDecodeMinimalInputs() {
+	tests := []struct {
+		name       string
+		payloads   []string
+		wantErrSub string
+	}{
+		{
+			name:       "empty reader",
+			wantErrSub: "pkt-line 1: EOF",
+		},
+		{
+			name:     "flush-only request",
+			payloads: []string{""},
+		},
+		{
+			name:       "first line missing want prefix",
+			payloads:   []string{"foobar", ""},
+			wantErrSub: "missing 'want '",
+		},
 	}
-	r := toPktLines(s.T(), payloads)
-	s.testDecoderErrorMatches(r, ".*missing 'want '.*")
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			var buf bytes.Buffer
+			for _, p := range tc.payloads {
+				if p == "" {
+					s.Require().NoError(pktline.WriteFlush(&buf))
+				} else {
+					_, err := pktline.WriteString(&buf, p)
+					s.Require().NoError(err)
+				}
+			}
+
+			ur := &UploadRequest{}
+			err := ur.Decode(&buf)
+
+			if tc.wantErrSub != "" {
+				s.ErrorContains(err, tc.wantErrSub)
+				return
+			}
+
+			s.Require().NoError(err)
+			s.Equal(&UploadRequest{}, ur)
+			s.Zero(buf.Len(), "flush-pkt should be fully consumed")
+		})
+	}
 }
 
 func (s *UlReqDecodeSuite) testDecoderErrorMatches(input io.Reader, pattern string) {
