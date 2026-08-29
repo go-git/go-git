@@ -40,6 +40,11 @@ const (
 	TheirMode Stage = 3
 )
 
+// DefaultVersion is the index format version used when a new index is
+// created and no other version was requested. It matches git's
+// INDEX_FORMAT_DEFAULT.
+const DefaultVersion uint32 = 2
+
 // Index contains the information about which objects are currently checked out
 // in the worktree, having information about the working files. Changes in
 // worktree are detected using this Index. The Index is also used during merges
