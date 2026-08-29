@@ -209,6 +209,32 @@ func TestSSHTransport_Connect(t *testing.T) {
 	}
 }
 
+func TestSSHTransport_CustomHostKeyCallbackWithoutKnownHosts(t *testing.T) {
+	t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "missing-known-hosts"))
+
+	addr := startSSHServer(t)
+	base := t.TempDir()
+	repoFS := test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
+	repoPath := filepath.ToSlash(repoFS.Root())
+
+	tr := NewTransport(sshClientOptions())
+	req := &transport.Request{
+		URL: &url.URL{
+			Scheme: "ssh",
+			User:   url.User("git"),
+			Host:   fmt.Sprintf("localhost:%d", addr.Port),
+			Path:   repoPath,
+		},
+		Command:  "git-upload-pack",
+		Protocol: protocol.V0,
+	}
+
+	sess, err := tr.Connect(context.Background(), req)
+	require.NoError(t, err)
+	require.NotNil(t, sess)
+	require.NoError(t, sess.Close())
+}
+
 func TestSSHTransport_NoConfig(t *testing.T) {
 	t.Parallel()
 
