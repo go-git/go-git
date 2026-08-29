@@ -109,7 +109,7 @@ func UploadPack(
 	var done bool
 	var haves []plumbing.Hash
 	var upreq *packp.UploadRequest
-	var havesWithRef map[plumbing.Hash][]plumbing.Hash
+	var reachable map[plumbing.Hash]struct{}
 	var multiAck, multiAckDetailed bool
 	var caps capability.List
 	var wants []plumbing.Hash
@@ -130,10 +130,16 @@ func UploadPack(
 				return fmt.Errorf("closing reader: %w", err)
 			}
 
-			// Find common commits/objects
-			havesWithRef, err = revlist.ObjectsWithRef(st, wants, nil)
+			// Find common commits/objects. Only membership is needed below,
+			// so walk the wants once as a set instead of once per want.
+			objs, err := revlist.Objects(st, wants, nil)
 			if err != nil {
-				return fmt.Errorf("getting objects with ref: %w", err)
+				return fmt.Errorf("getting objects: %w", err)
+			}
+
+			reachable = make(map[plumbing.Hash]struct{}, len(objs))
+			for _, h := range objs {
+				reachable[h] = struct{}{}
 			}
 
 			// Encode objects to packfile and write to client
@@ -182,7 +188,7 @@ func UploadPack(
 
 		var acks []packp.ACK
 		for _, hu := range uphav.Haves {
-			_, ok := havesWithRef[hu]
+			_, ok := reachable[hu]
 
 			var status packp.ACKStatus
 			if multiAckDetailed {
