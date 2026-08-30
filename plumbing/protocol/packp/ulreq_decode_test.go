@@ -86,6 +86,7 @@ func (s *UlReqDecodeSuite) TestDecodeResetsReusedRequest() {
 		Wants:    []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
 		Shallows: []plumbing.Hash{plumbing.NewHash("2222222222222222222222222222222222222222")},
 		Depth:    DepthRequest{Deepen: 7},
+		Filter:   FilterBlobNone(),
 	}
 	ur.Capabilities.Add(capability.OFSDelta)
 
