@@ -25,10 +25,13 @@ func benchGraphIndex(b *testing.B) (CommitNodeIndex, func()) {
 	storer := unpackRepository(f)
 	reader, err := storer.Filesystem().Open(path.Join("objects", "info", "commit-graph"))
 	if err != nil {
+		_ = storer.Close()
 		b.Fatal(err)
 	}
 	index, err := commitgraphfmt.OpenFileIndex(reader)
 	if err != nil {
+		_ = reader.Close()
+		_ = storer.Close()
 		b.Fatal(err)
 	}
 	return NewGraphCommitNodeIndex(index, storer), func() {

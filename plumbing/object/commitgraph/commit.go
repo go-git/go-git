@@ -18,6 +18,15 @@ import (
 
 var fixedZones sync.Map // int seconds east of UTC -> *time.Location
 
+// Header keys are kept as byte slices so the scanner can compare them
+// without converting each scanned line to a string.
+var (
+	headerTree      = []byte("tree")
+	headerParent    = []byte("parent")
+	headerAuthor    = []byte("author")
+	headerCommitter = []byte("committer")
+)
+
 // Commit holds the base traversal fields parsed from an encoded commit object.
 // It is a lightweight stand-in for object.Commit, carrying only what commit
 // graph walking needs: tree, parents, and the committer/author timestamps.
@@ -147,7 +156,7 @@ func scanCommitTree(s *commitScanner) commitState {
 		return s.fail(errors.New("malformed commit: missing tree header"))
 	}
 	key, data := splitHeader(line)
-	if string(key) != "tree" {
+	if !bytes.Equal(key, headerTree) {
 		return s.fail(errors.New("malformed commit: tree header must be first"))
 	}
 	h, ok := hashFromHex(data)
@@ -171,7 +180,7 @@ func scanCommitParents(s *commitScanner) commitState {
 		return nil
 	}
 	key, data := splitHeader(line)
-	if string(key) == "parent" {
+	if bytes.Equal(key, headerParent) {
 		h, ok := hashFromHex(data)
 		if !ok {
 			return s.fail(errors.New("invalid parent hash"))
@@ -195,7 +204,7 @@ func scanCommitAuthor(s *commitScanner) commitState {
 		return nil
 	}
 	key, data := splitHeader(line)
-	if string(key) == "author" {
+	if bytes.Equal(key, headerAuthor) {
 		w, ok := parseWhen(data)
 		if !ok {
 			return s.fail(errors.New("invalid author line"))
@@ -219,7 +228,7 @@ func scanCommitCommitter(s *commitScanner) commitState {
 		return nil
 	}
 	key, data := splitHeader(line)
-	if string(key) == "committer" {
+	if bytes.Equal(key, headerCommitter) {
 		w, ok := parseWhen(data)
 		if !ok {
 			return s.fail(errors.New("invalid committer line"))
