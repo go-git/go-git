@@ -213,7 +213,7 @@ func crossedOrigin(origin *url.URL, req *http.Request, via []*http.Request) bool
 		return true
 	}
 	for _, prev := range via[1:] {
-		if prev.URL != nil && !credentialsMayFollow(origin, prev.URL) {
+		if prev.URL == nil || !credentialsMayFollow(origin, prev.URL) {
 			return true
 		}
 	}
