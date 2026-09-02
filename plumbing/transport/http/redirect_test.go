@@ -454,3 +454,171 @@ func fetchWithRedirectedPost(t *testing.T, opts Options) error {
 
 	return session.Fetch(context.Background(), st, req)
 }
+
+func TestRedirectKeepsCredentialsWithinOrigin(t *testing.T) {
+	t.Parallel()
+
+	t.Run("path only", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		v := newVhost(t, hm, "example.test", "443", true)
+		v.redirectTo(v.base + refsPath("other.git"))
+
+		_, err := handshakeWithCredentials(t, hm, v.base)
+		require.NoError(t, err)
+		assertCredentialsPresent(t, v.lastRequest(t))
+	})
+
+	t.Run("explicit default port", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		v := newVhost(t, hm, "example.test", "443", true)
+		v.redirectTo("https://example.test:443" + refsPath("other.git"))
+
+		_, err := handshakeWithCredentials(t, hm, v.base)
+		require.NoError(t, err)
+		assertCredentialsPresent(t, v.lastRequest(t))
+	})
+
+	t.Run("http to https upgrade", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		secure := newVhost(t, hm, "example.test", "443", true)
+		plain := newVhost(t, hm, "example.test", "80", false)
+		plain.redirectTo(secure.base + refsPath("other.git"))
+
+		_, err := handshakeWithCredentials(t, hm, plain.base)
+		require.NoError(t, err)
+		assertCredentialsPresent(t, secure.lastRequest(t))
+	})
+}
+
+func TestRedirectDropsCredentialsAcrossOrigin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		destHost string
+		destPort string
+	}{
+		{"subdomain", "sub.example.test", "443"},
+		{"different port", "example.test", "8443"},
+		{"unrelated host", "evil.test", "443"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			hm := newVhostMap()
+			dest := newVhost(t, hm, tt.destHost, tt.destPort, true)
+			origin := newVhost(t, hm, "example.test", "443", true)
+			origin.redirectTo(dest.base + refsPath("repo.git"))
+
+			_, err := handshakeWithCredentials(t, hm, origin.base)
+			require.NoError(t, err)
+			assertCredentialsAbsent(t, dest.lastRequest(t))
+		})
+	}
+
+	// The dumb HTTP walker applies credentials through the same path, and
+	// sends /info/refs without the ?service= query.
+	t.Run("force dumb", func(t *testing.T) {
+		t.Parallel()
+
+		hm := newVhostMap()
+		dest := newVhost(t, hm, "evil.test", "443", true)
+		origin := newVhost(t, hm, "example.test", "443", true)
+		origin.redirectTo(dest.base + "/repo.git/info/refs")
+
+		tr := NewTransport(Options{
+			Client:    hm.client(),
+			ForceDumb: true,
+			Authorizer: func(r *http.Request) error {
+				r.Header.Set("X-Private-Token", "custom-canary")
+				r.Header["X-Raw-Token"] = []string{"raw-canary"}
+				return nil
+			},
+		})
+		u, err := url.Parse(origin.base + "/repo.git")
+		require.NoError(t, err)
+		u.User = url.UserPassword("testuser", "testpass")
+
+		sess, err := tr.Handshake(context.Background(), &transport.Request{
+			URL:     u,
+			Command: transport.UploadPackService,
+		})
+		if err == nil {
+			t.Cleanup(func() { _ = sess.Close() })
+		} else {
+			// The vhost serves a smart advertisement, so the dumb decoder may
+			// reject it. The assertion below is about the headers that reached
+			// dest, which that does not affect.
+			t.Logf("handshake: %v", err)
+		}
+		assertCredentialsAbsent(t, dest.lastRequest(t))
+	})
+}
+
+// Once the chain has left the origin, credentials stay gone even if a later
+// hop returns to it. Go restores non-sensitive headers on every hop, so
+// without the sticky check the custom credentials reappear on the final hop.
+func TestRedirectCredentialsStickyMultiHop(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	origin := newVhost(t, hm, "example.test", "443", true)
+	detour := newVhost(t, hm, "evil.test", "443", true)
+
+	detour.redirectTo(origin.base + refsPath("other.git"))
+	origin.redirectTo(detour.base + refsPath("repo.git"))
+
+	_, err := handshakeWithCredentials(t, hm, origin.base)
+	require.NoError(t, err)
+	// origin served the final /other.git request.
+	assertCredentialsAbsent(t, origin.lastRequest(t))
+}
+
+// A caller-supplied CheckRedirect must observe the sanitized request, and must
+// not be able to reinstate credentials by copying headers from via[0].
+func TestRedirectStripsAroundCallerHook(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	dest := newVhost(t, hm, "evil.test", "443", true)
+	origin := newVhost(t, hm, "example.test", "443", true)
+	origin.redirectTo(dest.base + refsPath("repo.git"))
+
+	var seen http.Header
+	client := hm.client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		seen = req.Header.Clone()
+		// The "preserve my headers across redirects" shape: via[0] is the
+		// original, unsanitized request.
+		maps.Copy(req.Header, via[0].Header)
+		return nil
+	}
+
+	tr := NewTransport(Options{
+		Client: client,
+		Authorizer: func(r *http.Request) error {
+			r.Header.Set("X-Private-Token", "custom-canary")
+			r.Header["X-Raw-Token"] = []string{"raw-canary"}
+			return nil
+		},
+	})
+	u, err := url.Parse(origin.base + "/repo.git")
+	require.NoError(t, err)
+	u.User = url.UserPassword("testuser", "testpass")
+
+	_, err = tr.Handshake(context.Background(), &transport.Request{
+		URL:     u,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, seen, "caller CheckRedirect was never invoked")
+	assert.Empty(t, seen.Get("Authorization"), "the caller hook should observe a sanitized request")
+	assert.Empty(t, seen.Get("X-Private-Token"), "the caller hook should observe a sanitized request")
+	assertCredentialsAbsent(t, dest.lastRequest(t))
+}

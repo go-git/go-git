@@ -218,6 +218,11 @@ func credentialsMayFollow(from, to *url.URL) bool {
 		effectivePort(from) == "80" && effectivePort(to) == "443"
 }
 
+// safeHeaders lists the headers go-git sets itself, none of which can carry a
+// caller credential. It has two consumers: trace.HTTP logs only these, and
+// stripCredentials keeps only these when a redirect leaves the credential's
+// origin. Adding a name here makes it both loggable and forwardable across an
+// origin boundary — do not add anything a caller can put a secret in.
 var safeHeaders = map[string]struct{}{
 	"User-Agent":        {},
 	"Host":              {},

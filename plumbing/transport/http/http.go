@@ -46,6 +46,12 @@ type Options struct {
 	// Client is the underlying HTTP client. If nil, a default client is
 	// created. When Client is set, TLS and HTTPProxy are ignored —
 	// configure them on the provided Client directly.
+	//
+	// When a redirect leaves the repository's origin, the transport keeps
+	// only the headers it sets itself and drops everything else, including
+	// any header an Authorizer added. Credentials injected by a custom
+	// RoundTripper on this Client are added after that point and will follow
+	// redirects; apply those in Authorizer instead.
 	Client *http.Client
 
 	// FollowRedirects controls redirect handling. The zero value defaults
@@ -119,22 +125,88 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 		if err := checkRedirect(req, via, policy); err != nil {
 			return err
 		}
+		// Strip before the caller's hook so it observes what will actually be
+		// sent, and again afterwards so a hook of the common "preserve my
+		// headers across redirects" shape — which copies from via[0], the
+		// original unsanitized request — cannot reinstate them. Carrying
+		// credentials across an origin boundary is deliberately unsupported.
+		stripCredentials(req, via)
 		if next != nil {
-			return next(req, via)
+			if err := next(req, via); err != nil {
+				return err
+			}
 		}
+		stripCredentials(req, via)
 		return nil
 	}
+}
+
+// stripCredentials removes credentials from req once the redirect chain has
+// left the origin of the original, credential-bearing request.
+//
+// CheckRedirect is the only hook that runs while a redirected request's
+// headers are still mutable: http.Client.Do performs the entire chain
+// internally, so anything the transport does after Do returns is too late.
+//
+// Two subtleties:
+//
+//   - Go rebuilds every redirect request from the original request's headers
+//     before calling this, so a header removed at one hop reappears at the
+//     next. The decision is therefore recomputed per hop.
+//   - The decision is sticky: once the chain has left the origin, credentials
+//     stay gone even if a later hop returns to it. Stickiness is derived from
+//     via rather than stored, because this closure is shared across a
+//     session's requests.
+//
+// Stripping keeps only the headers go-git sets itself (safeHeaders). An
+// allowlist is used rather than a list of credential header names because
+// caller credentials arrive under names that cannot be enumerated —
+// PRIVATE-TOKEN, X-Api-Key, gateway headers — which is exactly what Go's fixed
+// list of sensitive names gets wrong. It is also immune to header-name
+// canonicalisation: an Authorizer that writes a raw map key is still removed.
+func stripCredentials(req *http.Request, via []*http.Request) {
+	if len(via) == 0 {
+		return
+	}
+	// net/http sets a URL on every request it builds, and req.URL is non-nil
+	// by construction: checkRedirect dereferences req.URL.Scheme on each path
+	// that returns nil, so it runs first or not at all. This nil check and
+	// the two in crossedOrigin are defensive, against a synthetic caller.
+	// Each treats a URL it cannot read as an origin crossing; removing one
+	// panics in canonicalHost rather than leaking.
+	if origin := via[0].URL; origin != nil && !crossedOrigin(origin, req, via) {
+		return
+	}
+	req.Header = filterHeaders(req.Header)
+	if req.URL != nil {
+		req.URL.User = nil
+	}
+}
+
+// crossedOrigin reports whether any hop so far, including the pending one, has
+// left origin.
+func crossedOrigin(origin *url.URL, req *http.Request, via []*http.Request) bool {
+	if req.URL == nil || !credentialsMayFollow(origin, req.URL) {
+		return true
+	}
+	for _, prev := range via[1:] {
+		if prev.URL != nil && !credentialsMayFollow(origin, prev.URL) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkRedirect implements Git's http.followRedirects policies. The
 // default policy is "initial", where only the GET /info/refs discovery
 // request is allowed to follow redirects.
 //
-// Credential handling on redirect is left to Go's http.Client, which
-// already strips the Authorization header when a redirect crosses to a
-// different host (since Go 1.8) and preserves it for same-host
-// redirects — matching the expected behavior for scheme upgrades and
-// path-only redirects on the same server.
+// This function decides only whether a hop may proceed. Credentials on a
+// permitted hop are handled by stripCredentials, which removes them when the
+// hop leaves the origin they were issued for. Go's http.Client applies its own
+// rule first, but that rule forwards credentials from a host to its
+// subdomains, ignores the port and the scheme, and recognises only a fixed set
+// of header names, so it is not sufficient on its own.
 func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy) error {
 	if len(via) != 0 {
 		prev := via[len(via)-1]
