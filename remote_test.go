@@ -1467,6 +1467,41 @@ func (s *RemoteSuite) TestPushPrune() {
 	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
 }
 
+func (s *RemoteSuite) TestPushPruneForceRefSpec() {
+	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	s.Require().NoError(err)
+	defer func() { _ = server.Close() }()
+
+	r, err := PlainClone(s.T().TempDir(), &CloneOptions{
+		URL:  server.wt.Root(),
+		Bare: true,
+	})
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	remote, err := r.Remote(DefaultRemoteName)
+	s.NoError(err)
+
+	ref, err := r.Reference(plumbing.ReferenceName("refs/heads/master"), true)
+	s.NoError(err)
+
+	// Prune with a force refspec: refs that exist locally must survive on the
+	// remote. A buggy Reverse() moved the "+" into the destination pattern,
+	// making the prune-side local lookup miss every ref and delete the whole
+	// remote.
+	err = remote.Push(&PushOptions{
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/heads/*"),
+		},
+		Prune: true,
+	})
+	s.ErrorIs(err, NoErrAlreadyUpToDate)
+
+	AssertReferences(s.T(), server, map[string]string{
+		"refs/heads/master": ref.Hash().String(),
+	})
+}
+
 func (s *RemoteSuite) TestPushNewReference() {
 	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
