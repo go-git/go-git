@@ -216,3 +216,96 @@ func TestApplyRedirect(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialsMayFollow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		from string
+		to   string
+		want bool
+	}{
+		{"identical", "https://example.test/a", "https://example.test/a", true},
+		{"path differs only", "https://example.test/a", "https://example.test/b", true},
+		{"explicit default port on the right", "https://example.test/a", "https://example.test:443/a", true},
+		{"explicit default port on the left", "http://example.test:80/a", "http://example.test/a", true},
+		{"leading zero port", "https://example.test/a", "https://example.test:0443/a", true},
+		{"uppercase host", "https://EXAMPLE.test/a", "https://example.test/a", true},
+		{"unicode host, same spelling", "https://ẞexample.test/a", "https://ẞexample.test/a", true},
+		{"unicode host, ASCII case differs", "https://ΣXAMPLE.test/a", "https://Σxample.test/a", true},
+		{"http to https upgrade", "http://example.test/a", "https://example.test/a", true},
+		{"ipv4 literal", "http://127.0.0.1:8080/a", "http://127.0.0.1:8080/a", true},
+		{"ipv6 literal", "http://[::1]:8080/a", "http://[::1]:8080/a", true},
+		{"host with underscore", "http://build_host:8080/a", "http://build_host:8080/a", true},
+
+		{"https to http downgrade", "https://example.test/a", "http://example.test/a", false},
+		{"subdomain", "https://example.test/a", "https://sub.example.test/a", false},
+		{"parent domain", "https://sub.example.test/a", "https://example.test/a", false},
+		{"different port", "https://example.test/a", "https://example.test:8443/a", false},
+		{"unrelated host", "https://example.test/a", "https://evil.test/a", false},
+		{"suffix but not subdomain", "https://example.test/a", "https://notexample.test/a", false},
+
+		// A trailing root dot reaches the same peer, but net/http sends the
+		// name as written in Host, so the two spellings can be routed to
+		// different virtual hosts. curl and the WHATWG URL Standard keep them
+		// distinct too.
+		{"trailing root dot", "https://example.test/a", "https://example.test./a", false},
+		{"trailing root dot on the left", "https://example.test./a", "https://example.test/a", false},
+		{"upgrade to a non-default https port", "http://example.test/a", "https://example.test:8443/a", false},
+
+		// Hostnames are compared as bytes, so a unicode host is a different
+		// origin from the punycode that encodes it and from another Unicode
+		// case of itself, even though each pair reaches the same server.
+		// These lose a credential across such a redirect rather than
+		// granting one, and they hold whatever Unicode tables the build uses.
+		{"unicode host against its punycode", "https://ςxample.test/a", "https://xn--xample-20e.test/a", false},
+		{"punycode host against its unicode", "https://xn--xample-20e.test/a", "https://ςxample.test/a", false},
+		{"unicode host, unicode case differs", "https://ПРИМЕР.РФ/a", "https://пример.рф/a", false},
+
+		// strings.EqualFold treats these pairs as equal, but each side
+		// resolves to a different server. Comparing with EqualFold would call
+		// them the same origin; the ASCII-only fold keeps them apart.
+		{"greek final sigma fold pair", "https://ςxample.test/a", "https://σxample.test/a", false},
+		{"sharp s fold pair", "https://ẞexample.test/a", "https://ßexample.test/a", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			from, err := url.Parse(tt.from)
+			require.NoError(t, err)
+			to, err := url.Parse(tt.to)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, credentialsMayFollow(from, to))
+		})
+	}
+}
+
+func TestEffectivePort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		rawURL string
+		want   string
+	}{
+		{"http://example.test/a", "80"},
+		{"https://example.test/a", "443"},
+		{"http://example.test:8080/a", "8080"},
+		{"https://example.test:0443/a", "443"},
+		{"https://example.test:080/a", "80"},
+		{"ftp://example.test/a", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.rawURL, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse(tt.rawURL)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, effectivePort(u))
+		})
+	}
+}
