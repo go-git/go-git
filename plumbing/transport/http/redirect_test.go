@@ -195,56 +195,6 @@ func TestRedirectPostAllowedWithFollowRedirects(t *testing.T) {
 	require.NoError(t, fetchWithRedirectedPost(t, Options{FollowRedirects: FollowRedirects}))
 }
 
-func TestRedirectStripsCredentials(t *testing.T) {
-	t.Parallel()
-
-	base, backend := setupSmartServer(t)
-	prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
-
-	rl := test.ListenTCP(t)
-	raddr := rl.Addr().(*net.TCPAddr)
-
-	backendURL := fmt.Sprintf("http://localhost:%d", backend.Port)
-	redirectServer := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			target := backendURL + r.URL.Path
-			if r.URL.RawQuery != "" {
-				target += "?" + r.URL.RawQuery
-			}
-			http.Redirect(w, r, target, http.StatusMovedPermanently)
-		}),
-	}
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		require.ErrorIs(t, redirectServer.Serve(rl), http.ErrServerClosed)
-	}()
-	t.Cleanup(func() {
-		require.NoError(t, redirectServer.Close())
-		<-done
-	})
-
-	tr := NewTransport(Options{})
-	endpoint := &url.URL{
-		Scheme: "http",
-		User:   url.UserPassword("testuser", "testpass"),
-		Host:   fmt.Sprintf("localhost:%d", raddr.Port),
-		Path:   "/basic.git",
-	}
-
-	session, err := tr.Handshake(context.Background(), &transport.Request{
-		URL:     endpoint,
-		Command: transport.UploadPackService,
-	})
-	require.NoError(t, err)
-	defer session.Close()
-
-	sps, ok := session.(*smartPackSession)
-	require.True(t, ok)
-	assert.Nil(t, sps.baseURL.User)
-}
-
 func TestCheckRedirectPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -621,4 +571,66 @@ func TestRedirectStripsAroundCallerHook(t *testing.T) {
 	assert.Empty(t, seen.Get("Authorization"), "the caller hook should observe a sanitized request")
 	assert.Empty(t, seen.Get("X-Private-Token"), "the caller hook should observe a sanitized request")
 	assertCredentialsAbsent(t, dest.lastRequest(t))
+}
+
+func TestSessionCredentialsAfterRedirect(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retained when the redirect stays within the origin", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		v := newVhost(t, hm, "example.test", "443", true)
+		// Same origin, spelled with its default port.
+		v.redirectTo("https://example.test:443" + refsPath("other.git"))
+
+		sess, err := handshakeWithCredentials(t, hm, v.base)
+		require.NoError(t, err)
+
+		sps, ok := sess.(*smartPackSession)
+		require.True(t, ok)
+		assert.NotNil(t, sps.baseURL.User, "credentials should survive a same-origin redirect")
+		assert.NotNil(t, sps.authorizer, "the authorizer should survive a same-origin redirect")
+	})
+
+	t.Run("cleared when the redirect leaves the origin", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		dest := newVhost(t, hm, "sub.example.test", "443", true)
+		origin := newVhost(t, hm, "example.test", "443", true)
+		origin.redirectTo(dest.base + refsPath("repo.git"))
+
+		sess, err := handshakeWithCredentials(t, hm, origin.base)
+		require.NoError(t, err)
+
+		sps, ok := sess.(*smartPackSession)
+		require.True(t, ok)
+		assert.Nil(t, sps.baseURL.User, "credentials must not follow the session across origins")
+		assert.Nil(t, sps.authorizer, "the authorizer must not follow the session across origins")
+	})
+
+	// applyRedirect returns baseURL itself when the redirect changed nothing,
+	// and baseURL is the caller's URL. That aliasing cannot currently coincide
+	// with the clearing branch (an aliased URL is the same origin as itself),
+	// so this pins the invariant rather than catching an active regression.
+	t.Run("does not mutate the caller's URL", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		dest := newVhost(t, hm, "evil.test", "443", true)
+		origin := newVhost(t, hm, "example.test", "443", true)
+		origin.redirectTo(dest.base + refsPath("repo.git"))
+
+		tr := NewTransport(Options{Client: hm.client()})
+		u, err := url.Parse(origin.base + "/repo.git")
+		require.NoError(t, err)
+		u.User = url.UserPassword("testuser", "testpass")
+
+		sess, err := tr.Handshake(context.Background(), &transport.Request{
+			URL:     u,
+			Command: transport.UploadPackService,
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = sess.Close() })
+
+		assert.NotNil(t, u.User, "the caller's URL must not have been modified")
+	})
 }

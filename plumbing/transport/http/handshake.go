@@ -90,18 +90,26 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	sessReq.URL = redirectedURL
 	authorizer := t.opts.Authorizer
 
-	// Clear credentials when the redirect landed on a different host.
-	// The session stores baseURL and re-applies its User field and the
-	// Authorizer callback on every subsequent POST — without this, the
-	// original host's credentials would be sent to the new host.
-	// Go's http.Client already strips the Authorization header on
-	// cross-host redirects during the initial GET, but User and
-	// Authorizer are carried in the session and applied explicitly by
-	// doPost/applyAuth. In canonical git, credential_from_url()
-	// re-derives credentials from the new URL, effectively wiping the
-	// old ones.
-	if redirectedURL.Host != baseURL.Host {
-		sessReq.URL.User = nil
+	// Clear credentials when the redirect left the origin they were issued
+	// for. The session stores baseURL and re-applies its User field and the
+	// Authorizer callback on every subsequent POST, so without this the
+	// original origin's credentials would be sent to the new one.
+	//
+	// This uses the same predicate as stripCredentials, so the discovery GET
+	// and the session that follows it agree on what an origin is. In canonical
+	// git, credential_from_url() re-derives credentials from the new URL,
+	// effectively wiping the old ones.
+	if !credentialsMayFollow(baseURL, redirectedURL) {
+		// Copy before clearing rather than writing through redirectedURL:
+		// applyRedirect returns baseURL itself when the redirect changed
+		// nothing, and baseURL belongs to the caller. That aliasing cannot
+		// currently reach this branch — an aliased URL is trivially the same
+		// origin as itself — so this keeps the two functions independent
+		// rather than fixing a live bug: neither can make the other unsafe
+		// by changing later.
+		cleared := *redirectedURL
+		cleared.User = nil
+		sessReq.URL = &cleared
 		authorizer = nil
 	}
 
