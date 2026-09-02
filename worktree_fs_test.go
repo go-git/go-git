@@ -683,21 +683,14 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 	}
 }
 
-// TestCheckoutWindowsReservedDeviceName reproduces go-git issue #2322:
-// Worktree.Checkout (and PlainClone) rejected files whose base name is
-// a Windows reserved device name (e.g. prn.sh) even on Linux/macOS,
-// where such names are legitimate. The regression shipped in v5.19.1
-// when defaultProtectNTFS() began returning true on every platform and
-// the worktree write path applied WindowsValidPath unconditionally.
-//
-// The tree entry is built via plumbing (not a real on-disk file) so the
-// fixture is platform-independent: a file named prn.sh cannot be created
-// on disk on Windows.
-func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
-	t.Parallel()
+// cloneRepoWithReservedNameEntry builds a source repo whose tree
+// contains a single entry named name (built via plumbing, not a real
+// on-disk file, so names invalid on the host OS -- e.g. a reserved
+// device name on Windows -- can still be represented in the fixture),
+// clones it, and returns the clone error and destination directory.
+func cloneRepoWithReservedNameEntry(t *testing.T, name string) (error, string) {
+	t.Helper()
 
-	// Build a source repo whose tree contains prn.sh, with the entry
-	// created through plumbing so the fixture works on every platform.
 	dir := t.TempDir()
 
 	r1, err := PlainInit(dir, false)
@@ -717,28 +710,70 @@ func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
 	initCommit, err := r1.CommitObject(initHash)
 	require.NoError(t, err)
 
-	badCommit := buildCommitWithEntry(t, r1.Storer, initCommit, initHash, "prn.sh", filemode.Regular)
+	badCommit := buildCommitWithEntry(t, r1.Storer, initCommit, initHash, name, filemode.Regular)
 
-	// Point the default branch at the commit containing prn.sh so a
+	// Point the default branch at the commit containing name so a
 	// subsequent clone sees it.
 	require.NoError(t, r1.Storer.SetReference(plumbing.NewHashReference(plumbing.Master, badCommit.Hash)))
 
 	dst := t.TempDir()
-	_, err = PlainClone(dst, &CloneOptions{URL: dir})
+	_, cloneErr := PlainClone(dst, &CloneOptions{URL: dir})
+	return cloneErr, dst
+}
 
-	if onWindows() {
-		// On Windows the reserved-name check still applies and the
-		// checkout must fail.
-		assert.Error(t, err, "clone should reject prn.sh on Windows")
-		return
-	}
+// TestCheckoutWindowsReservedDeviceName reproduces go-git issue #2322:
+// Worktree.Checkout (and PlainClone) rejected files whose base name is
+// a Windows reserved device name (e.g. prn.sh) even on Linux/macOS,
+// where such names are legitimate. The regression shipped in v5.19.1
+// when defaultProtectNTFS() began returning true on every platform and
+// the worktree write path applied WindowsValidPath unconditionally.
+func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
+	t.Parallel()
 
-	// On non-Windows prn.sh is a legitimate filename; the clone must
-	// succeed and the file must be materialised.
-	require.NoError(t, err)
-	info, err := os.Stat(filepath.Join(dst, "prn.sh"))
-	require.NoError(t, err, "prn.sh should be checked out on non-Windows")
-	assert.False(t, info.IsDir())
+	t.Run("extension-bearing name prn.sh", func(t *testing.T) {
+		t.Parallel()
+
+		err, dst := cloneRepoWithReservedNameEntry(t, "prn.sh")
+
+		if onWindows() {
+			// Whether prn.sh is rejected on Windows now depends on the
+			// live OS's RtlIsDosDeviceName_U answer (via
+			// pathutil.IsWindowsReservedName delegating to
+			// filepath.IsLocal), which varies by Windows version/build
+			// -- observed rejected on Windows 10, accepted on Windows
+			// 11. This codebase has no independent oracle for that
+			// answer, so this subtest does not assert a specific
+			// outcome here. Deterministic Windows-side regression
+			// coverage is the sibling subtest below.
+			return
+		}
+
+		// On non-Windows prn.sh is a legitimate filename; the clone
+		// must succeed and the file must be materialised.
+		require.NoError(t, err)
+		info, statErr := os.Stat(filepath.Join(dst, "prn.sh"))
+		require.NoError(t, statErr, "prn.sh should be checked out on non-Windows")
+		assert.False(t, info.IsDir())
+	})
+
+	t.Run("bare reserved name PRN", func(t *testing.T) {
+		t.Parallel()
+
+		err, dst := cloneRepoWithReservedNameEntry(t, "PRN")
+
+		if onWindows() {
+			// Bare reserved names match deterministically on every
+			// Windows version (no live OS call), so this stays a hard
+			// assertion after the filepath.IsLocal delegation.
+			assert.Error(t, err, "clone should reject PRN on Windows")
+			return
+		}
+
+		require.NoError(t, err)
+		info, statErr := os.Stat(filepath.Join(dst, "PRN"))
+		require.NoError(t, statErr, "PRN should be checked out on non-Windows")
+		assert.False(t, info.IsDir())
+	})
 }
 
 func TestCherryPickDoesNotWriteThroughLeadingSymlink(t *testing.T) {
@@ -1489,8 +1524,14 @@ func TestValidPathProtectNTFS(t *testing.T) {
 		}{name, onWindows()})
 	}
 	// Path forms that exercise the reserved-name matcher's
-	// "followed by a dot or directory separator" rules.
-	for _, name := range []string{"aux.txt", "sub/NUL", "sub/COM1.txt", "CONIN$"} {
+	// "followed by a directory separator" rule and a bare $-suffixed
+	// name. Both stay deterministic after the filepath.IsLocal
+	// delegation because neither carries a file extension: extension-
+	// bearing forms (e.g. "aux.txt", "sub/COM1.txt") are deliberately
+	// not asserted here -- see TestIsWindowsReservedName's comment on
+	// why that answer varies by Windows version/build and has no
+	// independent oracle in this codebase.
+	for _, name := range []string{"sub/NUL", "CONIN$"} {
 		tests = append(tests, struct {
 			path    string
 			wantErr bool

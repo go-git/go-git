@@ -69,6 +69,10 @@ func TestWindowsValidPath(t *testing.T) {
 func TestIsWindowsReservedName(t *testing.T) {
 	t.Parallel()
 
+	// Bare reserved names match deterministically on Windows, on every
+	// Windows version, since filepath.IsLocal's reserved-name check
+	// matches these without a live OS call. On non-Windows the stdlib
+	// never checks reserved names at all.
 	for _, name := range WindowsReservedNames {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -76,12 +80,46 @@ func TestIsWindowsReservedName(t *testing.T) {
 		})
 	}
 
-	for _, name := range []string{"CONNECT", "comic", "COM", "COM0", "LPT0", "readme.md", "prn.sh"} {
+	// Non-reserved lookalikes are never flagged, on any platform.
+	for _, name := range []string{"CONNECT", "comic", "COM", "COM0", "LPT0", "readme.md"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			assert.False(t, IsWindowsReservedName(name))
 		})
 	}
+
+	// Extension-bearing reserved names (e.g. "prn.sh") are deliberately
+	// not asserted here: after delegating to filepath.IsLocal, whether
+	// Windows treats them as reserved depends on the live OS's
+	// RtlIsDosDeviceName_U syscall, which varies by Windows
+	// version/build. Asserting against filepath.IsLocal's own result
+	// would compare the function to its own definition and prove
+	// nothing; there is no independent oracle for this case in this
+	// codebase. See worktree_fs_test.go's TestCheckoutWindowsReservedDeviceName
+	// for the regression coverage this case actually gets (observed on
+	// the windows-latest CI runner, not asserted here).
+
+	t.Run("empty string is never reserved", func(t *testing.T) {
+		t.Parallel()
+		assert.False(t, IsWindowsReservedName(""))
+	})
+
+	// filepath.IsLocal also rejects "..", an absolute-looking
+	// component, and, on Windows only, a colon-bearing component --
+	// a disclosed broadening beyond pure reserved-name detection.
+	// Harmless: the sole caller (worktree_fs.go's validPath) already
+	// filters ".", "..", and empty components before calling
+	// WindowsValidPath, and never passes an absolute-looking or
+	// colon-bearing single path component.
+	t.Run("dot-dot reports true on every platform", func(t *testing.T) {
+		t.Parallel()
+		assert.True(t, IsWindowsReservedName(".."))
+	})
+
+	t.Run("colon-bearing component reports true on Windows only", func(t *testing.T) {
+		t.Parallel()
+		assert.Equal(t, windows(), IsWindowsReservedName("notes:txt"))
+	})
 }
 
 func TestIsNTFSDotGit(t *testing.T) {

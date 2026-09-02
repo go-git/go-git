@@ -1,6 +1,9 @@
 package pathutil
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // IsNTFSDotGit ports upstream Git's is_ntfs_dotgit. It detects path
 // components that NTFS would resolve to ".git": the canonical name
@@ -62,12 +65,43 @@ func WindowsValidPath(part string) bool {
 	return !IsWindowsReservedName(part)
 }
 
-// WindowsReservedNames lists the Windows reserved device names.
-// A path component is reserved if its base name (ignoring trailing
-// spaces, extensions, and NTFS Alternate Data Streams) matches one of
-// these case-insensitively.
+// IsWindowsReservedName reports whether part is a Windows reserved
+// device name, by delegating to the stdlib path/filepath.IsLocal
+// rather than hand-matching against a maintained list. IsLocal's
+// Windows-specific reserved-name check is itself platform-aware: it
+// is compiled only into Windows builds, so this function is a no-op
+// (aside from control characters) on every other platform, with no
+// build-tag split required.
 //
-// See upstream Git compat/mingw.c is_valid_win32_path().
+// On Windows, IsLocal matches bare reserved names (CON, PRN, AUX,
+// NUL, COM1-9, LPT1-9, CONIN$, CONOUT$) deterministically, on every
+// Windows version. For an extension-bearing or otherwise-decorated
+// reserved name (prn.sh, CON.txt), it defers to a live
+// RtlIsDosDeviceName_U syscall whose answer varies by Windows
+// version/build — unlike upstream Git's own is_valid_win32_path
+// (compat/mingw.c), which is a static, version-invariant check that
+// always treats such names as reserved. Delegating here trades exact
+// git.exe parity for that narrow case in favor of the live OS's own
+// answer, matching current Go-ecosystem guidance over a hand-
+// maintained list.
+//
+// IsLocal also rejects "..", an absolute-looking component, and (on
+// Windows only) a colon-bearing component. Those are a disclosed
+// broadening beyond pure reserved-name detection, harmless here
+// because the sole caller, worktree_fs.go's validPath, already
+// filters ".", "..", and empty components before calling
+// WindowsValidPath, and never passes an absolute-looking or
+// colon-bearing single path component.
+func IsWindowsReservedName(part string) bool {
+	return part != "" && !filepath.IsLocal(part)
+}
+
+// WindowsReservedNames lists the Windows reserved device names,
+// mirrored from upstream Git's compat/mingw.c is_valid_win32_path().
+// It is a reference/test fixture only: IsWindowsReservedName no
+// longer matches against this list in production, delegating to the
+// stdlib instead. Tests iterate it to enumerate the upstream set for
+// parity checks.
 var WindowsReservedNames = []string{
 	"CON", "PRN", "AUX", "NUL",
 	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
