@@ -70,8 +70,9 @@ func WindowsValidPath(part string) bool {
 // rather than hand-matching against a maintained list. IsLocal's
 // Windows-specific reserved-name check is itself platform-aware: it
 // is compiled only into Windows builds, so this function is a no-op
-// (aside from control characters) on every other platform, with no
-// build-tag split required.
+// on every other platform, with no build-tag split required. Control
+// characters are rejected separately, by validPath's byte-range check
+// before parts ever reach this function.
 //
 // On Windows, IsLocal matches bare reserved names (CON, PRN, AUX,
 // NUL, COM1-9, LPT1-9, CONIN$, CONOUT$) deterministically, on every
@@ -87,11 +88,14 @@ func WindowsValidPath(part string) bool {
 //
 // IsLocal also rejects "..", an absolute-looking component, and (on
 // Windows only) a colon-bearing component. Those are a disclosed
-// broadening beyond pure reserved-name detection, harmless here
-// because the sole caller, worktree_fs.go's validPath, already
-// filters ".", "..", and empty components before calling
-// WindowsValidPath, and never passes an absolute-looking or
-// colon-bearing single path component.
+// broadening beyond pure reserved-name detection. The "." and ".."
+// and empty cases are harmless because the sole caller, worktree_fs.go's
+// validPath, already filters them before calling WindowsValidPath.
+// An absolute-looking or colon-bearing component is not pre-filtered
+// the same way -- validPath only rejects a colon in true drive-letter
+// position via filepath.VolumeName, not a colon elsewhere in a
+// component -- so this function's own rejection of those shapes is
+// what makes them safe, not caller pre-filtering.
 func IsWindowsReservedName(part string) bool {
 	return part != "" && !filepath.IsLocal(part)
 }

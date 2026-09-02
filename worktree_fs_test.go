@@ -687,8 +687,8 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 // contains a single entry named name (built via plumbing, not a real
 // on-disk file, so names invalid on the host OS -- e.g. a reserved
 // device name on Windows -- can still be represented in the fixture),
-// clones it, and returns the clone error and destination directory.
-func cloneRepoWithReservedNameEntry(t *testing.T, name string) (error, string) {
+// clones it, and returns the destination directory and clone error.
+func cloneRepoWithReservedNameEntry(t *testing.T, name string) (string, error) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -718,7 +718,7 @@ func cloneRepoWithReservedNameEntry(t *testing.T, name string) (error, string) {
 
 	dst := t.TempDir()
 	_, cloneErr := PlainClone(dst, &CloneOptions{URL: dir})
-	return cloneErr, dst
+	return dst, cloneErr
 }
 
 // TestCheckoutWindowsReservedDeviceName reproduces go-git issue #2322:
@@ -733,7 +733,7 @@ func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
 	t.Run("extension-bearing name prn.sh", func(t *testing.T) {
 		t.Parallel()
 
-		err, dst := cloneRepoWithReservedNameEntry(t, "prn.sh")
+		dst, err := cloneRepoWithReservedNameEntry(t, "prn.sh")
 
 		if onWindows() {
 			// Whether prn.sh is rejected on Windows now depends on the
@@ -759,7 +759,7 @@ func TestCheckoutWindowsReservedDeviceName(t *testing.T) {
 	t.Run("bare reserved name PRN", func(t *testing.T) {
 		t.Parallel()
 
-		err, dst := cloneRepoWithReservedNameEntry(t, "PRN")
+		dst, err := cloneRepoWithReservedNameEntry(t, "PRN")
 
 		if onWindows() {
 			// Bare reserved names match deterministically on every
