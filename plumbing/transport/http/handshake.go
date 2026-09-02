@@ -99,6 +99,16 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	// and the session that follows it agree on what an origin is. In canonical
 	// git, credential_from_url() re-derives credentials from the new URL,
 	// effectively wiping the old ones.
+	//
+	// The two are deliberately asymmetric in one respect: stripCredentials is
+	// sticky over the whole chain, so an origin -> evil -> origin redirect
+	// leaves the discovery GET's later hops unauthenticated even though the
+	// chain returned home. This check instead compares baseURL only against
+	// the final redirectedURL, so the same round trip leaves the session
+	// authenticated. That is not a leak — redirectedURL's origin is the
+	// original one — but it means such a chain can make the discovery GET
+	// anonymous while the session's POSTs are authenticated, which can surface
+	// as a confusing 401 rather than a credential exposure.
 	if !credentialsMayFollow(baseURL, redirectedURL) {
 		// Copy before clearing rather than writing through redirectedURL:
 		// applyRedirect returns baseURL itself when the redirect changed

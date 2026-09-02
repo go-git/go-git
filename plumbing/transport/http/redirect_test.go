@@ -411,7 +411,7 @@ func TestRedirectKeepsCredentialsWithinOrigin(t *testing.T) {
 	t.Run("path only", func(t *testing.T) {
 		t.Parallel()
 		hm := newVhostMap()
-		v := newVhost(t, hm, "example.test", "443", true)
+		v := newTLSVhost(t, hm, "example.test", "443")
 		v.redirectTo(v.base + refsPath("other.git"))
 
 		_, err := handshakeWithCredentials(t, hm, v.base)
@@ -422,7 +422,7 @@ func TestRedirectKeepsCredentialsWithinOrigin(t *testing.T) {
 	t.Run("explicit default port", func(t *testing.T) {
 		t.Parallel()
 		hm := newVhostMap()
-		v := newVhost(t, hm, "example.test", "443", true)
+		v := newTLSVhost(t, hm, "example.test", "443")
 		v.redirectTo("https://example.test:443" + refsPath("other.git"))
 
 		_, err := handshakeWithCredentials(t, hm, v.base)
@@ -433,8 +433,8 @@ func TestRedirectKeepsCredentialsWithinOrigin(t *testing.T) {
 	t.Run("http to https upgrade", func(t *testing.T) {
 		t.Parallel()
 		hm := newVhostMap()
-		secure := newVhost(t, hm, "example.test", "443", true)
-		plain := newVhost(t, hm, "example.test", "80", false)
+		secure := newTLSVhost(t, hm, "example.test", "443")
+		plain := newVhost(t, hm, "example.test", "80")
 		plain.redirectTo(secure.base + refsPath("other.git"))
 
 		_, err := handshakeWithCredentials(t, hm, plain.base)
@@ -461,8 +461,8 @@ func TestRedirectDropsCredentialsAcrossOrigin(t *testing.T) {
 			t.Parallel()
 
 			hm := newVhostMap()
-			dest := newVhost(t, hm, tt.destHost, tt.destPort, true)
-			origin := newVhost(t, hm, "example.test", "443", true)
+			dest := newTLSVhost(t, hm, tt.destHost, tt.destPort)
+			origin := newTLSVhost(t, hm, "example.test", "443")
 			origin.redirectTo(dest.base + refsPath("repo.git"))
 
 			_, err := handshakeWithCredentials(t, hm, origin.base)
@@ -477,30 +477,14 @@ func TestRedirectDropsCredentialsAcrossOrigin(t *testing.T) {
 		t.Parallel()
 
 		hm := newVhostMap()
-		dest := newVhost(t, hm, "evil.test", "443", true)
-		origin := newVhost(t, hm, "example.test", "443", true)
+		dest := newTLSVhost(t, hm, "evil.test", "443")
+		origin := newTLSVhost(t, hm, "example.test", "443")
 		origin.redirectTo(dest.base + "/repo.git/info/refs")
 
-		tr := NewTransport(Options{
-			Client:    hm.client(),
-			ForceDumb: true,
-			Authorizer: func(r *http.Request) error {
-				r.Header.Set("X-Private-Token", "custom-canary")
-				r.Header["X-Raw-Token"] = []string{"raw-canary"}
-				return nil
-			},
+		_, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+			o.ForceDumb = true
 		})
-		u, err := url.Parse(origin.base + "/repo.git")
-		require.NoError(t, err)
-		u.User = url.UserPassword("testuser", "testpass")
-
-		sess, err := tr.Handshake(context.Background(), &transport.Request{
-			URL:     u,
-			Command: transport.UploadPackService,
-		})
-		if err == nil {
-			t.Cleanup(func() { _ = sess.Close() })
-		} else {
+		if err != nil {
 			// The vhost serves a smart advertisement, so the dumb decoder may
 			// reject it. The assertion below is about the headers that reached
 			// dest, which that does not affect.
@@ -511,14 +495,15 @@ func TestRedirectDropsCredentialsAcrossOrigin(t *testing.T) {
 }
 
 // Once the chain has left the origin, credentials stay gone even if a later
-// hop returns to it. Go restores non-sensitive headers on every hop, so
-// without the sticky check the custom credentials reappear on the final hop.
+// hop returns to it. net/http restores non-sensitive headers on every hop,
+// so without the sticky check the custom credentials reappear on the final
+// hop.
 func TestRedirectCredentialsStickyMultiHop(t *testing.T) {
 	t.Parallel()
 
 	hm := newVhostMap()
-	origin := newVhost(t, hm, "example.test", "443", true)
-	detour := newVhost(t, hm, "evil.test", "443", true)
+	origin := newTLSVhost(t, hm, "example.test", "443")
+	detour := newTLSVhost(t, hm, "evil.test", "443")
 
 	detour.redirectTo(origin.base + refsPath("other.git"))
 	origin.redirectTo(detour.base + refsPath("repo.git"))
@@ -535,8 +520,8 @@ func TestRedirectStripsAroundCallerHook(t *testing.T) {
 	t.Parallel()
 
 	hm := newVhostMap()
-	dest := newVhost(t, hm, "evil.test", "443", true)
-	origin := newVhost(t, hm, "example.test", "443", true)
+	dest := newTLSVhost(t, hm, "evil.test", "443")
+	origin := newTLSVhost(t, hm, "example.test", "443")
 	origin.redirectTo(dest.base + refsPath("repo.git"))
 
 	var seen http.Header
@@ -549,21 +534,8 @@ func TestRedirectStripsAroundCallerHook(t *testing.T) {
 		return nil
 	}
 
-	tr := NewTransport(Options{
-		Client: client,
-		Authorizer: func(r *http.Request) error {
-			r.Header.Set("X-Private-Token", "custom-canary")
-			r.Header["X-Raw-Token"] = []string{"raw-canary"}
-			return nil
-		},
-	})
-	u, err := url.Parse(origin.base + "/repo.git")
-	require.NoError(t, err)
-	u.User = url.UserPassword("testuser", "testpass")
-
-	_, err = tr.Handshake(context.Background(), &transport.Request{
-		URL:     u,
-		Command: transport.UploadPackService,
+	_, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+		o.Client = client
 	})
 	require.NoError(t, err)
 
@@ -579,7 +551,7 @@ func TestSessionCredentialsAfterRedirect(t *testing.T) {
 	t.Run("retained when the redirect stays within the origin", func(t *testing.T) {
 		t.Parallel()
 		hm := newVhostMap()
-		v := newVhost(t, hm, "example.test", "443", true)
+		v := newTLSVhost(t, hm, "example.test", "443")
 		// Same origin, spelled with its default port.
 		v.redirectTo("https://example.test:443" + refsPath("other.git"))
 
@@ -595,8 +567,8 @@ func TestSessionCredentialsAfterRedirect(t *testing.T) {
 	t.Run("cleared when the redirect leaves the origin", func(t *testing.T) {
 		t.Parallel()
 		hm := newVhostMap()
-		dest := newVhost(t, hm, "sub.example.test", "443", true)
-		origin := newVhost(t, hm, "example.test", "443", true)
+		dest := newTLSVhost(t, hm, "sub.example.test", "443")
+		origin := newTLSVhost(t, hm, "example.test", "443")
 		origin.redirectTo(dest.base + refsPath("repo.git"))
 
 		sess, err := handshakeWithCredentials(t, hm, origin.base)
@@ -615,8 +587,8 @@ func TestSessionCredentialsAfterRedirect(t *testing.T) {
 	t.Run("does not mutate the caller's URL", func(t *testing.T) {
 		t.Parallel()
 		hm := newVhostMap()
-		dest := newVhost(t, hm, "evil.test", "443", true)
-		origin := newVhost(t, hm, "example.test", "443", true)
+		dest := newTLSVhost(t, hm, "evil.test", "443")
+		origin := newTLSVhost(t, hm, "example.test", "443")
 		origin.redirectTo(dest.base + refsPath("repo.git"))
 
 		tr := NewTransport(Options{Client: hm.client()})

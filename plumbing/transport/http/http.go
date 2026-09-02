@@ -47,11 +47,20 @@ type Options struct {
 	// created. When Client is set, TLS and HTTPProxy are ignored —
 	// configure them on the provided Client directly.
 	//
-	// When a redirect leaves the repository's origin, the transport keeps
-	// only the headers it sets itself and drops everything else, including
-	// any header an Authorizer added. Credentials injected by a custom
-	// RoundTripper on this Client are added after that point and will follow
-	// redirects; apply those in Authorizer instead.
+	// Credentials injected by a custom RoundTripper on this Client are
+	// invisible to the transport, so they are not subject to the redirect
+	// stripping described on Authorizer and will follow redirects across
+	// origins; apply those in Authorizer instead if that is not wanted. A
+	// CheckRedirect hook set on this Client runs alongside the transport's
+	// own, but any header it adds when a redirect leaves the repository's
+	// origin is discarded the same way.
+	//
+	// A RoundTripper is therefore also how to authenticate to a new origin a
+	// redirect has moved the repository to: match on the request URL and
+	// inject the credential only for that origin, so it is not sent
+	// anywhere else. The transport keeps its own CheckRedirect on the copy
+	// it makes of this Client, so the policy and the origin checks still
+	// apply.
 	Client *http.Client
 
 	// FollowRedirects controls redirect handling. The zero value defaults
@@ -59,6 +68,19 @@ type Options struct {
 	FollowRedirects RedirectPolicy
 
 	// Authorizer mutates outgoing HTTP requests to add authentication.
+	//
+	// Headers it adds are dropped when a redirect leaves the repository's
+	// origin: only the headers the transport sets itself survive that
+	// boundary. This applies to non-credential headers too, so an
+	// Authorizer that adds a trace or tenant header will lose it on such
+	// a hop.
+	//
+	// That filter matches header names, not values. An Authorizer that
+	// writes a credential into a name the transport also uses — User-Agent,
+	// Accept, Content-Type, Git-Protocol — has that value carried across the
+	// boundary with the name. Such a credential is also sent to the origin
+	// and to any proxy in path, and appears in trace.HTTP output, so it
+	// should not be placed there whether or not a redirect follows.
 	Authorizer func(*http.Request) error
 
 	// HTTPProxy returns the proxy URL for a given HTTP request.
@@ -150,9 +172,9 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 //
 // Two subtleties:
 //
-//   - Go rebuilds every redirect request from the original request's headers
-//     before calling this, so a header removed at one hop reappears at the
-//     next. The decision is therefore recomputed per hop.
+//   - net/http rebuilds every redirect request from the original request's
+//     headers before calling this, so a header removed at one hop reappears
+//     at the next. The decision is therefore recomputed per hop.
 //   - The decision is sticky: once the chain has left the origin, credentials
 //     stay gone even if a later hop returns to it. Stickiness is derived from
 //     via rather than stored, because this closure is shared across a
@@ -161,9 +183,10 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 // Stripping keeps only the headers go-git sets itself (safeHeaders). An
 // allowlist is used rather than a list of credential header names because
 // caller credentials arrive under names that cannot be enumerated —
-// PRIVATE-TOKEN, X-Api-Key, gateway headers — which is exactly what Go's fixed
-// list of sensitive names gets wrong. It is also immune to header-name
-// canonicalisation: an Authorizer that writes a raw map key is still removed.
+// PRIVATE-TOKEN, X-Api-Key, gateway headers — which is exactly what
+// net/http's fixed list of sensitive header names gets wrong. It is also
+// immune to header-name canonicalisation: an Authorizer that writes a raw
+// map key is still removed.
 func stripCredentials(req *http.Request, via []*http.Request) {
 	if len(via) == 0 {
 		return
@@ -203,8 +226,8 @@ func crossedOrigin(origin *url.URL, req *http.Request, via []*http.Request) bool
 //
 // This function decides only whether a hop may proceed. Credentials on a
 // permitted hop are handled by stripCredentials, which removes them when the
-// hop leaves the origin they were issued for. Go's http.Client applies its own
-// rule first, but that rule forwards credentials from a host to its
+// hop leaves the origin they were issued for. net/http's Client applies its
+// own rule first, but that rule forwards credentials from a host to its
 // subdomains, ignores the port and the scheme, and recognises only a fixed set
 // of header names, so it is not sufficient on its own.
 func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy) error {

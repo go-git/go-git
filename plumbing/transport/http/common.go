@@ -222,7 +222,11 @@ func credentialsMayFollow(from, to *url.URL) bool {
 // caller credential. It has two consumers: trace.HTTP logs only these, and
 // stripCredentials keeps only these when a redirect leaves the credential's
 // origin. Adding a name here makes it both loggable and forwardable across an
-// origin boundary — do not add anything a caller can put a secret in.
+// origin boundary — do not add anything a caller can put a secret in. This
+// narrows rather than eliminates the exposure: an Authorizer that writes a
+// credential into one of these names directly — for example
+// Header.Set("User-Agent", "token "+secret) — still survives a cross-origin
+// redirect and still gets logged.
 var safeHeaders = map[string]struct{}{
 	"User-Agent":        {},
 	"Host":              {},

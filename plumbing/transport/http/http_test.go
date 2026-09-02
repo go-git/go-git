@@ -130,9 +130,22 @@ type vhost struct {
 	redirect string
 }
 
-// newVhost starts a server registered at hostname:port. Its base URL omits the
-// port when that port is the scheme's default.
-func newVhost(t *testing.T, hm *vhostMap, hostname, port string, useTLS bool) *vhost {
+// newTLSVhost starts an HTTPS server registered at hostname:port. Its base
+// URL omits the port when that port is the scheme's default.
+func newTLSVhost(t *testing.T, hm *vhostMap, hostname, port string) *vhost {
+	t.Helper()
+	return newVhostServer(t, hm, hostname, port, true)
+}
+
+// newVhost starts a plain HTTP server registered at hostname:port. Its base
+// URL omits the port when that port is the scheme's default.
+func newVhost(t *testing.T, hm *vhostMap, hostname, port string) *vhost {
+	t.Helper()
+	return newVhostServer(t, hm, hostname, port, false)
+}
+
+// newVhostServer implements newTLSVhost and newVhost.
+func newVhostServer(t *testing.T, hm *vhostMap, hostname, port string, useTLS bool) *vhost {
 	t.Helper()
 
 	v := &vhost{}
@@ -195,20 +208,31 @@ func refsPath(repo string) string {
 
 // handshakeWithCredentials performs a discovery handshake carrying three
 // credentials: URL userinfo (becomes Authorization), a custom header set with
-// Header.Set, and a custom header written as a raw map key. The raw one guards
-// against a strip implemented with http.Header.Del, which canonicalises the
-// name and would leave that spelling in place.
-func handshakeWithCredentials(t *testing.T, hm *vhostMap, originBase string) (transport.Session, error) {
+// Header.Set, and a custom header written as a raw, non-canonical map key.
+// The raw one guards against a strip implemented with http.Header.Del: Del
+// canonicalises the name it is given and would remove the canonical spelling,
+// but a lowercase key stored directly in the map bypasses that and would
+// survive such a strip undetected. The allowlist in filterHeaders instead
+// canonicalises for lookup, so it catches this spelling too.
+//
+// opts, if given, are applied to the base Options after the defaults above
+// are set, so a caller can override Client or add settings like ForceDumb
+// without duplicating the credential setup.
+func handshakeWithCredentials(t *testing.T, hm *vhostMap, originBase string, opts ...func(*Options)) (transport.Session, error) {
 	t.Helper()
 
-	tr := NewTransport(Options{
+	options := Options{
 		Client: hm.client(),
 		Authorizer: func(r *http.Request) error {
 			r.Header.Set("X-Private-Token", "custom-canary")
-			r.Header["X-Raw-Token"] = []string{"raw-canary"}
+			r.Header["x-raw-token"] = []string{"raw-canary"}
 			return nil
 		},
-	})
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+	tr := NewTransport(options)
 
 	u, err := url.Parse(originBase + "/repo.git")
 	require.NoError(t, err)
