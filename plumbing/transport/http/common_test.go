@@ -574,6 +574,419 @@ func (s *ClientSuite) TestCredentialsMayFollow(c *C) {
 	c.Check(credentialsMayFollow(from, &url.URL{Scheme: "HTTPS", Host: "example.com"}), Equals, true)
 }
 
+// customHeaderAuth is a third-party AuthMethod that carries its credential in
+// a header name net/http does not treat as sensitive.
+type customHeaderAuth struct {
+	name  string
+	value string
+}
+
+func (a *customHeaderAuth) Name() string   { return "custom-header-auth" }
+func (a *customHeaderAuth) String() string { return "custom-header-auth" }
+
+func (a *customHeaderAuth) SetAuth(r *http.Request) { r.Header.Set(a.name, a.value) }
+
+func (s *ClientSuite) TestStripCredentials(c *C) {
+	const origin = "https://user:pass@example.com/repo.git/info/refs"
+
+	tests := []struct {
+		name string
+		// hops lists the redirect targets in order; the last is the
+		// pending request, the ones before it are hops already taken.
+		hops []string
+		keep bool
+	}{
+		{
+			name: "same origin",
+			hops: []string{"https://example.com/other.git/info/refs"},
+			keep: true,
+		},
+		{
+			name: "same origin with the default port spelled out",
+			hops: []string{"https://example.com:443/other.git/info/refs"},
+			keep: true,
+		},
+		{
+			name: "same origin after another same-origin hop",
+			hops: []string{"https://example.com/a", "https://example.com/b"},
+			keep: true,
+		},
+		{
+			name: "subdomain",
+			hops: []string{"https://sub.example.com/repo.git/info/refs"},
+		},
+		{
+			name: "different port",
+			hops: []string{"https://example.com:8443/repo.git/info/refs"},
+		},
+		{
+			name: "unrelated host",
+			hops: []string{"https://evil.com/repo.git/info/refs"},
+		},
+		{
+			name: "left the origin and came back",
+			hops: []string{"https://evil.com/a", "https://example.com/b"},
+		},
+	}
+
+	for _, tt := range tests {
+		originURL, err := url.Parse(origin)
+		c.Assert(err, IsNil, Commentf(tt.name))
+
+		via := []*http.Request{{URL: originURL}}
+		for _, raw := range tt.hops[:len(tt.hops)-1] {
+			u, err := url.Parse(raw)
+			c.Assert(err, IsNil, Commentf(tt.name))
+			via = append(via, &http.Request{URL: u})
+		}
+
+		target, err := url.Parse(tt.hops[len(tt.hops)-1])
+		c.Assert(err, IsNil, Commentf(tt.name))
+		target.User = url.UserPassword("user", "pass")
+
+		req := &http.Request{URL: target, Header: http.Header{
+			"Authorization": {"Basic dXNlcjpwYXNz"},
+			// A raw, non-canonical map key, as a caller writing
+			// straight into the map would leave it.
+			"PRIVATE-TOKEN": {"glpat-secret"},
+			"User-Agent":    {"go-git/5.x"},
+		}}
+
+		stripCredentials(req, via)
+
+		// go-git's own headers survive either way.
+		c.Assert(req.Header.Get("User-Agent"), Equals, "go-git/5.x", Commentf(tt.name))
+
+		if tt.keep {
+			c.Assert(req.Header.Get("Authorization"), Equals, "Basic dXNlcjpwYXNz", Commentf(tt.name))
+			c.Assert(req.Header["PRIVATE-TOKEN"], HasLen, 1, Commentf(tt.name))
+			c.Assert(req.URL.User, NotNil, Commentf(tt.name))
+			continue
+		}
+
+		c.Assert(req.Header.Get("Authorization"), Equals, "", Commentf(tt.name))
+		c.Assert(req.Header["PRIVATE-TOKEN"], IsNil, Commentf(tt.name))
+		c.Assert(req.URL.User, IsNil, Commentf(tt.name))
+	}
+}
+
+// safeHeaders is the origin boundary: a name added here becomes forwardable
+// to another origin. Pinning the whole map means widening it has to be
+// deliberate rather than a side effect of adding a header elsewhere.
+func (s *ClientSuite) TestSafeHeadersMembership(c *C) {
+	c.Assert(safeHeaders, DeepEquals, map[string]struct{}{
+		"User-Agent":     {},
+		"Host":           {},
+		"Accept":         {},
+		"Content-Type":   {},
+		"Content-Length": {},
+	})
+}
+
+// The allowlist is matched on the canonical form of the name, so a caller
+// writing a raw map key is filtered on the same footing as one using
+// Header.Set. Keys are returned as they were given, which is why this asserts
+// on the map rather than through Header.Get.
+func (s *ClientSuite) TestFilterHeadersMatchesNonCanonicalKeys(c *C) {
+	filtered := filterHeaders(http.Header{
+		"user-agent":    {"go-git/5.x"},
+		"PRIVATE-TOKEN": {"glpat-secret"},
+		"authorization": {"Basic dXNlcjpwYXNz"},
+	})
+	c.Check(filtered["user-agent"], DeepEquals, []string{"go-git/5.x"})
+	c.Check(filtered["PRIVATE-TOKEN"], IsNil)
+	c.Check(filtered["authorization"], IsNil)
+}
+
+// stripCredentials treats a URL it cannot read as an origin crossing, so an
+// undeterminable hop strips rather than panicking or passing.
+func (s *ClientSuite) TestStripCredentialsFailsClosed(c *C) {
+	origin, err := url.Parse("https://example.com/repo.git/info/refs")
+	c.Assert(err, IsNil)
+	target, err := url.Parse("https://example.com/other.git/info/refs")
+	c.Assert(err, IsNil)
+
+	tests := []struct {
+		name string
+		via  []*http.Request
+		req  *http.Request
+	}{
+		{
+			name: "no hops yet",
+			via:  nil,
+			req:  &http.Request{URL: target},
+		},
+		{
+			name: "origin URL unreadable",
+			via:  []*http.Request{{}},
+			req:  &http.Request{URL: target},
+		},
+		{
+			name: "target URL unreadable",
+			via:  []*http.Request{{URL: origin}},
+			req:  &http.Request{},
+		},
+		{
+			name: "intermediate hop unreadable",
+			via:  []*http.Request{{URL: origin}, {}},
+			req:  &http.Request{URL: target},
+		},
+	}
+
+	for _, tt := range tests {
+		req := tt.req
+		req.Header = http.Header{
+			"Authorization": {"Basic dXNlcjpwYXNz"},
+			"User-Agent":    {"go-git/5.x"},
+		}
+
+		// Must not panic.
+		stripCredentials(req, tt.via)
+
+		if len(tt.via) == 0 {
+			// Nothing has been redirected yet, so nothing is stripped.
+			c.Check(req.Header.Get("Authorization"), Equals, "Basic dXNlcjpwYXNz", Commentf(tt.name))
+			continue
+		}
+		c.Check(req.Header.Get("Authorization"), Equals, "", Commentf(tt.name))
+		c.Check(req.Header.Get("User-Agent"), Equals, "go-git/5.x", Commentf(tt.name))
+	}
+}
+
+// A caller's own CheckRedirect hook runs between the two strips, so the common
+// "copy my headers from the original request" shape cannot put them back.
+func (s *ClientSuite) TestStripCredentialsSurvivesCustomRedirectHook(c *C) {
+	originURL, err := url.Parse("https://example.com/repo.git/info/refs")
+	c.Assert(err, IsNil)
+	target, err := url.Parse("https://evil.com/repo.git/info/refs")
+	c.Assert(err, IsNil)
+
+	via := []*http.Request{{
+		URL: originURL,
+		Header: http.Header{
+			"Authorization": {"Basic dXNlcjpwYXNz"},
+			"User-Agent":    {"go-git/5.x"},
+		},
+	}}
+	req := (&http.Request{URL: target, Header: http.Header{
+		"Authorization": {"Basic dXNlcjpwYXNz"},
+		"User-Agent":    {"go-git/5.x"},
+	}}).WithContext(withInitialRequest(context.Background()))
+
+	called := false
+	// observed is what the hook was handed: the strip runs before it, so a
+	// hook that logs or forwards headers rather than replacing them sees the
+	// sanitised set too.
+	observed := "unset"
+	next := func(req *http.Request, via []*http.Request) error {
+		called = true
+		observed = req.Header.Get("Authorization")
+		req.Header = via[0].Header.Clone()
+		return nil
+	}
+
+	err = wrapCheckRedirect(FollowRedirects, next)(req, via)
+	c.Assert(err, IsNil)
+	c.Assert(called, Equals, true)
+	c.Check(observed, Equals, "")
+	c.Check(req.Header.Get("Authorization"), Equals, "")
+	c.Check(req.Header.Get("User-Agent"), Equals, "go-git/5.x")
+}
+
+func (s *ClientSuite) TestCrossOriginRedirectDropsCallerHeaders(c *C) {
+	for _, tt := range []struct {
+		name     string
+		destHost string
+		keep     bool
+	}{
+		{name: "same origin", destHost: "example.test", keep: true},
+		{name: "subdomain", destHost: "sub.example.test"},
+		{name: "unrelated host", destHost: "evil.test"},
+	} {
+		// A function body per case, so each case's listeners are shut down
+		// when it ends rather than accumulating until the test returns.
+		func() {
+			probe := newSchemeProbe()
+			defer probe.close()
+
+			var mu sync.Mutex
+			var seen []http.Header
+			record := func(w http.ResponseWriter, req *http.Request) {
+				mu.Lock()
+				seen = append(seen, req.Header.Clone())
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+				_, _ = w.Write([]byte(uploadPackAdvertisement()))
+			}
+
+			// For the same-origin case the redirect stays on the origin and
+			// only changes path, so there is no second server.
+			sameOrigin := tt.destHost == "example.test"
+			var destBase string
+			if !sameOrigin {
+				destBase = probe.serve(c, tt.destHost, true, record)
+			}
+
+			originBase := probe.serve(c, "example.test", true, func(w http.ResponseWriter, req *http.Request) {
+				if req.URL.Path == "/repo.git/info/refs" {
+					http.Redirect(w, req,
+						destBase+"/other.git/info/refs?service=git-upload-pack",
+						http.StatusFound)
+					return
+				}
+				record(w, req)
+			})
+
+			ep, err := transport.NewEndpoint(originBase + "/repo.git")
+			c.Assert(err, IsNil, Commentf(tt.name))
+
+			cl := NewClientWithOptions(probe.client(), &ClientOptions{})
+			sess, err := cl.NewUploadPackSession(ep, &customHeaderAuth{name: "PRIVATE-TOKEN", value: "glpat-secret"})
+			c.Assert(err, IsNil, Commentf(tt.name))
+
+			_, err = sess.AdvertisedReferencesContext(context.Background())
+			c.Assert(err, IsNil, Commentf(tt.name))
+			c.Assert(sess.Close(), IsNil, Commentf(tt.name))
+
+			mu.Lock()
+			c.Assert(seen, Not(HasLen), 0, Commentf(tt.name))
+			got := seen[len(seen)-1].Get("PRIVATE-TOKEN")
+			mu.Unlock()
+
+			if tt.keep {
+				c.Assert(got, Equals, "glpat-secret", Commentf(tt.name))
+				return
+			}
+			c.Assert(got, Equals, "", Commentf(tt.name))
+		}()
+	}
+}
+
+// Under FollowRedirects a 307 on the upload-pack POST preserves the method and
+// the body, so a credential-bearing request with a body can be redirected too.
+// The same-origin subtest keeps the other honest: it is what shows the POST
+// carries the credential to begin with.
+func (s *ClientSuite) TestCrossOriginPostDropsCallerHeaders(c *C) {
+	for _, tt := range []struct {
+		name     string
+		destHost string
+		keep     bool
+	}{
+		{name: "same origin", destHost: "example.test", keep: true},
+		{name: "unrelated host", destHost: "evil.test"},
+	} {
+		// A function body per case, so each case's listeners are shut down
+		// when it ends rather than accumulating until the test returns.
+		func() {
+			probe := newSchemeProbe()
+			defer probe.close()
+
+			var mu sync.Mutex
+			var postAuth []string
+
+			recordPost := func(w http.ResponseWriter, req *http.Request) {
+				mu.Lock()
+				postAuth = append(postAuth, req.Header.Get("PRIVATE-TOKEN"))
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+				_, _ = w.Write([]byte("0008NAK\n"))
+			}
+
+			sameOrigin := tt.destHost == "example.test"
+			var destBase string
+			if !sameOrigin {
+				destBase = probe.serve(c, tt.destHost, true, recordPost)
+			}
+
+			originBase := probe.serve(c, "example.test", true, func(w http.ResponseWriter, req *http.Request) {
+				switch {
+				case req.URL.Path == "/repo.git/info/refs":
+					w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+					_, _ = w.Write([]byte(uploadPackAdvertisement()))
+				case req.URL.Path == "/repo.git/git-upload-pack":
+					// 307 keeps the method and the body.
+					http.Redirect(w, req, destBase+"/other.git/git-upload-pack", http.StatusTemporaryRedirect)
+				default:
+					recordPost(w, req)
+				}
+			})
+
+			ep, err := transport.NewEndpoint(originBase + "/repo.git")
+			c.Assert(err, IsNil, Commentf(tt.name))
+
+			cl := NewClientWithOptions(probe.client(), &ClientOptions{RedirectPolicy: FollowRedirects})
+			sess, err := cl.NewUploadPackSession(ep, &customHeaderAuth{name: "PRIVATE-TOKEN", value: "glpat-secret"})
+			c.Assert(err, IsNil, Commentf(tt.name))
+
+			_, err = sess.AdvertisedReferencesContext(context.Background())
+			c.Assert(err, IsNil, Commentf(tt.name))
+
+			upr := packp.NewUploadPackRequest()
+			upr.Wants = append(upr.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+			_, err = sess.UploadPack(context.Background(), upr)
+			c.Assert(err, IsNil, Commentf(tt.name))
+			c.Assert(sess.Close(), IsNil, Commentf(tt.name))
+
+			mu.Lock()
+			c.Assert(postAuth, Not(HasLen), 0, Commentf(tt.name))
+			got := postAuth[len(postAuth)-1]
+			mu.Unlock()
+
+			if tt.keep {
+				c.Check(got, Equals, "glpat-secret", Commentf(tt.name))
+				return
+			}
+			c.Check(got, Equals, "", Commentf(tt.name))
+		}()
+	}
+}
+
+// A Location can carry its own userinfo, and net/http's send() turns
+// req.URL.User into an Authorization header on the next hop, after
+// CheckRedirect has returned. Clearing the userinfo is what stops a hop the
+// transport decided must be unauthenticated from going out authenticated with
+// whatever the redirect chose. Nothing reaches req.URL.User by any other
+// route: for an absolute Location, ResolveReference takes the target's
+// userinfo, not the previous URL's.
+func (s *ClientSuite) TestCrossOriginRedirectDropsLocationUserinfo(c *C) {
+	probe := newSchemeProbe()
+	defer probe.close()
+
+	var mu sync.Mutex
+	var seen []string
+
+	destBase := probe.serve(c, "evil.test", true, func(w http.ResponseWriter, req *http.Request) {
+		mu.Lock()
+		seen = append(seen, req.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte(uploadPackAdvertisement()))
+	})
+
+	originBase := probe.serve(c, "example.test", true, func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req,
+			"https://injected:secret@"+destBase[len("https://"):]+"/other.git/info/refs?service=git-upload-pack",
+			http.StatusFound)
+	})
+
+	// Credentials come from the clone URL, with no AuthMethod at all.
+	ep, err := transport.NewEndpoint(originBase[:len("https://")] + "user:pass@" + originBase[len("https://"):] + "/repo.git")
+	c.Assert(err, IsNil)
+
+	cl := NewClientWithOptions(probe.client(), &ClientOptions{})
+	sess, err := cl.NewUploadPackSession(ep, nil)
+	c.Assert(err, IsNil)
+	defer sess.Close() //nolint:errcheck
+
+	_, err = sess.AdvertisedReferencesContext(context.Background())
+	c.Assert(err, IsNil)
+
+	mu.Lock()
+	defer mu.Unlock()
+	c.Assert(seen, HasLen, 1)
+	c.Check(seen[0], Equals, "")
+}
+
 func cloneEndpoint(ep *transport.Endpoint) *transport.Endpoint {
 	cloned := *ep
 	return &cloned
@@ -849,8 +1262,6 @@ func (p *schemeProbe) serve(c *C, host string, secure bool, h http.HandlerFunc) 
 	} else {
 		srv = httptest.NewServer(h)
 	}
-	c.Assert(srv, NotNil)
-
 	u, err := url.Parse(srv.URL)
 	c.Assert(err, IsNil)
 

@@ -181,6 +181,24 @@ func NewClient(c *http.Client) transport.Transport {
 // and other custom options specific to the client.
 // If the net/http client is nil or empty, it will use a net/http client configured
 // with http.DefaultTransport.
+//
+// Credentials this client adds where the transport cannot see them are not
+// subject to the redirect stripping described on AuthMethod: a RoundTripper
+// injects after the hop is decided, and Client.Jar is consulted after
+// CheckRedirect, so a domain cookie still follows a redirect to a subdomain
+// the transport counts as another origin. Apply them in an AuthMethod instead
+// if that is not wanted. A CheckRedirect hook set on this client runs
+// alongside the transport's own, but any header it adds when a redirect
+// leaves the repository's origin is discarded the same way.
+//
+// A RoundTripper is therefore also how to authenticate to a new origin a
+// redirect has moved the repository to: match on the request URL and inject
+// the credential only for that origin, so it is not sent anywhere else. The
+// transport keeps its own CheckRedirect on the copy it makes of this client,
+// so the policy and the origin checks still apply.
+//
+// None of this applies to a RoundTripper that follows redirects itself:
+// CheckRedirect is not consulted then, so no stripping happens at all.
 func NewClientWithOptions(c *http.Client, opts *ClientOptions) transport.Transport {
 	if c == nil {
 		c = &http.Client{
@@ -587,11 +605,107 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 		if err := checkRedirect(req, via, policy); err != nil {
 			return err
 		}
+		// Strip before the caller's hook so it observes what will actually
+		// be sent, and again afterwards so a hook of the common "preserve
+		// my headers across redirects" shape - which copies from via[0],
+		// the original unsanitized request - cannot reinstate them.
+		// Carrying credentials across an origin boundary is deliberately
+		// unsupported.
+		stripCredentials(req, via)
 		if next != nil {
-			return next(req, via)
+			if err := next(req, via); err != nil {
+				return err
+			}
 		}
+		stripCredentials(req, via)
 		return nil
 	}
+}
+
+// safeHeaders lists the headers go-git sets itself, none of which can carry a
+// caller credential. stripCredentials keeps only these when a redirect leaves
+// the credential's origin. Adding a name here makes it forwardable across an
+// origin boundary - do not add anything a caller can put a secret in.
+//
+// This narrows rather than eliminates the exposure: an AuthMethod that writes
+// a credential into one of these names directly - for example
+// Header.Set("User-Agent", "token "+secret) - still survives a cross-origin
+// redirect. Such a value is also sent to the origin and to any proxy in path,
+// so it should not be placed there whether or not a redirect follows.
+var safeHeaders = map[string]struct{}{
+	"User-Agent":     {},
+	"Host":           {},
+	"Accept":         {},
+	"Content-Type":   {},
+	"Content-Length": {},
+}
+
+func filterHeaders(h http.Header) http.Header {
+	filtered := make(http.Header)
+	for key, values := range h {
+		if _, ok := safeHeaders[http.CanonicalHeaderKey(key)]; ok {
+			filtered[key] = values
+		}
+	}
+	return filtered
+}
+
+// stripCredentials removes credentials from req once the redirect chain has
+// left the origin of the original, credential-bearing request.
+//
+// CheckRedirect is the only hook that runs while a redirected request's
+// headers are still mutable: http.Client.Do performs the entire chain
+// internally, so anything the transport does after Do returns - including
+// ModifyEndpointIfRedirect - is too late for the hops themselves.
+//
+// Two subtleties:
+//
+//   - net/http rebuilds every redirect request from the original request's
+//     headers before calling this, so a header removed at one hop reappears
+//     at the next. The decision is therefore recomputed per hop.
+//   - The decision is sticky: once the chain has left the origin, credentials
+//     stay gone even if a later hop returns to it. Stickiness is derived from
+//     via rather than stored, because this closure is shared across a
+//     session's requests.
+//
+// Stripping keeps only the headers go-git sets itself (safeHeaders). An
+// allowlist is used rather than a list of credential header names because
+// caller credentials arrive under names that cannot be enumerated -
+// PRIVATE-TOKEN, X-Api-Key, gateway headers - which is exactly what
+// net/http's fixed list of sensitive header names gets wrong. It is also
+// immune to header-name canonicalisation: an AuthMethod that writes a raw map
+// key is still removed.
+func stripCredentials(req *http.Request, via []*http.Request) {
+	if len(via) == 0 {
+		return
+	}
+	// net/http sets a URL on every request it builds, and req.URL is non-nil
+	// by construction: checkRedirect dereferences req.URL.Scheme on each path
+	// that returns nil, so it runs first or not at all. This nil check and
+	// the two in crossedOrigin are defensive, against a synthetic caller.
+	// Each treats a URL it cannot read as an origin crossing; removing one
+	// panics in canonicalHost rather than leaking.
+	if origin := via[0].URL; origin != nil && !crossedOrigin(origin, req, via) {
+		return
+	}
+	req.Header = filterHeaders(req.Header)
+	if req.URL != nil {
+		req.URL.User = nil
+	}
+}
+
+// crossedOrigin reports whether any hop so far, including the pending one, has
+// left origin.
+func crossedOrigin(origin *url.URL, req *http.Request, via []*http.Request) bool {
+	if req.URL == nil || !credentialsMayFollow(origin, req.URL) {
+		return true
+	}
+	for _, prev := range via[1:] {
+		if prev.URL == nil || !credentialsMayFollow(origin, prev.URL) {
+			return true
+		}
+	}
+	return false
 }
 
 // redactedURL returns the string form of u with the userinfo password
@@ -713,6 +827,17 @@ func (*session) Close() error {
 }
 
 // AuthMethod is concrete implementation of common.AuthMethod for HTTP services
+//
+// Headers SetAuth adds are dropped when a redirect leaves the repository's
+// origin: only the headers the transport sets itself survive that boundary.
+// This applies to non-credential headers too, so an implementation that adds a
+// trace or tenant header loses it on such a hop.
+//
+// That filter matches header names, not values. An implementation that writes
+// a credential into a name the transport also uses - User-Agent, Host, Accept,
+// Content-Type, Content-Length - has that value carried across the boundary
+// with the name. Such a credential is also sent to the origin and to any proxy
+// in path, so it should not be placed there whether or not a redirect follows.
 type AuthMethod interface {
 	transport.AuthMethod
 	SetAuth(r *http.Request)
