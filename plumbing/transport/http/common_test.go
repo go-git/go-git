@@ -237,7 +237,21 @@ func TestCredentialsMayFollow(t *testing.T) {
 		{"http to https upgrade", "http://example.test/a", "https://example.test/a", true},
 		{"ipv4 literal", "http://127.0.0.1:8080/a", "http://127.0.0.1:8080/a", true},
 		{"ipv6 literal", "http://[::1]:8080/a", "http://[::1]:8080/a", true},
+		{"ipv6 zone, same spelling", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25eth0]:8080/a", true},
+		{"ipv6 zone, address case differs", "http://[FE80::1%25eth0]:8080/a", "http://[fe80::1%25eth0]:8080/a", true},
 		{"host with underscore", "http://build_host:8080/a", "http://build_host:8080/a", true},
+
+		// One address has many spellings. netip.ParseAddr is the same call
+		// net's resolver gates on (lookup.go), so these all name the endpoint
+		// the dialer would connect to and are one origin.
+		{"ipv6 compressed against expanded", "http://[::1]:8080/a", "http://[0:0:0:0:0:0:0:1]:8080/a", true},
+		{"ipv6 leading zeroes in a field", "http://[::1]:8080/a", "http://[::0001]:8080/a", true},
+		{"ipv6 hex against dotted-quad tail", "http://[::ffff:7f00:1]/a", "http://[::ffff:127.0.0.1]/a", true},
+
+		// A percent in a registered name is not a scope zone. %25 is the only
+		// escape net/url leaves in a host, so Hostname() really can return
+		// one, and the whole name folds.
+		{"percent in a registered name", "https://foo%25bar.test/a", "https://FOO%25BAR.test/a", true},
 
 		{"https to http downgrade", "https://example.test/a", "http://example.test/a", false},
 		{"subdomain", "https://example.test/a", "https://sub.example.test/a", false},
@@ -249,10 +263,26 @@ func TestCredentialsMayFollow(t *testing.T) {
 		// A trailing root dot reaches the same peer, but net/http sends the
 		// name as written in Host, so the two spellings can be routed to
 		// different virtual hosts. curl and the WHATWG URL Standard keep them
-		// distinct too.
+		// distinct too. A dotted IP literal is kept apart for the same reason,
+		// though it stops parsing as a literal and is compared as a name.
 		{"trailing root dot", "https://example.test/a", "https://example.test./a", false},
 		{"trailing root dot on the left", "https://example.test./a", "https://example.test/a", false},
+		{"ipv4 with a trailing root dot", "http://127.0.0.1/a", "http://127.0.0.1./a", false},
 		{"upgrade to a non-default https port", "http://example.test/a", "https://example.test:8443/a", false},
+
+		// An IPv6 scope zone names an interface, and net resolves it by exact
+		// name: %eth0 and %ETH0 can be two interfaces carrying the same
+		// link-local address. Folding the zone would let a credential issued
+		// for one cross to the other.
+		{"ipv6 zone case differs", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25ETH0]:8080/a", false},
+		{"ipv6 zone differs", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25eth1]:8080/a", false},
+		{"ipv6 zone against none", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1]:8080/a", false},
+
+		// An IPv4-mapped literal dials the same endpoint as the IPv4 it wraps,
+		// but net/http sends the literal as written in Host, so the two can
+		// reach different virtual hosts on that endpoint. Same endpoint is not
+		// the same authority, and netip keeps the two Addrs apart.
+		{"ipv4-mapped against the ipv4", "http://[::ffff:127.0.0.1]/a", "http://127.0.0.1/a", false},
 
 		// Hostnames are compared as bytes, so a unicode host is a different
 		// origin from the punycode that encodes it and from another Unicode

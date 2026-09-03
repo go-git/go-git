@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -139,16 +140,29 @@ func schemeUpgrade(from, to string) bool {
 	return strings.EqualFold(from, "http") && strings.EqualFold(to, "https")
 }
 
-// canonicalHost returns u's hostname in the form origins are compared in:
-// ASCII-lowercased. That fold is the only liberty taken; every other
-// difference in spelling is a different origin.
+// canonicalHost returns u's hostname in the form origins are compared in.
 //
-// A trailing root dot is one such difference and is kept. curl and the WHATWG
-// URL Standard both hold "example.com." and "example.com" to be distinct
-// hosts, and although crypto/tls and crypto/x509 fold the dot when they
-// authenticate the peer, net/http sends the name as written in Host, so a
-// server can route the two spellings to different virtual hosts. Reaching the
-// same peer is not reaching the same authority.
+// An address literal is normalised by netip, so the many spellings of one
+// address are one origin. Two literals are the same origin exactly when netip
+// parses them to the same Addr, which is also how the WHATWG URL Standard
+// compares hosts. An IPv4-mapped literal is deliberately not unmapped onto
+// the IPv4 it dials: reaching the same endpoint is not the same authority,
+// since net/http sends the literal as written in Host and a server may route
+// the two spellings to different virtual hosts.
+//
+// netip also keeps a scope zone verbatim, which is what origin comparison
+// needs: net resolves a zone to an interface by exact name, so folding %eth0
+// onto %ETH0 would call two hosts the same origin that net dials down
+// different interfaces.
+//
+// A registered name is ASCII-lowercased. That fold is the only liberty taken;
+// every other difference in spelling is a different origin.
+//
+// A trailing root dot is one such difference and is kept, for the same reason
+// as the IPv4-mapped literal: curl and the WHATWG URL Standard both hold
+// "example.com." and "example.com" to be distinct hosts, and although
+// crypto/tls and crypto/x509 fold the dot when they authenticate the peer,
+// net/http sends the name as written in Host.
 //
 // The fold is deliberately ASCII-only. strings.ToLower and strings.EqualFold
 // apply Unicode case mapping, which folds U+03C2 onto U+03C3 and so would
@@ -167,7 +181,11 @@ func schemeUpgrade(from, to string) bool {
 // the failure this comparison exists to prevent, and comparing bytes has no
 // such mode.
 func canonicalHost(u *url.URL) string {
-	b := []byte(u.Hostname())
+	host := u.Hostname()
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addr.String()
+	}
+	b := []byte(host)
 	for i := range b {
 		if b[i] >= 'A' && b[i] <= 'Z' {
 			b[i] += 'a' - 'A'
