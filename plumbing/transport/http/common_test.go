@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -184,7 +185,10 @@ func (s *ClientSuite) Test_newSessionWrapsCustomClientRedirectPolicy(c *C) {
 	c.Assert(session.client, Not(Equals), customClient)
 	c.Assert(session.client.Transport, Equals, customTransport)
 
-	target, err := url.Parse("http://example.com/repo.git")
+	// https: the via entry below has no URL, and the scheme guard treats an
+	// unreadable hop as possibly-https, so a cleartext target would be
+	// rejected before the wrapped policy ran.
+	target, err := url.Parse("https://example.com/repo.git")
 	c.Assert(err, IsNil)
 
 	req := (&http.Request{URL: target, Header: http.Header{}}).WithContext(withInitialRequest(context.Background()))
@@ -421,7 +425,15 @@ func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
 		targetURL     string
 		initial       bool
 		redirectCount int
-		err           string
+		via           []string
+		// viaURLs holds hop URLs built by hand, for shapes url.Parse cannot
+		// produce: it lowercases the scheme it parses, so an uppercased hop
+		// only reaches checkRedirect from a caller that assembles the URL
+		// itself. Takes precedence over via.
+		viaURLs []*url.URL
+		// targetURLValue is targetURL built by hand, for the same reason.
+		targetURLValue *url.URL
+		err            string
 	}{
 		{
 			name:      "initial blocks non-initial request",
@@ -455,12 +467,89 @@ func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
 			err:       ".*unsupported scheme.*",
 		},
 		{
+			// https, so the scheme guard does not reject the chain before
+			// the count is reached: these via entries have no URL, which
+			// the guard treats as possibly-https.
 			name:          "blocks too many redirects",
 			policy:        FollowRedirects,
-			targetURL:     "http://example.com/repo.git",
+			targetURL:     "https://example.com/repo.git",
 			initial:       true,
 			redirectCount: 10,
 			err:           ".*too many redirects.*",
+		},
+		{
+			name:          "blocks a cleartext target after an unreadable hop",
+			policy:        FollowRedirects,
+			targetURL:     "http://example.com/repo.git",
+			initial:       true,
+			redirectCount: 1,
+			err:           ".*changes scheme from \"https\" to \"http\".*",
+		},
+		{
+			name:      "blocks https to http downgrade",
+			policy:    FollowRedirects,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			via:       []string{"https://example.com/repo.git"},
+			err:       ".*changes scheme from \"https\" to \"http\".*",
+		},
+		{
+			// A hop carrying a URL with no scheme is as unreadable as one
+			// carrying no URL, so it takes the same assumed-https default
+			// rather than turning the guard off.
+			name:      "blocks a cleartext target after a schemeless hop",
+			policy:    FollowRedirects,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			via:       []string{"//example.com/repo.git"},
+			err:       ".*changes scheme from \"https\" to \"http\".*",
+		},
+		{
+			// Schemes are case-insensitive, so an uppercased previous hop is
+			// still https and the downgrade is still a downgrade.
+			name:      "blocks a downgrade from an uppercased hop scheme",
+			policy:    FollowRedirects,
+			targetURL: "http://example.com/repo.git",
+			initial:   true,
+			viaURLs:   []*url.URL{{Scheme: "HTTPS", Host: "example.com", Path: "/repo.git"}},
+			err:       ".*changes scheme from \"HTTPS\" to \"http\".*",
+		},
+		{
+			// The mirror case: the target's spelling is folded too, so an
+			// uppercased cleartext target is still a downgrade.
+			name:           "blocks a downgrade to an uppercased target scheme",
+			policy:         FollowRedirects,
+			targetURLValue: &url.URL{Scheme: "HTTP", Host: "example.com", Path: "/repo.git"},
+			initial:        true,
+			via:            []string{"https://example.com/repo.git"},
+			err:            ".*changes scheme from \"https\" to \"HTTP\".*",
+		},
+		{
+			// The unsupported-scheme check folds on the same footing as the
+			// downgrade guard, so a scheme go-git does speak is not rejected
+			// for the case it is spelled in.
+			name:           "allows an uppercased target scheme",
+			policy:         FollowRedirects,
+			targetURLValue: &url.URL{Scheme: "HTTPS", Host: "example.com", Path: "/repo.git"},
+			initial:        true,
+			via:            []string{"https://example.com/repo.git"},
+		},
+		{
+			name:      "allows http to https upgrade",
+			policy:    FollowRedirects,
+			targetURL: "https://example.com/repo.git",
+			initial:   true,
+			via:       []string{"http://example.com/repo.git"},
+		},
+		{
+			// The target of a downgrade is attacker-supplied and can carry
+			// its own userinfo, so this message needs redacting too.
+			name:      "redacts credentials in the downgrade error",
+			policy:    FollowRedirects,
+			targetURL: "http://user:pass@example.com/repo.git",
+			initial:   true,
+			via:       []string{"https://example.com/repo.git"},
+			err:       ".*user:REDACTED@example.com.*",
 		},
 		{
 			name:      "redacts credentials in redirect errors",
@@ -485,8 +574,12 @@ func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
 	}
 
 	for _, tt := range tests {
-		target, err := url.Parse(tt.targetURL)
-		c.Assert(err, IsNil)
+		target := tt.targetURLValue
+		if target == nil {
+			parsed, err := url.Parse(tt.targetURL)
+			c.Assert(err, IsNil)
+			target = parsed
+		}
 
 		req := &http.Request{URL: target, Header: http.Header{}}
 		if tt.initial {
@@ -499,14 +592,169 @@ func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
 		for i := range via {
 			via[i] = &http.Request{}
 		}
+		switch {
+		case len(tt.viaURLs) != 0:
+			via = make([]*http.Request, 0, len(tt.viaURLs))
+			for _, u := range tt.viaURLs {
+				via = append(via, &http.Request{URL: u})
+			}
+		case len(tt.via) != 0:
+			via = make([]*http.Request, 0, len(tt.via))
+			for _, rawURL := range tt.via {
+				u, err := url.Parse(rawURL)
+				c.Assert(err, IsNil)
+				via = append(via, &http.Request{URL: u})
+			}
+		}
 
-		err = checkRedirect(req, via, tt.policy)
+		err := checkRedirect(req, via, tt.policy)
 		if tt.err != "" {
 			c.Assert(err, ErrorMatches, tt.err, Commentf(tt.name))
 			continue
 		}
 		c.Assert(err, IsNil, Commentf(tt.name))
 	}
+}
+
+// schemeProbe maps virtual host:port pairs onto real test listeners. Plaintext
+// dials and TLS dials go through separate functions, so a request that reaches
+// a server through DialContext demonstrably travelled unencrypted; that is the
+// property under test, and it cannot be read off a URL string.
+type schemeProbe struct {
+	mu        sync.Mutex
+	listeners map[string]string
+	dialed    []string
+	plainAuth []string
+	servers   []*httptest.Server
+}
+
+// close shuts the probe's listeners down. gocheck has no t.Cleanup, so every
+// test using a probe must defer this or leak an accept goroutine per server.
+func (p *schemeProbe) close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, srv := range p.servers {
+		srv.Close()
+	}
+	p.servers = nil
+}
+
+func newSchemeProbe() *schemeProbe {
+	return &schemeProbe{listeners: make(map[string]string)}
+}
+
+func (p *schemeProbe) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	p.mu.Lock()
+	target, ok := p.listeners[addr]
+	p.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("no listener mapped for %q", addr)
+	}
+
+	var d net.Dialer
+	return d.DialContext(ctx, network, target)
+}
+
+func (p *schemeProbe) client() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			p.mu.Lock()
+			p.dialed = append(p.dialed, addr)
+			p.mu.Unlock()
+			return p.dial(ctx, network, addr)
+		},
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := p.dial(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			tlsConn := tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				return nil, err
+			}
+			return tlsConn, nil
+		},
+	}}
+}
+
+// serve starts a listener and publishes it as host on the scheme's default
+// port, returning the base URL to address it by.
+func (p *schemeProbe) serve(c *C, host string, secure bool, h http.HandlerFunc) string {
+	var srv *httptest.Server
+	scheme, port := "http", "80"
+	if secure {
+		srv = httptest.NewTLSServer(h)
+		scheme, port = "https", "443"
+	} else {
+		srv = httptest.NewServer(h)
+	}
+	c.Assert(srv, NotNil)
+
+	u, err := url.Parse(srv.URL)
+	c.Assert(err, IsNil)
+
+	p.mu.Lock()
+	p.listeners[net.JoinHostPort(host, port)] = u.Host
+	p.servers = append(p.servers, srv)
+	p.mu.Unlock()
+
+	return scheme + "://" + host
+}
+
+// uploadPackAdvertisement is a decodable advertisement, so a redirect chain
+// that is not blocked completes and returns no error at all.
+func uploadPackAdvertisement() string {
+	pkt := func(s string) string { return fmt.Sprintf("%04x%s", len(s)+4, s) }
+	return pkt("# service=git-upload-pack\n") + "0000" +
+		pkt("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack\n") +
+		pkt("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n") +
+		"0000"
+}
+
+func (s *ClientSuite) TestCheckRedirectBlocksDowngradeBeforeTheHop(c *C) {
+	probe := newSchemeProbe()
+	defer probe.close()
+
+	// Both servers are published on the same virtual host, so the base URLs
+	// are known before either starts and the plaintext handler does not race
+	// the assignment it closes over.
+	const secureBase = "https://example.test"
+	plainBase := probe.serve(c, "example.test", false, func(w http.ResponseWriter, req *http.Request) {
+		probe.mu.Lock()
+		probe.plainAuth = append(probe.plainAuth, req.Header.Get("Authorization"))
+		probe.mu.Unlock()
+
+		// Bounce back to https. ModifyEndpointIfRedirect only compares the
+		// final URL against the endpoint, so it accepts this chain.
+		http.Redirect(w, req, secureBase+"/other.git/info/refs?service=git-upload-pack", http.StatusFound)
+	})
+	c.Assert(probe.serve(c, "example.test", true, func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/repo.git/info/refs" {
+			http.Redirect(w, req, plainBase+"/repo.git/info/refs?service=git-upload-pack", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte(uploadPackAdvertisement()))
+	}), Equals, secureBase)
+
+	ep, err := transport.NewEndpoint(secureBase + "/repo.git")
+	c.Assert(err, IsNil)
+
+	cl := NewClientWithOptions(probe.client(), &ClientOptions{})
+	sess, err := cl.NewUploadPackSession(ep, &BasicAuth{Username: "user", Password: "pass"})
+	c.Assert(err, IsNil)
+	defer sess.Close() //nolint:errcheck
+
+	_, err = sess.AdvertisedReferencesContext(context.Background())
+
+	// c.Check, not c.Assert: a regression in the guard must still report
+	// whether the credential reached the wire, which is what this harness
+	// exists to observe. c.Assert would abort before those two lines.
+	probe.mu.Lock()
+	defer probe.mu.Unlock()
+	c.Check(err, ErrorMatches, ".*changes scheme from \"https\" to \"http\".*")
+	c.Check(probe.dialed, HasLen, 0)
+	c.Check(probe.plainAuth, HasLen, 0)
 }
 
 func (s *ClientSuite) TestRedactedURL(c *C) {

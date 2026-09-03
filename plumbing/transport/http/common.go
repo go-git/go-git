@@ -517,6 +517,37 @@ func newRequest(method, rawURL string, body io.Reader) (*http.Request, error) {
 }
 
 func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy) error {
+	// CheckRedirect is the only hook that runs before the next hop leaves
+	// the client. ModifyEndpointIfRedirect inspects the chain after
+	// client.Do has followed all of it, so a hop rejected there has already
+	// carried the request headers to its server.
+	//
+	// The wording matches the message ModifyEndpointIfRedirect produces for
+	// the same hop, which this check reaches first.
+	if len(via) != 0 {
+		// A hop whose scheme cannot be read cannot be shown not to have been
+		// https, so it is assumed to have been, and a cleartext target is
+		// rejected. Skipping the comparison instead would let an
+		// undeterminable hop turn the check off, which is the wrong default
+		// for a credential control; crossedOrigin fails closed the same way.
+		// An empty scheme is as unreadable as a nil URL, so both take the
+		// assumed-https default.
+		//
+		// The comparisons fold case because a scheme is case-insensitive per
+		// RFC 3986. net/url lowercases what it parses, so only a hand-built
+		// URL reaches here uppercased - the same synthetic caller the nil
+		// checks guard against - and for that caller "HTTPS" to "http" is
+		// still a downgrade.
+		prevScheme := "https"
+		if prev := via[len(via)-1]; prev.URL != nil && prev.URL.Scheme != "" {
+			prevScheme = prev.URL.Scheme
+		}
+		if strings.EqualFold(prevScheme, "https") && strings.EqualFold(req.URL.Scheme, "http") {
+			return fmt.Errorf("http redirect: changes scheme from %q to %q: %s",
+				prevScheme, req.URL.Scheme, redactedURL(req.URL))
+		}
+	}
+
 	switch policy {
 	case FollowRedirects:
 	case NoFollowRedirects:
@@ -528,7 +559,10 @@ func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy
 	default:
 		return fmt.Errorf("http redirect: invalid redirect policy %q", policy)
 	}
-	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+	// Folded for the same reason as the guard above: a scheme is
+	// case-insensitive per RFC 3986, so a spelling the downgrade check read
+	// as https must not be rejected here as a scheme go-git cannot speak.
+	if !strings.EqualFold(req.URL.Scheme, "http") && !strings.EqualFold(req.URL.Scheme, "https") {
 		return fmt.Errorf("http redirect: unsupported scheme %q", req.URL.Scheme)
 	}
 	if len(via) >= 10 {
