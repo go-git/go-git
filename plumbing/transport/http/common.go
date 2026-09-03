@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -106,8 +107,7 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	if final.Scheme != "http" && final.Scheme != "https" {
 		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", final.Scheme)
 	}
-	if final.Scheme != baseURL.Scheme &&
-		(baseURL.Scheme != "http" || final.Scheme != "https") {
+	if final.Scheme != baseURL.Scheme && !schemeUpgrade(baseURL.Scheme, final.Scheme) {
 		return nil, fmt.Errorf(
 			"http transport: redirect changes scheme from %q to %q",
 			baseURL.Scheme, final.Scheme,
@@ -121,6 +121,130 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	return &redirected, nil
 }
 
+// schemeUpgrade reports whether the scheme transition from one URL to
+// another is the one cross-scheme change go-git permits: a plain-http
+// origin upgrading to https. It strictly improves confidentiality and is
+// how servers steer clients off cleartext.
+//
+// Permitting it at all is a deliberate deviation: curl, git and the Fetch
+// standard all count scheme as part of host identity and drop credentials on
+// the upgrade. Auth is sent pre-emptively here, so an http origin has already
+// spent its credential in cleartext on the first request and refusing the
+// upgrade would break the clone without unspending it. The host is unchanged,
+// where an on-path attacker needs a valid certificate to receive anything.
+//
+// applyRedirect ("may this become the new base URL?") and
+// credentialsMayFollow ("may credentials travel here?") are both built on it,
+// so the two cannot drift apart.
+func schemeUpgrade(from, to string) bool {
+	return strings.EqualFold(from, "http") && strings.EqualFold(to, "https")
+}
+
+// canonicalHost returns u's hostname in the form origins are compared in.
+//
+// An address literal is normalised by netip, so the many spellings of one
+// address are one origin. Two literals are the same origin exactly when netip
+// parses them to the same Addr, which is also how the WHATWG URL Standard
+// compares hosts. An IPv4-mapped literal is deliberately not unmapped onto
+// the IPv4 it dials: reaching the same endpoint is not the same authority,
+// since net/http sends the literal as written in Host and a server may route
+// the two spellings to different virtual hosts.
+//
+// netip also keeps a scope zone verbatim, which is what origin comparison
+// needs: net resolves a zone to an interface by exact name, so folding %eth0
+// onto %ETH0 would call two hosts the same origin that net dials down
+// different interfaces.
+//
+// A registered name is ASCII-lowercased. That fold is the only liberty taken;
+// every other difference in spelling is a different origin.
+//
+// A trailing root dot is one such difference and is kept, for the same reason
+// as the IPv4-mapped literal: curl and the WHATWG URL Standard both hold
+// "example.com." and "example.com" to be distinct hosts, and although
+// crypto/tls and crypto/x509 fold the dot when they authenticate the peer,
+// net/http sends the name as written in Host.
+//
+// The fold is deliberately ASCII-only. strings.ToLower and strings.EqualFold
+// apply Unicode case mapping, which folds U+03C2 onto U+03C3 and so would
+// call two hosts the same origin when they resolve to different servers. An
+// ASCII-only fold cannot merge two names DNS keeps apart.
+//
+// No IDNA mapping is applied either, so a unicode hostname is a different
+// origin from the punycode encoding of it, and from another Unicode case of
+// itself, even though all three reach the same server. Mapping through
+// golang.org/x/net/idna would join them, but it can only widen this equality,
+// never narrow it, so leaving it out can cost a credential across such a
+// redirect and cannot forward one. Against that cost, go-git pins x/net while
+// net/http uses the copy vendored into the toolchain: the two are versioned
+// separately, so a release that moves the Unicode tables under one and not
+// the other would have this merge origins net/http still dials apart. That is
+// the failure this comparison exists to prevent, and comparing bytes has no
+// such mode.
+func canonicalHost(u *url.URL) string {
+	host := u.Hostname()
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return addr.String()
+	}
+	b := []byte(host)
+	for i := range b {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] += 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+// effectivePort returns u's port as the connection will use it: the scheme's
+// well-known port when the URL does not spell one out, and without leading
+// zeroes, so "https://x", "https://x:443" and "https://x:0443" all agree.
+func effectivePort(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			return "80"
+		case "https":
+			return "443"
+		default:
+			return ""
+		}
+	}
+	if trimmed := strings.TrimLeft(port, "0"); trimmed != "" {
+		return trimmed
+	}
+	return "0"
+}
+
+// credentialsMayFollow reports whether credentials issued for one URL may be
+// sent to another.
+//
+// The relation is deliberately asymmetric: scheme, host and effective port
+// must all match, except that a plain http origin may upgrade to https on
+// the same host (see schemeUpgrade), mirroring applyRedirect.
+//
+// Host matching is exact. Unlike Go's http.Client, which forwards credentials
+// from a host to any subdomain of it, a subdomain is a different origin here —
+// matching canonical git and libcurl.
+func credentialsMayFollow(from, to *url.URL) bool {
+	if canonicalHost(from) != canonicalHost(to) {
+		return false
+	}
+	if strings.EqualFold(from.Scheme, to.Scheme) {
+		return effectivePort(from) == effectivePort(to)
+	}
+	return schemeUpgrade(from.Scheme, to.Scheme) &&
+		effectivePort(from) == "80" && effectivePort(to) == "443"
+}
+
+// safeHeaders lists the headers go-git sets itself, none of which can carry a
+// caller credential. It has two consumers: trace.HTTP logs only these, and
+// stripCredentials keeps only these when a redirect leaves the credential's
+// origin. Adding a name here makes it both loggable and forwardable across an
+// origin boundary — do not add anything a caller can put a secret in. This
+// narrows rather than eliminates the exposure: an Authorizer that writes a
+// credential into one of these names directly — for example
+// Header.Set("User-Agent", "token "+secret) — still survives a cross-origin
+// redirect and still gets logged.
 var safeHeaders = map[string]struct{}{
 	"User-Agent":        {},
 	"Host":              {},
