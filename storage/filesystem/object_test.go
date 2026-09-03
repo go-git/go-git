@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -422,7 +424,7 @@ func (s *FsSuite) TestPackfileReindex() {
 	s.Require().NoError(err)
 	packFilename := packFixture.PackfileHash
 	testObjectHash := plumbing.NewHash("a771b1e94141480861332fd0e4684d33071306c6") // this is an object we know exists in the standalone packfile
-	for _, f := range fixtures.ByTag(".git") {
+	for _, f := range fixtures.ByTag(".git").ByObjectFormat(packFixture.ObjectFormat) {
 		fs, err := f.DotGit()
 		s.Require().NoError(err)
 		storer := NewStorage(fs, cache.NewObjectLRUDefault())
@@ -447,6 +449,66 @@ func (s *FsSuite) TestPackfileReindex() {
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
 		s.Require().NoError(err)
 	}
+}
+
+type failRemovePathFS struct {
+	billy.Filesystem
+	failPath string
+}
+
+func (f *failRemovePathFS) Remove(name string) error {
+	if name == f.failPath {
+		return fmt.Errorf("simulated failure removing %s", name)
+	}
+	return f.Filesystem.Remove(name)
+}
+
+func TestDeletePackPartialFailureRefreshesIndex(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	fs := &failRemovePathFS{Filesystem: osfs.New(t.TempDir())}
+	dir := dotgit.New(fs)
+	require.NoError(t, dir.Initialize())
+
+	writer, err := dir.NewObjectPack()
+	require.NoError(t, err)
+	pack, err := fixture.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(writer, pack)
+	require.NoError(t, err)
+	require.NoError(t, pack.Close())
+	require.NoError(t, writer.Close())
+
+	packHash := plumbing.NewHash(fixture.PackfileHash)
+	canonicalBase := filepath.Join("objects", "pack", "pack-"+packHash.String())
+	looseBase := filepath.Join("objects", "pack", "loose-"+packHash.String())
+	for _, extension := range []string{".pack", ".idx", ".rev"} {
+		source, err := fs.Open(canonicalBase + extension)
+		require.NoError(t, err)
+		require.NoError(t, copyFile(fs, looseBase+extension, source))
+		require.NoError(t, source.Close())
+	}
+	fs.failPath = looseBase + ".pack"
+
+	storage := NewObjectStorage(dir, cache.NewObjectLRU(0))
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+
+	err = storage.DeleteOldObjectPackAndIndex(packHash, time.Time{})
+	require.ErrorContains(t, err, "simulated failure")
+
+	for _, extension := range []string{".pack", ".idx", ".rev"} {
+		_, err = fs.Lstat(canonicalBase + extension)
+		require.True(t, os.IsNotExist(err), "canonical %s must be removed", extension)
+		_, err = fs.Lstat(looseBase + extension)
+		require.NoError(t, err, "loose %s must survive", extension)
+	}
+
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
 }
 
 func (s *FsSuite) TestGetFromObjectFileSharedCache() {
@@ -1016,14 +1078,6 @@ func TestObjectStorageCloseIdleDescriptors(t *testing.T) {
 		iter.Close()
 		require.NotEmpty(t, hashes)
 
-		// Single-goroutine warm-up: the default loose-first probe calls
-		// dotgit.hasIncomingObjects(), which lazily initialises
-		// incomingChecked without a lock. One serial lookup here
-		// ensures the field is set before the concurrent herd,
-		// sidestepping the pre-existing race in hasIncomingObjects.
-		_, err = s.EncodedObject(plumbing.AnyObject, hashes[0])
-		require.NoError(t, err)
-
 		var wg sync.WaitGroup
 		var failures atomic.Int32
 
@@ -1117,14 +1171,283 @@ func TestObjectStorage_ReindexPrewarms(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestObjectStorage_ConcurrentReindex_NoRace runs many concurrent
-// Reindex calls against the same Storage and asserts that the
-// singleflight wrapper keeps the operation safe: every call returns
-// nil, s.index stays non-empty and consistent throughout, and reads
-// after the herd still succeed. Without singleflight the goroutines
-// would each populate independently and race on the map swap,
-// producing duplicate disk I/O and a window where a reader could
-// observe a partially-published map.
+type mutationLockProbeWriter struct {
+	mu          *sync.Mutex
+	closeCalled bool
+	lockHeld    bool
+}
+
+func (*mutationLockProbeWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (w *mutationLockProbeWriter) Close() error {
+	w.closeCalled = true
+	if w.mu.TryLock() {
+		w.mu.Unlock()
+		return nil
+	}
+	w.lockHeld = true
+	return nil
+}
+
+func TestPackMutationWriterLocksClose(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	probe := &mutationLockProbeWriter{mu: &mu}
+	writer := &packMutationWriter{WriteCloser: probe, mu: &mu}
+
+	require.NoError(t, writer.Close())
+	require.True(t, probe.closeCalled)
+	require.True(t, probe.lockHeld)
+	require.True(t, mu.TryLock(), "Close must release the pack mutation lock")
+	mu.Unlock()
+}
+
+func TestPackfileWriterDuplicatePublicationKeepsOwnedIndex(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	dir := dotgit.New(osfs.New(t.TempDir()))
+	require.NoError(t, dir.Initialize())
+	storage := NewObjectStorage(dir, cache.NewObjectLRU(0))
+	closed := false
+	t.Cleanup(func() {
+		if !closed {
+			require.NoError(t, storage.Close())
+		}
+	})
+
+	writePack := func() {
+		writer, err := storage.PackfileWriter()
+		require.NoError(t, err)
+		pack, err := fixture.Packfile()
+		require.NoError(t, err)
+		_, err = io.Copy(writer, pack)
+		require.NoError(t, err)
+		require.NoError(t, pack.Close())
+		require.NoError(t, writer.Close())
+	}
+
+	writePack()
+	hash := plumbing.NewHash(fixture.PackfileHash)
+	storage.muI.RLock()
+	firstIndex := storage.index[hash]
+	firstRoutes := append([]packEntry(nil), storage.packs...)
+	storage.muI.RUnlock()
+	require.Len(t, firstRoutes, 1)
+	firstRouteIndex := firstRoutes[0].idx
+	require.NotNil(t, firstIndex)
+	require.Same(t, firstIndex, firstRouteIndex)
+
+	writePack()
+	storage.muI.RLock()
+	secondIndex := storage.index[hash]
+	secondRoutes := append([]packEntry(nil), storage.packs...)
+	storage.muI.RUnlock()
+	require.Len(t, secondRoutes, 1)
+	secondRouteIndex := secondRoutes[0].idx
+	require.Same(t, firstIndex, secondIndex)
+	require.Same(t, firstIndex, secondRouteIndex)
+
+	target := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	_, err := storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+	require.NoError(t, storage.CloseIdleDescriptors())
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+
+	require.NoError(t, storage.Reindex())
+	storage.muI.RLock()
+	reindexed := storage.index[hash]
+	reindexedRoutes := append([]packEntry(nil), storage.packs...)
+	storage.muI.RUnlock()
+	require.Len(t, reindexedRoutes, 1)
+	reindexedRoute := reindexedRoutes[0].idx
+	require.Same(t, reindexed, reindexedRoute)
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+
+	require.NoError(t, storage.Close())
+	closed = true
+}
+
+type signalingLocker struct {
+	sync.Locker
+	attempted chan struct{}
+	once      sync.Once
+}
+
+func (l *signalingLocker) Lock() {
+	l.once.Do(func() { close(l.attempted) })
+	l.Locker.Lock()
+}
+
+type blockingIndexOpenFS struct {
+	billy.Filesystem
+	target  string
+	armed   atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (f *blockingIndexOpenFS) Open(name string) (billy.File, error) {
+	if f.armed.Load() && name == f.target {
+		f.once.Do(func() {
+			close(f.entered)
+			<-f.release
+		})
+	}
+	return f.Filesystem.Open(name)
+}
+
+func TestReindexDoesNotLoseConcurrentPackPublication(t *testing.T) {
+	t.Parallel()
+
+	first := fixtures.Basic().One()
+	second := fixtures.ByTag("packfile").ByTag("standalone").One()
+	base := osfs.New(t.TempDir())
+	fs := &blockingIndexOpenFS{
+		Filesystem: base,
+		target: filepath.Join(
+			"objects",
+			"pack",
+			"pack-"+first.PackfileHash+".idx",
+		),
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	dir := dotgit.New(fs)
+	require.NoError(t, dir.Initialize())
+
+	firstWriter, err := dir.NewObjectPack()
+	require.NoError(t, err)
+	firstPack, err := first.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(firstWriter, firstPack)
+	require.NoError(t, err)
+	require.NoError(t, firstPack.Close())
+	require.NoError(t, firstWriter.Close())
+
+	storage := NewObjectStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	require.NoError(t, storage.requireIndex())
+
+	secondWriter, err := storage.PackfileWriter()
+	require.NoError(t, err)
+	guardedWriter, ok := secondWriter.(*packMutationWriter)
+	require.True(t, ok)
+	require.Same(t, &storage.packMutationMu, guardedWriter.mu)
+	secondPack, err := second.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(secondWriter, secondPack)
+	require.NoError(t, err)
+	require.NoError(t, secondPack.Close())
+
+	fs.armed.Store(true)
+	released := false
+	defer func() {
+		if !released {
+			close(fs.release)
+		}
+	}()
+	reindexDone := make(chan error, 1)
+	go func() {
+		reindexDone <- storage.Reindex()
+	}()
+
+	select {
+	case <-fs.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Reindex did not reach the blocked index open")
+	}
+	require.False(t, storage.packMutationMu.TryLock(),
+		"Reindex must hold the pack mutation lock during its scan")
+
+	closeAttempted := make(chan struct{})
+	guardedWriter.mu = &signalingLocker{
+		Locker:    &storage.packMutationMu,
+		attempted: closeAttempted,
+	}
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- secondWriter.Close()
+	}()
+	<-closeAttempted
+
+	close(fs.release)
+	released = true
+	require.NoError(t, <-reindexDone)
+	require.NoError(t, <-closeDone)
+
+	secondHash := plumbing.NewHash(second.PackfileHash)
+	storage.muI.RLock()
+	_, indexed := storage.index[secondHash]
+	storage.muI.RUnlock()
+	require.True(t, indexed, "Reindex must not replace a pack published during its scan")
+
+	target := plumbing.NewHash("a771b1e94141480861332fd0e4684d33071306c6")
+	_, err = storage.EncodedObject(plumbing.AnyObject, target)
+	require.NoError(t, err)
+}
+
+type invalidatedIndex struct {
+	idxfile.Index
+	onFindOffset func()
+}
+
+func (i *invalidatedIndex) FindOffset(plumbing.Hash) (int64, error) {
+	i.onFindOffset()
+	return 0, os.ErrClosed
+}
+
+func TestFindObjectInPackfileRetriesInvalidatedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	dir, err := fixture.DotGit()
+	require.NoError(t, err)
+	storage := NewStorage(dir, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+	require.NoError(t, storage.requireIndex())
+
+	storage.muI.RLock()
+	livePacks := append([]packEntry(nil), storage.packs...)
+	storage.muI.RUnlock()
+	require.NotEmpty(t, livePacks)
+
+	entries, err := livePacks[0].idx.Entries()
+	require.NoError(t, err)
+	entry, err := entries.Next()
+	require.NoError(t, err)
+	require.NoError(t, entries.Close())
+
+	stalePacks := append([]packEntry(nil), livePacks...)
+	stalePacks[0].idx = &invalidatedIndex{
+		Index: livePacks[0].idx,
+		onFindOffset: func() {
+			storage.muI.Lock()
+			storage.packs = livePacks
+			storage.muI.Unlock()
+		},
+	}
+	storage.muI.Lock()
+	storage.packs = stalePacks
+	storage.lastHitPackIdx.Store(1)
+	storage.muI.Unlock()
+
+	pack, idx, offset, err := storage.findObjectInPackfile(entry.Hash)
+	require.NoError(t, err)
+	require.Equal(t, livePacks[0].h, pack)
+	require.Same(t, livePacks[0].idx, idx)
+	require.NotEqual(t, int64(-1), offset)
+}
+
+// TestObjectStorage_ConcurrentReindex_NoRace checks concurrent Reindex calls
+// and reads. It proves safe serialization and publication, not the number of
+// scans coalesced by singleflight.
 func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
 	t.Parallel()
 	fixture := fixtures.Basic().One()
@@ -1133,8 +1456,8 @@ func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Pre-warm so a concurrent reader can RLock muI without first
-	// racing requireIndex against the Reindex herd.
+	// Select a packed object and publish the initial index before the mutation
+	// herd starts.
 	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
 	require.NoError(t, err)
 	obj, err := iter.Next()
@@ -1166,12 +1489,8 @@ func TestObjectStorage_ConcurrentReindex_NoRace(t *testing.T) {
 	require.NoError(t, err, "reads after the Reindex herd must still succeed")
 }
 
-// TestObjectStorage_ConcurrentEncodedObject_NoRace slams many
-// goroutines at the same storage and verifies the read path is
-// race-free under -race. The map is pre-warmed by IterEncodedObjects
-// before the herd, so the herd exercises the RLock fast-path of
-// requireIndex (singleflight coalescing is exercised separately by
-// the cold-load benchmark).
+// TestObjectStorage_ConcurrentEncodedObject_NoRace checks concurrent reads
+// against an already published index.
 func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
 	t.Parallel()
 	fixture := fixtures.Basic().One()
@@ -1186,14 +1505,6 @@ func TestObjectStorage_ConcurrentEncodedObject_NoRace(t *testing.T) {
 	require.NoError(t, err)
 	iter.Close()
 	h := obj.Hash()
-
-	// Single-goroutine warm-up: the default loose-first probe calls
-	// dotgit.hasIncomingObjects(), which lazily writes incomingChecked
-	// without a lock. One serial call here ensures the field is set
-	// before the concurrent herd, avoiding a pre-existing race in
-	// hasIncomingObjects on cold startup.
-	_, err = s.EncodedObject(plumbing.AnyObject, h)
-	require.NoError(t, err)
 
 	var wg sync.WaitGroup
 	for range 32 {
@@ -1217,8 +1528,7 @@ func TestEncodedObject_PackedRoundTrip(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Warm the index so EncodedObject doesn't race through the
-	// cold dotgit path (matches the convention of existing tests).
+	// Select a known packed object.
 	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
 	require.NoError(t, err)
 	obj, err := iter.Next()
@@ -1264,11 +1574,6 @@ func TestEncodedObject_NotFound(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Warm index to avoid the cold dotgit race.
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
-	require.NoError(t, err)
-	iter.Close()
-
 	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	_, err = s.EncodedObject(plumbing.AnyObject, missing)
 	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
@@ -1281,11 +1586,6 @@ func TestEncodedObjectSize_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
-
-	// Warm index to avoid the cold dotgit race.
-	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
-	require.NoError(t, err)
-	iter.Close()
 
 	missing := plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	_, err = s.EncodedObjectSize(missing)
@@ -1319,7 +1619,7 @@ func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
 	s := NewStorage(dir, cache.NewObjectLRUDefault())
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Pre-warm the index (cold dotgit race avoidance).
+	// Select a packed object and publish the index before checking the MRU hint.
 	iter, err := s.IterEncodedObjects(plumbing.AnyObject)
 	require.NoError(t, err)
 	obj, err := iter.Next()

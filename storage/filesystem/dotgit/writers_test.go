@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -307,13 +308,17 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			dot.options.WriteReverseIndex = (ext == ".rev")
 			require.NoError(t, dot.Initialize())
 
-			// Place a directory where the pack file should go.
+			// Place a directory at the target path.
 			path := filepath.Join("objects", "pack",
 				fmt.Sprintf("pack-%s%s", f.PackfileHash, ext))
 			require.NoError(t, fs.MkdirAll(path, 0o755))
 
 			w, err := dot.NewObjectPack()
 			require.NoError(t, err)
+			notified := false
+			w.Notify = func(plumbing.Hash, *idxfile.Writer) {
+				notified = true
+			}
 
 			pf, pfErr := f.Packfile()
 			require.NoError(t, pfErr)
@@ -323,8 +328,54 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			err = w.Close()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "unexpected file type")
+			assert.False(t, notified, "a failed save must not publish the pack index")
 		})
 	}
+}
+
+type lstatErrorFS struct {
+	billy.Filesystem
+	failPath string
+	err      error
+}
+
+func (f *lstatErrorFS) Lstat(name string) (os.FileInfo, error) {
+	if name == f.failPath {
+		return nil, f.err
+	}
+	return f.Filesystem.Lstat(name)
+}
+
+func TestPackWriterPropagatesLstatErrorWithoutNotify(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.Basic().One()
+	wantErr := errors.New("simulated Lstat failure")
+	fs := &lstatErrorFS{Filesystem: osfs.New(t.TempDir()), err: wantErr}
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+
+	writer, err := dot.NewObjectPack()
+	require.NoError(t, err)
+	pack, err := fixture.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(writer, pack)
+	require.NoError(t, err)
+	require.NoError(t, pack.Close())
+
+	fs.failPath = filepath.Join(
+		"objects",
+		"pack",
+		"pack-"+fixture.PackfileHash+".idx",
+	)
+	notified := false
+	writer.Notify = func(plumbing.Hash, *idxfile.Writer) {
+		notified = true
+	}
+
+	err = writer.Close()
+	require.ErrorIs(t, err, wantErr)
+	require.False(t, notified)
 }
 
 func TestObjectWriterPermissions(t *testing.T) {

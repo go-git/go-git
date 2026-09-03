@@ -7,6 +7,7 @@ import "io"
 // fresh cursor with its own offset.
 type PackReader interface {
 	io.Reader
+	io.ReaderAt
 	io.Seeker
 	io.Closer
 }

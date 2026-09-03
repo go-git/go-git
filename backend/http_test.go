@@ -4,8 +4,11 @@ import (
 	"io"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
@@ -18,6 +21,14 @@ import (
 
 type fixturesLoader struct {
 	testing.TB
+}
+
+type filesystemLoader struct {
+	fs billy.Filesystem
+}
+
+func (l *filesystemLoader) Load(*url.URL) (storage.Storer, error) {
+	return filesystem.NewStorage(l.fs, nil), nil
 }
 
 var _ transport.Loader = &fixturesLoader{}
@@ -45,6 +56,97 @@ func TestNilLoaderBackend(t *testing.T) {
 	h.ServeHTTP(w, req)
 	res := w.Result()
 	require.Equal(t, 404, res.StatusCode)
+}
+
+func TestDumbLoosePackRoutes(t *testing.T) {
+	t.Parallel()
+
+	sha1 := strings.Repeat("1", 40)
+	sha256 := strings.Repeat("2", 64)
+	tests := []struct {
+		name        string
+		file        string
+		contentType string
+	}{
+		{
+			name:        "SHA-1 pack",
+			file:        "objects/pack/loose-" + sha1 + ".pack",
+			contentType: "application/x-git-packed-objects",
+		},
+		{
+			name:        "SHA-256 index",
+			file:        "objects/pack/loose-" + sha256 + ".idx",
+			contentType: "application/x-git-packed-objects-toc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			require.NoError(t, fs.MkdirAll("objects/pack", 0o755))
+			file, err := fs.Create(tt.file)
+			require.NoError(t, err)
+			_, err = file.Write([]byte("pack data"))
+			require.NoError(t, err)
+			require.NoError(t, file.Close())
+
+			backend := New(&filesystemLoader{fs: fs})
+			request := httptest.NewRequest("GET", "/repo.git/"+tt.file, nil)
+			response := httptest.NewRecorder()
+			backend.ServeHTTP(response, request)
+
+			result := response.Result()
+			require.Equal(t, 200, result.StatusCode)
+			require.Equal(t, tt.contentType, result.Header.Get("Content-Type"))
+			body, err := io.ReadAll(result.Body)
+			require.NoError(t, err)
+			require.NoError(t, result.Body.Close())
+			require.Equal(t, "pack data", string(body))
+		})
+	}
+}
+
+func TestDumbPackRoutesRejectNonObjectIDLength(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	require.NoError(t, fs.MkdirAll("objects/pack", 0o755))
+	name := "objects/pack/loose-" + strings.Repeat("1", 41) + ".pack"
+	file, err := fs.Create(name)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	backend := New(&filesystemLoader{fs: fs})
+	request := httptest.NewRequest("GET", "/repo.git/"+name, nil)
+	response := httptest.NewRecorder()
+	backend.ServeHTTP(response, request)
+	require.Equal(t, 404, response.Code)
+}
+
+func TestDumbInfoPacksDisablesCaching(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	require.NoError(t, fs.MkdirAll("objects/info", 0o755))
+	file, err := fs.Create("objects/info/packs")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("P pack-1111111111111111111111111111111111111111.pack\n"))
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	backend := New(&filesystemLoader{fs: fs})
+	request := httptest.NewRequest("GET", "/repo.git/objects/info/packs", nil)
+	response := httptest.NewRecorder()
+	backend.ServeHTTP(response, request)
+
+	result := response.Result()
+	require.Equal(t, 200, result.StatusCode)
+	require.Equal(t, "no-cache, max-age=0, must-revalidate", result.Header.Get("Cache-Control"))
+	require.Equal(t, "no-cache", result.Header.Get("Pragma"))
+	require.Equal(t, "Fri, 01 Jan 1980 00:00:00 GMT", result.Header.Get("Expires"))
+	require.NoError(t, result.Body.Close())
 }
 
 func testInfoRefs(t testing.TB, isSmart bool) {

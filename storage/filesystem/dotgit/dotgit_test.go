@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
 )
@@ -675,6 +676,209 @@ func testObjectPacks(s *SuiteDotGit, fs billy.Filesystem, dir *DotGit, f *fixtur
 	s.Equal(hashes2[0], hashes[0])
 }
 
+func TestObjectPacksLooseNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		objectFormat formatcfg.ObjectFormat
+		exclusive    bool
+		hash         string
+		files        []string
+	}{
+		{
+			name:         "sha1",
+			objectFormat: formatcfg.SHA1,
+			hash:         strings.Repeat("1", formatcfg.SHA1HexSize),
+			files: []string{
+				"loose-" + strings.Repeat("1", formatcfg.SHA1HexSize) + ".pack",
+				"loose-" + strings.Repeat("2", formatcfg.SHA1HexSize-1) + ".pack",
+				"loose-" + strings.Repeat("z", formatcfg.SHA1HexSize) + ".pack",
+				"other-" + strings.Repeat("3", formatcfg.SHA1HexSize) + ".pack",
+			},
+		},
+		{
+			name:         "sha1 exclusive duplicate",
+			objectFormat: formatcfg.SHA1,
+			exclusive:    true,
+			hash:         strings.Repeat("4", formatcfg.SHA1HexSize),
+			files: []string{
+				"loose-" + strings.Repeat("4", formatcfg.SHA1HexSize) + ".pack",
+				"pack-" + strings.Repeat("4", formatcfg.SHA1HexSize) + ".pack",
+			},
+		},
+		{
+			name:         "sha256",
+			objectFormat: formatcfg.SHA256,
+			hash:         strings.Repeat("5", formatcfg.SHA256HexSize),
+			files: []string{
+				"loose-" + strings.Repeat("5", formatcfg.SHA256HexSize) + ".pack",
+				"loose-" + strings.Repeat("6", formatcfg.SHA1HexSize) + ".pack",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			packDir := fs.Join(objectsPath, packPath)
+			require.NoError(t, fs.MkdirAll(packDir, 0o755))
+			for _, name := range tt.files {
+				f, err := fs.Create(fs.Join(packDir, name))
+				require.NoError(t, err)
+				require.NoError(t, f.Close())
+
+				idx, err := fs.Create(fs.Join(packDir, strings.TrimSuffix(name, packExt)+".idx"))
+				require.NoError(t, err)
+				require.NoError(t, idx.Close())
+			}
+			orphan, err := fs.Create(fs.Join(
+				packDir,
+				"pack-"+strings.Repeat("a", tt.objectFormat.HexSize())+packExt,
+			))
+			require.NoError(t, err)
+			require.NoError(t, orphan.Close())
+
+			dot := NewWithOptions(fs, Options{
+				ExclusiveAccess: tt.exclusive,
+				ObjectFormat:    tt.objectFormat,
+			})
+			t.Cleanup(func() { require.NoError(t, dot.Close()) })
+			packs, err := dot.ObjectPacks()
+			require.NoError(t, err)
+			require.Equal(t, []plumbing.Hash{plumbing.NewHash(tt.hash)}, packs)
+		})
+	}
+}
+
+func TestLooseObjectPackReads(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		objectFormat formatcfg.ObjectFormat
+		exclusive    bool
+	}{
+		{name: "sha1 non-exclusive", objectFormat: formatcfg.SHA1},
+		{name: "sha256 exclusive", objectFormat: formatcfg.SHA256, exclusive: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dot, hash, fs := createPackWithRev(t, Options{
+				ExclusiveAccess:   tt.exclusive,
+				ObjectFormat:      tt.objectFormat,
+				ReadReverseIndex:  false,
+				WriteReverseIndex: true,
+			})
+
+			canonicalBase := fmt.Sprintf("objects/pack/pack-%s", hash)
+			looseBase := fmt.Sprintf("objects/pack/loose-%s", hash)
+			for _, ext := range []string{"pack", "idx", "rev"} {
+				require.NoError(t, fs.Rename(canonicalBase+"."+ext, looseBase+"."+ext))
+			}
+			promisor, err := fs.Create(looseBase + promisorExt)
+			require.NoError(t, err)
+			require.NoError(t, promisor.Close())
+
+			packs, err := dot.ObjectPacks()
+			require.NoError(t, err)
+			require.Equal(t, []plumbing.Hash{hash}, packs)
+
+			pack, err := dot.ObjectPack(hash)
+			require.NoError(t, err)
+			require.Equal(t, filepath.Base(looseBase+".pack"), filepath.Base(pack.Name()))
+			require.NoError(t, pack.Close())
+
+			idx, err := dot.ObjectPackIdx(hash)
+			require.NoError(t, err)
+			require.Equal(t, filepath.Base(looseBase+".idx"), filepath.Base(idx.Name()))
+			require.NoError(t, idx.Close())
+
+			readOnlyPack, err := dot.OpenPackForReading(hash)
+			require.NoError(t, err)
+			require.Equal(t, filepath.Base(looseBase+".pack"), filepath.Base(readOnlyPack.Name()))
+			_, err = readOnlyPack.Stat()
+			require.NoError(t, err)
+			require.NoError(t, readOnlyPack.Close())
+
+			ph, err := dot.packHandle(hash)
+			require.NoError(t, err)
+			_, err = ph.PackHash()
+			require.NoError(t, err)
+
+			promisorPacks, err := dot.PromisorObjectPacks()
+			require.NoError(t, err)
+			require.Equal(t, []plumbing.Hash{hash}, promisorPacks)
+		})
+	}
+}
+
+func TestObjectPackAliasSelection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		exclusive          bool
+		removeCanonicalIdx bool
+		wantPrefix         string
+	}{
+		{name: "canonical preferred", wantPrefix: packPrefix},
+		{
+			name:               "incomplete canonical",
+			exclusive:          true,
+			removeCanonicalIdx: true,
+			wantPrefix:         loosePackPrefix,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dot, hash, fs := createPackWithRev(t, Options{
+				ExclusiveAccess:   tt.exclusive,
+				ObjectFormat:      formatcfg.SHA1,
+				ReadReverseIndex:  true,
+				WriteReverseIndex: true,
+			})
+
+			canonicalBase := fmt.Sprintf("objects/pack/%s%s", packPrefix, hash)
+			looseBase := fmt.Sprintf("objects/pack/%s%s", loosePackPrefix, hash)
+			for _, ext := range []string{"pack", "idx", "rev"} {
+				copyPackAliasFile(t, fs, canonicalBase+"."+ext, looseBase+"."+ext)
+			}
+			if tt.removeCanonicalIdx {
+				require.NoError(t, fs.Remove(canonicalBase+".idx"))
+			}
+
+			packs, err := dot.ObjectPacks()
+			require.NoError(t, err)
+			require.Equal(t, []plumbing.Hash{hash}, packs)
+
+			packNames, err := dot.ObjectPackNames()
+			require.NoError(t, err)
+			wantNames := []string{loosePackPrefix + hash.String() + packExt}
+			if !tt.removeCanonicalIdx {
+				wantNames = append(wantNames, packPrefix+hash.String()+packExt)
+			}
+			require.Equal(t, wantNames, packNames)
+
+			pack, err := dot.OpenPackForReading(hash)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPrefix+hash.String()+packExt, filepath.Base(pack.Name()))
+			require.NoError(t, pack.Close())
+
+			ph, err := dot.packHandle(hash)
+			require.NoError(t, err)
+			_, err = ph.PackHash()
+			require.NoError(t, err)
+		})
+	}
+}
+
 func (s *SuiteDotGit) TestObjectPack() {
 	f := fixtures.Basic().ByTag(".git").One()
 	fs, err := f.DotGit()
@@ -858,9 +1062,15 @@ func TestOpenPackRevUsableByLazyIndex(t *testing.T) {
 func createPackWithRev(t *testing.T, opts Options) (*DotGit, plumbing.Hash, billy.Filesystem) {
 	t.Helper()
 
-	f := fixtures.Basic().One()
+	objectFormat := opts.ObjectFormat
+	if objectFormat == formatcfg.UnsetObjectFormat {
+		objectFormat = formatcfg.DefaultObjectFormat
+	}
+	opts.ObjectFormat = objectFormat
+	f := fixtures.Basic().ByTag("packfile").ByTag(".git").ByObjectFormat(objectFormat.String()).One()
 	fs := osfs.New(t.TempDir())
 	dot := NewWithOptions(fs, opts)
+	t.Cleanup(func() { require.NoError(t, dot.Close()) })
 	require.NoError(t, dot.Initialize())
 
 	w, err := dot.NewObjectPack()
@@ -868,12 +1078,28 @@ func createPackWithRev(t *testing.T, opts Options) (*DotGit, plumbing.Hash, bill
 
 	pf, pfErr := f.Packfile()
 	require.NoError(t, pfErr)
+	defer func() { _ = pf.Close() }()
 	_, err = io.Copy(w, pf)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
 	h := plumbing.NewHash(f.PackfileHash)
 	return dot, h, fs
+}
+
+func copyPackAliasFile(t *testing.T, fs billy.Filesystem, sourcePath, targetPath string) {
+	t.Helper()
+
+	source, err := fs.Open(sourcePath)
+	require.NoError(t, err)
+	defer func() { _ = source.Close() }()
+
+	target, err := fs.Create(targetPath)
+	require.NoError(t, err)
+	defer func() { _ = target.Close() }()
+
+	_, err = io.Copy(target, source)
+	require.NoError(t, err)
 }
 
 // corruptRevFile overwrites the file at path with the given data,
@@ -1591,7 +1817,7 @@ func newFakePackHandle(t *testing.T, i int) *packhandle.PackHandle {
 	h.ResetBySize(20) // SHA-1 size
 	_, _ = h.Write(bytes.Repeat([]byte{byte(i + 1)}, 20))
 	src := fakePackHandleSource()
-	ph, err := packhandle.New(packhandle.Sources{Pack: src, Idx: src, Rev: src}, h)
+	ph, err := packhandle.NewWithPool(src, h, nil)
 	require.NoError(t, err)
 	return ph
 }
@@ -1603,7 +1829,7 @@ func seedPackHandles(t *testing.T, d *DotGit, n int) []plumbing.Hash {
 	d.packHandlesMu.Lock()
 	defer d.packHandlesMu.Unlock()
 	if d.packHandles == nil {
-		d.packHandles = make(map[plumbing.Hash]*packhandle.PackHandle)
+		d.packHandles = make(map[plumbing.Hash]*cachedPackHandle)
 	}
 	hashes := make([]plumbing.Hash, n)
 	for i := range n {
@@ -1611,7 +1837,7 @@ func seedPackHandles(t *testing.T, d *DotGit, n int) []plumbing.Hash {
 		h.ResetBySize(20) // SHA-1 size
 		_, _ = h.Write(bytes.Repeat([]byte{byte(i + 1)}, 20))
 		hashes[i] = h
-		d.packHandles[h] = newFakePackHandle(t, i)
+		d.packHandles[h] = &cachedPackHandle{handle: newFakePackHandle(t, i)}
 	}
 	return hashes
 }

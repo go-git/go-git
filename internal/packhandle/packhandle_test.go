@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 
@@ -15,16 +16,21 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-// validSourcesFromFixture wires Sources against the basic fixture's
-// pack triple, materialized on a real osfs.New(t.TempDir()).
-//
-// Each of fixture.Packfile(), fixture.Idx(), and fixture.Rev()
-// writes the embedded fixture file to a fresh OS temp path under dir
-// and returns an open billy.File. We close each returned handle and
-// re-open via PathSource so that PathSource owns its own FDs.
-//
-// Returns (Sources, packHash) for use with packhandle.New.
-func validSourcesFromFixture(t *testing.T) (packhandle.Sources, plumbing.Hash) {
+func pathSource(fs billy.Basic, path string) packhandle.Source {
+	return packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) { return fs.Open(path) },
+		Size: func() (int64, error) {
+			info, err := fs.Stat(path)
+			if err != nil {
+				return 0, err
+			}
+			return info.Size(), nil
+		},
+	}
+}
+
+// validSourceFromFixture returns a source for one materialized fixture pack.
+func validSourceFromFixture(t *testing.T) (packhandle.Source, plumbing.Hash) {
 	t.Helper()
 	dir := t.TempDir()
 	fixture := fixtures.NewOSFixture(fixtures.Basic().One(), dir)
@@ -36,86 +42,52 @@ func validSourcesFromFixture(t *testing.T) (packhandle.Sources, plumbing.Hash) {
 	packPath := packFile.Name()
 	_ = packFile.Close()
 
-	idxFile, err := fixture.Idx()
-	if err != nil {
-		t.Fatalf("fixture.Idx: %v", err)
-	}
-	idxPath := idxFile.Name()
-	_ = idxFile.Close()
-
-	revFile, err := fixture.Rev()
-	if err != nil {
-		t.Fatalf("fixture.Rev: %v", err)
-	}
-	revPath := revFile.Name()
-	_ = revFile.Close()
-
 	bfs := osfs.New(dir)
-	srcs := packhandle.Sources{
-		Pack: packhandle.PathSource(bfs, packPath),
-		Idx:  packhandle.PathSource(bfs, idxPath),
-		Rev:  packhandle.PathSource(bfs, revPath),
-	}
+	src := pathSource(bfs, packPath)
 	hash := plumbing.NewHash(fixture.PackfileHash)
 	if hash.IsZero() {
 		t.Fatalf("fixture.PackfileHash %q yields zero hash", fixture.PackfileHash)
 	}
-	return srcs, hash
+	return src, hash
 }
 
-func TestNew_ReturnsErrorOnNilPackOpen(t *testing.T) {
+func TestNewWithPool_ReturnsErrorOnNilPackOpen(t *testing.T) {
 	t.Parallel()
-	srcs := packhandle.Sources{
-		Pack: packhandle.Source{
-			Open: nil,
-			Size: func() (int64, error) { return 0, nil },
-		},
+	src := packhandle.Source{
+		Open: nil,
+		Size: func() (int64, error) { return 0, nil },
 	}
-	_, err := packhandle.New(srcs, plumbing.NewHash("ffff"))
+	_, err := packhandle.NewWithPool(src, plumbing.NewHash("ffff"), nil)
 	if !errors.Is(err, packhandle.ErrPackSourceRequired) {
 		t.Fatalf("err = %v, want ErrPackSourceRequired", err)
 	}
 }
 
-func TestNew_ReturnsErrorOnNilPackSize(t *testing.T) {
+func TestNewWithPool_ReturnsErrorOnNilPackSize(t *testing.T) {
 	t.Parallel()
-	srcs := packhandle.Sources{
-		Pack: packhandle.Source{
-			Open: func() (packhandle.ReadAtCloser, error) { return nil, nil },
-			Size: nil,
-		},
+	src := packhandle.Source{
+		Open: func() (packhandle.ReadAtCloser, error) { return nil, nil },
+		Size: nil,
 	}
-	_, err := packhandle.New(srcs, plumbing.NewHash("ffff"))
+	_, err := packhandle.NewWithPool(src, plumbing.NewHash("ffff"), nil)
 	if !errors.Is(err, packhandle.ErrPackSourceRequired) {
 		t.Fatalf("err = %v, want ErrPackSourceRequired", err)
 	}
 }
 
-func TestNew_ReturnsErrorOnZeroHash(t *testing.T) {
+func TestNewWithPool_ReturnsErrorOnZeroHash(t *testing.T) {
 	t.Parallel()
-	srcs, _ := validSourcesFromFixture(t)
-	_, err := packhandle.New(srcs, plumbing.ZeroHash)
+	src, _ := validSourceFromFixture(t)
+	_, err := packhandle.NewWithPool(src, plumbing.ZeroHash, nil)
 	if !errors.Is(err, packhandle.ErrInvalidPackHash) {
 		t.Fatalf("err = %v, want ErrInvalidPackHash", err)
 	}
 }
 
-func TestNew_AcceptsZeroIdxAndRev(t *testing.T) {
-	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	srcs.Idx = packhandle.Source{}
-	srcs.Rev = packhandle.Source{}
-	h, err := packhandle.New(srcs, hash)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer h.Close()
-}
-
 func TestOpenPackReader_ReadsFirstFourBytes(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -138,8 +110,8 @@ func TestOpenPackReader_ReadsFirstFourBytes(t *testing.T) {
 
 func TestOpenRandomReader_ReadAtAnyOffset(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -162,8 +134,8 @@ func TestOpenRandomReader_ReadAtAnyOffset(t *testing.T) {
 
 func TestClose_IsIdempotent(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -177,8 +149,8 @@ func TestClose_IsIdempotent(t *testing.T) {
 
 func TestOpenPackReader_AfterCloseReturnsErrClosed(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -193,99 +165,113 @@ func TestOpenPackReader_AfterCloseReturnsErrClosed(t *testing.T) {
 	}
 }
 
-func TestMeta_HappyPath(t *testing.T) {
+func TestPackHash_HappyPath(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	defer h.Close()
 
-	meta, err := h.Meta()
+	got, err := h.PackHash()
 	if err != nil {
-		t.Fatalf("Meta: %v", err)
+		t.Fatalf("PackHash: %v", err)
 	}
-	if meta.Version != 2 {
-		t.Fatalf("Version = %d, want 2", meta.Version)
-	}
-	if meta.Count == 0 {
-		t.Fatalf("Count = 0, want > 0")
-	}
-	if meta.ID != hash {
-		t.Fatalf("ID = %v, want %v", meta.ID, hash)
+	if got != hash {
+		t.Fatalf("PackHash = %v, want %v", got, hash)
 	}
 }
 
-func TestMeta_CachedAcrossCalls(t *testing.T) {
+type countingReadAtCloser struct {
+	packhandle.ReadAtCloser
+	reads *atomic.Int32
+}
+
+func (r *countingReadAtCloser) ReadAt(p []byte, off int64) (int, error) {
+	r.reads.Add(1)
+	return r.ReadAtCloser.ReadAt(p, off)
+}
+
+func TestPackHash_CachedAcrossCalls(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	open := src.Open
+	var reads atomic.Int32
+	src.Open = func() (packhandle.ReadAtCloser, error) {
+		f, err := open()
+		if err != nil {
+			return nil, err
+		}
+		return &countingReadAtCloser{ReadAtCloser: f, reads: &reads}, nil
+	}
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	defer h.Close()
 
-	first, err := h.Meta()
+	first, err := h.PackHash()
 	if err != nil {
-		t.Fatalf("first Meta: %v", err)
+		t.Fatalf("first PackHash: %v", err)
 	}
-	second, err := h.Meta()
+	firstReads := reads.Load()
+	second, err := h.PackHash()
 	if err != nil {
-		t.Fatalf("second Meta: %v", err)
+		t.Fatalf("second PackHash: %v", err)
 	}
 	if first != second {
-		t.Fatalf("Meta values differ across calls: %v vs %v", first, second)
+		t.Fatalf("PackHash values differ across calls: %v vs %v", first, second)
+	}
+	if reads.Load() != firstReads {
+		t.Fatalf("cached PackHash performed another ReadAt")
 	}
 }
 
-func TestMeta_HashMismatchSurfacesError(t *testing.T) {
+func TestPackHash_HashMismatchSurfacesError(t *testing.T) {
 	t.Parallel()
-	srcs, _ := validSourcesFromFixture(t)
+	src, _ := validSourceFromFixture(t)
 	wrongHash := plumbing.NewHash("0000000000000000000000000000000000000001")
-	h, err := packhandle.New(srcs, wrongHash)
+	h, err := packhandle.NewWithPool(src, wrongHash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	defer h.Close()
 
-	if _, err := h.Meta(); err == nil {
-		t.Fatalf("Meta returned no error against wrong packHash")
+	if _, err := h.PackHash(); err == nil {
+		t.Fatalf("PackHash returned no error against wrong packHash")
 	}
 }
 
-func TestMeta_AfterCloseReturnsErrClosed(t *testing.T) {
+func TestPackHash_AfterCloseReturnsErrClosed(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if err := h.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := h.Meta(); !errors.Is(err, fs.ErrClosed) {
-		t.Fatalf("Meta after Close: %v, want fs.ErrClosed", err)
+	if _, err := h.PackHash(); !errors.Is(err, fs.ErrClosed) {
+		t.Fatalf("PackHash after Close: %v, want fs.ErrClosed", err)
 	}
 }
 
-// TestPackSize_CachedAcrossCallSites confirms that the cached
-// .pack file size is consulted from a single Sources.Pack.Size()
-// invocation regardless of how many cursor opens or Meta calls
-// follow. Pack files are immutable post-creation, so the cache
-// avoids a per-cursor-open fs.Stat on the hot path.
+// TestPackSize_CachedAcrossCallSites confirms that one successful Source.Size
+// call serves cursor opens and PackHash validation.
 func TestPackSize_CachedAcrossCallSites(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
+	src, hash := validSourceFromFixture(t)
 
 	var sizeCalls atomic.Int32
-	origSize := srcs.Pack.Size
-	srcs.Pack.Size = func() (int64, error) {
+	origSize := src.Size
+	src.Size = func() (int64, error) {
 		sizeCalls.Add(1)
 		return origSize()
 	}
 
-	h, err := packhandle.New(srcs, hash)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -303,27 +289,26 @@ func TestPackSize_CachedAcrossCallSites(t *testing.T) {
 	}
 	_ = r2.Close()
 
-	if _, err := h.Meta(); err != nil {
-		t.Fatalf("Meta: %v", err)
+	if _, err := h.PackHash(); err != nil {
+		t.Fatalf("PackHash: %v", err)
 	}
 
 	if got := sizeCalls.Load(); got != 1 {
-		t.Fatalf("Pack.Size called %d times across OpenPackReader, OpenRandomReader, Meta; want 1", got)
+		t.Fatalf("Source.Size called %d times; want 1", got)
 	}
 }
 
-// TestPackSize_FailureNotCached confirms that a transient
-// Sources.Pack.Size() failure is not cached: the next call
-// retries and on success populates the cache.
+// TestPackSize_FailureNotCached confirms that a transient Source.Size failure
+// retries and that the first success populates the cache.
 func TestPackSize_FailureNotCached(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
+	src, hash := validSourceFromFixture(t)
 
 	var calls atomic.Int32
 	var failNext atomic.Bool
 	failNext.Store(true)
-	origSize := srcs.Pack.Size
-	srcs.Pack.Size = func() (int64, error) {
+	origSize := src.Size
+	src.Size = func() (int64, error) {
 		calls.Add(1)
 		if failNext.CompareAndSwap(true, false) {
 			return 0, errors.New("transient stat failure")
@@ -331,7 +316,7 @@ func TestPackSize_FailureNotCached(t *testing.T) {
 		return origSize()
 	}
 
-	h, err := packhandle.New(srcs, hash)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -368,30 +353,21 @@ func countingOpen(src packhandle.Source, ctr *atomic.Int64) packhandle.Source {
 	}
 }
 
-// TestCloseIdleDescriptors_ReleasesAndAllowsReuse drives the
-// soft-close end to end: it acquires the .pack (via a cursor)
-// and the LazyIndex (via Index()), invokes
-// CloseIdleDescriptors, and verifies that subsequent operations
-// re-open every FD without erroring. The check rests on
-// Source.Open counters — bytes-Reader fixtures otherwise don't
-// observe Close.
+// TestCloseIdleDescriptors_ReleasesAndAllowsReuse checks that an idle release
+// closes the pack descriptor and that the next cursor reopens it.
 func TestCloseIdleDescriptors_ReleasesAndAllowsReuse(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
+	src, hash := validSourceFromFixture(t)
 
-	var packOpens, idxOpens, revOpens atomic.Int64
-	srcs.Pack = countingOpen(srcs.Pack, &packOpens)
-	srcs.Idx = countingOpen(srcs.Idx, &idxOpens)
-	srcs.Rev = countingOpen(srcs.Rev, &revOpens)
+	var packOpens atomic.Int64
+	src = countingOpen(src, &packOpens)
 
-	h, err := packhandle.New(srcs, hash)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	defer h.Close()
 
-	// Force a .pack open + an Index() materialisation (which
-	// opens idx and rev via LazyIndex.init).
 	r, err := h.OpenRandomReader()
 	if err != nil {
 		t.Fatalf("OpenRandomReader: %v", err)
@@ -399,23 +375,16 @@ func TestCloseIdleDescriptors_ReleasesAndAllowsReuse(t *testing.T) {
 	if err := r.Close(); err != nil {
 		t.Fatalf("close cursor: %v", err)
 	}
-	if _, err := h.Index(); err != nil {
-		t.Fatalf("Index: %v", err)
-	}
 
 	packBefore := packOpens.Load()
-	idxBefore := idxOpens.Load()
-	revBefore := revOpens.Load()
-	if packBefore == 0 || idxBefore == 0 || revBefore == 0 {
-		t.Fatalf("setup: open counters pack=%d idx=%d rev=%d, want all >0",
-			packBefore, idxBefore, revBefore)
+	if packBefore == 0 {
+		t.Fatal("setup did not open the pack")
 	}
 
 	if err := h.CloseIdleDescriptors(); err != nil {
 		t.Fatalf("CloseIdleDescriptors: %v", err)
 	}
 
-	// Subsequent .pack read reopens the .pack FD.
 	r2, err := h.OpenRandomReader()
 	if err != nil {
 		t.Fatalf("OpenRandomReader after CloseIdleDescriptors: %v", err)
@@ -426,34 +395,9 @@ func TestCloseIdleDescriptors_ReleasesAndAllowsReuse(t *testing.T) {
 	}
 	_ = r2.Close()
 
-	// Subsequent LazyIndex query reopens idx and rev via
-	// EntriesByOffset, which acquires both shared files.
-	idx, err := h.Index()
-	if err != nil {
-		t.Fatalf("Index after CloseIdleDescriptors: %v", err)
-	}
-	iter, err := idx.EntriesByOffset()
-	if err != nil {
-		t.Fatalf("Index.EntriesByOffset: %v", err)
-	}
-	if _, err := iter.Next(); err != nil {
-		t.Fatalf("iter.Next: %v", err)
-	}
-	if err := iter.Close(); err != nil {
-		t.Fatalf("iter.Close: %v", err)
-	}
-
 	if packOpens.Load() <= packBefore {
 		t.Fatalf(".pack open counter did not advance: before=%d after=%d",
 			packBefore, packOpens.Load())
-	}
-	if idxOpens.Load() <= idxBefore {
-		t.Fatalf(".idx open counter did not advance: before=%d after=%d",
-			idxBefore, idxOpens.Load())
-	}
-	if revOpens.Load() <= revBefore {
-		t.Fatalf(".rev open counter did not advance: before=%d after=%d",
-			revBefore, revOpens.Load())
 	}
 }
 
@@ -462,8 +406,8 @@ func TestCloseIdleDescriptors_ReleasesAndAllowsReuse(t *testing.T) {
 // short-circuits before touching either SharedFile.
 func TestCloseIdleDescriptors_AfterCloseIsNoop(t *testing.T) {
 	t.Parallel()
-	srcs, hash := validSourcesFromFixture(t)
-	h, err := packhandle.New(srcs, hash)
+	src, hash := validSourceFromFixture(t)
+	h, err := packhandle.NewWithPool(src, hash, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

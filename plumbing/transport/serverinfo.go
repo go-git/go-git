@@ -10,11 +10,8 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
-// UpdateServerInfo updates the server info files in the repository.
-//
-// It generates a list of available refs for the repository.
-// Used by git http transport (dumb), for more information refer to:
-// https://git-scm.com/book/id/v2/Git-Internals-Transfer-Protocols#_the_dumb_protocol
+// UpdateServerInfo writes info/refs and objects/info/packs for dumb
+// transports. Call it after published refs or packs change.
 func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 	pos, ok := s.(storer.PackedObjectStorer)
 	if !ok {
@@ -27,13 +24,6 @@ func UpdateServerInfo(s storage.Storer, fs billy.Filesystem) error {
 	}
 
 	defer func() { _ = infoRefs.Close() }()
-
-	refsIter, err := s.IterReferences()
-	if err != nil {
-		return err
-	}
-
-	defer refsIter.Close()
 
 	if err := repository.WriteInfoRefs(infoRefs, s); err != nil {
 		return fmt.Errorf("failed to write info/refs: %w", err)

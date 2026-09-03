@@ -39,11 +39,8 @@ func promisorMarkersIn(t *testing.T, packDir string) []string {
 	return m
 }
 
-// TestFetchPackMarksFilteredPack pins the behaviour behind the reported bug: a
-// fetch that carried a filter must leave the pack marked as coming from a
-// promisor remote. The objects the filter excluded are absent from the result,
-// and git only accepts that when the pack is marked — unmarked, it reports them
-// as broken links and refuses to gc the repository.
+// TestFetchPackMarksFilteredPack verifies that a filtered fetch marks its pack
+// as promisor.
 func TestFetchPackMarksFilteredPack(t *testing.T) {
 	t.Parallel()
 

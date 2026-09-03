@@ -82,18 +82,17 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 	return nil
 }
 
-// WriteObjectsInfoPacks writes the objects/info/packs file to the given writer.
-// It generates a list of available packs for the repository.
-// Used by git http transport (dumb), for more information refer to:
-// https://git-scm.com/book/id/v2/Git-Internals-Transfer-Protocols#_the_dumb_protocol
+// WriteObjectsInfoPacks writes objects/info/packs for dumb transports. Storers
+// that implement [storer.ObjectPackNamer] supply exact physical basenames.
+// Other storers use canonical pack-<hash>.pack names.
 func WriteObjectsInfoPacks(w io.Writer, s storer.PackedObjectStorer) error {
-	packs, err := s.ObjectPacks()
+	names, err := objectPackNames(s)
 	if err != nil {
 		return err
 	}
 
-	for _, p := range packs {
-		if _, err := fmt.Fprintf(w, "P pack-%s.pack\n", p); err != nil {
+	for _, name := range names {
+		if _, err := fmt.Fprintf(w, "P %s\n", name); err != nil {
 			return fmt.Errorf("writing pack line reference: %w", err)
 		}
 	}
@@ -102,4 +101,21 @@ func WriteObjectsInfoPacks(w io.Writer, s storer.PackedObjectStorer) error {
 		return fmt.Errorf("writing pack line final newline: %w", err)
 	}
 	return nil
+}
+
+func objectPackNames(s storer.PackedObjectStorer) ([]string, error) {
+	if namer, ok := s.(storer.ObjectPackNamer); ok {
+		return namer.ObjectPackNames()
+	}
+
+	packs, err := s.ObjectPacks()
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(packs))
+	for i, pack := range packs {
+		names[i] = fmt.Sprintf("pack-%s.pack", pack)
+	}
+	return names, nil
 }

@@ -268,8 +268,8 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 // streamPackfile demultiplexes the sideband-64k packfile stream into st.
 //
 // A non-empty filter means the server withheld the objects it matched, so the
-// pack is recorded as coming from a promisor remote. Git reads unmarked
-// absences as corruption: fsck reports broken links to them and gc fails.
+// pack is recorded as coming from a promisor remote. The marker lets Git
+// distinguish promised missing objects from repository corruption.
 func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader, progress sideband.Progress, filter packp.Filter) error {
 	reader := ioutil.NewContextReader(ctx, packReader)
 	demuxer := sideband.NewDemuxer(sideband.Sideband64k, reader)
@@ -277,9 +277,7 @@ func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader
 		demuxer.Progress = progress
 	}
 	if filter != "" {
-		// The marker is left empty. Git fills it with the refs it sought on
-		// this path and leaves it empty when repacking, and accepts either,
-		// because only the file's presence is ever consulted.
+		// The marker is empty because Git uses its presence, not its contents.
 		return packfile.UpdatePromisorObjectStorage(st, demuxer, "")
 	}
 	return packfile.UpdateObjectStorage(st, demuxer)

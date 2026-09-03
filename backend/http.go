@@ -28,8 +28,8 @@ var httpServices = []httpService{
 	{regexp.MustCompile("(.*?)/objects/info/http-alternates$"), http.MethodGet, (*Backend).handleDumbTextFile, ""},
 	{regexp.MustCompile("(.*?)/objects/info/packs$"), http.MethodGet, (*Backend).handleDumbInfoPacks, ""},
 	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38,62}$"), http.MethodGet, (*Backend).handleDumbLooseObject, ""},
-	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40,64}\.pack$`), http.MethodGet, (*Backend).handleDumbPackFile, ""},
-	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40,64}\.idx$`), http.MethodGet, (*Backend).handleDumbIdxFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/(pack|loose)-([0-9a-f]{40}|[0-9a-f]{64})\.pack$`), http.MethodGet, (*Backend).handleDumbPackFile, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/(pack|loose)-([0-9a-f]{40}|[0-9a-f]{64})\.idx$`), http.MethodGet, (*Backend).handleDumbIdxFile, ""},
 	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, (*Backend).handleServiceRPC, transport.UploadPackService},
 	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, (*Backend).handleServiceRPC, transport.ReceivePackService},
 	{regexp.MustCompile("(.*?)/git-upload-archive$"), http.MethodPost, (*Backend).handleServiceRPC, transport.UploadArchiveService},
@@ -173,7 +173,7 @@ func (b *Backend) handleDumbTextFile(w http.ResponseWriter, r *http.Request, rep
 }
 
 func (b *Backend) handleDumbInfoPacks(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
-	hdrCacheForever(w)
+	hdrNocache(w)
 	b.handleDumbSendFile(w, r, repo, file, "text/plain; charset=utf-8")
 }
 

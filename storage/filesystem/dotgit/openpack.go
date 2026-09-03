@@ -2,7 +2,6 @@ package dotgit
 
 import (
 	"errors"
-	"io"
 	"io/fs"
 
 	"github.com/go-git/go-billy/v6"
@@ -15,63 +14,40 @@ import (
 // returned by [DotGit.OpenPackForReading].
 var errReadOnlyPack = errors.New("dotgit: pack file is read-only")
 
-// OpenPackForReading returns a read-only handle on the .pack file
-// for the given pack hash, backed by the internal FD pool. The
-// returned [billy.File] grace-closes on idle and shares its
-// descriptor across concurrent callers; closing the handle
-// releases this caller's lease without affecting the pool.
+// OpenPackForReading returns a read-only cursor for the selected pack- or
+// loose-named .pack alias. Name and Stat use that selected path. Concurrent
+// calls share the cached descriptor, but each cursor has its own offset.
+// Closing the file releases this cursor.
 //
-// Write-side methods (Write, WriteAt, Lock, Unlock, Truncate)
-// return an error. Stat resolves through the filesystem on each
-// call.
+// Write-side methods return errReadOnlyPack. Pack-handle invalidation makes
+// later Read, ReadAt, and Seek calls return fs.ErrClosed.
 func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
-	ph, err := d.packHandle(hash)
+	cached, err := d.packHandleEntry(hash)
 	if err != nil {
 		return nil, err
 	}
+	packPath := d.objectPackPathFromBase(cached.baseName, "pack")
 
-	pr, err := ph.OpenPackReader()
+	pr, err := cached.handle.OpenPackReader()
 	if err != nil {
 		return nil, err
-	}
-	// [packhandle.PackReader] is declared as
-	// Reader+Seeker+Closer; ReadAt is not in the interface, so
-	// the assertion is a real runtime check rather than a static
-	// guarantee. The current concrete (cursorReader) satisfies
-	// it; the dynamic assert exists to catch a future PackReader
-	// implementation that does not.
-	ra, ok := pr.(io.ReaderAt)
-	if !ok {
-		_ = pr.Close()
-		return nil, errors.New("dotgit: pack reader does not support ReadAt")
 	}
 
 	return &readOnlyPackFile{
 		cursor: pr,
-		ra:     ra,
-		name:   d.objectPackPath(hash, "pack"),
+		name:   packPath,
 		fs:     d.fs,
 	}, nil
 }
 
-// readOnlyPackFile adapts a packhandle cursor into a [billy.File].
+// readOnlyPackFile adapts a pack cursor to [billy.File]. Idle release and pool
+// eviction do not close its descriptor while the cursor is active. A terminal
+// pack-handle close invalidates it; later reads return fs.ErrClosed.
 //
-// The embedded cursor pins one [sharedfile.SharedFile] reference
-// for the lifetime of this handle: Read, ReadAt, and Seek route
-// through the cursor, so the .pack FD stays live until Close.
-// [readOnlyPackFile.Stat] is the exception — it goes through the
-// filesystem on each call and may report a result that diverges
-// from the cursor's view if the underlying pack was mutated or
-// deleted out from under the handle. Callers that need a
-// snapshot consistent with the cursor's reads should derive size
-// from prior reads rather than re-Stat through this method.
-//
-// The handle holds a [billy.Filesystem] reference for Stat
-// rather than a back-pointer to [DotGit]; this avoids a
-// DotGit → cache → PackHandle → readOnlyPackFile reference cycle.
+// Stat reads the selected path on each call, so it can differ from the open
+// cursor if another process changes that path.
 type readOnlyPackFile struct {
 	cursor packhandle.PackReader
-	ra     io.ReaderAt
 	name   string
 	fs     billy.Filesystem
 }
@@ -84,7 +60,7 @@ func (f *readOnlyPackFile) Seek(o int64, w int) (int64, error) {
 }
 
 func (f *readOnlyPackFile) ReadAt(p []byte, off int64) (int, error) {
-	return f.ra.ReadAt(p, off)
+	return f.cursor.ReadAt(p, off)
 }
 
 func (f *readOnlyPackFile) Stat() (fs.FileInfo, error) {

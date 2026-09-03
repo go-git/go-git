@@ -9,7 +9,7 @@ import (
 )
 
 // memCloser wraps a *bytes.Reader to satisfy ReadAtCloser.
-// Used by cursor_reader_test.go and pack_meta_test.go.
+// Used by cursor_reader_test.go and pack_hash_test.go.
 type memCloser struct {
 	*bytes.Reader
 	closed atomic.Bool

@@ -81,51 +81,46 @@ type LooseObjectStorer interface {
 // PackedObjectStorer is an optional interface for managing objects in
 // packfiles.
 type PackedObjectStorer interface {
-	// ObjectPacks returns hashes of object packs if the underlying
-	// implementation has pack files.
+	// ObjectPacks returns logical identifiers for stored object packs. More
+	// than one physical file can map to one identifier.
 	ObjectPacks() ([]plumbing.Hash, error)
-	// DeleteOldObjectPackAndIndex deletes an object pack and the corresponding index file if they exist.
-	// Deletion is only performed if the pack is older than the supplied time (or the time is zero).
+	// DeleteOldObjectPackAndIndex removes pack data for a hash when its pack is
+	// older than the supplied time. A zero time removes it without an age check.
 	DeleteOldObjectPackAndIndex(plumbing.Hash, time.Time) error
 }
 
-// PackfileWriter is an optional method for ObjectStorer, it enables directly writing
-// a packfile to storage.
+// ObjectPackNamer is an optional interface for storers that can report the
+// physical names of their object pack files.
+type ObjectPackNamer interface {
+	// ObjectPackNames returns physical pack basenames, including the .pack
+	// suffix, for dumb-transport publication.
+	ObjectPackNames() ([]string, error)
+}
+
+// PackfileWriter is an optional interface for storers that can write packfiles
+// directly.
 type PackfileWriter interface {
-	// PackfileWriter returns a writer for writing a packfile to the storage
-	//
-	// If the Storer not implements PackfileWriter the objects should be written
-	// using the Set method.
+	// PackfileWriter returns a writer for a packfile. If a storer does not
+	// implement this interface, callers store each object with SetEncodedObject.
 	PackfileWriter() (io.WriteCloser, error)
 }
 
-// PromisorPackfileWriter is an optional interface for ObjectStorer
-// implementations that can record a packfile as having come from a promisor
-// remote, which a filtered (partial clone) fetch requires.
-//
-// A pack fetched with a filter is missing the objects the filter excluded, and
-// git only treats those absences as legitimate when the pack is marked. An
-// implementation that cannot record the mark should not be used for filtered
-// fetches that land on disk: git reports the excluded objects as broken links
-// and refuses to gc the repository.
+// PromisorPackfileWriter is an optional interface for storers that preserve
+// promisor classification for stored packs.
 type PromisorPackfileWriter interface {
-	// PromisorPackfileWriter returns a writer for a packfile received from a
-	// promisor remote. marker is stored verbatim alongside the pack; git writes
-	// the refs it sought there when the pack came from a fetch, and nothing at
-	// all when repacking. Only the file's presence is ever consulted, so the
-	// contents are free-form.
+	// PromisorPackfileWriter returns a writer for a pack received from a
+	// promisor remote. Closing a used writer must leave the stored pack marked,
+	// including when the same pack data already exists. marker supplies
+	// free-form sidecar data; Git uses its presence, not its contents.
 	PromisorPackfileWriter(marker string) (io.WriteCloser, error)
 }
 
-// PromisorObjectStorer is an optional interface for ObjectStorer
-// implementations that track which packs came from a promisor remote.
-//
-// It lets callers tell a repository that is a partial clone, and whose missing
-// objects are therefore expected, from one that is simply incomplete.
+// PromisorObjectStorer is an optional interface for storers that can report
+// promisor-marked packs.
 type PromisorObjectStorer interface {
-	// PromisorObjectPacks returns the hashes of the packs received from a
-	// promisor remote. An empty result means the repository is not a partial
-	// clone, so any missing object is genuinely missing.
+	// PromisorObjectPacks returns the logical hashes of marked packs. An empty
+	// result means that no stored pack is marked. It does not describe the
+	// repository's promisor-remote configuration.
 	PromisorObjectPacks() ([]plumbing.Hash, error)
 }
 
