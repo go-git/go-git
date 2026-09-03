@@ -276,6 +276,70 @@ func (s *ClientSuite) TestModifyEndpointIfRedirect(c *C) {
 	}
 }
 
+// url.Parse lowercases the scheme it parses and transport.NewEndpoint takes
+// Protocol from one, so an uppercased scheme only reaches here from a caller
+// that assembles the URL or the Endpoint itself. A scheme is case-insensitive
+// per RFC 3986, so such a spelling is read for what it means rather than
+// rejected as one go-git cannot speak, and the endpoint keeps the folded form
+// so every later request built from it is spelled canonically.
+func (s *ClientSuite) TestModifyEndpointIfRedirectFoldsSchemeCase(c *C) {
+	tests := []struct {
+		name             string
+		endpoint         *transport.Endpoint
+		redirect         *url.URL
+		expectedProtocol string
+		err              string
+	}{
+		{
+			name:             "uppercased redirect scheme",
+			endpoint:         &transport.Endpoint{Protocol: "https", Host: "example.com"},
+			redirect:         &url.URL{Scheme: "HTTPS", Host: "example.com", Path: "/foo.git" + infoRefsPath},
+			expectedProtocol: "https",
+		},
+		{
+			name:             "uppercased endpoint protocol",
+			endpoint:         &transport.Endpoint{Protocol: "HTTPS", Host: "example.com"},
+			redirect:         &url.URL{Scheme: "https", Host: "example.com", Path: "/foo.git" + infoRefsPath},
+			expectedProtocol: "https",
+		},
+		{
+			name:             "uppercased upgrade from http",
+			endpoint:         &transport.Endpoint{Protocol: "HTTP", Host: "example.com"},
+			redirect:         &url.URL{Scheme: "HTTPS", Host: "example.com", Path: "/foo.git" + infoRefsPath},
+			expectedProtocol: "https",
+		},
+		{
+			name:             "uppercased downgrade to http",
+			endpoint:         &transport.Endpoint{Protocol: "https", Host: "example.com"},
+			redirect:         &url.URL{Scheme: "HTTP", Host: "example.com", Path: "/foo.git" + infoRefsPath},
+			expectedProtocol: "https",
+			err:              ".*changes scheme from \"https\" to \"HTTP\".*",
+		},
+		{
+			// Folding decides how a scheme is spelled, not which ones are
+			// accepted.
+			name:             "uppercased unsupported scheme",
+			endpoint:         &transport.Endpoint{Protocol: "https", Host: "example.com"},
+			redirect:         &url.URL{Scheme: "FILE", Host: "example.com", Path: "/foo.git" + infoRefsPath},
+			expectedProtocol: "https",
+			err:              ".*unsupported scheme \"FILE\".*",
+		},
+	}
+
+	for _, tt := range tests {
+		sess := &session{endpoint: tt.endpoint}
+		err := sess.ModifyEndpointIfRedirect(&http.Response{
+			Request: &http.Request{URL: tt.redirect},
+		})
+		if tt.err != "" {
+			c.Check(err, ErrorMatches, tt.err, Commentf(tt.name))
+		} else {
+			c.Check(err, IsNil, Commentf(tt.name))
+		}
+		c.Check(tt.endpoint.Protocol, Equals, tt.expectedProtocol, Commentf(tt.name))
+	}
+}
+
 func (s *ClientSuite) TestModifyEndpointIfRedirectClearsCredentialsOnCrossHost(c *C) {
 	sess := &session{
 		auth: &BasicAuth{Username: "user", Password: "pass"},
@@ -373,6 +437,21 @@ func (s *ClientSuite) TestModifyEndpointIfRedirectPreservesCredentialsOnEquivale
 			expectedString: "https://user:pass@[2001:db8::1]/new.git",
 		},
 		{
+			name: "http upgraded to https on the same host",
+			endpoint: &transport.Endpoint{
+				Protocol: "http",
+				User:     "user",
+				Password: "pass",
+				Host:     "example.com",
+				Path:     "/old.git",
+			},
+			redirectURL:    "https://example.com/new.git/info/refs",
+			expectedHost:   "example.com",
+			expectedPort:   0,
+			expectedPath:   "/new.git",
+			expectedString: "https://user:pass@example.com/new.git",
+		},
+		{
 			name: "ipv6 mapped address non-default port",
 			endpoint: &transport.Endpoint{
 				Protocol: "https",
@@ -411,6 +490,88 @@ func (s *ClientSuite) TestModifyEndpointIfRedirectPreservesCredentialsOnEquivale
 		c.Assert(sess.endpoint.Path, Equals, tt.expectedPath, Commentf(tt.name))
 		c.Assert(sess.endpoint.String(), Equals, tt.expectedString, Commentf(tt.name))
 	}
+}
+
+func (s *ClientSuite) TestCredentialsMayFollow(c *C) {
+	tests := []struct {
+		name string
+		from string
+		to   string
+		want bool
+	}{
+		{"identical", "https://example.com", "https://example.com", true},
+		{"path differs", "https://example.com/a", "https://example.com/b", true},
+		{"host case folds", "https://Example.COM", "https://example.com", true},
+		{"explicit default port", "https://example.com", "https://example.com:443", true},
+		{"leading zeroes in port", "https://example.com:443", "https://example.com:0443", true},
+		{"http upgrades to https", "http://example.com", "https://example.com", true},
+
+		{"subdomain is a different origin", "https://example.com", "https://sub.example.com", false},
+		{"parent domain is a different origin", "https://sub.example.com", "https://example.com", false},
+		{"different port", "https://example.com", "https://example.com:8443", false},
+		{"https does not downgrade", "https://example.com", "http://example.com", false},
+		{"upgrade from a non-default port", "http://example.com:8080", "https://example.com", false},
+		{"upgrade to a non-default port", "http://example.com", "https://example.com:8443", false},
+		{"unrelated host", "https://example.com", "https://evil.com", false},
+		{"prefix of the host", "https://example.com", "https://example.com.evil.com", false},
+
+		// A trailing root dot reaches the same peer, but net/http sends the
+		// name as written in Host, so the two spellings can be routed to
+		// different virtual hosts. curl and the WHATWG URL Standard keep them
+		// distinct too. A dotted IP literal is kept apart for the same reason,
+		// though it stops parsing as a literal and is compared as a name.
+		{"trailing root dot", "https://example.com", "https://example.com.", false},
+		{"trailing root dot on the left", "https://example.com.", "https://example.com", false},
+		{"ipv4 with a trailing root dot", "http://127.0.0.1/a", "http://127.0.0.1./a", false},
+
+		// An IPv4-mapped literal dials the same endpoint as the IPv4 it wraps,
+		// but net/http sends the literal as written in Host, so the two can
+		// reach different virtual hosts on that endpoint. Same endpoint is not
+		// the same authority, and netip keeps the two Addrs apart.
+		{"ipv4-mapped against the ipv4", "http://[::ffff:127.0.0.1]/a", "http://127.0.0.1/a", false},
+
+		{"ipv6 hex case folds", "https://[2001:DB8::1]", "https://[2001:db8::1]", true},
+		{"ipv6 zone matches itself", "https://[fe80::1%25eth0]", "https://[fe80::1%25eth0]", true},
+
+		// One address has many spellings. netip.ParseAddr is the same call
+		// net's resolver gates on, so these all name the endpoint the dialer
+		// would connect to and are one origin.
+		{"ipv6 compressed against expanded", "http://[::1]:8080/a", "http://[0:0:0:0:0:0:0:1]:8080/a", true},
+		{"ipv6 leading zeroes in a field", "http://[::1]:8080/a", "http://[::0001]:8080/a", true},
+		{"ipv6 hex against dotted-quad tail", "http://[::ffff:7f00:1]/a", "http://[::ffff:127.0.0.1]/a", true},
+
+		// A percent in a registered name is not a scope zone. %25 is the only
+		// escape net/url leaves in a host, so Hostname() really can return
+		// one, and the whole name folds.
+		{"percent in a registered name", "https://foo%25bar.test/a", "https://FOO%25BAR.test/a", true},
+
+		// An IPv6 scope zone names an interface, and net resolves it by exact
+		// name: %eth0 and %ETH0 can be two interfaces carrying the same
+		// link-local address. Folding the zone would let a credential issued
+		// for one cross to the other.
+		{"ipv6 zone case differs", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25ETH0]:8080/a", false},
+		{"ipv6 zone differs", "https://[fe80::1%25eth0]", "https://[fe80::1%25eth1]", false},
+		{"ipv6 zone against none", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1]:8080/a", false},
+	}
+
+	for _, tt := range tests {
+		from, err := url.Parse(tt.from)
+		c.Assert(err, IsNil, Commentf(tt.name))
+		to, err := url.Parse(tt.to)
+		c.Assert(err, IsNil, Commentf(tt.name))
+		c.Check(credentialsMayFollow(from, to), Equals, tt.want, Commentf(tt.name))
+	}
+
+	// endpointURL takes Endpoint.Protocol verbatim, and nothing lowercases it
+	// on the way in, so the scheme comparison has to fold case itself. Every
+	// URL above comes from url.Parse, which already lowercases the scheme.
+	to, err := url.Parse("https://example.com")
+	c.Assert(err, IsNil)
+	from := endpointURL(&transport.Endpoint{Protocol: "HTTP", Host: "example.com"})
+	c.Check(credentialsMayFollow(from, to), Equals, true)
+
+	// The same on the destination side, which only a hand-built URL reaches.
+	c.Check(credentialsMayFollow(from, &url.URL{Scheme: "HTTPS", Host: "example.com"}), Equals, true)
 }
 
 func cloneEndpoint(ep *transport.Endpoint) *transport.Endpoint {
