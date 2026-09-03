@@ -123,11 +123,15 @@ func (h *vhostMap) client() *http.Client {
 // vhost is a server reachable under a virtual authority. It records every
 // request it receives and optionally redirects the discovery request.
 type vhost struct {
-	mu       sync.Mutex
-	received []http.Header
-	srv      *httptest.Server
-	base     string
-	redirect string
+	mu          sync.Mutex
+	received    []http.Header
+	receivedLen []int64
+	srv         *httptest.Server
+	base        string
+	redirect    string
+	// redirectPost answers the service request with a 307, which preserves
+	// the method and the body. Only reachable under FollowRedirects.
+	redirectPost string
 }
 
 // newTLSVhost starts an HTTPS server registered at hostname:port. Its base
@@ -152,9 +156,15 @@ func newVhostServer(t *testing.T, hm *vhostMap, hostname, port string, useTLS bo
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		v.mu.Lock()
 		v.received = append(v.received, r.Header.Clone())
+		v.receivedLen = append(v.receivedLen, r.ContentLength)
 		redirect := v.redirect
+		redirectPost := v.redirectPost
 		v.mu.Unlock()
 
+		if redirectPost != "" && r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/repo.git/git-upload-pack") {
+			http.Redirect(w, r, redirectPost, http.StatusTemporaryRedirect)
+			return
+		}
 		if redirect != "" && strings.HasSuffix(r.URL.Path, "/repo.git/info/refs") {
 			http.Redirect(w, r, redirect, http.StatusFound)
 			return
@@ -200,6 +210,16 @@ func (v *vhost) lastRequest(t *testing.T) http.Header {
 	defer v.mu.Unlock()
 	require.NotEmpty(t, v.received, "the redirect target was never reached")
 	return v.received[len(v.received)-1]
+}
+
+// lastContentLength returns the body length of the most recent request this
+// vhost served.
+func (v *vhost) lastContentLength(t *testing.T) int64 {
+	t.Helper()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	require.NotEmpty(t, v.receivedLen, "the redirect target was never reached")
+	return v.receivedLen[len(v.receivedLen)-1]
 }
 
 func refsPath(repo string) string {

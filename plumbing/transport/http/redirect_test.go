@@ -494,6 +494,62 @@ func TestRedirectDropsCredentialsAcrossOrigin(t *testing.T) {
 	})
 }
 
+// The strip applies to every request a session makes, not just discovery.
+// Under FollowRedirects a 307 on the upload-pack POST preserves the method
+// and the body, so a credential-bearing request with a body reaches the new
+// origin intact.
+func TestRedirectPostCredentials(t *testing.T) {
+	t.Parallel()
+
+	t.Run("drops credentials across an origin", func(t *testing.T) {
+		t.Parallel()
+
+		hm := newVhostMap()
+		dest := newTLSVhost(t, hm, "evil.test", "443")
+		origin := newTLSVhost(t, hm, "example.test", "443")
+		origin.redirectPost = dest.base + "/repo.git/git-upload-pack"
+
+		sess, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+			o.FollowRedirects = FollowRedirects
+		})
+		require.NoError(t, err)
+
+		// Discovery stayed on the origin, so the session kept its credentials
+		// and the POST below is genuinely credential-bearing.
+		assertCredentialsPresent(t, origin.lastRequest(t))
+
+		// dest answers with the discovery advertisement, which is not a valid
+		// ls-refs response, so an error here is expected and irrelevant: the
+		// assertion is about what reached dest.
+		_, _ = sess.GetRemoteRefs(context.Background(), nil)
+
+		assertCredentialsPresent(t, origin.lastRequest(t)) // the POST as sent to the origin
+		assertCredentialsAbsent(t, dest.lastRequest(t))
+
+		// The 307 replayed the method and the body. Without this the test
+		// could pass trivially, on a redirected request carrying nothing.
+		wantLen := origin.lastContentLength(t)
+		assert.Positive(t, wantLen, "the POST to the origin had no body")
+		assert.Equal(t, wantLen, dest.lastContentLength(t), "the redirected POST body was not replayed intact")
+	})
+
+	t.Run("keeps credentials within the origin", func(t *testing.T) {
+		t.Parallel()
+
+		hm := newVhostMap()
+		origin := newTLSVhost(t, hm, "example.test", "443")
+		origin.redirectPost = origin.base + "/other.git/git-upload-pack"
+
+		sess, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+			o.FollowRedirects = FollowRedirects
+		})
+		require.NoError(t, err)
+
+		_, _ = sess.GetRemoteRefs(context.Background(), nil)
+		assertCredentialsPresent(t, origin.lastRequest(t))
+	})
+}
+
 // Once the chain has left the origin, credentials stay gone even if a later
 // hop returns to it. net/http restores non-sensitive headers on every hop,
 // so without the sticky check the custom credentials reappear on the final
