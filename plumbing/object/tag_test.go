@@ -808,6 +808,54 @@ YIefGtzXfldDxg4=
 	s.True(ok)
 }
 
+func (s *TagSuite) TestVerifyMultipleSignatures() {
+	ts := time.Unix(1617403017, 0)
+	loc, _ := time.LoadLocation("UTC")
+
+	sig := `
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQTMqU0ycQ3f6g3PMoWMmmmF4LuV8QUCYGeciQAKCRCMmmmF4LuV
+8ZoDAP4j9msumYymfHgS3y7jpxPcSyiOMlXjipr2upspvXJ6ewD+K+OPC4pGW7Aq
+8UDK8r6qhaloxATcV/LUrvAW2yz4PwM=
+=PD+s
+-----END PGP SIGNATURE-----
+`
+	tag := &Tag{
+		Name:   "v0.2",
+		Tagger: Signature{Name: "go-git", Email: "go-git@example.com", When: ts.In(loc)},
+		Message: `This is a signed tag
+`,
+		TargetType: plumbing.CommitObject,
+		Target:     plumbing.NewHash("1eca38290a3131d0c90709496a9b2207a872631e"),
+		// A second armored block appended after a valid one: the first
+		// signature verifies against the key below, so without the guard
+		// Verify would report success for an object whose provenance is
+		// ambiguous.
+		Signature: sig + sig,
+	}
+
+	armoredKeyRing := `
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEYGeSihYJKwYBBAHaRw8BAQdAIs9A3YD/EghhAOkHDkxlUkpqYrXUXebLfmmX
++pdEK6C0D2dvLWdpdCB0ZXN0IGtleYiPBBMWCgA3FiEEzKlNMnEN3+oNzzKFjJpp
+heC7lfEFAmBnkooCGyMECwkIBwUVCgkICwUWAwIBAAIeAQIXgAAKCRCMmmmF4LuV
+8a3jAQCi4hSqjj6J3ch290FvQaYPGwR+EMQTMBG54t+NN6sDfgD/aZy41+0dnFKl
+qM/wLW5Wr9XvwH+1zXXbuSvfxasHowq4OARgZ5KKEgorBgEEAZdVAQUBAQdAXoQz
+VTYug16SisAoSrxFnOmxmFu6efYgCAwXu0ZuvzsDAQgHiHgEGBYKACAWIQTMqU0y
+cQ3f6g3PMoWMmmmF4LuV8QUCYGeSigIbDAAKCRCMmmmF4LuV8Q4QAQCKW5FnEdWW
+lHYKeByw3JugnlZ0U3V/R20bCwDglst5UQEAtkN2iZkHtkPly9xapsfNqnrt2gTt
+YIefGtzXfldDxg4=
+=Psht
+-----END PGP PUBLIC KEY BLOCK-----
+`
+
+	e, err := tag.Verify(armoredKeyRing)
+	s.ErrorIs(err, ErrMultipleSignatures)
+	s.Nil(e)
+}
+
 func (s *TagSuite) TestDecodeAndVerify() {
 	objectText := `object f6685df0aac4b5adf9eeb760e6d447145c5d0b56
 type commit
