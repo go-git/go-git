@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cgi"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -461,6 +463,19 @@ func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
 			err:           ".*too many redirects.*",
 		},
 		{
+			name:      "redacts credentials in redirect errors",
+			policy:    NoFollowRedirects,
+			targetURL: "https://user:pass@example.com/repo.git",
+			initial:   true,
+			err:       ".*https://user:REDACTED@example.com/repo.git.*",
+		},
+		{
+			name:      "redacts credentials on non-initial request",
+			policy:    FollowInitialRedirects,
+			targetURL: "https://user:pass@example.com/repo.git",
+			err:       ".*https://user:REDACTED@example.com/repo.git.*",
+		},
+		{
 			name:      "rejects invalid policy",
 			policy:    RedirectPolicy("bogus"),
 			targetURL: "http://example.com/repo.git",
@@ -492,6 +507,173 @@ func (s *ClientSuite) TestCheckRedirectPolicy(c *C) {
 		}
 		c.Assert(err, IsNil, Commentf(tt.name))
 	}
+}
+
+func (s *ClientSuite) TestRedactedURL(c *C) {
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{
+			name:   "redacts the password",
+			rawURL: "https://user:pass@example.com/repo.git",
+			want:   "https://user:REDACTED@example.com/repo.git",
+		},
+		{
+			name:   "redacts an empty password",
+			rawURL: "https://user:@example.com/repo.git",
+			want:   "https://user:REDACTED@example.com/repo.git",
+		},
+		{
+			name:   "leaves a username-only URL alone",
+			rawURL: "https://user@example.com/repo.git",
+			want:   "https://user@example.com/repo.git",
+		},
+		{
+			name:   "leaves a URL without userinfo alone",
+			rawURL: "https://example.com/repo.git",
+			want:   "https://example.com/repo.git",
+		},
+	}
+
+	for _, tt := range tests {
+		u, err := url.Parse(tt.rawURL)
+		c.Assert(err, IsNil)
+		c.Assert(redactedURL(u), Equals, tt.want, Commentf(tt.name))
+	}
+
+	c.Assert(redactedURL(nil), Equals, "")
+}
+
+func (s *ClientSuite) TestRedactedRawURL(c *C) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "redacts the password",
+			raw:  "https://user:pass@example.com/repo.git",
+			want: "https://user:REDACTED@example.com/repo.git",
+		},
+		{
+			name: "redacts a password the URL parser rejects",
+			raw:  "https://user:pass@example.com/repo%zz.git/info/refs?service=git-upload-pack",
+			want: "https://user:REDACTED@example.com/repo%zz.git/info/refs?service=git-upload-pack",
+		},
+		{
+			name: "leaves a username-only URL alone",
+			raw:  "https://token@example.com/repo.git",
+			want: "https://token@example.com/repo.git",
+		},
+		{
+			name: "leaves a URL without userinfo alone",
+			raw:  "https://example.com/repo.git",
+			want: "https://example.com/repo.git",
+		},
+		{
+			name: "ignores an at sign in the path",
+			raw:  "https://example.com/repo@v2.git",
+			want: "https://example.com/repo@v2.git",
+		},
+		{
+			name: "leaves a string with no scheme alone",
+			raw:  "not a url",
+			want: "not a url",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Check(redactedRawURL(tt.raw), Equals, tt.want, Commentf(tt.name))
+	}
+}
+
+// Endpoint.String() re-emits Endpoint.Path raw, so a path holding a stray
+// percent yields a URL url.Parse rejects - reporting the string, credentials
+// and all. Reachable from a redirect Location, and from the clone URL.
+func (s *ClientSuite) TestNewRequestRedactsUnparseableURL(c *C) {
+	ep, err := transport.NewEndpoint("https://user:pass@example.com/repo.git")
+	c.Assert(err, IsNil)
+	ep.Path = "/repo%zz.git"
+
+	for _, suffix := range []string{
+		infoRefsPath + "?service=git-upload-pack",
+		"/git-upload-pack",
+		"/git-receive-pack",
+	} {
+		_, err := newRequest(http.MethodGet, ep.String()+suffix, nil)
+		c.Assert(err, NotNil, Commentf(suffix))
+		c.Check(err.Error(), Not(Matches), ".*:pass@.*", Commentf(suffix))
+		c.Check(err.Error(), Matches, ".*user:REDACTED@.*", Commentf(suffix))
+	}
+}
+
+// The same three URLs, reached through the calls that build them, so that a
+// call site reverting to http.NewRequest is caught as well as the helper.
+// The URL never parses, so no server is involved.
+func (s *ClientSuite) TestRequestBuildErrorsRedactCredentials(c *C) {
+	newSess := func() *transport.Endpoint {
+		ep, err := transport.NewEndpoint("https://user:pass@example.com/repo.git")
+		c.Assert(err, IsNil)
+		ep.Path = "/repo%zz.git"
+		return ep
+	}
+	check := func(what string, err error) {
+		c.Assert(err, NotNil, Commentf(what))
+		c.Check(err.Error(), Not(Matches), ".*:pass@.*", Commentf(what))
+		c.Check(err.Error(), Matches, ".*user:REDACTED@.*", Commentf(what))
+	}
+
+	up, err := DefaultClient.NewUploadPackSession(newSess(), nil)
+	c.Assert(err, IsNil)
+	defer up.Close() //nolint:errcheck
+
+	_, err = up.AdvertisedReferencesContext(context.Background())
+	check("advertised references", err)
+
+	upr := packp.NewUploadPackRequest()
+	upr.Wants = append(upr.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	_, err = up.UploadPack(context.Background(), upr)
+	check("upload-pack", err)
+
+	rp, err := DefaultClient.NewReceivePackSession(newSess(), nil)
+	c.Assert(err, IsNil)
+	defer rp.Close() //nolint:errcheck
+
+	rpr := packp.NewReferenceUpdateRequest()
+	rpr.Commands = append(rpr.Commands, &packp.Command{
+		Name: "refs/heads/master",
+		Old:  plumbing.ZeroHash,
+		New:  plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	})
+	_, err = rp.ReceivePack(context.Background(), rpr)
+	check("receive-pack", err)
+}
+
+func (s *ClientSuite) TestErrErrorRedactsCredentials(c *C) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	c.Assert(err, IsNil)
+
+	ep, err := transport.NewEndpoint("http://user:pass@" + u.Host + "/repo.git")
+	c.Assert(err, IsNil)
+
+	sess, err := NewClient(nil).NewUploadPackSession(ep, nil)
+	c.Assert(err, IsNil)
+	defer sess.Close() //nolint:errcheck
+
+	// No redirect is involved: any non-2xx that NewErr does not map to a
+	// sentinel error formats the request URL, which is built from the
+	// endpoint and so carries the caller's credentials.
+	_, err = sess.AdvertisedReferencesContext(context.Background())
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Not(Matches), ".*pass@.*")
+	c.Assert(err.Error(), Matches, ".*user:REDACTED@.*status code: 500.*")
 }
 
 type BaseSuite struct {

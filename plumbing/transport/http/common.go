@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -73,7 +75,7 @@ func advertisedReferences(ctx context.Context, s *session, serviceName string) (
 		s.endpoint.String(), infoRefsPath, serviceName,
 	)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -455,14 +457,73 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 	}
 }
 
+// redactedURL returns the string form of u with the userinfo password
+// replaced, for use in error messages. (*url.URL).String() renders the
+// password verbatim, and request URLs are built from the endpoint, which
+// carries whatever credentials the caller put in the clone URL.
+func redactedURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	if u.User == nil {
+		return u.String()
+	}
+	if _, hasPassword := u.User.Password(); !hasPassword {
+		return u.String()
+	}
+	redacted := *u
+	redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+	return redacted.String()
+}
+
+// redactedRawURL is redactedURL for a string that may not parse. Request URLs
+// are assembled from Endpoint.String(), which re-emits Endpoint.Path raw, so a
+// path holding a stray percent produces a string url.Parse rejects. url.Parse
+// reports the input verbatim and applies no redaction of its own; only
+// http.Client strips a password, and only from errors it raises itself.
+func redactedRawURL(raw string) string {
+	i := strings.Index(raw, "://")
+	if i < 0 {
+		return raw
+	}
+	authority := raw[i+3:]
+	if end := strings.IndexByte(authority, '/'); end >= 0 {
+		authority = authority[:end]
+	}
+	at := strings.LastIndexByte(authority, '@')
+	if at < 0 {
+		return raw
+	}
+	colon := strings.IndexByte(authority[:at], ':')
+	if colon < 0 {
+		// Username only, left alone, as redactedURL leaves it.
+		return raw
+	}
+	return raw[:i+3+colon+1] + "REDACTED" + raw[i+3+at:]
+}
+
+// newRequest wraps http.NewRequest so that a URL it cannot parse does not
+// reach the caller with the endpoint's credentials still in it.
+func newRequest(method, rawURL string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, rawURL, body)
+	if err != nil {
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			uerr.URL = redactedRawURL(uerr.URL)
+		}
+		return nil, err
+	}
+	return req, nil
+}
+
 func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy) error {
 	switch policy {
 	case FollowRedirects:
 	case NoFollowRedirects:
-		return fmt.Errorf("http redirect: redirects disabled to %s", req.URL)
+		return fmt.Errorf("http redirect: redirects disabled to %s", redactedURL(req.URL))
 	case "", FollowInitialRedirects:
 		if !isInitialRequest(req) {
-			return fmt.Errorf("http redirect: redirect on non-initial request to %s", req.URL)
+			return fmt.Errorf("http redirect: redirect on non-initial request to %s", redactedURL(req.URL))
 		}
 	default:
 		return fmt.Errorf("http redirect: invalid redirect policy %q", policy)
@@ -598,6 +659,6 @@ func (e *Err) StatusCode() int {
 
 func (e *Err) Error() string {
 	return fmt.Sprintf("unexpected requesting %q status code: %d",
-		e.Response.Request.URL, e.Response.StatusCode,
+		redactedURL(e.Response.Request.URL), e.Response.StatusCode,
 	)
 }
