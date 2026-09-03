@@ -47,13 +47,15 @@ type Options struct {
 	// created. When Client is set, TLS and HTTPProxy are ignored —
 	// configure them on the provided Client directly.
 	//
-	// Credentials injected by a custom RoundTripper on this Client are
-	// invisible to the transport, so they are not subject to the redirect
-	// stripping described on Authorizer and will follow redirects across
-	// origins; apply those in Authorizer instead if that is not wanted. A
-	// CheckRedirect hook set on this Client runs alongside the transport's
-	// own, but any header it adds when a redirect leaves the repository's
-	// origin is discarded the same way.
+	// Credentials this Client adds where the transport cannot see them are
+	// not subject to the redirect stripping described on Authorizer: a
+	// RoundTripper injects after the hop is decided, and Client.Jar is
+	// consulted after CheckRedirect, so a domain cookie still follows a
+	// redirect to a subdomain the transport counts as another origin. Apply
+	// them in Authorizer instead if that is not wanted. A CheckRedirect hook
+	// set on this Client runs alongside the transport's own, but any header
+	// it adds when a redirect leaves the repository's origin is discarded
+	// the same way.
 	//
 	// A RoundTripper is therefore also how to authenticate to a new origin a
 	// redirect has moved the repository to: match on the request URL and
