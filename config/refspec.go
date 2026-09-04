@@ -11,6 +11,7 @@ const (
 	refSpecWildcard  = "*"
 	refSpecForce     = "+"
 	refSpecSeparator = ":"
+	refSpecNegative  = "^"
 )
 
 var (
@@ -30,8 +31,32 @@ var (
 // https://git-scm.com/book/en/v2/Git-Internals-The-Refspec
 type RefSpec string
 
+// IsNegative returns true if the refspec is a negative refspec (starts with ^).
+func (s RefSpec) IsNegative() bool {
+	return len(s) > 0 && s[0] == refSpecNegative[0]
+}
+
+// MatchNegative reports whether n is excluded by this negative refspec.
+func (s RefSpec) MatchNegative(n plumbing.ReferenceName) bool {
+	if !s.IsNegative() {
+		return false
+	}
+	pattern := string(s[1:])
+	name := n.String()
+	prefix, suffix, isWild := strings.Cut(pattern, refSpecWildcard)
+	if !isWild {
+		return pattern == name
+	}
+	return len(name) >= len(prefix)+len(suffix) &&
+		strings.HasPrefix(name, prefix) &&
+		strings.HasSuffix(name, suffix)
+}
+
 // Validate validates the RefSpec
 func (s RefSpec) Validate() error {
+	if s.IsNegative() {
+		return nil
+	}
 	spec := string(s)
 	if strings.Count(spec, refSpecSeparator) != 1 {
 		return ErrRefSpecMalformedSeparator
