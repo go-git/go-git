@@ -456,10 +456,13 @@ func (s *ConfigSuite) TestRemoteConfigDefaultValues() {
 	s.Equal(DefaultPackWindow, config.Pack.Window)
 }
 
+// LoadConfig now reads the repository-level config like any other
+// scope. The tests run inside go-git's own checkout, so a repository is
+// found and its config parses.
 func (s *ConfigSuite) TestLoadConfigLocalScope() {
 	cfg, err := LoadConfig(LocalScope)
-	s.NotNil(err)
-	s.Nil(cfg)
+	s.NoError(err)
+	s.NotNil(cfg)
 }
 
 func (s *ConfigSuite) TestRemoveUrlOptions() {
