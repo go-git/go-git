@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -15,6 +16,11 @@ var (
 	subsectionReplacer = strings.NewReplacer(`"`, `\"`, `\`, `\\`)
 	valueReplacer      = strings.NewReplacer(`"`, `\"`, `\`, `\\`, "\n", `\n`, "\t", `\t`, "\b", `\b`)
 )
+
+// ErrInvalidSubsectionName is returned when a subsection name cannot be
+// represented in a config file. Per git-config(1), subsection names "can
+// contain any characters except newline and the null byte".
+var ErrInvalidSubsectionName = errors.New("invalid subsection name")
 
 // NewEncoder returns a new encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
@@ -53,6 +59,14 @@ func (e *Encoder) encodeSection(s *Section) error {
 }
 
 func (e *Encoder) encodeSubsection(sectionName string, s *Subsection) error {
+	// Neither character is escapable inside the quoted name: git drops the
+	// backslash before any character other than `"` and `\`, so `\n` reads
+	// back as the letter "n". Writing them raw is the only faithful encoding,
+	// and that ends the header early and corrupts the file.
+	if strings.ContainsAny(s.Name, "\n\x00") {
+		return fmt.Errorf("%w: %q", ErrInvalidSubsectionName, s.Name)
+	}
+
 	if err := e.printf("[%s \"%s\"]\n", sectionName, subsectionReplacer.Replace(s.Name)); err != nil {
 		return err
 	}
