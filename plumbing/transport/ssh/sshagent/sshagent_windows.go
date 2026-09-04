@@ -67,7 +67,7 @@ func New() (agent.Agent, net.Conn, error) {
 			"SSH agent requested, but could not detect Pageant or Windows native SSH agent",
 		)
 	}
-	return agent.NewClient(conn), nil, nil
+	return agent.NewClient(conn), conn, nil
 }
 
 type conn struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -142,27 +143,52 @@ type PublicKeysCallback struct {
 	HostKeyCallbackHelper
 }
 
+type sshAgentCloser struct {
+	closer io.Closer
+}
+
 // NewSSHAgentAuth returns a PublicKeysCallback based on an SSH agent. It opens
 // a pipe with the SSH agent and uses the pipe as the implementer of the public
-// key callback function.
+// key callback function. Callers that need to close the pipe should use
+// [NewSSHAgentAuthWithCloser].
 func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
+	auth, _, err := NewSSHAgentAuthWithCloser(u)
+	return auth, err
+}
+
+// NewSSHAgentAuthWithCloser returns a PublicKeysCallback and a closer for the
+// pipe opened to the SSH agent. The closer is safe to call more than once.
+func NewSSHAgentAuthWithCloser(u string) (*PublicKeysCallback, io.Closer, error) {
 	var err error
 	if u == "" {
 		u, err = username()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	a, _, err := sshagent.New()
+	a, c, err := sshagent.New()
 	if err != nil {
-		return nil, fmt.Errorf("error creating SSH agent: %w", err)
+		return nil, nil, fmt.Errorf("error creating SSH agent: %w", err)
 	}
 
 	return &PublicKeysCallback{
 		User:     u,
 		Callback: a.Signers,
-	}, nil
+	}, &sshAgentCloser{closer: c}, nil
+}
+
+func (c *sshAgentCloser) Close() error {
+	if c == nil || c.closer == nil {
+		return nil
+	}
+	closer := c.closer
+	c.closer = nil
+	err := closer.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 // ClientConfig returns the ssh.ClientConfig for public key callback authentication.
