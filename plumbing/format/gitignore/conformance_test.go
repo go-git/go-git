@@ -742,6 +742,37 @@ func (s *ConformanceSuite) TestIgnoreDoubleStarReinclude() {
 	}
 }
 
+// TestIgnoreReincludedDirDoesNotCascade verifies that a dirOnly re-include
+// pattern (e.g. "!dir/") does not extend a match to the directory's
+// descendants. Files and subdirectories nested inside a directory named by
+// such a pattern remain subject to the earlier "*" exclusion, matching
+// Git's documented behavior that re-including a directory does not
+// implicitly re-include its contents.
+//
+// This does not assert on the directory entry itself ("my-dir"): Git has a
+// separate, narrower quirk where a bare "*" specifically resists being
+// overridden by a later re-include pattern for the exact excluded entry,
+// even with no descendants involved. That is unrelated to the cascading
+// bug fixed here (go-git#2112, which is about nested files) and is left
+// alone.
+func (s *ConformanceSuite) TestIgnoreReincludedDirDoesNotCascade() {
+	patterns := []string{"*", "!my-dir/"}
+	m := s.createMatcher(patterns)
+
+	tests := []struct {
+		path    string
+		isDir   bool
+		ignored bool
+		desc    string
+	}{
+		{"my-dir/sub", true, true, "a subdirectory is not re-included"},
+		{"my-dir/sub/file.txt", false, true, "a nested file remains ignored"},
+	}
+	for _, tt := range tests {
+		s.assertIgnore(m, patterns, tt.path, tt.isDir, tt.ignored, tt.desc)
+	}
+}
+
 // TestIgnoreDoubleStarPrefix verifies that foo**/bar matches foo/bar (and
 // foo<anything>/bar) but does not match foobar — i.e. ** does not collapse
 // across the slash boundary into a prefix.
