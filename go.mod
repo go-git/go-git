@@ -1,6 +1,6 @@
 module github.com/go-git/go-git/v5
 
-go 1.25.0
+go 1.26.0
 
 require (
 	dario.cat/mergo v1.0.0
@@ -21,7 +21,7 @@ require (
 	github.com/skeema/knownhosts v1.3.1
 	github.com/stretchr/testify v1.11.1
 	github.com/xanzy/ssh-agent v0.3.3
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/net v0.57.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.41.0
