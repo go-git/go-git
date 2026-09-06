@@ -81,6 +81,28 @@ func (s *seenRequests) all() []*http.Request {
 	return append([]*http.Request(nil), s.reqs...)
 }
 
+// redirectPair starts a destination server running dest, and an origin server
+// that redirects everything it receives to that destination under status, with
+// the request URI preserved. It returns the two base URLs and what the
+// destination received; both servers are closed with the test.
+func redirectPair(t *testing.T, status int, dest http.HandlerFunc) (originURL, destURL string, destSeen *seenRequests) {
+	t.Helper()
+
+	destSeen = &seenRequests{}
+	destSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destSeen.add(r)
+		dest(w, r)
+	}))
+	t.Cleanup(destSrv.Close)
+
+	originSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destSrv.URL+r.URL.RequestURI(), status)
+	}))
+	t.Cleanup(originSrv.Close)
+
+	return originSrv.URL, destSrv.URL, destSeen
+}
+
 func refsPath(repo string) string {
 	return "/" + repo + "/info/refs?service=git-upload-pack"
 }

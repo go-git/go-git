@@ -67,6 +67,29 @@ type Options struct {
 
 	// FollowRedirects controls redirect handling. The zero value defaults
 	// to "initial", matching Git's default behavior.
+	//
+	// Setting this to FollowRedirects lets requests other than the /info/refs
+	// discovery GET follow a redirect, including POSTs that carry a body. A
+	// redirect across an origin strips credentials from such a request but
+	// not its body: net/http replays the body on a 307 or 308, and the
+	// transport keeps Content-Type and Content-Length, so the pack request
+	// arrives at the new origin complete. For upload-pack that discloses
+	// which objects the caller already has; for receive-pack it discloses the
+	// packfile being pushed. curl and canonical git behave the same way under
+	// http.followRedirects=true.
+	//
+	// The default policy has no such exposure: it refuses a redirect on every
+	// request except discovery, which has no body.
+	//
+	// To allow cross-origin redirects for the discovery GET while refusing
+	// them for a request carrying a body, set a CheckRedirect on Client that
+	// returns an error when req.Method is not GET: it runs after this
+	// transport's own and can refuse a hop the policy would otherwise permit.
+	//
+	// A POST redirected across an origin under this policy has its
+	// credentials stripped, but the crossing is not recorded on the session,
+	// so the resulting authentication failure carries no
+	// transport.CredentialsDroppedError.
 	FollowRedirects RedirectPolicy
 
 	// Authorizer mutates outgoing HTTP requests to add authentication.
