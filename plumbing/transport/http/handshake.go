@@ -26,7 +26,7 @@ type sessionBase struct {
 	client     *http.Client
 	baseURL    *url.URL
 	service    string
-	authorizer func(*http.Request) error
+	authorizer Authorizer
 }
 
 // Handshake implements transport.Transport. GETs /info/refs to discover
@@ -48,20 +48,25 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 
 	d := discovery{service: discoverService, protocol: discoverProtocol, forceDumb: forceDumb}
 
-	// Mark this as the initial request so checkRedirect allows the HTTP client
-	// to follow redirects for this discovery request. Subsequent requests
-	// (pack POSTs, object GETs) use a plain context and will not follow
-	// redirects.
+	// Only the discovery GET carries the initial-request marker, so only it may
+	// follow redirects under the default policy.
 	rec := &redirectRecord{}
 	httpReq, err := d.request(withRedirectRecord(withInitialRequest(ctx), rec), baseURL)
 	if err != nil {
 		return nil, err
 	}
-	// One authorizer for every credential this handshake holds: the repository
-	// URL's userinfo and the caller's callback. The session carries the same
-	// value, so there is one thing to withhold when a redirect leaves the origin
-	// rather than two that could disagree.
-	authorizer := combine(basicAuth(baseURL.User), t.opts.Authorizer)
+	// One authorizer for every credential this handshake holds — the repository
+	// URL's userinfo and whatever the caller supplies for the origin it named —
+	// so there is one thing to withhold rather than two that could disagree.
+	cred0, err := t.acquire(ctx, baseURL, baseURL, false)
+	if err != nil {
+		return nil, fmt.Errorf("http transport: %w", err)
+	}
+	var configured Authorizer
+	if cred0 != nil {
+		configured = cred0.credential.Authorizer
+	}
+	authorizer := combine(basicAuth(baseURL.User), configured)
 	if err := applyAuth(httpReq, authorizer); err != nil {
 		return nil, fmt.Errorf("http transport: authorize: %w", err)
 	}
@@ -90,28 +95,52 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		_ = resp.Body.Close()
 		return nil, err
 	}
-	sessURL := redirectedURL
+	// Copy before clearing rather than writing through redirectedURL:
+	// applyRedirect returns baseURL itself when the redirect changed nothing,
+	// and baseURL belongs to the caller. Clear unconditionally: a credential
+	// reaches the wire only through the authorizer below, which one rule
+	// governs, and leaving userinfo on this URL would give it a second route
+	// that rule does not see.
+	cleared := *redirectedURL
+	cleared.User = nil
+	sessURL := &cleared
 
-	// Clear credentials when any hop of the chain left the origin they were
-	// issued for. The session carries one authorizer, applied to every
-	// subsequent request, so without this the original origin's credentials
-	// would be sent to the new one.
+	// Re-derive the session's credential when a redirect left the origin the
+	// caller's was issued for. The session carries one authorizer, applied to
+	// every subsequent request, so a credential kept across such a move is a
+	// credential spent somewhere the caller was never asked about.
 	//
 	// This reads the record stripCredentials wrote, so the discovery GET and
 	// the session that follows it cannot disagree about what an origin is, or
 	// about whether the chain left one.
-	//
-	// In canonical git, credential_from_url() re-derives credentials from the
-	// new URL, effectively wiping the old ones.
 	if rec.crossed() {
-		// Copy before clearing rather than writing through redirectedURL:
-		// applyRedirect returns baseURL itself when the redirect changed
-		// nothing, and baseURL belongs to the caller.
-		cleared := *redirectedURL
-		cleared.User = nil
-		sessURL = &cleared
+		// The chain left the origin the caller's credential was issued for, so
+		// that credential is gone — from the wire and from here. The session
+		// now needs one belonging to where it actually ended up.
+		//
+		// In canonical git, credential_from_url() re-derives credentials from
+		// the new URL, effectively wiping the old ones.
 		authorizer = nil
+
+		cred, aerr := t.acquire(ctx, redirectedURL, baseURL, true)
+		if aerr != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("http transport: %w", aerr)
+		}
+
+		// Containment: carry it only while the session's base URL is still the
+		// origin it was minted for.
+		//
+		// Defense in depth: unreachable while the credential is acquired for
+		// the URL the session goes on to use, and the gate that would catch it
+		// if that ever changed.
+		if cred != nil && credentialsMayFollow(cred.origin, redirectedURL) {
+			authorizer = cred.credential.Authorizer
+		}
 	}
+	// No gate on the other path: without a crossing, every hop satisfied the
+	// same comparison, including the last, so the credential is already where
+	// it is allowed to be.
 
 	base := sessionBase{
 		client:     client,

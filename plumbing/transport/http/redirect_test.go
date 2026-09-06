@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -276,6 +277,222 @@ func fetchThrough(t *testing.T, front, path string, opts Options) error {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	return session.Fetch(context.Background(), memory.NewStorage(), req)
+}
+
+// The strip applies to every request a session makes, not just discovery.
+// Under FollowRedirects a 307 on the upload-pack POST preserves the method
+// and the body, so a credential-bearing request with a body reaches the new
+// origin intact.
+func TestRedirectPostCredentials(t *testing.T) {
+	t.Parallel()
+
+	t.Run("drops credentials across an origin", func(t *testing.T) {
+		t.Parallel()
+
+		hm := newVhostMap()
+		dest := newTLSVhost(t, hm, "evil.test", "443")
+		origin := newTLSVhost(t, hm, "example.test", "443")
+		origin.redirectPost = dest.base + "/repo.git/git-upload-pack"
+
+		sess, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+			o.FollowRedirects = FollowRedirects
+		})
+		require.NoError(t, err)
+
+		// Discovery stayed on the origin, so the session kept its credentials
+		// and the POST below is genuinely credential-bearing.
+		assertCredentialsPresent(t, origin.lastRequest(t))
+
+		// dest answers with the discovery advertisement, which is not a valid
+		// ls-refs response, so an error here is expected and irrelevant: the
+		// assertion is about what reached dest.
+		_, _ = sess.GetRemoteRefs(context.Background(), nil)
+
+		assertCredentialsPresent(t, origin.lastRequest(t)) // the POST as sent to the origin
+		assertCredentialsAbsent(t, dest.lastRequest(t))
+
+		// The 307 replayed the method and the body. Without this the test
+		// could pass trivially, on a redirected request carrying nothing.
+		wantLen := origin.lastContentLength(t)
+		assert.Positive(t, wantLen, "the POST to the origin had no body")
+		assert.Equal(t, wantLen, dest.lastContentLength(t), "the redirected POST body was not replayed intact")
+	})
+
+	t.Run("keeps credentials within the origin", func(t *testing.T) {
+		t.Parallel()
+
+		hm := newVhostMap()
+		origin := newTLSVhost(t, hm, "example.test", "443")
+		origin.redirectPost = origin.base + "/other.git/git-upload-pack"
+
+		sess, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+			o.FollowRedirects = FollowRedirects
+		})
+		require.NoError(t, err)
+
+		_, _ = sess.GetRemoteRefs(context.Background(), nil)
+		assertCredentialsPresent(t, origin.lastRequest(t))
+	})
+}
+
+// Once the chain has left the origin, credentials stay gone even if a later
+// hop returns to it. net/http restores non-sensitive headers on every hop,
+// so without the sticky check the custom credentials reappear on the final
+// hop.
+func TestRedirectCredentialsStickyMultiHop(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	origin := newTLSVhost(t, hm, "example.test", "443")
+	detour := newTLSVhost(t, hm, "evil.test", "443")
+
+	detour.redirectTo(origin.base + refsPath("other.git"))
+	origin.redirectTo(detour.base + refsPath("repo.git"))
+
+	_, err := handshakeWithCredentials(t, hm, origin.base)
+	require.NoError(t, err)
+	// origin served the final /other.git request.
+	assertCredentialsAbsent(t, origin.lastRequest(t))
+
+	t.Run("the session ends where the credential belongs", func(t *testing.T) {
+		t.Parallel()
+
+		// The chain visited evil.test but ended back at the origin, which
+		// already received the credential on the first request — the strip
+		// begins at the hop after it. So the session is authenticated for the
+		// origin the caller named.
+		sess, err := handshakeWithCredentials(t, hm, origin.base)
+		require.NoError(t, err)
+
+		sps, ok := sess.(*smartPackSession)
+		require.True(t, ok)
+		assert.Nil(t, sps.baseURL.User,
+			"a credential reaches the wire through the authorizer, not the URL")
+		require.NotNil(t, sps.authorizer,
+			"the origin asked about is the one the caller named")
+	})
+}
+
+// handshakeWithUserinfo performs a discovery handshake whose only credential is
+// userinfo in the repository URL, so what the session carries afterwards is
+// attributable to that source alone. The URL it handed the transport is
+// returned too, so a caller can assert the transport left it alone.
+func handshakeWithUserinfo(t *testing.T, hm *vhostMap, originBase string) (transport.Session, *url.URL, error) {
+	t.Helper()
+
+	u, err := url.Parse(originBase + "/repo.git")
+	require.NoError(t, err)
+	u.User = url.UserPassword("testuser", "testpass")
+
+	sess, err := NewTransport(Options{Client: hm.client()}).Handshake(
+		context.Background(),
+		&transport.Request{URL: u, Command: transport.UploadPackService},
+	)
+	if err == nil {
+		t.Cleanup(func() { _ = sess.Close() })
+	}
+	return sess, u, err
+}
+
+// A caller-supplied CheckRedirect must observe the sanitized request, and must
+// not be able to reinstate credentials by copying headers from via[0].
+func TestRedirectStripsAroundCallerHook(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	dest := newTLSVhost(t, hm, "evil.test", "443")
+	origin := newTLSVhost(t, hm, "example.test", "443")
+	origin.redirectTo(dest.base + refsPath("repo.git"))
+
+	var seen http.Header
+	client := hm.client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		seen = req.Header.Clone()
+		// The "preserve my headers across redirects" shape: via[0] is the
+		// original, unsanitized request.
+		maps.Copy(req.Header, via[0].Header)
+		return nil
+	}
+
+	_, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+		o.Client = client
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, seen, "caller CheckRedirect was never invoked")
+	assert.Empty(t, seen.Get("Authorization"), "the caller hook should observe a sanitized request")
+	assert.Empty(t, seen.Get("X-Private-Token"), "the caller hook should observe a sanitized request")
+	assertCredentialsAbsent(t, dest.lastRequest(t))
+}
+
+func TestSessionCredentialsAfterRedirect(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retained when the redirect stays within the origin", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		v := newTLSVhost(t, hm, "example.test", "443")
+		// Same origin, spelled with its default port.
+		v.redirectTo("https://example.test:443" + refsPath("other.git"))
+
+		sess, err := handshakeWithCredentials(t, hm, v.base)
+		require.NoError(t, err)
+
+		sps, ok := sess.(*smartPackSession)
+		require.True(t, ok)
+		require.NotNil(t, sps.authorizer, "the credential should survive a same-origin redirect")
+
+		req := httptest.NewRequest(http.MethodGet, sps.baseURL.String(), nil)
+		require.NoError(t, sps.authorizer(req))
+		assertCredentialsPresent(t, canonicalHeader(req.Header))
+	})
+
+	t.Run("cleared when the redirect leaves the origin", func(t *testing.T) {
+		t.Parallel()
+		hm := newVhostMap()
+		dest := newTLSVhost(t, hm, "sub.example.test", "443")
+		origin := newTLSVhost(t, hm, "example.test", "443")
+		origin.redirectTo(dest.base + refsPath("repo.git"))
+
+		sess, err := handshakeWithCredentials(t, hm, origin.base)
+		require.NoError(t, err)
+
+		sps, ok := sess.(*smartPackSession)
+		require.True(t, ok)
+		assert.Nil(t, sps.baseURL.User, "credentials must not follow the session across origins")
+		assert.Nil(t, sps.authorizer, "the authorizer must not follow the session across origins")
+	})
+
+	// applyRedirect returns baseURL itself when the redirect changed nothing,
+	// and baseURL is the caller's URL, so the session's URL is derived from a
+	// copy rather than written through. The un-redirected case below is where
+	// that aliasing occurs.
+	t.Run("does not mutate the caller's URL", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			name     string
+			redirect bool
+		}{
+			{"redirected across an origin", true},
+			{"not redirected at all", false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				hm := newVhostMap()
+				origin := newTLSVhost(t, hm, "example.test", "443")
+				if tc.redirect {
+					dest := newTLSVhost(t, hm, "evil.test", "443")
+					origin.redirectTo(dest.base + refsPath("repo.git"))
+				}
+
+				_, u, err := handshakeWithUserinfo(t, hm, origin.base)
+				require.NoError(t, err)
+
+				assert.NotNil(t, u.User, "the caller's URL must not have been modified")
+			})
+		}
+	})
 }
 
 // TestCallerCheckRedirectCanRefuseAHop covers the mitigation Options.

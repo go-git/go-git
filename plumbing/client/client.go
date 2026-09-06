@@ -73,11 +73,12 @@ func WithSSHAuth(a SSHAuth) Option {
 	}
 }
 
-// WithHTTPAuth sets HTTP authentication. The auth type's Authorizer method
-// is called for each outgoing HTTP request.
+// WithHTTPAuth sets HTTP authentication. The auth type's Authorizer method is
+// called for each outgoing HTTP request made to the origin in the repository
+// URL. It is not sent to another origin a redirect leads to.
 func WithHTTPAuth(a HTTPAuth) Option {
 	return func(o *options) {
-		o.http.Authorizer = a.Authorizer
+		o.http.Credentials = xhttp.ForRepositoryOrigin(a.Authorizer)
 	}
 }
 

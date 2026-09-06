@@ -320,7 +320,7 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 
 // basicAuth returns an authorizer setting HTTP Basic credentials from userinfo,
 // or nil when there is none to set.
-func basicAuth(user *url.Userinfo) func(*http.Request) error {
+func basicAuth(user *url.Userinfo) Authorizer {
 	if user == nil {
 		return nil
 	}
@@ -334,10 +334,9 @@ func basicAuth(user *url.Userinfo) func(*http.Request) error {
 
 // combine returns an authorizer applying each non-nil fn in order, or nil when
 // there is nothing to apply. Order matters and later wins: a credential in the
-// repository URL is applied before a caller's callback, which may then replace
-// or add to it, which is the order this transport has always used.
-func combine(fns ...func(*http.Request) error) func(*http.Request) error {
-	kept := make([]func(*http.Request) error, 0, len(fns))
+// repository URL is applied before a caller's callback, which may replace it.
+func combine(fns ...Authorizer) Authorizer {
+	kept := make([]Authorizer, 0, len(fns))
 	for _, fn := range fns {
 		if fn != nil {
 			kept = append(kept, fn)
@@ -365,7 +364,7 @@ func combine(fns ...func(*http.Request) error) func(*http.Request) error {
 // taken from the repository URL: userinfo is turned into an authorizer once,
 // where the request is first built, rather than re-read at each site that
 // builds one.
-func applyAuth(req *http.Request, authorizer func(*http.Request) error) error {
+func applyAuth(req *http.Request, authorizer Authorizer) error {
 	if authorizer == nil {
 		return nil
 	}

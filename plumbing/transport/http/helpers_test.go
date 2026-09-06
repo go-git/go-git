@@ -361,6 +361,53 @@ func (v *vhost) lastContentLength(t *testing.T) int64 {
 	return v.receivedLen[len(v.receivedLen)-1]
 }
 
+// handshakeWithCredentials performs a discovery handshake carrying three
+// credentials: URL userinfo (becomes Authorization), a custom header set with
+// Header.Set, and a custom header written as a raw, non-canonical map key.
+// The raw one guards against a strip implemented with http.Header.Del: Del
+// canonicalises the name it is given and would remove the canonical spelling,
+// but a lowercase key stored directly in the map bypasses that and would
+// survive such a strip undetected. The allowlist in filterHeaders instead
+// canonicalises for lookup, so it catches this spelling too.
+//
+// opts, if given, are applied to the base Options after the defaults above
+// are set, so a caller can override Client or add settings like ForceDumb
+// without duplicating the credential setup.
+func handshakeWithCredentials(t *testing.T, hm *vhostMap, originBase string, opts ...func(*Options)) (transport.Session, error) {
+	t.Helper()
+
+	options := Options{
+		Client: hm.client(),
+		Credentials: ForRepositoryOrigin(func(r *http.Request) error {
+			r.Header.Set("X-Private-Token", "custom-canary")
+			r.Header["x-raw-token"] = []string{"raw-canary"}
+			return nil
+		}),
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	sess, err := handshakeFor(t, originBase, clone{user: "testuser", pass: "testpass"}, options)
+	if err == nil {
+		t.Cleanup(func() { _ = sess.Close() })
+	}
+	return sess, err
+}
+
+// canonicalHeader returns h with every key spelled the way net/http writes it
+// on the wire. The credential helper above sets one canary as a raw,
+// non-canonical map key on purpose; net/http canonicalises it when the request
+// is sent, but a header inspected in memory still carries the raw spelling, so
+// an assertion made before the request goes out needs this first.
+func canonicalHeader(h http.Header) http.Header {
+	out := make(http.Header, len(h))
+	for k, v := range h {
+		out[http.CanonicalHeaderKey(k)] = v
+	}
+	return out
+}
+
 func assertCredentialsPresent(t *testing.T, h http.Header) {
 	t.Helper()
 	assert.NotEmpty(t, h.Get("Authorization"), "Authorization should have been preserved")

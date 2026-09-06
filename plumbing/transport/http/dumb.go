@@ -58,7 +58,7 @@ type fetchWalker struct {
 	ctx        context.Context
 	client     *http.Client
 	baseURL    *url.URL
-	authorizer func(*http.Request) error
+	authorizer Authorizer
 	st         storage.Storer
 	refs       *packp.AdvRefs
 	fs         billy.Filesystem
