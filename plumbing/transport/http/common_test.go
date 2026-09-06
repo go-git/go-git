@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -161,4 +162,28 @@ func TestCheckErrorDrainsPastTheMessageCap(t *testing.T) {
 	n, readErr := resp.Body.Read(make([]byte, 1))
 	assert.Zero(t, n, "checkError must leave the body fully consumed")
 	assert.ErrorIs(t, readErr, io.EOF)
+}
+
+func TestBasicAuthNilUserinfoYieldsNoAuthorizer(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, basicAuth(nil))
+}
+
+func TestCombineNilWhenNothingToApply(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, combine(nil, nil))
+}
+
+func TestCombineStopsOnError(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("boom")
+	var reached bool
+	fn := combine(
+		func(*http.Request) error { return sentinel },
+		func(*http.Request) error { reached = true; return nil },
+	)
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	assert.ErrorIs(t, fn(req), sentinel)
+	assert.False(t, reached, "an authorizer after a failing one must not run")
 }

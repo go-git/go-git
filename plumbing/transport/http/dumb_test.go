@@ -1,14 +1,18 @@
 package http
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -97,3 +101,56 @@ func (*dumbUploadPackSuite) TestUploadPackInvalidReq()                  {}
 func (*dumbUploadPackSuite) TestUploadPackMulti()                       {}
 func (*dumbUploadPackSuite) TestUploadPackNoChanges()                   {}
 func (*dumbUploadPackSuite) TestUploadPackPartial()                     {}
+
+// TestDumbObjectGetCarriesTheSessionCredential covers the dumb protocol's own
+// requests, which are the ones that actually fetch the repository: the loose
+// objects and packs the walker asks for, one request each.
+//
+// Folding the repository URL's userinfo into the session's authorizer is what
+// puts a credential on them. Nothing else does — there is no userinfo left on
+// the base URL for a request builder to pick up — so a session that reached
+// the walker without it would fetch every object anonymously, and against a
+// repository that happens to be readable that way it would even succeed.
+func TestDumbObjectGetCarriesTheSessionCredential(t *testing.T) {
+	t.Parallel()
+
+	var seen seenRequests
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		seen.add(r)
+		if strings.HasSuffix(r.URL.Path, infoRefsPath) {
+			// A dumb info/refs body: one ref, tab-separated, no pkt-lines.
+			_, _ = fmt.Fprintf(w, "%s\trefs/heads/master\n", testSHA)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	u, err := url.Parse(srv + "/repo.git")
+	require.NoError(t, err)
+	u.User = url.UserPassword("u", "p")
+
+	sess, err := NewTransport(Options{ForceDumb: true}).Handshake(
+		context.Background(),
+		&transport.Request{URL: u, Command: transport.UploadPackService},
+	)
+	require.NoError(t, err)
+	defer sess.Close()
+
+	dps, ok := sess.(*dumbPackSession)
+	require.True(t, ok)
+
+	w := newFetchWalker(context.Background(), dps, nil, nil)
+	resp, err := w.httpGet("objects/info/packs")
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	var objectGet *http.Request
+	for _, r := range seen.all() {
+		if strings.HasSuffix(r.URL.Path, "objects/info/packs") {
+			objectGet = r
+		}
+	}
+	require.NotNil(t, objectGet, "the object GET must have reached the server")
+	assert.Equal(t, "Basic dTpw", objectGet.Header.Get("Authorization"),
+		"an object GET must carry the credential the discovery request carried")
+}

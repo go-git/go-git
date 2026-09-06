@@ -89,7 +89,7 @@ func (r *fetchWalker) httpGet(urlPath string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := applyAuth(req, r.baseURL, r.authorizer); err != nil {
+	if err := applyAuth(req, r.authorizer); err != nil {
 		return nil, err
 	}
 	return doRequest(r.client, req)

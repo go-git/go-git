@@ -56,14 +56,13 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	if err != nil {
 		return nil, err
 	}
-	if baseURL.User != nil {
-		password, _ := baseURL.User.Password()
-		httpReq.SetBasicAuth(baseURL.User.Username(), password)
-	}
-	if t.opts.Authorizer != nil {
-		if err := t.opts.Authorizer(httpReq); err != nil {
-			return nil, fmt.Errorf("http transport: authorize: %w", err)
-		}
+	// One authorizer for every credential this handshake holds: the repository
+	// URL's userinfo and the caller's callback. The session carries the same
+	// value, so there is one thing to withhold when a redirect leaves the origin
+	// rather than two that could disagree.
+	authorizer := combine(basicAuth(baseURL.User), t.opts.Authorizer)
+	if err := applyAuth(httpReq, authorizer); err != nil {
+		return nil, fmt.Errorf("http transport: authorize: %w", err)
 	}
 
 	client := t.resolveClient()
@@ -91,12 +90,11 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		return nil, err
 	}
 	sessURL := redirectedURL
-	authorizer := t.opts.Authorizer
 
 	// Clear credentials when the redirect left the origin they were issued
-	// for. The session stores baseURL and re-applies its User field and the
-	// Authorizer callback on every subsequent POST, so without this the
-	// original origin's credentials would be sent to the new one.
+	// for. The session carries one authorizer, applied to every subsequent
+	// request, so without this the original origin's credentials would be sent
+	// to the new one.
 	//
 	// This uses the same predicate as stripCredentials, so the discovery GET
 	// and the session that follows it agree on what an origin is. In canonical
@@ -488,14 +486,8 @@ func (r *httpRequester) doPost() error {
 	if gp := transport.GitProtocolEnv(r.session.version); gp != "" {
 		httpReq.Header.Set("Git-Protocol", gp)
 	}
-	if r.session.baseURL.User != nil {
-		password, _ := r.session.baseURL.User.Password()
-		httpReq.SetBasicAuth(r.session.baseURL.User.Username(), password)
-	}
-	if r.session.authorizer != nil {
-		if err := r.session.authorizer(httpReq); err != nil {
-			return err
-		}
+	if err := applyAuth(httpReq, r.session.authorizer); err != nil {
+		return err
 	}
 	r.resp, err = doRequest(r.session.client, httpReq)
 	if err != nil {

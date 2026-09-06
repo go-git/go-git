@@ -318,14 +318,56 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 	return res, checkError(res)
 }
 
-// applyAuth sets basic auth from URL userinfo and/or the authorizer function.
-func applyAuth(httpReq *http.Request, baseURL *url.URL, authorizer func(*http.Request) error) error {
-	if baseURL.User != nil {
-		password, _ := baseURL.User.Password()
-		httpReq.SetBasicAuth(baseURL.User.Username(), password)
+// basicAuth returns an authorizer setting HTTP Basic credentials from userinfo,
+// or nil when there is none to set.
+func basicAuth(user *url.Userinfo) func(*http.Request) error {
+	if user == nil {
+		return nil
 	}
-	if authorizer != nil {
-		return authorizer(httpReq)
+	username := user.Username()
+	password, _ := user.Password()
+	return func(req *http.Request) error {
+		req.SetBasicAuth(username, password)
+		return nil
 	}
-	return nil
+}
+
+// combine returns an authorizer applying each non-nil fn in order, or nil when
+// there is nothing to apply. Order matters and later wins: a credential in the
+// repository URL is applied before a caller's callback, which may then replace
+// or add to it, which is the order this transport has always used.
+func combine(fns ...func(*http.Request) error) func(*http.Request) error {
+	kept := make([]func(*http.Request) error, 0, len(fns))
+	for _, fn := range fns {
+		if fn != nil {
+			kept = append(kept, fn)
+		}
+	}
+	switch len(kept) {
+	case 0:
+		return nil
+	case 1:
+		return kept[0]
+	}
+	return func(req *http.Request) error {
+		for _, fn := range kept {
+			if err := fn(req); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// applyAuth authenticates req. A nil authorizer leaves it unauthenticated.
+//
+// Every credential the transport sends arrives through here, including one
+// taken from the repository URL: userinfo is turned into an authorizer once,
+// where the request is first built, rather than re-read at each site that
+// builds one.
+func applyAuth(req *http.Request, authorizer func(*http.Request) error) error {
+	if authorizer == nil {
+		return nil
+	}
+	return authorizer(req)
 }

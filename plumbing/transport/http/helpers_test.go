@@ -141,6 +141,38 @@ func handshakeAt(t *testing.T, base string, opts Options) (transport.Session, er
 	return handshakeFor(t, base, clone{}, opts)
 }
 
+// newServer starts a server that answers every request with h. It is closed
+// with the test.
+func newServer(t *testing.T, h http.HandlerFunc) (base string) {
+	t.Helper()
+
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// newRecordingServer starts a server that records every request it receives
+// and answers it with h.
+func newRecordingServer(t *testing.T, seen *seenRequests, h http.HandlerFunc) (base string) {
+	t.Helper()
+
+	return newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		seen.add(r)
+		h(w, r)
+	})
+}
+
+// advertServer serves the advertisement for any discovery request and records
+// everything it receives.
+func advertServer(t *testing.T) (base string, seen *seenRequests) {
+	t.Helper()
+
+	seen = &seenRequests{}
+	return newRecordingServer(t, seen, func(w http.ResponseWriter, _ *http.Request) {
+		writeAdvert(w, transport.UploadPackService)
+	}), seen
+}
+
 // redirectPair starts a destination server running dest, and an origin server
 // that redirects everything it receives to that destination under status, with
 // the request URI preserved. It returns the two base URLs and what the
