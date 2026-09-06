@@ -209,59 +209,29 @@ type Options struct {
 	ForceDumb bool
 
 	// Credentials supplies a credential for the origin a request is about to be
-	// made to. It is the only place this transport is given one, the two it
-	// finds in the repository URL aside: userinfo, and the query, which
-	// several forges accept a token in (?private_token=, ?job_token=) and
-	// which this transport therefore withholds under the same origin rule.
-	// The query is not offered here to be re-supplied for a new origin the way
-	// userinfo is — it rides on the URL or not at all.
+	// made to. It is called for the repository's origin, and again for a
+	// redirect target once a redirect has left that origin. The zero value
+	// leaves the repository URL's userinfo and query as the only credentials.
 	//
-	// It also cannot authenticate a clone on its own. The discovery request is
-	// built from the repository URL's scheme, host and path, so the query
-	// reaches the requests the session makes afterwards — the pack POST, the
-	// dumb protocol's object GETs — but not the /info/refs GET that has to
-	// succeed before any of them. A private repository addressed that way is
-	// challenged on the first request and never gets as far as the one the
-	// token would have satisfied. Canonical git does not support such a URL
-	// either: it appends /info/refs to the URL string, query included, and
-	// sends a request with /info/refs inside the query value. Supply a
-	// credential here or as userinfo instead.
+	// See CredentialsFunc for the contract, ForRepositoryOrigin and ForOrigin
+	// for the common adapters, and Chain to combine sources. Userinfo is
+	// applied first and this credential second, so an Authorizer can replace
+	// the Authorization header userinfo set, or add another.
 	//
-	// See CredentialsFunc for the full contract, ForRepositoryOrigin for the
-	// common case of one credential for the repository's own origin, and
-	// ForOrigin for a credential belonging to an origin known up front.
+	// Only the headers this transport sets itself survive a cross-origin
+	// redirect, so an Authorizer's own headers — a trace or tenant header — are
+	// dropped. The filter matches header names, not values: a secret written
+	// into a header this transport does set, such as User-Agent, still crosses
+	// the boundary and appears in trace.HTTP output.
 	//
-	// The two applied sources are not alternatives. Both are applied to the same
-	// request, the repository URL's userinfo first and this one after it, so
-	// what this writes under a name the userinfo also uses replaces it —
-	// Authorization is the one they collide on — and anything it writes under
-	// another name is added alongside. That order holds at each of the three
-	// points the two are folded together: the first request, the session once
-	// a redirect has settled, and the re-authentication retry, so which half
-	// wins does not depend on the path a chain took.
+	// A redirecting remote chooses the origin and repository path this is asked
+	// about, so a source that prompts a human rather than reading a store is a
+	// phishing surface reachable from any clone URL.
 	//
-	// A credential is applied by mutating the outgoing request. Header names
-	// are not enumerable, so when a redirect leaves the origin a credential
-	// was issued for, this transport keeps only the headers it set itself and
-	// discards the rest: an Authorizer adding a trace or tenant header loses
-	// it on such a redirect. That filter matches header names, not values, so
-	// one writing a secret into a header this transport does set — a token in
-	// User-Agent, say — still crosses the boundary with the name, is sent to
-	// any proxy in path, and appears in trace.HTTP output. Do not put a
-	// credential there whether or not a redirect follows.
-	//
-	// Any HTTP remote can cause this to be called for an origin of its
-	// choosing, once per handshake, and can infer from the resulting traffic
-	// whether the caller holds a credential for it. Canonical git's credential
-	// helper has the same property. It may also be called a second time in one
-	// handshake, about the origin the caller named, when a chain left that
-	// origin and returned to it — the two calls ask different questions, so a
-	// hook that caches should key on the whole request rather than on
-	// TargetOrigin alone. Note also that an origin change is not necessarily a
-	// change of server: host comparison here is deliberately stricter than
-	// reachability, so example.com and example.com. are two origins on one
-	// machine. A CredentialsFunc that prompts a human rather than reading a
-	// store is therefore a phishing surface reachable from any clone URL.
+	// A token in the repository URL's query (?private_token=, ?job_token=) is
+	// withheld across an origin boundary like any other credential, but is
+	// never re-acquired and never rides the /info/refs GET. Supply it here or
+	// as userinfo instead.
 	Credentials CredentialsFunc
 }
 

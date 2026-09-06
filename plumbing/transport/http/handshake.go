@@ -67,7 +67,12 @@ type sessionBase struct {
 // refs and detects smart vs dumb HTTP.
 func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
 	service := req.Command
-	baseURL := req.URL
+	// The caller's URL with its path in the spelling the requests will carry;
+	// everything downstream compares against this base. See effectiveBase.
+	baseURL, err := effectiveBase(req.URL)
+	if err != nil {
+		return nil, err
+	}
 	forceDumb := t.opts.ForceDumb
 
 	// git archive over HTTP discovers protocol support through the upload-pack
@@ -128,59 +133,37 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		return nil, fmt.Errorf("http transport: %w", wrapDropped(rec, err))
 	}
 
-	// Update base URL from the final redirect target.
 	redirectedURL, err := applyRedirect(resp, baseURL)
 	if err != nil {
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("http transport: %w", wrapDropped(rec, err))
 	}
-	// Copy before clearing rather than writing through redirectedURL:
-	// applyRedirect returns baseURL itself when the redirect changed nothing,
-	// and baseURL belongs to the caller. Clear unconditionally: a credential
-	// reaches the wire only through the authorizer below, which one rule
-	// governs, and leaving userinfo on this URL would give it a second route
-	// that rule does not see.
+	// Copy before clearing: applyRedirect returns baseURL itself when the
+	// redirect changed nothing, and baseURL belongs to the caller. Cleared
+	// unconditionally, so a credential reaches the wire only through the
+	// authorizer below and not by a second route no rule governs.
 	cleared := *redirectedURL
 	cleared.User = nil
 	sessURL := &cleared
 
-	// Re-derive the session's credential when a redirect left the origin the
-	// caller's was issued for. The session carries one authorizer, applied to
-	// every subsequent request, so a credential kept across such a move is a
-	// credential spent somewhere the caller was never asked about.
-	//
-	// This reads the record stripCredentials wrote, so the discovery GET and
-	// the session that follows it cannot disagree about what an origin is, or
-	// about whether the chain left one.
-	if rec.crossed() {
-		// The chain left the origin the caller's credential was issued for, so
-		// that credential is gone — from the wire and from here. The session
-		// now needs one belonging to where it actually ended up.
-		//
-		// In canonical git, credential_from_url() re-derives credentials from
-		// the new URL, effectively wiping the old ones.
-		//
+	// Re-acquire after an origin or path move, so the session's one authorizer
+	// is not reused for a target the server rather than the caller chose. The
+	// record preserves a sticky crossing the endpoints alone would not show;
+	// paths are compared escaped, for the reason applyRedirect gives.
+	if rec.crossed() || redirectedURL.EscapedPath() != baseURL.EscapedPath() {
 		// Both halves of the hop-0 credential are re-derived below, each under
-		// the relation that decides whether it may travel to where the chain
-		// ended up. Anything it does not re-derive stays gone.
+		// the relation deciding whether it may travel to where the chain ended
+		// up; anything not re-derived stays gone, as in canonical git's
+		// credential_from_url().
 
-		// The credential the retry already spent, when there was one.
-		// reauthenticate derives it from both sources, under these same
-		// relations against this same target, so it is the whole credential for
-		// where the chain ended up and not one half of it: reuse it rather than
-		// re-composing it and asking the caller a question they have answered.
+		// The credential the retry already spent, when there was one:
+		// reauthenticate derives it from both sources under these same relations
+		// against this same target, so reuse it rather than asking the caller a
+		// question they have answered.
 		settled := reacq
 		if settled == nil {
-			// Nothing was spent, so derive both halves here.
-			//
-			// The repository URL's userinfo. The argument for re-offering the
-			// hook's answer applies to it verbatim: a chain returning to the
-			// origin the caller named ends where this credential was already
-			// sent on the first request, and the detour never saw it.
-			// Withholding one source while re-offering the other would make the
-			// same credential behave differently depending on how it was
-			// supplied, which is what folding the two into one authorizer
-			// exists to prevent.
+			// Nothing was spent, so derive both halves here, under the same
+			// relations reauthenticate uses.
 			var fromURL Authorizer
 			if credentialsMayFollow(baseURL, redirectedURL) {
 				fromURL = basicAuth(baseURL.User)
@@ -196,45 +179,29 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 				fromHook = cred.credential.Authorizer
 			}
 
-			// Composed in hop 0's order — userinfo first, the caller's source
-			// after it — so a chain that returns to the origin arrives with the
-			// same credential it left with. combine yields nil when neither
-			// applies.
+			// Hop 0's order, as in reauthenticate.
 			settled = &originCredential{
 				origin:     originOf(redirectedURL),
 				credential: &Credential{Authorizer: combine(fromURL, fromHook)},
 			}
 		}
 
-		// Containment: carry it only while the session's base URL is still the
-		// origin it was minted for. The retry does not follow redirects, so
-		// there is exactly one candidate. Those two decisions are a pair — a
-		// retry that could be redirected would give this credential the
-		// unbounded travel the original one is forbidden, with no gate
-		// anchored anywhere near it.
-		//
-		// Defense in depth: unreachable while the retry cannot be redirected,
-		// and the gate that would catch it if that ever changed.
+		// Defense in depth: retain the settled credential only at the origin it
+		// was acquired for. Unreachable while the retry cannot be redirected,
+		// which is the other half of the pair — see errRetryRedirected.
 		authorizer = nil
 		if credentialsMayFollow(settled.origin, redirectedURL) {
 			authorizer = settled.credential.Authorizer
 		}
 	}
-	// No gate on the other path: without a crossing, every hop satisfied the
-	// same comparison, including the last, so the credential is already where
-	// it is allowed to be.
+	// No gate on the other path: nothing moved, so every hop satisfied the same
+	// comparison and the credential is already where it is allowed to be.
 
-	// The record is what annotates the session's later authentication failures
-	// with the crossing. It is only an explanation while the session has no
-	// credential: one that holds a credential minted for its own origin had
-	// nothing withheld on the way there, so naming the crossing would blame a
-	// credential that was never the problem and tell the caller to supply what
-	// they already supplied. A crossing that left the session unauthenticated
-	// keeps the record — there the annotation is exactly the explanation.
-	//
-	// This is the session-side counterpart of the reacq check on the discovery
-	// failure above, phrased on the credential the session actually carries
-	// rather than on where it came from.
+	// The record annotates the session's later authentication failures with the
+	// crossing, and is only an explanation while the session has no credential:
+	// one minted for its own origin had nothing withheld on the way there, so
+	// naming the crossing would tell the caller to supply what they already
+	// supplied.
 	dropped := rec
 	if authorizer != nil {
 		dropped = nil

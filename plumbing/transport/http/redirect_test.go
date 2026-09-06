@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -658,6 +659,74 @@ func TestUpgradeAtAnIntermediateHopIsNotACrossing(t *testing.T) {
 	assertCredentialsPresent(t, secure.lastRequest(t))
 }
 
+// The one shape where the recorded crossing and a comparison of the two
+// endpoints disagree: a chain that leaves the repository's origin, comes back
+// to the same path, and is then served. Ending at 200 is what separates this
+// from the other return-to-origin tests, where reauthenticate consults the
+// source itself and the outcome is the same either way.
+func TestChainLeavingTheOriginAndReturningReconsultsTheSource(t *testing.T) {
+	t.Parallel()
+
+	var (
+		originURL, detourURL string
+		hits                 int
+		mu                   sync.Mutex
+	)
+
+	origin := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		first := hits == 1
+		mu.Unlock()
+		if first {
+			http.Redirect(w, r, detourURL+r.URL.RequestURI(), http.StatusFound)
+			return
+		}
+		writeAdvert(w, transport.UploadPackService)
+	})
+
+	detour := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, originURL+r.URL.RequestURI(), http.StatusFound)
+	})
+
+	// Set before any handler can run: the handshake below is what drives them.
+	originURL, detourURL = origin, detour
+
+	var (
+		flagsMu sync.Mutex
+		flags   []bool
+	)
+	source := func(_ context.Context, req *CredentialRequest) (*Credential, error) {
+		flagsMu.Lock()
+		flags = append(flags, req.Redirected)
+		flagsMu.Unlock()
+
+		// The strict idiom: a repository reached by following a redirect is
+		// not the one this credential was configured for.
+		if req.Redirected {
+			return nil, nil
+		}
+		return &Credential{Authorizer: func(r *http.Request) error {
+			r.Header.Set("Authorization", "Bearer origin-token")
+			return nil
+		}}, nil
+	}
+
+	sess, err := handshakeAt(t, origin, Options{Credentials: source})
+	require.NoError(t, err)
+	defer sess.Close()
+
+	flagsMu.Lock()
+	defer flagsMu.Unlock()
+	assert.Equal(t, []bool{false, true}, flags,
+		"asked once for the origin the caller named, once for the chain that came back to it")
+
+	sps, ok := sess.(*smartPackSession)
+	require.True(t, ok)
+	assert.Nil(t, sps.authorizer,
+		"the source declined for the redirected chain, so the session must carry nothing")
+}
+
 // The discovery GET is built from the base URL's scheme, host and path alone,
 // so the repository URL's query never reaches a redirect target on it. Every
 // later request the session makes is built from the base URL as a whole, and a
@@ -728,6 +797,109 @@ func TestRedirectDoesNotCarryQueryToAnotherOriginOnDumbGet(t *testing.T) {
 			"request %d (%s %s) carried the repository URL's query to another origin",
 			i, got.Method, got.URL.RequestURI())
 	}
+}
+
+// The retry answers a challenge, so it has to be made against the resource that
+// challenged. Re-issuing at another spelling of the path asks a question the
+// 401 was never about, and spends the re-acquired credential there.
+func TestReauthRetryReissuesAtTheResourceThatChallenged(t *testing.T) {
+	t.Parallel()
+
+	destSeen := &seenRequests{}
+	dest := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		destSeen.add(r)
+		if r.Header.Get("Authorization") == "" {
+			challenge(w)
+			return
+		}
+		writeAdvert(w, transport.UploadPackService)
+	})
+
+	origin := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, dest+"/a%2Fb.git"+infoRefsPath, http.StatusFound)
+	})
+
+	sess, err := handshakeAt(t, origin, Options{Credentials: func(_ context.Context, _ *CredentialRequest) (*Credential, error) {
+		return &Credential{Authorizer: func(r *http.Request) error {
+			r.Header.Set("Authorization", "Bearer minted")
+			return nil
+		}}, nil
+	}})
+	require.NoError(t, err)
+	defer sess.Close()
+
+	var retried []string
+	for _, got := range destSeen.all() {
+		if got.Header.Get("Authorization") != "" {
+			retried = append(retried, got.URL.EscapedPath())
+		}
+	}
+	require.Len(t, retried, 1, "the retry is one request")
+	assert.Equal(t, "/a%2Fb.git"+infoRefsPath, retried[0],
+		"the retry must be made against the resource that challenged")
+}
+
+// A chain that leaves the origin and returns can come back on a path the
+// detour chose. The origin is the caller's own, so the origin checks pass and
+// the credential is re-offered; TargetPath is the only thing that says the
+// repository is not the one the caller named.
+func TestCredentialRequestTargetPathAfterReturnToOrigin(t *testing.T) {
+	t.Parallel()
+
+	base, seen := returnToOrigin(t, func(r *http.Request) bool {
+		return r.Header.Get("Authorization") != ""
+	})
+
+	creds := &pathRecorder{refuse: true, granted: "repo-secret"}
+	_, err := handshakeAt(t, base, Options{Credentials: creds.fn})
+	require.Error(t, err,
+		"the detour chose /other.git, the source declined it, and the origin challenges")
+	require.ErrorIs(t, err, transport.ErrAuthenticationRequired)
+
+	assert.Equal(t, []string{"/repo.git", "/other.git"}, creds.paths())
+	var sawOther bool
+	for i, got := range seen.all() {
+		if got.URL.Path == "/repo.git/info/refs" {
+			continue // the path the caller named; the credential belongs here
+		}
+		sawOther = true
+		assert.NotContains(t, got.Header.Get("Authorization"), "repo-secret",
+			"request %d (%s) carried the credential to a path the detour chose",
+			i, got.URL.Path)
+	}
+	assert.True(t, sawOther, "the chain must have come back on the detour's path")
+}
+
+// What the path comparison protects, and what it cannot. On a same-origin move
+// nothing is stripped — the origin did not change — so net/http rebuilds the
+// redirected request from the original's headers and the hop-0 credential
+// arrives at the path the redirect chose before any CredentialsFunc has been
+// asked about it. Declining there recovers the session, not that first request:
+// the credential has already been spent once on a repository the caller did not
+// name. TestRedirectMovingThePath covers the recovery; this covers what no
+// refusal can undo.
+func TestSameOriginPathMoveSpendsTheCredentialBeforeTheSourceIsAsked(t *testing.T) {
+	t.Parallel()
+
+	base, seen := movedRepoServer(t, "/repo.git", "/moved.git")
+	creds := &pathRecorder{refuse: true, granted: "repo-secret"}
+
+	sess, err := handshakeAt(t, base, Options{Credentials: creds.fn})
+	require.NoError(t, err)
+	defer sess.Close()
+
+	var moved *http.Request
+	for _, got := range seen.all() {
+		if got.Method == http.MethodGet && got.URL.Path == "/moved.git"+infoRefsPath {
+			moved = got
+		}
+	}
+	require.NotNil(t, moved, "the redirect target was never reached")
+	assert.Equal(t, "Bearer repo-secret", moved.Header.Get("Authorization"),
+		"the hop-0 credential is on the wire at the moved path before anything can decline it")
+
+	require.Equal(t, []string{"/repo.git", "/moved.git"}, creds.paths(),
+		"the source is asked about the moved path only after that request has been made")
 }
 
 // A redirect between two spellings of one host that net/http calls different
@@ -874,6 +1046,98 @@ func TestRedirectCredentialTravel(t *testing.T) {
 				return
 			}
 			assertCredentialsAbsent(t, dest.lastRequest(t))
+		})
+	}
+}
+
+// A redirect chooses the path the session goes on to use, and it can move the
+// path without leaving the origin, so every origin check passes. The credential
+// would then be spent fetching from — or pushing to — a repository the redirect
+// picked. TargetPath is what lets a caller see that and decline.
+//
+// The refusal is the caller's to make and not the transport's: a source that
+// does not compare paths keeps working across a repository that moved, which
+// is what such a redirect is for and what canonical git does.
+//
+// A redirect also names a resource rather than a decoded approximation of one —
+// "/a%2Fb.git" and "/a/b.git" are two repositories on a forge with nested
+// groups — so the spelling the target chose is the spelling the session must go
+// on to address, and the move must be visible to the caller even when both
+// spellings decode alike. Both directions appear below, since a server may
+// escape a path the caller wrote plainly or unescape one they did not.
+func TestRedirectMovingThePath(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		from, to string
+		refuse   bool
+		// noSource installs no CredentialsFunc at all, so nothing is asked
+		// about the moved path and nothing can be re-derived for it.
+		noSource bool
+		wantAuth string
+	}{
+		{
+			name:   "a source that compares paths declines the one the redirect chose",
+			from:   "/repo.git",
+			to:     "/moved.git",
+			refuse: true,
+		},
+		{
+			name:     "a source that does not keeps working across the move",
+			from:     "/repo.git",
+			to:       "/moved.git",
+			wantAuth: "Bearer repo-secret",
+		},
+		{
+			// Both spellings decode alike, so every decoded comparison
+			// reports that nothing moved.
+			name:   "a move that escapes a path the caller wrote plainly",
+			from:   "/a/b.git",
+			to:     "/a%2Fb.git",
+			refuse: true,
+		},
+		{
+			name:   "a move that unescapes one they did not",
+			from:   "/a%2Fb.git",
+			to:     "/a/b.git",
+			refuse: true,
+		},
+		{
+			// The spelling has to reach the pack request on its own, rather
+			// than as a side effect of the session re-deriving a credential
+			// for the path the redirect named.
+			name:     "a move with no credential source installed",
+			from:     "/a/b.git",
+			to:       "/a%2Fb.git",
+			noSource: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			base, seen := movedRepoServer(t, tc.from, tc.to)
+
+			opts := Options{}
+			var creds *pathRecorder
+			if !tc.noSource {
+				creds = &pathRecorder{refuse: tc.refuse, granted: "repo-secret"}
+				opts.Credentials = creds.fn
+			}
+
+			sess, err := handshakeFor(t, base, clone{path: tc.from}, opts)
+			require.NoError(t, err, "the discovery request succeeds either way")
+			defer sess.Close()
+
+			if creds != nil {
+				assert.Equal(t, []string{tc.from, tc.to}, creds.paths(),
+					"the caller must be asked again about the path the redirect chose")
+			}
+
+			post := packRequest(t, sess, seen)
+			assert.Equal(t, tc.to+"/git-upload-pack", post.URL.EscapedPath(),
+				"the session addresses the repository the redirect named")
+			assert.Equal(t, tc.wantAuth, post.Header.Get("Authorization"))
 		})
 	}
 }

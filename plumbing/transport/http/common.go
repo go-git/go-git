@@ -77,42 +77,100 @@ func checkError(r *http.Response) error {
 
 const infoRefsPath = "/info/refs"
 
-// applyRedirect derives a new base URL from the final request URL after
-// the HTTP client followed any redirects during the /info/refs GET.
+// effectiveBase returns base with the path in the spelling the requests built
+// from it actually carry.
 //
-// The logic mirrors canonical git's update_url_from_redirect(): strip
-// the request-specific tail ("/info/refs") from the final URL to recover
-// the new base. If the tail is missing, the redirect target is
-// inconsistent and we return an error — canonical git die()s here
-// because a mismatch could let a malicious server rewrite the base URL
-// to an unrelated repository.
+// discovery.request assembles its URL with JoinPath, which cleans the path, and
+// applyRedirect recovers the base from the request URL that came back, so a
+// caller path of "/repo.git/" is requested as "/repo.git/info/refs" and
+// recovered as "/repo.git". Comparing that against the caller's own spelling
+// would read an ordinary clone as a repository the server moved:
+// Options.Credentials is consulted a second time with Redirected set, and both
+// documented ways of scoping a credential to a path decline that call, leaving
+// the session anonymous. Deriving the base through the same round trip keeps
+// every later comparison between like and like.
 //
-// Scheme is validated to prevent SSRF via unsupported protocols (e.g.
-// a redirect to file:// or gopher://). Cross-scheme redirects only
-// permit an upgrade from http to https; downgrades must not influence
-// the session base URL used for subsequent requests.
+// Cleaning changes only the spelling, never which resource is named: it
+// collapses "//", "/./" and a trailing "/" and leaves %2F alone.
+func effectiveBase(base *url.URL) (*url.URL, error) {
+	// Built exactly as discovery.request builds it, or the two could disagree
+	// about the spelling this exists to agree on.
+	origin := &url.URL{Scheme: base.Scheme, Host: base.Host, Path: base.Path, RawPath: base.RawPath}
+	joined := origin.JoinPath("info/refs").EscapedPath()
+	// JoinPath leaves a relative path relative, so a repository at the root of
+	// an origin joins to "info/refs", not "/info/refs". URL.String inserts the
+	// separator when there is a host, so discovery.request never sends it that
+	// way; insert it on the same condition to match the path the request carries.
+	if origin.Host != "" && !strings.HasPrefix(joined, "/") {
+		joined = "/" + joined
+	}
+	if !strings.HasSuffix(joined, infoRefsPath) {
+		return nil, fmt.Errorf(
+			"http transport: repository path %q leaves no base to request",
+			base.EscapedPath(),
+		)
+	}
+
+	out := *base
+	// Defensive, and uncoverable: no input reaches this error. EscapedPath
+	// always returns a valid encoding, and cutting the literal /info/refs tail
+	// cannot split a %XX sequence because the byte at the cut is "/". Kept so a
+	// future caller passing a hand-built path cannot slip a broken encoding
+	// through, and recorded so the missing test is a decision, not an oversight.
+	if err := setEscapedPath(&out, joined[:len(joined)-len(infoRefsPath)]); err != nil {
+		return nil, fmt.Errorf(
+			"http transport: repository path %q is unusable: %w",
+			base.EscapedPath(), err,
+		)
+	}
+	return &out, nil
+}
+
+// applyRedirect derives a new base URL from the final request URL after the
+// HTTP client followed any redirects during the /info/refs GET.
+//
+// It mirrors canonical git's update_url_from_redirect(): strip the
+// request-specific "/info/refs" tail to recover the new base. A missing tail
+// is an error — git die()s here, because a mismatch could let a server rewrite
+// the base to an unrelated repository. The scheme is checked for the same
+// reason, keeping a redirect to file:// or gopher:// out of the session;
+// cross-scheme redirects permit only the upgrade schemeUpgrade describes.
+//
+// The path is carried in the spelling the target is written in, never in the
+// one it decodes to: on a forge with nested groups "/a%2Fb.git" and "/a/b.git"
+// are two repositories, so decoding the escaping away — or letting the base's
+// own outlive the path it described — would address a repository neither the
+// caller nor the redirect named.
 func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	if resp.Request == nil {
 		return baseURL, nil
 	}
 
 	final := resp.Request.URL
-	if !strings.HasSuffix(final.Path, infoRefsPath) {
-		// Azure DevOps redirects unauthenticated requests for private repos
-		// to /_signin. Treat that as an authentication-required condition
-		// rather than a transport failure so callers can detect it via
-		// errors.Is(err, transport.ErrAuthenticationRequired). See issue #2200.
-		if strings.HasSuffix(final.Path, "/_signin") {
-			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, final.Path)
+	// Matched against the escaped path: a target ending in "/info%2Frefs" has
+	// one last segment spelled "info/refs", which is not the discovery request
+	// coming back.
+	finalPath := final.EscapedPath()
+	if !strings.HasSuffix(finalPath, infoRefsPath) {
+		// Azure DevOps answers an unauthenticated request for a private
+		// repository with a redirect to /_signin rather than a 401. Report it as
+		// an authentication challenge, so a caller sees one instead of a
+		// redirect target that leaves no base to recover.
+		if strings.HasSuffix(finalPath, "/_signin") {
+			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, finalPath)
 		}
 		return nil, fmt.Errorf(
 			"http transport: redirect target %q does not end with %s",
-			final.Path, infoRefsPath,
+			finalPath, infoRefsPath,
 		)
 	}
+	// Cut from the escaped spelling: an index taken there does not fall in the
+	// same place in the decoded one.
+	targetPath := finalPath[:len(finalPath)-len(infoRefsPath)]
+
 	if final.Host == baseURL.Host &&
 		final.Scheme == baseURL.Scheme &&
-		strings.TrimSuffix(final.Path, infoRefsPath) == baseURL.Path {
+		targetPath == baseURL.EscapedPath() {
 		return baseURL, nil
 	}
 
@@ -129,27 +187,24 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	redirected := *baseURL
 	redirected.Host = final.Host
 	redirected.Scheme = final.Scheme
-	redirected.Path = final.Path[:len(final.Path)-len(infoRefsPath)]
+	// Uncoverable for the same reason as the call in effectiveBase: targetPath
+	// is cut from an EscapedPath on a "/". A server chooses this path, so the
+	// guard stays even though nothing it can send reaches the error.
+	if err := setEscapedPath(&redirected, targetPath); err != nil {
+		return nil, fmt.Errorf(
+			"http transport: redirect target %q has an unusable path: %w",
+			finalPath, err,
+		)
+	}
 
 	// The query is the caller's, not the server's: it comes from the repository
-	// URL and rides on every later request the session builds from this base —
-	// the pack POST and the dumb protocol's object GETs. Several forges accept a
-	// credential there (?private_token=, ?job_token=), so it is subject to the
-	// rule credentials are subject to, and drops exactly where a credential
-	// would. Canonical git drops it here too, for a different reason: its
-	// update_url_from_redirect() rebuilds the base from the redirect target
-	// alone, so nothing of the old URL survives.
-	//
-	// Gating on credentialsMayFollow rather than on "the origin changed at
-	// all" is what keeps this rule and the credential rule from drifting
-	// apart, which is the whole reason to reuse the predicate. The
-	// http-to-https upgrade on one host therefore keeps the query, as it keeps
-	// userinfo — though not for the same reason: userinfo already went out in
-	// cleartext on the discovery GET, whereas the query never rides that
-	// request at all and first leaves on the pack POST, by then over TLS.
-	//
-	// The redirect target's own query is never picked up here — only dropped —
-	// so nothing a server chose can reach a later request either.
+	// URL and rides on every later request built from this base. Several forges
+	// accept a credential there (?private_token=, ?job_token=), so it drops
+	// exactly where a credential drops — gated on credentialsMayFollow rather
+	// than on "the origin changed at all", so the two rules cannot drift apart.
+	// The http-to-https upgrade therefore keeps the query: it never rides the
+	// discovery GET and first leaves on the pack POST, by then over TLS. The
+	// target's own query is never picked up here, only dropped.
 	if !credentialsMayFollow(baseURL, &redirected) {
 		redirected.RawQuery = ""
 		redirected.ForceQuery = false
@@ -157,21 +212,42 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	return &redirected, nil
 }
 
-// schemeUpgrade reports whether the scheme transition from one URL to
-// another is the one cross-scheme change go-git permits: a plain-http
-// origin upgrading to https. It strictly improves confidentiality and is
-// how servers steer clients off cleartext.
+// setEscapedPath sets Path and RawPath so EscapedPath returns escaped exactly.
+// It leaves RawPath empty when the decoded path has the same spelling, which is
+// what url.Parse stores and keeps a URL built here comparable with one parsed
+// from the same string, and rejects invalid encodings rather than silently
+// re-escaping them.
+func setEscapedPath(u *url.URL, escaped string) error {
+	decoded, err := url.PathUnescape(escaped)
+	if err != nil {
+		return err
+	}
+	u.Path = decoded
+	u.RawPath = ""
+	if u.EscapedPath() != escaped {
+		u.RawPath = escaped
+	}
+	return nil
+}
+
+// schemeUpgrade reports whether the scheme transition from one URL to another
+// is the one cross-scheme change go-git permits: a plain-http origin upgrading
+// to https.
 //
 // Permitting it at all is a deliberate deviation: curl, git and the Fetch
 // standard all count scheme as part of host identity and drop credentials on
 // the upgrade. Auth is sent pre-emptively here, so an http origin has already
-// spent its credential in cleartext on the first request and refusing the
-// upgrade would break the clone without unspending it. The host is unchanged,
-// where an on-path attacker needs a valid certificate to receive anything.
+// spent its credential in cleartext on the first request; refusing the upgrade
+// would break the clone without unspending it. The host is unchanged, where an
+// on-path attacker needs a valid certificate to receive anything.
 //
-// applyRedirect ("may this become the new base URL?") and
-// credentialsMayFollow ("may credentials travel here?") are both built on it,
-// so the two cannot drift apart.
+// applyRedirect and credentialsMayFollow are both built on this, so the
+// permitted direction is decided in one place, and each adds its own
+// condition: applyRedirect asks only about the scheme, while
+// credentialsMayFollow also requires the default ports, because a port is part
+// of an origin. An upgrade from http on 8080 to https on 8443 therefore moves
+// the session and leaves the credential behind — the safe direction for a base
+// URL is wider than the safe direction for a secret.
 func schemeUpgrade(from, to string) bool {
 	return strings.EqualFold(from, "http") && strings.EqualFold(to, "https")
 }

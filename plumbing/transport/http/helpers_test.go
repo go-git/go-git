@@ -208,6 +208,32 @@ func redirectPair(t *testing.T, status int, dest http.HandlerFunc) (originURL, d
 	return originSrv.URL, destSrv.URL, destSeen
 }
 
+// movedRepoServer answers the discovery request for from with a redirect to to
+// on the same origin, and serves to normally. Everything it receives is
+// recorded.
+//
+// Both paths are taken in the spelling they are written in: the handler
+// matches and rewrites RequestURI, which is what the client actually sent, so
+// an escape such as %2F is never decoded on its way through the fixture.
+func movedRepoServer(t *testing.T, from, to string) (base string, seen *seenRequests) {
+	t.Helper()
+
+	seen = &seenRequests{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.add(r)
+		switch {
+		case strings.HasPrefix(r.RequestURI, from+"/"):
+			http.Redirect(w, r, to+strings.TrimPrefix(r.RequestURI, from), http.StatusFound)
+		case strings.HasSuffix(r.URL.Path, infoRefsPath):
+			writeAdvert(w, transport.UploadPackService)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, seen
+}
+
 // returnToOrigin starts an origin that sends the discovery request out through
 // a second origin and straight back to itself. The chain therefore leaves the
 // origin and returns to it, and stripCredentials is sticky, so the request
@@ -548,6 +574,63 @@ func (h *hookRecorder) redirectedFlags() []bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]bool(nil), h.redirected...)
+}
+
+// pathAsk is what one Options.Credentials call was told about the path.
+type pathAsk struct {
+	target     string
+	repository string
+	redirected bool
+}
+
+// pathRecorder is a credential source that records what it was asked about the
+// path, and can decline any path the caller did not name.
+type pathRecorder struct {
+	mu     sync.Mutex
+	asks   []pathAsk
+	refuse bool
+	// granted is the bearer token it answers with. Empty means it declines
+	// every call and only records.
+	granted string
+}
+
+func (p *pathRecorder) fn(_ context.Context, req *CredentialRequest) (*Credential, error) {
+	p.mu.Lock()
+	p.asks = append(p.asks, pathAsk{
+		target:     req.TargetPath,
+		repository: req.RepositoryURL.EscapedPath(),
+		redirected: req.Redirected,
+	})
+	refuse, token := p.refuse, p.granted
+	p.mu.Unlock()
+
+	if token == "" {
+		return nil, nil
+	}
+	if refuse && req.TargetPath != req.RepositoryURL.EscapedPath() {
+		return nil, nil
+	}
+	return &Credential{Authorizer: func(r *http.Request) error {
+		r.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}}, nil
+}
+
+// paths returns the repository path each call was asked about, in order.
+func (p *pathRecorder) paths() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.asks))
+	for _, a := range p.asks {
+		out = append(out, a.target)
+	}
+	return out
+}
+
+func (p *pathRecorder) all() []pathAsk {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]pathAsk(nil), p.asks...)
 }
 
 // packRequest drives the session far enough to make the pack POST, and returns

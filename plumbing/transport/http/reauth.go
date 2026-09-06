@@ -102,6 +102,7 @@ func (t *Transport) acquire(ctx context.Context, target, repository *url.URL, re
 	origin := originOf(target)
 	cred, err := t.opts.Credentials(ctx, &CredentialRequest{
 		TargetOrigin:  origin,
+		TargetPath:    target.EscapedPath(),
 		RepositoryURL: withoutUserinfo(repository),
 		Redirected:    redirected,
 	})

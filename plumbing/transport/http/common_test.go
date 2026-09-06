@@ -92,6 +92,185 @@ func TestErr_ErrorRedactsCredentials(t *testing.T) {
 	assert.Contains(t, msg, "example.com/repo.git")
 }
 
+func TestApplyRedirect(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		baseURL          string
+		finalURL         string
+		wantURL          string
+		wantErr          string
+		wantAuthRequired bool
+		noRequest        bool
+	}{
+		{
+			name:      "no redirect",
+			baseURL:   "https://example.com/repo.git",
+			wantURL:   "https://example.com/repo.git",
+			noRequest: true,
+		},
+		{
+			name:     "redirect updates host",
+			baseURL:  "https://old.example.com/repo.git",
+			finalURL: "https://new.example.com/repo.git/info/refs",
+			wantURL:  "https://new.example.com/repo.git",
+		},
+		{
+			name:     "same host and path is no-op",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/repo.git/info/refs",
+			wantURL:  "https://example.com/repo.git",
+		},
+		{
+			name:     "unsupported scheme",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "ftp://evil.com/repo.git/info/refs",
+			wantErr:  "unsupported scheme",
+		},
+		{
+			name:     "tail mismatch",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://evil.com/malicious-path",
+			wantErr:  "does not end with",
+		},
+		{
+			name:     "redirect updates scheme for http to https",
+			baseURL:  "http://example.com/repo.git",
+			finalURL: "https://example.com/repo.git/info/refs",
+			wantURL:  "https://example.com/repo.git",
+		},
+		{
+			name:     "redirect rejects scheme downgrade",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "http://example.com/repo.git/info/refs",
+			wantErr:  "changes scheme",
+		},
+		{
+			name:     "redirect updates path",
+			baseURL:  "https://example.com/old-repo.git",
+			finalURL: "https://example.com/new-repo.git/info/refs",
+			wantURL:  "https://example.com/new-repo.git",
+		},
+		{
+			// The escape is part of the path the redirect named: on a forge
+			// with nested groups "/a%2Fb.git" and "/a/b.git" are two
+			// repositories, so the base must carry the spelling that was
+			// answered with and not the one it decodes to.
+			name:     "redirect to an escaped path keeps the escaping",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/a%2Fb.git/info/refs",
+			wantURL:  "https://example.com/a%2Fb.git",
+		},
+		{
+			// Two spellings that decode alike are still two paths, so this is
+			// a move and not the no-op a decoded comparison sees.
+			name:     "redirect respelling the path is not a no-op",
+			baseURL:  "https://example.com/a%2Fb.git",
+			finalURL: "https://example.com/a/b.git/info/refs",
+			wantURL:  "https://example.com/a/b.git",
+		},
+		{
+			name:     "redirect respelling the path the other way is not a no-op",
+			baseURL:  "https://example.com/a/b.git",
+			finalURL: "https://example.com/a%2Fb.git/info/refs",
+			wantURL:  "https://example.com/a%2Fb.git",
+		},
+		{
+			// The base's own escaping describes the base's own path. Carried
+			// onto a path the redirect chose it would decide how that one is
+			// spelled, which is the original defect in the opposite direction.
+			name:     "the base's escaping is not carried onto another path",
+			baseURL:  "https://example.com/a%2Fb.git",
+			finalURL: "https://other.example.com/a/b.git/info/refs",
+			wantURL:  "https://other.example.com/a/b.git",
+		},
+		{
+			// The tail is two segments this transport appended itself. A
+			// target spelling it as one escaped segment names some other
+			// resource, and no base can be recovered from it.
+			name:     "escaped tail is not the tail",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/repo.git/info%2Frefs",
+			wantErr:  "does not end with",
+		},
+		{
+			// The query belongs to the origin the caller named. It rides on
+			// every request the session builds from this base, and a forge
+			// credential can live in it, so it must not reach another origin.
+			name:     "query does not cross an origin change",
+			baseURL:  "https://example.com/repo.git?private_token=secret",
+			finalURL: "https://other.example.com/repo.git/info/refs",
+			wantURL:  "https://other.example.com/repo.git",
+		},
+		{
+			name:     "query does not cross a port change",
+			baseURL:  "https://example.com/repo.git?private_token=secret",
+			finalURL: "https://example.com:8443/repo.git/info/refs",
+			wantURL:  "https://example.com:8443/repo.git",
+		},
+		{
+			// The one exception credentials get, for the same reason: the
+			// first request already spent it in cleartext on this host.
+			name:     "query survives the http to https upgrade",
+			baseURL:  "http://example.com/repo.git?private_token=secret",
+			finalURL: "https://example.com/repo.git/info/refs",
+			wantURL:  "https://example.com/repo.git?private_token=secret",
+		},
+		{
+			name:     "query survives a path change within the origin",
+			baseURL:  "https://example.com/old-repo.git?private_token=secret",
+			finalURL: "https://example.com/new-repo.git/info/refs",
+			wantURL:  "https://example.com/new-repo.git?private_token=secret",
+		},
+		{
+			name:     "redirect to bare repo path errors",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/repo.git",
+			wantErr:  "does not end with",
+		},
+		{
+			name:             "azure devops _signin redirect is auth required",
+			baseURL:          "https://dev.azure.com/org/project/_git/repo",
+			finalURL:         "https://dev.azure.com/org/_signin",
+			wantErr:          "redirect to",
+			wantAuthRequired: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base, err := url.Parse(tt.baseURL)
+			require.NoError(t, err)
+
+			resp := &http.Response{}
+			if !tt.noRequest {
+				req, err := http.NewRequest("GET", tt.finalURL, nil)
+				require.NoError(t, err)
+				resp.Request = req
+			}
+
+			result, err := applyRedirect(resp, base)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				if tt.wantAuthRequired {
+					assert.True(t, errors.Is(err, transport.ErrAuthenticationRequired),
+						"expected error to wrap transport.ErrAuthenticationRequired")
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			want, err := url.Parse(tt.wantURL)
+			require.NoError(t, err)
+			assert.Equal(t, want, result)
+		})
+	}
+}
+
 // originRelations enumerates the relation this transport applies to decide
 // whether a credential held for one URL may be supplied for a request to
 // another. It is the whole of that rule: every entry point below is checked
@@ -434,4 +613,94 @@ func TestRedactedURLRedactsQueryValues(t *testing.T) {
 func TestRedactedURLNil(t *testing.T) {
 	t.Parallel()
 	assert.Empty(t, redactedURL(nil))
+}
+
+// effectiveBase re-derives the caller's base URL through the same round trip
+// the discovery request makes, so that every later comparison against it — the
+// redirect target's own path, the path reported to Options.Credentials — is
+// between two paths spelled the same way.
+//
+// The spelling changes; the resource named never does. An escape survives,
+// because "/a%2Fb.git" and "/a/b.git" are two repositories on a forge with
+// nested groups.
+func TestEffectiveBase(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		in      string
+		want    string
+		wantErr string
+	}{
+		{name: "an already-clean path is unchanged", in: "https://example.test/repo.git", want: "/repo.git"},
+		{name: "a trailing slash is cleaned away", in: "https://example.test/repo.git/", want: "/repo.git"},
+		{name: "a duplicate separator is collapsed", in: "https://example.test/a//b.git", want: "/a/b.git"},
+		{name: "a dot segment is collapsed", in: "https://example.test/a/./b.git", want: "/a/b.git"},
+		{name: "an escape is left alone", in: "https://example.test/a%2Fb.git", want: "/a%2Fb.git"},
+		{name: "a repository at the origin root leaves an empty base", in: "https://example.test", want: ""},
+		{
+			// Reachable from a caller: transport.ParseURL accepts "http://",
+			// which is absolute and hostless, and the joined path is then
+			// relative so no /info/refs tail can be cut off it.
+			name:    "a URL with neither host nor path leaves no base",
+			in:      "http://",
+			wantErr: "leaves no base to request",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse(tt.in)
+			require.NoError(t, err)
+
+			got, err := effectiveBase(u)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.EscapedPath())
+			assert.Equal(t, u.Host, got.Host, "only the path spelling may change")
+			assert.Equal(t, u.Scheme, got.Scheme, "only the path spelling may change")
+		})
+	}
+}
+
+// setEscapedPath keeps the two halves of a url.URL path in correspondence,
+// including the common case where the path needs no escaping and RawPath is
+// empty — which is what url.Parse stores for it, and what this must not turn
+// into a redundant RawPath.
+func TestSetEscapedPath(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		escaped     string
+		wantPath    string
+		wantRawPath string
+	}{
+		{"/repo.git", "/repo.git", ""},
+		{"", "", ""},
+		{"/a%2Fb.git", "/a/b.git", "/a%2Fb.git"},
+		{"/a%2fb.git", "/a/b.git", "/a%2fb.git"},
+		{"/a%20b.git", "/a b.git", ""},
+	} {
+		t.Run(tt.escaped, func(t *testing.T) {
+			t.Parallel()
+
+			u := &url.URL{Scheme: "https", Host: "example.com", Path: "/stale", RawPath: "/sta%6Cle"}
+			require.NoError(t, setEscapedPath(u, tt.escaped))
+			assert.Equal(t, tt.wantPath, u.Path)
+			assert.Equal(t, tt.wantRawPath, u.RawPath)
+			assert.Equal(t, tt.escaped, u.EscapedPath(),
+				"the escaping the caller set must be the one the URL renders")
+		})
+	}
+
+	t.Run("an invalid escaping is rejected rather than re-escaped", func(t *testing.T) {
+		t.Parallel()
+
+		u := &url.URL{Path: "/repo.git"}
+		require.Error(t, setEscapedPath(u, "/a%zzb.git"))
+	})
 }
