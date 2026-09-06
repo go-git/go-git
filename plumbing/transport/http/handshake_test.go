@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -25,11 +26,14 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	filetransport "github.com/go-git/go-git/v6/plumbing/transport/file"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 func TestSmartMultiRoundFetch(t *testing.T) {
@@ -94,6 +98,48 @@ func TestSmartMultiRoundFetch(t *testing.T) {
 	assert.NotEqual(t, string(requests.bodies[0]), string(requests.bodies[1]), "subsequent rounds should send different negotiation payloads")
 }
 
+// TestHTTPNegotiatorCloseResponse verifies that closeResponse closes
+// the final response body without error.
+func TestHTTPNegotiatorCloseResponse(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		_, _ = w.Write([]byte("0008NAK\n"))
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
+	}
+
+	neg := &httpNegotiator{session: session, ctx: context.Background()}
+
+	// Fire a round.
+	_, err = neg.Write([]byte("data"))
+	require.NoError(t, err)
+	err = neg.Close()
+	require.NoError(t, err)
+	_, _ = io.ReadAll(neg)
+
+	// closeResponse should not panic on a valid response.
+	assert.NotPanics(t, func() { neg.closeResponse() })
+
+	// After closeResponse, current.resp should be nil.
+	assert.Nil(t, neg.current.resp)
+
+	// closeResponse on an already-cleaned negotiator is safe.
+	assert.NotPanics(t, func() { neg.closeResponse() })
+}
+
 // TestHTTPNegotiatorNoRounds verifies that closeResponse is safe when
 // no rounds have been executed.
 func TestHTTPNegotiatorNoRounds(t *testing.T) {
@@ -107,6 +153,76 @@ func TestHTTPNegotiatorNoRounds(t *testing.T) {
 
 	err = neg.Close()
 	assert.NoError(t, err)
+}
+
+// TestFetchBodyReadRespectsCancellation exercises the precondition that
+// smartPackSession.Fetch relies on when it skips closeResponse on a cancelled
+// context: a context-wrapped read over a stuck upload-pack response body — the
+// same NewContextReadCloser pattern FetchPack uses — must unblock promptly on
+// cancel rather than deadlock against the hung server.
+func TestFetchBodyReadRespectsCancellation(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	serving := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("0008NAK\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		once.Do(func() { close(serving) })
+		<-release // hang with the body still open
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	neg := &httpNegotiator{session: session, ctx: ctx}
+
+	_, err = neg.Write([]byte("0000"))
+	require.NoError(t, err)
+	require.NoError(t, neg.Close()) // fires the POST; response headers received
+
+	<-serving // server streamed headers + NAK and is now hanging
+
+	// Mirror FetchPack: read the body through a context reader.
+	r := ioutil.NewContextReadCloser(ctx, io.NopCloser(neg))
+	done := make(chan error, 1)
+	go func() {
+		_, readErr := io.ReadAll(r)
+		done <- readErr
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("read returned before cancellation while the server was hanging")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+
+	select {
+	case readErr := <-done:
+		require.ErrorIs(t, readErr, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("context-wrapped body read deadlocked after cancellation")
+	}
 }
 
 // bodyCloseRecorder wraps a response body and records whether the client code
@@ -156,6 +272,26 @@ func (t *bodyRecordingTransport) lastBody() *bodyCloseRecorder {
 	return t.bodies[len(t.bodies)-1]
 }
 
+func newRecordingPushSession(t *testing.T, srv *httptest.Server) (*smartPackSession, *bodyRecordingTransport) {
+	t.Helper()
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	rt := &bodyRecordingTransport{inner: srv.Client().Transport, respReceived: make(chan struct{})}
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  &http.Client{Transport: rt},
+			baseURL: u,
+			service: transport.ReceivePackService,
+		},
+	}
+	// report-status makes SendPack read the response body after sending the
+	// commands, which is the read path the close-vs-cancel guard protects.
+	session.caps.Set(capability.ReportStatus)
+	return session, rt
+}
+
 // deleteOnlyPushRequest builds a PushRequest whose single delete command needs
 // no packfile, keeping the exchange minimal.
 func deleteOnlyPushRequest() *transport.PushRequest {
@@ -166,6 +302,85 @@ func deleteOnlyPushRequest() *transport.PushRequest {
 			New:  plumbing.ZeroHash,
 		}},
 	}
+}
+
+// TestPushClosesResponseOnNonCancelError verifies that Push closes the
+// response body when SendPack fails with a non-cancellation error (here a
+// report-status decode failure): the last Read already returned via the
+// ctxReader result channel, so closing is safe — and necessary, otherwise the
+// body and its connection leak.
+func TestPushClosesResponseOnNonCancelError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		_, _ = w.Write([]byte("not a pkt-line report-status"))
+	}))
+	defer srv.Close()
+
+	session, rt := newRecordingPushSession(t, srv)
+
+	err := session.Push(context.Background(), memory.NewStorage(), deleteOnlyPushRequest())
+	require.Error(t, err)
+	require.NotErrorIs(t, err, context.Canceled)
+
+	body := rt.lastBody()
+	require.NotNil(t, body, "expected the push POST to have produced a response")
+	assert.True(t, body.closed.Load(), "expected Push to close the response body on a non-cancellation error")
+}
+
+// TestPushSkipsCloseResponseOnCancel verifies that Push does not close the
+// response body when SendPack fails with a cancellation: the ctxReader
+// goroutine inside SendPack can still be blocked in the underlying Read after
+// the <-ctx.Done() branch, so closing here would race it; the request context
+// tears the connection down instead.
+func TestPushSkipsCloseResponseOnCancel(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-release // hang with the body still open
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	session, rt := newRecordingPushSession(t, srv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Push(ctx, memory.NewStorage(), deleteOnlyPushRequest())
+	}()
+
+	// Wait until the client holds the response (the server is now hanging mid
+	// report-status) before cancelling, so the cancel hits the body read
+	// rather than the POST itself.
+	select {
+	case <-rt.respReceived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("push POST produced no response")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Push did not return after cancellation")
+	}
+
+	body := rt.lastBody()
+	require.NotNil(t, body, "expected the push POST to have produced a response")
+	assert.False(t, body.closed.Load(), "expected Push not to close the response body on cancellation")
 }
 
 type uploadPackRequests struct {

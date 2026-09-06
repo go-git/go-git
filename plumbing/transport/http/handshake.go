@@ -19,6 +19,16 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// sessionBase is the state every session carries, in one value. Both session
+// types embed it, so a field added here reaches both without a signature to
+// thread it through.
+type sessionBase struct {
+	client     *http.Client
+	baseURL    *url.URL
+	service    string
+	authorizer func(*http.Request) error
+}
+
 // Handshake implements transport.Transport. GETs /info/refs to discover
 // refs and detects smart vs dumb HTTP.
 func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
@@ -80,8 +90,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		_ = resp.Body.Close()
 		return nil, err
 	}
-	sessReq := *req
-	sessReq.URL = redirectedURL
+	sessURL := redirectedURL
 	authorizer := t.opts.Authorizer
 
 	// Clear credentials when the redirect left the origin they were issued
@@ -113,24 +122,35 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		// by changing later.
 		cleared := *redirectedURL
 		cleared.User = nil
-		sessReq.URL = &cleared
+		sessURL = &cleared
 		authorizer = nil
 	}
 
-	if forceDumb {
-		return handshakeDumb(resp, &sessReq, client, authorizer)
+	base := sessionBase{
+		client:     client,
+		baseURL:    sessURL,
+		service:    req.Command,
+		authorizer: authorizer,
 	}
-
-	expected := fmt.Sprintf("application/x-%s-advertisement", discoverService)
-	isSmart := resp.Header.Get("Content-Type") == expected
-
-	if isSmart {
-		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer)
-	}
-	return handshakeDumb(resp, &sessReq, client, authorizer)
+	return finishHandshake(resp, base, d)
 }
 
-func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
+// finishHandshake picks the smart or dumb session for a discovery response that
+// has already been validated and had its credentials settled, keeping that
+// dispatch out of the redirect and credential handling above it.
+func finishHandshake(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
+	if d.forceDumb {
+		return handshakeDumb(resp, base)
+	}
+
+	expected := fmt.Sprintf("application/x-%s-advertisement", d.service)
+	if resp.Header.Get("Content-Type") == expected {
+		return handshakeSmart(resp, base, d)
+	}
+	return handshakeDumb(resp, base)
+}
+
+func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
@@ -143,7 +163,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		if err := reply.Decode(rd); err != nil {
 			return nil, err
 		}
-		if reply.Service != discoverService {
+		if reply.Service != d.service {
 			return nil, fmt.Errorf("unexpected service name: %w", transport.ErrInvalidResponse)
 		}
 	}
@@ -154,7 +174,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 	}
 
 	// git archive over HTTP is only available when the server speaks v2.
-	if req.Command == transport.UploadArchiveService && ver != protocol.V2 {
+	if base.service == transport.UploadArchiveService && ver != protocol.V2 {
 		return nil, transport.ErrArchiveUnsupported
 	}
 
@@ -174,12 +194,9 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		adv.Capabilities.Set(capability.AllowReachableSHA1InWant)
 		adv.Capabilities.Set(capability.AllowTipSHA1InWant)
 		return &smartPackSession{
-			client:     client,
-			baseURL:    req.URL,
-			service:    req.Command,
-			authorizer: authorizer,
-			version:    ver,
-			caps:       adv.Capabilities,
+			sessionBase: base,
+			version:     ver,
+			caps:        adv.Capabilities,
 		}, nil
 	}
 
@@ -197,17 +214,14 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 	ar.Version = ver
 
 	return &smartPackSession{
-		client:     client,
-		baseURL:    req.URL,
-		service:    req.Command,
-		authorizer: authorizer,
-		version:    ver,
-		caps:       ar.Capabilities,
-		refs:       ar,
+		sessionBase: base,
+		version:     ver,
+		caps:        ar.Capabilities,
+		refs:        ar,
 	}, nil
 }
 
-func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
+func handshakeDumb(resp *http.Response, base sessionBase) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
@@ -219,16 +233,8 @@ func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Cli
 	ar := &packp.AdvRefs{}
 	ar.References = infoRefs.References
 
-	return &dumbPackSession{
-		client:     client,
-		baseURL:    req.URL,
-		service:    req.Command,
-		authorizer: authorizer,
-		refs:       ar,
-	}, nil
+	return &dumbPackSession{sessionBase: base, refs: ar}, nil
 }
-
-// --- smart HTTP pack session ---
 
 var (
 	_ transport.Session   = (*smartPackSession)(nil)
@@ -237,13 +243,10 @@ var (
 )
 
 type smartPackSession struct {
-	client     *http.Client
-	baseURL    *url.URL
-	service    string
-	authorizer func(*http.Request) error
-	version    protocol.Version
-	caps       capability.List
-	refs       *packp.AdvRefs
+	sessionBase
+	version protocol.Version
+	caps    capability.List
+	refs    *packp.AdvRefs
 }
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
@@ -552,11 +555,8 @@ func (n *httpNegotiator) closeResponse() {
 var _ transport.Session = (*dumbPackSession)(nil)
 
 type dumbPackSession struct {
-	client     *http.Client
-	baseURL    *url.URL
-	service    string
-	authorizer func(*http.Request) error
-	refs       *packp.AdvRefs
+	sessionBase
+	refs *packp.AdvRefs
 }
 
 func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
