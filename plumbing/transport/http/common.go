@@ -131,6 +131,30 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	redirected.Host = final.Host
 	redirected.Scheme = final.Scheme
 	redirected.Path = final.Path[:len(final.Path)-len(infoRefsPath)]
+
+	// The query is the caller's, not the server's: it comes from the repository
+	// URL and rides on every later request the session builds from this base —
+	// the pack POST and the dumb protocol's object GETs. Several forges accept a
+	// credential there (?private_token=, ?job_token=), so it is subject to the
+	// rule credentials are subject to, and drops exactly where a credential
+	// would. Canonical git drops it here too, for a different reason: its
+	// update_url_from_redirect() rebuilds the base from the redirect target
+	// alone, so nothing of the old URL survives.
+	//
+	// Gating on credentialsMayFollow rather than on "the origin changed at
+	// all" is what keeps this rule and the credential rule from drifting
+	// apart, which is the whole reason to reuse the predicate. The
+	// http-to-https upgrade on one host therefore keeps the query, as it keeps
+	// userinfo — though not for the same reason: userinfo already went out in
+	// cleartext on the discovery GET, whereas the query never rides that
+	// request at all and first leaves on the pack POST, by then over TLS.
+	//
+	// The redirect target's own query is never picked up here — only dropped —
+	// so nothing a server chose can reach a later request either.
+	if !credentialsMayFollow(baseURL, &redirected) {
+		redirected.RawQuery = ""
+		redirected.ForceQuery = false
+	}
 	return &redirected, nil
 }
 
@@ -280,18 +304,78 @@ func filterHeaders(h http.Header) http.Header {
 	return filtered
 }
 
+// safeQueryParams lists the query parameters go-git puts on a URL itself. It
+// is the query-string counterpart of safeHeaders, and reads the same way: a
+// name added here is rendered verbatim into error strings and trace output, so
+// do not add anything a caller can put a secret in. This narrows rather than
+// eliminates the exposure: a forge that spells a token with one of these names
+// — ?service=<secret> — still has the value printed verbatim.
+var safeQueryParams = map[string]struct{}{
+	"service": {},
+}
+
+// redactedQuery replaces the value of every query parameter that is not
+// go-git's own, because a credential in a query string is a pattern several
+// forges support (?private_token=, ?job_token=).
+//
+// The parameter's name survives, so a message still says what was sent. A
+// parameter with no value at all is replaced whole: nothing distinguishes a
+// bare flag from a bare secret.
+func redactedQuery(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	var b strings.Builder
+	for i, param := range strings.Split(raw, "&") {
+		if i > 0 {
+			b.WriteByte('&')
+		}
+		name, value, hasValue := strings.Cut(param, "=")
+		// An element go-git wrote itself is rendered as it is — but only when
+		// it is one element. ";" is not a separator net/url recognises, so
+		// "service=x;private_token=SECRET" arrives here as a single element
+		// whose name is "service", and echoing it whole would print the rest.
+		if _, ok := safeQueryParams[name]; ok && !strings.ContainsRune(param, ';') {
+			b.WriteString(param)
+			continue
+		}
+		if !hasValue || value == "" {
+			b.WriteString("REDACTED")
+			continue
+		}
+		b.WriteString(name)
+		b.WriteString("=REDACTED")
+	}
+	return b.String()
+}
+
+// redactedURL renders u with anything a caller can have put a secret in
+// replaced. Every error string and trace line in this package prints a URL
+// through it.
+//
+// Userinfo without a password is left as it is, matching url.URL.Redacted: a
+// bare username is an identity, not a secret, and printing it is how a caller
+// tells two clone URLs apart. On the paths that print a redirect target —
+// checkRedirect's refusals and redactRetryError — that username came out of a
+// Location header, so a target of the form https://<token>@host/ would have
+// its token printed.
 func redactedURL(u *url.URL) string {
 	if u == nil {
 		return ""
 	}
-	if u.User == nil {
-		return u.String()
-	}
-	if _, hasPassword := u.User.Password(); !hasPassword {
-		return u.String()
-	}
 	redacted := *u
-	redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+	redacted.RawQuery = redactedQuery(u.RawQuery)
+	// The fragment never reaches the wire — net/http omits it from the request
+	// URI — but it reaches every message this renders.
+	if u.Fragment != "" {
+		redacted.Fragment = "REDACTED"
+		redacted.RawFragment = ""
+	}
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+		}
+	}
 	return redacted.String()
 }
 

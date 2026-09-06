@@ -187,3 +187,90 @@ func TestCombineStopsOnError(t *testing.T) {
 	assert.ErrorIs(t, fn(req), sentinel)
 	assert.False(t, reached, "an authorizer after a failing one must not run")
 }
+
+// A credential can live in a query string as easily as in a header, and
+// redactedURL is what every error and trace line in this package prints a URL
+// through. It needs no redirect to leak one: the repository URL's own query is
+// rendered wherever a request against it fails.
+func TestRedactedURLRedactsQueryValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "no query is untouched",
+			in:   "https://example.com/repo.git",
+			want: "https://example.com/repo.git",
+		},
+		{
+			name: "go-git's own parameter is rendered as it is",
+			in:   "https://example.com/repo.git/info/refs?service=git-upload-pack",
+			want: "https://example.com/repo.git/info/refs?service=git-upload-pack",
+		},
+		{
+			name: "a forge token in the query is replaced",
+			in:   "https://example.com/repo.git?private_token=glpat-secret",
+			want: "https://example.com/repo.git?private_token=REDACTED",
+		},
+		{
+			name: "the name survives so the message stays useful",
+			in:   "https://example.com/repo.git/info/refs?service=git-upload-pack&job_token=s3cr3t",
+			want: "https://example.com/repo.git/info/refs?service=git-upload-pack&job_token=REDACTED",
+		},
+		{
+			name: "a valueless parameter is replaced whole",
+			in:   "https://example.com/repo.git?glpat-secret",
+			want: "https://example.com/repo.git?REDACTED",
+		},
+		{
+			name: "userinfo and query are both replaced",
+			in:   "https://user:pw@example.com/repo.git?private_token=glpat-secret",
+			want: "https://user:REDACTED@example.com/repo.git?private_token=REDACTED",
+		},
+		{
+			// The name is the whole of the parameter when the value is empty,
+			// so replacing only the value would print the secret.
+			name: "a parameter whose value is empty is replaced whole",
+			in:   "https://example.com/repo.git?glpat-secret=",
+			want: "https://example.com/repo.git?REDACTED",
+		},
+		{
+			// ";" is not a separator net/url recognises, so this arrives as
+			// one element whose name is the allowlisted "service".
+			name: "a legacy semicolon separator does not smuggle a value out",
+			in:   "https://example.com/repo.git?service=git-upload-pack;private_token=glpat-secret",
+			want: "https://example.com/repo.git?service=REDACTED",
+		},
+		{
+			name: "a fragment is replaced",
+			in:   "https://example.com/repo.git#glpat-secret",
+			want: "https://example.com/repo.git#REDACTED",
+		},
+		{
+			// Deliberate, and matching url.URL.Redacted: a bare username is an
+			// identity, not a secret, and it is how a caller tells two clone
+			// URLs apart.
+			name: "userinfo without a password is left alone",
+			in:   "https://user@example.com/repo.git",
+			want: "https://user@example.com/repo.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse(tt.in)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, redactedURL(u))
+		})
+	}
+}
+
+func TestRedactedURLNil(t *testing.T) {
+	t.Parallel()
+	assert.Empty(t, redactedURL(nil))
+}

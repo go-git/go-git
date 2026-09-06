@@ -209,13 +209,29 @@ type Options struct {
 	ForceDumb bool
 
 	// Credentials supplies a credential for the origin a request is about to be
-	// made to. It is the only place this transport takes one, other than
-	// userinfo in the repository URL. See CredentialsFunc for the full
-	// contract, ForRepositoryOrigin for the common case of one credential for
-	// the repository's own origin, and ForOrigin for a credential belonging to
-	// an origin known up front.
+	// made to. It is the only place this transport is given one, the two it
+	// finds in the repository URL aside: userinfo, and the query, which
+	// several forges accept a token in (?private_token=, ?job_token=) and
+	// which this transport therefore withholds under the same origin rule.
+	// The query is not offered here to be re-supplied for a new origin the way
+	// userinfo is — it rides on the URL or not at all.
 	//
-	// The two sources are not alternatives. Both are applied to the same
+	// It also cannot authenticate a clone on its own. The discovery request is
+	// built from the repository URL's scheme, host and path, so the query
+	// reaches the requests the session makes afterwards — the pack POST, the
+	// dumb protocol's object GETs — but not the /info/refs GET that has to
+	// succeed before any of them. A private repository addressed that way is
+	// challenged on the first request and never gets as far as the one the
+	// token would have satisfied. Canonical git does not support such a URL
+	// either: it appends /info/refs to the URL string, query included, and
+	// sends a request with /info/refs inside the query value. Supply a
+	// credential here or as userinfo instead.
+	//
+	// See CredentialsFunc for the full contract, ForRepositoryOrigin for the
+	// common case of one credential for the repository's own origin, and
+	// ForOrigin for a credential belonging to an origin known up front.
+	//
+	// The two applied sources are not alternatives. Both are applied to the same
 	// request, the repository URL's userinfo first and this one after it, so
 	// what this writes under a name the userinfo also uses replaces it —
 	// Authorization is the one they collide on — and anything it writes under

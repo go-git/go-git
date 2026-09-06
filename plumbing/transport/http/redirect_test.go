@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -655,6 +656,78 @@ func TestUpgradeAtAnIntermediateHopIsNotACrossing(t *testing.T) {
 	require.NoError(t, err)
 
 	assertCredentialsPresent(t, secure.lastRequest(t))
+}
+
+// The discovery GET is built from the base URL's scheme, host and path alone,
+// so the repository URL's query never reaches a redirect target on it. Every
+// later request the session makes is built from the base URL as a whole, and a
+// credential in the query is a pattern several forges support, so the query has
+// to be treated the way a credential is: dropped where a credential would be.
+func TestRedirectDoesNotCarryQueryToAnotherOrigin(t *testing.T) {
+	t.Parallel()
+
+	originURL, _, destSeen := redirectPair(t, http.StatusTemporaryRedirect, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, infoRefsPath) {
+			writeAdvert(w, transport.UploadPackService)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	sess, err := handshakeFor(t, originURL, clone{query: "private_token=glpat-secret"}, Options{})
+	require.NoError(t, err, "discovery succeeds anonymously")
+	defer sess.Close()
+
+	sps, ok := sess.(*smartPackSession)
+	require.True(t, ok)
+
+	r := &httpRequester{session: sps, ctx: context.Background()}
+	_, err = r.Write([]byte("0032want " + testSHA + "\n0000"))
+	require.NoError(t, err)
+	require.Error(t, r.Close(), "the destination refuses the pack request")
+
+	reqs := destSeen.all()
+	require.Len(t, reqs, 2, "the discovery GET, then the pack POST")
+	for i, got := range reqs {
+		assert.NotContains(t, got.URL.RawQuery, "private_token",
+			"request %d (%s %s) carried the repository URL's query to another origin",
+			i, got.Method, got.URL.RequestURI())
+	}
+}
+
+// The dumb protocol builds its object GETs from the same base URL, so the same
+// rule has to hold for them.
+func TestRedirectDoesNotCarryQueryToAnotherOriginOnDumbGet(t *testing.T) {
+	t.Parallel()
+
+	originURL, _, destSeen := redirectPair(t, http.StatusTemporaryRedirect, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, infoRefsPath) {
+			// A dumb info/refs body: one ref, tab-separated, no pkt-lines.
+			_, _ = w.Write([]byte(testSHA + "\trefs/heads/master\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	sess, err := handshakeFor(t, originURL, clone{query: "private_token=glpat-secret"},
+		Options{ForceDumb: true})
+	require.NoError(t, err)
+	defer sess.Close()
+
+	dps, ok := sess.(*dumbPackSession)
+	require.True(t, ok)
+
+	w := newFetchWalker(context.Background(), dps, nil, nil)
+	_, err = w.httpGet("objects/info/packs")
+	require.Error(t, err)
+
+	reqs := destSeen.all()
+	require.NotEmpty(t, reqs)
+	for i, got := range reqs {
+		assert.NotContains(t, got.URL.RawQuery, "private_token",
+			"request %d (%s %s) carried the repository URL's query to another origin",
+			i, got.Method, got.URL.RequestURI())
+	}
 }
 
 // Whether a credential may follow a hop is one relation, and these are the
