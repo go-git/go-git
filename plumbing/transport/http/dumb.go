@@ -64,6 +64,7 @@ type fetchWalker struct {
 	fs         billy.Filesystem
 	queue      []plumbing.Hash
 	packIdx    map[plumbing.Hash]string
+	dropped    *redirectRecord
 }
 
 func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, fs billy.Filesystem) *fetchWalker {
@@ -77,6 +78,7 @@ func newFetchWalker(ctx context.Context, s *dumbPackSession, st storage.Storer, 
 		fs:         fs,
 		queue:      make([]plumbing.Hash, 0),
 		packIdx:    make(map[plumbing.Hash]string),
+		dropped:    s.dropped,
 	}
 }
 
@@ -92,7 +94,14 @@ func (r *fetchWalker) httpGet(urlPath string) (*http.Response, error) {
 	if err := applyAuth(req, r.authorizer); err != nil {
 		return nil, err
 	}
-	return doRequest(r.client, req)
+	resp, err := doRequest(r.client, req)
+	if err != nil {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil, wrapDropped(r.dropped, err)
+	}
+	return resp, nil
 }
 
 func (r *fetchWalker) getInfoPacks() ([]string, error) {

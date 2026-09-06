@@ -53,14 +53,17 @@ func withoutUserinfo(u *url.URL) *url.URL {
 // CheckRedirect closure, because resolveClient's client is stored on the
 // session and reused for every later request: a captured variable would leak
 // one request's redirect history into the next. net/http propagates the
-// original request's context to every hop, so a per-request record is both
-// correct and the same shape as withInitialRequest above.
+// original request's context to every hop.
 //
-// No synchronisation is needed. net/http drives the whole chain from the
-// goroutine that called Do, and Handshake reads the record only after Do has
-// returned.
+// No synchronisation is needed: net/http drives the chain from the goroutine
+// that called Do, and Handshake reads the record only after Do returned.
 type redirectRecord struct {
 	didCross bool
+	// held is whether the request this chain began with carried a credential at
+	// all. A crossing says one would have been withheld; this says there was one
+	// to withhold. An explanation naming a credential is only true if one
+	// existed, while what the session re-derives is the same either way.
+	held     bool
 	from, to *url.URL
 }
 
@@ -73,19 +76,24 @@ func redirectRecordFrom(req *http.Request) *redirectRecord {
 	return rec
 }
 
-// note records the first origin crossing of a chain. Later crossings do not
-// overwrite it: the pair that matters to a caller is where the credential was
-// issued and where it first could not go.
+// note records an origin crossing. The two ends come from different crossings
+// on purpose: from is the origin the credential was issued for, which every
+// crossing of one chain reports identically, so the first to name it settles
+// it; to is replaced by each later crossing. Because the strip is sticky every
+// hop after the first crossing is noted too, so the last to recorded is the
+// origin the request finally reached and therefore the one that challenged it.
+// Keeping the first would name an intermediate hop the caller cannot configure
+// a credential for.
 //
 // A crossing is recorded even when an endpoint cannot be read, because
-// stripCredentials strips on that path too and the two must not disagree. The
+// stripCredentials strips on that path too and the two must not disagree; the
 // pair is then incomplete, which origins reports.
 func (r *redirectRecord) note(from, to *url.URL) {
-	if r == nil || r.didCross {
+	if r == nil {
 		return
 	}
 	r.didCross = true
-	if from != nil {
+	if r.from == nil && from != nil {
 		r.from = originOf(from)
 	}
 	if to != nil {
@@ -96,7 +104,21 @@ func (r *redirectRecord) note(from, to *url.URL) {
 // crossed reports whether any hop left the origin.
 func (r *redirectRecord) crossed() bool { return r != nil && r.didCross }
 
-// origins returns the recorded pair, and whether both endpoints are known.
+// holdsCredential records whether the chain began with a credential. Called
+// once, before the request goes out, from the only place that knows.
+func (r *redirectRecord) holdsCredential(held bool) {
+	if r == nil {
+		return
+	}
+	r.held = held
+}
+
+// withheld reports whether a credential existed and a crossing took it away,
+// which is what CredentialsDroppedError says happened.
+func (r *redirectRecord) withheld() bool { return r != nil && r.didCross && r.held }
+
+// origins returns the origin the credential was issued for and the origin the
+// chain ended at, and whether both are known.
 func (r *redirectRecord) origins() (from, to *url.URL, ok bool) {
 	if r == nil || r.from == nil || r.to == nil {
 		return nil, nil, false
@@ -135,54 +157,39 @@ type Options struct {
 	// created. When Client is set, TLS and HTTPProxy are ignored —
 	// configure them on the provided Client directly.
 	//
-	// Credentials this Client adds where the transport cannot see them are
-	// not subject to the redirect stripping described on Options.Credentials:
-	// a RoundTripper injects after the hop is decided, and Client.Jar is
-	// consulted after CheckRedirect, so a domain cookie still follows a
-	// redirect to a subdomain the transport counts as another origin. Supply
-	// them through Options.Credentials instead if that is not wanted.
+	// A RoundTripper that resolves redirects itself disables every guard in
+	// this package. The credential stripping, the redirect policy, and the
+	// re-authentication a crossing triggers all run from CheckRedirect, which
+	// net/http calls only for redirects it resolves.
 	//
-	// One consequence is wider than a redirect: Jar implementations key on
-	// host and ignore the port, where this transport treats the port as part
-	// of the origin, so a cookie set by a service on one port is sent to a
-	// different service on another. That is a hop net/http followed. The
-	// re-authentication request the transport issues itself carries no jar at
-	// all — it exists because a redirect left the repository's origin, so it
-	// is by construction a request the caller's credentials may not travel
-	// on.
+	// Credentials this Client adds are not origin-scoped the way
+	// Options.Credentials is: a RoundTripper injects after the hop is decided,
+	// and Client.Jar is consulted after CheckRedirect and keys on host alone,
+	// so a cookie follows a redirect to a subdomain, or to another port, that
+	// this transport counts as another origin.
 	//
-	// A CheckRedirect hook set on this Client runs alongside the transport's
-	// own, but any header it adds when a redirect leaves the repository's
-	// origin is discarded the same way.
-	//
-	// A RoundTripper is therefore also how to authenticate to a new origin a
-	// redirect has moved the repository to: match on the request URL and
-	// inject the credential only for that origin, so it is not sent
-	// anywhere else. The transport keeps its own CheckRedirect on the copy
-	// it makes of this Client, so the policy and the origin checks still
-	// apply.
+	// A CheckRedirect set here runs after this transport's own and can refuse a
+	// hop the policy permits, but any header it adds is dropped on a hop that
+	// leaves the repository's origin.
 	Client *http.Client
 
-	// FollowRedirects controls redirect handling. The zero value defaults
-	// to "initial", matching Git's default behavior.
+	// FollowRedirects controls redirect handling. The zero value is
+	// FollowInitialRedirects, matching Git's default: only the /info/refs
+	// discovery GET, which carries no body, may follow a redirect.
 	//
-	// Setting this to FollowRedirects lets requests other than the /info/refs
-	// discovery GET follow a redirect, including POSTs that carry a body. A
-	// redirect across an origin strips credentials from such a request but
-	// not its body: net/http replays the body on a 307 or 308, and the
-	// transport keeps Content-Type and Content-Length, so the pack request
-	// arrives at the new origin complete. For upload-pack that discloses
-	// which objects the caller already has; for receive-pack it discloses the
-	// packfile being pushed. curl and canonical git behave the same way under
-	// http.followRedirects=true.
+	// FollowRedirects lets a POST follow one too. A redirect across an origin
+	// strips the request's credentials but not its body: net/http replays the
+	// body on a 307 or 308, and Content-Type and Content-Length are preserved,
+	// so the pack request arrives at the server-chosen origin complete. For
+	// upload-pack that discloses which objects the caller already has; for
+	// receive-pack, the packfile being pushed. Such a POST is not retried and
+	// Credentials is not consulted for the origin it reached, and its own
+	// crossing is not recorded, so the failure it produces does not name that
+	// origin.
 	//
-	// The default policy has no such exposure: it refuses a redirect on every
-	// request except discovery, which has no body.
-	//
-	// To allow cross-origin redirects for the discovery GET while refusing
-	// them for a request carrying a body, set a CheckRedirect on Client that
-	// returns an error when req.Method is not GET: it runs after this
-	// transport's own and can refuse a hop the policy would otherwise permit.
+	// To let the discovery GET follow a cross-origin redirect while refusing
+	// one for a request with a body, set a CheckRedirect on Client that returns
+	// an error unless req.Method is GET.
 	FollowRedirects RedirectPolicy
 
 	// HTTPProxy returns the proxy URL for a given HTTP request.

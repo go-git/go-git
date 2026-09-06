@@ -554,3 +554,128 @@ func TestCallerCheckRedirectCanRefuseAHop(t *testing.T) {
 	assert.Equal(t, 1, hookCalls, "the hook runs for the hop it is asked about")
 	assert.Empty(t, destSeen.all(), "nothing may reach the origin the redirect named")
 }
+
+// The scan over the hops already taken, which is the half of the crossing
+// check a single redirect never reaches. It has to ask the relation in the
+// same direction as the pending-hop check — from the origin the credential was
+// issued for — or an upgrade already taken reads as a downgrade and the
+// credential is withheld from a hop it was entitled to reach.
+func TestUpgradeAtAnIntermediateHopIsNotACrossing(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	secure := newTLSVhost(t, hm, "example.test", "443")
+	plain := newVhost(t, hm, "example.test", "80")
+
+	// Two hops: the upgrade, then a path move within the origin it upgraded
+	// to. The second hop is the one judged against the first.
+	plain.redirectTo(secure.base + refsPath("repo.git"))
+	secure.redirectTo(secure.base + refsPath("other.git"))
+
+	_, err := handshakeWithCredentials(t, hm, plain.base)
+	require.NoError(t, err)
+
+	assertCredentialsPresent(t, secure.lastRequest(t))
+}
+
+// Whether a credential may follow a hop is one relation, and these are the
+// pairings a caller meets. The credentials the fixture sends include a header
+// written as a raw, non-canonical map key, which a strip implemented with
+// Header.Del would leave behind.
+//
+// The relation's own table is TestCredentialsMayFollow; what these rows pin is
+// that the strip acts on its answer.
+func TestRedirectCredentialTravel(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		// originPlain makes the origin http on port 80 rather than https on
+		// 443, which is the only shape the permitted upgrade can start from.
+		originPlain bool
+		// destHost is empty when the redirect stays on the origin.
+		destHost, destPort string
+		forceDumb          bool
+		want               bool
+		reason             string
+	}{
+		{
+			name:   "a path move within the origin",
+			want:   true,
+			reason: "the origin is unchanged, so nothing is withheld",
+		},
+		{
+			name:        "an http to https upgrade on the same host",
+			originPlain: true,
+			destHost:    "example.test",
+			destPort:    "443",
+			want:        true,
+			reason:      "the first request already spent the credential in cleartext",
+		},
+		{
+			name:     "a subdomain",
+			destHost: "sub.example.test",
+			destPort: "443",
+			reason:   "a subdomain is another origin here, where net/http would forward to it",
+		},
+		{
+			name:     "another port",
+			destHost: "example.test",
+			destPort: "8443",
+			reason:   "a port is part of the origin",
+		},
+		{
+			name:     "an unrelated host",
+			destHost: "evil.test",
+			destPort: "443",
+			reason:   "the redirect target chose this origin, not the caller",
+		},
+		{
+			// The dumb walker applies credentials through the same path and
+			// asks for /info/refs without the service query.
+			name:      "an unrelated host on the dumb protocol",
+			destHost:  "evil.test",
+			destPort:  "443",
+			forceDumb: true,
+			reason:    "the dumb protocol's requests are subject to the same strip",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hm := newVhostMap()
+			origin := newTLSVhost(t, hm, "example.test", "443")
+			if tc.originPlain {
+				origin = newVhost(t, hm, "example.test", "80")
+			}
+
+			dest, target := origin, origin.base+refsPath("other.git")
+			if tc.destHost != "" {
+				dest = newTLSVhost(t, hm, tc.destHost, tc.destPort)
+				target = dest.base + refsPath("repo.git")
+			}
+			if tc.forceDumb {
+				target = dest.base + "/repo.git/info/refs"
+			}
+			origin.redirectTo(target)
+
+			_, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+				o.ForceDumb = tc.forceDumb
+			})
+			if tc.forceDumb {
+				// The vhost serves a smart advertisement, so the dumb decoder
+				// may reject it. What is asserted below is the headers that
+				// reached dest, which that does not affect.
+				t.Logf("handshake: %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tc.want {
+				assertCredentialsPresent(t, dest.lastRequest(t))
+				return
+			}
+			assertCredentialsAbsent(t, dest.lastRequest(t))
+		})
+	}
+}

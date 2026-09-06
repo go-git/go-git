@@ -19,6 +19,39 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// wrapDropped annotates err with the origin crossing that withheld credentials,
+// when there was a crossing, a credential to withhold, and err is an
+// authentication failure. The error keeps its type and message.
+//
+// The credential has to have existed: a caller who configured none and is
+// challenged after a redirect would otherwise be told a credential of theirs
+// was not sent, naming something they never had.
+//
+// The origins are copied out of the record, which outlives this call — it is
+// stored on the session and read again for every later request.
+func wrapDropped(rec *redirectRecord, err error) error {
+	if err == nil {
+		return err
+	}
+	if !rec.withheld() {
+		return err
+	}
+	from, to, ok := rec.origins()
+	if !ok {
+		return err
+	}
+	if !errors.Is(err, transport.ErrAuthenticationRequired) &&
+		!errors.Is(err, transport.ErrAuthorizationFailed) {
+		return err
+	}
+	// originOf again on values that are already origins: it is what makes the
+	// copies, so a caller mutating the error cannot reach the session's record.
+	return fmt.Errorf("%w: %w", err, &transport.CredentialsDroppedError{
+		From: originOf(from),
+		To:   originOf(to),
+	})
+}
+
 // sessionBase is the state every session carries, in one value. Both session
 // types embed it, so a field added here reaches both without a signature to
 // thread it through.
@@ -27,6 +60,7 @@ type sessionBase struct {
 	baseURL    *url.URL
 	service    string
 	authorizer Authorizer
+	dropped    *redirectRecord
 }
 
 // Handshake implements transport.Transport. GETs /info/refs to discover
@@ -67,6 +101,9 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		configured = cred0.credential.Authorizer
 	}
 	authorizer := combine(basicAuth(baseURL.User), configured)
+	// Recorded before the request goes out, and read back only on an
+	// authentication failure. See redirectRecord.held.
+	rec.holdsCredential(authorizer != nil)
 	if err := applyAuth(httpReq, authorizer); err != nil {
 		return nil, fmt.Errorf("http transport: authorize: %w", err)
 	}
@@ -83,14 +120,19 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		return nil, fmt.Errorf("http transport: %w", err)
+		// A credential was minted for the origin this failed at, so the
+		// caller's own credential being withheld is not what went wrong.
+		if reacq != nil {
+			return nil, fmt.Errorf("http transport: %w", err)
+		}
+		return nil, fmt.Errorf("http transport: %w", wrapDropped(rec, err))
 	}
 
 	// Update base URL from the final redirect target.
 	redirectedURL, err := applyRedirect(resp, baseURL)
 	if err != nil {
 		_ = resp.Body.Close()
-		return nil, err
+		return nil, fmt.Errorf("http transport: %w", wrapDropped(rec, err))
 	}
 	// Copy before clearing rather than writing through redirectedURL:
 	// applyRedirect returns baseURL itself when the redirect changed nothing,
@@ -148,11 +190,28 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	// same comparison, including the last, so the credential is already where
 	// it is allowed to be.
 
+	// The record is what annotates the session's later authentication failures
+	// with the crossing. It is only an explanation while the session has no
+	// credential: one that holds a credential minted for its own origin had
+	// nothing withheld on the way there, so naming the crossing would blame a
+	// credential that was never the problem and tell the caller to supply what
+	// they already supplied. A crossing that left the session unauthenticated
+	// keeps the record — there the annotation is exactly the explanation.
+	//
+	// This is the session-side counterpart of the reacq check on the discovery
+	// failure above, phrased on the credential the session actually carries
+	// rather than on where it came from.
+	dropped := rec
+	if authorizer != nil {
+		dropped = nil
+	}
+
 	base := sessionBase{
 		client:     client,
 		baseURL:    sessURL,
 		service:    req.Command,
 		authorizer: authorizer,
+		dropped:    dropped,
 	}
 	return finishHandshake(resp, base, d)
 }
@@ -515,8 +574,13 @@ func (r *httpRequester) doPost() error {
 	}
 	r.resp, err = doRequest(r.session.client, httpReq)
 	if err != nil {
-		return fmt.Errorf("http transport: %w", err)
+		if r.resp != nil {
+			_ = r.resp.Body.Close()
+		}
+		return fmt.Errorf("http transport: %w", wrapDropped(r.session.dropped, err))
 	}
+	// doRequest has already turned any non-2xx into an error, so this catches
+	// only a 2xx that is not 200 — one the pack protocol cannot parse.
 	if r.resp.StatusCode != http.StatusOK {
 		_ = r.resp.Body.Close()
 		return fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(r.resp.Request.URL), r.resp.StatusCode)

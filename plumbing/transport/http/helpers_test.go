@@ -208,6 +208,43 @@ func redirectPair(t *testing.T, status int, dest http.HandlerFunc) (originURL, d
 	return originSrv.URL, destSrv.URL, destSeen
 }
 
+// returnToOrigin starts an origin that sends the discovery request out through
+// a second origin and straight back to itself. The chain therefore leaves the
+// origin and returns to it, and stripCredentials is sticky, so the request
+// arrives back unauthenticated and the origin can challenge it.
+//
+// authorized decides whether a request that came back is answered with the
+// advertisement or with a challenge, so a test can require whichever half of a
+// credential it is about. It returns the origin's base URL and what the origin
+// received.
+func returnToOrigin(t *testing.T, authorized func(*http.Request) bool) (base string, seen *seenRequests) {
+	t.Helper()
+
+	detour := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, r.URL.Query().Get("to"), http.StatusFound)
+	}))
+	t.Cleanup(detour.Close)
+
+	seen = &seenRequests{}
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.add(r)
+		if strings.HasPrefix(r.URL.Path, "/repo.git/") {
+			// Out to the detour, carrying the way back. Built from r.Host so
+			// neither server has to know the other's address before it starts.
+			back := "http://" + r.Host + refsPath("other.git")
+			http.Redirect(w, r, detour.URL+"/relay?to="+url.QueryEscape(back), http.StatusFound)
+			return
+		}
+		if !authorized(r) {
+			challenge(w)
+			return
+		}
+		writeAdvert(w, transport.UploadPackService)
+	}))
+	t.Cleanup(origin.Close)
+	return origin.URL, seen
+}
+
 func refsPath(repo string) string {
 	return "/" + repo + "/info/refs?service=git-upload-pack"
 }
