@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -275,4 +276,40 @@ func fetchThrough(t *testing.T, front, path string, opts Options) error {
 	req := &transport.FetchRequest{}
 	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 	return session.Fetch(context.Background(), memory.NewStorage(), req)
+}
+
+// TestCallerCheckRedirectCanRefuseAHop covers the mitigation Options.
+// FollowRedirects names for the disclosure it documents: under that policy a
+// redirected POST replays its body at the new origin, and the way to allow the
+// cross-origin discovery GET while refusing the POST is a CheckRedirect on
+// Client that returns an error.
+//
+// The transport wraps that hook rather than replacing it, so a caller's refusal
+// has to reach net/http and the resulting error has to reach the caller. Both
+// existing tests that install such a hook return nil from it, which leaves the
+// documented advice resting on nothing.
+func TestCallerCheckRedirectCanRefuseAHop(t *testing.T) {
+	t.Parallel()
+
+	errRefused := errors.New("the caller refused this hop")
+
+	originURL, _, destSeen := redirectPair(t, http.StatusTemporaryRedirect, func(w http.ResponseWriter, _ *http.Request) {
+		writeAdvert(w, transport.UploadPackService)
+	})
+
+	var hookCalls int
+	sess, err := handshakeAt(t, originURL, Options{
+		Client: &http.Client{
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				hookCalls++
+				return errRefused
+			},
+		},
+	})
+	require.Error(t, err, "the hop the caller refused must not be followed")
+	assert.Nil(t, sess)
+	assert.ErrorIs(t, err, errRefused,
+		"the caller's own error has to survive to the caller")
+	assert.Equal(t, 1, hookCalls, "the hook runs for the hop it is asked about")
+	assert.Empty(t, destSeen.all(), "nothing may reach the origin the redirect named")
 }

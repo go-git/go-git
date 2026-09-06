@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // This file is the package's test harness. Tests here reach for these rather
@@ -79,6 +81,64 @@ func (s *seenRequests) all() []*http.Request {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]*http.Request(nil), s.reqs...)
+}
+
+// clone is the repository URL a handshake asks for. The zero value is
+// "/repo.git" on the base with nothing else, which is what most tests want.
+type clone struct {
+	// path is taken in the spelling it is written in, so an escape such as
+	// %2F reaches the request as written rather than as the slash it decodes
+	// to. Empty means "/repo.git"; use pathRoot for a repository at the
+	// origin root.
+	path       string
+	user, pass string
+	query      string
+	ctx        context.Context
+}
+
+// pathRoot asks for the origin root, which the zero clone cannot express
+// because an empty path means "the default".
+const pathRoot = "\x00root"
+
+func (c clone) url(t *testing.T, base string) *url.URL {
+	t.Helper()
+
+	path := c.path
+	switch path {
+	case "":
+		path = "/repo.git"
+	case pathRoot:
+		path = ""
+	}
+	if c.query != "" {
+		path += "?" + c.query
+	}
+	u, err := url.Parse(base + path)
+	require.NoError(t, err)
+	if c.user != "" || c.pass != "" {
+		u.User = url.UserPassword(c.user, c.pass)
+	}
+	return u
+}
+
+// handshakeFor runs an upload-pack handshake for the repository c describes.
+func handshakeFor(t *testing.T, base string, c clone, opts Options) (transport.Session, error) {
+	t.Helper()
+
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return NewTransport(opts).Handshake(ctx, &transport.Request{
+		URL:     c.url(t, base),
+		Command: transport.UploadPackService,
+	})
+}
+
+// handshakeAt runs a handshake against base + "/repo.git".
+func handshakeAt(t *testing.T, base string, opts Options) (transport.Session, error) {
+	t.Helper()
+	return handshakeFor(t, base, clone{}, opts)
 }
 
 // redirectPair starts a destination server running dest, and an origin server

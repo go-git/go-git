@@ -36,28 +36,15 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		discoverProtocol = protocol.V2
 	}
 
-	infoURL, err := url.JoinPath(baseURL.String(), "info/refs")
+	d := discovery{service: discoverService, protocol: discoverProtocol, forceDumb: forceDumb}
+
+	// Mark this as the initial request so checkRedirect allows the HTTP client
+	// to follow redirects for this discovery request. Subsequent requests
+	// (pack POSTs, object GETs) use a plain context and will not follow
+	// redirects.
+	httpReq, err := d.request(withInitialRequest(ctx), baseURL)
 	if err != nil {
 		return nil, err
-	}
-	if !forceDumb {
-		infoURL += "?service=" + discoverService
-	}
-
-	// Mark this as the initial request so checkRedirect allows
-	// the HTTP client to follow redirects for this discovery request.
-	// Subsequent requests (pack POSTs, object GETs) use a plain
-	// context and will not follow redirects.
-	httpReq, err := http.NewRequestWithContext(withInitialRequest(ctx), http.MethodGet, infoURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("http transport: %w", err)
-	}
-
-	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
-	if !forceDumb {
-		if gp := transport.GitProtocolEnv(discoverProtocol); gp != "" {
-			httpReq.Header.Set("Git-Protocol", gp)
-		}
 	}
 	if baseURL.User != nil {
 		password, _ := baseURL.User.Password()
