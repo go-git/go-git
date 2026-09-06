@@ -73,20 +73,17 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 
 	client := t.resolveClient()
 	resp, err := doRequest(client, httpReq)
+
+	// Retry once at the origin a redirect reached, if it challenged. See
+	// reauthenticate.
+	reacq, resp, err := t.reauthenticate(ctx, client, baseURL, d, resp, err)
 	if err != nil {
-		// doRequest returns a non-nil response alongside its error for any
-		// non-2xx status, and checkError has already read what it needs of the
-		// body. Close it, or every failed discovery leaks a body and a
-		// connection.
+		// doRequest returns a non-nil response with its error for any non-2xx,
+		// and checkError has already read what it needs of the body.
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
 		return nil, fmt.Errorf("http transport: %w", err)
-	}
-
-	if err := checkError(resp); err != nil {
-		_ = resp.Body.Close()
-		return nil, err
 	}
 
 	// Update base URL from the final redirect target.
@@ -122,18 +119,27 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		// the new URL, effectively wiping the old ones.
 		authorizer = nil
 
-		cred, aerr := t.acquire(ctx, redirectedURL, baseURL, true)
-		if aerr != nil {
-			_ = resp.Body.Close()
-			return nil, fmt.Errorf("http transport: %w", aerr)
+		// reauthenticate may already have acquired one to get the discovery
+		// request through; reuse it rather than asking the caller twice.
+		cred := reacq
+		if cred == nil {
+			var aerr error
+			cred, aerr = t.acquire(ctx, redirectedURL, baseURL, true)
+			if aerr != nil {
+				_ = resp.Body.Close()
+				return nil, fmt.Errorf("http transport: %w", aerr)
+			}
 		}
 
 		// Containment: carry it only while the session's base URL is still the
-		// origin it was minted for.
+		// origin it was minted for. The retry does not follow redirects, so
+		// there is exactly one candidate. Those two decisions are a pair — a
+		// retry that could be redirected would give this credential the
+		// unbounded travel the original one is forbidden, with no gate
+		// anchored anywhere near it.
 		//
-		// Defense in depth: unreachable while the credential is acquired for
-		// the URL the session goes on to use, and the gate that would catch it
-		// if that ever changed.
+		// Defense in depth: unreachable while the retry cannot be redirected,
+		// and the gate that would catch it if that ever changed.
 		if cred != nil && credentialsMayFollow(cred.origin, redirectedURL) {
 			authorizer = cred.credential.Authorizer
 		}

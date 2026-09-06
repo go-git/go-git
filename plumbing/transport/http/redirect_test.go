@@ -373,6 +373,30 @@ func TestRedirectCredentialsStickyMultiHop(t *testing.T) {
 	})
 }
 
+// Userinfo on a redirected request can only have come from the target: it
+// arrives in the Location header, which the target wrote. net/http turns
+// req.URL.User into an Authorization header on the way out, so a strip that
+// empties the headers but leaves the URL alone lets a target plant a
+// credential on the very hop the strip exists to sanitize — under a header
+// name the caller never set, on a request the caller believes carries nothing.
+func TestRedirectDiscardsUserinfoPlantedByTheTarget(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	dest := newTLSVhost(t, hm, "evil.test", "443")
+	origin := newTLSVhost(t, hm, "example.test", "443")
+	origin.redirectTo("https://planted:planted-secret@evil.test" + refsPath("repo.git"))
+
+	_, err := handshakeWithCredentials(t, hm, origin.base)
+	require.NoError(t, err)
+
+	got := dest.lastRequest(t)
+	assertCredentialsAbsent(t, got)
+	// Basic cGxhbnRlZDpwbGFudGVkLXNlY3JldA== is planted:planted-secret.
+	assert.NotEqual(t, "Basic cGxhbnRlZDpwbGFudGVkLXNlY3JldA==", got.Get("Authorization"),
+		"the target must not be able to authenticate a hop with userinfo it planted itself")
+}
+
 // handshakeWithUserinfo performs a discovery handshake whose only credential is
 // userinfo in the repository URL, so what the session carries afterwards is
 // attributable to that source alone. The URL it handed the transport is

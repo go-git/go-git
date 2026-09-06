@@ -142,6 +142,15 @@ type Options struct {
 	// redirect to a subdomain the transport counts as another origin. Supply
 	// them through Options.Credentials instead if that is not wanted.
 	//
+	// One consequence is wider than a redirect: Jar implementations key on
+	// host and ignore the port, where this transport treats the port as part
+	// of the origin, so a cookie set by a service on one port is sent to a
+	// different service on another. That is a hop net/http followed. The
+	// re-authentication request the transport issues itself carries no jar at
+	// all — it exists because a redirect left the repository's origin, so it
+	// is by construction a request the caller's credentials may not travel
+	// on.
+	//
 	// A CheckRedirect hook set on this Client runs alongside the transport's
 	// own, but any header it adds when a redirect leaves the repository's
 	// origin is discarded the same way.

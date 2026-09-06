@@ -245,3 +245,29 @@ func TestCredentialRequestIsOrigin(t *testing.T) {
 		assert.Equal(t, "x.test", req.TargetOrigin.Host)
 	})
 }
+
+// The context is half of CredentialsFunc's signature and the only thing a
+// source can reach for cancellation or a request-scoped value. A lookup made on
+// a fresh context still receives a correct CredentialRequest, so every test
+// that inspects only the request passes while a keychain prompt loses its
+// deadline.
+func TestCredentialLookupCarriesTheHandshakeContext(t *testing.T) {
+	t.Parallel()
+
+	base, _ := advertServer(t)
+
+	type sentinelKey struct{}
+	ctx := context.WithValue(context.Background(), sentinelKey{}, "sentinel")
+
+	var seen any
+	sess, err := handshakeFor(t, base, clone{ctx: ctx}, Options{
+		Credentials: func(hookCtx context.Context, _ *CredentialRequest) (*Credential, error) {
+			seen = hookCtx.Value(sentinelKey{})
+			return nil, nil
+		},
+	})
+	require.NoError(t, err)
+	defer sess.Close()
+
+	assert.Equal(t, "sentinel", seen, "the hook must be called on the caller's context")
+}

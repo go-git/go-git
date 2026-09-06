@@ -83,6 +83,19 @@ func (s *seenRequests) all() []*http.Request {
 	return append([]*http.Request(nil), s.reqs...)
 }
 
+// post returns the last pack request the server received.
+func (s *seenRequests) post(t *testing.T) *http.Request {
+	t.Helper()
+	var last *http.Request
+	for _, got := range s.all() {
+		if got.Method == http.MethodPost {
+			last = got
+		}
+	}
+	require.NotNil(t, last, "the session never made a pack request")
+	return last
+}
+
 // clone is the repository URL a handshake asks for. The zero value is
 // "/repo.git" on the base with nothing else, which is what most tests want.
 type clone struct {
@@ -420,4 +433,91 @@ func assertCredentialsAbsent(t *testing.T, h http.Header) {
 	assert.Empty(t, h.Get("Authorization"), "Authorization must not cross an origin boundary")
 	assert.Empty(t, h.Get("X-Private-Token"), "custom credential must not cross an origin boundary")
 	assert.Empty(t, h["X-Raw-Token"], "raw-key credential must not cross an origin boundary")
+}
+
+// hookRecorder is a credential source that records what it was asked and
+// answers for the origins it was told about.
+type hookRecorder struct {
+	mu            sync.Mutex
+	asked         []*url.URL
+	redirected    []bool
+	knows         map[string]bool
+	header, value string
+}
+
+// newHook answers with a bearer token in the Authorization header.
+//
+// Do not use it in a test that also cares where the repository URL's userinfo
+// went: combine applies userinfo first, so this hook overwrites the header
+// basicAuth wrote and an assertion about userinfo cannot fail either way. Use
+// newHeaderHook there.
+func newHook(answer string, origins ...string) *hookRecorder {
+	return newHeaderHook("Authorization", "Bearer "+answer, origins...)
+}
+
+// newHeaderHook answers with an arbitrary header, so a test can tell this
+// credential apart from the repository URL's userinfo on one request.
+func newHeaderHook(header, value string, origins ...string) *hookRecorder {
+	k := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		k[o] = true
+	}
+	return &hookRecorder{knows: k, header: header, value: value}
+}
+
+func (h *hookRecorder) fn(_ context.Context, req *CredentialRequest) (*Credential, error) {
+	h.mu.Lock()
+	h.asked = append(h.asked, req.TargetOrigin)
+	h.redirected = append(h.redirected, req.Redirected)
+	known := h.knows[req.TargetOrigin.String()]
+	header, value := h.header, h.value
+	h.mu.Unlock()
+	if !known {
+		return nil, nil
+	}
+	return &Credential{Authorizer: func(r *http.Request) error {
+		r.Header.Set(header, value)
+		return nil
+	}}, nil
+}
+
+// calls returns the origin each call was asked about, in order.
+func (h *hookRecorder) calls() []*url.URL {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]*url.URL(nil), h.asked...)
+}
+
+// origins returns calls() rendered as strings, which is what most assertions
+// compare against.
+func (h *hookRecorder) origins() []string {
+	out := make([]string, 0, len(h.calls()))
+	for _, u := range h.calls() {
+		out = append(out, u.String())
+	}
+	return out
+}
+
+// redirectedFlags returns req.Redirected as seen by each call, in the same
+// order as calls().
+func (h *hookRecorder) redirectedFlags() []bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]bool(nil), h.redirected...)
+}
+
+// packRequest drives the session far enough to make the pack POST, and returns
+// what the server saw of it.
+func packRequest(t *testing.T, sess transport.Session, seen *seenRequests) *http.Request {
+	t.Helper()
+
+	sps, ok := sess.(*smartPackSession)
+	require.True(t, ok, "the session is not a smart one")
+
+	r := &httpRequester{session: sps, ctx: context.Background()}
+	_, err := r.Write([]byte("0032want " + testSHA + "\n0000"))
+	require.NoError(t, err)
+	require.NoError(t, r.Close(), "the pack request must succeed")
+
+	return seen.post(t)
 }

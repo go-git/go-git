@@ -296,6 +296,9 @@ func redactedURL(u *url.URL) string {
 }
 
 // doRequest performs an HTTP request and returns a typed error on failure.
+//
+// Every non-2xx status is turned into an error here, so a caller that saw a nil
+// error has a 2xx response and need not check the status again.
 func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 	traceHTTP := trace.HTTP.Enabled()
 	if traceHTTP {
@@ -360,10 +363,8 @@ func combine(fns ...Authorizer) Authorizer {
 
 // applyAuth authenticates req. A nil authorizer leaves it unauthenticated.
 //
-// Every credential the transport sends arrives through here, including one
-// taken from the repository URL: userinfo is turned into an authorizer once,
-// where the request is first built, rather than re-read at each site that
-// builds one.
+// The one credential that does not come through here is the retry's in
+// reauthenticate, which applies the authorizer it just composed.
 func applyAuth(req *http.Request, authorizer Authorizer) error {
 	if authorizer == nil {
 		return nil
