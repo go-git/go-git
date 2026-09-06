@@ -52,7 +52,8 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	// to follow redirects for this discovery request. Subsequent requests
 	// (pack POSTs, object GETs) use a plain context and will not follow
 	// redirects.
-	httpReq, err := d.request(withInitialRequest(ctx), baseURL)
+	rec := &redirectRecord{}
+	httpReq, err := d.request(withRedirectRecord(withInitialRequest(ctx), rec), baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -91,33 +92,21 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	}
 	sessURL := redirectedURL
 
-	// Clear credentials when the redirect left the origin they were issued
-	// for. The session carries one authorizer, applied to every subsequent
-	// request, so without this the original origin's credentials would be sent
-	// to the new one.
+	// Clear credentials when any hop of the chain left the origin they were
+	// issued for. The session carries one authorizer, applied to every
+	// subsequent request, so without this the original origin's credentials
+	// would be sent to the new one.
 	//
-	// This uses the same predicate as stripCredentials, so the discovery GET
-	// and the session that follows it agree on what an origin is. In canonical
-	// git, credential_from_url() re-derives credentials from the new URL,
-	// effectively wiping the old ones.
+	// This reads the record stripCredentials wrote, so the discovery GET and
+	// the session that follows it cannot disagree about what an origin is, or
+	// about whether the chain left one.
 	//
-	// The two are deliberately asymmetric in one respect: stripCredentials is
-	// sticky over the whole chain, so an origin -> evil -> origin redirect
-	// leaves the discovery GET's later hops unauthenticated even though the
-	// chain returned home. This check instead compares baseURL only against
-	// the final redirectedURL, so the same round trip leaves the session
-	// authenticated. That is not a leak — redirectedURL's origin is the
-	// original one — but it means such a chain can make the discovery GET
-	// anonymous while the session's POSTs are authenticated, which can surface
-	// as a confusing 401 rather than a credential exposure.
-	if !credentialsMayFollow(baseURL, redirectedURL) {
+	// In canonical git, credential_from_url() re-derives credentials from the
+	// new URL, effectively wiping the old ones.
+	if rec.crossed() {
 		// Copy before clearing rather than writing through redirectedURL:
 		// applyRedirect returns baseURL itself when the redirect changed
-		// nothing, and baseURL belongs to the caller. That aliasing cannot
-		// currently reach this branch — an aliased URL is trivially the same
-		// origin as itself — so this keeps the two functions independent
-		// rather than fixing a live bug: neither can make the other unsafe
-		// by changing later.
+		// nothing, and baseURL belongs to the caller.
 		cleared := *redirectedURL
 		cleared.User = nil
 		sessURL = &cleared

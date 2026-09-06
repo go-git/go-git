@@ -14,7 +14,75 @@ import (
 // contextKey is an unexported type for context keys in this package.
 type contextKey int
 
-const initialRequestKey contextKey = iota
+const (
+	initialRequestKey contextKey = iota
+	redirectRecordKey
+)
+
+// originOf returns u's origin as a fresh URL carrying scheme and host only. It
+// is built rather than copied so no other field survives into a value the
+// transport treats as an origin, and so a receiver cannot reach the transport's
+// own URLs through it.
+func originOf(u *url.URL) *url.URL {
+	return &url.URL{Scheme: u.Scheme, Host: u.Host}
+}
+
+// redirectRecord carries what CheckRedirect saw back to Handshake.
+//
+// It is reached through the request context rather than captured in the
+// CheckRedirect closure, because resolveClient's client is stored on the
+// session and reused for every later request: a captured variable would leak
+// one request's redirect history into the next. net/http propagates the
+// original request's context to every hop, so a per-request record is both
+// correct and the same shape as withInitialRequest above.
+//
+// No synchronisation is needed. net/http drives the whole chain from the
+// goroutine that called Do, and Handshake reads the record only after Do has
+// returned.
+type redirectRecord struct {
+	didCross bool
+	from, to *url.URL
+}
+
+func withRedirectRecord(ctx context.Context, rec *redirectRecord) context.Context {
+	return context.WithValue(ctx, redirectRecordKey, rec)
+}
+
+func redirectRecordFrom(req *http.Request) *redirectRecord {
+	rec, _ := req.Context().Value(redirectRecordKey).(*redirectRecord)
+	return rec
+}
+
+// note records the first origin crossing of a chain. Later crossings do not
+// overwrite it: the pair that matters to a caller is where the credential was
+// issued and where it first could not go.
+//
+// A crossing is recorded even when an endpoint cannot be read, because
+// stripCredentials strips on that path too and the two must not disagree. The
+// pair is then incomplete, which origins reports.
+func (r *redirectRecord) note(from, to *url.URL) {
+	if r == nil || r.didCross {
+		return
+	}
+	r.didCross = true
+	if from != nil {
+		r.from = originOf(from)
+	}
+	if to != nil {
+		r.to = originOf(to)
+	}
+}
+
+// crossed reports whether any hop left the origin.
+func (r *redirectRecord) crossed() bool { return r != nil && r.didCross }
+
+// origins returns the recorded pair, and whether both endpoints are known.
+func (r *redirectRecord) origins() (from, to *url.URL, ok bool) {
+	if r == nil || r.from == nil || r.to == nil {
+		return nil, nil, false
+	}
+	return r.from, r.to, true
+}
 
 // RedirectPolicy controls how the HTTP transport follows redirects.
 type RedirectPolicy string
@@ -221,9 +289,15 @@ func stripCredentials(req *http.Request, via []*http.Request) {
 	// the two in crossedOrigin are defensive, against a synthetic caller.
 	// Each treats a URL it cannot read as an origin crossing; removing one
 	// panics in canonicalHost rather than leaking.
-	if origin := via[0].URL; origin != nil && !crossedOrigin(origin, req, via) {
+	origin := via[0].URL
+	if origin != nil && !crossedOrigin(origin, req, via) {
 		return
 	}
+	// Record on every path that strips, including the defensive one where a
+	// URL cannot be read. If the record and the strip can disagree, then the
+	// session and the discovery GET can disagree — which is the divergence
+	// this record exists to remove.
+	redirectRecordFrom(req).note(origin, req.URL)
 	req.Header = filterHeaders(req.Header)
 	if req.URL != nil {
 		req.URL.User = nil
