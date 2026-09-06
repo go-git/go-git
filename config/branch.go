@@ -43,7 +43,7 @@ func (b *Branch) Validate() error {
 		return errBranchEmptyName
 	}
 
-	if b.Merge != "" && !b.Merge.IsBranch() {
+	if b.Merge != "" && !strings.HasPrefix(string(b.Merge), "refs/") {
 		return errBranchInvalidMerge
 	}
 
