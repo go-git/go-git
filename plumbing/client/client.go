@@ -73,12 +73,67 @@ func WithSSHAuth(a SSHAuth) Option {
 	}
 }
 
+// addCredentials adds fn to the HTTP transport's credential sources.
+//
+// The latest source is tried first, matching option precedence elsewhere in
+// this package. Errors stop the chain; only a decline tries an earlier source.
+func (o *options) addCredentials(fn xhttp.CredentialsFunc) {
+	if o.http.Credentials == nil {
+		o.http.Credentials = fn
+		return
+	}
+	o.http.Credentials = xhttp.Chain(fn, o.http.Credentials)
+}
+
 // WithHTTPAuth sets HTTP authentication. The auth type's Authorizer method is
-// called for each outgoing HTTP request made to the origin in the repository
-// URL. It is not sent to another origin a redirect leads to.
+// called for each outgoing request made to the origin in the repository URL,
+// and for no other origin except the permitted http:80 to https:443 upgrade
+// on the same host. Use WithHTTPCredentials to authenticate a redirect's
+// origin.
+//
+// It composes with WithHTTPCredentials; see there for precedence.
+//
+// An untyped nil a is ignored. A typed nil in a non-nil interface —
+// WithHTTPAuth((*http.BasicAuth)(nil)) — is a value like any other and panics
+// on the first authenticated request.
 func WithHTTPAuth(a HTTPAuth) Option {
 	return func(o *options) {
-		o.http.Credentials = xhttp.ForRepositoryOrigin(a.Authorizer)
+		if a == nil {
+			return
+		}
+		o.addCredentials(xhttp.ForRepositoryOrigin(a.Authorizer))
+	}
+}
+
+// CredentialsFunc supplies a credential for an origin the HTTP transport is
+// about to make a request to. It is the type WithHTTPCredentials takes; see
+// [github.com/go-git/go-git/v6/plumbing/transport/http.CredentialsFunc] for
+// the contract and the adapters for building one.
+type CredentialsFunc = xhttp.CredentialsFunc
+
+// CredentialRequest identifies what a credential is wanted for. It is the
+// argument of a CredentialsFunc.
+type CredentialRequest = xhttp.CredentialRequest
+
+// Credential is a credential for the origin that was asked about. It is what a
+// CredentialsFunc returns.
+type Credential = xhttp.Credential
+
+// WithHTTPCredentials sets a per-origin credential source for the HTTP
+// transport. It is consulted for the repository's origin and for a redirect
+// target; see CredentialsFunc for the full contract.
+//
+// Multiple sources compose: the last option applied is consulted first, a
+// decline falls through to earlier sources, and an error stops the chain and
+// is returned. Userinfo in the repository URL is applied before the selected
+// source, so the source can replace its Authorization header or add others.
+//
+// Prefer transport/http.ForRepositoryOrigin or ForOrigin, combined with Chain.
+// A hand-written source can use CredentialRequest.IsOrigin for the transport's
+// own origin comparison.
+func WithHTTPCredentials(fn CredentialsFunc) Option {
+	return func(o *options) {
+		o.addCredentials(fn)
 	}
 }
 
