@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -30,6 +31,17 @@ func (e *Err) Error() string {
 	return fmt.Sprintf(format, redactedURL(e.URL), e.Status)
 }
 
+// maxErrorBodySize caps how much of an error response body is read into the
+// returned error. The body may come from a server the caller never named — a
+// redirect target — so it is not read to EOF.
+const maxErrorBodySize = 8 << 10
+
+// maxDrainSize caps how much of an error response body is read and discarded
+// after the message has been taken. Closing a body with bytes unread discards
+// the connection instead of returning it to the pool, so a large error page
+// would cost a new connection on every attempt.
+const maxDrainSize = 1 << 20
+
 // checkError maps HTTP response status codes to typed transport errors.
 func checkError(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
@@ -39,10 +51,11 @@ func checkError(r *http.Response) error {
 	var reason string
 	var messageBuffer bytes.Buffer
 	if r.Body != nil {
-		messageLength, _ := messageBuffer.ReadFrom(r.Body)
+		messageLength, _ := messageBuffer.ReadFrom(io.LimitReader(r.Body, maxErrorBodySize))
 		if messageLength > 0 {
 			reason = messageBuffer.String()
 		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrainSize))
 	}
 
 	err := &Err{
