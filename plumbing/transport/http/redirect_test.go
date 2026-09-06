@@ -418,6 +418,85 @@ func handshakeWithUserinfo(t *testing.T, hm *vhostMap, originBase string) (trans
 	return sess, u, err
 }
 
+// Userinfo in the repository URL and a caller's CredentialsFunc are folded into
+// one authorizer on the first request, so a chain that leaves the origin and
+// returns must re-offer both or neither. The origin the chain came back to
+// already received the credential on that first request, and the detour never
+// saw it; withholding one source while re-offering the other makes the same
+// credential behave differently depending on how it was supplied.
+func TestRedirectReoffersUserinfoOnReturnToOrigin(t *testing.T) {
+	t.Parallel()
+
+	// origin -> detour -> origin, the chain TestRedirectCredentialsStickyMultiHop
+	// pins the strip on.
+	bounce := func(t *testing.T) (hm *vhostMap, origin, detour *vhost) {
+		t.Helper()
+		hm = newVhostMap()
+		origin = newTLSVhost(t, hm, "example.test", "443")
+		detour = newTLSVhost(t, hm, "evil.test", "443")
+		detour.redirectTo(origin.base + refsPath("other.git"))
+		origin.redirectTo(detour.base + refsPath("repo.git"))
+		return hm, origin, detour
+	}
+
+	t.Run("userinfo alone", func(t *testing.T) {
+		t.Parallel()
+
+		hm, origin, detour := bounce(t)
+		sess, _, err := handshakeWithUserinfo(t, hm, origin.base)
+		require.NoError(t, err)
+
+		assertCredentialsAbsent(t, detour.lastRequest(t))
+
+		// The session's own request, back at the origin the credential names.
+		// The vhost answers it with the discovery advertisement, which ls-refs
+		// cannot decode, so the error is expected and irrelevant: the assertion
+		// is about what reached the origin.
+		_, _ = sess.GetRemoteRefs(context.Background(), nil)
+		assert.NotEmpty(t, origin.lastRequest(t).Get("Authorization"),
+			"the origin the chain returned to had this credential on the first request")
+	})
+
+	t.Run("composed with a hook credential", func(t *testing.T) {
+		t.Parallel()
+
+		hm, origin, detour := bounce(t)
+		sess, err := handshakeWithCredentials(t, hm, origin.base)
+		require.NoError(t, err)
+
+		assertCredentialsAbsent(t, detour.lastRequest(t))
+
+		_, _ = sess.GetRemoteRefs(context.Background(), nil)
+		// Both sources, in hop 0's order: the URL's Authorization and the
+		// hook's own headers all reach the origin, as they did on the first
+		// request.
+		assertCredentialsPresent(t, origin.lastRequest(t))
+	})
+}
+
+// The boundary. A chain ending at a genuinely different origin must not have
+// userinfo re-offered to it: that origin never received the credential, and
+// re-offering it there is the cross-origin leak the strip exists to prevent.
+func TestRedirectDoesNotReofferUserinfoAcrossAnOriginChange(t *testing.T) {
+	t.Parallel()
+
+	hm := newVhostMap()
+	origin := newTLSVhost(t, hm, "example.test", "443")
+	dest := newTLSVhost(t, hm, "evil.test", "443")
+	origin.redirectTo(dest.base + refsPath("repo.git"))
+
+	sess, _, err := handshakeWithUserinfo(t, hm, origin.base)
+	require.NoError(t, err)
+
+	sps, ok := sess.(*smartPackSession)
+	require.True(t, ok)
+	assert.Nil(t, sps.authorizer,
+		"the chain ended at another origin, which never received this credential")
+
+	_, _ = sess.GetRemoteRefs(context.Background(), nil)
+	assertCredentialsAbsent(t, dest.lastRequest(t))
+}
+
 // A caller-supplied CheckRedirect must observe the sanitized request, and must
 // not be able to reinstate credentials by copying headers from via[0].
 func TestRedirectStripsAroundCallerHook(t *testing.T) {

@@ -74,25 +74,24 @@ func redactRetryError(retryErr error) error {
 	}
 }
 
-// originCredential pairs a credential with the origin it was acquired for.
-// The origin is what the session's credential gate is re-anchored on; without
-// it nothing in the code relates the credential to where it is allowed to end
-// up.
+// originCredential pairs a credential with the origin it was acquired for; the
+// origin is what the session's credential gate is re-anchored on.
+//
+// When reauthenticate returns one, the credential is everything that origin is
+// authenticated with — the repository URL's userinfo and the caller's source
+// both, where each may travel there — not one of the two.
 type originCredential struct {
 	origin     *url.URL
 	credential *Credential
 }
 
-// acquire asks the caller for a credential belonging to target's origin.
+// acquire asks the caller for a credential belonging to target's origin. This
+// is the only place Options.Credentials is called, from either path. It returns
+// (nil, nil) when no hook is configured or the hook declines.
 //
-// This is the only place Options.Credentials is called, from either path, so
-// there is one answer to "what was the caller asked, and about what". It
-// returns (nil, nil) when no hook is configured or the hook declines.
-//
-// repository is the URL the caller named and is never derived from target: the
-// two are separate parameters so a call site cannot pass one and have the other
-// default to it. A credential source comparing them would then find every
-// origin to be the caller's own and answer for all of them.
+// repository is a separate parameter and never derived from target, so a call
+// site cannot pass one and have the other default to it: a credential source
+// comparing them would then find every origin to be the caller's own.
 //
 // The caller must have validated target through applyRedirect first: a target
 // that cannot become a base URL must not be able to attract a credential.
@@ -112,19 +111,18 @@ func (t *Transport) acquire(ctx context.Context, target, repository *url.URL, re
 	if cred == nil || cred.Authorizer == nil {
 		return nil, nil
 	}
-	// A second origin, not the one the hook was handed. CredentialRequest
-	// promises its URLs are copies made for that one call, and a value kept
-	// here is not that: a hook that writes to req.TargetOrigin.Host would be
-	// writing to what the transport carries back. Nothing reads this field
-	// today that a hook could reach, which is exactly the kind of thing one
-	// refactor changes quietly.
+	// A second origin, not the one the hook was handed: CredentialRequest
+	// promises its URLs are copies made for that one call, so a hook that writes
+	// to req.TargetOrigin.Host must not reach what the transport keeps.
 	return &originCredential{origin: originOf(target), credential: cred}, nil
 }
 
 // reauthenticate implements the discovery-request half of canonical git's
 // HTTP_REAUTH loop: when a redirect carried the discovery request to an origin
-// the caller's credential may not be sent to, and that origin challenges, mint
-// a credential for the new origin and try again.
+// the caller's credential may not be sent to, and that origin challenges, build
+// a credential for the new origin and try again. It returns the response and
+// error the caller should proceed with, and when it does not act it returns
+// resp and err untouched.
 //
 // One attempt, where git's loop makes up to two, each preceded by a fresh
 // credential_fill(): the caller's source has already answered for this origin,
@@ -133,12 +131,14 @@ func (t *Transport) acquire(ctx context.Context, target, repository *url.URL, re
 // where git's can — see errRetryRedirected. Both tighten the loop rather than
 // follow it.
 //
-// It returns the response and error the caller should proceed with. When it
-// does not act, it returns resp and err untouched.
+// The credential is built from both of the transport's sources under the same
+// relations the session settles on, so a chain that returns to the origin the
+// caller named is retried with the same credential whichever way it was
+// supplied. Returning the pair rather than the caller's half alone is what
+// makes a non-nil return mean "a credential was spent at this origin".
 //
-// Response ownership: the returned *http.Response is always the one the caller
-// must close. On the paths that decline after closing the original, closing it
-// again is a no-op — http.Response.Body.Close is idempotent.
+// The returned *http.Response is always the one the caller must close; on the
+// paths that close the original first, closing again is a no-op.
 func (t *Transport) reauthenticate(
 	ctx context.Context,
 	client *http.Client,
@@ -147,8 +147,10 @@ func (t *Transport) reauthenticate(
 	resp *http.Response,
 	err error,
 ) (*originCredential, *http.Response, error) {
-	if t.opts.Credentials == nil || resp == nil || resp.Request == nil ||
-		resp.Request.URL == nil || resp.Body == nil {
+	// A nil resp is the ordinary path: doRequest returns one for any client.Do
+	// failure. The other three are net/http's to populate, and a response whose
+	// target cannot be read is one whose origin cannot be checked.
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil || resp.Body == nil {
 		return nil, resp, err
 	}
 
@@ -157,86 +159,86 @@ func (t *Transport) reauthenticate(
 	if !errors.Is(err, transport.ErrAuthenticationRequired) {
 		return nil, resp, err
 	}
-	// Whether the caller's credential reached this request is a fact about the
-	// whole chain, not about its two endpoints. stripCredentials is sticky —
-	// once a hop has left the repository's origin the credential stays gone
-	// even where a later hop returns to it — and it records that on the
-	// redirect record, which net/http carries to every hop through the original
-	// request's context. Reading the record is therefore the only test that
-	// agrees with what was actually sent, and the same one the session's
-	// credential gate uses: comparing baseURL against the final URL alone reads
-	// a chain that left the origin and came back as still holding its
-	// credential, when the request arrived there with nothing.
-	//
-	// This keeps the http-to-https upgrade out of the retry just as that
-	// comparison did. An upgrade on the same host is not an origin change, so
-	// stripCredentials never strips and nothing is recorded: the original
-	// credential followed the upgrade and is what the challenge answered.
-	//
-	// A missing record declines, which is the safe direction — no record is no
-	// recorded crossing, and no credential is minted for an origin nothing says
-	// the chain left.
+	// The whole-chain record, not the two endpoints: stripping is sticky, so a
+	// chain that left the repository's origin and came back arrived here with
+	// nothing, where comparing baseURL against the final URL would read it as
+	// still holding its credential. A permitted upgrade sets no record, because
+	// the credential followed it. A missing record declines, the safe direction.
 	if !redirectRecordFrom(resp.Request).crossed() {
 		return nil, resp, err
 	}
 
-	// Validate before consulting the caller. Handshake runs applyRedirect only
-	// after this returns, so nothing has yet checked the /info/refs tail or the
-	// scheme rule, and a target that cannot become a base URL must not be able
-	// to attract a credential either.
+	// Validate before consulting the caller: nothing has yet checked the
+	// /info/refs tail or the scheme rule. See acquire.
 	newBase, rerr := applyRedirect(resp, baseURL)
 	if rerr != nil {
 		return nil, resp, err
 	}
 
-	// checkError has already read what it needs of the body; close it before
-	// re-issuing.
+	// checkError has already taken what it needs of the body.
 	_ = resp.Body.Close()
+
+	// The repository URL's userinfo, where the chain ended somewhere it may
+	// travel to: that is the origin the caller named, where the first request
+	// already spent it and the detour never saw it. Withholding it while the
+	// caller's source is re-offered would make one credential behave two ways
+	// depending only on how it was supplied.
+	var fromURL Authorizer
+	if credentialsMayFollow(baseURL, newBase) {
+		fromURL = basicAuth(baseURL.User)
+	}
 
 	reacq, aerr := t.acquire(ctx, newBase, baseURL, true)
 	if aerr != nil {
 		return nil, resp, aerr
 	}
-	if reacq == nil {
-		return nil, resp, err
+	var fromHook Authorizer
+	if reacq != nil {
+		fromHook = reacq.credential.Authorizer
 	}
 
-	// Re-issue at the validated target. Built by the same constructor as the
-	// original request, so it cannot differ from it, and so nothing the server
-	// chose — userinfo, query, fragment — can travel on a request this
-	// credential is about to authenticate.
+	// Hop 0's order — userinfo first, the caller's source after it — so the retry
+	// carries what the first request carried. combine yields nil when neither
+	// source answers for this origin, and there is nothing to spend.
+	retryAuth := combine(fromURL, fromHook)
+	if retryAuth == nil {
+		return nil, resp, err
+	}
+	spent := &originCredential{
+		origin:     originOf(newBase),
+		credential: &Credential{Authorizer: retryAuth},
+	}
+
+	// Re-issue at the validated target, through the same constructor as the
+	// original request, so nothing the server chose — userinfo, query, fragment
+	// — can travel on a request this credential authenticates.
 	retryReq, nerr := d.request(ctx, newBase)
 	if nerr != nil {
 		return nil, resp, err
 	}
-	if authErr := reacq.credential.Authorizer(retryReq); authErr != nil {
+	if authErr := retryAuth(retryReq); authErr != nil {
 		return nil, resp, authErr
 	}
 
-	// One attempt, redirects refused: the re-acquired credential stays at the
-	// origin it was minted for, and no second hop budget is opened.
+	// One attempt, redirects refused: see errRetryRedirected.
 	retryResp, retryErr := doRequest(noRedirectClient(client), retryReq)
 	if retryResp == nil {
-		// reacq, not nil: a credential was minted and spent at this origin, so
-		// what failed is authentication there, not a credential withheld on the
-		// way. Keep the original status as the error the caller sees and carry
-		// retryErr as its cause: doRequest returns (nil, err) for any
-		// client.Do failure, and retryErr is what actually happened — the
-		// retry's own redirect refusal (errRetryRedirected, wrapped in a
-		// *url.Error by net/http) when it was a redirect, or connection
-		// refused, a TLS failure, whatever else client.Do returned otherwise.
+		// spent, not nil: a credential was offered at this origin, so what
+		// failed is authentication there, not a credential withheld on the
+		// way. The original status stays the error the caller sees and
+		// retryErr becomes its cause — the redirect refusal wrapped in a
+		// *url.Error, or whatever else client.Do returned.
 		cause := redactRetryError(retryErr)
 		if stopped(retryErr) {
 			// A clone the caller stopped is not a clone that needs
-			// credentials. Both errors still render, so nothing is lost from
-			// the message, but only the cancellation is in the chain: leaving
-			// the 401 there has a caller who classifies authentication first
-			// prompt for a password on a clone the user cancelled themselves.
-			return reacq, resp, fmt.Errorf("%s: %w", err, cause)
+			// credentials: leaving the 401 in the chain has a caller who
+			// classifies authentication first prompt for a password on a
+			// clone the user cancelled. Both errors still render.
+			return spent, resp, fmt.Errorf("%s: %w", err, cause)
 		}
-		return reacq, resp, fmt.Errorf("%w: %w", err, cause)
+		return spent, resp, fmt.Errorf("%w: %w", err, cause)
 	}
-	return reacq, retryResp, retryErr
+	return spent, retryResp, retryErr
 }
 
 // stopped reports whether err is the caller withdrawing: a cancelled context, a

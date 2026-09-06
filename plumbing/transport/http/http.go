@@ -215,6 +215,15 @@ type Options struct {
 	// the repository's own origin, and ForOrigin for a credential belonging to
 	// an origin known up front.
 	//
+	// The two sources are not alternatives. Both are applied to the same
+	// request, the repository URL's userinfo first and this one after it, so
+	// what this writes under a name the userinfo also uses replaces it —
+	// Authorization is the one they collide on — and anything it writes under
+	// another name is added alongside. That order holds at each of the three
+	// points the two are folded together: the first request, the session once
+	// a redirect has settled, and the re-authentication retry, so which half
+	// wins does not depend on the path a chain took.
+	//
 	// A credential is applied by mutating the outgoing request. Header names
 	// are not enumerable, so when a redirect leaves the origin a credential
 	// was issued for, this transport keeps only the headers it set itself and

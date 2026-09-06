@@ -159,17 +159,50 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		//
 		// In canonical git, credential_from_url() re-derives credentials from
 		// the new URL, effectively wiping the old ones.
-		authorizer = nil
+		//
+		// Both halves of the hop-0 credential are re-derived below, each under
+		// the relation that decides whether it may travel to where the chain
+		// ended up. Anything it does not re-derive stays gone.
 
-		// reauthenticate may already have acquired one to get the discovery
-		// request through; reuse it rather than asking the caller twice.
-		cred := reacq
-		if cred == nil {
-			var aerr error
-			cred, aerr = t.acquire(ctx, redirectedURL, baseURL, true)
+		// The credential the retry already spent, when there was one.
+		// reauthenticate derives it from both sources, under these same
+		// relations against this same target, so it is the whole credential for
+		// where the chain ended up and not one half of it: reuse it rather than
+		// re-composing it and asking the caller a question they have answered.
+		settled := reacq
+		if settled == nil {
+			// Nothing was spent, so derive both halves here.
+			//
+			// The repository URL's userinfo. The argument for re-offering the
+			// hook's answer applies to it verbatim: a chain returning to the
+			// origin the caller named ends where this credential was already
+			// sent on the first request, and the detour never saw it.
+			// Withholding one source while re-offering the other would make the
+			// same credential behave differently depending on how it was
+			// supplied, which is what folding the two into one authorizer
+			// exists to prevent.
+			var fromURL Authorizer
+			if credentialsMayFollow(baseURL, redirectedURL) {
+				fromURL = basicAuth(baseURL.User)
+			}
+
+			cred, aerr := t.acquire(ctx, redirectedURL, baseURL, true)
 			if aerr != nil {
 				_ = resp.Body.Close()
 				return nil, fmt.Errorf("http transport: %w", aerr)
+			}
+			var fromHook Authorizer
+			if cred != nil {
+				fromHook = cred.credential.Authorizer
+			}
+
+			// Composed in hop 0's order — userinfo first, the caller's source
+			// after it — so a chain that returns to the origin arrives with the
+			// same credential it left with. combine yields nil when neither
+			// applies.
+			settled = &originCredential{
+				origin:     originOf(redirectedURL),
+				credential: &Credential{Authorizer: combine(fromURL, fromHook)},
 			}
 		}
 
@@ -182,8 +215,9 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		//
 		// Defense in depth: unreachable while the retry cannot be redirected,
 		// and the gate that would catch it if that ever changed.
-		if cred != nil && credentialsMayFollow(cred.origin, redirectedURL) {
-			authorizer = cred.credential.Authorizer
+		authorizer = nil
+		if credentialsMayFollow(settled.origin, redirectedURL) {
+			authorizer = settled.credential.Authorizer
 		}
 	}
 	// No gate on the other path: without a crossing, every hop satisfied the

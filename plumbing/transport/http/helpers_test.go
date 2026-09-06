@@ -558,3 +558,37 @@ func packRequest(t *testing.T, sess transport.Session, seen *seenRequests) *http
 
 	return seen.post(t)
 }
+
+// The advertisement advert() builds must be one handshakeSmart accepts, and
+// redirectPair must produce a chain the transport records as having crossed an
+// origin. Both underpin most of the package's assertions, so a fixture that
+// stopped doing either would make them pass vacuously rather than fail.
+func TestHarnessIsSound(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the advertisement is accepted as a smart session", func(t *testing.T) {
+		t.Parallel()
+
+		base, _ := advertServer(t)
+		sess, err := handshakeAt(t, base, Options{})
+		require.NoError(t, err)
+		defer sess.Close()
+
+		_, ok := sess.(*smartPackSession)
+		require.True(t, ok, "the harness must produce a smart session")
+	})
+
+	t.Run("redirectPair crosses an origin", func(t *testing.T) {
+		t.Parallel()
+
+		hook := newHook("unused")
+		originURL, destURL, _ := redirectPair(t, http.StatusFound, func(w http.ResponseWriter, _ *http.Request) {
+			writeAdvert(w, transport.UploadPackService)
+		})
+		_, err := handshakeAt(t, originURL, Options{Credentials: hook.fn})
+		require.NoError(t, err)
+
+		require.Equal(t, []string{originURL, destURL}, hook.origins(),
+			"the fixture must leave the origin, or every credential assertion built on it is vacuous")
+	})
+}
