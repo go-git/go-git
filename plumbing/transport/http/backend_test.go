@@ -136,7 +136,6 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	pu, err := url.Parse(authed)
 	require.NoError(t, err)
 
-	// --- git CLI clone (exercises v2 ls-refs + fetch against our UploadPack v2 path) ---
 	cloneCLI := t.TempDir()
 	runV2(t, cloneCLI, "git", "clone", authed, "cloned")
 	// Force a main branch for subsequent ops (git may default to master in the worktree).
@@ -147,7 +146,6 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	matches, _ := filepath.Glob(packGlob)
 	require.NotEmpty(t, matches, "v2 fetch via git CLI should have produced a pack")
 
-	// --- git CLI modify + push (exercises receive-pack path on our server) ---
 	workDir := filepath.Join(cloneCLI, "cloned")
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "from-cli.txt"), []byte("from cli over http\n"), 0o644))
 	run(t, workDir, "git", "add", "from-cli.txt")
@@ -155,7 +153,6 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	// Force auth header (git can be picky with userinfo on POST to custom backends).
 	runV2(t, workDir, "git", "-c", "http.extraHeader=Authorization: Basic dTpw", "push", "--force", authed, "HEAD:main")
 
-	// --- go-git HTTP transport low-level fetch (directly tests the http transport + our server) ---
 	// Note: we do not set Protocol: V2 here because the go-git client does not yet
 	// implement the v2 send path (command=fetch etc.). These low-level calls use
 	// the classic format (no Git-Protocol header -> v0 on server). The v2 server
@@ -203,7 +200,6 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 	}
 	require.True(t, found, "go-git http transport fetch should have delivered objects from server")
 
-	// --- go-git HTTP transport fetch after the CLI push (exercises "pull" using the http transport) ---
 	sess3, err := tr.Handshake(context.Background(), &transport.Request{URL: pu, Command: transport.UploadPackService})
 	require.NoError(t, err)
 	refs3, err := sess3.GetRemoteRefs(context.Background(), nil)

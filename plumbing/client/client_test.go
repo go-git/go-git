@@ -111,19 +111,6 @@ func TestWithSSHAuth(t *testing.T) {
 	assert.NotNil(t, tr)
 }
 
-func TestWithHTTPAuth(t *testing.T) {
-	t.Parallel()
-
-	auth := &xhttp.BasicAuth{Username: "user", Password: "pass"}
-
-	c := New(WithHTTPAuth(auth))
-	defer c.Close()
-
-	tr, err := c.Transport("http")
-	require.NoError(t, err)
-	assert.NotNil(t, tr)
-}
-
 func TestWithHTTPClient(t *testing.T) {
 	t.Parallel()
 

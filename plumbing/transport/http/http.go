@@ -149,11 +149,10 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 		if err := checkRedirect(req, via, policy); err != nil {
 			return err
 		}
-		// Strip before the caller's hook so it observes what will actually be
-		// sent, and again afterwards so a hook of the common "preserve my
-		// headers across redirects" shape — which copies from via[0], the
-		// original unsanitized request — cannot reinstate them. Carrying
-		// credentials across an origin boundary is deliberately unsupported.
+		// Strip before the caller's hook so it observes what will be sent, and
+		// again after so a hook of the common "preserve my headers across
+		// redirects" shape — copying from via[0], the original unsanitized
+		// request — cannot reinstate them.
 		stripCredentials(req, via)
 		if next != nil {
 			if err := next(req, via); err != nil {
@@ -210,6 +209,13 @@ func stripCredentials(req *http.Request, via []*http.Request) {
 
 // crossedOrigin reports whether any hop so far, including the pending one, has
 // left origin.
+//
+// Every comparison asks the relation in one direction: from the origin the
+// credential was issued for, towards the hop being judged. The relation is
+// asymmetric — an http origin on port 80 may upgrade to https on 443 of the
+// same host, never the reverse — so asking it the other way round reads an
+// upgrade already taken as a downgrade and withholds the credential from a hop
+// it was entitled to reach, which is a clone that stops working.
 func crossedOrigin(origin *url.URL, req *http.Request, via []*http.Request) bool {
 	if req.URL == nil || !credentialsMayFollow(origin, req.URL) {
 		return true
@@ -222,16 +228,14 @@ func crossedOrigin(origin *url.URL, req *http.Request, via []*http.Request) bool
 	return false
 }
 
-// checkRedirect implements Git's http.followRedirects policies. The
-// default policy is "initial", where only the GET /info/refs discovery
-// request is allowed to follow redirects.
+// checkRedirect implements Git's http.followRedirects policies. The default
+// policy is "initial", where only the GET /info/refs discovery request may
+// follow redirects.
 //
-// This function decides only whether a hop may proceed. Credentials on a
-// permitted hop are handled by stripCredentials, which removes them when the
-// hop leaves the origin they were issued for. net/http's Client applies its
-// own rule first, but that rule forwards credentials from a host to its
-// subdomains, ignores the port and the scheme, and recognises only a fixed set
-// of header names, so it is not sufficient on its own.
+// It decides only whether a hop may proceed; credentials on a permitted hop are
+// stripCredentials' business. net/http's Client applies its own rule first, but
+// that rule forwards credentials to subdomains, ignores port and scheme, and
+// recognises only a fixed set of header names.
 func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy) error {
 	if len(via) != 0 {
 		prev := via[len(via)-1]

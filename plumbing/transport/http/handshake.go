@@ -194,14 +194,12 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		return nil, err
 	}
 
-	// Validate capabilities before returning the session.
 	if err := capability.Validate(&ar.Capabilities); err != nil {
 		return nil, err
 	}
 
-	// Source the advertisement's version from the version DiscoverVersion
-	// already established, keeping the session the single source of truth
-	// rather than AdvRefs.Decode's independent parse of the same line.
+	// Take the version from DiscoverVersion rather than AdvRefs.Decode's
+	// independent parse of the same line, so there is one source of truth.
 	ar.Version = ver
 
 	return &smartPackSession{
@@ -305,9 +303,8 @@ func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.Co
 	if err := cr.Encode(r); err != nil {
 		return err
 	}
-	// Command consumes the whole response (it never streams the body out), so
-	// drain and close it on every path. A bare return on a decode error would
-	// otherwise leak the response body and its connection.
+	// Command never streams the body out, so drain and close on every path; a
+	// bare return on a decode error would leak the body and its connection.
 	defer func() {
 		if r.resp != nil {
 			_, _ = io.Copy(io.Discard, r.resp.Body)
@@ -342,21 +339,16 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
-	// Close the response unless the read itself was a cancellation. The race
-	// this guards against only exists on cancellation: a ctxReader goroutine
-	// inside FetchPack can still be blocked in the underlying Read after the
-	// <-ctx.Done() branch, so niling current.resp here would race it. On a
-	// non-cancellation error (or success) FetchPack's last Read returned via the
-	// result channel and its goroutine is quiescent, so closing is safe — and
-	// necessary, otherwise the response body/connection leaks. On the
-	// cancellation path the request context unblocks the in-flight read, so the
-	// body is not leaked.
+	// Close the response unless the read itself was a cancellation. Only then is
+	// there a race: a ctxReader goroutine inside FetchPack can still be blocked
+	// in the underlying Read after the <-ctx.Done() branch, and the request
+	// context is what unblocks it, so nothing leaks. Otherwise FetchPack's last
+	// Read returned through the result channel, its goroutine is quiescent, and
+	// closing is both safe and necessary.
 	//
-	// Classified against err itself via errors.Is, not a fresh ctx.Err() check:
-	// ctx can turn Err() non-nil an instant after FetchPack already returned
-	// with its read fully quiescent, and re-checking ctx.Err() at that later,
-	// independent point would incorrectly skip the close and leak the response
-	// (mirrors FetchV2's round loop).
+	// Classified against err with errors.Is, never a fresh ctx.Err(): ctx can
+	// turn Err() non-nil an instant after FetchPack returned quiescent, and
+	// re-checking there would skip the close and leak the response.
 	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		neg.closeResponse()
 	}
@@ -389,9 +381,8 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 		}
 		out := &packp.FetchOutput{}
 		if err := out.Decode(r); err != nil {
-			// The success path returns r.resp.Body for the caller to stream, so
-			// it must stay open; on a decode error nothing downstream will, so
-			// release it here rather than leaking the body and its connection.
+			// The success path hands r.resp.Body to the caller to stream; on a
+			// decode error nothing downstream will, so release it here.
 			if r.resp != nil {
 				_ = r.resp.Body.Close()
 			}
@@ -413,12 +404,10 @@ func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *tra
 	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
 	// Close the response unless the read itself was a cancellation: a ctxReader
 	// goroutine inside SendPack can still be blocked in the underlying Read
-	// after the <-ctx.Done() branch, so closing the body here would race it —
-	// the request context tears the connection down instead. On a
-	// non-cancellation error (or success) SendPack's last Read returned via the
-	// result channel and its goroutine is quiescent, so closing is safe — and
-	// necessary, otherwise the response body/connection leaks (mirrors Fetch
-	// above and FetchV2's round loop).
+	// after the <-ctx.Done() branch, and closing here would race it — the request
+	// context tears the connection down instead. Otherwise SendPack's last Read
+	// returned through the result channel and closing is both safe and necessary
+	// (mirrors Fetch and internal.FetchV2's round loop).
 	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && rwc.resp != nil {
 		_ = rwc.resp.Body.Close()
 	}
@@ -533,7 +522,6 @@ type httpNegotiator struct {
 
 func (n *httpNegotiator) Write(p []byte) (int, error) {
 	if n.current != nil && n.current.resp != nil {
-		// Previous round is complete — close its response, start fresh.
 		_, _ = io.Copy(io.Discard, n.current.resp.Body)
 		_ = n.current.resp.Body.Close()
 		n.current = nil
@@ -566,8 +554,6 @@ func (n *httpNegotiator) closeResponse() {
 		n.current.resp = nil
 	}
 }
-
-// --- dumb HTTP pack session ---
 
 var _ transport.Session = (*dumbPackSession)(nil)
 
