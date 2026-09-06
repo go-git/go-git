@@ -72,6 +72,13 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	client := t.resolveClient()
 	resp, err := doRequest(client, httpReq)
 	if err != nil {
+		// doRequest returns a non-nil response alongside its error for any
+		// non-2xx status, and checkError has already read what it needs of the
+		// body. Close it, or every failed discovery leaks a body and a
+		// connection.
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 		return nil, fmt.Errorf("http transport: %w", err)
 	}
 

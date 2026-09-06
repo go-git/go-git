@@ -282,3 +282,14 @@ func fetchToStorage(t testing.TB, repoPath string, storage *filesystem.Storage, 
 	})
 	require.NoError(t, err)
 }
+
+// trackedBody reports whether it was closed.
+type trackedBody struct {
+	io.Reader
+	closed atomic.Bool
+}
+
+func (b *trackedBody) Close() error {
+	b.closed.Store(true)
+	return nil
+}
