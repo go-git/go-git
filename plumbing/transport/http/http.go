@@ -344,31 +344,32 @@ func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.R
 //     via rather than stored, because this closure is shared across a
 //     session's requests.
 //
-// Stripping keeps only the headers go-git sets itself (safeHeaders). An
-// allowlist is used rather than a list of credential header names because
-// caller credentials arrive under names that cannot be enumerated —
-// PRIVATE-TOKEN, X-Api-Key, gateway headers — which is exactly what
-// net/http's fixed list of sensitive header names gets wrong. It is also
-// immune to header-name canonicalisation: an Authorizer that writes a raw
-// map key is still removed.
+// Stripping keeps only safeHeaders. An allowlist is used rather than a list of
+// credential header names because caller credentials arrive under names that
+// cannot be enumerated — PRIVATE-TOKEN, X-Api-Key, gateway headers — which is
+// what net/http's fixed list of sensitive names gets wrong, and because it is
+// immune to header-name canonicalisation.
+//
+// The URL's userinfo goes with the headers: on a redirected request it can only
+// have come from the target, via the Location header, and net/http turns
+// req.URL.User into an Authorization header on the way out. Emptying the
+// headers and leaving the URL alone would let a target plant a credential on
+// the very hop this exists to sanitize.
 func stripCredentials(req *http.Request, via []*http.Request) {
 	if len(via) == 0 {
 		return
 	}
-	// net/http sets a URL on every request it builds, and req.URL is non-nil
-	// by construction: checkRedirect dereferences req.URL.Scheme on each path
-	// that returns nil, so it runs first or not at all. This nil check and
-	// the two in crossedOrigin are defensive, against a synthetic caller.
-	// Each treats a URL it cannot read as an origin crossing; removing one
-	// panics in canonicalHost rather than leaking.
+	// req.URL is non-nil by construction — checkRedirect dereferences
+	// req.URL.Scheme on every path that returns nil, so it runs first or not at
+	// all. This check and the two in crossedOrigin are defensive against a
+	// synthetic caller; each treats an unreadable URL as a crossing, because
+	// removing one panics in credentialsMayFollow rather than leaking.
 	origin := via[0].URL
 	if origin != nil && !crossedOrigin(origin, req, via) {
 		return
 	}
-	// Record on every path that strips, including the defensive one where a
-	// URL cannot be read. If the record and the strip can disagree, then the
-	// session and the discovery GET can disagree — which is the divergence
-	// this record exists to remove.
+	// Recorded on every path that strips, including the defensive one: a record
+	// that could disagree with the strip is the divergence it exists to remove.
 	redirectRecordFrom(req).note(origin, req.URL)
 	req.Header = filterHeaders(req.Header)
 	if req.URL != nil {

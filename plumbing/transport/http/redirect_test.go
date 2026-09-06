@@ -730,6 +730,52 @@ func TestRedirectDoesNotCarryQueryToAnotherOriginOnDumbGet(t *testing.T) {
 	}
 }
 
+// A redirect between two spellings of one host that net/http calls different
+// hosts must be a crossing here too: net/http has already removed
+// Authorization from that request, so treating it as same-origin leaves the
+// transport carrying the credentials net/http does not recognise, while the
+// caller is never asked for one belonging to the origin the chain reached.
+//
+// Which spellings the relation refuses is enumerated in
+// TestCredentialsMayFollow. One registered name and one address literal here,
+// because Hostname treats the two differently.
+func TestRedirectHostSpellingCrossesOrigin(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, from, to string }{
+		{"host name case", "example.test", "EXAMPLE.test"},
+		{"ipv6 hex digit case", "[::a]", "[::A]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hm := newVhostMap()
+			dest := newTLSVhost(t, hm, tc.to, "443")
+			dest.serve(func(w http.ResponseWriter, _ *http.Request) { challenge(w) })
+			origin := newTLSVhost(t, hm, tc.from, "443")
+			origin.redirectTo(dest.base + refsPath("repo.git"))
+
+			hook := newHook("unused")
+			_, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
+				o.Credentials = Chain(hook.fn, o.Credentials)
+			})
+			require.Error(t, err)
+
+			assertCredentialsAbsent(t, dest.lastRequest(t))
+
+			require.Equal(t, []string{origin.base, dest.base}, hook.origins(),
+				"the caller must be asked again for the origin the redirect reached")
+			assert.Equal(t, []bool{false, true}, hook.redirectedFlags())
+
+			var dropped *transport.CredentialsDroppedError
+			require.ErrorAs(t, err, &dropped,
+				"the failure must name the crossing that withheld the credential")
+			assert.Equal(t, origin.base, dropped.From.String())
+			assert.Equal(t, dest.base, dropped.To.String())
+		})
+	}
+}
+
 // Whether a credential may follow a hop is one relation, and these are the
 // pairings a caller meets. The credentials the fixture sends include a header
 // written as a raw, non-canonical map key, which a strip implemented with

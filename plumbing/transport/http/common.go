@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
 
@@ -177,60 +176,6 @@ func schemeUpgrade(from, to string) bool {
 	return strings.EqualFold(from, "http") && strings.EqualFold(to, "https")
 }
 
-// canonicalHost returns u's hostname in the form origins are compared in.
-//
-// An address literal is normalised by netip, so the many spellings of one
-// address are one origin. Two literals are the same origin exactly when netip
-// parses them to the same Addr, which is also how the WHATWG URL Standard
-// compares hosts. An IPv4-mapped literal is deliberately not unmapped onto
-// the IPv4 it dials: reaching the same endpoint is not the same authority,
-// since net/http sends the literal as written in Host and a server may route
-// the two spellings to different virtual hosts.
-//
-// netip also keeps a scope zone verbatim, which is what origin comparison
-// needs: net resolves a zone to an interface by exact name, so folding %eth0
-// onto %ETH0 would call two hosts the same origin that net dials down
-// different interfaces.
-//
-// A registered name is ASCII-lowercased. That fold is the only liberty taken;
-// every other difference in spelling is a different origin.
-//
-// A trailing root dot is one such difference and is kept, for the same reason
-// as the IPv4-mapped literal: curl and the WHATWG URL Standard both hold
-// "example.com." and "example.com" to be distinct hosts, and although
-// crypto/tls and crypto/x509 fold the dot when they authenticate the peer,
-// net/http sends the name as written in Host.
-//
-// The fold is deliberately ASCII-only. strings.ToLower and strings.EqualFold
-// apply Unicode case mapping, which folds U+03C2 onto U+03C3 and so would
-// call two hosts the same origin when they resolve to different servers. An
-// ASCII-only fold cannot merge two names DNS keeps apart.
-//
-// No IDNA mapping is applied either, so a unicode hostname is a different
-// origin from the punycode encoding of it, and from another Unicode case of
-// itself, even though all three reach the same server. Mapping through
-// golang.org/x/net/idna would join them, but it can only widen this equality,
-// never narrow it, so leaving it out can cost a credential across such a
-// redirect and cannot forward one. Against that cost, go-git pins x/net while
-// net/http uses the copy vendored into the toolchain: the two are versioned
-// separately, so a release that moves the Unicode tables under one and not
-// the other would have this merge origins net/http still dials apart. That is
-// the failure this comparison exists to prevent, and comparing bytes has no
-// such mode.
-func canonicalHost(u *url.URL) string {
-	host := u.Hostname()
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return addr.String()
-	}
-	b := []byte(host)
-	for i := range b {
-		if b[i] >= 'A' && b[i] <= 'Z' {
-			b[i] += 'a' - 'A'
-		}
-	}
-	return string(b)
-}
-
 // effectivePort returns u's port as the connection will use it: the scheme's
 // well-known port when the URL does not spell one out, and without leading
 // zeroes, so "https://x", "https://x:443" and "https://x:0443" all agree.
@@ -256,14 +201,31 @@ func effectivePort(u *url.URL) string {
 // sent to another.
 //
 // The relation is deliberately asymmetric: scheme, host and effective port
-// must all match, except that a plain http origin may upgrade to https on
-// the same host (see schemeUpgrade), mirroring applyRedirect.
+// must all match, except that http on port 80 may upgrade to https on port
+// 443 of the same host (see schemeUpgrade), mirroring applyRedirect. Any
+// other port pairing is two origins as usual, and the reverse direction never
+// follows.
 //
 // Host matching is exact. Unlike Go's http.Client, which forwards credentials
 // from a host to any subdomain of it, a subdomain is a different origin here —
 // matching canonical git and libcurl.
 func credentialsMayFollow(from, to *url.URL) bool {
-	if canonicalHost(from) != canonicalHost(to) {
+	// Hostnames are compared as bytes, folding nothing: not ASCII case, not the
+	// spellings of one address literal, not a trailing root dot, not a unicode
+	// name against the punycode that encodes it. Byte equality is finer than any
+	// fold, so it can only find more origin crossings, never fewer; the cost is a
+	// credential lost across a redirect that merely respells the host, which the
+	// caller can supply again for the origin the chain reached.
+	//
+	// A fold made here that net/http does not make is the dangerous direction:
+	// no crossing would be recorded on a hop where net/http had already taken
+	// Authorization away, so nothing would be re-acquired, no
+	// transport.CredentialsDroppedError would name the origin that challenged,
+	// and the headers net/http does not know are credentials would travel on.
+	//
+	// Hostname panics on a nil URL, deliberately: stripCredentials treats a URL
+	// it cannot read as a crossing and never reaches here with one.
+	if from.Hostname() != to.Hostname() {
 		return false
 	}
 	if strings.EqualFold(from.Scheme, to.Scheme) {

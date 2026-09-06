@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -89,6 +90,166 @@ func TestErr_ErrorRedactsCredentials(t *testing.T) {
 	assert.Contains(t, msg, "REDACTED")
 	// the rest of the URL is still reported so the error stays useful
 	assert.Contains(t, msg, "example.com/repo.git")
+}
+
+// originRelations enumerates the relation this transport applies to decide
+// whether a credential held for one URL may be supplied for a request to
+// another. It is the whole of that rule: every entry point below is checked
+// against all of it, so no adapter can drift from the predicate it wraps.
+var originRelations = []struct {
+	name string
+	from string
+	to   string
+	want bool
+}{
+	{"identical", "https://example.test/a", "https://example.test/a", true},
+	{"path differs only", "https://example.test/a", "https://example.test/b", true},
+	{"explicit default port on the right", "https://example.test/a", "https://example.test:443/a", true},
+	{"explicit default port on the left", "http://example.test:80/a", "http://example.test/a", true},
+	{"leading zero port", "https://example.test/a", "https://example.test:0443/a", true},
+	{"http to https upgrade", "http://example.test/a", "https://example.test/a", true},
+	{"unicode host, same spelling", "https://ẞexample.test/a", "https://ẞexample.test/a", true},
+	{"ipv4 literal", "http://127.0.0.1:8080/a", "http://127.0.0.1:8080/a", true},
+	{"ipv6 literal", "http://[::1]:8080/a", "http://[::1]:8080/a", true},
+	{"ipv6 zone, same spelling", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25eth0]:8080/a", true},
+	{"host with underscore", "http://build_host:8080/a", "http://build_host:8080/a", true},
+
+	{"https to http downgrade", "https://example.test/a", "http://example.test/a", false},
+	{"subdomain", "https://example.test/a", "https://sub.example.test/a", false},
+	{"parent domain", "https://sub.example.test/a", "https://example.test/a", false},
+	{"different port", "https://example.test/a", "https://example.test:8443/a", false},
+	{"unrelated host", "https://example.test/a", "https://evil.test/a", false},
+	{"suffix but not subdomain", "https://example.test/a", "https://notexample.test/a", false},
+	{"upgrade to a non-default https port", "http://example.test/a", "https://example.test:8443/a", false},
+	{"upgrade from a non-default http port", "http://example.test:8080/a", "https://example.test/a", false},
+
+	// Hosts are compared as bytes, which is net/http's own test: when a
+	// redirect leaves the initial request's host it compares the two
+	// hostnames byte for byte and drops Authorization when they differ.
+	// Every respelling below is therefore a hop net/http has already
+	// stripped, and calling it same-origin would leave the caller
+	// unasked, the error unexplained, and the header names net/http does
+	// not recognise as credentials still travelling. Both directions,
+	// since the fold these replace was symmetric.
+	{"host name case", "https://EXAMPLE.test/a", "https://example.test/a", false},
+	{"host name case, reversed", "https://example.test/a", "https://EXAMPLE.test/a", false},
+	{"unicode host, ASCII case differs", "https://ΣXAMPLE.test/a", "https://Σxample.test/a", false},
+	{"unicode host, ASCII case differs, reversed", "https://Σxample.test/a", "https://ΣXAMPLE.test/a", false},
+	{"ipv6 compressed against expanded", "http://[::1]:8080/a", "http://[0:0:0:0:0:0:0:1]:8080/a", false},
+	{"ipv6 expanded against compressed", "http://[0:0:0:0:0:0:0:1]:8080/a", "http://[::1]:8080/a", false},
+	{"ipv6 leading zeroes in a field", "http://[::1]:8080/a", "http://[::0001]:8080/a", false},
+	{"ipv6 leading zeroes in a field, reversed", "http://[::0001]:8080/a", "http://[::1]:8080/a", false},
+	{"ipv6 hex digit case", "http://[::a]:8080/a", "http://[::A]:8080/a", false},
+	{"ipv6 hex digit case, reversed", "http://[::A]:8080/a", "http://[::a]:8080/a", false},
+	{"ipv6 hex against dotted-quad tail", "http://[::ffff:7f00:1]/a", "http://[::ffff:127.0.0.1]/a", false},
+	{"ipv6 dotted-quad tail against hex", "http://[::ffff:127.0.0.1]/a", "http://[::ffff:7f00:1]/a", false},
+	{"ipv6 zone, address case differs", "http://[FE80::1%25eth0]:8080/a", "http://[fe80::1%25eth0]:8080/a", false},
+	{"ipv6 zone, address case differs, reversed", "http://[fe80::1%25eth0]:8080/a", "http://[FE80::1%25eth0]:8080/a", false},
+
+	// A percent in a registered name is not a scope zone. %25 is the only
+	// escape net/url leaves in a host, so Hostname() really can return
+	// one, and it is compared with the rest of the name.
+	{"percent in a registered name", "https://foo%25bar.test/a", "https://FOO%25BAR.test/a", false},
+	{"percent in a registered name, reversed", "https://FOO%25BAR.test/a", "https://foo%25bar.test/a", false},
+
+	// A trailing root dot reaches the same peer, but net/http sends the
+	// name as written in Host, so the two spellings can be routed to
+	// different virtual hosts. curl and the WHATWG URL Standard keep them
+	// distinct too.
+	{"trailing root dot", "https://example.test/a", "https://example.test./a", false},
+	{"trailing root dot on the left", "https://example.test./a", "https://example.test/a", false},
+	{"ipv4 with a trailing root dot", "http://127.0.0.1/a", "http://127.0.0.1./a", false},
+
+	// An IPv6 scope zone names an interface, and net resolves it by exact
+	// name: %eth0 and %ETH0 can be two interfaces carrying the same
+	// link-local address.
+	{"ipv6 zone case differs", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25ETH0]:8080/a", false},
+	{"ipv6 zone differs", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1%25eth1]:8080/a", false},
+	{"ipv6 zone against none", "http://[fe80::1%25eth0]:8080/a", "http://[fe80::1]:8080/a", false},
+
+	// An IPv4-mapped literal dials the same endpoint as the IPv4 it wraps,
+	// but net/http sends the literal as written in Host, so the two can
+	// reach different virtual hosts on that endpoint. Same endpoint is not
+	// the same authority.
+	{"ipv4-mapped against the ipv4", "http://[::ffff:127.0.0.1]/a", "http://127.0.0.1/a", false},
+
+	// A unicode host is a different origin from the punycode that encodes
+	// it and from another Unicode case of itself, even though each pair
+	// reaches the same server. net/http maps a non-ASCII name through IDNA
+	// and would join them; this is the narrower of the two, so these lose
+	// a credential across such a redirect rather than granting one, and
+	// they hold whatever Unicode tables the build uses.
+	{"unicode host against its punycode", "https://ςxample.test/a", "https://xn--xample-20e.test/a", false},
+	{"punycode host against its unicode", "https://xn--xample-20e.test/a", "https://ςxample.test/a", false},
+	{"unicode host, unicode case differs", "https://ПРИМЕР.РФ/a", "https://пример.рф/a", false},
+
+	// strings.EqualFold treats these pairs as equal, but each side
+	// resolves to a different server.
+	{"greek final sigma fold pair", "https://ςxample.test/a", "https://σxample.test/a", false},
+	{"sharp s fold pair", "https://ẞexample.test/a", "https://ßexample.test/a", false},
+}
+
+// The origin relation has four entry points: the predicate itself, the two
+// adapters a caller configures, and the method a credential store asks. A
+// credential travels, or is withheld, identically through each — an adapter
+// that answered differently from the predicate would hand a caller a rule the
+// transport does not apply. Enumerating the relation once and driving every
+// door against all of it is what holds them together.
+//
+// Each door reports the same thing: may a credential held for from be supplied
+// for a request to to. Nil and hostless inputs are each door's own business and
+// are covered by TestAdaptersDecline.
+func TestOriginRelationHoldsThroughEveryEntryPoint(t *testing.T) {
+	t.Parallel()
+
+	for _, door := range []struct {
+		name      string
+		mayFollow func(t *testing.T, from, to *url.URL) bool
+	}{{
+		name: "credentialsMayFollow",
+		mayFollow: func(_ *testing.T, from, to *url.URL) bool {
+			return credentialsMayFollow(from, to)
+		},
+	}, {
+		name: "ForOrigin",
+		mayFollow: func(t *testing.T, from, to *url.URL) bool {
+			cred, err := ForOrigin(from, noopAuth)(context.Background(), &CredentialRequest{TargetOrigin: originOf(to)})
+			require.NoError(t, err)
+			return cred != nil
+		},
+	}, {
+		name: "ForRepositoryOrigin",
+		mayFollow: func(t *testing.T, from, to *url.URL) bool {
+			cred, err := ForRepositoryOrigin(noopAuth)(context.Background(), &CredentialRequest{
+				RepositoryURL: from,
+				TargetOrigin:  originOf(to),
+			})
+			require.NoError(t, err)
+			return cred != nil
+		},
+	}, {
+		name: "CredentialRequest.IsOrigin",
+		mayFollow: func(_ *testing.T, from, to *url.URL) bool {
+			return (&CredentialRequest{TargetOrigin: originOf(to)}).IsOrigin(from)
+		},
+	}} {
+		t.Run(door.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, tc := range originRelations {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+
+					from, err := url.Parse(tc.from)
+					require.NoError(t, err)
+					to, err := url.Parse(tc.to)
+					require.NoError(t, err)
+
+					assert.Equal(t, tc.want, door.mayFollow(t, from, to))
+				})
+			}
+		})
+	}
 }
 
 func TestEffectivePort(t *testing.T) {

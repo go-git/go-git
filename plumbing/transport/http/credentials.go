@@ -154,8 +154,8 @@ type Credential struct {
 //
 // A credential the caller configured for one origin is not sent to another by
 // this transport: it is discarded when a redirect leaves that origin. The
-// single exception, an http origin upgrading to https on the same host, is
-// described on ForOrigin.
+// single exception, an http origin on port 80 upgrading to https on port 443
+// of the same host, is described on ForOrigin.
 //
 // One Transport serves concurrent operations, so this may be called
 // concurrently. Each call is given its own request value, and neither it nor
@@ -181,19 +181,26 @@ type CredentialsFunc func(ctx context.Context, req *CredentialRequest) (*Credent
 // The comparison is the one this transport uses to decide whether a credential
 // may travel, which is what ForRepositoryOrigin applies too: scheme, host and
 // effective port must match, so "https://x" and "https://x:443" are one origin
-// while "https://x:8443" is another and a subdomain of x is another again.
-// Spellings that differ without changing the origin match — a default port
-// written out, the case of a host name, an address literal written two ways.
-// The single exception to the matching is the http-to-https upgrade on one
-// host: a credential held for a plain http origin is supplied for https on
-// that same host, because the first request already spent it in cleartext and
-// refusing the upgrade would break the clone without unspending it. The
-// reverse is refused, so a credential held for an https origin is never
-// offered to http.
+// while "https://x:8443" is another and a subdomain of x is another again. The
+// port is the only part with spellings that fold; the host is compared as
+// bytes, which is how net/http compares it when it decides whether a redirect
+// may carry Authorization, so "https://X" is a different origin from
+// "https://x". The single exception to the matching is the http-to-https
+// upgrade between the two schemes' own default ports: a credential held for
+// http on port 80 is supplied for https on port 443 of that same host, because
+// the first request already spent it in cleartext and refusing the upgrade
+// would break the clone without unspending it. Either side written any other
+// way is two origins as usual, so "http://x:8080" is not upgraded to
+// "https://x" and "http://x" is not upgraded to "https://x:8443". The reverse
+// direction is refused whatever the ports, so a credential held for an https
+// origin is never offered to http.
 //
 // Matching is otherwise deliberately narrower than reachability: "x.test."
-// differs from "x.test" and a unicode host differs from its punycode encoding,
-// even though each pair reaches one server.
+// differs from "x.test", one address literal written two ways is two origins,
+// and a unicode host differs from its punycode encoding, even though each pair
+// reaches one server. Configure the origin with the spelling the repository URL
+// uses, and add a second source for another spelling if a server redirects
+// between them.
 //
 // Only origin's scheme and host are read. A path, query, fragment or userinfo
 // on it is ignored, so a repository URL can be passed whole; a credential
@@ -203,9 +210,18 @@ type CredentialsFunc func(ctx context.Context, req *CredentialRequest) (*Credent
 //
 // A nil origin or a nil fn declines everything: an adapter that cannot say
 // which origin it stands for, or that has nothing to supply, must not answer
-// for an origin.
+// for an origin. A URL naming no host declines everything too, and url.Parse
+// yields one without complaining: url.Parse("github.com") is a path, not a
+// host, and an adapter built on it supplies its credential nowhere. Parse the
+// origin with the scheme spelled out, as the repository URL has it.
 func ForOrigin(origin *url.URL, fn Authorizer) CredentialsFunc {
-	if origin == nil || fn == nil {
+	// A URL with no host names no origin, so there is nothing for this to
+	// answer for. Checked rather than left to the comparison below: two
+	// origins with no host at all compare equal, and equal is what supplies.
+	// The transport never asks about one, but an adapter is a value a caller
+	// can call directly, and a decline is the only safe answer to a question
+	// this cannot have an opinion about.
+	if origin == nil || fn == nil || origin.Host == "" {
 		return func(context.Context, *CredentialRequest) (*Credential, error) {
 			return nil, nil
 		}
@@ -240,9 +256,9 @@ func ForOrigin(origin *url.URL, fn Authorizer) CredentialsFunc {
 //	        return nil, nil
 //	}
 //
-// The comparison is the one described on ForOrigin, so this permits the
-// http-to-https upgrade on one host that the transport permits, and nothing
-// else.
+// The comparison is the one described on ForOrigin, so this permits the same
+// http-to-https upgrade the transport permits, on the terms described there,
+// and nothing else.
 func ForRepositoryOrigin(fn Authorizer) CredentialsFunc {
 	return func(_ context.Context, req *CredentialRequest) (*Credential, error) {
 		if fn == nil || req == nil || req.TargetOrigin == nil || req.RepositoryURL == nil {

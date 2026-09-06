@@ -385,6 +385,13 @@ func newVhostServer(t *testing.T, hm *vhostMap, authority, port string, useTLS b
 	return v
 }
 
+// serve replaces the vhost's default behaviour. Requests are still recorded.
+func (v *vhost) serve(h http.HandlerFunc) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.handler = h
+}
+
 // redirectTo makes the vhost answer the discovery request with a redirect.
 func (v *vhost) redirectTo(target string) {
 	v.mu.Lock()

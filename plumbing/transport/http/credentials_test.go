@@ -119,6 +119,63 @@ func TestForRepositoryOrigin(t *testing.T) {
 	})
 }
 
+// Every adapter must decline an input it cannot read both ends of, rather than
+// answering for an origin it was never told about, and rather than
+// dereferencing its way into a panic.
+//
+// The hostless origin is the dangerous one: two empty hosts compare equal, so
+// an adapter built on one would answer for every origin. url.Parse yields a
+// hostless URL without complaining — url.Parse("github.com") is a path — which
+// is the mistake ForOrigin's documentation warns about.
+func TestAdaptersDecline(t *testing.T) {
+	t.Parallel()
+
+	origin := func() *CredentialRequest {
+		return &CredentialRequest{
+			TargetOrigin:  mustURL(t, "https://git.example.test"),
+			RepositoryURL: mustURL(t, "https://git.example.test/repo.git"),
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		fn   CredentialsFunc
+		req  *CredentialRequest
+	}{
+		{"ForOrigin with a nil origin", ForOrigin(nil, noopAuth), origin()},
+		{"ForOrigin with a nil authorizer", ForOrigin(mustURL(t, "https://git.example.test"), nil), origin()},
+		{"ForOrigin with a hostless origin", ForOrigin(mustURL(t, "github.com"), noopAuth), origin()},
+		{
+			// Both ends hostless is what makes the guard load-bearing rather
+			// than tidy: without it these two compare equal.
+			name: "ForOrigin with a hostless origin and a hostless target",
+			fn:   ForOrigin(mustURL(t, "github.com"), noopAuth),
+			req:  &CredentialRequest{TargetOrigin: mustURL(t, "github.com")},
+		},
+		{"ForOrigin with a request naming no target", ForOrigin(mustURL(t, "https://git.example.test"), noopAuth), &CredentialRequest{}},
+		{"ForRepositoryOrigin with a nil authorizer", ForRepositoryOrigin(nil), origin()},
+		{"ForRepositoryOrigin with a nil request", ForRepositoryOrigin(noopAuth), nil},
+		{
+			name: "ForRepositoryOrigin with a request naming no target",
+			fn:   ForRepositoryOrigin(noopAuth),
+			req:  &CredentialRequest{RepositoryURL: mustURL(t, "https://git.example.test/repo.git")},
+		},
+		{
+			name: "ForRepositoryOrigin with a request naming no repository",
+			fn:   ForRepositoryOrigin(noopAuth),
+			req:  &CredentialRequest{TargetOrigin: mustURL(t, "https://git.example.test")},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cred, err := tc.fn(context.Background(), tc.req)
+			require.NoError(t, err)
+			assert.Nil(t, cred)
+		})
+	}
+}
+
 func TestChain(t *testing.T) {
 	t.Parallel()
 
