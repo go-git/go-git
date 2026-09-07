@@ -331,7 +331,7 @@ func copyFile(c *C, dstDir, dstFilename string, srcFile billy.File) {
 }
 
 // TestPackfileReindex tests that externally-added packfiles are considered by go-git
-// after calling the Reindex method
+// after the pack inventory changes.
 func (s *FsSuite) TestPackfileReindex(c *C) {
 	// obtain a standalone packfile that is not part of any other repository
 	// in the fixtures:
@@ -355,13 +355,13 @@ func (s *FsSuite) TestPackfileReindex(c *C) {
 		copyFile(c, filepath.Join(storer.Filesystem().Root(), "objects", "pack"),
 			fmt.Sprintf("pack-%s.idx", packFilename), idxFile)
 
-		// check that we cannot still retrieve the test object
+		// The changed pack inventory should be detected on the miss and reindexed.
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
-		c.Assert(err, Equals, plumbing.ErrObjectNotFound)
+		c.Assert(err, IsNil)
 
-		storer.Reindex() // actually reindex
+		storer.Reindex()
 
-		// Now check that the test object can be retrieved
+		// Explicit reindexing should still leave the object retrievable.
 		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
 		c.Assert(err, IsNil)
 	})
