@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	internalhttp "github.com/go-git/go-git/v6/internal/server/http"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -25,7 +26,7 @@ import (
 // Output is captured for diagnostics.
 func run(t testing.TB, dir, name string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+	cmd := gitenv.Command(name, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s %v failed in %s: %s", name, args, dir, string(out))
@@ -37,9 +38,9 @@ func run(t testing.TB, dir, name string, args ...string) {
 // tests that had history and triggered haves+ready negotiation).
 func runV2(t testing.TB, dir, name string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+	cmd := gitenv.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_PROTOCOL=version=2")
+	cmd.Env = append(cmd.Env, "GIT_PROTOCOL=version=2")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s %v failed in %s: %s", name, args, dir, string(out))
 }
@@ -249,7 +250,7 @@ func TestBackend_HTTP_E2E_ClonePullPush(t *testing.T) {
 // gitOut runs a git command and returns its trimmed combined output, failing on error.
 func gitOut(t testing.TB, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := gitenv.Command("git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v in %s: %s", args, dir, out)
@@ -312,7 +313,10 @@ func TestBackend_HTTP_E2E_ShallowClone(t *testing.T) {
 	// Bounding: the parent commit's objects were never transferred (the pack is
 	// truncated to the boundary, not merely grafted).
 	parent := gitOut(t, work, "rev-parse", "HEAD~1")
-	catFile := exec.Command("git", "cat-file", "-e", parent)
+	// This one asserts a failure, so the isolation matters more here than
+	// elsewhere: a git that failed because it could not read the machine's
+	// config would satisfy the assertion while saying nothing about the object.
+	catFile := gitenv.Command("git", "cat-file", "-e", parent)
 	catFile.Dir = cloned
 	require.Error(t, catFile.Run(), "parent commit %s must be absent from a bounded --depth 1 clone", parent)
 }
