@@ -1,5 +1,6 @@
 module github.com/go-git/go-git/v5
 
+// go-git supports the last 3 stable Go versions.
 go 1.25.0
 
 require (
