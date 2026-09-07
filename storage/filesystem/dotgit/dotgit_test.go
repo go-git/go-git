@@ -2,6 +2,8 @@ package dotgit
 
 import (
 	"bufio"
+	"bytes"
+	"compress/zlib"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -732,6 +734,16 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 	c.Assert(idx, IsNil)
 }
 
+func looseObjectSize(t require.TestingT, content string) int64 {
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	_, err := w.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	return int64(buf.Len())
+}
+
 func (s *SuiteDotGit) TestNewObject(c *C) {
 	fs := s.TemporalFilesystem(c)
 
@@ -752,7 +764,7 @@ func (s *SuiteDotGit) TestNewObject(c *C) {
 
 	i, err := fs.Stat("objects/a8/a940627d132695a9769df883f85992f0ff4a43")
 	c.Assert(err, IsNil)
-	c.Assert(i.Size(), Equals, int64(34))
+	c.Assert(i.Size(), Equals, looseObjectSize(c, "blob 14\x00this is a test"))
 }
 
 func (s *SuiteDotGit) TestObjects(c *C) {
@@ -1302,7 +1314,7 @@ func TestIssue55(t *testing.T) {
 			writeObject(tc.fs)
 			i, err := tc.fs.Stat(path)
 			require.NoError(t, err)
-			assert.Equal(t, int64(34), i.Size())
+			assert.Equal(t, looseObjectSize(t, "blob 14\x00this is a test"), i.Size())
 
 			ro, err := isReadOnly(tc.fs, path)
 			require.NoError(t, err)
@@ -1312,7 +1324,7 @@ func TestIssue55(t *testing.T) {
 			writeObject(tc.fs)
 			i, err = tc.fs.Stat(path)
 			require.NoError(t, err)
-			assert.Equal(t, int64(34), i.Size())
+			assert.Equal(t, looseObjectSize(t, "blob 14\x00this is a test"), i.Size())
 
 			ro, err = isReadOnly(tc.fs, path)
 			require.NoError(t, err)
