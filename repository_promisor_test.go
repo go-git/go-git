@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
@@ -47,7 +48,8 @@ func requireGitPartialClone(t *testing.T) {
 	t.Helper()
 	requireGitBinary(t)
 
-	out, err := exec.Command("git", "version").Output()
+	versionCmd := gitenv.Command("git", "version")
+	out, err := versionCmd.Output()
 	if err != nil {
 		t.Skipf("cannot determine git version: %v", err)
 	}
@@ -97,7 +99,8 @@ func git(t *testing.T, dir string, args ...string) string {
 	// protocol.file.allow keeps file:// transport usable across git versions
 	// that restrict it by default.
 	full := append([]string{"-C", dir, "-c", "protocol.file.allow=always"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
+	cmd := gitenv.Command("git", full...)
+	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v: %s", args, out)
 	return string(out)
 }
@@ -107,7 +110,8 @@ func git(t *testing.T, dir string, args ...string) string {
 func gitAllowFail(t *testing.T, dir string, args ...string) (string, bool) {
 	t.Helper()
 	full := append([]string{"-C", dir, "-c", "protocol.file.allow=always"}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
+	cmd := gitenv.Command("git", full...)
+	out, err := cmd.CombinedOutput()
 	return string(out), err == nil
 }
 
@@ -130,11 +134,13 @@ func newPartialClone(t *testing.T, filter string) string {
 	require.NoError(t, os.MkdirAll(src, 0o755))
 	require.NoError(t, os.MkdirAll(seed, 0o755))
 
-	out, err := exec.Command("git", "init", "-q", "--bare", src).CombinedOutput()
+	initBare := gitenv.Command("git", "init", "-q", "--bare", src)
+	out, err := initBare.CombinedOutput()
 	require.NoError(t, err, "git init --bare: %s", out)
 	git(t, src, "config", "uploadpack.allowFilter", "true")
 
-	out, err = exec.Command("git", "init", "-q", seed).CombinedOutput()
+	initSeed := gitenv.Command("git", "init", "-q", seed)
+	out, err = initSeed.CombinedOutput()
 	require.NoError(t, err, "git init: %s", out)
 	git(t, seed, "config", "user.email", "test@example.com")
 	git(t, seed, "config", "user.name", "test")
@@ -148,8 +154,9 @@ func newPartialClone(t *testing.T, filter string) string {
 	git(t, seed, "remote", "add", "origin", src)
 	git(t, seed, "push", "-q", "origin", "main")
 
-	out, err = exec.Command("git", "-c", "protocol.file.allow=always", "clone", "-q",
-		"--filter="+filter, "--no-checkout", "file://"+src, dst).CombinedOutput()
+	cloneCmd := gitenv.Command("git", "-c", "protocol.file.allow=always", "clone", "-q",
+		"--filter="+filter, "--no-checkout", "file://"+src, dst)
+	out, err = cloneCmd.CombinedOutput()
 	require.NoError(t, err, "git clone --filter=%s: %s", filter, out)
 
 	// Sanity-check the fixture really is a partial clone with absent objects,

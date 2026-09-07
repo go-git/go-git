@@ -3,12 +3,11 @@ package git
 import (
 	"bytes"
 	"io"
-	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -43,14 +42,13 @@ func (s *objectWalkerSuite) TestNormalClonedRepo() {
 	t := s.T()
 	local := t.TempDir()
 
-	cmd := exec.Command(
+	cmd := gitenv.Command(
 		"git",
 		"clone",
 		"--no-checkout",
 		"file://"+s.GetBasicLocalRepositoryURL(),
 		local,
 	)
-	cmd.Env = os.Environ()
 	buf := &bytes.Buffer{}
 	cmd.Stderr = buf
 	cmd.Stdout = buf
@@ -73,7 +71,7 @@ func (s *objectWalkerSuite) TestShallowClonedRepo() {
 	t := s.T()
 	local := t.TempDir()
 
-	cmd := exec.Command(
+	cmd := gitenv.Command(
 		"git",
 		"clone",
 		"--no-checkout",
@@ -82,7 +80,6 @@ func (s *objectWalkerSuite) TestShallowClonedRepo() {
 		"file://"+s.GetBasicLocalRepositoryURL(),
 		local,
 	)
-	cmd.Env = os.Environ()
 	buf := &bytes.Buffer{}
 	cmd.Stderr = buf
 	cmd.Stdout = buf

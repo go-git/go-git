@@ -59,8 +59,6 @@ jobs:
           echo "Git exec path mismatch: expected ${{ github.workspace }}/.git-dist/${{ matrix.git[0] }}, got $exec_path"
           exit 1
         fi
-        git config --global user.email "gha@example.com"
-        git config --global user.name "GitHub Actions"
 
     - name: Test
       run: make test-coverage

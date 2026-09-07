@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -24,6 +22,7 @@ import (
 	_ "unsafe"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -943,9 +942,8 @@ func (s *WorktreeSuite) TestCommitTreeSort() {
 	err = r.Push(&PushOptions{})
 	s.Require().NoError(err)
 
-	cmd := exec.Command("git", "fsck")
+	cmd := gitenv.Command("git", "fsck")
 	cmd.Dir = fs.Root()
-	cmd.Env = os.Environ()
 	buf := &bytes.Buffer{}
 	cmd.Stderr = buf
 	cmd.Stdout = buf

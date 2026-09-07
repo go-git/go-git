@@ -43,11 +43,6 @@ jobs:
         mkdir -p  ~/.ssh
         ssh-keyscan -H github.com > ~/.ssh/known_hosts
 
-    - name: Set Git config
-      run: |
-        git config --global user.email "gha@example.com"
-        git config --global user.name "GitHub Actions"
-
     - name: Validate
       run: make validate
 
