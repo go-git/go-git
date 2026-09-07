@@ -143,11 +143,13 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	}()
 
 	cmd := buildCommand(req)
-	if err := session.Start(cmd); err != nil {
-		_ = session.Close()
-		_ = client.Close()
-		return nil, err
-	}
+	go func() {
+		if err := session.Start(cmd); err != nil {
+			_ = session.Close()
+			_ = client.Close()
+			return
+		}
+	}()
 
 	return conn, nil
 }
