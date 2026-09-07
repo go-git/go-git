@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -955,7 +955,7 @@ func storeRawTree(t *testing.T, s storer.Storer, entries []object.TreeEntry) plu
 
 func gitConfig(t *testing.T, dir, key, value string) {
 	t.Helper()
-	cmd := exec.Command("git", "config", key, value)
+	cmd := gitenv.Command("git", "config", key, value)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git config %s %s: %s", key, value, out)
@@ -968,7 +968,7 @@ func gitConfig(t *testing.T, dir, key, value string) {
 // NTFS Alternate Data Stream check (CVE-2019-1351).
 func gitAtLeast(t *testing.T, major, minor int) bool {
 	t.Helper()
-	out, err := exec.Command("git", "--version").Output()
+	out, err := gitenv.Command("git", "--version").Output()
 	if err != nil {
 		return false
 	}
@@ -984,9 +984,9 @@ func gitAtLeast(t *testing.T, major, minor int) bool {
 
 func gitCherryPick(t *testing.T, dir, hash string) error {
 	t.Helper()
-	cmd := exec.Command("git", "cherry-pick", hash)
+	cmd := gitenv.Command("git", "cherry-pick", hash)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_NAME=test",
 		"GIT_AUTHOR_EMAIL=test@test",
 		"GIT_COMMITTER_NAME=test",
@@ -994,7 +994,7 @@ func gitCherryPick(t *testing.T, dir, hash string) error {
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		abort := exec.Command("git", "cherry-pick", "--abort")
+		abort := gitenv.Command("git", "cherry-pick", "--abort")
 		abort.Dir = dir
 		_ = abort.Run()
 		return fmt.Errorf("git cherry-pick %s: %s: %w", hash, out, err)

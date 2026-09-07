@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -34,13 +34,12 @@ func freePort(t *testing.T) int {
 
 func startDaemon(t *testing.T, base string, port int) {
 	t.Helper()
-	daemon := exec.Command("git", "daemon",
+	daemon := gitenv.Command("git", "daemon",
 		fmt.Sprintf("--base-path=%s", base),
 		"--export-all", "--enable=receive-pack", "--enable=upload-archive", "--reuseaddr",
 		fmt.Sprintf("--port=%d", port),
 		"--max-connections=1", "--listen=127.0.0.1",
 	)
-	daemon.Env = os.Environ()
 	require.NoError(t, daemon.Start())
 
 	t.Cleanup(func() {

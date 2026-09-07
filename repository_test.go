@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -32,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	archivePkg "github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/server"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -3977,9 +3977,8 @@ func ExecuteOnPath(t *testing.T, path string, cmds ...string) error {
 
 func executeOnPath(path, cmd string) error {
 	args := strings.Split(cmd, " ")
-	c := exec.Command(args[0], args[1:]...)
+	c := gitenv.Command(args[0], args[1:]...)
 	c.Dir = path
-	c.Env = os.Environ()
 
 	buf := bytes.NewBuffer(nil)
 	c.Stderr = buf

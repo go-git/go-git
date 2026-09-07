@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -33,7 +33,7 @@ func setupSmartServer(t testing.TB) (base string, addr *net.TCPAddr) {
 	base = filepath.Join(t.TempDir(), fmt.Sprintf("go-git-http-%d", addr.Port))
 	require.NoError(t, os.MkdirAll(base, 0o755))
 
-	out, err := exec.Command("git", "--exec-path").CombinedOutput()
+	out, err := gitenv.Command("git", "--exec-path").CombinedOutput()
 	require.NoError(t, err)
 
 	server := &http.Server{

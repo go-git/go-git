@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 )
 
 var examplesTest = flag.Bool("examples", false, "run the examples tests")
@@ -96,7 +98,7 @@ func tempFolder() string {
 }
 
 func cloneRepository(url, folder string) string {
-	cmd := exec.Command("git", "clone", url, folder)
+	cmd := gitenv.Command("git", "clone", url, folder)
 	err := cmd.Run()
 	CheckIfError(err)
 
@@ -110,9 +112,9 @@ func createBareRepository(dir string) string {
 func createRepository(dir string, isBare bool) string {
 	var cmd *exec.Cmd
 	if isBare {
-		cmd = exec.Command("git", "init", "--bare", dir)
+		cmd = gitenv.Command("git", "init", "--bare", dir)
 	} else {
-		cmd = exec.Command("git", "init", dir)
+		cmd = gitenv.Command("git", "init", dir)
 	}
 	err := cmd.Run()
 	CheckIfError(err)
@@ -133,14 +135,14 @@ func setEmptyRemote(dir string) string {
 }
 
 func setRemote(local, remote string) {
-	cmd := exec.Command("git", "remote", "set-url", "origin", remote)
+	cmd := gitenv.Command("git", "remote", "set-url", "origin", remote)
 	cmd.Dir = local
 	err := cmd.Run()
 	CheckIfError(err)
 }
 
 func addRemote(local, remote string) {
-	cmd := exec.Command("git", "remote", "add", "origin", remote)
+	cmd := gitenv.Command("git", "remote", "add", "origin", remote)
 	cmd.Dir = local
 	err := cmd.Run()
 	CheckIfError(err)

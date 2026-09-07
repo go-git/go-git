@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 )
 
 // ConformanceSuite verifies go-git's gitignore against upstream Git references:
@@ -56,7 +58,7 @@ func (s *ConformanceSuite) gitOracleRoot() *os.Root {
 			s.T().Logf("oracle disabled: tempdir: %v", err)
 			return
 		}
-		if err := exec.Command("git", "-c", "init.defaultBranch=main", "-C", dir, "init", "-q").Run(); err != nil {
+		if err := gitenv.Command("git", "-c", "init.defaultBranch=main", "-C", dir, "init", "-q").Run(); err != nil {
 			_ = os.RemoveAll(dir)
 			s.T().Logf("oracle disabled: git init: %v", err)
 			return
@@ -68,7 +70,7 @@ func (s *ConformanceSuite) gitOracleRoot() *os.Root {
 			return
 		}
 		s.oracleRoot = root
-		out, err := exec.Command("git", "-C", dir, "config", "--get", "core.ignorecase").Output()
+		out, err := gitenv.Command("git", "-C", dir, "config", "--get", "core.ignorecase").Output()
 		if err == nil {
 			s.platformIgnoresCase = strings.TrimSpace(string(out)) == "true"
 		}
@@ -153,7 +155,7 @@ func (s *ConformanceSuite) runCheckIgnore(root *os.Root, arg, ignoreCase string)
 		args = append(args, "-c", "core.ignorecase="+ignoreCase)
 	}
 	args = append(args, "check-ignore", "-q", "--", arg)
-	err := exec.Command("git", args...).Run()
+	err := gitenv.Command("git", args...).Run()
 	switch {
 	case err == nil:
 		return true, true
