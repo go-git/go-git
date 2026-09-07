@@ -169,8 +169,11 @@ var isolatedHome = sync.OnceValue(func() string {
 // read the machine's configuration or be pointed at another repository, where
 // one built with exec.Command has to remember not to. The caller sets Dir, and
 // may append to Env for anything it needs on top: later entries win.
+// On macOS, Apple's /usr/bin/git launcher is resolved before applying Env;
+// resolution failures are returned through Cmd.Err and prevent execution.
 func Command(name string, args ...string) *exec.Cmd {
 	cmd := exec.Command(name, args...)
+	resolveAppleGit(cmd)
 	cmd.Env = Env()
 
 	return cmd
