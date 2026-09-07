@@ -2,6 +2,7 @@ package packfile
 
 import (
 	"bytes"
+	"compress/zlib"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -59,9 +60,12 @@ func (s *EncoderSuite) TestCorrectPackWithOneEmptyObject(c *C) {
 	// OBJECT HEADER(TYPE + SIZE)= 0001 0000
 	expectedResult = append(expectedResult, []byte{16}...)
 
-	// Zlib header
-	expectedResult = append(expectedResult,
-		[]byte{120, 156, 1, 0, 0, 255, 255, 0, 0, 0, 1}...)
+	// Zlib stream of the empty object contents. The exact bytes depend on the
+	// compress/flate implementation, so compress it here instead of hardcoding.
+	var zbuf bytes.Buffer
+	zw := zlib.NewWriter(&zbuf)
+	c.Assert(zw.Close(), IsNil)
+	expectedResult = append(expectedResult, zbuf.Bytes()...)
 
 	// + HASH
 	hb := [hash.Size]byte(h)
