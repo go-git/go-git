@@ -273,6 +273,35 @@ func TestSubmodulesStatus(t *testing.T) {
 	})
 }
 
+func TestSubmoduleStatusDoesNotInitializeUnclonedSubmodule(t *testing.T) {
+	t.Parallel()
+
+	fixtures.ByTag("submodule").Run(t, func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
+
+		r, wt := cloneFixture(t, f)
+		defer func() { _ = r.Close() }()
+
+		sm := namedSubmodule(t, wt, primaryFixtureSubmoduleName(f))
+		require.NoError(t, sm.Init())
+
+		status, err := sm.Status()
+		require.NoError(t, err)
+		require.Equal(t, sm.c.Path, status.Path)
+		require.Equal(t, submoduleHashFromIndex(t, r, sm.c.Name), status.Expected)
+		require.True(t, status.Current.IsZero())
+
+		_, err = wt.Status()
+		require.NoError(t, err)
+
+		_, err = os.Stat(filepath.Join(wt.Filesystem().Root(), sm.c.Path, ".git"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+
+		_, err = os.Stat(filepath.Join(wt.Filesystem().Root(), ".git", "modules", sm.c.Name))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
 func TestSubmodulesUpdateContext(t *testing.T) {
 	t.Parallel()
 
