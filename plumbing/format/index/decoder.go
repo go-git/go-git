@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/ewah"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -227,7 +229,9 @@ func (d *Decoder) doReadEntryNameV4() (string, error) {
 
 	var base string
 	if d.lastEntry != nil {
-		if l < 0 || int(l) > len(d.lastEntry.Name) {
+		// Compare in int64: on 32-bit builds int(l) would truncate a large
+		// strip length, slip past the bound check, and panic on the slice.
+		if l < 0 || l > int64(len(d.lastEntry.Name)) {
 			return "", fmt.Errorf("%w: invalid V4 entry name strip length %d (previous name length: %d)",
 				ErrMalformedIndexFile, l, len(d.lastEntry.Name))
 		}
@@ -265,9 +269,6 @@ func (d *Decoder) padEntry(idx *Index, e *Entry, read, nameConsumed int) error {
 }
 
 func (d *Decoder) readExtensions(idx *Index) error {
-	// TODO: support 'Split index' and 'Untracked cache' extensions, take in
-	// count that they are not supported by jgit or libgit
-
 	var expected []byte
 	var peeked []byte
 	var err error
@@ -341,6 +342,35 @@ func (d *Decoder) readExtension(idx *Index) error {
 			return err
 		}
 		trace.Internal.Printf("index: end-of-index-entry extension decoded, offset %d hash %s", idx.EndOfIndexEntry.Offset, idx.EndOfIndexEntry.Hash)
+
+	case bytes.Equal(header[:], linkExtSignature):
+		idx.Link = &Link{}
+		dec := &linkExtensionDecoder{r, d.hash}
+		if err := dec.Decode(idx.Link); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], untrackedCacheExtSignature):
+		idx.UntrackedCache = &UntrackedCache{}
+		dec := &untrackedCacheDecoder{r, d.hash}
+		if err := dec.Decode(idx.UntrackedCache); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], fsMonitorExtSignature):
+		idx.FSMonitor = &FSMonitor{}
+		dec := &fsMonitorDecoder{r}
+		if err := dec.Decode(idx.FSMonitor); err != nil {
+			return err
+		}
+
+	case bytes.Equal(header[:], indexEntryOffsetTableExtSignature):
+		idx.IndexEntryOffsetTable = &EntryOffsetTable{}
+		dec := &indexEntryOffsetTableDecoder{r}
+		if err := dec.Decode(idx.IndexEntryOffsetTable); err != nil {
+			return err
+		}
+
 	default:
 		// See https://git-scm.com/docs/index-format, which says:
 		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
@@ -354,6 +384,20 @@ func (d *Decoder) readExtension(idx *Index) error {
 		if err := extDec.Decode(); err != nil {
 			return err
 		}
+	}
+
+	// Every extension must be fully consumed. Draining the remainder of the
+	// length-bounded reader both validates that (any leftover means the payload
+	// was malformed) and advances the underlying stream to the next extension.
+	// This is done centrally, rather than per decoder via bufio.Buffered(),
+	// because Buffered() only sees the current buffer and misses bytes still in
+	// the underlying reader for extensions larger than the buffer.
+	n, err := io.Copy(io.Discard, r)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return fmt.Errorf("%w: %s extension has %d unparsed bytes", ErrMalformedIndexFile, string(header[:]), n)
 	}
 
 	return nil
@@ -439,10 +483,6 @@ func (d *treeExtensionDecoder) Decode(t *Tree) error {
 			return err
 		}
 
-		if e == nil {
-			continue
-		}
-
 		t.Entries = append(t.Entries, *e)
 	}
 }
@@ -480,12 +520,15 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 	e.Trees = subtrees
 
-	// An entry can be in an invalidated state and is represented by having a
-	// negative number in the entry_count field. In this case, there is no
-	// object name and the next entry starts immediately after the newline.
+	// An entry can be in an invalidated state, represented by a negative
+	// entry_count. In that case there is no object name and the next entry
+	// starts immediately after the newline. The entry is kept (with a zero
+	// Hash) so the cache tree, including its subtree_nr counts, survives a
+	// round trip: dropping it would leave a parent claiming more subtrees than
+	// are written and produce a cache tree git cannot parse.
 	if i < 0 {
 		trace.Internal.Printf("index: tree extension entry %q invalidated (entry count %d)", e.Path, i)
-		return nil, nil
+		return e, nil
 	}
 
 	e.Hash.ResetBySize(d.h.Size())
@@ -493,6 +536,7 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return e, nil
 }
 
@@ -518,7 +562,7 @@ func (d *resolveUndoDecoder) Decode(ru *ResolveUndo) error {
 
 func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 	e := &ResolveUndoEntry{
-		Stages: make(map[Stage]plumbing.Hash),
+		Stages: make(map[Stage]ResolveUndoStage),
 	}
 
 	path, err := binary.ReadUntil(d.r, '\x00')
@@ -528,20 +572,30 @@ func (d *resolveUndoDecoder) readEntry() (*ResolveUndoEntry, error) {
 
 	e.Path = string(path)
 
-	for i := range 3 {
-		if err := d.readStage(e, Stage(i+1)); err != nil {
+	// Stages are written by git in the fixed AncestorMode, OurMode,
+	// TheirMode order; read them back in that same order so the mode bits
+	// are recorded against the correct stage.
+	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		if err := d.readStage(e, stage); err != nil {
 			return nil, err
 		}
 	}
 
-	for s := range e.Stages {
-		var h plumbing.Hash
-		h.ResetBySize(d.h.Size())
-		if _, err := h.ReadFrom(d.r); err != nil {
+	// Object names follow the mode bits, again in stage order and only for
+	// the stages whose mode was non-zero. Iterating e.Stages directly would
+	// use Go's randomised map order and pair hashes with the wrong stages.
+	for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+		st, ok := e.Stages[stage]
+		if !ok {
+			continue
+		}
+
+		st.Hash.ResetBySize(d.h.Size())
+		if _, err := st.Hash.ReadFrom(d.r); err != nil {
 			return nil, err
 		}
 
-		e.Stages[s] = h
+		e.Stages[stage] = st
 	}
 
 	trace.Internal.Printf("index: resolve-undo entry %q, %d stages", e.Path, len(e.Stages))
@@ -554,13 +608,17 @@ func (d *resolveUndoDecoder) readStage(e *ResolveUndoEntry, s Stage) error {
 		return err
 	}
 
-	stage, err := strconv.ParseInt(string(ascii), 8, 64)
+	// git writes the octal file mode for each stage; a zero mode marks the
+	// stage as absent from the conflict. Parse as an unsigned 32-bit value
+	// (matching git's strtoul and filemode.FileMode's width) so an oversized
+	// mode is rejected rather than silently truncated on conversion.
+	mode, err := strconv.ParseUint(string(ascii), 8, 32)
 	if err != nil {
 		return err
 	}
 
-	if stage != 0 {
-		e.Stages[s] = plumbing.ZeroHash
+	if mode != 0 {
+		e.Stages[s] = ResolveUndoStage{Mode: filemode.FileMode(mode)}
 	}
 
 	return nil
@@ -579,8 +637,359 @@ func (d *endOfIndexEntryDecoder) Decode(e *EndOfIndexEntry) error {
 	}
 
 	e.Hash.ResetBySize(d.h.Size())
-	_, err = e.Hash.ReadFrom(d.r)
-	return err
+	if _, err := e.Hash.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type linkExtensionDecoder struct {
+	r *bufio.Reader
+	h hash.Hash
+}
+
+func (d *linkExtensionDecoder) Decode(ext *Link) error {
+	// Size the object ID to the index's object format before reading, otherwise
+	// it defaults to SHA-1's 20 bytes and desyncs the stream on SHA-256 repos.
+	ext.ObjectID.ResetBySize(d.h.Size())
+	if _, err := ext.ObjectID.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	// A split index that deletes and replaces nothing carries only the base
+	// object ID and no bitmaps. git stops reading here in that case, so match
+	// it rather than failing on the absent delete bitmap.
+	if _, err := d.r.Peek(1); err == io.EOF {
+		return nil
+	}
+
+	deleteBitmap, err := ewah.ReadFrom(d.r)
+	if err != nil {
+		return err
+	}
+
+	var deleteBuffer bytes.Buffer
+	if _, err := deleteBitmap.WriteTo(&deleteBuffer); err != nil {
+		return err
+	}
+	ext.DeleteBitmap = deleteBuffer.Bytes()
+
+	replaceBitmap, err := ewah.ReadFrom(d.r)
+	if err != nil {
+		return err
+	}
+
+	var replaceBuffer bytes.Buffer
+	if _, err := replaceBitmap.WriteTo(&replaceBuffer); err != nil {
+		return err
+	}
+	ext.ReplaceBitmap = replaceBuffer.Bytes()
+
+	return nil
+}
+
+type untrackedCacheDecoder struct {
+	r *bufio.Reader
+	h hash.Hash
+}
+
+func (d *untrackedCacheDecoder) Decode(ext *UntrackedCache) error {
+	length, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return err
+	}
+	for i := int64(0); i < length; {
+		env, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return err
+		}
+		ext.Environments = append(ext.Environments, string(env))
+		i += int64(len(env)) + 1
+	}
+
+	if err := d.decodeUntrackedCacheStats(&ext.InfoExcludeStats); err != nil {
+		return err
+	}
+	if err := d.decodeUntrackedCacheStats(&ext.ExcludesFileStats); err != nil {
+		return err
+	}
+
+	flags, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	ext.DirFlags = flags
+
+	// Size the hashes to the index's object format before reading; otherwise
+	// they default to SHA-1's 20 bytes and desync the stream on SHA-256 repos.
+	ext.InfoExcludeHash.ResetBySize(d.h.Size())
+	if _, err := ext.InfoExcludeHash.ReadFrom(d.r); err != nil {
+		return err
+	}
+	ext.ExcludesFileHash.ResetBySize(d.h.Size())
+	if _, err := ext.ExcludesFileHash.ReadFrom(d.r); err != nil {
+		return err
+	}
+
+	ignoreFile, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return err
+	}
+
+	ext.PerDirIgnoreFile = string(ignoreFile)
+
+	count, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return err
+	}
+
+	if count != 0 {
+		// count comes straight from the file. Append per decoded entry rather
+		// than pre-allocating an attacker-controlled size, so a crafted count
+		// fails on the first short read instead of demanding a huge slice.
+		for range count {
+			entry, err := d.readEntry()
+			if err != nil {
+				return err
+			}
+			ext.Entries = append(ext.Entries, *entry)
+		}
+
+		validBitmap, err := ewah.ReadFrom(d.r)
+		if err != nil {
+			return err
+		}
+
+		// The valid bitmap has one bit per directory entry, so its set-bit
+		// count cannot exceed the number of entries. Bounding it here both
+		// rejects a crafted bitmap and keeps the Stats allocation below in
+		// check. Count is O(words), unlike a per-bit scan which a large run
+		// would make pathologically slow.
+		validEntries, err := boundedBitCount(validBitmap, len(ext.Entries), "valid")
+		if err != nil {
+			return err
+		}
+
+		var validBuffer bytes.Buffer
+		if _, err := validBitmap.WriteTo(&validBuffer); err != nil {
+			return err
+		}
+		ext.ValidBitmap = validBuffer.Bytes()
+
+		checkOnlyBitmap, err := ewah.ReadFrom(d.r)
+		if err != nil {
+			return err
+		}
+
+		var checkOnlyBuffer bytes.Buffer
+		if _, err := checkOnlyBitmap.WriteTo(&checkOnlyBuffer); err != nil {
+			return err
+		}
+		ext.CheckOnlyBitmap = checkOnlyBuffer.Bytes()
+
+		metadataBitmap, err := ewah.ReadFrom(d.r)
+		if err != nil {
+			return err
+		}
+
+		// Same bound as the valid bitmap: one bit per directory entry.
+		metadataEntries, err := boundedBitCount(metadataBitmap, len(ext.Entries), "metadata")
+		if err != nil {
+			return err
+		}
+
+		var metadataBuffer bytes.Buffer
+		if _, err := metadataBitmap.WriteTo(&metadataBuffer); err != nil {
+			return err
+		}
+		ext.MetadataBitmap = metadataBuffer.Bytes()
+
+		ext.Stats = make([]UntrackedCacheStats, validEntries)
+		for i := range validEntries {
+			var value UntrackedCacheStats
+			if err := d.decodeUntrackedCacheStats(&value); err != nil {
+				return err
+			}
+			ext.Stats[i] = value
+		}
+
+		ext.Hashes = make([]plumbing.Hash, metadataEntries)
+		for i := range metadataEntries {
+			var value plumbing.Hash
+			value.ResetBySize(d.h.Size())
+			if _, err := value.ReadFrom(d.r); err != nil {
+				return err
+			}
+			ext.Hashes[i] = value
+		}
+
+		finalByte, err := d.r.ReadByte()
+		if err != nil {
+			return err
+		}
+		if finalByte != 0 {
+			return fmt.Errorf("expected final NUL terminator, got: 0x%x", finalByte)
+		}
+	}
+
+	return nil
+}
+
+// boundedBitCount returns the number of set bits in b, failing if it exceeds
+// max. The untracked cache's valid and metadata bitmaps carry one bit per
+// directory entry, so a count above the entry count signals a malformed (or
+// crafted) extension and would otherwise drive an oversized allocation. Count
+// is O(words), so a large run cannot make this pathologically slow.
+func boundedBitCount(b *ewah.Bitmap, limit int, name string) (int, error) {
+	count := b.Count()
+	if count > uint64(limit) {
+		return 0, fmt.Errorf("%w: untracked cache %s bitmap has %d set bits, exceeding %d directory entries",
+			ErrMalformedIndexFile, name, count, limit)
+	}
+	return int(count), nil
+}
+
+func (d *untrackedCacheDecoder) readEntry() (*UntrackedCacheEntry, error) {
+	e := &UntrackedCacheEntry{}
+
+	entries, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return nil, err
+	}
+
+	blocks, err := binary.ReadVariableWidthInt(d.r)
+	if err != nil {
+		return nil, err
+	}
+	e.Blocks = blocks
+
+	name, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return nil, err
+	}
+	e.Name = string(name)
+
+	// entries is untrusted; append per value read rather than pre-allocating an
+	// attacker-controlled size, so a short read fails before a huge allocation.
+	for range entries {
+		value, err := binary.ReadUntil(d.r, '\x00')
+		if err != nil {
+			return nil, err
+		}
+		e.Entries = append(e.Entries, string(value))
+	}
+
+	return e, nil
+}
+
+func (d *untrackedCacheDecoder) decodeUntrackedCacheStats(e *UntrackedCacheStats) error {
+	var msec, mnsec, sec, nsec uint32
+
+	flow := []any{
+		&sec, &nsec,
+		&msec, &mnsec,
+		&e.Dev,
+		&e.Inode,
+		&e.UID,
+		&e.GID,
+		&e.Size,
+	}
+
+	if err := binary.Read(d.r, flow...); err != nil {
+		return err
+	}
+
+	if sec != 0 || nsec != 0 {
+		e.CreatedAt = time.Unix(int64(sec), int64(nsec))
+	}
+
+	if msec != 0 || mnsec != 0 {
+		e.ModifiedAt = time.Unix(int64(msec), int64(mnsec))
+	}
+
+	return nil
+}
+
+type fsMonitorDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *fsMonitorDecoder) Decode(ext *FSMonitor) error {
+	var err error
+	ext.Version, err = binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	// Only version 2 is supported. git no longer writes version 1, whose token
+	// was an opaque 64-bit value; rejecting it avoids misinterpreting the bytes.
+	if ext.Version != 2 {
+		return fmt.Errorf("unsupported filesystem monitor cache extension version %d, only version 2 is supported", ext.Version)
+	}
+
+	token, err := binary.ReadUntil(d.r, '\x00')
+	if err != nil {
+		return err
+	}
+	ext.Token = string(token)
+
+	length, err := binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	// length is untrusted; copy exactly that many bytes rather than
+	// pre-allocating, so a crafted length fails on a short read.
+	var bitmap bytes.Buffer
+	if _, err := io.CopyN(&bitmap, d.r, int64(length)); err != nil {
+		return err
+	}
+	ext.DirtyBitmap = bitmap.Bytes()
+
+	return nil
+}
+
+type indexEntryOffsetTableDecoder struct {
+	r *bufio.Reader
+}
+
+func (d *indexEntryOffsetTableDecoder) Decode(table *EntryOffsetTable) error {
+	var err error
+
+	table.Version, err = binary.ReadUint32(d.r)
+	if err != nil {
+		return err
+	}
+
+	// Read (offset, count) blocks until the extension is exhausted. Peek is
+	// used rather than bufio.Buffered() so the loop sees bytes still in the
+	// underlying reader, not just the current buffer. Otherwise a table larger
+	// than the buffer would be silently truncated.
+	for {
+		if _, err := d.r.Peek(1); err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+
+		var entry EntryOffsetEntry
+
+		entry.Offset, err = binary.ReadUint32(d.r)
+		if err != nil {
+			return err
+		}
+
+		entry.Count, err = binary.ReadUint32(d.r)
+		if err != nil {
+			return err
+		}
+
+		table.Entries = append(table.Entries, entry)
+	}
+
+	return nil
 }
 
 type unknownExtensionDecoder struct {

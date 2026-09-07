@@ -2,12 +2,17 @@ package index
 
 import (
 	"bytes"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
+	"strconv"
 	"time"
 
+	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
@@ -24,9 +29,34 @@ var (
 // An Encoder writes an Index to an output stream.
 type Encoder struct {
 	w         io.Writer
+	counter   *countingWriter
 	hash      hash.Hash
 	lastEntry *Entry
 	skipHash  bool
+
+	// entriesStart is the absolute byte offset at which the index entries
+	// begin (immediately after the 12-byte header).
+	entriesStart int64
+	// entryOffsets holds the absolute byte offset of each entry in write
+	// order. It is used to recompute IEOT block offsets at write time.
+	entryOffsets []int64
+	// extHeaders accumulates the 8-byte (signature, size) header of each
+	// extension written before EOIE, which is the input to the EOIE hash. It
+	// is nil unless an EOIE extension is going to be written.
+	extHeaders *bytes.Buffer
+}
+
+// countingWriter wraps a writer and tracks the number of bytes written so the
+// encoder can record absolute offsets for the EOIE and IEOT extensions.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // NewEncoder returns a new encoder that writes to w.
@@ -41,12 +71,16 @@ func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
 		skipHash: cfg.skipHash,
 	}
 
+	var dst io.Writer
 	if e.skipHash {
-		e.w = w
+		dst = w
 	} else {
 		h.Reset()
-		e.w = io.MultiWriter(w, h)
+		dst = io.MultiWriter(w, h)
 	}
+
+	e.counter = &countingWriter{w: dst}
+	e.w = e.counter
 
 	return e
 }
@@ -57,7 +91,6 @@ func (e *Encoder) Encode(idx *Index) error {
 }
 
 func (e *Encoder) encode(idx *Index, footer bool) error {
-	// TODO: support extensions
 	if idx.Version > EncodeVersionSupported {
 		return ErrUnsupportedVersion
 	}
@@ -67,6 +100,10 @@ func (e *Encoder) encode(idx *Index, footer bool) error {
 	}
 
 	if err := e.encodeEntries(idx); err != nil {
+		return err
+	}
+
+	if err := e.encodeExtensions(idx); err != nil {
 		return err
 	}
 
@@ -85,9 +122,20 @@ func (e *Encoder) encodeHeader(idx *Index) error {
 }
 
 func (e *Encoder) encodeEntries(idx *Index) error {
-	sort.Sort(byNameAndStage(idx.Entries))
+	// Stable sort so entries that compare equal keep their input order.
+	// Split-index replacement entries all carry a zero-length name (and the
+	// same stage) and must stay in base-position order to align with the
+	// replace bitmap; an unstable sort would scramble them. byNameAndStage also
+	// orders same-name conflict entries by stage.
+	sort.Stable(byNameAndStage(idx.Entries))
+
+	// Record where the entries begin and the offset of each entry so IEOT
+	// block offsets can be recomputed from the actual byte layout.
+	e.entriesStart = e.counter.n
+	e.entryOffsets = make([]int64, 0, len(idx.Entries))
 
 	for _, entry := range idx.Entries {
+		e.entryOffsets = append(e.entryOffsets, e.counter.n)
 		if err := e.encodeEntry(idx, entry); err != nil {
 			return err
 		}
@@ -214,22 +262,435 @@ func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
 		return fmt.Errorf("invalid signature length")
 	}
 
-	_, err := e.w.Write([]byte(signature))
+	size, err := u32(int64(len(data)), fmt.Sprintf("%s extension size", signature))
 	if err != nil {
 		return err
 	}
 
-	err = binary.WriteUint32(e.w, uint32(len(data)))
+	if _, err := e.w.Write([]byte(signature)); err != nil {
+		return err
+	}
+
+	if err := binary.WriteUint32(e.w, size); err != nil {
+		return err
+	}
+
+	if _, err := e.w.Write(data); err != nil {
+		return err
+	}
+
+	// The EOIE hash covers the (signature, size) header of every extension
+	// written before it. Record this one while tracking is active.
+	if e.extHeaders != nil {
+		e.extHeaders.WriteString(signature)
+		if err := binary.WriteUint32(e.extHeaders, size); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// u32 narrows n to a uint32 on-disk index field, failing if it does not fit.
+// Offsets and sizes are 32-bit on disk; a larger value would be written
+// truncated and silently corrupt the file (git would seek to the wrong place),
+// so reject it rather than emit a bad offset.
+func u32(n int64, what string) (uint32, error) {
+	if n < 0 || n > math.MaxUint32 {
+		return 0, fmt.Errorf("%s (%d) exceeds the 32-bit index field", what, n)
+	}
+	return uint32(n), nil
+}
+
+func (e *Encoder) encodeExtensions(idx *Index) error {
+	// EOIE points at the start of the extension section and hashes the headers
+	// of the extensions preceding it, so both are derived here from the bytes
+	// actually written rather than replayed from a previous decode. Start
+	// recording extension headers before writing the first one.
+	extStart := e.counter.n
+	if idx.EndOfIndexEntry != nil {
+		e.extHeaders = &bytes.Buffer{}
+	}
+
+	// git's do_write_index writes extensions in this order: IEOT, LINK, TREE,
+	// REUC, UNTR, FSMONITOR, then EOIE last. Parsing is order-independent, but
+	// matching git keeps a git-written index byte-identical across a
+	// decode/encode round trip and feeds the EOIE hash the same header sequence.
+	if idx.IndexEntryOffsetTable != nil {
+		if err := e.encodeIEOT(idx.IndexEntryOffsetTable); err != nil {
+			return err
+		}
+	}
+
+	if idx.Link != nil {
+		if err := e.encodeLINK(idx.Link); err != nil {
+			return err
+		}
+	}
+
+	if idx.Cache != nil {
+		if err := e.encodeTREE(idx.Cache); err != nil {
+			return err
+		}
+	}
+
+	if idx.ResolveUndo != nil {
+		if err := e.encodeREUC(idx.ResolveUndo); err != nil {
+			return err
+		}
+	}
+
+	if idx.UntrackedCache != nil {
+		if err := e.encodeUNTR(idx.UntrackedCache); err != nil {
+			return err
+		}
+	}
+
+	if idx.FSMonitor != nil {
+		if err := e.encodeFSMN(idx.FSMonitor); err != nil {
+			return err
+		}
+	}
+
+	// EOIE is always last, so its own header is not part of its hash.
+	if idx.EndOfIndexEntry != nil {
+		if err := e.encodeEOIE(extStart); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *Encoder) encodeEOIE(extStart int64) error {
+	// The offset is the start of the extension section; the hash covers the
+	// (signature, size) headers of every extension written before EOIE.
+	digest := e.extensionDigest(e.extHeaders.Bytes())
+	e.extHeaders = nil
+
+	var h plumbing.Hash
+	h.ResetBySize(e.hash.Size())
+	if _, err := h.Write(digest); err != nil {
+		return err
+	}
+
+	offset, err := u32(extStart, "EOIE offset")
 	if err != nil {
 		return err
 	}
 
-	_, err = e.w.Write(data)
+	buf := &bytes.Buffer{}
+	if err := binary.WriteUint32(buf, offset); err != nil {
+		return err
+	}
+	if _, err := h.WriteTo(buf); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("EOIE", buf.Bytes())
+}
+
+// extensionDigest hashes data with the index's object-format hash, used to
+// compute the EOIE extension hash over the preceding extension headers.
+func (e *Encoder) extensionDigest(data []byte) []byte {
+	var h hash.Hash
+	if e.hash.Size() == format.SHA256Size {
+		h = hash.New(crypto.SHA256)
+	} else {
+		h = hash.New(crypto.SHA1)
+	}
+	h.Write(data)
+	return h.Sum(nil)
+}
+
+func (e *Encoder) encodeTREE(ext *Tree) error {
+	buf := &bytes.Buffer{}
+	for _, i := range ext.Entries {
+		if _, err := buf.WriteString(i.Path); err != nil {
+			return err
+		}
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(buf, "%d %d\n", i.Entries, i.Trees); err != nil {
+			return err
+		}
+		// An invalidated entry (negative entry count) carries no object name; the
+		// SHA is omitted, matching git and the decoder which skips it for i.Entries < 0.
+		if i.Entries >= 0 {
+			if _, err := buf.Write(i.Hash.Bytes()); err != nil {
+				return err
+			}
+		}
+	}
+
+	return e.encodeRawExtension("TREE", buf.Bytes())
+}
+
+func (e *Encoder) encodeREUC(ext *ResolveUndo) error {
+	buf := &bytes.Buffer{}
+	for _, i := range ext.Entries {
+		if _, err := buf.WriteString(i.Path); err != nil {
+			return err
+		}
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+
+		// git writes the octal file mode for each of the three stages, using a
+		// zero mode for stages absent from the conflict.
+		for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+			if st, ok := i.Stages[stage]; ok {
+				if _, err := buf.WriteString(strconv.FormatInt(int64(st.Mode), 8)); err != nil {
+					return err
+				}
+			} else {
+				if _, err := buf.WriteString("0"); err != nil {
+					return err
+				}
+			}
+			if err := buf.WriteByte(0); err != nil {
+				return err
+			}
+		}
+		// The object names follow, in the same stage order and only for the
+		// stages present in the conflict.
+		for _, stage := range []Stage{AncestorMode, OurMode, TheirMode} {
+			st, ok := i.Stages[stage]
+			if !ok {
+				continue
+			}
+			if _, err := buf.Write(st.Hash.Bytes()); err != nil {
+				return err
+			}
+		}
+	}
+	return e.encodeRawExtension("REUC", buf.Bytes())
+}
+
+func (e *Encoder) encodeLINK(ext *Link) error {
+	buf := &bytes.Buffer{}
+	if _, err := buf.Write(ext.ObjectID.Bytes()); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.DeleteBitmap); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.ReplaceBitmap); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("link", buf.Bytes())
+}
+
+func (e *Encoder) encodeUNTR(ext *UntrackedCache) error {
+	buf := &bytes.Buffer{}
+	envs := 0
+	for _, i := range ext.Environments {
+		envs += len(i) + 1
+	}
+	if err := binary.WriteVariableWidthInt(buf, int64(envs)); err != nil {
+		return err
+	}
+	for _, i := range ext.Environments {
+		if _, err := buf.WriteString(i); err != nil {
+			return err
+		}
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+	}
+	if err := e.encodeUntrackedCacheStats(buf, &ext.InfoExcludeStats); err != nil {
+		return err
+	}
+	if err := e.encodeUntrackedCacheStats(buf, &ext.ExcludesFileStats); err != nil {
+		return err
+	}
+	if err := binary.WriteUint32(buf, ext.DirFlags); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.InfoExcludeHash.Bytes()); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.ExcludesFileHash.Bytes()); err != nil {
+		return err
+	}
+	if _, err := buf.WriteString(ext.PerDirIgnoreFile); err != nil {
+		return err
+	}
+	if err := buf.WriteByte(0); err != nil {
+		return err
+	}
+	if err := binary.WriteVariableWidthInt(buf, int64(len(ext.Entries))); err != nil {
+		return err
+	}
+	if len(ext.Entries) != 0 {
+		for _, i := range ext.Entries {
+			if err := e.encodeUntrackedCacheEntry(buf, &i); err != nil {
+				return err
+			}
+		}
+		if _, err := buf.Write(ext.ValidBitmap); err != nil {
+			return err
+		}
+		if _, err := buf.Write(ext.CheckOnlyBitmap); err != nil {
+			return err
+		}
+		if _, err := buf.Write(ext.MetadataBitmap); err != nil {
+			return err
+		}
+		for _, i := range ext.Stats {
+			if err := e.encodeUntrackedCacheStats(buf, &i); err != nil {
+				return err
+			}
+		}
+		for _, i := range ext.Hashes {
+			if _, err := buf.Write(i.Bytes()); err != nil {
+				return err
+			}
+		}
+		// Terminate the list with a final NUL value.
+		if err := buf.WriteByte(0); err != nil {
+			return err
+		}
+	}
+
+	return e.encodeRawExtension("UNTR", buf.Bytes())
+}
+
+func (e *Encoder) encodeUntrackedCacheEntry(w io.Writer, entry *UntrackedCacheEntry) error {
+	if err := binary.WriteVariableWidthInt(w, int64(len(entry.Entries))); err != nil {
+		return err
+	}
+	if err := binary.WriteVariableWidthInt(w, entry.Blocks); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte(entry.Name)); err != nil {
+		return err
+	}
+	if err := binary.Write(w, []byte{'\x00'}); err != nil {
+		return err
+	}
+	for _, i := range entry.Entries {
+		if _, err := w.Write([]byte(i)); err != nil {
+			return err
+		}
+		if err := binary.Write(w, []byte{'\x00'}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Encoder) encodeUntrackedCacheStats(w io.Writer, stat *UntrackedCacheStats) error {
+	sec, nsec, err := e.timeToUint32(&stat.CreatedAt)
 	if err != nil {
+		return err
+	}
+
+	msec, mnsec, err := e.timeToUint32(&stat.ModifiedAt)
+	if err != nil {
+		return err
+	}
+
+	flow := []any{
+		sec, nsec,
+		msec, mnsec,
+		stat.Dev,
+		stat.Inode,
+		stat.UID,
+		stat.GID,
+		stat.Size,
+	}
+
+	if err := binary.Write(w, flow...); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (e *Encoder) encodeFSMN(ext *FSMonitor) error {
+	// Only version 2 is supported; git no longer writes version 1.
+	if ext.Version != 2 {
+		return fmt.Errorf("unsupported filesystem monitor cache extension version %d, only version 2 is supported", ext.Version)
+	}
+
+	buf := &bytes.Buffer{}
+	if err := binary.WriteUint32(buf, ext.Version); err != nil {
+		return err
+	}
+	if _, err := buf.Write([]byte(ext.Token)); err != nil {
+		return err
+	}
+	if err := buf.WriteByte(0); err != nil {
+		return err
+	}
+	bitmapLen, err := u32(int64(len(ext.DirtyBitmap)), "FSMN dirty bitmap size")
+	if err != nil {
+		return err
+	}
+	if err := binary.WriteUint32(buf, bitmapLen); err != nil {
+		return err
+	}
+	if _, err := buf.Write(ext.DirtyBitmap); err != nil {
+		return err
+	}
+	return e.encodeRawExtension("FSMN", buf.Bytes())
+}
+
+func (e *Encoder) encodeIEOT(ext *EntryOffsetTable) error {
+	buf := &bytes.Buffer{}
+
+	if err := binary.Write(buf, ext.Version); err != nil {
+		return err
+	}
+
+	// git seeks straight to each block offset with no further validation, so
+	// the offsets must point at real entry boundaries in the file being
+	// written. Recompute them from the recorded entry positions rather than
+	// replaying the decoded (now stale) offsets.
+	entry := 0
+	for _, count := range e.ieotBlockCounts(ext) {
+		blockOffset := e.entriesStart
+		if entry < len(e.entryOffsets) {
+			blockOffset = e.entryOffsets[entry]
+		}
+		offset, err := u32(blockOffset, "IEOT block offset")
+		if err != nil {
+			return err
+		}
+		if err := binary.Write(buf, offset); err != nil {
+			return err
+		}
+		if err := binary.Write(buf, count); err != nil {
+			return err
+		}
+		entry += int(count)
+	}
+
+	return e.encodeRawExtension("IEOT", buf.Bytes())
+}
+
+// ieotBlockCounts returns the entry count of each IEOT block. It preserves the
+// decoded partition when its counts still sum to the number of entries being
+// written; otherwise the partition is stale (entries were added or removed) and
+// a single block covering every entry is used so the offsets stay valid.
+func (e *Encoder) ieotBlockCounts(ext *EntryOffsetTable) []uint32 {
+	total := len(e.entryOffsets)
+
+	sum := 0
+	for _, block := range ext.Entries {
+		sum += int(block.Count)
+	}
+
+	if len(ext.Entries) > 0 && sum == total {
+		counts := make([]uint32, len(ext.Entries))
+		for i, block := range ext.Entries {
+			counts[i] = block.Count
+		}
+		return counts
+	}
+
+	return []uint32{uint32(total)}
 }
 
 func (e *Encoder) timeToUint32(t *time.Time) (uint32, uint32, error) {
