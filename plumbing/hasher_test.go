@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/pjbgf/sha1cd"
 	"github.com/stretchr/testify/assert"
 )
@@ -178,5 +179,27 @@ func benchmarkObjectHash(b *testing.B, h hash.Hash, sz int64) {
 	for i := 0; i < b.N; i++ {
 		_, _ = oh.Compute(BlobObject, content)
 		b.SetBytes(sz)
+	}
+}
+
+// TestHasherReset verifies that the object header assembled by Hasher.Reset
+// produces the canonical git object hash.
+func TestHasherReset(t *testing.T) {
+	t.Parallel()
+	content := []byte("hash object sample")
+	h := NewHasher(format.SHA1, BlobObject, int64(len(content)))
+	_, err := h.Write(content)
+	assert.NoError(t, err)
+	assert.Equal(t, "9f361d484fcebb869e1919dc7467b82ac6ca5fad", h.Sum().String())
+}
+
+// BenchmarkHasherReset measures the per-reset cost of writing the object
+// header, which Reset now assembles without intermediate allocations.
+func BenchmarkHasherReset(b *testing.B) {
+	h := NewHasher(format.SHA1, BlobObject, 0)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h.Reset(BlobObject, 18)
 	}
 }
