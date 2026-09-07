@@ -14,6 +14,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/file"
 	xgit "github.com/go-git/go-git/v6/plumbing/transport/git"
@@ -56,6 +57,9 @@ type options struct {
 	file file.Options
 
 	schemes map[string]transport.Transport
+
+	protocolConfig *config.Config
+	fromUser       *bool
 }
 
 func (o *options) ensureTLS() *tls.Config {
@@ -164,6 +168,32 @@ func WithLoader(l transport.Loader) Option {
 	}
 }
 
+// WithProtocolPolicy wires the repository config consulted by the
+// protocol-policy gate. Reads `protocol.<name>.allow` and
+// `protocol.allow` to decide whether a Handshake or Connect for a
+// given URL scheme is permitted. The config supplied here applies
+// only when the per-request transport.Request.Config is nil.
+//
+// The supplied config must not be mutated after this call —
+// concurrent reads happen on the fetch hot path.
+func WithProtocolPolicy(cfg *config.Config) Option {
+	return func(o *options) {
+		o.protocolConfig = cfg
+	}
+}
+
+// WithUserInitiated pre-populates the user-initiated flag carried
+// into the protocol-policy gate when transport.Request.FromUser is
+// nil. Callers that resolve remote URLs indirectly (e.g. submodule
+// update) pass false; direct user-driven operations either leave
+// the default (nil, which consults GIT_PROTOCOL_FROM_USER and
+// falls back to true) or pass true explicitly.
+func WithUserInitiated(v bool) Option {
+	return func(o *options) {
+		o.fromUser = &v
+	}
+}
+
 // WithTransport registers a custom transport for the given URL scheme.
 // This overrides any built-in transport for that scheme.
 func WithTransport(scheme string, tr transport.Transport) Option {
@@ -195,20 +225,42 @@ func New(opts ...Option) *Client {
 }
 
 // Handshake resolves the transport for the request URL scheme and performs
-// a pack protocol handshake.
+// a pack protocol handshake. Requests are first gated by the protocol
+// policy (see transport.CheckRequest).
+//
+// Policy defaults supplied via WithProtocolPolicy and WithUserInitiated
+// are applied only when the corresponding req.Config / req.FromUser
+// fields are at their zero value. Explicit request fields always win;
+// the request itself is never mutated.
 func (c *Client) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
-	tr, err := c.resolve(req)
+	if req == nil || req.URL == nil {
+		return nil, fmt.Errorf("transport: nil request or URL")
+	}
+	tr, err := c.Transport(req.URL.Scheme)
 	if err != nil {
 		return nil, err
 	}
-	return tr.Handshake(ctx, req)
+	effective := c.requestWithDefaults(req)
+	if err := transport.CheckRequest(effective); err != nil {
+		return nil, err
+	}
+	return tr.Handshake(ctx, effective)
 }
 
 // Connect resolves the transport for the request URL scheme and opens a
 // raw full-duplex connection. Returns ErrConnectUnsupported if the transport
-// does not implement Connector (e.g. HTTP).
+// does not implement Connector (e.g. HTTP). Requests are first gated by the
+// protocol policy (see transport.CheckRequest).
+//
+// Policy defaults supplied via WithProtocolPolicy and WithUserInitiated
+// are applied only when the corresponding req.Config / req.FromUser
+// fields are at their zero value. Explicit request fields always win;
+// the request itself is never mutated.
 func (c *Client) Connect(ctx context.Context, req *transport.Request) (transport.Conn, error) {
-	tr, err := c.resolve(req)
+	if req == nil || req.URL == nil {
+		return nil, fmt.Errorf("transport: nil request or URL")
+	}
+	tr, err := c.Transport(req.URL.Scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +268,28 @@ func (c *Client) Connect(ctx context.Context, req *transport.Request) (transport
 	if !ok {
 		return nil, fmt.Errorf("transport for %s does not support Connect: %w", req.URL.Scheme, transport.ErrConnectUnsupported)
 	}
-	return conn.Connect(ctx, req)
+	effective := c.requestWithDefaults(req)
+	if err := transport.CheckRequest(effective); err != nil {
+		return nil, err
+	}
+	return conn.Connect(ctx, effective)
+}
+
+// requestWithDefaults returns a shallow copy of req with the client's
+// policy defaults applied where the caller left fields at their zero
+// value. The original Request is never mutated.
+func (c *Client) requestWithDefaults(req *transport.Request) *transport.Request {
+	if req == nil {
+		return nil
+	}
+	eff := *req
+	if eff.Config == nil {
+		eff.Config = c.opts.protocolConfig
+	}
+	if eff.FromUser == nil {
+		eff.FromUser = c.opts.fromUser
+	}
+	return &eff
 }
 
 // Transport returns the resolved transport for the given URL scheme.
@@ -232,13 +305,6 @@ func (c *Client) Transport(scheme string) (transport.Transport, error) {
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
-}
-
-func (c *Client) resolve(req *transport.Request) (transport.Transport, error) {
-	if req == nil || req.URL == nil {
-		return nil, fmt.Errorf("transport: nil request or URL")
-	}
-	return c.Transport(req.URL.Scheme)
 }
 
 func (c *Client) builtin(scheme string) (transport.Transport, error) {

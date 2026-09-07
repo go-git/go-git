@@ -28,7 +28,10 @@ func ArchiveRemoteContext(ctx context.Context, url string, o *ArchiveOptions) (i
 		return nil, errors.New("remote URL is required")
 	}
 
-	cl, req, err := newClient(url, o.ClientOptions)
+	// nil config: ArchiveRemote has no Repository handle, so the
+	// protocol-policy gate sees only env + built-in defaults — file://
+	// is therefore user-only at the env's default of true.
+	cl, req, err := newClient(url, o.ClientOptions, nil)
 	if err != nil {
 		return nil, err
 	}
