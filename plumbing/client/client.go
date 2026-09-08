@@ -128,6 +128,11 @@ type Credential = xhttp.Credential
 // is returned. Userinfo in the repository URL is applied before the selected
 // source, so the source can replace its Authorization header or add others.
 //
+// Options are applied per operation, so a fetch and a push can be given
+// different sources by passing this in the ClientOptions of each. A credential
+// is selected by origin rather than by operation, so that is where a caller
+// holding separate read and write tokens draws the line.
+//
 // Prefer transport/http.ForRepositoryOrigin or ForOrigin, combined with Chain.
 // A hand-written source can use CredentialRequest.IsOrigin for the transport's
 // own origin comparison.
