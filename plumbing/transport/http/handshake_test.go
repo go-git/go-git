@@ -643,7 +643,7 @@ func TestCommandKeepsConnection(t *testing.T) {
 	t.Parallel()
 
 	const ref = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"
-	body := fmt.Sprintf("%04x%s0000", len(ref)+4, ref)
+	body := pktLine(ref) + "0000"
 
 	// Sent after the client has decoded the flush-pkt. Written in the same
 	// flush as the refs, the terminating chunk is already buffered when the
@@ -907,4 +907,101 @@ func TestHandshakeDumbInfoRefs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pktLine frames s as a pkt-line.
+func pktLine(s string) string { return fmt.Sprintf("%04x%s", len(s)+4, s) }
+
+// releasingRoundTripper signals once a response body has yielded n bytes, so a
+// handler can hold back what follows them until the client has read that far.
+type releasingRoundTripper struct {
+	base    http.RoundTripper
+	after   int
+	release chan<- struct{}
+}
+
+func (rt *releasingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := rt.base.RoundTrip(req)
+	if err != nil || req.Method != http.MethodGet {
+		return resp, err
+	}
+	resp.Body = &releasingBody{ReadCloser: resp.Body, left: rt.after, release: rt.release}
+	return resp, nil
+}
+
+type releasingBody struct {
+	io.ReadCloser
+	left    int
+	release chan<- struct{}
+	once    sync.Once
+}
+
+func (b *releasingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if b.left -= n; b.left <= 0 {
+		b.once.Do(func() { b.release <- struct{}{} })
+	}
+	return n, err
+}
+
+// TestHandshakeSmartKeepsConnection covers the discard the advertisement owes
+// the POST that opens the session. The decode stops at the advertisement's
+// flush-pkt, so the body is short of EOF when the handshake is done, and a
+// v2 clone asks for refs over that same connection a moment later.
+func TestHandshakeSmartKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	const head = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	advertisement := pktLine("# service=git-upload-pack\n") + "0000" +
+		pktLine("version 2\n") + pktLine("agent=go-git/test\n") + pktLine("ls-refs=unborn\n") + "0000"
+	refs := pktLine(head+" refs/heads/master\n") + "0000"
+
+	// The terminating chunk is held back until the client has read the
+	// advertisement, since a server that sends both at once lets net/http's
+	// chunked reader find EOF without anyone asking for it.
+	released := make(chan struct{}, 1)
+	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Transfer-Encoding", "chunked")
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, _ = io.WriteString(w, advertisement)
+			w.(http.Flusher).Flush()
+			select {
+			case <-released:
+			case <-time.After(10 * time.Second):
+				t.Error("the handshake never read the advertisement")
+			}
+			return
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		_, _ = io.WriteString(w, refs)
+	})
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	client := srv.Client()
+	client.Transport = &releasingRoundTripper{
+		base:    client.Transport,
+		after:   len(advertisement),
+		release: released,
+	}
+
+	tr := NewTransport(Options{Client: client})
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     u,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	// A v2 clone asks for refs next, which is the POST that reuses the
+	// connection the advertisement arrived on.
+	remote, err := session.GetRemoteRefs(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, remote.References)
+
+	assert.Equal(t, int64(1), conns.Load(),
+		"the ls-refs POST must reuse the connection the advertisement arrived on")
 }
