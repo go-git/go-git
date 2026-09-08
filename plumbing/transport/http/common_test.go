@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -990,4 +991,149 @@ func TestDoRequestBoundsWhatNetHTTPEmbedded(t *testing.T) {
 				"a 400 KB Location must not become a 400 KB error string")
 		})
 	}
+}
+
+// A response body is the one piece of server-chosen text this package renders
+// that net/url has not already escaped. A control character cannot reach a
+// *url.URL, because url.Parse refuses one, so every URL renders inertly; a
+// body has no such gate.
+//
+// Codepoints outside the printable ASCII range are spelled with rune literals
+// rather than written into the source, where they would be invisible.
+func TestSanitizeReason(t *testing.T) {
+	t.Parallel()
+
+	const (
+		nel      = rune(0x0085) // C1 NEXT LINE
+		csi      = rune(0x009b) // C1 CONTROL SEQUENCE INTRODUCER
+		rtlOverr = rune(0x202e) // RIGHT-TO-LEFT OVERRIDE, category Cf
+	)
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "printable text is unchanged",
+			in:   "Internal Server Error",
+			want: "Internal Server Error",
+		},
+		{
+			name: "an empty reason stays empty",
+			in:   "",
+			want: "",
+		},
+		{
+			// The escape byte is what makes the rest of a CSI sequence a
+			// command. Without it the bracket and the letters are text.
+			name: "an escape sequence loses its escape",
+			in:   "oops\x1b[2J",
+			want: "oops [2J",
+		},
+		{
+			name: "a carriage return cannot rewrite the line",
+			in:   "100%\rHACKED",
+			want: "100% HACKED",
+		},
+		{
+			name: "a newline cannot forge a second line",
+			in:   "denied\nremote: something else",
+			want: "denied remote: something else",
+		},
+		{
+			name: "a tab is a control character too",
+			in:   "a\tb",
+			want: "a b",
+		},
+		{
+			name: "NUL is replaced",
+			in:   "a\x00b",
+			want: "a b",
+		},
+		{
+			// A second escape vocabulary: U+009B introduces a sequence on its
+			// own, so replacing only the C0 range would leave a usable one.
+			name: "C1 controls are replaced",
+			in:   "a" + string(nel) + "b" + string(csi) + "2Jc",
+			want: "a b 2Jc",
+		},
+		{
+			// It prints nothing and reorders what follows, which is how a
+			// message is made to read other than as it was sent.
+			name: "a bidi override is replaced",
+			in:   "repo" + string(rtlOverr) + "gnp.exe",
+			want: "repo gnp.exe",
+		},
+		{
+			name: "multi-byte printable text survives",
+			in:   "サーバー",
+			want: "サーバー",
+		},
+		{
+			// U+FFFD is printable, so an unreadable byte reads as one
+			// unreadable character rather than as a gap.
+			name: "invalid UTF-8 becomes the replacement rune",
+			in:   "a\xffb",
+			want: "a" + string(utf8.RuneError) + "b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, sanitizeReason(tt.in))
+		})
+	}
+}
+
+// Reading the field is as safe as reading the message, the guarantee Err.URL
+// already carries, so something that logs Reason on its own is covered too.
+func TestCheckErrorSanitizesTheReason(t *testing.T) {
+	t.Parallel()
+
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/repo.git/info/refs", nil)
+	require.NoError(t, err)
+
+	gotErr := checkError(&http.Response{
+		Request:    req,
+		StatusCode: http.StatusInternalServerError,
+		Body:       io.NopCloser(strings.NewReader("boom\x1b[2J\rHACKED\nremote: forged")),
+	})
+	require.Error(t, gotErr)
+
+	var httpErr *Err
+	require.ErrorAs(t, gotErr, &httpErr)
+
+	assert.Equal(t, "boom [2J HACKED remote: forged", httpErr.Reason)
+	assert.NotContains(t, gotErr.Error(), "\x1b")
+	assert.NotContains(t, gotErr.Error(), "\r")
+	assert.NotContains(t, gotErr.Error(), "\n",
+		"one message, however many lines the body had")
+}
+
+// The body is cut at a byte offset, which can land inside a multi-byte rune.
+// The surviving half is not valid UTF-8 and must not reach the message as a
+// stray byte.
+func TestCheckErrorSanitizesARuneTheCapSplit(t *testing.T) {
+	t.Parallel()
+
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/repo.git/info/refs", nil)
+	require.NoError(t, err)
+
+	// A three-byte rune at the cap, so only its first byte is read.
+	body := strings.Repeat("a", maxErrorBodySize-1) + "サ"
+
+	gotErr := checkError(&http.Response{
+		Request:    req,
+		StatusCode: http.StatusInternalServerError,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	})
+	require.Error(t, gotErr)
+
+	var httpErr *Err
+	require.ErrorAs(t, gotErr, &httpErr)
+
+	assert.True(t, utf8.ValidString(httpErr.Reason), "no partial rune survives")
+	assert.Equal(t, strings.Repeat("a", maxErrorBodySize-1)+string(utf8.RuneError), httpErr.Reason)
 }

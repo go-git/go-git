@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode"
 
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -18,8 +19,14 @@ type Err struct {
 	// URL is the URL the failing request was made against, an independent copy
 	// redacted the way Error renders it. Reading the field is as safe as
 	// reading the message.
-	URL    *url.URL
+	URL *url.URL
+
+	// Status is the status code of the response.
 	Status int
+
+	// Reason is the response body, truncated to a bounded size and with every
+	// character that would not print as itself replaced by a space. Reading
+	// the field is as safe as reading the message.
 	Reason string
 }
 
@@ -67,7 +74,7 @@ func checkError(r *http.Response) error {
 	if r.Body != nil {
 		messageLength, _ := messageBuffer.ReadFrom(io.LimitReader(r.Body, maxErrorBodySize))
 		if messageLength > 0 {
-			reason = messageBuffer.String()
+			reason = sanitizeReason(messageBuffer.String())
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrainSize))
 	}
@@ -464,6 +471,32 @@ func bounded(s string) string {
 		return "TRUNCATED"
 	}
 	return s
+}
+
+// sanitizeReason replaces every character in s that would not print as itself
+// with a space, so a server's error body renders as text.
+//
+// The body arrives as the far end wrote it, and unlike a URL nothing has
+// escaped it on the way: url.Parse rejects a control character, so no *url.URL
+// in this package can carry one, while a body can carry any byte. Rendered
+// unchanged, an escape sequence in it redraws the reader's terminal and a
+// newline forges a line that reads as a separate message.
+//
+// unicode.IsPrint excludes both: the C0 and C1 controls that begin such a
+// sequence, and the format characters that reorder what follows without
+// printing anything themselves.
+//
+// A space rather than nothing, because removing a character joins the text on
+// either side of it into a word the server did not send. Invalid encoding
+// decodes to U+FFFD, which is printable and so survives, leaving one
+// unreadable character where the bytes were.
+func sanitizeReason(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return ' '
+	}, s)
 }
 
 // redactURL returns a copy of u with anything a caller can have put a secret
