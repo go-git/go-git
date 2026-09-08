@@ -57,13 +57,37 @@ const maxErrorBodySize = 8 << 10
 // A kilobyte is far past any real repository URL.
 const maxRedactedComponent = 1 << 10
 
-// maxDrainSize caps how much of an error response body is read and discarded
-// after the message has been taken. Closing a body with bytes unread discards
-// the connection instead of returning it to the pool, so a large error page
-// would cost a new connection on every attempt.
-const maxDrainSize = 1 << 20
+// maxDrainSize caps how much of a spent response body is discarded to keep its
+// connection reusable. Sized against what it buys: discarding the tail saves
+// one handshake, so spending more transfer than a handshake costs is a bad
+// trade. net/http draws the same line tighter still (maxBodySlurpSize, 2 KiB).
+const maxDrainSize = 64 << 10
+
+// drainAndClose releases a response body nobody will read again.
+//
+// What is left of it is discarded before the close, because net/http returns a
+// connection to the pool only once its body has reached EOF: closing with
+// bytes outstanding drops the connection instead. Those bytes are usually the
+// tail of a body that was read for something else — a message taken up to a
+// byte cap, a response a decoder left at its flush-pkt — and often just the
+// terminating chunk, for which the next request would pay a whole handshake.
+//
+// The discard stops at maxDrainSize, which bounds a server that keeps sending.
+// A server that stops sending without closing is bounded by the request's
+// context instead, since net/http ends the read when that context does.
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainSize))
+	_ = body.Close()
+}
 
 // checkError maps HTTP response status codes to typed transport errors.
+//
+// The body is consumed and closed: as much of it as maxErrorBodySize allows
+// becomes the error's Reason, the remainder is discarded, and the body is
+// closed. Discarding it keeps the connection: a 404 is ordinary control flow
+// for the dumb walk, which asks for every object as a loose file before
+// falling back to the packs, so dropping the connection of a failed request
+// would cost a handshake per object.
 func checkError(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
 		return nil
@@ -76,7 +100,7 @@ func checkError(r *http.Response) error {
 		if messageLength > 0 {
 			reason = sanitizeReason(messageBuffer.String())
 		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrainSize))
+		drainAndClose(r.Body)
 	}
 
 	err := &Err{
@@ -593,6 +617,10 @@ func redactClientError(err error) error {
 //
 // Every non-2xx status is turned into an error here, so a caller that saw a nil
 // error has a 2xx response and need not check the status again.
+//
+// A response is returned alongside that error, for what it says about the
+// request rather than for its body: checkError has taken what it needs of the
+// body and closed it. Closing it again is a no-op.
 func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 	traceHTTP := trace.HTTP.Enabled()
 	if traceHTTP {

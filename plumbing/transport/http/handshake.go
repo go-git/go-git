@@ -382,12 +382,15 @@ func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.Co
 	if err := cr.Encode(r); err != nil {
 		return err
 	}
-	// Command never streams the body out, so drain and close on every path; a
-	// bare return on a decode error would leak the body and its connection.
+	// Command consumes the whole response (it never streams the body out), so
+	// release it on every path. A bare return on a decode error would otherwise
+	// leak the response body and its connection. Releasing it includes the
+	// discard: a decoder stops at the response's flush-pkt, and the request
+	// that reuses the connection — the fetch POST after an ls-refs — follows
+	// immediately.
 	defer func() {
 		if r.resp != nil {
-			_, _ = io.Copy(io.Discard, r.resp.Body)
-			_ = r.resp.Body.Close()
+			drainAndClose(r.resp.Body)
 		}
 	}()
 	if resp != nil {
@@ -600,8 +603,9 @@ type httpNegotiator struct {
 
 func (n *httpNegotiator) Write(p []byte) (int, error) {
 	if n.current != nil && n.current.resp != nil {
-		_, _ = io.Copy(io.Discard, n.current.resp.Body)
-		_ = n.current.resp.Body.Close()
+		// The previous round is complete, and this round is the request that
+		// reuses its connection.
+		drainAndClose(n.current.resp.Body)
 		n.current = nil
 	}
 	if n.current == nil {

@@ -1,13 +1,16 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
@@ -459,6 +462,216 @@ func TestEffectivePort(t *testing.T) {
 	}
 }
 
+// countingBody is a finite response body that records how much was read and
+// whether it was closed. It is finite on purpose: an endless body would make
+// an unbounded read hang instead of fail, and a hanging test reports nothing.
+type countingBody struct {
+	remaining int
+	read      int
+	closed    bool
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	if b.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), b.remaining)
+	for i := range p[:n] {
+		p[i] = 'x'
+	}
+	b.remaining -= n
+	b.read += n
+	return n, nil
+}
+
+func (b *countingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+// bodySize is the fixture body for the bound tests: far larger than any cap
+// the package sets, so a test that stops short of it proves a bound exists.
+// Deliberately not written in terms of maxDrainSize or maxErrorBodySize —
+// asserting against the same constant the code reads is true for any value,
+// including a cap raised to gigabytes.
+const bodySize = 4 << 20
+
+func TestCheckErrorStopsShortOfEOF(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{remaining: bodySize}
+	u, err := url.Parse("https://example.com/repo.git")
+	require.NoError(t, err)
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Body:       body,
+		Request:    &http.Request{URL: u},
+	}
+
+	err = checkError(resp)
+	require.Error(t, err)
+
+	assert.Less(t, body.read, bodySize,
+		"checkError must not read a server-controlled body to EOF")
+	assert.LessOrEqual(t, body.read, 1<<20,
+		"the message and the discard after it must stay within a sane bound")
+
+	// Reading only the message and not closing would hold the connection for
+	// the life of the process: nobody reads this body again.
+	assert.True(t, body.closed, "the body must be closed")
+
+	var e *Err
+	require.ErrorAs(t, err, &e)
+	assert.LessOrEqual(t, len(e.Reason), 64<<10,
+		"the retained message must be bounded")
+}
+
+// TestDoRequestErrorReleasesBody covers the path a real caller takes. On an
+// unsuccessful status checkError takes its message and closes the body, so the
+// response doRequest hands back with its error has nothing left to read: it is
+// there for the request it names, not for its body.
+func TestDoRequestErrorReleasesBody(t *testing.T) {
+	t.Parallel()
+
+	var released atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusInternalServerError)
+		// Far larger than any cap the package sets, so the read cannot reach
+		// EOF and the close has to do the releasing.
+		chunk := bytes.Repeat([]byte("x"), 64<<10)
+		for written := 0; written < bodySize; written += len(chunk) {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	client := srv.Client()
+	client.Transport = &closeTrackingRoundTripper{base: client.Transport, closed: &released}
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := doRequest(client, req)
+	require.Error(t, err, "a 500 must surface as an error")
+	require.NotNil(t, resp, "the request the response names is what a caller reads next")
+
+	assert.Equal(t, int64(1), released.Load(),
+		"doRequest's error path must leave the body closed")
+
+	n, readErr := resp.Body.Read(make([]byte, 1))
+	assert.Zero(t, n, "a spent body has nothing left to hand back")
+	assert.Error(t, readErr, "reading a closed body must fail")
+}
+
+// closeTrackingRoundTripper counts closes of the response bodies it hands out.
+type closeTrackingRoundTripper struct {
+	base   http.RoundTripper
+	closed *atomic.Int64
+}
+
+func (rt *closeTrackingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := rt.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &closeTrackingBody{ReadCloser: resp.Body, closed: rt.closed}
+	return resp, nil
+}
+
+type closeTrackingBody struct {
+	io.ReadCloser
+	closed *atomic.Int64
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed.Add(1)
+	return b.ReadCloser.Close()
+}
+
+// connCountingServer counts the connections opened to it. Reuse is only
+// visible from the server's side: a client that drops a connection and dials
+// another one looks the same to its caller either way.
+func connCountingServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+
+	var conns atomic.Int64
+	srv := httptest.NewUnstartedServer(h)
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	return srv, &conns
+}
+
+// TestErrorResponseKeepsConnection covers the discard checkError owes the
+// request that follows a failed one. A body left with bytes outstanding takes
+// its connection with it, and a failed request is not the end of a session:
+// the dumb walk answers a miss with a 404 and asks for the next object over
+// the same connection.
+func TestErrorResponseKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		contentType string
+		size        int
+	}{
+		{
+			// Longer than the message cap, so the read for Reason cannot
+			// reach the end of the body on its own.
+			name:        "plain text past the message cap",
+			contentType: "text/plain",
+			size:        32 << 10,
+		},
+		{
+			// Markup is never kept, so nothing reads this body at all.
+			name:        "markup of any size",
+			contentType: "text/html",
+			size:        500,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv, conns := connCountingServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				// Chunked, as a server streaming an error page sends it. A
+				// Content-Length would let net/http find the end of the body
+				// without being asked, and the discard would not be what
+				// keeps the connection.
+				w.Header().Set("Transfer-Encoding", "chunked")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write(bytes.Repeat([]byte("x"), tt.size))
+			})
+
+			const requests = 10
+			client := srv.Client()
+			for range requests {
+				req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+				require.NoError(t, err)
+
+				resp, err := doRequest(client, req)
+				require.ErrorIs(t, err, transport.ErrRepositoryNotFound)
+				if resp != nil {
+					_ = resp.Body.Close()
+				}
+			}
+
+			assert.Equal(t, int64(1), conns.Load(),
+				"%d failed requests must share one connection", requests)
+		})
+	}
+}
+
 func TestCheckErrorBoundsBodyRead(t *testing.T) {
 	t.Parallel()
 
@@ -481,9 +694,9 @@ func TestCheckErrorBoundsBodyRead(t *testing.T) {
 }
 
 // A capped message read leaves the rest of the body unread, and closing an
-// unread body discards the connection instead of pooling it. The body must be
-// larger than the message cap or the drain has nothing to do and this test
-// cannot fail.
+// unread body discards the connection instead of pooling it, so checkError
+// discards what is left before it closes. The body must be larger than the
+// message cap or the discard has nothing to do and this test cannot fail.
 func TestCheckErrorDrainsPastTheMessageCap(t *testing.T) {
 	t.Parallel()
 
@@ -501,8 +714,11 @@ func TestCheckErrorDrainsPastTheMessageCap(t *testing.T) {
 	require.Error(t, checkError(resp))
 
 	n, readErr := resp.Body.Read(make([]byte, 1))
-	assert.Zero(t, n, "checkError must leave the body fully consumed")
-	assert.ErrorIs(t, readErr, io.EOF)
+	assert.Zero(t, n, "checkError must leave nothing of the body to read")
+	// net/http keeps the error for a read after close unexported, so its
+	// message is what there is to match.
+	assert.ErrorContains(t, readErr, "closed response body",
+		"the discard is followed by the close")
 }
 
 func TestBasicAuthNilUserinfoYieldsNoAuthorizer(t *testing.T) {

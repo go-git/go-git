@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -211,6 +213,32 @@ func TestHTTPNegotiatorCloseResponse(t *testing.T) {
 
 	// closeResponse on an already-cleaned negotiator is safe.
 	assert.NotPanics(t, func() { neg.closeResponse() })
+}
+
+// TestNegotiatorReleasesPreviousRound covers the one discard in the package:
+// the body of a finished round is dropped so the next round reuses its
+// connection, but only up to a bound, because a stalled server must not hold
+// the next round up.
+func TestNegotiatorReleasesPreviousRound(t *testing.T) {
+	t.Parallel()
+
+	spent := &countingBody{remaining: bodySize}
+	neg := &httpNegotiator{
+		session: &smartPackSession{
+			sessionBase: sessionBase{service: transport.UploadPackService},
+		},
+		ctx:     context.Background(),
+		current: &httpRequester{resp: &http.Response{Body: spent}},
+	}
+
+	// Starting the next round is what releases the previous one.
+	_, err := neg.Write([]byte("0000"))
+	require.NoError(t, err)
+
+	assert.True(t, spent.closed, "the finished round's body must be closed")
+	assert.Positive(t, spent.read, "some of it must be discarded so the connection is reusable")
+	assert.Less(t, spent.read, bodySize, "the discard must not read to EOF")
+	assert.LessOrEqual(t, spent.read, 1<<20, "the discard must stay within a sane bound")
 }
 
 // TestHTTPNegotiatorNoRounds verifies that closeResponse is safe when
@@ -625,4 +653,67 @@ func TestHandshakeClosesBodyOnErrorStatus(t *testing.T) {
 	for i, b := range bodies {
 		assert.True(t, b.closed.Load(), "response body %d was not closed", i)
 	}
+}
+
+// decoderFunc adapts a function to packp.Decoder, so a test can observe when
+// a command's decode returns.
+type decoderFunc func(io.Reader) error
+
+func (f decoderFunc) Decode(r io.Reader) error { return f(r) }
+
+// TestCommandKeepsConnection covers the discard a v2 command owes the request
+// that follows it. The decoder stops at the response's flush-pkt, so the
+// terminating chunk is still outstanding when the command is done, and closing
+// there costs the fetch POST after an ls-refs a connection of its own.
+func TestCommandKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	const ref = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"
+	body := fmt.Sprintf("%04x%s0000", len(ref)+4, ref)
+
+	// Sent after the client has decoded the flush-pkt. Written in the same
+	// flush as the refs, the terminating chunk is already buffered when the
+	// decoder takes the last packet, and net/http's chunked reader consumes
+	// it without being asked — which a server on a real network does not
+	// oblige.
+	decoded := make(chan struct{}, 1)
+	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		w.Header().Set("Transfer-Encoding", "chunked")
+		_, _ = io.WriteString(w, body)
+		w.(http.Flusher).Flush()
+		select {
+		case <-decoded:
+		case <-time.After(10 * time.Second):
+			t.Error("the command never decoded the response")
+		}
+	})
+
+	base, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: base,
+			service: transport.UploadPackService,
+		},
+		version: protocol.V2,
+	}
+
+	const commands = 10
+	for range commands {
+		out := &packp.LsRefsOutput{}
+		err := session.Command(context.Background(), "ls-refs", &packp.LsRefsArgs{},
+			decoderFunc(func(rd io.Reader) error {
+				err := out.Decode(rd)
+				decoded <- struct{}{}
+				return err
+			}))
+		require.NoError(t, err)
+		require.Len(t, out.References, 1)
+	}
+
+	assert.Equal(t, int64(1), conns.Load(),
+		"%d commands on one session must share one connection", commands)
 }
