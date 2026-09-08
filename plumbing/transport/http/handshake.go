@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -303,13 +304,55 @@ func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transpo
 	}, nil
 }
 
+// maxQuotedBodySize caps how much of a rejected /info/refs body is quoted back
+// in the error. Enough to recognise what the server sent, not enough to paste
+// a page into a log line, and no larger than a bufio.Reader's buffer, since
+// that is what bounds the Peek this size is asked of.
+const maxQuotedBodySize = 256
+
+// describeInfoRefsError turns a decode failure into one a caller can act on.
+//
+// packp reports which line was malformed and nothing about its contents,
+// because the bytes belong to the server. What the transport knows, and packp
+// does not, is which URL was fetched and what the server said it was serving —
+// the difference between "invalid info/refs" and "that host answered your
+// clone with an HTML sign-in page".
+//
+// The body is quoted only when it is plain text, matching git's
+// show_http_message: other types are markup meant for a browser, and an
+// interstitial can echo the request's own query back inside it.
+func describeInfoRefsError(err error, resp *http.Response, base sessionBase, head []byte) error {
+	// Name the URL actually fetched, which carries the /info/refs tail and the
+	// service query the session's base does not.
+	fetched := base.baseURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		fetched = resp.Request.URL
+	}
+
+	mediaType := contentMediaType(resp.Header.Get("Content-Type"))
+	if mediaType == "text/plain" {
+		return fmt.Errorf("%w: %s served content type %q: %w: %q",
+			transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err,
+			strings.TrimSpace(sanitizeReason(string(head))))
+	}
+	return fmt.Errorf("%w: %s served content type %q: %w",
+		transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err)
+}
+
 func handshakeDumb(resp *http.Response, base sessionBase) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
+
+	// Buffer the head of the body so a rejection can quote it. Peek leaves it
+	// in place for the decode, and returns what it has on a shorter body. The
+	// reader keeps bufio's own buffer size, which is what bounds a Peek; how
+	// much of a body is worth quoting is a separate question from how much of
+	// it is worth buffering.
 	rd := bufio.NewReader(resp.Body)
+	head, _ := rd.Peek(maxQuotedBodySize)
 
 	var infoRefs packp.InfoRefs
 	if err := infoRefs.Decode(rd); err != nil {
-		return nil, err
+		return nil, describeInfoRefsError(err, resp, base, head)
 	}
 
 	ar := &packp.AdvRefs{}

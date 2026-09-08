@@ -215,32 +215,6 @@ func TestHTTPNegotiatorCloseResponse(t *testing.T) {
 	assert.NotPanics(t, func() { neg.closeResponse() })
 }
 
-// TestNegotiatorReleasesPreviousRound covers the one discard in the package:
-// the body of a finished round is dropped so the next round reuses its
-// connection, but only up to a bound, because a stalled server must not hold
-// the next round up.
-func TestNegotiatorReleasesPreviousRound(t *testing.T) {
-	t.Parallel()
-
-	spent := &countingBody{remaining: bodySize}
-	neg := &httpNegotiator{
-		session: &smartPackSession{
-			sessionBase: sessionBase{service: transport.UploadPackService},
-		},
-		ctx:     context.Background(),
-		current: &httpRequester{resp: &http.Response{Body: spent}},
-	}
-
-	// Starting the next round is what releases the previous one.
-	_, err := neg.Write([]byte("0000"))
-	require.NoError(t, err)
-
-	assert.True(t, spent.closed, "the finished round's body must be closed")
-	assert.Positive(t, spent.read, "some of it must be discarded so the connection is reusable")
-	assert.Less(t, spent.read, bodySize, "the discard must not read to EOF")
-	assert.LessOrEqual(t, spent.read, 1<<20, "the discard must stay within a sane bound")
-}
-
 // TestHTTPNegotiatorNoRounds verifies that closeResponse is safe when
 // no rounds have been executed.
 func TestHTTPNegotiatorNoRounds(t *testing.T) {
@@ -718,6 +692,32 @@ func TestCommandKeepsConnection(t *testing.T) {
 		"%d commands on one session must share one connection", commands)
 }
 
+// TestNegotiatorReleasesPreviousRound covers the one drain in the package: the
+// body of a finished round is discarded so the next round reuses its
+// connection, but only up to a bound, because a stalled server must not hold
+// the next round up.
+func TestNegotiatorReleasesPreviousRound(t *testing.T) {
+	t.Parallel()
+
+	spent := &countingBody{remaining: bodySize}
+	neg := &httpNegotiator{
+		session: &smartPackSession{
+			sessionBase: sessionBase{service: transport.UploadPackService},
+		},
+		ctx:     context.Background(),
+		current: &httpRequester{resp: &http.Response{Body: spent}},
+	}
+
+	// Starting the next round is what releases the previous one.
+	_, err := neg.Write([]byte("0000"))
+	require.NoError(t, err)
+
+	assert.True(t, spent.closed, "the finished round's body must be closed")
+	assert.Positive(t, spent.read, "some of it must be discarded so the connection is reusable")
+	assert.Less(t, spent.read, bodySize, "the discard must not read to EOF")
+	assert.LessOrEqual(t, spent.read, 1<<20, "the discard must stay within a sane bound")
+}
+
 func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
 	t.Parallel()
 
@@ -768,4 +768,134 @@ func TestDumbPushIsUnsupported(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, transport.ErrCommandUnsupported,
 		"a caller picking another transport tests the sentinel, not the message")
+}
+
+// serveInfoRefs answers /info/refs with the given content type and body, and
+// nothing else, so the handshake is decided purely by that response.
+func serveInfoRefs(t testing.TB, contentType, body string) *url.URL {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	return u
+}
+
+// TestHandshakeDumbInfoRefs covers what a dumb handshake makes of the body it
+// is served. packp.InfoRefs.Decode decides what counts as a ref list; this
+// covers the transport's half — that a rejection names the URL and the content
+// type, quotes only plain text, and is not reported as an empty repository.
+func TestHandshakeDumbInfoRefs(t *testing.T) {
+	t.Parallel()
+
+	const head = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		wantRefs    bool // handshake succeeds and advertises references
+		wantInMsg   []string
+		wantNotMsg  []string
+	}{
+		{
+			// Indented markup puts hex-looking text before a tab, so this used
+			// to decode to a reference named after the markup.
+			name:        "sso interstitial",
+			contentType: "text/html; charset=utf-8",
+			body:        "<!DOCTYPE html>\n<html>\n\t<body>Sign in to continue</body>\n</html>\n",
+			wantInMsg:   []string{"text/html"},
+			wantNotMsg:  []string{"Sign in to continue"},
+		},
+		{
+			name:        "markup without tabs",
+			contentType: "text/html",
+			body:        "<html><body>nope</body></html>",
+			wantInMsg:   []string{"text/html"},
+			wantNotMsg:  []string{"nope"},
+		},
+		{
+			name:        "plain text is quoted back",
+			contentType: "text/plain",
+			body:        "repository is archived\n",
+			wantInMsg:   []string{"repository is archived"},
+		},
+		{
+			// A malformed ref list, not markup: the rejection reaches the
+			// caller the same way, and the body is plain text so it is quoted.
+			name:        "hash shorter than the hash size",
+			contentType: "text/plain",
+			body:        "deadbeef\trefs/heads/master\n",
+			wantInMsg:   []string{"deadbeef"},
+		},
+		{
+			// A byte order mark ahead of an otherwise valid list.
+			name:        "byte order mark",
+			contentType: "text/plain",
+			body:        "\ufeff" + head + "\trefs/heads/master\n",
+		},
+		{
+			// A valid line after the junk does not rescue the advertisement.
+			name:        "junk line before a valid one",
+			contentType: "text/plain",
+			body:        "<!-- injected -->\n" + head + "\trefs/heads/master\n",
+		},
+		{
+			name:        "legitimate ref list",
+			contentType: "text/plain",
+			body:        head + "\trefs/heads/master\n",
+			wantRefs:    true,
+		},
+		{
+			// git update-server-info writes a zero-byte file for a repository
+			// with no references, so an empty body is not a malformed one.
+			name:        "empty body",
+			contentType: "text/plain",
+			body:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u := serveInfoRefs(t, tt.contentType, tt.body)
+
+			tr := NewTransport(Options{})
+			session, err := tr.Handshake(context.Background(), &transport.Request{
+				URL:     u,
+				Command: transport.UploadPackService,
+			})
+
+			if tt.body == "" || tt.wantRefs {
+				require.NoError(t, err, "a dumb ref list, or the absence of one, must handshake")
+				defer session.Close()
+
+				refs, err := session.GetRemoteRefs(context.Background(), nil)
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantRefs, len(refs.References) > 0)
+				return
+			}
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, transport.ErrInvalidResponse,
+				"callers switch on the transport sentinel")
+			assert.ErrorIs(t, err, packp.ErrInvalidInfoRefs,
+				"the decoder's reason stays in the chain")
+			assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository,
+				"a body that is not a ref list is not an empty repository")
+			for _, want := range tt.wantInMsg {
+				assert.Contains(t, err.Error(), want)
+			}
+			for _, unwanted := range tt.wantNotMsg {
+				assert.NotContains(t, err.Error(), unwanted,
+					"markup is never echoed back, matching git's show_http_message")
+			}
+		})
+	}
 }
