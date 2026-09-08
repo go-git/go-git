@@ -7,11 +7,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 )
+
+// xcrunTimeout bounds the xcrun calls these tests make for themselves, at the
+// same 30 seconds the package bounds its own by. The reason is the reason
+// there: xcrun may be running a license check rather than answering, and an
+// unbounded call here would hang the run in place of failing it.
+const xcrunTimeout = 30 * time.Second
+
+// findGit is what the resolution under test is compared against: the same
+// question asked directly, under a deadline of its own.
+func findGit(t *testing.T) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), xcrunTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "/usr/bin/xcrun", "--find", "git").Output()
+	require.NoError(t, err)
+
+	return strings.TrimSpace(string(out))
+}
 
 func TestCommandResolvesAppleGit(t *testing.T) {
 	t.Parallel()
@@ -19,8 +39,7 @@ func TestCommandResolvesAppleGit(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/git"); err != nil {
 		t.Skip("Apple Git launcher not installed")
 	}
-	resolved, err := exec.Command("/usr/bin/xcrun", "--find", "git").Output()
-	require.NoError(t, err)
+	resolved := findGit(t)
 
 	cmd := gitenv.Command("/usr/bin/git", "--version")
 	require.NoError(t, cmd.Err)
