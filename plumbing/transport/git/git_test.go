@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -33,10 +34,31 @@ func freePort(t *testing.T) int {
 }
 
 // daemonShutdown is how long the daemon is given to act on the interrupt
-// below before exec kills it instead. No test waits that delay out: nothing
-// calls Wait on the daemon, so it is spent in exec's own goroutine once the
-// test has already ended.
+// below before exec kills it instead, and so the longest a test can be held
+// at waitForShutdown. A daemon that stops when it is asked to, which is the
+// ordinary case, is not waited on for any of it.
 const daemonShutdown = 5 * time.Second
+
+// waitForShutdown reaps cmd once the test that started it ends.
+//
+// A command built by exec.CommandContext watches its context in a goroutine
+// of its own, and that goroutine hands its result to Wait. With no Wait to
+// receive it, the watcher blocks on the send for good (os/exec/exec.go, the
+// last line of watchCtx), and the process it killed is never collected: it
+// stays a zombie until the test binary exits, taking a goroutine with it.
+// Killing is not reaping, and WaitDelay does not stand in for a Wait.
+//
+// So Wait runs in the background from the moment the command starts, and the
+// cleanup joins it. Joining is what keeps the test binary alive long enough
+// for the escalation above to happen at all, and the wait is bounded by it:
+// WaitDelay is handed to Wait, which kills the process when it elapses.
+func waitForShutdown(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	t.Cleanup(func() { <-waited })
+}
 
 func startDaemon(t *testing.T, base string, port int) {
 	t.Helper()
@@ -58,6 +80,7 @@ func startDaemon(t *testing.T, base string, port int) {
 	daemon.Cancel = func() error { return daemon.Process.Signal(os.Interrupt) }
 	daemon.WaitDelay = daemonShutdown
 	require.NoError(t, daemon.Start())
+	waitForShutdown(t, daemon)
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
