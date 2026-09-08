@@ -231,10 +231,10 @@ func (t *Transport) reauthenticate(
 		// *url.Error, or whatever else client.Do returned.
 		cause := redactRetryError(retryErr)
 		if stopped(retryErr) {
-			// A clone the caller stopped is not a clone that needs
-			// credentials: leaving the 401 in the chain has a caller who
-			// classifies authentication first prompt for a password on a
-			// clone the user cancelled. Both errors still render.
+			// A clone the caller stopped is not a clone that needs credentials, so
+			// the 401 renders in the message but leaves the error chain: %s, not %w.
+			// Otherwise a caller that classifies authentication before cancellation
+			// prompts for a password on a clone the user aborted.
 			return spent, resp, fmt.Errorf("%s: %w", err, cause)
 		}
 		return spent, resp, fmt.Errorf("%w: %w", err, cause)
