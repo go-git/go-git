@@ -824,3 +824,34 @@ func TestRedactedQueryDoesNotAllocatePerParameter(t *testing.T) { //nolint: para
 	assert.LessOrEqual(t, allocs, 6.0,
 		"one builder that grows, not a slice header per parameter")
 }
+
+// safeQueryParams lists two values because Handshake rewrites the third: git
+// archive discovers through the upload-pack endpoint, so "service=" never
+// carries git-upload-archive. That rewrite lives in another file, and dropping
+// it would make an archive print "service=REDACTED" for the value it sent.
+func TestArchiveDiscoversUnderAnAllowlistedService(t *testing.T) {
+	t.Parallel()
+
+	seen := &seenRequests{}
+	base := newRecordingServer(t, seen, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte(v2Advertisement))
+	})
+
+	u, err := url.Parse(base + "/repo.git")
+	require.NoError(t, err)
+	sess, err := NewTransport(Options{}).Handshake(context.Background(), &transport.Request{
+		URL:     u,
+		Command: transport.UploadArchiveService,
+	})
+	require.NoError(t, err)
+	defer func() { _ = sess.Close() }()
+
+	requests := seen.all()
+	require.Len(t, requests, 1)
+	query := requests[0].URL.RawQuery
+	assert.Equal(t, "service="+transport.UploadPackService, query,
+		"archive discovery goes out under upload-pack")
+	assert.Equal(t, query, redactedQuery(query),
+		"the value it sent is one the allowlist holds")
+}
