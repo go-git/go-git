@@ -717,3 +717,43 @@ func TestCommandKeepsConnection(t *testing.T) {
 	assert.Equal(t, int64(1), conns.Load(),
 		"%d commands on one session must share one connection", commands)
 }
+
+func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
+	t.Parallel()
+
+	var posts atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		// Not a pktline stream, so negotiation fails without cancellation.
+		_, _ = w.Write([]byte("this is not a pktline stream"))
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	var closed atomic.Int64
+	rt := &closeTrackingRoundTripper{base: srv.Client().Transport, closed: &closed}
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  &http.Client{Transport: rt},
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
+	}
+
+	err = session.Fetch(context.Background(), memory.NewStorage(), &transport.FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("0000000000000000000000000000000000000001")},
+	})
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
+	// Guard the premise: if negotiation failed before the POST was sent there
+	// would be no response to close and the assertion below would pass for the
+	// wrong reason.
+	require.Positive(t, posts.Load(), "the test must actually reach a POST")
+	assert.Equal(t, int64(1), closed.Load(),
+		"a non-cancellation negotiation error must close the response body")
+}
