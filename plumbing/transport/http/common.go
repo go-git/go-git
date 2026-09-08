@@ -342,14 +342,44 @@ func filterHeaders(h http.Header) http.Header {
 	return filtered
 }
 
-// safeQueryParams lists the query parameters go-git puts on a URL itself. It
-// is the query-string counterpart of safeHeaders, and reads the same way: a
-// name added here is rendered verbatim into error strings and trace output, so
-// do not add anything a caller can put a secret in. This narrows rather than
-// eliminates the exposure: a forge that spells a token with one of these names
-// — ?service=<secret> — still has the value printed verbatim.
-var safeQueryParams = map[string]struct{}{
-	"service": {},
+// safeQueryParams lists the query parameters go-git puts on a URL itself,
+// against the exact values it writes for them. It is the query-string
+// counterpart of safeHeaders, with one difference that decides its shape.
+//
+// For a header the name is enough, because a caller cannot choose the name
+// go-git sends its own headers under. A query parameter is not like that: the
+// only "service" this transport writes is the one it chose, but the name is a
+// name a forge is free to spell a token with, and transport.Request.Command is
+// an unvalidated string, so ?service=<secret> can arrive from either side.
+// Matching the value as well as the name is what keeps such an element out of
+// error strings and trace output — everything that is not a value below is
+// redacted like any other parameter.
+//
+// Archive discovery is not a third value: git archive discovers through the
+// upload-pack endpoint, so "service=" only ever carries one of the two below.
+//
+// The value match is also what makes the legacy ";" separator harmless.
+// net/url does not recognise it, so "service=git-upload-pack;private_token=x"
+// arrives here as one element whose value is that whole tail, which no entry
+// matches.
+//
+// Add nothing whose values a caller can choose.
+var safeQueryParams = map[string]map[string]struct{}{
+	"service": {
+		transport.UploadPackService:  {},
+		transport.ReceivePackService: {},
+	},
+}
+
+// ownQueryParam reports whether a query element is one this transport wrote
+// itself, and so may be rendered as it is. A parameter with no value is never
+// one: nothing distinguishes a bare flag from a bare secret.
+func ownQueryParam(name, value string, hasValue bool) bool {
+	if !hasValue {
+		return false
+	}
+	_, ok := safeQueryParams[name][value]
+	return ok
 }
 
 // redactedQuery replaces the value of every query parameter that is not
@@ -369,11 +399,9 @@ func redactedQuery(raw string) string {
 			b.WriteByte('&')
 		}
 		name, value, hasValue := strings.Cut(param, "=")
-		// An element go-git wrote itself is rendered as it is — but only when
-		// it is one element. ";" is not a separator net/url recognises, so
-		// "service=x;private_token=SECRET" arrives here as a single element
-		// whose name is "service", and echoing it whole would print the rest.
-		if _, ok := safeQueryParams[name]; ok && !strings.ContainsRune(param, ';') {
+		// An element go-git wrote itself is rendered as it is. Both halves are
+		// matched, so a caller-chosen value under one of those names is not.
+		if ownQueryParam(name, value, hasValue) {
 			b.WriteString(param)
 			continue
 		}

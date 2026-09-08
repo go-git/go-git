@@ -551,6 +551,25 @@ func TestRedactedURLRedactsQueryValues(t *testing.T) {
 			want: "https://example.com/repo.git/info/refs?service=git-upload-pack",
 		},
 		{
+			name: "the push service is rendered as it is too",
+			in:   "https://example.com/repo.git/info/refs?service=git-receive-pack",
+			want: "https://example.com/repo.git/info/refs?service=git-receive-pack",
+		},
+		{
+			// The name alone does not make an element go-git's own.
+			// transport.Request.Command reaches "service=" unvalidated, and the
+			// name is one a forge is free to spell a token with, so the value
+			// is matched as well.
+			name: "a value go-git did not write is replaced under its own name",
+			in:   "https://example.com/repo.git/info/refs?service=glpat-secret",
+			want: "https://example.com/repo.git/info/refs?service=REDACTED",
+		},
+		{
+			name: "a prefix of a value go-git writes is not that value",
+			in:   "https://example.com/repo.git/info/refs?service=git-upload-pack-secret",
+			want: "https://example.com/repo.git/info/refs?service=REDACTED",
+		},
+		{
 			name: "a forge token in the query is replaced",
 			in:   "https://example.com/repo.git?private_token=glpat-secret",
 			want: "https://example.com/repo.git?private_token=REDACTED",
@@ -579,7 +598,8 @@ func TestRedactedURLRedactsQueryValues(t *testing.T) {
 		},
 		{
 			// ";" is not a separator net/url recognises, so this arrives as
-			// one element whose name is the allowlisted "service".
+			// one element whose value is that whole tail — which is not a value
+			// go-git writes, so the value match alone keeps it out.
 			name: "a legacy semicolon separator does not smuggle a value out",
 			in:   "https://example.com/repo.git?service=git-upload-pack;private_token=glpat-secret",
 			want: "https://example.com/repo.git?service=REDACTED",
