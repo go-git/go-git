@@ -27,6 +27,7 @@ import (
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/object/commitgraph"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -1541,7 +1542,7 @@ func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.
 
 // Log returns the commit history from the given LogOptions.
 func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
-	fn := commitIterFunc(o.Order)
+	fn := commitIterFunc(r.Storer, o.Order)
 	if fn == nil {
 		return nil, fmt.Errorf("invalid Order=%v", o.Order)
 	}
@@ -1620,7 +1621,7 @@ func (*Repository) logWithLimit(commitIter object.CommitIter, limitOptions objec
 	return object.NewCommitLimitIterFromIter(commitIter, limitOptions)
 }
 
-func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
+func commitIterFunc(s storer.EncodedObjectStorer, order LogOrder) func(c *object.Commit) object.CommitIter {
 	switch order {
 	case LogOrderDefault:
 		return func(c *object.Commit) object.CommitIter {
@@ -1646,8 +1647,69 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 		return func(c *object.Commit) object.CommitIter {
 			return object.NewCommitPostorderIterFirstParent(c, nil)
 		}
+	case LogOrderTopoOrder:
+		return func(c *object.Commit) object.CommitIter {
+			return newCommitTopoOrderIter(s, c)
+		}
 	}
 	return nil
+}
+
+type commitNodeCommitIter struct {
+	commitgraph.CommitNodeIter
+	err error
+}
+
+func newCommitTopoOrderIter(s storer.EncodedObjectStorer, c *object.Commit) object.CommitIter {
+	node, err := commitgraph.NewObjectCommitNodeIndex(s).Get(c.Hash)
+	if err != nil {
+		return &commitNodeCommitIter{err: err}
+	}
+
+	return &commitNodeCommitIter{
+		CommitNodeIter: commitgraph.NewCommitNodeIterTopoOrder(node, nil, nil),
+	}
+}
+
+func (iter *commitNodeCommitIter) Next() (*object.Commit, error) {
+	if iter.err != nil {
+		err := iter.err
+		iter.err = nil
+		return nil, err
+	}
+	if iter.CommitNodeIter == nil {
+		return nil, io.EOF
+	}
+
+	node, err := iter.CommitNodeIter.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	return node.Commit()
+}
+
+func (iter *commitNodeCommitIter) ForEach(cb func(*object.Commit) error) error {
+	for {
+		commit, err := iter.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := cb(commit); errors.Is(err, storer.ErrStop) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
+}
+
+func (iter *commitNodeCommitIter) Close() {
+	if iter.CommitNodeIter != nil {
+		iter.CommitNodeIter.Close()
+	}
 }
 
 // Tags returns all the tag References in a repository.

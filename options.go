@@ -499,6 +499,8 @@ const (
 	LogOrderBSF
 	LogOrderCommitterTime
 	LogOrderDFSPostFirstParent
+	// LogOrderTopoOrder avoids showing commits on multiple lines of history intermixed.
+	LogOrderTopoOrder
 )
 
 // LogOptions describes how a log action should be performed.
@@ -515,6 +517,7 @@ type LogOptions struct {
 	// The default traversal algorithm is Depth-first search
 	// set Order=LogOrderCommitterTime for ordering by committer time (more compatible with `git log`)
 	// set Order=LogOrderBSF for Breadth-first search
+	// set Order=LogOrderTopoOrder for the equivalent of `git log --topo-order`
 	Order LogOrder
 
 	// Show only those commits in which the specified file was inserted/updated.
