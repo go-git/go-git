@@ -183,6 +183,60 @@ func FuzzLsRefsOutputDecode(f *testing.F) {
 	})
 }
 
+func FuzzInfoRefsDecode(f *testing.F) {
+	// Seeds are inline literals, like the rest of this file, so the OSS-Fuzz
+	// harness that lifts the Fuzz function out compiles them standalone.
+	f.Add([]byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\trefs/heads/main\n"))
+	f.Add([]byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\trefs/tags/v1^{}\n"))
+	// A SHA-256 sized hash, so the fuzzer can mutate either accepted length.
+	f.Add([]byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e56ecf0ef2c2dffb796033e5a0\trefs/heads/main\n"))
+	// Short-but-valid hex: plumbing.FromHex pads it, so only the length check
+	// stands between this and a reference at a hash nobody sent.
+	f.Add([]byte("deadbeef\trefs/heads/main\n"))
+	// Markup whose indentation puts hex-looking text before a tab.
+	f.Add([]byte("<html>\n\tabcdef\tSign in\n</html>\n"))
+	f.Add([]byte("0000000000000000000000000000000000000000\trefs/heads/main\n"))
+	f.Add([]byte{})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var refs InfoRefs
+		if err := refs.Decode(bytes.NewReader(data)); err != nil {
+			return
+		}
+
+		// Whatever is accepted must be built from bytes the server actually
+		// sent. A decoder that pads, truncates or otherwise invents a hash
+		// hands the caller a reference to an object the remote never named,
+		// which is indistinguishable downstream from a real one.
+		lower := bytes.ToLower(data)
+		for _, ref := range refs.References {
+			hash := ref.Hash().String()
+			if !bytes.Contains(lower, []byte(hash)) {
+				t.Fatalf("decoded hash %q is not present in the input", hash)
+			}
+			if ref.Name() == "" {
+				t.Fatal("decoded a reference with no name")
+			}
+		}
+
+		// And what is accepted must be re-readable: Encode is this package's
+		// own writer, so its output failing Decode would mean the two
+		// disagree about the format.
+		var out bytes.Buffer
+		if err := refs.Encode(&out); err != nil {
+			t.Fatalf("encoding decoded references failed: %v", err)
+		}
+		var round InfoRefs
+		if err := round.Decode(bytes.NewReader(out.Bytes())); err != nil {
+			t.Fatalf("re-decoding encoded references failed: %v", err)
+		}
+		if len(round.References) != len(refs.References) {
+			t.Fatalf("round trip changed the reference count: %d then %d",
+				len(refs.References), len(round.References))
+		}
+	})
+}
+
 func FuzzParseLsRefsLine(f *testing.F) {
 	const oid = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 	f.Add(oid + " refs/heads/main")
