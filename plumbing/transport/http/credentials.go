@@ -23,6 +23,19 @@ type CredentialRequest struct {
 	// wanted for, in its escaped on-wire form. A redirect may change it
 	// without changing the origin.
 	//
+	// It is what a source keyed on the path looks the credential up by, which
+	// is what credential.useHttpPath asks for. It corresponds to git's path
+	// credential attribute: git derives that from the repository URL too, and
+	// re-derives it from the redirect target once a redirect has been adopted,
+	// so the two agree about which path a credential was stored against.
+	//
+	// Git's form is decoded and has no leading slash, so building the attribute
+	// from this takes both:
+	//
+	//	path, err := url.PathUnescape(strings.TrimPrefix(req.TargetPath, "/"))
+	//
+	// Keep the escaped form for anything that compares rather than looks up.
+	//
 	// To restrict a credential to the path the caller named, compare it with
 	// RepositoryURL.EscapedPath():
 	//
