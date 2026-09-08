@@ -14,6 +14,9 @@ import (
 
 // Err represents an HTTP error response.
 type Err struct {
+	// URL is the URL the failing request was made against, an independent copy
+	// redacted the way Error renders it. Reading the field is as safe as
+	// reading the message.
 	URL    *url.URL
 	Status int
 	Reason string
@@ -69,7 +72,9 @@ func checkError(r *http.Response) error {
 	}
 
 	err := &Err{
-		URL:    r.Request.URL,
+		// Redacted here rather than in Error, so the field carries the same
+		// guarantee the message does and does not alias the live request URL.
+		URL:    redactURL(r.Request.URL),
 		Status: r.StatusCode,
 		Reason: reason,
 	}

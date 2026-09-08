@@ -855,3 +855,36 @@ func TestArchiveDiscoversUnderAnAllowlistedService(t *testing.T) {
 	assert.Equal(t, query, redactedQuery(query),
 		"the value it sent is one the allowlist holds")
 }
+
+// Err.URL is exported, so a caller can read the URL off an error rather than
+// parse the message. Error redacts, so the field must agree with it, or the
+// safer-looking of the two is the one that leaks. It is a copy for the same
+// reason the message is redacted: the live request URL is not the callers.
+func TestErrURLFieldIsRedacted(t *testing.T) {
+	t.Parallel()
+
+	req, err := http.NewRequest(http.MethodPost,
+		"https://user:pw@example.com/repo.git/git-upload-pack?private_token=glpat-secret", nil)
+	require.NoError(t, err)
+
+	gotErr := checkError(&http.Response{
+		Request:    req,
+		StatusCode: http.StatusForbidden,
+		Body:       io.NopCloser(strings.NewReader("nope")),
+	})
+	require.Error(t, gotErr)
+
+	var httpErr *Err
+	require.ErrorAs(t, gotErr, &httpErr)
+
+	require.NotNil(t, httpErr.URL)
+	assert.NotSame(t, req.URL, httpErr.URL, "a copy, not the live request URL")
+	assert.NotContains(t, httpErr.URL.String(), "glpat-secret")
+	assert.NotContains(t, httpErr.URL.String(), "pw")
+	assert.Equal(t,
+		"https://user:REDACTED@example.com/repo.git/git-upload-pack?private_token=REDACTED",
+		httpErr.URL.String(),
+		"the field renders what the message renders")
+	assert.Equal(t, httpErr.URL.String(), redactedURL(httpErr.URL),
+		"redacting an already-redacted URL changes nothing")
+}
