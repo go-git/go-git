@@ -24,9 +24,10 @@ type Err struct {
 	// Status is the status code of the response.
 	Status int
 
-	// Reason is the response body, truncated to a bounded size and with every
-	// character that would not print as itself replaced by a space. Reading
-	// the field is as safe as reading the message.
+	// Reason is the message the server sent with the status, empty unless it
+	// arrived as text/plain. See checkError. It is truncated to a bounded size
+	// and has every character that would not print as itself replaced by a
+	// space, so reading the field is as safe as reading the message.
 	Reason string
 }
 
@@ -36,7 +37,11 @@ func (e *Err) StatusCode() int { return e.Status }
 func (e *Err) Error() string {
 	format := "unexpected requesting %q status code: %d"
 	if e.Reason != "" {
-		return fmt.Sprintf(format+": %s", redactedURL(e.URL), e.Status, e.Reason)
+		// Quoted, because the text is the server's, not this package's. git
+		// marks the same distinction by prefixing each line with "remote: ";
+		// an error has no such channel, and quoting also stops a multi-line
+		// message from forging records in a caller's log.
+		return fmt.Sprintf(format+": %q", redactedURL(e.URL), e.Status, e.Reason)
 	}
 	return fmt.Sprintf(format, redactedURL(e.URL), e.Status)
 }
@@ -99,23 +104,40 @@ func smartContentType(header, service string) bool {
 
 // checkError maps HTTP response status codes to typed transport errors.
 //
-// The body is consumed and closed: as much of it as maxErrorBodySize allows
-// becomes the error's Reason, the remainder is discarded, and the body is
-// closed. Discarding it keeps the connection: a 404 is ordinary control flow
+// The server's message is kept only when it arrives as text/plain, the rule
+// git applies in show_http_message. Anything else is markup meant for a
+// browser — an SSO interstitial, a CDN error page — and hosting providers send
+// the messages they do want a git client to show as text/plain because of that
+// rule. Canonical git's own http-backend sends no body at all here, writing
+// its reason to the server's stderr instead.
+//
+// The declared charset is ignored, where git reencodes to its log output
+// encoding. A library has no such setting, and its caller is free to reencode
+// what it is handed.
+//
+// git shows a message on the /info/refs GET alone, and discards an RPC
+// response body as soon as the status reaches 300. That asymmetry follows from
+// streaming the RPC body into the pack parser rather than from a decision to
+// hide it, so the rule is applied to every request here: a text/plain refusal
+// of a receive-pack POST is what a caller most needs to be told.
+//
+// The body is consumed and closed whichever it is: the message it yields is
+// capped at maxErrorBodySize, the rest is discarded, and then it is closed.
+// Discarding it is what keeps the connection — a 404 is ordinary control flow
 // for the dumb walk, which asks for every object as a loose file before
-// falling back to the packs, so dropping the connection of a failed request
-// would cost a handshake per object.
+// falling back to the packs, so a connection dropped here costs a handshake
+// per object.
 func checkError(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
 
 	var reason string
-	var messageBuffer bytes.Buffer
 	if r.Body != nil {
-		messageLength, _ := messageBuffer.ReadFrom(io.LimitReader(r.Body, maxErrorBodySize))
-		if messageLength > 0 {
-			reason = sanitizeReason(messageBuffer.String())
+		if contentMediaType(r.Header.Get("Content-Type")) == "text/plain" {
+			var message bytes.Buffer
+			_, _ = message.ReadFrom(io.LimitReader(r.Body, maxErrorBodySize))
+			reason = strings.TrimSpace(sanitizeReason(message.String()))
 		}
 		drainAndClose(r.Body)
 	}

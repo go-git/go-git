@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,7 +60,12 @@ func TestCheckError(t *testing.T) {
 			err = checkError(&http.Response{
 				Request:    req,
 				StatusCode: tt.status,
-				Body:       io.NopCloser(strings.NewReader(tt.body)),
+				// The reason a status carries is the server's text, which
+				// reaches the error only as text/plain. Which media types
+				// qualify is TestCheckErrorMessageIsPlainTextOnly's subject;
+				// here every row states one so the mapping is what is tested.
+				Header: http.Header{"Content-Type": []string{"text/plain"}},
+				Body:   io.NopCloser(strings.NewReader(tt.body)),
 			})
 			require.Error(t, err)
 			if tt.wantIs != nil {
@@ -504,8 +510,11 @@ func TestCheckErrorStopsShortOfEOF(t *testing.T) {
 	require.NoError(t, err)
 	resp := &http.Response{
 		StatusCode: http.StatusInternalServerError,
-		Body:       body,
-		Request:    &http.Request{URL: u},
+		// Plain text, so the message is read at all: checkError does not
+		// touch a body it could not show.
+		Header:  http.Header{"Content-Type": []string{"text/plain"}},
+		Body:    body,
+		Request: &http.Request{URL: u},
 	}
 
 	err = checkError(resp)
@@ -1325,6 +1334,7 @@ func TestCheckErrorSanitizesTheReason(t *testing.T) {
 	gotErr := checkError(&http.Response{
 		Request:    req,
 		StatusCode: http.StatusInternalServerError,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
 		Body:       io.NopCloser(strings.NewReader("boom\x1b[2J\rHACKED\nremote: forged")),
 	})
 	require.Error(t, gotErr)
@@ -1354,6 +1364,7 @@ func TestCheckErrorSanitizesARuneTheCapSplit(t *testing.T) {
 	gotErr := checkError(&http.Response{
 		Request:    req,
 		StatusCode: http.StatusInternalServerError,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
 	})
 	require.Error(t, gotErr)
@@ -1364,6 +1375,7 @@ func TestCheckErrorSanitizesARuneTheCapSplit(t *testing.T) {
 	assert.True(t, utf8.ValidString(httpErr.Reason), "no partial rune survives")
 	assert.Equal(t, strings.Repeat("a", maxErrorBodySize-1)+string(utf8.RuneError), httpErr.Reason)
 }
+
 func TestSmartContentType(t *testing.T) {
 	t.Parallel()
 
@@ -1390,4 +1402,132 @@ func TestSmartContentType(t *testing.T) {
 			assert.Equal(t, tc.want, smartContentType(tc.header, "git-upload-pack"))
 		})
 	}
+}
+
+// TestCheckErrorMessageIsPlainTextOnly covers the rule git applies in
+// show_http_message: a server's message reaches the caller only as text/plain.
+// Anything else is markup meant for a browser, and an interstitial can echo
+// the request's own query back inside it.
+func TestCheckErrorMessageIsPlainTextOnly(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		wantReason  string
+	}{
+		{
+			name:        "plain text",
+			contentType: "text/plain",
+			body:        "repository is archived",
+			wantReason:  "repository is archived",
+		},
+		{
+			// A charset does not change the media type.
+			name:        "plain text with parameters",
+			contentType: "text/plain; charset=utf-8",
+			body:        "pay up",
+			wantReason:  "pay up",
+		},
+		{
+			name:        "upper case media type",
+			contentType: "TEXT/PLAIN",
+			body:        "pay up",
+			wantReason:  "pay up",
+		},
+		{
+			// show_http_message trims before printing, so a message that is
+			// only whitespace is no message at all.
+			name:        "surrounding whitespace",
+			contentType: "text/plain",
+			body:        "\n  push declined: the branch is protected  \n",
+			wantReason:  "push declined: the branch is protected",
+		},
+		{
+			name:        "whitespace only",
+			contentType: "text/plain",
+			body:        "\n \n",
+		},
+		{
+			name:        "markup",
+			contentType: "text/html; charset=utf-8",
+			body:        "<html><body>Sign in to continue</body></html>",
+		},
+		{
+			name:        "json",
+			contentType: "application/json",
+			body:        `{"message":"rate limit exceeded"}`,
+		},
+		{
+			// git's http-backend sends its 403 and 404 without a body, and a
+			// proxy answering for it may send one without saying what it is.
+			name: "no content type",
+			body: "not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse("https://example.com/repo.git")
+			require.NoError(t, err)
+			resp := &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+				Request:    &http.Request{URL: u},
+			}
+			if tt.contentType != "" {
+				resp.Header.Set("Content-Type", tt.contentType)
+			}
+
+			err = checkError(resp)
+			require.Error(t, err)
+
+			var httpErr *Err
+			require.ErrorAs(t, err, &httpErr)
+			assert.Equal(t, tt.wantReason, httpErr.Reason)
+
+			if tt.wantReason == "" {
+				if trimmed := strings.TrimSpace(tt.body); trimmed != "" {
+					assert.NotContains(t, err.Error(), trimmed,
+						"a message that cannot be shown must not reach the error")
+				}
+				return
+			}
+			// Quoted, so a multi-line message cannot forge a record in a
+			// caller's log.
+			assert.Contains(t, err.Error(), strconv.Quote(tt.wantReason))
+		})
+	}
+}
+
+// TestCheckErrorDiscardsUnshowableBody pairs with the bound on a message that
+// can be shown: one that cannot reaches the error nowhere, and is discarded
+// like any other spent body so that its connection survives.
+func TestCheckErrorDiscardsUnshowableBody(t *testing.T) {
+	t.Parallel()
+
+	body := &countingBody{remaining: bodySize}
+	u, err := url.Parse("https://example.com/repo.git")
+	require.NoError(t, err)
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"text/html"}},
+		Body:       body,
+		Request:    &http.Request{URL: u},
+	}
+
+	err = checkError(resp)
+	require.Error(t, err)
+
+	var httpErr *Err
+	require.ErrorAs(t, err, &httpErr)
+	assert.Empty(t, httpErr.Reason, "a body that cannot be shown reaches no error")
+
+	assert.Less(t, body.read, bodySize, "the discard must not read to EOF")
+	assert.LessOrEqual(t, body.read, 1<<20, "the discard must stay within a sane bound")
+	assert.True(t, body.closed, "the body must be closed")
 }
