@@ -43,6 +43,11 @@ type InfoRefs struct {
 // short hex string rather than rejecting it, so "deadbeef" would otherwise
 // decode to a reference at a hash the server never sent.
 //
+// A line too long to scan — over bufio.MaxScanTokenSize — is malformed on the
+// same grounds: no advertisement holds one, and a page minified onto a single
+// line arrives this way. A failure to read the body is returned unchanged,
+// because what did arrive may have been a valid advertisement.
+//
 // A rejected advertisement leaves i as it was. The references ahead of the
 // offending line are not a shorter ref list; they are part of a body that
 // turned out not to be a ref list at all.
@@ -55,7 +60,9 @@ func (i *InfoRefs) Decode(r io.Reader) error {
 	var refs []*plumbing.Reference
 
 	s := bufio.NewScanner(r)
-	for line := 1; s.Scan(); line++ {
+	line := 0
+	for s.Scan() {
+		line++
 		text := s.Text()
 		if text == "" {
 			continue
@@ -82,6 +89,13 @@ func (i *InfoRefs) Decode(r io.Reader) error {
 	}
 
 	if err := s.Err(); err != nil {
+		// A line the scanner cannot hold fails as a malformed line, not as a
+		// scanner error the caller has no reason to match on. A read failure
+		// is returned unchanged.
+		if errors.Is(err, bufio.ErrTooLong) {
+			return fmt.Errorf("%w: line %d is longer than %d bytes",
+				ErrInvalidInfoRefs, line+1, bufio.MaxScanTokenSize)
+		}
 		return err
 	}
 

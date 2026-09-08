@@ -1,8 +1,12 @@
 package packp
 
 import (
+	"bufio"
+	"errors"
+	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,6 +80,14 @@ func TestInfoRefsDecode(t *testing.T) {
 		{
 			name:    "odd number of hex digits",
 			input:   strings.Repeat("a", 41) + "\trefs/heads/master\n",
+			wantErr: true,
+		},
+		{
+			// A page minified onto one line. bufio.Scanner gives up on a line
+			// this long, and that has to reach the caller as a malformed
+			// advertisement like any other.
+			name:    "line longer than the scanner can hold",
+			input:   "<html>" + strings.Repeat("x", bufio.MaxScanTokenSize) + "</html>\n",
 			wantErr: true,
 		},
 		{
@@ -182,4 +194,22 @@ func TestInfoRefsDecodeRoundTrip(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, refs.Encode(&out))
 	assert.Equal(t, in, out.String())
+}
+
+// TestInfoRefsDecodeReadError keeps a failed read apart from a malformed body.
+// The bytes that did arrive may well have been a valid advertisement, so the
+// read error is returned as itself.
+func TestInfoRefsDecodeReadError(t *testing.T) {
+	t.Parallel()
+
+	readErr := errors.New("connection reset by peer")
+
+	var refs InfoRefs
+	err := refs.Decode(io.MultiReader(
+		strings.NewReader(sha1Head+"\trefs/heads/master\n"),
+		iotest.ErrReader(readErr),
+	))
+
+	require.ErrorIs(t, err, readErr)
+	assert.NotErrorIs(t, err, ErrInvalidInfoRefs)
 }

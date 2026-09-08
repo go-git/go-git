@@ -813,6 +813,15 @@ func TestHandshakeDumbInfoRefs(t *testing.T) {
 			wantNotMsg:  []string{"Sign in to continue"},
 		},
 		{
+			// A page minified onto one line, longer than the ref list decoder
+			// can hold. It has to reach the caller as a rejection like any
+			// other, not as the decoder's own scanner error.
+			name:        "single line longer than the decoder can hold",
+			contentType: "text/html",
+			body:        "<html>" + strings.Repeat("x", 64<<10) + "</html>",
+			wantInMsg:   []string{"text/html"},
+		},
+		{
 			name:        "markup without tabs",
 			contentType: "text/html",
 			body:        "<html><body>nope</body></html>",
