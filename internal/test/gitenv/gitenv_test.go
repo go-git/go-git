@@ -1,11 +1,13 @@
 package gitenv_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -266,6 +268,68 @@ func TestCommandTakesAnAppendedOverride(t *testing.T) {
 	require.NoErrorf(t, err, "git commit: %s", out)
 
 	require.Equal(t, "Appended", gitIn(t, dir, "log", "-1", "--format=%an"))
+}
+
+// TestCommandContextIsolatesAsCommandDoes holds CommandContext to Command's
+// side of the bargain: a context changes when the command is killed, not what
+// it is allowed to read.
+func TestCommandContextIsolatesAsCommandDoes(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	cmd := gitenv.CommandContext(t.Context(), "git", "version")
+	require.NoError(t, cmd.Err)
+	require.Equal(t, gitenv.Env(), cmd.Env)
+
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "git version: %s", out)
+}
+
+// TestCommandContextDoesNotStartOnADoneContext is the near half of binding the
+// command to a context: a context already over is a command that never runs.
+func TestCommandContextDoesNotStartOnADoneContext(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cmd := gitenv.CommandContext(ctx, "git", "version")
+	require.ErrorIs(t, cmd.Start(), context.Canceled)
+	require.Nil(t, cmd.Process)
+}
+
+// TestCommandContextKillsTheProcessWithTheContext is the far half, and what a
+// test injecting the harness's context gets out of it: a git still running
+// when the test ends is killed with the context rather than left behind.
+//
+// `git hash-object --stdin` reads until end of input, so with the pipe held
+// open the process is waiting on nothing else when the context ends.
+func TestCommandContextKillsTheProcessWithTheContext(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cmd := gitenv.CommandContext(ctx, "git", "hash-object", "--stdin")
+	stdin, err := cmd.StdinPipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = stdin.Close() })
+	require.NoError(t, cmd.Start())
+
+	cancel()
+
+	// Waiting in the background, so that a command which is not bound to the
+	// context fails here rather than hanging the package until the test
+	// binary's own timeout.
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		require.Error(t, err, "the context ending must end the command")
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("the command outlived its context")
+	}
 }
 
 // TestEnvSetsWhatItPromises is the environment read directly, for the entries

@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+// resolveTimeout bounds the xcrun call below, for the caller whose context
+// carries no deadline: a launcher that is running a license check is slow
+// rather than stuck, and a resolution that never returns would hang the test
+// binary in place of the startup delay this avoids.
+const resolveTimeout = 30 * time.Second
+
 // resolveAppleGit bypasses only Apple's tool launcher, not another Git selected
 // through PATH. With an isolated HOME, the launcher can run xcodebuild -license
 // check before starting Git. Under concurrent test load this exceeded the git
@@ -18,17 +24,22 @@ import (
 //
 // Resolve with the caller's environment, then apply isolation to Git itself.
 // Do not cache: PATH and Xcode selection variables can change between tests.
-func resolveAppleGit(cmd *exec.Cmd) {
+//
+// xcrun runs under ctx, so a caller that supplies one is not left waiting on a
+// subprocess outside it, with resolveTimeout capping a context that carries no
+// deadline of its own. Whichever ends first, the context reports why: exec
+// kills xcrun and would otherwise report only the signal.
+func resolveAppleGit(ctx context.Context, cmd *exec.Cmd) {
 	if runtime.GOOS != "darwin" || cmd.Err != nil || cmd.Path != "/usr/bin/git" {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "/usr/bin/xcrun", "--find", "git").Output()
 	if err != nil {
 		if ctx.Err() != nil {
-			err = ctx.Err()
+			err = context.Cause(ctx)
 		}
 		cmd.Err = fmt.Errorf("gitenv: resolve Apple Git with xcrun: %w", err)
 		return

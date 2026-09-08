@@ -12,8 +12,9 @@
 // built, so a stray value redirects the command rather than colouring it.
 //
 // Command returns a command with all of that removed and an identity supplied.
-// Env returns the environment on its own, for a caller that builds the command
-// itself. Every variable this package names is set unconditionally, whatever
+// CommandContext is the same command bound to a context, for a test that has
+// the harness's own to hand it. Env returns the environment on its own, for a
+// caller that builds the command itself. Every variable this package names is set unconditionally, whatever
 // the machine had: a value inherited from the environment is the thing being
 // isolated, so honouring it would defeat the purpose. A caller who needs
 // something different appends it, since the last entry for a variable is the
@@ -26,6 +27,7 @@
 package gitenv
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -171,9 +173,31 @@ var isolatedHome = sync.OnceValue(func() string {
 // may append to Env for anything it needs on top: later entries win.
 // On macOS, Apple's /usr/bin/git launcher is resolved before applying Env;
 // resolution failures are returned through Cmd.Err and prevent execution.
+//
+// The command's lifetime is the caller's to manage: this is CommandContext
+// with a context that is never done, which exec spends nothing on — it starts
+// no watcher for a context whose Done channel is nil. CommandContext ties the
+// command to a real one instead.
 func Command(name string, args ...string) *exec.Cmd {
-	cmd := exec.Command(name, args...)
-	resolveAppleGit(cmd)
+	return CommandContext(context.Background(), name, args...)
+}
+
+// CommandContext is Command with the command bound to ctx, as
+// exec.CommandContext binds one, and with the same context governing the
+// resolution Command performs on its own account: on macOS that runs xcrun,
+// and a caller who supplies a context should not be waiting on a subprocess
+// outside it. The resolution keeps a deadline of its own on top, so a context
+// without one still cannot wait indefinitely.
+//
+// A test passes the context its harness gives it — t.Context(), cancelled when
+// the test ends — so that a git which outlives the test does not outlive the
+// run. Note what exec does with a context that ends: it kills the process,
+// which leaves any grandchildren of a git that spawns them running. A command
+// whose shutdown has to be more careful than that, git daemon and its
+// upload-pack children among them, wants Command and a cleanup of its own.
+func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	resolveAppleGit(ctx, cmd)
 	cmd.Env = Env()
 
 	return cmd

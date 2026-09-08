@@ -1,6 +1,7 @@
 package gitenv_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,26 @@ func TestCommandResolvesAppleGit(t *testing.T) {
 	require.NotEqual(t, os.Getenv("HOME"), valueOf(t, cmd.Env, "HOME"))
 	out, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "%s", out)
+}
+
+// TestCommandContextResolvesAppleGitUnderTheCallersContext is the context
+// reaching the one command this package runs of its own accord. Resolution
+// shells out to xcrun, so a caller whose context is already over is told that
+// rather than made to wait on a launcher it no longer has a use for.
+func TestCommandContextResolvesAppleGitUnderTheCallersContext(t *testing.T) {
+	t.Parallel()
+
+	if _, err := os.Stat("/usr/bin/git"); err != nil {
+		t.Skip("Apple Git launcher not installed")
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cmd := gitenv.CommandContext(ctx, "/usr/bin/git", "--version")
+	require.ErrorContains(t, cmd.Err, "resolve Apple Git")
+	require.ErrorIs(t, cmd.Err, context.Canceled)
+	require.Equal(t, "/usr/bin/git", cmd.Path)
 }
 
 func TestCommandPreservesPATHSelectedGit(t *testing.T) {
