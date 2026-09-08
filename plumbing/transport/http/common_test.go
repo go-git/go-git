@@ -724,3 +724,103 @@ func TestSetEscapedPath(t *testing.T) {
 		require.Error(t, setEscapedPath(u, "/a%zzb.git"))
 	})
 }
+
+// A URL that reaches redactedURL can be a redirect target, so every part of it
+// is a length the server chose, up to the 10 MB of response headers net/http
+// accepts by default.
+func TestRedactedURLBoundsWhatItRenders(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("a", maxRedactedComponent+1)
+
+	tests := []struct {
+		name string
+		in   *url.URL
+		want string
+	}{
+		{
+			name: "an oversized query is replaced whole",
+			in:   &url.URL{Scheme: "https", Host: "example.com", Path: "/repo.git", RawQuery: strings.Repeat("a&", maxRedactedComponent)},
+			want: "https://example.com/repo.git?REDACTED",
+		},
+		{
+			// Trimming it to fit instead would print the prefix of whatever
+			// value the cut lands in.
+			name: "an oversized query of redactable elements is still replaced whole",
+			in:   &url.URL{Scheme: "https", Host: "example.com", Path: "/repo.git", RawQuery: "private_token=" + long},
+			want: "https://example.com/repo.git?REDACTED",
+		},
+		{
+			name: "an oversized path is replaced whole",
+			in:   &url.URL{Scheme: "https", Host: "example.com", Path: "/" + long},
+			want: "https://example.com/TRUNCATED",
+		},
+		{
+			name: "an oversized host is replaced whole",
+			in:   &url.URL{Scheme: "https", Host: long, Path: "/repo.git"},
+			want: "https://TRUNCATED/repo.git",
+		},
+		{
+			name: "an oversized username is replaced whole",
+			in:   &url.URL{Scheme: "https", Host: "example.com", Path: "/repo.git", User: url.User(long)},
+			want: "https://TRUNCATED@example.com/repo.git",
+		},
+		{
+			// Redacting lengthens, so the cap applies to the result too. Without
+			// that, rendering the result again would collapse it, leaving an
+			// *Err whose field and whose message disagree.
+			name: "a query that redaction makes oversized is replaced whole",
+			in:   &url.URL{Scheme: "https", Host: "example.com", Path: "/repo.git", RawQuery: strings.Repeat("&", maxRedactedComponent)},
+			want: "https://example.com/repo.git?REDACTED",
+		},
+		{
+			name: "a query at the cap is still redacted element by element",
+			in: &url.URL{
+				Scheme:   "https",
+				Host:     "example.com",
+				Path:     "/repo.git",
+				RawQuery: "service=git-upload-pack&t=" + strings.Repeat("a", maxRedactedComponent-26),
+			},
+			want: "https://example.com/repo.git?service=git-upload-pack&t=REDACTED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, redactedURL(tt.in))
+		})
+	}
+}
+
+// The cap has to hold against every part at once, because a Location can be
+// long in all of them.
+func TestRedactedURLBoundsAHostileLocation(t *testing.T) {
+	t.Parallel()
+
+	huge := strings.Repeat("&", 10<<20)
+	u := &url.URL{
+		Scheme:   "https",
+		Host:     strings.Repeat("h", 10<<20),
+		Path:     "/" + strings.Repeat("p", 10<<20),
+		RawQuery: huge,
+		Fragment: strings.Repeat("f", 10<<20),
+		User:     url.UserPassword(strings.Repeat("u", 10<<20), "pw"),
+	}
+
+	got := redactedURL(u)
+	assert.Less(t, len(got), 1<<10,
+		"a 50 MB URL must not become a 50 MB error string")
+	assert.NotContains(t, got, "hh")
+	assert.NotContains(t, got, "pp")
+	assert.NotContains(t, got, "uu")
+}
+
+// redactedQuery walks the raw query without materialising an element per
+// parameter, so the work it does stays proportional to what it is given.
+func TestRedactedQueryDoesNotAllocatePerParameter(t *testing.T) { //nolint: paralleltest // AllocsPerRun sets GOMAXPROCS to 1
+	raw := strings.Repeat("a&", maxRedactedComponent/2)
+	allocs := testing.AllocsPerRun(100, func() { _ = redactedQuery(raw) })
+	assert.LessOrEqual(t, allocs, 6.0,
+		"one builder that grows, not a slice header per parameter")
+}

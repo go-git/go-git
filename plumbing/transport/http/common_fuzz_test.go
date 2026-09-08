@@ -95,26 +95,33 @@ func FuzzSetEscapedPath(f *testing.F) {
 // mistake in the loop. Two usefulness properties come with it — the element
 // count and the parameter names survive — because a redactor that answers
 // "REDACTED" to everything satisfies the security property and tells a caller
-// nothing about what was sent.
+// nothing about what was sent. Both are waived for a query too long to render,
+// which is the one case where answering "REDACTED" to everything is the answer.
+//
+// Two properties hold whatever the input: the result is bounded, and redacting
+// it again returns it unchanged. The second is what an *Err depends on — it
+// keeps a URL this has already been through and renders it through here again.
 func FuzzRedactedQuery(f *testing.F) {
 	for _, seed := range []string{
 		"",
+		strings.Repeat("&", maxRedactedComponent),   // renders nine times its own length
+		strings.Repeat("&", maxRedactedComponent+1), // too long to walk at all
 		"service=git-upload-pack",
 		"service=git-receive-pack",
-		"service=glpat-secret", // the allowlisted name, a value go-git did not write
-		"service=git-upload-pack;private_token=x",  // the legacy separator net/url does not split on
-		"private_token=glpat-secret",               //
-		"job_token=secret&service=git-upload-pack", //
-		"glpat-secret",                           // a bare value: the name is the secret
-		"glpat-secret=",                          // and the same with an empty value
-		"=glpat-secret",                          // an empty name
-		"a=1&&b=2",                               // an empty element
-		"&",                                      //
-		"service",                                // the allowlisted name, bare
-		"service=git-upload-pack&service=secret", // repeated, one written and one not
-		"a=b=c",                                  // a value containing the separator
-		"private_token=%67%6c%70%61%74",          // an escaped value
-		"REDACTED=REDACTED",                      // the redactor's own output
+		"service=glpat-secret",                       // the allowlisted name, a value go-git did not write
+		"service=git-upload-pack;private_token=x",    // the legacy separator net/url does not split on
+		"private_token=glpat-secret",                 //
+		"job_token=secret&service=git-upload-pack",   //
+		"glpat-secret",                               // a bare value: the name is the secret
+		"glpat-secret=",                              // and the same with an empty value
+		"=glpat-secret",                              // an empty name
+		"a=1&&b=2",                                   // an empty element
+		"&",                                          //
+		"service",                                    // the allowlisted name, bare
+		"service=git-upload-pack&service=secret",     // repeated, one written and one not
+		"a=b=c",                                      // a value containing the separator
+		"private_token=%67%6c%70%61%74",              // an escaped value
+		"REDACTED=REDACTED",                          // the redactor's own output
 		"service=git-upload-pack&job_token=REDACTED", //
 	} {
 		f.Add(seed)
@@ -123,8 +130,21 @@ func FuzzRedactedQuery(f *testing.F) {
 	f.Fuzz(func(t *testing.T, raw string) {
 		got := redactedQuery(raw)
 
+		require.LessOrEqual(t, len(got), maxRedactedComponent,
+			"a message must be bounded whatever the query it reports was")
+		require.Equal(t, got, redactedQuery(got),
+			"redacting twice must not change what a message says")
+
 		if raw == "" {
 			require.Empty(t, got, "an empty query stays empty")
+			return
+		}
+
+		// A query too long to render is replaced whole, so there are no
+		// elements left to check one against one. An element separator in the
+		// input and none in the output is what says that happened: a query
+		// short enough to walk keeps every separator it came with.
+		if got == "REDACTED" && strings.Contains(raw, "&") {
 			return
 		}
 
@@ -150,8 +170,5 @@ func FuzzRedactedQuery(f *testing.F) {
 			require.Equal(t, inName, name,
 				"element %d lost the name that says what was sent", i)
 		}
-
-		require.Equal(t, got, redactedQuery(got),
-			"redacting twice must not change what a message says")
 	})
 }

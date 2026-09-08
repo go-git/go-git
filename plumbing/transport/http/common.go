@@ -35,6 +35,17 @@ func (e *Err) Error() string {
 // redirect target — so it is not read to EOF.
 const maxErrorBodySize = 8 << 10
 
+// maxRedactedComponent caps how long a part of a URL — host, path, query,
+// username — may be and still be rendered. Anything longer is replaced whole.
+//
+// A URL printed here is often a redirect target, so its length is the server's
+// choice, and net/http accepts 10 MB of response headers by default. Redacting
+// a query costs several times its length, and checkRedirect renders refusals
+// eagerly, so an uncapped Location becomes a message the caller then holds.
+//
+// A kilobyte is far past any real repository URL.
+const maxRedactedComponent = 1 << 10
+
 // maxDrainSize caps how much of an error response body is read and discarded
 // after the message has been taken. Closing a body with bytes unread discards
 // the connection instead of returning it to the pool, so a large error page
@@ -389,35 +400,69 @@ func ownQueryParam(name, value string, hasValue bool) bool {
 // The parameter's name survives, so a message still says what was sent. A
 // parameter with no value at all is replaced whole: nothing distinguishes a
 // bare flag from a bare secret.
+//
+// A query past maxRedactedComponent is replaced whole rather than walked:
+// trimming it to fit would cut inside an element and print the prefix of its
+// value. The cap applies to the result too, since replacing values lengthens
+// it — a kilobyte of "&" renders as nine. Bounding both ends is what keeps
+// redacting twice a no-op, which an *Err needs: it holds a URL that Error
+// renders through here again.
+//
+// It says "REDACTED" where bounded says "TRUNCATED" because every other bare
+// word is a valueless element, which this replaces whole.
 func redactedQuery(raw string) string {
 	if raw == "" {
 		return raw
 	}
+	if len(raw) > maxRedactedComponent {
+		return "REDACTED"
+	}
 	var b strings.Builder
-	for i, param := range strings.Split(raw, "&") {
+	b.Grow(len(raw))
+	for i, rest := 0, raw; ; i++ {
+		param, tail, more := strings.Cut(rest, "&")
 		if i > 0 {
 			b.WriteByte('&')
 		}
 		name, value, hasValue := strings.Cut(param, "=")
+		switch {
 		// An element go-git wrote itself is rendered as it is. Both halves are
 		// matched, so a caller-chosen value under one of those names is not.
-		if ownQueryParam(name, value, hasValue) {
+		case ownQueryParam(name, value, hasValue):
 			b.WriteString(param)
-			continue
-		}
-		if !hasValue || value == "" {
+		case !hasValue || value == "":
 			b.WriteString("REDACTED")
-			continue
+		default:
+			b.WriteString(name)
+			b.WriteString("=REDACTED")
 		}
-		b.WriteString(name)
-		b.WriteString("=REDACTED")
+		if !more {
+			break
+		}
+		rest = tail
+	}
+	if b.Len() > maxRedactedComponent {
+		return "REDACTED"
 	}
 	return b.String()
 }
 
-// redactedURL renders u with anything a caller can have put a secret in
-// replaced. Every error string and trace line in this package prints a URL
-// through it.
+// bounded returns s, or "TRUNCATED" when s is longer than
+// maxRedactedComponent.
+//
+// The two words report different things — a length, and a withheld secret —
+// and a reader needs to tell them apart. The query is the one part that says
+// "REDACTED" for a length; see redactedQuery.
+func bounded(s string) string {
+	if len(s) > maxRedactedComponent {
+		return "TRUNCATED"
+	}
+	return s
+}
+
+// redactURL returns a copy of u with anything a caller can have put a secret
+// in replaced, and every part short enough to print. Nothing the copy holds is
+// shared with u but its immutable strings.
 //
 // Userinfo without a password is left as it is, matching url.URL.Redacted: a
 // bare username is an identity, not a secret, and printing it is how a caller
@@ -425,11 +470,18 @@ func redactedQuery(raw string) string {
 // checkRedirect's refusals and redactRetryError — that username came out of a
 // Location header, so a target of the form https://<token>@host/ would have
 // its token printed.
-func redactedURL(u *url.URL) string {
+//
+// Redacting an already-redacted URL returns it unchanged, so a URL kept on an
+// error and rendered again comes out the same.
+func redactURL(u *url.URL) *url.URL {
 	if u == nil {
-		return ""
+		return nil
 	}
 	redacted := *u
+	redacted.Host = bounded(u.Host)
+	if path := u.EscapedPath(); len(path) > maxRedactedComponent {
+		redacted.Path, redacted.RawPath = bounded(path), ""
+	}
 	redacted.RawQuery = redactedQuery(u.RawQuery)
 	// The fragment never reaches the wire — net/http omits it from the request
 	// URI — but it reaches every message this renders.
@@ -438,11 +490,23 @@ func redactedURL(u *url.URL) string {
 		redacted.RawFragment = ""
 	}
 	if u.User != nil {
+		name := bounded(u.User.Username())
 		if _, hasPassword := u.User.Password(); hasPassword {
-			redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
+			redacted.User = url.UserPassword(name, "REDACTED")
+		} else if name != u.User.Username() {
+			redacted.User = url.User(name)
 		}
 	}
-	return redacted.String()
+	return &redacted
+}
+
+// redactedURL renders u the way redactURL redacts it. Every error string and
+// trace line in this package prints a URL through it.
+func redactedURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	return redactURL(u).String()
 }
 
 // doRequest performs an HTTP request and returns a typed error on failure.

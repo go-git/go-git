@@ -396,7 +396,9 @@ func checkRedirect(req *http.Request, via []*http.Request, policy RedirectPolicy
 		return fmt.Errorf("http transport: invalid redirect policy %q", policy)
 	}
 	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-		return fmt.Errorf("http transport: redirect to unsupported scheme %q", req.URL.Scheme)
+		// The scheme is the one part of a Location this prints without going
+		// through redactedURL, so it is bounded here instead.
+		return fmt.Errorf("http transport: redirect to unsupported scheme %q", bounded(req.URL.Scheme))
 	}
 	if len(via) >= 10 {
 		return fmt.Errorf("http transport: too many redirects")
