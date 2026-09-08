@@ -506,7 +506,7 @@ func sanitizeReason(s string) string {
 // Userinfo without a password is left as it is, matching url.URL.Redacted: a
 // bare username is an identity, not a secret, and printing it is how a caller
 // tells two clone URLs apart. On the paths that print a redirect target —
-// checkRedirect's refusals and redactRetryError — that username came out of a
+// checkRedirect's refusals and redactClientError — that username came out of a
 // Location header, so a target of the form https://<token>@host/ would have
 // its token printed.
 //
@@ -568,6 +568,10 @@ func (e *redactedClientError) Unwrap() error { return e.err }
 // The wrapped error is bounded but not redacted. net/http builds it from the
 // target too — a DNS failure names the host it looked up — but it is prose
 // this package does not parse, and Unwrap leaves the original reachable.
+//
+// The URL is quoted, as url.Error quotes it, so a URL with nothing to redact
+// renders the way url.Error renders it. Only a URL this withholds a part of
+// reads differently, which is the difference worth seeing.
 func redactClientError(err error) error {
 	var uerr *url.Error
 	if !errors.As(err, &uerr) {
@@ -580,7 +584,7 @@ func redactClientError(err error) error {
 		return &redactedClientError{msg: fmt.Sprintf("%s: %s", uerr.Op, cause), err: err}
 	}
 	return &redactedClientError{
-		msg: fmt.Sprintf("%s %s: %s", uerr.Op, redactedURL(u), cause),
+		msg: fmt.Sprintf("%s %q: %s", uerr.Op, redactedURL(u), cause),
 		err: err,
 	}
 }

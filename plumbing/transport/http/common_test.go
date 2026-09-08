@@ -901,11 +901,17 @@ func TestDoRequestRedactsWhatNetHTTPEmbedded(t *testing.T) {
 		name     string
 		location string
 		policy   RedirectPolicy
+		// want is the rebuilt prefix, quoted as url.Error quotes it. Asserted
+		// with the redaction rather than beside it: rebuilding is for
+		// withholding a secret, not for reshaping every error that carries a
+		// URL, so the shape belongs where the redaction is checked.
+		want string
 	}{
 		{
 			name:     "a refused hop",
 			location: "https://elsewhere.example/x?private_token=glpat-secret#glpat-fragment",
 			policy:   NoFollowRedirects,
+			want:     `Get "https://elsewhere.example/x?private_token=REDACTED#REDACTED": `,
 		},
 		{
 			// The hop is permitted and the failure comes later, from the
@@ -913,11 +919,15 @@ func TestDoRequestRedactsWhatNetHTTPEmbedded(t *testing.T) {
 			name:     "a permitted hop that fails to connect",
 			location: "https://not.a.real.host.invalid/x?private_token=glpat-secret",
 			policy:   FollowInitialRedirects,
+			want:     `Get "https://not.a.real.host.invalid/x?private_token=REDACTED": `,
 		},
 		{
+			// net/http has already replaced the password with "***" by the time
+			// the error is built; redactURL replaces that in turn.
 			name:     "a password the target planted",
 			location: "https://someone:glpat-password@elsewhere.example/x",
 			policy:   NoFollowRedirects,
+			want:     `Get "https://someone:REDACTED@elsewhere.example/x": `,
 		},
 	}
 
@@ -934,6 +944,7 @@ func TestDoRequestRedactsWhatNetHTTPEmbedded(t *testing.T) {
 			assert.NotContains(t, err.Error(), "glpat-secret")
 			assert.NotContains(t, err.Error(), "glpat-password")
 			assert.NotContains(t, err.Error(), "glpat-fragment")
+			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
 
