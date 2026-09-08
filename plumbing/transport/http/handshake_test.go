@@ -757,3 +757,15 @@ func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
 	assert.Equal(t, int64(1), closed.Load(),
 		"a non-cancellation negotiation error must close the response body")
 }
+
+func TestDumbPushIsUnsupported(t *testing.T) {
+	t.Parallel()
+
+	session := &dumbPackSession{}
+
+	err := session.Push(context.Background(), nil, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, transport.ErrCommandUnsupported,
+		"a caller picking another transport tests the sentinel, not the message")
+}

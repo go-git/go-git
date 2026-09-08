@@ -653,7 +653,7 @@ func (s *dumbPackSession) Fetch(ctx context.Context, st storage.Storer, req *tra
 }
 
 func (s *dumbPackSession) Push(_ context.Context, _ storage.Storer, _ *transport.PushRequest) error {
-	return fmt.Errorf("dumb HTTP does not support push")
+	return fmt.Errorf("dumb HTTP does not support push: %w", transport.ErrCommandUnsupported)
 }
 
 func (s *dumbPackSession) Close() error { return nil }
