@@ -226,8 +226,7 @@ func finishHandshake(resp *http.Response, base sessionBase, d discovery) (transp
 		return handshakeDumb(resp, base)
 	}
 
-	expected := fmt.Sprintf("application/x-%s-advertisement", d.service)
-	if resp.Header.Get("Content-Type") == expected {
+	if smartContentType(resp.Header.Get("Content-Type"), d.service) {
 		return handshakeSmart(resp, base, d)
 	}
 	return handshakeDumb(resp, base)

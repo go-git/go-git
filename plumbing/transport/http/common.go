@@ -80,6 +80,23 @@ func drainAndClose(body io.ReadCloser) {
 	_ = body.Close()
 }
 
+// contentMediaType returns the media type of a Content-Type header, without
+// parameters and lower-cased, mirroring git's extract_content_type().
+//
+// Not mime.ParseMediaType: it reports ErrInvalidMediaParameter alongside a
+// usable media type, which would force a choice between rejecting a smart
+// server over a broken charset and ignoring parse errors wholesale.
+func contentMediaType(header string) string {
+	mediaType, _, _ := strings.Cut(header, ";")
+	return strings.ToLower(strings.TrimSpace(mediaType))
+}
+
+// smartContentType reports whether a response advertises the smart protocol
+// for service.
+func smartContentType(header, service string) bool {
+	return contentMediaType(header) == "application/x-"+service+"-advertisement"
+}
+
 // checkError maps HTTP response status codes to typed transport errors.
 //
 // The body is consumed and closed: as much of it as maxErrorBodySize allows
