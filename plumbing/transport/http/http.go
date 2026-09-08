@@ -182,10 +182,13 @@ type Options struct {
 	// body on a 307 or 308, and Content-Type and Content-Length are preserved,
 	// so the pack request arrives at the server-chosen origin complete. For
 	// upload-pack that discloses which objects the caller already has; for
-	// receive-pack, the packfile being pushed. Such a POST is not retried and
-	// Credentials is not consulted for the origin it reached, and its own
-	// crossing is not recorded, so the failure it produces does not name that
-	// origin.
+	// receive-pack, the packfile being pushed.
+	//
+	// Nothing follows up on such a POST: it is not retried, Credentials is not
+	// consulted for the origin it reached, and its crossing is not recorded, so
+	// the failure it produces does not name that origin. Those describe the
+	// transport as it stands and may change. The disclosure above does not
+	// depend on them, because the body arrives before any of it would apply.
 	//
 	// To let the discovery GET follow a cross-origin redirect while refusing
 	// one for a request with a body, set a CheckRedirect on Client that returns
