@@ -135,11 +135,22 @@ type Credential struct {
 // CredentialRequest.IsOrigin for a store that spans many origins.
 //
 // A nil *Credential, or one whose Authorizer is nil, declines; an error aborts
-// the operation. A credential serves the request it was asked about and the
-// session's later requests until a redirect moves the origin or the repository
-// path, at which point it is discarded and this is called again — so a moved
-// path re-asks even though the origin is unchanged. One Transport serves
-// concurrent operations, so this may be called concurrently.
+// the operation. One Transport serves concurrent operations, so this may be
+// called concurrently.
+//
+// The number of calls is not part of the contract. A credential serves the
+// request it was asked about and the session's later requests until a redirect
+// moves the origin or the repository path, at which point it is discarded and
+// this is called again, so a moved path re-asks even though the origin is
+// unchanged. Later versions may ask in further cases, in particular in response
+// to a server challenge, which is how canonical git acquires a credential by
+// default. An implementation should be inexpensive to call and safe to call
+// repeatedly; one that prompts a person will be reached more than once.
+//
+// The service being run is not reported here, because a credential belongs to
+// an origin rather than to an operation, and the git credential protocol has
+// no attribute for it either. A source that has to tell a fetch from a push can
+// return a Credential whose Authorizer reads the request it is handed.
 //
 // The adapters below do not restrict repository paths, because a moved or
 // renamed repository is what a same-origin redirect is normally for; see
