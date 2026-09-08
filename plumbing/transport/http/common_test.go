@@ -888,3 +888,106 @@ func TestErrURLFieldIsRedacted(t *testing.T) {
 	assert.Equal(t, httpErr.URL.String(), redactedURL(httpErr.URL),
 		"redacting an already-redacted URL changes nothing")
 }
+
+// net/http hands back a *url.Error whose URL field is the Location header,
+// copied in verbatim, and every guard in this package has run before that error
+// is built. doRequest is the one place client.Do is called, so it is the one
+// place this can be caught.
+func TestDoRequestRedactsWhatNetHTTPEmbedded(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		location string
+		policy   RedirectPolicy
+	}{
+		{
+			name:     "a refused hop",
+			location: "https://elsewhere.example/x?private_token=glpat-secret#glpat-fragment",
+			policy:   NoFollowRedirects,
+		},
+		{
+			// The hop is permitted and the failure comes later, from the
+			// transport. net/http embeds the target the same way.
+			name:     "a permitted hop that fails to connect",
+			location: "https://not.a.real.host.invalid/x?private_token=glpat-secret",
+			policy:   FollowInitialRedirects,
+		},
+		{
+			name:     "a password the target planted",
+			location: "https://someone:glpat-password@elsewhere.example/x",
+			policy:   NoFollowRedirects,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", tt.location)
+				w.WriteHeader(http.StatusFound)
+			})
+			_, err := handshakeAt(t, base, Options{FollowRedirects: tt.policy})
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "glpat-secret")
+			assert.NotContains(t, err.Error(), "glpat-password")
+			assert.NotContains(t, err.Error(), "glpat-fragment")
+		})
+	}
+
+	// A bare username stays, here as everywhere: redactedURL keeps it on purpose,
+	// so a target that spells a token as one has it printed. Asserted so the
+	// exception reads as a decision rather than a gap.
+	t.Run("a bare username the target planted is still printed", func(t *testing.T) {
+		t.Parallel()
+
+		base := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Location", "https://glpat-bare@elsewhere.example/x")
+			w.WriteHeader(http.StatusFound)
+		})
+		_, err := handshakeAt(t, base, Options{FollowRedirects: NoFollowRedirects})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "glpat-bare")
+	})
+}
+
+// The same error is where an oversized Location is retained, so the cap has to
+// reach it too.
+func TestDoRequestBoundsWhatNetHTTPEmbedded(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		location string
+		policy   RedirectPolicy
+	}{
+		{
+			name:     "an oversized query in the target",
+			location: "https://elsewhere.example/x?" + strings.Repeat("&", 400<<10),
+			policy:   NoFollowRedirects,
+		},
+		{
+			// net/http builds the wrapped error from the target as well: a DNS
+			// failure names the host it looked up, at whatever length.
+			name:     "an oversized host the wrapped error names",
+			location: "https://" + strings.Repeat("h", 400<<10) + ".invalid/x",
+			policy:   FollowInitialRedirects,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", tt.location)
+				w.WriteHeader(http.StatusFound)
+			})
+			_, err := handshakeAt(t, base, Options{FollowRedirects: tt.policy})
+			require.Error(t, err)
+			assert.Less(t, len(err.Error()), 1<<11,
+				"a 400 KB Location must not become a 400 KB error string")
+		})
+	}
+}

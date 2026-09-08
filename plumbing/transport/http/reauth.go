@@ -36,44 +36,6 @@ func noRedirectClient(c *http.Client) *http.Client {
 	return &cp
 }
 
-// redactedRetryError substitutes retryErr's message for one built with
-// redactedURL, while still unwrapping to retryErr itself so errors.Is
-// continues to reach whatever retryErr wraps.
-type redactedRetryError struct {
-	msg string
-	err error
-}
-
-func (e *redactedRetryError) Error() string { return e.msg }
-func (e *redactedRetryError) Unwrap() error { return e.err }
-
-// redactRetryError rebuilds retryErr's message using redactedURL in place of
-// the URL net/http embedded in it.
-//
-// client.Do returns a *url.Error, and where CheckRedirect refuses a hop
-// net/http sets its URL field to the Location header's raw value — the target's
-// own choice, copied in verbatim. A hostile target can put userinfo there, so
-// rendering retryErr's text unredacted would print a secret the target planted.
-// Unwrap keeps retryErr in the chain, so only Error() changes.
-func redactRetryError(retryErr error) error {
-	var uerr *url.Error
-	if !errors.As(retryErr, &uerr) {
-		return retryErr
-	}
-	if u, perr := url.Parse(uerr.URL); perr == nil {
-		return &redactedRetryError{
-			msg: fmt.Sprintf("%s %s: %s", uerr.Op, redactedURL(u), uerr.Err),
-			err: retryErr,
-		}
-	}
-	// The URL did not even parse: omit it rather than risk printing whatever
-	// made it unparsable.
-	return &redactedRetryError{
-		msg: fmt.Sprintf("%s: %s", uerr.Op, uerr.Err),
-		err: retryErr,
-	}
-}
-
 // originCredential pairs a credential with the origin it was acquired for; the
 // origin is what the session's credential gate is re-anchored on.
 //
@@ -227,17 +189,16 @@ func (t *Transport) reauthenticate(
 		// spent, not nil: a credential was offered at this origin, so what
 		// failed is authentication there, not a credential withheld on the
 		// way. The original status stays the error the caller sees and
-		// retryErr becomes its cause — the redirect refusal wrapped in a
-		// *url.Error, or whatever else client.Do returned.
-		cause := redactRetryError(retryErr)
+		// retryErr becomes its cause — the redirect refusal, or whatever else
+		// client.Do returned, already redacted by doRequest.
 		if stopped(retryErr) {
 			// A clone the caller stopped is not a clone that needs credentials, so
 			// the 401 renders in the message but leaves the error chain: %s, not %w.
 			// Otherwise a caller that classifies authentication before cancellation
 			// prompts for a password on a clone the user aborted.
-			return spent, resp, fmt.Errorf("%s: %w", err, cause)
+			return spent, resp, fmt.Errorf("%s: %w", err, retryErr)
 		}
-		return spent, resp, fmt.Errorf("%w: %w", err, cause)
+		return spent, resp, fmt.Errorf("%w: %w", err, retryErr)
 	}
 	return spent, retryResp, retryErr
 }

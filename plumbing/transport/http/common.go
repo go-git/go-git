@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -514,6 +515,43 @@ func redactedURL(u *url.URL) string {
 	return redactURL(u).String()
 }
 
+// redactedClientError reports msg in place of err's own message, and unwraps
+// to err so errors.Is and errors.As still reach it.
+type redactedClientError struct {
+	msg string
+	err error
+}
+
+func (e *redactedClientError) Error() string { return e.msg }
+func (e *redactedClientError) Unwrap() error { return e.err }
+
+// redactClientError rebuilds the message of a *url.Error from client.Do with
+// its URL rendered through redactedURL. Any other error is returned unchanged.
+//
+// net/http copies the Location header into url.Error.URL verbatim, so that URL
+// is the redirect target's own choice of bytes: a secret it planted is printed,
+// and a megabyte it sent is retained. Every guard here has already run by then.
+//
+// The wrapped error is bounded but not redacted. net/http builds it from the
+// target too — a DNS failure names the host it looked up — but it is prose
+// this package does not parse, and Unwrap leaves the original reachable.
+func redactClientError(err error) error {
+	var uerr *url.Error
+	if !errors.As(err, &uerr) {
+		return err
+	}
+	cause := bounded(uerr.Err.Error())
+	u, perr := url.Parse(uerr.URL)
+	if perr != nil {
+		// Omit a URL that will not parse rather than print what made it so.
+		return &redactedClientError{msg: fmt.Sprintf("%s: %s", uerr.Op, cause), err: err}
+	}
+	return &redactedClientError{
+		msg: fmt.Sprintf("%s %s: %s", uerr.Op, redactedURL(u), cause),
+		err: err,
+	}
+}
+
 // doRequest performs an HTTP request and returns a typed error on failure.
 //
 // Every non-2xx status is turned into an error here, so a caller that saw a nil
@@ -526,7 +564,9 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		// The only client.Do in this package, and so the only place the URL
+		// net/http embeds in its error can be caught.
+		return nil, redactClientError(err)
 	}
 
 	if traceHTTP {
