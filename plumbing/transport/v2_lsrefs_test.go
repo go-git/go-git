@@ -181,3 +181,91 @@ func TestV2GetRemoteRefsUnbornOnlyIsEmpty(t *testing.T) {
 	_, err := s.GetRemoteRefs(context.TODO(), nil)
 	require.ErrorIs(t, err, ErrEmptyRemoteRepository)
 }
+
+func TestV2GetRemoteRefsPrefixedSymrefHeadOnlyIsNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	const headHash = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+
+	serve := func(serverConn net.Conn) (err error) {
+		defer func() { _ = serverConn.Close() }()
+
+		w := serverConn
+		for _, line := range []string{
+			"version 2\n",
+			"agent=test\n",
+			"ls-refs=unborn\n",
+			"object-format=sha1\n",
+		} {
+			if _, err := pktline.WriteString(w, line); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteFlush(w); err != nil {
+			return err
+		}
+
+		req := &packp.CommandRequest{Args: &packp.LsRefsArgs{}}
+		if err := req.Decode(bufio.NewReader(serverConn)); err != nil {
+			return err
+		}
+
+		// A populated repository whose branch is not among the requested
+		// ref-prefixes: only HEAD is returned, still carrying the resolved
+		// object id. This is not an empty repository.
+		if _, err := pktline.Writef(w, "%s HEAD symref-target:refs/heads/main\n", headHash); err != nil {
+			return err
+		}
+		return pktline.WriteFlush(w)
+	}
+
+	s := newV2Session(t, serve)
+	rr, err := s.GetRemoteRefs(context.TODO(), &GetRemoteRefsOptions{
+		RefPrefixes: []string{"refs/heads/no-such-branch", "HEAD"},
+	})
+	require.NoError(t, err)
+	require.Len(t, rr.References, 1)
+	require.Equal(t, plumbing.HEAD, rr.References[0].Name())
+	require.Equal(t, plumbing.SymbolicReference, rr.References[0].Type())
+}
+
+func TestV2GetRemoteRefsPrefixedUnbornHeadIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	serve := func(serverConn net.Conn) (err error) {
+		defer func() { _ = serverConn.Close() }()
+
+		w := serverConn
+		for _, line := range []string{
+			"version 2\n",
+			"agent=test\n",
+			"ls-refs=unborn\n",
+			"object-format=sha1\n",
+		} {
+			if _, err := pktline.WriteString(w, line); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteFlush(w); err != nil {
+			return err
+		}
+
+		req := &packp.CommandRequest{Args: &packp.LsRefsArgs{}}
+		if err := req.Decode(bufio.NewReader(serverConn)); err != nil {
+			return err
+		}
+
+		// A genuinely empty repository: even when filtered by ref-prefixes,
+		// only an unborn HEAD comes back.
+		if _, err := pktline.WriteString(w, "unborn HEAD symref-target:refs/heads/main\n"); err != nil {
+			return err
+		}
+		return pktline.WriteFlush(w)
+	}
+
+	s := newV2Session(t, serve)
+	_, err := s.GetRemoteRefs(context.TODO(), &GetRemoteRefsOptions{
+		RefPrefixes: []string{"refs/heads/no-such-branch", "HEAD"},
+	})
+	require.ErrorIs(t, err, ErrEmptyRemoteRepository)
+}
