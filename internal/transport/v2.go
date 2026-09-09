@@ -39,10 +39,12 @@ func nextFlush(count int) int {
 }
 
 // CommandFunc runs a single Protocol v2 command: it encodes req into the
-// request and decodes the response via resp. A session's Command method
-// satisfies this signature, so the shared v2 helpers stay decoupled from the
-// public transport.Commander interface (and the import cycle it would create).
-type CommandFunc func(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error
+// request and returns a reader positioned at the response. The caller decodes
+// the response and, for streaming commands such as fetch, reads the packfile
+// from the same reader, then closes it. A session's Command method satisfies
+// this signature, so the shared v2 helpers stay decoupled from the public
+// transport.Commander interface (and the import cycle it would create).
+type CommandFunc func(ctx context.Context, cmd string, req packp.CommandArgs) (io.ReadCloser, error)
 
 // ClientCapabilities returns the capabilities a v2 client sends with each
 // command: the agent and the server's object-format echoed back so both sides
@@ -95,9 +97,16 @@ func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPre
 	}
 
 	out := &packp.LsRefsOutput{}
-	if err := cmd(ctx, "ls-refs", args, out); err != nil {
+	rc, err := cmd(ctx, "ls-refs", args)
+	if err != nil {
 		return nil, err
 	}
+
+	if err := out.Decode(rc); err != nil {
+		_ = rc.Close()
+		return nil, err
+	}
+	drainClose(rc)
 
 	return out.References, nil
 }
@@ -241,16 +250,25 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 			// cancelled an instant after a successful/non-cancel return,
 			// and checking ctx.Err() at that point would skip the close
 			// for a read that was already fully quiescent.
-			if !errors.Is(streamErr, context.Canceled) && !errors.Is(streamErr, context.DeadlineExceeded) {
-				closeReader(packReader)
-			}
-			if streamErr != nil {
+			if errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
 				return streamErr
 			}
+			if streamErr != nil {
+				// The stream aborted mid-packfile: the unread remainder may be
+				// a large partial pack, so close without draining.
+				closeReader(packReader)
+				return streamErr
+			}
+			// The pack was read in full. The sideband demuxer has
+			// already consumed the flush-pkt and returned io.EOF; any
+			// bytes that remain on packReader are HTTP trailers or a
+			// response-end pkt-line (or nothing). Drain them best-effort
+			// so the HTTP connection returns to the pool.
+			drainClose(packReader)
 			break
 		}
 
-		closeReader(packReader)
+		drainClose(packReader)
 		if args.Done {
 			return fmt.Errorf("transport: server sent no packfile after done")
 		}
@@ -285,16 +303,36 @@ func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader
 	return packfile.UpdateObjectStorage(st, demuxer)
 }
 
-// closeReader drains and closes r when it owns a closable resource (such as an
-// HTTP response body). Draining any unread bytes (e.g. the v2 response-end
-// pkt-line) before Close lets net/http reuse the connection across negotiation
-// rounds. Persistent stream readers do not implement io.Closer and are left
-// open for the next round.
+// closeReader closes r when it owns a closable resource (such as an HTTP
+// response body). Persistent stream readers wrap Close as a no-op so the
+// connection stays open for the next round.
 func closeReader(r io.Reader) {
 	if c, ok := r.(io.Closer); ok {
-		_, _ = io.Copy(io.Discard, r)
 		_ = c.Close()
 	}
+}
+
+// DrainCloser is an io.Closer whose DrainClose consumes any unread bytes before
+// closing, so a pooled connection can be reused for the next request. The HTTP
+// transport implements it on its response body; stream transports (ssh, git,
+// file) do not, so drainClose falls back to a plain, non-draining Close for
+// them and never disturbs their persistent reader.
+type DrainCloser interface {
+	io.Closer
+	DrainClose() error
+}
+
+// drainClose drains and closes r on transports that support it (HTTP), enabling
+// keep-alive reuse for the next stateless-RPC round; on all other readers it is
+// a plain Close. It is used only where the unread remainder is a small metadata
+// reply (negotiation rounds, ls-refs) — never on the packfile stream or error
+// paths, where draining could download a large body.
+func drainClose(r io.Reader) {
+	if dc, ok := r.(DrainCloser); ok {
+		_ = dc.DrainClose()
+		return
+	}
+	closeReader(r)
 }
 
 // updateShallow merges a shallow-info update into st's shallow boundary.

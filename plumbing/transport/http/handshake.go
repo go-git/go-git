@@ -131,12 +131,12 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	isSmart := resp.Header.Get("Content-Type") == expected
 
 	if isSmart {
-		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer)
+		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer, &t.opts)
 	}
 	return handshakeDumb(resp, &sessReq, client, authorizer)
 }
 
-func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
+func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error, opts *Options) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	rd := bufio.NewReader(resp.Body)
 
@@ -186,6 +186,8 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 			authorizer: authorizer,
 			version:    ver,
 			caps:       adv.Capabilities,
+
+			lowSpeed: opts.LowSpeed,
 		}, nil
 	}
 
@@ -212,6 +214,8 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		version:    ver,
 		caps:       ar.Capabilities,
 		refs:       ar,
+
+		lowSpeed: opts.LowSpeed,
 	}, nil
 }
 
@@ -252,6 +256,8 @@ type smartPackSession struct {
 	version    protocol.Version
 	caps       capability.List
 	refs       *packp.AdvRefs
+
+	lowSpeed *LowSpeedGuard
 }
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
@@ -287,13 +293,13 @@ func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.Ge
 }
 
 // Command implements transport.Commander. It runs a Protocol v2 command as a
-// single stateless HTTP POST: the request envelope is buffered and sent, and
-// the response is decoded from the response body. Fetch uses its own round
-// instead so it can stream the packfile from the body; Command is for
-// non-streaming commands such as ls-refs.
-func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
+// single stateless HTTP POST: the request envelope is buffered and sent on the
+// first read, and the returned reader streams the response body. The caller
+// decodes the response (and, for fetch, streams the packfile) from that reader
+// and closes it, which closes the underlying response body.
+func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.CommandArgs) (io.ReadCloser, error) {
 	if s.version != protocol.V2 {
-		return transport.ErrUnsupportedVersion
+		return nil, transport.ErrUnsupportedVersion
 	}
 
 	r := &httpRequester{session: s, ctx: ctx}
@@ -303,23 +309,9 @@ func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.Co
 		Args:         req,
 	}
 	if err := cr.Encode(r); err != nil {
-		return err
+		return nil, err
 	}
-	// Command consumes the whole response (it never streams the body out), so
-	// drain and close it on every path. A bare return on a decode error would
-	// otherwise leak the response body and its connection.
-	defer func() {
-		if r.resp != nil {
-			_, _ = io.Copy(io.Discard, r.resp.Body)
-			_ = r.resp.Body.Close()
-		}
-	}()
-	if resp != nil {
-		if err := resp.Decode(r); err != nil {
-			return err
-		}
-	}
-	return nil
+	return &httpResponseBody{req: r}, nil
 }
 
 func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
@@ -378,31 +370,19 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 	}
 
 	round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
-		r := &httpRequester{session: s, ctx: ctx}
-		cr := &packp.CommandRequest{
-			Command:      "fetch",
-			Capabilities: internal.ClientCapabilities(s.caps),
-			Args:         args,
-		}
-		if err := cr.Encode(r); err != nil {
+		rc, err := s.Command(ctx, "fetch", args)
+		if err != nil {
 			return nil, nil, err
 		}
 		out := &packp.FetchOutput{}
-		if err := out.Decode(r); err != nil {
-			// The success path returns r.resp.Body for the caller to stream, so
-			// it must stay open; on a decode error nothing downstream will, so
-			// release it here rather than leaking the body and its connection.
-			if r.resp != nil {
-				_ = r.resp.Body.Close()
-			}
+		if err := out.Decode(rc); err != nil {
+			_ = rc.Close()
 			return nil, nil, err
 		}
-		if r.resp == nil {
-			return nil, nil, fmt.Errorf("http transport: fetch command produced no response")
-		}
-		// The response body is positioned at the packfile (when out.Packfile);
-		// internal.FetchV2 streams it and closes the body via io.Closer.
-		return out, r.resp.Body, nil
+		// The reader is positioned at the packfile (when out.Packfile);
+		// internal.FetchV2 streams it and closes the reader via io.Closer,
+		// which closes the underlying response body.
+		return out, rc, nil
 	}
 
 	return internal.FetchV2(ctx, st, req, round)
@@ -437,7 +417,7 @@ func (s *smartPackSession) Archive(ctx context.Context, req *transport.ArchiveRe
 	}
 
 	rt := &httpRequester{session: s, ctx: ctx}
-	body := &httpArchiveBody{req: rt}
+	body := &httpResponseBody{req: rt}
 	archive, err := transport.Archive(ctx, rt, body, req)
 	if err != nil {
 		_ = body.Close()
@@ -446,19 +426,46 @@ func (s *smartPackSession) Archive(ctx context.Context, req *transport.ArchiveRe
 	return archive, nil
 }
 
-// httpArchiveBody adapts an httpRequester to the io.ReadCloser the archive
-// client reads from: reads come from the POST response body, and Close closes
-// that body. The paired httpRequester is passed to transport.Archive as the
-// writer, whose Close fires the POST.
-type httpArchiveBody struct{ req *httpRequester }
+// httpResponseBody adapts an httpRequester to an io.ReadCloser positioned at
+// the POST response body: reads stream the body (firing the POST lazily on the
+// first read). Close releases the body without reading it, so an early Close
+// after a partial read never triggers a large download — this is the behaviour
+// the public Command and Archive readers expose to callers. If no POST fired
+// (nothing was read), Close is a no-op: there is no body to release. The paired
+// httpRequester is the write side, whose own Close fires the POST.
+//
+// DrainClose is the keep-alive variant used only on internal negotiation paths;
+// see its doc. httpResponseBody satisfies internal.DrainCloser so those paths
+// can opt into draining via a type assertion.
+type httpResponseBody struct{ req *httpRequester }
 
-func (b *httpArchiveBody) Read(p []byte) (int, error) { return b.req.Read(p) }
+var _ internal.DrainCloser = (*httpResponseBody)(nil)
 
-func (b *httpArchiveBody) Close() error {
-	if b.req.resp != nil {
-		return b.req.resp.Body.Close()
+func (b *httpResponseBody) Read(p []byte) (int, error) { return b.req.Read(p) }
+
+func (b *httpResponseBody) Close() error {
+	if b.req.resp == nil {
+		return nil
 	}
-	return nil
+	return b.req.resp.Body.Close()
+}
+
+// DrainClose drains any unread response bytes to EOF before closing, so
+// net/http can reuse the keep-alive connection for the next stateless-RPC
+// round. It is used only on internal keep-alive paths (v2 negotiation rounds
+// and ls-refs), where the response is a small metadata reply — never on the
+// packfile stream, error paths, or the public Command/Archive readers.
+//
+// Draining an incomplete or malformed response could block indefinitely under
+// a deadline-less context; this is bounded by the transport's low-speed guard
+// (Options.LowSpeed) when configured. The drain is best-effort, so its error
+// is ignored — a stalled drain simply forfeits connection reuse.
+func (b *httpResponseBody) DrainClose() error {
+	if b.req.resp == nil {
+		return nil
+	}
+	_, _ = io.Copy(io.Discard, b.req.resp.Body)
+	return b.req.resp.Body.Close()
 }
 
 // httpRequester buffers writes and fires a POST on first Read or Close.
@@ -518,6 +525,9 @@ func (r *httpRequester) doPost() error {
 	if r.resp.StatusCode != http.StatusOK {
 		_ = r.resp.Body.Close()
 		return fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(r.resp.Request.URL), r.resp.StatusCode)
+	}
+	if r.session.lowSpeed.valid() {
+		r.resp.Body = newLowSpeedBody(r.resp.Body, r.session.lowSpeed)
 	}
 	return nil
 }

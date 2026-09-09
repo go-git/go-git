@@ -100,6 +100,16 @@ type Options struct {
 	// not send the ?service= query parameter in the info/refs request
 	// and will always treat the server as a dumb HTTP server.
 	ForceDumb bool
+
+	// LowSpeed configures a minimum receive throughput guard for HTTP
+	// transfers, mirroring git's http.lowSpeedLimit/http.lowSpeedTime. When
+	// set, a transfer is aborted when a single read stalls for LowSpeed.Time
+	// or the average receive speed over that window stays below
+	// LowSpeed.Limit bytes per second. This also caps how long draining a
+	// response body for connection reuse can block. The guard wraps the
+	// response body rather than the connection, so it applies even when
+	// Client is set. Off by default, matching git.
+	LowSpeed *LowSpeedGuard
 }
 
 // Transport implements the http:// and https:// transport protocol.
