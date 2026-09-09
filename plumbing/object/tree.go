@@ -45,8 +45,14 @@ var (
 // [1]: https://github.com/git/git/blob/v2.54.0/fsck.c#L26
 const maxTreeEntryNameLen = 4096
 
-// Tree is basically like a directory - it references a bunch of other trees
-// and/or blobs (i.e. files and sub-directories)
+// Tree represents a Git tree, which contains entries for files and subtrees.
+//
+// Decode accepts some structurally invalid trees, including duplicate names
+// and names containing slashes, but rejects malformed encoding and empty names.
+// Validate checks structural constraints on this tree without loading subtrees.
+// Read methods do not call Validate: FindEntry, TreeEntryFile, and TreeWalker.Next
+// apply path checks, and FindEntry descends only through directory entries.
+// Internal diff walkers can disable path validation.
 type Tree struct {
 	Entries []TreeEntry
 	Hash    plumbing.Hash
@@ -84,8 +90,12 @@ type TreeEntry struct {
 	Hash plumbing.Hash
 }
 
-// File returns the hash of the file identified by the `path` argument.
-// The path is interpreted as relative to the tree receiver.
+// File returns the file at path, relative to the tree.
+//
+// Errors from FindEntry are reported as ErrFileNotFound. Call FindEntry
+// directly to distinguish invalid paths and unreadable subtrees from missing
+// entries. A missing or wrong-type blob also reports ErrFileNotFound;
+// other blob read errors are returned unchanged.
 func (t *Tree) File(path string) (*File, error) {
 	e, err := t.FindEntry(path)
 	if err != nil {
@@ -103,8 +113,12 @@ func (t *Tree) File(path string) (*File, error) {
 	return NewFile(path, e.Mode, blob), nil
 }
 
-// Size returns the plaintext size of an object, without reading it
-// into memory.
+// Size returns the plaintext size of the object at path without reading it
+// into memory. The path is relative to the tree.
+//
+// Errors from FindEntry are reported as ErrEntryNotFound. Call FindEntry
+// directly to distinguish invalid paths and unreadable subtrees from missing
+// entries.
 func (t *Tree) Size(path string) (int64, error) {
 	e, err := t.FindEntry(path)
 	if err != nil {
@@ -114,8 +128,15 @@ func (t *Tree) Size(path string) (int64, error) {
 	return t.s.EncodedObjectSize(e.Hash)
 }
 
-// Tree returns the tree identified by the `path` argument.
-// The path is interpreted as relative to the tree receiver.
+// Tree returns the tree at path, relative to the receiver.
+// Intermediate entries must have mode filemode.Dir. The final entry's object
+// is read as a tree regardless of its mode, allowing inspection of entries
+// whose mode does not match their object type. Callers materializing the tree
+// must check that entry's mode themselves.
+//
+// Errors from FindEntry and plumbing.ErrObjectNotFound from the final object
+// read are reported as ErrDirectoryNotFound. Other read and decode errors
+// are returned unchanged.
 func (t *Tree) Tree(path string) (*Tree, error) {
 	e, err := t.FindEntry(path)
 	if err != nil {
@@ -149,13 +170,17 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 	return NewFile(e.Name, e.Mode, blob), nil
 }
 
-// FindEntry search a TreeEntry in this tree or any subtree.
+// FindEntry returns the entry at path, relative to the tree.
+// The path is checked with pathutil.ValidTreePath, which rejects traversal
+// and reserved names such as .git. Use Entries to inspect unvalidated names.
 //
-// The lookup path is validated against pathutil.ValidTreePath to
-// prevent attacker-controlled tree contents from leaking past this
-// boundary as `.git`-shaped or path-traversal-shaped names. Callers
-// that legitimately need to look up unsafe paths should walk the
-// tree manually.
+// Only entries with mode filemode.Dir can be traversed, even if a symlink or
+// gitlink entry points to a tree object. The final entry is returned without
+// reading its object; use its hash with GetTree to inspect a referenced tree.
+//
+// Duplicate names are not rejected, so lookup depends on their modes and order.
+// Call Validate on each tree along the path to reject duplicates; validating
+// only the root does not validate its subtrees.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	if err := pathutil.ValidTreePath(path); err != nil {
 		return nil, err
@@ -200,6 +225,14 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 	entry, err := t.entry(baseName)
 	if err != nil {
 		return nil, ErrDirectoryNotFound
+	}
+
+	// The entry mode determines whether a path can descend, even when the
+	// referenced object's type disagrees. Unlike Git's object peeling, the
+	// typed read below requires a tree object, not a commit or tag naming one.
+	// See https://github.com/git/git/blob/v2.54.0/tree-walk.c#L568-L633.
+	if entry.Mode != filemode.Dir {
+		return nil, fmt.Errorf("%w: entry %q has mode %s", ErrDirectoryNotFound, baseName, entry.Mode)
 	}
 
 	obj, err := t.s.EncodedObject(plumbing.TreeObject, entry.Hash)
@@ -253,7 +286,10 @@ func (t *Tree) searchEntryIndex(name string) int {
 	})
 }
 
-// Files returns a FileIter allowing to iterate over the Tree
+// Files returns an iterator over the files in the tree and its subtrees.
+// Entry names may contain slashes in malformed trees. Call Validate on every
+// traversed tree to require single-component entry names; validating only the
+// root does not validate its subtrees.
 func (t *Tree) Files() *FileIter {
 	return NewFileIter(t.s, t)
 }
@@ -449,26 +485,15 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 	return err
 }
 
-// Validate reports whether the tree object obeys the same structural
-// rules upstream Git's fsck_tree[1] enforces. It is the read-side
-// counterpart to Tree.Encode's producer-side gate: Decode is permissive
-// so that inspection and recovery tools can read trees with unusual
-// entries, and callers that want fsck-shaped reporting call Validate.
+// Validate checks this tree's entry names, modes, hashes, and ordering.
+// It does not load or validate the objects referenced by the entries.
 //
-// The returned error wraps ErrInvalidTree (and, where applicable,
-// ErrEntriesNotSorted, ErrDuplicateEntry, or pathutil.ErrInvalidPath)
-// so callers can match either the umbrella or specific rule with
-// errors.Is. When multiple rules are violated they are reported
-// together via errors.Join.
+// Errors wrap ErrInvalidTree and, where applicable, ErrEntriesNotSorted,
+// ErrDuplicateEntry, or pathutil.ErrInvalidPath. Multiple violations are
+// combined with errors.Join; use errors.Is to match individual errors.
 //
-// Two fsck_tree warnings — zero-padded modes and the non-canonical
-// 0100664 bits — are not surfaced here. Both rely on inspecting the
-// original octal string from the wire, which canonicalTreeMode
-// discards during Decode. Detecting them would require a parallel
-// raw-mode field on TreeEntry; the structural rules below are the
-// load-bearing ones for refusing malformed trees.
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/fsck.c#L616-L800
+// Decode normalizes modes, so Validate cannot detect zero-padded modes or
+// non-canonical permission bits in the original encoding.
 func (t *Tree) Validate() error {
 	var errs []error
 	add := func(err error) {

@@ -2465,3 +2465,141 @@ func TestTreeValidateReportsAllRules(t *testing.T) {
 	assert.ErrorIs(t, verr, pathutil.ErrInvalidPath)
 	assert.Contains(t, verr.Error(), "null hash")
 }
+
+func TestTreeFindEntryRefusesNonDirectoryDescent(t *testing.T) {
+	t.Parallel()
+
+	const (
+		entryName  = "evil"
+		lookupPath = entryName + "/foo"
+	)
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	subtree := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: entryName, Mode: filemode.Symlink, Hash: subtree},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	_, err = tree.FindEntry(lookupPath)
+	assert.ErrorIs(t, err, ErrDirectoryNotFound)
+
+	_, err = tree.File(lookupPath)
+	assert.ErrorIs(t, err, ErrFileNotFound)
+
+	_, err = tree.Size(lookupPath)
+	assert.ErrorIs(t, err, ErrEntryNotFound)
+
+	leaf, err := tree.FindEntry(entryName)
+	require.NoError(t, err)
+	assert.Equal(t, filemode.Symlink, leaf.Mode)
+	assert.Equal(t, subtree, leaf.Hash)
+
+	got, err := tree.Tree(entryName)
+	require.NoError(t, err)
+	assert.Len(t, got.Entries, 1)
+}
+
+func TestTreeFindEntryDescendsIntoDirectories(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	leaf := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	mid := storeTestTree(t, st, []TreeEntry{
+		{Name: "bar", Mode: filemode.Dir, Hash: leaf},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "baz", Mode: filemode.Dir, Hash: mid},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	// Exercise both uncached and cached lookup.
+	for range 2 {
+		entry, err := tree.FindEntry("baz/bar/foo")
+		require.NoError(t, err)
+		assert.Equal(t, filemode.Regular, entry.Mode)
+		assert.Equal(t, payload, entry.Hash)
+	}
+}
+
+func TestTreeFindEntryCacheDoesNotBypassModeCheck(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	shared := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "dir", Mode: filemode.Dir, Hash: shared},
+		{Name: "evil", Mode: filemode.Symlink, Hash: shared},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	entry, err := tree.FindEntry("dir/foo")
+	require.NoError(t, err)
+	assert.Equal(t, payload, entry.Hash)
+
+	_, err = tree.FindEntry("evil/foo")
+	assert.ErrorIs(t, err, ErrDirectoryNotFound)
+}
+
+func TestTreeFindEntryRefusesSubmoduleDescent(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	subtree := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "sub", Mode: filemode.Submodule, Hash: subtree},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	_, err = tree.FindEntry("sub/foo")
+	assert.ErrorIs(t, err, ErrDirectoryNotFound)
+}
+
+func TestTreeFilesSurfacesSlashBearingEntryName(t *testing.T) {
+	t.Parallel()
+
+	const (
+		entryName        = "evil"
+		slashBearingName = entryName + "/shadow"
+	)
+
+	st := memory.NewStorage()
+	link := storeTestObject(t, st, plumbing.BlobObject, []byte("/victim"))
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: entryName, Mode: filemode.Symlink, Hash: link},
+		{Name: slashBearingName, Mode: filemode.Regular, Hash: payload},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	var names []string
+	require.NoError(t, tree.Files().ForEach(func(f *File) error {
+		names = append(names, f.Name)
+		return nil
+	}))
+	assert.Equal(t, []string{entryName, slashBearingName}, names)
+
+	assert.ErrorIs(t, tree.Validate(), ErrInvalidTree)
+}
