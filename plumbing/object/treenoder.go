@@ -1,8 +1,11 @@
 package object
 
 import (
+	"fmt"
 	"io"
+	"strings"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
@@ -82,8 +85,19 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 	// is is own parent.
 	parent := t.parent
 	if !t.isRoot() {
+		// Check the name as Tree.FindEntry would before descending, so a
+		// diff never reports a path below a directory named "..", ".git"
+		// or "a/b". Leaf names are not checked here.
+		if err := validSubtreeName(t.name); err != nil {
+			return nil, err
+		}
+
+		// Read the subtree by the entry this noder was built from, so an
+		// unreadable one reports the same errors a recursive walk does,
+		// rather than Tree.Tree's ErrDirectoryNotFound.
 		var err error
-		if parent, err = t.parent.Tree(t.name); err != nil {
+		entry := TreeEntry{Name: t.name, Mode: t.mode, Hash: t.hash}
+		if parent, err = readSubtree(t.parent.s, &entry); err != nil {
 			return nil, err
 		}
 	}
@@ -91,6 +105,17 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 	var err error
 	t.children, err = transformChildren(parent)
 	return t.children, err
+}
+
+// validSubtreeName checks that name can be looked up as a single
+// directory component by Tree.FindEntry: a valid tree path without a
+// slash, which FindEntry would treat as a separator.
+func validSubtreeName(name string) error {
+	if strings.Contains(name, "/") {
+		return fmt.Errorf("%w %q: contains a slash", pathutil.ErrInvalidPath, name)
+	}
+
+	return pathutil.ValidTreePath(name)
 }
 
 // Returns the children of a tree as treenoders.
