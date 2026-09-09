@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -1527,6 +1528,159 @@ func (s *WorktreeSuite) TestStatusUnmodified() {
 
 	s.Equal(Untracked, status.File("LICENSE").Staging)
 	s.Equal(Untracked, status.File("LICENSE").Worktree)
+}
+
+func (s *WorktreeSuite) TestResetUnreadableTreePreservesReferences() {
+	const (
+		targetBranch    = "refs/heads/target"
+		newBranch       = "refs/heads/new"
+		missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		readmePath      = "README"
+		readmeContent   = "initial\n"
+		siblingPath     = "zsibling"
+	)
+
+	tests := []struct {
+		name string
+		run  func(*Worktree, plumbing.Hash) error
+	}{
+		{
+			name: "checkout hash",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: hash})
+			},
+		},
+		{
+			name: "force checkout hash",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: hash, Force: true})
+			},
+		},
+		{
+			name: "checkout branch",
+			run: func(w *Worktree, _ plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Branch: targetBranch, Force: true})
+			},
+		},
+		{
+			name: "create branch",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Branch: newBranch, Hash: hash, Create: true, Force: true})
+			},
+		},
+		{
+			name: "hard reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: HardReset})
+			},
+		},
+		{
+			name: "mixed reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: MixedReset})
+			},
+		},
+		{
+			name: "merge reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: MergeReset})
+			},
+		},
+		{
+			name: "keep reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: KeepReset})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			t := s.T()
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			s.Require().NoError(err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte(readmeContent), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(readmePath)
+			s.Require().NoError(err)
+
+			initialHash, err := w.Commit("initial", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			initial, err := r.CommitObject(initialHash)
+			s.Require().NoError(err)
+
+			payload := writeBlob(t, r.Storer, []byte("payload\n"))
+			target := buildCommitWithEntries(t, r.Storer, initial, initialHash, []object.TreeEntry{
+				{Name: "adir", Mode: filemode.Dir, Hash: plumbing.NewHash(missingObjectID)},
+				{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+			}, "absent subtree")
+
+			err = r.Storer.SetReference(plumbing.NewHashReference(targetBranch, target.Hash))
+			s.Require().NoError(err)
+
+			snapshotReferences := func() map[plumbing.ReferenceName]string {
+				t.Helper()
+
+				iter, err := r.Storer.IterReferences()
+				s.Require().NoError(err)
+
+				refs := make(map[plumbing.ReferenceName]string)
+				err = iter.ForEach(func(ref *plumbing.Reference) error {
+					refs[ref.Name()] = ref.String()
+					return nil
+				})
+				s.Require().NoError(err)
+
+				return refs
+			}
+			beforeRefs := snapshotReferences()
+			beforeIndex := snapshotIndex(t, r)
+
+			err = tc.run(w, target.Hash)
+			s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+			s.Equal(beforeRefs, snapshotReferences())
+			s.Equal(beforeIndex, snapshotIndex(t, r))
+
+			readme, err := util.ReadFile(fs, readmePath)
+			s.Require().NoError(err)
+			s.Equal(readmeContent, string(readme))
+
+			_, err = fs.Lstat(siblingPath)
+			s.ErrorIs(err, os.ErrNotExist)
+
+			_, err = w.Commit("after failed reset", &CommitOptions{Author: defaultSignature()})
+			s.ErrorIs(err, ErrEmptyCommit)
+
+			err = w.Checkout(&CheckoutOptions{Hash: initialHash, Force: true})
+			s.Require().NoError(err)
+
+			status, err := w.Status()
+			s.Require().NoError(err)
+			s.True(status.IsClean())
+		})
+	}
+}
+
+func snapshotIndex(t *testing.T, r *Repository) []byte {
+	t.Helper()
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	err = index.NewEncoder(&buf, crypto.SHA1.New()).Encode(idx)
+	require.NoError(t, err)
+
+	return buf.Bytes()
 }
 
 func (s *WorktreeSuite) TestReset() {

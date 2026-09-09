@@ -220,7 +220,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	}
 
 	if opts.Create {
-		if err := w.createBranch(opts); err != nil {
+		if err := w.validateNewBranch(opts); err != nil {
 			return err
 		}
 	}
@@ -241,30 +241,24 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = SoftReset
 	}
 
-	// For HardReset and KeepReset, capture the current tree BEFORE updating
-	// HEAD. This ensures resetWorktreeToTree correctly diffs from where we
-	// actually are, not from where HEAD will point after the update.
-	if ro.Mode == HardReset || ro.Mode == KeepReset {
-		ro.fromTree, err = w.headTree()
-		if err != nil {
-			return err
-		}
-	}
-
-	if !opts.Hash.IsZero() && !opts.Create {
-		err = w.setHEADToCommit(opts.Hash)
-	} else {
-		err = w.setHEADToBranch(opts.Branch, c)
-	}
-
-	if err != nil {
+	if err := w.reset(ro); err != nil {
 		return err
 	}
 
-	return w.Reset(ro)
+	// A failed tree read must not switch HEAD or create a branch. Resetting
+	// through the current HEAD would also move the branch we are leaving.
+	if opts.Create {
+		if err := w.r.Storer.SetReference(plumbing.NewHashReference(opts.Branch, c)); err != nil {
+			return err
+		}
+	}
+	if !opts.Hash.IsZero() && !opts.Create {
+		return w.setHEADToCommit(c)
+	}
+	return w.setHEADToBranch(opts.Branch, c)
 }
 
-func (w *Worktree) createBranch(opts *CheckoutOptions) error {
+func (w *Worktree) validateNewBranch(opts *CheckoutOptions) error {
 	if err := opts.Branch.Validate(); err != nil {
 		return err
 	}
@@ -287,9 +281,7 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 		opts.Hash = ref.Hash()
 	}
 
-	return w.r.Storer.SetReference(
-		plumbing.NewHashReference(opts.Branch, opts.Hash),
-	)
+	return nil
 }
 
 func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing.Hash, error) {
@@ -345,6 +337,15 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
+	if err := w.reset(opts); err != nil {
+		return err
+	}
+	return w.setHEADCommit(opts.Commit)
+}
+
+// reset updates the index and worktree without changing references. Checkout
+// switches HEAD afterward; Reset moves the current branch afterward.
+func (w *Worktree) reset(opts *ResetOptions) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -373,7 +374,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == SoftReset {
-		return w.setHEADCommit(opts.Commit)
+		return nil
 	}
 
 	t, err := w.r.getTreeFromCommitHash(opts.Commit)
@@ -387,24 +388,11 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
-	// For HardReset and KeepReset, capture the current HEAD tree before
-	// resetting HEAD. resetWorktreeToTree will diff prevTree→t and apply only
-	// those changes to the worktree. Since the diff is tree-to-tree, untracked
-	// files are invisible and are never deleted — matching real git reset --hard.
-	//
-	// If opts.fromTree is set (by Checkout), use that instead of calling
-	// headTree(). This handles the case where HEAD was already updated before
-	// Reset was called (e.g., in Checkout), ensuring we diff from the actual
-	// previous state rather than the new HEAD.
 	var prevTree *object.Tree
 	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		if opts.fromTree != nil {
-			prevTree = opts.fromTree
-		} else {
-			prevTree, err = w.headTree()
-			if err != nil {
-				return err
-			}
+		prevTree, err = w.headTree()
+		if err != nil {
+			return err
 		}
 	}
 
@@ -412,10 +400,6 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		if err := w.checkKeepResetConflicts(prevTree, t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
-	}
-
-	if err := w.setHEADCommit(opts.Commit); err != nil {
-		return err
 	}
 
 	var removedFiles []string

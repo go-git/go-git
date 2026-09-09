@@ -42,17 +42,17 @@ func newDoubleIter(from, to noder.Noder, hashEqual noder.Equal) (
 	var err error
 
 	if ii.from.iter, err = NewIter(from); err != nil {
-		return nil, fmt.Errorf("from: %s", err)
+		return nil, fmt.Errorf("from: %w", err)
 	}
 	if ii.from.current, err = ii.from.iter.Next(); turnEOFIntoNil(err) != nil {
-		return nil, fmt.Errorf("from: %s", err)
+		return nil, fmt.Errorf("from: %w", err)
 	}
 
 	if ii.to.iter, err = NewIter(to); err != nil {
-		return nil, fmt.Errorf("to: %s", err)
+		return nil, fmt.Errorf("to: %w", err)
 	}
 	if ii.to.current, err = ii.to.iter.Next(); turnEOFIntoNil(err) != nil {
-		return nil, fmt.Errorf("to: %s", err)
+		return nil, fmt.Errorf("to: %w", err)
 	}
 
 	ii.hashEqual = hashEqual
@@ -149,12 +149,12 @@ func (d *doubleIter) compare() (s comparison, err error) {
 
 	fromNumChildren, err := d.from.current.NumChildren()
 	if err != nil {
-		return comparison{}, fmt.Errorf("from: %s", err)
+		return comparison{}, fmt.Errorf("from: %w", err)
 	}
 
 	toNumChildren, err := d.to.current.NumChildren()
 	if err != nil {
-		return comparison{}, fmt.Errorf("to: %s", err)
+		return comparison{}, fmt.Errorf("to: %w", err)
 	}
 
 	s.fromIsEmptyDir = fromIsDir && fromNumChildren == 0

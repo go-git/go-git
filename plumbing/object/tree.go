@@ -181,6 +181,16 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 // Duplicate names are not rejected, so lookup depends on their modes and order.
 // Call Validate on each tree along the path to reject duplicates; validating
 // only the root does not validate its subtrees.
+//
+// Use errors.Is to match errors. A missing final entry returns ErrEntryNotFound;
+// a missing intermediate entry or one with a non-directory mode reports
+// ErrDirectoryNotFound. An intermediate directory pointing to another object
+// type reports ErrInvalidTree; an absent subtree reports plumbing.ErrObjectNotFound.
+// Path-validation errors are returned unchanged.
+//
+// Subtree read and decode errors identify the entry and wrap the cause, except
+// that causes matching io.EOF are included only as text to distinguish read
+// failures from normal iterator exhaustion.
 func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	if err := pathutil.ValidTreePath(path); err != nil {
 		return nil, err
@@ -235,15 +245,7 @@ func (t *Tree) dir(baseName string) (*Tree, error) {
 		return nil, fmt.Errorf("%w: entry %q has mode %s", ErrDirectoryNotFound, baseName, entry.Mode)
 	}
 
-	obj, err := t.s.EncodedObject(plumbing.TreeObject, entry.Hash)
-	if err != nil {
-		return nil, err
-	}
-
-	tree := &Tree{s: t.s}
-	err = tree.Decode(obj)
-
-	return tree, err
+	return readSubtree(t.s, entry)
 }
 
 func (t *Tree) entry(baseName string) (*TreeEntry, error) {
@@ -666,21 +668,25 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 	}
 }
 
-// Next returns the next object from the tree. Objects are returned in order
-// and subtrees are included. After the last object has been returned further
-// calls to Next() will return io.EOF.
+// Next returns the next entry in tree order, including directory entries.
+// After the last entry, Next returns io.EOF.
 //
-// Each entry's name is validated against pathutil.ValidTreePath as it
-// surfaces, so callers that funnel the returned name into filesystem
-// or archive output can trust it is free of `.git`-shaped components,
-// HFS+/NTFS variants, Windows reserved names, and traversal sequences.
-// A malformed entry stops the walk with the validator's error;
-// inspection-only callers that need to enumerate raw, unvalidated
-// names can read Tree.Entries directly or set skipPathValidation.
+// Entry names are checked with pathutil.ValidTreePath unless the internal
+// skipPathValidation flag is set. Callers inspecting unvalidated names can
+// read Tree.Entries directly. Path checks do not validate filesystem state.
 //
-// In the current implementation any objects which cannot be found in the
-// underlying repository will be skipped automatically. It is possible that this
-// may change in future versions.
+// Unreadable subtrees return errors identifying the entry. A directory entry
+// pointing to another object type reports ErrInvalidTree; an absent subtree
+// reports plumbing.ErrObjectNotFound. Other read and decode errors wrap their
+// cause, except that causes matching io.EOF are included only as text so that
+// errors.Is(err, io.EOF) identifies only normal exhaustion.
+//
+// After a path-validation or subtree-read error, calling Next again skips
+// the failed entry and continues with its siblings. ErrMaxTreeDepth is terminal:
+// it reports no entry and repeats on subsequent calls.
+//
+// Missing subtrees are errors even in partial clones: go-git does not lazily
+// fetch them, and omitting their entries could produce an incomplete index.
 func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 	var obj *Tree
 	for {
@@ -721,13 +727,12 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 		}
 
 		if entry.Mode == filemode.Dir {
-			obj, err = GetTree(w.s, entry.Hash)
+			obj, err = readSubtree(w.s, &entry)
 		}
 
 		name = simpleJoin(w.base, entry.Name)
 
 		if err != nil {
-			err = io.EOF
 			return name, entry, err
 		}
 
@@ -745,6 +750,93 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 
 	return name, entry, err
 }
+
+// readSubtree reads a directory entry's tree for lookup or enumeration.
+// Decode errors are preserved without another lookup, which could obscure
+// the original failure.
+func readSubtree(s storer.EncodedObjectStorer, e *TreeEntry) (*Tree, error) {
+	obj, err := s.EncodedObject(plumbing.TreeObject, e.Hash)
+	if err != nil {
+		return nil, subtreeReadError(s, e, err)
+	}
+	tree, err := DecodeTree(s, obj)
+	if err != nil {
+		return nil, subtreeError(e, err)
+	}
+	return tree, nil
+}
+
+// subtreeReadError distinguishes a missing object from a wrong-type object.
+// Typed lookups can return plumbing.ErrObjectNotFound for either, so an
+// untyped lookup is needed. If it finds a tree, preserve the original error;
+// otherwise report the wrong type or the untyped lookup's error.
+func subtreeReadError(s storer.EncodedObjectStorer, e *TreeEntry, err error) error {
+	obj, perr := s.EncodedObject(plumbing.AnyObject, e.Hash)
+	if perr != nil {
+		return subtreeError(e, perr)
+	}
+
+	if obj.Type() != plumbing.TreeObject {
+		return fmt.Errorf("%w: entry %q has mode %s but points at a %s",
+			ErrInvalidTree, e.Name, e.Mode, obj.Type())
+	}
+
+	return subtreeError(e, err)
+}
+
+// subtreeError identifies the entry and wraps cause unless it matches io.EOF.
+// EOF causes are included only as text so a failed read cannot be mistaken for
+// iterator exhaustion. No sentinel replaces them: EOF alone does not establish
+// that the object is missing or invalid. Causes joined with EOF keep the
+// identity of the errors joined alongside it, which callers match to tell a
+// missing subtree from an invalid one.
+func subtreeError(e *TreeEntry, cause error) error {
+	if !errors.Is(cause, io.EOF) {
+		return fmt.Errorf("%w: entry %q has mode %s", cause, e.Name, e.Mode)
+	}
+
+	text := fmt.Sprintf("entry %q has mode %s: %v", e.Name, e.Mode, cause)
+	kept := causesBesidesEOF(cause)
+	if kept == nil {
+		return errors.New(text)
+	}
+
+	return &subtreeEOFError{text: text, cause: kept}
+}
+
+// causesBesidesEOF returns the errors joined into err that do not match io.EOF,
+// or nil when it joins none. An error that wraps io.EOF along a single chain
+// cannot be separated from it, so it is left out.
+func causesBesidesEOF(err error) error {
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		return nil
+	}
+
+	var kept []error
+	for _, c := range joined.Unwrap() {
+		if !errors.Is(c, io.EOF) {
+			kept = append(kept, c)
+			continue
+		}
+		if inner := causesBesidesEOF(c); inner != nil {
+			kept = append(kept, inner)
+		}
+	}
+
+	return errors.Join(kept...)
+}
+
+// subtreeEOFError reports a subtree read that failed with io.EOF among its
+// causes. Its message names every cause while its chain omits io.EOF.
+type subtreeEOFError struct {
+	text  string
+	cause error
+}
+
+func (e *subtreeEOFError) Error() string { return e.text }
+
+func (e *subtreeEOFError) Unwrap() error { return e.cause }
 
 // Tree returns the tree that the tree walker most recently operated on.
 func (w *TreeWalker) Tree() *Tree {

@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -1602,4 +1603,184 @@ func TestWorktreeFilesystemHFSDotGitmodulesSymlinkAllowedWhenProtectionOff(t *te
 	fs := newWorktreeFilesystem(memfs.New(), false, false)
 	err := fs.Symlink("safe-target", ".g\u200citmodules")
 	assert.NoError(t, err, "HFS variant should be allowed when protectHFS is off")
+}
+
+func TestCheckoutRejectsAbsentSubtree(t *testing.T) {
+	t.Parallel()
+
+	const (
+		missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		siblingPath     = "zsibling"
+	)
+
+	dir := t.TempDir()
+	r, w, initCommit := initRepoWithReadme(t, dir)
+
+	payload := writeBlob(t, r.Storer, []byte("payload\n"))
+	absent := plumbing.NewHash(missingObjectID)
+	bad := buildCommitWithEntries(t, r.Storer, initCommit, initCommit.Hash,
+		[]object.TreeEntry{
+			{Name: "adir", Mode: filemode.Dir, Hash: absent},
+			{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+		},
+		"subtree the repository does not hold\n")
+
+	beforeIndex, err := r.Storer.Index()
+	require.NoError(t, err)
+
+	err = w.Checkout(&CheckoutOptions{Hash: bad.Hash, Force: true})
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+	_, statErr := os.Lstat(filepath.Join(dir, siblingPath))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+
+	afterIndex, err := r.Storer.Index()
+	require.NoError(t, err)
+	assert.Equal(t, beforeIndex, afterIndex)
+}
+
+type promisorStorage struct {
+	storage.Storer
+}
+
+func (promisorStorage) PromisorObjectPacks() ([]plumbing.Hash, error) {
+	const promisorPackID = "cccccccccccccccccccccccccccccccccccccccc"
+
+	return []plumbing.Hash{plumbing.NewHash(promisorPackID)}, nil
+}
+
+func TestCheckoutRejectsAbsentSubtreeInPartialClone(t *testing.T) {
+	t.Parallel()
+
+	const (
+		missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		siblingPath     = "zsibling"
+	)
+
+	dir := t.TempDir()
+	r, _, initCommit := initRepoWithReadme(t, dir)
+
+	payload := writeBlob(t, r.Storer, []byte("payload\n"))
+	absent := plumbing.NewHash(missingObjectID)
+	bad := buildCommitWithEntries(t, r.Storer, initCommit, initCommit.Hash,
+		[]object.TreeEntry{
+			{Name: "adir", Mode: filemode.Dir, Hash: absent},
+			{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+		},
+		"subtree withheld by a promisor remote\n")
+
+	pr, err := Open(promisorStorage{r.Storer}, osfs.New(dir))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pr.Close()) })
+
+	pw, err := pr.Worktree()
+	require.NoError(t, err)
+
+	err = pw.Checkout(&CheckoutOptions{Hash: bad.Hash, Force: true})
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+	idx, err := pr.Storer.Index()
+	require.NoError(t, err)
+
+	for _, e := range idx.Entries {
+		assert.NotEqual(t, siblingPath, e.Name)
+	}
+}
+
+func TestCheckoutRejectsDirectoryEntryPointingAtBlob(t *testing.T) {
+	t.Parallel()
+
+	const entryName = "evil"
+
+	t.Run("in the root tree", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		r, w, initCommit := initRepoWithReadme(t, dir)
+
+		payload := writeBlob(t, r.Storer, []byte("payload\n"))
+		bad := buildCommitWithEntries(t, r.Storer, initCommit, initCommit.Hash,
+			[]object.TreeEntry{{Name: entryName, Mode: filemode.Dir, Hash: payload}},
+			"directory entry over a blob\n")
+
+		err := w.Checkout(&CheckoutOptions{Hash: bad.Hash, Force: true})
+		require.ErrorIs(t, err, object.ErrInvalidTree)
+
+		_, statErr := os.Lstat(filepath.Join(dir, entryName))
+		assert.ErrorIs(t, statErr, os.ErrNotExist)
+	})
+
+	t.Run("replacing a symlink out of the worktree", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			victimName    = "shadow"
+			victimContent = "victim\n"
+		)
+
+		victim := t.TempDir()
+		victimFile := filepath.Join(victim, victimName)
+		err := os.WriteFile(victimFile, []byte(victimContent), 0o644)
+		require.NoError(t, err)
+
+		dir := t.TempDir()
+		r, w, initCommit := initRepoWithReadme(t, dir)
+
+		link := writeBlob(t, r.Storer, []byte(victim))
+		withLink := buildCommitWithEntries(t, r.Storer, initCommit, initCommit.Hash,
+			[]object.TreeEntry{{Name: entryName, Mode: filemode.Symlink, Hash: link}},
+			"add evil symlink\n")
+
+		err = w.Checkout(&CheckoutOptions{Hash: withLink.Hash, Force: true})
+		require.NoError(t, err)
+
+		fi, err := os.Lstat(filepath.Join(dir, entryName))
+		require.NoError(t, err)
+		require.NotZero(t, fi.Mode()&os.ModeSymlink)
+
+		payload := writeBlob(t, r.Storer, []byte("payload\n"))
+		bad := buildCommitReplacingRootEntry(t, r.Storer, withLink, withLink.Hash,
+			object.TreeEntry{Name: entryName, Mode: filemode.Dir, Hash: payload})
+
+		err = w.Checkout(&CheckoutOptions{Hash: bad.Hash, Force: true})
+		require.ErrorIs(t, err, object.ErrInvalidTree)
+
+		data, err := os.ReadFile(victimFile)
+		require.NoError(t, err)
+		assert.Equal(t, victimContent, string(data))
+
+		names, err := os.ReadDir(victim)
+		require.NoError(t, err)
+		require.Len(t, names, 1)
+		assert.Equal(t, victimName, names[0].Name())
+	})
+}
+
+// initRepoWithReadme initialises a repository at dir with a single
+// committed file, and returns it alongside its worktree and that commit.
+func initRepoWithReadme(t *testing.T, dir string) (*Repository, *Worktree, *object.Commit) {
+	t.Helper()
+
+	const readmePath = "README"
+
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = r.Close() })
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	require.NoError(t, util.WriteFile(w.Filesystem(), readmePath, []byte("init"), 0o644))
+
+	_, err = w.Add(readmePath)
+	require.NoError(t, err)
+
+	hash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	commit, err := r.CommitObject(hash)
+	require.NoError(t, err)
+
+	return r, w, commit
 }
