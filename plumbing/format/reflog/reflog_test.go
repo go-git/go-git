@@ -294,7 +294,7 @@ func TestDecodeLongLine(t *testing.T) {
 	assert.Equal(t, message, entries[0].Message)
 }
 
-func FuzzDecode(f *testing.F) {
+func FuzzReflogDecode(f *testing.F) {
 	// Valid entries.
 	f.Add([]byte("0000000000000000000000000000000000000000 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Author Name <author@example.com> 1234567890 +0000\tcommit (initial): Initial commit\n"))
 	f.Add([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Author <a@b.com> 1234567890 +0000\n"))

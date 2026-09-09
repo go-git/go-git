@@ -76,7 +76,7 @@ func FuzzReadLine(f *testing.F) {
 	})
 }
 
-func FuzzScanner(f *testing.F) {
+func FuzzPktlineScanner(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("0000"))
 	f.Add([]byte("0001"))

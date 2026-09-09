@@ -15,7 +15,7 @@ import (
 	gogitbinary "github.com/go-git/go-git/v6/utils/binary"
 )
 
-func FuzzParser(f *testing.F) {
+func FuzzPackfileParser(f *testing.F) {
 	if pf, err := fixtures.Basic().One().Packfile(); err == nil {
 		if data, rerr := io.ReadAll(pf); rerr == nil {
 			f.Add(data)

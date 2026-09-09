@@ -112,7 +112,7 @@ func decodeSucceeds(s *DecoderSuite, text string) {
 	s.Equal("value", remote.Option("key"))
 }
 
-func FuzzDecoder(f *testing.F) {
+func FuzzConfigDecoder(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, input []byte) {
 		d := NewDecoder(bytes.NewReader(input))
 		cfg := &Config{}
