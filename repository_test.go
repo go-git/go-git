@@ -190,6 +190,54 @@ func TestPlainInitAndPlainOpen(t *testing.T) {
 	})
 }
 
+func TestPlainOpenRelativeWorktree(t *testing.T) {
+	t.Parallel()
+
+	mainDir := filepath.Join(t.TempDir(), "main")
+	repo, err := PlainInit(mainDir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	cfg, err := repo.Config()
+	require.NoError(t, err)
+	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+	cfg.Raw.Section("extensions").SetOption("relativeWorktrees", "true")
+	require.NoError(t, repo.SetConfig(cfg))
+
+	linkedDir := filepath.Join(mainDir, "relative")
+	metadataDir := filepath.Join(mainDir, GitDirName, "worktrees", "relative")
+	require.NoError(t, os.MkdirAll(linkedDir, 0o755))
+	require.NoError(t, os.MkdirAll(metadataDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(linkedDir, GitDirName),
+		[]byte("gitdir: ../.git/worktrees/relative\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDir, "commondir"),
+		[]byte("../..\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDir, "gitdir"),
+		[]byte("../../../relative/.git\n"),
+		0o644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDir, plumbing.HEAD.String()),
+		[]byte("ref: refs/heads/master\n"),
+		0o644,
+	))
+
+	linkedRepo, err := PlainOpen(linkedDir)
+	require.NoError(t, err)
+	defer func() { _ = linkedRepo.Close() }()
+
+	worktree, err := linkedRepo.Worktree()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Clean(linkedDir), filepath.Clean(worktree.Filesystem().Root()))
+}
+
 type RepositorySuite struct {
 	BaseSuite
 }
