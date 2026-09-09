@@ -2,11 +2,13 @@ package http
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
+	"unicode"
 
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -14,8 +16,17 @@ import (
 
 // Err represents an HTTP error response.
 type Err struct {
-	URL    *url.URL
+	// URL is the URL the failing request was made against, an independent copy
+	// redacted the way Error renders it. Reading the field is as safe as
+	// reading the message.
+	URL *url.URL
+
+	// Status is the status code of the response.
 	Status int
+
+	// Reason is the response body, truncated to a bounded size and with every
+	// character that would not print as itself replaced by a space. Reading
+	// the field is as safe as reading the message.
 	Reason string
 }
 
@@ -30,6 +41,28 @@ func (e *Err) Error() string {
 	return fmt.Sprintf(format, redactedURL(e.URL), e.Status)
 }
 
+// maxErrorBodySize caps how much of an error response body is read into the
+// returned error. The body may come from a server the caller never named — a
+// redirect target — so it is not read to EOF.
+const maxErrorBodySize = 8 << 10
+
+// maxRedactedComponent caps how long a part of a URL — host, path, query,
+// username — may be and still be rendered. Anything longer is replaced whole.
+//
+// A URL printed here is often a redirect target, so its length is the server's
+// choice, and net/http accepts 10 MB of response headers by default. Redacting
+// a query costs several times its length, and checkRedirect renders refusals
+// eagerly, so an uncapped Location becomes a message the caller then holds.
+//
+// A kilobyte is far past any real repository URL.
+const maxRedactedComponent = 1 << 10
+
+// maxDrainSize caps how much of an error response body is read and discarded
+// after the message has been taken. Closing a body with bytes unread discards
+// the connection instead of returning it to the pool, so a large error page
+// would cost a new connection on every attempt.
+const maxDrainSize = 1 << 20
+
 // checkError maps HTTP response status codes to typed transport errors.
 func checkError(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
@@ -39,14 +72,17 @@ func checkError(r *http.Response) error {
 	var reason string
 	var messageBuffer bytes.Buffer
 	if r.Body != nil {
-		messageLength, _ := messageBuffer.ReadFrom(r.Body)
+		messageLength, _ := messageBuffer.ReadFrom(io.LimitReader(r.Body, maxErrorBodySize))
 		if messageLength > 0 {
-			reason = messageBuffer.String()
+			reason = sanitizeReason(messageBuffer.String())
 		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrainSize))
 	}
 
 	err := &Err{
-		URL:    r.Request.URL,
+		// Redacted here rather than in Error, so the field carries the same
+		// guarantee the message does and does not alias the live request URL.
+		URL:    redactURL(r.Request.URL),
 		Status: r.StatusCode,
 		Reason: reason,
 	}
@@ -65,42 +101,100 @@ func checkError(r *http.Response) error {
 
 const infoRefsPath = "/info/refs"
 
-// applyRedirect derives a new base URL from the final request URL after
-// the HTTP client followed any redirects during the /info/refs GET.
+// effectiveBase returns base with the path in the spelling the requests built
+// from it actually carry.
 //
-// The logic mirrors canonical git's update_url_from_redirect(): strip
-// the request-specific tail ("/info/refs") from the final URL to recover
-// the new base. If the tail is missing, the redirect target is
-// inconsistent and we return an error — canonical git die()s here
-// because a mismatch could let a malicious server rewrite the base URL
-// to an unrelated repository.
+// discovery.request assembles its URL with JoinPath, which cleans the path, and
+// applyRedirect recovers the base from the request URL that came back, so a
+// caller path of "/repo.git/" is requested as "/repo.git/info/refs" and
+// recovered as "/repo.git". Comparing that against the caller's own spelling
+// would read an ordinary clone as a repository the server moved:
+// Options.Credentials is consulted a second time with Redirected set, and both
+// documented ways of scoping a credential to a path decline that call, leaving
+// the session anonymous. Deriving the base through the same round trip keeps
+// every later comparison between like and like.
 //
-// Scheme is validated to prevent SSRF via unsupported protocols (e.g.
-// a redirect to file:// or gopher://). Cross-scheme redirects only
-// permit an upgrade from http to https; downgrades must not influence
-// the session base URL used for subsequent requests.
+// Cleaning changes only the spelling, never which resource is named: it
+// collapses "//", "/./" and a trailing "/" and leaves %2F alone.
+func effectiveBase(base *url.URL) (*url.URL, error) {
+	// Built exactly as discovery.request builds it, or the two could disagree
+	// about the spelling this exists to agree on.
+	origin := &url.URL{Scheme: base.Scheme, Host: base.Host, Path: base.Path, RawPath: base.RawPath}
+	joined := origin.JoinPath("info/refs").EscapedPath()
+	// JoinPath leaves a relative path relative, so a repository at the root of
+	// an origin joins to "info/refs", not "/info/refs". URL.String inserts the
+	// separator when there is a host, so discovery.request never sends it that
+	// way; insert it on the same condition to match the path the request carries.
+	if origin.Host != "" && !strings.HasPrefix(joined, "/") {
+		joined = "/" + joined
+	}
+	if !strings.HasSuffix(joined, infoRefsPath) {
+		return nil, fmt.Errorf(
+			"http transport: repository path %q leaves no base to request",
+			base.EscapedPath(),
+		)
+	}
+
+	out := *base
+	// Defensive, and uncoverable: no input reaches this error. EscapedPath
+	// always returns a valid encoding, and cutting the literal /info/refs tail
+	// cannot split a %XX sequence because the byte at the cut is "/". Kept so a
+	// future caller passing a hand-built path cannot slip a broken encoding
+	// through, and recorded so the missing test is a decision, not an oversight.
+	if err := setEscapedPath(&out, joined[:len(joined)-len(infoRefsPath)]); err != nil {
+		return nil, fmt.Errorf(
+			"http transport: repository path %q is unusable: %w",
+			base.EscapedPath(), err,
+		)
+	}
+	return &out, nil
+}
+
+// applyRedirect derives a new base URL from the final request URL after the
+// HTTP client followed any redirects during the /info/refs GET.
+//
+// It mirrors canonical git's update_url_from_redirect(): strip the
+// request-specific "/info/refs" tail to recover the new base. A missing tail
+// is an error — git die()s here, because a mismatch could let a server rewrite
+// the base to an unrelated repository. The scheme is checked for the same
+// reason, keeping a redirect to file:// or gopher:// out of the session;
+// cross-scheme redirects permit only the upgrade schemeUpgrade describes.
+//
+// The path is carried in the spelling the target is written in, never in the
+// one it decodes to: on a forge with nested groups "/a%2Fb.git" and "/a/b.git"
+// are two repositories, so decoding the escaping away — or letting the base's
+// own outlive the path it described — would address a repository neither the
+// caller nor the redirect named.
 func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	if resp.Request == nil {
 		return baseURL, nil
 	}
 
 	final := resp.Request.URL
-	if !strings.HasSuffix(final.Path, infoRefsPath) {
-		// Azure DevOps redirects unauthenticated requests for private repos
-		// to /_signin. Treat that as an authentication-required condition
-		// rather than a transport failure so callers can detect it via
-		// errors.Is(err, transport.ErrAuthenticationRequired). See issue #2200.
-		if strings.HasSuffix(final.Path, "/_signin") {
-			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, final.Path)
+	// Matched against the escaped path: a target ending in "/info%2Frefs" has
+	// one last segment spelled "info/refs", which is not the discovery request
+	// coming back.
+	finalPath := final.EscapedPath()
+	if !strings.HasSuffix(finalPath, infoRefsPath) {
+		// Azure DevOps answers an unauthenticated request for a private
+		// repository with a redirect to /_signin rather than a 401. Report it as
+		// an authentication challenge, so a caller sees one instead of a
+		// redirect target that leaves no base to recover.
+		if strings.HasSuffix(finalPath, "/_signin") {
+			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, finalPath)
 		}
 		return nil, fmt.Errorf(
 			"http transport: redirect target %q does not end with %s",
-			final.Path, infoRefsPath,
+			finalPath, infoRefsPath,
 		)
 	}
+	// Cut from the escaped spelling: an index taken there does not fall in the
+	// same place in the decoded one.
+	targetPath := finalPath[:len(finalPath)-len(infoRefsPath)]
+
 	if final.Host == baseURL.Host &&
 		final.Scheme == baseURL.Scheme &&
-		strings.TrimSuffix(final.Path, infoRefsPath) == baseURL.Path {
+		targetPath == baseURL.EscapedPath() {
 		return baseURL, nil
 	}
 
@@ -117,81 +211,69 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	redirected := *baseURL
 	redirected.Host = final.Host
 	redirected.Scheme = final.Scheme
-	redirected.Path = final.Path[:len(final.Path)-len(infoRefsPath)]
+	// Uncoverable for the same reason as the call in effectiveBase: targetPath
+	// is cut from an EscapedPath on a "/". A server chooses this path, so the
+	// guard stays even though nothing it can send reaches the error.
+	if err := setEscapedPath(&redirected, targetPath); err != nil {
+		return nil, fmt.Errorf(
+			"http transport: redirect target %q has an unusable path: %w",
+			finalPath, err,
+		)
+	}
+
+	// The query is the caller's, not the server's: it comes from the repository
+	// URL and rides on every later request built from this base. Several forges
+	// accept a credential there (?private_token=, ?job_token=), so it drops
+	// exactly where a credential drops — gated on credentialsMayFollow rather
+	// than on "the origin changed at all", so the two rules cannot drift apart.
+	// The http-to-https upgrade therefore keeps the query: it never rides the
+	// discovery GET and first leaves on the pack POST, by then over TLS. The
+	// target's own query is never picked up here, only dropped.
+	if !credentialsMayFollow(baseURL, &redirected) {
+		redirected.RawQuery = ""
+		redirected.ForceQuery = false
+	}
 	return &redirected, nil
 }
 
-// schemeUpgrade reports whether the scheme transition from one URL to
-// another is the one cross-scheme change go-git permits: a plain-http
-// origin upgrading to https. It strictly improves confidentiality and is
-// how servers steer clients off cleartext.
+// setEscapedPath sets Path and RawPath so EscapedPath returns escaped exactly.
+// It leaves RawPath empty when the decoded path has the same spelling, which is
+// what url.Parse stores and keeps a URL built here comparable with one parsed
+// from the same string, and rejects invalid encodings rather than silently
+// re-escaping them.
+func setEscapedPath(u *url.URL, escaped string) error {
+	decoded, err := url.PathUnescape(escaped)
+	if err != nil {
+		return err
+	}
+	u.Path = decoded
+	u.RawPath = ""
+	if u.EscapedPath() != escaped {
+		u.RawPath = escaped
+	}
+	return nil
+}
+
+// schemeUpgrade reports whether the scheme transition from one URL to another
+// is the one cross-scheme change go-git permits: a plain-http origin upgrading
+// to https.
 //
 // Permitting it at all is a deliberate deviation: curl, git and the Fetch
 // standard all count scheme as part of host identity and drop credentials on
 // the upgrade. Auth is sent pre-emptively here, so an http origin has already
-// spent its credential in cleartext on the first request and refusing the
-// upgrade would break the clone without unspending it. The host is unchanged,
-// where an on-path attacker needs a valid certificate to receive anything.
+// spent its credential in cleartext on the first request; refusing the upgrade
+// would break the clone without unspending it. The host is unchanged, where an
+// on-path attacker needs a valid certificate to receive anything.
 //
-// applyRedirect ("may this become the new base URL?") and
-// credentialsMayFollow ("may credentials travel here?") are both built on it,
-// so the two cannot drift apart.
+// applyRedirect and credentialsMayFollow are both built on this, so the
+// permitted direction is decided in one place, and each adds its own
+// condition: applyRedirect asks only about the scheme, while
+// credentialsMayFollow also requires the default ports, because a port is part
+// of an origin. An upgrade from http on 8080 to https on 8443 therefore moves
+// the session and leaves the credential behind — the safe direction for a base
+// URL is wider than the safe direction for a secret.
 func schemeUpgrade(from, to string) bool {
 	return strings.EqualFold(from, "http") && strings.EqualFold(to, "https")
-}
-
-// canonicalHost returns u's hostname in the form origins are compared in.
-//
-// An address literal is normalised by netip, so the many spellings of one
-// address are one origin. Two literals are the same origin exactly when netip
-// parses them to the same Addr, which is also how the WHATWG URL Standard
-// compares hosts. An IPv4-mapped literal is deliberately not unmapped onto
-// the IPv4 it dials: reaching the same endpoint is not the same authority,
-// since net/http sends the literal as written in Host and a server may route
-// the two spellings to different virtual hosts.
-//
-// netip also keeps a scope zone verbatim, which is what origin comparison
-// needs: net resolves a zone to an interface by exact name, so folding %eth0
-// onto %ETH0 would call two hosts the same origin that net dials down
-// different interfaces.
-//
-// A registered name is ASCII-lowercased. That fold is the only liberty taken;
-// every other difference in spelling is a different origin.
-//
-// A trailing root dot is one such difference and is kept, for the same reason
-// as the IPv4-mapped literal: curl and the WHATWG URL Standard both hold
-// "example.com." and "example.com" to be distinct hosts, and although
-// crypto/tls and crypto/x509 fold the dot when they authenticate the peer,
-// net/http sends the name as written in Host.
-//
-// The fold is deliberately ASCII-only. strings.ToLower and strings.EqualFold
-// apply Unicode case mapping, which folds U+03C2 onto U+03C3 and so would
-// call two hosts the same origin when they resolve to different servers. An
-// ASCII-only fold cannot merge two names DNS keeps apart.
-//
-// No IDNA mapping is applied either, so a unicode hostname is a different
-// origin from the punycode encoding of it, and from another Unicode case of
-// itself, even though all three reach the same server. Mapping through
-// golang.org/x/net/idna would join them, but it can only widen this equality,
-// never narrow it, so leaving it out can cost a credential across such a
-// redirect and cannot forward one. Against that cost, go-git pins x/net while
-// net/http uses the copy vendored into the toolchain: the two are versioned
-// separately, so a release that moves the Unicode tables under one and not
-// the other would have this merge origins net/http still dials apart. That is
-// the failure this comparison exists to prevent, and comparing bytes has no
-// such mode.
-func canonicalHost(u *url.URL) string {
-	host := u.Hostname()
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return addr.String()
-	}
-	b := []byte(host)
-	for i := range b {
-		if b[i] >= 'A' && b[i] <= 'Z' {
-			b[i] += 'a' - 'A'
-		}
-	}
-	return string(b)
 }
 
 // effectivePort returns u's port as the connection will use it: the scheme's
@@ -219,14 +301,31 @@ func effectivePort(u *url.URL) string {
 // sent to another.
 //
 // The relation is deliberately asymmetric: scheme, host and effective port
-// must all match, except that a plain http origin may upgrade to https on
-// the same host (see schemeUpgrade), mirroring applyRedirect.
+// must all match, except that http on port 80 may upgrade to https on port
+// 443 of the same host (see schemeUpgrade), mirroring applyRedirect. Any
+// other port pairing is two origins as usual, and the reverse direction never
+// follows.
 //
 // Host matching is exact. Unlike Go's http.Client, which forwards credentials
 // from a host to any subdomain of it, a subdomain is a different origin here —
 // matching canonical git and libcurl.
 func credentialsMayFollow(from, to *url.URL) bool {
-	if canonicalHost(from) != canonicalHost(to) {
+	// Hostnames are compared as bytes, folding nothing: not ASCII case, not the
+	// spellings of one address literal, not a trailing root dot, not a unicode
+	// name against the punycode that encodes it. Byte equality is finer than any
+	// fold, so it can only find more origin crossings, never fewer; the cost is a
+	// credential lost across a redirect that merely respells the host, which the
+	// caller can supply again for the origin the chain reached.
+	//
+	// A fold made here that net/http does not make is the dangerous direction:
+	// no crossing would be recorded on a hop where net/http had already taken
+	// Authorization away, so nothing would be re-acquired, no
+	// transport.CredentialsDroppedError would name the origin that challenged,
+	// and the headers net/http does not know are credentials would travel on.
+	//
+	// Hostname panics on a nil URL, deliberately: stripCredentials treats a URL
+	// it cannot read as a crossing and never reaches here with one.
+	if from.Hostname() != to.Hostname() {
 		return false
 	}
 	if strings.EqualFold(from.Scheme, to.Scheme) {
@@ -267,22 +366,233 @@ func filterHeaders(h http.Header) http.Header {
 	return filtered
 }
 
+// safeQueryParams lists the query parameters go-git puts on a URL itself,
+// against the exact values it writes for them. It is the query-string
+// counterpart of safeHeaders, with one difference that decides its shape.
+//
+// For a header the name is enough, because a caller cannot choose the name
+// go-git sends its own headers under. A query parameter is not like that: the
+// only "service" this transport writes is the one it chose, but the name is a
+// name a forge is free to spell a token with, and transport.Request.Command is
+// an unvalidated string, so ?service=<secret> can arrive from either side.
+// Matching the value as well as the name is what keeps such an element out of
+// error strings and trace output — everything that is not a value below is
+// redacted like any other parameter.
+//
+// Archive discovery is not a third value: git archive discovers through the
+// upload-pack endpoint, so "service=" only ever carries one of the two below.
+//
+// The value match is also what makes the legacy ";" separator harmless.
+// net/url does not recognise it, so "service=git-upload-pack;private_token=x"
+// arrives here as one element whose value is that whole tail, which no entry
+// matches.
+//
+// Add nothing whose values a caller can choose.
+var safeQueryParams = map[string]map[string]struct{}{
+	"service": {
+		transport.UploadPackService:  {},
+		transport.ReceivePackService: {},
+	},
+}
+
+// ownQueryParam reports whether a query element is one this transport wrote
+// itself, and so may be rendered as it is. A parameter with no value is never
+// one: nothing distinguishes a bare flag from a bare secret.
+func ownQueryParam(name, value string, hasValue bool) bool {
+	if !hasValue {
+		return false
+	}
+	_, ok := safeQueryParams[name][value]
+	return ok
+}
+
+// redactedQuery replaces the value of every query parameter that is not
+// go-git's own, because a credential in a query string is a pattern several
+// forges support (?private_token=, ?job_token=).
+//
+// The parameter's name survives, so a message still says what was sent. A
+// parameter with no value at all is replaced whole: nothing distinguishes a
+// bare flag from a bare secret.
+//
+// A query past maxRedactedComponent is replaced whole rather than walked:
+// trimming it to fit would cut inside an element and print the prefix of its
+// value. The cap applies to the result too, since replacing values lengthens
+// it — a kilobyte of "&" renders as nine. Bounding both ends is what keeps
+// redacting twice a no-op, which an *Err needs: it holds a URL that Error
+// renders through here again.
+//
+// It says "REDACTED" where bounded says "TRUNCATED" because every other bare
+// word is a valueless element, which this replaces whole.
+func redactedQuery(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	if len(raw) > maxRedactedComponent {
+		return "REDACTED"
+	}
+	var b strings.Builder
+	b.Grow(len(raw))
+	for i, rest := 0, raw; ; i++ {
+		param, tail, more := strings.Cut(rest, "&")
+		if i > 0 {
+			b.WriteByte('&')
+		}
+		name, value, hasValue := strings.Cut(param, "=")
+		switch {
+		// An element go-git wrote itself is rendered as it is. Both halves are
+		// matched, so a caller-chosen value under one of those names is not.
+		case ownQueryParam(name, value, hasValue):
+			b.WriteString(param)
+		case !hasValue || value == "":
+			b.WriteString("REDACTED")
+		default:
+			b.WriteString(name)
+			b.WriteString("=REDACTED")
+		}
+		if !more {
+			break
+		}
+		rest = tail
+	}
+	if b.Len() > maxRedactedComponent {
+		return "REDACTED"
+	}
+	return b.String()
+}
+
+// bounded returns s, or "TRUNCATED" when s is longer than
+// maxRedactedComponent.
+//
+// The two words report different things — a length, and a withheld secret —
+// and a reader needs to tell them apart. The query is the one part that says
+// "REDACTED" for a length; see redactedQuery.
+func bounded(s string) string {
+	if len(s) > maxRedactedComponent {
+		return "TRUNCATED"
+	}
+	return s
+}
+
+// sanitizeReason replaces every character in s that would not print as itself
+// with a space, so a server's error body renders as text.
+//
+// The body arrives as the far end wrote it, and unlike a URL nothing has
+// escaped it on the way: url.Parse rejects a control character, so no *url.URL
+// in this package can carry one, while a body can carry any byte. Rendered
+// unchanged, an escape sequence in it redraws the reader's terminal and a
+// newline forges a line that reads as a separate message.
+//
+// unicode.IsPrint excludes both: the C0 and C1 controls that begin such a
+// sequence, and the format characters that reorder what follows without
+// printing anything themselves.
+//
+// A space rather than nothing, because removing a character joins the text on
+// either side of it into a word the server did not send. Invalid encoding
+// decodes to U+FFFD, which is printable and so survives, leaving one
+// unreadable character where the bytes were.
+func sanitizeReason(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return ' '
+	}, s)
+}
+
+// redactURL returns a copy of u with anything a caller can have put a secret
+// in replaced, and every part short enough to print. Nothing the copy holds is
+// shared with u but its immutable strings.
+//
+// Userinfo without a password is left as it is, matching url.URL.Redacted: a
+// bare username is an identity, not a secret, and printing it is how a caller
+// tells two clone URLs apart. On the paths that print a redirect target —
+// checkRedirect's refusals and redactClientError — that username came out of a
+// Location header, so a target of the form https://<token>@host/ would have
+// its token printed.
+//
+// Redacting an already-redacted URL returns it unchanged, so a URL kept on an
+// error and rendered again comes out the same.
+func redactURL(u *url.URL) *url.URL {
+	if u == nil {
+		return nil
+	}
+	redacted := *u
+	redacted.Host = bounded(u.Host)
+	if path := u.EscapedPath(); len(path) > maxRedactedComponent {
+		redacted.Path, redacted.RawPath = bounded(path), ""
+	}
+	redacted.RawQuery = redactedQuery(u.RawQuery)
+	// The fragment never reaches the wire — net/http omits it from the request
+	// URI — but it reaches every message this renders.
+	if u.Fragment != "" {
+		redacted.Fragment = "REDACTED"
+		redacted.RawFragment = ""
+	}
+	if u.User != nil {
+		name := bounded(u.User.Username())
+		if _, hasPassword := u.User.Password(); hasPassword {
+			redacted.User = url.UserPassword(name, "REDACTED")
+		} else if name != u.User.Username() {
+			redacted.User = url.User(name)
+		}
+	}
+	return &redacted
+}
+
+// redactedURL renders u the way redactURL redacts it. Every error string and
+// trace line in this package prints a URL through it.
 func redactedURL(u *url.URL) string {
 	if u == nil {
 		return ""
 	}
-	if u.User == nil {
-		return u.String()
+	return redactURL(u).String()
+}
+
+// redactedClientError reports msg in place of err's own message, and unwraps
+// to err so errors.Is and errors.As still reach it.
+type redactedClientError struct {
+	msg string
+	err error
+}
+
+func (e *redactedClientError) Error() string { return e.msg }
+func (e *redactedClientError) Unwrap() error { return e.err }
+
+// redactClientError rebuilds the message of a *url.Error from client.Do with
+// its URL rendered through redactedURL. Any other error is returned unchanged.
+//
+// net/http copies the Location header into url.Error.URL verbatim, so that URL
+// is the redirect target's own choice of bytes: a secret it planted is printed,
+// and a megabyte it sent is retained. Every guard here has already run by then.
+//
+// The wrapped error is bounded but not redacted. net/http builds it from the
+// target too — a DNS failure names the host it looked up — but it is prose
+// this package does not parse, and Unwrap leaves the original reachable.
+//
+// The URL is quoted, as url.Error quotes it, so a URL with nothing to redact
+// renders the way url.Error renders it. Only a URL this withholds a part of
+// reads differently, which is the difference worth seeing.
+func redactClientError(err error) error {
+	var uerr *url.Error
+	if !errors.As(err, &uerr) {
+		return err
 	}
-	if _, hasPassword := u.User.Password(); !hasPassword {
-		return u.String()
+	cause := bounded(uerr.Err.Error())
+	u, perr := url.Parse(uerr.URL)
+	if perr != nil {
+		// Omit a URL that will not parse rather than print what made it so.
+		return &redactedClientError{msg: fmt.Sprintf("%s: %s", uerr.Op, cause), err: err}
 	}
-	redacted := *u
-	redacted.User = url.UserPassword(u.User.Username(), "REDACTED")
-	return redacted.String()
+	return &redactedClientError{
+		msg: fmt.Sprintf("%s %q: %s", uerr.Op, redactedURL(u), cause),
+		err: err,
+	}
 }
 
 // doRequest performs an HTTP request and returns a typed error on failure.
+//
+// Every non-2xx status is turned into an error here, so a caller that saw a nil
+// error has a 2xx response and need not check the status again.
 func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 	traceHTTP := trace.HTTP.Enabled()
 	if traceHTTP {
@@ -291,7 +601,9 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		// The only client.Do in this package, and so the only place the URL
+		// net/http embeds in its error can be caught.
+		return nil, redactClientError(err)
 	}
 
 	if traceHTTP {
@@ -305,14 +617,53 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 	return res, checkError(res)
 }
 
-// applyAuth sets basic auth from URL userinfo and/or the authorizer function.
-func applyAuth(httpReq *http.Request, baseURL *url.URL, authorizer func(*http.Request) error) error {
-	if baseURL.User != nil {
-		password, _ := baseURL.User.Password()
-		httpReq.SetBasicAuth(baseURL.User.Username(), password)
+// basicAuth returns an authorizer setting HTTP Basic credentials from userinfo,
+// or nil when there is none to set.
+func basicAuth(user *url.Userinfo) Authorizer {
+	if user == nil {
+		return nil
 	}
-	if authorizer != nil {
-		return authorizer(httpReq)
+	username := user.Username()
+	password, _ := user.Password()
+	return func(req *http.Request) error {
+		req.SetBasicAuth(username, password)
+		return nil
 	}
-	return nil
+}
+
+// combine returns an authorizer applying each non-nil fn in order, or nil when
+// there is nothing to apply. Order matters and later wins: a credential in the
+// repository URL is applied before a caller's callback, which may replace it.
+func combine(fns ...Authorizer) Authorizer {
+	kept := make([]Authorizer, 0, len(fns))
+	for _, fn := range fns {
+		if fn != nil {
+			kept = append(kept, fn)
+		}
+	}
+	switch len(kept) {
+	case 0:
+		return nil
+	case 1:
+		return kept[0]
+	}
+	return func(req *http.Request) error {
+		for _, fn := range kept {
+			if err := fn(req); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// applyAuth authenticates req. A nil authorizer leaves it unauthenticated.
+//
+// The one credential that does not come through here is the retry's in
+// reauthenticate, which applies the authorizer it just composed.
+func applyAuth(req *http.Request, authorizer Authorizer) error {
+	if authorizer == nil {
+		return nil
+	}
+	return authorizer(req)
 }

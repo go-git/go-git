@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -35,6 +36,78 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
+
+// A source or an authorizer that fails must not be treated as one that
+// declined: Chain's own documentation calls that downgrade to an anonymous
+// request unacceptable. Every place the transport asks has to agree, and they
+// are separate call sites with separate error handling.
+//
+// Zero requests reaching the server is what tells "failed closed" apart from
+// "proceeded without a credential" — a bare require.Error would also pass if
+// the request went out anonymously and the server happened to answer with an
+// error. The settle row is the exception and says why in place.
+func TestHandshakeFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	errStore := errors.New("credential store unavailable")
+
+	t.Run("the source fails on the first request", func(t *testing.T) {
+		t.Parallel()
+
+		base, seen := advertServer(t)
+		_, err := handshakeAt(t, base, Options{
+			Credentials: func(context.Context, *CredentialRequest) (*Credential, error) {
+				return nil, errStore
+			},
+		})
+		require.ErrorIs(t, err, errStore)
+		assert.Empty(t, seen.all(),
+			"a failing credential source must stop the request, not send it anonymously")
+	})
+
+	t.Run("the authorizer fails on the first request", func(t *testing.T) {
+		t.Parallel()
+
+		base, seen := advertServer(t)
+		_, err := handshakeAt(t, base, Options{
+			Credentials: func(context.Context, *CredentialRequest) (*Credential, error) {
+				return &Credential{Authorizer: func(*http.Request) error { return errStore }}, nil
+			},
+		})
+		require.ErrorIs(t, err, errStore)
+		assert.Empty(t, seen.all(),
+			"an authorizer that fails must stop the request, not send it unauthenticated")
+	})
+
+	// The second place a redirect makes the transport ask: not the retry after
+	// a challenge, but the session settling at an origin that answered without
+	// one. This is the direction that fails open if the error is dropped — the
+	// handshake would succeed, the session would carry no credential, and the
+	// pack POST would 401 later with no mention of the store that could not be
+	// read. The discovery request has already gone out here, so the request
+	// count says nothing; the session being nil is the assertion.
+	t.Run("the source fails while the session settles", func(t *testing.T) {
+		t.Parallel()
+
+		originURL, destURL, _ := redirectPair(t, http.StatusTemporaryRedirect, func(w http.ResponseWriter, _ *http.Request) {
+			// Served without a challenge, so nothing is re-acquired for the
+			// retry and the settle path is what asks.
+			writeAdvert(w, transport.UploadPackService)
+		})
+
+		sess, err := handshakeAt(t, originURL, Options{
+			Credentials: func(_ context.Context, req *CredentialRequest) (*Credential, error) {
+				if req.TargetOrigin.String() == destURL {
+					return nil, errStore
+				}
+				return nil, nil
+			},
+		})
+		require.ErrorIs(t, err, errStore,
+			"a failing credential store must not yield a silently anonymous session")
+		assert.Nil(t, sess)
+	})
+}
 
 func TestSmartMultiRoundFetch(t *testing.T) {
 	t.Parallel()
@@ -114,9 +187,11 @@ func TestHTTPNegotiatorCloseResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	session := &smartPackSession{
-		client:  srv.Client(),
-		baseURL: u,
-		service: transport.UploadPackService,
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
 	}
 
 	neg := &httpNegotiator{session: session, ctx: context.Background()}
@@ -182,9 +257,11 @@ func TestFetchBodyReadRespectsCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	session := &smartPackSession{
-		client:  srv.Client(),
-		baseURL: u,
-		service: transport.UploadPackService,
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -276,9 +353,11 @@ func newRecordingPushSession(t *testing.T, srv *httptest.Server) (*smartPackSess
 
 	rt := &bodyRecordingTransport{inner: srv.Client().Transport, respReceived: make(chan struct{})}
 	session := &smartPackSession{
-		client:  &http.Client{Transport: rt},
-		baseURL: u,
-		service: transport.ReceivePackService,
+		sessionBase: sessionBase{
+			client:  &http.Client{Transport: rt},
+			baseURL: u,
+			service: transport.ReceivePackService,
+		},
 	}
 	// report-status makes SendPack read the response body after sending the
 	// commands, which is the read path the close-vs-cancel guard protects.
@@ -490,4 +569,60 @@ func fetchToStorage(t testing.TB, repoPath string, storage *filesystem.Storage, 
 		Wants: []plumbing.Hash{want},
 	})
 	require.NoError(t, err)
+}
+
+// trackedBody reports whether it was closed.
+type trackedBody struct {
+	io.Reader
+	closed atomic.Bool
+}
+
+func (b *trackedBody) Close() error {
+	b.closed.Store(true)
+	return nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestHandshakeClosesBodyOnErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu     sync.Mutex
+		bodies []*trackedBody
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("nope"))
+	}))
+	defer srv.Close()
+
+	// Wrap the transport so we can see the response bodies handed to
+	// Handshake and assert they were closed.
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		resp, err := base.RoundTrip(r)
+		if err != nil {
+			return nil, err
+		}
+		tb := &trackedBody{Reader: resp.Body}
+		mu.Lock()
+		bodies = append(bodies, tb)
+		mu.Unlock()
+		resp.Body = tb
+		return resp, nil
+	})}
+
+	_, err := handshakeAt(t, srv.URL, Options{Client: client})
+	require.ErrorIs(t, err, transport.ErrAuthenticationRequired)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, bodies, "no response body was observed")
+	for i, b := range bodies {
+		assert.True(t, b.closed.Load(), "response body %d was not closed", i)
+	}
 }
