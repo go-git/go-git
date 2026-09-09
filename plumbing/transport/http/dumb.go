@@ -134,7 +134,8 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 
 	f, err := r.fs.TempFile(filepath.Dir(fp), filepath.Base(fp)+".temp")
 	if err != nil {
-		_, _ = io.Copy(io.Discard, res.Body)
+		// The body is an object or pack, so there is nothing to gain from
+		// draining a file this walk has given up on writing.
 		_ = res.Body.Close()
 		return err
 	}
@@ -145,6 +146,9 @@ func (r *fetchWalker) downloadFile(fp string) (rErr error) {
 	}()
 
 	if _, err := ioutil.CopyBufferPool(f, res.Body); err != nil {
+		// As above: an object or a pack, so a walk that has given up on
+		// writing it gains nothing from draining what is left.
+		_ = res.Body.Close()
 		return err
 	}
 	if err := res.Body.Close(); err != nil {

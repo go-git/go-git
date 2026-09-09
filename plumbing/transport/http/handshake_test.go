@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -625,4 +627,381 @@ func TestHandshakeClosesBodyOnErrorStatus(t *testing.T) {
 	for i, b := range bodies {
 		assert.True(t, b.closed.Load(), "response body %d was not closed", i)
 	}
+}
+
+// decoderFunc adapts a function to packp.Decoder, so a test can observe when
+// a command's decode returns.
+type decoderFunc func(io.Reader) error
+
+func (f decoderFunc) Decode(r io.Reader) error { return f(r) }
+
+// TestCommandKeepsConnection covers the discard a v2 command owes the request
+// that follows it. The decoder stops at the response's flush-pkt, so the
+// terminating chunk is still outstanding when the command is done, and closing
+// there costs the fetch POST after an ls-refs a connection of its own.
+func TestCommandKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	const ref = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"
+	body := pktLine(ref) + "0000"
+
+	// Sent after the client has decoded the flush-pkt. Written in the same
+	// flush as the refs, the terminating chunk is already buffered when the
+	// decoder takes the last packet, and net/http's chunked reader consumes
+	// it without being asked — which a server on a real network does not
+	// oblige.
+	decoded := make(chan struct{}, 1)
+	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		w.Header().Set("Transfer-Encoding", "chunked")
+		_, _ = io.WriteString(w, body)
+		w.(http.Flusher).Flush()
+		select {
+		case <-decoded:
+		case <-time.After(10 * time.Second):
+			t.Error("the command never decoded the response")
+		}
+	})
+
+	base, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: base,
+			service: transport.UploadPackService,
+		},
+		version: protocol.V2,
+	}
+
+	const commands = 10
+	for range commands {
+		out := &packp.LsRefsOutput{}
+		err := session.Command(context.Background(), "ls-refs", &packp.LsRefsArgs{},
+			decoderFunc(func(rd io.Reader) error {
+				err := out.Decode(rd)
+				decoded <- struct{}{}
+				return err
+			}))
+		require.NoError(t, err)
+		require.Len(t, out.References, 1)
+	}
+
+	assert.Equal(t, int64(1), conns.Load(),
+		"%d commands on one session must share one connection", commands)
+}
+
+// TestNegotiatorReleasesPreviousRound covers the one drain in the package: the
+// body of a finished round is discarded so the next round reuses its
+// connection, but only up to a bound, because a stalled server must not hold
+// the next round up.
+func TestNegotiatorReleasesPreviousRound(t *testing.T) {
+	t.Parallel()
+
+	spent := &countingBody{remaining: bodySize}
+	neg := &httpNegotiator{
+		session: &smartPackSession{
+			sessionBase: sessionBase{service: transport.UploadPackService},
+		},
+		ctx:     context.Background(),
+		current: &httpRequester{resp: &http.Response{Body: spent}},
+	}
+
+	// Starting the next round is what releases the previous one.
+	_, err := neg.Write([]byte("0000"))
+	require.NoError(t, err)
+
+	assert.True(t, spent.closed, "the finished round's body must be closed")
+	assert.Positive(t, spent.read, "some of it must be discarded so the connection is reusable")
+	assert.Less(t, spent.read, bodySize, "the discard must not read to EOF")
+	assert.LessOrEqual(t, spent.read, 1<<20, "the discard must stay within a sane bound")
+}
+
+func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
+	t.Parallel()
+
+	var posts atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		// Not a pktline stream, so negotiation fails without cancellation.
+		_, _ = w.Write([]byte("this is not a pktline stream"))
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	var closed atomic.Int64
+	rt := &closeTrackingRoundTripper{base: srv.Client().Transport, closed: &closed}
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  &http.Client{Transport: rt},
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
+	}
+
+	err = session.Fetch(context.Background(), memory.NewStorage(), &transport.FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("0000000000000000000000000000000000000001")},
+	})
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.Canceled)
+	// Guard the premise: if negotiation failed before the POST was sent there
+	// would be no response to close and the assertion below would pass for the
+	// wrong reason.
+	require.Positive(t, posts.Load(), "the test must actually reach a POST")
+	assert.Equal(t, int64(1), closed.Load(),
+		"a non-cancellation negotiation error must close the response body")
+}
+
+func TestDumbPushIsUnsupported(t *testing.T) {
+	t.Parallel()
+
+	session := &dumbPackSession{}
+
+	err := session.Push(context.Background(), nil, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, transport.ErrCommandUnsupported,
+		"a caller picking another transport tests the sentinel, not the message")
+}
+
+// serveInfoRefs answers /info/refs with the given content type and body, and
+// nothing else, so the handshake is decided purely by that response.
+func serveInfoRefs(t testing.TB, contentType, body string) *url.URL {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	return u
+}
+
+// TestHandshakeDumbInfoRefs covers what a dumb handshake makes of the body it
+// is served. packp.InfoRefs.Decode decides what counts as a ref list; this
+// covers the transport's half — that a rejection names the URL and the content
+// type, quotes only plain text, and is not reported as an empty repository.
+func TestHandshakeDumbInfoRefs(t *testing.T) {
+	t.Parallel()
+
+	const head = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		wantRefs    bool // handshake succeeds and advertises references
+		wantInMsg   []string
+		wantNotMsg  []string
+	}{
+		{
+			// Indented markup puts hex-looking text before a tab, so this used
+			// to decode to a reference named after the markup.
+			name:        "sso interstitial",
+			contentType: "text/html; charset=utf-8",
+			body:        "<!DOCTYPE html>\n<html>\n\t<body>Sign in to continue</body>\n</html>\n",
+			wantInMsg:   []string{"text/html"},
+			wantNotMsg:  []string{"Sign in to continue"},
+		},
+		{
+			// A page minified onto one line, longer than the ref list decoder
+			// can hold. It has to reach the caller as a rejection like any
+			// other, not as the decoder's own scanner error.
+			name:        "single line longer than the decoder can hold",
+			contentType: "text/html",
+			body:        "<html>" + strings.Repeat("x", 64<<10) + "</html>",
+			wantInMsg:   []string{"text/html"},
+		},
+		{
+			name:        "markup without tabs",
+			contentType: "text/html",
+			body:        "<html><body>nope</body></html>",
+			wantInMsg:   []string{"text/html"},
+			wantNotMsg:  []string{"nope"},
+		},
+		{
+			name:        "plain text is quoted back",
+			contentType: "text/plain",
+			body:        "repository is archived\n",
+			wantInMsg:   []string{"repository is archived"},
+		},
+		{
+			// A malformed ref list, not markup: the rejection reaches the
+			// caller the same way, and the body is plain text so it is quoted.
+			name:        "hash shorter than the hash size",
+			contentType: "text/plain",
+			body:        "deadbeef\trefs/heads/master\n",
+			wantInMsg:   []string{"deadbeef"},
+		},
+		{
+			// A byte order mark ahead of an otherwise valid list.
+			name:        "byte order mark",
+			contentType: "text/plain",
+			body:        "\ufeff" + head + "\trefs/heads/master\n",
+		},
+		{
+			// A valid line after the junk does not rescue the advertisement.
+			name:        "junk line before a valid one",
+			contentType: "text/plain",
+			body:        "<!-- injected -->\n" + head + "\trefs/heads/master\n",
+		},
+		{
+			name:        "legitimate ref list",
+			contentType: "text/plain",
+			body:        head + "\trefs/heads/master\n",
+			wantRefs:    true,
+		},
+		{
+			// git update-server-info writes a zero-byte file for a repository
+			// with no references, so an empty body is not a malformed one.
+			name:        "empty body",
+			contentType: "text/plain",
+			body:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u := serveInfoRefs(t, tt.contentType, tt.body)
+
+			tr := NewTransport(Options{})
+			session, err := tr.Handshake(context.Background(), &transport.Request{
+				URL:     u,
+				Command: transport.UploadPackService,
+			})
+
+			if tt.body == "" || tt.wantRefs {
+				require.NoError(t, err, "a dumb ref list, or the absence of one, must handshake")
+				defer session.Close()
+
+				refs, err := session.GetRemoteRefs(context.Background(), nil)
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantRefs, len(refs.References) > 0)
+				return
+			}
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, transport.ErrInvalidResponse,
+				"callers switch on the transport sentinel")
+			assert.ErrorIs(t, err, packp.ErrInvalidInfoRefs,
+				"the decoder's reason stays in the chain")
+			assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository,
+				"a body that is not a ref list is not an empty repository")
+			for _, want := range tt.wantInMsg {
+				assert.Contains(t, err.Error(), want)
+			}
+			for _, unwanted := range tt.wantNotMsg {
+				assert.NotContains(t, err.Error(), unwanted,
+					"markup is never echoed back, matching git's show_http_message")
+			}
+		})
+	}
+}
+
+// pktLine frames s as a pkt-line.
+func pktLine(s string) string { return fmt.Sprintf("%04x%s", len(s)+4, s) }
+
+// releasingRoundTripper signals once a response body has yielded n bytes, so a
+// handler can hold back what follows them until the client has read that far.
+type releasingRoundTripper struct {
+	base    http.RoundTripper
+	after   int
+	release chan<- struct{}
+}
+
+func (rt *releasingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := rt.base.RoundTrip(req)
+	if err != nil || req.Method != http.MethodGet {
+		return resp, err
+	}
+	resp.Body = &releasingBody{ReadCloser: resp.Body, left: rt.after, release: rt.release}
+	return resp, nil
+}
+
+type releasingBody struct {
+	io.ReadCloser
+	left    int
+	release chan<- struct{}
+	once    sync.Once
+}
+
+func (b *releasingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if b.left -= n; b.left <= 0 {
+		b.once.Do(func() { b.release <- struct{}{} })
+	}
+	return n, err
+}
+
+// TestHandshakeSmartKeepsConnection covers the discard the advertisement owes
+// the POST that opens the session. The decode stops at the advertisement's
+// flush-pkt, so the body is short of EOF when the handshake is done, and a
+// v2 clone asks for refs over that same connection a moment later.
+func TestHandshakeSmartKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	const head = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	advertisement := pktLine("# service=git-upload-pack\n") + "0000" +
+		pktLine("version 2\n") + pktLine("agent=go-git/test\n") + pktLine("ls-refs=unborn\n") + "0000"
+	refs := pktLine(head+" refs/heads/master\n") + "0000"
+
+	// The terminating chunk is held back until the client has read the
+	// advertisement, since a server that sends both at once lets net/http's
+	// chunked reader find EOF without anyone asking for it.
+	released := make(chan struct{}, 1)
+	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Transfer-Encoding", "chunked")
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+			_, _ = io.WriteString(w, advertisement)
+			w.(http.Flusher).Flush()
+			select {
+			case <-released:
+			case <-time.After(10 * time.Second):
+				t.Error("the handshake never read the advertisement")
+			}
+			return
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		_, _ = io.WriteString(w, refs)
+	})
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	client := srv.Client()
+	client.Transport = &releasingRoundTripper{
+		base:    client.Transport,
+		after:   len(advertisement),
+		release: released,
+	}
+
+	tr := NewTransport(Options{Client: client})
+	session, err := tr.Handshake(context.Background(), &transport.Request{
+		URL:     u,
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	defer session.Close()
+
+	// A v2 clone asks for refs next, which is the POST that reuses the
+	// connection the advertisement arrived on.
+	remote, err := session.GetRemoteRefs(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, remote.References)
+
+	assert.Equal(t, int64(1), conns.Load(),
+		"the ls-refs POST must reuse the connection the advertisement arrived on")
 }

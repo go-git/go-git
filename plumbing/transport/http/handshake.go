@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // wrapDropped annotates err with the origin crossing that withheld credentials,
@@ -225,15 +227,18 @@ func finishHandshake(resp *http.Response, base sessionBase, d discovery) (transp
 		return handshakeDumb(resp, base)
 	}
 
-	expected := fmt.Sprintf("application/x-%s-advertisement", d.service)
-	if resp.Header.Get("Content-Type") == expected {
+	if smartContentType(resp.Header.Get("Content-Type"), d.service) {
 		return handshakeSmart(resp, base, d)
 	}
 	return handshakeDumb(resp, base)
 }
 
 func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
-	defer resp.Body.Close() //nolint:errcheck
+	// The advertisement ends at a flush-pkt, which leaves the rest of the body
+	// — the terminating chunk, on a chunked response — outstanding. The POST
+	// that opens the session follows immediately, so the discard is what
+	// decides whether it reuses this connection.
+	defer drainAndClose(resp.Body)
 	rd := bufio.NewReader(resp.Body)
 
 	_, prefix, err := pktline.PeekLine(rd)
@@ -303,13 +308,55 @@ func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transpo
 	}, nil
 }
 
+// maxQuotedBodySize caps how much of a rejected /info/refs body is quoted back
+// in the error. Enough to recognise what the server sent, not enough to paste
+// a page into a log line, and no larger than a bufio.Reader's buffer, since
+// that is what bounds the Peek this size is asked of.
+const maxQuotedBodySize = 256
+
+// describeInfoRefsError turns a decode failure into one a caller can act on.
+//
+// packp reports which line was malformed and nothing about its contents,
+// because the bytes belong to the server. What the transport knows, and packp
+// does not, is which URL was fetched and what the server said it was serving —
+// the difference between "invalid info/refs" and "that host answered your
+// clone with an HTML sign-in page".
+//
+// The body is quoted only when it is plain text, matching git's
+// show_http_message: other types are markup meant for a browser, and an
+// interstitial can echo the request's own query back inside it.
+func describeInfoRefsError(err error, resp *http.Response, base sessionBase, head []byte) error {
+	// Name the URL actually fetched, which carries the /info/refs tail and the
+	// service query the session's base does not.
+	fetched := base.baseURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		fetched = resp.Request.URL
+	}
+
+	mediaType := contentMediaType(resp.Header.Get("Content-Type"))
+	if mediaType == "text/plain" {
+		return fmt.Errorf("%w: %s served content type %q: %w: %q",
+			transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err,
+			strings.TrimSpace(sanitizeReason(string(head))))
+	}
+	return fmt.Errorf("%w: %s served content type %q: %w",
+		transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err)
+}
+
 func handshakeDumb(resp *http.Response, base sessionBase) (transport.Session, error) {
 	defer resp.Body.Close() //nolint:errcheck
+
+	// Buffer the head of the body so a rejection can quote it. Peek leaves it
+	// in place for the decode, and returns what it has on a shorter body. The
+	// reader keeps bufio's own buffer size, which is what bounds a Peek; how
+	// much of a body is worth quoting is a separate question from how much of
+	// it is worth buffering.
 	rd := bufio.NewReader(resp.Body)
+	head, _ := rd.Peek(maxQuotedBodySize)
 
 	var infoRefs packp.InfoRefs
 	if err := infoRefs.Decode(rd); err != nil {
-		return nil, err
+		return nil, describeInfoRefsError(err, resp, base, head)
 	}
 
 	ar := &packp.AdvRefs{}
@@ -382,12 +429,15 @@ func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.Co
 	if err := cr.Encode(r); err != nil {
 		return err
 	}
-	// Command never streams the body out, so drain and close on every path; a
-	// bare return on a decode error would leak the body and its connection.
+	// Command consumes the whole response (it never streams the body out), so
+	// release it on every path. A bare return on a decode error would otherwise
+	// leak the response body and its connection. Releasing it includes the
+	// discard: a decoder stops at the response's flush-pkt, and the request
+	// that reuses the connection — the fetch POST after an ls-refs — follows
+	// immediately.
 	defer func() {
 		if r.resp != nil {
-			_, _ = io.Copy(io.Discard, r.resp.Body)
-			_ = r.resp.Body.Close()
+			drainAndClose(r.resp.Body)
 		}
 	}()
 	if resp != nil {
@@ -407,8 +457,9 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 
 	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
 	if err != nil {
-		// Don't close the response body here — context-wrapper goroutines
-		// inside NegotiatePack may still be reading from it.
+		if ioutil.ReadFinished(ctx, err) {
+			neg.closeResponse()
+		}
 		return err
 	}
 	if neg.current == nil || neg.current.resp == nil {
@@ -418,17 +469,7 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
-	// Close the response unless the read itself was a cancellation. Only then is
-	// there a race: a ctxReader goroutine inside FetchPack can still be blocked
-	// in the underlying Read after the <-ctx.Done() branch, and the request
-	// context is what unblocks it, so nothing leaks. Otherwise FetchPack's last
-	// Read returned through the result channel, its goroutine is quiescent, and
-	// closing is both safe and necessary.
-	//
-	// Classified against err with errors.Is, never a fresh ctx.Err(): ctx can
-	// turn Err() non-nil an instant after FetchPack returned quiescent, and
-	// re-checking there would skip the close and leak the response.
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+	if ioutil.ReadFinished(ctx, err) {
 		neg.closeResponse()
 	}
 	return err
@@ -481,13 +522,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
 	rwc := &httpRequester{session: s, ctx: ctx}
 	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
-	// Close the response unless the read itself was a cancellation: a ctxReader
-	// goroutine inside SendPack can still be blocked in the underlying Read
-	// after the <-ctx.Done() branch, and closing here would race it — the request
-	// context tears the connection down instead. Otherwise SendPack's last Read
-	// returned through the result channel and closing is both safe and necessary
-	// (mirrors Fetch and internal.FetchV2's round loop).
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && rwc.resp != nil {
+	if ioutil.ReadFinished(ctx, err) && rwc.resp != nil {
 		_ = rwc.resp.Body.Close()
 	}
 	return err
@@ -600,8 +635,9 @@ type httpNegotiator struct {
 
 func (n *httpNegotiator) Write(p []byte) (int, error) {
 	if n.current != nil && n.current.resp != nil {
-		_, _ = io.Copy(io.Discard, n.current.resp.Body)
-		_ = n.current.resp.Body.Close()
+		// The previous round is complete, and this round is the request that
+		// reuses its connection.
+		drainAndClose(n.current.resp.Body)
 		n.current = nil
 	}
 	if n.current == nil {
@@ -624,8 +660,13 @@ func (n *httpNegotiator) Close() error {
 	return n.current.Close()
 }
 
-// closeResponse closes the current HTTP response body.
-// The caller (FetchPack) is expected to have already drained the body.
+// closeResponse closes the current round's response body, without discarding
+// what is left of it: Fetch calls this when it is finished with the negotiator
+// altogether, so no request follows that the connection could serve.
+//
+// Whether the body was read to its end is the caller's affair. So is whether
+// closing is safe at all — ioutil.ReadFinished answers that, and a caller that
+// does not ask races the context reader wrapped around this body.
 func (n *httpNegotiator) closeResponse() {
 	if n.current != nil && n.current.resp != nil {
 		_ = n.current.resp.Body.Close()
@@ -658,7 +699,7 @@ func (s *dumbPackSession) Fetch(ctx context.Context, st storage.Storer, req *tra
 }
 
 func (s *dumbPackSession) Push(_ context.Context, _ storage.Storer, _ *transport.PushRequest) error {
-	return fmt.Errorf("dumb HTTP does not support push")
+	return fmt.Errorf("dumb HTTP does not support push: %w", transport.ErrCommandUnsupported)
 }
 
 func (s *dumbPackSession) Close() error { return nil }

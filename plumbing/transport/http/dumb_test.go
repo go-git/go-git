@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/go-git/go-billy/v6/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,4 +156,44 @@ func TestDumbObjectGetCarriesTheSessionCredential(t *testing.T) {
 	require.NotNil(t, objectGet, "the object GET must have reached the server")
 	assert.Equal(t, "Basic dTpw", objectGet.Header.Get("Authorization"),
 		"an object GET must carry the credential the discovery request carried")
+}
+
+// TestDownloadFileReleasesATruncatedBody covers the copy's own error path. The
+// walk asks for every object as a file of its own, so a body left open there
+// holds a connection per object.
+func TestDownloadFileReleasesATruncatedBody(t *testing.T) {
+	t.Parallel()
+
+	// Written raw, because the body has to be shorter than the Content-Length
+	// it announces: net/http's own server will not send a response it knows is
+	// short, and a copy that reaches the end of a body does not fail.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 4096\r\n\r\nshort")
+		_ = buf.Flush()
+	}))
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	var closed atomic.Int64
+	w := &fetchWalker{
+		ctx: context.Background(),
+		client: &http.Client{Transport: &closeTrackingRoundTripper{
+			base:   srv.Client().Transport,
+			closed: &closed,
+		}},
+		baseURL: u,
+		fs:      memfs.New(),
+	}
+
+	err = w.downloadFile("objects/ab/cdef")
+	require.Error(t, err, "a body shorter than its Content-Length must fail the copy")
+	assert.Equal(t, int64(1), closed.Load(),
+		"the copy's error path must close the response body")
 }
