@@ -205,19 +205,18 @@ func isDotGitVariant(part string, protectHFS bool) bool {
 	return false
 }
 
-// validPath checks whether paths are valid for the worktree
-// filesystem abstraction. It is intentionally tolerant of .git as
-// the final path component of a multi-component path
-// (e.g. "submodule/.git"), so that legitimate gitlink pointer files
-// can still be Stat'd, Read, and Removed via the wrapper during
-// submodule cleanup. Attacker-controlled tree-entry paths are
-// validated separately by pathutil.ValidTreePath at the boundaries
-// where data leaves the trusted store (Tree.FindEntry, the explicit
-// callers in CherryPick and Submodule.Repository).
+// validPath checks path strings, allowing a final, non-root .git component
+// such as "submodule/.git" for submodule pointer-file operations.
 //
-// For upstream rules:
-// https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
-// https://github.com/git/git/blob/v2.54.0/path.c#L1419
+// Tree paths have separate checks: FindEntry validates lookup paths,
+// TreeEntryFile validates file names, and TreeWalker.Next validates entry names
+// unless its internal skipPathValidation flag is set. Tree.Validate checks
+// names when explicitly called. CherryPick reaches the object API checks
+// through its merge operations. Submodule.Repository validates paths from
+// .gitmodules, and index.Index.Add rejects unsafe names before tree creation.
+//
+// validWritePath and validReadPath also check for leading symlinks on disk;
+// validPath alone cannot detect them.
 func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 	for _, p := range paths {
 		for i := 0; i < len(p); i++ {
