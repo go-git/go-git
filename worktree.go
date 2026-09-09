@@ -64,6 +64,15 @@ type Worktree struct {
 }
 
 // Filesystem returns the underlying filesystem for the worktree.
+// It bypasses the worktree wrapper's reserved-path and leading-symlink checks.
+//
+// PlainInit and PlainOpen use a filesystem bound to the worktree root, but
+// root containment does not protect an in-root .git directory from direct
+// writes or writes through an in-root symlink. Caller-supplied filesystems
+// provide their own containment guarantees, which may be none.
+//
+// Use Checkout or Reset to materialize tree contents with worktree path
+// validation and blocking-symlink handling.
 func (w *Worktree) Filesystem() billy.Filesystem {
 	return w.filesystem.Filesystem
 }
