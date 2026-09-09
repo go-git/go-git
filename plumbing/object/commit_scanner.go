@@ -26,7 +26,7 @@ type commitScanner struct {
 	pendingErr error
 
 	// First-occurrence tracking — once the corresponding field has been
-	// decoded, subsequent occurrences are silently dropped (matches
+	// decoded, subsequent occurrences do not overwrite decoded fields (matches
 	// upstream's find_commit_header / first-wins semantics).
 	//
 	// gpgsig/gpgsig-sha256 are NOT tracked here: upstream's
@@ -89,6 +89,7 @@ func scanTree(s *commitScanner) (commitState, error) {
 		return nil, herr
 	}
 	s.c.TreeHash = h
+	s.recordHeader("tree", 0, line)
 	s.sawTree = true
 	if err == io.EOF {
 		return nil, nil
@@ -97,10 +98,10 @@ func scanTree(s *commitScanner) (commitState, error) {
 }
 
 // scanParents consumes contiguous `parent HASH` lines. The first non-parent
-// line ends the parent block and is handed off to scanAuthor; any later
-// `parent` line is silently dropped (matches upstream's parse_commit_buffer
-// exiting its parent loop at the first non-parent line and
-// read_commit_extra_header_lines filtering `parent` out of extras).
+// line ends the parent block and is handed off to scanHeaders; any later
+// `parent` line is retained in the layout but excluded from ParentHashes,
+// matching upstream's parse_commit_buffer exiting its parent loop at the
+// first non-parent line.
 func scanParents(s *commitScanner) (commitState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {
@@ -110,6 +111,7 @@ func scanParents(s *commitScanner) (commitState, error) {
 		return nil, nil
 	}
 	if isBlankLine(line) {
+		s.c.layout.separator = true
 		return scanMessage, nil
 	}
 
@@ -119,70 +121,12 @@ func scanParents(s *commitScanner) (commitState, error) {
 		if herr != nil {
 			return nil, herr
 		}
+		s.recordHeader("parent", len(s.c.ParentHashes), line)
 		s.c.ParentHashes = append(s.c.ParentHashes, h)
 		if err == io.EOF {
 			return nil, nil
 		}
 		return scanParents, nil
-	}
-	s.pushBack(line, err)
-	return scanAuthor, nil
-}
-
-// scanAuthor accepts an `author` line at its canonical position immediately
-// after the parent block. Any other header here is pushed back for
-// scanCommitter; an out-of-place author is therefore silently dropped.
-// Mirrors upstream's parse_commit_date func.
-func scanAuthor(s *commitScanner) (commitState, error) {
-	line, err := s.readLine()
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	if len(line) == 0 {
-		return nil, nil
-	}
-	if isBlankLine(line) {
-		return scanMessage, nil
-	}
-
-	key, data := splitHeader(line)
-	if key == "author" {
-		s.c.authorSource = newIdentSource(data)
-		s.c.Author = s.c.authorSource.signature
-		s.sawAuthor = true
-		if err == io.EOF {
-			return nil, nil
-		}
-		return scanCommitter, nil
-	}
-	s.pushBack(line, err)
-	return scanCommitter, nil
-}
-
-// scanCommitter accepts a `committer` line at its canonical position
-// immediately after the author. Any other header is pushed back for
-// scanHeaders. Same upstream rationale as scanAuthor.
-func scanCommitter(s *commitScanner) (commitState, error) {
-	line, err := s.readLine()
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	if len(line) == 0 {
-		return nil, nil
-	}
-	if isBlankLine(line) {
-		return scanMessage, nil
-	}
-
-	key, data := splitHeader(line)
-	if key == "committer" {
-		s.c.committerSource = newIdentSource(data)
-		s.c.Committer = s.c.committerSource.signature
-		s.sawCommitter = true
-		if err == io.EOF {
-			return nil, nil
-		}
-		return scanHeaders, nil
 	}
 	s.pushBack(line, err)
 	return scanHeaders, nil
@@ -201,6 +145,7 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 		return nil, nil
 	}
 	if isBlankLine(line) {
+		s.c.layout.separator = true
 		return scanMessage, nil
 	}
 
@@ -209,26 +154,46 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 
 	var next commitState = scanHeaders
 	switch key {
-	case "tree", "parent", "author", "committer":
-		// Anything reaching scanHeaders with one of these keys is out of
-		// canonical position — duplicate tree, parent past the contiguous
-		// block, or author/committer not at their expected slot. Drop them
-		// the same way upstream's standard_header_field filter excludes
-		// them from the extras list (read_commit_extra_header_lines,
-		// commit.c:1520-1522).
+	case "tree", "parent":
+		// Duplicate trees and parents outside the contiguous parent block
+		// remain raw headers without changing the decoded graph.
+		s.recordHeader("", 0, line)
+	case "author":
+		if !s.sawAuthor {
+			s.c.authorSource = newIdentSource(data)
+			s.c.Author = s.c.authorSource.signature
+			s.sawAuthor = true
+			s.recordHeader(key, 0, line)
+		} else {
+			s.recordHeader("", 0, line)
+		}
+	case "committer":
+		if !s.sawCommitter {
+			s.c.committerSource = newIdentSource(data)
+			s.c.Committer = s.c.committerSource.signature
+			s.sawCommitter = true
+			s.recordHeader(key, 0, line)
+		} else {
+			s.recordHeader("", 0, line)
+		}
 	case headerencoding:
 		if !s.sawEncoding {
 			s.c.Encoding = MessageEncoding(data)
-			s.c.encodingHeaderPosition = len(s.c.ExtraHeaders) + 1
+			s.recordHeader(key, 0, line)
 			s.sawEncoding = true
+		} else {
+			s.recordHeader("", 0, line)
 		}
 	case headerpgp:
+		s.recordHeader(key, 0, line)
 		s.c.Signature += string(data) + "\n"
 		next = scanPgpCont
 	case headerpgp256:
+		s.recordHeader(key, 0, line)
 		s.c.SignatureSHA256 += string(data) + "\n"
 		next = scanPgp256Cont
 	default:
+		s.recordHeader("extra", len(s.c.ExtraHeaders), line)
 		h, multiline := parseExtraHeader(originalLine)
 		if multiline {
 			s.extra = &h
@@ -239,6 +204,9 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 	}
 
 	if err == io.EOF {
+		if s.extra != nil {
+			s.finaliseExtra()
+		}
 		return nil, nil
 	}
 	return next, nil
@@ -266,6 +234,7 @@ func continuationCont(s *commitScanner, dst *string, self commitState) (commitSt
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
+		s.c.layout.headers[len(s.c.layout.headers)-1].raw += string(line)
 		*dst += string(line[1:])
 		if err == io.EOF {
 			return nil, nil
@@ -287,6 +256,7 @@ func scanExtraCont(s *commitScanner) (commitState, error) {
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
+		s.c.layout.headers[len(s.c.layout.headers)-1].raw += string(line)
 		s.extra.Value += string(line[1:])
 		if err == io.EOF {
 			s.finaliseExtra()
@@ -351,4 +321,8 @@ func parseObjectIDHex(data []byte, malformedErr error, header string) (plumbing.
 		return plumbing.ZeroHash, fmt.Errorf("%w: bad %s hash", malformedErr, header)
 	}
 	return h, nil
+}
+
+func (s *commitScanner) recordHeader(key string, index int, line []byte) {
+	s.c.layout.headers = append(s.c.layout.headers, commitHeader{key: key, index: index, raw: string(line)})
 }

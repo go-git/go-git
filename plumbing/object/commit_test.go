@@ -49,7 +49,6 @@ func (s *SuiteCommit) TestDecodeNonCommit() {
 func (s *SuiteCommit) TestDecodeClearsExistingState() {
 	const raw = "tree eba74343e2f15d62adedfd8c883ee0262b5c8021\n\nfresh message\n"
 
-	staleSrc := &plumbing.MemoryObject{}
 	commit := &Commit{
 		Hash:            plumbing.NewHash("1111111111111111111111111111111111111111"),
 		Author:          Signature{Name: "Stale Author", Email: "author@example.local", When: time.Unix(1, 0).UTC()},
@@ -65,11 +64,10 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 		ExtraHeaders: []ExtraHeader{
 			{Key: "x-stale", Value: "stale"},
 		},
-		s:                      s.Storer,
-		src:                    staleSrc,
-		encodingHeaderPosition: 1,
-		authorSource:           newIdentSource([]byte("Stale Author <author@example.local> 1 +0000")),
-		committerSource:        newIdentSource([]byte("Stale Committer <committer@example.local> 2 +0000")),
+		s:               s.Storer,
+		layout:          &commitLayout{separator: false, extras: []ExtraHeader{{Key: "stale"}}},
+		authorSource:    newIdentSource([]byte("Stale Author <author@example.local> 1 +0000")),
+		committerSource: newIdentSource([]byte("Stale Committer <committer@example.local> 2 +0000")),
 	}
 
 	obj := &plumbing.MemoryObject{}
@@ -89,8 +87,10 @@ func (s *SuiteCommit) TestDecodeClearsExistingState() {
 	s.Equal(defaultUtf8CommitMessageEncoding, commit.Encoding)
 	s.Nil(commit.ExtraHeaders)
 	s.Equal(s.Storer, commit.s)
-	s.Equal(obj, commit.src)
-	s.Zero(commit.encodingHeaderPosition)
+	s.Require().NotNil(commit.layout)
+	s.True(commit.layout.separator)
+	s.Empty(commit.layout.extras)
+	s.Len(commit.layout.headers, 1)
 	s.Zero(commit.authorSource)
 	s.Zero(commit.committerSource)
 }
@@ -340,8 +340,7 @@ change
 		err = newCommit.Decode(obj)
 		s.NoError(err)
 		commit.Hash = obj.Hash()
-		commit.src = obj
-		commit.encodingHeaderPosition = newCommit.encodingHeaderPosition
+		commit.layout = newCommit.layout
 		commit.authorSource = newCommit.authorSource
 		commit.committerSource = newCommit.committerSource
 		s.Equal(commit, newCommit)
@@ -740,27 +739,23 @@ func (s *SuiteCommit) TestDecodeFirstOccurrenceWins() {
 			},
 		},
 		{
-			name: "encoding between author and committer drops committer",
+			name: "encoding between identities preserves committer",
 			raw: "tree " + treeA + "\nauthor " + identAuthor +
 				"\nencoding latin-1\ncommitter " + identCommit + "\n\nmsg\n",
 			assert: func(c *Commit) {
 				s.Equal("Author Name", c.Author.Name)
 				s.Equal(MessageEncoding("latin-1"), c.Encoding)
-				// committer was not at its canonical position
-				// (immediately after author) so it is dropped, matching
-				// upstream's parse_commit_date returning 0 and the
-				// subsequent standard_header_field filter.
-				s.Empty(c.Committer.Name)
+				s.Equal("Commit Name", c.Committer.Name)
 			},
 		},
 		{
-			name: "author out of canonical position is dropped",
+			name: "identities after encoding are preserved",
 			raw: "tree " + treeA + "\nencoding latin-1\nauthor " + identAuthor +
 				"\ncommitter " + identCommit + "\n\nmsg\n",
 			assert: func(c *Commit) {
 				s.Equal(MessageEncoding("latin-1"), c.Encoding)
-				s.Empty(c.Author.Name)
-				s.Empty(c.Committer.Name)
+				s.Equal("Author Name", c.Author.Name)
+				s.Equal("Commit Name", c.Committer.Name)
 			},
 		},
 		{
@@ -1188,6 +1183,205 @@ func (s *SuiteCommit) TestEncodeWithoutSignaturePreservesDecodedIdentBytes() {
 			s.Equal(strings.Replace(raw, oldParent, newParent, 1), string(payload))
 		})
 	}
+}
+
+func (s *SuiteCommit) TestCommitHeaderLayout() {
+	const (
+		tree      = "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+		oldParent = "parent 35e85108805c84807bc66a02d91535e1e24b38b9\n"
+		newParent = "parent a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69\n"
+		author    = "author A U Thor<author@example.test>01700000000 +0000\n"
+		committer = "committer C O Mitter <committer@example.test> 1700000000\n"
+		sig       = "gpgsig first\n \n  indented\n last\n"
+		sig256    = "gpgsig-sha256 first256\n last256\n"
+		mergetag  = "mergetag object 35e85108805c84807bc66a02d91535e1e24b38b9\n type commit\n tag test\n \n message\n \n"
+		message   = "\nmessage\n\ngpgsig in the body\n body continuation\n"
+	)
+	cases := []struct {
+		name, headers, unsigned string
+	}{
+		{"gpgsig before author", sig + author + committer, author + committer},
+		{"gpgsig between identities", author + sig + committer, author + committer},
+		{"mergetag before author", mergetag + author + committer, mergetag + author + committer},
+		{"extra before author", "custom value\n" + author + committer, "custom value\n" + author + committer},
+		{"encoding before author", "encoding UTF-8\n" + author + committer, "encoding UTF-8\n" + author + committer},
+		{"extra between identities", author + "custom value\n" + committer, author + "custom value\n" + committer},
+		{"committer before author", committer + author, committer + author},
+		{"empty extra separator", author + "custom \n" + committer, author + "custom \n" + committer},
+		{"valueless extra", author + "custom\n" + committer, author + "custom\n" + committer},
+		{"multiple signatures", sig256 + author + sig + committer + sig + sig256, author + committer},
+		{"encoding among extras", "x-first one\nencoding UTF-8\n" + author + "x-last two\n" + committer, "x-first one\nencoding UTF-8\n" + author + "x-last two\n" + committer},
+		{"duplicate fields", author + author + committer + "encoding UTF-8\nencoding latin-1\n", author + author + committer + "encoding UTF-8\nencoding latin-1\n"},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			for _, parents := range []string{"", oldParent, oldParent + newParent} {
+				for _, replacement := range []string{"", newParent, newParent + oldParent} {
+					raw := tree + parents + tc.headers + message
+					obj := &plumbing.MemoryObject{}
+					obj.SetType(plumbing.CommitObject)
+					_, err := obj.Write([]byte(raw))
+					s.Require().NoError(err)
+					commit, err := DecodeCommit(s.Storer, obj)
+					s.Require().NoError(err)
+					s.Equal("A U Thor", commit.Author.Name)
+					s.Equal("C O Mitter", commit.Committer.Name)
+
+					encoded := &plumbing.MemoryObject{}
+					s.Require().NoError(commit.Encode(encoded))
+					s.Equal(obj.Hash(), encoded.Hash(), "signed round trip")
+					commit.ParentHashes = nil
+					for line := range strings.FieldsSeq(replacement) {
+						if line != "parent" {
+							commit.ParentHashes = append(commit.ParentHashes, plumbing.NewHash(line))
+						}
+					}
+					for _, includeSig := range []bool{false, true} {
+						encoded = &plumbing.MemoryObject{}
+						want := tree + replacement + tc.unsigned + message
+						if includeSig {
+							s.Require().NoError(commit.Encode(encoded))
+							want = tree + replacement + tc.headers + message
+						} else {
+							s.Require().NoError(commit.EncodeWithoutSignature(encoded))
+						}
+						r, err := encoded.Reader()
+						s.Require().NoError(err)
+						payload, err := io.ReadAll(r)
+						s.Require().NoError(err)
+						s.Require().NoError(r.Close())
+						s.Equal(want, string(payload), "parents %q -> %q, signatures %v", parents, replacement, includeSig)
+					}
+				}
+			}
+		})
+	}
+}
+
+func (s *SuiteCommit) TestCommitHeaderLayoutMutations() {
+	const (
+		tree      = "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+		author    = "author A U Thor<author@example.test>01700000000 +0000\n"
+		committer = "committer C O Mitter<committer@example.test>1700000000 +0000\n"
+		sig       = "gpgsig old\n continuation\n"
+		sig256    = "gpgsig-sha256 old256\n continuation256\n"
+		encoding  = "encoding UTF-8\n"
+		extra     = "custom \n"
+		message   = "\nmessage without final newline"
+		raw       = tree + sig + encoding + committer + extra + author + sig256 + message
+	)
+	cases := []struct {
+		name   string
+		mutate func(*Commit)
+		want   string
+	}{
+		{"tree", func(c *Commit) { c.TreeHash = plumbing.NewHash(strings.Repeat("1", 40)) }, strings.Replace(raw, tree, "tree "+strings.Repeat("1", 40)+"\n", 1)},
+		{"author", func(c *Commit) { c.Author.Name = "Changed Author" }, strings.Replace(raw, author, "author Changed Author <author@example.test> 1700000000 +0000\n", 1)},
+		{"committer", func(c *Commit) { c.Committer.Email = "changed@example.test" }, strings.Replace(raw, committer, "committer C O Mitter <changed@example.test> 1700000000 +0000\n", 1)},
+		{"timezone", func(c *Commit) { c.Author.When = c.Author.When.In(time.FixedZone("offset", 3600)) }, strings.Replace(raw, author, "author A U Thor <author@example.test> 1700000000 +0100\n", 1)},
+		{"message", func(c *Commit) { c.Message = "new message\n" }, strings.Replace(raw, message, "\nnew message\n", 1)},
+		{"encoding", func(c *Commit) { c.Encoding = "latin-1" }, strings.Replace(raw, encoding, "encoding latin-1\n", 1)},
+		{"remove encoding", func(c *Commit) { c.Encoding = "" }, strings.Replace(raw, encoding, "", 1)},
+		{"extra in place", func(c *Commit) { c.ExtraHeaders[0].Value = "changed\ncontinuation" }, strings.Replace(raw, extra, "custom changed\n continuation\n", 1)},
+		{"remove extra", func(c *Commit) { c.ExtraHeaders = nil }, strings.Replace(raw, extra, "", 1)},
+		{"append extra", func(c *Commit) { c.ExtraHeaders = append(c.ExtraHeaders, ExtraHeader{Key: "new", Value: "value"}) }, strings.Replace(raw, message, "new value\n"+message, 1)},
+		{"replace signature", func(c *Commit) { c.Signature = "new\nnew continuation\n" }, strings.Replace(raw, sig, "gpgsig new\n new continuation\n", 1)},
+		{"remove signature", func(c *Commit) { c.Signature = "" }, strings.Replace(raw, sig, "", 1)},
+		{"replace sha256 signature", func(c *Commit) { c.SignatureSHA256 = "new256\n" }, strings.Replace(raw, sig256, "gpgsig-sha256 new256\n", 1)},
+		{"remove sha256 signature", func(c *Commit) { c.SignatureSHA256 = "" }, strings.Replace(raw, sig256, "", 1)},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			obj := &plumbing.MemoryObject{}
+			obj.SetType(plumbing.CommitObject)
+			_, err := obj.Write([]byte(raw))
+			s.Require().NoError(err)
+			commit, err := DecodeCommit(s.Storer, obj)
+			s.Require().NoError(err)
+			tc.mutate(commit)
+			for _, includeSig := range []bool{false, true} {
+				want := tc.want
+				encoded := &plumbing.MemoryObject{}
+				if includeSig {
+					s.Require().NoError(commit.Encode(encoded))
+				} else {
+					s.Require().NoError(commit.EncodeWithoutSignature(encoded))
+					for _, signature := range []string{sig, sig256, "gpgsig new\n new continuation\n", "gpgsig-sha256 new256\n"} {
+						want = strings.ReplaceAll(want, signature, "")
+					}
+				}
+				r, err := encoded.Reader()
+				s.Require().NoError(err)
+				payload, err := io.ReadAll(r)
+				s.Require().NoError(err)
+				s.Require().NoError(r.Close())
+				s.Equal(want, string(payload))
+			}
+		})
+	}
+}
+
+func (s *SuiteCommit) TestCommitHeaderLayoutEndings() {
+	const tree = "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	for _, suffix := range []string{
+		"", "\n", "\n\n", "\n\nmessage", "\ncustom ", "\ncustom",
+		"\ncustom value", "\ncustom value\n continuation", "\ncustom value\n \n",
+		"\nencoding ", "\nauthor A U Thor <author@example.test> 1700000000 +0000",
+		"\ngpgsig", "\ngpgsig \n continuation", "\ngpgsig old\n continuation\n\nmessage",
+	} {
+		s.Run(fmt.Sprintf("suffix %q", suffix), func() {
+			obj := &plumbing.MemoryObject{}
+			obj.SetType(plumbing.CommitObject)
+			_, err := obj.Write([]byte(tree + suffix))
+			s.Require().NoError(err)
+			commit, err := DecodeCommit(s.Storer, obj)
+			s.Require().NoError(err)
+			encoded := &plumbing.MemoryObject{}
+			s.Require().NoError(commit.Encode(encoded))
+			s.Equal(obj.Hash(), encoded.Hash())
+
+			commit.ParentHashes = []plumbing.Hash{plumbing.NewHash(strings.Repeat("1", 40))}
+			encoded = &plumbing.MemoryObject{}
+			s.Require().NoError(commit.EncodeWithoutSignature(encoded))
+			var unsigned bytes.Buffer
+			s.Require().NoError(stripHeaderSignatures(&unsigned, strings.NewReader(tree+suffix)))
+			_, rest, _ := strings.Cut(unsigned.String(), "\n")
+			want := tree + "\nparent " + strings.Repeat("1", 40) + "\n" + rest
+			r, err := encoded.Reader()
+			s.Require().NoError(err)
+			payload, err := io.ReadAll(r)
+			s.Require().NoError(err)
+			s.Require().NoError(r.Close())
+			s.Equal(want, string(payload))
+		})
+	}
+}
+
+func (s *SuiteCommit) TestCommitHeaderLayoutAddsFields() {
+	const tree = "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.CommitObject)
+	_, err := obj.Write([]byte(tree))
+	s.Require().NoError(err)
+	commit, err := DecodeCommit(s.Storer, obj)
+	s.Require().NoError(err)
+	commit.Author = Signature{Name: "Author", Email: "author@example.test", When: time.Unix(1700000000, 0).UTC()}
+	commit.Committer = commit.Author
+	commit.Encoding = "latin-1"
+	commit.ExtraHeaders = []ExtraHeader{{Key: "custom", Value: "value"}}
+	commit.Signature = "new\ncontinuation\n"
+	commit.SignatureSHA256 = "new256\n"
+	commit.Message = "new message\n"
+	encoded := &plumbing.MemoryObject{}
+	s.Require().NoError(commit.Encode(encoded))
+	r, err := encoded.Reader()
+	s.Require().NoError(err)
+	payload, err := io.ReadAll(r)
+	s.Require().NoError(err)
+	s.Require().NoError(r.Close())
+	s.Equal(tree+"author Author <author@example.test> 1700000000 +0000\n"+
+		"committer Author <author@example.test> 1700000000 +0000\nencoding latin-1\n"+
+		"custom value\ngpgsig new\n continuation\ngpgsig-sha256 new256\n\nnew message\n", string(payload))
 }
 
 func (s *SuiteCommit) TestEncodeWithoutSignatureCanonicalizesChangedIdent() {
