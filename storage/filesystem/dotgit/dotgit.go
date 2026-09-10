@@ -1737,7 +1737,16 @@ func (d *DotGit) PackRefs() (err error) {
 // cleaned. The config-layer parser also validates submodule names,
 // but Module may be reached from any caller that constructs a
 // Submodule struct programmatically and so bypasses the parser.
+//
+// path.Clean does not account for filesystem-specific parent-directory
+// aliases. Check components before constructing the path, and reject
+// periods-only components under the same storage policy as references.
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if pathutil.IsDotsOnlyName(part) || pathutil.IsDotOrDotDotName(part) {
+			return nil, ErrModuleNameEscape
+		}
+	}
 	p := d.fs.Join(modulePath, name)
 	cleaned := path.Clean(filepath.ToSlash(p))
 	if cleaned != modulePath && !strings.HasPrefix(cleaned, modulePath+"/") {

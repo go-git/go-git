@@ -37,8 +37,7 @@ var dotdotDisguises = []string{
 	`foo/../bar`,
 	`.\..\foo`,
 
-	// HFS+ drops ignorable code points during normalisation, so
-	// these all resolve to ".." on macOS.
+	// HFS+ parent-disguise policy, independent of native alias resolution.
 	".\u200c.",
 	"\u200c..",
 	"..\u200c",
@@ -46,9 +45,7 @@ var dotdotDisguises = []string{
 	"foo/.\u200c.",
 	"a/.\u200c./b",
 
-	// NTFS strips trailing spaces and an alternate-data-stream
-	// suffix during canonicalisation, so these all resolve to ".."
-	// on Windows.
+	// NTFS parent-disguise policy, applied on every host.
 	".. ",
 	"..  ",
 	".. .",
@@ -64,7 +61,8 @@ func (s *ModulesSuite) TestValidateMissingURL() {
 }
 
 func (s *ModulesSuite) TestValidateBadPath() {
-	for _, p := range dotdotDisguises {
+	input := append([]string{".", "./sub", "sub/."}, dotdotDisguises...)
+	for _, p := range input {
 		m := &Submodule{
 			Name: "ok",
 			Path: p,
@@ -131,14 +129,12 @@ func (s *ModulesSuite) TestValidateMissingName() {
 }
 
 func (s *ModulesSuite) TestValidateBadName() {
-	// A submodule name becomes a directory under .git/modules, so it
-	// is held to a stricter rule than a path: a component of periods
-	// alone folds to ".." on NTFS and there is no repository C Git
-	// wrote that go-git must accept one to read.
+	// Submodule storage names apply an additional periods-only policy.
 	input := append([]string{
 		"",
 		".",
 		"....",
+		"a/.", "./a", "a/./b",
 		"/abs",
 		`C:\win`,
 		"x\x00y",

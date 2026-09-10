@@ -57,8 +57,7 @@ func TestIsNTFSDotDot(t *testing.T) {
 		// IsDotOrDotDotName, not of this predicate.
 		{"..", false},
 		{".", false},
-		// Periods alone: NTFS folds these, WindowsValidPath rejects
-		// them under core.protectNTFS.
+		// Periods alone pass the tree gate; Win32ValidPath rejects them.
 		{"...", false},
 		{"....", false},
 		// The tail is not spaces and periods alone, so nothing folds.
@@ -109,10 +108,8 @@ func TestIsDotOrDotDotName(t *testing.T) {
 		{"..\u200c", true},
 		{"\u200c.\u200d.\u200e", true},
 
-		// A component of periods alone is accepted. NTFS folds it,
-		// but it is a legitimate name everywhere else and C Git
-		// 2.54.0 accepts it in a tree and in an index on POSIX.
-		// WindowsValidPath refuses it under core.protectNTFS.
+		// Periods alone pass this predicate. validPath applies the
+		// Win32 trailing rule only on Windows with core.protectNTFS.
 		{"...", false},
 		{"....", false},
 		{".....", false},
@@ -152,4 +149,69 @@ func TestIsDotOrDotDotName(t *testing.T) {
 				"IsDotOrDotDotName(%q)", tc.name)
 		})
 	}
+}
+
+func TestIsDotsOnlyName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{".", true},
+		{"..", true},
+		{"...", true},
+		{"....", true},
+		{".....", true},
+		{"", false},
+		{". ", false},
+		{" .", false},
+		{".a", false},
+		{"a.", false},
+		{"a..b", false},
+		{".\u200c.", false},
+		{"..:x", false},
+		{"foo", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q", tc.name), func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, IsDotsOnlyName(tc.name))
+		})
+	}
+}
+
+// Reference names already rejected literal dot; submodule names gain it.
+func TestIsDotsOnlyNameComplementsIsDotOrDotDotName(t *testing.T) {
+	t.Parallel()
+	for _, part := range generateComponents(t, ". :a~gt$\u200c", 4) {
+		got := IsDotsOnlyName(part) || IsDotOrDotDotName(part)
+		reference := part == "." || IsHFSDot(part, ".") || IsNTFSDot(part, ".", "")
+		submodule := IsHFSDot(part, ".") || IsNTFSDot(part, ".", "")
+		assert.Equal(t, reference, got, "reference component %q", part)
+		assert.Equal(t, part == ".", got != submodule, "submodule delta %q", part)
+	}
+}
+
+// generateComponents returns every string of length 0 to maxLen over
+// the runes of alphabet. It exists so the two cross-checks in this
+// package can assert an invariant over a closed corpus rather than
+// over a hand-picked table.
+func generateComponents(t *testing.T, alphabet string, maxLen int) []string {
+	t.Helper()
+
+	out := make([]string, 1, 1+len(alphabet)*maxLen)
+	cur := []string{""}
+	for range maxLen {
+		next := make([]string, 0, len(alphabet)*len(cur))
+		for _, prefix := range cur {
+			for _, r := range alphabet {
+				next = append(next, prefix+string(r))
+			}
+		}
+		out = append(out, next...)
+		cur = next
+	}
+	return out
 }

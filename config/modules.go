@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -109,15 +110,13 @@ func (m *Submodule) Validate() error {
 	// so it falls through to ErrModuleEmptyPath below.
 	//
 	// The per-segment predicate is pathutil.IsDotOrDotDotName, the
-	// same one ValidTreePath applies to this Path at
-	// Submodule.Repository: a literal ".." and the NTFS and HFS+
-	// spellings a filesystem folds back to a parent hop. m.Path is
-	// worktree-relative and attacker-controlled via .gitmodules, so
-	// the check runs regardless of host OS.
-	for _, seg := range strings.FieldsFunc(m.Path, isPathSep) {
-		if pathutil.IsDotOrDotDotName(seg) {
-			return ErrModuleBadPath
-		}
+	// same one ValidTreePath applies to this Path in
+	// Submodule.Repository: dot and parent components plus the shared
+	// NTFS/HFS+ disguise policy. m.Path is worktree-relative and is
+	// attacker-controlled via .gitmodules, so the check runs
+	// regardless of host OS.
+	if slices.ContainsFunc(strings.FieldsFunc(m.Path, isPathSep), pathutil.IsDotOrDotDotName) {
+		return ErrModuleBadPath
 	}
 
 	if m.Path == "" {
@@ -131,24 +130,14 @@ func (m *Submodule) Validate() error {
 	return nil
 }
 
-// validSubmoduleName mirrors canonical Git's check_submodule_name in
-// submodule-config.c [1]: reject empty names and any name with a ".."
-// path component, using both '/' and '\\' as separators so the rule
-// is consistent across platforms. The component check is delegated to
-// `pathutil.IsHFSDot` and `pathutil.IsNTFSDot` with `.` as the needle,
-// which both cover the bare ".." case and reject components that
-// resolve to ".." after HFS+ Unicode normalisation (ignored code
-// points, e.g. `.<U+200C>.`) or NTFS trailing-space/dot/ADS
-// canonicalisation (e.g. `.. `, `..::$INDEX_ALLOCATION`).
-// `.gitmodules` is attacker-controlled by definition, so both checks
-// run unconditionally regardless of host OS.
-//
-// The additional checks (bare ".", NUL byte, leading or trailing
-// separator, drive-letter prefix) close go-git-specific edge cases
-// the canonical loop does not exercise: canonical Git treats names
-// as opaque C strings, while Go strings carry NULs through and the
-// billy filesystem layer is path-aware in ways Git's working storage
-// is not.
+// validSubmoduleName validates storage names below .git/modules.
+// Upstream Git's check_submodule_name at submodule-config.c#L214-L237
+// in tag v2.54.0[1] rejects empty names and literal parent
+// components. go-git additionally rejects dot and periods-only
+// components, parent disguises, NULs, leading/trailing separators and
+// drive prefixes. Both separators are recognized on every host.
+// C Git accepts some of these extra names; the periods-only
+// restriction is policy, not an assertion of NTFS parent folding.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/submodule-config.c#L214-L237
 func validSubmoduleName(name string) error {
@@ -156,7 +145,7 @@ func validSubmoduleName(name string) error {
 		return ErrModuleBadName
 	}
 	for _, seg := range strings.FieldsFunc(name, isPathSep) {
-		if pathutil.IsHFSDot(seg, ".") || pathutil.IsNTFSDot(seg, ".", "") {
+		if pathutil.IsDotsOnlyName(seg) || pathutil.IsDotOrDotDotName(seg) {
 			return ErrModuleBadName
 		}
 	}
