@@ -870,6 +870,13 @@ func (r *Repository) CreateBranch(c *config.Branch) error {
 		return err
 	}
 
+	// The creation rules live here rather than in Branch.Validate, which also
+	// runs when a config file is read: a repository whose config already names
+	// a branch go-git would decline to create still has to open.
+	if err := plumbing.ValidateBranchName(c.Name); err != nil {
+		return err
+	}
+
 	cfg, err := r.Config()
 	if err != nil {
 		return err
@@ -903,10 +910,11 @@ func (r *Repository) DeleteBranch(name string) error {
 // CreateTag creates a tag. If opts is included, the tag is an annotated tag,
 // otherwise a lightweight tag is created.
 func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
-	rname := plumbing.NewTagReferenceName(name)
-	if err := rname.Validate(); err != nil {
+	if err := plumbing.ValidateTagName(name); err != nil {
 		return nil, err
 	}
+
+	rname := plumbing.NewTagReferenceName(name)
 
 	_, err := r.Storer.Reference(rname)
 	switch err {

@@ -216,6 +216,13 @@ var ctrlSeqs = regexp.MustCompile(`[\000-\037\177]`)
 //  8. They cannot contain a sequence @{.
 //  9. They cannot be the single character @.
 //  10. They cannot contain a \.
+//
+// A leading "-" is not among them, and neither is a component spelled "@".
+// Git restricts a leading "-" when a branch or a tag is created, in
+// check_branch_ref and check_tag_ref rather than in check_refname_format; see
+// ValidateBranchName and ValidateTagName.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs.c#L191-L322
 func (r ReferenceName) Validate() error {
 	s := string(r)
 	if len(s) == 0 {
@@ -225,6 +232,20 @@ func (r ReferenceName) Validate() error {
 	// HEAD is a special case
 	if r == HEAD {
 		return nil
+	}
+
+	// rule 9. The rule is about the whole name, not about a component: Git
+	// tests it once, against the entire string, before it starts walking the
+	// components (check_or_sanitize_refname, refs.c). "@" is an ordinary
+	// character everywhere else, so "refs/heads/@" is a name git branch
+	// creates and git clone replicates.
+	//
+	// Rule 2 below already refuses every one-level name, so this changes no
+	// outcome today. It is spelled out because Git needs it — the rule earns
+	// its keep under REFNAME_ALLOW_ONELEVEL, which this function has no mode
+	// for — and so that adding such a mode does not quietly admit "@".
+	if s == "@" {
+		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 	}
 
 	// rule 7
@@ -238,9 +259,7 @@ func (r ReferenceName) Validate() error {
 		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 	}
 
-	isBranch := r.IsBranch()
-	isTag := r.IsTag()
-	for i, part := range parts {
+	for _, part := range parts {
 		// rule 6
 		if len(part) == 0 {
 			return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
@@ -251,18 +270,60 @@ func (r ReferenceName) Validate() error {
 			ctrlSeqs.MatchString(part) || // rule 4
 			strings.ContainsAny(part, "~^:?*[ \t\n") || // rule 4 & 5
 			strings.Contains(part, "@{") || // rule 8
-			part == "@" || // rule 9
 			strings.Contains(part, "\\") || // rule 10
 			strings.HasSuffix(part, ".lock") { // rule 1
-			return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
-		}
-
-		if (isBranch || isTag) && strings.HasPrefix(part, "-") && (i == 2) { // branches & tags can't start with -
 			return fmt.Errorf("%w: %q", ErrInvalidReferenceName, s)
 		}
 	}
 
 	return nil
+}
+
+// ValidateBranchName reports whether name, a literal branch shorthand, may be
+// used to create a branch. It applies the naming checks from Git's check_branch_ref
+// (refs.c): the shorthand must not begin with "-", the resulting reference must
+// not be refs/heads/HEAD, and the reference name must satisfy Validate.
+// It does not perform repository-dependent expansion of expressions such as
+// "@{-1}"; callers must resolve those before validating the resulting name.
+//
+// The leading "-" is not a check_refname_format rule and Git does not apply it
+// to a name arriving over the wire: refs/heads/-foo is a reference git fetch
+// and git clone store without complaint, and git update-ref creates on request.
+// This restriction applies at creation time. Existing leading-hyphen names can
+// still be read, written and deleted; for example, git branch -D -- -foo removes
+// an existing branch named -foo.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs.c#L761-L781
+func ValidateBranchName(name string) error {
+	// Every error names the spliced reference rather than the shorthand, so a
+	// caller holding a ReferenceName is told about the name it passed.
+	r := NewBranchReferenceName(name)
+
+	// Git compares the shorthand for the "-" rule and the spliced name for the
+	// HEAD one; keep that, since the two disagree for a shorthand such as
+	// "refs/heads/HEAD", which Git accepts.
+	if strings.HasPrefix(name, "-") || r == refHeadPrefix+"HEAD" {
+		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, string(r))
+	}
+
+	return r.Validate()
+}
+
+// ValidateTagName reports whether name, the shorthand of a tag as a user spells
+// it, may be used to create a tag. It mirrors Git's check_tag_ref (refs.c): the
+// shorthand must not begin with "-" nor be "HEAD", and the reference name must
+// satisfy Validate. See ValidateBranchName for why the "-" rule belongs here
+// rather than in Validate.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs.c#L783-L792
+func ValidateTagName(name string) error {
+	r := NewTagReferenceName(name)
+
+	if strings.HasPrefix(name, "-") || name == "HEAD" {
+		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, string(r))
+	}
+
+	return r.Validate()
 }
 
 const (

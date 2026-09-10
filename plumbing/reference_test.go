@@ -158,6 +158,48 @@ func (s *ReferenceSuite) TestIsTag() {
 	s.True(r.IsTag())
 }
 
+// The two creation helpers carry the rules Git keeps in check_branch_ref and
+// check_tag_ref rather than in check_refname_format: a shorthand beginning with
+// "-", and the spelling that would land on HEAD. They apply to authoring a
+// name, not to handling one that already exists, which is why they sit here
+// rather than in Validate.
+func (s *ReferenceSuite) TestValidateBranchName() {
+	for _, name := range []string{"foo", "foo/bar", "release-1.0", "v1.0"} {
+		s.NoError(ValidateBranchName(name), "branch name %q", name)
+	}
+
+	for _, name := range []string{"-foo", "-", "HEAD", "", "foo..bar", "foo.lock", "foo bar"} {
+		err := ValidateBranchName(name)
+		s.ErrorIs(err, ErrInvalidReferenceName, "branch name %q", name)
+	}
+}
+
+func (s *ReferenceSuite) TestValidateTagName() {
+	for _, name := range []string{"v1.0.0", "release/v1", "v1-rc1"} {
+		s.NoError(ValidateTagName(name), "tag name %q", name)
+	}
+
+	for _, name := range []string{"-1.0", "-", "HEAD", "", "v1..0", "v1.lock", "v 1"} {
+		err := ValidateTagName(name)
+		s.ErrorIs(err, ErrInvalidReferenceName, "tag name %q", name)
+	}
+}
+
+// The names the two helpers refuse for their own reasons are names Validate
+// accepts, which is what keeps a repository that already holds one usable.
+func (s *ReferenceSuite) TestCreationRulesAreNotNamingRules() {
+	for _, r := range []ReferenceName{
+		"refs/heads/-foo", "refs/heads/HEAD", "refs/tags/-1.0", "refs/tags/HEAD",
+	} {
+		s.NoError(r.Validate(), "reference name %q", r)
+	}
+
+	s.ErrorIs(ValidateBranchName("-foo"), ErrInvalidReferenceName)
+	s.ErrorIs(ValidateBranchName("HEAD"), ErrInvalidReferenceName)
+	s.ErrorIs(ValidateTagName("-1.0"), ErrInvalidReferenceName)
+	s.ErrorIs(ValidateTagName("HEAD"), ErrInvalidReferenceName)
+}
+
 func (s *ReferenceSuite) TestValidReferenceNames() {
 	valid := []ReferenceName{
 		"refs/heads/master",
@@ -169,12 +211,25 @@ func (s *ReferenceSuite) TestValidReferenceNames() {
 		"refs/pulls/1/merge",
 		"refs/pulls/1/abc.123",
 		"refs/pulls",
-		"refs/-", // should this be allowed?
 		"refs/ab/-testing",
 		"refs/123-testing",
+		// A leading "-" is not a check_refname_format rule at any position,
+		// and git clone, git fetch and git update-ref all handle these. What
+		// refuses them is branch and tag creation; see TestValidateBranchName.
+		"refs/-",
+		"refs/heads/-",
+		"refs/heads/-foo",
+		"refs/tags/-",
+		"refs/tags/-foo",
+		// Rule 9 is about a name that is the single character "@", so "@" is
+		// an ordinary component. git branch -- @ creates the first of these.
+		"refs/heads/@",
+		"refs/heads/@/x",
+		"refs/heads/@foo",
+		"refs/remotes/origin/@",
 	}
 	for _, v := range valid {
-		s.Nil(v.Validate())
+		s.NoError(v.Validate(), "reference name %q", v)
 	}
 
 	invalid := []ReferenceName{
@@ -202,14 +257,11 @@ func (s *ReferenceSuite) TestValidReferenceNames() {
 		"refs/heads/foo*",
 		"refs/heads/foo[bar",
 		"refs/heads/foo\t",
-		"refs/heads/@",
 		"refs/heads/@{bar}",
 		"refs/heads/\n",
-		"refs/heads/-foo",
 		"refs/heads/foo..bar",
-		"refs/heads/-",
-		"refs/tags/-",
-		"refs/tags/-foo",
+		// Rule 9, the whole name and nothing shorter.
+		"@",
 	}
 
 	for i, v := range invalid {

@@ -1017,11 +1017,30 @@ func (s *RepositorySuite) TestEmptyCreateBranch() {
 func (s *RepositorySuite) TestInvalidCreateBranch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{
-		Name: "-foo",
-	})
 
-	s.NotNil(err)
+	// The rules check_branch_ref applies to a shorthand, which are creation
+	// rules rather than naming rules: the reference names they stand for
+	// satisfy Validate, and git clone replicates both.
+	for _, name := range []string{"-foo", "HEAD"} {
+		err := r.CreateBranch(&config.Branch{
+			Name:   name,
+			Remote: "origin",
+			Merge:  "refs/heads/main",
+		})
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "branch %q", name)
+	}
+}
+
+// check_tag_ref's equivalent, which CreateTag applies to the shorthand before
+// it builds the reference name.
+func (s *RepositorySuite) TestInvalidCreateTag() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+
+	for _, name := range []string{"-1.0", "HEAD"} {
+		_, err := r.CreateTag(name, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), nil)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "tag %q", name)
+	}
 }
 
 func (s *RepositorySuite) TestCreateBranchAndBranch() {
