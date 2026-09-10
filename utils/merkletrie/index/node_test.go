@@ -93,6 +93,35 @@ func (s *NoderSuite) TestDiffSkipIssue1455() {
 	s.Equal(a, merkletrie.Insert)
 }
 
+// TestDiffIgnoreSkipWorktree covers the option reset uses to bring the index
+// to a tree: every entry is reported, so a path the sparse-checkout excludes
+// still follows its target.
+func (s *NoderSuite) TestDiffIgnoreSkipWorktree() {
+	idx := &index.Index{
+		Entries: []*index.Entry{
+			{
+				Name:         path.Join("bar", "baz", "bar"),
+				Hash:         plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+				SkipWorktree: true,
+			},
+			{
+				Name:         path.Join("bar", "biz", "bat"),
+				Hash:         plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+				SkipWorktree: false,
+			},
+		},
+	}
+
+	options := RootNodeOptions{UpholdExecutableBit: true, IgnoreSkipWorktree: true}
+	ch, err := merkletrie.DiffTree(
+		NewRootNodeWithOptions(&index.Index{}, options),
+		NewRootNodeWithOptions(idx, options),
+		isEquals,
+	)
+	s.NoError(err)
+	s.Len(ch, 2)
+}
+
 func (s *NoderSuite) TestDiffDir() {
 	indexA := &index.Index{
 		Entries: []*index.Entry{{

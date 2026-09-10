@@ -2575,6 +2575,113 @@ func (s *WorktreeSuite) TestMergeResetRemovesTrackedFileInIgnoredDir() {
 	s.True(os.IsNotExist(err), "vendor/keep.txt must be removed after MergeReset, got err=%v", err)
 }
 
+// commitSparseFixture writes path with content, stages it and commits, so
+// the sparse reset tests have two commits that differ outside the sparse
+// directories.
+func (s *WorktreeSuite) commitSparseFixture(w *Worktree, fs billy.Filesystem, path, content string) plumbing.Hash {
+	s.Require().NoError(fs.MkdirAll(filepath.Dir(path), os.ModePerm))
+	s.Require().NoError(util.WriteFile(fs, path, []byte(content), 0o644))
+	_, err := w.Add(path)
+	s.Require().NoError(err)
+	h, err := w.Commit(content, &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	s.Require().NoError(err)
+
+	return h
+}
+
+// TestResetSparselyUpdatesExcludedEntry checks that a sparse reset brings an
+// index entry outside the sparse directories to its target. git keeps the
+// index matching the commit it resets to and lets SkipWorktree decide only
+// which paths reach the worktree, so status is clean afterwards.
+func (s *WorktreeSuite) TestResetSparselyUpdatesExcludedEntry() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	first := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	second := s.commitSparseFixture(w, fs, "excluded/f.txt", "v2")
+
+	sparse := []string{"php"}
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: first, SparseDirs: sparse}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: second, SparseDirs: sparse}))
+
+	target, err := s.Repository.getTreeFromCommitHash(second)
+	s.Require().NoError(err)
+	want, err := target.FindEntry("excluded/f.txt")
+	s.Require().NoError(err)
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	e, err := idx.Entry("excluded/f.txt")
+	s.Require().NoError(err)
+	s.Equal(want.Hash, e.Hash, "index entry must match the reset target")
+	s.True(e.SkipWorktree, "the path stays outside the sparse directories")
+
+	_, err = fs.Stat("excluded/f.txt")
+	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
+}
+
+// TestResetSparselyRemovesExcludedEntry checks that a sparse reset drops an
+// index entry the target no longer records, even though the path is outside
+// the sparse directories.
+func (s *WorktreeSuite) TestResetSparselyRemovesExcludedEntry() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	withFile := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	_, err := w.Remove("excluded/f.txt")
+	s.Require().NoError(err)
+	withoutFile, err := w.Commit("without file", &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	s.Require().NoError(err)
+
+	sparse := []string{"php"}
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: withFile, SparseDirs: sparse}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: withoutFile, SparseDirs: sparse}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	_, err = idx.Entry("excluded/f.txt")
+	s.ErrorIs(err, index.ErrEntryNotFound, "index must not track a path the target dropped")
+}
+
+// TestResetKeepsSkipWorktreeWithoutSparseDirs checks that a reset which does
+// not restate SparseDirs leaves the flag alone. The index entries are the
+// only record of the sparse set, so rewriting one must carry its flag over
+// or the next worktree update would materialise the path.
+func (s *WorktreeSuite) TestResetKeepsSkipWorktreeWithoutSparseDirs() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	first := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	second := s.commitSparseFixture(w, fs, "excluded/f.txt", "v2")
+
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: first, SparseDirs: []string{"php"}}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: second}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	e, err := idx.Entry("excluded/f.txt")
+	s.Require().NoError(err)
+	s.True(e.SkipWorktree, "a reset without SparseDirs must not clear the flag")
+
+	_, err = fs.Stat("excluded/f.txt")
+	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
+}
+
 func (s *WorktreeSuite) TestResetSparsely() {
 	fs := memfs.New()
 	w := &Worktree{

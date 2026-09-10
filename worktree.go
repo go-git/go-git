@@ -403,8 +403,9 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 	if opts.Mode == HardReset {
 		// The index identifies tracked paths even when the old HEAD tree is
 		// unreadable. Capture its diff before resetIndex replaces it, including
-		// staged additions that must be removed when absent from the target.
-		trackedChanges, err = w.diffTreeWithStaging(t, true)
+		// staged additions that must be removed when absent from the target and
+		// SkipWorktree paths that the target no longer records.
+		trackedChanges, err = w.diffTreeWithIndex(t, true)
 		if err != nil {
 			return err
 		}
@@ -509,9 +510,21 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 
 	b := newIndexBuilder(idx)
 
-	changes, err := w.diffTreeWithStaging(t, true)
+	// The index must match the reset target for every path it records, so the
+	// diff reports SkipWorktree entries too. The flag itself is preserved
+	// below, and resetWorktreeToTree keeps the paths it marks off disk.
+	changes, err := w.diffTreeWithIndex(t, true)
 	if err != nil {
 		return nil, err
+	}
+
+	// Index entries are the only record of the sparse-checkout state, which a
+	// reset that does not restate dirs leaves untouched.
+	skipped := make(map[string]bool, len(idx.Entries))
+	for _, e := range idx.Entries {
+		if e.SkipWorktree {
+			skipped[e.Name] = true
+		}
 	}
 
 	removedFiles := make([]string, 0, len(changes))
@@ -550,9 +563,10 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		}
 
 		b.Add(&index.Entry{
-			Name: name,
-			Hash: e.Hash,
-			Mode: e.Mode,
+			Name:         name,
+			Hash:         e.Hash,
+			Mode:         e.Mode,
+			SkipWorktree: skipped[name],
 		})
 	}
 
