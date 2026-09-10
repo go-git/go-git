@@ -3,11 +3,11 @@
 package object
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -89,8 +89,12 @@ type Signature struct {
 
 // Decode decodes a byte slice into a signature
 func (s *Signature) Decode(b []byte) {
-	open := bytes.LastIndexByte(b, '<')
-	closeBracket := bytes.LastIndexByte(b, '>')
+	s.decode(string(b))
+}
+
+func (s *Signature) decode(raw string) {
+	open := strings.LastIndexByte(raw, '<')
+	closeBracket := strings.LastIndexByte(raw, '>')
 	if open == -1 || closeBracket == -1 {
 		return
 	}
@@ -99,12 +103,12 @@ func (s *Signature) Decode(b []byte) {
 		return
 	}
 
-	s.Name = string(bytes.Trim(b[:open], " "))
-	s.Email = string(b[open+1 : closeBracket])
+	s.Name = strings.Trim(raw[:open], " ")
+	s.Email = raw[open+1 : closeBracket]
 
-	hasTime := closeBracket+2 < len(b)
-	if hasTime {
-		s.decodeTimeAndTimeZone(b[closeBracket+2:])
+	timeAndTimeZone := strings.TrimLeft(raw[closeBracket+1:], " \t\n\v\f\r")
+	if len(timeAndTimeZone) > 0 {
+		s.decodeTimeAndTimeZone(timeAndTimeZone)
 	}
 }
 
@@ -119,26 +123,59 @@ func (s *Signature) Encode(w io.Writer) error {
 	return nil
 }
 
+// identSource keeps the exact header value and the signature decoded from it.
+// The raw value is reusable only while the public Signature is unchanged.
+type identSource struct {
+	raw       string
+	signature Signature
+	present   bool
+}
+
+func newIdentSource(raw []byte) identSource {
+	source := identSource{raw: string(raw), present: true}
+	source.signature.decode(source.raw)
+	return source
+}
+
+func (s identSource) matches(signature Signature) bool {
+	return s.present && signatureEqual(s.signature, signature)
+}
+
+func (s identSource) encode(w io.Writer, signature Signature) error {
+	if s.matches(signature) {
+		_, err := io.WriteString(w, s.raw)
+		return err
+	}
+	return signature.Encode(w)
+}
+
+func signatureEqual(a, b Signature) bool {
+	return a.Name == b.Name &&
+		a.Email == b.Email &&
+		a.When.Unix() == b.When.Unix() &&
+		a.When.Format("-0700") == b.When.Format("-0700")
+}
+
 var timeZoneLength = 5
 
-func (s *Signature) decodeTimeAndTimeZone(b []byte) {
-	space := bytes.IndexByte(b, ' ')
+func (s *Signature) decodeTimeAndTimeZone(raw string) {
+	space := strings.IndexByte(raw, ' ')
 	if space == -1 {
-		space = len(b)
+		space = len(raw)
 	}
 
-	ts, err := strconv.ParseInt(string(b[:space]), 10, 64)
+	ts, err := strconv.ParseInt(raw[:space], 10, 64)
 	if err != nil {
 		return
 	}
 
 	s.When = time.Unix(ts, 0).In(time.UTC)
 	tzStart := space + 1
-	if tzStart >= len(b) || tzStart+timeZoneLength > len(b) {
+	if tzStart >= len(raw) || tzStart+timeZoneLength > len(raw) {
 		return
 	}
 
-	timezone := string(b[tzStart : tzStart+timeZoneLength])
+	timezone := raw[tzStart : tzStart+timeZoneLength]
 	tzhours, err1 := strconv.ParseInt(timezone[0:3], 10, 64)
 	tzmins, err2 := strconv.ParseInt(timezone[3:], 10, 64)
 	if err1 != nil || err2 != nil {
