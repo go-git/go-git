@@ -3,7 +3,7 @@ package packhandle
 import (
 	billy "github.com/go-git/go-billy/v6"
 
-	"github.com/go-git/go-git/v6/internal/sharedfile"
+	"github.com/go-git/go-git/v6/x/sharedfile"
 )
 
 // ReadAtCloser is the file shape returned by Source.Open.

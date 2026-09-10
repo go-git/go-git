@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/x/fdpool"
+	"github.com/go-git/go-git/v6/x/sharedfile"
 )
 
 // defaultGracePeriod is the idle window after the last cursor

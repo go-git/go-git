@@ -8,10 +8,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
 	gsync "github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/x/fdpool"
+	"github.com/go-git/go-git/v6/x/sharedfile"
 )
 
 const defaultCloseGracePeriod = time.Second
