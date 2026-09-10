@@ -121,11 +121,18 @@ func (sfs *worktreeFilesystem) Lstat(filename string) (os.FileInfo, error) {
 	return sfs.Filesystem.Lstat(filename)
 }
 
+// Symlink refuses a link name that names .gitmodules on any
+// filesystem before it applies the general path rules. Both checks
+// refuse the same names, but validSymlinkName reports
+// ErrGitModulesSymlink, which tells the caller which rule it broke,
+// and validPath reports only that the path is invalid. Ordering the
+// specific check first keeps the sentinel reachable for names that
+// break both, such as ".gitmodules " under core.protectNTFS.
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
-	if err := sfs.validWritePath(link); err != nil {
+	if err := sfs.validSymlinkName(link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
-	if err := sfs.validSymlinkName(link); err != nil {
+	if err := sfs.validWritePath(link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
 	return sfs.Filesystem.Symlink(target, link)
@@ -210,14 +217,29 @@ func isDotGitVariant(part string, protectHFS bool) bool {
 // the final path component of a multi-component path
 // (e.g. "submodule/.git"), so that legitimate gitlink pointer files
 // can still be Stat'd, Read, and Removed via the wrapper during
-// submodule cleanup. Attacker-controlled tree-entry paths are
-// validated separately by pathutil.ValidTreePath at the boundaries
-// where data leaves the trusted store (Tree.FindEntry, the explicit
-// callers in CherryPick and Submodule.Repository).
+// submodule cleanup.
+//
+// This is the shared gate for the paths that reach the worktree
+// without meeting pathutil.ValidTreePath first, and two classes do.
+// resetWorktreeToTree's delete pass takes its names from diffTrees,
+// whose treeNoder sets TreeWalker.skipPathValidation, so a
+// tree-derived delete never passes through Tree.FindEntry.
+// Index-derived names arrive from a decoder that does not validate
+// entry names at all. The "." / ".." check therefore runs whatever
+// core.protectNTFS and core.protectHFS say, matching the stance
+// isDotGitVariant takes for a literal .git: core.protectNTFS is a
+// statement about NTFS canonicalisation, not consent to a parent
+// hop.
+//
+// Callers that do run pathutil.ValidTreePath — Tree.FindEntry,
+// Tree.TreeEntryFile, TreeWalker.Next, Index.Add and
+// Submodule.Repository — meet a stricter predicate before reaching
+// here, which is why this layer stays tolerant of the rest.
 //
 // For upstream rules:
 // https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
 // https://github.com/git/git/blob/v2.54.0/path.c#L1419
+// https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3363
 func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 	for _, p := range paths {
 		for i := 0; i < len(p); i++ {
@@ -239,7 +261,9 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 		}
 
 		for i, part := range parts {
-			if part == "." || part == ".." {
+			// Always on, whatever core.protectNTFS and
+			// core.protectHFS say: see the doc comment above.
+			if pathutil.IsDotOrDotDotName(part) {
 				return fmt.Errorf("invalid path %q: cannot use %q", p, part)
 			}
 

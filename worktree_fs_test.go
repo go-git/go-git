@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"fmt"
+	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -1002,6 +1004,150 @@ func gitCherryPick(t *testing.T, dir, hash string) error {
 	return nil
 }
 
+// recordingFS records every path handed to a mutating operation, so a
+// test can assert on which strings actually reach the filesystem
+// after the wrapper's validators have had their say. Asserting on the
+// returned error is not enough: a delete that succeeds and a delete
+// that is refused can both leave Reset returning nil.
+type recordingFS struct {
+	billy.Filesystem
+	calls []string
+}
+
+func (r *recordingFS) record(op, p string) { r.calls = append(r.calls, op+" "+p) }
+
+func (r *recordingFS) Remove(p string) error {
+	r.record("Remove", p)
+	return r.Filesystem.Remove(p)
+}
+
+func (r *recordingFS) OpenFile(p string, flag int, perm gofs.FileMode) (billy.File, error) {
+	r.record("OpenFile", p)
+	return r.Filesystem.OpenFile(p, flag, perm)
+}
+
+func (r *recordingFS) MkdirAll(p string, perm gofs.FileMode) error {
+	r.record("MkdirAll", p)
+	return r.Filesystem.MkdirAll(p, perm)
+}
+
+func (r *recordingFS) sawPath(name string) bool {
+	for _, c := range r.calls {
+		if strings.HasSuffix(c, " "+name) {
+			return true
+		}
+	}
+	return false
+}
+
+// storeCommit writes commit to s and returns its hash.
+func storeCommit(t *testing.T, s storer.Storer, commit *object.Commit) plumbing.Hash {
+	t.Helper()
+
+	obj := s.NewEncodedObject()
+	require.NoError(t, commit.Encode(obj))
+	hash, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
+// TestResetHardRefusesTreeDerivedDotDotDisguise closes the delete
+// half of checkout and reset. resetWorktreeToTree's first pass takes
+// ch.From.String() straight from diffTrees into rmFileAndDirsIfEmpty,
+// and diffTrees' treeNoder sets TreeWalker.skipPathValidation, so the
+// name never meets pathutil.ValidTreePath. The wrapper's validPath is
+// the only gate, and it must hold with both protections off as well
+// as on.
+//
+// Reachability does not require the hostile tree ever to have been
+// materialised: Reset sets HEAD before resetIndex, so an aborted
+// checkout leaves HEAD on the hostile commit and the next
+// reset --hard issues the delete. The test models exactly that by
+// pointing HEAD at the hostile commit directly.
+func TestResetHardRefusesTreeDerivedDotDotDisguise(t *testing.T) {
+	t.Parallel()
+
+	const hostile = ".. "
+
+	for _, tc := range []struct {
+		name        string
+		protectNTFS config.OptBool
+		protectHFS  config.OptBool
+	}{
+		{name: "repository defaults"},
+		{
+			name:        "protections off",
+			protectNTFS: config.NewOptBool(false),
+			protectHFS:  config.NewOptBool(false),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := memory.NewStorage()
+			rec := &recordingFS{Filesystem: memfs.New()}
+
+			r, err := Init(s, WithWorkTree(rec))
+			require.NoError(t, err)
+
+			if tc.protectNTFS.IsSet() || tc.protectHFS.IsSet() {
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				cfg.Core.ProtectNTFS = tc.protectNTFS
+				cfg.Core.ProtectHFS = tc.protectHFS
+				require.NoError(t, r.SetConfig(cfg))
+			}
+
+			blob := writeBlob(t, s, []byte("payload\n"))
+			hostileTree := storeRawTree(t, s, []object.TreeEntry{
+				{Name: hostile, Mode: filemode.Regular, Hash: blob},
+			})
+			benignTree := storeRawTree(t, s, nil)
+
+			sig := defaultSignature()
+			hostileCommit := storeCommit(t, s, &object.Commit{
+				Author:    *sig,
+				Committer: *sig,
+				Message:   "hostile\n",
+				TreeHash:  hostileTree,
+			})
+			benignCommit := storeCommit(t, s, &object.Commit{
+				Author:       *sig,
+				Committer:    *sig,
+				Message:      "benign\n",
+				TreeHash:     benignTree,
+				ParentHashes: []plumbing.Hash{hostileCommit},
+			})
+
+			// The hostile name really is in the stored tree, and the
+			// tree-path validator really does refuse it.
+			tr, err := object.GetTree(s, hostileTree)
+			require.NoError(t, err)
+			require.Len(t, tr.Entries, 1)
+			require.Equal(t, hostile, tr.Entries[0].Name)
+			_, err = tr.FindEntry(hostile)
+			require.Error(t, err, "FindEntry must refuse the disguise")
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			require.NoError(t, s.SetReference(
+				plumbing.NewHashReference(head.Target(), hostileCommit),
+			))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			err = w.Reset(&ResetOptions{Mode: HardReset, Commit: benignCommit})
+			t.Logf("Reset returned: %v", err)
+			t.Logf("filesystem calls: %q", rec.calls)
+
+			assert.False(t, rec.sawPath(hostile),
+				"the disguise %q must never reach the filesystem; calls=%q",
+				hostile, rec.calls)
+		})
+	}
+}
+
 // TestResetAcceptsLegitPaths drives Reset(HardReset) onto a tree
 // containing a variety of legitimate path shapes and asserts each
 // one materialises on disk. pathutil.ValidTreePath rejects only
@@ -1602,4 +1748,65 @@ func TestWorktreeFilesystemHFSDotGitmodulesSymlinkAllowedWhenProtectionOff(t *te
 	fs := newWorktreeFilesystem(memfs.New(), false, false)
 	err := fs.Symlink("safe-target", ".g\u200citmodules")
 	assert.NoError(t, err, "HFS variant should be allowed when protectHFS is off")
+}
+
+// TestValidPathRejectsDotDotDisguisesWithProtectionOff pins the
+// disguise check as independent of core.protectNTFS and
+// core.protectHFS. It has to be: resetWorktreeToTree's first pass
+// takes its delete paths from diffTrees, whose treeNoder sets
+// TreeWalker.skipPathValidation, so those names never meet
+// pathutil.ValidTreePath and this wrapper is their only gate. The
+// index decoder does not validate entry names either. Turning
+// core.protectNTFS off is a statement about NTFS canonicalisation,
+// not consent to a parent hop.
+func TestValidPathRejectsDotDotDisguisesWithProtectionOff(t *testing.T) {
+	t.Parallel()
+
+	fs := newWorktreeFilesystem(memfs.New(), false, false)
+
+	paths := []string{
+		"..",
+		"../x",
+		".. ",
+		".. /x",
+		"..  /x",
+		".. ./x",
+		"..:$DATA/x",
+		"..:x/x",
+		"..::$INDEX_ALLOCATION/x",
+		".\u200c./x",
+		"\u200c../x",
+		"..\u200c/x",
+		"a/.. /b",
+		"a\\.. \\b",
+		"a/.\u200c./b",
+		".",
+		"a/./b",
+	}
+
+	for _, p := range paths {
+		t.Run(p, func(t *testing.T) {
+			t.Parallel()
+			assert.Error(t, fs.validPath(p),
+				"validPath(%q) must be refused with both protections off", p)
+		})
+	}
+}
+
+// TestValidPathAllowsDotsOnlyWithProtectionOff is the other side of
+// the same line. A component of periods alone folds to ".." on NTFS
+// and nowhere else, so it belongs to WindowsValidPath under
+// core.protectNTFS rather than to the always-on check above.
+func TestValidPathAllowsDotsOnlyWithProtectionOff(t *testing.T) {
+	t.Parallel()
+
+	fs := newWorktreeFilesystem(memfs.New(), false, false)
+
+	for _, p := range []string{"...", "....", "a/.../b", "x..", ".. x", ". "} {
+		t.Run(p, func(t *testing.T) {
+			t.Parallel()
+			assert.NoError(t, fs.validPath(p),
+				"validPath(%q) must be allowed with core.protectNTFS off", p)
+		})
+	}
 }
