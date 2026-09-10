@@ -1283,13 +1283,46 @@ func (s *WorktreeSuite) TestCheckoutCreateInvalidBranch() {
 		"refs/heads/..",
 		"refs/heads/a..b",
 		"refs/heads/.",
+		// The creation rules, which apply to the shorthand recovered from a
+		// refs/heads/ name. Validate accepts both: git clone replicates
+		// refs/heads/-foo, and refs/heads/HEAD is a name git will store.
+		"refs/heads/-foo",
+		"refs/heads/HEAD",
 	} {
 		err := w.Checkout(&CheckoutOptions{
 			Create: true,
 			Branch: name,
 		})
 
-		s.ErrorIs(err, plumbing.ErrInvalidReferenceName)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "branch %q", name)
+		s.ErrorContains(err, string(name), "branch %q", name)
+	}
+}
+
+// A name outside refs/heads/ takes the other arm of createBranch and keeps the
+// reference-name rules alone. The creation rules must not reach it: they would
+// splice a second "refs/heads/" in front and judge that instead, which accepts
+// the one-level spellings Validate exists to refuse.
+func (s *WorktreeSuite) TestCheckoutCreateAppliesBranchRulesOnlyToBranches() {
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(memfs.New(), defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	// Accepted by check_refname_format and created by git branch -- @.
+	s.NoError(w.Checkout(&CheckoutOptions{Create: true, Branch: "refs/heads/@"}))
+
+	// Not a branch, so the shorthand rules do not apply and a leading "-" is
+	// only a reference-name question, which Validate answers by accepting it.
+	s.NoError(w.Checkout(&CheckoutOptions{Create: true, Branch: "refs/remotes/origin/-x"}))
+
+	// The property this test exists for. A one-level name must keep the
+	// reference-name rules: routed through ValidateBranchName instead, it
+	// would be spliced to "refs/heads/CONFIG" and accepted, which is exactly
+	// the spelling Validate's rule 2 is there to refuse.
+	for _, name := range []plumbing.ReferenceName{"CONFIG", "ORIG_HEAD"} {
+		err := w.Checkout(&CheckoutOptions{Create: true, Branch: name})
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "branch %q", name)
 	}
 }
 

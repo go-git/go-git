@@ -51,13 +51,18 @@ func WriteInfoRefs(w io.Writer, s storage.Storer) error {
 	reference.Sort(refs)
 	for _, ref := range refs {
 		name := ref.Name()
+		// Dumb HTTP lists refs/ names only. Keep malformed names visible to
+		// storage consumers, but never interpolate them into wire records.
+		if !name.IsUnderRefs() || name.Validate() != nil {
+			continue
+		}
 		hash := ref.Hash()
 		switch ref.Type() {
 		case plumbing.SymbolicReference:
-			if name == plumbing.HEAD {
+			ref, err := storer.ResolveReference(s, ref.Target())
+			if reference.IsUnresolvableForAdvertisement(err) {
 				continue
 			}
-			ref, err := s.Reference(ref.Target())
 			if err != nil {
 				return err
 			}

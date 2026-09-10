@@ -36,6 +36,9 @@ func (r *Repository) DeleteObject(hash plumbing.Hash) error {
 }
 
 // Prune removes unreferenced loose objects from the repository.
+// It follows symbolic references when finding reachable objects. Missing targets,
+// including an unborn HEAD, are ignored. Other resolution errors, including the
+// recursion limit, abort pruning before Handler is called for any object.
 func (r *Repository) Prune(opt PruneOptions) error {
 	los, ok := r.Storer.(storer.LooseObjectStorer)
 	if !ok {

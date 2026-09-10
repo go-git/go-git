@@ -14,8 +14,10 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1017,11 +1019,30 @@ func (s *RepositorySuite) TestEmptyCreateBranch() {
 func (s *RepositorySuite) TestInvalidCreateBranch() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
-	err := r.CreateBranch(&config.Branch{
-		Name: "-foo",
-	})
 
-	s.NotNil(err)
+	// The rules check_branch_ref applies to a shorthand, which are creation
+	// rules rather than naming rules: the reference names they stand for
+	// satisfy Validate, and git clone replicates both.
+	for _, name := range []string{"-foo", "HEAD"} {
+		err := r.CreateBranch(&config.Branch{
+			Name:   name,
+			Remote: "origin",
+			Merge:  "refs/heads/main",
+		})
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "branch %q", name)
+	}
+}
+
+// check_tag_ref's equivalent, which CreateTag applies to the shorthand before
+// it builds the reference name.
+func (s *RepositorySuite) TestInvalidCreateTag() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+
+	for _, name := range []string{"-1.0", "HEAD"} {
+		_, err := r.CreateTag(name, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"), nil)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "tag %q", name)
+	}
 }
 
 func (s *RepositorySuite) TestCreateBranchAndBranch() {
@@ -4495,4 +4516,152 @@ func setupArchiveRepo(t *testing.T) *Repository {
 	r, err := Open(st, memfs.New())
 	require.NoError(t, err)
 	return r
+}
+
+// A remote is free to hold a reference name go-git will not store: a leftover
+// ".lock" file, or a name some other tool wrote. Cloning such a repository has
+// to keep working, because Git's does — filter_refs drops the name on the way
+// in and get_fetch_map drops the destination, and neither ends the fetch.
+//
+// This is the scenario the branch exists for, so it is asserted end to end
+// rather than through either filter's predicate.
+func (s *RepositorySuite) TestPlainCloneFromRepoWithUnstorableRefs() {
+	s.testPlainCloneFromRepoWithUnstorableRefs(false)
+}
+
+func (s *RepositorySuite) TestPlainCloneFiltersUnstorableRefs() {
+	s.testPlainCloneFromRepoWithUnstorableRefs(true)
+}
+
+func (s *RepositorySuite) testPlainCloneFromRepoWithUnstorableRefs(checkFiltered bool) {
+	s.T().Helper()
+	dir := s.T().TempDir()
+
+	// A real repository to clone, with objects, then names planted behind
+	// go-git's back the way another tool would leave them.
+	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := srcFs.Root()
+
+	head, err := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault()).
+		Reference(plumbing.ReferenceName("refs/heads/master"))
+	s.Require().NoError(err)
+	branch, err := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault()).
+		Reference(plumbing.ReferenceName("refs/heads/branch"))
+	s.Require().NoError(err)
+
+	for _, name := range []string{
+		"main.lock",      // a lock file, or what a crashed process left behind
+		"bad~name",       // check_refname_format rule 4
+		".hidden",        // rule 1
+		"a..b",           // rule 3
+		"nz/\u200c./sub", // a component HFS+ folds to a dot
+	} {
+		s.Require().NoError(util.WriteFile(srcFs,
+			srcFs.Join("refs", "heads", filepath.FromSlash(name)),
+			[]byte(head.Hash().String()+"\n"), 0o644))
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts *CloneOptions
+	}{
+		{"default refspec", &CloneOptions{URL: src}},
+		{"mirror", &CloneOptions{URL: src, Mirror: true, Bare: true}},
+	} {
+		s.Run(tc.name, func() {
+			r, err := PlainClone(filepath.Join(dir, "dst-"+tc.name), tc.opts)
+			s.Require().NoError(err)
+			defer func() { _ = r.Close() }()
+
+			iter, err := r.References()
+			s.Require().NoError(err)
+			got := make(map[plumbing.ReferenceName]plumbing.Hash)
+			s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+				got[ref.Name()] = ref.Hash()
+				return nil
+			}))
+			prefix := "refs/remotes/origin/"
+			if tc.opts.Mirror {
+				prefix = "refs/heads/"
+			}
+			s.Equal(head.Hash(), got[plumbing.ReferenceName(prefix+"master")])
+			s.Equal(branch.Hash(), got[plumbing.ReferenceName(prefix+"branch")])
+			if checkFiltered {
+				for _, name := range []string{"main.lock", "bad~name", ".hidden", "a..b", "nz/\u200c./sub"} {
+					s.NotContains(got, plumbing.ReferenceName(prefix+name))
+				}
+			}
+		})
+	}
+}
+
+func (s *RepositorySuite) TestCloneSkipsSymbolicRefToEmptyRoot() {
+	srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+	defer func() { s.Require().NoError(src.Close()) }()
+	head, err := src.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(srcFS, "ORIG_HEAD", nil, 0o644))
+	s.Require().NoError(src.SetReference(plumbing.NewSymbolicReference("refs/heads/alias", "ORIG_HEAD")))
+
+	dst, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: srcFS.Root(), Bare: true})
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(dst.Close()) }()
+	ref, err := dst.Storer.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	s.Require().Equal(head.Hash(), ref.Hash())
+	_, err = dst.Storer.Reference("refs/heads/alias")
+	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+}
+
+func (s *RepositorySuite) TestPlainCloneSkipsFilesystemSymlinkLoopReferent() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("requires POSIX symlink loop errors")
+	}
+
+	srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+	defer func() { s.Require().NoError(src.Close()) }()
+	head, err := src.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(srcFS, "refs/heads/alias", []byte("ref: ORIG_HEAD\n"), 0o644))
+	s.Require().NoError(srcFS.Remove("ORIG_HEAD"))
+	s.Require().NoError(srcFS.Symlink("ORIG_HEAD", "ORIG_HEAD"))
+	_, err = src.Reference("ORIG_HEAD")
+	s.Require().ErrorIs(err, syscall.ELOOP)
+
+	dst, err := PlainClone(filepath.Join(s.T().TempDir(), "clone"), &CloneOptions{URL: srcFS.Root(), Bare: true})
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(dst.Close()) }()
+	got, err := dst.Reference(plumbing.Master, true)
+	s.Require().NoError(err)
+	s.Require().Equal(head.Hash(), got.Hash())
+	_, err = dst.Reference("refs/heads/alias", false)
+	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+	_, err = src.Reference("ORIG_HEAD")
+	s.Require().ErrorIs(err, syscall.ELOOP)
+}
+
+func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
+	r, commit, tree := newPruneSymrefRepository(s.T())
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewHashReference("ORIG_HEAD", commit)))
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference("refs/heads/main", "ORIG_HEAD")))
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/main")))
+
+	s.Require().NoError(r.RepackObjects(&RepackConfig{}))
+	packs, err := r.Storer.(storer.PackedObjectStorer).ObjectPacks()
+	s.Require().NoError(err)
+	s.Require().Len(packs, 1)
+	var loose []plumbing.Hash
+	s.Require().NoError(r.Storer.(storer.LooseObjectStorer).ForEachObjectHash(func(hash plumbing.Hash) error {
+		loose = append(loose, hash)
+		return nil
+	}))
+	s.Require().NotContains(loose, commit)
+	s.Require().NotContains(loose, tree)
+	s.Require().NoError(r.Storer.HasEncodedObject(commit))
+	s.Require().NoError(r.Storer.HasEncodedObject(tree))
 }

@@ -28,52 +28,110 @@ func (s *ReferenceSuite) TestReferenceNameShort() {
 	s.Equal("v4", ExampleReferenceName.Short())
 }
 
-func (s *ReferenceSuite) TestReferenceNameIsSafe() {
+// TestReferenceNameIsSafeAndIsRoot pins IsSafe and IsRoot against the same
+// names, because the point of having both is where they disagree. IsSafe is
+// Git's refname_is_safe and accepts any shouting one-level name, "CONFIG" and
+// "SHALLOW" included — those fold onto .git/config and .git/shallow on a
+// case-insensitive filesystem, so the safe/!root rows are the gap IsRoot
+// closes. IsRoot in turn uses is_root_ref_syntax's wider alphabet, so a name
+// with a '-' can be a root ref by spelling and still not be safe: neither
+// predicate is a gate on its own.
+func (s *ReferenceSuite) TestReferenceNameIsSafeAndIsRoot() {
 	for _, tc := range []struct {
 		name ReferenceName
 		safe bool
+		root bool
 	}{
-		// One-level pseudo-refs ([A-Z_] only).
-		{"HEAD", true},
-		{"ORIG_HEAD", true},
-		{"FETCH_HEAD", true},
-		{"MERGE_HEAD", true},
-		{"CHERRY_PICK_HEAD", true},
-		// Well-formed refs/ names.
-		{"refs/heads/main", true},
-		{"refs/heads/release-1.2", true},
-		{"refs/tags/v1.0.0", true},
-		{"refs/remotes/origin/HEAD", true},
-		{"refs/stash", true},
-		// Empty, and one-level names that are not pseudo-refs (would land on
-		// top-level .git metadata).
-		{"", false},
-		{"config", false},
-		{"index", false},
-		{"packed-refs", false},
-		{"config.worktree", false},
-		{"bar", false},
-		{"head", false},
-		{"HEAD2", false},
+		// The root refs: the "*_HEAD" suffix rule, then the irregular names
+		// Git's is_root_ref lists explicitly.
+		{"HEAD", true, true},
+		{"ORIG_HEAD", true, true},
+		{"FETCH_HEAD", true, true},
+		{"MERGE_HEAD", true, true},
+		{"CHERRY_PICK_HEAD", true, true},
+		{"REVERT_HEAD", true, true},
+		{"REBASE_HEAD", true, true},
+		{"BISECT_HEAD", true, true},
+		{"_HEAD", true, true},
+		{"AUTO_MERGE", true, true},
+		{"BISECT_EXPECTED_REV", true, true},
+		{"NOTES_MERGE_PARTIAL", true, true},
+		{"NOTES_MERGE_REF", true, true},
+		{"MERGE_AUTOSTASH", true, true},
+		// is_root_ref_syntax allows '-'; refname_is_safe's [A-Z_] arm does
+		// not. A caller that reads IsRoot's "root ref" as permission would
+		// accept a name IsSafe refuses.
+		{"SOME-THING_HEAD", false, true},
+		// Well-formed refs/ names. IsRoot is about the root of the reference
+		// store only, so it is false for every one of them.
+		{"refs/heads/main", true, false},
+		{"refs/heads/release-1.2", true, false},
+		{"refs/tags/v1.0.0", true, false},
+		{"refs/remotes/origin/HEAD", true, false},
+		{"refs/heads/FETCH_HEAD", true, false},
+		{"refs/stash", true, false},
+		// The uppercase spellings of .git metadata: safe by refname_is_safe,
+		// and not root refs. On a case-insensitive filesystem (APFS, NTFS)
+		// each folds onto the real file, which is why IsSafe cannot be the
+		// only gate a create or update goes through.
+		{"CONFIG", true, false},
+		{"INDEX", true, false},
+		{"SHALLOW", true, false},
+		{"PACKED_REFS", true, false},
+		{"DESCRIPTION", true, false},
+		{"COMMONDIR", true, false},
+		{"GITDIR", true, false},
+		{"LOGS", true, false},
+		{"OBJECTS", true, false},
+		{"REFS", true, false},
+		{"HOOKS", true, false},
+		{"INFO", true, false},
+		{"WORKTREES", true, false},
+		{"MODULES", true, false},
+		{"BRANCHES", true, false},
+		{"REMOTES", true, false},
+		{"COMMIT_EDITMSG", true, false},
+		{"MERGE_MSG", true, false},
+		{"MERGE_RR", true, false},
+		{"SEQUENCER", true, false},
+		// A '-' is outside refname_is_safe's one-level alphabet, so the
+		// uppercase spelling of "packed-refs" is not safe either.
+		{"PACKED-REFS", false, false},
+		// Empty, and one-level names that would land on top-level .git
+		// metadata without even needing a case-insensitive filesystem.
+		{"", false, false},
+		{"config", false, false},
+		{"index", false, false},
+		{"packed-refs", false, false},
+		{"config.worktree", false, false},
+		{"bar", false, false},
+		{"head", false, false},
+		{"Head", false, false},
+		{"orig_head", false, false},
+		{"HEAD2", false, false},
+		{"HEAD.lock", false, false},
+		{"HEAD/x", false, false},
 		// refs/ names that escape or have empty components.
-		{"refs/", false},
-		{"refs/heads/.", false},
-		{"refs/heads/..", false},
-		{"refs/heads/../../config", false},
-		{"refs/heads//main", false},
-		{"refs/heads/", false},
+		{"refs/", false, false},
+		{"refs/heads/.", false, false},
+		{"refs/heads/..", false, false},
+		{"refs/heads/../../config", false, false},
+		{"refs/heads//main", false, false},
+		{"refs/heads/", false, false},
 		// Absolute and drive-prefixed forms.
-		{"/config", false},
-		{"/refs/heads/main", false},
-		{"\\config", false},
-		{"C:config", false},
+		{"/HEAD", false, false},
+		{"/config", false, false},
+		{"/refs/heads/main", false, false},
+		{"\\config", false, false},
+		{"C:config", false, false},
 		// Backslash inside a refs/ name: a Windows path separator that could
 		// escape the sub-tree or alias another name once turned into a path.
-		{"refs/heads/foo\\bar", false},
-		{"refs/heads\\..\\config", false},
-		{"refs/heads\\foo", false},
+		{"refs/heads/foo\\bar", false, false},
+		{"refs/heads\\..\\config", false, false},
+		{"refs/heads\\foo", false, false},
 	} {
 		s.Equal(tc.safe, tc.name.IsSafe(), "IsSafe(%q)", tc.name)
+		s.Equal(tc.root, tc.name.IsRoot(), "IsRoot(%q)", tc.name)
 	}
 }
 
@@ -158,6 +216,48 @@ func (s *ReferenceSuite) TestIsTag() {
 	s.True(r.IsTag())
 }
 
+// The two creation helpers carry the rules Git keeps in check_branch_ref and
+// check_tag_ref rather than in check_refname_format: a shorthand beginning with
+// "-", and the spelling that would land on HEAD. They apply to authoring a
+// name, not to handling one that already exists, which is why they sit here
+// rather than in Validate.
+func (s *ReferenceSuite) TestValidateBranchName() {
+	for _, name := range []string{"foo", "foo/bar", "release-1.0", "v1.0"} {
+		s.NoError(ValidateBranchName(name), "branch name %q", name)
+	}
+
+	for _, name := range []string{"-foo", "-", "HEAD", "", "foo..bar", "foo.lock", "foo bar"} {
+		err := ValidateBranchName(name)
+		s.ErrorIs(err, ErrInvalidReferenceName, "branch name %q", name)
+	}
+}
+
+func (s *ReferenceSuite) TestValidateTagName() {
+	for _, name := range []string{"v1.0.0", "release/v1", "v1-rc1"} {
+		s.NoError(ValidateTagName(name), "tag name %q", name)
+	}
+
+	for _, name := range []string{"-1.0", "-", "HEAD", "", "v1..0", "v1.lock", "v 1"} {
+		err := ValidateTagName(name)
+		s.ErrorIs(err, ErrInvalidReferenceName, "tag name %q", name)
+	}
+}
+
+// The names the two helpers refuse for their own reasons are names Validate
+// accepts, which is what keeps a repository that already holds one usable.
+func (s *ReferenceSuite) TestCreationRulesAreNotNamingRules() {
+	for _, r := range []ReferenceName{
+		"refs/heads/-foo", "refs/heads/HEAD", "refs/tags/-1.0", "refs/tags/HEAD",
+	} {
+		s.NoError(r.Validate(), "reference name %q", r)
+	}
+
+	s.ErrorIs(ValidateBranchName("-foo"), ErrInvalidReferenceName)
+	s.ErrorIs(ValidateBranchName("HEAD"), ErrInvalidReferenceName)
+	s.ErrorIs(ValidateTagName("-1.0"), ErrInvalidReferenceName)
+	s.ErrorIs(ValidateTagName("HEAD"), ErrInvalidReferenceName)
+}
+
 func (s *ReferenceSuite) TestValidReferenceNames() {
 	valid := []ReferenceName{
 		"refs/heads/master",
@@ -169,12 +269,25 @@ func (s *ReferenceSuite) TestValidReferenceNames() {
 		"refs/pulls/1/merge",
 		"refs/pulls/1/abc.123",
 		"refs/pulls",
-		"refs/-", // should this be allowed?
 		"refs/ab/-testing",
 		"refs/123-testing",
+		// A leading "-" is not a check_refname_format rule at any position,
+		// and git clone, git fetch and git update-ref all handle these. What
+		// refuses them is branch and tag creation; see TestValidateBranchName.
+		"refs/-",
+		"refs/heads/-",
+		"refs/heads/-foo",
+		"refs/tags/-",
+		"refs/tags/-foo",
+		// Rule 9 is about a name that is the single character "@", so "@" is
+		// an ordinary component. git branch -- @ creates the first of these.
+		"refs/heads/@",
+		"refs/heads/@/x",
+		"refs/heads/@foo",
+		"refs/remotes/origin/@",
 	}
 	for _, v := range valid {
-		s.Nil(v.Validate())
+		s.NoError(v.Validate(), "reference name %q", v)
 	}
 
 	invalid := []ReferenceName{
@@ -202,14 +315,11 @@ func (s *ReferenceSuite) TestValidReferenceNames() {
 		"refs/heads/foo*",
 		"refs/heads/foo[bar",
 		"refs/heads/foo\t",
-		"refs/heads/@",
 		"refs/heads/@{bar}",
 		"refs/heads/\n",
-		"refs/heads/-foo",
 		"refs/heads/foo..bar",
-		"refs/heads/-",
-		"refs/tags/-",
-		"refs/tags/-foo",
+		// Rule 9, the whole name and nothing shorter.
+		"@",
 	}
 
 	for i, v := range invalid {
@@ -241,4 +351,32 @@ func BenchmarkReferenceObjectID(b *testing.B) {
 
 func BenchmarkReferenceStringInvalid(b *testing.B) {
 	benchMarkReferenceString(&Reference{}, b)
+}
+
+// The four gates that draw a line at refs/ used to each carry their own copy
+// of the string. This is the one they share.
+func (s *ReferenceSuite) TestIsUnderRefs() {
+	for _, tc := range []struct {
+		name ReferenceName
+		want bool
+	}{
+		{"refs/heads/main", true},
+		{"refs/stash", true},
+		{"refs/", true},
+		{"HEAD", false},
+		{"ORIG_HEAD", false},
+		{"CONFIG", false},
+		{"", false},
+		{"refs", false},
+		{"Refs/heads/main", false},
+		{"xrefs/heads/main", false},
+	} {
+		s.Equal(tc.want, tc.name.IsUnderRefs(), "IsUnderRefs(%q)", tc.name)
+	}
+
+	// The exported prefixes are what the constructors build from, so a change
+	// to one cannot silently disagree with the other.
+	s.Equal(RefPrefix+"heads/", RefHeadPrefix)
+	s.True(NewBranchReferenceName("x").IsUnderRefs())
+	s.Equal(ReferenceName(RefHeadPrefix+"x"), NewBranchReferenceName("x"))
 }

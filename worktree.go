@@ -265,7 +265,19 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 }
 
 func (w *Worktree) createBranch(opts *CheckoutOptions) error {
-	if err := opts.Branch.Validate(); err != nil {
+	// Git applies its branch-name rules to the shorthand a user types, so
+	// recover the shorthand before checking a name that is one. A name that is
+	// not under refs/heads/ gets the reference-name rules alone: handing it to
+	// ValidateBranchName would splice a second "refs/heads/" in front and
+	// judge that instead, which accepts the one-level spellings Validate
+	// exists to refuse. That arm is not a second gate — "HEAD" reaches it and
+	// passes, because Validate carves HEAD out; what stops it is the existing-
+	// reference check below.
+	if name, ok := strings.CutPrefix(opts.Branch.String(), plumbing.RefHeadPrefix); ok {
+		if err := plumbing.ValidateBranchName(name); err != nil {
+			return err
+		}
+	} else if err := opts.Branch.Validate(); err != nil {
 		return err
 	}
 

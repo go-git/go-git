@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // Request describes a Git server-side operation.
@@ -93,6 +94,15 @@ func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 			_ = closer.Close()
 		}
 	}()
+
+	// Transport commands may close their streams when an exchange finishes.
+	// Serve leaves the underlying streams open for the caller.
+	if r != nil {
+		r = io.NopCloser(r)
+	}
+	if w != nil {
+		w = ioutil.WriteNopCloser(w)
+	}
 
 	switch req.Service {
 	case transport.UploadPackService:

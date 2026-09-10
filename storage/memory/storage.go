@@ -411,7 +411,10 @@ func (r ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) err
 
 	if old != nil {
 		tmp := r[ref.Name()]
-		if tmp != nil && tmp.Hash() != old.Hash() {
+		if tmp == nil {
+			return plumbing.ErrReferenceNotFound
+		}
+		if tmp.Hash() != old.Hash() {
 			return storage.ErrReferenceHasChanged
 		}
 	}

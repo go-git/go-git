@@ -3,9 +3,11 @@ package transport
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -78,18 +80,47 @@ type PostReceiveInfo struct {
 }
 
 // ReceivePack is a server command that serves the receive-pack service.
+// It closes w on every return, including malformed requests and advertisement-only
+// exchanges. A close error is returned only if no earlier error occurred.
+// Callers that retain ownership of their streams should wrap r with [io.NopCloser]
+// and w with [ioutil.WriteNopCloser].
+//
+// Commands may name only references under refs/ with valid syntax and safe path
+// components. Refusals are reported per command when report-status is negotiated.
+// A request naming the same reference twice is rejected before hooks or reference
+// updates run. See ErrFunnyRefname and ErrDuplicateRefname.
+// Commands execute even when report-status is not requested. Updates use the
+// storer's compare-and-set operation on the resolved target. Symbolic resolution
+// is separate from the update, and deletes check the old value before a separate
+// removal. ReferenceStorer has no transaction covering these steps: callers must
+// serialize concurrent writers if they require the entire operation to be atomic.
 func ReceivePack(
 	ctx context.Context,
 	st storage.Storer,
 	r io.ReadCloser,
 	w io.WriteCloser,
 	opts *ReceivePackRequest,
-) error {
+) (err error) {
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
 
 	w = ioutil.NewContextWriteCloser(ctx, w)
+
+	// Every exit from here on closes the writer, because the close is what ends
+	// the response for the caller's transport: a return that skips it leaves a
+	// client waiting on a stream that will never end. That holds for the early
+	// returns too, where nothing has been written yet, and for a refused ref,
+	// where the "ng <ref> <reason>" line is the response.
+	//
+	// The close error only surfaces when nothing else went wrong: a rejected
+	// command or a malformed request describes the exchange better than a
+	// failure to hang up does.
+	defer func() {
+		if closeErr := closeWriter(w); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	if opts == nil {
 		opts = &ReceivePackRequest{}
@@ -170,10 +201,7 @@ func ReceivePack(
 		return fmt.Errorf("closing reader: %w", err)
 	}
 
-	// Report status if the client supports it
-	if !updreq.Capabilities.Supports(capability.ReportStatus) && !updreq.Capabilities.Supports(capability.ReportStatusV2) {
-		return unpackErr
-	}
+	reportStatus := caps.Supports(capability.ReportStatus) || caps.Supports(capability.ReportStatusV2)
 
 	var (
 		useSideband bool
@@ -195,10 +223,69 @@ func ReceivePack(
 	}
 
 	writeCloser := ioutil.NewWriteCloser(writer, w)
+
+	// report is how every remaining exit answers the client: the report-status,
+	// then the flush that ends the sideband stream when one is in use.
+	// ReportStatus.Encode writes a flush of its own, but on a sideband exchange
+	// that one is muxed into band 1 along with the rest of the report, so it
+	// does not terminate the stream the client is demuxing. Routing all three
+	// exits through one function is what stops one of them from answering
+	// without that second flush.
+	report := func(unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
+		if reportStatus {
+			if err := sendReportStatus(writeCloser, updreq.Commands, unpackErr, cmdStatus); err != nil {
+				return err
+			}
+		}
+		if !useSideband {
+			return nil
+		}
+		if err := pktline.WriteFlush(w); err != nil {
+			return fmt.Errorf("flushing sideband: %w", err)
+		}
+		return nil
+	}
+
 	if unpackErr != nil {
-		res := sendReportStatus(writeCloser, unpackErr, nil)
-		_ = closeWriter(w)
-		return res
+		// No command was attempted, so there is no per-ref outcome to give and
+		// the unpack line carries the whole reason. The error still goes back
+		// to the caller: writing the report successfully does not turn a failed
+		// push into a successful exchange, and the two failure exits below
+		// answer the same way.
+		if err := report(unpackErr, nil); err != nil {
+			return err
+		}
+		return unpackErr
+	}
+
+	// A name carried by more than one command makes the push unapplyable: the
+	// commands contradict each other, and cmdStatus holds a single outcome per
+	// name, so running both would report one of them and hide the other.
+	//
+	// git refuses such a push outright. It batches the ref updates into a
+	// transaction, and a repeated name aborts the transaction with "multiple
+	// updates for ref <name> not allowed", so no ref in the batch moves and
+	// every command is answered "ng" — including the commands that named a
+	// reference only once. Refuse the whole request the same way, rather than
+	// only the duplicated name, so a push either applies as sent or not at all.
+	//
+	// Unlike git this runs before PreReceive. A hook is a policy gate that may
+	// have side effects of its own, so it is not asked to authorise a request
+	// that cannot be applied whatever it answers.
+	if dup, ok := duplicateRefname(updreq.Commands); ok {
+		rejected := make(map[plumbing.ReferenceName]error, len(updreq.Commands))
+		for _, cmd := range updreq.Commands {
+			// sendReportStatus writes Error() into the "ng <ref> <reason>"
+			// line, so the reason stays the bare sentinel: the line already
+			// names the ref it speaks for. Git sends "failed to update refs"
+			// here; this says more, and both are opaque to a client. Which
+			// name was duplicated goes to the caller instead.
+			rejected[cmd.Name] = ErrDuplicateRefname
+		}
+		if err := report(nil, rejected); err != nil {
+			return err
+		}
+		return fmt.Errorf("%w: %q", ErrDuplicateRefname, dup)
 	}
 
 	if opts.Hooks.PreReceive != nil {
@@ -213,17 +300,7 @@ func ReceivePack(
 			for _, cmd := range updreq.Commands {
 				rejected[cmd.Name] = hookErr
 			}
-			if err := sendReportStatus(writeCloser, nil, rejected); err != nil {
-				_ = closeWriter(w)
-				return err
-			}
-			if useSideband {
-				if err := pktline.WriteFlush(w); err != nil {
-					_ = closeWriter(w)
-					return fmt.Errorf("flushing sideband: %w", err)
-				}
-			}
-			if err := closeWriter(w); err != nil {
+			if err := report(nil, rejected); err != nil {
 				return err
 			}
 			return hookErr
@@ -250,19 +327,16 @@ func ReceivePack(
 		_ = opts.Hooks.PostReceive(ctx, info)
 	}
 
-	if err := sendReportStatus(writeCloser, firstErr, cmdStatus); err != nil {
+	// The unpack status reports on the packfile, not on the ref updates: it is
+	// "ok" here because unpackErr was handled above. Per-command failures are
+	// carried by cmdStatus as "ng <ref> <reason>" lines, exactly as the
+	// PreReceive rejection path does; folding firstErr into the unpack status
+	// would make a client treat a single refused ref as a corrupt push.
+	if err := report(nil, cmdStatus); err != nil {
 		return err
 	}
 
-	if useSideband {
-		if err := pktline.WriteFlush(w); err != nil {
-			return fmt.Errorf("flushing sideband: %w", err)
-		}
-	}
-	if firstErr != nil {
-		return firstErr
-	}
-	return closeWriter(w)
+	return firstErr
 }
 
 type sidebandProgress struct{ mux *sideband.Muxer }
@@ -278,20 +352,37 @@ func closeWriter(w io.WriteCloser) error {
 	return nil
 }
 
-func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
+// sendReportStatus writes the report-status for the exchange: the unpack line,
+// then one status line per command.
+//
+// The lines follow cmds, not the cmdStatus map. Git reports in the order the
+// commands arrived and a client is entitled to pair the two up positionally,
+// whereas ranging over the map orders them differently on every push. A command
+// with no entry in cmdStatus was never attempted and is not reported.
+//
+// One line is written per command, not per distinct name, which is what keeps
+// that pairing positional: git answers a name carried by two commands with two
+// ng lines. Both lines say the same thing here, because a duplicated name is
+// refused before any command runs and the map holds one outcome for it.
+func sendReportStatus(w io.WriteCloser, cmds []*packp.Command, unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
 	rs := &packp.ReportStatus{}
 	rs.UnpackStatus = "ok"
 	if unpackErr != nil {
 		rs.UnpackStatus = unpackErr.Error()
 	}
 
-	for ref, err := range cmdStatus {
+	for _, cmd := range cmds {
+		err, ok := cmdStatus[cmd.Name]
+		if !ok {
+			continue
+		}
+
 		msg := "ok"
 		if err != nil {
 			msg = err.Error()
 		}
 		status := &packp.CommandStatus{
-			ReferenceName: ref,
+			ReferenceName: cmd.Name,
 			Status:        msg,
 		}
 		rs.CommandStatuses = append(rs.CommandStatuses, status)
@@ -304,6 +395,19 @@ func sendReportStatus(w io.WriteCloser, unpackErr error, cmdStatus map[plumbing.
 	return nil
 }
 
+// duplicateRefname returns the first reference name that more than one command
+// in cmds updates, and whether there was one.
+func duplicateRefname(cmds []*packp.Command) (plumbing.ReferenceName, bool) {
+	seen := make(map[plumbing.ReferenceName]struct{}, len(cmds))
+	for _, cmd := range cmds {
+		if _, ok := seen[cmd.Name]; ok {
+			return cmd.Name, true
+		}
+		seen[cmd.Name] = struct{}{}
+	}
+	return "", false
+}
+
 func setStatus(cmdStatus map[plumbing.ReferenceName]error, firstErr *error, ref plumbing.ReferenceName, err error) {
 	cmdStatus[ref] = err
 	if *firstErr == nil && err != nil {
@@ -311,19 +415,113 @@ func setStatus(cmdStatus map[plumbing.ReferenceName]error, firstErr *error, ref 
 	}
 }
 
-func referenceExists(s storer.ReferenceStorer, n plumbing.ReferenceName) (bool, error) {
-	_, err := s.Reference(n)
-	if err == plumbing.ErrReferenceNotFound {
-		return false, nil
+// checkRefname returns [ErrFunnyRefname] if receive-pack must refuse a command
+// naming ref, and nil if the name may reach the storer.
+//
+// It mirrors the gate in Git's builtin/receive-pack.c (execute_commands_non_atomic
+// -> update, "only refs/... are allowed"), which refuses a command whose name
+// is not under refs/ or fails check_refname_format, reporting "funny refname".
+// Without it, a push can name HEAD, CONFIG, INDEX or SHALLOW and reach the
+// storer: writing HEAD repoints the repository's default branch for every
+// later clone on any filesystem, and on a case-insensitive one the shouting
+// names land on .git/config, .git/index and .git/shallow. A Delete command
+// needs no packfile at all, so the same names also give an unauthenticated
+// "remove .git/config" primitive.
+//
+// The name is checked in four steps:
+//
+//   - the refs/ prefix, which is what stops HEAD and every other root ref.
+//     Git relaxes its format check for deletes (REFNAME_ALLOW_ONELEVEL) but
+//     never relaxes this prefix, and neither do we: deleting a ref is the
+//     cheapest form of this attack, not the most benign.
+//   - ReferenceName.IsSafe, Git's refname_is_safe, for names that escape the
+//     refs/ sub-tree or alias another path once joined.
+//   - pathutil.HasUnsafeComponent, for the escapes IsSafe's literal ".."
+//     comparison misses: control characters, and the components an HFS+ or
+//     NTFS filesystem folds back to "." or "..". The dotgit storage layer
+//     applies the same helper, but this gate cannot lean on it: ReceivePack is
+//     exported and can be handed any storer, including one that never reaches
+//     a filesystem.
+//   - ReferenceName.Validate, go-git's check_refname_format, for the remaining
+//     character and component rules.
+//
+// Three of the four are decisive somewhere. The refs/ prefix is the only thing
+// that refuses HEAD, which IsSafe accepts, HasUnsafeComponent passes, and
+// Validate carves out by name. IsSafe is the exception: with the prefix already
+// required, every name it rejects is one Validate also rejects, by rules 1, 3,
+// 6 and 10. It stays because this gate should not depend on that overlap
+// holding as either function changes.
+//
+// Validating the full name, rather than Git's suffix after refs/, has two
+// compatibility differences:
+//
+//   - Git runs check_refname_format on the part after "refs/" and passes
+//     REFNAME_ALLOW_ONELEVEL only for deletes, so it refuses to *create*
+//     refs/stash ("funny refname") while allowing it to be deleted. go-git
+//     validates the whole name, which accepts one level under refs/ for every
+//     action. refs/stash is a first-class ref here, and a single component
+//     under refs/ cannot escape the sub-tree, so the asymmetry would cost
+//     compatibility and buy no safety.
+//   - For refs/@, Git tests the suffix "@" and rejects it for every action.
+//     go-git accepts it because "@" is not the entire reference name. This
+//     preserves the existing support for names accepted by Validate.
+//
+// An additional filesystem-safety restriction applies to every action:
+//
+//   - HasUnsafeComponent refuses a component whose first non-ignorable code
+//     point is a lone ".", which check_refname_format accepts:
+//     refs/heads/<U+200C>./x is "ok" to Git and "funny refname" here. On HFS+
+//     that component normalises away and the name lands on refs/heads/x, which
+//     is a filesystem hazard Git's format check does not model.
+//
+// Git relaxes only the component count for a delete and keeps every other
+// format rule at its receive-pack gate. The wider
+// relaxation it grants in ref_transaction_update — refname_is_safe on its own —
+// is for a local caller rather than a remote one.
+//
+// The error is returned bare on purpose: sendReportStatus writes Error()
+// verbatim into the "ng <ref> <reason>" line, so wrapping it with extra context
+// would hand the client a status git never sends.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L1491-L1499
+func checkRefname(ref plumbing.ReferenceName) error {
+	if !ref.IsUnderRefs() {
+		return ErrFunnyRefname
 	}
 
-	return err == nil, err
+	if !ref.IsSafe() {
+		return ErrFunnyRefname
+	}
+
+	if pathutil.HasUnsafeComponent(ref.String()) {
+		return ErrFunnyRefname
+	}
+
+	if err := ref.Validate(); err != nil {
+		return ErrFunnyRefname
+	}
+
+	return nil
 }
 
 func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus map[plumbing.ReferenceName]error, firstErr *error) {
 	for _, cmd := range req.Commands {
-		exists, err := referenceExists(st, cmd.Name)
-		if err != nil {
+		if err := checkRefname(cmd.Name); err != nil {
+			setStatus(cmdStatus, firstErr, cmd.Name, err)
+			continue
+		}
+
+		var current *plumbing.Reference
+		var err error
+		if cmd.Action() == packp.Create {
+			// An existing symbolic ref still occupies the name when its
+			// target is missing. A create must not overwrite that alias.
+			current, err = st.Reference(cmd.Name)
+		} else {
+			current, err = storer.ResolveReference(st, cmd.Name)
+		}
+		exists := err == nil
+		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 			continue
 		}
@@ -344,7 +542,22 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 				continue
 			}
 
-			err := st.RemoveReference(cmd.Name)
+			if current.Hash() != cmd.Old {
+				// Git permits removal of a corrupt ref when the supplied old
+				// object is missing. A present old object must match the ref.
+				// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L1604-L1619.
+				_, objectErr := st.EncodedObject(plumbing.AnyObject, cmd.Old)
+				if objectErr == nil {
+					setStatus(cmdStatus, firstErr, cmd.Name, storage.ErrReferenceHasChanged)
+					continue
+				}
+				if !errors.Is(objectErr, plumbing.ErrObjectNotFound) {
+					setStatus(cmdStatus, firstErr, cmd.Name, objectErr)
+					continue
+				}
+			}
+
+			err := st.RemoveReference(current.Name())
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		case packp.Update:
 			if !exists {
@@ -352,8 +565,9 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 				continue
 			}
 
-			ref := plumbing.NewHashReference(cmd.Name, cmd.New)
-			err := st.SetReference(ref)
+			ref := plumbing.NewHashReference(current.Name(), cmd.New)
+			old := plumbing.NewHashReference(current.Name(), cmd.Old)
+			err := st.CheckAndSetReference(ref, old)
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		}
 	}
