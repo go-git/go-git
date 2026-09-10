@@ -51,8 +51,8 @@ func TestValidPath(t *testing.T) {
 		{".", true},
 		{"a/.git/b", true},
 		{"a\\.git\\b", true},
-		{"a/.git", false},
-		{"a\\.git", false},
+		{"a/.git", true},
+		{"a\\.git", true},
 		{"a\x01b", true},     // explicit byte-oriented control-char rejection
 		{"foo\x7fbar", true}, // DEL byte
 	}
@@ -78,7 +78,6 @@ func TestWorktreeFilesystemRejectsInvalidPaths(t *testing.T) {
 	badPaths := []string{
 		".git/config",
 		".git/objects/pack/file",
-		"git~1/HEAD",
 		"../escape",
 		"a/../../etc/passwd",
 	}
@@ -234,7 +233,6 @@ func TestWorktreeFilesystemSymlinkRejectsDangerousLinkNames(t *testing.T) {
 		".git",
 		".git/config",
 		".git/hooks/pre-commit",
-		"git~1/HEAD",
 		"../escape",
 		"a/../../etc/passwd",
 	}
@@ -492,7 +490,7 @@ func TestWorktreeFilesystemAbsolutePaths(t *testing.T) {
 		{"allow /readme.md", "/readme.md", false},
 		{"allow /src/main.go", "/src/main.go", false},
 		{"allow /.gitignore", "/.gitignore", false},
-		{"allow /submodule/.git", "/submodule/.git", false},
+		{"reject /submodule/.git", "/submodule/.git", true},
 	}
 
 	for _, tc := range tests {
@@ -1004,6 +1002,19 @@ func gitCherryPick(t *testing.T, dir, hash string) error {
 	return nil
 }
 
+func gitRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	overrides := []string{
+		"-c", "protocol.file.allow=always",
+		"-c", "submodule.recurse=false",
+		"-C", dir,
+	}
+	out, err := gitenv.CommandContext(t.Context(), "git", append(overrides, args...)...).CombinedOutput()
+	require.NoError(t, err, "git %q: %s", args, out)
+	return strings.TrimSpace(string(out))
+}
+
 // recordingFS records every path handed to a mutating operation, so a
 // test can assert on which strings actually reach the filesystem
 // after the wrapper's validators have had their say. Asserting on the
@@ -1145,6 +1156,89 @@ func TestResetHardRefusesTreeDerivedDotDotDisguise(t *testing.T) {
 				"the disguise %q must never reach the filesystem; calls=%q",
 				hostile, rec.calls)
 		})
+	}
+}
+
+// TestResetRejectsDotGitPositionShift walks a .git alias through the
+// positions a hostile tree can hide it in — behind a component that
+// NTFS or HFS+ folds away, behind an Alternate Data Stream name, and
+// at the root — for a regular entry and for a gitlink. The gate has
+// to hold with either protection off, because ValidTreePath refuses
+// the alias unconditionally and the wrapper is the only thing the
+// tree-derived delete passes through.
+func TestResetRejectsDotGitPositionShift(t *testing.T) {
+	t.Parallel()
+
+	names := []string{
+		"::$INDEX_ALLOCATION/.git",
+		":a/.git",
+		".\u200c/.git",
+		". /.git",
+		".../.git",
+		" /.git",
+		"sub/.GIT",
+		".git",
+	}
+
+	for _, name := range names {
+		for _, mode := range []filemode.FileMode{filemode.Regular, filemode.Submodule} {
+			for _, ntfs := range []bool{false, true} {
+				for _, hfs := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%q/%o/ntfs=%t/hfs=%t", name, mode, ntfs, hfs), func(t *testing.T) {
+						t.Parallel()
+
+						s := memory.NewStorage()
+						rec := &recordingFS{Filesystem: memfs.New()}
+
+						r, err := Init(s, WithWorkTree(rec))
+						require.NoError(t, err)
+
+						cfg, err := r.Config()
+						require.NoError(t, err)
+						cfg.Core.ProtectNTFS = config.NewOptBool(ntfs)
+						cfg.Core.ProtectHFS = config.NewOptBool(hfs)
+						require.NoError(t, r.SetConfig(cfg))
+
+						blob := writeBlob(t, s, []byte("payload"))
+						hostileTree := storeRawTree(t, s, []object.TreeEntry{
+							{Name: name, Mode: mode, Hash: blob},
+						})
+						benignTree := storeRawTree(t, s, nil)
+
+						sig := defaultSignature()
+						hostileCommit := storeCommit(t, s, &object.Commit{
+							Author:    *sig,
+							Committer: *sig,
+							Message:   "hostile\n",
+							TreeHash:  hostileTree,
+						})
+						benignCommit := storeCommit(t, s, &object.Commit{
+							Author:       *sig,
+							Committer:    *sig,
+							Message:      "benign\n",
+							TreeHash:     benignTree,
+							ParentHashes: []plumbing.Hash{hostileCommit},
+						})
+
+						head, err := r.Reference(plumbing.HEAD, false)
+						require.NoError(t, err)
+						require.NoError(t, s.SetReference(
+							plumbing.NewHashReference(head.Target(), hostileCommit),
+						))
+
+						w, err := r.Worktree()
+						require.NoError(t, err)
+
+						rec.calls = nil
+						err = w.Reset(&ResetOptions{Mode: HardReset, Commit: benignCommit})
+						require.Error(t, err, "the alias must be refused; calls=%q", rec.calls)
+						assert.False(t, rec.sawPath(name),
+							"the alias %q must never reach the filesystem; calls=%q",
+							name, rec.calls)
+					})
+				}
+			}
+		}
 	}
 }
 
@@ -1435,7 +1529,7 @@ func TestForceCheckoutReplacesLeadingSymlink(t *testing.T) {
 // Windows reserved device names are not exercised here: they are
 // legitimate filenames on non-Windows and upstream Git accepts them, so
 // the strict tree-side gate also accepts them. The wrapper rejects them
-// at materialisation time when core.protectNTFS is on; that path is
+// on Windows when core.protectNTFS is on; that path is
 // covered by TestValidPathProtectNTFS.
 func TestAddRejectsDangerousPaths(t *testing.T) {
 	t.Parallel()
@@ -1522,6 +1616,129 @@ func TestMoveRejectsDangerousDestinations(t *testing.T) {
 	}
 }
 
+// TestValidPathRejectsDotGitEveryPosition walks a .git alias through
+// every position a path can put it in. `.git` and the bare 8.3 short
+// name `git~1` are refused whatever the configuration says, because
+// ValidTreePath refuses them; core.protectNTFS and core.protectHFS
+// only add the spellings those filesystems fold back to one of the
+// two.
+func TestValidPathRejectsDotGitEveryPosition(t *testing.T) {
+	t.Parallel()
+
+	groups := []struct {
+		name  string
+		paths []string
+	}{
+		{"always", []string{
+			". /.git", ".\u200c/.git", ".../.git", "..../.git", " /.git",
+			"::$INDEX_ALLOCATION/.git", ":a/.git", "a/. /.git",
+			"sub/.git", "sub/.GIT", ".GIT", "a\\.git", "a/.git/config",
+			"git~1", "git~1/HEAD", "sub/git~1", "GIT~1",
+		}},
+		{"ntfs", []string{
+			"sub/GIT~1 ", ".git ", "git~1 ", ".git::$INDEX_ALLOCATION",
+		}},
+		{"hfs", []string{
+			"sub/.git\u200c", "sub/.gi\u200ct", "sub/.g\u200cit",
+			"sub/.\u200cgit", "sub/\u200c.git",
+		}},
+	}
+
+	for _, group := range groups {
+		for _, ntfs := range []bool{false, true} {
+			for _, hfs := range []bool{false, true} {
+				for _, p := range group.paths {
+					t.Run(fmt.Sprintf("%s/%q/ntfs=%t/hfs=%t", group.name, p, ntfs, hfs), func(t *testing.T) {
+						t.Parallel()
+
+						fs := newWorktreeFilesystem(memfs.New(), ntfs, hfs)
+						rejected := group.name == "always" ||
+							group.name == "ntfs" && ntfs ||
+							group.name == "hfs" && hfs
+
+						for _, check := range []func(...string) error{fs.validPath, fs.validWritePath} {
+							err := check(p)
+							if rejected {
+								require.Error(t, err)
+							} else {
+								require.NoError(t, err)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// TestWorktreeOperationsSurviveDotGitDisguises pins what the
+// every-position refusal costs the porcelain: a name the gate refuses
+// is invisible to Status and untouched by Clean, where git would list
+// and remove it. Neither operation may fail on account of it, and an
+// unrelated file in the same worktree stays reachable.
+func TestWorktreeOperationsSurviveDotGitDisguises(t *testing.T) {
+	t.Parallel()
+
+	names := []string{
+		".git", "git~1", ".GIT", "sub/.GIT",
+		"sub/git~1", "sub/.git", ".git\u200c", "sub/.git\u200c",
+	}
+
+	for _, name := range names {
+		for _, directory := range []bool{false, true} {
+			for _, op := range []string{"Clean", "Status", "AddUnrelated", "AddGlob", "AddAll", "AddName"} {
+				t.Run(fmt.Sprintf("%q/directory=%t/%s", name, directory, op), func(t *testing.T) {
+					t.Parallel()
+
+					fs := memfs.New()
+					r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+					require.NoError(t, err)
+
+					cfg, err := r.Config()
+					require.NoError(t, err)
+					cfg.Core.ProtectNTFS = config.OptBoolTrue
+					cfg.Core.ProtectHFS = config.OptBoolTrue
+					require.NoError(t, r.SetConfig(cfg))
+
+					w, err := r.Worktree()
+					require.NoError(t, err)
+
+					p := name
+					if directory {
+						p += "/inner.txt"
+					}
+					require.NoError(t, util.WriteFile(fs, p, []byte("preserved"), 0o644))
+					require.NoError(t, util.WriteFile(fs, "unrelated.txt", []byte("safe"), 0o644))
+
+					switch op {
+					case "Clean":
+						require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+						body, err := util.ReadFile(fs, p)
+						require.NoError(t, err)
+						require.Equal(t, "preserved", string(body))
+					case "Status":
+						status, err := w.Status()
+						require.NoError(t, err)
+						require.Equal(t, Status{
+							"unrelated.txt": &FileStatus{Staging: Untracked, Worktree: Untracked},
+						}, status)
+					case "AddUnrelated":
+						_, err = w.Add("unrelated.txt")
+						require.NoError(t, err)
+					case "AddGlob":
+						require.NoError(t, w.AddGlob("."))
+					case "AddAll":
+						require.NoError(t, w.AddWithOptions(&AddOptions{All: true}))
+					case "AddName":
+						_, err = w.Add(name)
+						require.ErrorIs(t, err, pathutil.ErrInvalidPath)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestValidPathProtectNTFS(t *testing.T) {
 	t.Parallel()
 
@@ -1541,6 +1758,15 @@ func TestValidPathProtectNTFS(t *testing.T) {
 		{"sub/NUL", true},
 		{"sub/COM1.txt", true},
 		{"CONIN$", true},
+		{"foo ", true},
+		{"foo.", true},
+		{"sub /x", true},
+		{".gitattributes ", true},
+		{".gitignore ", true},
+		{"...", true},
+		{"....", true},
+		{"a..b", false},
+		{"foo", false},
 		{"readme.md", false},
 		{".gitignore", false},
 		{"CONNECT", false},
@@ -1580,6 +1806,12 @@ func TestValidPathProtectNTFSDisabled(t *testing.T) {
 		".git ",
 		".git.",
 		".git::$INDEX_ALLOCATION",
+		"foo ",
+		"foo.",
+		"sub /x",
+		".gitattributes ",
+		"...",
+		"....",
 	}
 
 	for _, p := range paths {
@@ -1793,10 +2025,9 @@ func TestValidPathRejectsDotDotDisguisesWithProtectionOff(t *testing.T) {
 	}
 }
 
-// TestValidPathAllowsDotsOnlyWithProtectionOff is the other side of
-// the same line. A component of periods alone folds to ".." on NTFS
-// and nowhere else, so it belongs to WindowsValidPath under
-// core.protectNTFS rather than to the always-on check above.
+// TestValidPathAllowsDotsOnlyWithProtectionOff checks that the Win32
+// trailing rule is disabled with core.protectNTFS off. It applies only
+// on Windows and is separate from the always-on dot/parent check.
 func TestValidPathAllowsDotsOnlyWithProtectionOff(t *testing.T) {
 	t.Parallel()
 

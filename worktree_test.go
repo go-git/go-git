@@ -2389,6 +2389,35 @@ func TestRemovalPreservesNonemptyDirectories(t *testing.T) {
 	}
 }
 
+func TestRemovalRefusesDotGitAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range []string{"memfs", "osfs"} {
+		for _, name := range []string{".git", "a/.git/b", "sub/.GIT", "sub/git~1"} {
+			for _, directory := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/refuse/%q/directory=%t", backend, name, directory), func(t *testing.T) {
+					t.Parallel()
+
+					raw := memfs.New()
+					if backend == "osfs" {
+						raw = osfs.New(t.TempDir())
+					}
+
+					p := name
+					if directory {
+						p += "/inner.txt"
+					}
+					require.NoError(t, util.WriteFile(raw, p, []byte("keep"), 0o644))
+
+					before := snapshotSubtree(t, raw, name)
+					require.Error(t, rmFileAndDirsIfEmpty(newWorktreeFilesystem(raw, true, false), name))
+					require.Equal(t, before, snapshotSubtree(t, raw, name))
+				})
+			}
+		}
+	}
+}
+
 // Git preserves a removed submodule's worktree even when it contains local changes.
 func TestResetPreservesSubmoduleDirectory(t *testing.T) {
 	t.Parallel()

@@ -176,7 +176,7 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 		fsOpts.IgnoreScope = w.ignoreScope()
 	}
 
-	to := filesystem.NewRootNodeWithOptions(w.filesystem, submodules, fsOpts)
+	to := filesystem.NewRootNodeWithDotGitFilter(w.filesystem, submodules, fsOpts, w.filesystem.isDotGitComponent)
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)

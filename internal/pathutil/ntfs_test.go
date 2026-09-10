@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestWindowsValidPath(t *testing.T) {
+func TestWin32ValidPath(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		path string
@@ -18,12 +18,9 @@ func TestWindowsValidPath(t *testing.T) {
 		{".git  ", false},
 		{".git . .", false},
 		{".git . .", false},
-		{".git::$INDEX_ALLOCATION", false},
-		{".git:", false},
 		{"git~1 ", false},
 		{"git~1.", false},
 		{"GIT~1 ", false},
-		{"git~1::$DATA", false},
 		{"CON", false},
 		{"con", false},
 		{"CON.txt", false},
@@ -38,6 +35,28 @@ func TestWindowsValidPath(t *testing.T) {
 		{"LPT9", false},
 		{"CONIN$", false},
 		{"CONOUT$", false},
+		// Upstream's is_valid_win32_path refuses a component ending
+		// in a space or a period, excepting exactly "." and "..".
+		// Win32 canonicalisation strips both characters, so such a
+		// component names something other than what it spells.
+		{"foo ", false},
+		{"foo.", false},
+		{"foo  ", false},
+		{"foo ..", false},
+		{"sub ", false},
+		{".gitattributes ", false},
+		{".gitignore ", false},
+		{".gitmodules.", false},
+		{"...", false},
+		{"....", false},
+		{". ", false},
+		{". .", false},
+		{".. ", false},
+		// The two upstream exceptions. NTFS resolves these to the
+		// directory itself and to its parent, which is the caller's
+		// business, not a spelling problem.
+		{".", true},
+		{"..", true},
 		{"a", true},
 		{"a\\b", true},
 		{"a/b", true},
@@ -56,7 +75,7 @@ func TestWindowsValidPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
-			got := WindowsValidPath(tc.path)
+			got := Win32ValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -210,5 +229,43 @@ func TestIsNTFSDotMetadataFamily(t *testing.T) {
 			assert.False(t, tc.fn(".gitmodules"), "%s(%q)", tc.name, ".gitmodules")
 			assert.False(t, tc.fn(""), "%s(empty)", tc.name)
 		})
+	}
+}
+
+// TestWin32ValidPathTrailingRuleMatchesUpstream compares the
+// trailing-space/period rule against a direct transcription of
+// upstream Git's segment-boundary condition in is_valid_win32_path
+// at compat/mingw.c#L3363-L3366 in tag v2.54.0[1], over every
+// component in a closed corpus. A table of hand-picked rows catches
+// a wrong verdict; only this catches a subtly wrong port.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3363-L3366
+func TestWin32ValidPathTrailingRuleMatchesUpstream(t *testing.T) {
+	t.Parallel()
+
+	// upstreamRejects transcribes
+	//   preceding_space_or_period && (i != periods || periods > 2)
+	// where i is the component length in bytes and periods is the
+	// count of periods in it.
+	upstreamRejects := func(part string) bool {
+		periods, precedingSpaceOrPeriod := 0, false
+		for i := 0; i < len(part); i++ {
+			switch part[i] {
+			case '.':
+				periods++
+				precedingSpaceOrPeriod = true
+			case ' ':
+				precedingSpaceOrPeriod = true
+			default:
+				precedingSpaceOrPeriod = false
+			}
+		}
+		return precedingSpaceOrPeriod &&
+			(len(part) != periods || periods > 2)
+	}
+
+	for _, part := range generateComponents(t, ". a:", 5) {
+		assert.Equal(t, upstreamRejects(part), endsInSpaceOrPeriod(part),
+			"component %q", part)
 	}
 }

@@ -1368,7 +1368,7 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 
 func (w *Worktree) doClean(status Status, opts *CleanOptions, dir string, files []fs.DirEntry) error {
 	for _, fi := range files {
-		if fi.Name() == GitDirName {
+		if w.filesystem.isDotGitComponent(fi.Name()) {
 			continue
 		}
 

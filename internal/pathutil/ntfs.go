@@ -50,37 +50,44 @@ func IsNTFSDotGit(part string) bool {
 // "..:$DATA" and "..::$INDEX_ALLOCATION" match. ".." itself does
 // not; the literal comparison in IsDotOrDotDotName owns that.
 //
-// A tail of periods alone ("...", "....") does not match. NTFS
-// strips trailing periods too, so such a name does fold to ".."
-// there, but it is a well-formed name on every other filesystem and
-// upstream Git accepts it in a tree and in an index on POSIX.
-// Rejecting it at an always-on cross-platform layer would make a
-// repository carrying one unreadable, so WindowsValidPath refuses it
-// at the materialisation boundary under core.protectNTFS instead --
-// which is where upstream's own is_valid_win32_path sits.
+// A tail of periods alone ("...", "....") does not match. C Git
+// carries such names on POSIX. Win32 trims trailing spaces and
+// periods, except for exactly "." and "..". validPath consults
+// Win32ValidPath under core.protectNTFS.
 func IsNTFSDotDot(part string) bool {
-	// IsNTFSDot with a "." needle matches ".." followed by any run
-	// of spaces and periods, optionally terminated by an ADS colon.
-	// Only its first pattern can match a needle this short: the
-	// second needs len(dotgit) >= 6 and the third returns early on
-	// len(shortnamePrefix) < 6. That pattern requires part[0] and
-	// part[1] to be periods, so the tail starts at index 2 and the
-	// slice below needs no length guard.
+	// Only the literal-dot pattern in IsNTFSDot matches a needle
+	// this short. It requires two leading periods, so the slice
+	// below needs no additional length guard.
 	if !IsNTFSDot(part, ".", "") {
 		return false
 	}
 	return strings.ContainsAny(part[2:], " :")
 }
 
-// WindowsValidPath reports whether part is a valid Windows / NTFS
-// path component for the worktree filesystem abstraction. It rejects
-// NTFS-disguised variants of `.git` and `git~1` (trailing spaces,
-// periods, Alternate Data Streams) and Windows reserved device
-// names. Bare `.git` and `git~1` are allowed at this layer; the
-// caller decides whether they are permissible at the current path
-// position.
-func WindowsValidPath(part string) bool {
-	if IsNTFSDotGit(part) && !IsDotGitName(part) {
+// Win32ValidPath reports whether one path component avoids trailing
+// spaces and periods and Windows reserved device names. The worktree
+// wrapper's validPath applies it under core.protectNTFS; the .git
+// disguise checks stay separately config-gated.
+//
+// Both rules come from upstream Git's is_valid_win32_path at
+// compat/mingw.c#L3347-L3469 in tag v2.54.0[1]. Upstream skips the
+// DOS drive prefix before scanning components; this predicate never
+// receives that prefix, because validPath refuses a path carrying one
+// before the components are examined.
+//
+// Two parts of upstream's scanner are not ported. Its illegal
+// characters — the control bytes and `< > " | ? *`, plus a colon
+// outside an Alternate Data Stream — are not checked here; validPath
+// covers the control bytes itself and accepts the rest, so a
+// component such as `a:b` passes where upstream would refuse it. The
+// reserved-name policy also differs at two edges: it is stricter for
+// a reserved name followed by a space and a further character
+// ("con c", "aux b", "prn x"), which upstream accepts, and laxer for
+// "LPT0", which upstream refuses even though it accepts "COM0".
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3347-L3469
+func Win32ValidPath(part string) bool {
+	if endsInSpaceOrPeriod(part) {
 		return false
 	}
 	return !isWindowsReservedName(part)
@@ -91,7 +98,10 @@ func WindowsValidPath(part string) bool {
 // spaces, extensions, and NTFS Alternate Data Streams) matches one of
 // these case-insensitively.
 //
-// See upstream Git compat/mingw.c is_valid_win32_path().
+// See upstream Git's is_valid_win32_path reserved-name scanner at
+// compat/mingw.c#L3372-L3449 in tag v2.54.0[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3372-L3449
 var windowsReservedNames = []string{
 	"CON", "PRN", "AUX", "NUL",
 	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -107,7 +117,7 @@ func isWindowsReservedName(part string) bool {
 		if !strings.EqualFold(part[:len(name)], name) {
 			continue
 		}
-		// Exact match or followed by space, dot, colon (ADS), or separator.
+		// Exact match or followed by space, dot or colon (ADS).
 		if len(part) == len(name) {
 			return true
 		}
@@ -117,6 +127,33 @@ func isWindowsReservedName(part string) bool {
 		}
 	}
 	return false
+}
+
+// endsInSpaceOrPeriod reports whether part ends in a space or a
+// period, with "." and ".." excepted. Win32 path canonicalisation
+// strips both characters from the end of a component, so a component
+// that ends in one names something other than what it spells: "foo "
+// opens "foo", and ".gitattributes " collides with
+// ".gitattributes".
+//
+// Ports the segment-boundary condition of upstream Git's
+// is_valid_win32_path at compat/mingw.c L3363-L3366 in tag
+// v2.54.0[1]:
+//
+//	preceding_space_or_period && (i != periods || periods > 2)
+//
+// `i != periods` is false only for a component of periods alone, and
+// `periods > 2` then caps that exception at "." and "..", so the
+// condition reduces to the two-name exception written literally
+// below.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3363-L3366
+func endsInSpaceOrPeriod(part string) bool {
+	if part == "" || part == "." || part == ".." {
+		return false
+	}
+	c := part[len(part)-1]
+	return c == ' ' || c == '.'
 }
 
 // IsNTFSDot ports upstream Git's is_ntfs_dot_generic. It detects NTFS
@@ -135,7 +172,8 @@ func IsNTFSDot(name, dotgit, shortnamePrefix string) bool {
 	// onlySpacesAndPeriods returns true when the suffix from start
 	// onwards consists only of trailing spaces and periods, possibly
 	// terminated by a NTFS Alternate Data Stream colon. Mirrors the
-	// only_spaces_and_periods label in upstream's is_ntfs_dot_generic.
+	// only_spaces_and_periods label in upstream's
+	// is_ntfs_dot_generic.
 	onlySpacesAndPeriods := func(start int) bool {
 		for i := start; i < len(name); i++ {
 			c := name[i]
@@ -149,7 +187,8 @@ func IsNTFSDot(name, dotgit, shortnamePrefix string) bool {
 		return true
 	}
 
-	// Pattern 1: ".<dotgit>" prefix + trailing spaces / periods / ADS.
+	// Pattern 1: ".<dotgit>" prefix + trailing spaces / periods /
+	// ADS.
 	if len(name) >= len(dotgit)+1 && name[0] == '.' &&
 		strings.EqualFold(name[1:1+len(dotgit)], dotgit) {
 		if onlySpacesAndPeriods(len(dotgit) + 1) {
@@ -208,8 +247,8 @@ func IsNTFSDotGitmodules(part string) bool {
 }
 
 // IsNTFSDotGitattributes reports whether part is an NTFS equivalent
-// of ".gitattributes". The short-name prefix "gi7d29" mirrors upstream
-// Git's is_ntfs_dotgitattributes.
+// of ".gitattributes". The short-name prefix "gi7d29" mirrors
+// upstream Git's is_ntfs_dotgitattributes.
 func IsNTFSDotGitattributes(part string) bool {
 	return IsNTFSDot(part, "gitattributes", "gi7d29")
 }
