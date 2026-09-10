@@ -864,7 +864,9 @@ func (r *Repository) Branch(name string) (*config.Branch, error) {
 	return b, nil
 }
 
-// CreateBranch creates a new Branch
+// CreateBranch creates a new branch configuration. The name must satisfy
+// plumbing.ValidateBranchName; these creation rules do not apply when reading
+// existing branch configurations.
 func (r *Repository) CreateBranch(c *config.Branch) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -909,6 +911,7 @@ func (r *Repository) DeleteBranch(name string) error {
 
 // CreateTag creates a tag. If opts is included, the tag is an annotated tag,
 // otherwise a lightweight tag is created.
+// The shorthand name must satisfy plumbing.ValidateTagName.
 func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
 	if err := plumbing.ValidateTagName(name); err != nil {
 		return nil, err

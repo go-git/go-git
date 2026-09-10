@@ -147,6 +147,41 @@ func (s *SuiteDotGit) TestReferenceNameRejectsHFSDisguisedTraversal() {
 	s.Error(err, "traversal must not create .git/config")
 }
 
+func (s *SuiteDotGit) TestReferenceNameRejectsDisguisedSelfReference() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// A component that folds to a single "." names the directory it sits in,
+	// so each of these resolves to refs/heads/main once joined: HFS+ drops the
+	// ignorable code points, and NTFS trims the trailing space or truncates at
+	// the Alternate Data Stream colon. HasUnsafeComponent is what stops them:
+	// IsSafe compares components literally, and Validate only refuses the
+	// spellings whose dot comes first, so rule 1 passes a component that
+	// leads with the zero-width non-joiner and carries the dot second.
+	for _, n := range []plumbing.ReferenceName{
+		"refs/heads/\u200c./main",
+		"refs/heads/.\u200c/main",
+		"refs/\u200c./heads/main",
+		"refs/heads/. /main",
+		"refs/heads/.:$DATA/main",
+	} {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+
+		_, err := d.Ref(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
+
+		s.ErrorIs(d.RemoveRef(n), ErrReferenceNameEscape, "RemoveRef %q", n)
+	}
+
+	// The aliasing itself only happens on HFS+ or NTFS, so what this asserts
+	// on any host is that the name never became a path: nothing was stored
+	// under refs/heads at all.
+	entries, err := d.fs.ReadDir(d.fs.Join(refsPath, "heads"))
+	s.NoError(err)
+	s.Empty(entries)
+}
+
 func (s *SuiteDotGit) TestReferenceNameRejectsAbsoluteAndDriveNames() {
 	d := New(s.EmptyFS())
 	s.Require().NoError(d.Initialize())
@@ -176,20 +211,126 @@ func (s *SuiteDotGit) TestReferenceNameRejectsTopLevelMetadata() {
 	d := New(s.EmptyFS())
 	s.Require().NoError(d.Initialize())
 
-	// A single-level name that is neither under refs/ nor a [A-Z_] pseudo-ref
-	// would land on top-level .git metadata once joined; the IsSafe gate
-	// rejects it, matching upstream refname_is_safe.
+	// A single-level name that is neither under refs/ nor a root ref would
+	// land on top-level .git metadata once joined. The lowercase spellings are
+	// stopped by IsSafe; the uppercase ones are not (refname_is_safe accepts
+	// any [A-Z_] one-level name) and are stopped by the root-ref allowlist —
+	// they matter because a case-insensitive filesystem folds "CONFIG" onto
+	// .git/config.
 	bad := []plumbing.ReferenceName{
 		"config", "config.worktree", "index", "packed-refs",
 		"shallow", "hooks", "objects", "bar", "HEAD2", "head",
+		"CONFIG", "INDEX", "SHALLOW", "DESCRIPTION", "COMMONDIR",
+		"GITDIR", "LOGS", "MODULES", "BRANCHES", "REMOTES", "HOOKS",
+		"INFO", "OBJECTS", "REFS", "WORKTREES", "PACKED_REFS",
+		"COMMIT_EDITMSG", "MERGE_MSG",
+		// A '-' satisfies is_root_ref_syntax, so IsRoot alone would let this
+		// through; IsSafe running first is what stops it.
+		"SOME-THING_HEAD",
 	}
 	for _, n := range bad {
 		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+		s.ErrorIs(d.RemoveRef(n), ErrReferenceNameEscape, "RemoveRef %q", n)
+		_, err := d.Ref(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
 	}
 
-	_, err := d.fs.Stat(configPath)
-	s.Error(err, "must not create .git/config")
+	for _, p := range []string{configPath, indexPath, shallowPath, packedRefsPath} {
+		_, err := d.fs.Stat(p)
+		s.Error(err, "must not create .git/%s", p)
+	}
+}
+
+func (s *SuiteDotGit) TestReferenceNameRejectsNamesOnlyValidateCatches() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	// These are under refs/, escape nothing, and hold no component that folds
+	// to a dot, so IsSafe and HasUnsafeComponent both pass them and only
+	// Validate refuses them. The storage layer needs it because a fetch
+	// reaches here with a name the remote chose, after refspec mapping.
+	//
+	// A ".lock" suffix is the one that does damage without looking like an
+	// escape. Git never reads .git/refs/heads/main.lock as a reference, so the
+	// name looks harmless, but that path is the lock file git creates to
+	// update refs/heads/main: once one is left behind, every later update of
+	// that ref fails with "File exists" and the advice that a lock file may be
+	// stale, until someone deletes it by hand.
+	bad := []plumbing.ReferenceName{
+		"refs/heads/main.lock",
+		"refs/remotes/origin/main.lock",
+		"refs/heads/sub/main.lock",
+		"refs/heads/.hidden",
+		"refs/heads/foo bar",
+		"refs/heads/foo~1",
+		"refs/heads/foo^",
+		"refs/heads/foo:bar",
+		"refs/heads/foo?",
+		"refs/heads/foo*",
+		"refs/heads/foo[",
+		"refs/heads/foo@{1}",
+	}
+	for _, n := range bad {
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+
+		err := d.SetRef(ref, nil)
+		s.ErrorIs(err, ErrReferenceNameEscape, "SetRef %q", n)
+		// Assert the wrapped cause too, so the case keeps testing Validate
+		// rather than passing on whichever check happens to run first.
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "SetRef %q", n)
+
+		_, err = d.ReflogWriter(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "ReflogWriter %q", n)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "ReflogWriter %q", n)
+	}
+
+	entries, err := d.fs.ReadDir(d.fs.Join(refsPath, "heads"))
+	s.NoError(err)
+	s.Empty(entries, "no refused name may have become a path")
+}
+
+// A name too malformed to write stays readable and removable, because that is
+// the only way a repository already holding one gets cleaned up. Git splits the
+// two the same way: transaction_refname_valid applies check_refname_format when
+// the update carries a new object id and refname_is_safe alone when it does
+// not, which is why git update-ref -d and git branch -D delete a broken ref.
+func (s *SuiteDotGit) TestRefusedNamesStayReadableAndRemovable() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	hash := plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	for _, n := range []plumbing.ReferenceName{
+		"refs/heads/main.lock",
+		"refs/heads/.hidden",
+		"refs/heads/foo bar",
+		"refs/heads/foo~1",
+	} {
+		// Plant the file the way something other than go-git would have: a
+		// pre-fix go-git, another tool, or a crashed git.
+		p := d.fs.Join(strings.Split(string(n), "/")...)
+		s.Require().NoError(util.WriteFile(d.fs, p, []byte(hash.String()+"\n"), 0o644))
+
+		ref, err := d.Ref(n)
+		s.Require().NoError(err, "Ref %q", n)
+		s.Equal(hash, ref.Hash(), "Ref %q", n)
+
+		s.NoError(d.RemoveRef(n), "RemoveRef %q", n)
+
+		_, err = d.fs.Stat(p)
+		s.True(os.IsNotExist(err), "%q must be gone from disk", n)
+	}
+
+	// The path-safety gate still applies to both, so a name that escapes is
+	// refused whichever way it arrives.
+	for _, n := range []plumbing.ReferenceName{
+		"refs/heads/../../config",
+		"CONFIG",
+	} {
+		_, err := d.Ref(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
+		s.ErrorIs(d.RemoveRef(n), ErrReferenceNameEscape, "RemoveRef %q", n)
+	}
 }
 
 func (s *SuiteDotGit) TestReferenceNameAcceptsBenignNames() {
@@ -197,11 +338,19 @@ func (s *SuiteDotGit) TestReferenceNameAcceptsBenignNames() {
 	s.Require().NoError(d.Initialize())
 	for _, n := range []plumbing.ReferenceName{
 		"HEAD", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
+		"AUTO_MERGE", "MERGE_AUTOSTASH", "BISECT_EXPECTED_REV",
+		"NOTES_MERGE_REF", "NOTES_MERGE_PARTIAL",
 		"refs/heads/main", "refs/heads/release-1.2",
 		"refs/tags/v1.0.0", "refs/remotes/origin/HEAD", "refs/stash",
 	} {
 		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 		s.Require().NoError(d.SetRef(ref, nil), "SetRef %q", n)
+
+		got, err := d.Ref(n)
+		s.Require().NoError(err, "Ref %q", n)
+		s.Equal(n, got.Name(), "Ref %q", n)
+
+		s.Require().NoError(d.RemoveRef(n), "RemoveRef %q", n)
 	}
 }
 

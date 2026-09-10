@@ -1,8 +1,12 @@
 package transport
 
 import (
+	"bytes"
+	"errors"
 	"io"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -10,6 +14,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -174,4 +179,72 @@ func assertObjectPacks(s *ServerInfoSuite, st storage.Storer, fs billy.Filesyste
 		_, ok := localPacks[p.String()]
 		s.True(ok)
 	}
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoFiltersReferenceNames() {
+	st := memory.NewStorage()
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	valid := []plumbing.ReferenceName{"refs/heads/main", "refs/heads/@", "refs/heads/-foo", "refs/heads/\u200c./main"}
+	invalid := []plumbing.ReferenceName{"refs/heads/main.lock", "refs/heads/bad\ninjected", "refs/heads/sp ace", "CONFIG", plumbing.HEAD}
+	for _, name := range append(valid, invalid...) {
+		s.Require().NoError(st.SetReference(plumbing.NewHashReference(name, hash)))
+	}
+	fs := memfs.New()
+	s.Require().NoError(UpdateServerInfo(st, fs))
+	f, err := fs.Open("info/refs")
+	s.Require().NoError(err)
+	defer f.Close()
+	out, err := io.ReadAll(f)
+	s.Require().NoError(err)
+	for _, name := range valid {
+		s.Contains(string(out), hash.String()+"\t"+name.String()+"\n")
+	}
+	for _, name := range invalid {
+		s.NotContains(string(out), name.String())
+	}
+	iter, err := st.IterReferences()
+	s.Require().NoError(err)
+	count := 0
+	s.Require().NoError(iter.ForEach(func(*plumbing.Reference) error { count++; return nil }))
+	s.Equal(len(valid)+len(invalid), count)
+}
+
+func (s *ServerInfoSuite) TestUpdateServerInfoSkipsUnresolvableSymrefs() {
+	st := memory.NewStorage()
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	s.Require().NoError(st.SetReference(plumbing.NewHashReference("refs/heads/main", hash)))
+	s.Require().NoError(st.SetReference(plumbing.NewSymbolicReference("refs/heads/loop", "refs/heads/loop")))
+	s.Require().NoError(st.SetReference(plumbing.NewSymbolicReference("refs/heads/missing", "refs/heads/absent")))
+	s.Require().NoError(st.SetReference(plumbing.NewSymbolicReference("refs/heads/alias", "refs/heads/main")))
+	fs := memfs.New()
+	s.Require().NoError(UpdateServerInfo(st, fs))
+	f, err := fs.Open("info/refs")
+	s.Require().NoError(err)
+	defer f.Close()
+	out, err := io.ReadAll(f)
+	s.Require().NoError(err)
+	s.Contains(string(out), hash.String()+"\trefs/heads/main\n")
+	s.Contains(string(out), hash.String()+"\trefs/heads/alias\n")
+	s.NotContains(string(out), "refs/heads/loop")
+	s.NotContains(string(out), "refs/heads/missing")
+}
+
+func (s *ServerInfoSuite) TestWriteInfoRefsPropagatesSymrefReadError() {
+	st := memory.NewStorage()
+	s.Require().NoError(st.SetReference(plumbing.NewSymbolicReference("refs/heads/alias", "refs/heads/main")))
+	want := errors.New("reference storage unavailable")
+	var out bytes.Buffer
+	err := repository.WriteInfoRefs(&out, referenceReadErrorStorage{st, want})
+	s.ErrorIs(err, want)
+}
+
+func (s *ServerInfoSuite) TestWriteInfoRefsSkipsFilesystemSymlinkLoop() {
+	st := memory.NewStorage()
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	s.Require().NoError(st.SetReference(plumbing.NewHashReference("refs/heads/main", hash)))
+	s.Require().NoError(st.SetReference(plumbing.NewSymbolicReference("refs/heads/alias", "ORIG_HEAD")))
+	broken := referenceReadErrorStorage{st, &os.PathError{Op: "stat", Path: "ORIG_HEAD", Err: syscall.ELOOP}}
+	var out bytes.Buffer
+	s.Require().NoError(repository.WriteInfoRefs(&out, broken))
+	s.Equal(hash.String()+"\trefs/heads/main\n", out.String())
 }

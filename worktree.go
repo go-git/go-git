@@ -273,7 +273,7 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 	// exists to refuse. That arm is not a second gate — "HEAD" reaches it and
 	// passes, because Validate carves HEAD out; what stops it is the existing-
 	// reference check below.
-	if name, ok := strings.CutPrefix(opts.Branch.String(), "refs/heads/"); ok {
+	if name, ok := strings.CutPrefix(opts.Branch.String(), plumbing.RefHeadPrefix); ok {
 		if err := plumbing.ValidateBranchName(name); err != nil {
 			return err
 		}

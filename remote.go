@@ -79,12 +79,14 @@ func (r *Remote) String() string {
 
 // Push performs a push to the remote. Returns NoErrAlreadyUpToDate if the
 // remote was already up-to-date.
+// Malformed wildcard source patterns are rejected before contacting the remote.
 func (r *Remote) Push(o *PushOptions) error {
 	return r.PushContext(context.Background(), o)
 }
 
 // PushContext performs a push to the remote. Returns NoErrAlreadyUpToDate if
 // the remote was already up-to-date.
+// Malformed wildcard source patterns are rejected before contacting the remote.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
@@ -99,6 +101,23 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 
 	if err := o.Validate(); err != nil {
 		return err
+	}
+
+	for _, spec := range o.RefSpecs {
+		if !spec.IsWildcard() {
+			continue
+		}
+		// A source glob must satisfy Git's refname rules with one wildcard
+		// and one-level names allowed. A fixed invalid prefix or suffix must
+		// fail before pruning can mistake filtered sources for missing refs.
+		// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refspec.c#L119-L134.
+		name := strings.ReplaceAll(spec.Src(), "*", "x")
+		if !strings.Contains(name, "/") {
+			name = plumbing.RefPrefix + name
+		}
+		if err := plumbing.ReferenceName(name).Validate(); err != nil {
+			return fmt.Errorf("%w: invalid source pattern %q", plumbing.ErrInvalidReferenceName, spec.Src())
+		}
 	}
 
 	if o.RemoteName != r.c.Name {
@@ -167,6 +186,27 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 	if err != nil {
 		return err
 	}
+	// Storage enumeration is also used by repository maintenance and must
+	// remain complete. Only push candidates exclude malformed ordinary refs,
+	// including stale lock files that Git's files ref iterator skips.
+	pushRefs := localRefs[:0]
+	for _, ref := range localRefs {
+		if ref.Name().IsUnderRefs() {
+			if err := ref.Name().Validate(); err != nil {
+				// An explicit source must fail rather than disappear: prune
+				// would interpret its absence as a request to delete its
+				// mapped destination. Wildcards still skip malformed entries.
+				for _, spec := range o.RefSpecs {
+					if !spec.IsWildcard() && spec.Match(ref.Name()) {
+						return err
+					}
+				}
+				continue
+			}
+		}
+		pushRefs = append(pushRefs, ref)
+	}
+	localRefs = pushRefs
 
 	cmds := make([]*packp.Command, 0)
 	if err := r.addReferencesToUpdate(o.RefSpecs, localRefs, remoteRefs, &cmds, o.Prune, o.ForceWithLease); err != nil {
@@ -175,6 +215,13 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 
 	if o.FollowTags {
 		if err := r.addReachableTags(localRefs, remoteRefs, &cmds); err != nil {
+			return err
+		}
+	}
+	// Refspecs can turn a valid source into an invalid destination. Validate
+	// the complete command list before any update is sent to the remote.
+	for _, cmd := range cmds {
+		if err := cmd.Name.Validate(); err != nil {
 			return err
 		}
 	}
@@ -379,7 +426,7 @@ func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
 		// v2 server that strictly honours ref-prefix omits the resolved branch
 		// and it cannot be fetched. Matches git clone.
 		if src == "HEAD" {
-			prefixes = append(prefixes, "refs/heads/")
+			prefixes = append(prefixes, plumbing.RefHeadPrefix)
 			continue
 		}
 
@@ -594,9 +641,75 @@ func referenceStorageFromRefs(refs []*plumbing.Reference, filterPeeled bool) mem
 		if filterPeeled && strings.HasSuffix(ref.Name().String(), peeledSuffix) {
 			continue
 		}
+		if !usableRemoteRef(ref.Name()) {
+			trace.General.Printf("ignoring ref with broken name %q", ref.Name().String())
+			continue
+		}
 		_ = refStore.SetReference(ref)
 	}
 	return refStore
+}
+
+// unstorableRefName reports whether err says the storer refused name for what
+// the name is, rather than for anything about the fetch.
+//
+// A refspec builds a destination name the remote did not choose, so a name the
+// storer will not take can arrive even after the advertisement has been
+// filtered — "+refs/*:refs/*" onto a remote name go-git holds to a stricter
+// rule than check_refname_format, say. Git answers per-reference rather than
+// per-fetch, in get_fetch_map:
+//
+//	error(_("* Ignoring funny ref '%s' locally"), (*rmp)->peer_ref->name);
+//
+// and finishes with the references that remain, exiting 0.
+//
+// Every arm of the storer's name gate wraps plumbing.ErrInvalidReferenceName,
+// so this recognises all of them rather than the format rule alone. That
+// matters because go-git refuses a wider set than Git does — the components an
+// HFS+ or NTFS filesystem folds to a dot — and those names reach here having
+// passed the advertisement filter, which is a faithful check_refname_format.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/remote.c#L2165-L2176
+func unstorableRefName(name, source plumbing.ReferenceName, err error) bool {
+	if !errors.Is(err, plumbing.ErrInvalidReferenceName) {
+		return false
+	}
+
+	trace.General.Printf("ignoring local ref %q from remote ref %q: %q", name.String(), source.String(), err.Error())
+	return true
+}
+
+// usableRemoteRef reports whether an advertised reference name is one this
+// side can do anything with.
+//
+// A remote is free to advertise a name go-git will not store, and one that
+// serves a repository holding a stale lock file or a name some other tool left
+// behind will do exactly that. Dropping it here, where the advertisement first
+// becomes a list, keeps it out of refspec matching, out of the want list and
+// out of the storer, so a single unusable name costs that one reference rather
+// than the whole fetch.
+//
+// This is filter_refs in fetch-pack.c, which checks the same thing in the same
+// place and says nothing about it:
+//
+//	if (starts_with(ref->name, "refs/") &&
+//	    check_refname_format(ref->name, 0)) {
+//		/* trash or a peeled value; do not even add it to unmatched list */
+//		free_one_ref(ref);
+//		continue;
+//	}
+//
+// Only names under refs/ are judged, as there: HEAD is advertised and is not
+// one. Git also relies on this to drop the null-object-id entries it emits for
+// a broken name, which go-git would otherwise ask the remote to send.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/fetch-pack.c#L711-L718
+func usableRemoteRef(name plumbing.ReferenceName) bool {
+	if !name.IsUnderRefs() {
+		return true
+	}
+
+	return name.Validate() == nil
 }
 
 func depthChanged(before []plumbing.Hash, s storage.Storer) (bool, error) {
@@ -936,7 +1049,7 @@ func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Co
 
 	ref, err := storer.ResolveReference(
 		r.s,
-		plumbing.ReferenceName(remotePrefix+strings.ReplaceAll(localRef.Name().String(), "refs/heads/", "")),
+		plumbing.ReferenceName(remotePrefix+strings.ReplaceAll(localRef.Name().String(), plumbing.RefHeadPrefix, "")),
 	)
 	if err != nil {
 		return err
@@ -1347,7 +1460,7 @@ func (r *Remote) updateLocalReferenceStorage(
 			// a caller uses a bare-hash dst such as "+<hash>:<hash>"). Creating
 			// a branch named after a commit hash is always wrong and produces
 			// spurious refs that confuse ResolveRevision and other callers.
-			if !strings.HasPrefix(localName.String(), "refs/") {
+			if !localName.IsUnderRefs() {
 				if plumbing.IsHash(localName.String()) {
 					// Bare-hash dst: the intent is to fetch the object only;
 					// no local reference should be created.
@@ -1378,6 +1491,9 @@ func (r *Remote) updateLocalReferenceStorage(
 			}
 
 			refUpdated, err := checkAndUpdateReferenceStorerIfNeeded(r.s, newRef, old)
+			if unstorableRefName(localName, ref.Name(), err) {
+				continue
+			}
 			if err != nil {
 				return updated, err
 			}
@@ -1431,6 +1547,9 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 		}
 
 		old, err := r.s.Reference(ref.Name())
+		if unstorableRefName(ref.Name(), ref.Name(), err) {
+			continue
+		}
 		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return updated, forceNeeded, err
 		}
@@ -1447,6 +1566,9 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 		}
 
 		refUpdated, err := updateReferenceStorerIfNeeded(r.s, ref)
+		if unstorableRefName(ref.Name(), ref.Name(), err) {
+			continue
+		}
 		if err != nil {
 			return updated, forceNeeded, err
 		}

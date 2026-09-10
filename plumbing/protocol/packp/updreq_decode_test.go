@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -105,6 +106,83 @@ func (s *UpdReqDecodeSuite) TestMalformedCommand() {
 		"",
 	}
 	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: malformed command: EOF$")
+}
+
+func (s *UpdReqDecodeSuite) TestCommandPreservesReferenceName() {
+	old := plumbing.NewHash(strings.Repeat("1", sha1HexSize))
+	newHash := plumbing.NewHash(strings.Repeat("2", sha1HexSize))
+	for _, name := range []string{
+		"refs/heads/a b", "refs/heads/a\tb", "refs/heads/a\nb",
+		"refs/heads/a\rb", "refs/heads/a\vb", "refs/heads/a\fb",
+		"refs/heads/a ", " refs/heads/a", "refs/heads/a\u00a0b",
+	} {
+		s.Run(name, func() {
+			command := old.String() + " " + newHash.String() + " " + name
+			payloads := []string{command + "\x00report-status\n", command + "\n", ""}
+			req := &UpdateRequests{}
+			s.Require().NoError(req.Decode(toPktLines(s.T(), payloads)))
+			s.Require().Len(req.Commands, 2)
+			for _, cmd := range req.Commands {
+				s.Equal(plumbing.ReferenceName(name), cmd.Name)
+				s.Equal(old, cmd.Old)
+				s.Equal(newHash, cmd.New)
+			}
+		})
+	}
+}
+
+func (s *UpdReqDecodeSuite) TestCommandRequiresSpaceSeparators() {
+	oldHex, newHex := strings.Repeat("1", sha1HexSize), strings.Repeat("2", sha1HexSize)
+	for _, command := range []string{
+		oldHex + "\t" + newHex + " refs/heads/main",
+		oldHex + " " + newHex + "\trefs/heads/main",
+		oldHex + "  " + newHex + " refs/heads/main",
+		" " + oldHex + " " + newHex + " refs/heads/main",
+	} {
+		s.Run(command, func() {
+			req := &UpdateRequests{}
+			s.Error(req.Decode(toPktLines(s.T(), []string{command + "\x00", ""})))
+		})
+	}
+}
+
+func (s *UpdReqDecodeSuite) TestCommandTrailingNewline() {
+	oldHex, newHex := strings.Repeat("1", sha1HexSize), strings.Repeat("2", sha1HexSize)
+	command := oldHex + " " + newHex + " refs/heads/main"
+	req := &UpdateRequests{}
+	s.Require().NoError(req.Decode(toPktLines(s.T(), []string{
+		command + "\n\x00report-status\n", command + "\n\n", "",
+	})))
+	s.Require().Len(req.Commands, 2)
+	for _, cmd := range req.Commands {
+		s.Equal(plumbing.ReferenceName("refs/heads/main\n"), cmd.Name)
+	}
+}
+
+func (s *UpdReqDecodeSuite) TestCommandRequiresFullObjectIDs() {
+	for _, size := range []int{0, 38, 42, 62, 66} {
+		short := strings.Repeat("1", size)
+		full := strings.Repeat("2", sha1HexSize)
+		for _, command := range []string{
+			short + " " + full + " refs/heads/main",
+			full + " " + short + " refs/heads/main",
+		} {
+			req := &UpdateRequests{}
+			s.Error(req.Decode(toPktLines(s.T(), []string{command + "\x00", ""})), "command %q", command)
+		}
+	}
+}
+
+func (s *UpdReqDecodeSuite) TestSHA256Command() {
+	oldHex, newHex := strings.Repeat("1", sha256HexSize), strings.Repeat("2", sha256HexSize)
+	req := &UpdateRequests{}
+	s.Require().NoError(req.Decode(toPktLines(s.T(), []string{
+		oldHex + " " + newHex + " refs/heads/main\x00", "",
+	})))
+	s.Require().Len(req.Commands, 1)
+	s.Equal(oldHex, req.Commands[0].Old.String())
+	s.Equal(newHex, req.Commands[0].New.String())
+	s.Equal(plumbing.ReferenceName("refs/heads/main"), req.Commands[0].Name)
 }
 
 func (s *UpdReqDecodeSuite) TestInvalidCommandInvalidHash() {

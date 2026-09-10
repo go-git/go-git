@@ -37,6 +37,10 @@ const (
 var ErrMissingURL = errors.New("URL field is required")
 
 // CloneOptions describes how a clone should be performed.
+//
+// References with unusable names are skipped. To diagnose skipped references,
+// enable [github.com/go-git/go-git/v6/utils/trace.General] with
+// [github.com/go-git/go-git/v6/utils/trace.SetTarget].
 type CloneOptions struct {
 	// The (possibly remote) repository URL to clone from.
 	URL string
@@ -222,7 +226,11 @@ const (
 	NoTags = plumbing.NoTags
 )
 
-// FetchOptions describes how a fetch should be performed
+// FetchOptions describes how a fetch should be performed.
+//
+// References with unusable names are skipped. To diagnose skipped references,
+// enable [github.com/go-git/go-git/v6/utils/trace.General] with
+// [github.com/go-git/go-git/v6/utils/trace.SetTarget].
 type FetchOptions struct {
 	// Name of the remote to fetch from. Defaults to origin.
 	RemoteName string

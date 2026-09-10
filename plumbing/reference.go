@@ -8,11 +8,16 @@ import (
 )
 
 const (
-	refPrefix       = "refs/"
-	refHeadPrefix   = refPrefix + "heads/"
-	refTagPrefix    = refPrefix + "tags/"
-	refRemotePrefix = refPrefix + "remotes/"
-	refNotePrefix   = refPrefix + "notes/"
+	// RefPrefix is the sub-tree every ordinary reference lives under. The
+	// reference store, the receive-pack gate and both ends of the transport
+	// all draw a line at it, so they draw it at the same string.
+	RefPrefix = "refs/"
+	// RefHeadPrefix is the sub-tree branches live under.
+	RefHeadPrefix = RefPrefix + "heads/"
+
+	refTagPrefix    = RefPrefix + "tags/"
+	refRemotePrefix = RefPrefix + "remotes/"
+	refNotePrefix   = RefPrefix + "notes/"
 	symrefPrefix    = "ref: "
 )
 
@@ -67,7 +72,7 @@ type ReferenceName string
 // NewBranchReferenceName returns a reference name describing a branch based on
 // his short name.
 func NewBranchReferenceName(name string) ReferenceName {
-	return ReferenceName(refHeadPrefix + name)
+	return ReferenceName(RefHeadPrefix + name)
 }
 
 // NewNoteReferenceName returns a reference name describing a note based on his
@@ -96,7 +101,7 @@ func NewTagReferenceName(name string) ReferenceName {
 
 // IsBranch check if a reference is a branch
 func (r ReferenceName) IsBranch() bool {
-	return strings.HasPrefix(string(r), refHeadPrefix)
+	return strings.HasPrefix(string(r), RefHeadPrefix)
 }
 
 // IsNote check if a reference is a note
@@ -120,28 +125,51 @@ func (r ReferenceName) IsPeeled() bool {
 	return strings.HasSuffix(string(r), "^{}")
 }
 
+// IsUnderRefs reports whether the name lives in the refs/ sub-tree, where
+// every ordinary reference lives.
+//
+// Four gates draw a line here and each drew it with its own copy of the
+// string: the storer deciding what it will write, the receive-pack gate
+// deciding what a push may name, and the two ends of the transport deciding
+// what may be advertised and what an advertisement may carry. What each does
+// with the answer differs — the transport keeps HEAD, the storer also takes a
+// root ref, and a push takes neither — so this reports the fact and leaves
+// the policy to them.
+func (r ReferenceName) IsUnderRefs() bool {
+	return strings.HasPrefix(string(r), RefPrefix)
+}
+
 // IsSafe reports whether the reference name can be safely turned into a path
-// under the .git directory, mirroring Git's refname_is_safe (refs.c). A name
+// under the .git directory. It follows Git's refname_is_safe, but rejects
+// backslashes on every platform; Git rejects them only on Windows. A name
 // is safe when it is either:
 //
 //   - under "refs/", non-empty after the prefix, containing no backslash and
 //     no empty, "." or ".." path component (so it cannot escape the refs/
 //     sub-tree, or alias another name, once turned into a path); or
-//   - a one-level pseudo-ref whose spelling is restricted to [A-Z_]
+//   - a one-level name whose spelling is restricted to [A-Z_]
 //     (e.g. HEAD, ORIG_HEAD, FETCH_HEAD).
 //
 // Everything else — a lowercase or mixed one-level name such as "config" or
 // "index", an absolute or drive-prefixed name, or a refs/ name that escapes —
-// is unsafe, because it could resolve onto unrelated repository metadata.
-// This is a storage-safety check, not full check_refname_format validation;
-// see Validate for the latter.
+// is unsafe.
+//
+// IsSafe is not an allowlist of legitimate names, and does not on its own keep
+// a name off unrelated repository metadata: its one-level arm admits any [A-Z_]
+// spelling, "CONFIG" and "SHALLOW" included. A caller that creates or updates a
+// reference must also require the name to be under refs/ or to satisfy IsRoot.
+// This is a storage-safety check, not full check_refname_format validation; see
+// Validate for the latter.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs.c#L382-L412
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/refs-internal.h#L57-L69
 func (r ReferenceName) IsSafe() bool {
 	s := string(r)
 	if s == "" {
 		return false
 	}
 
-	if rest, ok := strings.CutPrefix(s, refPrefix); ok {
+	if rest, ok := strings.CutPrefix(s, RefPrefix); ok {
 		// '\' is a path separator on Windows, so a refs/ name containing one
 		// could escape the sub-tree or alias another name once turned into a
 		// path; reject it outright (check_refname_format forbids '\' too).
@@ -156,12 +184,68 @@ func (r ReferenceName) IsSafe() bool {
 		return true
 	}
 
+	// Git's refname_is_safe admits any [A-Z_] one-level spelling.
+	// "CONFIG" and "SHALLOW" fold onto .git/config and .git/shallow on a
+	// case-insensitive filesystem; IsRoot is what tells the genuine root refs
+	// apart from those.
 	for i := 0; i < len(s); i++ {
 		if (s[i] < 'A' || s[i] > 'Z') && s[i] != '_' {
 			return false
 		}
 	}
 	return true
+}
+
+// IsRoot reports whether the reference name is one of the one-level references
+// that legitimately live in the root of the reference store, next to refs/.
+// It mirrors Git's is_root_ref (refs.c): the name must be spelled with
+// [A-Z_-] only and must either end in "_HEAD" (ORIG_HEAD, FETCH_HEAD,
+// MERGE_HEAD, CHERRY_PICK_HEAD, REBASE_HEAD, ...) or be one of the irregular
+// names Git lists explicitly (HEAD, AUTO_MERGE, BISECT_EXPECTED_REV,
+// NOTES_MERGE_PARTIAL, NOTES_MERGE_REF, MERGE_AUTOSTASH). Unlike Git's
+// is_root_ref, FETCH_HEAD and MERGE_HEAD are included.
+//
+// IsRoot reports false for every name under refs/, and is not a complete test
+// on its own: its alphabet admits '-', so "SOME-THING_HEAD" satisfies IsRoot
+// while IsSafe rejects it. Test IsSafe first, then accept the name if it is
+// under refs/ or satisfies IsRoot.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs.c#L887-L938
+func (r ReferenceName) IsRoot() bool {
+	// An allowlist by design: denying the names of known .git entries instead
+	// would be incomplete the moment Git adds a file, whereas the set of
+	// legitimate root refs changes only when Git grows a new one.
+	//
+	// FETCH_HEAD and MERGE_HEAD are kept because Git excludes them only via
+	// is_pseudo_ref, which marks the names its ref transactions refuse to
+	// update since they carry more than an object id. That is a write-policy
+	// rule rather than a naming rule. This predicate describes spelling and
+	// permits callers to store those names directly.
+	s := string(r)
+	if s == "" {
+		return false
+	}
+
+	// is_root_ref_syntax: uppercase, '-' and '_' only.
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < 'A' || c > 'Z') && c != '_' && c != '-' {
+			return false
+		}
+	}
+
+	if strings.HasSuffix(s, "_HEAD") {
+		return true
+	}
+
+	// The one-level names is_root_ref accepts by exact spelling, i.e. those
+	// that do not match its "*_HEAD" suffix rule.
+	switch r {
+	case "HEAD", "AUTO_MERGE", "BISECT_EXPECTED_REV",
+		"NOTES_MERGE_PARTIAL", "NOTES_MERGE_REF", "MERGE_AUTOSTASH":
+		return true
+	}
+
+	return false
 }
 
 func (r ReferenceName) String() string {
@@ -302,7 +386,7 @@ func ValidateBranchName(name string) error {
 	// Git compares the shorthand for the "-" rule and the spliced name for the
 	// HEAD one; keep that, since the two disagree for a shorthand such as
 	// "refs/heads/HEAD", which Git accepts.
-	if strings.HasPrefix(name, "-") || r == refHeadPrefix+"HEAD" {
+	if strings.HasPrefix(name, "-") || r == RefHeadPrefix+"HEAD" {
 		return fmt.Errorf("%w: %q", ErrInvalidReferenceName, string(r))
 	}
 
