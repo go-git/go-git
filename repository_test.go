@@ -15,8 +15,10 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -4593,4 +4595,74 @@ func (s *RepositorySuite) testPlainCloneFromRepoWithUnstorableRefs(checkFiltered
 			}
 		})
 	}
+}
+
+func (s *RepositorySuite) TestCloneSkipsSymbolicRefToEmptyRoot() {
+	srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+	defer func() { s.Require().NoError(src.Close()) }()
+	head, err := src.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(srcFS, "ORIG_HEAD", nil, 0o644))
+	s.Require().NoError(src.SetReference(plumbing.NewSymbolicReference("refs/heads/alias", "ORIG_HEAD")))
+
+	dst, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: srcFS.Root(), Bare: true})
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(dst.Close()) }()
+	ref, err := dst.Storer.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	s.Require().Equal(head.Hash(), ref.Hash())
+	_, err = dst.Storer.Reference("refs/heads/alias")
+	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+}
+
+func (s *RepositorySuite) TestPlainCloneSkipsFilesystemSymlinkLoopReferent() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("requires POSIX symlink loop errors")
+	}
+
+	srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+	defer func() { s.Require().NoError(src.Close()) }()
+	head, err := src.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(srcFS, "refs/heads/alias", []byte("ref: ORIG_HEAD\n"), 0o644))
+	s.Require().NoError(srcFS.Remove("ORIG_HEAD"))
+	s.Require().NoError(srcFS.Symlink("ORIG_HEAD", "ORIG_HEAD"))
+	_, err = src.Reference("ORIG_HEAD")
+	s.Require().ErrorIs(err, syscall.ELOOP)
+
+	dst, err := PlainClone(filepath.Join(s.T().TempDir(), "clone"), &CloneOptions{URL: srcFS.Root(), Bare: true})
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(dst.Close()) }()
+	got, err := dst.Reference(plumbing.Master, true)
+	s.Require().NoError(err)
+	s.Require().Equal(head.Hash(), got.Hash())
+	_, err = dst.Reference("refs/heads/alias", false)
+	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+	_, err = src.Reference("ORIG_HEAD")
+	s.Require().ErrorIs(err, syscall.ELOOP)
+}
+
+func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
+	r, commit, tree := newPruneSymrefRepository(s.T())
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewHashReference("ORIG_HEAD", commit)))
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference("refs/heads/main", "ORIG_HEAD")))
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/main")))
+
+	s.Require().NoError(r.RepackObjects(&RepackConfig{}))
+	packs, err := r.Storer.(storer.PackedObjectStorer).ObjectPacks()
+	s.Require().NoError(err)
+	s.Require().Len(packs, 1)
+	var loose []plumbing.Hash
+	s.Require().NoError(r.Storer.(storer.LooseObjectStorer).ForEachObjectHash(func(hash plumbing.Hash) error {
+		loose = append(loose, hash)
+		return nil
+	}))
+	s.Require().NotContains(loose, commit)
+	s.Require().NotContains(loose, tree)
+	s.Require().NoError(r.Storer.HasEncodedObject(commit))
+	s.Require().NoError(r.Storer.HasEncodedObject(tree))
 }

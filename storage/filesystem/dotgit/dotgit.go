@@ -1302,6 +1302,9 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 // Ref returns the reference for a given reference name.
 // It rejects names that fail the path-safety checks described by DotGit, even
 // when Refs returns an entry with that name.
+// It falls back to packed-refs when the loose reference is missing, empty, or
+// its path is a directory. Other loose-reference read errors are returned to the
+// caller.
 func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	if err := validReferenceName(name); err != nil {
 		return nil, err
@@ -1310,6 +1313,9 @@ func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	ref, err := d.readReferenceFile(".", name.String())
 	if err == nil {
 		return ref, nil
+	}
+	if !os.IsNotExist(err) && !errors.Is(err, ErrIsDir) && !errors.Is(err, ErrEmptyRefFile) {
+		return nil, err
 	}
 
 	return d.packedRef(name)

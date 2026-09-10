@@ -510,6 +510,108 @@ func (s *SuiteDotGit) TestRefsFromReferenceFile() {
 	s.Equal("refs/remotes/origin/master", string(ref.Target()))
 }
 
+type referenceReadErrorFS struct {
+	billy.Filesystem
+	phase string
+	err   error
+}
+
+func (f referenceReadErrorFS) Stat(name string) (os.FileInfo, error) {
+	if f.Join(name) == f.Join("refs", "heads", "main") && f.phase == "stat" {
+		return nil, f.err
+	}
+	return f.Filesystem.Stat(name)
+}
+
+func (f referenceReadErrorFS) Open(name string) (billy.File, error) {
+	if f.Join(name) != f.Join("refs", "heads", "main") {
+		return f.Filesystem.Open(name)
+	}
+	if f.phase == "open" {
+		return nil, f.err
+	}
+	file, err := f.Filesystem.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return referenceReadErrorFile{File: file, phase: f.phase, err: f.err}, nil
+}
+
+type referenceReadErrorFile struct {
+	billy.File
+	phase string
+	err   error
+}
+
+func (f referenceReadErrorFile) Read(p []byte) (int, error) {
+	if f.phase == "read" {
+		return 0, f.err
+	}
+	return f.File.Read(p)
+}
+
+func (f referenceReadErrorFile) Close() error {
+	if err := f.File.Close(); err != nil {
+		return err
+	}
+	if f.phase == "close" {
+		return f.err
+	}
+	return nil
+}
+
+func (s *SuiteDotGit) TestRefPreservesLooseReadErrors() {
+	for _, phase := range []string{"stat", "open", "read", "close"} {
+		for _, packed := range []bool{false, true} {
+			s.Run(fmt.Sprintf("%s/packed=%t", phase, packed), func() {
+				fs := s.EmptyFS()
+				s.Require().NoError(util.WriteFile(fs, "refs/heads/main", []byte("1111111111111111111111111111111111111111\n"), 0o644))
+				if packed {
+					s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte("2222222222222222222222222222222222222222 refs/heads/main\n"), 0o644))
+				}
+				d := New(referenceReadErrorFS{Filesystem: fs, phase: phase, err: fmt.Errorf("reading loose reference: %w", io.ErrUnexpectedEOF)})
+				ref, err := d.Ref("refs/heads/main")
+				s.Require().ErrorIs(err, io.ErrUnexpectedEOF)
+				s.Require().Nil(ref)
+			})
+		}
+	}
+}
+
+func (s *SuiteDotGit) TestRefPackedFallback() {
+	for _, kind := range []string{"missing", "directory", "empty", "loose"} {
+		s.Run(kind, func() {
+			fs := s.EmptyFS()
+			packedHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+			looseHash := plumbing.NewHash("2222222222222222222222222222222222222222")
+			s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(packedHash.String()+" refs/heads/main\n"), 0o644))
+			switch kind {
+			case "directory":
+				s.Require().NoError(fs.MkdirAll("refs/heads/main", 0o755))
+			case "empty":
+				s.Require().NoError(util.WriteFile(fs, "refs/heads/main", nil, 0o644))
+			case "loose":
+				s.Require().NoError(util.WriteFile(fs, "refs/heads/main", []byte(looseHash.String()+"\n"), 0o644))
+			}
+			ref, err := New(fs).Ref("refs/heads/main")
+			s.Require().NoError(err)
+			expected := packedHash
+			if kind == "loose" {
+				expected = looseHash
+			}
+			s.Require().Equal(expected, ref.Hash())
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestRefEmptyWithoutPackedEntry() {
+	fs := s.EmptyFS()
+	s.Require().NoError(util.WriteFile(fs, "ORIG_HEAD", nil, 0o644))
+	ref, err := New(fs).Ref("ORIG_HEAD")
+	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+	s.Require().Nil(ref)
+}
+
 func BenchmarkRefMultipleTimes(b *testing.B) {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	if err != nil {

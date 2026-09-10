@@ -86,7 +86,7 @@ func (p *objectWalker) isShallow(hash plumbing.Hash) (bool, error) {
 	return ok, nil
 }
 
-// walkAllRefs walks all (hash) references from the repo.
+// walkAllRefs walks the objects reachable through hash and symbolic references.
 func (p *objectWalker) walkAllRefs() error {
 	// Walk over all the references in the repo.
 	it, err := p.Storer.IterReferences()
@@ -95,7 +95,19 @@ func (p *objectWalker) walkAllRefs() error {
 	}
 	defer it.Close()
 	err = it.ForEach(func(ref *plumbing.Reference) error {
-		// Exit this iteration early for non-hash references.
+		if ref.Type() == plumbing.SymbolicReference {
+			resolved, err := storer.ResolveReference(p.Storer, ref.Target())
+			if errors.Is(err, plumbing.ErrReferenceNotFound) {
+				// Unborn HEAD and dangling symrefs do not name any objects.
+				return nil
+			}
+			if err != nil {
+				// Prune and repack must not discard objects when a failed
+				// lookup or an unresolved cycle makes reachability unknown.
+				return fmt.Errorf("resolving reference %q failed: %w", ref.Name(), err)
+			}
+			ref = resolved
+		}
 		if ref.Type() != plumbing.HashReference {
 			return nil
 		}

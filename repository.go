@@ -2065,7 +2065,10 @@ type RepackConfig struct {
 	OnlyDeletePacksOlderThan time.Time
 }
 
-// RepackObjects repacks all objects in the repository into a single packfile.
+// RepackObjects packs reachable objects and removes old packs according to cfg.
+// Reachability follows symbolic references. Missing targets are ignored, but
+// other resolution errors, including the recursion limit, stop the operation
+// before it creates a replacement pack or removes existing objects.
 func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 	pos, ok := r.Storer.(storer.PackedObjectStorer)
 	if !ok {
