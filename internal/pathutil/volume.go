@@ -11,10 +11,13 @@
 package pathutil
 
 // HasVolumeName takes one whole path and reports whether it has a
-// Windows volume prefix, independent of the host. It is equivalent
-// to filepath.VolumeName(p) != "" evaluated on Windows. Like Go, it
-// treats a drive prefix as a single byte followed by a colon; it
-// does not recognize a multibyte UTF-8 drive letter.
+// Windows volume prefix, independent of the host. It is equivalent to
+// filepath.VolumeName(p) != "" evaluated on Windows with Go 1.26; Go
+// 1.27 reports no volume name for a candidate holding a ".." component
+// (golang/go#58451), and this package keeps the Go 1.26 answer, which
+// refuses such a path on both toolchains. Like Go, it treats a drive
+// prefix as a single byte followed by a colon; it does not recognize
+// a multibyte UTF-8 drive letter.
 func HasVolumeName(p string) bool { return volumeNameLen(p) != 0 }
 
 // volumeNameLen returns length of the leading volume name on Windows.
