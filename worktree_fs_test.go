@@ -764,7 +764,21 @@ func TestPathPolicyMatchesGitIndex(t *testing.T) {
 					gitAccepts := tc.rule != "literal" &&
 						(!ntfs || (tc.rule != "ntfs" && tc.rule != "shortname" && tc.rule != "backslash")) &&
 						(!hfs || tc.rule != "hfs")
-					require.Equal(t, gitAccepts, indexed == tc.name+"\x00", "Git index: %q", indexed)
+					// `core.protectNTFS` has covered `git~1` and the
+					// trailing space and period spellings since 2.2.1,
+					// but the Alternate Data Stream spelling only since
+					// 2.24.1 (7c3745fc6185, CVE-2019-1352)[1]. Earlier
+					// releases end a component at a directory separator
+					// and never at `:`, so `.git::$INDEX_ALLOCATION`
+					// reaches the index with the setting enabled. Ask
+					// Git only where it implements the check; the go-git
+					// verdicts below are asserted against every release.
+					//
+					// [1]: https://github.com/git/git/commit/7c3745fc6185495d5765628b4dfe1bd2c25a2981
+					ntfsStream := tc.rule == "ntfs" && strings.Contains(tc.name, ":")
+					if !ntfsStream || gitAtLeast(t, 2, 24) {
+						require.Equal(t, gitAccepts, indexed == tc.name+"\x00", "Git index: %q", indexed)
+					}
 
 					worktreeAccepts := gitAccepts && tc.rule != "tree-policy" &&
 						tc.rule != "backslash" && tc.rule != "shortname"
