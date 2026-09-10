@@ -2130,6 +2130,76 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	s.Equal(sha4, head.Hash(), "local master must point to the new remote tip")
 }
 
+// TestPushToShallowBoundaryWithDependentBoundary is a regression test for
+// https://github.com/go-git/go-git/issues/2367.
+//
+// A depth-one fetch of two branches whose tips are base and its child records
+// both as shallow boundaries, which makes one boundary the parent of another.
+// git grafts a boundary's parents away but keeps the boundary itself reachable,
+// so a child of it is still a fast-forward.
+func (s *RemoteSuite) TestPushToShallowBoundaryWithDependentBoundary() {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+
+	remoteRepo, err := PlainInit(remoteURL, true)
+	s.Require().NoError(err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	now := time.Now()
+	tree := writeEmptyTree(s.T(), remoteRepo)
+	writeCommitToRef(s.T(), remoteRepo, "refs/heads/base", tree, now)
+	base := writeCommitToRef(s.T(), remoteRepo, "refs/heads/base", tree, now.Add(time.Second))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/target", base),
+	))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/blocker", base),
+	))
+	blocker := writeCommitToRef(s.T(), remoteRepo, "refs/heads/blocker", tree, now.Add(2*time.Second))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/base"),
+	))
+
+	repo, err := PlainInit(filepath.Join(tempDir, "repo"), false)
+	s.Require().NoError(err)
+	defer func() { _ = repo.Close() }()
+
+	_, err = repo.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{remoteURL},
+	})
+	s.Require().NoError(err)
+
+	err = repo.Fetch(&FetchOptions{
+		Depth: 1,
+		Tags:  plumbing.NoTags,
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/target:refs/remotes/origin/target",
+			"+refs/heads/blocker:refs/remotes/origin/blocker",
+		},
+	})
+	s.Require().NoError(err)
+
+	shallows, err := repo.Storer.Shallow()
+	s.Require().NoError(err)
+	s.ElementsMatch([]plumbing.Hash{base, blocker}, shallows)
+
+	s.Require().NoError(repo.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/target", base),
+	))
+	child := writeCommitToRef(s.T(), repo, "refs/heads/target", tree, now.Add(3*time.Second))
+
+	err = repo.Push(&PushOptions{
+		RemoteName: DefaultRemoteName,
+		RefSpecs:   []config.RefSpec{"refs/heads/target:refs/heads/target"},
+	})
+	s.Require().NoError(err)
+
+	updated, err := remoteRepo.Reference("refs/heads/target", true)
+	s.Require().NoError(err)
+	s.Equal(child, updated.Hash())
+}
+
 func TestFetchFastForwardForCustomRef(t *testing.T) {
 	t.Parallel()
 	customRef := "refs/custom/branch"
