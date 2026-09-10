@@ -53,7 +53,7 @@ func IsNTFSDotGit(part string) bool {
 // A tail of periods alone ("...", "....") does not match. C Git
 // carries such names on POSIX. Win32 trims trailing spaces and
 // periods, except for exactly "." and "..". validPath consults
-// Win32ValidPath under core.protectNTFS.
+// Win32ValidPath only on Windows with core.protectNTFS enabled.
 func IsNTFSDotDot(part string) bool {
 	// Only the literal-dot pattern in IsNTFSDot matches a needle
 	// this short. It requires two leading periods, so the slice
@@ -66,14 +66,15 @@ func IsNTFSDotDot(part string) bool {
 
 // Win32ValidPath reports whether one path component avoids trailing
 // spaces and periods and Windows reserved device names. The worktree
-// wrapper's validPath applies it under core.protectNTFS; the .git
-// disguise checks stay separately config-gated.
+// wrapper's validPath applies it on a Win32 host with
+// core.protectNTFS enabled; the .git disguise checks stay separately
+// config-gated on every host.
 //
 // Both rules come from upstream Git's is_valid_win32_path at
 // compat/mingw.c#L3347-L3469 in tag v2.54.0[1]. Upstream skips the
 // DOS drive prefix before scanning components; this predicate never
-// receives that prefix, because validPath refuses a path carrying one
-// before the components are examined.
+// receives that prefix, because HasVolumeName refuses a path carrying
+// one before the components are examined.
 //
 // Two parts of upstream's scanner are not ported. Its illegal
 // characters — the control bytes and `< > " | ? *`, plus a colon

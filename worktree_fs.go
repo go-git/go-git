@@ -61,10 +61,25 @@ type worktreeFilesystem struct {
 	billy.Filesystem
 	protectNTFS bool
 	protectHFS  bool
+
+	// win32 enables the rules that describe the host's own path
+	// canonicalisation rather than a repository's contents: volume
+	// prefixes, and the trailing-space/period and reserved-device rules
+	// that Win32ValidPath applies under core.protectNTFS. Upstream Git
+	// compiles is_valid_win32_path only for MinGW and MSVC, so a POSIX
+	// host must keep checking out names such as aux.c. It is a field
+	// rather than a runtime.GOOS test so both hosts' policies are
+	// reachable from a test on either.
+	win32 bool
 }
 
 func newWorktreeFilesystem(fs billy.Filesystem, protectNTFS, protectHFS bool) *worktreeFilesystem {
-	return &worktreeFilesystem{Filesystem: fs, protectNTFS: protectNTFS, protectHFS: protectHFS}
+	return &worktreeFilesystem{
+		Filesystem:  fs,
+		protectNTFS: protectNTFS,
+		protectHFS:  protectHFS,
+		win32:       runtime.GOOS == "windows",
+	}
 }
 
 func (sfs *worktreeFilesystem) Create(filename string) (billy.File, error) {
@@ -201,15 +216,15 @@ var errUnsupportedOperation = errors.New("unsupported operation")
 // Dot and parent components, including the NTFS and HFS+ spellings a
 // filesystem folds back to them, are refused whatever the configuration
 // says. So are `.git` and `git~1` at every component position;
-// core.protectHFS and core.protectNTFS add the remaining aliases. With
-// core.protectNTFS the Win32 trailing-space/period and reserved-device
-// rules apply too, and volume prefixes are refused.
+// core.protectHFS and core.protectNTFS add the remaining aliases. A Win32
+// host additionally refuses volume prefixes, and with core.protectNTFS the
+// trailing-space/period and reserved-device rules.
 //
 // ValidTreePath and this gate are not ordered by strictness. Tree
 // validation refuses an alias such as sub/.git<U+200C> with both
-// protections off, which this gate accepts; core.protectNTFS refuses
-// aux.c here, which tree validation accepts. A submodule .git pointer
-// file cannot be reached through this wrapper.
+// protections off, which this gate accepts; a Win32 host with
+// core.protectNTFS refuses aux.c here, which tree validation accepts. A
+// submodule .git pointer file cannot be reached through this wrapper.
 //
 // Reference: upstream Git verify_path_internal at read-cache.c#L987-L1048
 // and is_valid_win32_path at compat/mingw.c#L3347-L3469 in tag v2.54.0[1][2].
@@ -229,12 +244,8 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 			return fmt.Errorf("%w: %q", pathutil.ErrInvalidPath, p)
 		}
 
-		if sfs.protectNTFS {
-			// Volume names are not supported, in both formats: \\ and
-			// <DRIVE_LETTER>:.
-			if vol := filepath.VolumeName(p); vol != "" {
-				return fmt.Errorf("%w: %q", pathutil.ErrInvalidPath, p)
-			}
+		if sfs.win32 && pathutil.HasVolumeName(p) {
+			return fmt.Errorf("%w %q: contains a volume name", pathutil.ErrInvalidPath, p)
 		}
 
 		for _, part := range parts {
@@ -249,7 +260,7 @@ func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 				return fmt.Errorf("%w component: %q", pathutil.ErrInvalidPath, p)
 			}
 
-			if sfs.protectNTFS && !pathutil.Win32ValidPath(part) {
+			if sfs.win32 && sfs.protectNTFS && !pathutil.Win32ValidPath(part) {
 				return fmt.Errorf("%w %q: component %q is not a valid Windows path component (core.protectNTFS)", pathutil.ErrInvalidPath, p, part)
 			}
 		}

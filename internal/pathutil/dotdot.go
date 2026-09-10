@@ -12,7 +12,9 @@ package pathutil
 // C Git carries them in POSIX trees and indexes. ValidTreePath and
 // the worktree wrapper's validPath therefore accept them, while
 // IsDotsOnlyName refuses runs of periods as submodule and reference
-// storage names below .git.
+// storage names below .git. On a Win32 host with core.protectNTFS,
+// validPath additionally consults Win32ValidPath, which refuses a
+// component ending in a space or a period.
 func IsDotOrDotDotName(name string) bool {
 	return name == "." || name == ".." ||
 		IsHFSDotDot(name) || IsNTFSDotDot(name)

@@ -30,11 +30,12 @@ var ErrInvalidPath = fmt.Errorf("invalid path")
 // stricter than C Git, which gates the disguise checks on those two
 // settings and can store such names on POSIX.
 //
-// Windows reserved device names (CON, NUL, etc.) are not policed
-// here: they are legitimate filenames on non-Windows and upstream Git
-// accepts them. A component of periods alone passes for the same
-// reason. The wrapper layer (validPath in package git) applies those
-// rules at materialisation time.
+// Win32ValidPath's trailing-space/period and reserved-device rules do
+// not belong here — applying them would make an ordinary POSIX
+// repository unreadable, and upstream likewise compiles
+// is_valid_win32_path only for MinGW and MSVC. A component of periods
+// alone therefore passes this gate. The worktree wrapper's validPath
+// applies those rules on a Win32 host with core.protectNTFS.
 //
 // A rejected entry interrupts tree iteration and checkout; entries
 // yielded before it have already been seen by the caller.

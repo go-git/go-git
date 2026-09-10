@@ -3,8 +3,10 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"io"
 	gofs "io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -535,7 +537,8 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 		// checks that go-git enforces but upstream git does not on this
 		// platform (e.g. reserved device names are only checked by
 		// compat/mingw.c, which is not compiled on non-Windows).
-		skipGit bool
+		skipGit          bool
+		acceptOffWindows bool
 	}{
 		{
 			name: ".git at root",
@@ -587,16 +590,18 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			skipGit: !gitAtLeast(t, 2, 24),
 		},
 		{
-			name:    "NTFS reserved device name CON",
-			path:    "CON/file",
-			config:  map[string]string{"core.protectNTFS": "true"},
-			skipGit: runtime.GOOS != "windows",
+			name:             "NTFS reserved device name CON",
+			acceptOffWindows: true,
+			path:             "CON/file",
+			config:           map[string]string{"core.protectNTFS": "true"},
+			skipGit:          runtime.GOOS != "windows",
 		},
 		{
-			name:    "NTFS reserved device name NUL",
-			path:    "NUL",
-			config:  map[string]string{"core.protectNTFS": "true"},
-			skipGit: runtime.GOOS != "windows",
+			name:             "NTFS reserved device name NUL",
+			acceptOffWindows: true,
+			path:             "NUL",
+			config:           map[string]string{"core.protectNTFS": "true"},
+			skipGit:          runtime.GOOS != "windows",
 		},
 		{
 			name:   "HFS+ zero-width character in .git",
@@ -646,6 +651,12 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 				&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true},
 				TheirsMergeStrategy, badCommit,
 			)
+			if tc.acceptOffWindows && runtime.GOOS != "windows" {
+				require.NoError(t, goGitErr)
+				_, err := w.Filesystem().Lstat(tc.path)
+				require.NoError(t, err)
+				return
+			}
 			assert.Error(t, goGitErr, "go-git should reject cherry-pick of %q", tc.path)
 
 			if !tc.skipGit {
@@ -654,6 +665,216 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 				gitErr := gitCherryPick(t, dir, badCommit.Hash.String())
 				assert.Error(t, gitErr, "git should reject cherry-pick of %q", tc.path)
 			}
+		})
+	}
+}
+
+// TestPathPolicyMatchesGitIndex compares the three gates against
+// reference git's own index, row by row, under every combination of
+// core.protectNTFS and core.protectHFS. The rule column names the
+// expected verdict, so a wrong port shows up as a mismatch against
+// git rather than against a predicate this branch also changed.
+//
+// The divergences are deliberate: go-git refuses the bare 8.3 alias
+// git~1 whatever the configuration says, refuses a backslash
+// component, and ValidTreePath refuses the ".." disguises git carries
+// in a POSIX tree.
+//
+//nolint:paralleltest // Subtests share one Git index and config.
+func TestPathPolicyMatchesGitIndex(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("POSIX Git oracle; native Windows gates have separate tests")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+
+	dir := t.TempDir()
+	gitRun(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "blob"), []byte("content"), 0o644))
+	blob := gitRun(t, dir, "hash-object", "-w", "blob")
+
+	cases := []struct{ name, rule string }{
+		{".git", "literal"},
+		{"sub/.git", "literal"},
+		{".GIT", "literal"},
+		{"sub/.GIT", "literal"},
+		{". /.git", "literal"},
+		{"::$INDEX_ALLOCATION/.git", "literal"},
+		{":a/.git", "literal"},
+		{"git~1", "shortname"},
+		{"git~1/HEAD", "shortname"},
+		{"git~1 ", "ntfs"},
+		{"sub/git~1 ", "ntfs"},
+		{".git ", "ntfs"},
+		{".git::$INDEX_ALLOCATION", "ntfs"},
+		{"a\\.git", "backslash"},
+		{".git\u200c", "hfs"},
+		{"sub/.git\u200c", "hfs"},
+		{".gi\u200ct", "hfs"},
+		{".g\u200cit", "hfs"},
+		{".\u200cgit", "hfs"},
+		{"\u200c.git", "hfs"},
+		{".. ", "tree-policy"},
+		{"..:x", "tree-policy"},
+		{".. .", "tree-policy"},
+		{"x/.. ", "tree-policy"},
+		{"..::$INDEX_ALLOCATION", "tree-policy"},
+		{".\u200c./inner.txt", "tree-policy"},
+		{"x/.\u200c.", "tree-policy"},
+		{"tab\tname", "tree-policy"},
+		{"del\x7fname", "tree-policy"},
+		{"a\\.", "tree-policy"},
+		{"a\\..", "tree-policy"},
+		{"trail.", "ordinary"},
+		{"trail ", "ordinary"},
+		{".../inner.txt", "ordinary"},
+		{"....", "ordinary"},
+		{"sub /x", "ordinary"},
+		{".gitattributes ", "ordinary"},
+		{".gitignore ", "ordinary"},
+		{".gitmodules ", "ordinary"},
+		{".mailmap ", "ordinary"},
+		{".GITIGNORE", "ordinary"},
+		{"aux.c", "ordinary"},
+		{"lib/con.go", "ordinary"},
+		{"con c", "ordinary"},
+		{"C:foo", "ordinary"},
+		{"a:b", "ordinary"},
+		{"C:/x", "ordinary"},
+		{`\\srv\share\x`, "ordinary"},
+		{`\??\C:\x`, "ordinary"},
+	}
+
+	for _, ntfs := range []bool{false, true} {
+		for _, hfs := range []bool{false, true} {
+			gitRun(t, dir, "config", "core.protectNTFS", fmt.Sprint(ntfs))
+			gitRun(t, dir, "config", "core.protectHFS", fmt.Sprint(hfs))
+			fs := newWorktreeFilesystem(memfs.New(), ntfs, hfs)
+
+			for _, tc := range cases {
+				t.Run(fmt.Sprintf("%q/ntfs=%t/hfs=%t", tc.name, ntfs, hfs), func(t *testing.T) {
+					gitRun(t, dir, "read-tree", "--empty")
+					cmd := gitenv.CommandContext(t.Context(), "git", "-C", dir, "update-index", "--add", "--cacheinfo", "100644", blob, tc.name)
+					_, _ = cmd.CombinedOutput()
+					indexed := gitRun(t, dir, "ls-files", "-z")
+
+					gitAccepts := tc.rule != "literal" &&
+						(!ntfs || (tc.rule != "ntfs" && tc.rule != "shortname" && tc.rule != "backslash")) &&
+						(!hfs || tc.rule != "hfs")
+					require.Equal(t, gitAccepts, indexed == tc.name+"\x00", "Git index: %q", indexed)
+
+					worktreeAccepts := gitAccepts && tc.rule != "tree-policy" &&
+						tc.rule != "backslash" && tc.rule != "shortname"
+					require.Equal(t, worktreeAccepts, fs.validPath(tc.name) == nil)
+					require.Equal(t, worktreeAccepts, fs.validWritePath(tc.name) == nil)
+					require.Equal(t, tc.rule == "ordinary", pathutil.ValidTreePath(tc.name) == nil)
+				})
+			}
+		}
+	}
+}
+
+// TestPlainClonePOSIXPathPolicy takes each name through a real git
+// commit and then clones it with both implementations. Reference git
+// always materialises the file; go-git clones the ordinary names and
+// refuses the ones ValidTreePath rejects, which also stops tree
+// iteration at the offending entry.
+func TestPlainClonePOSIXPathPolicy(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("POSIX filenames and Linux config defaults")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+
+	tests := []struct {
+		name     string
+		rejected bool
+	}{
+		{"trail.", false},
+		{"trail ", false},
+		{".../inner.txt", false},
+		{". /inner.txt", false},
+		{".\u200c/inner.txt", false},
+		{"aux.c", false},
+		{"lib/con.go", false},
+		{"a:b.txt", false},
+		{".gitattributes ", false},
+		{"gi7eba~1", false},
+		{".. ", true},
+		{"..:x", true},
+		{".. .", true},
+		{"x/.. ", true},
+		{"..::$INDEX_ALLOCATION", true},
+		{".\u200c./inner.txt", true},
+		{"x/.\u200c.", true},
+		{"tab\tname", true},
+		{"del\x7fname", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			source := filepath.Join(root, "source")
+			require.NoError(t, os.Mkdir(source, 0o755))
+			gitRun(t, source, "init", "-q")
+
+			p := filepath.Join(source, tc.name)
+			require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+			require.NoError(t, os.WriteFile(p, []byte("payload"), 0o644))
+			gitRun(t, source, "add", "--all")
+			require.Equal(t, tc.name+"\x00", gitRun(t, source, "ls-files", "-z"))
+			gitRun(t, source, "commit", "-qm", "fixture")
+
+			oracle := filepath.Join(root, "git-clone")
+			gitRun(t, source, "clone", "-q", source, oracle)
+			content, err := os.ReadFile(filepath.Join(oracle, tc.name))
+			require.NoError(t, err)
+			require.Equal(t, "payload", string(content))
+
+			r, err := PlainOpen(source)
+			require.NoError(t, err)
+			head, err := r.Head()
+			require.NoError(t, err)
+			commit, err := r.CommitObject(head.Hash())
+			require.NoError(t, err)
+			tree, err := commit.Tree()
+			require.NoError(t, err)
+
+			iter := tree.Files()
+			defer iter.Close()
+			file, walkErr := iter.Next()
+
+			clone := filepath.Join(root, "go-clone")
+			_, cloneErr := PlainClone(clone, &CloneOptions{URL: source})
+
+			if tc.rejected {
+				// This single-offender fixture yields nothing. A mixed
+				// tree may yield the files preceding the offender; full
+				// iteration stays unavailable either way.
+				require.Nil(t, file)
+				require.Error(t, walkErr)
+				require.NotErrorIs(t, walkErr, io.EOF)
+				require.Error(t, cloneErr)
+				return
+			}
+
+			require.NoError(t, walkErr)
+			require.Equal(t, tc.name, file.Name)
+			_, err = iter.Next()
+			require.ErrorIs(t, err, io.EOF)
+
+			require.NoError(t, cloneErr)
+			content, err = os.ReadFile(filepath.Join(clone, tc.name))
+			require.NoError(t, err)
+			require.Equal(t, "payload", string(content))
 		})
 	}
 }
@@ -1301,6 +1522,65 @@ func TestResetAcceptsLegitPaths(t *testing.T) {
 	}
 }
 
+// TestCheckoutMaterialisesPOSIXTrailingNames drives a checkout of the
+// names the Win32 component rules refuse and the host gate now
+// allows. Off Windows every one has to reach the filesystem with its
+// contents intact: they are ordinary POSIX filenames that C Git
+// checks out, and refusing them made a repository containing aux.c
+// or ".gitattributes " unusable.
+func TestCheckoutMaterialisesPOSIXTrailingNames(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX contract")
+	}
+
+	paths := []string{
+		"trail.", "trail ", ".../inner.txt", ". /inner.txt",
+		".\u200c/inner.txt", "aux.c", "a:b.txt", ".gitattributes ",
+		"gi7eba~1",
+	}
+
+	fs := memfs.New()
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+
+	blob := writeBlob(t, s, []byte("payload"))
+
+	var entries []object.TreeEntry
+	for _, p := range paths {
+		parent, child, nested := strings.Cut(p, "/")
+		if !nested {
+			entries = append(entries, object.TreeEntry{Name: p, Mode: filemode.Regular, Hash: blob})
+			continue
+		}
+		subtree := storeRawTree(t, s, []object.TreeEntry{
+			{Name: child, Mode: filemode.Regular, Hash: blob},
+		})
+		entries = append(entries, object.TreeEntry{Name: parent, Mode: filemode.Dir, Hash: subtree})
+	}
+	sort.Sort(object.TreeEntrySorter(entries))
+
+	sig := defaultSignature()
+	commit := storeCommit(t, s, &object.Commit{
+		Author:    *sig,
+		Committer: *sig,
+		Message:   "fixture\n",
+		TreeHash:  storeRawTree(t, s, entries),
+	})
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, w.Checkout(&CheckoutOptions{Hash: commit, Force: true}))
+
+	for _, p := range paths {
+		body, err := util.ReadFile(fs, p)
+		require.NoError(t, err, "path %q should exist after Checkout", p)
+		require.Equal(t, "payload", string(body), "path %q", p)
+	}
+}
+
 // TestForceCheckoutRejectsDangerousPaths pins that a Force checkout
 // (Checkout{Force:true}) and its underlying HardReset refuse to
 // materialise attacker-shaped tree entries into the worktree.
@@ -1739,60 +2019,184 @@ func TestWorktreeOperationsSurviveDotGitDisguises(t *testing.T) {
 	}
 }
 
-func TestValidPathProtectNTFS(t *testing.T) {
+// TestValidPathAcceptsPOSIXNamesOffWindows pins the other half of the
+// host gate. Every name here is an ordinary filename that C Git
+// carries, so validPath has to accept it off Windows however
+// core.protectNTFS is set. On a Win32 host the win32 rows become
+// refusals under core.protectNTFS, and the volume rows are refused by
+// the host alone, whatever the setting.
+func TestValidPathAcceptsPOSIXNamesOffWindows(t *testing.T) {
 	t.Parallel()
 
-	fs := newWorktreeFilesystem(memfs.New(), true, false)
-
 	tests := []struct {
-		path    string
-		wantErr bool
+		path string
+		// win32 marks a name only the Win32 component rules refuse;
+		// volume one carrying a Windows volume prefix.
+		win32, volume bool
 	}{
-		{".git . . .", true},
-		{".git . . ", true},
-		{".git ", true},
-		{".git.", true},
-		{".git::$INDEX_ALLOCATION", true},
-		{"CON", true},
-		{"aux.txt", true},
-		{"sub/NUL", true},
-		{"sub/COM1.txt", true},
-		{"CONIN$", true},
-		{"foo ", true},
-		{"foo.", true},
-		{"sub /x", true},
-		{".gitattributes ", true},
-		{".gitignore ", true},
-		{"...", true},
-		{"....", true},
-		{"a..b", false},
-		{"foo", false},
-		{"readme.md", false},
-		{".gitignore", false},
-		{"CONNECT", false},
-	}
-
-	if runtime.GOOS == "windows" {
-		// filepath.VolumeName only parses volume names on Windows.
-		tests = append(tests, []struct {
-			path    string
-			wantErr bool
-		}{
-			{"\\\\a\\b", true},
-			{"C:\\a\\b", true},
-		}...)
+		{"trail.", true, false},
+		{"trail ", true, false},
+		{".../inner.txt", true, false},
+		{"sub /x", true, false},
+		{". /inner.txt", true, false},
+		{".\u200c/inner.txt", false, false},
+		{".gitattributes ", true, false},
+		{".gitignore ", true, false},
+		{".mailmap ", true, false},
+		{"gi7eba~1", false, false},
+		{"aux.c", true, false},
+		{"lib/con.go", true, false},
+		{"C:foo", false, true},
+		{"a:b", false, true},
+		{"C:/x", false, true},
+		{`\\srv\share\x`, false, true},
+		{`\??\C:\x`, false, true},
+		{".gitattributes /inner.txt", true, false},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.path, func(t *testing.T) {
-			t.Parallel()
-			err := fs.validPath(tc.path)
-			if tc.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
+		for _, ntfs := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%q/ntfs=%t", tc.path, ntfs), func(t *testing.T) {
+				t.Parallel()
+
+				fs := newWorktreeFilesystem(memfs.New(), ntfs, false)
+				err := fs.validPath(tc.path)
+				if runtime.GOOS == "windows" && (tc.volume || ntfs && tc.win32) {
+					require.Error(t, err)
+					if !tc.volume {
+						require.Contains(t, err.Error(), "core.protectNTFS")
+					}
+					return
+				}
+				require.NoError(t, err)
+			})
+		}
+	}
+}
+
+// TestWorktreeAPISurvivesUntrackedEdgeNames is the counterpart to
+// TestWorktreeOperationsSurviveDotGitDisguises: these names are not
+// disguises, so off Windows the porcelain has to treat them as
+// ordinary untracked files — Status lists them, Clean removes them,
+// and Add takes them by name.
+func TestWorktreeAPISurvivesUntrackedEdgeNames(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX filenames")
+	}
+
+	names := []string{
+		"build ", ". ", ".\u200c", ".gitattributes ", ".gitignore ",
+		".mailmap ", "gi7eba~1", ".GITIGNORE ", "a:b", "aux.c",
+	}
+
+	for _, name := range names {
+		for _, directory := range []bool{false, true} {
+			for _, op := range []string{"Clean", "Status", "AddUnrelated", "AddGlob", "AddAll", "AddName"} {
+				t.Run(fmt.Sprintf("%q/directory=%t/%s", name, directory, op), func(t *testing.T) {
+					t.Parallel()
+
+					fs := memfs.New()
+					r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+					require.NoError(t, err)
+
+					w, err := r.Worktree()
+					require.NoError(t, err)
+
+					p := name
+					if directory {
+						p += "/inner.txt"
+					}
+					require.NoError(t, util.WriteFile(fs, p, []byte("content"), 0o644))
+					require.NoError(t, util.WriteFile(fs, "unrelated.txt", []byte("safe"), 0o644))
+
+					switch op {
+					case "Clean":
+						require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+						_, err = fs.Lstat(name)
+						require.ErrorIs(t, err, os.ErrNotExist)
+					case "Status":
+						status, err := w.Status()
+						require.NoError(t, err)
+						require.Contains(t, status, p)
+					case "AddUnrelated":
+						_, err = w.Add("unrelated.txt")
+						require.NoError(t, err)
+					case "AddGlob":
+						require.NoError(t, w.AddGlob("."))
+					case "AddAll":
+						require.NoError(t, w.AddWithOptions(&AddOptions{All: true}))
+					case "AddName":
+						_, err = w.Add(name)
+						require.NoError(t, err)
+					}
+				})
 			}
-		})
+		}
+	}
+}
+
+// TestValidPathProtectNTFS runs every row against both hosts. Setting
+// worktreeFilesystem.win32 by hand rather than reading runtime.GOOS is
+// what makes the Win32 half reachable from a POSIX test run: with a
+// runtime.GOOS test in validPath, deleting the Windows policy outright
+// still passes the suite everywhere but Windows.
+func TestValidPathProtectNTFS(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path string
+		// win32 is the verdict on a Win32 host, posix on every other.
+		win32, posix bool
+	}{
+		{".git . . .", true, true},
+		{".git . . ", true, true},
+		{".git ", true, true},
+		{".git.", true, true},
+		{".git::$INDEX_ALLOCATION", true, true},
+		{"CON", true, false},
+		{"aux.txt", true, false},
+		{"sub/NUL", true, false},
+		{"sub/COM1.txt", true, false},
+		{"CONIN$", true, false},
+		{"foo ", true, false},
+		{"foo.", true, false},
+		{"sub /x", true, false},
+		{".gitattributes ", true, false},
+		{".gitignore ", true, false},
+		{"...", true, false},
+		{"....", true, false},
+		// Volume prefixes are a Win32 rule too, and independent of
+		// core.protectNTFS.
+		{"\\\\a\\b", true, false},
+		{"C:\\a\\b", true, false},
+		{"a..b", false, false},
+		{"foo", false, false},
+		{"readme.md", false, false},
+		{".gitignore", false, false},
+		{"CONNECT", false, false},
+	}
+
+	for _, win32 := range []bool{false, true} {
+		for _, tc := range tests {
+			t.Run(fmt.Sprintf("%s/win32=%t", tc.path, win32), func(t *testing.T) {
+				t.Parallel()
+				fs := newWorktreeFilesystem(memfs.New(), true, false)
+				fs.win32 = win32
+				wantErr := tc.posix
+				if win32 {
+					wantErr = tc.win32
+				}
+				err := fs.validPath(tc.path)
+				if wantErr {
+					assert.Error(t, err)
+					assert.ErrorIs(t, err, pathutil.ErrInvalidPath)
+				} else {
+					assert.NoError(t, err)
+				}
+			})
+		}
 	}
 }
 

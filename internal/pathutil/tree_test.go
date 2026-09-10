@@ -27,11 +27,10 @@ func TestValidTreePath(t *testing.T) {
 		{"reject .", ".", true},
 		{"reject empty", "", true},
 
-		// NTFS folds trailing spaces/dots and an ADS suffix back to "..".
+		// NTFS parent disguises remain an always-on policy.
 		{"reject .. trailing space", ".. /x", true},
 		{"reject nested .. trailing space", "a/.. /b", true},
-		// Three periods and two spaces. The tail after ".." contains
-		// a space, so the component folds to ".." on NTFS.
+		// A space in the tail distinguishes this from periods alone.
 		{"reject .. periods then spaces", "...  /x", true},
 		{"reject ..:: ADS", "..::$INDEX_ALLOCATION/x", true},
 		// HFS+ ignores certain code points, so these resolve to "..".
@@ -71,14 +70,14 @@ func TestValidTreePath(t *testing.T) {
 		{"allow Çircle/file high-codepoint", "Çircle/file", false},
 		// Windows reserved device names are not policed at this layer:
 		// they are legitimate on non-Windows and upstream Git accepts
-		// them. The wrapper enforces them when core.protectNTFS is on.
+		// them. The wrapper enforces them on Windows with core.protectNTFS.
 		{"allow CON file", "CON/file", false},
 		{"allow CON.txt", "CON.txt", false},
 		{"allow nested NUL", "dir/NUL", false},
 		// A component of periods alone is well-formed on filesystems
 		// other than NTFS and C Git 2.54.0 accepts it in a tree and
-		// in an index on POSIX. WindowsValidPath refuses it at the
-		// materialisation boundary under core.protectNTFS.
+		// in an index on POSIX. Win32ValidPath refuses it on Windows
+		// when core.protectNTFS is enabled.
 		{"allow ... component", ".../x", false},
 		{"allow .... component", "....", false},
 		{"allow nested ...", "a/.../b", false},
