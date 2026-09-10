@@ -208,6 +208,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 						return
 					}
 					baseBuf.Reset(baseRd)
+					basePos = 0
 					discard = offset
 				}
 				for discard > math.MaxInt32 {
