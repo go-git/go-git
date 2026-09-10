@@ -297,6 +297,104 @@ func (s *RepositorySuite) TestPullAdd() {
 	s.NotEqual("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branch.Hash().String())
 }
 
+func (s *WorktreeSuite) TestPullAbsentSubtreePreservesCurrentBranch() {
+	const (
+		readmePath     = "README"
+		directoryName  = "adir"
+		childName      = "child"
+		siblingPath    = "zsibling"
+		payloadContent = "payload\n"
+	)
+
+	t := s.T()
+	dir := t.TempDir()
+	remote, _, initial := initRepoWithReadme(t, dir)
+
+	local, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{URL: dir})
+	s.Require().NoError(err)
+	t.Cleanup(func() { require.NoError(t, local.Close()) })
+
+	w, err := local.Worktree()
+	s.Require().NoError(err)
+
+	beforeBranch, err := local.Head()
+	s.Require().NoError(err)
+
+	beforeHEAD, err := local.Storer.Reference(plumbing.HEAD)
+	s.Require().NoError(err)
+
+	beforeIndex := snapshotIndex(t, local)
+
+	payload := writeBlob(t, remote.Storer, []byte(payloadContent))
+	subtree := storeRawTree(t, remote.Storer, []object.TreeEntry{
+		{Name: childName, Mode: filemode.Regular, Hash: payload},
+	})
+	target := buildCommitWithEntries(t, remote.Storer, initial, initial.Hash, []object.TreeEntry{
+		{Name: directoryName, Mode: filemode.Dir, Hash: subtree},
+		{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+	}, "withheld subtree")
+
+	err = remote.Storer.SetReference(plumbing.NewHashReference(beforeBranch.Name(), target.Hash))
+	s.Require().NoError(err)
+
+	// Model a filtered fetch by copying the commit, root tree, and blobs
+	// while withholding the subtree.
+	for _, hash := range []plumbing.Hash{payload, target.TreeHash, target.Hash} {
+		obj, err := remote.Storer.EncodedObject(plumbing.AnyObject, hash)
+		s.Require().NoError(err)
+
+		_, err = local.Storer.SetEncodedObject(obj)
+		s.Require().NoError(err)
+	}
+
+	for range 2 {
+		err = w.Pull(&PullOptions{})
+		s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+		afterHEAD, err := local.Storer.Reference(plumbing.HEAD)
+		s.Require().NoError(err)
+		s.Equal(beforeHEAD, afterHEAD)
+
+		afterBranch, err := local.Head()
+		s.Require().NoError(err)
+		s.Equal(beforeBranch, afterBranch)
+
+		s.Equal(beforeIndex, snapshotIndex(t, local))
+
+		readme, err := util.ReadFile(w.Filesystem(), readmePath)
+		s.Require().NoError(err)
+		s.Equal("init", string(readme))
+
+		_, err = w.Filesystem().Lstat(siblingPath)
+		s.ErrorIs(err, os.ErrNotExist)
+	}
+
+	_, err = w.Commit("after failed pull", &CommitOptions{Author: defaultSignature()})
+	s.ErrorIs(err, ErrEmptyCommit)
+
+	err = w.Checkout(&CheckoutOptions{Branch: beforeBranch.Name(), Force: true})
+	s.Require().NoError(err)
+
+	obj, err := remote.Storer.EncodedObject(plumbing.TreeObject, subtree)
+	s.Require().NoError(err)
+
+	_, err = local.Storer.SetEncodedObject(obj)
+	s.Require().NoError(err)
+
+	err = w.Pull(&PullOptions{})
+	s.Require().NoError(err)
+
+	afterBranch, err := local.Head()
+	s.Require().NoError(err)
+	s.Equal(target.Hash, afterBranch.Hash())
+
+	for _, path := range []string{directoryName + "/" + childName, siblingPath} {
+		data, err := util.ReadFile(w.Filesystem(), path)
+		s.Require().NoError(err)
+		s.Equal(payloadContent, string(data), "path: %s", path)
+	}
+}
+
 func (s *WorktreeSuite) TestPullAlreadyUptodate() {
 	url := s.GetLocalRepositoryURL(fixtures.Basic().ByTag("worktree").One())
 

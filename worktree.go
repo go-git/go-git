@@ -185,14 +185,16 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	if err := w.updateHEAD(ref.Hash()); err != nil {
-		return err
-	}
-
-	if err := w.Reset(&ResetOptions{
+	if err := w.reset(&ResetOptions{
 		Mode:   MergeReset,
 		Commit: ref.Hash(),
 	}); err != nil {
+		return err
+	}
+
+	// Publish the fetched commit only after the reset succeeds. updateHEAD
+	// also creates the current branch when pulling into an unborn HEAD.
+	if err := w.updateHEAD(ref.Hash()); err != nil {
 		return err
 	}
 
@@ -353,7 +355,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 }
 
 // reset updates the index and worktree without changing references. Checkout
-// switches HEAD afterward; Reset moves the current branch afterward.
+// switches HEAD afterward; Reset and Pull move the current branch afterward.
 func (w *Worktree) reset(opts *ResetOptions) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
