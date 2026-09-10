@@ -563,7 +563,7 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 		{
 			name:    "git~1 8.3 short name",
 			path:    "git~1/config",
-			skipGit: !gitAtLeast(t, 2, 24),
+			skipGit: !gitAtLeast(t, 2, 24, 1),
 		},
 		{
 			name: "dot-dot traversal",
@@ -587,7 +587,7 @@ func TestCherryPickPathValidationMatchesGit(t *testing.T) {
 			name:    "NTFS alternate data stream",
 			path:    ".git::$INDEX_ALLOCATION/config",
 			config:  map[string]string{"core.protectNTFS": "true"},
-			skipGit: !gitAtLeast(t, 2, 24),
+			skipGit: !gitAtLeast(t, 2, 24, 1),
 		},
 		{
 			name:             "NTFS reserved device name CON",
@@ -776,7 +776,7 @@ func TestPathPolicyMatchesGitIndex(t *testing.T) {
 					//
 					// [1]: https://github.com/git/git/commit/7c3745fc6185495d5765628b4dfe1bd2c25a2981
 					ntfsStream := tc.rule == "ntfs" && strings.Contains(tc.name, ":")
-					if !ntfsStream || gitAtLeast(t, 2, 24) {
+					if !ntfsStream || gitAtLeast(t, 2, 24, 1) {
 						require.Equal(t, gitAccepts, indexed == tc.name+"\x00", "Git index: %q", indexed)
 					}
 
@@ -1197,24 +1197,37 @@ func gitConfig(t *testing.T, dir, key, value string) {
 }
 
 // gitAtLeast reports whether the local `git` is at least the given version.
-// Used to skip upstream cherry-pick assertions for protections that older
-// Git releases (e.g. 2.11) do not implement, such as the git~1 8.3 short
-// name check (CVE-2014-9390 hardening) and the .git::$INDEX_ALLOCATION
-// NTFS Alternate Data Stream check (CVE-2019-1351).
-func gitAtLeast(t *testing.T, major, minor int) bool {
+// Used to skip upstream assertions for protections that older Git releases
+// do not apply. Both protections the callers gate on arrived in 2.24.1:
+// `core.protectNTFS` has covered the `git~1` short name since 2.2.1 but
+// only defaults to enabled since 9102f958ee5 (CVE-2019-1353)[1], and
+// is_ntfs_dotgit reads the `.git::$INDEX_ALLOCATION` Alternate Data Stream
+// spelling only since 7c3745fc6185 (CVE-2019-1352)[2].
+//
+// [1]: https://github.com/git/git/commit/9102f958ee5
+// [2]: https://github.com/git/git/commit/7c3745fc6185
+func gitAtLeast(t *testing.T, major, minor, patch int) bool {
 	t.Helper()
 	out, err := gitenv.Command("git", "--version").Output()
 	if err != nil {
 		return false
 	}
-	var maj, mnr int
-	if _, err := fmt.Sscanf(string(out), "git version %d.%d", &maj, &mnr); err != nil {
-		return false
+	// Release builds carry a patch component; builds from a development
+	// branch append further fields, which Sscanf leaves unread.
+	var maj, mnr, pch int
+	if _, err := fmt.Sscanf(string(out), "git version %d.%d.%d", &maj, &mnr, &pch); err != nil {
+		if _, err := fmt.Sscanf(string(out), "git version %d.%d", &maj, &mnr); err != nil {
+			return false
+		}
 	}
-	if maj != major {
+	switch {
+	case maj != major:
 		return maj > major
+	case mnr != minor:
+		return mnr > minor
+	default:
+		return pch >= patch
 	}
-	return mnr >= minor
 }
 
 func gitCherryPick(t *testing.T, dir, hash string) error {
