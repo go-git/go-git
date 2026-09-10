@@ -2670,6 +2670,54 @@ func TestTreeFilesSurfacesSlashBearingEntryName(t *testing.T) {
 	assert.ErrorIs(t, tree.Validate(), ErrInvalidTree)
 }
 
+func TestTreeWalkerRestoresParentPathAfterSlashBearingDirectory(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	leaf := storeTestTree(t, st, []TreeEntry{{Name: "child", Mode: filemode.Regular, Hash: blob}})
+	empty := storeTestTree(t, st, nil)
+	subtree := storeTestTree(t, st, []TreeEntry{
+		{Name: "c/d", Mode: filemode.Dir, Hash: leaf},
+		{Name: "empty/dir", Mode: filemode.Dir, Hash: empty},
+		{Name: "z", Mode: filemode.Regular, Hash: blob},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "a/b", Mode: filemode.Dir, Hash: subtree},
+		{Name: "z", Mode: filemode.Regular, Hash: blob},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	walker := NewTreeWalker(tree, true, nil)
+	defer walker.Close()
+
+	wantNames := []string{
+		"a/b",
+		"a/b/c/d",
+		"a/b/c/d/child",
+		"a/b/empty/dir",
+		"a/b/z",
+		"z",
+	}
+	for _, want := range wantNames {
+		name, _, err := walker.Next()
+		require.NoError(t, err)
+		assert.Equal(t, want, name)
+	}
+
+	_, _, err = walker.Next()
+	require.ErrorIs(t, err, io.EOF)
+
+	var names []string
+	require.NoError(t, tree.Files().ForEach(func(f *File) error {
+		names = append(names, f.Name)
+		return nil
+	}))
+	assert.Equal(t, []string{"a/b/c/d/child", "a/b/z", "z"}, names)
+}
+
 func TestTreeWalkerNextRejectsDirEntryPointingAtBlob(t *testing.T) {
 	t.Parallel()
 

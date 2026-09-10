@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -620,8 +619,9 @@ func (t *Tree) PatchContext(ctx context.Context, to *Tree) (*Patch, error) {
 
 // treeEntryIter facilitates iterating through the TreeEntry objects in a Tree.
 type treeEntryIter struct {
-	t   *Tree
-	pos int
+	t             *Tree
+	pos           int
+	parentBaseLen int
 }
 
 func (iter *treeEntryIter) Next() (TreeEntry, error) {
@@ -656,7 +656,7 @@ type TreeWalker struct {
 // tree walker.
 func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWalker {
 	stack := make([]*treeEntryIter, 0, startingStackSize)
-	stack = append(stack, &treeEntryIter{t, 0})
+	stack = append(stack, &treeEntryIter{t: t})
 
 	return &TreeWalker{
 		stack:     stack,
@@ -705,10 +705,10 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 
 		entry, err = w.stack[current].Next()
 		if err == io.EOF {
-			// Finished with the current tree, move back up to the parent
+			// Restore one tree level, which can span several path components
+			// when a malformed directory entry's name contains slashes.
+			w.base = w.base[:w.stack[current].parentBaseLen]
 			w.stack = w.stack[:current]
-			w.base, _ = path.Split(w.base)
-			w.base = strings.TrimSuffix(w.base, "/")
 			continue
 		}
 
@@ -744,7 +744,7 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 	}
 
 	if obj != nil {
-		w.stack = append(w.stack, &treeEntryIter{obj, 0})
+		w.stack = append(w.stack, &treeEntryIter{t: obj, parentBaseLen: len(w.base)})
 		w.base = simpleJoin(w.base, entry.Name)
 	}
 
