@@ -1814,7 +1814,7 @@ func isHexAlpha(b byte) bool {
 func incBytes(in []byte) (out []byte, overflow bool) {
 	out = make([]byte, len(in))
 	copy(out, in)
-	for i := len(out) - 1; i >= 0; i-- {
+	for i := range slices.Backward(out) {
 		out[i]++
 		if out[i] != 0 {
 			return out, overflow // Didn't overflow.
