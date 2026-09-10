@@ -62,20 +62,67 @@ func (s *Scope) Descend(dir []string, readOwn func() ([]Pattern, error)) (*Scope
 		return &Scope{patterns: s.patterns, matcher: s.matcher, excluded: true}, nil
 	}
 
-	if readOwn == nil {
-		return s, nil
+	patterns := dropExhausted(s.patterns, dir)
+
+	var own []Pattern
+	if readOwn != nil {
+		var err error
+		own, err = readOwn()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	own, err := readOwn()
-	if err != nil {
-		return nil, err
-	}
 	if len(own) == 0 {
-		return s, nil
+		if len(patterns) == len(s.patterns) {
+			return s, nil
+		}
+		return &Scope{patterns: patterns, matcher: NewMatcher(patterns)}, nil
 	}
 
-	patterns := slices.Concat(s.patterns, own)
+	patterns = slices.Concat(patterns, own)
 	return &Scope{patterns: patterns, matcher: NewMatcher(patterns)}, nil
+}
+
+// dropExhausted removes patterns from patterns that can no longer
+// distinguish dir from anything below it. A glob pattern (one containing
+// "/") is anchored to a fixed number of path components; once dir's depth
+// reaches or exceeds domain-plus-pattern length, globMatch has nothing left
+// to consume, and its "leftover suffix still counts as matched" behavior —
+// needed so an excluded directory excludes its descendants — would
+// otherwise let the pattern wrongly reassert dir's old verdict past a
+// boundary a more specific, later-checked pattern has since overridden.
+// See TestScopeOverriddenGlobDoesNotReclaimDescendants.
+//
+// A pattern using "**" is kept regardless of depth: it has unbounded reach
+// by design. A non-glob pattern is also always kept: matching at any depth
+// below its domain is its entire purpose (see simpleNameMatch).
+func dropExhausted(patterns []Pattern, dir []string) []Pattern {
+	depth := len(dir)
+	drop := 0
+	for _, ip := range patterns {
+		if exhausted(ip, depth) {
+			drop++
+		}
+	}
+	if drop == 0 {
+		return patterns
+	}
+
+	kept := make([]Pattern, 0, len(patterns)-drop)
+	for _, ip := range patterns {
+		if !exhausted(ip, depth) {
+			kept = append(kept, ip)
+		}
+	}
+	return kept
+}
+
+func exhausted(ip Pattern, depth int) bool {
+	p, ok := ip.(*pattern)
+	return ok && p.isGlob &&
+		!slices.Contains(p.pattern, zeroToManyDirs) &&
+		len(p.domain)+len(p.pattern) <= depth
 }
 
 // Excluded reports whether the directory this Scope belongs to, or an ancestor
