@@ -16,7 +16,6 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
@@ -898,14 +897,9 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 
 		isSubmodule = e.Mode == filemode.Submodule
 	case merkletrie.Delete:
-		// checkoutChange.Delete is only reached from resetWorktree's
-		// filesystem-vs-index merkletrie diff (resetWorktreeToTree's
-		// tree-derived deletes call rmFileAndDirsIfEmpty directly).
-		// The path source is therefore the local worktree filesystem,
-		// where the tolerant worktreeFilesystem wrapper is the right
-		// fit: we want to be able to clean up legitimately-tracked
-		// shapes like "submodule/.git" rather than abort the whole
-		// reset on a single weird untracked file.
+		// These names come from the filesystem-vs-index diff. Apply the
+		// configured worktree gate. Tree-derived deletes use the same
+		// helper in resetWorktreeToTree.
 		return rmFileAndDirsIfEmpty(fs, ch.From.String())
 	}
 
@@ -1550,10 +1544,30 @@ func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]G
 	return grepResults, nil
 }
 
-// will walk up the directory tree removing all encountered empty
-// directories, not just the one containing this file
+// rmFileAndDirsIfEmpty removes a file or an empty directory, then walks up
+// removing the empty directories above it. A nonempty directory is kept,
+// along with everything under it, and the walk stops there.
+//
+// Removal is not recursive because the names reaching here are index and
+// tree entries, and upstream Git removes them one at a time: remove_or_warn
+// unlinks a regular entry and calls rmdir for a gitlink, so a submodule
+// worktree with contents of its own survives a reset that drops the
+// gitlink, as do untracked files left inside a directory that replaced a
+// tracked file. Where rmdir fails Git warns and continues; this returns nil.
+// Billy backends do not share a directory-not-empty sentinel, so the
+// condition is tested rather than inferred from the error.
+//
+// Reference: upstream Git entry.c remove_or_warn at L610-L613 and
+// unlink_entry at L595-L608 in tag v2.54.0[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/entry.c#L595-L613
 func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
-	if err := util.RemoveAll(fs, name); err != nil {
+	if fi, err := fs.Lstat(name); err == nil && fi.IsDir() {
+		if entries, err := fs.ReadDir(name); err == nil && len(entries) > 0 {
+			return nil
+		}
+	}
+	if err := fs.Remove(name); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
