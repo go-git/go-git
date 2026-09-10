@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"sync"
 
 	"github.com/go-git/go-billy/v6"
 	"golang.org/x/sys/unix"
@@ -34,11 +36,18 @@ func mmapFile(f billy.File) ([]byte, func() error, error) {
 		return nil, nil, errors.Join(err, f.Close())
 	}
 
+	// Unmapping is single-shot: a second call must not munmap an address
+	// range that a later mapping may already own.
+	var once sync.Once
 	cleanup := func() error {
-		return errors.Join(
-			unix.Munmap(data),
-			f.Close(),
-		)
+		err := os.ErrClosed
+		once.Do(func() {
+			err = errors.Join(
+				unix.Munmap(data),
+				f.Close(),
+			)
+		})
+		return err
 	}
 
 	return data, cleanup, nil
