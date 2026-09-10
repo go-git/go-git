@@ -6,7 +6,10 @@ import (
 	"testing"
 )
 
-func FuzzRead(f *testing.F) {
+// Not named FuzzRead: the OSS-Fuzz harness resolves a target by
+// grepping for `func <name>`, which would also match FuzzReadLine.
+// See `make validate-fuzz`.
+func FuzzReadPacket(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("0000"))
 	f.Add([]byte("0001"))
@@ -73,7 +76,7 @@ func FuzzReadLine(f *testing.F) {
 	})
 }
 
-func FuzzScanner(f *testing.F) {
+func FuzzPktlineScanner(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("0000"))
 	f.Add([]byte("0001"))

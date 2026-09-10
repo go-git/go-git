@@ -82,7 +82,9 @@ func buildMinimalRev(count, hashSize int) []byte {
 //
 // Lives outside `_test.go` so the OSS-Fuzz harness, which does not
 // see other test files when extracting fuzz targets, can reach it
-// from FuzzMemoryIndex's seed corpus.
+// from the seed corpus. The harness finds a target by grepping the
+// package for its name, so naming one here would break the build.
+// See `make validate-fuzz`.
 func buildOOBOffset64Idx() ([]byte, plumbing.Hash) {
 	const hashSize = 20
 

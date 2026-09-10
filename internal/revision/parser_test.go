@@ -411,7 +411,7 @@ func (s *ParserSuite) TestParseRefWithInvalidName() {
 	}
 }
 
-func FuzzParser(f *testing.F) {
+func FuzzRevisionParser(f *testing.F) {
 	f.Add("@{2016-12-16T21:42:47Z}")
 	f.Add("@~3")
 	f.Add("v0.99.8^{}")
