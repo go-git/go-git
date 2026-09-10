@@ -2176,6 +2176,125 @@ func (s *WorktreeSuite) TestResetKeepUntrackedOverwrite() {
 	s.Equal(commitA, head.Hash())
 }
 
+func (s *WorktreeSuite) TestResetHardRecoversFromUnreadableHEADTree() {
+	const (
+		readmePath       = "README"
+		initialContent   = "initial\n"
+		directoryName    = "dir"
+		childPath        = directoryName + "/child"
+		stagedPath       = "staged"
+		untrackedPath    = "untracked"
+		untrackedContent = "keep\n"
+	)
+
+	tests := []struct {
+		name          string
+		missingRoot   bool
+		forceCheckout bool
+	}{
+		{name: "subtree/reset"},
+		{name: "subtree/force checkout", forceCheckout: true},
+		{name: "root/reset", missingRoot: true},
+		{name: "root/force checkout", missingRoot: true, forceCheckout: true},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			t := s.T()
+			st := memory.NewStorage()
+			fs := memfs.New()
+			r, err := Init(st, WithWorkTree(fs))
+			s.Require().NoError(err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte(initialContent), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(readmePath)
+			s.Require().NoError(err)
+
+			target, err := w.Commit("initial", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte("changed\n"), 0o644)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, childPath, []byte("tracked\n"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(".")
+			s.Require().NoError(err)
+
+			current, err := w.Commit("with subtree", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			commit, err := r.CommitObject(current)
+			s.Require().NoError(err)
+
+			tree, err := commit.Tree()
+			s.Require().NoError(err)
+
+			entry, err := tree.FindEntry(directoryName)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, stagedPath, []byte("staged\n"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(stagedPath)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, untrackedPath, []byte(untrackedContent), 0o644)
+			s.Require().NoError(err)
+
+			missingHash := entry.Hash
+			if tc.missingRoot {
+				missingHash = tree.Hash
+			}
+			delete(st.Objects, missingHash)
+			delete(st.Trees, missingHash)
+
+			for range 2 {
+				if tc.forceCheckout {
+					err = w.Checkout(&CheckoutOptions{Hash: target, Force: true})
+				} else {
+					err = w.Reset(&ResetOptions{Commit: target, Mode: HardReset})
+				}
+				s.Require().NoError(err)
+
+				head, err := r.Head()
+				s.Require().NoError(err)
+				s.Equal(target, head.Hash())
+
+				idx, err := st.Index()
+				s.Require().NoError(err)
+				s.Require().Len(idx.Entries, 1)
+				s.Equal(readmePath, idx.Entries[0].Name)
+
+				data, err := util.ReadFile(fs, readmePath)
+				s.Require().NoError(err)
+				s.Equal(initialContent, string(data))
+
+				for _, path := range []string{childPath, stagedPath} {
+					_, err := fs.Lstat(path)
+					s.ErrorIs(err, os.ErrNotExist, "path: %s", path)
+				}
+
+				data, err = util.ReadFile(fs, untrackedPath)
+				s.Require().NoError(err)
+				s.Equal(untrackedContent, string(data))
+
+				status, err := w.Status()
+				s.Require().NoError(err)
+				s.Require().Len(status, 1)
+				s.Equal(Untracked, status.File(untrackedPath).Worktree)
+			}
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestResetHard() {
 	fs := memfs.New()
 	w := &Worktree{
