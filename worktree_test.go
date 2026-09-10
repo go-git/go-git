@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -294,6 +295,104 @@ func (s *RepositorySuite) TestPullAdd() {
 	branch, err = r.Reference("refs/heads/master", false)
 	s.NoError(err)
 	s.NotEqual("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branch.Hash().String())
+}
+
+func (s *WorktreeSuite) TestPullAbsentSubtreePreservesCurrentBranch() {
+	const (
+		readmePath     = "README"
+		directoryName  = "adir"
+		childName      = "child"
+		siblingPath    = "zsibling"
+		payloadContent = "payload\n"
+	)
+
+	t := s.T()
+	dir := t.TempDir()
+	remote, _, initial := initRepoWithReadme(t, dir)
+
+	local, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{URL: dir})
+	s.Require().NoError(err)
+	t.Cleanup(func() { require.NoError(t, local.Close()) })
+
+	w, err := local.Worktree()
+	s.Require().NoError(err)
+
+	beforeBranch, err := local.Head()
+	s.Require().NoError(err)
+
+	beforeHEAD, err := local.Storer.Reference(plumbing.HEAD)
+	s.Require().NoError(err)
+
+	beforeIndex := snapshotIndex(t, local)
+
+	payload := writeBlob(t, remote.Storer, []byte(payloadContent))
+	subtree := storeRawTree(t, remote.Storer, []object.TreeEntry{
+		{Name: childName, Mode: filemode.Regular, Hash: payload},
+	})
+	target := buildCommitWithEntries(t, remote.Storer, initial, initial.Hash, []object.TreeEntry{
+		{Name: directoryName, Mode: filemode.Dir, Hash: subtree},
+		{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+	}, "withheld subtree")
+
+	err = remote.Storer.SetReference(plumbing.NewHashReference(beforeBranch.Name(), target.Hash))
+	s.Require().NoError(err)
+
+	// Model a filtered fetch by copying the commit, root tree, and blobs
+	// while withholding the subtree.
+	for _, hash := range []plumbing.Hash{payload, target.TreeHash, target.Hash} {
+		obj, err := remote.Storer.EncodedObject(plumbing.AnyObject, hash)
+		s.Require().NoError(err)
+
+		_, err = local.Storer.SetEncodedObject(obj)
+		s.Require().NoError(err)
+	}
+
+	for range 2 {
+		err = w.Pull(&PullOptions{})
+		s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+		afterHEAD, err := local.Storer.Reference(plumbing.HEAD)
+		s.Require().NoError(err)
+		s.Equal(beforeHEAD, afterHEAD)
+
+		afterBranch, err := local.Head()
+		s.Require().NoError(err)
+		s.Equal(beforeBranch, afterBranch)
+
+		s.Equal(beforeIndex, snapshotIndex(t, local))
+
+		readme, err := util.ReadFile(w.Filesystem(), readmePath)
+		s.Require().NoError(err)
+		s.Equal("init", string(readme))
+
+		_, err = w.Filesystem().Lstat(siblingPath)
+		s.ErrorIs(err, os.ErrNotExist)
+	}
+
+	_, err = w.Commit("after failed pull", &CommitOptions{Author: defaultSignature()})
+	s.ErrorIs(err, ErrEmptyCommit)
+
+	err = w.Checkout(&CheckoutOptions{Branch: beforeBranch.Name(), Force: true})
+	s.Require().NoError(err)
+
+	obj, err := remote.Storer.EncodedObject(plumbing.TreeObject, subtree)
+	s.Require().NoError(err)
+
+	_, err = local.Storer.SetEncodedObject(obj)
+	s.Require().NoError(err)
+
+	err = w.Pull(&PullOptions{})
+	s.Require().NoError(err)
+
+	afterBranch, err := local.Head()
+	s.Require().NoError(err)
+	s.Equal(target.Hash, afterBranch.Hash())
+
+	for _, path := range []string{directoryName + "/" + childName, siblingPath} {
+		data, err := util.ReadFile(w.Filesystem(), path)
+		s.Require().NoError(err)
+		s.Equal(payloadContent, string(data), "path: %s", path)
+	}
 }
 
 func (s *WorktreeSuite) TestPullAlreadyUptodate() {
@@ -1529,6 +1628,159 @@ func (s *WorktreeSuite) TestStatusUnmodified() {
 	s.Equal(Untracked, status.File("LICENSE").Worktree)
 }
 
+func (s *WorktreeSuite) TestResetUnreadableTreePreservesReferences() {
+	const (
+		targetBranch    = "refs/heads/target"
+		newBranch       = "refs/heads/new"
+		missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		readmePath      = "README"
+		readmeContent   = "initial\n"
+		siblingPath     = "zsibling"
+	)
+
+	tests := []struct {
+		name string
+		run  func(*Worktree, plumbing.Hash) error
+	}{
+		{
+			name: "checkout hash",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: hash})
+			},
+		},
+		{
+			name: "force checkout hash",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: hash, Force: true})
+			},
+		},
+		{
+			name: "checkout branch",
+			run: func(w *Worktree, _ plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Branch: targetBranch, Force: true})
+			},
+		},
+		{
+			name: "create branch",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Branch: newBranch, Hash: hash, Create: true, Force: true})
+			},
+		},
+		{
+			name: "hard reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: HardReset})
+			},
+		},
+		{
+			name: "mixed reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: MixedReset})
+			},
+		},
+		{
+			name: "merge reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: MergeReset})
+			},
+		},
+		{
+			name: "keep reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: KeepReset})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			t := s.T()
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			s.Require().NoError(err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte(readmeContent), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(readmePath)
+			s.Require().NoError(err)
+
+			initialHash, err := w.Commit("initial", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			initial, err := r.CommitObject(initialHash)
+			s.Require().NoError(err)
+
+			payload := writeBlob(t, r.Storer, []byte("payload\n"))
+			target := buildCommitWithEntries(t, r.Storer, initial, initialHash, []object.TreeEntry{
+				{Name: "adir", Mode: filemode.Dir, Hash: plumbing.NewHash(missingObjectID)},
+				{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+			}, "absent subtree")
+
+			err = r.Storer.SetReference(plumbing.NewHashReference(targetBranch, target.Hash))
+			s.Require().NoError(err)
+
+			snapshotReferences := func() map[plumbing.ReferenceName]string {
+				t.Helper()
+
+				iter, err := r.Storer.IterReferences()
+				s.Require().NoError(err)
+
+				refs := make(map[plumbing.ReferenceName]string)
+				err = iter.ForEach(func(ref *plumbing.Reference) error {
+					refs[ref.Name()] = ref.String()
+					return nil
+				})
+				s.Require().NoError(err)
+
+				return refs
+			}
+			beforeRefs := snapshotReferences()
+			beforeIndex := snapshotIndex(t, r)
+
+			err = tc.run(w, target.Hash)
+			s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+			s.Equal(beforeRefs, snapshotReferences())
+			s.Equal(beforeIndex, snapshotIndex(t, r))
+
+			readme, err := util.ReadFile(fs, readmePath)
+			s.Require().NoError(err)
+			s.Equal(readmeContent, string(readme))
+
+			_, err = fs.Lstat(siblingPath)
+			s.ErrorIs(err, os.ErrNotExist)
+
+			_, err = w.Commit("after failed reset", &CommitOptions{Author: defaultSignature()})
+			s.ErrorIs(err, ErrEmptyCommit)
+
+			err = w.Checkout(&CheckoutOptions{Hash: initialHash, Force: true})
+			s.Require().NoError(err)
+
+			status, err := w.Status()
+			s.Require().NoError(err)
+			s.True(status.IsClean())
+		})
+	}
+}
+
+func snapshotIndex(t *testing.T, r *Repository) []byte {
+	t.Helper()
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	err = index.NewEncoder(&buf, crypto.SHA1.New()).Encode(idx)
+	require.NoError(t, err)
+
+	return buf.Bytes()
+}
+
 func (s *WorktreeSuite) TestReset() {
 	fs := memfs.New()
 	w := &Worktree{
@@ -1924,6 +2176,125 @@ func (s *WorktreeSuite) TestResetKeepUntrackedOverwrite() {
 	s.Equal(commitA, head.Hash())
 }
 
+func (s *WorktreeSuite) TestResetHardRecoversFromUnreadableHEADTree() {
+	const (
+		readmePath       = "README"
+		initialContent   = "initial\n"
+		directoryName    = "dir"
+		childPath        = directoryName + "/child"
+		stagedPath       = "staged"
+		untrackedPath    = "untracked"
+		untrackedContent = "keep\n"
+	)
+
+	tests := []struct {
+		name          string
+		missingRoot   bool
+		forceCheckout bool
+	}{
+		{name: "subtree/reset"},
+		{name: "subtree/force checkout", forceCheckout: true},
+		{name: "root/reset", missingRoot: true},
+		{name: "root/force checkout", missingRoot: true, forceCheckout: true},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			t := s.T()
+			st := memory.NewStorage()
+			fs := memfs.New()
+			r, err := Init(st, WithWorkTree(fs))
+			s.Require().NoError(err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte(initialContent), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(readmePath)
+			s.Require().NoError(err)
+
+			target, err := w.Commit("initial", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte("changed\n"), 0o644)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, childPath, []byte("tracked\n"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(".")
+			s.Require().NoError(err)
+
+			current, err := w.Commit("with subtree", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			commit, err := r.CommitObject(current)
+			s.Require().NoError(err)
+
+			tree, err := commit.Tree()
+			s.Require().NoError(err)
+
+			entry, err := tree.FindEntry(directoryName)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, stagedPath, []byte("staged\n"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(stagedPath)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, untrackedPath, []byte(untrackedContent), 0o644)
+			s.Require().NoError(err)
+
+			missingHash := entry.Hash
+			if tc.missingRoot {
+				missingHash = tree.Hash
+			}
+			delete(st.Objects, missingHash)
+			delete(st.Trees, missingHash)
+
+			for range 2 {
+				if tc.forceCheckout {
+					err = w.Checkout(&CheckoutOptions{Hash: target, Force: true})
+				} else {
+					err = w.Reset(&ResetOptions{Commit: target, Mode: HardReset})
+				}
+				s.Require().NoError(err)
+
+				head, err := r.Head()
+				s.Require().NoError(err)
+				s.Equal(target, head.Hash())
+
+				idx, err := st.Index()
+				s.Require().NoError(err)
+				s.Require().Len(idx.Entries, 1)
+				s.Equal(readmePath, idx.Entries[0].Name)
+
+				data, err := util.ReadFile(fs, readmePath)
+				s.Require().NoError(err)
+				s.Equal(initialContent, string(data))
+
+				for _, path := range []string{childPath, stagedPath} {
+					_, err := fs.Lstat(path)
+					s.ErrorIs(err, os.ErrNotExist, "path: %s", path)
+				}
+
+				data, err = util.ReadFile(fs, untrackedPath)
+				s.Require().NoError(err)
+				s.Equal(untrackedContent, string(data))
+
+				status, err := w.Status()
+				s.Require().NoError(err)
+				s.Require().Len(status, 1)
+				s.Equal(Untracked, status.File(untrackedPath).Worktree)
+			}
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestResetHard() {
 	fs := memfs.New()
 	w := &Worktree{
@@ -2202,6 +2573,113 @@ func (s *WorktreeSuite) TestMergeResetRemovesTrackedFileInIgnoredDir() {
 	s.NoError(err)
 	_, err = fs.Stat("vendor/keep.txt")
 	s.True(os.IsNotExist(err), "vendor/keep.txt must be removed after MergeReset, got err=%v", err)
+}
+
+// commitSparseFixture writes path with content, stages it and commits, so
+// the sparse reset tests have two commits that differ outside the sparse
+// directories.
+func (s *WorktreeSuite) commitSparseFixture(w *Worktree, fs billy.Filesystem, path, content string) plumbing.Hash {
+	s.Require().NoError(fs.MkdirAll(filepath.Dir(path), os.ModePerm))
+	s.Require().NoError(util.WriteFile(fs, path, []byte(content), 0o644))
+	_, err := w.Add(path)
+	s.Require().NoError(err)
+	h, err := w.Commit(content, &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	s.Require().NoError(err)
+
+	return h
+}
+
+// TestResetSparselyUpdatesExcludedEntry checks that a sparse reset brings an
+// index entry outside the sparse directories to its target. git keeps the
+// index matching the commit it resets to and lets SkipWorktree decide only
+// which paths reach the worktree, so status is clean afterwards.
+func (s *WorktreeSuite) TestResetSparselyUpdatesExcludedEntry() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	first := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	second := s.commitSparseFixture(w, fs, "excluded/f.txt", "v2")
+
+	sparse := []string{"php"}
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: first, SparseDirs: sparse}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: second, SparseDirs: sparse}))
+
+	target, err := s.Repository.getTreeFromCommitHash(second)
+	s.Require().NoError(err)
+	want, err := target.FindEntry("excluded/f.txt")
+	s.Require().NoError(err)
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	e, err := idx.Entry("excluded/f.txt")
+	s.Require().NoError(err)
+	s.Equal(want.Hash, e.Hash, "index entry must match the reset target")
+	s.True(e.SkipWorktree, "the path stays outside the sparse directories")
+
+	_, err = fs.Stat("excluded/f.txt")
+	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
+}
+
+// TestResetSparselyRemovesExcludedEntry checks that a sparse reset drops an
+// index entry the target no longer records, even though the path is outside
+// the sparse directories.
+func (s *WorktreeSuite) TestResetSparselyRemovesExcludedEntry() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	withFile := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	_, err := w.Remove("excluded/f.txt")
+	s.Require().NoError(err)
+	withoutFile, err := w.Commit("without file", &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	s.Require().NoError(err)
+
+	sparse := []string{"php"}
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: withFile, SparseDirs: sparse}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: withoutFile, SparseDirs: sparse}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	_, err = idx.Entry("excluded/f.txt")
+	s.ErrorIs(err, index.ErrEntryNotFound, "index must not track a path the target dropped")
+}
+
+// TestResetKeepsSkipWorktreeWithoutSparseDirs checks that a reset which does
+// not restate SparseDirs leaves the flag alone. The index entries are the
+// only record of the sparse set, so rewriting one must carry its flag over
+// or the next worktree update would materialise the path.
+func (s *WorktreeSuite) TestResetKeepsSkipWorktreeWithoutSparseDirs() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	first := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	second := s.commitSparseFixture(w, fs, "excluded/f.txt", "v2")
+
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: first, SparseDirs: []string{"php"}}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: second}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	e, err := idx.Entry("excluded/f.txt")
+	s.Require().NoError(err)
+	s.True(e.SkipWorktree, "a reset without SparseDirs must not clear the flag")
+
+	_, err = fs.Stat("excluded/f.txt")
+	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
 }
 
 func (s *WorktreeSuite) TestResetSparsely() {

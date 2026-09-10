@@ -249,7 +249,27 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 	return w.diffTreeWithStaging(t, reverse)
 }
 
+// diffTreeWithStaging returns the changes between t and the index as the
+// worktree sees it. SkipWorktree entries are left out, because a path the
+// sparse-checkout excludes is absent from disk by design.
 func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+	return w.diffTreeWithIndexNode(t, reverse, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+	})
+}
+
+// diffTreeWithIndex returns the changes between t and every index entry,
+// including those flagged SkipWorktree. Reset uses it to bring the index to
+// its target while the flag continues to decide which paths reach the
+// worktree, as git does.
+func (w *Worktree) diffTreeWithIndex(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+	return w.diffTreeWithIndexNode(t, reverse, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+		IgnoreSkipWorktree:  true,
+	})
+}
+
+func (w *Worktree) diffTreeWithIndexNode(t *object.Tree, reverse bool, options mindex.RootNodeOptions) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
 		from = object.NewTreeRootNode(t)
@@ -260,7 +280,7 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	to := mindex.NewRootNodeWithOptions(idx, options)
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)

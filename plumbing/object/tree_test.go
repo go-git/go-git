@@ -2465,3 +2465,478 @@ func TestTreeValidateReportsAllRules(t *testing.T) {
 	assert.ErrorIs(t, verr, pathutil.ErrInvalidPath)
 	assert.Contains(t, verr.Error(), "null hash")
 }
+
+func TestTreeFindEntryMatchesWalkerErrors(t *testing.T) {
+	t.Parallel()
+
+	const missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	tests := []struct {
+		name       string
+		objectType plumbing.ObjectType
+		content    string
+		missing    bool
+		wantIs     error
+		wantNot    error
+	}{
+		{
+			name:       "wrong object type",
+			objectType: plumbing.BlobObject,
+			content:    "payload\n",
+			wantIs:     ErrInvalidTree,
+			wantNot:    plumbing.ErrObjectNotFound,
+		},
+		{
+			name:    "missing subtree",
+			missing: true,
+			wantIs:  plumbing.ErrObjectNotFound,
+			wantNot: ErrInvalidTree,
+		},
+		{
+			name:       "malformed subtree",
+			objectType: plumbing.TreeObject,
+			content:    "100644 foo\x00short",
+			wantIs:     ErrMalformedTree,
+			wantNot:    ErrInvalidTree,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := memory.NewStorage()
+			hash := plumbing.NewHash(missingObjectID)
+			if !tc.missing {
+				hash = storeTestObject(t, st, tc.objectType, []byte(tc.content))
+			}
+			root := storeTestTree(t, st, []TreeEntry{
+				{Name: "sub", Mode: filemode.Dir, Hash: hash},
+			})
+
+			tree, err := GetTree(st, root)
+			require.NoError(t, err)
+
+			_, findErr := tree.FindEntry("sub/x")
+			require.ErrorIs(t, findErr, tc.wantIs)
+			assert.NotErrorIs(t, findErr, tc.wantNot)
+			assert.Contains(t, findErr.Error(), `entry "sub"`)
+
+			walker := NewTreeWalker(tree, true, nil)
+			defer walker.Close()
+
+			_, _, walkErr := walker.Next()
+			require.ErrorIs(t, walkErr, tc.wantIs)
+			assert.NotErrorIs(t, walkErr, tc.wantNot)
+		})
+	}
+}
+
+func TestTreeFindEntryRefusesNonDirectoryDescent(t *testing.T) {
+	t.Parallel()
+
+	const (
+		entryName  = "evil"
+		lookupPath = entryName + "/foo"
+	)
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	subtree := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: entryName, Mode: filemode.Symlink, Hash: subtree},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	_, err = tree.FindEntry(lookupPath)
+	assert.ErrorIs(t, err, ErrDirectoryNotFound)
+
+	_, err = tree.File(lookupPath)
+	assert.ErrorIs(t, err, ErrFileNotFound)
+
+	_, err = tree.Size(lookupPath)
+	assert.ErrorIs(t, err, ErrEntryNotFound)
+
+	leaf, err := tree.FindEntry(entryName)
+	require.NoError(t, err)
+	assert.Equal(t, filemode.Symlink, leaf.Mode)
+	assert.Equal(t, subtree, leaf.Hash)
+
+	got, err := tree.Tree(entryName)
+	require.NoError(t, err)
+	assert.Len(t, got.Entries, 1)
+}
+
+func TestTreeFindEntryDescendsIntoDirectories(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	leaf := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	mid := storeTestTree(t, st, []TreeEntry{
+		{Name: "bar", Mode: filemode.Dir, Hash: leaf},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "baz", Mode: filemode.Dir, Hash: mid},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	// Exercise both uncached and cached lookup.
+	for range 2 {
+		entry, err := tree.FindEntry("baz/bar/foo")
+		require.NoError(t, err)
+		assert.Equal(t, filemode.Regular, entry.Mode)
+		assert.Equal(t, payload, entry.Hash)
+	}
+}
+
+func TestTreeFindEntryCacheDoesNotBypassModeCheck(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	shared := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "dir", Mode: filemode.Dir, Hash: shared},
+		{Name: "evil", Mode: filemode.Symlink, Hash: shared},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	entry, err := tree.FindEntry("dir/foo")
+	require.NoError(t, err)
+	assert.Equal(t, payload, entry.Hash)
+
+	_, err = tree.FindEntry("evil/foo")
+	assert.ErrorIs(t, err, ErrDirectoryNotFound)
+}
+
+func TestTreeFindEntryRefusesSubmoduleDescent(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	subtree := storeTestTree(t, st, []TreeEntry{
+		{Name: "foo", Mode: filemode.Regular, Hash: payload},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "sub", Mode: filemode.Submodule, Hash: subtree},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	_, err = tree.FindEntry("sub/foo")
+	assert.ErrorIs(t, err, ErrDirectoryNotFound)
+}
+
+func TestTreeFilesSurfacesSlashBearingEntryName(t *testing.T) {
+	t.Parallel()
+
+	const (
+		entryName        = "evil"
+		slashBearingName = entryName + "/shadow"
+	)
+
+	st := memory.NewStorage()
+	link := storeTestObject(t, st, plumbing.BlobObject, []byte("/victim"))
+	payload := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: entryName, Mode: filemode.Symlink, Hash: link},
+		{Name: slashBearingName, Mode: filemode.Regular, Hash: payload},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	var names []string
+	require.NoError(t, tree.Files().ForEach(func(f *File) error {
+		names = append(names, f.Name)
+		return nil
+	}))
+	assert.Equal(t, []string{entryName, slashBearingName}, names)
+
+	assert.ErrorIs(t, tree.Validate(), ErrInvalidTree)
+}
+
+func TestTreeWalkerRestoresParentPathAfterSlashBearingDirectory(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	leaf := storeTestTree(t, st, []TreeEntry{{Name: "child", Mode: filemode.Regular, Hash: blob}})
+	empty := storeTestTree(t, st, nil)
+	subtree := storeTestTree(t, st, []TreeEntry{
+		{Name: "c/d", Mode: filemode.Dir, Hash: leaf},
+		{Name: "empty/dir", Mode: filemode.Dir, Hash: empty},
+		{Name: "z", Mode: filemode.Regular, Hash: blob},
+	})
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "a/b", Mode: filemode.Dir, Hash: subtree},
+		{Name: "z", Mode: filemode.Regular, Hash: blob},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	walker := NewTreeWalker(tree, true, nil)
+	defer walker.Close()
+
+	wantNames := []string{
+		"a/b",
+		"a/b/c/d",
+		"a/b/c/d/child",
+		"a/b/empty/dir",
+		"a/b/z",
+		"z",
+	}
+	for _, want := range wantNames {
+		name, _, err := walker.Next()
+		require.NoError(t, err)
+		assert.Equal(t, want, name)
+	}
+
+	_, _, err = walker.Next()
+	require.ErrorIs(t, err, io.EOF)
+
+	var names []string
+	require.NoError(t, tree.Files().ForEach(func(f *File) error {
+		names = append(names, f.Name)
+		return nil
+	}))
+	assert.Equal(t, []string{"a/b/c/d/child", "a/b/z", "z"}, names)
+}
+
+func TestTreeWalkerNextRejectsDirEntryPointingAtBlob(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "evil", Mode: filemode.Dir, Hash: blob},
+		{Name: "later", Mode: filemode.Regular, Hash: blob},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	_, _, err = w.Next()
+	require.ErrorIs(t, err, ErrInvalidTree)
+	assert.NotErrorIs(t, err, io.EOF)
+	assert.Contains(t, err.Error(), "blob")
+}
+
+func TestTreeWalkerNextReportsUndecodableSubtree(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	truncated := storeTestObject(t, st, plumbing.TreeObject, []byte("100644 foo\x00short"))
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "dir", Mode: filemode.Dir, Hash: truncated},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	_, _, err = w.Next()
+	require.ErrorIs(t, err, ErrMalformedTree)
+	assert.NotErrorIs(t, err, io.EOF)
+}
+
+type unreadableStorer struct {
+	storer.EncodedObjectStorer
+	err error
+}
+
+func (s unreadableStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	if t == plumbing.AnyObject {
+		return nil, s.err
+	}
+	return s.EncodedObjectStorer.EncodedObject(t, h)
+}
+
+func TestSubtreeReadersPreserveDecoderError(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	truncated := storeTestObject(t, st, plumbing.TreeObject, []byte("100644 foo\x00short"))
+	root := storeTestTree(t, st, []TreeEntry{{Name: "sub", Mode: filemode.Dir, Hash: truncated}})
+	probeErr := errors.New("untyped lookup failed")
+	tree, err := GetTree(unreadableStorer{EncodedObjectStorer: st, err: probeErr}, root)
+	require.NoError(t, err)
+
+	_, findErr := tree.FindEntry("sub/x")
+
+	walker := NewTreeWalker(tree, true, nil)
+	defer walker.Close()
+
+	_, _, walkErr := walker.Next()
+
+	for _, err := range []error{findErr, walkErr} {
+		assert.ErrorIs(t, err, ErrMalformedTree)
+		assert.NotErrorIs(t, err, probeErr)
+		assert.NotErrorIs(t, err, io.EOF)
+		assert.Contains(t, err.Error(), `entry "sub"`)
+	}
+}
+
+func TestTreeWalkerNextReportsUnreadableStore(t *testing.T) {
+	t.Parallel()
+
+	const missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	st := memory.NewStorage()
+	absent := plumbing.NewHash(missingObjectID)
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "gone", Mode: filemode.Dir, Hash: absent},
+	})
+
+	damaged := errors.New("pack is damaged")
+	tree, err := GetTree(unreadableStorer{EncodedObjectStorer: st, err: damaged}, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	_, _, err = w.Next()
+	require.ErrorIs(t, err, damaged)
+	assert.NotErrorIs(t, err, io.EOF)
+}
+
+func TestTreeWalkerNextKeepsEOFOutOfTheChain(t *testing.T) {
+	t.Parallel()
+
+	const missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	absent := plumbing.NewHash(missingObjectID)
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "gone", Mode: filemode.Dir, Hash: absent},
+		{Name: "later", Mode: filemode.Regular, Hash: blob},
+	})
+
+	tree, err := GetTree(unreadableStorer{EncodedObjectStorer: st, err: io.EOF}, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	name, _, err := w.Next()
+	require.Error(t, err)
+	assert.Equal(t, "gone", name)
+	assert.NotErrorIs(t, err, io.EOF)
+	assert.NotErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.NotErrorIs(t, err, ErrInvalidTree)
+	assert.Contains(t, err.Error(), "EOF")
+}
+
+func TestTreeWalkerNextKeepsCausesJoinedWithEOF(t *testing.T) {
+	t.Parallel()
+
+	const missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	st := memory.NewStorage()
+	absent := plumbing.NewHash(missingObjectID)
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "gone", Mode: filemode.Dir, Hash: absent},
+	})
+
+	// An alternate object directory that cannot be read reports both errors,
+	// as storage/filesystem does when no alternate holds the object.
+	joined := errors.Join(io.EOF, plumbing.ErrObjectNotFound)
+	tree, err := GetTree(unreadableStorer{EncodedObjectStorer: st, err: joined}, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	_, _, err = w.Next()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.NotErrorIs(t, err, io.EOF)
+	assert.Contains(t, err.Error(), "EOF")
+	assert.Contains(t, err.Error(), `entry "gone"`)
+}
+
+type promisorStorer struct {
+	storer.EncodedObjectStorer
+}
+
+func (promisorStorer) PromisorObjectPacks() ([]plumbing.Hash, error) {
+	const promisorPackID = "cccccccccccccccccccccccccccccccccccccccc"
+
+	return []plumbing.Hash{plumbing.NewHash(promisorPackID)}, nil
+}
+
+func TestTreeWalkerNextReportsAbsentSubtree(t *testing.T) {
+	t.Parallel()
+
+	const missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	st := memory.NewStorage()
+	blob := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+	absent := plumbing.NewHash(missingObjectID)
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "gone", Mode: filemode.Dir, Hash: absent},
+		{Name: "later", Mode: filemode.Regular, Hash: blob},
+	})
+
+	tree, err := GetTree(st, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	name, _, err := w.Next()
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.Equal(t, "gone", name)
+	assert.NotErrorIs(t, err, io.EOF)
+
+	name, _, err = w.Next()
+	require.NoError(t, err)
+	assert.Equal(t, "later", name)
+
+	_, _, err = w.Next()
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestTreeWalkerNextReportsAbsentSubtreeInPartialClone(t *testing.T) {
+	t.Parallel()
+
+	const missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	st := memory.NewStorage()
+	absent := plumbing.NewHash(missingObjectID)
+	root := storeTestTree(t, st, []TreeEntry{
+		{Name: "gone", Mode: filemode.Dir, Hash: absent},
+	})
+
+	tree, err := GetTree(promisorStorer{EncodedObjectStorer: st}, root)
+	require.NoError(t, err)
+
+	w := NewTreeWalker(tree, true, nil)
+	defer w.Close()
+
+	_, _, err = w.Next()
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.NotErrorIs(t, err, io.EOF)
+	assert.NotErrorIs(t, err, ErrInvalidTree)
+}
