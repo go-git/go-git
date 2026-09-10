@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -27,6 +30,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -2264,6 +2268,248 @@ func (s *WorktreeSuite) TestResetSparselyInvalidDir() {
 				return
 			}
 			s.Require().NoError(err)
+		})
+	}
+}
+
+func snapshotSubtree(t *testing.T, fs billy.Filesystem, root string) map[string]string {
+	t.Helper()
+
+	snapshot := map[string]string{}
+
+	var walk func(string)
+	walk = func(p string) {
+		fi, err := fs.Lstat(p)
+		require.NoError(t, err)
+
+		if !fi.IsDir() {
+			data, err := util.ReadFile(fs, p)
+			require.NoError(t, err)
+			snapshot[p] = string(data)
+			return
+		}
+
+		snapshot[p+"/"] = ""
+		children, err := fs.ReadDir(p)
+		require.NoError(t, err)
+		for _, child := range children {
+			walk(path.Join(p, child.Name()))
+		}
+	}
+	walk(root)
+
+	return snapshot
+}
+
+func TestRemovalPreservesNonemptyDirectories(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range []string{"memfs", "osfs"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Parallel()
+
+			raw := memfs.New()
+			if backend == "osfs" {
+				raw = osfs.New(t.TempDir())
+			}
+			wrapped := newWorktreeFilesystem(raw, true, false)
+
+			for name, content := range map[string]string{
+				"sub/.git":         "gitdir: ../.git/modules/sub\n",
+				"sub/a.txt":        "tracked",
+				"sub/dirty.txt":    "uncommitted",
+				"sub/nested/b.txt": "nested",
+			} {
+				require.NoError(t, util.WriteFile(raw, name, []byte(content), 0o644))
+			}
+
+			expected := map[string]string{
+				"sub/":             "",
+				"sub/.git":         "gitdir: ../.git/modules/sub\n",
+				"sub/a.txt":        "tracked",
+				"sub/dirty.txt":    "uncommitted",
+				"sub/nested/":      "",
+				"sub/nested/b.txt": "nested",
+			}
+			require.Equal(t, expected, snapshotSubtree(t, raw, "sub"))
+			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "sub"))
+			require.Equal(t, expected, snapshotSubtree(t, raw, "sub"))
+
+			require.NoError(t, util.WriteFile(raw, "p/q/only.txt", []byte("remove"), 0o644))
+			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "p/q/only.txt"))
+			_, err := raw.Lstat("p")
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			require.NoError(t, raw.MkdirAll("empty", 0o755))
+			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "empty"))
+			_, err = raw.Lstat("empty")
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "missing"))
+
+			require.NoError(t, util.WriteFile(raw, "tracked.txt/precious", []byte("keep"), 0o644))
+			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "tracked.txt"))
+			require.Equal(t, map[string]string{
+				"tracked.txt/":         "",
+				"tracked.txt/precious": "keep",
+			}, snapshotSubtree(t, raw, "tracked.txt"))
+		})
+	}
+}
+
+// stubReadDirFS answers ReadDir of dir with err instead of its contents, for
+// the first call only when once is set. Both shapes leave a directory that a
+// removal will refuse: one written to between the check and that removal, and
+// one whose entries cannot be read at all.
+type stubReadDirFS struct {
+	billy.Filesystem
+
+	dir  string
+	err  error
+	once bool
+	hits int
+}
+
+func (f *stubReadDirFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if name == f.dir && (!f.once || f.hits == 0) {
+		f.hits++
+		return nil, f.err
+	}
+
+	return f.Filesystem.ReadDir(name)
+}
+
+// A directory a removal leaves behind is kept, whether it is the name being
+// removed or one above it, and whether it was found empty and then written to
+// or never read at all. The removal fails with an error no backend spells the
+// same way, and upstream Git warns where rmdir fails and carries on.
+func TestRemovalKeepsDirectoriesItCannotRemove(t *testing.T) {
+	t.Parallel()
+
+	full := map[string]string{
+		"sub/":         "",
+		"sub/gone.txt": "gone",
+		"sub/keep.txt": "keep",
+	}
+	kept := map[string]string{
+		"sub/":         "",
+		"sub/keep.txt": "keep",
+	}
+
+	for _, test := range []struct {
+		name     string
+		target   string
+		readDir  error
+		once     bool
+		expected map[string]string
+	}{
+		{name: "filled directory", target: "sub", once: true, expected: full},
+		{name: "filled parent", target: "sub/gone.txt", once: true, expected: kept},
+		{name: "unreadable directory", target: "sub", readDir: os.ErrPermission, expected: full},
+		{name: "unreadable parent", target: "sub/gone.txt", readDir: os.ErrPermission, expected: kept},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := memfs.New()
+			for name, content := range map[string]string{
+				"sub/gone.txt": "gone",
+				"sub/keep.txt": "keep",
+			} {
+				require.NoError(t, util.WriteFile(raw, name, []byte(content), 0o644))
+			}
+
+			stub := &stubReadDirFS{Filesystem: raw, dir: "sub", err: test.readDir, once: test.once}
+			require.NoError(t, rmFileAndDirsIfEmpty(newWorktreeFilesystem(stub, true, false), test.target))
+
+			require.Positive(t, stub.hits, "sub was never read")
+			require.Equal(t, test.expected, snapshotSubtree(t, raw, "sub"))
+		})
+	}
+}
+
+// Git preserves a removed submodule's worktree even when it contains local changes.
+func TestResetPreservesSubmoduleDirectory(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+
+	for _, implementation := range []string{"go-git", "git"} {
+		t.Run(implementation, func(t *testing.T) {
+			t.Parallel()
+
+			gitRun := func(dir string, args ...string) string {
+				t.Helper()
+				overrides := []string{
+					"-c", "protocol.file.allow=always",
+					"-c", "submodule.recurse=false",
+					"-C", dir,
+				}
+				out, err := gitenv.CommandContext(t.Context(), "git", append(overrides, args...)...).CombinedOutput()
+				require.NoError(t, err, "git %q: %s", args, out)
+				return strings.TrimSpace(string(out))
+			}
+
+			root := t.TempDir()
+			source, parent := filepath.Join(root, "source"), filepath.Join(root, "parent")
+			for _, dir := range []string{source, parent} {
+				require.NoError(t, os.Mkdir(dir, 0o755))
+				gitRun(dir, "init", "-q")
+			}
+
+			write := func(dir, name, content string) {
+				t.Helper()
+				p := filepath.Join(dir, filepath.FromSlash(name))
+				require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+				require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+			}
+
+			write(source, "a.txt", "tracked\n")
+			write(source, "nested/b.txt", "nested\n")
+			gitRun(source, "add", ".")
+			gitRun(source, "commit", "-qm", "source")
+
+			write(parent, "safe.txt", "keep\n")
+			gitRun(parent, "add", ".")
+			gitRun(parent, "commit", "-qm", "base")
+			base := plumbing.NewHash(gitRun(parent, "rev-parse", "HEAD"))
+
+			gitRun(parent, "submodule", "add", "-q", source, "sub")
+			write(parent, "removed.txt", "remove\n")
+			gitRun(parent, "add", ".")
+			gitRun(parent, "commit", "-qm", "submodule")
+
+			write(parent, "sub/a.txt", "dirty tracked\n")
+			write(parent, "sub/dirty.txt", "untracked work\n")
+			write(parent, "sub/nested/extra.txt", "nested untracked\n")
+			require.Equal(t, "true",
+				gitRun(filepath.Join(parent, "sub"), "rev-parse", "--is-inside-work-tree"))
+
+			raw := osfs.New(parent)
+			before := snapshotSubtree(t, raw, "sub")
+			require.Len(t, before, 7)
+
+			r, err := PlainOpen(parent)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			if implementation == "git" {
+				gitRun(parent, "reset", "--hard", base.String())
+			} else {
+				require.NoError(t, w.Reset(&ResetOptions{Mode: HardReset, Commit: base}))
+			}
+
+			require.Equal(t, before, snapshotSubtree(t, raw, "sub"))
+			for _, name := range []string{"removed.txt", ".gitmodules"} {
+				_, err := raw.Lstat(name)
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+			require.Equal(t, base.String(), gitRun(parent, "rev-parse", "HEAD"))
+			require.Equal(t, "safe.txt", gitRun(parent, "ls-files"))
 		})
 	}
 }
