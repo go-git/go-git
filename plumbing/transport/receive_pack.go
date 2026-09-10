@@ -3,6 +3,7 @@ package transport
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -81,11 +82,18 @@ type PostReceiveInfo struct {
 // ReceivePack is a server command that serves the receive-pack service.
 // It closes w on every return, including malformed requests and advertisement-only
 // exchanges. A close error is returned only if no earlier error occurred.
+// Callers that retain ownership of their streams should wrap r with [io.NopCloser]
+// and w with [ioutil.WriteNopCloser].
 //
 // Commands may name only references under refs/ with valid syntax and safe path
 // components. Refusals are reported per command when report-status is negotiated.
 // A request naming the same reference twice is rejected before hooks or reference
 // updates run. See ErrFunnyRefname and ErrDuplicateRefname.
+// Commands execute even when report-status is not requested. Updates use the
+// storer's compare-and-set operation on the resolved target. Symbolic resolution
+// is separate from the update, and deletes check the old value before a separate
+// removal. ReferenceStorer has no transaction covering these steps: callers must
+// serialize concurrent writers if they require the entire operation to be atomic.
 func ReceivePack(
 	ctx context.Context,
 	st storage.Storer,
@@ -193,10 +201,7 @@ func ReceivePack(
 		return fmt.Errorf("closing reader: %w", err)
 	}
 
-	// Report status if the client supports it
-	if !updreq.Capabilities.Supports(capability.ReportStatus) && !updreq.Capabilities.Supports(capability.ReportStatusV2) {
-		return unpackErr
-	}
+	reportStatus := caps.Supports(capability.ReportStatus) || caps.Supports(capability.ReportStatusV2)
 
 	var (
 		useSideband bool
@@ -227,8 +232,10 @@ func ReceivePack(
 	// exits through one function is what stops one of them from answering
 	// without that second flush.
 	report := func(unpackErr error, cmdStatus map[plumbing.ReferenceName]error) error {
-		if err := sendReportStatus(writeCloser, updreq.Commands, unpackErr, cmdStatus); err != nil {
-			return err
+		if reportStatus {
+			if err := sendReportStatus(writeCloser, updreq.Commands, unpackErr, cmdStatus); err != nil {
+				return err
+			}
 		}
 		if !useSideband {
 			return nil
@@ -408,15 +415,6 @@ func setStatus(cmdStatus map[plumbing.ReferenceName]error, firstErr *error, ref 
 	}
 }
 
-func referenceExists(s storer.ReferenceStorer, n plumbing.ReferenceName) (bool, error) {
-	_, err := s.Reference(n)
-	if err == plumbing.ErrReferenceNotFound {
-		return false, nil
-	}
-
-	return err == nil, err
-}
-
 // checkRefname returns [ErrFunnyRefname] if receive-pack must refuse a command
 // naming ref, and nil if the name may reach the storer.
 //
@@ -513,8 +511,17 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 			continue
 		}
 
-		exists, err := referenceExists(st, cmd.Name)
-		if err != nil {
+		var current *plumbing.Reference
+		var err error
+		if cmd.Action() == packp.Create {
+			// An existing symbolic ref still occupies the name when its
+			// target is missing. A create must not overwrite that alias.
+			current, err = st.Reference(cmd.Name)
+		} else {
+			current, err = storer.ResolveReference(st, cmd.Name)
+		}
+		exists := err == nil
+		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 			continue
 		}
@@ -535,7 +542,22 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 				continue
 			}
 
-			err := st.RemoveReference(cmd.Name)
+			if current.Hash() != cmd.Old {
+				// Git permits removal of a corrupt ref when the supplied old
+				// object is missing. A present old object must match the ref.
+				// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L1604-L1619.
+				_, objectErr := st.EncodedObject(plumbing.AnyObject, cmd.Old)
+				if objectErr == nil {
+					setStatus(cmdStatus, firstErr, cmd.Name, storage.ErrReferenceHasChanged)
+					continue
+				}
+				if !errors.Is(objectErr, plumbing.ErrObjectNotFound) {
+					setStatus(cmdStatus, firstErr, cmd.Name, objectErr)
+					continue
+				}
+			}
+
+			err := st.RemoveReference(current.Name())
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		case packp.Update:
 			if !exists {
@@ -543,8 +565,9 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 				continue
 			}
 
-			ref := plumbing.NewHashReference(cmd.Name, cmd.New)
-			err := st.SetReference(ref)
+			ref := plumbing.NewHashReference(current.Name(), cmd.New)
+			old := plumbing.NewHashReference(current.Name(), cmd.Old)
+			err := st.CheckAndSetReference(ref, old)
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 		}
 	}

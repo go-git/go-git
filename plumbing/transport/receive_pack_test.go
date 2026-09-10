@@ -1154,6 +1154,304 @@ func TestDuplicateRefname(t *testing.T) {
 	}
 }
 
+func storeReceiveObject(t *testing.T, st storage.Storer, content string) plumbing.Hash {
+	t.Helper()
+	obj := st.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	obj.SetSize(int64(len(content)))
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = io.WriteString(w, content)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	hash, err := st.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
+func receiveExpectedOld(t *testing.T, st storage.Storer, cmd *packp.Command) (string, error) {
+	t.Helper()
+	var response bytes.Buffer
+	err := ReceivePack(context.Background(), st, receivePackRequest(t, []*packp.Command{cmd}),
+		ioutil.WriteNopCloser(&response), &ReceivePackRequest{StatelessRPC: true})
+	return response.String(), err
+}
+
+func TestReceivePackChecksExpectedOld(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"update", "delete"} {
+		for _, matches := range []bool{false, true} {
+			name := action + "/mismatch"
+			if matches {
+				name = action + "/match"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				st := memory.NewStorage()
+				current := storeReceiveObject(t, st, "current")
+				old := storeReceiveObject(t, st, "stale")
+				if matches {
+					old = current
+				}
+				next := storeReceiveObject(t, st, "next")
+				if action == "delete" {
+					next = plumbing.ZeroHash
+				}
+				require.NoError(t, st.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/tags/main"), current)))
+				out, err := receiveExpectedOld(t, st, &packp.Command{Name: plumbing.ReferenceName("refs/tags/main"), Old: old, New: next})
+				if !matches {
+					assert.ErrorIs(t, err, storage.ErrReferenceHasChanged)
+					assert.Contains(t, out, "ng refs/tags/main ")
+					ref, err := st.Reference(plumbing.ReferenceName("refs/tags/main"))
+					require.NoError(t, err)
+					assert.Equal(t, current, ref.Hash())
+					return
+				}
+				require.NoError(t, err)
+				assert.Contains(t, out, "ok refs/tags/main\n")
+				ref, err := st.Reference(plumbing.ReferenceName("refs/tags/main"))
+				if action == "delete" {
+					assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+				} else {
+					require.NoError(t, err)
+					assert.Equal(t, next, ref.Hash())
+				}
+			})
+		}
+	}
+}
+
+func TestReceivePackCreatePreservesDanglingSymbolicReference(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	alias := plumbing.NewSymbolicReference("refs/tags/alias", "refs/tags/missing")
+	require.NoError(t, st.SetReference(alias))
+	next := storeReceiveObject(t, st, "next")
+	out, err := receiveExpectedOld(t, st, &packp.Command{Name: alias.Name(), Old: plumbing.ZeroHash, New: next})
+	assert.ErrorIs(t, err, ErrUpdateReference)
+	assert.Contains(t, out, "ng refs/tags/alias ")
+	actual, err := st.Reference(alias.Name())
+	require.NoError(t, err)
+	assert.Equal(t, alias, actual)
+	_, err = st.Reference(alias.Target())
+	assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+}
+
+type receiveConcurrentReferenceStorage struct {
+	storage.Storer
+	change func() error
+	called bool
+}
+
+func (s *receiveConcurrentReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
+	s.called = true
+	if err := s.change(); err != nil {
+		return err
+	}
+	return s.Storer.CheckAndSetReference(ref, old)
+}
+
+func TestReceivePackUpdatePreservesConcurrentReferenceChange(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"change", "delete"} {
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+			base := memory.NewStorage()
+			old := storeReceiveObject(t, base, "old")
+			next := storeReceiveObject(t, base, "next")
+			concurrent := storeReceiveObject(t, base, "concurrent")
+			require.NoError(t, base.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/tags/main"), old)))
+			st := &receiveConcurrentReferenceStorage{Storer: base, change: func() error {
+				if action == "delete" {
+					return base.RemoveReference(plumbing.ReferenceName("refs/tags/main"))
+				}
+				return base.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/tags/main"), concurrent))
+			}}
+			out, err := receiveExpectedOld(t, st, &packp.Command{Name: plumbing.ReferenceName("refs/tags/main"), Old: old, New: next})
+			assert.True(t, st.called)
+			require.Error(t, err)
+			assert.Contains(t, out, "ng refs/tags/main ")
+			ref, readErr := base.Reference(plumbing.ReferenceName("refs/tags/main"))
+			if action == "delete" {
+				assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+				assert.ErrorIs(t, readErr, plumbing.ErrReferenceNotFound)
+			} else {
+				assert.ErrorIs(t, err, storage.ErrReferenceHasChanged)
+				require.NoError(t, readErr)
+				assert.Equal(t, concurrent, ref.Hash())
+			}
+		})
+	}
+}
+
+func TestReceivePackChangesTerminalSymbolicReference(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"update", "delete"} {
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+			st := memory.NewStorage()
+			old := storeReceiveObject(t, st, "old")
+			next := storeReceiveObject(t, st, "next")
+			if action == "delete" {
+				next = plumbing.ZeroHash
+			}
+			alias := plumbing.NewSymbolicReference("refs/tags/alias", plumbing.ReferenceName("refs/tags/main"))
+			require.NoError(t, st.SetReference(alias))
+			require.NoError(t, st.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/tags/main"), old)))
+			out, err := receiveExpectedOld(t, st, &packp.Command{Name: alias.Name(), Old: old, New: next})
+			require.NoError(t, err)
+			assert.Contains(t, out, "ok refs/tags/alias\n")
+			actual, err := st.Reference(alias.Name())
+			require.NoError(t, err)
+			assert.Equal(t, alias, actual)
+			terminal, err := st.Reference(plumbing.ReferenceName("refs/tags/main"))
+			if action == "delete" {
+				assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, next, terminal.Hash())
+			}
+		})
+	}
+}
+
+type receiveOldObjectErrorStorage struct {
+	storage.Storer
+	old    plumbing.Hash
+	err    error
+	called bool
+}
+
+func (s *receiveOldObjectErrorStorage) EncodedObject(typ plumbing.ObjectType, hash plumbing.Hash) (plumbing.EncodedObject, error) {
+	if hash == s.old {
+		s.called = true
+		return nil, s.err
+	}
+	return s.Storer.EncodedObject(typ, hash)
+}
+
+func TestReceivePackDeleteOldObjectLookup(t *testing.T) {
+	t.Parallel()
+	for _, missing := range []bool{false, true} {
+		name := "read-error"
+		if missing {
+			name = "missing-object"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			base := memory.NewStorage()
+			current := storeReceiveObject(t, base, "current")
+			old := plumbing.NewHash(receivePackTestHash)
+			require.NoError(t, base.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/tags/main"), current)))
+			lookupErr := errors.New("object read failed")
+			if missing {
+				lookupErr = plumbing.ErrObjectNotFound
+			}
+			st := &receiveOldObjectErrorStorage{Storer: base, old: old, err: lookupErr}
+			out, err := receiveExpectedOld(t, st, deleteCmd(plumbing.ReferenceName("refs/tags/main"), old))
+			assert.True(t, st.called)
+			ref, readErr := base.Reference(plumbing.ReferenceName("refs/tags/main"))
+			if missing {
+				require.NoError(t, err)
+				assert.Contains(t, out, "ok refs/tags/main\n")
+				assert.ErrorIs(t, readErr, plumbing.ErrReferenceNotFound)
+			} else {
+				assert.ErrorIs(t, err, lookupErr)
+				assert.Contains(t, out, "ng refs/tags/main object read failed\n")
+				require.NoError(t, readErr)
+				assert.Equal(t, current, ref.Hash())
+			}
+		})
+	}
+}
+
+func TestReceivePackWithoutReportStatus(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"create", "update", "delete", "sideband-delete", "hook-rejection", "invalid-name"} {
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+			st := memory.NewStorage()
+			name := plumbing.ReferenceName("refs/tags/main")
+			old := plumbing.NewHash(receivePackTestHash)
+			newHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+			if action == "create" {
+				old = plumbing.ZeroHash
+			} else {
+				require.NoError(t, st.SetReference(plumbing.NewHashReference(name, old)))
+			}
+			if action == "delete" || action == "sideband-delete" || action == "hook-rejection" || action == "invalid-name" {
+				newHash = plumbing.ZeroHash
+			}
+			commandName := name
+			if action == "invalid-name" {
+				commandName = "refs/tags/main.lock"
+			}
+			var request bytes.Buffer
+			caps := ""
+			if action == "sideband-delete" {
+				caps = "side-band-64k"
+			}
+			_, err := pktline.Writef(&request, "%s %s %s\x00%s\n", old, newHash, commandName, caps)
+			require.NoError(t, err)
+			require.NoError(t, pktline.WriteFlush(&request))
+			if !newHash.IsZero() {
+				header := []byte("PACK\x00\x00\x00\x02\x00\x00\x00\x00")
+				sum := sha1.Sum(header)
+				request.Write(header)
+				request.Write(sum[:])
+			}
+			preCalled, postCalled := false, false
+			var applied []*packp.Command
+			rejected := errors.New("policy rejected update")
+			opts := &ReceivePackRequest{StatelessRPC: true, Hooks: ReceivePackHooks{
+				PreReceive: func(context.Context, *PreReceiveInfo) error {
+					preCalled = true
+					if action == "hook-rejection" {
+						return rejected
+					}
+					return nil
+				},
+				PostReceive: func(_ context.Context, info *PostReceiveInfo) error {
+					postCalled = true
+					applied = info.Commands
+					return nil
+				},
+			}}
+			response := &closeCountingWriter{}
+			err = ReceivePack(context.Background(), st, io.NopCloser(&request), response, opts)
+			assert.True(t, preCalled)
+			assert.Equal(t, 1, response.closes)
+			if action == "sideband-delete" {
+				assert.Equal(t, "0000", response.buf.String())
+			} else {
+				assert.Empty(t, response.buf.String())
+			}
+			if action == "hook-rejection" || action == "invalid-name" {
+				want := rejected
+				if action == "invalid-name" {
+					want = ErrFunnyRefname
+				}
+				assert.ErrorIs(t, err, want)
+				assert.Empty(t, applied)
+				ref, err := st.Reference(name)
+				require.NoError(t, err)
+				assert.Equal(t, old, ref.Hash())
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, postCalled)
+			require.Len(t, applied, 1)
+			ref, err := st.Reference(name)
+			if action == "delete" || action == "sideband-delete" {
+				assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, newHash, ref.Hash())
+			}
+		})
+	}
+}
+
 func TestReceivePackRejectsCompleteWhitespaceRefname(t *testing.T) {
 	t.Parallel()
 
