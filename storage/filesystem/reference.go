@@ -73,7 +73,11 @@ func (r *ReferenceStorage) CountLooseRefs() (int, error) {
 	return r.dir.CountLooseRefs()
 }
 
-// PackRefs packs all loose references into a single packed-refs file.
+// PackRefs packs loose hash references with valid names and nonzero hashes into
+// packed-refs. Symbolic references, malformed names and zero hashes remain loose.
+// Existing packed references are retained unless replaced by a packed loose ref.
+// It does not check whether referenced objects exist. The repository must not
+// be modified concurrently while PackRefs runs.
 func (r *ReferenceStorage) PackRefs() error {
 	return r.dir.PackRefs()
 }

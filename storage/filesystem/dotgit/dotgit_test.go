@@ -1291,6 +1291,63 @@ func (s *SuiteDotGit) TestPackRefs() {
 	s.Equal("b8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 }
 
+func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+	oldHash := "a8d3ffab552895c19b9fcf7aa264d277cde33881"
+	newHash := "b8d3ffab552895c19b9fcf7aa264d277cde33881"
+	unpackable := map[string]string{
+		"refs/heads/alias":         "ref: refs/heads/main\n",
+		"refs/heads/bad\ninjected": newHash + "\n",
+		"refs/heads/main.lock":     newHash + "\n",
+		"refs/heads/bad~name":      newHash + "\n",
+		"refs/heads/zero":          plumbing.ZeroHash.String() + "\n",
+		"refs/heads/gibberish":     "not an object id\n",
+	}
+	for name, content := range unpackable {
+		s.Require().NoError(util.WriteFile(fs, name, []byte(content), 0o644))
+	}
+	packable := []string{"refs/heads/main", "refs/heads/@", "refs/heads/-foo", "refs/heads/\u200c./main"}
+	for _, name := range packable {
+		s.Require().NoError(util.WriteFile(fs, name, []byte(newHash+"\n"), 0o644))
+	}
+	packed := oldHash + " refs/heads/alias\n" + oldHash + " refs/heads/main.lock\n" + oldHash + " refs/heads/main\n" +
+		oldHash + " refs/heads/zero\n" + oldHash + " refs/heads/gibberish\n"
+	s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(packed), 0o644))
+	before, err := dir.Refs()
+	s.Require().NoError(err)
+	s.Require().NoError(dir.PackRefs())
+	after, err := dir.Refs()
+	s.Require().NoError(err)
+	s.Require().ElementsMatch(before, after)
+	for name, content := range unpackable {
+		data, err := util.ReadFile(fs, name)
+		s.Require().NoError(err, "loose ref %q must survive", name)
+		s.Require().Equal(content, string(data))
+	}
+	for _, name := range packable {
+		_, err := fs.Stat(name)
+		s.Require().ErrorIs(err, os.ErrNotExist)
+	}
+	data, err := util.ReadFile(fs, packedRefsPath)
+	s.Require().NoError(err)
+	s.Require().Contains(string(data), oldHash+" refs/heads/alias\n")
+	s.Require().Contains(string(data), oldHash+" refs/heads/main.lock\n")
+	s.Require().Contains(string(data), newHash+" refs/heads/main\n")
+	s.Require().Contains(string(data), oldHash+" refs/heads/zero\n")
+	s.Require().Contains(string(data), oldHash+" refs/heads/gibberish\n")
+	s.Require().NotContains(string(data), "ref:")
+	s.Require().NotContains(string(data), "injected")
+	s.Require().NotContains(string(data), "bad~name")
+	s.Require().NoError(dir.PackRefs())
+	rerun, err := util.ReadFile(fs, packedRefsPath)
+	s.Require().NoError(err)
+	s.Require().Equal(data, rerun)
+	looseCount, err := dir.CountLooseRefs()
+	s.Require().NoError(err)
+	s.Require().Equal(len(unpackable), looseCount)
+}
+
 func TestAlternatesDefault(t *testing.T) {
 	t.Parallel()
 	// Create a new dotgit object.

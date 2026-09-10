@@ -1631,7 +1631,10 @@ func (d *DotGit) CountLooseRefs() (int, error) {
 	return len(refs), nil
 }
 
-// PackRefs packs all loose refs into the packed-refs file.
+// PackRefs packs loose nonzero hash references with valid Git names into
+// packed-refs. Symbolic references, zero hashes and malformed names remain
+// loose. It does not verify whether referenced objects exist. Existing packed
+// references are retained unless replaced by a packable loose reference.
 //
 // This implementation only works under the assumption that the view
 // of the file system won't be updated during this operation.  This
@@ -1654,12 +1657,23 @@ func (d *DotGit) PackRefs() (err error) {
 	}
 	defer ioutil.CheckClose(f, &err)
 
-	// Gather all refs using addRefsFromRefDir and addRefsFromPackedRefs.
+	// Keep enumeration complete, but pack only loose references representable
+	// in packed-refs. A skipped loose reference must not suppress the existing
+	// packed value it shadows; it continues to shadow that value on disk.
 	var refs []*plumbing.Reference
 	seen := make(map[plumbing.ReferenceName]bool)
 	if err = d.addRefsFromRefDir(&refs, seen); err != nil {
 		return err
 	}
+	packable := refs[:0]
+	for _, ref := range refs {
+		if ref.Type() != plumbing.HashReference || ref.Hash().IsZero() || ref.Name().Validate() != nil {
+			delete(seen, ref.Name())
+			continue
+		}
+		packable = append(packable, ref)
+	}
+	refs = packable
 	if len(refs) == 0 {
 		// Nothing to do!
 		return nil
@@ -1698,8 +1712,7 @@ func (d *DotGit) PackRefs() (err error) {
 		return err
 	}
 
-	// Delete all the loose refs, while still holding the packed-refs
-	// lock.
+	// Delete only the loose refs packed above, while holding the packed-refs lock.
 	for _, ref := range refs[:numLooseRefs] {
 		path := d.fs.Join(".", ref.Name().String())
 		err = d.fs.Remove(path)
