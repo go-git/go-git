@@ -326,6 +326,10 @@ func (t *Tag) String() string {
 // keyring and returns openpgp.Entity associated with verifying key on
 // success.
 func (t *Tag) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
+	if countSignatureBlocks([]byte(t.Signature)) > 1 {
+		return nil, ErrMultipleSignatures
+	}
+
 	keyRingReader := strings.NewReader(armoredKeyRing)
 	keyring, err := openpgp.ReadArmoredKeyRing(keyRingReader)
 	if err != nil {

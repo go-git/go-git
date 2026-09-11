@@ -477,13 +477,13 @@ func (c *Commit) String() string {
 	)
 }
 
-// ErrMultipleSignatures is returned by Verify when the commit carries more
-// than one armored signature block. Mirrors upstream's parse_gpg_output
+// ErrMultipleSignatures is returned by Verify when a signed object carries
+// more than one armored signature block. Mirrors upstream's parse_gpg_output
 // rejection of GOODSIG/BADSIG status lines after the first
-// (gpg-interface.c:257-269): multi-signature commits are intentionally
+// (gpg-interface.c:257-269): multi-signature objects are intentionally
 // unsupported because their provenance cannot be reduced to a single
 // authoritative signer.
-var ErrMultipleSignatures = errors.New("commit has multiple signatures")
+var ErrMultipleSignatures = errors.New("object has multiple signatures")
 
 // Verify performs PGP verification of the commit with a provided armored
 // keyring and returns openpgp.Entity associated with verifying key on success.
