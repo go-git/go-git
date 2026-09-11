@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,4 +206,51 @@ func (s *PruneSuite) TestMaintenanceStopsOnSymbolicTargetFileReadError() {
 			s.Require().Empty(packs)
 		})
 	}
+}
+
+type packTempFileCloseError struct {
+	billy.Filesystem
+	err      error
+	injected bool
+}
+
+func (s *packTempFileCloseError) TempFile(dir, prefix string) (billy.File, error) {
+	f, err := s.Filesystem.TempFile(dir, prefix)
+	if err != nil || !strings.HasPrefix(prefix, "tmp_pack_") {
+		return f, err
+	}
+	s.injected = true
+	return &closeErrorFile{File: f, err: s.err}, nil
+}
+
+type closeErrorFile struct {
+	billy.File
+	err error
+}
+
+func (f *closeErrorFile) Close() error {
+	_ = f.File.Close()
+	return f.err
+}
+
+func (s *PruneSuite) TestRepackKeepsObjectsWhenNewPackFailsToPublish() {
+	r, commit, tree := newPruneSymrefRepository(s.T())
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewHashReference("refs/heads/main", commit)))
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/main")))
+
+	publishErr := errors.New("pack publish failure")
+	fs := &packTempFileCloseError{Filesystem: r.Storer.(*filesystem.Storage).Filesystem(), err: publishErr}
+	r.Storer = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	err := r.RepackObjects(&RepackConfig{})
+	s.Require().True(fs.injected)
+	s.Require().ErrorIs(err, publishErr)
+
+	// The repacking storage indexes the unsaved pack, so read back through a fresh one.
+	fresh := filesystem.NewStorage(fs.Filesystem, cache.NewObjectLRUDefault())
+	s.Require().NoError(fresh.HasEncodedObject(commit))
+	s.Require().NoError(fresh.HasEncodedObject(tree))
+	packs, err := fresh.ObjectPacks()
+	s.Require().NoError(err)
+	s.Require().Empty(packs)
 }
