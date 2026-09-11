@@ -1532,40 +1532,46 @@ func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]G
 	return grepResults, nil
 }
 
-// rmFileAndDirsIfEmpty removes a file or an empty directory, then walks up
-// removing the empty directories above it. A nonempty directory is kept,
-// along with everything under it, and the walk stops there.
+// rmFileAndDirsIfEmpty removes name and its empty parent directories.
+// It preserves nonempty directories and ignores removal errors for directories
+// that remain in place. This keeps submodule worktrees and untracked files
+// when a reset removes their index entries.
 //
-// Removal is not recursive because the names reaching here are index and
-// tree entries, and upstream Git removes them one at a time: remove_or_warn
-// unlinks a regular entry and calls rmdir for a gitlink, so a submodule
-// worktree with contents of its own survives a reset that drops the
-// gitlink, as do untracked files left inside a directory that replaced a
-// tracked file. Where rmdir fails Git warns and continues; this returns nil.
-// Billy backends do not share a directory-not-empty sentinel, so the
-// condition is tested rather than inferred from the error, and a directory a
-// failed removal leaves behind is kept whatever its entries read as: one
-// written to since the test and one that refuses the test outright both
-// arrive here as a removal that failed.
+// Removal is not recursive. Billy filesystems have no shared directory-not-empty
+// error, so directories are checked before removal and again if removal fails.
+// Where Git warns about a failed directory removal and continues, this returns nil.
 //
-// Reference: upstream Git entry.c remove_or_warn at L610-L613 and
-// unlink_entry at L595-L608 in tag v2.54.0[1].
+// Paths rejected by the worktree filesystem because of a leading symlink are
+// left untouched, as in Git's [unlink_entry]. The symlink error stops parent
+// cleanup too, so the blocking symlink is preserved.
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/entry.c#L595-L613
+// [unlink_entry]: https://github.com/git/git/blob/v2.54.0/entry.c
 func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 	if nonemptyDir(fs, name) {
 		return nil
 	}
 
-	if err := fs.Remove(name); err != nil && !os.IsNotExist(err) && !isDir(fs, name) {
-		return err
+	if err := fs.Remove(name); err != nil {
+		if errors.Is(err, errLeadingSymlink) {
+			return nil
+		}
+
+		if !os.IsNotExist(err) && !isDir(fs, name) {
+			return err
+		}
 	}
 
 	dir := filepath.Dir(name)
 	for dir != "." && dir != "" {
 		removed, err := removeDirIfEmpty(fs, dir)
-		if err != nil && !os.IsNotExist(err) && !isDir(fs, dir) {
-			return err
+		if err != nil {
+			if errors.Is(err, errLeadingSymlink) {
+				return nil
+			}
+
+			if !os.IsNotExist(err) && !isDir(fs, dir) {
+				return err
+			}
 		}
 
 		if !removed {
@@ -1581,9 +1587,7 @@ func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 	return nil
 }
 
-// removeDirIfEmpty will remove the supplied directory `dir` if
-// `dir` is empty
-// returns true if the directory was removed
+// removeDirIfEmpty removes dir if it is empty and reports whether it was removed.
 func removeDirIfEmpty(fs billy.Filesystem, dir string) (bool, error) {
 	files, err := fs.ReadDir(dir)
 	if err != nil {

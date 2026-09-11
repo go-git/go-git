@@ -2514,6 +2514,117 @@ func TestResetPreservesSubmoduleDirectory(t *testing.T) {
 	}
 }
 
+func TestRemovalPreservesLeadingSymlink(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"link/file.txt", "link/nested/file.txt", "dangling/file.txt"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := memfs.New()
+			require.NoError(t, util.WriteFile(raw, "target/file.txt", []byte("keep"), 0o644))
+			require.NoError(t, util.WriteFile(raw, "target/nested/file.txt", []byte("nested"), 0o644))
+			require.NoError(t, raw.Symlink("target", "link"))
+			require.NoError(t, raw.Symlink("missing", "dangling"))
+			before := snapshotSubtree(t, raw, "target")
+			wrapped := newWorktreeFilesystem(raw, true, false)
+
+			require.ErrorIs(t, wrapped.Remove(name), errLeadingSymlink)
+			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, name))
+			require.Equal(t, before, snapshotSubtree(t, raw, "target"))
+			for link, target := range map[string]string{"link": "target", "dangling": "missing"} {
+				got, err := raw.Readlink(link)
+				require.NoError(t, err)
+				require.Equal(t, target, got)
+			}
+		})
+	}
+}
+
+func TestResetPreservesLeadingSymlink(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+
+	for _, implementation := range []string{"go-git", "git"} {
+		t.Run(implementation, func(t *testing.T) {
+			t.Parallel()
+
+			gitRun := func(dir string, args ...string) string {
+				t.Helper()
+				out, err := gitenv.CommandContext(t.Context(), "git",
+					append([]string{"-C", dir}, args...)...).CombinedOutput()
+				require.NoError(t, err, "git %q: %s", args, out)
+				return strings.TrimSpace(string(out))
+			}
+
+			root := t.TempDir()
+			repo, outside := filepath.Join(root, "repo"), filepath.Join(root, "outside")
+			require.NoError(t, os.Mkdir(repo, 0o755))
+			require.NoError(t, os.Mkdir(outside, 0o755))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(outside, "file.txt"), []byte("outside\n"), 0o644,
+			))
+
+			gitRun(repo, "init", "-q")
+			require.NoError(t, os.WriteFile(
+				filepath.Join(repo, "safe.txt"), []byte("keep\n"), 0o644,
+			))
+			gitRun(repo, "add", ".")
+			gitRun(repo, "commit", "-qm", "base")
+			base := plumbing.NewHash(gitRun(repo, "rev-parse", "HEAD"))
+
+			require.NoError(t, os.Mkdir(filepath.Join(repo, "dir"), 0o755))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(repo, "dir", "file.txt"), []byte("tracked\n"), 0o644,
+			))
+			gitRun(repo, "add", ".")
+			gitRun(repo, "commit", "-qm", "adds dir")
+
+			// Replace the tracked directory with a symlink out of the tree,
+			// so removing dir/file.txt would have to follow it.
+			require.NoError(t, os.RemoveAll(filepath.Join(repo, "dir")))
+			if err := os.Symlink(outside, filepath.Join(repo, "dir")); err != nil {
+				if isSymlinkWindowsNonAdmin(err) {
+					t.Skipf("symlink creation requires elevated privileges: %v", err)
+				}
+				require.NoError(t, err)
+			}
+
+			if implementation == "git" {
+				gitRun(repo, "reset", "--hard", base.String())
+			} else {
+				r, err := PlainOpen(repo)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, r.Close()) })
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				require.NoError(t, w.Reset(&ResetOptions{Mode: HardReset, Commit: base}))
+			}
+
+			require.Equal(t, base.String(), gitRun(repo, "rev-parse", "HEAD"))
+
+			fi, err := os.Lstat(filepath.Join(repo, "dir"))
+			require.NoError(t, err)
+			require.NotZero(t, fi.Mode()&os.ModeSymlink, "the symlink was replaced")
+			target, err := os.Readlink(filepath.Join(repo, "dir"))
+			require.NoError(t, err)
+			require.Equal(t, outside, target)
+			require.Equal(t, "safe.txt", gitRun(repo, "ls-files"))
+
+			entries, err := os.ReadDir(outside)
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "the symlink was followed")
+			require.Equal(t, "file.txt", entries[0].Name())
+			content, err := os.ReadFile(filepath.Join(outside, "file.txt"))
+			require.NoError(t, err)
+			require.Equal(t, "outside\n", string(content))
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestStatusAfterCheckout() {
 	fs := memfs.New()
 	w := &Worktree{
