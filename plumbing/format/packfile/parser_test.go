@@ -549,6 +549,34 @@ func TestParserRejectsOverflowingObjectHeader(t *testing.T) {
 	require.ErrorContains(t, err, "malformed pack")
 }
 
+func TestParserRejectsShortInflatedObject(t *testing.T) {
+	t.Parallel()
+
+	// A single blob entry whose header declares 32 bytes but whose zlib
+	// stream inflates to 8. The pack is otherwise well formed, trailer
+	// included, so nothing else flags it. The declared size is what the
+	// object id is computed over, so accepting it would index the entry
+	// under an id that does not hash its own content.
+	var body bytes.Buffer
+	h := sha1.New()
+	w := io.MultiWriter(&body, h)
+
+	_, _ = w.Write([]byte("PACK"))
+	_ = binary.Write(w, binary.BigEndian, uint32(2))
+	_ = binary.Write(w, binary.BigEndian, uint32(1))
+
+	writePackObjectHeader(t, w, plumbing.BlobObject, 32)
+	writeZlibPayload(t, w, bytes.Repeat([]byte{'x'}, 8))
+
+	_, _ = body.Write(h.Sum(nil))
+
+	parser := packfile.NewParser(bytes.NewReader(body.Bytes()))
+
+	_, err := parser.Parse()
+	require.Error(t, err)
+	require.ErrorIs(t, err, packfile.ErrInflatedSizeShort)
+}
+
 // writePackObjectHeader writes a packfile object header for an entry of
 // the given type and uncompressed payload size in the variable-length
 // encoding used by the pack format (4 bits of size in the first byte, 7

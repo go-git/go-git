@@ -39,6 +39,13 @@ var (
 	// packfile never produces more data than the declared size; exceeding it
 	// indicates a structurally invalid entry.
 	ErrInflatedSizeMismatch = errors.New("packfile: inflated object exceeds declared size")
+	// ErrInflatedSizeShort is the converse: the object inflated to fewer
+	// bytes than its header declared. Canonical Git enforces the same
+	// equality in get_data (builtin/index-pack.c), whose inflate loop only
+	// breaks on `stream.total_out == size && ret == Z_STREAM_END`. The
+	// declared size is what the object id is computed over, so a short
+	// stream would otherwise be indexed under an id that does not hash it.
+	ErrInflatedSizeShort = errors.New("packfile: inflated object is shorter than declared size")
 )
 
 // boundedWriter passes writes through to w up to limit bytes total, then
@@ -338,8 +345,14 @@ func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer, declared
 	}
 	defer gogitsync.PutZlibReader(zr)
 
-	_, err = ioutil.CopyBufferPool(bounded, zr)
-	return err
+	n, err := ioutil.CopyBufferPool(bounded, zr)
+	if err != nil {
+		return err
+	}
+	if n != declaredSize {
+		return ErrInflatedSizeShort
+	}
+	return nil
 }
 
 // scan goes through the next stateFn.
@@ -532,9 +545,12 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	// the resolved object.
 	mw = &boundedWriter{w: mw, limit: oh.Size}
 
-	_, err = ioutil.CopyBufferPool(mw, zr)
+	n, err := ioutil.CopyBufferPool(mw, zr)
 	if err != nil {
 		return nil, err
+	}
+	if n != oh.Size {
+		return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, ErrInflatedSizeShort)
 	}
 
 	if err := r.Flush(); err != nil {
