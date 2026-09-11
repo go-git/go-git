@@ -18,8 +18,12 @@ import (
 var ErrDeepenMutuallyExclusive = errors.New("deepen and deepen-since (or deepen-not) cannot be used together")
 
 // Decode reads the next upload-request from its input and
-// stores it in the UploadRequest.
+// stores it in the UploadRequest, discarding any prior contents. A
+// flush-pkt with no want lines is a valid, empty upload-request, matching
+// native git-upload-pack behavior.
 func (req *UploadRequest) Decode(r io.Reader) error {
+	*req = UploadRequest{}
+
 	var (
 		nLine         int
 		line          []byte
@@ -63,7 +67,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("empty input")
+		return nil
 	}
 
 	if !bytes.HasPrefix(line, want) {
