@@ -2364,27 +2364,78 @@ func TestRemovalPreservesNonemptyDirectories(t *testing.T) {
 				"sub/nested/b.txt": "nested",
 			}
 			require.Equal(t, expected, snapshotSubtree(t, raw, "sub"))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "sub"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "sub", filemode.Submodule))
 			require.Equal(t, expected, snapshotSubtree(t, raw, "sub"))
 
 			require.NoError(t, util.WriteFile(raw, "p/q/only.txt", []byte("remove"), 0o644))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "p/q/only.txt"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "p/q/only.txt", filemode.Regular))
 			_, err := raw.Lstat("p")
 			require.ErrorIs(t, err, os.ErrNotExist)
 
+			// An empty submodule worktree is what rmdir takes.
 			require.NoError(t, raw.MkdirAll("empty", 0o755))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "empty"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "empty", filemode.Submodule))
 			_, err = raw.Lstat("empty")
 			require.ErrorIs(t, err, os.ErrNotExist)
 
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "missing"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "missing", filemode.Regular))
 
 			require.NoError(t, util.WriteFile(raw, "tracked.txt/precious", []byte("keep"), 0o644))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "tracked.txt"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "tracked.txt", filemode.Regular))
 			require.Equal(t, map[string]string{
 				"tracked.txt/":         "",
 				"tracked.txt/precious": "keep",
 			}, snapshotSubtree(t, raw, "tracked.txt"))
+		})
+	}
+}
+
+// TestRemovalHonoursTheEntryMode covers the two worktree shapes that separate
+// the removals: a directory at a regular entry, which unlink refuses, and a
+// file at a gitlink, which rmdir refuses. Upstream Git warns and continues in
+// both places, so both must survive. unknownMode selects neither removal
+// and keeps only what both refuse.
+func TestRemovalHonoursTheEntryMode(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range []string{"memfs", "osfs"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Parallel()
+
+			raw := memfs.New()
+			if backend == "osfs" {
+				raw = osfs.New(t.TempDir())
+			}
+			wrapped := newWorktreeFilesystem(raw, true, false)
+
+			require.NoError(t, raw.MkdirAll("regular-entry", 0o755))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "regular-entry", filemode.Regular))
+			fi, err := raw.Lstat("regular-entry")
+			require.NoError(t, err, "unlink must not take a directory")
+			require.True(t, fi.IsDir())
+
+			require.NoError(t, util.WriteFile(raw, "gitlink-entry", []byte("keep"), 0o644))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "gitlink-entry", filemode.Submodule))
+			require.Equal(t, map[string]string{
+				"gitlink-entry": "keep",
+			}, snapshotSubtree(t, raw, "gitlink-entry"), "rmdir must not take a file")
+
+			// A symlink is a non-directory, so unlink takes it.
+			require.NoError(t, raw.Symlink("elsewhere", "link"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "link", filemode.Symlink))
+			_, err = raw.Lstat("link")
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			// Both shapes go without a mode to select a removal.
+			require.NoError(t, raw.MkdirAll("no-mode-dir", 0o755))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "no-mode-dir", unknownMode))
+			_, err = raw.Lstat("no-mode-dir")
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			require.NoError(t, util.WriteFile(raw, "no-mode-file", []byte("go"), 0o644))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "no-mode-file", unknownMode))
+			_, err = raw.Lstat("no-mode-file")
+			require.ErrorIs(t, err, os.ErrNotExist)
 		})
 	}
 }
@@ -2410,7 +2461,7 @@ func TestRemovalRefusesDotGitAliases(t *testing.T) {
 					require.NoError(t, util.WriteFile(raw, p, []byte("keep"), 0o644))
 
 					before := snapshotSubtree(t, raw, name)
-					require.Error(t, rmFileAndDirsIfEmpty(newWorktreeFilesystem(raw, true, false), name))
+					require.Error(t, rmEntryAndDirsIfEmpty(newWorktreeFilesystem(raw, true, false), name, filemode.Regular))
 					require.Equal(t, before, snapshotSubtree(t, raw, name))
 				})
 			}

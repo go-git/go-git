@@ -1319,7 +1319,7 @@ func storeCommit(t *testing.T, s storer.Storer, commit *object.Commit) plumbing.
 
 // TestResetHardRefusesTreeDerivedDotDotDisguise closes the delete
 // half of checkout and reset. resetWorktreeToTree's first pass takes
-// ch.From.String() straight from diffTrees into rmFileAndDirsIfEmpty,
+// ch.From.String() straight from diffTrees into rmEntryAndDirsIfEmpty,
 // and diffTrees' treeNoder sets TreeWalker.skipPathValidation, so the
 // name never meets pathutil.ValidTreePath. The wrapper's validPath is
 // the only gate, and it must hold with both protections off as well
@@ -1411,6 +1411,89 @@ func TestResetHardRefusesTreeDerivedDotDotDisguise(t *testing.T) {
 			assert.False(t, rec.sawPath(hostile),
 				"the disguise %q must never reach the filesystem; calls=%q",
 				hostile, rec.calls)
+		})
+	}
+}
+
+// TestResetHardHonoursTheRemovedEntryMode drives the two mode-dependent
+// removals through a reset --hard, where resetWorktreeToTree reads the mode
+// from the tree the diff is taken from.
+//
+// Both shapes are ones a user can leave in a worktree: a submodule directory
+// replaced by a file, and a tracked file replaced by a directory. Upstream
+// Git's remove_or_warn refuses each of them and warns, so the reset must
+// leave both in place.
+func TestResetHardHonoursTheRemovedEntryMode(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		mode filemode.FileMode
+		// directory is the shape standing in the worktree at the entry's
+		// path, in place of what mode describes.
+		directory bool
+	}{
+		{name: "file at a gitlink", mode: filemode.Submodule},
+		{name: "directory at a regular entry", mode: filemode.Regular, directory: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			const name = "entry"
+
+			s := memory.NewStorage()
+			wt := memfs.New()
+
+			r, err := Init(s, WithWorkTree(wt))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			// A gitlink names a commit in another repository, so its
+			// hash need not resolve here. A blob's must.
+			target := plumbing.NewHash("0123456789012345678901234567890123456789")
+			if tc.mode != filemode.Submodule {
+				target = writeBlob(t, s, []byte("tracked\n"))
+			}
+
+			fromTree := storeRawTree(t, s, []object.TreeEntry{
+				{Name: name, Mode: tc.mode, Hash: target},
+			})
+			toTree := storeRawTree(t, s, nil)
+
+			sig := defaultSignature()
+			from := storeCommit(t, s, &object.Commit{
+				Author:    *sig,
+				Committer: *sig,
+				Message:   "carries the entry\n",
+				TreeHash:  fromTree,
+			})
+			to := storeCommit(t, s, &object.Commit{
+				Author:       *sig,
+				Committer:    *sig,
+				Message:      "drops the entry\n",
+				TreeHash:     toTree,
+				ParentHashes: []plumbing.Hash{from},
+			})
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			require.NoError(t, s.SetReference(
+				plumbing.NewHashReference(head.Target(), from),
+			))
+
+			if tc.directory {
+				require.NoError(t, wt.MkdirAll(name, 0o755))
+			} else {
+				require.NoError(t, util.WriteFile(wt, name, []byte("user data\n"), 0o644))
+			}
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, w.Reset(&ResetOptions{Mode: HardReset, Commit: to}))
+
+			fi, err := wt.Lstat(name)
+			require.NoError(t, err, "the reset must leave %q in place", name)
+			require.Equal(t, tc.directory, fi.IsDir(), "the reset must not change the shape at %q", name)
 		})
 	}
 }

@@ -743,7 +743,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 		if len(files) > 0 && !inFiles(filesMap, name) {
 			continue
 		}
-		if err := rmFileAndDirsIfEmpty(fs, name); err != nil {
+		if err := rmEntryAndDirsIfEmpty(fs, name, treeEntryMode(fromTree, name)); err != nil {
 			return err
 		}
 	}
@@ -812,7 +812,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 		if _, statErr := fs.Lstat(e.Name); os.IsNotExist(statErr) {
 			continue
 		}
-		if err := rmFileAndDirsIfEmpty(fs, e.Name); err != nil {
+		if err := rmEntryAndDirsIfEmpty(fs, e.Name, e.Mode); err != nil {
 			return err
 		}
 	}
@@ -900,7 +900,12 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 		// These names come from the filesystem-vs-index diff. Apply the
 		// configured worktree gate. Tree-derived deletes use the same
 		// helper in resetWorktreeToTree.
-		return rmFileAndDirsIfEmpty(fs, ch.From.String())
+		//
+		// resetWorktree is the only caller that reaches this. resetIndex
+		// has already removed these names from the index, and the target
+		// tree does not carry them either, so there is no entry to read a
+		// mode from.
+		return rmEntryAndDirsIfEmpty(fs, ch.From.String(), unknownMode)
 	}
 
 	if isSubmodule {
@@ -1544,29 +1549,39 @@ func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]G
 	return grepResults, nil
 }
 
-// rmFileAndDirsIfEmpty removes a file or an empty directory, then walks up
-// removing the empty directories above it. A nonempty directory is kept,
-// along with everything under it, and the walk stops there.
+// unknownMode is the mode rmEntryAndDirsIfEmpty takes for an entry whose own
+// mode the caller cannot read, leaving canRemove no removal to select. It is
+// filemode.Empty, which the filemode package defines as the mode of a tree
+// element after its deletion.
+const unknownMode = filemode.Empty
+
+// rmEntryAndDirsIfEmpty removes one tracked entry from the worktree, then
+// walks up removing the empty directories above it.
 //
-// Removal is not recursive because the names reaching here are index and
-// tree entries, and upstream Git removes them one at a time: remove_or_warn
-// unlinks a regular entry and calls rmdir for a gitlink, so a submodule
-// worktree with contents of its own survives a reset that drops the
-// gitlink, as do untracked files left inside a directory that replaced a
-// tracked file. Where rmdir fails Git warns and continues; this returns nil.
-// Billy backends do not share a directory-not-empty sentinel, so the
-// condition is tested rather than inferred from the error.
+// mode is the mode of the entry being removed. It selects the removal the way
+// upstream Git's remove_or_warn does: rmdir for a gitlink, which takes an
+// empty directory and nothing else, and unlink for every other mode, which
+// takes anything that is not a directory. A submodule worktree with contents
+// of its own therefore survives a reset that drops the gitlink, as do the
+// untracked files inside a directory standing at a regular entry's path, and
+// a file standing at a gitlink's path.
+//
+// Where the removal does not apply, the entry and everything under it is
+// kept and the upward walk stops there. Upstream warns in that case and
+// continues; this returns nil.
+//
+// Removal is never recursive: the names reaching here are index and tree
+// entries, which upstream removes one at a time.
 //
 // Reference: upstream Git entry.c remove_or_warn at L610-L613 and
 // unlink_entry at L595-L608 in tag v2.54.0[1].
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/entry.c#L595-L613
-func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
-	if fi, err := fs.Lstat(name); err == nil && fi.IsDir() {
-		if entries, err := fs.ReadDir(name); err == nil && len(entries) > 0 {
-			return nil
-		}
+func rmEntryAndDirsIfEmpty(fs billy.Filesystem, name string, mode filemode.FileMode) error {
+	if !canRemove(fs, name, mode) {
+		return nil
 	}
+
 	if err := fs.Remove(name); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -1589,6 +1604,53 @@ func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 	}
 
 	return nil
+}
+
+// canRemove reports whether what stands at name is a shape the removal
+// rmEntryAndDirsIfEmpty selects for mode accepts. Billy backends do not share
+// a directory-not-empty sentinel, so the condition is tested rather than
+// inferred from the error.
+//
+// unknownMode selects neither removal, and the only shape kept for it is the
+// one both refuse, a nonempty directory.
+func canRemove(fs billy.Filesystem, name string, mode filemode.FileMode) bool {
+	fi, err := fs.Lstat(name)
+	if err != nil {
+		// Nothing to inspect. fs.Remove reports the outcome, and a name
+		// that is already gone is not an error to the caller.
+		return true
+	}
+
+	if !fi.IsDir() {
+		// unlink takes any non-directory; rmdir takes none of them.
+		return mode != filemode.Submodule
+	}
+
+	if entries, err := fs.ReadDir(name); err != nil || len(entries) > 0 {
+		// Both removals refuse a nonempty directory, and one whose
+		// entries cannot be read is not worth the attempt.
+		return false
+	}
+
+	// An empty directory is what rmdir takes and what unlink refuses.
+	return mode == filemode.Submodule || mode == unknownMode
+}
+
+// treeEntryMode reports the mode t records for name, or unknownMode when
+// there is no entry to read one from. t may be nil, and a name a tree-to-tree
+// diff yields can fail object.Tree.FindEntry's path validation; a reset that
+// is only removing such a name has no reason to fail on it.
+func treeEntryMode(t *object.Tree, name string) filemode.FileMode {
+	if t == nil {
+		return unknownMode
+	}
+
+	e, err := t.FindEntry(name)
+	if err != nil {
+		return unknownMode
+	}
+
+	return e.Mode
 }
 
 // removeDirIfEmpty will remove the supplied directory `dir` if
