@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
@@ -878,11 +879,28 @@ func TestSubmoduleRepositoryRefusesDotDisguisedPath(t *testing.T) {
 // The rule above is one component rule, not a widening of the tree
 // policy: a run of periods stays a legal submodule path, as it is a
 // legal tree entry on POSIX.
+//
+// A Win32 host is where that stops being the whole story. The worktree
+// wrapper refuses a component ending in a period under core.protectNTFS,
+// so the chroot fails there for every path carrying one. That is the host
+// gate rather than the submodule policy: "..x" spells the same run of
+// periods without ending in one, and is accepted on every host.
 func TestSubmoduleRepositoryAcceptsPeriodsOnlyPath(t *testing.T) {
 	t.Parallel()
 
-	for _, p := range []string{"...", "....", "sub/.../x", "x..", "..x"} {
-		t.Run(p, func(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		// win32 marks a path with a component ending in a period, which
+		// Win32ValidPath refuses under core.protectNTFS.
+		win32 bool
+	}{
+		{path: "...", win32: true},
+		{path: "....", win32: true},
+		{path: "sub/.../x", win32: true},
+		{path: "x..", win32: true},
+		{path: "..x"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
 
 			sub := &Submodule{
@@ -891,10 +909,16 @@ func TestSubmoduleRepositoryAcceptsPeriodsOnlyPath(t *testing.T) {
 					filesystem: newWorktreeFilesystem(memfs.New(), true, true),
 					r:          &Repository{Storer: memory.NewStorage(), wt: memfs.New()},
 				},
-				c: &config.Submodule{Name: "child", Path: p, URL: "https://example.com/"},
+				c: &config.Submodule{Name: "child", Path: tc.path, URL: "https://example.com/"},
 			}
 
 			subRepo, err := sub.Repository()
+			if runtime.GOOS == "windows" && tc.win32 {
+				require.ErrorContains(t, err, "core.protectNTFS")
+				require.Nil(t, subRepo)
+				return
+			}
+
 			require.NoError(t, err)
 			require.NotNil(t, subRepo)
 			t.Cleanup(func() { _ = subRepo.Close() })
