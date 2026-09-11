@@ -161,6 +161,12 @@ type Scanner struct {
 	objIndex int
 	// hasher is used to hash non-delta objects.
 	hasher plumbing.Hasher
+	// bw is a per-object bounded writer, reused across objects to avoid a
+	// heap allocation per object. Scan operations are serialised (see m).
+	bw boundedWriter
+	// mwbuf is a reusable scratch slice that collects an object's output
+	// destinations so a single io.MultiWriter is built instead of nesting two.
+	mwbuf []io.Writer
 	// crc is used to generate the CRC-32 checksum of each object's content.
 	crc hash.Hash32
 	// packhash hashes the pack contents so that at the end it is able to
@@ -502,10 +508,13 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	defer gogitsync.PutZlibReader(zr)
 
-	mw := io.Discard
+	// Collect the object's output destinations into a reusable scratch slice
+	// and build a single io.MultiWriter, instead of nesting up to two per
+	// object (each nested io.MultiWriter is its own allocation).
+	writers := r.mwbuf[:0]
 	if !oh.Type.IsDelta() {
 		r.hasher.Reset(oh.Type, oh.Size)
-		mw = r.hasher
+		writers = append(writers, r.hasher)
 		if r.storage != nil {
 			w, err := r.storage.RawObjectWriter(oh.Type, oh.Size)
 			if err != nil {
@@ -513,7 +522,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 			}
 
 			defer func() { _ = w.Close() }()
-			mw = io.MultiWriter(r.hasher, w)
+			writers = append(writers, w)
 		}
 	}
 
@@ -522,15 +531,27 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	// of the objects in memory.
 	if !r.lowMemoryMode && (oh.Type.IsDelta() || r.seeker == nil) {
 		oh.content = gogitsync.GetBytesBuffer()
-		mw = io.MultiWriter(mw, oh.content)
+		writers = append(writers, oh.content)
+	}
+	r.mwbuf = writers[:0] // retain the grown backing array for the next object
+
+	var mw io.Writer
+	switch len(writers) {
+	case 0:
+		mw = io.Discard
+	case 1:
+		mw = writers[0]
+	default:
+		mw = io.MultiWriter(writers...)
 	}
 
 	// Bind the inflated stream by the size declared in the object header.
 	// A well-formed packfile never produces more inflated bytes than that
 	// value, so any overrun signals a malformed entry. For delta entries
 	// the declared size is the size of the delta instruction stream, not
-	// the resolved object.
-	mw = &boundedWriter{w: mw, limit: oh.Size}
+	// the resolved object. The bounded writer is reused across objects.
+	r.bw = boundedWriter{w: mw, limit: oh.Size}
+	mw = &r.bw
 
 	_, err = ioutil.CopyBufferPool(mw, zr)
 	if err != nil {
