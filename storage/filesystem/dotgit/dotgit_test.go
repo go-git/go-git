@@ -69,6 +69,286 @@ func (s *SuiteDotGit) TestModuleAcceptsBenignNames() {
 	}
 }
 
+func (s *SuiteDotGit) initModule(d *DotGit, name string) billy.Filesystem {
+	s.T().Helper()
+
+	fs, err := d.Module(name)
+	s.Require().NoError(err)
+	s.Require().NoError(New(fs).Initialize())
+	s.Require().NoError(util.WriteFile(fs, "HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	return fs
+}
+
+func (s *SuiteDotGit) TestModuleRejectsNestingInsideSiblingGitDir() {
+	// These names collide with another module's metadata or nested submodule.
+	for _, name := range []string{"lib/refs/heads", "lib/packed-refs", "lib/refs", "lib/modules/x"} {
+		s.Run(name, func() {
+			d := New(s.EmptyFS())
+			s.initModule(d, "lib")
+
+			_, err := d.Module(name)
+			s.ErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithHeadFormats() {
+	const sha1 = "e8d3ffab552895c19b9fcf7aa264d277cde33881"
+	tests := []struct {
+		name    string
+		head    string
+		wantErr error
+	}{
+		{name: "symbolic", head: "ref: refs/heads/master\n", wantErr: ErrModuleGitDirNested},
+		{name: "symbolic without space", head: "ref:refs/heads/master\n", wantErr: ErrModuleGitDirNested},
+		{name: "symbolic with Git whitespace", head: "ref: \t\r\nrefs/heads/master\n", wantErr: ErrModuleGitDirNested},
+		{name: "symbolic with leading space", head: " ref: refs/heads/master\n"},
+		{name: "symbolic with vertical tab", head: "ref:\vrefs/heads/master\n"},
+		{name: "symbolic with form feed", head: "ref:\frefs/heads/master\n"},
+		{name: "symbolic with Unicode space", head: "ref:\u00a0refs/heads/master\n"},
+		{name: "symbolic outside refs", head: "ref: HEAD\n"},
+		{name: "symbolic at size limit", head: "ref:" + strings.Repeat(" ", 246) + "refs/", wantErr: ErrModuleGitDirNested},
+		{name: "symbolic beyond size limit", head: "ref:" + strings.Repeat(" ", 247) + "refs/"},
+		{name: "hash beyond size limit", head: sha1 + strings.Repeat(" ", 216)},
+		{name: "SHA-1", head: sha1 + "\n", wantErr: ErrModuleGitDirNested},
+		{name: "SHA-256", head: strings.Repeat("ab", 32) + "\n", wantErr: ErrModuleGitDirNested},
+		{name: "uppercase hash", head: strings.ToUpper(sha1), wantErr: ErrModuleGitDirNested},
+		{name: "hash with suffix", head: sha1 + " trailing\n", wantErr: ErrModuleGitDirNested},
+		{name: "hash with NUL suffix", head: sha1 + "\x00trailing", wantErr: ErrModuleGitDirNested},
+		{name: "hash with leading space", head: " " + sha1},
+		{name: "short hash", head: sha1[:39]},
+		{name: "invalid hash", head: "g" + sha1[1:]},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			d := New(s.EmptyFS())
+			fs := s.initModule(d, "lib")
+			s.Require().NoError(util.WriteFile(fs, "HEAD", []byte(tc.head), 0o644))
+
+			_, err := d.Module("lib/refs/heads")
+			s.ErrorIs(err, tc.wantErr)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithSymlinkHead() {
+	// A target spelled with a backslash is a reference where that is the path
+	// separator, and an ordinary file name everywhere else. Targets written
+	// with a slash reach Windows in this form, as billy stores them with the
+	// host path separator.
+	var backslashSeparated error
+	if filepath.Separator == '\\' {
+		backslashSeparated = ErrModuleGitDirNested
+	}
+	tests := []struct {
+		name    string
+		target  string
+		wantErr error
+	}{
+		{name: "unborn branch", target: "refs/heads/master", wantErr: ErrModuleGitDirNested},
+		{name: "outside refs", target: "../HEAD"},
+		{name: "host separators", target: `refs\heads\master`, wantErr: backslashSeparated},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			d := New(s.EmptyFS())
+			fs := s.initModule(d, "lib")
+			s.Require().NoError(fs.Remove("HEAD"))
+			s.Require().NoError(fs.Symlink(tc.target, "HEAD"))
+
+			_, err := d.Module("lib/refs/heads")
+			s.ErrorIs(err, tc.wantErr)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDir() {
+	tests := []struct {
+		name      string
+		directory string
+		contents  string
+	}{
+		{name: "relative", directory: "common", contents: "../../common\n"},
+		{name: "absolute", directory: "common", contents: "/common\n"},
+		{name: "CRLF", directory: "common", contents: "../../common\r\n"},
+		{name: "trailing space", directory: "common ", contents: "../../common \r\n"},
+		{name: "absolute trailing space", directory: "common ", contents: "/common \r\n"},
+		{name: "NUL terminated", directory: "modules/lib", contents: ".\x00ignored\n"},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			fs := s.EmptyFS()
+			common, err := fs.Chroot(tc.directory)
+			s.Require().NoError(err)
+			s.Require().NoError(New(common).Initialize())
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(tc.contents), 0o644))
+
+			_, err = New(fs).Module("lib/refs/heads")
+			s.ErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirOnDisk() {
+	tests := []struct {
+		name              string
+		relativeRoot      bool
+		absoluteCommonDir bool
+	}{
+		{name: "absolute root and relative common directory"},
+		{name: "absolute root and absolute common directory", absoluteCommonDir: true},
+		{name: "relative root and relative common directory", relativeRoot: true},
+		{name: "relative root and absolute common directory", relativeRoot: true, absoluteCommonDir: true},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			root := s.T().TempDir()
+			if tc.relativeRoot {
+				// The temporary directory may be on another volume than the
+				// working directory, leaving no relative path between them.
+				// Create the root below the working directory instead.
+				dir, err := os.MkdirTemp(".", "dotgit")
+				s.Require().NoError(err)
+				s.T().Cleanup(func() { s.NoError(os.RemoveAll(dir)) })
+				root = dir
+			}
+			commonPath := "../../common"
+			if tc.absoluteCommonDir {
+				absRoot, err := filepath.Abs(root)
+				s.Require().NoError(err)
+				commonPath = filepath.Join(absRoot, "common")
+			}
+			fs := osfs.New(root)
+			common, err := fs.Chroot("common")
+			s.Require().NoError(err)
+			s.Require().NoError(New(common).Initialize())
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(commonPath+"\r\n"), 0o644))
+
+			_, err = New(fs).Module("lib/refs/heads")
+			s.ErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithInvalidCommonDir() {
+	tests := []struct {
+		name     string
+		contents string
+	}{
+		{name: "empty"},
+		{name: "outside filesystem", contents: "../../../outside"},
+		{name: "oversized", contents: strings.Repeat("x", (1<<20)+1)},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(tc.contents), 0o644))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			s.Error(err)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirOutsideFilesystem() {
+	fs := osfs.New(s.T().TempDir())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	target := filepath.Join(fs.Root(), "..", "outside")
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(target), 0o644))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Error(err)
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirReadError() {
+	fs := s.EmptyFS()
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(fs.MkdirAll("modules/lib/commondir", 0o755))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Error(err)
+}
+
+func (s *SuiteDotGit) TestModuleRejectsNestingOnceOuterModuleExists() {
+	d := New(s.EmptyFS())
+	s.initModule(d, "lib/refs/heads")
+	s.initModule(d, "lib")
+
+	_, err := d.Module("lib/refs/heads")
+	s.ErrorIs(err, ErrModuleGitDirNested)
+}
+
+func (s *SuiteDotGit) TestModuleAcceptsSlashNamesOnRepeatAccess() {
+	d := New(s.EmptyFS())
+	s.initModule(d, "lib/foo")
+
+	for _, name := range []string{"lib/foo", "lib/bar", "deps/x"} {
+		_, err := d.Module(name)
+		s.NoError(err, "name %q", name)
+	}
+}
+
+func (s *SuiteDotGit) TestModuleAcceptsNestingUnderIncompleteGitDir() {
+	tests := []struct {
+		name     string
+		path     string
+		contents []byte
+	}{
+		{name: "no HEAD", path: "HEAD"},
+		{name: "invalid HEAD", path: "HEAD", contents: []byte("master\n")},
+		{name: "no objects directory", path: "objects"},
+		{name: "no refs directory", path: "refs"},
+		{name: "missing common directory", path: "commondir", contents: []byte("missing\n")},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			d := New(s.EmptyFS())
+			fs := s.initModule(d, "lib")
+			s.Require().NoError(util.RemoveAll(fs, tc.path))
+			if tc.contents != nil {
+				s.Require().NoError(util.WriteFile(fs, tc.path, tc.contents, 0o644))
+			}
+
+			_, err := d.Module("lib/refs/heads")
+			s.NoError(err)
+		})
+	}
+}
+
+type countingFS struct {
+	billy.Filesystem
+	probes int
+}
+
+func (c *countingFS) Stat(path string) (fs.FileInfo, error) {
+	c.probes++
+	return c.Filesystem.Stat(path)
+}
+
+func (c *countingFS) Lstat(path string) (fs.FileInfo, error) {
+	c.probes++
+	return c.Filesystem.Lstat(path)
+}
+
+func (c *countingFS) Open(path string) (billy.File, error) {
+	c.probes++
+	return c.Filesystem.Open(path)
+}
+
+func (s *SuiteDotGit) TestModuleDoesNotProbeForSeparatorFreeNames() {
+	fs := &countingFS{Filesystem: s.EmptyFS()}
+	d := New(fs)
+	s.initModule(d, "lib")
+	fs.probes = 0
+
+	_, err := d.Module("lib")
+	s.Require().NoError(err)
+	s.Zero(fs.probes)
+}
+
 func (s *SuiteDotGit) TestReferenceNameRejectsEscapingNames() {
 	d := New(s.EmptyFS())
 	s.Require().NoError(d.Initialize())
