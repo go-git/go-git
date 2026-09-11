@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/internal/transport/test"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -115,7 +116,7 @@ func TestGitTransport_Connect(t *testing.T) {
 		command string
 	}{
 		{"UploadPack", "git-upload-pack"},
-		{"ReceivePack", "git-upload-pack"},
+		{"ReceivePack", "git-receive-pack"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -141,10 +142,14 @@ func TestGitTransport_Connect(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, sess)
 
-			buf := make([]byte, 4)
-			n, err := sess.Reader().Read(buf)
+			// A daemon that refuses the command still answers, with an
+			// ERR pkt-line. Reading the first line as a pkt-line is what
+			// tells acceptance from refusal: ReadLine reports an ERR
+			// payload as *pktline.ErrorLine, where counting bytes off the
+			// reader cannot distinguish the two.
+			_, line, err := pktline.ReadLine(sess.Reader())
 			require.NoError(t, err)
-			assert.Greater(t, n, 0, "should read pkt-line data from server")
+			assert.NotEmpty(t, line, "server should advertise refs")
 
 			require.NoError(t, sess.Close())
 		})
