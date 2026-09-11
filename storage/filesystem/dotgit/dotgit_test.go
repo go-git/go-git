@@ -2122,3 +2122,27 @@ func (s *SuiteDotGit) TestReferenceNameRejectsDotsOnlyComponent() {
 	_, err := d.fs.Stat(configPath)
 	s.Error(err, "traversal must not create .git/config")
 }
+
+// TestModuleRejectsRootShapedNames pins the names whose own shape
+// resolves to the modules root rather than to a module below it.
+// FieldsFunc yields no components for them, so the per-component
+// policy never sees them, and the joined path cleans back to
+// modules/ — a chroot over every submodule's storage at once.
+func (s *SuiteDotGit) TestModuleRejectsRootShapedNames() {
+	d := New(s.EmptyFS())
+	for _, n := range []string{
+		"",
+		"/",
+		"//",
+		`\`,
+		`\\`,
+		`/\`,
+		"/foo",
+		"foo/",
+		`\foo`,
+		`foo\`,
+	} {
+		_, err := d.Module(n)
+		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
+	}
+}
