@@ -2552,6 +2552,12 @@ func TestResetPreservesLeadingSymlink(t *testing.T) {
 		t.Run(implementation, func(t *testing.T) {
 			t.Parallel()
 
+			// Git 2.32 fixed unlink_entry following leading symlinks
+			// when removing entries (upstream commit fab78a0c3d).
+			if implementation == "git" && !gitAtLeast(t, 2, 32) {
+				t.Skip("Git 2.32 or newer is required for symlink-safe removal")
+			}
+
 			gitRun := func(dir string, args ...string) string {
 				t.Helper()
 				out, err := gitenv.CommandContext(t.Context(), "git",
