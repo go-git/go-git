@@ -2254,6 +2254,39 @@ func TestValidPathProtectNTFSDisabled(t *testing.T) {
 	}
 }
 
+func TestWorktreeFilesystemWin32InvalidCharacters(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"foo:bar", "foo::$DATA", "foo<bar", "foo>bar", "foo\"bar",
+		"foo|bar", "foo?bar", "foo*bar", "LPT0", "con .txt",
+	} {
+		for _, prefix := range []string{"", "sub/", `sub\`} {
+			for _, win32 := range []bool{false, true} {
+				for _, ntfs := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%q/win32=%t/ntfs=%t", prefix+name, win32, ntfs), func(t *testing.T) {
+						t.Parallel()
+						rec := &recordingFS{Filesystem: memfs.New()}
+						fs := newWorktreeFilesystem(rec, ntfs, false)
+						fs.win32 = win32
+						file, err := fs.OpenFile(prefix+name, os.O_CREATE|os.O_WRONLY, 0o644)
+						if file != nil {
+							require.NoError(t, file.Close())
+						}
+						if win32 && ntfs {
+							require.ErrorIs(t, err, pathutil.ErrInvalidPath)
+							require.Empty(t, rec.calls)
+						} else {
+							require.NoError(t, err)
+							require.Equal(t, []string{"OpenFile " + prefix + name}, rec.calls)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestWorktreeFilesystemRejectsNTFSPaths(t *testing.T) {
 	t.Parallel()
 

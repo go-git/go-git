@@ -64,30 +64,27 @@ func IsNTFSDotDot(part string) bool {
 	return strings.ContainsAny(part[2:], " :")
 }
 
-// Win32ValidPath reports whether one path component avoids trailing
-// spaces and periods and Windows reserved device names. The worktree
-// wrapper's validPath applies it on a Win32 host with
-// core.protectNTFS enabled; the .git disguise checks stay separately
-// config-gated on every host.
+// Win32ValidPath checks one path component for illegal Win32 characters,
+// trailing spaces or periods, and reserved device names. The worktree
+// wrapper applies it on Windows with core.protectNTFS enabled; metadata
+// aliases are checked separately on every host.
 //
-// Both rules come from upstream Git's is_valid_win32_path at
-// compat/mingw.c#L3347-L3469 in tag v2.54.0[1]. Upstream skips the
-// DOS drive prefix before scanning components; this predicate never
-// receives that prefix, because HasVolumeName refuses a path carrying
-// one before the components are examined.
+// Follows upstream Git's is_valid_win32_path with allow_literal_nul=false.
+// The caller splits path separators and rejects volume prefixes before
+// checking components, so every colon here is invalid. Embedded NUL bytes
+// are also rejected rather than treated as C string terminators.
 //
-// Two parts of upstream's scanner are not ported. Its illegal
-// characters — the control bytes and `< > " | ? *`, plus a colon
-// outside an Alternate Data Stream — are not checked here; validPath
-// covers the control bytes itself and accepts the rest, so a
-// component such as `a:b` passes where upstream would refuse it. The
-// reserved-name policy also differs at two edges: it is stricter for
-// a reserved name followed by a space and a further character
-// ("con c", "aux b", "prn x"), which upstream accepts, and laxer for
-// "LPT0", which upstream refuses even though it accepts "COM0".
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3347-L3469
+// https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3155-L3272
 func Win32ValidPath(part string) bool {
+	for i := 0; i < len(part); i++ {
+		if part[i] < 0x20 {
+			return false
+		}
+		switch part[i] {
+		case ':', '<', '>', '"', '|', '?', '*':
+			return false
+		}
+	}
 	if endsInSpaceOrPeriod(part) {
 		return false
 	}
@@ -100,13 +97,13 @@ func Win32ValidPath(part string) bool {
 // these case-insensitively.
 //
 // See upstream Git's is_valid_win32_path reserved-name scanner at
-// compat/mingw.c#L3372-L3449 in tag v2.54.0[1].
+// compat/mingw.c#L3178-L3252 in tag v2.54.0[1].
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3372-L3449
+// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3178-L3252
 var windowsReservedNames = []string{
 	"CON", "PRN", "AUX", "NUL",
 	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+	"LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 	"CONIN$", "CONOUT$",
 }
 
@@ -118,12 +115,12 @@ func isWindowsReservedName(part string) bool {
 		if !strings.EqualFold(part[:len(name)], name) {
 			continue
 		}
-		// Exact match or followed by space, dot or colon (ADS).
-		if len(part) == len(name) {
+		suffix := strings.TrimLeft(part[len(name):], " ")
+		if suffix == "" {
 			return true
 		}
-		switch part[len(name)] {
-		case ' ', '.', ':':
+		switch suffix[0] {
+		case '.', ':':
 			return true
 		}
 	}

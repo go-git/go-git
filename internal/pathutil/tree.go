@@ -30,7 +30,7 @@ var ErrInvalidPath = fmt.Errorf("invalid path")
 // stricter than C Git, which gates the disguise checks on those two
 // settings and can store such names on POSIX.
 //
-// Win32ValidPath's trailing-space/period and reserved-device rules do
+// Win32ValidPath's character, trailing-space/period and device rules do
 // not belong here — applying them would make an ordinary POSIX
 // repository unreadable, and upstream likewise compiles
 // is_valid_win32_path only for MinGW and MSVC. A component of periods

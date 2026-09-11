@@ -43,7 +43,8 @@ func defaultProtectNTFS() bool {
 //   - validPath rejects dangerous path *strings*: .git and its HFS+/NTFS
 //     variants at every position, dot/parent components and control bytes.
 //     Windows additionally rejects volume prefixes and, with
-//     core.protectNTFS, trailing spaces/periods and reserved device names.
+//     core.protectNTFS, illegal characters, trailing spaces/periods and
+//     reserved device names.
 //   - validNoLeadingSymlink rejects paths whose leading directories
 //     already exist on disk as symlinks, so a write or delete cannot
 //     follow a planted link out of the tree.
@@ -64,7 +65,7 @@ type worktreeFilesystem struct {
 
 	// win32 enables the rules that describe the host's own path
 	// canonicalisation rather than a repository's contents: volume
-	// prefixes, and the trailing-space/period and reserved-device rules
+	// prefixes, and the character, trailing-space/period and device rules
 	// that Win32ValidPath applies under core.protectNTFS. Upstream Git
 	// compiles is_valid_win32_path only for MinGW and MSVC, so a POSIX
 	// host must keep checking out names such as aux.c. It is a field
@@ -218,7 +219,7 @@ var errUnsupportedOperation = errors.New("unsupported operation")
 // says. So are `.git` and `git~1` at every component position;
 // core.protectHFS and core.protectNTFS add the remaining aliases. A Win32
 // host additionally refuses volume prefixes, and with core.protectNTFS the
-// trailing-space/period and reserved-device rules.
+// illegal-character, trailing-space/period and reserved-device rules.
 //
 // ValidTreePath and this gate are not ordered by strictness. Tree
 // validation refuses an alias such as sub/.git<U+200C> with both
@@ -227,10 +228,10 @@ var errUnsupportedOperation = errors.New("unsupported operation")
 // submodule .git pointer file cannot be reached through this wrapper.
 //
 // Reference: upstream Git verify_path_internal at read-cache.c#L987-L1048
-// and is_valid_win32_path at compat/mingw.c#L3347-L3469 in tag v2.54.0[1][2].
+// and is_valid_win32_path at compat/mingw.c#L3155-L3272 in tag v2.54.0[1][2].
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987-L1048
-// [2]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3347-L3469
+// [2]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3155-L3272
 func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 	for _, p := range paths {
 		for i := 0; i < len(p); i++ {

@@ -31,10 +31,24 @@ func TestWin32ValidPath(t *testing.T) {
 		{"NUL", false},
 		{"COM1", false},
 		{"COM9", false},
+		{"LPT0", false},
 		{"LPT1", false},
 		{"LPT9", false},
 		{"CONIN$", false},
 		{"CONOUT$", false},
+		{"lPt0.txt", false},
+		{"CON .txt", false},
+		{"AUX  .log", false},
+		{"CONIN$ .txt", false},
+		{"CONOUT$ .txt", false},
+		{"foo:bar", false},
+		{"foo::$DATA", false},
+		{"foo<bar", false},
+		{"foo>bar", false},
+		{"foo\"bar", false},
+		{"foo|bar", false},
+		{"foo?bar", false},
+		{"foo*bar", false},
 		// Upstream's is_valid_win32_path refuses a component ending
 		// in a space or a period, excepting exactly "." and "..".
 		// Win32 canonicalisation strips both characters, so such a
@@ -65,7 +79,17 @@ func TestWin32ValidPath(t *testing.T) {
 		{"comic", true},
 		{"COM", true},
 		{"COM0", true},
-		{"LPT0", true},
+		{"LPT10", true},
+		{"con c", true},
+		{"aux b", true},
+		{"prn x", true},
+		{"nul x", true},
+		{"COM1 port", true},
+		{"LPT0 port", true},
+		{"CONIN$ input", true},
+		{"CONOUT$ output", true},
+		{"foo\x7fbar", true}, // The worktree's always-on control check rejects DEL.
+		{"résumé.txt", true},
 		// Bare ".git" / "git~1" stay valid here; the caller decides
 		// whether they are permissible at the current path position.
 		{".git", true},
@@ -78,6 +102,14 @@ func TestWin32ValidPath(t *testing.T) {
 			got := Win32ValidPath(tc.path)
 			assert.Equal(t, tc.want, got)
 		})
+	}
+}
+
+func TestWin32ValidPathControlCharacters(t *testing.T) {
+	t.Parallel()
+	for c := range byte(0x20) {
+		name := "foo" + string(c) + "bar"
+		assert.False(t, Win32ValidPath(name), "component %q", name)
 	}
 }
 
