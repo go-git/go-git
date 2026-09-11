@@ -56,5 +56,18 @@ type Noder interface {
 	Skip() bool
 }
 
+// Collapser may be implemented by directory-like noders to signal that
+// their whole subtree can be represented by a single change. When
+// Collapse reports true for a directory, Changes.AddRecursiveInsert and
+// Changes.AddRecursiveDelete emit one change for the directory itself
+// instead of descending into it. This mirrors how "git status" reports
+// untracked directories as a single entry by default.
+type Collapser interface {
+	// Collapse reports whether the directory subtree rooted at this
+	// noder can be represented by a single change. It must return false
+	// for file-like noders.
+	Collapse() bool
+}
+
 // NoChildren represents the children of a noder without children.
 var NoChildren = []Noder{}

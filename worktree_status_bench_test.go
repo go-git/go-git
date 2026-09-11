@@ -409,3 +409,106 @@ func BenchmarkStatusIgnoredDir(b *testing.B) {
 		})
 	}
 }
+
+// setupUntrackedDirRepo builds a repo with `tracked` committed files and
+// `untracked` files dropped into a directory that is NOT gitignored. This
+// mirrors dotfiles-style repositories opened over a large worktree (e.g. a
+// home directory), where almost everything is untracked, from
+// https://github.com/go-git/go-git/issues/181.
+func setupUntrackedDirRepo(b *testing.B, tracked, untracked int) *Worktree {
+	b.Helper()
+
+	const untrackedDir = "untracked_dir"
+
+	tmpDir := b.TempDir()
+	repoDir := filepath.Join(tmpDir, "repo")
+
+	repo, err := PlainInit(repoDir, false)
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = repo.Close() })
+
+	wt, err := repo.Worktree()
+	require.NoError(b, err)
+
+	for i := range tracked {
+		path := filepath.Join("src", fmt.Sprintf("dir%02d", i%10), fmt.Sprintf("file%04d.go", i))
+		require.NoError(b, wt.Filesystem().MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(b, util.WriteFile(wt.Filesystem(), path, []byte("package main\n"), 0o644))
+	}
+
+	require.NoError(b, wt.AddGlob("src/*"))
+
+	sig := &object.Signature{
+		Name:  "Bench",
+		Email: "bench@test.com",
+		When:  time.Now().Add(-time.Hour), // older than index modtime so the metadata fast-path engages
+	}
+	_, err = wt.Commit("initial", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(b, err)
+
+	for top := range untracked / 100 {
+		for sub := range 10 {
+			dir := filepath.Join(untrackedDir, fmt.Sprintf("top%03d", top), fmt.Sprintf("sub%02d", sub))
+			require.NoError(b, wt.Filesystem().MkdirAll(dir, 0o755))
+			for f := range 10 {
+				path := filepath.Join(dir, fmt.Sprintf("file%02d.txt", f))
+				require.NoError(b, util.WriteFile(wt.Filesystem(), path, []byte("untracked\n"), 0o644))
+			}
+		}
+	}
+
+	return wt
+}
+
+// BenchmarkStatusUntrackedDir measures the cost of running Status() over a
+// tree that contains a large untracked, non-ignored directory, comparing
+// the untracked files modes:
+//
+//   - Normal collapses the directory into a single entry, like "git status"
+//     does by default, so cost stays roughly flat as the tree grows.
+//   - All lists every untracked file (go-git's historical behavior), so
+//     cost grows linearly with the number of untracked files.
+func BenchmarkStatusUntrackedDir(b *testing.B) {
+	const tracked = 100
+
+	cases := []struct {
+		name      string
+		untracked int
+	}{
+		{"UntrackedFiles_1k", 1000},
+		{"UntrackedFiles_5k", 5000},
+		{"UntrackedFiles_20k", 20000},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("Normal", func(b *testing.B) {
+				wt := setupUntrackedDirRepo(b, tracked, tc.untracked)
+				b.ResetTimer()
+				for b.Loop() {
+					s, err := wt.Status()
+					if err != nil {
+						b.Fatalf("status: %v", err)
+					}
+					if len(s) != 1 {
+						b.Fatalf("expected 1 collapsed entry, got %d", len(s))
+					}
+				}
+			})
+
+			b.Run("All", func(b *testing.B) {
+				wt := setupUntrackedDirRepo(b, tracked, tc.untracked)
+				b.ResetTimer()
+				for b.Loop() {
+					s, err := wt.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
+					if err != nil {
+						b.Fatalf("status: %v", err)
+					}
+					if len(s) != tc.untracked {
+						b.Fatalf("expected %d entries, got %d", tc.untracked, len(s))
+					}
+				}
+			})
+		})
+	}
+}
