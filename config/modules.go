@@ -102,29 +102,28 @@ func (m *Submodule) Validate() error {
 		return fmt.Errorf("%w: %q", ErrModuleBadName, m.Name)
 	}
 
-	// The path check runs ahead of the empty-field checks because
-	// unmarshalSubmodules drops a stanza only on ErrModuleBadPath or
-	// ErrModuleBadName: a stanza carrying `path = ..` and no `url =`
-	// would otherwise be reported as ErrModuleEmptyURL and retained
-	// with its unsafe Path intact. An empty Path yields no segments,
-	// so it falls through to ErrModuleEmptyPath below.
-	//
-	// The per-segment predicates are the ones
-	// pathutil.ValidSubmodulePath applies to this Path in
-	// Submodule.Repository: parent components and the components a
-	// filesystem folds to ".", each with the shared NTFS/HFS+ disguise
-	// policy. Runs of periods are not among them, so this loop agrees
-	// with that validator rather than being stricter than it. m.Path
-	// is worktree-relative and is attacker-controlled via
-	// .gitmodules, so the check runs regardless of host OS.
-	if slices.ContainsFunc(strings.FieldsFunc(m.Path, isPathSep), func(seg string) bool {
-		return pathutil.IsDotOrDotDotName(seg) || pathutil.IsDotName(seg)
-	}) {
-		return ErrModuleBadPath
-	}
-
 	if m.Path == "" {
 		return ErrModuleEmptyPath
+	}
+
+	// The path is validated before the URL is checked for emptiness.
+	// unmarshalSubmodules drops a stanza only on ErrModuleBadPath or
+	// ErrModuleBadName, so a stanza carrying `path = ..` and no `url =`
+	// would otherwise be reported as ErrModuleEmptyURL and kept with its
+	// unsafe Path intact.
+	//
+	// pathutil.ValidSubmodulePath is the validator Submodule.Repository
+	// runs on this Path before it chroots to it, so the parser applies the
+	// same gate: a stanza it keeps is one whose Path can reach that chroot.
+	// The error is flattened to ErrModuleBadPath, the sentinel the parser
+	// drops a stanza on.
+	//
+	// Path is worktree-relative and is attacker-controlled via .gitmodules,
+	// so its component rules run on every host. Only the volume prefix rule
+	// is host-dependent, because filepath.VolumeName recognises a drive
+	// letter on Windows alone.
+	if err := pathutil.ValidSubmodulePath(m.Path); err != nil {
+		return ErrModuleBadPath
 	}
 
 	if m.URL == "" {

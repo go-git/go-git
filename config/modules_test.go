@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/go-git/go-git/v6/internal/pathutil"
 )
 
 type ModulesSuite struct {
@@ -108,8 +110,8 @@ func (s *ModulesSuite) TestValidateGoodPath() {
 	// The boundary rows: a component of periods alone, and a ".."
 	// prefix whose tail does not fold, are legitimate names that
 	// C Git accepts on POSIX. pathutil.ValidSubmodulePath accepts
-	// them too, and this loop must agree with it because
-	// Submodule.Repository runs that validator on the same string.
+	// them, so Validate accepts them too, and they survive parsing to
+	// reach Submodule.Repository.
 	//
 	// ". " and ". ." are not on this list: they fold to the directory
 	// holding them, which would scope the submodule worktree to the
@@ -282,4 +284,56 @@ func (s *ModulesSuite) TestUnmarshalDropsDotDisguisedPathStanza() {
 	m := NewModules()
 	s.Require().NoError(m.Unmarshal([]byte("[submodule \"m\"]\n\tpath = . \n\turl = u\n")))
 	s.Empty(m.Submodules, "stanza whose path folds to the worktree root must be dropped")
+}
+
+// Validate delegates the path to pathutil.ValidSubmodulePath, the same
+// validator Submodule.Repository runs before it chroots to that path.
+// Every shape the validator refuses must therefore be ErrModuleBadPath
+// here, so that a stanza the parser keeps is one whose Path can reach
+// the chroot.
+func (s *ModulesSuite) TestValidateBadPathMatchesSubmodulePathPolicy() {
+	for _, p := range []string{
+		// .git and its aliases, at every position and in both
+		// separator forms.
+		".git",
+		".git/config",
+		"a/.git",
+		"a/.git/b",
+		`a\.git\b`,
+		".GIT",
+		"git~1",
+		"sub/git~1/HEAD",
+
+		// NTFS and HFS+ .git disguises.
+		"sub/.git . ",
+		".git::$INDEX_ALLOCATION",
+		"git~1 ",
+		"git~1.",
+		".g\u200cit",
+
+		// Control bytes.
+		"a\x01b",
+		"foo\x7fbar",
+	} {
+		s.Require().Error(pathutil.ValidSubmodulePath(p), "path %q", p)
+
+		m := &Submodule{
+			Name: "ok",
+			Path: p,
+			URL:  "https://example.com/",
+		}
+		s.Equal(ErrModuleBadPath, m.Validate(), "path %q", p)
+	}
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsDotGitPathStanza() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \"m\"]\n\tpath = a/.git/b\n\turl = u\n")))
+	s.Empty(m.Submodules, "stanza whose path carries a .git component must be dropped")
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsDotGitPathStanzaWithMissingURL() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \"m\"]\n\tpath = .git\n")))
+	s.Empty(m.Submodules, "stanza whose path names .git must be dropped")
 }
