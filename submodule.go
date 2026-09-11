@@ -124,13 +124,13 @@ func (s *Submodule) Repository() (*Repository, error) {
 		exists = true
 	}
 
-	// s.c.Path is sourced from the worktree's .gitmodules and is
-	// therefore tree-controlled. Apply the strict tree-path validator
-	// before chroot — the wrapper's tolerant validPath would let a
-	// final-position .git component through (e.g. "submodule/.git"),
-	// which a malicious .gitmodules could use to chroot the submodule
-	// worktree into the repository's actual .git directory.
-	if err := pathutil.ValidTreePath(s.c.Path); err != nil {
+	// .gitmodules supplies the path. Apply the submodule policy before
+	// chroot; its alias checks remain active even with worktree
+	// protection disabled. The worktree wrapper independently checks
+	// every .git position, but accepts a component that folds to "."
+	// because an ordinary worktree path may carry one, so the chroot
+	// base is validated here.
+	if err := pathutil.ValidSubmodulePath(s.c.Path); err != nil {
 		return nil, err
 	}
 

@@ -41,7 +41,10 @@ func defaultProtectNTFS() bool {
 // boundary. Two layers apply:
 //
 //   - validPath rejects dangerous path *strings*: .git and its HFS+/NTFS
-//     variants, "..", control characters, volume names.
+//     variants at every position, dot/parent components and control bytes.
+//     Windows additionally rejects volume prefixes and, with
+//     core.protectNTFS, illegal characters, trailing spaces/periods and
+//     reserved device names.
 //   - validNoLeadingSymlink rejects paths whose leading directories
 //     already exist on disk as symlinks, so a write or delete cannot
 //     follow a planted link out of the tree.
@@ -59,10 +62,25 @@ type worktreeFilesystem struct {
 	billy.Filesystem
 	protectNTFS bool
 	protectHFS  bool
+
+	// win32 enables the rules that describe the host's own path
+	// canonicalisation rather than a repository's contents: volume
+	// prefixes, and the character, trailing-space/period and device rules
+	// that Win32ValidPath applies under core.protectNTFS. Upstream Git
+	// compiles is_valid_win32_path only for MinGW and MSVC, so a POSIX
+	// host must keep checking out names such as aux.c. It is a field
+	// rather than a runtime.GOOS test so both hosts' policies are
+	// reachable from a test on either.
+	win32 bool
 }
 
 func newWorktreeFilesystem(fs billy.Filesystem, protectNTFS, protectHFS bool) *worktreeFilesystem {
-	return &worktreeFilesystem{Filesystem: fs, protectNTFS: protectNTFS, protectHFS: protectHFS}
+	return &worktreeFilesystem{
+		Filesystem:  fs,
+		protectNTFS: protectNTFS,
+		protectHFS:  protectHFS,
+		win32:       runtime.GOOS == "windows",
+	}
 }
 
 func (sfs *worktreeFilesystem) Create(filename string) (billy.File, error) {
@@ -121,11 +139,14 @@ func (sfs *worktreeFilesystem) Lstat(filename string) (os.FileInfo, error) {
 	return sfs.Filesystem.Lstat(filename)
 }
 
+// Symlink checks .gitmodules names before the general path and filesystem
+// rules. The checks are independent and can overlap; checking the symlink
+// name first preserves ErrGitModulesSymlink for overlapping refusals.
 func (sfs *worktreeFilesystem) Symlink(target, link string) error {
-	if err := sfs.validWritePath(link); err != nil {
+	if err := sfs.validSymlinkName(link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
-	if err := sfs.validSymlinkName(link); err != nil {
+	if err := sfs.validWritePath(link); err != nil {
 		return fmt.Errorf("symlink: %w", err)
 	}
 	return sfs.Filesystem.Symlink(target, link)
@@ -190,82 +211,84 @@ func (sfs *worktreeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 
 var errUnsupportedOperation = errors.New("unsupported operation")
 
-// isDotGitVariant reports whether part is .git, git~1, or an HFS+
-// equivalent of .git (when protectHFS is true). NTFS variants of .git
-// (e.g. ".git " with trailing space, ".git::$INDEX_ALLOCATION") are
-// detected separately by windowsValidPath, which applies regardless
-// of position in the path. Both validators reuse this helper.
-func isDotGitVariant(part string, protectHFS bool) bool {
-	if pathutil.IsDotGitName(part) {
-		return true
-	}
-	if protectHFS && pathutil.IsHFSDotGit(part) {
-		return true
-	}
-	return false
-}
-
-// validPath checks whether paths are valid for the worktree
-// filesystem abstraction. It is intentionally tolerant of .git as
-// the final path component of a multi-component path
-// (e.g. "submodule/.git"), so that legitimate gitlink pointer files
-// can still be Stat'd, Read, and Removed via the wrapper during
-// submodule cleanup. Attacker-controlled tree-entry paths are
-// validated separately by pathutil.ValidTreePath at the boundaries
-// where data leaves the trusted store (Tree.FindEntry, the explicit
-// callers in CherryPick and Submodule.Repository).
+// validPath validates worktree paths, including index-derived names and
+// tree-derived deletions that do not pass through ValidTreePath.
 //
-// For upstream rules:
-// https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
-// https://github.com/git/git/blob/v2.54.0/path.c#L1419
+// Dot and parent components, including the NTFS and HFS+ spellings a
+// filesystem folds back to them, are refused whatever the configuration
+// says. So are `.git` and `git~1` at every component position;
+// core.protectHFS and core.protectNTFS add the remaining aliases. A Win32
+// host additionally refuses volume prefixes, and with core.protectNTFS the
+// illegal-character, trailing-space/period and reserved-device rules.
+//
+// ValidTreePath and this gate are not ordered by strictness. Tree
+// validation refuses an alias such as sub/.git<U+200C> with both
+// protections off, which this gate accepts; a Win32 host with
+// core.protectNTFS refuses aux.c here, which tree validation accepts. A
+// submodule .git pointer file cannot be reached through this wrapper.
+//
+// Reference: upstream Git verify_path_internal at read-cache.c#L987-L1048
+// and is_valid_win32_path at compat/mingw.c#L3155-L3272 in tag v2.54.0[1][2].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987-L1048
+// [2]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3155-L3272
 func (sfs *worktreeFilesystem) validPath(paths ...string) error {
 	for _, p := range paths {
 		for i := 0; i < len(p); i++ {
 			if p[i] < 0x20 || p[i] == 0x7f {
-				return fmt.Errorf("invalid path %q: contains control character", p)
+				return fmt.Errorf("%w %q: contains control character", pathutil.ErrInvalidPath, p)
 			}
 		}
 
 		parts := strings.FieldsFunc(p, func(r rune) bool { return (r == '\\' || r == '/') })
 		if len(parts) == 0 {
-			return fmt.Errorf("invalid path: %q", p)
+			return fmt.Errorf("%w: %q", pathutil.ErrInvalidPath, p)
 		}
 
-		if sfs.protectNTFS {
-			// Volume names are not supported, in both formats: \\ and <DRIVE_LETTER>:.
-			if vol := filepath.VolumeName(p); vol != "" {
-				return fmt.Errorf("invalid path: %q", p)
-			}
+		if sfs.win32 && pathutil.HasVolumeName(p) {
+			return fmt.Errorf("%w %q: contains a volume name", pathutil.ErrInvalidPath, p)
 		}
 
-		for i, part := range parts {
-			if part == "." || part == ".." {
-				return fmt.Errorf("invalid path %q: cannot use %q", p, part)
+		for _, part := range parts {
+			// Always on, whatever core.protectNTFS and
+			// core.protectHFS say: see the doc comment above.
+			if pathutil.IsDotOrDotDotName(part) {
+				return fmt.Errorf("%w %q: cannot use %q", pathutil.ErrInvalidPath, p, part)
 			}
 
-			// Reject .git (and equivalents) as a path component when it is
-			// either the first component (root-level .git) or a non-final
-			// component (traversal into a .git directory, e.g. "a/.git/config").
-			// A final non-first .git component (e.g. "submodule/.git") is
-			// allowed because submodule worktrees contain a .git pointer file.
-			if isDotGitVariant(part, sfs.protectHFS) && (i == 0 || i < len(parts)-1) {
-				return fmt.Errorf("invalid path component: %q", p)
+			// Check every position, including a final submodule .git pointer.
+			if sfs.isDotGitComponent(part) {
+				return fmt.Errorf("%w component: %q", pathutil.ErrInvalidPath, p)
 			}
 
-			if sfs.protectNTFS && !pathutil.WindowsValidPath(part) {
-				return fmt.Errorf("invalid path: %q", p)
+			if sfs.win32 && sfs.protectNTFS && !pathutil.Win32ValidPath(part) {
+				return fmt.Errorf("%w %q: component %q is not a valid Windows path component (core.protectNTFS)", pathutil.ErrInvalidPath, p, part)
 			}
 		}
 	}
 	return nil
 }
 
-// validWritePath validates paths for mutating operations. It layers the
-// filesystem-state check validNoLeadingSymlink on top of the string-only
-// checks in validPath, so a write can neither name a dangerous path nor
-// reach one by traversing an existing symlink. Every mutating method on
-// the wrapper funnels through here, so the leading-symlink invariant holds
-// for all worktree writers without each call site having to remember it.
+// isDotGitComponent reports whether a component names .git under this
+// worktree's protection settings. `.git` and its 8.3 short name `git~1`
+// are refused case-insensitively whatever the configuration says, as
+// pathutil.ValidTreePath refuses them; core.protectHFS and
+// core.protectNTFS add the HFS+ and NTFS spellings on top. validPath
+// checks every position; Clean and the filesystem noder apply the same
+// policy to entry base names.
+//
+// Reference: upstream Git verify_path_internal at read-cache.c#L987-L1048
+// in tag v2.54.0[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987-L1048
+func (sfs *worktreeFilesystem) isDotGitComponent(part string) bool {
+	return pathutil.IsDotGitName(part) ||
+		(sfs.protectHFS && pathutil.IsHFSDotGit(part)) ||
+		(sfs.protectNTFS && pathutil.IsNTFSDotGit(part))
+}
+
+// validWritePath combines string validation with a check for existing leading
+// symlinks, so mutating operations cannot follow them outside the worktree.
 func (sfs *worktreeFilesystem) validWritePath(paths ...string) error {
 	if err := sfs.validPath(paths...); err != nil {
 		return err

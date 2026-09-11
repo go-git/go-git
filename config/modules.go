@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -22,9 +22,6 @@ var (
 	// for use as a path component.
 	ErrModuleBadName = errors.New("ignoring suspicious submodule name")
 )
-
-// Matches module paths with dotdot ".." components.
-var dotdotPath = regexp.MustCompile(`(^|[/\\])\.\.([/\\]|$)`)
 
 // Modules defines the submodules properties, represents a .gitmodules file
 // https://www.kernel.org/pub/software/scm/git/docs/gitmodules.html
@@ -109,45 +106,51 @@ func (m *Submodule) Validate() error {
 		return ErrModuleEmptyPath
 	}
 
-	if m.URL == "" {
-		return ErrModuleEmptyURL
+	// The path is validated before the URL is checked for emptiness.
+	// unmarshalSubmodules drops a stanza only on ErrModuleBadPath or
+	// ErrModuleBadName, so a stanza carrying `path = ..` and no `url =`
+	// would otherwise be reported as ErrModuleEmptyURL and kept with its
+	// unsafe Path intact.
+	//
+	// pathutil.ValidSubmodulePath is the validator Submodule.Repository
+	// runs on this Path before it chroots to it, so the parser applies the
+	// same gate: a stanza it keeps is one whose Path can reach that chroot.
+	// The error is flattened to ErrModuleBadPath, the sentinel the parser
+	// drops a stanza on.
+	//
+	// Path is worktree-relative and is attacker-controlled via .gitmodules,
+	// so its component rules run on every host. Only the volume prefix rule
+	// is host-dependent, because filepath.VolumeName recognises a drive
+	// letter on Windows alone.
+	if err := pathutil.ValidSubmodulePath(m.Path); err != nil {
+		return ErrModuleBadPath
 	}
 
-	if dotdotPath.MatchString(m.Path) {
-		return ErrModuleBadPath
+	if m.URL == "" {
+		return ErrModuleEmptyURL
 	}
 
 	return nil
 }
 
-// validSubmoduleName mirrors canonical Git's check_submodule_name in
-// submodule-config.c [1]: reject empty names and any name with a ".."
-// path component, using both '/' and '\\' as separators so the rule
-// is consistent across platforms. The component check is delegated to
-// `pathutil.IsHFSDot` and `pathutil.IsNTFSDot` with `.` as the needle,
-// which both cover the bare ".." case and reject components that
-// resolve to ".." after HFS+ Unicode normalisation (ignored code
-// points, e.g. `.<U+200C>.`) or NTFS trailing-space/dot/ADS
-// canonicalisation (e.g. `.. `, `..::$INDEX_ALLOCATION`).
-// `.gitmodules` is attacker-controlled by definition, so both checks
-// run unconditionally regardless of host OS.
-//
-// The additional checks (bare ".", NUL byte, leading or trailing
-// separator, drive-letter prefix) close go-git-specific edge cases
-// the canonical loop does not exercise: canonical Git treats names
-// as opaque C strings, while Go strings carry NULs through and the
-// billy filesystem layer is path-aware in ways Git's working storage
-// is not.
+// validSubmoduleName validates storage names below .git/modules.
+// Upstream Git's check_submodule_name at submodule-config.c#L214-L237
+// in tag v2.54.0[1] rejects empty names and literal parent
+// components. go-git additionally applies
+// pathutil.IsUnsafeStorageName, which adds periods-only components,
+// parent disguises and the components a filesystem folds to ".", and
+// rejects NULs, leading/trailing separators and drive prefixes. Both
+// separators are recognized on every host. C Git accepts some of
+// these extra names; the periods-only restriction is policy, not an
+// assertion of NTFS parent folding.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/submodule-config.c#L214-L237
 func validSubmoduleName(name string) error {
-	if name == "" || name == "." {
+	if name == "" {
 		return ErrModuleBadName
 	}
-	for _, seg := range strings.FieldsFunc(name, isPathSep) {
-		if pathutil.IsHFSDot(seg, ".") || pathutil.IsNTFSDot(seg, ".", "") {
-			return ErrModuleBadName
-		}
+	if slices.ContainsFunc(strings.FieldsFunc(name, isPathSep), pathutil.IsUnsafeStorageName) {
+		return ErrModuleBadName
 	}
 	// go-git-specific defensive checks beyond canonical Git.
 	if strings.ContainsRune(name, 0) {

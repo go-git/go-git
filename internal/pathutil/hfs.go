@@ -1,6 +1,9 @@
 package pathutil
 
-import "unicode"
+import (
+	"unicode"
+	"unicode/utf8"
+)
 
 // hfsIgnoredCodepoints contains Unicode code points that HFS+ ignores
 // during path normalization. A path component containing these
@@ -10,7 +13,7 @@ import "unicode"
 //
 // See upstream Git utf8.c next_hfs_char in tag v2.54.0[1].
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/utf8.c#L703-L740
+// [1]: https://github.com/git/git/blob/v2.54.0/utf8.c#L703-L739
 var hfsIgnoredCodepoints = map[rune]struct{}{
 	0x200c: {}, // ZERO WIDTH NON-JOINER
 	0x200d: {}, // ZERO WIDTH JOINER
@@ -37,11 +40,14 @@ var hfsIgnoredCodepoints = map[rune]struct{}{
 // mirrors upstream Git's is_hfs_dot_generic and is the building
 // block of IsHFSDotGit / IsHFSDotGitmodules.
 //
-// Reference: upstream Git utf8.c is_hfs_dot_generic at L741-L774 and
-// the dotgit family at L784-L809 in tag v2.54.0[1].
+// Reference: upstream Git utf8.c is_hfs_dot_generic at L741-L773 and
+// the dotgit family at L784-L807 in tag v2.54.0[1].
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/utf8.c#L741-L809
+// [1]: https://github.com/git/git/blob/v2.54.0/utf8.c#L741-L807
 func IsHFSDot(part, needle string) bool {
+	if part == "" || (part[0] < utf8.RuneSelf && part[0] != '.') {
+		return false
+	}
 	runes := []rune(part)
 	i := 0
 
@@ -92,6 +98,19 @@ func IsHFSDot(part, needle string) bool {
 
 // IsHFSDotGit reports whether part is an HFS+ equivalent of ".git".
 func IsHFSDotGit(part string) bool { return IsHFSDot(part, "git") }
+
+// IsHFSDotDot reports whether part is an HFS+ equivalent of "..".
+// HFS+ drops a fixed set of ignorable code points during
+// normalisation, so ".<U+200C>." names the parent directory on an
+// HFS+ volume.
+func IsHFSDotDot(part string) bool { return IsHFSDot(part, ".") }
+
+// IsHFSDotCurrent reports whether part is an HFS+ equivalent of ".".
+// The empty needle leaves IsHFSDot matching a lone period surrounded
+// by ignorable code points, so ".<U+200C>" and "<U+200C>." name the
+// current directory on an HFS+ volume. The literal "." matches too;
+// IsDotName owns that comparison.
+func IsHFSDotCurrent(part string) bool { return IsHFSDot(part, "") }
 
 // IsHFSDotGitmodules reports whether part is an HFS+ equivalent of
 // ".gitmodules", catching attempts to plant the file via Unicode

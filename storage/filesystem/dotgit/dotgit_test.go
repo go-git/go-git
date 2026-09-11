@@ -61,9 +61,52 @@ func (s *SuiteDotGit) TestModuleRejectsEscapingNames() {
 	}
 }
 
+// TestModuleRejectsDisguisedEscapingNames pins the names path.Clean
+// leaves inside modules/ but a filesystem folds back out of it. The
+// returned chroot is writable, so a name that resolves to .git hands
+// the caller .git/hooks; validSubmoduleName refuses these at the
+// config layer, and Module is the gate for a caller that builds a
+// Submodule without the parser.
+func (s *SuiteDotGit) TestModuleRejectsDisguisedEscapingNames() {
+	d := New(s.EmptyFS())
+	bad := []string{
+		".. ",
+		"..  ",
+		".. .",
+		"..:foo",
+		"..::$INDEX_ALLOCATION",
+		".\u200c.",
+		"\u200c..",
+		"..\u200e",
+		"foo/.. ",
+		"a/.\u200c./b",
+		".",
+		"a/./b",
+		"...",
+		"....",
+		"a/.../b",
+		// Spellings a filesystem folds back to ".", which resolve the
+		// chroot to the modules root shared by every submodule rather
+		// than to one module below it.
+		". ",
+		".  ",
+		". .",
+		".:foo",
+		".::$INDEX_ALLOCATION",
+		".\u200c",
+		"\u200c.",
+		"foo/. ",
+		"a/.\u200c/b",
+	}
+	for _, n := range bad {
+		_, err := d.Module(n)
+		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
+	}
+}
+
 func (s *SuiteDotGit) TestModuleAcceptsBenignNames() {
 	d := New(s.EmptyFS())
-	for _, n := range []string{"foo", "lib/foo", "x.y"} {
+	for _, n := range []string{"foo", "lib/foo", "x.y", "a..b", "..x", "x.."} {
 		_, err := d.Module(n)
 		s.Require().NoError(err, "name %q", n)
 	}
@@ -2051,4 +2094,55 @@ func TestWalkPackHandles_JoinsErrors(t *testing.T) {
 	// Crucially: the walk did not stop on the first error.
 	assert.Equal(t, int32(totalEntries), visits.Load(),
 		"walk should not stop on first error")
+}
+
+// Periods-only components are rejected for reads as well as writes.
+// Reads do not apply ReferenceName.Validate, so this also exercises
+// the storage path checks independently of Git's refname format rules.
+func (s *SuiteDotGit) TestReferenceNameRejectsDotsOnlyComponent() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	bad := []plumbing.ReferenceName{
+		"refs/heads/...",
+		"refs/heads/....",
+		"refs/heads/.../config",
+		"refs/heads/x/.../y",
+	}
+	for _, n := range bad {
+		s.Require().True(n.IsSafe(), "IsSafe must not be what rejects %q", n)
+
+		ref := plumbing.NewHashReference(n, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+		s.ErrorIs(d.SetRef(ref, nil), ErrReferenceNameEscape, "SetRef %q", n)
+
+		_, err := d.Ref(n)
+		s.ErrorIs(err, ErrReferenceNameEscape, "Ref %q", n)
+	}
+
+	_, err := d.fs.Stat(configPath)
+	s.Error(err, "traversal must not create .git/config")
+}
+
+// TestModuleRejectsRootShapedNames pins the names whose own shape
+// resolves to the modules root rather than to a module below it.
+// FieldsFunc yields no components for them, so the per-component
+// policy never sees them, and the joined path cleans back to
+// modules/ — a chroot over every submodule's storage at once.
+func (s *SuiteDotGit) TestModuleRejectsRootShapedNames() {
+	d := New(s.EmptyFS())
+	for _, n := range []string{
+		"",
+		"/",
+		"//",
+		`\`,
+		`\\`,
+		`/\`,
+		"/foo",
+		"foo/",
+		`\foo`,
+		`foo\`,
+	} {
+		_, err := d.Module(n)
+		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
+	}
 }

@@ -1,9 +1,11 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -319,5 +321,62 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 
 			assert.Equal(t, want, got, "untracked set must match reference git")
 		})
+	}
+}
+
+// TestGitReportsFilteredUntrackedNames documents what reference git
+// does with the names go-git's path gate filters out. Git lists every
+// one of them as untracked and `clean -fdx` removes them, under all
+// four combinations of core.protectNTFS and core.protectHFS — the
+// settings gate what may enter the index, not what Status reports.
+// go-git diverges here: a name its gate refuses is invisible to
+// Status and survives Clean, which
+// TestWorktreeOperationsSurviveDotGitDisguises pins from the other
+// side.
+func TestGitReportsFilteredUntrackedNames(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("literal POSIX names")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+
+	names := []string{
+		"git~1", ".GIT", ".git ", ".git.", ".git::$DATA", "GIT~1 ",
+		".git\u200c", "sub/.GIT", "sub/git~1", "sub/.git\u200c",
+	}
+
+	for _, name := range names {
+		for _, directory := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%q/directory=%t", name, directory), func(t *testing.T) {
+				t.Parallel()
+
+				dir := t.TempDir()
+				gitRun(t, dir, "init", "-q")
+
+				p := name
+				if directory {
+					p += "/inner.txt"
+				}
+				require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, p), []byte("payload"), 0o644))
+
+				for _, ntfs := range []bool{false, true} {
+					for _, hfs := range []bool{false, true} {
+						gitRun(t, dir, "config", "core.protectNTFS", fmt.Sprint(ntfs))
+						gitRun(t, dir, "config", "core.protectHFS", fmt.Sprint(hfs))
+						require.NotEmpty(t, gitRun(t, dir, "clean", "-fdxn"))
+						reported := gitRun(t, dir, "status", "--porcelain", "-z", "--untracked-files=all")
+						require.Equal(t, "?? "+p+"\x00", reported)
+					}
+				}
+
+				require.Contains(t, gitRun(t, dir, "clean", "-fdx"), "Removing")
+				_, err := os.Stat(filepath.Join(dir, p))
+				require.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
 	}
 }

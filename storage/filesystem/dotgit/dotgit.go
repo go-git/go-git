@@ -1737,7 +1737,24 @@ func (d *DotGit) PackRefs() (err error) {
 // cleaned. The config-layer parser also validates submodule names,
 // but Module may be reached from any caller that constructs a
 // Submodule struct programmatically and so bypasses the parser.
+//
+// path.Clean does not account for filesystem-specific aliases of the
+// current or the parent directory, so check components against
+// pathutil.IsUnsafeStorageName before constructing the path.
+//
+// The name's own shape is checked first. FieldsFunc discards leading
+// and trailing separators and yields nothing at all for an empty or
+// separator-only name, so the component loop would not see one, and
+// the joined path cleans back to the modules root that every submodule
+// shares. validSubmoduleName refuses these shapes at the config layer.
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
+	isSep := func(r rune) bool { return r == '/' || r == '\\' }
+	if name == "" || isSep(rune(name[0])) || isSep(rune(name[len(name)-1])) {
+		return nil, ErrModuleNameEscape
+	}
+	if slices.ContainsFunc(strings.FieldsFunc(name, isSep), pathutil.IsUnsafeStorageName) {
+		return nil, ErrModuleNameEscape
+	}
 	p := d.fs.Join(modulePath, name)
 	cleaned := path.Clean(filepath.ToSlash(p))
 	if cleaned != modulePath && !strings.HasPrefix(cleaned, modulePath+"/") {

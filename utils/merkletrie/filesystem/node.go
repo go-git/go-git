@@ -22,8 +22,11 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
-var ignore = map[string]bool{
-	".git": true,
+func (n *node) skipDotGit(name string) bool {
+	if n.dotGitFilter != nil {
+		return n.dotGitFilter(name)
+	}
+	return name == ".git"
 }
 
 // Options contains configuration for the filesystem node.
@@ -70,7 +73,8 @@ type node struct {
 	// matches an ignore rule.
 	trackedDirs map[string]struct{}
 
-	options *Options
+	options      *Options
+	dotGitFilter func(string) bool
 
 	// scope is the ignore scope governing this node's entries. On a child it
 	// starts as the parent's scope and is replaced by this directory's own on
@@ -120,6 +124,21 @@ func NewRootNodeWithOptions(
 	submodules map[string]plumbing.Hash,
 	options Options,
 ) noder.Noder {
+	return NewRootNodeWithDotGitFilter(fs, submodules, options, nil)
+}
+
+// NewRootNodeWithDotGitFilter creates a root using options and a metadata-name
+// predicate matching the filesystem's configured path protections. The predicate
+// applies to entry base names at every depth, for both files and directories.
+// A nil predicate retains the exact ".git" exclusion used by the existing
+// constructors. Callers supply the filesystem and validation policy; this
+// callback is not a security boundary. It must remain stable during the walk.
+func NewRootNodeWithDotGitFilter(
+	fs billy.Filesystem,
+	submodules map[string]plumbing.Hash,
+	options Options,
+	skipDotGit func(string) bool,
+) noder.Noder {
 	var idxMap map[string]*index.Entry
 	var trackedDirs map[string]struct{}
 
@@ -143,13 +162,14 @@ func NewRootNodeWithOptions(
 	}
 
 	return &node{
-		fs:          fs,
-		submodules:  submodules,
-		idx:         options.Index,
-		idxMap:      idxMap,
-		trackedDirs: trackedDirs,
-		options:     &options,
-		isDir:       true,
+		fs:           fs,
+		submodules:   submodules,
+		idx:          options.Index,
+		idxMap:       idxMap,
+		trackedDirs:  trackedDirs,
+		options:      &options,
+		dotGitFilter: skipDotGit,
+		isDir:        true,
 		// The root scope already accounts for the root's own ignore files, so
 		// it must not descend again.
 		scope:         options.IgnoreScope,
@@ -224,7 +244,7 @@ func (n *node) calculateChildren() error {
 	}
 
 	for _, file := range files {
-		if _, ok := ignore[file.Name()]; ok {
+		if n.skipDotGit(file.Name()) {
 			continue
 		}
 
@@ -329,12 +349,13 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 	path := path.Join(n.path, file.Name())
 
 	node := &node{
-		fs:          n.fs,
-		submodules:  n.submodules,
-		idx:         n.idx,
-		idxMap:      n.idxMap,
-		trackedDirs: n.trackedDirs,
-		options:     n.options,
+		fs:           n.fs,
+		submodules:   n.submodules,
+		idx:          n.idx,
+		idxMap:       n.idxMap,
+		trackedDirs:  n.trackedDirs,
+		options:      n.options,
+		dotGitFilter: n.dotGitFilter,
 
 		// The child inherits this directory's scope and resolves its own on
 		// its first listing.
