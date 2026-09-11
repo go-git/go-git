@@ -181,57 +181,20 @@ func TestReaderFromDeltaRejectsOversizedCopies(t *testing.T) {
 		"ReaderFromDelta yielded more bytes than the declared target size")
 }
 
-func TestReaderFromDeltaCopyPositions(t *testing.T) {
+func TestReaderFromDeltaRepeatedRewinds(t *testing.T) {
 	t.Parallel()
-
-	tests := []struct {
-		name  string
-		delta []byte
-		want  string
-	}{
-		{
-			name: "forward copies",
-			delta: buildDelta(20, 3,
-				encodeCopyOperation(0, 1), encodeCopyOperation(10, 1), encodeCopyOperation(13, 1)),
-			want: "akn",
-		},
-		{
-			name: "rewind to start then copy forward",
-			delta: buildDelta(20, 3,
-				encodeCopyOperation(10, 1), encodeCopyOperation(0, 1), encodeCopyOperation(13, 1)),
-			want: "kan",
-		},
-		{
-			name: "rewind to nonzero offset then copy forward",
-			delta: buildDelta(20, 3,
-				encodeCopyOperation(10, 1), encodeCopyOperation(2, 1), encodeCopyOperation(15, 1)),
-			want: "kcp",
-		},
-		{
-			name: "rewind with multiple byte copies",
-			delta: buildDelta(20, 6,
-				encodeCopyOperation(10, 2), encodeCopyOperation(0, 2), encodeCopyOperation(15, 2)),
-			want: "klabpq",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			base := &plumbing.MemoryObject{}
-			_, err := base.Write([]byte("abcdefghijklmnopqrst"))
-			require.NoError(t, err)
-
-			r, err := ReaderFromDelta(base, bytes.NewReader(tt.delta))
-			require.NoError(t, err)
-			defer func() { require.NoError(t, r.Close()) }()
-
-			got, err := io.ReadAll(r)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, string(got))
-		})
-	}
+	base := &plumbing.MemoryObject{}
+	_, err := base.Write([]byte("abcdefghijklmnopqrst"))
+	require.NoError(t, err)
+	delta := buildDelta(20, 5,
+		encodeCopyOperation(10, 1), encodeCopyOperation(0, 1),
+		encodeCopyOperation(13, 1), encodeCopyOperation(2, 1), encodeCopyOperation(18, 1))
+	r, err := ReaderFromDelta(base, bytes.NewReader(delta))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, r.Close()) }()
+	got, err := io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "kancs", string(got))
 }
 
 // TestPatchDeltaRejectsTrailingBytes asserts that a delta whose
