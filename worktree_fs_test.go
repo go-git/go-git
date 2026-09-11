@@ -855,6 +855,7 @@ func TestPlainClonePOSIXPathPolicy(t *testing.T) {
 
 			r, err := PlainOpen(source)
 			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
 			head, err := r.Head()
 			require.NoError(t, err)
 			commit, err := r.CommitObject(head.Hash())
@@ -867,7 +868,13 @@ func TestPlainClonePOSIXPathPolicy(t *testing.T) {
 			file, walkErr := iter.Next()
 
 			clone := filepath.Join(root, "go-clone")
-			_, cloneErr := PlainClone(clone, &CloneOptions{URL: source})
+			cloned, cloneErr := PlainClone(clone, &CloneOptions{URL: source})
+			// PlainClone returns a non-nil repository alongside some
+			// errors, having closed it already; Close is idempotent,
+			// so the nil guard is the only one needed.
+			if cloned != nil {
+				t.Cleanup(func() { _ = cloned.Close() })
+			}
 
 			if tc.rejected {
 				// This single-offender fixture yields nothing. A mixed
@@ -1348,6 +1355,7 @@ func TestResetHardRefusesTreeDerivedDotDotDisguise(t *testing.T) {
 
 			r, err := Init(s, WithWorkTree(rec))
 			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
 
 			if tc.protectNTFS.IsSet() || tc.protectHFS.IsSet() {
 				cfg, err := r.Config()
@@ -1440,6 +1448,7 @@ func TestResetRejectsDotGitPositionShift(t *testing.T) {
 
 						r, err := Init(s, WithWorkTree(rec))
 						require.NoError(t, err)
+						t.Cleanup(func() { _ = r.Close() })
 
 						cfg, err := r.Config()
 						require.NoError(t, err)
@@ -1572,6 +1581,7 @@ func TestCheckoutMaterialisesPOSIXTrailingNames(t *testing.T) {
 	s := memory.NewStorage()
 	r, err := Init(s, WithWorkTree(fs))
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
 
 	blob := writeBlob(t, s, []byte("payload"))
 
@@ -2000,6 +2010,7 @@ func TestWorktreeOperationsSurviveDotGitDisguises(t *testing.T) {
 					fs := memfs.New()
 					r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 					require.NoError(t, err)
+					t.Cleanup(func() { _ = r.Close() })
 
 					cfg, err := r.Config()
 					require.NoError(t, err)
@@ -2127,6 +2138,7 @@ func TestWorktreeAPISurvivesUntrackedEdgeNames(t *testing.T) {
 					fs := memfs.New()
 					r, err := Init(memory.NewStorage(), WithWorkTree(fs))
 					require.NoError(t, err)
+					t.Cleanup(func() { _ = r.Close() })
 
 					w, err := r.Worktree()
 					require.NoError(t, err)
