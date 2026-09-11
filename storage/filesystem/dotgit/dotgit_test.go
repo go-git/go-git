@@ -85,6 +85,18 @@ func (s *SuiteDotGit) TestModuleRejectsDisguisedEscapingNames() {
 		"...",
 		"....",
 		"a/.../b",
+		// Spellings a filesystem folds back to ".", which resolve the
+		// chroot to the modules root shared by every submodule rather
+		// than to one module below it.
+		". ",
+		".  ",
+		". .",
+		".:foo",
+		".::$INDEX_ALLOCATION",
+		".\u200c",
+		"\u200c.",
+		"foo/. ",
+		"a/.\u200c/b",
 	}
 	for _, n := range bad {
 		_, err := d.Module(n)

@@ -105,6 +105,13 @@ func IsHFSDotGit(part string) bool { return IsHFSDot(part, "git") }
 // HFS+ volume.
 func IsHFSDotDot(part string) bool { return IsHFSDot(part, ".") }
 
+// IsHFSDotCurrent reports whether part is an HFS+ equivalent of ".".
+// The empty needle leaves IsHFSDot matching a lone period surrounded
+// by ignorable code points, so ".<U+200C>" and "<U+200C>." name the
+// current directory on an HFS+ volume. The literal "." matches too;
+// IsDotName owns that comparison.
+func IsHFSDotCurrent(part string) bool { return IsHFSDot(part, "") }
+
 // IsHFSDotGitmodules reports whether part is an HFS+ equivalent of
 // ".gitmodules", catching attempts to plant the file via Unicode
 // code points that HFS+ would strip during normalisation.

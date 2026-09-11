@@ -215,3 +215,186 @@ func generateComponents(t *testing.T, alphabet string, maxLen int) []string {
 	}
 	return out
 }
+
+func TestIsHFSDotCurrent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{".", true},
+		{".\u200c", true},
+		{"\u200c.", true},
+		{".\u200e", true},
+		{".\ufeff", true},
+		{"\u200d.\u200d", true},
+		// Two periods fold to the parent, not to the current
+		// directory; IsHFSDotDot owns those.
+		{"..", false},
+		{".\u200c.", false},
+		// HFS+ strips ignorable code points, not spaces or colons.
+		{". ", false},
+		{".:", false},
+		{"...", false},
+		{".git", false},
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q", tc.name), func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, IsHFSDotCurrent(tc.name))
+		})
+	}
+}
+
+func TestIsNTFSDotCurrent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		want bool
+	}{
+		// A tail of spaces and periods containing at least one space.
+		{". ", true},
+		{".  ", true},
+		{". .", true},
+		{".  .", true},
+		{".. ", true},
+		// An Alternate Data Stream suffix names the entry itself.
+		{".:x", true},
+		{".:$DATA", true},
+		{".::$INDEX_ALLOCATION", true},
+		// The literal name is the job of the == comparison in
+		// IsDotName, not of this predicate.
+		{".", false},
+		{"..", false},
+		// Periods alone pass the tree gate; IsDotsOnlyName refuses
+		// them as a storage name.
+		{"...", false},
+		{"....", false},
+		// NTFS trims spaces and periods from the end, not the start,
+		// and ignores no code points.
+		{" .", false},
+		{".\u200c", false},
+		{".git", false},
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q", tc.name), func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, IsNTFSDotCurrent(tc.name))
+		})
+	}
+}
+
+func TestIsDotName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{".", true},
+		// NTFS trims a trailing run of spaces and periods, and reads
+		// a colon as an Alternate Data Stream suffix.
+		{". ", true},
+		{". .", true},
+		{".  .", true},
+		{".:", true},
+		{".:$DATA", true},
+		{".::$INDEX_ALLOCATION", true},
+		// HFS+ drops ignorable code points during normalisation.
+		{".\u200c", true},
+		{"\u200c.", true},
+		{".\ufeff", true},
+		// The parent spellings belong to IsDotOrDotDotName. An NTFS
+		// tail makes a component fold to both, so those overlap.
+		{"..", false},
+		{"..\u200c", false},
+		{".\u200c.", false},
+		{".. ", true},
+		// Runs of periods are carried in POSIX trees; IsDotsOnlyName
+		// refuses them as a storage name.
+		{"...", false},
+		{"....", false},
+		// Ordinary names, including ones that merely contain periods.
+		{"a..b", false},
+		{"..x", false},
+		{"x..", false},
+		{".a", false},
+		{" .", false},
+		{".git", false},
+		{"foo", false},
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q", tc.name), func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, IsDotName(tc.name))
+		})
+	}
+}
+
+func TestIsUnsafeStorageName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		want bool
+	}{
+		// Periods only.
+		{".", true},
+		{"..", true},
+		{"...", true},
+		{"....", true},
+		// Parent spellings.
+		{".. ", true},
+		{"..:", true},
+		{"..\u200c", true},
+		{".\u200c.", true},
+		// Current-directory spellings.
+		{". ", true},
+		{". .", true},
+		{".:", true},
+		{".\u200c", true},
+		{"\u200c.", true},
+		// Names that only contain periods are ordinary storage names.
+		{"a..b", false},
+		{"..x", false},
+		{"x..", false},
+		{".git", false},
+		{"lib", false},
+		{"foo", false},
+		// The empty component never reaches this predicate, because
+		// FieldsFunc drops it. Callers check the whole name's shape.
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q", tc.name), func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, IsUnsafeStorageName(tc.name))
+		})
+	}
+}
+
+// Every component that HFS+ or NTFS folds to "." or ".." must be
+// refused as a storage name, whichever of the three policies catches
+// it. The corpus covers the runes those folds are built from.
+func TestIsUnsafeStorageNameCoversEveryDotFold(t *testing.T) {
+	t.Parallel()
+
+	for _, part := range generateComponents(t, ". :.\u200c", 4) {
+		folds := IsHFSDot(part, "") || IsNTFSDot(part, "", "") ||
+			IsHFSDot(part, ".") || IsNTFSDot(part, ".", "")
+		if !folds {
+			continue
+		}
+		assert.True(t, IsUnsafeStorageName(part),
+			"component %q folds to a directory name", part)
+	}
+}

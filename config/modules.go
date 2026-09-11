@@ -109,13 +109,17 @@ func (m *Submodule) Validate() error {
 	// with its unsafe Path intact. An empty Path yields no segments,
 	// so it falls through to ErrModuleEmptyPath below.
 	//
-	// The per-segment predicate is pathutil.IsDotOrDotDotName, the
-	// same one ValidTreePath applies to this Path in
-	// Submodule.Repository: dot and parent components plus the shared
-	// NTFS/HFS+ disguise policy. m.Path is worktree-relative and is
-	// attacker-controlled via .gitmodules, so the check runs
-	// regardless of host OS.
-	if slices.ContainsFunc(strings.FieldsFunc(m.Path, isPathSep), pathutil.IsDotOrDotDotName) {
+	// The per-segment predicates are the ones
+	// pathutil.ValidSubmodulePath applies to this Path in
+	// Submodule.Repository: parent components and the components a
+	// filesystem folds to ".", each with the shared NTFS/HFS+ disguise
+	// policy. Runs of periods are not among them, so this loop agrees
+	// with that validator rather than being stricter than it. m.Path
+	// is worktree-relative and is attacker-controlled via
+	// .gitmodules, so the check runs regardless of host OS.
+	if slices.ContainsFunc(strings.FieldsFunc(m.Path, isPathSep), func(seg string) bool {
+		return pathutil.IsDotOrDotDotName(seg) || pathutil.IsDotName(seg)
+	}) {
 		return ErrModuleBadPath
 	}
 
@@ -133,21 +137,21 @@ func (m *Submodule) Validate() error {
 // validSubmoduleName validates storage names below .git/modules.
 // Upstream Git's check_submodule_name at submodule-config.c#L214-L237
 // in tag v2.54.0[1] rejects empty names and literal parent
-// components. go-git additionally rejects dot and periods-only
-// components, parent disguises, NULs, leading/trailing separators and
-// drive prefixes. Both separators are recognized on every host.
-// C Git accepts some of these extra names; the periods-only
-// restriction is policy, not an assertion of NTFS parent folding.
+// components. go-git additionally applies
+// pathutil.IsUnsafeStorageName, which adds periods-only components,
+// parent disguises and the components a filesystem folds to ".", and
+// rejects NULs, leading/trailing separators and drive prefixes. Both
+// separators are recognized on every host. C Git accepts some of
+// these extra names; the periods-only restriction is policy, not an
+// assertion of NTFS parent folding.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/submodule-config.c#L214-L237
 func validSubmoduleName(name string) error {
-	if name == "" || name == "." {
+	if name == "" {
 		return ErrModuleBadName
 	}
-	for _, seg := range strings.FieldsFunc(name, isPathSep) {
-		if pathutil.IsDotsOnlyName(seg) || pathutil.IsDotOrDotDotName(seg) {
-			return ErrModuleBadName
-		}
+	if slices.ContainsFunc(strings.FieldsFunc(name, isPathSep), pathutil.IsUnsafeStorageName) {
+		return ErrModuleBadName
 	}
 	// go-git-specific defensive checks beyond canonical Git.
 	if strings.ContainsRune(name, 0) {

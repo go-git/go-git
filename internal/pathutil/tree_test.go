@@ -104,3 +104,71 @@ func TestValidTreePath(t *testing.T) {
 		})
 	}
 }
+
+func TestValidSubmodulePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		// Everything ValidTreePath refuses stays refused.
+		{"reject .git component", "sub/.git", true},
+		{"reject parent", "a/../b", true},
+		{"reject parent disguise", "a/.. /b", true},
+		{"reject control byte", "a/\x01/b", true},
+		{"reject empty", "", true},
+
+		// The rule this adds: a component the filesystem folds to
+		// ".". Submodule.Repository chroots to this path, so such a
+		// component scopes the submodule to the directory above it.
+		{"reject dot", ".", true},
+		{"reject dot trailing space", ". ", true},
+		{"reject dot space period", ". .", true},
+		{"reject dot ADS", ".:$DATA", true},
+		{"reject dot zwnj hfs", ".\u200c", true},
+		{"reject zwnj dot hfs", "\u200c.", true},
+		{"reject nested dot trailing space", "sub/. /x", true},
+		{"reject trailing dot component", "sub/.\u200c", true},
+
+		// Runs of periods stay valid, as they do in a tree: C Git
+		// carries them on POSIX and ValidTreePath accepts them.
+		{"accept periods only", "...", false},
+		{"accept four periods", "....", false},
+		{"accept nested periods only", "a/.../b", false},
+		{"accept trailing periods", "x..", false},
+		{"accept leading periods", "..x", false},
+		{"accept periods then space", ".. x", false},
+
+		// Ordinary submodule paths.
+		{"accept plain", "sub", false},
+		{"accept nested", "deps/sub", false},
+		{"accept dotfile", "sub/.gitignore", false},
+		{"accept period in name", "deps/x.y", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidSubmodulePath(tc.path)
+			if tc.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidPath, "path %q", tc.path)
+				return
+			}
+			assert.NoError(t, err, "path %q", tc.path)
+		})
+	}
+}
+
+// ValidSubmodulePath is ValidTreePath plus one rule, so it must never
+// accept a path the tree gate refuses.
+func TestValidSubmodulePathIsStricterThanValidTreePath(t *testing.T) {
+	t.Parallel()
+
+	for _, part := range generateComponents(t, "./ :a\u200c", 3) {
+		if ValidTreePath(part) != nil {
+			assert.Error(t, ValidSubmodulePath(part), "path %q", part)
+		}
+	}
+}

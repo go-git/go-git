@@ -1738,12 +1738,12 @@ func (d *DotGit) PackRefs() (err error) {
 // but Module may be reached from any caller that constructs a
 // Submodule struct programmatically and so bypasses the parser.
 //
-// path.Clean does not account for filesystem-specific parent-directory
-// aliases. Check components before constructing the path, and reject
-// periods-only components under the same storage policy as references.
+// path.Clean does not account for filesystem-specific aliases of the
+// current or the parent directory, so check components against
+// pathutil.IsUnsafeStorageName before constructing the path.
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	for _, part := range strings.FieldsFunc(name, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if pathutil.IsDotsOnlyName(part) || pathutil.IsDotOrDotDotName(part) {
+		if pathutil.IsUnsafeStorageName(part) {
 			return nil, ErrModuleNameEscape
 		}
 	}

@@ -22,8 +22,8 @@ func TestModulesSuite(t *testing.T) {
 // The two tables are deliberately not otherwise symmetric: a name is
 // held to the stricter rule because it becomes a directory under
 // .git/modules via dotgit.DotGit.Module, while a path is held to
-// ValidTreePath's rule because Submodule.Repository runs
-// ValidTreePath on it. A component of periods alone is therefore
+// pathutil.ValidSubmodulePath's rule because Submodule.Repository runs
+// that validator on it. A component of periods alone is therefore
 // rejected as a name and accepted as a path.
 var dotdotDisguises = []string{
 	// Literal, at every position and with both separators.
@@ -55,6 +55,37 @@ var dotdotDisguises = []string{
 	"a/.. /b",
 }
 
+// dotDisguises are the spellings a filesystem folds back to the
+// directory holding them. A path built from one addresses that
+// directory: Submodule.Repository would chroot the submodule worktree
+// to the superproject worktree root, and DotGit.Module would chroot
+// the module storer to .git/modules itself. Both a name and a path
+// must refuse every one of them.
+//
+// The literal "." belongs here too, but the existing tables already
+// carry it, so it is not repeated.
+var dotDisguises = []string{
+	// HFS+ drops ignorable code points during normalisation.
+	".\u200c",
+	"\u200c.",
+	".\u200e",
+	".\ufeff",
+	"\u200d.\u200d",
+	"foo/.\u200c",
+	"a/.\u200c/b",
+
+	// NTFS trims a trailing run of spaces and periods, and reads a
+	// colon as an Alternate Data Stream suffix.
+	". ",
+	".  ",
+	". .",
+	".:foo",
+	".:$DATA",
+	".::$INDEX_ALLOCATION",
+	"foo/. /bar",
+	"a/. /b",
+}
+
 func (s *ModulesSuite) TestValidateMissingURL() {
 	m := &Submodule{Name: "foo", Path: "foo"}
 	s.Equal(ErrModuleEmptyURL, m.Validate())
@@ -62,6 +93,7 @@ func (s *ModulesSuite) TestValidateMissingURL() {
 
 func (s *ModulesSuite) TestValidateBadPath() {
 	input := append([]string{".", "./sub", "sub/."}, dotdotDisguises...)
+	input = append(input, dotDisguises...)
 	for _, p := range input {
 		m := &Submodule{
 			Name: "ok",
@@ -75,13 +107,16 @@ func (s *ModulesSuite) TestValidateBadPath() {
 func (s *ModulesSuite) TestValidateGoodPath() {
 	// The boundary rows: a component of periods alone, and a ".."
 	// prefix whose tail does not fold, are legitimate names that
-	// C Git accepts on POSIX. ValidTreePath accepts them too, and
-	// this loop must agree with it because Submodule.Repository runs
-	// ValidTreePath on the same string.
+	// C Git accepts on POSIX. pathutil.ValidSubmodulePath accepts
+	// them too, and this loop must agree with it because
+	// Submodule.Repository runs that validator on the same string.
+	//
+	// ". " and ". ." are not on this list: they fold to the directory
+	// holding them, which would scope the submodule worktree to the
+	// superproject root. dotDisguises carries them.
 	for _, p := range []string{
 		"foo", "foo/bar", "a..b", "deps/x.y", "lib-foo/sub",
 		"...", "....", "a/.../b", "x..", "foo..", "..x", ".. x",
-		". ", ". .",
 	} {
 		m := &Submodule{
 			Name: "ok",
@@ -143,6 +178,7 @@ func (s *ModulesSuite) TestValidateBadName() {
 		"modules/../escape",
 		"a/../../b",
 	}, dotdotDisguises...)
+	input = append(input, dotDisguises...)
 	for _, n := range input {
 		m := &Submodule{
 			Name: n,
@@ -228,4 +264,22 @@ func (s *ModulesSuite) TestUnmarshalMarshal() {
 	output, err := cfg.Marshal()
 	s.NoError(err)
 	s.Equal(string(input), string(output))
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsDotDisguisedNameStanza() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \". \"]\n\tpath = ok\n\turl = u\n")))
+	s.Empty(m.Submodules, "stanza whose name folds to the modules root must be dropped")
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsHFSDotDisguisedNameStanza() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \".\u200c\"]\n\tpath = ok\n\turl = u\n")))
+	s.Empty(m.Submodules, "stanza whose name folds to the modules root must be dropped")
+}
+
+func (s *ModulesSuite) TestUnmarshalDropsDotDisguisedPathStanza() {
+	m := NewModules()
+	s.Require().NoError(m.Unmarshal([]byte("[submodule \"m\"]\n\tpath = . \n\turl = u\n")))
+	s.Empty(m.Submodules, "stanza whose path folds to the worktree root must be dropped")
 }

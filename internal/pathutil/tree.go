@@ -52,7 +52,7 @@ func ValidTreePath(p string) error {
 		}
 	}
 
-	parts := strings.FieldsFunc(p, func(r rune) bool { return r == '\\' || r == '/' })
+	parts := strings.FieldsFunc(p, isPathSep)
 	if len(parts) == 0 {
 		return fmt.Errorf("%w: %q", ErrInvalidPath, p)
 	}
@@ -70,6 +70,34 @@ func ValidTreePath(p string) error {
 
 		if IsDotGitName(part) || IsHFSDotGit(part) || IsNTFSDotGit(part) {
 			return fmt.Errorf("%w component: %q", ErrInvalidPath, p)
+		}
+	}
+
+	return nil
+}
+
+// ValidSubmodulePath applies ValidTreePath and the one rule a
+// submodule path needs beyond it: no component that a filesystem folds
+// to ".". Submodule.Repository chroots the submodule worktree to this
+// path, so such a component scopes the submodule to the superproject
+// worktree root instead of a directory below it, and a checkout then
+// materialises the submodule's blobs over the superproject's own
+// files.
+//
+// ValidTreePath stays tolerant of these because an ordinary tree entry
+// only names a file there, and C Git's verify_path carries such names
+// on POSIX. C Git does not validate the .gitmodules path at all — the
+// gitlink path it uses comes from the index — so this rule is go-git
+// policy for the one place a tree-controlled string becomes a chroot
+// base.
+func ValidSubmodulePath(p string) error {
+	if err := ValidTreePath(p); err != nil {
+		return err
+	}
+
+	for _, part := range strings.FieldsFunc(p, isPathSep) {
+		if IsDotName(part) {
+			return fmt.Errorf("%w %q: cannot use %q", ErrInvalidPath, p, part)
 		}
 	}
 

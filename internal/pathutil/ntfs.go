@@ -64,6 +64,28 @@ func IsNTFSDotDot(part string) bool {
 	return strings.ContainsAny(part[2:], " :")
 }
 
+// IsNTFSDotCurrent reports whether part is an NTFS spelling of "."
+// that a comparison against the literal "." misses: "." followed by a
+// tail of spaces and periods containing at least one space, or "."
+// followed by an Alternate Data Stream colon. ". ", ". .", ".:$DATA"
+// and ".::$INDEX_ALLOCATION" match.
+//
+// The empty needle degenerates IsNTFSDot: the length guards skip both
+// short-name patterns, leaving a leading period followed only by
+// spaces, periods or an ADS colon. That admits ".", ".." and runs of
+// periods, which this function excludes the way IsNTFSDotDot does —
+// by requiring a space or a colon in the tail. IsDotName and
+// IsDotOrDotDotName own the literal spellings.
+func IsNTFSDotCurrent(part string) bool {
+	// Only the literal-dot pattern in IsNTFSDot matches an empty
+	// needle. It requires one leading period, so the slice below
+	// needs no additional length guard.
+	if !IsNTFSDot(part, "", "") {
+		return false
+	}
+	return strings.ContainsAny(part[1:], " :")
+}
+
 // Win32ValidPath checks one path component for illegal Win32 characters,
 // trailing spaces or periods, and reserved device names. The worktree
 // wrapper applies it on Windows with core.protectNTFS enabled; metadata

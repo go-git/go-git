@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -832,4 +834,70 @@ func TestSubmoduleRepositoryRejectsEscapingName(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, headBefore.Target(), headAfter.Target(),
 		"parent HEAD must not be overwritten")
+}
+
+// Submodule.Repository chroots the submodule worktree to the
+// .gitmodules path. A component a filesystem folds to "." resolves
+// that chroot to the superproject worktree root, so a submodule
+// checkout would write over the superproject's own files. The worktree
+// wrapper accepts such a component — an ordinary worktree path may
+// carry one — so pathutil.ValidSubmodulePath is the gate.
+func TestSubmoduleRepositoryRefusesDotDisguisedPath(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range []string{
+		".",
+		". ",
+		". .",
+		".:$DATA",
+		".::$INDEX_ALLOCATION",
+		".\u200c",
+		"\u200c.",
+		"sub/. ",
+		"sub/.\u200c",
+	} {
+		t.Run(fmt.Sprintf("%q", p), func(t *testing.T) {
+			t.Parallel()
+
+			sub := &Submodule{
+				initialized: true,
+				w: &Worktree{
+					filesystem: newWorktreeFilesystem(memfs.New(), true, true),
+					r:          &Repository{Storer: memory.NewStorage(), wt: memfs.New()},
+				},
+				c: &config.Submodule{Name: "child", Path: p, URL: "https://example.com/"},
+			}
+
+			subRepo, err := sub.Repository()
+			require.ErrorIs(t, err, pathutil.ErrInvalidPath)
+			require.Nil(t, subRepo)
+		})
+	}
+}
+
+// The rule above is one component rule, not a widening of the tree
+// policy: a run of periods stays a legal submodule path, as it is a
+// legal tree entry on POSIX.
+func TestSubmoduleRepositoryAcceptsPeriodsOnlyPath(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range []string{"...", "....", "sub/.../x", "x..", "..x"} {
+		t.Run(p, func(t *testing.T) {
+			t.Parallel()
+
+			sub := &Submodule{
+				initialized: true,
+				w: &Worktree{
+					filesystem: newWorktreeFilesystem(memfs.New(), true, true),
+					r:          &Repository{Storer: memory.NewStorage(), wt: memfs.New()},
+				},
+				c: &config.Submodule{Name: "child", Path: p, URL: "https://example.com/"},
+			}
+
+			subRepo, err := sub.Repository()
+			require.NoError(t, err)
+			require.NotNil(t, subRepo)
+			t.Cleanup(func() { _ = subRepo.Close() })
+		})
+	}
 }
