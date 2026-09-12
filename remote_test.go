@@ -2200,6 +2200,27 @@ func (s *RemoteSuite) TestPushToShallowBoundaryWithDependentBoundary() {
 	s.Equal(child, updated.Hash())
 }
 
+func (s *RemoteSuite) TestIsFastForwardSkipsMissingShallowMarker() {
+	storage := memory.NewStorage()
+	missing := plumbing.NewHash("0000000000000000000000000000000000000001")
+
+	boundary := &object.Commit{ParentHashes: []plumbing.Hash{missing}}
+	encodedBoundary := storage.NewEncodedObject()
+	s.Require().NoError(boundary.Encode(encodedBoundary))
+	boundaryHash, err := storage.SetEncodedObject(encodedBoundary)
+	s.Require().NoError(err)
+
+	child := &object.Commit{ParentHashes: []plumbing.Hash{boundaryHash}}
+	encodedChild := storage.NewEncodedObject()
+	s.Require().NoError(child.Encode(encodedChild))
+	childHash, err := storage.SetEncodedObject(encodedChild)
+	s.Require().NoError(err)
+
+	fastForward, err := isFastForward(storage, missing, childHash, []plumbing.Hash{boundaryHash, missing})
+	s.Require().NoError(err)
+	s.True(fastForward)
+}
+
 func TestFetchFastForwardForCustomRef(t *testing.T) {
 	t.Parallel()
 	customRef := "refs/custom/branch"
