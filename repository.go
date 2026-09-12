@@ -2175,7 +2175,14 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	if err != nil {
 		return h, err
 	}
-	defer ioutil.CheckClose(wc, &err)
+	// Close publishes the pack, so it has to precede the deletion below (#2370).
+	closed := false
+	defer func() {
+		if !closed {
+			ioutil.CheckClose(wc, &err)
+		}
+	}()
+
 	scfg, err := r.Config()
 	if err != nil {
 		return h, err
@@ -2183,6 +2190,11 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	enc := packfile.NewEncoder(wc, r.Storer, cfg.UseRefDeltas)
 	h, err = enc.Encode(objs, scfg.Pack.Window)
 	if err != nil {
+		return h, err
+	}
+
+	closed = true
+	if err = wc.Close(); err != nil {
 		return h, err
 	}
 

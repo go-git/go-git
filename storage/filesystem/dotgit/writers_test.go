@@ -319,10 +319,15 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			require.NoError(t, pfErr)
 			_, err = io.Copy(w, pf)
 			require.NoError(t, err)
+			notified := false
+			w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
+				notified = true
+			}
 
 			err = w.Close()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "unexpected file type")
+			assert.False(t, notified)
 		})
 	}
 }
