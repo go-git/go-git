@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -22,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -193,6 +195,70 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	s.Require().NotEqual(-1, nakAt)
 	finalAt := strings.Index(response[continueAt+len(continueACK)+nakAt:], finalACK)
 	s.Require().NotEqual(-1, finalAt)
+}
+
+// A have that is reachable from any of the wants must be recognised as common,
+// not only one reachable from the first want.
+func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
+	st := memory.NewStorage()
+	sig := object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0).UTC()}
+
+	commit := func(content string, parents ...plumbing.Hash) plumbing.Hash {
+		blob := &plumbing.MemoryObject{}
+		blob.SetType(plumbing.BlobObject)
+		_, err := blob.Write([]byte(content))
+		s.Require().NoError(err)
+		bh, err := st.SetEncodedObject(blob)
+		s.Require().NoError(err)
+
+		tree := &object.Tree{Entries: []object.TreeEntry{
+			{Name: "f.txt", Mode: filemode.Regular, Hash: bh},
+		}}
+		to := &plumbing.MemoryObject{}
+		s.Require().NoError(tree.Encode(to))
+		th, err := st.SetEncodedObject(to)
+		s.Require().NoError(err)
+
+		c := &object.Commit{Author: sig, Committer: sig, Message: content, TreeHash: th, ParentHashes: parents}
+		co := &plumbing.MemoryObject{}
+		s.Require().NoError(c.Encode(co))
+		ch, err := st.SetEncodedObject(co)
+		s.Require().NoError(err)
+		return ch
+	}
+
+	// base --- tipA          (want #1)
+	//     \--- mid --- tipB  (want #2); mid is reachable only through tipB
+	base := commit("base")
+	tipA := commit("tipA", base)
+	mid := commit("mid", base)
+	tipB := commit("tipB", mid)
+
+	s.Require().NoError(st.SetReference(plumbing.NewHashReference(plumbing.HEAD, tipA)))
+
+	var upreq packp.UploadRequest
+	upreq.Capabilities.Add(capability.MultiACK)
+	upreq.Capabilities.Add(capability.NoProgress)
+	upreq.Wants = []plumbing.Hash{tipA, tipB}
+
+	var firstRound packp.UploadHaves
+	firstRound.Haves = []plumbing.Hash{mid}
+
+	var finalRound packp.UploadHaves
+	finalRound.Done = true
+
+	var req bytes.Buffer
+	s.Require().NoError(upreq.Encode(&req))
+	s.Require().NoError(firstRound.Encode(&req))
+	s.Require().NoError(finalRound.Encode(&req))
+
+	var out bytes.Buffer
+	s.Require().NoError(UploadPack(context.Background(), st,
+		io.NopCloser(&req), ioutil.WriteNopCloser(&out),
+		&UploadPackRequest{GitProtocol: "version=1"}))
+
+	s.Contains(out.String(), fmt.Sprintf("ACK %s continue\n", mid),
+		"a have reachable from the second want must be acknowledged as common")
 }
 
 type ReceivePackServeSuite struct {
