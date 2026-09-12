@@ -188,6 +188,19 @@ func (s *RefSpecSuite) TestRefSpecReverse() {
 	s.Equal(RefSpec("refs/remotes/origin/*:refs/heads/*"), spec.Reverse())
 }
 
+func (s *RefSpecSuite) TestRefSpecReverseForce() {
+	spec := RefSpec("+refs/heads/*:refs/remotes/origin/*")
+	rev := spec.Reverse()
+	s.Equal(RefSpec("+refs/remotes/origin/*:refs/heads/*"), rev)
+	s.True(rev.IsForceUpdate())
+	s.True(rev.Validate() == nil)
+	// The force marker must stay a spec prefix: it must not leak into the
+	// destination pattern, or Dst-mapped names grow a "+" prefix.
+	s.True(rev.Match(plumbing.ReferenceName("refs/remotes/origin/master")))
+	s.Equal("refs/heads/master",
+		rev.Dst(plumbing.ReferenceName("refs/remotes/origin/master")).String())
+}
+
 func (s *RefSpecSuite) TestMatchAny() {
 	specs := []RefSpec{
 		"refs/heads/bar:refs/remotes/origin/foo",
