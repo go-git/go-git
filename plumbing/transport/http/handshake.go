@@ -333,7 +333,11 @@ func describeInfoRefsError(err error, resp *http.Response, base sessionBase, hea
 		fetched = resp.Request.URL
 	}
 
-	mediaType := contentMediaType(resp.Header.Get("Content-Type"))
+	// The media type comes out of a response header, so its length is the
+	// server's choice; it is capped like every other part of a refusal this
+	// package builds. Gated on the capped value, which is what is rendered,
+	// so the two cannot disagree.
+	mediaType := bounded(contentMediaType(resp.Header.Get("Content-Type")))
 	if mediaType == "text/plain" {
 		return fmt.Errorf("%w: %s served content type %q: %w: %q",
 			transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err,

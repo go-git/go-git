@@ -51,8 +51,9 @@ func (e *Err) Error() string {
 // redirect target — so it is not read to EOF.
 const maxErrorBodySize = 8 << 10
 
-// maxRedactedComponent caps how long a part of a URL — host, path, query,
-// username — may be and still be rendered. Anything longer is replaced whole.
+// maxRedactedComponent caps how long a part of a URL — scheme, opaque part,
+// host, path, query, username — may be and still be rendered. Anything longer
+// is replaced whole.
 //
 // A URL printed here is often a redirect target, so its length is the server's
 // choice, and net/http accepts 10 MB of response headers by default. Redacting
@@ -244,11 +245,11 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 		// an authentication challenge, so a caller sees one instead of a
 		// redirect target that leaves no base to recover.
 		if strings.HasSuffix(finalPath, "/_signin") {
-			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, finalPath)
+			return nil, fmt.Errorf("%w: redirect to %q", transport.ErrAuthenticationRequired, bounded(finalPath))
 		}
 		return nil, fmt.Errorf(
 			"http transport: redirect target %q does not end with %s",
-			finalPath, infoRefsPath,
+			bounded(finalPath), infoRefsPath,
 		)
 	}
 	// Cut from the escaped spelling: an index taken there does not fall in the
@@ -262,12 +263,12 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	}
 
 	if final.Scheme != "http" && final.Scheme != "https" {
-		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", final.Scheme)
+		return nil, fmt.Errorf("http transport: redirect to unsupported scheme %q", bounded(final.Scheme))
 	}
 	if final.Scheme != baseURL.Scheme && !schemeUpgrade(baseURL.Scheme, final.Scheme) {
 		return nil, fmt.Errorf(
 			"http transport: redirect changes scheme from %q to %q",
-			baseURL.Scheme, final.Scheme,
+			bounded(baseURL.Scheme), bounded(final.Scheme),
 		)
 	}
 
@@ -280,7 +281,7 @@ func applyRedirect(resp *http.Response, baseURL *url.URL) (*url.URL, error) {
 	if err := setEscapedPath(&redirected, targetPath); err != nil {
 		return nil, fmt.Errorf(
 			"http transport: redirect target %q has an unusable path: %w",
-			finalPath, err,
+			bounded(finalPath), err,
 		)
 	}
 
@@ -580,6 +581,11 @@ func redactURL(u *url.URL) *url.URL {
 		return nil
 	}
 	redacted := *u
+	// A Location's scheme and opaque part are the server's bytes like every
+	// other part, and net/url accepts either at any length, so both are
+	// capped here rather than trusted to be short.
+	redacted.Scheme = bounded(u.Scheme)
+	redacted.Opaque = bounded(u.Opaque)
 	redacted.Host = bounded(u.Host)
 	if path := u.EscapedPath(); len(path) > maxRedactedComponent {
 		redacted.Path, redacted.RawPath = bounded(path), ""
