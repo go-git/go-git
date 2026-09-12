@@ -77,26 +77,41 @@ func ParsePattern(p string, domain []string) Pattern {
 }
 
 func (p *pattern) Match(path []string, isDir bool) MatchResult {
+	match, _ := p.matchForTraversal(path, isDir)
+	return match
+}
+
+// matchForTraversal also reports whether a matching exclusion makes it safe
+// to prune a directory from a filesystem walk. A trailing /** may match its
+// parent directory only because isDir stands in for the otherwise empty
+// remainder; that match excludes the directory's contents, not the directory
+// itself, so a later pattern may still re-include a child.
+func (p *pattern) matchForTraversal(path []string, isDir bool) (MatchResult, bool) {
 	if len(path) <= len(p.domain) {
-		return NoMatch
+		return NoMatch, false
 	}
 	for i, e := range p.domain {
 		if path[i] != e {
-			return NoMatch
+			return NoMatch, false
 		}
 	}
 
 	path = path[len(p.domain):]
-	if p.isGlob && !p.globMatch(path, isDir) {
-		return NoMatch
-	} else if !p.isGlob && !p.simpleNameMatch(path, isDir) {
-		return NoMatch
+	canPrune := true
+	if p.isGlob {
+		matched, emptyTrailingStar := p.globMatchForTraversal(path, isDir)
+		if !matched {
+			return NoMatch, false
+		}
+		canPrune = !emptyTrailingStar
+	} else if !p.simpleNameMatch(path, isDir) {
+		return NoMatch, false
 	}
 
 	if p.inclusion {
-		return Include
+		return Include, false
 	}
-	return Exclude
+	return Exclude, canPrune
 }
 
 // The wildmatch implementation below ports the matcher from canonical Git's
@@ -491,10 +506,11 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	return false
 }
 
-func (p *pattern) globMatch(path []string, isDir bool) bool {
+func (p *pattern) globMatchForTraversal(path []string, isDir bool) (bool, bool) {
 	matched := false
 	canTraverse := false
 	trailingStar := false
+	emptyTrailingStar := false
 	for i, pattern := range p.pattern {
 		if pattern == "" {
 			canTraverse = false
@@ -508,7 +524,8 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 				// Assigning matched rather than only raising it stops an
 				// exhausted path from inheriting the previous segment's
 				// result, which would make `a/**/*/**` match `a/f.txt`.
-				matched = len(path) > 0 || isDir
+				emptyTrailingStar = len(path) == 0 && isDir
+				matched = len(path) > 0 || emptyTrailingStar
 				trailingStar = matched
 				break
 			}
@@ -518,7 +535,7 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 		// Note: If pattern contains ** but isn't exactly **, it's treated as a regular wildcard pattern
 		// (e.g., foo** or **bar) and wildmatch will handle it
 		if len(path) == 0 {
-			return false
+			return false, false
 		}
 		if canTraverse {
 			canTraverse = false
@@ -535,12 +552,12 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 					// clearing matched keeps a trailing `**` from reviving
 					// the pattern once the path is exhausted, which would
 					// make `**/bar/**` match directories containing no bar.
-					return false
+					return false, false
 				}
 			}
 		} else {
 			if !wildmatch(pattern, path[0]) {
-				return false
+				return false, false
 			}
 			matched = true
 			path = path[1:]
@@ -554,5 +571,5 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 	if matched && p.dirOnly && !isDir && (len(path) == 0 || trailingStar) {
 		matched = false
 	}
-	return matched
+	return matched, matched && emptyTrailingStar
 }
