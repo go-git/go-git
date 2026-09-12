@@ -104,9 +104,9 @@ func (w *PackWriter) Write(p []byte) (int, error) {
 
 // Close closes all the file descriptors and save the final packfile, if nothing
 // was written, the tempfiles are deleted without writing a packfile.
-func (w *PackWriter) Close() error {
+func (w *PackWriter) Close() (err error) {
 	defer func() {
-		if w.Notify != nil && w.writer != nil && w.writer.Finished() {
+		if err == nil && w.Notify != nil && w.writer != nil && w.writer.Finished() {
 			w.Notify(w.checksum, w.writer)
 		}
 

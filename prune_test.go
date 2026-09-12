@@ -239,18 +239,20 @@ func (s *PruneSuite) TestRepackKeepsObjectsWhenNewPackFailsToPublish() {
 	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/main")))
 
 	publishErr := errors.New("pack publish failure")
-	fs := &packTempFileCloseError{Filesystem: r.Storer.(*filesystem.Storage).Filesystem(), err: publishErr}
+	original := r.Storer.(*filesystem.Storage)
+	s.T().Cleanup(func() { s.Require().NoError(original.Close()) })
+	fs := &packTempFileCloseError{Filesystem: original.Filesystem(), err: publishErr}
 	r.Storer = filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
 
 	err := r.RepackObjects(&RepackConfig{})
 	s.Require().True(fs.injected)
 	s.Require().ErrorIs(err, publishErr)
 
-	// The repacking storage indexes the unsaved pack, so read back through a fresh one.
-	fresh := filesystem.NewStorage(fs.Filesystem, cache.NewObjectLRUDefault())
-	s.Require().NoError(fresh.HasEncodedObject(commit))
-	s.Require().NoError(fresh.HasEncodedObject(tree))
-	packs, err := fresh.ObjectPacks()
+	_, err = r.CommitObject(commit)
+	s.Require().NoError(err)
+	_, err = r.TreeObject(tree)
+	s.Require().NoError(err)
+	packs, err := r.Storer.(storer.PackedObjectStorer).ObjectPacks()
 	s.Require().NoError(err)
 	s.Require().Empty(packs)
 }
