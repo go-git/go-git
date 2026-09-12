@@ -211,3 +211,46 @@ func TestPatchDeltaAcceptsEmptyTarget(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, out)
 }
+
+// TestReaderFromDeltaBackwardCopy asserts that the streaming applier
+// produces the same output as the slice-based PatchDelta when a delta
+// copies backward into the base (an earlier offset than a preceding
+// copy) and then forward again. Copy offsets are absolute into the base
+// and may appear in any order, so ReaderFromDelta rewinds the base
+// reader when it needs to go backward; it must also reset its position
+// cursor, otherwise a later forward copy reads the wrong region of the
+// base and the reconstructed object is silently corrupted.
+func TestReaderFromDeltaBackwardCopy(t *testing.T) {
+	t.Parallel()
+
+	src := make([]byte, 64)
+	for i := range src {
+		src[i] = byte(i)
+	}
+
+	// copy [40,50) -> advances the reader to 50
+	// copy [0,10)  -> backward, rewinds the reader to 0
+	// copy [60,64) -> forward again to an offset past the earlier one
+	delta := buildDelta(len(src), 24,
+		encodeCopyOperation(40, 10),
+		encodeCopyOperation(0, 10),
+		encodeCopyOperation(60, 4),
+	)
+
+	want, err := PatchDelta(src, delta)
+	require.NoError(t, err)
+
+	base := &plumbing.MemoryObject{}
+	_, err = base.Write(src)
+	require.NoError(t, err)
+
+	rc, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(delta)))
+	require.NoError(t, err)
+
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
+
+	assert.Equal(t, want, got,
+		"ReaderFromDelta must match PatchDelta for a backward-then-forward copy")
+}
