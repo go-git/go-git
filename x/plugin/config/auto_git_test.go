@@ -303,8 +303,43 @@ func TestGitBehaviour_UnsupportedScope(t *testing.T) {
 	t.Parallel()
 	src := NewAuto(WithFilesystem(memfs.New()))
 
-	_, err := src.Load(config.LocalScope)
+	_, err := src.LoadFor(config.Scope(42), config.IncludeContext{})
 	require.Error(t, err)
+}
+
+// The local scope resolves to <gitdir>/config for the repository named
+// by the context, so callers no longer have to special-case it.
+func TestGitBehaviour_LocalScope(t *testing.T) {
+	t.Parallel()
+
+	gitDir := filepath.Join(testHome, "repo", ".git")
+	fs := memfs.New()
+	require.NoError(t, util.WriteFile(fs,
+		filepath.Join(gitDir, "config"), []byte("[user]\n\tname = LocalUser\n"), 0o644))
+
+	src := NewAuto(WithFilesystem(fs))
+
+	storer, err := src.LoadFor(config.LocalScope, config.IncludeContext{GitDir: gitDir})
+	require.NoError(t, err)
+
+	cfg, err := storer.Config()
+	require.NoError(t, err)
+	assert.Equal(t, "LocalUser", cfg.User.Name)
+}
+
+// A repository with no config file of its own is empty, not an error.
+func TestGitBehaviour_LocalScopeMissingFile(t *testing.T) {
+	t.Parallel()
+
+	gitDir := filepath.Join(testHome, "repo", ".git")
+	src := NewAuto(WithFilesystem(memfs.New()))
+
+	storer, err := src.LoadFor(config.LocalScope, config.IncludeContext{GitDir: gitDir})
+	require.NoError(t, err)
+
+	cfg, err := storer.Config()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.User.Name)
 }
 
 // setTestHome sets HOME (and USERPROFILE on Windows) so that

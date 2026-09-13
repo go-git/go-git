@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+
+	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -69,6 +72,68 @@ func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 	merged := config.Merge(cfg, wcfg)
 
 	return &merged, nil
+}
+
+// ConfigWithIncludes returns the repository configuration with
+// [include] and [includeIf] directives resolved against ctx, so that an
+// included file's options land where its directive appears.
+//
+// It is kept separate from Config because SetConfig writes back what
+// Config returns; inlining included options there would copy them into
+// the repository's own config file.
+func (c *ConfigStorage) ConfigWithIncludes(ctx config.IncludeContext) (conf *config.Config, err error) {
+	base, err := c.readConfigWithIncludes(ctx, c.dir.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	if !base.Extensions.WorktreeConfig {
+		return base, nil
+	}
+
+	wcfg, err := c.readConfigWithIncludes(ctx, c.dir.ConfigWorktree)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return base, nil
+		}
+		return nil, fmt.Errorf("read worktree config: %w", err)
+	}
+
+	merged := config.Merge(base, wcfg)
+
+	return &merged, nil
+}
+
+// readConfigWithIncludes reads one config file through open, resolving
+// its includes. A missing file yields an empty config, matching Config.
+func (c *ConfigStorage) readConfigWithIncludes(
+	ctx config.IncludeContext,
+	open func() (billy.File, error),
+) (conf *config.Config, err error) {
+	f, err := open()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return config.NewConfig(), nil
+		}
+		return nil, err
+	}
+	defer ioutil.CheckClose(f, &err)
+
+	fs := c.dir.Fs()
+
+	// Relative includes resolve against the directory of the including
+	// file, so the path has to be absolute on the host filesystem.
+	path := f.Name()
+	if !filepath.IsAbs(path) {
+		path = fs.Join(fs.Root(), path)
+	}
+
+	cfg, err := config.ReadConfigWithIncludes(f, ctx.FormatOptions(path))
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // SetConfig saves the repository configuration.
