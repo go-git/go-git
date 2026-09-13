@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"path"
@@ -43,7 +42,7 @@ func (s *dumbPackSession) fetchDumb(ctx context.Context, st storage.Storer, req 
 
 	repoFs := fsi.Filesystem()
 	r := newFetchWalker(ctx, s, st, repoFs)
-	if err := r.process(); err != nil {
+	if err := r.process(req.Wants); err != nil {
 		return err
 	}
 
@@ -106,6 +105,14 @@ func (r *fetchWalker) httpGet(urlPath string) (*http.Response, error) {
 
 func (r *fetchWalker) getInfoPacks() ([]string, error) {
 	res, err := r.httpGet("objects/info/packs")
+	if errors.Is(err, transport.ErrRepositoryNotFound) {
+		// A repository whose objects are all loose has no objects/info/packs
+		// to serve, and the dumb protocol treats its absence as "no packs".
+		// The 404 is ordinary control flow here, the same way fetchObject
+		// reads it for a loose object, so a repository that is otherwise
+		// fetchable must not be refused as missing outright.
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +195,7 @@ func (r *fetchWalker) getHead() (ref *plumbing.Reference, err error) {
 	return plumbing.NewHashReference(plumbing.HEAD, plumbing.NewHash(line)), nil
 }
 
-func (r *fetchWalker) process() error {
+func (r *fetchWalker) process(wants []plumbing.Hash) error {
 	var head plumbing.Hash
 	if headRef, err := r.refs.Head(); err != nil {
 		h, err := r.getHead()
@@ -228,7 +235,9 @@ func (r *fetchWalker) process() error {
 		}
 
 		packIdx := path.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", h))
-		if _, err := r.fs.Stat(packIdx); errors.Is(err, fs.ErrExist) {
+		// Stat returns nil when the index is already on disk; the walk only has
+		// to fetch the ones it does not hold.
+		if _, err := r.fs.Stat(packIdx); err == nil {
 			r.packIdx[ph] = packIdx
 		} else {
 			if err := r.downloadFile(packIdx); err != nil {
@@ -238,20 +247,42 @@ func (r *fetchWalker) process() error {
 		}
 	}
 
-	r.queue = append(r.queue, head)
+	// Only enqueue head if the walk does not already hold it, the same way the
+	// references below are treated. head used to be appended unconditionally -
+	// and twice - so a fetch whose head was already present walked it anyway
+	// and aborted on the zero-value object that came back.
+	if r.st.HasEncodedObject(head) != nil {
+		r.queue = append(r.queue, head)
+	}
+
+	// The caller's wants reach the walk too. The dumb protocol has no
+	// capability negotiation, so a want that no advertised reference points at
+	// would otherwise be ignored, and a fetch for an object the server cannot
+	// serve would report success having fetched nothing.
+	for _, want := range wants {
+		if r.st.HasEncodedObject(want) != nil {
+			r.queue = append(r.queue, want)
+		}
+	}
+
 	for _, ref := range r.refs.References {
 		if r.st.HasEncodedObject(ref.Hash()) != nil {
 			r.queue = append(r.queue, ref.Hash())
 		}
 	}
 
-	r.queue = append(r.queue, head)
 	return nil
 }
 
+// errObjectAlreadyPresent reports that the walk already holds the object, so
+// there is nothing to download and no decoded object to hand back. It is
+// control flow rather than a failure: fetch marks the object processed and
+// moves on.
+var errObjectAlreadyPresent = errors.New("object already present")
+
 func (r *fetchWalker) fetchObject(objHash plumbing.Hash, obj plumbing.EncodedObject) (err error) {
 	if r.st.HasEncodedObject(objHash) == nil {
-		return nil
+		return errObjectAlreadyPresent
 	}
 
 	h := objHash.String()
@@ -327,6 +358,13 @@ LOOP:
 
 		obj := r.st.NewEncodedObject()
 		err := r.fetchObject(objHash, obj)
+		if errors.Is(err, errObjectAlreadyPresent) {
+			// Nothing to download, and no decoded object to descend through:
+			// a fetch never walks into objects it already holds, exactly as it
+			// never enqueues the references that point at them.
+			processed[objHash.String()] = struct{}{}
+			continue
+		}
 		if errors.Is(err, io.EOF) {
 			for packHash, packIdxPath := range r.packIdx {
 				idxFile, err := r.fs.Open(packIdxPath)
@@ -356,7 +394,7 @@ LOOP:
 						continue LOOP
 					}
 
-					if _, err := r.fs.Stat(packPath); errors.Is(err, fs.ErrExist) {
+					if _, err := r.fs.Stat(packPath); err == nil {
 						packs[packPath] = struct{}{}
 						continue LOOP
 					}
