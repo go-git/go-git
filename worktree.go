@@ -16,7 +16,6 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
-	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
@@ -898,14 +897,9 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 
 		isSubmodule = e.Mode == filemode.Submodule
 	case merkletrie.Delete:
-		// checkoutChange.Delete is only reached from resetWorktree's
-		// filesystem-vs-index merkletrie diff (resetWorktreeToTree's
-		// tree-derived deletes call rmFileAndDirsIfEmpty directly).
-		// The path source is therefore the local worktree filesystem,
-		// where the tolerant worktreeFilesystem wrapper is the right
-		// fit: we want to be able to clean up legitimately-tracked
-		// shapes like "submodule/.git" rather than abort the whole
-		// reset on a single weird untracked file.
+		// These names come from the filesystem-vs-index diff. Apply the
+		// configured worktree gate. Tree-derived deletes use the same
+		// helper in resetWorktreeToTree.
 		return rmFileAndDirsIfEmpty(fs, ch.From.String())
 	}
 
@@ -1550,18 +1544,46 @@ func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]G
 	return grepResults, nil
 }
 
-// will walk up the directory tree removing all encountered empty
-// directories, not just the one containing this file
+// rmFileAndDirsIfEmpty removes name and its empty parent directories.
+// It preserves nonempty directories and ignores removal errors for directories
+// that remain in place. This keeps submodule worktrees and untracked files
+// when a reset removes their index entries.
+//
+// Removal is not recursive. Billy filesystems have no shared directory-not-empty
+// error, so directories are checked before removal and again if removal fails.
+// Where Git warns about a failed directory removal and continues, this returns nil.
+//
+// Paths rejected by the worktree filesystem because of a leading symlink are
+// left untouched, as in Git's [unlink_entry]. The symlink error stops parent
+// cleanup too, so the blocking symlink is preserved.
+//
+// [unlink_entry]: https://github.com/git/git/blob/v2.54.0/entry.c
 func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
-	if err := util.RemoveAll(fs, name); err != nil {
-		return err
+	if nonemptyDir(fs, name) {
+		return nil
+	}
+
+	if err := fs.Remove(name); err != nil {
+		if errors.Is(err, errLeadingSymlink) {
+			return nil
+		}
+
+		if !os.IsNotExist(err) && !isDir(fs, name) {
+			return err
+		}
 	}
 
 	dir := filepath.Dir(name)
 	for dir != "." && dir != "" {
 		removed, err := removeDirIfEmpty(fs, dir)
-		if err != nil && !os.IsNotExist(err) {
-			return err
+		if err != nil {
+			if errors.Is(err, errLeadingSymlink) {
+				return nil
+			}
+
+			if !os.IsNotExist(err) && !isDir(fs, dir) {
+				return err
+			}
 		}
 
 		if !removed {
@@ -1577,9 +1599,7 @@ func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
 	return nil
 }
 
-// removeDirIfEmpty will remove the supplied directory `dir` if
-// `dir` is empty
-// returns true if the directory was removed
+// removeDirIfEmpty removes dir if it is empty and reports whether it was removed.
 func removeDirIfEmpty(fs billy.Filesystem, dir string) (bool, error) {
 	files, err := fs.ReadDir(dir)
 	if err != nil {
@@ -1596,6 +1616,31 @@ func removeDirIfEmpty(fs billy.Filesystem, dir string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// isDir reports whether name is a directory. This is what a removal that has
+// already failed asks: a directory it could not take away is one Git would
+// have warned about and carried on from, and its contents are beside the
+// point once the removal has been refused.
+func isDir(fs billy.Filesystem, name string) bool {
+	fi, err := fs.Lstat(name)
+
+	return err == nil && fi.IsDir()
+}
+
+// nonemptyDir reports whether name is a directory with entries in it, the
+// shape rmFileAndDirsIfEmpty keeps without attempting a removal at all.
+//
+// A directory whose entries cannot be read reports false. It reaches the
+// removal, which fails, and isDir keeps it from there.
+func nonemptyDir(fs billy.Filesystem, name string) bool {
+	if !isDir(fs, name) {
+		return false
+	}
+
+	entries, err := fs.ReadDir(name)
+
+	return err == nil && len(entries) > 0
 }
 
 type indexBuilder struct {

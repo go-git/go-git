@@ -962,7 +962,7 @@ func gitConfig(t *testing.T, dir, key, value string) {
 }
 
 // gitAtLeast reports whether the local `git` is at least the given version.
-// Used to skip upstream cherry-pick assertions for protections that older
+// Used to skip upstream assertions for protections that older
 // Git releases (e.g. 2.11) do not implement, such as the git~1 8.3 short
 // name check (CVE-2014-9390 hardening) and the .git::$INDEX_ALLOCATION
 // NTFS Alternate Data Stream check (CVE-2019-1351).

@@ -190,6 +190,9 @@ func (sfs *worktreeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 
 var errUnsupportedOperation = errors.New("unsupported operation")
 
+// errLeadingSymlink indicates that a path has a symlink in a leading component.
+var errLeadingSymlink = errors.New("leading component is a symlink")
+
 // isDotGitVariant reports whether part is .git, git~1, or an HFS+
 // equivalent of .git (when protectHFS is true). NTFS variants of .git
 // (e.g. ".git " with trailing space, ".git::$INDEX_ALLOCATION") are
@@ -297,7 +300,7 @@ func (sfs *worktreeFilesystem) validNoLeadingSymlink(paths ...string) error {
 				continue
 			}
 			if fi.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("invalid path %q: leading component %q is a symlink", p, dir)
+				return fmt.Errorf("invalid path %q: %w: %q", p, errLeadingSymlink, dir)
 			}
 		}
 	}
