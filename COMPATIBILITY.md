@@ -224,3 +224,4 @@ compatibility status with go-git.
 | `gitattributes` |                             | ✅     |                                                |          |
 | `git-worktree`  | `add`, `remove` and `list`  | ⚠️ (partial) | Not all flags nor subcommands are supported.   | - [worktrees](_examples/worktrees/main.go) |
 | `extensions`    | `worktreeConfig`            | ✅           | Per-worktree `config.worktree` files are read and overlaid on the common config when this extension is enabled. Supported only by `storage.filesystem`. |          |
+| `extensions`    | `relativeWorktrees`         | ✅           | Linked worktrees using relative paths can be opened with `storage.filesystem`. |          |

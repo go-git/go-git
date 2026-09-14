@@ -50,6 +50,14 @@ func TestVerifyExtensions(t *testing.T) {
 			wantErr: "unknown extension: unknownext",
 		},
 		{
+			name: "repositoryformatversion=1: rejects filesystem extension in memory",
+			setup: func(_ *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
+				cfg.Raw.Section("extensions").SetOption("relativeWorktrees", "true")
+			},
+			wantErr: "unknown extension: relativeworktrees",
+		},
+		{
 			name: "repositoryformatversion=1: allows known extension",
 			setup: func(_ *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
