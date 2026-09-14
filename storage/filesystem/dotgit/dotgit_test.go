@@ -6,6 +6,7 @@ import (
 	"compress/zlib"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -732,6 +734,61 @@ func (s *SuiteDotGit) TestObjectPackNotFound(c *C) {
 	idx, err := dir.ObjectPackIdx(plumbing.ZeroHash)
 	c.Assert(err, Equals, ErrPackfileNotFound)
 	c.Assert(idx, IsNil)
+}
+
+// renameToLooseNamed renames a "pack-<hash>.<ext>" file to the
+// "loose-<hash>.<ext>" name that Git's loose-objects maintenance task gives a
+// pack it batches from loose objects (see git-maintenance(1)). The pack's
+// content and hash are unchanged; only how it most recently reached the
+// object store differs.
+func renameToLooseNamed(c *C, fs billy.Filesystem, hash, ext string) {
+	oldPath := fs.Join("objects", "pack", fmt.Sprintf("pack-%s.%s", hash, ext))
+	newPath := fs.Join("objects", "pack", fmt.Sprintf("loose-%s.%s", hash, ext))
+	c.Assert(fs.Rename(oldPath, newPath), IsNil)
+}
+
+func (s *SuiteDotGit) TestObjectPacksLooseNamed(c *C) {
+	f := fixtures.Basic().ByTag(".git").One()
+	fs := f.DotGit()
+
+	// Simulate the layout left by `git maintenance run --task=loose-objects`:
+	// the only copy of this pack is named "loose-<hash>", not "pack-<hash>".
+	renameToLooseNamed(c, fs, f.PackfileHash, "pack")
+	renameToLooseNamed(c, fs, f.PackfileHash, "idx")
+
+	dir := New(fs)
+
+	hashes, err := dir.ObjectPacks()
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, 1)
+	c.Assert(hashes[0], Equals, plumbing.NewHash(f.PackfileHash))
+
+	pack, err := dir.ObjectPack(plumbing.NewHash(f.PackfileHash))
+	c.Assert(err, IsNil)
+	c.Assert(filepath.Ext(pack.Name()), Equals, ".pack")
+	c.Assert(pack.Close(), IsNil)
+
+	idx, err := dir.ObjectPackIdx(plumbing.NewHash(f.PackfileHash))
+	c.Assert(err, IsNil)
+	c.Assert(filepath.Ext(idx.Name()), Equals, ".idx")
+	c.Assert(idx.Close(), IsNil)
+}
+
+func (s *SuiteDotGit) TestDeleteOldObjectPackAndIndexLooseNamed(c *C) {
+	f := fixtures.Basic().ByTag(".git").One()
+	fs := f.DotGit()
+
+	renameToLooseNamed(c, fs, f.PackfileHash, "pack")
+	renameToLooseNamed(c, fs, f.PackfileHash, "idx")
+
+	dir := New(fs)
+
+	err := dir.DeleteOldObjectPackAndIndex(plumbing.NewHash(f.PackfileHash), time.Time{})
+	c.Assert(err, IsNil)
+
+	hashes, err := dir.ObjectPacks()
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, 0)
 }
 
 func looseObjectSize(t require.TestingT, content string) int64 {
