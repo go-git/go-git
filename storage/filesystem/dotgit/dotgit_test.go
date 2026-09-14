@@ -903,6 +903,28 @@ func (s *SuiteDotGit) TestObjectPacksExclusive() {
 }
 
 func testObjectPacks(s *SuiteDotGit, fs billy.Filesystem, dir *DotGit, f *fixtures.Fixture) {
+	// A well-named pack without a matching index is not readable and must not
+	// be enumerated.
+	orphan, err := fs.Create("objects/pack/pack-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pack")
+	s.Require().NoError(err)
+	s.Require().NoError(orphan.Close())
+
+	indexWithoutPack, err := fs.Create("objects/pack/pack-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.idx")
+	s.Require().NoError(err)
+	s.Require().NoError(indexWithoutPack.Close())
+
+	for _, base := range []string{
+		"pack-cccc",
+		"pack-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+		"pack-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+	} {
+		for _, ext := range []string{packExt, idxExt} {
+			file, err := fs.Create("objects/pack/" + base + ext)
+			s.Require().NoError(err)
+			s.Require().NoError(file.Close())
+		}
+	}
+
 	hashes, err := dir.ObjectPacks()
 	s.Require().NoError(err)
 	s.Len(hashes, 1)
