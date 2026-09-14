@@ -213,6 +213,34 @@ func TestDumbFetchReportsAWantTheServerCannotServe(t *testing.T) {
 	require.Error(t, err, "a want the server cannot serve must not pass as a successful fetch")
 }
 
+// TestDumbFetchReportsAWantTheServerCannotServeFromAPack is the packed shape of
+// the case above. Every object of this repository is served from a pack rather
+// than loose, so the loose path answers 404 for all of them and the walk has to
+// consult the pack indexes it holds: it opens and decodes the index and
+// downloads the pack for the head it reaches first, then finds no index entry
+// for the want. The want the server cannot serve must still abort the walk
+// rather than pass as a successful fetch: the object is neither loose nor in an
+// index the walk holds, so the walk ends on the zero-value object it did not
+// resolve and reports that as an invalid type.
+func TestDumbFetchReportsAWantTheServerCannotServeFromAPack(t *testing.T) {
+	t.Parallel()
+
+	base, addr := setupDumbServer(t)
+	serverFS := prepareRepo(t, fixtures.Basic().One(), base, "basic.git")
+	serverSt := filesystem.NewStorage(serverFS, nil)
+	t.Cleanup(func() { _ = serverSt.Close() })
+	require.NoError(t, transport.UpdateServerInfo(serverSt, serverFS))
+
+	clientSt := filesystem.NewStorage(memfs.New(), nil)
+	t.Cleanup(func() { _ = clientSt.Close() })
+
+	missing := plumbing.NewHash("1111111111111111111111111111111111111111")
+	err := fetchDumb(t, addr, "basic.git", clientSt,
+		&transport.FetchRequest{Wants: []plumbing.Hash{missing}})
+	require.ErrorIs(t, err, plumbing.ErrInvalidType,
+		"a want the server cannot serve must abort the walk, not pass as a successful fetch")
+}
+
 // writeLooseRepository writes a small bare repository whose objects are all
 // loose, so a walk into it has no pack to fall back on, and leaves it with the
 // objects/info/packs that transport.UpdateServerInfo generates. It returns the

@@ -381,8 +381,9 @@ LOOP:
 
 				idx := idxfile.NewMemoryIndex(packHash.Size())
 				d := idxfile.NewDecoder(idxFile, hasher)
-				if err := d.Decode(idx); err != nil {
-					_ = idxFile.Close()
+				err = d.Decode(idx)
+				_ = idxFile.Close()
+				if err != nil {
 					return fmt.Errorf("error decoding index file: %w", err)
 				}
 
