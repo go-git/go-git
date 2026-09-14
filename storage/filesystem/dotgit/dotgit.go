@@ -49,7 +49,19 @@ const (
 	packPrefix = "pack-"
 	packExt    = ".pack"
 	idxExt     = ".idx"
+
+	// loosePackPrefix is the basename prefix Git's loose-objects
+	// maintenance task gives a pack it batches from loose objects,
+	// instead of the usual packPrefix (see git-maintenance(1)). It
+	// names the same kind of pack, keyed by the same content hash;
+	// DotGit recognizes both when discovering and opening packs.
+	loosePackPrefix = "loose-"
 )
+
+// packPrefixes are the on-disk basename prefixes DotGit recognizes for a
+// packfile and its sidecar files, tried in the order a freshly repacked
+// pack is most likely to be found under.
+var packPrefixes = []string{packPrefix, loosePackPrefix}
 
 var (
 	// ErrNotFound is returned by New when the path is not found.
@@ -297,11 +309,22 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 	var packs []plumbing.Hash
 	for _, f := range files {
 		n := f.Name()
-		if !strings.HasSuffix(n, packExt) || !strings.HasPrefix(n, packPrefix) {
+		if !strings.HasSuffix(n, packExt) {
 			continue
 		}
 
-		h := plumbing.NewHash(n[5 : len(n)-5]) // pack-(hash).pack
+		trimmed := strings.TrimSuffix(n, packExt)
+		var hashPart string
+		switch {
+		case strings.HasPrefix(trimmed, packPrefix):
+			hashPart = trimmed[len(packPrefix):]
+		case strings.HasPrefix(trimmed, loosePackPrefix):
+			hashPart = trimmed[len(loosePackPrefix):]
+		default:
+			continue
+		}
+
+		h := plumbing.NewHash(hashPart)
 		if h.IsZero() {
 			// Ignore files with badly-formatted names.
 			continue
@@ -313,7 +336,43 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 }
 
 func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
-	return d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.%s", hash.String(), extension))
+	return d.objectPackPathWithPrefix(packPrefix, hash, extension)
+}
+
+func (d *DotGit) objectPackPathWithPrefix(prefix string, hash plumbing.Hash, extension string) string {
+	return d.fs.Join(objectsPath, packPath, fmt.Sprintf("%s%s.%s", prefix, hash.String(), extension))
+}
+
+// openPack opens the physical file for a packfile or its index, trying
+// each recognized prefix (see packPrefixes) in turn.
+func (d *DotGit) openPack(hash plumbing.Hash, extension string) (billy.File, error) {
+	for _, prefix := range packPrefixes {
+		f, err := d.fs.Open(d.objectPackPathWithPrefix(prefix, hash, extension))
+		if err == nil {
+			return f, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+
+	return nil, ErrPackfileNotFound
+}
+
+// packPrefixFor returns the recognized prefix (see packPrefixes) under
+// which hash's packfile physically exists on disk.
+func (d *DotGit) packPrefixFor(hash plumbing.Hash) (string, error) {
+	for _, prefix := range packPrefixes {
+		_, err := d.fs.Stat(d.objectPackPathWithPrefix(prefix, hash, `pack`))
+		if err == nil {
+			return prefix, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+
+	return "", ErrPackfileNotFound
 }
 
 func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
@@ -333,13 +392,8 @@ func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.Fil
 		return nil, err
 	}
 
-	path := d.objectPackPath(hash, extension)
-	pack, err := d.fs.Open(path)
+	pack, err := d.openPack(hash, extension)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrPackfileNotFound
-		}
-
 		return nil, err
 	}
 
@@ -373,7 +427,12 @@ func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
 func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) error {
 	d.cleanPackList()
 
-	path := d.objectPackPath(hash, `pack`)
+	prefix, err := d.packPrefixFor(hash)
+	if err != nil {
+		return err
+	}
+
+	path := d.objectPackPathWithPrefix(prefix, hash, `pack`)
 	if !t.IsZero() {
 		fi, err := d.fs.Stat(path)
 		if err != nil {
@@ -384,11 +443,10 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 			return nil
 		}
 	}
-	err := d.fs.Remove(path)
-	if err != nil {
+	if err := d.fs.Remove(path); err != nil {
 		return err
 	}
-	return d.fs.Remove(d.objectPackPath(hash, `idx`))
+	return d.fs.Remove(d.objectPackPathWithPrefix(prefix, hash, `idx`))
 }
 
 // NewObject return a writer for a new object file.
