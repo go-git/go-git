@@ -195,6 +195,10 @@ func FuzzInfoRefsDecode(f *testing.F) {
 	f.Add([]byte("deadbeef\trefs/heads/main\n"))
 	// Markup whose indentation puts hex-looking text before a tab.
 	f.Add([]byte("<html>\n\tabcdef\tSign in\n</html>\n"))
+	// A line ending in more carriage returns than a scanner drops, which is
+	// how a body that has been through a CRLF conversion twice arrives.
+	f.Add([]byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\trefs/heads/main\r\r\n"))
+	f.Add([]byte("6ecf0ef2c2dffb796033e5a02219af86ec6584e5\t\r\r"))
 	f.Add([]byte("0000000000000000000000000000000000000000\trefs/heads/main\n"))
 	f.Add([]byte{})
 
@@ -233,6 +237,18 @@ func FuzzInfoRefsDecode(f *testing.F) {
 		if len(round.References) != len(refs.References) {
 			t.Fatalf("round trip changed the reference count: %d then %d",
 				len(refs.References), len(round.References))
+		}
+		// Comparing the count alone would miss a name that survives the round
+		// trip as a different name, which is the shape a line terminator
+		// dropped one at a time takes.
+		for i, ref := range refs.References {
+			if got := round.References[i].Name(); got != ref.Name() {
+				t.Fatalf("round trip changed reference %d from %q to %q",
+					i, ref.Name(), got)
+			}
+			if got := round.References[i].Hash(); got != ref.Hash() {
+				t.Fatalf("round trip changed the hash of %q", ref.Name())
+			}
 		}
 	})
 }
