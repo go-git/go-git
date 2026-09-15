@@ -2,14 +2,20 @@ package packp
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"log"
+	"os"
 	"strings"
 	"testing"
 	"testing/iotest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 const (
@@ -96,9 +102,14 @@ func TestInfoRefsDecode(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty reference name",
-			input:   sha1Head + "\t\n",
-			wantErr: true,
+			// The empty string is not a valid reference name, so a line with
+			// no name is skipped like any other the decoder cannot use. It
+			// sits one carriage return from "name is only carriage returns"
+			// and trims to the same string as "peel suffix with no name", and
+			// all three take the same exit.
+			name:     "empty reference name",
+			input:    sha1Head + "\t\n",
+			wantRefs: nil,
 		},
 		{
 			// The case that motivated this: markup whose indentation happens to
@@ -119,6 +130,85 @@ func TestInfoRefsDecode(t *testing.T) {
 			name:    "junk line before a valid one",
 			input:   "<!-- injected -->\n" + sha1Head + "\trefs/heads/master\n",
 			wantErr: true,
+		},
+		{
+			name:     "line terminated with CRLF",
+			input:    sha1Head + "\trefs/heads/master\r\n",
+			wantRefs: []string{"refs/heads/master"},
+		},
+		{
+			// A body that has been through a CRLF conversion twice. The
+			// scanner drops one carriage return and the other stays in the
+			// name, which the name rule refuses. Losing the reference is what
+			// upstream does with it, and it is what keeps the name from
+			// depending on how many conversions the body has been through.
+			name:     "line terminated with two carriage returns",
+			input:    sha1Head + "\trefs/heads/master\r\r\n",
+			wantRefs: nil,
+		},
+		{
+			name:     "carriage returns at the end of the body",
+			input:    sha1Head + "\trefs/heads/master\r\r",
+			wantRefs: nil,
+		},
+		{
+			// Reduced from an OSS-Fuzz reproducer. The scanner drops one
+			// carriage return and the name is the other, which the name rule
+			// refuses, so the body decodes to nothing rather than to a
+			// reference this package cannot write back.
+			name:     "name is only carriage returns",
+			input:    sha1Head + "\t\r\r",
+			wantRefs: nil,
+		},
+		{
+			// A carriage return inside a name is not at the end of the line,
+			// so the scanner leaves it and the name rule refuses it.
+			name:     "carriage return inside a name",
+			input:    sha1Head + "\trefs/heads/mas\rter\n",
+			wantRefs: nil,
+		},
+		{
+			name:     "name holds a space",
+			input:    sha1Head + "\trefs/heads/ma ster\n",
+			wantRefs: nil,
+		},
+		{
+			name:     "name holds a control byte",
+			input:    sha1Head + "\trefs/heads/mas\x00ter\n",
+			wantRefs: nil,
+		},
+		{
+			// git update-server-info writes names under refs/, and a name of
+			// one component is not a valid reference name.
+			name:     "single level name",
+			input:    sha1Head + "\tmaster\n",
+			wantRefs: nil,
+		},
+		{
+			// The line an unusable name sits on is the only thing dropped.
+			name: "unusable name among usable ones",
+			input: sha1Head + "\trefs/heads/master\n" +
+				sha1Head + "\trefs/heads/ma ster\n" +
+				sha1Head + "\trefs/tags/v1\n",
+			wantRefs: []string{"refs/heads/master", "refs/tags/v1"},
+		},
+		{
+			// A peel suffix is stripped before the name is checked, so the
+			// base has to carry the line on its own.
+			name:     "peeled name with an unusable base",
+			input:    sha1Head + "\trefs/heads/ma ster^{}\n",
+			wantRefs: nil,
+		},
+		{
+			name:     "peel suffix with no name",
+			input:    sha1Head + "\t^{}\n",
+			wantRefs: nil,
+		},
+		{
+			// Only one suffix is stripped, so what is left still holds a "^".
+			name:     "name peeled twice",
+			input:    sha1Head + "\trefs/tags/v1^{}^{}\n",
+			wantRefs: nil,
 		},
 	}
 
@@ -212,4 +302,71 @@ func TestInfoRefsDecodeReadError(t *testing.T) {
 
 	require.ErrorIs(t, err, readErr)
 	assert.NotErrorIs(t, err, ErrInvalidInfoRefs)
+}
+
+func TestInfoRefsDecodeTracesSkippedName(t *testing.T) { //nolint:paralleltest // modifies global trace configuration
+	var logs bytes.Buffer
+	previousTarget := trace.GetTarget()
+	t.Cleanup(func() {
+		trace.SetTarget(previousTarget)
+		trace.SetLogger(log.New(os.Stderr, "", log.Ltime|log.Lmicroseconds|log.Lshortfile))
+	})
+	trace.SetLogger(log.New(&logs, "", 0))
+	trace.SetTarget(trace.General)
+
+	// What a hostile server can put in a name: an escape sequence that would
+	// rewrite the terminal reading the log, and a NUL. %q is what makes them
+	// inert, and it is what the other reference-name traces already use.
+	const hostile = "refs/heads/\x1b[2Jma ster\x00"
+
+	var refs InfoRefs
+	err := refs.Decode(strings.NewReader(
+		sha1Head + "\t" + hostile + "\n" +
+			sha1Head + "\trefs/heads/master\n",
+	))
+
+	require.NoError(t, err, "one unusable name must not fail the advertisement")
+
+	got := logs.String()
+	assert.Contains(t, got, `"refs/heads/\x1b[2Jma ster\x00"`,
+		"the name should be quoted, as every other reference name go-git traces is")
+	assert.Contains(t, got, "line 1", "the trace should locate the skipped line")
+	assert.NotContains(t, got, "\x1b", "no raw escape byte may reach the log")
+	assert.NotContains(t, got, "\x00", "no raw control byte may reach the log")
+
+	names := make([]string, 0, len(refs.References))
+	for _, ref := range refs.References {
+		names = append(names, ref.Name().String())
+	}
+	assert.Equal(t, []string{"refs/heads/master"}, names)
+}
+
+// TestInfoRefsDecodeNamelessLineCostsOneLine pins the continuity the name rule
+// is there to give. A line carrying no usable name arrives in several
+// spellings that sit one carriage return apart, and "^{}" trims to the same
+// empty string as a bare tab. All of them have to leave the advertisement
+// standing and cost their own line, or a body one byte from another decodes to
+// nothing where its neighbour decodes to everything.
+func TestInfoRefsDecodeNamelessLineCostsOneLine(t *testing.T) {
+	t.Parallel()
+
+	for _, nameless := range []string{"", "\r", "\r\r", "^{}", " ", "\t"} {
+		t.Run(fmt.Sprintf("%q", nameless), func(t *testing.T) {
+			t.Parallel()
+
+			var refs InfoRefs
+			err := refs.Decode(strings.NewReader(
+				sha1Head + "\trefs/heads/main\n" +
+					sha1Head + "\t" + nameless + "\n" +
+					sha1Head + "\trefs/heads/other\n",
+			))
+			require.NoError(t, err, "a line with no usable name must not fail the advertisement")
+
+			names := make([]string, 0, len(refs.References))
+			for _, ref := range refs.References {
+				names = append(names, ref.Name().String())
+			}
+			assert.Equal(t, []string{"refs/heads/main", "refs/heads/other"}, names)
+		})
+	}
 }

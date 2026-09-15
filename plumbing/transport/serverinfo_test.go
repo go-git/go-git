@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/repository"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -247,4 +249,66 @@ func (s *ServerInfoSuite) TestWriteInfoRefsSkipsFilesystemSymlinkLoop() {
 	var out bytes.Buffer
 	s.Require().NoError(repository.WriteInfoRefs(&out, broken))
 	s.Equal(hash.String()+"\trefs/heads/main\n", out.String())
+}
+
+// TestWriteInfoRefsDecodes pairs the two ends of the dumb format. WriteInfoRefs
+// emits names it has validated, and the decoder drops a name it cannot use, so
+// a body go-git writes has to survive go-git reading it with nothing lost. The
+// odd names here are ones git's rules allow and a reader might not expect.
+func (s *ServerInfoSuite) TestWriteInfoRefsDecodes() {
+	st := memory.NewStorage()
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	names := []string{
+		"refs/heads/main",
+		"refs/heads/feature/x",
+		"refs/heads/-dash",
+		"refs/heads/\xff",
+		"refs/stash",
+	}
+	for _, name := range names {
+		s.Require().NoError(st.SetReference(
+			plumbing.NewHashReference(plumbing.ReferenceName(name), hash),
+		))
+	}
+
+	// An annotated tag, so the writer emits the peel line too. With only
+	// references in storage object.GetTag fails for every hash and the "^{}"
+	// branch never runs, which would leave the one name the decoder has to
+	// trim before validating out of the round trip this test is here to pin.
+	tag := &object.Tag{
+		Name:       "v1",
+		Message:    "v1\n",
+		TargetType: plumbing.CommitObject,
+		Target:     hash,
+		Tagger: object.Signature{
+			Name:  "go-git",
+			Email: "go-git@example.com",
+			When:  time.Unix(0, 0).UTC(),
+		},
+	}
+	obj := st.NewEncodedObject()
+	s.Require().NoError(tag.Encode(obj))
+	tagHash, err := st.SetEncodedObject(obj)
+	s.Require().NoError(err)
+	s.Require().NoError(st.SetReference(
+		plumbing.NewHashReference("refs/tags/v1", tagHash),
+	))
+
+	var out bytes.Buffer
+	s.Require().NoError(repository.WriteInfoRefs(&out, st))
+	s.Require().Contains(out.String(), "\trefs/tags/v1^{}\n",
+		"the writer must emit a peel line for an annotated tag")
+
+	var refs packp.InfoRefs
+	s.Require().NoError(refs.Decode(bytes.NewReader(out.Bytes())))
+
+	got := make([]string, 0, len(refs.References))
+	for _, ref := range refs.References {
+		got = append(got, ref.Name().String())
+	}
+
+	want := append([]string{}, names...)
+	want = append(want, "refs/tags/v1", "refs/tags/v1^{}")
+	s.ElementsMatch(want, got, "the decoder dropped a name the writer emitted")
 }
