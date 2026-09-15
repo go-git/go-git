@@ -138,7 +138,11 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 			_ = dstWr.CloseWithError(ErrInvalidDelta)
 			return
 		}
-		defer func() { _ = baseRd.Close() }()
+		defer func() {
+			if baseRd != nil {
+				_ = baseRd.Close()
+			}
+		}()
 
 		baseBuf := bufio.NewReader(baseRd)
 		basePos := uint(0)
@@ -182,6 +186,7 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 						return
 					}
 					baseBuf.Reset(baseRd)
+					basePos = 0
 					discard = offset
 				}
 				for discard > math.MaxInt32 {

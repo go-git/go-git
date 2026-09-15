@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,6 +181,22 @@ func TestReaderFromDeltaRejectsOversizedCopies(t *testing.T) {
 		"ReaderFromDelta yielded more bytes than the declared target size")
 }
 
+func TestReaderFromDeltaRepeatedRewinds(t *testing.T) {
+	t.Parallel()
+	base := &plumbing.MemoryObject{}
+	_, err := base.Write([]byte("abcdefghijklmnopqrst"))
+	require.NoError(t, err)
+	delta := buildDelta(20, 5,
+		encodeCopyOperation(10, 1), encodeCopyOperation(0, 1),
+		encodeCopyOperation(13, 1), encodeCopyOperation(2, 1), encodeCopyOperation(18, 1))
+	r, err := ReaderFromDelta(base, bytes.NewReader(delta))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, r.Close()) }()
+	got, err := io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "kancs", string(got))
+}
+
 // TestPatchDeltaRejectsTrailingBytes asserts that a delta whose
 // operations exactly fill the declared target size but is followed by
 // extra bytes is rejected, matching upstream's `data != top` post-loop
@@ -210,4 +227,33 @@ func TestPatchDeltaAcceptsEmptyTarget(t *testing.T) {
 	out, err := PatchDelta(src, delta)
 	assert.NoError(t, err)
 	assert.Empty(t, out)
+}
+
+func TestReaderFromDeltaFailedReopen(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		base := &plumbing.MemoryObject{}
+		_, err := base.Write([]byte("abc"))
+		require.NoError(t, err)
+		delta := buildDelta(3, 2, encodeCopyOperation(2, 1), encodeCopyOperation(0, 1))
+		r, err := ReaderFromDelta(&reopenFailureObject{EncodedObject: base}, bytes.NewReader(delta))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, r.Close()) }()
+		got, err := io.ReadAll(r)
+		require.ErrorIs(t, err, ErrInvalidDelta)
+		assert.Equal(t, "c", string(got))
+	})
+}
+
+type reopenFailureObject struct {
+	plumbing.EncodedObject
+	opened bool
+}
+
+func (o *reopenFailureObject) Reader() (io.ReadCloser, error) {
+	if o.opened {
+		return nil, io.ErrClosedPipe
+	}
+	o.opened = true
+	return o.EncodedObject.Reader()
 }
