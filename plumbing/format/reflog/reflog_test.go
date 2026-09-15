@@ -257,6 +257,35 @@ func TestDecodeInvalidNewHash(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid new hash")
 }
 
+func TestDecodeErrorStaysBounded(t *testing.T) {
+	t.Parallel()
+
+	// Every field a malformed entry can stretch reaches an error message, so
+	// each one is checked.
+	const field = 1 << 20
+	hash := strings.Repeat("a", 40)
+
+	for _, tc := range []struct {
+		name string
+		line string
+	}{
+		{"old hash", strings.Repeat("z", field) + " " + hash + " A <a@b.com> 1 +0000\n"},
+		{"new hash", hash + " " + strings.Repeat("z", field) + " A <a@b.com> 1 +0000\n"},
+		{"timestamp", hash + " " + hash + " A <a@b.com> " + strings.Repeat("z", field) + "\n"},
+		{"seconds", hash + " " + hash + " A <a@b.com> " + strings.Repeat("9", field) + " +0000\n"},
+		{"timezone", hash + " " + hash + " A <a@b.com> 1 " + strings.Repeat("z", field) + "\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Decode(strings.NewReader(tc.line))
+			require.Error(t, err)
+			assert.Less(t, len(err.Error()), 1024,
+				"error repeats an unbounded amount of the entry back")
+		})
+	}
+}
+
 func TestDecodeTimestampExtraFields(t *testing.T) {
 	t.Parallel()
 
