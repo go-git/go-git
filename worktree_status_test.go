@@ -269,6 +269,13 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 			"foo/bar/baz.txt": "x\n",
 			"foo/other.txt":   "x\n",
 		},
+	}, {
+		name: "contents wildcard permits direct child re-inclusion",
+		files: map[string]string{
+			".gitignore":                        "volumes/functions/**\n!volumes/functions/deno.json*\n",
+			"volumes/functions/deno.jsonsample": "x\n",
+			"volumes/functions/otro.txt":        "x\n",
+		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

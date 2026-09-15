@@ -25,11 +25,26 @@ type matcher struct {
 }
 
 func (m *matcher) Match(path []string, isDir bool) bool {
+	excluded, _ := m.matchForTraversal(path, isDir)
+	return excluded
+}
+
+func (m *matcher) matchForTraversal(path []string, isDir bool) (bool, bool) {
 	n := len(m.patterns)
 	for i := n - 1; i >= 0; i-- {
-		if match := m.patterns[i].Match(path, isDir); match > NoMatch {
-			return match == Exclude
+		var match MatchResult
+		var canPrune bool
+		if p, ok := m.patterns[i].(*pattern); ok {
+			match, canPrune = p.matchForTraversal(path, isDir)
+		} else {
+			match = m.patterns[i].Match(path, isDir)
+			// Preserve the historical treatment of custom Pattern
+			// implementations, for which no richer match information exists.
+			canPrune = match == Exclude
+		}
+		if match > NoMatch {
+			return match == Exclude, canPrune
 		}
 	}
-	return false
+	return false, false
 }

@@ -308,7 +308,20 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 		return false
 	}
 	childPath := path.Join(n.path, name)
-	if !n.scope.Match(strings.Split(childPath, "/"), isDir) {
+	childComponents := strings.Split(childPath, "/")
+	var ignored bool
+	if isDir {
+		// Descend with no reader cannot fail; the only possible error comes
+		// from reading a child .gitignore.
+		childScope, err := n.scope.Descend(childComponents, nil)
+		if err != nil {
+			return false
+		}
+		ignored = childScope.Excluded()
+	} else {
+		ignored = n.scope.Match(childComponents, false)
+	}
+	if !ignored {
 		return false
 	}
 	// An entry whose own path is in the index is tracked, regardless of
