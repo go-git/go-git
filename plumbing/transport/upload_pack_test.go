@@ -78,6 +78,38 @@ func (s *UploadPackServeSuite) TestUploadPackAlwaysUseSidebandWhenAvailable() {
 	s.Equal(expected, buf.String()[:len(expected)])
 }
 
+func (s *UploadPackServeSuite) TestUploadPackRejectsUnadvertisedWant() {
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	s.Require().NoError(err)
+	c, err := object.GetCommit(st, head.Hash())
+	s.Require().NoError(err)
+	s.Require().NotEmpty(c.ParentHashes, "HEAD must have a parent for this test")
+
+	// An ancestor of an advertised tip is in the object store but was never
+	// advertised, so it is not a valid want.
+	upreq := &packp.UploadRequest{}
+	upreq.Wants = append(upreq.Wants, c.ParentHashes[0])
+
+	var uphav packp.UploadHaves
+	uphav.Done = true
+
+	var reqW bytes.Buffer
+	s.Require().NoError(upreq.Encode(&reqW))
+	s.Require().NoError(uphav.Encode(&reqW))
+
+	var out bytes.Buffer
+	err = UploadPack(context.TODO(), st, io.NopCloser(&reqW), ioutil.WriteNopCloser(&out),
+		&UploadPackRequest{GitProtocol: "version=1", StatelessRPC: true})
+
+	s.Require().ErrorIs(err, ErrNotOurRef)
+	s.NotContains(out.String(), "PACK")
+}
+
 func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
