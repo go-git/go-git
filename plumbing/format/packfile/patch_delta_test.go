@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 )
 
@@ -178,6 +179,75 @@ func TestReaderFromDeltaRejectsOversizedCopies(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidDelta)
 	assert.LessOrEqual(t, len(out), 64,
 		"ReaderFromDelta yielded more bytes than the declared target size")
+}
+
+// TestPatchDeltaRejectsShortCopies asserts that a copy operation which
+// claims more bytes than its source can supply is rejected rather than
+// silently producing a result shorter than the declared target size.
+// patchDelta already enforces this for copy-from-delta; the streaming
+// appliers hand the copy to io.Copy, which reports a short source as a
+// clean EOF, so the copied count has to be compared against the claim.
+// Mirrors upstream's `data + cmd > top` bail in patch-delta.c.
+func TestPatchDeltaRejectsShortCopies(t *testing.T) {
+	t.Parallel()
+
+	src := bytes.Repeat([]byte("A"), 16)
+	// One copy-from-delta op claiming 32 bytes but carrying only 8. The
+	// delta ends there, so the "all delta bytes consumed" post-loop check
+	// is satisfied and only the short copy itself signals the problem.
+	shortInsert := buildDelta(16, 32,
+		append([]byte{32}, bytes.Repeat([]byte{'x'}, 8)...),
+	)
+
+	t.Run("patchDeltaWriter copy-from-delta", func(t *testing.T) {
+		t.Parallel()
+
+		var out bytes.Buffer
+		_, _, err := patchDeltaWriter(&out, bytes.NewReader(src),
+			bytes.NewReader(shortInsert), plumbing.BlobObject, nil, format.SHA1)
+		assert.ErrorIs(t, err, ErrInvalidDelta)
+	})
+
+	t.Run("ReaderFromDelta copy-from-delta", func(t *testing.T) {
+		t.Parallel()
+
+		base := &plumbing.MemoryObject{}
+		_, _ = base.Write(src)
+
+		rc, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(shortInsert)))
+		require.NoError(t, err)
+		_, err = io.ReadAll(rc)
+		assert.ErrorIs(t, err, ErrInvalidDelta)
+	})
+
+	t.Run("ReaderFromDelta copy-from-src", func(t *testing.T) {
+		t.Parallel()
+
+		// A base object whose declared size exceeds what its reader
+		// yields: the copy-from-src op is within the declared size but
+		// runs out of base bytes part way through.
+		base := &shortMemoryObject{declared: 64, content: src}
+		delta := buildDelta(64, 64, encodeCopyOperation(0, 64))
+
+		rc, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(delta)))
+		require.NoError(t, err)
+		_, err = io.ReadAll(rc)
+		assert.ErrorIs(t, err, ErrInvalidDelta)
+	})
+}
+
+// shortMemoryObject is an EncodedObject whose Size is larger than the
+// content its Reader produces.
+type shortMemoryObject struct {
+	plumbing.EncodedObject
+	declared int64
+	content  []byte
+}
+
+func (o *shortMemoryObject) Size() int64               { return o.declared }
+func (o *shortMemoryObject) Type() plumbing.ObjectType { return plumbing.BlobObject }
+func (o *shortMemoryObject) Reader() (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(o.content)), nil
 }
 
 // TestPatchDeltaRejectsTrailingBytes asserts that a delta whose

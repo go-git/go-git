@@ -202,8 +202,13 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					basePos += uint(n)
 					discard -= uint(n)
 				}
-				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+				n, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz)))
+				if err != nil {
 					_ = dstWr.CloseWithError(err)
+					return
+				}
+				if uint(n) != sz {
+					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
 				remainingTargetSz -= sz
@@ -215,8 +220,13 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+				n, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz)))
+				if err != nil {
 					_ = dstWr.CloseWithError(err)
+					return
+				}
+				if uint(n) != sz {
+					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
 
@@ -406,8 +416,12 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, deltaBuf *bufio.Reader,
 				return 0, plumbing.ZeroHash, err
 			}
 			baselr.N = int64(sz)
-			if _, err := io.CopyBuffer(mw, baselr, buf); err != nil {
+			n, err := io.CopyBuffer(mw, baselr, buf)
+			if err != nil {
 				return 0, plumbing.ZeroHash, err
+			}
+			if uint(n) != sz {
+				return 0, plumbing.ZeroHash, ErrInvalidDelta
 			}
 			remainingTargetSz -= sz
 		case isCopyFromDelta(cmd):
@@ -416,8 +430,12 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, deltaBuf *bufio.Reader,
 				return 0, plumbing.ZeroHash, ErrInvalidDelta
 			}
 			deltalr.N = int64(sz)
-			if _, err := io.CopyBuffer(mw, deltalr, buf); err != nil {
+			n, err := io.CopyBuffer(mw, deltalr, buf)
+			if err != nil {
 				return 0, plumbing.ZeroHash, err
+			}
+			if uint(n) != sz {
+				return 0, plumbing.ZeroHash, ErrInvalidDelta
 			}
 
 			remainingTargetSz -= sz
