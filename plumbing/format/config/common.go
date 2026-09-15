@@ -40,6 +40,14 @@ func (c *Config) Section(name string) *Section {
 		}
 	}
 
+	return c.appendSection(name)
+}
+
+// appendSection adds a section with the given name and returns it. The caller
+// is responsible for having established that no section of that name exists
+// yet, which is why it stays unexported: Section is the entry point that
+// checks.
+func (c *Config) appendSection(name string) *Section {
 	s := &Section{Name: name}
 	c.Sections = append(c.Sections, s)
 	return s
