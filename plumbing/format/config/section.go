@@ -66,6 +66,8 @@ func (s Subsections) GoString() string {
 
 // IsName checks if the name provided is equals to the Section name, case insensitive.
 func (s *Section) IsName(name string) bool {
+	// NOTE: decodeIndex resolves section names by this same rule, using a
+	// map. Keep the two in sync.
 	return strings.EqualFold(s.Name, name)
 }
 
@@ -78,6 +80,13 @@ func (s *Section) Subsection(name string) *Subsection {
 		}
 	}
 
+	return s.appendSubsection(name)
+}
+
+// appendSubsection adds a subsection with the given name and returns it. As
+// with Config.appendSection, the caller is responsible for having established
+// that no subsection of that name exists yet.
+func (s *Section) appendSubsection(name string) *Subsection {
 	ss := &Subsection{Name: name}
 	s.Subsections = append(s.Subsections, ss)
 	return ss
@@ -145,6 +154,8 @@ func (s *Section) RemoveOption(key string) *Section {
 
 // IsName checks if the name of the subsection is exactly the specified name.
 func (s *Subsection) IsName(name string) bool {
+	// NOTE: Unlike Section.IsName, this is case-sensitive, and decodeIndex
+	// keys subsections verbatim to match. Keep the two in sync.
 	return s.Name == name
 }
 
