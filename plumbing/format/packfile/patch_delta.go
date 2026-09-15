@@ -102,31 +102,63 @@ func PatchDelta(src, delta []byte) ([]byte, error) {
 }
 
 // ReaderFromDelta returns a reader that applies a delta to a base object.
+//
+// The delta payload is read in full and its operations checked against
+// the target size the header advertises before any of the target is
+// produced, so that a delta which cannot deliver what it advertises is
+// rejected here rather than through the returned reader; see
+// validateDeltaOps. Only the payload is held. The base is still read
+// through as the operations call for it, which is where the bulk of a
+// delta application's reads are.
 func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadCloser, error) {
-	deltaBuf := bufio.NewReaderSize(deltaRC, 1024)
-	srcSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
-	if err != nil {
-		if err == io.EOF {
-			return nil, ErrInvalidDelta
+	// Pooled rather than io.ReadAll, which doubles its buffer as it
+	// fills and so allocates several times the bytes it ends up
+	// holding. Ownership passes to the goroutine below once it starts,
+	// because the operations read straight out of this buffer; until
+	// then every return path has to hand it back.
+	payload := sync.GetBytesBuffer()
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			sync.PutBytesBuffer(payload)
 		}
+	}()
+
+	if _, err := payload.ReadFrom(deltaRC); err != nil {
+		return nil, err
+	}
+
+	delta := payload.Bytes()
+	if len(delta) < minDeltaSize {
+		return nil, ErrInvalidDelta
+	}
+
+	srcSz, delta, err := decodeDeltaSize(delta)
+	if err != nil {
 		return nil, err
 	}
 	if srcSz != uint(base.Size()) {
 		return nil, ErrInvalidDelta
 	}
 
-	targetSz, err := packutil.DecodeLEB128FromReader(deltaBuf)
+	targetSz, delta, err := decodeDeltaSize(delta)
 	if err != nil {
-		if err == io.EOF {
-			return nil, ErrInvalidDelta
-		}
 		return nil, err
 	}
+
+	if err := validateDeltaOps(delta, srcSz, targetSz); err != nil {
+		return nil, err
+	}
+
 	remainingTargetSz := targetSz
+	deltaBuf := bytes.NewReader(delta)
 
 	dstRd, dstWr := io.Pipe()
 
+	handedOff = true
 	go func() {
+		defer sync.PutBytesBuffer(payload)
+
 		baseRd, err := base.Reader()
 		if err != nil {
 			_ = dstWr.CloseWithError(ErrInvalidDelta)
@@ -196,8 +228,15 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					basePos += uint(n)
 					discard -= uint(n)
 				}
-				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz))); err != nil {
+				n, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(baseBuf, int64(sz)))
+				if err != nil {
 					_ = dstWr.CloseWithError(err)
+					return
+				}
+				// A base that yields fewer bytes than its size reported
+				// would otherwise truncate the target silently.
+				if uint(n) != sz {
+					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
 				remainingTargetSz -= sz
@@ -209,8 +248,15 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
-				if _, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz))); err != nil {
+				n, err := ioutil.CopyBufferPool(dstWr, io.LimitReader(deltaBuf, int64(sz)))
+				if err != nil {
 					_ = dstWr.CloseWithError(err)
+					return
+				}
+				// Mirror patchDelta's length check on the payload: a
+				// short read here would truncate the target silently.
+				if uint(n) != sz {
+					_ = dstWr.CloseWithError(ErrInvalidDelta)
 					return
 				}
 

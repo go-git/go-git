@@ -175,12 +175,59 @@ func TestReaderFromDeltaRejectsOversizedCopies(t *testing.T) {
 		encodeCopyOperation(0, 63),
 	)
 
-	rc, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(delta)))
-	assert.NoError(t, err)
-	out, err := io.ReadAll(rc)
+	_, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(delta)))
 	assert.ErrorIs(t, err, ErrInvalidDelta)
-	assert.LessOrEqual(t, len(out), 64,
-		"ReaderFromDelta yielded more bytes than the declared target size")
+}
+
+// TestReaderFromDeltaRejectsShortCopyFromDelta asserts that a
+// copy-from-delta operation declaring more bytes than the payload holds
+// is rejected. The stream used to end short of the declared target and
+// report success, handing the consumer a truncated object with no error.
+func TestReaderFromDeltaRejectsShortCopyFromDelta(t *testing.T) {
+	t.Parallel()
+
+	base := &plumbing.MemoryObject{}
+
+	// targetSz is 5, and the single operation declares 5 literal bytes
+	// while supplying 2.
+	delta := buildDelta(0, 5, []byte{0x05, 'a', 'b'})
+
+	rc, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(delta)))
+	if err == nil {
+		var out []byte
+		out, err = io.ReadAll(rc)
+		assert.Empty(t, out, "yielded a truncated object")
+	}
+	assert.ErrorIs(t, err, ErrInvalidDelta)
+}
+
+// TestReaderFromDeltaRejectsOversizedTarget asserts that the streaming
+// path rejects a target its operations cannot reach, like patchDelta,
+// rather than producing every byte the operations encode before
+// discovering the shortfall. The operations below expand to
+// opCount*maxCopySize bytes, which a consumer buffering the stream
+// would have to hold.
+func TestReaderFromDeltaRejectsOversizedTarget(t *testing.T) {
+	t.Parallel()
+
+	const (
+		srcSz   = maxCopySize
+		opCount = 1024
+	)
+
+	base := &plumbing.MemoryObject{}
+	_, _ = base.Write(randBytes(srcSz))
+
+	delta := buildDelta(srcSz, math.MaxInt,
+		bytes.Repeat([]byte{maskContinue}, opCount))
+
+	rc, err := ReaderFromDelta(base, io.NopCloser(bytes.NewReader(delta)))
+	var n int64
+	if err == nil {
+		n, err = io.Copy(io.Discard, rc)
+	}
+	assert.ErrorIs(t, err, ErrInvalidDelta)
+	assert.Zero(t, n, "streamed output for a target the operations cannot reach")
 }
 
 // TestPatchDeltaRejectsTrailingBytes asserts that a delta whose
