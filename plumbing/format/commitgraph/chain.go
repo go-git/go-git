@@ -24,18 +24,25 @@ func OpenChainFile(r io.Reader) ([]string, error) {
 	chain := make([]string, 0, 8)
 	for {
 		line, err := bufRd.ReadSlice('\n')
+		// A final hash that is not newline-terminated is returned by
+		// ReadSlice together with io.EOF; process it before breaking so
+		// the last entry of such a chain file is not silently dropped.
+		if len(line) > 0 {
+			if line[len(line)-1] == '\n' {
+				line = line[:len(line)-1]
+			}
+			hashStr := string(line)
+			if !plumbing.IsHash(hashStr) {
+				return nil, ErrMalformedCommitGraphFile
+			}
+			chain = append(chain, hashStr)
+		}
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
 			return nil, err
 		}
-
-		hashStr := string(line[:len(line)-1])
-		if !plumbing.IsHash(hashStr) {
-			return nil, ErrMalformedCommitGraphFile
-		}
-		chain = append(chain, hashStr)
 	}
 	return chain, nil
 }
