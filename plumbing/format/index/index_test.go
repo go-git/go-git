@@ -116,3 +116,27 @@ func TestIndexGlob(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, m, 1)
 }
+
+func TestSkipUnlessMatchesDirectoriesNotStringPrefixes(t *testing.T) {
+	t.Parallel()
+
+	idx := &Index{Entries: []*Entry{
+		{Name: "go/a.txt"},     // inside the cone
+		{Name: "google/b.txt"}, // sibling dir that shares a string prefix
+		{Name: "gopher.go"},    // sibling file that shares a string prefix
+		{Name: "go"},           // exact match (a file named exactly "go")
+	}}
+
+	idx.SkipUnless([]string{"go"})
+
+	assert.False(t, idx.Entries[0].SkipWorktree, "go/a.txt is under the cone and must be checked out")
+	assert.True(t, idx.Entries[1].SkipWorktree, "google/b.txt is a sibling directory, not under go/")
+	assert.True(t, idx.Entries[2].SkipWorktree, "gopher.go is a sibling file, not under go/")
+	assert.False(t, idx.Entries[3].SkipWorktree, "a file named exactly go matches the pattern")
+
+	// A trailing slash on the pattern must not change the match.
+	idx = &Index{Entries: []*Entry{{Name: "go/a.txt"}, {Name: "google/b.txt"}}}
+	idx.SkipUnless([]string{"go/"})
+	assert.False(t, idx.Entries[0].SkipWorktree, "go/a.txt is under the cone regardless of a trailing slash")
+	assert.True(t, idx.Entries[1].SkipWorktree, "google/b.txt is still a sibling directory")
+}
