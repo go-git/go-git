@@ -281,6 +281,72 @@ func TestApplyRedirect(t *testing.T) {
 	}
 }
 
+// A redirect target's path and scheme are read off a Location header, so a
+// refusal that names them is a string whose length the server chose. The cap
+// every other rendered part goes through has to hold on these branches too.
+func TestApplyRedirectBoundsWhatItRenders(t *testing.T) {
+	t.Parallel()
+
+	oversized := strings.Repeat("a", maxRedactedComponent+1)
+
+	tests := []struct {
+		name     string
+		baseURL  string
+		finalURL string
+		wantErr  string
+	}{
+		{
+			name:     "an oversized path in a tail mismatch is replaced whole",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://evil.com/" + oversized,
+			wantErr:  "does not end with",
+		},
+		{
+			name:     "an oversized path in an azure _signin redirect is replaced whole",
+			baseURL:  "https://dev.azure.com/org/project/_git/repo",
+			finalURL: "https://dev.azure.com/" + oversized + "/_signin",
+			wantErr:  "redirect to",
+		},
+		{
+			name:     "an oversized scheme is replaced whole",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: oversized + "://evil.com/repo.git/info/refs",
+			wantErr:  "unsupported scheme",
+		},
+		{
+			// The base half of this message is the caller's URL rather than
+			// the target's, and it is capped with the other half: one
+			// rendering holds one rule.
+			name:     "an oversized scheme on the base is replaced whole",
+			baseURL:  oversized + "://example.com/repo.git",
+			finalURL: "https://example.com/repo.git/info/refs",
+			wantErr:  "changes scheme",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base, err := url.Parse(tt.baseURL)
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("GET", tt.finalURL, nil)
+			require.NoError(t, err)
+
+			_, err = applyRedirect(&http.Response{Request: req}, base)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Contains(t, err.Error(), "TRUNCATED",
+				"an oversized part is replaced whole, like every other rendered part")
+			assert.NotContains(t, err.Error(), oversized,
+				"a refusal must not embed a string whose length the server chose")
+			assert.Less(t, len(err.Error()), maxRedactedComponent,
+				"the message must stay the size of a refusal, not the size of its input")
+		})
+	}
+}
+
 // originRelations enumerates the relation this transport applies to decide
 // whether a credential held for one URL may be supplied for a request to
 // another. It is the whole of that rule: every entry point below is checked
@@ -987,6 +1053,20 @@ func TestRedactedURLBoundsWhatItRenders(t *testing.T) {
 			want: "https://TRUNCATED/repo.git",
 		},
 		{
+			// net/url accepts a scheme of any length as long as its
+			// characters are legal, so a Location can carry one this long.
+			name: "an oversized scheme is replaced whole",
+			in:   &url.URL{Scheme: long, Host: "example.com", Path: "/repo.git"},
+			want: "TRUNCATED://example.com/repo.git",
+		},
+		{
+			// An opaque URL keeps its bytes in Opaque rather than in a path,
+			// and String renders that part verbatim.
+			name: "an oversized opaque part is replaced whole",
+			in:   &url.URL{Scheme: "foo", Opaque: long},
+			want: "foo:TRUNCATED",
+		},
+		{
 			name: "an oversized username is replaced whole",
 			in:   &url.URL{Scheme: "https", Host: "example.com", Path: "/repo.git", User: url.User(long)},
 			want: "https://TRUNCATED@example.com/repo.git",
@@ -1026,7 +1106,7 @@ func TestRedactedURLBoundsAHostileLocation(t *testing.T) {
 
 	huge := strings.Repeat("&", 10<<20)
 	u := &url.URL{
-		Scheme:   "https",
+		Scheme:   strings.Repeat("s", 10<<20),
 		Host:     strings.Repeat("h", 10<<20),
 		Path:     "/" + strings.Repeat("p", 10<<20),
 		RawQuery: huge,
@@ -1037,9 +1117,21 @@ func TestRedactedURLBoundsAHostileLocation(t *testing.T) {
 	got := redactedURL(u)
 	assert.Less(t, len(got), 1<<10,
 		"a 50 MB URL must not become a 50 MB error string")
+	assert.NotContains(t, got, "ss")
 	assert.NotContains(t, got, "hh")
 	assert.NotContains(t, got, "pp")
 	assert.NotContains(t, got, "uu")
+
+	// An opaque URL keeps its bytes in Opaque, and String renders that part
+	// where it would otherwise render the host and path, so it is capped on
+	// its own: one rendering holds one rule, but the part it renders is this
+	// one.
+	opaque := &url.URL{Scheme: "https", Opaque: strings.Repeat("o", 10<<20)}
+
+	gotOpaque := redactedURL(opaque)
+	assert.Less(t, len(gotOpaque), 1<<10,
+		"a 10 MB opaque part must not become a 10 MB error string")
+	assert.NotContains(t, gotOpaque, "oo")
 }
 
 // redactedQuery walks the raw query without materialising an element per

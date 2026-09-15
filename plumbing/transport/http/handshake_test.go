@@ -829,6 +829,16 @@ func TestHandshakeDumbInfoRefs(t *testing.T) {
 			wantNotMsg:  []string{"nope"},
 		},
 		{
+			// The media type is a response header, so its length is the
+			// server's choice too. It is rendered through bounded() like
+			// every other part of a refusal this package builds.
+			name:        "oversized content type is replaced whole",
+			contentType: strings.Repeat("a", maxRedactedComponent+1),
+			body:        "some body\n",
+			wantInMsg:   []string{`content type "TRUNCATED"`},
+			wantNotMsg:  []string{strings.Repeat("a", maxRedactedComponent+1)},
+		},
+		{
 			name:        "plain text is quoted back",
 			contentType: "text/plain",
 			body:        "repository is archived\n",
