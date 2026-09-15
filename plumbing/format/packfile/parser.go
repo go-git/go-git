@@ -459,11 +459,19 @@ func (oh *ObjectHeader) isDeltaOnDisk() bool {
 	return oh.Type.IsDelta() || oh.diskType.IsDelta()
 }
 
-// parentReader returns a [io.ReaderAt] for the decompressed contents
-// of the parent.
-func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
+// parentReader returns a reader over the decompressed contents of the
+// parent, along with how many bytes it holds. The size is reported
+// separately because [io.ReaderAt] does not carry one, and callers
+// sizing work from the parent need the bytes actually available rather
+// than the size its header claims.
+func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, int64, error) {
+	contents := func() (io.ReaderAt, int64, error) {
+		b := parent.content.Bytes()
+		return bytes.NewReader(b), int64(len(b)), nil
+	}
+
 	if parent.content != nil && parent.content.Len() > 0 {
-		return bytes.NewReader(parent.content.Bytes()), nil
+		return contents()
 	}
 
 	// If parent is a Delta object, the inflated object must come
@@ -487,7 +495,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 
 				_, err = ioutil.CopyBufferPool(parent.content, r)
 				if err == nil {
-					return bytes.NewReader(parent.content.Bytes()), nil
+					return contents()
 				}
 			}
 		}
@@ -497,12 +505,12 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 	// content offset, we won't be able to inflate via seeking through
 	// the packfile.
 	if !parent.externalRef && parent.ContentOffset == 0 {
-		return nil, plumbing.ErrObjectNotFound
+		return nil, 0, plumbing.ErrObjectNotFound
 	}
 
 	// Not a seeker data source, so avoid seeking the content.
 	if p.scanner.seeker == nil {
-		return nil, plumbing.ErrObjectNotFound
+		return nil, 0, plumbing.ErrObjectNotFound
 	}
 
 	if parent.content == nil {
@@ -512,17 +520,17 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, error) {
 
 	err := p.scanner.inflateContent(parent.ContentOffset, parent.content, parent.Size)
 	if err != nil {
-		return nil, ErrReferenceDeltaNotFound
+		return nil, 0, ErrReferenceDeltaNotFound
 	}
-	return bytes.NewReader(parent.content.Bytes()), nil
+	return contents()
 }
 
-func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target io.Writer, wh objectHeaderWriter) error {
+func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta *bytes.Buffer, target io.Writer, wh objectHeaderWriter) error {
 	if target == nil {
 		return fmt.Errorf("cannot apply patch against nil target")
 	}
 
-	parentContents, err := p.parentReader(ota.parent)
+	parentContents, parentSz, err := p.parentReader(ota.parent)
 	if err != nil {
 		return err
 	}
@@ -532,10 +540,7 @@ func (p *Parser) applyPatchBaseHeader(ota *ObjectHeader, delta io.Reader, target
 		typ = ota.parent.Type
 	}
 
-	deltaBuf := sync.GetBufioReader(delta)
-	defer sync.PutBufioReader(deltaBuf)
-
-	sz, h, err := patchDeltaWriter(target, parentContents, deltaBuf, typ, wh, p.objectFormat)
+	sz, h, err := patchDeltaWriter(target, parentContents, parentSz, delta.Bytes(), typ, wh, p.objectFormat)
 	if err != nil {
 		return err
 	}
