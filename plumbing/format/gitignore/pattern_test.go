@@ -21,6 +21,18 @@ func (s *PatternSuite) TestSimpleMatch_inclusion() {
 	s.Equal(Include, r)
 }
 
+func (s *PatternSuite) TestSimpleMatch_inclusion_dirOnly_atStart() {
+	p := ParsePattern("!dir/", nil)
+	r := p.Match([]string{"dir"}, true)
+	s.Equal(Include, r)
+}
+
+func (s *PatternSuite) TestSimpleMatch_inclusion_dirOnly_doesNotCascadeToDescendants() {
+	p := ParsePattern("!dir/", nil)
+	r := p.Match([]string{"dir", "sub", "file.txt"}, false)
+	s.Equal(NoMatch, r)
+}
+
 func (s *PatternSuite) TestMatch_domainLonger_mismatch() {
 	p := ParsePattern("value", []string{"head", "middle", "tail"})
 	r := p.Match([]string{"head", "middle"}, false)

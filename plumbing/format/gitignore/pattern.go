@@ -483,7 +483,15 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 		if !wildmatch(p.pattern[0], name) {
 			continue
 		}
-		if p.dirOnly && !isDir && i == len(path)-1 {
+		last := i == len(path)-1
+		if p.dirOnly && p.inclusion && !last {
+			// A dirOnly re-include pattern (e.g. "!dir/") restores only the
+			// directory entry itself, not everything nested inside it, so a
+			// match against an ancestor component must not be treated as a
+			// match for the full descendant path.
+			continue
+		}
+		if p.dirOnly && !isDir && last {
 			return false
 		}
 		return true
