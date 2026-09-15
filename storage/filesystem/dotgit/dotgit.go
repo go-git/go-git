@@ -65,6 +65,13 @@ const (
 	// such absences as legitimate without this marker: fsck reports them as
 	// broken links and gc fails outright.
 	promisorExt = ".promisor"
+
+	// maxHeadRefSize is the largest HEAD accepted by validHeadRef, matching
+	// the buffer in Git's validate_headref.
+	maxHeadRefSize = 255
+
+	// maxCommonDirSize limits allocation when reading a commondir file.
+	maxCommonDirSize = 1 << 20
 )
 
 var (
@@ -96,6 +103,9 @@ var (
 	// resolve outside the modules/ subtree, mirroring canonical Git's
 	// "ignoring suspicious submodule name" defence.
 	ErrModuleNameEscape = errors.New("submodule name escapes modules/ directory")
+	// ErrModuleGitDirNested is wrapped by the error returned by [DotGit.Module]
+	// when a submodule's Git directory is inside another submodule's Git directory.
+	ErrModuleGitDirNested = errors.New("submodule git dir is inside another submodule's git dir")
 	// ErrReferenceNameEscape is returned when a reference name fails the
 	// filesystem storage's name checks. Reads and deletes require a safe path;
 	// writes also require a valid reference name. These errors also wrap
@@ -1730,20 +1740,184 @@ func (d *DotGit) PackRefs() (err error) {
 	return nil
 }
 
-// Module return a billy.Filesystem pointing to the module folder
+// Module returns a filesystem rooted at the named submodule's Git directory.
 //
-// As a defence in depth against submodule name path traversal,
-// refuse names whose joined path leaves the modules/ subtree once
-// cleaned. The config-layer parser also validates submodule names,
-// but Module may be reached from any caller that constructs a
-// Submodule struct programmatically and so bypasses the parser.
+// It returns [ErrModuleNameEscape] if the joined path leaves the modules
+// directory, or an error wrapping [ErrModuleGitDirNested] if a proper prefix
+// of the name identifies another submodule's Git directory. It also returns
+// an error if a prefix's commondir file is empty, unreadable, larger than
+// 1 MiB, or resolves outside the filesystem.
+//
+// Names may contain separators. As in [Git's submodule_name_to_gitdir],
+// nesting is checked on every call, so a name may be refused after a prefix
+// becomes a Git directory. Names without separators require no such check.
+//
+// [Git's submodule_name_to_gitdir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2735
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	p := d.fs.Join(modulePath, name)
 	cleaned := path.Clean(filepath.ToSlash(p))
 	if cleaned != modulePath && !strings.HasPrefix(cleaned, modulePath+"/") {
 		return nil, ErrModuleNameEscape
 	}
+
+	if err := d.checkModuleGitDirNesting(cleaned); err != nil {
+		return nil, err
+	}
+
 	return d.fs.Chroot(p)
+}
+
+// checkModuleGitDirNesting rejects a Git directory nested inside another
+// submodule's Git directory. gitdir must be a cleaned, slash-separated path
+// rooted at modules/.
+//
+// The prefix walk follows [Git's validate_submodule_legacy_git_dir]. For
+// example, "lib/refs/heads" must not use the branch directory of "lib".
+//
+// [Git's validate_submodule_legacy_git_dir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2401-L2444
+func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
+	segments := strings.Split(gitdir, "/")
+	for i := 2; i < len(segments); i++ {
+		prefix := d.fs.Join(segments[:i]...)
+		nested, err := d.isGitDir(prefix)
+		if err != nil {
+			return err
+		}
+		if nested {
+			return fmt.Errorf("%w: %q", ErrModuleGitDirNested, prefix)
+		}
+	}
+
+	return nil
+}
+
+// isGitDir reports whether p has a recognizable HEAD and objects and refs
+// directories. As in [Git's is_git_directory], a commondir file redirects
+// the directory checks. Relative common paths are resolved against p.
+//
+// All paths are resolved within d.fs. Git's environment overrides are not
+// consulted. A commondir file that is not a regular file, or is unreadable,
+// oversized, or unresolvable, returns an error so the caller cannot accept
+// nesting without checking it.
+//
+// [Git's is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416-L454
+func (d *DotGit) isGitDir(p string) (bool, error) {
+	if !d.validHeadRef(d.fs.Join(p, "HEAD")) {
+		return false, nil
+	}
+
+	commonFile := d.fs.Join(p, "commondir")
+	fi, err := d.fs.Stat(commonFile)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return false, fmt.Errorf("read %q: %w", commonFile, err)
+	case !fi.Mode().IsRegular():
+		// Opening a device or a named pipe can block indefinitely, so the
+		// mode is checked before the file is read.
+		return false, fmt.Errorf("submodule common directory file %q is not a regular file", commonFile)
+	default:
+		f, err := d.fs.Open(commonFile)
+		if err != nil {
+			return false, fmt.Errorf("read %q: %w", commonFile, err)
+		}
+		defer func() { _ = f.Close() }()
+
+		b, err := io.ReadAll(io.LimitReader(f, maxCommonDirSize+1))
+		if err != nil {
+			return false, fmt.Errorf("read %q: %w", commonFile, err)
+		}
+		if len(b) == 0 {
+			return false, fmt.Errorf("empty submodule common directory file %q", commonFile)
+		}
+		if len(b) > maxCommonDirSize {
+			return false, fmt.Errorf("submodule common directory file %q exceeds %d bytes", commonFile, maxCommonDirSize)
+		}
+
+		common := strings.TrimRight(string(b), "\r\n")
+		if i := strings.IndexByte(common, 0); i >= 0 {
+			common = common[:i]
+		}
+		absolute := filepath.IsAbs(common)
+		if absolute || path.IsAbs(filepath.ToSlash(common)) {
+			root := d.fs.Root()
+			if absolute && !filepath.IsAbs(root) {
+				root, err = filepath.Abs(root)
+				if err != nil {
+					return false, fmt.Errorf("resolve filesystem root: %w", err)
+				}
+			}
+			common, err = filepath.Rel(root, common)
+			if err != nil {
+				return false, fmt.Errorf("resolve submodule common directory: %w", err)
+			}
+		} else {
+			common = d.fs.Join(p, common)
+		}
+		cleaned := filepath.ToSlash(filepath.Clean(common))
+		if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+			return false, fmt.Errorf("submodule common directory %q is outside the filesystem", common)
+		}
+		p = common
+	}
+
+	for _, dir := range []string{objectsPath, refsPath} {
+		fi, err := d.fs.Stat(d.fs.Join(p, dir))
+		if err != nil || !fi.IsDir() {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// validHeadRef reports whether p has a HEAD format recognized by
+// [Git's validate_headref]: a symlink or symbolic reference into refs/,
+// or a hexadecimal object ID prefix. A path that is not a regular file, or
+// a file larger than 255 bytes, is rejected. Symlink targets are read with
+// the host path separator. It does not resolve the reference or check
+// whether the object exists.
+//
+// [Git's validate_headref]: https://github.com/git/git/blob/v2.54.0/setup.c#L353-L403
+func (d *DotGit) validHeadRef(p string) bool {
+	fi, err := d.fs.Lstat(p)
+	if err != nil {
+		return false
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		// Unlike Git, which compares the target byte for byte, compare the
+		// slash-separated form: billy writes symlink targets with the host
+		// path separator, so a reference is unrecognizable otherwise. The
+		// conversion is a no-op where that separator is a slash.
+		target, err := d.fs.Readlink(p)
+		return err == nil && strings.HasPrefix(filepath.ToSlash(target), refsPath+"/")
+	}
+	// As in Git, a HEAD larger than the read buffer is not a reference.
+	// Anything other than a regular file is not one either, and opening a
+	// device or a named pipe can block indefinitely.
+	if !fi.Mode().IsRegular() || fi.Size() > maxHeadRefSize {
+		return false
+	}
+
+	f, err := d.fs.Open(p)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	b, err := io.ReadAll(io.LimitReader(f, maxHeadRefSize))
+	if err != nil {
+		return false
+	}
+
+	head := string(b)
+	if target, ok := strings.CutPrefix(head, "ref:"); ok {
+		return strings.HasPrefix(strings.TrimLeft(target, " \t\r\n"), refsPath+"/")
+	}
+
+	// Git accepts either hash format and ignores trailing bytes. A SHA-256
+	// prefix also contains a complete SHA-1-sized hexadecimal prefix.
+	return len(head) >= formatcfg.SHA1HexSize && plumbing.IsHash(head[:formatcfg.SHA1HexSize])
 }
 
 // AddAlternate appends an alternate object directory path to the alternates file.
