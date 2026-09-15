@@ -1,7 +1,6 @@
 package packfile
 
 import (
-	"bufio"
 	"bytes"
 	"io"
 	"math"
@@ -198,12 +197,11 @@ func (s *DeltaSuite) TestMaxCopySizeDeltaReader() {
 }
 
 func (s *DeltaSuite) TestPatchDeltaWriterOversizedTargetHeader() {
-	// patchDeltaWriter must bound the preemptive Buffer.Grow at
-	// maxPatchPreemptionSize regardless of the targetSz advertised in
-	// the delta header, matching the behaviour of patchDelta. The
-	// header here encodes targetSz = math.MaxInt64; with the cap in
-	// place the function reaches the command loop, runs out of input,
-	// and returns an error.
+	// patchDeltaWriter must not size its destination from the targetSz
+	// advertised in the delta header, matching the behaviour of
+	// patchDelta. The header here encodes targetSz = math.MaxInt64 and
+	// carries no operations to back it, so the delta is rejected before
+	// any of that target is made available.
 	var hdr bytes.Buffer
 	hdr.WriteByte(0x00) // srcSz = 0
 
@@ -216,10 +214,11 @@ func (s *DeltaSuite) TestPatchDeltaWriterOversizedTargetHeader() {
 
 	var dst bytes.Buffer
 	_, _, err := patchDeltaWriter(
-		&dst, bytes.NewReader(nil), bufio.NewReader(&hdr),
+		&dst, bytes.NewReader(nil), 0, hdr.Bytes(),
 		plumbing.BlobObject, nil, format.SHA1,
 	)
-	s.Error(err)
+	s.ErrorIs(err, ErrInvalidDelta)
+	s.Zero(dst.Cap())
 }
 
 func FuzzPatchDelta(f *testing.F) {
@@ -233,6 +232,10 @@ func FuzzPatchDelta(f *testing.F) {
 	// Two copy-from-src ops with the same shape: cmd=0x90 takes one
 	// size byte and reads from offset 0 of src.
 	f.Add([]byte("AAAAAAAAAA"), []byte("\n\n\x90\a\x90\a"))
+	// A target size no sequence of operations this short can reach.
+	// Header: srcSz=10, targetSz=0xffffffff, followed by copy-from-src
+	// ops that together produce 30 bytes.
+	f.Add([]byte("AAAAAAAAAA"), []byte("\n\xff\xff\xff\xff\x0f\x90\n\x90\n\x90\n"))
 
 	f.Fuzz(func(_ *testing.T, input1, input2 []byte) {
 		PatchDelta(input1, input2)

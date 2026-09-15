@@ -3,12 +3,15 @@ package packfile
 import (
 	"bytes"
 	"io"
+	"math"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 )
 
@@ -210,4 +213,205 @@ func TestPatchDeltaAcceptsEmptyTarget(t *testing.T) {
 	out, err := PatchDelta(src, delta)
 	assert.NoError(t, err)
 	assert.Empty(t, out)
+}
+
+func TestValidateDeltaOps(t *testing.T) {
+	t.Parallel()
+
+	const srcSz = maxCopySize
+
+	tests := []struct {
+		name     string
+		delta    []byte
+		targetSz uint
+		err      error
+	}{
+		{
+			name:     "no operations for an empty target",
+			delta:    nil,
+			targetSz: 0,
+		},
+		{
+			name:     "copy from delta",
+			delta:    insertOp([]byte("abc")),
+			targetSz: 3,
+		},
+		{
+			name:     "copy from source",
+			delta:    encodeCopyOperation(0, 64),
+			targetSz: 64,
+		},
+		{
+			// A copy-from-src command with no size bits set means
+			// maxCopySize, which the source is exactly large enough for.
+			name:     "copy from source with implied size",
+			delta:    []byte{maskContinue},
+			targetSz: maxCopySize,
+		},
+		{
+			name:     "no operations for a non-empty target",
+			delta:    nil,
+			targetSz: 1,
+			err:      ErrInvalidDelta,
+		},
+		{
+			name:     "operations short of the target",
+			delta:    encodeCopyOperation(0, 64),
+			targetSz: 128,
+			err:      ErrInvalidDelta,
+		},
+		{
+			name:     "operations past the target",
+			delta:    append(encodeCopyOperation(0, 64), insertOp([]byte("a"))...),
+			targetSz: 64,
+			err:      ErrInvalidDelta,
+		},
+		{
+			name:     "copy from delta truncated",
+			delta:    []byte{0x03, 'a'},
+			targetSz: 3,
+			err:      ErrInvalidDelta,
+		},
+		{
+			name:     "copy from source past the end",
+			delta:    encodeCopyOperation(srcSz, 1),
+			targetSz: 1,
+			err:      ErrInvalidDelta,
+		},
+		{
+			name:     "reserved command",
+			delta:    []byte{0x00},
+			targetSz: 1,
+			err:      ErrDeltaCmd,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateDeltaOps(tc.delta, srcSz, tc.targetSz)
+			if tc.err != nil {
+				assert.ErrorIs(t, err, tc.err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// TestDeltaRejectsTruncatedHeader asserts that a header size whose last
+// byte still carries the LEB128 continuation bit is rejected, rather
+// than decoded as the partial value it happens to have accumulated.
+//
+// The payload is long enough to satisfy minDeltaSize, so nothing but a
+// termination check stands between it and a delta that reports success.
+func TestDeltaRejectsTruncatedHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		delta []byte
+	}{
+		{
+			name:  "truncated srcSz",
+			delta: []byte{maskContinue, maskContinue},
+		},
+		{
+			// srcSz terminates, then targetSz runs off the end.
+			name:  "truncated targetSz",
+			delta: []byte{0x00, maskContinue},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var dst bytes.Buffer
+			err := patchDelta(&dst, nil, tc.delta)
+			assert.ErrorIs(t, err, ErrInvalidDelta, "patchDelta")
+
+			var out bytes.Buffer
+			_, _, err = patchDeltaWriter(&out, bytes.NewReader(nil), 0, tc.delta,
+				plumbing.BlobObject, nil, format.SHA1)
+			assert.ErrorIs(t, err, ErrInvalidDelta, "patchDeltaWriter")
+		})
+	}
+}
+
+// TestPatchDeltaWriterRejectsShortDelta asserts that a payload too
+// short to hold both header fields is rejected, matching PatchDelta.
+func TestPatchDeltaWriterRejectsShortDelta(t *testing.T) {
+	t.Parallel()
+
+	for _, delta := range [][]byte{nil, {0x00}} {
+		var dst bytes.Buffer
+		_, _, err := patchDeltaWriter(&dst, bytes.NewReader(nil), 0, delta,
+			plumbing.BlobObject, nil, format.SHA1)
+		assert.ErrorIs(t, err, ErrInvalidDelta)
+	}
+}
+
+// allocatedBytes reports the number of bytes f allocates. The counter it
+// reads is process-wide, so callers must not run it in parallel with
+// other tests.
+func allocatedBytes(f func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// TestOversizedTargetDeltaIsRejectedUpFront covers oss-fuzz issue
+// 5764827075903488: a delta that advertises a target size its operations
+// cannot produce must be rejected before any of the target is built, not
+// after the expansion has already been paid for and thrown away.
+//
+// Each operation here is a bare copy-from-src command: a single delta
+// byte that copies maxCopySize bytes out of the source. The operations
+// therefore expand to opCount*maxCopySize bytes before the payload runs
+// out short of the advertised target.
+func TestOversizedTargetDeltaIsRejectedUpFront(t *testing.T) { //nolint:paralleltest // reads a process-wide allocation counter
+	const (
+		srcSz   = maxCopySize
+		opCount = 1024
+
+		// What the operations expand to before the shortfall surfaces.
+		// The bound is two orders of magnitude below that, which leaves
+		// room for incidental allocations while still failing loudly if
+		// the expansion is reintroduced.
+		expansion = opCount * maxCopySize
+		bound     = expansion / 128
+	)
+
+	src := randBytes(srcSz)
+	delta := buildDelta(srcSz, math.MaxInt,
+		bytes.Repeat([]byte{maskContinue}, opCount))
+
+	t.Run("PatchDelta", func(t *testing.T) { //nolint:paralleltest // reads a process-wide allocation counter
+		var err error
+		allocated := allocatedBytes(func() {
+			_, err = PatchDelta(src, delta)
+		})
+
+		assert.ErrorIs(t, err, ErrInvalidDelta)
+		assert.Less(t, allocated, uint64(bound),
+			"delta expanded into memory before being rejected")
+	})
+
+	t.Run("patchDeltaWriter", func(t *testing.T) { //nolint:paralleltest // reads a process-wide allocation counter
+		var err error
+		allocated := allocatedBytes(func() {
+			var dst bytes.Buffer
+			_, _, err = patchDeltaWriter(&dst, bytes.NewReader(src), int64(len(src)), delta,
+				plumbing.BlobObject, nil, format.SHA1)
+		})
+
+		assert.ErrorIs(t, err, ErrInvalidDelta)
+		assert.Less(t, allocated, uint64(bound),
+			"delta expanded into memory before being rejected")
+	})
 }
