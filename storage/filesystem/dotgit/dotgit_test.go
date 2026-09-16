@@ -266,6 +266,26 @@ func (s *SuiteDotGit) TestModuleNestingWithCommonDirOutsideFilesystem() {
 	s.Error(err)
 }
 
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirThroughSymlink() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("symlink creation is privileged on windows")
+	}
+
+	// The containment check reads the commondir text, where nothing
+	// leaves the filesystem. A symlink puts the escape in the path
+	// instead, where only resolving it can find it.
+	outside := s.T().TempDir()
+	s.Require().NoError(New(osfs.New(outside)).Initialize())
+
+	fs := osfs.New(s.T().TempDir())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("link\n"), 0o644))
+	s.Require().NoError(fs.Symlink(outside, "modules/lib/link"))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Error(err)
+}
+
 func (s *SuiteDotGit) TestModuleNestingWithCommonDirReadError() {
 	fs := s.EmptyFS()
 	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
