@@ -1796,6 +1796,48 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 	s.Equal(1, looseCount)
 }
 
+// TestSetRefWithStaleOldLeavesNoLooseRef ensures a rejected compare-and-swap
+// does not leave an empty loose ref behind (go-git#2399). Matches git
+// update-ref, which unlinks the lock file on mismatch and never creates a
+// zero-byte loose ref.
+func (s *SuiteDotGit) TestSetRefWithStaleOldLeavesNoLooseRef() {
+	packedHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+	stale := plumbing.NewReferenceFromStrings("refs/heads/main", "2222222222222222222222222222222222222222")
+	updated := plumbing.NewReferenceFromStrings("refs/heads/main", "3333333333333333333333333333333333333333")
+
+	for _, rw := range []bool{true, false} {
+		for _, packed := range []bool{false, true} {
+			s.Run(fmt.Sprintf("rw=%t/packed=%t", rw, packed), func() {
+				fs := s.EmptyFS()
+				dirFS := billy.Filesystem(fs)
+				if !rw {
+					dirFS = &norwfs{fs}
+				}
+				wantErr := plumbing.ErrReferenceNotFound
+				if packed {
+					s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(packedHash.String()+" refs/heads/main\n"), 0o644))
+					wantErr = storage.ErrReferenceHasChanged
+				}
+				dir := New(dirFS)
+
+				s.ErrorIs(dir.SetRef(updated, stale), wantErr)
+
+				_, err := fs.Stat("refs/heads/main")
+				s.ErrorIs(err, os.ErrNotExist)
+				_, err = dir.Refs()
+				s.NoError(err)
+				ref, err := dir.Ref("refs/heads/main")
+				if packed {
+					s.Require().NoError(err)
+					s.Equal(packedHash, ref.Hash())
+				} else {
+					s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+				}
+			})
+		}
+	}
+}
+
 func TestIssue55(t *testing.T) {
 	t.Parallel()
 
