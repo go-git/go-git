@@ -59,14 +59,20 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 		}
 	}
 
-	// Fallback to loading full commit object
-	commit, err := object.GetCommit(gci.s, hash)
+	// Fallback to loading the commit object
+	obj, err := gci.s.EncodedObject(plumbing.CommitObject, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	commit, err := DecodeCommit(obj)
 	if err != nil {
 		return nil, err
 	}
 
 	return &objectCommitNode{
 		nodeIndex: gci,
+		s:         gci.s,
 		commit:    commit,
 	}, nil
 }
@@ -127,8 +133,13 @@ func (c *graphCommitNode) GenerationV2() uint64 {
 	return c.commitData.GenerationV2
 }
 
-func (c *graphCommitNode) Commit() (*object.Commit, error) {
-	return object.GetCommit(c.gci.s, c.hash)
+func (c *graphCommitNode) Commit() (*Commit, error) {
+	obj, err := c.gci.s.EncodedObject(plumbing.CommitObject, c.hash)
+	if err != nil {
+		return nil, err
+	}
+
+	return DecodeCommit(obj)
 }
 
 func (c *graphCommitNode) String() string {
