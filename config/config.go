@@ -1056,6 +1056,8 @@ func (c *Config) marshalProtocol() {
 	if c.Protocol.Allow != "" {
 		s := c.Raw.Section(protocolSection)
 		s.SetOption(allowKey, c.Protocol.Allow)
+	} else if c.Raw.HasSection(protocolSection) {
+		c.Raw.Section(protocolSection).RemoveOption(allowKey)
 	}
 
 	if len(c.Protocol.AllowByName) > 0 {

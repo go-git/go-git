@@ -1495,3 +1495,66 @@ func TestMarshalProtocol_WritesAllowWithoutExistingSection(t *testing.T) {
 		require.Equal(t, ProtocolNever, got.Protocol.Allow)
 	})
 }
+
+func TestMarshalProtocol_DropsRemovedAllow(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		raw     string
+		version protocol.Version
+		want    string
+	}{
+		{
+			name:    "last key",
+			raw:     "[protocol]\n\tallow = never\n",
+			version: DefaultProtocolVersion,
+		},
+		{
+			name:    "non-default version",
+			raw:     "[protocol]\n\tallow = never\n\tversion = 1\n",
+			version: protocol.V1,
+			want:    "[protocol]\n\tversion = 1\n",
+		},
+		{
+			name:    "stale version",
+			raw:     "[protocol]\n\tallow = never\n\tversion = 1\n",
+			version: DefaultProtocolVersion,
+		},
+		{
+			name:    "unrelated key",
+			raw:     "[protocol]\n\tallow = never\n\tsomething = else\n",
+			version: DefaultProtocolVersion,
+			want:    "[protocol]\n\tsomething = else\n",
+		},
+		{
+			name:    "per-scheme policy",
+			raw:     "[protocol]\n\tallow = never\n[protocol \"file\"]\n\tallow = always\n",
+			version: DefaultProtocolVersion,
+			want:    "[protocol \"file\"]\n\tallow = always\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			require.NoError(t, cfg.Unmarshal([]byte(tt.raw)))
+			cfg.Protocol.Allow = ""
+			cfg.Protocol.Version = tt.version
+
+			buf, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			got := NewConfig()
+			require.NoError(t, got.Unmarshal(buf))
+			require.Empty(t, got.Protocol.Allow)
+			require.Equal(t, tt.version, got.Protocol.Version)
+			require.Equal(t, cfg.Protocol.AllowByName, got.Protocol.AllowByName)
+			if tt.want == "" {
+				require.NotContains(t, string(buf), "[protocol")
+			} else {
+				require.Contains(t, string(buf), tt.want)
+			}
+		})
+	}
+}
