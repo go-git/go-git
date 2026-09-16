@@ -3020,6 +3020,13 @@ func TestResolveModuleURL(t *testing.T) {
 			want:      "git@github.com:user/repo2.git",
 		},
 		{
+			// A userless origin must not grow an `@`, which would make
+			// the rebuilt URL name the host `@github.com`.
+			originURL: "github.com:user/repo1.git",
+			moduleURL: "../repo2.git",
+			want:      "github.com:user/repo2.git",
+		},
+		{
 			// The literal host keeps its brackets, so the rebuilt URL
 			// parses back to the same host and path.
 			originURL: "git@[fe80::1]:user/repo1.git",
