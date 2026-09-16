@@ -1457,3 +1457,41 @@ func TestMarshalProtocol_KeepsUnrelatedSubsectionKeys(t *testing.T) {
 	require.NotContains(t, out, "allow")
 	require.Contains(t, out, "something = else")
 }
+
+// The allow keys must be written even when the raw config has no
+// [protocol] section yet, and even when protocol.version is carrying a
+// non-default value. Both cases used to leave the section early, before
+// the allow keys were ever considered.
+func TestMarshalProtocol_WritesAllowWithoutExistingSection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no section", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Protocol.Allow = ProtocolUser
+		cfg.Protocol.AllowByName = map[string]string{"file": ProtocolAlways}
+
+		buf, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		got := NewConfig()
+		require.NoError(t, got.Unmarshal(buf))
+		require.Equal(t, ProtocolUser, got.Protocol.Allow)
+		require.Equal(t, map[string]string{"file": ProtocolAlways}, got.Protocol.AllowByName)
+	})
+
+	t.Run("non-default version", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Protocol.Version = protocol.V0
+		cfg.Protocol.Allow = ProtocolNever
+
+		buf, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		got := NewConfig()
+		require.NoError(t, got.Unmarshal(buf))
+		require.Equal(t, protocol.V0, got.Protocol.Version)
+		require.Equal(t, ProtocolNever, got.Protocol.Allow)
+	})
+}

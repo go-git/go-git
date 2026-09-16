@@ -1029,18 +1029,12 @@ func (c *Config) marshalProtocol() {
 	if c.Protocol.Version != DefaultProtocolVersion {
 		s := c.Raw.Section(protocolSection)
 		s.SetOption(versionKey, c.Protocol.Version.String())
-		return
+	} else if c.Raw.HasSection(protocolSection) {
+		// The struct holds the default version. Clear any stale
+		// protocol.version left over in the raw config so switching back
+		// to the default persists.
+		c.Raw.Section(protocolSection).RemoveOption(versionKey)
 	}
-
-	// The struct holds the default version. Clear any stale protocol.version
-	// left over in the raw config so switching back to the default persists,
-	// and drop the section if it becomes empty. Guard on HasSection so a
-	// non-default round-trip does not introduce an empty [protocol].
-	if !c.Raw.HasSection(protocolSection) {
-		return
-	}
-	s := c.Raw.Section(protocolSection)
-	s.RemoveOption(versionKey)
 
 	// Likewise clear per-scheme allow entries the struct no longer
 	// holds, so a removed entry does not linger. Unmarshal records every
@@ -1048,16 +1042,15 @@ func (c *Config) marshalProtocol() {
 	// map had its entry dropped programmatically. Only the allow key is
 	// removed, and the subsection only once nothing else is left in it:
 	// unrelated keys under protocol.<name> are not ours to discard.
-	s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
-		if _, keep := c.Protocol.AllowByName[sub.Name]; keep {
-			return false
-		}
-		sub.RemoveOption(allowKey)
-		return len(sub.Options) == 0
-	})
-
-	if len(s.Options) == 0 && len(s.Subsections) == 0 {
-		c.Raw.RemoveSection(protocolSection)
+	if c.Raw.HasSection(protocolSection) {
+		s := c.Raw.Section(protocolSection)
+		s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
+			if _, keep := c.Protocol.AllowByName[sub.Name]; keep {
+				return false
+			}
+			sub.RemoveOption(allowKey)
+			return len(sub.Options) == 0
+		})
 	}
 
 	if c.Protocol.Allow != "" {
@@ -1070,6 +1063,15 @@ func (c *Config) marshalProtocol() {
 		for name, v := range c.Protocol.AllowByName {
 			sub := s.Subsection(name)
 			sub.SetOption(allowKey, v)
+		}
+	}
+
+	// Drop the section once nothing is left in it, so neither a default
+	// round-trip nor a removal leaves an empty [protocol] behind.
+	if c.Raw.HasSection(protocolSection) {
+		s := c.Raw.Section(protocolSection)
+		if len(s.Options) == 0 && len(s.Subsections) == 0 {
+			c.Raw.RemoveSection(protocolSection)
 		}
 	}
 }
