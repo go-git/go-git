@@ -107,9 +107,12 @@ func (s *SuiteDotGit) TestModuleNestingWithHeadFormats() {
 		{name: "symbolic with form feed", head: "ref:\frefs/heads/master\n"},
 		{name: "symbolic with Unicode space", head: "ref:\u00a0refs/heads/master\n"},
 		{name: "symbolic outside refs", head: "ref: HEAD\n"},
-		{name: "symbolic at size limit", head: "ref:" + strings.Repeat(" ", 246) + "refs/", wantErr: ErrModuleGitDirNested},
-		{name: "symbolic beyond size limit", head: "ref:" + strings.Repeat(" ", 247) + "refs/"},
-		{name: "hash beyond size limit", head: sha1 + strings.Repeat(" ", 216)},
+		{name: "symbolic at read limit", head: "ref:" + strings.Repeat(" ", 246) + "refs/", wantErr: ErrModuleGitDirNested},
+		// Truncation at the read limit drops the trailing separator, so Git
+		// does not see a reference into refs/ here either.
+		{name: "symbolic truncated at read limit", head: "ref:" + strings.Repeat(" ", 247) + "refs/"},
+		{name: "symbolic padded past read limit", head: "ref: refs/heads/master\n" + strings.Repeat(" ", 1000), wantErr: ErrModuleGitDirNested},
+		{name: "hash padded past read limit", head: sha1 + strings.Repeat(" ", 216), wantErr: ErrModuleGitDirNested},
 		{name: "SHA-1", head: sha1 + "\n", wantErr: ErrModuleGitDirNested},
 		{name: "SHA-256", head: strings.Repeat("ab", 32) + "\n", wantErr: ErrModuleGitDirNested},
 		{name: "uppercase hash", head: strings.ToUpper(sha1), wantErr: ErrModuleGitDirNested},

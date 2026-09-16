@@ -66,8 +66,7 @@ const (
 	// broken links and gc fails outright.
 	promisorExt = ".promisor"
 
-	// maxHeadRefSize is the largest HEAD accepted by validHeadRef, matching
-	// the buffer in Git's validate_headref.
+	// maxHeadRefSize matches the read limit in Git's validate_headref.
 	maxHeadRefSize = 255
 
 	// maxCommonDirSize limits allocation when reading a commondir file.
@@ -1873,10 +1872,11 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 
 // validHeadRef reports whether p has a HEAD format recognized by
 // [Git's validate_headref]: a symlink or symbolic reference into refs/,
-// or a hexadecimal object ID prefix. A path that is not a regular file, or
-// a file larger than 255 bytes, is rejected. Symlink targets are read with
-// the host path separator. It does not resolve the reference or check
-// whether the object exists.
+// or a hexadecimal object ID prefix. Only the first 255 bytes are examined,
+// as in Git; a longer HEAD is not rejected for its length. A path that is
+// not a regular file is rejected. Symlink targets are read with the host
+// path separator. It does not resolve the reference or check whether the
+// object exists.
 //
 // [Git's validate_headref]: https://github.com/git/git/blob/v2.54.0/setup.c#L353-L403
 func (d *DotGit) validHeadRef(p string) bool {
@@ -1889,10 +1889,10 @@ func (d *DotGit) validHeadRef(p string) bool {
 		target, err := d.fs.Readlink(p)
 		return err == nil && strings.HasPrefix(filepath.ToSlash(target), refsPath+"/")
 	}
-	// As in Git, a HEAD larger than the read buffer is not a reference.
-	// Anything other than a regular file is not one either, and opening a
-	// device or a named pipe can block indefinitely.
-	if !fi.Mode().IsRegular() || fi.Size() > maxHeadRefSize {
+	// Unlike Git, require a regular file: opening a device or a named pipe
+	// can block indefinitely. Size is not a criterion, as the read below is
+	// already bounded the way Git's is.
+	if !fi.Mode().IsRegular() {
 		return false
 	}
 
