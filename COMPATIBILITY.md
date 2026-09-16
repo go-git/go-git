@@ -210,8 +210,29 @@ compatibility status with go-git.
 | `http(s)://` (smart) | ✅           |                                                                        |                                                |
 | `git://`             | ✅           |                                                                        |                                                |
 | `ssh://`             | ✅           |                                                                        |                                                |
-| `file://`            | ✅           |                                                                        |                                                |
+| `file://`            | ✅           | Denied for submodule operations unless allowed, as in git. See [Protocol restrictions](#protocol-restrictions). |                                                |
 | Custom               | ✅           | All existing schemes can be replaced by custom implementations.        | - [custom_http](_examples/custom_http/main.go) |
+
+## Protocol restrictions
+
+Transports are gated the way git gates them, so a scheme can be refused
+before the handshake. A policy is one of `always`, `never` or `user`; `user`
+permits the scheme only when the operation was initiated by the user rather
+than by data in the repository, which is what keeps a submodule from choosing
+its own transport.
+
+Without configuration the defaults match git's `get_protocol_config`:
+`http`, `https`, `git` and `ssh` are `always`, `ext` is `never`, and every
+other scheme — `file` included, along with bare local paths — is `user`.
+A `file://` clone therefore still works, while a `file://` submodule update
+is refused unless it is allowed explicitly.
+
+| Feature                  | Status       | Notes                                                                                                                         |
+| ------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `protocol.allow`         | ⚠️ (partial) | Fallback policy for schemes with no per-scheme setting. Read from the repository config only; a value in `--global` or `--system` config is not consulted. |
+| `protocol.<name>.allow`  | ⚠️ (partial) | Per-scheme policy, takes precedence over `protocol.allow`. Same repository-config-only limitation.                             |
+| `GIT_ALLOW_PROTOCOL`     | ✅           | Colon-separated allow-list. When set it replaces every other source, and an empty value denies every scheme.                   |
+| `GIT_PROTOCOL_FROM_USER` | ✅           | Overrides whether an operation counts as user-initiated for the `user` policy.                                                 |
 
 ## Other features
 

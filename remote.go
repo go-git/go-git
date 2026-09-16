@@ -73,6 +73,12 @@ func (r *Remote) Config() *config.RemoteConfig {
 // from; the policy gate then falls back to the built-in defaults. A read
 // error is returned to the caller rather than swallowed, so that a
 // restrictive policy is never silently replaced by those defaults.
+//
+// This is the repository configuration alone. Git resolves protocol.allow
+// against the global and system files too, so a policy set only in
+// ~/.gitconfig does not reach the gate here: reading those requires a
+// registered config plugin, which ConfigScoped needs and Storer.Config
+// does not use.
 func (r *Remote) repoConfig() (*config.Config, error) {
 	if r.s == nil {
 		return nil, nil
