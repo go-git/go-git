@@ -124,6 +124,41 @@ func (s *URLSuite) TestFindScpLikeComponents() {
 	}
 }
 
+func (s *URLSuite) TestMatchesSchemeAtTheFirstSeparator() {
+	// Canonical Git splits on the FIRST `://` anywhere in the endpoint
+	// (strstr in parse_connect_url) and treats everything before it as
+	// the scheme, then refuses the endpoint when it cannot name a
+	// protocol. It never falls back to the SCP-like or local reading.
+	// See https://github.com/git/git/blob/v2.56.0/connect.c#L1111.
+	for _, tc := range []struct {
+		url  string
+		why  string
+		scpe bool
+	}{
+		// git 2.55: fatal: protocol 'a:b' is not supported
+		{url: "a:b://c", why: "the separator does not open at the first colon"},
+		// git 2.55: fatal: protocol 'git@host:a' is not supported
+		{url: "git@host:a://b", why: "a scheme outranks the SCP-like reading"},
+		// git 2.55: fatal: protocol '/abs/a' is not supported
+		{url: "/abs/a://b", why: "a scheme outranks the local reading"},
+		// git 2.55: fatal: protocol './foo' is not supported
+		{url: "./foo://bar", why: "a scheme outranks the local reading"},
+		// git 2.55: fatal: protocol '' is not supported
+		{url: "://a", why: "an empty scheme is still a scheme"},
+	} {
+		s.True(MatchesScheme(tc.url), "%s: %s", tc.url, tc.why)
+		s.False(IsLocalEndpoint(tc.url), "%s: %s", tc.url, tc.why)
+		_, ok := ParseSCP(tc.url)
+		s.False(ok, "%s: %s", tc.url, tc.why)
+	}
+
+	// A `:` that opens nothing is not a separator, so these keep their
+	// SCP-like and local readings.
+	for _, url := range []string{"a:/b", "a:", ":", "git@github.com:james/bond"} {
+		s.False(MatchesScheme(url), url)
+	}
+}
+
 func (s *URLSuite) TestParseSCPOmitsAnEmptyUser() {
 	// The user is optional in the SCP-like form. url.User("") is an
 	// empty userinfo, not the absence of one: String writes it out as

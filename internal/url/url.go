@@ -15,11 +15,10 @@ var fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
 // \s in a Go regular expression.
 const scpLikeWhitespace = "\t\n\f\r "
 
-// MatchesScheme reports whether the first colon in url follows at least
-// one byte and is followed by "//". It does not validate the scheme.
+// MatchesScheme reports whether url contains "://".
+// It does not validate the scheme or require it to be non-empty.
 func MatchesScheme(url string) bool {
-	i := strings.IndexByte(url, ':')
-	return i > 0 && strings.HasPrefix(url[i:], "://")
+	return strings.Contains(url, "://")
 }
 
 // matchScpLike splits s according to the following grammar:

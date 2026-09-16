@@ -102,6 +102,28 @@ func TestParseURL(t *testing.T) {
 			input: "git://github.com/user/repository.git?foo#bar",
 			want:  "git://github.com/user/repository.git?foo#bar",
 		},
+		{
+			// The scheme ends at the FIRST `://` anywhere, so this is
+			// a URL with the unroutable scheme `a`, not SSH to host
+			// `a`. git 2.55: fatal: protocol 'a:b' is not supported.
+			input: "a:b://c",
+			want:  "a:b://c",
+		},
+		{
+			// git 2.55: fatal: protocol 'git@host:a' is not supported.
+			input:   "git@host:a://b",
+			wantErr: "first path segment in URL cannot contain colon",
+		},
+		{
+			// git 2.55: fatal: protocol '/abs/a' is not supported.
+			input:   "/abs/a://b",
+			wantErr: "invalid endpoint",
+		},
+		{
+			// git 2.55: fatal: protocol '' is not supported.
+			input:   "://a",
+			wantErr: "missing protocol scheme",
+		},
 	}
 
 	for _, tc := range tests {
