@@ -331,6 +331,7 @@ func (s *WorktreeSuite) TestPullDepth() {
 	})
 
 	s.NoError(err)
+	defer func() { _ = r.Close() }()
 
 	w, err := r.Worktree()
 	s.NoError(err)
