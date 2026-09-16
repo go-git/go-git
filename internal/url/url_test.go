@@ -54,9 +54,9 @@ func (s *URLSuite) TestMatchesScpLike() {
 }
 
 func (s *URLSuite) TestFindScpLikeComponents() {
-	// There is no port in the SCP-like form: canonical Git splits the
-	// endpoint at the first `:` and everything after it is the path,
-	// so a leading digit run in the path stays in the path. See
+	// Outside a bracketed host, canonical Git splits the endpoint at
+	// the first `:` and everything after it is the path, so a leading
+	// digit run in the path stays in the path. See
 	// parse_connect_url in
 	// https://github.com/git/git/blob/v2.56.0/connect.c#L1097-L1165.
 	testCases := []struct {
@@ -227,6 +227,43 @@ func (s *URLSuite) TestMatchesScpLikeWindowsDrivePrefix() {
 		"d:relative",
 	} {
 		s.False(MatchesScpLike(url), url)
+	}
+}
+
+func (s *URLSuite) TestMatchesScpLikeDrivePrefixOffWindows() {
+	// Off Windows a drive-letter path is NOT local: Git's
+	// has_dos_drive_prefix is a no-op there (git-compat-util.h), so
+	// url_is_local_not_ssh never reaches the local reading and Git
+	// dials host `C`. git 2.55 on macOS, for `C:\path\to\repo`:
+	// HOST=[C] CMD=[git-upload-pack '\path\to\repo'].
+	if runtime.GOOS == "windows" {
+		s.T().Skip("non-Windows only: the drive prefix IS local on Windows")
+	}
+	for _, url := range []string{
+		"C:foo",
+		"C:/path/to/repo",
+		`C:\path\to\repo`,
+		"d:relative",
+	} {
+		s.True(MatchesScpLike(url), url)
+	}
+}
+
+func (s *URLSuite) TestMatchesScpLikeAcceptsAnyByte() {
+	// Git restricts neither half of the SCP-like form, so neither does
+	// this. go-git used to reject whitespace in the host and a leading
+	// backslash or an embedded newline in the path, which did not
+	// reject the endpoint -- it reclassified it as a local path.
+	for _, url := range []string{
+		"ho st:path",    // git 2.55: HOST=[ho st] CMD=[...'path']
+		"host:\\path",   // git 2.55: HOST=[host] CMD=[...'\path']
+		"host:a\nb",     // git 2.55: HOST=[host] CMD=[...'a\nb']
+		"host:path\n",   // git 2.55: HOST=[host] CMD=[...'path\n']
+		"[a b]:c",       // git 2.55: HOST=[a b] CMD=[...'c']
+		"ho\x00st:path", // NUL and invalid UTF-8 are ordinary bytes
+		"ho\xffst:path",
+	} {
+		s.True(MatchesScpLike(url), "%q", url)
 	}
 }
 

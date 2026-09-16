@@ -5,15 +5,53 @@ import (
 	"math/rand"
 	"os"
 	"regexp"
+	"runtime"
 	"testing"
 )
 
 // The oracle expressions specify the grammars used by the URL scanners.
 // The differential tests compare match results and extracted components.
+var oracleScheme = regexp.MustCompile(`://`)
+
+// Independent from the fuzz target, whose helpers must remain local.
 var (
-	oracleScheme = regexp.MustCompile(`://`)
-	oracleScp    = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]*):(?P<path>(?:[^\\].*)?)$`)
+	bracketStart = regexp.MustCompile(`@\[`)
+	bracketHost  = regexp.MustCompile(`^\[[^\]]*\]`)
+	hostPath     = regexp.MustCompile(`(?s)^([^:]*):(.*)$`)
+	userHost     = regexp.MustCompile(`(?s)^(.*)@([^@]*)$`)
 )
+
+//nolint:dupl // OSS-Fuzz requires a separate oracle inside the fuzz target.
+func oracleSCPComponents(s string) []string {
+	start := 0
+	if loc := bracketStart.FindStringIndex(s); loc != nil {
+		start = loc[0] + 1
+	}
+	offset := 0
+	if loc := bracketHost.FindStringIndex(s[start:]); loc != nil {
+		offset = start + loc[1]
+	}
+	m := hostPath.FindStringSubmatch(s[offset:])
+	if m == nil {
+		return nil
+	}
+	authority := s[:offset+len(m[1])]
+	start = 0
+	if loc := bracketStart.FindStringIndex(authority); loc != nil {
+		start = loc[0] + 1
+	}
+	if loc := bracketHost.FindStringIndex(authority[start:]); loc != nil {
+		user := ""
+		if start > 0 {
+			user = authority[:start-1]
+		}
+		return []string{s, user, authority[start : start+loc[1]], m[2]}
+	}
+	if parts := userHost.FindStringSubmatch(authority); parts != nil {
+		return []string{s, parts[1], parts[2], m[2]}
+	}
+	return []string{s, "", authority, m[2]}
+}
 
 // equivDiff returns a description of the first difference between the
 // scanners and the oracle expressions, or an empty string if they agree.
@@ -23,7 +61,7 @@ func equivDiff(s string) string {
 	}
 
 	user, host, path, ok := matchScpLike(s)
-	m := oracleScp.FindStringSubmatch(s)
+	m := oracleSCPComponents(s)
 	if ok != (m != nil) {
 		return fmt.Sprintf("matchScpLike(%q) ok = %v, regexp says %v", s, ok, m != nil)
 	}
@@ -66,7 +104,7 @@ var equivSeeds = []string{
 	// Degenerate components: an empty host, an empty path, or both.
 	":", "a@:", "[a]:", "@:",
 
-	// Host boundaries and the whitespace class.
+	// Host boundaries, and the bytes that used to be excluded.
 	"host:path", ":path", "host:", "ho st:path", "ho\tst:path",
 	"ho\nst:path", "ho\rst:path", "ho\fst:path", "ho\vst:path",
 	"ho\x00st:path", "ho\xffst:path", "h\xc3\xa9st:path",
@@ -79,9 +117,13 @@ var equivSeeds = []string{
 	"[fe80::1]:repo.git", "git@[fe80::1]:repo.git", "[fe80::1]:22:repo.git",
 	"[a:b]:c", "[a:b]:\\c", "[a]:c", "[a]:", "[]:p", "[:p", "[a:c",
 	"[a]x:c", "[a b]:c", "[a]::c", "a@[b]:c", "[a@b]:c", "[[a]:c",
+	"[x@y]:a@[b", "a@b@[c]:d", "user@[a@b]:repo", "host:path@other:repo",
+	"[myhost:123]:src", "user@[myhost:123]:src", "[fe80:1]:repo",
 
 	// Path rules.
 	"h:\\p", "h:p\nq", "h:p\n", "h:\np", "h:\n", "h:\\", "h:p\\q",
+	"h:\x00", "h:\xc3\xa9\n", "[a]b",
+	"[a:b]",
 
 	// Real-world shapes.
 	"git@github.com:james/bond", "git@github.com:22:james/bond",
@@ -93,275 +135,87 @@ var equivSeeds = []string{
 	"/foo.git", "foo.git", "file:///foo.git", "file://C:/path/to/repo",
 }
 
+// Component expectations were checked against Git's fetch-pack --diag-url.
+// Brackets remain at this layer; ParseSCP unwraps them and extracts ports.
 func TestScannerRules(t *testing.T) {
 	t.Parallel()
 
-	type want struct {
-		ok               bool
-		user, host, path string
-	}
-	type kase struct {
-		in string
-		want
-	}
-
-	for _, rule := range []struct {
-		name  string
-		why   string
-		cases []kase
+	for _, tc := range []struct {
+		input, user, host, path string
 	}{
-		{
-			name: "UserCannotCrossFirstAt",
-			why: "`[^@]+` excludes `@` and is closed by a literal `@`, so the user " +
-				"group can only ever be the text before the FIRST `@`, and must be " +
-				"non-empty. The scanner therefore needs one IndexByte, not a search.",
-			cases: []kase{
-				{"a@b:c", want{true, "a", "b", "c"}},
-				// Later `@`s fall inside the host, which permits them.
-				{"a@b@c:d", want{true, "a", "b@c", "d"}},
-				// at == 0 leaves the user group empty, so the branch cannot be taken.
-				{"@host:p", want{true, "", "@host", "p"}},
-				{"@:p", want{true, "", "@", "p"}},
-				// Consecutive `@`: user is "a", host is "@b".
-				{"a@@b:c", want{true, "a", "@b", "c"}},
-			},
-		},
-		{
-			name: "UserBranchIsGreedyButFallsBack",
-			why: "`(?:...)?` is greedy, so a parse that fills the user group outranks " +
-				"one that does not; when the rest of the grammar cannot be satisfied " +
-				"with a user, the no-user parse wins instead. The scanner mirrors that " +
-				"with an explicit second attempt.",
-			cases: []kase{
-				// Both branches match. Greedy wins: user=a, not host="a@b".
-				{"a@b:c", want{true, "a", "b", "c"}},
-				// The host may be empty, so the user branch now succeeds
-				// here and the greedy parse wins. Git splits the same
-				// endpoint into the single host `a@`, which ssh then
-				// reads as user `a` and an empty host, so the two agree
-				// on what is dialled and differ only in which component
-				// the `a` is reported in.
-				{"a@:path", want{true, "a", "", "path"}},
-				{"a@:", want{true, "a", "", ""}},
-				// User branch fails (rest has no `:`), so no-user is
-				// used -- and it has no `:` either, so nothing matches.
-				{"a@b", want{false, "", "", ""}},
-			},
-		},
-		{
-			name: "HostCannotCrossFirstColonAndIsWhitespaceFree",
-			why: "`[^:\\s]*` excludes `:` and is closed by a literal `:`, so the host " +
-				"is exactly the text before the FIRST `:`. RE2's `\\s` is " +
-				"[\\t\\n\\f\\r ] — it does NOT include `\\v`, so a vertical tab is a " +
-				"legal host byte. Shortening the host cannot rescue a match, because " +
-				"the next byte would then not be the `:` the grammar demands.",
-			cases: []kase{
-				{"host:path", want{true, "", "host", "path"}},
-				// Each member of RE2's \s class rejects the host.
-				{"ho st:path", want{false, "", "", ""}},
-				{"ho\tst:path", want{false, "", "", ""}},
-				{"ho\nst:path", want{false, "", "", ""}},
-				{"ho\rst:path", want{false, "", "", ""}},
-				{"ho\fst:path", want{false, "", "", ""}},
-				// \v is NOT in \s, so this one matches.
-				{"ho\vst:path", want{true, "", "ho\vst", "path"}},
-				// NUL and invalid UTF-8 are ordinary host bytes.
-				{"ho\x00st:path", want{true, "", "ho\x00st", "path"}},
-				{"ho\xffst:path", want{true, "", "ho\xffst", "path"}},
-			},
-		},
-		{
-			name: "NoPortAfterTheHost",
-			why: "The SCP-like form has no port. Git splits it in parse_connect_url " +
-				"(connect.c) at the FIRST `:` at or after the host, and everything " +
-				"past that `:` is the path; get_host_and_port, which is where a port " +
-				"could come from, only ever runs on the host half, and in this form " +
-				"that half holds no `:`. go-git used to read a leading 1..5 digit " +
-				"run closed by a second `:` as a port, so `host:22:007/bond` asked " +
-				"for `007/bond` on TCP 22 where Git asks for `22:007/bond` on the " +
-				"default port.",
-			cases: []kase{
-				// Every one of these used to report a port.
-				{"h:22:p", want{true, "", "h", "22:p"}},
-				{"h:0:p", want{true, "", "h", "0:p"}},
-				{"h:99999:p", want{true, "", "h", "99999:p"}},
-				{"git@host:22:007/bond", want{true, "git", "host", "22:007/bond"}},
-				// These never did, and are unchanged.
-				{"h:123456:p", want{true, "", "h", "123456:p"}},
-				{"h:007/bond", want{true, "", "h", "007/bond"}},
-				{"h:2a:p", want{true, "", "h", "2a:p"}},
-				{"h::p", want{true, "", "h", ":p"}},
-				// The port branch used to be abandoned here, for an empty path
-				// and for a path opening with a backslash. There is only ever
-				// the one parse now.
-				{"h:22:", want{true, "", "h", "22:"}},
-				{"h:22:\\p", want{true, "", "h", "22:\\p"}},
-			},
-		},
-		{
-			name: "BracketedHostIsTheFirstAlternative",
-			why: "`\\[[^\\]\\s]+\\]` stands in for Git's host_end (connect.c): a host " +
-				"written as a bracketed literal, which is how an IPv6 address has to " +
-				"be written, ends at the `]` and not at a `:` inside it. The body " +
-				"cannot hold a `]`, so the literal ends at the FIRST one; it must be " +
-				"non-empty, and — as everywhere else in this grammar, which is " +
-				"stricter than Git about whitespace — hold none. The brackets stay " +
-				"in the returned host: that keeps it a substring of the endpoint, it " +
-				"is the form net/url wants in URL.Host, and it is what has to be " +
-				"written back out for the URL to parse the same way again.",
-			cases: []kase{
-				{"[fe80::1]:repo.git", want{true, "", "[fe80::1]", "repo.git"}},
-				{"git@[fe80::1]:repo.git", want{true, "git", "[fe80::1]", "repo.git"}},
-				// No port here either: Git asks for the path `22:repo.git`.
-				{"[fe80::1]:22:repo.git", want{true, "", "[fe80::1]", "22:repo.git"}},
-				// The alternative is FIRST, so it beats the bare host `[a`.
-				{"[a:b]:c", want{true, "", "[a:b]", "c"}},
-				{"[a]:c", want{true, "", "[a]", "c"}},
-				{"[a]::c", want{true, "", "[a]", ":c"}},
-				// The path may be empty, so the literal stands on its own.
-				{"[a]:", want{true, "", "[a]", ""}},
-				// Whitespace in the body rules the literal out, and the bare
-				// host left over holds whitespace too.
-				{"[a b]:c", want{false, "", "", ""}},
-			},
-		},
-		{
-			name: "BracketedHostFallsBackToTheBareHost",
-			why: "The alternation is ordered, not committed: when the bracketed " +
-				"parse cannot be completed the bare-host parse is tried on the same " +
-				"input, exactly as the regexp backtracks, and the scanner makes that " +
-				"second attempt explicitly. Note where this leaves go-git stricter " +
-				"than Git: Git accepts junk between the `]` and the `:` and silently " +
-				"drops it (`[a]b:c` reaches host `a`), which would make the returned " +
-				"host text the user never wrote, so go-git does not mirror it and " +
-				"such an endpoint keeps its bare-host reading. Git also looks for " +
-				"the first `@[` rather than the first `@`, so `[a@b]:c` and " +
-				"`a@b@[c]:d` split differently there; no address is written either " +
-				"way.",
-			cases: []kase{
-				// Empty body, so the literal cannot match; the bare host can.
-				{"[]:p", want{true, "", "[]", "p"}},
-				// Unterminated bracket. Git falls back here too.
-				{"[a:c", want{true, "", "[a", "c"}},
-				{"[:p", want{true, "", "[", "p"}},
-				// `]` not closed by the `:`. Git would reach host `a`.
-				{"[a]x:c", want{true, "", "[a]x", "c"}},
-				// The literal parses but its path does not, so the bare host
-				// wins and reads the `]` as part of the path.
-				{"[a:b]:\\c", want{true, "", "[a", "b]:\\c"}},
-				// A `[` inside the body is an ordinary byte.
-				{"[[a]:c", want{true, "", "[[a]", "c"}},
-				// The user is split at the first `@`, before the host
-				// alternation is reached at all.
-				{"a@[b]:c", want{true, "a", "[b]", "c"}},
-				{"[a@b]:c", want{true, "[a", "b]", "c"}},
-			},
-		},
-		{
-			name: "DegenerateComponentsAreLegal",
-			why: "The colon is the whole of the SCP-like syntax: Git's " +
-				"url_is_local_not_ssh (url.c) asks only whether there IS a colon " +
-				"with no `/` before it, and parse_connect_url then splits on it " +
-				"with no minimum length on either half. So `host:` asks the host " +
-				"for `git-upload-pack ''` and `:path` asks the empty host — which " +
-				"ssh reads as the local machine — for `path`. go-git used to " +
-				"require both halves to be non-empty and so read both as LOCAL " +
-				"PATHS, opening a repository at the literal text instead.",
-			cases: []kase{
-				// git 2.55: HOST=[host] CMD=[git-upload-pack '']
-				{"host:", want{true, "", "host", ""}},
-				// git 2.55: HOST=[] CMD=[git-upload-pack 'path']
-				{":path", want{true, "", "", "path"}},
-				// git 2.55: HOST=[] CMD=[git-upload-pack '']
-				{":", want{true, "", "", ""}},
-				{"[a]:", want{true, "", "[a]", ""}},
-				// git 2.55: HOST=[a@] CMD=[git-upload-pack 'path'] -- the
-				// same dial, reported with the `a` in the user group.
-				{"a@:path", want{true, "a", "", "path"}},
-				{"a@:", want{true, "a", "", ""}},
-				{"@:p", want{true, "", "@", "p"}},
-				// A colon is still required: no colon, no match.
-				{"host", want{false, "", "", ""}},
-				{"", want{false, "", "", ""}},
-				{"a@b", want{false, "", "", ""}},
-				// The empty path does not rescue a path the grammar
-				// rejects; `$` still has to be reached.
-				{"h:\\p", want{false, "", "", ""}},
-				{"h:p\n", want{false, "", "", ""}},
-			},
-		},
-		{
-			name: "PathRules",
-			why: "`(?:[^\\\\].*)?$` means: empty, or a first rune that is not a " +
-				"backslash followed by anything `.` matches — and `.` excludes " +
-				"`\\n` while `$` is end-of-text (no (?m)), so no newline may appear " +
-				"past that first rune, a TRAILING newline included. Note " +
-				"`[^\\\\]` does match `\\n`, so a newline is legal as the first rune. " +
-				"Scanning for `\\n` from byte 1 is exact because `\\n` is never a " +
-				"UTF-8 continuation byte.",
-			cases: []kase{
-				{"h:p", want{true, "", "h", "p"}},
-				// Leading backslash.
-				{"h:\\p", want{false, "", "", ""}},
-				{"h:\\", want{false, "", "", ""}},
-				// A backslash anywhere else is fine.
-				{"h:p\\q", want{true, "", "h", "p\\q"}},
-				// Newline past the first rune, including at the very end.
-				{"h:p\nq", want{false, "", "", ""}},
-				{"h:p\n", want{false, "", "", ""}},
-				// Newline AS the first rune is accepted by `[^\\]`.
-				{"h:\np", want{true, "", "h", "\np"}},
-				{"h:\n", want{true, "", "h", "\n"}},
-				// Multi-byte first rune, then the \n scan starts mid-rune yet is exact.
-				{"h:\xc3\xa9p", want{true, "", "h", "\xc3\xa9p"}},
-				{"h:\xc3\xa9\n", want{false, "", "", ""}},
-			},
-		},
-		{
-			name: "RealWorldShapes",
-			why: "The forms the rest of the suite and the transport tests rely on. " +
-				"Note that matchScpLike is only the grammar: `./rel:path` and `C:/foo` " +
-				"match it and are rejected a layer up, by MatchesScpLike.",
-			cases: []kase{
-				{"git@github.com:james/bond", want{true, "git", "github.com", "james/bond"}},
-				{"git@host:22:007/bond", want{true, "git", "host", "22:007/bond"}},
-				{"git@[fe80::1]:james/bond", want{true, "git", "[fe80::1]", "james/bond"}},
-				{"git@github.com:_james/bond.git", want{true, "git", "github.com", "_james/bond.git"}},
-				{"user@host.example.com:path/to/repo.git", want{true, "user", "host.example.com", "path/to/repo.git"}},
-				{"host:path", want{true, "", "host", "path"}},
-				// A DOS path with backslashes fails the grammar outright.
-				{"C:\\foo", want{false, "", "", ""}},
-				// A DOS path with forward slashes does NOT; MatchesScpLike rejects it.
-				{"C:/path/to/repo", want{true, "", "C", "/path/to/repo"}},
-				// Local paths match the grammar; MatchesScpLike rejects them.
-				{"./rel:path", want{true, "", "./rel", "path"}},
-				{"/abs/path/with:colon/file", want{true, "", "/abs/path/with", "colon/file"}},
-				{"@host:p", want{true, "", "@host", "p"}},
-				{"a@b@host:p", want{true, "a", "b@host", "p"}},
-				{"host:", want{true, "", "host", ""}},
-				{":path", want{true, "", "", "path"}},
-			},
-		},
+		{"a@b:c", "a", "b", "c"},
+		{"a@b@c:d", "a@b", "c", "d"},
+		{"a@@b:c", "a@", "b", "c"},
+		{"@host:p", "", "host", "p"},
+		{"@:p", "", "", "p"},
+		{"a@:path", "a", "", "path"},
+		{"a@:", "a", "", ""},
+		{"host:path@other:repo", "", "host", "path@other:repo"},
+		{"host:path", "", "host", "path"},
+		{"ho st:path", "", "ho st", "path"},
+		{"ho\tst:path", "", "ho\tst", "path"},
+		{"ho\nst:path", "", "ho\nst", "path"},
+		{"ho\rst:path", "", "ho\rst", "path"},
+		{"ho\fst:path", "", "ho\fst", "path"},
+		{"ho\vst:path", "", "ho\vst", "path"},
+		{"ho\x00st:path", "", "ho\x00st", "path"},
+		{"ho\xffst:path", "", "ho\xffst", "path"},
+		{"h:22:p", "", "h", "22:p"},
+		{"h:0:p", "", "h", "0:p"},
+		{"h:99999:p", "", "h", "99999:p"},
+		{"h:123456:p", "", "h", "123456:p"},
+		{"h:007/bond", "", "h", "007/bond"},
+		{"h:2a:p", "", "h", "2a:p"},
+		{"h::p", "", "h", ":p"},
+		{"h:22:", "", "h", "22:"},
+		{"h:22:\\p", "", "h", "22:\\p"},
+		{"[fe80::1]:repo.git", "", "[fe80::1]", "repo.git"},
+		{"git@[fe80::1]:repo.git", "git", "[fe80::1]", "repo.git"},
+		{"[fe80::1]:22:repo.git", "", "[fe80::1]", "22:repo.git"},
+		{"[myhost:123]:src", "", "[myhost:123]", "src"},
+		{"user@[myhost:123]:src", "user", "[myhost:123]", "src"},
+		{"[a:b]:c", "", "[a:b]", "c"},
+		{"[a]:c", "", "[a]", "c"},
+		{"[a]::c", "", "[a]", ":c"},
+		{"[a]:", "", "[a]", ""},
+		{"[a b]:c", "", "[a b]", "c"},
+		{"[a:b]:\\c", "", "[a:b]", "\\c"},
+		{"[]:p", "", "[]", "p"},
+		{"[a:c", "", "[a", "c"},
+		{"[:p", "", "[", "p"},
+		{"[a]x:c", "", "[a]", "c"},
+		{"[[a]:c", "", "[[a]", "c"},
+		{"a@[b]:c", "a", "[b]", "c"},
+		{"[a@b]:c", "", "[a@b]", "c"},
+		{"[x@y]:a@[b", "", "[x@y]", "a@[b"},
+		{"a@b@[c]:d", "a@b", "[c]", "d"},
+		{"user@[a@b]:c", "user", "[a@b]", "c"},
+		{"host:", "", "host", ""},
+		{":path", "", "", "path"},
+		{":", "", "", ""},
+		{"h:\\p", "", "h", "\\p"},
+		{"h:\\", "", "h", "\\"},
+		{"h:p\\q", "", "h", "p\\q"},
+		{"h:p\nq", "", "h", "p\nq"},
+		{"h:p\n", "", "h", "p\n"},
+		{"h:\np", "", "h", "\np"},
+		{"h:\n", "", "h", "\n"},
+		{"h:\xc3\xa9p", "", "h", "\xc3\xa9p"},
+		{"h:\xc3\xa9\n", "", "h", "\xc3\xa9\n"},
+		{"h:\x00", "", "h", "\x00"},
+		{"git@github.com:james/bond", "git", "github.com", "james/bond"},
+		{"C:\\foo", "", "C", "\\foo"},
+		{"C:/path/to/repo", "", "C", "/path/to/repo"},
+		{"./rel:path", "", "./rel", "path"},
+		{"/abs/path/with:colon/file", "", "/abs/path/with", "colon/file"},
 	} {
-		t.Run(rule.name, func(t *testing.T) {
+		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
-			t.Log(rule.why)
-
-			for _, c := range rule.cases {
-				checkEquiv(t, c.in)
-
-				user, host, path, ok := matchScpLike(c.in)
-				if ok != c.ok {
-					t.Errorf("matchScpLike(%q) ok = %v, want %v", c.in, ok, c.ok)
-					continue
-				}
-				if !ok {
-					continue
-				}
-				if user != c.user || host != c.host || path != c.path {
-					t.Errorf("matchScpLike(%q) = (user=%q host=%q path=%q), want (user=%q host=%q path=%q)",
-						c.in, user, host, path, c.user, c.host, c.path)
-				}
+			checkEquiv(t, tc.input)
+			user, host, path, ok := matchScpLike(tc.input)
+			if !ok || user != tc.user || host != tc.host || path != tc.path {
+				t.Errorf("matchScpLike(%q) = (%q, %q, %q, %v), want (%q, %q, %q, true)",
+					tc.input, user, host, path, ok, tc.user, tc.host, tc.path)
 			}
 		})
 	}
@@ -428,8 +282,15 @@ func TestMatchesScpLikeLayering(t *testing.T) {
 		{"host:", true, true},
 		{":path", true, true},
 		{":", true, true},
-		// Grammar rejects it outright.
-		{"C:\\foo", false, false},
+		// A DOS path matches the grammar everywhere. It is rejected a
+		// layer up on Windows only, by hasDosDrivePrefix -- and Git
+		// does exactly the same, because has_dos_drive_prefix is a
+		// no-op off Windows (git-compat-util.h). git 2.55 on this
+		// machine asks HOST=[C] for CMD=[git-upload-pack '\\foo'].
+		{"C:\\foo", true, runtime.GOOS != "windows"},
+		{"C:/foo", true, runtime.GOOS != "windows"},
+		// Grammar rejects it outright: no colon at all.
+		{"a@b", false, false},
 	} {
 		_, _, _, grammar := matchScpLike(c.in)
 		if grammar != c.grammar {
@@ -603,17 +464,15 @@ func TestScannerMatchesRegexpSeeds(t *testing.T) {
 func TestFindScpLikeComponentsOnNonMatch(t *testing.T) {
 	t.Parallel()
 
+	// A bracketed host requires a colon after its closing bracket.
 	for _, s := range []string{
-		"",           // nothing at all
-		"host",       // no colon
-		"C:\\foo",    // path opens with a backslash
-		"h:p\n",      // trailing newline
-		"ho st:path", // whitespace in the host
-		"h:\\",       // path is a lone backslash
-		"a@b",        // user branch and no-user branch both lack a colon
-		"[a b]:c",    // whitespace survives both host alternatives
+		"",     // nothing at all
+		"host", // no colon
+		"a@b",  // user branch and no-user branch both lack a colon
+		"[a]b", // a bracketed host with no `:` to close it
+		"\xff", // an arbitrary byte string with no colon in it
 	} {
-		if oracleScp.FindStringSubmatch(s) != nil {
+		if oracleSCPComponents(s) != nil {
 			t.Fatalf("%q was meant to be a non-match", s)
 		}
 

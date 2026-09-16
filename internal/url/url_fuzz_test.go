@@ -10,9 +10,47 @@ import (
 //
 // The oracle expressions and seed corpus are local to the target because
 // OSS-Fuzz builds it without the package's other test files. See tests/fuzz.
+//
+//nolint:dupl // OSS-Fuzz strips top-level helpers, so the oracle must be local.
 func FuzzURLScanner(f *testing.F) {
 	oracleScheme := regexp.MustCompile(`://`)
-	oracleScp := regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]*):(?P<path>(?:[^\\].*)?)$`)
+	// OSS-Fuzz removes all non-Fuzz top-level functions and declarations.
+	// Keep this oracle and its regexps inside the target; the ordinary
+	// scanner tests carry a separate copy so neither depends on the other.
+	bracketStart := regexp.MustCompile(`@\[`)
+	bracketHost := regexp.MustCompile(`^\[[^\]]*\]`)
+	hostPath := regexp.MustCompile(`(?s)^([^:]*):(.*)$`)
+	userHost := regexp.MustCompile(`(?s)^(.*)@([^@]*)$`)
+	oracleSCPComponents := func(s string) []string {
+		start := 0
+		if loc := bracketStart.FindStringIndex(s); loc != nil {
+			start = loc[0] + 1
+		}
+		offset := 0
+		if loc := bracketHost.FindStringIndex(s[start:]); loc != nil {
+			offset = start + loc[1]
+		}
+		m := hostPath.FindStringSubmatch(s[offset:])
+		if m == nil {
+			return nil
+		}
+		authority := s[:offset+len(m[1])]
+		start = 0
+		if loc := bracketStart.FindStringIndex(authority); loc != nil {
+			start = loc[0] + 1
+		}
+		if loc := bracketHost.FindStringIndex(authority[start:]); loc != nil {
+			user := ""
+			if start > 0 {
+				user = authority[:start-1]
+			}
+			return []string{s, user, authority[start : start+loc[1]], m[2]}
+		}
+		if parts := userHost.FindStringSubmatch(authority); parts != nil {
+			return []string{s, parts[1], parts[2], m[2]}
+		}
+		return []string{s, "", authority, m[2]}
+	}
 
 	for _, seed := range []string{
 		"", ":", "://", "a://", "a://b", "a:b://c", "://a", "a:/b", "a:",
@@ -27,9 +65,12 @@ func FuzzURLScanner(f *testing.F) {
 		"h:22:p", "h:0:p", "h:99999:p", "h:123456:p", "h:22:", "h:22:\\p",
 		"h:007/bond", "h::p", "h:2a:p",
 		"h:\\p", "h:p\nq", "h:p\n", "h:\np", "h:\n", "h:\\", "h:p\\q",
+		"h:\x00", "h:\xc3\xa9\n", "[a]b",
 		"[fe80::1]:repo.git", "git@[fe80::1]:repo.git", "[fe80::1]:22:repo.git",
 		"[a:b]:c", "[a:b]:\\c", "[a]:c", "[a]:", "[]:p", "[:p", "[a:c",
 		"[a]x:c", "[a b]:c", "[a]::c", "a@[b]:c", "[a@b]:c", "[[a]:c",
+		"[x@y]:a@[b", "a@b@[c]:d", "user@[a@b]:repo", "host:path@other:repo",
+		"[myhost:123]:src", "user@[myhost:123]:src", "[fe80:1]:repo",
 		"h:\xc3\xa9p", "h:\xc3\xa9\n",
 		"git@github.com:james/bond", "git@github.com:22:james/bond",
 		"git@github.com:22:007/bond", "git@github.com:_james/bond.git",
@@ -48,7 +89,7 @@ func FuzzURLScanner(f *testing.F) {
 		}
 
 		user, host, path, ok := matchScpLike(endpoint)
-		m := oracleScp.FindStringSubmatch(endpoint)
+		m := oracleSCPComponents(endpoint)
 		if ok != (m != nil) {
 			t.Fatalf("matchScpLike(%q) ok = %v, regexp says %v", endpoint, ok, m != nil)
 		}

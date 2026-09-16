@@ -70,8 +70,8 @@ func TestParseURL(t *testing.T) {
 			want:  "ssh://git@github.com/9999/user/repository.git",
 		},
 		{
-			// The SCP-like form has no port: everything after the
-			// first colon is the path, exactly as canonical Git reads
+			// Outside brackets, everything after the first colon
+			// is the path, exactly as canonical Git reads
 			// it, so `8080:` here is the start of the path and not a
 			// port to dial.
 			input: "git@github.com:8080:9999/user/repository.git",
@@ -147,6 +147,34 @@ func TestParseURL(t *testing.T) {
 		},
 	}
 
+	// Neither the host nor the path excludes a byte, because Git
+	// restricts neither: the whitespace and backslash rules go-git used
+	// to apply did not reject these endpoints, they reclassified them
+	// as local paths.
+	tests = append(tests, []tt{{
+		// git 2.55: HOST=[ho st] CMD=[git-upload-pack 'path'].
+		input: "ho st:path",
+		want:  "ssh://ho%20st/path",
+	}, {
+		// git 2.55: HOST=[host] CMD=[git-upload-pack '\\path'].
+		input: "host:\\path",
+		want:  "ssh://host/%5Cpath",
+	}, {
+		// git 2.55: HOST=[a b] CMD=[git-upload-pack 'c'].
+		input: "[a b]:c",
+		want:  "ssh://[a%20b]/c",
+	}}...)
+
+	if runtime.GOOS != "windows" {
+		// A DOS drive prefix is only local on Windows, in go-git as in
+		// Git. git 2.55 on macOS: HOST=[C] CMD=[git-upload-pack
+		// '\\path\\to\\repo'].
+		tests = append(tests, tt{
+			input: "C:\\path\\to\\repo",
+			want:  "ssh://C/%5Cpath%5Cto%5Crepo",
+		})
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
@@ -158,6 +186,54 @@ func TestParseURL(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tc.want, ep.String())
 			}
+		})
+	}
+}
+
+// Expectations follow Git's fetch-pack --diag-url and OpenSSH's last-@ split.
+func TestParseURLSCPAuthority(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		input, user, host, port, path string
+	}{
+		{"[myhost:123]:src", "", "myhost", "123", "src"},
+		{"user@[myhost:123]:src", "user", "myhost", "123", "src"},
+		{"[fe80:1]:repo", "", "fe80", "1", "repo"},
+		{"git@[fe80:1]:user/repository.git", "git", "fe80", "1", "user/repository.git"},
+		{"git@[github.local:8080]:9999/user/repository.git", "git", "github.local", "8080", "9999/user/repository.git"},
+		{"[a:b]:c", "", "a:b", "", "c"},
+		{"[fe80::1]:repo.git", "", "fe80::1", "", "repo.git"},
+		{"a@b@c:d", "a@b", "c", "", "d"},
+		{"a@@b:c", "a@", "b", "", "c"},
+		{"[a@b]:repo", "a", "b", "", "repo"},
+		{"[x@y]:a@[b", "x", "y", "", "a@[b"},
+		{"[x@y]junk:a@[b", "x", "y", "", "a@[b"},
+		{"user@[x@y]:a@[b", "user@x", "y", "", "a@[b"},
+		{"a@b@[c]:d", "a@b", "c", "", "d"},
+		{"user@[a@b]:repo", "user@a", "b", "", "repo"},
+		{"host:path@other:repo", "", "host", "", "path@other:repo"},
+		{"[h:0]:p", "", "h", "0", "p"},
+		{"[h:65535]:p", "", "h", "65535", "p"},
+		{"[h:65536]:p", "", "h:65536", "", "p"},
+		{"[h:-1]:p", "", "h:-1", "", "p"},
+		{"[h:]:p", "", "h:", "", "p"},
+		{"[h:022]:p", "", "h", "22", "p"},
+		{"[h:+22]:p", "", "h", "22", "p"},
+		{"[h: 22]:p", "", "h", "22", "p"},
+		{"[h:22 ]:p", "", "h:22 ", "", "p"},
+		{"[h:-0]:p", "", "h", "0", "p"},
+		{"[a]junk:p", "", "a", "", "p"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			u, err := ParseURL(tc.input)
+			require.NoError(t, err)
+			assert.Equal(t, "ssh", u.Scheme)
+			assert.Equal(t, tc.user, u.User.Username())
+			assert.Equal(t, tc.host, u.Hostname())
+			assert.Equal(t, tc.port, u.Port())
+			assert.Equal(t, tc.path, u.Path)
 		})
 	}
 }
@@ -178,14 +254,6 @@ func TestParseURLFile(t *testing.T) {
 		{
 			input: "foo.git",
 			want:  "file://foo.git",
-		},
-		{
-			input: "C:\\foo.git",
-			want:  "file://C:\\foo.git",
-		},
-		{
-			input: "C:\\\\foo.git",
-			want:  "file://C:\\\\foo.git",
 		},
 		{
 			input: "file:///foo.git",
@@ -209,8 +277,20 @@ func TestParseURLFile(t *testing.T) {
 		},
 	}
 
+	// A DOS drive prefix is a local path on Windows and an SSH endpoint
+	// naming the host `C` everywhere else, because that is what
+	// canonical Git does: has_dos_drive_prefix is a no-op off Windows
+	// (git-compat-util.h), and url_is_local_not_ssh only reaches the
+	// local reading through it. git 2.55 on macOS asks HOST=[C] for
+	// CMD=[git-upload-pack '\\foo.git'].
 	if runtime.GOOS == "windows" {
 		tests = append(tests, []tt{{
+			input: "C:\\foo.git",
+			want:  "file://C:\\foo.git",
+		}, {
+			input: "C:\\\\foo.git",
+			want:  "file://C:\\\\foo.git",
+		}, {
 			input: "file:///C:/path/to/repo",
 			want:  "file://C:/path/to/repo",
 		}, {
