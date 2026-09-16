@@ -96,8 +96,9 @@ func (s *URLSuite) TestFindScpLikeComponents() {
 	}
 
 	for _, tc := range testCases {
-		user, host, port, path := FindScpLikeComponents(tc.url)
+		user, host, port, path, ok := FindScpLikeComponents(tc.url)
 
+		s.True(ok, tc.url)
 		s.Equal(tc.user, user, tc.url)
 		s.Equal(tc.host, host, tc.url)
 		s.Equal(tc.port, port, tc.url)

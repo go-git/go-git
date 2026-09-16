@@ -1247,12 +1247,13 @@ func resolveModuleURL(originURL, moduleURL string) (string, error) {
 		return moduleURL, nil
 	}
 	if !giturl.MatchesScheme(originURL) && giturl.MatchesScpLike(originURL) {
-		user, host, portStr, p := giturl.FindScpLikeComponents(originURL)
-		p = path.Join(p, moduleURL)
-		if portStr != "" {
-			portStr += ":"
+		if user, host, portStr, p, ok := giturl.FindScpLikeComponents(originURL); ok {
+			p = path.Join(p, moduleURL)
+			if portStr != "" {
+				portStr += ":"
+			}
+			return fmt.Sprintf("%s@%s:%s%s", user, host, portStr, p), nil
 		}
-		return fmt.Sprintf("%s@%s:%s%s", user, host, portStr, p), nil
 	}
 	base, err := url.Parse(originURL)
 	if err != nil {
