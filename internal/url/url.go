@@ -23,7 +23,7 @@ func MatchesScheme(url string) bool {
 
 // matchScpLike splits s according to the following grammar:
 //
-//	^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]+):(?P<path>[^\\].*)$
+//	^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]*):(?P<path>(?:[^\\].*)?)$
 //
 // The optional user is tried before the form without a user. A bracketed
 // host is tried before an unbracketed host.
@@ -65,29 +65,32 @@ func matchScpLikeAfterUser(s string) (host, path string, ok bool) {
 		}
 	}
 
-	// `[^:\s]+` cannot contain a `:`, so the host must end at the first
-	// one, must be non-empty, and must hold no whitespace.
-	colon := strings.IndexByte(s, ':')
-	if colon <= 0 {
-		return "", "", false
-	}
-	host = s[:colon]
-	if strings.ContainsAny(host, scpLikeWhitespace) {
+	// `[^:\s]*` cannot contain a `:`, so the host must end at the first
+	// one, and must hold no whitespace. It may be empty: Git reaches an
+	// empty host for `:path`, and `ssh` reads that as the local user on
+	// the local machine.
+	host, rest, found := strings.Cut(s, ":")
+	if !found || strings.ContainsAny(host, scpLikeWhitespace) {
 		return "", "", false
 	}
 
-	if path, ok := matchScpLikePath(s[colon+1:]); ok {
+	if path, ok := matchScpLikePath(rest); ok {
 		return host, path, true
 	}
 	return "", "", false
 }
 
 // matchScpLikePath returns s and true if s matches the SCP-like path grammar.
-// The path must be non-empty and must not start with a backslash
+// The path may be empty. Otherwise, it must not start with a backslash
 // or contain a newline after its first rune. On a non-match, it returns an
 // empty string and false.
 func matchScpLikePath(s string) (string, bool) {
-	if s == "" || s[0] == '\\' {
+	// The path may be empty: Git splits `host:` into a host and the
+	// empty path, and asks that host for `git-upload-pack ''`.
+	if s == "" {
+		return "", true
+	}
+	if s[0] == '\\' {
 		return "", false
 	}
 	// `.` excludes `\n` and `$` is end of text, so a newline anywhere

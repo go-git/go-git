@@ -41,6 +41,11 @@ func (s *URLSuite) TestMatchesScpLike() {
 		// address here.
 		"[fe80::1]:bond",
 		"git@[fe80::1]:james/bond",
+		// Neither half has a minimum length. The colon is the whole of
+		// the syntax, so all three of these are SSH for canonical Git.
+		"host:",
+		":path",
+		":",
 	}
 
 	for _, url := range examples {
@@ -111,6 +116,23 @@ func (s *URLSuite) TestFindScpLikeComponents() {
 			// The colons inside the literal belong to the address, and
 			// the one after it still opens the path.
 			url: "git@[fe80::1]:22:james/bond", user: "git", host: "[fe80::1]", path: "22:james/bond",
+		},
+		{
+			// git 2.55: HOST=[github.com] CMD=[git-upload-pack ''].
+			url: "github.com:", user: "", host: "github.com", path: "",
+		},
+		{
+			// git 2.55: HOST=[] CMD=[git-upload-pack 'james/bond'].
+			url: ":james/bond", user: "", host: "", path: "james/bond",
+		},
+		{
+			// git 2.55: HOST=[] CMD=[git-upload-pack ''].
+			url: ":", user: "", host: "", path: "",
+		},
+		{
+			// git 2.55 reports the single host `git@`, which ssh then
+			// splits the same way this does.
+			url: "git@:james/bond", user: "git", host: "", path: "james/bond",
 		},
 	}
 

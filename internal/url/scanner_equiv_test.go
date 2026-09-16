@@ -12,7 +12,7 @@ import (
 // The differential tests compare match results and extracted components.
 var (
 	oracleScheme = regexp.MustCompile(`://`)
-	oracleScp    = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]+):(?P<path>[^\\].*)$`)
+	oracleScp    = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]*):(?P<path>(?:[^\\].*)?)$`)
 )
 
 // equivDiff returns a description of the first difference between the
@@ -62,6 +62,9 @@ var equivSeeds = []string{
 
 	// User group boundaries.
 	"a@b:c", "a@b@c:d", "@host:p", "a@:path", "a@@b:c", "@:p",
+
+	// Degenerate components: an empty host, an empty path, or both.
+	":", "a@:", "[a]:", "@:",
 
 	// Host boundaries and the whitespace class.
 	"host:path", ":path", "host:", "ho st:path", "ho\tst:path",
@@ -132,23 +135,28 @@ func TestScannerRules(t *testing.T) {
 			cases: []kase{
 				// Both branches match. Greedy wins: user=a, not host="a@b".
 				{"a@b:c", want{true, "a", "b", "c"}},
-				// User branch fails (rest begins with `:`), so no-user is used.
-				{"a@:path", want{true, "", "a@", "path"}},
-				// User branch fails (rest has no `:`), so no-user is used.
+				// The host may be empty, so the user branch now succeeds
+				// here and the greedy parse wins. Git splits the same
+				// endpoint into the single host `a@`, which ssh then
+				// reads as user `a` and an empty host, so the two agree
+				// on what is dialled and differ only in which component
+				// the `a` is reported in.
+				{"a@:path", want{true, "a", "", "path"}},
+				{"a@:", want{true, "a", "", ""}},
+				// User branch fails (rest has no `:`), so no-user is
+				// used -- and it has no `:` either, so nothing matches.
 				{"a@b", want{false, "", "", ""}},
 			},
 		},
 		{
 			name: "HostCannotCrossFirstColonAndIsWhitespaceFree",
-			why: "`[^:\\s]+` excludes `:` and is closed by a literal `:`, so the host " +
-				"is exactly the text before the FIRST `:`, non-empty. RE2's `\\s` is " +
+			why: "`[^:\\s]*` excludes `:` and is closed by a literal `:`, so the host " +
+				"is exactly the text before the FIRST `:`. RE2's `\\s` is " +
 				"[\\t\\n\\f\\r ] — it does NOT include `\\v`, so a vertical tab is a " +
 				"legal host byte. Shortening the host cannot rescue a match, because " +
 				"the next byte would then not be the `:` the grammar demands.",
 			cases: []kase{
 				{"host:path", want{true, "", "host", "path"}},
-				// Empty host.
-				{":path", want{false, "", "", ""}},
 				// Each member of RE2's \s class rejects the host.
 				{"ho st:path", want{false, "", "", ""}},
 				{"ho\tst:path", want{false, "", "", ""}},
@@ -210,8 +218,8 @@ func TestScannerRules(t *testing.T) {
 				{"[a:b]:c", want{true, "", "[a:b]", "c"}},
 				{"[a]:c", want{true, "", "[a]", "c"}},
 				{"[a]::c", want{true, "", "[a]", ":c"}},
-				// Empty path: neither alternative can save it.
-				{"[a]:", want{false, "", "", ""}},
+				// The path may be empty, so the literal stands on its own.
+				{"[a]:", want{true, "", "[a]", ""}},
 				// Whitespace in the body rules the literal out, and the bare
 				// host left over holds whitespace too.
 				{"[a b]:c", want{false, "", "", ""}},
@@ -250,17 +258,49 @@ func TestScannerRules(t *testing.T) {
 			},
 		},
 		{
+			name: "DegenerateComponentsAreLegal",
+			why: "The colon is the whole of the SCP-like syntax: Git's " +
+				"url_is_local_not_ssh (url.c) asks only whether there IS a colon " +
+				"with no `/` before it, and parse_connect_url then splits on it " +
+				"with no minimum length on either half. So `host:` asks the host " +
+				"for `git-upload-pack ''` and `:path` asks the empty host — which " +
+				"ssh reads as the local machine — for `path`. go-git used to " +
+				"require both halves to be non-empty and so read both as LOCAL " +
+				"PATHS, opening a repository at the literal text instead.",
+			cases: []kase{
+				// git 2.55: HOST=[host] CMD=[git-upload-pack '']
+				{"host:", want{true, "", "host", ""}},
+				// git 2.55: HOST=[] CMD=[git-upload-pack 'path']
+				{":path", want{true, "", "", "path"}},
+				// git 2.55: HOST=[] CMD=[git-upload-pack '']
+				{":", want{true, "", "", ""}},
+				{"[a]:", want{true, "", "[a]", ""}},
+				// git 2.55: HOST=[a@] CMD=[git-upload-pack 'path'] -- the
+				// same dial, reported with the `a` in the user group.
+				{"a@:path", want{true, "a", "", "path"}},
+				{"a@:", want{true, "a", "", ""}},
+				{"@:p", want{true, "", "@", "p"}},
+				// A colon is still required: no colon, no match.
+				{"host", want{false, "", "", ""}},
+				{"", want{false, "", "", ""}},
+				{"a@b", want{false, "", "", ""}},
+				// The empty path does not rescue a path the grammar
+				// rejects; `$` still has to be reached.
+				{"h:\\p", want{false, "", "", ""}},
+				{"h:p\n", want{false, "", "", ""}},
+			},
+		},
+		{
 			name: "PathRules",
-			why: "`[^\\\\].*$` means: non-empty, first rune is not a backslash, and " +
-				"`.` excludes `\\n` while `$` is end-of-text (no (?m)), so no newline " +
-				"may appear past that first rune — a TRAILING newline fails too. Note " +
+			why: "`(?:[^\\\\].*)?$` means: empty, or a first rune that is not a " +
+				"backslash followed by anything `.` matches — and `.` excludes " +
+				"`\\n` while `$` is end-of-text (no (?m)), so no newline may appear " +
+				"past that first rune, a TRAILING newline included. Note " +
 				"`[^\\\\]` does match `\\n`, so a newline is legal as the first rune. " +
 				"Scanning for `\\n` from byte 1 is exact because `\\n` is never a " +
 				"UTF-8 continuation byte.",
 			cases: []kase{
 				{"h:p", want{true, "", "h", "p"}},
-				// Empty path.
-				{"host:", want{false, "", "", ""}},
 				// Leading backslash.
 				{"h:\\p", want{false, "", "", ""}},
 				{"h:\\", want{false, "", "", ""}},
@@ -298,8 +338,8 @@ func TestScannerRules(t *testing.T) {
 				{"/abs/path/with:colon/file", want{true, "", "/abs/path/with", "colon/file"}},
 				{"@host:p", want{true, "", "@host", "p"}},
 				{"a@b@host:p", want{true, "a", "b@host", "p"}},
-				{"host:", want{false, "", "", ""}},
-				{":path", want{false, "", "", ""}},
+				{"host:", want{true, "", "host", ""}},
+				{":path", want{true, "", "", "path"}},
 			},
 		},
 	} {
@@ -384,9 +424,12 @@ func TestMatchesScpLikeLayering(t *testing.T) {
 		{"./rel:path", true, false},
 		{"/abs/path/with:colon/file", true, false},
 		{"sub/dir:foo", true, false},
+		// The degenerate halves are SSH, exactly as in Git.
+		{"host:", true, true},
+		{":path", true, true},
+		{":", true, true},
 		// Grammar rejects it outright.
 		{"C:\\foo", false, false},
-		{"host:", false, false},
 	} {
 		_, _, _, grammar := matchScpLike(c.in)
 		if grammar != c.grammar {
@@ -563,14 +606,11 @@ func TestFindScpLikeComponentsOnNonMatch(t *testing.T) {
 	for _, s := range []string{
 		"",           // nothing at all
 		"host",       // no colon
-		"host:",      // empty path
 		"C:\\foo",    // path opens with a backslash
 		"h:p\n",      // trailing newline
 		"ho st:path", // whitespace in the host
-		":path",      // empty host
 		"h:\\",       // path is a lone backslash
 		"a@b",        // user branch and no-user branch both lack a colon
-		"[a]:",       // bracketed host, empty path
 		"[a b]:c",    // whitespace survives both host alternatives
 	} {
 		if oracleScp.FindStringSubmatch(s) != nil {

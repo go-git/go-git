@@ -103,6 +103,27 @@ func TestParseURL(t *testing.T) {
 			want:  "git://github.com/user/repository.git?foo#bar",
 		},
 		{
+			// Both halves of the SCP-like form may be empty: the colon
+			// is the whole of the syntax. git 2.55 asks `host` for
+			// `git-upload-pack ''`.
+			input: "host:",
+			want:  "ssh://host",
+		},
+		{
+			input: "[fe80::1]:",
+			want:  "ssh://[fe80::1]",
+		},
+		{
+			// An empty host, which git 2.55 hands to ssh as the empty
+			// string. Note what String() makes of it: net/url has no
+			// way to spell an empty host followed by a relative path,
+			// so it writes the path where the host goes. The Host and
+			// Path fields, which are what the ssh transport reads, are
+			// right.
+			input: ":path",
+			want:  "ssh://path",
+		},
+		{
 			// The scheme ends at the FIRST `://` anywhere, so this is
 			// a URL with the unroutable scheme `a`, not SSH to host
 			// `a`. git 2.55: fatal: protocol 'a:b' is not supported.
