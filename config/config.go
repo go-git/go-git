@@ -1041,6 +1041,21 @@ func (c *Config) marshalProtocol() {
 	}
 	s := c.Raw.Section(protocolSection)
 	s.RemoveOption(versionKey)
+
+	// Likewise clear per-scheme allow entries the struct no longer
+	// holds, so a removed entry does not linger. Unmarshal records every
+	// subsection carrying an allow key, so a subsection missing from the
+	// map had its entry dropped programmatically. Only the allow key is
+	// removed, and the subsection only once nothing else is left in it:
+	// unrelated keys under protocol.<name> are not ours to discard.
+	s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
+		if _, keep := c.Protocol.AllowByName[sub.Name]; keep {
+			return false
+		}
+		sub.RemoveOption(allowKey)
+		return len(sub.Options) == 0
+	})
+
 	if len(s.Options) == 0 && len(s.Subsections) == 0 {
 		c.Raw.RemoveSection(protocolSection)
 	}
@@ -1052,12 +1067,6 @@ func (c *Config) marshalProtocol() {
 
 	if len(c.Protocol.AllowByName) > 0 {
 		s := c.Raw.Section(protocolSection)
-		// Drop existing per-scheme subsections so removed entries do
-		// not linger in the marshalled output.
-		s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
-			_, replaced := c.Protocol.AllowByName[sub.Name]
-			return replaced
-		})
 		for name, v := range c.Protocol.AllowByName {
 			sub := s.Subsection(name)
 			sub.SetOption(allowKey, v)

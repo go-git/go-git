@@ -1386,3 +1386,74 @@ func TestUnmarshalProtocol_RejectsInvalidPerSchemeAllow(t *testing.T) {
 	err := cfg.Unmarshal(raw)
 	require.Error(t, err)
 }
+
+// A per-scheme entry dropped from AllowByName must not survive the next
+// marshal. Unmarshal records every subsection carrying an allow key, so
+// a subsection missing from the map was removed programmatically and
+// writing it back out would silently reinstate the policy.
+func TestMarshalProtocol_DropsRemovedPerSchemeAllow(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(
+		"[protocol]\n\tallow = never\n"+
+			"[protocol \"file\"]\n\tallow = always\n"+
+			"[protocol \"ssh\"]\n\tallow = always\n",
+	)))
+	require.Equal(t, map[string]string{
+		"file": ProtocolAlways,
+		"ssh":  ProtocolAlways,
+	}, cfg.Protocol.AllowByName)
+
+	// Drop "file" and retune "ssh".
+	cfg.Protocol.AllowByName = map[string]string{"ssh": ProtocolNever}
+
+	buf, err := cfg.Marshal()
+	require.NoError(t, err)
+	out := string(buf)
+
+	require.NotContains(t, out, "[protocol \"file\"]",
+		"a removed per-scheme entry must not linger in the output")
+	require.Contains(t, out, "[protocol \"ssh\"]")
+
+	// The surviving entry round-trips at its new value.
+	got := NewConfig()
+	require.NoError(t, got.Unmarshal(buf))
+	require.Equal(t, map[string]string{"ssh": ProtocolNever}, got.Protocol.AllowByName)
+	require.Equal(t, ProtocolNever, got.Protocol.Allow)
+}
+
+// Clearing AllowByName entirely must clear every per-scheme subsection,
+// not just leave them behind because the map went empty.
+func TestMarshalProtocol_DropsAllPerSchemeAllow(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(
+		"[protocol \"file\"]\n\tallow = always\n",
+	)))
+	cfg.Protocol.AllowByName = nil
+
+	buf, err := cfg.Marshal()
+	require.NoError(t, err)
+	require.NotContains(t, string(buf), "protocol")
+}
+
+// Only the allow key belongs to this marshaller. A protocol.<name>
+// subsection that carries other keys keeps them, and keeps the
+// subsection, when its allow entry is removed.
+func TestMarshalProtocol_KeepsUnrelatedSubsectionKeys(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(
+		"[protocol \"file\"]\n\tallow = always\n\tsomething = else\n",
+	)))
+	cfg.Protocol.AllowByName = nil
+
+	buf, err := cfg.Marshal()
+	require.NoError(t, err)
+	out := string(buf)
+	require.NotContains(t, out, "allow")
+	require.Contains(t, out, "something = else")
+}
