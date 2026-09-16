@@ -147,6 +147,34 @@ func TestParseURL(t *testing.T) {
 		},
 	}
 
+	// Neither the host nor the path excludes a byte, because Git
+	// restricts neither: the whitespace and backslash rules go-git used
+	// to apply did not reject these endpoints, they reclassified them
+	// as local paths.
+	tests = append(tests, []tt{{
+		// git 2.55: HOST=[ho st] CMD=[git-upload-pack 'path'].
+		input: "ho st:path",
+		want:  "ssh://ho%20st/path",
+	}, {
+		// git 2.55: HOST=[host] CMD=[git-upload-pack '\\path'].
+		input: "host:\\path",
+		want:  "ssh://host/%5Cpath",
+	}, {
+		// git 2.55: HOST=[a b] CMD=[git-upload-pack 'c'].
+		input: "[a b]:c",
+		want:  "ssh://[a%20b]/c",
+	}}...)
+
+	if runtime.GOOS != "windows" {
+		// A DOS drive prefix is only local on Windows, in go-git as in
+		// Git. git 2.55 on macOS: HOST=[C] CMD=[git-upload-pack
+		// '\\path\\to\\repo'].
+		tests = append(tests, tt{
+			input: "C:\\path\\to\\repo",
+			want:  "ssh://C/%5Cpath%5Cto%5Crepo",
+		})
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
@@ -180,14 +208,6 @@ func TestParseURLFile(t *testing.T) {
 			want:  "file://foo.git",
 		},
 		{
-			input: "C:\\foo.git",
-			want:  "file://C:\\foo.git",
-		},
-		{
-			input: "C:\\\\foo.git",
-			want:  "file://C:\\\\foo.git",
-		},
-		{
 			input: "file:///foo.git",
 			want:  "file:///foo.git",
 		},
@@ -209,8 +229,20 @@ func TestParseURLFile(t *testing.T) {
 		},
 	}
 
+	// A DOS drive prefix is a local path on Windows and an SSH endpoint
+	// naming the host `C` everywhere else, because that is what
+	// canonical Git does: has_dos_drive_prefix is a no-op off Windows
+	// (git-compat-util.h), and url_is_local_not_ssh only reaches the
+	// local reading through it. git 2.55 on macOS asks HOST=[C] for
+	// CMD=[git-upload-pack '\\foo.git'].
 	if runtime.GOOS == "windows" {
 		tests = append(tests, []tt{{
+			input: "C:\\foo.git",
+			want:  "file://C:\\foo.git",
+		}, {
+			input: "C:\\\\foo.git",
+			want:  "file://C:\\\\foo.git",
+		}, {
 			input: "file:///C:/path/to/repo",
 			want:  "file://C:/path/to/repo",
 		}, {

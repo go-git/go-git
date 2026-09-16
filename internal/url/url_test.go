@@ -230,6 +230,43 @@ func (s *URLSuite) TestMatchesScpLikeWindowsDrivePrefix() {
 	}
 }
 
+func (s *URLSuite) TestMatchesScpLikeDrivePrefixOffWindows() {
+	// Off Windows a drive-letter path is NOT local: Git's
+	// has_dos_drive_prefix is a no-op there (git-compat-util.h), so
+	// url_is_local_not_ssh never reaches the local reading and Git
+	// dials host `C`. git 2.55 on macOS, for `C:\path\to\repo`:
+	// HOST=[C] CMD=[git-upload-pack '\path\to\repo'].
+	if runtime.GOOS == "windows" {
+		s.T().Skip("non-Windows only: the drive prefix IS local on Windows")
+	}
+	for _, url := range []string{
+		"C:foo",
+		"C:/path/to/repo",
+		`C:\path\to\repo`,
+		"d:relative",
+	} {
+		s.True(MatchesScpLike(url), url)
+	}
+}
+
+func (s *URLSuite) TestMatchesScpLikeAcceptsAnyByte() {
+	// Git restricts neither half of the SCP-like form, so neither does
+	// this. go-git used to reject whitespace in the host and a leading
+	// backslash or an embedded newline in the path, which did not
+	// reject the endpoint -- it reclassified it as a local path.
+	for _, url := range []string{
+		"ho st:path",    // git 2.55: HOST=[ho st] CMD=[...'path']
+		"host:\\path",   // git 2.55: HOST=[host] CMD=[...'\path']
+		"host:a\nb",     // git 2.55: HOST=[host] CMD=[...'a\nb']
+		"host:path\n",   // git 2.55: HOST=[host] CMD=[...'path\n']
+		"[a b]:c",       // git 2.55: HOST=[a b] CMD=[...'c']
+		"ho\x00st:path", // NUL and invalid UTF-8 are ordinary bytes
+		"ho\xffst:path",
+	} {
+		s.True(MatchesScpLike(url), "%q", url)
+	}
+}
+
 func (s *URLSuite) TestMatchesScpLikeStillAcceptsRealSCP() {
 	// Regression-guard: the new disambiguation logic must not reject
 	// canonical SCP forms.
