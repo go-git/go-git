@@ -70,8 +70,22 @@ func TestParseURL(t *testing.T) {
 			want:  "ssh://git@github.com/9999/user/repository.git",
 		},
 		{
+			// The SCP-like form has no port: everything after the
+			// first colon is the path, exactly as canonical Git reads
+			// it, so `8080:` here is the start of the path and not a
+			// port to dial.
 			input: "git@github.com:8080:9999/user/repository.git",
-			want:  "ssh://git@github.com:8080/9999/user/repository.git",
+			want:  "ssh://git@github.com/8080:9999/user/repository.git",
+		},
+		{
+			// A bracketed literal host, the only way to write an IPv6
+			// address in the SCP-like form.
+			input: "git@[fe80::1]:user/repository.git",
+			want:  "ssh://git@[fe80::1]/user/repository.git",
+		},
+		{
+			input: "git@[fe80::1]:22:user/repository.git",
+			want:  "ssh://git@[fe80::1]/22:user/repository.git",
 		},
 		{
 			input: "git://github.com/user/repository.git?foo#bar",

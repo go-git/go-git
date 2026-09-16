@@ -1247,12 +1247,13 @@ func resolveModuleURL(originURL, moduleURL string) (string, error) {
 		return moduleURL, nil
 	}
 	if !giturl.MatchesScheme(originURL) && giturl.MatchesScpLike(originURL) {
-		if user, host, portStr, p, ok := giturl.FindScpLikeComponents(originURL); ok {
+		if user, host, p, ok := giturl.FindScpLikeComponents(originURL); ok {
 			p = path.Join(p, moduleURL)
-			if portStr != "" {
-				portStr += ":"
-			}
-			return fmt.Sprintf("%s@%s:%s%s", user, host, portStr, p), nil
+			// The SCP-like form has no port: everything after the
+			// first `:` is the path, so it is rebuilt verbatim. The
+			// host keeps any brackets it was written with, which is
+			// what makes an IPv6 literal parse the same way again.
+			return fmt.Sprintf("%s@%s:%s", user, host, p), nil
 		}
 	}
 	base, err := url.Parse(originURL)

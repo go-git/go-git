@@ -9,6 +9,7 @@ var benchURLs = []string{
 	"git://github.com/user/repository.git",
 	"git@github.com:james/bond",
 	"git@github.com:22:james/bond",
+	"git@[fe80::1]:james/bond",
 	"user@host.example.com:path/to/repo.git",
 	"/home/user/src/go-git",
 	"./relative/path/repo.git",

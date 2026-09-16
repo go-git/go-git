@@ -3,7 +3,6 @@ package url
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"runtime"
@@ -25,54 +24,63 @@ func MatchesScheme(url string) bool {
 
 // matchScpLike splits s according to the following grammar:
 //
-//	^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5}):)?(?P<path>[^\\].*)$
+//	^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]\s]+\]|[^:\s]+):(?P<path>[^\\].*)$
 //
-// The optional user is tried before the form without a user. The optional
-// port is tried before the form without a port.
+// The optional user is tried before the form without a user. A bracketed
+// host is tried before an unbracketed host.
 // If s does not match, it returns empty components and false.
 // It does not exclude URLs with schemes or local paths; see [ParseSCP].
-func matchScpLike(s string) (user, host, port, path string, ok bool) {
+func matchScpLike(s string) (user, host, path string, ok bool) {
 	// `[^@]+` cannot contain an `@`, so the user can only ever be the
 	// text preceding the first one, and must be non-empty.
 	if at := strings.IndexByte(s, '@'); at > 0 {
-		if host, port, path, ok := matchScpLikeAfterUser(s[at+1:]); ok {
-			return s[:at], host, port, path, true
+		if host, path, ok := matchScpLikeAfterUser(s[at+1:]); ok {
+			return s[:at], host, path, true
 		}
 	}
-	if host, port, path, ok := matchScpLikeAfterUser(s); ok {
-		return "", host, port, path, true
+	if host, path, ok := matchScpLikeAfterUser(s); ok {
+		return "", host, path, true
 	}
 
 	// On a non-match every component is empty, so a caller that ignores
 	// ok cannot mistake a partial parse for a result.
-	return "", "", "", "", false
+	return "", "", "", false
 }
 
-// matchScpLikeAfterUser parses the host, optional port, and path in s.
-// It applies the grammar used by matchScpLike after the optional user.
+// matchScpLikeAfterUser parses the host and path in s, without a user prefix.
+// It applies the grammar used by matchScpLike and preserves host brackets.
 // The components are valid only when ok is true.
-func matchScpLikeAfterUser(s string) (host, port, path string, ok bool) {
+func matchScpLikeAfterUser(s string) (host, path string, ok bool) {
+	// `\[[^\]\s]+\]` is the first alternative, so a bracketed host is
+	// preferred whenever one parses. Its body cannot contain a `]`, so
+	// the literal ends at the first one; it holds no whitespace and must
+	// be non-empty, and the `]` must be followed by the closing `:`.
+	if strings.HasPrefix(s, "[") {
+		if end := strings.IndexByte(s, ']'); end > 1 &&
+			!strings.ContainsAny(s[1:end], scpLikeWhitespace) {
+			if rest, found := strings.CutPrefix(s[end+1:], ":"); found {
+				if path, ok := matchScpLikePath(rest); ok {
+					return s[:end+1], path, true
+				}
+			}
+		}
+	}
+
 	// `[^:\s]+` cannot contain a `:`, so the host must end at the first
 	// one, must be non-empty, and must hold no whitespace.
 	colon := strings.IndexByte(s, ':')
 	if colon <= 0 {
-		return "", "", "", false
+		return "", "", false
 	}
 	host = s[:colon]
 	if strings.ContainsAny(host, scpLikeWhitespace) {
-		return "", "", "", false
+		return "", "", false
 	}
 
-	rest := s[colon+1:]
-	// `[0-9]{1,5}` is greedy and cannot contain the `:` that closes it,
-	// so the only candidate port is the full run of leading digits.
-	if n := leadingDigits(rest); n >= 1 && n <= 5 && n < len(rest) && rest[n] == ':' {
-		if path, ok := matchScpLikePath(rest[n+1:]); ok {
-			return host, rest[:n], path, true
-		}
+	if path, ok := matchScpLikePath(s[colon+1:]); ok {
+		return host, path, true
 	}
-	path, ok = matchScpLikePath(rest)
-	return host, "", path, ok
+	return "", "", false
 }
 
 // matchScpLikePath returns s and true if s matches the SCP-like path grammar.
@@ -93,20 +101,10 @@ func matchScpLikePath(s string) (string, bool) {
 	return s, true
 }
 
-// leadingDigits returns the length of the run of ASCII digits at the
-// start of s.
-func leadingDigits(s string) int {
-	i := 0
-	for i < len(s) && '0' <= s[i] && s[i] <= '9' {
-		i++
-	}
-	return i
-}
-
 // MatchesScpLike returns true if the given string matches an SCP-like
 // format scheme.
 func MatchesScpLike(url string) bool {
-	if _, _, _, _, ok := matchScpLike(url); !ok {
+	if _, _, _, ok := matchScpLike(url); !ok {
 		return false
 	}
 	// Mirror canonical Git's url_is_local_not_ssh in connect.c[1] for
@@ -140,11 +138,15 @@ func hasDosDrivePrefix(s string) bool {
 	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
 
-// FindScpLikeComponents returns the user, host, port, and path in url.
+// FindScpLikeComponents returns the user, host, and path in url.
 // If url does not match the SCP-like grammar, it returns empty components
 // and false. It does not exclude URLs with schemes or local paths; callers
 // should check [MatchesScheme] and [MatchesScpLike] first.
-func FindScpLikeComponents(url string) (user, host, port, path string, ok bool) {
+//
+// A bracketed host retains its brackets, as in "[fe80::1]:repo.git".
+// The path starts after the colon separating it from the host; subsequent
+// colons are part of the path. This syntax does not support a port number.
+func FindScpLikeComponents(url string) (user, host, path string, ok bool) {
 	return matchScpLike(url)
 }
 
@@ -207,13 +209,9 @@ func ParseSCP(endpoint string) (*url.URL, bool) {
 		return nil, false
 	}
 
-	user, host, port, path, ok := FindScpLikeComponents(endpoint)
+	user, host, path, ok := FindScpLikeComponents(endpoint)
 	if !ok {
 		return nil, false
-	}
-
-	if port != "" {
-		host = net.JoinHostPort(host, port)
 	}
 
 	return &url.URL{

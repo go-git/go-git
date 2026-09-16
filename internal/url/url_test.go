@@ -17,27 +17,30 @@ func TestURLSuite(t *testing.T) {
 }
 
 func (s *URLSuite) TestMatchesScpLike() {
-	// See https://github.com/git/git/blob/master/Documentation/urls.txt#L37
+	// The shape is `[<user>@]<host>:<path>`. See
+	// https://github.com/git/git/blob/v2.56.0/Documentation/urls.adoc#L23-L25.
 	examples := []string{
 		// Most-extended case
 		"git@github.com:james/bond",
-		// Most-extended case with port
+		// A path whose first segment is digits; there is no port in
+		// this form, so `22:` is simply where the path starts.
 		"git@github.com:22:james/bond",
 		// Most-extended case with numeric path
 		"git@github.com:007/bond",
-		// Most-extended case with port and numeric "username"
 		"git@github.com:22:007/bond",
 		// Single repo path
 		"git@github.com:bond",
-		// Single repo path with port
 		"git@github.com:22:bond",
-		// Single repo path with port and numeric repo
 		"git@github.com:22:007",
 		// Repo path ending with .git and starting with _
 		"git@github.com:22:_007.git",
 		"git@github.com:_007.git",
 		"git@github.com:_james.git",
 		"git@github.com:_james/bond.git",
+		// Bracketed literal hosts, the only way to write an IPv6
+		// address here.
+		"[fe80::1]:bond",
+		"git@[fe80::1]:james/bond",
 	}
 
 	for _, url := range examples {
@@ -46,62 +49,77 @@ func (s *URLSuite) TestMatchesScpLike() {
 }
 
 func (s *URLSuite) TestFindScpLikeComponents() {
+	// There is no port in the SCP-like form: canonical Git splits the
+	// endpoint at the first `:` and everything after it is the path,
+	// so a leading digit run in the path stays in the path. See
+	// parse_connect_url in
+	// https://github.com/git/git/blob/v2.56.0/connect.c#L1097-L1165.
 	testCases := []struct {
-		url, user, host, port, path string
+		url, user, host, path string
 	}{
 		{
 			// Most-extended case
-			url: "git@github.com:james/bond", user: "git", host: "github.com", port: "", path: "james/bond",
+			url: "git@github.com:james/bond", user: "git", host: "github.com", path: "james/bond",
 		},
 		{
-			// Most-extended case with port
-			url: "git@github.com:22:james/bond", user: "git", host: "github.com", port: "22", path: "james/bond",
+			// A path whose first segment is digits: Git asks the host
+			// for `22:james/bond`, it does not dial TCP port 22.
+			url: "git@github.com:22:james/bond", user: "git", host: "github.com", path: "22:james/bond",
 		},
 		{
 			// Most-extended case with numeric path
-			url: "git@github.com:007/bond", user: "git", host: "github.com", port: "", path: "007/bond",
+			url: "git@github.com:007/bond", user: "git", host: "github.com", path: "007/bond",
 		},
 		{
-			// Most-extended case with port and numeric path
-			url: "git@github.com:22:007/bond", user: "git", host: "github.com", port: "22", path: "007/bond",
+			url: "git@github.com:22:007/bond", user: "git", host: "github.com", path: "22:007/bond",
 		},
 		{
 			// Single repo path
-			url: "git@github.com:bond", user: "git", host: "github.com", port: "", path: "bond",
+			url: "git@github.com:bond", user: "git", host: "github.com", path: "bond",
 		},
 		{
-			// Single repo path with port
-			url: "git@github.com:22:bond", user: "git", host: "github.com", port: "22", path: "bond",
+			url: "git@github.com:22:bond", user: "git", host: "github.com", path: "22:bond",
 		},
 		{
-			// Single repo path with port and numeric path
-			url: "git@github.com:22:007", user: "git", host: "github.com", port: "22", path: "007",
-		},
-		{
-			// Repo path ending with .git and starting with _
-			url: "git@github.com:22:_007.git", user: "git", host: "github.com", port: "22", path: "_007.git",
+			url: "git@github.com:22:007", user: "git", host: "github.com", path: "22:007",
 		},
 		{
 			// Repo path ending with .git and starting with _
-			url: "git@github.com:_007.git", user: "git", host: "github.com", port: "", path: "_007.git",
+			url: "git@github.com:22:_007.git", user: "git", host: "github.com", path: "22:_007.git",
 		},
 		{
 			// Repo path ending with .git and starting with _
-			url: "git@github.com:_james.git", user: "git", host: "github.com", port: "", path: "_james.git",
+			url: "git@github.com:_007.git", user: "git", host: "github.com", path: "_007.git",
 		},
 		{
 			// Repo path ending with .git and starting with _
-			url: "git@github.com:_james/bond.git", user: "git", host: "github.com", port: "", path: "_james/bond.git",
+			url: "git@github.com:_james.git", user: "git", host: "github.com", path: "_james.git",
+		},
+		{
+			// Repo path ending with .git and starting with _
+			url: "git@github.com:_james/bond.git", user: "git", host: "github.com", path: "_james/bond.git",
+		},
+		{
+			// A bracketed literal host keeps its brackets, so the host
+			// stays usable as a net/url host and as SCP-like text.
+			url: "[fe80::1]:bond", user: "", host: "[fe80::1]", path: "bond",
+		},
+		{
+			url: "git@[fe80::1]:james/bond", user: "git", host: "[fe80::1]", path: "james/bond",
+		},
+		{
+			// The colons inside the literal belong to the address, and
+			// the one after it still opens the path.
+			url: "git@[fe80::1]:22:james/bond", user: "git", host: "[fe80::1]", path: "22:james/bond",
 		},
 	}
 
 	for _, tc := range testCases {
-		user, host, port, path, ok := FindScpLikeComponents(tc.url)
+		user, host, path, ok := FindScpLikeComponents(tc.url)
 
 		s.True(ok, tc.url)
 		s.Equal(tc.user, user, tc.url)
 		s.Equal(tc.host, host, tc.url)
-		s.Equal(tc.port, port, tc.url)
 		s.Equal(tc.path, path, tc.url)
 	}
 }
@@ -145,6 +163,8 @@ func (s *URLSuite) TestMatchesScpLikeStillAcceptsRealSCP() {
 		"git@github.com:james/bond",
 		"user@host.example.com:path/to/repo.git",
 		"host:path",
+		"[fe80::1]:path",
+		"git@[fe80::1]:path",
 	} {
 		s.True(MatchesScpLike(url), url)
 	}
