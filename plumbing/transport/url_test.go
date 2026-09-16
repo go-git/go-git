@@ -78,6 +78,17 @@ func TestParseURL(t *testing.T) {
 			want:  "ssh://git@github.com/8080:9999/user/repository.git",
 		},
 		{
+			// The user is optional in the SCP-like form. Writing an
+			// empty userinfo would render as `ssh://@github.com/...`,
+			// a URL that names no user and does not round-trip.
+			input: "github.com:user/repository.git",
+			want:  "ssh://github.com/user/repository.git",
+		},
+		{
+			input: "[fe80::1]:user/repository.git",
+			want:  "ssh://[fe80::1]/user/repository.git",
+		},
+		{
 			// A bracketed literal host, the only way to write an IPv6
 			// address in the SCP-like form.
 			input: "git@[fe80::1]:user/repository.git",

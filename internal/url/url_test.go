@@ -124,6 +124,23 @@ func (s *URLSuite) TestFindScpLikeComponents() {
 	}
 }
 
+func (s *URLSuite) TestParseSCPOmitsAnEmptyUser() {
+	// The user is optional in the SCP-like form. url.User("") is an
+	// empty userinfo, not the absence of one: String writes it out as
+	// a bare `@`, and every `URL.User != nil` test reads it as a user
+	// having been given.
+	u, ok := ParseSCP("github.com:user/repository.git")
+	s.True(ok)
+	s.Nil(u.User)
+	s.Equal("ssh://github.com/user/repository.git", u.String())
+
+	u, ok = ParseSCP("git@github.com:user/repository.git")
+	s.True(ok)
+	s.NotNil(u.User)
+	s.Equal("git", u.User.Username())
+	s.Equal("ssh://git@github.com/user/repository.git", u.String())
+}
+
 func (s *URLSuite) TestMatchesScpLikeRejectsLocalPaths() {
 	// Cases that look superficially SCP-like but are actually local
 	// paths per canonical Git's url_is_local_not_ssh — a `/` before

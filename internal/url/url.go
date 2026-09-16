@@ -214,12 +214,19 @@ func ParseSCP(endpoint string) (*url.URL, bool) {
 		return nil, false
 	}
 
-	return &url.URL{
+	u := &url.URL{
 		Scheme: "ssh",
-		User:   url.User(user),
 		Host:   host,
 		Path:   path,
-	}, true
+	}
+	// The user is optional in this form, and url.User("") is not the
+	// same as no user at all: it is an empty userinfo, which String
+	// writes out as a bare `@` and which every `URL.User != nil` test
+	// reads as "a user was given".
+	if user != "" {
+		u.User = url.User(user)
+	}
+	return u, true
 }
 
 // ParseFile parses a local file path into a file:// *url.URL.
