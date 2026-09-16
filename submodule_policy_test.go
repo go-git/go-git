@@ -12,12 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 // Build a small superproject + nested target on disk, where the
@@ -169,4 +172,90 @@ func TestProtocolPolicyConfigRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "user", got.Protocol.Allow)
 	require.Equal(t, "always", got.Protocol.AllowByName["file"])
+}
+
+// errConfigStorer is a storer whose config cannot be read. Everything
+// else is delegated to an in-memory storage so the value is usable
+// wherever a storage.Storer is expected.
+type errConfigStorer struct {
+	storage.Storer
+	err error
+}
+
+func (s *errConfigStorer) Config() (*config.Config, error) {
+	return nil, s.err
+}
+
+func newErrConfigStorer(err error) *errConfigStorer {
+	return &errConfigStorer{Storer: memory.NewStorage(), err: err}
+}
+
+// A config that cannot be read must abort the operation. Swallowing the
+// error would drop the repository's protocol policy and let the request
+// continue under the built-in defaults, which are more permissive than
+// any policy a user would have written down.
+func TestRemoteConfigReadErrorFailsOperation(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("config is unreadable")
+	rc := &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{"https://localhost/repo.git"},
+		Fetch: []config.RefSpec{
+			config.RefSpec("+refs/heads/*:refs/remotes/origin/*"),
+		},
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func(*Remote) error
+	}{
+		{"List", func(r *Remote) error {
+			_, err := r.ListContext(context.Background(), &ListOptions{})
+			return err
+		}},
+		{"Fetch", func(r *Remote) error {
+			return r.FetchContext(context.Background(), &FetchOptions{})
+		}},
+		{"Push", func(r *Remote) error {
+			return r.PushContext(context.Background(), &PushOptions{})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := NewRemote(newErrConfigStorer(sentinel), rc)
+			err := tc.run(r)
+			require.ErrorIs(t, err, sentinel)
+		})
+	}
+}
+
+// The submodule's own config supplies its protocol policy, so a read
+// failure must surface instead of leaving the fetch to run under the
+// built-in defaults.
+func TestSubmoduleClientOptionsConfigReadError(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("config is unreadable")
+	subRepo := &Repository{Storer: newErrConfigStorer(sentinel)}
+
+	var s Submodule
+	opts, err := s.submoduleClientOptions(subRepo, nil)
+	require.ErrorIs(t, err, sentinel)
+	require.Nil(t, opts)
+}
+
+// A submodule whose config cannot be read must not fall through to a
+// fetch; UpdateContext has to report the failure.
+func TestSubmoduleUpdate_ConfigReadErrorFailsUpdate(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("config is unreadable")
+	subRepo := &Repository{Storer: newErrConfigStorer(sentinel)}
+
+	var s Submodule
+	err := s.fetchAndCheckout(
+		context.Background(), subRepo, &SubmoduleUpdateOptions{}, plumbing.ZeroHash,
+	)
+	require.ErrorIs(t, err, sentinel)
 }

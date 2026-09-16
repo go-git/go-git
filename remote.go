@@ -69,17 +69,15 @@ func (r *Remote) Config() *config.RemoteConfig {
 
 // repoConfig returns the storer's loaded config, used to resolve
 // protocol.<name>.allow and protocol.allow for transport policy gating.
-// Returns nil when the storer cannot supply a config; the policy gate
-// then falls back to environment defaults.
-func (r *Remote) repoConfig() *config.Config {
+// A nil config with a nil error means the Remote has no storer to read
+// from; the policy gate then falls back to the built-in defaults. A read
+// error is returned to the caller rather than swallowed, so that a
+// restrictive policy is never silently replaced by those defaults.
+func (r *Remote) repoConfig() (*config.Config, error) {
 	if r.s == nil {
-		return nil
+		return nil, nil
 	}
-	cfg, err := r.s.Config()
-	if err != nil {
-		return nil
-	}
-	return cfg
+	return r.s.Config()
 }
 
 func (r *Remote) String() string {
@@ -143,7 +141,12 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 		o.RemoteURL = r.c.URLs[len(r.c.URLs)-1]
 	}
 
-	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, r.repoConfig())
+	cfg, err := r.repoConfig()
+	if err != nil {
+		return err
+	}
+
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, cfg)
 	if err != nil {
 		return err
 	}
@@ -510,7 +513,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		o.RemoteURL = r.c.URLs[0]
 	}
 
-	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, r.repoConfig())
+	cfg, err := r.repoConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	cl, req, err := newClient(o.RemoteURL, o.ClientOptions, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,7 +1635,12 @@ func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Refe
 		return nil, ErrEmptyUrls
 	}
 
-	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions, r.repoConfig())
+	cfg, err := r.repoConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	cl, req, err := newClient(r.c.URLs[0], o.ClientOptions, cfg)
 	if err != nil {
 		return nil, err
 	}
