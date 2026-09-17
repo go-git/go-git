@@ -3474,6 +3474,106 @@ func (s *RepositorySuite) TestDeleteTagMissingTag() {
 	s.ErrorIs(err, ErrTagNotFound)
 }
 
+// A tag shorthand is spliced into refs/tags/ as it is spelled, never
+// normalised, so one spelled with ".." cannot name a reference in another
+// namespace. Memory storage holds references by name rather than as paths, so
+// the spliced name is simply an entry it does not have.
+func (s *RepositorySuite) TestTagShorthandCannotLeaveTagNamespace() {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
+	s.NoError(err)
+
+	head, err := r.Head()
+	s.NoError(err)
+
+	ref, err := r.Tag("../heads/" + head.Name().Short())
+	s.Nil(ref)
+	s.ErrorIs(err, ErrTagNotFound)
+}
+
+// DeleteTag resolves through Tag, so the same splicing decides what it removes.
+// A shorthand that reads as a path to a branch must leave that branch alone.
+func (s *RepositorySuite) TestDeleteTagShorthandCannotLeaveTagNamespace() {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
+	s.NoError(err)
+
+	head, err := r.Head()
+	s.NoError(err)
+	branch := head.Name()
+
+	err = r.DeleteTag("../heads/" + branch.Short())
+	s.ErrorIs(err, ErrTagNotFound)
+
+	_, err = r.Storer.Reference(branch)
+	s.NoError(err, "%s must survive a tag deletion", branch)
+}
+
+// HEAD sits two levels above refs/tags, within reach of a shorthand that a
+// normalising splice would resolve. It is the repository's starting point and
+// a file rather than an entry under refs/, so losing it costs more than losing
+// any single reference. Filesystem storage does turn a reference name into a
+// path, and so is the storage that refuses the name outright.
+func (s *RepositorySuite) TestDeleteTagCannotRemoveHEAD() {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	fs := s.TemporalFilesystem()
+
+	r, _ := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
+	s.NoError(err)
+
+	err = r.DeleteTag("../../HEAD")
+	s.ErrorIs(err, plumbing.ErrInvalidReferenceName)
+
+	_, err = fs.Stat("HEAD")
+	s.NoError(err, "HEAD must survive a tag deletion")
+}
+
+// Leaving the tag namespace is the spelling that does damage, but it is not
+// the only one path cleaning used to absorb. A shorthand that reaches a tag
+// only by way of cleaning no longer reaches it, which is what git does with
+// the same spellings.
+func (s *RepositorySuite) TestTagShorthandIsNotCleanedAsAPath() {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
+	)
+
+	fs := s.TemporalFilesystem()
+
+	r, _ := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{URL: url})
+	s.NoError(err)
+
+	ref, err := r.Tag("lightweight-tag")
+	s.NoError(err)
+	s.NotNil(ref)
+
+	for _, name := range []string{
+		"./lightweight-tag",
+		"lightweight-tag/",
+		"v1.0/../lightweight-tag",
+	} {
+		ref, err := r.Tag(name)
+		s.Nil(ref, "%q must not reach a tag", name)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "%q", name)
+	}
+}
+
 func (s *RepositorySuite) TestDeleteTagAnnotated() {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/tags.git").One(),
