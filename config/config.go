@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -198,6 +199,16 @@ type Config struct {
 		// version string in the initial response from the server.
 		//   2 - Wire protocol version 2.
 		Version protocol.Version
+		// Allow is the fallback policy for protocols that have no
+		// per-scheme entry in AllowByName. Accepts "always", "never",
+		// or "user" (case-insensitive). An empty value means the
+		// built-in defaults apply: http/https/git/ssh -> always,
+		// ext -> never, file and unknown schemes -> user.
+		Allow string
+		// AllowByName holds per-scheme policies, keyed by URL scheme
+		// (e.g. "file", "ssh"). Each value must be one of "always",
+		// "never", or "user"; an empty value defers to Allow.
+		AllowByName map[string]string
 	}
 
 	// Remotes list of repository remotes, the key of the map is the name
@@ -489,6 +500,7 @@ const (
 	gpgSignKey                 = "gpgSign"
 	uploadArchiveSection       = "uploadArchive"
 	allowUnreachableKey        = "allowUnreachable"
+	allowKey                   = "allow"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -547,11 +559,11 @@ func (c *Config) unmarshalCore() {
 	c.Core.AutoCRLF = s.Options.Get(autoCRLFKey)
 	c.Core.HooksPath = s.Options.Get(hooksPathKey)
 
-	if parsed := parseConfigBool(s.Options.Get(protectNTFSKey)); parsed.IsSet() {
+	if parsed := ParseConfigBool(s.Options.Get(protectNTFSKey)); parsed.IsSet() {
 		c.Core.ProtectNTFS = parsed
 	}
 
-	if parsed := parseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
+	if parsed := ParseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
 		c.Core.ProtectHFS = parsed
 	}
 
@@ -723,6 +735,27 @@ func (c *Config) unmarshalProtocol() error {
 			return err
 		}
 		c.Protocol.Version = v
+	}
+
+	if rv := s.Options.Get(allowKey); rv != "" {
+		if err := ValidateProtocolPolicy("protocol.allow", rv); err != nil {
+			return err
+		}
+		c.Protocol.Allow = rv
+	}
+
+	for _, sub := range s.Subsections {
+		rv := sub.Options.Get(allowKey)
+		if rv == "" {
+			continue
+		}
+		if err := ValidateProtocolPolicy("protocol."+sub.Name+".allow", rv); err != nil {
+			return err
+		}
+		if c.Protocol.AllowByName == nil {
+			c.Protocol.AllowByName = make(map[string]string, len(s.Subsections))
+		}
+		c.Protocol.AllowByName[sub.Name] = rv
 	}
 
 	return nil
@@ -996,20 +1029,52 @@ func (c *Config) marshalProtocol() {
 	if c.Protocol.Version != DefaultProtocolVersion {
 		s := c.Raw.Section(protocolSection)
 		s.SetOption(versionKey, c.Protocol.Version.String())
-		return
+	} else if c.Raw.HasSection(protocolSection) {
+		// The struct holds the default version. Clear any stale
+		// protocol.version left over in the raw config so switching back
+		// to the default persists.
+		c.Raw.Section(protocolSection).RemoveOption(versionKey)
 	}
 
-	// The struct holds the default version. Clear any stale protocol.version
-	// left over in the raw config so switching back to the default persists,
-	// and drop the section if it becomes empty. Guard on HasSection so a
-	// non-default round-trip does not introduce an empty [protocol].
-	if !c.Raw.HasSection(protocolSection) {
-		return
+	// Likewise clear per-scheme allow entries the struct no longer
+	// holds, so a removed entry does not linger. Unmarshal records every
+	// subsection carrying an allow key, so a subsection missing from the
+	// map had its entry dropped programmatically. Only the allow key is
+	// removed, and the subsection only once nothing else is left in it:
+	// unrelated keys under protocol.<name> are not ours to discard.
+	if c.Raw.HasSection(protocolSection) {
+		s := c.Raw.Section(protocolSection)
+		s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
+			if _, keep := c.Protocol.AllowByName[sub.Name]; keep {
+				return false
+			}
+			sub.RemoveOption(allowKey)
+			return len(sub.Options) == 0
+		})
 	}
-	s := c.Raw.Section(protocolSection)
-	s.RemoveOption(versionKey)
-	if len(s.Options) == 0 && len(s.Subsections) == 0 {
-		c.Raw.RemoveSection(protocolSection)
+
+	if c.Protocol.Allow != "" {
+		s := c.Raw.Section(protocolSection)
+		s.SetOption(allowKey, c.Protocol.Allow)
+	} else if c.Raw.HasSection(protocolSection) {
+		c.Raw.Section(protocolSection).RemoveOption(allowKey)
+	}
+
+	if len(c.Protocol.AllowByName) > 0 {
+		s := c.Raw.Section(protocolSection)
+		for name, v := range c.Protocol.AllowByName {
+			sub := s.Subsection(name)
+			sub.SetOption(allowKey, v)
+		}
+	}
+
+	// Drop the section once nothing is left in it, so neither a default
+	// round-trip nor a removal leaves an empty [protocol] behind.
+	if c.Raw.HasSection(protocolSection) {
+		s := c.Raw.Section(protocolSection)
+		if len(s.Options) == 0 && len(s.Subsections) == 0 {
+			c.Raw.RemoveSection(protocolSection)
+		}
 	}
 }
 

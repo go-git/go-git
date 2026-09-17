@@ -1370,3 +1370,191 @@ func TestGPGConfig(t *testing.T) {
 		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
 	})
 }
+
+func TestUnmarshalProtocol_RejectsInvalidAllow(t *testing.T) {
+	t.Parallel()
+	raw := []byte("[protocol]\n\tallow = sometimes\n")
+	cfg := NewConfig()
+	err := cfg.Unmarshal(raw)
+	require.Error(t, err)
+}
+
+func TestUnmarshalProtocol_RejectsInvalidPerSchemeAllow(t *testing.T) {
+	t.Parallel()
+	raw := []byte("[protocol \"file\"]\n\tallow = perhaps\n")
+	cfg := NewConfig()
+	err := cfg.Unmarshal(raw)
+	require.Error(t, err)
+}
+
+// A per-scheme entry dropped from AllowByName must not survive the next
+// marshal. Unmarshal records every subsection carrying an allow key, so
+// a subsection missing from the map was removed programmatically and
+// writing it back out would silently reinstate the policy.
+func TestMarshalProtocol_DropsRemovedPerSchemeAllow(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(
+		"[protocol]\n\tallow = never\n"+
+			"[protocol \"file\"]\n\tallow = always\n"+
+			"[protocol \"ssh\"]\n\tallow = always\n",
+	)))
+	require.Equal(t, map[string]string{
+		"file": ProtocolAlways,
+		"ssh":  ProtocolAlways,
+	}, cfg.Protocol.AllowByName)
+
+	// Drop "file" and retune "ssh".
+	cfg.Protocol.AllowByName = map[string]string{"ssh": ProtocolNever}
+
+	buf, err := cfg.Marshal()
+	require.NoError(t, err)
+	out := string(buf)
+
+	require.NotContains(t, out, "[protocol \"file\"]",
+		"a removed per-scheme entry must not linger in the output")
+	require.Contains(t, out, "[protocol \"ssh\"]")
+
+	// The surviving entry round-trips at its new value.
+	got := NewConfig()
+	require.NoError(t, got.Unmarshal(buf))
+	require.Equal(t, map[string]string{"ssh": ProtocolNever}, got.Protocol.AllowByName)
+	require.Equal(t, ProtocolNever, got.Protocol.Allow)
+}
+
+// Clearing AllowByName entirely must clear every per-scheme subsection,
+// not just leave them behind because the map went empty.
+func TestMarshalProtocol_DropsAllPerSchemeAllow(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(
+		"[protocol \"file\"]\n\tallow = always\n",
+	)))
+	cfg.Protocol.AllowByName = nil
+
+	buf, err := cfg.Marshal()
+	require.NoError(t, err)
+	require.NotContains(t, string(buf), "protocol")
+}
+
+// Only the allow key belongs to this marshaller. A protocol.<name>
+// subsection that carries other keys keeps them, and keeps the
+// subsection, when its allow entry is removed.
+func TestMarshalProtocol_KeepsUnrelatedSubsectionKeys(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(
+		"[protocol \"file\"]\n\tallow = always\n\tsomething = else\n",
+	)))
+	cfg.Protocol.AllowByName = nil
+
+	buf, err := cfg.Marshal()
+	require.NoError(t, err)
+	out := string(buf)
+	require.NotContains(t, out, "allow")
+	require.Contains(t, out, "something = else")
+}
+
+// The allow keys must be written even when the raw config has no
+// [protocol] section yet, and even when protocol.version is carrying a
+// non-default value. Both cases used to leave the section early, before
+// the allow keys were ever considered.
+func TestMarshalProtocol_WritesAllowWithoutExistingSection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no section", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Protocol.Allow = ProtocolUser
+		cfg.Protocol.AllowByName = map[string]string{"file": ProtocolAlways}
+
+		buf, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		got := NewConfig()
+		require.NoError(t, got.Unmarshal(buf))
+		require.Equal(t, ProtocolUser, got.Protocol.Allow)
+		require.Equal(t, map[string]string{"file": ProtocolAlways}, got.Protocol.AllowByName)
+	})
+
+	t.Run("non-default version", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		cfg.Protocol.Version = protocol.V0
+		cfg.Protocol.Allow = ProtocolNever
+
+		buf, err := cfg.Marshal()
+		require.NoError(t, err)
+
+		got := NewConfig()
+		require.NoError(t, got.Unmarshal(buf))
+		require.Equal(t, protocol.V0, got.Protocol.Version)
+		require.Equal(t, ProtocolNever, got.Protocol.Allow)
+	})
+}
+
+func TestMarshalProtocol_DropsRemovedAllow(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		raw     string
+		version protocol.Version
+		want    string
+	}{
+		{
+			name:    "last key",
+			raw:     "[protocol]\n\tallow = never\n",
+			version: DefaultProtocolVersion,
+		},
+		{
+			name:    "non-default version",
+			raw:     "[protocol]\n\tallow = never\n\tversion = 1\n",
+			version: protocol.V1,
+			want:    "[protocol]\n\tversion = 1\n",
+		},
+		{
+			name:    "stale version",
+			raw:     "[protocol]\n\tallow = never\n\tversion = 1\n",
+			version: DefaultProtocolVersion,
+		},
+		{
+			name:    "unrelated key",
+			raw:     "[protocol]\n\tallow = never\n\tsomething = else\n",
+			version: DefaultProtocolVersion,
+			want:    "[protocol]\n\tsomething = else\n",
+		},
+		{
+			name:    "per-scheme policy",
+			raw:     "[protocol]\n\tallow = never\n[protocol \"file\"]\n\tallow = always\n",
+			version: DefaultProtocolVersion,
+			want:    "[protocol \"file\"]\n\tallow = always\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			require.NoError(t, cfg.Unmarshal([]byte(tt.raw)))
+			cfg.Protocol.Allow = ""
+			cfg.Protocol.Version = tt.version
+
+			buf, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			got := NewConfig()
+			require.NoError(t, got.Unmarshal(buf))
+			require.Empty(t, got.Protocol.Allow)
+			require.Equal(t, tt.version, got.Protocol.Version)
+			require.Equal(t, cfg.Protocol.AllowByName, got.Protocol.AllowByName)
+			if tt.want == "" {
+				require.NotContains(t, string(buf), "[protocol")
+			} else {
+				require.Contains(t, string(buf), tt.want)
+			}
+		})
+	}
+}
