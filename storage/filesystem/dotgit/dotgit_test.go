@@ -452,6 +452,18 @@ func (s *SuiteDotGit) TestModuleNestingWithNonDirectoryObjectsAndRefs() {
 	}
 }
 
+func (s *SuiteDotGit) TestModuleNestingBoundsTheQuotedCommonDir() {
+	fs := s.EmptyFS()
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	escaping := strings.Repeat("../", maxCommonDirSize/8)
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(escaping), 0o644))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Require().Error(err)
+	s.ErrorContains(err, "is outside the filesystem")
+	s.Less(len(err.Error()), 4*maxCommonDirInError)
+}
+
 func (s *SuiteDotGit) TestModuleNestingWithCommonDirReadError() {
 	fs := s.EmptyFS()
 	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))

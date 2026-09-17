@@ -73,6 +73,9 @@ const (
 	// truncating a path could redirect the check to a different directory.
 	maxCommonDirSize = 1 << 20
 
+	// maxCommonDirInError limits the bytes quoted from a commondir path.
+	maxCommonDirInError = 100
+
 	// gitSpace matches Git's sane-ctype.h isspace table. Unlike C's isspace
 	// and unicode.IsSpace, it excludes vertical tab and form feed.
 	gitSpace = " \t\n\r"
@@ -1934,7 +1937,7 @@ func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, e
 		return nil, "", resolveErr
 	}
 
-	return nil, "", fmt.Errorf("submodule common directory %q is outside the filesystem", common)
+	return nil, "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(common))
 }
 
 // resolveRelativeCommonDir resolves common against the filesystem-relative p.
@@ -1978,10 +1981,10 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 		case "", ".":
 		case "..":
 			if len(resolved) == 0 {
-				return "", fmt.Errorf("submodule common directory %q is outside the filesystem", common)
+				return "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(common))
 			}
 			if link[len(link)-1] {
-				return "", fmt.Errorf("submodule common directory %q is resolved through the symbolic link %q", common, d.fs.Join(resolved...))
+				return "", fmt.Errorf("submodule common directory %q is resolved through the symbolic link %q", elide(common), elide(d.fs.Join(resolved...)))
 			}
 			resolved, link = resolved[:len(resolved)-1], link[:len(link)-1]
 			if len(resolved) < absent {
@@ -1993,6 +1996,14 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 	}
 
 	return d.fs.Join(resolved...), nil
+}
+
+// elide truncates a path for use in an error message.
+func elide(s string) string {
+	if len(s) <= maxCommonDirInError {
+		return s
+	}
+	return s[:maxCommonDirInError] + "..."
 }
 
 // escapesRoot reports whether a path relative to a root leaves it.
