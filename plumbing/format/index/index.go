@@ -234,7 +234,8 @@ func (i *Index) SkipUnless(patterns []string) {
 	for _, e := range i.Entries {
 		var include bool
 		for _, pattern := range patterns {
-			if strings.HasPrefix(e.Name, pattern) {
+			pattern = strings.TrimSuffix(pattern, "/")
+			if e.Name == pattern || strings.HasPrefix(e.Name, pattern+"/") {
 				include = true
 				break
 			}
