@@ -24,7 +24,3 @@ func init() {
 func isSymlinkWindowsNonAdmin(error) bool {
 	return false
 }
-
-func preReceiveHook(string) []byte {
-	return []byte{}
-}

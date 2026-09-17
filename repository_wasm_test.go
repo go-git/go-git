@@ -1,4 +1,4 @@
-//go:build wasip1
+//go:build wasip1 || js
 
 package git
 
@@ -28,4 +28,9 @@ func TestWasmInit(t *testing.T) {
 	require.NotNil(t, ref)
 	assert.False(t, ref.Hash().IsZero())
 	assert.Equal(t, h, ref.Hash())
+}
+
+// preReceiveHook returns no script: wasm targets cannot execute hooks.
+func preReceiveHook(string) []byte {
+	return []byte{}
 }
