@@ -201,24 +201,8 @@ func (s *DecoderSuite) TestDecodeIntoNonEmptyConfig() {
 	s.Equal(expected, obtained)
 }
 
-// TestDecodeScalesLinearly guards the lookups the decoder performs for every
-// header and every option line against degrading into a scan of everything
-// decoded so far. Without an index each of these shapes costs
-// O(lines × sections × len(name)), which is enough for a config of a few
-// hundred kilobytes from an untrusted source, a .gitmodules file for
-// instance, to take tens of seconds to decode.
-//
-// The assertion is on how the cost grows with the input rather than on an
-// absolute duration, which is far more robust on a loaded machine than a
-// threshold would be, though not immune to one. If it ever does flake, shrink
-// size: the separation between the two regimes does not depend on it, and a
-// smaller decode is both quicker and less exposed to a scheduling hiccup.
-// Raising tolerance is not the lever it looks like: at 12 the bound would be
-// 192, and the broken many subsections shape has been measured coming in under
-// that.
-//
-// When the index is broken this takes a couple of seconds to fail, against the
-// few tens of milliseconds it costs when it is not.
+// TestDecodeScalesLinearly checks that section and subsection lookups do not
+// make decoding quadratic in the input size.
 func (s *DecoderSuite) TestDecodeScalesLinearly() {
 	const (
 		size   = 4 * 1024
@@ -230,17 +214,25 @@ func (s *DecoderSuite) TestDecodeScalesLinearly() {
 		// Decoding is timed more than once, keeping the fastest run, to
 		// take the edge off a scheduling hiccup.
 		runs = 3
+		// Time repeated decodes to avoid zero or poorly resolved samples
+		// on platforms with coarse clocks, then compare the cost per decode.
+		minDuration = 100 * time.Millisecond
 	)
 
 	decode := func(in string) time.Duration {
 		best := time.Duration(math.MaxInt64)
 		for range runs {
 			start := time.Now()
-			err := NewDecoder(strings.NewReader(in)).Decode(New())
-			elapsed := time.Since(start)
-
-			s.Require().NoError(err)
-			best = min(best, elapsed)
+			var elapsed time.Duration
+			n := 0
+			for elapsed < minDuration {
+				if err := NewDecoder(strings.NewReader(in)).Decode(New()); err != nil {
+					s.T().Fatal(err)
+				}
+				n++
+				elapsed = time.Since(start)
+			}
+			best = min(best, elapsed/time.Duration(n))
 		}
 		return best
 	}
