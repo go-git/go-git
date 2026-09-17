@@ -33,3 +33,21 @@ func (m *matcher) Match(path []string, isDir bool) bool {
 	}
 	return false
 }
+
+func (m *matcher) matchEntry(path []string, isDir bool) bool {
+	n := len(m.patterns)
+	for i := n - 1; i >= 0; i-- {
+		var match MatchResult
+		if p, ok := m.patterns[i].(*pattern); ok {
+			match = p.match(path, isDir, true)
+		} else {
+			match = m.patterns[i].Match(path, isDir)
+			// Preserve the historical treatment of custom Pattern
+			// implementations, for which no richer match information exists.
+		}
+		if match > NoMatch {
+			return match == Exclude
+		}
+	}
+	return false
+}

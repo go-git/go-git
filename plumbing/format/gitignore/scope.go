@@ -91,6 +91,9 @@ func (s *Scope) Excluded() bool {
 // Unlike a Matcher built from a flat pattern list, Match honours excluded
 // ancestors: below an excluded directory it reports true without consulting
 // any pattern, so a negation there cannot re-include the entry.
+// Callers must Descend through the ancestors before matching their children.
+// Built-in patterns match the entry itself, not its ancestors; in particular,
+// re-including a directory does not override exclusions of its contents.
 func (s *Scope) Match(path []string, isDir bool) bool {
 	if s.excluded {
 		return true
@@ -107,6 +110,9 @@ func (s *Scope) Patterns() []Pattern {
 func (s *Scope) matches(path []string, isDir bool) bool {
 	if s.matcher == nil {
 		return false
+	}
+	if m, ok := s.matcher.(*matcher); ok {
+		return m.matchEntry(path, isDir)
 	}
 	return s.matcher.Match(path, isDir)
 }
