@@ -35,8 +35,9 @@ func FuzzDotGitIsGitDir(f *testing.F) {
 	f.Add([]byte("ref:\vrefs/heads/main\n"), []byte(nil), false)
 	f.Add([]byte("ref:\frefs/heads/main\n"), []byte(nil), false)
 
-	// A HEAD truncated at the read limit, one padded past it, and one whose
-	// hash is cut a byte short of a full SHA-1.
+	// A HEAD truncated at the read limit, one padded past it, one whose hash
+	// is cut a byte short of a full SHA-1, one carrying a NUL, and an empty
+	// one.
 	f.Add([]byte("ref:"+strings.Repeat(" ", 247)+"refs/"), []byte(nil), false)
 	f.Add([]byte("ref: refs/heads/main\n"+strings.Repeat(" ", 1000)), []byte(nil), false)
 	f.Add([]byte(sha1[:39]), []byte(nil), false)
