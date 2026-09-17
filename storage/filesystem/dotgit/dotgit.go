@@ -1749,7 +1749,8 @@ func (d *DotGit) PackRefs() (err error) {
 // directory, or an error wrapping [ErrModuleGitDirNested] if a proper prefix
 // of the name identifies another submodule's Git directory. It also returns
 // an error if a prefix's commondir file is empty, unreadable, larger than
-// 1 MiB, or resolves outside the filesystem.
+// 1 MiB, resolves outside the filesystem, or names a path this cannot resolve
+// the way Git does.
 //
 // Names may contain separators. As in [Git's submodule_name_to_gitdir],
 // nesting is checked on every call, so a name may be refused after a prefix
@@ -1811,6 +1812,7 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 
 	// Resolution errors in redirected paths must not bypass the nesting check.
 	redirected := false
+	commonFS := d.fs
 
 	commonFile := d.fs.Join(p, "commondir")
 	fi, err := d.fs.Stat(commonFile)
@@ -1844,27 +1846,10 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 		if i := strings.IndexByte(common, 0); i >= 0 {
 			common = common[:i]
 		}
-		absolute := filepath.IsAbs(common)
-		if absolute || path.IsAbs(filepath.ToSlash(common)) {
-			root := d.fs.Root()
-			if absolute && !filepath.IsAbs(root) {
-				root, err = filepath.Abs(root)
-				if err != nil {
-					return false, fmt.Errorf("resolve filesystem root: %w", err)
-				}
-			}
-			common, err = filepath.Rel(root, common)
-			if err != nil {
-				return false, fmt.Errorf("resolve submodule common directory: %w", err)
-			}
-		} else {
-			common = d.fs.Join(p, common)
+		commonFS, p, err = d.resolveCommonDir(p, common)
+		if err != nil {
+			return false, err
 		}
-		cleaned := filepath.ToSlash(filepath.Clean(common))
-		if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-			return false, fmt.Errorf("submodule common directory %q is outside the filesystem", common)
-		}
-		p = common
 		redirected = true
 	}
 
@@ -1872,19 +1857,13 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 	// on Windows, it checks only existence. Billy has no access equivalent,
 	// so conservatively count any existing entry.
 	for _, dir := range []string{objectsPath, refsPath} {
-		q := d.fs.Join(p, dir)
-		_, err := d.fs.Stat(q)
+		q := commonFS.Join(p, dir)
+		_, err := commonFS.Stat(q)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			return false, nil
 		case err != nil && redirected:
-			// The containment check above is lexical, so it sees a
-			// written "../" but not a symlink standing in a component.
-			// Such a path leaves the filesystem on the way to this Stat,
-			// and reading that failure as "no Git directory here" would
-			// let the commondir turn the check off. Only a prefix the
-			// file redirected can reach this: elsewhere an unreadable
-			// directory stays an absence, as it is in Git.
+			// This includes symlinks that leave the filesystem.
 			return false, fmt.Errorf("resolve submodule common directory %q: %w", q, err)
 		case err != nil:
 			return false, nil
@@ -1892,6 +1871,130 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// resolveCommonDir returns the backing filesystem and path named by commondir.
+// Relative paths are resolved against p. Absolute paths must name a location
+// within one of the repository's filesystem roots.
+func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, error) {
+	roots := []billy.Filesystem{d.fs}
+	if fs, ok := d.fs.(*RepositoryFilesystem); ok {
+		roots[0] = fs.dotGitFs
+		if fs.commonDotGitFs != nil {
+			roots = append(roots, fs.commonDotGitFs)
+		}
+	}
+
+	// Resolve against a backing filesystem, not RepositoryFilesystem's
+	// logical layout: a commondir path beginning with refs/ still names a
+	// location in the same filesystem as the file containing it.
+	if !filepath.IsAbs(common) && !path.IsAbs(filepath.ToSlash(common)) {
+		resolver := DotGit{fs: roots[0]}
+		resolved, err := resolver.resolveRelativeCommonDir(p, common)
+		return roots[0], resolved, err
+	}
+
+	// Rel and Abs clean their arguments. Split before the first ".." so
+	// the component walk can check for symlinks before removing any part
+	// of the path.
+	base, tail := common, "."
+	segments := strings.Split(filepath.ToSlash(common), "/")
+	if i := slices.Index(segments, ".."); i >= 0 {
+		base = strings.Join(segments[:i], "/") + "/"
+		tail = strings.Join(segments[i:], "/")
+	}
+	abs, err := filepath.Abs(base)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve submodule common directory: %w", err)
+	}
+
+	var resolveErr error
+	for _, fs := range roots {
+		root, err := filepath.Abs(fs.Root())
+		if err != nil {
+			return nil, "", fmt.Errorf("resolve filesystem root: %w", err)
+		}
+		rel, err := filepath.Rel(root, abs)
+		if err != nil || escapesRoot(rel) {
+			continue
+		}
+		resolver := DotGit{fs: fs}
+		resolved, err := resolver.resolveRelativeCommonDir(rel, tail)
+		if err == nil {
+			return fs, resolved, nil
+		}
+		// The path may leave a worktree root but remain in the common root.
+		resolveErr = err
+	}
+	if resolveErr != nil {
+		return nil, "", resolveErr
+	}
+
+	return nil, "", fmt.Errorf("submodule common directory %q is outside the filesystem", common)
+}
+
+// resolveRelativeCommonDir resolves common against the filesystem-relative p.
+// It rejects paths that leave the root or remove a symlink component with "..".
+// Git resolves symlinks before "..", but Billy has no realpath operation and
+// may clean paths before resolving them.
+func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
+	segments := strings.Split(filepath.ToSlash(common), "/")
+	if !slices.Contains(segments, "..") {
+		// Nothing is removed, so cleaning names what Git resolves.
+		return d.fs.Join(p, common), nil
+	}
+
+	// Cache symlink status for each component. Once a component is absent,
+	// its descendants need no filesystem probes.
+	var resolved []string
+	var link []bool
+	absent := -1
+
+	descend := func(segment string) {
+		resolved = append(resolved, segment)
+		if absent >= 0 && len(resolved) > absent {
+			link = append(link, false)
+			return
+		}
+		fi, err := d.fs.Lstat(d.fs.Join(resolved...))
+		if errors.Is(err, os.ErrNotExist) {
+			absent = len(resolved)
+		}
+		link = append(link, err == nil && fi.Mode()&os.ModeSymlink != 0)
+	}
+
+	if slashed := filepath.ToSlash(p); slashed != "" && slashed != "." {
+		for _, segment := range strings.Split(slashed, "/") {
+			descend(segment)
+		}
+	}
+
+	for _, segment := range segments {
+		switch segment {
+		case "", ".":
+		case "..":
+			if len(resolved) == 0 {
+				return "", fmt.Errorf("submodule common directory %q is outside the filesystem", common)
+			}
+			if link[len(link)-1] {
+				return "", fmt.Errorf("submodule common directory %q is resolved through the symbolic link %q", common, d.fs.Join(resolved...))
+			}
+			resolved, link = resolved[:len(resolved)-1], link[:len(link)-1]
+			if len(resolved) < absent {
+				absent = -1
+			}
+		default:
+			descend(segment)
+		}
+	}
+
+	return d.fs.Join(resolved...), nil
+}
+
+// escapesRoot reports whether a path relative to a root leaves it.
+func escapesRoot(rel string) bool {
+	rel = filepath.ToSlash(rel)
+	return rel == ".." || strings.HasPrefix(rel, "../")
 }
 
 // validHeadRef reports whether p has a HEAD format recognized by

@@ -179,6 +179,7 @@ func (s *SuiteDotGit) TestModuleNestingWithCommonDir() {
 	}{
 		{name: "relative", directory: "common", contents: "../../common\n"},
 		{name: "absolute", directory: "common", contents: "/common\n"},
+		{name: "absolute with parent components", directory: "common", contents: "/modules/lib/../../common\n"},
 		{name: "CRLF", directory: "common", contents: "../../common\r\n"},
 		{name: "trailing space", directory: "common ", contents: "../../common \r\n"},
 		{name: "absolute trailing space", directory: "common ", contents: "/common \r\n"},
@@ -290,6 +291,165 @@ func (s *SuiteDotGit) TestModuleNestingWithCommonDirThroughSymlink() {
 
 	_, err := New(fs).Module("lib/refs/heads")
 	s.Error(err)
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirThroughSymlinkComponent() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("symlink creation is privileged on windows")
+	}
+
+	// Git canonicalizes the concatenated path with realpath, where ".."
+	// names the parent of what the component before it resolves to. Cleaning
+	// the text first names "modules/lib/common" instead, so the two read
+	// different directories and only one of them may hold the nesting.
+	root := s.T().TempDir()
+	s.Require().NoError(New(osfs.New(filepath.Join(root, "elsewhere", "common"))).Initialize())
+	s.Require().NoError(os.MkdirAll(filepath.Join(root, "elsewhere", "x"), 0o755))
+
+	fs := osfs.New(filepath.Join(root, "repo"))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("link/../common\n"), 0o644))
+	s.Require().NoError(fs.Symlink(filepath.Join(root, "elsewhere", "x"), "modules/lib/link"))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Error(err)
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithAbsoluteCommonDirThroughSymlinkComponent() {
+	fs := s.EmptyFS()
+	s.Require().NoError(fs.MkdirAll("elsewhere/x", 0o755))
+	s.Require().NoError(fs.MkdirAll("elsewhere/common/objects", 0o755))
+	s.Require().NoError(fs.MkdirAll("elsewhere/common/refs", 0o755))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(fs.Symlink("../../elsewhere/x", "modules/lib/link"))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("/modules/lib/link/../common\n"), 0o644))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Error(err)
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirInWorktreeRoot() {
+	for _, absolute := range []bool{false, true} {
+		s.Run(fmt.Sprintf("absolute %t", absolute), func() {
+			root := s.T().TempDir()
+			worktree := osfs.New(filepath.Join(root, "worktree"))
+			common := osfs.New(filepath.Join(root, "common"))
+			s.Require().NoError(worktree.MkdirAll("refs/shared/objects", 0o755))
+			s.Require().NoError(worktree.MkdirAll("refs/shared/refs", 0o755))
+			contents := "../../refs/shared"
+			if absolute {
+				contents = filepath.Join(worktree.Root(), "refs", "shared")
+			}
+			s.Require().NoError(util.WriteFile(worktree, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(worktree, "modules/lib/commondir", []byte(contents), 0o644))
+
+			_, err := New(NewRepositoryFilesystem(worktree, common)).Module("lib/refs/heads")
+			s.ErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirInRelativeCommonRoot() {
+	root, err := os.MkdirTemp(".", "dotgit")
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { s.NoError(os.RemoveAll(root)) })
+	worktree := osfs.New(filepath.Join(root, "worktree"))
+	common := osfs.New(filepath.Join(root, "common"))
+	s.Require().NoError(New(common).Initialize())
+	target, err := filepath.Abs(common.Root())
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(worktree, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(worktree, "modules/lib/commondir", []byte(target), 0o644))
+
+	_, err = New(NewRepositoryFilesystem(worktree, common)).Module("lib/refs/heads")
+	s.ErrorIs(err, ErrModuleGitDirNested)
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithAbsoluteCommonDirAscendingToCommonRoot() {
+	common := osfs.New(s.T().TempDir())
+	worktree := osfs.New(filepath.Join(common.Root(), "worktrees", "wt"))
+	s.Require().NoError(common.MkdirAll("modules/lib/objects", 0o755))
+	s.Require().NoError(common.MkdirAll("modules/lib/refs", 0o755))
+	s.Require().NoError(util.WriteFile(worktree, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	contents := filepath.ToSlash(worktree.Root()) + "/../../modules/lib"
+	s.Require().NoError(util.WriteFile(worktree, "modules/lib/commondir", []byte(contents), 0o644))
+
+	_, err := New(NewRepositoryFilesystem(worktree, common)).Module("lib/refs/heads")
+	s.ErrorIs(err, ErrModuleGitDirNested)
+}
+
+// TestModuleNestingWithRootedCommonDirOutsideRoot covers a common directory
+// named by a path from a filesystem root that the filesystem does not hold.
+// On Windows such a path need not name a volume, where filepath.IsAbs reports
+// it as relative, so the same text has to reach the same answer from a root of
+// either kind.
+func (s *SuiteDotGit) TestModuleNestingWithRootedCommonDirOutsideRoot() {
+	for _, relativeRoot := range []bool{false, true} {
+		s.Run(fmt.Sprintf("relative root %t", relativeRoot), func() {
+			root := s.T().TempDir()
+			if relativeRoot {
+				dir, err := os.MkdirTemp(".", "dotgit")
+				s.Require().NoError(err)
+				s.T().Cleanup(func() { s.NoError(os.RemoveAll(dir)) })
+				root = dir
+			}
+			fs := osfs.New(root)
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("/common\n"), 0o644))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			s.ErrorContains(err, "is outside the filesystem")
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirInCommonRoot() {
+	tests := []struct {
+		name    string
+		gitDir  bool
+		wantErr error
+	}{
+		{name: "git directory", gitDir: true, wantErr: ErrModuleGitDirNested},
+		{name: "plain directory"},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			root := s.T().TempDir()
+			common := osfs.New(filepath.Join(root, ".git"))
+			worktree := osfs.New(filepath.Join(root, ".git", "worktrees", "wt"))
+
+			target := filepath.Join(common.Root(), "modules", "lib")
+			s.Require().NoError(os.MkdirAll(target, 0o755))
+			if tc.gitDir {
+				s.Require().NoError(New(osfs.New(target)).Initialize())
+			}
+
+			s.Require().NoError(util.WriteFile(worktree, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(worktree, "modules/lib/commondir", []byte(target+"\n"), 0o644))
+
+			_, err := New(NewRepositoryFilesystem(worktree, common)).Module("lib/refs/heads")
+			s.ErrorIs(err, tc.wantErr)
+		})
+	}
+}
+
+// TestModuleNestingWithNonDirectoryObjectsAndRefs covers objects and refs
+// entries that are not directories. Git tests them with access(X_OK), which
+// succeeds on an executable file and which its Windows layer reduces to a test
+// for existence, so a malformed layout like this is still a Git directory
+// there and the nesting under it is still refused.
+func (s *SuiteDotGit) TestModuleNestingWithNonDirectoryObjectsAndRefs() {
+	for _, mode := range []os.FileMode{0o644, 0o755} {
+		s.Run(mode.String(), func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/objects", []byte("not a directory\n"), mode))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/refs", []byte("not a directory\n"), mode))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			s.ErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
 }
 
 func (s *SuiteDotGit) TestModuleNestingWithCommonDirReadError() {
@@ -2360,18 +2520,4 @@ func TestWalkPackHandles_JoinsErrors(t *testing.T) {
 	// Crucially: the walk did not stop on the first error.
 	assert.Equal(t, int32(totalEntries), visits.Load(),
 		"walk should not stop on first error")
-}
-
-func (s *SuiteDotGit) TestModuleNestingWithNonDirectoryObjectsAndRefs() {
-	for _, mode := range []os.FileMode{0o644, 0o755} {
-		s.Run(mode.String(), func() {
-			fs := s.EmptyFS()
-			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
-			s.Require().NoError(util.WriteFile(fs, "modules/lib/objects", []byte("not a directory\n"), mode))
-			s.Require().NoError(util.WriteFile(fs, "modules/lib/refs", []byte("not a directory\n"), mode))
-
-			_, err := New(fs).Module("lib/refs/heads")
-			s.ErrorIs(err, ErrModuleGitDirNested)
-		})
-	}
 }
