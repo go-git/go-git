@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -567,23 +566,17 @@ func (c *Config) unmarshalCore() {
 func (c *Config) unmarshalExtensions() {
 	s := c.Raw.Section(extensionsSection)
 	c.Extensions.ObjectFormat = format.ObjectFormat(s.Options.Get(objectFormatKey))
-	c.Extensions.WorktreeConfig = strings.EqualFold(s.Options.Get(worktreeConfigKey), "true")
+	c.Extensions.WorktreeConfig = parseConfigBool(s.Options.Get(worktreeConfigKey)).IsTrue()
 }
 
 func (c *Config) unmarshalTag() {
 	s := c.Raw.Section(tagSection)
-	v, err := strconv.ParseBool(s.Options.Get(gpgSignKey))
-	if err == nil {
-		c.Tag.GpgSign = NewOptBool(v)
-	}
+	c.Tag.GpgSign = parseConfigBool(s.Options.Get(gpgSignKey))
 }
 
 func (c *Config) unmarshalCommit() {
 	s := c.Raw.Section(commitSection)
-	v, err := strconv.ParseBool(s.Options.Get(gpgSignKey))
-	if err == nil {
-		c.Commit.GpgSign = NewOptBool(v)
-	}
+	c.Commit.GpgSign = parseConfigBool(s.Options.Get(gpgSignKey))
 }
 
 func (c *Config) unmarshalUser() {
@@ -730,10 +723,7 @@ func (c *Config) unmarshalProtocol() error {
 
 func (c *Config) unmarshalIndex() {
 	s := c.Raw.Section(indexSection)
-	v, err := strconv.ParseBool(s.Options.Get(skipHashKey))
-	if err == nil {
-		c.Index.SkipHash = NewOptBool(v)
-	}
+	c.Index.SkipHash = parseConfigBool(s.Options.Get(skipHashKey))
 }
 
 func (c *Config) unmarshalInit() {
@@ -743,10 +733,7 @@ func (c *Config) unmarshalInit() {
 
 func (c *Config) unmarshalUploadArchive() {
 	s := c.Raw.Section(uploadArchiveSection)
-	v, err := strconv.ParseBool(s.Options.Get(allowUnreachableKey))
-	if err == nil {
-		c.UploadArchive.AllowUnreachable = NewOptBool(v)
-	}
+	c.UploadArchive.AllowUnreachable = parseConfigBool(s.Options.Get(allowUnreachableKey))
 }
 
 // Marshal returns Config encoded as a git-config file.
