@@ -3,43 +3,93 @@ package url
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"runtime"
 	"strings"
 )
 
-var (
-	isSchemeRegExp = regexp.MustCompile(`^[^:]+://`)
+var fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
 
-	// Ref: https://github.com/git/git/blob/v2.54.0/Documentation/urls.adoc#L41-L48
-	scpLikeURLRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5}):)?(?P<path>[^\\].*)$`)
-
-	fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
-)
-
-// MatchesScheme returns true if the given string matches a URL-like
-// format scheme.
+// MatchesScheme reports whether url contains "://".
+// It does not validate the scheme or require it to be non-empty.
 func MatchesScheme(url string) bool {
-	return isSchemeRegExp.MatchString(url)
+	return strings.Contains(url, "://")
+}
+
+// matchScpLike splits s according to the following grammar:
+//
+//	(?s)^(?:(?P<user>[^@]+)@)?(?P<host>\[[^\]]+\]|[^:]*):(?P<path>.*)$
+//
+// The optional user is tried before the form without a user. A bracketed
+// host is tried before an unbracketed host.
+// If s does not match, it returns empty components and false.
+// It does not exclude URLs with schemes or local paths; see [ParseSCP].
+func matchScpLike(s string) (user, host, path string, ok bool) {
+	// `[^@]+` cannot contain an `@`, so the user can only ever be the
+	// text preceding the first one, and must be non-empty.
+	if at := strings.IndexByte(s, '@'); at > 0 {
+		if host, path, ok := matchScpLikeAfterUser(s[at+1:]); ok {
+			return s[:at], host, path, true
+		}
+	}
+	if host, path, ok := matchScpLikeAfterUser(s); ok {
+		return "", host, path, true
+	}
+
+	// On a non-match every component is empty, so a caller that ignores
+	// ok cannot mistake a partial parse for a result.
+	return "", "", "", false
+}
+
+// matchScpLikeAfterUser parses the host and path in s, without a user prefix.
+// It applies the grammar used by matchScpLike and preserves host brackets.
+// The components are valid only when ok is true.
+func matchScpLikeAfterUser(s string) (host, path string, ok bool) {
+	// `\[[^\]]+\]` is the first alternative, so a bracketed host is
+	// preferred whenever one parses. Its body cannot contain a `]`, so
+	// the literal ends at the first one; it must be non-empty, and the
+	// `]` must be followed by the closing `:`.
+	if strings.HasPrefix(s, "[") {
+		if end := strings.IndexByte(s, ']'); end > 1 {
+			if path, found := strings.CutPrefix(s[end+1:], ":"); found {
+				return s[:end+1], path, true
+			}
+		}
+	}
+
+	// `[^:]*` cannot contain a `:`, so the host is exactly the text
+	// before the first one. It may be empty: Git reaches an empty host
+	// for `:path`, and ssh reads that as the local machine. Everything
+	// after the `:` is the path, whatever it holds.
+	host, path, found := strings.Cut(s, ":")
+	if !found {
+		return "", "", false
+	}
+	return host, path, true
 }
 
 // MatchesScpLike returns true if the given string matches an SCP-like
 // format scheme.
 func MatchesScpLike(url string) bool {
-	if !scpLikeURLRegExp.MatchString(url) {
+	if _, _, _, ok := matchScpLike(url); !ok {
 		return false
 	}
-	// Mirror canonical Git's url_is_local_not_ssh in connect.c[1] for
-	// the cases the regex above cannot disambiguate by itself: a URL
-	// is treated as a local path (not SCP-style SSH) when a `/`
-	// precedes the first `:` (e.g. `./relative:path`,
-	// `/abs/with:colon/file`), or — on Windows only — when it has a
-	// DOS drive prefix like `C:foo` where the host is a single
-	// ASCII letter.
+	// Mirror canonical Git's url_is_local_not_ssh in url.c[1] for the
+	// cases the grammar above cannot disambiguate by itself: an
+	// endpoint is a local path, not SCP-style SSH, when a `/` precedes
+	// the first `:` (e.g. `./relative:path`, `/abs/with:colon/file`),
+	// or — on Windows only — when it has a DOS drive prefix like
+	// `C:foo` or `C:\repo`.
 	//
-	// [1]: https://github.com/git/git/blob/v2.54.0/connect.c#L710-L716
+	// The platform gate is Git's, not an approximation of it:
+	// has_dos_drive_prefix is a no-op everywhere but Windows
+	// (git-compat-util.h), and it is the only route to the local
+	// reading for a drive-letter endpoint. So `C:\repo` is a path on
+	// Windows and an SSH request to the host `C` on a Linux or macOS
+	// host, in Git and here alike.
+	//
+	// [1]: https://github.com/git/git/blob/v2.56.0/url.c#L136-L142
 	if before, _, _ := strings.Cut(url, ":"); strings.Contains(before, "/") {
 		return false
 	}
@@ -49,11 +99,8 @@ func MatchesScpLike(url string) bool {
 	return true
 }
 
-// hasDosDrivePrefix reports whether s begins with `<letter>:` (a
-// Windows drive prefix such as `C:` or `c:`). Mirrors canonical Git's
-// win32_has_dos_drive_prefix[1].
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/compat/win32/path-utils.c#L20-L29
+// hasDosDrivePrefix reports whether s starts with an ASCII letter followed
+// by a colon, as in "C:" or "c:".
 func hasDosDrivePrefix(s string) bool {
 	if len(s) < 2 || s[1] != ':' {
 		return false
@@ -62,11 +109,16 @@ func hasDosDrivePrefix(s string) bool {
 	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
 
-// FindScpLikeComponents returns the user, host, port and path of the
-// given SCP-like URL.
-func FindScpLikeComponents(url string) (user, host, port, path string) {
-	m := scpLikeURLRegExp.FindStringSubmatch(url)
-	return m[1], m[2], m[3], m[4]
+// FindScpLikeComponents returns the user, host, and path in url.
+// If url does not match the SCP-like grammar, it returns empty components
+// and false. It does not exclude URLs with schemes or local paths; callers
+// should check [MatchesScheme] and [MatchesScpLike] first.
+//
+// A bracketed host retains its brackets, as in "[fe80::1]:repo.git".
+// The path starts after the colon separating it from the host; subsequent
+// colons are part of the path. This syntax does not support a port number.
+func FindScpLikeComponents(url string) (user, host, path string, ok bool) {
+	return matchScpLike(url)
 }
 
 // IsLocalEndpoint returns true if the given URL string specifies a
@@ -128,17 +180,24 @@ func ParseSCP(endpoint string) (*url.URL, bool) {
 		return nil, false
 	}
 
-	user, host, port, path := FindScpLikeComponents(endpoint)
-	if port != "" {
-		host = net.JoinHostPort(host, port)
+	user, host, path, ok := FindScpLikeComponents(endpoint)
+	if !ok {
+		return nil, false
 	}
 
-	return &url.URL{
+	u := &url.URL{
 		Scheme: "ssh",
-		User:   url.User(user),
 		Host:   host,
 		Path:   path,
-	}, true
+	}
+	// The user is optional in this form, and url.User("") is not the
+	// same as no user at all: it is an empty userinfo, which String
+	// writes out as a bare `@` and which every `URL.User != nil` test
+	// reads as "a user was given".
+	if user != "" {
+		u.User = url.User(user)
+	}
+	return u, true
 }
 
 // ParseFile parses a local file path into a file:// *url.URL.
