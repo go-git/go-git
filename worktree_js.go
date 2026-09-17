@@ -24,3 +24,9 @@ func init() {
 func isSymlinkWindowsNonAdmin(error) bool {
 	return false
 }
+
+// reusableRootFS returns the default worktree filesystem. On js, osfs is
+// backed by an in-memory filesystem, so there is no *os.Root to reuse.
+func (w *Worktree) reusableRootFS() (*worktreeFilesystem, func()) {
+	return w.filesystem, func() {}
+}
