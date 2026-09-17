@@ -77,41 +77,40 @@ func ParsePattern(p string, domain []string) Pattern {
 }
 
 func (p *pattern) Match(path []string, isDir bool) MatchResult {
-	match, _ := p.matchForTraversal(path, isDir)
-	return match
+	return p.match(path, isDir, false)
 }
 
-// matchForTraversal also reports whether a matching exclusion makes it safe
-// to prune a directory from a filesystem walk. A trailing /** may match its
-// parent directory only because isDir stands in for the otherwise empty
-// remainder; that match excludes the directory's contents, not the directory
-// itself, so a later pattern may still re-include a child.
-func (p *pattern) matchForTraversal(path []string, isDir bool) (MatchResult, bool) {
+// endpointOnly is used by Scope, which handles excluded ancestors while
+// descending. Matching an ancestor again here would let a directory negation
+// override rules that still exclude its contents.
+func (p *pattern) match(path []string, isDir, endpointOnly bool) MatchResult {
 	if len(path) <= len(p.domain) {
-		return NoMatch, false
+		return NoMatch
 	}
 	for i, e := range p.domain {
 		if path[i] != e {
-			return NoMatch, false
+			return NoMatch
 		}
 	}
 
 	path = path[len(p.domain):]
-	canPrune := true
 	if p.isGlob {
-		matched, emptyTrailingStar := p.globMatchForTraversal(path, isDir)
-		if !matched {
-			return NoMatch, false
+		if !p.globMatch(path, isDir, endpointOnly) {
+			return NoMatch
 		}
-		canPrune = !emptyTrailingStar
-	} else if !p.simpleNameMatch(path, isDir) {
-		return NoMatch, false
+	} else {
+		if endpointOnly {
+			path = path[len(path)-1:]
+		}
+		if !p.simpleNameMatch(path, isDir) {
+			return NoMatch
+		}
 	}
 
 	if p.inclusion {
-		return Include, false
+		return Include
 	}
-	return Exclude, canPrune
+	return Exclude
 }
 
 // The wildmatch implementation below ports the matcher from canonical Git's
@@ -506,7 +505,7 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	return false
 }
 
-func (p *pattern) globMatchForTraversal(path []string, isDir bool) (bool, bool) {
+func (p *pattern) globMatch(path []string, isDir, endpointOnly bool) bool {
 	matched := false
 	canTraverse := false
 	trailingStar := false
@@ -535,7 +534,7 @@ func (p *pattern) globMatchForTraversal(path []string, isDir bool) (bool, bool) 
 		// Note: If pattern contains ** but isn't exactly **, it's treated as a regular wildcard pattern
 		// (e.g., foo** or **bar) and wildmatch will handle it
 		if len(path) == 0 {
-			return false, false
+			return false
 		}
 		if canTraverse {
 			canTraverse = false
@@ -552,12 +551,12 @@ func (p *pattern) globMatchForTraversal(path []string, isDir bool) (bool, bool) 
 					// clearing matched keeps a trailing `**` from reviving
 					// the pattern once the path is exhausted, which would
 					// make `**/bar/**` match directories containing no bar.
-					return false, false
+					return false
 				}
 			}
 		} else {
 			if !wildmatch(pattern, path[0]) {
-				return false, false
+				return false
 			}
 			matched = true
 			path = path[1:]
@@ -571,5 +570,8 @@ func (p *pattern) globMatchForTraversal(path []string, isDir bool) (bool, bool) 
 	if matched && p.dirOnly && !isDir && (len(path) == 0 || trailingStar) {
 		matched = false
 	}
-	return matched, matched && emptyTrailingStar
+	if endpointOnly && (emptyTrailingStar || (len(path) > 0 && !trailingStar)) {
+		return false
+	}
+	return matched
 }

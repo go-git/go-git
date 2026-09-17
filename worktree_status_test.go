@@ -276,6 +276,35 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 			"volumes/functions/deno.jsonsample": "x\n",
 			"volumes/functions/otro.txt":        "x\n",
 		},
+	}, {
+		name: "re-included directory does not re-include its contents",
+		files: map[string]string{
+			".gitignore":             "f/**\n!f/deno.json*\n",
+			"f/deno.jsonsample/keep": "x\n",
+		},
+	}, {
+		name: "re-included directory with explicitly re-included file",
+		files: map[string]string{
+			".gitignore":                             "volumes/functions/**\n!volumes/functions/deno.json*\n!volumes/functions/main/\n!volumes/functions/main/index.ts\n",
+			"volumes/functions/deno.jsonsample/keep": "x\n",
+			"volumes/functions/main/_gic_keep":       "x\n",
+			"volumes/functions/main/index.ts":        "x\n",
+		},
+	}, {
+		name: "contents wildcard does not override excluded parent",
+		files: map[string]string{
+			".gitignore": "f/\nf/**\n!f/keep\n",
+			"f/keep":     "x\n",
+		},
+	}, {
+		name: "nested ignore file re-includes directories without their descendants",
+		files: map[string]string{
+			"docker/.gitignore": "volumes/functions/**\n!volumes/functions/deno.json*\n!volumes/functions/main/\nvolumes/functions/main/**\n!volumes/functions/main/index.ts\n",
+			"docker/volumes/functions/deno.jsonsample/_gic_keep":           "x\n",
+			"docker/volumes/functions/deno.jsonsample/_gic_deep/_gic_keep": "x\n",
+			"docker/volumes/functions/main/index.ts/_gic_keep":             "x\n",
+			"docker/volumes/functions/main/index.ts/_gic_deep/_gic_keep":   "x\n",
+		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

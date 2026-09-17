@@ -56,7 +56,7 @@ func NewScope(base []Pattern) *Scope {
 // when the subdirectory has no ignore file, which callers already know from
 // the directory listing they hold.
 func (s *Scope) Descend(dir []string, readOwn func() ([]Pattern, error)) (*Scope, error) {
-	if s.canPrune(dir) {
+	if s.excluded || s.matches(dir, true) {
 		// Nothing below an excluded directory can change an outcome, so the
 		// pattern set is frozen here and readOwn is never called.
 		return &Scope{patterns: s.patterns, matcher: s.matcher, excluded: true}, nil
@@ -91,29 +91,14 @@ func (s *Scope) Excluded() bool {
 // Unlike a Matcher built from a flat pattern list, Match honours excluded
 // ancestors: below an excluded directory it reports true without consulting
 // any pattern, so a negation there cannot re-include the entry.
+// Callers must Descend through the ancestors before matching their children.
+// Built-in patterns match the entry itself, not its ancestors; in particular,
+// re-including a directory does not override exclusions of its contents.
 func (s *Scope) Match(path []string, isDir bool) bool {
 	if s.excluded {
 		return true
 	}
 	return s.matches(path, isDir)
-}
-
-// canPrune reports whether dir is excluded in a way that makes it safe to
-// omit the entire directory from a filesystem walk. It differs from matching
-// the directory for a pattern ending in /**: such a pattern excludes the
-// contents, but a later pattern may still re-include one of them.
-func (s *Scope) canPrune(dir []string) bool {
-	if s.excluded {
-		return true
-	}
-	if s.matcher == nil {
-		return false
-	}
-	if m, ok := s.matcher.(*matcher); ok {
-		_, canPrune := m.matchForTraversal(dir, true)
-		return canPrune
-	}
-	return s.matcher.Match(dir, true)
 }
 
 // Patterns returns the patterns in effect, ancestors first. The result must
@@ -125,6 +110,9 @@ func (s *Scope) Patterns() []Pattern {
 func (s *Scope) matches(path []string, isDir bool) bool {
 	if s.matcher == nil {
 		return false
+	}
+	if m, ok := s.matcher.(*matcher); ok {
+		return m.matchEntry(path, isDir)
 	}
 	return s.matcher.Match(path, isDir)
 }
