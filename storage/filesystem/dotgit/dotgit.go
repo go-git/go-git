@@ -69,7 +69,8 @@ const (
 	// maxHeadRefSize matches the read limit in Git's validate_headref.
 	maxHeadRefSize = 255
 
-	// maxCommonDirSize limits allocation when reading a commondir file.
+	// maxCommonDirSize bounds commondir reads. Oversized files are rejected;
+	// truncating a path could redirect the check to a different directory.
 	maxCommonDirSize = 1 << 20
 
 	// gitSpace matches Git's sane-ctype.h isspace table. Unlike C's isspace
@@ -1748,9 +1749,9 @@ func (d *DotGit) PackRefs() (err error) {
 // It returns [ErrModuleNameEscape] if the joined path leaves the modules
 // directory, or an error wrapping [ErrModuleGitDirNested] if a proper prefix
 // of the name identifies another submodule's Git directory. It also returns
-// an error if a prefix's commondir file is empty, unreadable, larger than
-// 1 MiB, resolves outside the filesystem, or names a path this cannot resolve
-// the way Git does.
+// an error if a prefix's commondir file is empty, unreadable, not a regular
+// file, or larger than 1 MiB, or if its path cannot be resolved within the
+// filesystem with Git's path semantics.
 //
 // Names may contain separators. As in [Git's submodule_name_to_gitdir],
 // nesting is checked on every call, so a name may be refused after a prefix
@@ -1758,6 +1759,7 @@ func (d *DotGit) PackRefs() (err error) {
 //
 // [Git's submodule_name_to_gitdir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2735
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
+	// Callers constructing config.Submodule values may bypass validation.
 	p := d.fs.Join(modulePath, name)
 	cleaned := path.Clean(filepath.ToSlash(p))
 	if cleaned != modulePath && !strings.HasPrefix(cleaned, modulePath+"/") {
@@ -1776,7 +1778,8 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 // rooted at modules/.
 //
 // The prefix walk follows [Git's validate_submodule_legacy_git_dir]. For
-// example, "lib/refs/heads" must not use the branch directory of "lib".
+// example, a submodule named "lib/refs/heads" would otherwise keep its Git
+// directory inside the one holding the branches of the submodule "lib".
 //
 // [Git's validate_submodule_legacy_git_dir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2401-L2444
 func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
@@ -1795,14 +1798,15 @@ func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
 	return nil
 }
 
-// isGitDir reports whether p has a recognizable HEAD and objects and refs
-// entries. As in [Git's is_git_directory], a commondir file redirects the
-// latter two. Relative common paths are resolved against p.
+// isGitDir reports whether p holds a recognizable HEAD together with objects
+// and refs entries. As in [Git's is_git_directory], a commondir file in p
+// redirects the latter two; a relative path in it is resolved against p.
 //
 // All paths are resolved within d.fs. Git's environment overrides are not
-// consulted. A commondir file that is not a regular file, or is unreadable,
-// oversized, or unresolvable, returns an error so the caller cannot accept
-// nesting without checking it.
+// consulted. A commondir file that is not a regular file, or that is empty,
+// unreadable, oversized, or unresolvable, is reported as an error rather than
+// as an absent Git directory, so the caller cannot accept nesting without
+// having checked it.
 //
 // [Git's is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416-L454
 func (d *DotGit) isGitDir(p string) (bool, error) {
@@ -1964,7 +1968,7 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 	}
 
 	if slashed := filepath.ToSlash(p); slashed != "" && slashed != "." {
-		for _, segment := range strings.Split(slashed, "/") {
+		for segment := range strings.SplitSeq(slashed, "/") {
 			descend(segment)
 		}
 	}
@@ -1997,13 +2001,11 @@ func escapesRoot(rel string) bool {
 	return rel == ".." || strings.HasPrefix(rel, "../")
 }
 
-// validHeadRef reports whether p has a HEAD format recognized by
-// [Git's validate_headref]: a symlink or symbolic reference into refs/,
-// or a hexadecimal object ID prefix. Only the first 255 bytes are examined,
-// as in Git; a longer HEAD is not rejected for its length. A path that is
-// not a regular file is rejected. Symlink targets are read with the host
-// path separator. It does not resolve the reference or check whether the
-// object exists.
+// validHeadRef reports whether p contains a HEAD recognized by
+// [Git's validate_headref]: a symlink or symbolic reference into refs/, or a
+// hexadecimal object ID prefix. It examines at most 255 bytes without resolving
+// the reference or checking object existence. Only symlinks and regular files
+// are accepted.
 //
 // [Git's validate_headref]: https://github.com/git/git/blob/v2.54.0/setup.c#L353-L403
 func (d *DotGit) validHeadRef(p string) bool {
