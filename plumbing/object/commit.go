@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -38,10 +37,8 @@ type MessageEncoding string
 // commit, a pointer to the previous commit(s), etc.
 // http://shafiulazam.com/gitbook/1_the_git_object_model.html
 //
-// When a Commit is populated by Decode it retains a reference to the source
-// plumbing.EncodedObject so that EncodeWithoutSignature can reproduce the
-// exact bytes the signature was computed over. Refer to EncodeWithoutSignature
-// for more information.
+// When a Commit is populated by Decode it retains the original header layout
+// so that encoding changes only the fields that have been modified.
 type Commit struct {
 	// Hash of the commit object.
 	Hash plumbing.Hash
@@ -67,10 +64,10 @@ type Commit struct {
 	// List of extra headers of the commit
 	ExtraHeaders []ExtraHeader
 
-	s storer.EncodedObjectStorer
-	// src holds the encoded object this Commit was decoded from, used by
-	// EncodeWithoutSignature to recover the canonical signed bytes.
-	src plumbing.EncodedObject
+	s               storer.EncodedObjectStorer
+	layout          *commitLayout
+	authorSource    identSource
+	committerSource identSource
 }
 
 // ExtraHeader holds any non-standard header
@@ -187,8 +184,7 @@ func (c *Commit) NumParents() int {
 var ErrParentNotFound = errors.New("commit parent not found")
 
 // ErrMalformedCommit is returned when a commit object cannot be decoded
-// because its standard headers (tree, parent, author, committer) are missing,
-// duplicated, or out of order.
+// because its initial tree header or a hash in its parent block is invalid.
 var ErrMalformedCommit = errors.New("malformed commit")
 
 // Parent returns the ith parent of a commit.
@@ -253,7 +249,6 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 
 	c.reset()
 	c.Hash = o.Hash()
-	c.src = o
 
 	reader, err := o.Reader()
 	if err != nil {
@@ -264,6 +259,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	r := sync.GetBufioReader(reader)
 	defer sync.PutBufioReader(r)
 
+	c.layout = &commitLayout{}
 	s := &commitScanner{r: r, c: c}
 	for state := scanTree; state != nil; {
 		state, err = state(s)
@@ -275,6 +271,7 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 		return fmt.Errorf("%w: missing tree header", ErrMalformedCommit)
 	}
 	c.Message = s.msgbuf.String()
+	c.layout.remember(c)
 	return nil
 }
 
@@ -287,58 +284,13 @@ func (c *Commit) Encode(o plumbing.EncodedObject) error {
 // without any signature headers, producing the payload that PGP/GPG
 // signatures are computed over.
 //
-// Behaviour depends on how the Commit was created:
-//
-//   - For Commits populated by Decode whose exported fields still match the
-//     source object, the payload is streamed from the raw source bytes with
-//     gpgsig and gpgsig-sha256 headers (and their continuation lines)
-//     stripped verbatim. This preserves the exact bytes the signature was
-//     computed over, regardless of any normalization performed by Decode.
-//
-//   - For Commits constructed in memory, or for decoded Commits whose
-//     exported fields have been mutated, the payload is derived from the
-//     current struct fields. Mutation is detected by re-decoding the source
-//     object and comparing exported fields; if any differ, the in-memory
-//     representation prevails.
+// Decoded commits retain the original layout and bytes of unchanged headers.
+// Changing ParentHashes, for example, replaces only the contiguous parent
+// block after the tree header. Signature headers and their continuation lines
+// are omitted regardless of position. Commits constructed in memory use the
+// canonical header order.
 func (c *Commit) EncodeWithoutSignature(o plumbing.EncodedObject) error {
-	if c.matchesSource() {
-		return stripObjectSignatures(o, c.src, plumbing.CommitObject)
-	}
 	return c.encode(o, false)
-}
-
-// matchesSource reports whether c.src is set and re-decoding it produces a
-// Commit whose payload-affecting exported fields are identical to those of
-// c. It is the auto-detection used by EncodeWithoutSignature to decide
-// between the raw bytes and the struct-encoded payload.
-//
-// Signature and SignatureSHA256 are intentionally excluded from the
-// comparison: neither path emits them, so mutating them must not trigger a
-// switch to struct-encode (which would change the byte layout the caller is
-// trying to verify against).
-func (c *Commit) matchesSource() bool {
-	if c.src == nil {
-		return false
-	}
-	fresh := &Commit{}
-	if err := fresh.Decode(c.src); err != nil {
-		return false
-	}
-	return c.Hash == fresh.Hash &&
-		signatureEqual(c.Author, fresh.Author) &&
-		signatureEqual(c.Committer, fresh.Committer) &&
-		c.Message == fresh.Message &&
-		c.TreeHash == fresh.TreeHash &&
-		c.Encoding == fresh.Encoding &&
-		slices.Equal(c.ParentHashes, fresh.ParentHashes) &&
-		slices.Equal(c.ExtraHeaders, fresh.ExtraHeaders)
-}
-
-func signatureEqual(a, b Signature) bool {
-	return a.Name == b.Name &&
-		a.Email == b.Email &&
-		a.When.Unix() == b.When.Unix() &&
-		a.When.Format("-0700") == b.When.Format("-0700")
 }
 
 func isStandardHeader(key string) bool {
@@ -358,6 +310,9 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 	}
 
 	defer ioutil.CheckClose(w, &err)
+	if c.layout != nil {
+		return c.encodeLayout(w, includeSig)
+	}
 
 	if _, err = fmt.Fprintf(w, "tree %s\n", c.TreeHash.String()); err != nil {
 		return err
@@ -373,7 +328,7 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if err = c.Author.Encode(w); err != nil {
+	if err = c.authorSource.encode(w, c.Author); err != nil {
 		return err
 	}
 
@@ -381,22 +336,30 @@ func (c *Commit) encode(o plumbing.EncodedObject, includeSig bool) (err error) {
 		return err
 	}
 
-	if err = c.Committer.Encode(w); err != nil {
+	if err = c.committerSource.encode(w, c.Committer); err != nil {
 		return err
 	}
 
-	if string(c.Encoding) != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
-		if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
-			return err
-		}
+	encodingPosition := -1
+	if c.Encoding != "" && c.Encoding != defaultUtf8CommitMessageEncoding {
+		encodingPosition = 0
 	}
 
-	for _, header := range c.ExtraHeaders {
-		if isStandardHeader(header.Key) {
-			continue
+	for i := 0; i <= len(c.ExtraHeaders); i++ {
+		if i == encodingPosition {
+			if _, err = fmt.Fprintf(w, "\n%s %s", headerencoding, c.Encoding); err != nil {
+				return err
+			}
 		}
-		if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
-			return err
+		if i == len(c.ExtraHeaders) {
+			break
+		}
+
+		header := c.ExtraHeaders[i]
+		if !isStandardHeader(header.Key) {
+			if _, err = fmt.Fprintf(w, "\n%s", header); err != nil {
+				return err
+			}
 		}
 	}
 
