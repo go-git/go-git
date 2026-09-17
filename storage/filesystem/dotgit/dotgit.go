@@ -1795,8 +1795,8 @@ func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
 }
 
 // isGitDir reports whether p has a recognizable HEAD and objects and refs
-// directories. As in [Git's is_git_directory], a commondir file redirects
-// the directory checks. Relative common paths are resolved against p.
+// entries. As in [Git's is_git_directory], a commondir file redirects the
+// latter two. Relative common paths are resolved against p.
 //
 // All paths are resolved within d.fs. Git's environment overrides are not
 // consulted. A commondir file that is not a regular file, or is unreadable,
@@ -1868,9 +1868,12 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 		redirected = true
 	}
 
+	// Git's access(X_OK) accepts executable files as well as directories;
+	// on Windows, it checks only existence. Billy has no access equivalent,
+	// so conservatively count any existing entry.
 	for _, dir := range []string{objectsPath, refsPath} {
 		q := d.fs.Join(p, dir)
-		fi, err := d.fs.Stat(q)
+		_, err := d.fs.Stat(q)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			return false, nil
@@ -1883,7 +1886,7 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 			// file redirected can reach this: elsewhere an unreadable
 			// directory stays an absence, as it is in Git.
 			return false, fmt.Errorf("resolve submodule common directory %q: %w", q, err)
-		case err != nil || !fi.IsDir():
+		case err != nil:
 			return false, nil
 		}
 	}
