@@ -103,9 +103,15 @@ func (s *SuiteDotGit) TestModuleNestingWithHeadFormats() {
 		{name: "symbolic without space", head: "ref:refs/heads/master\n", wantErr: ErrModuleGitDirNested},
 		{name: "symbolic with Git whitespace", head: "ref: \t\r\nrefs/heads/master\n", wantErr: ErrModuleGitDirNested},
 		{name: "symbolic with leading space", head: " ref: refs/heads/master\n"},
+		// Git skips isspace after "ref:", and its own table makes vertical
+		// tab and form feed control characters rather than spaces. Widening
+		// the set to C's isspace or to Go's unicode.IsSpace would accept
+		// these, where Git reads the whitespace as the start of a reference
+		// name that does not begin with "refs/".
 		{name: "symbolic with vertical tab", head: "ref:\vrefs/heads/master\n"},
 		{name: "symbolic with form feed", head: "ref:\frefs/heads/master\n"},
 		{name: "symbolic with Unicode space", head: "ref:\u00a0refs/heads/master\n"},
+		{name: "symbolic with NUL", head: "ref:\x00refs/heads/master\n"},
 		{name: "symbolic outside refs", head: "ref: HEAD\n"},
 		{name: "symbolic at read limit", head: "ref:" + strings.Repeat(" ", 246) + "refs/", wantErr: ErrModuleGitDirNested},
 		// Truncation at the read limit drops the trailing separator, so Git

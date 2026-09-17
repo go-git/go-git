@@ -71,6 +71,10 @@ const (
 
 	// maxCommonDirSize limits allocation when reading a commondir file.
 	maxCommonDirSize = 1 << 20
+
+	// gitSpace matches Git's sane-ctype.h isspace table. Unlike C's isspace
+	// and unicode.IsSpace, it excludes vertical tab and form feed.
+	gitSpace = " \t\n\r"
 )
 
 var (
@@ -1926,7 +1930,7 @@ func (d *DotGit) validHeadRef(p string) bool {
 
 	head := string(b)
 	if target, ok := strings.CutPrefix(head, "ref:"); ok {
-		return strings.HasPrefix(strings.TrimLeft(target, " \t\r\n"), refsPath+"/")
+		return strings.HasPrefix(strings.TrimLeft(target, gitSpace), refsPath+"/")
 	}
 
 	// Git accepts either hash format and ignores trailing bytes. A SHA-256
