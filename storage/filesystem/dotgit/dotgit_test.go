@@ -290,6 +290,77 @@ func (s *SuiteDotGit) TestReferenceNameRejectsNamesOnlyValidateCatches() {
 	s.Empty(entries, "no refused name may have become a path")
 }
 
+// Git's files backend updates refs/heads/main by creating refs/heads/main.lock
+// beside it, so the longest reference git can move stops that suffix short of
+// the longest one a directory entry can hold. go-git writes the file in place
+// and would take the longer name, leaving a reference only go-git can move:
+// git update-ref and git branch -f fail with ENAMETOOLONG, and nothing says so
+// until one of them runs. A name is refused at creation instead.
+//
+// The two limits differ by where the component sits. Only the last one becomes
+// the file git locks; the ones before it are directories, which stop at what
+// the filesystem allows.
+func (s *SuiteDotGit) TestReferenceNameRejectsNamesTooLongToLock() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	hash := plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	name := func(parts ...string) plumbing.ReferenceName {
+		return plumbing.ReferenceName("refs/heads/" + strings.Join(parts, "/"))
+	}
+	rep := func(n int) string { return strings.Repeat("a", n) }
+
+	good := []struct {
+		description string
+		name        plumbing.ReferenceName
+	}{{
+		description: "leaf at the lock limit",
+		name:        name(rep(maxRefLeafLen)),
+	}, {
+		description: "directory at the component limit",
+		name:        name(rep(maxRefComponentLen), "x"),
+	}}
+	for _, tt := range good {
+		ref := plumbing.NewHashReference(tt.name, hash)
+
+		s.NoError(d.SetRef(ref, nil), tt.description)
+
+		got, err := d.Ref(tt.name)
+		s.NoError(err, tt.description)
+		s.Equal(hash, got.Hash(), tt.description)
+	}
+
+	bad := []struct {
+		description string
+		name        plumbing.ReferenceName
+	}{{
+		description: "leaf one byte past the lock limit",
+		name:        name(rep(maxRefLeafLen + 1)),
+	}, {
+		description: "leaf at the component limit, which a lock file outgrows",
+		name:        name(rep(maxRefComponentLen)),
+	}, {
+		description: "directory one byte past the component limit",
+		name:        name(rep(maxRefComponentLen+1), "x"),
+	}}
+	for _, tt := range bad {
+		ref := plumbing.NewHashReference(tt.name, hash)
+
+		err := d.SetRef(ref, nil)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, tt.description)
+
+		_, err = d.ReflogWriter(tt.name)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, tt.description)
+
+		// The rejection has to stay the size of a message rather than the
+		// size of the name it refuses.
+		s.Less(len(err.Error()), 128, tt.description)
+
+		_, err = d.Ref(tt.name)
+		s.ErrorIs(err, plumbing.ErrReferenceNotFound, tt.description)
+	}
+}
+
 // A name too malformed to write stays readable and removable, because that is
 // the only way a repository already holding one gets cleaned up. Git splits the
 // two the same way: transaction_refname_valid applies check_refname_format when

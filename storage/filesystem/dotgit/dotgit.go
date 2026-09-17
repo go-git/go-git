@@ -65,6 +65,27 @@ const (
 	// such absences as legitimate without this marker: fsck reports them as
 	// broken links and gc fails outright.
 	promisorExt = ".promisor"
+
+	// refLockSuffix is what git's files backend appends to a loose reference
+	// while updating it: .git/refs/heads/main.lock holds the new value of
+	// refs/heads/main until the update is committed by renaming it into place.
+	refLockSuffix = ".lock"
+
+	// maxRefComponentLen bounds one path component of a reference this
+	// package creates. A loose reference and its reflog are files at
+	// .git/<name> and .git/logs/<name>, so every component of the name is a
+	// directory entry, and 255 is the limit those have on the filesystems
+	// go-git runs on.
+	maxRefComponentLen = 255
+
+	// maxRefLeafLen bounds the last component, the one that becomes the file
+	// holding the reference. Git needs room beside it for refLockSuffix, so
+	// the longest reference git can update stops that much short of the
+	// longest one a filesystem can hold. go-git writes the file in place and
+	// would take the longer name, which is the worse outcome of the two: not
+	// a reference that fails to store, but one only go-git can move, that
+	// git reports as unlockable whenever something finally tries.
+	maxRefLeafLen = maxRefComponentLen - len(refLockSuffix)
 )
 
 var (
@@ -100,6 +121,11 @@ var (
 	// filesystem storage's name checks. Reads and deletes require a safe path;
 	// writes also require a valid reference name. These errors also wrap
 	// plumbing.ErrInvalidReferenceName.
+	//
+	// A name refused only for its length wraps plumbing.ErrInvalidReferenceName
+	// without this one. Such a name reaches no path it should not; it is simply
+	// longer than git can lock, and calling that an escape would leave the
+	// sentinel meaning nothing in particular.
 	ErrReferenceNameEscape = errors.New("reference name escapes the reference storage")
 )
 
@@ -165,7 +191,8 @@ func validReferenceName(name plumbing.ReferenceName) error {
 
 // validNewReferenceName is validReferenceName plus
 // plumbing.ReferenceName.Validate, go-git's check_refname_format, for the
-// character and component rules the path-safety checks do not cover. SetRef and
+// character and component rules the path-safety checks do not cover, plus
+// validReferenceNameLength for what the path itself costs. SetRef and
 // ReflogWriter use it for creates, updates, and reflog appends.
 //
 // Of those rules the ".lock" suffix is the one that does damage without looking
@@ -192,6 +219,10 @@ func validNewReferenceName(name plumbing.ReferenceName) error {
 		return err
 	}
 
+	if err := validReferenceNameLength(name); err != nil {
+		return err
+	}
+
 	if !name.IsUnderRefs() {
 		return nil
 	}
@@ -201,6 +232,49 @@ func validNewReferenceName(name plumbing.ReferenceName) error {
 	}
 
 	return nil
+}
+
+// validReferenceNameLength rejects a new reference name holding a component no
+// directory entry could hold, or a leaf git could not lock. This is a property
+// of the files backend rather than of the name: check_refname_format has no
+// length rule, so plumbing.ReferenceName.Validate has none either, and the
+// limit belongs here with the rest of what storing a reference as a path costs.
+//
+// Git stops five bytes sooner than the filesystem does on the last component,
+// because updating refs/heads/<name> means creating refs/heads/<name>.lock
+// beside it. A name past that is one go-git stores and git cannot update:
+// git update-ref, git branch -f and a checkout of a worktree on that branch
+// all fail with ENAMETOOLONG, and nothing says so until one of them runs.
+//
+// Both rejections wrap plumbing.ErrInvalidReferenceName, so a fetch skips the
+// reference and keeps the rest, as it does for every other arm of the gate.
+// Neither quotes the name: a name this long would be most of the message.
+func validReferenceNameLength(name plumbing.ReferenceName) error {
+	s := string(name)
+
+	leaf := s
+	if i := strings.LastIndexByte(s, '/'); i >= 0 {
+		leaf = s[i+1:]
+	}
+
+	if len(leaf) > maxRefLeafLen {
+		return fmt.Errorf("%w: reference name ends in a %d byte component, over the %d byte limit a %q file leaves it",
+			plumbing.ErrInvalidReferenceName, len(leaf), maxRefLeafLen, refLockSuffix)
+	}
+
+	for rest := s; ; {
+		i := strings.IndexByte(rest, '/')
+		if i < 0 {
+			return nil
+		}
+
+		if i > maxRefComponentLen {
+			return fmt.Errorf("%w: reference name holds a %d byte path component, over the %d byte limit",
+				plumbing.ErrInvalidReferenceName, i, maxRefComponentLen)
+		}
+
+		rest = rest[i+1:]
+	}
 }
 
 // Options holds configuration for the storage.
@@ -241,7 +315,8 @@ type Options struct {
 // Ref and RemoveRef permit malformed names such as refs/heads/main.lock but
 // reject unsafe paths, including backslashes, control characters and components
 // that HFS+ or NTFS could fold to "." or "..", on every operating system.
-// SetRef and ReflogWriter additionally require valid reference-name syntax.
+// SetRef and ReflogWriter additionally require valid reference-name syntax and
+// a name short enough for git to lock.
 // Refs applies neither name check, so a returned entry may be inaccessible
 // through Ref and RemoveRef.
 //
