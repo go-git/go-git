@@ -2736,3 +2736,17 @@ func (s *SuiteDotGit) TestModuleRejectsRootShapedNames() {
 		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
 	}
 }
+
+func (s *SuiteDotGit) TestModuleNestingWithNonDirectoryObjectsAndRefs() {
+	for _, mode := range []os.FileMode{0o644, 0o755} {
+		s.Run(mode.String(), func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/objects", []byte("not a directory\n"), mode))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/refs", []byte("not a directory\n"), mode))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			s.ErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
+}
