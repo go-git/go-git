@@ -452,6 +452,34 @@ func (s *SuiteDotGit) TestModuleNestingWithNonDirectoryObjectsAndRefs() {
 	}
 }
 
+func (s *SuiteDotGit) TestModuleNestingWithOversizedCommonDir() {
+	// A file at the limit is read, and a path of that length simply names
+	// nothing, so the prefix is no Git directory and the name is accepted.
+	// Only past the limit is the file itself refused.
+	for _, tc := range []struct {
+		name    string
+		size    int
+		wantErr string
+	}{
+		{name: "at the limit", size: maxCommonDirSize},
+		{name: "past the limit", size: maxCommonDirSize + 1, wantErr: "exceeds"},
+	} {
+		s.Run(tc.name, func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", bytes.Repeat([]byte("x"), tc.size), 0o644))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			if tc.wantErr == "" {
+				s.NoError(err)
+				return
+			}
+			s.Require().Error(err)
+			s.ErrorContains(err, tc.wantErr)
+		})
+	}
+}
+
 func (s *SuiteDotGit) TestModuleNestingBoundsTheQuotedCommonDir() {
 	fs := s.EmptyFS()
 	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))

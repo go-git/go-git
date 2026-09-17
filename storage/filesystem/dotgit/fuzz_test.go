@@ -45,14 +45,20 @@ func FuzzDotGitIsGitDir(f *testing.F) {
 	f.Add([]byte{}, []byte(nil), false)
 
 	// Commondir forms: relative, absolute, NUL terminated, CRLF terminated,
-	// empty, one that leaves the filesystem, and the two sides of the cap.
+	// empty, one that leaves the filesystem, and a long one.
+	//
+	// The seeds stop well short of maxCommonDirSize deliberately. A seed at
+	// the cap makes every new interesting input a megabyte long, and Go's
+	// minimizer then holds every worker for its whole budget, so the target
+	// reports a throughput it is not running at. Both sides of the cap are
+	// pinned by TestModuleNestingWithOversizedCommonDir instead, which is
+	// where a fixed boundary belongs.
 	f.Add([]byte("ref: refs/heads/main\n"), []byte("/common\n"), true)
 	f.Add([]byte("ref: refs/heads/main\n"), []byte("../../common\x00ignored\n"), true)
 	f.Add([]byte("ref: refs/heads/main\n"), []byte("../../common\r\n"), true)
 	f.Add([]byte("ref: refs/heads/main\n"), []byte{}, true)
 	f.Add([]byte("ref: refs/heads/main\n"), []byte("../../../outside\n"), true)
-	f.Add([]byte("ref: refs/heads/main\n"), bytes.Repeat([]byte("x"), maxCommonDirSize), true)
-	f.Add([]byte("ref: refs/heads/main\n"), bytes.Repeat([]byte("x"), maxCommonDirSize+1), true)
+	f.Add([]byte("ref: refs/heads/main\n"), bytes.Repeat([]byte("x"), 1024), true)
 
 	f.Fuzz(func(t *testing.T, head, commondir []byte, withCommonDir bool) {
 		fs := memfs.New()
