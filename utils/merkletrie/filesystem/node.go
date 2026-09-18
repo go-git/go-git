@@ -52,6 +52,16 @@ type Options struct {
 	// Requires Index to be set: without an index there is no way to identify
 	// tracked entries, so the scope is treated as a no-op.
 	IgnoreScope *gitignore.Scope
+
+	// CollapseUntrackedDirs, when true, makes directories that contain no
+	// tracked entries and at least one visible (non-ignored) file report
+	// as a single change for the directory itself instead of being walked,
+	// matching the default behavior of "git status". Directories without
+	// any visible content produce no change at all, matching git not
+	// listing empty untracked directories. Requires Index to be set:
+	// without an index there is no way to identify tracked entries, so
+	// the option is treated as a no-op.
+	CollapseUntrackedDirs bool
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -65,9 +75,9 @@ type node struct {
 	idx        *index.Index
 	idxMap     map[string]*index.Entry
 	// trackedDirs holds every directory path that has at least one entry
-	// in the index. It is populated only when IgnoreScope is set so the
-	// walker can keep tracked entries even if their parent directory
-	// matches an ignore rule.
+	// in the index. It is populated only when IgnoreScope or
+	// CollapseUntrackedDirs is set so the walker can keep tracked entries
+	// even if their parent directory matches an ignore rule.
 	trackedDirs map[string]struct{}
 
 	options *Options
@@ -129,7 +139,7 @@ func NewRootNodeWithOptions(
 			idxMap[entry.Name] = entry
 		}
 
-		if options.IgnoreScope != nil {
+		if options.IgnoreScope != nil || options.CollapseUntrackedDirs {
 			trackedDirs = make(map[string]struct{})
 			for _, entry := range options.Index.Entries {
 				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
@@ -262,35 +272,47 @@ func (n *node) resolveScope(files []iofs.DirEntry) error {
 	}
 	n.scopeResolved = true
 
-	if n.scope == nil {
-		return nil
+	scope, err := descendScope(n.fs, n.scope, n.path, files)
+	if err != nil {
+		return err
+	}
+	if scope != nil {
+		n.scope = scope
+	}
+
+	return nil
+}
+
+// descendScope derives the scope governing the entries of the directory at
+// dirPath from its parent's scope and the listing just taken for it,
+// reading the directory's own .gitignore only when the listing shows one.
+// A nil parent scope means no ignore filtering is in effect and yields a
+// nil scope. It mirrors resolveScope for directories the collapse scan
+// visits without creating nodes.
+func descendScope(fs billy.Filesystem, parent *gitignore.Scope, dirPath string, files []iofs.DirEntry) (*gitignore.Scope, error) {
+	if parent == nil {
+		return nil, nil
 	}
 
 	var readOwn func() ([]gitignore.Pattern, error)
 	for _, f := range files {
 		if f.Name() == gitignore.IgnoreFile && !f.IsDir() {
-			dir := n.pathComponents()
+			dir := pathComponents(dirPath)
 			readOwn = func() ([]gitignore.Pattern, error) {
-				return gitignore.DirPatterns(n.fs, dir)
+				return gitignore.DirPatterns(fs, dir)
 			}
 			break
 		}
 	}
 
-	scope, err := n.scope.Descend(n.pathComponents(), readOwn)
-	if err != nil {
-		return err
-	}
-	n.scope = scope
-
-	return nil
+	return parent.Descend(pathComponents(dirPath), readOwn)
 }
 
-func (n *node) pathComponents() []string {
-	if n.path == "" {
+func pathComponents(p string) []string {
+	if p == "" {
 		return nil
 	}
-	return strings.Split(n.path, "/")
+	return strings.Split(p, "/")
 }
 
 // shouldSkipIgnored reports whether the child entry of n with the given
@@ -298,7 +320,15 @@ func (n *node) pathComponents() []string {
 // AND has no entry in the index. Tracked entries are never skipped so
 // modifications to them are still reported.
 func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
-	if n.options == nil || n.options.IgnoreScope == nil {
+	return n.isIgnoredUntracked(n.scope, path.Join(n.path, name), isDir)
+}
+
+// isIgnoredUntracked reports whether the entry at childPath should be
+// skipped because scope matches it AND it has no entry in the index.
+// scope must be the one governing the entries of childPath's parent
+// directory; a nil scope means no ignore filtering is in effect.
+func (n *node) isIgnoredUntracked(scope *gitignore.Scope, childPath string, isDir bool) bool {
+	if scope == nil {
 		return false
 	}
 	// Without an index we cannot prove that a subtree contains no tracked
@@ -307,8 +337,7 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 	if n.idxMap == nil {
 		return false
 	}
-	childPath := path.Join(n.path, name)
-	if !n.scope.Match(strings.Split(childPath, "/"), isDir) {
+	if !scope.Match(strings.Split(childPath, "/"), isDir) {
 		return false
 	}
 	// An entry whose own path is in the index is tracked, regardless of
@@ -323,6 +352,76 @@ func (n *node) shouldSkipIgnored(name string, isDir bool) bool {
 		return !hasTrackedDescendant
 	}
 	return true
+}
+
+// Collapse implements noder.Collapser. It reports true when the node is a
+// directory that has no tracked descendants but contains at least one
+// visible (non-ignored) file, so the whole subtree can be represented by
+// a single change for the directory itself. Directories without any
+// visible content are not collapsed: they must produce no change at all,
+// matching git which does not list empty untracked directories.
+func (n *node) Collapse() bool {
+	if n.options == nil || !n.options.CollapseUntrackedDirs || !n.isDir {
+		return false
+	}
+	if n.idxMap == nil {
+		return false
+	}
+	if _, tracked := n.trackedDirs[n.path]; tracked {
+		return false
+	}
+	return n.containsVisibleEntry()
+}
+
+// containsVisibleEntry reports whether the subtree rooted at n contains at
+// least one entry that would surface in a walk: a non-ignored file,
+// symlink included. The scan short-circuits on the first visible entry,
+// so fully untracked directories are usually validated with a single
+// ReadDir per nesting level instead of a full enumeration.
+func (n *node) containsVisibleEntry() bool {
+	// pending directories carry the scope inherited from their parent and
+	// derive their own from the listing taken for them here, as walked
+	// nodes do in resolveScope, so a .gitignore below n is honored.
+	type pending struct {
+		path  string
+		scope *gitignore.Scope
+	}
+
+	dirs := []pending{{n.path, n.scope}}
+	for len(dirs) > 0 {
+		d := dirs[len(dirs)-1]
+		dirs = dirs[:len(dirs)-1]
+
+		files, err := n.fs.ReadDir(d.path)
+		if err != nil {
+			// Refuse to collapse so the full walk surfaces the error.
+			return false
+		}
+
+		scope, err := descendScope(n.fs, d.scope, d.path, files)
+		if err != nil {
+			return false
+		}
+
+		for _, file := range files {
+			if _, ok := ignore[file.Name()]; ok {
+				continue
+			}
+			if file.Type()&os.ModeSocket != 0 {
+				continue
+			}
+			isDir := file.IsDir()
+			childPath := path.Join(d.path, file.Name())
+			if n.isIgnoredUntracked(scope, childPath, isDir) {
+				continue
+			}
+			if !isDir {
+				return true
+			}
+			dirs = append(dirs, pending{childPath, scope})
+		}
+	}
+	return false
 }
 
 func (n *node) newChildNode(file os.FileInfo) (*node, error) {
