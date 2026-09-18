@@ -40,9 +40,9 @@ New filesystems (e.g. cloud based storage) could be created by implementing `go-
 
 ## Transport Schemes
 
-Git supports various transport schemes, including `http`, `https`, `ssh`, `git`, `file`. `go-git` defines the [transport.Transport interface](plumbing/transport/common.go#L48) to represent them.
+Git supports various transport schemes, including `http`, `https`, `ssh`, `git`, `file`. `go-git` defines the [transport.Transport interface](plumbing/transport/pack_session.go#L31) to represent them.
 
-The built-in implementations can be replaced by calling `transport.Register`.
+There is no global registry: transports are resolved per operation by a [`client.Client`](plumbing/client/client.go), built with `client.New(opts...)`. By default it resolves `file`, `git`, `ssh`, `http` and `https` to their built-in implementations. Built-in transports can be overridden, and new schemes added, with `client.WithTransport(scheme, tr)`, passed via `ClientOptions` on the operation (`CloneOptions`, `FetchOptions`, `PushOptions`, ...).
 
 An example of changing the built-in `https` implementation to skip TLS could look like this:
 
@@ -53,7 +53,23 @@ An example of changing the built-in `https` implementation to skip TLS could loo
 		},
 	}
 
-	transport.Register("https", githttp.NewTransport(&githttp.TransportOptions{Client: customClient}))
+	r, err := git.PlainClone(dir, &git.CloneOptions{
+		URL: "https://github.com/go-git/go-git",
+		ClientOptions: []client.Option{
+			client.WithTransport("https", githttp.NewTransport(githttp.Options{Client: customClient})),
+		},
+	})
+```
+
+The same mechanism registers an entirely new scheme. `plumbing/transport/rad` implements a read-only `rad://` transport for local [Radicle](https://radicle.xyz/) repository storage, by composing the built-in `file` transport with a custom `transport.Loader`. It is not one of the client's built-in schemes — Radicle-specific URL conventions don't belong in go-git core — so it is opted into the same way any external transport would be:
+
+```go
+	r, err := git.PlainClone(dir, &git.CloneOptions{
+		URL: "rad://z2cK19PnX6cAUgnZfMfwECBNppJ6z",
+		ClientOptions: []client.Option{
+			client.WithTransport("rad", rad.NewTransport(rad.Options{})),
+		},
+	})
 ```
 
 Some internal implementations enables code reuse amongst the different transport implementations. Some of these may be made public in the future (e.g. `plumbing/transport/internal/common`).
