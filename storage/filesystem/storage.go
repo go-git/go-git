@@ -268,7 +268,7 @@ func (s *Storage) SupportsExtension(name, value string) bool {
 		case "sha1", "sha256", "":
 			return true
 		}
-	case "worktreeconfig":
+	case "worktreeconfig", "relativeworktrees":
 		switch value {
 		case "true", "false":
 			return true
