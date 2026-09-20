@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
@@ -463,13 +464,17 @@ type ShallowStorage []plumbing.Hash
 
 // SetShallow stores the shallow commits.
 func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
-	*s = commits
+	*s = slices.Clone(commits)
 	return nil
 }
 
 // Shallow returns the shallow commits.
+//
+// Each call returns a fresh copy: callers such as updateShallow
+// (plumbing/transport/fetch.go, internal/transport/v2.go) mutate the returned
+// slice in place before calling SetShallow.
 func (s ShallowStorage) Shallow() ([]plumbing.Hash, error) {
-	return s, nil
+	return slices.Clone(s), nil
 }
 
 // ModuleStorage implements storer.ModuleStorer for in-memory storage.
