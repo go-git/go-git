@@ -75,7 +75,7 @@ func (w *filterCommitIter) Next() (*Commit, error) {
 		w.visited[commit.Hash] = struct{}{}
 
 		if !w.isLimit(commit) {
-			err = w.addToQueue(commit.s, commit.ParentHashes...)
+			err = w.addToQueue(commit.s, commit.liveParentHashes()...)
 			if err != nil {
 				return nil, w.close(err)
 			}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
@@ -470,6 +471,12 @@ func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
 // Shallow returns the shallow commits.
 func (s ShallowStorage) Shallow() ([]plumbing.Hash, error) {
 	return s, nil
+}
+
+// IsShallow honors the storer.ShallowChecker interface, so a commit walk can
+// ask about a single hash without copying the whole list per parent lookup.
+func (s ShallowStorage) IsShallow(h plumbing.Hash) (bool, error) {
+	return slices.Contains(s, h), nil
 }
 
 // ModuleStorage implements storer.ModuleStorer for in-memory storage.
