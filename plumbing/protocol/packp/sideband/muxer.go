@@ -61,6 +61,14 @@ func (m *Muxer) WriteChannel(t Channel, p []byte) (int, error) {
 func (m *Muxer) doWrite(ch Channel, p []byte) (int, error) {
 	sz := min(len(p), m.max)
 
-	_, err := pktline.Write(m.w, ch.WithPayload(p[:sz]))
-	return sz, err
+	n, err := pktline.Write(m.w, ch.WithPayload(p[:sz]))
+	if err != nil {
+		// n counts what reached w, which leads with the length prefix and the
+		// channel byte. Neither comes from p, so discount both: a write that
+		// failed the length check or died on the prefix consumed nothing at
+		// all, and claiming otherwise reports bytes the caller still owns.
+		return max(0, n-pktline.LenSize-chLen), err
+	}
+
+	return sz, nil
 }
