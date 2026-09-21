@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v6/internal/sharedfile"
+	"github.com/go-git/go-git/v6/x/sharedfile"
 )
 
 // fakeBackend is a ReadAtCloser whose ReadAt does NOT return

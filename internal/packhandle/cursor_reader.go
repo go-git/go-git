@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"sync/atomic"
 
-	"github.com/go-git/go-git/v6/internal/sharedfile"
+	"github.com/go-git/go-git/v6/x/sharedfile"
 )
 
 // ErrInvalidSeekWhence is returned by [cursorReader.Seek] when
