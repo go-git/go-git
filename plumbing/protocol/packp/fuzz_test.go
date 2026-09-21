@@ -261,6 +261,6 @@ func FuzzParseLsRefsLine(f *testing.F) {
 	f.Add("")
 
 	f.Fuzz(func(_ *testing.T, line string) {
-		_, _ = parseLsRefsLine(line)
+		_, _, _ = parseLsRefsLine(line)
 	})
 }

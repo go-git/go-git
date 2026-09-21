@@ -137,6 +137,11 @@ func (r *LsRefsArgs) Decode(rd io.Reader) error {
 // consumed by the transport layer and not seen by Decode.
 type LsRefsOutput struct {
 	References []*plumbing.Reference
+	// HasOid reports whether any ref line carried an object id. A line with
+	// "unborn" as the oid does not count. This lets callers distinguish an
+	// empty repository from a ref-prefix-narrowed advertisement that simply
+	// matched nothing except a symbolic HEAD.
+	HasOid bool
 }
 
 // Encode writes the ls-refs response lines as pkt-lines following the v2
@@ -205,26 +210,28 @@ func (r *LsRefsOutput) Decode(rd io.Reader) error {
 			continue
 		}
 
-		refs, err := parseLsRefsLine(line)
+		refs, hasOid, err := parseLsRefsLine(line)
 		if err != nil {
 			return err
 		}
 		r.References = append(r.References, refs...)
+		r.HasOid = r.HasOid || hasOid
 	}
 }
 
 // parseLsRefsLine parses a single ref line from ls-refs output.
 // Format: <oid-or-unborn> SP <refname> [SP <attr>...] LF
 // Returns one or two references (base + peeled if the peeled attribute is present).
-func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
+func parseLsRefsLine(line string) ([]*plumbing.Reference, bool, error) {
 	// Fields tolerates the SP-separated grammar without producing empty tokens
 	// on repeated spaces: [oid-or-unborn, refname, attr1, attr2, ...].
 	parts := strings.Fields(line)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("malformed ref line: %q", line)
+		return nil, false, fmt.Errorf("malformed ref line: %q", line)
 	}
 
 	oidStr := parts[0]
+	hasOid := oidStr != "unborn"
 	refName := plumbing.ReferenceName(parts[1])
 
 	var symrefTarget plumbing.ReferenceName
@@ -237,7 +244,7 @@ func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
 		} else if strings.HasPrefix(attr, "peeled:") {
 			h, ok := parseFullHash(attr[len("peeled:"):])
 			if !ok {
-				return nil, fmt.Errorf("malformed peeled hash: %q", attr)
+				return nil, false, fmt.Errorf("malformed peeled hash: %q", attr)
 			}
 			peeledHash = h
 			hasPeeled = true
@@ -249,16 +256,16 @@ func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
 	// Handle unborn refs
 	if oidStr == "unborn" {
 		if symrefTarget == "" {
-			return nil, fmt.Errorf("malformed unborn ref line, missing symref-target: %q", line)
+			return nil, false, fmt.Errorf("malformed unborn ref line, missing symref-target: %q", line)
 		}
 		refs = append(refs, plumbing.NewSymbolicReference(refName, symrefTarget))
-		return refs, nil
+		return refs, false, nil
 	}
 
 	// Regular hash ref
 	hash, ok := parseFullHash(oidStr)
 	if !ok {
-		return nil, fmt.Errorf("malformed object id: %q", oidStr)
+		return nil, false, fmt.Errorf("malformed object id: %q", oidStr)
 	}
 
 	if symrefTarget != "" {
@@ -275,7 +282,7 @@ func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
 		))
 	}
 
-	return refs, nil
+	return refs, hasOid, nil
 }
 
 // parseFullHash strictly parses a full-length SHA-1 or SHA-256 object id in hex

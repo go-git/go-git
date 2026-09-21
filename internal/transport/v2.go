@@ -86,7 +86,7 @@ func lsRefsSupportsUnborn(server capability.List) bool {
 // branch, and requests unborn HEAD reporting when the server advertises it. The
 // returned references include a symbolic HEAD (and an unborn HEAD as a symref
 // whose target has no hash reference) so callers can detect an unborn branch.
-func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPrefixes []string) ([]*plumbing.Reference, error) {
+func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPrefixes []string) (*packp.LsRefsOutput, error) {
 	args := &packp.LsRefsArgs{
 		Peel:        true,
 		Symrefs:     true,
@@ -99,20 +99,7 @@ func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPre
 		return nil, err
 	}
 
-	return out.References, nil
-}
-
-// HasHashRef reports whether refs contains at least one hash (non-symbolic)
-// reference. A v2 ls-refs result with only a symbolic or unborn HEAD and no
-// hash references corresponds to an empty repository, so callers treat the
-// absence of hash references the same as the v0/v1 empty advertisement.
-func HasHashRef(refs []*plumbing.Reference) bool {
-	for _, r := range refs {
-		if r.Type() == plumbing.HashReference {
-			return true
-		}
-	}
-	return false
+	return out, nil
 }
 
 // wantsLocal reports whether every wanted object is already present in haves, so
