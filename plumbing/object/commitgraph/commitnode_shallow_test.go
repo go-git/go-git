@@ -82,6 +82,8 @@ func buildShallowChainForCommitNode(t *testing.T) (*object.Commit, *memory.Stora
 // commit's parent count, instead of bounds-checking against the raw
 // (untruncated) ParentHashes length.
 func TestObjectCommitNodeParentNodeRespectsNumParents(t *testing.T) {
+	t.Parallel()
+
 	head, sto := buildShallowChainForCommitNode(t)
 	idx := NewObjectCommitNodeIndex(sto)
 
@@ -104,6 +106,8 @@ func TestObjectCommitNodeParentNodeRespectsNumParents(t *testing.T) {
 // ErrParentNotFound, so before the fix a shallow commit's absent parent made it
 // surface plumbing.ErrObjectNotFound instead of ending cleanly.
 func TestObjectCommitNodeParentNodesStopsAtShallowBoundary(t *testing.T) {
+	t.Parallel()
+
 	head, sto := buildShallowChainForCommitNode(t)
 	idx := NewObjectCommitNodeIndex(sto)
 
@@ -141,6 +145,8 @@ func TestObjectCommitNodeParentNodesStopsAtShallowBoundary(t *testing.T) {
 // NewObjectCommitNodeIndex (no commit-graph file, or one that doesn't cover
 // this part of history).
 func TestObjectCommitNodeIteratorsStopAtShallowBoundary(t *testing.T) {
+	t.Parallel()
+
 	ctors := map[string]func(c CommitNode) CommitNodeIter{
 		"TopoOrder": func(c CommitNode) CommitNodeIter {
 			return NewCommitNodeIterTopoOrder(c, nil, nil)
@@ -158,6 +164,8 @@ func TestObjectCommitNodeIteratorsStopAtShallowBoundary(t *testing.T) {
 
 	for name, ctor := range ctors {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			head, sto := buildShallowChainForCommitNode(t)
 			idx := NewObjectCommitNodeIndex(sto)
 			node, err := idx.Get(head.Hash)
@@ -194,6 +202,8 @@ func (n inconsistentNode) ParentHashes() []plumbing.Hash { return n.parentHashes
 // ParentHashes -- it exists to prevent a walk past a shallow boundary, so it
 // must not itself become a new panic.
 func TestLiveParentHashesClampsToAvailableHashes(t *testing.T) {
+	t.Parallel()
+
 	a := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	for name, tc := range map[string]struct {
@@ -218,6 +228,8 @@ func TestLiveParentHashesClampsToAvailableHashes(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			got := liveParentHashes(tc.node)
 			if len(tc.want) == 0 {
 				require.Empty(t, got)
