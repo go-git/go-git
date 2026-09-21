@@ -70,6 +70,38 @@ func (s *ObjectStorage) requireIndex() error {
 	return nil
 }
 
+func (s *ObjectStorage) refreshIndexIfPackInventoryChanged() error {
+	changed, err := s.packInventoryChanged()
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	s.Reindex()
+	return s.requireIndex()
+}
+
+func (s *ObjectStorage) packInventoryChanged() (bool, error) {
+	if s.index == nil {
+		return false, nil
+	}
+
+	packs, err := s.dir.ObjectPacks()
+	if err != nil {
+		return false, err
+	}
+	if len(packs) != len(s.index) {
+		return true, nil
+	}
+	for _, h := range packs {
+		if _, ok := s.index[h]; !ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Reindex indexes again all packfiles. Useful if git changed packfiles externally
 func (s *ObjectStorage) Reindex() {
 	s.index = nil
@@ -187,7 +219,13 @@ func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 	}
 	_, _, offset := s.findObjectInPackfile(h)
 	if offset == -1 {
-		return plumbing.ErrObjectNotFound
+		if err := s.refreshIndexIfPackInventoryChanged(); err != nil {
+			return err
+		}
+		_, _, offset = s.findObjectInPackfile(h)
+		if offset == -1 {
+			return plumbing.ErrObjectNotFound
+		}
 	}
 	return nil
 }
@@ -290,7 +328,13 @@ func (s *ObjectStorage) encodedObjectSizeFromPackfile(h plumbing.Hash) (
 
 	pack, _, offset := s.findObjectInPackfile(h)
 	if offset == -1 {
-		return 0, plumbing.ErrObjectNotFound
+		if err := s.refreshIndexIfPackInventoryChanged(); err != nil {
+			return 0, err
+		}
+		pack, _, offset = s.findObjectInPackfile(h)
+		if offset == -1 {
+			return 0, plumbing.ErrObjectNotFound
+		}
 	}
 
 	idx := s.index[pack]
@@ -470,7 +514,13 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (
 
 	pack, hash, offset := s.findObjectInPackfile(h)
 	if offset == -1 {
-		return nil, plumbing.ErrObjectNotFound
+		if err := s.refreshIndexIfPackInventoryChanged(); err != nil {
+			return nil, err
+		}
+		pack, hash, offset = s.findObjectInPackfile(h)
+		if offset == -1 {
+			return nil, plumbing.ErrObjectNotFound
+		}
 	}
 
 	idx := s.index[pack]
