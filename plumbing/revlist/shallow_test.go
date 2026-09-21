@@ -46,6 +46,8 @@ func testMakeBlob(t *testing.T, s storer.EncodedObjectStorer, content string) pl
 // Server history is X <- P <- B, with a blob shared by P and B but not present
 // in X. A client holding X that fetches B at depth 1 needs that blob.
 func TestObjectsShallowBoundaryShipsCompleteTree(t *testing.T) {
+	t.Parallel()
+
 	sto := memory.NewStorage()
 
 	blobX := testMakeBlob(t, sto, "x\n")

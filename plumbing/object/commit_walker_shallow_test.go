@@ -99,6 +99,8 @@ func buildShallowCommitChainIn(t *testing.T, sto shallowTestStorer) (head *Commi
 // constructor here is exercised as a consumer of that behaviour rather than
 // having its own shallow-handling logic.
 func TestCommitIteratorsStopAtShallowBoundary(t *testing.T) {
+	t.Parallel()
+
 	ctors := map[string]func(c *Commit) CommitIter{
 		"Preorder": func(c *Commit) CommitIter {
 			return NewCommitPreorderIter(c, nil, nil)
@@ -124,6 +126,8 @@ func TestCommitIteratorsStopAtShallowBoundary(t *testing.T) {
 
 	for name, ctor := range ctors {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			head, missingParent := buildShallowCommitChain(t)
 			shallowRootHash := head.ParentHashes[0]
 
@@ -146,6 +150,8 @@ func TestCommitIteratorsStopAtShallowBoundary(t *testing.T) {
 // git's graft-based behaviour, where the object's recorded data is
 // untouched but every revision walk sees a truncated parent list.
 func TestCommitAccessorsOnShallowCommit(t *testing.T) {
+	t.Parallel()
+
 	head, _ := buildShallowCommitChain(t)
 	shallowRoot, err := head.Parent(0)
 	require.NoError(t, err)
@@ -169,6 +175,8 @@ func TestCommitAccessorsOnShallowCommit(t *testing.T) {
 // NumParents()", where a negative index used to fall through the old
 // "i > len(ParentHashes)-1" test and panic on the slice access below it.
 func TestCommitParentRejectsOutOfRangeIndex(t *testing.T) {
+	t.Parallel()
+
 	head, _ := buildShallowCommitChain(t)
 	require.Equal(t, 1, head.NumParents())
 
@@ -256,6 +264,8 @@ func buildShallowDiamond(t *testing.T) (branchA, branchB *Commit) {
 // closed: finding the common ancestor of two branches rooted at a shallow
 // commit must not require dereferencing that commit's absent parent.
 func TestMergeBaseOnShallowRepository(t *testing.T) {
+	t.Parallel()
+
 	branchA, branchB := buildShallowDiamond(t)
 	shallowRoot, err := branchA.Parent(0)
 	require.NoError(t, err)

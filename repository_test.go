@@ -4715,11 +4715,13 @@ func TestLogOnShallowRepository(t *testing.T) {
 
 	for _, order := range orders {
 		t.Run(fmt.Sprintf("Order=%d", order), func(t *testing.T) {
+			t.Parallel()
+
 			iter, err := repo.Log(&LogOptions{From: head.Hash(), Order: order})
 			require.NoError(t, err)
 
 			var count int
-			err = iter.ForEach(func(c *object.Commit) error {
+			err = iter.ForEach(func(_ *object.Commit) error {
 				count++
 				return nil
 			})
