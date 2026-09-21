@@ -8,6 +8,22 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+// liveParentHashes returns c's parent hashes truncated to c.NumParents(),
+// so callers that need both the hash and its index (for ParentNode) never
+// walk past a shallow boundary: NumParents() is 0 there even though
+// ParentHashes() still reports the real (unfetched) parent.
+//
+// The count is clamped rather than assumed. Both implementations here keep
+// NumParents and ParentHashes in step, but CommitNode is an exported
+// interface, so an implementation from outside this package can report more
+// parents than it has hashes for — and a helper that exists to stop a walk
+// going past a shallow boundary must not itself become a panic.
+func liveParentHashes(c CommitNode) []plumbing.Hash {
+	hashes := c.ParentHashes()
+
+	return hashes[:min(c.NumParents(), len(hashes))]
+}
+
 // commitNodeStackable represents a common interface between heaps and stacks
 type commitNodeStackable interface {
 	Push(c CommitNode)
