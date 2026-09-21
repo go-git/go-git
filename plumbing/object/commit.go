@@ -212,6 +212,14 @@ func (c *Commit) liveParentHashes() []plumbing.Hash {
 //
 // A lookup error is treated as "not shallow".
 func (c *Commit) isShallow() (bool, error) {
+	// Preferred path: a storer that can answer the membership question
+	// directly, without copying or scanning its shallow list. This is called
+	// for every parent lookup of every commit walk, so the difference
+	// matters on a large history. Every storer in this module implements it.
+	if sc, ok := c.s.(storer.ShallowChecker); ok {
+		return sc.IsShallow(c.Hash)
+	}
+
 	ss, ok := c.s.(storer.ShallowStorer)
 	if !ok {
 		return false, nil

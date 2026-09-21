@@ -1,6 +1,7 @@
 package object
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -168,6 +169,89 @@ func TestCommitAccessorsOnShallowCommit(t *testing.T) {
 
 	_, err = shallowRoot.Parent(0)
 	require.ErrorIs(t, err, ErrParentNotFound)
+}
+
+// countingShallowStorage records which of the two shallow-lookup paths
+// Commit.isShallow takes.
+type countingShallowStorage struct {
+	*memory.Storage
+
+	shallowCalls   int
+	isShallowCalls int
+}
+
+func (s *countingShallowStorage) Shallow() ([]plumbing.Hash, error) {
+	s.shallowCalls++
+
+	return s.Storage.Shallow()
+}
+
+func (s *countingShallowStorage) IsShallow(h plumbing.Hash) (bool, error) {
+	s.isShallowCalls++
+
+	shallow, err := s.Storage.Shallow()
+	if err != nil {
+		return false, err
+	}
+
+	return slices.Contains(shallow, h), nil
+}
+
+// TestShallowLookupPrefersIsShallow pins the optional fast path: a storer that
+// can answer the membership question directly must be asked directly, rather
+// than made to hand over (and therefore copy) its whole shallow list for a
+// linear scan on every parent lookup of every commit walk.
+func TestShallowLookupPrefersIsShallow(t *testing.T) {
+	t.Parallel()
+
+	sto := &countingShallowStorage{Storage: memory.NewStorage()}
+	head, missingParent := buildShallowCommitChainIn(t, sto)
+
+	var visited []plumbing.Hash
+	require.NoError(t, NewCommitIterCTime(head, nil, nil).ForEach(func(c *Commit) error {
+		visited = append(visited, c.Hash)
+		return nil
+	}))
+
+	require.Len(t, visited, 2)
+	require.NotContains(t, visited, missingParent)
+	require.Positive(t, sto.isShallowCalls, "the walk must consult the storer about shallow-ness")
+	require.Zero(t, sto.shallowCalls, "IsShallow must be preferred over copying the whole shallow list")
+}
+
+// shallowStorerOnly exposes exactly storer.EncodedObjectStorer and
+// storer.ShallowStorer, and nothing else. Embedding the interfaces rather than
+// a concrete storer is what keeps storer.ShallowChecker out of the method set,
+// which every storer in this module implements.
+type shallowStorerOnly struct {
+	storer.EncodedObjectStorer
+	storer.ShallowStorer
+}
+
+// TestShallowLookupFallsBackToShallow checks the fallback still works for a
+// storer that only implements storer.ShallowStorer, which stays sufficient for
+// correctness — third-party storers are under no obligation to implement the
+// storer.ShallowChecker fast path.
+func TestShallowLookupFallsBackToShallow(t *testing.T) {
+	t.Parallel()
+
+	sto := memory.NewStorage()
+	head, missingParent := buildShallowCommitChainIn(t, shallowStorerOnly{
+		EncodedObjectStorer: sto,
+		ShallowStorer:       sto,
+	})
+
+	_, isChecker := head.s.(storer.ShallowChecker)
+	require.False(t, isChecker, "this test is only meaningful against a plain ShallowStorer")
+
+	var visited []plumbing.Hash
+	require.NoError(t, NewCommitIterCTime(head, nil, nil).ForEach(func(c *Commit) error {
+		visited = append(visited, c.Hash)
+		return nil
+	}))
+
+	require.Len(t, visited, 2)
+	require.NotContains(t, visited, missingParent)
 }
 
 // TestCommitParentRejectsOutOfRangeIndex pins the bounds check Parent(i) grew
