@@ -856,6 +856,22 @@ func (s *ConformanceSuite) TestIgnoreRealWorld() {
 	}
 }
 
+func (s *ConformanceSuite) TestIgnoreRepeatedSlash() {
+	for _, tc := range []struct {
+		pattern string
+		path    string
+		ignored bool
+	}{
+		{pattern: "a//b", path: "a/b", ignored: false},
+		{pattern: "c//", path: "c/x", ignored: false},
+		{pattern: "a/b", path: "a/b", ignored: true},
+		{pattern: "c/", path: "c/x", ignored: true},
+		{pattern: "/a/b", path: "a/b", ignored: true},
+	} {
+		s.testMatch(tc.pattern, tc.path, tc.ignored, "repeated slash")
+	}
+}
+
 // TestIgnoreDoubleStarSuffixRequiresSegment verifies that `**/<segment>/**`
 // excludes only paths that actually contain <segment>. Callers such as
 // Worktree.Status stop descending into a directory the matcher excludes, so a
