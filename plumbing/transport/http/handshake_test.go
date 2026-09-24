@@ -758,18 +758,6 @@ func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
 		"a non-cancellation negotiation error must close the response body")
 }
 
-func TestDumbPushIsUnsupported(t *testing.T) {
-	t.Parallel()
-
-	session := &dumbPackSession{}
-
-	err := session.Push(context.Background(), nil, nil)
-
-	require.Error(t, err)
-	assert.ErrorIs(t, err, transport.ErrCommandUnsupported,
-		"a caller picking another transport tests the sentinel, not the message")
-}
-
 // serveInfoRefs answers /info/refs with the given content type and body, and
 // nothing else, so the handshake is decided purely by that response.
 func serveInfoRefs(t testing.TB, contentType, body string) *url.URL {
@@ -786,47 +774,27 @@ func serveInfoRefs(t testing.TB, contentType, body string) *url.URL {
 	return u
 }
 
-// TestHandshakeDumbInfoRefs covers what a dumb handshake makes of the body it
-// is served. packp.InfoRefs.Decode decides what counts as a ref list; this
-// covers the transport's half — that a rejection names the URL and the content
-// type, quotes only plain text, and is not reported as an empty repository.
-func TestHandshakeDumbInfoRefs(t *testing.T) {
+// TestHandshakeRejectsNonSmartResponse covers a discovery response without the
+// smart advertisement's content type. Canonical git would fall back to the dumb
+// protocol there; go-git does not support it, so the handshake fails, and the
+// rejection names the URL and the content type, quotes only plain text, and is
+// not reported as an empty repository.
+func TestHandshakeRejectsNonSmartResponse(t *testing.T) {
 	t.Parallel()
-
-	const head = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 
 	tests := []struct {
 		name        string
 		contentType string
 		body        string
-		wantRefs    bool // handshake succeeds and advertises references
 		wantInMsg   []string
 		wantNotMsg  []string
 	}{
 		{
-			// Indented markup puts hex-looking text before a tab, so this used
-			// to decode to a reference named after the markup.
 			name:        "sso interstitial",
 			contentType: "text/html; charset=utf-8",
 			body:        "<!DOCTYPE html>\n<html>\n\t<body>Sign in to continue</body>\n</html>\n",
 			wantInMsg:   []string{"text/html"},
 			wantNotMsg:  []string{"Sign in to continue"},
-		},
-		{
-			// A page minified onto one line, longer than the ref list decoder
-			// can hold. It has to reach the caller as a rejection like any
-			// other, not as the decoder's own scanner error.
-			name:        "single line longer than the decoder can hold",
-			contentType: "text/html",
-			body:        "<html>" + strings.Repeat("x", 64<<10) + "</html>",
-			wantInMsg:   []string{"text/html"},
-		},
-		{
-			name:        "markup without tabs",
-			contentType: "text/html",
-			body:        "<html><body>nope</body></html>",
-			wantInMsg:   []string{"text/html"},
-			wantNotMsg:  []string{"nope"},
 		},
 		{
 			name:        "plain text is quoted back",
@@ -835,37 +803,24 @@ func TestHandshakeDumbInfoRefs(t *testing.T) {
 			wantInMsg:   []string{"repository is archived"},
 		},
 		{
-			// A malformed ref list, not markup: the rejection reaches the
-			// caller the same way, and the body is plain text so it is quoted.
-			name:        "hash shorter than the hash size",
+			name:        "plain text is quoted only up to a bound",
 			contentType: "text/plain",
-			body:        "deadbeef\trefs/heads/master\n",
-			wantInMsg:   []string{"deadbeef"},
+			body:        strings.Repeat("x", maxQuotedBodySize) + "tail",
+			wantNotMsg:  []string{"tail"},
 		},
 		{
-			// A byte order mark ahead of an otherwise valid list.
-			name:        "byte order mark",
+			name:        "dumb ref list",
 			contentType: "text/plain",
-			body:        "\ufeff" + head + "\trefs/heads/master\n",
-		},
-		{
-			// A valid line after the junk does not rescue the advertisement.
-			name:        "junk line before a valid one",
-			contentType: "text/plain",
-			body:        "<!-- injected -->\n" + head + "\trefs/heads/master\n",
-		},
-		{
-			name:        "legitimate ref list",
-			contentType: "text/plain",
-			body:        head + "\trefs/heads/master\n",
-			wantRefs:    true,
+			body:        "6ecf0ef2c2dffb796033e5a02219af86ec6584e5\trefs/heads/master\n",
+			wantInMsg:   []string{"text/plain", "dumb"},
 		},
 		{
 			// git update-server-info writes a zero-byte file for a repository
-			// with no references, so an empty body is not a malformed one.
-			name:        "empty body",
+			// with no references, which a dumb server serves as is.
+			name:        "empty dumb ref list",
 			contentType: "text/plain",
 			body:        "",
+			wantInMsg:   []string{"dumb"},
 		},
 	}
 
@@ -876,28 +831,18 @@ func TestHandshakeDumbInfoRefs(t *testing.T) {
 			u := serveInfoRefs(t, tt.contentType, tt.body)
 
 			tr := NewTransport(Options{})
-			session, err := tr.Handshake(context.Background(), &transport.Request{
+			_, err := tr.Handshake(context.Background(), &transport.Request{
 				URL:     u,
 				Command: transport.UploadPackService,
 			})
 
-			if tt.body == "" || tt.wantRefs {
-				require.NoError(t, err, "a dumb ref list, or the absence of one, must handshake")
-				defer session.Close()
-
-				refs, err := session.GetRemoteRefs(context.Background(), nil)
-				require.NoError(t, err)
-				assert.Equal(t, tt.wantRefs, len(refs.References) > 0)
-				return
-			}
-
 			require.Error(t, err)
 			assert.ErrorIs(t, err, transport.ErrInvalidResponse,
 				"callers switch on the transport sentinel")
-			assert.ErrorIs(t, err, packp.ErrInvalidInfoRefs,
-				"the decoder's reason stays in the chain")
 			assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository,
-				"a body that is not a ref list is not an empty repository")
+				"a response that is not a smart advertisement is not an empty repository")
+			assert.Contains(t, err.Error(), u.Host+"/info/refs",
+				"the rejection names the URL that was fetched")
 			for _, want := range tt.wantInMsg {
 				assert.Contains(t, err.Error(), want)
 			}

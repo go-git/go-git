@@ -205,12 +205,6 @@ type Options struct {
 	// bundle. Ignored when Client is set.
 	TLS *tls.Config
 
-	// ForceDumb forces the transport to use the dumb HTTP protocol,
-	// bypassing smart HTTP detection. When true, the transport will
-	// not send the ?service= query parameter in the info/refs request
-	// and will always treat the server as a dumb HTTP server.
-	ForceDumb bool
-
 	// Credentials supplies a credential for the origin a request is about to be
 	// made to. It is called for the repository's origin, and again for a
 	// redirect target once a redirect has left that origin. The zero value

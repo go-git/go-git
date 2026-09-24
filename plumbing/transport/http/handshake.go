@@ -66,7 +66,7 @@ type sessionBase struct {
 }
 
 // Handshake implements transport.Transport. GETs /info/refs to discover
-// refs and detects smart vs dumb HTTP.
+// refs. Only the smart HTTP protocol is supported.
 func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
 	service := req.Command
 	// The caller's URL with its path in the spelling the requests will carry;
@@ -75,7 +75,6 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	if err != nil {
 		return nil, err
 	}
-	forceDumb := t.opts.ForceDumb
 
 	// git archive over HTTP discovers protocol support through the upload-pack
 	// info/refs endpoint and requires Protocol v2 (remote-curl.c). The archive
@@ -87,7 +86,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		discoverProtocol = protocol.V2
 	}
 
-	d := discovery{service: discoverService, protocol: discoverProtocol, forceDumb: forceDumb}
+	d := discovery{service: discoverService, protocol: discoverProtocol}
 
 	// Only the discovery GET carries the initial-request marker, so only it may
 	// follow redirects under the default policy.
@@ -219,18 +218,19 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	return finishHandshake(resp, base, d)
 }
 
-// finishHandshake picks the smart or dumb session for a discovery response that
-// has already been validated and had its credentials settled, keeping that
-// dispatch out of the redirect and credential handling above it.
+// finishHandshake opens the session for a discovery response that has already
+// been validated and had its credentials settled, keeping that step out of the
+// redirect and credential handling above it.
+//
+// A response without the smart advertisement's content type is what a dumb
+// server, or something that is not a git server at all, sends. Canonical git
+// falls back to the dumb protocol there (remote-curl.c); go-git does not
+// support it, so the response is rejected.
 func finishHandshake(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
-	if d.forceDumb {
-		return handshakeDumb(resp, base)
+	if !smartContentType(resp.Header.Get("Content-Type"), d.service) {
+		return nil, notSmartError(resp, base)
 	}
-
-	if smartContentType(resp.Header.Get("Content-Type"), d.service) {
-		return handshakeSmart(resp, base, d)
-	}
-	return handshakeDumb(resp, base)
+	return handshakeSmart(resp, base, d)
 }
 
 func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
@@ -310,22 +310,20 @@ func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transpo
 
 // maxQuotedBodySize caps how much of a rejected /info/refs body is quoted back
 // in the error. Enough to recognise what the server sent, not enough to paste
-// a page into a log line, and no larger than a bufio.Reader's buffer, since
-// that is what bounds the Peek this size is asked of.
+// a page into a log line.
 const maxQuotedBodySize = 256
 
-// describeInfoRefsError turns a decode failure into one a caller can act on.
-//
-// packp reports which line was malformed and nothing about its contents,
-// because the bytes belong to the server. What the transport knows, and packp
-// does not, is which URL was fetched and what the server said it was serving —
-// the difference between "invalid info/refs" and "that host answered your
-// clone with an HTML sign-in page".
+// notSmartError describes a discovery response that is not a smart
+// advertisement, in terms a caller can act on: which URL was fetched and what
+// the server said it was serving — the difference between "not a smart
+// server" and "that host answered your clone with an HTML sign-in page".
 //
 // The body is quoted only when it is plain text, matching git's
 // show_http_message: other types are markup meant for a browser, and an
 // interstitial can echo the request's own query back inside it.
-func describeInfoRefsError(err error, resp *http.Response, base sessionBase, head []byte) error {
+func notSmartError(resp *http.Response, base sessionBase) error {
+	defer resp.Body.Close() //nolint:errcheck
+
 	// Name the URL actually fetched, which carries the /info/refs tail and the
 	// service query the session's base does not.
 	fetched := base.baseURL
@@ -335,34 +333,14 @@ func describeInfoRefsError(err error, resp *http.Response, base sessionBase, hea
 
 	mediaType := contentMediaType(resp.Header.Get("Content-Type"))
 	if mediaType == "text/plain" {
-		return fmt.Errorf("%w: %s served content type %q: %w: %q",
-			transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err,
-			strings.TrimSpace(sanitizeReason(string(head))))
+		var head bytes.Buffer
+		_, _ = head.ReadFrom(io.LimitReader(resp.Body, maxQuotedBodySize))
+		return fmt.Errorf("%w: %s served content type %q, not a smart advertisement (the dumb HTTP protocol is not supported): %q",
+			transport.ErrInvalidResponse, redactedURL(fetched), mediaType,
+			strings.TrimSpace(sanitizeReason(head.String())))
 	}
-	return fmt.Errorf("%w: %s served content type %q: %w",
-		transport.ErrInvalidResponse, redactedURL(fetched), mediaType, err)
-}
-
-func handshakeDumb(resp *http.Response, base sessionBase) (transport.Session, error) {
-	defer resp.Body.Close() //nolint:errcheck
-
-	// Buffer the head of the body so a rejection can quote it. Peek leaves it
-	// in place for the decode, and returns what it has on a shorter body. The
-	// reader keeps bufio's own buffer size, which is what bounds a Peek; how
-	// much of a body is worth quoting is a separate question from how much of
-	// it is worth buffering.
-	rd := bufio.NewReader(resp.Body)
-	head, _ := rd.Peek(maxQuotedBodySize)
-
-	var infoRefs packp.InfoRefs
-	if err := infoRefs.Decode(rd); err != nil {
-		return nil, describeInfoRefsError(err, resp, base, head)
-	}
-
-	ar := &packp.AdvRefs{}
-	ar.References = infoRefs.References
-
-	return &dumbPackSession{sessionBase: base, refs: ar}, nil
+	return fmt.Errorf("%w: %s served content type %q, not a smart advertisement (the dumb HTTP protocol is not supported)",
+		transport.ErrInvalidResponse, redactedURL(fetched), mediaType)
 }
 
 var (
@@ -674,38 +652,7 @@ func (n *httpNegotiator) closeResponse() {
 	}
 }
 
-var _ transport.Session = (*dumbPackSession)(nil)
-
-type dumbPackSession struct {
-	sessionBase
-	refs *packp.AdvRefs
-}
-
-func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
-
-func (s *dumbPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
-	if s.refs == nil {
-		return nil, transport.ErrEmptyRemoteRepository
-	}
-	refs, err := s.refs.ResolvedReferences()
-	if err != nil {
-		return nil, err
-	}
-	return transport.NewRemoteRefs(refs), nil
-}
-
-func (s *dumbPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
-	return s.fetchDumb(ctx, st, req)
-}
-
-func (s *dumbPackSession) Push(_ context.Context, _ storage.Storer, _ *transport.PushRequest) error {
-	return fmt.Errorf("dumb HTTP does not support push: %w", transport.ErrCommandUnsupported)
-}
-
-func (s *dumbPackSession) Close() error { return nil }
-
 var (
 	_ transport.Session   = (*smartPackSession)(nil)
-	_ transport.Session   = (*dumbPackSession)(nil)
 	_ transport.Transport = (*Transport)(nil)
 )

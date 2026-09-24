@@ -14,18 +14,8 @@ import (
 // discovery carries what a discovery request is made of, so the request and any
 // re-issue of it are built by the same code from the same values.
 type discovery struct {
-	service   string
-	protocol  protocol.Version
-	forceDumb bool
-}
-
-// query returns the discovery query, empty when the server is being treated as
-// a dumb one.
-func (d discovery) query() string {
-	if d.forceDumb {
-		return ""
-	}
-	return "service=" + d.service
+	service  string
+	protocol protocol.Version
 }
 
 // request builds the discovery GET for base.
@@ -38,10 +28,7 @@ func (d discovery) query() string {
 // from the URL.
 func (d discovery) request(ctx context.Context, base *url.URL) (*http.Request, error) {
 	origin := &url.URL{Scheme: base.Scheme, Host: base.Host, Path: base.Path, RawPath: base.RawPath}
-	infoURL := origin.JoinPath("info/refs").String()
-	if q := d.query(); q != "" {
-		infoURL += "?" + q
-	}
+	infoURL := origin.JoinPath("info/refs").String() + "?service=" + d.service
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, infoURL, nil)
 	if err != nil {
@@ -49,10 +36,8 @@ func (d discovery) request(ctx context.Context, base *url.URL) (*http.Request, e
 	}
 
 	req.Header.Set("User-Agent", capability.DefaultAgent())
-	if !d.forceDumb {
-		if gp := transport.GitProtocolEnv(d.protocol); gp != "" {
-			req.Header.Set("Git-Protocol", gp)
-		}
+	if gp := transport.GitProtocolEnv(d.protocol); gp != "" {
+		req.Header.Set("Git-Protocol", gp)
 	}
 	return req, nil
 }

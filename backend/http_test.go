@@ -212,13 +212,31 @@ func TestNilLoaderBackend(t *testing.T) {
 	require.Equal(t, 404, res.StatusCode)
 }
 
-func testInfoRefs(t testing.TB, isSmart bool) {
-	expectedDumb := `6ecf0ef2c2dffb796033e5a02219af86ec6584e5	refs/heads/master
-6ecf0ef2c2dffb796033e5a02219af86ec6584e5	refs/remotes/origin/HEAD
-e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
-6ecf0ef2c2dffb796033e5a02219af86ec6584e5	refs/remotes/origin/master
-`
-	expectedSmart := `001e# service=git-upload-pack
+// Every dumb request is denied the way git http-backend denies it while
+// http.getanyfile is unset: 403, not the 404 an unrecognised path would get.
+func TestDumbRequestsAreForbidden(t *testing.T) {
+	t.Parallel()
+	h := New(&fixturesLoader{t})
+	for _, path := range []string{
+		"/basic.git/info/refs",
+		"/basic.git/HEAD",
+		"/basic.git/objects/info/alternates",
+		"/basic.git/objects/info/http-alternates",
+		"/basic.git/objects/info/packs",
+		"/basic.git/objects/aa/00000000000000000000000000000000000000",
+		"/basic.git/objects/pack/pack-a3fed42da1e8189a077c0e6846c040dcf73fc9dd.pack",
+		"/basic.git/objects/pack/pack-a3fed42da1e8189a077c0e6846c040dcf73fc9dd.idx",
+	} {
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		require.Equal(t, 403, w.Code, path)
+	}
+}
+
+func TestSmartInfoRefs(t *testing.T) {
+	t.Parallel()
+	expected := `001e# service=git-upload-pack
 000000c76ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD` + "\x00" + `agent=` + capability.DefaultAgent() + ` ofs-delta side-band-64k multi_ack multi_ack_detailed side-band no-progress shallow object-format=sha1 symref=HEAD:refs/heads/master
 003fe8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/branch
 003f6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master
@@ -229,11 +247,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 0000`
 	h := New(&fixturesLoader{t})
 
-	urlPath := "/basic.git/info/refs"
-	if isSmart {
-		urlPath += "?service=git-upload-pack"
-	}
-	req := httptest.NewRequest("GET", urlPath, nil)
+	req := httptest.NewRequest("GET", "/basic.git/info/refs?service=git-upload-pack", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	res := w.Result()
@@ -242,22 +256,7 @@ e8d3ffab552895c19b9fcf7aa264d277cde33881	refs/remotes/origin/branch
 	bts, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	require.NoError(t, res.Body.Close())
-
-	if isSmart {
-		require.Equal(t, expectedSmart, string(bts))
-	} else {
-		require.Equal(t, expectedDumb, string(bts))
-	}
-}
-
-func TestDumbInfoRefs(t *testing.T) {
-	t.Parallel()
-	testInfoRefs(t, false)
-}
-
-func TestSmartInfoRefs(t *testing.T) {
-	t.Parallel()
-	testInfoRefs(t, true)
+	require.Equal(t, expected, string(bts))
 }
 
 type tagLoader struct {

@@ -454,7 +454,7 @@ func (v *vhost) lastContentLength(t *testing.T) int64 {
 // canonicalises for lookup, so it catches this spelling too.
 //
 // opts, if given, are applied to the base Options after the defaults above
-// are set, so a caller can override Client or add settings like ForceDumb
+// are set, so a caller can override Client or add settings like FollowRedirects
 // without duplicating the credential setup.
 func handshakeWithCredentials(t *testing.T, hm *vhostMap, originBase string, opts ...func(*Options)) (transport.Session, error) {
 	t.Helper()
