@@ -85,9 +85,11 @@ func (s *ParserSuite) TestParserHashes(c *C) {
 	c.Assert(obs.objects, DeepEquals, objs)
 }
 
+// Not marked as parallel: fixtures.Basic().One().Packfile() extracts the
+// fixture packfile through a shared, unsynchronized package-level cache in
+// go-git-fixtures, so running this concurrently with other fixture-backed
+// tests can trigger a fatal "concurrent map writes" crash.
 func TestChecksumMismatch(t *testing.T) {
-	t.Parallel()
-
 	f, err := os.CreateTemp(t.TempDir(), "temp.pack")
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -114,9 +116,8 @@ func TestChecksumMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "checksum mismatch")
 }
 
+// Not marked as parallel: see TestChecksumMismatch above.
 func TestMalformedPack(t *testing.T) {
-	t.Parallel()
-
 	f, err := os.CreateTemp(t.TempDir(), "temp.pack")
 	require.NoError(t, err)
 	t.Cleanup(func() {
