@@ -2169,13 +2169,13 @@ func TestTreeEncodeRejectsDangerousNames(t *testing.T) {
 	}
 }
 
-// TestTreeEntryFileRejectsDangerousNames pins the validation gate added
-// to TreeEntryFile: any caller materialising a *File from a *TreeEntry
-// must fail closed when the entry's name is a shape that
+// TestFileFromEntryRejectsDangerousNames pins the validation gate added
+// to FileFromEntry: any caller materialising a *File from a *TreeEntry
+// must fail closed when the path is a shape that
 // pathutil.ValidTreePath rejects, regardless of whether the underlying
 // blob fetch would succeed. The blob is staged before each case so a
 // missing-blob error cannot mask a missing validator.
-func TestTreeEntryFileRejectsDangerousNames(t *testing.T) {
+func TestFileFromEntryRejectsDangerousNames(t *testing.T) {
 	t.Parallel()
 
 	store := memory.NewStorage()
@@ -2212,12 +2212,12 @@ func TestTreeEntryFileRejectsDangerousNames(t *testing.T) {
 			t.Parallel()
 
 			tree := &Tree{s: store}
-			f, err := tree.TreeEntryFile(&TreeEntry{
+			f, err := tree.FileFromEntry(tc.entryName, &TreeEntry{
 				Name: tc.entryName,
 				Mode: filemode.Regular,
 				Hash: blobHash,
 			})
-			assert.Nil(t, f, "TreeEntryFile should not return a *File for %q", tc.entryName)
+			assert.Nil(t, f, "FileFromEntry should not return a *File for %q", tc.entryName)
 			assert.ErrorIs(t, err, pathutil.ErrInvalidPath)
 		})
 	}
