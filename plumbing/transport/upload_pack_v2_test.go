@@ -156,6 +156,36 @@ func TestObjectsToUploadShallowBounded(t *testing.T) {
 	require.Less(t, len(bounded), len(full), "shallow pack must be smaller than the full pack")
 }
 
+// TestShallowBoundaryStorerIsShallow pins the storer.ShallowChecker fast path
+// on shallowBoundaryStorer: embedding the storage.Storer interface rather
+// than a concrete type means the base storer's own IsShallow is never
+// promoted, so without its own implementation every NumParents() lookup
+// during this request's object walk would fall back to Shallow, allocating
+// and linearly scanning the combined boundary+base list per call.
+func TestShallowBoundaryStorerIsShallow(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	c, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
+	parent := c.ParentHashes[0]
+
+	var wrapped storage.Storer = &shallowBoundaryStorer{Storer: st, boundary: []plumbing.Hash{head.Hash()}}
+
+	checker, isChecker := wrapped.(storer.ShallowChecker)
+	require.True(t, isChecker, "shallowBoundaryStorer must implement storer.ShallowChecker")
+
+	isShallow, err := checker.IsShallow(head.Hash())
+	require.NoError(t, err)
+	require.True(t, isShallow, "the per-request boundary hash must report shallow")
+
+	isShallow, err = checker.IsShallow(parent)
+	require.NoError(t, err)
+	require.False(t, isShallow, "a commit outside the boundary and the base's own shallow list must not report shallow")
+}
+
 func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)

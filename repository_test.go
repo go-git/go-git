@@ -4665,3 +4665,68 @@ func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
 	s.Require().NoError(r.Storer.HasEncodedObject(commit))
 	s.Require().NoError(r.Storer.HasEncodedObject(tree))
 }
+
+// TestLogOnShallowRepository is a regression test for
+// https://github.com/go-git/go-git/issues/1127: on a shallow repository,
+// repo.Log() used to fail with plumbing.ErrObjectNotFound as soon as the
+// walk reached the shallow boundary's absent parent, instead of stopping
+// cleanly the way `git log` does. This is exercised across every LogOrder,
+// since each is backed by a different object.NewCommit*Iter constructor.
+func TestLogOnShallowRepository(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+	repoDir := filepath.Join(tempDir, "repo")
+
+	remote, err := PlainInit(remoteURL, false)
+	require.NoError(t, err)
+	defer func() { _ = remote.Close() }()
+
+	_ = CommitNewFile(t, remote, "File1")
+	_ = CommitNewFile(t, remote, "File2")
+	sha3 := CommitNewFile(t, remote, "File3")
+
+	// A depth=2 clone stores only File2's and File3's commits locally.
+	// File2's commit is the shallow root: it faithfully records File1's
+	// commit as its parent, but that parent was never fetched.
+	repo, err := PlainClone(repoDir, &CloneOptions{
+		URL:           remoteURL,
+		Depth:         2,
+		Tags:          plumbing.NoTags,
+		SingleBranch:  true,
+		ReferenceName: "master",
+	})
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	head, err := repo.Head()
+	require.NoError(t, err)
+	require.Equal(t, sha3, head.Hash())
+
+	orders := []LogOrder{
+		LogOrderDefault,
+		LogOrderDFS,
+		LogOrderDFSPost,
+		LogOrderBSF,
+		LogOrderCommitterTime,
+		LogOrderDFSPostFirstParent,
+	}
+
+	for _, order := range orders {
+		t.Run(fmt.Sprintf("Order=%d", order), func(t *testing.T) {
+			t.Parallel()
+
+			iter, err := repo.Log(&LogOptions{From: head.Hash(), Order: order})
+			require.NoError(t, err)
+
+			var count int
+			err = iter.ForEach(func(_ *object.Commit) error {
+				count++
+				return nil
+			})
+			require.NoError(t, err, "Log() must reach io.EOF cleanly at the shallow boundary")
+			require.Equal(t, 2, count, "only the two locally-stored commits should be visited")
+		})
+	}
+}

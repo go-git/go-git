@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -1089,6 +1090,26 @@ func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
 		return base, nil
 	}
 	return append(append([]plumbing.Hash(nil), base...), s.boundary...), nil
+}
+
+// IsShallow honors the storer.ShallowChecker interface. Without it, every
+// parent lookup during this request's object walk would fall back to
+// Shallow, allocating and linearly scanning the combined list per call:
+// embedding the storage.Storer interface (rather than a concrete type)
+// means this wrapper never promotes the base storer's own IsShallow, since
+// interface embedding only promotes methods the interface itself declares.
+func (s *shallowBoundaryStorer) IsShallow(h plumbing.Hash) (bool, error) {
+	if slices.Contains(s.boundary, h) {
+		return true, nil
+	}
+	if sc, ok := s.Storer.(storer.ShallowChecker); ok {
+		return sc.IsShallow(h)
+	}
+	base, err := s.Storer.Shallow()
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(base, h), nil
 }
 
 // wantsReachableFromHaves reports whether every want is reachable from the set
