@@ -1,7 +1,9 @@
 package dotgit
 
 import (
+	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,7 +30,7 @@ func writeFile(t *testing.T, fs billy.Filesystem, name, content string) {
 
 func collectRefs(t *testing.T, iter storer.ReferenceIter) []string {
 	t.Helper()
-	var refs []string
+	refs := []string{}
 	require.NoError(t, iter.ForEach(func(r *plumbing.Reference) error {
 		refs = append(refs, r.String())
 		return nil
@@ -73,33 +75,77 @@ func TestRefsWithPrefixMatchesFilteredRefs(t *testing.T) {
 	} {
 		t.Run(prefix, func(t *testing.T) {
 			t.Parallel()
-			want := make([]string, 0, len(all))
+			var matching []*plumbing.Reference
 			for _, r := range all {
 				if strings.HasPrefix(r.Name().String(), prefix) {
-					want = append(want, r.String())
+					matching = append(matching, r)
 				}
+			}
+			slices.SortFunc(matching, func(a, b *plumbing.Reference) int {
+				return strings.Compare(a.Name().String(), b.Name().String())
+			})
+			want := make([]string, 0, len(matching))
+			for _, r := range matching {
+				want = append(want, r.String())
 			}
 
 			iter, err := dir.RefsWithPrefix(prefix)
 			require.NoError(t, err)
-			assert.ElementsMatch(t, want, collectRefs(t, iter))
+			assert.Equal(t, want, collectRefs(t, iter))
 		})
 	}
 }
 
-func TestRefsWithPrefixEmptyPrefixMatchesRefsOrder(t *testing.T) {
+// "-", "." and "0" sort around "/", so a walk that visited a directory
+// before its siblings would be out of order. A loose ref shadows a packed one
+// between other packed refs, and a repeated packed entry is yielded once.
+func TestRefsWithPrefixYieldsNameOrder(t *testing.T) {
 	t.Parallel()
-	_, dir := newPrefixTestDotGit(t)
-	all, err := dir.Refs()
-	require.NoError(t, err)
-	want := make([]string, 0, len(all))
-	for _, r := range all {
-		want = append(want, r.String())
-	}
+	for _, header := range []string{"# pack-refs with: peeled fully-peeled sorted ", ""} {
+		t.Run(header, func(t *testing.T) {
+			t.Parallel()
+			fs := memfs.New()
+			writeFile(t, fs, "HEAD", "ref: refs/heads/a/b\n")
+			writeFile(t, fs, "refs/heads/a/b", hashB+"\n")
+			writeFile(t, fs, "refs/heads/a-c", hashA+"\n")
+			writeFile(t, fs, "refs/heads/a0/d", hashA+"\n")
+			packed := []string{
+				hashA + " refs/heads/a.b",
+				hashA + " refs/heads/a/a",
+				hashA + " refs/heads/a/b",
+				hashA + " refs/heads/a/c",
+				hashA + " refs/heads/a0",
+				hashB + " refs/heads/a0",
+				hashA + " refs/tags/v1",
+			}
+			if header == "" {
+				slices.Reverse(packed)
+			} else {
+				packed = append([]string{header}, packed...)
+			}
+			writeFile(t, fs, "packed-refs", strings.Join(packed, "\n")+"\n")
+			dir := New(fs)
 
-	iter, err := dir.RefsWithPrefix("")
-	require.NoError(t, err)
-	assert.Equal(t, want, collectRefs(t, iter))
+			iter, err := dir.RefsWithPrefix("")
+			require.NoError(t, err)
+			want := []string{
+				"ref: refs/heads/a/b HEAD",
+				hashA + " refs/heads/a-c",
+				hashA + " refs/heads/a.b",
+				hashA + " refs/heads/a/a",
+				hashB + " refs/heads/a/b",
+				hashA + " refs/heads/a/c",
+				hashA + " refs/heads/a0",
+				hashA + " refs/heads/a0/d",
+				hashA + " refs/tags/v1",
+			}
+			if header == "" {
+				// Reversing the file put the later duplicate first.
+				want[6] = hashB + " refs/heads/a0"
+			}
+			assert.Equal(t, want, collectRefs(t, iter))
+		})
+	}
 }
 
 func TestRefsWithPrefixLooseShadowsPacked(t *testing.T) {
@@ -151,16 +197,17 @@ func TestRefsWithPrefixStopsAfterSortedPackedRange(t *testing.T) {
 			require.NoError(t, err)
 			defer iter.Close()
 
+			// An unsorted file is scanned in full before the first result.
 			ref, err := iter.Next()
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+				return
+			}
 			require.NoError(t, err)
 			assert.Equal(t, "refs/heads/main", ref.Name().String())
 
 			_, err = iter.Next()
-			if tc.wantErr != nil {
-				assert.ErrorIs(t, err, tc.wantErr)
-			} else {
-				assert.ErrorIs(t, err, io.EOF)
-			}
+			assert.ErrorIs(t, err, io.EOF)
 		})
 	}
 }
@@ -186,20 +233,25 @@ func TestRefsWithPrefixReleasesPackedRefs(t *testing.T) {
 			iter.Close()
 		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			fs, _ := newPrefixTestDotGit(t)
-			counting := &openCountingFS{Filesystem: fs}
-			dir := New(counting)
+		for _, sorted := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/sorted=%v", name, sorted), func(t *testing.T) {
+				t.Parallel()
+				fs, _ := newPrefixTestDotGit(t)
+				if !sorted {
+					writeFile(t, fs, "packed-refs", hashB+" refs/remotes/origin/topic\n"+hashA+" refs/remotes/origin/main\n")
+				}
+				counting := &openCountingFS{Filesystem: fs}
+				dir := New(counting)
 
-			iter, err := dir.RefsWithPrefix("refs/remotes/origin/")
-			require.NoError(t, err)
-			consume(iter)
-			assert.Zero(t, counting.open.Load())
+				iter, err := dir.RefsWithPrefix("refs/remotes/origin/")
+				require.NoError(t, err)
+				consume(iter)
+				assert.Zero(t, counting.open.Load())
 
-			_, err = iter.Next()
-			assert.ErrorIs(t, err, io.EOF, "a released iterator yields nothing more")
-		})
+				_, err = iter.Next()
+				assert.ErrorIs(t, err, io.EOF, "a released iterator yields nothing more")
+			})
+		}
 	}
 }
 

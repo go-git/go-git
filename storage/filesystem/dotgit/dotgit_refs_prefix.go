@@ -2,7 +2,6 @@ package dotgit
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -11,28 +10,29 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
 const packedRefsHeader = "# pack-refs with: "
 
-// RefsWithPrefix lazily iterates over Refs filtered by strings.HasPrefix.
-// It yields matching HEAD, loose refs, then unshadowed packed refs.
+// RefsWithPrefix lazily iterates over Refs filtered by strings.HasPrefix, in
+// ascending byte-wise name order. Loose refs and packed refs are merged as
+// Git's files backend does, with a loose ref shadowing a packed one of the
+// same name:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
 // The iterator must be closed.
 func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
-	iter := &refsWithPrefixIter{
-		d:      d,
-		prefix: prefix,
-		seen:   make(map[plumbing.ReferenceName]bool),
-	}
+	loose := &looseRefsSource{d: d}
 
+	// HEAD sorts before every name under refs/.
 	if strings.HasPrefix("HEAD", prefix) { //nolint:gocritic // HEAD matches a prefix of itself
 		head, err := d.readReferenceFile(".", "HEAD")
 		if err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		iter.head = head
+		loose.head = head
 	}
 
 	dir, err := d.looseRefsDirWithPrefix(prefix)
@@ -40,10 +40,10 @@ func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 		return nil, err
 	}
 	if dir != nil {
-		iter.dirs = append(iter.dirs, *dir)
+		loose.dirs = append(loose.dirs, *dir)
 	}
 
-	return iter, nil
+	return reference.NewOverlayIter(loose, &packedRefsSource{d: d, prefix: prefix}), nil
 }
 
 // looseRefsDir holds unvisited entries and their slash-separated directory
@@ -51,6 +51,23 @@ func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 type looseRefsDir struct {
 	name    string
 	entries []fs.DirEntry
+}
+
+// sortLooseRefsEntries sorts entries so that a depth-first walk yields names
+// in byte-wise order. Git names a directory entry with a trailing slash, so
+// "a-c" sorts before the refs under "a/":
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L394-L398
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/ref-cache.c#L108-L113
+func sortLooseRefsEntries(entries []fs.DirEntry) {
+	key := func(e fs.DirEntry) string {
+		if e.IsDir() {
+			return e.Name() + "/"
+		}
+		return e.Name()
+	}
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
+		return strings.Compare(key(a), key(b))
+	})
 }
 
 // looseRefsDirWithPrefix returns the deepest directory under refs/ that
@@ -86,6 +103,7 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 			entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
 				return !strings.HasPrefix(e.Name(), component)
 			})
+			sortLooseRefsEntries(entries)
 
 			return &looseRefsDir{name: dir, entries: entries}, nil
 		}
@@ -102,46 +120,25 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 	}
 }
 
-type refsWithPrefixIter struct {
-	d      *DotGit
-	prefix string
-	head   *plumbing.Reference
-
-	// dirs is the stack of loose reference directories being walked.
+// looseRefsSource yields HEAD, then walks loose refs depth-first in sorted
+// order.
+type looseRefsSource struct {
+	d    *DotGit
+	head *plumbing.Reference
 	dirs []looseRefsDir
-	// seen holds the references yielded, so that loose ones shadow packed
-	// ones and repeated packed-refs entries are yielded once.
-	seen map[plumbing.ReferenceName]bool
-
-	packed        billy.File
-	packedScanner *bufio.Scanner
-	packedSorted  bool
-	packedDone    bool
 }
 
-// Next returns the next reference, or io.EOF once all have been returned.
-func (iter *refsWithPrefixIter) Next() (*plumbing.Reference, error) {
-	if iter.head != nil {
-		ref := iter.head
-		iter.head = nil
+func (s *looseRefsSource) Next() (*plumbing.Reference, error) {
+	if s.head != nil {
+		ref := s.head
+		s.head = nil
 		return ref, nil
 	}
 
-	ref, err := iter.nextLoose()
-	if ref != nil || err != nil {
-		return ref, err
-	}
-
-	return iter.nextPacked()
-}
-
-// nextLoose walks the loose references depth-first, in the same order as
-// Refs, and returns nil once none are left.
-func (iter *refsWithPrefixIter) nextLoose() (*plumbing.Reference, error) {
-	for len(iter.dirs) > 0 {
-		dir := &iter.dirs[len(iter.dirs)-1]
+	for len(s.dirs) > 0 {
+		dir := &s.dirs[len(s.dirs)-1]
 		if len(dir.entries) == 0 {
-			iter.dirs = iter.dirs[:len(iter.dirs)-1]
+			s.dirs = s.dirs[:len(s.dirs)-1]
 			continue
 		}
 
@@ -150,7 +147,7 @@ func (iter *refsWithPrefixIter) nextLoose() (*plumbing.Reference, error) {
 		name := dir.name + "/" + entry.Name()
 
 		if entry.IsDir() {
-			entries, err := iter.d.fs.ReadDir(iter.d.fs.Join(strings.Split(name, "/")...))
+			entries, err := s.d.fs.ReadDir(s.d.fs.Join(strings.Split(name, "/")...))
 			if os.IsNotExist(err) {
 				// The directory may have been removed since listing.
 				continue
@@ -159,11 +156,12 @@ func (iter *refsWithPrefixIter) nextLoose() (*plumbing.Reference, error) {
 				return nil, err
 			}
 
-			iter.dirs = append(iter.dirs, looseRefsDir{name: name, entries: entries})
+			sortLooseRefsEntries(entries)
+			s.dirs = append(s.dirs, looseRefsDir{name: name, entries: entries})
 			continue
 		}
 
-		ref, err := iter.d.readReferenceFile(".", name)
+		ref, err := s.d.readReferenceFile(".", name)
 		if os.IsNotExist(err) {
 			// The file may have been removed since listing.
 			continue
@@ -172,116 +170,156 @@ func (iter *refsWithPrefixIter) nextLoose() (*plumbing.Reference, error) {
 			return nil, err
 		}
 
-		iter.seen[ref.Name()] = true
 		return ref, nil
 	}
 
-	return nil, nil
-}
-
-// nextPacked returns the next matching, unseen packed reference.
-// The sorted header trait permits stopping past the prefix, as Git does:
-// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1015-L1022
-// Otherwise, exhausting the iterator requires scanning the whole file.
-func (iter *refsWithPrefixIter) nextPacked() (*plumbing.Reference, error) {
-	if iter.packedDone {
-		return nil, io.EOF
-	}
-
-	if iter.packed == nil {
-		f, err := iter.d.fs.Open(packedRefsPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				iter.packedDone = true
-				return nil, io.EOF
-			}
-
-			return nil, err
-		}
-
-		iter.packed = f
-		iter.packedScanner = bufio.NewScanner(f)
-		if iter.packedScanner.Scan() {
-			// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L740-L763
-			if traits, ok := strings.CutPrefix(iter.packedScanner.Text(), packedRefsHeader); ok {
-				iter.packedSorted = slices.Contains(strings.Split(traits, " "), "sorted")
-			}
-			if ref, err := iter.matchPackedLine(iter.packedScanner.Text()); ref != nil || err != nil {
-				return ref, err
-			}
-		}
-	}
-
-	for !iter.packedDone && iter.packedScanner.Scan() {
-		if ref, err := iter.matchPackedLine(iter.packedScanner.Text()); ref != nil || err != nil {
-			return ref, err
-		}
-	}
-
-	if err := iter.packedScanner.Err(); err != nil {
-		return nil, err
-	}
-
-	iter.Close()
 	return nil, io.EOF
 }
 
-// matchPackedLine returns the reference on line if it matches the prefix and
-// has not been yielded already. It marks the scan as done once a
-// sorted file is past the prefix.
-func (iter *refsWithPrefixIter) matchPackedLine(line string) (*plumbing.Reference, error) {
-	hash, name, ok, err := parsePackedRefLine(line)
-	if err != nil || !ok {
+func (s *looseRefsSource) Close() {
+	s.head = nil
+	s.dirs = nil
+}
+
+// packedRefsSource yields the packed refs matching prefix in sorted order.
+// The sorted header trait permits streaming and stopping past the prefix, as
+// Git does:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1015-L1022
+// Without it, Git sorts the whole file; this collects and sorts the matching
+// lines, so the first result waits for a full scan.
+type packedRefsSource struct {
+	d      *DotGit
+	prefix string
+
+	file    billy.File
+	scanner *bufio.Scanner
+	sorted  bool
+	// unsorted holds the matches of a file without the sorted trait.
+	unsorted []*plumbing.Reference
+	done     bool
+}
+
+func (s *packedRefsSource) Next() (*plumbing.Reference, error) {
+	if s.done {
+		return nil, io.EOF
+	}
+
+	if s.scanner == nil {
+		if err := s.open(); err != nil || s.done {
+			return nil, err
+		}
+	}
+
+	if !s.sorted {
+		if len(s.unsorted) == 0 {
+			s.Close()
+			return nil, io.EOF
+		}
+		ref := s.unsorted[0]
+		s.unsorted = s.unsorted[1:]
+		return ref, nil
+	}
+
+	for s.scanner.Scan() {
+		ref, past, err := s.matchLine(s.scanner.Text())
+		if err != nil {
+			return nil, err
+		}
+		if past {
+			break
+		}
+		if ref != nil {
+			return ref, nil
+		}
+	}
+	if err := s.scanner.Err(); err != nil {
 		return nil, err
 	}
 
-	if !strings.HasPrefix(name, iter.prefix) {
-		if iter.packedSorted && name > iter.prefix {
-			iter.packedDone = true
-		}
-		return nil, nil
-	}
-
-	// Like Refs, keep the first of repeated names, whether loose or packed.
-	if iter.seen[plumbing.ReferenceName(name)] {
-		return nil, nil
-	}
-	iter.seen[plumbing.ReferenceName(name)] = true
-
-	return plumbing.NewReferenceFromStrings(name, hash), nil
+	s.Close()
+	return nil, io.EOF
 }
 
-// ForEach calls cb for each reference and closes the iterator.
-// Returning storer.ErrStop stops iteration without an error.
-func (iter *refsWithPrefixIter) ForEach(cb func(*plumbing.Reference) error) error {
-	defer iter.Close()
-	for {
-		ref, err := iter.Next()
-		if err == io.EOF {
+// open reads the header and, for a file without the sorted trait, collects
+// and sorts every match. It marks the source done if packed-refs is missing.
+func (s *packedRefsSource) open() error {
+	f, err := s.d.fs.Open(packedRefsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			s.done = true
 			return nil
 		}
-		if err != nil {
-			return err
+
+		return err
+	}
+	s.file = f
+	s.scanner = bufio.NewScanner(f)
+
+	var first string
+	if s.scanner.Scan() {
+		first = s.scanner.Text()
+		// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L740-L763
+		if traits, ok := strings.CutPrefix(first, packedRefsHeader); ok {
+			s.sorted = slices.Contains(strings.Split(traits, " "), "sorted")
 		}
+	}
+	if err := s.scanner.Err(); err != nil {
+		return err
+	}
 
-		if err := cb(ref); err != nil {
-			if errors.Is(err, storer.ErrStop) {
-				return nil
-			}
+	if s.sorted {
+		return nil
+	}
 
+	// The first line is a reference when there is no header.
+	collect := func(line string) error {
+		ref, _, err := s.matchLine(line)
+		if ref != nil {
+			s.unsorted = append(s.unsorted, ref)
+		}
+		return err
+	}
+	if err := collect(first); err != nil {
+		return err
+	}
+	for s.scanner.Scan() {
+		if err := collect(s.scanner.Text()); err != nil {
 			return err
 		}
 	}
+	if err := s.scanner.Err(); err != nil {
+		return err
+	}
+
+	// Stable, so the first of repeated names stays first, as in Refs.
+	slices.SortStableFunc(s.unsorted, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
+	_ = s.file.Close()
+	s.file = nil
+	return nil
 }
 
-// Close releases the packed-refs file, if open. Later calls to Next return
-// io.EOF.
-func (iter *refsWithPrefixIter) Close() {
-	iter.head = nil
-	iter.dirs = nil
-	iter.packedDone = true
-	if iter.packed != nil {
-		_ = iter.packed.Close()
-		iter.packed = nil
+// matchLine returns the reference on line if it matches the prefix, and
+// reports past once a name sorts after every match.
+func (s *packedRefsSource) matchLine(line string) (ref *plumbing.Reference, past bool, err error) {
+	hash, name, ok, err := parsePackedRefLine(line)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+
+	if !strings.HasPrefix(name, s.prefix) {
+		return nil, name > s.prefix, nil
+	}
+
+	return plumbing.NewReferenceFromStrings(name, hash), false, nil
+}
+
+func (s *packedRefsSource) Close() {
+	s.done = true
+	s.unsorted = nil
+	if s.file != nil {
+		_ = s.file.Close()
+		s.file = nil
 	}
 }

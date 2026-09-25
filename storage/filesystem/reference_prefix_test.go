@@ -52,6 +52,10 @@ func newPrefixFixture(t *testing.T) string {
 		"refs/heads/fe/one":              a,
 		"refs/heads/feature":             a,
 		"refs/heads/fix":                 b,
+		"refs/heads/a-c":                 a,
+		"refs/heads/a.b":                 b,
+		"refs/heads/a/b":                 a,
+		"refs/heads/a0":                  b,
 		"refs/remotes/origin/main":       a,
 		"refs/remotes/origin/topic":      b,
 		"refs/remotes/origin-other/main": b,
@@ -149,18 +153,19 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 			defer func() { _ = sto.Close() }()
 
 			// git for-each-ref matches a pattern ending in "/" as a plain
-			// prefix, so it is the reference output for these.
+			// prefix, and sorts by refname, so its output is the expected
+			// output, order included.
 			for _, prefix := range []string{
 				"refs/", "refs/heads/", "refs/heads/fe/", "refs/remotes/origin/",
 				"refs/remotes/origin-other/", "refs/tags/", "refs/nope/",
 			} {
-				assert.ElementsMatch(t, gitForEachRef(t, dir, prefix), prefixRefs(t, sto, prefix), prefix)
+				assert.Equal(t, gitForEachRef(t, dir, prefix), prefixRefs(t, sto, prefix), prefix)
 			}
 
 			// Without the trailing "/", for-each-ref matches whole path
 			// components only; the globs spell out the byte-wise prefix.
-			for _, prefix := range []string{"refs/heads/fe", "refs/remotes/origin"} {
-				assert.ElementsMatch(t, gitForEachRef(t, dir, prefix+"*", prefix+"*/**"), prefixRefs(t, sto, prefix), prefix)
+			for _, prefix := range []string{"refs/heads/a", "refs/heads/fe", "refs/remotes/origin"} {
+				assert.Equal(t, gitForEachRef(t, dir, prefix+"*", prefix+"*/**"), prefixRefs(t, sto, prefix), prefix)
 			}
 		})
 	}

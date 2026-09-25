@@ -526,15 +526,15 @@ func TestIterReferencesWithPrefix(t *testing.T) {
 			))
 		}
 
-		// The same references must come back through the storage's own
-		// implementation and through the fallback that filters IterReferences.
-		_, ok := sto.(storer.PrefixReferenceIterer)
-		assert.True(t, ok)
+		// The same references, in the same order, must come back through the
+		// storage's own implementation and through the fallback that filters
+		// IterReferences.
 		withoutPrefixIterer := struct{ storer.ReferenceStorer }{sto}
 
 		for prefix, want := range map[string][]string{
 			"refs/remotes/origin/": {"refs/remotes/origin/main"},
-			"refs/remotes/origin":  {"refs/remotes/origin/main", "refs/remotes/origin-other/main"},
+			"refs/remotes/origin":  {"refs/remotes/origin-other/main", "refs/remotes/origin/main"},
+			"refs/heads/":          {"refs/heads/feature", "refs/heads/main"},
 			"refs/heads/fe":        {"refs/heads/feature"},
 			"refs/tags/":           nil,
 		} {
@@ -547,7 +547,7 @@ func TestIterReferencesWithPrefix(t *testing.T) {
 					got = append(got, r.Name().String())
 					return nil
 				}))
-				assert.ElementsMatch(t, want, got, prefix)
+				assert.Equal(t, want, got, prefix)
 			}
 		}
 	})

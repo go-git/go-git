@@ -17,7 +17,16 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
-func writeBenchRefs(b *testing.B, packed bool) string {
+type benchLayout int
+
+const (
+	benchLoose benchLayout = iota
+	benchPackedSorted
+	// benchPackedUnsorted has no header, like packed-refs written by older go-git.
+	benchPackedUnsorted
+)
+
+func writeBenchRefs(b *testing.B, layout benchLayout) string {
 	b.Helper()
 	dir := b.TempDir()
 	const hash = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
@@ -32,10 +41,14 @@ func writeBenchRefs(b *testing.B, packed bool) string {
 	}
 
 	require.NoError(b, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/branch-0000\n"), 0o644))
-	if packed {
+	if layout != benchLoose {
 		slices.Sort(names)
 		var sb strings.Builder
-		sb.WriteString("# pack-refs with: peeled fully-peeled sorted \n")
+		if layout == benchPackedSorted {
+			sb.WriteString("# pack-refs with: peeled fully-peeled sorted \n")
+		} else {
+			slices.Reverse(names)
+		}
 		for _, name := range names {
 			sb.WriteString(hash + " " + name + "\n")
 		}
@@ -70,9 +83,9 @@ func BenchmarkIterReferencesWithPrefix(b *testing.B) {
 
 	for _, layout := range []struct {
 		name   string
-		packed bool
-	}{{"Loose", false}, {"Packed", true}} {
-		dir := writeBenchRefs(b, layout.packed)
+		layout benchLayout
+	}{{"Loose", benchLoose}, {"Packed", benchPackedSorted}, {"PackedUnsorted", benchPackedUnsorted}} {
+		dir := writeBenchRefs(b, layout.layout)
 		sto := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
 		b.Cleanup(func() { _ = sto.Close() })
 

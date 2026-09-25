@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -444,7 +445,8 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 }
 
 // IterReferencesWithPrefix returns an iterator for the references whose names
-// start with prefix, implementing storer.PrefixReferenceIterer.
+// start with prefix in ascending name order, implementing
+// storer.PrefixReferenceIterer.
 func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
 	var refs []*plumbing.Reference
 	for name, ref := range r {
@@ -452,6 +454,9 @@ func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.Refere
 			refs = append(refs, ref)
 		}
 	}
+	slices.SortFunc(refs, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
 
 	return storer.NewReferenceSliceIter(refs), nil
 }
