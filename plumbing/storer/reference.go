@@ -45,6 +45,13 @@ type PrefixReferenceIterer interface {
 	// excludes "refs/remotes/origin-other/".
 	// Both matching and order follow Git's reference backends:
 	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/refs-internal.h#L460-L466
+	//
+	// Like git for-each-ref, implementations may skip references they
+	// cannot read, such as an empty loose ref file, rather than fail. Do not
+	// use it to find the objects that must be kept: Git reports broken
+	// references to reachability walks so that gc does not prune what they
+	// might have pointed at:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L1859-L1868
 	IterReferencesWithPrefix(prefix string) (ReferenceIter, error)
 }
 
