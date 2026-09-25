@@ -162,3 +162,39 @@ func (s *ReferenceSuite) TestCommitDelete() {
 	s.NoError(err)
 	s.Equal("c3f4688a08fd86f1bf8e055724c84b7a40a09733", ref.Hash().String())
 }
+
+// Each name is yielded once, in order, with the value Reference returns:
+// temporal over base, and nothing for a removed name.
+func (s *ReferenceSuite) TestIterReferencesWithPrefix() {
+	const (
+		hashA = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+		hashB = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	)
+	base := memory.NewStorage()
+	temporal := memory.NewStorage()
+	for _, name := range []string{"refs/heads/feature", "refs/heads/gone", "refs/heads/main", "refs/tags/v1"} {
+		s.Require().NoError(base.SetReference(plumbing.NewReferenceFromStrings(name, hashA)))
+	}
+
+	rs := NewReferenceStorage(base, temporal)
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hashB)))
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/topic", hashB)))
+	s.Require().NoError(rs.RemoveReference("refs/heads/gone"))
+
+	iter, err := rs.IterReferencesWithPrefix("refs/heads/")
+	s.Require().NoError(err)
+	var got []string
+	s.Require().NoError(iter.ForEach(func(r *plumbing.Reference) error {
+		want, err := rs.Reference(r.Name())
+		s.Require().NoError(err)
+		s.Equal(want.String(), r.String())
+		got = append(got, r.String())
+		return nil
+	}))
+
+	s.Equal([]string{
+		hashA + " refs/heads/feature",
+		hashB + " refs/heads/main",
+		hashB + " refs/heads/topic",
+	}, got)
+}

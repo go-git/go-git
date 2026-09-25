@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
@@ -438,6 +440,23 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	for _, ref := range r {
 		refs = append(refs, ref)
 	}
+
+	return storer.NewReferenceSliceIter(refs), nil
+}
+
+// IterReferencesWithPrefix returns an iterator for the references whose names
+// start with prefix in ascending name order, implementing
+// storer.PrefixReferenceIterer.
+func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	var refs []*plumbing.Reference
+	for name, ref := range r {
+		if strings.HasPrefix(name.String(), prefix) {
+			refs = append(refs, ref)
+		}
+	}
+	slices.SortFunc(refs, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
 
 	return storer.NewReferenceSliceIter(refs), nil
 }

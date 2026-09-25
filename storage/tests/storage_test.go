@@ -511,6 +511,90 @@ func TestIterReferences(t *testing.T) {
 	})
 }
 
+func prefixRefs(t *testing.T, s storer.ReferenceStorer, prefix string) []string {
+	t.Helper()
+	iter, err := storer.IterReferencesWithPrefix(s, prefix)
+	require.NoError(t, err)
+
+	var got []string
+	require.NoError(t, iter.ForEach(func(r *plumbing.Reference) error {
+		got = append(got, r.String())
+		return nil
+	}))
+	return got
+}
+
+func TestIterReferencesWithPrefix(t *testing.T) {
+	t.Parallel()
+	const (
+		hashA = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+		hashB = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	)
+
+	forEachStorage(t, func(sto Storer, t *testing.T) {
+		for _, name := range []string{
+			"refs/heads/main",
+			"refs/heads/feature",
+			"refs/heads/gone",
+			"refs/remotes/origin/main",
+			"refs/remotes/origin-other/main",
+		} {
+			require.NoError(t, sto.SetReference(plumbing.NewReferenceFromStrings(name, hashA)))
+		}
+		require.NoError(t, sto.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hashB)))
+		require.NoError(t, sto.RemoveReference("refs/heads/gone"))
+
+		_, ok := sto.(storer.PrefixReferenceIterer)
+		assert.True(t, ok)
+
+		// The same references, in the same order, must come back through the
+		// storage's own implementation and through the fallback that filters
+		// IterReferences.
+		withoutPrefixIterer := struct{ storer.ReferenceStorer }{sto}
+
+		for prefix, want := range map[string][]string{
+			"refs/remotes/origin/": {hashA + " refs/remotes/origin/main"},
+			"refs/remotes/origin":  {hashA + " refs/remotes/origin-other/main", hashA + " refs/remotes/origin/main"},
+			"refs/heads/":          {hashA + " refs/heads/feature", hashB + " refs/heads/main"},
+			"refs/heads/fe":        {hashA + " refs/heads/feature"},
+			"refs/tags/":           nil,
+		} {
+			assert.Equal(t, want, prefixRefs(t, sto, prefix), prefix)
+			assert.Equal(t, want, prefixRefs(t, withoutPrefixIterer, prefix), "fallback: "+prefix)
+		}
+	})
+}
+
+// A transaction over a populated base overrides and removes base references.
+// Its own implementation and the fallback over its IterReferences must agree
+// with Reference on each of them.
+func TestIterReferencesWithPrefixTransactional(t *testing.T) {
+	t.Parallel()
+	const (
+		hashA = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+		hashB = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	)
+
+	base := memory.NewStorage()
+	for _, name := range []string{"refs/heads/feature", "refs/heads/gone", "refs/heads/main"} {
+		require.NoError(t, base.SetReference(plumbing.NewReferenceFromStrings(name, hashA)))
+	}
+	temporal := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+	tx := transactional.NewStorage(base, temporal)
+	require.NoError(t, tx.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hashB)))
+	require.NoError(t, tx.RemoveReference("refs/heads/gone"))
+
+	_, err := tx.Reference("refs/heads/gone")
+	require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+	main, err := tx.Reference("refs/heads/main")
+	require.NoError(t, err)
+	require.Equal(t, hashB, main.Hash().String())
+
+	want := []string{hashA + " refs/heads/feature", hashB + " refs/heads/main"}
+	assert.Equal(t, want, prefixRefs(t, tx, "refs/heads/"))
+	assert.Equal(t, want, prefixRefs(t, struct{ storer.ReferenceStorer }{tx}, "refs/heads/"), "fallback")
+}
+
 func TestSetShallowAndShallow(t *testing.T) {
 	t.Parallel()
 

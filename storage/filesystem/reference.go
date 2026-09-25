@@ -61,6 +61,12 @@ func (r *ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	return storer.NewReferenceSliceIter(refs), nil
 }
 
+// IterReferencesWithPrefix implements storer.PrefixReferenceIterer with lazy,
+// prefix-scoped reads. The iterator must be closed.
+func (r *ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	return r.dir.RefsWithPrefix(prefix)
+}
+
 // RemoveReference deletes the reference with the given name. Invalid-format
 // names such as refs/heads/main.lock can be removed, but names rejected by the
 // path-safety checks described by ReferenceStorage cannot.

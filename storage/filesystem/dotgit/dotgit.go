@@ -1546,22 +1546,33 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 
 // process lines from a packed-refs file
 func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
+	hash, name, ok, err := parsePackedRefLine(line)
+	if err != nil || !ok {
+		return nil, err
+	}
+
+	return plumbing.NewReferenceFromStrings(name, hash), nil
+}
+
+// parsePackedRefLine splits a packed-refs line into its hash and reference
+// name. It reports ok as false for lines that carry no reference.
+func parsePackedRefLine(line string) (hash, name string, ok bool, err error) {
 	if len(line) == 0 {
-		return nil, nil
+		return "", "", false, nil
 	}
 
 	switch line[0] {
 	case '#': // comment - ignore
-		return nil, nil
+		return "", "", false, nil
 	case '^': // annotated tag commit of the previous line - ignore
-		return nil, nil
+		return "", "", false, nil
 	default:
-		ws := strings.Split(line, " ") // hash then ref
-		if len(ws) != 2 {
-			return nil, ErrPackedRefsBadFormat
+		hash, name, found := strings.Cut(line, " ") // hash then ref
+		if !found || strings.Contains(name, " ") {
+			return "", "", false, ErrPackedRefsBadFormat
 		}
 
-		return plumbing.NewReferenceFromStrings(ws[1], ws[0]), nil
+		return hash, name, true, nil
 	}
 }
 
@@ -1715,8 +1726,23 @@ func (d *DotGit) PackRefs() (err error) {
 		_ = d.fs.Remove(tmpName) // don't check err, we might have renamed it
 	}()
 
+	// Write the refs sorted by name under a header saying so, which lets
+	// readers stop scanning early, as git's writer does:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1334-L1343
+	// No peeled values are written, so the peeled traits must not be
+	// claimed; they would tell readers that no tag can be peeled:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L697-L724
+	// refs keeps its order, since its first numLooseRefs entries are removed
+	// below.
+	sorted := slices.Clone(refs)
+	slices.SortFunc(sorted, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
 	w := bufio.NewWriter(tmp)
-	for _, ref := range refs {
+	if _, err = w.WriteString(packedRefsHeader + "sorted \n"); err != nil {
+		return err
+	}
+	for _, ref := range sorted {
 		_, err = w.WriteString(ref.String() + "\n")
 		if err != nil {
 			return err

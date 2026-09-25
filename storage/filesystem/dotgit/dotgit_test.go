@@ -1415,6 +1415,39 @@ func (s *SuiteDotGit) TestPackRefs() {
 	s.Equal("b8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 }
 
+// Loose and already packed refs are written merged, in name order, under a
+// header claiming only the sorted trait, since no peeled values are written.
+func (s *SuiteDotGit) TestPackRefsWritesSortedFile() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+	s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(
+		"# pack-refs with: peeled fully-peeled sorted \n"+
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a/b\n"+
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n"+
+			"^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+	), 0o644))
+	for _, name := range []string{"refs/heads/z", "refs/heads/a0", "refs/heads/a-c", "refs/tags/v1"} {
+		s.Require().NoError(dir.SetRef(plumbing.NewReferenceFromStrings(
+			name, "a8d3ffab552895c19b9fcf7aa264d277cde33881",
+		), nil))
+	}
+
+	s.Require().NoError(dir.PackRefs())
+
+	content, err := util.ReadFile(fs, "packed-refs")
+	s.Require().NoError(err)
+	s.Equal("# pack-refs with: sorted \n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a-c\n"+
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a/b\n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a0\n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/z\n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n", string(content))
+
+	looseCount, err := dir.CountLooseRefs()
+	s.Require().NoError(err)
+	s.Zero(looseCount)
+}
+
 func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	fs := s.EmptyFS()
 	dir := New(fs)
