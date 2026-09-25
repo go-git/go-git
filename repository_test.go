@@ -3987,6 +3987,29 @@ func (s *RepositorySuite) TestRepackObjectsWithNoDelete() {
 	s.testRepackObjects(time.Unix(0, 1), 3)
 }
 
+func (s *RepositorySuite) TestRepackObjectsKeepsPackWithoutIndex() {
+	if testing.Short() {
+		s.T().Skip("skipping test in short mode.")
+	}
+
+	fs, err := fixtures.ByTag("unpacked").One().DotGit()
+	s.Require().NoError(err)
+
+	const orphanPath = "objects/pack/pack-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pack"
+	orphan, err := fs.Create(orphanPath)
+	s.Require().NoError(err)
+	s.Require().NoError(orphan.Close())
+
+	sto := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	r, err := Open(sto, fs)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(r.Close()) }()
+
+	s.Require().NoError(r.RepackObjects(&RepackConfig{}))
+	_, err = fs.Lstat(orphanPath)
+	s.Require().NoError(err)
+}
+
 func ExecuteOnPath(t *testing.T, path string, cmds ...string) error {
 	for _, cmd := range cmds {
 		err := executeOnPath(path, cmd)

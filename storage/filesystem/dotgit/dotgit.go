@@ -58,6 +58,7 @@ const (
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
+	idxExt     = ".idx"
 
 	// promisorExt marks a pack as having been received from a promisor
 	// remote, meaning objects it references but does not contain are
@@ -504,7 +505,9 @@ func (d *DotGit) hasPromisor(hash plumbing.Hash) (bool, error) {
 	return fi.Mode().IsRegular(), nil
 }
 
-// ObjectPacks returns the list of availables packfiles
+// ObjectPacks returns the hashes of packfiles that have corresponding index
+// files. Packs without indexes are ignored because they cannot be read, and
+// PackWriter publishes each index before making its pack visible.
 func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
 	if !d.options.ExclusiveAccess {
 		return d.objectPacks()
@@ -530,21 +533,33 @@ func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
 	}
 
 	packs := make([]plumbing.Hash, 0, len(files))
+	indexes := make(map[string]struct{}, len(files))
 	for _, f := range files {
 		n := f.Name()
-		if !strings.HasSuffix(n, packExt) || !strings.HasPrefix(n, packPrefix) {
+		if !strings.HasPrefix(n, packPrefix) {
 			continue
 		}
 
-		h := plumbing.NewHash(n[5 : len(n)-5]) // pack-(hash).pack
-		if h.IsZero() {
-			// Ignore files with badly-formatted names.
-			continue
+		switch {
+		case strings.HasSuffix(n, packExt):
+			name := n[len(packPrefix) : len(n)-len(packExt)]
+			h := plumbing.NewHash(name)
+			if !h.IsZero() && h.String() == name {
+				packs = append(packs, h)
+			}
+		case strings.HasSuffix(n, idxExt):
+			name := n[len(packPrefix) : len(n)-len(idxExt)]
+			h := plumbing.NewHash(name)
+			if !h.IsZero() && h.String() == name {
+				indexes[name] = struct{}{}
+			}
 		}
-		packs = append(packs, h)
 	}
 
-	return packs, nil
+	return slices.DeleteFunc(packs, func(h plumbing.Hash) bool {
+		_, ok := indexes[h.String()]
+		return !ok
+	}), nil
 }
 
 func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
