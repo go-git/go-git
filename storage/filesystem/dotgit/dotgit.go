@@ -1726,8 +1726,23 @@ func (d *DotGit) PackRefs() (err error) {
 		_ = d.fs.Remove(tmpName) // don't check err, we might have renamed it
 	}()
 
+	// Write the refs sorted by name under a header saying so, which lets
+	// readers stop scanning early, as git's writer does:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1334-L1343
+	// No peeled values are written, so the peeled traits must not be
+	// claimed; they would tell readers that no tag can be peeled:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L697-L724
+	// refs keeps its order, since its first numLooseRefs entries are removed
+	// below.
+	sorted := slices.Clone(refs)
+	slices.SortFunc(sorted, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
 	w := bufio.NewWriter(tmp)
-	for _, ref := range refs {
+	if _, err = w.WriteString(packedRefsHeader + "sorted \n"); err != nil {
+		return err
+	}
+	for _, ref := range sorted {
 		_, err = w.WriteString(ref.String() + "\n")
 		if err != nil {
 			return err

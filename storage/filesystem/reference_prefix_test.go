@@ -99,6 +99,48 @@ func prefixRefs(t *testing.T, sto *filesystem.Storage, prefix string) []string {
 	return refs
 }
 
+func goGitPackRefs(t *testing.T, dir string) {
+	t.Helper()
+	sto := filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
+	require.NoError(t, sto.PackRefs())
+}
+
+// git reads packed-refs written by go-git the same as the loose refs they
+// replace, peeling annotated tags itself since no peeled trait is claimed, and
+// git refs verify, where available, confirms the sorted claim.
+func TestPackRefsIsReadByGit(t *testing.T) {
+	t.Parallel()
+	dir := newPrefixFixture(t)
+	listRefs := func() string {
+		return runGit(t, dir, "for-each-ref", "--format=%(refname) %(objectname) %(*objectname) %(symref)")
+	}
+	showRefs := func() string {
+		return runGit(t, dir, "show-ref", "--dereference")
+	}
+	wantList, wantShow := listRefs(), showRefs()
+	require.Contains(t, wantShow, "refs/tags/v2^{}")
+
+	goGitPackRefs(t, dir)
+
+	content, err := os.ReadFile(filepath.Join(dir, ".git", "packed-refs"))
+	require.NoError(t, err)
+	header, _, _ := strings.Cut(string(content), "\n")
+	assert.Equal(t, "# pack-refs with: sorted ", header)
+	assert.Equal(t, wantList, listRefs())
+	assert.Equal(t, wantShow, showRefs())
+
+	verify := gitenv.Command("git", "-C", dir, "refs", "verify")
+	if out, err := verify.CombinedOutput(); err != nil && strings.Contains(string(out), "usage") {
+		t.Log("git refs verify is unavailable")
+	} else {
+		assert.NoError(t, err, "git refs verify: %s", out)
+	}
+
+	runGit(t, dir, "pack-refs", "--all")
+	assert.Equal(t, wantList, listRefs())
+}
+
 func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 	t.Parallel()
 
@@ -117,6 +159,9 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 			runGit(t, dir, "pack-refs", "--all")
 			runGit(t, dir, "update-ref", "refs/heads/fix", "refs/heads/main")
 			require.NoError(t, os.Remove(filepath.Join(dir, ".git", "refs", "heads", "fix")))
+		},
+		"GoGitPackRefs": func(t *testing.T, dir string) {
+			goGitPackRefs(t, dir)
 		},
 		// Git accepts a packed-refs file without the sorted trait and sorts
 		// it in memory, so its order must not matter.
