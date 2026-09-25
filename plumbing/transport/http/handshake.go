@@ -344,7 +344,7 @@ func describeInfoRefsError(err error, resp *http.Response, base sessionBase, hea
 }
 
 func handshakeDumb(resp *http.Response, base sessionBase) (transport.Session, error) {
-	defer resp.Body.Close() //nolint:errcheck
+	defer drainAndClose(resp.Body)
 
 	// Buffer the head of the body so a rejection can quote it. Peek leaves it
 	// in place for the decode, and returns what it has on a shorter body. The
