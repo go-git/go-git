@@ -134,8 +134,11 @@ func TestPackRefsIsReadByGit(t *testing.T) {
 	assert.Equal(t, wantList, listRefs())
 	assert.Equal(t, wantShow, showRefs())
 
+	// git refs verify arrived in 2.47; older git lacks "refs" entirely, or
+	// only knows "refs migrate" and prints its usage.
 	verify := gitenv.Command("git", "-C", dir, "refs", "verify")
-	if out, err := verify.CombinedOutput(); err != nil && strings.Contains(string(out), "usage") {
+	if out, err := verify.CombinedOutput(); err != nil &&
+		(strings.Contains(string(out), "is not a git command") || strings.Contains(string(out), "usage")) {
 		t.Log("git refs verify is unavailable")
 	} else {
 		assert.NoError(t, err, "git refs verify: %s", out)
