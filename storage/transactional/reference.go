@@ -1,6 +1,7 @@
 package transactional
 
 import (
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -70,22 +71,31 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 	return ref, err
 }
 
-// IterReferences honors the storer.ReferenceStorer interface.
+// IterReferences honors the storer.ReferenceStorer interface. It yields the
+// same references as IterReferencesWithPrefix with an empty prefix.
 func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
-	baseIter, err := r.ReferenceStorer.IterReferences()
+	return r.IterReferencesWithPrefix("")
+}
+
+// IterReferencesWithPrefix honors the storer.PrefixReferenceIterer interface.
+// It yields each name once, with the value Reference returns: the temporal
+// reference over the base one, and none once removed.
+func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	temporalIter, err := storer.IterReferencesWithPrefix(r.temporal, prefix)
 	if err != nil {
 		return nil, err
 	}
 
-	temporalIter, err := r.temporal.IterReferences()
+	baseIter, err := storer.IterReferencesWithPrefix(r.ReferenceStorer, prefix)
 	if err != nil {
+		temporalIter.Close()
 		return nil, err
 	}
 
-	return storer.NewMultiReferenceIter([]storer.ReferenceIter{
-		baseIter,
-		temporalIter,
-	}), nil
+	return storer.NewReferenceFilteredIter(func(ref *plumbing.Reference) bool {
+		_, deleted := r.deleted[ref.Name()]
+		return !deleted
+	}, reference.NewOverlayIter(temporalIter, baseIter)), nil
 }
 
 // CountLooseRefs honors the storer.ReferenceStorer interface.
