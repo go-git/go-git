@@ -511,6 +511,48 @@ func TestIterReferences(t *testing.T) {
 	})
 }
 
+func TestIterReferencesWithPrefix(t *testing.T) {
+	t.Parallel()
+
+	forEachStorage(t, func(sto Storer, t *testing.T) {
+		for _, name := range []string{
+			"refs/heads/main",
+			"refs/heads/feature",
+			"refs/remotes/origin/main",
+			"refs/remotes/origin-other/main",
+		} {
+			require.NoError(t, sto.SetReference(
+				plumbing.NewReferenceFromStrings(name, "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+			))
+		}
+
+		// The same references must come back through the storage's own
+		// implementation and through the fallback that filters IterReferences.
+		_, ok := sto.(storer.PrefixReferenceIterer)
+		assert.True(t, ok)
+		withoutPrefixIterer := struct{ storer.ReferenceStorer }{sto}
+
+		for prefix, want := range map[string][]string{
+			"refs/remotes/origin/": {"refs/remotes/origin/main"},
+			"refs/remotes/origin":  {"refs/remotes/origin/main", "refs/remotes/origin-other/main"},
+			"refs/heads/fe":        {"refs/heads/feature"},
+			"refs/tags/":           nil,
+		} {
+			for _, s := range []storer.ReferenceStorer{sto, withoutPrefixIterer} {
+				iter, err := storer.IterReferencesWithPrefix(s, prefix)
+				require.NoError(t, err)
+
+				var got []string
+				require.NoError(t, iter.ForEach(func(r *plumbing.Reference) error {
+					got = append(got, r.Name().String())
+					return nil
+				}))
+				assert.ElementsMatch(t, want, got, prefix)
+			}
+		}
+	})
+}
+
 func TestSetShallowAndShallow(t *testing.T) {
 	t.Parallel()
 

@@ -88,6 +88,26 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	}), nil
 }
 
+// IterReferencesWithPrefix honors the storer.PrefixReferenceIterer interface.
+// Like IterReferences, it yields the base references before the temporal ones.
+func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	baseIter, err := storer.IterReferencesWithPrefix(r.ReferenceStorer, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	temporalIter, err := storer.IterReferencesWithPrefix(r.temporal, prefix)
+	if err != nil {
+		baseIter.Close()
+		return nil, err
+	}
+
+	return storer.NewMultiReferenceIter([]storer.ReferenceIter{
+		baseIter,
+		temporalIter,
+	}), nil
+}
+
 // CountLooseRefs honors the storer.ReferenceStorer interface.
 func (r ReferenceStorage) CountLooseRefs() (int, error) {
 	tc, err := r.temporal.CountLooseRefs()

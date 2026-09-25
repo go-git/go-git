@@ -1,0 +1,195 @@
+package filesystem_test
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+)
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := gitenv.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.Output()
+	require.NoError(t, err, "git %v", args)
+	return strings.TrimSpace(string(out))
+}
+
+func newPrefixFixture(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	runGit(t, dir, "-c", "init.defaultBranch=main", "init", "-q")
+	if _, err := os.Stat(filepath.Join(dir, ".git", "reftable")); err == nil {
+		t.Skip("git defaults to the reftable backend")
+	}
+
+	commit := func(msg string) string {
+		runGit(t, dir, "-c", "user.name=a", "-c", "user.email=a@example.com",
+			"commit", "-q", "--allow-empty", "-m", msg)
+		return runGit(t, dir, "rev-parse", "HEAD")
+	}
+	a := commit("a")
+	b := commit("b")
+
+	for name, hash := range map[string]string{
+		"refs/heads/main":                a,
+		"refs/heads/fe/one":              a,
+		"refs/heads/feature":             a,
+		"refs/heads/fix":                 b,
+		"refs/remotes/origin/main":       a,
+		"refs/remotes/origin/topic":      b,
+		"refs/remotes/origin-other/main": b,
+		"refs/tags/v1":                   a,
+	} {
+		runGit(t, dir, "update-ref", name, hash)
+	}
+	runGit(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	runGit(t, dir, "-c", "user.name=a", "-c", "user.email=a@example.com",
+		"tag", "-a", "-m", "v2", "v2", a)
+
+	return dir
+}
+
+// gitForEachRef lists the references matching patterns as
+// "<name> <object> <symref target>", the same shape as prefixRefs.
+func gitForEachRef(t *testing.T, dir string, patterns ...string) []string {
+	t.Helper()
+	args := append([]string{"for-each-ref", "--format=%(refname) %(objectname) %(symref)"}, patterns...)
+	cmd := gitenv.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.Output()
+	require.NoError(t, err, "git %v", args)
+	if len(out) == 0 {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+}
+
+func prefixRefs(t *testing.T, sto *filesystem.Storage, prefix string) []string {
+	t.Helper()
+	iter, err := storer.IterReferencesWithPrefix(sto, prefix)
+	require.NoError(t, err)
+
+	var refs []string
+	require.NoError(t, iter.ForEach(func(r *plumbing.Reference) error {
+		resolved, err := storer.ResolveReference(sto, r.Name())
+		require.NoError(t, err)
+		refs = append(refs, r.Name().String()+" "+resolved.Hash().String()+" "+r.Target().String())
+		return nil
+	}))
+	return refs
+}
+
+func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
+	t.Parallel()
+
+	scenarios := map[string]func(t *testing.T, dir string){
+		"Loose": func(*testing.T, string) {},
+		"Packed": func(t *testing.T, dir string) {
+			runGit(t, dir, "pack-refs", "--all")
+		},
+		"LooseOverridesPacked": func(t *testing.T, dir string) {
+			runGit(t, dir, "pack-refs", "--all")
+			runGit(t, dir, "update-ref", "refs/heads/feature", "refs/heads/fix")
+			runGit(t, dir, "update-ref", "refs/remotes/origin/new", "refs/heads/main")
+		},
+		// Removing a loose ref exposes its packed value.
+		"LooseRemovedOverPacked": func(t *testing.T, dir string) {
+			runGit(t, dir, "pack-refs", "--all")
+			runGit(t, dir, "update-ref", "refs/heads/fix", "refs/heads/main")
+			require.NoError(t, os.Remove(filepath.Join(dir, ".git", "refs", "heads", "fix")))
+		},
+		// Git accepts a packed-refs file without the sorted trait and sorts
+		// it in memory, so its order must not matter.
+		"UnsortedPacked": func(t *testing.T, dir string) {
+			runGit(t, dir, "pack-refs", "--all")
+			path := filepath.Join(dir, ".git", "packed-refs")
+			content, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			lines := strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
+			// Older git, such as 2.11, writes the header without the sorted trait.
+			require.True(t, strings.HasPrefix(lines[0], "# pack-refs with: "), lines[0])
+			var records []string
+			for _, line := range lines[1:] {
+				if strings.HasPrefix(line, "^") {
+					records[len(records)-1] += "\n" + line
+					continue
+				}
+				records = append(records, line)
+			}
+			slices.Reverse(records)
+
+			unsorted := "# pack-refs with: peeled fully-peeled \n" + strings.Join(records, "\n") + "\n"
+			require.NoError(t, os.WriteFile(path, []byte(unsorted), 0o644))
+		},
+	}
+
+	for name, setup := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := newPrefixFixture(t)
+			setup(t, dir)
+			sto := filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
+			defer func() { _ = sto.Close() }()
+
+			// git for-each-ref matches a pattern ending in "/" as a plain
+			// prefix, so it is the reference output for these.
+			for _, prefix := range []string{
+				"refs/", "refs/heads/", "refs/heads/fe/", "refs/remotes/origin/",
+				"refs/remotes/origin-other/", "refs/tags/", "refs/nope/",
+			} {
+				assert.ElementsMatch(t, gitForEachRef(t, dir, prefix), prefixRefs(t, sto, prefix), prefix)
+			}
+
+			// Without the trailing "/", for-each-ref matches whole path
+			// components only; the globs spell out the byte-wise prefix.
+			for _, prefix := range []string{"refs/heads/fe", "refs/remotes/origin"} {
+				assert.ElementsMatch(t, gitForEachRef(t, dir, prefix+"*", prefix+"*/**"), prefixRefs(t, sto, prefix), prefix)
+			}
+		})
+	}
+}
+
+// The storer prefix is byte-wise, like the prefix iterators of Git's
+// reference backends, while for-each-ref treats a pattern without a trailing
+// slash as whole path components:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L2695-L2724
+func TestIterReferencesWithPrefixIsByteWiseUnlikeForEachRef(t *testing.T) {
+	t.Parallel()
+	dir := newPrefixFixture(t)
+	sto := filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
+	defer func() { _ = sto.Close() }()
+
+	names := func(lines []string) []string {
+		names := make([]string, 0, len(lines))
+		for _, line := range lines {
+			name, _, _ := strings.Cut(line, " ")
+			names = append(names, name)
+		}
+		return names
+	}
+
+	assert.ElementsMatch(t, []string{
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/topic",
+	}, names(gitForEachRef(t, dir, "refs/remotes/origin")))
+	assert.ElementsMatch(t, []string{
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/topic",
+		"refs/remotes/origin-other/main",
+	}, names(prefixRefs(t, sto, "refs/remotes/origin")))
+}

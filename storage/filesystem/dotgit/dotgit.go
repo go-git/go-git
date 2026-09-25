@@ -1546,22 +1546,33 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 
 // process lines from a packed-refs file
 func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
+	hash, name, ok, err := parsePackedRefLine(line)
+	if err != nil || !ok {
+		return nil, err
+	}
+
+	return plumbing.NewReferenceFromStrings(name, hash), nil
+}
+
+// parsePackedRefLine splits a packed-refs line into its hash and reference
+// name. It reports ok as false for lines that carry no reference.
+func parsePackedRefLine(line string) (hash, name string, ok bool, err error) {
 	if len(line) == 0 {
-		return nil, nil
+		return "", "", false, nil
 	}
 
 	switch line[0] {
 	case '#': // comment - ignore
-		return nil, nil
+		return "", "", false, nil
 	case '^': // annotated tag commit of the previous line - ignore
-		return nil, nil
+		return "", "", false, nil
 	default:
-		ws := strings.Split(line, " ") // hash then ref
-		if len(ws) != 2 {
-			return nil, ErrPackedRefsBadFormat
+		hash, name, found := strings.Cut(line, " ") // hash then ref
+		if !found || strings.Contains(name, " ") {
+			return "", "", false, ErrPackedRefsBadFormat
 		}
 
-		return plumbing.NewReferenceFromStrings(ws[1], ws[0]), nil
+		return hash, name, true, nil
 	}
 }
 

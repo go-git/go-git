@@ -3,6 +3,7 @@ package storer
 import (
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -27,6 +28,42 @@ type ReferenceStorer interface {
 	RemoveReference(plumbing.ReferenceName) error
 	CountLooseRefs() (int, error)
 	PackRefs() error
+}
+
+// PrefixReferenceIterer is an optional interface for ReferenceStorer
+// implementations that can iterate over the references under a name prefix
+// without enumerating all of them.
+type PrefixReferenceIterer interface {
+	// IterReferencesWithPrefix returns an iterator over the references whose
+	// names start with prefix. It must yield the same references as
+	// IterReferences filtered with strings.HasPrefix, in any order. It need
+	// not read references outside prefix, so it may not report errors that
+	// reading those would.
+	//
+	// Matching is byte-wise: "refs/heads/fe" matches "refs/heads/feature".
+	// Use a trailing slash to select a namespace: "refs/remotes/origin/"
+	// excludes "refs/remotes/origin-other/".
+	// This follows Git's reference backend:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/iterator.c#L321-L333
+	IterReferencesWithPrefix(prefix string) (ReferenceIter, error)
+}
+
+// IterReferencesWithPrefix returns an iterator over the references in s whose
+// names start with prefix. It uses s's PrefixReferenceIterer implementation
+// when available, and otherwise filters s.IterReferences.
+func IterReferencesWithPrefix(s ReferenceStorer, prefix string) (ReferenceIter, error) {
+	if p, ok := s.(PrefixReferenceIterer); ok {
+		return p.IterReferencesWithPrefix(prefix)
+	}
+
+	iter, err := s.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
+		return strings.HasPrefix(r.Name().String(), prefix)
+	}, iter), nil
 }
 
 // ReferenceIter is a generic closable interface for iterating over references.

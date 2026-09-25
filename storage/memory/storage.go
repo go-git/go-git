@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
@@ -437,6 +438,19 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	refs := make([]*plumbing.Reference, 0, len(r))
 	for _, ref := range r {
 		refs = append(refs, ref)
+	}
+
+	return storer.NewReferenceSliceIter(refs), nil
+}
+
+// IterReferencesWithPrefix returns an iterator for the references whose names
+// start with prefix, implementing storer.PrefixReferenceIterer.
+func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	var refs []*plumbing.Reference
+	for name, ref := range r {
+		if strings.HasPrefix(name.String(), prefix) {
+			refs = append(refs, ref)
+		}
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil
