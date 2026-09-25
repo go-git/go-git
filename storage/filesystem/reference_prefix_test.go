@@ -167,6 +167,15 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 			runGit(t, dir, "update-ref", "refs/heads/fix", "refs/heads/main")
 			require.NoError(t, os.Remove(filepath.Join(dir, ".git", "refs", "heads", "fix")))
 		},
+		// An empty loose directory named like a packed ref, as an
+		// interrupted deletion can leave behind, must not hide it:
+		// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/t/t0600-reffiles-backend.sh#L31-L39
+		"EmptyDirOverPacked": func(t *testing.T, dir string) {
+			runGit(t, dir, "pack-refs", "--all")
+			for _, name := range []string{"refs/heads/fix/bar/baz", "refs/remotes/origin/main"} {
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git", filepath.FromSlash(name)), 0o755))
+			}
+		},
 		// git skips broken loose refs with a warning instead of failing,
 		// still lets them hide the packed ref of the same name, and does not
 		// treat ".*" or "*.lock" entries as refs.
