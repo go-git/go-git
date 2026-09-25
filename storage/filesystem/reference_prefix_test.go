@@ -91,9 +91,13 @@ func prefixRefs(t *testing.T, sto *filesystem.Storage, prefix string) []string {
 
 	var refs []string
 	require.NoError(t, iter.ForEach(func(r *plumbing.Reference) error {
-		resolved, err := storer.ResolveReference(sto, r.Name())
-		require.NoError(t, err)
-		refs = append(refs, r.Name().String()+" "+resolved.Hash().String()+" "+r.Target().String())
+		hash := r.Hash()
+		if r.Type() == plumbing.SymbolicReference {
+			resolved, err := storer.ResolveReference(sto, r.Name())
+			require.NoError(t, err)
+			hash = resolved.Hash()
+		}
+		refs = append(refs, r.Name().String()+" "+hash.String()+" "+r.Target().String())
 		return nil
 	}))
 	return refs
@@ -159,6 +163,27 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 			runGit(t, dir, "pack-refs", "--all")
 			runGit(t, dir, "update-ref", "refs/heads/fix", "refs/heads/main")
 			require.NoError(t, os.Remove(filepath.Join(dir, ".git", "refs", "heads", "fix")))
+		},
+		// git skips broken loose refs with a warning instead of failing,
+		// still lets them hide the packed ref of the same name, and does not
+		// treat ".*" or "*.lock" entries as refs.
+		"BrokenLoose": func(t *testing.T, dir string) {
+			runGit(t, dir, "pack-refs", "--all")
+			head := runGit(t, dir, "rev-parse", "refs/heads/main")
+			for name, content := range map[string]string{
+				"refs/heads/empty":               "",
+				"refs/heads/garbage":             "garbage\n",
+				"refs/heads/zero":                strings.Repeat("0", len(head)) + "\n",
+				"refs/heads/spaced":              "  " + head + "\n",
+				"refs/heads/fix":                 "",
+				"refs/heads/main.lock":           head + "\n",
+				"refs/heads/.hidden":             head + "\n",
+				"refs/remotes/origin/topic.lock": head + "\n",
+				"refs/heads/trailing":            head + " trailing\n",
+			} {
+				path := filepath.Join(dir, ".git", filepath.FromSlash(name))
+				require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+			}
 		},
 		"GoGitPackRefs": func(t *testing.T, dir string) {
 			goGitPackRefs(t, dir)

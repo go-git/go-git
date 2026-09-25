@@ -13,26 +13,31 @@ import (
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 const packedRefsHeader = "# pack-refs with: "
 
-// RefsWithPrefix lazily iterates over Refs filtered by strings.HasPrefix, in
-// ascending byte-wise name order. Loose refs and packed refs are merged as
+// RefsWithPrefix lazily iterates over the refs whose names start with prefix,
+// in ascending byte-wise name order. Loose refs and packed refs are merged as
 // Git's files backend does, with a loose ref shadowing a packed one of the
 // same name:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
+// Unlike Refs, and like Git, it skips broken loose refs rather than failing,
+// and ignores loose entries named ".*" or "*.lock".
 // The iterator must be closed.
 func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
-	loose := &looseRefsSource{d: d}
+	loose := &looseRefsSource{d: d, broken: make(map[*plumbing.Reference]bool)}
 
 	// HEAD sorts before every name under refs/.
 	if strings.HasPrefix("HEAD", prefix) { //nolint:gocritic // HEAD matches a prefix of itself
-		head, err := d.readReferenceFile(".", "HEAD")
+		head, broken, err := d.readLooseRef("HEAD")
 		if err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		loose.head = head
+		if !broken {
+			loose.head = head
+		}
 	}
 
 	dir, err := d.looseRefsDirWithPrefix(prefix)
@@ -43,7 +48,14 @@ func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 		loose.dirs = append(loose.dirs, *dir)
 	}
 
-	return reference.NewOverlayIter(loose, &packedRefsSource{d: d, prefix: prefix}), nil
+	// Broken loose refs take part in the merge, so they still hide packed
+	// refs of the same name, and are dropped after it, as Git does:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1100-L1115
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1028-L1032
+	overlay := reference.NewOverlayIter(loose, &packedRefsSource{d: d, prefix: prefix})
+	return storer.NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
+		return !loose.broken[r]
+	}, overlay), nil
 }
 
 // looseRefsDir holds unvisited entries and their slash-separated directory
@@ -53,12 +65,21 @@ type looseRefsDir struct {
 	entries []fs.DirEntry
 }
 
-// sortLooseRefsEntries sorts entries so that a depth-first walk yields names
-// in byte-wise order. Git names a directory entry with a trailing slash, so
+// looseRefsEntries lists the loose refs directory dir, skipping the entries
+// Git skips, and sorts the rest so that a depth-first walk yields names in
+// byte-wise order. Git names a directory entry with a trailing slash, so
 // "a-c" sorts before the refs under "a/":
-// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L394-L398
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L386-L398
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/ref-cache.c#L108-L113
-func sortLooseRefsEntries(entries []fs.DirEntry) {
+func (d *DotGit) looseRefsEntries(dir string) ([]fs.DirEntry, error) {
+	entries, err := d.fs.ReadDir(d.fs.Join(strings.Split(dir, "/")...))
+	if err != nil {
+		return nil, err
+	}
+
+	entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
+		return strings.HasPrefix(e.Name(), ".") || strings.HasSuffix(e.Name(), ".lock")
+	})
 	key := func(e fs.DirEntry) string {
 		if e.IsDir() {
 			return e.Name() + "/"
@@ -68,6 +89,53 @@ func sortLooseRefsEntries(entries []fs.DirEntry) {
 	slices.SortFunc(entries, func(a, b fs.DirEntry) int {
 		return strings.Compare(key(a), key(b))
 	})
+	return entries, nil
+}
+
+// readLooseRef reads the loose ref name as Git parses it, reporting broken
+// when Git would skip it as broken: content that is neither "ref:" and a
+// target, nor a full object ID followed by whitespace or the end, and the
+// all-zero ID:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L668-L697
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L330-L343
+func (d *DotGit) readLooseRef(name string) (ref *plumbing.Reference, broken bool, err error) {
+	path := d.fs.Join(strings.Split(name, "/")...)
+	st, err := d.fs.Stat(path)
+	if err != nil {
+		return nil, false, err
+	}
+	if st.IsDir() {
+		return nil, false, ErrIsDir
+	}
+
+	f, err := d.fs.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer ioutil.CheckClose(f, &err)
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Git's isspace, unlike C's, excludes \v and \f:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ctype.c#L21-L23
+	const gitSpace = " \t\n\r"
+	content := string(b)
+	if target, ok := strings.CutPrefix(content, "ref:"); ok {
+		target = strings.Trim(target, gitSpace)
+		return plumbing.NewSymbolicReference(plumbing.ReferenceName(name), plumbing.ReferenceName(target)), target == "", nil
+	}
+
+	size := d.options.ObjectFormat.HexSize()
+	ref = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.ZeroHash)
+	if len(content) < size || !isHex(content[:size]) ||
+		(len(content) > size && !strings.ContainsRune(gitSpace, rune(content[size]))) {
+		return ref, true, nil
+	}
+
+	ref = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.NewHash(content[:size]))
+	return ref, ref.Hash().IsZero(), nil
 }
 
 // looseRefsDirWithPrefix returns the deepest directory under refs/ that
@@ -89,7 +157,7 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 
 	dir := refsPath
 	for {
-		entries, err := d.fs.ReadDir(d.fs.Join(strings.Split(dir, "/")...))
+		entries, err := d.looseRefsEntries(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, nil
@@ -103,7 +171,6 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 			entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
 				return !strings.HasPrefix(e.Name(), component)
 			})
-			sortLooseRefsEntries(entries)
 
 			return &looseRefsDir{name: dir, entries: entries}, nil
 		}
@@ -121,11 +188,12 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 }
 
 // looseRefsSource yields HEAD, then walks loose refs depth-first in sorted
-// order.
+// order. It yields broken refs too, recording them in broken.
 type looseRefsSource struct {
-	d    *DotGit
-	head *plumbing.Reference
-	dirs []looseRefsDir
+	d      *DotGit
+	head   *plumbing.Reference
+	dirs   []looseRefsDir
+	broken map[*plumbing.Reference]bool
 }
 
 func (s *looseRefsSource) Next() (*plumbing.Reference, error) {
@@ -147,7 +215,7 @@ func (s *looseRefsSource) Next() (*plumbing.Reference, error) {
 		name := dir.name + "/" + entry.Name()
 
 		if entry.IsDir() {
-			entries, err := s.d.fs.ReadDir(s.d.fs.Join(strings.Split(name, "/")...))
+			entries, err := s.d.looseRefsEntries(name)
 			if os.IsNotExist(err) {
 				// The directory may have been removed since listing.
 				continue
@@ -156,12 +224,11 @@ func (s *looseRefsSource) Next() (*plumbing.Reference, error) {
 				return nil, err
 			}
 
-			sortLooseRefsEntries(entries)
 			s.dirs = append(s.dirs, looseRefsDir{name: name, entries: entries})
 			continue
 		}
 
-		ref, err := s.d.readReferenceFile(".", name)
+		ref, broken, err := s.d.readLooseRef(name)
 		if os.IsNotExist(err) {
 			// The file may have been removed since listing.
 			continue
@@ -170,6 +237,9 @@ func (s *looseRefsSource) Next() (*plumbing.Reference, error) {
 			return nil, err
 		}
 
+		if broken {
+			s.broken[ref] = true
+		}
 		return ref, nil
 	}
 

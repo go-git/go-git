@@ -278,26 +278,43 @@ func TestRefsWithPrefixToleratesRefsRemovedMidWalk(t *testing.T) {
 	assert.ErrorIs(t, err, io.EOF)
 }
 
-func TestRefsWithPrefixReportsEmptyLooseRef(t *testing.T) {
+// Like Git, broken loose refs are skipped rather than failing the iteration,
+// yet still hide the packed ref of the same name, and ".*" and "*.lock"
+// entries are not refs at all. Refs keeps failing on the empty file.
+func TestRefsWithPrefixSkipsBrokenLooseRefs(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
+	writeFile(t, fs, "HEAD", "")
 	writeFile(t, fs, "refs/heads/empty", "")
-	writeFile(t, fs, "refs/tags/v1", hashA+"\n")
+	writeFile(t, fs, "refs/heads/garbage", "garbage\n")
+	writeFile(t, fs, "refs/heads/zero", plumbing.ZeroHash.String()+"\n")
+	writeFile(t, fs, "refs/heads/spaced", "  "+hashA+"\n")
+	writeFile(t, fs, "refs/heads/short", hashA[:39]+"\n")
+	writeFile(t, fs, "refs/heads/vtab", hashA+"\v\n")
+	writeFile(t, fs, "refs/heads/symempty", "ref: \n")
+	writeFile(t, fs, "refs/heads/shadow", "")
+	writeFile(t, fs, "refs/heads/main.lock", hashA+"\n")
+	writeFile(t, fs, "refs/heads/.hidden", hashA+"\n")
+	writeFile(t, fs, "refs/heads/.dir/x", hashA+"\n")
+	writeFile(t, fs, "refs/heads/main", hashA+"\n")
+	writeFile(t, fs, "refs/heads/trailing", hashB+" trailing\n")
+	writeFile(t, fs, "refs/heads/sym", "ref:refs/heads/main\n")
+	writeFile(t, fs, "packed-refs", "# pack-refs with: sorted \n"+
+		hashB+" refs/heads/after\n"+
+		hashB+" refs/heads/shadow\n")
 	dir := New(fs)
 
 	_, err := dir.Refs()
 	require.ErrorIs(t, err, ErrEmptyRefFile)
 
-	iter, err := dir.RefsWithPrefix("refs/heads/")
+	iter, err := dir.RefsWithPrefix("")
 	require.NoError(t, err)
-	defer iter.Close()
-	_, err = iter.Next()
-	assert.ErrorIs(t, err, ErrEmptyRefFile)
-
-	iter, err = dir.RefsWithPrefix("refs/tags/")
-	require.NoError(t, err)
-	assert.Equal(t, []string{hashA + " refs/tags/v1"}, collectRefs(t, iter),
-		"a broken reference outside the prefix is not read")
+	assert.Equal(t, []string{
+		hashB + " refs/heads/after",
+		hashA + " refs/heads/main",
+		"ref: refs/heads/main refs/heads/sym",
+		hashB + " refs/heads/trailing",
+	}, collectRefs(t, iter))
 }
 
 type openCountingFS struct {
