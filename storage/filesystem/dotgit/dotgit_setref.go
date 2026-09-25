@@ -1,12 +1,13 @@
 package dotgit
 
 import (
-	"fmt"
+	"errors"
 	"os"
 
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -19,13 +20,29 @@ func (d *DotGit) setRef(fileName, content string, old *plumbing.Reference) (err 
 }
 
 func (d *DotGit) setRefRwfs(fileName, content string, old *plumbing.Reference) (err error) {
-	// If we are not checking an old ref, just truncate the file.
+	// Unconditional SetRef: create/truncate the loose file.
+	// Check-and-set (old != nil): open without O_CREATE first. Creating before
+	// the compare leaves an empty loose ref on mismatch (#2399). Removing that
+	// file after unlock is unsafe — a concurrent successful writer can lose
+	// its update — so compare against packed-refs first and only create on match.
 	mode := os.O_RDWR | os.O_CREATE
 	if old == nil {
 		mode |= os.O_TRUNC
+	} else {
+		mode = os.O_RDWR
 	}
 
 	f, err := d.fs.OpenFile(fileName, mode, 0o666)
+	if old != nil && errors.Is(err, os.ErrNotExist) {
+		ref, perr := d.packedRef(old.Name())
+		if perr != nil {
+			return perr
+		}
+		if ref.Hash() != old.Hash() {
+			return storage.ErrReferenceHasChanged
+		}
+		f, err = d.fs.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0o666)
+	}
 	if err != nil {
 		return err
 	}
@@ -54,29 +71,42 @@ func (d *DotGit) setRefRwfs(fileName, content string, old *plumbing.Reference) (
 }
 
 // There are some filesystems that don't support opening files in RDWD mode.
-// In these filesystems the standard SetRef function can not be used as it
-// reads the reference file to check that it's not modified before updating it.
-//
-// This version of the function writes the reference without extra checks
-// making it compatible with these simple filesystems. This is usually not
-// a problem as they should be accessed by only one process at a time.
+// In these filesystems the standard SetRef function cannot open the reference
+// for an in-place compare-and-swap, so the old value is checked first (loose
+// or packed) and only then is the loose file created/rewritten.
 func (d *DotGit) setRefNorwfs(fileName, content string, old *plumbing.Reference) error {
 	_, err := d.fs.Stat(fileName)
-	if err == nil && old != nil {
-		fRead, err := d.fs.Open(fileName)
-		if err != nil {
-			return err
-		}
+	looseExists := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 
-		ref, err := d.readReferenceFrom(fRead, old.Name().String())
-		_ = fRead.Close()
+	if old != nil {
+		var ref *plumbing.Reference
+		if looseExists {
+			fRead, openErr := d.fs.Open(fileName)
+			if openErr != nil {
+				return openErr
+			}
 
-		if err != nil {
-			return err
+			ref, err = d.readReferenceFrom(fRead, old.Name().String())
+			_ = fRead.Close()
+			if errors.Is(err, ErrEmptyRefFile) {
+				// Empty loose file: fall back to packed-refs like the rw path.
+				ref, err = d.packedRef(old.Name())
+			}
+			if err != nil {
+				return err
+			}
+		} else {
+			ref, err = d.packedRef(old.Name())
+			if err != nil {
+				return err
+			}
 		}
 
 		if ref.Hash() != old.Hash() {
-			return fmt.Errorf("reference has changed concurrently")
+			return storage.ErrReferenceHasChanged
 		}
 	}
 
