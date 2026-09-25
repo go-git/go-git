@@ -129,12 +129,15 @@ func (d *DotGit) readLooseRef(name string) (ref *plumbing.Reference, broken bool
 
 	size := d.options.ObjectFormat.HexSize()
 	ref = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.ZeroHash)
-	if len(content) < size || !isHex(content[:size]) ||
-		(len(content) > size && !strings.ContainsRune(gitSpace, rune(content[size]))) {
+	if len(content) < size || !isHex(content[:size]) {
+		return ref, true, nil
+	}
+	hash, rest := content[:size], content[size:]
+	if rest != "" && !strings.ContainsRune(gitSpace, rune(rest[0])) {
 		return ref, true, nil
 	}
 
-	ref = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.NewHash(content[:size]))
+	ref = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.NewHash(hash))
 	return ref, ref.Hash().IsZero(), nil
 }
 
