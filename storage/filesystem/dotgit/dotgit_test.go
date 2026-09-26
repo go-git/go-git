@@ -668,6 +668,68 @@ func (s *SuiteDotGit) TestRemoveRefFromPackedRefs() {
 		string(b))
 }
 
+func (s *SuiteDotGit) TestRemoveAnnotatedTagFromPackedRefs() {
+	const head = "1111111111111111111111111111111111111111"
+	const firstTag = "2222222222222222222222222222222222222222"
+	const secondTag = "3333333333333333333333333333333333333333"
+	packedRefs := "# pack-refs with: peeled fully-peeled sorted\n" +
+		head + " refs/heads/main\n" +
+		firstTag + " refs/tags/first\n" +
+		"^" + head + "\n" +
+		secondTag + " refs/tags/second\n" +
+		"^" + head + "\n"
+
+	for _, tc := range []struct {
+		scenario string
+		name     plumbing.ReferenceName
+		input    string
+		expected string
+	}{
+		{
+			scenario: "first tag after branch",
+			name:     "refs/tags/first",
+			expected: "# pack-refs with: peeled fully-peeled sorted\n" +
+				head + " refs/heads/main\n" +
+				secondTag + " refs/tags/second\n" +
+				"^" + head + "\n",
+		},
+		{
+			scenario: "last tag",
+			name:     "refs/tags/second",
+			expected: "# pack-refs with: peeled fully-peeled sorted\n" +
+				head + " refs/heads/main\n" +
+				firstTag + " refs/tags/first\n" +
+				"^" + head + "\n",
+		},
+		{
+			scenario: "first packed entry",
+			name:     "refs/tags/first",
+			input: "# pack-refs with: peeled fully-peeled sorted\n" +
+				firstTag + " refs/tags/first\n" +
+				"^" + head + "\n" +
+				secondTag + " refs/tags/second\n" +
+				"^" + head + "\n",
+			expected: "# pack-refs with: peeled fully-peeled sorted\n" +
+				secondTag + " refs/tags/second\n" +
+				"^" + head + "\n",
+		},
+	} {
+		s.Run(tc.scenario, func() {
+			fs := s.EmptyFS()
+			input := packedRefs
+			if tc.input != "" {
+				input = tc.input
+			}
+			s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(input), 0o644))
+			s.Require().NoError(New(fs).RemoveRef(tc.name))
+
+			actual, err := util.ReadFile(fs, packedRefsPath)
+			s.Require().NoError(err)
+			s.Equal(tc.expected, string(actual))
+		})
+	}
+}
+
 func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	s.Require().NoError(err)
