@@ -172,3 +172,59 @@ func (s *SidebandSuite) TestDecodeErrMaxPacked() {
 	s.ErrorIs(err, ErrMaxPackedExceeded)
 	s.Equal(0, n)
 }
+
+func (s *SidebandSuite) TestDecodeMasksControlCharactersInProgress() {
+	for _, tc := range []struct {
+		name     string
+		message  string
+		expected string
+	}{
+		{"clear screen", "\x1b[2J\x1b[Hdone\n", "^[[2J^[[Hdone\n"},
+		{"cursor movement", "\x1b[3A\x1b[Kgone\n", "^[[3A^[[Kgone\n"},
+		{"operating system command", "\x1b]0;title\x07\n", "^[]0;title^G\n"},
+		{"c0 controls and delete", "\x00\x01\x08\x7f\n", "^@^A^H^?\n"},
+		{"color sequences", "\x1b[1;31mfatal\x1b[0m: nope\x1b[m\n", "\x1b[1;31mfatal\x1b[0m: nope\x1b[m\n"},
+		{"color with colon subparameters", "\x1b[38:2::255:0:0mred\x1b[39m\n", "\x1b[38:2::255:0:0mred\x1b[39m\n"},
+		{"unterminated color sequence", "\x1b[31", "^[[31"},
+		{"color sequence with foreign parameter", "\x1b[31;xm", "^[[31;xm"},
+		{"escape at end", "done\x1b", "done^["},
+		{"progress line breaks and tabs", "Counting: 50%\rCounting: 100%\n\tdone\n", "Counting: 50%\rCounting: 100%\n\tdone\n"},
+		{"multibyte text", "Récupération 完了\n", "Récupération 完了\n"},
+	} {
+		s.Run(tc.name, func() {
+			input := bytes.NewBuffer(nil)
+			pktline.Write(input, ProgressMessage.WithPayload([]byte(tc.message)))
+			pktline.Write(input, PackData.WithPayload([]byte("pack")))
+
+			output := bytes.NewBuffer(nil)
+			d := NewDemuxer(Sideband64k, input)
+			d.Progress = output
+
+			content := make([]byte, 4)
+			_, err := io.ReadFull(d, content)
+			s.NoError(err)
+			s.Equal([]byte("pack"), content)
+			s.Equal(tc.expected, output.String())
+		})
+	}
+}
+
+func (s *SidebandSuite) TestDecodeMasksControlCharactersInErrors() {
+	s.Run("error channel", func() {
+		buf := bytes.NewBuffer(nil)
+		pktline.Write(buf, ErrorMessage.WithPayload([]byte("\x1b[2J\x1b[Hfatal: \x1b[31mnope\x1b[m\n")))
+
+		d := NewDemuxer(Sideband64k, buf)
+		_, err := io.ReadFull(d, make([]byte, 1))
+		s.ErrorContains(err, "unexpected error: ^[[2J^[[Hfatal: \x1b[31mnope\x1b[m\n")
+	})
+
+	s.Run("unknown channel", func() {
+		buf := bytes.NewBuffer(nil)
+		pktline.Write(buf, []byte("4\x1b[2JFOO\n"))
+
+		d := NewDemuxer(Sideband64k, buf)
+		_, err := io.ReadFull(d, make([]byte, 1))
+		s.ErrorContains(err, "unknown channel 4^[[2JFOO\n")
+	})
+}
