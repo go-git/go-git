@@ -2,8 +2,7 @@
 // git-upload-pack and git-receive-pack over any transport (TCP, HTTP, SSH).
 //
 // Use [Backend.Serve] or [Backend.ServeConn] for stream-based transports
-// (TCP, SSH, pipes). Use [Backend.ServeHTTP] for HTTP (both smart and dumb
-// protocols).
+// (TCP, SSH, pipes). Use [Backend.ServeHTTP] for smart HTTP.
 package backend
 
 import (

@@ -123,10 +123,8 @@ func smartContentType(header, service string) bool {
 //
 // The body is consumed and closed whichever it is: the message it yields is
 // capped at maxErrorBodySize, the rest is discarded, and then it is closed.
-// Discarding it is what keeps the connection — a 404 is ordinary control flow
-// for the dumb walk, which asks for every object as a loose file before
-// falling back to the packs, so a connection dropped here costs a handshake
-// per object.
+// Discarding it is what keeps the connection for the request that follows, so
+// a failed request does not cost the session a handshake.
 func checkError(r *http.Response) error {
 	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
 		return nil

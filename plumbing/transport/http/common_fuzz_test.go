@@ -16,8 +16,8 @@ import (
 // Three properties are asserted, and none of them restates the function:
 //
 //   - A malformed escape is refused rather than silently re-escaped. Refusing
-//     is what keeps a path the caller never named out of the pack POST, the
-//     dumb protocol's object GETs and the retry.
+//     is what keeps a path the caller never named out of the pack POST and
+//     the retry.
 //   - Path and RawPath stay in correspondence. A url.URL whose halves disagree
 //     renders a third path through EscapedPath, which is the defect the
 //     function exists to prevent.

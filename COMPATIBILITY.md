@@ -113,7 +113,7 @@ compatibility status with go-git.
 | Feature              | Sub-feature | Status | Notes | Examples                                                   |
 | -------------------- | ----------- | ------ | ----- | ---------------------------------------------------------- |
 | `daemon`             |             | ⚠️ (partial) | via https://github.com/go-git/cli      |                                                            |
-| `update-server-info` |             | ✅     |       | [update-server-info](_examples/update-server-info/main.go) |
+| `update-server-info` |             | ❌     | Only used by the dumb HTTP protocol, which is not supported. |                                       |
 
 ## Advanced
 
@@ -206,7 +206,7 @@ compatibility status with go-git.
 
 | Scheme               | Status       | Notes                                                                  | Examples                                       |
 | -------------------- | ------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
-| `http(s)://` (dumb)  | ⚠️ (partial) | Requires filesystem-backed storage; shallow fetch is not supported.    |                                                |
+| `http(s)://` (dumb)  | ❌           | Not supported, neither as a client nor when serving.                   |                                                |
 | `http(s)://` (smart) | ✅           |                                                                        |                                                |
 | `git://`             | ✅           |                                                                        |                                                |
 | `ssh://`             | ✅           |                                                                        |                                                |

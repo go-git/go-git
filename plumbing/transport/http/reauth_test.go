@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -125,14 +124,12 @@ func TestCredentialsDroppedErrorCarriesCopies(t *testing.T) {
 }
 
 // The request that fails is not the discovery request, so the annotation has to
-// be recoverable from the session's own calls, on both the smart and the dumb
-// path.
+// be recoverable from the session's own calls.
 func TestCredentialsDroppedErrorAfterDiscovery(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
 		name    string
-		opts    Options
 		refs    func(w http.ResponseWriter)
 		request func(t *testing.T, sess transport.Session) error
 	}{{
@@ -146,17 +143,6 @@ func TestCredentialsDroppedErrorAfterDiscovery(t *testing.T) {
 			require.NoError(t, err)
 			return r.Close()
 		},
-	}, {
-		name: "a dumb object GET",
-		opts: Options{ForceDumb: true},
-		// A dumb info/refs body: one ref, tab-separated, no pkt-lines.
-		refs: func(w http.ResponseWriter) { _, _ = fmt.Fprintf(w, "%s\trefs/heads/master\n", testSHA) },
-		request: func(t *testing.T, sess transport.Session) error {
-			dps, ok := sess.(*dumbPackSession)
-			require.True(t, ok)
-			_, err := newFetchWalker(t.Context(), dps, nil, nil).httpGet("objects/info/packs")
-			return err
-		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -169,9 +155,7 @@ func TestCredentialsDroppedErrorAfterDiscovery(t *testing.T) {
 				challenge(w)
 			})
 
-			opts := tc.opts
-			opts.Credentials = ForRepositoryOrigin(noopAuth)
-			sess, err := handshakeAt(t, originURL, opts)
+			sess, err := handshakeAt(t, originURL, Options{Credentials: ForRepositoryOrigin(noopAuth)})
 			require.NoError(t, err, "discovery succeeds anonymously")
 			defer sess.Close()
 

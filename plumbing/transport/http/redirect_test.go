@@ -764,41 +764,6 @@ func TestRedirectDoesNotCarryQueryToAnotherOrigin(t *testing.T) {
 	}
 }
 
-// The dumb protocol builds its object GETs from the same base URL, so the same
-// rule has to hold for them.
-func TestRedirectDoesNotCarryQueryToAnotherOriginOnDumbGet(t *testing.T) {
-	t.Parallel()
-
-	originURL, _, destSeen := redirectPair(t, http.StatusTemporaryRedirect, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, infoRefsPath) {
-			// A dumb info/refs body: one ref, tab-separated, no pkt-lines.
-			_, _ = w.Write([]byte(testSHA + "\trefs/heads/master\n"))
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	sess, err := handshakeFor(t, originURL, clone{query: "private_token=glpat-secret"},
-		Options{ForceDumb: true})
-	require.NoError(t, err)
-	defer sess.Close()
-
-	dps, ok := sess.(*dumbPackSession)
-	require.True(t, ok)
-
-	w := newFetchWalker(context.Background(), dps, nil, nil)
-	_, err = w.httpGet("objects/info/packs")
-	require.Error(t, err)
-
-	reqs := destSeen.all()
-	require.NotEmpty(t, reqs)
-	for i, got := range reqs {
-		assert.NotContains(t, got.URL.RawQuery, "private_token",
-			"request %d (%s %s) carried the repository URL's query to another origin",
-			i, got.Method, got.URL.RequestURI())
-	}
-}
-
 // The retry answers a challenge, so it has to be made against the resource that
 // challenged. Re-issuing at another spelling of the path asks a question the
 // 401 was never about, and spends the re-acquired credential there.
@@ -965,7 +930,6 @@ func TestRedirectCredentialTravel(t *testing.T) {
 		originPlain bool
 		// destHost is empty when the redirect stays on the origin.
 		destHost, destPort string
-		forceDumb          bool
 		want               bool
 		reason             string
 	}{
@@ -1000,15 +964,6 @@ func TestRedirectCredentialTravel(t *testing.T) {
 			destPort: "443",
 			reason:   "the redirect target chose this origin, not the caller",
 		},
-		{
-			// The dumb walker applies credentials through the same path and
-			// asks for /info/refs without the service query.
-			name:      "an unrelated host on the dumb protocol",
-			destHost:  "evil.test",
-			destPort:  "443",
-			forceDumb: true,
-			reason:    "the dumb protocol's requests are subject to the same strip",
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -1024,22 +979,10 @@ func TestRedirectCredentialTravel(t *testing.T) {
 				dest = newTLSVhost(t, hm, tc.destHost, tc.destPort)
 				target = dest.base + refsPath("repo.git")
 			}
-			if tc.forceDumb {
-				target = dest.base + "/repo.git/info/refs"
-			}
 			origin.redirectTo(target)
 
-			_, err := handshakeWithCredentials(t, hm, origin.base, func(o *Options) {
-				o.ForceDumb = tc.forceDumb
-			})
-			if tc.forceDumb {
-				// The vhost serves a smart advertisement, so the dumb decoder
-				// may reject it. What is asserted below is the headers that
-				// reached dest, which that does not affect.
-				t.Logf("handshake: %v", err)
-			} else {
-				require.NoError(t, err)
-			}
+			_, err := handshakeWithCredentials(t, hm, origin.base)
+			require.NoError(t, err)
 
 			if tc.want {
 				assertCredentialsPresent(t, dest.lastRequest(t))

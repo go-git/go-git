@@ -622,8 +622,7 @@ func connCountingServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, *at
 // TestErrorResponseKeepsConnection covers the discard checkError owes the
 // request that follows a failed one. A body left with bytes outstanding takes
 // its connection with it, and a failed request is not the end of a session:
-// the dumb walk answers a miss with a 404 and asks for the next object over
-// the same connection.
+// the next request goes over the same connection.
 func TestErrorResponseKeepsConnection(t *testing.T) {
 	t.Parallel()
 
