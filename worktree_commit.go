@@ -181,7 +181,7 @@ func (w *Worktree) CherryPick(commitOpts *CommitOptions, ortStrategyOption OrtMe
 				// worktree write needs the full path so it lands at the
 				// right location and is validated by the wrapper.
 				to.Name = change.To.Name
-				if err := w.checkoutFile(cfg, fs, to); err != nil {
+				if _, err := w.checkoutFile(cfg, fs, to); err != nil {
 					return err
 				}
 				if _, err := w.Add(to.Name); err != nil {
