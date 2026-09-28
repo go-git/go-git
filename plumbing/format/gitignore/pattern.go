@@ -77,6 +77,13 @@ func ParsePattern(p string, domain []string) Pattern {
 }
 
 func (p *pattern) Match(path []string, isDir bool) MatchResult {
+	return p.match(path, isDir, false)
+}
+
+// endpointOnly is used by Scope, which handles excluded ancestors while
+// descending. Matching an ancestor again here would let a directory negation
+// override rules that still exclude its contents.
+func (p *pattern) match(path []string, isDir, endpointOnly bool) MatchResult {
 	if len(path) <= len(p.domain) {
 		return NoMatch
 	}
@@ -87,10 +94,17 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 	}
 
 	path = path[len(p.domain):]
-	if p.isGlob && !p.globMatch(path, isDir) {
-		return NoMatch
-	} else if !p.isGlob && !p.simpleNameMatch(path, isDir) {
-		return NoMatch
+	if p.isGlob {
+		if !p.globMatch(path, isDir, endpointOnly) {
+			return NoMatch
+		}
+	} else {
+		if endpointOnly {
+			path = path[len(path)-1:]
+		}
+		if !p.simpleNameMatch(path, isDir) {
+			return NoMatch
+		}
 	}
 
 	if p.inclusion {
@@ -491,10 +505,11 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	return false
 }
 
-func (p *pattern) globMatch(path []string, isDir bool) bool {
+func (p *pattern) globMatch(path []string, isDir, endpointOnly bool) bool {
 	matched := false
 	canTraverse := false
 	trailingStar := false
+	emptyTrailingStar := false
 	for i, pattern := range p.pattern {
 		if pattern == "" {
 			canTraverse = false
@@ -508,7 +523,8 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 				// Assigning matched rather than only raising it stops an
 				// exhausted path from inheriting the previous segment's
 				// result, which would make `a/**/*/**` match `a/f.txt`.
-				matched = len(path) > 0 || isDir
+				emptyTrailingStar = len(path) == 0 && isDir
+				matched = len(path) > 0 || emptyTrailingStar
 				trailingStar = matched
 				break
 			}
@@ -553,6 +569,9 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 	// Check dirOnly: either we consumed all path (len(path) == 0) or we matched a trailing **
 	if matched && p.dirOnly && !isDir && (len(path) == 0 || trailingStar) {
 		matched = false
+	}
+	if endpointOnly && (emptyTrailingStar || (len(path) > 0 && !trailingStar)) {
+		return false
 	}
 	return matched
 }

@@ -350,6 +350,29 @@ func TestExcludedParentBeatsNestedNegation(t *testing.T) {
 		"the ignore file itself is untracked and below an excluded directory")
 }
 
+// TestContentsWildcardDoesNotPruneReincludedChild verifies that a trailing
+// /** excludes a directory's contents without excluding the directory itself.
+// The walk must therefore enter the directory so a later pattern can
+// re-include one of its direct children.
+func TestContentsWildcardDoesNotPruneReincludedChild(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "volumes/functions/deno.jsonsample", []byte("x\n"), 0o644))
+	require.NoError(t, WriteFile(fs, "volumes/functions/otro.txt", []byte("x\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{
+		Index: &index.Index{},
+		IgnoreScope: scope(
+			"volumes/functions/**",
+			"!volumes/functions/deno.json*",
+		),
+	})
+
+	names := childNames(t, root, "volumes", "functions")
+	require.Contains(t, names, "deno.jsonsample")
+	require.NotContains(t, names, "otro.txt")
+}
+
 // childNames returns the names of the children of the node reached by
 // following path from root.
 func childNames(t *testing.T, root noder.Noder, path ...string) []string {

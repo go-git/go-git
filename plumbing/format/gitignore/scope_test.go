@@ -161,6 +161,55 @@ func TestScopeDoesNotReadIgnoreFilesBelowExcluded(t *testing.T) {
 	assert.True(t, deeper.Match([]string{"outer", "ignored", "deep", "any.txt"}, false))
 }
 
+func TestScopeDoesNotExcludeContentsWildcardParent(t *testing.T) {
+	t.Parallel()
+
+	s := NewScope([]Pattern{
+		ParsePattern("volumes/functions/**", nil),
+		ParsePattern("!volumes/functions/deno.json*", nil),
+	})
+
+	assert.True(t, NewMatcher(s.Patterns()).Match([]string{"volumes", "functions"}, true),
+		"the public matcher continues to report the directory as matched")
+	contents, err := s.Descend([]string{"volumes", "functions"}, nil)
+	require.NoError(t, err)
+	assert.False(t, contents.Excluded(),
+		"/** excludes contents, so its parent must still be traversed")
+	nested, err := s.Descend([]string{"volumes", "functions", "nested"}, nil)
+	require.NoError(t, err)
+	assert.True(t, nested.Excluded(),
+		"a nested directory is itself part of the excluded contents")
+	assert.False(t, s.Match([]string{"volumes", "functions", "deno.jsonsample"}, false))
+	assert.True(t, s.Match([]string{"volumes", "functions", "otro.txt"}, false))
+	assert.False(t, s.Match([]string{"volumes", "functions"}, true))
+	reincluded, err := contents.Descend([]string{"volumes", "functions", "deno.jsonsample"}, nil)
+	require.NoError(t, err)
+	assert.False(t, reincluded.Excluded())
+	assert.True(t, reincluded.Match([]string{"volumes", "functions", "deno.jsonsample", "keep"}, false))
+
+	dirOnly := NewScope([]Pattern{ParsePattern("volumes/functions/", nil)})
+	excluded, err := dirOnly.Descend([]string{"volumes", "functions"}, nil)
+	require.NoError(t, err)
+	assert.True(t, excluded.Excluded(),
+		"a directory-only rule excludes the directory itself")
+}
+
+func TestScopeDirectoryNegationDoesNotOverrideChildRules(t *testing.T) {
+	t.Parallel()
+	for _, negation := range []string{"!keep", "!keep/", "!f/keep", "!f/keep/"} {
+		t.Run(negation, func(t *testing.T) {
+			t.Parallel()
+			s := NewScope([]Pattern{ParsePattern("f/**", nil), ParsePattern(negation, nil)})
+			parent, err := s.Descend([]string{"f"}, nil)
+			require.NoError(t, err)
+			child, err := parent.Descend([]string{"f", "keep"}, nil)
+			require.NoError(t, err)
+			assert.False(t, child.Excluded())
+			assert.True(t, child.Match([]string{"f", "keep", "ignored.txt"}, false))
+		})
+	}
+}
+
 // TestScopeDescendReusesParent checks the allocation-free path: a directory
 // that declares no patterns of its own shares its parent's Scope.
 func TestScopeDescendReusesParent(t *testing.T) {
