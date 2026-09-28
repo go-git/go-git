@@ -1661,7 +1661,9 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 	return nil
 }
 
-// Tags returns all the tag References in a repository.
+// Tags returns all the tag References in a repository, sorted by name. Like
+// git tag, it may skip tags that cannot be read, such as an empty loose ref
+// file, rather than fail.
 //
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash Reference passed in through ForEach:
@@ -1686,45 +1688,21 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 //	  // Handle outer iterator error
 //	}
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	return storer.NewReferenceFilteredIter(
-		func(r *plumbing.Reference) bool {
-			return r.Name().IsTag()
-		}, refIter,
-	), nil
+	return storer.IterReferencesWithPrefix(r.Storer, plumbing.RefPrefix+"tags/")
 }
 
-// Branches returns all the References that are Branches.
+// Branches returns all the References that are Branches, sorted by name.
+// Like git branch, it may skip branches that cannot be read, such as an empty
+// loose ref file, rather than fail.
 func (r *Repository) Branches() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	return storer.NewReferenceFilteredIter(
-		func(r *plumbing.Reference) bool {
-			return r.Name().IsBranch()
-		}, refIter,
-	), nil
+	return storer.IterReferencesWithPrefix(r.Storer, plumbing.RefHeadPrefix)
 }
 
-// Notes returns all the References that are notes. For more information:
-// https://git-scm.com/docs/git-notes
+// Notes returns all the References that are notes, sorted by name. It may
+// skip references that cannot be read, as Tags and Branches do. For more
+// information: https://git-scm.com/docs/git-notes
 func (r *Repository) Notes() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	return storer.NewReferenceFilteredIter(
-		func(r *plumbing.Reference) bool {
-			return r.Name().IsNote()
-		}, refIter,
-	), nil
+	return storer.IterReferencesWithPrefix(r.Storer, plumbing.RefPrefix+"notes/")
 }
 
 // TreeObject return a Tree with the given hash. If not found

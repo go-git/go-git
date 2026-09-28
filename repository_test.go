@@ -3664,6 +3664,57 @@ func (s *RepositorySuite) TestBranches() {
 	s.Equal(8, count)
 }
 
+// An empty loose branch file, as a crash during SetRef leaves, is skipped by
+// Branches and Tags, as git branch and git tag do. References reports it with
+// the all-zero ID, as git ls-remote does, and Prune refuses to run past it,
+// as git prune does, since the objects it pointed at are unknown.
+func (s *RepositorySuite) TestBranchesAndTagsSkipBrokenLooseRefs() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	r, err := Open(sto, nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	names := func(iter storer.ReferenceIter, err error) []string {
+		s.Require().NoError(err)
+		var names []string
+		s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+			names = append(names, ref.Name().String())
+			return nil
+		}))
+		return names
+	}
+	branchesBefore := names(r.Branches())
+	tagsBefore := names(r.Tags())
+
+	for _, name := range []string{"refs/heads/truncated", "refs/tags/truncated"} {
+		s.Require().NoError(util.WriteFile(dotgit, name, nil, 0o644))
+	}
+
+	s.Equal(branchesBefore, names(r.Branches()))
+	s.Equal(tagsBefore, names(r.Tags()))
+
+	iter, err := r.References()
+	s.Require().NoError(err)
+	var zero []string
+	s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() == plumbing.HashReference && ref.Hash().IsZero() {
+			zero = append(zero, ref.Name().String())
+		}
+		return nil
+	}))
+	s.Equal([]string{"refs/heads/truncated", "refs/tags/truncated"}, zero)
+
+	pruned := 0
+	err = r.Prune(PruneOptions{Handler: func(plumbing.Hash) error {
+		pruned++
+		return nil
+	}})
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
+	s.Zero(pruned)
+}
+
 func (s *RepositorySuite) TestNotes() {
 	// TODO add fixture with Notes
 	url := s.GetLocalRepositoryURL(
