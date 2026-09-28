@@ -55,6 +55,7 @@ const (
 	alternatesPath     = "alternates"
 
 	tmpPackedRefsPrefix = "._packed-refs"
+	packedRefsHeader    = "# pack-refs with: "
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
@@ -1695,11 +1696,22 @@ func (d *DotGit) PackRefs() (err error) {
 		packable = append(packable, ref)
 	}
 	refs = packable
-	if len(refs) == 0 {
-		// Nothing to do!
-		return nil
-	}
 	numLooseRefs := len(refs)
+	if numLooseRefs == 0 {
+		// Nothing to pack, but a file without the sorted trait is rewritten
+		// sorted, so that readers can stop scanning it early.
+		header, err := bufio.NewReader(f).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		traits, ok := strings.CutPrefix(strings.TrimSuffix(header, "\n"), packedRefsHeader)
+		if header == "" || ok && slices.Contains(strings.Split(traits, " "), "sorted") {
+			return nil
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+	}
 	if err = d.addRefsFromPackedRefsFile(&refs, f, seen); err != nil {
 		return err
 	}
@@ -1715,8 +1727,23 @@ func (d *DotGit) PackRefs() (err error) {
 		_ = d.fs.Remove(tmpName) // don't check err, we might have renamed it
 	}()
 
+	// Write the refs sorted by name under a header saying so, which lets
+	// readers stop scanning early, as git's writer does:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1334-L1343
+	// No peeled values are written, so the peeled traits must not be
+	// claimed; they would tell readers that no tag can be peeled:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L697-L724
+	// refs keeps its order, since its first numLooseRefs entries are removed
+	// below.
+	sorted := slices.Clone(refs)
+	slices.SortFunc(sorted, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
 	w := bufio.NewWriter(tmp)
-	for _, ref := range refs {
+	if _, err = w.WriteString(packedRefsHeader + "sorted \n"); err != nil {
+		return err
+	}
+	for _, ref := range sorted {
 		_, err = w.WriteString(ref.String() + "\n")
 		if err != nil {
 			return err
