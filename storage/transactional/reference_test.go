@@ -1,11 +1,13 @@
 package transactional
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -161,4 +163,63 @@ func (s *ReferenceSuite) TestCommitDelete() {
 	ref, err := rs.Reference(refC.Name())
 	s.NoError(err)
 	s.Equal("c3f4688a08fd86f1bf8e055724c84b7a40a09733", ref.Hash().String())
+}
+
+// Each name comes back once, with the value Reference returns: the temporal
+// reference over the base one, and none once removed.
+func (s *ReferenceSuite) TestIterReferencesMatchesReference() {
+	const (
+		hashA = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+		hashB = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	)
+	base := memory.NewStorage()
+	for _, name := range []string{"refs/heads/feature", "refs/heads/gone", "refs/heads/main"} {
+		s.Require().NoError(base.SetReference(plumbing.NewReferenceFromStrings(name, hashA)))
+	}
+	rs := NewReferenceStorage(base, memory.NewStorage())
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hashB)))
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/topic", hashB)))
+	s.Require().NoError(rs.RemoveReference("refs/heads/gone"))
+
+	iter, err := rs.IterReferences()
+	s.Require().NoError(err)
+	var got []string
+	s.Require().NoError(iter.ForEach(func(r *plumbing.Reference) error {
+		want, err := rs.Reference(r.Name())
+		s.Require().NoError(err)
+		s.Equal(want.String(), r.String())
+		got = append(got, r.String())
+		return nil
+	}))
+
+	s.ElementsMatch([]string{
+		hashA + " refs/heads/feature",
+		hashB + " refs/heads/main",
+		hashB + " refs/heads/topic",
+	}, got)
+}
+
+// failingIterStorer fails IterReferences, as a storer does that cannot read
+// one of its references.
+type failingIterStorer struct {
+	storer.ReferenceStorer
+}
+
+func (failingIterStorer) IterReferences() (storer.ReferenceIter, error) {
+	return nil, errReferencesUnreadable
+}
+
+var errReferencesUnreadable = errors.New("references unreadable")
+
+// An error from either storer's IterReferences is returned rather than the
+// references it could not list being left out, which reachability walks such
+// as RepackObjects rely on.
+func (s *ReferenceSuite) TestIterReferencesReportsErrors() {
+	for name, rs := range map[string]*ReferenceStorage{
+		"base":     NewReferenceStorage(failingIterStorer{memory.NewStorage()}, memory.NewStorage()),
+		"temporal": NewReferenceStorage(memory.NewStorage(), failingIterStorer{memory.NewStorage()}),
+	} {
+		_, err := rs.IterReferences()
+		s.ErrorIs(err, errReferencesUnreadable, name)
+	}
 }

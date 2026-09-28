@@ -70,22 +70,44 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 	return ref, err
 }
 
-// IterReferences honors the storer.ReferenceStorer interface.
+// IterReferences honors the storer.ReferenceStorer interface. It yields each
+// name once, with the value Reference returns: the temporal reference over
+// the base one, and none once removed. Errors from either storer are
+// returned, so a reference one of them cannot read is not silently left out.
 func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
-	baseIter, err := r.ReferenceStorer.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
+	var refs []*plumbing.Reference
+	seen := make(map[plumbing.ReferenceName]bool)
 	temporalIter, err := r.temporal.IterReferences()
 	if err != nil {
 		return nil, err
 	}
+	if err := temporalIter.ForEach(func(ref *plumbing.Reference) error {
+		if !seen[ref.Name()] {
+			seen[ref.Name()] = true
+			refs = append(refs, ref)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 
-	return storer.NewMultiReferenceIter([]storer.ReferenceIter{
-		baseIter,
-		temporalIter,
-	}), nil
+	baseIter, err := r.ReferenceStorer.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	var base []*plumbing.Reference
+	if err := baseIter.ForEach(func(ref *plumbing.Reference) error {
+		_, deleted := r.deleted[ref.Name()]
+		if !deleted && !seen[ref.Name()] {
+			seen[ref.Name()] = true
+			base = append(base, ref)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return storer.NewReferenceSliceIter(append(base, refs...)), nil
 }
 
 // CountLooseRefs honors the storer.ReferenceStorer interface.
