@@ -573,7 +573,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	if !updated && !updatedPrune {
 		// No references updated, but may have fetched new objects, check if we now have any of our wants
 		for _, hash := range wants {
-			exists, _ := objectExists(r.s, hash)
+			exists, err := objectExists(r.s, hash)
+			if err != nil {
+				return nil, fmt.Errorf("error checking object existence: %w", err)
+			}
 			if exists {
 				updated = true
 				break
