@@ -278,3 +278,27 @@ func TestReflogStorage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 }
+
+// TestShallowStorageIsShallow covers the storer.ShallowChecker fast path
+// object.Commit's parent accessors use.
+func TestShallowStorageIsShallow(t *testing.T) {
+	t.Parallel()
+
+	s := memory.NewStorage()
+
+	hashA := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashB := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	hashC := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
+
+	require.NoError(t, s.SetShallow([]plumbing.Hash{hashA, hashB}))
+
+	for _, h := range []plumbing.Hash{hashA, hashB} {
+		isShallow, err := s.IsShallow(h)
+		require.NoError(t, err)
+		assert.True(t, isShallow, "%s is in the shallow list", h)
+	}
+
+	isShallow, err := s.IsShallow(hashC)
+	require.NoError(t, err)
+	assert.False(t, isShallow)
+}
