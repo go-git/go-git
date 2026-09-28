@@ -1589,9 +1589,10 @@ func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	rerun, err := util.ReadFile(fs, packedRefsPath)
 	s.Require().NoError(err)
 	s.Require().Equal(data, rerun)
+	// refs/heads/main.lock stays on disk, but Git does not read it as a ref.
 	looseCount, err := dir.CountLooseRefs()
 	s.Require().NoError(err)
-	s.Require().Equal(len(unpackable), looseCount)
+	s.Require().Equal(len(unpackable)-1, looseCount)
 }
 
 func TestAlternatesDefault(t *testing.T) {

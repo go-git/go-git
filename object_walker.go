@@ -111,6 +111,13 @@ func (p *objectWalker) walkAllRefs() error {
 		if ref.Type() != plumbing.HashReference {
 			return nil
 		}
+		// Storage reports a reference it cannot read with the all-zero ID.
+		// Like git prune and git repack, fail rather than skip it, since the
+		// objects it pointed at are unknown; in a partial clone the lookup
+		// below would otherwise pass it off as a promised object.
+		if ref.Hash().IsZero() {
+			return fmt.Errorf("reference %q is broken: %w", ref.Name(), plumbing.ErrObjectNotFound)
+		}
 		return p.walkObjectTree(ref.Hash())
 	})
 	return err

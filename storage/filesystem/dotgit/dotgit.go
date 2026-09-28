@@ -94,6 +94,9 @@ var (
 	// ErrEmptyRefFile is returned when a reference file is attempted to be read,
 	// but the file is empty
 	ErrEmptyRefFile = errors.New("ref file is empty")
+	// ErrBrokenRefFile is returned when a loose reference file holds neither a
+	// symbolic reference nor an object ID, which Git treats as a broken ref.
+	ErrBrokenRefFile = errors.New("ref file is broken")
 	// ErrModuleNameEscape is returned when a submodule name would
 	// resolve outside the modules/ subtree, mirroring canonical Git's
 	// "ignoring suspicious submodule name" defence.
@@ -1232,6 +1235,13 @@ func (d *DotGit) ObjectDelete(h plumbing.Hash) error {
 	return err1
 }
 
+// readReferenceFrom parses a loose reference as Git does: "ref:" and a
+// target, or an object ID followed by whitespace or the end, where anything
+// after the ID is ignored:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L668-L697
+// It returns ErrEmptyRefFile for an empty file and ErrBrokenRefFile for other
+// content Git treats as broken. The ID's length selects the object format, so
+// the configured format cannot hide references.
 func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Reference, err error) {
 	b, err := io.ReadAll(rd)
 	if err != nil {
@@ -1242,8 +1252,27 @@ func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Ref
 		return nil, ErrEmptyRefFile
 	}
 
-	line := strings.TrimSpace(string(b))
-	return plumbing.NewReferenceFromStrings(name, line), nil
+	// Git's isspace, unlike C's, excludes \v and \f:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ctype.c#L21-L23
+	const gitSpace = " \t\n\r"
+	content := string(b)
+	if target, ok := strings.CutPrefix(content, "ref:"); ok {
+		target = strings.Trim(target, gitSpace)
+		if target == "" {
+			return nil, ErrBrokenRefFile
+		}
+		return plumbing.NewSymbolicReference(plumbing.ReferenceName(name), plumbing.ReferenceName(target)), nil
+	}
+
+	id := content
+	if i := strings.IndexAny(content, gitSpace); i >= 0 {
+		id = content[:i]
+	}
+	if (len(id) != formatcfg.SHA1HexSize && len(id) != formatcfg.SHA256HexSize) || !isHex(id) {
+		return nil, ErrBrokenRefFile
+	}
+
+	return plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.NewHash(id)), nil
 }
 
 // checkReferenceAndTruncate reads the reference from the given file, or the `pack-refs` file if
@@ -1295,24 +1324,23 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 	return d.setRef(fileName, content, old)
 }
 
-// Refs scans the git directory collecting references, which it returns.
-// Symbolic references are resolved and included in the output.
+// Refs returns HEAD and every reference, sorted by name, with a loose
+// reference shadowing a packed one of the same name. Unlike RefsWithPrefix,
+// it returns a loose reference Git treats as broken, with the all-zero ID, as
+// git ls-remote and upload-pack do. Callers walking reachable objects must
+// fail on that ID rather than skip the reference, as git gc and git prune do.
 func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
+	iter, err := d.refsWithPrefix("", false)
+	if err != nil {
+		return nil, err
+	}
+
 	var refs []*plumbing.Reference
-	seen := make(map[plumbing.ReferenceName]bool)
-	if err := d.addRefFromHEAD(&refs); err != nil {
-		return nil, err
-	}
-
-	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
-		return nil, err
-	}
-
-	if err := d.addRefsFromPackedRefs(&refs, seen); err != nil {
-		return nil, err
-	}
-
-	return refs, nil
+	err = iter.ForEach(func(r *plumbing.Reference) error {
+		refs = append(refs, r)
+		return nil
+	})
+	return refs, err
 }
 
 // Ref returns the reference for a given reference name.
@@ -1409,20 +1437,6 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	}
 
 	return d.rewritePackedRefsWithoutRef(name)
-}
-
-func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
-	return func(r *plumbing.Reference) bool {
-		if r != nil && !seen[r.Name()] {
-			*refs = append(*refs, r)
-			seen[r.Name()] = true
-		}
-		return true
-	}
-}
-
-func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) (err error) {
-	return d.findPackedRefs(refsRecvFunc(refs, seen))
 }
 
 func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
@@ -1549,80 +1563,34 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 
 // process lines from a packed-refs file
 func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
+	hash, name, ok, err := parsePackedRefLine(line)
+	if err != nil || !ok {
+		return nil, err
+	}
+
+	return plumbing.NewReferenceFromStrings(name, hash), nil
+}
+
+// parsePackedRefLine splits a packed-refs line into its hash and reference
+// name. It reports ok as false for lines that carry no reference.
+func parsePackedRefLine(line string) (hash, name string, ok bool, err error) {
 	if len(line) == 0 {
-		return nil, nil
+		return "", "", false, nil
 	}
 
 	switch line[0] {
 	case '#': // comment - ignore
-		return nil, nil
+		return "", "", false, nil
 	case '^': // annotated tag commit of the previous line - ignore
-		return nil, nil
+		return "", "", false, nil
 	default:
-		ws := strings.Split(line, " ") // hash then ref
-		if len(ws) != 2 {
-			return nil, ErrPackedRefsBadFormat
+		hash, name, found := strings.Cut(line, " ") // hash then ref
+		if !found || strings.Contains(name, " ") {
+			return "", "", false, ErrPackedRefsBadFormat
 		}
 
-		return plumbing.NewReferenceFromStrings(ws[1], ws[0]), nil
+		return hash, name, true, nil
 	}
-}
-
-func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) error {
-	return d.walkReferencesTree(refs, []string{refsPath}, seen)
-}
-
-func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string, seen map[plumbing.ReferenceName]bool) error {
-	files, err := d.fs.ReadDir(d.fs.Join(relPath...))
-	if err != nil {
-		if os.IsNotExist(err) {
-			// a race happened, and our directory is gone now
-			return nil
-		}
-
-		return err
-	}
-
-	for _, f := range files {
-		newRelPath := append(append([]string(nil), relPath...), f.Name())
-		if f.IsDir() {
-			if err = d.walkReferencesTree(refs, newRelPath, seen); err != nil {
-				return err
-			}
-
-			continue
-		}
-
-		ref, err := d.readReferenceFile(".", strings.Join(newRelPath, "/"))
-		if os.IsNotExist(err) {
-			// a race happened, and our file is gone now
-			continue
-		}
-		if err != nil {
-			return err
-		}
-
-		if ref != nil && !seen[ref.Name()] {
-			*refs = append(*refs, ref)
-			seen[ref.Name()] = true
-		}
-	}
-
-	return nil
-}
-
-func (d *DotGit) addRefFromHEAD(refs *[]*plumbing.Reference) error {
-	ref, err := d.readReferenceFile(".", "HEAD")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return err
-	}
-
-	*refs = append(*refs, ref)
-	return nil
 }
 
 func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, err error) {
@@ -1644,15 +1612,35 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 	return d.readReferenceFrom(f, name)
 }
 
-// CountLooseRefs returns the number of loose references in the repository.
+// CountLooseRefs returns the number of loose references in the repository,
+// counting broken ones but not entries Git does not read as refs, such as
+// "*.lock" files.
 func (d *DotGit) CountLooseRefs() (int, error) {
-	var refs []*plumbing.Reference
-	seen := make(map[plumbing.ReferenceName]bool)
-	if err := d.addRefsFromRefDir(&refs, seen); err != nil {
-		return 0, err
-	}
+	refs, err := d.looseRefsUnderRefs()
+	return len(refs), err
+}
 
-	return len(refs), nil
+// looseRefsUnderRefs returns the loose references under refs/ as git
+// pack-refs reads them: a broken one has the all-zero ID, so PackRefs leaves
+// it loose, and entries Git does not read as refs are left out.
+func (d *DotGit) looseRefsUnderRefs() ([]*plumbing.Reference, error) {
+	loose, err := d.looseRefs(refsPath+"/", true)
+	if err != nil {
+		return nil, err
+	}
+	defer loose.Close()
+
+	var refs []*plumbing.Reference
+	for {
+		ref, err := loose.Next()
+		if err == io.EOF {
+			return refs, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
 }
 
 // PackRefs packs loose nonzero hash references with valid Git names into
@@ -1684,10 +1672,13 @@ func (d *DotGit) PackRefs() (err error) {
 	// Keep enumeration complete, but pack only loose references representable
 	// in packed-refs. A skipped loose reference must not suppress the existing
 	// packed value it shadows; it continues to shadow that value on disk.
-	var refs []*plumbing.Reference
-	seen := make(map[plumbing.ReferenceName]bool)
-	if err = d.addRefsFromRefDir(&refs, seen); err != nil {
+	refs, err := d.looseRefsUnderRefs()
+	if err != nil {
 		return err
+	}
+	seen := make(map[plumbing.ReferenceName]bool, len(refs))
+	for _, ref := range refs {
+		seen[ref.Name()] = true
 	}
 	packable := refs[:0]
 	for _, ref := range refs {
