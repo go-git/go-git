@@ -391,6 +391,33 @@ func (s *SuiteDotGit) TestSetRefsNorwfs() {
 	testSetRefs(s, dir)
 }
 
+// Regression test for #2399: a SetRef whose old-value check fails for a ref
+// that has no loose file must not leave behind an empty loose ref file, which
+// would otherwise break reference iteration for the whole repository.
+func (s *SuiteDotGit) TestSetRefFailedCheckLeavesNoEmptyLooseRef() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	name := plumbing.ReferenceName("refs/heads/missing")
+	newRef := plumbing.NewReferenceFromStrings(name.String(),
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	// old refers to a value the (nonexistent) ref does not have, so the update
+	// must be rejected.
+	oldRef := plumbing.NewReferenceFromStrings(name.String(),
+		"aa9b383c260e1d05fbbf6b30a02914555e20c725")
+
+	err := dir.SetRef(newRef, oldRef)
+	s.Require().Error(err)
+
+	// No empty loose ref file should have been created, so iterating all refs
+	// must still succeed (an empty ref file would surface as "ref file is empty").
+	refs, err := dir.Refs()
+	s.Require().NoError(err)
+	for _, r := range refs {
+		s.NotEqual(name, r.Name(), "rejected update must not create the ref")
+	}
+}
+
 func (s *SuiteDotGit) TestRefsHeadFirst() {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	s.Require().NoError(err)

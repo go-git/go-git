@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -25,10 +26,26 @@ func (d *DotGit) setRefRwfs(fileName, content string, old *plumbing.Reference) (
 		mode |= os.O_TRUNC
 	}
 
+	// Detect whether the ref file already exists. With O_CREATE, a failed
+	// old-value check below would otherwise leave behind a newly-created empty
+	// loose ref file, which breaks reference iteration (see #2399). If we
+	// created it, we must remove it when the update does not go through.
+	_, statErr := d.fs.Stat(fileName)
+	created := statErr != nil
+
 	f, err := d.fs.OpenFile(fileName, mode, 0o666)
 	if err != nil {
 		return err
 	}
+
+	// If we created the file and end up returning an error before writing the
+	// new content, remove the empty file we just created so it does not linger.
+	removeOnErr := created
+	defer func() {
+		if err != nil && removeOnErr {
+			_ = d.fs.Remove(fileName)
+		}
+	}()
 
 	defer ioutil.CheckClose(f, &err)
 
@@ -48,6 +65,9 @@ func (d *DotGit) setRefRwfs(fileName, content string, old *plumbing.Reference) (
 	if err != nil {
 		return err
 	}
+
+	// The update is going through; keep the file.
+	removeOnErr = false
 
 	_, err = f.Write([]byte(content))
 	return err
@@ -78,6 +98,21 @@ func (d *DotGit) setRefNorwfs(fileName, content string, old *plumbing.Reference)
 		if ref.Hash() != old.Hash() {
 			return fmt.Errorf("reference has changed concurrently")
 		}
+	} else if err != nil && old != nil {
+		// There is no loose ref file, but the caller still asked us to verify
+		// the previous value. The current value may live in packed-refs, so we
+		// must check it there rather than skipping the check entirely (which
+		// would silently apply a stale update). See #2399.
+		ref, perr := d.packedRef(old.Name())
+		if perr == nil {
+			if ref.Hash() != old.Hash() {
+				return fmt.Errorf("reference has changed concurrently")
+			}
+		} else if !errors.Is(perr, plumbing.ErrReferenceNotFound) {
+			return perr
+		}
+		// If the ref exists neither loose nor packed, old is expected to be the
+		// zero reference; fall through to create it.
 	}
 
 	f, err := d.fs.Create(fileName)
