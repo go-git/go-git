@@ -1,7 +1,6 @@
 package dotgit
 
 import (
-	"bufio"
 	"errors"
 	"io"
 	"io/fs"
@@ -9,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -23,8 +22,7 @@ import (
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
 // Like git for-each-ref, it skips broken loose refs, which Refs returns with
 // the all-zero ID, and ignores loose entries named ".*" or "*.lock", which Git
-// does not read as refs.
-// The iterator must be closed.
+// does not read as refs. It holds no file open.
 func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 	return d.refsWithPrefix(prefix, true)
 }
@@ -244,19 +242,21 @@ func (s *looseRefsSource) Close() {
 }
 
 // packedRefsSource yields the packed refs matching prefix in sorted order.
-// The sorted header trait permits streaming and stopping past the prefix, as
-// Git does:
+// It reads packed-refs into memory at once, so it holds no file open, and
+// parses it lazily. The sorted header trait permits stopping past the prefix,
+// as Git does:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1015-L1022
-// Without it, Git sorts the whole file; this collects and sorts the matching
-// lines, so the first result waits for a full scan.
+// Unlike Git, which trusts the trait, it first checks that the names do
+// ascend. For a file that is not sorted, as Git does, it sorts the matches,
+// so the first result waits for a full scan.
 type packedRefsSource struct {
 	d      *DotGit
 	prefix string
-
-	file    billy.File
-	scanner *bufio.Scanner
-	sorted  bool
-	// unsorted holds the matches of a file without the sorted trait.
+	opened bool
+	// sorted reports that rest, the records not yet read, are sorted.
+	sorted bool
+	rest   string
+	// unsorted holds the matches of a file that is not sorted.
 	unsorted []*plumbing.Reference
 	done     bool
 }
@@ -266,7 +266,8 @@ func (s *packedRefsSource) Next() (*plumbing.Reference, error) {
 		return nil, io.EOF
 	}
 
-	if s.scanner == nil {
+	if !s.opened {
+		s.opened = true
 		if err := s.open(); err != nil || s.done {
 			return nil, err
 		}
@@ -282,8 +283,10 @@ func (s *packedRefsSource) Next() (*plumbing.Reference, error) {
 		return ref, nil
 	}
 
-	for s.scanner.Scan() {
-		ref, past, err := s.matchLine(s.scanner.Text())
+	for s.rest != "" {
+		var line string
+		line, s.rest, _ = strings.Cut(s.rest, "\n")
+		ref, past, err := s.matchLine(line)
 		if err != nil {
 			return nil, err
 		}
@@ -294,18 +297,15 @@ func (s *packedRefsSource) Next() (*plumbing.Reference, error) {
 			return ref, nil
 		}
 	}
-	if err := s.scanner.Err(); err != nil {
-		return nil, err
-	}
 
 	s.Close()
 	return nil, io.EOF
 }
 
-// open reads the header and, for a file without the sorted trait, collects
-// and sorts every match. It marks the source done if packed-refs is missing.
+// open reads packed-refs and, unless it is sorted, collects and sorts every
+// match. It marks the source done if packed-refs is missing.
 func (s *packedRefsSource) open() error {
-	f, err := s.d.fs.Open(packedRefsPath)
+	b, err := util.ReadFile(s.d.fs, packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.done = true
@@ -314,51 +314,44 @@ func (s *packedRefsSource) open() error {
 
 		return err
 	}
-	s.file = f
-	s.scanner = bufio.NewScanner(f)
+	content := string(b)
 
-	var first string
-	if s.scanner.Scan() {
-		first = s.scanner.Text()
-		// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L740-L763
-		if traits, ok := strings.CutPrefix(first, packedRefsHeader); ok {
-			s.sorted = slices.Contains(strings.Split(traits, " "), "sorted")
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L740-L763
+	first, rest, _ := strings.Cut(content, "\n")
+	if traits, ok := strings.CutPrefix(first, packedRefsHeader); ok &&
+		slices.Contains(strings.Split(traits, " "), "sorted") {
+		s.sorted = true
+		var prev string
+		for line := range strings.Lines(rest) {
+			if _, name, ok, _ := parsePackedRefLine(strings.TrimSuffix(line, "\n")); ok {
+				if name < prev {
+					s.sorted = false
+					break
+				}
+				prev = name
+			}
 		}
 	}
-	if err := s.scanner.Err(); err != nil {
-		return err
-	}
-
 	if s.sorted {
+		s.rest = rest
 		return nil
 	}
 
-	// The first line is a reference when there is no header.
-	collect := func(line string) error {
-		ref, _, err := s.matchLine(line)
+	// Without a header, the first line is a reference too.
+	for line := range strings.Lines(content) {
+		ref, _, err := s.matchLine(strings.TrimSuffix(line, "\n"))
+		if err != nil {
+			return err
+		}
 		if ref != nil {
 			s.unsorted = append(s.unsorted, ref)
 		}
-		return err
-	}
-	if err := collect(first); err != nil {
-		return err
-	}
-	for s.scanner.Scan() {
-		if err := collect(s.scanner.Text()); err != nil {
-			return err
-		}
-	}
-	if err := s.scanner.Err(); err != nil {
-		return err
 	}
 
 	// Stable, so the first of repeated names stays first, as in Refs.
 	slices.SortStableFunc(s.unsorted, func(a, b *plumbing.Reference) int {
 		return strings.Compare(a.Name().String(), b.Name().String())
 	})
-	_ = s.file.Close()
-	s.file = nil
 	return nil
 }
 
@@ -379,9 +372,6 @@ func (s *packedRefsSource) matchLine(line string) (ref *plumbing.Reference, past
 
 func (s *packedRefsSource) Close() {
 	s.done = true
+	s.rest = ""
 	s.unsorted = nil
-	if s.file != nil {
-		_ = s.file.Close()
-		s.file = nil
-	}
 }
