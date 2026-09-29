@@ -38,8 +38,8 @@ type PrefixReferenceIterer interface {
 	// IterReferencesWithPrefix returns an iterator over the references whose
 	// names start with prefix, each name once, in ascending byte-wise name
 	// order. It need not read references outside prefix, so it may not
-	// report errors that reading those would. The iterator may hold files
-	// open, so callers must Close it unless they exhaust it or use ForEach.
+	// report errors that reading those would. As with IterReferences, a
+	// caller that stops before the end should Close the iterator.
 	//
 	// Matching is byte-wise: "refs/heads/fe" matches "refs/heads/feature".
 	// Use a trailing slash to select a namespace: "refs/remotes/origin/"
@@ -47,9 +47,11 @@ type PrefixReferenceIterer interface {
 	// Both matching and order follow Git's reference backends:
 	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/refs-internal.h#L460-L466
 	//
-	// Like git for-each-ref, implementations may skip references they
-	// cannot read, such as an empty loose ref file, rather than fail. Do not
-	// use it to find the objects that must be kept: Git reports broken
+	// Like git for-each-ref, it skips references the storage cannot read,
+	// such as an empty loose ref file, which IterReferences reports with the
+	// all-zero ID, rather than fail. It may also leave out entries the
+	// storage does not treat as references, as Git does for "*.lock" files.
+	// Do not use it to find the objects that must be kept: Git reports broken
 	// references to reachability walks so that gc does not prune what they
 	// might have pointed at:
 	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L1859-L1868
@@ -59,7 +61,9 @@ type PrefixReferenceIterer interface {
 // IterReferencesWithPrefix returns an iterator over the references in s whose
 // names start with prefix, in ascending byte-wise name order. It uses s's
 // PrefixReferenceIterer implementation when available, and otherwise filters
-// and sorts all of s.IterReferences, keeping the first of repeated names.
+// and sorts all of s.IterReferences, keeping the first of repeated names and
+// leaving out references with the all-zero ID, which storage reports for
+// references it cannot read.
 func IterReferencesWithPrefix(s ReferenceStorer, prefix string) (ReferenceIter, error) {
 	if p, ok := s.(PrefixReferenceIterer); ok {
 		return p.IterReferencesWithPrefix(prefix)
@@ -72,7 +76,7 @@ func IterReferencesWithPrefix(s ReferenceStorer, prefix string) (ReferenceIter, 
 
 	var refs []*plumbing.Reference
 	err = iter.ForEach(func(r *plumbing.Reference) error {
-		if strings.HasPrefix(r.Name().String(), prefix) {
+		if strings.HasPrefix(r.Name().String(), prefix) && !brokenReference(r) {
 			refs = append(refs, r)
 		}
 		return nil
@@ -88,6 +92,12 @@ func IterReferencesWithPrefix(s ReferenceStorer, prefix string) (ReferenceIter, 
 		return a.Name() == b.Name()
 	})
 	return NewReferenceSliceIter(refs), nil
+}
+
+// brokenReference reports whether r is a hash reference with the all-zero ID,
+// which storage reports for a reference it cannot read.
+func brokenReference(r *plumbing.Reference) bool {
+	return r.Type() == plumbing.HashReference && r.Hash().IsZero()
 }
 
 // ReferenceIter is a generic closable interface for iterating over references.
