@@ -108,3 +108,32 @@ func must[T any](v T, err error) T {
 	}
 	return v
 }
+
+// Removing a packed annotated tag also removes its peeled line. Left behind,
+// git attaches it to the preceding ref, so git show-ref --dereference and
+// the refs advertised to fetching clients would give that ref the tag's
+// commit as its peeled value.
+func TestRemoveReferenceDropsPeeledLine(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	packRefsGit(t, dir, "-c", "init.defaultBranch=main", "init", "-q")
+	if _, err := os.Stat(filepath.Join(dir, ".git", "reftable")); err == nil {
+		t.Skip("git defaults to the reftable backend")
+	}
+	packRefsGit(t, dir, "-c", "user.name=a", "-c", "user.email=a@example.com", "commit", "-q", "--allow-empty", "-m", "a")
+	packRefsGit(t, dir, "-c", "user.name=a", "-c", "user.email=a@example.com", "tag", "-a", "-m", "v1", "v1")
+	packRefsGit(t, dir, "pack-refs", "--all")
+
+	sto := filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
+	require.NoError(t, sto.RemoveReference("refs/tags/v1"))
+	require.NoError(t, sto.Close())
+
+	content, err := os.ReadFile(filepath.Join(dir, ".git", "packed-refs"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(content), "\n^")
+	assert.NotContains(t, packRefsGit(t, dir, "show-ref", "--dereference"), "^{}")
+}

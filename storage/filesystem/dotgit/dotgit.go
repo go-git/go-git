@@ -1512,16 +1512,22 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 	}()
 
 	s := bufio.NewScanner(pr)
-	found := false
+	found, dropping := false, false
 	for s.Scan() {
 		line := s.Text()
+		// A peeled line belongs to the reference before it, and goes with it.
+		if dropping && strings.HasPrefix(line, "^") {
+			continue
+		}
+		dropping = false
+
 		ref, err := d.processLine(line)
 		if err != nil {
 			return err
 		}
 
 		if ref != nil && ref.Name() == name {
-			found = true
+			found, dropping = true, true
 			continue
 		}
 
