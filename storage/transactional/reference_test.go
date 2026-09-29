@@ -2,6 +2,7 @@ package transactional
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -222,4 +223,31 @@ func (s *ReferenceSuite) TestIterReferencesReportsErrors() {
 		_, err := rs.IterReferences()
 		s.ErrorIs(err, errReferencesUnreadable, name)
 	}
+}
+
+// failingRemoveStorer fails RemoveReference, leaving the reference in place.
+type failingRemoveStorer struct {
+	storer.ReferenceStorer
+}
+
+func (failingRemoveStorer) RemoveReference(plumbing.ReferenceName) error {
+	return errReferencesUnreadable
+}
+
+// A removal that fails in the temporal storer still hides the reference, as
+// Reference does, rather than leaving IterReferences to list it.
+func (s *ReferenceSuite) TestIterReferencesHidesFailedTemporalRemoval() {
+	temporal := memory.NewStorage()
+	rs := NewReferenceStorage(memory.NewStorage(), failingRemoveStorer{temporal})
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings(
+		"refs/heads/main", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52",
+	)))
+	s.Require().ErrorIs(rs.RemoveReference("refs/heads/main"), errReferencesUnreadable)
+
+	_, err := rs.Reference("refs/heads/main")
+	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+	iter, err := rs.IterReferences()
+	s.Require().NoError(err)
+	_, err = iter.Next()
+	s.ErrorIs(err, io.EOF)
 }

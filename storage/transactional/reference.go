@@ -82,6 +82,11 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 		return nil, err
 	}
 	if err := temporalIter.ForEach(func(ref *plumbing.Reference) error {
+		// RemoveReference records the removal before removing the temporal
+		// reference, so a failed removal can leave one behind.
+		if _, deleted := r.deleted[ref.Name()]; deleted {
+			return nil
+		}
 		if !seen[ref.Name()] {
 			seen[ref.Name()] = true
 			refs = append(refs, ref)
