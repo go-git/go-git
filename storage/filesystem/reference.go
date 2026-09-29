@@ -62,7 +62,7 @@ func (r *ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 }
 
 // IterReferencesWithPrefix implements storer.PrefixReferenceIterer with lazy,
-// prefix-scoped reads. The iterator must be closed.
+// prefix-scoped reads.
 func (r *ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
 	return r.dir.RefsWithPrefix(prefix)
 }

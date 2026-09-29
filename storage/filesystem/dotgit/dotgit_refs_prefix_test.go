@@ -232,6 +232,10 @@ func TestRefsWithPrefixReleasesPackedRefs(t *testing.T) {
 		"CloseUnused": func(iter storer.ReferenceIter) {
 			iter.Close()
 		},
+		// Branches and Tags callers commonly read one result and walk away.
+		"AbandonedAfterFirst": func(iter storer.ReferenceIter) {
+			_, _ = iter.Next()
+		},
 	} {
 		for _, sorted := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/sorted=%v", name, sorted), func(t *testing.T) {
@@ -248,8 +252,10 @@ func TestRefsWithPrefixReleasesPackedRefs(t *testing.T) {
 				consume(iter)
 				assert.Zero(t, counting.open.Load())
 
-				_, err = iter.Next()
-				assert.ErrorIs(t, err, io.EOF, "a released iterator yields nothing more")
+				if name != "AbandonedAfterFirst" {
+					_, err = iter.Next()
+					assert.ErrorIs(t, err, io.EOF, "a released iterator yields nothing more")
+				}
 			})
 		}
 	}
@@ -392,6 +398,36 @@ func TestBrokenLooseRefReaders(t *testing.T) {
 			assert.Equal(t, []string{hashA + " refs/heads/main"}, collectRefs(t, iter))
 		})
 	}
+}
+
+// A packed-refs file claiming the sorted trait is only trusted once its
+// names are checked to ascend. Otherwise a lying header would end the scan
+// early, hiding later matches, and leave a repeated name apart from its
+// first, so that the merge would yield it twice.
+func TestRefsWithPrefixChecksSortedClaim(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	writeFile(t, fs, "packed-refs", "# pack-refs with: peeled fully-peeled sorted \n"+
+		hashA+" refs/heads/main\n"+
+		hashA+" refs/tags/v1\n"+
+		hashB+" refs/heads/feature\n"+
+		hashB+" refs/heads/main\n")
+	dir := New(fs)
+
+	iter, err := dir.RefsWithPrefix("refs/heads/")
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		hashB + " refs/heads/feature",
+		hashA + " refs/heads/main",
+	}, collectRefs(t, iter))
+
+	all, err := dir.Refs()
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		hashB + " refs/heads/feature",
+		hashA + " refs/heads/main",
+		hashA + " refs/tags/v1",
+	}, collectRefs(t, storer.NewReferenceSliceIter(all)))
 }
 
 type openCountingFS struct {
