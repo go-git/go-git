@@ -1485,6 +1485,46 @@ func (s *SuiteDotGit) TestPackRefsSortsFileWithoutLooseRefs() {
 	}
 }
 
+// Existing packed records are kept verbatim: a peeled line stays with its
+// tag, and an ID PackRefs cannot parse is not rewritten as the zero ID, with
+// or without loose references to pack.
+func (s *SuiteDotGit) TestPackRefsKeepsPackedRecordsVerbatim() {
+	const (
+		tag   = "e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"
+		bad   = "not-a-hex-id refs/heads/bad\n"
+		other = "a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/other\n"
+		loose = "b8d3ffab552895c19b9fcf7aa264d277cde33881"
+	)
+	for _, withLoose := range []bool{false, true} {
+		s.Run(fmt.Sprintf("loose=%v", withLoose), func() {
+			fs := s.EmptyFS()
+			dir := New(fs)
+			s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(tag+bad+other), 0o644))
+			want := "# pack-refs with: sorted \n" + bad + other + tag
+			if withLoose {
+				s.Require().NoError(util.WriteFile(fs, "refs/heads/main", []byte(loose+"\n"), 0o644))
+				want = "# pack-refs with: sorted \n" + bad + loose + " refs/heads/main\n" + other + tag
+			}
+
+			s.Require().NoError(dir.PackRefs())
+
+			content, err := util.ReadFile(fs, packedRefsPath)
+			s.Require().NoError(err)
+			s.Equal(want, string(content))
+		})
+	}
+}
+
+func (s *SuiteDotGit) TestPackRefsRejectsPeeledLineWithoutRef() {
+	fs := s.EmptyFS()
+	s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(
+		"^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"+
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n",
+	), 0o644))
+
+	s.ErrorIs(New(fs).PackRefs(), ErrPackedRefsBadFormat)
+}
+
 func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	fs := s.EmptyFS()
 	dir := New(fs)

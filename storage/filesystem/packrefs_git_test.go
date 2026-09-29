@@ -88,4 +88,23 @@ func TestPackRefsIsReadByGit(t *testing.T) {
 
 	packRefsGit(t, dir, "pack-refs", "--all")
 	assert.Equal(t, wantList, listRefs())
+
+	// Over a file git wrote, with peeled lines, packing a new loose ref
+	// keeps every other record and its peeled value.
+	packRefsGit(t, dir, "update-ref", "refs/heads/new", a)
+	wantList, wantShow = listRefs(), showRefs()
+	require.Contains(t, string(must(os.ReadFile(filepath.Join(dir, ".git", "packed-refs")))), "\n^")
+	sto = filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
+	require.NoError(t, sto.PackRefs())
+	require.NoError(t, sto.Close())
+	assert.Equal(t, wantList, listRefs())
+	assert.Equal(t, wantShow, showRefs())
+	assert.Contains(t, string(must(os.ReadFile(filepath.Join(dir, ".git", "packed-refs")))), "\n^")
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
