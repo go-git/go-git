@@ -44,6 +44,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/storage/transactional"
 	"github.com/go-git/go-git/v6/x/plugin"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
@@ -3713,6 +3714,37 @@ func (s *RepositorySuite) TestBranchesAndTagsSkipBrokenLooseRefs() {
 	}})
 	s.ErrorIs(err, plumbing.ErrObjectNotFound)
 	s.Zero(pruned)
+}
+
+// Branches lists the same branches whether the storage is used directly or
+// through a transaction over it.
+func (s *RepositorySuite) TestBranchesSameThroughTransaction() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	for name, content := range map[string]string{
+		"refs/heads/truncated":   "",
+		"refs/heads/locked.lock": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+	} {
+		s.Require().NoError(util.WriteFile(dotgit, name, []byte(content), 0o644))
+	}
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+
+	branches := func(st storage.Storer) []string {
+		r, err := Open(st, nil)
+		s.Require().NoError(err)
+		iter, err := r.Branches()
+		s.Require().NoError(err)
+		var names []string
+		s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+			names = append(names, ref.Name().String())
+			return nil
+		}))
+		return names
+	}
+
+	direct := branches(sto)
+	s.NotEmpty(direct)
+	s.Equal(direct, branches(transactional.NewStorage(sto, memory.NewStorage())))
 }
 
 func (s *RepositorySuite) TestNotes() {

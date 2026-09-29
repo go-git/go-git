@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -544,10 +545,8 @@ func TestIterReferencesWithPrefix(t *testing.T) {
 		require.NoError(t, sto.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hashB)))
 		require.NoError(t, sto.RemoveReference("refs/heads/gone"))
 
-		// Transactional storage relies on the fallback.
 		_, ok := sto.(storer.PrefixReferenceIterer)
-		_, isTransactional := sto.(transactional.Storage)
-		assert.Equal(t, !isTransactional, ok)
+		assert.True(t, ok)
 
 		// The same references, in the same order, must come back through the
 		// storage's own implementation and through the fallback that filters
@@ -595,6 +594,33 @@ func TestIterReferencesWithPrefixTransactional(t *testing.T) {
 	want := []string{hashA + " refs/heads/feature", hashB + " refs/heads/main"}
 	assert.Equal(t, want, prefixRefs(t, tx, "refs/heads/"))
 	assert.Equal(t, want, prefixRefs(t, struct{ storer.ReferenceStorer }{tx}, "refs/heads/"), "fallback")
+}
+
+// A transaction lists the same references under a prefix as the storage it
+// wraps, including when that storage skips entries it cannot read or does
+// not treat as references, and adds its own on top.
+func TestIterReferencesWithPrefixTransactionalMatchesBase(t *testing.T) {
+	t.Parallel()
+	const hash = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+
+	fs := memfs.New()
+	base := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	require.NoError(t, base.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hash)))
+	for name, content := range map[string]string{
+		"refs/heads/empty":       "",
+		"refs/heads/garbage":     "garbage\n",
+		"refs/heads/locked.lock": hash + "\n",
+	} {
+		require.NoError(t, util.WriteFile(fs, name, []byte(content), 0o644))
+	}
+	tx := transactional.NewStorage(base, memory.NewStorage())
+
+	want := []string{hash + " refs/heads/main"}
+	assert.Equal(t, want, prefixRefs(t, base, "refs/heads/"))
+	assert.Equal(t, want, prefixRefs(t, tx, "refs/heads/"))
+
+	require.NoError(t, tx.SetReference(plumbing.NewReferenceFromStrings("refs/heads/topic", hash)))
+	assert.Equal(t, []string{hash + " refs/heads/main", hash + " refs/heads/topic"}, prefixRefs(t, tx, "refs/heads/"))
 }
 
 func TestSetShallowAndShallow(t *testing.T) {
