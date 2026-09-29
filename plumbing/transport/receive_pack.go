@@ -526,6 +526,20 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 			continue
 		}
 
+		// A reference may only point at an object the repository holds. Git
+		// refuses "trying to write ref with nonexistent object" at the ref
+		// transaction (refs.c) and "missing necessary objects" at receive-pack
+		// (builtin/receive-pack.c), so a client cannot leave a ref dangling at
+		// an object the packfile never delivered. A valid push is unaffected —
+		// its objects are unpacked before this runs. A delete carries a zero
+		// New and is exempt.
+		if cmd.Action() != packp.Delete {
+			if err := st.HasEncodedObject(cmd.New); err != nil {
+				setStatus(cmdStatus, firstErr, cmd.Name, ErrMissingObject)
+				continue
+			}
+		}
+
 		switch cmd.Action() {
 		case packp.Create:
 			if exists {
