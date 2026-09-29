@@ -7,36 +7,34 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
-	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 type httpService struct {
 	pattern *regexp.Regexp
 	method  string
-	handler func(b *Backend, w http.ResponseWriter, r *http.Request, repo, file, svc string)
+	handler func(b *Backend, w http.ResponseWriter, r *http.Request, repo, svc string)
 	svc     string
 }
 
 var httpServices = []httpService{
-	{regexp.MustCompile("(.*?)/HEAD$"), http.MethodGet, (*Backend).handleDumbTextFile, ""},
+	{regexp.MustCompile("(.*?)/HEAD$"), http.MethodGet, (*Backend).handleDumbRequest, ""},
 	{regexp.MustCompile("(.*?)/info/refs$"), http.MethodGet, (*Backend).handleInfoRefs, ""},
-	{regexp.MustCompile("(.*?)/objects/info/alternates$"), http.MethodGet, (*Backend).handleDumbTextFile, ""},
-	{regexp.MustCompile("(.*?)/objects/info/http-alternates$"), http.MethodGet, (*Backend).handleDumbTextFile, ""},
-	{regexp.MustCompile("(.*?)/objects/info/packs$"), http.MethodGet, (*Backend).handleDumbInfoPacks, ""},
-	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38,62}$"), http.MethodGet, (*Backend).handleDumbLooseObject, ""},
-	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40,64}\.pack$`), http.MethodGet, (*Backend).handleDumbPackFile, ""},
-	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40,64}\.idx$`), http.MethodGet, (*Backend).handleDumbIdxFile, ""},
+	{regexp.MustCompile("(.*?)/objects/info/alternates$"), http.MethodGet, (*Backend).handleDumbRequest, ""},
+	{regexp.MustCompile("(.*?)/objects/info/http-alternates$"), http.MethodGet, (*Backend).handleDumbRequest, ""},
+	{regexp.MustCompile("(.*?)/objects/info/packs$"), http.MethodGet, (*Backend).handleDumbRequest, ""},
+	{regexp.MustCompile("(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38,62}$"), http.MethodGet, (*Backend).handleDumbRequest, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40,64}\.pack$`), http.MethodGet, (*Backend).handleDumbRequest, ""},
+	{regexp.MustCompile(`(.*?)/objects/pack/pack-[0-9a-f]{40,64}\.idx$`), http.MethodGet, (*Backend).handleDumbRequest, ""},
 	{regexp.MustCompile("(.*?)/git-upload-pack$"), http.MethodPost, (*Backend).handleServiceRPC, transport.UploadPackService},
 	{regexp.MustCompile("(.*?)/git-receive-pack$"), http.MethodPost, (*Backend).handleServiceRPC, transport.ReceivePackService},
 	{regexp.MustCompile("(.*?)/git-upload-archive$"), http.MethodPost, (*Backend).handleServiceRPC, transport.UploadArchiveService},
 }
 
-// ServeHTTP implements [http.Handler]. It supports both smart and dumb
-// HTTP protocols.
+// ServeHTTP implements [http.Handler]. It supports the smart HTTP protocol
+// only. The dumb protocol's requests are recognised so they can be denied,
+// rather than answered as if the endpoint did not exist.
 func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	urlPath := strings.TrimPrefix(r.URL.Path, b.Prefix)
 	for _, s := range httpServices {
@@ -47,8 +45,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			repo := strings.TrimPrefix(m[1], "/")
-			file := strings.Replace(urlPath, repo+"/", "", 1)
-			s.handler(b, w, r, repo, file, s.svc)
+			s.handler(b, w, r, repo, s.svc)
 			return
 		}
 	}
@@ -56,7 +53,7 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	renderStatusError(w, http.StatusNotFound)
 }
 
-func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo, _, svc string) {
+func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo, svc string) {
 	version := r.Header.Get("Git-Protocol")
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 
@@ -116,11 +113,12 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 	}
 }
 
-func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
+func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, _ string) {
 	service := r.URL.Query().Get("service")
 	if service == "" {
-		hdrNocache(w)
-		b.handleDumbSendFile(w, r, repo, file, "text/plain; charset=utf-8")
+		// A request without a service is a dumb client's, and is denied the
+		// same way as the static files it would go on to ask for.
+		b.handleDumbRequest(w, r, repo, "")
 		return
 	}
 
@@ -165,92 +163,13 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, f
 	}
 }
 
-// Dumb HTTP handlers — serve static files from the repository filesystem.
-
-func (b *Backend) handleDumbTextFile(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
-	hdrNocache(w)
-	b.handleDumbSendFile(w, r, repo, file, "text/plain; charset=utf-8")
-}
-
-func (b *Backend) handleDumbInfoPacks(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
-	hdrCacheForever(w)
-	b.handleDumbSendFile(w, r, repo, file, "text/plain; charset=utf-8")
-}
-
-func (b *Backend) handleDumbLooseObject(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
-	hdrCacheForever(w)
-	b.handleDumbSendFile(w, r, repo, file, "application/x-git-loose-object")
-}
-
-func (b *Backend) handleDumbPackFile(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
-	hdrCacheForever(w)
-	b.handleDumbSendFile(w, r, repo, file, "application/x-git-packed-objects")
-}
-
-func (b *Backend) handleDumbIdxFile(w http.ResponseWriter, r *http.Request, repo, file, _ string) {
-	hdrCacheForever(w)
-	b.handleDumbSendFile(w, r, repo, file, "application/x-git-packed-objects-toc")
-}
-
-func (b *Backend) handleDumbSendFile(w http.ResponseWriter, _ *http.Request, repo, file, contentType string) {
-	loader := b.Loader
-	if loader == nil {
-		loader = transport.DefaultLoader
-	}
-
-	ep, err := transport.ParseURL(repo)
-	if err != nil {
-		b.logf("error parsing URL: %v", err)
-		renderStatusError(w, http.StatusBadRequest)
-		return
-	}
-
-	st, err := loader.Load(ep)
-	if err != nil {
-		b.logf("error loading repository: %v", err)
-		renderStatusError(w, http.StatusNotFound)
-		return
-	}
-	defer func() {
-		if closer, ok := st.(io.Closer); ok {
-			_ = closer.Close()
-		}
-	}()
-
-	fss, ok := st.(storer.FilesystemStorer)
-	if !ok {
-		renderStatusError(w, http.StatusNotFound)
-		return
-	}
-
-	fs := fss.Filesystem()
-	f, err := fs.Open(file)
-	if err != nil {
-		renderStatusError(w, http.StatusNotFound)
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	stat, err := fs.Lstat(file)
-	if err != nil || !stat.Mode().IsRegular() {
-		renderStatusError(w, http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
-	w.Header().Set("Last-Modified", stat.ModTime().Format(http.TimeFormat))
-
-	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
-	if _, err := ioutil.CopyBufferPool(frw, f); err != nil {
-		b.logf("error writing response: %v", err)
-		if !frw.started.Load() {
-			// Failed before writing any byte — the headers set above are not yet
-			// committed, so surface a real error instead of an implicit 200.
-			renderStatusError(w, http.StatusInternalServerError)
-		}
-		return
-	}
+// handleDumbRequest denies a request belonging to the dumb HTTP protocol. git
+// http-backend serves those static files only while http.getanyfile is set,
+// and answers 403 otherwise. Not serving them is the only mode this backend
+// offers, so the denial is unconditional.
+func (b *Backend) handleDumbRequest(w http.ResponseWriter, _ *http.Request, _, _ string) {
+	b.logf("dumb HTTP protocol is not supported")
+	renderStatusError(w, http.StatusForbidden)
 }
 
 func (b *Backend) requireReceivePackAuth(w http.ResponseWriter, r *http.Request, service string) bool {
@@ -271,12 +190,4 @@ func hdrNocache(w http.ResponseWriter) {
 	w.Header().Set("Expires", "Fri, 01 Jan 1980 00:00:00 GMT")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
-}
-
-func hdrCacheForever(w http.ResponseWriter) {
-	now := time.Now()
-	expires := now.Add(365 * 24 * time.Hour)
-	w.Header().Set("Date", now.Format(http.TimeFormat))
-	w.Header().Set("Expires", expires.Format(http.TimeFormat))
-	w.Header().Set("Cache-Control", "public, max-age=31536000")
 }

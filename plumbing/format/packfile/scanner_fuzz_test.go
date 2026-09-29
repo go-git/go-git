@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-func FuzzScanner(f *testing.F) {
+func FuzzPackfileScanner(f *testing.F) {
 	// Seed from a real packfile when available.
 	if pf, err := fixtures.Basic().One().Packfile(); err == nil {
 		if data, err := io.ReadAll(pf); err == nil {

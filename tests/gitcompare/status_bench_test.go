@@ -37,6 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 )
 
 // compareRepoEnv names an existing checkout to measure alongside the fixtures.
@@ -52,7 +53,8 @@ func requireGit(b *testing.B) {
 // runGit executes a git command that is expected to succeed.
 func runGit(b *testing.B, dir string, args ...string) {
 	b.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	cmd := gitenv.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
 	require.NoError(b, err, "git %v: %s", args, out)
 }
 
@@ -100,12 +102,14 @@ func benchGitStatus(dir string, readOnly bool) func(*testing.B) {
 		// One untimed invocation first. On a fresh fixture it populates the
 		// index stat cache that steady-state use would already have, so the
 		// measurement is not dominated by a cost paid once.
-		if _, err := exec.Command("git", args...).Output(); err != nil {
+		warm := gitenv.Command("git", args...)
+		if _, err := warm.Output(); err != nil {
 			b.Fatalf("git status: %v", err)
 		}
 
 		for b.Loop() {
-			if _, err := exec.Command("git", args...).Output(); err != nil {
+			cmd := gitenv.Command("git", args...)
+			if _, err := cmd.Output(); err != nil {
 				b.Fatalf("git status: %v", err)
 			}
 		}

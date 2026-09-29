@@ -209,6 +209,27 @@ func TestSupportsExtension(t *testing.T) {
 	}
 }
 
+func TestCheckAndSetReferenceDoesNotRecreateRemovedReference(t *testing.T) {
+	t.Parallel()
+
+	s := memory.NewStorage()
+	old := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	updated := plumbing.NewHashReference(plumbing.Master, plumbing.NewHash("2222222222222222222222222222222222222222"))
+	require.NoError(t, s.SetReference(old))
+	observed, err := s.Reference(plumbing.Master)
+	require.NoError(t, err)
+	require.NoError(t, s.RemoveReference(plumbing.Master))
+
+	require.ErrorIs(t, s.CheckAndSetReference(updated, observed), plumbing.ErrReferenceNotFound)
+	_, err = s.Reference(plumbing.Master)
+	require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+
+	require.NoError(t, s.CheckAndSetReference(updated, nil))
+	current, err := s.Reference(plumbing.Master)
+	require.NoError(t, err)
+	require.Equal(t, updated, current)
+}
+
 func TestReflogStorage(t *testing.T) {
 	t.Parallel()
 

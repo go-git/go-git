@@ -78,6 +78,9 @@ func errMalformedCommand(err error) error {
 }
 
 // Decode reads the next update-request message from the reader.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L2562-L2566
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/pkt-line.c#L466-L493
 func (req *UpdateRequests) Decode(r io.Reader) error {
 	var (
 		payload []byte
@@ -168,7 +171,9 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 			break
 		}
 
-		cmd, err := parseCommand(payload)
+		// Match receive-pack's PACKET_READ_CHOMP_NEWLINE without stripping
+		// whitespace that belongs to the reference name.
+		cmd, err := parseCommand(bytes.TrimSuffix(payload, eol))
 		if err != nil {
 			return err
 		}
@@ -183,33 +188,42 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 	return validateUpdateRequests(req)
 }
 
+// parseCommand preserves the complete reference name after the two object IDs.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L2144-L2152.
 func parseCommand(b []byte) (*Command, error) {
 	if len(b) < minCommandLength {
 		return nil, errInvalidCommandLineLength(len(b))
 	}
 
-	var (
-		os, ns string
-		n      plumbing.ReferenceName
-	)
-	if _, err := fmt.Sscanf(string(b), "%s %s %s", &os, &ns, &n); err != nil {
-		return nil, errMalformedCommand(err)
+	oldHex, rest, ok := bytes.Cut(b, []byte{' '})
+	if !ok {
+		return nil, errMalformedCommand(io.EOF)
+	}
+	newHex, name, ok := bytes.Cut(rest, []byte{' '})
+	if !ok || len(name) == 0 {
+		return nil, errMalformedCommand(io.EOF)
 	}
 
-	oh, err := parseHash(os)
+	oh, err := parseHash(string(oldHex))
 	if err != nil {
 		return nil, errInvalidOldObjID(err)
 	}
 
-	nh, err := parseHash(ns)
+	nh, err := parseHash(string(newHex))
 	if err != nil {
 		return nil, errInvalidNewObjID(err)
 	}
 
-	return &Command{Old: oh, New: nh, Name: n}, nil
+	// Git's queue_command (builtin/receive-pack.c) keeps the entire remainder
+	// after the two object IDs. The receive-pack name gate must see whitespace
+	// in that remainder rather than update a different, truncated reference.
+	return &Command{Old: oh, New: nh, Name: plumbing.ReferenceName(name)}, nil
 }
 
 func parseHash(s string) (plumbing.Hash, error) {
+	if len(s) != sha1HexSize && len(s) != sha256HexSize {
+		return plumbing.ZeroHash, errInvalidHash(s)
+	}
 	h, ok := plumbing.FromHex(s)
 	if !ok {
 		return plumbing.ZeroHash, errInvalidHash(s)

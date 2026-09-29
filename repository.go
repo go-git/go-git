@@ -864,9 +864,18 @@ func (r *Repository) Branch(name string) (*config.Branch, error) {
 	return b, nil
 }
 
-// CreateBranch creates a new Branch
+// CreateBranch creates a new branch configuration. The name must satisfy
+// plumbing.ValidateBranchName; these creation rules do not apply when reading
+// existing branch configurations.
 func (r *Repository) CreateBranch(c *config.Branch) error {
 	if err := c.Validate(); err != nil {
+		return err
+	}
+
+	// The creation rules live here rather than in Branch.Validate, which also
+	// runs when a config file is read: a repository whose config already names
+	// a branch go-git would decline to create still has to open.
+	if err := plumbing.ValidateBranchName(c.Name); err != nil {
 		return err
 	}
 
@@ -902,11 +911,13 @@ func (r *Repository) DeleteBranch(name string) error {
 
 // CreateTag creates a tag. If opts is included, the tag is an annotated tag,
 // otherwise a lightweight tag is created.
+// The shorthand name must satisfy plumbing.ValidateTagName.
 func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
-	rname := plumbing.NewTagReferenceName(name)
-	if err := rname.Validate(); err != nil {
+	if err := plumbing.ValidateTagName(name); err != nil {
 		return nil, err
 	}
+
+	rname := plumbing.NewTagReferenceName(name)
 
 	_, err := r.Storer.Reference(rname)
 	switch err {
@@ -2054,7 +2065,10 @@ type RepackConfig struct {
 	OnlyDeletePacksOlderThan time.Time
 }
 
-// RepackObjects repacks all objects in the repository into a single packfile.
+// RepackObjects packs reachable objects and removes old packs according to cfg.
+// Reachability follows symbolic references. Missing targets are ignored, but
+// other resolution errors, including the recursion limit, stop the operation
+// before it creates a replacement pack or removes existing objects.
 func (r *Repository) RepackObjects(cfg *RepackConfig) (err error) {
 	pos, ok := r.Storer.(storer.PackedObjectStorer)
 	if !ok {

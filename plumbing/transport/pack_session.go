@@ -27,7 +27,7 @@ type Commander interface {
 
 // Transport is implemented by transports that speak the Git pack
 // protocol. Each transport implements this directly — stream transports
-// use the NewStreamSession helper, HTTP handles smart/dumb internally.
+// use the NewStreamSession helper, HTTP handles smart HTTP internally.
 type Transport interface {
 	Handshake(ctx context.Context, req *Request) (Session, error)
 }

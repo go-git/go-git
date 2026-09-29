@@ -8,8 +8,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -21,6 +19,7 @@ import (
 	stdssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -53,10 +52,10 @@ func handlerSSH(s ssh.Session) {
 		return
 	}
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := gitenv.Command(args[0], args[1:]...)
 	// Forward the SSH session environment (notably GIT_PROTOCOL, which the
 	// client sets via Setenv) so git speaks the requested wire version.
-	cmd.Env = append(os.Environ(), s.Environ()...)
+	cmd.Env = append(cmd.Env, s.Environ()...)
 	stdout, _ := cmd.StdoutPipe()
 	stdin, _ := cmd.StdinPipe()
 	stderr, _ := cmd.StderrPipe()

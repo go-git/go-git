@@ -11,7 +11,7 @@ import (
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
-func FuzzDecoder(f *testing.F) {
+func FuzzIndexDecoder(f *testing.F) {
 	// Seed from a real index file when available.
 	if dotgit, err := fixtures.Basic().One().DotGit(); err == nil {
 		if fh, err := dotgit.Open(dotgit.Join("index")); err == nil {

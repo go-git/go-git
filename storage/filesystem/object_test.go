@@ -64,6 +64,24 @@ func (s *FsSuite) TestGetFromPackfile() {
 	}
 }
 
+func (s *FsSuite) TestGetFromPackfileIgnoresPackWithoutIndex() {
+	f := fixtures.Basic().ByTag(".git").ByObjectFormat("sha1").One()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
+
+	orphan, err := fs.Create("objects/pack/pack-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pack")
+	s.Require().NoError(err)
+	s.Require().NoError(orphan.Close())
+
+	o := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+	defer func() { _ = o.Close() }()
+
+	expected := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
+	s.Require().NoError(err)
+	s.Equal(expected, obj.Hash())
+}
+
 func (s *FsSuite) TestIterEncodedObjectsSHA256HashesRoundTrip() {
 	fs, err := fixtures.ByTag(".git").ByObjectFormat("sha256").One().DotGit()
 	s.Require().NoError(err)

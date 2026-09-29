@@ -85,6 +85,21 @@ func Decode(r io.Reader) ([]*Entry, error) {
 	}
 }
 
+// maxQuotedLen limits how much of a malformed field an error quotes back.
+// Reflog lines have no length limit, and quoting expands a byte up to
+// fourfold, so quoting a field whole lets one line produce an error several
+// times its size.
+const maxQuotedLen = 64
+
+// quoteBounded returns b quoted for an error message, truncated to
+// maxQuotedLen bytes.
+func quoteBounded(b []byte) string {
+	if len(b) <= maxQuotedLen {
+		return strconv.Quote(string(b))
+	}
+	return strconv.Quote(string(b[:maxQuotedLen])) + "..."
+}
+
 // decodeLine parses a single reflog line.
 // Format: <old-hash> <new-hash> <name> <<email>> <unix-timestamp> <timezone>\t<message>
 func decodeLine(line []byte) (*Entry, error) {
@@ -97,7 +112,7 @@ func decodeLine(line []byte) (*Entry, error) {
 	}
 	oldHashStr := string(line[:spaceIdx])
 	if !plumbing.IsHash(oldHashStr) {
-		return nil, fmt.Errorf("invalid old hash in reflog entry: %q", oldHashStr)
+		return nil, fmt.Errorf("invalid old hash in reflog entry: %s", quoteBounded(line[:spaceIdx]))
 	}
 	e.OldHash = plumbing.NewHash(oldHashStr)
 	line = line[spaceIdx+1:]
@@ -109,7 +124,7 @@ func decodeLine(line []byte) (*Entry, error) {
 	}
 	newHashStr := string(line[:spaceIdx])
 	if !plumbing.IsHash(newHashStr) {
-		return nil, fmt.Errorf("invalid new hash in reflog entry: %q", newHashStr)
+		return nil, fmt.Errorf("invalid new hash in reflog entry: %s", quoteBounded(line[:spaceIdx]))
 	}
 	e.NewHash = plumbing.NewHash(newHashStr)
 	line = line[spaceIdx+1:]
@@ -149,9 +164,14 @@ func decodeTimestamp(s []byte) (time.Time, error) {
 	// Format: "1234567890 +0000"
 	parts := bytes.Fields(s)
 	if len(parts) != 2 {
-		return time.Time{}, fmt.Errorf("invalid timestamp in reflog entry: %q", s)
+		return time.Time{}, fmt.Errorf("invalid timestamp in reflog entry: %s", quoteBounded(s))
 	}
 
+	// A NumError repeats the string it was given, so reject an over-long
+	// field before ParseInt wraps it into the message.
+	if len(parts[0]) > maxQuotedLen {
+		return time.Time{}, fmt.Errorf("invalid timestamp seconds in reflog entry: %s", quoteBounded(parts[0]))
+	}
 	secs, err := strconv.ParseInt(string(parts[0]), 10, 64)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid timestamp seconds in reflog entry: %w", err)
@@ -159,10 +179,10 @@ func decodeTimestamp(s []byte) (time.Time, error) {
 
 	t := time.Unix(secs, 0)
 
-	tz := string(parts[1])
-	if len(tz) != 5 || (tz[0] != '+' && tz[0] != '-') {
-		return time.Time{}, fmt.Errorf("invalid timezone in reflog entry: %q", tz)
+	if len(parts[1]) != 5 || (parts[1][0] != '+' && parts[1][0] != '-') {
+		return time.Time{}, fmt.Errorf("invalid timezone in reflog entry: %s", quoteBounded(parts[1]))
 	}
+	tz := string(parts[1])
 	h, err := strconv.Atoi(tz[1:3])
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid timezone hours in reflog entry: %w", err)

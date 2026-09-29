@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -17,14 +18,63 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
+// wrapDropped annotates err with the origin crossing that withheld credentials,
+// when there was a crossing, a credential to withhold, and err is an
+// authentication failure. The error keeps its type and message.
+//
+// The credential has to have existed: a caller who configured none and is
+// challenged after a redirect would otherwise be told a credential of theirs
+// was not sent, naming something they never had.
+//
+// The origins are copied out of the record, which outlives this call — it is
+// stored on the session and read again for every later request.
+func wrapDropped(rec *redirectRecord, err error) error {
+	if err == nil {
+		return err
+	}
+	if !rec.withheld() {
+		return err
+	}
+	from, to, ok := rec.origins()
+	if !ok {
+		return err
+	}
+	if !errors.Is(err, transport.ErrAuthenticationRequired) &&
+		!errors.Is(err, transport.ErrAuthorizationFailed) {
+		return err
+	}
+	// originOf again on values that are already origins: it is what makes the
+	// copies, so a caller mutating the error cannot reach the session's record.
+	return fmt.Errorf("%w: %w", err, &transport.CredentialsDroppedError{
+		From: originOf(from),
+		To:   originOf(to),
+	})
+}
+
+// sessionBase is the state every session carries, in one value. Both session
+// types embed it, so a field added here reaches both without a signature to
+// thread it through.
+type sessionBase struct {
+	client     *http.Client
+	baseURL    *url.URL
+	service    string
+	authorizer Authorizer
+	dropped    *redirectRecord
+}
+
 // Handshake implements transport.Transport. GETs /info/refs to discover
-// refs and detects smart vs dumb HTTP.
+// refs. Only the smart HTTP protocol is supported.
 func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
 	service := req.Command
-	baseURL := req.URL
-	forceDumb := t.opts.ForceDumb
+	// The caller's URL with its path in the spelling the requests will carry;
+	// everything downstream compares against this base. See effectiveBase.
+	baseURL, err := effectiveBase(req.URL)
+	if err != nil {
+		return nil, err
+	}
 
 	// git archive over HTTP discovers protocol support through the upload-pack
 	// info/refs endpoint and requires Protocol v2 (remote-curl.c). The archive
@@ -36,108 +86,159 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		discoverProtocol = protocol.V2
 	}
 
-	infoURL, err := url.JoinPath(baseURL.String(), "info/refs")
+	d := discovery{service: discoverService, protocol: discoverProtocol}
+
+	// Only the discovery GET carries the initial-request marker, so only it may
+	// follow redirects under the default policy.
+	rec := &redirectRecord{}
+	httpReq, err := d.request(withRedirectRecord(withInitialRequest(ctx), rec), baseURL)
 	if err != nil {
 		return nil, err
 	}
-	if !forceDumb {
-		infoURL += "?service=" + discoverService
-	}
-
-	// Mark this as the initial request so checkRedirect allows
-	// the HTTP client to follow redirects for this discovery request.
-	// Subsequent requests (pack POSTs, object GETs) use a plain
-	// context and will not follow redirects.
-	httpReq, err := http.NewRequestWithContext(withInitialRequest(ctx), http.MethodGet, infoURL, nil)
+	// One authorizer for every credential this handshake holds — the repository
+	// URL's userinfo and whatever the caller supplies for the origin it named —
+	// so there is one thing to withhold rather than two that could disagree.
+	cred0, err := t.acquire(ctx, baseURL, baseURL, false)
 	if err != nil {
 		return nil, fmt.Errorf("http transport: %w", err)
 	}
-
-	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
-	if !forceDumb {
-		if gp := transport.GitProtocolEnv(discoverProtocol); gp != "" {
-			httpReq.Header.Set("Git-Protocol", gp)
-		}
+	var configured Authorizer
+	if cred0 != nil {
+		configured = cred0.credential.Authorizer
 	}
-	if baseURL.User != nil {
-		password, _ := baseURL.User.Password()
-		httpReq.SetBasicAuth(baseURL.User.Username(), password)
-	}
-	if t.opts.Authorizer != nil {
-		if err := t.opts.Authorizer(httpReq); err != nil {
-			return nil, fmt.Errorf("http transport: authorize: %w", err)
-		}
+	authorizer := combine(basicAuth(baseURL.User), configured)
+	// Recorded before the request goes out, and read back only on an
+	// authentication failure. See redirectRecord.held.
+	rec.holdsCredential(authorizer != nil)
+	if err := applyAuth(httpReq, authorizer); err != nil {
+		return nil, fmt.Errorf("http transport: authorize: %w", err)
 	}
 
 	client := t.resolveClient()
 	resp, err := doRequest(client, httpReq)
+
+	// Retry once at the origin a redirect reached, if it challenged. See
+	// reauthenticate.
+	reacq, resp, err := t.reauthenticate(ctx, client, baseURL, d, resp, err)
 	if err != nil {
-		return nil, fmt.Errorf("http transport: %w", err)
+		// doRequest returns a non-nil response with its error for any non-2xx,
+		// and checkError has already read what it needs of the body.
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		// A credential was minted for the origin this failed at, so the
+		// caller's own credential being withheld is not what went wrong.
+		if reacq != nil {
+			return nil, fmt.Errorf("http transport: %w", err)
+		}
+		return nil, fmt.Errorf("http transport: %w", wrapDropped(rec, err))
 	}
 
-	if err := checkError(resp); err != nil {
-		_ = resp.Body.Close()
-		return nil, err
-	}
-
-	// Update base URL from the final redirect target.
 	redirectedURL, err := applyRedirect(resp, baseURL)
 	if err != nil {
 		_ = resp.Body.Close()
-		return nil, err
+		return nil, fmt.Errorf("http transport: %w", wrapDropped(rec, err))
 	}
-	sessReq := *req
-	sessReq.URL = redirectedURL
-	authorizer := t.opts.Authorizer
+	// Copy before clearing: applyRedirect returns baseURL itself when the
+	// redirect changed nothing, and baseURL belongs to the caller. Cleared
+	// unconditionally, so a credential reaches the wire only through the
+	// authorizer below and not by a second route no rule governs.
+	cleared := *redirectedURL
+	cleared.User = nil
+	sessURL := &cleared
 
-	// Clear credentials when the redirect left the origin they were issued
-	// for. The session stores baseURL and re-applies its User field and the
-	// Authorizer callback on every subsequent POST, so without this the
-	// original origin's credentials would be sent to the new one.
-	//
-	// This uses the same predicate as stripCredentials, so the discovery GET
-	// and the session that follows it agree on what an origin is. In canonical
-	// git, credential_from_url() re-derives credentials from the new URL,
-	// effectively wiping the old ones.
-	//
-	// The two are deliberately asymmetric in one respect: stripCredentials is
-	// sticky over the whole chain, so an origin -> evil -> origin redirect
-	// leaves the discovery GET's later hops unauthenticated even though the
-	// chain returned home. This check instead compares baseURL only against
-	// the final redirectedURL, so the same round trip leaves the session
-	// authenticated. That is not a leak — redirectedURL's origin is the
-	// original one — but it means such a chain can make the discovery GET
-	// anonymous while the session's POSTs are authenticated, which can surface
-	// as a confusing 401 rather than a credential exposure.
-	if !credentialsMayFollow(baseURL, redirectedURL) {
-		// Copy before clearing rather than writing through redirectedURL:
-		// applyRedirect returns baseURL itself when the redirect changed
-		// nothing, and baseURL belongs to the caller. That aliasing cannot
-		// currently reach this branch — an aliased URL is trivially the same
-		// origin as itself — so this keeps the two functions independent
-		// rather than fixing a live bug: neither can make the other unsafe
-		// by changing later.
-		cleared := *redirectedURL
-		cleared.User = nil
-		sessReq.URL = &cleared
+	// Re-acquire after an origin or path move, so the session's one authorizer
+	// is not reused for a target the server rather than the caller chose. The
+	// record preserves a sticky crossing the endpoints alone would not show;
+	// paths are compared escaped, for the reason applyRedirect gives.
+	if rec.crossed() || redirectedURL.EscapedPath() != baseURL.EscapedPath() {
+		// Both halves of the hop-0 credential are re-derived below, each under
+		// the relation deciding whether it may travel to where the chain ended
+		// up; anything not re-derived stays gone, as in canonical git's
+		// credential_from_url().
+
+		// The credential the retry already spent, when there was one:
+		// reauthenticate derives it from both sources under these same relations
+		// against this same target, so reuse it rather than asking the caller a
+		// question they have answered.
+		settled := reacq
+		if settled == nil {
+			// Nothing was spent, so derive both halves here, under the same
+			// relations reauthenticate uses.
+			var fromURL Authorizer
+			if credentialsMayFollow(baseURL, redirectedURL) {
+				fromURL = basicAuth(baseURL.User)
+			}
+
+			cred, aerr := t.acquire(ctx, redirectedURL, baseURL, true)
+			if aerr != nil {
+				_ = resp.Body.Close()
+				return nil, fmt.Errorf("http transport: %w", aerr)
+			}
+			var fromHook Authorizer
+			if cred != nil {
+				fromHook = cred.credential.Authorizer
+			}
+
+			// Hop 0's order, as in reauthenticate.
+			settled = &originCredential{
+				origin:     originOf(redirectedURL),
+				credential: &Credential{Authorizer: combine(fromURL, fromHook)},
+			}
+		}
+
+		// Defense in depth: retain the settled credential only at the origin it
+		// was acquired for. Unreachable while the retry cannot be redirected,
+		// which is the other half of the pair — see errRetryRedirected.
 		authorizer = nil
+		if credentialsMayFollow(settled.origin, redirectedURL) {
+			authorizer = settled.credential.Authorizer
+		}
+	}
+	// No gate on the other path: nothing moved, so every hop satisfied the same
+	// comparison and the credential is already where it is allowed to be.
+
+	// The record annotates the session's later authentication failures with the
+	// crossing, and is only an explanation while the session has no credential:
+	// one minted for its own origin had nothing withheld on the way there, so
+	// naming the crossing would tell the caller to supply what they already
+	// supplied.
+	dropped := rec
+	if authorizer != nil {
+		dropped = nil
 	}
 
-	if forceDumb {
-		return handshakeDumb(resp, &sessReq, client, authorizer)
+	base := sessionBase{
+		client:     client,
+		baseURL:    sessURL,
+		service:    req.Command,
+		authorizer: authorizer,
+		dropped:    dropped,
 	}
-
-	expected := fmt.Sprintf("application/x-%s-advertisement", discoverService)
-	isSmart := resp.Header.Get("Content-Type") == expected
-
-	if isSmart {
-		return handshakeSmart(resp, &sessReq, discoverService, client, authorizer)
-	}
-	return handshakeDumb(resp, &sessReq, client, authorizer)
+	return finishHandshake(resp, base, d)
 }
 
-func handshakeSmart(resp *http.Response, req *transport.Request, discoverService string, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
-	defer resp.Body.Close() //nolint:errcheck
+// finishHandshake opens the session for a discovery response that has already
+// been validated and had its credentials settled, keeping that step out of the
+// redirect and credential handling above it.
+//
+// A response without the smart advertisement's content type is what a dumb
+// server, or something that is not a git server at all, sends. Canonical git
+// falls back to the dumb protocol there (remote-curl.c); go-git does not
+// support it, so the response is rejected.
+func finishHandshake(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
+	if !smartContentType(resp.Header.Get("Content-Type"), d.service) {
+		return nil, notSmartError(resp, base)
+	}
+	return handshakeSmart(resp, base, d)
+}
+
+func handshakeSmart(resp *http.Response, base sessionBase, d discovery) (transport.Session, error) {
+	// The advertisement ends at a flush-pkt, which leaves the rest of the body
+	// — the terminating chunk, on a chunked response — outstanding. The POST
+	// that opens the session follows immediately, so the discard is what
+	// decides whether it reuses this connection.
+	defer drainAndClose(resp.Body)
 	rd := bufio.NewReader(resp.Body)
 
 	_, prefix, err := pktline.PeekLine(rd)
@@ -149,7 +250,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		if err := reply.Decode(rd); err != nil {
 			return nil, err
 		}
-		if reply.Service != discoverService {
+		if reply.Service != d.service {
 			return nil, fmt.Errorf("unexpected service name: %w", transport.ErrInvalidResponse)
 		}
 	}
@@ -160,7 +261,7 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 	}
 
 	// git archive over HTTP is only available when the server speaks v2.
-	if req.Command == transport.UploadArchiveService && ver != protocol.V2 {
+	if base.service == transport.UploadArchiveService && ver != protocol.V2 {
 		return nil, transport.ErrArchiveUnsupported
 	}
 
@@ -180,12 +281,9 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		adv.Capabilities.Set(capability.AllowReachableSHA1InWant)
 		adv.Capabilities.Set(capability.AllowTipSHA1InWant)
 		return &smartPackSession{
-			client:     client,
-			baseURL:    req.URL,
-			service:    req.Command,
-			authorizer: authorizer,
-			version:    ver,
-			caps:       adv.Capabilities,
+			sessionBase: base,
+			version:     ver,
+			caps:        adv.Capabilities,
 		}, nil
 	}
 
@@ -194,49 +292,56 @@ func handshakeSmart(resp *http.Response, req *transport.Request, discoverService
 		return nil, err
 	}
 
-	// Validate capabilities before returning the session.
 	if err := capability.Validate(&ar.Capabilities); err != nil {
 		return nil, err
 	}
 
-	// Source the advertisement's version from the version DiscoverVersion
-	// already established, keeping the session the single source of truth
-	// rather than AdvRefs.Decode's independent parse of the same line.
+	// Take the version from DiscoverVersion rather than AdvRefs.Decode's
+	// independent parse of the same line, so there is one source of truth.
 	ar.Version = ver
 
 	return &smartPackSession{
-		client:     client,
-		baseURL:    req.URL,
-		service:    req.Command,
-		authorizer: authorizer,
-		version:    ver,
-		caps:       ar.Capabilities,
-		refs:       ar,
+		sessionBase: base,
+		version:     ver,
+		caps:        ar.Capabilities,
+		refs:        ar,
 	}, nil
 }
 
-func handshakeDumb(resp *http.Response, req *transport.Request, client *http.Client, authorizer func(*http.Request) error) (transport.Session, error) {
-	defer resp.Body.Close() //nolint:errcheck
-	rd := bufio.NewReader(resp.Body)
+// maxQuotedBodySize caps how much of a rejected /info/refs body is quoted back
+// in the error. Enough to recognise what the server sent, not enough to paste
+// a page into a log line.
+const maxQuotedBodySize = 256
 
-	var infoRefs packp.InfoRefs
-	if err := infoRefs.Decode(rd); err != nil {
-		return nil, err
+// notSmartError describes a discovery response that is not a smart
+// advertisement, in terms a caller can act on: which URL was fetched and what
+// the server said it was serving — the difference between "not a smart
+// server" and "that host answered your clone with an HTML sign-in page".
+//
+// The body is quoted only when it is plain text, matching git's
+// show_http_message: other types are markup meant for a browser, and an
+// interstitial can echo the request's own query back inside it.
+func notSmartError(resp *http.Response, base sessionBase) error {
+	defer resp.Body.Close() //nolint:errcheck
+
+	// Name the URL actually fetched, which carries the /info/refs tail and the
+	// service query the session's base does not.
+	fetched := base.baseURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		fetched = resp.Request.URL
 	}
 
-	ar := &packp.AdvRefs{}
-	ar.References = infoRefs.References
-
-	return &dumbPackSession{
-		client:     client,
-		baseURL:    req.URL,
-		service:    req.Command,
-		authorizer: authorizer,
-		refs:       ar,
-	}, nil
+	mediaType := contentMediaType(resp.Header.Get("Content-Type"))
+	if mediaType == "text/plain" {
+		var head bytes.Buffer
+		_, _ = head.ReadFrom(io.LimitReader(resp.Body, maxQuotedBodySize))
+		return fmt.Errorf("%w: %s served content type %q, not a smart advertisement (the dumb HTTP protocol is not supported): %q",
+			transport.ErrInvalidResponse, redactedURL(fetched), mediaType,
+			strings.TrimSpace(sanitizeReason(head.String())))
+	}
+	return fmt.Errorf("%w: %s served content type %q, not a smart advertisement (the dumb HTTP protocol is not supported)",
+		transport.ErrInvalidResponse, redactedURL(fetched), mediaType)
 }
-
-// --- smart HTTP pack session ---
 
 var (
 	_ transport.Session   = (*smartPackSession)(nil)
@@ -245,13 +350,10 @@ var (
 )
 
 type smartPackSession struct {
-	client     *http.Client
-	baseURL    *url.URL
-	service    string
-	authorizer func(*http.Request) error
-	version    protocol.Version
-	caps       capability.List
-	refs       *packp.AdvRefs
+	sessionBase
+	version protocol.Version
+	caps    capability.List
+	refs    *packp.AdvRefs
 }
 
 func (s *smartPackSession) Capabilities() *capability.List { return &s.caps }
@@ -306,12 +408,14 @@ func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.Co
 		return err
 	}
 	// Command consumes the whole response (it never streams the body out), so
-	// drain and close it on every path. A bare return on a decode error would
-	// otherwise leak the response body and its connection.
+	// release it on every path. A bare return on a decode error would otherwise
+	// leak the response body and its connection. Releasing it includes the
+	// discard: a decoder stops at the response's flush-pkt, and the request
+	// that reuses the connection — the fetch POST after an ls-refs — follows
+	// immediately.
 	defer func() {
 		if r.resp != nil {
-			_, _ = io.Copy(io.Discard, r.resp.Body)
-			_ = r.resp.Body.Close()
+			drainAndClose(r.resp.Body)
 		}
 	}()
 	if resp != nil {
@@ -331,8 +435,9 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 
 	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
 	if err != nil {
-		// Don't close the response body here — context-wrapper goroutines
-		// inside NegotiatePack may still be reading from it.
+		if ioutil.ReadFinished(ctx, err) {
+			neg.closeResponse()
+		}
 		return err
 	}
 	if neg.current == nil || neg.current.resp == nil {
@@ -342,22 +447,7 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
-	// Close the response unless the read itself was a cancellation. The race
-	// this guards against only exists on cancellation: a ctxReader goroutine
-	// inside FetchPack can still be blocked in the underlying Read after the
-	// <-ctx.Done() branch, so niling current.resp here would race it. On a
-	// non-cancellation error (or success) FetchPack's last Read returned via the
-	// result channel and its goroutine is quiescent, so closing is safe — and
-	// necessary, otherwise the response body/connection leaks. On the
-	// cancellation path the request context unblocks the in-flight read, so the
-	// body is not leaked.
-	//
-	// Classified against err itself via errors.Is, not a fresh ctx.Err() check:
-	// ctx can turn Err() non-nil an instant after FetchPack already returned
-	// with its read fully quiescent, and re-checking ctx.Err() at that later,
-	// independent point would incorrectly skip the close and leak the response
-	// (mirrors FetchV2's round loop).
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+	if ioutil.ReadFinished(ctx, err) {
 		neg.closeResponse()
 	}
 	return err
@@ -389,9 +479,8 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 		}
 		out := &packp.FetchOutput{}
 		if err := out.Decode(r); err != nil {
-			// The success path returns r.resp.Body for the caller to stream, so
-			// it must stay open; on a decode error nothing downstream will, so
-			// release it here rather than leaking the body and its connection.
+			// The success path hands r.resp.Body to the caller to stream; on a
+			// decode error nothing downstream will, so release it here.
 			if r.resp != nil {
 				_ = r.resp.Body.Close()
 			}
@@ -411,15 +500,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
 	rwc := &httpRequester{session: s, ctx: ctx}
 	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
-	// Close the response unless the read itself was a cancellation: a ctxReader
-	// goroutine inside SendPack can still be blocked in the underlying Read
-	// after the <-ctx.Done() branch, so closing the body here would race it —
-	// the request context tears the connection down instead. On a
-	// non-cancellation error (or success) SendPack's last Read returned via the
-	// result channel and its goroutine is quiescent, so closing is safe — and
-	// necessary, otherwise the response body/connection leaks (mirrors Fetch
-	// above and FetchV2's round loop).
-	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && rwc.resp != nil {
+	if ioutil.ReadFinished(ctx, err) && rwc.resp != nil {
 		_ = rwc.resp.Body.Close()
 	}
 	return err
@@ -502,19 +583,18 @@ func (r *httpRequester) doPost() error {
 	if gp := transport.GitProtocolEnv(r.session.version); gp != "" {
 		httpReq.Header.Set("Git-Protocol", gp)
 	}
-	if r.session.baseURL.User != nil {
-		password, _ := r.session.baseURL.User.Password()
-		httpReq.SetBasicAuth(r.session.baseURL.User.Username(), password)
-	}
-	if r.session.authorizer != nil {
-		if err := r.session.authorizer(httpReq); err != nil {
-			return err
-		}
+	if err := applyAuth(httpReq, r.session.authorizer); err != nil {
+		return err
 	}
 	r.resp, err = doRequest(r.session.client, httpReq)
 	if err != nil {
-		return fmt.Errorf("http transport: %w", err)
+		if r.resp != nil {
+			_ = r.resp.Body.Close()
+		}
+		return fmt.Errorf("http transport: %w", wrapDropped(r.session.dropped, err))
 	}
+	// doRequest has already turned any non-2xx into an error, so this catches
+	// only a 2xx that is not 200 — one the pack protocol cannot parse.
 	if r.resp.StatusCode != http.StatusOK {
 		_ = r.resp.Body.Close()
 		return fmt.Errorf("http transport: POST %s unexpected status %d", redactedURL(r.resp.Request.URL), r.resp.StatusCode)
@@ -533,9 +613,9 @@ type httpNegotiator struct {
 
 func (n *httpNegotiator) Write(p []byte) (int, error) {
 	if n.current != nil && n.current.resp != nil {
-		// Previous round is complete — close its response, start fresh.
-		_, _ = io.Copy(io.Discard, n.current.resp.Body)
-		_ = n.current.resp.Body.Close()
+		// The previous round is complete, and this round is the request that
+		// reuses its connection.
+		drainAndClose(n.current.resp.Body)
 		n.current = nil
 	}
 	if n.current == nil {
@@ -558,8 +638,13 @@ func (n *httpNegotiator) Close() error {
 	return n.current.Close()
 }
 
-// closeResponse closes the current HTTP response body.
-// The caller (FetchPack) is expected to have already drained the body.
+// closeResponse closes the current round's response body, without discarding
+// what is left of it: Fetch calls this when it is finished with the negotiator
+// altogether, so no request follows that the connection could serve.
+//
+// Whether the body was read to its end is the caller's affair. So is whether
+// closing is safe at all — ioutil.ReadFinished answers that, and a caller that
+// does not ask races the context reader wrapped around this body.
 func (n *httpNegotiator) closeResponse() {
 	if n.current != nil && n.current.resp != nil {
 		_ = n.current.resp.Body.Close()
@@ -567,43 +652,7 @@ func (n *httpNegotiator) closeResponse() {
 	}
 }
 
-// --- dumb HTTP pack session ---
-
-var _ transport.Session = (*dumbPackSession)(nil)
-
-type dumbPackSession struct {
-	client     *http.Client
-	baseURL    *url.URL
-	service    string
-	authorizer func(*http.Request) error
-	refs       *packp.AdvRefs
-}
-
-func (s *dumbPackSession) Capabilities() *capability.List { return &capability.List{} }
-
-func (s *dumbPackSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
-	if s.refs == nil {
-		return nil, transport.ErrEmptyRemoteRepository
-	}
-	refs, err := s.refs.ResolvedReferences()
-	if err != nil {
-		return nil, err
-	}
-	return transport.NewRemoteRefs(refs), nil
-}
-
-func (s *dumbPackSession) Fetch(ctx context.Context, st storage.Storer, req *transport.FetchRequest) error {
-	return s.fetchDumb(ctx, st, req)
-}
-
-func (s *dumbPackSession) Push(_ context.Context, _ storage.Storer, _ *transport.PushRequest) error {
-	return fmt.Errorf("dumb HTTP does not support push")
-}
-
-func (s *dumbPackSession) Close() error { return nil }
-
 var (
 	_ transport.Session   = (*smartPackSession)(nil)
-	_ transport.Session   = (*dumbPackSession)(nil)
 	_ transport.Transport = (*Transport)(nil)
 )

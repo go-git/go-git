@@ -2,7 +2,6 @@ package revlist
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -591,7 +591,7 @@ func gitRevListObjects(t *testing.T, gitDir string, want, have plumbing.Hash) ma
 func tryGitRevListObjects(t *testing.T, gitDir string, want, have plumbing.Hash) (map[plumbing.Hash]bool, error) {
 	t.Helper()
 	args := []string{"--git-dir", gitDir, "rev-list", "--objects", want.String(), "^" + have.String()}
-	cmd := exec.Command("git", args...)
+	cmd := gitenv.Command("git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git rev-list failed: %s\n%s", err, string(out))

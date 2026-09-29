@@ -15,7 +15,7 @@ COVERAGE_REPORT = coverage.out
 COVERAGE_MODE = count
 
 # renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_VERSION ?= v2.13.1
+GOLANGCI_VERSION ?= v2.13.2
 TOOLS_BIN := $(shell mkdir -p build/tools && realpath build/tools)
 
 GOLANGCI = $(TOOLS_BIN)/golangci-lint-$(GOLANGCI_VERSION)
@@ -57,10 +57,17 @@ fuzz:
 		go test -fuzz=Fuzz -fuzztime=$(FUZZ_TIME) $$path; \
 	done
 
-validate: validate-lint validate-dirty ## Run validation checks.
+validate: validate-lint validate-fuzz validate-dirty ## Run validation checks.
 
 validate-lint: $(GOLANGCI)
 	$(GOLANGCI) run
+
+# Fuzz targets have to stay discoverable by the OSS-Fuzz build, which is
+# stricter about their names than `go test -fuzz` is. A target breaking those
+# rules is dropped from the fuzzing fleet, or breaks the build, without any
+# local test failing. See tests/fuzz for the rules and where they come from.
+validate-fuzz:
+	$(GOTEST) ./tests/fuzz/...
 
 validate-dirty:
 ifneq ($(shell git status --porcelain --untracked-files=no),)

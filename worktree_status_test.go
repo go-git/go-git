@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -282,7 +283,7 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 
 			dir := filepath.Join(t.TempDir(), "repo")
 			require.NoError(t, os.MkdirAll(dir, 0o755))
-			require.NoError(t, exec.Command("git", "-c", "init.defaultBranch=main", "-C", dir, "init", "-q").Run())
+			require.NoError(t, gitenv.Command("git", "-c", "init.defaultBranch=main", "-C", dir, "init", "-q").Run())
 
 			for p, content := range tc.files {
 				abs := filepath.Join(dir, filepath.FromSlash(p))
@@ -290,7 +291,7 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 				require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
 			}
 
-			out, err := exec.Command("git", "-C", dir, "ls-files", "--others", "--exclude-standard").Output()
+			out, err := gitenv.Command("git", "-C", dir, "ls-files", "--others", "--exclude-standard").Output()
 			require.NoError(t, err)
 			want := map[string]bool{}
 			for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {

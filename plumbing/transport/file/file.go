@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // ServerFunc is a function that runs a git server-side command over pipes.
@@ -107,7 +108,12 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 
 	go func() {
 		defer close(done)
-		err := serverFn(ctx, st, io.NopCloser(pr), sw, gitProtocol)
+		// Both pipe ends stay this goroutine's to close: CloseWithError below is
+		// how a server error reaches the client's reader, and a server that
+		// closed sw itself would first store a plain EOF there. The server
+		// commands close the writer they are handed on every exit, so it is
+		// wrapped, exactly as pr already is.
+		err := serverFn(ctx, st, io.NopCloser(pr), ioutil.WriteNopCloser(sw), gitProtocol)
 		_ = sw.CloseWithError(err)
 		_ = pr.Close()
 	}()

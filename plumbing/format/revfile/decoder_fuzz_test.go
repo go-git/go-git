@@ -7,7 +7,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-func FuzzDecode(f *testing.F) {
+func FuzzRevfileDecode(f *testing.F) {
 	// Minimal valid rev header: 4-byte magic + version(uint32 BE = 1) +
 	// hash-func(uint32 BE = 1, SHA1).
 	f.Add([]byte("RIDX\x00\x00\x00\x01\x00\x00\x00\x01"))

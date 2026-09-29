@@ -98,6 +98,22 @@ func TestPromisorObjectPacks(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, promisors, "a repository with no promisor pack is not a partial clone, so every missing object is genuinely missing")
 	})
+
+	t.Run("ignores a promisor pack without an index", func(t *testing.T) {
+		t.Parallel()
+
+		dot, h, fs := createPromisorPack(t, "")
+		orphan := "pack-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		for _, ext := range []string{"pack", "promisor"} {
+			file, err := fs.Create(fs.Join("objects", "pack", orphan+"."+ext))
+			require.NoError(t, err)
+			require.NoError(t, file.Close())
+		}
+
+		promisors, err := dot.PromisorObjectPacks()
+		require.NoError(t, err)
+		assert.Equal(t, []plumbing.Hash{h}, promisors)
+	})
 }
 
 // TestDeleteOldObjectPackAndIndexRemovesMarker pins the sidecar to its pack. A

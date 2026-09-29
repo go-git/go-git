@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
@@ -30,6 +34,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 type RemoteSuite struct {
@@ -1411,6 +1416,127 @@ func (s *RemoteSuite) TestPushForceWithLease_failure() {
 	}
 }
 
+func (s *RemoteSuite) TestPushWildcardIgnoresMalformedLocalReferences() {
+	for _, prune := range []bool{false, true} {
+		s.Run(fmt.Sprintf("prune=%t", prune), func() {
+			srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+			s.Require().NoError(err)
+			src, err := Open(filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault()), nil)
+			s.Require().NoError(err)
+			defer func() { _ = src.Close() }()
+			head, err := src.Reference(plumbing.NewBranchReferenceName("master"), true)
+			s.Require().NoError(err)
+			invalid := []string{"main.lock", ".hidden", "bad~name", "a..b"}
+			if runtime.GOOS != "windows" {
+				invalid = append(invalid, "a\\b", "a\x01b")
+			}
+			for _, name := range append(append([]string(nil), invalid...), "@", "-foo") {
+				s.Require().NoError(util.WriteFile(srcFs, srcFs.Join("refs", "heads", name),
+					[]byte(head.Hash().String()+"\n"), 0o644))
+			}
+
+			dstDir := s.T().TempDir()
+			dst, err := PlainClone(dstDir, &CloneOptions{URL: srcFs.Root(), Bare: true})
+			s.Require().NoError(err)
+			defer func() { _ = dst.Close() }()
+			for _, name := range []string{"@", "-foo"} {
+				s.Require().NoError(dst.Storer.RemoveReference(plumbing.NewBranchReferenceName(name)))
+			}
+			s.Require().NoError(dst.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("gone"), head.Hash())))
+			remote := NewRemote(src.Storer, &config.RemoteConfig{Name: "target", URLs: []string{dstDir}})
+			s.Require().NoError(remote.Push(&PushOptions{
+				RemoteName: "target", RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"}, Prune: prune,
+			}))
+			for _, name := range []string{"master", "@", "-foo"} {
+				ref, err := dst.Reference(plumbing.NewBranchReferenceName(name), false)
+				s.Require().NoError(err)
+				s.Equal(head.Hash(), ref.Hash())
+			}
+			_, err = dst.Reference(plumbing.NewBranchReferenceName("gone"), false)
+			if prune {
+				s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+			} else {
+				s.NoError(err)
+			}
+			iter, err := dst.References()
+			s.Require().NoError(err)
+			s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+				s.NoError(ref.Name().Validate())
+				return nil
+			}))
+			for _, name := range invalid {
+				_, err := srcFs.Stat(srcFs.Join("refs", "heads", name))
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *RemoteSuite) TestPushRejectsMalformedMappedDestinations() {
+	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+	s.Require().NoError(err)
+	for _, spec := range []config.RefSpec{
+		"refs/heads/master:refs/heads/main.lock",
+		"refs/heads/master:refs/heads/bad\nname",
+		"refs/heads/*:refs/heads/*.lock",
+		config.RefSpec(head.Hash().String() + ":refs/heads/main.lock"),
+	} {
+		s.Run(spec.String(), func() {
+			dir := s.T().TempDir()
+			dst, err := PlainInit(dir, true)
+			s.Require().NoError(err)
+			defer func() { _ = dst.Close() }()
+			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+			err = remote.Push(&PushOptions{RefSpecs: []config.RefSpec{
+				"refs/heads/master:refs/heads/allowed", spec,
+			}})
+			s.ErrorIs(err, plumbing.ErrInvalidReferenceName)
+			iter, err := dst.References()
+			s.Require().NoError(err)
+			s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+				s.Equal(plumbing.HEAD, ref.Name())
+				return nil
+			}))
+		})
+	}
+}
+
+func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
+	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+	s.Require().NoError(err)
+	for _, name := range []string{"main.lock", ".hidden", "bad~name", "a..b"} {
+		fullName := plumbing.NewBranchReferenceName(name)
+		s.Require().NoError(util.WriteFile(srcFs, fullName.String(), []byte(head.Hash().String()+"\n"), 0o644))
+		for _, prune := range []bool{false, true} {
+			s.Run(fmt.Sprintf("%s/prune=%t", name, prune), func() {
+				dir := s.T().TempDir()
+				dst, err := PlainClone(dir, &CloneOptions{URL: s.GetBasicLocalRepositoryURL(), Bare: true})
+				s.Require().NoError(err)
+				defer func() { _ = dst.Close() }()
+				keep := plumbing.NewHashReference("refs/heads/keep", head.Hash())
+				s.Require().NoError(dst.Storer.SetReference(keep))
+				remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+				err = remote.Push(&PushOptions{Prune: prune, RefSpecs: []config.RefSpec{
+					"refs/heads/master:refs/heads/allowed",
+					config.RefSpec(fullName.String() + ":refs/heads/keep"),
+				}})
+				s.ErrorIs(err, plumbing.ErrInvalidReferenceName)
+				ref, err := dst.Storer.Reference(keep.Name())
+				s.Require().NoError(err)
+				s.Equal(keep, ref)
+				_, err = dst.Storer.Reference("refs/heads/allowed")
+				s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+			})
+		}
+	}
+}
+
 func (s *RemoteSuite) TestPushPrune() {
 	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
@@ -2268,4 +2394,313 @@ func writeCommitToRef(t *testing.T, repo *Repository, refName string, treeID plu
 	}
 
 	return commitID
+}
+
+// A remote is free to advertise a name go-git will not store. Dropping it
+// where the advertisement becomes a list is what keeps one such name from
+// costing the whole fetch, and mirrors filter_refs in fetch-pack.c.
+func (s *RemoteSuite) TestReferenceStorageFromRefsDropsUnusableNames() {
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	refs := make([]*plumbing.Reference, 0, 8)
+	for _, n := range []plumbing.ReferenceName{
+		"HEAD",
+		"refs/heads/main",
+		"refs/heads/@",
+		"refs/heads/-foo",
+		"refs/heads/stale.lock",
+		"refs/heads/bad~name",
+		"refs/heads/.hidden",
+		"refs/heads/a..b",
+	} {
+		refs = append(refs, plumbing.NewHashReference(n, hash))
+	}
+
+	got := referenceStorageFromRefs(refs, true)
+
+	for _, n := range []plumbing.ReferenceName{"HEAD", "refs/heads/main", "refs/heads/@", "refs/heads/-foo"} {
+		_, err := got.Reference(n)
+		s.NoError(err, "%q must survive", n)
+	}
+	for _, n := range []plumbing.ReferenceName{
+		"refs/heads/stale.lock", "refs/heads/bad~name",
+		"refs/heads/.hidden", "refs/heads/a..b",
+	} {
+		_, err := got.Reference(n)
+		s.ErrorIs(err, plumbing.ErrReferenceNotFound, "%q must be dropped", n)
+	}
+}
+
+// A refspec names a destination the remote did not choose, so the storer can
+// refuse one even after the advertisement has been filtered. That must cost
+// the single reference and not the fetch, which is what git does in
+// get_fetch_map. Asserted through a real fetch rather than through the
+// predicate, because the predicate was never the part that broke.
+func (s *RemoteSuite) TestFetchSkipsUnstorableDestination() {
+	const traceMode = "GO_GIT_TEST_FETCH_TRACE"
+	mode := os.Getenv(traceMode)
+	if mode == "" {
+		// Trace configuration is process-wide, so each mode runs in isolation
+		// from the other parallel repository suites.
+		executable, err := os.Executable()
+		s.Require().NoError(err)
+		for _, mode := range []string{"enabled", "disabled"} {
+			s.Run(mode, func() {
+				cmd := exec.Command(executable, "-test.v", "-test.run=^TestRemoteSuite$/^TestFetchSkipsUnstorableDestination$")
+				cmd.Env = append(os.Environ(), traceMode+"="+mode)
+				output, err := cmd.CombinedOutput()
+				s.Require().NoError(err, "%s", output)
+				s.Contains(string(output), "--- PASS: TestRemoteSuite/TestFetchSkipsUnstorableDestination (")
+			})
+		}
+		return
+	}
+
+	var diagnostic bytes.Buffer
+	trace.SetLogger(log.New(&diagnostic, "", 0))
+	if mode == "enabled" {
+		trace.SetTarget(trace.General)
+	} else {
+		trace.SetTarget(0)
+	}
+
+	url := s.GetBasicLocalRepositoryURL()
+	// A filesystem storer, because the name gate this exercises is the dotgit
+	// one; memory storage accepts any name.
+	dir := s.T().TempDir()
+	st := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
+	r := NewRemote(st, &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{url},
+	})
+
+	err := r.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{
+		// Refused by the format rules, and by the dot-fold rule that only
+		// the storer applies. Both must be skipped, not fatal.
+		"+refs/heads/master:refs/heads/broken.lock",
+		"+refs/heads/master:refs/heads/nz/\u200c./sub",
+		"+refs/heads/master:refs/heads/good",
+	}})
+	s.Require().NoError(err)
+
+	_, err = r.s.Reference("refs/heads/good")
+	s.NoError(err, "the usable destination must be stored")
+
+	// Checked on disk rather than through Reference, which gates the same
+	// names and would report an error either way.
+	for _, p := range []string{"refs/heads/broken.lock", "refs/heads/nz/\u200c./sub"} {
+		_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p)))
+		s.True(os.IsNotExist(err), "%q must not have become a path", p)
+	}
+
+	if mode == "enabled" {
+		for _, name := range []string{"refs/heads/broken.lock", "refs/heads/nz/\u200c./sub"} {
+			err := st.SetReference(plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.ZeroHash))
+			s.Require().ErrorIs(err, plumbing.ErrInvalidReferenceName)
+			s.Contains(diagnostic.String(), fmt.Sprintf("ignoring local ref %q from remote ref %q: %q\n",
+				name, "refs/heads/master", err.Error()))
+		}
+	} else {
+		s.Empty(diagnostic.String())
+	}
+}
+
+func (s *RemoteSuite) TestCloneAndFetchSkipUnstorableTags() {
+	srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+	defer func() { s.Require().NoError(src.Close()) }()
+	head, err := src.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	validTag := plumbing.ReferenceName("refs/tags/valid-name")
+	invalidTag := plumbing.ReferenceName("refs/tags/nz/\u200c./tag")
+	for _, name := range []plumbing.ReferenceName{validTag, invalidTag} {
+		s.Require().NoError(util.WriteFile(srcFS, name.String(), []byte(head.Hash().String()+"\n"), 0o644))
+	}
+
+	for _, operation := range []string{"clone", "fetch"} {
+		for _, mode := range []struct {
+			name string
+			tags plumbing.TagMode
+		}{{"default", plumbing.InvalidTagMode}, {"all", plumbing.AllTags}, {"none", plumbing.NoTags}} {
+			s.Run(operation+"/"+mode.name, func() {
+				var dst *Repository
+				var err error
+				branch := plumbing.Master
+				if operation == "clone" {
+					dst, err = PlainClone(s.T().TempDir(), &CloneOptions{URL: srcFS.Root(), Bare: true, Tags: mode.tags})
+				} else {
+					dst, err = PlainInit(s.T().TempDir(), true)
+					s.Require().NoError(err)
+					remote := NewRemote(dst.Storer, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{srcFS.Root()}})
+					err = remote.Fetch(&FetchOptions{Tags: mode.tags, RefSpecs: []config.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}})
+					branch = plumbing.NewRemoteReferenceName(DefaultRemoteName, "master")
+				}
+				s.Require().NoError(err)
+				defer func() { s.Require().NoError(dst.Close()) }()
+				ref, err := dst.Storer.Reference(branch)
+				s.Require().NoError(err)
+				s.Require().Equal(head.Hash(), ref.Hash())
+				ref, err = dst.Storer.Reference(validTag)
+				if mode.tags == plumbing.NoTags {
+					s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+				} else {
+					s.Require().NoError(err)
+					s.Require().Equal(head.Hash(), ref.Hash())
+				}
+				iter, err := dst.References()
+				s.Require().NoError(err)
+				s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+					s.Require().NotEqual(invalidTag, ref.Name())
+					return nil
+				}))
+			})
+		}
+	}
+}
+
+type tagRefErrorStorage struct {
+	storage.Storer
+	name                        plumbing.ReferenceName
+	readErr, writeErr           error
+	readFailures, writeFailures int
+}
+
+func (s *tagRefErrorStorage) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if name == s.name && s.readErr != nil {
+		s.readFailures++
+		return nil, s.readErr
+	}
+	return s.Storer.Reference(name)
+}
+
+func (s *tagRefErrorStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
+	if ref.Name() == s.name && s.writeErr != nil {
+		s.writeFailures++
+		return s.writeErr
+	}
+	return s.Storer.CheckAndSetReference(ref, old)
+}
+
+func (s *RemoteSuite) TestFetchTagStorageErrors() {
+	srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+	defer func() { s.Require().NoError(src.Close()) }()
+	head, err := src.Reference(plumbing.Master)
+	s.Require().NoError(err)
+	target := plumbing.ReferenceName("refs/tags/rejected")
+	validTag := plumbing.ReferenceName("refs/tags/allowed")
+	for _, name := range []plumbing.ReferenceName{target, validTag} {
+		s.Require().NoError(src.SetReference(plumbing.NewHashReference(name, head.Hash())))
+	}
+
+	for _, phase := range []string{"read", "write"} {
+		for _, rejectedName := range []bool{false, true} {
+			s.Run(fmt.Sprintf("%s/name-error=%t", phase, rejectedName), func() {
+				cause := errors.New("reference storage unavailable")
+				if rejectedName {
+					cause = plumbing.ErrInvalidReferenceName
+				}
+				dst := memory.NewStorage()
+				st := &tagRefErrorStorage{Storer: dst, name: target}
+				if phase == "read" {
+					st.readErr = fmt.Errorf("reading tag: %w", cause)
+				} else {
+					st.writeErr = fmt.Errorf("writing tag: %w", cause)
+				}
+				remote := NewRemote(st, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{srcFS.Root()}})
+				err := remote.Fetch(&FetchOptions{RefSpecs: []config.RefSpec{"+refs/heads/*:refs/remotes/origin/*"}})
+				if rejectedName {
+					s.Require().NoError(err)
+					ref, err := dst.Reference(validTag)
+					s.Require().NoError(err)
+					s.Require().Equal(head.Hash(), ref.Hash())
+				} else {
+					s.Require().ErrorIs(err, cause)
+				}
+				_, err = dst.Reference(target)
+				s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+				ref, err := dst.Reference(plumbing.NewRemoteReferenceName(DefaultRemoteName, "master"))
+				s.Require().NoError(err)
+				s.Require().Equal(head.Hash(), ref.Hash())
+				if phase == "read" {
+					s.Require().Positive(st.readFailures)
+					s.Require().Zero(st.writeFailures)
+				} else {
+					s.Require().Zero(st.readFailures)
+					s.Require().Positive(st.writeFailures)
+				}
+			})
+		}
+	}
+}
+
+func (s *RemoteSuite) TestPushRejectsMalformedWildcardSourcesBeforePrune() {
+	for _, tc := range []struct {
+		spec   config.RefSpec
+		source string
+	}{
+		{"refs/heads/*.lock:refs/heads/*", "refs/heads/keep.lock"},
+		{"refs/heads/.*:refs/heads/*", "refs/heads/.keep"},
+		{"refs/heads/a..*:refs/heads/*", "refs/heads/a..keep"},
+		{"*.lock:refs/heads/*", "keep.lock"},
+	} {
+		s.Run(tc.spec.String(), func() {
+			srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+			s.Require().NoError(err)
+			src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+			defer func() { s.Require().NoError(src.Close()) }()
+			head, err := src.Reference(plumbing.Master)
+			s.Require().NoError(err)
+			dir := s.T().TempDir()
+			dst, err := PlainClone(dir, &CloneOptions{URL: srcFS.Root(), Bare: true})
+			s.Require().NoError(err)
+			defer func() { s.Require().NoError(dst.Close()) }()
+			keep := plumbing.NewHashReference("refs/heads/keep", head.Hash())
+			s.Require().NoError(dst.Storer.SetReference(keep))
+			s.Require().NoError(util.WriteFile(srcFS, tc.source, []byte(head.Hash().String()+"\n"), 0o644))
+			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+			err = remote.Push(&PushOptions{Prune: true, RefSpecs: []config.RefSpec{
+				"refs/heads/master:refs/heads/allowed", tc.spec,
+			}})
+			s.Require().ErrorIs(err, plumbing.ErrInvalidReferenceName)
+			ref, err := dst.Storer.Reference(keep.Name())
+			s.Require().NoError(err)
+			s.Require().Equal(keep, ref)
+			_, err = dst.Storer.Reference("refs/heads/allowed")
+			s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+		})
+	}
+}
+
+func (s *RemoteSuite) TestPushPreservesValidWildcardSources() {
+	for _, tc := range []struct {
+		spec                config.RefSpec
+		source, destination plumbing.ReferenceName
+	}{
+		{"refs/heads/*/topic:refs/heads/*", "refs/heads/feature/topic", "refs/heads/feature"},
+		{"*:refs/backup/*", "refs/heads/master", "refs/backup/refs/heads/master"},
+		{"refs/heads/-*:refs/heads/kept-*", "refs/heads/-foo", "refs/heads/kept-foo"},
+		{"refs/heads/@*:refs/heads/kept-*", "refs/heads/@", "refs/heads/kept-"},
+		{"refs/heads/*lock:refs/heads/kept-*", "refs/heads/clock", "refs/heads/kept-c"},
+	} {
+		s.Run(tc.spec.String(), func() {
+			srcFS, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+			s.Require().NoError(err)
+			src := filesystem.NewStorage(srcFS, cache.NewObjectLRUDefault())
+			defer func() { s.Require().NoError(src.Close()) }()
+			head, err := src.Reference(plumbing.Master)
+			s.Require().NoError(err)
+			s.Require().NoError(src.SetReference(plumbing.NewHashReference(tc.source, head.Hash())))
+			dir := s.T().TempDir()
+			dst, err := PlainInit(dir, true)
+			s.Require().NoError(err)
+			defer func() { s.Require().NoError(dst.Close()) }()
+			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+			s.Require().NoError(remote.Push(&PushOptions{RefSpecs: []config.RefSpec{tc.spec}}))
+			ref, err := dst.Storer.Reference(tc.destination)
+			s.Require().NoError(err)
+			s.Require().Equal(head.Hash(), ref.Hash())
+		})
+	}
 }

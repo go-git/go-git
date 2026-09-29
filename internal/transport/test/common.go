@@ -2,7 +2,6 @@ package test
 
 import (
 	"net"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 )
 
@@ -19,7 +19,7 @@ import (
 // (git >= 2.18). Transports backed by the reference git server use it to skip
 // the v2 suite run on older git, which would silently fall back to v0.
 func GitSupportsV2() bool {
-	out, err := exec.Command("git", "version").Output()
+	out, err := gitenv.Command("git", "version").Output()
 	if err != nil {
 		return false
 	}

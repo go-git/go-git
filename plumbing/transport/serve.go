@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -14,10 +15,19 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/utils/trace"
 )
 
 // ErrUpdateReference is returned when a reference update fails.
 var ErrUpdateReference = errors.New("failed to update ref")
+
+// ErrFunnyRefname is returned when a push names a reference the server refuses
+// to touch: one that is not under refs/, or one whose name is malformed.
+var ErrFunnyRefname = errors.New("funny refname")
+
+// ErrDuplicateRefname is reported for every command of a push whose command
+// list updates one reference more than once.
+var ErrDuplicateRefname = errors.New("multiple updates for ref not allowed")
 
 // AdvertiseRefs is a server command that implements the reference
 // discovery phase of the v0/v1 Git transfer protocol. Protocol v2 advertises
@@ -161,6 +171,41 @@ func objectFormat(st storage.Storer) config.ObjectFormat {
 	return cfg.Extensions.ObjectFormat
 }
 
+// advertisable reports whether a reference name may be put on the wire.
+//
+// The reference store reports what is on disk, malformed names included,
+// because a caller that cannot see a name cannot repair it and because
+// anything that prunes or repacks from that listing has to see every name that
+// is really there. The advertisement excludes malformed wire names. A valid
+// Git name is retained even if the filesystem storer applies stricter path
+// safety rules, such as rejecting an HFS+ component that folds to a dot.
+//
+// Git's upload-pack.c send_ref does not consult REF_BAD_NAME: malformed names
+// that reach it can be advertised with a zero object id, leaving the dropping
+// to fetch-pack.c's filter_refs. The files backend excludes some entries,
+// including loose .lock files, before send_ref. The ref-filter.c pass that
+// warns and skips is the porcelain layer behind for-each-ref and git branch,
+// not upload-pack's path.
+//
+// Dropping rather than zeroing is the choice here, because a zero id is a
+// thing every client has to be taught to read, while a name a peer cannot
+// store is one it has no use for. The cost is that git ls-remote against a
+// go-git server does not show such a name at all, where Git may show it with
+// a zero object id.
+//
+// HEAD is the one name outside refs/ that belongs on the wire, and Validate
+// carves it out already.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/upload-pack.c#L1196-L1242
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/files-backend.c#L345-L350
+func advertisable(name plumbing.ReferenceName) bool {
+	if name == plumbing.HEAD {
+		return true
+	}
+
+	return name.IsUnderRefs() && name.Validate() == nil
+}
+
 func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 	iter, err := st.IterReferences()
 	if err != nil {
@@ -170,15 +215,30 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 	// Add references and their peeled values
 	return iter.ForEach(func(r *plumbing.Reference) error {
 		hash, name := r.Hash(), r.Name()
+		var target plumbing.ReferenceName
+
+		if !advertisable(name) {
+			// One malformed name must not prevent advertising the usable refs.
+			trace.General.Printf("ignoring ref with broken name %q", string(name))
+			return nil
+		}
 		if r.Type() == plumbing.SymbolicReference {
 			ref, err := storer.ResolveReference(st, r.Target())
-			if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			// Missing, rejected and cyclic referents cost this one entry.
+			// Other errors still propagate: an unavailable store must not
+			// turn into a successful but incomplete advertisement.
+			if reference.IsUnresolvableForAdvertisement(err) {
+				trace.General.Printf("ignoring ref %q with unresolvable target %q",
+					string(name), r.Target().String())
 				return nil
 			}
 			if err != nil {
 				return err
 			}
 			hash = ref.Hash()
+			// Git advertises the terminal name, including for symbolic chains.
+			// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/upload-pack.c#L1245-L1259.
+			target = ref.Name()
 		}
 		if name == plumbing.HEAD {
 			if !addHead {
@@ -188,8 +248,15 @@ func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
 			// (HashReference) has no branch target to advertise; emitting
 			// "HEAD:" with an empty target corrupts the capability list and
 			// causes the client to store an unresolvable HEAD symref.
-			if r.Type() == plumbing.SymbolicReference {
-				ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, r.Target()))
+			//
+			// The target is checked too. It is a name leaving the process
+			// like any other, and naming a ref that was just withheld would
+			// produce an advertisement contradicting itself: the client is
+			// told HEAD points somewhere it will never be told about, and
+			// go-git's own client fails such a clone outright. HEAD keeps its
+			// object id, so the peer still has a starting point.
+			if r.Type() == plumbing.SymbolicReference && advertisable(target) {
+				ar.Capabilities.Add(capability.SymRef, fmt.Sprintf("%s:%s", name, target))
 			}
 			ar.References = append([]*plumbing.Reference{plumbing.NewHashReference(name, hash)}, ar.References...)
 			return nil

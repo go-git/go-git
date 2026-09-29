@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
@@ -164,14 +165,14 @@ func configureRepoSigning(t *testing.T, repo, keyID string) {
 		{"commit.gpgsign", "false"},
 		{"tag.gpgsign", "false"},
 	} {
-		out, err := exec.Command("git", "-C", repo, "config", "--local", kv[0], kv[1]).CombinedOutput()
+		out, err := gitenv.Command("git", "-C", repo, "config", "--local", kv[0], kv[1]).CombinedOutput()
 		require.NoErrorf(t, err, "git config %s: %s", kv[0], out)
 	}
 }
 
 func gitWriteEmptyTree(t *testing.T, repo string) plumbing.Hash {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repo, "write-tree")
+	cmd := gitenv.Command("git", "-C", repo, "write-tree")
 	out, err := cmd.Output()
 	require.NoError(t, err, "git write-tree")
 	return plumbing.NewHash(strings.TrimSpace(string(out)))
@@ -179,8 +180,8 @@ func gitWriteEmptyTree(t *testing.T, repo string) plumbing.Hash {
 
 func gitCommitTreeSigned(t *testing.T, repo string, tree plumbing.Hash, msg string, envOverrides []string) plumbing.Hash {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repo, "commit-tree", "-S", "-m", strings.TrimRight(msg, "\n"), tree.String())
-	cmd.Env = append(os.Environ(), envOverrides...)
+	cmd := gitenv.Command("git", "-C", repo, "commit-tree", "-S", "-m", strings.TrimRight(msg, "\n"), tree.String())
+	cmd.Env = append(cmd.Env, envOverrides...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -190,20 +191,20 @@ func gitCommitTreeSigned(t *testing.T, repo string, tree plumbing.Hash, msg stri
 
 func gitTagSigned(t *testing.T, repo, name string, target plumbing.Hash, msg string, envOverrides []string) plumbing.Hash {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repo, "tag", "-s", "-m", strings.TrimRight(msg, "\n"), name, target.String())
-	cmd.Env = append(os.Environ(), envOverrides...)
+	cmd := gitenv.Command("git", "-C", repo, "tag", "-s", "-m", strings.TrimRight(msg, "\n"), name, target.String())
+	cmd.Env = append(cmd.Env, envOverrides...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoErrorf(t, cmd.Run(), "git tag -s: %s", stderr.String())
 
-	rev, err := exec.Command("git", "-C", repo, "rev-parse", name).Output()
+	rev, err := gitenv.Command("git", "-C", repo, "rev-parse", name).Output()
 	require.NoError(t, err)
 	return plumbing.NewHash(strings.TrimSpace(string(rev)))
 }
 
 func readObjectBytes(t *testing.T, repo, kind string, h plumbing.Hash) []byte {
 	t.Helper()
-	out, err := exec.Command("git", "-C", repo, "cat-file", kind, h.String()).Output()
+	out, err := gitenv.Command("git", "-C", repo, "cat-file", kind, h.String()).Output()
 	require.NoError(t, err, "git cat-file %s %s", kind, h.String())
 	return out
 }
@@ -313,14 +314,14 @@ func gpgSign(t *testing.T, payload []byte) string {
 func initRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	out, err := exec.Command("git", "-C", dir, "init", "--quiet").CombinedOutput()
+	out, err := gitenv.Command("git", "-C", dir, "init", "--quiet").CombinedOutput()
 	require.NoErrorf(t, err, "git init: %s", out)
 	return dir
 }
 
 func writeLooseObject(t *testing.T, repo, objType string, content []byte) plumbing.Hash {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repo, "hash-object", "-w", "--literally", "-t", objType, "--stdin")
+	cmd := gitenv.Command("git", "-C", repo, "hash-object", "-w", "--literally", "-t", objType, "--stdin")
 	cmd.Stdin = bytes.NewReader(content)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -331,7 +332,7 @@ func writeLooseObject(t *testing.T, repo, objType string, content []byte) plumbi
 
 func gitVerifyCommit(t *testing.T, repo string, h plumbing.Hash) error {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repo, "verify-commit", h.String())
+	cmd := gitenv.Command("git", "-C", repo, "verify-commit", h.String())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -342,7 +343,7 @@ func gitVerifyCommit(t *testing.T, repo string, h plumbing.Hash) error {
 
 func gitVerifyTag(t *testing.T, repo string, h plumbing.Hash) error {
 	t.Helper()
-	cmd := exec.Command("git", "-C", repo, "verify-tag", h.String())
+	cmd := gitenv.Command("git", "-C", repo, "verify-tag", h.String())
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

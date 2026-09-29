@@ -8,6 +8,6 @@
 //   - Session: a connected Git protocol session (refs, fetch, push)
 //
 // Stream transports (SSH, Git TCP, file) implement both Connector and
-// Transport. HTTP implements only Transport, handling the smart and dumb
-// HTTP protocols internally.
+// Transport. HTTP implements only Transport, speaking the smart HTTP
+// protocol; the dumb HTTP protocol is not supported.
 package transport
