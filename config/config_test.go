@@ -1370,3 +1370,47 @@ func TestGPGConfig(t *testing.T) {
 		assert.Equal(t, OptBoolFalse, merged.Commit.GpgSign)
 	})
 }
+
+// Git accepts yes/no/on/off and any integer for a boolean, not just the set
+// strconv.ParseBool understands. Expectations are the output of
+// `git config -f <file> --type=bool --get <key>` under git 2.50.1.
+func (s *ConfigSuite) TestUnmarshalBoolValues() {
+	for _, tc := range []struct {
+		value string
+		want  OptBool
+	}{
+		{value: "true", want: OptBoolTrue},
+		{value: "TRUE", want: OptBoolTrue},
+		{value: "yes", want: OptBoolTrue},
+		{value: "Yes", want: OptBoolTrue},
+		{value: "on", want: OptBoolTrue},
+		{value: "On", want: OptBoolTrue},
+		{value: "1", want: OptBoolTrue},
+		{value: "2", want: OptBoolTrue},
+		{value: "-1", want: OptBoolTrue},
+		{value: "false", want: OptBoolFalse},
+		{value: "no", want: OptBoolFalse},
+		{value: "off", want: OptBoolFalse},
+		{value: "0", want: OptBoolFalse},
+		// git errors on a value it cannot read; go-git leaves the key unset so
+		// the caller's default applies.
+		{value: "garbage", want: OptBoolUnset},
+	} {
+		input := []byte("[commit]\n\tgpgsign = " + tc.value +
+			"\n[tag]\n\tgpgsign = " + tc.value +
+			"\n[index]\n\tskipHash = " + tc.value +
+			"\n[uploadarchive]\n\tallowUnreachable = " + tc.value +
+			"\n[extensions]\n\tworktreeConfig = " + tc.value + "\n")
+
+		cfg := NewConfig()
+		s.Require().NoError(cfg.Unmarshal(input), tc.value)
+
+		s.Equal(tc.want, cfg.Commit.GpgSign, "commit.gpgsign = %s", tc.value)
+		s.Equal(tc.want, cfg.Tag.GpgSign, "tag.gpgsign = %s", tc.value)
+		s.Equal(tc.want, cfg.Index.SkipHash, "index.skipHash = %s", tc.value)
+		s.Equal(tc.want, cfg.UploadArchive.AllowUnreachable,
+			"uploadarchive.allowUnreachable = %s", tc.value)
+		s.Equal(tc.want.IsTrue(), cfg.Extensions.WorktreeConfig,
+			"extensions.worktreeConfig = %s", tc.value)
+	}
+}
