@@ -135,11 +135,18 @@ func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
 }
 
 // Reverse returns the RefSpec with source and destination swapped.
+// A force marker stays a prefix of the spec rather than swapping into the
+// destination side.
 func (s RefSpec) Reverse() RefSpec {
 	spec := string(s)
+	var force string
+	if strings.HasPrefix(spec, refSpecForce) {
+		force = refSpecForce
+		spec = spec[len(refSpecForce):]
+	}
 	before, after, _ := strings.Cut(spec, refSpecSeparator)
 
-	return RefSpec(after + refSpecSeparator + before)
+	return RefSpec(force + after + refSpecSeparator + before)
 }
 
 func (s RefSpec) String() string {
