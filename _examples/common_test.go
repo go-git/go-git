@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
@@ -21,6 +23,7 @@ var args = map[string][]string{
 	"checkout":                   {defaultURL, tempFolder(), "35e85108805c84807bc66a02d91535e1e24b38b9"},
 	"checkout-branch":            {defaultURL, tempFolder(), "branch"},
 	"clone":                      {defaultURL, tempFolder()},
+	"clone-commit-push":          {createBareRepositoryFrom(defaultURL, tempFolder()), tempFolder(), "example-branch"},
 	"config":                     {},
 	"commit":                     {cloneRepository(defaultURL, tempFolder())},
 	"context":                    {defaultURL, tempFolder()},
@@ -51,6 +54,13 @@ var ignored = map[string]bool{
 	"submodule":       true,
 	"tag-create-push": true,
 	"http-server":     true,
+}
+
+// verify holds optional post-run checks, keyed by example name. The runner only
+// learns whether an example exited cleanly, which says nothing about an example
+// whose point is the state it leaves in another repository.
+var verify = map[string]func(*testing.T, []string){
+	"clone-commit-push": verifyClonePushedBranch,
 }
 
 var (
@@ -84,6 +94,10 @@ func TestExamples(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			testExample(t, name, dir)
+
+			if check := verify[name]; check != nil && !t.Failed() {
+				check(t, args[name])
+			}
 		})
 	}
 }
@@ -106,6 +120,14 @@ func cloneRepository(url, folder string) string {
 
 func createBareRepository(dir string) string {
 	return createRepository(dir, true)
+}
+
+func createBareRepositoryFrom(url, dir string) string {
+	cmd := gitenv.Command("git", "clone", "--bare", url, dir)
+	err := cmd.Run()
+	CheckIfError(err)
+
+	return dir
 }
 
 func createRepository(dir string, isBare bool) string {
@@ -164,4 +186,45 @@ func deleteTempFolders() {
 		err := os.RemoveAll(folder)
 		CheckIfError(err)
 	}
+}
+
+// verifyClonePushedBranch inspects the bare repository that clone-commit-push
+// pushed to. Its arguments are the remote, the clone directory and the branch.
+func verifyClonePushedBranch(t *testing.T, args []string) {
+	remote, branch := args[0], args[2]
+	ref := "refs/heads/" + branch
+
+	// The fixture arrives with branch and master. A push scoped to the new
+	// branch adds that one name and disturbs nothing else; the wildcard default
+	// refspec would also carry any other local branch.
+	got := gitLines(t, remote, "for-each-ref", "--format=%(refname:short)", "refs/heads/")
+	want := []string{"branch", branch, "master"}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("remote branches = %v, want %v", got, want)
+	}
+
+	if files := gitLines(t, remote, "ls-tree", "--name-only", ref); !slices.Contains(files, "example-git-file") {
+		t.Errorf("pushed tree = %v, want it to contain example-git-file", files)
+	}
+
+	// The example branches from HEAD and adds a single commit, so the pushed
+	// tip's parent is the commit master still points at. This pins both that the
+	// commit travelled and that it was built on the cloned history.
+	parent := gitLines(t, remote, "rev-parse", ref+"^")
+	master := gitLines(t, remote, "rev-parse", "refs/heads/master")
+	if parent[0] != master[0] {
+		t.Errorf("pushed commit parent = %s, want master at %s", parent[0], master[0])
+	}
+}
+
+func gitLines(t *testing.T, dir string, arg ...string) []string {
+	cmd := gitenv.Command("git", append([]string{"-C", dir}, arg...)...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v in %s: %v", arg, dir, err)
+	}
+
+	return strings.Split(strings.TrimSpace(string(out)), "\n")
 }
