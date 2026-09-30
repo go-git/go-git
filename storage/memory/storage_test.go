@@ -278,3 +278,31 @@ func TestReflogStorage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 }
+
+// TestShallowStorageDoesNotAliasCaller covers the copy-on-return/copy-on-set
+// the shallow list needs because updateShallow (plumbing/transport/fetch.go,
+// internal/transport/v2.go) mutates it in place before storing it again.
+func TestShallowStorageDoesNotAliasCaller(t *testing.T) {
+	t.Parallel()
+
+	s := memory.NewStorage()
+
+	hashA := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashB := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	hashC := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
+
+	own := []plumbing.Hash{hashA, hashB}
+	require.NoError(t, s.SetShallow(own))
+
+	// Neither the slice handed to SetShallow nor the one handed back may be
+	// aliased by the storage.
+	own[0] = hashC
+	got, err := s.Shallow()
+	require.NoError(t, err)
+	assert.Equal(t, []plumbing.Hash{hashA, hashB}, got)
+
+	got[0] = hashC
+	again, err := s.Shallow()
+	require.NoError(t, err)
+	assert.Equal(t, []plumbing.Hash{hashA, hashB}, again)
+}
