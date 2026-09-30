@@ -199,6 +199,12 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 
 // A have that is reachable from any of the wants must be recognised as common,
 // not only one reachable from the first want.
+//
+// The request asks for multi_ack_detailed rather than multi_ack because only
+// the former distinguishes the two outcomes: it answers "common" when the have
+// is in the reachable set and "ready" when it is not. multi_ack answers
+// "continue" either way, so it cannot tell a populated reachable set from an
+// empty one.
 func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
 	st := memory.NewStorage()
 	sig := object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0).UTC()}
@@ -237,7 +243,7 @@ func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
 	s.Require().NoError(st.SetReference(plumbing.NewHashReference(plumbing.HEAD, tipA)))
 
 	var upreq packp.UploadRequest
-	upreq.Capabilities.Add(capability.MultiACK)
+	upreq.Capabilities.Add(capability.MultiACKDetailed)
 	upreq.Capabilities.Add(capability.NoProgress)
 	upreq.Wants = []plumbing.Hash{tipA, tipB}
 
@@ -257,8 +263,10 @@ func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
 		io.NopCloser(&req), ioutil.WriteNopCloser(&out),
 		&UploadPackRequest{GitProtocol: "version=1"}))
 
-	s.Contains(out.String(), fmt.Sprintf("ACK %s continue\n", mid),
+	s.Contains(out.String(), fmt.Sprintf("ACK %s common\n", mid),
 		"a have reachable from the second want must be acknowledged as common")
+	s.NotContains(out.String(), fmt.Sprintf("ACK %s ready\n", mid),
+		"the have must not be reported as merely ready: it is reachable through the second want")
 }
 
 type ReceivePackServeSuite struct {
