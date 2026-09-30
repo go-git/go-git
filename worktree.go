@@ -489,7 +489,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 
 	b := newIndexBuilder(idx)
 
-	changes, err := w.diffTreeWithStaging(t, true)
+	changes, err := w.diffTreeWithStaging(t, true, "")
 	if err != nil {
 		return nil, err
 	}
@@ -736,7 +736,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true)
+	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true, "")
 	if err != nil {
 		return err
 	}
@@ -806,7 +806,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 // noder's IgnoreScope would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
 func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []string) error {
-	changes, err := w.diffStagingWithWorktree(cfg, true, false)
+	changes, err := w.diffStagingWithWorktree(cfg, true, false, "")
 	if err != nil {
 		return err
 	}
@@ -886,7 +886,7 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 }
 
 func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
-	ch, err := w.diffStagingWithWorktree(cfg, false, true)
+	ch, err := w.diffStagingWithWorktree(cfg, false, true, "")
 	if err != nil {
 		return false, err
 	}
