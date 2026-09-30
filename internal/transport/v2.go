@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -145,7 +146,9 @@ type FetchRound func(args *packp.FetchArgs) (out *packp.FetchOutput, packReader 
 // commits acked so far, and a growing batch of haves, until the server reports
 // "ready" (the packfile follows in the same response) or the client runs out of
 // haves and sends "done". The packfile (always sideband-64k muxed in v2) is
-// streamed here, and any shallow-info from the response is applied to st.
+// streamed here. A shallow-info from the response is applied to st when the
+// request asked to deepen; one the server sent unasked is its own boundary,
+// which is recorded only for a clone (see unrequestedShallowRoots).
 //
 // The caller is responsible for validating optional features against the server
 // advertisement (see FetchSupports) before requesting Filter or Depth.
@@ -241,6 +244,13 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		}
 	}
 
+	if shallowInfo != nil && req.Depth == 0 {
+		roots, err := unrequestedShallowRoots(st, shallowInfo)
+		if err != nil {
+			return err
+		}
+		shallowInfo = roots
+	}
 	if shallowInfo != nil {
 		if err := updateShallow(st, shallowInfo); err != nil {
 			return err
@@ -248,6 +258,47 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 	}
 
 	return nil
+}
+
+// unrequestedShallowRoots returns the part of a shallow-info that the server
+// sent without being asked to deepen which may be applied to st. Such a section
+// describes the server's own shallow boundary, not one the client chose. Git
+// records it only when cloning, and then only for roots the pack delivered; a
+// fetch into a repository that already has references leaves the shallow file
+// untouched, so a server cannot cut history the client holds by naming one of
+// its commits as a root. Git rejects the refs that would need the new roots
+// instead; that rejection is not reproduced here, only the refusal to record.
+//
+// https://github.com/git/git/blob/v2.54.0/fetch-pack.c#L1987-L2082
+func unrequestedShallowRoots(st storage.Storer, info *packp.ShallowUpdate) (*packp.ShallowUpdate, error) {
+	refs, err := st.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	defer refs.Close()
+
+	hasRefs := false
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() == plumbing.HashReference {
+			hasRefs = true
+			return storer.ErrStop
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if hasRefs {
+		return nil, nil
+	}
+
+	delivered := make([]plumbing.Hash, 0, len(info.Shallows))
+	for _, h := range info.Shallows {
+		if st.HasEncodedObject(h) == nil {
+			delivered = append(delivered, h)
+		}
+	}
+	return &packp.ShallowUpdate{Shallows: delivered}, nil
 }
 
 // streamPackfile demultiplexes the sideband-64k packfile stream into st.
