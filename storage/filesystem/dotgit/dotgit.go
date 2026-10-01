@@ -55,6 +55,7 @@ const (
 	alternatesPath     = "alternates"
 
 	tmpPackedRefsPrefix = "._packed-refs"
+	packedRefsHeader    = "# pack-refs with: "
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
@@ -1424,10 +1425,6 @@ func (d *DotGit) addRefsFromPackedRefs(refs *[]*plumbing.Reference, seen map[plu
 	return d.findPackedRefs(refsRecvFunc(refs, seen))
 }
 
-func (d *DotGit) addRefsFromPackedRefsFile(refs *[]*plumbing.Reference, f billy.File, seen map[plumbing.ReferenceName]bool) (err error) {
-	return d.findPackedRefsInFile(f, refsRecvFunc(refs, seen))
-}
-
 func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 	pr billy.File, err error,
 ) {
@@ -1515,16 +1512,22 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 	}()
 
 	s := bufio.NewScanner(pr)
-	found := false
+	found, dropping := false, false
 	for s.Scan() {
 		line := s.Text()
+		// A peeled line belongs to the reference before it, and goes with it.
+		if dropping && strings.HasPrefix(line, "^") {
+			continue
+		}
+		dropping = false
+
 		ref, err := d.processLine(line)
 		if err != nil {
 			return err
 		}
 
 		if ref != nil && ref.Name() == name {
-			found = true
+			found, dropping = true, true
 			continue
 		}
 
@@ -1696,12 +1699,68 @@ func (d *DotGit) PackRefs() (err error) {
 	}
 	refs = packable
 	if len(refs) == 0 {
-		// Nothing to do!
-		return nil
+		// Nothing to pack, but a file without the sorted trait is rewritten
+		// sorted, so that readers can stop scanning it early.
+		header, err := bufio.NewReader(f).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		traits, ok := strings.CutPrefix(strings.TrimSuffix(header, "\n"), packedRefsHeader)
+		if header == "" || ok && slices.Contains(strings.Split(traits, " "), "sorted") {
+			return nil
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
 	}
-	numLooseRefs := len(refs)
-	if err = d.addRefsFromPackedRefsFile(&refs, f, seen); err != nil {
+
+	// Existing records, a reference line and the peeled lines after it, are
+	// kept verbatim, so that PackRefs neither drops their peeled values nor
+	// rewrites an ID it could not parse. A packed loose reference replaces
+	// the record of the same name, and the first of repeated names is kept.
+	type record struct{ name, text string }
+	var records []record
+	for _, ref := range refs {
+		records = append(records, record{ref.Name().String(), ref.String() + "\n"})
+	}
+	content, err := io.ReadAll(f)
+	if err != nil {
 		return err
+	}
+	// A peeled line may only follow a reference line, at most once, as git
+	// requires. peeledOwner is the record it then belongs to, or -1 when it
+	// belongs to a record being dropped.
+	peeledOwner, peelable := -1, false
+	for line := range strings.Lines(string(content)) {
+		if !strings.HasSuffix(line, "\n") {
+			line += "\n"
+		}
+		switch {
+		case line == "\n" || line[0] == '#':
+			continue
+		case line[0] == '^':
+			if !peelable {
+				return ErrPackedRefsBadFormat
+			}
+			peelable = false
+			if peeledOwner >= 0 {
+				records[peeledOwner].text += line
+			}
+			continue
+		}
+
+		peelable = true
+		_, name, ok := strings.Cut(strings.TrimSuffix(line, "\n"), " ")
+		if !ok || strings.Contains(name, " ") {
+			return ErrPackedRefsBadFormat
+		}
+		if seen[plumbing.ReferenceName(name)] {
+			peeledOwner = -1
+			continue
+		}
+		seen[plumbing.ReferenceName(name)] = true
+		records = append(records, record{name, line})
+		peeledOwner = len(records) - 1
 	}
 
 	// Write them all to a new temp packed-refs file.
@@ -1715,10 +1774,22 @@ func (d *DotGit) PackRefs() (err error) {
 		_ = d.fs.Remove(tmpName) // don't check err, we might have renamed it
 	}()
 
+	// Write the records sorted by name under a header saying so, which lets
+	// readers stop scanning early, as git's writer does:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1334-L1343
+	// Only records kept from the old file carry peeled values, so the peeled
+	// traits must not be claimed; they would tell readers that no other tag
+	// can be peeled:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L697-L724
+	slices.SortStableFunc(records, func(a, b record) int {
+		return strings.Compare(a.name, b.name)
+	})
 	w := bufio.NewWriter(tmp)
-	for _, ref := range refs {
-		_, err = w.WriteString(ref.String() + "\n")
-		if err != nil {
+	if _, err = w.WriteString(packedRefsHeader + "sorted \n"); err != nil {
+		return err
+	}
+	for _, r := range records {
+		if _, err = w.WriteString(r.text); err != nil {
 			return err
 		}
 	}
@@ -1734,7 +1805,7 @@ func (d *DotGit) PackRefs() (err error) {
 	}
 
 	// Delete only the loose refs packed above, while holding the packed-refs lock.
-	for _, ref := range refs[:numLooseRefs] {
+	for _, ref := range refs {
 		path := d.fs.Join(".", ref.Name().String())
 		err = d.fs.Remove(path)
 		if err != nil && !os.IsNotExist(err) {

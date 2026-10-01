@@ -1415,6 +1415,128 @@ func (s *SuiteDotGit) TestPackRefs() {
 	s.Equal("b8d3ffab552895c19b9fcf7aa264d277cde33881", ref.Hash().String())
 }
 
+// Loose and already packed refs are written merged, in name order, under a
+// header claiming only the sorted trait, since no peeled values are written.
+func (s *SuiteDotGit) TestPackRefsWritesSortedFile() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+	s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(
+		"# pack-refs with: peeled fully-peeled sorted \n"+
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a/b\n"+
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n"+
+			"^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+	), 0o644))
+	for _, name := range []string{"refs/heads/z", "refs/heads/a0", "refs/heads/a-c", "refs/tags/v1"} {
+		s.Require().NoError(dir.SetRef(plumbing.NewReferenceFromStrings(
+			name, "a8d3ffab552895c19b9fcf7aa264d277cde33881",
+		), nil))
+	}
+
+	s.Require().NoError(dir.PackRefs())
+
+	content, err := util.ReadFile(fs, "packed-refs")
+	s.Require().NoError(err)
+	s.Equal("# pack-refs with: sorted \n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a-c\n"+
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a/b\n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/a0\n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/z\n"+
+		"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n", string(content))
+
+	looseCount, err := dir.CountLooseRefs()
+	s.Require().NoError(err)
+	s.Zero(looseCount)
+}
+
+// With nothing loose to pack, a packed-refs file lacking the sorted trait,
+// such as older go-git wrote, is still rewritten sorted, while one git marked
+// sorted is left alone, keeping its peeled lines.
+func (s *SuiteDotGit) TestPackRefsSortsFileWithoutLooseRefs() {
+	for _, tc := range []struct {
+		name, before, after string
+	}{{
+		name: "unsorted",
+		before: "e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n" +
+			"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/main\n",
+		after: "# pack-refs with: sorted \n" +
+			"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/main\n" +
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n",
+	}, {
+		name: "sorted",
+		before: "# pack-refs with: peeled fully-peeled sorted \n" +
+			"a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/main\n" +
+			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n" +
+			"^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+	}} {
+		s.Run(tc.name, func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(tc.before), 0o644))
+
+			s.Require().NoError(New(fs).PackRefs())
+
+			content, err := util.ReadFile(fs, packedRefsPath)
+			s.Require().NoError(err)
+			want := tc.after
+			if want == "" {
+				want = tc.before
+			}
+			s.Equal(want, string(content))
+		})
+	}
+}
+
+// Existing packed records are kept verbatim: a peeled line stays with its
+// tag, and an ID PackRefs cannot parse is not rewritten as the zero ID, with
+// or without loose references to pack.
+func (s *SuiteDotGit) TestPackRefsKeepsPackedRecordsVerbatim() {
+	const (
+		tag   = "e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"
+		bad   = "not-a-hex-id refs/heads/bad\n"
+		other = "a8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/other\n"
+		loose = "b8d3ffab552895c19b9fcf7aa264d277cde33881"
+	)
+	for _, withLoose := range []bool{false, true} {
+		s.Run(fmt.Sprintf("loose=%v", withLoose), func() {
+			fs := s.EmptyFS()
+			dir := New(fs)
+			s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(tag+bad+other), 0o644))
+			want := "# pack-refs with: sorted \n" + bad + other + tag
+			if withLoose {
+				s.Require().NoError(util.WriteFile(fs, "refs/heads/main", []byte(loose+"\n"), 0o644))
+				want = "# pack-refs with: sorted \n" + bad + loose + " refs/heads/main\n" + other + tag
+			}
+
+			s.Require().NoError(dir.PackRefs())
+
+			content, err := util.ReadFile(fs, packedRefsPath)
+			s.Require().NoError(err)
+			s.Equal(want, string(content))
+		})
+	}
+}
+
+// git accepts a peeled line only directly after a reference line, and only
+// one, rejecting the file otherwise ("unexpected line in .git/packed-refs").
+// So does PackRefs, which also keeps a run of peeled lines from growing a
+// record without bound.
+func (s *SuiteDotGit) TestPackRefsRejectsMisplacedPeeledLines() {
+	const (
+		ref  = "e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n"
+		peel = "^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"
+	)
+	for name, content := range map[string]string{
+		"before any ref": peel + ref,
+		"twice":          ref + peel + peel,
+	} {
+		s.Run(name, func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(content), 0o644))
+
+			s.ErrorIs(New(fs).PackRefs(), ErrPackedRefsBadFormat)
+		})
+	}
+}
+
 func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	fs := s.EmptyFS()
 	dir := New(fs)
