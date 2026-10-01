@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
+	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // PackWriter is a io.Writer that generates the packfile index simultaneously,
@@ -143,9 +144,9 @@ func (w *PackWriter) clean() error {
 func (w *PackWriter) save() error {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
 
-	h := crypto.SHA1.New()
+	h := githash.New(crypto.SHA1)
 	if w.checksum.Size() == crypto.SHA256.Size() {
-		h = crypto.SHA256.New()
+		h = githash.New(crypto.SHA256)
 	}
 
 	// Pack files are content addressable. Each file is checked

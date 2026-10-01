@@ -3,6 +3,7 @@ package plumbing
 import (
 	"bytes"
 	"crypto"
+	"crypto/sha1"
 	"fmt"
 	"hash"
 	"sync"
@@ -10,7 +11,25 @@ import (
 
 	"github.com/pjbgf/sha1cd"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
+
+func TestObjectHasherUsesRegisteredSHA1(t *testing.T) { //nolint: paralleltest // modifies global algos map
+	defer func() {
+		require.NoError(t, githash.RegisterHash(crypto.SHA1, sha1cd.New))
+	}()
+
+	assert.IsType(t, sha1cd.New(), FromObjectFormat(format.SHA1).hasher)
+	assert.IsType(t, sha1cd.New(), NewHasher(format.SHA1, BlobObject, 0).Hash)
+
+	require.NoError(t, githash.RegisterHash(crypto.SHA1, sha1.New))
+
+	assert.IsType(t, sha1.New(), FromObjectFormat(format.SHA1).hasher)
+	assert.IsType(t, sha1.New(), NewHasher(format.SHA1, BlobObject, 0).Hash)
+}
 
 func TestHasher(t *testing.T) {
 	t.Parallel()
