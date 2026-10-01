@@ -1026,8 +1026,32 @@ func (s *ObjectStorage) buildPackfileIters(
 				return nil, err
 			}
 			s.muI.RLock()
-			idx := s.index[h]
+			idx, ok := s.index[h]
 			s.muI.RUnlock()
+			if !ok {
+				// The pack was added externally after the index was
+				// loaded: load its idx and install it, so that later
+				// lookups find its objects too.
+				idx, err = s.loadIdx(h)
+				if err != nil {
+					_ = pack.Close()
+					return nil, err
+				}
+				s.muI.Lock()
+				if existing, ok := s.index[h]; ok {
+					// A racing caller installed it while we were loading.
+					_ = idx.Close()
+					idx = existing
+				} else {
+					// Copy-on-grow, as in packfileWriter's Notify.
+					next := make([]packEntry, len(s.packs)+1)
+					copy(next, s.packs)
+					next[len(s.packs)] = packEntry{h: h, idx: idx}
+					s.packs = next
+					s.index[h] = idx
+				}
+				s.muI.Unlock()
+			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, idx,
 				s.objectCache, false, h.Size(),
