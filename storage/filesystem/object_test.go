@@ -467,6 +467,51 @@ func (s *FsSuite) TestPackfileReindex() {
 	}
 }
 
+// TestIterEncodedObjectsExternalPack tests that iterating objects doesn't fail
+// on a packfile added externally after the index was loaded: the iterator lists
+// the packs on disk, and must not expect the index to know all of them.
+func TestIterEncodedObjectsExternalPack(t *testing.T) {
+	t.Parallel()
+
+	packFixture := fixtures.ByTag("packfile").ByTag("standalone").One()
+	packFile, err := packFixture.Packfile()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = packFile.Close() })
+	idxFile, err := packFixture.Idx()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = idxFile.Close() })
+	packFilename := packFixture.PackfileHash
+	testObjectHash := plumbing.NewHash("a771b1e94141480861332fd0e4684d33071306c6") // this is an object we know exists in the standalone packfile
+
+	fs, err := fixtures.Basic().One().DotGit()
+	require.NoError(t, err)
+	storer := NewStorage(fs, cache.NewObjectLRUDefault())
+	t.Cleanup(func() { _ = storer.Close() })
+
+	// load the index before the packfile is added
+	_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+	require.NoError(t, copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", packFilename)), packFile))
+	require.NoError(t, copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", packFilename)), idxFile))
+
+	iter, err := storer.IterEncodedObjects(plumbing.CommitObject)
+	require.NoError(t, err)
+	found := false
+	err = iter.ForEach(func(o plumbing.EncodedObject) error {
+		if o.Hash() == testObjectHash {
+			found = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.True(t, found, "objects of the external packfile should be iterated")
+
+	// the packfile met while iterating is now indexed
+	_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
+	require.NoError(t, err)
+}
+
 func (s *FsSuite) TestGetFromObjectFileSharedCache() {
 	f1, err := fixtures.ByTag("worktree").One().DotGit()
 	s.Require().NoError(err)
