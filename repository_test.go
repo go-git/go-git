@@ -4888,3 +4888,21 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/heads/"), names(r.Branches()))
 	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/tags/"), names(r.Tags()))
 }
+
+// A "*.lock" file, which git update-ref holds briefly while it updates a ref,
+// is not a reference. Git's ref store skips it, so maintenance must not
+// treat it as a broken reference and refuse to run.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L386-L391
+func (s *RepositorySuite) TestMaintenanceIgnoresLockFiles() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	for _, name := range []string{"refs/heads/x.lock", "refs/heads/.hidden"} {
+		s.Require().NoError(util.WriteFile(dotgit, name, nil, 0o644))
+	}
+	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	s.NoError(r.Prune(PruneOptions{Handler: func(plumbing.Hash) error { return nil }}))
+	s.NoError(r.RepackObjects(&RepackConfig{}))
+}

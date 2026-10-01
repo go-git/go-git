@@ -21,7 +21,7 @@ import (
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
 // It holds no file open.
 func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
-	loose, err := d.looseRefs(prefix, false)
+	loose, err := d.looseRefs(prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -32,10 +32,9 @@ func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 // looseRefs returns the loose refs matching prefix, starting with HEAD when
 // it matches, since HEAD sorts before every name under refs/. A ref Git
 // treats as broken is returned with the all-zero ID, as Git's ref store
-// reports it. skipNonRefs leaves out the entries Git does not read as refs;
-// without it every entry is listed.
-func (d *DotGit) looseRefs(prefix string, skipNonRefs bool) (*looseRefsSource, error) {
-	s := &looseRefsSource{d: d, skipNonRefs: skipNonRefs}
+// reports it.
+func (d *DotGit) looseRefs(prefix string) (*looseRefsSource, error) {
+	s := &looseRefsSource{d: d}
 
 	if strings.HasPrefix("HEAD", prefix) { //nolint:gocritic // HEAD matches a prefix of itself
 		head, err := s.read("HEAD")
@@ -45,7 +44,7 @@ func (d *DotGit) looseRefs(prefix string, skipNonRefs bool) (*looseRefsSource, e
 		s.head = head
 	}
 
-	dir, err := d.looseRefsDirWithPrefix(prefix, skipNonRefs)
+	dir, err := d.looseRefsDirWithPrefix(prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -62,23 +61,22 @@ type looseRefsDir struct {
 	entries []fs.DirEntry
 }
 
-// looseRefsEntries lists the loose refs directory dir, optionally skipping the
-// entries Git does not read as refs, and sorts them so that a depth-first
-// walk yields names in byte-wise order. Git names a directory entry with a trailing slash, so
-// "a-c" sorts before the refs under "a/":
+// looseRefsEntries lists the loose refs directory dir, skipping entries named
+// ".*" or "*.lock", which Git's ref store never reads as refs: a "*.lock" file
+// exists while git update-ref updates a ref. It sorts the rest so that a
+// depth-first walk yields names in byte-wise order. Git names a directory
+// entry with a trailing slash, so "a-c" sorts before the refs under "a/":
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L386-L398
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/ref-cache.c#L108-L113
-func (d *DotGit) looseRefsEntries(dir string, skipNonRefs bool) ([]fs.DirEntry, error) {
+func (d *DotGit) looseRefsEntries(dir string) ([]fs.DirEntry, error) {
 	entries, err := d.fs.ReadDir(d.fs.Join(strings.Split(dir, "/")...))
 	if err != nil {
 		return nil, err
 	}
 
-	if skipNonRefs {
-		entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
-			return strings.HasPrefix(e.Name(), ".") || strings.HasSuffix(e.Name(), ".lock")
-		})
-	}
+	entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
+		return strings.HasPrefix(e.Name(), ".") || strings.HasSuffix(e.Name(), ".lock")
+	})
 	key := func(e fs.DirEntry) string {
 		if e.IsDir() {
 			return e.Name() + "/"
@@ -98,7 +96,7 @@ func (d *DotGit) looseRefsEntries(dir string, skipNonRefs bool) ([]fs.DirEntry, 
 // Looking up components in directory listings prevents traversal through the
 // prefix and preserves on-disk spelling: "refs/Heads/" does not match
 // "refs/heads/", even on case-insensitive filesystems.
-func (d *DotGit) looseRefsDirWithPrefix(prefix string, skipNonRefs bool) (*looseRefsDir, error) {
+func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 	rest, underRefs := strings.CutPrefix(prefix, refsPath+"/")
 	if !underRefs {
 		// Every name under refs/ matches a prefix of "refs/", such as "ref".
@@ -110,7 +108,7 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string, skipNonRefs bool) (*loose
 
 	dir := refsPath
 	for {
-		entries, err := d.looseRefsEntries(dir, skipNonRefs)
+		entries, err := d.looseRefsEntries(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, nil
@@ -146,8 +144,6 @@ type looseRefsSource struct {
 	d    *DotGit
 	head *plumbing.Reference
 	dirs []looseRefsDir
-	// skipNonRefs leaves out entries Git does not read as refs.
-	skipNonRefs bool
 }
 
 // read reads the loose ref name. An unparsable file is reported with the
@@ -182,7 +178,7 @@ func (s *looseRefsSource) Next() (*plumbing.Reference, error) {
 		name := dir.name + "/" + entry.Name()
 
 		if entry.IsDir() {
-			entries, err := s.d.looseRefsEntries(name, s.skipNonRefs)
+			entries, err := s.d.looseRefsEntries(name)
 			if os.IsNotExist(err) {
 				// The directory may have been removed since listing.
 				continue

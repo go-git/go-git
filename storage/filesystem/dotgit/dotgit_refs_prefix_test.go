@@ -270,9 +270,8 @@ func TestRefsWithPrefixToleratesRefsRemovedMidWalk(t *testing.T) {
 }
 
 // RefsWithPrefix reports what Refs does: a loose ref Git treats as broken
-// with the all-zero ID, still hiding the packed ref of the same name, and
-// every loose entry, including "*.lock" and ".*" names, which listing callers
-// such as Repository.Branches leave out.
+// with the all-zero ID, still hiding the packed ref of the same name. Like
+// Git's ref store, neither lists "*.lock" or ".*" entries, which are not refs.
 func TestRefsWithPrefixReportsBrokenLooseRefs(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
@@ -303,14 +302,19 @@ func TestRefsWithPrefixReportsBrokenLooseRefs(t *testing.T) {
 		plumbing.ZeroHash.String() + " refs/heads/empty",
 		plumbing.ZeroHash.String() + " refs/heads/garbage",
 		plumbing.ZeroHash.String() + " refs/heads/shadow",
-		hashA + " refs/heads/main.lock",
-		hashA + " refs/heads/.hidden",
 		hashB + " refs/heads/after",
 		hashB + " refs/heads/trailing",
 	} {
 		assert.Contains(t, refs, want)
 	}
-	assert.NotContains(t, refs, hashB+" refs/heads/shadow")
+	for _, unwanted := range []string{
+		hashB + " refs/heads/shadow",
+		hashA + " refs/heads/main.lock",
+		hashA + " refs/heads/.hidden",
+		hashA + " refs/heads/.dir/x",
+	} {
+		assert.NotContains(t, refs, unwanted)
+	}
 
 	iter, err := dir.RefsWithPrefix("")
 	require.NoError(t, err)

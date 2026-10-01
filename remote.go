@@ -105,6 +105,16 @@ func (r *Remote) PushContext(ctx context.Context, o *PushOptions) (err error) {
 
 	for _, spec := range o.RefSpecs {
 		if !spec.IsWildcard() {
+			// An explicit source that is not a valid name, such as a
+			// "*.lock" file, is never listed as a reference, as Git's ref
+			// store does not list it. It must fail here rather than go
+			// unmatched: prune would read its absence as a request to delete
+			// its mapped destination.
+			if src := plumbing.ReferenceName(spec.Src()); src.IsUnderRefs() {
+				if err := src.Validate(); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		// A source glob must satisfy Git's refname rules with one wildcard
@@ -187,8 +197,7 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		return err
 	}
 	// Storage enumeration is also used by repository maintenance and must
-	// remain complete. Only push candidates exclude malformed ordinary refs,
-	// including stale lock files that Git's files ref iterator skips.
+	// remain complete. Only push candidates exclude malformed ordinary refs.
 	pushRefs := localRefs[:0]
 	for _, ref := range localRefs {
 		if ref.Name().IsUnderRefs() {

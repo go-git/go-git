@@ -1614,8 +1614,7 @@ func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, 
 }
 
 // CountLooseRefs returns the number of loose references in the repository,
-// counting broken ones but not entries Git does not read as refs, such as
-// "*.lock" files.
+// counting broken ones.
 func (d *DotGit) CountLooseRefs() (int, error) {
 	refs, err := d.looseRefsUnderRefs()
 	return len(refs), err
@@ -1623,9 +1622,9 @@ func (d *DotGit) CountLooseRefs() (int, error) {
 
 // looseRefsUnderRefs returns the loose references under refs/ as git
 // pack-refs reads them: a broken one has the all-zero ID, so PackRefs leaves
-// it loose, and entries Git does not read as refs are left out.
+// it loose.
 func (d *DotGit) looseRefsUnderRefs() ([]*plumbing.Reference, error) {
-	loose, err := d.looseRefs(refsPath+"/", true)
+	loose, err := d.looseRefs(refsPath + "/")
 	if err != nil {
 		return nil, err
 	}
