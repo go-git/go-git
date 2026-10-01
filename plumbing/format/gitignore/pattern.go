@@ -497,6 +497,10 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 	trailingStar := false
 	for i, pattern := range p.pattern {
 		if pattern == "" {
+			if i > 0 {
+				// Only the first empty component anchors a pattern at the root.
+				return false
+			}
 			canTraverse = false
 			continue
 		}
