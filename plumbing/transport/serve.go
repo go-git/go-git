@@ -29,6 +29,11 @@ var ErrFunnyRefname = errors.New("funny refname")
 // list updates one reference more than once.
 var ErrDuplicateRefname = errors.New("multiple updates for ref not allowed")
 
+// ErrMissingObject is reported for a create or update command whose new value
+// names an object the repository does not have, mirroring canonical Git's
+// refusal to point a reference at a nonexistent object.
+var ErrMissingObject = errors.New("missing necessary objects")
+
 // AdvertiseRefs is a server command that implements the reference
 // discovery phase of the v0/v1 Git transfer protocol. Protocol v2 advertises
 // capabilities only, via [AdvertiseCapabilities]; the sole reason this function

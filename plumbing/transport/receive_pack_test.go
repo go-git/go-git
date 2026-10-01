@@ -81,6 +81,24 @@ func seedRef(t *testing.T, ref plumbing.ReferenceName, hash plumbing.Hash) stora
 	return st
 }
 
+// seedObject stores a blob carrying content in st and returns its hash.
+// receive-pack refuses to point a reference at an object the repository does
+// not have, so a create or update whose new value must be accepted has to make
+// that object exist first.
+func seedObject(t *testing.T, st storage.Storer, content string) plumbing.Hash {
+	t.Helper()
+	obj := st.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	h, err := st.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return h
+}
+
 func TestReceivePackNilHooksDeleteRef(t *testing.T) {
 	t.Parallel()
 
@@ -474,7 +492,7 @@ func TestReceivePackAcceptsBenignRefnames(t *testing.T) {
 			t.Parallel()
 
 			st := memory.NewStorage()
-			hash := plumbing.NewHash(receivePackTestHash)
+			hash := seedObject(t, st, "benign")
 
 			var out bytes.Buffer
 			err := ReceivePack(
@@ -497,12 +515,85 @@ func TestReceivePackAcceptsBenignRefnames(t *testing.T) {
 	}
 }
 
+func TestReceivePackRefusesRefToMissingObject(t *testing.T) {
+	t.Parallel()
+
+	ref := plumbing.ReferenceName("refs/heads/main")
+	missing := plumbing.NewHash(receivePackTestHash)
+
+	t.Run("create", func(t *testing.T) {
+		t.Parallel()
+		st := memory.NewStorage()
+
+		var out bytes.Buffer
+		err := ReceivePack(
+			context.Background(), st,
+			receivePackRequest(t, []*packp.Command{
+				{Name: ref, Old: plumbing.ZeroHash, New: missing},
+			}),
+			ioutil.WriteNopCloser(&out),
+			&ReceivePackRequest{StatelessRPC: true},
+		)
+		require.ErrorIs(t, err, ErrMissingObject)
+		assert.Contains(t, out.String(), "unpack ok")
+		assert.Contains(t, out.String(), "ng refs/heads/main missing necessary objects")
+
+		_, refErr := st.Reference(ref)
+		assert.ErrorIs(t, refErr, plumbing.ErrReferenceNotFound)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		t.Parallel()
+		st := memory.NewStorage()
+		old := seedObject(t, st, "base")
+		require.NoError(t, st.SetReference(plumbing.NewHashReference(ref, old)))
+
+		var out bytes.Buffer
+		err := ReceivePack(
+			context.Background(), st,
+			receivePackRequest(t, []*packp.Command{
+				{Name: ref, Old: old, New: missing},
+			}),
+			ioutil.WriteNopCloser(&out),
+			&ReceivePackRequest{StatelessRPC: true},
+		)
+		require.ErrorIs(t, err, ErrMissingObject)
+		assert.Contains(t, out.String(), "ng refs/heads/main missing necessary objects")
+
+		got, refErr := st.Reference(ref)
+		require.NoError(t, refErr)
+		assert.Equal(t, old, got.Hash(), "ref must not move to a missing object")
+	})
+
+	t.Run("present object is accepted", func(t *testing.T) {
+		t.Parallel()
+		st := memory.NewStorage()
+		present := seedObject(t, st, "present")
+
+		var out bytes.Buffer
+		err := ReceivePack(
+			context.Background(), st,
+			receivePackRequest(t, []*packp.Command{
+				{Name: ref, Old: plumbing.ZeroHash, New: present},
+			}),
+			ioutil.WriteNopCloser(&out),
+			&ReceivePackRequest{StatelessRPC: true},
+		)
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), "ok refs/heads/main")
+
+		got, refErr := st.Reference(ref)
+		require.NoError(t, refErr)
+		assert.Equal(t, present, got.Hash())
+	})
+}
+
 func TestReceivePackFunnyRefnameDoesNotBlockGoodRefs(t *testing.T) {
 	t.Parallel()
 
 	good := plumbing.ReferenceName("refs/heads/ok")
-	hash := plumbing.NewHash(receivePackTestHash)
 	st := memory.NewStorage()
+	hash := seedObject(t, st, "ok")
 
 	var out bytes.Buffer
 	err := ReceivePack(
@@ -575,9 +666,6 @@ func TestReceivePackFunnyRefnameWireFormat(t *testing.T) {
 func TestReceivePackAcceptsWellFormedRefs(t *testing.T) {
 	t.Parallel()
 
-	hash := plumbing.NewHash(receivePackTestHash)
-	other := plumbing.NewHash("1111111111111111111111111111111111111111")
-
 	for _, name := range []plumbing.ReferenceName{
 		"refs/heads/main",
 		"refs/heads/feature/nested/name",
@@ -598,6 +686,8 @@ func TestReceivePackAcceptsWellFormedRefs(t *testing.T) {
 			t.Parallel()
 
 			st := memory.NewStorage()
+			other := seedObject(t, st, "well-formed-other")
+			hash := seedObject(t, st, "well-formed-hash")
 
 			var out bytes.Buffer
 			require.NoError(t, ReceivePack(
@@ -845,8 +935,8 @@ func TestReceivePackCloseErrorYieldsToRequestError(t *testing.T) {
 func TestReceivePackReportsStatusInCommandOrder(t *testing.T) {
 	t.Parallel()
 
-	hash := plumbing.NewHash(receivePackTestHash)
 	st := memory.NewStorage()
+	hash := seedObject(t, st, "ordered")
 
 	var out bytes.Buffer
 	err := ReceivePack(
@@ -1373,7 +1463,7 @@ func TestReceivePackWithoutReportStatus(t *testing.T) {
 			st := memory.NewStorage()
 			name := plumbing.ReferenceName("refs/tags/main")
 			old := plumbing.NewHash(receivePackTestHash)
-			newHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+			newHash := seedObject(t, st, "without-report-status")
 			if action == "create" {
 				old = plumbing.ZeroHash
 			} else {
