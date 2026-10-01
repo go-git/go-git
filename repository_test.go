@@ -4819,3 +4819,72 @@ func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
 	s.Require().NoError(r.Storer.HasEncodedObject(commit))
 	s.Require().NoError(r.Storer.HasEncodedObject(tree))
 }
+
+// Branches and Tags list what git for-each-ref lists, skipping what it skips:
+// broken loose refs, and names that are not valid, whether loose "*.lock"
+// files or packed entries.
+func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git := func(args ...string) string {
+		out, err := gitenv.Command("git", append([]string{"-C", dir}, args...)...).Output()
+		require.NoError(t, err, "git %v", args)
+		return strings.TrimSpace(string(out))
+	}
+	git("-c", "init.defaultBranch=main", "init", "-q")
+	if _, err := os.Stat(filepath.Join(dir, ".git", "reftable")); err == nil {
+		t.Skip("git defaults to the reftable backend")
+	}
+	git("-c", "user.name=a", "-c", "user.email=a@example.com", "commit", "-q", "--allow-empty", "-m", "a")
+	head := git("rev-parse", "HEAD")
+	for _, name := range []string{"refs/heads/feature", "refs/heads/shadowed", "refs/tags/v1"} {
+		git("update-ref", name, head)
+	}
+	git("pack-refs", "--all")
+
+	// Add a packed name git rejects, keeping the file sorted as its header
+	// claims.
+	packed, err := os.ReadFile(filepath.Join(dir, ".git", "packed-refs"))
+	require.NoError(t, err)
+	header, records, _ := strings.Cut(string(packed), "\n")
+	lines := append(strings.Split(strings.TrimSuffix(records, "\n"), "\n"), head+" refs/heads/bad..name")
+	slices.SortFunc(lines, func(a, b string) int {
+		return strings.Compare(a[strings.IndexByte(a, ' ')+1:], b[strings.IndexByte(b, ' ')+1:])
+	})
+	files := map[string]string{
+		"packed-refs":              header + "\n" + strings.Join(lines, "\n") + "\n",
+		"refs/heads/empty":         "",
+		"refs/heads/garbage":       "garbage\n",
+		"refs/heads/shadowed":      "",
+		"refs/heads/locked.lock":   head + "\n",
+		"refs/heads/.hidden":       head + "\n",
+		"refs/tags/truncated":      "",
+		"refs/tags/v1.lock":        head + "\n",
+		"refs/heads/topic/nested":  head + "\n",
+		"refs/heads/topic/broken":  "ref:\n",
+		"refs/heads/trailing-text": head + " trailing\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, ".git", filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+
+	r, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	names := func(iter storer.ReferenceIter, err error) string {
+		require.NoError(t, err)
+		var names []string
+		require.NoError(t, iter.ForEach(func(ref *plumbing.Reference) error {
+			names = append(names, ref.Name().String())
+			return nil
+		}))
+		return strings.Join(names, "\n")
+	}
+
+	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/heads/"), names(r.Branches()))
+	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/tags/"), names(r.Tags()))
+}

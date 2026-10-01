@@ -1688,21 +1688,39 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 //	  // Handle outer iterator error
 //	}
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
-	return storer.IterReferencesWithPrefix(r.Storer, plumbing.RefPrefix+"tags/")
+	return r.listReferences(plumbing.RefPrefix + "tags/")
 }
 
 // Branches returns all the References that are Branches, sorted by name.
 // Like git branch, it may skip branches that cannot be read, such as an empty
 // loose ref file, rather than fail.
 func (r *Repository) Branches() (storer.ReferenceIter, error) {
-	return storer.IterReferencesWithPrefix(r.Storer, plumbing.RefHeadPrefix)
+	return r.listReferences(plumbing.RefHeadPrefix)
 }
 
 // Notes returns all the References that are notes, sorted by name. It may
 // skip references that cannot be read, as Tags and Branches do. For more
 // information: https://git-scm.com/docs/git-notes
 func (r *Repository) Notes() (storer.ReferenceIter, error) {
-	return storer.IterReferencesWithPrefix(r.Storer, plumbing.RefPrefix+"notes/")
+	return r.listReferences(plumbing.RefPrefix + "notes/")
+}
+
+// listReferences returns the references under prefix, sorted by name, that
+// git for-each-ref lists: it skips a reference whose name is not valid, such
+// as a "*.lock" file, and one storage reports with the all-zero ID because it
+// cannot read it. Unlike git, it also skips a packed reference that holds the
+// all-zero ID, which it cannot tell apart from an unreadable one.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L3015-L3023
+func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error) {
+	iter, err := storer.IterReferencesWithPrefix(r.Storer, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	return storer.NewReferenceFilteredIter(func(ref *plumbing.Reference) bool {
+		broken := ref.Type() == plumbing.HashReference && ref.Hash().IsZero()
+		return !broken && ref.Name().Validate() == nil
+	}, iter), nil
 }
 
 // TreeObject return a Tree with the given hash. If not found
