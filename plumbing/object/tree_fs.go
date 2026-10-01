@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 )
 
@@ -21,6 +22,7 @@ type treeFilesystem struct {
 }
 
 var _ billy.Filesystem = (*treeFilesystem)(nil)
+
 var _ billy.Capable = (*treeFilesystem)(nil)
 
 // validPath validates paths for read operations. It treats
@@ -42,27 +44,27 @@ func (tfs *treeFilesystem) validPath(p string) error {
 
 // treeFilesystem is a read-only filesystem implementation
 
-func (tfs *treeFilesystem) Create(filename string) (billy.File, error) {
+func (tfs *treeFilesystem) Create(_ string) (billy.File, error) {
 	return nil, billy.ErrReadOnly
 }
 
-func (tfs *treeFilesystem) Remove(filename string) error {
+func (tfs *treeFilesystem) Remove(_ string) error {
 	return billy.ErrReadOnly
 }
 
-func (tfs *treeFilesystem) Rename(oldpath string, newpath string) error {
+func (tfs *treeFilesystem) Rename(_, _ string) error {
 	return billy.ErrReadOnly
 }
 
-func (tfs *treeFilesystem) Symlink(target string, link string) error {
+func (tfs *treeFilesystem) Symlink(_, _ string) error {
 	return billy.ErrReadOnly
 }
 
-func (tfs *treeFilesystem) TempFile(dir string, prefix string) (billy.File, error) {
+func (tfs *treeFilesystem) TempFile(_, _ string) (billy.File, error) {
 	return nil, billy.ErrReadOnly
 }
 
-func (tfs *treeFilesystem) MkdirAll(filename string, perm fs.FileMode) error {
+func (tfs *treeFilesystem) MkdirAll(_ string, _ fs.FileMode) error {
 	return billy.ErrReadOnly
 }
 
@@ -122,10 +124,9 @@ func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
 	default:
 		return nil, fmt.Errorf("unsupported file mode %v", e.Mode)
 	}
-
 }
 
-func (tfs *treeFilesystem) OpenFile(filename string, flag int, perm fs.FileMode) (billy.File, error) {
+func (tfs *treeFilesystem) OpenFile(filename string, flag int, _ fs.FileMode) (billy.File, error) {
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC|os.O_EXCL) != 0 {
 		return nil, billy.ErrReadOnly
 	}
@@ -137,7 +138,7 @@ func (tfs *treeFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	dir, ok := file.(fs.ReadDirFile)
 	if !ok {
@@ -210,7 +211,7 @@ func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 	}, nil
 }
 
-func (tfs *treeFilesystem) Stat(filename string) (fs.FileInfo, error) {
+func (tfs *treeFilesystem) Stat(_ string) (fs.FileInfo, error) {
 	panic("unimplemented")
 }
 
@@ -262,17 +263,17 @@ func (t *treeFile) Stat() (fs.FileInfo, error) {
 }
 
 // Truncate implements [billy.File].
-func (t *treeFile) Truncate(size int64) error {
+func (t *treeFile) Truncate(_ int64) error {
 	return billy.ErrReadOnly
 }
 
 // Write implements [billy.File].
-func (t *treeFile) Write(p []byte) (n int, err error) {
+func (t *treeFile) Write(_ []byte) (n int, err error) {
 	return 0, billy.ErrReadOnly
 }
 
 // WriteAt implements [billy.File].
-func (t *treeFile) WriteAt(p []byte, off int64) (n int, err error) {
+func (t *treeFile) WriteAt(_ []byte, _ int64) (n int, err error) {
 	return 0, billy.ErrReadOnly
 }
 
@@ -287,6 +288,7 @@ type treeDir struct {
 }
 
 var _ billy.File = (*treeDir)(nil)
+
 var _ fs.ReadDirFile = (*treeDir)(nil)
 
 // Close implements [billy.File].
@@ -308,12 +310,12 @@ func (t *treeDir) Read([]byte) (int, error) {
 }
 
 // ReadAt implements [billy.File].
-func (t *treeDir) ReadAt(p []byte, off int64) (n int, err error) {
+func (t *treeDir) ReadAt(_ []byte, _ int64) (n int, err error) {
 	return 0, fmt.Errorf("is a directory")
 }
 
 // Seek implements [billy.File].
-func (t *treeDir) Seek(offset int64, whence int) (int64, error) {
+func (t *treeDir) Seek(_ int64, _ int) (int64, error) {
 	return 0, fmt.Errorf("is a directory")
 }
 
@@ -323,22 +325,22 @@ func (t *treeDir) Stat() (fs.FileInfo, error) {
 }
 
 // Truncate implements [billy.File].
-func (t *treeDir) Truncate(size int64) error {
+func (t *treeDir) Truncate(_ int64) error {
 	return billy.ErrReadOnly
 }
 
 // Write implements [billy.File].
-func (t *treeDir) Write(p []byte) (n int, err error) {
+func (t *treeDir) Write(_ []byte) (n int, err error) {
 	return 0, billy.ErrReadOnly
 }
 
 // WriteAt implements [billy.File].
-func (t *treeDir) WriteAt(p []byte, off int64) (n int, err error) {
+func (t *treeDir) WriteAt(_ []byte, _ int64) (n int, err error) {
 	return 0, billy.ErrReadOnly
 }
 
 // MkdirAll implements [fs.ReadDirFile].
-func (t *treeDir) MkdirAll(filename string, perm fs.FileMode) error {
+func (t *treeDir) MkdirAll(_ string, _ fs.FileMode) error {
 	return billy.ErrReadOnly
 }
 
@@ -352,9 +354,7 @@ func (t *treeDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 
 	end := t.index + n
-	if end > len(t.tree.Entries) {
-		end = len(t.tree.Entries)
-	}
+	end = min(end, len(t.tree.Entries))
 	entries := make([]fs.DirEntry, 0, end-t.index)
 	for i := t.index; i < end; i++ {
 		entries = append(entries, treeDirEntry{entry: &t.tree.Entries[i]})

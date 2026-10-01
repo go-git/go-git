@@ -8,13 +8,15 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/stretchr/testify/require"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTreeFilesystemFileOperations(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	fileHash := storeTestObject(t, store, plumbing.BlobObject, []byte("hello tree"))
 	root := &Tree{
@@ -46,6 +48,7 @@ func TestTreeFilesystemFileOperations(t *testing.T) {
 }
 
 func TestTreeFilesystemConcurrentReadAt(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	fileHash := storeTestObject(t, store, plumbing.BlobObject, []byte("concurrent reads"))
 	filesystem := &treeFilesystem{
@@ -81,6 +84,7 @@ func TestTreeFilesystemConcurrentReadAt(t *testing.T) {
 }
 
 func TestTreeFilesystemDirectoryOperations(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	fileHash := storeTestObject(t, store, plumbing.BlobObject, []byte("nested"))
 	subtreeHash := storeTestTree(t, store, []TreeEntry{{Name: "nested.txt", Mode: filemode.Regular, Hash: fileHash}})
@@ -108,6 +112,7 @@ func TestTreeFilesystemDirectoryOperations(t *testing.T) {
 }
 
 func TestTreeFilesystemRejectsWriteOperations(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	fileHash := storeTestObject(t, store, plumbing.BlobObject, []byte("read only"))
 	root := &Tree{
@@ -136,6 +141,7 @@ func TestTreeFilesystemRejectsWriteOperations(t *testing.T) {
 	writeFlags := []int{os.O_WRONLY, os.O_RDWR, os.O_APPEND, os.O_CREATE, os.O_TRUNC, os.O_EXCL}
 	for _, flag := range writeFlags {
 		t.Run("OpenFile write flag", func(t *testing.T) {
+			t.Parallel()
 			_, err := filesystem.OpenFile("file", flag, 0o644)
 			require.ErrorIs(t, err, billy.ErrReadOnly)
 		})
@@ -152,6 +158,7 @@ func TestTreeFilesystemRejectsWriteOperations(t *testing.T) {
 }
 
 func TestTreeFilesystemRejectsDirectoryWrites(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	subtreeHash := storeTestTree(t, store, nil)
 	filesystem := &treeFilesystem{
@@ -172,6 +179,7 @@ func TestTreeFilesystemRejectsDirectoryWrites(t *testing.T) {
 }
 
 func TestTreeFilesystemSymlinkAndLstat(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	targetHash := storeTestObject(t, store, plumbing.BlobObject, []byte("target.txt"))
 	root := &Tree{
@@ -198,6 +206,7 @@ func TestTreeFilesystemSymlinkAndLstat(t *testing.T) {
 }
 
 func TestTreeFilesystemInvalidPaths(t *testing.T) {
+	t.Parallel()
 	filesystem := &treeFilesystem{tree: &Tree{}}
 
 	for _, path := range []string{"../outside", "a//b", ""} {
@@ -211,6 +220,7 @@ func TestTreeFilesystemInvalidPaths(t *testing.T) {
 }
 
 func TestTreeFilesystemReadAtDoesNotChangePosition(t *testing.T) {
+	t.Parallel()
 	store := memory.NewStorage()
 	hash := storeTestObject(t, store, plumbing.BlobObject, []byte("abcdef"))
 	filesystem := &treeFilesystem{tree: &Tree{
