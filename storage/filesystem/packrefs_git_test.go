@@ -89,17 +89,21 @@ func TestPackRefsIsReadByGit(t *testing.T) {
 	packRefsGit(t, dir, "pack-refs", "--all")
 	assert.Equal(t, wantList, listRefs())
 
-	// Over a file git wrote, with peeled lines, packing a new loose ref
-	// keeps every other record and its peeled value.
+	// Over a file git wrote with a peeled line, packing a new loose ref keeps
+	// every other record and its peeled value. git peels only the refs it
+	// packs from loose, so the annotated tag is created loose first.
+	packRefsGit(t, dir, "-c", "user.name=a", "-c", "user.email=a@example.com", "tag", "-a", "-m", "v3", "v3", b)
+	packRefsGit(t, dir, "pack-refs", "--all")
+	v3 := packRefsGit(t, dir, "rev-parse", "refs/tags/v3") + " refs/tags/v3\n^" + b + "\n"
+	require.Contains(t, string(must(os.ReadFile(filepath.Join(dir, ".git", "packed-refs")))), v3)
 	packRefsGit(t, dir, "update-ref", "refs/heads/new", a)
 	wantList, wantShow = listRefs(), showRefs()
-	require.Contains(t, string(must(os.ReadFile(filepath.Join(dir, ".git", "packed-refs")))), "\n^")
 	sto = filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
 	require.NoError(t, sto.PackRefs())
 	require.NoError(t, sto.Close())
 	assert.Equal(t, wantList, listRefs())
 	assert.Equal(t, wantShow, showRefs())
-	assert.Contains(t, string(must(os.ReadFile(filepath.Join(dir, ".git", "packed-refs")))), "\n^")
+	assert.Contains(t, string(must(os.ReadFile(filepath.Join(dir, ".git", "packed-refs")))), v3)
 }
 
 func must[T any](v T, err error) T {

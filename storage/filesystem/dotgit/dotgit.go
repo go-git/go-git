@@ -1727,9 +1727,10 @@ func (d *DotGit) PackRefs() (err error) {
 	if err != nil {
 		return err
 	}
-	// peeledOwner is the record that the next peeled lines belong to, or -1
-	// when they belong to a record being dropped.
-	peeledOwner, sawRef := -1, false
+	// A peeled line may only follow a reference line, at most once, as git
+	// requires. peeledOwner is the record it then belongs to, or -1 when it
+	// belongs to a record being dropped.
+	peeledOwner, peelable := -1, false
 	for line := range strings.Lines(string(content)) {
 		if !strings.HasSuffix(line, "\n") {
 			line += "\n"
@@ -1738,16 +1739,17 @@ func (d *DotGit) PackRefs() (err error) {
 		case line == "\n" || line[0] == '#':
 			continue
 		case line[0] == '^':
-			if !sawRef {
+			if !peelable {
 				return ErrPackedRefsBadFormat
 			}
+			peelable = false
 			if peeledOwner >= 0 {
 				records[peeledOwner].text += line
 			}
 			continue
 		}
 
-		sawRef = true
+		peelable = true
 		_, name, ok := strings.Cut(strings.TrimSuffix(line, "\n"), " ")
 		if !ok || strings.Contains(name, " ") {
 			return ErrPackedRefsBadFormat

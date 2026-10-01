@@ -1515,14 +1515,26 @@ func (s *SuiteDotGit) TestPackRefsKeepsPackedRecordsVerbatim() {
 	}
 }
 
-func (s *SuiteDotGit) TestPackRefsRejectsPeeledLineWithoutRef() {
-	fs := s.EmptyFS()
-	s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(
-		"^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"+
-			"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n",
-	), 0o644))
+// git accepts a peeled line only directly after a reference line, and only
+// one, rejecting the file otherwise ("unexpected line in .git/packed-refs").
+// So does PackRefs, which also keeps a run of peeled lines from growing a
+// record without bound.
+func (s *SuiteDotGit) TestPackRefsRejectsMisplacedPeeledLines() {
+	const (
+		ref  = "e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/tags/v1\n"
+		peel = "^6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n"
+	)
+	for name, content := range map[string]string{
+		"before any ref": peel + ref,
+		"twice":          ref + peel + peel,
+	} {
+		s.Run(name, func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(content), 0o644))
 
-	s.ErrorIs(New(fs).PackRefs(), ErrPackedRefsBadFormat)
+			s.ErrorIs(New(fs).PackRefs(), ErrPackedRefsBadFormat)
+		})
+	}
 }
 
 func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
