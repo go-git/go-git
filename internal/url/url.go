@@ -3,43 +3,88 @@ package url
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
-var (
-	isSchemeRegExp = regexp.MustCompile(`^[^:]+://`)
+var fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
 
-	// Ref: https://github.com/git/git/blob/v2.54.0/Documentation/urls.adoc#L41-L48
-	scpLikeURLRegExp = regexp.MustCompile(`^(?:(?P<user>[^@]+)@)?(?P<host>[^:\s]+):(?:(?P<port>[0-9]{1,5}):)?(?P<path>[^\\].*)$`)
-
-	fileIssueWindows = regexp.MustCompile(`^/[A-Za-z]:(/|\\)`)
-)
-
-// MatchesScheme returns true if the given string matches a URL-like
-// format scheme.
+// MatchesScheme reports whether url contains "://".
+// It does not validate the scheme or require it to be non-empty.
 func MatchesScheme(url string) bool {
-	return isSchemeRegExp.MatchString(url)
+	return strings.Contains(url, "://")
+}
+
+// matchScpLike locates the path using Git's host_end and parse_connect_url
+// rules before splitting the user from the host. Brackets are retained here;
+// ParseSCP handles Git's subsequent unwrapping and port extraction.
+func matchScpLike(s string) (user, host, path string, ok bool) {
+	start, end := scpHostBounds(s)
+	separatorStart := max(end, 0)
+	colon := strings.IndexByte(s[separatorStart:], ':')
+	if colon < 0 {
+		return "", "", "", false
+	}
+	colon += separatorStart
+	host, path = s[:colon], s[colon+1:]
+
+	// Git calls host_end again on just the authority. Reuse the bounds
+	// unless an unterminated @[ in the path hid the bracketed host.
+	if start > colon {
+		start, end = scpHostBounds(host)
+	}
+	if end >= 0 {
+		if start > 0 {
+			user = host[:start-1]
+		}
+		return user, host[start : end+1], path, true
+	}
+	// OpenSSH separates user and host at the last @, after Git has
+	// isolated the authority from the path.
+	if at := strings.LastIndexByte(host, '@'); at >= 0 {
+		user, host = host[:at], host[at+1:]
+	}
+	return user, host, path, true
+}
+
+// scpHostBounds follows Git's host_end bracket precedence. A negative end
+// means there is no complete bracketed host.
+func scpHostBounds(s string) (start, end int) {
+	if at := strings.Index(s, "@["); at >= 0 {
+		start = at + 1
+	}
+	if start < len(s) && s[start] == '[' {
+		if end := strings.IndexByte(s[start+1:], ']'); end >= 0 {
+			return start, start + 1 + end
+		}
+	}
+	return start, -1
 }
 
 // MatchesScpLike returns true if the given string matches an SCP-like
 // format scheme.
 func MatchesScpLike(url string) bool {
-	if !scpLikeURLRegExp.MatchString(url) {
+	if _, _, _, ok := matchScpLike(url); !ok {
 		return false
 	}
-	// Mirror canonical Git's url_is_local_not_ssh in connect.c[1] for
-	// the cases the regex above cannot disambiguate by itself: a URL
-	// is treated as a local path (not SCP-style SSH) when a `/`
-	// precedes the first `:` (e.g. `./relative:path`,
-	// `/abs/with:colon/file`), or — on Windows only — when it has a
-	// DOS drive prefix like `C:foo` where the host is a single
-	// ASCII letter.
+	// Mirror canonical Git's url_is_local_not_ssh in url.c[1] for the
+	// cases the grammar above cannot disambiguate by itself: an
+	// endpoint is a local path, not SCP-style SSH, when a `/` precedes
+	// the first `:` (e.g. `./relative:path`, `/abs/with:colon/file`),
+	// or — on Windows only — when it has a DOS drive prefix like
+	// `C:foo` or `C:\repo`.
 	//
-	// [1]: https://github.com/git/git/blob/v2.54.0/connect.c#L710-L716
+	// The platform gate is Git's, not an approximation of it:
+	// has_dos_drive_prefix is a no-op everywhere but Windows
+	// (git-compat-util.h), and it is the only route to the local
+	// reading for a drive-letter endpoint. So `C:\repo` is a path on
+	// Windows and an SSH request to the host `C` on a Linux or macOS
+	// host, in Git and here alike.
+	//
+	// [1]: https://github.com/git/git/blob/v2.56.0/url.c#L136-L142
 	if before, _, _ := strings.Cut(url, ":"); strings.Contains(before, "/") {
 		return false
 	}
@@ -49,11 +94,8 @@ func MatchesScpLike(url string) bool {
 	return true
 }
 
-// hasDosDrivePrefix reports whether s begins with `<letter>:` (a
-// Windows drive prefix such as `C:` or `c:`). Mirrors canonical Git's
-// win32_has_dos_drive_prefix[1].
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/compat/win32/path-utils.c#L20-L29
+// hasDosDrivePrefix reports whether s starts with an ASCII letter followed
+// by a colon, as in "C:" or "c:".
 func hasDosDrivePrefix(s string) bool {
 	if len(s) < 2 || s[1] != ':' {
 		return false
@@ -62,11 +104,17 @@ func hasDosDrivePrefix(s string) bool {
 	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
 
-// FindScpLikeComponents returns the user, host, port and path of the
-// given SCP-like URL.
-func FindScpLikeComponents(url string) (user, host, port, path string) {
-	m := scpLikeURLRegExp.FindStringSubmatch(url)
-	return m[1], m[2], m[3], m[4]
+// FindScpLikeComponents returns the user, host, and path in url.
+// If url does not match the SCP-like grammar, it returns empty components
+// and false. It does not exclude URLs with schemes or local paths; callers
+// should check [MatchesScheme] and [MatchesScpLike] first.
+//
+// A bracketed host retains its brackets, as in "[fe80::1]:repo.git".
+// The path starts after the colon separating it from the host; subsequent
+// colons are part of the path. ParseSCP extracts a port from a bracketed host
+// when Git would do so.
+func FindScpLikeComponents(url string) (user, host, path string, ok bool) {
+	return matchScpLike(url)
 }
 
 // IsLocalEndpoint returns true if the given URL string specifies a
@@ -128,17 +176,57 @@ func ParseSCP(endpoint string) (*url.URL, bool) {
 		return nil, false
 	}
 
-	user, host, port, path := FindScpLikeComponents(endpoint)
-	if port != "" {
-		host = net.JoinHostPort(host, port)
+	user, host, path, ok := FindScpLikeComponents(endpoint)
+	if !ok {
+		return nil, false
 	}
 
-	return &url.URL{
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		// Git's get_port checks the first colon after unwrapping the
+		// authority. A colon in the user prevents a numeric suffix;
+		// otherwise a suffix in 0..65535 is a port. See get_port in
+		// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/connect.c.
+		literal := host[1 : len(host)-1]
+		var port string
+		if colon := strings.IndexByte(literal, ':'); colon >= 0 && !strings.Contains(user, ":") {
+			// strtol permits leading ASCII whitespace and a sign.
+			// Multiple colons denote a host, not a numeric port.
+			text := strings.TrimLeft(literal[colon+1:], " \t\n\r\v\f")
+			if !strings.Contains(text, ":") {
+				if n, err := strconv.ParseInt(text, 10, 32); err == nil && n >= 0 && n < 65536 {
+					literal, port = literal[:colon], strconv.FormatInt(n, 10)
+				}
+			}
+		}
+		if at := strings.LastIndexByte(literal, '@'); at >= 0 {
+			if user == "" {
+				user = literal[:at]
+			} else {
+				user += "@" + literal[:at]
+			}
+			literal = literal[at+1:]
+			host = "[" + literal + "]"
+		}
+		if port != "" {
+			host = literal + ":" + port
+		}
+		// Otherwise retain the original brackets, so net/url cannot
+		// reinterpret a colon in the host as a port.
+	}
+
+	u := &url.URL{
 		Scheme: "ssh",
-		User:   url.User(user),
 		Host:   host,
 		Path:   path,
-	}, true
+	}
+	// The user is optional in this form, and url.User("") is not the
+	// same as no user at all: it is an empty userinfo, which String
+	// writes out as a bare `@` and which every `URL.User != nil` test
+	// reads as "a user was given".
+	if user != "" {
+		u.User = url.User(user)
+	}
+	return u, true
 }
 
 // ParseFile parses a local file path into a file:// *url.URL.
