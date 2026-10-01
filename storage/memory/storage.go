@@ -450,8 +450,7 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
 	var refs []*plumbing.Reference
 	for name, ref := range r {
-		// Skip an all-zero ID, as storer.IterReferencesWithPrefix does.
-		if strings.HasPrefix(name.String(), prefix) && (ref.Type() != plumbing.HashReference || !ref.Hash().IsZero()) {
+		if strings.HasPrefix(name.String(), prefix) {
 			refs = append(refs, ref)
 		}
 	}

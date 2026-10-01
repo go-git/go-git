@@ -8,54 +8,34 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-git/go-billy/v6/util"
-
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// RefsWithPrefix lazily iterates over the refs whose names start with prefix,
-// in ascending byte-wise name order. Loose refs and packed refs are merged as
-// Git's files backend does, with a loose ref shadowing a packed one of the
-// same name:
+// RefsWithPrefix lazily iterates over the refs Refs returns whose names start
+// with prefix, with the same values, in ascending byte-wise name order. Loose
+// refs and packed refs are merged as Git's files backend does, with a loose
+// ref shadowing a packed one of the same name:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
-// Like git for-each-ref, it skips broken loose refs, which Refs returns with
-// the all-zero ID, and ignores loose entries named ".*" or "*.lock", which Git
-// does not read as refs. It holds no file open.
+// It holds no file open.
 func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
-	return d.refsWithPrefix(prefix, true)
-}
-
-// refsWithPrefix merges loose and packed refs matching prefix. forEachRef
-// selects git for-each-ref's view of loose refs, as looseRefs describes.
-func (d *DotGit) refsWithPrefix(prefix string, forEachRef bool) (storer.ReferenceIter, error) {
-	loose, err := d.looseRefs(prefix, forEachRef)
+	loose, err := d.looseRefs(prefix, false)
 	if err != nil {
 		return nil, err
 	}
 
-	overlay := reference.NewOverlayIter(loose, &packedRefsSource{d: d, prefix: prefix})
-	if !forEachRef {
-		return overlay, nil
-	}
-
-	// Broken loose refs take part in the merge, so they still hide packed
-	// refs of the same name, and are dropped after it, as Git does:
-	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1100-L1115
-	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1028-L1032
-	return storer.NewReferenceFilteredIter(func(r *plumbing.Reference) bool {
-		return !loose.broken[r.Name()]
-	}, overlay), nil
+	return reference.NewOverlayIter(loose, &packedRefsSource{d: d, prefix: prefix}), nil
 }
 
 // looseRefs returns the loose refs matching prefix, starting with HEAD when
 // it matches, since HEAD sorts before every name under refs/. A ref Git
-// treats as broken is returned with the all-zero ID and recorded in broken,
-// as Git's ref store reports it. skipNonRefs leaves out the entries Git does
-// not read as refs; without it every entry is listed.
+// treats as broken is returned with the all-zero ID, as Git's ref store
+// reports it. skipNonRefs leaves out the entries Git does not read as refs;
+// without it every entry is listed.
 func (d *DotGit) looseRefs(prefix string, skipNonRefs bool) (*looseRefsSource, error) {
-	s := &looseRefsSource{d: d, skipNonRefs: skipNonRefs, broken: make(map[plumbing.ReferenceName]bool)}
+	s := &looseRefsSource{d: d, skipNonRefs: skipNonRefs}
 
 	if strings.HasPrefix("HEAD", prefix) { //nolint:gocritic // HEAD matches a prefix of itself
 		head, err := s.read("HEAD")
@@ -168,23 +148,17 @@ type looseRefsSource struct {
 	dirs []looseRefsDir
 	// skipNonRefs leaves out entries Git does not read as refs.
 	skipNonRefs bool
-	// broken holds the refs Git treats as broken, yielded with the all-zero ID.
-	broken map[plumbing.ReferenceName]bool
 }
 
-// read reads the loose ref name. An unparsable file becomes an all-zero
-// placeholder, and it and a ref holding the all-zero ID are recorded as
-// broken, as Git's loose-ref loader marks them and its ref store then reports
-// them with the all-zero ID:
+// read reads the loose ref name. An unparsable file is reported with the
+// all-zero ID, as Git's loose-ref loader marks it broken and its ref store
+// then reports it:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L330-L343
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L1859-L1868
 func (s *looseRefsSource) read(name string) (*plumbing.Reference, error) {
 	ref, err := s.d.readReferenceFile(".", name)
 	if errors.Is(err, ErrEmptyRefFile) || errors.Is(err, ErrBrokenRefFile) {
 		ref, err = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.ZeroHash), nil
-	}
-	if err == nil && ref.Type() == plumbing.HashReference && ref.Hash().IsZero() {
-		s.broken[ref.Name()] = true
 	}
 	return ref, err
 }
@@ -242,136 +216,84 @@ func (s *looseRefsSource) Close() {
 }
 
 // packedRefsSource yields the packed refs matching prefix in sorted order.
-// It reads packed-refs into memory at once, so it holds no file open, and
-// parses it lazily. The sorted header trait permits stopping past the prefix,
-// as Git does:
-// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L1015-L1022
-// Unlike Git, which trusts the trait, it first checks that the names do
-// ascend. For a file that is not sorted, as Git does, it sorts the matches,
-// so the first result waits for a full scan.
+// On first use it reads packed-refs whole, so it holds no file open, and
+// collects the matches in one pass, sorting them unless the names already
+// ascend. It does not rely on the sorted header trait, which Git trusts:
+// verifying it costs the same pass, and a false claim would hide matches.
 type packedRefsSource struct {
 	d      *DotGit
 	prefix string
 	opened bool
-	// sorted reports that rest, the records not yet read, are sorted.
-	sorted bool
-	rest   string
-	// unsorted holds the matches of a file that is not sorted.
-	unsorted []*plumbing.Reference
-	done     bool
+	refs   []*plumbing.Reference
 }
 
 func (s *packedRefsSource) Next() (*plumbing.Reference, error) {
-	if s.done {
-		return nil, io.EOF
-	}
-
 	if !s.opened {
 		s.opened = true
-		if err := s.open(); err != nil || s.done {
+		if err := s.open(); err != nil {
 			return nil, err
 		}
 	}
 
-	if !s.sorted {
-		if len(s.unsorted) == 0 {
-			s.Close()
-			return nil, io.EOF
-		}
-		ref := s.unsorted[0]
-		s.unsorted = s.unsorted[1:]
-		return ref, nil
+	if len(s.refs) == 0 {
+		return nil, io.EOF
 	}
-
-	for s.rest != "" {
-		var line string
-		line, s.rest, _ = strings.Cut(s.rest, "\n")
-		ref, past, err := s.matchLine(line)
-		if err != nil {
-			return nil, err
-		}
-		if past {
-			break
-		}
-		if ref != nil {
-			return ref, nil
-		}
-	}
-
-	s.Close()
-	return nil, io.EOF
+	ref := s.refs[0]
+	s.refs = s.refs[1:]
+	return ref, nil
 }
 
-// open reads packed-refs and, unless it is sorted, collects and sorts every
-// match. It marks the source done if packed-refs is missing.
-func (s *packedRefsSource) open() error {
-	b, err := util.ReadFile(s.d.fs, packedRefsPath)
+func (s *packedRefsSource) open() (err error) {
+	f, err := s.d.fs.Open(packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			s.done = true
 			return nil
 		}
 
 		return err
 	}
-	content := string(b)
+	defer ioutil.CheckClose(f, &err)
 
-	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L740-L763
-	first, rest, _ := strings.Cut(content, "\n")
-	if traits, ok := strings.CutPrefix(first, packedRefsHeader); ok &&
-		slices.Contains(strings.Split(traits, " "), "sorted") {
-		s.sorted = true
-		var prev string
-		for line := range strings.Lines(rest) {
-			if _, name, ok, _ := parsePackedRefLine(strings.TrimSuffix(line, "\n")); ok {
-				if name < prev {
-					s.sorted = false
-					break
-				}
-				prev = name
-			}
-		}
+	// A builder grown to the file's size holds it in one allocation, which
+	// String returns without copying.
+	var content strings.Builder
+	if st, err := s.d.fs.Stat(packedRefsPath); err == nil {
+		content.Grow(int(st.Size()))
 	}
-	if s.sorted {
-		s.rest = rest
-		return nil
+	if _, err := io.Copy(&content, f); err != nil {
+		return err
 	}
 
-	// Without a header, the first line is a reference too.
-	for line := range strings.Lines(content) {
-		ref, _, err := s.matchLine(strings.TrimSuffix(line, "\n"))
+	sorted, prev := true, ""
+	for line := range strings.Lines(content.String()) {
+		hash, name, ok, err := parsePackedRefLine(strings.TrimSuffix(line, "\n"))
 		if err != nil {
 			return err
 		}
-		if ref != nil {
-			s.unsorted = append(s.unsorted, ref)
+		if !ok {
+			continue
+		}
+		if name < prev {
+			sorted = false
+		}
+		prev = name
+
+		if strings.HasPrefix(name, s.prefix) {
+			// Cloned, so the refs do not keep the whole file alive.
+			s.refs = append(s.refs, plumbing.NewReferenceFromStrings(strings.Clone(name), hash))
 		}
 	}
 
-	// Stable, so the first of repeated names stays first, as in Refs.
-	slices.SortStableFunc(s.unsorted, func(a, b *plumbing.Reference) int {
-		return strings.Compare(a.Name().String(), b.Name().String())
-	})
+	if !sorted {
+		// Stable, so the first of repeated names stays first, as in Refs.
+		slices.SortStableFunc(s.refs, func(a, b *plumbing.Reference) int {
+			return strings.Compare(a.Name().String(), b.Name().String())
+		})
+	}
 	return nil
 }
 
-// matchLine returns the reference on line if it matches the prefix, and
-// reports past once a name sorts after every match.
-func (s *packedRefsSource) matchLine(line string) (ref *plumbing.Reference, past bool, err error) {
-	hash, name, ok, err := parsePackedRefLine(line)
-	if err != nil || !ok {
-		return nil, false, err
-	}
-
-	if !strings.HasPrefix(name, s.prefix) {
-		return nil, name > s.prefix, nil
-	}
-
-	return plumbing.NewReferenceFromStrings(name, hash), false, nil
-}
-
 func (s *packedRefsSource) Close() {
-	s.done = true
-	s.rest = ""
-	s.unsorted = nil
+	s.opened = true
+	s.refs = nil
 }

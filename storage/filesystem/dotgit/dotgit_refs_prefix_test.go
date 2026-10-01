@@ -47,10 +47,13 @@ func newPrefixTestDotGit(t *testing.T) (billy.Filesystem, *DotGit) {
 	writeFile(t, fs, "refs/heads/feature", hashB+"\n")
 	writeFile(t, fs, "refs/remotes/origin/HEAD", "ref: refs/remotes/origin/main\n")
 	writeFile(t, fs, "refs/remotes/origin-other/main", hashA+"\n")
+	writeFile(t, fs, "refs/heads/empty", "")
+	writeFile(t, fs, "refs/heads/main.lock", hashA+"\n")
 	writeFile(t, fs, "packed-refs", strings.Join([]string{
 		"# pack-refs with: peeled fully-peeled sorted ",
 		hashA + " refs/heads/feature",
 		hashA + " refs/heads/fix",
+		plumbing.ZeroHash.String() + " refs/heads/zero",
 		hashA + " refs/remotes/origin/main",
 		hashB + " refs/remotes/origin/topic",
 		hashB + " refs/tags/v1",
@@ -172,42 +175,24 @@ func TestRefsWithPrefixKeepsFirstOfDuplicatePackedRefs(t *testing.T) {
 	assert.Equal(t, []string{all[0].String()}, collectRefs(t, iter))
 }
 
-// A malformed line beyond the matching range detects whether scanning stops
-// early. Only a sorted header permits skipping it.
-func TestRefsWithPrefixStopsAfterSortedPackedRange(t *testing.T) {
+// A malformed packed-refs line fails the iteration wherever it is, as it
+// fails git, whatever the header claims: packed-refs is always read in full.
+func TestRefsWithPrefixReportsMalformedPackedRefs(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		header  string
-		wantErr error
-	}{
-		{header: "# pack-refs with: peeled fully-peeled sorted "},
-		{header: "# pack-refs with: peeled fully-peeled ", wantErr: ErrPackedRefsBadFormat},
-		{header: "", wantErr: ErrPackedRefsBadFormat},
-	} {
-		t.Run(tc.header, func(t *testing.T) {
+	for _, header := range []string{"# pack-refs with: peeled fully-peeled sorted ", "# pack-refs with: peeled fully-peeled ", ""} {
+		t.Run(header, func(t *testing.T) {
 			t.Parallel()
 			fs := memfs.New()
-			writeFile(t, fs, "packed-refs", tc.header+"\n"+
+			writeFile(t, fs, "packed-refs", header+"\n"+
 				hashA+" refs/heads/main\n"+
 				hashA+" refs/remotes/origin/main\n"+
 				"malformed packed-refs line\n")
-			dir := New(fs)
 
-			iter, err := dir.RefsWithPrefix("refs/heads/")
+			iter, err := New(fs).RefsWithPrefix("refs/heads/")
 			require.NoError(t, err)
 			defer iter.Close()
-
-			// An unsorted file is scanned in full before the first result.
-			ref, err := iter.Next()
-			if tc.wantErr != nil {
-				assert.ErrorIs(t, err, tc.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, "refs/heads/main", ref.Name().String())
-
 			_, err = iter.Next()
-			assert.ErrorIs(t, err, io.EOF)
+			assert.ErrorIs(t, err, ErrPackedRefsBadFormat)
 		})
 	}
 }
@@ -284,11 +269,11 @@ func TestRefsWithPrefixToleratesRefsRemovedMidWalk(t *testing.T) {
 	assert.ErrorIs(t, err, io.EOF)
 }
 
-// Like Git, broken loose refs are skipped rather than failing the iteration,
-// yet still hide the packed ref of the same name, and ".*" and "*.lock"
-// entries are not refs at all. Refs instead reports the broken ones with the
-// all-zero ID.
-func TestRefsWithPrefixSkipsBrokenLooseRefs(t *testing.T) {
+// RefsWithPrefix reports what Refs does: a loose ref Git treats as broken
+// with the all-zero ID, still hiding the packed ref of the same name, and
+// every loose entry, including "*.lock" and ".*" names, which listing callers
+// such as Repository.Branches leave out.
+func TestRefsWithPrefixReportsBrokenLooseRefs(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
 	writeFile(t, fs, "HEAD", "")
@@ -313,16 +298,23 @@ func TestRefsWithPrefixSkipsBrokenLooseRefs(t *testing.T) {
 
 	all, err := dir.Refs()
 	require.NoError(t, err)
-	assert.Contains(t, collectRefs(t, storer.NewReferenceSliceIter(all)), plumbing.ZeroHash.String()+" refs/heads/empty")
+	refs := collectRefs(t, storer.NewReferenceSliceIter(all))
+	for _, want := range []string{
+		plumbing.ZeroHash.String() + " refs/heads/empty",
+		plumbing.ZeroHash.String() + " refs/heads/garbage",
+		plumbing.ZeroHash.String() + " refs/heads/shadow",
+		hashA + " refs/heads/main.lock",
+		hashA + " refs/heads/.hidden",
+		hashB + " refs/heads/after",
+		hashB + " refs/heads/trailing",
+	} {
+		assert.Contains(t, refs, want)
+	}
+	assert.NotContains(t, refs, hashB+" refs/heads/shadow")
 
 	iter, err := dir.RefsWithPrefix("")
 	require.NoError(t, err)
-	assert.Equal(t, []string{
-		hashB + " refs/heads/after",
-		hashA + " refs/heads/main",
-		"ref: refs/heads/main refs/heads/sym",
-		hashB + " refs/heads/trailing",
-	}, collectRefs(t, iter))
+	assert.Equal(t, refs, collectRefs(t, iter))
 }
 
 // Ref, Refs and RefsWithPrefix share one loose-ref parser, so they agree on
@@ -367,9 +359,8 @@ func TestLooseRefReadersAgree(t *testing.T) {
 	}
 }
 
-// Content Git treats as broken fails Ref, is reported by Refs with the
-// all-zero ID as git ls-remote shows it, and is skipped by RefsWithPrefix as
-// git for-each-ref skips it.
+// Content Git treats as broken fails Ref, and is reported by Refs and
+// RefsWithPrefix alike with the all-zero ID, as git ls-remote shows it.
 func TestBrokenLooseRefReaders(t *testing.T) {
 	t.Parallel()
 	for _, content := range []string{"garbage\n", "  " + hashA + "\n", hashA[:39] + "\n", hashA + "\v\n", "ref:\n", ""} {
@@ -395,15 +386,13 @@ func TestBrokenLooseRefReaders(t *testing.T) {
 
 			iter, err := dir.RefsWithPrefix("refs/heads/")
 			require.NoError(t, err)
-			assert.Equal(t, []string{hashA + " refs/heads/main"}, collectRefs(t, iter))
+			assert.Equal(t, collectRefs(t, storer.NewReferenceSliceIter(all)), collectRefs(t, iter))
 		})
 	}
 }
 
-// A packed-refs file claiming the sorted trait is only trusted once its
-// names are checked to ascend. Otherwise a lying header would end the scan
-// early, hiding later matches, and leave a repeated name apart from its
-// first, so that the merge would yield it twice.
+// The sorted header trait is not relied on: a file claiming it over names out
+// of order still yields every match, in order, and a repeated name once.
 func TestRefsWithPrefixChecksSortedClaim(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()

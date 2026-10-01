@@ -84,6 +84,11 @@ func gitForEachRef(t *testing.T, dir string, patterns ...string) []string {
 	return strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
 }
 
+// prefixRefs lists the references under prefix as git for-each-ref lists
+// them. IterReferencesWithPrefix reports every stored reference, so this
+// skips the ones for-each-ref skips, by the rule Repository.Branches applies:
+// a name that is not valid, and the all-zero ID storage reports for a
+// reference it cannot read.
 func prefixRefs(t *testing.T, sto *filesystem.Storage, prefix string) []string {
 	t.Helper()
 	iter, err := storer.IterReferencesWithPrefix(sto, prefix)
@@ -91,6 +96,9 @@ func prefixRefs(t *testing.T, sto *filesystem.Storage, prefix string) []string {
 
 	var refs []string
 	require.NoError(t, iter.ForEach(func(r *plumbing.Reference) error {
+		if r.Name().Validate() != nil || r.Type() == plumbing.HashReference && r.Hash().IsZero() {
+			return nil
+		}
 		hash := r.Hash()
 		if r.Type() == plumbing.SymbolicReference {
 			resolved, err := storer.ResolveReference(sto, r.Name())

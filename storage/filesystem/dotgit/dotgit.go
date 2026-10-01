@@ -1325,12 +1325,13 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 }
 
 // Refs returns HEAD and every reference, sorted by name, with a loose
-// reference shadowing a packed one of the same name. Unlike RefsWithPrefix,
-// it returns a loose reference Git treats as broken, with the all-zero ID, as
-// git ls-remote and upload-pack do. Callers walking reachable objects must
-// fail on that ID rather than skip the reference, as git gc and git prune do.
+// reference shadowing a packed one of the same name. A loose reference Git
+// treats as broken is returned with the all-zero ID, as git ls-remote and
+// upload-pack show it. Callers walking reachable objects must fail on that ID
+// rather than skip the reference, as git gc and git prune do, and listing
+// callers may skip it, as git for-each-ref does.
 func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
-	iter, err := d.refsWithPrefix("", false)
+	iter, err := d.RefsWithPrefix("")
 	if err != nil {
 		return nil, err
 	}
