@@ -1363,16 +1363,10 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, sha
 		return false, err
 	}
 
-	// Build a set of shallow commits so we can detect when the walk actually
-	// reaches a shallow boundary (as opposed to merely knowing shallows exist).
-	shallowsSet := make(map[plumbing.Hash]struct{}, len(shallows))
-	for _, sh := range shallows {
-		shallowsSet[sh] = struct{}{}
-	}
-
-	// For each known shallow commit, mark its parent hashes as boundaries so
-	// the walker never tries to load commits that are not stored locally.
-	parentsToIgnore := make([]plumbing.Hash, 0, len(shallows))
+	// Load the shallow commits we still hold, so the walk can both detect when
+	// it reaches a shallow boundary (as opposed to merely knowing shallows
+	// exist) and tell a boundary apart from a commit that is genuinely absent.
+	shallowCommits := make(map[plumbing.Hash]*object.Commit, len(shallows))
 	for _, sh := range shallows {
 		shallowCommit, err := object.GetCommit(s, sh)
 		if err != nil {
@@ -1382,14 +1376,36 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, sha
 			}
 			return false, err
 		}
-		parentsToIgnore = append(parentsToIgnore, shallowCommit.ParentHashes...)
+
+		shallowCommits[sh] = shallowCommit
+	}
+
+	// For each known shallow commit, mark its parent hashes as boundaries so
+	// the walker never tries to load commits that are not stored locally.
+	parentsToIgnore := make([]plumbing.Hash, 0, len(shallows))
+	for _, sh := range shallows {
+		shallowCommit, ok := shallowCommits[sh]
+		if !ok {
+			continue
+		}
+
+		for _, parent := range shallowCommit.ParentHashes {
+			// git truncates at a boundary by making it parentless rather than by
+			// dropping it, so a boundary we hold stays reachable even when
+			// another boundary names it as a parent. See #2367.
+			if _, held := shallowCommits[parent]; held {
+				continue
+			}
+
+			parentsToIgnore = append(parentsToIgnore, parent)
+		}
 	}
 
 	found := false
 	boundedByShallow := false
 	iter := object.NewCommitPreorderIter(c, nil, parentsToIgnore)
 	err = iter.ForEach(func(c *object.Commit) error {
-		if _, isShallow := shallowsSet[c.Hash]; isShallow {
+		if _, isShallow := shallowCommits[c.Hash]; isShallow {
 			// The walk reached a shallow commit; history is truncated here.
 			boundedByShallow = true
 		}
