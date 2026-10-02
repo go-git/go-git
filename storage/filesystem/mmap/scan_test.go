@@ -3,7 +3,12 @@
 package mmap
 
 import (
+	"bytes"
 	"crypto"
+	"encoding/binary"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -285,6 +290,76 @@ func TestSearchObjectID(t *testing.T) {
 			gotIndex, gotFound := searchObjectID(tc.names, tc.lo, tc.hi, tc.want)
 			assert.Equal(t, tc.wantFound, gotFound, "found mismatch")
 			assert.Equal(t, tc.wantIndex, gotIndex, "index mismatch")
+		})
+	}
+}
+
+// Git's load_idx refuses an idx whose fanout is out of order ("non-monotonic
+// index") or whose size does not fit the object count the fanout declares
+// ("wrong index v2 file size"). Lookups use the fanout as binary search
+// bounds and derive every table offset from that count.
+func TestNewPackScannerRejectsMalformedIdx(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.NewOSFixture(
+		fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
+		t.TempDir(),
+	)
+	idx, err := fixture.Idx()
+	require.NoError(t, err)
+	original, err := io.ReadAll(idx)
+	require.NoError(t, err)
+	require.NoError(t, idx.Close())
+
+	fanoutEntry := func(data []byte, b int) []byte {
+		return data[idxHeaderSize+b*4:]
+	}
+	objectCount := binary.BigEndian.Uint32(fanoutEntry(original, 0xff))
+
+	tests := []struct {
+		name   string
+		mutate func(data []byte) []byte
+	}{
+		{
+			name: "object count exceeds file size",
+			mutate: func(data []byte) []byte {
+				binary.BigEndian.PutUint32(fanoutEntry(data, 0xff), 1<<20)
+				return data
+			},
+		},
+		{
+			name: "fanout out of order",
+			mutate: func(data []byte) []byte {
+				binary.BigEndian.PutUint32(fanoutEntry(data, 0x00), objectCount+1)
+				return data
+			},
+		},
+		{
+			name: "file larger than a full 64-bit offset table",
+			mutate: func(data []byte) []byte {
+				return append(data, make([]byte, int(objectCount)*off64Size)...)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			idxPath := filepath.Join(t.TempDir(), "corrupt.idx")
+			require.NoError(t, os.WriteFile(idxPath, tc.mutate(bytes.Clone(original)), 0o600))
+			corruptIdx, err := os.Open(idxPath)
+			require.NoError(t, err)
+
+			pack, err := fixture.Packfile()
+			require.NoError(t, err)
+			rev, err := fixture.Rev()
+			require.NoError(t, err)
+
+			scanner, err := NewPackScanner(crypto.SHA256.Size(), pack, corruptIdx, rev)
+			assert.ErrorIs(t, err, ErrCorruptedIdx)
+			assert.ErrorContains(t, err, "malformed idx file")
+			assert.Nil(t, scanner)
 		})
 	}
 }
