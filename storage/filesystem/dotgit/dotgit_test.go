@@ -2003,6 +2003,114 @@ func (s *SuiteDotGit) TestSetPackedRef() {
 	s.Equal(1, looseCount)
 }
 
+// TestSetRefWithStaleOldLeavesNoLooseRef ensures a rejected compare-and-swap
+// does not leave an empty loose ref behind (go-git#2399). Matches git
+// update-ref, which unlinks the lock file on mismatch and never creates a
+// zero-byte loose ref.
+func (s *SuiteDotGit) TestSetRefWithStaleOldLeavesNoLooseRef() {
+	packedHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+	stale := plumbing.NewReferenceFromStrings("refs/heads/main", "2222222222222222222222222222222222222222")
+	updated := plumbing.NewReferenceFromStrings("refs/heads/main", "3333333333333333333333333333333333333333")
+
+	for _, rw := range []bool{true, false} {
+		for _, packed := range []bool{false, true} {
+			s.Run(fmt.Sprintf("rw=%t/packed=%t", rw, packed), func() {
+				fs := s.EmptyFS()
+				dirFS := billy.Filesystem(fs)
+				if !rw {
+					dirFS = &norwfs{fs}
+				}
+				wantErr := plumbing.ErrReferenceNotFound
+				if packed {
+					s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(packedHash.String()+" refs/heads/main\n"), 0o644))
+					wantErr = storage.ErrReferenceHasChanged
+				}
+				dir := New(dirFS)
+
+				s.ErrorIs(dir.SetRef(updated, stale), wantErr)
+
+				_, err := fs.Stat("refs/heads/main")
+				s.ErrorIs(err, os.ErrNotExist)
+				_, err = dir.Refs()
+				s.NoError(err)
+				ref, err := dir.Ref("refs/heads/main")
+				if packed {
+					s.Require().NoError(err)
+					s.Equal(packedHash, ref.Hash())
+				} else {
+					s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+				}
+			})
+		}
+	}
+}
+
+
+// TestSetRefRejectedAfterPackedDeletionLeavesNoLooseRef covers the race where
+// packed-refs is deleted after the compare pre-check would have passed but
+// before the loose ref is materialized. With <ref>.lock held for the whole
+// update, a concurrent RemoveRef cannot take the lock (os.ErrExist) and the
+// packed value remains; SetRef then completes cleanly with no junk loose file.
+// Suggested shape from review on #2404.
+type beforeLooseCreateFS struct {
+	billy.Filesystem
+	beforeCreate func()
+}
+
+func (fs *beforeLooseCreateFS) OpenFile(
+	name string, flag int, perm os.FileMode,
+) (billy.File, error) {
+	f, err := fs.Filesystem.OpenFile(name, flag, perm)
+	if err == nil && name == "refs/heads/main.lock" && flag&os.O_CREATE != 0 {
+		// Lock file exists now; concurrent RemoveRef must not proceed.
+		fs.beforeCreate()
+	}
+	return f, err
+}
+
+func TestSetRefRejectedAfterPackedDeletionLeavesNoLooseRef(t *testing.T) {
+	fs := osfs.New(t.TempDir())
+	old := plumbing.NewReferenceFromStrings(
+		"refs/heads/main",
+		"1111111111111111111111111111111111111111",
+	)
+	updated := plumbing.NewReferenceFromStrings(
+		"refs/heads/main",
+		"3333333333333333333333333333333333333333",
+	)
+
+	require.NoError(t, util.WriteFile(
+		fs,
+		"packed-refs",
+		[]byte(old.Hash().String()+" refs/heads/main\n"),
+		0o644,
+	))
+
+	var removeErr error
+	wrapped := &beforeLooseCreateFS{
+		Filesystem: fs,
+		beforeCreate: func() {
+			// Runs after SetRef created <ref>.lock; RemoveRef must fail to
+			// take the same lock and must not delete packed-refs.
+			removeErr = New(fs).RemoveRef(old.Name())
+		},
+	}
+	dir := New(wrapped)
+
+	require.NoError(t, dir.SetRef(updated, old))
+	require.ErrorIs(t, removeErr, os.ErrExist)
+
+	ref, err := dir.Ref(old.Name())
+	require.NoError(t, err)
+	assert.Equal(t, updated.Hash(), ref.Hash())
+
+	_, err = fs.Stat(old.Name().String() + ".lock")
+	assert.ErrorIs(t, err, os.ErrNotExist)
+
+	_, err = dir.Refs()
+	assert.NoError(t, err)
+}
+
 func TestIssue55(t *testing.T) {
 	t.Parallel()
 

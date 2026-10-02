@@ -1392,23 +1392,26 @@ func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, er
 
 // RemoveRef removes a reference by name.
 // It permits invalid-format names but rejects unsafe paths as described by DotGit.
+// It takes <ref>.lock first so concurrent SetRef cannot race with the delete.
 func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	if err := validReferenceName(name); err != nil {
 		return err
 	}
 
-	path := d.fs.Join(".", name.String())
-	_, err := d.fs.Stat(path)
-	if err == nil {
-		err = d.fs.Remove(path)
-		// Drop down to remove it from the packed refs file, too.
-	}
+	path := name.String()
+	return d.withRefLock(path, func() error {
+		_, err := d.fs.Stat(path)
+		if err == nil {
+			err = d.fs.Remove(path)
+			// Drop down to remove it from the packed refs file, too.
+		}
 
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
 
-	return d.rewritePackedRefsWithoutRef(name)
+		return d.rewritePackedRefsWithoutRef(name)
+	})
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
