@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // ObjectHasher computes hashes for Git objects. A few differences
@@ -58,9 +59,9 @@ func FromObjectFormat(f format.ObjectFormat) *ObjectHasher {
 	var hasher hash.Hash
 	switch f {
 	case format.SHA256:
-		hasher = crypto.SHA256.New()
+		hasher = githash.New(crypto.SHA256)
 	default:
-		hasher = crypto.SHA1.New()
+		hasher = githash.New(crypto.SHA1)
 		f = format.UnsetObjectFormat
 	}
 	return &ObjectHasher{
