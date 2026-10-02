@@ -4857,3 +4857,40 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 	})
 }
+
+// A loose ref that exists but cannot be read is not an unborn branch: like
+// git, which refuses with "unable to resolve reference", committing on it or
+// creating a branch over it fails instead of replacing the file.
+func TestWritesRefuseBrokenReference(t *testing.T) {
+	t.Parallel()
+	for _, op := range []string{"commit", "checkout-create"} {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+			dot, wt := memfs.New(), memfs.New()
+			r, err := Init(filesystem.NewStorage(dot, cache.NewObjectLRUDefault()), WithWorkTree(wt))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, util.WriteFile(wt, "f", []byte("x"), 0o644))
+			_, err = w.Add("f")
+			require.NoError(t, err)
+			head, err := w.Commit("a", &CommitOptions{Author: defaultSignature()})
+			require.NoError(t, err)
+
+			name := "refs/heads/master"
+			if op == "commit" {
+				require.NoError(t, util.WriteFile(dot, name, []byte("garbage\n"), 0o644))
+				_, err = w.Commit("b", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+			} else {
+				name = "refs/heads/broken"
+				require.NoError(t, util.WriteFile(dot, name, []byte("garbage\n"), 0o644))
+				err = w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName(name), Create: true, Hash: head})
+			}
+			require.ErrorIs(t, err, plumbing.ErrBrokenReference)
+
+			content, err := util.ReadFile(dot, name)
+			require.NoError(t, err)
+			assert.Equal(t, "garbage\n", string(content))
+		})
+	}
+}

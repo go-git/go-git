@@ -1543,22 +1543,31 @@ func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
 // refuses the push instead, through an explicit or a wildcard refspec, and
 // with prune, which would otherwise read a skipped source as a deletion.
 func (s *RemoteSuite) TestPushRejectsBrokenSource() {
-	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
-	s.Require().NoError(err)
-	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
-	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
-	s.Require().NoError(err)
-	s.Require().NoError(util.WriteFile(srcFs, "refs/heads/keep", nil, 0o644))
-
 	for _, tc := range []struct {
-		spec  config.RefSpec
-		prune bool
+		spec    config.RefSpec
+		prune   bool
+		files   map[string]string
+		wantErr error
 	}{
-		{spec: "+refs/heads/keep:refs/heads/keep"},
-		{spec: "+refs/heads/*:refs/heads/*"},
-		{spec: "+refs/heads/*:refs/heads/*", prune: true},
+		{spec: "+refs/heads/keep:refs/heads/keep", files: map[string]string{"refs/heads/keep": ""}, wantErr: plumbing.ErrObjectNotFound},
+		{spec: "+refs/heads/*:refs/heads/*", files: map[string]string{"refs/heads/keep": ""}, wantErr: plumbing.ErrObjectNotFound},
+		{spec: "+refs/heads/*:refs/heads/*", prune: true, files: map[string]string{"refs/heads/keep": ""}, wantErr: plumbing.ErrObjectNotFound},
+		// A symbolic source to a ref that cannot be read is refused too.
+		{spec: "+refs/heads/alias:refs/heads/keep", files: map[string]string{
+			"refs/heads/garbage": "garbage\n",
+			"refs/heads/alias":   "ref: refs/heads/garbage\n",
+		}, wantErr: plumbing.ErrBrokenReference},
 	} {
 		s.Run(fmt.Sprintf("%s/prune=%t", tc.spec, tc.prune), func() {
+			srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+			s.Require().NoError(err)
+			src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+			head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+			s.Require().NoError(err)
+			for name, content := range tc.files {
+				s.Require().NoError(util.WriteFile(srcFs, name, []byte(content), 0o644))
+			}
+
 			dir := s.T().TempDir()
 			dst, err := PlainClone(dir, &CloneOptions{URL: s.GetBasicLocalRepositoryURL(), Bare: true})
 			s.Require().NoError(err)
@@ -1568,7 +1577,7 @@ func (s *RemoteSuite) TestPushRejectsBrokenSource() {
 
 			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
 			err = remote.Push(&PushOptions{Prune: tc.prune, RefSpecs: []config.RefSpec{tc.spec}})
-			s.ErrorIs(err, plumbing.ErrObjectNotFound)
+			s.ErrorIs(err, tc.wantErr)
 
 			ref, err := dst.Storer.Reference(keep.Name())
 			s.Require().NoError(err)

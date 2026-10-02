@@ -15,6 +15,7 @@ import (
 // references on ELOOP or recursion-limit errors.
 func IsUnresolvableForAdvertisement(err error) bool {
 	return errors.Is(err, plumbing.ErrReferenceNotFound) ||
+		errors.Is(err, plumbing.ErrBrokenReference) ||
 		errors.Is(err, plumbing.ErrInvalidReferenceName) ||
 		errors.Is(err, storer.ErrMaxResolveRecursion) ||
 		errors.Is(err, syscall.ELOOP)

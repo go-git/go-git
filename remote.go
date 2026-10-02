@@ -879,6 +879,9 @@ func (r *Remote) checkPushSourceReadable(ref *plumbing.Reference, specs []config
 	if ref.Type() == plumbing.SymbolicReference {
 		var err error
 		resolved, err = storer.ResolveReference(r.s, ref.Name())
+		if errors.Is(err, plumbing.ErrBrokenReference) {
+			return fmt.Errorf("reference %q points at a broken reference: %w", ref.Name(), err)
+		}
 		if err != nil {
 			// Dangling and unresolvable sources are handled where refspecs
 			// are matched.
