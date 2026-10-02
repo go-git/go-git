@@ -5004,6 +5004,7 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 		"refs/heads/alias":         "ref: refs/heads/feature\n",
 		"refs/heads/dangling":      "ref: refs/heads/missing\n",
 		"refs/heads/to-broken":     "ref: refs/heads/garbage\n",
+		"refs/heads/to-lock":       "ref: refs/heads/locked.lock\n",
 	}
 	for name, content := range files {
 		path := filepath.Join(dir, ".git", filepath.FromSlash(name))

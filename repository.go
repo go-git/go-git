@@ -1725,43 +1725,77 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 // listReferences returns the references under prefix, sorted by name, that
 // git for-each-ref lists. It skips a reference whose name is not valid, such
 // as one named like "x.lock", one storage reports with the all-zero ID
-// because it cannot read it, and a symbolic reference whose target is missing
-// or broken; other errors resolving a target are returned. Unlike git, it
-// also skips a packed reference that holds the all-zero ID, which it cannot
-// tell apart from an unreadable one.
+// because it cannot read it, and a symbolic reference whose target is
+// missing, broken or not a valid name; other errors resolving a target are
+// returned. Unlike git, it also skips a packed reference that holds the
+// all-zero ID, which it cannot tell apart from an unreadable one.
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L3015-L3023
 func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error) {
 	iter, err := storer.IterReferencesWithPrefix(r.Storer, prefix)
 	if err != nil {
 		return nil, err
 	}
+	return &listedReferencesIter{s: r.Storer, iter: iter}, nil
+}
 
-	var refs []*plumbing.Reference
-	err = iter.ForEach(func(ref *plumbing.Reference) error {
-		if ref.Name().Validate() != nil {
-			return nil
+// listedReferencesIter yields the references of iter that git for-each-ref
+// lists, resolving symbolic ones as it reaches them.
+type listedReferencesIter struct {
+	s    storer.ReferenceStorer
+	iter storer.ReferenceIter
+}
+
+func (it *listedReferencesIter) Next() (*plumbing.Reference, error) {
+	for {
+		ref, err := it.iter.Next()
+		if err != nil {
+			return nil, err
 		}
+		if ref.Name().Validate() != nil {
+			continue
+		}
+
 		resolved := ref
 		if ref.Type() == plumbing.SymbolicReference {
-			var err error
-			resolved, err = storer.ResolveReference(r.Storer, ref.Name())
+			resolved, err = storer.ResolveReference(it.s, ref.Name())
 			if reference.IsUnresolvableForAdvertisement(err) {
-				return nil
+				continue
 			}
 			if err != nil {
-				return err
+				return nil, err
+			}
+			if resolved.Name().Validate() != nil {
+				continue
 			}
 		}
 		if resolved.Type() == plumbing.HashReference && resolved.Hash().IsZero() {
+			continue
+		}
+		return ref, nil
+	}
+}
+
+func (it *listedReferencesIter) ForEach(cb func(*plumbing.Reference) error) error {
+	defer it.Close()
+	for {
+		ref, err := it.Next()
+		if err == io.EOF {
 			return nil
 		}
-		refs = append(refs, ref)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return err
+		}
+		if err := cb(ref); err != nil {
+			if errors.Is(err, storer.ErrStop) {
+				return nil
+			}
+			return err
+		}
 	}
-	return storer.NewReferenceSliceIter(refs), nil
+}
+
+func (it *listedReferencesIter) Close() {
+	it.iter.Close()
 }
 
 // TreeObject return a Tree with the given hash. If not found
