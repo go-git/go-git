@@ -263,7 +263,9 @@ func (s *packedRefsSource) open() (err error) {
 	sorted, prev := true, ""
 	for line := range strings.Lines(content.String()) {
 		// Drop the line ending as bufio.ScanLines does for the other
-		// packed-refs readers, so a CRLF record reads the same everywhere.
+		// packed-refs readers, so a CRLF record reads the same everywhere in
+		// go-git. Git itself keeps the carriage return in the name and then
+		// ignores the record as a ref with a broken name.
 		hash, name, ok, err := parsePackedRefLine(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"))
 		if err != nil {
 			return err
