@@ -96,7 +96,10 @@ var (
 	ErrEmptyRefFile = errors.New("ref file is empty")
 	// ErrBrokenRefFile is returned when a loose reference file holds neither a
 	// symbolic reference nor an object ID, which Git treats as a broken ref.
-	ErrBrokenRefFile = errors.New("ref file is broken")
+	// It wraps plumbing.ErrReferenceNotFound: like git, a lookup treats a
+	// broken reference as missing, while iteration reports it with the
+	// all-zero ID.
+	ErrBrokenRefFile = fmt.Errorf("ref file is broken: %w", plumbing.ErrReferenceNotFound)
 	// ErrModuleNameEscape is returned when a submodule name would
 	// resolve outside the modules/ subtree, mirroring canonical Git's
 	// "ignoring suspicious submodule name" defence.

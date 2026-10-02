@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/revision"
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -1706,10 +1707,12 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 }
 
 // listReferences returns the references under prefix, sorted by name, that
-// git for-each-ref lists: it skips a reference whose name is not valid, such
-// as a "*.lock" file, and one storage reports with the all-zero ID because it
-// cannot read it. Unlike git, it also skips a packed reference that holds the
-// all-zero ID, which it cannot tell apart from an unreadable one.
+// git for-each-ref lists. It skips a reference whose name is not valid, such
+// as one named like "x.lock", one storage reports with the all-zero ID
+// because it cannot read it, and a symbolic reference whose target is missing
+// or broken; other errors resolving a target are returned. Unlike git, it
+// also skips a packed reference that holds the all-zero ID, which it cannot
+// tell apart from an unreadable one.
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L3015-L3023
 func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error) {
 	iter, err := storer.IterReferencesWithPrefix(r.Storer, prefix)
@@ -1717,10 +1720,32 @@ func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error)
 		return nil, err
 	}
 
-	return storer.NewReferenceFilteredIter(func(ref *plumbing.Reference) bool {
-		broken := ref.Type() == plumbing.HashReference && ref.Hash().IsZero()
-		return !broken && ref.Name().Validate() == nil
-	}, iter), nil
+	var refs []*plumbing.Reference
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Name().Validate() != nil {
+			return nil
+		}
+		resolved := ref
+		if ref.Type() == plumbing.SymbolicReference {
+			var err error
+			resolved, err = storer.ResolveReference(r.Storer, ref.Name())
+			if reference.IsUnresolvableForAdvertisement(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+		if resolved.Type() == plumbing.HashReference && resolved.Hash().IsZero() {
+			return nil
+		}
+		refs = append(refs, ref)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return storer.NewReferenceSliceIter(refs), nil
 }
 
 // TreeObject return a Tree with the given hash. If not found
