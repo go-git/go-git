@@ -1537,6 +1537,46 @@ func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
 	}
 }
 
+// Storage reports a loose ref it cannot read, such as the empty file a
+// crash during SetRef leaves, with the all-zero ID. Pushed, that ID would
+// delete the mapped destination, as git push does with such a ref; go-git
+// refuses the push instead, through an explicit or a wildcard refspec, and
+// with prune, which would otherwise read a skipped source as a deletion.
+func (s *RemoteSuite) TestPushRejectsBrokenSource() {
+	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(srcFs, "refs/heads/keep", nil, 0o644))
+
+	for _, tc := range []struct {
+		spec  config.RefSpec
+		prune bool
+	}{
+		{spec: "+refs/heads/keep:refs/heads/keep"},
+		{spec: "+refs/heads/*:refs/heads/*"},
+		{spec: "+refs/heads/*:refs/heads/*", prune: true},
+	} {
+		s.Run(fmt.Sprintf("%s/prune=%t", tc.spec, tc.prune), func() {
+			dir := s.T().TempDir()
+			dst, err := PlainClone(dir, &CloneOptions{URL: s.GetBasicLocalRepositoryURL(), Bare: true})
+			s.Require().NoError(err)
+			defer func() { _ = dst.Close() }()
+			keep := plumbing.NewHashReference("refs/heads/keep", head.Hash())
+			s.Require().NoError(dst.Storer.SetReference(keep))
+
+			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+			err = remote.Push(&PushOptions{Prune: tc.prune, RefSpecs: []config.RefSpec{tc.spec}})
+			s.ErrorIs(err, plumbing.ErrObjectNotFound)
+
+			ref, err := dst.Storer.Reference(keep.Name())
+			s.Require().NoError(err)
+			s.Equal(keep, ref)
+		})
+	}
+}
+
 func (s *RemoteSuite) TestPushPrune() {
 	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
