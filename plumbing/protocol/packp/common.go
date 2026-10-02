@@ -32,9 +32,6 @@ var (
 	// server-response
 	ack = []byte("ACK")
 	nak = []byte("NAK")
-
-	// updreq
-	shallowNoSp = []byte("shallow")
 )
 
 func isFlush(payload []byte) bool {
