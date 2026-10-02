@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"fmt"
 	"io"
-	"math"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/hash"
@@ -124,7 +123,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
 		}
-		if hasGenerationV2 && v.GenerationV2Data() > math.MaxUint32 {
+		if hasGenerationV2 && v.GenerationV2Data() >= 0x80000000 {
 			generationV2OverflowCount++
 		}
 	}

@@ -684,6 +684,36 @@ func (s *CommitgraphSuite) TestGetCommitDataReadsGenerationOverflow() {
 		"GenerationV2 should round-trip through the GDO2 overflow chunk")
 }
 
+// Git moves a corrected commit date offset to the GDO2 overflow chunk once
+// it exceeds GENERATION_NUMBER_V2_OFFSET_MAX (2^31-1), not only once it
+// stops fitting a uint32, as in Git's [write_graph_chunk_generation_data].
+//
+// [write_graph_chunk_generation_data]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1366-L1369
+func (s *CommitgraphSuite) TestGenerationOffsetAboveInt32RoundTrips() {
+	want := uint64(0x80000000)
+	mem := commitgraph.NewMemoryIndex()
+	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		&commitgraph.CommitData{
+			TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			Generation:   1,
+			GenerationV2: want,
+			When:         time.Unix(0, 0),
+		})
+
+	var buf bytes.Buffer
+	s.Require().NoError(commitgraph.NewEncoder(&buf).Encode(mem))
+
+	idx, err := commitgraph.OpenFileIndex(
+		discardCloseReader{bytes.NewReader(buf.Bytes())},
+	)
+	s.Require().NoError(err)
+	defer idx.Close()
+
+	data, err := idx.GetCommitDataByIndex(0)
+	s.Require().NoError(err)
+	s.Equal(want, data.GenerationV2)
+}
+
 // patchTOCOffset rewrites the file offset of the TOC entry whose
 // 4-byte signature matches sig. Returns false if no entry matches.
 func patchTOCOffset(raw, sig []byte, newOffset uint64) bool {
