@@ -656,7 +656,7 @@ func (s *CommitgraphSuite) TestGetCommitDataRejectsGenerationOverflowPastChunk()
 func (s *CommitgraphSuite) TestGetCommitDataReadsGenerationOverflow() {
 	// Use Unix epoch as the commit time so the encoder's
 	// (generation<<34 | unixTime) packing leaves the lower 34 bits at
-	// zero; the reader's `generationV2 = uint64(genAndTime & 0x3FFFFFFFF)`
+	// zero; the reader's `generationV2 = genAndTime & commitTimeMask`
 	// then equals When.Unix(), and `+= overflow_value` returns the
 	// caller-set GenerationV2 unchanged.
 	want := uint64(0x100000001)
@@ -712,6 +712,102 @@ func (s *CommitgraphSuite) TestGenerationOffsetAboveInt32RoundTrips() {
 	data, err := idx.GetCommitDataByIndex(0)
 	s.Require().NoError(err)
 	s.Equal(want, data.GenerationV2)
+}
+
+// The GDA2 offset is relative to the 34-bit date CDAT stores, not the full
+// commit date, as in Git's [compute_generation_offset], so a reader adding
+// the two gets the corrected date back.
+//
+// [compute_generation_offset]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1341-L1351
+func (s *CommitgraphSuite) TestCorrectedDateBeyond34BitsRoundTrips() {
+	when := time.Unix(1<<34+7, 0)
+	mem := commitgraph.NewMemoryIndex()
+	mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		&commitgraph.CommitData{
+			TreeHash:     plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			Generation:   1,
+			GenerationV2: uint64(when.Unix()),
+			When:         when,
+		})
+
+	var buf bytes.Buffer
+	s.Require().NoError(commitgraph.NewEncoder(&buf).Encode(mem))
+
+	idx, err := commitgraph.OpenFileIndex(
+		discardCloseReader{bytes.NewReader(buf.Bytes())},
+	)
+	s.Require().NoError(err)
+	defer idx.Close()
+
+	data, err := idx.GetCommitDataByIndex(0)
+	s.Require().NoError(err)
+	s.Equal(uint64(when.Unix()), data.GenerationV2)
+}
+
+// CDAT packs a 30-bit topological generation above a 34-bit commit date.
+// Git keeps only the low 34 bits of the date in [write_graph_chunk_data]
+// and caps the generation at GENERATION_NUMBER_V1_MAX in
+// [compute_generation_from_max], so an out-of-range value in either field
+// must not corrupt the other.
+//
+// [write_graph_chunk_data]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1306-L1313
+// [compute_generation_from_max]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1630-L1645
+func (s *CommitgraphSuite) TestCommitDataFieldsDoNotOverlap() {
+	tests := []struct {
+		name           string
+		when           time.Time
+		generation     uint64
+		wantWhen       int64
+		wantGeneration uint64
+	}{
+		{
+			name:           "date before the epoch",
+			when:           time.Unix(-1, 0),
+			generation:     5,
+			wantWhen:       1<<34 - 1,
+			wantGeneration: 5,
+		},
+		{
+			name:           "date beyond 34 bits",
+			when:           time.Unix(1<<34+7, 0),
+			generation:     4,
+			wantWhen:       7,
+			wantGeneration: 4,
+		},
+		{
+			name:           "generation beyond 30 bits",
+			when:           time.Unix(1700000000, 0),
+			generation:     1 << 30,
+			wantWhen:       1700000000,
+			wantGeneration: 0x3FFFFFFF,
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			mem := commitgraph.NewMemoryIndex()
+			mem.Add(plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+				&commitgraph.CommitData{
+					TreeHash:   plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+					Generation: tc.generation,
+					When:       tc.when,
+				})
+
+			var buf bytes.Buffer
+			s.Require().NoError(commitgraph.NewEncoder(&buf).Encode(mem))
+
+			idx, err := commitgraph.OpenFileIndex(
+				discardCloseReader{bytes.NewReader(buf.Bytes())},
+			)
+			s.Require().NoError(err)
+			defer idx.Close()
+
+			data, err := idx.GetCommitDataByIndex(0)
+			s.Require().NoError(err)
+			s.Equal(tc.wantGeneration, data.Generation)
+			s.Equal(tc.wantWhen, data.When.Unix())
+		})
+	}
 }
 
 // patchTOCOffset rewrites the file offset of the TOC entry whose

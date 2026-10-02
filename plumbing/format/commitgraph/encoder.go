@@ -239,8 +239,15 @@ func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumb
 			return extraEdges, generationV2Data, err
 		}
 
-		unixTime := uint64(commitData.When.Unix())
-		unixTime |= uint64(commitData.Generation) << 34
+		// The date keeps its low 34 bits, as in Git's
+		// [write_graph_chunk_data], and the generation is capped at
+		// GENERATION_NUMBER_V1_MAX, as in [compute_generation_from_max], so
+		// neither field can spill into the other.
+		//
+		// [write_graph_chunk_data]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1306-L1313
+		// [compute_generation_from_max]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1630-L1645
+		unixTime := uint64(commitData.When.Unix()) & commitTimeMask
+		unixTime |= min(commitData.Generation, 0x3FFFFFFF) << 34
 		if err = binary.WriteUint64(e, unixTime); err != nil {
 			return extraEdges, generationV2Data, err
 		}
