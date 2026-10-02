@@ -43,9 +43,9 @@ func NewCommitNodeIterAuthorDateOrder(c CommitNode,
 		}
 
 		switch {
-		case rightCommit.Author.When.Before(leftCommit.Author.When):
+		case rightCommit.AuthorWhen().Before(leftCommit.AuthorWhen()):
 			return -1
-		case leftCommit.Author.When.Before(rightCommit.Author.When):
+		case leftCommit.AuthorWhen().Before(rightCommit.AuthorWhen()):
 			return 1
 		}
 		return 0
