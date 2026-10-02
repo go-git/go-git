@@ -1744,7 +1744,7 @@ func (d *DotGit) PackRefs() (err error) {
 		}
 
 		peelable = true
-		_, name, ok := strings.Cut(strings.TrimSuffix(line, "\n"), " ")
+		_, name, ok := strings.Cut(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"), " ")
 		if !ok || strings.Contains(name, " ") {
 			return ErrPackedRefsBadFormat
 		}

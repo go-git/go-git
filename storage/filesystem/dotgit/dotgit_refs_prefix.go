@@ -262,7 +262,9 @@ func (s *packedRefsSource) open() (err error) {
 
 	sorted, prev := true, ""
 	for line := range strings.Lines(content.String()) {
-		hash, name, ok, err := parsePackedRefLine(strings.TrimSuffix(line, "\n"))
+		// Drop the line ending as bufio.ScanLines does for the other
+		// packed-refs readers, so a CRLF record reads the same everywhere.
+		hash, name, ok, err := parsePackedRefLine(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"))
 		if err != nil {
 			return err
 		}

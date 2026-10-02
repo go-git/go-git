@@ -1537,6 +1537,22 @@ func (s *SuiteDotGit) TestPackRefsRejectsMisplacedPeeledLines() {
 	}
 }
 
+// In a packed-refs file with CRLF line endings, a packed loose ref still
+// replaces the record of the same name instead of being written beside it.
+func (s *SuiteDotGit) TestPackRefsReplacesCRLFRecord() {
+	fs := s.EmptyFS()
+	s.Require().NoError(util.WriteFile(fs, packedRefsPath, []byte(
+		"e8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/main\r\n",
+	), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "refs/heads/main", []byte("a8d3ffab552895c19b9fcf7aa264d277cde33881\n"), 0o644))
+
+	s.Require().NoError(New(fs).PackRefs())
+
+	content, err := util.ReadFile(fs, packedRefsPath)
+	s.Require().NoError(err)
+	s.Equal("# pack-refs with: sorted \na8d3ffab552895c19b9fcf7aa264d277cde33881 refs/heads/main\n", string(content))
+}
+
 func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	fs := s.EmptyFS()
 	dir := New(fs)
