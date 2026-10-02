@@ -549,6 +549,59 @@ func TestParserRejectsOverflowingObjectHeader(t *testing.T) {
 	require.ErrorContains(t, err, "malformed pack")
 }
 
+func TestParserRejectsInflatedSizeMismatch(t *testing.T) {
+	t.Parallel()
+
+	// The declared size is what the object id is computed over, so an entry
+	// whose zlib stream inflates to a different length would be indexed
+	// under an id that does not hash its own content. Each pack is
+	// otherwise well formed, trailer included, so nothing else flags it.
+	tests := []struct {
+		name         string
+		declaredSize int64
+		payload      []byte
+		wantErr      error
+	}{
+		{
+			name:         "inflates to fewer bytes than declared",
+			declaredSize: 32,
+			payload:      bytes.Repeat([]byte{'x'}, 8),
+			wantErr:      packfile.ErrInflatedSizeShort,
+		},
+		{
+			name:         "inflates to more bytes than declared",
+			declaredSize: 8,
+			payload:      bytes.Repeat([]byte{'x'}, 32),
+			wantErr:      packfile.ErrInflatedSizeMismatch,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var body bytes.Buffer
+			h := sha1.New()
+			w := io.MultiWriter(&body, h)
+
+			_, _ = w.Write([]byte("PACK"))
+			_ = binary.Write(w, binary.BigEndian, uint32(2))
+			_ = binary.Write(w, binary.BigEndian, uint32(1))
+
+			writePackObjectHeader(t, w, plumbing.BlobObject, tc.declaredSize)
+			writeZlibPayload(t, w, tc.payload)
+
+			_, _ = body.Write(h.Sum(nil))
+
+			parser := packfile.NewParser(bytes.NewReader(body.Bytes()))
+
+			_, err := parser.Parse()
+			require.Error(t, err)
+			require.ErrorIs(t, err, tc.wantErr)
+		})
+	}
+}
+
 // writePackObjectHeader writes a packfile object header for an entry of
 // the given type and uncompressed payload size in the variable-length
 // encoding used by the pack format (4 bits of size in the first byte, 7
