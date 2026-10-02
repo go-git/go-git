@@ -423,6 +423,33 @@ func TestRefsWithPrefixChecksSortedClaim(t *testing.T) {
 	}, collectRefs(t, storer.NewReferenceSliceIter(all)))
 }
 
+// A packed-refs file with CRLF line endings reads the same through Ref and
+// RefsWithPrefix, as through the scanner the other packed-refs readers use,
+// and a loose ref still shadows its packed counterpart.
+func TestRefsWithPrefixReadsCRLFPackedRefs(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	writeFile(t, fs, "packed-refs", "# pack-refs with: peeled fully-peeled sorted \r\n"+
+		hashA+" refs/heads/main\r\n"+
+		hashA+" refs/heads/shadowed\r\n"+
+		hashA+" refs/tags/v1\r\n"+
+		"^"+hashB+"\r\n")
+	writeFile(t, fs, "refs/heads/shadowed", hashB+"\n")
+	dir := New(fs)
+
+	iter, err := dir.RefsWithPrefix("refs/")
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		hashA + " refs/heads/main",
+		hashB + " refs/heads/shadowed",
+		hashA + " refs/tags/v1",
+	}, collectRefs(t, iter))
+
+	ref, err := dir.Ref("refs/heads/main")
+	require.NoError(t, err)
+	assert.Equal(t, hashA+" refs/heads/main", ref.String())
+}
+
 type openCountingFS struct {
 	billy.Filesystem
 	open atomic.Int64
