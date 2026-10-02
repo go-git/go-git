@@ -1627,3 +1627,46 @@ func TestReceivePackCapabilitiesOnLaterCommandLine(t *testing.T) {
 	assert.Contains(t, out.String(), "ok refs/heads/first")
 	assert.Contains(t, out.String(), "ok refs/heads/second")
 }
+
+// A shallow-only request updates nothing, and Git runs neither the packfile
+// read nor the hooks for it.
+func TestReceivePackWithoutCommandsSkipsHooks(t *testing.T) {
+	t.Parallel()
+
+	ref := plumbing.ReferenceName("refs/heads/main")
+	hash := plumbing.NewHash(receivePackTestHash)
+	st := seedRef(t, ref, hash)
+
+	var body bytes.Buffer
+	_, err := pktline.Writef(&body, "shallow %s", hash)
+	require.NoError(t, err)
+	require.NoError(t, pktline.WriteFlush(&body))
+
+	var (
+		out    bytes.Buffer
+		called []string
+	)
+	err = ReceivePack(
+		context.Background(),
+		st,
+		io.NopCloser(&body),
+		ioutil.WriteNopCloser(&out),
+		&ReceivePackRequest{
+			StatelessRPC: true,
+			Hooks: ReceivePackHooks{
+				PreReceive: func(context.Context, *PreReceiveInfo) error {
+					called = append(called, "pre-receive")
+					return nil
+				},
+				PostReceive: func(context.Context, *PostReceiveInfo) error {
+					called = append(called, "post-receive")
+					return nil
+				},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Empty(t, called)
+	assert.Empty(t, out.String())
+}
