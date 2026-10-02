@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -1306,6 +1307,142 @@ func TestWorktreeConfig(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, customWorktreePath, repoCfg.Core.Worktree)
 	})
+}
+
+func TestValidateName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("accepts a name at the length limit", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, validateName(strings.Repeat("a", maxWorktreeNameLen), maxWorktreeNameLen))
+	})
+
+	t.Run("rejects a name over the length limit", func(t *testing.T) {
+		t.Parallel()
+
+		err := validateName(strings.Repeat("a", maxWorktreeNameLen+1), maxWorktreeNameLen)
+		require.ErrorIs(t, err, ErrInvalidWorktreeName)
+		require.ErrorContains(t, err, "exceeds the 255 byte limit")
+	})
+
+	t.Run("rejects a name of the wrong shape", func(t *testing.T) {
+		t.Parallel()
+
+		err := validateName("has spaces", maxWorktreeNameLen)
+		require.ErrorIs(t, err, ErrInvalidWorktreeName)
+		require.ErrorContains(t, err, `"has spaces"`)
+	})
+
+	// A rejected name reaches an error message by one of two routes, and both
+	// stay the size of a message rather than the size of the name: too long
+	// for the length check, which reports the length, or the right length but
+	// the wrong shape, which is quoted back bounded. The bytes are the ones
+	// quoting expands the furthest.
+	t.Run("error stays bounded", func(t *testing.T) {
+		t.Parallel()
+
+		for _, b := range []byte{'a', 0x00, 0xff, ':'} {
+			name := strings.Repeat(string([]byte{b}), 1<<20)
+			err := validateName(name, maxWorktreeNameLen)
+			require.Error(t, err)
+			require.Less(t, len(err.Error()), 128,
+				"length error for byte %#x quotes too much of the name", b)
+		}
+
+		// Bytes that worktreeNameRE rejects, at a length the check above
+		// admits, so the name reaches the quoting branch instead.
+		for _, b := range []byte{0x00, 0xff, ':'} {
+			name := strings.Repeat(string([]byte{b}), maxWorktreeNameLen)
+			err := validateName(name, maxWorktreeNameLen)
+			require.Error(t, err)
+			require.Less(t, len(err.Error()), 320,
+				"quoted error for byte %#x quotes too much of the name", b)
+		}
+	})
+}
+
+// An attached worktree's name becomes a branch as well as a directory entry,
+// and git updates a loose reference through a sibling .lock, so the name git
+// can carry as a branch stops lockSuffix short of the one it can carry as a
+// directory. go-git writes the reference in place and would accept the longer
+// name, so the boundary is where a worktree go-git creates stops being one
+// git can use. Detaching drops the branch and with it the shorter limit.
+func TestAddNameLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		description string
+		nameLen     int
+		detached    bool
+		wantErr     string
+	}{{
+		description: "attached at the branch limit",
+		nameLen:     maxBranchNameLen,
+	}, {
+		description: "attached over the branch limit",
+		nameLen:     maxBranchNameLen + 1,
+		wantErr:     "exceeds the 250 byte limit",
+	}, {
+		description: "detached over the branch limit",
+		nameLen:     maxBranchNameLen + 1,
+		detached:    true,
+	}, {
+		description: "detached at the directory limit",
+		nameLen:     maxWorktreeNameLen,
+		detached:    true,
+	}, {
+		description: "detached over the directory limit",
+		nameLen:     maxWorktreeNameLen + 1,
+		detached:    true,
+		wantErr:     "exceeds the 255 byte limit",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			t.Parallel()
+
+			fs, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(t.TempDir, osfs.WithBoundOS()))
+			require.NoError(t, err)
+
+			storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+			defer func() { _ = storer.Close() }()
+
+			w, err := New(storer)
+			require.NoError(t, err)
+
+			var opts []Option
+			if tt.detached {
+				opts = append(opts, WithDetachedHead())
+			}
+
+			name := strings.Repeat("a", tt.nameLen)
+			err = w.Add(osfs.New(t.TempDir(), osfs.WithBoundOS()), name, opts...)
+
+			if tt.wantErr != "" {
+				require.ErrorIs(t, err, ErrInvalidWorktreeName)
+				require.ErrorContains(t, err, tt.wantErr)
+
+				_, err = fs.Lstat(filepath.Join(worktrees, name))
+				require.ErrorIs(t, err, iofs.ErrNotExist, "a rejected name left metadata behind")
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			names, err := w.List()
+			require.NoError(t, err)
+			require.Equal(t, []string{name}, names)
+
+			_, err = storer.Reference(plumbing.NewBranchReferenceName(name))
+			if tt.detached {
+				require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			} else {
+				require.NoError(t, err, "an attached worktree created no branch")
+			}
+		})
+	}
 }
 
 func FuzzAdd(f *testing.F) {
