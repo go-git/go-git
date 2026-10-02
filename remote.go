@@ -213,6 +213,9 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 				continue
 			}
 		}
+		if err := r.checkPushSourceReadable(ref, o.RefSpecs); err != nil {
+			return err
+		}
 		pushRefs = append(pushRefs, ref)
 	}
 	localRefs = pushRefs
@@ -852,6 +855,40 @@ func (r *Remote) pruneRemotes(specs []config.RefSpec, localRefs []*plumbing.Refe
 		}
 	}
 	return updatedPrune, nil
+}
+
+// checkPushSourceReadable fails a push whose refspecs match ref when storage
+// reports ref, or the reference it points at, with the all-zero ID because it
+// cannot read it. Pushed, that ID would become the new value of the mapped
+// destination and delete it, as git push does with such a ref. It must fail
+// rather than be skipped: prune would read a skipped source as a request to
+// delete its destination.
+func (r *Remote) checkPushSourceReadable(ref *plumbing.Reference, specs []config.RefSpec) error {
+	matched := false
+	for _, spec := range specs {
+		if spec.Match(ref.Name()) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return nil
+	}
+
+	resolved := ref
+	if ref.Type() == plumbing.SymbolicReference {
+		var err error
+		resolved, err = storer.ResolveReference(r.s, ref.Name())
+		if err != nil {
+			// Dangling and unresolvable sources are handled where refspecs
+			// are matched.
+			return nil
+		}
+	}
+	if resolved.Type() == plumbing.HashReference && resolved.Hash().IsZero() {
+		return fmt.Errorf("reference %q is broken: %w", ref.Name(), plumbing.ErrObjectNotFound)
+	}
+	return nil
 }
 
 func (r *Remote) addReferencesToUpdate(
