@@ -537,7 +537,7 @@ func (c *Config) Unmarshal(b []byte) error {
 
 func (c *Config) unmarshalCore() {
 	s := c.Raw.Section(coreSection)
-	if s.Options.Get(bareKey) == "true" {
+	if parseConfigBool(s.Options.Get(bareKey)).IsTrue() {
 		c.Core.IsBare = true
 	}
 
@@ -554,7 +554,7 @@ func (c *Config) unmarshalCore() {
 		c.Core.ProtectHFS = parsed
 	}
 
-	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
+	if parseConfigBool(s.Options.Get(fileModeKey)) == OptBoolFalse {
 		c.Core.FileMode = false
 	}
 
@@ -619,8 +619,8 @@ func (c *Config) unmarshalPack() error {
 		c.Pack.Window = uint(winUint)
 	}
 
-	c.Pack.ReadReverseIndex = s.Options.Get(readReverseIndexKey) != "false"
-	c.Pack.WriteReverseIndex = s.Options.Get(writeReverseIndexKey) != "false"
+	c.Pack.ReadReverseIndex = parseConfigBool(s.Options.Get(readReverseIndexKey)) != OptBoolFalse
+	c.Pack.WriteReverseIndex = parseConfigBool(s.Options.Get(writeReverseIndexKey)) != OptBoolFalse
 
 	return nil
 }
@@ -1101,8 +1101,8 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
 	c.URLs = append(c.URLs, c.raw.Options.GetAll(pushurlKey)...)
 	c.Fetch = fetch
-	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
-	c.Promisor = c.raw.Options.Get(promisorKey) == "true"
+	c.Mirror = parseConfigBool(c.raw.Options.Get(mirrorKey)).IsTrue()
+	c.Promisor = parseConfigBool(c.raw.Options.Get(promisorKey)).IsTrue()
 	c.PartialCloneFilter = c.raw.Options.Get(partialCloneFilterKey)
 
 	return nil
