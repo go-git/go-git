@@ -10,6 +10,7 @@ import (
 const (
 	refSpecWildcard  = "*"
 	refSpecForce     = "+"
+	refSpecNegative  = "^"
 	refSpecSeparator = ":"
 )
 
@@ -32,6 +33,13 @@ type RefSpec string
 
 // Validate validates the RefSpec
 func (s RefSpec) Validate() error {
+	// Negative refspecs ("^<pattern>") exclude matching refs from fetch/push
+	// and have no destination, so the usual "<src>:<dst>" shape does not apply.
+	// See git-fetch(1).
+	if s.IsNegative() {
+		return nil
+	}
+
 	spec := string(s)
 	if strings.Count(spec, refSpecSeparator) != 1 {
 		return ErrRefSpecMalformedSeparator
@@ -61,6 +69,12 @@ func (s RefSpec) IsDelete() bool {
 	return s[0] == refSpecSeparator[0]
 }
 
+// IsNegative returns true if the refspec excludes (rather than includes) matching
+// refs. Negative refspecs have the form "^<pattern>" and carry no destination.
+func (s RefSpec) IsNegative() bool {
+	return len(s) > 0 && s[0] == refSpecNegative[0]
+}
+
 // IsExactSHA1 returns true if the source is a SHA1 hash.
 func (s RefSpec) IsExactSHA1() bool {
 	return plumbing.IsHash(s.Src())
@@ -69,6 +83,12 @@ func (s RefSpec) IsExactSHA1() bool {
 // Src returns the src side.
 func (s RefSpec) Src() string {
 	spec := string(s)
+
+	// Negative refspecs ("^<pattern>") have no destination — the rest after the
+	// leading ^ is the exclusion pattern.
+	if s.IsNegative() {
+		return spec[1:]
+	}
 
 	var start int
 	if s.IsForceUpdate() {
@@ -117,6 +137,11 @@ func (s RefSpec) matchGlob(n plumbing.ReferenceName) bool {
 
 // Dst returns the destination for the given remote reference.
 func (s RefSpec) Dst(n plumbing.ReferenceName) plumbing.ReferenceName {
+	// Negative refspecs only exclude refs; they have no destination.
+	if s.IsNegative() {
+		return ""
+	}
+
 	spec := string(s)
 	start := strings.Index(spec, refSpecSeparator) + 1
 	dst := spec[start:]
