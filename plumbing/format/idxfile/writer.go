@@ -11,6 +11,13 @@ import (
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
+// maxObjectsPrealloc caps the up-front capacity reserved from the pack's
+// declared object count, so a header advertising an absurd quantity cannot
+// trigger a multi-gigabyte allocation. The slice still grows organically
+// beyond this hint. It mirrors the bound the packfile parser applies to its
+// own cache, which cannot be imported from here without a cycle.
+const maxObjectsPrealloc = 1 << 16 // 64 Ki entries
+
 // objects implements sort.Interface and uses hash as sorting key.
 type objects []Entry
 
@@ -69,7 +76,7 @@ func (w *Writer) Finished() bool {
 // OnHeader implements packfile.Observer interface.
 func (w *Writer) OnHeader(count uint32) error {
 	w.count = count
-	w.objects = make(objects, 0, count)
+	w.objects = make(objects, 0, min(count, maxObjectsPrealloc))
 	return nil
 }
 
