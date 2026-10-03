@@ -14,7 +14,7 @@ import (
 //     The buffer helps avoid a performance penalty for performing small writes
 //     to the crc32 hash writer.
 //
-// Note that this is passed on to zlib, and it mmust support io.BytesReader, else
+// Note that this is passed on to zlib, and it must support io.BytesReader, else
 // it won't be able to just read the content of the current object, but rather it
 // will read the entire packfile.
 //
