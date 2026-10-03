@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
@@ -66,6 +67,7 @@ func (f *packHandleFile) Close() error {
 // the descriptor until it is released, so a missing Close leaves the pack
 // open for the life of the storage and the fd pool cannot reclaim it.
 func TestEncodedObjectSizeReleasesPackHandle(t *testing.T) {
+	t.Parallel()
 	const (
 		nPacks     = 16
 		objPerPack = 4
