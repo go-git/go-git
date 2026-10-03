@@ -63,8 +63,9 @@ func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
 		minimumLevel, generationV2 = next.Generation(), false
 	}
 
-	parents := make([]CommitNode, 0, len(next.ParentHashes()))
-	for i := range next.ParentHashes() {
+	nextParentHashes := liveParentHashes(next)
+	parents := make([]CommitNode, 0, len(nextParentHashes))
+	for i := range nextParentHashes {
 		pc, err := next.ParentNode(i)
 		if err != nil {
 			return nil, err
@@ -105,7 +106,7 @@ func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
 		}
 
 		iter.exploreStack.Pop()
-		for i, h := range toExplore.ParentHashes() {
+		for i, h := range liveParentHashes(toExplore) {
 			if _, has := iter.ignore[h]; has {
 				continue
 			}
@@ -122,7 +123,7 @@ func (iter *commitNodeIteratorTopological) Next() (CommitNode, error) {
 	}
 
 	// VISIT
-	for i, h := range next.ParentHashes() {
+	for i, h := range nextParentHashes {
 		if _, has := iter.ignore[h]; has {
 			continue
 		}
