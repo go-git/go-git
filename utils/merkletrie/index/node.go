@@ -29,6 +29,9 @@ type node struct {
 // RootNodeOptions contains configuration for the root node.
 type RootNodeOptions struct {
 	UpholdExecutableBit bool
+	// IncludeSkipWorktree makes entries with SkipWorktree set be compared
+	// like any other entry instead of being skipped.
+	IncludeSkipWorktree bool
 }
 
 // NewRootNode returns the root node of a computed tree from a index.Index,
@@ -43,6 +46,7 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 	m := map[string]*node{rootNode: {isDir: true}}
 
 	for _, e := range idx.Entries {
+		skip := e.SkipWorktree && !options.IncludeSkipWorktree
 		parts := strings.Split(e.Name, string("/"))
 
 		var fullpath string
@@ -56,13 +60,13 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 			// of the tree needs to have this value set to false so that subdirectories
 			// are not ignored.
 			if parentNode, ok := m[fullpath]; ok {
-				if !e.SkipWorktree {
+				if !skip {
 					parentNode.skip = false
 				}
 				continue
 			}
 
-			n := &node{path: fullpath, skip: e.SkipWorktree, upholdExecutableBit: options.UpholdExecutableBit}
+			n := &node{path: fullpath, skip: skip, upholdExecutableBit: options.UpholdExecutableBit}
 			if fullpath == e.Name {
 				n.entry = e
 			} else {
