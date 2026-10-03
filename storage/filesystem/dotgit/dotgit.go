@@ -1414,24 +1414,22 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 }
 
 // removeEmptyRefParents deletes empty directories left after removing a loose
-// ref such as refs/bugfix/issue-1 (the bugfix/ directory).
+// ref such as refs/heads/bugfix/issue-1 (the bugfix/ directory). It spares
+// refs/ and its immediate subdirectories (such as refs/heads, refs/tags, refs/remotes),
+// matching upstream Git's try_remove_empty_parents.
 func (d *DotGit) removeEmptyRefParents(refPath string) error {
-	dir := path.Dir(refPath)
-	// Never remove the refs root or anything outside it.
-	for dir != "." && dir != "" && dir != "/" && dir != "refs" {
-		entries, err := d.fs.ReadDir(dir)
-		if err != nil {
-			return nil
+	dir := path.Dir(filepath.ToSlash(refPath))
+	for {
+		parent := path.Dir(dir)
+		if dir == "." || dir == "" || dir == "/" || dir == "refs" || parent == "refs" || parent == dir {
+			break
 		}
-		if len(entries) > 0 {
+		entries, err := d.fs.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
 			return nil
 		}
 		if err := d.fs.Remove(dir); err != nil {
 			return nil
-		}
-		parent := path.Dir(dir)
-		if parent == dir {
-			break
 		}
 		dir = parent
 	}
