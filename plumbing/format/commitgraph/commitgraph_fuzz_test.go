@@ -5,7 +5,9 @@ import (
 	encbin "encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 
@@ -128,22 +130,33 @@ func FuzzOpenFileIndex(f *testing.F) {
 }
 
 // FuzzEncoderRoundTrip drives the encoder with a small randomly-shaped
-// MemoryIndex and asserts the produced byte stream parses back. Catches
-// drift between the chunk-count cap on the writer side (byte 6 = uint8)
-// and the on-disk header byte the reader extracts.
+// MemoryIndex and asserts the produced byte stream parses back to the
+// same commit data. Catches drift between the chunk-count cap on the
+// writer side (byte 6 = uint8) and the on-disk header byte the reader
+// extracts, and between the GDA2 overflow threshold and GDO2 sizing.
 func FuzzEncoderRoundTrip(f *testing.F) {
-	f.Add(uint8(0), uint8(0), uint8(0))
-	f.Add(uint8(1), uint8(0), uint8(0))
-	f.Add(uint8(5), uint8(3), uint8(2))
-	f.Add(uint8(255), uint8(0), uint8(0))
+	f.Add(uint8(0), uint8(0), uint8(0), int64(0), uint64(0))
+	f.Add(uint8(1), uint8(0), uint8(0), int64(0), uint64(0))
+	f.Add(uint8(5), uint8(3), uint8(2), int64(0), uint64(0x100000001))
+	f.Add(uint8(255), uint8(0), uint8(0), int64(0), uint64(0))
+	// GDA2 holds offsets up to GENERATION_NUMBER_V2_OFFSET_MAX (2^31-1);
+	// anything above goes to GDO2.
+	f.Add(uint8(5), uint8(0), uint8(1), int64(1700000000), uint64(0x7FFFFFFF))
+	f.Add(uint8(5), uint8(0), uint8(1), int64(1700000000), uint64(0x80000000))
+	f.Add(uint8(5), uint8(0), uint8(1), int64(1700000000), uint64(0xFFFFFFFF))
+	f.Add(uint8(5), uint8(0), uint8(1), int64(1700000000), uint64(0x100000000))
+	// CDAT keeps only the low 34 bits of the commit date.
+	f.Add(uint8(5), uint8(0), uint8(1), int64(1<<34+7), uint64(1))
+	f.Add(uint8(5), uint8(0), uint8(1), int64(-1), uint64(1))
 
-	f.Fuzz(func(t *testing.T, numCommits, octopusMod, gv2Mod uint8) {
+	f.Fuzz(func(t *testing.T, numCommits, octopusMod, gv2Mod uint8, when int64, offset uint64) {
 		// Cap fuzzer-suggested numCommits to keep iterations cheap.
 		const maxN = 64
 		n := int(numCommits) % (maxN + 1)
 		mem := NewMemoryIndex()
 
 		hashes := make([]plumbing.Hash, n)
+		commits := make([]*CommitData, n)
 		for i := range n {
 			hashes[i] = plumbing.NewHash(fmt.Sprintf("%040x", uint64(i+1)))
 		}
@@ -151,6 +164,7 @@ func FuzzEncoderRoundTrip(f *testing.F) {
 			cd := &CommitData{
 				TreeHash:   hashes[i],
 				Generation: uint64(i + 1),
+				When:       time.Unix(when, 0),
 			}
 			// Octopus: 3 parents on selected commits.
 			if octopusMod > 1 && i >= 3 && i%int(octopusMod) == 0 {
@@ -158,12 +172,16 @@ func FuzzEncoderRoundTrip(f *testing.F) {
 			} else if i >= 1 {
 				cd.ParentHashes = []plumbing.Hash{hashes[i-1]}
 			}
-			// GenerationV2: force overflow encoding on selected commits.
 			if gv2Mod > 0 && i%(int(gv2Mod)+1) == 0 {
-				cd.GenerationV2 = 0x100000001
+				cd.GenerationV2 = uint64(when) + offset
 			} else {
-				cd.GenerationV2 = uint64(i + 1)
+				cd.GenerationV2 = uint64(when) + uint64(i+1)
 			}
+			// Zero and MaxUint64 mean "no corrected commit date".
+			if cd.GenerationV2 == 0 || cd.GenerationV2 == math.MaxUint64 {
+				cd.GenerationV2 = 1
+			}
+			commits[i] = cd
 			mem.Add(hashes[i], cd)
 		}
 
@@ -180,15 +198,28 @@ func FuzzEncoderRoundTrip(f *testing.F) {
 			io.NopCloser(nil),
 		})
 		if err != nil {
-			return
+			t.Fatalf("encoded graph does not open: %v", err)
 		}
 		t.Cleanup(func() { _ = out.Close() })
 
-		// Walk to exercise EDGE / GDA2 / GDO2 paths bounded by the new
-		// chunk-size assertions. Errors here aren't fatal — we only
-		// want the fuzz harness to surface real panics.
-		for i := range n {
-			_, _ = out.GetCommitDataByIndex(uint32(i))
+		for i, want := range commits {
+			idx, err := out.GetIndexByHash(hashes[i])
+			if err != nil {
+				t.Fatalf("commit %d: %v", i, err)
+			}
+			got, err := out.GetCommitDataByIndex(idx)
+			if err != nil {
+				t.Fatalf("commit %d: %v", i, err)
+			}
+			if got.GenerationV2 != want.GenerationV2 {
+				t.Errorf("commit %d: GenerationV2 = %#x, want %#x", i, got.GenerationV2, want.GenerationV2)
+			}
+			if got.When.Unix() != when&commitTimeMask {
+				t.Errorf("commit %d: When = %d, want %d", i, got.When.Unix(), when&commitTimeMask)
+			}
+			if got.Generation != want.Generation {
+				t.Errorf("commit %d: Generation = %d, want %d", i, got.Generation, want.Generation)
+			}
 		}
 	})
 }
