@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	gogitbinary "github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -90,7 +91,10 @@ func FuzzPackfileParser(f *testing.F) {
 	}
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		p := NewParser(bytes.NewReader(data))
-		_, _ = p.Parse()
+		w := new(idxfile.Writer)
+		p := NewParser(bytes.NewReader(data), WithScannerObservers(w))
+		if _, err := p.Parse(); err == nil {
+			_, _ = w.Index()
+		}
 	})
 }
