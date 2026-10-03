@@ -154,7 +154,8 @@ func scanTagTagger(s *tagScanner) (tagState, error) {
 
 	key, data := splitHeader(line)
 	if key == "tagger" {
-		s.t.Tagger.Decode(data)
+		s.t.taggerSource = newIdentSource(data)
+		s.t.Tagger = s.t.taggerSource.signature
 		s.sawTagger = true
 		if err == io.EOF {
 			return nil, nil
