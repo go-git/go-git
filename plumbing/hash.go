@@ -49,10 +49,17 @@ func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
 // Reset resets the hasher with a new object type and size.
 func (h Hasher) Reset(t ObjectType, size int64) {
 	h.Hash.Reset()
-	h.Write(t.Bytes())
-	h.Write([]byte(" "))
-	h.Write([]byte(strconv.FormatInt(size, 10)))
-	h.Write([]byte{0})
+	// Write the "<type> <size>\x00" object header from a single stack buffer.
+	// The previous form allocated for each piece (t.Bytes(), the FormatInt
+	// string-to-[]byte conversion and the two byte-slice literals); t.String()
+	// returns a constant and appending a string to a []byte does not allocate,
+	// so the header is now assembled with no intermediate allocations.
+	var buf [40]byte // longest type ("commit") + ' ' + up to 20 digits + '\x00'
+	b := append(buf[:0], t.String()...)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, size, 10)
+	b = append(b, 0)
+	h.Write(b)
 }
 
 // Sum returns the computed hash.
