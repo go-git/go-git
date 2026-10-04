@@ -16,7 +16,7 @@ import (
 // SendPack sends a packfile to a remote server.
 func SendPack(
 	ctx context.Context,
-	_ storage.Storer,
+	st storage.Storer,
 	caps capability.List,
 	writer io.WriteCloser,
 	reader io.ReadCloser,
@@ -41,6 +41,16 @@ func SendPack(
 	}
 
 	upreq := buildUpdateRequests(caps, req)
+	local := objectFormat(st)
+
+	// Echo the repository's object format when the server advertised the
+	// capability, as git's send-pack does; receive-pack treats a missing
+	// value as sha1 and refuses a sha256 push otherwise.
+	if caps.Supports(capability.ObjectFormat) {
+		upreq.Capabilities.Set(capability.ObjectFormat, local.String())
+	}
+	upreq.Commands = sizeZeroIDs(upreq.Commands, local)
+
 	if err := upreq.Encode(writer); err != nil {
 		return err
 	}
