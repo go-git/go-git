@@ -166,6 +166,136 @@ func TestRefLockHeld(t *testing.T) {
 	}
 }
 
+func TestPackedRefsLockHeld(t *testing.T) {
+	t.Parallel()
+
+	const name = plumbing.ReferenceName("refs/heads/main")
+	packed := counterHash(1)
+	content := packed.String() + " " + name.String() + "\n"
+	lockPath := packedRefsPath + refLockSuffix
+
+	for fsName, newFS := range refTestFilesystems {
+		t.Run(fsName, func(t *testing.T) {
+			t.Parallel()
+			fs := newFS(t)
+			require.NoError(t, util.WriteFile(fs, packedRefsPath, []byte(content), 0o644))
+			// Another writer, git maybe, holds the lock while rewriting
+			// packed-refs.
+			require.NoError(t, util.WriteFile(fs, lockPath, nil, 0o644))
+			dir := New(fs)
+			require.NoError(t, dir.SetRef(plumbing.NewHashReference("refs/heads/loose", packed), nil))
+
+			require.ErrorIs(t, dir.RemoveRef(name), os.ErrExist)
+			require.ErrorIs(t, dir.PackRefs(), os.ErrExist)
+
+			// Readers don't take the lock, so they don't wait for it.
+			ref, err := dir.Ref(name)
+			require.NoError(t, err)
+			assert.Equal(t, packed, ref.Hash())
+
+			got, err := util.ReadFile(fs, packedRefsPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, string(got))
+			_, err = fs.Stat(lockPath)
+			assert.NoError(t, err, "the lock belongs to the other writer")
+		})
+	}
+}
+
+// removeHookFS calls onRemove before each removal.
+type removeHookFS struct {
+	billy.Filesystem
+	onRemove func(filename string)
+}
+
+func (f *removeHookFS) Remove(filename string) error {
+	f.onRemove(filename)
+	return f.Filesystem.Remove(filename)
+}
+
+// RemoveRef holds the lock of packed-refs until the loose reference is gone,
+// as git does: otherwise a concurrent pack could pack the loose reference
+// right before its removal, which would bring it back from packed-refs.
+func TestRemoveRefHoldsPackedRefsLock(t *testing.T) {
+	t.Parallel()
+
+	const name = plumbing.ReferenceName("refs/heads/main")
+	const other = plumbing.ReferenceName("refs/heads/other")
+	a, b := counterHash(1), counterHash(2)
+
+	tests := []struct {
+		name          string
+		loose, packed bool
+	}{
+		{name: "loose", loose: true},
+		{name: "packed", packed: true},
+		{name: "loose over packed", loose: true, packed: true},
+	}
+	for fsName, newFS := range refTestFilesystems {
+		for _, tc := range tests {
+			t.Run(fsName+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+				fs := &removeHookFS{Filesystem: newFS(t), onRemove: func(string) {}}
+				packed := a.String() + " " + other.String() + "\n"
+				if tc.packed {
+					packed += b.String() + " " + name.String() + "\n"
+				}
+				require.NoError(t, util.WriteFile(fs, packedRefsPath, []byte(packed), 0o644))
+				dir := New(fs)
+				if tc.loose {
+					require.NoError(t, dir.SetRef(plumbing.NewHashReference(name, a), nil))
+				}
+
+				removedLoose := false
+				fs.onRemove = func(filename string) {
+					if filename != name.String() {
+						return
+					}
+					removedLoose = true
+					_, err := fs.Stat(packedRefsPath + refLockSuffix)
+					assert.NoError(t, err, "packed-refs is unlocked before the loose reference is removed")
+				}
+				require.NoError(t, dir.RemoveRef(name))
+				assert.True(t, removedLoose)
+
+				_, err := dir.Ref(name)
+				require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+				ref, err := dir.Ref(other)
+				require.NoError(t, err)
+				assert.Equal(t, a, ref.Hash())
+				for _, leftover := range []string{packedRefsPath + refLockSuffix, packedRefsPath + ".new"} {
+					_, err = fs.Stat(leftover)
+					assert.ErrorIs(t, err, os.ErrNotExist, leftover)
+				}
+			})
+		}
+	}
+}
+
+// In a linked worktree, packed-refs and its lock file are in the common
+// directory, where git has them: the references packed there stay visible to
+// the main worktree.
+func TestPackedRefsLockInCommonDir(t *testing.T) {
+	t.Parallel()
+
+	common, worktree := memfs.New(), memfs.New()
+	dir := New(NewRepositoryFilesystem(worktree, common))
+	ref := plumbing.NewHashReference("refs/heads/main", counterHash(1))
+	require.NoError(t, dir.SetRef(ref, nil))
+
+	lockPath := packedRefsPath + refLockSuffix
+	require.NoError(t, util.WriteFile(common, lockPath, nil, 0o644))
+	require.ErrorIs(t, dir.PackRefs(), os.ErrExist)
+	require.NoError(t, common.Remove(lockPath))
+
+	require.NoError(t, dir.PackRefs())
+	_, err := worktree.Stat(packedRefsPath)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	got, err := New(common).Ref(ref.Name())
+	require.NoError(t, err)
+	assert.Equal(t, ref, got)
+}
+
 // releasingLockFS releases the lock of a reference, as its holder would,
 // right after a writer first finds it held.
 type releasingLockFS struct {
@@ -563,6 +693,18 @@ func TestRefLockInteropWithGit(t *testing.T) {
 		require.NoError(t, cmd.Run())
 		assert.Empty(t, stderr.String())
 		assert.Equal(t, a.String(), mustGit("rev-parse", "refs/heads/packed"))
+	})
+
+	//nolint:paralleltest // the subtests share a repository
+	t.Run("git waits for the packed-refs lock of go-git", func(t *testing.T) {
+		lock, err := dir.lockFile(packedRefsPath, packedRefsLockTimeout)
+		require.NoError(t, err)
+		out, err := git("pack-refs", "--all")
+		lock.unlock()
+		require.Error(t, err)
+		assert.Contains(t, out, "packed-refs.lock")
+
+		mustGit("pack-refs", "--all")
 	})
 
 	//nolint:paralleltest // the subtests share a repository
