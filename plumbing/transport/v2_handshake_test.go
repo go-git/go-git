@@ -74,6 +74,28 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 	require.Equal(t, []string{"refs/heads/"}, gotArgs.RefPrefixes)
 }
 
+// Command refuses a server whose object-format go-git does not know before
+// sending anything, as git's send_capabilities does for every command.
+func TestStreamSessionCommandUnknownObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, v := range []string{"", "bogus", "sha1 sha256"} {
+		var out bytes.Buffer
+		caps := capability.List{}
+		caps.Set(capability.ObjectFormat, v)
+		s := &StreamSession{
+			version: protocol.V2,
+			w:       ioutil.WriteNopCloser(&out),
+			caps:    caps,
+		}
+		for _, cmd := range []string{"ls-refs", "fetch", "object-info"} {
+			err := s.Command(context.TODO(), cmd, nil, nil)
+			require.ErrorContains(t, err, "unsupported object-format", "%s with %q", cmd, v)
+		}
+		require.Empty(t, out.String(), "sent with object-format %q", v)
+	}
+}
+
 func TestStreamSessionCommandRejectsNonV2(t *testing.T) {
 	t.Parallel()
 

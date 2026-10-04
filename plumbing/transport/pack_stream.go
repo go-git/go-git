@@ -202,12 +202,16 @@ func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRe
 // carries the capabilities collected during the handshake (the agent and the
 // server's object-format), so callers only provide the command arguments.
 //
-// Command is only valid on a session that negotiated Protocol v2. If ctx is
+// Command is only valid on a session that negotiated Protocol v2, and refuses
+// a server that advertised an object-format go-git does not know. If ctx is
 // done while Command runs, the session is closed, even if Command then returns
 // nil.
 func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
 	if s.version != protocol.V2 {
 		return ErrUnsupportedVersion
+	}
+	if err := internal.CheckServerObjectFormat(s.caps); err != nil {
+		return err
 	}
 
 	stop := s.closeOnDone(ctx)
