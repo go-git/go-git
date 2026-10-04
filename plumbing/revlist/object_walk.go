@@ -3,6 +3,7 @@ package revlist
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -19,8 +20,14 @@ type objectWalk struct {
 	havesQueue []*object.Commit
 	wantsSeen  map[plumbing.Hash]struct{}
 	havesSeen  map[plumbing.Hash]struct{}
-	seen       map[plumbing.Hash]struct{}
-	result     []plumbing.Hash
+	// seen holds objects that are already in result or excluded by the
+	// haves side (haves tips and edge parents), with the type they were
+	// seen as: their own for commits and tags, the one their tree entry
+	// mode implies for trees and blobs. A seen tree is never walked
+	// again: everything below it is seen too, or could not be read.
+	// Anything that adds a tree here must uphold this.
+	seen   map[plumbing.Hash]plumbing.ObjectType
+	result []plumbing.Hash
 }
 
 func newObjectWalk(s storer.EncodedObjectStorer) (*objectWalk, error) {
@@ -34,7 +41,7 @@ func newObjectWalk(s storer.EncodedObjectStorer) (*objectWalk, error) {
 		shallows:  shallows,
 		wantsSeen: make(map[plumbing.Hash]struct{}),
 		havesSeen: make(map[plumbing.Hash]struct{}),
-		seen:      make(map[plumbing.Hash]struct{}),
+		seen:      make(map[plumbing.Hash]plumbing.ObjectType),
 	}, nil
 }
 
@@ -87,7 +94,7 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 			if err != nil {
 				return fmt.Errorf("decoding tag %s: %w", h, err)
 			}
-			w.seen[tag.Hash] = struct{}{}
+			w.seen[tag.Hash] = plumbing.TagObject
 			w.result = append(w.result, tag.Hash)
 			wants = append(wants, tag.Target)
 		case plumbing.TreeObject:
@@ -99,7 +106,7 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 				return err
 			}
 		case plumbing.BlobObject:
-			w.seen[h] = struct{}{}
+			w.seen[h] = plumbing.BlobObject
 			w.result = append(w.result, h)
 		default:
 			return fmt.Errorf("unsupported object type %s for %s", o.Type(), h)
@@ -110,7 +117,7 @@ func (w *objectWalk) seedWants(wants []plumbing.Hash) error {
 
 // seedHaves enqueues each have commit and pre-populates seen with all
 // tree/blob objects reachable from the haves tips. Non-commit objects
-// (tags, trees, blobs) are marked as seen so the diff walk skips them.
+// (tags, trees, blobs) are marked as seen so the tree walk skips them.
 // Missing objects (ErrObjectNotFound) are tolerated since the remote
 // may advertise refs we don't have locally.
 func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
@@ -147,14 +154,14 @@ func (w *objectWalk) seedHaves(haves []plumbing.Hash) error {
 			if err != nil {
 				return fmt.Errorf("decoding haves tag %s: %w", h, err)
 			}
-			w.seen[tag.Hash] = struct{}{}
+			w.seen[tag.Hash] = plumbing.TagObject
 			haves = append(haves, tag.Target)
 		case plumbing.TreeObject:
 			if t, err := object.GetTree(w.s, h); err == nil {
 				markTreeSeen(w.s, t, w.seen)
 			}
 		case plumbing.BlobObject:
-			w.seen[h] = struct{}{}
+			w.seen[h] = plumbing.BlobObject
 		}
 	}
 	return nil
@@ -235,16 +242,55 @@ func (w *objectWalk) walk() error {
 		return fmt.Errorf("commit %s has missing parent %s", mp.child, mp.hash)
 	}
 
-	// Phase 2: collect tree objects for new commits, skipping any
-	// that were painted by haves after being added to newCommits.
+	// Phase 2: drop new commits that were painted by haves after being
+	// added. Then, like Git's mark_edges_uninteresting, mark the trees
+	// of all edge parents (parents of new commits painted by haves) as
+	// seen before collecting any new tree, so that objects moved or
+	// copied from them are not sent. Shallow commits have no parents
+	// here, as with Git's grafts.
+	newCommits = slices.DeleteFunc(newCommits, func(c *object.Commit) bool {
+		return flags[c.Hash]&havePaint != 0
+	})
 	for _, lc := range newCommits {
-		if flags[lc.Hash]&havePaint != 0 {
+		if _, shallow := w.shallows[lc.Hash]; shallow {
 			continue
 		}
-		if err := w.processCommitTrees(lc); err != nil {
+		for _, ph := range lc.ParentHashes {
+			if flags[ph]&havePaint == 0 {
+				continue
+			}
+			if err := w.markEdgeTreeSeen(ph); err != nil {
+				return err
+			}
+		}
+	}
+	for _, lc := range newCommits {
+		if err := w.collectCommit(lc); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// markEdgeTreeSeen marks the tree of edge parent h as seen. A missing
+// edge parent is tolerated, as it may be beyond the haves boundary, but
+// the root tree of one that is present must be readable.
+func (w *objectWalk) markEdgeTreeSeen(h plumbing.Hash) error {
+	c, err := object.GetCommit(w.s, h)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return nil
+		}
+		return fmt.Errorf("getting parent commit %s: %w", h, err)
+	}
+	if _, ok := w.seen[c.TreeHash]; ok {
+		return nil // shared with an edge already marked
+	}
+	t, err := c.Tree()
+	if err != nil {
+		return fmt.Errorf("getting parent tree for %s: %w", h, err)
+	}
+	markTreeSeen(w.s, t, w.seen)
 	return nil
 }
 
@@ -297,9 +343,9 @@ func allStale(queue []*object.Commit, flags map[plumbing.Hash]uint8) bool {
 	return true
 }
 
-// walkFull is the fast path when there are no haves. It walks all
-// commits and collects every reachable tree/blob via a simple seen-set
-// traversal — no per-commit tree diffs needed.
+// walkFull is the fast path when there are no haves. It walks every
+// commit reachable from the wants and collects all of their trees and
+// blobs, without painting.
 func (w *objectWalk) walkFull() error {
 	for len(w.wantsQueue) > 0 {
 		lc := w.wantsQueue[0]
@@ -308,16 +354,8 @@ func (w *objectWalk) walkFull() error {
 		if _, ok := w.seen[lc.Hash]; ok {
 			continue
 		}
-		w.seen[lc.Hash] = struct{}{}
-		w.result = append(w.result, lc.Hash)
-
-		tree, err := lc.Tree()
-		if err != nil {
-			return fmt.Errorf("getting tree for %s: %w", lc.Hash, err)
-		}
-
-		if err := collectAllTreeObjects(w.s, tree, w.seen, &w.result); err != nil {
-			return fmt.Errorf("collecting tree objects for %s: %w", lc.Hash, err)
+		if err := w.collectCommit(lc); err != nil {
+			return err
 		}
 
 		if _, ok := w.shallows[lc.Hash]; ok {
@@ -339,43 +377,21 @@ func (w *objectWalk) walkFull() error {
 	return nil
 }
 
-// processCommitTrees collects new tree/blob objects for a commit by
-// diffing its tree against its parents' trees.
-func (w *objectWalk) processCommitTrees(lc *object.Commit) error {
+// collectCommit adds lc and every tree and blob reachable from it that
+// is not already seen to the result.
+func (w *objectWalk) collectCommit(lc *object.Commit) error {
 	if _, ok := w.seen[lc.Hash]; !ok {
-		w.seen[lc.Hash] = struct{}{}
+		w.seen[lc.Hash] = plumbing.CommitObject
 		w.result = append(w.result, lc.Hash)
 	}
 
-	newTree, err := lc.Tree()
+	tree, err := lc.Tree()
 	if err != nil {
 		return fmt.Errorf("getting tree for %s: %w", lc.Hash, err)
 	}
 
-	// A shallow boundary commit is grafted, so Git treats it as having no
-	// parents. Its tree has to be collected in full even when the parent
-	// commit is still present locally, because the receiver has no history
-	// before the boundary to diff against.
-	var oldTrees []*object.Tree
-	if _, shallow := w.shallows[lc.Hash]; !shallow {
-		for i := 0; i < lc.NumParents(); i++ {
-			parent, err := lc.Parent(i)
-			if err != nil {
-				if errors.Is(err, plumbing.ErrObjectNotFound) {
-					continue // parent may be beyond haves boundary
-				}
-				return fmt.Errorf("getting parent commit %s: %w", lc.ParentHashes[i], err)
-			}
-			pt, err := parent.Tree()
-			if err != nil {
-				return fmt.Errorf("getting parent tree for %s: %w", parent.Hash, err)
-			}
-			oldTrees = append(oldTrees, pt)
-		}
-	}
-
-	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
-		return fmt.Errorf("diffing trees for %s: %w", lc.Hash, err)
+	if err := collectAllTreeObjects(w.s, tree, w.seen, &w.result); err != nil {
+		return fmt.Errorf("collecting tree objects for %s: %w", lc.Hash, err)
 	}
 
 	return nil
@@ -392,114 +408,35 @@ func insertSorted(q *[]*object.Commit, c *object.Commit) {
 	(*q)[i] = c
 }
 
-// collectChangedTreeObjects walks newTree, comparing entry hashes against
-// all oldTrees. An entry is considered unchanged if any old tree contains the
-// same name with the same hash. Only new or modified tree and blob hashes are
-// added to result.
-func collectChangedTreeObjects(
-	s storer.EncodedObjectStorer,
-	newTree *object.Tree,
-	oldTrees []*object.Tree,
-	seen map[plumbing.Hash]struct{},
-	result *[]plumbing.Hash,
-) error {
-	// If newTree matches any old tree exactly, nothing changed.
-	for _, ot := range oldTrees {
-		if newTree.Hash == ot.Hash {
-			return nil
-		}
-	}
-
-	if _, ok := seen[newTree.Hash]; !ok {
-		seen[newTree.Hash] = struct{}{}
-		*result = append(*result, newTree.Hash)
-	}
-
-	// Build per-parent entry indexes for O(1) lookup.
-	oldEntryMaps := make([]map[string]plumbing.Hash, len(oldTrees))
-	for i, ot := range oldTrees {
-		oldEntryMaps[i] = make(map[string]plumbing.Hash, len(ot.Entries))
-		for _, e := range ot.Entries {
-			oldEntryMaps[i][e.Name] = e.Hash
-		}
-	}
-
-	for _, e := range newTree.Entries {
-		// Skip blobs we've already collected. Directories are not skipped
-		// here — a tree hash being "seen" means the hash itself was added
-		// to the result, but a prior diff-walk may not have collected all
-		// of its children. The recursive call handles dedup for trees.
-		if e.Mode != filemode.Dir {
-			if _, ok := seen[e.Hash]; ok {
-				continue
-			}
-		}
-		if e.Mode == filemode.Submodule {
-			continue
-		}
-
-		// If same name has same hash in any parent tree, unchanged—skip.
-		unchanged := false
-		for _, m := range oldEntryMaps {
-			if oh, ok := m[e.Name]; ok && oh == e.Hash {
-				unchanged = true
-				break
-			}
-		}
-		if unchanged {
-			continue
-		}
-
-		if e.Mode == filemode.Dir {
-			// Recurse into changed subtree. Collect the old versions of
-			// this subtree from all parents that have it.
-			newSub, err := object.GetTree(s, e.Hash)
-			if err != nil {
-				return fmt.Errorf("getting subtree %s: %w", e.Hash, err)
-			}
-			var oldSubs []*object.Tree
-			for _, m := range oldEntryMaps {
-				if oh, ok := m[e.Name]; ok {
-					if ot, err := object.GetTree(s, oh); err == nil {
-						oldSubs = append(oldSubs, ot)
-					}
-				}
-			}
-			if err := collectChangedTreeObjects(s, newSub, oldSubs, seen, result); err != nil {
-				return err
-			}
-		} else {
-			seen[e.Hash] = struct{}{}
-			*result = append(*result, e.Hash)
-		}
-	}
-
-	return nil
-}
-
 // collectAllTreeObjects recursively walks a tree, adding all unseen
-// tree and blob hashes to result. This is faster than collectChangedTreeObjects
-// when we need all objects (no haves to diff against).
+// tree and blob hashes to result. A seen tree is skipped without
+// descending into it, as all of its contents are seen as well. An
+// object seen as a tree and used as a blob, or the other way around,
+// fails with plumbing.ErrInvalidType, as it does in Git.
 func collectAllTreeObjects(
 	s storer.EncodedObjectStorer,
 	t *object.Tree,
-	seen map[plumbing.Hash]struct{},
+	seen map[plumbing.Hash]plumbing.ObjectType,
 	result *[]plumbing.Hash,
 ) error {
-	if _, ok := seen[t.Hash]; ok {
-		return nil
+	if typ, ok := seen[t.Hash]; ok {
+		return checkSeenType(t.Hash, typ, plumbing.TreeObject)
 	}
-	seen[t.Hash] = struct{}{}
+	seen[t.Hash] = plumbing.TreeObject
 	*result = append(*result, t.Hash)
 
 	for _, e := range t.Entries {
 		if e.Mode == filemode.Submodule {
 			continue
 		}
-		if _, ok := seen[e.Hash]; ok {
+		typ := entryType(e.Mode)
+		if seenTyp, ok := seen[e.Hash]; ok {
+			if err := checkSeenType(e.Hash, seenTyp, typ); err != nil {
+				return err
+			}
 			continue
 		}
-		if e.Mode == filemode.Dir {
+		if typ == plumbing.TreeObject {
 			sub, err := object.GetTree(s, e.Hash)
 			if err != nil {
 				return fmt.Errorf("getting subtree %s: %w", e.Hash, err)
@@ -508,21 +445,25 @@ func collectAllTreeObjects(
 				return err
 			}
 		} else {
-			seen[e.Hash] = struct{}{}
+			seen[e.Hash] = plumbing.BlobObject
 			*result = append(*result, e.Hash)
 		}
 	}
 	return nil
 }
 
-// markTreeSeen recursively adds all tree and blob hashes in t to seen.
-// Objects added to seen are not added to result — this is used to mark
-// haves-reachable objects so they are skipped during diff walks.
-func markTreeSeen(s storer.EncodedObjectStorer, t *object.Tree, seen map[plumbing.Hash]struct{}) {
+// markTreeSeen adds t and every tree and blob below it to seen, without
+// adding them to result. It excludes the objects reachable from haves
+// tips and edge parents. As Git's mark_tree_uninteresting does for edge
+// parents, a subtree that cannot be read is still marked by hash, but
+// not descended into, so it is neither read nor sent when a want
+// references it. An object already seen as another type keeps that
+// type, so collectAllTreeObjects reports the conflict if a want uses it.
+func markTreeSeen(s storer.EncodedObjectStorer, t *object.Tree, seen map[plumbing.Hash]plumbing.ObjectType) {
 	if _, ok := seen[t.Hash]; ok {
 		return
 	}
-	seen[t.Hash] = struct{}{}
+	seen[t.Hash] = plumbing.TreeObject
 	for _, e := range t.Entries {
 		if e.Mode == filemode.Submodule {
 			continue
@@ -530,12 +471,35 @@ func markTreeSeen(s storer.EncodedObjectStorer, t *object.Tree, seen map[plumbin
 		if _, ok := seen[e.Hash]; ok {
 			continue
 		}
-		if e.Mode == filemode.Dir {
-			if sub, err := object.GetTree(s, e.Hash); err == nil {
-				markTreeSeen(s, sub, seen)
+		typ := entryType(e.Mode)
+		if typ == plumbing.TreeObject {
+			sub, err := object.GetTree(s, e.Hash)
+			if err != nil {
+				seen[e.Hash] = plumbing.TreeObject
+				continue
 			}
+			markTreeSeen(s, sub, seen)
 		} else {
-			seen[e.Hash] = struct{}{}
+			seen[e.Hash] = plumbing.BlobObject
 		}
 	}
+}
+
+// entryType returns the object type a tree entry with mode m refers to.
+// Submodule entries refer to commits in another repository and are
+// skipped by the callers.
+func entryType(m filemode.FileMode) plumbing.ObjectType {
+	if m == filemode.Dir {
+		return plumbing.TreeObject
+	}
+	return plumbing.BlobObject
+}
+
+// checkSeenType returns an error when h, seen as type seen, is used as
+// type used.
+func checkSeenType(h plumbing.Hash, seen, used plumbing.ObjectType) error {
+	if seen == used {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is used as both a %s and a %s", plumbing.ErrInvalidType, h, seen, used)
 }

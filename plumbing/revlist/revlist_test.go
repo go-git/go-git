@@ -839,6 +839,319 @@ func (s *RevListSuite) TestRevListObjects_ClockSkewedHaveAncestorMissingParentTo
 	s.False(gotSet[have], "have must not be included")
 }
 
+// --- Edge-parent exclusion ---
+//
+// Each test below builds history on an on-disk fixture where the
+// haves tip changed a blob that a want commit then moves or copies.
+// The blob is reachable from the want commit's uninteresting parent
+// (an edge parent older than the haves tip) but not from the haves
+// tip itself. git rev-list --objects marks edge-parent trees
+// uninteresting by hash, so the blob must not be sent.
+
+// edgeFixture returns a writable copy of the basic fixture.
+func (s *RevListSuite) edgeFixture() (*filesystem.Storage, string) {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() { _ = sto.Close() })
+	return sto, dotgit.Root()
+}
+
+// assertMatchesGit asserts that Objects(want, ^have) has no duplicates,
+// equals git rev-list --objects want ^have, and contains none of
+// excluded, which git must exclude as well.
+func (s *RevListSuite) assertMatchesGit(sto storer.EncodedObjectStorer, gitDir string, want, have plumbing.Hash, excluded ...plumbing.Hash) {
+	got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+	s.Require().NoError(err)
+
+	gotSet := make(map[plumbing.Hash]bool, len(got))
+	for _, h := range got {
+		gotSet[h] = true
+	}
+	s.Len(got, len(gotSet), "Objects must not return duplicates")
+
+	gitSet := gitRevListObjects(s.T(), gitDir, want, have)
+	for _, h := range excluded {
+		s.Require().False(gitSet[h], "premise: git rev-list must exclude %s", h)
+		s.False(gotSet[h], "%s is reachable from an edge parent and must not be sent", h)
+	}
+	s.Equal(gitSet, gotSet, "Objects output must match git rev-list --objects")
+}
+
+func (s *RevListSuite) TestRevListObjects_MovedBlobFromEdgeParent() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	x := testMakeBlob(t, sto, "x\n")
+	y := testMakeBlob(t, sto, "y\n")
+	z := testMakeBlob(t, sto, "z\n")
+	k := testMakeBlob(t, sto, "k\n")
+
+	baseDir := testMakeTree(t, sto, []object.TreeEntry{{Name: "f", Mode: filemode.Regular, Hash: x}})
+	base := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "dir", Mode: filemode.Dir, Hash: baseDir},
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+	}))
+
+	haveDir := testMakeTree(t, sto, []object.TreeEntry{{Name: "f", Mode: filemode.Regular, Hash: y}})
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "dir", Mode: filemode.Dir, Hash: haveDir},
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+	}), base)
+
+	// Move dir/f to other/f next to a new file, so other/ is a new tree.
+	otherDir := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: x},
+		{Name: "new", Mode: filemode.Regular, Hash: z},
+	})
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+		{Name: "other", Mode: filemode.Dir, Hash: otherDir},
+	}), base)
+
+	s.assertMatchesGit(sto, gitDir, want, have, x)
+}
+
+func (s *RevListSuite) TestRevListObjects_CopiedBlobFromEdgeParent() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	x := testMakeBlob(t, sto, "x\n")
+	y := testMakeBlob(t, sto, "y\n")
+
+	base := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: x},
+	}))
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: y},
+	}), base)
+
+	// Keep a and copy it to b.
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: x},
+		{Name: "b", Mode: filemode.Regular, Hash: x},
+	}), base)
+
+	s.assertMatchesGit(sto, gitDir, want, have, x)
+}
+
+func (s *RevListSuite) TestRevListObjects_MovedSubtreeFromEdgeParent() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	x := testMakeBlob(t, sto, "x\n")
+	x2 := testMakeBlob(t, sto, "x2\n")
+	y := testMakeBlob(t, sto, "y\n")
+	m := testMakeBlob(t, sto, "main\n")
+
+	baseLib := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "x", Mode: filemode.Regular, Hash: x},
+		{Name: "y", Mode: filemode.Regular, Hash: y},
+	})
+	base := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "lib", Mode: filemode.Dir, Hash: baseLib},
+	}))
+
+	haveLib := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "x", Mode: filemode.Regular, Hash: x2},
+		{Name: "y", Mode: filemode.Regular, Hash: y},
+	})
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "lib", Mode: filemode.Dir, Hash: haveLib},
+	}), base)
+
+	// Move lib/ unchanged to src/lib/.
+	src := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "lib", Mode: filemode.Dir, Hash: baseLib},
+		{Name: "main", Mode: filemode.Regular, Hash: m},
+	})
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "src", Mode: filemode.Dir, Hash: src},
+	}), base)
+
+	s.assertMatchesGit(sto, gitDir, want, have, baseLib, x)
+}
+
+func (s *RevListSuite) TestRevListObjects_MergeWithEdgeParent() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	x := testMakeBlob(t, sto, "x\n")
+	y := testMakeBlob(t, sto, "y\n")
+	z := testMakeBlob(t, sto, "z\n")
+
+	base := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: x},
+	}))
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: y},
+	}), base)
+	side := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: y},
+		{Name: "n", Mode: filemode.Regular, Hash: z},
+	}), have)
+
+	// Merge side with base, reintroducing base's f as g. base is an
+	// edge parent of the merge only.
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: y},
+		{Name: "g", Mode: filemode.Regular, Hash: x},
+		{Name: "n", Mode: filemode.Regular, Hash: z},
+	}), side, base)
+
+	s.assertMatchesGit(sto, gitDir, want, have, x)
+}
+
+func (s *RevListSuite) TestRevListObjects_MissingEdgeSubtreeIsTolerated() {
+	// An edge parent references a subtree that is missing locally, and
+	// the want commit keeps it unchanged. Git marks the subtree
+	// uninteresting by hash without reading it, so it is neither read
+	// nor sent.
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	missing := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
+	k := testMakeBlob(t, sto, "k\n")
+	n := testMakeBlob(t, sto, "n\n")
+
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "d", Mode: filemode.Dir, Hash: missing},
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+	}))
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "d", Mode: filemode.Dir, Hash: missing},
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+		{Name: "n", Mode: filemode.Regular, Hash: n},
+	}), have)
+
+	s.assertMatchesGit(sto, gitDir, want, have, missing)
+}
+
+func (s *RevListSuite) TestRevListObjects_MovedMissingEdgeSubtreeIsTolerated() {
+	// As above, but the want commit moves the missing subtree to a new
+	// path, where it must not be read either.
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	missing := plumbing.NewHash("cccccccccccccccccccccccccccccccccccccccc")
+	k := testMakeBlob(t, sto, "k\n")
+
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "d", Mode: filemode.Dir, Hash: missing},
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+	}))
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "e", Mode: filemode.Dir, Hash: missing},
+		{Name: "k", Mode: filemode.Regular, Hash: k},
+	}), have)
+
+	s.assertMatchesGit(sto, gitDir, want, have, missing)
+}
+
+func (s *RevListSuite) TestRevListObjects_ShallowCommitHasNoEdgeParents() {
+	// A shallow new commit has no parents, as with Git's grafts, so its
+	// parent is not an edge even when haves reach it by another path.
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	x := testMakeBlob(t, sto, "x\n")
+	y := testMakeBlob(t, sto, "y\n")
+	z := testMakeBlob(t, sto, "z\n")
+
+	base := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: x},
+	}))
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: y},
+	}), base)
+	shallow := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: x},
+	}), base)
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "f", Mode: filemode.Regular, Hash: x},
+		{Name: "g", Mode: filemode.Regular, Hash: z},
+	}), shallow)
+	s.Require().NoError(sto.SetShallow([]plumbing.Hash{shallow}))
+
+	s.assertMatchesGit(sto, gitDir, want, have)
+}
+
+// --- Object used as both a tree and a blob ---
+//
+// A malformed tree can list a tree object under a file mode. Git
+// refuses to list objects once that object is also used as a tree;
+// Objects must fail too rather than leave the tree's contents out.
+
+// treeAsBlob writes tree T = {x} and returns it with a tree that lists
+// T under a regular file mode as "a".
+func treeAsBlob(t *testing.T, sto storer.EncodedObjectStorer) (tree, malformed plumbing.Hash) {
+	t.Helper()
+	tree = testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "x", Mode: filemode.Regular, Hash: testMakeBlob(t, sto, "x\n")},
+	})
+	malformed = testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: tree},
+	})
+	return tree, malformed
+}
+
+// requireErrorsLikeGit asserts that both git rev-list --objects and
+// Objects fail for want and haves.
+func (s *RevListSuite) requireErrorsLikeGit(sto storer.EncodedObjectStorer, gitDir string, want plumbing.Hash, haves ...plumbing.Hash) {
+	args := make([]string, 0, 5+len(haves))
+	args = append(args, "--git-dir", gitDir, "rev-list", "--objects", want.String())
+	for _, h := range haves {
+		args = append(args, "^"+h.String())
+	}
+	out, gitErr := gitenv.Command("git", args...).CombinedOutput()
+	s.Require().Error(gitErr, "premise: git rev-list must fail, got:\n%s", out)
+
+	_, err := Objects(sto, []plumbing.Hash{want}, haves)
+	s.ErrorIs(err, plumbing.ErrInvalidType)
+}
+
+func (s *RevListSuite) TestRevListObjects_TreeAsBlobInEdgeParentErrors() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	tree, malformed := treeAsBlob(t, sto)
+	base := testMakeCommit(t, sto, malformed)
+	have := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "b", Mode: filemode.Regular, Hash: testMakeBlob(t, sto, "y\n")},
+	}), base)
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "d", Mode: filemode.Dir, Hash: tree},
+	}), base)
+
+	s.requireErrorsLikeGit(sto, gitDir, want, have)
+}
+
+func (s *RevListSuite) TestRevListObjects_TreeAsBlobInHavesTipErrors() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	tree, malformed := treeAsBlob(t, sto)
+	have := testMakeCommit(t, sto, malformed)
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "d", Mode: filemode.Dir, Hash: tree},
+	}), have)
+
+	s.requireErrorsLikeGit(sto, gitDir, want, have)
+}
+
+func (s *RevListSuite) TestRevListObjects_TreeAsBlobWithoutHavesErrors() {
+	sto, gitDir := s.edgeFixture()
+	t := s.T()
+
+	tree, _ := treeAsBlob(t, sto)
+	want := testMakeCommit(t, sto, testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: tree},
+		{Name: "d", Mode: filemode.Dir, Hash: tree},
+	}))
+
+	s.requireErrorsLikeGit(sto, gitDir, want)
+}
+
 // benchFixture opens the src-d/go-git fixture (2133 objects) and walks
 // back from HEAD to find a commit ~10 commits earlier to use as the
 // haves boundary.
