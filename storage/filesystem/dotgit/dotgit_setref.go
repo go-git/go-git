@@ -13,8 +13,8 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
 
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/storage"
 )
 
 // Loose references are written with git's lock file protocol. A writer creates
@@ -42,11 +42,14 @@ func (d *DotGit) setRef(name plumbing.ReferenceName, content string, old *plumbi
 
 	if old != nil {
 		current, err := d.Ref(name)
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			current, err = nil, nil
+		}
 		if err != nil {
 			return err
 		}
-		if current.Hash() != old.Hash() {
-			return storage.ErrReferenceHasChanged
+		if err := reference.CheckUnchanged(current, old); err != nil {
+			return err
 		}
 	}
 

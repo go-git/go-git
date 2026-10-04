@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -411,12 +412,8 @@ func (r ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) err
 	}
 
 	if old != nil {
-		tmp := r[ref.Name()]
-		if tmp == nil {
-			return plumbing.ErrReferenceNotFound
-		}
-		if tmp.Hash() != old.Hash() {
-			return storage.ErrReferenceHasChanged
+		if err := reference.CheckUnchanged(r[ref.Name()], old); err != nil {
+			return err
 		}
 	}
 	r[ref.Name()] = ref

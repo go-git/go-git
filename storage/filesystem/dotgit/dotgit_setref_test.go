@@ -67,6 +67,9 @@ func TestSetRefChecksOld(t *testing.T) {
 		{name: "loose over packed, old matches packed", loose: a, packed: c, old: ref(c), wantErr: storage.ErrReferenceHasChanged, want: a},
 		{name: "missing, old", old: ref(a), wantErr: plumbing.ErrReferenceNotFound},
 		{name: "missing, no old", want: b},
+		{name: "loose, zero old", loose: a, old: ref(plumbing.ZeroHash), wantErr: storage.ErrReferenceHasChanged, want: a},
+		{name: "packed, zero old", packed: a, old: ref(plumbing.ZeroHash), wantErr: storage.ErrReferenceHasChanged, want: a},
+		{name: "missing, zero old", old: ref(plumbing.ZeroHash), want: b},
 	}
 
 	for fsName, newFS := range refTestFilesystems {
@@ -458,6 +461,45 @@ func TestSetRefConcurrentCompareAndSwap(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Of concurrent writers creating the same reference with a zero `old`,
+// exactly one succeeds.
+func TestSetRefConcurrentCreate(t *testing.T) {
+	t.Parallel()
+
+	const (
+		name    = plumbing.ReferenceName("refs/heads/created")
+		writers = 8
+		rounds  = 20
+	)
+	zero := plumbing.NewHashReference(name, plumbing.ZeroHash)
+
+	for round := range rounds {
+		dir := New(osfs.New(t.TempDir()))
+
+		var created atomic.Int32
+		var wg sync.WaitGroup
+		errs := make(chan error, writers)
+		for w := range writers {
+			wg.Go(func() {
+				err := dir.SetRef(plumbing.NewHashReference(name, counterHash(uint64(w+1))), zero)
+				switch {
+				case err == nil:
+					created.Add(1)
+				case errors.Is(err, storage.ErrReferenceHasChanged), errors.Is(err, os.ErrExist):
+				default:
+					errs <- err
+				}
+			})
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			require.NoError(t, err)
+		}
+		require.Equal(t, int32(1), created.Load(), "round %d", round)
+	}
+}
+
 // git and go-git exclude each other on the lock of a reference, and an update
 // go-git rejects leaves nothing git takes for a broken reference.
 func TestRefLockInteropWithGit(t *testing.T) {
@@ -533,5 +575,21 @@ func TestRefLockInteropWithGit(t *testing.T) {
 		require.NoError(t, dir.RemoveRef("refs/heads/updated"))
 		_, err = git("rev-parse", "--verify", "-q", "refs/heads/updated")
 		assert.Error(t, err)
+	})
+
+	//nolint:paralleltest // the subtests share a repository
+	t.Run("a zero old value creates only, as for git", func(t *testing.T) {
+		zero := plumbing.ZeroHash.String()
+
+		created := plumbing.NewHashReference("refs/heads/created-by-go-git", a)
+		require.NoError(t, dir.SetRef(created, plumbing.NewHashReference(created.Name(), plumbing.ZeroHash)))
+		out, err := git("update-ref", created.Name().String(), b.String(), zero)
+		require.Error(t, err)
+		assert.Contains(t, out, "already exists")
+
+		mustGit("update-ref", "refs/heads/created-by-git", a.String(), zero)
+		err = dir.SetRef(plumbing.NewHashReference("refs/heads/created-by-git", b), plumbing.NewHashReference("refs/heads/created-by-git", plumbing.ZeroHash))
+		require.ErrorIs(t, err, storage.ErrReferenceHasChanged)
+		assert.Equal(t, a.String(), mustGit("rev-parse", "refs/heads/created-by-git"))
 	})
 }
