@@ -205,3 +205,85 @@ func TestInteropNativeFetchV2SHA256FromGoGitServer(t *testing.T) {
 		gitRun(t, src, "rev-parse", "HEAD"),
 		gitRun(t, filepath.Join(dst, "clone"), "rev-parse", "HEAD"))
 }
+
+// go-git's client refuses to push to a server that does not support the
+// local object format, before sending anything, and the sentinel reaches the
+// caller through each transport.
+func TestInteropGoGitClientPushUnsupportedObjectFormat(t *testing.T) {
+	t.Parallel()
+	requireInteropGit(t)
+
+	transports := []struct {
+		name  string
+		serve func(t *testing.T, base string) string // returns the base URL
+	}{
+		{name: "git daemon", serve: startNativeDaemon},
+		{name: "go-git http", serve: func(t *testing.T, base string) string {
+			return withUserinfo(startGoGitHTTP(t, base))
+		}},
+		{name: "file", serve: func(_ *testing.T, base string) string { return base }},
+	}
+	directions := []struct{ local, remote string }{
+		{local: "sha256", remote: "sha1"},
+		{local: "sha1", remote: "sha256"},
+	}
+
+	for _, tr := range transports {
+		for _, d := range directions {
+			t.Run(fmt.Sprintf("%s/%s to %s", tr.name, d.local, d.remote), func(t *testing.T) {
+				t.Parallel()
+				base := t.TempDir()
+				bare := newBareRepo(t, base, "remote.git", d.remote)
+				url := tr.serve(t, base) + "/remote.git"
+				client := newClientRepo(t, d.local)
+
+				err := goGitPush(t, client, url, "refs/heads/main:refs/heads/main")
+				require.ErrorIs(t, err, transport.ErrUnsupportedObjectFormat)
+				require.Empty(t, gitRun(t, bare, "for-each-ref"))
+			})
+		}
+	}
+}
+
+// git's send-pack checks the server's object format before it looks at the
+// refs, so a push the remote would reject as a non-fast-forward, or one with
+// nothing to send, fails with the format error too. Deleting a ref the remote
+// does not have leaves nothing to push; the remote's main is unrelated to the
+// client's.
+func TestInteropGoGitClientPushRefsUnsupportedObjectFormat(t *testing.T) {
+	t.Parallel()
+	requireInteropGit(t)
+
+	transports := []struct {
+		name  string
+		serve func(t *testing.T, base string) string // returns the base URL
+	}{
+		{name: "git daemon", serve: startNativeDaemon},
+		{name: "go-git http", serve: func(t *testing.T, base string) string {
+			return withUserinfo(startGoGitHTTP(t, base))
+		}},
+		{name: "file", serve: func(_ *testing.T, base string) string { return base }},
+	}
+	pushes := []struct{ name, refspec string }{
+		{name: "nothing to push", refspec: ":refs/heads/missing"},
+		{name: "existing ref", refspec: "refs/heads/main:refs/heads/main"},
+	}
+
+	for _, tr := range transports {
+		for _, p := range pushes {
+			t.Run(tr.name+"/"+p.name, func(t *testing.T) {
+				t.Parallel()
+				base := t.TempDir()
+				bare := newBareRepo(t, base, "remote.git", "sha1")
+				gitRun(t, newClientRepo(t, "sha1"), "push", "-q", bare, "HEAD:refs/heads/main")
+				before := gitRun(t, bare, "rev-parse", "refs/heads/main")
+				url := tr.serve(t, base) + "/remote.git"
+				client := newClientRepo(t, "sha256")
+
+				err := goGitPush(t, client, url, p.refspec)
+				require.ErrorIs(t, err, transport.ErrUnsupportedObjectFormat)
+				require.Equal(t, before, gitRun(t, bare, "rev-parse", "refs/heads/main"))
+			})
+		}
+	}
+}

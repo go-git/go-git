@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
+	xtransport "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -169,6 +170,12 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 
 	// TODO: support delete-refs
 	caps := sess.Capabilities() // server capabilities
+	// git's send-pack refuses a server that cannot store the local object
+	// format before it looks at the refs, so a push that would be rejected
+	// or has nothing to send fails with the format error too.
+	if err := xtransport.CheckPushObjectFormat(r.s, *caps); err != nil {
+		return err
+	}
 	if isDelete && !caps.Supports(capability.DeleteRefs) {
 		return ErrDeleteRefNotSupported
 	}
