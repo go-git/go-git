@@ -11,7 +11,7 @@ import (
 // NewFilterCommitIter returns a CommitIter that walks the commit history,
 // starting at the passed commit and visiting its parents in Breadth-first order.
 // The commits returned by the CommitIter will validate the passed CommitFilter.
-// The history won't be transversed beyond a commit if isLimit is true for it.
+// The history won't be traversed beyond a commit if isLimit is true for it.
 // Each commit will be visited only once.
 // If the commit history can not be traversed, or the Close() method is called,
 // the CommitIter won't return more commits.

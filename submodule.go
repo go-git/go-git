@@ -430,7 +430,7 @@ func (s Submodules) Status() (SubmodulesStatus, error) {
 	return list, nil
 }
 
-// SubmodulesStatus contains the status for all submodiles in the worktree
+// SubmodulesStatus contains the status for all submodules in the worktree
 type SubmodulesStatus []*SubmoduleStatus
 
 // String is equivalent to `git submodule status`
