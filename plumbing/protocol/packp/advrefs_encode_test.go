@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -322,4 +324,20 @@ func (s *AdvRefsEncodeSuite) TestVersion1EmptyRepo() {
 	)
 
 	testEncode(s, ar, expected)
+}
+
+func TestAdvRefsEncodeEmptySizesZeroID(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		format string
+		zeros  int
+	}{{"sha1", 40}, {"sha256", 64}} {
+		ar := &AdvRefs{}
+		ar.Capabilities.Set(capability.ObjectFormat, tc.format)
+		var buf bytes.Buffer
+		require.NoError(t, ar.Encode(&buf))
+		assert.Contains(t, buf.String(), strings.Repeat("0", tc.zeros)+" capabilities^{}\x00")
+		// Skip the 4-byte pkt-line length prefix, which may itself end in 0.
+		assert.NotContains(t, buf.String()[4:], strings.Repeat("0", tc.zeros+1))
+	}
 }

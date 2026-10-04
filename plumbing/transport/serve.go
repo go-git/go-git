@@ -70,6 +70,7 @@ func AdvertiseRefs(
 		ar.Capabilities.Set(capability.ReportStatus)
 		ar.Capabilities.Set(capability.PushOptions)
 		ar.Capabilities.Set(capability.Quiet)
+		ar.Capabilities.Set(capability.ObjectFormat, objectFormat(st).String())
 	} else {
 		// TODO: support include-tag
 		// TODO: support deepen

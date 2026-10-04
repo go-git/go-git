@@ -450,6 +450,7 @@ func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (i
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
 // It is used when the client requests version=2 via GIT_PROTOCOL.
 func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader, w io.WriteCloser, opts *UploadPackRequest) error {
+	repo := objectFormat(st)
 	for {
 		// Peek the command line to choose the argument decoder, then decode the
 		// whole request envelope through packp.CommandRequest (the same type the
@@ -483,6 +484,11 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 
 		if err := req.Decode(rd); err != nil {
 			return fmt.Errorf("decoding %s request: %w", cmd, err)
+		}
+		// git keeps the client's format for the whole stateful session while
+		// go-git checks each request, which is equivalent for real clients.
+		if el := v2ObjectFormatError(repo, req.Capabilities); el != nil {
+			return rejectWithErrorLine(w, el)
 		}
 
 		switch cmd {
