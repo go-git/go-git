@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/suite"
 
@@ -171,4 +172,58 @@ func (s *SidebandSuite) TestDecodeErrMaxPacked() {
 	n, err := io.ReadFull(d, content)
 	s.ErrorIs(err, ErrMaxPackedExceeded)
 	s.Equal(0, n)
+}
+
+// TestDecodeKeepsFinalResult checks that once Read has returned io.EOF at a
+// flush-pkt, or an error, later calls return it again without reading on.
+// A caller may get that result while the data still fits in its buffer, and
+// then read again to reach the end of the stream.
+func (s *SidebandSuite) TestDecodeKeepsFinalResult() {
+	payload := []byte("abcdefgh")
+
+	tests := []struct {
+		name    string
+		write   func(*bytes.Buffer)
+		wantErr string
+	}{
+		{
+			name:  "flush",
+			write: func(buf *bytes.Buffer) { s.Require().NoError(pktline.WriteFlush(buf)) },
+		},
+		{
+			name: "error message",
+			write: func(buf *bytes.Buffer) {
+				pktline.Write(buf, ErrorMessage.WithPayload([]byte("boom")))
+			},
+			wantErr: "unexpected error: boom",
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			buf := bytes.NewBuffer(nil)
+			pktline.Write(buf, PackData.WithPayload(payload))
+			tc.write(buf)
+
+			pastEnd := iotest.ErrReader(errors.New("read past the end of the stream"))
+			d := NewDemuxer(Sideband64k, io.MultiReader(buf, pastEnd))
+			check := func(err error) {
+				if tc.wantErr == "" {
+					s.ErrorIs(err, io.EOF)
+				} else {
+					s.ErrorContains(err, tc.wantErr)
+				}
+			}
+
+			content := make([]byte, 64)
+			n, err := d.Read(content)
+			s.Equal(payload, content[:n])
+			check(err)
+			for range 2 {
+				n, err = d.Read(content)
+				s.Zero(n)
+				check(err)
+			}
+		})
+	}
 }
