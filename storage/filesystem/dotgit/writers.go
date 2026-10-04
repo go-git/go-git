@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-git/go-billy/v6"
 
@@ -21,12 +22,11 @@ import (
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
-// PackWriter is a io.Writer that generates the packfile index simultaneously,
-// a packfile.Decoder is used with a file reader to read the file being written
-// this operation is synchronized with the write operations.
-// The packfile is written in a temp file, when Close is called this file
-// is renamed/moved (depends on the Filesystem implementation) to the final
-// location, if the PackWriter is not used, nothing is written.
+var errReadPackCalled = errors.New("dotgit: ReadPack already called")
+
+// A PackWriter writes a packfile to a temporary file, building its index as
+// the data arrives through [PackWriter.Write] or [PackWriter.ReadPack].
+// [PackWriter.Close] moves the pack and its index into place.
 type PackWriter struct {
 	Notify func(plumbing.Hash, *idxfile.Writer)
 
@@ -37,7 +37,9 @@ type PackWriter struct {
 	size     int64
 	parser   *packfile.Parser
 	writer   *idxfile.Writer
-	result   chan error
+	parsed   chan struct{} // closed when buildIndex returns
+	parseErr error         // valid once parsed is closed
+	readPack atomic.Bool   // set once ReadPack is called
 	format   formatcfg.ObjectFormat
 	writeRev bool
 	// promisor, when non-nil, writes a .promisor sidecar next to the pack
@@ -61,7 +63,7 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 		fw:       fw,
 		fr:       fr,
 		synced:   newSyncedReader(fw, fr),
-		result:   make(chan error),
+		parsed:   make(chan struct{}),
 		format:   format,
 		writeRev: writeRev,
 	}
@@ -73,8 +75,8 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 }
 
 func (w *PackWriter) buildIndex() {
+	defer close(w.parsed)
 	w.writer = new(idxfile.Writer)
-	var err error
 
 	w.parser = packfile.NewParser(w.synced,
 		packfile.WithScannerObservers(w.writer),
@@ -82,29 +84,58 @@ func (w *PackWriter) buildIndex() {
 
 	h, err := w.parser.Parse()
 	if err != nil {
-		w.result <- err
+		w.parseErr = err
 		return
 	}
 
 	w.checksum = h
 	w.size = w.parser.Size()
-	w.result <- nil
 }
 
-// waitBuildIndex waits until buildIndex function finishes, this can terminate
-// with a packfile.ErrEmptyPackfile, this means that nothing was written so we
-// ignore the error
+// waitBuildIndex waits for buildIndex and returns its error, treating an
+// empty pack as success. It may be called any number of times.
 func (w *PackWriter) waitBuildIndex() error {
-	err := <-w.result
-	if errors.Is(err, packfile.ErrEmptyPackfile) {
+	<-w.parsed
+	if errors.Is(w.parseErr, packfile.ErrEmptyPackfile) {
 		return nil
 	}
 
-	return err
+	return w.parseErr
 }
 
+// Write appends p to the pack. Once [PackWriter.ReadPack] has been called,
+// Write returns an error.
 func (w *PackWriter) Write(p []byte) (int, error) {
+	if w.readPack.Load() {
+		return 0, errReadPackCalled
+	}
+
 	return w.synced.Write(p)
+}
+
+// ReadPack reads a packfile from r and writes it as [PackWriter.Write] does,
+// returning once the pack trailer has been parsed rather than when r reaches
+// EOF. Data previously passed to Write is parsed first. ReadPack calls Read
+// on r only when the parser needs more data, so it reads past the trailer
+// no more than the final Read returns. Those bytes are counted in the result
+// but are not part of the saved pack.
+//
+// ReadPack returns the number of bytes read from r and any error parsing the
+// pack, which wraps an error r returned before the trailer. An error returned
+// by the Read that completes the pack is ignored. If r is empty, ReadPack
+// returns 0, nil.
+//
+// ReadPack returns an error if it has already been called. Write must not be
+// called concurrently with it, and [PackWriter.Close] must still be called.
+func (w *PackWriter) ReadPack(r io.Reader) (int64, error) {
+	if !w.readPack.CompareAndSwap(false, true) {
+		return 0, errReadPackCalled
+	}
+
+	cr := &countingReader{r: r}
+	w.synced.pull(cr)
+	err := w.waitBuildIndex()
+	return cr.n, err
 }
 
 // Close closes the temporary file and saves the packfile and its index. If
@@ -116,8 +147,6 @@ func (w *PackWriter) Close() (err error) {
 		if err == nil && w.Notify != nil && w.writer != nil && w.writer.Finished() {
 			w.Notify(w.checksum, w.writer)
 		}
-
-		close(w.result)
 	}()
 
 	if err := w.synced.Close(); err != nil {
@@ -328,8 +357,9 @@ func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
 
 // syncedReader lets a reader trail a writer on the same file: Read
 // blocks while it has consumed everything written so far, until the
-// next Write or Close. State is guarded by a single mutex so a wake-up
-// can never slip between the reader's check and its wait.
+// next Write or Close, or, once pull has set a source, fetches more from
+// it. State is guarded by a single mutex so a wake-up can never slip
+// between the reader's check and its wait.
 type syncedReader struct {
 	w io.Writer
 	r io.ReadSeeker
@@ -338,7 +368,16 @@ type syncedReader struct {
 	cond          *sync.Cond
 	written, read int64
 	done          bool
+	src           io.Reader // set by pull; read when the reader catches up
+	srcBuf        []byte    // what src is read into; set by pull
+	srcErr        error     // sticky error from src, io.EOF included
 }
+
+// srcBufSize is the size of the buffer src is read into. Read is called
+// with the parser's much smaller buffer, and reading src into that would
+// take a write to the file for every few KiB. It fits the largest
+// side-band-64k packet.
+const srcBufSize = 64 << 10
 
 func newSyncedReader(w io.Writer, r io.ReadSeeker) *syncedReader {
 	s := &syncedReader{w: w, r: r}
@@ -357,14 +396,50 @@ func (s *syncedReader) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// pull makes Read fetch more data from src, appending it to the file, when
+// it has consumed everything written so far.
+func (s *syncedReader) pull(src io.Reader) {
+	s.mu.Lock()
+	s.src = src
+	s.srcBuf = make([]byte, srcBufSize)
+	s.mu.Unlock()
+	s.cond.Broadcast()
+}
+
 func (s *syncedReader) Read(p []byte) (int, error) {
 	for {
 		s.mu.Lock()
-		for s.read >= s.written && !s.done {
+		for s.read >= s.written && s.src == nil && !s.done {
 			s.cond.Wait()
 		}
 		done := s.done
+		src, srcBuf, srcErr := s.src, s.srcBuf, s.srcErr
+		caughtUp := s.read >= s.written
 		s.mu.Unlock()
+
+		if caughtUp && src != nil {
+			if srcErr != nil {
+				return 0, srcErr
+			}
+
+			// One read from the source per call: a git:// client sends
+			// nothing after the pack, so a read past its trailer would
+			// never return.
+			n, err := src.Read(srcBuf)
+			if n > 0 {
+				if _, werr := s.Write(srcBuf[:n]); werr != nil {
+					return 0, werr
+				}
+			}
+			if err != nil {
+				s.mu.Lock()
+				s.srcErr = err
+				s.mu.Unlock()
+			}
+			if n == 0 {
+				return 0, err
+			}
+		}
 
 		n, err := s.r.Read(p)
 
@@ -409,6 +484,18 @@ func (s *syncedReader) size() int64 {
 	defer s.mu.Unlock()
 
 	return s.written
+}
+
+// countingReader counts the bytes read through it.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // ObjectWriter writes a single git object to the filesystem.
