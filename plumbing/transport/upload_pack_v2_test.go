@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -146,10 +147,7 @@ func TestObjectsToUploadShallowBounded(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, full, parent, "unbounded pack should include the parent commit")
 
-	bounded, err := objectsToUpload(
-		&shallowBoundaryStorer{Storer: st, boundary: []plumbing.Hash{head.Hash()}},
-		[]plumbing.Hash{head.Hash()}, nil,
-	)
+	bounded, err := revlist.ObjectsWithShallows(st, []plumbing.Hash{head.Hash()}, nil, []plumbing.Hash{head.Hash()})
 	require.NoError(t, err)
 	require.Contains(t, bounded, head.Hash(), "shallow boundary commit must be included")
 	require.NotContains(t, bounded, parent, "depth-1 pack must exclude the boundary's parent")
