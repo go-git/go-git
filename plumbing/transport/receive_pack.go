@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -167,6 +168,16 @@ func ReceivePack(
 	updreq := &packp.UpdateRequests{}
 	if err := updreq.Decode(rd); err != nil {
 		return err
+	}
+
+	// git checks the client's object format while reading the first
+	// command line, before any packfile; a request without commands
+	// carries no capabilities and is not checked.
+	if len(updreq.Commands) > 0 {
+		repo := internal.ObjectFormat(st)
+		if el := receivePackObjectFormatError(repo, updreq.Capabilities); el != nil {
+			return rejectReceivePack(w, updreq.Capabilities, el)
+		}
 	}
 
 	var (

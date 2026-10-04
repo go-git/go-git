@@ -33,6 +33,10 @@ func requireInteropGit(t *testing.T) {
 	}
 }
 
+// interopAuthHeader satisfies go-git's HTTP backend, which requires an
+// Authorization header for receive-pack.
+const interopAuthHeader = "http.extraHeader=Authorization: Basic dTpw"
+
 // withUserinfo adds credentials to an http:// endpoint for go-git's client.
 func withUserinfo(endpoint string) string {
 	return strings.Replace(endpoint, "http://", "http://u:p@", 1)
@@ -139,4 +143,65 @@ func TestInteropGoGitClientPushSHA256ToGoGitServer(t *testing.T) {
 	require.Equal(t,
 		gitRun(t, client, "rev-parse", "HEAD"),
 		gitRun(t, bare, "rev-parse", "refs/heads/main"))
+}
+
+// Native git pushes a sha256 repository once the go-git server advertises
+// object-format.
+func TestInteropNativePushSHA256ToGoGitServer(t *testing.T) {
+	t.Parallel()
+	requireInteropGit(t)
+
+	base := t.TempDir()
+	bare := newBareRepo(t, base, "s256.git", "sha256")
+	url := startGoGitHTTP(t, base)
+	client := newClientRepo(t, "sha256")
+
+	gitRun(t, client, "-c", interopAuthHeader, "push", url+"/s256.git", "HEAD:refs/heads/main")
+	require.Equal(t,
+		gitRun(t, client, "rev-parse", "HEAD"),
+		gitRun(t, bare, "rev-parse", "refs/heads/main"))
+}
+
+// A sha1 push into a sha256 repository. Now that the server
+// advertises its format, git's send-pack refuses before sending anything;
+// before this change the server parsed the sha1 pack as sha256 and left a
+// temporary pack behind. The server-side check itself is covered by the
+// receive-pack unit tests.
+func TestInteropNativePushSHA1ToGoGitServerSHA256Rejected(t *testing.T) {
+	t.Parallel()
+	requireInteropGit(t)
+
+	base := t.TempDir()
+	bare := newBareRepo(t, base, "s256.git", "sha256")
+	url := startGoGitHTTP(t, base)
+	client := newClientRepo(t, "sha1")
+
+	out, err := gitRunErr(t, client, "-c", interopAuthHeader, "push", url+"/s256.git", "HEAD:refs/heads/main")
+	require.Error(t, err, out)
+	require.Contains(t, out, "the receiving end does not support this repository's hash algorithm")
+
+	refs := gitRun(t, bare, "for-each-ref")
+	require.Empty(t, refs)
+	tmp, err := filepath.Glob(filepath.Join(bare, "objects", "pack", "tmp_pack_*"))
+	require.NoError(t, err)
+	require.Empty(t, tmp)
+}
+
+// git's v2 client sends object-format; the go-git server must keep serving
+// it after the check.
+func TestInteropNativeFetchV2SHA256FromGoGitServer(t *testing.T) {
+	t.Parallel()
+	requireInteropGit(t)
+
+	base := t.TempDir()
+	newBareRepo(t, base, "s256.git", "sha256")
+	src := newClientRepo(t, "sha256")
+	gitRun(t, src, "push", "-q", filepath.Join(base, "s256.git"), "HEAD:refs/heads/main")
+	url := startGoGitHTTP(t, base)
+
+	dst := t.TempDir()
+	gitRun(t, dst, "-c", "protocol.version=2", "clone", "-q", url+"/s256.git", "clone")
+	require.Equal(t,
+		gitRun(t, src, "rev-parse", "HEAD"),
+		gitRun(t, filepath.Join(dst, "clone"), "rev-parse", "HEAD"))
 }
