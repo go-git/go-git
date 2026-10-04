@@ -447,6 +447,11 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
+	if err == nil {
+		// FetchPack may stop at the pack trailer. Read the body to its end
+		// so that the connection can be reused.
+		_, _ = io.Copy(io.Discard, neg)
+	}
 	if ioutil.ReadFinished(ctx, err) {
 		neg.closeResponse()
 	}

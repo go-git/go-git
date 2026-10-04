@@ -20,7 +20,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 )
+
+var _ storer.PackReader = (*PackWriter)(nil)
 
 var errReadPackCalled = errors.New("dotgit: ReadPack already called")
 
