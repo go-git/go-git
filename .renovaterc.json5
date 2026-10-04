@@ -14,12 +14,13 @@
       "enabled": false
     },
     {
-      "description": "Re-enable go-billy v5 on the v5 release line",
+      "description": "Re-enable go-billy v5 and sha1cd on the v5 release line",
       "matchBaseBranches": [
         "releases/v5.x"
       ],
       "matchPackageNames": [
-        "github.com/go-git/go-billy/v5"
+        "github.com/go-git/go-billy/v5",
+	"github.com/pjbgf/sha1cd"
       ],
       "enabled": true
     },
@@ -29,7 +30,8 @@
         "releases/v5.x"
       ],
       "matchPackageNames": [
-        "github.com/go-git/go-billy/v5"
+        "github.com/go-git/go-billy/v5",
+	"github.com/pjbgf/sha1cd"
       ],
       "matchUpdateTypes": ["major"],
       "enabled": false
