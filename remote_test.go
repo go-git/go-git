@@ -33,6 +33,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -2846,4 +2847,79 @@ func TestFetchShallowSHA256(t *testing.T) {
 			require.Equal(t, []plumbing.Hash{head}, shallows)
 		})
 	}
+}
+
+type fixedCapabilitiesSession struct {
+	transport.Session
+	caps *capability.List
+}
+
+func (s fixedCapabilitiesSession) Capabilities() *capability.List { return s.caps }
+
+func TestSendPackObjectFormatCheckComesAfterNothingMatched(t *testing.T) {
+	t.Parallel()
+	sha256Repo, err := PlainInit(t.TempDir(), true, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	sha1Server := fixedCapabilitiesSession{caps: &capability.List{}}
+	refspec := []config.RefSpec{"refs/heads/main:refs/heads/main"}
+
+	t.Run("remote without refs and nothing matched", func(t *testing.T) {
+		t.Parallel()
+		r := NewRemote(sha256Repo.Storer, &config.RemoteConfig{Name: "origin"})
+
+		err := r.sendPack(context.Background(), sha1Server, memory.NewStorage(), &PushOptions{RefSpecs: refspec})
+
+		require.ErrorIs(t, err, NoErrAlreadyUpToDate)
+	})
+
+	t.Run("delete to a remote without refs", func(t *testing.T) {
+		t.Parallel()
+		r := NewRemote(sha256Repo.Storer, &config.RemoteConfig{Name: "origin"})
+
+		err := r.sendPack(context.Background(), sha1Server, memory.NewStorage(), &PushOptions{
+			RefSpecs: []config.RefSpec{":refs/heads/x"},
+		})
+
+		require.ErrorIs(t, err, transport.ErrUnsupportedObjectFormat)
+	})
+
+	t.Run("delete to a remote without refs and delete-refs", func(t *testing.T) {
+		t.Parallel()
+		sha1Repo, err := PlainInit(t.TempDir(), true)
+		require.NoError(t, err)
+		r := NewRemote(sha1Repo.Storer, &config.RemoteConfig{Name: "origin"})
+
+		err = r.sendPack(context.Background(), sha1Server, memory.NewStorage(), &PushOptions{
+			RefSpecs: []config.RefSpec{":refs/heads/x"},
+		})
+
+		require.ErrorIs(t, err, ErrDeleteRefNotSupported)
+	})
+
+	t.Run("matching refspec to a remote without refs", func(t *testing.T) {
+		t.Parallel()
+		local, err := PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA256))
+		require.NoError(t, err)
+		head := CommitNewFile(t, local, "File")
+		branch := plumbing.NewBranchReferenceName("main")
+		require.NoError(t, local.Storer.SetReference(plumbing.NewHashReference(branch, head)))
+		r := NewRemote(local.Storer, &config.RemoteConfig{Name: "origin"})
+
+		err = r.sendPack(context.Background(), sha1Server, memory.NewStorage(), &PushOptions{
+			RefSpecs: []config.RefSpec{config.RefSpec(branch + ":" + branch)},
+		})
+
+		require.ErrorIs(t, err, transport.ErrUnsupportedObjectFormat)
+	})
+
+	t.Run("remote with refs and nothing matched", func(t *testing.T) {
+		t.Parallel()
+		r := NewRemote(sha256Repo.Storer, &config.RemoteConfig{Name: "origin"})
+		remoteRefs := memory.NewStorage()
+		require.NoError(t, remoteRefs.SetReference(plumbing.NewHashReference("refs/heads/other", plumbing.NewHash("1111111111111111111111111111111111111111"))))
+
+		err := r.sendPack(context.Background(), sha1Server, remoteRefs, &PushOptions{RefSpecs: refspec})
+
+		require.ErrorIs(t, err, transport.ErrUnsupportedObjectFormat)
+	})
 }

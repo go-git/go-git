@@ -41,8 +41,13 @@ func SendPack(
 		return fmt.Errorf("packfile is required for push request with new objects")
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	// git's send-pack refuses a server that cannot store the local format.
+	if err := internal.CheckPushObjectFormat(st, caps); err != nil {
+		return err
+	}
 	local := internal.ObjectFormat(st)
+
+	upreq := buildUpdateRequests(caps, req)
 
 	// Echo the repository's object format when the server advertised the
 	// capability, as git's send-pack does; receive-pack treats a missing
