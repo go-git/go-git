@@ -733,3 +733,71 @@ func TestParserParseRejectsSecondCall(t *testing.T) {
 	_, err = p.Parse()
 	assert.ErrorIs(t, err, packfile.ErrParserConsumed, "second Parse must return ErrParserConsumed")
 }
+
+func TestParserSizeExcludesTrailingData(t *testing.T) {
+	t.Parallel()
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	pack, err := io.ReadAll(pf)
+	require.NoError(t, err)
+
+	data := append(bytes.Clone(pack), "trailing data after the pack checksum"...)
+
+	tests := []struct {
+		name string
+		r    func() io.Reader
+	}{
+		{name: "seekable", r: func() io.Reader { return bytes.NewReader(data) }},
+		// Hides io.Seeker, as a pack stream read from a remote would.
+		{name: "stream", r: func() io.Reader { return struct{ io.Reader }{bytes.NewReader(data)} }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := packfile.NewParser(tc.r())
+			assert.Zero(t, p.Size(), "Size before Parse")
+
+			_, err := p.Parse()
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(pack)), p.Size())
+		})
+	}
+}
+
+// sizeObserver reports the parser's size as seen from OnFooter.
+type sizeObserver struct {
+	p    *packfile.Parser
+	size int64
+}
+
+func (*sizeObserver) OnHeader(uint32) error                                          { return nil }
+func (*sizeObserver) OnInflatedObjectHeader(plumbing.ObjectType, int64, int64) error { return nil }
+func (*sizeObserver) OnInflatedObjectContent(plumbing.Hash, int64, uint32, []byte) error {
+	return nil
+}
+
+func (o *sizeObserver) OnFooter(plumbing.Hash) error {
+	o.size = o.p.Size()
+	return nil
+}
+
+func TestParserSizeFromObserver(t *testing.T) {
+	t.Parallel()
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	pack, err := io.ReadAll(pf)
+	require.NoError(t, err)
+
+	ob := &sizeObserver{}
+	p := packfile.NewParser(bytes.NewReader(pack), packfile.WithScannerObservers(ob))
+	ob.p = p
+
+	// Parse calls OnFooter while it holds the parser's lock, so a Size that
+	// took it as well would hang here until the test binary times out.
+	_, err = p.Parse()
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(pack)), ob.size)
+}

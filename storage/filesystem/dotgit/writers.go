@@ -32,6 +32,7 @@ type PackWriter struct {
 	fr, fw   billy.File
 	synced   *syncedReader
 	checksum plumbing.Hash
+	size     int64
 	parser   *packfile.Parser
 	writer   *idxfile.Writer
 	result   chan error
@@ -84,6 +85,7 @@ func (w *PackWriter) buildIndex() {
 	}
 
 	w.checksum = h
+	w.size = w.parser.Size()
 	w.result <- nil
 }
 
@@ -124,6 +126,16 @@ func (w *PackWriter) Close() (err error) {
 
 	if err := w.fr.Close(); err != nil {
 		return err
+	}
+
+	// Drop anything written after the pack's checksum: it is not part of the
+	// pack, and git rejects a .pack with "junk at the end".
+	if w.size > 0 && int64(w.synced.written.Load()) > w.size {
+		if err := w.fw.Truncate(w.size); err != nil {
+			_ = w.fw.Close()
+			_ = w.clean()
+			return err
+		}
 	}
 
 	if err := w.fw.Close(); err != nil {
