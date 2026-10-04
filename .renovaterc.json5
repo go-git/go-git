@@ -8,22 +8,31 @@
   "packageRules": [
     {
       "description": "Disable non-security bumps for the v5 release line",
-      "enabled": false,
       "matchBaseBranches": [
         "releases/v5.x"
-      ]
+      ],
+      "enabled": false
     },
     {
-      "description": "Enable minor and patch updates for go-billy",
+      "description": "Re-enable go-billy v5 on the v5 release line",
       "matchBaseBranches": [
-        "main",
         "releases/v5.x"
       ],
       "matchPackageNames": [
-        "github.com/go-git/go-billy",
+        "github.com/go-git/go-billy/v5"
       ],
-      "matchUpdateTypes": ["minor", "patch"],
       "enabled": true
+    },
+    {
+      "description": "...but only minor/patch",
+      "matchBaseBranches": [
+        "releases/v5.x"
+      ],
+      "matchPackageNames": [
+        "github.com/go-git/go-billy/v5"
+      ],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {
