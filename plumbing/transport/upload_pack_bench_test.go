@@ -93,7 +93,7 @@ func benchRepo(tb testing.TB, commits, refs int) (*memory.Storage, []plumbing.Ha
 // returns the number of bytes written to the client. The response is not
 // copied out of the buffer, so that the measurement stays on UploadPack
 // itself rather than on materialising the packfile a second time.
-func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) int {
+func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash, haves ...plumbing.Hash) int {
 	tb.Helper()
 
 	var upreq packp.UploadRequest
@@ -102,6 +102,7 @@ func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) i
 
 	var final packp.UploadHaves
 	final.Done = true
+	final.Haves = haves
 
 	var req bytes.Buffer
 	if err := upreq.Encode(&req); err != nil {
@@ -140,3 +141,24 @@ func BenchmarkUploadPackWants1(b *testing.B)   { benchmarkUploadPack(b, 300, 1) 
 func BenchmarkUploadPackWants16(b *testing.B)  { benchmarkUploadPack(b, 300, 16) }
 func BenchmarkUploadPackWants64(b *testing.B)  { benchmarkUploadPack(b, 300, 64) }
 func BenchmarkUploadPackWants256(b *testing.B) { benchmarkUploadPack(b, 300, 256) }
+
+func benchmarkUploadPackHaveNearTip(b *testing.B, commits int) {
+	st, wants := benchRepo(b, commits, 1)
+	tip, err := object.GetCommit(st, wants[0])
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		if serveUploadPack(b, st, wants, tip.ParentHashes[0]) == 0 {
+			b.Fatal("no output produced")
+		}
+	}
+}
+
+// A fetch that is one commit behind should not cost more on a longer history.
+func BenchmarkUploadPackHaveNearTip300(b *testing.B)  { benchmarkUploadPackHaveNearTip(b, 300) }
+func BenchmarkUploadPackHaveNearTip3000(b *testing.B) { benchmarkUploadPackHaveNearTip(b, 3000) }
