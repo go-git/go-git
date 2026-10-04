@@ -166,6 +166,66 @@ func TestRefLockHeld(t *testing.T) {
 	}
 }
 
+func TestPackedRefsLockHeld(t *testing.T) {
+	t.Parallel()
+
+	const name = plumbing.ReferenceName("refs/heads/main")
+	packed := counterHash(1)
+	content := packed.String() + " " + name.String() + "\n"
+	lockPath := packedRefsPath + refLockSuffix
+
+	for fsName, newFS := range refTestFilesystems {
+		t.Run(fsName, func(t *testing.T) {
+			t.Parallel()
+			fs := newFS(t)
+			require.NoError(t, util.WriteFile(fs, packedRefsPath, []byte(content), 0o644))
+			// Another writer, git maybe, holds the lock while rewriting
+			// packed-refs.
+			require.NoError(t, util.WriteFile(fs, lockPath, nil, 0o644))
+			dir := New(fs)
+			require.NoError(t, dir.SetRef(plumbing.NewHashReference("refs/heads/loose", packed), nil))
+
+			require.ErrorIs(t, dir.RemoveRef(name), os.ErrExist)
+			require.ErrorIs(t, dir.PackRefs(), os.ErrExist)
+
+			// Readers don't take the lock, so they don't wait for it.
+			ref, err := dir.Ref(name)
+			require.NoError(t, err)
+			assert.Equal(t, packed, ref.Hash())
+
+			got, err := util.ReadFile(fs, packedRefsPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, string(got))
+			_, err = fs.Stat(lockPath)
+			assert.NoError(t, err, "the lock belongs to the other writer")
+		})
+	}
+}
+
+// In a linked worktree, packed-refs and its lock file are in the common
+// directory, where git has them: the references packed there stay visible to
+// the main worktree.
+func TestPackedRefsLockInCommonDir(t *testing.T) {
+	t.Parallel()
+
+	common, worktree := memfs.New(), memfs.New()
+	dir := New(NewRepositoryFilesystem(worktree, common))
+	ref := plumbing.NewHashReference("refs/heads/main", counterHash(1))
+	require.NoError(t, dir.SetRef(ref, nil))
+
+	lockPath := packedRefsPath + refLockSuffix
+	require.NoError(t, util.WriteFile(common, lockPath, nil, 0o644))
+	require.ErrorIs(t, dir.PackRefs(), os.ErrExist)
+	require.NoError(t, common.Remove(lockPath))
+
+	require.NoError(t, dir.PackRefs())
+	_, err := worktree.Stat(packedRefsPath)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	got, err := New(common).Ref(ref.Name())
+	require.NoError(t, err)
+	assert.Equal(t, ref, got)
+}
+
 // releasingLockFS releases the lock of a reference, as its holder would,
 // right after a writer first finds it held.
 type releasingLockFS struct {
@@ -563,6 +623,18 @@ func TestRefLockInteropWithGit(t *testing.T) {
 		require.NoError(t, cmd.Run())
 		assert.Empty(t, stderr.String())
 		assert.Equal(t, a.String(), mustGit("rev-parse", "refs/heads/packed"))
+	})
+
+	//nolint:paralleltest // the subtests share a repository
+	t.Run("git waits for the packed-refs lock of go-git", func(t *testing.T) {
+		lock, err := dir.lockFile(packedRefsPath, packedRefsLockTimeout)
+		require.NoError(t, err)
+		out, err := git("pack-refs", "--all")
+		lock.unlock()
+		require.Error(t, err)
+		assert.Contains(t, out, "packed-refs.lock")
+
+		mustGit("pack-refs", "--all")
 	})
 
 	//nolint:paralleltest // the subtests share a repository

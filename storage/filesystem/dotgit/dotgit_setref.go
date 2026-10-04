@@ -30,6 +30,11 @@ import (
 // See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs.c#L992-L1005.
 const refLockTimeout = 100 * time.Millisecond
 
+// packedRefsLockTimeout is how long to wait for the lock of packed-refs held
+// by another writer, git's default for core.packedRefsTimeout.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/packed-backend.c#L1242-L1247.
+const packedRefsLockTimeout = time.Second
+
 func (d *DotGit) setRef(name plumbing.ReferenceName, content string, old *plumbing.Reference) error {
 	lock, err := d.lockRef(name)
 	if err != nil {
@@ -56,29 +61,35 @@ func (d *DotGit) setRef(name plumbing.ReferenceName, content string, old *plumbi
 	return lock.commit(content)
 }
 
-// refLock is the held lock of a loose reference.
-type refLock struct {
+// fileLock is the held lock of a file, a loose reference or packed-refs: the
+// lock file beside it, as git takes.
+type fileLock struct {
 	fs       billy.Filesystem
 	path     string
 	lockPath string
 	// f is the open lock file, nil once closed.
 	f billy.File
-	// committed is set once the lock file became the reference.
+	// committed is set once the lock file became the locked file.
 	committed bool
 }
 
 // lockRef takes the lock of the loose reference name, waiting up to
-// refLockTimeout for another writer to release it. The caller must call unlock
-// once done, whether it committed the lock or not.
-func (d *DotGit) lockRef(name plumbing.ReferenceName) (*refLock, error) {
-	refPath := name.String()
-	lockPath := refPath + refLockSuffix
+// refLockTimeout for another writer to release it.
+func (d *DotGit) lockRef(name plumbing.ReferenceName) (*fileLock, error) {
+	return d.lockFile(name.String(), refLockTimeout)
+}
 
-	// Like git, create the directory of the reference when it is missing, and
-	// try again a few times if it vanishes, removed by another process as it
+// lockFile takes the lock of the file filename, waiting up to timeout for
+// another writer to release it. The caller must call unlock once done, whether
+// it committed the lock or not.
+func (d *DotGit) lockFile(filename string, timeout time.Duration) (*fileLock, error) {
+	lockPath := filename + refLockSuffix
+
+	// Like git, create the directory of the file when it is missing, and try
+	// again a few times if it vanishes, removed by another process as it
 	// emptied it.
 	dirAttempts := 3
-	deadline := time.Now().Add(refLockTimeout)
+	deadline := time.Now().Add(timeout)
 	backoff := time.Millisecond
 	for {
 		f, err := d.fs.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
@@ -91,12 +102,12 @@ func (d *DotGit) lockRef(name plumbing.ReferenceName) (*refLock, error) {
 			runtime.GOOS == "windows" && errors.Is(err, os.ErrPermission)
 		switch {
 		case err == nil:
-			return &refLock{fs: d.fs, path: refPath, lockPath: lockPath, f: f}, nil
+			return &fileLock{fs: d.fs, path: filename, lockPath: lockPath, f: f}, nil
 
 		case errors.Is(err, os.ErrNotExist) && dirAttempts > 0:
 			dirAttempts--
-			if err := d.fs.MkdirAll(path.Dir(refPath), 0o777); err != nil {
-				return nil, fmt.Errorf("cannot lock ref %q: %w", name, err)
+			if err := d.fs.MkdirAll(path.Dir(filename), 0o777); err != nil {
+				return nil, fmt.Errorf("cannot lock %q: %w", filename, err)
 			}
 
 		case held && time.Now().Before(deadline):
@@ -106,17 +117,17 @@ func (d *DotGit) lockRef(name plumbing.ReferenceName) (*refLock, error) {
 			backoff *= 2
 
 		case errors.Is(err, os.ErrExist):
-			return nil, fmt.Errorf("cannot lock ref %q: %w: another process is updating it, "+
-				"or crashed doing so; if no git process is running, remove the lock file", name, err)
+			return nil, fmt.Errorf("cannot lock %q: %w: another process is updating it, "+
+				"or crashed doing so; if no git process is running, remove the lock file", filename, err)
 
 		default:
-			return nil, fmt.Errorf("cannot lock ref %q: %w", name, err)
+			return nil, fmt.Errorf("cannot lock %q: %w", filename, err)
 		}
 	}
 }
 
-// commit writes content to the lock file and renames it over the reference.
-func (l *refLock) commit(content string) error {
+// commit writes content to the lock file and renames it over the locked file.
+func (l *fileLock) commit(content string) error {
 	_, err := io.WriteString(l.f, content)
 	if closeErr := l.f.Close(); err == nil {
 		err = closeErr
@@ -128,8 +139,8 @@ func (l *refLock) commit(content string) error {
 
 	err = l.rename()
 	if errors.Is(err, billy.ErrNotSupported) {
-		// Without rename, the reference is written in place, still under the
-		// lock. A reader can then see it partially written.
+		// Without rename, the file is written in place, still under the lock.
+		// A reader can then see it partially written.
 		return util.WriteFile(l.fs, l.path, []byte(content), 0o666)
 	}
 	if err != nil {
@@ -140,13 +151,12 @@ func (l *refLock) commit(content string) error {
 	return nil
 }
 
-// rename renames the lock file over the reference.
+// rename renames the lock file over the locked file.
 //
 // Windows refuses to replace a file that another process has open, such as a
-// reader of the reference, so there it retries for a while, as Git for Windows
-// does.
+// reader of it, so there it retries for a while, as Git for Windows does.
 // See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/compat/mingw.c#L243-L263.
-func (l *refLock) rename() error {
+func (l *fileLock) rename() error {
 	err := l.fs.Rename(l.lockPath, l.path)
 	if runtime.GOOS != "windows" {
 		return err
@@ -162,8 +172,8 @@ func (l *refLock) rename() error {
 }
 
 // unlock releases the lock, removing the lock file unless commit renamed it
-// over the reference.
-func (l *refLock) unlock() {
+// over the locked file.
+func (l *fileLock) unlock() {
 	if l.f != nil {
 		_ = l.f.Close()
 		l.f = nil
