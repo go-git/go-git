@@ -238,14 +238,45 @@ func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	s.Require().NotEqual(-1, finalAt)
 }
 
-// A have that is reachable from any of the wants must be recognised as common,
-// not only one reachable from the first want.
-//
-// The request asks for multi_ack_detailed rather than multi_ack because only
-// the former distinguishes the two outcomes: it answers "common" when the have
-// is in the reachable set and "ready" when it is not. multi_ack answers
-// "continue" either way, so it cannot tell a populated reachable set from an
-// empty one.
+func (s *UploadPackServeSuite) TestUploadPackStatefulEOFAfterHavesFails() {
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() { _ = st.Close() })
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	s.Require().NoError(err)
+	headCommit, err := object.GetCommit(st, head.Hash())
+	s.Require().NoError(err)
+	s.Require().NotEmpty(headCommit.ParentHashes)
+
+	var upreq packp.UploadRequest
+	upreq.Capabilities.Add(capability.NoProgress)
+	upreq.Wants = []plumbing.Hash{head.Hash()}
+
+	var reqW bytes.Buffer
+	s.Require().NoError(upreq.Encode(&reqW))
+	s.Require().NoError((&packp.UploadHaves{Haves: headCommit.ParentHashes[:1]}).Encode(&reqW))
+
+	var out bytes.Buffer
+	errc := make(chan error, 1)
+	go func() {
+		errc <- UploadPack(context.Background(), st, io.NopCloser(&reqW), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+			GitProtocol: "version=1",
+		})
+	}()
+
+	select {
+	case err := <-errc:
+		s.Require().ErrorIs(err, io.ErrUnexpectedEOF)
+	case <-time.After(5 * time.Second):
+		s.FailNow("upload-pack kept looping after the client closed the connection")
+	}
+}
+
+// A have the server has is common, and once every want reaches a common have
+// or a parent of one, the server is ready (upstream ok_to_give_up). Here tipA
+// reaches base, mid's parent, and tipB reaches mid itself.
 func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
 	st := memory.NewStorage()
 	sig := object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(0, 0).UTC()}
@@ -304,10 +335,8 @@ func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
 		io.NopCloser(&req), ioutil.WriteNopCloser(&out),
 		&UploadPackRequest{GitProtocol: "version=1"}))
 
-	s.Contains(out.String(), fmt.Sprintf("ACK %s common\n", mid),
-		"a have reachable from the second want must be acknowledged as common")
-	s.NotContains(out.String(), fmt.Sprintf("ACK %s ready\n", mid),
-		"the have must not be reported as merely ready: it is reachable through the second want")
+	s.Contains(out.String(), fmt.Sprintf("ACK %s common\n", mid))
+	s.Contains(out.String(), fmt.Sprintf("ACK %s ready\n", mid))
 }
 
 type ReceivePackServeSuite struct {

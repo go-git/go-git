@@ -197,6 +197,29 @@ type v1Response struct {
 	pack *memory.Storage
 }
 
+// responseLines returns the pkt-lines of a stateless v0/v1 response without
+// sideband, up to the pack if there is one, without flushes. Lines keep their
+// trailing newline, if any.
+func responseLines(t testing.TB, raw []byte) []string {
+	t.Helper()
+	if at := bytes.Index(raw, []byte("PACK")); at != -1 {
+		raw = raw[:at]
+	}
+	var lines []string
+	rd := bytes.NewReader(raw)
+	for {
+		l, line, err := pktline.ReadLine(rd)
+		if err == io.EOF {
+			return lines
+		}
+		require.NoError(t, err)
+		if l == pktline.Flush {
+			continue
+		}
+		lines = append(lines, string(line))
+	}
+}
+
 // parseV1Response splits a v0/v1 response into its shallow, unshallow and
 // ACK or NAK lines and the pack that follows them.
 func parseV1Response(t testing.TB, r *canonicalRepo, raw []byte) v1Response {
@@ -205,17 +228,7 @@ func parseV1Response(t testing.TB, r *canonicalRepo, raw []byte) v1Response {
 	require.NotEqual(t, -1, at, "response must carry a pack: %q", raw)
 
 	var resp v1Response
-	rd := bytes.NewReader(raw[:at])
-	for {
-		l, line, err := pktline.ReadLine(rd)
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		if l == pktline.Flush {
-			continue
-		}
-		text := string(line)
+	for _, text := range responseLines(t, raw) {
 		if hash, ok := strings.CutPrefix(text, "shallow "); ok {
 			requireNoNewline(t, text)
 			resp.shallows = append(resp.shallows, r.names([]plumbing.Hash{plumbing.NewHash(hash)})...)
@@ -412,9 +425,10 @@ func TestGetShallowCommitsFollowsMergesAlongShortestPaths(t *testing.T) {
 	}
 }
 
-// requireGitV2 skips the test unless git speaks protocol v2, which git
-// introduced in 2.18. Older versions parse the command as a v0 want line.
-func requireGitV2(t testing.TB) {
+// requireGitAtLeast skips the test unless the git CLI is at least version
+// wantMajor.wantMinor. The reason names what the test needs from that version
+// and is reported in the skip message.
+func requireGitAtLeast(t testing.TB, wantMajor, wantMinor int, reason string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git CLI not found in PATH")
@@ -433,14 +447,15 @@ func requireGitV2(t testing.TB) {
 	if len(parts) > 1 {
 		minor, _ = strconv.Atoi(parts[1])
 	}
-	if errMajor != nil || major < 2 || (major == 2 && minor < 18) {
-		t.Skipf("git %s does not support protocol v2 (need >= 2.18)", fields[2])
+	if errMajor != nil || major < wantMajor || (major == wantMajor && minor < wantMinor) {
+		t.Skipf("git %s predates %s (need >= %d.%d)", fields[2], reason, wantMajor, wantMinor)
 	}
 }
 
 func TestUploadPackV2DeepenBeyondHistoryMatchesCanonicalShallowInfo(t *testing.T) {
 	t.Parallel()
-	requireGitV2(t)
+	// Versions before protocol v2 parse the command as a v0 want line.
+	requireGitAtLeast(t, 2, 18, "protocol v2")
 	r := mergeHistory(t)
 
 	req, err := io.ReadAll(v2Request(t, "fetch", nil, []string{
@@ -469,7 +484,7 @@ func TestUploadPackV2DeepenBeyondHistoryMatchesCanonicalShallowInfo(t *testing.T
 // trailing newline, and libgit2 rejects a line that has one.
 func TestUploadPackV2ShallowInfoMatchesCanonicalBytes(t *testing.T) {
 	t.Parallel()
-	requireGitV2(t)
+	requireGitAtLeast(t, 2, 18, "protocol v2")
 	r := mergeHistory(t)
 
 	// Depth 2 from D has the single boundary M, so the line order cannot
