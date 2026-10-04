@@ -327,6 +327,28 @@ func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbin
 	return revlist.Objects(st, wants, haves)
 }
 
+// shallowObjectWalker is implemented by storers that walk objects for
+// revlist.Objects themselves and can bound the walk at shallow commits.
+//
+// RevListObjectsWithShallows is like RevListObjects, but also treats each
+// of shallows as shallow: the commit and its tree are included, its parents
+// are not walked. Hashes that are missing or not commits are ignored.
+type shallowObjectWalker interface {
+	RevListObjectsWithShallows(wants, haves, shallows []plumbing.Hash) ([]plumbing.Hash, error)
+}
+
+// shallowObjectsToUpload is like objectsToUpload, but treats boundary as
+// additional shallow commits.
+func shallowObjectsToUpload(st storage.Storer, wants, haves, boundary []plumbing.Hash) ([]plumbing.Hash, error) {
+	if len(boundary) == 0 {
+		return objectsToUpload(st, wants, haves)
+	}
+	if w, ok := st.(shallowObjectWalker); ok {
+		return w.RevListObjectsWithShallows(wants, haves, boundary)
+	}
+	return objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: boundary}, wants, haves)
+}
+
 func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
 	var i, curDepth int
 	var commit *object.Commit
@@ -802,12 +824,12 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 			// full history grafts nothing and unshallows the old boundary.
 			boundary = newBoundary
 		}
-		newView, nerr := objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: boundary}, wants, nil)
+		newView, nerr := shallowObjectsToUpload(st, wants, nil, boundary)
 		if nerr != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting objects to upload: %w", nerr)
 		}
-		clientView, cerr := objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: clientShallows}, haves, nil)
+		clientView, cerr := shallowObjectsToUpload(st, haves, nil, clientShallows)
 		if cerr != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting client objects: %w", cerr)
@@ -820,12 +842,12 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 			}
 		}
 	} else {
-		packSt := st
+		var boundary []plumbing.Hash
 		if haveNewBoundary && len(newBoundary) > 0 {
 			out.ShallowInfo = &packp.ShallowInfo{Shallows: newBoundary}
-			packSt = &shallowBoundaryStorer{Storer: st, boundary: newBoundary}
+			boundary = newBoundary
 		}
-		objs, err = objectsToUpload(packSt, wants, haves)
+		objs, err = shallowObjectsToUpload(st, wants, haves, boundary)
 		if err != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting objects to upload: %w", err)
@@ -1082,6 +1104,9 @@ func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.H
 // so wrapping the storer bounds a shallow fetch's packfile to the requested
 // depth — the boundary commits ship complete, their ancestors are omitted —
 // without the blob loss a plain have-exclusion would cause.
+//
+// It hides the wrapped storer's RevListObjects, which cannot see the
+// boundary; such storers implement shallowObjectWalker instead.
 type shallowBoundaryStorer struct {
 	storage.Storer
 	boundary []plumbing.Hash
