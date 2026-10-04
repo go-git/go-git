@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -58,16 +59,53 @@ func ClientCapabilities(server capability.List) capability.List {
 	if agent := server.Get(capability.Agent); len(agent) > 0 {
 		caps.Set(capability.Agent, capability.DefaultAgent())
 	}
+	// A format go-git does not know is not echoed. The sessions' Command
+	// methods, LsRefs and ReconcileObjectFormatV2 refuse such a server before
+	// any command, as git's send_capabilities does.
 	if of := server.Get(capability.ObjectFormat); len(of) > 0 {
-		caps.Set(capability.ObjectFormat, of[0])
+		switch f := config.ObjectFormat(of[0]); f {
+		case config.SHA1, config.SHA256:
+			caps.Set(capability.ObjectFormat, f.String())
+		}
 	}
 	return caps
+}
+
+// CheckServerObjectFormat returns an error when the server advertised an
+// object-format go-git does not know, including an empty value and a list
+// such as "sha1 sha256". git's send_capabilities dies on these before it
+// sends any command, so a v2 client runs it before each one. A server that
+// advertised no object-format, or a bare object-format without "=", speaks
+// sha1.
+func CheckServerObjectFormat(server capability.List) error {
+	of := server.Get(capability.ObjectFormat)
+	if len(of) == 0 {
+		return nil
+	}
+	switch config.ObjectFormat(of[0]) {
+	case config.SHA1, config.SHA256:
+		return nil
+	}
+	return fmt.Errorf("server advertised unsupported object-format %q", of[0])
 }
 
 // FetchSupports reports whether the server advertised the given fetch feature
 // in its v2 capability advertisement (fetch=<feature>...).
 func FetchSupports(server capability.List, feature string) bool {
-	for _, v := range server.Get(capability.FetchCmd) {
+	return commandSupports(server, capability.FetchCmd, feature)
+}
+
+// lsRefsSupportsUnborn reports whether the server advertised the ls-refs
+// "unborn" feature (ls-refs=unborn).
+func lsRefsSupportsUnborn(server capability.List) bool {
+	return commandSupports(server, capability.LsRefs, "unborn")
+}
+
+// commandSupports reports whether the server listed feature in the
+// space-separated value of command's capability, as git's
+// server_supports_feature reads it.
+func commandSupports(server capability.List, command capability.Capability, feature string) bool {
+	for _, v := range server.Get(command) {
 		if slices.Contains(strings.Fields(v), feature) {
 			return true
 		}
@@ -75,17 +113,17 @@ func FetchSupports(server capability.List, feature string) bool {
 	return false
 }
 
-// lsRefsSupportsUnborn reports whether the server advertised the ls-refs
-// "unborn" feature (ls-refs=unborn).
-func lsRefsSupportsUnborn(server capability.List) bool {
-	return slices.Contains(server.Get(capability.LsRefs), "unborn")
-}
-
 // LsRefs lists references using the v2 ls-refs command run through cmd. It
 // always requests peeled tags and symref targets so HEAD resolves to its
 // branch, and requests unborn HEAD reporting when the server advertises it. An
-// unborn HEAD is returned as a symbolic reference and named by UnbornHead.
+// unborn HEAD is returned as a symbolic reference and named by UnbornHead. A
+// server that advertised an object-format go-git does not know is refused
+// before the command is sent.
 func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPrefixes []string) (*packp.LsRefsOutput, error) {
+	if err := CheckServerObjectFormat(server); err != nil {
+		return nil, err
+	}
+
 	args := &packp.LsRefsArgs{
 		Peel:        true,
 		Symrefs:     true,

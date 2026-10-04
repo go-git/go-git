@@ -1022,3 +1022,30 @@ func TestGetRemoteRefsV2NarrowedByRefPrefix(t *testing.T) {
 		})
 	}
 }
+
+// Command refuses a server whose object-format go-git does not know before
+// sending a request, as git's send_capabilities does for every command.
+func TestSmartPackSessionCommandUnknownObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return nil, errors.New("no request expected")
+	})}
+	u, err := url.Parse("http://example.invalid/repo.git")
+	require.NoError(t, err)
+
+	for _, v := range []string{"", "bogus", "sha1 sha256"} {
+		caps := capability.List{}
+		caps.Set(capability.ObjectFormat, v)
+		s := &smartPackSession{
+			sessionBase: sessionBase{client: client, baseURL: u, service: transport.UploadPackService},
+			version:     protocol.V2,
+			caps:        caps,
+		}
+		err := s.Command(context.Background(), "ls-refs", &packp.LsRefsArgs{}, &packp.LsRefsOutput{})
+		require.ErrorContains(t, err, "unsupported object-format", "object-format %q", v)
+	}
+	assert.Zero(t, requests.Load(), "requests sent")
+}

@@ -414,23 +414,38 @@ func TestReconcileObjectFormatV2(t *testing.T) {
 		assert.Contains(t, err.Error(), "unsupported object-format")
 	})
 
-	t.Run("empty value is accepted for an sha1 client", func(t *testing.T) {
+	// A bare object-format is not an advertisement: git's server_feature_v2
+	// matches only "object-format=", so the server speaks sha1.
+	t.Run("bare capability counts as sha1", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), withFormat("")))
-	})
+		var bare capability.List
+		bare.Add(capability.ObjectFormat)
+		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), bare))
 
-	t.Run("empty value rejects a sha256 client", func(t *testing.T) {
-		t.Parallel()
 		st := memory.NewStorage()
 		cfg, err := st.Config()
 		require.NoError(t, err)
 		cfg.Extensions.ObjectFormat = formatcfg.SHA256
 		require.NoError(t, st.SetConfig(cfg))
-
-		err = ReconcileObjectFormatV2(st, withFormat(""))
+		err = ReconcileObjectFormatV2(st, bare)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "does not support algorithm")
 	})
+
+	// git's send_capabilities dies on any object-format it cannot name,
+	// whatever the client's own format.
+	for name, caps := range map[string]capability.List{
+		"empty value":     withFormat(""),
+		"list of formats": withFormat("sha1 sha256"),
+		"leading space":   withFormat(" sha1"),
+	} {
+		t.Run(name+" is rejected", func(t *testing.T) {
+			t.Parallel()
+			err := ReconcileObjectFormatV2(memory.NewStorage(), caps)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported object-format")
+		})
+	}
 
 	t.Run("sha1 server with unset client is accepted", func(t *testing.T) {
 		t.Parallel()
