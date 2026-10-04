@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/repository"
+	xtransport "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/client"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -169,8 +170,31 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 
 	// TODO: support delete-refs
 	caps := sess.Capabilities() // server capabilities
-	if isDelete && !caps.Supports(capability.DeleteRefs) {
-		return ErrDeleteRefNotSupported
+
+	haves, err := referencesToHashes(remoteRefs)
+	if err != nil {
+		return err
+	}
+
+	// git's send-pack refuses a server that cannot store the local object
+	// format before it looks at the refs, so a push that would be rejected
+	// or has nothing to send fails with the format error too. It returns
+	// earlier when no refspec matched anything and the remote has no refs,
+	// which is only known once the commands are built.
+	checkServer := func() error {
+		if err := xtransport.CheckPushObjectFormat(r.s, *caps); err != nil {
+			return err
+		}
+		if isDelete && !caps.Supports(capability.DeleteRefs) {
+			return ErrDeleteRefNotSupported
+		}
+		return nil
+	}
+	remoteHasNoRefs := len(haves) == 0
+	if !remoteHasNoRefs {
+		if err := checkServer(); err != nil {
+			return err
+		}
 	}
 
 	if o.Force {
@@ -226,15 +250,20 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		}
 	}
 
+	if remoteHasNoRefs {
+		if len(cmds) == 0 && !isDelete {
+			return NoErrAlreadyUpToDate
+		}
+		if err := checkServer(); err != nil {
+			return err
+		}
+	}
+
 	if len(cmds) == 0 {
 		return NoErrAlreadyUpToDate
 	}
 
 	objects := objectsToPush(cmds)
-	haves, err := referencesToHashes(remoteRefs)
-	if err != nil {
-		return err
-	}
 
 	stop, err := r.s.Shallow()
 	if err != nil {
