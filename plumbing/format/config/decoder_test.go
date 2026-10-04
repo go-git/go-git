@@ -230,17 +230,27 @@ func (s *DecoderSuite) TestDecodeScalesLinearly() {
 		// Decoding is timed more than once, keeping the fastest run, to
 		// take the edge off a scheduling hiccup.
 		runs = 3
+		// Each run repeats decoding until at least this much time has
+		// passed. A single decode of the small input can finish within
+		// one tick of a coarse clock, as on Windows, and measure as 0s.
+		minRun = 25 * time.Millisecond
 	)
 
 	decode := func(in string) time.Duration {
 		best := time.Duration(math.MaxInt64)
 		for range runs {
+			var (
+				n       int
+				elapsed time.Duration
+			)
 			start := time.Now()
-			err := NewDecoder(strings.NewReader(in)).Decode(New())
-			elapsed := time.Since(start)
-
-			s.Require().NoError(err)
-			best = min(best, elapsed)
+			for elapsed < minRun {
+				err := NewDecoder(strings.NewReader(in)).Decode(New())
+				s.Require().NoError(err)
+				n++
+				elapsed = time.Since(start)
+			}
+			best = min(best, elapsed/time.Duration(n))
 		}
 		return best
 	}
