@@ -1671,31 +1671,42 @@ func (d *DotGit) CountLooseRefs() (int, error) {
 // loose. It does not verify whether referenced objects exist. Existing packed
 // references are retained unless replaced by a packable loose reference.
 //
-// This implementation only works under the assumption that the view
-// of the file system won't be updated during this operation.  This
-// strategy would not work on a general file system though, without
-// locking each loose reference and checking it again before deleting
-// the file, because otherwise an updated reference could sneak in and
-// then be deleted by the packed-refs process.  Alternatively, every
-// ref update could also lock packed-refs, so only one lock is
-// required during ref-packing.  But that would worsen performance in
-// the common case.
+// As git does, it then removes each packed loose reference once packed-refs is
+// unlocked, holding the lock of the reference, and only if the reference still
+// has the packed value: one updated in the meantime keeps its new value.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/files-backend.c#L1515-L1576.
 //
 // TODO: add an "all" boolean like the `git pack-refs --all` flag.
 // When `all` is false, it would only pack refs that have already been
 // packed, plus all tags.
 func (d *DotGit) PackRefs() error {
+	refs, err := d.writePackedRefs()
+	if err != nil {
+		return err
+	}
+
+	for _, ref := range refs {
+		if err := d.pruneLooseRef(ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writePackedRefs writes the packable loose references to packed-refs,
+// holding its lock, and returns them.
+func (d *DotGit) writePackedRefs() ([]*plumbing.Reference, error) {
 	// Lock packed-refs as git does, by its lock file. Readers don't take it:
 	// they read packed-refs, which is only ever replaced whole.
 	lock, err := d.lockFile(packedRefsPath, packedRefsLockTimeout)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer lock.unlock()
 
 	content, err := util.ReadFile(d.fs, packedRefsPath)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return nil, err
 	}
 
 	// Keep enumeration complete, but pack only loose references representable
@@ -1704,7 +1715,7 @@ func (d *DotGit) PackRefs() error {
 	var refs []*plumbing.Reference
 	seen := make(map[plumbing.ReferenceName]bool)
 	if err = d.addRefsFromRefDir(&refs, seen); err != nil {
-		return err
+		return nil, err
 	}
 	packable := refs[:0]
 	for _, ref := range refs {
@@ -1721,7 +1732,7 @@ func (d *DotGit) PackRefs() error {
 		header, _, _ := strings.Cut(string(content), "\n")
 		traits, ok := strings.CutPrefix(header, packedRefsHeader)
 		if len(content) == 0 || ok && slices.Contains(strings.Split(traits, " "), "sorted") {
-			return nil
+			return nil, nil
 		}
 	}
 
@@ -1747,7 +1758,7 @@ func (d *DotGit) PackRefs() error {
 			continue
 		case line[0] == '^':
 			if !peelable {
-				return ErrPackedRefsBadFormat
+				return nil, ErrPackedRefsBadFormat
 			}
 			peelable = false
 			if peeledOwner >= 0 {
@@ -1759,7 +1770,7 @@ func (d *DotGit) PackRefs() error {
 		peelable = true
 		_, name, ok := strings.Cut(strings.TrimSuffix(line, "\n"), " ")
 		if !ok || strings.Contains(name, " ") {
-			return ErrPackedRefsBadFormat
+			return nil, ErrPackedRefsBadFormat
 		}
 		if seen[plumbing.ReferenceName(name)] {
 			peeledOwner = -1
@@ -1786,17 +1797,39 @@ func (d *DotGit) PackRefs() error {
 		packed.WriteString(r.text)
 	}
 	if err := lock.commit(packed.String()); err != nil {
+		return nil, err
+	}
+
+	return refs, nil
+}
+
+// pruneLooseRef removes the loose reference packed as ref, holding its lock,
+// unless it changed since: like git, it then keeps the loose reference, which
+// shadows the outdated packed one. A lock held by another writer means the
+// reference is changing, so it is kept too.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/files-backend.c#L1372-L1418.
+func (d *DotGit) pruneLooseRef(ref *plumbing.Reference) error {
+	lock, err := d.lockRef(ref.Name())
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
+	// Once the lock file is gone, as in git.
+	defer d.removeEmptyRefParents(ref.Name())
+	defer lock.unlock()
 
-	// Delete only the loose refs packed above.
-	for _, ref := range refs {
-		path := d.fs.Join(".", ref.Name().String())
-		if err := d.fs.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	loose, err := d.readReferenceFile(".", ref.Name().String())
+	if err != nil || loose.Type() != plumbing.HashReference || loose.Hash() != ref.Hash() {
+		// Gone, changed or unreadable since packed: like git, keep it.
+		return nil
 	}
 
+	err = d.fs.Remove(ref.Name().String())
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }
 

@@ -433,7 +433,8 @@ func TestSetRefFilesystemLimits(t *testing.T) {
 }
 
 // Concurrent writers incrementing a counter with compare-and-swap lose no
-// update, and a concurrent reader always lists the reference.
+// update, while the counter is packed concurrently, and a concurrent reader
+// always lists it.
 func TestSetRefConcurrentCompareAndSwap(t *testing.T) {
 	t.Parallel()
 
@@ -449,26 +450,37 @@ func TestSetRefConcurrentCompareAndSwap(t *testing.T) {
 	require.NoError(t, util.WriteFile(fs, packedRefsPath, []byte(counterHash(0).String()+" "+name.String()+"\n"), 0o644))
 	dir := New(fs)
 
+	// untilDone runs f in a loop until done is closed, or f fails.
 	done := make(chan struct{})
-	readerErr := make(chan error, 1)
-	go func() {
-		readerErr <- func() error {
+	untilDone := func(f func() error) <-chan error {
+		errc := make(chan error, 1)
+		go func() {
 			for {
 				select {
 				case <-done:
-					return nil
+					errc <- nil
+					return
 				default:
 				}
-				refs, err := dir.Refs()
-				if err != nil {
-					return err
-				}
-				if findReference(refs, name.String()) == nil {
-					return fmt.Errorf("%s not listed", name)
+				if err := f(); err != nil {
+					errc <- err
+					return
 				}
 			}
 		}()
-	}()
+		return errc
+	}
+	readerErr := untilDone(func() error {
+		refs, err := dir.Refs()
+		if err != nil {
+			return err
+		}
+		if findReference(refs, name.String()) == nil {
+			return fmt.Errorf("%s not listed", name)
+		}
+		return nil
+	})
+	packerErr := untilDone(dir.PackRefs)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, writers)
@@ -507,6 +519,7 @@ func TestSetRefConcurrentCompareAndSwap(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, <-readerErr)
+	require.NoError(t, <-packerErr)
 
 	got, err := dir.Ref(name)
 	require.NoError(t, err)
@@ -519,6 +532,96 @@ func TestSetRefConcurrentCompareAndSwap(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
+}
+
+// updatingFS runs update once a new packed-refs is renamed into place.
+type updatingFS struct {
+	billy.Filesystem
+	update func() error
+	once   sync.Once
+}
+
+func (f *updatingFS) Rename(from, to string) error {
+	if err := f.Filesystem.Rename(from, to); err != nil {
+		return err
+	}
+	var err error
+	if filepath.ToSlash(to) == packedRefsPath {
+		f.once.Do(func() { err = f.update() })
+	}
+	return err
+}
+
+func TestPackRefsKeepsUpdatedRef(t *testing.T) {
+	t.Parallel()
+
+	const name = plumbing.ReferenceName("refs/heads/main")
+	packed := plumbing.NewHashReference(name, counterHash(1))
+	updated := plumbing.NewHashReference(name, counterHash(2))
+
+	base := memfs.New()
+	require.NoError(t, util.WriteFile(base, name.String(), []byte(packed.Hash().String()+"\n"), 0o644))
+	// Another writer updates the reference once it is packed, before the
+	// loose reference is pruned.
+	fs := &updatingFS{Filesystem: base, update: func() error { return New(base).SetRef(updated, packed) }}
+	dir := New(fs)
+
+	require.NoError(t, dir.PackRefs())
+
+	got, err := dir.Ref(name)
+	require.NoError(t, err)
+	assert.Equal(t, updated, got, "the update must not be lost")
+	got, err = dir.packedRef(name)
+	require.NoError(t, err)
+	assert.Equal(t, packed, got)
+}
+
+func TestPackRefsKeepsLockedRef(t *testing.T) {
+	t.Parallel()
+
+	const name = plumbing.ReferenceName("refs/heads/main")
+	value := counterHash(1)
+	lockPath := name.String() + refLockSuffix
+
+	fs := memfs.New()
+	require.NoError(t, util.WriteFile(fs, name.String(), []byte(value.String()+"\n"), 0o644))
+	// Another writer, git maybe, is updating the reference to the value it
+	// holds in the lock file.
+	require.NoError(t, util.WriteFile(fs, lockPath, []byte(counterHash(2).String()+"\n"), 0o644))
+	dir := New(fs)
+
+	require.NoError(t, dir.PackRefs())
+
+	loose, err := dir.readReferenceFile(".", name.String())
+	require.NoError(t, err, "the loose reference must be kept")
+	assert.Equal(t, value, loose.Hash())
+	lock, err := util.ReadFile(fs, lockPath)
+	require.NoError(t, err)
+	assert.Equal(t, counterHash(2).String()+"\n", string(lock))
+}
+
+func TestPackRefsRemovesEmptyParents(t *testing.T) {
+	t.Parallel()
+
+	for fsName, newFS := range refTestFilesystems {
+		t.Run(fsName, func(t *testing.T) {
+			t.Parallel()
+			fs := newFS(t)
+			dir := New(fs)
+			ref := plumbing.NewHashReference("refs/heads/a/b", counterHash(1))
+			require.NoError(t, dir.SetRef(ref, nil))
+
+			require.NoError(t, dir.PackRefs())
+
+			_, err := fs.Stat("refs/heads/a")
+			assert.ErrorIs(t, err, os.ErrNotExist)
+			_, err = fs.Stat("refs/heads")
+			assert.NoError(t, err)
+			got, err := dir.Ref(ref.Name())
+			require.NoError(t, err)
+			assert.Equal(t, ref, got)
+		})
+	}
 }
 
 // Of concurrent writers creating the same reference with a zero `old`,
