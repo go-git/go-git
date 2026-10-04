@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -111,16 +112,14 @@ func UploadPack(
 	var done bool
 	var haves []plumbing.Hash
 	var upreq *packp.UploadRequest
-	var reachable map[plumbing.Hash]struct{}
-	var multiAck, multiAckDetailed bool
+	var common *commonHaves
+	var anyMultiAck, multiAckDetailed bool
 	var caps capability.List
 	var wants []plumbing.Hash
-	var ack packp.ACK
 	var plan *shallowPlan
 	firstRound := true
 	for !done {
-		writec := make(chan error)
-		if firstRound || opts.StatelessRPC {
+		if firstRound {
 			upreq = &packp.UploadRequest{}
 			if err := upreq.Decode(rd); err != nil {
 				return fmt.Errorf("decoding upload-request: %w", err)
@@ -133,22 +132,9 @@ func UploadPack(
 				return fmt.Errorf("closing reader: %w", err)
 			}
 
-			// Collect the objects reachable from the wants. Only membership
-			// is tested later, when a client have is checked against this
-			// set, so walk the wants once instead of once per want.
-			objs, err := revlist.Objects(st, wants, nil)
-			if err != nil {
-				return fmt.Errorf("getting objects: %w", err)
-			}
-
-			reachable = make(map[plumbing.Hash]struct{}, len(objs))
-			for _, h := range objs {
-				reachable[h] = struct{}{}
-			}
-
-			// Encode objects to packfile and write to client
-			multiAck = caps.Supports(capability.MultiACK)
 			multiAckDetailed = caps.Supports(capability.MultiACKDetailed)
+			// Either form, where upstream tests data->multi_ack.
+			anyMultiAck = multiAckDetailed || caps.Supports(capability.MultiACK)
 
 			// TODO: support deepen-since, and deepen-not
 			if !upreq.Depth.DeepenSince.IsZero() || len(upreq.Depth.DeepenNot) > 0 {
@@ -162,22 +148,38 @@ func UploadPack(
 				return fmt.Errorf("planning shallow fetch: %w", err)
 			}
 
-			go func() {
-				// Upstream follows a deepen with the shallow update and a
-				// flush even when both lists are empty (receive_needs).
-				if plan != nil && plan.deepened {
-					shupd := packp.ShallowUpdate{Shallows: plan.shallows, Unshallows: plan.unshallows}
-					if err := shupd.Encode(w); err != nil {
-						writec <- fmt.Errorf("sending shallow-update: %w", err)
-						return
-					}
-				}
-
-				writec <- nil
-			}()
-
-			if err := <-writec; err != nil {
+			// Before negotiation starts, upstream send_unshallow adds the
+			// parents of unshallowed commits to want_obj, so ok_to_give_up
+			// requires them to reach a common commit too, and the client's
+			// shallow commits and the new boundary are registered as
+			// shallow, so neither walk goes past them.
+			negotiated := wants
+			var grafts []plumbing.Hash
+			if plan != nil {
+				negotiated = slices.Concat(wants, plan.extraWants)
+				grafts = plan.grafts
+			}
+			common, err = newCommonHaves(st, negotiated, grafts)
+			if err != nil {
 				return err
+			}
+
+			// Upstream follows a deepen with the shallow update and a flush
+			// even when both lists are empty (receive_needs).
+			if plan != nil && plan.deepened {
+				shupd := packp.ShallowUpdate{Shallows: plan.shallows, Unshallows: plan.unshallows}
+				if err := shupd.Encode(w); err != nil {
+					return fmt.Errorf("sending shallow-update: %w", err)
+				}
+			}
+		}
+
+		// UploadHaves.Decode takes EOF for a flush. Upstream dies when a
+		// stateful client hangs up mid-negotiation, so do the same instead of
+		// looping on empty rounds.
+		if !opts.StatelessRPC {
+			if _, _, err := pktline.PeekLine(rd); errors.Is(err, io.EOF) {
+				return fmt.Errorf("decoding upload-haves: %w", io.ErrUnexpectedEOF)
 			}
 		}
 
@@ -193,81 +195,84 @@ func UploadPack(
 		haves = append(haves, uphav.Haves...)
 		done = uphav.Done
 
-		var acks []packp.ACK
-		for _, hu := range uphav.Haves {
-			_, ok := reachable[hu]
-
-			var status packp.ACKStatus
-			if multiAckDetailed {
-				status = packp.ACKCommon
-				if !ok {
-					status = packp.ACKReady
+		// Acknowledge the haves as upstream get_common_commits does: a have is
+		// common when the server has it, and "ready" is only promised once
+		// every want reaches a common have (ok_to_give_up).
+		var resps []packp.ServerResponse
+		ack := func(a packp.ACK) {
+			resps = append(resps, packp.ServerResponse{ACKs: []packp.ACK{a}})
+		}
+		nak := func() { resps = append(resps, packp.ServerResponse{}) }
+		gotCommon, gotOther := false, false
+		for _, h := range uphav.Haves {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			ok, err := common.add(h)
+			if err != nil {
+				return fmt.Errorf("checking have %s: %w", h, err)
+			}
+			if !ok {
+				gotOther = true
+				if anyMultiAck {
+					ready, err := common.okToGiveUp(ctx)
+					if err != nil {
+						return fmt.Errorf("checking negotiation: %w", err)
+					}
+					if ready {
+						status := packp.ACKContinue
+						if multiAckDetailed {
+							status = packp.ACKReady
+						}
+						ack(packp.ACK{Hash: h, Status: status})
+					}
 				}
-			} else if multiAck {
-				status = packp.ACKContinue
+				continue
 			}
 
-			if ok || multiAck || multiAckDetailed {
-				ack = packp.ACK{Hash: hu, Status: status}
-				acks = append(acks, ack)
-				if !multiAck && !multiAckDetailed {
-					break
-				}
+			gotCommon = true
+			switch {
+			case multiAckDetailed:
+				ack(packp.ACK{Hash: h, Status: packp.ACKCommon})
+			case anyMultiAck:
+				ack(packp.ACK{Hash: h, Status: packp.ACKContinue})
+			case len(common.counted) == 1:
+				ack(packp.ACK{Hash: h})
 			}
 		}
 
-		go func() {
-			defer close(writec)
-
-			if len(haves) > 0 {
-				// Encode ACKs to client when we have haves
-				srvrsp := packp.ServerResponse{ACKs: acks}
-				if err := srvrsp.Encode(w); err != nil {
-					writec <- fmt.Errorf("sending acks server-response: %w", err)
-					return
-				}
-			}
-
+		if done {
 			switch {
-			case !done:
-				if multiAck || multiAckDetailed {
-					// Encode a NAK for multi-ack
-					srvrsp := packp.ServerResponse{}
-					if err := srvrsp.Encode(w); err != nil {
-						writec <- fmt.Errorf("sending nak server-response: %w", err)
-						return
-					}
+			case len(common.counted) == 0:
+				nak()
+			case anyMultiAck:
+				ack(packp.ACK{Hash: common.last})
+			}
+		} else {
+			if multiAckDetailed && gotCommon && !gotOther {
+				ready, err := common.okToGiveUp(ctx)
+				if err != nil {
+					return fmt.Errorf("checking negotiation: %w", err)
 				}
-			case !ack.Hash.IsZero() && (multiAck || multiAckDetailed):
-				// We're done, send the final ACK
-				ack.Status = 0
-				srvrsp := packp.ServerResponse{ACKs: []packp.ACK{ack}}
-				if err := srvrsp.Encode(w); err != nil {
-					writec <- fmt.Errorf("sending final ack server-response: %w", err)
-					return
-				}
-			case ack.Hash.IsZero() && len(haves) == 0:
-				// No haves were sent. Emit the single terminal NAK.
-				//
-				// When haves *were* sent, the ServerResponse{ACKs: acks}
-				// write above already emitted a NAK (encodeServerResponse
-				// writes NAK when ACKs is empty). Emitting another one here
-				// would produce two consecutive "0008NAK\n" pktlines;
-				// ServerResponse.Decode consumes only the first, and the
-				// second would then be misread by the sideband demuxer as
-				// a frame with channel byte 'N' ("unknown channel NAK").
-				srvrsp := packp.ServerResponse{}
-				if err := srvrsp.Encode(w); err != nil {
-					writec <- fmt.Errorf("sending final nak server-response: %w", err)
-					return
+				if ready {
+					ack(packp.ACK{Hash: common.last, Status: packp.ACKReady})
 				}
 			}
+			if len(common.counted) == 0 || anyMultiAck {
+				nak()
+			}
+		}
 
-			writec <- nil
-		}()
+		for _, resp := range resps {
+			if err := resp.Encode(w); err != nil {
+				return fmt.Errorf("sending server-response: %w", err)
+			}
+		}
 
-		if err := <-writec; err != nil {
-			return err
+		// A stateless round that is not done ends here; the client sends the
+		// next round as a new request.
+		if opts.StatelessRPC && !done {
+			return w.Close()
 		}
 
 		firstRound = false
@@ -668,28 +673,43 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	//   - done            -> no acknowledgments section; packfile follows.
 	//   - no haves        -> clone-like; no acknowledgments section; packfile follows.
 	//   - haves and !done -> emit an acknowledgments section. ACK every common
-	//                        object. "ready" is sent only once every want is
-	//                        reachable from the common haves (upstream's
+	//                        have not already implied by an earlier one.
+	//                        "ready" is sent only once every want reaches a
+	//                        common have or a parent of one (upstream's
 	//                        ok_to_give_up); then the packfile follows in the
 	//                        same response. Otherwise the section ends without a
 	//                        packfile and the client negotiates again with more
 	//                        haves (NAK when there is no common object at all).
 	if !done && len(haves) > 0 {
-		var common []plumbing.Hash
+		// Unlike v0/v1, upstream negotiates before send_shallow_info adds the
+		// parents of unshallowed commits to the wants and registers the
+		// client's shallow commits, so neither applies here. The server's
+		// own shallow commits do, and newCommonHaves reads them.
+		common, err := newCommonHaves(st, wants, nil)
+		if err != nil {
+			_ = w.Close()
+			return true, err
+		}
 		for _, h := range haves {
-			if _, err := st.EncodedObject(plumbing.AnyObject, h); err == nil {
-				common = append(common, h)
+			if _, err := common.add(h); err != nil {
+				_ = w.Close()
+				return true, fmt.Errorf("checking have %s: %w", h, err)
 			}
 		}
-		out.Acknowledgments = &packp.Acknowledgments{ACKs: common}
+		out.Acknowledgments = &packp.Acknowledgments{ACKs: common.counted}
 
-		// "ready" is withheld until every want is reachable from the common
-		// haves (upstream's ok_to_give_up). Declaring it on the first common
+		// "ready" is withheld until every want reaches a common have
+		// (upstream's ok_to_give_up). Declaring it on the first common
 		// have would force single-round negotiation and a larger pack. When not
 		// ready (including no common object at all, which encodes as NAK), the
 		// acknowledgments section stands alone and the client refines its haves
 		// in the next request.
-		if len(common) == 0 || !wantsReachableFromHaves(st, wants, common) {
+		ready, err := common.okToGiveUp(ctx)
+		if err != nil {
+			_ = w.Close()
+			return true, fmt.Errorf("checking negotiation: %w", err)
+		}
+		if !ready {
 			if err := out.Encode(w); err != nil {
 				return true, err
 			}
@@ -1188,46 +1208,368 @@ func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
 	return append(append([]plumbing.Hash(nil), base...), s.boundary...), nil
 }
 
-// wantsReachableFromHaves reports whether every want is reachable from the set
-// of common haves — upstream's ok_to_give_up (upload-pack.c). A want is anchored
-// when a common have is the want itself or one of its ancestors, i.e. the want
-// can reach a have by walking parents. Tags are peeled to commits first, as the
-// ancestry walk operates on commits. Returns false (keep negotiating) if any
-// want cannot be resolved to a commit or is not yet anchored.
-func wantsReachableFromHaves(st storage.Storer, wants, commonHaves []plumbing.Hash) bool {
-	haveSet := make(map[plumbing.Hash]struct{}, len(commonHaves))
-	haveCommits := make([]*object.Commit, 0, len(commonHaves))
-	for _, h := range commonHaves {
-		haveSet[h] = struct{}{}
-		if c, ok := peelToCommit(st, h); ok {
-			haveCommits = append(haveCommits, c)
+// commonHaves is the negotiation state of a fetch: the client's haves that
+// the server also has, as upstream tracks them in have_obj and with the
+// THEY_HAVE flag, and the last answer of okToGiveUp.
+type commonHaves struct {
+	st storage.Storer
+	// wants are the commits that must reach the client's history before
+	// negotiation can stop.
+	wants []plumbing.Hash
+	// grafts are the commits taken as parentless, upstream's registered
+	// shallow commits.
+	grafts map[plumbing.Hash]struct{}
+
+	// counted holds the common haves not already implied by an earlier one,
+	// upstream's have_obj.
+	counted []plumbing.Hash
+	// theyHave holds every common have and the parents of common commits,
+	// upstream's THEY_HAVE flag.
+	theyHave map[plumbing.Hash]struct{}
+	// oldest is the committer date, in seconds since the epoch, of the oldest
+	// common commit; the walk in okToGiveUp does not go below it. Zero means
+	// no common commit yet, as upstream's oldest_have, so a commit dated zero
+	// does not pin it.
+	oldest int64
+	// last is the most recent common have.
+	last plumbing.Hash
+	// added holds every have add has processed and whether the server has
+	// it, so a repeated have is not read again.
+	added map[plumbing.Hash]bool
+
+	// nodes holds the commits read so far, nil for a commit the server does
+	// not have. Upstream keeps parsed commits in memory and clears only its
+	// marks between walks; keeping them here makes a repeated walk as cheap.
+	nodes map[plumbing.Hash]*commitNode
+	// starts are the wants peeled to commits, oldest first. okToGiveUp fills
+	// it on its first walk and sets startsKnown, as no want may peel to one.
+	starts      []plumbing.Hash
+	startsKnown bool
+	// checked reports that ready holds the answer of okToGiveUp for the
+	// current theyHave and oldest.
+	checked bool
+	ready   bool
+	// gen numbers the walks of okToGiveUp. A node stamped with the current
+	// gen was visited, or reaches a common commit, in this walk, as
+	// upstream marks commits and clears the marks after each walk.
+	gen uint64
+	// stack is the walk's stack, kept so that each walk reuses its backing
+	// array rather than growing a new one.
+	stack []*commitNode
+}
+
+// newCommonHaves returns the negotiation state of a fetch of wants, before
+// any have is known, in which the commits in grafts and the server's own
+// shallow commits have no parents. Upstream registers the latter when it
+// reads the repository, so they bound both walks in every protocol version.
+func newCommonHaves(st storage.Storer, wants, grafts []plumbing.Hash) (*commonHaves, error) {
+	shallows, err := st.Shallow()
+	if err != nil {
+		return nil, fmt.Errorf("reading shallow commits: %w", err)
+	}
+	c := &commonHaves{
+		st:       st,
+		wants:    wants,
+		grafts:   make(map[plumbing.Hash]struct{}, len(grafts)+len(shallows)),
+		theyHave: map[plumbing.Hash]struct{}{},
+		added:    map[plumbing.Hash]bool{},
+		nodes:    map[plumbing.Hash]*commitNode{},
+	}
+	for _, h := range slices.Concat(grafts, shallows) {
+		c.grafts[h] = struct{}{}
+	}
+	return c, nil
+}
+
+// commitNode is what the negotiation needs of a commit.
+type commitNode struct {
+	// date is the committer date, in seconds since the epoch.
+	date int64
+	// parents are none for a grafted commit.
+	parents []plumbing.Hash
+	// parentNodes holds the nodes of the first resolved parents, nil for a
+	// parent the server does not have. A walk resolves the parents in order,
+	// the first time it scans each, so later walks follow them without
+	// looking them up in nodes.
+	parentNodes []*commitNode
+	resolved    int
+	// theyHave mirrors the commit's membership of commonHaves.theyHave.
+	theyHave bool
+	// visited and reaches hold the gen of the last walk of okToGiveUp that
+	// visited the commit, and that found it reaches a common commit.
+	visited, reaches uint64
+}
+
+// remember records commit in nodes and returns its node.
+func (c *commonHaves) remember(commit *object.Commit) *commitNode {
+	n := &commitNode{date: commit.Committer.When.Unix(), parents: commit.ParentHashes}
+	if _, ok := c.grafts[commit.Hash]; ok {
+		n.parents = nil
+	}
+	_, n.theyHave = c.theyHave[commit.Hash]
+	c.nodes[commit.Hash] = n
+	return n
+}
+
+// markHave adds h to theyHave and reports whether it was not there yet.
+func (c *commonHaves) markHave(h plumbing.Hash) bool {
+	if _, ok := c.theyHave[h]; ok {
+		return false
+	}
+	c.theyHave[h] = struct{}{}
+	if n := c.nodes[h]; n != nil {
+		n.theyHave = true
+	}
+	return true
+}
+
+// node returns the node of commit h, reading it only if nodes does not hold
+// it yet, or nil if the server does not have h.
+func (c *commonHaves) node(h plumbing.Hash) (*commitNode, error) {
+	if n, ok := c.nodes[h]; ok {
+		return n, nil
+	}
+	commit, err := object.GetCommit(c.st, h)
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		c.nodes[h] = nil
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c.remember(commit), nil
+}
+
+// parentNode returns the node of the i-th parent of n, as node does, and
+// keeps it in n so that the next walk does not look it up again. The parents
+// before i must have been resolved already, as a walk scans them in order.
+func (c *commonHaves) parentNode(n *commitNode, i int) (*commitNode, error) {
+	if i < n.resolved {
+		return n.parentNodes[i], nil
+	}
+	p, err := c.node(n.parents[i])
+	if err != nil {
+		return nil, err
+	}
+	if n.parentNodes == nil {
+		n.parentNodes = make([]*commitNode, len(n.parents))
+	}
+	n.parentNodes[i] = p
+	n.resolved = i + 1
+	return p, nil
+}
+
+// add records the have h and reports whether the server has it, returning an
+// error if the object cannot be read. It mirrors upstream got_oid and
+// do_got_oid: the parents of a common commit count as had before the commit
+// itself is checked, and the oldest common commit bounds okToGiveUp. A have
+// that adds no commit to theyHave and does not move that bound, such as a
+// repeated have or a blob, keeps the answer okToGiveUp last gave.
+//
+// A have add has already processed is answered without reading it again, and
+// a commit an earlier walk read is not read again either. Of any other
+// object only the type is looked up, as upstream does for a have that is not
+// a commit, so a have naming a large blob, or a delta against one, is not
+// inflated; a commit is then read.
+func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
+	if had, ok := c.added[h]; ok {
+		if had {
+			c.last = h
+		}
+		return had, nil
+	}
+
+	n, isCommit := c.nodes[h]
+	if !isCommit || n == nil {
+		typ, err := storer.EncodedObjectType(c.st, h)
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			c.added[h] = false
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		isCommit = typ == plumbing.CommitObject
+		if isCommit {
+			commit, err := object.GetCommit(c.st, h)
+			if err != nil {
+				return false, err
+			}
+			n = c.remember(commit)
+		}
+	}
+	c.added[h] = true
+
+	c.last = h
+	if isCommit {
+		if c.oldest == 0 || n.date < c.oldest {
+			c.oldest = n.date
+			c.checked = false
+		}
+		for _, p := range n.parents {
+			if c.markHave(p) {
+				c.checked = false
+			}
+		}
+	}
+	if c.markHave(h) {
+		c.counted = append(c.counted, h)
+		if isCommit {
+			c.checked = false
+		}
+	}
+	return true, nil
+}
+
+// okToGiveUp reports whether every want reaches a commit the client has, so
+// that negotiation can stop. It mirrors upstream ok_to_give_up and
+// can_all_from_reach_with_flag (commit-reach.c): a depth-first walk per want,
+// oldest want first, sharing what earlier walks in the same call learned,
+// that does not descend below the oldest common commit. Upstream orders the
+// wants by generation number and then by date; without a commit-graph every
+// generation number is the same, so the date decides. It reports false while
+// no have is common, as upstream does. A want that does not peel to a commit
+// cannot be judged by ancestry and does not hold negotiation back, but one
+// that cannot be read is an error, unlike upstream in one case; see
+// peelWant.
+//
+// The answer depends only on theyHave, oldest and the wants, so it is
+// returned again without a walk until add changes one of them. Otherwise it
+// walks again from scratch, as upstream does for every have it lacks, but
+// over the commits in nodes, so only commits no earlier walk reached are read
+// from storage. It is not monotonic: when a commit is dated before its parent,
+// a lower cutoff can let the walk from one want visit a commit before the
+// walk from another want marks it, and a true answer can turn false. A walk
+// that finds ctx done stops and returns ctx's error.
+func (c *commonHaves) okToGiveUp(ctx context.Context) (bool, error) {
+	if len(c.counted) == 0 {
+		return false, nil
+	}
+	if c.checked {
+		return c.ready, nil
+	}
+
+	if !c.startsKnown {
+		for _, w := range c.wants {
+			start, err := peelWant(c.st, w)
+			if err != nil {
+				c.starts = c.starts[:0]
+				return false, fmt.Errorf("reading want %s: %w", w, err)
+			}
+			if start != nil {
+				c.remember(start)
+				c.starts = append(c.starts, start.Hash)
+			}
+		}
+		slices.SortStableFunc(c.starts, func(a, b plumbing.Hash) int {
+			return cmp.Compare(c.nodes[a].date, c.nodes[b].date)
+		})
+		c.startsKnown = true
+	}
+
+	c.gen++
+	gen := c.gen
+	marked := func(n *commitNode) bool {
+		return n.theyHave || n.reaches == gen
+	}
+
+	for _, start := range c.starts {
+		sn := c.nodes[start]
+		sn.visited = gen
+		c.stack = append(c.stack[:0], sn)
+		stack := c.stack
+		for len(stack) > 0 {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			top := stack[len(stack)-1]
+			if marked(top) {
+				stack = stack[:len(stack)-1]
+				if len(stack) > 0 {
+					stack[len(stack)-1].reaches = gen
+				}
+				continue
+			}
+
+			// The parents are scanned from the first one each time the walk
+			// returns to a commit, so a parent marked since marks the commit,
+			// and the scan still goes on to walk any parent not yet visited.
+			// What this visits decides what later walks skip.
+			pushed := false
+			for i := range top.parents {
+				n, err := c.parentNode(top, i)
+				if err != nil {
+					return false, err
+				}
+				if n == nil {
+					// A parent the server lacks is never walked, but may
+					// still be one the client has.
+					if _, ok := c.theyHave[top.parents[i]]; ok {
+						top.reaches = gen
+					}
+					continue
+				}
+				if marked(n) {
+					top.reaches = gen
+				}
+				if n.visited == gen {
+					continue
+				}
+				n.visited = gen
+				if c.oldest != 0 && n.date < c.oldest {
+					continue
+				}
+				stack = append(stack, n)
+				pushed = true
+				break
+			}
+			if !pushed {
+				stack = stack[:len(stack)-1]
+			}
+		}
+		c.stack = stack
+
+		if !marked(sn) {
+			c.checked, c.ready = true, false
+			return false, nil
 		}
 	}
 
-	for _, wHash := range wants {
-		wc, ok := peelToCommit(st, wHash)
-		if !ok {
-			return false
+	c.checked, c.ready = true, true
+	return true, nil
+}
+
+// peelWant resolves the want h to the commit okToGiveUp walks from,
+// following annotated tags. It returns no commit, and no error, when h peels
+// to an object that is not a commit, or to a tag whose target the server does
+// not have: upstream can_all_from_reach_with_flag skips both, as deref_tag
+// gives no object for the latter. Any other failure to read h, a tag or the
+// commit is returned. For the want itself that matches upstream, which dies
+// on a want it cannot parse (receive_needs). It does not for a tag's target
+// that exists but cannot be read: upstream's deref_tag gives no object for it
+// too, so upstream skips that want where this returns the error.
+func peelWant(st storage.Storer, h plumbing.Hash) (*object.Commit, error) {
+	for want := true; ; want = false {
+		typ, err := storer.EncodedObjectType(st, h)
+		if !want && errors.Is(err, plumbing.ErrObjectNotFound) {
+			return nil, nil
 		}
-		if _, ok := haveSet[wc.Hash]; ok {
-			continue
+		if err != nil {
+			return nil, err
 		}
-		anchored := false
-		for _, hc := range haveCommits {
-			if hc.Hash == wc.Hash {
-				anchored = true
-				break
+		switch typ {
+		case plumbing.CommitObject:
+			return object.GetCommit(st, h)
+		case plumbing.TagObject:
+			tag, err := object.GetTag(st, h)
+			if err != nil {
+				return nil, err
 			}
-			if isAnc, err := hc.IsAncestor(wc); err == nil && isAnc {
-				anchored = true
-				break
-			}
-		}
-		if !anchored {
-			return false
+			h = tag.Target
+		default:
+			return nil, nil
 		}
 	}
-	return true
 }
 
 // peelToCommit resolves h to a commit, following annotated tags. It returns
