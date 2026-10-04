@@ -7,8 +7,8 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/internal/reference"
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -80,7 +80,7 @@ func AdvertiseRefs(
 		ar.Capabilities.Set(capability.Sideband)
 		ar.Capabilities.Set(capability.NoProgress)
 		ar.Capabilities.Set(capability.Shallow)
-		ar.Capabilities.Set(capability.ObjectFormat, objectFormat(st).String())
+		ar.Capabilities.Set(capability.ObjectFormat, internal.ObjectFormat(st).String())
 	}
 
 	// Set references
@@ -159,21 +159,8 @@ func serverV2Capabilities(st storage.Storer) capability.List {
 	caps.Set(capability.Agent, capability.DefaultAgent())
 	caps.Set(capability.LsRefs)
 	caps.Set(capability.FetchCmd, "shallow")
-	caps.Set(capability.ObjectFormat, objectFormat(st).String())
+	caps.Set(capability.ObjectFormat, internal.ObjectFormat(st).String())
 	return caps
-}
-
-// objectFormat returns the repository's configured object format, defaulting to
-// the package default when the config is missing or unset.
-func objectFormat(st storage.Storer) config.ObjectFormat {
-	cfg, err := st.Config()
-	if err != nil || cfg == nil {
-		return config.DefaultObjectFormat
-	}
-	if cfg.Extensions.ObjectFormat == config.UnsetObjectFormat {
-		return config.DefaultObjectFormat
-	}
-	return cfg.Extensions.ObjectFormat
 }
 
 // advertisable reports whether a reference name may be put on the wire.
