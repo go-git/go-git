@@ -1725,7 +1725,8 @@ func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	s.Require().Equal(data, rerun)
 	looseCount, err := dir.CountLooseRefs()
 	s.Require().NoError(err)
-	s.Require().Equal(len(unpackable), looseCount)
+	// Like git, refs/heads/main.lock is taken for a lock file, not a reference.
+	s.Require().Equal(len(unpackable)-1, looseCount)
 }
 
 func TestAlternatesDefault(t *testing.T) {

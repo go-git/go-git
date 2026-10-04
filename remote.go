@@ -188,8 +188,7 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		return err
 	}
 	// Storage enumeration is also used by repository maintenance and must
-	// remain complete. Only push candidates exclude malformed ordinary refs,
-	// including stale lock files that Git's files ref iterator skips.
+	// remain complete. Only push candidates exclude malformed ordinary refs.
 	pushRefs := localRefs[:0]
 	for _, ref := range localRefs {
 		if ref.Name().IsUnderRefs() {

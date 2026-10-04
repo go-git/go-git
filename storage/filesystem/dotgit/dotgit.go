@@ -31,7 +31,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
 	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
-	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
@@ -320,7 +319,8 @@ type Options struct {
 // SetRef and ReflogWriter additionally require valid reference-name syntax and
 // a name short enough for git to lock.
 // Refs applies neither name check, so a returned entry may be inaccessible
-// through Ref and RemoveRef.
+// through Ref and RemoveRef. Like git, it skips loose files whose name ends in
+// ".lock": those are the lock files of reference updates.
 //
 // Existing entries rejected by the path checks need external repair. On a
 // filesystem that preserves the exact spelling without aliasing, native Git's
@@ -1321,37 +1321,16 @@ func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Ref
 	return plumbing.NewReferenceFromStrings(name, line), nil
 }
 
-// checkReferenceAndTruncate reads the reference from the given file, or the `pack-refs` file if
-// the file was empty. Then it checks that the old reference matches the stored reference and
-// truncates the file.
-func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference) error {
-	if old == nil {
-		return nil
-	}
-
-	ref, err := d.readReferenceFrom(f, old.Name().String())
-	if errors.Is(err, ErrEmptyRefFile) {
-		// This may happen if the reference is being read from a newly created file.
-		// In that case, try getting the reference from the packed refs file.
-		ref, err = d.packedRef(old.Name())
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if ref.Hash() != old.Hash() {
-		return storage.ErrReferenceHasChanged
-	}
-	_, err = f.Seek(0, io.SeekStart)
-	if err != nil {
-		return err
-	}
-	return f.Truncate(0)
-}
-
-// SetRef stores a reference, optionally checking that old matches the current value.
-// The reference name must pass the write checks described by DotGit.
+// SetRef stores a reference as a loose reference, holding its lock file as git
+// does. The reference name must pass the write checks described by DotGit.
+//
+// If `old` is not nil, the reference is only stored if its current value,
+// loose or packed, has the hash of `old`. Otherwise SetRef returns
+// storage.ErrReferenceHasChanged, or plumbing.ErrReferenceNotFound if there is
+// no current value, and leaves the reference unchanged.
+//
+// If the lock is held by another writer for longer than git would wait, SetRef
+// returns an error wrapping os.ErrExist.
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 	if err := validNewReferenceName(r.Name()); err != nil {
 		return err
@@ -1365,9 +1344,7 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 		content = fmt.Sprintln(r.Hash().String())
 	}
 
-	fileName := r.Name().String()
-
-	return d.setRef(fileName, content, old)
+	return d.setRef(r.Name(), content, old)
 }
 
 // Refs scans the git directory collecting references, which it returns.
@@ -1465,25 +1442,47 @@ func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, er
 	return nil, plumbing.ErrReferenceNotFound
 }
 
-// RemoveRef removes a reference by name.
+// RemoveRef removes a reference by name, holding its lock file as git does.
 // It permits invalid-format names but rejects unsafe paths as described by DotGit.
 func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	if err := validReferenceName(name); err != nil {
 		return err
 	}
 
-	path := d.fs.Join(".", name.String())
-	_, err := d.fs.Stat(path)
-	if err == nil {
-		err = d.fs.Remove(path)
-		// Drop down to remove it from the packed refs file, too.
+	lock, err := d.lockRef(name)
+	if err != nil {
+		return err
 	}
+	// Once the lock file is gone, as in git.
+	defer d.removeEmptyRefParents(name)
+	defer lock.unlock()
 
-	if err != nil && !os.IsNotExist(err) {
+	// The packed value goes first, as in git: the other way around, a reader
+	// could see the outdated packed value once the loose one is gone.
+	if err := d.rewritePackedRefsWithoutRef(name); err != nil {
 		return err
 	}
 
-	return d.rewritePackedRefsWithoutRef(name)
+	err = d.fs.Remove(name.String())
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// removeEmptyRefParents removes the directories of the reference name that are
+// left empty, keeping its first two components, such as refs/heads, as git does.
+// Otherwise an empty directory, left by a deleted reference or created to hold
+// the lock file of a rejected update, would keep a reference of the same name
+// from being created.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/files-backend.c#L1330-L1370.
+func (d *DotGit) removeEmptyRefParents(name plumbing.ReferenceName) {
+	for dir := path.Dir(name.String()); strings.Count(dir, "/") >= 2; dir = path.Dir(dir) {
+		// Removing a directory that isn't empty fails, which ends the walk.
+		if d.fs.Remove(dir) != nil {
+			return
+		}
+	}
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
@@ -1659,6 +1658,13 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []strin
 	}
 
 	for _, f := range files {
+		// A lock file is not a reference: like git, skip it. While held, it
+		// may be empty, or hold a value not committed yet.
+		// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/refs/files-backend.c#L390-L391.
+		if strings.HasSuffix(f.Name(), refLockSuffix) {
+			continue
+		}
+
 		newRelPath := append(append([]string(nil), relPath...), f.Name())
 		if f.IsDir() {
 			if err = d.walkReferencesTree(refs, newRelPath, seen); err != nil {
