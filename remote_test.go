@@ -1537,6 +1537,35 @@ func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
 	}
 }
 
+func (s *RemoteSuite) TestPushRejectsExplicitMissingSourceBeforePrune() {
+	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+	s.Require().NoError(err)
+	for _, prune := range []bool{false, true} {
+		s.Run(fmt.Sprintf("prune=%t", prune), func() {
+			dir := s.T().TempDir()
+			dst, err := PlainClone(dir, &CloneOptions{URL: s.GetBasicLocalRepositoryURL(), Bare: true})
+			s.Require().NoError(err)
+			defer func() { _ = dst.Close() }()
+			keep := plumbing.NewHashReference("refs/heads/keep", head.Hash())
+			s.Require().NoError(dst.Storer.SetReference(keep))
+			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+			err = remote.Push(&PushOptions{Prune: prune, RefSpecs: []config.RefSpec{
+				"refs/heads/master:refs/heads/allowed",
+				"refs/heads/missing:refs/heads/keep",
+			}})
+			s.ErrorIs(err, ErrSrcRefSpecNotFound)
+			ref, err := dst.Storer.Reference(keep.Name())
+			s.Require().NoError(err)
+			s.Equal(keep, ref)
+			_, err = dst.Storer.Reference("refs/heads/allowed")
+			s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+		})
+	}
+}
+
 func (s *RemoteSuite) TestPushPrune() {
 	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)
