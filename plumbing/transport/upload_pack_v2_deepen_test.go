@@ -112,7 +112,7 @@ func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	require.NoError(t, err)
 	since := c.Committer.When
 
-	shallows, err := getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil)
+	shallows, err := getShallowCommitsByRevList(context.Background(), st, []plumbing.Hash{head.Hash()}, since, nil)
 	require.NoError(t, err)
 
 	require.NotEmpty(t, shallows)
@@ -193,6 +193,22 @@ func TestUploadPackV2FetchDeepenExistingShallow(t *testing.T) {
 		"the deepened boundary (depth 2) must be the parent")
 	require.Contains(t, out, "unshallow "+head.Hash().String(),
 		"the previously-shallow tip is now interior and must be unshallowed")
+}
+
+func TestUploadPackV2FetchRefetchAtSameDepthSendsEmptyShallowInfo(t *testing.T) {
+	t.Parallel()
+	r := mergeHistory(t)
+
+	out := serveUploadPackV2Test(t, r.st, v2Request(t, "fetch", nil, []string{
+		"want " + r.commits["D"].String(),
+		"have " + r.commits["D"].String(),
+		"shallow " + r.commits["M"].String(),
+		"deepen 2",
+		"done",
+	}))
+
+	require.Contains(t, out, "shallow-info")
+	require.NotContains(t, out, "shallow "+r.commits["M"].String())
 }
 
 func TestUploadPackV2FetchDeepenRelativeExistingShallow(t *testing.T) {
