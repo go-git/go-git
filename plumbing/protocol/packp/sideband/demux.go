@@ -38,6 +38,7 @@ type Demuxer struct {
 
 	max     int
 	pending []byte
+	err     error // first error returned by Read
 
 	// Progress is where the progress messages are stored
 	Progress Progress
@@ -67,13 +68,22 @@ func NewDemuxer(t Type, r io.Reader) *Demuxer {
 //
 // Read will return io.EOF when a flush packet is received after reading all
 // the PackData channel data.
+//
+// After Read returns an error, including io.EOF, later calls return the same
+// error without reading from the underlying reader, so any data following
+// the flush-pkt is left unread.
 func (d *Demuxer) Read(b []byte) (read int, err error) {
+	if d.err != nil {
+		return 0, d.err
+	}
+
 	req := len(b)
 	for read < req {
 		n, err := d.doRead(b[read:req])
 		read += n
 
 		if err != nil {
+			d.err = err
 			return read, err
 		}
 	}
