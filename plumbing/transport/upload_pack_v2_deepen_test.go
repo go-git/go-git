@@ -14,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -113,11 +112,11 @@ func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	require.NoError(t, err)
 	since := c.Committer.When
 
-	var upd packp.ShallowUpdate
-	require.NoError(t, getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil, &upd))
+	shallows, err := getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil)
+	require.NoError(t, err)
 
-	require.NotEmpty(t, upd.Shallows)
-	for _, h := range upd.Shallows {
+	require.NotEmpty(t, shallows)
+	for _, h := range shallows {
 		sc, err := object.GetCommit(st, h)
 		require.NoError(t, err)
 		require.False(t, sc.Committer.When.Before(since),

@@ -154,10 +154,12 @@ func UploadPack(
 				var shupd packp.ShallowUpdate
 				if !upreq.Depth.IsZero() {
 					if upreq.Depth.Deepen > 0 {
-						if err := getShallowCommits(st, wants, upreq.Depth.Deepen, &shupd); err != nil {
+						boundary, err := getShallowCommits(st, wants, upreq.Depth.Deepen)
+						if err != nil {
 							writec <- fmt.Errorf("getting shallow commits: %w", err)
 							return
 						}
+						shupd.Shallows = boundary
 					} else {
 						writec <- fmt.Errorf("unsupported depth: %+v", upreq.Depth)
 						return
@@ -327,73 +329,56 @@ func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbin
 	return revlist.Objects(st, wants, haves)
 }
 
-func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
-	var i, curDepth int
-	var commit *object.Commit
-	depths := map[*object.Commit]int{}
-	stack := []object.Object{}
-
-	for commit != nil || i < len(heads) || len(stack) > 0 {
-		if commit == nil {
-			if i < len(heads) {
-				obj, err := st.EncodedObject(plumbing.CommitObject, heads[i])
-				i++
-				if err != nil {
-					continue
-				}
-
-				commit, err = object.DecodeCommit(st, obj)
-				if err != nil {
-					commit = nil
-					continue
-				}
-
-				depths[commit] = 0
-				curDepth = 0
-			} else if len(stack) > 0 {
-				commit = stack[len(stack)-1].(*object.Commit)
-				stack = stack[:len(stack)-1]
-				curDepth = depths[commit]
-			}
-		}
-
-		curDepth++
-
-		if depth != math.MaxInt && curDepth >= depth {
-			upd.Shallows = append(upd.Shallows, commit.Hash)
-			commit = nil
-			continue
-		}
-
-		upd.Unshallows = append(upd.Unshallows, commit.Hash)
-
-		parents := commit.Parents()
-		commit = nil
-		for {
-			parent, err := parents.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-
-			if depths[parent] != 0 && curDepth >= depths[parent] {
-				continue
-			}
-
-			depths[parent] = curDepth
-
-			if _, err := parents.Next(); err == nil {
-				stack = append(stack, parent)
-			} else {
-				commit = parent
-				curDepth = depths[commit]
-			}
-		}
+// getShallowCommits returns the shallow boundary of a fetch limited to depth
+// commits: the commits whose shortest distance from heads is exactly depth (a
+// head is at depth 1), following every parent. It mirrors upstream
+// get_shallow_commits (shallow.c). Heads that do not peel to a commit are
+// skipped, and an infinite depth (math.MaxInt) has no boundary.
+func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int) ([]plumbing.Hash, error) {
+	if depth == math.MaxInt {
+		return nil, nil
 	}
 
-	return nil
+	// Walking breadth-first visits every commit first at its shortest depth,
+	// so a commit reached again through a longer path is skipped.
+	visited := make(map[plumbing.Hash]struct{})
+	var level []plumbing.Hash
+	for _, h := range heads {
+		c, ok := peelToCommit(st, h)
+		if !ok {
+			continue
+		}
+		if _, ok := visited[c.Hash]; ok {
+			continue
+		}
+		visited[c.Hash] = struct{}{}
+		level = append(level, c.Hash)
+	}
+
+	for d := 1; len(level) > 0; d++ {
+		if d == depth {
+			plumbing.HashesSort(level)
+			return level, nil
+		}
+
+		var next []plumbing.Hash
+		for _, h := range level {
+			c, err := object.GetCommit(st, h)
+			if err != nil {
+				return nil, fmt.Errorf("getting commit %s: %w", h, err)
+			}
+			for _, p := range c.ParentHashes {
+				if _, ok := visited[p]; ok {
+					continue
+				}
+				visited[p] = struct{}{}
+				next = append(next, p)
+			}
+		}
+		level = next
+	}
+
+	return nil, nil
 }
 
 // shallowFrontierDepth returns the depth, counted from the wants (a tip is at
@@ -744,10 +729,10 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	var newBoundary []plumbing.Hash
 	var haveNewBoundary bool
 	if depth > 0 || revList {
-		var shupd packp.ShallowUpdate
+		var boundary []plumbing.Hash
 		computed := true
 		if revList {
-			err = getShallowCommitsByRevList(st, wants, since, notTips, &shupd)
+			boundary, err = getShallowCommitsByRevList(st, wants, since, notTips)
 		} else {
 			effectiveDepth := depth
 			if args.DeepenRelative && len(clientShallows) > 0 {
@@ -770,7 +755,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 				}
 			}
 			if computed {
-				err = getShallowCommits(st, wants, effectiveDepth, &shupd)
+				boundary, err = getShallowCommits(st, wants, effectiveDepth)
 			}
 		}
 		if err != nil {
@@ -779,7 +764,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		}
 		if computed {
 			haveNewBoundary = true
-			newBoundary = shupd.Shallows
+			newBoundary = boundary
 		}
 	}
 
@@ -977,10 +962,10 @@ func reachableCommits(st storage.Storer, tips []plumbing.Hash) (map[plumbing.Has
 // Unlike git's rev-list traversal it does not apply the date "slop" used to
 // tolerate out-of-order committer timestamps, so under clock skew the boundary
 // may differ by a few commits; the resulting shallow clone is still valid.
-func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash, upd *packp.ShallowUpdate) error {
+func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash) ([]plumbing.Hash, error) {
 	exclude, err := reachableCommits(st, notTips)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	included := make(map[plumbing.Hash]struct{})
@@ -1009,16 +994,17 @@ func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since 
 		stack = append(stack, c.ParentHashes...)
 	}
 
+	var shallows []plumbing.Hash
 	for h := range included {
 		for _, p := range parents[h] {
 			if _, ok := included[p]; !ok {
-				upd.Shallows = append(upd.Shallows, h)
+				shallows = append(shallows, h)
 				break
 			}
 		}
 	}
-	plumbing.HashesSort(upd.Shallows)
-	return nil
+	plumbing.HashesSort(shallows)
+	return shallows, nil
 }
 
 // includeReachableTags implements the fetch "include-tag" feature: for every
