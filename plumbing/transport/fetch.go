@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -13,6 +14,15 @@ import (
 )
 
 // FetchPack fetches a packfile from the remote into the given storage.
+//
+// caps must be the capabilities the fetch was negotiated with: as
+// [NegotiatePack] requests side-band only when req.Progress is set, packf is
+// read as multiplexed only when caps support side-band and req.Progress is
+// non-nil. A multiplexed response is read up to its closing flush-pkt, and
+// an error the remote sends on the error band, even after the pack, fails
+// the fetch. So does pack data the storage left unread after the pack
+// trailer, although the pack is then already stored. Otherwise packf may be
+// left unread past the pack trailer.
 func FetchPack(
 	ctx context.Context,
 	st storage.Storer,
@@ -31,7 +41,10 @@ func FetchPack(
 		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
 	}
 
-	if demuxer != nil && req.Progress != nil {
+	// Sideband is only requested when there is progress to report (see
+	// NegotiatePack), so only then is the response muxed.
+	muxed := demuxer != nil && req.Progress != nil
+	if muxed {
 		demuxer.Progress = req.Progress
 		reader = demuxer
 	}
@@ -52,6 +65,18 @@ func FetchPack(
 		}
 	} else if err := packfile.UpdateObjectStorage(st, reader); err != nil {
 		return err
+	}
+
+	// Storage that parses the pack stops reading at its trailer, so read the
+	// rest of the response here: an error the server sends after the pack
+	// must fail the fetch, as must pack data after it, and trailing progress
+	// must reach the caller. The demuxer stops at the closing flush-pkt; an
+	// unmuxed response has no end marker, so reading on would wait for the
+	// server to close.
+	if muxed {
+		if err := internal.DrainPackSection(demuxer); err != nil {
+			return err
+		}
 	}
 
 	if err := packf.Close(); err != nil {
