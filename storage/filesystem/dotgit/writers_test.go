@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
@@ -518,5 +519,42 @@ func TestObjectWriterPermissions(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, ro, "file %q is not read-only", path)
 		})
+	}
+}
+
+// TestSyncedReaderNoLostWakeup checks that a reader that has caught up with
+// the writer is woken by the next write, however the two goroutines
+// interleave.
+func TestSyncedReaderNoLostWakeup(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	for i := range 2000 {
+		fw, err := fs.Create(fmt.Sprintf("f%d", i))
+		require.NoError(t, err)
+		fr, err := fs.Open(fw.Name())
+		require.NoError(t, err)
+
+		s := newSyncedReader(fw, fr)
+		got := make(chan error, 1)
+		go func() {
+			b := make([]byte, 1)
+			_, err := io.ReadFull(s, b)
+			got <- err
+		}()
+
+		_, err = s.Write([]byte{'x'})
+		require.NoError(t, err)
+
+		select {
+		case err := <-got:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			_ = s.Close() // release the reader goroutine
+			t.Fatalf("iteration %d: reader never woke after write", i)
+		}
+		require.NoError(t, s.Close())
+		require.NoError(t, fr.Close())
+		require.NoError(t, fw.Close())
 	}
 }

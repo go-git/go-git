@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"sync/atomic"
+	"sync"
 
 	"github.com/go-git/go-billy/v6"
 
@@ -133,7 +133,7 @@ func (w *PackWriter) Close() (err error) {
 
 	// Drop anything written after the pack's checksum: it is not part of the
 	// pack, and git rejects a .pack with "junk at the end".
-	if w.size > 0 && int64(w.synced.written.Load()) > w.size {
+	if w.size > 0 && w.synced.size() > w.size {
 		if err := w.fw.Truncate(w.size); err != nil {
 			_ = w.fw.Close()
 			_ = w.clean()
@@ -298,73 +298,57 @@ func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
 	return revfile.Encode(writer, h, idx)
 }
 
+// syncedReader lets a reader trail a writer on the same file: Read
+// blocks while it has consumed everything written so far, until the
+// next Write or Close. State is guarded by a single mutex so a wake-up
+// can never slip between the reader's check and its wait.
 type syncedReader struct {
 	w io.Writer
 	r io.ReadSeeker
 
-	blocked, done atomic.Uint32
-	written, read atomic.Uint64
-	news          chan bool
+	mu            sync.Mutex
+	cond          *sync.Cond
+	written, read int64
+	done          bool
 }
 
 func newSyncedReader(w io.Writer, r io.ReadSeeker) *syncedReader {
-	return &syncedReader{
-		w:    w,
-		r:    r,
-		news: make(chan bool),
-	}
+	s := &syncedReader{w: w, r: r}
+	s.cond = sync.NewCond(&s.mu)
+	return s
 }
 
-func (s *syncedReader) Write(p []byte) (n int, err error) {
-	defer func() {
-		written := s.written.Add(uint64(n))
-		read := s.read.Load()
-		if written > read {
-			s.wake()
-		}
-	}()
+func (s *syncedReader) Write(p []byte) (int, error) {
+	n, err := s.w.Write(p)
 
-	n, err = s.w.Write(p)
+	s.mu.Lock()
+	s.written += int64(n)
+	s.mu.Unlock()
+	s.cond.Broadcast()
+
 	return n, err
 }
 
-func (s *syncedReader) Read(p []byte) (n int, err error) {
-	defer func() { s.read.Add(uint64(n)) }()
-
+func (s *syncedReader) Read(p []byte) (int, error) {
 	for {
-		s.sleep()
-		n, err = s.r.Read(p)
-		if err == io.EOF && !s.isDone() && n == 0 {
+		s.mu.Lock()
+		for s.read >= s.written && !s.done {
+			s.cond.Wait()
+		}
+		done := s.done
+		s.mu.Unlock()
+
+		n, err := s.r.Read(p)
+
+		s.mu.Lock()
+		s.read += int64(n)
+		s.mu.Unlock()
+
+		if err == io.EOF && !done && n == 0 {
 			continue
 		}
 
-		break
-	}
-
-	return n, err
-}
-
-func (s *syncedReader) isDone() bool {
-	return s.done.Load() == 1
-}
-
-func (s *syncedReader) isBlocked() bool {
-	return s.blocked.Load() == 1
-}
-
-func (s *syncedReader) wake() {
-	if s.isBlocked() {
-		s.blocked.Store(0)
-		s.news <- true
-	}
-}
-
-func (s *syncedReader) sleep() {
-	read := s.read.Load()
-	written := s.written.Load()
-	if read >= written {
-		s.blocked.Store(1)
-		<-s.news
+		return n, err
 	}
 }
 
@@ -374,15 +358,29 @@ func (s *syncedReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	p, err := s.r.Seek(offset, whence)
-	s.read.Store(uint64(p))
+
+	s.mu.Lock()
+	s.read = p
+	s.mu.Unlock()
 
 	return p, err
 }
 
 func (s *syncedReader) Close() error {
-	s.done.Store(1)
-	close(s.news)
+	s.mu.Lock()
+	s.done = true
+	s.mu.Unlock()
+	s.cond.Broadcast()
+
 	return nil
+}
+
+// size returns the number of bytes written.
+func (s *syncedReader) size() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.written
 }
 
 // ObjectWriter writes a single git object to the filesystem.
