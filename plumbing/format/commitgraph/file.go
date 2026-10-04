@@ -51,6 +51,10 @@ const (
 	szCommitData = 2*szUint32 + szUint64
 
 	lenFanout = 256
+
+	// commitTimeMask selects the commit date from a CDAT entry's last
+	// eight bytes: its low 34 bits, with the generation stored above.
+	commitTimeMask = 0x3FFFFFFFF
 )
 
 type sizer interface {
@@ -526,7 +530,7 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 
 	if fi.hasGenerationV2 {
 		// set the GenerationV2 result to the commit time
-		generationV2 = uint64(genAndTime & 0x3FFFFFFFF)
+		generationV2 = genAndTime & commitTimeMask
 
 		// Next read the generation (offset) data from the generation data chunk
 		offset := fi.offsets[GenerationDataChunk] + int64(idx)*szUint32
@@ -568,7 +572,7 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 		ParentHashes:  parentHashes,
 		Generation:    genAndTime >> 34,
 		GenerationV2:  generationV2,
-		When:          time.Unix(int64(genAndTime&0x3FFFFFFFF), 0),
+		When:          time.Unix(int64(genAndTime&commitTimeMask), 0),
 	}, nil
 }
 

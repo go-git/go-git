@@ -28,12 +28,16 @@ type CommitData struct {
 	When time.Time
 }
 
-// GenerationV2Data returns the corrected commit date for the commits
+// GenerationV2Data returns the corrected commit date offset stored in the
+// generation data chunk: GenerationV2 minus the commit date truncated to the
+// 34 bits the CDAT chunk stores, as in Git's [compute_generation_offset].
+//
+// [compute_generation_offset]: https://github.com/git/git/blob/v2.55.0/commit-graph.c#L1341-L1351
 func (c *CommitData) GenerationV2Data() uint64 {
 	if c.GenerationV2 == 0 || c.GenerationV2 == math.MaxUint64 {
 		return 0
 	}
-	return c.GenerationV2 - uint64(c.When.Unix())
+	return c.GenerationV2 - uint64(c.When.Unix())&commitTimeMask
 }
 
 // Index represents a representation of commit graph that allows indexed
