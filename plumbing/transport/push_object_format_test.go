@@ -158,3 +158,40 @@ func TestSizeZeroIDsCopiesWhenResizing(t *testing.T) {
 func formatHash(f config.ObjectFormat, digit string) plumbing.Hash {
 	return plumbing.NewHash(strings.Repeat(digit, f.HexSize()))
 }
+
+func TestSendPackObjectFormatPreCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		local      config.ObjectFormat
+		advertised []string
+		wantErr    bool
+	}{
+		{name: "sha1, not advertised", local: config.SHA1},
+		{name: "sha1, advertised sha1", local: config.SHA1, advertised: []string{"sha1"}},
+		{name: "sha1, advertised sha256", local: config.SHA1, advertised: []string{"sha256"}, wantErr: true},
+		{name: "sha256, not advertised", local: config.SHA256, wantErr: true},
+		{name: "sha256, advertised sha1", local: config.SHA256, advertised: []string{"sha1"}, wantErr: true},
+		{name: "sha256, advertised sha256", local: config.SHA256, advertised: []string{"sha256"}},
+		{name: "sha256, advertised both", local: config.SHA256, advertised: []string{"sha1", "sha256"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			st := memory.NewStorage(memory.WithObjectFormat(tc.local))
+			caps := capability.List{}
+			if tc.advertised != nil {
+				caps.Set(capability.ObjectFormat, tc.advertised...)
+			}
+			out, err := sendPackCaptured(t, st, caps)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, ErrUnsupportedObjectFormat)
+			assert.Empty(t, out, "nothing may be sent before the pre-check")
+		})
+	}
+}

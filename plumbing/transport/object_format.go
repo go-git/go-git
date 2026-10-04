@@ -69,6 +69,14 @@ func sizeZeroIDs(cmds []*packp.Command, f config.ObjectFormat) []*packp.Command 
 	return out
 }
 
+// serverSupportsObjectFormat mirrors git's server_supports_hash.
+func serverSupportsObjectFormat(caps capability.List, f config.ObjectFormat) bool {
+	if !caps.Supports(capability.ObjectFormat) {
+		return f == config.SHA1
+	}
+	return slices.Contains(caps.Get(capability.ObjectFormat), f.String())
+}
+
 // receivePackObjectFormatError mirrors receive-pack.c read_head_info: the
 // client's format must equal the repository's. A client that does not send
 // the capability speaks sha1; one that sends it more than once is held to
