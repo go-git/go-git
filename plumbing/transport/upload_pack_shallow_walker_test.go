@@ -218,3 +218,30 @@ func TestUploadPackV2FetchUnshallowUsesStorerWalk(t *testing.T) {
 		})
 	}
 }
+
+// revListOnlyStorer has a custom walker that cannot see the shallow boundary.
+type revListOnlyStorer struct {
+	storage.Storer
+	revListCalls int
+}
+
+func (s *revListOnlyStorer) RevListObjects(wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	s.revListCalls++
+	return revlist.Objects(s.Storer, wants, haves)
+}
+
+func TestUploadPackV2FetchShallowRevListOnlyStorerUsesBuiltinWalk(t *testing.T) {
+	t.Parallel()
+	st := &revListOnlyStorer{Storer: basicV2Storage(t)}
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"deepen 1",
+		"done",
+	}))
+
+	require.Contains(t, out, "packfile")
+	require.Zero(t, st.revListCalls)
+}
