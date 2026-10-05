@@ -4103,7 +4103,10 @@ func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks 
 	err = r.RepackObjects(&RepackConfig{
 		OnlyDeletePacksOlderThan: deleteTime,
 	})
-	s.NoError(err)
+	if err != nil {
+		diagnoseRepack(s.T(), srcFs)
+	}
+	s.Require().NoError(err)
 
 	numLooseEnd := 0
 	err = los.ForEachObjectHash(func(_ plumbing.Hash) error {
