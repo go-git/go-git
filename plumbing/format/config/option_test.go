@@ -53,3 +53,21 @@ func (s *OptionSuite) TestOption_IsKey() {
 	s.False((&Option{Key: "key"}).IsKey(""))
 	s.False((&Option{Key: ""}).IsKey("key"))
 }
+
+func (s *OptionSuite) TestOptions_Get() {
+	o := Options{
+		&Option{"k", "v"},
+		&Option{"ok", "v1"},
+		&Option{"K", "v2"},
+	}
+	s.Equal("v2", o.Get("k"))
+	s.Equal("v2", o.Get("K"))
+	s.Equal("v1", o.Get("ok"))
+	s.Equal("", o.Get("missing"))
+
+	o = Options{&Option{"k", "v"}, &Option{"K", ""}}
+	s.Equal("", o.Get("K"))
+
+	o = Options{}
+	s.Equal("", o.Get("k"))
+}
