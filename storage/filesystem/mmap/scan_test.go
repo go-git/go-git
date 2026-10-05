@@ -7,6 +7,7 @@ import (
 	"crypto"
 	"encoding/binary"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -362,4 +363,71 @@ func TestNewPackScannerRejectsMalformedIdx(t *testing.T) {
 			assert.Nil(t, scanner)
 		})
 	}
+}
+
+// An idx may legitimately carry a 64-bit offset table, and nothing in the idx
+// itself bounds the offsets it holds against the size of the pack they point
+// into. getObject must therefore reject an out-of-range offset rather than
+// indexing the pack mapping with it.
+func TestPackScannerRejectsOutOfRangeOffset(t *testing.T) {
+	t.Parallel()
+
+	fixture := fixtures.NewOSFixture(
+		fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
+		t.TempDir(),
+	)
+	idx, err := fixture.Idx()
+	require.NoError(t, err)
+	original, err := io.ReadAll(idx)
+	require.NoError(t, err)
+	require.NoError(t, idx.Close())
+
+	hashSize := crypto.SHA256.Size()
+	count := int(binary.BigEndian.Uint32(original[idxHeaderSize+idxFanoutSize-4:]))
+	require.GreaterOrEqual(t, count, 2, "fixture needs at least two objects to allow a 64-bit offset table")
+
+	// The 64-bit offset table sits between the 32-bit offsets and the two
+	// trailing checksums, and Git permits at most count-1 entries, so one
+	// entry keeps the idx within the size validateIdx accepts.
+	trailerStart := len(original) - 2*hashSize
+	mutated := make([]byte, 0, len(original)+off64Size)
+	mutated = append(mutated, original[:trailerStart]...)
+	mutated = binary.BigEndian.AppendUint64(mutated, math.MaxUint64)
+	mutated = append(mutated, original[trailerStart:]...)
+
+	// Point the first object at that entry.
+	off32Start := idxHeaderSize + idxFanoutSize + count*(hashSize+idxCrcSize)
+	binary.BigEndian.PutUint32(mutated[off32Start:], 1<<31)
+
+	names := original[idxHeaderSize+idxFanoutSize:]
+	first, ok := plumbing.FromBytes(names[:hashSize])
+	require.True(t, ok)
+
+	idxPath := filepath.Join(t.TempDir(), "off64.idx")
+	require.NoError(t, os.WriteFile(idxPath, mutated, 0o600))
+	mutatedIdx, err := os.Open(idxPath)
+	require.NoError(t, err)
+
+	pack, err := fixture.Packfile()
+	require.NoError(t, err)
+	rev, err := fixture.Rev()
+	require.NoError(t, err)
+
+	scanner, err := NewPackScanner(hashSize, pack, mutatedIdx, rev)
+	require.NoError(t, err, "the idx is well-formed, only its offset is out of range")
+	defer scanner.Close()
+
+	offset, err := scanner.FindOffset(first)
+	require.NoError(t, err)
+	require.Equal(t, uint64(math.MaxUint64), offset)
+
+	obj, err := scanner.Get(first)
+	assert.ErrorIs(t, err, ErrOffsetNotFound)
+	assert.Nil(t, obj)
+
+	// GetByOffset resolves the hash through the rev index first, which no
+	// longer maps this offset, so it stops before reaching getObject.
+	obj, err = scanner.GetByOffset(offset)
+	assert.ErrorIs(t, err, ErrObjectNotFound)
+	assert.Nil(t, obj)
 }

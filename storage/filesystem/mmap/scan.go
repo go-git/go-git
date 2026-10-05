@@ -133,7 +133,12 @@ func (s *PackScanner) GetByOffset(offset uint64) (plumbing.EncodedObject, error)
 
 // getObject retrieves object metadata from the pack at the given offset.
 func (s *PackScanner) getObject(h plumbing.Hash, offset uint64) (plumbing.EncodedObject, error) {
-	if int(offset+1) >= len(s.packMmap) {
+	// The idx bounds the size of its 64-bit offset table but not the values
+	// held in it, so an offset can point past the end of the pack. The
+	// comparison is made in uint64 as converting to int wraps for large
+	// offsets and lets them through.
+	packLen := uint64(len(s.packMmap))
+	if offset >= packLen || packLen-offset < 2 {
 		return nil, ErrOffsetNotFound
 	}
 
