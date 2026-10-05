@@ -56,6 +56,28 @@ func (s *ConfigSuite) TearDownTest() {
 	defer os.RemoveAll(s.path)
 }
 
+func TestSetConfigKeepsExistingConfigWhenEncodingFails(t *testing.T) {
+	t.Parallel()
+
+	const existing = "[core]\n\tbare = false\n"
+
+	fs := memfs.New()
+	require.NoError(t, util.WriteFile(fs, "config", []byte(existing), 0o644))
+	cs := &ConfigStorage{dir: dotgit.New(fs)}
+
+	cfg, err := cs.Config()
+	require.NoError(t, err)
+	// Submodule names come from .gitmodules, and git-config(1) cannot
+	// represent a newline in a subsection name.
+	cfg.Submodules["a\nb"] = &config.Submodule{Name: "a\nb", URL: "https://example.com/x.git"}
+
+	require.Error(t, cs.SetConfig(cfg))
+
+	data, err := util.ReadFile(fs, "config")
+	require.NoError(t, err)
+	assert.Equal(t, existing, string(data))
+}
+
 // newDualStorer builds a ConfigStorage backed by a RepositoryFilesystem that
 // mirrors a linked-worktree layout:
 //
