@@ -685,15 +685,11 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 			if cached, ok := s.objectCache.Get(h); ok {
 				return cached.Size(), nil
 			}
-			p, perr := s.packfile(idx, pack)
-			if perr != nil {
-				return 0, perr
-			}
-			size, err = p.GetSizeByOffset(offset)
+			size, err = s.getSizeFromPackfileAt(pack, idx, offset)
 			if err == nil {
 				return size, nil
 			}
-			if !errors.Is(err, plumbing.ErrObjectNotFound) && !errors.Is(err, os.ErrNotExist) {
+			if !errors.Is(err, plumbing.ErrObjectNotFound) && !isMissingPack(err) {
 				return 0, err
 			}
 			// Membership claimed the hash but the pack lost it, or
@@ -727,11 +723,7 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 	if pack.IsZero() {
 		return 0, err
 	}
-	p, err := s.packfile(idx, pack)
-	if err != nil {
-		return 0, err
-	}
-	return p.GetSizeByOffset(offset)
+	return s.getSizeFromPackfileAt(pack, idx, offset)
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -761,7 +753,7 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 			obj, err = s.getFromPackfileAt(pack, idx, h, offset, false)
 			// The pack is gone, as after a repack: look for the
 			// object elsewhere, and in the packs on disk.
-			routed = !errors.Is(err, os.ErrNotExist)
+			routed = !isMissingPack(err)
 		}
 	}
 	if !routed {
@@ -882,6 +874,25 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (plumb
 		return nil, plumbing.ErrObjectNotFound
 	}
 	return s.getFromPackfileAt(pack, idx, h, offset, canBeDelta)
+}
+
+// getSizeFromPackfileAt is getFromPackfileAt for the size of the object
+// alone.
+func (s *ObjectStorage) getSizeFromPackfileAt(pack plumbing.Hash, idx idxfile.Index, offset int64) (size int64, err error) {
+	p, err := s.packfile(idx, pack)
+	if err != nil {
+		return 0, err
+	}
+	defer ioutil.CheckClose(p, &err)
+
+	return p.GetSizeByOffset(offset)
+}
+
+// isMissingPack reports whether err says that a pack is no longer on disk, as
+// after a repack. Reopening a pack reports dotgit.ErrPackfileNotFound rather
+// than the fs.ErrNotExist of a first open.
+func isMissingPack(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, dotgit.ErrPackfileNotFound)
 }
 
 // getFromPackfileAt fetches the object at a pre-located pack

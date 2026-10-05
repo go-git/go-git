@@ -125,3 +125,46 @@ func TestEncodedObjectAfterExternalRepack(t *testing.T) {
 		assert.NoError(t, err, "EncodedObjectSize(%s)", h)
 	}
 }
+
+// A pack whose handle is cached but whose descriptors were released is
+// reopened on the next read, and a repack may have deleted it by then. The
+// reopen reports dotgit.ErrPackfileNotFound rather than os.ErrNotExist.
+func TestEncodedObjectAfterExternalRepackOfReleasedPack(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		args = append([]string{
+			"-C", dir, "-c", "user.name=a", "-c", "user.email=a@example.com",
+			"-c", "maintenance.auto=false", "-c", "gc.auto=0",
+		}, args...)
+		out, err := gitenv.Command("git", args...).CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "packed")
+	git("repack", "-adq")
+	packed := plumbing.NewHash(git("rev-parse", "HEAD"))
+
+	// No object cache, so that every read goes to the pack, and an index held
+	// in memory, so that it still routes there once the descriptors are gone.
+	storer := NewStorageWithOptions(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRU(0),
+		Options{UseInMemoryIdx: true})
+	t.Cleanup(func() { _ = storer.Close() })
+	_, err := storer.EncodedObject(plumbing.CommitObject, packed)
+	require.NoError(t, err)
+	require.NoError(t, storer.CloseIdleDescriptors())
+
+	git("commit", "-q", "--allow-empty", "-m", "loose")
+	git("repack", "-adq")
+
+	_, err = storer.EncodedObjectSize(packed)
+	assert.NoError(t, err, "EncodedObjectSize")
+	_, err = storer.EncodedObject(plumbing.CommitObject, packed)
+	assert.NoError(t, err, "EncodedObject")
+}
