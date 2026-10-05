@@ -3,6 +3,8 @@ package storer
 import (
 	"errors"
 	"io"
+	"slices"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -27,6 +29,59 @@ type ReferenceStorer interface {
 	RemoveReference(plumbing.ReferenceName) error
 	CountLooseRefs() (int, error)
 	PackRefs() error
+}
+
+// PrefixReferenceIterer is an optional interface for ReferenceStorer
+// implementations that can iterate over the references under a name prefix
+// without enumerating all of them.
+type PrefixReferenceIterer interface {
+	// IterReferencesWithPrefix returns an iterator over the references whose
+	// names start with prefix: the references IterReferences yields, filtered
+	// by prefix, each name once, in ascending byte-wise name order, with the
+	// same values. It need not read references outside prefix, so it may not
+	// report errors that reading those would. As with IterReferences, a
+	// caller that stops before the end should Close the iterator.
+	//
+	// Matching is byte-wise: "refs/heads/fe" matches "refs/heads/feature".
+	// Use a trailing slash to select a namespace: "refs/remotes/origin/"
+	// excludes "refs/remotes/origin-other/".
+	// Both matching and order follow Git's reference backends:
+	// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/refs-internal.h#L460-L466
+	IterReferencesWithPrefix(prefix string) (ReferenceIter, error)
+}
+
+// IterReferencesWithPrefix returns an iterator over the references in s whose
+// names start with prefix, in ascending byte-wise name order. It uses s's
+// PrefixReferenceIterer implementation when available, and otherwise filters
+// and sorts all of s.IterReferences, keeping the first of repeated names.
+func IterReferencesWithPrefix(s ReferenceStorer, prefix string) (ReferenceIter, error) {
+	if p, ok := s.(PrefixReferenceIterer); ok {
+		return p.IterReferencesWithPrefix(prefix)
+	}
+
+	iter, err := s.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+
+	var refs []*plumbing.Reference
+	err = iter.ForEach(func(r *plumbing.Reference) error {
+		if strings.HasPrefix(r.Name().String(), prefix) {
+			refs = append(refs, r)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(refs, func(a, b *plumbing.Reference) int {
+		return strings.Compare(a.Name().String(), b.Name().String())
+	})
+	refs = slices.CompactFunc(refs, func(a, b *plumbing.Reference) bool {
+		return a.Name() == b.Name()
+	})
+	return NewReferenceSliceIter(refs), nil
 }
 
 // ReferenceIter is a generic closable interface for iterating over references.
