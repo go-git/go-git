@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -117,4 +118,14 @@ func TestWildmatchCaseFold(t *testing.T) {
 			assert.Equal(t, tt.want, wildmatch(tt.pattern, tt.text, tt.icase))
 		})
 	}
+}
+
+// From t3070-wildmatch.sh: each '*' must not retry the rest of the pattern
+// at every position, or this takes exponential time.
+func TestWildmatchIsNotExponential(t *testing.T) {
+	t.Parallel()
+
+	text := strings.Repeat("a", 61) + "b"
+	assert.False(t, wildmatch(strings.Repeat("*a", 16), text, false))
+	assert.False(t, wildmatch(strings.Repeat("*a", 16), text, true))
 }

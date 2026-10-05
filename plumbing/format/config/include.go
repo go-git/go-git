@@ -57,15 +57,16 @@ type IncludeOptions struct {
 	Open func(path string) (io.ReadCloser, error)
 
 	// Path is the absolute path of the config file being decoded.
-	// Relative include paths and "./" gitdir patterns are resolved
-	// against its directory. When empty, a relative include path is an
-	// error and a "./" gitdir condition is false.
+	// Relative include paths and "./" gitdir and worktree patterns are
+	// resolved against its directory. When empty, a relative include
+	// path is an error and a "./" gitdir or worktree condition is false.
 	Path string
 
 	// Home expands a leading "~/" in include paths, and its real path a
-	// leading "~/" in gitdir patterns. A leading "~user/" is expanded via
-	// os/user regardless of this field. When empty, a "~/" include path
-	// is an error and a "~/" gitdir pattern is left unexpanded.
+	// leading "~/" in gitdir and worktree patterns. A leading "~user/" is
+	// expanded via os/user regardless of this field. When empty, a "~/"
+	// include path is an error and a "~/" gitdir or worktree pattern is
+	// left unexpanded.
 	Home string
 
 	// GitDir is the absolute path of the repository's git directory.
@@ -74,6 +75,14 @@ type IncludeOptions struct {
 	// pattern naming a symlinked directory matches too. They are false
 	// when it is empty.
 	GitDir string
+
+	// WorkTree is the absolute path of the repository's working tree.
+	// "worktree:" and "worktree/i:" conditions are matched against its
+	// real path only: git resolves the working tree when it sets up the
+	// repository, so a pattern naming a symlinked directory does not
+	// match. It must be empty for a bare repository, so that such
+	// conditions are false.
+	WorkTree string
 
 	// Branch is the short name of the currently checked out branch, as
 	// matched by "onbranch:" conditions. It must be empty when HEAD is
@@ -134,9 +143,13 @@ func includeDirective(section, subsection, key string) (condition string, ok boo
 func (o *IncludeOptions) conditionIsTrue(condition string) bool {
 	switch {
 	case strings.HasPrefix(condition, "gitdir:"):
-		return o.matchGitDir(strings.TrimPrefix(condition, "gitdir:"), false)
+		return o.matchPath(o.GitDir, strings.TrimPrefix(condition, "gitdir:"), false)
 	case strings.HasPrefix(condition, "gitdir/i:"):
-		return o.matchGitDir(strings.TrimPrefix(condition, "gitdir/i:"), true)
+		return o.matchPath(o.GitDir, strings.TrimPrefix(condition, "gitdir/i:"), true)
+	case strings.HasPrefix(condition, "worktree:"):
+		return o.matchPath(realPath(o.WorkTree), strings.TrimPrefix(condition, "worktree:"), false)
+	case strings.HasPrefix(condition, "worktree/i:"):
+		return o.matchPath(realPath(o.WorkTree), strings.TrimPrefix(condition, "worktree/i:"), true)
 	case strings.HasPrefix(condition, "onbranch:"):
 		return o.matchBranch(strings.TrimPrefix(condition, "onbranch:"))
 	case strings.HasPrefix(condition, "hasconfig:remote.*.url:"):
@@ -146,15 +159,16 @@ func (o *IncludeOptions) conditionIsTrue(condition string) bool {
 	return false
 }
 
-// matchGitDir evaluates a "gitdir:" or "gitdir/i:" condition against
-// GitDir, applying the pattern rewriting documented in git-config(1):
-// a "~/" prefix is expanded, a "./" prefix is anchored to the including
-// file's directory, a pattern that is neither of those and is not
-// absolute is prefixed with "**/", and a trailing "/" gains a "**".
+// matchPath evaluates a "gitdir:" or "worktree:" condition, or their
+// "/i" variants, against path, applying the pattern rewriting documented
+// in git-config(1): a "~/" prefix is expanded, a "./" prefix is anchored
+// to the including file's directory, a pattern that is neither of those
+// and is not absolute is prefixed with "**/", and a trailing "/" gains a
+// "**".
 //
 // https://github.com/git/git/blob/8103b446517e0c44e67561b9d0ccce56efa60a71/config.c#L187-L285
-func (o *IncludeOptions) matchGitDir(pattern string, icase bool) bool {
-	if o.GitDir == "" {
+func (o *IncludeOptions) matchPath(path, pattern string, icase bool) bool {
+	if path == "" {
 		return false
 	}
 
@@ -189,8 +203,8 @@ func (o *IncludeOptions) matchGitDir(pattern string, icase bool) bool {
 		pattern += "**"
 	}
 
-	matches := func(gitDir string) bool {
-		text := filepath.ToSlash(gitDir)
+	matches := func(path string) bool {
+		text := filepath.ToSlash(path)
 		if prefix > 0 {
 			if len(text) < prefix || !strEqualFold(pattern[:prefix], text[:prefix], icase) {
 				return false
@@ -199,11 +213,11 @@ func (o *IncludeOptions) matchGitDir(pattern string, icase bool) bool {
 		return wildmatch(pattern[prefix:], text[prefix:], icase)
 	}
 
-	if resolved := realPath(o.GitDir); matches(resolved) {
+	if resolved := realPath(path); matches(resolved) {
 		return true
 	}
 
-	return matches(o.GitDir)
+	return matches(path)
 }
 
 // realPath returns the absolute path with symlinks resolved, or path

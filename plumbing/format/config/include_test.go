@@ -357,6 +357,90 @@ func TestIncludeIfGitDirRelativeToConfigFile(t *testing.T) {
 	assert.Equal(t, "rel@example.com", cfg.Section("user").Option("email"))
 }
 
+func TestIncludeIfWorkTree(t *testing.T) {
+	t.Parallel()
+
+	included := testAbs("cfg", "work")
+	files := map[string]string{included: "[user]\n\temail = work@example.com\n"}
+
+	tests := []struct {
+		name      string
+		condition string
+		workTree  string
+		want      bool
+	}{
+		{
+			name:      "exact path",
+			condition: "worktree:" + slash(testAbs("src", "work", "repo")),
+			workTree:  testAbs("src", "work", "repo"),
+			want:      true,
+		},
+		{
+			name:      "trailing slash matches only below the path",
+			condition: "worktree:" + slash(testAbs("src", "work", "repo")) + "/",
+			workTree:  testAbs("src", "work", "repo"),
+			want:      false,
+		},
+		{
+			name:      "trailing slash matches everything below",
+			condition: "worktree:" + slash(testAbs("src", "work")) + "/",
+			workTree:  testAbs("src", "work", "repo"),
+			want:      true,
+		},
+		{
+			name:      "bare name is prefixed with **/",
+			condition: "worktree:repo",
+			workTree:  testAbs("src", "work", "repo"),
+			want:      true,
+		},
+		{
+			name:      "the git directory is not the working tree",
+			condition: "worktree:" + slash(testAbs("src", "work", "repo", ".git")),
+			workTree:  testAbs("src", "work", "repo"),
+			want:      false,
+		},
+		{
+			name:      "case sensitive by default",
+			condition: "worktree:" + slash(testAbs("src", "WORK")) + "/",
+			workTree:  testAbs("src", "work", "repo"),
+			want:      false,
+		},
+		{
+			name:      "case insensitive variant",
+			condition: "worktree/i:" + slash(testAbs("src", "WORK")) + "/",
+			workTree:  testAbs("src", "work", "repo"),
+			want:      true,
+		},
+		{
+			name:      "bare repository means false",
+			condition: "worktree:",
+			workTree:  "",
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &IncludeOptions{
+				Path:     testAbs("cfg", "main"),
+				GitDir:   testAbs("src", "work", "repo", ".git"),
+				WorkTree: tt.workTree,
+				Open:     openMap(files),
+			}
+
+			cfg := decode(t,
+				"[includeIf \""+tt.condition+"\"]\n\tpath = "+slash(included)+"\n", opts)
+
+			if tt.want {
+				assert.Equal(t, "work@example.com", cfg.Section("user").Option("email"))
+			} else {
+				assert.Empty(t, cfg.Section("user").Option("email"))
+			}
+		})
+	}
+}
+
 func TestIncludeIfOnBranch(t *testing.T) {
 	t.Parallel()
 
@@ -599,6 +683,37 @@ func TestIncludeIfGitDirThroughSymlink(t *testing.T) {
 	}
 }
 
+// Unlike gitdir:, a worktree: pattern is matched only against the target
+// path, because git resolves the working tree when it sets up the
+// repository.
+func TestIncludeIfWorkTreeThroughSymlink(t *testing.T) {
+	t.Parallel()
+
+	root, target, link := symlinkedRoot(t)
+	included := filepath.Join(root, "inc")
+	writeFile(t, included, "[user]\n\temail = work@example.com\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "repo"), 0o755))
+
+	for _, tt := range []struct {
+		name, pattern string
+		want          bool
+	}{
+		{"pattern names the symlink", link + "/", false},
+		{"pattern names the target path", target + "/", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &IncludeOptions{Path: filepath.Join(root, "main"), WorkTree: filepath.Join(link, "repo"), Open: openOS}
+			cfg := decode(t, "[includeIf \"worktree:"+slash(tt.pattern)+"\"]\n\tpath = "+slash(included)+"\n", opts)
+			if tt.want {
+				assert.Equal(t, "work@example.com", cfg.Section("user").Option("email"))
+			} else {
+				assert.Empty(t, cfg.Section("user").Option("email"))
+			}
+		})
+	}
+}
+
 // "~/" in a gitdir: pattern stands for the target path of the home
 // directory, and "./" for the target directory of the including file.
 func TestIncludeIfGitDirUsesRealPaths(t *testing.T) {
@@ -666,4 +781,36 @@ func TestIncludeIfForbidsRemoteURLWhileCollecting(t *testing.T) {
 			}
 		})
 	}
+}
+
+func FuzzDecoderWithIncludes(f *testing.F) {
+	f.Add([]byte("[include]\n\tpath = inc\n"), []byte("[user]\n\tname = a\n"), false)
+	f.Add([]byte("[includeIf \"gitdir:**/r/\"]\n\tpath = ~/inc\n"), []byte("[include]\n\tpath = ../inc\n"), false)
+	f.Add([]byte("[includeIf \"hasconfig:remote.*.url:https://**\"]\n\tpath = inc\n"),
+		[]byte("[remote \"o\"]\n\turl = https://example.com\n"), true)
+	f.Add([]byte("[includeIf \"worktree/i:./[a-z]*/\"]\n\tpath = inc\n[includeIf \"onbranch:m*\"]\n\tpath = inc\n"),
+		[]byte("[include]\n\tpath = inc\n\tpath = inc\n"), false)
+
+	f.Fuzz(func(_ *testing.T, root, included []byte, unconditionalRemoteURL bool) {
+		// Every path opens the same file, so an include that names itself
+		// more than once fans out at every level; the budget keeps each
+		// run bounded.
+		opens := 0
+		opts := &IncludeOptions{
+			Open: func(string) (io.ReadCloser, error) {
+				if opens++; opens > 100 {
+					return nil, fs.ErrNotExist
+				}
+				return io.NopCloser(bytes.NewReader(included)), nil
+			},
+			Path:                   testAbs("home", "u", "r", ".git", "config"),
+			Home:                   testAbs("home", "u"),
+			GitDir:                 testAbs("home", "u", "r", ".git"),
+			WorkTree:               testAbs("home", "u", "r"),
+			Branch:                 "main",
+			RemoteURLs:             []string{"https://example.com/r.git"},
+			UnconditionalRemoteURL: unconditionalRemoteURL,
+		}
+		_ = NewDecoderWithIncludes(bytes.NewReader(root), opts).Decode(New())
+	})
 }

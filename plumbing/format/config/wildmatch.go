@@ -35,11 +35,22 @@ func lowerASCII(c byte) byte {
 	return c
 }
 
+func foldASCII(c byte, icase bool) byte {
+	if icase {
+		return lowerASCII(c)
+	}
+	return c
+}
+
 func upperASCII(c byte) byte {
 	if c >= 'a' && c <= 'z' {
 		return c - ('a' - 'A')
 	}
 	return c
+}
+
+func isGlobSpecial(c byte) bool {
+	return c == '*' || c == '?' || c == '[' || c == '\\'
 }
 
 func isAlnumASCII(c byte) bool {
@@ -136,7 +147,7 @@ func doWildmatch(p, text []byte, icase bool) int {
 			if pi >= len(p) {
 				// Trailing star: a single '*' must not swallow slashes.
 				if !matchSlash && bytes.IndexByte(text[ti:], '/') >= 0 {
-					return wmNoMatch
+					return wmAbortToStarStar
 				}
 				return wmMatch
 			}
@@ -145,7 +156,7 @@ func doWildmatch(p, text []byte, icase bool) int {
 				// "*/" matches exactly the remainder of one component.
 				idx := bytes.IndexByte(text[ti:], '/')
 				if idx < 0 {
-					return wmNoMatch
+					return wmAbortAll
 				}
 				ti += idx + 1
 				pi++
@@ -153,6 +164,25 @@ func doWildmatch(p, text []byte, icase bool) int {
 			}
 
 			for ti < len(text) {
+				if lit := p[pi]; !isGlobSpecial(lit) {
+					// When the star is followed by a literal, whatever
+					// precedes the next occurrence of that literal must
+					// belong to the star, so skip straight to it. Without
+					// matchSlash the star cannot reach past a '/'.
+					if icase {
+						lit = lowerASCII(lit)
+					}
+					for ti < len(text) && (matchSlash || text[ti] != '/') && foldASCII(text[ti], icase) != lit {
+						ti++
+					}
+					if ti >= len(text) || foldASCII(text[ti], icase) != lit {
+						if matchSlash {
+							return wmAbortAll
+						}
+						return wmAbortToStarStar
+					}
+				}
+
 				matched := doWildmatch(p[pi:], text[ti:], icase)
 				if matched != wmNoMatch {
 					if !matchSlash || matched != wmAbortToStarStar {
