@@ -87,3 +87,48 @@ func TestUploadPackV2FetchDeepenExistingShallowUsesStorerWalk(t *testing.T) {
 	require.ElementsMatch(t, [][]plumbing.Hash{{parent}, {head.Hash()}}, st.shallowsCalls)
 	require.Zero(t, st.revListCalls)
 }
+
+// revListOnlyStorer has a custom walker that cannot see the shallow boundary.
+type revListOnlyStorer struct {
+	storage.Storer
+	revListCalls int
+}
+
+func (s *revListOnlyStorer) RevListObjects(wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
+	s.revListCalls++
+	return revlist.Objects(s.Storer, wants, haves)
+}
+
+func TestShallowObjectsToUploadRevListOnlyStorerUsesBuiltinWalk(t *testing.T) {
+	t.Parallel()
+	st := &revListOnlyStorer{Storer: basicV2Storage(t)}
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	c, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
+	parent := c.ParentHashes[0]
+
+	objs, err := shallowObjectsToUpload(st, []plumbing.Hash{head.Hash()}, nil, []plumbing.Hash{head.Hash()})
+	require.NoError(t, err)
+	require.Contains(t, objs, head.Hash())
+	require.NotContains(t, objs, parent, "depth-1 walk must exclude the boundary's parent")
+	// RevListObjects would walk past the boundary and leak the full history.
+	require.Zero(t, st.revListCalls)
+}
+
+func TestUploadPackV2FetchShallowRevListOnlyStorerUsesBuiltinWalk(t *testing.T) {
+	t.Parallel()
+	st := &revListOnlyStorer{Storer: basicV2Storage(t)}
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"deepen 1",
+		"done",
+	}))
+
+	require.Contains(t, out, "packfile")
+	require.Zero(t, st.revListCalls)
+}
