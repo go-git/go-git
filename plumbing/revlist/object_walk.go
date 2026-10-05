@@ -352,20 +352,26 @@ func (w *objectWalk) processCommitTrees(lc *object.Commit) error {
 		return fmt.Errorf("getting tree for %s: %w", lc.Hash, err)
 	}
 
+	// A shallow boundary commit is grafted, so Git treats it as having no
+	// parents. Its tree has to be collected in full even when the parent
+	// commit is still present locally, because the receiver has no history
+	// before the boundary to diff against.
 	var oldTrees []*object.Tree
-	for i := 0; i < lc.NumParents(); i++ {
-		parent, err := lc.Parent(i)
-		if err != nil {
-			if errors.Is(err, plumbing.ErrObjectNotFound) {
-				continue // parent may be beyond haves boundary
+	if _, shallow := w.shallows[lc.Hash]; !shallow {
+		for i := 0; i < lc.NumParents(); i++ {
+			parent, err := lc.Parent(i)
+			if err != nil {
+				if errors.Is(err, plumbing.ErrObjectNotFound) {
+					continue // parent may be beyond haves boundary
+				}
+				return fmt.Errorf("getting parent commit %s: %w", lc.ParentHashes[i], err)
 			}
-			return fmt.Errorf("getting parent commit %s: %w", lc.ParentHashes[i], err)
+			pt, err := parent.Tree()
+			if err != nil {
+				return fmt.Errorf("getting parent tree for %s: %w", parent.Hash, err)
+			}
+			oldTrees = append(oldTrees, pt)
 		}
-		pt, err := parent.Tree()
-		if err != nil {
-			return fmt.Errorf("getting parent tree for %s: %w", parent.Hash, err)
-		}
-		oldTrees = append(oldTrees, pt)
 	}
 
 	if err := collectChangedTreeObjects(w.s, newTree, oldTrees, w.seen, &w.result); err != nil {
