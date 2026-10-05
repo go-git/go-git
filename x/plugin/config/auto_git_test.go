@@ -307,6 +307,24 @@ func TestGitBehaviour_UnsupportedScope(t *testing.T) {
 	require.Error(t, err)
 }
 
+// Load follows includes. With no repository at hand, a
+// hasconfig:remote.*.url: condition still matches the remotes the scope
+// defines, as git matches those of the whole configuration.
+func TestGitBehaviour_LoadResolvesIncludes(t *testing.T) {
+	t.Setenv(envGitConfigGlobal, "/global.cfg")
+
+	src := memAuto(t, map[string]string{
+		"/global.cfg": "[include]\n\tpath = /plain.cfg\n" +
+			"[includeIf \"hasconfig:remote.*.url:https://work.example.com/**\"]\n\tpath = /work.cfg\n" +
+			"[remote \"origin\"]\n\turl = https://work.example.com/r.git\n",
+		"/plain.cfg": "[user]\n\tname = FromPlainInclude\n",
+		"/work.cfg":  "[user]\n\temail = me@work.example.com\n",
+	})
+
+	assert.Equal(t, "FromPlainInclude", loadUserName(t, src, config.GlobalScope))
+	assert.Equal(t, "me@work.example.com", loadUserEmail(t, src, config.GlobalScope))
+}
+
 // setTestHome sets HOME (and USERPROFILE on Windows) so that
 // os.UserHomeDir returns the given path on every platform.
 func setTestHome(t *testing.T, home string) {
