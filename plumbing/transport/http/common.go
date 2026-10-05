@@ -80,9 +80,9 @@ const maxDrainSize = 64 << 10
 // The discard stops at maxDrainSize, which bounds a server that keeps sending.
 // A server that stops sending without closing is bounded by the request's
 // context instead, since net/http ends the read when that context does.
-func drainAndClose(body io.ReadCloser) {
+func drainAndClose(body io.ReadCloser) error {
 	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainSize))
-	_ = body.Close()
+	return body.Close()
 }
 
 // contentMediaType returns the media type of a Content-Type header, without
@@ -137,7 +137,7 @@ func checkError(r *http.Response) error {
 			_, _ = message.ReadFrom(io.LimitReader(r.Body, maxErrorBodySize))
 			reason = strings.TrimSpace(sanitizeReason(message.String()))
 		}
-		drainAndClose(r.Body)
+		_ = drainAndClose(r.Body)
 	}
 
 	err := &Err{
