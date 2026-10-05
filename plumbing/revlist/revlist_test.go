@@ -885,3 +885,60 @@ func BenchmarkObjects(b *testing.B) {
 		}
 	}
 }
+
+func testMakeBlob(t *testing.T, s storer.EncodedObjectStorer, content string) plumbing.Hash {
+	t.Helper()
+	obj := s.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	hash, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
+// A shallow boundary commit is grafted: Git treats it as having no parents,
+// so everything its tree references has to be sent even when the parent
+// commit and its objects are still present in the object store. Diffing the
+// boundary commit against that parent drops the objects they share.
+func (s *RevListSuite) TestRevListObjects_ShallowBoundaryIgnoresPresentParent() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	shared := testMakeBlob(t, sto, "shared\n")
+	oldFile := testMakeBlob(t, sto, "old\n")
+	newFile := testMakeBlob(t, sto, "new\n")
+
+	parentTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "file", Mode: filemode.Regular, Hash: oldFile},
+		{Name: "shared", Mode: filemode.Regular, Hash: shared},
+	})
+	parent := testMakeCommit(t, sto, parentTree)
+
+	boundaryTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "file", Mode: filemode.Regular, Hash: newFile},
+		{Name: "shared", Mode: filemode.Regular, Hash: shared},
+	})
+	boundary := testMakeCommit(t, sto, boundaryTree, parent)
+	s.Require().NoError(sto.SetShallow([]plumbing.Hash{boundary}))
+
+	// An unrelated have, so the walk takes the haves path rather than the
+	// no-haves fast path.
+	haveBlob := testMakeBlob(t, sto, "unrelated\n")
+	haveTree := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "other", Mode: filemode.Regular, Hash: haveBlob},
+	})
+	have := testMakeCommit(t, sto, haveTree)
+
+	got, err := Objects(sto, []plumbing.Hash{boundary}, []plumbing.Hash{have})
+	s.Require().NoError(err)
+
+	// git rev-list --objects <boundary> ^<have> against a .git/shallow
+	// listing the boundary returns exactly these four, shared blob included.
+	s.ElementsMatch([]plumbing.Hash{boundary, boundaryTree, newFile, shared}, got)
+	s.NotContains(got, parent, "parent beyond the shallow boundary must not be walked")
+	s.NotContains(got, oldFile, "parent-only blob must not be included")
+}
