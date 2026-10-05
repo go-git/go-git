@@ -32,7 +32,15 @@ func defaultProtectHFS() bool {
 //
 // [1]: https://github.com/git/git/commit/9102f958ee5
 func defaultProtectNTFS() bool {
-	return true
+	// Reserved device names (PRN, CON, AUX, ...) are only dangerous on
+	// Windows filesystems. Upstream Git has protected_ntfs default on
+	// everywhere since 9102f958ee5 (CVE-2019-1353) because WSL can reach
+	// NTFS-mounted worktrees; a pure-Linux/macOS worktree has no such
+	// path, and gating unconditionally breaks checkouts of repositories
+	// that legitimately contain prn.sh-style names (issue #2322).
+	// Users who share worktrees with Windows hosts can still set
+	// core.protectNTFS explicitly.
+	return runtime.GOOS == "windows"
 }
 
 // worktreeFilesystem wraps a billy.Filesystem and validates every path passed
