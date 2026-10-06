@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"testing/iotest"
 
 	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -162,6 +163,18 @@ func TestParserMalformedPack(t *testing.T) {
 
 	_, err := parser.Parse()
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
+
+func TestParserShortReads(t *testing.T) {
+	t.Parallel()
+	f := fixtures.Basic().One()
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	parser := packfile.NewParser(iotest.OneByteReader(pf))
+
+	h, err := parser.Parse()
+	require.NoError(t, err)
+	assert.Equal(t, f.PackfileHash, h.String())
 }
 
 func TestThinPack(t *testing.T) {

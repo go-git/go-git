@@ -23,14 +23,15 @@ import (
 )
 
 var (
-	// ErrEmptyPackfile is returned by ReadHeader when no data is found in the packfile.
+	// ErrEmptyPackfile is returned when the packfile holds no data.
 	ErrEmptyPackfile = NewError("empty packfile")
-	// ErrBadSignature is returned by ReadHeader when the signature in the packfile is incorrect.
+	// ErrBadSignature is returned when the packfile does not start with the
+	// pack signature, including when it is too short to hold one.
 	ErrBadSignature = NewError("bad signature")
 	// ErrMalformedPackfile is returned when the packfile format is incorrect.
 	ErrMalformedPackfile = NewError("malformed pack file")
-	// ErrUnsupportedVersion is returned by ReadHeader when the packfile version is
-	// different than VersionSupported.
+	// ErrUnsupportedVersion is returned when the packfile version is not
+	// VersionSupported.
 	ErrUnsupportedVersion = NewError("unsupported packfile version")
 	// ErrSeekNotSupported returned if seek is not support.
 	ErrSeekNotSupported = NewError("not seek support")
@@ -372,11 +373,12 @@ type stateFn func(*Scanner) (stateFn, error)
 // that handles the entire packfile header.
 func packHeaderSignature(r *Scanner) (stateFn, error) {
 	start := make([]byte, 4)
-	n, err := r.Read(start)
-	if err != nil {
-		if n == 0 && err == io.EOF {
-			return nil, ErrEmptyPackfile
-		}
+	// Input too short to hold a signature falls through to ErrBadSignature.
+	_, err := io.ReadFull(r, start)
+	if err == io.EOF {
+		return nil, ErrEmptyPackfile
+	}
+	if err != nil && err != io.ErrUnexpectedEOF {
 		return nil, fmt.Errorf("read signature: %w", err)
 	}
 

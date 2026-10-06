@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"testing"
+	"testing/iotest"
 
 	"github.com/go-git/go-billy/v6"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -126,6 +127,13 @@ func TestPackHeaderSignature(t *testing.T) {
 			nextState: packVersion,
 		},
 		{
+			name: "valid signature over short reads",
+			scanner: &Scanner{
+				scannerReader: newScannerReader(iotest.OneByteReader(bytes.NewReader([]byte("PACK"))), nil, nil),
+			},
+			nextState: packVersion,
+		},
+		{
 			name: "invalid signature",
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader([]byte("FOOBAR")), nil, nil),
@@ -137,7 +145,14 @@ func TestPackHeaderSignature(t *testing.T) {
 			scanner: &Scanner{
 				scannerReader: newScannerReader(bytes.NewReader([]byte("FOO")), nil, nil),
 			},
-			wantErr: ErrMalformedPackfile,
+			wantErr: ErrBadSignature,
+		},
+		{
+			name: "invalid signature - too small over short reads",
+			scanner: &Scanner{
+				scannerReader: newScannerReader(iotest.OneByteReader(bytes.NewReader([]byte("PAC"))), nil, nil),
+			},
+			wantErr: ErrBadSignature,
 		},
 		{
 			name: "empty packfile: ErrEmptyPackfile",
