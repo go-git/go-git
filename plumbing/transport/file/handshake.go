@@ -12,7 +12,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	if err != nil {
 		return nil, err
 	}
-	return transport.NewStreamSession(conn, req.Command)
+	return transport.NewStreamSession(conn, req)
 }
 
 var (

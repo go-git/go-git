@@ -23,7 +23,7 @@ func TestBuildUpdateRequestsWithReportStatus(t *testing.T) {
 		},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.True(t, upreq.Capabilities.Supports(capability.ReportStatus))
 	require.Len(t, upreq.Commands, 1)
 	assert.Equal(t, plumbing.ReferenceName("refs/heads/master"), upreq.Commands[0].Name)
@@ -39,7 +39,7 @@ func TestBuildUpdateRequestsWithoutReportStatus(t *testing.T) {
 		},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.False(t, upreq.Capabilities.Supports(capability.ReportStatus))
 }
 
@@ -55,7 +55,7 @@ func TestBuildUpdateRequestsWithProgress(t *testing.T) {
 		Progress: &mockWriter{},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Sideband64k))
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband))
 }
@@ -72,7 +72,7 @@ func TestBuildUpdateRequestsWithProgressFallback(t *testing.T) {
 		Progress: &mockWriter{},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.False(t, upreq.Capabilities.Supports(capability.Sideband64k))
 	assert.True(t, upreq.Capabilities.Supports(capability.Sideband))
 }
@@ -90,7 +90,7 @@ func TestBuildUpdateRequestsWithQuiet(t *testing.T) {
 		Quiet: true,
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Quiet))
 }
 
@@ -106,7 +106,7 @@ func TestBuildUpdateRequestsWithAtomic(t *testing.T) {
 		Atomic: true,
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
@@ -121,7 +121,7 @@ func TestBuildUpdateRequestsWithAtomicNotSupported(t *testing.T) {
 		Atomic: true,
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.False(t, upreq.Capabilities.Supports(capability.Atomic))
 }
 
@@ -136,8 +136,23 @@ func TestBuildUpdateRequestsWithAgent(t *testing.T) {
 		},
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, "", req)
 	assert.True(t, upreq.Capabilities.Supports(capability.Agent))
+}
+
+func TestBuildUpdateRequestsWithUserAgent(t *testing.T) {
+	t.Parallel()
+	caps := capability.List{}
+	caps.Set(capability.Agent, "git/2.45.0")
+
+	req := &PushRequest{
+		Commands: []*packp.Command{
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash("0123456789012345678901234567890123456789")},
+		},
+	}
+
+	upreq := buildUpdateRequests(caps, "my app/1.0", req)
+	assert.Equal(t, []string{"my.app/1.0"}, upreq.Capabilities.Get(capability.Agent))
 }
 
 type mockWriter struct {

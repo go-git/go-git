@@ -7,15 +7,15 @@ import (
 	"net/url"
 
 	"github.com/go-git/go-git/v6/plumbing/protocol"
-	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // discovery carries what a discovery request is made of, so the request and any
 // re-issue of it are built by the same code from the same values.
 type discovery struct {
-	service  string
-	protocol protocol.Version
+	service   string
+	protocol  protocol.Version
+	userAgent string
 }
 
 // request builds the discovery GET for base.
@@ -35,7 +35,7 @@ func (d discovery) request(ctx context.Context, base *url.URL) (*http.Request, e
 		return nil, fmt.Errorf("http transport: %w", err)
 	}
 
-	req.Header.Set("User-Agent", capability.DefaultAgent())
+	req.Header.Set("User-Agent", d.userAgent)
 	if gp := transport.GitProtocolEnv(d.protocol); gp != "" {
 		req.Header.Set("Git-Protocol", gp)
 	}

@@ -29,7 +29,7 @@ func TestStreamSessionV2Handshake(t *testing.T) {
 		close: func() error { return nil },
 	}
 
-	s, err := NewStreamSession(conn, UploadPackService)
+	s, err := NewStreamSession(conn, &Request{Command: UploadPackService})
 	require.NoError(t, err)
 
 	require.Equal(t, protocol.V2, s.version)
@@ -50,9 +50,10 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 
 	var out bytes.Buffer
 	s := &StreamSession{
-		version: protocol.V2,
-		w:       ioutil.WriteNopCloser(&out),
-		caps:    serverCaps,
+		version:   protocol.V2,
+		w:         ioutil.WriteNopCloser(&out),
+		caps:      serverCaps,
+		userAgent: "my app/1.0",
 	}
 
 	req := &packp.LsRefsArgs{
@@ -65,7 +66,7 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 	require.NoError(t, got.Decode(&out))
 
 	require.Equal(t, "ls-refs", got.Command)
-	require.Equal(t, []string{capability.DefaultAgent()}, got.Capabilities.Get(capability.Agent))
+	require.Equal(t, []string{"my.app/1.0"}, got.Capabilities.Get(capability.Agent))
 	require.Equal(t, []string{"sha1"}, got.Capabilities.Get(capability.ObjectFormat))
 
 	gotArgs, ok := got.Args.(*packp.LsRefsArgs)
@@ -115,7 +116,7 @@ func TestStreamSessionCommandLsRefsEndToEnd(t *testing.T) {
 		close: func() error { return clientConn.Close() },
 	}
 
-	s, err := NewStreamSession(conn, UploadPackService)
+	s, err := NewStreamSession(conn, &Request{Command: UploadPackService})
 	require.NoError(t, err)
 	require.Equal(t, protocol.V2, s.version)
 
