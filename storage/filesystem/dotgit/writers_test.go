@@ -165,8 +165,11 @@ func TestNewObjectPackTruncated(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := map[string][]byte{
-		"mid object":       pack[:len(pack)/2],
-		"missing checksum": pack[:len(pack)-20],
+		"after signature":         pack[:4],
+		"after version":           pack[:8],
+		"no objects, no checksum": []byte("PACK\x00\x00\x00\x02\x00\x00\x00\x00"),
+		"mid object":              pack[:len(pack)/2],
+		"missing checksum":        pack[:len(pack)-20],
 	}
 	for name, data := range tests {
 		t.Run(name, func(t *testing.T) {
