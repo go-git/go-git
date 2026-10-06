@@ -64,7 +64,8 @@ func OpenChainOrFileIndex(fs billy.Filesystem) (Index, error) {
 
 // OpenChainIndex expects a billy.Filesystem representing a .git directory.
 // It will read a commit-graph chain file and return a coalesced index.
-// If the chain file or a graph in that chain is not present, an error is returned.
+// If the chain file is not present or names no graphs, or a graph in that
+// chain is not present or invalid, an error is returned.
 //
 // See: https://git-scm.com/docs/commit-graph
 func OpenChainIndex(fs billy.Filesystem) (Index, error) {
@@ -78,22 +79,31 @@ func OpenChainIndex(fs billy.Filesystem) (Index, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(chain) == 0 {
+		return nil, ErrMalformedCommitGraphFile
+	}
 
 	var index Index
 	for _, hash := range chain {
 		file, err := fs.Open(path.Join("objects", "info", "commit-graphs", "graph-"+hash+".graph"))
 		if err != nil {
-			// Ignore all other file closing errors and return the error from opening the last file in the graph
-			_ = index.Close()
+			// Ignore closing errors and return the error from opening the file instead
+			if index != nil {
+				_ = index.Close()
+			}
 			return nil, err
 		}
 
-		index, err = OpenFileIndexWithParent(file, index)
+		next, err := OpenFileIndexWithParent(file, index)
 		if err != nil {
-			// Ignore file closing errors and return the error from OpenFileIndex instead
-			_ = index.Close()
+			// Ignore closing errors and return the error from OpenFileIndexWithParent instead
+			_ = file.Close()
+			if index != nil {
+				_ = index.Close()
+			}
 			return nil, err
 		}
+		index = next
 	}
 
 	return index, nil
