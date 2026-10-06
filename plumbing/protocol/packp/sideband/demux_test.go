@@ -163,6 +163,38 @@ func (s *SidebandSuite) TestDecodeWithPending() {
 	s.Equal(expected[13:26], content)
 }
 
+// TestDecodeSmallReads checks that packets drained over many reads smaller
+// than a packet, with progress in between, come out intact and in order.
+func (s *SidebandSuite) TestDecodeSmallReads() {
+	var expected []byte
+	buf := bytes.NewBuffer(nil)
+	for i, size := range []int{1, 7, 64, 1000, 3, 65515} {
+		payload := bytes.Repeat([]byte{byte('a' + i)}, size)
+		expected = append(expected, payload...)
+		pktline.Write(buf, PackData.WithPayload(payload))
+		pktline.Write(buf, ProgressMessage.WithPayload([]byte{byte('0' + i)}))
+	}
+	pktline.WriteFlush(buf)
+
+	progress := bytes.NewBuffer(nil)
+	d := NewDemuxer(Sideband64k, buf)
+	d.Progress = progress
+
+	var got []byte
+	p := make([]byte, 3)
+	for {
+		n, err := d.Read(p)
+		got = append(got, p[:n]...)
+		if err == io.EOF {
+			break
+		}
+		s.Require().NoError(err)
+	}
+
+	s.Equal(expected, got)
+	s.Equal("012345", progress.String())
+}
+
 func (s *SidebandSuite) TestDecodeErrMaxPacked() {
 	buf := bytes.NewBuffer(nil)
 	pktline.Write(buf, PackData.WithPayload(bytes.Repeat([]byte{'0'}, MaxPackedSize+1)))
