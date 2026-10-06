@@ -80,6 +80,8 @@ const maxDrainSize = 64 << 10
 // The discard stops at maxDrainSize, which bounds a server that keeps sending.
 // A server that stops sending without closing is bounded by the request's
 // context instead, since net/http ends the read when that context does.
+// It returns the error from body.Close. Drain errors are ignored because the
+// drain only enables connection reuse.
 func drainAndClose(body io.ReadCloser) error {
 	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrainSize))
 	return body.Close()
