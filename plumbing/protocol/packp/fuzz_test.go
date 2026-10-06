@@ -21,6 +21,7 @@ func FuzzAdvRefsDecode(f *testing.F) {
 
 func FuzzUlReqDecode(f *testing.F) {
 	f.Add([]byte("0032want 0000000000000000000000000000000000000000\n0000"))
+	f.Add([]byte("0039want 0000000000000000000000000000000000000000 filter\n0015filter blob:none\n0000"))
 	f.Add([]byte("0000"))
 	f.Add([]byte{})
 

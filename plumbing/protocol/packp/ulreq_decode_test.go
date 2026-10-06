@@ -610,3 +610,127 @@ func (s *UlReqDecodeSuite) TestExtraData() {
 	r := toPktLines(s.T(), payloads)
 	s.testDecoderErrorMatches(r, ".*unexpected payload.*")
 }
+
+func (s *UlReqDecodeSuite) TestFilter() {
+	tests := []struct {
+		name     string
+		payloads []string
+		depth    DepthRequest
+	}{
+		{
+			name: "after wants",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 ofs-delta filter\n",
+				"filter blob:none\n",
+				"",
+			},
+		},
+		{
+			name: "after shallows",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 filter\n",
+				"shallow aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+				"filter blob:none\n",
+				"",
+			},
+		},
+		{
+			// As git clone --depth 1 --filter=blob:none sends it.
+			name: "after deepen",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 multi_ack_detailed side-band-64k thin-pack no-progress include-tag ofs-delta deepen-since deepen-not agent=git/2.54.0-Linux filter\n",
+				"want 3333333333333333333333333333333333333333\n",
+				"deepen 1\n",
+				"filter blob:none\n",
+				"",
+			},
+			depth: DepthRequest{Deepen: 1},
+		},
+		{
+			name: "after deepen-since",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 filter\n",
+				"deepen-since 1420167845\n",
+				"filter blob:none\n",
+				"",
+			},
+			depth: DepthRequest{DeepenSince: time.Date(2015, time.January, 2, 3, 4, 5, 0, time.UTC)},
+		},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ur, _ := s.testDecodeOK(tt.payloads, 0)
+			s.Equal(FilterBlobNone(), ur.Filter)
+			s.Equal(tt.depth, ur.Depth)
+		})
+	}
+}
+
+func (s *UlReqDecodeSuite) TestFilterErrors() {
+	tests := []struct {
+		name     string
+		payloads []string
+		pattern  string
+	}{
+		{
+			name: "capability not requested",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 ofs-delta\n",
+				"filter blob:none\n",
+				"",
+			},
+			pattern: ".*pkt-line 2: filter capability not negotiated.*",
+		},
+		{
+			name: "empty spec",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 filter\n",
+				"filter \n",
+				"",
+			},
+			pattern: ".*pkt-line 2: empty filter-spec.*",
+		},
+		{
+			name: "multiple specs",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 filter\n",
+				"filter blob:none\n",
+				"filter tree:0\n",
+				"",
+			},
+			pattern: ".*pkt-line 3: multiple filter-specs cannot be combined.*",
+		},
+		{
+			name: "payload after filter",
+			payloads: []string{
+				"want 3333333333333333333333333333333333333333 filter\n",
+				"filter blob:none\n",
+				"deepen 1\n",
+				"",
+			},
+			pattern: ".*pkt-line 3: unexpected payload.*",
+		},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.testDecoderErrorMatches(toPktLines(s.T(), tt.payloads), tt.pattern)
+		})
+	}
+}
+
+func (s *UlReqDecodeSuite) TestFilterRoundTrip() {
+	want := &UploadRequest{
+		Wants:  []plumbing.Hash{plumbing.NewHash("3333333333333333333333333333333333333333")},
+		Depth:  DepthRequest{Deepen: 1},
+		Filter: FilterCombine(FilterBlobLimit(1, BlobLimitPrefixKibi), FilterTreeDepth(2)),
+	}
+	want.Capabilities.Set(capability.Filter)
+
+	var buf bytes.Buffer
+	s.Require().NoError(want.Encode(&buf))
+
+	got := &UploadRequest{}
+	s.Require().NoError(got.Decode(&buf))
+	s.Equal(want.Filter, got.Filter)
+	s.Equal(want.Depth, got.Depth)
+}
