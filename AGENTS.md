@@ -60,35 +60,74 @@ All new features and non-critical fixes target `main`. Backports to
 ## Commit Message Format
 
 ```
-<package>: <subpackage>, <what changed>. [Fixes #<issue-number>]
+<package>: <subpackage>, <Summary>
+
+<body>
+
+[Fixes #<issue-number>]
+
+<trailers>
 ```
 
-Examples:
+Examples of title lines:
 
 ```
-plumbing: transport, Add HTTP/2 support. Fixes #456
-storage: filesystem, Fix config.worktree overlay for linked worktrees.
+plumbing: transport, Add HTTP/2 support
+storage: filesystem, Fix config.worktree overlay for linked worktrees
 ```
 
-- The title line is NOT followed by a blank line before the body.
-- The body starts on the very next line after the title.
+- The title names the package and subpackage that changed, followed by
+  a capitalised, imperative summary without a trailing period. Keep it
+  around 50 characters where the prefix allows.
+- A blank line MUST separate the title from the body.
+- Wrap the body at 72 characters.
+- Reference issues in the body, not the title. When the change closes
+  an issue, end the body with `Fixes #<issue-number>`.
 - A blank line separates the body from trailers.
+
+### Writing a Good Commit Message
+
+A commit message is read by reviewers today and by whoever runs
+`git blame` years from now. The diff already shows *what* changed; the
+message should explain *why*.
+
+- Start with the problem or the benefit: what was wrong, missing or
+  costly, and in which situation it shows up.
+- Then describe how the change addresses it, at the level of approach
+  rather than a line-by-line restatement of the diff.
+- State behaviour changes and compatibility consequences plainly,
+  including who is affected.
+- When the change follows upstream Git behaviour, say so and reference
+  the Git source or documentation it relies on.
+- Write plain, concise prose in short paragraphs. Avoid filler such as
+  "This commit ...". Use bullets only for genuinely parallel items.
+- Put code identifiers, flags, file paths and commands in backticks.
+- Only make claims that have been verified. If a later commit in the same
+  pull request makes an earlier message untrue, fix that message before
+  the pull request is merged.
 
 ### AI-Assisted Commits
 
 All commits produced with AI assistance MUST include an `Assisted-by`
-trailer identifying the agent:
+trailer naming the tool and, where known, the model, without an email
+address:
 
 ```
-plumbing: object, Fix delta offset decoding for large pack files.
-Ensure the offset calculation correctly handles the variable-length
-encoding used for offsets > 2 GiB.
+plumbing: object, Fix delta offset decoding for large pack files
 
-Assisted-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+Pack offsets of 2 GiB or more are kept in the idx's 64-bit offset
+table, with the 32-bit entry holding an index into it and its MSB
+set. The decoder read that entry as the offset itself, so objects
+past 2 GiB in a pack resolved to the wrong location.
+
+Follow the index into the 64-bit table when the MSB is set, as Git
+does when reading large offsets from the idx.
+
+Assisted-by: Claude Sonnet 4.6
 ```
 
-Adjust name and address to match the actual tool used (e.g.
-`Assisted-by: Copilot <noreply@github.com>`).
+Adjust the name to match the tool and model actually used, or name only
+the tool when the model is not known (e.g. `Assisted-by: GitHub Copilot`).
 
 ## Git Behaviour Compliance
 

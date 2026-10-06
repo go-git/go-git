@@ -108,7 +108,7 @@ Signed-off-by: Jane Smith <jane.smith@example.com>
 Git makes this easy — pass `-s` (or `--signoff`) when committing:
 
 ```sh
-git commit -s -m "plumbing: packp, fix capability parsing"
+git commit -s
 ```
 
 To sign off commits you have already made:
@@ -122,17 +122,66 @@ DCO sign-off is verified automatically on every pull request. PRs with unsigned 
 
 ### Format of the commit message
 
-Every commit message should describe what was changed, under which context and, if applicable, the GitHub issue it relates to:
+Every commit message has a title, a body and trailers, each separated by
+a blank line:
 
 ```
-plumbing: packp, Skip argument validations for unknown capabilities. Fixes #623
+<package>: <subpackage>, <Summary>
+
+<body>
+
+[Fixes #<issue-number>]
+
+<trailers>
 ```
 
-The format can be described more formally as follows:
+For example:
 
 ```
-<package>: <subpackage>, <what changed>. [Fixes #<issue-number>]
+plumbing: packp, Skip argument validations for unknown capabilities
+
+Unknown capabilities were validated like known ones that take no
+argument, so a server advertising one with a value, such as
+`oldref=HEAD:refs/heads/v2`, made decoding the whole capability list
+fail with `ErrArguments`.
+
+Apply the argument checks to known capabilities only, and for unknown
+ones reject just empty arguments.
+
+Fixes #<issue-number>
+
+Signed-off-by: Jane Smith <jane.smith@example.com>
 ```
+
+- The title names the package and subpackage that changed, followed by
+  a capitalised, imperative summary without a trailing period. Keep it
+  around 50 characters where the prefix allows.
+- A blank line MUST separate the title from the body.
+- Wrap the body at 72 characters.
+- Reference issues in the body, not the title. When the change closes
+  an issue, end the body with `Fixes #<issue-number>`.
+- A blank line separates the body from trailers.
+
+### Writing a good commit message
+
+A commit message is read by reviewers today and by whoever runs
+`git blame` years from now. The diff already shows *what* changed; the
+message should explain *why*.
+
+- Start with the problem or the benefit: what was wrong, missing or
+  costly, and in which situation it shows up.
+- Then describe how the change addresses it, at the level of approach
+  rather than a line-by-line restatement of the diff.
+- State behaviour changes and compatibility consequences plainly,
+  including who is affected.
+- When the change follows upstream Git behaviour, say so and reference
+  the Git source or documentation it relies on.
+- Write plain, concise prose in short paragraphs. Avoid filler such as
+  "This commit ...". Use bullets only for genuinely parallel items.
+- Put code identifiers, flags, file paths and commands in backticks.
+- Only make claims that have been verified. If a later commit in the same
+  pull request makes an earlier message untrue, fix that message before
+  the pull request is merged.
 
 [discord server]: https://discord.gg/8hrxYEVPE5
 [StackOverflow go-git tag]: https://stackoverflow.com/questions/tagged/go-git
