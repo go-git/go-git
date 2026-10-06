@@ -70,6 +70,17 @@ type CredentialsDroppedError struct {
 func (e *CredentialsDroppedError) Error() string {
 	return fmt.Sprintf(
 		"credentials for %s were not sent to %s because a redirect crossed an origin boundary",
-		e.From, e.To,
+		originString(e.From), originString(e.To),
 	)
+}
+
+// originString renders u, or "<nil>" when u is nil. Passing a nil *url.URL to
+// fmt directly would rely on fmt recovering the nil dereference in
+// (*url.URL).String, and on Windows the hardware fault behind that can
+// corrupt the heap (golang/go#81238).
+func originString(u *url.URL) string {
+	if u == nil {
+		return "<nil>"
+	}
+	return u.String()
 }
