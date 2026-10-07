@@ -20,7 +20,7 @@ func shallowSet(t *testing.T, repo string) map[string]bool {
 	}
 	require.NoError(t, err)
 	set := map[string]bool{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			set[line] = true
@@ -37,7 +37,7 @@ func refsOf(t *testing.T, repo string) []string {
 	if out == "" {
 		return refs
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		fields := strings.Fields(line)
 		require.Len(t, fields, 2, "unexpected show-ref line: %q", line)
 		refs = append(refs, fields[1]+" "+fields[0])
@@ -51,7 +51,7 @@ func objectsOf(t *testing.T, repo string) []string {
 	t.Helper()
 	out := gitOut(t, repo, "rev-list", "--objects", "--all", "--reflog")
 	var objects []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if line == "" {
 			continue
 		}

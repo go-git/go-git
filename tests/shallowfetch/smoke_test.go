@@ -4,8 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	gogit "github.com/go-git/go-git/v6"
 	"github.com/stretchr/testify/require"
+
+	gogit "github.com/go-git/go-git/v6"
 )
 
 // TestDaemonServesFixture proves the harness end to end: a full go-git clone
