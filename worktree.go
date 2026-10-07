@@ -940,6 +940,10 @@ func (w *Worktree) checkoutChangeSubmodule(fs *worktreeFilesystem,
 	switch a {
 	case merkletrie.Modify:
 		sub, err := w.Submodule(name)
+		if errors.Is(err, ErrSubmoduleNotFound) {
+			// A submodule's configured name can differ from its worktree path.
+			sub, err = w.submoduleByPath(name)
+		}
 		if err != nil {
 			return err
 		}
@@ -1205,6 +1209,22 @@ func (w *Worktree) Submodule(name string) (*Submodule, error) {
 
 	for _, m := range l {
 		if m.Config().Name == name {
+			return m, nil
+		}
+	}
+
+	return nil, ErrSubmoduleNotFound
+}
+
+// submoduleByPath returns the submodule configured at the given worktree path
+func (w *Worktree) submoduleByPath(modulePath string) (*Submodule, error) {
+	l, err := w.Submodules()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, m := range l {
+		if m.Config().Path == modulePath {
 			return m, nil
 		}
 	}
