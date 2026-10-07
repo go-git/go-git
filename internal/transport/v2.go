@@ -133,6 +133,22 @@ func wantsLocal(wants, haves []plumbing.Hash) bool {
 	return true
 }
 
+// ShallowSupportRequired reports whether a fetch needs the server to speak
+// shallow: either it deepens, or the repository is already shallow and must
+// advertise its boundary. Git requires the shallow capability from such a
+// client even without a depth (fetch-pack.c:1165-1168; v2: the fetch
+// command's shallow feature, fetch-pack.c:1402-1405).
+func ShallowSupportRequired(st storage.Storer, req *FetchRequest) (bool, error) {
+	if req.Depth > 0 {
+		return true, nil
+	}
+	shallows, err := st.Shallow()
+	if err != nil {
+		return false, err
+	}
+	return len(shallows) > 0, nil
+}
+
 // FetchRound runs a single fetch command round. When the returned output has
 // Packfile set, packReader is positioned at the first packfile pkt-line so the
 // caller can stream it. If packReader implements io.Closer, Fetch closes it
@@ -150,9 +166,15 @@ type FetchRound func(args *packp.FetchArgs) (out *packp.FetchOutput, packReader 
 // The caller is responsible for validating optional features against the server
 // advertisement (see FetchSupports) before requesting Filter or Depth.
 func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round FetchRound) error {
-	// Everything wanted is already local and no shallow change was requested:
-	// short-circuit before opening negotiation, matching git's everything_local.
-	if req.Depth == 0 && wantsLocal(req.Wants, req.Haves) {
+	shallows, err := st.Shallow()
+	if err != nil {
+		return err
+	}
+	// Everything wanted is already local and the repository is not shallow:
+	// short-circuit before opening negotiation, matching git's
+	// everything_local. A shallow repository cannot prove completeness from
+	// local data, so it always asks.
+	if req.Depth == 0 && len(shallows) == 0 && wantsLocal(req.Wants, req.Haves) {
 		return ErrNoChange
 	}
 
@@ -165,13 +187,12 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 	if req.Filter != "" {
 		baseArgs.Filter = req.Filter
 	}
+	// A shallow repository advertises its boundary whether or not this fetch
+	// deepens (add_shallow_requests, fetch-pack.c:1280-1297); deepen stays
+	// tied to a requested depth.
+	baseArgs.Shallows = shallows
 	if req.Depth > 0 {
 		baseArgs.Deepen = req.Depth
-		shallows, err := st.Shallow()
-		if err != nil {
-			return err
-		}
-		baseArgs.Shallows = shallows
 	}
 
 	// Pop haves from a private copy so the caller's slice is left untouched.

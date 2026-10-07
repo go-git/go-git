@@ -460,7 +460,11 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 	if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
 		return transport.ErrFilterNotSupported
 	}
-	if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
+	shallowRequired, err := internal.ShallowSupportRequired(st, req)
+	if err != nil {
+		return err
+	}
+	if shallowRequired && !internal.FetchSupports(s.caps, "shallow") {
 		return transport.ErrShallowNotSupported
 	}
 	if err := transport.ReconcileObjectFormatV2(st, s.caps); err != nil {
