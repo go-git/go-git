@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
@@ -68,9 +71,21 @@ func (w *trailerWriter) Write([]byte) (int, error) {
 
 func (w *trailerWriter) Close() error { return nil }
 
+// closeRecorder is a response body that records whether it was closed.
+type closeRecorder struct {
+	io.Reader
+	closed bool
+}
+
+func (c *closeRecorder) Close() error {
+	c.closed = true
+	return nil
+}
+
 // TestFetchPackReadsResponseAfterPack checks that FetchPack reads the sideband
 // stream to its closing flush-pkt after the packfile: a band-3 error must fail
-// the fetch, and trailing progress must reach the caller.
+// the fetch and still close packf, and trailing progress must reach the
+// caller.
 //
 // Filesystem storage copies the pack to EOF, and memory storage parses it
 // through a buffer whose last fill reads past the pack unless it happens to
@@ -105,11 +120,12 @@ func TestFetchPackReadsResponseAfterPack(t *testing.T) {
 			t.Run(name+"/error after pack/filter="+string(filter), func(t *testing.T) {
 				t.Parallel()
 
-				resp := packfileSection(t, pack, sideband.ErrorMessage, "remote boom")
-				err := FetchPack(context.Background(), newStorer(t), caps, io.NopCloser(resp), nil,
+				body := &closeRecorder{Reader: packfileSection(t, pack, sideband.ErrorMessage, "remote boom")}
+				err := FetchPack(context.Background(), newStorer(t), caps, body, nil,
 					&FetchRequest{Progress: io.Discard, Filter: filter})
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "remote boom")
+				assert.True(t, body.closed, "packf left open")
 			})
 
 			t.Run(name+"/progress after pack/filter="+string(filter), func(t *testing.T) {
@@ -124,4 +140,57 @@ func TestFetchPackReadsResponseAfterPack(t *testing.T) {
 			})
 		}
 	}
+}
+
+// blockingReadCloser blocks in Read until unblock is closed, and counts calls
+// to Close. Close does not unblock Read, just as NewContextReadCloser cannot
+// interrupt a Read it has started.
+type blockingReadCloser struct {
+	unblock chan struct{}
+	started chan struct{}
+	once    sync.Once
+	closes  atomic.Int32
+}
+
+func (b *blockingReadCloser) Read([]byte) (int, error) {
+	b.once.Do(func() { close(b.started) })
+	<-b.unblock
+	return 0, io.EOF
+}
+
+func (b *blockingReadCloser) Close() error {
+	b.closes.Add(1)
+	return nil
+}
+
+// TestFetchPackLeavesResponseOpenOnCancel checks that FetchPack does not close
+// packf when the context cancels a read: the read is still blocked in the
+// goroutine NewContextReadCloser started, and closing would race it.
+func TestFetchPackLeavesResponseOpenOnCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	body := &blockingReadCloser{unblock: make(chan struct{}), started: make(chan struct{})}
+	// Release the read left blocked in the background once the test is done.
+	t.Cleanup(func() { close(body.unblock) })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- FetchPack(ctx, memory.NewStorage(), capability.List{}, body, nil, &FetchRequest{})
+	}()
+
+	select {
+	case <-body.started:
+	case <-time.After(time.Second):
+		t.Fatal("FetchPack did not start reading packf")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("FetchPack did not return after cancel")
+	}
+	assert.Zero(t, body.closes.Load(), "packf closed while a read was in flight")
 }
