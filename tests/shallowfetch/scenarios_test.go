@@ -49,16 +49,9 @@ func runScenario(t *testing.T, name string,
 	}
 }
 
-// TestDeepenFetch: clone at depth 1, fetch with depth 3. The boundary must
-// move to the new frontier, and the deepened history must be complete to
-// the requested depth on both clients.
-func TestDeepenFetch(t *testing.T) {
-	t.Parallel()
-	runScenario(t, "deepen", func(_ *testing.T, _ string) ([]string, func(*gogit.FetchOptions)) {
-		return []string{"--depth", "3"},
-			func(o *gogit.FetchOptions) { o.Depth = 3 }
-	})
-}
+// TestDeepenFetch lives with the tag-following fix it exercises (it
+// depends on go-git following tags made reachable by a deepen, which is
+// its own change in its own PR); see that PR for the dedicated parity test.
 
 // TestShallowRefreshFetch: clone at depth 1, fetch again at depth 1 after
 // the server advanced. This is the re-shallow path a periodic refresher
