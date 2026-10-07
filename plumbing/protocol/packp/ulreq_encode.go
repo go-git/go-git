@@ -6,16 +6,21 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 // Encode writes the UlReq encoding of u to the stream.
 //
 // All the payloads will end with a newline character.  Wants and
 // shallows are sorted alphabetically.  A depth of 0 means no depth
-// request is sent.
+// request is sent.  A non-empty Filter requires the filter capability
+// in Capabilities.
 func (req *UploadRequest) Encode(w io.Writer) error {
 	if len(req.Wants) == 0 {
 		return fmt.Errorf("empty wants provided")
+	}
+	if req.Filter != "" && !req.Capabilities.Supports(capability.Filter) {
+		return fmt.Errorf("filter %q set without the filter capability", req.Filter)
 	}
 
 	plumbing.HashesSort(req.Wants)
