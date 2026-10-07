@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
@@ -29,6 +30,11 @@ type node struct {
 // RootNodeOptions contains configuration for the root node.
 type RootNodeOptions struct {
 	UpholdExecutableBit bool
+
+	// Path limits entries to this slash-separated, repository-relative file
+	// or directory. An empty path includes all entries. Ancestor directory
+	// nodes are retained so changes keep their repository-relative paths.
+	Path string
 }
 
 // NewRootNode returns the root node of a computed tree from a index.Index,
@@ -43,6 +49,12 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 	m := map[string]*node{rootNode: {isDir: true}}
 
 	for _, e := range idx.Entries {
+		// Filter before constructing nodes, but retain the normal ancestor
+		// chain for each selected entry so diff paths stay repository-relative.
+		if !pathutil.IsWithinPath(e.Name, options.Path) {
+			continue
+		}
+
 		parts := strings.Split(e.Name, string("/"))
 
 		var fullpath string

@@ -843,7 +843,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffIndexWithWorktree(cfg, idx, true, true)
+	worktreeChanges, err := w.diffIndexWithWorktree(cfg, idx, true, true, "")
 	if err != nil {
 		return err
 	}
@@ -910,7 +910,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 // noder's IgnoreScope would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
 func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.Index, files []string) error {
-	changes, err := w.diffIndexWithWorktree(cfg, idx, true, false)
+	changes, err := w.diffIndexWithWorktree(cfg, idx, true, false, "")
 	if err != nil {
 		return err
 	}
