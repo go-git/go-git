@@ -1,15 +1,16 @@
 package git
 
 import (
-	"fmt"
 	"net/url"
 	"path/filepath"
 	"runtime"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/test/gitserver"
 	"github.com/go-git/go-git/v6/internal/transport/test"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -25,15 +26,14 @@ type gitPackEnv struct {
 
 func setupGitPackEnv(t testing.TB) gitPackEnv {
 	t.Helper()
-	port := freePort(t.(*testing.T))
-	base := filepath.Join(t.TempDir(), fmt.Sprintf("git-proto-%d", port))
+	base := filepath.Join(t.TempDir(), "git-proto")
 
 	basicFS := test.PrepareRepository(t, fixtures.Basic().One(), base, "basic.git")
 	emptyFS := test.PrepareRepository(t, fixtures.ByTag("empty").One(), base, "empty.git")
 
-	startDaemon(t.(*testing.T), base, port)
-
-	host := fmt.Sprintf("localhost:%d", port)
+	prefix, err := url.Parse(gitserver.Start(t.(*testing.T), base))
+	require.NoError(t, err)
+	host := prefix.Host
 	return gitPackEnv{
 		Endpoint:            &url.URL{Scheme: "git", Host: host, Path: "/basic.git"},
 		EmptyEndpoint:       &url.URL{Scheme: "git", Host: host, Path: "/empty.git"},
