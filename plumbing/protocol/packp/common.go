@@ -25,6 +25,7 @@ var (
 	deepenCommits   = []byte("deepen ")
 	deepenSince     = []byte("deepen-since ")
 	deepenReference = []byte("deepen-not ")
+	filterSpec      = []byte("filter ")
 
 	// shallow-update
 	unshallow = []byte("unshallow ")

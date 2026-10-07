@@ -166,12 +166,14 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 			return nil
 		}
 
-		// After deepen <n>, only flush-pkt is valid
+		// After deepen <n>, only filter or flush-pkt is valid
 		if req.Depth.Deepen > 0 {
 			if bytes.HasPrefix(line, deepenSince) || bytes.HasPrefix(line, deepenReference) {
 				return ErrDeepenMutuallyExclusive
 			}
-			return decodeError("unexpected payload while expecting a flush-pkt: %q", line)
+			if !bytes.HasPrefix(line, filterSpec) {
+				return decodeError("unexpected payload while expecting a flush-pkt: %q", line)
+			}
 		}
 		// After deepen-since/deepen-not, only deepen-since/deepen-not or flush is valid
 		if deepenRevList && bytes.HasPrefix(line, deepen) && !bytes.HasPrefix(line, deepenSince) && !bytes.HasPrefix(line, deepenReference) {
@@ -179,7 +181,32 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 		}
 	}
 
-	// Unexpected payload after shallows or wants
+	// filter <filter-spec>, sent last by fetch-pack. upload-pack accepts it
+	// only when the first want line requested the filter capability, and
+	// at most once.
+	if bytes.HasPrefix(line, filterSpec) {
+		if !req.Capabilities.Supports(capability.Filter) {
+			return decodeError("filter capability not negotiated")
+		}
+		spec := bytes.TrimPrefix(line, filterSpec)
+		if len(spec) == 0 {
+			return decodeError("empty filter-spec")
+		}
+		req.Filter = Filter(spec)
+
+		ok, err := nextLine()
+		if err != nil {
+			return err
+		}
+		if !ok || len(line) == 0 {
+			return nil
+		}
+		if bytes.HasPrefix(line, filterSpec) {
+			return decodeError("multiple filter-specs cannot be combined")
+		}
+	}
+
+	// Unexpected payload after wants, shallows, deepens or filter
 	if len(line) != 0 {
 		return decodeError("unexpected payload while expecting a flush-pkt: %q", line)
 	}
