@@ -76,7 +76,10 @@ func TestFetchAfterRewind(t *testing.T) {
 	runScenario(t, "rewind", func(t *testing.T, work string) ([]string, func(*gogit.FetchOptions)) {
 		older := gitOut(t, work, "rev-parse", "HEAD~2")
 		git(t, work, "reset", "--hard", older)
-		git(t, "", "push", "--force", filepath.Join(filepath.Dir(work), "server.git"), "main:main")
+		// Push from the fixture work clone, not the test process's CWD:
+		// a bare-path push with no -C runs in the CWD and would push this
+		// repository's own refs to the server, corrupting the scenario.
+		git(t, work, "push", "--force", filepath.Join(filepath.Dir(work), "server.git"), "main:main")
 		return []string{"--force"},
 			func(o *gogit.FetchOptions) { o.Force = true }
 	})

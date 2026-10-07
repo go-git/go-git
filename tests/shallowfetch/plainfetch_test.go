@@ -96,16 +96,15 @@ func resetToOriginMain(t *testing.T, repo *gogit.Repository) {
 	t.Helper()
 	hash, err := repo.ResolveRevision(plumbing.Revision("refs/remotes/origin/main"))
 	require.NoError(t, err)
-	// Detach HEAD first: a hard reset through a symbolic HEAD moves the
-	// branch it points at, where the twin's checkout leaves refs/heads/main
-	// at the clone-time commit. Detached, the reset only moves HEAD. It
-	// also sidesteps the unborn-HEAD case: go-git's reset cannot follow
-	// HEAD to a branch that does not exist yet, and after PlainInit no
-	// local branch does.
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, *hash)))
+	// Checkout, not Reset, mirrors the twin's `git checkout origin/main`:
+	// it detaches HEAD at the remote tip, leaves refs/heads/main at the
+	// clone-time commit, and updates the worktree to the target tree --
+	// including removing files the target tree no longer has. A bare
+	// Reset after manually detaching HEAD would diff the new HEAD's tree
+	// against itself (an empty diff) and leave stale files behind.
 	w, err := repo.Worktree()
 	require.NoError(t, err)
-	require.NoError(t, w.Reset(&gogit.ResetOptions{Mode: gogit.HardReset, Commit: *hash}))
+	require.NoError(t, w.Checkout(&gogit.CheckoutOptions{Hash: *hash, Force: true}))
 }
 
 // advanceServer pushes one more commit onto the server's main, after the
