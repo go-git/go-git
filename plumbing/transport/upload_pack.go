@@ -27,6 +27,11 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
+// ErrNotOurRef is reported for a want naming an object the advertisement does
+// not account for. It is written to the client as the "ERR upload-pack: not
+// our ref <oid>" line upstream sends. See checkWants.
+var ErrNotOurRef = errors.New("upload-pack: not our ref")
+
 // UploadPackRequest is a set of options for the UploadPack service.
 type UploadPackRequest struct {
 	GitProtocol   string
@@ -127,6 +132,20 @@ func UploadPack(
 
 			wants = upreq.Wants
 			caps = upreq.Capabilities
+
+			if err := checkWants(st, wants, opts.StatelessRPC); err != nil {
+				// The client is still sending the rest of its request and
+				// nothing can be written back until that is read: a transport
+				// whose two directions are a synchronous pipe deadlocks
+				// otherwise. Upstream can answer the moment it has the wants
+				// because it exits, and the client's write then fails against
+				// a closed socket.
+				var uphav packp.UploadHaves
+				_ = uphav.Decode(rd)
+				_, _ = pktline.WriteError(w, err)
+				_ = w.Close()
+				return err
+			}
 
 			if err := r.Close(); err != nil {
 				return fmt.Errorf("closing reader: %w", err)
@@ -318,6 +337,87 @@ func UploadPack(
 
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("closing writer: %w", err)
+	}
+
+	return nil
+}
+
+// checkWants refuses a want the advertisement does not account for, mirroring
+// is_our_ref and check_non_tip in upstream's upload-pack.c[1].
+//
+// objectsToUpload walks outwards from the wants alone, so without this gate
+// every object in the storer can be had for its object id: a commit left
+// behind by a force-push, or one contributed by a sibling repository sharing
+// the store, is served along with the trees and blobs under it. An object id
+// is not a secret — it outlives the reference that carried it, in CI logs and
+// in the clones peers already hold.
+//
+// Upstream draws the line in two places, and so does this:
+//
+//   - a want must name an advertised reference value. A want that is merely
+//     reachable is refused, which is what check_non_tip does when neither
+//     uploadpack.allowReachableSHA1InWant nor allowAnySHA1InWant is set.
+//   - over a stateless transport (smart HTTP) a commit reachable from one is
+//     accepted too, upstream's `rev-list --not --all` arm of the same check.
+//     A stateless client negotiates against an advertisement it fetched in an
+//     earlier request, so the looser rule is what keeps that fetch working.
+//
+// A peeled tag value is not a tip: send_ref writes the "<name>^{}" line but
+// marks only the reference's own object, so a want naming the commit under an
+// annotated tag takes the reachability arm. Protocol v2 is not gated at all,
+// because upload_pack_v2 sets ALLOW_ANY_SHA1 outright — serving any object by
+// id is upstream's v2 behaviour rather than an omission here.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L609-L642
+func checkWants(st storage.Storer, wants []plumbing.Hash, statelessRPC bool) error {
+	ar := &packp.AdvRefs{}
+	if err := addReferences(st, ar, true); err != nil {
+		return err
+	}
+
+	tips := make(map[plumbing.Hash]struct{}, len(ar.References))
+	for _, ref := range ar.References {
+		if ref.Name().IsPeeled() {
+			continue
+		}
+		tips[ref.Hash()] = struct{}{}
+	}
+
+	var nonTips []plumbing.Hash
+	for _, want := range wants {
+		if _, ok := tips[want]; !ok {
+			nonTips = append(nonTips, want)
+		}
+	}
+
+	if len(nonTips) > 0 && statelessRPC {
+		roots := make([]plumbing.Hash, 0, len(tips))
+		for tip := range tips {
+			if commit, ok := peelToCommit(st, tip); ok {
+				roots = append(roots, commit.Hash)
+			}
+		}
+		reachable, err := reachableCommits(st, roots)
+		if err != nil {
+			return err
+		}
+
+		var unreachable []plumbing.Hash
+		for _, want := range nonTips {
+			commit, ok := peelToCommit(st, want)
+			if !ok {
+				unreachable = append(unreachable, want)
+				continue
+			}
+			if _, ok := reachable[commit.Hash]; !ok {
+				unreachable = append(unreachable, want)
+			}
+		}
+		nonTips = unreachable
+	}
+
+	if len(nonTips) > 0 {
+		return fmt.Errorf("%w %s", ErrNotOurRef, nonTips[0])
 	}
 
 	return nil

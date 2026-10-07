@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -389,4 +392,209 @@ func prefixHex(b []byte, n int) string {
 		}
 	}
 	return sb.String()
+}
+
+// uploadPackFixture is a repository whose object store holds more than its
+// references reach: refs/heads/main and the annotated tag refs/tags/v1 are
+// advertised, taggedCommit sits under the tag object, and orphanCommit is
+// what a force-pushed branch leaves behind.
+type uploadPackFixture struct {
+	storer       storage.Storer
+	mainCommit   plumbing.Hash
+	tagObject    plumbing.Hash
+	taggedCommit plumbing.Hash
+	orphanCommit plumbing.Hash
+	orphanBlob   plumbing.Hash
+}
+
+// encodableObject is the shape the object types share for writing themselves
+// into a store.
+type encodableObject interface {
+	Encode(plumbing.EncodedObject) error
+}
+
+func newUploadPackFixture(t *testing.T) uploadPackFixture {
+	t.Helper()
+
+	st := memory.NewStorage()
+
+	store := func(encoder encodableObject) plumbing.Hash {
+		t.Helper()
+		obj := st.NewEncodedObject()
+		require.NoError(t, encoder.Encode(obj))
+		hash, err := st.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return hash
+	}
+
+	storeBlob := func(content string) plumbing.Hash {
+		t.Helper()
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.BlobObject)
+		_, err := obj.Write([]byte(content))
+		require.NoError(t, err)
+		hash, err := st.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return hash
+	}
+
+	treeFor := func(name string, blob plumbing.Hash) plumbing.Hash {
+		t.Helper()
+		return store(&object.Tree{Entries: []object.TreeEntry{
+			{Name: name, Mode: filemode.Regular, Hash: blob},
+		}})
+	}
+
+	when := time.Date(2024, time.March, 1, 12, 0, 0, 0, time.UTC)
+	who := object.Signature{Name: "go-git", Email: "go-git@example.com", When: when}
+
+	mainCommit := store(&object.Commit{
+		Author: who, Committer: who, Message: "main",
+		TreeHash: treeFor("main.txt", storeBlob("main\n")),
+	})
+	require.NoError(t, st.SetReference(
+		plumbing.NewHashReference("refs/heads/main", mainCommit),
+	))
+
+	taggedCommit := store(&object.Commit{
+		Author: who, Committer: who, Message: "tagged",
+		TreeHash:     treeFor("tagged.txt", storeBlob("tagged\n")),
+		ParentHashes: []plumbing.Hash{mainCommit},
+	})
+	tagObject := store(&object.Tag{
+		Name: "v1", Tagger: who, Message: "v1\n",
+		Target: taggedCommit, TargetType: plumbing.CommitObject,
+	})
+	require.NoError(t, st.SetReference(
+		plumbing.NewHashReference("refs/tags/v1", tagObject),
+	))
+
+	orphanBlob := storeBlob("AWS_SECRET_ACCESS_KEY=hunter2\n")
+	orphanCommit := store(&object.Commit{
+		Author: who, Committer: who, Message: "orphan",
+		TreeHash:     treeFor("credentials", orphanBlob),
+		ParentHashes: []plumbing.Hash{mainCommit},
+	})
+
+	return uploadPackFixture{
+		storer:       st,
+		mainCommit:   mainCommit,
+		tagObject:    tagObject,
+		taggedCommit: taggedCommit,
+		orphanCommit: orphanCommit,
+		orphanBlob:   orphanBlob,
+	}
+}
+
+// serveWant runs one upload-pack exchange for a single want and returns the
+// objects the server packed, or the refusal it wrote instead.
+func serveWant(t *testing.T, st storage.Storer, want plumbing.Hash, statelessRPC bool) (storage.Storer, error) {
+	t.Helper()
+
+	upreq := &packp.UploadRequest{}
+	upreq.Wants = append(upreq.Wants, want)
+
+	var uphav packp.UploadHaves
+	uphav.Done = true
+
+	var request bytes.Buffer
+	require.NoError(t, upreq.Encode(&request))
+	require.NoError(t, uphav.Encode(&request))
+
+	var response bytes.Buffer
+	err := UploadPack(
+		context.TODO(),
+		st,
+		io.NopCloser(&request),
+		ioutil.WriteNopCloser(&response),
+		&UploadPackRequest{StatelessRPC: statelessRPC},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	pack := bytes.Index(response.Bytes(), []byte("PACK"))
+	require.GreaterOrEqual(t, pack, 0, "no packfile in response")
+
+	served := memory.NewStorage()
+	parser := packfile.NewParser(
+		bytes.NewReader(response.Bytes()[pack:]),
+		packfile.WithStorage(served),
+	)
+	_, err = parser.Parse()
+	require.NoError(t, err)
+	return served, nil
+}
+
+// TestUploadPackRefusesUnadvertisedWant pins the two arms of upstream's
+// is_our_ref / check_non_tip. An advertised reference value is always
+// servable; a commit that is only reachable from one is servable over a
+// stateless transport alone; an object no reference reaches is never
+// servable.
+func TestUploadPackRefusesUnadvertisedWant(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		want       func(uploadPackFixture) plumbing.Hash
+		servedWhen []bool // StatelessRPC values the want is served for
+	}{
+		{
+			name:       "advertised branch tip",
+			want:       func(f uploadPackFixture) plumbing.Hash { return f.mainCommit },
+			servedWhen: []bool{false, true},
+		},
+		{
+			name:       "advertised tag object",
+			want:       func(f uploadPackFixture) plumbing.Hash { return f.tagObject },
+			servedWhen: []bool{false, true},
+		},
+		{
+			name:       "commit under an annotated tag",
+			want:       func(f uploadPackFixture) plumbing.Hash { return f.taggedCommit },
+			servedWhen: []bool{true},
+		},
+		{
+			name:       "commit no reference reaches",
+			want:       func(f uploadPackFixture) plumbing.Hash { return f.orphanCommit },
+			servedWhen: nil,
+		},
+	} {
+		for _, statelessRPC := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stateless=%v", tc.name, statelessRPC), func(t *testing.T) {
+				t.Parallel()
+
+				fixture := newUploadPackFixture(t)
+				want := tc.want(fixture)
+				served, err := serveWant(t, fixture.storer, want, statelessRPC)
+
+				if !slices.Contains(tc.servedWhen, statelessRPC) {
+					require.ErrorIs(t, err, ErrNotOurRef)
+					assert.Contains(t, err.Error(), want.String())
+					return
+				}
+
+				require.NoError(t, err)
+				_, err = served.EncodedObject(plumbing.AnyObject, want)
+				assert.NoError(t, err, "want missing from the packfile")
+			})
+		}
+	}
+}
+
+// TestUploadPackUnadvertisedWantKeepsObjectsBack is the leak the gate closes:
+// the blob under an unreferenced commit travels with it, so a peer holding
+// only the commit id walks away with the contents too.
+func TestUploadPackUnadvertisedWantKeepsObjectsBack(t *testing.T) {
+	t.Parallel()
+
+	fixture := newUploadPackFixture(t)
+
+	_, err := serveWant(t, fixture.storer, fixture.orphanCommit, true)
+	require.ErrorIs(t, err, ErrNotOurRef)
+
+	served, err := serveWant(t, fixture.storer, fixture.mainCommit, true)
+	require.NoError(t, err)
+	_, err = served.EncodedObject(plumbing.AnyObject, fixture.orphanBlob)
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 }
