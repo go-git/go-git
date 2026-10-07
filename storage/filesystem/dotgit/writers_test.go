@@ -156,6 +156,38 @@ func TestNewObjectPackTrailingDataTruncateError(t *testing.T) {
 	assert.Empty(t, entries, "temporary pack left behind")
 }
 
+func TestNewObjectPackTruncated(t *testing.T) {
+	t.Parallel()
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	pack, err := io.ReadAll(pf)
+	require.NoError(t, err)
+
+	tests := map[string][]byte{
+		"mid object":       pack[:len(pack)/2],
+		"missing checksum": pack[:len(pack)-20],
+	}
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			w, err := newPackWrite(fs, config.SHA1, false)
+			require.NoError(t, err)
+
+			_, err = w.Write(data)
+			require.NoError(t, err)
+
+			require.ErrorIs(t, w.Close(), packfile.ErrMalformedPackfile)
+
+			entries, err := fs.ReadDir("objects/pack")
+			require.NoError(t, err)
+			assert.Empty(t, entries, "temporary pack left behind")
+		})
+	}
+}
+
 func TestNewObjectPackUnused(t *testing.T) {
 	t.Parallel()
 
