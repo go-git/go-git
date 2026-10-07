@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -12,7 +13,8 @@ import (
 // ShallowStorage where the shallow commits are stored, an internal to
 // manipulate the shallow file
 type ShallowStorage struct {
-	dir *dotgit.DotGit
+	dir          *dotgit.DotGit
+	objectFormat formatcfg.ObjectFormat
 }
 
 // SetShallow save the shallows in the shallow file in the .git folder as one
@@ -34,7 +36,12 @@ func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
 	return err
 }
 
-// Shallow returns the shallow commits reading from shallow file from .git
+// Shallow returns the shallow commits reading from shallow file from .git.
+//
+// Each line must start with a full hash in the repository's object format.
+// Anything after the hash is ignored, so CRLF line endings are accepted. A
+// line that does not start with a full hash is an error, as in upstream's
+// is_repository_shallow.
 func (s *ShallowStorage) Shallow() ([]plumbing.Hash, error) {
 	f, err := s.dir.Shallow()
 	if f == nil || err != nil {
@@ -45,9 +52,18 @@ func (s *ShallowStorage) Shallow() ([]plumbing.Hash, error) {
 
 	var hash []plumbing.Hash
 
+	hexSize := s.objectFormat.HexSize()
 	scn := bufio.NewScanner(f)
 	for scn.Scan() {
-		hash = append(hash, plumbing.NewHash(scn.Text()))
+		line := scn.Text()
+		if len(line) < hexSize {
+			return nil, fmt.Errorf("bad shallow line: %q", line)
+		}
+		h, ok := plumbing.FromHex(line[:hexSize])
+		if !ok {
+			return nil, fmt.Errorf("bad shallow line: %q", line)
+		}
+		hash = append(hash, h)
 	}
 
 	return hash, scn.Err()

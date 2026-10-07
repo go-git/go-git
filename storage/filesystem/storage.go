@@ -200,7 +200,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
 		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
-		ShallowStorage:   ShallowStorage{dir: dir},
+		ShallowStorage:   ShallowStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ReflogStorage:    ReflogStorage{dir: dir},
@@ -250,6 +250,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 
 		s.ConfigStorage.objectFormat = of
 		s.ModuleStorage.objectFormat = of
+		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
 		s.oh = plumbing.FromObjectFormat(of)
 		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
