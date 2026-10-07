@@ -242,6 +242,28 @@ func TestUploadPackV2FetchNoWantsEmitsNothing(t *testing.T) {
 	require.Empty(t, out)
 }
 
+// fetch=filter is not advertised, so a filter argument is refused, as
+// upload-pack refuses it with uploadpack.allowFilter unset.
+func TestUploadPackV2FetchRejectsUnadvertisedFilter(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	err = UploadPack(context.TODO(), st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"filter blob:none",
+		"done",
+	}), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+		GitProtocol:  "version=2",
+		StatelessRPC: true,
+	})
+	require.ErrorIs(t, err, ErrFilterNotSupported)
+	require.False(t, strings.Contains(out.String(), "packfile"),
+		"a filtered request must not be answered with a pack")
+}
+
 func TestUploadPackV2LsRefsHeadResolvedOID(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
