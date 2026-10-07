@@ -24,8 +24,32 @@ func goGitShallowClone(t *testing.T, url, dir string, v protocol.Version) *gogit
 	var repo *gogit.Repository
 	var err error
 	if v == protocol.V2 {
-		repo, err = gogit.PlainClone(dir, &gogit.CloneOptions{URL: url, Depth: 1})
+		// Single-branch + tag-following, mirroring git clone --depth 1's
+		// defaults exactly: git fetches only HEAD's branch and only tags
+		// reachable from it. go-git's PlainClone default fetches every ref
+		// and every tag, which for this fixture pulls in the feature branch
+		// tip (f2) and the v1 tag (c3) as extra shallow roots -- correct
+		// for an all-refs clone, but not what the git CLI twin does, so the
+		// two would not be comparable. Matching git's defaults keeps the
+		// parity assertion meaningful.
+		//
+		// ReferenceName is refs/heads/main rather than HEAD so the clone
+		// creates refs/remotes/origin/main (which resetToOriginMain resolves);
+		// PlainClone with HEAD leaves only refs/remotes/origin/HEAD. The
+		// origin/HEAD symref git clone leaves behind is added below, the
+		// way the v0 path does.
+		repo, err = gogit.PlainClone(dir, &gogit.CloneOptions{
+			URL:           url,
+			Depth:         1,
+			SingleBranch:  true,
+			ReferenceName: plumbing.ReferenceName("refs/heads/main"),
+			Tags:          plumbing.TagFollowing,
+		})
 		require.NoError(t, err)
+		require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(
+			plumbing.ReferenceName("refs/remotes/origin/HEAD"),
+			plumbing.ReferenceName("refs/remotes/origin/main"),
+		)))
 	} else {
 		repo, err = gogit.PlainInit(dir, false)
 		require.NoError(t, err)
