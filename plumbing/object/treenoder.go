@@ -2,6 +2,7 @@ package object
 
 import (
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -22,10 +23,24 @@ type treeNoder struct {
 	mode     filemode.FileMode
 	hash     plumbing.Hash
 	children []noder.Noder // memoized
+	path     string        // scope components still to follow below this node
 }
 
 // NewTreeRootNode returns the root node of a Tree
 func NewTreeRootNode(t *Tree) noder.Noder {
+	return NewTreeRootNodeWithOptions(t, TreeRootNodeOptions{})
+}
+
+// TreeRootNodeOptions contains configuration for a commit tree root node.
+type TreeRootNodeOptions struct {
+	// Path limits entries to this slash-separated, repository-relative file
+	// or directory. An empty path includes all entries. Ancestor directory
+	// nodes are retained so changes keep their repository-relative paths.
+	Path string
+}
+
+// NewTreeRootNodeWithOptions returns the root node of a Tree with options.
+func NewTreeRootNodeWithOptions(t *Tree, opts TreeRootNodeOptions) noder.Noder {
 	if t == nil {
 		return &treeNoder{}
 	}
@@ -35,6 +50,7 @@ func NewTreeRootNode(t *Tree) noder.Noder {
 		name:   "",
 		mode:   filemode.Dir,
 		hash:   t.Hash,
+		path:   opts.Path,
 	}
 }
 
@@ -86,6 +102,52 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 		if parent, err = t.parent.Tree(t.name); err != nil {
 			return nil, err
 		}
+	}
+
+	if t.path != "" {
+		// For scope "docs/generated", root.Children() returns only a docs
+		// node, and docs.Children() returns only a generated node. The diff
+		// constructs filenames from the names of the nodes it walks through:
+		// root -> docs -> generated -> file.txt becomes docs/generated/file.txt.
+		//
+		// That full filename is also the key used for the file in the index.
+		//
+		// The constructed children have separate name and path fields:
+		//   docs node:      name="docs",      path="generated"
+		//   generated node: name="generated", path=""
+		//
+		// name contributes to the diff filename. path tells Children() which
+		// child to select next. An empty path means no further filtering, so
+		// generated.Children() calls transformChildren to return every entry
+		// inside docs/generated, including any files and subdirectories.
+		name, rest, _ := strings.Cut(t.path, "/")
+
+		// Select the child from entries already loaded in the current tree.
+		// transformChildren would read sibling directory objects through its
+		// TreeWalker before we could discard those unrelated children.
+		for _, entry := range parent.Entries {
+			// Only the next scope component leads to the selected subtree,
+			// sibling entries must not become children of this scoped node.
+			if entry.Name != name {
+				continue
+			}
+			// Remaining components require a directory to descend through.
+			// A matching file or gitlink cannot contain the requested path,
+			// so this tree contributes no entries within that scope.
+			if rest != "" && entry.Mode != filemode.Dir {
+				break
+			}
+			t.children = []noder.Noder{&treeNoder{
+				parent: parent,
+				name:   entry.Name,
+				mode:   entry.Mode,
+				hash:   entry.Hash,
+				path:   rest,
+			}}
+			return t.children, nil
+		}
+		t.children = noder.NoChildren
+		return t.children, nil
 	}
 
 	var err error
