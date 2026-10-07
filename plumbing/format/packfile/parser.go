@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	stdsync "sync"
+	"sync/atomic"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -78,6 +79,7 @@ type Parser struct {
 	objectFormat format.ObjectFormat
 
 	checksum plumbing.Hash
+	size     atomic.Int64
 	m        stdsync.Mutex
 	parsed   bool
 }
@@ -215,6 +217,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
+			p.size.Store(p.scanner.packSize)
 		}
 	}
 
@@ -241,6 +244,14 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 	}()
 
 	return p.checksum, p.onFooter(p.checksum)
+}
+
+// Size returns the length in bytes of the pack read by Parse, from its
+// signature through its trailing checksum. Data after the checksum is not
+// counted. Size returns 0 until Parse has read the checksum. It is safe to
+// call concurrently with Parse, including from an [Observer].
+func (p *Parser) Size() int64 {
+	return p.size.Load()
 }
 
 func (p *Parser) ensureContent(oh *ObjectHeader) error {

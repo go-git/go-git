@@ -168,6 +168,8 @@ type Scanner struct {
 	packhash gogithash.Hash
 	// objectIdSize holds the object ID size.
 	objectIDSize int
+	// packSize holds the size of the pack, set once its checksum is read.
+	packSize int64
 
 	// next holds what state function should be executed on the next
 	// call to Scan().
@@ -267,6 +269,7 @@ func (r *Scanner) Reset() error {
 	r.objIndex = -1
 	r.version = 0
 	r.objects = 0
+	r.packSize = 0
 	r.packData = PackData{}
 	r.err = nil
 	r.nextFn = packHeaderSignature
@@ -577,6 +580,7 @@ func packFooter(r *Scanner) (stateFn, error) {
 
 	r.packData.Section = FooterSection
 	r.packData.checksum = checksum
+	r.packSize = r.offset
 	r.nextFn = nil
 
 	return nil, nil

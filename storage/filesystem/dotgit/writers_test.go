@@ -1,14 +1,18 @@
 package dotgit
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -84,6 +88,71 @@ func TestNewObjectPack(t *testing.T) {
 
 	assert.NoError(t, pf2.Close())
 	assert.True(t, objFound)
+}
+
+func TestNewObjectPackTrailingData(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+
+	fs := osfs.New(t.TempDir())
+	dot := New(fs)
+
+	w, err := dot.NewObjectPack()
+	require.NoError(t, err)
+
+	pf, err := f.Packfile()
+	require.NoError(t, err)
+	want, err := io.ReadAll(pf)
+	require.NoError(t, err)
+
+	_, err = w.Write(want)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("trailing data after the pack checksum"))
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	got, err := util.ReadFile(fs, fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash))
+	require.NoError(t, err)
+	assert.Equal(t, len(want), len(got), "saved pack size")
+	assert.True(t, bytes.Equal(want, got), "saved pack differs from the one written")
+}
+
+var errTruncate = errors.New("truncate failed")
+
+// noTruncateFS hands out temporary files that cannot be truncated.
+type noTruncateFS struct{ billy.Filesystem }
+
+func (fs noTruncateFS) TempFile(dir, prefix string) (billy.File, error) {
+	f, err := fs.Filesystem.TempFile(dir, prefix)
+	if err != nil {
+		return nil, err
+	}
+	return noTruncateFile{f}, nil
+}
+
+type noTruncateFile struct{ billy.File }
+
+func (noTruncateFile) Truncate(int64) error { return errTruncate }
+
+func TestNewObjectPackTrailingDataTruncateError(t *testing.T) {
+	t.Parallel()
+
+	fs := noTruncateFS{memfs.New()}
+	w, err := newPackWrite(fs, config.SHA1, false)
+	require.NoError(t, err)
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(w, io.MultiReader(pf, strings.NewReader("trailing data")))
+	require.NoError(t, err)
+
+	require.ErrorIs(t, w.Close(), errTruncate)
+
+	entries, err := fs.ReadDir("objects/pack")
+	require.NoError(t, err)
+	assert.Empty(t, entries, "temporary pack left behind")
 }
 
 func TestNewObjectPackUnused(t *testing.T) {
