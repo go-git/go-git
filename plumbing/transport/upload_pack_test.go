@@ -269,6 +269,44 @@ func (s *UploadPackServeSuite) TestUploadPackCommonAcrossMultipleWants() {
 		"the have must not be reported as merely ready: it is reachable through the second want")
 }
 
+// The filter capability is not advertised, so a filter line was never
+// negotiated and the request is refused rather than answered with a pack the
+// client takes for a filtered one. The capability alone, without a filter line,
+// is ignored. Both match upload-pack with uploadpack.allowFilter unset.
+func (s *UploadPackServeSuite) TestUploadPackRejectsUnadvertisedFilter() {
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	s.T().Cleanup(func() { _ = st.Close() })
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	s.Require().NoError(err)
+
+	serve := func(filter packp.Filter) (string, error) {
+		upreq := packp.UploadRequest{Wants: []plumbing.Hash{head.Hash()}, Filter: filter}
+		upreq.Capabilities.Add(capability.Filter)
+		upreq.Capabilities.Add(capability.NoProgress)
+
+		var req bytes.Buffer
+		s.Require().NoError(upreq.Encode(&req))
+		s.Require().NoError((&packp.UploadHaves{Done: true}).Encode(&req))
+
+		var out bytes.Buffer
+		err := UploadPack(context.Background(), st,
+			io.NopCloser(&req), ioutil.WriteNopCloser(&out),
+			&UploadPackRequest{StatelessRPC: true})
+		return out.String(), err
+	}
+
+	out, err := serve(packp.FilterBlobNone())
+	s.ErrorIs(err, ErrFilterNotSupported)
+	s.False(strings.Contains(out, "PACK"), "a filtered request must not be answered with a pack")
+
+	out, err = serve("")
+	s.Require().NoError(err)
+	s.True(strings.Contains(out, "PACK"), "the filter capability alone must not be refused")
+}
+
 type ReceivePackServeSuite struct {
 	suite.Suite
 }

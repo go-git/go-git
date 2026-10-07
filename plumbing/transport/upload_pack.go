@@ -125,6 +125,15 @@ func UploadPack(
 				return fmt.Errorf("decoding upload-request: %w", err)
 			}
 
+			// The filter capability is never advertised, so a filter line
+			// was not negotiated, even when the client requested the
+			// capability. Upstream refuses it the same way when
+			// uploadpack.allowFilter is unset, instead of sending a pack
+			// the client takes for a filtered one.
+			if upreq.Filter != "" {
+				return fmt.Errorf("%w: %q", ErrFilterNotSupported, upreq.Filter)
+			}
+
 			wants = upreq.Wants
 			caps = upreq.Capabilities
 
@@ -661,6 +670,14 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	clientShallows := args.Shallows
 	depth := args.Deepen
 	done := args.Done
+
+	// fetch=filter is not advertised. Upstream rejects the argument as an
+	// unexpected line before acting on any other, so do the same rather than
+	// send a pack the client takes for a filtered one.
+	if args.Filter != "" {
+		_ = w.Close()
+		return true, fmt.Errorf("%w: %q", ErrFilterNotSupported, args.Filter)
+	}
 
 	// No 'want' lines: the client guessed it didn't want anything. Upstream
 	// emits no response at all here (upload-pack.c, UPLOAD_DONE), so write
