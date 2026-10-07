@@ -334,7 +334,7 @@ func (s *RevListSuite) TestRevListObjectsTreeWant() {
 
 var commitCounter int
 
-func testMakeTree(t *testing.T, s storer.EncodedObjectStorer, entries []object.TreeEntry) plumbing.Hash {
+func testMakeTree(t testing.TB, s storer.EncodedObjectStorer, entries []object.TreeEntry) plumbing.Hash {
 	t.Helper()
 	tree := &object.Tree{Entries: entries}
 	obj := s.NewEncodedObject()
@@ -352,7 +352,7 @@ func testMakeCommit(t *testing.T, s storer.EncodedObjectStorer, treeHash plumbin
 	return testMakeCommitAt(t, s, treeHash, when, parents...)
 }
 
-func testMakeCommitAt(t *testing.T, s storer.EncodedObjectStorer, treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
+func testMakeCommitAt(t testing.TB, s storer.EncodedObjectStorer, treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
 	t.Helper()
 	c := &object.Commit{
 		Author:       object.Signature{Name: "Test", Email: "t@t.com", When: when},
@@ -1199,7 +1199,55 @@ func BenchmarkObjects(b *testing.B) {
 	}
 }
 
-func testMakeBlob(t *testing.T, s storer.EncodedObjectStorer, content string) plumbing.Hash {
+// BenchmarkObjectsWideHistory walks a history in which width branches
+// are merged into the line that the want and the have both build on,
+// while the have also merges a commit older than all of them. The
+// branches are painted from both sides before the walk reaches that
+// commit, so about width stale commits are queued at every step.
+func BenchmarkObjectsWideHistory(b *testing.B) {
+	const depth = 10
+	for _, width := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("width=%d", width), func(b *testing.B) {
+			s := memory.NewStorage()
+			var sec int64
+			next := func() time.Time {
+				sec++
+				return time.Unix(sec, 0)
+			}
+
+			tree := testMakeTree(b, s, nil)
+			root := testMakeCommitAt(b, s, tree, next())
+			old := testMakeCommitAt(b, s, tree, next(), root)
+
+			tips := make([]plumbing.Hash, width)
+			for i := range tips {
+				tips[i] = root
+			}
+			for range depth {
+				for i := range tips {
+					tips[i] = testMakeCommitAt(b, s, tree, next(), tips[i])
+				}
+			}
+			merged := tips[0]
+			for _, tip := range tips[1:] {
+				merged = testMakeCommitAt(b, s, tree, next(), merged, tip)
+			}
+
+			have := testMakeCommitAt(b, s, tree, next(), merged, old)
+			want := testMakeCommitAt(b, s, testMakeTree(b, s, []object.TreeEntry{
+				{Name: "new", Mode: filemode.Regular, Hash: testMakeBlob(b, s, "new\n")},
+			}), next(), merged)
+
+			for b.Loop() {
+				if _, err := Objects(s, []plumbing.Hash{want}, []plumbing.Hash{have}); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func testMakeBlob(t testing.TB, s storer.EncodedObjectStorer, content string) plumbing.Hash {
 	t.Helper()
 	obj := s.NewEncodedObject()
 	obj.SetType(plumbing.BlobObject)
