@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"os"
+	"slices"
 	"sync"
 
 	"github.com/go-git/go-billy/v6"
@@ -105,8 +107,10 @@ func (w *PackWriter) Write(p []byte) (int, error) {
 	return w.synced.Write(p)
 }
 
-// Close closes all the file descriptors and save the final packfile, if nothing
-// was written, the tempfiles are deleted without writing a packfile.
+// Close closes the temporary file and saves the packfile and its index. If
+// nothing was written, Close removes the temporary file and saves nothing.
+// If the pack cannot be parsed or saved, Close removes the temporary file,
+// leaves no index without its pack, and returns the error.
 func (w *PackWriter) Close() (err error) {
 	defer func() {
 		if err == nil && w.Notify != nil && w.writer != nil && w.writer.Finished() {
@@ -120,29 +124,21 @@ func (w *PackWriter) Close() (err error) {
 		return err
 	}
 
-	if err := w.waitBuildIndex(); err != nil {
-		_ = w.fr.Close()
-		_ = w.fw.Close()
-		_ = w.clean()
-		return err
-	}
-
-	if err := w.fr.Close(); err != nil {
-		return err
-	}
+	parseErr := w.waitBuildIndex()
 
 	// Drop anything written after the pack's checksum: it is not part of the
 	// pack, and git rejects a .pack with "junk at the end".
-	if w.size > 0 && w.synced.size() > w.size {
-		if err := w.fw.Truncate(w.size); err != nil {
-			_ = w.fw.Close()
-			_ = w.clean()
-			return err
-		}
+	var truncErr error
+	if parseErr == nil && w.size > 0 && w.synced.size() > w.size {
+		truncErr = w.fw.Truncate(w.size)
 	}
 
-	if err := w.fw.Close(); err != nil {
-		return err
+	closeErr := errors.Join(truncErr, w.fr.Close(), w.fw.Close())
+	if parseErr != nil || closeErr != nil {
+		if cleanErr := errors.Join(closeErr, w.clean()); cleanErr != nil {
+			return errors.Join(parseErr, cleanErr)
+		}
+		return parseErr
 	}
 
 	if w.writer == nil || !w.writer.Finished() {
@@ -156,7 +152,36 @@ func (w *PackWriter) clean() error {
 	return w.fs.Remove(w.fw.Name())
 }
 
-func (w *PackWriter) save() error {
+// discard removes paths, newest first, and then the temporary pack. A path
+// that is already gone is not an error.
+func (w *PackWriter) discard(paths []string) error {
+	var errs []error
+	for _, p := range slices.Backward(append(paths, w.fw.Name())) {
+		if err := w.fs.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// save writes the pack's index files and moves the pack into place next to
+// them. On failure it removes the temporary pack and the files it created,
+// unless an identical pack is already in place, so that no index is left
+// without its pack.
+func (w *PackWriter) save() (err error) {
+	var (
+		created    []string
+		packExists bool
+	)
+	defer func() {
+		// Files written next to an identical pack already in place
+		// belong to it; only removing the temporary pack failed.
+		if err != nil && !packExists {
+			err = errors.Join(err, w.discard(created))
+		}
+	}()
+
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
 
 	h := githash.New(crypto.SHA1)
@@ -176,6 +201,7 @@ func (w *PackWriter) save() error {
 		if err != nil {
 			return err
 		}
+		created = append(created, idxPath)
 
 		if err := w.encodeIdx(idx, h); err != nil {
 			_ = idx.Close()
@@ -199,6 +225,7 @@ func (w *PackWriter) save() error {
 			if err != nil {
 				return err
 			}
+			created = append(created, revPath)
 
 			if err := w.encodeRev(rev, h); err != nil {
 				_ = rev.Close()
@@ -213,7 +240,7 @@ func (w *PackWriter) save() error {
 	}
 
 	packPath := fmt.Sprintf("%s.pack", base)
-	exists, err = fileExists(w.fs, packPath)
+	packExists, err = fileExists(w.fs, packPath)
 	if err != nil {
 		return err
 	}
@@ -229,7 +256,7 @@ func (w *PackWriter) save() error {
 	// objects, and nothing is missing that was not missing before; marking it
 	// now would newly declare the repository a partial clone on the strength of
 	// a duplicate.
-	if w.promisor != nil && !exists {
+	if w.promisor != nil && !packExists {
 		promisorPath := fmt.Sprintf("%s%s", base, promisorExt)
 		promisorExists, err := fileExists(w.fs, promisorPath)
 		if err != nil {
@@ -240,6 +267,7 @@ func (w *PackWriter) save() error {
 			if err != nil {
 				return err
 			}
+			created = append(created, promisorPath)
 
 			if _, err := io.WriteString(f, *w.promisor); err != nil {
 				_ = f.Close()
@@ -252,7 +280,7 @@ func (w *PackWriter) save() error {
 		}
 	}
 
-	if !exists {
+	if !packExists {
 		if err := w.fs.Rename(w.fw.Name(), packPath); err != nil {
 			return err
 		}
