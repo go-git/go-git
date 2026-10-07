@@ -64,7 +64,7 @@ func decodeInto(idx *decodeIndex, r io.Reader, opts *IncludeOptions, depth int) 
 			return nil
 		}
 
-		if opts.forbidRemoteURL && isRemoteURL(s, ss, k) {
+		if opts.forbidRemoteURL && isRemoteURL(s, k) {
 			return ErrRemoteURLInConditionalInclude
 		}
 

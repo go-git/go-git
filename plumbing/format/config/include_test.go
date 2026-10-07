@@ -750,6 +750,7 @@ func TestIncludeIfForbidsRemoteURLWhileCollecting(t *testing.T) {
 	files := map[string]string{
 		testAbs("cfg", "remote"):   remote,
 		testAbs("cfg", "indirect"): "[include]\n\tpath = remote\n",
+		testAbs("cfg", "unnamed"):  "[remote \"\"]\n\turl = https://example.com/r.git\n",
 	}
 	conditional := func(path string) string {
 		return "[includeIf \"hasconfig:remote.*.url:https://example.com/**\"]\n\tpath = " + path + "\n"
@@ -761,6 +762,7 @@ func TestIncludeIfForbidsRemoteURLWhileCollecting(t *testing.T) {
 		wantErr       bool
 	}{
 		{"directly", conditional("remote"), true, true},
+		{"in the unnamed remote", conditional("unnamed"), true, true},
 		{"indirectly", conditional("indirect"), true, true},
 		{"through a plain include", "[include]\n\tpath = remote\n", true, false},
 		{"when not collecting", conditional("remote"), false, false},
@@ -813,4 +815,32 @@ func FuzzDecoderWithIncludes(f *testing.F) {
 		}
 		_ = NewDecoderWithIncludes(bytes.NewReader(root), opts).Decode(New())
 	})
+}
+
+// For a home directory of "/", git expands "gitdir:~" to "/", which
+// matches everything below it, and "gitdir:~/" to "//", which matches no
+// git directory.
+func TestIncludeIfGitDirWithRootHome(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("a home directory of / is a POSIX case")
+	}
+
+	included := testAbs("cfg", "inc")
+	files := map[string]string{included: "[user]\n\temail = root@example.com\n"}
+
+	for pattern, want := range map[string]bool{"~": true, "~/": false} {
+		opts := &IncludeOptions{
+			Path:   testAbs("cfg", "main"),
+			Home:   "/",
+			GitDir: testAbs("src", "repo", ".git"),
+			Open:   openMap(files),
+		}
+		cfg := decode(t, "[includeIf \"gitdir:"+pattern+"\"]\n\tpath = "+slash(included)+"\n", opts)
+		if want {
+			assert.Equal(t, "root@example.com", cfg.Section("user").Option("email"), pattern)
+		} else {
+			assert.Empty(t, cfg.Section("user").Option("email"), pattern)
+		}
+	}
 }

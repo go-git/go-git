@@ -113,10 +113,15 @@ type IncludeOptions struct {
 	forbidRemoteURL bool
 }
 
-// isRemoteURL reports whether a section/subsection/key triple sets a
-// remote URL.
-func isRemoteURL(section, subsection, key string) bool {
-	return strings.EqualFold(section, "remote") && subsection != "" && strings.EqualFold(key, "url")
+// isRemoteURL reports whether a section/key pair sets a remote URL.
+//
+// The subsection is not consulted. The decoder turns the empty
+// subsection of [remote ""] into none at all, as it does for every
+// section, and go-git reads a url set there as that of the unnamed
+// remote, so git's refusal of a url in [remote ""] has to cover it. That
+// also covers a url in a bare [remote], which git ignores.
+func isRemoteURL(section, key string) bool {
+	return strings.EqualFold(section, "remote") && strings.EqualFold(key, "url")
 }
 
 // includeDirective reports whether a section/subsection/key triple is an
@@ -343,13 +348,19 @@ func (o *IncludeOptions) processInclude(idx *decodeIndex, condition, rawPath str
 
 // expandUser expands a leading "~/" using home, and a leading "~user/"
 // by looking the account up. ok is false when it cannot.
+//
+// The result is not cleaned, as git's interpolate_path does not clean
+// it, so that a trailing "/" in a pattern survives, and "~/" for a home
+// of "/" is "//", which matches no git directory.
+//
+// https://github.com/git/git/blob/8103b446517e0c44e67561b9d0ccce56efa60a71/path.c#L695-L740
 func expandUser(path, home string) (expanded string, ok bool) {
 	rest := path[1:]
 	if rest == "" || rest[0] == '/' || (os.PathSeparator == '\\' && rest[0] == '\\') {
 		if home == "" {
 			return path, false
 		}
-		return joinHome(home, rest), true
+		return home + filepath.FromSlash(rest), true
 	}
 
 	name := rest
@@ -364,16 +375,7 @@ func expandUser(path, home string) (expanded string, ok bool) {
 		return path, false
 	}
 
-	return joinHome(u.HomeDir, rest), true
-}
-
-// joinHome puts home in front of rest without cleaning the result, as git
-// does, so that a trailing "/" in a gitdir pattern survives.
-func joinHome(home, rest string) string {
-	home = strings.TrimRightFunc(home, func(r rune) bool {
-		return r == '/' || r == os.PathSeparator
-	})
-	return home + filepath.FromSlash(rest)
+	return u.HomeDir + filepath.FromSlash(rest), true
 }
 
 func strEqualFold(a, b string, icase bool) bool {
