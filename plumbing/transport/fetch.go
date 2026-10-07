@@ -23,6 +23,11 @@ import (
 // the fetch. So does pack data the storage left unread after the pack
 // trailer, although the pack is then already stored. Otherwise packf may be
 // left unread past the pack trailer.
+//
+// FetchPack closes packf before it returns, whether or not the fetch fails,
+// unless cancelling ctx ended a read of packf. That read may still be
+// blocked, so packf is then left open, and the caller should tie it to ctx so
+// that cancelling ctx also closes it.
 func FetchPack(
 	ctx context.Context,
 	st storage.Storer,
@@ -59,12 +64,11 @@ func FetchPack(
 	// repacking (repack-promisor.c), and accepts either, because only the
 	// file's presence is ever consulted — packfile.c tests it with access(2)
 	// and never opens it.
+	var err error
 	if req.Filter != "" {
-		if err := packfile.UpdatePromisorObjectStorage(st, reader, ""); err != nil {
-			return err
-		}
-	} else if err := packfile.UpdateObjectStorage(st, reader); err != nil {
-		return err
+		err = packfile.UpdatePromisorObjectStorage(st, reader, "")
+	} else {
+		err = packfile.UpdateObjectStorage(st, reader)
 	}
 
 	// Storage that parses the pack stops reading at its trailer, so read the
@@ -73,13 +77,16 @@ func FetchPack(
 	// must reach the caller. The demuxer stops at the closing flush-pkt; an
 	// unmuxed response has no end marker, so reading on would wait for the
 	// server to close.
-	if muxed {
-		if err := internal.DrainPackSection(demuxer); err != nil {
-			return err
-		}
+	if err == nil && muxed {
+		err = internal.DrainPackSection(demuxer)
 	}
 
-	if err := packf.Close(); err != nil {
+	// A read the context cancelled may still be blocked in the goroutine
+	// NewContextReadCloser started, and closing packf would race it.
+	if ioutil.ReadFinished(ctx, err) {
+		ioutil.CheckClose(packf, &err)
+	}
+	if err != nil {
 		return err
 	}
 
