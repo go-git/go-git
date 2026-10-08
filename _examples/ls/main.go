@@ -74,7 +74,9 @@ func main() {
 
 	revs, err := getLastCommitForPaths(commitNode, treePath, paths)
 	CheckIfError(err)
-	for path, rev := range revs {
+	for path, node := range revs {
+		rev, err := node.Commit()
+		CheckIfError(err)
 		// Print one line per file (name hash message)
 		hash := rev.Hash.String()
 		line := strings.Split(rev.Message, "\n")
@@ -155,7 +157,7 @@ func getFileHashes(c commitgraph.CommitNode, treePath string, paths []string) (m
 	return hashes, nil
 }
 
-func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []string) (map[string]*object.Commit, error) {
+func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []string) (map[string]commitgraph.CommitNode, error) {
 	// We do a tree traversal with nodes sorted by commit time
 	heap := binaryheap.NewWith(func(a, b any) int {
 		if a.(*commitAndPaths).commit.CommitTime().Before(b.(*commitAndPaths).commit.CommitTime()) {
@@ -259,15 +261,5 @@ func getLastCommitForPaths(c commitgraph.CommitNode, treePath string, paths []st
 		}
 	}
 
-	// Post-processing
-	result := make(map[string]*object.Commit)
-	for path, commitNode := range resultNodes {
-		var err error
-		result[path], err = commitNode.Commit()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
+	return resultNodes, nil
 }

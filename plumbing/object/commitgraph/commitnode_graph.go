@@ -23,6 +23,11 @@ type graphCommitNode struct {
 
 	commitData *commitgraph.CommitData
 	gci        *graphCommitNodeIndex
+
+	// authorWhen caches the author time, which the commit-graph does not
+	// record, once the author-order walker has decoded it.
+	authorWhen       time.Time
+	authorWhenLoaded bool
 }
 
 // graphCommitNodeIndex is an index that can load CommitNode objects from both the commit
@@ -59,14 +64,15 @@ func (gci *graphCommitNodeIndex) Get(hash plumbing.Hash) (CommitNode, error) {
 		}
 	}
 
-	// Fallback to loading full commit object
-	commit, err := object.GetCommit(gci.s, hash)
+	// Fallback to loading the commit object
+	commit, err := getTraversalCommit(gci.s, hash)
 	if err != nil {
 		return nil, err
 	}
 
 	return &objectCommitNode{
 		nodeIndex: gci,
+		s:         gci.s,
 		commit:    commit,
 	}, nil
 }
@@ -127,8 +133,18 @@ func (c *graphCommitNode) GenerationV2() uint64 {
 	return c.commitData.GenerationV2
 }
 
-func (c *graphCommitNode) Commit() (*object.Commit, error) {
-	return object.GetCommit(c.gci.s, c.hash)
+func (c *graphCommitNode) Commit() (*object.Commit, error) { return object.GetCommit(c.gci.s, c.hash) }
+
+func (c *graphCommitNode) authorTime() (time.Time, error) {
+	if c.authorWhenLoaded {
+		return c.authorWhen, nil
+	}
+	commit, err := getTraversalCommit(c.gci.s, c.hash)
+	if err != nil {
+		return time.Time{}, err
+	}
+	c.authorWhen, c.authorWhenLoaded = commit.AuthorWhen(), true
+	return c.authorWhen, nil
 }
 
 func (c *graphCommitNode) String() string {
