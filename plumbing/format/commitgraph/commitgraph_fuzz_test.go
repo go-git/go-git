@@ -12,6 +12,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -75,15 +76,18 @@ func FuzzOpenFileIndex(f *testing.F) {
 		return raw
 	}
 
-	// Seed from real commit-graph fixture when available.
-	for _, fix := range fixtures.ByTag("commit-graph") {
-		if dotgit, err := fix.DotGit(); err == nil {
-			path := dotgit.Join("objects", "info", "commit-graph")
-			if fh, err := dotgit.Open(path); err == nil {
-				if data, err := io.ReadAll(fh); err == nil {
-					f.Add(data)
+	// Seed from real commit-graph fixtures when available, including
+	// the Git-written SHA-1 and SHA-256 graphs.
+	for _, tag := range []string{"commit-graph", "commit-graph-sha1", "commit-graph-sha256"} {
+		for _, fix := range fixtures.ByTag(tag) {
+			if dotgit, err := fix.DotGit(fixtures.WithMemFS()); err == nil {
+				path := dotgit.Join("objects", "info", "commit-graph")
+				if fh, err := dotgit.Open(path); err == nil {
+					if data, err := io.ReadAll(fh); err == nil {
+						f.Add(data)
+					}
+					_ = fh.Close()
 				}
-				_ = fh.Close()
 			}
 		}
 	}
@@ -103,28 +107,41 @@ func FuzzOpenFileIndex(f *testing.F) {
 	f.Add(seedGenerationOverflowPastChunk())
 	f.Add([]byte{})
 
-	f.Fuzz(func(_ *testing.T, data []byte) {
-		idx, err := OpenFileIndex(struct {
-			io.ReaderAt
-			io.Closer
-		}{
-			bytes.NewReader(data),
-			io.NopCloser(nil),
-		})
-		if err != nil {
-			return
+	// readers returns data both with a known size, as files have, and
+	// without one, so both trailer and offset bound paths are fuzzed.
+	readers := func(data []byte) []ReaderAtCloser {
+		return []ReaderAtCloser{
+			struct {
+				*bytes.Reader
+				io.Closer
+			}{bytes.NewReader(data), io.NopCloser(nil)},
+			struct {
+				io.ReaderAt
+				io.Closer
+			}{bytes.NewReader(data), io.NopCloser(nil)},
 		}
-		defer idx.Close()
+	}
 
-		// Walk the index to exercise fanout-driven offset math in
-		// GetCommitDataByIndex and the OID lookup / generation-data paths.
-		hashes := idx.Hashes()
-		const maxIters = 4096
-		n := min(len(hashes), maxIters)
-		for i := range n {
-			_, _ = idx.GetIndexByHash(hashes[i])
-			_, _ = idx.GetHashByIndex(uint32(i))
-			_, _ = idx.GetCommitDataByIndex(uint32(i))
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		for _, of := range []formatcfg.ObjectFormat{formatcfg.SHA1, formatcfg.SHA256} {
+			for _, r := range readers(data) {
+				idx, err := OpenFileIndex(r, WithObjectFormat(of))
+				if err != nil {
+					continue
+				}
+
+				// Walk the index to exercise fanout-driven offset math in
+				// GetCommitDataByIndex and the OID lookup / generation-data paths.
+				hashes := idx.Hashes()
+				const maxIters = 4096
+				n := min(len(hashes), maxIters)
+				for i := range n {
+					_, _ = idx.GetIndexByHash(hashes[i])
+					_, _ = idx.GetHashByIndex(uint32(i))
+					_, _ = idx.GetCommitDataByIndex(uint32(i))
+				}
+				_ = idx.Close()
+			}
 		}
 	})
 }
@@ -153,72 +170,90 @@ func FuzzEncoderRoundTrip(f *testing.F) {
 		// Cap fuzzer-suggested numCommits to keep iterations cheap.
 		const maxN = 64
 		n := int(numCommits) % (maxN + 1)
-		mem := NewMemoryIndex()
 
-		hashes := make([]plumbing.Hash, n)
-		commits := make([]*CommitData, n)
-		for i := range n {
-			hashes[i] = plumbing.NewHash(fmt.Sprintf("%040x", uint64(i+1)))
-		}
-		for i := range n {
-			cd := &CommitData{
-				TreeHash:   hashes[i],
-				Generation: uint64(i + 1),
-				When:       time.Unix(when, 0),
+		for _, of := range []formatcfg.ObjectFormat{formatcfg.SHA1, formatcfg.SHA256} {
+			mem := NewMemoryIndex()
+			hashes := make([]plumbing.Hash, n)
+			commits := make([]*CommitData, n)
+			for i := range n {
+				hashes[i] = plumbing.NewHash(fmt.Sprintf("%0*x", of.HexSize(), uint64(i+1)))
 			}
-			// Octopus: 3 parents on selected commits.
-			if octopusMod > 1 && i >= 3 && i%int(octopusMod) == 0 {
-				cd.ParentHashes = []plumbing.Hash{hashes[i-1], hashes[i-2], hashes[i-3]}
-			} else if i >= 1 {
-				cd.ParentHashes = []plumbing.Hash{hashes[i-1]}
+			for i := range n {
+				cd := &CommitData{
+					TreeHash:   hashes[i],
+					Generation: uint64(i + 1),
+					When:       time.Unix(when, 0),
+				}
+				// Octopus: 3 parents on selected commits.
+				if octopusMod > 1 && i >= 3 && i%int(octopusMod) == 0 {
+					cd.ParentHashes = []plumbing.Hash{hashes[i-1], hashes[i-2], hashes[i-3]}
+				} else if i >= 1 {
+					cd.ParentHashes = []plumbing.Hash{hashes[i-1]}
+				}
+				if gv2Mod > 0 && i%(int(gv2Mod)+1) == 0 {
+					cd.GenerationV2 = uint64(when) + offset
+				} else {
+					cd.GenerationV2 = uint64(when) + uint64(i+1)
+				}
+				// Zero and MaxUint64 mean "no corrected commit date".
+				if cd.GenerationV2 == 0 || cd.GenerationV2 == math.MaxUint64 {
+					cd.GenerationV2 = 1
+				}
+				commits[i] = cd
+				mem.Add(hashes[i], cd)
 			}
-			if gv2Mod > 0 && i%(int(gv2Mod)+1) == 0 {
-				cd.GenerationV2 = uint64(when) + offset
-			} else {
-				cd.GenerationV2 = uint64(when) + uint64(i+1)
-			}
-			// Zero and MaxUint64 mean "no corrected commit date".
-			if cd.GenerationV2 == 0 || cd.GenerationV2 == math.MaxUint64 {
-				cd.GenerationV2 = 1
-			}
-			commits[i] = cd
-			mem.Add(hashes[i], cd)
-		}
 
-		var buf bytes.Buffer
-		if err := NewEncoder(&buf).Encode(mem); err != nil {
-			// Legitimate rejections (e.g. ErrTooManyChunks) are valid.
-			return
-		}
-		out, err := OpenFileIndex(struct {
-			io.ReaderAt
-			io.Closer
-		}{
-			bytes.NewReader(buf.Bytes()),
-			io.NopCloser(nil),
-		})
-		if err != nil {
-			t.Fatalf("encoded graph does not open: %v", err)
-		}
-		t.Cleanup(func() { _ = out.Close() })
-
-		for i, want := range commits {
-			idx, err := out.GetIndexByHash(hashes[i])
+			var buf bytes.Buffer
+			if err := NewEncoder(&buf, WithObjectFormat(of)).Encode(mem); err != nil {
+				// Legitimate rejections (e.g. ErrTooManyChunks) are valid.
+				continue
+			}
+			// Without a known size the trailer must still follow the
+			// chunk data.
+			unsized, err := OpenFileIndex(struct {
+				io.ReaderAt
+				io.Closer
+			}{
+				bytes.NewReader(buf.Bytes()),
+				io.NopCloser(nil),
+			}, WithObjectFormat(of))
 			if err != nil {
-				t.Fatalf("commit %d: %v", i, err)
+				t.Fatalf("%s: encoded graph does not open without a size: %v", of, err)
 			}
-			got, err := out.GetCommitDataByIndex(idx)
+			_ = unsized.Close()
+			out, err := OpenFileIndex(struct {
+				*bytes.Reader
+				io.Closer
+			}{
+				bytes.NewReader(buf.Bytes()),
+				io.NopCloser(nil),
+			}, WithObjectFormat(of))
 			if err != nil {
-				t.Fatalf("commit %d: %v", i, err)
+				t.Fatalf("%s: encoded graph does not open: %v", of, err)
 			}
-			if got.GenerationV2 != want.GenerationV2 {
-				t.Errorf("commit %d: GenerationV2 = %#x, want %#x", i, got.GenerationV2, want.GenerationV2)
-			}
-			if got.When.Unix() != when&commitTimeMask {
-				t.Errorf("commit %d: When = %d, want %d", i, got.When.Unix(), when&commitTimeMask)
-			}
-			if got.Generation != want.Generation {
-				t.Errorf("commit %d: Generation = %d, want %d", i, got.Generation, want.Generation)
+			t.Cleanup(func() { _ = out.Close() })
+
+			for i, want := range commits {
+				idx, err := out.GetIndexByHash(hashes[i])
+				if err != nil {
+					t.Fatalf("%s: commit %d: %v", of, i, err)
+				}
+				got, err := out.GetCommitDataByIndex(idx)
+				if err != nil {
+					t.Fatalf("%s: commit %d: %v", of, i, err)
+				}
+				if got.TreeHash != want.TreeHash {
+					t.Errorf("%s: commit %d: TreeHash = %s, want %s", of, i, got.TreeHash, want.TreeHash)
+				}
+				if got.GenerationV2 != want.GenerationV2 {
+					t.Errorf("%s: commit %d: GenerationV2 = %#x, want %#x", of, i, got.GenerationV2, want.GenerationV2)
+				}
+				if got.When.Unix() != when&commitTimeMask {
+					t.Errorf("%s: commit %d: When = %d, want %d", of, i, got.When.Unix(), when&commitTimeMask)
+				}
+				if got.Generation != want.Generation {
+					t.Errorf("%s: commit %d: Generation = %d, want %d", of, i, got.Generation, want.Generation)
+				}
 			}
 		}
 	})

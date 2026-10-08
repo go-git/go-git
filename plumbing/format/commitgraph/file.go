@@ -2,15 +2,15 @@ package commitgraph
 
 import (
 	"bytes"
-	"crypto"
 	encbin "encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -18,10 +18,20 @@ var (
 	// ErrUnsupportedVersion is returned by OpenFileIndex when the commit graph
 	// file version is not supported.
 	ErrUnsupportedVersion = errors.New("unsupported version")
-	// ErrUnsupportedHash is returned by OpenFileIndex when the commit graph
-	// hash function is not supported. Currently only SHA-1 is defined and
-	// supported.
-	ErrUnsupportedHash = errors.New("unsupported hash algorithm")
+	// ErrUnsupportedHashFunction is returned by OpenFileIndex and
+	// ReadObjectFormat when the commit graph hash version is not one go-git
+	// supports. A graph of a supported format other than the selected one
+	// returns ErrObjectFormatMismatch instead.
+	ErrUnsupportedHashFunction = errors.New("unsupported hash function")
+	// ErrUnsupportedHash is the former name of ErrUnsupportedHashFunction.
+	//
+	// Deprecated: use ErrUnsupportedHashFunction.
+	ErrUnsupportedHash = ErrUnsupportedHashFunction
+	// ErrObjectFormatMismatch is returned when a commit-graph file, chain
+	// entry, parent index, looked-up hash or encoded object ID uses another
+	// object format than the one selected with WithObjectFormat. It is
+	// formatcfg.ErrObjectFormatMismatch.
+	ErrObjectFormatMismatch = formatcfg.ErrObjectFormatMismatch
 	// ErrMalformedCommitGraphFile is returned by OpenFileIndex when the commit
 	// graph file is corrupted.
 	ErrMalformedCommitGraphFile = errors.New("malformed commit graph file")
@@ -86,6 +96,15 @@ type fileIndex struct {
 	objSize               int
 	numChunks             uint8
 	fileSize              int64
+	graphOID              plumbing.Hash
+}
+
+// newHash returns a zero hash sized for this index's object format, so
+// ReadFrom consumes objSize bytes (20 for SHA-1, 32 for SHA-256).
+func (fi *fileIndex) newHash() plumbing.Hash {
+	var h plumbing.Hash
+	h.ResetBySize(fi.objSize)
+	return h
 }
 
 // ReaderAtCloser is an interface that combines io.ReaderAt and io.Closer.
@@ -99,35 +118,59 @@ type ReaderAtCloser interface {
 //
 // On success the returned Index owns reader and closes it on Close. On
 // error reader is left open and the caller remains responsible for it.
-func OpenFileIndex(reader ReaderAtCloser) (Index, error) {
-	return OpenFileIndexWithParent(reader, nil)
+func OpenFileIndex(reader ReaderAtCloser, opts ...Option) (Index, error) {
+	return OpenFileIndexWithParent(reader, nil, opts...)
 }
 
 // OpenFileIndexWithParent opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
 //
+// File-backed parents are checked against the BASE chunk. Other Index
+// implementations remain supported, but their graph identities cannot be verified.
+// A graph that names base graphs cannot be opened without a parent.
+//
 // On success the returned Index owns reader and parent and closes both on
 // Close. On error neither is closed and the caller remains responsible
 // for them.
-func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error) {
+func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index, opts ...Option) (Index, error) {
+	o, err := readOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
 	}
-	fi := &fileIndex{reader: reader, parent: parent, objSize: config.SHA1Size}
+	fi := &fileIndex{reader: reader, parent: parent}
 
 	if err := fi.verifyFileHeader(); err != nil {
 		return nil, err
 	}
+	if fi.objSize != o.objectFormat.Size() {
+		return nil, fmt.Errorf("%w: graph has %d-byte object IDs, want %s", ErrObjectFormatMismatch, fi.objSize, o.objectFormat)
+	}
 	if err := fi.verifyFileSize(); err != nil {
 		return nil, err
 	}
-	if err := fi.readChunkHeaders(); err != nil {
+	dataEnd, err := fi.readChunkHeaders()
+	if err != nil {
 		return nil, err
 	}
 	if err := fi.verifyChunkSizes(); err != nil {
 		return nil, err
 	}
 	if err := fi.readFanout(); err != nil {
+		return nil, err
+	}
+	// Without a known file size, the trailer must follow the chunk data.
+	trailerOffset := dataEnd
+	if fi.fileSize != 0 {
+		trailerOffset = fi.fileSize - int64(fi.objSize)
+	}
+	fi.graphOID = fi.newHash()
+	if _, err := fi.graphOID.ReadFrom(io.NewSectionReader(fi.reader, trailerOffset, int64(fi.objSize))); err != nil {
+		return nil, err
+	}
+	if err := fi.verifyBaseGraphs(); err != nil {
 		return nil, err
 	}
 
@@ -141,6 +184,51 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 	}
 
 	return fi, nil
+}
+
+// verifyBaseGraphs follows Git's add_graph_to_chain: the actual chain and
+// BASE OIDs determine membership, independently of the wrapping header byte.
+func (fi *fileIndex) verifyBaseGraphs() error {
+	var parents []*fileIndex
+	for parent := fi.parent; parent != nil; {
+		p, ok := parent.(*fileIndex)
+		if !ok {
+			for _, h := range parent.Hashes() {
+				if h.Size() != fi.objSize {
+					return fmt.Errorf("%w: parent index has %d-byte object IDs, graph has %d", ErrObjectFormatMismatch, h.Size(), fi.objSize)
+				}
+			}
+			// An opaque ancestor does not expose layer positions or graph OIDs.
+			return nil
+		}
+		if p.objSize != fi.objSize {
+			return fmt.Errorf("%w: parent graph has %d-byte object IDs, graph has %d", ErrObjectFormatMismatch, p.objSize, fi.objSize)
+		}
+		parents = append(parents, p)
+		parent = p.parent
+	}
+	if len(parents) == 0 {
+		// Parent positions in a layer that names base graphs count the
+		// commits in those bases, so it cannot be read on its own.
+		if fi.sizes[BaseGraphsListChunk] > 0 {
+			return ErrMalformedCommitGraphFile
+		}
+		return nil
+	}
+	if fi.offsets[BaseGraphsListChunk] == 0 || fi.sizes[BaseGraphsListChunk]/int64(fi.objSize) < int64(len(parents)) {
+		return ErrMalformedCommitGraphFile
+	}
+	for i := range parents {
+		h := fi.newHash()
+		offset := fi.offsets[BaseGraphsListChunk] + int64(i)*int64(fi.objSize)
+		if _, err := h.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(fi.objSize))); err != nil {
+			return err
+		}
+		if h != parents[len(parents)-1-i].graphOID {
+			return ErrMalformedCommitGraphFile
+		}
+	}
+	return nil
 }
 
 // Close closes the underlying reader and the parent index if it exists.
@@ -158,32 +246,59 @@ func (fi *fileIndex) Close() (err error) {
 	return err
 }
 
+// ReadObjectFormat returns the object format a commit-graph file declares
+// in its header, checking only its signature, version and hash version.
+// Prefer the repository's configured format, passed with WithObjectFormat;
+// this is for callers without one, such as tools inspecting a lone graph.
+func ReadObjectFormat(r io.ReaderAt) (formatcfg.ObjectFormat, error) {
+	of, _, err := readFileHeader(r)
+	return of, err
+}
+
 func (fi *fileIndex) verifyFileHeader() error {
-	// Verify file signature
-	signature := make([]byte, szSignature)
-	if _, err := fi.reader.ReadAt(signature, 0); err != nil {
+	of, numChunks, err := readFileHeader(fi.reader)
+	if err != nil {
 		return err
 	}
+	// The hash version determines the on-disk OID width used by every
+	// subsequent read.
+	fi.objSize = of.Size()
+	fi.numChunks = numChunks
+	return nil
+}
+
+// readFileHeader reads the object format and chunk count from the header.
+func readFileHeader(r io.ReaderAt) (formatcfg.ObjectFormat, uint8, error) {
+	// Verify file signature
+	signature := make([]byte, szSignature)
+	if _, err := r.ReadAt(signature, 0); err != nil {
+		return formatcfg.UnsetObjectFormat, 0, err
+	}
 	if !bytes.Equal(signature, commitFileSignature) {
-		return ErrMalformedCommitGraphFile
+		return formatcfg.UnsetObjectFormat, 0, ErrMalformedCommitGraphFile
 	}
 
 	// Read and verify the file header
 	header := make([]byte, szHeader)
-	if _, err := fi.reader.ReadAt(header, szHeader); err != nil {
-		return err
+	if _, err := r.ReadAt(header, szHeader); err != nil {
+		return formatcfg.UnsetObjectFormat, 0, err
 	}
 	if header[0] != 1 {
-		return ErrUnsupportedVersion
+		return formatcfg.UnsetObjectFormat, 0, ErrUnsupportedVersion
 	}
-	if (fi.objSize != crypto.SHA1.Size() || header[1] != 1) &&
-		(fi.objSize != crypto.SHA256.Size() || header[1] != 2) {
-		// Unknown hash type / unsupported hash type
-		return ErrUnsupportedHash
+	// header[1] is the hash version: 1 == SHA-1, 2 == SHA-256.
+	var of formatcfg.ObjectFormat
+	switch header[1] {
+	case 1:
+		of = formatcfg.SHA1
+	case 2:
+		of = formatcfg.SHA256
+	default:
+		return formatcfg.UnsetObjectFormat, 0, ErrUnsupportedHashFunction
 	}
-	fi.numChunks = header[2]
-
-	return nil
+	// Git writes header[3] as a byte but does not read it when loading.
+	// The BASE chunk is validated against the actual linked graph identities.
+	return of, header[2], nil
 }
 
 // verifyFileSize records the reader's byte length on fi.fileSize and
@@ -242,7 +357,7 @@ type chunkAssignment struct {
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L414
 // [2]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L117
-func (fi *fileIndex) readChunkHeaders() error {
+func (fi *fileIndex) readChunkHeaders() (int64, error) {
 	tocBase := int64(szSignature + szHeader)
 	const tocEntrySize = szChunkSig + szUint64
 	chunkID := make([]byte, szChunkSig) // reused across loop iterations
@@ -265,19 +380,17 @@ func (fi *fileIndex) readChunkHeaders() error {
 	// instead of a linear scan; the semantics are identical.
 	seen := make(map[[szChunkSig]byte]struct{}, int(fi.numChunks))
 
-	// assigned records, in file order, every chunk whose offset was stored in
-	// fi.offsets. After the terminator offset is known, a second pass derives
-	// fi.sizes from consecutive offset differences.
+	// Unknown chunks also delimit the preceding chunk's data.
 	assigned := make([]chunkAssignment, 0, int(fi.numChunks))
 
 	for i := range int(fi.numChunks) {
 		entry := io.NewSectionReader(fi.reader, tocBase+int64(i)*tocEntrySize, tocEntrySize)
 		if _, err := io.ReadAtLeast(entry, chunkID, szChunkSig); err != nil {
-			return err
+			return 0, err
 		}
 		chunkOffset, err := binary.ReadUint64(entry)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		// Validate the offset before classifying the chunk-id, mirroring
@@ -285,7 +398,7 @@ func (fi *fileIndex) readChunkHeaders() error {
 		// against the previous one and the upper bound before any
 		// per-chunk dispatch.
 		if int64(chunkOffset) > upperBound || int64(chunkOffset) < prevOffset {
-			return ErrMalformedCommitGraphFile
+			return 0, ErrMalformedCommitGraphFile
 		}
 		prevOffset = int64(chunkOffset)
 
@@ -294,21 +407,23 @@ func (fi *fileIndex) readChunkHeaders() error {
 		var id [szChunkSig]byte
 		copy(id[:], chunkID)
 		if _, ok := seen[id]; ok {
-			return ErrMalformedCommitGraphFile
+			return 0, ErrMalformedCommitGraphFile
 		}
 		seen[id] = struct{}{}
 
 		chunkType, ok := ChunkTypeFromBytes(chunkID)
 		if !ok {
+			assigned = append(assigned, chunkAssignment{ct: ZeroChunk, offset: int64(chunkOffset)})
 			continue
 		}
 		// A zero chunk-id inside the declared count is the same condition
 		// canonical Git reports as "terminating chunk id appears earlier
 		// than expected".
 		if chunkType == ZeroChunk {
-			return ErrMalformedCommitGraphFile
+			return 0, ErrMalformedCommitGraphFile
 		}
 		if int(chunkType) >= len(fi.offsets) {
+			assigned = append(assigned, chunkAssignment{ct: ZeroChunk, offset: int64(chunkOffset)})
 			continue
 		}
 		fi.offsets[chunkType] = int64(chunkOffset)
@@ -320,18 +435,24 @@ func (fi *fileIndex) readChunkHeaders() error {
 	// match the table contents.
 	terminator := io.NewSectionReader(fi.reader, tocBase+int64(fi.numChunks)*tocEntrySize, tocEntrySize)
 	if _, err := io.ReadAtLeast(terminator, chunkID, szChunkSig); err != nil {
-		return err
+		return 0, err
 	}
 	if !bytes.Equal(chunkID, ZeroChunk.Signature()) {
-		return ErrMalformedCommitGraphFile
+		return 0, ErrMalformedCommitGraphFile
 	}
 	// The terminator entry's offset marks the end of all chunk data. Use it
 	// together with the per-chunk start offsets to derive chunk byte lengths.
 	terminatorOffset, err := binary.ReadUint64(terminator)
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if int64(terminatorOffset) < prevOffset || terminatorOffset > uint64(upperBound) {
+		return 0, ErrMalformedCommitGraphFile
 	}
 	for i, a := range assigned {
+		if a.ct == ZeroChunk {
+			continue
+		}
 		var end int64
 		if i+1 < len(assigned) {
 			end = assigned[i+1].offset
@@ -342,10 +463,10 @@ func (fi *fileIndex) readChunkHeaders() error {
 	}
 
 	if fi.offsets[OIDFanoutChunk] <= 0 || fi.offsets[OIDLookupChunk] <= 0 || fi.offsets[CommitDataChunk] <= 0 {
-		return ErrMalformedCommitGraphFile
+		return 0, ErrMalformedCommitGraphFile
 	}
 
-	return nil
+	return int64(terminatorOffset), nil
 }
 
 // verifyChunkSizes asserts the byte length of every required chunk
@@ -404,6 +525,15 @@ func (fi *fileIndex) readFanout() error {
 		if fanoutValue > 0x7fffffff {
 			return ErrMalformedCommitGraphFile
 		}
+		// The fanout is cumulative, so it must be monotonically
+		// non-decreasing. Canonical Git rejects an out-of-order fanout in
+		// graph_read_oid_fanout (commit-graph.c v2.54.0, "commit-graph
+		// fanout values out of order"); mirror that, both to reject
+		// corrupt files and to keep GetIndexByHash's binary search bound
+		// (high = fanout[b]) within the OID lookup chunk.
+		if i > 0 && fanoutValue < fi.fanout[i-1] {
+			return ErrMalformedCommitGraphFile
+		}
 		fi.fanout[i] = fanoutValue
 	}
 	return nil
@@ -411,7 +541,10 @@ func (fi *fileIndex) readFanout() error {
 
 // GetIndexByHash looks up the provided hash in the commit-graph fanout and returns the index of the commit data for the given hash.
 func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
-	var oid plumbing.Hash
+	if h.Size() != fi.objSize {
+		return 0, fmt.Errorf("%w: %d-byte hash, graph has %d", ErrObjectFormatMismatch, h.Size(), fi.objSize)
+	}
+	oid := fi.newHash()
 
 	// Find the hash in the oid lookup table
 	var low uint32
@@ -470,8 +603,7 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 	offset := fi.offsets[CommitDataChunk] + int64(idx)*int64(fi.objSize+szCommitData)
 	commitDataReader := io.NewSectionReader(fi.reader, offset, int64(fi.objSize+szCommitData))
 
-	// TODO: Add support for SHA256
-	var treeHash plumbing.Hash
+	treeHash := fi.newHash()
 	_, err := treeHash.ReadFrom(commitDataReader)
 	if err != nil {
 		return nil, err
@@ -596,8 +728,9 @@ func (fi *fileIndex) GetHashByIndex(idx uint32) (found plumbing.Hash, err error)
 		return found, ErrMalformedCommitGraphFile
 	}
 
+	found = fi.newHash()
 	offset := fi.offsets[OIDLookupChunk] + int64(idx)*int64(fi.objSize)
-	if _, err := found.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(found.Size()))); err != nil {
+	if _, err := found.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(fi.objSize))); err != nil {
 		return found, err
 	}
 
@@ -626,8 +759,9 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 			return nil, ErrMalformedCommitGraphFile
 		}
 
+		hashes[i] = fi.newHash()
 		offset := fi.offsets[OIDLookupChunk] + int64(idx)*int64(fi.objSize)
-		if _, err := hashes[i].ReadFrom(io.NewSectionReader(fi.reader, offset, int64(hashes[i].Size()))); err != nil {
+		if _, err := hashes[i].ReadFrom(io.NewSectionReader(fi.reader, offset, int64(fi.objSize))); err != nil {
 			return nil, err
 		}
 	}
@@ -648,9 +782,10 @@ func (fi *fileIndex) Hashes() []plumbing.Hash {
 
 	for i := uint32(0); i < fi.fanout[0xff]; i++ {
 		h := &hashes[i+fi.minimumNumberOfHashes]
-		offset := fi.offsets[OIDLookupChunk] + int64(i)*int64(h.Size())
-		n, err := h.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(h.Size())))
-		if err != nil || n < int64(h.Size()) {
+		*h = fi.newHash()
+		offset := fi.offsets[OIDLookupChunk] + int64(i)*int64(fi.objSize)
+		n, err := h.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(fi.objSize)))
+		if err != nil || n < int64(fi.objSize) {
 			return nil
 		}
 	}
