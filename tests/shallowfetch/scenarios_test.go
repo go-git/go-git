@@ -58,6 +58,7 @@ func runScenario(t *testing.T, name string,
 // takes.
 func TestShallowRefreshFetch(t *testing.T) {
 	t.Parallel()
+	skipOnWindows(t)
 	runScenario(t, "refresh", func(t *testing.T, work string) ([]string, func(*gogit.FetchOptions)) {
 		advanceServer(t, work)
 		return []string{"--depth", "1"},
@@ -70,6 +71,7 @@ func TestShallowRefreshFetch(t *testing.T) {
 // the rewound tip without object-not-found (the #1443 shape).
 func TestFetchAfterRewind(t *testing.T) {
 	t.Parallel()
+	skipOnWindows(t)
 	runScenario(t, "rewind", func(t *testing.T, work string) ([]string, func(*gogit.FetchOptions)) {
 		older := gitOut(t, work, "rev-parse", "HEAD~2")
 		git(t, work, "reset", "--hard", older)
@@ -87,6 +89,7 @@ func TestFetchAfterRewind(t *testing.T) {
 // (the feature branch), which the depth-1 pack never contained.
 func TestFetchAcrossMergeBoundary(t *testing.T) {
 	t.Parallel()
+	skipOnWindows(t)
 	runScenario(t, "merge-boundary", func(_ *testing.T, _ string) ([]string, func(*gogit.FetchOptions)) {
 		return nil, nil
 	})

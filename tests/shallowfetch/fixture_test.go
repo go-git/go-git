@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,6 +20,16 @@ func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git not found: %v", err)
+	}
+}
+
+// skipOnWindows skips tests that talk to a real git daemon over git://,
+// which is unreliable on Windows (connection resets). Matches the skip in
+// plumbing/transport/git. See https://github.com/git-for-windows/git/issues/907
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("git for windows has issues with the git:// protocol. See https://github.com/git-for-windows/git/issues/907")
 	}
 }
 

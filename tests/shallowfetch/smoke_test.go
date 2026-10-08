@@ -13,6 +13,7 @@ import (
 // through the real git daemon works before any shallow behaviour is touched.
 func TestDaemonServesFixture(t *testing.T) {
 	t.Parallel()
+	skipOnWindows(t)
 	requireGit(t)
 	root, _, url := buildServer(t)
 

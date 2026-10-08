@@ -123,6 +123,7 @@ func advanceServer(t *testing.T, work string) string {
 // that lacks the boundary's ancestry (fetch-pack.c:436-437).
 func TestPlainFetchAfterShallowClone(t *testing.T) {
 	t.Parallel()
+	skipOnWindows(t)
 
 	for _, tc := range []struct {
 		version protocol.Version
