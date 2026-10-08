@@ -487,12 +487,13 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			packfile.ErrPromisorPacksUnsupported, o.Filter)
 	}
 
-	// FETCH_HEAD marks the refs named on the command line for merging, and
-	// falls back to the branch's upstream for configured refspecs, so whether
-	// the caller gave refspecs has to be known before they are defaulted.
-	explicitRefSpecs := len(o.RefSpecs) > 0
+	// FETCH_HEAD treats refspecs the caller gives differently from the
+	// remote's configured ones, so the defaults are not written back into o,
+	// where a caller reusing o would pass them as its own.
+	specs := o.RefSpecs
+	explicitRefSpecs := len(specs) > 0
 	if !explicitRefSpecs {
-		o.RefSpecs = r.c.Fetch
+		specs = r.c.Fetch
 	}
 
 	if o.RemoteURL == "" {
@@ -521,12 +522,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 	defer ioutil.CheckClose(sess, &err)
 
-	if err := r.isSupportedRefSpec(o.RefSpecs, sess.Capabilities()); err != nil {
+	if err := r.isSupportedRefSpec(specs, sess.Capabilities()); err != nil {
 		return nil, err
 	}
 
 	rRefs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{
-		RefPrefixes: fetchRefPrefixes(o.RefSpecs, o.Tags),
+		RefPrefixes: fetchRefPrefixes(specs, o.Tags),
 	})
 	if err != nil {
 		return nil, err
@@ -537,7 +538,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	if err != nil {
 		return nil, err
 	}
-	refs, specToRefs, err := calculateRefs(o.RefSpecs, remoteRefs, o.Tags)
+	refs, specToRefs, err := calculateRefs(specs, remoteRefs, o.Tags)
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +552,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	isWildcard := true
-	for _, s := range o.RefSpecs {
+	for _, s := range specs {
 		if !s.IsWildcard() {
 			isWildcard = false
 			break
@@ -612,13 +613,13 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 	var updatedPrune bool
 	if o.Prune {
-		updatedPrune, err = r.pruneRemotes(o.RefSpecs, localRefs, remoteRefs)
+		updatedPrune, err = r.pruneRemotes(specs, localRefs, remoteRefs)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	updated, followedTags, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
+	updated, followedTags, err := r.updateLocalReferenceStorage(specs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
 	// Git records every fetched ref in FETCH_HEAD, including those whose
 	// local update was refused for want of --force. It only follows tags once
 	// every update has succeeded, though (do_fetch in builtin/fetch.c), so
@@ -627,7 +628,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		if err != nil {
 			followedTags = nil
 		}
-		entries, ferr := r.fetchHeadEntries(o.RefSpecs, specToRefs, remoteRefs, followedTags, explicitRefSpecs)
+		entries, ferr := r.fetchHeadEntries(specs, specToRefs, remoteRefs, followedTags, explicitRefSpecs)
 		if ferr != nil {
 			return nil, ferr
 		}

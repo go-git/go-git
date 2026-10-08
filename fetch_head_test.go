@@ -77,9 +77,20 @@ func TestFetchHeadMatchesGit(t *testing.T) {
 		gitArgs []string
 		opts    FetchOptions
 		wantErr bool
+		// twice fetches again with the same FetchOptions, which must not
+		// keep anything the first fetch filled in.
+		twice bool
 	}{{
 		name:    "configured refspecs",
 		gitArgs: []string{"fetch", "origin"},
+	}, {
+		name: "configured refspecs twice with the same options",
+		setup: []string{
+			"config branch.master.remote origin",
+			"config branch.master.merge refs/heads/feature",
+		},
+		gitArgs: []string{"fetch", "origin"},
+		twice:   true,
 	}, {
 		name:    "already up to date",
 		setup:   []string{"fetch -q origin"},
@@ -205,18 +216,25 @@ func TestFetchHeadMatchesGit(t *testing.T) {
 				}
 			}
 
-			out, ok := gitAllowFail(t, withGit, tc.gitArgs...)
-			require.Equal(t, !tc.wantErr, ok, "git %v: %s", tc.gitArgs, out)
+			fetches := 1
+			if tc.twice {
+				fetches = 2
+			}
 
 			r, err := PlainOpen(withGoGit)
 			require.NoError(t, err)
 			defer func() { _ = r.Close() }()
 
-			err = r.Fetch(&tc.opts)
-			if tc.wantErr {
-				require.Error(t, err)
-			} else if !errors.Is(err, NoErrAlreadyUpToDate) {
-				require.NoError(t, err)
+			for range fetches {
+				out, ok := gitAllowFail(t, withGit, tc.gitArgs...)
+				require.Equal(t, !tc.wantErr, ok, "git %v: %s", tc.gitArgs, out)
+
+				err = r.Fetch(&tc.opts)
+				if tc.wantErr {
+					require.Error(t, err)
+				} else if !errors.Is(err, NoErrAlreadyUpToDate) {
+					require.NoError(t, err)
+				}
 			}
 
 			want := readFetchHead(t, withGit)
