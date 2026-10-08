@@ -487,7 +487,11 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			packfile.ErrPromisorPacksUnsupported, o.Filter)
 	}
 
-	if len(o.RefSpecs) == 0 {
+	// FETCH_HEAD marks the refs named on the command line for merging, and
+	// falls back to the branch's upstream for configured refspecs, so whether
+	// the caller gave refspecs has to be known before they are defaulted.
+	explicitRefSpecs := len(o.RefSpecs) > 0
+	if !explicitRefSpecs {
 		o.RefSpecs = r.c.Fetch
 	}
 
@@ -498,6 +502,15 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	cl, req, err := newClient(o.RemoteURL, o.ClientOptions)
 	if err != nil {
 		return nil, err
+	}
+
+	// Git empties FETCH_HEAD before it contacts the remote, so a fetch that
+	// fails leaves nothing behind for a later `git checkout FETCH_HEAD` to
+	// pick up from an earlier fetch.
+	if !o.NoWriteFetchHead && !o.AppendFetchHead {
+		if err := r.truncateFetchHead(); err != nil {
+			return nil, err
+		}
 	}
 
 	req.Command = transport.UploadPackService
@@ -605,7 +618,23 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	updated, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
+	updated, followedTags, err := r.updateLocalReferenceStorage(o.RefSpecs, refs, remoteRefs, specToRefs, o.Tags, o.Force)
+	// Git records every fetched ref in FETCH_HEAD, including those whose
+	// local update was refused for want of --force. It only follows tags once
+	// every update has succeeded, though (do_fetch in builtin/fetch.c), so
+	// then FETCH_HEAD lists no auto-followed tags.
+	if !o.NoWriteFetchHead && (err == nil || errors.Is(err, ErrForceNeeded)) {
+		if err != nil {
+			followedTags = nil
+		}
+		entries, ferr := r.fetchHeadEntries(o.RefSpecs, specToRefs, remoteRefs, followedTags, explicitRefSpecs)
+		if ferr != nil {
+			return nil, ferr
+		}
+		if ferr := r.writeFetchHead(entries, o.RemoteURL); ferr != nil {
+			return nil, ferr
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1438,7 +1467,7 @@ func (r *Remote) updateLocalReferenceStorage(
 	specToRefs [][]*plumbing.Reference,
 	tagMode plumbing.TagMode,
 	force bool,
-) (updated bool, err error) {
+) (updated bool, followedTags []*plumbing.Reference, err error) {
 	isWildcard := true
 	forceNeeded := false
 
@@ -1481,7 +1510,7 @@ func (r *Remote) updateLocalReferenceStorage(
 			if old != nil && !old.Name().IsTag() && !force && !spec.IsForceUpdate() {
 				ff, err := isFastForward(r.s, old.Hash(), newRef.Hash(), shallows)
 				if err != nil {
-					return updated, err
+					return updated, nil, err
 				}
 
 				if !ff {
@@ -1495,7 +1524,7 @@ func (r *Remote) updateLocalReferenceStorage(
 				continue
 			}
 			if err != nil {
-				return updated, err
+				return updated, nil, err
 			}
 
 			if refUpdated {
@@ -1505,16 +1534,16 @@ func (r *Remote) updateLocalReferenceStorage(
 	}
 
 	if tagMode == plumbing.NoTags {
-		return updated, nil
+		return updated, nil, nil
 	}
 
 	tags := fetchedRefs
 	if isWildcard {
 		tags = remoteRefs
 	}
-	tagUpdated, tagForceNeeded, err := r.buildFetchedTags(tags, tagMode == plumbing.AllTags, force)
+	tagUpdated, tagForceNeeded, followedTags, err := r.buildFetchedTags(tags, tagMode == plumbing.AllTags, force)
 	if err != nil {
-		return updated, err
+		return updated, nil, err
 	}
 
 	if tagUpdated {
@@ -1528,10 +1557,13 @@ func (r *Remote) updateLocalReferenceStorage(
 		err = ErrForceNeeded
 	}
 
-	return updated, err
+	return updated, followedTags, err
 }
 
-func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force bool) (updated, forceNeeded bool, err error) {
+// buildFetchedTags stores the tags among refs whose objects are now present.
+// Unless allTags is set, it also returns the tags it created, which are the
+// ones git reports as auto-followed in FETCH_HEAD.
+func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force bool) (updated, forceNeeded bool, followed []*plumbing.Reference, err error) {
 	for _, ref := range refs {
 		if !ref.Name().IsTag() {
 			continue
@@ -1543,7 +1575,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 		}
 
 		if err != nil {
-			return updated, forceNeeded, err
+			return updated, forceNeeded, nil, err
 		}
 
 		old, err := r.s.Reference(ref.Name())
@@ -1551,7 +1583,7 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 			continue
 		}
 		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
-			return updated, forceNeeded, err
+			return updated, forceNeeded, nil, err
 		}
 		if err == nil && old.Hash() != ref.Hash() {
 			if !allTags {
@@ -1570,15 +1602,18 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 			continue
 		}
 		if err != nil {
-			return updated, forceNeeded, err
+			return updated, forceNeeded, nil, err
 		}
 
 		if refUpdated {
 			updated = true
+			if !allTags {
+				followed = append(followed, ref)
+			}
 		}
 	}
 
-	return updated, forceNeeded, err
+	return updated, forceNeeded, followed, err
 }
 
 // ListContext lists the references on the remote repository.

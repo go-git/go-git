@@ -258,6 +258,13 @@ type FetchOptions struct {
 	// Filter requests that the server to send only a subset of the objects.
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
+	// NoWriteFetchHead skips recording the fetched references in FETCH_HEAD,
+	// like `git fetch --no-write-fetch-head`. FETCH_HEAD is only written by
+	// storers that keep the repository on a filesystem.
+	NoWriteFetchHead bool
+	// AppendFetchHead appends the fetched references to FETCH_HEAD instead of
+	// replacing its contents, like `git fetch --append`.
+	AppendFetchHead bool
 }
 
 // Validate validates the fields and sets the default values.
