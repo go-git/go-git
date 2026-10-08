@@ -543,6 +543,13 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
+	// Worked out before anything is fetched, as git does, because two
+	// sources fetched to one destination fail the fetch.
+	fetchHead, err := r.fetchHeadEntries(specs, specToRefs, remoteRefs, explicitRefSpecs)
+	if err != nil {
+		return nil, err
+	}
+
 	var shallows []plumbing.Hash
 	if o.Depth != 0 {
 		shallows, err = r.s.Shallow()
@@ -628,11 +635,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		if err != nil {
 			followedTags = nil
 		}
-		entries, ferr := r.fetchHeadEntries(specs, specToRefs, remoteRefs, followedTags, explicitRefSpecs)
-		if ferr != nil {
-			return nil, ferr
-		}
-		if ferr := r.writeFetchHead(entries, o.RemoteURL); ferr != nil {
+		if ferr := r.writeFetchHead(fetchHead, followedTags, o.RemoteURL); ferr != nil {
 			return nil, ferr
 		}
 	}

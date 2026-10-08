@@ -34,22 +34,21 @@ type fetchHeadEntry struct {
 // References matched by refspecs the caller gave are all for merge. With the
 // remote's configured refspecs, only the current branch's upstream
 // (branch.<name>.merge) is, or, when the branch has none, the first reference
-// matched by a first refspec that is not a wildcard. Tags fetched by AllTags,
-// or auto-followed, are never for merge, nor is anything that does not peel
-// to a commit. Destinations that repeat are listed once. This is get_ref_map
-// and store_updated_refs in builtin/fetch.c:
+// matched by a first refspec that is not a wildcard. Tags fetched by AllTags
+// are never for merge. A destination that one source reaches through several
+// refspecs is listed once, and one that two sources reach is an error, as in
+// ref_remove_duplicates in remote.c. This is get_ref_map in builtin/fetch.c:
 //
 // https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/fetch.c#L503-L610
-// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/fetch.c#L1260-L1310
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/remote.c#L887-L947
 func (r *Remote) fetchHeadEntries(
 	specs []config.RefSpec,
 	specToRefs [][]*plumbing.Reference,
 	remoteRefs storer.ReferenceStorer,
-	followedTags []*plumbing.Reference,
 	explicitRefSpecs bool,
 ) ([]fetchHeadEntry, error) {
 	var entries []fetchHeadEntry
-	seen := make(map[plumbing.ReferenceName]bool)
+	sources := make(map[plumbing.ReferenceName]string)
 	for i, refs := range specToRefs {
 		// calculateRefs appends the AllTags refspec after the given ones.
 		spec := config.RefSpec(refspecAllTags)
@@ -80,14 +79,20 @@ func (r *Remote) fetchHeadEntries(
 				}
 			}
 
-			// A destination that is a hash stores no reference, as in
-			// updateLocalReferenceStorage, so like a refspec without a
-			// destination it is never a duplicate.
+			// A destination that is a hash stores no reference, so like a
+			// refspec without a destination it is never a duplicate. One
+			// outside refs/ is a branch. See updateLocalReferenceStorage.
 			if dst := spec.Dst(ref.Name()); !plumbing.IsHash(dst.String()) {
-				if seen[dst] {
+				if !dst.IsUnderRefs() {
+					dst = plumbing.NewBranchReferenceName(dst.String())
+				}
+				if source, ok := sources[dst]; ok {
+					if source != name {
+						return nil, fmt.Errorf("cannot fetch both %s and %s to %s", source, name, dst)
+					}
 					continue
 				}
-				seen[dst] = true
+				sources[dst] = name
 			}
 
 			entries = append(entries, fetchHeadEntry{
@@ -101,16 +106,6 @@ func (r *Remote) fetchHeadEntries(
 	if !explicitRefSpecs {
 		if err := r.markUpstreamForMerge(entries, specs, specToRefs); err != nil {
 			return nil, err
-		}
-	}
-
-	for _, tag := range slices.SortedFunc(slices.Values(followedTags), compareRefNames) {
-		entries = append(entries, fetchHeadEntry{hash: tag.Hash(), name: tag.Name().String()})
-	}
-
-	for i := range entries {
-		if entries[i].forMerge && !r.peelsToCommit(entries[i].hash) {
-			entries[i].forMerge = false
 		}
 	}
 
@@ -192,12 +187,26 @@ func (r *Remote) truncateFetchHead() error {
 	return f.Close()
 }
 
-// writeFetchHead appends entries to FETCH_HEAD, those for merge first so that
-// FETCH_HEAD resolves to the first of them.
-func (r *Remote) writeFetchHead(entries []fetchHeadEntry, remoteURL string) (err error) {
+// writeFetchHead appends entries and the auto-followed tags, never for merge,
+// to FETCH_HEAD. An entry whose object does not peel to a commit is not for
+// merge either. Those for merge come first, so that FETCH_HEAD resolves to
+// the first of them. This is store_updated_refs in builtin/fetch.c:
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/fetch.c#L1260-L1310
+func (r *Remote) writeFetchHead(entries []fetchHeadEntry, followedTags []*plumbing.Reference, remoteURL string) (err error) {
 	fss, ok := r.s.(storer.FilesystemStorer)
 	if !ok {
 		return nil
+	}
+
+	for _, tag := range slices.SortedFunc(slices.Values(followedTags), compareRefNames) {
+		entries = append(entries, fetchHeadEntry{hash: tag.Hash(), name: tag.Name().String()})
+	}
+
+	for i := range entries {
+		if entries[i].forMerge && !r.peelsToCommit(entries[i].hash) {
+			entries[i].forMerge = false
+		}
 	}
 
 	url := fetchHeadURL(remoteURL)

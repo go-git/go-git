@@ -194,6 +194,15 @@ func TestFetchHeadMatchesGit(t *testing.T) {
 		},
 		wantErr: true,
 	}, {
+		name:    "two sources to one destination",
+		setup:   []string{"fetch -q --no-tags origin feature:refs/remotes/origin/feature"},
+		gitArgs: []string{"fetch", "--no-tags", "origin", "master:refs/remotes/x", "feature:refs/remotes/x"},
+		opts: FetchOptions{
+			RefSpecs: []config.RefSpec{"master:refs/remotes/x", "feature:refs/remotes/x"},
+			Tags:     plumbing.NoTags,
+		},
+		wantErr: true,
+	}, {
 		name:    "missing ref",
 		setup:   []string{"fetch -q --no-tags origin feature:refs/remotes/origin/feature"},
 		gitArgs: []string{"fetch", "--no-tags", "origin", "missing:refs/remotes/origin/missing"},
