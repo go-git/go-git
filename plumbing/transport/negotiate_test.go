@@ -480,7 +480,7 @@ func TestNegotiatePackShallowClientNeedsCapability(t *testing.T) {
 	_, err := NegotiatePack(
 		context.TODO(),
 		st,
-		capability.List{}, // server without the shallow capability
+		capability.List{},
 		false,
 		bytes.NewReader([]byte{}),
 		writer,

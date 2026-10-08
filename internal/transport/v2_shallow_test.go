@@ -26,8 +26,6 @@ func TestFetchV2AdvertisesShallowWithoutDepth(t *testing.T) {
 	req := &FetchRequest{
 		Wants: []plumbing.Hash{hash},
 	}
-	// No Depth, no Haves: previously this short-circuited to ErrNoChange
-	// before any round trip; now the shallow boundary must reach the args.
 
 	var got *packp.FetchArgs
 	round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {

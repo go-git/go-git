@@ -70,8 +70,6 @@ func goGitShallowClone(t *testing.T, url, dir string, v protocol.Version) *gogit
 		err = repo.Fetch(&gogit.FetchOptions{Depth: 1})
 		require.NoError(t, err)
 
-		// Leave behind what git clone --depth 1 leaves: a local main at
-		// the remote tip, origin/HEAD pointing at it, and HEAD on main.
 		tip, err := repo.ResolveRevision(plumbing.Revision("refs/remotes/origin/main"))
 		require.NoError(t, err)
 		require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(
@@ -137,16 +135,12 @@ func TestPlainFetchAfterShallowClone(t *testing.T) {
 			requireGit(t)
 			root, work, url := buildServer(t)
 
-			// Both clients start from the same server state: the git CLI
-			// twin, then go-git, each as a depth-1 clone.
 			twin := filepath.Join(root, "twin")
 			git(t, "", "clone", "--depth", "1", url, twin)
 
 			ours := filepath.Join(root, "ours")
 			repo := goGitShallowClone(t, url, ours, tc.version)
 
-			// The server gains one commit; both clients plain-fetch it,
-			// with no depth, and consume the result.
 			advanceServer(t, work)
 
 			git(t, twin, "fetch", "origin")

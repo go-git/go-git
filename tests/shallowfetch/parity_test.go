@@ -55,7 +55,6 @@ func objectsOf(t *testing.T, repo string) []string {
 		if line == "" {
 			continue
 		}
-		// Keep "<hash> <path>", but the path may be empty for commits.
 		objects = append(objects, strings.TrimSuffix(line, " "))
 	}
 	sort.Strings(objects)
@@ -99,8 +98,6 @@ func worktreeFiles(t *testing.T, repo string) map[string]string {
 func assertRepoParity(t *testing.T, ours, twin string) {
 	t.Helper()
 
-	// A repository go-git leaves that git itself reports as corrupt is a
-	// failure no matter what the twin looks like.
 	git(t, ours, "fsck", "--no-dangling")
 
 	require.Equal(t, shallowSet(t, twin), shallowSet(t, ours),

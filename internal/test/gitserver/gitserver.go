@@ -32,28 +32,16 @@ func Start(t *testing.T, basePath string) string {
 	port, err := test.FreePort()
 	require.NoError(t, err)
 
-	// Bound to the test's own context, which the testing package cancels
-	// before the test's cleanups run, so the daemon ends with the test that
-	// started it rather than through a cleanup remembering to end it.
 	daemon := gitenv.CommandContext(t.Context(), "git", "daemon",
 		fmt.Sprintf("--base-path=%s", basePath),
 		"--export-all", "--enable=receive-pack", "--enable=upload-archive", "--reuseaddr",
 		fmt.Sprintf("--port=%d", port),
 		"--max-connections=1", "--listen=127.0.0.1",
 	)
-	// Interrupt in place of the Kill exec would use, which leaves the daemon's
-	// git-upload-pack and git-receive-pack children orphaned. WaitDelay bounds
-	// the gentler ending: a daemon that does not act on the interrupt — the
-	// signal is unsupported on Windows, and a shutdown can stall anywhere — is
-	// killed rather than left running, which sending the signal and returning
-	// had no answer for.
 	daemon.Cancel = func() error { return daemon.Process.Signal(os.Interrupt) }
 	daemon.WaitDelay = daemonShutdown
 	require.NoError(t, daemon.Start())
 
-	// Wait runs in the background from the moment the command starts, and
-	// the cleanup joins it: killing is not reaping, and without a Wait the
-	// killed process stays a zombie until the test binary exits.
 	waited := make(chan error, 1)
 	go func() { waited <- daemon.Wait() }()
 	t.Cleanup(func() { <-waited })
