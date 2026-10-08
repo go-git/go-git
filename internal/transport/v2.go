@@ -138,15 +138,19 @@ func wantsLocal(wants, haves []plumbing.Hash) bool {
 // advertise its boundary. Git requires the shallow capability from such a
 // client even without a depth (fetch-pack.c:1165-1168; v2: the fetch
 // command's shallow feature, fetch-pack.c:1402-1405).
-func ShallowSupportRequired(st storage.Storer, req *FetchRequest) (bool, error) {
+func ShallowSupportRequired(st storage.Storer, req *FetchRequest) (bool, []plumbing.Hash, error) {
 	if req.Depth > 0 {
-		return true, nil
+		shallows, err := st.Shallow()
+		if err != nil {
+			return false, nil, err
+		}
+		return true, shallows, nil
 	}
 	shallows, err := st.Shallow()
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
-	return len(shallows) > 0, nil
+	return len(shallows) > 0, shallows, nil
 }
 
 // FetchRound runs a single fetch command round. When the returned output has
@@ -166,9 +170,13 @@ type FetchRound func(args *packp.FetchArgs) (out *packp.FetchOutput, packReader 
 // The caller is responsible for validating optional features against the server
 // advertisement (see FetchSupports) before requesting Filter or Depth.
 func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round FetchRound) error {
-	shallows, err := st.Shallow()
-	if err != nil {
-		return err
+	shallows := req.Shallows
+	if shallows == nil {
+		var err error
+		shallows, err = st.Shallow()
+		if err != nil {
+			return err
+		}
 	}
 	// Everything wanted is already local and the repository is not shallow:
 	// short-circuit before opening negotiation, matching git's

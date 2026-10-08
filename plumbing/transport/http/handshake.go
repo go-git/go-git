@@ -460,7 +460,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 	if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
 		return transport.ErrFilterNotSupported
 	}
-	shallowRequired, err := internal.ShallowSupportRequired(st, req)
+	shallowRequired, shallows, err := internal.ShallowSupportRequired(st, req)
 	if err != nil {
 		return err
 	}
@@ -470,6 +470,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 	if err := transport.ReconcileObjectFormatV2(st, s.caps); err != nil {
 		return err
 	}
+	req.Shallows = shallows
 
 	round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
 		r := &httpRequester{session: s, ctx: ctx}

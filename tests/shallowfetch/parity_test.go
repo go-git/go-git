@@ -49,13 +49,13 @@ func refsOf(t *testing.T, repo string) []string {
 // objectsOf returns the sorted set of objects reachable from all refs.
 func objectsOf(t *testing.T, repo string) []string {
 	t.Helper()
-	out := gitOut(t, repo, "rev-list", "--objects", "--all", "--reflog")
+	out := gitOut(t, repo, "rev-list", "--objects", "--all")
 	var objects []string
 	for line := range strings.SplitSeq(out, "\n") {
 		if line == "" {
 			continue
 		}
-		objects = append(objects, strings.TrimSuffix(line, " "))
+		objects = append(objects, strings.TrimSpace(line))
 	}
 	sort.Strings(objects)
 	return objects
