@@ -1318,6 +1318,15 @@ func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Ref
 	}
 
 	line := strings.TrimSpace(string(b))
+	// FETCH_HEAD follows the object name with more data, one fetched ref per
+	// line. Git reads the object name and ignores whatever comes after the
+	// whitespace that ends it (parse_loose_ref_contents in
+	// refs/files-backend.c), so FETCH_HEAD resolves to its first line.
+	if !strings.HasPrefix(line, "ref: ") {
+		if i := strings.IndexAny(line, " \t\n\r"); i >= 0 {
+			line = line[:i]
+		}
+	}
 	return plumbing.NewReferenceFromStrings(name, line), nil
 }
 

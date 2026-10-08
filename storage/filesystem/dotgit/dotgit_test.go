@@ -683,6 +683,18 @@ func (s *SuiteDotGit) TestRefEmptyWithoutPackedEntry() {
 	s.Require().Nil(ref)
 }
 
+func (s *SuiteDotGit) TestRefFetchHeadResolvesToFirstLine() {
+	fs := s.EmptyFS()
+	s.Require().NoError(util.WriteFile(fs, "FETCH_HEAD", []byte(
+		"1111111111111111111111111111111111111111\t\tbranch 'main' of https://example.com/repo\n"+
+			"2222222222222222222222222222222222222222\tnot-for-merge\ttag 'v1' of https://example.com/repo\n",
+	), 0o644))
+
+	ref, err := New(fs).Ref("FETCH_HEAD")
+	s.Require().NoError(err)
+	s.Equal(plumbing.NewHash("1111111111111111111111111111111111111111"), ref.Hash())
+}
+
 func BenchmarkRefMultipleTimes(b *testing.B) {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	if err != nil {
