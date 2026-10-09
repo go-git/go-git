@@ -62,8 +62,9 @@ func (fs *RepositoryFilesystem) mapToRepositoryFsByPath(path string) billy.Files
 	// Determine dot-git root by first path element.
 	// There are some elements which should always use commondir when commondir defined.
 	// Usual dot-git root will be used for the rest of files.
+	// The lock file of packed-refs goes beside it, where git takes it.
 	switch strings.Split(cleanPath, string(filepath.Separator))[0] {
-	case objectsPath, refsPath, packedRefsPath, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, worktreesPath:
+	case objectsPath, refsPath, packedRefsPath, packedRefsPath + refLockSuffix, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, worktreesPath:
 		return fs.commonDotGitFs
 	default:
 		return fs.dotGitFs
