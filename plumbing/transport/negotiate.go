@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -71,10 +72,13 @@ func applyServerACKs(
 }
 
 // NegotiatePack performs the pack negotiation phase of the fetch operation.
+// userAgent is sent as the agent capability, sanitized as git does; empty
+// means capability.DefaultAgent().
 func NegotiatePack(
 	ctx context.Context,
 	st storage.Storer,
 	caps capability.List,
+	userAgent string,
 	statelessRPC bool,
 	reader io.Reader,
 	writer io.WriteCloser,
@@ -146,7 +150,7 @@ func NegotiatePack(
 	}
 
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+		upreq.Capabilities.Set(capability.Agent, internal.AgentCapability(userAgent))
 	}
 
 	if req.IncludeTags && caps.Supports(capability.IncludeTag) {

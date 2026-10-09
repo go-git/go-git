@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/go-git/go-git/v6/internal/reference"
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -60,7 +61,7 @@ func AdvertiseRefs(
 	ar := &packp.AdvRefs{}
 
 	// Set server default capabilities
-	ar.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+	ar.Capabilities.Set(capability.Agent, internal.AgentCapability(capability.DefaultAgent()))
 	ar.Capabilities.Set(capability.OFSDelta)
 	ar.Capabilities.Set(capability.Sideband64k)
 	if forPush {
@@ -156,7 +157,7 @@ func AdvertiseCapabilities(_ context.Context, st storage.Storer, w io.Writer, se
 //   - object-info          object size/type queries without a fetch
 func serverV2Capabilities(st storage.Storer) capability.List {
 	var caps capability.List
-	caps.Set(capability.Agent, capability.DefaultAgent())
+	caps.Set(capability.Agent, internal.AgentCapability(capability.DefaultAgent()))
 	caps.Set(capability.LsRefs)
 	caps.Set(capability.FetchCmd, "shallow")
 	caps.Set(capability.ObjectFormat, objectFormat(st).String())

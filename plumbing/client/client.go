@@ -55,7 +55,8 @@ type options struct {
 	git  xgit.Options
 	file file.Options
 
-	schemes map[string]transport.Transport
+	schemes   map[string]transport.Transport
+	userAgent string
 }
 
 func (o *options) ensureTLS() *tls.Config {
@@ -239,6 +240,15 @@ func WithTransport(scheme string, tr transport.Transport) Option {
 	}
 }
 
+// WithUserAgent sets the user agent sent to the remote in the HTTP User-Agent
+// header and the agent capability, as GIT_USER_AGENT does in git. It replaces
+// capability.DefaultAgent(), GO_GIT_USER_AGENT_EXTRA included.
+func WithUserAgent(userAgent string) Option {
+	return func(o *options) {
+		o.userAgent = userAgent
+	}
+}
+
 // Client resolves URL schemes to transport implementations.
 type Client struct {
 	opts options
@@ -261,6 +271,11 @@ func (c *Client) Handshake(ctx context.Context, req *transport.Request) (transpo
 	tr, err := c.resolve(req)
 	if err != nil {
 		return nil, err
+	}
+	if c.opts.userAgent != "" {
+		r := *req
+		r.UserAgent = c.opts.userAgent
+		req = &r
 	}
 	return tr.Handshake(ctx, req)
 }

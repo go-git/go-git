@@ -950,3 +950,31 @@ func TestHandshakeSmartKeepsConnection(t *testing.T) {
 	assert.Equal(t, int64(1), conns.Load(),
 		"the ls-refs POST must reuse the connection the advertisement arrived on")
 }
+
+// git sends http.userAgent as given, so the header keeps the space the agent
+// capability cannot carry.
+func TestUserAgentHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		userAgent string
+		want      string
+	}{
+		{userAgent: "", want: capability.DefaultAgent()},
+		{userAgent: "my app/1.0", want: "my app/1.0"},
+	}
+	for _, tt := range tests {
+		base, seen := advertServer(t)
+		sess, err := NewTransport(Options{}).Handshake(context.Background(), &transport.Request{
+			URL:       clone{}.url(t, base),
+			Command:   transport.UploadPackService,
+			UserAgent: tt.userAgent,
+		})
+		require.NoError(t, err)
+
+		post := packRequest(t, sess, seen)
+		assert.Equal(t, tt.want, seen.all()[0].Header.Get("User-Agent"), "discovery request")
+		assert.Equal(t, tt.want, post.Header.Get("User-Agent"), "pack request")
+		require.NoError(t, sess.Close())
+	}
+}

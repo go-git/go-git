@@ -95,6 +95,21 @@ func TestWithTransport_OverrideBuiltin(t *testing.T) {
 	assert.Equal(t, custom, tr)
 }
 
+func TestWithUserAgent(t *testing.T) {
+	t.Parallel()
+
+	custom := &mockTransport{}
+	c := New(WithUserAgent("gitlab-sync/1.2.3"), WithTransport("custom", custom))
+	defer c.Close()
+
+	req := &transport.Request{URL: &url.URL{Scheme: "custom", Host: "example.com"}}
+	_, err := c.Handshake(context.Background(), req)
+	require.NoError(t, err)
+
+	assert.Equal(t, "gitlab-sync/1.2.3", custom.req.UserAgent)
+	assert.Empty(t, req.UserAgent, "the caller's request must be left as it was")
+}
+
 func TestWithSSHAuth(t *testing.T) {
 	t.Parallel()
 
@@ -447,9 +462,12 @@ func TestHTTPCredentialSourceErrorStopsEarlierSources(t *testing.T) {
 	assert.False(t, reached, "an earlier source must not be consulted past a failure")
 }
 
-type mockTransport struct{}
+type mockTransport struct {
+	req *transport.Request
+}
 
-func (m *mockTransport) Handshake(_ context.Context, _ *transport.Request) (transport.Session, error) {
+func (m *mockTransport) Handshake(_ context.Context, req *transport.Request) (transport.Session, error) {
+	m.req = req
 	return nil, nil
 }
 

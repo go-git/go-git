@@ -39,7 +39,7 @@ func TestSendPackWithReportStatus(t *testing.T) {
 		Packfile: io.NopCloser(&bytes.Buffer{}),
 	}
 
-	err := SendPack(context.TODO(), nil, caps, writer, reader, req)
+	err := SendPack(context.TODO(), nil, caps, "", writer, reader, req)
 	assert.NoError(t, err)
 	assert.True(t, writer.closed)
 }
@@ -67,7 +67,7 @@ func TestSendPackWithReportStatusError(t *testing.T) {
 		Packfile: io.NopCloser(&bytes.Buffer{}),
 	}
 
-	err := SendPack(context.Background(), nil, caps, writer, reader, req)
+	err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unpack error: failed")
 }
@@ -90,7 +90,7 @@ func TestSendPackWithoutReportStatus(t *testing.T) {
 		Packfile: io.NopCloser(&bytes.Buffer{}),
 	}
 
-	err := SendPack(context.Background(), nil, caps, writer, reader, req)
+	err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 	assert.NoError(t, err)
 	assert.True(t, writer.closed)
 }
@@ -125,7 +125,7 @@ func TestSendPackWithProgress(t *testing.T) {
 		Progress: progressBuf,
 	}
 
-	err := SendPack(context.Background(), nil, caps, writer, reader, req)
+	err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 	assert.NoError(t, err)
 	assert.Contains(t, progressBuf.String(), "Progress: 50%")
 }
@@ -155,7 +155,7 @@ func TestSendPackWithPackfile(t *testing.T) {
 		Packfile: io.NopCloser(bytes.NewReader(packfileContent)),
 	}
 
-	err := SendPack(context.Background(), nil, caps, writer, reader, req)
+	err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 	assert.NoError(t, err)
 	assert.Contains(t, writer.writeBuf.String(), "mock packfile content")
 }
@@ -182,7 +182,7 @@ func TestSendPackErrors(t *testing.T) {
 			Packfile: io.NopCloser(&bytes.Buffer{}),
 		}
 
-		err := SendPack(context.Background(), nil, caps, writer, reader, req)
+		err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "encode error")
 	})
@@ -204,7 +204,7 @@ func TestSendPackErrors(t *testing.T) {
 			Packfile: io.NopCloser(errPackfile),
 		}
 
-		err := SendPack(context.Background(), nil, caps, writer, reader, req)
+		err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "packfile read error")
 	})
@@ -226,7 +226,7 @@ func TestSendPackErrors(t *testing.T) {
 			Packfile: io.NopCloser(&bytes.Buffer{}),
 		}
 
-		err := SendPack(context.Background(), nil, caps, writer, reader, req)
+		err := SendPack(context.Background(), nil, caps, "", writer, reader, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "writer close error")
 	})
