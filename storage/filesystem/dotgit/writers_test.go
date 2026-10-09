@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
@@ -155,6 +156,41 @@ func TestNewObjectPackTrailingDataTruncateError(t *testing.T) {
 	assert.Empty(t, entries, "temporary pack left behind")
 }
 
+func TestNewObjectPackTruncated(t *testing.T) {
+	t.Parallel()
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	pack, err := io.ReadAll(pf)
+	require.NoError(t, err)
+
+	tests := map[string][]byte{
+		"after signature":         pack[:4],
+		"after version":           pack[:8],
+		"no objects, no checksum": []byte("PACK\x00\x00\x00\x02\x00\x00\x00\x00"),
+		"mid object":              pack[:len(pack)/2],
+		"missing checksum":        pack[:len(pack)-20],
+	}
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			w, err := newPackWrite(fs, config.SHA1, false)
+			require.NoError(t, err)
+
+			_, err = w.Write(data)
+			require.NoError(t, err)
+
+			require.ErrorIs(t, w.Close(), packfile.ErrMalformedPackfile)
+
+			entries, err := fs.ReadDir("objects/pack")
+			require.NoError(t, err)
+			assert.Empty(t, entries, "temporary pack left behind")
+		})
+	}
+}
+
 func TestNewObjectPackUnused(t *testing.T) {
 	t.Parallel()
 
@@ -222,6 +258,56 @@ func TestSyncedReader(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3, n)
 	assert.Equal(t, "280", string(head))
+}
+
+// firstReadSignal closes read once its first Read has returned.
+type firstReadSignal struct {
+	r    io.Reader
+	once sync.Once
+	read chan struct{}
+}
+
+func (s *firstReadSignal) Read(p []byte) (int, error) {
+	defer s.once.Do(func() { close(s.read) })
+	return s.r.Read(p)
+}
+
+// The reader PackWriter parses from returns only what has been written so
+// far, so the parser can see the start of a pack before all of it arrives.
+func TestSyncedReaderPartialSignature(t *testing.T) {
+	t.Parallel()
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	pack, err := io.ReadAll(pf)
+	require.NoError(t, err)
+
+	fs := osfs.New(t.TempDir())
+	fw, err := fs.TempFile("", "pack")
+	require.NoError(t, err)
+	defer fw.Close()
+	fr, err := fs.Open(fw.Name())
+	require.NoError(t, err)
+	defer fr.Close()
+
+	synced := newSyncedReader(fw, fr)
+	_, err = synced.Write(pack[:2])
+	require.NoError(t, err)
+
+	r := &firstReadSignal{r: synced, read: make(chan struct{})}
+	parsed := make(chan error, 1)
+	go func() {
+		_, err := packfile.NewParser(r).Parse()
+		parsed <- err
+	}()
+
+	// The parser has now read the two bytes written so far, and no more.
+	<-r.read
+	_, err = synced.Write(pack[2:])
+	require.NoError(t, err)
+	require.NoError(t, synced.Close())
+
+	require.NoError(t, <-parsed)
 }
 
 func TestPackWriterUnusedNotify(t *testing.T) {

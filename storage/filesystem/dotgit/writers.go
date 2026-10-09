@@ -121,6 +121,9 @@ func (w *PackWriter) Close() (err error) {
 	}
 
 	if err := w.waitBuildIndex(); err != nil {
+		_ = w.fr.Close()
+		_ = w.fw.Close()
+		_ = w.clean()
 		return err
 	}
 

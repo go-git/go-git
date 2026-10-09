@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"testing/iotest"
 
 	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -162,6 +163,50 @@ func TestParserMalformedPack(t *testing.T) {
 
 	_, err := parser.Parse()
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
+
+// TestParserTruncatedHeader checks that a pack cut off inside its header, or
+// before the checksum of a pack with no objects, is malformed rather than
+// empty, even when it ends on a field boundary.
+func TestParserTruncatedHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "signature only", data: []byte("PACK")},
+		{name: "no object count", data: []byte("PACK\x00\x00\x00\x02")},
+		{name: "no objects, no checksum", data: []byte("PACK\x00\x00\x00\x02\x00\x00\x00\x00")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := packfile.NewParser(bytes.NewReader(tc.data)).Parse()
+			require.ErrorIs(t, err, packfile.ErrMalformedPackfile)
+			assert.NotErrorIs(t, err, packfile.ErrEmptyPackfile)
+		})
+	}
+}
+
+func TestParserEmpty(t *testing.T) {
+	t.Parallel()
+
+	_, err := packfile.NewParser(bytes.NewReader(nil)).Parse()
+	require.ErrorIs(t, err, packfile.ErrEmptyPackfile)
+}
+
+func TestParserShortReads(t *testing.T) {
+	t.Parallel()
+	f := fixtures.Basic().One()
+	pf, pfErr := f.Packfile()
+	require.NoError(t, pfErr)
+	parser := packfile.NewParser(iotest.OneByteReader(pf))
+
+	h, err := parser.Parse()
+	require.NoError(t, err)
+	assert.Equal(t, f.PackfileHash, h.String())
 }
 
 func TestThinPack(t *testing.T) {
