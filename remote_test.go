@@ -162,6 +162,11 @@ func (s *RemoteSuite) TestFetch() {
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/remotes/origin/master", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
+		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
+		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
+		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
+		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	})
 }
 
@@ -188,6 +193,9 @@ func (s *RemoteSuite) TestFetchToNewBranch() {
 		plumbing.NewReferenceFromStrings("refs/tags/tree-tag", "152175bf7e5580299fa1f0ba41ef6474cc043b70"),
 		plumbing.NewReferenceFromStrings("refs/tags/renamed-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
 		plumbing.NewReferenceFromStrings("refs/tags/commit-tag", "ad7897c0fb8e7d9a9ba41fa66072cf06095a6cfc"),
+		plumbing.NewReferenceFromStrings("refs/tags/annotated-tag", "b742a2a9fa0afcfa9a6fad080980fbc26b007c69"),
+		plumbing.NewReferenceFromStrings("refs/tags/blob-tag", "fe6cb94756faa81e5ed9240f9191b833db5f40ae"),
+		plumbing.NewReferenceFromStrings("refs/tags/lightweight-tag", "f7b877701fbf855b44c0a9e86f3fdce2c298b07f"),
 	})
 }
 
@@ -459,6 +467,7 @@ func (s *RemoteSuite) TestFetchWithDepthChange() {
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
 	s.Len(r.s.(*memory.Storage).Commits, 1)
 
@@ -469,6 +478,7 @@ func (s *RemoteSuite) TestFetchWithDepthChange() {
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
 	s.Len(r.s.(*memory.Storage).Commits, 3)
 }
@@ -483,7 +493,6 @@ func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing
 	s.Require().NoError(err)
 	err = l.ForEach(func(*plumbing.Reference) error { refs++; return nil })
 	s.Require().NoError(err)
-
 	s.Len(expected, refs)
 
 	for _, exp := range expected {
@@ -649,6 +658,7 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
 
 	// First make sure that we error correctly when a force is required.
@@ -677,6 +687,7 @@ func (s *RemoteSuite) testFetchFastForward(sto storage.Storer) {
 		},
 	}, []*plumbing.Reference{
 		plumbing.NewReferenceFromStrings("refs/heads/master", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
 	})
 }
 
