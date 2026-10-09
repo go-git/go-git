@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -49,10 +50,23 @@ func (w *Worktree) Status() (Status, error) {
 // StatusOptions defines the options for Worktree.StatusWithOptions().
 type StatusOptions struct {
 	Strategy StatusStrategy
+
+	// Path limits status to a literal file or directory, relative to the
+	// worktree root. Absolute paths inside the worktree are also accepted.
+	// Empty and "." select the whole worktree. Returned names remain relative
+	// to the worktree root.
+	// IsClean on the returned status reports cleanliness only within Path.
+	Path string
 }
 
 // StatusWithOptions returns the working tree status.
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
+	var err error
+	o.Path, err = w.statusPath(o.Path)
+	if err != nil {
+		return nil, err
+	}
+
 	var hash plumbing.Hash
 
 	ref, err := w.r.Head()
@@ -69,16 +83,38 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		return nil, err
 	}
 
-	return w.status(cfg, o.Strategy, hash)
+	return w.status(cfg, o, hash)
 }
 
-func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
-	s, err := ss.new(w)
+func (w *Worktree) statusPath(name string) (string, error) {
+	name = filepath.Clean(name)
+	if filepath.IsAbs(name) {
+		rel, err := filepath.Rel(w.filesystem.Root(), name)
+		if err != nil {
+			return "", err
+		}
+		name = rel
+	}
+
+	name = filepath.ToSlash(name)
+	if name == ".." || strings.HasPrefix(name, "../") {
+		return "", fmt.Errorf("status path %q is outside the worktree root", name)
+	}
+
+	if name == "." {
+		return "", nil
+	}
+
+	return name, nil
+}
+
+func (w *Worktree) status(cfg *config.Config, opts StatusOptions, commit plumbing.Hash) (Status, error) {
+	s, err := opts.Strategy.new(w, opts.Path)
 	if err != nil {
 		return nil, err
 	}
 
-	left, err := w.diffCommitWithStaging(commit, false)
+	left, err := w.diffCommitWithStaging(commit, false, opts.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +138,7 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 		}
 	}
 
-	right, err := w.diffStagingWithWorktree(cfg, false, true)
+	right, err := w.diffStagingWithWorktreePath(cfg, false, true, opts.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +178,12 @@ func nameFromAction(ch *merkletrie.Change) string {
 }
 
 func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+	return w.diffStagingWithWorktreePath(cfg, reverse, excludeIgnoredChanges, "")
+}
+
+// diffStagingWithWorktreePath scopes both trees while retaining their ancestor
+// chains, so the diff still returns repository-relative paths.
+func (w *Worktree) diffStagingWithWorktreePath(cfg *config.Config, reverse, excludeIgnoredChanges bool, scope string) (merkletrie.Changes, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
@@ -149,13 +191,15 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: cfg.Core.FileMode,
+		Path:                scope,
 	})
-	submodules, err := w.getSubmodulesStatus(cfg)
+	submodules, err := w.getSubmodulesStatus(cfg, scope)
 	if err != nil {
 		return nil, err
 	}
 
 	fsOpts := filesystem.Options{
+		Path:     scope,
 		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
 		Index:    idx,
 	}
@@ -207,7 +251,7 @@ func (w *Worktree) ignoreScope() *gitignore.Scope {
 	return gitignore.NewScope(patterns)
 }
 
-func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.Hash, error) {
+func (w *Worktree) getSubmodulesStatus(cfg *config.Config, scope string) (map[string]plumbing.Hash, error) {
 	o := map[string]plumbing.Hash{}
 
 	sub, err := w.submodulesWithConfig(cfg)
@@ -215,7 +259,20 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 		return nil, err
 	}
 
-	status, err := sub.Status()
+	// The filesystem walker uses this map to distinguish submodules from
+	// ordinary directories and stops at a submodule above the requested path.
+	// For scope "docs/module/file.txt", keep the gitlink at "docs/module":
+	// omitting it would leave a directory on disk that the walker could enter,
+	// incorrectly reporting the submodule's files as untracked in the parent
+	// repository, whose index records only the gitlink's commit hash.
+	selected := make(Submodules, 0, len(sub))
+	for _, module := range sub {
+		if pathutil.IsWithinPath(module.c.Path, scope) || strings.HasPrefix(scope, module.c.Path+"/") {
+			selected = append(selected, module)
+		}
+	}
+
+	status, err := selected.Status()
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +289,7 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 	return o, nil
 }
 
-func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool, scope string) (merkletrie.Changes, error) {
 	var t *object.Tree
 	if !commit.IsZero() {
 		c, err := w.r.CommitObject(commit)
@@ -246,13 +303,19 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 		}
 	}
 
-	return w.diffTreeWithStaging(t, reverse)
+	return w.diffTreeWithStagingPath(t, reverse, scope)
 }
 
 func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+	return w.diffTreeWithStagingPath(t, reverse, "")
+}
+
+// diffTreeWithStagingPath limits both the commit tree and index tree to scope.
+// An empty scope compares the full trees.
+func (w *Worktree) diffTreeWithStagingPath(t *object.Tree, reverse bool, scope string) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
-		from = object.NewTreeRootNode(t)
+		from = object.NewTreeRootNodeWithOptions(t, object.TreeRootNodeOptions{Path: scope})
 	}
 
 	idx, err := w.r.Storer.Index()
@@ -260,7 +323,10 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	to := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+		Path:                scope,
+	})
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
@@ -394,16 +460,6 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 
 	fi, err := w.filesystem.Lstat(path)
 
-	// status is required for doAddDirectory
-	var s Status
-	var err2 error
-	if !skipStatus || fi == nil || fi.IsDir() {
-		s, err2 = w.Status()
-		if err2 != nil {
-			return plumbing.ZeroHash, err2
-		}
-	}
-
 	path = filepath.Clean(path)
 	if filepath.IsAbs(path) {
 		root := w.filesystem.Root()
@@ -417,6 +473,16 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		path = relPath
 	}
 	path = filepath.ToSlash(path)
+
+	// Directory additions need status even when SkipStatus is set.
+	var s Status
+	var err2 error
+	if !skipStatus || fi == nil || fi.IsDir() {
+		s, err2 = w.StatusWithOptions(StatusOptions{Path: path})
+		if err2 != nil {
+			return plumbing.ZeroHash, err2
+		}
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(cfg, idx, s, path, ignorePattern)
@@ -461,7 +527,23 @@ func (w *Worktree) AddGlob(pattern string) error {
 		return err
 	}
 
-	s, err := w.Status()
+	for i, name := range files {
+		files[i], err = w.statusPath(name)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Bound the status walk by the matches' common parent. The staging loop
+	// below still selects exact glob matches, not everything under this path.
+	scope := path.Dir(files[0])
+	for _, name := range files[1:] {
+		for scope != "." && !pathutil.IsWithinPath(name, scope) {
+			scope = path.Dir(scope)
+		}
+	}
+
+	s, err := w.StatusWithOptions(StatusOptions{Path: scope})
 	if err != nil {
 		return err
 	}

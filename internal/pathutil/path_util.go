@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+// IsWithinPath reports whether name is path itself or a descendant of it.
+// Both arguments use slash-separated, repository-relative paths. An empty
+// path selects the whole repository.
+func IsWithinPath(name, path string) bool {
+	return path == "" || name == path || strings.HasPrefix(name, path+"/")
+}
+
 // ReplaceTildeWithHome replaces the tilde character at the beginning of a path
 // with the appropriate home directory.
 func ReplaceTildeWithHome(path string) (string, error) {
