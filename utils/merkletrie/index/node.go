@@ -29,6 +29,13 @@ type node struct {
 // RootNodeOptions contains configuration for the root node.
 type RootNodeOptions struct {
 	UpholdExecutableBit bool
+
+	// Prefix, if non-empty, scopes the root to the subtree at that path. Only
+	// the entries under it, and the nodes on the way to it, are part of the
+	// tree, so the walk of it never descends into an unrelated sibling. It is
+	// the counterpart of the same option on the filesystem noder, and callers
+	// diffing the two trees are expected to set it on both.
+	Prefix string
 }
 
 // NewRootNode returns the root node of a computed tree from a index.Index,
@@ -43,6 +50,10 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 	m := map[string]*node{rootNode: {isDir: true}}
 
 	for _, e := range idx.Entries {
+		if !withinPrefix(e.Name, options.Prefix) {
+			continue
+		}
+
 		parts := strings.Split(e.Name, string("/"))
 
 		var fullpath string
@@ -75,6 +86,23 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 	}
 
 	return m[rootNode]
+}
+
+// withinPrefix reports whether the entry at path belongs to the subtree at
+// prefix: it is the prefix itself, an entry under it, or a directory on the
+// way to it. An empty prefix wants every entry. The last case is what keeps
+// the ancestors of a nested prefix in the tree, so that the paths of its
+// entries stay those of the whole index.
+func withinPrefix(path, prefix string) bool {
+	if prefix == "" {
+		return true
+	}
+
+	if strings.HasPrefix(path, prefix+"/") || path == prefix {
+		return true
+	}
+
+	return strings.HasPrefix(prefix+"/", path+"/")
 }
 
 func (n *node) String() string {
