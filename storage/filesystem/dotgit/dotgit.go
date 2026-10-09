@@ -1477,6 +1477,13 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	if err == nil {
 		err = d.fs.Remove(path)
 		// Drop down to remove it from the packed refs file, too.
+		if err == nil {
+			// Match git: deleting refs/bugfix/issue-1 must not leave an empty
+			// bugfix directory, or a later ref named refs/bugfix cannot be created.
+			if cleanErr := d.removeEmptyParentDirs(path); cleanErr != nil {
+				return cleanErr
+			}
+		}
 	}
 
 	if err != nil && !os.IsNotExist(err) {
@@ -1484,6 +1491,33 @@ func (d *DotGit) RemoveRef(name plumbing.ReferenceName) error {
 	}
 
 	return d.rewritePackedRefsWithoutRef(name)
+}
+
+// removeEmptyParentDirs deletes empty directories left behind by a loose
+// reference file. It stops at "refs" so the standard refs directory is kept,
+// and stops at the first non-empty directory so sibling refs are preserved.
+func (d *DotGit) removeEmptyParentDirs(refPath string) error {
+	dir := path.Dir(filepath.ToSlash(refPath))
+	for dir != "." && dir != "" && dir != "refs" {
+		entries, err := d.fs.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if len(entries) > 0 {
+			return nil
+		}
+		if err := d.fs.Remove(dir); err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		dir = path.Dir(dir)
+	}
+	return nil
 }
 
 func refsRecvFunc(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) refsRecv {
