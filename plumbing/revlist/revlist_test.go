@@ -334,7 +334,7 @@ func (s *RevListSuite) TestRevListObjectsTreeWant() {
 
 var commitCounter int
 
-func testMakeTree(t *testing.T, s storer.EncodedObjectStorer, entries []object.TreeEntry) plumbing.Hash {
+func testMakeTree(t testing.TB, s storer.EncodedObjectStorer, entries []object.TreeEntry) plumbing.Hash {
 	t.Helper()
 	tree := &object.Tree{Entries: entries}
 	obj := s.NewEncodedObject()
@@ -352,7 +352,7 @@ func testMakeCommit(t *testing.T, s storer.EncodedObjectStorer, treeHash plumbin
 	return testMakeCommitAt(t, s, treeHash, when, parents...)
 }
 
-func testMakeCommitAt(t *testing.T, s storer.EncodedObjectStorer, treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
+func testMakeCommitAt(t testing.TB, s storer.EncodedObjectStorer, treeHash plumbing.Hash, when time.Time, parents ...plumbing.Hash) plumbing.Hash {
 	t.Helper()
 	c := &object.Commit{
 		Author:       object.Signature{Name: "Test", Email: "t@t.com", When: when},
@@ -1199,7 +1199,55 @@ func BenchmarkObjects(b *testing.B) {
 	}
 }
 
-func testMakeBlob(t *testing.T, s storer.EncodedObjectStorer, content string) plumbing.Hash {
+// BenchmarkObjectsWideHistory walks a history in which width branches
+// are merged into the line that the want and the have both build on,
+// while the have also merges a commit older than all of them. The
+// branches are painted from both sides before the walk reaches that
+// commit, so about width stale commits are queued at every step.
+func BenchmarkObjectsWideHistory(b *testing.B) {
+	const depth = 10
+	for _, width := range []int{10, 100, 1000} {
+		b.Run(fmt.Sprintf("width=%d", width), func(b *testing.B) {
+			s := memory.NewStorage()
+			var sec int64
+			next := func() time.Time {
+				sec++
+				return time.Unix(sec, 0)
+			}
+
+			tree := testMakeTree(b, s, nil)
+			root := testMakeCommitAt(b, s, tree, next())
+			old := testMakeCommitAt(b, s, tree, next(), root)
+
+			tips := make([]plumbing.Hash, width)
+			for i := range tips {
+				tips[i] = root
+			}
+			for range depth {
+				for i := range tips {
+					tips[i] = testMakeCommitAt(b, s, tree, next(), tips[i])
+				}
+			}
+			merged := tips[0]
+			for _, tip := range tips[1:] {
+				merged = testMakeCommitAt(b, s, tree, next(), merged, tip)
+			}
+
+			have := testMakeCommitAt(b, s, tree, next(), merged, old)
+			want := testMakeCommitAt(b, s, testMakeTree(b, s, []object.TreeEntry{
+				{Name: "new", Mode: filemode.Regular, Hash: testMakeBlob(b, s, "new\n")},
+			}), next(), merged)
+
+			for b.Loop() {
+				if _, err := Objects(s, []plumbing.Hash{want}, []plumbing.Hash{have}); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func testMakeBlob(t testing.TB, s storer.EncodedObjectStorer, content string) plumbing.Hash {
 	t.Helper()
 	obj := s.NewEncodedObject()
 	obj.SetType(plumbing.BlobObject)
@@ -1254,4 +1302,72 @@ func (s *RevListSuite) TestRevListObjects_ShallowBoundaryIgnoresPresentParent() 
 	s.ElementsMatch([]plumbing.Hash{boundary, boundaryTree, newFile, shared}, got)
 	s.NotContains(got, parent, "parent beyond the shallow boundary must not be walked")
 	s.NotContains(got, oldFile, "parent-only blob must not be included")
+}
+
+// A commit painted by the wants alone turns stale once the haves reach it,
+// whether it is still queued at that point or was already popped (possible
+// under clock skew). Either way the walk must keep going until it reaches
+// the older want-only commit Y.
+//
+//	W (want, T=10) ──→ X, Y (T=1)
+//	H (have, T=8)  ──→ X
+func (s *RevListSuite) TestRevListObjects_WantCommitPaintedByHavesLater() {
+	at := func(sec int) time.Time { return time.Date(2024, 1, 1, 0, 0, sec, 0, time.UTC) }
+
+	for _, tc := range []struct {
+		name  string
+		xTime time.Time
+	}{
+		{name: "while queued", xTime: at(5)},
+		{name: "after popped", xTime: at(20)},
+	} {
+		s.Run(tc.name, func() {
+			dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+			s.Require().NoError(err)
+			sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+			defer func() { _ = sto.Close() }()
+			t := s.T()
+
+			shared := testMakeBlob(t, sto, "shared\n")
+			older := testMakeBlob(t, sto, "older\n")
+			haveOnly := testMakeBlob(t, sto, "have\n")
+			wantOnly := testMakeBlob(t, sto, "want\n")
+
+			xTree := testMakeTree(t, sto, []object.TreeEntry{
+				{Name: "shared", Mode: filemode.Regular, Hash: shared},
+			})
+			x := testMakeCommitAt(t, sto, xTree, tc.xTime)
+
+			yTree := testMakeTree(t, sto, []object.TreeEntry{
+				{Name: "older", Mode: filemode.Regular, Hash: older},
+			})
+			y := testMakeCommitAt(t, sto, yTree, at(1))
+
+			haveTree := testMakeTree(t, sto, []object.TreeEntry{
+				{Name: "have", Mode: filemode.Regular, Hash: haveOnly},
+				{Name: "shared", Mode: filemode.Regular, Hash: shared},
+			})
+			have := testMakeCommitAt(t, sto, haveTree, at(8), x)
+
+			wantTree := testMakeTree(t, sto, []object.TreeEntry{
+				{Name: "older", Mode: filemode.Regular, Hash: older},
+				{Name: "shared", Mode: filemode.Regular, Hash: shared},
+				{Name: "want", Mode: filemode.Regular, Hash: wantOnly},
+			})
+			want := testMakeCommitAt(t, sto, wantTree, at(10), x, y)
+
+			got, err := Objects(sto, []plumbing.Hash{want}, []plumbing.Hash{have})
+			s.Require().NoError(err)
+
+			gotSet := make(map[plumbing.Hash]bool, len(got))
+			for _, h := range got {
+				gotSet[h] = true
+			}
+
+			s.True(gotSet[y], "older want-only commit must be included")
+			s.False(gotSet[x], "commit reachable from haves must not be included")
+			s.Equal(gitRevListObjects(t, dotgit.Root(), want, have), gotSet,
+				"Objects output must match git rev-list --objects")
+		})
+	}
 }

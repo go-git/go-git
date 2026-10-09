@@ -187,16 +187,15 @@ func (w *objectWalk) walk() error {
 	// propagate to parents. A commit painted from both sides is a
 	// boundary. The walk stops when all queue entries are boundaries
 	// (all stale), so only the overlap region is traversed.
-	flags := make(map[plumbing.Hash]uint8)
-	var queue []*object.Commit
+	q := newPaintQueue()
 
 	for _, c := range w.wantsQueue {
-		flags[c.Hash] |= wantPaint
-		insertSorted(&queue, c)
+		q.paint(c.Hash, wantPaint)
+		q.push(c)
 	}
 	for _, c := range w.havesQueue {
-		flags[c.Hash] |= havePaint
-		insertSorted(&queue, c)
+		q.paint(c.Hash, havePaint)
+		q.push(c)
 	}
 	w.wantsQueue = nil
 	w.havesQueue = nil
@@ -204,11 +203,10 @@ func (w *objectWalk) walk() error {
 	var newCommits []*object.Commit
 	var missing []missingParent
 
-	for len(queue) > 0 {
-		lc := queue[0]
-		queue = queue[1:]
-
-		f := flags[lc.Hash]
+	// Once every queued entry is stale, no new commits can be
+	// discovered.
+	for q.active > 0 {
+		lc, f := q.pop()
 
 		// Want-only commit — tentatively new.
 		if f == wantPaint {
@@ -217,15 +215,9 @@ func (w *objectWalk) walk() error {
 
 		// Propagate this commit's flags to parents.
 		if _, shallow := w.shallows[lc.Hash]; !shallow {
-			if err := w.propagate(&queue, flags, &missing, lc, f); err != nil {
+			if err := w.propagate(q, &missing, lc, f); err != nil {
 				return err
 			}
-		}
-
-		// If all remaining queue entries have both flags, no new
-		// commits can be discovered — stop early.
-		if allStale(queue, flags) {
-			break
 		}
 	}
 
@@ -236,7 +228,7 @@ func (w *objectWalk) walk() error {
 	// walk terminated). Otherwise the want side references history we
 	// cannot traverse — match Git's behavior and error.
 	for _, mp := range missing {
-		if flags[mp.child]&havePaint != 0 {
+		if q.flags[mp.child]&havePaint != 0 {
 			continue
 		}
 		return fmt.Errorf("commit %s has missing parent %s", mp.child, mp.hash)
@@ -249,14 +241,14 @@ func (w *objectWalk) walk() error {
 	// copied from them are not sent. Shallow commits have no parents
 	// here, as with Git's grafts.
 	newCommits = slices.DeleteFunc(newCommits, func(c *object.Commit) bool {
-		return flags[c.Hash]&havePaint != 0
+		return q.flags[c.Hash]&havePaint != 0
 	})
 	for _, lc := range newCommits {
 		if _, shallow := w.shallows[lc.Hash]; shallow {
 			continue
 		}
 		for _, ph := range lc.ParentHashes {
-			if flags[ph]&havePaint == 0 {
+			if q.flags[ph]&havePaint == 0 {
 				continue
 			}
 			if err := w.markEdgeTreeSeen(ph); err != nil {
@@ -310,13 +302,11 @@ type missingParent struct {
 // walk, where we can tell whether the child was eventually painted by
 // haves (in which case the missing parent is behind the haves boundary
 // and tolerable, matching Git's behavior).
-func (w *objectWalk) propagate(queue *[]*object.Commit, flags map[plumbing.Hash]uint8, missing *[]missingParent, lc *object.Commit, f uint8) error {
+func (w *objectWalk) propagate(q *paintQueue, missing *[]missingParent, lc *object.Commit, f uint8) error {
 	for _, ph := range lc.ParentHashes {
-		pf := flags[ph]
-		if pf|f == pf {
+		if !q.paint(ph, f) {
 			continue // parent already has all our flags
 		}
-		flags[ph] = pf | f
 
 		pc, err := object.GetCommit(w.s, ph)
 		if err != nil {
@@ -326,21 +316,74 @@ func (w *objectWalk) propagate(queue *[]*object.Commit, flags map[plumbing.Hash]
 			}
 			return fmt.Errorf("getting parent commit %s: %w", ph, err)
 		}
-		insertSorted(queue, pc)
+		q.push(pc)
 	}
 	return nil
 }
 
-// allStale returns true when every commit in the queue has both paint
-// flags, meaning all remaining commits are boundaries and no new
-// commits can be discovered.
-func allStale(queue []*object.Commit, flags map[plumbing.Hash]uint8) bool {
-	for _, c := range queue {
-		if flags[c.Hash]&wantPaint == 0 || flags[c.Hash]&havePaint == 0 {
-			return false
-		}
+// paintQueue is the priority queue of the painted commit walk. It holds
+// the paint flags of every commit reached so far and counts the queued
+// entries that are not yet stale, so the walk can tell when to stop
+// without rescanning the queue. A commit may be queued more than once,
+// and its flags may change while it is queued.
+type paintQueue struct {
+	commits []*object.Commit
+	flags   map[plumbing.Hash]uint8
+	// queued is the number of entries in commits for each hash.
+	queued map[plumbing.Hash]int
+	// active is the number of entries in commits whose commit is not
+	// stale.
+	active int
+}
+
+func newPaintQueue() *paintQueue {
+	return &paintQueue{
+		flags:  make(map[plumbing.Hash]uint8),
+		queued: make(map[plumbing.Hash]int),
+	}
+}
+
+// stale reports whether f marks a commit reachable from both wants and
+// haves.
+func stale(f uint8) bool {
+	return f&(wantPaint|havePaint) == wantPaint|havePaint
+}
+
+// paint adds f to the flags of h and reports whether they changed.
+func (q *paintQueue) paint(h plumbing.Hash, f uint8) bool {
+	old := q.flags[h]
+	if old|f == old {
+		return false
+	}
+	q.flags[h] = old | f
+	if !stale(old) && stale(old|f) {
+		q.active -= q.queued[h]
 	}
 	return true
+}
+
+// push queues c, ordered by committer time.
+func (q *paintQueue) push(c *object.Commit) {
+	insertSorted(&q.commits, c)
+	q.queued[c.Hash]++
+	if !stale(q.flags[c.Hash]) {
+		q.active++
+	}
+}
+
+// pop removes the newest commit from the queue and returns it with its
+// current flags.
+func (q *paintQueue) pop() (*object.Commit, uint8) {
+	c := q.commits[0]
+	q.commits = q.commits[1:]
+	if q.queued[c.Hash]--; q.queued[c.Hash] == 0 {
+		delete(q.queued, c.Hash)
+	}
+	f := q.flags[c.Hash]
+	if !stale(f) {
+		q.active--
+	}
+	return c, f
 }
 
 // walkFull is the fast path when there are no haves. It walks every
