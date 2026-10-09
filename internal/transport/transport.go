@@ -36,4 +36,10 @@ type FetchRequest struct {
 
 	// IncludeTags indicates whether tags should be fetched.
 	IncludeTags bool
+
+	// Shallows is the pre-computed shallow boundary for the fetch.
+	// When nil, FetchV2 reads it from the storer; callers that already
+	// computed it (e.g. via ShallowSupportRequired) may set it to avoid
+	// a redundant storer read.
+	Shallows []plumbing.Hash
 }

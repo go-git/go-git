@@ -529,12 +529,13 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		return nil, err
 	}
 
-	var shallows []plumbing.Hash
-	if o.Depth != 0 {
-		shallows, err = r.s.Shallow()
-		if err != nil {
-			return nil, err
-		}
+	// Read the boundary on every fetch, not only deepening ones, so the
+	// haves filtering below also protects plain fetches from a shallow
+	// repository: a boundary commit in the haves list tells the server its
+	// ancestors are present, which the shallow lines contradict.
+	shallows, err := r.s.Shallow()
+	if err != nil {
+		return nil, err
 	}
 
 	isWildcard := true
