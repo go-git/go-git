@@ -112,14 +112,14 @@ func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOp
 		if opts != nil {
 			prefixes = opts.RefPrefixes
 		}
-		refs, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
+		out, err := internal.LsRefs(ctx, s.Command, s.caps, prefixes)
 		if err != nil {
 			return nil, err
 		}
-		if !forPush && !internal.HasHashRef(refs) {
+		if !forPush && !out.HasOid {
 			return nil, ErrEmptyRemoteRepository
 		}
-		return NewRemoteRefs(refs), nil
+		return NewRemoteRefs(out.References), nil
 	}
 
 	if s.refs == nil {
