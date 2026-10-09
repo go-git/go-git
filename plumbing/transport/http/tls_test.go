@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,6 +121,67 @@ func TestResolveClient_CustomClientWrapsRedirectPolicy(t *testing.T) {
 	err = client.CheckRedirect(req, []*http.Request{{}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-initial request")
+}
+
+func TestResolveClient_LowSpeedPreservesOptions(t *testing.T) {
+	t.Parallel()
+
+	proxy, err := url.Parse("http://proxy.example:8080")
+	require.NoError(t, err)
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13}
+	guard := &LowSpeedGuard{Limit: 100, Time: time.Second}
+	opts := Options{
+		TLS:             tlsConfig,
+		HTTPProxy:       http.ProxyURL(proxy),
+		FollowRedirects: NoFollowRedirects,
+		LowSpeed:        guard,
+	}
+	client := NewTransport(opts).resolveClient()
+	defer client.CloseIdleConnections()
+	wrapped, ok := client.Transport.(*lowSpeedTransport)
+	require.True(t, ok)
+	base, ok := wrapped.RoundTripper.(*http.Transport)
+	require.True(t, ok)
+	assert.Same(t, tlsConfig, base.TLSClientConfig)
+	req, err := http.NewRequest(http.MethodGet, "https://example.test/", nil)
+	require.NoError(t, err)
+	gotProxy, err := base.Proxy(req)
+	require.NoError(t, err)
+	assert.Equal(t, proxy, gotProxy)
+	assert.ErrorContains(t, client.CheckRedirect(req, nil), "redirects disabled")
+	assert.Equal(t, *guard, wrapped.guard)
+	assert.Same(t, tlsConfig, opts.TLS)
+	assert.Same(t, guard, opts.LowSpeed)
+	assert.Nil(t, opts.Client)
+
+	customTransport := &http.Transport{}
+	custom := &http.Client{Transport: customTransport, Timeout: time.Minute}
+	opts.Client = custom
+	client = NewTransport(opts).resolveClient()
+	defer client.CloseIdleConnections()
+	wrapped, ok = client.Transport.(*lowSpeedTransport)
+	require.True(t, ok)
+	assert.Same(t, customTransport, wrapped.RoundTripper)
+	assert.Equal(t, custom.Timeout, client.Timeout)
+	assert.Same(t, customTransport, custom.Transport)
+	assert.Nil(t, custom.CheckRedirect)
+	assert.Nil(t, customTransport.TLSClientConfig)
+	assert.Nil(t, customTransport.Proxy)
+	assert.Equal(t, LowSpeedGuard{Limit: 100, Time: time.Second}, *guard)
+}
+
+func TestResolveClient_LowSpeedDisabled(t *testing.T) {
+	t.Parallel()
+	for _, guard := range []*LowSpeedGuard{nil, {}, {Limit: 1}, {Time: time.Second}, {Limit: -1, Time: time.Second}, {Limit: 1, Time: -1}} {
+		t.Run(fmt.Sprint(guard), func(t *testing.T) {
+			t.Parallel()
+			custom := &http.Transport{}
+			client := NewTransport(Options{
+				Client: &http.Client{Transport: custom}, LowSpeed: guard,
+			}).resolveClient()
+			assert.Same(t, custom, client.Transport)
+		})
+	}
 }
 
 func TestResolveClient_NilTLS(t *testing.T) {
