@@ -2,12 +2,19 @@ package commitgraph_test
 
 import (
 	"bytes"
+	"os"
+	"path"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/commitgraph"
 )
 
@@ -66,6 +73,147 @@ func TestOpenChainFile(t *testing.T) {
 			assert.Nil(t, chain)
 		})
 	}
+}
+
+func TestOpenChainIndexBrokenLayer(t *testing.T) {
+	t.Parallel()
+
+	const (
+		base = "c336d16298a017486c4164c40f8acb28afe64e84"
+		tip  = "31eae7b619d166c366bf5df4991f04ba8cebea0a"
+	)
+
+	tests := []struct {
+		name   string
+		chain  []string
+		graphs map[string][]byte
+		err    error
+	}{
+		{
+			name:  "missing graph",
+			chain: []string{tip},
+			err:   os.ErrNotExist,
+		},
+		{
+			name:   "corrupt graph",
+			chain:  []string{tip},
+			graphs: map[string][]byte{tip: []byte("not a graph")},
+			err:    commitgraph.ErrMalformedCommitGraphFile,
+		},
+		{
+			name:   "missing graph after valid base",
+			chain:  []string{base, tip},
+			graphs: map[string][]byte{base: encodeTestGraph(t)},
+			err:    os.ErrNotExist,
+		},
+		{
+			name:  "corrupt graph after valid base",
+			chain: []string{base, tip},
+			graphs: map[string][]byte{
+				base: encodeTestGraph(t),
+				tip:  []byte("not a graph"),
+			},
+			err: commitgraph.ErrMalformedCommitGraphFile,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := &closeTrackingFS{Filesystem: memfs.New()}
+			dir := path.Join("objects", "info", "commit-graphs")
+			chain := strings.Join(tc.chain, "\n") + "\n"
+			require.NoError(t, util.WriteFile(fs, path.Join(dir, "commit-graph-chain"), []byte(chain), 0o644))
+			for hash, data := range tc.graphs {
+				require.NoError(t, util.WriteFile(fs, path.Join(dir, "graph-"+hash+".graph"), data, 0o644))
+			}
+
+			index, err := commitgraph.OpenChainIndex(fs)
+			require.ErrorIs(t, err, tc.err)
+			assert.Nil(t, index)
+			assert.Zero(t, fs.open, "files left open")
+		})
+	}
+}
+
+func TestOpenChainIndexNoLayers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		chain string
+	}{
+		{
+			name:  "empty",
+			chain: "",
+		},
+		{
+			name:  "unterminated hash",
+			chain: "c336d16298a017486c4164c40f8acb28afe64e84",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := &closeTrackingFS{Filesystem: memfs.New()}
+			chainPath := path.Join("objects", "info", "commit-graphs", "commit-graph-chain")
+			require.NoError(t, util.WriteFile(fs, chainPath, []byte(tc.chain), 0o644))
+
+			index, err := commitgraph.OpenChainIndex(fs)
+			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
+			assert.Nil(t, index)
+
+			index, err = commitgraph.OpenChainOrFileIndex(fs)
+			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
+			assert.Nil(t, index)
+
+			assert.Zero(t, fs.open, "files left open")
+		})
+	}
+}
+
+// closeTrackingFS counts the files opened through it that are not yet
+// closed.
+type closeTrackingFS struct {
+	billy.Filesystem
+	open int
+}
+
+func (fs *closeTrackingFS) Open(name string) (billy.File, error) {
+	f, err := fs.Filesystem.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	fs.open++
+	return &closeTrackingFile{File: f, fs: fs}, nil
+}
+
+type closeTrackingFile struct {
+	billy.File
+	fs *closeTrackingFS
+}
+
+func (f *closeTrackingFile) Close() error {
+	f.fs.open--
+	return f.File.Close()
+}
+
+func encodeTestGraph(t *testing.T) []byte {
+	t.Helper()
+
+	idx := commitgraph.NewMemoryIndex()
+	idx.Add(plumbing.NewHash("347c91919944a68e9413581a1bc15519550a3afe"), &commitgraph.CommitData{
+		TreeHash:   plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c"),
+		Generation: 1,
+		When:       time.Unix(1, 0),
+	})
+
+	var buf bytes.Buffer
+	require.NoError(t, commitgraph.NewEncoder(&buf).Encode(idx))
+	return buf.Bytes()
 }
 
 var (

@@ -96,12 +96,19 @@ type ReaderAtCloser interface {
 
 // OpenFileIndex opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
+//
+// On success the returned Index owns reader and closes it on Close. On
+// error reader is left open and the caller remains responsible for it.
 func OpenFileIndex(reader ReaderAtCloser) (Index, error) {
 	return OpenFileIndexWithParent(reader, nil)
 }
 
 // OpenFileIndexWithParent opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
+//
+// On success the returned Index owns reader and parent and closes both on
+// Close. On error neither is closed and the caller remains responsible
+// for them.
 func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error) {
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
