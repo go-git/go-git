@@ -653,9 +653,9 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // inspection-only callers that need to enumerate raw, unvalidated
 // names can read Tree.Entries directly or set skipPathValidation.
 //
-// In the current implementation any objects which cannot be found in the
-// underlying repository will be skipped automatically. It is possible that this
-// may change in future versions.
+// A subtree that cannot be read stops a recursive walk with the error from
+// reading it, such as plumbing.ErrObjectNotFound, along with its name. A walk
+// that does not recurse does not read subtrees.
 func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 	var obj *Tree
 	for {
@@ -695,15 +695,13 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			}
 		}
 
-		if entry.Mode == filemode.Dir {
-			obj, err = GetTree(w.s, entry.Hash)
-		}
-
 		name = simpleJoin(w.base, entry.Name)
 
-		if err != nil {
-			err = io.EOF
-			return name, entry, err
+		if entry.Mode == filemode.Dir && w.recursive {
+			obj, err = GetTree(w.s, entry.Hash)
+			if err != nil {
+				return name, entry, err
+			}
 		}
 
 		break

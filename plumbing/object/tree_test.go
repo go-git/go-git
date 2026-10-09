@@ -2465,3 +2465,87 @@ func TestTreeValidateReportsAllRules(t *testing.T) {
 	assert.ErrorIs(t, verr, pathutil.ErrInvalidPath)
 	assert.Contains(t, verr.Error(), "null hash")
 }
+
+// treeWithMissingSubtree stores a tree whose middle entry is a subtree missing
+// from the storage, between two files that are present, as in a repository
+// with a missing or not yet fetched tree object.
+func treeWithMissingSubtree(t *testing.T, store *memory.Storage, zContent string) *Tree {
+	t.Helper()
+
+	blob := func(content string) []byte {
+		obj := store.NewEncodedObject()
+		obj.SetType(plumbing.BlobObject)
+		w, err := obj.Writer()
+		require.NoError(t, err)
+		_, err = w.Write([]byte(content))
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+		h, err := store.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return h.Bytes()
+	}
+	missingSubtree := bytes.Repeat([]byte{0xCC}, 20)
+
+	root := newRawTreeObject(t, encodeRawTreeEntries(
+		rawTreeEntry{"100644", "a", blob("a\n")},
+		rawTreeEntry{"40000", "middle", missingSubtree},
+		rawTreeEntry{"100644", "z", blob(zContent)},
+	))
+	h, err := store.SetEncodedObject(root)
+	require.NoError(t, err)
+	tree, err := GetTree(store, h)
+	require.NoError(t, err)
+	return tree
+}
+
+// A subtree that cannot be read must stop a recursive walk with that error.
+// Reporting io.EOF instead made an incomplete walk look complete. Refs #2345.
+func TestTreeWalkerNextReportsMissingSubtree(t *testing.T) {
+	t.Parallel()
+
+	tree := treeWithMissingSubtree(t, memory.NewStorage(), "z\n")
+	walker := NewTreeWalker(tree, true, nil)
+	defer walker.Close()
+
+	name, _, err := walker.Next()
+	require.NoError(t, err)
+	assert.Equal(t, "a", name)
+
+	name, _, err = walker.Next()
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.Equal(t, "middle", name)
+}
+
+func TestTreeFilesReportsMissingSubtree(t *testing.T) {
+	t.Parallel()
+
+	tree := treeWithMissingSubtree(t, memory.NewStorage(), "z\n")
+	var names []string
+	err := tree.Files().ForEach(func(f *File) error {
+		names = append(names, f.Name)
+		return nil
+	})
+	assert.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.Equal(t, []string{"a"}, names)
+}
+
+// A walk that does not recurse never descends into a subtree, so it does not
+// need to read one.
+func TestTreeWalkerNextNonRecursiveDoesNotReadSubtrees(t *testing.T) {
+	t.Parallel()
+
+	tree := treeWithMissingSubtree(t, memory.NewStorage(), "z\n")
+	walker := NewTreeWalker(tree, false, nil)
+	defer walker.Close()
+
+	var names []string
+	for {
+		name, _, err := walker.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, name)
+	}
+	assert.Equal(t, []string{"a", "middle", "z"}, names)
+}
