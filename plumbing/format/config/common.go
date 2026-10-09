@@ -7,20 +7,16 @@ func New() *Config {
 	return &Config{}
 }
 
-// Config contains all the sections, comments and includes from a config file.
+// Config contains all the sections and comments from a config file.
+//
+// Include directives are kept as ordinary options, include.path and
+// includeIf.<condition>.path, whichever decoder read them.
+// [NewDecoderWithIncludes] additionally expands an included file at the
+// point its directive appears, so its options are indistinguishable from
+// ones written inline, which is what gives them their precedence.
 type Config struct {
 	Comment  *Comment
 	Sections Sections
-	Includes Includes
-}
-
-// Includes is a list of Includes in a config file.
-type Includes []*Include
-
-// Include is a reference to an included config file.
-type Include struct {
-	Path   string
-	Config *Config
 }
 
 // Comment string without the prefix '#' or ';'.
