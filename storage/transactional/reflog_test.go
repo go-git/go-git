@@ -73,8 +73,8 @@ func (s noReflogStorage) Reference(name plumbing.ReferenceName) (*plumbing.Refer
 	return s.sto.Reference(name)
 }
 
-func (s noReflogStorage) IterReferences() (storer.ReferenceIter, error) {
-	return s.sto.IterReferences()
+func (s noReflogStorage) IterReferences(prefix string) (storer.ReferenceIter, error) {
+	return s.sto.IterReferences(prefix)
 }
 
 func (s noReflogStorage) CountLooseRefs() (int, error) {
