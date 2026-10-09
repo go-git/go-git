@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/suite"
 
@@ -162,6 +163,38 @@ func (s *SidebandSuite) TestDecodeWithPending() {
 	s.Equal(expected[13:26], content)
 }
 
+// TestDecodeSmallReads checks that packets drained over many reads smaller
+// than a packet, with progress in between, come out intact and in order.
+func (s *SidebandSuite) TestDecodeSmallReads() {
+	var expected []byte
+	buf := bytes.NewBuffer(nil)
+	for i, size := range []int{1, 7, 64, 1000, 3, 65515} {
+		payload := bytes.Repeat([]byte{byte('a' + i)}, size)
+		expected = append(expected, payload...)
+		pktline.Write(buf, PackData.WithPayload(payload))
+		pktline.Write(buf, ProgressMessage.WithPayload([]byte{byte('0' + i)}))
+	}
+	pktline.WriteFlush(buf)
+
+	progress := bytes.NewBuffer(nil)
+	d := NewDemuxer(Sideband64k, buf)
+	d.Progress = progress
+
+	var got []byte
+	p := make([]byte, 3)
+	for {
+		n, err := d.Read(p)
+		got = append(got, p[:n]...)
+		if err == io.EOF {
+			break
+		}
+		s.Require().NoError(err)
+	}
+
+	s.Equal(expected, got)
+	s.Equal("012345", progress.String())
+}
+
 func (s *SidebandSuite) TestDecodeErrMaxPacked() {
 	buf := bytes.NewBuffer(nil)
 	pktline.Write(buf, PackData.WithPayload(bytes.Repeat([]byte{'0'}, MaxPackedSize+1)))
@@ -171,4 +204,58 @@ func (s *SidebandSuite) TestDecodeErrMaxPacked() {
 	n, err := io.ReadFull(d, content)
 	s.ErrorIs(err, ErrMaxPackedExceeded)
 	s.Equal(0, n)
+}
+
+// TestDecodeKeepsFinalResult checks that once Read has returned io.EOF at a
+// flush-pkt, or an error, later calls return it again without reading on.
+// A caller may get that result while the data still fits in its buffer, and
+// then read again to reach the end of the stream.
+func (s *SidebandSuite) TestDecodeKeepsFinalResult() {
+	payload := []byte("abcdefgh")
+
+	tests := []struct {
+		name    string
+		write   func(*bytes.Buffer)
+		wantErr string
+	}{
+		{
+			name:  "flush",
+			write: func(buf *bytes.Buffer) { s.Require().NoError(pktline.WriteFlush(buf)) },
+		},
+		{
+			name: "error message",
+			write: func(buf *bytes.Buffer) {
+				pktline.Write(buf, ErrorMessage.WithPayload([]byte("boom")))
+			},
+			wantErr: "unexpected error: boom",
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			buf := bytes.NewBuffer(nil)
+			pktline.Write(buf, PackData.WithPayload(payload))
+			tc.write(buf)
+
+			pastEnd := iotest.ErrReader(errors.New("read past the end of the stream"))
+			d := NewDemuxer(Sideband64k, io.MultiReader(buf, pastEnd))
+			check := func(err error) {
+				if tc.wantErr == "" {
+					s.ErrorIs(err, io.EOF)
+				} else {
+					s.ErrorContains(err, tc.wantErr)
+				}
+			}
+
+			content := make([]byte, 64)
+			n, err := d.Read(content)
+			s.Equal(payload, content[:n])
+			check(err)
+			for range 2 {
+				n, err = d.Read(content)
+				s.Zero(n)
+				check(err)
+			}
+		})
+	}
 }

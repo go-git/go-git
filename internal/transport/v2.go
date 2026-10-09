@@ -265,9 +265,21 @@ func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader
 		// The marker is left empty. Git fills it with the refs it sought on
 		// this path and leaves it empty when repacking, and accepts either,
 		// because only the file's presence is ever consulted.
-		return packfile.UpdatePromisorObjectStorage(st, demuxer, "")
+		if err := packfile.UpdatePromisorObjectStorage(st, demuxer, ""); err != nil {
+			return err
+		}
+	} else if err := packfile.UpdateObjectStorage(st, demuxer); err != nil {
+		return err
 	}
-	return packfile.UpdateObjectStorage(st, demuxer)
+
+	// Storage that parses the pack stops reading at its trailer, so read the
+	// rest of the section here: an error the server sends after the pack
+	// must fail the fetch, trailing progress must reach the caller, and a
+	// stream session must be left after the flush-pkt for its next command.
+	// The packfile section is always muxed, and the demuxer stops at its
+	// closing flush-pkt.
+	_, err := io.Copy(io.Discard, demuxer)
+	return err
 }
 
 // closeReader drains and closes r when it owns a closable resource (such as an
