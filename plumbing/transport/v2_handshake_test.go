@@ -51,6 +51,7 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 	var out bytes.Buffer
 	s := &StreamSession{
 		version: protocol.V2,
+		r:       bufio.NewReader(bytes.NewReader(nil)),
 		w:       ioutil.WriteNopCloser(&out),
 		caps:    serverCaps,
 	}
@@ -59,7 +60,9 @@ func TestStreamSessionCommandEnvelope(t *testing.T) {
 		Symrefs:     true,
 		RefPrefixes: []string{"refs/heads/"},
 	}
-	require.NoError(t, s.Command(context.TODO(), "ls-refs", req, nil))
+	rc, err := s.Command(context.TODO(), "ls-refs", req)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
 
 	got := &packp.CommandRequest{Args: &packp.LsRefsArgs{}}
 	require.NoError(t, got.Decode(&out))
@@ -82,7 +85,7 @@ func TestStreamSessionCommandRejectsNonV2(t *testing.T) {
 		w:       ioutil.WriteNopCloser(io.Discard),
 	}
 
-	err := s.Command(context.TODO(), "ls-refs", nil, nil)
+	_, err := s.Command(context.TODO(), "ls-refs", nil)
 	require.ErrorIs(t, err, ErrUnsupportedVersion)
 }
 
@@ -121,7 +124,10 @@ func TestStreamSessionCommandLsRefsEndToEnd(t *testing.T) {
 
 	req := &packp.LsRefsArgs{Symrefs: true, RefPrefixes: []string{"refs/heads/"}}
 	out := &packp.LsRefsOutput{}
-	require.NoError(t, s.Command(context.TODO(), "ls-refs", req, out))
+	rc, err := s.Command(context.TODO(), "ls-refs", req)
+	require.NoError(t, err)
+	require.NoError(t, out.Decode(rc))
+	require.NoError(t, rc.Close())
 	require.NoError(t, <-serveErr)
 
 	require.NotEmpty(t, out.References)

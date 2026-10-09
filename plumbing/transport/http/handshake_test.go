@@ -576,12 +576,13 @@ func fetchToStorage(t testing.TB, repoPath string, storage *filesystem.Storage, 
 // trackedBody reports whether it was closed.
 type trackedBody struct {
 	io.Reader
-	closed atomic.Bool
+	closed   atomic.Bool
+	closeErr error
 }
 
 func (b *trackedBody) Close() error {
 	b.closed.Store(true)
-	return nil
+	return b.closeErr
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -629,27 +630,13 @@ func TestHandshakeClosesBodyOnErrorStatus(t *testing.T) {
 	}
 }
 
-// decoderFunc adapts a function to packp.Decoder, so a test can observe when
-// a command's decode returns.
-type decoderFunc func(io.Reader) error
-
-func (f decoderFunc) Decode(r io.Reader) error { return f(r) }
-
-// TestCommandKeepsConnection covers the discard a v2 command owes the request
-// that follows it. The decoder stops at the response's flush-pkt, so the
-// terminating chunk is still outstanding when the command is done, and closing
-// there costs the fetch POST after an ls-refs a connection of its own.
 func TestCommandKeepsConnection(t *testing.T) {
 	t.Parallel()
 
 	const ref = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/master\n"
 	body := pktLine(ref) + "0000"
 
-	// Sent after the client has decoded the flush-pkt. Written in the same
-	// flush as the refs, the terminating chunk is already buffered when the
-	// decoder takes the last packet, and net/http's chunked reader consumes
-	// it without being asked — which a server on a real network does not
-	// oblige.
+	// Send HTTP EOF only after the client decodes the Git flush-pkt.
 	decoded := make(chan struct{}, 1)
 	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
@@ -659,10 +646,11 @@ func TestCommandKeepsConnection(t *testing.T) {
 		w.(http.Flusher).Flush()
 		select {
 		case <-decoded:
-		case <-time.After(10 * time.Second):
-			t.Error("the command never decoded the response")
+		case <-r.Context().Done():
 		}
 	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	base, err := url.Parse(srv.URL)
 	require.NoError(t, err)
@@ -677,19 +665,127 @@ func TestCommandKeepsConnection(t *testing.T) {
 
 	const commands = 10
 	for range commands {
-		out := &packp.LsRefsOutput{}
-		err := session.Command(context.Background(), "ls-refs", &packp.LsRefsArgs{},
-			decoderFunc(func(rd io.Reader) error {
-				err := out.Decode(rd)
-				decoded <- struct{}{}
-				return err
-			}))
+		rc, err := session.Command(ctx, "ls-refs", &packp.LsRefsArgs{})
 		require.NoError(t, err)
+		out := &packp.LsRefsOutput{}
+		err = out.Decode(rc)
+		decoded <- struct{}{}
+		closeErr := rc.Close()
+		require.NoError(t, err)
+		require.NoError(t, closeErr)
 		require.Len(t, out.References, 1)
 	}
 
 	assert.Equal(t, int64(1), conns.Load(),
 		"%d commands on one session must share one connection", commands)
+}
+
+func TestCommandResponseCleanup(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		reply     string
+		public    bool
+		wantError bool
+		unread    bool
+		tailSize  int
+	}{
+		{name: "unread command sends no request", public: true, unread: true},
+		{name: "public close drains small tail", reply: "0000", public: true, tailSize: 32},
+		{name: "public close caps drain", reply: "0000", public: true, tailSize: bodySize},
+		{name: "ls-refs success caps drain", reply: pktLine("6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/main\n") + "0000", tailSize: bodySize},
+		{name: "ls-refs error caps drain", reply: "xxxx", wantError: true, tailSize: bodySize},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tail := &countingBody{remaining: tt.tailSize}
+			body := &trackedBody{Reader: io.MultiReader(strings.NewReader(tt.reply), tail)}
+			u, err := url.Parse("http://example.test/repo.git")
+			require.NoError(t, err)
+			session := &smartPackSession{
+				sessionBase: sessionBase{
+					client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+						require.False(t, tt.unread, "closing an unread command must not send it")
+						return &http.Response{StatusCode: http.StatusOK, Body: body, Request: r}, nil
+					})},
+					baseURL: u,
+					service: transport.UploadPackService,
+				},
+				version: protocol.V2,
+			}
+			if tt.public {
+				rc, err := session.Command(context.Background(), "ls-refs", &packp.LsRefsArgs{})
+				require.NoError(t, err)
+				if !tt.unread {
+					require.NoError(t, (&packp.LsRefsOutput{}).Decode(rc))
+				}
+				require.NoError(t, rc.Close())
+			} else {
+				_, err := session.GetRemoteRefs(context.Background(), nil)
+				if tt.wantError {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+			}
+			assert.Equal(t, !tt.unread, body.closed.Load())
+			assert.Equal(t, min(tt.tailSize, maxDrainSize), tail.read)
+		})
+	}
+}
+
+func TestHTTPResponseBodyCloseError(t *testing.T) {
+	t.Parallel()
+	want := errors.New("close failed")
+	body := &trackedBody{Reader: strings.NewReader("tail"), closeErr: want}
+	rc := &httpResponseBody{req: &httpRequester{resp: &http.Response{Body: body}}}
+	require.ErrorIs(t, rc.Close(), want)
+	require.True(t, body.closed.Load())
+}
+
+func TestHTTPResponseBodyCloseCancellation(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(finished)
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		_, _ = io.WriteString(w, "0000")
+		w.(http.Flusher).Flush()
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client: server.Client(), baseURL: base, service: transport.UploadPackService,
+		},
+		version: protocol.V2,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	rc, err := session.Command(ctx, "ls-refs", &packp.LsRefsArgs{})
+	require.NoError(t, err)
+	require.NoError(t, (&packp.LsRefsOutput{}).Decode(rc))
+	closed := make(chan error, 1)
+	go func() { closed <- rc.Close() }()
+	select {
+	case err := <-closed:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after request cancellation")
+	}
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+	select {
+	case <-finished:
+		t.Fatal("the server finished before Close returned")
+	default:
+	}
 }
 
 // TestNegotiatorReleasesPreviousRound covers the one drain in the package: the
