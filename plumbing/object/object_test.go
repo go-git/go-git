@@ -138,6 +138,11 @@ func (s *ObjectsSuite) TestParseSignature() {
 			Email: "foo@bar.com",
 			When:  MustParseTime("2009-11-10 16:00:00 -0700"),
 		},
+		`Foo Bar <foo@bar.com>1257894000 +0100`: {
+			Name:  "Foo Bar",
+			Email: "foo@bar.com",
+			When:  MustParseTime("2009-11-11 00:00:00 +0100"),
+		},
 		`Foo Bar <> 1257894000 +0100`: {
 			Name:  "Foo Bar",
 			Email: "",
