@@ -5,12 +5,14 @@ import (
 	"crypto"
 	"encoding/base64"
 	"io"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/hash"
@@ -102,3 +104,12 @@ var (
 		{5924278919, "35858be9c6f5914cbe6768489c41eb6809a2bceb", 0x9c89d9d2},
 	}
 )
+
+func (s *WriterSuite) TestWriterRejectsOtherFormatHash() {
+	writer := new(idxfile.Writer)
+	s.Require().NoError(writer.OnHeader(1))
+	s.Require().NoError(writer.OnInflatedObjectContent(plumbing.NewHash(strings.Repeat("a", 64)), 12, 0, nil))
+
+	err := writer.OnFooter(plumbing.NewHash(strings.Repeat("b", 40)))
+	s.ErrorIs(err, formatcfg.ErrObjectFormatMismatch)
+}
