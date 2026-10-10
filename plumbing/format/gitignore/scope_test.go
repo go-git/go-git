@@ -126,6 +126,33 @@ func TestScopeExcludedAncestorWins(t *testing.T) {
 	}
 }
 
+// TestScopeOverriddenGlobDoesNotReclaimDescendants covers the counterpart to
+// TestScopeExcludedAncestorWins: a directory-anchored glob pattern
+// ("vendor/g*/") excludes two sibling directories, but a nested .gitignore
+// re-includes one of them specifically ("!github.com/"). Once that
+// override is resolved, the ancestor glob must not reassert itself against
+// files inside the re-included directory — its own anchor ("vendor", "g*")
+// is fully consumed at that depth, so it has nothing left to say about
+// anything further down. The sibling that was never overridden stays
+// excluded via the ordinary sticky Scope.excluded mechanism. Verified with
+// `git status --porcelain --ignored`.
+func TestScopeOverriddenGlobDoesNotReclaimDescendants(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	writeScopeFile(t, fs, ".gitignore", "vendor/g*/\n")
+	writeScopeFile(t, fs, "vendor/.gitignore", "!github.com/\n")
+	writeScopeFile(t, fs, "vendor/github.com/file", "x\n")
+	writeScopeFile(t, fs, "vendor/gopkg.in/file", "x\n")
+
+	verdicts, _ := walkScoped(t, fs)
+
+	assert.False(t, verdicts[fs.Join("vendor", "github.com", "file")],
+		"the nested re-include overrides the ancestor glob for this directory and its contents")
+	assert.True(t, verdicts[fs.Join("vendor", "gopkg.in", "file")],
+		"the sibling directory was never overridden, so the ancestor glob still excludes it")
+}
+
 // TestScopeDoesNotReadIgnoreFilesBelowExcluded verifies that Descend never
 // invokes readOwn for an excluded directory, which is what lets a walker skip
 // the open entirely.
