@@ -13,24 +13,33 @@ import (
 // Encoder writes MemoryIndex structs to an output stream.
 type Encoder struct {
 	io.Writer
-	hash hash.Hash
+	hash      hash.Hash
+	optionErr error
 }
 
-// NewEncoder returns a new stream encoder that writes to w.
-func NewEncoder(w io.Writer) *Encoder {
-	// TODO: Support passing an ObjectFormat (sha256)
-	h := hash.New(crypto.SHA1)
-	mw := io.MultiWriter(w, h)
-	return &Encoder{mw, h}
+// NewEncoder returns a new stream encoder that writes to w. The object
+// format defaults to SHA-1; use WithObjectFormat for SHA-256. Invalid options
+// are reported by Encode before writing any bytes.
+func NewEncoder(w io.Writer, opts ...Option) *Encoder {
+	o, err := readOptions(opts)
+	h := hash.New(o.hashAlgorithm())
+	return &Encoder{Writer: io.MultiWriter(w, h), hash: h, optionErr: err}
 }
 
-// Encode writes an index into the commit-graph file
+// Encode writes an index into the commit-graph file. It returns
+// formatcfg.ErrInvalidObjectFormat if the Encoder was created with an invalid
+// object format, and ErrObjectFormatMismatch if a commit, tree or parent ID
+// has another width than that format; neither writes any bytes.
 func (e *Encoder) Encode(idx Index) error {
+	if e.optionErr != nil {
+		return e.optionErr
+	}
+	e.hash.Reset()
 	// Get all the hashes in the input index
 	hashes := idx.Hashes()
 
 	// Sort the input and prepare helper structures we'll need for encoding
-	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, err := e.prepare(idx, hashes)
+	hashToIndex, positions, fanout, extraEdgesCount, generationV2OverflowCount, err := e.prepare(idx, hashes)
 	if err != nil {
 		return err
 	}
@@ -63,7 +72,7 @@ func (e *Encoder) Encode(idx Index) error {
 		return err
 	}
 
-	extraEdges, generationV2Data, err := e.encodeCommitData(hashes, hashToIndex, idx)
+	extraEdges, generationV2Data, err := e.encodeCommitData(hashes, positions, hashToIndex, idx)
 	if err != nil {
 		return err
 	}
@@ -95,12 +104,17 @@ func lookupParentIndex(hashToIndex map[plumbing.Hash]uint32, h plumbing.Hash) (u
 	return i, nil
 }
 
-func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount, generationV2OverflowCount uint32, err error) {
+// prepare sorts hashes and indexes them. positions[i] is the position of
+// hashes[i] in idx, so encodeCommitData does not have to look it up again.
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, positions, fanout []uint32, extraEdgesCount, generationV2OverflowCount uint32, err error) {
 	// Sort the hashes and build our index
 	plumbing.HashesSort(hashes)
-	hashToIndex = make(map[plumbing.Hash]uint32)
+	hashToIndex = make(map[plumbing.Hash]uint32, len(hashes))
 	fanout = make([]uint32, lenFanout)
 	for i, hash := range hashes {
+		if hash.Size() != e.hash.Size() {
+			return nil, nil, nil, 0, 0, e.widthMismatch("commit", hash)
+		}
 		hashToIndex[hash] = uint32(i)
 		fanout[hash.Bytes()[0]]++
 	}
@@ -115,10 +129,24 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	// Find out if we will need extra edge table. An index that cannot satisfy
 	// the lookup returns a nil CommitData, so the error has to be checked
 	// before v is dereferenced.
-	for i := range len(hashes) {
-		v, err := idx.GetCommitDataByIndex(uint32(i))
+	positions = make([]uint32, len(hashes))
+	for i, h := range hashes {
+		originalIndex, err := idx.GetIndexByHash(h)
 		if err != nil {
-			return nil, nil, 0, 0, err
+			return nil, nil, nil, 0, 0, err
+		}
+		positions[i] = originalIndex
+		v, err := idx.GetCommitDataByIndex(originalIndex)
+		if err != nil {
+			return nil, nil, nil, 0, 0, err
+		}
+		if v.TreeHash.Size() != e.hash.Size() {
+			return nil, nil, nil, 0, 0, e.widthMismatch("tree", v.TreeHash)
+		}
+		for _, parent := range v.ParentHashes {
+			if parent.Size() != e.hash.Size() {
+				return nil, nil, nil, 0, 0, e.widthMismatch("parent", parent)
+			}
 		}
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
@@ -128,7 +156,11 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		}
 	}
 
-	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, nil
+	return hashToIndex, positions, fanout, extraEdgesCount, generationV2OverflowCount, nil
+}
+
+func (e *Encoder) widthMismatch(kind string, h plumbing.Hash) error {
+	return fmt.Errorf("%w: %d-byte %s ID %s, want %d bytes", ErrObjectFormatMismatch, h.Size(), kind, h, e.hash.Size())
 }
 
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
@@ -137,7 +169,7 @@ func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 	}
 	if _, err = e.Write(commitFileSignature); err == nil {
 		version := byte(1)
-		if crypto.Hash(e.hash.Size()) == crypto.Hash(crypto.SHA256.Size()) {
+		if e.hash.Size() == crypto.SHA256.Size() {
 			version = byte(2)
 		}
 		_, err = e.Write([]byte{1, version, byte(chunkCount), 0})
@@ -181,18 +213,13 @@ func (e *Encoder) encodeOidLookup(hashes []plumbing.Hash) (err error) {
 	return err
 }
 
-func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, hashToIndex map[plumbing.Hash]uint32, idx Index) (extraEdges []uint32, generationV2Data []uint64, err error) {
+func (e *Encoder) encodeCommitData(hashes []plumbing.Hash, positions []uint32, hashToIndex map[plumbing.Hash]uint32, idx Index) (extraEdges []uint32, generationV2Data []uint64, err error) {
 	if idx.HasGenerationV2() {
 		generationV2Data = make([]uint64, 0, len(hashes))
 	}
-	for _, hash := range hashes {
-		// Both lookups can fail, and commitData is nil when the second one
-		// does.
-		origIndex, err := idx.GetIndexByHash(hash)
-		if err != nil {
-			return extraEdges, generationV2Data, err
-		}
-		commitData, err := idx.GetCommitDataByIndex(origIndex)
+	for i := range hashes {
+		// The lookup can fail, and commitData is nil when it does.
+		commitData, err := idx.GetCommitDataByIndex(positions[i])
 		if err != nil {
 			return extraEdges, generationV2Data, err
 		}

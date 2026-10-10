@@ -2,6 +2,8 @@ package commitgraph_test
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"os"
 	"path"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/commitgraph"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 func TestOpenChainFile(t *testing.T) {
@@ -40,11 +43,12 @@ func TestOpenChainFile(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			option := commitgraph.WithObjectFormat(formatcfg.ObjectFormat(tc.name))
 
 			chainData := strings.Join(tc.goodShas, "\n") + "\n"
 			chainReader := strings.NewReader(chainData)
 
-			chain, err := commitgraph.OpenChainFile(chainReader)
+			chain, err := commitgraph.OpenChainFile(chainReader, option)
 			require.NoError(t, err)
 			assert.Equal(t, chain, tc.goodShas)
 
@@ -53,14 +57,14 @@ func TestOpenChainFile(t *testing.T) {
 
 			chainReader = strings.NewReader(chainData)
 
-			chain, err = commitgraph.OpenChainFile(chainReader)
+			chain, err = commitgraph.OpenChainFile(chainReader, option)
 			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
 			assert.Nil(t, chain)
 
 			// Test with empty file
 			emptyChainReader := bytes.NewReader(nil)
 
-			chain, err = commitgraph.OpenChainFile(emptyChainReader)
+			chain, err = commitgraph.OpenChainFile(emptyChainReader, option)
 			require.NoError(t, err)
 			assert.Equal(t, []string{}, chain)
 
@@ -68,7 +72,7 @@ func TestOpenChainFile(t *testing.T) {
 			newlineChainData := []byte("\n\n\n")
 			newlineChainReader := bytes.NewReader(newlineChainData)
 
-			chain, err = commitgraph.OpenChainFile(newlineChainReader)
+			chain, err = commitgraph.OpenChainFile(newlineChainReader, option)
 			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
 			assert.Nil(t, chain)
 		})
@@ -78,10 +82,12 @@ func TestOpenChainFile(t *testing.T) {
 func TestOpenChainIndexBrokenLayer(t *testing.T) {
 	t.Parallel()
 
-	const (
-		base = "c336d16298a017486c4164c40f8acb28afe64e84"
-		tip  = "31eae7b619d166c366bf5df4991f04ba8cebea0a"
-	)
+	const tip = "31eae7b619d166c366bf5df4991f04ba8cebea0a"
+
+	// A chain names each layer by its trailing checksum, so the valid
+	// base must be named after the graph it holds.
+	baseGraph := encodeTestGraph(t)
+	base := hex.EncodeToString(baseGraph[len(baseGraph)-sha1.Size:])
 
 	tests := []struct {
 		name   string
@@ -103,14 +109,14 @@ func TestOpenChainIndexBrokenLayer(t *testing.T) {
 		{
 			name:   "missing graph after valid base",
 			chain:  []string{base, tip},
-			graphs: map[string][]byte{base: encodeTestGraph(t)},
+			graphs: map[string][]byte{base: baseGraph},
 			err:    os.ErrNotExist,
 		},
 		{
 			name:  "corrupt graph after valid base",
 			chain: []string{base, tip},
 			graphs: map[string][]byte{
-				base: encodeTestGraph(t),
+				base: baseGraph,
 				tip:  []byte("not a graph"),
 			},
 			err: commitgraph.ErrMalformedCommitGraphFile,
@@ -214,6 +220,28 @@ func encodeTestGraph(t *testing.T) []byte {
 	var buf bytes.Buffer
 	require.NoError(t, commitgraph.NewEncoder(&buf).Encode(idx))
 	return buf.Bytes()
+}
+
+func TestOpenChainFileIgnoresUnterminatedEntry(t *testing.T) {
+	t.Parallel()
+	first := strings.Repeat("a", 40)
+	last := strings.Repeat("b", 40)
+	for _, tc := range []struct {
+		name string
+		data string
+		want []string
+	}{
+		{"terminated", first + "\n" + last + "\n", []string{first, last}},
+		{"unterminated", first + "\n" + last, []string{first}},
+		{"single unterminated", last, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			chain, err := commitgraph.OpenChainFile(strings.NewReader(tc.data))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, chain)
+		})
+	}
 }
 
 var (
