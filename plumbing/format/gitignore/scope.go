@@ -1,6 +1,7 @@
 package gitignore
 
 import (
+	"errors"
 	"os"
 	"slices"
 
@@ -113,10 +114,23 @@ func (s *Scope) matches(path []string, isDir bool) bool {
 
 // DirPatterns returns the patterns declared by the .gitignore of a single
 // directory, without recursing. A missing file is not an error and yields no
-// patterns. Use it to build the readOwn argument of Scope.Descend while walking
-// a tree; ReadPatterns is the eager whole-tree equivalent.
+// patterns, as does a .gitignore that is not a regular file, such as a
+// symbolic link. Use it to build the readOwn argument of Scope.Descend while
+// walking a tree; ReadPatterns is the eager whole-tree equivalent.
 func DirPatterns(fs billy.Filesystem, path []string) ([]Pattern, error) {
-	ps, err := readIgnoreFile(fs, path, gitignoreFile)
+	name := fs.Join(append(path, gitignoreFile)...)
+	fi, err := fs.Lstat(name)
+	if errors.Is(err, billy.ErrNotSupported) {
+		// A filesystem without Lstat, such as embedfs, cannot report a symlink.
+		fi, err = fs.Stat(name)
+	}
+
+	var ps []Pattern
+	// Windows reports reparse-point placeholders, such as cloud files, as
+	// irregular, but git reads them as regular files.
+	if err == nil && fi.Mode().Type()&^os.ModeIrregular == 0 {
+		ps, err = readIgnoreFile(fs, path, gitignoreFile)
+	}
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
