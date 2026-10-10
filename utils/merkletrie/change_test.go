@@ -92,3 +92,58 @@ func (s *ChangeSuite) TestMalformedChange() {
 	change := merkletrie.Change{}
 	s.PanicsWithError("malformed change: nil from and to", func() { _ = change.String() })
 }
+
+// collapsibleNoder wraps a noder and implements noder.Collapser, so tests
+// can control whether a directory collapses into a single change.
+type collapsibleNoder struct {
+	noder.Noder
+	collapse bool
+}
+
+func (n collapsibleNoder) Collapse() bool { return n.collapse }
+
+func wrapLast(p noder.Path, collapse bool) noder.Path {
+	wrapped := make(noder.Path, len(p))
+	copy(wrapped, p)
+	wrapped[len(wrapped)-1] = collapsibleNoder{Noder: p.Last(), collapse: collapse}
+	return wrapped
+}
+
+func (s *ChangeSuite) TestAddRecursiveInsertCollapsedDir() {
+	tree, err := fsnoder.New("(a(b(z<>)))")
+	s.NoError(err)
+	p := wrapLast(find(s.T(), tree, "b"), true)
+
+	ret := merkletrie.NewChanges()
+	err = ret.AddRecursiveInsert(p)
+	s.NoError(err)
+
+	s.Len(ret, 1)
+	s.Equal("<Insert a/b>", ret[0].String())
+}
+
+func (s *ChangeSuite) TestAddRecursiveDeleteCollapsedDir() {
+	tree, err := fsnoder.New("(a(b(z<>)))")
+	s.NoError(err)
+	p := wrapLast(find(s.T(), tree, "b"), true)
+
+	ret := merkletrie.NewChanges()
+	err = ret.AddRecursiveDelete(p)
+	s.NoError(err)
+
+	s.Len(ret, 1)
+	s.Equal("<Delete a/b>", ret[0].String())
+}
+
+func (s *ChangeSuite) TestAddRecursiveInsertNonCollapsedDir() {
+	tree, err := fsnoder.New("(a(b(z<>)))")
+	s.NoError(err)
+	p := wrapLast(find(s.T(), tree, "b"), false)
+
+	ret := merkletrie.NewChanges()
+	err = ret.AddRecursiveInsert(p)
+	s.NoError(err)
+
+	s.Len(ret, 1)
+	s.Equal("<Insert a/b/z>", ret[0].String())
+}
