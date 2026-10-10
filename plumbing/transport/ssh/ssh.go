@@ -82,12 +82,6 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		}
 		config.HostKeyCallback = db.HostKeyCallback()
 		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
-	} else if len(config.HostKeyAlgorithms) == 0 {
-		db, err := newKnownHostsDb()
-		if err != nil {
-			return nil, err
-		}
-		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
 	}
 
 	trace.SSH.Printf("ssh: host key algorithms %s", strings.Join(config.HostKeyAlgorithms, ", "))
