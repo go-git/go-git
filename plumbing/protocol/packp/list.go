@@ -49,20 +49,25 @@ func DecodeListV2(r io.Reader, l *capability.List) (int, error) {
 			return length, nil
 		}
 
-		line = bytes.TrimSuffix(line, []byte("\n"))
-		if len(line) == 0 {
-			continue
-		}
+		addListV2Line(l, bytes.TrimSuffix(line, []byte("\n")))
+	}
+}
 
-		key, value, hasValue := strings.Cut(string(line), "=")
-		if hasValue {
-			for v := range strings.SplitSeq(value, " ") {
-				if v != "" {
-					l.Add(key, v)
-				}
+// addListV2Line parses a single v2 capability line ("key" or "key=v1 v2"),
+// without its trailing LF, and appends it to l. Empty lines are ignored.
+func addListV2Line(l *capability.List, line []byte) {
+	if len(line) == 0 {
+		return
+	}
+
+	key, value, hasValue := strings.Cut(string(line), "=")
+	if hasValue {
+		for v := range strings.SplitSeq(value, " ") {
+			if v != "" {
+				l.Add(key, v)
 			}
-		} else {
-			l.Add(key)
 		}
+	} else {
+		l.Add(key)
 	}
 }
