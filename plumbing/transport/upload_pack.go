@@ -467,7 +467,17 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 			return nil
 		}
 
-		cmd := strings.TrimPrefix(strings.TrimSuffix(string(line), "\n"), "command=")
+		cmd, isCmd := strings.CutPrefix(strings.TrimSuffix(string(line), "\n"), "command=")
+		if !isCmd {
+			// Consume and ignore non-command capabilities (e.g. "object-format=sha1").
+			if _, _, err := pktline.ReadLine(rd); err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return err
+			}
+			continue
+		}
 
 		req := &packp.CommandRequest{}
 		switch cmd {

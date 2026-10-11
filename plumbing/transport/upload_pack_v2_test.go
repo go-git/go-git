@@ -292,3 +292,53 @@ func TestUploadPackV2FetchNotReadyContinuesNegotiation(t *testing.T) {
 	require.NotContains(t, out, "ready")
 	require.NotContains(t, out, "packfile")
 }
+
+func TestUploadPackV2NonCommandCapabilitiesBeforeCommand(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	_, err = pktline.Writef(&buf, "agent=git/2.55.0-Linux\n")
+	require.NoError(t, err)
+	_, err = pktline.Writef(&buf, "object-format=sha1\n")
+	require.NoError(t, err)
+	_, err = pktline.Writef(&buf, "command=ls-refs\n")
+	require.NoError(t, err)
+	require.NoError(t, pktline.WriteDelim(&buf))
+	_, err = pktline.Writef(&buf, "symrefs\n")
+	require.NoError(t, err)
+	require.NoError(t, pktline.WriteFlush(&buf))
+
+	out := serveUploadPackV2Test(t, st, io.NopCloser(&buf))
+	require.Contains(t, out, head.Hash().String()+" HEAD symref-target:"+head.Name().String())
+	require.NotContains(t, out, "error unknown-command")
+}
+
+func TestUploadPackV2NonCommandCapabilitiesOnly(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+
+	var buf bytes.Buffer
+	_, err := pktline.Writef(&buf, "object-format=sha1\n")
+	require.NoError(t, err)
+	require.NoError(t, pktline.WriteFlush(&buf))
+
+	out := serveUploadPackV2Test(t, st, io.NopCloser(&buf))
+	require.Empty(t, out)
+}
+
+func TestUploadPackV2UnknownCommandError(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+
+	var out bytes.Buffer
+	err := UploadPack(context.TODO(), st, v2Request(t, "unknown-cmd", nil, nil), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+		GitProtocol:  "version=2",
+		StatelessRPC: true,
+	})
+	require.ErrorContains(t, err, `unsupported v2 command "unknown-cmd"`)
+	require.Contains(t, out.String(), "error unknown-command unknown-cmd")
+}
+
