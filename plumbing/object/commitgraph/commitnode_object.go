@@ -64,7 +64,7 @@ func (c *objectCommitNode) ParentNodes() CommitNodeIter {
 }
 
 func (c *objectCommitNode) ParentNode(i int) (CommitNode, error) {
-	if i < 0 || i >= len(c.commit.ParentHashes) {
+	if i < 0 || i >= c.commit.NumParents() {
 		return nil, object.ErrParentNotFound
 	}
 
