@@ -171,6 +171,25 @@ func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
 	require.Contains(t, out, "packfile")
 }
 
+func TestUploadPackV2FetchFromShallowRepository(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	require.NoError(t, st.SetShallow([]plumbing.Hash{head.Hash()}))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"done",
+	}))
+
+	require.Contains(t, out, "shallow-info")
+	require.Contains(t, out, "shallow "+head.Hash().String())
+	require.Contains(t, out, "packfile")
+	require.Less(t, strings.Index(out, "shallow-info"), strings.Index(out, "packfile"),
+		"shallow-info must precede the packfile section")
+}
+
 func TestUploadPackV2FetchCloneNoHaves(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
