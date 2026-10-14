@@ -863,6 +863,83 @@ func (s *SuiteDotGit) TestRemoveRefNonExistent() {
 	s.Equal(string(after), string(before))
 }
 
+func (s *SuiteDotGit) TestRemoveRefCleansEmptyParentDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	ref := plumbing.NewReferenceFromStrings("refs/heads/feature/branch-1", "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.Require().NoError(dir.SetRef(ref, nil))
+
+	_, err := fs.Stat("refs/heads/feature/branch-1")
+	s.Require().NoError(err)
+	_, err = fs.Stat("refs/heads/feature")
+	s.Require().NoError(err)
+	_, err = fs.Stat("refs/heads")
+	s.Require().NoError(err)
+
+	s.Require().NoError(dir.RemoveRef(ref.Name()))
+
+	_, err = fs.Stat("refs/heads/feature/branch-1")
+	s.Require().ErrorIs(err, os.ErrNotExist)
+	_, err = fs.Stat("refs/heads/feature")
+	s.Require().ErrorIs(err, os.ErrNotExist)
+
+	// Spares refs/heads and refs/ matching upstream Git
+	_, err = fs.Stat("refs/heads")
+	s.Require().NoError(err, "refs/heads must not be removed")
+	_, err = fs.Stat("refs")
+	s.Require().NoError(err, "refs must not be removed")
+}
+
+func (s *SuiteDotGit) TestRemoveRefPreservesRefsHeadsWhenOnlyRef() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	ref := plumbing.NewReferenceFromStrings("refs/heads/main", "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.Require().NoError(dir.SetRef(ref, nil))
+
+	s.Require().NoError(dir.RemoveRef(ref.Name()))
+
+	_, err := fs.Stat("refs/heads")
+	s.Require().NoError(err, "refs/heads must not be removed even when it becomes empty")
+}
+
+func (s *SuiteDotGit) TestRemoveRefPreservesNonEmptyParentDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	ref1 := plumbing.NewReferenceFromStrings("refs/heads/feature/branch-1", "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	ref2 := plumbing.NewReferenceFromStrings("refs/heads/feature/branch-2", "a8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.Require().NoError(dir.SetRef(ref1, nil))
+	s.Require().NoError(dir.SetRef(ref2, nil))
+
+	s.Require().NoError(dir.RemoveRef(ref1.Name()))
+
+	_, err := fs.Stat("refs/heads/feature")
+	s.Require().NoError(err, "feature directory must not be removed while sibling exists")
+	_, err = fs.Stat("refs/heads/feature/branch-2")
+	s.Require().NoError(err)
+}
+
+func (s *SuiteDotGit) TestRemoveRefAllowsCreatingConflictingRef() {
+	// Reproduce and verify fix for issue #1822:
+	// After deleting refs/heads/bugfix/1, creating refs/heads/bugfix must succeed.
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	nestedRef := plumbing.NewReferenceFromStrings("refs/heads/bugfix/1", "e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.Require().NoError(dir.SetRef(nestedRef, nil))
+
+	s.Require().NoError(dir.RemoveRef(nestedRef.Name()))
+
+	conflictingRef := plumbing.NewReferenceFromStrings("refs/heads/bugfix", "a8d3ffab552895c19b9fcf7aa264d277cde33881")
+	s.Require().NoError(dir.SetRef(conflictingRef, nil))
+
+	got, err := dir.Ref("refs/heads/bugfix")
+	s.Require().NoError(err)
+	s.Require().Equal(conflictingRef.Hash(), got.Hash())
+}
+
 func (s *SuiteDotGit) TestRemoveRefInvalidPackedRefs() {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	s.Require().NoError(err)
