@@ -142,12 +142,17 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 		if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
 			return ErrFilterNotSupported
 		}
-		if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
+		shallowRequired, shallows, err := internal.ShallowSupportRequired(st, req)
+		if err != nil {
+			return err
+		}
+		if shallowRequired && !internal.FetchSupports(s.caps, "shallow") {
 			return ErrShallowNotSupported
 		}
 		if err := ReconcileObjectFormatV2(st, s.caps); err != nil {
 			return err
 		}
+		req.Shallows = shallows
 		// Each negotiation round reuses the persistent stream: Command writes
 		// the request and decodes the metadata, leaving s.r at the packfile.
 		round := func(args *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
