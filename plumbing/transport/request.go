@@ -14,6 +14,9 @@ import (
 // repository path. For example, git-lfs-authenticate produces
 // `git-lfs-authenticate '<repo>' '<arg>'` on the wire.
 // Protocol communicates the preferred Git wire protocol version.
+// UserAgent identifies the client to the remote, in the HTTP User-Agent
+// header and in the agent capability; it defaults to
+// capability.DefaultAgent().
 //
 // The repository path is not a field on Request. Adapters derive it from
 // URL.Path, matching how canonical Git handles the relationship for all
@@ -25,4 +28,6 @@ type Request struct {
 	Args    []string
 
 	Protocol protocol.Version
+
+	UserAgent string
 }
