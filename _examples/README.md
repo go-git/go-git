@@ -15,6 +15,7 @@ Here you can find a list of annotated _go-git_ examples:
 - [config](config/main.go) - Explains how to work with config files. 
 - [commit](commit/main.go) - Commit changes to the current branch to an existent repository.
 - [push](push/main.go) - Push repository to default remote (origin).
+- [clone, commit and push](clone-commit-push/main.go) - End-to-end workflow: clone a repository, create a branch, commit a change and push it.
 - [pull](pull/main.go) - Pull changes from a remote repository.
 - [checkout](checkout/main.go) - Check out a specific commit from a repository.
 - [log](log/main.go) - Emulate `git log` command output iterating all the commit history from HEAD reference.
