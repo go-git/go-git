@@ -751,6 +751,104 @@ func buildRefOnOfsDeltaChainPack(t *testing.T) (pack []byte, midHash, leafHash p
 	return buf.Bytes(), midHash, leafHash
 }
 
+// TestParserResolvesOfsDeltaOfExternalRefDelta covers a thin pack in which
+// an OFS_DELTA's base is a REF_DELTA whose own base is not in the pack.
+// Canonical Git writes this shape when a delta chain ends at an object the
+// receiver already has, e.g. in an incremental bundle (bundle.c runs
+// pack-objects with --thin and --delta-base-offset). index-pack resolves
+// it by reading the missing base and then walking all of its delta
+// descendants (fix_unresolved_deltas in builtin/index-pack.c).
+func TestParserResolvesOfsDeltaOfExternalRefDelta(t *testing.T) {
+	t.Parallel()
+
+	base := []byte("a stable base payload that stays outside the thin pack")
+	mid := []byte("a stable base payload modified by the REF-delta entry")
+	leaf := []byte("a stable base payload modified twice for the OFS-delta")
+	pack := buildOfsOnExternalRefDeltaPack(t, base, mid, leaf)
+
+	tests := []struct {
+		name    string
+		storage storer.Storer
+	}{
+		{
+			name:    "with memory storage",
+			storage: memory.NewStorage(),
+		},
+		{
+			name:    "with filesystem storage",
+			storage: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault()),
+		},
+		{
+			name:    "with filesystem storage and high memory mode",
+			storage: filesystem.NewStorageWithOptions(osfs.New(t.TempDir()), cache.NewObjectLRUDefault(), filesystem.Options{HighMemoryMode: true}),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if closer, ok := tc.storage.(io.Closer); ok {
+				defer func() { _ = closer.Close() }()
+			}
+
+			external := &plumbing.MemoryObject{}
+			external.SetType(plumbing.BlobObject)
+			_, _ = external.Write(base)
+			_, err := tc.storage.SetEncodedObject(external)
+			require.NoError(t, err)
+
+			parser := packfile.NewParser(bytes.NewReader(pack), packfile.WithStorage(tc.storage))
+
+			_, err = parser.Parse()
+			require.NoError(t, err)
+
+			for _, want := range [][]byte{mid, leaf} {
+				obj, err := tc.storage.EncodedObject(plumbing.BlobObject, blobHash(want))
+				require.NoError(t, err)
+
+				r, err := obj.Reader()
+				require.NoError(t, err)
+				got, err := io.ReadAll(r)
+				_ = r.Close()
+				require.NoError(t, err)
+				assert.Equal(t, want, got)
+			}
+		})
+	}
+}
+
+// buildOfsOnExternalRefDeltaPack returns a 2-entry thin pack with the shape
+// [REF-delta(base=blob of base, not in the pack), OFS-delta(base=REF-delta)]
+// that resolves to the blobs mid and leaf.
+func buildOfsOnExternalRefDeltaPack(t *testing.T, base, mid, leaf []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	h := sha1.New()
+	w := io.MultiWriter(&buf, h)
+
+	_, _ = w.Write([]byte("PACK"))
+	_ = binary.Write(w, binary.BigEndian, uint32(2))
+	_ = binary.Write(w, binary.BigEndian, uint32(2))
+
+	refOffset := int64(buf.Len())
+	baseHash := blobHash(base)
+	refDelta := packfile.DiffDelta(base, mid)
+	writePackObjectHeader(t, w, plumbing.REFDeltaObject, int64(len(refDelta)))
+	_, _ = baseHash.WriteTo(w)
+	writeZlibPayload(t, w, refDelta)
+
+	ofsOffset := int64(buf.Len())
+	ofsDelta := packfile.DiffDelta(mid, leaf)
+	writePackObjectHeader(t, w, plumbing.OFSDeltaObject, int64(len(ofsDelta)))
+	_ = gogitbinary.WriteVariableWidthInt(w, ofsOffset-refOffset)
+	writeZlibPayload(t, w, ofsDelta)
+
+	_, _ = buf.Write(h.Sum(nil))
+
+	return buf.Bytes()
+}
+
 // TestParserParseRejectsSecondCall pins the single-shot Parser invariant
 // documented on the Parser type: once Parse has been called (whether it
 // returned successfully or with an error mid-walk), a subsequent call
