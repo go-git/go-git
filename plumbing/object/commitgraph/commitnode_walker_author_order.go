@@ -1,6 +1,8 @@
 package commitgraph
 
 import (
+	"time"
+
 	"github.com/emirpasic/gods/trees/binaryheap"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -33,19 +35,19 @@ func NewCommitNodeIterAuthorDateOrder(c CommitNode,
 	exploreHeap.Push(c)
 
 	visitHeap := &commitNodeHeap{binaryheap.NewWith(func(left, right any) int {
-		leftCommit, err := left.(CommitNode).Commit()
+		leftTime, err := nodeAuthorTime(left.(CommitNode))
 		if err != nil {
 			return -1
 		}
-		rightCommit, err := right.(CommitNode).Commit()
+		rightTime, err := nodeAuthorTime(right.(CommitNode))
 		if err != nil {
 			return -1
 		}
 
 		switch {
-		case rightCommit.Author.When.Before(leftCommit.Author.When):
+		case rightTime.Before(leftTime):
 			return -1
-		case leftCommit.Author.When.Before(rightCommit.Author.When):
+		case leftTime.Before(rightTime):
 			return 1
 		}
 		return 0
@@ -58,4 +60,15 @@ func NewCommitNodeIterAuthorDateOrder(c CommitNode,
 		inCounts:     inCounts,
 		ignore:       seen,
 	}
+}
+
+func nodeAuthorTime(node CommitNode) (time.Time, error) {
+	if node, ok := node.(interface{ authorTime() (time.Time, error) }); ok {
+		return node.authorTime()
+	}
+	commit, err := node.Commit()
+	if err != nil {
+		return time.Time{}, err
+	}
+	return commit.Author.When, nil
 }
