@@ -43,7 +43,10 @@ func (c *CommitData) GenerationV2Data() uint64 {
 // Index represents a representation of commit graph that allows indexed
 // access to the nodes using commit object hash
 type Index interface {
-	// GetIndexByHash gets the index in the commit graph from commit hash, if available
+	// GetIndexByHash gets the index in the commit graph from commit hash, if available.
+	// It returns plumbing.ErrObjectNotFound when h is not in the graph; a
+	// file-backed index returns ErrObjectFormatMismatch for a hash of another
+	// width. Callers falling back to the object store treat any error as a miss.
 	GetIndexByHash(h plumbing.Hash) (uint32, error)
 	// GetHashByIndex gets the hash given an index in the commit graph
 	GetHashByIndex(i uint32) (plumbing.Hash, error)

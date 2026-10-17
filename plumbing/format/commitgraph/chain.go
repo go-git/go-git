@@ -2,7 +2,10 @@ package commitgraph
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"io"
+	"os"
 	"path"
 
 	"github.com/go-git/go-billy/v6"
@@ -16,7 +19,13 @@ import (
 // and are new line separated list of graph file hashes, oldest to newest.
 //
 // This function simply reads the file and returns the hashes as a slice.
-func OpenChainFile(r io.Reader) ([]string, error) {
+// A hash of the other object format's width is rejected with
+// ErrObjectFormatMismatch.
+func OpenChainFile(r io.Reader, opts ...Option) ([]string, error) {
+	o, err := readOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 	if r == nil {
 		return nil, io.ErrUnexpectedEOF
 	}
@@ -35,6 +44,9 @@ func OpenChainFile(r io.Reader) ([]string, error) {
 		if !plumbing.IsHash(hashStr) {
 			return nil, ErrMalformedCommitGraphFile
 		}
+		if len(hashStr) != o.objectFormat.HexSize() {
+			return nil, fmt.Errorf("%w: chain names %d-character graph hash, want %s", ErrObjectFormatMismatch, len(hashStr), o.objectFormat)
+		}
 		chain = append(chain, hashStr)
 	}
 	return chain, nil
@@ -42,20 +54,26 @@ func OpenChainFile(r io.Reader) ([]string, error) {
 
 // OpenChainOrFileIndex expects a billy.Filesystem representing a .git directory.
 // It will first attempt to read a commit-graph index file, before trying to read a
-// commit-graph chain file and its index files. If neither are present, an error is returned.
-// Otherwise an Index will be returned.
+// commit-graph chain file and its index files. It falls back to the chain only
+// when the index file does not exist; any other error opening or reading it is
+// returned. If neither are present, an error is returned. Otherwise an Index
+// will be returned.
 //
 // See: https://git-scm.com/docs/commit-graph
-func OpenChainOrFileIndex(fs billy.Filesystem) (Index, error) {
+func OpenChainOrFileIndex(fs billy.Filesystem, opts ...Option) (Index, error) {
+	if _, err := readOptions(opts); err != nil {
+		return nil, err
+	}
 	file, err := fs.Open(path.Join("objects", "info", "commit-graph"))
 	if err != nil {
-		// try to open a chain file
-		return OpenChainIndex(fs)
+		if errors.Is(err, os.ErrNotExist) {
+			return OpenChainIndex(fs, opts...)
+		}
+		return nil, err
 	}
 
-	index, err := OpenFileIndex(file)
+	index, err := OpenFileIndex(file, opts...)
 	if err != nil {
-		// Ignore any file closing errors and return the error from OpenFileIndex instead
 		_ = file.Close()
 		return nil, err
 	}
@@ -68,13 +86,16 @@ func OpenChainOrFileIndex(fs billy.Filesystem) (Index, error) {
 // chain is not present or invalid, an error is returned.
 //
 // See: https://git-scm.com/docs/commit-graph
-func OpenChainIndex(fs billy.Filesystem) (Index, error) {
+func OpenChainIndex(fs billy.Filesystem, opts ...Option) (Index, error) {
+	if _, err := readOptions(opts); err != nil {
+		return nil, err
+	}
 	chainFile, err := fs.Open(path.Join("objects", "info", "commit-graphs", "commit-graph-chain"))
 	if err != nil {
 		return nil, err
 	}
 
-	chain, err := OpenChainFile(chainFile)
+	chain, err := OpenChainFile(chainFile, opts...)
 	_ = chainFile.Close()
 	if err != nil {
 		return nil, err
@@ -94,7 +115,7 @@ func OpenChainIndex(fs billy.Filesystem) (Index, error) {
 			return nil, err
 		}
 
-		next, err := OpenFileIndexWithParent(file, index)
+		next, err := OpenFileIndexWithParent(file, index, opts...)
 		if err != nil {
 			// Ignore closing errors and return the error from OpenFileIndexWithParent instead
 			_ = file.Close()
@@ -102,6 +123,15 @@ func OpenChainIndex(fs billy.Filesystem) (Index, error) {
 				_ = index.Close()
 			}
 			return nil, err
+		}
+		// Each layer's trailer must match the name the chain gives it.
+		// Git checks this for the base layers only; the top layer is
+		// checked here too. The trailer is read, not recomputed, so this
+		// catches a stale or mismatched layer, not a forged one.
+		if want, _ := plumbing.FromHex(hash); next.(*fileIndex).graphOID != want {
+			// next owns file and every layer below it.
+			_ = next.Close()
+			return nil, ErrMalformedCommitGraphFile
 		}
 		index = next
 	}
