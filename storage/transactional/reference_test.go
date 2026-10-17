@@ -101,6 +101,27 @@ func (s *ReferenceSuite) TestCheckAndSetReferenceInBase() {
 	s.Equal("bc9968d75e48de59f0870ffb71f5e160bbbdcf52", e.Hash().String())
 }
 
+// A reference removed in the transaction doesn't exist for it, even though the
+// base still holds it.
+func (s *ReferenceSuite) TestCheckAndSetReferenceRemoved() {
+	base := memory.NewStorage()
+	temporal := memory.NewStorage()
+	rs := NewReferenceStorage(base, temporal)
+
+	inBase := plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+	updated := plumbing.NewReferenceFromStrings("refs/foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
+	s.Require().NoError(base.SetReference(inBase))
+	s.Require().NoError(rs.RemoveReference(inBase.Name()))
+
+	err := rs.CheckAndSetReference(updated, inBase)
+	s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+
+	s.Require().NoError(rs.CheckAndSetReference(updated, plumbing.NewHashReference(inBase.Name(), plumbing.ZeroHash)))
+	e, err := rs.Reference(inBase.Name())
+	s.Require().NoError(err)
+	s.Equal(updated, e)
+}
+
 func (s *ReferenceSuite) TestCommit() {
 	base := memory.NewStorage()
 	temporal := memory.NewStorage()
