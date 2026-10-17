@@ -1213,6 +1213,28 @@ func testMakeBlob(t *testing.T, s storer.EncodedObjectStorer, content string) pl
 	return hash
 }
 
+// testMakeTreeRaw stores a tree bypassing Tree.Encode's validation, as a
+// tree fetched from a remote would be stored.
+func testMakeTreeRaw(t *testing.T, s storer.EncodedObjectStorer, entries []object.TreeEntry) plumbing.Hash {
+	t.Helper()
+	obj := s.NewEncodedObject()
+	obj.SetType(plumbing.TreeObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	for _, e := range entries {
+		_, err = fmt.Fprintf(w, "%o %s", e.Mode, e.Name)
+		require.NoError(t, err)
+		_, err = w.Write([]byte{0x00})
+		require.NoError(t, err)
+		_, err = e.Hash.WriteTo(w)
+		require.NoError(t, err)
+	}
+	require.NoError(t, w.Close())
+	hash, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
 // A shallow boundary commit is grafted: Git treats it as having no parents,
 // so everything its tree references has to be sent even when the parent
 // commit and its objects are still present in the object store. Diffing the
@@ -1254,4 +1276,67 @@ func (s *RevListSuite) TestRevListObjects_ShallowBoundaryIgnoresPresentParent() 
 	s.ElementsMatch([]plumbing.Hash{boundary, boundaryTree, newFile, shared}, got)
 	s.NotContains(got, parent, "parent beyond the shallow boundary must not be walked")
 	s.NotContains(got, oldFile, "parent-only blob must not be included")
+}
+
+// The push object walk only collects hashes and never materialises
+// entry names, so it must not reject names that upstream Git's
+// verify_path accepts — only '/' and NUL are forbidden in a path
+// component. Same reasoning as the tree diff walk in #2222.
+func (s *RevListSuite) TestRevListObjects_ControlCharacterInHistory() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	deletedBlob := testMakeBlob(t, sto, "deleted content")
+	liveBlob := testMakeBlob(t, sto, "live content")
+
+	historical := testMakeTreeRaw(t, sto, []object.TreeEntry{
+		{Name: "\x1b\x1b\x1b", Mode: filemode.Regular, Hash: deletedBlob},
+	})
+	current := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "ok.txt", Mode: filemode.Regular, Hash: liveBlob},
+	})
+
+	old := testMakeCommit(t, sto, historical)
+	head := testMakeCommit(t, sto, current, old)
+
+	got, err := Objects(sto, []plumbing.Hash{head}, nil)
+	s.Require().NoError(err)
+	s.ElementsMatch([]plumbing.Hash{head, old, current, historical, liveBlob, deletedBlob}, got)
+}
+
+func (s *RevListSuite) TestRevListObjects_ControlCharacterInPushedCommit() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	blob := testMakeBlob(t, sto, "content")
+	tree := testMakeTreeRaw(t, sto, []object.TreeEntry{
+		{Name: "\x1b\x1b\x1b", Mode: filemode.Regular, Hash: blob},
+	})
+	head := testMakeCommit(t, sto, tree)
+
+	got, err := Objects(sto, []plumbing.Hash{head}, nil)
+	s.Require().NoError(err)
+	s.ElementsMatch([]plumbing.Hash{head, tree, blob}, got)
+}
+
+func (s *RevListSuite) TestRevListObjects_ControlCharacterInHaves() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	deletedBlob := testMakeBlob(t, sto, "deleted content")
+	liveBlob := testMakeBlob(t, sto, "live content")
+
+	historical := testMakeTreeRaw(t, sto, []object.TreeEntry{
+		{Name: "\x1b\x1b\x1b", Mode: filemode.Regular, Hash: deletedBlob},
+	})
+	current := testMakeTree(t, sto, []object.TreeEntry{
+		{Name: "ok.txt", Mode: filemode.Regular, Hash: liveBlob},
+	})
+
+	old := testMakeCommit(t, sto, historical)
+	head := testMakeCommit(t, sto, current, old)
+
+	got, err := Objects(sto, []plumbing.Hash{head}, []plumbing.Hash{old})
+	s.Require().NoError(err)
+	s.ElementsMatch([]plumbing.Hash{head, current, liveBlob}, got)
 }
