@@ -205,6 +205,13 @@ type Options struct {
 	// bundle. Ignored when Client is set.
 	TLS *tls.Config
 
+	// LowSpeed checks the combined upload and download rate of each HTTP
+	// transfer, including discovery, redirects, and authentication retries.
+	// It cancels only the slow request, not its shared connection. It also
+	// applies to a custom Client and is disabled by default.
+	// See LowSpeedGuard for the measurement policy and differences from Git.
+	LowSpeed *LowSpeedGuard
+
 	// Credentials supplies a credential for the origin a request is about to be
 	// made to. It is called for the repository's origin, and again for a
 	// redirect target once a redirect has left that origin. The zero value
@@ -245,26 +252,30 @@ func NewTransport(opts Options) *Transport {
 }
 
 func (t *Transport) resolveClient() *http.Client {
+	var client *http.Client
 	if t.opts.Client != nil {
-		client := *t.opts.Client
-		client.CheckRedirect = wrapCheckRedirect(t.opts.redirectPolicy(), t.opts.Client.CheckRedirect)
-		return &client
+		copied := *t.opts.Client
+		client = &copied
+	} else {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		if t.opts.HTTPProxy != nil {
+			tr.Proxy = t.opts.HTTPProxy
+		}
+		if t.opts.TLS != nil {
+			tr.TLSClientConfig = t.opts.TLS
+		}
+		client = &http.Client{Transport: tr}
 	}
 
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-
-	if t.opts.HTTPProxy != nil {
-		tr.Proxy = t.opts.HTTPProxy
+	client.CheckRedirect = wrapCheckRedirect(t.opts.redirectPolicy(), client.CheckRedirect)
+	if t.opts.LowSpeed.valid() {
+		base := client.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		client.Transport = &lowSpeedTransport{RoundTripper: base, guard: *t.opts.LowSpeed}
 	}
-
-	if t.opts.TLS != nil {
-		tr.TLSClientConfig = t.opts.TLS
-	}
-
-	return &http.Client{
-		Transport:     tr,
-		CheckRedirect: wrapCheckRedirect(t.opts.redirectPolicy(), nil),
-	}
+	return client
 }
 
 func (o Options) redirectPolicy() RedirectPolicy {
