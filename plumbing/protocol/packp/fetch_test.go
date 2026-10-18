@@ -404,6 +404,23 @@ func TestFetchOutputEncode(t *testing.T) {
 		require.Error(t, resp.Encode(&bytes.Buffer{}))
 	})
 
+	t.Run("empty shallow-info round trip", func(t *testing.T) {
+		t.Parallel()
+		resp := &FetchOutput{ShallowInfo: &ShallowInfo{}, Packfile: true}
+
+		var buf bytes.Buffer
+		require.NoError(t, resp.Encode(&buf))
+		require.Contains(t, buf.String(), "shallow-info\n0001")
+		pktline.WriteFlush(&buf)
+
+		got := &FetchOutput{}
+		require.NoError(t, got.Decode(&buf))
+		require.NotNil(t, got.ShallowInfo)
+		assert.Empty(t, got.ShallowInfo.Shallows)
+		assert.Empty(t, got.ShallowInfo.Unshallows)
+		assert.True(t, got.Packfile)
+	})
+
 	t.Run("full response round trip", func(t *testing.T) {
 		t.Parallel()
 		resp := &FetchOutput{
