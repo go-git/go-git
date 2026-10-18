@@ -29,6 +29,23 @@ type ConfigSource interface {
 	Load(scope config.Scope) (config.ConfigStorer, error)
 }
 
+// ContextualConfigSource is an optional interface a [ConfigSource] may
+// implement to be told which repository the configuration is being
+// loaded for.
+//
+// Global and system config may contain [includeIf] directives whose
+// conditions ("gitdir:", "onbranch:", "hasconfig:remote.*.url:") are
+// evaluated against the repository being operated on. A plain
+// [ConfigSource] has no way to know it. Repository.ConfigScoped prefers
+// this interface when the source implements it.
+type ContextualConfigSource interface {
+	ConfigSource
+
+	// LoadFor returns a ConfigStorer for the given scope, resolving
+	// include conditions against ctx.
+	LoadFor(scope config.Scope, ctx config.IncludeContext) (config.ConfigStorer, error)
+}
+
 // ConfigLoader returns the key used to register a ConfigLoader plugin.
 // When set, Repository.ConfigScoped uses this plugin to obtain global and
 // system configuration instead of reading from the host filesystem.

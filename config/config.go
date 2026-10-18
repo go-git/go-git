@@ -339,21 +339,34 @@ func NewConfig() *Config {
 }
 
 // ReadConfig reads a config file from a io.Reader.
+//
+// Any [include] or [includeIf] directives are read as ordinary options
+// and not followed, because resolving them needs the path of the file
+// being read. Use [ReadConfigWithIncludes] when that path is known.
 func ReadConfig(r io.Reader) (*Config, error) {
+	return ReadConfigWithIncludes(r, nil)
+}
+
+// ReadConfigWithIncludes reads a config file from a io.Reader, resolving
+// [include] and [includeIf] directives with opts. A nil opts behaves
+// like [ReadConfig].
+func ReadConfigWithIncludes(r io.Reader, opts *format.IncludeOptions) (*Config, error) {
 	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := NewConfig()
-	if err = cfg.Unmarshal(b); err != nil {
+	if err = cfg.UnmarshalWithIncludes(b, opts); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
 }
 
-// LoadConfig loads a config file from a given scope.
+// LoadConfig loads a config file from a given scope, resolving any
+// include directives it contains. There is no repository to evaluate
+// repository-specific [includeIf] conditions against, so they are false.
 //
 // Deprecated: Use the ConfigLoader plugin instead. This will be removed in v7.
 func LoadConfig(scope Scope) (*Config, error) {
@@ -367,7 +380,7 @@ func LoadConfig(scope Scope) (*Config, error) {
 	}
 
 	for _, file := range files {
-		f, err := osfs.Default.Open(file)
+		b, err := readFile(file)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -376,11 +389,31 @@ func LoadConfig(scope Scope) (*Config, error) {
 			return nil, err
 		}
 
-		defer func() { _ = f.Close() }()
-		return ReadConfig(f)
+		cfgs, err := LoadWithIncludes(IncludeContext{}, func(ctx IncludeContext) ([]*Config, error) {
+			cfg := NewConfig()
+			if err := cfg.UnmarshalWithIncludes(b, ctx.FormatOptions(file)); err != nil {
+				return nil, err
+			}
+			return []*Config{cfg}, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return cfgs[0], nil
 	}
 
 	return NewConfig(), nil
+}
+
+func readFile(path string) ([]byte, error) {
+	f, err := osfs.Default.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	return io.ReadAll(f)
 }
 
 // Paths returns the config file location for a given scope.
@@ -497,9 +530,22 @@ const (
 )
 
 // Unmarshal parses a git-config file and stores it.
+//
+// Any [include] or [includeIf] directives are stored as ordinary options
+// and not followed. Use [Config.UnmarshalWithIncludes] to resolve them.
 func (c *Config) Unmarshal(b []byte) error {
+	return c.UnmarshalWithIncludes(b, nil)
+}
+
+// UnmarshalWithIncludes parses a git-config file and stores it,
+// resolving [include] and [includeIf] directives with opts. Each
+// included file is expanded at the point its directive appears, so an
+// included value overrides one set earlier in the including file and is
+// overridden by one set after it. A nil opts behaves like
+// [Config.Unmarshal].
+func (c *Config) UnmarshalWithIncludes(b []byte, opts *format.IncludeOptions) error {
 	r := bytes.NewBuffer(b)
-	d := format.NewDecoder(r)
+	d := format.NewDecoderWithIncludes(r, opts)
 
 	c.Raw = format.New()
 	if err := d.Decode(c.Raw); err != nil {

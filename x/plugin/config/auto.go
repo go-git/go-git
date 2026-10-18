@@ -30,11 +30,13 @@ const maxConfigFileSize = 10 << 20 // 10 MiB
 // Option configures an [auto] ConfigSource.
 type Option func(*auto)
 
-// WithFilesystem sets the filesystem used to read configuration files.
-// When not provided, the host OS filesystem is used.
+// WithFilesystem sets the filesystem used to read configuration files,
+// and the files they include. When not provided, the host OS filesystem
+// is used.
 func WithFilesystem(fs billy.Basic) Option {
 	return func(a *auto) {
 		a.fs = fs
+		a.includeFS = fs
 	}
 }
 
@@ -58,45 +60,73 @@ func NewAuto(opts ...Option) *auto { //nolint:revive
 
 type auto struct {
 	fs billy.Basic
+	// includeFS opens included files, nil to open them on the host as git
+	// does: they are named by path, and a path through a symlinked
+	// directory cannot be opened through osfs.Default.
+	includeFS billy.Basic
 }
 
+// Load returns the configuration for the given scope, resolving include
+// directives. There is no repository to evaluate repository-specific
+// [includeIf] conditions against, so they are false; [auto.LoadFor]
+// evaluates them against one.
 func (a *auto) Load(scope config.Scope) (config.ConfigStorer, error) {
-	var cfg *config.Config
-	var err error
-
-	switch scope {
-	case config.GlobalScope:
-		cfg, err = a.loadGlobal()
-	case config.SystemScope:
-		cfg, err = a.loadSystem()
-	default:
-		return nil, fmt.Errorf("unsupported scope: %d", scope)
+	cfgs, err := config.LoadWithIncludes(config.IncludeContext{}, func(ctx config.IncludeContext) ([]*config.Config, error) {
+		cfg, err := a.load(scope, ctx)
+		return []*config.Config{cfg}, err
+	})
+	if err != nil {
+		return nil, err
 	}
+	return &readOnlyStorer{cfg: *cfgs[0]}, nil
+}
+
+// LoadFor returns the configuration for the given scope, resolving
+// [includeIf] conditions against ctx. "hasconfig:remote.*.url:"
+// conditions match ctx.RemoteURLs, which [config.LoadWithIncludes] fills
+// in from every scope.
+func (a *auto) LoadFor(scope config.Scope, ctx config.IncludeContext) (config.ConfigStorer, error) {
+	cfg, err := a.load(scope, ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &readOnlyStorer{cfg: *cfg}, nil
 }
 
+func (a *auto) load(scope config.Scope, ctx config.IncludeContext) (*config.Config, error) {
+	if ctx.FS == nil {
+		ctx.FS = a.includeFS
+	}
+
+	switch scope {
+	case config.GlobalScope:
+		return a.loadGlobal(ctx)
+	case config.SystemScope:
+		return a.loadSystem(ctx)
+	default:
+		return nil, fmt.Errorf("unsupported scope: %d", scope)
+	}
+}
+
 // loadGlobal resolves global config following git's precedence rules.
 // GIT_CONFIG_GLOBAL replaces all standard paths when set; an empty value
 // explicitly disables global config. When unset, ~/.gitconfig is used
 // if it exists, otherwise the XDG config path is used as a fallback.
-func (a *auto) loadGlobal() (*config.Config, error) {
+func (a *auto) loadGlobal(ctx config.IncludeContext) (*config.Config, error) {
 	if path, ok := os.LookupEnv(envGitConfigGlobal); ok {
 		if path == "" {
 			return config.NewConfig(), nil
 		}
-		return a.loadAndMerge([]string{path})
+		return a.loadAndMerge([]string{path}, ctx)
 	}
-	return a.loadAndMerge(a.globalPaths())
+	return a.loadAndMerge(a.globalPaths(), ctx)
 }
 
 // loadSystem resolves system config following git's precedence rules.
 // GIT_CONFIG_NOSYSTEM, when truthy, skips system config entirely.
 // GIT_CONFIG_SYSTEM overrides the default path when set; an empty value
 // explicitly disables system config.
-func (a *auto) loadSystem() (*config.Config, error) {
+func (a *auto) loadSystem(ctx config.IncludeContext) (*config.Config, error) {
 	if isNoSystem() {
 		return config.NewConfig(), nil
 	}
@@ -104,9 +134,9 @@ func (a *auto) loadSystem() (*config.Config, error) {
 		if path == "" {
 			return config.NewConfig(), nil
 		}
-		return a.loadAndMerge([]string{path})
+		return a.loadAndMerge([]string{path}, ctx)
 	}
-	return a.loadAndMerge(systemPaths())
+	return a.loadAndMerge(systemPaths(), ctx)
 }
 
 // globalPaths returns the config file path for the global scope.
@@ -160,7 +190,7 @@ func systemPaths() []string {
 // loadAndMerge reads every existing config file in paths and merges them
 // in order so that later files take precedence (last value wins).
 // If no file is found, an empty config is returned.
-func (a *auto) loadAndMerge(paths []string) (*config.Config, error) {
+func (a *auto) loadAndMerge(paths []string, ctx config.IncludeContext) (*config.Config, error) {
 	configs := make([]*config.Config, 0, len(paths))
 	for _, p := range paths {
 		f, err := a.fs.Open(p)
@@ -171,7 +201,7 @@ func (a *auto) loadAndMerge(paths []string) (*config.Config, error) {
 			return nil, err
 		}
 
-		cfg, err := readAndClose(f)
+		cfg, err := a.readAndClose(f, p, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -190,9 +220,10 @@ func (a *auto) loadAndMerge(paths []string) (*config.Config, error) {
 	return &merged, nil
 }
 
-// readAndClose reads a Git config from r and closes it.
+// readAndClose reads a Git config from r and closes it, resolving any
+// include directives it contains relative to path.
 // Files larger than [maxConfigFileSize] are rejected.
-func readAndClose(r io.ReadCloser) (cfg *config.Config, err error) {
+func (a *auto) readAndClose(r io.ReadCloser, path string, ctx config.IncludeContext) (cfg *config.Config, err error) {
 	defer func() {
 		if cErr := r.Close(); cErr != nil && err == nil {
 			err = cErr
@@ -208,7 +239,7 @@ func readAndClose(r io.ReadCloser) (cfg *config.Config, err error) {
 	}
 
 	cfg = config.NewConfig()
-	if err = cfg.Unmarshal(b); err != nil {
+	if err = cfg.UnmarshalWithIncludes(b, ctx.FormatOptions(path)); err != nil {
 		return nil, err
 	}
 	return cfg, nil
