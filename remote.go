@@ -284,7 +284,7 @@ func (r *Remote) addReachableTags(localRefs []*plumbing.Reference, remoteRefs st
 		}
 	}
 
-	remoteRefIter, err := remoteRefs.IterReferences()
+	remoteRefIter, err := remoteRefs.IterReferences("")
 	if err != nil {
 		return err
 	}
@@ -920,7 +920,7 @@ func (r *Remote) deleteReferences(rs config.RefSpec,
 	cmds *[]*packp.Command,
 	prune bool,
 ) error {
-	iter, err := remoteRefs.IterReferences()
+	iter, err := remoteRefs.IterReferences("")
 	if err != nil {
 		return err
 	}
@@ -1082,7 +1082,7 @@ func getRemoteRefsFromStorer(remoteRefStorer storer.ReferenceStorer) (
 	map[plumbing.Hash]bool, error,
 ) {
 	remoteRefs := map[plumbing.Hash]bool{}
-	iter, err := remoteRefStorer.IterReferences()
+	iter, err := remoteRefStorer.IterReferences("")
 	if err != nil {
 		return nil, err
 	}
@@ -1248,7 +1248,7 @@ func doCalculateRefs(
 
 	var ret error
 	if s.IsWildcard() {
-		iter, err := remoteRefs.IterReferences()
+		iter, err := remoteRefs.IterReferences("")
 		if err != nil {
 			return nil, err
 		}
@@ -1660,7 +1660,7 @@ func objectsToPush(commands []*packp.Command) []plumbing.Hash {
 }
 
 func referencesToHashes(refs storer.ReferenceStorer) ([]plumbing.Hash, error) {
-	iter, err := refs.IterReferences()
+	iter, err := refs.IterReferences("")
 	if err != nil {
 		return nil, err
 	}

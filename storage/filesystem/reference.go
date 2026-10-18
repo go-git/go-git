@@ -1,6 +1,9 @@
 package filesystem
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -53,11 +56,18 @@ func (r *ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Refere
 	return r.dir.Ref(n)
 }
 
-// IterReferences returns an iterator over all references.
-func (r *ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
+// IterReferences returns an iterator over the references whose name starts
+// with prefix.
+func (r *ReferenceStorage) IterReferences(prefix string) (storer.ReferenceIter, error) {
 	refs, err := r.dir.Refs()
 	if err != nil {
 		return nil, err
+	}
+
+	if prefix != "" {
+		refs = slices.DeleteFunc(refs, func(ref *plumbing.Reference) bool {
+			return !strings.HasPrefix(ref.Name().String(), prefix)
+		})
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil

@@ -2566,7 +2566,7 @@ func (s *RepositorySuite) TestLogAll() {
 	})
 	s.NoError(err)
 
-	rIter, err := r.Storer.IterReferences()
+	rIter, err := r.Storer.IterReferences("")
 	s.NoError(err)
 
 	refCount := 0
@@ -2614,7 +2614,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	err = r.Storer.RemoveReference(plumbing.HEAD)
 	s.NoError(err)
 
-	rIter, err := r.Storer.IterReferences()
+	rIter, err := r.Storer.IterReferences("")
 	s.NoError(err)
 
 	refCount := 0
@@ -2628,7 +2628,7 @@ func (s *RepositorySuite) TestLogAllMissingReferences() {
 	err = r.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("DUMMY"), plumbing.NewHash("DUMMY")))
 	s.NoError(err)
 
-	rIter, err = r.Storer.IterReferences()
+	rIter, err = r.Storer.IterReferences("")
 	s.NoError(err)
 
 	refCount = 0

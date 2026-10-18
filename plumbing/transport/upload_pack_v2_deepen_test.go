@@ -137,7 +137,7 @@ func TestIncludeReachableTags(t *testing.T) {
 	st := v2StorageFromFixture(t, fixtures.ByTag("tags").One())
 
 	var tagHash, target plumbing.Hash
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences("")
 	require.NoError(t, err)
 	_ = iter.ForEach(func(ref *plumbing.Reference) error {
 		if !tagHash.IsZero() || ref.Type() != plumbing.HashReference || !ref.Name().IsTag() {

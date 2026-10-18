@@ -212,7 +212,7 @@ func advertisable(name plumbing.ReferenceName) bool {
 }
 
 func addReferences(st storage.Storer, ar *packp.AdvRefs, addHead bool) error {
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences("")
 	if err != nil {
 		return err
 	}

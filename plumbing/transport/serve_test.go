@@ -280,7 +280,7 @@ type referenceIterationErrorStorage struct {
 	err error
 }
 
-func (s referenceIterationErrorStorage) IterReferences() (storer.ReferenceIter, error) {
+func (s referenceIterationErrorStorage) IterReferences(string) (storer.ReferenceIter, error) {
 	return referenceIterationError{storer.NewReferenceSliceIter(nil), s.err}, nil
 }
 
