@@ -319,6 +319,68 @@ func (s *ObjectStorage) Reindex() error {
 	return err
 }
 
+// reprepare brings the pack index up to date with the packs on disk, as git
+// does when an object read misses, and reports whether it changed. Unlike
+// Reindex it keeps the indexes of the packs still on disk, and loads only
+// those of new ones.
+//
+// https://github.com/git/git/blob/8103b446517e0c44e67561b9d0ccce56efa60a71/odb/source-packed.c#L89-L95
+func (s *ObjectStorage) reprepare() (bool, error) {
+	s.muIWriters.Lock()
+	defer s.muIWriters.Unlock()
+
+	onDisk, err := s.dir.ObjectPacks()
+	if err != nil {
+		return false, err
+	}
+
+	s.muI.RLock()
+	current := s.index
+	s.muI.RUnlock()
+
+	next := make([]packEntry, 0, len(onDisk))
+	var loaded []idxfile.Index
+	for _, h := range onDisk {
+		idx, ok := current[h]
+		if !ok {
+			if idx, err = s.loadIdx(h); err != nil {
+				for _, idx := range loaded {
+					_ = idx.Close()
+				}
+				return false, err
+			}
+			loaded = append(loaded, idx)
+		}
+		next = append(next, packEntry{h: h, idx: idx})
+	}
+	if len(loaded) == 0 && len(next) == len(current) {
+		return false, nil
+	}
+
+	index := make(map[plumbing.Hash]idxfile.Index, len(next))
+	for _, pe := range next {
+		index[pe.h] = pe.idx
+	}
+	s.muI.Lock()
+	s.index = index
+	s.packs = next
+	s.lastHitPackIdx.Store(0)
+	s.muI.Unlock()
+	return true, nil
+}
+
+// findObjectInRepreparedPacks is findObjectInPackfile after a reprepare, for
+// an object that was not found. It reports no pack when the packs on disk
+// have not changed, as looking again would find nothing new.
+func (s *ObjectStorage) findObjectInRepreparedPacks(h plumbing.Hash) (plumbing.Hash, idxfile.Index, int64, error) {
+	changed, err := s.reprepare()
+	if err != nil || !changed {
+		return plumbing.ZeroHash, nil, -1, err
+	}
+	pack, idx, offset := s.findObjectInPackfile(h)
+	return pack, idx, offset, nil
+}
+
 // populateIndex loads every pack's idx in parallel and returns the
 // resulting map. The caller is responsible for publishing the map
 // into s.index under s.muI.Lock; populateIndex itself takes no
@@ -623,19 +685,16 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 			if cached, ok := s.objectCache.Get(h); ok {
 				return cached.Size(), nil
 			}
-			p, perr := s.packfile(idx, pack)
-			if perr != nil {
-				return 0, perr
-			}
-			size, err = p.GetSizeByOffset(offset)
+			size, err = s.getSizeFromPackfileAt(pack, idx, offset)
 			if err == nil {
 				return size, nil
 			}
-			if !errors.Is(err, plumbing.ErrObjectNotFound) {
+			if !errors.Is(err, plumbing.ErrObjectNotFound) && !isMissingPack(err) {
 				return 0, err
 			}
-			// Membership claimed the hash but the pack lost it —
-			// fall through to loose and alternates.
+			// Membership claimed the hash but the pack lost it, or
+			// the pack itself is gone, as after a repack — fall
+			// through to loose, alternates and the packs on disk.
 		}
 	}
 
@@ -650,9 +709,21 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 		return 0, idxErr
 	}
 
-	return findInAlternates(s, func(alt *ObjectStorage) (int64, error) {
+	size, err = findInAlternates(s, func(alt *ObjectStorage) (int64, error) {
 		return alt.EncodedObjectSize(h)
 	})
+	if !errors.Is(err, plumbing.ErrObjectNotFound) {
+		return size, err
+	}
+
+	pack, idx, offset, rerr := s.findObjectInRepreparedPacks(h)
+	if rerr != nil {
+		return 0, rerr
+	}
+	if pack.IsZero() {
+		return 0, err
+	}
+	return s.getSizeFromPackfileAt(pack, idx, offset)
 }
 
 // EncodedObject returns the object with the given hash, by searching for it in
@@ -673,7 +744,6 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 	routed := false
 	if idxErr == nil {
 		if pack, idx, offset := s.findObjectInPackfile(h); !pack.IsZero() {
-			routed = true
 			if cached, ok := s.objectCache.Get(h); ok {
 				if t == plumbing.AnyObject || cached.Type() == t {
 					return cached, nil
@@ -681,6 +751,9 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 				return nil, plumbing.ErrObjectNotFound
 			}
 			obj, err = s.getFromPackfileAt(pack, idx, h, offset, false)
+			// The pack is gone, as after a repack: look for the
+			// object elsewhere, and in the packs on disk.
+			routed = !isMissingPack(err)
 		}
 	}
 	if !routed {
@@ -693,6 +766,16 @@ func (s *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (p
 		})
 		if errors.Is(err, plumbing.ErrObjectNotFound) && idxErr != nil {
 			return nil, idxErr
+		}
+	}
+
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		pack, idx, offset, rerr := s.findObjectInRepreparedPacks(h)
+		switch {
+		case rerr != nil:
+			err = rerr
+		case !pack.IsZero():
+			obj, err = s.getFromPackfileAt(pack, idx, h, offset, false)
 		}
 	}
 
@@ -791,6 +874,25 @@ func (s *ObjectStorage) getFromPackfile(h plumbing.Hash, canBeDelta bool) (plumb
 		return nil, plumbing.ErrObjectNotFound
 	}
 	return s.getFromPackfileAt(pack, idx, h, offset, canBeDelta)
+}
+
+// getSizeFromPackfileAt is getFromPackfileAt for the size of the object
+// alone.
+func (s *ObjectStorage) getSizeFromPackfileAt(pack plumbing.Hash, idx idxfile.Index, offset int64) (size int64, err error) {
+	p, err := s.packfile(idx, pack)
+	if err != nil {
+		return 0, err
+	}
+	defer ioutil.CheckClose(p, &err)
+
+	return p.GetSizeByOffset(offset)
+}
+
+// isMissingPack reports whether err says that a pack is no longer on disk, as
+// after a repack. Reopening a pack reports dotgit.ErrPackfileNotFound rather
+// than the fs.ErrNotExist of a first open.
+func isMissingPack(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, dotgit.ErrPackfileNotFound)
 }
 
 // getFromPackfileAt fetches the object at a pre-located pack
