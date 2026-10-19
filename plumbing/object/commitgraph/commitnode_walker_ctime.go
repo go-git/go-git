@@ -67,7 +67,7 @@ func (w *commitNodeIteratorByCTime) Next() (CommitNode, error) {
 
 		w.seen[cID] = true
 
-		for i, h := range c.ParentHashes() {
+		for i, h := range liveParentHashes(c) {
 			if w.seen[h] || w.seenExternal[h] {
 				continue
 			}
