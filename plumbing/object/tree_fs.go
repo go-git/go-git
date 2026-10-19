@@ -7,15 +7,19 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 )
 
 type treeFilesystem struct {
 	tree *Tree
+	mtx  sync.Mutex
 
 	// root is the path of tree relative to the original filesystem root.
 	root string
@@ -25,19 +29,12 @@ var _ billy.Filesystem = (*treeFilesystem)(nil)
 
 var _ billy.Capable = (*treeFilesystem)(nil)
 
-// validPath validates paths for read operations. It treats
-// the empty string and "." as valid references to the
-// worktree root. Read-side operations on the
-// root (e.g. ReadDir(""), Lstat(".")) are legitimate.
-// Symlink validation has not yet been implemented.
-func (tfs *treeFilesystem) validPath(p string) error {
-	if p == "" || p == "." || p == "/" {
-		return nil
-	}
-	if !fs.ValidPath(p) {
-		return fmt.Errorf("invalid path: %q", p)
-	}
-	return nil
+// Wrapper for tree.FindEntry, ensures mutex
+func (tfs *treeFilesystem) findEntry(path string) (*TreeEntry, error) {
+	tfs.mtx.Lock()
+	defer func() { tfs.mtx.Unlock() }()
+
+	return tfs.tree.FindEntry(path)
 }
 
 // billy.Filesystem interface methods
@@ -73,7 +70,7 @@ func (tfs *treeFilesystem) Join(elem ...string) string {
 }
 
 func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
-	if err := tfs.validPath(filename); err != nil {
+	if err := pathutil.ValidTreePath(filename); err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
 
@@ -81,7 +78,7 @@ func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
 		return &treeDir{tree: tfs.tree}, nil
 	}
 
-	e, err := tfs.tree.FindEntry(filename)
+	e, err := tfs.findEntry(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -148,10 +145,10 @@ func (tfs *treeFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
 }
 
 func (tfs *treeFilesystem) Readlink(link string) (string, error) {
-	if err := tfs.validPath(link); err != nil {
+	if err := pathutil.ValidTreePath(link); err != nil {
 		return "", err
 	}
-	entry, err := tfs.tree.FindEntry(link)
+	entry, err := tfs.findEntry(link)
 	if err != nil {
 		return "", err
 	}
@@ -179,14 +176,14 @@ func (tfs *treeFilesystem) Readlink(link string) (string, error) {
 }
 
 func (tfs *treeFilesystem) Lstat(filename string) (fs.FileInfo, error) {
-	if err := tfs.validPath(filename); err != nil {
+	if err := pathutil.ValidTreePath(filename); err != nil {
 		return nil, err
 	}
 	if filename == "" || filename == "." || filename == "/" {
 		return treeFileInfo{name: ".", mode: filemode.Dir}, nil
 	}
 
-	entry, err := tfs.tree.FindEntry(filename)
+	entry, err := tfs.findEntry(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +197,25 @@ func (tfs *treeFilesystem) Root() string {
 // Chroot returns a filesystem rooted at path. The returned filesystem's
 // root is the current root joined with path.
 func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
+	originalPath := path
+
+	if path == "" || path == "." || path == "/" {
+		return nil, fmt.Errorf("chroot: invalid path %q", originalPath)
+	}
+
+	if strings.HasPrefix(path, "/") {
+		path = path[1:]
+	}
+
+	path = strings.TrimRight(path, "/")
+
+	if !fs.ValidPath(path) {
+		return nil, fmt.Errorf("chroot: invalid path %q", originalPath)
+	}
+
+	tfs.mtx.Lock()
 	subtree, err := tfs.tree.Tree(path)
+	tfs.mtx.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -211,11 +226,9 @@ func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 	}, nil
 }
 
-func (tfs *treeFilesystem) Stat(_ string) (fs.FileInfo, error) {
-	panic("unimplemented")
+func (tfs *treeFilesystem) Stat(filename string) (fs.FileInfo, error) {
+	return tfs.Lstat(filename)
 }
-
-// billy.Capable interface methods
 
 func (tfs *treeFilesystem) Capabilities() billy.Capability {
 	return billy.ReadCapability | billy.SeekCapability
