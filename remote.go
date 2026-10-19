@@ -1370,24 +1370,13 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, sha
 		shallowsSet[sh] = struct{}{}
 	}
 
-	// For each known shallow commit, mark its parent hashes as boundaries so
-	// the walker never tries to load commits that are not stored locally.
-	parentsToIgnore := make([]plumbing.Hash, 0, len(shallows))
-	for _, sh := range shallows {
-		shallowCommit, err := object.GetCommit(s, sh)
-		if err != nil {
-			if errors.Is(err, plumbing.ErrObjectNotFound) {
-				// Shallow marker may reference a commit we no longer have; skip.
-				continue
-			}
-			return false, err
-		}
-		parentsToIgnore = append(parentsToIgnore, shallowCommit.ParentHashes...)
-	}
-
+	// The walk stops at a shallow commit on its own: object.Commit's parent
+	// accessors report a shallow commit as parentless, so nothing here has to
+	// pre-resolve each shallow commit to seed the walker with the parents it
+	// must not load.
 	found := false
 	boundedByShallow := false
-	iter := object.NewCommitPreorderIter(c, nil, parentsToIgnore)
+	iter := object.NewCommitPreorderIter(c, nil, nil)
 	err = iter.ForEach(func(c *object.Commit) error {
 		if _, isShallow := shallowsSet[c.Hash]; isShallow {
 			// The walk reached a shallow commit; history is truncated here.
