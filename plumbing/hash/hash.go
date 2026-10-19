@@ -4,6 +4,7 @@ package hash
 
 import (
 	"crypto"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"hash"
@@ -26,8 +27,11 @@ func init() {
 // reset resets the default algos value. Can be used after running tests
 // that registers new algorithms to avoid side effects.
 func reset() {
+	// Both name an implementation directly rather than going through
+	// crypto.Hash.New, so this package does not depend on another package
+	// having registered the algorithm with crypto.
 	algos[crypto.SHA1] = sha1cd.New
-	algos[crypto.SHA256] = crypto.SHA256.New
+	algos[crypto.SHA256] = sha256.New
 }
 
 // RegisterHash allows for the hash algorithm used to be overridden.

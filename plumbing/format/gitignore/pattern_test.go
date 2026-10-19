@@ -1,6 +1,7 @@
 package gitignore
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -301,4 +302,28 @@ func (s *PatternSuite) TestGlobMatch_folderVersusFileAgain() {
 	p := ParsePattern("/a*/**/a*", nil)
 	r := p.Match([]string{"ab", "ab"}, false)
 	s.Equal(Exclude, r)
+}
+
+// TestMatch_starBeforeFarClosingBracket builds the shape whose reading grew
+// with the pattern and the text together: a '*' followed by a bracket whose
+// ']' is tens of kilobytes away, so the star reaches that same '[' at every
+// text offset it retries, and each "[:" inside the bracket that does not name
+// a POSIX class scans ahead to the ']' before conceding a single byte.
+// Reading the bracket once per offset instead settles both matches in well
+// under a millisecond; re-reading it does not finish inside the test timeout.
+// The second text is here because an unmatched pattern alone would not show
+// that the bracket was read correctly.
+func (s *PatternSuite) TestMatch_starBeforeFarClosingBracket() {
+	var b strings.Builder
+	b.WriteString("***[")
+	for range 32000 {
+		b.WriteString("[:")
+	}
+	b.WriteString("\xff]")
+	p := ParsePattern(b.String(), nil)
+
+	// The bracket accepts '[', ':' and '\xff' — the members left over once
+	// every "[:" has been rejected as a class.
+	s.Equal(NoMatch, p.Match([]string{strings.Repeat("q", 8000)}, false))
+	s.Equal(Exclude, p.Match([]string{strings.Repeat("q", 8000) + ":"}, false))
 }

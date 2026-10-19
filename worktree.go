@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/osfs"
 
 	"github.com/go-git/go-git/v6/config"
 	giturl "github.com/go-git/go-git/v6/internal/url"
@@ -65,30 +64,6 @@ type Worktree struct {
 // Filesystem returns the underlying filesystem for the worktree.
 func (w *Worktree) Filesystem() billy.Filesystem {
 	return w.filesystem.Filesystem
-}
-
-// reusableRootFS returns a worktree filesystem to use for a single bulk
-// checkout/reset. When the worktree lives on an OS-backed billy filesystem,
-// it opens one *os.Root for the whole operation and wraps it in the same
-// validating worktreeFilesystem, so each file is opened relative to a
-// reused directory instead of opening and closing a fresh root per call.
-// It falls back to the default filesystem when that is not possible.
-func (w *Worktree) reusableRootFS() (*worktreeFilesystem, func()) {
-	bos, ok := w.filesystem.Filesystem.(*osfs.BoundOS)
-	if !ok {
-		return w.filesystem, func() {}
-	}
-	root, err := os.OpenRoot(bos.Root())
-	if err != nil {
-		return w.filesystem, func() {}
-	}
-	rfs, err := osfs.FromRoot(root)
-	if err != nil {
-		_ = root.Close()
-		return w.filesystem, func() {}
-	}
-	return newWorktreeFilesystem(rfs, w.filesystem.protectNTFS, w.filesystem.protectHFS),
-		func() { _ = root.Close() }
 }
 
 // Pull incorporates changes from a remote repository into the current branch.
@@ -1247,12 +1222,17 @@ func resolveModuleURL(originURL, moduleURL string) (string, error) {
 		return moduleURL, nil
 	}
 	if !giturl.MatchesScheme(originURL) && giturl.MatchesScpLike(originURL) {
-		user, host, portStr, p := giturl.FindScpLikeComponents(originURL)
-		p = path.Join(p, moduleURL)
-		if portStr != "" {
-			portStr += ":"
+		if user, host, p, ok := giturl.FindScpLikeComponents(originURL); ok {
+			p = path.Join(p, moduleURL)
+			if user != "" {
+				user += "@"
+			}
+			// The SCP-like form has no port: everything after the
+			// first `:` is the path, so it is rebuilt verbatim. The
+			// host keeps any brackets it was written with, which is
+			// what makes an IPv6 literal parse the same way again.
+			return fmt.Sprintf("%s%s:%s", user, host, p), nil
 		}
-		return fmt.Sprintf("%s@%s:%s%s", user, host, portStr, p), nil
 	}
 	base, err := url.Parse(originURL)
 	if err != nil {

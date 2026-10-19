@@ -66,7 +66,13 @@ type ObjectStorage struct {
 	// LazyIndex FindOffset calls do not block a concurrent
 	// Reindex on muI.Lock.
 	packs []packEntry
-	muI   sync.RWMutex
+	// muI protects index and packs. Every lookup takes it.
+	muI sync.RWMutex
+	// muIWriters serializes the writers of index and packs (Reindex, the
+	// pack writer, iterators, pack deletion), from their disk work to the
+	// update, so that a Reindex can't undo a concurrent change. muI is
+	// taken inside it.
+	muIWriters sync.Mutex
 
 	// indexSF coalesces concurrent first-readers so populateIndex
 	// runs once per cold-load even under thundering-herd contention.
@@ -242,6 +248,9 @@ func (s *ObjectStorage) requireIndex() error {
 		}
 		s.muI.RUnlock()
 
+		s.muIWriters.Lock()
+		defer s.muIWriters.Unlock()
+
 		local, entries, err := s.populateIndex()
 		if err != nil {
 			return nil, err
@@ -291,6 +300,9 @@ func (s *ObjectStorage) requireIndex() error {
 // the new slice.
 func (s *ObjectStorage) Reindex() error {
 	_, err, _ := s.indexSF.Do(reindexSFKey, func() (any, error) {
+		s.muIWriters.Lock()
+		defer s.muIWriters.Unlock()
+
 		local, entries, err := s.populateIndex()
 		if err != nil {
 			return nil, err
@@ -468,6 +480,8 @@ func (s *ObjectStorage) packfileWriter(newPack func() (*dotgit.PackWriter, error
 		if err != nil {
 			return
 		}
+		s.muIWriters.Lock()
+		defer s.muIWriters.Unlock()
 		s.muI.Lock()
 		if _, existed := s.index[h]; !existed {
 			// Copy-on-grow rather than append-in-place so any
@@ -1026,8 +1040,35 @@ func (s *ObjectStorage) buildPackfileIters(
 				return nil, err
 			}
 			s.muI.RLock()
-			idx := s.index[h]
+			idx, ok := s.index[h]
 			s.muI.RUnlock()
+			if !ok {
+				// The pack was added externally after the index was
+				// loaded: load its idx and install it, so that later
+				// lookups find its objects too. Check again under
+				// muIWriters: someone may have installed it meanwhile.
+				s.muIWriters.Lock()
+				s.muI.RLock()
+				idx, ok = s.index[h]
+				s.muI.RUnlock()
+				if !ok {
+					idx, err = s.loadIdx(h)
+					if err != nil {
+						s.muIWriters.Unlock()
+						_ = pack.Close()
+						return nil, err
+					}
+					// Copy-on-grow, as in packfileWriter's Notify.
+					s.muI.Lock()
+					next := make([]packEntry, len(s.packs)+1)
+					copy(next, s.packs)
+					next[len(s.packs)] = packEntry{h: h, idx: idx}
+					s.packs = next
+					s.index[h] = idx
+					s.muI.Unlock()
+				}
+				s.muIWriters.Unlock()
+			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, idx,
 				s.objectCache, false, h.Size(),
@@ -1165,6 +1206,9 @@ func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 // lives only in the now-deleted pack. If the MRU hint pointed at the
 // deleted slot, invalidate it.
 func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
+	s.muIWriters.Lock()
+	defer s.muIWriters.Unlock()
+
 	if err := s.dir.DeleteOldObjectPackAndIndex(h, t); err != nil {
 		return err
 	}

@@ -8,10 +8,11 @@ import (
 
 // ReferenceStorage implements storer.ReferenceStorer for filesystem storage.
 //
-// Writes require valid reference names. Reads and deletes use less restrictive
-// path-safety checks so that existing names such as refs/heads/main.lock can be
-// inspected and removed. IterReferences reports stored entries without applying
-// either name check; an enumerated name is not necessarily readable or writable.
+// Writes require valid reference names, short enough for git to lock. Reads and
+// deletes use less restrictive path-safety checks so that existing names such
+// as refs/heads/main.lock can be inspected and removed. IterReferences reports
+// stored entries without applying either name check; an enumerated name is not
+// necessarily readable or writable.
 //
 // Path-safety checks apply on every operating system. They reject backslashes,
 // control characters, non-reference root names, and path components that HFS+
@@ -33,7 +34,8 @@ type ReferenceStorage struct {
 
 // SetReference stores a reference whose name passes the write checks described
 // by ReferenceStorage. A rejected name returns an error wrapping
-// plumbing.ErrInvalidReferenceName and dotgit.ErrReferenceNameEscape.
+// plumbing.ErrInvalidReferenceName, and dotgit.ErrReferenceNameEscape as well
+// unless the only thing wrong with it was its length.
 func (r *ReferenceStorage) SetReference(ref *plumbing.Reference) error {
 	return r.dir.SetRef(ref, nil)
 }

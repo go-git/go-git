@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
@@ -34,6 +35,33 @@ const (
 
 	dirMode               = 0o777
 	worktreeDotGitMaxSize = 1024
+
+	// maxWorktreeNameLen bounds the length of a worktree name. The name is a
+	// directory entry under .git/worktrees, so it cannot be longer than one
+	// path component: that limit is 255 on the filesystems go-git runs on —
+	// counted in bytes, characters or UTF-16 units depending on which — and
+	// git itself fails a longer name with ENAMETOOLONG. A name that passes
+	// worktreeNameRE is ASCII, so all three counts agree and the limit means
+	// the same thing under each. Rejecting up front keeps a name that can
+	// never become a worktree out of a path, a regexp and an error message.
+	maxWorktreeNameLen = 255
+
+	// lockSuffix is what git appends to a loose reference while updating it.
+	lockSuffix = ".lock"
+
+	// maxBranchNameLen bounds a worktree name that Add also creates a branch
+	// for. Git updates refs/heads/<name> through a sibling <name>.lock, so the
+	// longest branch git can carry is lockSuffix shorter than the longest
+	// directory entry it can create. go-git writes the reference in place and
+	// would take the longer name happily, leaving a worktree only go-git can
+	// use: git refuses to check it out or move its branch, and says so only
+	// once someone tries. Add rejects the name instead.
+	maxBranchNameLen = maxWorktreeNameLen - len(lockSuffix)
+
+	// maxQuotedLen limits how much of a rejected name an error quotes back.
+	// Quoting expands a byte up to fourfold, so quoting a name whole makes
+	// the message several times its size.
+	maxQuotedLen = 64
 )
 
 var (
@@ -44,6 +72,10 @@ var (
 
 	// ErrWorktreeAlreadyExists is returned when attempting to add a worktree with a name that already exists.
 	ErrWorktreeAlreadyExists = errors.New("worktree already exists")
+
+	// ErrInvalidWorktreeName is returned when a worktree name is too long or
+	// holds a byte a name cannot hold. The wrapping error says which.
+	ErrInvalidWorktreeName = errors.New("invalid worktree name")
 )
 
 // Worktree manages multiple working trees attached to a git repository.
@@ -77,6 +109,34 @@ func New(storer storage.Storer) (*Worktree, error) {
 	}, nil
 }
 
+// validateName checks that name can be used as a worktree name, no longer
+// than maxLen: maxWorktreeNameLen for a name that is only a directory entry,
+// maxBranchNameLen for one that becomes a branch too. Length is checked
+// before shape, so an over-long name is reported by its length instead of
+// being quoted back whole.
+func validateName(name string, maxLen int) error {
+	if len(name) > maxLen {
+		return fmt.Errorf("%w: %d bytes exceeds the %d byte limit",
+			ErrInvalidWorktreeName, len(name), maxLen)
+	}
+
+	if !worktreeNameRE.MatchString(name) {
+		return fmt.Errorf("%w %s", ErrInvalidWorktreeName, quoteBounded(name))
+	}
+
+	return nil
+}
+
+// quoteBounded returns name quoted for an error message, truncated to
+// maxQuotedLen bytes.
+func quoteBounded(name string) string {
+	if len(name) <= maxQuotedLen {
+		return strconv.Quote(name)
+	}
+
+	return strconv.Quote(name[:maxQuotedLen]) + "..."
+}
+
 // Add creates a new linked worktree with the specified name and filesystem.
 //
 // This method sets up the necessary metadata and directory structure for a new
@@ -88,13 +148,20 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 		return errors.New("cannot add worktree: fs is nil")
 	}
 
-	if !worktreeNameRE.MatchString(name) {
-		return fmt.Errorf("invalid worktree name %q", name)
-	}
-
 	o := &options{}
 	for _, opt := range opts {
 		opt(o)
+	}
+
+	// An attached worktree takes its name as a branch name as well, which
+	// git bounds shorter than the directory entry under .git/worktrees.
+	maxLen := maxWorktreeNameLen
+	if !o.detachedHead {
+		maxLen = maxBranchNameLen
+	}
+
+	if err := validateName(name, maxLen); err != nil {
+		return err
 	}
 
 	if o.commit.IsZero() {
@@ -171,8 +238,8 @@ func (w *Worktree) Add(wt billy.Filesystem, name string, opts ...Option) error {
 // that this only removes the metadata; it does not delete the actual worktree
 // filesystem or its files.
 func (w *Worktree) Remove(name string) error {
-	if !worktreeNameRE.MatchString(name) {
-		return fmt.Errorf("invalid worktree name %q", name)
+	if err := validateName(name, maxWorktreeNameLen); err != nil {
+		return err
 	}
 
 	dotgit := w.storer.Filesystem()
@@ -255,8 +322,8 @@ func (w *Worktree) Init(wt billy.Filesystem, name string) error {
 		return errors.New("worktree fs is nil")
 	}
 
-	if !worktreeNameRE.MatchString(name) {
-		return fmt.Errorf("invalid worktree name %q", name)
+	if err := validateName(name, maxWorktreeNameLen); err != nil {
+		return err
 	}
 
 	commonDir := w.storer.Filesystem()

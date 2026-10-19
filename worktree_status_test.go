@@ -229,6 +229,13 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 		name  string
 		files map[string]string
 	}{{
+		name: "repeated slash patterns do not hide files",
+		files: map[string]string{
+			".gitignore": "a//b\nc//\n",
+			"a/b":        "x\n",
+			"c/x":        "x\n",
+		},
+	}, {
 		name: "negation below an excluded directory, re-excluded by a nested rule",
 		files: map[string]string{
 			".gitignore":               "outer/ignored/\n!outer/ignored/keep.txt\n",

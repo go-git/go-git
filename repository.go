@@ -1021,10 +1021,22 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 	return string(b), nil
 }
 
-// Tag returns a tag from the repository.
+// Tag returns the tag reference with the given shorthand name.
 //
-// If you want to check to see if the tag is an annotated tag, you can call
-// TagObject on the hash of the reference in ForEach:
+// The name is appended to "refs/tags/" verbatim, not cleaned as a path, so
+// "../heads/main" denotes refs/tags/../heads/main rather than refs/heads/main,
+// and "./v1.0" denotes refs/tags/./v1.0 rather than refs/tags/v1.0. Git splices
+// a tag shorthand the same way.
+//
+// The Storer decides whether it can hold such a name, so the error varies with
+// it: filesystem storage returns one wrapping plumbing.ErrInvalidReferenceName,
+// while a Storer that keys references by name holds no entry under it and Tag
+// returns ErrTagNotFound.
+//
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/tag.c#L106-L127
+//
+// To find out whether the tag is an annotated tag, call TagObject on the hash
+// of the returned reference:
 //
 //	ref, err := r.Tag("v0.1.0")
 //	if err != nil {
@@ -1041,7 +1053,7 @@ func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, 
 //	  // Some other error
 //	}
 func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
-	ref, err := r.Reference(plumbing.ReferenceName(path.Join("refs", "tags", name)), false)
+	ref, err := r.Reference(plumbing.NewTagReferenceName(name), false)
 	if err != nil {
 		if err == plumbing.ErrReferenceNotFound {
 			// Return a friendly error for this one, versus just ReferenceNotFound.
@@ -1054,14 +1066,18 @@ func (r *Repository) Tag(name string) (*plumbing.Reference, error) {
 	return ref, nil
 }
 
-// DeleteTag deletes a tag from the repository.
+// DeleteTag removes the tag reference with the given shorthand name.
+//
+// The name is appended to "refs/tags/" as Tag describes. DeleteTag resolves it
+// through Tag first, so it reports Tag's error and removes nothing for a name
+// that denotes no tag.
 func (r *Repository) DeleteTag(name string) error {
 	_, err := r.Tag(name)
 	if err != nil {
 		return err
 	}
 
-	return r.Storer.RemoveReference(plumbing.ReferenceName(path.Join("refs", "tags", name)))
+	return r.Storer.RemoveReference(plumbing.NewTagReferenceName(name))
 }
 
 func (r *Repository) resolveToCommitHash(h plumbing.Hash) (plumbing.Hash, error) {
