@@ -211,10 +211,6 @@ func TestTreeFilesystemInvalidPaths(t *testing.T) {
 
 	for _, path := range []string{"../outside", "a//b", ""} {
 		_, err := filesystem.Open(path)
-		if path == "" {
-			require.NoError(t, err)
-			continue
-		}
 		require.Error(t, err)
 	}
 }
@@ -241,4 +237,62 @@ func TestTreeFilesystemReadAtDoesNotChangePosition(t *testing.T) {
 	remaining, err := io.ReadAll(file)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte("cdef"), remaining))
+}
+
+func TestTreeFilesystemFileStatSizeIsStable(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	content := []byte("hello tree")
+	fileHash := storeTestObject(t, store, plumbing.BlobObject, content)
+	filesystem := &treeFilesystem{
+		tree: &Tree{
+			Entries: []TreeEntry{{
+				Name: "hello.txt",
+				Mode: filemode.Regular,
+				Hash: fileHash,
+			}},
+			s: store,
+		},
+	}
+
+	file, err := filesystem.Open("hello.txt")
+	require.NoError(t, err)
+	defer file.Close()
+
+	info, err := file.Stat()
+	require.NoError(t, err)
+	require.Equal(t, int64(len(content)), info.Size())
+
+	_, err = io.ReadAll(file)
+	require.NoError(t, err)
+
+	info, err = file.Stat()
+	require.NoError(t, err)
+	require.Equal(t, int64(len(content)), info.Size())
+}
+
+func TestTreeFilesystemEmptyFileStatSize(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	fileHash := storeTestObject(t, store, plumbing.BlobObject, nil)
+	filesystem := &treeFilesystem{
+		tree: &Tree{
+			Entries: []TreeEntry{{
+				Name: "empty.txt",
+				Mode: filemode.Regular,
+				Hash: fileHash,
+			}},
+			s: store,
+		},
+	}
+
+	file, err := filesystem.Open("empty.txt")
+	require.NoError(t, err)
+	defer file.Close()
+
+	info, err := file.Stat()
+	require.NoError(t, err)
+	require.Zero(t, info.Size())
 }
