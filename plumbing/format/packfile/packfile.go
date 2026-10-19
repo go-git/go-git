@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	gogitsync "github.com/go-git/go-git/v6/utils/sync"
@@ -134,12 +135,47 @@ func (p *Packfile) GetSizeByOffset(offset int64) (size int64, err error) {
 		return 0, err
 	}
 
-	d, err := p.GetByOffset(offset)
+	p.m.Lock()
+	defer p.m.Unlock()
+	// Re-check after Lock: Close may have flipped closed and torn
+	// down the scanner between the early Load and the Lock.
+	if p.closed.Load() {
+		return 0, fs.ErrClosed
+	}
+
+	oh, err := p.headerFromOffset(offset)
 	if err != nil {
 		return 0, err
 	}
 
-	return d.Size(), nil
+	if !oh.Type.IsDelta() {
+		return oh.Size, nil
+	}
+
+	// Second varint of the inflated delta payload for deltas.
+	// Don't resolve the base chain and apply just to size it.
+	delta := oh.content
+	if delta == nil {
+		delta = gogitsync.GetBytesBuffer()
+		defer gogitsync.PutBytesBuffer(delta)
+
+		if err := p.scanner.inflateContent(oh.ContentOffset, delta, oh.Size); err != nil {
+			return 0, err
+		}
+	}
+
+	buf := delta.Bytes()
+	_, buf, err = packutil.DecodeLEB128(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	resultSize, _, err := packutil.DecodeLEB128(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(resultSize), nil
 }
 
 // GetAll returns an iterator with all encoded objects in the packfile.
