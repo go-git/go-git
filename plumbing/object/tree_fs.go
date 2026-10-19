@@ -207,6 +207,9 @@ func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 
 	path = strings.TrimRight(path, "/")
 
+	if err := pathutil.ValidTreePath(path); err != nil {
+		return nil, fmt.Errorf("chroot: %w", err)
+	}
 	if !fs.ValidPath(path) {
 		return nil, fmt.Errorf("chroot: invalid path %q", originalPath)
 	}
@@ -270,7 +273,11 @@ func (t *treeFile) Seek(offset int64, whence int) (int64, error) {
 
 // Stat implements [billy.File].
 func (t *treeFile) Stat() (fs.FileInfo, error) {
-	return treeFileInfo{name: t.entry.Name, mode: t.entry.Mode, size: int64(t.reader.Len())}, nil
+	return treeFileInfo{
+		name: t.entry.Name,
+		mode: t.entry.Mode,
+		size: t.reader.Size(),
+	}, nil
 }
 
 // Truncate implements [billy.File].
