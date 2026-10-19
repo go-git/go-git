@@ -30,6 +30,12 @@ var (
 	ErrTooManySymlinks       = errors.New("too many symbolic links")
 )
 
+// treeFilesystem is a read-only [billy.Filesystem] implementation backed by a
+// Git [Tree].
+//
+// Opening a regular file buffers that file's blob contents in memory so the
+// returned [billy.File] can satisfy [io.Seeker] and concurrent [io.ReaderAt]
+// operations over sequential Git blob streams.
 type treeFilesystem struct {
 	tree *Tree
 	mtx  sync.Mutex
@@ -42,7 +48,12 @@ var _ billy.Filesystem = (*treeFilesystem)(nil)
 
 var _ billy.Capable = (*treeFilesystem)(nil)
 
-// Wrapper for tree.FindEntry, ensures mutex
+// findEntry wraps tree.FindEntry with mutex synchronization.
+//
+// As per Tree.FindEntry, the lookup path is validated against
+// pathutil.ValidTreePath to prevent attacker-controlled tree contents
+// from leaking past this boundary as .git-shaped or path-traversal-shaped
+// names.
 func (tfs *treeFilesystem) findEntry(path string) (*TreeEntry, error) {
 	tfs.mtx.Lock()
 	defer func() { tfs.mtx.Unlock() }()
@@ -50,49 +61,69 @@ func (tfs *treeFilesystem) findEntry(path string) (*TreeEntry, error) {
 	return tfs.tree.FindEntry(path)
 }
 
-// billy.Filesystem interface methods
-
-// treeFilesystem is a read-only filesystem implementation
-
+// Create implements [billy.Filesystem]. It always returns [billy.ErrReadOnly].
 func (tfs *treeFilesystem) Create(_ string) (billy.File, error) {
 	return nil, billy.ErrReadOnly
 }
 
+// Remove implements [billy.Filesystem]. It always returns [billy.ErrReadOnly].
 func (tfs *treeFilesystem) Remove(_ string) error {
 	return billy.ErrReadOnly
 }
 
+// Rename implements [billy.Filesystem]. It always returns [billy.ErrReadOnly].
 func (tfs *treeFilesystem) Rename(_, _ string) error {
 	return billy.ErrReadOnly
 }
 
+// Symlink implements [billy.Filesystem]. It always returns [billy.ErrReadOnly].
 func (tfs *treeFilesystem) Symlink(_, _ string) error {
 	return billy.ErrReadOnly
 }
 
+// TempFile implements [billy.Filesystem]. It always returns [billy.ErrReadOnly].
 func (tfs *treeFilesystem) TempFile(_, _ string) (billy.File, error) {
 	return nil, billy.ErrReadOnly
 }
 
+// MkdirAll implements [billy.Filesystem]. It always returns [billy.ErrReadOnly].
 func (tfs *treeFilesystem) MkdirAll(_ string, _ fs.FileMode) error {
 	return billy.ErrReadOnly
 }
 
+// Join implements [billy.Filesystem].
 func (tfs *treeFilesystem) Join(elem ...string) string {
 	return filepath.Join(elem...)
 }
 
+// Open implements [billy.Filesystem]. It opens the named file or directory for
+// reading, following symbolic links up to maxSymlinkDepth.
+//
+// When opening a regular or executable file, the entire Git blob for that file
+// is read into memory because [Blob.Reader] only provides a sequential
+// [io.ReadCloser], whereas [billy.File] requires random-access [io.Seeker] and
+// concurrent-safe [io.ReaderAt] semantics.
 func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
 	return tfs.open(filename, 0)
 }
 
+// open resolves filename at the given symlink traversal depth and returns a
+// read-only [billy.File].
+//
+// For regular and executable entries, the target blob's contents are buffered
+// in memory so the returned [treeFile] supports [io.Seeker] and concurrent
+// [io.ReaderAt].
+//
+// Paths are validated against pathutil.ValidTreePath (explicitly and via
+// findEntry) to prevent unsafe tree paths or symlink targets from crossing the
+// filesystem boundary.
 func (tfs *treeFilesystem) open(filename string, symlinkDepth int) (billy.File, error) {
-	if err := pathutil.ValidTreePath(filename); err != nil {
-		return nil, fmt.Errorf("open: %w", err)
+	if filename == "." || filename == "/" {
+		return &treeDir{tree: tfs.tree}, nil
 	}
 
-	if filename == "" || filename == "." || filename == "/" {
-		return &treeDir{tree: tfs.tree}, nil
+	if err := pathutil.ValidTreePath(filename); err != nil {
+		return nil, fmt.Errorf("open: %w", err)
 	}
 
 	e, err := tfs.findEntry(filename)
@@ -157,6 +188,9 @@ func (tfs *treeFilesystem) open(filename string, symlinkDepth int) (billy.File, 
 	}
 }
 
+// OpenFile implements [billy.Filesystem]. Only read-only flags are supported;
+// any write or creation flag returns [billy.ErrReadOnly]. Like [treeFilesystem.Open],
+// opening a regular file buffers that file's blob contents in memory.
 func (tfs *treeFilesystem) OpenFile(filename string, flag int, _ fs.FileMode) (billy.File, error) {
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC|os.O_EXCL) != 0 {
 		return nil, billy.ErrReadOnly
@@ -164,6 +198,8 @@ func (tfs *treeFilesystem) OpenFile(filename string, flag int, _ fs.FileMode) (b
 	return tfs.Open(filename)
 }
 
+// ReadDir implements [billy.Filesystem]. It reads the named directory and
+// returns its directory entries.
 func (tfs *treeFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
 	file, err := tfs.Open(path)
 	if err != nil {
@@ -178,6 +214,11 @@ func (tfs *treeFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
 	return dir.ReadDir(-1)
 }
 
+// Readlink implements [billy.Filesystem]. It returns the destination of the
+// named symbolic link.
+//
+// The link path is validated against pathutil.ValidTreePath to prevent unsafe
+// tree paths from crossing the filesystem boundary.
 func (tfs *treeFilesystem) Readlink(link string) (string, error) {
 	if err := pathutil.ValidTreePath(link); err != nil {
 		return "", err
@@ -211,12 +252,19 @@ func (tfs *treeFilesystem) Readlink(link string) (string, error) {
 	return string(target), nil
 }
 
+// Lstat implements [billy.Filesystem]. It returns a [fs.FileInfo] describing
+// the named file without following symbolic links.
+//
+// Paths are validated against pathutil.ValidTreePath (explicitly and via
+// findEntry) to prevent unsafe tree paths from crossing the filesystem
+// boundary.
 func (tfs *treeFilesystem) Lstat(filename string) (fs.FileInfo, error) {
-	if err := pathutil.ValidTreePath(filename); err != nil {
-		return nil, err
-	}
 	if filename == "" || filename == "." || filename == "/" {
 		return treeFileInfo{name: ".", mode: filemode.Dir}, nil
+	}
+
+	if err := pathutil.ValidTreePath(filename); err != nil {
+		return nil, err
 	}
 
 	entry, err := tfs.findEntry(filename)
@@ -226,12 +274,14 @@ func (tfs *treeFilesystem) Lstat(filename string) (fs.FileInfo, error) {
 	return treeFileInfo{name: entry.Name, mode: entry.Mode}, nil
 }
 
+// Root implements [billy.Filesystem]. It returns the root path of the
+// filesystem.
 func (tfs *treeFilesystem) Root() string {
 	return tfs.root
 }
 
-// Chroot returns a filesystem rooted at path. The returned filesystem's
-// root is the current root joined with path.
+// Chroot implements [billy.Filesystem]. It returns a new filesystem rooted at
+// path, whose root is the current root joined with path.
 func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 	originalPath := path
 
@@ -263,12 +313,20 @@ func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 	}, nil
 }
 
+// Stat implements [billy.Filesystem]. It returns a [fs.FileInfo] describing
+// the named file, following symbolic links up to maxSymlinkDepth.
 func (tfs *treeFilesystem) Stat(filename string) (fs.FileInfo, error) {
 	return tfs.stat(filename, 0)
 }
 
+// stat resolves filename at the given symlink traversal depth and returns its
+// [fs.FileInfo].
+//
+// Paths are validated against pathutil.ValidTreePath (via findEntry) to
+// prevent unsafe tree paths or symlink targets from crossing the filesystem
+// boundary.
 func (tfs *treeFilesystem) stat(filename string, symlinkDepth int) (fs.FileInfo, error) {
-	if filename == "." || filename == "/" {
+	if filename == "" || filename == "." || filename == "/" {
 		return treeFileInfo{name: ".", mode: filemode.Dir}, nil
 	}
 
@@ -307,6 +365,7 @@ func (tfs *treeFilesystem) stat(filename string, symlinkDepth int) (fs.FileInfo,
 	return treeFileInfo{name: entry.Name, mode: entry.Mode}, nil
 }
 
+// Capabilities implements [billy.Capable].
 func (tfs *treeFilesystem) Capabilities() billy.Capability {
 	return billy.ReadCapability | billy.SeekCapability
 }
@@ -439,6 +498,11 @@ func (t *treeDir) MkdirAll(_ string, _ fs.FileMode) error {
 }
 
 // ReadDir implements [fs.ReadDirFile].
+//
+// Each entry's name is validated against pathutil.ValidTreePath as it
+// surfaces, for the same reason FindEntry validates: ReadDir is a boundary
+// where attacker-controlled tree contents leave the store as fs.DirEntry
+// values that callers may pass to filesystem operations.
 func (t *treeDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	if n <= 0 {
 		n = len(t.tree.Entries) - t.index
@@ -451,7 +515,11 @@ func (t *treeDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	end = min(end, len(t.tree.Entries))
 	entries := make([]fs.DirEntry, 0, end-t.index)
 	for i := t.index; i < end; i++ {
-		entries = append(entries, treeDirEntry{entry: &t.tree.Entries[i]})
+		entry := &t.tree.Entries[i]
+		if err := pathutil.ValidTreePath(entry.Name); err != nil {
+			return nil, err
+		}
+		entries = append(entries, treeDirEntry{entry: entry})
 	}
 	t.index = end
 	if len(entries) == 0 {
@@ -460,30 +528,51 @@ func (t *treeDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
+// treeFileInfo implements [fs.FileInfo] for a Git tree entry.
 type treeFileInfo struct {
 	name string
 	mode filemode.FileMode
 	size int64
 }
 
-func (i treeFileInfo) Name() string       { return i.name }
-func (i treeFileInfo) Size() int64        { return i.size }
-func (i treeFileInfo) Mode() fs.FileMode  { return treeFSMode(i.mode) }
-func (i treeFileInfo) ModTime() time.Time { return time.Time{} }
-func (i treeFileInfo) IsDir() bool        { return i.mode == filemode.Dir }
-func (i treeFileInfo) Sys() any           { return nil }
+// Name implements [fs.FileInfo].
+func (i treeFileInfo) Name() string { return i.name }
 
+// Size implements [fs.FileInfo].
+func (i treeFileInfo) Size() int64 { return i.size }
+
+// Mode implements [fs.FileInfo].
+func (i treeFileInfo) Mode() fs.FileMode { return treeFSMode(i.mode) }
+
+// ModTime implements [fs.FileInfo].
+func (i treeFileInfo) ModTime() time.Time { return time.Time{} }
+
+// IsDir implements [fs.FileInfo].
+func (i treeFileInfo) IsDir() bool { return i.mode == filemode.Dir }
+
+// Sys implements [fs.FileInfo].
+func (i treeFileInfo) Sys() any { return nil }
+
+// treeDirEntry implements [fs.DirEntry] for a Git [TreeEntry].
 type treeDirEntry struct {
 	entry *TreeEntry
 }
 
-func (e treeDirEntry) Name() string      { return e.entry.Name }
-func (e treeDirEntry) IsDir() bool       { return e.entry.Mode == filemode.Dir }
+// Name implements [fs.DirEntry].
+func (e treeDirEntry) Name() string { return e.entry.Name }
+
+// IsDir implements [fs.DirEntry].
+func (e treeDirEntry) IsDir() bool { return e.entry.Mode == filemode.Dir }
+
+// Type implements [fs.DirEntry].
 func (e treeDirEntry) Type() fs.FileMode { return treeFSMode(e.entry.Mode) }
+
+// Info implements [fs.DirEntry].
 func (e treeDirEntry) Info() (fs.FileInfo, error) {
 	return treeFileInfo{name: e.entry.Name, mode: e.entry.Mode}, nil
 }
 
+// treeFSMode converts a Git [filemode.FileMode] to an [fs.FileMode].
 func treeFSMode(mode filemode.FileMode) fs.FileMode {
 	osMode, err := mode.ToOSFileMode()
 	if err != nil {
