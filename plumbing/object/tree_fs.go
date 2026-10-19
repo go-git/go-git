@@ -203,9 +203,7 @@ func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 		return nil, fmt.Errorf("chroot: invalid path %q", originalPath)
 	}
 
-	if strings.HasPrefix(path, "/") {
-		path = path[1:]
-	}
+	strings.TrimPrefix(path, "/")
 
 	path = strings.TrimRight(path, "/")
 
