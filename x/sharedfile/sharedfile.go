@@ -58,6 +58,7 @@ type SharedFile struct {
 	gen            uint64
 	timer          *time.Timer
 	closed         bool
+	sealed         bool // set by Retire: refuse new Acquire and reopen; defer close to last Release
 	isClosed       atomic.Bool
 	immediateClose bool // set by ReleaseNow when refs>0; consumed by Release
 }
@@ -87,7 +88,7 @@ func NewWithPool(open func() (ReadAtCloser, error), gracePeriod time.Duration, p
 // open and refreshes its LRU position on every subsequent acquire.
 func (s *SharedFile) Acquire() (ReadAtCloser, error) {
 	s.mu.Lock()
-	if s.closed {
+	if s.closed || s.sealed {
 		s.mu.Unlock()
 		return nil, ErrClosed
 	}
@@ -140,6 +141,16 @@ func (s *SharedFile) Release() {
 	s.gen++
 
 	if s.refs > 0 || s.closed || s.file == nil {
+		return
+	}
+
+	if s.sealed {
+		// Deferred Retire close: tear down now, never reopen.
+		s.closed = true
+		s.immediateClose = false
+		s.isClosed.Store(true)
+		_ = s.file.Close()
+		s.file = nil
 		return
 	}
 
@@ -226,6 +237,46 @@ func (s *SharedFile) Close() error {
 	if s.file != nil {
 		err = s.file.Close()
 		s.file = nil
+	}
+	pool := s.pool
+	s.mu.Unlock()
+
+	if pool != nil {
+		pool.Forget(&s.poolHandle)
+	}
+	return err
+}
+
+// Retire seals the SharedFile: subsequent Acquire/Ref return ErrClosed and the
+// underlying file is never reopened. If no references are held it closes now;
+// otherwise the close is deferred to the last Release (in-flight readers ride
+// to completion). The SharedFile is forgotten from its pool. Idempotent; a
+// no-op on an already-Closed SharedFile.
+//
+// Retire differs from Close (which closes immediately, ignoring refs) and from
+// ReleaseNow (which permits reopen on the next Acquire). It is the graceful,
+// no-reopen teardown used for forget-on-publish.
+func (s *SharedFile) Retire() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.sealed = true
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	s.gen++
+
+	var err error
+	if s.refs == 0 {
+		s.closed = true
+		s.isClosed.Store(true)
+		if s.file != nil {
+			err = s.file.Close()
+			s.file = nil
+		}
 	}
 	pool := s.pool
 	s.mu.Unlock()

@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-git/go-git/v6/internal/sharedfile"
+	"github.com/go-git/go-git/v6/x/sharedfile"
 )
 
 // memCloser wraps a *bytes.Reader to satisfy ReadAtCloser.

@@ -34,10 +34,9 @@ type Member interface {
 // consults during eviction. When evicting because capacity is
 // exceeded, the Pool walks the LRU back-to-front and skips
 // Members whose Pinned reports true; if every Member is pinned,
-// the Pool falls back to evicting the LRU tail unconditionally.
-// This matches canonical Git's find_lru_pack policy
-// (packfile.c:482-530), where the in-use preference is a hint
-// rather than a guarantee.
+// the Pool over-commits (retains all members, skips eviction) and
+// increments Stats.OverCommits rather than force-evicting a live pin.
+// The LRU self-corrects as pins release on subsequent Touch calls.
 //
 // Members that do not implement Pinnable are treated as unpinned,
 // preserving the unconditional-LRU behaviour from the pool's
@@ -98,12 +97,18 @@ type Stats struct {
 	EvictionFailures uint64
 	// PinnedSkips is the cumulative count of Pinnable Members the
 	// eviction walk skipped because Pinned() reported true. The
-	// counter is incremented in both cases: when an unpinned
-	// victim was eventually found further forward, and when every
-	// Member was pinned and the walk fell back to evicting the
-	// LRU tail anyway. Useful for spotting churn under sustained
-	// concurrent load.
+	// counter is incremented whether an unpinned victim was
+	// eventually found further forward or every Member was pinned
+	// (triggering an over-commit). Useful for spotting churn under
+	// sustained concurrent load.
 	PinnedSkips uint64
+	// OverCommits is the cumulative count of Touch calls that
+	// retained a member over capacity because every eviction
+	// candidate was pinned. Over-committing is preferred to
+	// force-evicting a live pin, which would not free the fd and
+	// would defeat cross-request reuse. The LRU self-corrects as
+	// pins release.
+	OverCommits uint64
 }
 
 // Pool is a fixed-capacity LRU of Members. The zero value is not
@@ -116,6 +121,7 @@ type Pool struct {
 	evictions        uint64
 	evictionFailures uint64
 	pinnedSkips      uint64
+	overCommits      uint64
 }
 
 // New constructs a Pool with the given capacity. capacity <= 0
@@ -137,8 +143,10 @@ func New(capacity int) *Pool {
 // already-registered Member (m moves to MRU front). The Handle h
 // identifies m in the LRU; the same h must be passed on every
 // Touch/Forget for the same Member. If the resulting active count
-// exceeds the capacity, the LRU tail is evicted via
-// Member.ReleaseNow. Eviction never targets m itself.
+// exceeds the capacity, the LRU evicts the least-recently-touched
+// unpinned Member via Member.ReleaseNow. When every Member is pinned,
+// Touch over-commits (retains all members) and bumps Stats.OverCommits
+// instead. Eviction never targets m itself.
 //
 // Touch is safe to call from multiple goroutines.
 func (p *Pool) Touch(m Member, h *Handle) {
@@ -176,7 +184,11 @@ func (p *Pool) Touch(m Member, h *Handle) {
 			p.pinnedSkips++
 		}
 		if victimElem == nil {
-			victimElem = p.lru.Back()
+			// Every candidate is pinned. Over-commit rather than force-evict a
+			// live pin: evicting it would not free the fd (a pinned Member's
+			// ReleaseNow only latches), and it would drop honest accounting and
+			// cross-request reuse. The LRU self-corrects as pins release.
+			p.overCommits++
 		}
 		if victimElem != nil {
 			victimEnt := victimElem.Value.(*entry)
@@ -252,5 +264,6 @@ func (p *Pool) Stats() Stats {
 		Evictions:        p.evictions,
 		EvictionFailures: p.evictionFailures,
 		PinnedSkips:      p.pinnedSkips,
+		OverCommits:      p.overCommits,
 	}
 }
