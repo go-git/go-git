@@ -2,6 +2,7 @@ package object
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -295,4 +296,139 @@ func TestTreeFilesystemEmptyFileStatSize(t *testing.T) {
 	info, err := file.Stat()
 	require.NoError(t, err)
 	require.Zero(t, info.Size())
+}
+
+func TestTreeFilesystemOpenSymlink(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	targetHash := storeTestObject(t, store, plumbing.BlobObject, []byte("contents"))
+	linkHash := storeTestObject(t, store, plumbing.BlobObject, []byte("target.txt"))
+
+	filesystem := &treeFilesystem{
+		tree: &Tree{
+			Entries: []TreeEntry{
+				{Name: "link", Mode: filemode.Symlink, Hash: linkHash},
+				{Name: "target.txt", Mode: filemode.Regular, Hash: targetHash},
+			},
+			s: store,
+		},
+	}
+
+	file, err := filesystem.Open("link")
+	require.NoError(t, err)
+	defer file.Close()
+
+	contents, err := io.ReadAll(file)
+	require.NoError(t, err)
+	require.Equal(t, []byte("contents"), contents)
+}
+
+func TestTreeFilesystemOpenNestedRelativeSymlink(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	targetHash := storeTestObject(t, store, plumbing.BlobObject, []byte("nested contents"))
+	linkHash := storeTestObject(t, store, plumbing.BlobObject, []byte("target.txt"))
+
+	subtreeHash := storeTestTree(t, store, []TreeEntry{
+		{Name: "link", Mode: filemode.Symlink, Hash: linkHash},
+		{Name: "target.txt", Mode: filemode.Regular, Hash: targetHash},
+	})
+
+	filesystem := &treeFilesystem{
+		tree: &Tree{
+			Entries: []TreeEntry{
+				{Name: "dir", Mode: filemode.Dir, Hash: subtreeHash},
+			},
+			s: store,
+		},
+	}
+
+	file, err := filesystem.Open("dir/link")
+	require.NoError(t, err)
+	defer file.Close()
+
+	contents, err := io.ReadAll(file)
+	require.NoError(t, err)
+	require.Equal(t, []byte("nested contents"), contents)
+}
+
+func TestTreeFilesystemOpenSymlinkLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		linkCount  int
+		shouldOpen bool
+	}{
+		{name: "at limit", linkCount: maxSymlinkDepth, shouldOpen: true},
+		{name: "over limit", linkCount: maxSymlinkDepth + 1, shouldOpen: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := memory.NewStorage()
+			entries := make([]TreeEntry, 0, test.linkCount+1)
+
+			targetHash := storeTestObject(t, store, plumbing.BlobObject, []byte("target"))
+
+			for index := 0; index < test.linkCount; index++ {
+				target := "target"
+				if index+1 < test.linkCount {
+					target = fmt.Sprintf("link-%03d", index+1)
+				}
+
+				linkHash := storeTestObject(t, store, plumbing.BlobObject, []byte(target))
+				entries = append(entries, TreeEntry{
+					Name: fmt.Sprintf("link-%03d", index),
+					Mode: filemode.Symlink,
+					Hash: linkHash,
+				})
+			}
+
+			entries = append(entries, TreeEntry{
+				Name: "target",
+				Mode: filemode.Regular,
+				Hash: targetHash,
+			})
+
+			filesystem := &treeFilesystem{
+				tree: &Tree{Entries: entries, s: store},
+			}
+
+			file, err := filesystem.Open("link-000")
+			if test.shouldOpen {
+				require.NoError(t, err)
+				defer file.Close()
+
+				contents, readErr := io.ReadAll(file)
+				require.NoError(t, readErr)
+				require.Equal(t, []byte("target"), contents)
+			} else {
+				require.ErrorIs(t, err, ErrTooManySymlinks)
+			}
+		})
+	}
+}
+
+func TestTreeFilesystemOpenSymlinkLoop(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	aHash := storeTestObject(t, store, plumbing.BlobObject, []byte("b"))
+	bHash := storeTestObject(t, store, plumbing.BlobObject, []byte("a"))
+
+	filesystem := &treeFilesystem{
+		tree: &Tree{
+			Entries: []TreeEntry{
+				{Name: "a", Mode: filemode.Symlink, Hash: aHash},
+				{Name: "b", Mode: filemode.Symlink, Hash: bHash},
+			},
+			s: store,
+		},
+	}
+
+	_, err := filesystem.Open("a")
+	require.ErrorIs(t, err, ErrTooManySymlinks)
 }

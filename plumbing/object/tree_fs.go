@@ -2,10 +2,12 @@ package object
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +17,16 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+)
+
+const (
+	maxSymlinkTargetSize = 64 * 1024
+	maxSymlinkDepth      = 40
+)
+
+var (
+	ErrSymlinkTargetTooLarge = errors.New("symlink target too large")
+	ErrTooManySymlinks       = errors.New("too many symbolic links")
 )
 
 type treeFilesystem struct {
@@ -70,6 +82,10 @@ func (tfs *treeFilesystem) Join(elem ...string) string {
 }
 
 func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
+	return tfs.open(filename, 0)
+}
+
+func (tfs *treeFilesystem) open(filename string, symlinkDepth int) (billy.File, error) {
 	if err := pathutil.ValidTreePath(filename); err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
@@ -95,7 +111,7 @@ func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
 			tree:  subtree,
 		}, nil
 
-	case filemode.Regular, filemode.Executable, filemode.Symlink:
+	case filemode.Regular, filemode.Executable:
 		blob, err := GetBlob(tfs.tree.s, e.Hash)
 		if err != nil {
 			return nil, err
@@ -113,6 +129,23 @@ func (tfs *treeFilesystem) Open(filename string) (billy.File, error) {
 		}
 
 		return &treeFile{entry: e, reader: bytes.NewReader(data)}, nil
+
+	case filemode.Symlink:
+		if symlinkDepth >= maxSymlinkDepth {
+			return nil, &fs.PathError{
+				Op:   "open",
+				Path: filename,
+				Err:  ErrTooManySymlinks,
+			}
+		}
+
+		target, err := tfs.Readlink(filename)
+		if err != nil {
+			return nil, err
+		}
+		target = path.Join(path.Dir(filename), target)
+
+		return tfs.open(target, symlinkDepth+1)
 
 	// Submodules not yet implemented
 	case filemode.Submodule:
@@ -166,10 +199,12 @@ func (tfs *treeFilesystem) Readlink(link string) (string, error) {
 	}
 	defer func() { _ = reader.Close() }()
 
-	target, readErr := io.ReadAll(reader)
-
-	if readErr != nil {
-		return "", readErr
+	target, err := io.ReadAll(io.LimitReader(reader, maxSymlinkTargetSize+1))
+	if err != nil {
+		return "", err
+	}
+	if len(target) > maxSymlinkTargetSize {
+		return "", &fs.PathError{Op: "readlink", Path: link, Err: ErrSymlinkTargetTooLarge}
 	}
 
 	return string(target), nil
