@@ -24,6 +24,7 @@ const (
 	maxSymlinkDepth      = 40
 )
 
+// New errors defined by this package.
 var (
 	ErrSymlinkTargetTooLarge = errors.New("symlink target too large")
 	ErrTooManySymlinks       = errors.New("too many symbolic links")
@@ -263,7 +264,47 @@ func (tfs *treeFilesystem) Chroot(path string) (billy.Filesystem, error) {
 }
 
 func (tfs *treeFilesystem) Stat(filename string) (fs.FileInfo, error) {
-	return tfs.Lstat(filename)
+	return tfs.stat(filename, 0)
+}
+
+func (tfs *treeFilesystem) stat(filename string, symlinkDepth int) (fs.FileInfo, error) {
+	if filename == "." || filename == "/" {
+		return treeFileInfo{name: ".", mode: filemode.Dir}, nil
+	}
+
+	entry, err := tfs.findEntry(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	if entry.Mode == filemode.Symlink {
+		if symlinkDepth >= maxSymlinkDepth {
+			return nil, &fs.PathError{
+				Op:   "stat",
+				Path: filename,
+				Err:  ErrTooManySymlinks,
+			}
+		}
+
+		target, err := tfs.Readlink(filename)
+		if err != nil {
+			return nil, err
+		}
+
+		target = path.Join(path.Dir(filename), target)
+		info, err := tfs.stat(target, symlinkDepth+1)
+		if err != nil {
+			return nil, err
+		}
+
+		return treeFileInfo{
+			name: path.Base(filename),
+			mode: info.(treeFileInfo).mode,
+			size: info.Size(),
+		}, nil
+	}
+
+	return treeFileInfo{name: entry.Name, mode: entry.Mode}, nil
 }
 
 func (tfs *treeFilesystem) Capabilities() billy.Capability {
