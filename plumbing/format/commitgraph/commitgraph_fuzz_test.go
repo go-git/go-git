@@ -75,15 +75,18 @@ func FuzzOpenFileIndex(f *testing.F) {
 		return raw
 	}
 
-	// Seed from real commit-graph fixture when available.
-	for _, fix := range fixtures.ByTag("commit-graph") {
-		if dotgit, err := fix.DotGit(); err == nil {
-			path := dotgit.Join("objects", "info", "commit-graph")
-			if fh, err := dotgit.Open(path); err == nil {
-				if data, err := io.ReadAll(fh); err == nil {
-					f.Add(data)
+	// Seed from real commit-graph fixtures when available, including one
+	// carrying changed-path Bloom filters.
+	for _, tag := range []string{"commit-graph", "commit-graph-bloom-v2"} {
+		for _, fix := range fixtures.ByTag(tag) {
+			if dotgit, err := fix.DotGit(); err == nil {
+				path := dotgit.Join("objects", "info", "commit-graph")
+				if fh, err := dotgit.Open(path); err == nil {
+					if data, err := io.ReadAll(fh); err == nil {
+						f.Add(data)
+					}
+					_ = fh.Close()
 				}
-				_ = fh.Close()
 			}
 		}
 	}
@@ -125,6 +128,9 @@ func FuzzOpenFileIndex(f *testing.F) {
 			_, _ = idx.GetIndexByHash(hashes[i])
 			_, _ = idx.GetHashByIndex(uint32(i))
 			_, _ = idx.GetCommitDataByIndex(uint32(i))
+			if bf, err := idx.GetBloomFilterByIndex(uint32(i)); err == nil {
+				_ = bf.MaybeContains("a/b/c.txt")
+			}
 		}
 	})
 }
