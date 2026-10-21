@@ -452,6 +452,7 @@ func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, er
 		// duplicate copy of the delta payload.
 		if oh.content == nil {
 			oh.content = gogitsync.GetBytesBuffer()
+			oh.content.Grow(int(oh.Size))
 			err = p.scanner.inflateContent(oh.ContentOffset, oh.content, oh.Size)
 			if err != nil {
 				return nil, fmt.Errorf("cannot inflate content: %w", err)
