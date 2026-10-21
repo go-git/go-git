@@ -104,7 +104,7 @@ func (w *commitPreIterator) Next() (*Commit, error) {
 
 func filteredParentIter(c *Commit, seen map[plumbing.Hash]bool) CommitIter {
 	var hashes []plumbing.Hash
-	for _, h := range c.ParentHashes {
+	for _, h := range c.liveParentHashes() {
 		if !seen[h] {
 			hashes = append(hashes, h)
 		}
@@ -209,8 +209,10 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
+		live := c.liveParentHashes()
+
 		return c, c.Parents().ForEach(func(p *Commit) error {
-			if len(c.ParentHashes) > 0 && p.Hash == c.ParentHashes[0] {
+			if len(live) > 0 && p.Hash == live[0] {
 				w.stack = append(w.stack, p)
 			}
 			return nil
