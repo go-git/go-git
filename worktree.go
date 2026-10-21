@@ -489,7 +489,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 
 	b := newIndexBuilder(idx)
 
-	changes, err := w.diffTreeWithStaging(t, true)
+	changes, err := w.diffTreeWithStaging(t, true, true)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +523,13 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 			}
 		}
 
+		// Keep the skip-worktree bit of a rewritten entry: SkipUnless only
+		// recomputes it when dirs is set.
+		var skipWorktree bool
+		if old, ok := b.entries[name]; ok && a == merkletrie.Modify {
+			skipWorktree = old.SkipWorktree
+		}
+
 		b.Remove(name)
 		removedFiles = append(removedFiles, name)
 		if e == nil {
@@ -530,9 +537,10 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		}
 
 		b.Add(&index.Entry{
-			Name: name,
-			Hash: e.Hash,
-			Mode: e.Mode,
+			Name:         name,
+			Hash:         e.Hash,
+			Mode:         e.Mode,
+			SkipWorktree: skipWorktree,
 		})
 	}
 

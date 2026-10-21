@@ -246,10 +246,10 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 		}
 	}
 
-	return w.diffTreeWithStaging(t, reverse)
+	return w.diffTreeWithStaging(t, reverse, false)
 }
 
-func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse, includeSkipWorktree bool) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
 		from = object.NewTreeRootNode(t)
@@ -260,7 +260,10 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	to := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+		IncludeSkipWorktree: includeSkipWorktree,
+	})
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
