@@ -2,6 +2,7 @@ package sideband
 
 import (
 	"io"
+	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
@@ -11,6 +12,8 @@ import (
 type Muxer struct {
 	max int
 	w   io.Writer
+	mu  sync.Mutex
+	buf []byte
 }
 
 const chLen = 1
@@ -61,6 +64,9 @@ func (m *Muxer) WriteChannel(t Channel, p []byte) (int, error) {
 func (m *Muxer) doWrite(ch Channel, p []byte) (int, error) {
 	sz := min(len(p), m.max)
 
-	_, err := pktline.Write(m.w, ch.WithPayload(p[:sz]))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.buf = append(append(m.buf[:0], byte(ch)), p[:sz]...)
+	_, err := pktline.Write(m.w, m.buf)
 	return sz, err
 }
