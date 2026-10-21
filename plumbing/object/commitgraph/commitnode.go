@@ -34,7 +34,7 @@ type CommitNode interface {
 	// It combines the contents of the GDA2 and GDO2 sections of the commit-graph
 	// with the commit time portion of the CDAT section.
 	GenerationV2() uint64
-	// Commit returns the full commit object from the node
+	// Commit loads the full commit object referenced by the node
 	Commit() (*object.Commit, error)
 }
 

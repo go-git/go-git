@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	gsync "github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
@@ -422,7 +423,7 @@ func (s *LazyIndex) CloseIdleDescriptors() error {
 // position (0..count-1) if found.
 func (s *LazyIndex) findHashPos(idx io.ReaderAt, h plumbing.Hash) (int, bool, error) {
 	if h.Size() != s.hashSize {
-		return 0, false, fmt.Errorf("hash size mismatch: %d %d", h.Size(), s.hashSize)
+		return 0, false, fmt.Errorf("%w: %d-byte hash, index has %d", formatcfg.ErrObjectFormatMismatch, h.Size(), s.hashSize)
 	}
 	first := int(h.Bytes()[0])
 	var lo int

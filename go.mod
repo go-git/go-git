@@ -11,7 +11,7 @@ require (
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/gcfg/v2 v2.0.2
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
-	github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1
+	github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1.0.20261008125256-bb637ec9076b
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.7.0
 	github.com/sergi/go-diff v1.4.0

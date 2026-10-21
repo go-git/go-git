@@ -196,8 +196,8 @@ func (r discardCloseReader) Seek(offset int64, whence int) (int64, error) {
 	return 0, errors.New("commitgraph test: inner reader does not support Seek")
 }
 
-func openIndexBytes(data []byte) (commitgraph.Index, error) {
-	return commitgraph.OpenFileIndex(discardCloseReader{bytes.NewReader(data)})
+func openIndexBytes(data []byte, opts ...commitgraph.Option) (commitgraph.Index, error) {
+	return commitgraph.OpenFileIndex(discardCloseReader{bytes.NewReader(data)}, opts...)
 }
 
 func (s *CommitgraphSuite) TestOpenFileIndexRejectsChunkCountMismatch() {
