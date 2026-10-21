@@ -73,6 +73,14 @@ func ParsePattern(p string, domain []string) Pattern {
 	}
 
 	res.pattern = strings.Split(p, patternDirSep)
+
+	// Like git, read a segment made only of three or more asterisks as "**".
+	for i, seg := range res.pattern {
+		if len(seg) > len(zeroToManyDirs) && strings.Trim(seg, "*") == "" {
+			res.pattern[i] = zeroToManyDirs
+		}
+	}
+
 	return &res
 }
 
