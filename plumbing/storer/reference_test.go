@@ -187,6 +187,7 @@ func (s *ReferenceSuite) TestMultiReferenceIterForEach() {
 				plumbing.NewReferenceFromStrings("foo", "foo"),
 			}),
 			NewReferenceSliceIter([]*plumbing.Reference{
+				plumbing.NewReferenceFromStrings("foo", "foo"),
 				plumbing.NewReferenceFromStrings("bar", "bar"),
 			}),
 		},
