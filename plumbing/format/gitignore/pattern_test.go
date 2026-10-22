@@ -252,6 +252,13 @@ func (s *PatternSuite) TestGlobMatch_asteriskRun_leading() {
 	s.Equal(NoMatch, p.Match([]string{"a", "xvolcano"}, false))
 }
 
+func (s *PatternSuite) TestParsePattern_starRunDirOnlyKeepsDescendants() {
+	p := ParsePattern("a/***/", nil)
+	s.Equal(Exclude, p.Match([]string{"a", "x"}, true))
+	s.Equal(Exclude, p.Match([]string{"a", "x", "b"}, false))
+	s.Equal(NoMatch, p.Match([]string{"a", "x"}, false))
+}
+
 func (s *PatternSuite) TestGlobMatch_asteriskRun_middle() {
 	p := ParsePattern("/*lue/****/vol?ano", nil)
 	s.Equal(Exclude, p.Match([]string{"value", "volcano"}, false))

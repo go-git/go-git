@@ -75,7 +75,12 @@ func ParsePattern(p string, domain []string) Pattern {
 	res.pattern = strings.Split(p, patternDirSep)
 
 	// Like git, read a segment made only of three or more asterisks as "**".
+	// A trailing one in a directory-only rule is left alone: "**" there would
+	// stop matching files below the directory, which "*" still does.
 	for i, seg := range res.pattern {
+		if res.dirOnly && i == len(res.pattern)-1 {
+			break
+		}
 		if len(seg) > len(zeroToManyDirs) && strings.Trim(seg, "*") == "" {
 			res.pattern[i] = zeroToManyDirs
 		}
