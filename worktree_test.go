@@ -832,6 +832,67 @@ func (s *WorktreeSuite) TestCheckoutSubmodule() {
 	s.True(status.IsClean())
 }
 
+func TestCheckoutSubmoduleCustomName(t *testing.T) {
+	t.Parallel()
+
+	const modulePath = "deps/lib"
+	for _, moduleName := range []string{modulePath, "custom-name"} {
+		t.Run(moduleName, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+			defer func() { _ = r.Close() }()
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			modules := fmt.Sprintf("[submodule %q]\n\tpath = %s\n\turl = https://example.com/lib.git\n", moduleName, modulePath)
+			require.NoError(t, util.WriteFile(fs, gitmodulesFile, []byte(modules), 0o644))
+			_, err = w.Add(gitmodulesFile)
+			require.NoError(t, err)
+
+			sub, err := w.Submodule(moduleName)
+			require.NoError(t, err)
+			require.NoError(t, sub.Init())
+			subRepo, err := sub.Repository()
+			require.NoError(t, err)
+			defer func() { _ = subRepo.Close() }()
+
+			firstHash := CommitNewFile(t, subRepo, "first")
+			idx, err := r.Storer.Index()
+			require.NoError(t, err)
+			idx.Entries = append(idx.Entries, &index.Entry{
+				Name: modulePath, Mode: filemode.Submodule, Hash: firstHash,
+			})
+			require.NoError(t, r.Storer.SetIndex(idx))
+			firstCommit, err := w.Commit("first submodule commit", defaultTestCommitOptions())
+			require.NoError(t, err)
+
+			secondHash := CommitNewFile(t, subRepo, "second")
+			idx, err = r.Storer.Index()
+			require.NoError(t, err)
+			entry, err := idx.Entry(modulePath)
+			require.NoError(t, err)
+			entry.Hash = secondHash
+			require.NoError(t, r.Storer.SetIndex(idx))
+			_, err = w.Commit("second submodule commit", defaultTestCommitOptions())
+			require.NoError(t, err)
+
+			require.NoError(t, w.Checkout(&CheckoutOptions{Hash: firstCommit}))
+			idx, err = r.Storer.Index()
+			require.NoError(t, err)
+			entry, err = idx.Entry(modulePath)
+			require.NoError(t, err)
+			require.Equal(t, firstHash, entry.Hash)
+
+			subHead, err := subRepo.Head()
+			require.NoError(t, err)
+			require.Equal(t, secondHash, subHead.Hash())
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestCheckoutSubmoduleInitialized() {
 	url := "https://github.com/git-fixtures/submodule.git"
 	r := s.NewRepository(fixtures.ByURL(url).One())
