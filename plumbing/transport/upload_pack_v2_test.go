@@ -210,27 +210,52 @@ func TestUploadPackV2FetchReadyWithCommonHave(t *testing.T) {
 
 func TestUploadPackV2FetchCommonButNotReady(t *testing.T) {
 	t.Parallel()
-	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
-	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
-	require.NoError(t, err)
-	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
-	parent := c.ParentHashes[0]
+	r := mergeHistory(t)
+	r.commit("Z")
 
-	// want an ancestor, have its descendant (HEAD). HEAD is a known object so it
-	// is ACK'd, but it is not an ancestor of the want, so no want is anchored:
-	// the server must withhold "ready" and end with a flush (no packfile),
-	// mirroring upstream ok_to_give_up.
-	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
-		"want " + parent.String(),
-		"have " + head.Hash().String(),
+	// Z is known, so it is ACK'd, but it shares no history with the want: no
+	// want reaches a common commit, so the server withholds "ready" and ends
+	// with a flush (no packfile), mirroring upstream ok_to_give_up.
+	out := serveUploadPackV2Test(t, r.st, v2Request(t, "fetch", nil, []string{
+		"want " + r.commits["Y"].String(),
+		"have " + r.commits["Z"].String(),
 	}))
 
-	require.Contains(t, out, "acknowledgments")
-	require.Contains(t, out, "ACK "+head.Hash().String())
+	require.Contains(t, out, "ACK "+r.commits["Z"].String())
 	require.NotContains(t, out, "ready")
 	require.NotContains(t, out, "packfile")
+}
+
+func TestUploadPackV2FetchAcknowledgesOnlyHavesNotImpliedByEarlierOnes(t *testing.T) {
+	t.Parallel()
+	r := mergeHistory(t)
+
+	out := serveUploadPackV2Test(t, r.st, v2Request(t, "fetch", nil, []string{
+		"want " + r.commits["D"].String(),
+		"have " + r.commits["C"].String(),
+		"have " + r.commits["C"].String(),
+		"have " + r.commits["B"].String(),
+	}))
+
+	require.Equal(t, 1, strings.Count(out, "ACK "+r.commits["C"].String()))
+	require.NotContains(t, out, "ACK "+r.commits["B"].String())
+	require.Contains(t, out, "ready")
+}
+
+func TestUploadPackV2FetchReadyWhenHaveIsChildOfWant(t *testing.T) {
+	t.Parallel()
+	r := mergeHistory(t)
+
+	// A client that has D has its parent M, so a want of M is anchored and the
+	// server is ready (upstream marks the parents of common commits).
+	out := serveUploadPackV2Test(t, r.st, v2Request(t, "fetch", nil, []string{
+		"want " + r.commits["M"].String(),
+		"have " + r.commits["D"].String(),
+	}))
+
+	require.Contains(t, out, "ACK "+r.commits["D"].String())
+	require.Contains(t, out, "ready")
+	require.Contains(t, out, "packfile")
 }
 
 func TestUploadPackV2FetchNoWantsEmitsNothing(t *testing.T) {
