@@ -447,45 +447,48 @@ func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (i
 	return best, nil
 }
 
+var errUnknownV2Command = errors.New("unknown v2 command")
+
+// newUploadPackV2Args returns the argument decoder for a v2 upload-pack
+// command, or errUnknownV2Command if the command is not supported.
+func newUploadPackV2Args(cmd string) (packp.CommandArgs, error) {
+	switch cmd {
+	case "ls-refs":
+		return &packp.LsRefsArgs{}, nil
+	case "fetch":
+		return &packp.FetchArgs{}, nil
+	default:
+		return nil, errUnknownV2Command
+	}
+}
+
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
 // It is used when the client requests version=2 via GIT_PROTOCOL.
 func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader, w io.WriteCloser, opts *UploadPackRequest) error {
 	for {
-		// Peek the command line to choose the argument decoder, then decode the
-		// whole request envelope through packp.CommandRequest (the same type the
-		// client encodes).
-		l, line, err := pktline.PeekLine(rd)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-		if l == pktline.Flush {
-			// A lone flush-pkt ends the request.
-			_, _, _ = pktline.ReadLine(rd)
-			return nil
-		}
-
-		cmd := strings.TrimPrefix(strings.TrimSuffix(string(line), "\n"), "command=")
-
-		req := &packp.CommandRequest{}
-		switch cmd {
-		case "ls-refs":
-			req.Args = &packp.LsRefsArgs{}
-		case "fetch":
-			req.Args = &packp.FetchArgs{}
-		default:
-			_, _ = pktline.Writef(w, "error unknown-command %s\n", cmd)
-			_ = pktline.WriteFlush(w)
-			return fmt.Errorf("unsupported v2 command %q", cmd)
-		}
-
+		// Decode the whole request envelope through packp.CommandRequest (the
+		// same type the client encodes). The command line is not necessarily
+		// the first one: like upstream serve.c, capability lines such as
+		// object-format may precede it, so the argument decoder is chosen once
+		// the command is known.
+		req := &packp.CommandRequest{NewArgs: newUploadPackV2Args}
 		if err := req.Decode(rd); err != nil {
-			return fmt.Errorf("decoding %s request: %w", cmd, err)
+			if errors.Is(err, errUnknownV2Command) {
+				_, _ = pktline.Writef(w, "error unknown-command %s\n", req.Command)
+				_ = pktline.WriteFlush(w)
+				return fmt.Errorf("unsupported v2 command %q", req.Command)
+			}
+			if req.Command == "" {
+				return fmt.Errorf("decoding request: %w", err)
+			}
+			return fmt.Errorf("decoding %s request: %w", req.Command, err)
 		}
 
+		cmd := req.Command
 		switch cmd {
+		case "":
+			// A lone flush-pkt (or EOF) ends the session.
+			return nil
 		case "ls-refs":
 			if err := serveLsRefsV2(ctx, st, w, req.Args.(*packp.LsRefsArgs)); err != nil {
 				return err
