@@ -304,10 +304,14 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 //
 // Any REF-delta not reached through the depth-first walk has a base
 // outside this pack and is processed via the external-reference
-// placeholder path. An OFS-delta whose recorded negative offset does
-// not match any in-pack object header is rejected as malformed input.
+// placeholder path, after which the walk continues into its own delta
+// children, as canonical Git's fix_unresolved_deltas[2] does once it
+// has read the missing base. An OFS-delta whose recorded negative
+// offset does not match any in-pack object header is rejected as
+// malformed input.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/builtin/index-pack.c#L1103
+// [2]: https://github.com/git/git/blob/v2.54.0/builtin/index-pack.c#L1475
 func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 	// Map sizes correspond to the count of distinct parent offsets /
 	// hashes, not the count of delta entries. Real packs cluster many
@@ -375,6 +379,9 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 		}
 		if err := p.processDelta(d); err != nil {
 			return fmt.Errorf("processing ref-delta at offset %v: %w", d.Offset, err)
+		}
+		if err := visit(d); err != nil {
+			return err
 		}
 	}
 
