@@ -231,6 +231,22 @@ func TestCommandRequestDecodeDuplicateCommand(t *testing.T) {
 	assert.Contains(t, err.Error(), "already requesting command")
 }
 
+// An empty command is still a command: one requested after it is a duplicate.
+func TestCommandRequestDecodeEmptyThenCommand(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "command=\n")
+	pktline.WriteString(&buf, "command=ls-refs\n")
+	pktline.WriteDelim(&buf)
+	pktline.WriteFlush(&buf)
+
+	cmd := &CommandRequest{}
+	err := cmd.Decode(&buf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already requesting command")
+}
+
 // Without command arguments the delim-pkt may be omitted, as in upstream
 // serve.c where the flush-pkt then also ends the arguments.
 func TestCommandRequestDecodeWithoutDelim(t *testing.T) {

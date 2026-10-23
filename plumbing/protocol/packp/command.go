@@ -33,9 +33,10 @@ type CommandArgs interface {
 // An empty Command encodes as an empty request (a single flush-pkt).
 // On decode, a flush-pkt as the first packet leaves Command empty.
 //
-// Decode is as lenient as upstream's serve.c (process_request): the command
-// line may appear anywhere among the capability lines, and the delim-pkt may
-// be omitted when there are no command arguments.
+// Like upstream's serve.c (process_request), Decode accepts the command line
+// anywhere among the capability lines, and a request without command arguments
+// may omit the delim-pkt. Unlike serve.c, it does not check the capabilities
+// themselves, such as object-format.
 type CommandRequest struct {
 	Command      string
 	Capabilities capability.List
@@ -86,6 +87,7 @@ func (c *CommandRequest) Decode(r io.Reader) error {
 	// delim-pkt or the flush-pkt that ends a request without arguments.
 	const prefix = "command="
 	var keys, length int
+	var seen bool
 	for {
 		l, line, err := pktline.ReadLine(r)
 		if err != nil {
@@ -108,9 +110,10 @@ func (c *CommandRequest) Decode(r io.Reader) error {
 		keys++
 		line = bytes.TrimSuffix(line, []byte("\n"))
 		if cmd, ok := bytes.CutPrefix(line, []byte(prefix)); ok {
-			if c.Command != "" {
+			if seen {
 				return fmt.Errorf("command %q requested after already requesting command %q", cmd, c.Command)
 			}
+			seen = true
 			c.Command = string(cmd)
 			continue
 		}
