@@ -164,15 +164,24 @@ func NegotiatePack(
 
 	upreq.Wants = req.Wants
 
-	if req.Depth > 0 {
+	// A shallow repository advertises its boundary whether or not this
+	// fetch deepens: the server needs the boundary to compute a pack the
+	// client's truncated history can use, and otherwise treats every
+	// have as the root of a complete ancestry and omits objects the
+	// client is missing (git fetch-pack.c:436-437; upload-pack.c
+	// receive_needs only registers the boundaries for the pack when the
+	// client sent a depth, a deepen or a shallow line).
+	upreq.Shallows, err = st.Shallow()
+	if err != nil {
+		return nil, err
+	}
+	if req.Depth > 0 || len(upreq.Shallows) > 0 {
 		if !caps.Supports(capability.Shallow) {
 			return nil, ErrShallowNotSupported
 		}
+	}
+	if req.Depth > 0 {
 		upreq.Depth = packp.DepthRequest{Deepen: req.Depth}
-		upreq.Shallows, err = st.Shallow()
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
