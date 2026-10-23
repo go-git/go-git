@@ -50,6 +50,11 @@ jobs:
         # as macros in terms of each other, which breaks the build. Defining
         # CURLOPT_USE_SSL to itself skips that compatibility block.
         CPPFLAGS: ${{ matrix.git[0] == 'v2.11.0' && '-DCURLOPT_USE_SSL=CURLOPT_USE_SSL' || '' }}
+        # Newer GCC defaults to C23, which Git v2.11.0 predates. It declares
+        # a struct thread_local, now a keyword, and an unreachable()
+        # function, now a stddef.h macro. Build it as C11 instead. An empty
+        # CFLAGS would drop configure's default -g -O2, so set it explicitly.
+        CFLAGS: ${{ matrix.git[0] == 'v2.11.0' && '-g -O2 -std=gnu11' || '-g -O2' }}
 
     - name: Set Git config environment variables
       run: |
