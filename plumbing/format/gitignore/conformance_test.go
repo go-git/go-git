@@ -766,6 +766,34 @@ func (s *ConformanceSuite) TestIgnoreDoubleStarPrefix() {
 	}
 }
 
+// TestIgnoreAsteriskRuns verifies that a path segment made only of three or
+// more asterisks is read as a single "**", as Git does.
+func (s *ConformanceSuite) TestIgnoreAsteriskRuns() {
+	tests := []struct {
+		pattern string
+		path    string
+		ignored bool
+	}{
+		{"***/ab", "ab", true},
+		{"***/ab", "x/ab", true},
+		{"***/ab", "x/y/ab", true},
+		{"***/ab", "xab", false},
+		{"***/ab", "x/xab", false},
+		{"a/***/b", "a/b", true},
+		{"a/***/b", "a/x/b", true},
+		{"a/***/b", "a/x/y/b", true},
+		{"a/***/b", "a/c", false},
+		{"a/***", "a/b", true},
+		{"a/***", "a/x/b", true},
+		{"a/***", "b/a/b", false},
+	}
+	for _, tt := range tests {
+		patterns := []string{tt.pattern}
+		m := s.createMatcher(patterns)
+		s.assertIgnore(m, patterns, tt.path, false, tt.ignored, tt.pattern)
+	}
+}
+
 // TestIgnoreTrailingWhitespace verifies t0008's rule that unescaped trailing
 // whitespace in a pattern is stripped.
 func (s *ConformanceSuite) TestIgnoreTrailingWhitespace() {

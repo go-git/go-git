@@ -244,6 +244,35 @@ func (s *PatternSuite) TestGlobMatch_middleAsterisks_multiMatch() {
 	s.Equal(Exclude, r)
 }
 
+func (s *PatternSuite) TestGlobMatch_asteriskRun_leading() {
+	p := ParsePattern("***/volcano", nil)
+	s.Equal(Exclude, p.Match([]string{"volcano"}, false))
+	s.Equal(Exclude, p.Match([]string{"a", "volcano"}, false))
+	s.Equal(Exclude, p.Match([]string{"a", "b", "volcano"}, false))
+	s.Equal(NoMatch, p.Match([]string{"a", "xvolcano"}, false))
+}
+
+func (s *PatternSuite) TestParsePattern_starRunDirOnlyKeepsDescendants() {
+	p := ParsePattern("a/***/", nil)
+	s.Equal(Exclude, p.Match([]string{"a", "x"}, true))
+	s.Equal(Exclude, p.Match([]string{"a", "x", "b"}, false))
+	s.Equal(NoMatch, p.Match([]string{"a", "x"}, false))
+}
+
+func (s *PatternSuite) TestGlobMatch_asteriskRun_middle() {
+	p := ParsePattern("/*lue/****/vol?ano", nil)
+	s.Equal(Exclude, p.Match([]string{"value", "volcano"}, false))
+	s.Equal(Exclude, p.Match([]string{"value", "middle1", "middle2", "volcano"}, false))
+	s.Equal(NoMatch, p.Match([]string{"value", "middle1", "middle2"}, false))
+}
+
+func (s *PatternSuite) TestGlobMatch_asteriskRun_insideSegment() {
+	// only a whole segment is read as "**", a run inside a segment stays "*"
+	p := ParsePattern("/a***b/c", nil)
+	s.Equal(Exclude, p.Match([]string{"axxb", "c"}, false))
+	s.Equal(NoMatch, p.Match([]string{"a", "x", "b", "c"}, false))
+}
+
 func (s *PatternSuite) TestGlobMatch_middleAsterisks_isDir_trailing() {
 	p := ParsePattern("/*lue/**/vol?ano/", nil)
 	r := p.Match([]string{"value", "middle1", "middle2", "volcano"}, true)
