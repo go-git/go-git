@@ -114,7 +114,7 @@ func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	since := c.Committer.When
 
 	var upd packp.ShallowUpdate
-	require.NoError(t, getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil, &upd))
+	require.NoError(t, getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil, nil, &upd))
 
 	require.NotEmpty(t, upd.Shallows)
 	for _, h := range upd.Shallows {
