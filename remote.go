@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -537,14 +538,6 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	isWildcard := true
-	for _, s := range o.RefSpecs {
-		if !s.IsWildcard() {
-			isWildcard = false
-			break
-		}
-	}
-
 	var haves []plumbing.Hash
 	wants, _ := getWants(r.s, refs, o.Depth)
 	if len(wants) > 0 {
@@ -561,26 +554,14 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		// ancestors), which contradicts the shallow boundary and causes the
 		// server to send an empty packfile even when the client is missing
 		// objects that are ancestors of its shallow commits.
-		if len(shallows) > 0 {
-			shallowSet := make(map[plumbing.Hash]bool, len(shallows))
-			for _, h := range shallows {
-				shallowSet[h] = true
-			}
-			filtered := haves[:0]
-			for _, h := range haves {
-				if !shallowSet[h] {
-					filtered = append(filtered, h)
-				}
-			}
-			haves = filtered
-		}
+		haves = filterShallowHaves(haves, shallows)
 
 		req := &transport.FetchRequest{
 			Wants:       wants,
 			Haves:       haves,
 			Depth:       o.Depth,
 			Progress:    o.Progress,
-			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
+			IncludeTags: o.Tags == plumbing.TagFollowing,
 			Filter:      o.Filter,
 		}
 
@@ -592,6 +573,27 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 
 		if o.Filter != "" {
 			if err := r.recordPromisor(o.Filter); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if o.Tags == plumbing.TagFollowing {
+		peeled := peeledTargets(rRefs.References)
+		if err := r.backfillAnnotatedTags(ctx, sess, remoteRefs, peeled); err != nil {
+			if !isDeadSession(err) {
+				return nil, err
+			}
+			// The session the main fetch used is one-shot for some transports
+			// (a v0/v1 upload-pack exits after one pack; some v2 peers close
+			// after one command). The backfill is a second fetch round, so
+			// reopen the session and retry.
+			backfillSess, handshakeErr := cl.Handshake(ctx, req)
+			if handshakeErr != nil {
+				return nil, handshakeErr
+			}
+			defer ioutil.CheckClose(backfillSess, &err)
+			if err := r.backfillAnnotatedTags(ctx, backfillSess, remoteRefs, peeled); err != nil {
 				return nil, err
 			}
 		}
@@ -648,6 +650,58 @@ func referenceStorageFromRefs(refs []*plumbing.Reference, filterPeeled bool) mem
 		_ = refStore.SetReference(ref)
 	}
 	return refStore
+}
+
+// peeledTargets maps each advertised tag name to its peeled target hash, from
+// the raw advertisement. An annotated tag has a "<name>^{}" entry whose hash is
+// the object the tag ultimately points at; a lightweight tag has none, so its
+// target is the tag's own hash. Used to gate tag following on target
+// reachability without fetching the tag object first.
+func peeledTargets(refs []*plumbing.Reference) map[string]plumbing.Hash {
+	peeled := make(map[string]plumbing.Hash)
+	for _, ref := range refs {
+		name := ref.Name().String()
+		if !strings.HasSuffix(name, peeledSuffix) {
+			continue
+		}
+		peeled[strings.TrimSuffix(name, peeledSuffix)] = ref.Hash()
+	}
+	return peeled
+}
+
+// isDeadSession reports whether err signals the session is closed and a second
+// fetch round must reopen it: a closed pipe (a one-shot v0/v1 upload-pack, or
+// a v2 peer that closes after one command) or a connection reset by the peer.
+func isDeadSession(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, io.EOF) {
+		return true
+	}
+	var netErr *net.OpError
+	return errors.As(err, &netErr)
+}
+
+// filterShallowHaves removes shallow-boundary commits from the haves list.
+// Shallow commits are already communicated to the server via "shallow"
+// packets; including them in HAVE would lead the server to treat their
+// ancestors as present on the client, contradicting the shallow boundary.
+func filterShallowHaves(haves, shallows []plumbing.Hash) []plumbing.Hash {
+	if len(shallows) == 0 {
+		return haves
+	}
+	shallowSet := make(map[plumbing.Hash]bool, len(shallows))
+	for _, h := range shallows {
+		shallowSet[h] = true
+	}
+	filtered := haves[:0]
+	for _, h := range haves {
+		if !shallowSet[h] {
+			filtered = append(filtered, h)
+		}
+	}
+	return filtered
 }
 
 // unstorableRefName reports whether err says the storer refused name for what
@@ -1432,6 +1486,71 @@ func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List
 	return ErrExactSHA1NotSupported
 }
 
+func (r *Remote) backfillAnnotatedTags(
+	ctx context.Context,
+	sess transport.Session,
+	remoteRefs memory.ReferenceStorage,
+	peeled map[string]plumbing.Hash,
+) error {
+	var wants []plumbing.Hash
+	for _, ref := range remoteRefs {
+		if !ref.Name().IsTag() {
+			continue
+		}
+
+		// Only follow a tag whose target is already present locally, as git's
+		// backfill_tags does: a tag pointing at an object the fetch did not
+		// reach (e.g. a tag on an unfetched branch) is left alone, rather than
+		// pulling its target in just to create the tag ref. The peeled target
+		// comes from the advertisement; a lightweight tag has no peeled entry,
+		// so its target is the tag's own hash.
+		target, ok := peeled[ref.Name().String()]
+		if !ok {
+			target = ref.Hash()
+		}
+		targetPresent, err := objectExists(r.s, target)
+		if err != nil {
+			return err
+		}
+		if !targetPresent {
+			continue
+		}
+		if ref.Hash() == target {
+			continue
+		}
+		tagPresent, err := objectExists(r.s, ref.Hash())
+		if err != nil {
+			return err
+		}
+		if !tagPresent {
+			wants = append(wants, ref.Hash())
+		}
+	}
+	if len(wants) == 0 {
+		return nil
+	}
+
+	localRefs, err := reference.References(r.s)
+	if err != nil {
+		return err
+	}
+	haves, err := getHaves(localRefs, remoteRefs, r.s, 0)
+	if err != nil {
+		return err
+	}
+	shallows, err := r.s.Shallow()
+	if err != nil {
+		return err
+	}
+	haves = filterShallowHaves(haves, shallows)
+
+	err = sess.Fetch(ctx, r.s, &transport.FetchRequest{Wants: wants, Haves: haves})
+	if errors.Is(err, transport.ErrNoChange) {
+		return nil
+	}
+	return err
+}
+
 func (r *Remote) updateLocalReferenceStorage(
 	specs []config.RefSpec,
 	fetchedRefs, remoteRefs memory.ReferenceStorage,
@@ -1439,16 +1558,11 @@ func (r *Remote) updateLocalReferenceStorage(
 	tagMode plumbing.TagMode,
 	force bool,
 ) (updated bool, err error) {
-	isWildcard := true
 	forceNeeded := false
 
 	shallows, _ := r.s.Shallow()
 
 	for i, spec := range specs {
-		if !spec.IsWildcard() {
-			isWildcard = false
-		}
-
 		for _, ref := range specToRefs[i] {
 			if ref.Type() != plumbing.HashReference {
 				continue
@@ -1508,8 +1622,15 @@ func (r *Remote) updateLocalReferenceStorage(
 		return updated, nil
 	}
 
+	// Tag-following mirrors canonical git's default auto-follow: any
+	// advertised tag whose target object is now present locally gets a local
+	// ref (builtin/fetch.c, backfill_tags). Use the advertised refs as the
+	// tag source so non-wildcard fetches -- e.g. a single-branch fetch whose
+	// refspec matches no tags -- still pick up tags whose targets were
+	// fetched, including tags made reachable by a deepen. AllTags already
+	// pulled every tag via the refs/tags/* refspec, so fetchedRefs suffices.
 	tags := fetchedRefs
-	if isWildcard {
+	if tagMode == plumbing.TagFollowing {
 		tags = remoteRefs
 	}
 	tagUpdated, tagForceNeeded, err := r.buildFetchedTags(tags, tagMode == plumbing.AllTags, force)
@@ -1537,13 +1658,20 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 			continue
 		}
 
-		_, err := r.s.EncodedObject(plumbing.AnyObject, ref.Hash())
+		obj, err := object.GetObject(r.s, ref.Hash())
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			continue
 		}
-
 		if err != nil {
 			return updated, forceNeeded, err
+		}
+		if tag, ok := obj.(*object.Tag); ok {
+			if _, err := object.GetObject(r.s, tag.Target); err != nil {
+				if errors.Is(err, plumbing.ErrObjectNotFound) {
+					continue
+				}
+				return updated, forceNeeded, err
+			}
 		}
 
 		old, err := r.s.Reference(ref.Name())
@@ -1577,7 +1705,6 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 			updated = true
 		}
 	}
-
 	return updated, forceNeeded, err
 }
 
