@@ -27,7 +27,11 @@ const (
 )
 
 // UpdateObjectStorage updates the storer with the objects in the given
-// packfile.
+// packfile. If s implements [storer.PackfileWriter], the packfile is written
+// with [WritePackfileToObjectStorage]; otherwise it is parsed into s.
+//
+// UpdateObjectStorage may return without reading data that follows the pack
+// trailer. Callers that need the rest of the stream must read it themselves.
 func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
@@ -85,6 +89,9 @@ func SupportsPromisorPacks(s storer.Storer) bool {
 // ErrPromisorPacksUnsupported rather than silently producing the corruption this
 // marking exists to prevent. Storage that writes no packfiles at all stores the
 // objects individually, where there is no marking to lose.
+//
+// Like UpdateObjectStorage, UpdatePromisorObjectStorage may return without
+// reading data that follows the pack trailer.
 func UpdatePromisorObjectStorage(s storer.Storer, packfile io.Reader, marker string) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
@@ -110,7 +117,10 @@ func UpdatePromisorObjectStorage(s storer.Storer, packfile io.Reader, marker str
 }
 
 // WritePackfileToObjectStorage writes all the packfile objects into the given
-// object storage.
+// object storage. If the writer returned by sw implements
+// [storer.PackReader], its ReadPack is called with packfile, which may then
+// be left unread past the pack trailer. Otherwise packfile is copied to the
+// writer until EOF.
 func WritePackfileToObjectStorage(
 	sw storer.PackfileWriter,
 	packfile io.Reader,
@@ -126,7 +136,12 @@ func WritePackfileToObjectStorage(
 func copyPackfile(w io.WriteCloser, packfile io.Reader) (err error) {
 	defer ioutil.CheckClose(w, &err)
 
-	n, err := ioutil.CopyBufferPool(w, packfile)
+	var n int64
+	if pr, ok := w.(storer.PackReader); ok {
+		n, err = pr.ReadPack(packfile)
+	} else {
+		n, err = ioutil.CopyBufferPool(w, packfile)
+	}
 	if err == nil && n == 0 {
 		return ErrEmptyPackfile
 	}

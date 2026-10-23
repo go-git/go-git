@@ -117,6 +117,17 @@ type PromisorPackfileWriter interface {
 	PromisorPackfileWriter(marker string) (io.WriteCloser, error)
 }
 
+// PackReader is an optional interface for the writer returned by
+// [PackfileWriter] or [PromisorPackfileWriter]. A writer that implements it
+// is given the packfile's source instead of having the packfile copied to it.
+type PackReader interface {
+	// ReadPack reads a packfile from r and stores it as the writer's Write
+	// would, returning once the pack's trailing checksum has been read rather
+	// than when r reaches EOF, so r may be left unread past the pack. It
+	// returns the number of bytes read from r. An empty r returns 0, nil.
+	ReadPack(r io.Reader) (n int64, err error)
+}
+
 // PromisorObjectStorer is an optional interface for ObjectStorer
 // implementations that track which packs came from a promisor remote.
 //

@@ -758,6 +758,81 @@ func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
 		"a non-cancellation negotiation error must close the response body")
 }
 
+// TestFetchKeepsConnection checks that a fetch into storage that stops reading
+// at the pack trailer still reads the response to its end, so the connection
+// is reused. The response is chunked, as git http-backend sends it, and the
+// server ends it only once the pack is stored, so the end of the body is
+// only seen by reading on after the pack.
+func TestFetchKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	pack, err := f.Packfile()
+	require.NoError(t, err)
+	packData, err := io.ReadAll(pack)
+	require.NoError(t, err)
+
+	stored := make(chan struct{}, 1)
+	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		_, _ = w.Write([]byte("0008NAK\n"))
+		_, _ = w.Write(packData)
+		w.(http.Flusher).Flush()
+
+		select {
+		case <-stored:
+		case <-r.Context().Done():
+		}
+	})
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
+	}
+
+	for range 2 {
+		st := &packStoredStorage{Storage: initBareStorage(t, t.TempDir()), stored: stored}
+		require.NoError(t, session.Fetch(context.Background(), st, &transport.FetchRequest{
+			Wants: []plumbing.Hash{plumbing.NewHash(f.Head)},
+		}))
+		require.NoError(t, st.HasEncodedObject(plumbing.NewHash(f.Head)))
+	}
+
+	assert.Equal(t, int64(1), conns.Load())
+}
+
+// packStoredStorage signals stored when a packfile written to it is closed.
+type packStoredStorage struct {
+	*filesystem.Storage
+	stored chan<- struct{}
+}
+
+func (s *packStoredStorage) PackfileWriter() (io.WriteCloser, error) {
+	w, err := s.Storage.PackfileWriter()
+	if err != nil {
+		return nil, err
+	}
+
+	return &packStoredWriter{WriteCloser: w, PackReader: w.(storer.PackReader), stored: s.stored}, nil
+}
+
+type packStoredWriter struct {
+	io.WriteCloser
+	storer.PackReader
+	stored chan<- struct{}
+}
+
+func (w *packStoredWriter) Close() error {
+	defer func() { w.stored <- struct{}{} }()
+	return w.WriteCloser.Close()
+}
+
 // serveInfoRefs answers /info/refs with the given content type and body, and
 // nothing else, so the handshake is decided purely by that response.
 func serveInfoRefs(t testing.TB, contentType, body string) *url.URL {

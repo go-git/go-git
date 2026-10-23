@@ -1,7 +1,6 @@
 package sideband
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -37,7 +36,8 @@ type Demuxer struct {
 	s *pktline.Scanner
 
 	max     int
-	pending []byte
+	pending []byte // rest of the current packet; aliases the scanner buffer
+	err     error  // first error returned by Read
 
 	// Progress is where the progress messages are stored
 	Progress Progress
@@ -67,13 +67,22 @@ func NewDemuxer(t Type, r io.Reader) *Demuxer {
 //
 // Read will return io.EOF when a flush packet is received after reading all
 // the PackData channel data.
+//
+// After Read returns an error, including io.EOF, later calls return the same
+// error without reading from the underlying reader, so any data following
+// the flush-pkt is left unread.
 func (d *Demuxer) Read(b []byte) (read int, err error) {
+	if d.err != nil {
+		return 0, d.err
+	}
+
 	req := len(b)
 	for read < req {
 		n, err := d.doRead(b[read:req])
 		read += n
 
 		if err != nil {
+			d.err = err
 			return read, err
 		}
 	}
@@ -82,28 +91,22 @@ func (d *Demuxer) Read(b []byte) (read int, err error) {
 }
 
 func (d *Demuxer) doRead(b []byte) (int, error) {
+	if len(d.pending) > 0 {
+		n := copy(b, d.pending)
+		d.pending = d.pending[n:]
+		return n, nil
+	}
+
 	read, err := d.nextPackData()
-	size := len(read)
-	wanted := len(b)
+	n := copy(b, read)
+	// The scanner keeps read valid until its next Scan, which happens only
+	// once pending is drained, so the rest of the packet is not copied.
+	d.pending = read[n:]
 
-	if size > wanted {
-		d.pending = bytes.Clone(read[wanted:])
-	}
-
-	if wanted > size {
-		wanted = size
-	}
-
-	size = copy(b, read[:wanted])
-	return size, err
+	return n, err
 }
 
 func (d *Demuxer) nextPackData() ([]byte, error) {
-	content := d.getPending()
-	if len(content) != 0 {
-		return content, nil
-	}
-
 	if !d.s.Scan() {
 		if err := d.s.Err(); err != nil {
 			return nil, err
@@ -118,7 +121,7 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return nil, ErrMaxPackedExceeded
 	}
 
-	content = d.s.Bytes()
+	content := d.s.Bytes()
 	if len(content) < 1 {
 		return nil, fmt.Errorf("invalid sideband pktline %04x %q", l, content)
 	}
@@ -138,15 +141,4 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 	}
 
 	return nil, nil
-}
-
-func (d *Demuxer) getPending() (b []byte) {
-	if len(d.pending) == 0 {
-		return nil
-	}
-
-	content := d.pending
-	d.pending = nil
-
-	return content
 }
