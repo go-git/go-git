@@ -809,6 +809,11 @@ func TestHandshakeRejectsNonSmartResponse(t *testing.T) {
 			wantNotMsg:  []string{"tail"},
 		},
 		{
+			name:        "an oversized content type is bounded",
+			contentType: "text/" + strings.Repeat("x", maxRedactedComponent),
+			wantInMsg:   []string{`content type "TRUNCATED"`},
+		},
+		{
 			name:        "dumb ref list",
 			contentType: "text/plain",
 			body:        "6ecf0ef2c2dffb796033e5a02219af86ec6584e5\trefs/heads/master\n",

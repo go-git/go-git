@@ -341,7 +341,7 @@ func notSmartError(resp *http.Response, base sessionBase) error {
 		fetched = resp.Request.URL
 	}
 
-	mediaType := contentMediaType(resp.Header.Get("Content-Type"))
+	mediaType := bounded(contentMediaType(resp.Header.Get("Content-Type")))
 	if mediaType == "text/plain" {
 		var head bytes.Buffer
 		_, _ = head.ReadFrom(io.LimitReader(resp.Body, maxQuotedBodySize))
