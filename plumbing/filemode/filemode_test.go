@@ -357,6 +357,36 @@ func (s *ModeSuite) TestIsRegular() {
 	}
 }
 
+func (s *ModeSuite) TestCanonical() {
+	for _, test := range [...]struct {
+		input    FileMode
+		expected FileMode
+	}{
+		{input: 0o100644, expected: Regular},
+		{input: Deprecated, expected: Regular},
+		{input: 0o100011, expected: Regular},
+		{input: 0o100001, expected: Regular},
+		{input: 0o100010, expected: Regular},
+		{input: 0o300644, expected: Regular},
+		{input: 0o100755, expected: Executable},
+		{input: 0o100100, expected: Executable},
+		{input: 0o100111, expected: Executable},
+		{input: 0o120000, expected: Symlink},
+		{input: 0o120777, expected: Symlink},
+		{input: 0o040000, expected: Dir},
+		{input: 0o040755, expected: Dir},
+		{input: 0o160000, expected: Submodule},
+		{input: 0o160777, expected: Submodule},
+		{input: Empty, expected: Submodule},
+		{input: FileMode(0o42), expected: Submodule},
+	} {
+		comment := fmt.Sprintf("input = %07o", uint32(test.input))
+		s.Equal(test.expected, test.input.Canonical(), comment)
+		s.Equal(test.expected, test.expected.Canonical(), comment)
+		s.False(test.expected.IsMalformed(), comment)
+	}
+}
+
 func (s *ModeSuite) TestIsFile() {
 	for _, test := range [...]struct {
 		mode     FileMode

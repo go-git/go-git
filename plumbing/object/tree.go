@@ -308,7 +308,7 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 		if err != nil {
 			return err
 		}
-		mode = canonicalTreeMode(mode)
+		mode = mode.Canonical()
 
 		nameSlice, err := r.ReadSlice(0)
 		if err == bufio.ErrBufferFull {
@@ -431,22 +431,6 @@ func readTreeEntryMode(r *bufio.Reader) (filemode.FileMode, error) {
 	}
 }
 
-func canonicalTreeMode(mode filemode.FileMode) filemode.FileMode {
-	switch mode & 0o170000 {
-	case 0o040000:
-		return filemode.Dir
-	case 0o100000:
-		if mode&0o111 != 0 {
-			return filemode.Executable
-		}
-		return filemode.Regular
-	case 0o120000:
-		return filemode.Symlink
-	default:
-		return filemode.Submodule
-	}
-}
-
 // Encode transforms a Tree into a plumbing.EncodedObject.
 //
 // The tree is run through Tree.Validate before any bytes are written,
@@ -500,11 +484,11 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 // together via errors.Join.
 //
 // Two fsck_tree warnings — zero-padded modes and the non-canonical
-// 0100664 bits — are not surfaced here. Both rely on inspecting the
-// original octal string from the wire, which canonicalTreeMode
-// discards during Decode. Detecting them would require a parallel
-// raw-mode field on TreeEntry; the structural rules below are the
-// load-bearing ones for refusing malformed trees.
+// 0100664 bits — are not surfaced here. Both need the mode as stored,
+// which Decode replaces with [filemode.FileMode.Canonical]. Detecting
+// them would require a parallel raw-mode field on TreeEntry; the
+// structural rules below are the load-bearing ones for refusing
+// malformed trees.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/fsck.c#L616-L800
 func (t *Tree) Validate() error {
@@ -542,8 +526,8 @@ func (t *Tree) Validate() error {
 			}
 		}
 
-		// Mode validation against the canonical set. Decode normalises
-		// the wire bytes via canonicalTreeMode, so this rule mainly
+		// Mode validation against the canonical set. Decode stores
+		// FileMode.Canonical of the wire mode, so this rule mainly
 		// catches programmatically-built trees with garbage modes;
 		// the zero-padded-mode and non-canonical-bit checks fsck_tree
 		// runs against the raw wire form are out of reach without

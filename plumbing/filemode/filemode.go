@@ -55,8 +55,6 @@ const (
 //
 // Example: "40000" means Dir, "100644" means Regular.
 //
-// To parse a mode as Git reads it from a tree object, use [FromBytes].
-//
 // Please note this function does not check if the returned FileMode
 // is valid in git or if it is malformed.  For instance, "1" will
 // return the malformed FileMode(1) and a nil error.
@@ -193,6 +191,41 @@ func (m FileMode) IsFile() bool {
 		m == Deprecated ||
 		m == Executable ||
 		m == Symlink
+}
+
+// Canonical returns the mode Git acts on for a tree entry stored with
+// mode m, as Git's canon_mode[1] does. It is meant for modes read from
+// tree objects: [Empty], which go-git elsewhere uses for an absent
+// entry, becomes [Submodule] like any other unknown type.
+//
+// Only the file type bits (m & 0o170000) and the owner execute bit
+// (0o100) count:
+//
+//   - type 0o100000 is [Executable] if the owner execute bit is set,
+//     and [Regular] otherwise, so [Deprecated] and 0o100011 both
+//     become Regular;
+//   - type 0o120000 is [Symlink] and type 0o040000 is [Dir], whatever
+//     their permission bits;
+//   - any other type is [Submodule].
+//
+// The result is never malformed (see [FileMode.IsMalformed]), and
+// Canonical of a canonical mode returns it unchanged.
+//
+// [1]: https://github.com/git/git/blob/v2.55.0/object.h#L133-L154
+func (m FileMode) Canonical() FileMode {
+	switch m & 0o170000 {
+	case 0o100000:
+		if m&0o100 != 0 {
+			return Executable
+		}
+		return Regular
+	case 0o120000:
+		return Symlink
+	case 0o040000:
+		return Dir
+	default:
+		return Submodule
+	}
 }
 
 // ToOSFileMode returns the os.FileMode to be used when creating file
