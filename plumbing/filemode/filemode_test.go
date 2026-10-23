@@ -82,6 +82,10 @@ func (s *ModeSuite) TestFromBytes() {
 		{input: "040000", expected: Dir},
 		{input: "0", expected: Empty},
 		{input: "42", expected: FileMode(0o42)},
+		{input: "00000000000100644", expected: Regular},
+		{input: "000000000000000000000000100644", expected: Regular},
+		{input: "37777777777", expected: FileMode(0xFFFFFFFF)},
+		{input: "1234567012", expected: FileMode(0o1234567012)},
 	} {
 		comment := fmt.Sprintf("input = %q", test.input)
 		obtained, err := FromBytes([]byte(test.input))
@@ -92,13 +96,16 @@ func (s *ModeSuite) TestFromBytes() {
 
 func (s *ModeSuite) TestFromBytesErrors() {
 	for _, input := range [...]string{
-		"",         // empty
-		"9",        // non-octal digit
-		"09",       // non-octal digit
-		"mode",     // letters
-		"12345678", // too long (>7 chars)
-		"0x81a4",   // hex prefix
-		"-100644",  // negative
+		"",                           // empty
+		"9",                          // non-octal digit
+		"09",                         // non-octal digit
+		"12345678",                   // non-octal digit, past the old 7-digit limit
+		"40000000000",                // wider than 32 bits
+		"1000000100644",              // wider than 32 bits
+		"77777777777777777777100644", // wider than 32 bits
+		"mode",                       // letters
+		"0x81a4",                     // hex prefix
+		"-100644",                    // negative
 	} {
 		comment := fmt.Sprintf("input = %q", input)
 		obtained, err := FromBytes([]byte(input))
@@ -111,6 +118,7 @@ func (s *ModeSuite) TestFromBytesEquivalence() {
 	// FromBytes should produce the same results as New for valid git modes
 	for _, m := range [...]string{
 		"40000", "100644", "100664", "100755", "120000", "160000",
+		"00000000000100644",
 	} {
 		expected, err1 := New(m)
 		s.NoError(err1)

@@ -301,25 +301,12 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	var prevSortName string
 	for {
-		// Use ReadSlice to get a view into bufio's internal buffer,
-		// avoiding a string allocation for the mode (which is parsed
-		// into a uint32 immediately and doesn't need to persist).
-		modeSlice, err := r.ReadSlice(' ')
-		if err != nil {
-			if err == io.EOF {
-				if len(modeSlice) != 0 {
-					return fmt.Errorf("%w: missing mode terminator", ErrMalformedTree)
-				}
-				break
-			}
-
-			return err
+		mode, err := readTreeEntryMode(r)
+		if err == io.EOF {
+			break
 		}
-		modeSlice = modeSlice[:len(modeSlice)-1] // strip delimiter
-
-		mode, err := filemode.FromBytes(modeSlice)
 		if err != nil {
-			return fmt.Errorf("%w: malformed mode", ErrMalformedTree)
+			return err
 		}
 		mode = canonicalTreeMode(mode)
 
@@ -391,6 +378,57 @@ func treeEntrySortName(e *TreeEntry) string {
 		return e.Name + "/"
 	}
 	return e.Name
+}
+
+// readTreeEntryMode reads the mode of the next tree entry from r,
+// consuming the space that ends it. It returns io.EOF when r holds no
+// further entries.
+//
+// Git's parse_mode[1] accepts any nonempty run of octal digits and keeps
+// the low 16 bits of a wider value. readTreeEntryMode keeps the low 32
+// bits; [filemode.FileMode.Canonical] reads only bits both keep, so the
+// canonical mode is the one Git acts on. A mode longer than r's buffer
+// is read in chunks, so memory use does not grow with its length.
+//
+// [1]: https://github.com/git/git/blob/v2.55.0/object.h#L200-L215
+func readTreeEntryMode(r *bufio.Reader) (filemode.FileMode, error) {
+	var (
+		mode uint32
+		seen bool
+	)
+	for {
+		// ReadSlice returns a view into bufio's internal buffer, which
+		// avoids allocating for a mode that is parsed immediately.
+		chunk, err := r.ReadSlice(' ')
+		switch err {
+		case nil:
+			chunk = chunk[:len(chunk)-1] // strip delimiter
+		case bufio.ErrBufferFull:
+		case io.EOF:
+			if !seen && len(chunk) == 0 {
+				return filemode.Empty, io.EOF
+			}
+			return filemode.Empty, fmt.Errorf("%w: missing mode terminator", ErrMalformedTree)
+		default:
+			return filemode.Empty, err
+		}
+
+		for _, c := range chunk {
+			if c < '0' || c > '7' {
+				return filemode.Empty, fmt.Errorf("%w: malformed mode", ErrMalformedTree)
+			}
+			// Overflow wraps, keeping the low 32 bits.
+			mode = mode<<3 | uint32(c-'0')
+		}
+		seen = seen || len(chunk) > 0
+
+		if err == nil {
+			if !seen {
+				return filemode.Empty, fmt.Errorf("%w: malformed mode", ErrMalformedTree)
+			}
+			return filemode.FileMode(mode), nil
+		}
+	}
 }
 
 func canonicalTreeMode(mode filemode.FileMode) filemode.FileMode {

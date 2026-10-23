@@ -3,7 +3,9 @@ package filemode
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 )
@@ -53,6 +55,8 @@ const (
 //
 // Example: "40000" means Dir, "100644" means Regular.
 //
+// To parse a mode as Git reads it from a tree object, use [FromBytes].
+//
 // Please note this function does not check if the returned FileMode
 // is valid in git or if it is malformed.  For instance, "1" will
 // return the malformed FileMode(1) and a nil error.
@@ -65,22 +69,32 @@ func New(s string) (FileMode, error) {
 	return FileMode(n), nil
 }
 
-// FromBytes parses a FileMode from a byte slice containing an octal
-// number. This avoids allocating a string when parsing from binary data.
+// FromBytes parses b, a run of octal digits such as the mode of a tree
+// entry, as a FileMode. It accepts leading zeros, so zero-padded modes
+// such as "040000", written by early Git versions, or
+// "00000000000100644" parse. It avoids allocating a string when
+// parsing from binary data.
 //
-// Please note this function does not check if the returned FileMode
-// is valid in git or if it is malformed.
+// If b is empty, contains a byte other than '0' to '7', or holds a
+// value wider than 32 bits, FromBytes returns [Empty] and an error, as
+// [New] does.
+//
+// FromBytes does not check whether the result is a valid tree entry
+// mode. Use [FileMode.Canonical] to normalize the result.
 func FromBytes(b []byte) (FileMode, error) {
-	if len(b) == 0 || len(b) > 7 {
-		return Empty, fmt.Errorf("invalid mode length: %d", len(b))
+	if len(b) == 0 {
+		return Empty, errors.New("empty mode")
 	}
 
 	var mode uint32
 	for _, c := range b {
 		if c < '0' || c > '7' {
-			return Empty, fmt.Errorf("invalid octal character: %c", c)
+			return Empty, fmt.Errorf("invalid octal character: %q", c)
 		}
-		mode = mode*8 + uint32(c-'0')
+		if mode > math.MaxUint32>>3 {
+			return Empty, errors.New("mode wider than 32 bits")
+		}
+		mode = mode<<3 | uint32(c-'0')
 	}
 	return FileMode(mode), nil
 }

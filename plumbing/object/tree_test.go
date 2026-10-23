@@ -1804,6 +1804,14 @@ func TestTreeDecodeRejectsMalformedEntries(t *testing.T) {
 			name: "trailing partial entry",
 			body: append(encodeRawTreeEntries(rawTreeEntry{"100644", "foo", hash}), []byte("100644 trailing")...),
 		},
+		{
+			name: "long mode without terminator",
+			body: []byte(strings.Repeat("0", 5000)),
+		},
+		{
+			name: "long mode with non-octal byte",
+			body: encodeRawTreeEntries(rawTreeEntry{strings.Repeat("0", 5000) + "9", "foo", hash}),
+		},
 	}
 
 	for _, tc := range cases {
@@ -1813,6 +1821,37 @@ func TestTreeDecodeRejectsMalformedEntries(t *testing.T) {
 			tree, err := decodeRawTree(t, tc.body)
 			require.ErrorIs(t, err, ErrMalformedTree)
 			assert.NotNil(t, tree)
+		})
+	}
+}
+
+func TestTreeDecodeLongModes(t *testing.T) {
+	t.Parallel()
+
+	hash := bytes.Repeat([]byte{0xAA}, 20)
+
+	cases := []struct {
+		name string
+		mode string
+		want filemode.FileMode
+	}{
+		{name: "zero-padded", mode: "00000000000100644", want: filemode.Regular},
+		{name: "wider than 32 bits", mode: "1000000100644", want: filemode.Regular},
+		{name: "wider than 64 bits", mode: "77777777777777777777100755", want: filemode.Executable},
+		{name: "fills read buffer", mode: strings.Repeat("0", 4090) + "100644", want: filemode.Regular},
+		{name: "exceeds read buffer", mode: strings.Repeat("0", 5000) + "100644", want: filemode.Regular},
+		{name: "exceeds read buffer executable", mode: strings.Repeat("0", 5000) + "100755", want: filemode.Executable},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tree, err := decodeRawTree(t, encodeRawTreeEntries(rawTreeEntry{tc.mode, "a", hash}))
+			require.NoError(t, err)
+			require.Len(t, tree.Entries, 1)
+			assert.Equal(t, tc.want, tree.Entries[0].Mode)
+			assert.Equal(t, "a", tree.Entries[0].Name)
 		})
 	}
 }
