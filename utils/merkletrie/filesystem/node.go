@@ -52,6 +52,19 @@ type Options struct {
 	// Requires Index to be set: without an index there is no way to identify
 	// tracked entries, so the scope is treated as a no-op.
 	IgnoreScope *gitignore.Scope
+
+	// Prefix, if non-empty, scopes the walk to the subtree at that path: only
+	// entries under it, and the directories on the way to it, are visited.
+	// Entries of any other directory are left out as the directory is listed,
+	// so their contents are never read or hashed. The tree the walk yields is
+	// then the subtree of the full walk's tree, with the same paths and the
+	// same decisions taken about each of them: the prefix's ancestors are
+	// still listed and still apply their ignore scope and their skip rules to
+	// the components of the path.
+	//
+	// It is the caller's responsibility to request a prefix whose entries are
+	// wanted; the empty prefix is the whole tree, as before.
+	Prefix string
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -120,41 +133,142 @@ func NewRootNodeWithOptions(
 	submodules map[string]plumbing.Hash,
 	options Options,
 ) noder.Noder {
-	var idxMap map[string]*index.Entry
-	var trackedDirs map[string]struct{}
+	idxMap, trackedDirs := indexMaps(options.Index, options.IgnoreScope, options.Prefix)
 
-	if options.Index != nil {
-		idxMap = make(map[string]*index.Entry, len(options.Index.Entries))
-		for _, entry := range options.Index.Entries {
-			idxMap[entry.Name] = entry
-		}
+	return &node{
+		fs:            fs,
+		submodules:    submodules,
+		idx:           options.Index,
+		idxMap:        idxMap,
+		trackedDirs:   trackedDirs,
+		options:       &options,
+		isDir:         true,
+		scope:         options.IgnoreScope,
+		scopeResolved: true,
+	}
+}
 
-		if options.IgnoreScope != nil {
-			trackedDirs = make(map[string]struct{})
-			for _, entry := range options.Index.Entries {
-				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
-					if _, ok := trackedDirs[parent]; ok {
-						break
-					}
-					trackedDirs[parent] = struct{}{}
-				}
+// indexMaps returns the lookups the walk needs from the index: the entry of
+// each path, and the directories a tracked entry lives under. The latter is
+// only consulted to keep a tracked subtree out of an ignored directory, so it
+// is built only when an ignore scope is in use.
+//
+// A scoped walk keeps only the entries it can reach: the prefix, everything
+// under it, and the ancestor paths on the way to it. Building the maps from the
+// whole index would make setup time and memory proportional to the index rather
+// than to the subtree, which is the cost the scope exists to remove. Dropping
+// an unrelated sibling changes nothing about the walk because prefixWants
+// already refuses every name outside the prefix before it is looked up here.
+func indexMaps(idx *index.Index, scope *gitignore.Scope, prefix string) (map[string]*index.Entry, map[string]struct{}) {
+	if idx == nil {
+		return nil, nil
+	}
+
+	// Size the maps for the scoped walk when there is one, so the allocation
+	// does not follow the whole index either.
+	size := len(idx.Entries)
+	if prefix != "" {
+		size = 0
+		for _, entry := range idx.Entries {
+			if withinPrefix(entry.Name, prefix) {
+				size++
 			}
 		}
 	}
 
-	return &node{
-		fs:          fs,
-		submodules:  submodules,
-		idx:         options.Index,
-		idxMap:      idxMap,
-		trackedDirs: trackedDirs,
-		options:     &options,
-		isDir:       true,
-		// The root scope already accounts for the root's own ignore files, so
-		// it must not descend again.
-		scope:         options.IgnoreScope,
-		scopeResolved: true,
+	idxMap := make(map[string]*index.Entry, size)
+	for _, entry := range idx.Entries {
+		if !withinPrefix(entry.Name, prefix) {
+			continue
+		}
+		idxMap[entry.Name] = entry
 	}
+
+	if scope == nil {
+		return idxMap, nil
+	}
+
+	trackedDirs := make(map[string]struct{})
+	for name := range idxMap {
+		for parent := path.Dir(name); parent != "." && parent != "/"; parent = path.Dir(parent) {
+			if _, ok := trackedDirs[parent]; ok {
+				break
+			}
+			trackedDirs[parent] = struct{}{}
+		}
+	}
+
+	return idxMap, trackedDirs
+}
+
+// withinPrefix reports whether the entry at path is one a walk scoped to prefix
+// can reach: the prefix itself, an entry under it, or a directory on the way to
+// it. An empty prefix reaches everything. The last case is what keeps the
+// ancestors of a nested prefix, so the scoped walk still lists the directories
+// leading to it and their ignore scope still applies to its components.
+//
+// It mirrors the predicate of the same name on the index noder, which filters
+// the other side of the same diff.
+func withinPrefix(path, prefix string) bool {
+	if prefix == "" {
+		return true
+	}
+
+	if prefix == path || strings.HasPrefix(path, prefix+"/") {
+		return true
+	}
+
+	return strings.HasPrefix(prefix, path+"/")
+}
+
+// prefixComponents returns the slash-separated components of the walk's
+// prefix, or nil when the walk is not scoped to a subtree.
+func (n *node) prefixComponents() []string {
+	if n.options == nil || n.options.Prefix == "" {
+		return nil
+	}
+
+	return strings.Split(strings.Trim(n.options.Prefix, "/"), "/")
+}
+
+// prefixWants reports whether the entry of n's directory with the given name is
+// the component of the walk's prefix at this depth, and so has to be taken or
+// descended into. Every entry is wanted when the walk is not scoped, or once the
+// walk has reached the prefix and the prefix scopes nothing any more.
+//
+// The listing is not assumed to be ordered: an entry of an unrelated name is
+// skipped wherever it appears, which matters because the billy filesystem used on
+// disk returns entries in readdir order.
+func (n *node) prefixWants(name string) bool {
+	prefix := n.prefixComponents()
+	if prefix == nil {
+		return true
+	}
+
+	components := n.pathComponents()
+	if len(components) >= len(prefix) {
+		return true
+	}
+
+	return name == prefix[len(components)]
+}
+
+// scopedChildren reports whether all the children of n are outside the prefix.
+// It holds for a directory on the way to the prefix that is past the directory
+// the prefix names: no path below it begins with the prefix, so the walk stops
+// rather than descending into it.
+func (n *node) scopedChildren() bool {
+	prefix := n.prefixComponents()
+	if prefix == nil {
+		return false
+	}
+
+	components := n.pathComponents()
+	if len(components) == 0 || len(components) >= len(prefix) {
+		return false
+	}
+
+	return components[len(components)-1] != prefix[len(components)-1]
 }
 
 // Hash the hash of a filesystem is the result of concatenating the computed
@@ -223,6 +337,10 @@ func (n *node) calculateChildren() error {
 		return err
 	}
 
+	if n.scopedChildren() {
+		return nil
+	}
+
 	for _, file := range files {
 		if _, ok := ignore[file.Name()]; ok {
 			continue
@@ -237,6 +355,10 @@ func (n *node) calculateChildren() error {
 		}
 
 		if n.shouldSkipIgnored(file.Name(), fi.IsDir()) {
+			continue
+		}
+
+		if !n.prefixWants(file.Name()) {
 			continue
 		}
 
@@ -336,8 +458,6 @@ func (n *node) newChildNode(file os.FileInfo) (*node, error) {
 		trackedDirs: n.trackedDirs,
 		options:     n.options,
 
-		// The child inherits this directory's scope and resolves its own on
-		// its first listing.
 		scope: n.scope,
 
 		path:    path,
