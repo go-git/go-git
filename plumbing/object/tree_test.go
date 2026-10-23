@@ -1,20 +1,25 @@
 package object
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
+	"os/exec"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v6/osfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
@@ -1804,6 +1809,14 @@ func TestTreeDecodeRejectsMalformedEntries(t *testing.T) {
 			name: "trailing partial entry",
 			body: append(encodeRawTreeEntries(rawTreeEntry{"100644", "foo", hash}), []byte("100644 trailing")...),
 		},
+		{
+			name: "long mode without terminator",
+			body: []byte(strings.Repeat("0", 5000)),
+		},
+		{
+			name: "long mode with non-octal byte",
+			body: encodeRawTreeEntries(rawTreeEntry{strings.Repeat("0", 5000) + "9", "foo", hash}),
+		},
 	}
 
 	for _, tc := range cases {
@@ -1817,26 +1830,212 @@ func TestTreeDecodeRejectsMalformedEntries(t *testing.T) {
 	}
 }
 
+func TestTreeDecodeLongModes(t *testing.T) {
+	t.Parallel()
+
+	hash := bytes.Repeat([]byte{0xAA}, 20)
+
+	cases := []struct {
+		name string
+		mode string
+		want filemode.FileMode
+	}{
+		{name: "zero-padded", mode: "00000000000100644", want: filemode.Regular},
+		{name: "wider than 32 bits", mode: "1000000100644", want: filemode.Regular},
+		{name: "wider than 64 bits", mode: "77777777777777777777100755", want: filemode.Executable},
+		{name: "fills read buffer", mode: strings.Repeat("0", 4090) + "100644", want: filemode.Regular},
+		{name: "exceeds read buffer", mode: strings.Repeat("0", 5000) + "100644", want: filemode.Regular},
+		{name: "exceeds read buffer executable", mode: strings.Repeat("0", 5000) + "100755", want: filemode.Executable},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tree, err := decodeRawTree(t, encodeRawTreeEntries(rawTreeEntry{tc.mode, "a", hash}))
+			require.NoError(t, err)
+			require.Len(t, tree.Entries, 1)
+			assert.Equal(t, tc.want, tree.Entries[0].Mode)
+			assert.Equal(t, "a", tree.Entries[0].Name)
+		})
+	}
+}
+
 func TestTreeDecodeCanonicalizesModes(t *testing.T) {
 	t.Parallel()
 
 	hash := bytes.Repeat([]byte{0xAA}, 20)
-	body := encodeRawTreeEntries(
-		rawTreeEntry{"100664", "regular", hash},
-		rawTreeEntry{"100111", "executable", hash},
-		rawTreeEntry{"120777", "symlink", hash},
-		rawTreeEntry{"040755", "directory", hash},
-		rawTreeEntry{"42", "submodule", hash},
-	)
+	entries := []struct {
+		mode string
+		name string
+		want filemode.FileMode
+	}{
+		{"100664", "a-regular", filemode.Regular},
+		{"100111", "b-executable", filemode.Executable},
+		{"120777", "c-symlink", filemode.Symlink},
+		{"040755", "d-directory", filemode.Dir},
+		{"42", "e-submodule", filemode.Submodule},
+		{"100011", "f-group-other-execute", filemode.Regular},
+		{"100100", "g-owner-execute", filemode.Executable},
+		{"300644", "h-high-bits", filemode.Regular},
+		{"160777", "i-gitlink-bits", filemode.Submodule},
+		{"0", "j-zero", filemode.Submodule},
+	}
 
-	tree, err := decodeRawTree(t, body)
+	raw := make([]rawTreeEntry, 0, len(entries))
+	for _, e := range entries {
+		raw = append(raw, rawTreeEntry{e.mode, e.name, hash})
+	}
+
+	tree, err := decodeRawTree(t, encodeRawTreeEntries(raw...))
 	require.NoError(t, err)
-	require.Len(t, tree.Entries, 5)
-	assert.Equal(t, filemode.Regular, tree.Entries[0].Mode)
-	assert.Equal(t, filemode.Executable, tree.Entries[1].Mode)
-	assert.Equal(t, filemode.Symlink, tree.Entries[2].Mode)
-	assert.Equal(t, filemode.Dir, tree.Entries[3].Mode)
-	assert.Equal(t, filemode.Submodule, tree.Entries[4].Mode)
+	require.Len(t, tree.Entries, len(entries))
+	for i, e := range entries {
+		assert.Equal(t, e.name, tree.Entries[i].Name)
+		assert.Equal(t, e.want, tree.Entries[i].Mode, "mode %s", e.mode)
+	}
+}
+
+// gitCanonMode mirrors how Git reads a tree entry mode: parse_mode
+// accumulates in an unsigned int and stores a uint16_t, then canon_mode
+// keeps the file type and the owner execute bit. It is written
+// independently of readTreeEntryMode and FileMode.Canonical so that
+// each checks the other.
+func gitCanonMode(s string) filemode.FileMode {
+	var acc uint32
+	for _, c := range []byte(s) {
+		acc = acc<<3 + uint32(c-'0')
+	}
+	m := uint16(acc)
+
+	switch m & 0o170000 {
+	case 0o100000:
+		if m&0o100 != 0 {
+			return 0o100755
+		}
+		return 0o100644
+	case 0o120000:
+		return 0o120000
+	case 0o040000:
+		return 0o040000
+	default:
+		return 0o160000
+	}
+}
+
+func TestReadTreeEntryModeCanonicalMatchesGit(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{
+		"100644", "100011", "1000000100644", "77777777777777777777100644",
+		"37777777777", "40000000000", "0", "120777", "160777", "300644",
+		"177777", "777777777777",
+	} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+
+			mode, err := readTreeEntryMode(bufio.NewReader(strings.NewReader(input + " ")))
+			require.NoError(t, err)
+			assert.Equal(t, gitCanonMode(input), mode.Canonical())
+		})
+	}
+}
+
+func TestTreeDecodeEncodeCanonicalModes(t *testing.T) {
+	t.Parallel()
+
+	hash := bytes.Repeat([]byte{0xAA}, 20)
+	tree, err := decodeRawTree(t, encodeRawTreeEntries(
+		rawTreeEntry{"100011", "a", hash},
+		rawTreeEntry{"100664", "b", hash},
+		rawTreeEntry{"160777", "c", hash},
+	))
+	require.NoError(t, err)
+
+	obj := &plumbing.MemoryObject{}
+	require.NoError(t, tree.Encode(obj))
+
+	var got Tree
+	require.NoError(t, got.Decode(obj))
+	require.Len(t, got.Entries, 3)
+	assert.Equal(t, filemode.Regular, got.Entries[0].Mode)
+	assert.Equal(t, filemode.Regular, got.Entries[1].Mode)
+	assert.Equal(t, filemode.Submodule, got.Entries[2].Mode)
+}
+
+// TestTreeDecodeModesMatchGit writes trees whose entry modes Git
+// canonicalises and checks that Decode reads each mode as git ls-tree
+// prints it.
+func TestTreeDecodeModesMatchGit(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("oracle disabled: -short")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("oracle disabled: git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	runGit := func(t *testing.T, stdin []byte, args ...string) string {
+		t.Helper()
+
+		cmd := gitenv.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = dir
+		if stdin != nil {
+			cmd.Stdin = bytes.NewReader(stdin)
+		}
+		out, err := cmd.Output()
+		require.NoError(t, err, "git %s", strings.Join(args, " "))
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit(t, nil, "init", "-q", "--bare", ".")
+	blob, err := hex.DecodeString(runGit(t, []byte("hello\n"), "hash-object", "-w", "--stdin"))
+	require.NoError(t, err)
+
+	sto := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
+	// t.Cleanup rather than defer: the parallel subtests below run
+	// after this function returns.
+	t.Cleanup(func() { _ = sto.Close() })
+
+	cases := []struct {
+		name string
+		mode string
+	}{
+		{"00000000000100644", "00000000000100644"},
+		{"1000000100644", "1000000100644"},
+		{"long", strings.Repeat("0", 5000) + "100644"},
+		{"100011", "100011"},
+		{"100001", "100001"},
+		{"100010", "100010"},
+		{"100664", "100664"},
+		{"300644", "300644"},
+		{"100100", "100100"},
+		{"100755", "100755"},
+		{"120777", "120777"},
+		{"160777", "160777"},
+		{"0", "0"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := encodeRawTreeEntries(rawTreeEntry{tc.mode, "a", blob})
+			id := runGit(t, body, "hash-object", "--literally", "-t", "tree", "-w", "--stdin")
+
+			fields := strings.Fields(runGit(t, nil, "ls-tree", id))
+			require.NotEmpty(t, fields)
+			want, err := filemode.New(fields[0])
+			require.NoError(t, err)
+
+			tree, err := GetTree(sto, plumbing.NewHash(id))
+			require.NoError(t, err)
+			require.Len(t, tree.Entries, 1)
+			assert.Equal(t, want, tree.Entries[0].Mode)
+		})
+	}
 }
 
 func TestTreeDecodeEmptyClearsExistingEntries(t *testing.T) {
@@ -2339,7 +2538,7 @@ func TestTreeValidateRejectsFsckRules(t *testing.T) {
 			wantIs: ErrDuplicateEntry,
 		},
 		{
-			// canonicalTreeMode maps the non-canonical 0100664 down
+			// FileMode.Canonical maps the non-canonical 0100664 down
 			// to the canonical Regular mode at Decode, so Validate
 			// sees a well-formed entry and accepts it. The rule is
 			// kept in the table to document that the canonicalising
@@ -2429,7 +2628,7 @@ func TestTreeValidateEmptyName(t *testing.T) {
 
 // TestTreeValidateBadInMemoryMode pins the bad-mode rule against
 // programmatically-constructed entries. Wire-decoded modes go through
-// canonicalTreeMode and always land on a valid value, so this rule is
+// FileMode.Canonical and always land on a valid value, so this rule is
 // only reachable when a caller sets a non-canonical Mode by hand.
 func TestTreeValidateBadInMemoryMode(t *testing.T) {
 	t.Parallel()

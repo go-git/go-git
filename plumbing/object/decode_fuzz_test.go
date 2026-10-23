@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 )
 
 func FuzzCommitDecode(f *testing.F) {
@@ -29,11 +30,20 @@ func FuzzTreeDecode(f *testing.F) {
 	f.Add(append([]byte("100644 a\x00"), make([]byte, 20)...))
 	f.Add([]byte{})
 
-	f.Fuzz(func(_ *testing.T, data []byte) {
+	f.Fuzz(func(t *testing.T, data []byte) {
 		mo := &plumbing.MemoryObject{}
 		mo.SetType(plumbing.TreeObject)
 		_, _ = mo.Write(data)
-		_ = (&Tree{}).Decode(mo)
+
+		var tree Tree
+		if tree.Decode(mo) != nil {
+			return
+		}
+		for _, e := range tree.Entries {
+			if e.Mode.IsMalformed() || e.Mode == filemode.Deprecated {
+				t.Fatalf("entry %q decoded to non-canonical mode %o", e.Name, e.Mode)
+			}
+		}
 	})
 }
 

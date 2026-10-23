@@ -301,27 +301,14 @@ func (t *Tree) Decode(o plumbing.EncodedObject) (err error) {
 
 	var prevSortName string
 	for {
-		// Use ReadSlice to get a view into bufio's internal buffer,
-		// avoiding a string allocation for the mode (which is parsed
-		// into a uint32 immediately and doesn't need to persist).
-		modeSlice, err := r.ReadSlice(' ')
+		mode, err := readTreeEntryMode(r)
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			if err == io.EOF {
-				if len(modeSlice) != 0 {
-					return fmt.Errorf("%w: missing mode terminator", ErrMalformedTree)
-				}
-				break
-			}
-
 			return err
 		}
-		modeSlice = modeSlice[:len(modeSlice)-1] // strip delimiter
-
-		mode, err := filemode.FromBytes(modeSlice)
-		if err != nil {
-			return fmt.Errorf("%w: malformed mode", ErrMalformedTree)
-		}
-		mode = canonicalTreeMode(mode)
+		mode = mode.Canonical()
 
 		nameSlice, err := r.ReadSlice(0)
 		if err == bufio.ErrBufferFull {
@@ -393,19 +380,54 @@ func treeEntrySortName(e *TreeEntry) string {
 	return e.Name
 }
 
-func canonicalTreeMode(mode filemode.FileMode) filemode.FileMode {
-	switch mode & 0o170000 {
-	case 0o040000:
-		return filemode.Dir
-	case 0o100000:
-		if mode&0o111 != 0 {
-			return filemode.Executable
+// readTreeEntryMode reads the mode of the next tree entry from r,
+// consuming the space that ends it. It returns io.EOF when r holds no
+// further entries.
+//
+// Git's parse_mode[1] accepts any nonempty run of octal digits and keeps
+// the low 16 bits of a wider value. readTreeEntryMode keeps the low 32
+// bits; [filemode.FileMode.Canonical] reads only bits both keep, so the
+// canonical mode is the one Git acts on. A mode longer than r's buffer
+// is read in chunks, so memory use does not grow with its length.
+//
+// [1]: https://github.com/git/git/blob/v2.55.0/object.h#L200-L215
+func readTreeEntryMode(r *bufio.Reader) (filemode.FileMode, error) {
+	var (
+		mode uint32
+		seen bool
+	)
+	for {
+		// ReadSlice returns a view into bufio's internal buffer, which
+		// avoids allocating for a mode that is parsed immediately.
+		chunk, err := r.ReadSlice(' ')
+		switch err {
+		case nil:
+			chunk = chunk[:len(chunk)-1] // strip delimiter
+		case bufio.ErrBufferFull:
+		case io.EOF:
+			if !seen && len(chunk) == 0 {
+				return filemode.Empty, io.EOF
+			}
+			return filemode.Empty, fmt.Errorf("%w: missing mode terminator", ErrMalformedTree)
+		default:
+			return filemode.Empty, err
 		}
-		return filemode.Regular
-	case 0o120000:
-		return filemode.Symlink
-	default:
-		return filemode.Submodule
+
+		for _, c := range chunk {
+			if c < '0' || c > '7' {
+				return filemode.Empty, fmt.Errorf("%w: malformed mode", ErrMalformedTree)
+			}
+			// Overflow wraps, keeping the low 32 bits.
+			mode = mode<<3 | uint32(c-'0')
+		}
+		seen = seen || len(chunk) > 0
+
+		if err == nil {
+			if !seen {
+				return filemode.Empty, fmt.Errorf("%w: malformed mode", ErrMalformedTree)
+			}
+			return filemode.FileMode(mode), nil
+		}
 	}
 }
 
@@ -462,11 +484,11 @@ func (t *Tree) Encode(o plumbing.EncodedObject) (err error) {
 // together via errors.Join.
 //
 // Two fsck_tree warnings — zero-padded modes and the non-canonical
-// 0100664 bits — are not surfaced here. Both rely on inspecting the
-// original octal string from the wire, which canonicalTreeMode
-// discards during Decode. Detecting them would require a parallel
-// raw-mode field on TreeEntry; the structural rules below are the
-// load-bearing ones for refusing malformed trees.
+// 0100664 bits — are not surfaced here. Both need the mode as stored,
+// which Decode replaces with [filemode.FileMode.Canonical]. Detecting
+// them would require a parallel raw-mode field on TreeEntry; the
+// structural rules below are the load-bearing ones for refusing
+// malformed trees.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/fsck.c#L616-L800
 func (t *Tree) Validate() error {
@@ -504,8 +526,8 @@ func (t *Tree) Validate() error {
 			}
 		}
 
-		// Mode validation against the canonical set. Decode normalises
-		// the wire bytes via canonicalTreeMode, so this rule mainly
+		// Mode validation against the canonical set. Decode stores
+		// FileMode.Canonical of the wire mode, so this rule mainly
 		// catches programmatically-built trees with garbage modes;
 		// the zero-padded-mode and non-canonical-bit checks fsck_tree
 		// runs against the raw wire form are out of reach without

@@ -3,7 +3,9 @@ package filemode
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 )
@@ -65,22 +67,32 @@ func New(s string) (FileMode, error) {
 	return FileMode(n), nil
 }
 
-// FromBytes parses a FileMode from a byte slice containing an octal
-// number. This avoids allocating a string when parsing from binary data.
+// FromBytes parses b, a run of octal digits such as the mode of a tree
+// entry, as a FileMode. It accepts leading zeros, so zero-padded modes
+// such as "040000", written by early Git versions, or
+// "00000000000100644" parse. It avoids allocating a string when
+// parsing from binary data.
 //
-// Please note this function does not check if the returned FileMode
-// is valid in git or if it is malformed.
+// If b is empty, contains a byte other than '0' to '7', or holds a
+// value wider than 32 bits, FromBytes returns [Empty] and an error, as
+// [New] does.
+//
+// FromBytes does not check whether the result is a valid tree entry
+// mode. Use [FileMode.Canonical] to normalize the result.
 func FromBytes(b []byte) (FileMode, error) {
-	if len(b) == 0 || len(b) > 7 {
-		return Empty, fmt.Errorf("invalid mode length: %d", len(b))
+	if len(b) == 0 {
+		return Empty, errors.New("empty mode")
 	}
 
 	var mode uint32
 	for _, c := range b {
 		if c < '0' || c > '7' {
-			return Empty, fmt.Errorf("invalid octal character: %c", c)
+			return Empty, fmt.Errorf("invalid octal character: %q", c)
 		}
-		mode = mode*8 + uint32(c-'0')
+		if mode > math.MaxUint32>>3 {
+			return Empty, errors.New("mode wider than 32 bits")
+		}
+		mode = mode<<3 | uint32(c-'0')
 	}
 	return FileMode(mode), nil
 }
@@ -179,6 +191,41 @@ func (m FileMode) IsFile() bool {
 		m == Deprecated ||
 		m == Executable ||
 		m == Symlink
+}
+
+// Canonical returns the mode Git acts on for a tree entry stored with
+// mode m, as Git's canon_mode[1] does. It is meant for modes read from
+// tree objects: [Empty], which go-git elsewhere uses for an absent
+// entry, becomes [Submodule] like any other unknown type.
+//
+// Only the file type bits (m & 0o170000) and the owner execute bit
+// (0o100) count:
+//
+//   - type 0o100000 is [Executable] if the owner execute bit is set,
+//     and [Regular] otherwise, so [Deprecated] and 0o100011 both
+//     become Regular;
+//   - type 0o120000 is [Symlink] and type 0o040000 is [Dir], whatever
+//     their permission bits;
+//   - any other type is [Submodule].
+//
+// The result is never malformed (see [FileMode.IsMalformed]), and
+// Canonical of a canonical mode returns it unchanged.
+//
+// [1]: https://github.com/git/git/blob/v2.55.0/object.h#L133-L154
+func (m FileMode) Canonical() FileMode {
+	switch m & 0o170000 {
+	case 0o100000:
+		if m&0o100 != 0 {
+			return Executable
+		}
+		return Regular
+	case 0o120000:
+		return Symlink
+	case 0o040000:
+		return Dir
+	default:
+		return Submodule
+	}
 }
 
 // ToOSFileMode returns the os.FileMode to be used when creating file
