@@ -845,6 +845,72 @@ func (s *SuiteDotGit) TestRemoveRefFromReferenceFileAndPackedRefs() {
 	s.Nil(ref)
 }
 
+func (s *SuiteDotGit) TestRemoveRefCleansEmptyParentDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+
+	nested := plumbing.NewHashReference(
+		"refs/bugfix/issue-1",
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	)
+	s.Require().NoError(dir.SetRef(nested, nil))
+	_, err := fs.Stat("refs/bugfix/issue-1")
+	s.Require().NoError(err)
+
+	s.Require().NoError(dir.RemoveRef(nested.Name()))
+
+	_, err = fs.Stat("refs/bugfix")
+	s.True(os.IsNotExist(err), "empty parent directory should be removed, got %v", err)
+	_, err = fs.Stat("refs")
+	s.NoError(err, "refs directory itself should be kept")
+
+	// A reference can now reuse the name that was previously a directory.
+	replacement := plumbing.NewHashReference(
+		"refs/bugfix",
+		plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"),
+	)
+	s.NoError(dir.SetRef(replacement, nil))
+	got, err := dir.Ref(replacement.Name())
+	s.Require().NoError(err)
+	s.Equal(replacement.Hash(), got.Hash())
+}
+
+func (s *SuiteDotGit) TestRemoveRefKeepsParentDirWithSibling() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+	hash := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	s.Require().NoError(dir.SetRef(plumbing.NewHashReference("refs/bugfix/issue-1", hash), nil))
+	s.Require().NoError(dir.SetRef(plumbing.NewHashReference("refs/bugfix/issue-2", hash), nil))
+
+	s.Require().NoError(dir.RemoveRef("refs/bugfix/issue-1"))
+
+	_, err := fs.Stat("refs/bugfix")
+	s.NoError(err)
+	_, err = fs.Stat("refs/bugfix/issue-2")
+	s.NoError(err)
+	_, err = fs.Stat("refs/bugfix/issue-1")
+	s.True(os.IsNotExist(err))
+}
+
+func (s *SuiteDotGit) TestRemoveRefCleansDeeplyNestedEmptyDirs() {
+	fs := s.EmptyFS()
+	dir := New(fs)
+	name := plumbing.ReferenceName("refs/feature/topic/sub/name")
+	s.Require().NoError(dir.SetRef(plumbing.NewHashReference(
+		name,
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	), nil))
+
+	s.Require().NoError(dir.RemoveRef(name))
+
+	for _, leftover := range []string{"refs/feature/topic/sub", "refs/feature/topic", "refs/feature"} {
+		_, err := fs.Stat(leftover)
+		s.True(os.IsNotExist(err), "%s should be removed, got %v", leftover, err)
+	}
+	_, err := fs.Stat("refs")
+	s.NoError(err)
+}
+
 func (s *SuiteDotGit) TestRemoveRefNonExistent() {
 	fs, err := fixtures.Basic().ByTag(".git").One().DotGit()
 	s.Require().NoError(err)
