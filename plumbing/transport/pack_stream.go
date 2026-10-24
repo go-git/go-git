@@ -19,31 +19,33 @@ import (
 // Stream transports (SSH, Git TCP, file) call NewStreamSession from
 // their Handshake implementation.
 type StreamSession struct {
-	conn    Conn
-	r       *bufio.Reader
-	w       io.WriteCloser
-	svc     string
-	version protocol.Version
-	caps    capability.List
-	refs    *packp.AdvRefs
+	conn      Conn
+	r         *bufio.Reader
+	w         io.WriteCloser
+	svc       string
+	userAgent string
+	version   protocol.Version
+	caps      capability.List
+	refs      *packp.AdvRefs
 }
 
-// NewStreamSession creates a session from an open Conn.
+// NewStreamSession creates a session for req from an open Conn.
 // For pack services (upload-pack, receive-pack), it reads the version
 // and advertised refs from the stream. For upload-archive, it skips
 // that — the archive protocol has no ref advertisement.
-func NewStreamSession(conn Conn, service string) (*StreamSession, error) {
+func NewStreamSession(conn Conn, req *Request) (*StreamSession, error) {
 	r := bufio.NewReader(conn.Reader())
 	w := conn.Writer()
 
 	s := &StreamSession{
-		conn: conn,
-		r:    r,
-		w:    w,
-		svc:  service,
+		conn:      conn,
+		r:         r,
+		w:         w,
+		svc:       req.Command,
+		userAgent: req.UserAgent,
 	}
 
-	if service == UploadArchiveService {
+	if s.svc == UploadArchiveService {
 		return s, nil
 	}
 
@@ -163,7 +165,7 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 		return nil
 	}
 
-	shallows, err := NegotiatePack(ctx, st, s.caps, false, s.r, s.w, req)
+	shallows, err := NegotiatePack(ctx, st, s.caps, s.userAgent, false, s.r, s.w, req)
 	if err != nil {
 		return s.wrapStderr(err)
 	}
@@ -175,7 +177,7 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 
 // Push implements PackSession.
 func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRequest) error {
-	if err := SendPack(ctx, st, s.caps, s.w, io.NopCloser(s.r), req); err != nil {
+	if err := SendPack(ctx, st, s.caps, s.userAgent, s.w, io.NopCloser(s.r), req); err != nil {
 		return s.wrapStderr(err)
 	}
 	return nil
@@ -217,7 +219,7 @@ func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.Comma
 // a capability the server did not offer; the object-format is echoed back so
 // both sides agree on the hash algorithm.
 func (s *StreamSession) commandCapabilities() capability.List {
-	return internal.ClientCapabilities(s.caps)
+	return internal.ClientCapabilities(s.caps, s.userAgent)
 }
 
 // wrapStderr checks if the underlying connection has stderr output and

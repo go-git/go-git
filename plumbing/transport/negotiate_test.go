@@ -80,6 +80,7 @@ func TestNegotiatePackCloseBehavior(t *testing.T) {
 				context.TODO(),
 				memory.NewStorage(),
 				capability.List{},
+				"",
 				false,
 				bytes.NewReader(tt.reader),
 				writer,
@@ -194,7 +195,7 @@ func TestNegotiatePackStatelessRequeuesACKCommon(t *testing.T) {
 		Haves: haves,
 	}
 
-	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
+	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, "", true, reader, writer, req)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, strings.Count(writer.writeBuf.String(), "have "+commonHash.String()), "ACK_common haves should be re-sent on subsequent stateless rounds")
@@ -310,7 +311,7 @@ func TestNegotiatePackStatelessClampsAfterGotContinue(t *testing.T) {
 		Haves: makeSyntheticHaves(600),
 	}
 
-	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
+	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, "", true, reader, writer, req)
 	require.NoError(t, err)
 
 	assert.LessOrEqual(t, strings.Count(writer.writeBuf.String(), "have "), initialFlush+maxInVein, "post-continue stateless negotiation should clamp new haves to the remaining in-vein budget")
@@ -330,7 +331,7 @@ func TestNegotiatePackStopsImmediatelyOnACKReady(t *testing.T) {
 		Haves: makeSyntheticHaves(40),
 	}
 
-	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
+	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, "", true, reader, writer, req)
 	require.NoError(t, err)
 
 	out := writer.writeBuf.String()
@@ -351,7 +352,7 @@ func negotiatePackMultiRound(t *testing.T, statelessRPC bool) *mockWriteCloser {
 	}
 
 	storer := memory.NewStorage()
-	_, err := NegotiatePack(context.TODO(), storer, caps, statelessRPC, reader, writer, req)
+	_, err := NegotiatePack(context.TODO(), storer, caps, "", statelessRPC, reader, writer, req)
 	require.NoError(t, err)
 	return writer
 }
@@ -373,6 +374,22 @@ func mapsClone(in map[plumbing.Hash]struct{}) map[plumbing.Hash]struct{} {
 }
 
 // mockWriteCloser implements io.WriteCloser for testing.
+func TestNegotiatePackSendsUserAgent(t *testing.T) {
+	t.Parallel()
+
+	caps := capability.List{}
+	caps.Set(capability.Agent, "git/2.45.0")
+	writer := newMockWriteCloser(nil)
+	req := &FetchRequest{Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")}}
+
+	_, err := NegotiatePack(context.TODO(), memory.NewStorage(), caps, "my app/1.0", false, bytes.NewReader([]byte("0008NAK\n")), writer, req)
+	require.NoError(t, err)
+
+	sent := &packp.UploadRequest{}
+	require.NoError(t, sent.Decode(writer.writeBuf))
+	assert.Equal(t, []string{"my.app/1.0"}, sent.Capabilities.Get(capability.Agent))
+}
+
 type mockWriteCloser struct {
 	writeBuf *bytes.Buffer
 	writeErr error
