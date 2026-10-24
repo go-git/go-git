@@ -783,6 +783,17 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		}
 	}
 
+	serverShallows, err := st.Shallow()
+	if err != nil {
+		_ = w.Close()
+		return true, fmt.Errorf("reading server shallow commits: %w", err)
+	}
+	if len(serverShallows) > 0 && !haveNewBoundary {
+		// A shallow serving repository must describe its own boundary even
+		// when the client did not request a deepen operation.
+		out.ShallowInfo = &packp.ShallowInfo{Shallows: serverShallows}
+	}
+
 	var objs []plumbing.Hash
 	if len(clientShallows) > 0 {
 		// The client already has a shallow view (it sent "shallow" lines).
