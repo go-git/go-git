@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -679,7 +680,15 @@ func doRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 		return res, nil
 	}
 
-	return res, checkError(res)
+	err = checkError(res)
+	// A timeout while reading an error body must not become an authentication
+	// failure that asks the caller for another credential.
+	if res.Request != nil {
+		if slow, ok := errors.AsType[*lowSpeedError](context.Cause(res.Request.Context())); ok {
+			return res, slow
+		}
+	}
+	return res, err
 }
 
 // basicAuth returns an authorizer setting HTTP Basic credentials from userinfo,
