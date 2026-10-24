@@ -4040,6 +4040,57 @@ func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	}
 }
 
+func (s *RepositorySuite) TestResolveRevisionNestedTag() {
+	dotgit, err := fixtures.ByURL("https://github.com/git-fixtures/tags.git").One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	annotated, err := r.Tag("annotated-tag")
+	s.Require().NoError(err)
+	nested, err := r.CreateTag("nested-tag", annotated.Hash(), &CreateTagOptions{
+		Tagger:  defaultSignature(),
+		Message: "tag of a tag",
+	})
+	s.Require().NoError(err)
+	doublyNested, err := r.CreateTag("doubly-nested-tag", nested.Hash(), &CreateTagOptions{
+		Tagger:  defaultSignature(),
+		Message: "tag of a tag of a tag",
+	})
+	s.Require().NoError(err)
+
+	for _, rev := range []string{
+		"nested-tag",
+		"refs/tags/doubly-nested-tag",
+		doublyNested.Hash().String(),
+	} {
+		h, err := r.ResolveRevision(plumbing.Revision(rev))
+		s.Require().NoError(err, rev)
+		s.Equal("f7b877701fbf855b44c0a9e86f3fdce2c298b07f", h.String(), rev)
+	}
+}
+
+func (s *RepositorySuite) TestResolveRevisionTagCycle() {
+	sto := memory.NewStorage()
+	r, err := Init(sto)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	// A tag cannot name its own hash as its target, but a corrupt object
+	// store can hand out one that claims to.
+	self := plumbing.NewHash("1111111111111111111111111111111111111111")
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TagObject)
+	_, err = fmt.Fprintf(obj, "object %s\ntype tag\ntag loop\n\nloop\n", self)
+	s.Require().NoError(err)
+	sto.Objects[self] = obj
+	sto.Tags[self] = obj
+
+	_, err = r.ResolveRevision(plumbing.Revision(self.String()))
+	s.ErrorIs(err, storer.ErrMaxResolveRecursion)
+}
+
 func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
