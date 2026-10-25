@@ -170,6 +170,10 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 		}
 	case *object.Tree:
 		for i := range obj.Entries {
+			if obj.Entries[i].Mode == filemode.Submodule {
+				// Gitlinks name commits in another repository.
+				continue
+			}
 			// Shortcut for blob objects:
 			// 'or' the lower bits of a mode and check that it
 			// it matches a filemode.Executable. The type information
@@ -196,7 +200,7 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 				}
 				continue
 			}
-			// Normal walk for sub-trees (and symlinks etc).
+			// Walk subtrees and symlink blobs.
 			err = p.walkObjectTree(obj.Entries[i].Hash)
 			if err != nil {
 				return err
@@ -204,6 +208,8 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 		}
 	case *object.Tag:
 		return p.walkObjectTree(obj.Target)
+	case *object.Blob:
+		return nil
 	default:
 		// Error out on unhandled object types.
 		return fmt.Errorf("unknown object %X %s %T", obj.ID(), obj.Type(), obj)
