@@ -2694,6 +2694,56 @@ func (s *RepositorySuite) TestLogAllOrderByTime() {
 	cIter.Close()
 }
 
+func (s *RepositorySuite) TestLogAllOrderByTimeAcrossUnrelatedHistories() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+
+	commitAt := func(sec int64, parents ...plumbing.Hash) plumbing.Hash {
+		when := time.Unix(sec, 0)
+		c := &object.Commit{
+			Author:       object.Signature{When: when},
+			Committer:    object.Signature{When: when},
+			ParentHashes: parents,
+		}
+		obj := r.Storer.NewEncodedObject()
+		s.Require().NoError(c.Encode(obj))
+		h, err := r.Storer.SetEncodedObject(obj)
+		s.Require().NoError(err)
+		return h
+	}
+
+	c1 := commitAt(1000)
+	c2 := commitAt(3000, c1)
+	c3 := commitAt(5000, c2)
+	side := commitAt(3500, c1)
+	orphanA1 := commitAt(2000)
+	orphanA2 := commitAt(4000, orphanA1)
+	orphanB1 := commitAt(2500)
+	orphanB2 := commitAt(4500, orphanB1)
+
+	for name, h := range map[plumbing.ReferenceName]plumbing.Hash{
+		plumbing.Master:       c3,
+		"refs/heads/side":     side,
+		"refs/heads/orphan-a": orphanA2,
+		"refs/heads/orphan-b": orphanB2,
+		"refs/tags/v1":        c2,
+		"refs/heads/dangling": plumbing.NewHash("1111111111111111111111111111111111111111"),
+	} {
+		s.Require().NoError(r.Storer.SetReference(plumbing.NewHashReference(name, h)))
+	}
+
+	iter, err := r.Log(&LogOptions{All: true, Order: LogOrderCommitterTime})
+	s.Require().NoError(err)
+	defer iter.Close()
+
+	var got []int64
+	s.Require().NoError(iter.ForEach(func(c *object.Commit) error {
+		got = append(got, c.Committer.When.Unix())
+		return nil
+	}))
+	s.Equal([]int64{5000, 4500, 4000, 3500, 3000, 2500, 2000, 1000}, got)
+}
+
 func (s *RepositorySuite) TestLogHead() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
