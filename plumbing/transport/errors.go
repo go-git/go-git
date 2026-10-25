@@ -32,6 +32,10 @@ var (
 	ErrInvalidResponse           = errors.New("invalid response")
 	ErrTimeoutExceeded           = errors.New("timeout exceeded")
 	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
+
+	// ErrUnsupportedObjectFormat is returned by SendPack when the server does not
+	// support the local repository's object format.
+	ErrUnsupportedObjectFormat = errors.New("the receiving end does not support this repository's hash algorithm")
 )
 
 // Negotiation errors.

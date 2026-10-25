@@ -169,6 +169,16 @@ func ReceivePack(
 		return err
 	}
 
+	// git checks the client's object format while reading the first
+	// command line, before any packfile; a request without commands
+	// carries no capabilities and is not checked.
+	if len(updreq.Commands) > 0 {
+		repo := objectFormat(st)
+		if el := receivePackObjectFormatError(repo, updreq.Capabilities); el != nil {
+			return rejectReceivePack(w, updreq.Capabilities, el)
+		}
+	}
+
 	var (
 		caps         = updreq.Capabilities
 		needPackfile bool

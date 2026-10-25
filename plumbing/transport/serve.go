@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -71,6 +70,7 @@ func AdvertiseRefs(
 		ar.Capabilities.Set(capability.ReportStatus)
 		ar.Capabilities.Set(capability.PushOptions)
 		ar.Capabilities.Set(capability.Quiet)
+		ar.Capabilities.Set(capability.ObjectFormat, objectFormat(st).String())
 	} else {
 		// TODO: support include-tag
 		// TODO: support deepen
@@ -161,19 +161,6 @@ func serverV2Capabilities(st storage.Storer) capability.List {
 	caps.Set(capability.FetchCmd, "shallow")
 	caps.Set(capability.ObjectFormat, objectFormat(st).String())
 	return caps
-}
-
-// objectFormat returns the repository's configured object format, defaulting to
-// the package default when the config is missing or unset.
-func objectFormat(st storage.Storer) config.ObjectFormat {
-	cfg, err := st.Config()
-	if err != nil || cfg == nil {
-		return config.DefaultObjectFormat
-	}
-	if cfg.Extensions.ObjectFormat == config.UnsetObjectFormat {
-		return config.DefaultObjectFormat
-	}
-	return cfg.Extensions.ObjectFormat
 }
 
 // advertisable reports whether a reference name may be put on the wire.
