@@ -1,9 +1,11 @@
 package transactional
 
 import (
+	"errors"
+
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
-	"github.com/go-git/go-git/v6/storage"
 )
 
 // ReferenceStorage implements the storer.ReferenceStorage for the transactional package.
@@ -34,23 +36,20 @@ func (r *ReferenceStorage) SetReference(ref *plumbing.Reference) error {
 	return r.temporal.SetReference(ref)
 }
 
-// CheckAndSetReference honors the storer.ReferenceStorer interface.
+// CheckAndSetReference honors the storer.ReferenceStorer interface. It checks
+// `old` against the reference as the transaction sees it.
 func (r *ReferenceStorage) CheckAndSetReference(ref, old *plumbing.Reference) error {
-	if old == nil {
-		return r.SetReference(ref)
-	}
-
-	tmp, err := r.temporal.Reference(old.Name())
-	if err == plumbing.ErrReferenceNotFound {
-		tmp, err = r.ReferenceStorer.Reference(old.Name())
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if tmp.Hash() != old.Hash() {
-		return storage.ErrReferenceHasChanged
+	if old != nil {
+		current, err := r.Reference(old.Name())
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			current, err = nil, nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := reference.CheckUnchanged(current, old); err != nil {
+			return err
+		}
 	}
 
 	return r.SetReference(ref)
