@@ -24,10 +24,13 @@ func GetBufioReader(reader io.Reader) *bufio.Reader {
 	return r
 }
 
-// PutBufioReader puts reader back into its sync.Pool.
+// PutBufioReader puts reader back into its sync.Pool. It drops the reference
+// to the underlying io.Reader first, so the pool does not keep that reader,
+// and anything it holds, alive. reader must not be used afterwards.
 func PutBufioReader(reader *bufio.Reader) {
 	if reader == nil {
 		return
 	}
+	reader.Reset(nil)
 	bufioReader.Put(reader)
 }
