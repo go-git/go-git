@@ -14,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -113,11 +112,11 @@ func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	require.NoError(t, err)
 	since := c.Committer.When
 
-	var upd packp.ShallowUpdate
-	require.NoError(t, getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil, &upd))
+	shallows, err := getShallowCommitsByRevList(st, []plumbing.Hash{head.Hash()}, since, nil)
+	require.NoError(t, err)
 
-	require.NotEmpty(t, upd.Shallows)
-	for _, h := range upd.Shallows {
+	require.NotEmpty(t, shallows)
+	for _, h := range shallows {
 		sc, err := object.GetCommit(st, h)
 		require.NoError(t, err)
 		require.False(t, sc.Committer.When.Before(since),
@@ -194,6 +193,22 @@ func TestUploadPackV2FetchDeepenExistingShallow(t *testing.T) {
 		"the deepened boundary (depth 2) must be the parent")
 	require.Contains(t, out, "unshallow "+head.Hash().String(),
 		"the previously-shallow tip is now interior and must be unshallowed")
+}
+
+func TestUploadPackV2FetchRefetchAtSameDepthSendsEmptyShallowInfo(t *testing.T) {
+	t.Parallel()
+	r := mergeHistory(t)
+
+	out := serveUploadPackV2Test(t, r.st, v2Request(t, "fetch", nil, []string{
+		"want " + r.commits["D"].String(),
+		"have " + r.commits["D"].String(),
+		"shallow " + r.commits["M"].String(),
+		"deepen 2",
+		"done",
+	}))
+
+	require.Contains(t, out, "shallow-info")
+	require.NotContains(t, out, "shallow "+r.commits["M"].String())
 }
 
 func TestUploadPackV2FetchDeepenRelativeExistingShallow(t *testing.T) {

@@ -136,6 +136,47 @@ func (s *UploadPackServeSuite) TestUploadPackSkipDeltaCompression() {
 	s.Equal(0, countDeltas(skipPack))
 }
 
+func (s *UploadPackServeSuite) TestUploadPackV1DeepenBoundsPack() {
+	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
+	s.Require().NoError(err)
+	st := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
+	defer func() { _ = st.Close() }()
+
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	s.Require().NoError(err)
+	tip, err := object.GetCommit(st, head.Hash())
+	s.Require().NoError(err)
+	s.Require().NotEmpty(tip.ParentHashes)
+
+	upreq := &packp.UploadRequest{}
+	upreq.Capabilities.Add(capability.Shallow)
+	upreq.Wants = append(upreq.Wants, head.Hash())
+	upreq.Depth.Deepen = 1
+
+	var reqW bytes.Buffer
+	s.Require().NoError(upreq.Encode(&reqW))
+	s.Require().NoError((&packp.UploadHaves{Done: true}).Encode(&reqW))
+	out := testServe(s.T(), st, UploadPack, io.NopCloser(&reqW), &UploadPackRequest{
+		GitProtocol:  "version=1",
+		StatelessRPC: true,
+	})
+
+	const nakPktline = "0008NAK\n"
+	shallowSection, pack, ok := bytes.Cut(out.Bytes(), []byte(nakPktline))
+	s.Require().True(ok, "response must contain a NAK before the pack")
+
+	var shupd packp.ShallowUpdate
+	s.Require().NoError(shupd.Decode(bytes.NewReader(shallowSection)))
+	s.Equal([]plumbing.Hash{head.Hash()}, shupd.Shallows)
+
+	packed := memory.NewStorage()
+	s.Require().NoError(packfile.UpdateObjectStorage(packed, bytes.NewReader(pack)))
+	_, err = packed.EncodedObject(plumbing.CommitObject, head.Hash())
+	s.NoError(err, "boundary commit must be in the pack")
+	_, err = packed.EncodedObject(plumbing.CommitObject, tip.ParentHashes[0])
+	s.ErrorIs(err, plumbing.ErrObjectNotFound, "depth-1 pack must not contain the tip's parent")
+}
+
 func (s *UploadPackServeSuite) TestUploadPackStatefulMultiRoundSendsFinalACK() {
 	dot, err := fixtures.Basic().One().DotGit(fixtures.WithTargetDir(s.T().TempDir))
 	s.Require().NoError(err)
