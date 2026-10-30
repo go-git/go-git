@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -291,4 +294,200 @@ func TestUploadPackV2FetchNoProgressEmitsNoProgressBand(t *testing.T) {
 		require.NotEqual(t, byte(sideband.ProgressMessage), line[0],
 			"upload-pack must not write a sideband progress band")
 	}
+}
+
+// shallowServingStorage builds a server whose main branch is shallow: boundary
+// is grafted (the commit below it is not in the object store), as after a
+// --depth 2 clone. It also has a full branch and a shallow side branch, so
+// tests can check that boundaries of refs the client never asked for are not
+// reported.
+func shallowServingStorage(t testing.TB) (st storage.Storer, tip, boundary, sideTip, fullTip plumbing.Hash) {
+	t.Helper()
+	st = memory.NewStorage()
+	tree := makeShallowTestTree(t, st)
+
+	// The parent of the boundary is not present, like on a real shallow server.
+	missing := plumbing.NewHash("1111111111111111111111111111111111111111")
+	boundary = makeShallowTestCommit(t, st, "boundary", tree, missing)
+	tip = makeShallowTestCommit(t, st, "tip", tree, boundary)
+
+	f0 := makeShallowTestCommit(t, st, "full-0", tree)
+	fullTip = makeShallowTestCommit(t, st, "full-1", tree, f0)
+
+	sideTip = makeShallowTestCommit(t, st, "side", tree)
+
+	require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/main", tip)))
+	require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/full", fullTip)))
+	require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/side", sideTip)))
+	require.NoError(t, st.SetShallow([]plumbing.Hash{boundary, sideTip}))
+	return st, tip, boundary, sideTip, fullTip
+}
+
+func makeShallowTestTree(t testing.TB, st storer.EncodedObjectStorer) plumbing.Hash {
+	t.Helper()
+	obj := st.NewEncodedObject()
+	obj.SetType(plumbing.TreeObject)
+	require.NoError(t, (&object.Tree{}).Encode(obj))
+	h, err := st.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return h
+}
+
+func makeShallowTestCommit(t testing.TB, st storer.EncodedObjectStorer, msg string, tree plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
+	t.Helper()
+	when := time.Unix(1700000000, 0)
+	c := &object.Commit{
+		Author:       object.Signature{Name: "test", Email: "test@example.com", When: when},
+		Committer:    object.Signature{Name: "test", Email: "test@example.com", When: when},
+		Message:      msg + "\n",
+		TreeHash:     tree,
+		ParentHashes: parents,
+	}
+	obj := st.NewEncodedObject()
+	obj.SetType(plumbing.CommitObject)
+	require.NoError(t, c.Encode(obj))
+	h, err := st.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return h
+}
+
+// v2FetchSections decodes the metadata sections of a protocol v2 fetch response
+// up to (and including) the packfile header, keyed by section name.
+func v2FetchSections(t testing.TB, out string) map[string][]string {
+	t.Helper()
+	sections := map[string][]string{}
+	rd := bufio.NewReader(strings.NewReader(out))
+	current := ""
+	for {
+		l, line, err := pktline.ReadLine(rd)
+		if l == pktline.Flush || err != nil {
+			return sections
+		}
+		if l < pktline.LenSize {
+			current = "" // delim: end of the current section
+			continue
+		}
+		s := strings.TrimRight(string(line), "\n")
+		switch s {
+		case "acknowledgments", "shallow-info", "wanted-refs":
+			current = s
+			sections[s] = nil
+			continue
+		case "packfile":
+			sections[s] = nil
+			return sections
+		}
+		if current != "" {
+			sections[current] = append(sections[current], s)
+		}
+	}
+}
+
+func TestUploadPackV2FetchShallowServerReportsReachableBoundary(t *testing.T) {
+	t.Parallel()
+	st, tip, boundary, _, _ := shallowServingStorage(t)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.Contains(t, sections, "shallow-info")
+	require.Equal(t, []string{"shallow " + boundary.String()}, sections["shallow-info"],
+		"only the server boundary reachable from the wants may be reported")
+	require.Contains(t, sections, "packfile")
+}
+
+func TestUploadPackV2FetchShallowServerOmitsUnrelatedBoundary(t *testing.T) {
+	t.Parallel()
+	st, _, _, _, fullTip := shallowServingStorage(t)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + fullTip.String(),
+		"done",
+	}))
+
+	// The fetch does not touch the shallow branches, so there is nothing to
+	// report. The section is still present because the server is shallow.
+	sections := v2FetchSections(t, out)
+	require.Contains(t, sections, "shallow-info")
+	require.Empty(t, sections["shallow-info"],
+		"boundaries of refs the wants cannot reach must not be sent")
+}
+
+func TestUploadPackV2FetchShallowServerDeepenStopsAtGraft(t *testing.T) {
+	t.Parallel()
+	st, tip, boundary, _, _ := shallowServingStorage(t)
+
+	// The deepen requests far more than the server has: it must stop at the
+	// server's own boundary instead of running into the missing parents.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"deepen 100",
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.Equal(t, []string{"shallow " + boundary.String()}, sections["shallow-info"],
+		"the server graft is a boundary at any depth")
+}
+
+func TestUploadPackV2FetchShallowServerSkipsClientShallow(t *testing.T) {
+	t.Parallel()
+	st, tip, boundary, _, _ := shallowServingStorage(t)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"have " + tip.String(),
+		"shallow " + boundary.String(),
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.Contains(t, sections, "shallow-info")
+	require.Empty(t, sections["shallow-info"],
+		"a boundary the client already reported must not be echoed back")
+}
+
+func TestUploadPackV2FetchDeepenRelativeNoReachableClientShallow(t *testing.T) {
+	t.Parallel()
+	st, tip, _, sideTip, _ := shallowServingStorage(t)
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"have " + tip.String(),
+		"shallow " + sideTip.String(),
+		"deepen 1",
+		"deepen-relative",
+		"done",
+	}))
+
+	// No client boundary is reachable from the want, so the relative deepen is
+	// a no-op. It must not fall back to sending the server's shallow file.
+	sections := v2FetchSections(t, out)
+	require.Contains(t, sections, "shallow-info")
+	require.Empty(t, sections["shallow-info"])
+}
+
+func TestUploadPackV2FetchDeepenRelativeFromShallowServerBoundary(t *testing.T) {
+	t.Parallel()
+	st, tip, boundary, _, _ := shallowServingStorage(t)
+
+	// The client is at the server's depth 1 (tip) and deepens by one more; the
+	// server's graft sits at depth 2 and becomes the new boundary.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"have " + tip.String(),
+		"shallow " + tip.String(),
+		"deepen 1",
+		"deepen-relative",
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.ElementsMatch(t, []string{
+		"shallow " + boundary.String(),
+		"unshallow " + tip.String(),
+	}, sections["shallow-info"])
 }
