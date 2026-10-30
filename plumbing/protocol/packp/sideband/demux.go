@@ -130,13 +130,13 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 		return content[1:], nil
 	case ProgressMessage:
 		if d.Progress != nil {
-			_, err := d.Progress.Write(sanitize(content[1:]))
+			_, err := d.Progress.Write(sanitize(content[1:], true))
 			return nil, err
 		}
 	case ErrorMessage:
-		return nil, fmt.Errorf("unexpected error: %s", sanitize(content[1:]))
+		return nil, fmt.Errorf("unexpected error: %s", sanitize(content[1:], false))
 	default:
-		return nil, fmt.Errorf("unknown channel %s", sanitize(content))
+		return nil, fmt.Errorf("unknown channel %s", sanitize(content, false))
 	}
 
 	return nil, nil
@@ -154,24 +154,26 @@ func (d *Demuxer) getPending() (b []byte) {
 }
 
 // sanitize returns message with each control character replaced by its caret
-// notation (^[ for ESC, ^A for 0x01, ^? for DEL), keeping the tab, line feed
-// and carriage return that lay out progress output and the ANSI SGR sequences
-// that color it. It returns message itself when nothing needs masking.
+// notation (^[ for ESC, ^A for 0x01, ^? for DEL), keeping the tab and line feed
+// and the ANSI SGR sequences that color the output. Carriage return is kept
+// only when keepCR is true, for the progress channel where it redraws the
+// current line. It returns message itself when it contains no control bytes.
 //
 // The bytes on the progress and error channels are whatever the server, or a
 // hook running on it, wrote to stderr, and they end up on the user's terminal.
 // An escape sequence there can redraw the screen, hide what was printed before
-// it, or type into the input buffer (CWE-150), so Git masks the sideband the
-// same way by default; see strbuf_add_sanitized in sideband.c[1]. Color
-// sequences pass because hooks in the wild rely on them and they cannot hide
-// or forge output on their own.
+// it, or type into the input buffer (CWE-150). Git masks the sideband the same
+// way by default, see strbuf_add_sanitized in sideband.c[1]. Git keeps carriage
+// return only on the progress channel, by splitting lines before masking them.
+// Color sequences pass because hooks in the wild rely on them. They cannot move
+// the cursor, clear the screen or write to the input buffer.
 //
-// [1]: https://github.com/git/git/blob/v2.55.0/sideband.c
-func sanitize(message []byte) []byte {
+// [1]: https://github.com/git/git/blob/v2.56.0/sideband.c
+func sanitize(message []byte, keepCR bool) []byte {
 	var out []byte
 	for i := 0; i < len(message); i++ {
 		c := message[i]
-		if c == '\t' || c == '\n' || c == '\r' || (c >= 0x20 && c != 0x7f) {
+		if c == '\t' || c == '\n' || (c == '\r' && keepCR) || (c >= 0x20 && c != 0x7f) {
 			if out != nil {
 				out = append(out, c)
 			}

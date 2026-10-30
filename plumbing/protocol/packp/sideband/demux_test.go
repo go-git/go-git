@@ -219,6 +219,15 @@ func (s *SidebandSuite) TestDecodeMasksControlCharactersInErrors() {
 		s.ErrorContains(err, "unexpected error: ^[[2J^[[Hfatal: \x1b[31mnope\x1b[m\n")
 	})
 
+	s.Run("carriage return on error channel", func() {
+		buf := bytes.NewBuffer(nil)
+		pktline.Write(buf, ErrorMessage.WithPayload([]byte("ok\rerror: forged\n")))
+
+		d := NewDemuxer(Sideband64k, buf)
+		_, err := io.ReadFull(d, make([]byte, 1))
+		s.ErrorContains(err, "unexpected error: ok^Merror: forged\n")
+	})
+
 	s.Run("unknown channel", func() {
 		buf := bytes.NewBuffer(nil)
 		pktline.Write(buf, []byte("4\x1b[2JFOO\n"))
