@@ -171,6 +171,109 @@ func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
 	require.Contains(t, out, "packfile")
 }
 
+func TestUploadPackV2FetchFromShallowServer(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	commit, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, commit.ParentHashes)
+	shallow := commit.ParentHashes[0]
+	require.NoError(t, st.SetShallow([]plumbing.Hash{shallow}))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		"done",
+	}))
+
+	metadata, _, hasPackfile := strings.Cut(out, "packfile")
+	require.True(t, hasPackfile)
+	require.Contains(t, metadata, "shallow-info")
+	require.Contains(t, metadata, "shallow "+shallow.String())
+	require.Contains(t, out, "packfile")
+}
+
+func TestUploadPackV2FetchFromShallowServerWithUnreachableBoundary(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	headCommit, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	branch, err := storer.ResolveReference(st, plumbing.NewBranchReferenceName("branch"))
+	require.NoError(t, err)
+	branchCommit, err := object.GetCommit(st, branch.Hash())
+	require.NoError(t, err)
+	require.NotEqual(t, head.Hash(), branch.Hash())
+	require.Equal(t, headCommit.ParentHashes, branchCommit.ParentHashes)
+	shallow := branch.Hash()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{shallow}))
+
+	for _, tc := range []struct {
+		name         string
+		deepen       string
+		wantBoundary bool
+	}{
+		{name: "unbounded fetch omits unreachable server shallow boundary"},
+		{name: "depth fetch keeps an empty shallow-info section when boundary is unreachable", deepen: "deepen 5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			args := []string{"want " + head.Hash().String()}
+			if tc.deepen != "" {
+				args = append(args, tc.deepen)
+			}
+			args = append(args, "done")
+			out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, args))
+
+			metadata, _, hasPackfile := strings.Cut(out, "packfile")
+			require.True(t, hasPackfile)
+			require.Contains(t, metadata, "shallow-info")
+			if tc.wantBoundary {
+				require.Contains(t, metadata, "shallow "+shallow.String())
+			} else {
+				require.NotContains(t, metadata, "shallow "+shallow.String())
+			}
+		})
+	}
+}
+
+func TestUploadPackV2FetchDeepenStopsAtShallowServerBoundary(t *testing.T) {
+	t.Parallel()
+	testUploadPackV2FetchStopsAtShallowServerBoundary(t, "deepen 5")
+}
+
+func TestUploadPackV2FetchDeepenSinceStopsAtShallowServerBoundary(t *testing.T) {
+	t.Parallel()
+	testUploadPackV2FetchStopsAtShallowServerBoundary(t, "deepen-since 0")
+}
+
+func testUploadPackV2FetchStopsAtShallowServerBoundary(t *testing.T, deepen string) {
+	t.Helper()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+	commit, err := object.GetCommit(st, head.Hash())
+	require.NoError(t, err)
+	require.NotEmpty(t, commit.ParentHashes)
+	shallow := commit.ParentHashes[0]
+	require.NoError(t, st.SetShallow([]plumbing.Hash{shallow}))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + head.Hash().String(),
+		deepen,
+		"done",
+	}))
+
+	metadata, _, hasPackfile := strings.Cut(out, "packfile")
+	require.True(t, hasPackfile)
+	require.Contains(t, metadata, "shallow-info")
+	require.Contains(t, metadata, "shallow "+shallow.String())
+	require.NotContains(t, metadata, "shallow "+head.Hash().String())
+	require.Contains(t, out, "packfile")
+}
+
 func TestUploadPackV2FetchCloneNoHaves(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)

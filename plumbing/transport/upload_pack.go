@@ -154,7 +154,7 @@ func UploadPack(
 				var shupd packp.ShallowUpdate
 				if !upreq.Depth.IsZero() {
 					if upreq.Depth.Deepen > 0 {
-						if err := getShallowCommits(st, wants, upreq.Depth.Deepen, &shupd); err != nil {
+						if err := getShallowCommits(st, wants, upreq.Depth.Deepen, nil, &shupd); err != nil {
 							writec <- fmt.Errorf("getting shallow commits: %w", err)
 							return
 						}
@@ -327,7 +327,7 @@ func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbin
 	return revlist.Objects(st, wants, haves)
 }
 
-func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
+func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, shallowBoundaries map[plumbing.Hash]struct{}, upd *packp.ShallowUpdate) error {
 	var i, curDepth int
 	var commit *object.Commit
 	depths := map[*object.Commit]int{}
@@ -359,7 +359,7 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 
 		curDepth++
 
-		if depth != math.MaxInt && curDepth >= depth {
+		if _, ok := shallowBoundaries[commit.Hash]; ok || (depth != math.MaxInt && curDepth >= depth) {
 			upd.Shallows = append(upd.Shallows, commit.Hash)
 			commit = nil
 			continue
@@ -718,6 +718,8 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	//   - deepen <n>: a depth boundary from the wants (getShallowCommits).
 	//   - deepen-since / deepen-not: a date/ref boundary (getShallowCommitsByRevList,
 	//     mirroring deepen_by_rev_list).
+	//   - a shallow server: its own boundaries are reported even when the client
+	//     did not request a deepen.
 	// Upstream forbids combining deepen with deepen-since/deepen-not, and so do we.
 	// deepen-relative only changes how the depth is counted: for a fresh fetch
 	// (no client shallows) relative and absolute depth coincide, and for an
@@ -734,22 +736,37 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		_ = w.Close()
 		return true, fmt.Errorf("deepen and deepen-since (or deepen-not) cannot be used together")
 	}
+	serverShallows, err := st.Shallow()
+	if err != nil {
+		_ = w.Close()
+		return true, fmt.Errorf("reading server shallow commits: %w", err)
+	}
+	serverShallowSet := make(map[plumbing.Hash]struct{}, len(serverShallows))
+	for _, h := range serverShallows {
+		serverShallowSet[h] = struct{}{}
+	}
 
-	// A deepen was requested when depth > 0 or a rev-list bound was given.
-	// haveNewBoundary records that separately from len(newBoundary): a deepen
-	// that reaches full history yields an empty boundary, which still drives
-	// shallow-info and the unshallow lines and must not be mistaken for "no
-	// deepen requested". newBoundary is the grafting boundary for the deepened
-	// view (nil/empty means graft nothing: full history).
+	// Compute a new shallow view for explicit deepen requests and whenever the
+	// server itself is shallow. haveNewBoundary records this separately from
+	// len(newBoundary): a deepen that reaches full history yields an empty
+	// boundary, which still drives shallow-info and the unshallow lines and must
+	// not be mistaken for "no deepen requested". newBoundary is the grafting
+	// boundary for the deepened view (nil/empty means graft nothing: full history).
 	var newBoundary []plumbing.Hash
 	var haveNewBoundary bool
-	if depth > 0 || revList {
+	if depth > 0 || revList || len(serverShallows) > 0 {
 		var shupd packp.ShallowUpdate
 		computed := true
-		if revList {
-			err = getShallowCommitsByRevList(st, wants, since, notTips, &shupd)
-		} else {
+		switch {
+		case revList:
+			err = getShallowCommitsByRevList(st, wants, since, notTips, serverShallowSet, &shupd)
+		default:
 			effectiveDepth := depth
+			if effectiveDepth == 0 {
+				// An unbounded fetch still walks the wants so only reachable
+				// server shallow boundaries are reported.
+				effectiveDepth = math.MaxInt
+			}
 			if args.DeepenRelative && len(clientShallows) > 0 {
 				// deepen-relative counts depth from the client's existing
 				// shallow boundary, not from the wants. Mirror upstream
@@ -770,7 +787,7 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 				}
 			}
 			if computed {
-				err = getShallowCommits(st, wants, effectiveDepth, &shupd)
+				err = getShallowCommits(st, wants, effectiveDepth, serverShallowSet, &shupd)
 			}
 		}
 		if err != nil {
@@ -821,9 +838,11 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		}
 	} else {
 		packSt := st
-		if haveNewBoundary && len(newBoundary) > 0 {
+		if haveNewBoundary && (len(newBoundary) > 0 || len(serverShallows) > 0) {
 			out.ShallowInfo = &packp.ShallowInfo{Shallows: newBoundary}
-			packSt = &shallowBoundaryStorer{Storer: st, boundary: newBoundary}
+			if len(newBoundary) > 0 {
+				packSt = &shallowBoundaryStorer{Storer: st, boundary: newBoundary}
+			}
 		}
 		objs, err = objectsToUpload(packSt, wants, haves)
 		if err != nil {
@@ -977,7 +996,7 @@ func reachableCommits(st storage.Storer, tips []plumbing.Hash) (map[plumbing.Has
 // Unlike git's rev-list traversal it does not apply the date "slop" used to
 // tolerate out-of-order committer timestamps, so under clock skew the boundary
 // may differ by a few commits; the resulting shallow clone is still valid.
-func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash, upd *packp.ShallowUpdate) error {
+func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash, serverShallows map[plumbing.Hash]struct{}, upd *packp.ShallowUpdate) error {
 	exclude, err := reachableCommits(st, notTips)
 	if err != nil {
 		return err
@@ -1006,10 +1025,17 @@ func getShallowCommitsByRevList(st storage.Storer, heads []plumbing.Hash, since 
 		}
 		included[h] = struct{}{}
 		parents[h] = c.ParentHashes
+		if _, shallow := serverShallows[h]; shallow {
+			continue
+		}
 		stack = append(stack, c.ParentHashes...)
 	}
 
 	for h := range included {
+		if _, shallow := serverShallows[h]; shallow {
+			upd.Shallows = append(upd.Shallows, h)
+			continue
+		}
 		for _, p := range parents[h] {
 			if _, ok := included[p]; !ok {
 				upd.Shallows = append(upd.Shallows, h)
