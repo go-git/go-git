@@ -758,17 +758,13 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		var shupd packp.ShallowUpdate
 		computed := true
 		switch {
-		case depth == 0 && !revList && len(serverShallows) > 0:
-			// A clone-like fetch from a shallow repository reports the server's
-			// shallow file as-is, including boundaries outside the requested refs.
-			shupd.Shallows = append(shupd.Shallows, serverShallows...)
 		case revList:
 			err = getShallowCommitsByRevList(st, wants, since, notTips, serverShallowSet, &shupd)
 		default:
 			effectiveDepth := depth
 			if effectiveDepth == 0 {
-				// An unbounded fetch from a shallow repository still needs to
-				// report the server's shallow boundary to a clone-like client.
+				// An unbounded fetch still walks the wants so only reachable
+				// server shallow boundaries are reported.
 				effectiveDepth = math.MaxInt
 			}
 			if args.DeepenRelative && len(clientShallows) > 0 {

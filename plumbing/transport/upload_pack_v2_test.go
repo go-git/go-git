@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
@@ -202,18 +201,13 @@ func TestUploadPackV2FetchFromShallowServerWithUnreachableBoundary(t *testing.T)
 	require.NoError(t, err)
 	headCommit, err := object.GetCommit(st, head.Hash())
 	require.NoError(t, err)
-	sig := object.Signature{Name: "Test", Email: "test@example.com", When: time.Unix(0, 0).UTC()}
-	unrelated := &object.Commit{
-		Author:    sig,
-		Committer: sig,
-		Message:   "unreachable shallow boundary",
-		TreeHash:  headCommit.TreeHash,
-	}
-	obj := st.NewEncodedObject()
-	obj.SetType(plumbing.CommitObject)
-	require.NoError(t, unrelated.Encode(obj))
-	shallow, err := st.SetEncodedObject(obj)
+	branch, err := storer.ResolveReference(st, plumbing.NewBranchReferenceName("branch"))
 	require.NoError(t, err)
+	branchCommit, err := object.GetCommit(st, branch.Hash())
+	require.NoError(t, err)
+	require.NotEqual(t, head.Hash(), branch.Hash())
+	require.Equal(t, headCommit.ParentHashes, branchCommit.ParentHashes)
+	shallow := branch.Hash()
 	require.NoError(t, st.SetShallow([]plumbing.Hash{shallow}))
 
 	for _, tc := range []struct {
@@ -221,7 +215,7 @@ func TestUploadPackV2FetchFromShallowServerWithUnreachableBoundary(t *testing.T)
 		deepen       string
 		wantBoundary bool
 	}{
-		{name: "unbounded fetch reports the server shallow file", wantBoundary: true},
+		{name: "unbounded fetch omits unreachable server shallow boundary"},
 		{name: "depth fetch keeps an empty shallow-info section when boundary is unreachable", deepen: "deepen 5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
