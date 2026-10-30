@@ -243,6 +243,42 @@ func TestMultipleOptions(t *testing.T) {
 	assert.NotNil(t, tr)
 }
 
+// Git runs git-remote-<transport> for <transport>::<address> even when
+// <transport> names a built-in scheme, so the built-in transports must not
+// receive these URLs.
+func TestRemoteHelperURLNeedsRegisteredTransport(t *testing.T) {
+	t.Parallel()
+
+	endpoints := []string{
+		"file::/tmp/repo",
+		"git::git://host/repo",
+		"ssh::ssh://host/repo",
+		"https::https://host/repo",
+		"foo::bar",
+	}
+	for _, endpoint := range endpoints {
+		t.Run(endpoint, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := transport.ParseURL(endpoint)
+			require.NoError(t, err)
+			req := &transport.Request{URL: u, Command: transport.UploadPackService}
+
+			c := New()
+			_, err = c.Handshake(context.Background(), req)
+			require.ErrorContains(t, err, fmt.Sprintf("no transport registered for remote helper %q", u.Scheme))
+
+			_, err = c.Connect(context.Background(), req)
+			require.ErrorContains(t, err, fmt.Sprintf("no transport registered for remote helper %q", u.Scheme))
+
+			custom := &mockTransport{}
+			tr, err := New(WithTransport(u.Scheme, custom)).resolve(req)
+			require.NoError(t, err)
+			assert.Same(t, custom, tr)
+		})
+	}
+}
+
 func TestNilRequest(t *testing.T) {
 	t.Parallel()
 

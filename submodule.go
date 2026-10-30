@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -154,7 +155,8 @@ func (s *Submodule) Repository() (*Repository, error) {
 		return nil, err
 	}
 
-	if !path.IsAbs(moduleEndpoint.Path) && !filepath.IsAbs(moduleEndpoint.Path) && moduleEndpoint.Scheme == "file" {
+	if !path.IsAbs(moduleEndpoint.Path) && !filepath.IsAbs(moduleEndpoint.Path) && moduleEndpoint.Scheme == "file" &&
+		!giturl.IsRemoteHelper(moduleEndpoint) {
 		base, err := defaultRemote(s.w.r)
 		if err != nil {
 			_ = r.Close()
