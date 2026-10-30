@@ -71,6 +71,7 @@ type sessionBase struct {
 	client     *http.Client
 	baseURL    *url.URL
 	service    string
+	userAgent  string
 	authorizer Authorizer
 	dropped    *redirectRecord
 }
@@ -96,7 +97,12 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		discoverProtocol = protocol.V2
 	}
 
-	d := discovery{service: discoverService, protocol: discoverProtocol}
+	userAgent := req.UserAgent
+	if userAgent == "" {
+		userAgent = capability.DefaultAgent()
+	}
+
+	d := discovery{service: discoverService, protocol: discoverProtocol, userAgent: userAgent}
 
 	// Only the discovery GET carries the initial-request marker, so only it may
 	// follow redirects under the default policy.
@@ -222,6 +228,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		client:     client,
 		baseURL:    sessURL,
 		service:    req.Command,
+		userAgent:  userAgent,
 		authorizer: authorizer,
 		dropped:    dropped,
 	}
@@ -411,7 +418,7 @@ func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.Co
 	r := &httpRequester{session: s, ctx: ctx}
 	cr := &packp.CommandRequest{
 		Command:      cmd,
-		Capabilities: internal.ClientCapabilities(s.caps),
+		Capabilities: internal.ClientCapabilities(s.caps, s.userAgent),
 		Args:         req,
 	}
 	if err := cr.Encode(r); err != nil {
@@ -443,7 +450,7 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 
 	neg := &httpNegotiator{session: s, ctx: ctx}
 
-	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
+	shallows, err := transport.NegotiatePack(ctx, st, s.caps, s.userAgent, true, neg, neg, req)
 	if err != nil {
 		if ioutil.ReadFinished(ctx, err) {
 			neg.closeResponse()
@@ -481,7 +488,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 		r := &httpRequester{session: s, ctx: ctx}
 		cr := &packp.CommandRequest{
 			Command:      "fetch",
-			Capabilities: internal.ClientCapabilities(s.caps),
+			Capabilities: internal.ClientCapabilities(s.caps, s.userAgent),
 			Args:         args,
 		}
 		if err := cr.Encode(r); err != nil {
@@ -509,7 +516,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
 	rwc := &httpRequester{session: s, ctx: ctx}
-	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
+	err := transport.SendPack(ctx, st, s.caps, s.userAgent, rwc, io.NopCloser(rwc), req)
 	if ioutil.ReadFinished(ctx, err) && rwc.resp != nil {
 		_ = rwc.resp.Body.Close()
 	}
@@ -592,7 +599,7 @@ func (r *httpRequester) doPost() error {
 	}
 	httpReq.Header.Set("Content-Type", fmt.Sprintf("application/x-%s-request", r.session.service))
 	httpReq.Header.Set("Accept", fmt.Sprintf("application/x-%s-result", r.session.service))
-	httpReq.Header.Set("User-Agent", capability.DefaultAgent())
+	httpReq.Header.Set("User-Agent", r.session.userAgent)
 	if gp := transport.GitProtocolEnv(r.session.version); gp != "" {
 		httpReq.Header.Set("Git-Protocol", gp)
 	}

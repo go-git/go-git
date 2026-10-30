@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -13,11 +14,13 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// SendPack sends a packfile to a remote server.
+// SendPack sends a packfile to a remote server. userAgent is sent as the agent
+// capability, sanitized as git does; empty means capability.DefaultAgent().
 func SendPack(
 	ctx context.Context,
 	_ storage.Storer,
 	caps capability.List,
+	userAgent string,
 	writer io.WriteCloser,
 	reader io.ReadCloser,
 	req *PushRequest,
@@ -40,7 +43,7 @@ func SendPack(
 		return fmt.Errorf("packfile is required for push request with new objects")
 	}
 
-	upreq := buildUpdateRequests(caps, req)
+	upreq := buildUpdateRequests(caps, userAgent, req)
 	if err := upreq.Encode(writer); err != nil {
 		return err
 	}
@@ -121,7 +124,7 @@ func SendPack(
 	return reportError
 }
 
-func buildUpdateRequests(caps capability.List, req *PushRequest) *packp.UpdateRequests {
+func buildUpdateRequests(caps capability.List, userAgent string, req *PushRequest) *packp.UpdateRequests {
 	upreq := &packp.UpdateRequests{}
 
 	if caps.Supports(capability.ReportStatus) {
@@ -144,7 +147,7 @@ func buildUpdateRequests(caps capability.List, req *PushRequest) *packp.UpdateRe
 		upreq.Capabilities.Set(capability.PushOptions)
 	}
 	if caps.Supports(capability.Agent) {
-		upreq.Capabilities.Set(capability.Agent, capability.DefaultAgent())
+		upreq.Capabilities.Set(capability.Agent, internal.AgentCapability(userAgent))
 	}
 
 	upreq.Commands = req.Commands

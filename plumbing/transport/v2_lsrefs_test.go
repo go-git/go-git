@@ -34,7 +34,7 @@ func newV2Session(t testing.TB, serve func(serverConn net.Conn) error) *StreamSe
 		close: func() error { return clientConn.Close() },
 	}
 
-	s, err := NewStreamSession(conn, UploadPackService)
+	s, err := NewStreamSession(conn, &Request{Command: UploadPackService})
 	require.NoError(t, err)
 	require.Equal(t, protocol.V2, s.version)
 	return s
