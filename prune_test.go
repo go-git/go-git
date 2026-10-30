@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -83,6 +84,209 @@ func (s *PruneSuite) TestPrune() {
 
 func (s *PruneSuite) TestPruneWithNoDelete() {
 	s.testPrune(time.Unix(0, 1))
+}
+
+func TestMaintenanceTreeEntries(t *testing.T) {
+	t.Parallel()
+
+	for _, operation := range []string{"prune", "repack"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			for _, test := range []struct {
+				name    string
+				mode    filemode.FileMode
+				present bool
+			}{
+				{"regular", filemode.Regular, true},
+				{"executable", filemode.Executable, true},
+				{"symlink", filemode.Symlink, true},
+				{"missing_symlink_blob", filemode.Symlink, false},
+				{"missing_submodule_commit", filemode.Submodule, false},
+				{"local_submodule_commit", filemode.Submodule, true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					t.Parallel()
+					st := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+					r, err := Init(st, nil)
+					require.NoError(t, err)
+					defer func() { _ = r.Close() }()
+
+					blob := writeBlob(t, st, []byte("target"))
+					entryHash := blob
+					if !test.present {
+						entryHash = plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+					} else if test.mode == filemode.Submodule {
+						target := st.NewEncodedObject()
+						require.NoError(t, (&object.Commit{TreeHash: writeEmptyTree(t, r), Message: "submodule"}).Encode(target))
+						entryHash, err = st.SetEncodedObject(target)
+						require.NoError(t, err)
+					}
+					tree := st.NewEncodedObject()
+					require.NoError(t, (&object.Tree{Entries: []object.TreeEntry{
+						{Name: "entry", Mode: test.mode, Hash: entryHash},
+					}}).Encode(tree))
+					treeHash, err := st.SetEncodedObject(tree)
+					require.NoError(t, err)
+					commit := st.NewEncodedObject()
+					require.NoError(t, (&object.Commit{TreeHash: treeHash, Message: "reachable"}).Encode(commit))
+					commitHash, err := st.SetEncodedObject(commit)
+					require.NoError(t, err)
+					require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/main", commitHash)))
+
+					if operation == "prune" {
+						err = r.Prune(PruneOptions{Handler: r.DeleteObject})
+					} else {
+						err = r.RepackObjects(&RepackConfig{})
+					}
+					if test.mode == filemode.Symlink && !test.present {
+						require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+						require.NoError(t, st.HasEncodedObject(commitHash))
+						require.NoError(t, st.HasEncodedObject(treeHash))
+						require.NoError(t, st.HasEncodedObject(blob))
+						packs, err := st.ObjectPacks()
+						require.NoError(t, err)
+						require.Empty(t, packs)
+						return
+					}
+					require.NoError(t, err)
+					fresh := filesystem.NewStorage(st.Filesystem(), cache.NewObjectLRUDefault())
+					defer func() { _ = fresh.Close() }()
+					if operation == "repack" {
+						packs, err := st.ObjectPacks()
+						require.NoError(t, err)
+						require.Len(t, packs, 1)
+						_, err = st.LooseObjectTime(commitHash)
+						require.Error(t, err)
+					}
+					_, err = object.GetCommit(fresh, commitHash)
+					require.NoError(t, err)
+					_, err = object.GetTree(fresh, treeHash)
+					require.NoError(t, err)
+					if test.mode == filemode.Submodule {
+						if operation == "prune" || !test.present {
+							require.ErrorIs(t, st.HasEncodedObject(entryHash), plumbing.ErrObjectNotFound)
+						} else {
+							_, err = st.LooseObjectTime(entryHash)
+							require.NoError(t, err)
+						}
+						if operation == "prune" {
+							require.ErrorIs(t, st.HasEncodedObject(blob), plumbing.ErrObjectNotFound)
+						}
+					} else {
+						if operation == "repack" {
+							_, err = st.LooseObjectTime(blob)
+							require.Error(t, err)
+						}
+						obj, err := object.GetBlob(fresh, blob)
+						require.NoError(t, err)
+						rd, err := obj.Reader()
+						require.NoError(t, err)
+						defer func() { _ = rd.Close() }()
+						content, err := io.ReadAll(rd)
+						require.NoError(t, err)
+						require.Equal(t, "target", string(content))
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestMaintenanceBlobTag(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"prune", "repack"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			st := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+			r, err := Init(st, nil)
+			require.NoError(t, err)
+			defer func() { _ = r.Close() }()
+
+			blob := writeBlob(t, st, []byte("tagged blob"))
+			tag := st.NewEncodedObject()
+			require.NoError(t, (&object.Tag{Name: "blob", TargetType: plumbing.BlobObject, Target: blob}).Encode(tag))
+			tagHash, err := st.SetEncodedObject(tag)
+			require.NoError(t, err)
+			require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/tags/blob", tagHash)))
+
+			if operation == "prune" {
+				err = r.Prune(PruneOptions{Handler: r.DeleteObject})
+			} else {
+				err = r.RepackObjects(&RepackConfig{})
+			}
+			require.NoError(t, err)
+			fresh := filesystem.NewStorage(st.Filesystem(), cache.NewObjectLRUDefault())
+			defer func() { _ = fresh.Close() }()
+			require.NoError(t, fresh.HasEncodedObject(tagHash))
+			require.NoError(t, fresh.HasEncodedObject(blob))
+			if operation == "repack" {
+				_, err = st.LooseObjectTime(blob)
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestMaintenanceRejectsBlobAsTree(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"prune", "repack"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			for _, context := range []string{"commit_tree", "directory", "directory_after_file", "directory_after_symlink"} {
+				t.Run(context, func(t *testing.T) {
+					t.Parallel()
+					st := filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+					r, err := Init(st, nil)
+					require.NoError(t, err)
+					defer func() { _ = r.Close() }()
+
+					blob := writeBlob(t, st, []byte("not a tree"))
+					witness := writeBlob(t, st, []byte("unreachable witness"))
+					treeHash := blob
+					if context != "commit_tree" {
+						entries := []object.TreeEntry{{Name: "directory", Mode: filemode.Dir, Hash: blob}}
+						switch context {
+						case "directory_after_file":
+							entries = append([]object.TreeEntry{{Name: "already_seen", Mode: filemode.Regular, Hash: blob}}, entries...)
+						case "directory_after_symlink":
+							entries = append([]object.TreeEntry{{Name: "already_seen", Mode: filemode.Symlink, Hash: blob}}, entries...)
+						}
+						tree := st.NewEncodedObject()
+						require.NoError(t, (&object.Tree{Entries: entries}).Encode(tree))
+						treeHash, err = st.SetEncodedObject(tree)
+						require.NoError(t, err)
+					}
+					commit := st.NewEncodedObject()
+					require.NoError(t, (&object.Commit{TreeHash: treeHash, Message: "malformed"}).Encode(commit))
+					commitHash, err := st.SetEncodedObject(commit)
+					require.NoError(t, err)
+					require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/main", commitHash)))
+
+					called := false
+					if operation == "prune" {
+						err = r.Prune(PruneOptions{Handler: func(hash plumbing.Hash) error {
+							called = true
+							return r.DeleteObject(hash)
+						}})
+					} else {
+						err = r.RepackObjects(&RepackConfig{})
+					}
+					require.ErrorIs(t, err, plumbing.ErrInvalidType)
+					require.False(t, called)
+					fresh := filesystem.NewStorage(st.Filesystem(), cache.NewObjectLRUDefault())
+					defer func() { _ = fresh.Close() }()
+					for _, hash := range []plumbing.Hash{blob, witness, treeHash, commitHash} {
+						require.NoError(t, fresh.HasEncodedObject(hash))
+						_, err = fresh.LooseObjectTime(hash)
+						require.NoError(t, err)
+					}
+					packs, err := fresh.ObjectPacks()
+					require.NoError(t, err)
+					require.Empty(t, packs)
+				})
+			}
+		})
+	}
 }
 
 func newPruneSymrefRepository(t *testing.T) (*Repository, plumbing.Hash, plumbing.Hash) {
