@@ -230,10 +230,10 @@ func (s *SidebandSuite) TestDecodeMasksControlCharactersInErrors() {
 
 	s.Run("unknown channel", func() {
 		buf := bytes.NewBuffer(nil)
-		pktline.Write(buf, []byte("4\x1b[2JFOO\n"))
+		pktline.Write(buf, []byte("4\x1b[2JFOO\rBAR\n"))
 
 		d := NewDemuxer(Sideband64k, buf)
 		_, err := io.ReadFull(d, make([]byte, 1))
-		s.ErrorContains(err, "unknown channel 4^[[2JFOO\n")
+		s.ErrorContains(err, "unknown channel 4^[[2JFOO^MBAR\n")
 	})
 }

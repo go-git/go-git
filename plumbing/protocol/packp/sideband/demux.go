@@ -163,8 +163,9 @@ func (d *Demuxer) getPending() (b []byte) {
 // hook running on it, wrote to stderr, and they end up on the user's terminal.
 // An escape sequence there can redraw the screen, hide what was printed before
 // it, or type into the input buffer (CWE-150). Git masks the sideband the same
-// way by default, see strbuf_add_sanitized in sideband.c[1]. Git keeps carriage
-// return only on the progress channel, by splitting lines before masking them.
+// way by default, see strbuf_add_sanitized in sideband.c[1]. That function
+// masks carriage return, and Git keeps it on the progress channel by splitting
+// lines before masking them.
 // Color sequences pass because hooks in the wild rely on them. They cannot move
 // the cursor, clear the screen or write to the input buffer.
 //
