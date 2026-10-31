@@ -137,6 +137,11 @@ func (r *LsRefsArgs) Decode(rd io.Reader) error {
 // consumed by the transport layer and not seen by Decode.
 type LsRefsOutput struct {
 	References []*plumbing.Reference
+	// UnbornHead is the symref target of HEAD when the server reported HEAD
+	// as unborn. References still holds HEAD as a single symbolic reference
+	// to it. It tells an unborn HEAD apart from a HEAD whose target a
+	// ref-prefix left out, since both decode to the same symbolic reference.
+	UnbornHead plumbing.ReferenceName
 }
 
 // Encode writes the ls-refs response lines as pkt-lines following the v2
@@ -186,6 +191,7 @@ func (r *LsRefsOutput) Encode(w io.Writer) error {
 
 // Decode reads ref lines until a flush-pkt.
 func (r *LsRefsOutput) Decode(rd io.Reader) error {
+	unbornAt := -1
 	for {
 		l, pkt, err := pktline.ReadLine(rd)
 		if err != nil {
@@ -205,9 +211,20 @@ func (r *LsRefsOutput) Decode(rd io.Reader) error {
 			continue
 		}
 
-		refs, err := parseLsRefsLine(line)
+		refs, unbornHead, err := parseLsRefsLine(line)
 		if err != nil {
 			return err
+		}
+		if unbornHead != "" {
+			r.UnbornHead = unbornHead
+			// A repeated unborn HEAD replaces the earlier one, since upstream
+			// keeps the last target (connect.c process_ref_v2). Keeping a
+			// single entry lets callers discount it from References.
+			if unbornAt >= 0 {
+				r.References[unbornAt] = refs[0]
+				continue
+			}
+			unbornAt = len(r.References)
 		}
 		r.References = append(r.References, refs...)
 	}
@@ -215,17 +232,24 @@ func (r *LsRefsOutput) Decode(rd io.Reader) error {
 
 // parseLsRefsLine parses a single ref line from ls-refs output.
 // Format: <oid-or-unborn> SP <refname> [SP <attr>...] LF
-// Returns one or two references (base + peeled if the peeled attribute is present).
-func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
+// Returns one or two references (base + peeled if the peeled attribute is present),
+// and the symref target of HEAD when the line reports HEAD as unborn.
+func parseLsRefsLine(line string) (refs []*plumbing.Reference, unbornHead plumbing.ReferenceName, err error) {
 	// Fields tolerates the SP-separated grammar without producing empty tokens
 	// on repeated spaces: [oid-or-unborn, refname, attr1, attr2, ...].
 	parts := strings.Fields(line)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("malformed ref line: %q", line)
+		return nil, "", fmt.Errorf("malformed ref line: %q", line)
 	}
 
 	oidStr := parts[0]
 	refName := plumbing.ReferenceName(parts[1])
+
+	// Only HEAD can be unborn. Upstream skips any other unborn line without
+	// reading its attributes (connect.c process_ref_v2), so do the same.
+	if oidStr == "unborn" && refName != plumbing.HEAD {
+		return nil, "", nil
+	}
 
 	var symrefTarget plumbing.ReferenceName
 	var peeledHash plumbing.Hash
@@ -237,28 +261,26 @@ func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
 		} else if strings.HasPrefix(attr, "peeled:") {
 			h, ok := parseFullHash(attr[len("peeled:"):])
 			if !ok {
-				return nil, fmt.Errorf("malformed peeled hash: %q", attr)
+				return nil, "", fmt.Errorf("malformed peeled hash: %q", attr)
 			}
 			peeledHash = h
 			hasPeeled = true
 		}
 	}
 
-	var refs []*plumbing.Reference
-
 	// Handle unborn refs
 	if oidStr == "unborn" {
 		if symrefTarget == "" {
-			return nil, fmt.Errorf("malformed unborn ref line, missing symref-target: %q", line)
+			return nil, "", fmt.Errorf("malformed unborn ref line, missing symref-target: %q", line)
 		}
 		refs = append(refs, plumbing.NewSymbolicReference(refName, symrefTarget))
-		return refs, nil
+		return refs, symrefTarget, nil
 	}
 
 	// Regular hash ref
 	hash, ok := parseFullHash(oidStr)
 	if !ok {
-		return nil, fmt.Errorf("malformed object id: %q", oidStr)
+		return nil, "", fmt.Errorf("malformed object id: %q", oidStr)
 	}
 
 	if symrefTarget != "" {
@@ -275,7 +297,7 @@ func parseLsRefsLine(line string) ([]*plumbing.Reference, error) {
 		))
 	}
 
-	return refs, nil
+	return refs, "", nil
 }
 
 // parseFullHash strictly parses a full-length SHA-1 or SHA-256 object id in hex

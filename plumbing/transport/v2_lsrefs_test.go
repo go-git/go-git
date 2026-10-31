@@ -64,6 +64,84 @@ func refNames(refs []*plumbing.Reference) map[string]*plumbing.Reference {
 	return m
 }
 
+// serveLsRefsLines answers a single ls-refs command with lines, regardless of
+// the arguments it was sent.
+func serveLsRefsLines(lines ...string) func(net.Conn) error {
+	return func(serverConn net.Conn) error {
+		defer func() { _ = serverConn.Close() }()
+
+		for _, line := range []string{"version 2\n", "agent=test\n", "ls-refs=unborn\n", "object-format=sha1\n"} {
+			if _, err := pktline.WriteString(serverConn, line); err != nil {
+				return err
+			}
+		}
+		if err := pktline.WriteFlush(serverConn); err != nil {
+			return err
+		}
+
+		req := &packp.CommandRequest{Args: &packp.LsRefsArgs{}}
+		if err := req.Decode(bufio.NewReader(serverConn)); err != nil {
+			return err
+		}
+		for _, line := range lines {
+			if _, err := pktline.Writef(serverConn, "%s\n", line); err != nil {
+				return err
+			}
+		}
+		return pktline.WriteFlush(serverConn)
+	}
+}
+
+func TestV2GetRemoteRefsNarrowedByRefPrefix(t *testing.T) {
+	t.Parallel()
+
+	const headHash = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	tests := []struct {
+		name    string
+		lines   []string
+		wantErr error
+	}{
+		{
+			name:  "HEAD with an object id is not empty",
+			lines: []string{headHash + " HEAD symref-target:refs/heads/main"},
+		},
+		{
+			name:    "unborn HEAD is empty",
+			lines:   []string{"unborn HEAD symref-target:refs/heads/main"},
+			wantErr: ErrEmptyRemoteRepository,
+		},
+		{
+			name: "repeated unborn HEAD is empty",
+			lines: []string{
+				"unborn HEAD symref-target:refs/heads/main",
+				"unborn HEAD symref-target:refs/heads/main",
+			},
+			wantErr: ErrEmptyRemoteRepository,
+		},
+		{
+			name:    "no lines is empty",
+			wantErr: ErrEmptyRemoteRepository,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newV2Session(t, serveLsRefsLines(tt.lines...))
+			rr, err := s.GetRemoteRefs(context.TODO(), &GetRemoteRefsOptions{
+				RefPrefixes: []string{"refs/heads/no-such-branch", "HEAD"},
+			})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, rr.References, 1)
+			require.Equal(t, plumbing.HEAD, rr.References[0].Name())
+			require.Empty(t, rr.Unborn, "HEAD carries an object id, so it is not unborn")
+		})
+	}
+}
+
 func TestV2GetRemoteRefs(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
