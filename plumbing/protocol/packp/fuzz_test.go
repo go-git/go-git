@@ -176,6 +176,8 @@ func FuzzLsRefsArgsDecode(f *testing.F) {
 
 func FuzzLsRefsOutputDecode(f *testing.F) {
 	f.Add([]byte("003d6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/heads/main\n00506ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD symref-target:refs/heads/main\n0000"))
+	f.Add([]byte("002eunborn HEAD symref-target:refs/heads/main\n0000"))
+	f.Add([]byte("0010unborn HEAD\n0025unborn refs/heads/main peeled:zz\n0000"))
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
@@ -189,9 +191,12 @@ func FuzzParseLsRefsLine(f *testing.F) {
 	f.Add(oid + " refs/heads/main")
 	f.Add(oid + " HEAD symref-target:refs/heads/main")
 	f.Add(oid + " refs/tags/v1 peeled:" + oid)
+	f.Add("unborn HEAD symref-target:refs/heads/main")
+	f.Add("unborn HEAD")
+	f.Add("unborn refs/heads/main peeled:zz")
 	f.Add("")
 
 	f.Fuzz(func(_ *testing.T, line string) {
-		_, _ = parseLsRefsLine(line)
+		_, _, _ = parseLsRefsLine(line)
 	})
 }
