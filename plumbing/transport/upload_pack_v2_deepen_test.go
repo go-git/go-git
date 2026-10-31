@@ -491,3 +491,118 @@ func TestUploadPackV2FetchDeepenRelativeFromShallowServerBoundary(t *testing.T) 
 		"unshallow " + tip.String(),
 	}, sections["shallow-info"])
 }
+
+func TestUploadPackV2FetchShallowServerStopsAtClientBoundary(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	tree := makeShallowTestTree(t, st)
+	boundary := makeShallowTestCommit(t, st, "graft", tree, plumbing.NewHash("2222222222222222222222222222222222222222"))
+	tip := makeShallowTestCommit(t, st, "tip", tree, boundary)
+	tip2 := makeShallowTestCommit(t, st, "tip2", tree, tip)
+	require.NoError(t, st.SetShallow([]plumbing.Hash{boundary}))
+
+	// The client is shallow above the server's graft. A fetch without a deepen
+	// must leave its boundary alone: git registers those commits as grafts
+	// before deepen(INFINITE_DEPTH), so the walk stops at the client's tip and
+	// reaches neither the server graft nor its history.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip2.String(),
+		"have " + tip.String(),
+		"shallow " + tip.String(),
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.Contains(t, sections, "shallow-info")
+	require.Empty(t, sections["shallow-info"],
+		"a plain fetch must not deepen past the client's own boundary")
+}
+
+func TestUploadPackV2FetchDeepenWalksEveryParentToGraft(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	tree := makeShallowTestTree(t, st)
+	graftA := makeShallowTestCommit(t, st, "graft-a", tree, plumbing.NewHash("3333333333333333333333333333333333333333"))
+	a := makeShallowTestCommit(t, st, "a", tree, graftA)
+	graftB := makeShallowTestCommit(t, st, "graft-b", tree, plumbing.NewHash("4444444444444444444444444444444444444444"))
+	merge := makeShallowTestCommit(t, st, "merge", tree, a, graftB)
+	require.NoError(t, st.SetShallow([]plumbing.Hash{graftA, graftB}))
+
+	// Both parents of the merge lead to a server graft. Every parent must be
+	// walked: missing one leaves the client with an unmarked boundary and a
+	// missing parent.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + merge.String(),
+		"deepen 100",
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.ElementsMatch(t, []string{
+		"shallow " + graftA.String(),
+		"shallow " + graftB.String(),
+	}, sections["shallow-info"])
+}
+
+func TestUploadPackV2FetchDeepenReportsEachBoundaryOnce(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	tree := makeShallowTestTree(t, st)
+	graft := makeShallowTestCommit(t, st, "graft", tree, plumbing.NewHash("5555555555555555555555555555555555555555"))
+	tip := makeShallowTestCommit(t, st, "root", tree)
+	for i := 1; i <= 12; i++ {
+		tip = makeShallowTestCommit(t, st, "merge-"+strconv.Itoa(i), tree, tip, graft)
+	}
+	require.NoError(t, st.SetShallow([]plumbing.Hash{graft}))
+
+	// A merge-heavy history reaches the graft through every merge. The walk
+	// must decode each commit once, keyed by hash like git's commit slab, or
+	// the boundary is reported once per path.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"deepen 1000000",
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	shallowLines := 0
+	unshallows := map[string]struct{}{}
+	for _, line := range sections["shallow-info"] {
+		switch {
+		case strings.HasPrefix(line, "shallow "):
+			shallowLines++
+		case strings.HasPrefix(line, "unshallow "):
+			require.NotContains(t, unshallows, line, "a commit must be unshallowed once")
+			unshallows[line] = struct{}{}
+		}
+	}
+	require.Equal(t, 1, shallowLines, "each boundary must be reported once")
+}
+
+func TestUploadPackV2FetchDeepenRelativeStopsAtServerGraft(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	tree := makeShallowTestTree(t, st)
+	// The object below the graft still exists, as after a stale shallow file.
+	below := makeShallowTestCommit(t, st, "below-graft", tree)
+	graft := makeShallowTestCommit(t, st, "graft", tree, below)
+	tip := makeShallowTestCommit(t, st, "tip", tree, graft)
+	require.NoError(t, st.SetShallow([]plumbing.Hash{graft}))
+
+	// The client's boundary lies behind the server's graft, which the depth
+	// calculation stops at: no reachable client boundary means no deepen, not a
+	// boundary three commits down.
+	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
+		"want " + tip.String(),
+		"have " + tip.String(),
+		"shallow " + below.String(),
+		"deepen 1",
+		"deepen-relative",
+		"done",
+	}))
+
+	sections := v2FetchSections(t, out)
+	require.Contains(t, sections, "shallow-info")
+	require.Empty(t, sections["shallow-info"],
+		"the depth calculation must not walk past a server graft")
+}
