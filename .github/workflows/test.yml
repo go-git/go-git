@@ -1,6 +1,13 @@
 name: Test
 on:
+  # Pull requests only run against stable. Dispatch with a pull request
+  # number to also run oldstable against it before merging.
   workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to test (defaults to the selected branch)
+        type: number
+        required: false
   push:
     branches:
     - releases/v5.x
@@ -20,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [oldstable, stable]
+        go-version: ${{ fromJSON(github.event_name == 'pull_request' && '["stable"]' || '["oldstable", "stable"]') }}
         platform: [ubuntu-latest, macos-latest, windows-latest]
 
     permissions:
@@ -30,6 +37,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.pr && format('refs/pull/{0}/merge', inputs.pr) || '' }}
 
     - name: Install Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -53,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [oldstable, stable]
+        go-version: ${{ fromJSON(github.event_name == 'pull_request' && '["stable"]' || '["oldstable", "stable"]') }}
 
     permissions:
       contents: read
@@ -62,6 +71,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.pr && format('refs/pull/{0}/merge', inputs.pr) || '' }}
 
     - name: Install Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -83,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: [oldstable, stable]
+        go-version: ${{ fromJSON(github.event_name == 'pull_request' && '["stable"]' || '["oldstable", "stable"]') }}
 
     permissions:
       contents: read
@@ -92,6 +103,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.pr && format('refs/pull/{0}/merge', inputs.pr) || '' }}
 
     - name: Install Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
