@@ -83,10 +83,9 @@ func lsRefsSupportsUnborn(server capability.List) bool {
 
 // LsRefs lists references using the v2 ls-refs command run through cmd. It
 // always requests peeled tags and symref targets so HEAD resolves to its
-// branch, and requests unborn HEAD reporting when the server advertises it. The
-// returned references include a symbolic HEAD (and an unborn HEAD as a symref
-// whose target has no hash reference) so callers can detect an unborn branch.
-func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPrefixes []string) ([]*plumbing.Reference, error) {
+// branch, and requests unborn HEAD reporting when the server advertises it. An
+// unborn HEAD is returned as a symbolic reference and named by UnbornHead.
+func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPrefixes []string) (*packp.LsRefsOutput, error) {
 	args := &packp.LsRefsArgs{
 		Peel:        true,
 		Symrefs:     true,
@@ -99,20 +98,20 @@ func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPre
 		return nil, err
 	}
 
-	return out.References, nil
+	return out, nil
 }
 
-// HasHashRef reports whether refs contains at least one hash (non-symbolic)
-// reference. A v2 ls-refs result with only a symbolic or unborn HEAD and no
-// hash references corresponds to an empty repository, so callers treat the
-// absence of hash references the same as the v0/v1 empty advertisement.
-func HasHashRef(refs []*plumbing.Reference) bool {
-	for _, r := range refs {
-		if r.Type() == plumbing.HashReference {
-			return true
-		}
+// IsEmptyLsRefs reports whether out advertises no reference with an object id,
+// the v2 equivalent of an empty v0/v1 advertisement. An unborn HEAD is not a
+// reference (connect.c process_ref_v2), and the decoder keeps it in References
+// once at most. A symbolic HEAD that carries an object id is a reference, even
+// when a ref-prefix left its target out of the result.
+func IsEmptyLsRefs(out *packp.LsRefsOutput) bool {
+	n := len(out.References)
+	if out.UnbornHead != "" {
+		n--
 	}
-	return false
+	return n == 0
 }
 
 // wantsLocal reports whether every wanted object is already present in haves, so

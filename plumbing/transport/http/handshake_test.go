@@ -950,3 +950,75 @@ func TestHandshakeSmartKeepsConnection(t *testing.T) {
 	assert.Equal(t, int64(1), conns.Load(),
 		"the ls-refs POST must reuse the connection the advertisement arrived on")
 }
+
+func TestGetRemoteRefsV2NarrowedByRefPrefix(t *testing.T) {
+	t.Parallel()
+
+	const head = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	tests := []struct {
+		name    string
+		lines   []string
+		wantErr error
+	}{
+		{
+			name:  "HEAD with an object id is not empty",
+			lines: []string{head + " HEAD symref-target:refs/heads/main\n"},
+		},
+		{
+			name:    "unborn HEAD is empty",
+			lines:   []string{"unborn HEAD symref-target:refs/heads/main\n"},
+			wantErr: transport.ErrEmptyRemoteRepository,
+		},
+		{
+			name:    "no lines is empty",
+			wantErr: transport.ErrEmptyRemoteRepository,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			advertisement := pktLine("# service=git-upload-pack\n") + "0000" +
+				pktLine("version 2\n") + pktLine("agent=go-git/test\n") + pktLine("ls-refs=unborn\n") + "0000"
+			var refs strings.Builder
+			for _, line := range tt.lines {
+				refs.WriteString(pktLine(line))
+			}
+			refs.WriteString("0000")
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+					_, _ = io.WriteString(w, advertisement)
+					return
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+				_, _ = io.WriteString(w, refs.String())
+			}))
+			t.Cleanup(srv.Close)
+
+			u, err := url.Parse(srv.URL)
+			require.NoError(t, err)
+
+			tr := NewTransport(Options{Client: srv.Client()})
+			session, err := tr.Handshake(context.Background(), &transport.Request{
+				URL:     u,
+				Command: transport.UploadPackService,
+			})
+			require.NoError(t, err)
+			defer session.Close()
+
+			remote, err := session.GetRemoteRefs(context.Background(), &transport.GetRemoteRefsOptions{
+				RefPrefixes: []string{"refs/heads/no-such-branch", "HEAD"},
+			})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, remote.References, 1)
+			assert.Empty(t, remote.Unborn, "HEAD carries an object id, so it is not unborn")
+		})
+	}
+}

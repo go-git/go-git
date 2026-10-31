@@ -748,6 +748,38 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
 }
 
+// A single-branch clone of a missing branch narrows ls-refs to HEAD, which
+// the remote still advertises with an object id. That is a missing branch,
+// not an empty remote, so AllowEmptyRepo must not turn it into a success.
+func TestPlainCloneContext_SingleBranchMissingRefIsNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	src := t.TempDir()
+	repo, err := PlainInit(src, false)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(src, "a.txt"), []byte("hi"), 0o600))
+	_, err = wt.Add("a.txt")
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@example.com", When: time.Now()}
+	_, err = wt.Commit("init", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	for _, allowEmpty := range []bool{false, true} {
+		t.Run(fmt.Sprintf("AllowEmptyRepo=%t", allowEmpty), func(t *testing.T) {
+			t.Parallel()
+			_, err := PlainCloneContext(context.Background(), t.TempDir(), &CloneOptions{
+				URL:            "file://" + src,
+				ReferenceName:  plumbing.NewBranchReferenceName("no-such-branch"),
+				SingleBranch:   true,
+				AllowEmptyRepo: allowEmpty,
+			})
+			require.ErrorIs(t, err, ErrRemoteRefNotFound)
+		})
+	}
+}
+
 // TestPlainCloneContext_DetachedHeadSource is a regression test for a bug
 // where PlainCloneContext returns plumbing.ErrReferenceNotFound when the
 // source repository has a detached HEAD.
