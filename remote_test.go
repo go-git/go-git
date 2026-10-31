@@ -2233,26 +2233,21 @@ func (s *RemoteSuite) TestFetchAfterShallowClone() {
 // TestFetchAfterShallowClone_NoForceRefspec is a regression test for
 // https://github.com/go-git/go-git/issues/207.
 //
-// When a shallow clone is followed by a depth-limited fetch using a plain
-// (non-force) refspec, the local ancestor walk would fail with
-// plumbing.ErrObjectNotFound because intermediate commits (between the old
-// local tip and the new shallow tip) are absent from the local store.
-// The fix makes isFastForward aware of shallow boundaries: when ancestry
-// cannot be proven due to missing shallow history, it conservatively assumes
-// fast-forward (matching the behaviour of git(1)).
+// A depth-limited fetch over a plain refspec leaves the new tip's history
+// truncated, so ancestry cannot be proven and git rejects the update as a
+// non-fast-forward. The walk must stop at the boundary instead of failing with
+// plumbing.ErrObjectNotFound on the absent intermediate commits.
 func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	tempDir := s.T().TempDir()
 	remoteURL := filepath.Join(tempDir, "remote")
 	repoDir := filepath.Join(tempDir, "repo")
 
-	// Build a remote with two commits so we can take a shallow clone.
 	remoteRepo, err := PlainInit(remoteURL, false)
 	s.Require().NoError(err)
 	defer func() { _ = remoteRepo.Close() }()
 	_ = CommitNewFile(s.T(), remoteRepo, "File1")
-	_ = CommitNewFile(s.T(), remoteRepo, "File2")
+	shallowTip := CommitNewFile(s.T(), remoteRepo, "File2")
 
-	// Shallow clone at depth=1 — only the latest commit is stored locally.
 	repo, err := PlainClone(repoDir, &CloneOptions{
 		URL:           remoteURL,
 		Depth:         1,
@@ -2263,14 +2258,9 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 	s.Require().NoError(err)
 	defer func() { _ = repo.Close() }()
 
-	// Push two more commits to the remote while the local clone is still shallow.
 	_ = CommitNewFile(s.T(), remoteRepo, "File3")
-	sha4 := CommitNewFile(s.T(), remoteRepo, "File4")
+	_ = CommitNewFile(s.T(), remoteRepo, "File4")
 
-	// Fetch with depth=1 and a plain (non-force) refspec.
-	// This means only File4's commit is fetched; File3's commit is absent
-	// locally, so the ancestry walk from sha4 back to our current tip would
-	// hit a missing object without the fix.
 	r, err := repo.Remote(DefaultRemoteName)
 	s.Require().NoError(err)
 
@@ -2278,17 +2268,267 @@ func (s *RemoteSuite) TestFetchAfterShallowClone_NoForceRefspec() {
 		Depth: 1,
 		Tags:  plumbing.NoTags,
 		RefSpecs: []config.RefSpec{
-			// No leading '+' — this is a fast-forward-only refspec.
 			"refs/heads/master:refs/heads/master",
 			"refs/heads/master:refs/remotes/origin/master",
 		},
 	})
-	s.Require().NoError(err, "shallow fetch with non-force refspec must not return an error")
+	// Tags: NoTags returns early before ErrForceNeeded is set, so the
+	// rejection shows up as an unchanged reference rather than an error.
+	s.Require().NoError(err)
 
-	// Confirm the local branch was updated to the new tip.
 	head, err := repo.Reference(plumbing.NewBranchReferenceName("master"), true)
 	s.Require().NoError(err)
-	s.Equal(sha4, head.Hash(), "local master must point to the new remote tip")
+	s.Equal(shallowTip, head.Hash(), "local master must not move over truncated history")
+}
+
+// dependentBoundaryFixture is the graph from
+// https://github.com/go-git/go-git/issues/2367: a depth-one fetch of two
+// branches whose tips are base and a child of base records both as shallow
+// boundaries, so one boundary is the parent of another.
+type dependentBoundaryFixture struct {
+	remote  *Repository
+	local   *Repository
+	tree    plumbing.Hash
+	base    plumbing.Hash
+	blocker plumbing.Hash
+	clock   time.Time
+}
+
+func (s *RemoteSuite) newDependentBoundaryFixture() *dependentBoundaryFixture {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+
+	remoteRepo, err := PlainInit(remoteURL, true)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = remoteRepo.Close() })
+
+	clock := time.Unix(1700000000, 0).UTC()
+	tree := writeEmptyTree(s.T(), remoteRepo)
+	writeCommitToRef(s.T(), remoteRepo, "refs/heads/base", tree, clock)
+	base := writeCommitToRef(s.T(), remoteRepo, "refs/heads/base", tree, clock.Add(time.Second))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/target", base),
+	))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/blocker", base),
+	))
+	blocker := writeCommitToRef(s.T(), remoteRepo, "refs/heads/blocker", tree, clock.Add(2*time.Second))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/base"),
+	))
+
+	repo, err := PlainInit(filepath.Join(tempDir, "repo"), false)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = repo.Close() })
+
+	_, err = repo.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{remoteURL},
+	})
+	s.Require().NoError(err)
+
+	err = repo.Fetch(&FetchOptions{
+		Depth: 1,
+		Tags:  plumbing.NoTags,
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/target:refs/remotes/origin/target",
+			"+refs/heads/blocker:refs/remotes/origin/blocker",
+		},
+	})
+	s.Require().NoError(err)
+
+	shallows, err := repo.Storer.Shallow()
+	s.Require().NoError(err)
+	s.Require().ElementsMatch([]plumbing.Hash{base, blocker}, shallows)
+
+	return &dependentBoundaryFixture{
+		remote:  remoteRepo,
+		local:   repo,
+		tree:    tree,
+		base:    base,
+		blocker: blocker,
+		clock:   clock,
+	}
+}
+
+// TestPushToShallowBoundaryWithDependentBoundary is a regression test for
+// https://github.com/go-git/go-git/issues/2367.
+//
+// git grafts a boundary's parents away but keeps the boundary itself
+// reachable, so a child of it is still a fast-forward.
+func (s *RemoteSuite) TestPushToShallowBoundaryWithDependentBoundary() {
+	f := s.newDependentBoundaryFixture()
+
+	s.Require().NoError(f.local.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/target", f.base),
+	))
+	child := writeCommitToRef(s.T(), f.local, "refs/heads/target", f.tree, f.clock.Add(3*time.Second))
+
+	err := f.local.Push(&PushOptions{
+		RemoteName: DefaultRemoteName,
+		RefSpecs:   []config.RefSpec{"refs/heads/target:refs/heads/target"},
+	})
+	s.Require().NoError(err)
+
+	updated, err := f.remote.Reference("refs/heads/target", true)
+	s.Require().NoError(err)
+	s.Equal(child, updated.Hash())
+}
+
+// TestPushShallowBoundaryOverItsShallowParent asserts the rejection git gives
+// for a boundary pushed over its own parent: the boundary is parentless, so
+// nothing proves the parent is an ancestor.
+func (s *RemoteSuite) TestPushShallowBoundaryOverItsShallowParent() {
+	f := s.newDependentBoundaryFixture()
+
+	s.Require().NoError(f.local.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/blocker", f.blocker),
+	))
+
+	err := f.local.Push(&PushOptions{
+		RemoteName: DefaultRemoteName,
+		RefSpecs:   []config.RefSpec{"refs/heads/blocker:refs/heads/target"},
+	})
+	s.Require().ErrorContains(err, "non-fast-forward update: refs/heads/target")
+
+	unchanged, err := f.remote.Reference("refs/heads/target", true)
+	s.Require().NoError(err)
+	s.Equal(f.base, unchanged.Hash())
+}
+
+// TestPushDivergedSiblingOfShallowBoundary asserts the rejection git gives for
+// two commits that share a boundary as their only visible parent: neither is
+// an ancestor of the other, so a non-force push must not overwrite the remote.
+func (s *RemoteSuite) TestPushDivergedSiblingOfShallowBoundary() {
+	f := s.newDependentBoundaryFixture()
+
+	s.Require().NoError(f.remote.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/target", f.blocker),
+	))
+	s.Require().NoError(f.local.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/target", f.base),
+	))
+	sibling := writeCommitToRef(s.T(), f.local, "refs/heads/target", f.tree, f.clock.Add(3*time.Second))
+
+	err := f.local.Push(&PushOptions{
+		RemoteName: DefaultRemoteName,
+		RefSpecs:   []config.RefSpec{"refs/heads/target:refs/heads/target"},
+	})
+	s.Require().ErrorContains(err, "non-fast-forward update: refs/heads/target")
+
+	unchanged, err := f.remote.Reference("refs/heads/target", true)
+	s.Require().NoError(err)
+	s.Equal(f.blocker, unchanged.Hash())
+	s.NotEqual(sibling, unchanged.Hash())
+}
+
+// heldParentFixture holds a shallow boundary whose parent the repository also
+// holds in full, which happens when one branch is fetched in full and another
+// is fetched at depth one.
+type heldParentFixture struct {
+	remote *Repository
+	local  *Repository
+	tree   plumbing.Hash
+	parent plumbing.Hash
+	clock  time.Time
+}
+
+func (s *RemoteSuite) newHeldParentFixture() *heldParentFixture {
+	tempDir := s.T().TempDir()
+	remoteURL := filepath.Join(tempDir, "remote")
+
+	remoteRepo, err := PlainInit(remoteURL, true)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = remoteRepo.Close() })
+
+	clock := time.Unix(1700000000, 0).UTC()
+	tree := writeEmptyTree(s.T(), remoteRepo)
+	parent := writeCommitToRef(s.T(), remoteRepo, "refs/heads/master", tree, clock)
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/feature", parent),
+	))
+	writeCommitToRef(s.T(), remoteRepo, "refs/heads/feature", tree, clock.Add(time.Second))
+	s.Require().NoError(remoteRepo.Storer.SetReference(
+		plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/master"),
+	))
+
+	repo, err := PlainInit(filepath.Join(tempDir, "repo"), false)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = repo.Close() })
+
+	_, err = repo.CreateRemote(&config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{remoteURL},
+	})
+	s.Require().NoError(err)
+
+	s.Require().NoError(repo.Fetch(&FetchOptions{
+		Tags:     plumbing.NoTags,
+		RefSpecs: []config.RefSpec{"+refs/heads/master:refs/remotes/origin/master"},
+	}))
+	s.Require().NoError(repo.Fetch(&FetchOptions{
+		Depth:    1,
+		Tags:     plumbing.NoTags,
+		RefSpecs: []config.RefSpec{"+refs/heads/feature:refs/remotes/origin/feature"},
+	}))
+
+	shallows, err := repo.Storer.Shallow()
+	s.Require().NoError(err)
+	s.Require().NotEmpty(shallows)
+	s.Require().NotContains(shallows, parent, "the fully fetched parent must not be a boundary")
+
+	return &heldParentFixture{
+		remote: remoteRepo,
+		local:  repo,
+		tree:   tree,
+		parent: parent,
+		clock:  clock,
+	}
+}
+
+// TestPushChildOfParentHeldBesideShallowBoundary covers a parent that is held
+// in full while a boundary names it as its parent. git only makes the boundary
+// parentless, so the held parent stays reachable on every other path and a
+// child of it is a fast-forward.
+func (s *RemoteSuite) TestPushChildOfParentHeldBesideShallowBoundary() {
+	f := s.newHeldParentFixture()
+
+	s.Require().NoError(f.local.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/master", f.parent),
+	))
+	child := writeCommitToRef(s.T(), f.local, "refs/heads/master", f.tree, f.clock.Add(2*time.Second))
+
+	err := f.local.Push(&PushOptions{
+		RemoteName: DefaultRemoteName,
+		RefSpecs:   []config.RefSpec{"refs/heads/master:refs/heads/master"},
+	})
+	s.Require().NoError(err)
+
+	updated, err := f.remote.Reference("refs/heads/master", true)
+	s.Require().NoError(err)
+	s.Equal(child, updated.Hash())
+}
+
+// TestFetchChildOfParentHeldBesideShallowBoundary is the fetch side of
+// TestPushChildOfParentHeldBesideShallowBoundary: the same ancestry decision
+// gates a non-force refspec.
+func (s *RemoteSuite) TestFetchChildOfParentHeldBesideShallowBoundary() {
+	f := s.newHeldParentFixture()
+
+	child := writeCommitToRef(s.T(), f.remote, "refs/heads/master", f.tree, f.clock.Add(2*time.Second))
+	s.Require().NoError(f.local.Storer.SetReference(
+		plumbing.NewHashReference("refs/heads/master", f.parent),
+	))
+
+	err := f.local.Fetch(&FetchOptions{
+		Tags:     plumbing.NoTags,
+		RefSpecs: []config.RefSpec{"refs/heads/master:refs/heads/master"},
+	})
+	s.Require().NoError(err)
+
+	updated, err := f.local.Reference("refs/heads/master", true)
+	s.Require().NoError(err)
+	s.Equal(child, updated.Hash(), "a fast-forward over a held parent must be taken")
 }
 
 func TestFetchFastForwardForCustomRef(t *testing.T) {
