@@ -190,6 +190,63 @@ func TestParseURL(t *testing.T) {
 	}
 }
 
+// A `<transport>::<address>` URL selects the remote helper
+// git-remote-<transport> before any other syntax is considered. See
+// transport_get in https://github.com/git/git/blob/v2.56.0/transport.c#L1247-L1251.
+func TestParseURLRemoteHelper(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input      string
+		wantScheme string
+	}{
+		{input: "gcrypt::rsync://host/repo", wantScheme: "gcrypt"},
+		{input: "hg::https://host/repo?x#y", wantScheme: "hg"},
+		{input: "foo::/abs/path", wantScheme: "foo"},
+		{input: "foo::", wantScheme: "foo"},
+		{input: "foo:::bar", wantScheme: "foo"},
+		{input: "a1+b.c-d::addr", wantScheme: "a1+b.c-d"},
+		// Git accepts a leading digit, unlike RFC 3986, so that helper
+		// names valid before its scheme check was tightened still work.
+		{input: "1foo::bar", wantScheme: "1foo"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := ParseURL(tc.input)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantScheme, u.Scheme)
+			assert.Equal(t, tc.input, u.String())
+		})
+	}
+}
+
+func TestParseURLNotRemoteHelper(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "./foo::bar", want: "file://./foo::bar"},
+		{input: "git@host::path", want: "ssh://git@host/:path"},
+		{input: "+foo::bar", want: "ssh://+foo/:bar"},
+		{input: "foo:bar", want: "ssh://foo/bar"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := ParseURL(tc.input)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, u.String())
+		})
+	}
+}
+
 // Expectations follow Git's fetch-pack --diag-url and OpenSSH's last-@ split.
 func TestParseURLSCPAuthority(t *testing.T) {
 	t.Parallel()
