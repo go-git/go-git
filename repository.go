@@ -764,6 +764,54 @@ func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	return &cfg, nil
 }
 
+// policyConfig returns the config the protocol policy is resolved from: the
+// repository's own, when s is not nil, merged key by key with the global and
+// system ones, which Git also reads protocol.allow from, when a config
+// loader is registered to load them. Of the global and system configs only
+// the protocol policy is read, when the loader can do that, so a value
+// elsewhere in them that go-git would refuse does not fail the operation, as
+// Git reads only the keys a command needs.
+func policyConfig(s config.ConfigStorer) (*config.Config, error) {
+	local := config.NewConfig()
+	if s != nil {
+		var err error
+		if local, err = s.Config(); err != nil {
+			return nil, err
+		}
+	}
+	if !plugin.Has(plugin.ConfigLoader()) {
+		cfg := config.Merge(config.NewConfig(), config.NewConfig(), local)
+		return &cfg, nil
+	}
+
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return nil, err
+	}
+	system, err := scopePolicy(src, config.SystemScope)
+	if err != nil {
+		return nil, err
+	}
+	global, err := scopePolicy(src, config.GlobalScope)
+	if err != nil {
+		return nil, err
+	}
+	cfg := config.Merge(system, global, local)
+	return &cfg, nil
+}
+
+// scopePolicy returns the config of scope the protocol policy is read from.
+func scopePolicy(src plugin.ConfigSource, scope config.Scope) (*config.Config, error) {
+	if ps, ok := src.(plugin.ProtocolPolicySource); ok {
+		return ps.LoadProtocolPolicy(scope)
+	}
+	cs, err := src.Load(scope)
+	if err != nil {
+		return nil, err
+	}
+	return cs.Config()
+}
+
 // Remote return a remote if exists
 func (r *Repository) Remote(name string) (*Remote, error) {
 	cfg, err := r.Config()

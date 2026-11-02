@@ -67,23 +67,18 @@ func (r *Remote) Config() *config.RemoteConfig {
 	return r.c
 }
 
-// repoConfig returns the storer's loaded config, used to resolve
-// protocol.<name>.allow and protocol.allow for transport policy gating.
-// A nil config with a nil error means the Remote has no storer to read
-// from; the policy gate then falls back to the built-in defaults. A read
-// error is returned to the caller rather than swallowed, so that a
-// restrictive policy is never silently replaced by those defaults.
-//
-// This is the repository configuration alone. Git resolves protocol.allow
-// against the global and system files too, so a policy set only in
-// ~/.gitconfig does not reach the gate here: reading those requires a
-// registered config plugin, which ConfigScoped needs and Storer.Config
-// does not use.
+// repoConfig returns the config protocol.<name>.allow and protocol.allow
+// are resolved from for transport policy gating: the storer's, merged with
+// the global and system configs when a config loader is registered, as Git
+// reads all three. A Remote without a storer still gets the global and
+// system ones, as git ls-remote outside a repository does. A read error is
+// returned to the caller rather than swallowed, so that a restrictive policy
+// is never silently replaced by the built-in defaults.
 func (r *Remote) repoConfig() (*config.Config, error) {
 	if r.s == nil {
-		return nil, nil
+		return policyConfig(nil)
 	}
-	return r.s.Config()
+	return policyConfig(r.s)
 }
 
 func (r *Remote) String() string {
