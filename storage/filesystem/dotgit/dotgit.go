@@ -2130,8 +2130,16 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 	redirected := false
 	commonFS := d.fs
 
+	// As Git, test for commondir without following it: a dangling symlink
+	// is a commondir that cannot be read, not a missing one.
 	commonFile := d.fs.Join(p, "commondir")
-	fi, err := d.fs.Stat(commonFile)
+	fi, err := d.fs.Lstat(commonFile)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		fi, err = d.fs.Stat(commonFile)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("read %q: %w", commonFile, err)
+		}
+	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
