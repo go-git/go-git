@@ -328,69 +328,67 @@ func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbin
 }
 
 func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd *packp.ShallowUpdate) error {
-	var i, curDepth int
-	var commit *object.Commit
-	depths := map[*object.Commit]int{}
-	stack := []object.Object{}
+	serverShallows, err := st.Shallow()
+	if err != nil {
+		return err
+	}
+	shallowSet := make(map[plumbing.Hash]struct{}, len(serverShallows))
+	for _, h := range serverShallows {
+		shallowSet[h] = struct{}{}
+	}
 
-	for commit != nil || i < len(heads) || len(stack) > 0 {
-		if commit == nil {
-			if i < len(heads) {
-				obj, err := st.EncodedObject(plumbing.CommitObject, heads[i])
-				i++
-				if err != nil {
-					continue
-				}
-
-				commit, err = object.DecodeCommit(st, obj)
-				if err != nil {
-					commit = nil
-					continue
-				}
-
-				depths[commit] = 0
-				curDepth = 0
-			} else if len(stack) > 0 {
-				commit = stack[len(stack)-1].(*object.Commit)
-				stack = stack[:len(stack)-1]
-				curDepth = depths[commit]
-			}
-		}
-
-		curDepth++
-
-		if depth != math.MaxInt && curDepth >= depth {
-			upd.Shallows = append(upd.Shallows, commit.Hash)
-			commit = nil
+	// Walk breadth-first and mark each commit by hash: a commit reached again
+	// through a longer path was already handled, so it is visited once. Git's
+	// commit slab does the same (shallow.c), and without it a merge-heavy
+	// history decodes the same commits over and over, emitting duplicate
+	// boundary lines.
+	visited := make(map[plumbing.Hash]struct{}, len(heads))
+	var level []plumbing.Hash
+	for _, h := range heads {
+		c, ok := peelToCommit(st, h)
+		if !ok {
 			continue
 		}
+		if _, ok := visited[c.Hash]; ok {
+			continue
+		}
+		visited[c.Hash] = struct{}{}
+		level = append(level, c.Hash)
+	}
 
-		upd.Unshallows = append(upd.Unshallows, commit.Hash)
+	for curDepth := 1; len(level) > 0; curDepth++ {
+		if depth != math.MaxInt && curDepth >= depth {
+			upd.Shallows = append(upd.Shallows, level...)
+			return nil
+		}
 
-		parents := commit.Parents()
-		commit = nil
-		for {
-			parent, err := parents.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-
-			if depths[parent] != 0 && curDepth >= depths[parent] {
+		var next []plumbing.Hash
+		for _, h := range level {
+			if _, ok := shallowSet[h]; ok {
+				// A commit the server itself grafts is a boundary at any depth:
+				// its parents are not in the repository. Upstream
+				// get_shallows_or_depth (shallow.c) stops here, which also keeps
+				// a deepen against a very shallow server from walking into the
+				// missing parents.
+				upd.Shallows = append(upd.Shallows, h)
 				continue
 			}
 
-			depths[parent] = curDepth
+			c, err := object.GetCommit(st, h)
+			if err != nil {
+				return fmt.Errorf("getting commit %s: %w", h, err)
+			}
+			upd.Unshallows = append(upd.Unshallows, c.Hash)
 
-			if _, err := parents.Next(); err == nil {
-				stack = append(stack, parent)
-			} else {
-				commit = parent
-				curDepth = depths[commit]
+			for _, p := range c.ParentHashes {
+				if _, ok := visited[p]; ok {
+					continue
+				}
+				visited[p] = struct{}{}
+				next = append(next, p)
 			}
 		}
+		level = next
 	}
 
 	return nil
@@ -402,6 +400,15 @@ func getShallowCommits(st storage.Storer, heads []plumbing.Hash, depth int, upd 
 // offsets a deepen-relative request so the new depth is measured from the
 // client's existing shallow boundary rather than from the tips.
 func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (int, error) {
+	serverShallows, err := st.Shallow()
+	if err != nil {
+		return 0, err
+	}
+	serverSet := make(map[plumbing.Hash]struct{}, len(serverShallows))
+	for _, h := range serverShallows {
+		serverSet[h] = struct{}{}
+	}
+
 	shallowSet := make(map[plumbing.Hash]struct{}, len(shallows))
 	for _, h := range shallows {
 		shallowSet[h] = struct{}{}
@@ -436,6 +443,13 @@ func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (i
 			// walk continues past it, matching upstream get_shallows_or_depth.
 		}
 
+		if _, ok := serverSet[f.hash]; ok {
+			// A commit the server grafts is a boundary, and upstream stops the
+			// depth calculation there, so a client boundary behind it never
+			// offsets the deepen.
+			continue
+		}
+
 		c, err := object.GetCommit(st, f.hash)
 		if err != nil {
 			continue
@@ -445,6 +459,49 @@ func shallowFrontierDepth(st storage.Storer, heads, shallows []plumbing.Hash) (i
 		}
 	}
 	return best, nil
+}
+
+// reachableShallowCommits returns the subset of the given graft commits that
+// the wants can reach, mirroring upstream deepen(INFINITE_DEPTH) on a shallow
+// repository: get_shallows_or_depth (shallow.c) treats each grafted commit as a
+// boundary, reports it, and stops there. Client shallow commits belong in the
+// graft set too: upstream registers them before calling deepen(INFINITE_DEPTH)
+// (upload-pack.c), so a boundary the client already has blocks the walk and the
+// server never deepens past it.
+func reachableShallowCommits(st storage.Storer, heads, shallow []plumbing.Hash) []plumbing.Hash {
+	shallowSet := make(map[plumbing.Hash]struct{}, len(shallow))
+	for _, h := range shallow {
+		shallowSet[h] = struct{}{}
+	}
+
+	var out []plumbing.Hash
+	seen := make(map[plumbing.Hash]struct{})
+	var stack []plumbing.Hash
+	for _, h := range heads {
+		if c, ok := peelToCommit(st, h); ok {
+			stack = append(stack, c.Hash)
+		}
+	}
+	for len(stack) > 0 {
+		h := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+
+		if _, ok := shallowSet[h]; ok {
+			out = append(out, h)
+			continue
+		}
+
+		c, err := object.GetCommit(st, h)
+		if err != nil {
+			continue
+		}
+		stack = append(stack, c.ParentHashes...)
+	}
+	return out
 }
 
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
@@ -741,9 +798,14 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 	// shallow-info and the unshallow lines and must not be mistaken for "no
 	// deepen requested". newBoundary is the grafting boundary for the deepened
 	// view (nil/empty means graft nothing: full history).
+	deepenRequested := depth > 0 || revList
 	var newBoundary []plumbing.Hash
 	var haveNewBoundary bool
-	if depth > 0 || revList {
+	// unshallowsOwed marks a deepen that computed a boundary: only then can a
+	// client shallow commit become interior and need an "unshallow" line. A
+	// plain fetch registers the client's shallow commits as grafts instead.
+	var unshallowsOwed bool
+	if deepenRequested {
 		var shupd packp.ShallowUpdate
 		computed := true
 		if revList {
@@ -779,9 +841,45 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 		}
 		if computed {
 			haveNewBoundary = true
+			unshallowsOwed = true
 			newBoundary = shupd.Shallows
 		}
 	}
+
+	serverShallows, err := st.Shallow()
+	if err != nil {
+		_ = w.Close()
+		return true, fmt.Errorf("reading server shallow commits: %w", err)
+	}
+	if !deepenRequested && len(serverShallows) > 0 {
+		// A fetch without a deepen against a shallow repository still has to
+		// describe the server's boundary: upstream calls deepen(INFINITE_DEPTH)
+		// there, which reports only the grafted commits reachable from the
+		// wants. Sending the whole shallow file would hand the client
+		// boundaries of refs it never asked for, cutting history it may already
+		// have (and, for a boundary beyond the wants, one it will never use).
+		// The client's own shallow commits are grafts by then, so the walk stops
+		// at them and the server does not deepen past a boundary the client
+		// already has: that is a report with no new lines, not a deepen.
+		grafts := make([]plumbing.Hash, 0, len(serverShallows)+len(clientShallows))
+		grafts = append(grafts, serverShallows...)
+		grafts = append(grafts, clientShallows...)
+		newBoundary = reachableShallowCommits(st, wants, grafts)
+		haveNewBoundary = true
+	}
+
+	// shallow-info is emitted when a deepen was requested, when the serving
+	// repository is shallow, or when the client sent "shallow" lines, mirroring
+	// upstream send_shallow_info (upload-pack.c). A request that computed no
+	// boundary still carries an empty section: it tells the client the deepen
+	// was handled, so it must not be mistaken for "no shallow state". When none
+	// of the conditions hold there is no shallow-info section at all.
+	shallowInfo := deepenRequested || len(serverShallows) > 0 || len(clientShallows) > 0
+	// Upstream marks the client's own shallow commits CLIENT_SHALLOW and
+	// send_shallow skips them: the client already knows those boundaries, and
+	// echoing them back would re-persist (or, for a client with full history,
+	// newly cut) its view of the repository.
+	shallows := sendableShallows(newBoundary, clientShallows)
 
 	var objs []plumbing.Hash
 	if len(clientShallows) > 0 {
@@ -813,22 +911,24 @@ func serveFetchV2(_ context.Context, st storage.Storer, w io.WriteCloser, args *
 			return true, fmt.Errorf("getting client objects: %w", cerr)
 		}
 		objs = hashDifference(newView, clientView)
-		if haveNewBoundary {
-			out.ShallowInfo = &packp.ShallowInfo{
-				Shallows:   newBoundary,
-				Unshallows: unshallowedCommits(clientShallows, newBoundary, newView),
+		if shallowInfo {
+			out.ShallowInfo = &packp.ShallowInfo{Shallows: shallows}
+			if unshallowsOwed {
+				out.ShallowInfo.Unshallows = unshallowedCommits(clientShallows, newBoundary, newView)
 			}
 		}
 	} else {
 		packSt := st
 		if haveNewBoundary && len(newBoundary) > 0 {
-			out.ShallowInfo = &packp.ShallowInfo{Shallows: newBoundary}
 			packSt = &shallowBoundaryStorer{Storer: st, boundary: newBoundary}
 		}
 		objs, err = objectsToUpload(packSt, wants, haves)
 		if err != nil {
 			_ = w.Close()
 			return true, fmt.Errorf("getting objects to upload: %w", err)
+		}
+		if shallowInfo {
+			out.ShallowInfo = &packp.ShallowInfo{Shallows: shallows}
 		}
 	}
 
@@ -915,6 +1015,27 @@ func unshallowedCommits(clientShallows, newBoundary, newView []plumbing.Hash) []
 			continue // still a boundary commit
 		}
 		out = append(out, cs)
+	}
+	return out
+}
+
+// sendableShallows drops commits the client already reported as shallow:
+// upstream marks them CLIENT_SHALLOW and send_shallow (upload-pack.c) never
+// sends them back.
+func sendableShallows(shallows, clientShallows []plumbing.Hash) []plumbing.Hash {
+	if len(clientShallows) == 0 {
+		return shallows
+	}
+	known := make(map[plumbing.Hash]struct{}, len(clientShallows))
+	for _, h := range clientShallows {
+		known[h] = struct{}{}
+	}
+	var out []plumbing.Hash
+	for _, h := range shallows {
+		if _, ok := known[h]; ok {
+			continue
+		}
+		out = append(out, h)
 	}
 	return out
 }
