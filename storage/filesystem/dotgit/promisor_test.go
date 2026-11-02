@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -48,11 +49,49 @@ func TestNewPromisorObjectPackWritesMarker(t *testing.T) {
 	fi, err := fs.Lstat(marker)
 	require.NoError(t, err, "a filtered fetch must leave a .promisor marker: without it git reports the withheld objects as broken links and refuses to gc")
 	assert.True(t, fi.Mode().IsRegular())
+	if runtime.GOOS != "windows" {
+		// As index-pack --promisor creates it, and writable by its owner, since
+		// fetch-pack rewrites an existing marker in place.
+		assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	}
 
 	// The pack itself has to be readable as an ordinary pack.
 	packs, err := dot.ObjectPacks()
 	require.NoError(t, err)
 	assert.Contains(t, packs, h)
+}
+
+// An existing marker is kept whatever it holds, as index-pack keeps one,
+// and does not fail the save as a different index or pack does.
+func TestNewPromisorObjectPackKeepsExistingMarker(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	h := plumbing.NewHash(f.PackfileHash)
+	fs := osfs.New(t.TempDir())
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+	marker := fs.Join("objects", "pack", "pack-"+h.String()+".promisor")
+	f0, err := fs.OpenFile(marker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	require.NoError(t, err)
+	_, err = io.WriteString(f0, "earlier\n")
+	require.NoError(t, err)
+	require.NoError(t, f0.Close())
+
+	w, err := dot.NewPromisorObjectPack("later\n")
+	require.NoError(t, err)
+	pf, err := f.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(w, pf)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	got, err := fs.Open(marker)
+	require.NoError(t, err)
+	defer func() { _ = got.Close() }()
+	b, err := io.ReadAll(got)
+	require.NoError(t, err)
+	assert.Equal(t, "earlier\n", string(b))
 }
 
 // TestNewPromisorObjectPackMarkerContents covers git's own convention for the
