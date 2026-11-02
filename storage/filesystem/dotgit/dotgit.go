@@ -2267,22 +2267,32 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 	var link []bool
 	absent := -1
 
-	descend := func(segment string) {
+	// A component that cannot be examined for another reason than being
+	// absent fails the resolution, as it does Git's realpath.
+	descend := func(segment string) error {
 		resolved = append(resolved, segment)
 		if absent >= 0 && len(resolved) > absent {
 			link = append(link, false)
-			return
+			return nil
 		}
 		fi, err := d.fs.Lstat(d.fs.Join(resolved...))
-		if errors.Is(err, os.ErrNotExist) {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
 			absent = len(resolved)
+			link = append(link, false)
+		case err != nil:
+			return fmt.Errorf("resolve submodule common directory %q: %w", elide(common), pathErrCause(err))
+		default:
+			link = append(link, fi.Mode()&os.ModeSymlink != 0)
 		}
-		link = append(link, err == nil && fi.Mode()&os.ModeSymlink != 0)
+		return nil
 	}
 
 	if slashed := filepath.ToSlash(p); slashed != "" && slashed != "." {
 		for segment := range strings.SplitSeq(slashed, "/") {
-			descend(segment)
+			if err := descend(segment); err != nil {
+				return "", err
+			}
 		}
 	}
 
@@ -2301,7 +2311,9 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 				absent = -1
 			}
 		default:
-			descend(segment)
+			if err := descend(segment); err != nil {
+				return "", err
+			}
 		}
 	}
 
