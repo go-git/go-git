@@ -752,12 +752,24 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 // as a single entry: a directory that is not empty is left in place. changes
 // must be computed before resetting the index: HardReset compares the old
 // index with the target tree; KeepReset compares the old HEAD tree with it.
+//
+// The removal is selected by the mode of the entry being removed, as Git
+// takes it from the index entry it unlinks[1]: the stored index's entry, which
+// still describes the old state, or unknownMode for a path it lacks. For a
+// conflict that is its lowest stage, the one Git's reset keeps when it drops
+// an unmerged path to stage 0[2].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/entry.c#L595-L613
+// [2]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L3403-L3430
 func (w *Worktree) removeTrackedDeletions(changes merkletrie.Changes, files []string) error {
 	filesMap := buildFilePathMap(files)
 
 	fs, closeFS := w.reusableRootFS()
 	defer closeFS()
 
+	// The stored index's entries, by name, read on the first deletion. A
+	// lookup per deletion in the index itself would scan its entries.
+	var entries map[string]*index.Entry
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
@@ -770,7 +782,25 @@ func (w *Worktree) removeTrackedDeletions(changes merkletrie.Changes, files []st
 		if len(files) > 0 && !inFiles(filesMap, name) {
 			continue
 		}
-		if err := rmFileAndDirsIfEmpty(fs, name); err != nil {
+		if entries == nil {
+			idx, err := w.r.Storer.Index()
+			if err != nil {
+				return err
+			}
+			entries = make(map[string]*index.Entry, len(idx.Entries))
+			for _, e := range idx.Entries {
+				// idx.Entries need not be sorted, so the lowest stage
+				// of a conflict is found by comparing stages.
+				if seen, ok := entries[e.Name]; !ok || e.Stage < seen.Stage {
+					entries[e.Name] = e
+				}
+			}
+		}
+		mode := unknownMode
+		if e, ok := entries[name]; ok {
+			mode = e.Mode
+		}
+		if err := rmEntryAndDirsIfEmpty(fs, name, mode); err != nil {
 			return err
 		}
 	}
@@ -850,7 +880,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 		if _, statErr := fs.Lstat(e.Name); os.IsNotExist(statErr) {
 			continue
 		}
-		if err := rmFileAndDirsIfEmpty(fs, e.Name); err != nil {
+		if err := rmEntryAndDirsIfEmpty(fs, e.Name, e.Mode); err != nil {
 			return err
 		}
 	}
@@ -935,7 +965,13 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 		// These names come from the filesystem-vs-index diff. Apply the
 		// configured worktree gate. Tree-derived deletes use the same
 		// helper in resetWorktreeToTree.
-		return rmFileAndDirsIfEmpty(fs, ch.From.String())
+		//
+		// resetWorktree is the only caller that reaches this, for a merge
+		// reset. The mode would be the stored index entry's, but a merge
+		// reset refuses a file or a directory standing at a tracked path
+		// with ErrUnstagedChanges, so the shapes the mode separates never
+		// reach here, and unknownMode removes the rest.
+		return rmEntryAndDirsIfEmpty(fs, ch.From.String(), unknownMode)
 	}
 
 	if isSubmodule {
@@ -1584,22 +1620,37 @@ func findMatchInFile(file *object.File, treeName string, opts *GrepOptions) ([]G
 	return grepResults, nil
 }
 
-// rmFileAndDirsIfEmpty removes name and its empty parent directories.
-// It preserves nonempty directories and ignores removal errors for directories
-// that remain in place. This keeps submodule worktrees and untracked files
-// when a reset removes their index entries.
+// unknownMode is the mode rmEntryAndDirsIfEmpty takes for an entry whose own
+// mode the caller cannot read. It is filemode.Empty, which the filemode
+// package defines as the mode of a tree element after its deletion.
+const unknownMode = filemode.Empty
+
+// rmEntryAndDirsIfEmpty removes one tracked entry, name, and its empty parent
+// directories.
 //
-// Removal is not recursive. Billy filesystems have no shared directory-not-empty
-// error, so directories are checked before removal and again if removal fails.
-// Where Git warns about a failed directory removal and continues, this returns nil.
+// mode is the mode of the entry being removed, and selects the removal as
+// Git's [remove_or_warn] does: rmdir for a gitlink, which takes an empty
+// directory and nothing else, and unlink for every other mode, which takes
+// anything that is not a directory. So a submodule worktree with contents of
+// its own survives a reset that drops the gitlink, as does a file standing
+// where a gitlink is tracked, and a directory standing where a file is
+// tracked. With unknownMode only a nonempty directory is kept, the shape both
+// removals refuse.
+//
+// Where the removal does not apply, or fails on a directory that remains in
+// place, the entry is kept and parent cleanup stops; Git warns and continues,
+// and this returns nil. Removal is never recursive. Billy filesystems have no
+// shared directory-not-empty error, so directories are checked before removal
+// and again if removal fails.
 //
 // Paths rejected by the worktree filesystem because of a leading symlink are
 // left untouched, as in Git's [unlink_entry]. The symlink error stops parent
 // cleanup too, so the blocking symlink is preserved.
 //
-// [unlink_entry]: https://github.com/git/git/blob/v2.54.0/entry.c
-func rmFileAndDirsIfEmpty(fs billy.Filesystem, name string) error {
-	if nonemptyDir(fs, name) {
+// [remove_or_warn]: https://github.com/git/git/blob/v2.54.0/entry.c#L610-L613
+// [unlink_entry]: https://github.com/git/git/blob/v2.54.0/entry.c#L595-L608
+func rmEntryAndDirsIfEmpty(fs billy.Filesystem, name string, mode filemode.FileMode) error {
+	if !canRemove(fs, name, mode) {
 		return nil
 	}
 
@@ -1668,8 +1719,29 @@ func isDir(fs billy.Filesystem, name string) bool {
 	return err == nil && fi.IsDir()
 }
 
+// canRemove reports whether the removal rmEntryAndDirsIfEmpty selects for
+// mode should be attempted on what stands at name. A name that cannot be
+// inspected is attempted, so the removal reports the outcome.
+func canRemove(fs billy.Filesystem, name string, mode filemode.FileMode) bool {
+	fi, err := fs.Lstat(name)
+	if err != nil {
+		return true
+	}
+
+	if !fi.IsDir() {
+		// unlink takes any non-directory; rmdir takes none of them.
+		return mode != filemode.Submodule
+	}
+
+	// A directory: unlink refuses it, and rmdir takes it only when empty.
+	if mode != filemode.Submodule && mode != unknownMode {
+		return false
+	}
+	return !nonemptyDir(fs, name)
+}
+
 // nonemptyDir reports whether name is a directory with entries in it, the
-// shape rmFileAndDirsIfEmpty keeps without attempting a removal at all.
+// shape rmEntryAndDirsIfEmpty keeps without attempting a removal at all.
 //
 // A directory whose entries cannot be read reports false. It reaches the
 // removal, which fails, and isDir keeps it from there.

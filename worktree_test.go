@@ -2737,23 +2737,24 @@ func TestRemovalPreservesNonemptyDirectories(t *testing.T) {
 				"sub/nested/b.txt": "nested",
 			}
 			require.Equal(t, expected, snapshotSubtree(t, raw, "sub"))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "sub"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "sub", filemode.Submodule))
 			require.Equal(t, expected, snapshotSubtree(t, raw, "sub"))
 
 			require.NoError(t, util.WriteFile(raw, "p/q/only.txt", []byte("remove"), 0o644))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "p/q/only.txt"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "p/q/only.txt", filemode.Regular))
 			_, err := raw.Lstat("p")
 			require.ErrorIs(t, err, os.ErrNotExist)
 
+			// An empty submodule worktree is what rmdir takes.
 			require.NoError(t, raw.MkdirAll("empty", 0o755))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "empty"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "empty", filemode.Submodule))
 			_, err = raw.Lstat("empty")
 			require.ErrorIs(t, err, os.ErrNotExist)
 
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "missing"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "missing", filemode.Regular))
 
 			require.NoError(t, util.WriteFile(raw, "tracked.txt/precious", []byte("keep"), 0o644))
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, "tracked.txt"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "tracked.txt", filemode.Regular))
 			require.Equal(t, map[string]string{
 				"tracked.txt/":         "",
 				"tracked.txt/precious": "keep",
@@ -2825,7 +2826,7 @@ func TestRemovalKeepsDirectoriesItCannotRemove(t *testing.T) {
 			}
 
 			stub := &stubReadDirFS{Filesystem: raw, dir: "sub", err: test.readDir, once: test.once}
-			require.NoError(t, rmFileAndDirsIfEmpty(newWorktreeFilesystem(stub, true, false), test.target))
+			require.NoError(t, rmEntryAndDirsIfEmpty(newWorktreeFilesystem(stub, true, false), test.target, unknownMode))
 
 			require.Positive(t, stub.hits, "sub was never read")
 			require.Equal(t, test.expected, snapshotSubtree(t, raw, "sub"))
@@ -2935,7 +2936,7 @@ func TestRemovalPreservesLeadingSymlink(t *testing.T) {
 			wrapped := newWorktreeFilesystem(raw, true, false)
 
 			require.ErrorIs(t, wrapped.Remove(name), errLeadingSymlink)
-			require.NoError(t, rmFileAndDirsIfEmpty(wrapped, name))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, name, unknownMode))
 			require.Equal(t, before, snapshotSubtree(t, raw, "target"))
 			for link, target := range map[string]string{"link": "target", "dangling": "missing"} {
 				got, err := raw.Readlink(link)
@@ -5603,4 +5604,260 @@ func TestHardResetWriteFailureLeavesStoredEntries(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRemovalHonoursTheEntryMode covers the two worktree shapes that separate
+// the removals: a directory at a regular entry, which unlink refuses, and a
+// file at a gitlink, which rmdir refuses. Git warns and continues in both
+// places, so both must survive. unknownMode selects neither removal and keeps
+// only what both refuse.
+func TestRemovalHonoursTheEntryMode(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range []string{"memfs", "osfs"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Parallel()
+
+			raw := memfs.New()
+			if backend == "osfs" {
+				raw = osfs.New(t.TempDir())
+			}
+			wrapped := newWorktreeFilesystem(raw, true, false)
+
+			require.NoError(t, raw.MkdirAll("regular-entry", 0o755))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "regular-entry", filemode.Regular))
+			fi, err := raw.Lstat("regular-entry")
+			require.NoError(t, err, "unlink must not take a directory")
+			require.True(t, fi.IsDir())
+
+			require.NoError(t, util.WriteFile(raw, "gitlink-entry", []byte("keep"), 0o644))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "gitlink-entry", filemode.Submodule))
+			require.Equal(t, map[string]string{
+				"gitlink-entry": "keep",
+			}, snapshotSubtree(t, raw, "gitlink-entry"), "rmdir must not take a file")
+
+			// A symlink is a non-directory, so unlink takes it.
+			require.NoError(t, raw.Symlink("elsewhere", "link"))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "link", filemode.Symlink))
+			_, err = raw.Lstat("link")
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			// Both shapes go without a mode to select a removal.
+			require.NoError(t, raw.MkdirAll("no-mode-dir", 0o755))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "no-mode-dir", unknownMode))
+			_, err = raw.Lstat("no-mode-dir")
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			require.NoError(t, util.WriteFile(raw, "no-mode-file", []byte("go"), 0o644))
+			require.NoError(t, rmEntryAndDirsIfEmpty(wrapped, "no-mode-file", unknownMode))
+			_, err = raw.Lstat("no-mode-file")
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// TestResetHardHonoursTheRemovedEntryMode drives the two mode-dependent
+// removals through a reset --hard, which reads the mode from the index entry
+// it removes. Both shapes are ones a user can leave
+// in a worktree: a submodule directory replaced by a file, and a tracked file
+// replaced by a directory. Git's remove_or_warn refuses each of them, so the
+// reset must leave both in place.
+func TestResetHardHonoursTheRemovedEntryMode(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		mode filemode.FileMode
+		// directory is the shape standing in the worktree at the entry's
+		// path, in place of what mode describes.
+		directory bool
+	}{
+		{name: "file at a gitlink", mode: filemode.Submodule},
+		{name: "directory at a regular entry", mode: filemode.Regular, directory: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			const name = "entry"
+
+			s := memory.NewStorage()
+			wt := memfs.New()
+			r, err := Init(s, WithWorkTree(wt))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			// A gitlink names a commit in another repository, so its hash
+			// need not resolve here. A blob's must.
+			target := plumbing.NewHash("0123456789012345678901234567890123456789")
+			if tc.mode != filemode.Submodule {
+				target = writeBlob(t, s, []byte("tracked\n"))
+			}
+			fromTree := storeRawTree(t, s, []object.TreeEntry{{Name: name, Mode: tc.mode, Hash: target}})
+			toTree := storeRawTree(t, s, nil)
+
+			sig := defaultSignature()
+			from := storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "carries the entry\n", TreeHash: fromTree})
+			to := storeCommit(t, s, &object.Commit{
+				Author: *sig, Committer: *sig, Message: "drops the entry\n",
+				TreeHash: toTree, ParentHashes: []plumbing.Hash{from},
+			})
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			require.NoError(t, s.SetReference(plumbing.NewHashReference(head.Target(), from)))
+
+			// Stage the entry, so the hard reset has an index entry to
+			// remove.
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, w.Reset(&ResetOptions{Mode: MixedReset, Commit: from}))
+			idx, err := s.Index()
+			require.NoError(t, err)
+			e, err := idx.Entry(name)
+			require.NoError(t, err)
+			require.Equal(t, tc.mode, e.Mode)
+
+			if tc.directory {
+				require.NoError(t, wt.MkdirAll(name, 0o755))
+			} else {
+				require.NoError(t, util.WriteFile(wt, name, []byte("user data\n"), 0o644))
+			}
+
+			require.NoError(t, w.Reset(&ResetOptions{Mode: HardReset, Commit: to}))
+
+			fi, err := wt.Lstat(name)
+			require.NoError(t, err, "the reset must leave %q in place", name)
+			require.Equal(t, tc.directory, fi.IsDir(), "the reset must not change the shape at %q", name)
+			if !tc.directory {
+				body, err := util.ReadFile(wt, name)
+				require.NoError(t, err)
+				require.Equal(t, "user data\n", string(body))
+			}
+		})
+	}
+}
+
+// A hard reset removes an entry by the mode of the index entry it removes,
+// as Git's unlink_entry does: a file staged where HEAD has a gitlink is
+// unlinked, though HEAD's gitlink mode would select rmdir and keep it.
+func TestHardResetRemovesByTheIndexEntryMode(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	target, err := w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	idx, err := s.Index()
+	require.NoError(t, err)
+	a, err := idx.Entry("a")
+	require.NoError(t, err)
+	tree := storeRawTree(t, s, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: a.Hash},
+		{Name: "sub", Mode: filemode.Submodule, Hash: plumbing.NewHash("1111111111111111111111111111111111111111")},
+	})
+	withGitlink := storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "sub\n", TreeHash: tree, ParentHashes: []plumbing.Hash{target}})
+	head, err := r.Head()
+	require.NoError(t, err)
+	require.NoError(t, s.SetReference(plumbing.NewHashReference(head.Name(), withGitlink)))
+
+	require.NoError(t, util.WriteFile(fs, "sub", []byte("staged"), 0o644))
+	_, err = w.Add("sub")
+	require.NoError(t, err)
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: target, Mode: HardReset}))
+	_, err = fs.Lstat("sub")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// A skip-worktree gitlink is removed by its own mode, so a file standing at
+// its path is kept, as rmdir refuses it.
+func TestHardResetSkipWorktreeKeepsFileAtGitlink(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	first, err := w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+	idx, err := s.Index()
+	require.NoError(t, err)
+	a, err := idx.Entry("a")
+	require.NoError(t, err)
+	tree := storeRawTree(t, s, []object.TreeEntry{
+		{Name: "a", Mode: filemode.Regular, Hash: a.Hash},
+		{Name: "sub", Mode: filemode.Submodule, Hash: plumbing.NewHash("1111111111111111111111111111111111111111")},
+	})
+	commit := storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "sub\n", TreeHash: tree, ParentHashes: []plumbing.Hash{first}})
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: commit, Mode: MixedReset}))
+	idx, err = s.Index()
+	require.NoError(t, err)
+	e, err := idx.Entry("sub")
+	require.NoError(t, err)
+	e.SkipWorktree = true
+	require.NoError(t, s.SetIndex(idx))
+	require.NoError(t, util.WriteFile(fs, "sub", []byte("user"), 0o644))
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: commit, Mode: HardReset}))
+	body, err := util.ReadFile(fs, "sub")
+	require.NoError(t, err, "the file at the gitlink was removed")
+	require.Equal(t, "user", string(body))
+}
+
+// A conflict is removed by the mode of its lowest stage, as Git drops an
+// unmerged path to that stage before a hard reset, whatever order the
+// stages have in the index. Here the base stage is a regular file and both
+// sides a gitlink, so the file standing at the path is unlinked, where a
+// gitlink's rmdir would keep it.
+func TestHardResetRemovesAConflictByItsLowestStage(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	target, err := w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	idx, err := s.Index()
+	require.NoError(t, err)
+	gitlink := plumbing.NewHash("1111111111111111111111111111111111111111")
+	base := writeBlob(t, s, []byte("base\n"))
+	// Neither the first nor the last stage listed is the lowest.
+	idx.Entries = append(idx.Entries,
+		&index.Entry{Name: "c", Stage: index.OurMode, Mode: filemode.Submodule, Hash: gitlink},
+		&index.Entry{Name: "c", Stage: index.AncestorMode, Mode: filemode.Regular, Hash: base},
+		&index.Entry{Name: "c", Stage: index.TheirMode, Mode: filemode.Submodule, Hash: gitlink},
+	)
+	require.NoError(t, s.SetIndex(idx))
+	require.NoError(t, util.WriteFile(fs, "c", []byte("user"), 0o644))
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: target, Mode: HardReset}))
+	_, err = fs.Lstat("c")
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
