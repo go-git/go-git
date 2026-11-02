@@ -53,3 +53,29 @@ func (s *SuiteDotGit) TestModuleNestingWithNamedPipe() {
 		})
 	}
 }
+
+// TestModuleNestingWithUnreadableCommonDirComponent covers a commondir path
+// with a component that cannot be examined for a reason other than being
+// absent. Git's realpath fails there; applying the ".." that follows it
+// lexically could find a Git directory Git does not.
+func (s *SuiteDotGit) TestModuleNestingWithUnreadableCommonDirComponent() {
+	if os.Geteuid() == 0 {
+		s.T().Skip("permissions do not apply to root")
+	}
+
+	root := s.T().TempDir()
+	fs := osfs.New(root)
+	common, err := fs.Chroot("common")
+	s.Require().NoError(err)
+	s.Require().NoError(New(common).Initialize())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("locked/x/../../../../common\n"), 0o644))
+	locked := filepath.Join(root, "modules", "lib", "locked")
+	s.Require().NoError(os.Mkdir(locked, 0o755))
+	s.Require().NoError(os.Chmod(locked, 0))
+	s.T().Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	_, err = New(fs).Module("lib/refs/heads")
+	s.Require().ErrorIs(err, os.ErrPermission)
+	s.NotErrorIs(err, ErrModuleGitDirNested)
+}
