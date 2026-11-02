@@ -119,6 +119,63 @@ func TestLsRefsOutputDecode(t *testing.T) {
 		}
 	})
 
+	t.Run("unborn HEAD", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name           string
+			lines          []string
+			wantRefs       int
+			wantUnbornHead plumbing.ReferenceName
+		}{
+			{
+				name:           "unborn HEAD",
+				lines:          []string{"unborn HEAD symref-target:refs/heads/main"},
+				wantRefs:       1,
+				wantUnbornHead: "refs/heads/main",
+			},
+			{
+				name: "repeated unborn HEAD keeps the last target",
+				lines: []string{
+					"unborn HEAD symref-target:refs/heads/main",
+					"unborn HEAD symref-target:refs/heads/trunk",
+				},
+				wantRefs:       1,
+				wantUnbornHead: "refs/heads/trunk",
+			},
+			{
+				name:     "HEAD with an object id",
+				lines:    []string{"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD symref-target:refs/heads/main"},
+				wantRefs: 1,
+			},
+			{
+				name:  "unborn ref other than HEAD is ignored",
+				lines: []string{"unborn refs/heads/topic symref-target:refs/heads/main"},
+			},
+			{
+				name:  "unborn ref other than HEAD is ignored without validation",
+				lines: []string{"unborn refs/heads/topic peeled:nothex"},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				var buf bytes.Buffer
+				for _, line := range tt.lines {
+					pktline.Writef(&buf, "%s\n", line)
+				}
+				pktline.WriteFlush(&buf)
+
+				resp := &LsRefsOutput{}
+				require.NoError(t, resp.Decode(&buf))
+				assert.Len(t, resp.References, tt.wantRefs)
+				assert.Equal(t, tt.wantUnbornHead, resp.UnbornHead)
+				if tt.wantUnbornHead != "" {
+					assert.Equal(t, tt.wantUnbornHead, resp.References[0].Target())
+				}
+			})
+		}
+	})
+
 	t.Run("refs with peeled attribute", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
