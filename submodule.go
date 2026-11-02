@@ -186,27 +186,20 @@ func (s *Submodule) Repository() (*Repository, error) {
 
 // submoduleClientOptions returns the caller's ClientOptions extended
 // with the protocol-policy defaults that apply to submodule fetches:
-// WithUserInitiated(false), so the gate evaluates the fetch as
-// non-user-initiated, and WithProtocolPolicy taken from the
-// submodule's own storer, so its `protocol.<scheme>.allow`
-// resolution governs the clone — matching canonical Git's
-// submodule-subprocess model[1], which reads the subprocess's own
-// local config plus global/system. Callers may flip either bit
-// back by appending their own option later: client.Option
-// resolution is last-wins.
-//
-// Security: a caller can override WithUserInitiated(false)
-// by appending WithUserInitiated(true) to ClientOptions,
-// which re-enables user-only protocols (default for file://) for the
-// submodule fetch. Do so only when the submodule URL is trusted —
-// canonical Git provides no such escape hatch from the `git submodule
-// update` shell wrapper.
+// WithProtocolPolicy taken from the submodule's own storer, so its
+// `protocol.<scheme>.allow` resolution governs the clone, and
+// WithUserInitiated(false), so the gate evaluates the fetch as not
+// user-initiated. Canonical Git's submodule update sets
+// GIT_PROTOCOL_FROM_USER=0 whatever the caller passes[1], so
+// WithUserInitiated(false) comes after the caller's options and wins
+// over a WithUserInitiated(true) among them. A caller's
+// WithProtocolPolicy does replace the submodule's policy, as `git -c
+// protocol.<name>.allow=...` does in Git.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/git-submodule.sh#L29-L30
 func (s *Submodule) submoduleClientOptions(subRepo *Repository, opts []client.Option) ([]client.Option, error) {
-	// Capacity: WithUserInitiated + optional WithProtocolPolicy + caller opts.
+	// Capacity: optional WithProtocolPolicy + caller opts + WithUserInitiated.
 	out := make([]client.Option, 0, len(opts)+2)
-	out = append(out, client.WithUserInitiated(false))
 	if subRepo != nil {
 		// A config that cannot be read is an error, not an absent
 		// policy: dropping it here would fall back to the built-in
@@ -218,6 +211,7 @@ func (s *Submodule) submoduleClientOptions(subRepo *Repository, opts []client.Op
 		out = append(out, client.WithProtocolPolicy(cfg))
 	}
 	out = append(out, opts...)
+	out = append(out, client.WithUserInitiated(false))
 	return out, nil
 }
 
