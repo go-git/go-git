@@ -138,6 +138,45 @@ func (s *SuiteDotGit) TestModuleRejectsNestingInsideSiblingGitDir() {
 			s.ErrorIs(err, ErrModuleGitDirNested)
 		})
 	}
+	// "lib/.", "lib/./refs" and "x/../lib/hooks" share modules/lib once
+	// cleaned. Their "." and ".." components are refused before the walk,
+	// so the walk never sees a name other than the one it was given.
+	for _, name := range []string{"lib/.", "lib/./refs", "x/../lib/hooks"} {
+		s.Run(name, func() {
+			d := New(s.EmptyFS())
+			s.initModule(d, "lib")
+
+			_, err := d.Module(name)
+			s.ErrorIs(err, ErrModuleNameEscape)
+		})
+	}
+}
+
+// statCountingFS counts the Stat and Lstat calls made through it.
+type statCountingFS struct {
+	billy.Filesystem
+	stats int
+}
+
+func (fs *statCountingFS) Stat(name string) (os.FileInfo, error) {
+	fs.stats++
+	return fs.Filesystem.Stat(name)
+}
+
+func (fs *statCountingFS) Lstat(name string) (os.FileInfo, error) {
+	fs.stats++
+	return fs.Filesystem.Lstat(name)
+}
+
+func (s *SuiteDotGit) TestModuleNestingStopsAtMissingDirectory() {
+	// .gitmodules names have no length limit. The walk must stop at the
+	// first missing directory rather than check every prefix of the name.
+	fs := &statCountingFS{Filesystem: s.EmptyFS()}
+	name := strings.Repeat("a/", 16000) + "a"
+
+	_, err := New(fs).Module(name)
+	s.Require().NoError(err)
+	s.LessOrEqual(fs.stats, 2)
 }
 
 func (s *SuiteDotGit) TestModuleNestingWithHeadFormats() {
