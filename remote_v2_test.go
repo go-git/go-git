@@ -34,7 +34,9 @@ func TestFetchRefPrefixes(t *testing.T) {
 		name     string
 		specs    []config.RefSpec
 		tags     plumbing.TagMode
+		noHead   bool
 		contains []string
+		excludes []string
 		wantNil  bool
 	}{
 		{
@@ -69,18 +71,36 @@ func TestFetchRefPrefixes(t *testing.T) {
 			tags:     plumbing.TagFollowing,
 			contains: []string{"refs/heads/master", "refs/tags/", "HEAD"},
 		},
+		{
+			name:     "HEAD left out when not wanted",
+			specs:    []config.RefSpec{"+refs/heads/main:refs/remotes/origin/main"},
+			tags:     plumbing.AllTags,
+			noHead:   true,
+			contains: []string{"refs/heads/main", "refs/tags/"},
+			excludes: []string{"HEAD"},
+		},
+		{
+			name:     "HEAD source requests HEAD even when not wanted",
+			specs:    []config.RefSpec{"+HEAD:refs/remotes/origin/HEAD"},
+			tags:     plumbing.NoTags,
+			noHead:   true,
+			contains: []string{"refs/heads/", "HEAD"},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := fetchRefPrefixes(tc.specs, tc.tags)
+			got := fetchRefPrefixes(tc.specs, tc.tags, !tc.noHead)
 			if tc.wantNil {
 				assert.Nil(t, got)
 				return
 			}
 			for _, want := range tc.contains {
 				assert.Contains(t, got, want)
+			}
+			for _, notWant := range tc.excludes {
+				assert.NotContains(t, got, notWant)
 			}
 		})
 	}
