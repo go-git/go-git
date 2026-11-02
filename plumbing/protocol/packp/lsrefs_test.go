@@ -264,6 +264,65 @@ func TestLsRefsOutputEncode(t *testing.T) {
 		assert.Equal(t, "refs/heads/main", got.References[1].Name().String())
 	})
 
+	t.Run("round trip with unborn HEAD", func(t *testing.T) {
+		t.Parallel()
+		resp := &LsRefsOutput{
+			References: []*plumbing.Reference{plumbing.NewSymbolicReference("HEAD", "refs/heads/main")},
+			UnbornHead: "refs/heads/main",
+		}
+
+		var buf bytes.Buffer
+		require.NoError(t, resp.Encode(&buf))
+		pktline.WriteFlush(&buf)
+
+		got := &LsRefsOutput{}
+		require.NoError(t, got.Decode(&buf))
+		assert.Equal(t, resp, got)
+	})
+
+	t.Run("symbolic reference with unknown target is left out", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name       string
+			ref        *plumbing.Reference
+			unbornHead plumbing.ReferenceName
+		}{
+			{
+				name: "HEAD not reported unborn",
+				ref:  plumbing.NewSymbolicReference("HEAD", "refs/heads/main"),
+			},
+			{
+				name:       "HEAD reported unborn on another target",
+				ref:        plumbing.NewSymbolicReference("HEAD", "refs/heads/main"),
+				unbornHead: "refs/heads/trunk",
+			},
+			{
+				name:       "ref other than HEAD",
+				ref:        plumbing.NewSymbolicReference("refs/remotes/origin/HEAD", "refs/heads/main"),
+				unbornHead: "refs/heads/main",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				develop := plumbing.NewHashReference("refs/heads/develop", plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+				release := plumbing.NewHashReference("refs/heads/release", plumbing.NewHash("a6930aaee06755d1bdcfd943fbf614e4d92bb0c7"))
+				resp := &LsRefsOutput{
+					References: []*plumbing.Reference{develop, tt.ref, release},
+					UnbornHead: tt.unbornHead,
+				}
+
+				var buf bytes.Buffer
+				require.NoError(t, resp.Encode(&buf))
+				pktline.WriteFlush(&buf)
+
+				got := &LsRefsOutput{}
+				require.NoError(t, got.Decode(&buf))
+				assert.Equal(t, []*plumbing.Reference{develop, release}, got.References)
+			})
+		}
+	})
+
 	t.Run("round trip with peeled refs", func(t *testing.T) {
 		t.Parallel()
 		resp := &LsRefsOutput{
