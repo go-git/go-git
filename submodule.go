@@ -184,35 +184,21 @@ func (s *Submodule) Repository() (*Repository, error) {
 	return r, nil
 }
 
-// submoduleClientOptions returns the caller's ClientOptions extended
-// with the protocol-policy defaults that apply to submodule fetches:
-// WithProtocolPolicy taken from the submodule's own storer, so its
-// `protocol.<scheme>.allow` resolution governs the clone, and
-// WithUserInitiated(false), so the gate evaluates the fetch as not
-// user-initiated. Canonical Git's submodule update sets
-// GIT_PROTOCOL_FROM_USER=0 whatever the caller passes[1], so
-// WithUserInitiated(false) comes after the caller's options and wins
-// over a WithUserInitiated(true) among them. A caller's
-// WithProtocolPolicy does replace the submodule's policy, as `git -c
+// submoduleClientOptions returns the caller's ClientOptions extended with
+// WithUserInitiated(false), so the protocol-policy gate evaluates submodule
+// fetches as not user-initiated. Canonical Git's submodule update sets
+// GIT_PROTOCOL_FROM_USER=0 whatever the caller passes[1], so it comes after
+// the caller's options and wins over a WithUserInitiated(true) among them.
+// The policy itself is the submodule's config merged with the global and
+// system ones, which each fetch reads (see Remote.repoConfig); a caller's
+// WithProtocolPolicy overlays it key by key, as `git -c
 // protocol.<name>.allow=...` does in Git.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/git-submodule.sh#L29-L30
-func (s *Submodule) submoduleClientOptions(subRepo *Repository, opts []client.Option) ([]client.Option, error) {
-	// Capacity: optional WithProtocolPolicy + caller opts + WithUserInitiated.
-	out := make([]client.Option, 0, len(opts)+2)
-	if subRepo != nil {
-		// A config that cannot be read is an error, not an absent
-		// policy: dropping it here would fall back to the built-in
-		// defaults and quietly widen what the submodule may fetch.
-		cfg, err := subRepo.Config()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, client.WithProtocolPolicy(cfg))
-	}
+func (s *Submodule) submoduleClientOptions(opts []client.Option) []client.Option {
+	out := make([]client.Option, 0, len(opts)+1)
 	out = append(out, opts...)
-	out = append(out, client.WithUserInitiated(false))
-	return out, nil
+	return append(out, client.WithUserInitiated(false))
 }
 
 // defaultRemote returns the remote that relative submodule URLs are
@@ -361,10 +347,7 @@ func (s *Submodule) fetchAndCheckout(
 	// config plus global/system — not the parent's local config.
 	//
 	// [1]: https://github.com/git/git/blob/v2.54.0/git-submodule.sh#L29-L30
-	subOpts, err := s.submoduleClientOptions(r, o.ClientOptions)
-	if err != nil {
-		return err
-	}
+	subOpts := s.submoduleClientOptions(o.ClientOptions)
 
 	if !o.NoFetch {
 		err := r.FetchContext(ctx, &FetchOptions{ClientOptions: subOpts, Depth: o.Depth})

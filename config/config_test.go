@@ -1609,3 +1609,18 @@ func TestMarshalProtocol_DropsRemovedAllow(t *testing.T) {
 		})
 	}
 }
+
+// ReadProtocolPolicy reads only the protocol policy, so a value another
+// section would reject is not an error, while bad syntax still is.
+func TestReadProtocolPolicy(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ReadProtocolPolicy([]byte("[pack]\n\twindow = x\n[protocol]\n\tallow = user\n[protocol \"file\"]\n\tallow = never\n"))
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Protocol.Allow)
+	require.Equal(t, ProtocolUser, *cfg.Protocol.Allow)
+	require.Equal(t, map[string]string{"file": ProtocolNever}, cfg.Protocol.AllowByName)
+
+	_, err = ReadProtocolPolicy([]byte("[protocol\n"))
+	require.Error(t, err)
+}

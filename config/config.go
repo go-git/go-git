@@ -735,6 +735,14 @@ func (c *Config) unmarshalProtocol() error {
 		c.Protocol.Version = v
 	}
 
+	c.unmarshalProtocolAllow(s)
+
+	return nil
+}
+
+// unmarshalProtocolAllow reads protocol.allow and protocol.<name>.allow from
+// the protocol section s.
+func (c *Config) unmarshalProtocolAllow(s *format.Section) {
 	// The allow keys are recorded as they are, an empty value included,
 	// and checked only when ProtocolPolicy looks one up: Git parses only
 	// the key a transport needs, so a bad value for one protocol does not
@@ -753,8 +761,21 @@ func (c *Config) unmarshalProtocol() error {
 		}
 		c.Protocol.AllowByName[sub.Name] = sub.Options.Get(allowKey)
 	}
+}
 
-	return nil
+// ReadProtocolPolicy decodes the config file b and returns a Config that
+// holds only its protocol policy, protocol.allow and protocol.<name>.allow.
+// Nothing else in b is interpreted, so a value another command would refuse
+// is not an error here, as Git reads only the keys a command needs; a file
+// that is not valid config syntax is.
+func ReadProtocolPolicy(b []byte) (*Config, error) {
+	raw := format.New()
+	if err := format.NewDecoder(bytes.NewReader(b)).Decode(raw); err != nil {
+		return nil, err
+	}
+	c := NewConfig()
+	c.unmarshalProtocolAllow(raw.Section(protocolSection))
+	return c, nil
 }
 
 func (c *Config) unmarshalIndex() {

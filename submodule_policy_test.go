@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/config"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/client"
@@ -22,6 +23,8 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 // Build a small superproject + nested target on disk, where the
@@ -258,21 +261,6 @@ func TestRemoteConfigReadErrorFailsOperation(t *testing.T) {
 	}
 }
 
-// The submodule's own config supplies its protocol policy, so a read
-// failure must surface instead of leaving the fetch to run under the
-// built-in defaults.
-func TestSubmoduleClientOptionsConfigReadError(t *testing.T) {
-	t.Parallel()
-
-	sentinel := errors.New("config is unreadable")
-	subRepo := &Repository{Storer: newErrConfigStorer(sentinel)}
-
-	var s Submodule
-	opts, err := s.submoduleClientOptions(subRepo, nil)
-	require.ErrorIs(t, err, sentinel)
-	require.Nil(t, opts)
-}
-
 // A submodule whose config cannot be read must not fall through to a
 // fetch; UpdateContext has to report the failure.
 func TestSubmoduleUpdate_ConfigReadErrorFailsUpdate(t *testing.T) {
@@ -286,4 +274,181 @@ func TestSubmoduleUpdate_ConfigReadErrorFailsUpdate(t *testing.T) {
 		context.Background(), subRepo, &SubmoduleUpdateOptions{}, plumbing.ZeroHash,
 	)
 	require.ErrorIs(t, err, sentinel)
+}
+
+// Git resolves protocol.allow from the global and system configs as well as
+// the repository's, so a policy set only in the global config applies to a
+// fetch and to a submodule update.
+func TestProtocolPolicyFromGlobalConfig(t *testing.T) { //nolint:paralleltest // replaces the global config loader
+	t.Cleanup(registerTestConfigLoader)
+
+	t.Run("fetch", func(t *testing.T) { //nolint:paralleltest // replaces the global config loader
+		parent, sm := setupFileSubmodule(t)
+		defer func() { _ = parent.Close() }()
+
+		global := config.NewConfig()
+		global.Protocol.AllowByName = map[string]string{"file": config.ProtocolNever}
+		testconfig.Register(*global, *config.NewConfig())
+
+		remote := NewRemote(parent.Storer, &config.RemoteConfig{Name: "t", URLs: []string{sm.c.URL}})
+		_, err := remote.ListContext(context.Background(), &ListOptions{})
+		require.ErrorIs(t, err, transport.ErrProtocolNotAllowed)
+	})
+
+	t.Run("submodule", func(t *testing.T) { //nolint:paralleltest // replaces the global config loader
+		parent, sm := setupFileSubmodule(t)
+		defer func() { _ = parent.Close() }()
+
+		global := config.NewConfig()
+		global.Protocol.AllowByName = map[string]string{"file": config.ProtocolAlways}
+		testconfig.Register(*global, *config.NewConfig())
+
+		require.NoError(t, sm.UpdateContext(context.Background(), &SubmoduleUpdateOptions{}))
+	})
+}
+
+// Only the protocol policy is read from the global config, so a value there
+// go-git would refuse elsewhere does not fail a listing, as it does not for
+// git ls-remote, while the policy still applies, also when it is set under a
+// legacy `[protocol.file]` header, which Git reads too.
+func TestProtocolPolicyIgnoresUnrelatedGlobalConfig(t *testing.T) {
+	t.Cleanup(registerTestConfigLoader)
+	testconfig.RegisterSource(func() plugin.ConfigSource { return xconfig.NewAuto() })
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	for name, tc := range map[string]struct {
+		global string
+		err    error
+	}{
+		"bad value elsewhere":             {global: "[pack]\n\twindow = x\n"},
+		"bad value elsewhere, policy set": {global: "[pack]\n\twindow = x\n[protocol \"file\"]\n\tallow = never\n", err: transport.ErrProtocolNotAllowed},
+		"legacy section header":           {global: "[protocol.file]\n\tallow = never\n", err: transport.ErrProtocolNotAllowed},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "gitconfig")
+			require.NoError(t, os.WriteFile(path, []byte(tc.global), 0o644))
+			t.Setenv("GIT_CONFIG_GLOBAL", path)
+
+			parent, sm := setupFileSubmodule(t)
+			defer func() { _ = parent.Close() }()
+
+			remote := NewRemote(parent.Storer, &config.RemoteConfig{Name: "t", URLs: []string{sm.c.URL}})
+			_, err := remote.ListContext(context.Background(), &ListOptions{})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// A Remote without a storer, and ArchiveRemote, have no repository config,
+// but the global one still applies, as for git ls-remote and git archive
+// --remote outside a repository.
+func TestProtocolPolicyWithoutRepository(t *testing.T) { //nolint:paralleltest // replaces the global config loader
+	t.Cleanup(registerTestConfigLoader)
+	global := config.NewConfig()
+	global.Protocol.AllowByName = map[string]string{"file": config.ProtocolNever}
+	testconfig.Register(*global, *config.NewConfig())
+
+	parent, sm := setupFileSubmodule(t)
+	defer func() { _ = parent.Close() }()
+
+	remote := NewRemote(nil, &config.RemoteConfig{Name: "t", URLs: []string{sm.c.URL}})
+	_, err := remote.ListContext(context.Background(), &ListOptions{})
+	require.ErrorIs(t, err, transport.ErrProtocolNotAllowed)
+
+	_, err = ArchiveRemoteContext(context.Background(), sm.c.URL, &ArchiveOptions{Treeish: "HEAD"})
+	require.ErrorIs(t, err, transport.ErrProtocolNotAllowed)
+}
+
+// The policy is read from the system, global and local configs, the later
+// winning key by key, and a caller's WithProtocolPolicy overlays it as `git
+// -c` does, shadowing only the keys it names. A config that cannot be read
+// fails the operation rather than leaving it to the built-in defaults.
+func TestProtocolPolicyPrecedence(t *testing.T) { //nolint:paralleltest // replaces the global config loader
+	t.Cleanup(registerTestConfigLoader)
+
+	policy := func(file string) *config.Config {
+		c := config.NewConfig()
+		if file != "" {
+			c.Protocol.AllowByName = map[string]string{"file": file}
+		}
+		return c
+	}
+	sentinel := errors.New("config is unreadable")
+
+	for name, tc := range map[string]struct { //nolint:paralleltest // replaces the global config loader
+		system, global, local, caller string
+		// callerAll is the caller's protocol.allow.
+		callerAll string
+		source    func() plugin.ConfigSource
+		err       error
+	}{
+		"local over global":  {global: config.ProtocolNever, local: config.ProtocolAlways},
+		"global over system": {system: config.ProtocolAlways, global: config.ProtocolNever, err: transport.ErrProtocolNotAllowed},
+		"local never":        {global: config.ProtocolAlways, local: config.ProtocolNever, err: transport.ErrProtocolNotAllowed},
+		"caller over local":  {local: config.ProtocolNever, caller: config.ProtocolAlways},
+		// The local protocol.file.allow, which Git looks up before
+		// protocol.allow, survives a caller that names only the latter.
+		"caller overlays local": {local: config.ProtocolNever, callerAll: config.ProtocolAlways, err: transport.ErrProtocolNotAllowed},
+		"unreadable global": {source: func() plugin.ConfigSource {
+			return failingPolicySource{scope: config.GlobalScope, err: sentinel}
+		}, err: sentinel},
+		"unreadable system": {source: func() plugin.ConfigSource {
+			return failingPolicySource{scope: config.SystemScope, err: sentinel}
+		}, err: sentinel},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if tc.source != nil {
+				testconfig.RegisterSource(tc.source)
+			} else {
+				testconfig.Register(*policy(tc.global), *policy(tc.system))
+			}
+
+			parent, sm := setupFileSubmodule(t)
+			defer func() { _ = parent.Close() }()
+			if tc.local != "" {
+				cfg, err := parent.Config()
+				require.NoError(t, err)
+				cfg.Protocol.AllowByName = map[string]string{"file": tc.local}
+				require.NoError(t, parent.SetConfig(cfg))
+			}
+			var opts []client.Option
+			if tc.caller != "" || tc.callerAll != "" {
+				caller := policy(tc.caller)
+				if tc.callerAll != "" {
+					all := tc.callerAll
+					caller.Protocol.Allow = &all
+				}
+				opts = append(opts, client.WithProtocolPolicy(caller))
+			}
+
+			remote := NewRemote(parent.Storer, &config.RemoteConfig{Name: "t", URLs: []string{sm.c.URL}})
+			_, err := remote.ListContext(context.Background(), &ListOptions{ClientOptions: opts})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// failingPolicySource fails to load the protocol policy of one scope.
+type failingPolicySource struct {
+	scope config.Scope
+	err   error
+}
+
+func (s failingPolicySource) Load(config.Scope) (config.ConfigStorer, error) {
+	return nil, s.err
+}
+
+func (s failingPolicySource) LoadProtocolPolicy(scope config.Scope) (*config.Config, error) {
+	if scope == s.scope {
+		return nil, s.err
+	}
+	return config.NewConfig(), nil
 }
