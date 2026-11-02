@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	iofs "io/fs"
 	"maps"
 	"os"
 	"path"
@@ -2178,8 +2179,9 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 		case errors.Is(err, os.ErrNotExist):
 			return false, nil
 		case err != nil && redirected:
-			// This includes symlinks that leave the filesystem.
-			return false, fmt.Errorf("resolve submodule common directory %q: %w", q, err)
+			// This includes symlinks that leave the filesystem. The path
+			// error would repeat q in full, so only its cause is wrapped.
+			return false, fmt.Errorf("resolve submodule common directory %q: %w", elide(q), pathErrCause(err))
 		case err != nil:
 			return false, nil
 		}
@@ -2304,6 +2306,15 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 	}
 
 	return d.fs.Join(resolved...), nil
+}
+
+// pathErrCause returns the cause of a path error, so an error message that
+// already quotes the path does not repeat it, and err itself otherwise.
+func pathErrCause(err error) error {
+	if pe, ok := errors.AsType[*iofs.PathError](err); ok {
+		return pe.Err
+	}
+	return err
 }
 
 // elide truncates a path for use in an error message.

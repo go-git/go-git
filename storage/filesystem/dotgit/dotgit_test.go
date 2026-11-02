@@ -350,6 +350,22 @@ func (s *SuiteDotGit) TestModuleNestingWithInvalidCommonDir() {
 	}
 }
 
+func (s *SuiteDotGit) TestModuleNestingErrorQuotesBoundedPath() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("the long component fails differently on windows")
+	}
+
+	// A component past the filesystem's name limit fails to stat with an
+	// error other than not-exist, which the nesting check reports.
+	fs := osfs.New(s.T().TempDir())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(strings.Repeat("x", 4000)+"\n"), 0o644))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Require().Error(err)
+	s.Less(len(err.Error()), 1024, "error quotes the path in full: %d bytes", len(err.Error()))
+}
+
 func (s *SuiteDotGit) TestModuleNestingWithCommonDirOutsideFilesystem() {
 	fs := osfs.New(s.T().TempDir())
 	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
