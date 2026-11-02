@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -123,6 +124,33 @@ func TestSubmoduleUpdate_FileSchemeAllowedByProtocolConfig(t *testing.T) { //nol
 	require.NoError(t, subRepo.Storer.SetConfig(cfg))
 
 	require.NoError(t, sm.UpdateContext(context.Background(), &SubmoduleUpdateOptions{}))
+}
+
+// Canonical Git's submodule update fetches as not user-initiated whatever
+// the caller asks, so a caller's WithUserInitiated(true) must not unlock a
+// user-only protocol for a submodule, while a policy the caller passes
+// still overlays the submodule's own key by key, as `git -c` does.
+func TestSubmoduleUpdate_CallerOptions(t *testing.T) { //nolint:paralleltest // mutates process env
+	t.Run("user-initiated", func(t *testing.T) { //nolint:paralleltest // mutates process env
+		parent, sm := setupFileSubmodule(t)
+		defer func() { _ = parent.Close() }()
+
+		err := sm.UpdateContext(context.Background(), &SubmoduleUpdateOptions{
+			ClientOptions: []client.Option{client.WithUserInitiated(true)},
+		})
+		require.ErrorIs(t, err, transport.ErrProtocolNotAllowed)
+	})
+
+	t.Run("policy", func(t *testing.T) { //nolint:paralleltest // mutates process env
+		parent, sm := setupFileSubmodule(t)
+		defer func() { _ = parent.Close() }()
+
+		policy := config.NewConfig()
+		policy.Protocol.AllowByName = map[string]string{"file": config.ProtocolAlways}
+		require.NoError(t, sm.UpdateContext(context.Background(), &SubmoduleUpdateOptions{
+			ClientOptions: []client.Option{client.WithProtocolPolicy(policy)},
+		}))
+	})
 }
 
 // Canonical Git's submodule subprocess reads its own local config
