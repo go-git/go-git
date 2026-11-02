@@ -350,6 +350,21 @@ func (s *SuiteDotGit) TestModuleNestingWithInvalidCommonDir() {
 	}
 }
 
+func (s *SuiteDotGit) TestModuleNestingWithDanglingCommonDirSymlink() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("symlink creation is privileged on windows")
+	}
+
+	// Git tests for commondir without following it, then fails to read it.
+	fs := osfs.New(s.T().TempDir())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(fs.Symlink("missing", "modules/lib/commondir"))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Require().Error(err)
+	s.NotErrorIs(err, ErrModuleGitDirNested)
+}
+
 func (s *SuiteDotGit) TestModuleNestingErrorQuotesBoundedPath() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("the long component fails differently on windows")
