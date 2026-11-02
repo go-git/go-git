@@ -151,6 +151,40 @@ func isInitialRequest(req *http.Request) bool {
 	return v
 }
 
+// protocolGateKey marks a request's context with the transport.Request whose
+// protocol policy every redirect hop of it must pass.
+type protocolGateKey struct{}
+
+// withProtocolGate marks ctx so that checkRedirect checks the scheme of each
+// redirect hop against tr's protocol policy. A nil tr leaves ctx unmarked.
+func withProtocolGate(ctx context.Context, tr *transport.Request) context.Context {
+	if tr == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, protocolGateKey{}, tr)
+}
+
+// checkRedirectProtocol checks req's scheme against the protocol policy its
+// context carries, as a request that is not user-initiated: canonical Git
+// limits redirects to the protocols allowed for a non-user request[1], so
+// a hop to a scheme set to "user", or to "never", is refused.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/http.c#L1148-L1161
+func checkRedirectProtocol(req *http.Request) error {
+	tr, _ := req.Context().Value(protocolGateKey{}).(*transport.Request)
+	if tr == nil {
+		return nil
+	}
+	hop := *tr
+	hop.URL = req.URL
+	fromUser := false
+	hop.FromUser = &fromUser
+	if err := transport.CheckRequest(&hop); err != nil {
+		return fmt.Errorf("http transport: redirect to %s: %w", redactedURL(req.URL), err)
+	}
+	return nil
+}
+
 // Options configures the HTTP transport.
 type Options struct {
 	// Client is the underlying HTTP client. If nil, a default client is
@@ -277,6 +311,9 @@ func (o Options) redirectPolicy() RedirectPolicy {
 func wrapCheckRedirect(policy RedirectPolicy, next func(*http.Request, []*http.Request) error) func(*http.Request, []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
 		if err := checkRedirect(req, via, policy); err != nil {
+			return err
+		}
+		if err := checkRedirectProtocol(req); err != nil {
 			return err
 		}
 		// Strip before the caller's hook so it observes what will be sent, and

@@ -73,6 +73,9 @@ type sessionBase struct {
 	service    string
 	authorizer Authorizer
 	dropped    *redirectRecord
+	// request is the handshake's request, whose protocol policy every
+	// redirect of the session's requests must pass.
+	request *transport.Request
 }
 
 // Handshake implements transport.Transport. GETs /info/refs to discover
@@ -104,7 +107,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 	// Only the discovery GET carries the initial-request marker, so only it may
 	// follow redirects under the default policy.
 	rec := &redirectRecord{}
-	httpReq, err := d.request(withRedirectRecord(withInitialRequest(ctx), rec), baseURL)
+	httpReq, err := d.request(withProtocolGate(withRedirectRecord(withInitialRequest(ctx), rec), req), baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +230,7 @@ func (t *Transport) Handshake(ctx context.Context, req *transport.Request) (tran
 		service:    req.Command,
 		authorizer: authorizer,
 		dropped:    dropped,
+		request:    req,
 	}
 	return finishHandshake(resp, base, d)
 }
@@ -590,7 +594,7 @@ func (r *httpRequester) doPost() error {
 	if err != nil {
 		return err
 	}
-	httpReq, err := http.NewRequestWithContext(r.ctx, http.MethodPost, serviceURL, &r.buf)
+	httpReq, err := http.NewRequestWithContext(withProtocolGate(r.ctx, r.session.request), http.MethodPost, serviceURL, &r.buf)
 	if err != nil {
 		return err
 	}
