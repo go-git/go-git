@@ -172,6 +172,16 @@ func UploadPack(
 					return fmt.Errorf("sending shallow-update: %w", err)
 				}
 			}
+
+			// A stateless client may end its first request here, having
+			// asked only for the shallow list, and sends its haves in the
+			// next. It is owed neither acknowledgments nor a pack: upstream
+			// upload_pack peeks with PACKET_READ_GENTLE_ON_EOF and stops.
+			if opts.StatelessRPC {
+				if _, _, err := pktline.PeekLine(rd); errors.Is(err, io.EOF) {
+					return w.Close()
+				}
+			}
 		}
 
 		// UploadHaves.Decode takes EOF for a flush. Upstream dies when a

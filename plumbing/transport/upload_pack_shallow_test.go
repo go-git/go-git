@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
@@ -555,4 +556,46 @@ func TestPlanShallowStopsWhenCancelled(t *testing.T) {
 		_, err := planShallow(ctx, r.st, []plumbing.Hash{r.commits["D"]}, req)
 		require.ErrorIs(t, err, context.Canceled, name)
 	}
+}
+
+// TestUploadPackV1StatelessShallowListOnly checks that a stateless request
+// that ends after its wants, deepen and flush gets the shallow list and
+// nothing else, as git upload-pack answers it. git clients send such a
+// request first on a shallow clone over smart HTTP, and fail with "expected
+// shallow list" on anything after the list.
+func TestUploadPackV1StatelessShallowListOnly(t *testing.T) {
+	t.Parallel()
+	// Before 2.30, git upload-pack died on such a request instead of
+	// answering it: fb3d1a083f taught it to accept the client's EOF.
+	requireGitAtLeast(t, 2, 30, "git upload-pack answering a stateless request that ends after its shallow list")
+	r := mergeHistory(t)
+
+	var req bytes.Buffer
+	upreq := &packp.UploadRequest{Wants: r.hashes([]string{"D"})}
+	upreq.Depth.Deepen = 1
+	upreq.Capabilities.Set(capability.MultiACKDetailed)
+	require.NoError(t, upreq.Encode(&req))
+
+	want := canonicalUploadPack(t, r, req.Bytes())
+	got := goGitUploadPack(t, r, req.Bytes())
+	require.Equal(t, pktLines(t, want), pktLines(t, got))
+	require.Equal(t, []string{"shallow " + r.commits["D"].String(), "0000"}, pktLines(t, got))
+}
+
+// pktLines splits raw into its pkt-line payloads without their trailing line
+// feed, which pkt-line leaves optional, and with a flush-pkt as "0000".
+func pktLines(t testing.TB, raw []byte) []string {
+	t.Helper()
+	var lines []string
+	rd := bytes.NewReader(raw)
+	for rd.Len() > 0 {
+		l, line, err := pktline.ReadLine(rd)
+		require.NoError(t, err)
+		if l == pktline.Flush {
+			lines = append(lines, "0000")
+			continue
+		}
+		lines = append(lines, strings.TrimSuffix(string(line), "\n"))
+	}
+	return lines
 }
