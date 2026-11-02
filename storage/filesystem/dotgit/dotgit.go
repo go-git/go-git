@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -2064,7 +2065,8 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 		return nil, ErrModuleNameEscape
 	}
 
-	if err := d.checkModuleGitDirNesting(cleaned); err != nil {
+	// Git walks the name as given, so "a/." is checked against modules/a.
+	if err := d.checkModuleGitDirNesting(modulePath + "/" + filepath.ToSlash(name)); err != nil {
 		return nil, err
 	}
 
@@ -2072,24 +2074,35 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 }
 
 // checkModuleGitDirNesting rejects a Git directory nested inside another
-// submodule's Git directory. gitdir must be a cleaned, slash-separated path
-// rooted at modules/.
+// submodule's Git directory. gitdir must be a slash-separated path rooted at
+// modules/, not cleaned, as Git checks the name as given.
 //
-// The prefix walk follows [Git's validate_submodule_legacy_git_dir]. For
-// example, a submodule named "lib/refs/heads" would otherwise keep its Git
-// directory inside the one holding the branches of the submodule "lib".
+// The prefix walk follows [Git's validate_submodule_legacy_git_dir]: every
+// prefix that ends at a separator after modules/ is checked. For example, a
+// submodule named "lib/refs/heads" would otherwise keep its Git directory
+// inside the one holding the branches of the submodule "lib". The walk stops
+// at the first prefix that is not a directory, as nothing below it can be a
+// Git directory either, so its cost follows the directories that exist rather
+// than the length of the name.
 //
 // [Git's validate_submodule_legacy_git_dir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2401-L2444
 func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
-	segments := strings.Split(gitdir, "/")
-	for i := 2; i < len(segments); i++ {
-		prefix := d.fs.Join(segments[:i]...)
+	for i := len(modulePath) + 1; i < len(gitdir); i++ {
+		if gitdir[i] != '/' {
+			continue
+		}
+		prefix := gitdir[:i]
+		fi, err := d.fs.Stat(prefix)
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ENAMETOOLONG) ||
+			(err == nil && !fi.IsDir()) {
+			return nil
+		}
 		nested, err := d.isGitDir(prefix)
 		if err != nil {
 			return err
 		}
 		if nested {
-			return fmt.Errorf("%w: %q", ErrModuleGitDirNested, prefix)
+			return fmt.Errorf("%w: %q", ErrModuleGitDirNested, elide(prefix))
 		}
 	}
 
