@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -39,9 +40,9 @@ var (
 	ErrSubmoduleNotFound = errors.New("submodule not found")
 	// ErrUnstagedChanges is returned when the worktree has unstaged changes.
 	ErrUnstagedChanges = errors.New("worktree contains unstaged changes")
-	// ErrLocalChanges is returned when a KeepReset is attempted but a file
-	// that would be changed by the reset has local modifications.
-	ErrLocalChanges = errors.New("worktree contains local changes that would be overwritten by reset")
+	// ErrLocalChanges is returned when a reset, checkout or pull would change
+	// or remove a file that has local modifications.
+	ErrLocalChanges = errors.New("worktree contains local changes that would be overwritten")
 	// ErrGitModulesSymlink is returned when .gitmodules is a symlink.
 	ErrGitModulesSymlink = errors.New(gitmodulesFile + " is a symlink")
 	// ErrNonFastForwardUpdate is returned when a non-fast-forward update is attempted.
@@ -389,8 +390,10 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 	if opts.Mode == HardReset {
 		// The index identifies tracked paths even when the old HEAD tree is
 		// unreadable. Capture its diff before resetIndex replaces it, including
-		// staged additions that must be removed when absent from the target.
-		trackedChanges, err = w.diffTreeWithStaging(t, true)
+		// staged additions that must be removed when absent from the target,
+		// and SkipWorktree entries, which the index must be brought to the
+		// target for too.
+		trackedChanges, err = w.diffTreeWithIndex(t, true)
 		if err != nil {
 			return err
 		}
@@ -416,12 +419,35 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 		return err
 	}
 
+	// The diff of the target against every index entry, from which the
+	// index is built and the SkipWorktree entries the reset touches are
+	// checked. A hard reset's tracked changes are that diff, so it is not
+	// computed twice.
+	indexChanges := trackedChanges
+	if opts.Mode != HardReset {
+		if indexChanges, err = w.diffTreeWithIndex(t, true); err != nil {
+			return err
+		}
+	}
+	stored, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
+	skipped := skipWorktreeEntries(stored)
+	skipUpdates, err := w.checkSkipWorktreeUpToDate(cfg, t, stored, skipped, indexChanges, opts.Files)
+	if err != nil {
+		return err
+	}
+
 	// Merge resets also check out the paths whose index entries changed.
 	// As for hard and keep resets below, the index is stored only once the
 	// worktree is updated.
 	if opts.Mode == MergeReset {
-		idx, changedFiles, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, nil)
+		idx, changedFiles, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, indexChanges)
 		if err != nil {
+			return err
+		}
+		if err := w.updateSkipWorktreePaths(cfg, t, idx, skipped, skipUpdates); err != nil {
 			return err
 		}
 		if len(changedFiles) == 0 {
@@ -438,20 +464,17 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 	// a write that fails leaves the index and HEAD as they were, so a hard
 	// reset can be run again. The tracked deletions come from the old index
 	// or HEAD tree, which the stored index still describes until the end.
-	var stagingChanges merkletrie.Changes
-	if opts.Mode == HardReset {
-		// A hard reset's tracked changes are the staging diff the index
-		// is built from, so it is not computed twice.
-		stagingChanges = trackedChanges
-	}
-	idx, _, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, stagingChanges)
+	idx, _, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, indexChanges)
 	if err != nil {
 		return err
 	}
 	if err := w.removeTrackedDeletions(trackedChanges, opts.Files); err != nil {
 		return err
 	}
-	return w.resetWorktreeToTree(cfg, t, idx, opts.Files)
+	if err := w.updateSkipWorktreePaths(cfg, t, idx, skipped, skipUpdates); err != nil {
+		return err
+	}
+	return w.resetWorktreeToTree(cfg, t, idx, skipped, opts.Files)
 }
 
 // treeContainsDirs checks if the given tree contains all the directories.
@@ -509,8 +532,9 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 	return ErrRestoreWorktreeOnlyNotSupported
 }
 
-// resetIndex resets the index to t. changes is the diff of t against the
-// index, as diffTreeWithStaging(t, true) returns it, or nil to compute it.
+// resetIndex resets the index to t, SkipWorktree entries included. changes
+// is the diff of t against the index, as diffTreeWithIndex(t, true) returns
+// it, or nil to compute it.
 func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string, changes merkletrie.Changes) ([]string, error) {
 	idx, removedFiles, err := w.buildResetIndex(t, dirs, files, changes)
 	if err != nil {
@@ -536,10 +560,15 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 	b := newIndexBuilder(idx)
 
 	if changes == nil {
-		if changes, err = w.diffTreeWithStaging(t, true); err != nil {
+		if changes, err = w.diffTreeWithIndex(t, true); err != nil {
 			return nil, nil, err
 		}
 	}
+
+	// Index entries are the only record of the sparse-checkout state, which
+	// a reset that does not restate dirs leaves untouched, so a rewritten
+	// entry keeps its flag.
+	skipped := skipWorktreeEntries(stored)
 
 	removedFiles := make([]string, 0, len(changes))
 	filesMap := buildFilePathMap(files)
@@ -576,10 +605,12 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 			continue
 		}
 
+		_, skip := skipped[name]
 		b.Add(&index.Entry{
-			Name: name,
-			Hash: e.Hash,
-			Mode: e.Mode,
+			Name:         name,
+			Hash:         e.Hash,
+			Mode:         e.Mode,
+			SkipWorktree: skip,
 		})
 	}
 
@@ -599,6 +630,299 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 func (w *Worktree) storeIndex(idx *index.Index) error {
 	idx.Cache = nil
 	return w.r.Storer.SetIndex(idx)
+}
+
+// skipWorktreeEntries returns idx's SkipWorktree entries by name.
+func skipWorktreeEntries(idx *index.Index) map[string]*index.Entry {
+	entries := make(map[string]*index.Entry)
+	for _, e := range idx.Entries {
+		if e.SkipWorktree {
+			entries[e.Name] = e
+		}
+	}
+	return entries
+}
+
+// checkSkipWorktreeUpToDate refuses a reset to t that changes or removes
+// one of the SkipWorktree entries skipped whose path holds something other
+// than what the entry records, with [ErrLocalChanges], as Git's
+// verify_uptodate does when sparse checkout is off[1]. Git refuses on
+// changed stat data; go-git, whose skip-worktree entries often carry none,
+// compares what the path holds instead. It runs before anything is
+// written, and returns the changes to entries whose path holds their
+// recorded content, which the reset applies like any tracked path. An
+// entry whose path is absent is changed in the index alone: Git would
+// write it, but the flag is go-git's only record of the sparse checkout.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/unpack-trees.c#L2221-L2277
+func (w *Worktree) checkSkipWorktreeUpToDate(cfg *config.Config, t *object.Tree, stored *index.Index, skipped map[string]*index.Entry, changes merkletrie.Changes, files []string) (merkletrie.Changes, error) {
+	if len(skipped) == 0 {
+		return nil, nil
+	}
+	attrs := newCheckinAttributes(w, stored)
+
+	filesMap := buildFilePathMap(files)
+	var update merkletrie.Changes
+	for _, ch := range changes {
+		if ch.From == nil {
+			continue
+		}
+		name := ch.From.String()
+		e, skip := skipped[name]
+		if !skip {
+			continue
+		}
+		if len(files) > 0 && !inFiles(filesMap, name) {
+			continue
+		}
+		var present, upToDate bool
+		var err error
+		if e.Mode == filemode.Submodule {
+			present, upToDate, err = w.gitlinkPathReplaceable(t, name)
+		} else {
+			present, upToDate, err = w.worktreeMatchesEntry(cfg, attrs, e)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !present {
+			continue
+		}
+		if !upToDate {
+			return nil, fmt.Errorf("%w: %s", ErrLocalChanges, name)
+		}
+		update = append(update, ch)
+	}
+	return update, nil
+}
+
+// gitlinkPathReplaceable reports whether the path of the gitlink name is
+// present in the worktree, and whether a reset to t may change it. Git
+// lets a submodule be out of sync with the index, so the path may hold
+// anything when t keeps a gitlink there or drops the path, which removes
+// only an empty directory. When t puts a file, a symlink or a tree there,
+// the path must be an empty directory: anything else is the user's.
+func (w *Worktree) gitlinkPathReplaceable(t *object.Tree, name string) (present, ok bool, err error) {
+	fi, err := w.filesystem.Lstat(name)
+	switch {
+	case errors.Is(err, syscall.ENOTDIR) || (os.IsNotExist(err) && w.underNonDirectory(name)):
+		return true, false, nil
+	case os.IsNotExist(err) || errors.Is(err, errLeadingSymlink):
+		return false, false, nil
+	case err != nil:
+		return false, false, err
+	}
+
+	te, err := t.FindEntry(name)
+	switch {
+	case errors.Is(err, object.ErrEntryNotFound) || errors.Is(err, object.ErrDirectoryNotFound):
+		return true, true, nil
+	case err != nil:
+		return true, false, err
+	case te.Mode == filemode.Submodule:
+		return true, true, nil
+	}
+	if !fi.IsDir() {
+		return true, false, nil
+	}
+	entries, err := w.filesystem.ReadDir(name)
+	if err != nil {
+		return true, false, err
+	}
+	return true, len(entries) == 0, nil
+}
+
+// underNonDirectory reports whether a leading component of name is in the
+// worktree but is not a directory. Windows reports a path below a file as
+// missing, where POSIX fails with ENOTDIR; Git for Windows looks up the
+// leading components to tell the two apart[1], and so does this.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L1051-L1078
+func (w *Worktree) underNonDirectory(name string) bool {
+	for dir := path.Dir(name); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		fi, err := w.filesystem.Lstat(dir)
+		if err == nil {
+			return !fi.IsDir()
+		}
+	}
+	return false
+}
+
+// worktreeMatchesEntry reports whether the path of e, which is not a
+// gitlink, is present in the worktree, and whether it holds what e
+// records: a file of e's type, and of e's executable bit when
+// core.fileMode is set, whose contents, or a symlink whose target, hashes
+// to e's hash, as written or, under core.autocrlf, with its CRLF line
+// endings converted to LF, unless attrs says Git keeps them for its path.
+// A blob holding CRLF itself matches only as written, as Git converts only
+// for a blob without one[1]. A path under a symlinked directory is not
+// e's, and is reported absent.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/convert.c#L527-L538
+func (w *Worktree) worktreeMatchesEntry(cfg *config.Config, attrs *checkinAttributes, e *index.Entry) (present, upToDate bool, err error) {
+	fi, err := w.filesystem.Lstat(e.Name)
+	switch {
+	case errors.Is(err, syscall.ENOTDIR) || (os.IsNotExist(err) && w.underNonDirectory(e.Name)):
+		return true, false, nil
+	case os.IsNotExist(err) || errors.Is(err, errLeadingSymlink):
+		return false, false, nil
+	case err != nil:
+		return false, false, err
+	}
+
+	switch {
+	case fi.Mode()&os.ModeSymlink != 0:
+		if e.Mode != filemode.Symlink {
+			return true, false, nil
+		}
+		target, err := w.filesystem.Readlink(e.Name)
+		if err != nil {
+			return true, false, err
+		}
+		h := plumbing.NewHasher(cfg.Extensions.ObjectFormat, plumbing.BlobObject, int64(len(target)))
+		if _, err := io.WriteString(h, target); err != nil {
+			return true, false, err
+		}
+		return true, h.Sum().Equal(e.Hash), nil
+	case fi.Mode().IsRegular():
+		if e.Mode != filemode.Regular && e.Mode != filemode.Executable && e.Mode != filemode.Deprecated {
+			return true, false, nil
+		}
+		if cfg.Core.FileMode && (fi.Mode()&0o111 != 0) != (e.Mode == filemode.Executable) {
+			return true, false, nil
+		}
+	default:
+		return true, false, nil
+	}
+
+	got, err := w.hashWorktreeFile(cfg, e.Name, fi.Size(), false)
+	if err != nil {
+		return true, false, err
+	}
+	if got.Equal(e.Hash) || !autoCRLF(cfg) {
+		return true, got.Equal(e.Hash), nil
+	}
+	if attrs.keepsCRLF(e.Name) {
+		return true, false, nil
+	}
+	if got, err = w.hashWorktreeFile(cfg, e.Name, fi.Size(), true); err != nil {
+		return true, false, err
+	}
+	return true, got.Equal(e.Hash), nil
+}
+
+// hashWorktreeFile returns the blob hash of the file at name, of the given
+// size, streaming it. With lf, a text file is hashed with its CRLF line
+// endings converted to LF, as Add stores it under core.autocrlf.
+func (w *Worktree) hashWorktreeFile(cfg *config.Config, name string, size int64, lf bool) (plumbing.Hash, error) {
+	f, err := w.filesystem.Open(name)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	defer func() { _ = f.Close() }()
+
+	h := plumbing.NewHasher(cfg.Extensions.ObjectFormat, plumbing.BlobObject, size)
+	var dst io.Writer = h
+	if lf {
+		var dropped int64
+		if dst, dropped, err = toLF(f, h); err != nil {
+			return plumbing.ZeroHash, err
+		}
+		h.Reset(plumbing.BlobObject, size-dropped)
+	}
+	if _, err := ioutil.CopyBufferPool(dst, f); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return h.Sum(), nil
+}
+
+// updateSkipWorktreePaths applies changes, the changes to the SkipWorktree
+// entries skipped whose path holds their recorded content, to the worktree: a
+// modified entry's path gets the target's content, and a removed entry's
+// path is removed, as for any tracked path. The entries keep their flag,
+// and idx, the index being reset, gets the stat data of each file written,
+// so Git does not take it for a local change. A removed path is also
+// removed by the reset's pass over the tracked deletions; removing it here
+// keeps this pass complete on its own, and the second removal finds
+// nothing.
+func (w *Worktree) updateSkipWorktreePaths(cfg *config.Config, t *object.Tree, idx *index.Index, skipped map[string]*index.Entry, changes merkletrie.Changes) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	fs, closeFS := w.reusableRootFS()
+	defer closeFS()
+
+	for _, ch := range changes {
+		a, err := ch.Action()
+		if err != nil {
+			return err
+		}
+		name := ch.From.String()
+		old := skipped[name]
+		switch a {
+		case merkletrie.Delete:
+			if err := rmEntryAndDirsIfEmpty(fs, name, old.Mode); err != nil {
+				return err
+			}
+		case merkletrie.Modify:
+			e, err := t.FindEntry(name)
+			if err != nil {
+				return err
+			}
+			if e.Mode == filemode.Submodule {
+				// A gitlink's path is a directory go-git leaves to the
+				// submodule. A file the entry recorded is replaced by
+				// one, as a checkout of the gitlink would create it.
+				if old.Mode == filemode.Submodule {
+					continue
+				}
+				if err := fs.Remove(name); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				mode, err := e.Mode.ToOSFileMode()
+				if err != nil {
+					return err
+				}
+				if err := fs.MkdirAll(name, mode); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := fs.Remove(name); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			f, err := t.File(name)
+			if err != nil {
+				return err
+			}
+			if err := w.checkoutFile(cfg, fs, f); err != nil {
+				return err
+			}
+			if err := recordStat(fs, idx, name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// recordStat sets the stat data of idx's entry for name from the file at
+// name, as addIndexFromFile does for the entries it adds.
+func recordStat(fs billy.Filesystem, idx *index.Index, name string) error {
+	e, err := idx.Entry(name)
+	if err != nil {
+		return err
+	}
+	fi, err := fs.Lstat(name)
+	if err != nil {
+		return err
+	}
+	e.ModifiedAt = fi.ModTime()
+	e.Size = uint32(fi.Size())
+	if fillSystemInfo != nil {
+		fillSystemInfo(e, fi.Sys())
+	}
+	return nil
 }
 
 // copyIndex returns a copy of idx whose entries can be changed without
@@ -812,9 +1136,10 @@ func (w *Worktree) removeTrackedDeletions(changes merkletrie.Changes, files []st
 // the target drops, and then stores idx.
 //
 // Untracked paths absent from the target are preserved. SkipWorktree entries
-// are removed separately because they are excluded from the worktree diff.
+// are removed separately because they are excluded from the worktree diff;
+// those in wasSkipped, the stored index's, are left alone.
 // A nonempty files slice restricts updates to the selected paths.
-func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, idx *index.Index, files []string) error {
+func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, idx *index.Index, wasSkipped map[string]*index.Entry, files []string) error {
 	filesMap := buildFilePathMap(files)
 
 	fs, closeFS := w.reusableRootFS()
@@ -866,12 +1191,17 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 		}
 	}
 
-	// Step 3: remove tracked files that are SkipWorktree=true from disk.
-	// diffStagingWithWorktree builds the index node tree with skip=true for
-	// SkipWorktree entries, so they never appear as Delete actions in step 2.
-	// git removes these files when the sparse-checkout contract excludes them.
+	// Step 3: remove the files of the entries this reset excludes from the
+	// sparse checkout, as git does when the sparse-checkout contract excludes
+	// them. The worktree diff leaves SkipWorktree entries out, so they never
+	// appear as Delete actions in step 2. An entry that was SkipWorktree
+	// before the reset is left alone: the reset already checked and updated
+	// the ones it changes, and Git leaves the others' paths as they are.
 	for _, e := range idx.Entries {
 		if !e.SkipWorktree {
+			continue
+		}
+		if _, was := wasSkipped[e.Name]; was {
 			continue
 		}
 		if len(files) > 0 && !inFiles(filesMap, e.Name) {
