@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"slices"
@@ -195,6 +196,25 @@ func TestRefsWithPrefixReportsMalformedPackedRefs(t *testing.T) {
 			assert.ErrorIs(t, err, ErrPackedRefsBadFormat)
 		})
 	}
+}
+
+// A packed-refs record longer than the scanner's limit fails iteration as it
+// fails Refs, rather than growing memory to fit the file: a sparse file can
+// claim terabytes without a newline.
+func TestRefsWithPrefixBoundsPackedRefsRecord(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	writeFile(t, fs, "packed-refs", hashA+" refs/heads/"+strings.Repeat("x", bufio.MaxScanTokenSize)+"\n")
+	dir := New(fs)
+
+	iter, err := dir.RefsWithPrefix("refs/heads/")
+	require.NoError(t, err)
+	defer iter.Close()
+	_, err = iter.Next()
+	assert.ErrorIs(t, err, bufio.ErrTooLong)
+
+	_, err = dir.Refs()
+	assert.ErrorIs(t, err, bufio.ErrTooLong)
 }
 
 func TestRefsWithPrefixReleasesPackedRefs(t *testing.T) {

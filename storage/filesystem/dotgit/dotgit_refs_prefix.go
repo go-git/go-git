@@ -1,6 +1,7 @@
 package dotgit
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"io/fs"
@@ -212,9 +213,9 @@ func (s *looseRefsSource) Close() {
 }
 
 // packedRefsSource yields the packed refs matching prefix in sorted order.
-// On first use it reads packed-refs whole, so it holds no file open, and
-// collects the matches in one pass, sorting them unless the names already
-// ascend. It does not rely on the sorted header trait, which Git trusts:
+// On first use it reads packed-refs in one pass and closes it, so it holds
+// no file open, collecting the matches and sorting them unless the names
+// already ascend. It does not rely on the sorted header trait, which Git trusts:
 // verifying it costs the same pass, and a false claim would hide matches.
 type packedRefsSource struct {
 	d      *DotGit
@@ -250,23 +251,16 @@ func (s *packedRefsSource) open() (err error) {
 	}
 	defer ioutil.CheckClose(f, &err)
 
-	// A builder grown to the file's size holds it in one allocation, which
-	// String returns without copying.
-	var content strings.Builder
-	if st, err := s.d.fs.Stat(packedRefsPath); err == nil {
-		content.Grow(int(st.Size()))
-	}
-	if _, err := io.Copy(&content, f); err != nil {
-		return err
-	}
-
+	// Scanned line by line, as the other packed-refs readers are, so a
+	// record longer than bufio.MaxScanTokenSize fails with
+	// bufio.ErrTooLong instead of growing memory to fit it. ScanLines drops
+	// a carriage return before the newline, so a CRLF record reads the same
+	// everywhere in go-git. Git itself keeps the carriage return in the name
+	// and then ignores the record as a ref with a broken name.
 	sorted, prev := true, ""
-	for line := range strings.Lines(content.String()) {
-		// Drop the line ending as bufio.ScanLines does for the other
-		// packed-refs readers, so a CRLF record reads the same everywhere in
-		// go-git. Git itself keeps the carriage return in the name and then
-		// ignores the record as a ref with a broken name.
-		hash, name, ok, err := parsePackedRefLine(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"))
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		hash, name, ok, err := parsePackedRefLine(sc.Text())
 		if err != nil {
 			return err
 		}
@@ -279,9 +273,11 @@ func (s *packedRefsSource) open() (err error) {
 		prev = name
 
 		if strings.HasPrefix(name, s.prefix) {
-			// Cloned, so the refs do not keep the whole file alive.
-			s.refs = append(s.refs, plumbing.NewReferenceFromStrings(strings.Clone(name), hash))
+			s.refs = append(s.refs, plumbing.NewReferenceFromStrings(name, hash))
 		}
+	}
+	if err := sc.Err(); err != nil {
+		return err
 	}
 
 	if !sorted {
