@@ -411,3 +411,36 @@ func (s *NoderSuite) TestZeroIndexModTime() {
 
 	s.Equal(expectedHash, fileHash, "should hash actual file content when idx.ModTime is zero, not use stale index hash")
 }
+
+// The walk skips the repository directory as Git's fspathcmp compares it:
+// .git only, unless IgnoreCase, which skips it in any case. The zero
+// Options skip only .git, as NewRootNode always has.
+func (s *NoderSuite) TestSkipsGitDirAsIgnoreCaseSays() {
+	fs := memfs.New()
+	for _, name := range []string{".git/HEAD", ".GIT/HEAD", "sub/.Git/HEAD", "f"} {
+		s.Require().NoError(WriteFile(fs, name, nil, 0o644))
+	}
+
+	names := func(n noder.Noder) []string {
+		var got []string
+		children, err := n.Children()
+		s.Require().NoError(err)
+		for _, c := range children {
+			got = append(got, c.Name())
+			if c.Name() == "sub" {
+				sub, err := c.Children()
+				s.Require().NoError(err)
+				for _, cc := range sub {
+					got = append(got, "sub/"+cc.Name())
+				}
+			}
+		}
+		return got
+	}
+
+	s.ElementsMatch([]string{".GIT", "f", "sub", "sub/.Git"}, names(NewRootNode(fs, nil)))
+	s.ElementsMatch([]string{".GIT", "f", "sub", "sub/.Git"},
+		names(NewRootNodeWithOptions(fs, nil, Options{})))
+	s.ElementsMatch([]string{"f", "sub"},
+		names(NewRootNodeWithOptions(fs, nil, Options{IgnoreCase: true})))
+}

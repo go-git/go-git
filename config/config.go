@@ -95,6 +95,11 @@ type Config struct {
 		// directional characters that HFS+ would normalize away).
 		// When unset, defaults to true on macOS.
 		ProtectHFS OptBool
+		// IgnoreCase reports that the worktree filesystem is
+		// case-insensitive. Status and Clean then skip the repository's
+		// directory in any case, such as .GIT, as Git does; otherwise
+		// they skip only .git. Unset means false, as in Git.
+		IgnoreCase OptBool
 	}
 
 	User user
@@ -481,6 +486,7 @@ const (
 	hooksPathKey               = "hooksPath"
 	protectNTFSKey             = "protectNTFS"
 	protectHFSKey              = "protectHFS"
+	ignoreCaseKey              = "ignoreCase"
 	indexSection               = "index"
 	skipHashKey                = "skipHash"
 	formatKey                  = "format"
@@ -552,6 +558,10 @@ func (c *Config) unmarshalCore() {
 
 	if parsed := parseConfigBool(s.Options.Get(protectHFSKey)); parsed.IsSet() {
 		c.Core.ProtectHFS = parsed
+	}
+
+	if parsed := parseConfigBool(s.Options.Get(ignoreCaseKey)); parsed.IsSet() {
+		c.Core.IgnoreCase = parsed
 	}
 
 	if fileMode := s.Options.Get(fileModeKey); fileMode == "false" {
@@ -796,6 +806,10 @@ func (c *Config) marshalCore() {
 
 	if c.Core.ProtectHFS.IsSet() {
 		s.SetOption(protectHFSKey, c.Core.ProtectHFS.FormatBool())
+	}
+
+	if c.Core.IgnoreCase.IsSet() {
+		s.SetOption(ignoreCaseKey, c.Core.IgnoreCase.FormatBool())
 	}
 }
 

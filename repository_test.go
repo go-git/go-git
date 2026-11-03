@@ -4201,7 +4201,7 @@ func (s *RepositorySuite) TestRepackObjectsKeepsPackWithoutIndex() {
 func TestRepackObjectsKeepsStagedBlobInLooseObjectsPack(t *testing.T) {
 	t.Parallel()
 	requireGitBinary(t)
-	if !gitAtLeast(t, 2, 30) {
+	if !gitAtLeast(t, 2, 30, 0) {
 		t.Skip("git maintenance gained the loose-objects task in 2.30")
 	}
 
