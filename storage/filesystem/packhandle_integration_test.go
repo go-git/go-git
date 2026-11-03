@@ -173,9 +173,9 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 	tmp := t.TempDir()
 	base := osfs.New(tmp)
 
-	// ExclusiveAccess so hasPack consults packMap; after cleanPackList
-	// clears packMap, hasPack returns ErrPackfileNotFound immediately
-	// rather than falling back to a directory scan.
+	// ExclusiveAccess so lookups go through the cached pack list. The
+	// delete clears it, so the next lookup lists objects/pack again and
+	// reports the pack as gone.
 	opts := dotgit.Options{
 		ExclusiveAccess:   true,
 		ReadReverseIndex:  true,
@@ -365,4 +365,34 @@ func copyDir(t *testing.T, src, dst billy.Filesystem, dir string) {
 			copyOne(t, src, dst, p)
 		}
 	}
+}
+
+// A pack too new for the cutoff stays on disk, so its objects must stay
+// readable through the same ObjectStorage.
+func TestDeleteKeepsPackTooNewToDeleteReadable(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	dg := dotgit.New(osfs.New(t.TempDir()))
+	require.NoError(t, dg.Initialize())
+
+	pw, err := dg.NewObjectPack()
+	require.NoError(t, err)
+	pf, err := f.Packfile()
+	require.NoError(t, err)
+	_, err = io.Copy(pw, pf)
+	require.NoError(t, err)
+	require.NoError(t, pw.Close())
+
+	storage := NewObjectStorage(dg, cache.NewObjectLRUDefault())
+	defer func() { _ = storage.Close() }()
+
+	_, err = storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	require.NoError(t, err)
+
+	h := plumbing.NewHash(f.PackfileHash)
+	require.NoError(t, storage.DeleteOldObjectPackAndIndex(h, time.Now().Add(-time.Hour)))
+
+	_, err = storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	require.NoError(t, err)
 }

@@ -5,6 +5,7 @@ import (
 	iofs "io/fs"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,18 @@ func packDirNames(t *testing.T, fs billy.Filesystem) []string {
 		names = append(names, e.Name())
 	}
 	return names
+}
+
+// forEachDeleteCutoff runs fn with no cutoff, and with one after the pack was
+// written, which RepackObjects passes when OnlyDeletePacksOlderThan is set.
+func forEachDeleteCutoff(t *testing.T, fn func(t *testing.T, cutoff time.Time)) {
+	t.Helper()
+
+	for name, cutoff := range map[string]time.Time{"no cutoff": {}, "cutoff": time.Now().Add(time.Hour)} {
+		t.Run(name, func(t *testing.T) {
+			fn(t, cutoff)
+		})
+	}
 }
 
 func forEachAccessMode(t *testing.T, fn func(t *testing.T, opts Options)) {
@@ -182,23 +195,25 @@ func TestDeleteRemovesOnlyPackNamedCopy(t *testing.T) {
 	t.Parallel()
 
 	forEachAccessMode(t, func(t *testing.T, opts Options) {
-		fs := memfs.New()
-		hex := fixtures.Basic().One().PackfileHash
-		h := writeFixturePack(t, fs, "pack-"+hex, packExt, idxExt, revExt)
-		writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt, promisorExt)
-		dot := NewWithOptions(fs, opts)
-		defer func() { _ = dot.Close() }()
+		forEachDeleteCutoff(t, func(t *testing.T, cutoff time.Time) {
+			fs := memfs.New()
+			hex := fixtures.Basic().One().PackfileHash
+			h := writeFixturePack(t, fs, "pack-"+hex, packExt, idxExt, revExt)
+			writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt, promisorExt)
+			dot := NewWithOptions(fs, opts)
+			defer func() { _ = dot.Close() }()
 
-		require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
-		assert.ElementsMatch(t, []string{
-			"loose-" + hex + idxExt,
-			"loose-" + hex + packExt,
-			"loose-" + hex + promisorExt,
-		}, packDirNames(t, fs))
+			require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, cutoff))
+			assert.ElementsMatch(t, []string{
+				"loose-" + hex + idxExt,
+				"loose-" + hex + packExt,
+				"loose-" + hex + promisorExt,
+			}, packDirNames(t, fs))
 
-		packs, err := dot.ObjectPacks()
-		require.NoError(t, err)
-		assert.Equal(t, []plumbing.Hash{h}, packs)
+			packs, err := dot.ObjectPacks()
+			require.NoError(t, err)
+			assert.Equal(t, []plumbing.Hash{h}, packs)
+		})
 	})
 }
 
@@ -206,23 +221,25 @@ func TestDeleteLeavesLooseObjectsPackReadable(t *testing.T) {
 	t.Parallel()
 
 	forEachAccessMode(t, func(t *testing.T, opts Options) {
-		fs := memfs.New()
-		hex := fixtures.Basic().One().PackfileHash
-		h := writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt, revExt, promisorExt)
-		dot := NewWithOptions(fs, opts)
-		defer func() { _ = dot.Close() }()
+		forEachDeleteCutoff(t, func(t *testing.T, cutoff time.Time) {
+			fs := memfs.New()
+			hex := fixtures.Basic().One().PackfileHash
+			h := writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt, revExt, promisorExt)
+			dot := NewWithOptions(fs, opts)
+			defer func() { _ = dot.Close() }()
 
-		require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
-		assert.Len(t, packDirNames(t, fs), 4)
+			require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, cutoff))
+			assert.Len(t, packDirNames(t, fs), 4)
 
-		packs, err := dot.ObjectPacks()
-		require.NoError(t, err)
-		assert.Equal(t, []plumbing.Hash{h}, packs)
+			packs, err := dot.ObjectPacks()
+			require.NoError(t, err)
+			assert.Equal(t, []plumbing.Hash{h}, packs)
 
-		rev, err := dot.ObjectPackRev(h)
-		require.NoError(t, err)
-		assert.Equal(t, "loose-"+hex+revExt, filepath.Base(rev.Name()))
-		require.NoError(t, rev.Close())
+			rev, err := dot.ObjectPackRev(h)
+			require.NoError(t, err)
+			assert.Equal(t, "loose-"+hex+revExt, filepath.Base(rev.Name()))
+			require.NoError(t, rev.Close())
+		})
 	})
 }
 
@@ -230,18 +247,20 @@ func TestDeleteRemovesOrphanedPackNextToLooseObjectsPack(t *testing.T) {
 	t.Parallel()
 
 	forEachAccessMode(t, func(t *testing.T, opts Options) {
-		fs := memfs.New()
-		hex := fixtures.Basic().One().PackfileHash
-		h := writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt)
-		writeFixturePack(t, fs, "pack-"+hex, packExt)
-		dot := NewWithOptions(fs, opts)
-		defer func() { _ = dot.Close() }()
+		forEachDeleteCutoff(t, func(t *testing.T, cutoff time.Time) {
+			fs := memfs.New()
+			hex := fixtures.Basic().One().PackfileHash
+			h := writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt)
+			writeFixturePack(t, fs, "pack-"+hex, packExt)
+			dot := NewWithOptions(fs, opts)
+			defer func() { _ = dot.Close() }()
 
-		require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
-		assert.ElementsMatch(t, []string{
-			"loose-" + hex + idxExt,
-			"loose-" + hex + packExt,
-		}, packDirNames(t, fs))
+			require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, cutoff))
+			assert.ElementsMatch(t, []string{
+				"loose-" + hex + idxExt,
+				"loose-" + hex + packExt,
+			}, packDirNames(t, fs))
+		})
 	})
 }
 
@@ -304,7 +323,7 @@ func TestMissingReverseIndexIsLookedUpOnce(t *testing.T) {
 		require.NoError(t, rev.Close())
 	}
 
-	assert.LessOrEqual(t, fs.readDirs.Load(), int32(1))
+	assert.Equal(t, int32(1), fs.readDirs.Load())
 }
 
 func TestRenamedPackIsFoundAgain(t *testing.T) {
@@ -330,4 +349,69 @@ func TestRenamedPackIsFoundAgain(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "other-"+hex+packExt, filepath.Base(pack.Name()))
 	require.NoError(t, pack.Close())
+}
+
+func TestOneListingFindsEveryLooseObjectsPack(t *testing.T) {
+	t.Parallel()
+
+	fs := &readDirCounter{Filesystem: memfs.New()}
+	first := writeFixturePack(t, fs, "loose-"+fixtures.Basic().One().PackfileHash, packExt, idxExt)
+	second := plumbing.NewHash(strings.Repeat("1", first.HexSize()))
+	writeFixturePack(t, fs, "loose-"+second.String(), packExt, idxExt)
+	dot := NewWithOptions(fs, Options{})
+	defer func() { _ = dot.Close() }()
+
+	for _, h := range []plumbing.Hash{first, second} {
+		pack, err := dot.ObjectPack(h)
+		require.NoError(t, err)
+		require.NoError(t, pack.Close())
+	}
+
+	assert.Equal(t, int32(1), fs.readDirs.Load())
+}
+
+func TestDeleteForgetsWhereThePackWasFound(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	hex := fixtures.Basic().One().PackfileHash
+	h := writeFixturePack(t, fs, "pack-"+hex, packExt, idxExt)
+	writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt)
+	dot := NewWithOptions(fs, Options{})
+	defer func() { _ = dot.Close() }()
+
+	_, err := dot.ObjectPackRev(h)
+	require.ErrorIs(t, err, ErrPackfileNotFound)
+
+	require.NoError(t, dot.DeleteOldObjectPackAndIndex(h, time.Time{}))
+
+	idx, err := dot.ObjectPackIdx(h)
+	require.NoError(t, err)
+	assert.Equal(t, "loose-"+hex+idxExt, filepath.Base(idx.Name()))
+	require.NoError(t, idx.Close())
+}
+
+// A reader can record pack-<hash> while DeleteOldObjectPackAndIndex is
+// removing it, and the lazy index reopens the .idx without opening the .pack.
+func TestStaleRecordedNameIsFoundAgainOnIdxOpen(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	hex := fixtures.Basic().One().PackfileHash
+	h := writeFixturePack(t, fs, "pack-"+hex, packExt, idxExt)
+	writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt)
+	dot := NewWithOptions(fs, Options{})
+	defer func() { _ = dot.Close() }()
+
+	_, err := dot.ObjectPackRev(h)
+	require.ErrorIs(t, err, ErrPackfileNotFound)
+
+	for _, ext := range []string{packExt, idxExt} {
+		require.NoError(t, fs.Remove(path.Join(objectsPath, packPath, "pack-"+hex+ext)))
+	}
+
+	idx, err := dot.ObjectPackIdx(h)
+	require.NoError(t, err)
+	assert.Equal(t, "loose-"+hex+idxExt, filepath.Base(idx.Name()))
+	require.NoError(t, idx.Close())
 }

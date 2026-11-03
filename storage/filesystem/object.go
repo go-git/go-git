@@ -1216,11 +1216,10 @@ func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time
 
 	// The pack outlives the call when it is too new to delete, or when it is
 	// also stored under a name other than pack-<hash>, which is left in place.
+	// When the listing fails, the entry is dropped as if the pack were gone,
+	// since keeping it for a deleted pack would route reads to missing files.
 	packs, err := s.dir.ObjectPacks()
-	if err != nil {
-		return err
-	}
-	if slices.Contains(packs, h) {
+	if err == nil && slices.Contains(packs, h) {
 		return nil
 	}
 

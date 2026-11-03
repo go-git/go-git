@@ -350,10 +350,10 @@ type DotGit struct {
 	packHandlesMu sync.Mutex
 	packHandles   map[plumbing.Hash]*packhandle.PackHandle
 
-	// foundBases records, outside ExclusiveAccess, the base name each pack
-	// was last found under, guarded by foundBasesMu. With it, a pack not
-	// named pack-<hash>, or one without a .rev, costs a directory listing
-	// only when it is first opened and when its .pack goes missing.
+	// foundBases records, outside ExclusiveAccess, the base name of every
+	// pack the last directory listing found, guarded by foundBasesMu. With
+	// it, one listing serves every pack not named pack-<hash>, and the
+	// directory is listed again only when a recorded pack's .pack is gone.
 	foundBasesMu sync.Mutex
 	foundBases   map[plumbing.Hash]string
 }
@@ -708,9 +708,10 @@ func (d *DotGit) cachedPackBase(hash plumbing.Hash) (string, error) {
 // withPackFile calls op with the path of the pack's file with extension ext.
 // A file that does not exist is reported as [ErrPackfileNotFound], whatever
 // the access mode. Outside ExclusiveAccess, op is tried on the base name the
-// pack was last found under, or pack-<hash> before it has been found, and
-// the directory is listed only when the pack has not been found yet or its
-// .pack has gone, so the common case costs no syscall beyond op itself.
+// last directory listing found the pack under, or pack-<hash> when it has
+// not been listed, and the directory is listed again only when the pack has
+// not been listed or its .pack is gone, so the common case costs no syscall
+// beyond op itself.
 func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path string) error) error {
 	opAt := func(base string) error {
 		err := op(d.packFilePath(base, ext))
@@ -730,15 +731,25 @@ func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path strin
 	}
 
 	d.foundBasesMu.Lock()
-	base, found := d.foundBases[hash]
+	base, recorded := d.foundBases[hash]
 	d.foundBasesMu.Unlock()
-	if !found {
+	if !recorded {
 		base = packPrefix + hash.String()
 	}
 
 	err := opAt(base)
-	if !errors.Is(err, ErrPackfileNotFound) || (found && ext != packExt) {
+	if !errors.Is(err, ErrPackfileNotFound) {
 		return err
+	}
+
+	// A recorded name can go stale, for instance when another goroutine
+	// lists the directory while DeleteOldObjectPackAndIndex removes the
+	// pack. The lazy index reopens the .idx without opening the .pack, so
+	// the .pack is checked before trusting the record.
+	if recorded && ext != packExt {
+		if _, statErr := d.fs.Lstat(d.packFilePath(base, packExt)); statErr == nil {
+			return err
+		}
 	}
 
 	_, bases, scanErr := d.scanPacks()
@@ -746,23 +757,20 @@ func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path strin
 		return scanErr
 	}
 
-	listed, ok := bases[hash]
-	d.foundBasesMu.Lock()
-	if ok {
-		if d.foundBases == nil {
-			d.foundBases = make(map[plumbing.Hash]string)
-		}
-		d.foundBases[hash] = listed[0]
-	} else {
-		delete(d.foundBases, hash)
+	found := make(map[plumbing.Hash]string, len(bases))
+	for h, b := range bases {
+		found[h] = b[0]
 	}
+	d.foundBasesMu.Lock()
+	d.foundBases = found
 	d.foundBasesMu.Unlock()
 
-	if !ok || listed[0] == base {
+	listed, ok := found[hash]
+	if !ok || listed == base {
 		return err
 	}
 
-	return opAt(listed[0])
+	return opAt(listed)
 }
 
 // packFilePath returns the path of the file with extension ext of the pack
@@ -1087,6 +1095,12 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 			errs = append(errs, err)
 		}
 	}
+
+	// A reader may have recorded pack-<hash> since cleanPackList dropped the
+	// records above.
+	d.foundBasesMu.Lock()
+	delete(d.foundBases, hash)
+	d.foundBasesMu.Unlock()
 
 	d.packHandlesMu.Lock()
 	ph, ok := d.packHandles[hash]
