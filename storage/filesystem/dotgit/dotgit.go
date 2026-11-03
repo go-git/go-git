@@ -2137,33 +2137,33 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		fi, err = d.fs.Stat(commonFile)
 		if errors.Is(err, os.ErrNotExist) {
-			return false, fmt.Errorf("read %q: %w", commonFile, err)
+			return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
 		}
 	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
-		return false, fmt.Errorf("read %q: %w", commonFile, err)
+		return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
 	case !fi.Mode().IsRegular():
 		// Opening a device or a named pipe can block indefinitely, so the
 		// mode is checked before the file is read.
-		return false, fmt.Errorf("submodule common directory file %q is not a regular file", commonFile)
+		return false, fmt.Errorf("submodule common directory file %q is not a regular file", elide(commonFile))
 	default:
 		f, err := d.fs.Open(commonFile)
 		if err != nil {
-			return false, fmt.Errorf("read %q: %w", commonFile, err)
+			return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
 		}
 		defer func() { _ = f.Close() }()
 
 		b, err := io.ReadAll(io.LimitReader(f, maxCommonDirSize+1))
 		if err != nil {
-			return false, fmt.Errorf("read %q: %w", commonFile, err)
+			return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
 		}
 		if len(b) == 0 {
-			return false, fmt.Errorf("empty submodule common directory file %q", commonFile)
+			return false, fmt.Errorf("empty submodule common directory file %q", elide(commonFile))
 		}
 		if len(b) > maxCommonDirSize {
-			return false, fmt.Errorf("submodule common directory file %q exceeds %d bytes", commonFile, maxCommonDirSize)
+			return false, fmt.Errorf("submodule common directory file %q exceeds %d bytes", elide(commonFile), maxCommonDirSize)
 		}
 
 		common := strings.TrimRight(string(b), "\r\n")

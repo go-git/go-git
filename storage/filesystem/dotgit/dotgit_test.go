@@ -454,6 +454,39 @@ func (s *SuiteDotGit) TestModuleNestingErrorQuotesBoundedPath() {
 	s.Less(len(err.Error()), 1024, "error quotes the path in full: %d bytes", len(err.Error()))
 }
 
+// The commondir file's errors quote its path bounded too, for a prefix of a
+// long module name.
+func (s *SuiteDotGit) TestModuleNestingCommonDirFileErrorQuotesBoundedPath() {
+	component := strings.Repeat("n", 200)
+	prefix := strings.Repeat(component+"/", 9) + component
+	tests := []struct {
+		name  string
+		setup func(fs billy.Filesystem, commonFile string)
+	}{
+		{name: "empty", setup: func(fs billy.Filesystem, commonFile string) {
+			s.Require().NoError(util.WriteFile(fs, commonFile, nil, 0o644))
+		}},
+		{name: "oversized", setup: func(fs billy.Filesystem, commonFile string) {
+			s.Require().NoError(util.WriteFile(fs, commonFile, []byte(strings.Repeat("x", maxCommonDirSize+1)), 0o644))
+		}},
+		{name: "directory", setup: func(fs billy.Filesystem, commonFile string) {
+			s.Require().NoError(fs.MkdirAll(commonFile, 0o755))
+		}},
+	}
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			fs := memfs.New()
+			gitDir := fs.Join("modules", prefix)
+			s.Require().NoError(util.WriteFile(fs, fs.Join(gitDir, "HEAD"), []byte("ref: refs/heads/master\n"), 0o644))
+			tc.setup(fs, fs.Join(gitDir, "commondir"))
+
+			_, err := New(fs).Module(prefix + "/sub")
+			s.Require().Error(err)
+			s.Less(len(err.Error()), 4*maxCommonDirInError, "error quotes the path in full: %d bytes", len(err.Error()))
+		})
+	}
+}
+
 func (s *SuiteDotGit) TestModuleNestingWithCommonDirOutsideFilesystem() {
 	fs := osfs.New(s.T().TempDir())
 	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
