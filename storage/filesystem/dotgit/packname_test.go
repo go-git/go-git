@@ -2,8 +2,10 @@ package dotgit
 
 import (
 	"io"
+	iofs "io/fs"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -255,4 +257,77 @@ func TestMissingPackFileIsNotFoundInEitherMode(t *testing.T) {
 		_, err := dot.packFileSize(h, revExt)
 		assert.ErrorIs(t, err, ErrPackfileNotFound)
 	})
+}
+
+type readDirCounter struct {
+	billy.Filesystem
+	readDirs atomic.Int32
+}
+
+func (c *readDirCounter) ReadDir(path string) ([]iofs.DirEntry, error) {
+	c.readDirs.Add(1)
+	return c.Filesystem.ReadDir(path)
+}
+
+func TestLooseObjectsPackNameIsResolvedOnce(t *testing.T) {
+	t.Parallel()
+
+	fs := &readDirCounter{Filesystem: memfs.New()}
+	h := writeFixturePack(t, fs, "loose-"+fixtures.Basic().One().PackfileHash, packExt, idxExt, revExt)
+	dot := NewWithOptions(fs, Options{})
+	defer func() { _ = dot.Close() }()
+
+	for range 3 {
+		for _, open := range []func(plumbing.Hash) (billy.File, error){dot.ObjectPack, dot.ObjectPackIdx, dot.ObjectPackRev} {
+			f, err := open(h)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+		}
+	}
+
+	assert.Equal(t, int32(1), fs.readDirs.Load())
+}
+
+// Packs written before Git 2.41, or with pack.writeReverseIndex=false, have
+// no .rev, so every open of the reverse index misses.
+func TestMissingReverseIndexIsLookedUpOnce(t *testing.T) {
+	t.Parallel()
+
+	fs := &readDirCounter{Filesystem: memfs.New()}
+	h := writeFixturePack(t, fs, "pack-"+fixtures.Basic().One().PackfileHash, packExt, idxExt)
+	dot := NewWithOptions(fs, Options{ReadReverseIndex: true})
+	defer func() { _ = dot.Close() }()
+
+	for range 3 {
+		rev, err := dot.OpenPackRev(h)
+		require.NoError(t, err)
+		require.NoError(t, rev.Close())
+	}
+
+	assert.LessOrEqual(t, fs.readDirs.Load(), int32(1))
+}
+
+func TestRenamedPackIsFoundAgain(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	hex := fixtures.Basic().One().PackfileHash
+	h := writeFixturePack(t, fs, "loose-"+hex, packExt, idxExt)
+	dot := NewWithOptions(fs, Options{})
+	defer func() { _ = dot.Close() }()
+
+	pack, err := dot.ObjectPack(h)
+	require.NoError(t, err)
+	require.NoError(t, pack.Close())
+
+	for _, ext := range []string{packExt, idxExt} {
+		from := path.Join(objectsPath, packPath, "loose-"+hex+ext)
+		to := path.Join(objectsPath, packPath, "other-"+hex+ext)
+		require.NoError(t, fs.Rename(from, to))
+	}
+
+	pack, err = dot.ObjectPack(h)
+	require.NoError(t, err)
+	assert.Equal(t, "other-"+hex+packExt, filepath.Base(pack.Name()))
+	require.NoError(t, pack.Close())
 }

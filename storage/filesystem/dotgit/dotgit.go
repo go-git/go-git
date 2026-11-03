@@ -349,6 +349,13 @@ type DotGit struct {
 	// guarded by packHandlesMu. Lazy-initialised on first use.
 	packHandlesMu sync.Mutex
 	packHandles   map[plumbing.Hash]*packhandle.PackHandle
+
+	// foundBases records, outside ExclusiveAccess, the base name each pack
+	// was last found under, guarded by foundBasesMu. With it, a pack not
+	// named pack-<hash>, or one without a .rev, costs a directory listing
+	// only when it is first opened and when its .pack goes missing.
+	foundBasesMu sync.Mutex
+	foundBases   map[plumbing.Hash]string
 }
 
 // New returns a DotGit value ready to be used. The path argument must
@@ -700,9 +707,10 @@ func (d *DotGit) cachedPackBase(hash plumbing.Hash) (string, error) {
 
 // withPackFile calls op with the path of the pack's file with extension ext.
 // A file that does not exist is reported as [ErrPackfileNotFound], whatever
-// the access mode. Outside ExclusiveAccess, op is tried on pack-<hash> first,
-// and the directory is listed only when that file does not exist, so the
-// common case costs no syscall beyond op itself.
+// the access mode. Outside ExclusiveAccess, op is tried on the base name the
+// pack was last found under, or pack-<hash> before it has been found, and
+// the directory is listed only when the pack has not been found yet or its
+// .pack has gone, so the common case costs no syscall beyond op itself.
 func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path string) error) error {
 	opAt := func(base string) error {
 		err := op(d.packFilePath(base, ext))
@@ -721,9 +729,15 @@ func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path strin
 		return opAt(base)
 	}
 
-	base := packPrefix + hash.String()
+	d.foundBasesMu.Lock()
+	base, found := d.foundBases[hash]
+	d.foundBasesMu.Unlock()
+	if !found {
+		base = packPrefix + hash.String()
+	}
+
 	err := opAt(base)
-	if !errors.Is(err, ErrPackfileNotFound) {
+	if !errors.Is(err, ErrPackfileNotFound) || (found && ext != packExt) {
 		return err
 	}
 
@@ -732,12 +746,23 @@ func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path strin
 		return scanErr
 	}
 
-	found, ok := bases[hash]
-	if !ok || found[0] == base {
+	listed, ok := bases[hash]
+	d.foundBasesMu.Lock()
+	if ok {
+		if d.foundBases == nil {
+			d.foundBases = make(map[plumbing.Hash]string)
+		}
+		d.foundBases[hash] = listed[0]
+	} else {
+		delete(d.foundBases, hash)
+	}
+	d.foundBasesMu.Unlock()
+
+	if !ok || listed[0] == base {
 		return err
 	}
 
-	return opAt(found[0])
+	return opAt(listed[0])
 }
 
 // packFilePath returns the path of the file with extension ext of the pack
@@ -1266,6 +1291,10 @@ func (d *DotGit) hasObject(h plumbing.Hash) error {
 func (d *DotGit) cleanPackList() error {
 	d.packBases = nil
 	d.packList = nil
+
+	d.foundBasesMu.Lock()
+	d.foundBases = nil
+	d.foundBasesMu.Unlock()
 
 	d.packHandlesMu.Lock()
 	handles := d.packHandles
