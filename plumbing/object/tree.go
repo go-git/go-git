@@ -141,6 +141,18 @@ func (t *Tree) TreeEntryFile(e *TreeEntry) (*File, error) {
 		return nil, err
 	}
 
+	return t.treeEntryFile(e)
+}
+
+// TreeEntryFileSkipValidation returns the *File for a given *TreeEntry
+// without validating the entry's name. Use this when the entry was
+// obtained via a TreeWalker with skipPathValidation enabled, and the
+// caller has already verified the entry is safe to use.
+func (t *Tree) TreeEntryFileSkipValidation(e *TreeEntry) (*File, error) {
+	return t.treeEntryFile(e)
+}
+
+func (t *Tree) treeEntryFile(e *TreeEntry) (*File, error) {
 	blob, err := GetBlob(t.s, e.Hash)
 	if err != nil {
 		return nil, err
