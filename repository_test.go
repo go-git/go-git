@@ -4993,7 +4993,7 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 		"packed-refs":              header + "\n" + strings.Join(lines, "\n") + "\n",
 		"refs/heads/empty":         "",
 		"refs/heads/garbage":       "garbage\n",
-		"refs/heads/shadowed":      "",
+		"refs/heads/shadowed":      "garbage\n",
 		"refs/heads/locked.lock":   head + "\n",
 		"refs/heads/.hidden":       head + "\n",
 		"refs/tags/truncated":      "",

@@ -1557,6 +1557,10 @@ func (s *RemoteSuite) TestPushRejectsBrokenSource() {
 			"refs/heads/garbage": "garbage\n",
 			"refs/heads/alias":   "ref: refs/heads/garbage\n",
 		}, wantErr: plumbing.ErrBrokenReference},
+		{spec: "+refs/heads/empty-alias:refs/heads/keep", files: map[string]string{
+			"refs/heads/empty":       "",
+			"refs/heads/empty-alias": "ref: refs/heads/empty\n",
+		}, wantErr: plumbing.ErrBrokenReference},
 	} {
 		s.Run(fmt.Sprintf("%s/prune=%t", tc.spec, tc.prune), func() {
 			srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
@@ -1582,6 +1586,29 @@ func (s *RemoteSuite) TestPushRejectsBrokenSource() {
 			ref, err := dst.Storer.Reference(keep.Name())
 			s.Require().NoError(err)
 			s.Equal(keep, ref)
+		})
+	}
+}
+
+// A remote-tracking ref storage cannot read, such as an empty file, is not
+// taken as missing and overwritten by fetch: git fails with "bad object".
+func (s *RemoteSuite) TestFetchRefusesBrokenTrackingRef() {
+	for _, content := range []string{"", "garbage\n"} {
+		s.Run(fmt.Sprintf("%q", content), func() {
+			fs := memfs.New()
+			r, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+			s.Require().NoError(err)
+			_, err = r.CreateRemote(&config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{s.GetBasicLocalRepositoryURL()}})
+			s.Require().NoError(err)
+			name := "refs/remotes/origin/master"
+			s.Require().NoError(util.WriteFile(fs, name, []byte(content), 0o644))
+
+			err = r.Fetch(&FetchOptions{})
+			s.ErrorIs(err, plumbing.ErrBrokenReference)
+
+			got, err := util.ReadFile(fs, name)
+			s.Require().NoError(err)
+			s.Equal(content, string(got))
 		})
 	}
 }

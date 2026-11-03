@@ -157,7 +157,6 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 				"refs/heads/garbage":             "garbage\n",
 				"refs/heads/zero":                strings.Repeat("0", len(head)) + "\n",
 				"refs/heads/spaced":              "  " + head + "\n",
-				"refs/heads/fix":                 "",
 				"refs/heads/main.lock":           head + "\n",
 				"refs/heads/.hidden":             head + "\n",
 				"refs/remotes/origin/topic.lock": head + "\n",

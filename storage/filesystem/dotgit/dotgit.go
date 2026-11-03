@@ -112,9 +112,11 @@ var (
 	// ErrIsDir is returned when a reference file is attempting to be read,
 	// but the path specified is a directory.
 	ErrIsDir = errors.New("reference path is a directory")
-	// ErrEmptyRefFile is returned when a reference file is attempted to be read,
-	// but the file is empty
-	ErrEmptyRefFile = errors.New("ref file is empty")
+	// ErrEmptyRefFile is returned when a loose reference file is empty and
+	// packed-refs holds no reference of that name, which Git treats as a
+	// broken ref. It wraps plumbing.ErrBrokenReference; iteration reports
+	// such a reference with the all-zero ID instead.
+	ErrEmptyRefFile = fmt.Errorf("ref file is empty: %w", plumbing.ErrBrokenReference)
 	// ErrBrokenRefFile is returned when a loose reference file holds neither a
 	// symbolic reference nor an object ID, which Git treats as a broken ref.
 	// It wraps plumbing.ErrBrokenReference; iteration reports such a
@@ -1426,21 +1428,40 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 // when Refs returns an entry with that name.
 // It falls back to packed-refs when the loose reference is missing, empty, or
 // its path is a directory. Other loose-reference read errors are returned to the
-// caller.
+// caller, as is ErrEmptyRefFile for an empty file packed-refs does not back.
 func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	if err := validReferenceName(name); err != nil {
 		return nil, err
 	}
 
 	ref, err := d.readReferenceFile(".", name.String())
+	if errors.Is(err, ErrEmptyRefFile) {
+		return d.packedRefUnderEmptyFile(name)
+	}
 	if err == nil {
 		return ref, nil
 	}
-	if !os.IsNotExist(err) && !errors.Is(err, ErrIsDir) && !errors.Is(err, ErrEmptyRefFile) {
+	if !os.IsNotExist(err) && !errors.Is(err, ErrIsDir) {
 		return nil, err
 	}
 
 	return d.packedRef(name)
+}
+
+// packedRefUnderEmptyFile returns the packed reference name, whose loose file
+// is empty. Git reads an empty loose ref as broken whether or not it is
+// packed, but go-git falls back to the packed one, since SetRef truncates a
+// loose file before writing it and a reader may see it empty in between.
+// Without a packed reference, it returns ErrEmptyRefFile rather than
+// plumbing.ErrReferenceNotFound, so that writers do not take it as unborn
+// and overwrite it, as git refuses to:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L956-L958
+func (d *DotGit) packedRefUnderEmptyFile(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	ref, err := d.packedRef(name)
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return nil, ErrEmptyRefFile
+	}
+	return ref, err
 }
 
 func (d *DotGit) findPackedRefsInFile(f billy.File, recv refsRecv) error {

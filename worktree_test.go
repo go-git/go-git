@@ -4863,8 +4863,16 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 // creating a branch over it fails instead of replacing the file.
 func TestWritesRefuseBrokenReference(t *testing.T) {
 	t.Parallel()
-	for _, op := range []string{"commit", "checkout-create"} {
-		t.Run(op, func(t *testing.T) {
+	for _, tc := range []struct{ op, content string }{
+		{"commit", "garbage\n"},
+		{"commit", ""},
+		{"checkout-create", "garbage\n"},
+		{"checkout-create", ""},
+		{"create-tag", "garbage\n"},
+		{"create-tag", ""},
+	} {
+		op := tc.op
+		t.Run(fmt.Sprintf("%s/%q", op, tc.content), func(t *testing.T) {
 			t.Parallel()
 			dot, wt := memfs.New(), memfs.New()
 			r, err := Init(filesystem.NewStorage(dot, cache.NewObjectLRUDefault()), WithWorkTree(wt))
@@ -4877,20 +4885,26 @@ func TestWritesRefuseBrokenReference(t *testing.T) {
 			head, err := w.Commit("a", &CommitOptions{Author: defaultSignature()})
 			require.NoError(t, err)
 
-			name := "refs/heads/master"
-			if op == "commit" {
-				require.NoError(t, util.WriteFile(dot, name, []byte("garbage\n"), 0o644))
+			var name string
+			switch op {
+			case "commit":
+				name = "refs/heads/master"
+				require.NoError(t, util.WriteFile(dot, name, []byte(tc.content), 0o644))
 				_, err = w.Commit("b", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
-			} else {
+			case "checkout-create":
 				name = "refs/heads/broken"
-				require.NoError(t, util.WriteFile(dot, name, []byte("garbage\n"), 0o644))
+				require.NoError(t, util.WriteFile(dot, name, []byte(tc.content), 0o644))
 				err = w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName(name), Create: true, Hash: head})
+			case "create-tag":
+				name = "refs/tags/broken"
+				require.NoError(t, util.WriteFile(dot, name, []byte(tc.content), 0o644))
+				_, err = r.CreateTag("broken", head, nil)
 			}
 			require.ErrorIs(t, err, plumbing.ErrBrokenReference)
 
 			content, err := util.ReadFile(dot, name)
 			require.NoError(t, err)
-			assert.Equal(t, "garbage\n", string(content))
+			assert.Equal(t, tc.content, string(content))
 		})
 	}
 }

@@ -679,7 +679,9 @@ func (s *SuiteDotGit) TestRefEmptyWithoutPackedEntry() {
 	fs := s.EmptyFS()
 	s.Require().NoError(util.WriteFile(fs, "ORIG_HEAD", nil, 0o644))
 	ref, err := New(fs).Ref("ORIG_HEAD")
-	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
+	s.Require().ErrorIs(err, ErrEmptyRefFile)
+	s.Require().ErrorIs(err, plumbing.ErrBrokenReference)
+	s.Require().NotErrorIs(err, plumbing.ErrReferenceNotFound)
 	s.Require().Nil(ref)
 }
 

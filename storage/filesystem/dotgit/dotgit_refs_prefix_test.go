@@ -321,14 +321,14 @@ func TestRefsWithPrefixReportsBrokenLooseRefs(t *testing.T) {
 	for _, want := range []string{
 		plumbing.ZeroHash.String() + " refs/heads/empty",
 		plumbing.ZeroHash.String() + " refs/heads/garbage",
-		plumbing.ZeroHash.String() + " refs/heads/shadow",
+		hashB + " refs/heads/shadow",
 		hashB + " refs/heads/after",
 		hashB + " refs/heads/trailing",
 	} {
 		assert.Contains(t, refs, want)
 	}
 	for _, unwanted := range []string{
-		hashB + " refs/heads/shadow",
+		plumbing.ZeroHash.String() + " refs/heads/shadow",
 		hashA + " refs/heads/main.lock",
 		hashA + " refs/heads/.hidden",
 		hashA + " refs/heads/.dir/x",
@@ -383,8 +383,9 @@ func TestLooseRefReadersAgree(t *testing.T) {
 	}
 }
 
-// Content Git treats as broken fails Ref, and is reported by Refs and
-// RefsWithPrefix alike with the all-zero ID, as git ls-remote shows it.
+// Content Git treats as broken, including an empty file packed-refs does not
+// back, fails Ref, and is reported by Refs and RefsWithPrefix alike with the
+// all-zero ID, as git ls-remote shows it.
 func TestBrokenLooseRefReaders(t *testing.T) {
 	t.Parallel()
 	for _, content := range []string{"garbage\n", "  " + hashA + "\n", hashA[:39] + "\n", hashA + "\v\n", "ref:\n", ""} {
@@ -395,12 +396,8 @@ func TestBrokenLooseRefReaders(t *testing.T) {
 			writeFile(t, fs, "refs/heads/main", hashA+"\n")
 			dir := New(fs)
 
-			if content != "" {
-				// An empty file falls back to packed-refs, as SetRef may
-				// not have written it yet.
-				_, err := dir.Ref("refs/heads/broken")
-				assert.ErrorIs(t, err, ErrBrokenRefFile)
-			}
+			_, err := dir.Ref("refs/heads/broken")
+			assert.ErrorIs(t, err, plumbing.ErrBrokenReference)
 			all, err := dir.Refs()
 			require.NoError(t, err)
 			assert.Equal(t, []string{
@@ -413,6 +410,25 @@ func TestBrokenLooseRefReaders(t *testing.T) {
 			assert.Equal(t, collectRefs(t, storer.NewReferenceSliceIter(all)), collectRefs(t, iter))
 		})
 	}
+}
+
+// An empty loose ref over a packed one reads as the packed one through Ref,
+// as SetRef may not have written it yet, and so through iteration too. Git
+// reads it as broken instead.
+func TestEmptyLooseRefOverPackedRef(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	writeFile(t, fs, "refs/heads/main", "")
+	writeFile(t, fs, "packed-refs", hashA+" refs/heads/main\n")
+	dir := New(fs)
+
+	ref, err := dir.Ref("refs/heads/main")
+	require.NoError(t, err)
+	assert.Equal(t, hashA+" refs/heads/main", ref.String())
+
+	iter, err := dir.RefsWithPrefix("refs/heads/")
+	require.NoError(t, err)
+	assert.Equal(t, []string{hashA + " refs/heads/main"}, collectRefs(t, iter))
 }
 
 // The sorted header trait is not relied on: a file claiming it over names out
