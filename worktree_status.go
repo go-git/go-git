@@ -162,8 +162,9 @@ func (w *Worktree) diffIndexWithWorktree(cfg *config.Config, idx *index.Index, r
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
-		Index:    idx,
+		AutoCRLF:     cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:        idx,
+		ObjectFormat: cfg.Extensions.ObjectFormat,
 	}
 
 	// When ignored changes are to be filtered out, hand the noder the ignore
