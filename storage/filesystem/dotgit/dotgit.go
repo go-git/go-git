@@ -139,6 +139,10 @@ var (
 	// ErrModuleGitDirNested is wrapped by the error returned by [DotGit.Module]
 	// when a submodule's Git directory is inside another submodule's Git directory.
 	ErrModuleGitDirNested = errors.New("submodule git dir is inside another submodule's git dir")
+	// ErrModuleNameTooDeep is wrapped by the error returned by
+	// [DotGit.Module] for a name with more than 255 components, counted as
+	// its separators plus one.
+	ErrModuleNameTooDeep = errors.New("submodule name has too many components")
 	// ErrReferenceNameEscape is returned when a reference name fails the
 	// filesystem storage's name checks. Reads and deletes require a safe path;
 	// writes also require a valid reference name. These errors also wrap
@@ -2037,14 +2041,19 @@ func (d *DotGit) PackRefs() (err error) {
 	return nil
 }
 
+// maxModuleNameDepth is the most components a submodule name may have. Git
+// has no such limit; go-git sets one to bound the nesting check.
+const maxModuleNameDepth = 255
+
 // Module returns a filesystem rooted at the named submodule's Git directory.
 //
 // It returns [ErrModuleNameEscape] if the joined path leaves the modules
-// directory, or an error wrapping [ErrModuleGitDirNested] if a proper prefix
-// of the name identifies another submodule's Git directory. It also returns
-// an error if a prefix's commondir file is empty, unreadable, not a regular
-// file, or larger than 1 MiB, or if its path cannot be resolved within the
-// filesystem with Git's path semantics.
+// directory, an error wrapping [ErrModuleNameTooDeep] if the name has more
+// than 255 components, or an error wrapping [ErrModuleGitDirNested] if a
+// proper prefix of the name identifies another submodule's Git directory.
+// It also returns an error if a prefix's commondir file is empty,
+// unreadable, not a regular file, or larger than 1 MiB, or if its path
+// cannot be resolved within the filesystem with Git's path semantics.
 //
 // Names may contain separators. As in [Git's submodule_name_to_gitdir],
 // nesting is checked on every call, so a name may be refused after a prefix
@@ -2066,7 +2075,16 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 		return nil, ErrModuleNameEscape
 	}
 
-	// Git walks the name as given, so "a/." is checked against modules/a.
+	// Every lookup walks each prefix of the name, and Git sets no limit on
+	// its depth, so a name from .gitmodules could otherwise make every
+	// Status or Update cost minutes. Real names are a few components deep.
+	if n := strings.Count(filepath.ToSlash(name), "/") + 1; n > maxModuleNameDepth {
+		return nil, fmt.Errorf("%w: %d, more than %d", ErrModuleNameTooDeep, n, maxModuleNameDepth)
+	}
+
+	// Git walks the name as given. The checks above refuse "." and ".."
+	// components, so its prefixes name the directories the cleaned name's
+	// do; an empty component only makes the walk check a prefix twice.
 	if err := d.checkModuleGitDirNesting(modulePath + "/" + filepath.ToSlash(name)); err != nil {
 		return nil, err
 	}
