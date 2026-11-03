@@ -169,14 +169,27 @@ func (fs *statCountingFS) Lstat(name string) (os.FileInfo, error) {
 }
 
 func (s *SuiteDotGit) TestModuleNestingStopsAtMissingDirectory() {
-	// .gitmodules names have no length limit. The walk must stop at the
-	// first missing directory rather than check every prefix of the name.
+	// The walk must stop at the first missing directory rather than check
+	// every prefix of the name.
 	fs := &statCountingFS{Filesystem: s.EmptyFS()}
-	name := strings.Repeat("a/", 16000) + "a"
+	name := strings.Repeat("a/", maxModuleNameDepth-1) + "a"
 
 	_, err := New(fs).Module(name)
 	s.Require().NoError(err)
 	s.LessOrEqual(fs.stats, 2)
+}
+
+// A name deeper than maxModuleNameDepth is refused, so a module whose
+// directories all exist cannot make every lookup walk a long name.
+func (s *SuiteDotGit) TestModuleRejectsDeepName() {
+	d := New(s.EmptyFS())
+	deepest := strings.Repeat("a/", maxModuleNameDepth-1) + "a"
+	s.initModule(d, deepest)
+
+	_, err := d.Module(deepest)
+	s.Require().NoError(err)
+	_, err = d.Module(deepest + "/a")
+	s.ErrorIs(err, ErrModuleNameTooDeep)
 }
 
 func (s *SuiteDotGit) TestModuleNestingWithHeadFormats() {
