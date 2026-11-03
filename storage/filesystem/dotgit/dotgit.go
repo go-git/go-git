@@ -2202,7 +2202,10 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 		q := commonFS.Join(p, dir)
 		_, err := commonFS.Stat(q)
 		switch {
-		case errors.Is(err, os.ErrNotExist):
+		case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+			// A commondir naming a file has no objects or refs: Git's
+			// access fails with ENOTDIR, and the prefix is not a Git
+			// directory.
 			return false, nil
 		case err != nil && redirected:
 			// This includes symlinks that leave the filesystem. The path
