@@ -140,6 +140,12 @@ func (fs *RepositoryFilesystem) Chroot(path string) (billy.Filesystem, error) {
 	return fs.mapToRepositoryFsByPath(path).Chroot(path)
 }
 
+// CommonFilesystem returns the filesystem of the common directory, or nil
+// when there is none, as for a repository that is not a linked worktree.
+func (fs *RepositoryFilesystem) CommonFilesystem() billy.Filesystem {
+	return fs.commonDotGitFs
+}
+
 // Root returns the root path of the dot-git filesystem.
 func (fs *RepositoryFilesystem) Root() string {
 	return fs.dotGitFs.Root()
