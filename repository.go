@@ -1726,8 +1726,8 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 // git for-each-ref lists. It skips a reference whose name is not valid, such
 // as one named like "x.lock", one storage reports with the all-zero ID
 // because it cannot read it, and a symbolic reference whose target is
-// missing, broken or not a valid name; other errors resolving a target are
-// returned. Unlike git, it also skips a packed reference that holds the
+// missing, broken, not a valid name or too many links away; other errors
+// resolving a target are returned. Unlike git, it also skips a packed reference that holds the
 // all-zero ID, which it cannot tell apart from an unreadable one.
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L3015-L3023
 func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error) {
@@ -1755,24 +1755,44 @@ func (it *listedReferencesIter) Next() (*plumbing.Reference, error) {
 			continue
 		}
 
-		resolved := ref
-		if ref.Type() == plumbing.SymbolicReference {
-			resolved, err = storer.ResolveReference(it.s, ref.Name())
-			if reference.IsUnresolvableForAdvertisement(err) {
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			if resolved.Name().Validate() != nil {
-				continue
-			}
+		resolved, err := it.resolve(ref)
+		if err != nil {
+			return nil, err
+		}
+		if resolved == nil {
+			continue
 		}
 		if resolved.Type() == plumbing.HashReference && resolved.Hash().IsZero() {
 			continue
 		}
 		return ref, nil
 	}
+}
+
+// symrefMaxDepth is the number of references git reads at most to resolve
+// one, the first included, before it gives up on it as dangling:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/refs-internal.h#L260
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L2147
+const symrefMaxDepth = 5
+
+// resolve follows ref as git for-each-ref does, returning nil when ref
+// is dangling: its target is missing, broken or not a valid name, or more
+// than symrefMaxDepth references away.
+func (it *listedReferencesIter) resolve(ref *plumbing.Reference) (*plumbing.Reference, error) {
+	for depth := 1; ref.Type() == plumbing.SymbolicReference; depth++ {
+		if depth == symrefMaxDepth || ref.Target().Validate() != nil {
+			return nil, nil
+		}
+		next, err := it.s.Reference(ref.Target())
+		if reference.IsUnresolvableForAdvertisement(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		ref = next
+	}
+	return ref, nil
 }
 
 func (it *listedReferencesIter) ForEach(cb func(*plumbing.Reference) error) error {

@@ -4957,8 +4957,9 @@ func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
 }
 
 // Branches and Tags list what git for-each-ref lists, skipping what it skips:
-// broken loose refs, symbolic refs whose target is missing or broken, and
-// names that are not valid, whether loose "*.lock" files or packed entries.
+// broken loose refs, symbolic refs whose target is missing or broken or too
+// many links away, and names that are not valid, whether loose "*.lock" files
+// or packed entries.
 func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 	t.Parallel()
 	requireGitBinary(t)
@@ -5005,6 +5006,12 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 		"refs/heads/dangling":      "ref: refs/heads/missing\n",
 		"refs/heads/to-broken":     "ref: refs/heads/garbage\n",
 		"refs/heads/to-lock":       "ref: refs/heads/locked.lock\n",
+		"refs/heads/chain/8":       head + "\n",
+	}
+	// Git follows at most SYMREF_MAXDEPTH references, so it lists
+	// chain/4, four links from chain/8, and skips chain/3 as dangling.
+	for i := 1; i < 8; i++ {
+		files[fmt.Sprintf("refs/heads/chain/%d", i)] = fmt.Sprintf("ref: refs/heads/chain/%d\n", i+1)
 	}
 	for name, content := range files {
 		path := filepath.Join(dir, ".git", filepath.FromSlash(name))
