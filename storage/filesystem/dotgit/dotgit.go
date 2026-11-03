@@ -2215,38 +2215,19 @@ func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, e
 	// location in the same filesystem as the file containing it.
 	if !filepath.IsAbs(common) && !path.IsAbs(filepath.ToSlash(common)) {
 		resolver := DotGit{fs: roots[0]}
-		resolved, err := resolver.resolveRelativeCommonDir(p, common)
+		resolved, err := resolver.resolveRelativeCommonDir(p, common, common)
 		return roots[0], resolved, err
-	}
-
-	// Rel and Abs clean their arguments. Split before the first ".." so
-	// the component walk can check for symlinks before removing any part
-	// of the path.
-	base, tail := common, "."
-	segments := strings.Split(filepath.ToSlash(common), "/")
-	if i := slices.Index(segments, ".."); i >= 0 {
-		base = strings.Join(segments[:i], "/") + "/"
-		tail = strings.Join(segments[i:], "/")
-	}
-	abs, err := filepath.Abs(base)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve submodule common directory: %w", err)
 	}
 
 	var resolveErr error
 	for _, fs := range roots {
-		root, err := filepath.Abs(fs.Root())
-		if err != nil {
-			return nil, "", fmt.Errorf("resolve filesystem root: %w", err)
-		}
-		rel, err := filepath.Rel(root, abs)
-		if err != nil || escapesRoot(rel) {
-			continue
-		}
 		resolver := DotGit{fs: fs}
-		resolved, err := resolver.resolveRelativeCommonDir(rel, tail)
-		if err == nil {
+		resolved, err := resolver.resolveAbsoluteCommonDir(common, common)
+		switch {
+		case err == nil:
 			return fs, resolved, nil
+		case errors.Is(err, errOutsideRoot):
+			continue
 		}
 		// The path may leave a worktree root but remain in the common root.
 		resolveErr = err
@@ -2258,15 +2239,57 @@ func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, e
 	return nil, "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(common))
 }
 
+// errOutsideRoot reports that an absolute commondir path lies outside the
+// filesystem it is resolved in.
+var errOutsideRoot = errors.New("outside the filesystem")
+
+// resolveAbsoluteCommonDir resolves the absolute path common within d's
+// filesystem, as resolveRelativeCommonDir does a relative one, or fails with
+// errOutsideRoot when it lies elsewhere. quoted is the commondir errors
+// name.
+func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string) (string, error) {
+	// Rel and Abs clean their arguments. Split before the first ".." so
+	// the component walk can check for symlinks before removing any part
+	// of the path.
+	base, tail := common, ""
+	segments := strings.Split(filepath.ToSlash(common), "/")
+	if i := slices.Index(segments, ".."); i >= 0 {
+		base = strings.Join(segments[:i], "/") + "/"
+		tail = strings.Join(segments[i:], "/")
+	}
+	abs, err := filepath.Abs(base)
+	if err != nil {
+		return "", fmt.Errorf("resolve submodule common directory: %w", err)
+	}
+	root, err := filepath.Abs(d.fs.Root())
+	if err != nil {
+		return "", fmt.Errorf("resolve filesystem root: %w", err)
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || escapesRoot(rel) {
+		return "", errOutsideRoot
+	}
+	if tail == "" {
+		// The segments as written keep what cleaning drops, such as a
+		// trailing separator after a missing component.
+		return d.resolveCommonDirWithoutParent(rel, ".", quoted, segments)
+	}
+	return d.resolveRelativeCommonDir(rel, tail, quoted)
+}
+
 // resolveRelativeCommonDir resolves common against the filesystem-relative p.
 // It rejects paths that leave the root or remove a symlink component with "..".
 // Git resolves symlinks before "..", but Billy has no realpath operation and
-// may clean paths before resolving them.
-func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
+// may clean paths before resolving them. As Git's realpath, only the last
+// component may be missing, written with nothing after it: a path through a
+// component that does not exist is invalid. quoted is the commondir errors
+// name.
+func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string) (string, error) {
 	segments := strings.Split(filepath.ToSlash(common), "/")
 	if !slices.Contains(segments, "..") {
-		// Nothing is removed, so cleaning names what Git resolves.
-		return d.fs.Join(p, common), nil
+		// Nothing is removed, so the filesystem follows the symlinks Git's
+		// realpath follows, and one or two lookups settle the path.
+		return d.resolveCommonDirWithoutParent(p, common, quoted, segments)
 	}
 
 	// Cache symlink status for each component. Once a component is absent,
@@ -2288,8 +2311,16 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 		case errors.Is(err, os.ErrNotExist):
 			absent = len(resolved)
 			link = append(link, false)
+			// Lstat found the components before this one, but realpath
+			// follows them: a symlink to nothing among them, or anything
+			// but a directory, is the missing component.
+			if absent > 1 {
+				if fi, err := d.fs.Stat(d.fs.Join(resolved[:absent-1]...)); err != nil || !fi.IsDir() {
+					absent--
+				}
+			}
 		case err != nil:
-			return fmt.Errorf("resolve submodule common directory %q: %w", elide(common), pathErrCause(err))
+			return fmt.Errorf("resolve submodule common directory %q: %w", elide(quoted), pathErrCause(err))
 		default:
 			link = append(link, fi.Mode()&os.ModeSymlink != 0)
 		}
@@ -2307,17 +2338,21 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 	for _, segment := range segments {
 		switch segment {
 		case "", ".":
+			// Realpath refuses anything written after a missing component.
+			if absent >= 0 {
+				return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
+			}
 		case "..":
 			if len(resolved) == 0 {
-				return "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(common))
+				return "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(quoted))
+			}
+			if absent >= 0 {
+				return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
 			}
 			if link[len(link)-1] {
-				return "", fmt.Errorf("submodule common directory %q is resolved through the symbolic link %q", elide(common), elide(d.fs.Join(resolved...)))
+				return "", fmt.Errorf("submodule common directory %q is resolved through the symbolic link %q", elide(quoted), elide(d.fs.Join(resolved...)))
 			}
 			resolved, link = resolved[:len(resolved)-1], link[:len(link)-1]
-			if len(resolved) < absent {
-				absent = -1
-			}
 		default:
 			if err := descend(segment); err != nil {
 				return "", err
@@ -2325,7 +2360,42 @@ func (d *DotGit) resolveRelativeCommonDir(p, common string) (string, error) {
 		}
 	}
 
+	if absent >= 0 && absent < len(resolved) {
+		return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
+	}
 	return d.fs.Join(resolved...), nil
+}
+
+// resolveCommonDirWithoutParent resolves common, whose segments name no "..",
+// against p. The path is accepted when it exists, or when only its last
+// component is missing, the component is written with nothing after it, and
+// its parent is a directory, as Git's realpath accepts it[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L120-L131
+func (d *DotGit) resolveCommonDirWithoutParent(p, common, quoted string, segments []string) (string, error) {
+	q := d.fs.Join(p, common)
+	_, err := d.fs.Stat(q)
+	switch {
+	case err == nil:
+		return q, nil
+	case !errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("resolve submodule common directory %q: %w", elide(quoted), pathErrCause(err))
+	}
+	if last := segments[len(segments)-1]; last == "" || last == "." {
+		return "", invalidCommonDir(quoted, q)
+	}
+	parent := filepath.Dir(q)
+	if fi, err := d.fs.Stat(parent); err != nil || !fi.IsDir() {
+		return "", invalidCommonDir(quoted, parent)
+	}
+	return q, nil
+}
+
+// invalidCommonDir is the error for a commondir that resolves through the
+// missing component missing, which Git's realpath refuses with "Invalid
+// path".
+func invalidCommonDir(common, missing string) error {
+	return fmt.Errorf("submodule common directory %q: invalid path %q", elide(common), elide(missing))
 }
 
 // pathErrCause returns the cause of a path error, so an error message that

@@ -337,6 +337,16 @@ func (s *SuiteDotGit) TestModuleNestingWithInvalidCommonDir() {
 		{name: "empty"},
 		{name: "outside filesystem", contents: "../../../outside"},
 		{name: "oversized", contents: strings.Repeat("x", (1<<20)+1)},
+		// As Git's realpath, only the last component may be missing.
+		{name: "missing intermediate component", contents: "missing/deeper"},
+		{name: "parent of a missing component", contents: "missing/../nothere"},
+		{name: "separator after a missing component", contents: "missing/"},
+		{name: "separators after a missing component", contents: "missing//"},
+		{name: "dot after a missing component", contents: "missing/."},
+		{name: "separator after a missing component past dot-dot", contents: "../lib/missing/"},
+		{name: "dot after a missing component past dot-dot", contents: "../lib/missing/."},
+		{name: "component under a file", contents: "HEAD/deeper"},
+		{name: "component under a file past dot-dot", contents: "../lib/HEAD/deeper"},
 	}
 	for _, tc := range tests {
 		s.Run(tc.name, func() {
@@ -346,6 +356,41 @@ func (s *SuiteDotGit) TestModuleNestingWithInvalidCommonDir() {
 
 			_, err := New(fs).Module("lib/refs/heads")
 			s.Error(err)
+		})
+	}
+}
+
+// A commondir whose last component is missing names no Git directory, so
+// the prefix is not one, as Git finds no objects or refs there.
+func (s *SuiteDotGit) TestModuleNestingWithMissingCommonDir() {
+	for _, common := range []string{"missing", "../lib/missing"} {
+		s.Run(common, func() {
+			fs := s.EmptyFS()
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(common), 0o644))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			s.NoError(err)
+		})
+	}
+}
+
+// Realpath follows a symlink before the components below it, so a commondir
+// through a symlink to nothing is invalid, as Git finds it.
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirThroughDanglingSymlink() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("symlink creation is privileged on windows")
+	}
+
+	for _, common := range []string{"dang/deeper", "../lib/dang/deeper"} {
+		s.Run(common, func() {
+			fs := osfs.New(s.T().TempDir())
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(common), 0o644))
+			s.Require().NoError(fs.Symlink("nowhere", "modules/lib/dang"))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			s.ErrorContains(err, "invalid path")
 		})
 	}
 }
@@ -363,6 +408,34 @@ func (s *SuiteDotGit) TestModuleNestingWithDanglingCommonDirSymlink() {
 	_, err := New(fs).Module("lib/refs/heads")
 	s.Require().Error(err)
 	s.NotErrorIs(err, ErrModuleGitDirNested)
+}
+
+// An absolute commondir follows the same rules as a relative one: a
+// missing last component names no Git directory, and one written with a
+// trailing separator is invalid.
+func (s *SuiteDotGit) TestModuleNestingWithAbsoluteCommonDirToMissing() {
+	for _, tc := range []struct {
+		suffix string
+		valid  bool
+	}{
+		{suffix: "missing", valid: true},
+		{suffix: "missing/"},
+		{suffix: "missing/."},
+	} {
+		s.Run(tc.suffix, func() {
+			fs := osfs.New(s.T().TempDir())
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			common := filepath.Join(fs.Root(), "modules", "lib") + "/" + tc.suffix
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(common), 0o644))
+
+			_, err := New(fs).Module("lib/refs/heads")
+			if tc.valid {
+				s.NoError(err)
+			} else {
+				s.ErrorContains(err, "invalid path")
+			}
+		})
+	}
 }
 
 func (s *SuiteDotGit) TestModuleNestingErrorQuotesBoundedPath() {
