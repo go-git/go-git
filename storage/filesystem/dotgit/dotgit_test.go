@@ -490,6 +490,18 @@ func (s *SuiteDotGit) TestModuleNestingWithCommonDirLinkToNothing() {
 	}
 }
 
+// A commondir naming a file has no objects or refs, so the prefix is not a
+// Git directory, as Git finds it.
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirNamingAFile() {
+	fs := osfs.New(s.T().TempDir())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/file", []byte("file"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("file"), 0o644))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.NoError(err)
+}
+
 func (s *SuiteDotGit) TestModuleNestingErrorQuotesBoundedPath() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("the long component fails differently on windows")
