@@ -46,10 +46,19 @@ func (d *DotGit) OpenPackForReading(hash plumbing.Hash) (billy.File, error) {
 		return nil, errors.New("dotgit: pack reader does not support ReadAt")
 	}
 
+	// The handle resolved which base name the pack is stored under when
+	// it opened the file, so the name comes from that file rather than
+	// from another lookup. FSObject reopens the pack by this name.
+	named, ok := pr.(interface{ Name() string })
+	if !ok || named.Name() == "" {
+		_ = pr.Close()
+		return nil, errors.New("dotgit: pack reader does not report its file name")
+	}
+
 	return &readOnlyPackFile{
 		cursor: pr,
 		ra:     ra,
-		name:   d.objectPackPath(hash, "pack"),
+		name:   named.Name(),
 		fs:     d.fs,
 	}, nil
 }

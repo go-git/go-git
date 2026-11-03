@@ -4194,6 +4194,44 @@ func (s *RepositorySuite) TestRepackObjectsKeepsPackWithoutIndex() {
 	s.Require().NoError(err)
 }
 
+// The loose-objects task packs every loose object into loose-<hash>.pack,
+// including blobs only the index reaches. RepackObjects packs only what the
+// refs reach, whereas `git repack` also passes --indexed-objects and --reflog
+// (builtin/repack.c), so the loose- pack is the only copy of a staged blob.
+func TestRepackObjectsKeepsStagedBlobInLooseObjectsPack(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+	if !gitAtLeast(t, 2, 30) {
+		t.Skip("git maintenance gained the loose-objects task in 2.30")
+	}
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "committed"), []byte("committed\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "first")
+	git(t, dir, "gc", "-q")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "staged"), []byte("staged\n"), 0o644))
+	git(t, dir, "add", "staged")
+	git(t, dir, "maintenance", "run", "--task=loose-objects")
+	git(t, dir, "maintenance", "run", "--task=loose-objects")
+
+	staged := strings.TrimSpace(git(t, dir, "rev-parse", ":staged"))
+	_, err := os.Stat(filepath.Join(dir, ".git", "objects", staged[:2], staged[2:]))
+	require.ErrorIs(t, err, os.ErrNotExist, "the staged blob must live only in the loose-objects pack")
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+
+	_, err = repo.BlobObject(plumbing.NewHash(staged))
+	require.NoError(t, err)
+	git(t, dir, "cat-file", "-e", staged)
+}
+
 func ExecuteOnPath(t *testing.T, path string, cmds ...string) error {
 	for _, cmd := range cmds {
 		err := executeOnPath(path, cmd)

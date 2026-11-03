@@ -60,6 +60,7 @@ const (
 	packPrefix = "pack-"
 	packExt    = ".pack"
 	idxExt     = ".idx"
+	revExt     = ".rev"
 
 	// promisorExt marks a pack as having been received from a promisor
 	// remote, meaning objects it references but does not contain are
@@ -342,7 +343,7 @@ type DotGit struct {
 	objectList []plumbing.Hash // sorted
 	objectMap  map[plumbing.Hash]struct{}
 	packList   []plumbing.Hash
-	packMap    map[plumbing.Hash]struct{}
+	packBases  map[plumbing.Hash][]string
 
 	// packHandles caches one [*packhandle.PackHandle] per pack hash,
 	// guarded by packHandlesMu. Lazy-initialised on first use.
@@ -411,7 +412,7 @@ func (d *DotGit) Close() error {
 		}
 	}
 
-	d.packMap = nil
+	d.packBases = nil
 
 	return errors.Join(phErrs...)
 }
@@ -550,28 +551,32 @@ func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
 // PromisorObjectPacks returns the hashes of the packs that were received from a
 // promisor remote, that is those carrying a .promisor marker.
 func (d *DotGit) PromisorObjectPacks() ([]plumbing.Hash, error) {
-	packs, err := d.ObjectPacks()
+	packs, bases, err := d.packCatalog()
 	if err != nil {
 		return nil, err
 	}
 
 	var promisors []plumbing.Hash
 	for _, h := range packs {
-		ok, err := d.hasPromisor(h)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			promisors = append(promisors, h)
+		for _, base := range bases[h] {
+			ok, err := d.hasPromisor(base)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				promisors = append(promisors, h)
+				break
+			}
 		}
 	}
 
 	return promisors, nil
 }
 
-// hasPromisor reports whether the pack carries a .promisor marker.
-func (d *DotGit) hasPromisor(hash plumbing.Hash) (bool, error) {
-	fi, err := d.fs.Lstat(d.objectPackPath(hash, promisorExt[1:]))
+// hasPromisor reports whether the pack stored under base carries a .promisor
+// marker.
+func (d *DotGit) hasPromisor(base string) (bool, error) {
+	fi, err := d.fs.Lstat(d.packFilePath(base, promisorExt))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -585,110 +590,201 @@ func (d *DotGit) hasPromisor(hash plumbing.Hash) (bool, error) {
 // files. Packs without indexes are ignored because they cannot be read, and
 // PackWriter publishes each index before making its pack visible.
 func (d *DotGit) ObjectPacks() ([]plumbing.Hash, error) {
-	if !d.options.ExclusiveAccess {
-		return d.objectPacks()
-	}
-
-	err := d.genPackList()
-	if err != nil {
-		return nil, err
-	}
-
-	return d.packList, nil
+	packs, _, err := d.packCatalog()
+	return packs, err
 }
 
-func (d *DotGit) objectPacks() ([]plumbing.Hash, error) {
-	packDir := d.fs.Join(objectsPath, packPath)
-	files, err := d.fs.ReadDir(packDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-
-		return nil, err
+// packCatalog returns the readable packs, along with the base names (the file
+// name without its extension) each one is stored under. Under ExclusiveAccess
+// the result is cached until the pack set changes.
+func (d *DotGit) packCatalog() ([]plumbing.Hash, map[plumbing.Hash][]string, error) {
+	if !d.options.ExclusiveAccess {
+		return d.scanPacks()
 	}
 
-	packs := make([]plumbing.Hash, 0, len(files))
-	indexes := make(map[string]struct{}, len(files))
+	if err := d.genPackList(); err != nil {
+		return nil, nil, err
+	}
+
+	return d.packList, d.packBases, nil
+}
+
+// scanPacks lists objects/pack: like git, any .pack with an .idx of the same
+// base name is a pack whatever its prefix, so the loose-<hash> packs of
+// `git maintenance run --task=loose-objects` are read alongside pack-<hash>.
+// Unlike git, the base name must end in -<hash>, which is the pack checksum
+// and the key the pack is listed under; two names sharing a hash hold the
+// same pack, and pack-<hash>, the name go-git itself writes, is listed first.
+//
+// Names starting with a dot are skipped: `git repack` writes its packs as
+// .tmp-<pid>-pack-<hash> and then renames them, so reading one races with
+// the rename. Git loads them too but retries a pack that vanishes; go-git
+// would fail the read instead.
+func (d *DotGit) scanPacks() ([]plumbing.Hash, map[plumbing.Hash][]string, error) {
+	bases := make(map[plumbing.Hash][]string)
+	files, err := d.fs.ReadDir(d.fs.Join(objectsPath, packPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, bases, nil
+		}
+
+		return nil, nil, err
+	}
+
+	var withPack []string
+	withIdx := make(map[string]struct{}, len(files))
 	for _, f := range files {
 		n := f.Name()
-		if !strings.HasPrefix(n, packPrefix) {
+		if strings.HasPrefix(n, ".") {
+			continue
+		}
+		if base, ok := strings.CutSuffix(n, packExt); ok {
+			withPack = append(withPack, base)
+		} else if base, ok := strings.CutSuffix(n, idxExt); ok {
+			withIdx[base] = struct{}{}
+		}
+	}
+
+	packs := make([]plumbing.Hash, 0, len(withPack))
+	for _, base := range withPack {
+		if _, ok := withIdx[base]; !ok {
 			continue
 		}
 
-		switch {
-		case strings.HasSuffix(n, packExt):
-			name := n[len(packPrefix) : len(n)-len(packExt)]
-			h := plumbing.NewHash(name)
-			if !h.IsZero() && h.String() == name {
-				packs = append(packs, h)
-			}
-		case strings.HasSuffix(n, idxExt):
-			name := n[len(packPrefix) : len(n)-len(idxExt)]
-			h := plumbing.NewHash(name)
-			if !h.IsZero() && h.String() == name {
-				indexes[name] = struct{}{}
-			}
+		h, ok := packBaseHash(base)
+		if !ok {
+			continue
+		}
+
+		if _, seen := bases[h]; !seen {
+			packs = append(packs, h)
+		}
+		if base == packPrefix+h.String() {
+			bases[h] = slices.Insert(bases[h], 0, base)
+		} else {
+			bases[h] = append(bases[h], base)
 		}
 	}
 
-	return slices.DeleteFunc(packs, func(h plumbing.Hash) bool {
-		_, ok := indexes[h.String()]
-		return !ok
-	}), nil
+	return packs, bases, nil
 }
 
-func (d *DotGit) objectPackPath(hash plumbing.Hash, extension string) string {
-	return d.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s.%s", hash.String(), extension))
-}
-
-func (d *DotGit) objectPackOpen(hash plumbing.Hash, extension string) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
+// packBaseHash parses the hash from a pack base name of the form
+// <prefix>-<hash>, which is how `git pack-objects <base-name>` names its
+// output.
+func packBaseHash(base string) (plumbing.Hash, bool) {
+	i := strings.LastIndexByte(base, '-')
+	if i < 0 {
+		return plumbing.ZeroHash, false
 	}
 
-	path := d.objectPackPath(hash, extension)
-	pack, err := d.fs.Open(path)
-	if err != nil {
+	hex := base[i+1:]
+	h := plumbing.NewHash(hex)
+	return h, !h.IsZero() && h.String() == hex
+}
+
+// cachedPackBase returns the base name the pack is listed under in the
+// ExclusiveAccess catalog.
+func (d *DotGit) cachedPackBase(hash plumbing.Hash) (string, error) {
+	if err := d.genPackList(); err != nil {
+		return "", err
+	}
+
+	bases, ok := d.packBases[hash]
+	if !ok {
+		return "", ErrPackfileNotFound
+	}
+
+	return bases[0], nil
+}
+
+// withPackFile calls op with the path of the pack's file with extension ext.
+// A file that does not exist is reported as [ErrPackfileNotFound], whatever
+// the access mode. Outside ExclusiveAccess, op is tried on pack-<hash> first,
+// and the directory is listed only when that file does not exist, so the
+// common case costs no syscall beyond op itself.
+func (d *DotGit) withPackFile(hash plumbing.Hash, ext string, op func(path string) error) error {
+	opAt := func(base string) error {
+		err := op(d.packFilePath(base, ext))
 		if os.IsNotExist(err) {
-			return nil, ErrPackfileNotFound
+			return ErrPackfileNotFound
 		}
-
-		return nil, err
+		return err
 	}
 
-	return pack, nil
+	if d.options.ExclusiveAccess {
+		base, err := d.cachedPackBase(hash)
+		if err != nil {
+			return err
+		}
+
+		return opAt(base)
+	}
+
+	base := packPrefix + hash.String()
+	err := opAt(base)
+	if !errors.Is(err, ErrPackfileNotFound) {
+		return err
+	}
+
+	_, bases, scanErr := d.scanPacks()
+	if scanErr != nil {
+		return scanErr
+	}
+
+	found, ok := bases[hash]
+	if !ok || found[0] == base {
+		return err
+	}
+
+	return opAt(found[0])
+}
+
+// packFilePath returns the path of the file with extension ext of the pack
+// stored under base.
+func (d *DotGit) packFilePath(base, ext string) string {
+	return d.fs.Join(objectsPath, packPath, base+ext)
+}
+
+// objectPackOpen opens the pack's file with extension ext.
+func (d *DotGit) objectPackOpen(hash plumbing.Hash, ext string) (billy.File, error) {
+	var f billy.File
+	err := d.withPackFile(hash, ext, func(path string) (err error) {
+		f, err = d.fs.Open(path)
+		return err
+	})
+
+	return f, err
+}
+
+// packFileSize returns the size of the pack's file with extension ext.
+func (d *DotGit) packFileSize(hash plumbing.Hash, ext string) (int64, error) {
+	var size int64
+	err := d.withPackFile(hash, ext, func(path string) error {
+		fi, err := d.fs.Stat(path)
+		if err != nil {
+			return err
+		}
+		size = fi.Size()
+		return nil
+	})
+
+	return size, err
 }
 
 // ObjectPack returns a fs.File of the given packfile.
 func (d *DotGit) ObjectPack(hash plumbing.Hash) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return d.objectPackOpen(hash, `pack`)
+	return d.objectPackOpen(hash, packExt)
 }
 
 // ObjectPackIdx returns a fs.File of the index file for a given packfile.
 func (d *DotGit) ObjectPackIdx(hash plumbing.Hash) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return d.objectPackOpen(hash, `idx`)
+	return d.objectPackOpen(hash, idxExt)
 }
 
 // ObjectPackRev returns a fs.File of the reverse index file for a given packfile.
 func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
-	err := d.hasPack(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return d.objectPackOpen(hash, `rev`)
+	return d.objectPackOpen(hash, revExt)
 }
 
 // OpenPackRev returns a [idxfile.ReadAtCloser] for the reverse index of the given
@@ -763,12 +859,11 @@ func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) 
 		return h, nil
 	}
 
-	if err := d.hasPack(hash); err != nil {
-		return nil, err
+	if d.options.ExclusiveAccess {
+		if _, err := d.cachedPackBase(hash); err != nil {
+			return nil, err
+		}
 	}
-
-	packPath := d.objectPackPath(hash, "pack")
-	idxPath := d.objectPackPath(hash, "idx")
 
 	sources := packhandle.Sources{
 		Pack: packhandle.Source{
@@ -776,11 +871,7 @@ func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) 
 				return d.ObjectPack(hash)
 			},
 			Size: func() (int64, error) {
-				fi, err := d.fs.Stat(packPath)
-				if err != nil {
-					return 0, err
-				}
-				return fi.Size(), nil
+				return d.packFileSize(hash, packExt)
 			},
 		},
 		Idx: packhandle.Source{
@@ -788,11 +879,7 @@ func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) 
 				return d.ObjectPackIdx(hash)
 			},
 			Size: func() (int64, error) {
-				fi, err := d.fs.Stat(idxPath)
-				if err != nil {
-					return 0, err
-				}
-				return fi.Size(), nil
+				return d.packFileSize(hash, idxExt)
 			},
 		},
 		Rev: packhandle.Source{
@@ -896,7 +983,13 @@ func (a packHandleAdapter) PackHash() (plumbing.Hash, error) {
 	return m.ID, nil
 }
 
-// DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
+// DeleteOldObjectPackAndIndex removes the pack-<hash> copy of a pack and its
+// index if older than t. Copies under other names, such as the loose-<hash>
+// packs of `git maintenance run --task=loose-objects`, are left in place, and
+// while they are, pack-<hash> files that are missing are not an error: those
+// packs hold objects that only the index or a reflog reach, which a repack
+// that walks only the refs does not copy into the pack that replaces them.
+//
 // The .pack, .idx, .rev and .promisor files are each attempted independently;
 // any failures are joined into the returned error so a partial failure cannot
 // leave orphaned siblings on disk. A missing .rev is not an error — the
@@ -913,9 +1006,23 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 		errs = append(errs, err)
 	}
 
-	packPath := d.objectPackPath(hash, `pack`)
+	base := packPrefix + hash.String()
+	_, listed, err := d.scanPacks()
+	if err != nil {
+		errs = append(errs, err)
+		return errors.Join(errs...)
+	}
+	// While the pack stays readable under another name, whatever is left of
+	// pack-<hash> is an orphan, and files missing from it are not an error.
+	storedElsewhere := slices.ContainsFunc(listed[hash], func(b string) bool { return b != base })
+
+	packPath := d.packFilePath(base, packExt)
+	fi, err := d.fs.Stat(packPath)
+	if storedElsewhere && os.IsNotExist(err) {
+		return errors.Join(errs...)
+	}
+
 	if !t.IsZero() {
-		fi, err := d.fs.Stat(packPath)
 		if err != nil {
 			errs = append(errs, err)
 			return errors.Join(errs...)
@@ -936,18 +1043,20 @@ func (d *DotGit) DeleteOldObjectPackAndIndex(hash plumbing.Hash, t time.Time) er
 	if err := d.fs.Remove(packPath); err != nil {
 		if !os.IsNotExist(err) {
 			packGone = false
+			errs = append(errs, err)
+		} else if !storedElsewhere {
+			errs = append(errs, err)
 		}
-		errs = append(errs, err)
 	}
 
-	siblings := []string{`idx`, `rev`}
+	siblings := []string{idxExt, revExt}
 	if packGone {
-		siblings = append(siblings, `promisor`)
+		siblings = append(siblings, promisorExt)
 	}
 
 	for _, ext := range siblings {
-		if err := d.fs.Remove(d.objectPackPath(hash, ext)); err != nil {
-			if (ext == `rev` || ext == `promisor`) && os.IsNotExist(err) {
+		if err := d.fs.Remove(d.packFilePath(base, ext)); err != nil {
+			if (storedElsewhere || ext == revExt || ext == promisorExt) && os.IsNotExist(err) {
 				continue
 			}
 			errs = append(errs, err)
@@ -1155,7 +1264,7 @@ func (d *DotGit) hasObject(h plumbing.Hash) error {
 // The errors are joined and returned so callers can surface them
 // rather than silently masking I/O failures during cleanup.
 func (d *DotGit) cleanPackList() error {
-	d.packMap = nil
+	d.packBases = nil
 	d.packList = nil
 
 	d.packHandlesMu.Lock()
@@ -1173,41 +1282,16 @@ func (d *DotGit) cleanPackList() error {
 }
 
 func (d *DotGit) genPackList() error {
-	if d.packMap != nil {
+	if d.packBases != nil {
 		return nil
 	}
 
-	op, err := d.objectPacks()
+	packs, bases, err := d.scanPacks()
 	if err != nil {
 		return err
 	}
 
-	d.packMap = make(map[plumbing.Hash]struct{}, len(op))
-	d.packList = nil
-
-	for _, h := range op {
-		d.packList = append(d.packList, h)
-		d.packMap[h] = struct{}{}
-	}
-
-	return nil
-}
-
-func (d *DotGit) hasPack(h plumbing.Hash) error {
-	if !d.options.ExclusiveAccess {
-		return nil
-	}
-
-	err := d.genPackList()
-	if err != nil {
-		return err
-	}
-
-	_, ok := d.packMap[h]
-	if !ok {
-		return ErrPackfileNotFound
-	}
-
+	d.packList, d.packBases = packs, bases
 	return nil
 }
 
