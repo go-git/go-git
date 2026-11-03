@@ -32,38 +32,63 @@ func TestFetchV2ShallowInfo(t *testing.T) {
 	// The server answers with the whole fixture pack and names two shallow
 	// roots whether or not the client asked to deepen: one commit the pack
 	// carries and one it does not, as a shallow server or a hostile one may.
-	sent := &packp.ShallowInfo{Shallows: []plumbing.Hash{master, undelivered}}
-	round := func(_ *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
-		var buf bytes.Buffer
-		mux := sideband.NewMuxer(sideband.Sideband64k, &buf)
-		if _, err := mux.Write(pack); err != nil {
-			return nil, nil, err
+	roots := &packp.ShallowInfo{Shallows: []plumbing.Hash{master, undelivered}}
+	rootsAndUnshallow := &packp.ShallowInfo{
+		Shallows:   []plumbing.Hash{master, undelivered},
+		Unshallows: []plumbing.Hash{older},
+	}
+	respondWith := func(sent *packp.ShallowInfo) FetchRound {
+		return func(_ *packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
+			var buf bytes.Buffer
+			mux := sideband.NewMuxer(sideband.Sideband64k, &buf)
+			if _, err := mux.Write(pack); err != nil {
+				return nil, nil, err
+			}
+			if err := pktline.WriteFlush(&buf); err != nil {
+				return nil, nil, err
+			}
+			return &packp.FetchOutput{ShallowInfo: sent, Packfile: true}, &buf, nil
 		}
-		if err := pktline.WriteFlush(&buf); err != nil {
-			return nil, nil, err
-		}
-		return &packp.FetchOutput{ShallowInfo: sent, Packfile: true}, &buf, nil
 	}
 
 	tests := []struct {
-		name        string
-		depth       int
-		existingRef *plumbing.Reference
-		wantShallow []plumbing.Hash
+		name            string
+		depth           int
+		existingRef     *plumbing.Reference
+		existingShallow []plumbing.Hash
+		sent            *packp.ShallowInfo
+		wantShallow     []plumbing.Hash
 	}{
 		{
 			name:        "deepen request records every root",
 			depth:       1,
+			sent:        roots,
 			wantShallow: []plumbing.Hash{master, undelivered},
 		},
 		{
 			name:        "clone records the delivered roots",
+			sent:        roots,
 			wantShallow: []plumbing.Hash{master},
 		},
 		{
 			name:        "fetch into existing repository records nothing",
 			existingRef: plumbing.NewHashReference("refs/heads/master", older),
+			sent:        roots,
 			wantShallow: []plumbing.Hash{},
+		},
+		{
+			name:        "negative depth fetch into existing repository records nothing",
+			depth:       -1,
+			existingRef: plumbing.NewHashReference("refs/heads/master", older),
+			sent:        roots,
+			wantShallow: []plumbing.Hash{},
+		},
+		{
+			name:            "fetch into shallow repository applies unshallow",
+			existingRef:     plumbing.NewHashReference("refs/heads/master", older),
+			existingShallow: []plumbing.Hash{older},
+			sent:            rootsAndUnshallow,
+			wantShallow:     []plumbing.Hash{},
 		},
 	}
 	for _, tc := range tests {
@@ -73,9 +98,12 @@ func TestFetchV2ShallowInfo(t *testing.T) {
 			if tc.existingRef != nil {
 				require.NoError(t, st.SetReference(tc.existingRef))
 			}
+			if tc.existingShallow != nil {
+				require.NoError(t, st.SetShallow(tc.existingShallow))
+			}
 
 			req := &FetchRequest{Wants: []plumbing.Hash{master}, Depth: tc.depth}
-			require.NoError(t, FetchV2(context.Background(), st, req, round))
+			require.NoError(t, FetchV2(context.Background(), st, req, respondWith(tc.sent)))
 			require.NoError(t, st.HasEncodedObject(master))
 
 			shallows, err := st.Shallow()

@@ -244,7 +244,7 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		}
 	}
 
-	if shallowInfo != nil && req.Depth == 0 {
+	if shallowInfo != nil && baseArgs.Deepen == 0 {
 		roots, err := unrequestedShallowRoots(st, shallowInfo)
 		if err != nil {
 			return err
@@ -268,7 +268,10 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 // untouched, so a server cannot cut history the client holds by naming one of
 // its commits as a root. Git rejects the refs that would need the new roots
 // instead; that rejection is not reproduced here, only the refusal to record.
+// Unshallow lines are always kept: they can only remove roots st already has,
+// and git applies them on any fetch (receive_shallow_info).
 //
+// https://github.com/git/git/blob/v2.54.0/fetch-pack.c#L1519-L1587
 // https://github.com/git/git/blob/v2.54.0/fetch-pack.c#L1987-L2082
 func unrequestedShallowRoots(st storage.Storer, info *packp.ShallowUpdate) (*packp.ShallowUpdate, error) {
 	refs, err := st.IterReferences()
@@ -289,7 +292,10 @@ func unrequestedShallowRoots(st storage.Storer, info *packp.ShallowUpdate) (*pac
 		return nil, err
 	}
 	if hasRefs {
-		return nil, nil
+		if len(info.Unshallows) == 0 {
+			return nil, nil
+		}
+		return &packp.ShallowUpdate{Unshallows: info.Unshallows}, nil
 	}
 
 	delivered := make([]plumbing.Hash, 0, len(info.Shallows))
@@ -298,7 +304,7 @@ func unrequestedShallowRoots(st storage.Storer, info *packp.ShallowUpdate) (*pac
 			delivered = append(delivered, h)
 		}
 	}
-	return &packp.ShallowUpdate{Shallows: delivered}, nil
+	return &packp.ShallowUpdate{Shallows: delivered, Unshallows: info.Unshallows}, nil
 }
 
 // streamPackfile demultiplexes the sideband-64k packfile stream into st.
