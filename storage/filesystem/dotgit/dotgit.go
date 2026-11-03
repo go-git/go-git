@@ -2233,14 +2233,14 @@ func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, e
 	// location in the same filesystem as the file containing it.
 	if !filepath.IsAbs(common) && !path.IsAbs(filepath.ToSlash(common)) {
 		resolver := DotGit{fs: roots[0]}
-		resolved, err := resolver.resolveRelativeCommonDir(p, common, common)
+		resolved, err := resolver.resolveRelativeCommonDir(p, common, common, 0)
 		return roots[0], resolved, err
 	}
 
 	var resolveErr error
 	for _, fs := range roots {
 		resolver := DotGit{fs: fs}
-		resolved, err := resolver.resolveAbsoluteCommonDir(common, common)
+		resolved, err := resolver.resolveAbsoluteCommonDir(common, common, 0)
 		switch {
 		case err == nil:
 			return fs, resolved, nil
@@ -2261,11 +2261,17 @@ func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, e
 // filesystem it is resolved in.
 var errOutsideRoot = errors.New("outside the filesystem")
 
+// maxCommonDirLinks is the most symbolic links a commondir is resolved
+// through, as Git's realpath allows[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L67-L68
+const maxCommonDirLinks = 32
+
 // resolveAbsoluteCommonDir resolves the absolute path common within d's
 // filesystem, as resolveRelativeCommonDir does a relative one, or fails with
-// errOutsideRoot when it lies elsewhere. quoted is the commondir errors
-// name.
-func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string) (string, error) {
+// errOutsideRoot when it lies elsewhere. links counts the symbolic links
+// already followed to reach it; quoted is the commondir errors name.
+func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string, links int) (string, error) {
 	// Rel and Abs clean their arguments. Split before the first ".." so
 	// the component walk can check for symlinks before removing any part
 	// of the path.
@@ -2290,9 +2296,9 @@ func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string) (string, error)
 	if tail == "" {
 		// The segments as written keep what cleaning drops, such as a
 		// trailing separator after a missing component.
-		return d.resolveCommonDirWithoutParent(rel, ".", quoted, segments)
+		return d.resolveCommonDirWithoutParent(rel, ".", quoted, segments, links)
 	}
-	return d.resolveRelativeCommonDir(rel, tail, quoted)
+	return d.resolveRelativeCommonDir(rel, tail, quoted, links)
 }
 
 // resolveRelativeCommonDir resolves common against the filesystem-relative p.
@@ -2300,14 +2306,15 @@ func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string) (string, error)
 // Git resolves symlinks before "..", but Billy has no realpath operation and
 // may clean paths before resolving them. As Git's realpath, only the last
 // component may be missing, written with nothing after it: a path through a
-// component that does not exist is invalid. quoted is the commondir errors
-// name.
-func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string) (string, error) {
+// component that does not exist is invalid, and a missing last component
+// that is a symbolic link is resolved through its target. links counts the
+// symbolic links already followed; quoted is the commondir errors name.
+func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string, links int) (string, error) {
 	segments := strings.Split(filepath.ToSlash(common), "/")
 	if !slices.Contains(segments, "..") {
 		// Nothing is removed, so the filesystem follows the symlinks Git's
 		// realpath follows, and one or two lookups settle the path.
-		return d.resolveCommonDirWithoutParent(p, common, quoted, segments)
+		return d.resolveCommonDirWithoutParent(p, common, quoted, segments, links)
 	}
 
 	// Cache symlink status for each component. Once a component is absent,
@@ -2381,7 +2388,14 @@ func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string) (string, err
 	if absent >= 0 && absent < len(resolved) {
 		return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
 	}
-	return d.fs.Join(resolved...), nil
+	q := d.fs.Join(resolved...)
+	if absent < 0 && len(link) > 0 && link[len(link)-1] {
+		// A symlink last component exists, but may point at nothing.
+		if _, err := d.fs.Stat(q); errors.Is(err, os.ErrNotExist) {
+			return d.followDanglingLink(q, quoted, links)
+		}
+	}
+	return q, nil
 }
 
 // resolveCommonDirWithoutParent resolves common, whose segments name no "..",
@@ -2390,7 +2404,7 @@ func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string) (string, err
 // its parent is a directory, as Git's realpath accepts it[1].
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L120-L131
-func (d *DotGit) resolveCommonDirWithoutParent(p, common, quoted string, segments []string) (string, error) {
+func (d *DotGit) resolveCommonDirWithoutParent(p, common, quoted string, segments []string, links int) (string, error) {
 	q := d.fs.Join(p, common)
 	_, err := d.fs.Stat(q)
 	switch {
@@ -2406,7 +2420,36 @@ func (d *DotGit) resolveCommonDirWithoutParent(p, common, quoted string, segment
 	if fi, err := d.fs.Stat(parent); err != nil || !fi.IsDir() {
 		return "", invalidCommonDir(quoted, parent)
 	}
-	return q, nil
+	return d.followDanglingLink(q, quoted, links)
+}
+
+// followDanglingLink resolves q, a path that does not exist under an
+// existing directory. A plain missing name resolves to itself. A symbolic
+// link to nothing is resolved through its target, as Git's realpath splices
+// the target into the path it resolves[1], so a target that is itself
+// invalid makes the commondir invalid.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L138-L188
+func (d *DotGit) followDanglingLink(q, quoted string, links int) (string, error) {
+	fi, err := d.fs.Lstat(q)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return q, nil
+	}
+	if links >= maxCommonDirLinks {
+		return "", fmt.Errorf("submodule common directory %q: too many levels of symbolic links", elide(quoted))
+	}
+	target, err := d.fs.Readlink(q)
+	if err != nil {
+		return "", fmt.Errorf("resolve submodule common directory %q: %w", elide(quoted), pathErrCause(err))
+	}
+	if !filepath.IsAbs(target) && !path.IsAbs(filepath.ToSlash(target)) {
+		return d.resolveRelativeCommonDir(filepath.Dir(q), target, quoted, links+1)
+	}
+	resolved, err := d.resolveAbsoluteCommonDir(target, quoted, links+1)
+	if errors.Is(err, errOutsideRoot) {
+		return "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(quoted))
+	}
+	return resolved, err
 }
 
 // invalidCommonDir is the error for a commondir that resolves through the

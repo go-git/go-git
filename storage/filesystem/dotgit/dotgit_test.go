@@ -451,6 +451,45 @@ func (s *SuiteDotGit) TestModuleNestingWithAbsoluteCommonDirToMissing() {
 	}
 }
 
+// A last component that is a symbolic link to nothing is resolved through
+// its target, as Git's realpath resolves it: a link to a missing name names
+// no Git directory, and a link to an invalid path is invalid.
+func (s *SuiteDotGit) TestModuleNestingWithCommonDirLinkToNothing() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("symlink creation is privileged on windows")
+	}
+
+	for _, tc := range []struct {
+		name, common string
+		links        map[string]string
+		valid        bool
+	}{
+		{name: "link to a missing name", common: "dang", links: map[string]string{"dang": "nowhere"}, valid: true},
+		{name: "chain to a missing name", common: "chain", links: map[string]string{"chain": "dang", "dang": "nowhere"}, valid: true},
+		{name: "link to a missing directory's child", common: "dang", links: map[string]string{"dang": "nothere/deeper"}},
+		{name: "link with a trailing separator", common: "dang", links: map[string]string{"dang": "nothere/"}},
+		{name: "link with a trailing dot", common: "dang", links: map[string]string{"dang": "nothere/."}},
+		{name: "link through a missing directory and dot-dot", common: "dang", links: map[string]string{"dang": "nothere/../x"}},
+		{name: "link reached past dot-dot", common: "../lib/dang", links: map[string]string{"dang": "nothere/deeper"}},
+	} {
+		s.Run(tc.name, func() {
+			fs := osfs.New(s.T().TempDir())
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte(tc.common), 0o644))
+			for name, target := range tc.links {
+				s.Require().NoError(fs.Symlink(target, "modules/lib/"+name))
+			}
+
+			_, err := New(fs).Module("lib/refs/heads")
+			if tc.valid {
+				s.NoError(err)
+			} else {
+				s.ErrorContains(err, "invalid path")
+			}
+		})
+	}
+}
+
 func (s *SuiteDotGit) TestModuleNestingErrorQuotesBoundedPath() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("the long component fails differently on windows")
