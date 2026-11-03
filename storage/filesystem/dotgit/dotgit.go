@@ -2275,7 +2275,7 @@ const maxCommonDirLinks = 32
 // errOutsideRoot when it lies elsewhere. links counts the symbolic links
 // already followed to reach it; quoted is the commondir errors name.
 func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string, links int) (string, error) {
-	// Rel and Abs clean their arguments. Split before the first ".." so
+	// Rel and Clean clean their arguments. Split before the first ".." so
 	// the component walk can check for symlinks before removing any part
 	// of the path.
 	base, tail := common, ""
@@ -2284,14 +2284,19 @@ func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string, links int) (str
 		base = strings.Join(segments[:i], "/") + "/"
 		tail = strings.Join(segments[i:], "/")
 	}
-	abs, err := filepath.Abs(base)
-	if err != nil {
-		return "", fmt.Errorf("resolve submodule common directory: %w", err)
-	}
 	root, err := filepath.Abs(d.fs.Root())
 	if err != nil {
 		return "", fmt.Errorf("resolve filesystem root: %w", err)
 	}
+	// filepath.Abs resolves a path on Windows through GetFullPathName,
+	// which drops trailing spaces and periods from its components, so
+	// "/common " would name "common". A path that names no volume is
+	// rooted on the filesystem root's instead, and only cleaned.
+	abs := filepath.FromSlash(base)
+	if !filepath.IsAbs(abs) {
+		abs = filepath.VolumeName(root) + abs
+	}
+	abs = filepath.Clean(abs)
 	rel, err := filepath.Rel(root, abs)
 	if err != nil || escapesRoot(rel) {
 		return "", errOutsideRoot
