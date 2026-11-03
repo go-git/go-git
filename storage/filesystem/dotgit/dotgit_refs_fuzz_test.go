@@ -54,9 +54,6 @@ func FuzzLooseRefDecode(f *testing.F) {
 			}
 			encoded = ref.Hash().String() + "\n"
 		case plumbing.SymbolicReference:
-			if ref.Target() == "" {
-				t.Fatalf("accepted an empty symbolic target in %q", data)
-			}
 			encoded = "ref: " + ref.Target().String() + "\n"
 		default:
 			t.Fatalf("unexpected reference type for %q: %v", data, ref.Type())

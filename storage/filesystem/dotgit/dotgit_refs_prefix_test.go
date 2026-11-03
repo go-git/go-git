@@ -388,7 +388,7 @@ func TestLooseRefReadersAgree(t *testing.T) {
 // all-zero ID, as git ls-remote shows it.
 func TestBrokenLooseRefReaders(t *testing.T) {
 	t.Parallel()
-	for _, content := range []string{"garbage\n", "  " + hashA + "\n", hashA[:39] + "\n", hashA + "\v\n", "ref:\n", ""} {
+	for _, content := range []string{"garbage\n", "  " + hashA + "\n", hashA[:39] + "\n", hashA + "\v\n", ""} {
 		t.Run(content, func(t *testing.T) {
 			t.Parallel()
 			fs := memfs.New()

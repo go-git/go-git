@@ -96,6 +96,11 @@ func (p *objectWalker) walkAllRefs() error {
 	defer it.Close()
 	err = it.ForEach(func(ref *plumbing.Reference) error {
 		if ref.Type() == plumbing.SymbolicReference {
+			if ref.Target() == "" {
+				// Git reads a loose "ref:" with no target as a dangling
+				// symref, which names no objects either.
+				return nil
+			}
 			resolved, err := storer.ResolveReference(p.Storer, ref.Target())
 			if errors.Is(err, plumbing.ErrReferenceNotFound) {
 				// Unborn HEAD and dangling symrefs do not name any objects.

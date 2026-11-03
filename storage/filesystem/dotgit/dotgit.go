@@ -1336,10 +1336,9 @@ func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Ref
 	const gitSpace = " \t\n\r"
 	content := string(b)
 	if target, ok := strings.CutPrefix(content, "ref:"); ok {
+		// An empty target is kept, as Git keeps it: a symbolic ref to it
+		// is dangling, not broken.
 		target = strings.Trim(target, gitSpace)
-		if target == "" {
-			return nil, ErrBrokenRefFile
-		}
 		return plumbing.NewSymbolicReference(plumbing.ReferenceName(name), plumbing.ReferenceName(target)), nil
 	}
 

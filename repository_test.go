@@ -5029,6 +5029,32 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/tags/"), names(r.Tags()))
 }
 
+// A loose ref holding "ref:" and no target is a dangling symbolic ref to Git,
+// not a broken one: git for-each-ref leaves it out without a warning, and
+// git gc runs past it.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L673-L680
+func (s *RepositorySuite) TestEmptySymbolicTargetIsDangling() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(dotgit, "refs/heads/empty-target", []byte("ref: \n"), 0o644))
+	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	ref, err := r.Reference("refs/heads/empty-target", false)
+	s.Require().NoError(err)
+	s.Equal(plumbing.SymbolicReference, ref.Type())
+
+	branches, err := r.Branches()
+	s.Require().NoError(err)
+	s.NoError(branches.ForEach(func(ref *plumbing.Reference) error {
+		s.NotEqual(plumbing.ReferenceName("refs/heads/empty-target"), ref.Name())
+		return nil
+	}))
+	s.NoError(r.Prune(PruneOptions{Handler: func(plumbing.Hash) error { return nil }}))
+	s.NoError(r.RepackObjects(&RepackConfig{}))
+}
+
 // A "*.lock" file, which git update-ref holds briefly while it updates a ref,
 // is not a reference. Git's ref store skips it, so maintenance must not
 // treat it as a broken reference and refuse to run.
