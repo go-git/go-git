@@ -20,7 +20,10 @@ import (
 // refs and packed refs are merged as Git's files backend does, with a loose
 // ref shadowing a packed one of the same name:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
-// It holds no file open.
+// It holds no file open. Packed refs are read on the first call to Next, and
+// loose refs as the walk reaches them, so a concurrent update may or may not
+// be seen, and a ref renamed during the walk may be yielded twice or not at
+// all.
 func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 	loose, err := d.looseRefs(prefix)
 	if err != nil {

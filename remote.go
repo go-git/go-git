@@ -200,18 +200,10 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 	// remain complete. Only push candidates exclude malformed ordinary refs.
 	pushRefs := localRefs[:0]
 	for _, ref := range localRefs {
-		if ref.Name().IsUnderRefs() {
-			if err := ref.Name().Validate(); err != nil {
-				// An explicit source must fail rather than disappear: prune
-				// would interpret its absence as a request to delete its
-				// mapped destination. Wildcards still skip malformed entries.
-				for _, spec := range o.RefSpecs {
-					if !spec.IsWildcard() && spec.Match(ref.Name()) {
-						return err
-					}
-				}
-				continue
-			}
+		// PushContext has already failed an explicit source that is not a
+		// valid name, so only wildcard sources can match a skipped one.
+		if ref.Name().IsUnderRefs() && ref.Name().Validate() != nil {
+			continue
 		}
 		if err := r.checkPushSourceReadable(ref, o.RefSpecs); err != nil {
 			return err

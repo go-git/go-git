@@ -9,9 +9,10 @@ import (
 )
 
 // IsUnresolvableForAdvertisement identifies broken symbolic referents that
-// advertisements omit individually. ELOOP also covers filesystem symlink
-// chains exceeding the operating system limit. Other storage errors remain
-// fatal. Maintenance reachability must not use this classification to omit
+// advertisements omit individually, and that Repository.Branches, Tags and
+// Notes leave out as git for-each-ref does. ELOOP also covers filesystem
+// symlink chains exceeding the operating system limit. Other storage errors
+// remain fatal. Maintenance reachability must not use this classification to omit
 // references on ELOOP or recursion-limit errors.
 func IsUnresolvableForAdvertisement(err error) bool {
 	return errors.Is(err, plumbing.ErrReferenceNotFound) ||

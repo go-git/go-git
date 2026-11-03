@@ -34,6 +34,12 @@ type ReferenceStorer interface {
 // PrefixReferenceIterer is an optional interface for ReferenceStorer
 // implementations that can iterate over the references under a name prefix
 // without enumerating all of them.
+//
+// A wrapper that embeds a storer implementing it and overrides
+// IterReferences or Reference must override IterReferencesWithPrefix too:
+// otherwise the promoted method reads the embedded storer directly, and
+// IterReferencesWithPrefix yields what the wrapper hides or misses what it
+// adds.
 type PrefixReferenceIterer interface {
 	// IterReferencesWithPrefix returns an iterator over the references whose
 	// names start with prefix: the references IterReferences yields, filtered
