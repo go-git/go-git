@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
@@ -342,17 +343,13 @@ func TestRefsWithPrefixReportsBrokenLooseRefs(t *testing.T) {
 }
 
 // Ref, Refs and RefsWithPrefix share one loose-ref parser, so they agree on
-// the value of every file, including forms Git accepts beyond "<id>\n". The
-// ID's length, not the configured object format, selects SHA-1 or SHA-256,
-// so a DotGit left at the default format still reads SHA-256 refs.
+// the value of every file, including forms Git accepts beyond "<id>\n".
 func TestLooseRefReadersAgree(t *testing.T) {
 	t.Parallel()
-	sha256ID := strings.Repeat("ab", 32)
 	files := map[string]string{
 		"refs/heads/extra":   hashA + " extra\n",
 		"refs/heads/crlf":    hashA + "\r\n",
 		"refs/heads/sym":     "ref:refs/heads/crlf\n",
-		"refs/heads/sha256":  sha256ID + "\n",
 		"refs/heads/nolf":    hashB,
 		"refs/heads/symtabs": "ref:\trefs/heads/nolf \n",
 	}
@@ -372,7 +369,6 @@ func TestLooseRefReadersAgree(t *testing.T) {
 		"refs/heads/extra":   hashA + " refs/heads/extra",
 		"refs/heads/crlf":    hashA + " refs/heads/crlf",
 		"refs/heads/sym":     "ref: refs/heads/crlf refs/heads/sym",
-		"refs/heads/sha256":  sha256ID + " refs/heads/sha256",
 		"refs/heads/nolf":    hashB + " refs/heads/nolf",
 		"refs/heads/symtabs": "ref: refs/heads/nolf refs/heads/symtabs",
 	}
@@ -380,6 +376,42 @@ func TestLooseRefReadersAgree(t *testing.T) {
 		ref, err := dir.Ref(plumbing.ReferenceName(name))
 		require.NoError(t, err, name)
 		assert.Equal(t, value, ref.String(), name)
+	}
+}
+
+// A loose ref's ID is parsed with the repository's object format, as Git
+// parses it, so an ID of the other format is broken rather than a value.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L684-L690
+func TestLooseRefObjectFormat(t *testing.T) {
+	t.Parallel()
+	sha256ID := strings.Repeat("ab", 32)
+	for _, tc := range []struct {
+		format        formatcfg.ObjectFormat
+		valid, broken string
+	}{
+		{formatcfg.SHA1, hashA, sha256ID},
+		{formatcfg.SHA256, sha256ID, hashA},
+	} {
+		t.Run(string(tc.format), func(t *testing.T) {
+			t.Parallel()
+			fs := memfs.New()
+			writeFile(t, fs, "refs/heads/broken", tc.broken+"\n")
+			writeFile(t, fs, "refs/heads/valid", tc.valid+"\n")
+			dir := NewWithOptions(fs, Options{ObjectFormat: tc.format})
+
+			_, err := dir.Ref("refs/heads/broken")
+			assert.ErrorIs(t, err, ErrBrokenRefFile)
+			ref, err := dir.Ref("refs/heads/valid")
+			require.NoError(t, err)
+			assert.Equal(t, tc.valid, ref.Hash().String())
+
+			iter, err := dir.RefsWithPrefix("refs/heads/")
+			require.NoError(t, err)
+			assert.Equal(t, []string{
+				strings.Repeat("0", len(tc.valid)) + " refs/heads/broken",
+				tc.valid + " refs/heads/valid",
+			}, collectRefs(t, iter))
+		})
 	}
 }
 

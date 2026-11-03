@@ -1319,8 +1319,8 @@ func (d *DotGit) ObjectDelete(h plumbing.Hash) error {
 // after the ID is ignored:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L668-L697
 // It returns ErrEmptyRefFile for an empty file and ErrBrokenRefFile for other
-// content Git treats as broken. The ID's length selects the object format, so
-// the configured format cannot hide references.
+// content Git treats as broken, including an ID of another object format
+// than the repository's, as Git parses it with the repository's algorithm.
 func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Reference, err error) {
 	b, err := io.ReadAll(rd)
 	if err != nil {
@@ -1346,7 +1346,7 @@ func (d *DotGit) readReferenceFrom(rd io.Reader, name string) (ref *plumbing.Ref
 	if i := strings.IndexAny(content, gitSpace); i >= 0 {
 		id = content[:i]
 	}
-	if (len(id) != formatcfg.SHA1HexSize && len(id) != formatcfg.SHA256HexSize) || !isHex(id) {
+	if len(id) != d.options.ObjectFormat.HexSize() || !isHex(id) {
 		return nil, ErrBrokenRefFile
 	}
 

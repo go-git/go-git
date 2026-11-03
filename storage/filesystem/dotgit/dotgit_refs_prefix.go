@@ -149,7 +149,7 @@ type looseRefsSource struct {
 
 // read reads the loose ref name as Ref does, with an empty file standing for
 // the packed ref of that name. A file Ref fails as broken is reported with the
-// all-zero ID, as Git's loose-ref loader marks it broken and its ref store
+// all-zero ID of the repository's object format, as Git's loose-ref loader marks it broken and its ref store
 // then reports it:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L330-L343
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L1859-L1868
@@ -159,7 +159,8 @@ func (s *looseRefsSource) read(name string) (*plumbing.Reference, error) {
 		ref, err = s.d.packedRefUnderEmptyFile(plumbing.ReferenceName(name))
 	}
 	if errors.Is(err, ErrEmptyRefFile) || errors.Is(err, ErrBrokenRefFile) {
-		ref, err = plumbing.NewHashReference(plumbing.ReferenceName(name), plumbing.ZeroHash), nil
+		zero, _ := plumbing.FromBytes(make([]byte, s.d.options.ObjectFormat.Size()))
+		ref, err = plumbing.NewHashReference(plumbing.ReferenceName(name), zero), nil
 	}
 	return ref, err
 }

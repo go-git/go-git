@@ -15,7 +15,7 @@ import (
 
 // A loose ref file either fails with ErrEmptyRefFile or ErrBrokenRefFile, or
 // decodes to a value that encodes back to itself, and an object ID it accepts
-// has the length of a supported object format, as git's parser requires.
+// has the length of the repository's object format, as git's parser requires.
 func FuzzLooseRefDecode(f *testing.F) {
 	for _, seed := range []string{
 		"", "\n", "garbage\n",
@@ -49,7 +49,7 @@ func FuzzLooseRefDecode(f *testing.F) {
 			if i := strings.IndexAny(id, " \t\n\r"); i >= 0 {
 				id = id[:i]
 			}
-			if l := len(id); l != formatcfg.SHA1HexSize && l != formatcfg.SHA256HexSize {
+			if l := len(id); l != formatcfg.SHA1HexSize {
 				t.Fatalf("accepted an object ID of length %d in %q", l, data)
 			}
 			encoded = ref.Hash().String() + "\n"
