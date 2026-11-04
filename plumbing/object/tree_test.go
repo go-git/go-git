@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"sort"
@@ -2663,4 +2664,136 @@ func TestTreeValidateReportsAllRules(t *testing.T) {
 	assert.ErrorIs(t, verr, ErrInvalidTree)
 	assert.ErrorIs(t, verr, pathutil.ErrInvalidPath)
 	assert.Contains(t, verr.Error(), "null hash")
+}
+
+// treeWithBrokenSubtree stores a tree shaped like
+//
+//	a.txt
+//	top/
+//	  mid/        (subtree object replaced by brokenTree, or absent if nil)
+//	  after.txt
+//	z.txt
+//
+// and returns it with the hash the top/mid entry points to.
+func treeWithBrokenSubtree(t *testing.T, brokenTree []byte) (*Tree, plumbing.Hash) {
+	t.Helper()
+
+	store := memory.NewStorage()
+	blob := func(content string) plumbing.Hash {
+		return storeTestObject(t, store, plumbing.BlobObject, []byte(content))
+	}
+
+	var mid plumbing.Hash
+	if brokenTree == nil {
+		mid = storeTestTree(t, store, []TreeEntry{{Name: "inner.txt", Mode: filemode.Regular, Hash: blob("inner")}})
+		delete(store.Objects, mid)
+		delete(store.Trees, mid)
+	} else {
+		mid = storeTestObject(t, store, plumbing.TreeObject, brokenTree)
+	}
+
+	top := storeTestTree(t, store, []TreeEntry{
+		{Name: "after.txt", Mode: filemode.Regular, Hash: blob("after")},
+		{Name: "mid", Mode: filemode.Dir, Hash: mid},
+	})
+	root := storeTestTree(t, store, []TreeEntry{
+		{Name: "a.txt", Mode: filemode.Regular, Hash: blob("a")},
+		{Name: "top", Mode: filemode.Dir, Hash: top},
+		{Name: "z.txt", Mode: filemode.Regular, Hash: blob("z")},
+	})
+
+	tree, err := GetTree(store, root)
+	require.NoError(t, err)
+	return tree, mid
+}
+
+type walkStep struct {
+	name string
+	err  error
+}
+
+// walkAll collects every step of w, failing the test if the walk does not
+// reach io.EOF within maxSteps.
+func walkAll(t *testing.T, w *TreeWalker, maxSteps int) []walkStep {
+	t.Helper()
+
+	var steps []walkStep
+	for range maxSteps {
+		name, _, err := w.Next()
+		if err == io.EOF {
+			return steps
+		}
+		steps = append(steps, walkStep{name, err})
+	}
+	require.FailNow(t, "walk did not end", "no io.EOF after %d steps: %v", maxSteps, steps)
+	return nil
+}
+
+// A recursive walk must not report an unreadable subtree as the end of the
+// tree: `git ls-tree -r` fails in that case, with "Could not read <hash>" for
+// a missing subtree and "too-short tree object" for the malformed one here.
+func TestTreeWalkerNextUnreadableSubtree(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		brokenTree []byte
+		cause      error
+	}{
+		{"missing", nil, plumbing.ErrObjectNotFound},
+		{"malformed", []byte("100644 no-terminator"), ErrMalformedTree},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tree, mid := treeWithBrokenSubtree(t, tc.brokenTree)
+			walker := NewTreeWalker(tree, true, nil)
+			defer walker.Close()
+
+			steps := walkAll(t, walker, 10)
+			require.Len(t, steps, 5)
+			for i, want := range []string{"a.txt", "top", "top/after.txt", "top/mid", "z.txt"} {
+				assert.Equal(t, want, steps[i].name)
+			}
+
+			failed := steps[3]
+			require.ErrorIs(t, failed.err, tc.cause)
+			assert.EqualError(t, failed.err, fmt.Sprintf("reading tree %s for %q: %s", mid, "top/mid", errors.Unwrap(failed.err)))
+			for _, s := range []walkStep{steps[0], steps[1], steps[2], steps[4]} {
+				assert.NoError(t, s.err, s.name)
+			}
+		})
+	}
+}
+
+func TestTreeFilesForEachMissingSubtree(t *testing.T) {
+	t.Parallel()
+
+	tree, mid := treeWithBrokenSubtree(t, nil)
+
+	var seen []string
+	err := tree.Files().ForEach(func(f *File) error {
+		seen = append(seen, f.Name)
+		return nil
+	})
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+	assert.ErrorContains(t, err, mid.String())
+	assert.Equal(t, []string{"a.txt", "top/after.txt"}, seen)
+}
+
+// `git ls-tree` without -r lists a subtree entry without reading it, so a
+// missing subtree does not affect a non-recursive walk.
+func TestTreeWalkerNextNonRecursiveMissingSubtree(t *testing.T) {
+	t.Parallel()
+
+	tree, _ := treeWithBrokenSubtree(t, nil)
+	top, err := tree.Tree("top")
+	require.NoError(t, err)
+
+	walker := NewTreeWalker(top, false, nil)
+	defer walker.Close()
+
+	assert.Equal(t, []walkStep{{"after.txt", nil}, {"mid", nil}}, walkAll(t, walker, 10))
 }

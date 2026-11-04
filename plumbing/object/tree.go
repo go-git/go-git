@@ -675,9 +675,15 @@ func NewTreeWalker(t *Tree, recursive bool, seen map[plumbing.Hash]bool) *TreeWa
 // inspection-only callers that need to enumerate raw, unvalidated
 // names can read Tree.Entries directly or set skipPathValidation.
 //
-// In the current implementation any objects which cannot be found in the
-// underlying repository will be skipped automatically. It is possible that this
-// may change in future versions.
+// In a recursive walk, a subtree that cannot be read or decoded is reported
+// as an error that names the subtree's hash and path and wraps the cause
+// (for example plumbing.ErrObjectNotFound or ErrMalformedTree). Git's
+// `git ls-tree -r` fails in the same situation, with "Could not read <hash>"
+// for a missing subtree or a decode error such as "too-short tree object"
+// for a malformed one. The failing entry is consumed: a further call to Next
+// continues with the entry after it without descending into it, so a caller
+// may choose to skip unreadable subtrees. A non-recursive walk does not read
+// subtrees, so an unreadable subtree is returned as an ordinary entry.
 func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 	var obj *Tree
 	for {
@@ -717,15 +723,14 @@ func (w *TreeWalker) Next() (name string, entry TreeEntry, err error) {
 			}
 		}
 
-		if entry.Mode == filemode.Dir {
-			obj, err = GetTree(w.s, entry.Hash)
-		}
-
 		name = simpleJoin(w.base, entry.Name)
 
-		if err != nil {
-			err = io.EOF
-			return name, entry, err
+		if w.recursive && entry.Mode == filemode.Dir {
+			obj, err = GetTree(w.s, entry.Hash)
+			if err != nil {
+				err = fmt.Errorf("reading tree %s for %q: %w", entry.Hash, name, err)
+				return name, entry, err
+			}
 		}
 
 		break
