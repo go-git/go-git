@@ -95,23 +95,26 @@ func (p *objectWalker) walkAllRefs() error {
 	}
 	defer it.Close()
 	err = it.ForEach(func(ref *plumbing.Reference) error {
-		if ref.Type() == plumbing.SymbolicReference {
+		name := ref.Name()
+		for depth := 0; ref.Type() == plumbing.SymbolicReference; depth++ {
+			// Unborn HEAD and dangling symrefs do not name any objects,
+			// and git reads a loose "ref:" with no target as dangling.
 			if ref.Target() == "" {
-				// Git reads a loose "ref:" with no target as a dangling
-				// symref, which names no objects either.
 				return nil
 			}
-			resolved, err := storer.ResolveReference(p.Storer, ref.Target())
+			if depth > storer.MaxResolveRecursion {
+				return fmt.Errorf("resolving reference %q failed: %w", name, storer.ErrMaxResolveRecursion)
+			}
+			next, err := p.Storer.Reference(ref.Target())
 			if errors.Is(err, plumbing.ErrReferenceNotFound) {
-				// Unborn HEAD and dangling symrefs do not name any objects.
 				return nil
 			}
 			if err != nil {
 				// Prune and repack must not discard objects when a failed
 				// lookup or an unresolved cycle makes reachability unknown.
-				return fmt.Errorf("resolving reference %q failed: %w", ref.Name(), err)
+				return fmt.Errorf("resolving reference %q failed: %w", name, err)
 			}
-			ref = resolved
+			ref = next
 		}
 		if ref.Type() != plumbing.HashReference {
 			return nil

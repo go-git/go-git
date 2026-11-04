@@ -1526,6 +1526,22 @@ func (s *RepositorySuite) TestPlainOpenNotExists() {
 	s.Nil(r)
 }
 
+// A HEAD file git cannot read does not make a repository, to git or go-git.
+func (s *RepositorySuite) TestOpenRefusesBrokenHEAD() {
+	for _, content := range []string{"", "garbage\n"} {
+		s.Run(fmt.Sprintf("%q", content), func() {
+			fs := memfs.New()
+			_, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+			s.Require().NoError(err)
+			s.Require().NoError(util.WriteFile(fs, "HEAD", []byte(content), 0o644))
+
+			r, err := Open(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()), nil)
+			s.ErrorIs(err, ErrRepositoryNotExists)
+			s.Nil(r)
+		})
+	}
+}
+
 func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
 	fs := s.TemporalFilesystem()
 
@@ -5007,6 +5023,8 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 		"refs/heads/to-broken":     "ref: refs/heads/garbage\n",
 		"refs/heads/to-lock":       "ref: refs/heads/locked.lock\n",
 		"refs/heads/chain/8":       head + "\n",
+		"ORIG_HEAD":                head + "\n",
+		"refs/heads/to-root":       "ref: ORIG_HEAD\n",
 	}
 	// Git follows at most SYMREF_MAXDEPTH references, so it lists
 	// chain/4, four links from chain/8, and skips chain/3 as dangling.
@@ -5044,6 +5062,7 @@ func (s *RepositorySuite) TestEmptySymbolicTargetIsDangling() {
 	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
 	s.Require().NoError(err)
 	s.Require().NoError(util.WriteFile(dotgit, "refs/heads/empty-target", []byte("ref: \n"), 0o644))
+	s.Require().NoError(util.WriteFile(dotgit, "refs/heads/to-empty-target", []byte("ref: refs/heads/empty-target\n"), 0o644))
 	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
 	s.Require().NoError(err)
 	defer func() { _ = r.Close() }()

@@ -55,8 +55,10 @@ type StatusOptions struct {
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	var hash plumbing.Hash
 
+	// A HEAD branch that cannot be read has no commits to compare with, as
+	// git status reports it.
 	ref, err := w.r.Head()
-	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) && !errors.Is(err, plumbing.ErrBrokenReference) {
 		return nil, err
 	}
 

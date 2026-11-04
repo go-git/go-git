@@ -1472,6 +1472,26 @@ func (s *WorktreeSuite) TestStatusEmpty() {
 	s.NotNil(status)
 }
 
+// A HEAD branch whose file cannot be read has no commits to compare with:
+// git status reports "No commits yet" rather than failing.
+func (s *WorktreeSuite) TestStatusOnBrokenHEADBranch() {
+	for _, content := range []string{"", "garbage\n"} {
+		s.Run(fmt.Sprintf("%q", content), func() {
+			dot, wt := memfs.New(), memfs.New()
+			r, err := Init(filesystem.NewStorage(dot, cache.NewObjectLRUDefault()), WithWorkTree(wt))
+			s.Require().NoError(err)
+			s.Require().NoError(util.WriteFile(dot, "refs/heads/master", []byte(content), 0o644))
+			s.Require().NoError(util.WriteFile(wt, "f", []byte("x"), 0o644))
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			status, err := w.Status()
+			s.Require().NoError(err)
+			s.Equal(Untracked, status.File("f").Worktree)
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored() {
 	fs := memfs.New()
 	storage := memory.NewStorage()

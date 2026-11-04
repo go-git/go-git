@@ -282,8 +282,10 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		}()
 	}
 
+	// A HEAD that cannot be read, such as an empty file, does not make a
+	// repository either: git does not take the directory as one.
 	_, err := s.Reference(plumbing.HEAD)
-	if err == plumbing.ErrReferenceNotFound {
+	if err == plumbing.ErrReferenceNotFound || errors.Is(err, plumbing.ErrBrokenReference) {
 		return nil, ErrRepositoryNotExists
 	}
 
@@ -1769,6 +1771,20 @@ func (it *listedReferencesIter) Next() (*plumbing.Reference, error) {
 	}
 }
 
+// validTargetName reports whether git resolves a symbolic reference to name:
+// it checks the name's format as Validate does, but accepts a one-level name
+// such as ORIG_HEAD, as git does:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L2190
+func validTargetName(name plumbing.ReferenceName) bool {
+	if !strings.Contains(name.String(), "/") && name != "@" {
+		// The rule requiring a slash is the only one git waives, so check
+		// the name as a component. "@" is refused as a whole name, so it is
+		// left to Validate as it is.
+		name = "x/" + name
+	}
+	return name.Validate() == nil
+}
+
 // symrefMaxDepth is the number of references git reads at most to resolve
 // one, the first included, before it gives up on it as dangling:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/refs-internal.h#L260
@@ -1780,7 +1796,7 @@ const symrefMaxDepth = 5
 // than symrefMaxDepth references away.
 func (it *listedReferencesIter) resolve(ref *plumbing.Reference) (*plumbing.Reference, error) {
 	for depth := 1; ref.Type() == plumbing.SymbolicReference; depth++ {
-		if depth == symrefMaxDepth || ref.Target().Validate() != nil {
+		if depth == symrefMaxDepth || !validTargetName(ref.Target()) {
 			return nil, nil
 		}
 		next, err := it.s.Reference(ref.Target())
