@@ -81,7 +81,7 @@ func TestPackHandle_InvalidatedOnDelete(t *testing.T) {
 	assert.ErrorIs(t, err, fs.ErrClosed, "evicted handle should report closed")
 
 	// Re-requesting the same hash must now report pack-not-found
-	// (the pack files are gone and ExclusiveAccess uses packMap).
+	// (the pack files are gone and ExclusiveAccess uses packBases).
 	_, err = dot.packHandle(h)
 	assert.Error(t, err, "packHandle should fail after delete")
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1200,10 +1201,10 @@ func (s *ObjectStorage) ObjectPacks() ([]plumbing.Hash, error) {
 }
 
 // DeleteOldObjectPackAndIndex removes a pack and its index if older than t.
-// Also drops the in-memory s.index map entry and the matching s.packs
-// slice entry for the removed pack so subsequent routing decisions in
-// findObjectInPackfile no longer claim membership for a hash that
-// lives only in the now-deleted pack. If the MRU hint pointed at the
+// Once the pack is gone from disk, also drops the in-memory s.index map
+// entry and the matching s.packs slice entry so subsequent routing
+// decisions in findObjectInPackfile no longer claim membership for a hash
+// that lived only in the deleted pack. If the MRU hint pointed at the
 // deleted slot, invalidate it.
 func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time) error {
 	s.muIWriters.Lock()
@@ -1212,6 +1213,16 @@ func (s *ObjectStorage) DeleteOldObjectPackAndIndex(h plumbing.Hash, t time.Time
 	if err := s.dir.DeleteOldObjectPackAndIndex(h, t); err != nil {
 		return err
 	}
+
+	// The pack outlives the call when it is too new to delete, or when it is
+	// also stored under a name other than pack-<hash>, which is left in place.
+	// When the listing fails, the entry is dropped as if the pack were gone,
+	// since keeping it for a deleted pack would route reads to missing files.
+	packs, err := s.dir.ObjectPacks()
+	if err == nil && slices.Contains(packs, h) {
+		return nil
+	}
+
 	s.muI.Lock()
 	defer s.muI.Unlock()
 

@@ -42,6 +42,15 @@ func newCursorReader(sf *sharedfile.SharedFile, size int64) (*cursorReader, erro
 	return &cursorReader{sf: sf, file: f, size: size}, nil
 }
 
+// Name returns the name the underlying .pack file was opened with, or ""
+// when the file returned by [Source.Open] does not report one.
+func (c *cursorReader) Name() string {
+	if n, ok := c.file.(interface{ Name() string }); ok {
+		return n.Name()
+	}
+	return ""
+}
+
 func (c *cursorReader) Read(p []byte) (int, error) {
 	if c.closed.Load() || c.sf.IsClosed() {
 		return 0, fs.ErrClosed

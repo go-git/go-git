@@ -328,3 +328,48 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 		})
 	}
 }
+
+// `git maintenance run --task=loose-objects` packs loose objects into
+// `loose-<hash>.pack` rather than `pack-<hash>.pack`. Its first run keeps the
+// loose copies; the second deletes them, since they are now packed. A later
+// commit that only touches the root leaves the subtree reachable solely
+// through that pack.
+func TestStatusReadsSubtreeStoredOnlyInLooseObjectsPack(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+	if !gitAtLeast(t, 2, 30) {
+		t.Skip("git maintenance gained the loose-objects task in 2.30")
+	}
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "file"), []byte("sub\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "root"), []byte("one\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "first")
+
+	git(t, dir, "maintenance", "run", "--task=loose-objects")
+	git(t, dir, "maintenance", "run", "--task=loose-objects")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "root"), []byte("two\n"), 0o644))
+	git(t, dir, "commit", "-q", "-am", "second")
+
+	subtree := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD:sub"))
+	_, err := os.Stat(filepath.Join(dir, ".git", "objects", subtree[:2], subtree[2:]))
+	require.ErrorIs(t, err, os.ErrNotExist, "the subtree must live only in the loose-objects pack")
+	packs, err := filepath.Glob(filepath.Join(dir, ".git", "objects", "pack", "pack-*"))
+	require.NoError(t, err)
+	require.Empty(t, packs)
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	st, err := wt.Status()
+	require.NoError(t, err)
+	assert.True(t, st.IsClean(), "status: %v", st)
+}
