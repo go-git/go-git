@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -503,4 +505,55 @@ func storeTestTree(t *testing.T, st storer.EncodedObjectStorer, entries []TreeEn
 		t.Fatal(err)
 	}
 	return h
+}
+
+// Git compares tree entries by hash and mode before reading them, so a
+// subtree that is identical on both sides is never loaded and may be absent
+// from storage (tree-diff.c, ll_diff_tree_paths).
+func TestDiffTreeSkipsUnchangedMissingSubtree(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	blob := func(content string) plumbing.Hash {
+		return storeTestObject(t, st, plumbing.BlobObject, []byte(content))
+	}
+	missingDir := storeTestTree(t, st, []TreeEntry{{Name: "inner.txt", Mode: filemode.Regular, Hash: blob("inner")}})
+	delete(st.Objects, missingDir)
+	delete(st.Trees, missingDir)
+
+	tree := func(a, z string) *Tree {
+		h := storeTestTree(t, st, []TreeEntry{
+			{Name: "a.txt", Mode: filemode.Regular, Hash: blob(a)},
+			{Name: "dir", Mode: filemode.Dir, Hash: missingDir},
+			{Name: "z.txt", Mode: filemode.Regular, Hash: blob(z)},
+		})
+		tr, err := GetTree(st, h)
+		require.NoError(t, err)
+		return tr
+	}
+	from, to := tree("a", "z"), tree("a2", "z2")
+
+	t.Run("identical trees", func(t *testing.T) {
+		t.Parallel()
+
+		changes, err := DiffTree(from, from)
+		require.NoError(t, err)
+		assert.Empty(t, changes)
+	})
+
+	t.Run("files around the subtree modified", func(t *testing.T) {
+		t.Parallel()
+
+		changes, err := DiffTree(from, to)
+		require.NoError(t, err)
+
+		modified := make([]string, 0, len(changes))
+		for _, c := range changes {
+			action, err := c.Action()
+			require.NoError(t, err)
+			assert.Equal(t, merkletrie.Modify, action, c.To.Name)
+			modified = append(modified, c.To.Name)
+		}
+		assert.Equal(t, []string{"a.txt", "z.txt"}, modified)
+	})
 }
