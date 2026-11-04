@@ -218,6 +218,49 @@ func TestRefsWithPrefixBoundsPackedRefsRecord(t *testing.T) {
 	assert.ErrorIs(t, err, bufio.ErrTooLong)
 }
 
+// A packed ID that is not one of the repository's object format fails every
+// packed-refs reader, as git dies on it as an unexpected line, so a packed ID
+// is never accepted where the same loose one reads as broken.
+func TestPackedRefsRejectInvalidIDs(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{strings.Repeat("ab", 32), "zz" + hashA[2:], hashA[:39]} {
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+			fs := memfs.New()
+			writeFile(t, fs, "packed-refs", hashA+" refs/heads/main\n"+id+" refs/heads/x\n")
+			dir := New(fs)
+
+			_, err := dir.Ref("refs/heads/x")
+			assert.ErrorIs(t, err, ErrPackedRefsBadFormat)
+			iter, err := dir.RefsWithPrefix("refs/heads/")
+			require.NoError(t, err)
+			defer iter.Close()
+			_, err = iter.Next()
+			assert.ErrorIs(t, err, ErrPackedRefsBadFormat)
+		})
+	}
+}
+
+// Many empty loose refs over packed ones are resolved from the packed refs
+// the iterator collects, reading packed-refs once rather than once per file.
+func TestRefsWithPrefixReadsPackedRefsOnceForEmptyLooseRefs(t *testing.T) {
+	t.Parallel()
+	mem := memfs.New()
+	var packed strings.Builder
+	for i := range 20 {
+		name := fmt.Sprintf("refs/heads/b%02d", i)
+		writeFile(t, mem, name, "")
+		packed.WriteString(hashA + " " + name + "\n")
+	}
+	writeFile(t, mem, "packed-refs", packed.String())
+	fs := &openCountingFS{Filesystem: mem}
+
+	iter, err := New(fs).RefsWithPrefix("refs/heads/")
+	require.NoError(t, err)
+	assert.Len(t, collectRefs(t, iter), 20)
+	assert.Equal(t, int64(1), fs.packedReads.Load())
+}
+
 func TestRefsWithPrefixReleasesPackedRefs(t *testing.T) {
 	t.Parallel()
 	for name, consume := range map[string]func(storer.ReferenceIter){
@@ -520,7 +563,8 @@ func TestRefsWithPrefixReadsCRLFPackedRefs(t *testing.T) {
 
 type openCountingFS struct {
 	billy.Filesystem
-	open atomic.Int64
+	open        atomic.Int64
+	packedReads atomic.Int64
 }
 
 func (fs *openCountingFS) Open(name string) (billy.File, error) {
@@ -529,6 +573,9 @@ func (fs *openCountingFS) Open(name string) (billy.File, error) {
 		return nil, err
 	}
 	fs.open.Add(1)
+	if name == packedRefsPath {
+		fs.packedReads.Add(1)
+	}
 	return &openCountingFile{File: f, fs: fs}, nil
 }
 

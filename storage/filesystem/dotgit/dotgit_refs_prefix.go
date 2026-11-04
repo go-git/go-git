@@ -2,6 +2,7 @@ package dotgit
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"io"
 	"io/fs"
@@ -20,7 +21,7 @@ import (
 // refs and packed refs are merged as Git's files backend does, with a loose
 // ref shadowing a packed one of the same name:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L1115
-// It holds no file open. Packed refs are read on the first call to Next, and
+// It holds no file open. Packed refs are read once, when first needed, and
 // loose refs as the walk reaches them, so a concurrent update may or may not
 // be seen, and a ref renamed during the walk may be yielded twice or not at
 // all.
@@ -30,7 +31,7 @@ func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 		return nil, err
 	}
 
-	return reference.NewOverlayIter(loose, &packedRefsSource{d: d, prefix: prefix}), nil
+	return reference.NewOverlayIter(loose, loose.packed), nil
 }
 
 // looseRefs returns the loose refs matching prefix, starting with HEAD when
@@ -38,7 +39,7 @@ func (d *DotGit) RefsWithPrefix(prefix string) (storer.ReferenceIter, error) {
 // treats as broken is returned with the all-zero ID, as Git's ref store
 // reports it.
 func (d *DotGit) looseRefs(prefix string) (*looseRefsSource, error) {
-	s := &looseRefsSource{d: d}
+	s := &looseRefsSource{d: d, packed: &packedRefsSource{d: d, prefix: prefix}}
 
 	if strings.HasPrefix("HEAD", prefix) { //nolint:gocritic // HEAD matches a prefix of itself
 		head, err := s.read("HEAD")
@@ -143,23 +144,31 @@ func (d *DotGit) looseRefsDirWithPrefix(prefix string) (*looseRefsDir, error) {
 }
 
 // looseRefsSource yields HEAD, then walks loose refs depth-first in sorted
-// order.
+// order. packed holds the packed refs matching the same prefix, which stand
+// for empty loose files.
 type looseRefsSource struct {
-	d    *DotGit
-	head *plumbing.Reference
-	dirs []looseRefsDir
+	d      *DotGit
+	packed *packedRefsSource
+	head   *plumbing.Reference
+	dirs   []looseRefsDir
 }
 
 // read reads the loose ref name as Ref does, with an empty file standing for
 // the packed ref of that name. A file Ref fails as broken is reported with the
-// all-zero ID of the repository's object format, as Git's loose-ref loader marks it broken and its ref store
-// then reports it:
+// all-zero ID of the repository's object format, as Git's loose-ref loader
+// marks it broken and its ref store then reports it:
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L330-L343
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L1859-L1868
 func (s *looseRefsSource) read(name string) (*plumbing.Reference, error) {
 	ref, err := s.d.readReferenceFile(".", name)
 	if errors.Is(err, ErrEmptyRefFile) {
-		ref, err = s.d.packedRefUnderEmptyFile(plumbing.ReferenceName(name))
+		packed, perr := s.packed.lookup(name)
+		if perr != nil {
+			return nil, perr
+		}
+		if packed != nil {
+			return packed, nil
+		}
 	}
 	if errors.Is(err, ErrEmptyRefFile) || errors.Is(err, ErrBrokenRefFile) {
 		zero, _ := plumbing.FromBytes(make([]byte, s.d.options.ObjectFormat.Size()))
@@ -221,34 +230,58 @@ func (s *looseRefsSource) Close() {
 }
 
 // packedRefsSource yields the packed refs matching prefix in sorted order.
-// On first use it reads packed-refs in one pass and closes it, so it holds
-// no file open, collecting the matches and sorting them unless the names
-// already ascend. It does not rely on the sorted header trait, which Git trusts:
-// verifying it costs the same pass, and a false claim would hide matches.
+// When first needed it reads packed-refs in one pass and closes it, so it
+// holds no file open, collecting the matches and sorting them unless they
+// already ascend. It does not rely on the sorted header trait, which Git
+// trusts: verifying it costs the same pass, and a false claim would hide
+// matches.
 type packedRefsSource struct {
 	d      *DotGit
 	prefix string
-	opened bool
+	loaded bool
+	err    error
 	refs   []*plumbing.Reference
+	pos    int
 }
 
 func (s *packedRefsSource) Next() (*plumbing.Reference, error) {
-	if !s.opened {
-		s.opened = true
-		if err := s.open(); err != nil {
-			return nil, err
-		}
+	if err := s.load(); err != nil {
+		return nil, err
 	}
 
-	if len(s.refs) == 0 {
+	if s.pos >= len(s.refs) {
 		return nil, io.EOF
 	}
-	ref := s.refs[0]
-	s.refs = s.refs[1:]
+	ref := s.refs[s.pos]
+	s.pos++
 	return ref, nil
 }
 
-func (s *packedRefsSource) open() (err error) {
+// lookup returns the first packed ref named name, which must match prefix,
+// or nil when there is none.
+func (s *packedRefsSource) lookup(name string) (*plumbing.Reference, error) {
+	if err := s.load(); err != nil {
+		return nil, err
+	}
+
+	i, found := slices.BinarySearchFunc(s.refs, name, func(r *plumbing.Reference, name string) int {
+		return strings.Compare(r.Name().String(), name)
+	})
+	if !found {
+		return nil, nil
+	}
+	return s.refs[i], nil
+}
+
+func (s *packedRefsSource) load() error {
+	if !s.loaded {
+		s.loaded = true
+		s.err = s.read()
+	}
+	return s.err
+}
+
+func (s *packedRefsSource) read() (err error) {
 	f, err := s.d.fs.Open(packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -264,25 +297,28 @@ func (s *packedRefsSource) open() (err error) {
 	// bufio.ErrTooLong instead of growing memory to fit it. ScanLines drops
 	// a carriage return before the newline, so a CRLF record reads the same
 	// everywhere in go-git. Git itself keeps the carriage return in the name
-	// and then ignores the record as a ref with a broken name.
-	sorted, prev := true, ""
+	// and then ignores the record as a ref with a broken name. Only matches
+	// are copied out of the scanner's buffer.
+	prefix := []byte(s.prefix)
+	sorted := true
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), bufio.MaxScanTokenSize)
 	for sc.Scan() {
-		hash, name, ok, err := parsePackedRefLine(sc.Text())
+		hash, name, ok, err := s.d.parsePackedRefLine(sc.Bytes())
 		if err != nil {
 			return err
 		}
-		if !ok {
+		if !ok || !bytes.HasPrefix(name, prefix) {
 			continue
 		}
-		if name < prev {
+
+		// One copy per match, which the name and the ID share.
+		line := string(sc.Bytes())
+		ref := plumbing.NewReferenceFromStrings(line[len(hash)+1:], line[:len(hash)])
+		if n := len(s.refs); n > 0 && ref.Name() < s.refs[n-1].Name() {
 			sorted = false
 		}
-		prev = name
-
-		if strings.HasPrefix(name, s.prefix) {
-			s.refs = append(s.refs, plumbing.NewReferenceFromStrings(name, hash))
-		}
+		s.refs = append(s.refs, ref)
 	}
 	if err := sc.Err(); err != nil {
 		return err
@@ -298,6 +334,6 @@ func (s *packedRefsSource) open() (err error) {
 }
 
 func (s *packedRefsSource) Close() {
-	s.opened = true
+	s.loaded = true
 	s.refs = nil
 }

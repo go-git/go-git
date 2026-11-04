@@ -327,7 +327,8 @@ type Options struct {
 // SetRef and ReflogWriter additionally require valid reference-name syntax and
 // a name short enough for git to lock.
 // Refs applies neither name check, so a returned entry may be inaccessible
-// through Ref and RemoveRef.
+// through Ref and RemoveRef; it only skips entries Git never reads as refs,
+// those named ".*" or "*.lock".
 //
 // Existing entries rejected by the path checks need external repair. On a
 // filesystem that preserves the exact spelling without aliasing, native Git's
@@ -1403,9 +1404,10 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 }
 
 // Refs returns HEAD and every reference, sorted by name, with a loose
-// reference shadowing a packed one of the same name. A loose reference Git
-// treats as broken is returned with the all-zero ID, as git ls-remote and
-// upload-pack show it. Callers walking reachable objects must fail on that ID
+// reference shadowing a packed one of the same name, and an empty loose file
+// standing for the packed reference it covers, as Ref reads it. A loose
+// reference Ref fails as broken is returned with the all-zero ID of the
+// repository's object format, as git ls-remote and upload-pack show it. Callers walking reachable objects must fail on that ID
 // rather than skip the reference, as git gc and git prune do, and listing
 // callers may skip it, as git for-each-ref does.
 func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
@@ -1426,8 +1428,9 @@ func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 // It rejects names that fail the path-safety checks described by DotGit, even
 // when Refs returns an entry with that name.
 // It falls back to packed-refs when the loose reference is missing, empty, or
-// its path is a directory. Other loose-reference read errors are returned to the
-// caller, as is ErrEmptyRefFile for an empty file packed-refs does not back.
+// its path is a directory. It returns ErrEmptyRefFile for an empty file
+// packed-refs does not back, ErrBrokenRefFile for one Git treats as broken,
+// and other loose-reference read errors as they are.
 func (d *DotGit) Ref(name plumbing.ReferenceName) (*plumbing.Reference, error) {
 	if err := validReferenceName(name); err != nil {
 		return nil, err
@@ -1466,7 +1469,7 @@ func (d *DotGit) packedRefUnderEmptyFile(name plumbing.ReferenceName) (*plumbing
 func (d *DotGit) findPackedRefsInFile(f billy.File, recv refsRecv) error {
 	s := bufio.NewScanner(f)
 	for s.Scan() {
-		ref, err := d.processLine(s.Text())
+		ref, err := d.processLine(s.Bytes())
 		if err != nil {
 			return err
 		}
@@ -1633,7 +1636,7 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		}
 		dropping = false
 
-		ref, err := d.processLine(line)
+		ref, err := d.processLine(s.Bytes())
 		if err != nil {
 			return err
 		}
@@ -1660,31 +1663,36 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 }
 
 // process lines from a packed-refs file
-func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
-	hash, name, ok, err := parsePackedRefLine(line)
+func (d *DotGit) processLine(line []byte) (*plumbing.Reference, error) {
+	hash, name, ok, err := d.parsePackedRefLine(line)
 	if err != nil || !ok {
 		return nil, err
 	}
 
-	return plumbing.NewReferenceFromStrings(name, hash), nil
+	return plumbing.NewReferenceFromStrings(string(name), string(hash)), nil
 }
 
-// parsePackedRefLine splits a packed-refs line into its hash and reference
-// name. It reports ok as false for lines that carry no reference.
-func parsePackedRefLine(line string) (hash, name string, ok bool, err error) {
+// parsePackedRefLine splits a packed-refs line into its object ID and
+// reference name, without copying either. It reports ok as false for lines
+// that carry no reference, and ErrPackedRefsBadFormat for a line whose ID is
+// not one of the repository's object format, which git rejects as an
+// unexpected line, as it does a line without a name:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L938-L942
+func (d *DotGit) parsePackedRefLine(line []byte) (hash, name []byte, ok bool, err error) {
 	if len(line) == 0 {
-		return "", "", false, nil
+		return nil, nil, false, nil
 	}
 
 	switch line[0] {
 	case '#': // comment - ignore
-		return "", "", false, nil
+		return nil, nil, false, nil
 	case '^': // annotated tag commit of the previous line - ignore
-		return "", "", false, nil
+		return nil, nil, false, nil
 	default:
-		hash, name, found := strings.Cut(line, " ") // hash then ref
-		if !found || strings.Contains(name, " ") {
-			return "", "", false, ErrPackedRefsBadFormat
+		hash, name, found := bytes.Cut(line, []byte{' '}) // hash then ref
+		if !found || bytes.IndexByte(name, ' ') >= 0 ||
+			len(hash) != d.options.ObjectFormat.HexSize() || !isHex(hash) {
+			return nil, nil, false, ErrPackedRefsBadFormat
 		}
 
 		return hash, name, true, nil
@@ -2057,8 +2065,9 @@ func (d *DotGit) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	return nil
 }
 
-func isHex(s string) bool {
-	for _, b := range []byte(s) {
+func isHex[S ~string | ~[]byte](s S) bool {
+	for i := range len(s) {
+		b := s[i]
 		if isNum(b) {
 			continue
 		}

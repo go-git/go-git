@@ -121,39 +121,49 @@ func goGitPackRefs(t *testing.T, dir string) {
 func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 	t.Parallel()
 
-	scenarios := map[string]func(t *testing.T, dir string){
-		"Loose": func(*testing.T, string) {},
-		"Packed": func(t *testing.T, dir string) {
+	// Each scenario returns the lines go-git lists where git does not, in
+	// the cases it deliberately differs from git.
+	scenarios := map[string]func(t *testing.T, dir string) (goGitOnly []string){
+		"Loose": func(*testing.T, string) []string { return nil },
+		"Packed": func(t *testing.T, dir string) []string {
 			runGit(t, dir, "pack-refs", "--all")
+			return nil
 		},
-		"LooseOverridesPacked": func(t *testing.T, dir string) {
+		"LooseOverridesPacked": func(t *testing.T, dir string) []string {
 			runGit(t, dir, "pack-refs", "--all")
 			runGit(t, dir, "update-ref", "refs/heads/feature", "refs/heads/fix")
 			runGit(t, dir, "update-ref", "refs/remotes/origin/new", "refs/heads/main")
+			return nil
 		},
 		// Removing a loose ref exposes its packed value.
-		"LooseRemovedOverPacked": func(t *testing.T, dir string) {
+		"LooseRemovedOverPacked": func(t *testing.T, dir string) []string {
 			runGit(t, dir, "pack-refs", "--all")
 			runGit(t, dir, "update-ref", "refs/heads/fix", "refs/heads/main")
 			require.NoError(t, os.Remove(filepath.Join(dir, ".git", "refs", "heads", "fix")))
+			return nil
 		},
 		// An empty loose directory named like a packed ref, as an
 		// interrupted deletion can leave behind, must not hide it:
 		// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/t/t0600-reffiles-backend.sh#L31-L39
-		"EmptyDirOverPacked": func(t *testing.T, dir string) {
+		"EmptyDirOverPacked": func(t *testing.T, dir string) []string {
 			runGit(t, dir, "pack-refs", "--all")
 			for _, name := range []string{"refs/heads/fix/bar/baz", "refs/remotes/origin/main"} {
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git", filepath.FromSlash(name)), 0o755))
 			}
+			return nil
 		},
 		// git skips broken loose refs with a warning instead of failing,
 		// still lets them hide the packed ref of the same name, and does not
-		// treat ".*" or "*.lock" entries as refs.
-		"BrokenLoose": func(t *testing.T, dir string) {
+		// treat ".*" or "*.lock" entries as refs. Unlike git, go-git reads
+		// an empty loose ref over a packed one as the packed one, as Ref
+		// does, since SetRef truncates a loose ref before writing it.
+		"BrokenLoose": func(t *testing.T, dir string) []string {
 			runGit(t, dir, "pack-refs", "--all")
 			head := runGit(t, dir, "rev-parse", "refs/heads/main")
+			fix := runGit(t, dir, "rev-parse", "refs/heads/fix")
 			for name, content := range map[string]string{
 				"refs/heads/empty":               "",
+				"refs/heads/fix":                 "",
 				"refs/heads/garbage":             "garbage\n",
 				"refs/heads/zero":                strings.Repeat("0", len(head)) + "\n",
 				"refs/heads/spaced":              "  " + head + "\n",
@@ -165,13 +175,15 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 				path := filepath.Join(dir, ".git", filepath.FromSlash(name))
 				require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 			}
+			return []string{"refs/heads/fix " + fix + " "}
 		},
-		"GoGitPackRefs": func(t *testing.T, dir string) {
+		"GoGitPackRefs": func(t *testing.T, dir string) []string {
 			goGitPackRefs(t, dir)
+			return nil
 		},
 		// Git accepts a packed-refs file without the sorted trait and sorts
 		// it in memory, so its order must not matter.
-		"UnsortedPacked": func(t *testing.T, dir string) {
+		"UnsortedPacked": func(t *testing.T, dir string) []string {
 			runGit(t, dir, "pack-refs", "--all")
 			path := filepath.Join(dir, ".git", "packed-refs")
 			content, err := os.ReadFile(path)
@@ -192,6 +204,7 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 
 			unsorted := "# pack-refs with: peeled fully-peeled \n" + strings.Join(records, "\n") + "\n"
 			require.NoError(t, os.WriteFile(path, []byte(unsorted), 0o644))
+			return nil
 		},
 	}
 
@@ -199,7 +212,16 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			dir := newPrefixFixture(t)
-			setup(t, dir)
+			goGitOnly := setup(t, dir)
+			want := func(git []string, prefix string) []string {
+				for _, line := range goGitOnly {
+					if strings.HasPrefix(line, prefix) {
+						git = append(git, line)
+					}
+				}
+				slices.Sort(git)
+				return git
+			}
 			sto := filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())
 			defer func() { _ = sto.Close() }()
 
@@ -210,13 +232,13 @@ func TestIterReferencesWithPrefixMatchesGit(t *testing.T) {
 				"refs/", "refs/heads/", "refs/heads/fe/", "refs/remotes/origin/",
 				"refs/remotes/origin-other/", "refs/tags/", "refs/nope/",
 			} {
-				assert.Equal(t, gitForEachRef(t, dir, prefix), prefixRefs(t, sto, prefix), prefix)
+				assert.Equal(t, want(gitForEachRef(t, dir, prefix), prefix), prefixRefs(t, sto, prefix), prefix)
 			}
 
 			// Without the trailing "/", for-each-ref matches whole path
 			// components only; the globs spell out the byte-wise prefix.
 			for _, prefix := range []string{"refs/heads/a", "refs/heads/fe", "refs/remotes/origin"} {
-				assert.Equal(t, gitForEachRef(t, dir, prefix+"*", prefix+"*/**"), prefixRefs(t, sto, prefix), prefix)
+				assert.Equal(t, want(gitForEachRef(t, dir, prefix+"*", prefix+"*/**"), prefix), prefixRefs(t, sto, prefix), prefix)
 			}
 		})
 	}
