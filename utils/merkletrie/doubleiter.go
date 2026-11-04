@@ -147,20 +147,29 @@ func (d *doubleIter) compare() (s comparison, err error) {
 	s.bothAreFiles = !fromIsDir && !toIsDir
 	s.fileAndDir = !s.bothAreDirs && !s.bothAreFiles
 
+	// Only differing directories are descended into, so only they need their
+	// children. Leaving identical directories unread matches Git, which
+	// compares tree entries by hash and mode before reading them, and lets
+	// a diff cross a subtree that is identical on both sides but absent from
+	// storage.
+	if s.sameHash || !s.bothAreDirs {
+		return s, nil
+	}
+
 	fromNumChildren, err := d.from.current.NumChildren()
 	if err != nil {
-		return comparison{}, fmt.Errorf("from: %s", err)
+		return comparison{}, fmt.Errorf("from: %w", err)
 	}
 
 	toNumChildren, err := d.to.current.NumChildren()
 	if err != nil {
-		return comparison{}, fmt.Errorf("to: %s", err)
+		return comparison{}, fmt.Errorf("to: %w", err)
 	}
 
-	s.fromIsEmptyDir = fromIsDir && fromNumChildren == 0
-	s.toIsEmptyDir = toIsDir && toNumChildren == 0
+	s.fromIsEmptyDir = fromNumChildren == 0
+	s.toIsEmptyDir = toNumChildren == 0
 
-	return s, err
+	return s, nil
 }
 
 // Answers to a lot of questions you can ask about how to noders are
@@ -181,6 +190,9 @@ type comparison struct {
 	fileAndDir bool
 	// Are both nodes dirs?
 	bothAreDirs bool
+	// the following are only set if both nodes are dirs with different
+	// hashes; identical dirs are not read
+
 	// Is the from node an empty dir?
 	fromIsEmptyDir bool
 	// Is the to Node an empty dir?

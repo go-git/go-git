@@ -148,13 +148,18 @@ func (iter *Iter) advance(wantDescend bool) (noder.Path, error) {
 	}
 
 	// Advances means getting a next current node, either its first child or
-	// its next sibling, depending if we must descend or not.
-	numChildren, err := current.NumChildren()
-	if err != nil {
-		return nil, err
+	// its next sibling, depending if we must descend or not. The children are
+	// only read when descending, so Next can move past a node whose children
+	// cannot be read.
+	mustDescend := false
+	if wantDescend {
+		numChildren, err := current.NumChildren()
+		if err != nil {
+			return nil, err
+		}
+		mustDescend = numChildren != 0
 	}
 
-	mustDescend := numChildren != 0 && wantDescend
 	if mustDescend {
 		// descend: add a new frame with the current's children.
 		frame, err := frame.New(current)
