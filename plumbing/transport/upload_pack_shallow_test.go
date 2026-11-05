@@ -267,7 +267,7 @@ func (r *canonicalRepo) commitNames(pack *memory.Storage) []string {
 func (r *canonicalRepo) requireComplete(wants, haves, clientShallows []string, resp v1Response) {
 	r.t.Helper()
 	client := memory.NewStorage()
-	had, err := revlist.Objects(&shallowBoundaryStorer{Storer: r.st, boundary: r.hashes(clientShallows)}, r.hashes(haves), nil)
+	had, err := revlist.ObjectsWithShallows(r.st, r.hashes(haves), nil, r.hashes(clientShallows))
 	require.NoError(r.t, err)
 	for _, h := range had {
 		o, err := r.st.EncodedObject(plumbing.AnyObject, h)

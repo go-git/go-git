@@ -972,7 +972,7 @@ func (p *shallowPlan) objects(st storage.Storer, wants, haves []plumbing.Hash) (
 		return objectsToUpload(st, wants, haves)
 	}
 	wants = slices.Concat(wants, p.extraWants)
-	return objectsToUpload(&shallowBoundaryStorer{Storer: st, boundary: p.grafts}, wants, haves)
+	return revlist.ObjectsWithShallows(st, wants, haves, p.grafts)
 }
 
 // unshallowedCommits returns the client's shallow commits that a deepen to
@@ -1194,28 +1194,6 @@ func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.H
 		return objs, err
 	}
 	return added, nil
-}
-
-// shallowBoundaryStorer reports an additional set of shallow commits (the
-// per-request boundary) on top of any the repository already has. revlist's
-// object walk stops at shallow commits while still collecting their full trees,
-// so wrapping the storer bounds a shallow fetch's packfile to the requested
-// depth — the boundary commits ship complete, their ancestors are omitted —
-// without the blob loss a plain have-exclusion would cause.
-type shallowBoundaryStorer struct {
-	storage.Storer
-	boundary []plumbing.Hash
-}
-
-func (s *shallowBoundaryStorer) Shallow() ([]plumbing.Hash, error) {
-	base, err := s.Storer.Shallow()
-	if err != nil {
-		return nil, err
-	}
-	if len(s.boundary) == 0 {
-		return base, nil
-	}
-	return append(append([]plumbing.Hash(nil), base...), s.boundary...), nil
 }
 
 // commonHaves is the negotiation state of a fetch: the client's haves that

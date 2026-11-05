@@ -126,6 +126,49 @@ func (s *RevListSuite) TestRevListObjects_DelegatesToObjectWalker() {
 	s.Equal(expected, got)
 }
 
+// shallowDelegatedObjectStorer walks objects with shallows itself.
+type shallowDelegatedObjectStorer struct {
+	delegatedObjectStorer
+	shallows []plumbing.Hash
+}
+
+func (s *shallowDelegatedObjectStorer) RevListObjectsWithShallows(wants, haves, shallows []plumbing.Hash) ([]plumbing.Hash, error) {
+	s.shallows = append([]plumbing.Hash(nil), shallows...)
+	return s.RevListObjects(wants, haves)
+}
+
+func (s *RevListSuite) TestObjectsWithShallows_DelegatesToShallowObjectWalker() {
+	want := plumbing.NewHash(initialCommit)
+	shallow := plumbing.NewHash(secondCommit)
+	expected := []plumbing.Hash{plumbing.NewHash(someCommit)}
+
+	sto := &shallowDelegatedObjectStorer{delegatedObjectStorer: delegatedObjectStorer{
+		EncodedObjectStorer: memory.NewStorage(),
+		result:              expected,
+	}}
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{want}, nil, []plumbing.Hash{shallow})
+	s.Require().NoError(err)
+	s.Equal([]plumbing.Hash{shallow}, sto.shallows)
+	s.Equal(expected, got)
+}
+
+// A storer that walks objects but cannot bound the walk at shallows is not
+// asked to: its walk would include the history below them.
+func (s *RevListSuite) TestObjectsWithShallows_BoundsTheBuiltInWalk() {
+	sto := &delegatedObjectStorer{EncodedObjectStorer: s.Storer}
+	head := plumbing.NewHash(someCommit)
+	c, err := object.GetCommit(s.Storer, head)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(c.ParentHashes)
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{head}, nil, []plumbing.Hash{head})
+	s.Require().NoError(err)
+	s.False(sto.called, "RevListObjects cannot see the shallows")
+	s.Contains(got, head)
+	s.NotContains(got, c.ParentHashes[0])
+}
+
 // ---
 // | |\
 // | | * b8e471f Creating changelog
