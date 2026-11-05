@@ -32,6 +32,10 @@ func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 		if statErr == nil {
 			cp := copyIndex(idx)
 			cp.ModTime = fi.ModTime()
+			// The encoder does not write the cache-tree, so the cached
+			// index must not carry one either: it would describe the
+			// entries the index was read with, not the ones written.
+			cp.Cache = nil
 			s.cache.Set(cp, fi.ModTime(), fi.Size())
 		} else {
 			s.cache.Clear()

@@ -228,7 +228,7 @@ func (w *Worktree) autoAddModifiedAndDeleted() error {
 		}
 	}
 
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 func (w *Worktree) updateHEAD(commit plumbing.Hash) error {
