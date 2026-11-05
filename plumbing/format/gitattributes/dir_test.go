@@ -152,8 +152,10 @@ func (s *MatcherSuite) TestDir_ReadPatterns() {
 	results, _ := m.Match([]string{"vendor", "gopkg.in", "file"}, nil)
 	s.Equal("bar", results["foo"].Value())
 
+	// vendor/.gitattributes has priority over the root one, as git
+	// check-attr reports "foo: unset" for this path.
 	results, _ = m.Match([]string{"vendor", "github.com", "file"}, nil)
-	s.False(results["foo"].IsUnset())
+	s.True(results["foo"].IsUnset())
 }
 
 func (s *MatcherSuite) TestDir_LoadGlobalPatterns() {

@@ -127,6 +127,10 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	name, unquoted := unquote(line)
 	attrs := strings.Fields(unquoted)
 	if len(name) == 0 {
+		// A quoted empty pattern names no path.
+		if len(attrs) == 0 || strings.HasPrefix(line, `""`) {
+			return MatchAttribute{}, nil
+		}
 		name = attrs[0]
 		attrs = attrs[1:]
 	}
