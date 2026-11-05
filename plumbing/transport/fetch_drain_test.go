@@ -145,9 +145,10 @@ func TestFetchPackReadsResponseAfterPack(t *testing.T) {
 }
 
 // TestFetchPackRejectsPackDataAfterPack checks that FetchPack fails when
-// pack data follows the pack trailer, as Git does, but not for an empty
-// pack-data packet, which servers send as a keepalive. trailerStorer leaves
-// everything after the trailer to FetchPack.
+// pack data follows the pack trailer, which is stricter than Git (see
+// [internal.DrainPackSection]), but not for an empty pack-data packet,
+// which servers send as a keepalive. trailerStorer leaves everything after
+// the trailer to FetchPack.
 func TestFetchPackRejectsPackDataAfterPack(t *testing.T) {
 	t.Parallel()
 

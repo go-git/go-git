@@ -126,9 +126,10 @@ func TestFetchV2ReadsResponseAfterPack(t *testing.T) {
 }
 
 // TestFetchV2RejectsPackDataAfterPack checks that a v2 fetch fails when pack
-// data follows the pack trailer, as Git does, but not for an empty pack-data
-// packet, which servers send as a keepalive. trailerStorer leaves everything
-// after the trailer to the fetch.
+// data follows the pack trailer, which is stricter than Git (see
+// [DrainPackSection]), but not for an empty pack-data packet, which servers
+// send as a keepalive. trailerStorer leaves everything after the trailer to
+// the fetch.
 func TestFetchV2RejectsPackDataAfterPack(t *testing.T) {
 	t.Parallel()
 
