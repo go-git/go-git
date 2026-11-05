@@ -1407,9 +1407,10 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 // reference shadowing a packed one of the same name, and an empty loose file
 // standing for the packed reference it covers, as Ref reads it. A loose
 // reference Ref fails as broken is returned with the all-zero ID of the
-// repository's object format, as git ls-remote and upload-pack show it. Callers walking reachable objects must fail on that ID
-// rather than skip the reference, as git gc and git prune do, and listing
-// callers may skip it, as git for-each-ref does.
+// repository's object format, as git ls-remote and upload-pack show it.
+// Callers walking reachable objects must fail on that ID rather than skip
+// the reference, as git gc and git prune do, and listing callers may skip
+// it, as git for-each-ref does.
 func (d *DotGit) Refs() ([]*plumbing.Reference, error) {
 	iter, err := d.RefsWithPrefix("")
 	if err != nil {
@@ -1466,55 +1467,36 @@ func (d *DotGit) packedRefUnderEmptyFile(name plumbing.ReferenceName) (*plumbing
 	return ref, err
 }
 
-func (d *DotGit) findPackedRefsInFile(f billy.File, recv refsRecv) error {
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		ref, err := d.processLine(s.Bytes())
-		if err != nil {
-			return err
-		}
-
-		if !recv(ref) {
-			// skip parse
-			return nil
-		}
-	}
-	if err := s.Err(); err != nil {
-		return err
-	}
-	return nil
-}
-
-// refsRecv: returning true means that the reference continues to be resolved, otherwise it is stopped, which will speed up the lookup of a single reference.
-type refsRecv func(*plumbing.Reference) bool
-
-func (d *DotGit) findPackedRefs(recv refsRecv) error {
+// packedRef returns the packed reference name. Only the record for name has
+// its object ID checked, so a bad ID elsewhere in packed-refs fails the
+// lookup of that record alone, as it does in git. Lines without a name still
+// fail every lookup.
+func (d *DotGit) packedRef(name plumbing.ReferenceName) (ref *plumbing.Reference, err error) {
 	f, err := d.fs.Open(packedRefsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, plumbing.ErrReferenceNotFound
 		}
-		return err
-	}
-
-	defer ioutil.CheckClose(f, &err)
-	return d.findPackedRefsInFile(f, recv)
-}
-
-func (d *DotGit) packedRef(name plumbing.ReferenceName) (*plumbing.Reference, error) {
-	var ref *plumbing.Reference
-	if err := d.findPackedRefs(func(r *plumbing.Reference) bool {
-		if r != nil && r.Name() == name {
-			ref = r
-			// ref found
-			return false
-		}
-		return true
-	}); err != nil {
 		return nil, err
 	}
-	if ref != nil {
-		return ref, nil
+	defer ioutil.CheckClose(f, &err)
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		hash, refName, ok, err := parsePackedRefLine(s.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		if !ok || string(refName) != name.String() {
+			continue
+		}
+		if err := d.checkPackedID(hash); err != nil {
+			return nil, err
+		}
+		return plumbing.NewHashReference(name, plumbing.NewHash(string(hash))), nil
+	}
+	if err := s.Err(); err != nil {
+		return nil, err
 	}
 	return nil, plumbing.ErrReferenceNotFound
 }
@@ -1626,27 +1608,34 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 		_ = d.fs.Remove(tmpName) // don't check err, we might have renamed it
 	}()
 
+	// Every record is checked, as git does when it rewrites packed-refs.
 	s := bufio.NewScanner(pr)
 	found, dropping := false, false
+	var out []byte
 	for s.Scan() {
-		line := s.Text()
+		line := s.Bytes()
 		// A peeled line belongs to the reference before it, and goes with it.
-		if dropping && strings.HasPrefix(line, "^") {
+		if dropping && bytes.HasPrefix(line, []byte("^")) {
 			continue
 		}
 		dropping = false
 
-		ref, err := d.processLine(s.Bytes())
+		hash, refName, ok, err := parsePackedRefLine(line)
 		if err != nil {
 			return err
 		}
-
-		if ref != nil && ref.Name() == name {
-			found, dropping = true, true
-			continue
+		if ok {
+			if err := d.checkPackedID(hash); err != nil {
+				return err
+			}
+			if string(refName) == name.String() {
+				found, dropping = true, true
+				continue
+			}
 		}
 
-		if _, err := fmt.Fprintln(tmp, line); err != nil {
+		out = append(append(out[:0], line...), '\n')
+		if _, err := tmp.Write(out); err != nil {
 			return err
 		}
 	}
@@ -1662,23 +1651,11 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 	return d.rewritePackedRefsWhileLocked(tmp, pr)
 }
 
-// process lines from a packed-refs file
-func (d *DotGit) processLine(line []byte) (*plumbing.Reference, error) {
-	hash, name, ok, err := d.parsePackedRefLine(line)
-	if err != nil || !ok {
-		return nil, err
-	}
-
-	return plumbing.NewReferenceFromStrings(string(name), string(hash)), nil
-}
-
 // parsePackedRefLine splits a packed-refs line into its object ID and
-// reference name, without copying either. It reports ok as false for lines
-// that carry no reference, and ErrPackedRefsBadFormat for a line whose ID is
-// not one of the repository's object format, which git rejects as an
-// unexpected line, as it does a line without a name:
-// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L938-L942
-func (d *DotGit) parsePackedRefLine(line []byte) (hash, name []byte, ok bool, err error) {
+// reference name, without copying or checking either. It reports ok as false
+// for lines that carry no reference, and ErrPackedRefsBadFormat for a line
+// that does not hold an ID and a name.
+func parsePackedRefLine(line []byte) (hash, name []byte, ok bool, err error) {
 	if len(line) == 0 {
 		return nil, nil, false, nil
 	}
@@ -1690,13 +1667,23 @@ func (d *DotGit) parsePackedRefLine(line []byte) (hash, name []byte, ok bool, er
 		return nil, nil, false, nil
 	default:
 		hash, name, found := bytes.Cut(line, []byte{' '}) // hash then ref
-		if !found || bytes.IndexByte(name, ' ') >= 0 ||
-			len(hash) != d.options.ObjectFormat.HexSize() || !isHex(hash) {
+		if !found || bytes.IndexByte(name, ' ') >= 0 {
 			return nil, nil, false, ErrPackedRefsBadFormat
 		}
 
 		return hash, name, true, nil
 	}
+}
+
+// checkPackedID returns ErrPackedRefsBadFormat for a packed reference whose
+// ID is not hex of the repository's object format, which git rejects as an
+// unexpected line when it reads that record. Git accepts uppercase hex.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/packed-backend.c#L938-L942
+func (d *DotGit) checkPackedID(hash []byte) error {
+	if len(hash) != d.options.ObjectFormat.HexSize() || !isHex(hash) {
+		return ErrPackedRefsBadFormat
+	}
+	return nil
 }
 
 func (d *DotGit) readReferenceFile(path, name string) (ref *plumbing.Reference, err error) {

@@ -162,21 +162,6 @@ func TestRefsWithPrefixLooseShadowsPacked(t *testing.T) {
 	assert.Equal(t, []string{hashB + " refs/heads/feature"}, collectRefs(t, iter))
 }
 
-func TestRefsWithPrefixKeepsFirstOfDuplicatePackedRefs(t *testing.T) {
-	t.Parallel()
-	fs := memfs.New()
-	writeFile(t, fs, "packed-refs", hashA+" refs/heads/main\n"+hashB+" refs/heads/main\n")
-	dir := New(fs)
-
-	all, err := dir.Refs()
-	require.NoError(t, err)
-	require.Len(t, all, 1)
-
-	iter, err := dir.RefsWithPrefix("refs/heads/")
-	require.NoError(t, err)
-	assert.Equal(t, []string{all[0].String()}, collectRefs(t, iter))
-}
-
 // A malformed packed-refs line fails the iteration wherever it is, as it
 // fails git, whatever the header claims: packed-refs is always read in full.
 func TestRefsWithPrefixReportsMalformedPackedRefs(t *testing.T) {
@@ -221,24 +206,77 @@ func TestRefsWithPrefixBoundsPackedRefsRecord(t *testing.T) {
 // A packed ID that is not one of the repository's object format fails every
 // packed-refs reader, as git dies on it as an unexpected line, so a packed ID
 // is never accepted where the same loose one reads as broken.
+// A packed ID that is not hex of the repository's format fails a lookup of
+// that record, but not of the records around it, as git rev-parse reads
+// them. Listings and rewrites of packed-refs read every record and fail.
 func TestPackedRefsRejectInvalidIDs(t *testing.T) {
 	t.Parallel()
 	for _, id := range []string{strings.Repeat("ab", 32), "zz" + hashA[2:], hashA[:39]} {
 		t.Run(id, func(t *testing.T) {
 			t.Parallel()
 			fs := memfs.New()
-			writeFile(t, fs, "packed-refs", hashA+" refs/heads/main\n"+id+" refs/heads/x\n")
+			writeFile(t, fs, "packed-refs", hashA+" refs/heads/main\n"+id+" refs/heads/x\n"+hashB+" refs/tags/v1\n")
 			dir := New(fs)
 
 			_, err := dir.Ref("refs/heads/x")
 			assert.ErrorIs(t, err, ErrPackedRefsBadFormat)
-			iter, err := dir.RefsWithPrefix("refs/heads/")
+			for name, hash := range map[plumbing.ReferenceName]string{"refs/heads/main": hashA, "refs/tags/v1": hashB} {
+				ref, err := dir.Ref(name)
+				require.NoError(t, err)
+				assert.Equal(t, hash, ref.Hash().String())
+			}
+
+			iter, err := dir.RefsWithPrefix("refs/tags/")
 			require.NoError(t, err)
 			defer iter.Close()
 			_, err = iter.Next()
 			assert.ErrorIs(t, err, ErrPackedRefsBadFormat)
+			assert.ErrorIs(t, dir.RemoveRef("refs/tags/v1"), ErrPackedRefsBadFormat)
 		})
 	}
+}
+
+// Git reads uppercase hex in packed-refs as the ID it spells.
+func TestPackedRefsReadUppercaseIDs(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	writeFile(t, fs, "packed-refs", strings.ToUpper(hashA)+" refs/heads/main\n")
+	dir := New(fs)
+
+	ref, err := dir.Ref("refs/heads/main")
+	require.NoError(t, err)
+	assert.Equal(t, hashA, ref.Hash().String())
+	iter, err := dir.RefsWithPrefix("refs/heads/")
+	require.NoError(t, err)
+	assert.Equal(t, []string{hashA + " refs/heads/main"}, collectRefs(t, iter))
+}
+
+// Iterating an unsorted packed-refs file yields, for a name packed more than
+// once, the record Ref reads: the first. Fifty names are enough to make an
+// unstable sort reorder them.
+func TestRefsWithPrefixKeepsFirstOfDuplicatePackedRefs(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	var packed strings.Builder
+	for i := 49; i >= 0; i-- {
+		fmt.Fprintf(&packed, "%s refs/heads/b%02d\n", hashA, i)
+	}
+	for i := 49; i >= 0; i-- {
+		fmt.Fprintf(&packed, "%s refs/heads/b%02d\n", hashB, i)
+	}
+	writeFile(t, fs, "packed-refs", packed.String())
+	dir := New(fs)
+
+	iter, err := dir.RefsWithPrefix("refs/heads/")
+	require.NoError(t, err)
+	got := collectRefs(t, iter)
+	require.Len(t, got, 50)
+	for i, line := range got {
+		assert.Equal(t, fmt.Sprintf("%s refs/heads/b%02d", hashA, i), line)
+	}
+	ref, err := dir.Ref("refs/heads/b07")
+	require.NoError(t, err)
+	assert.Equal(t, hashA, ref.Hash().String())
 }
 
 // Many empty loose refs over packed ones are resolved from the packed refs

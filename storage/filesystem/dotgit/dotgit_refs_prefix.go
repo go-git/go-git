@@ -297,18 +297,24 @@ func (s *packedRefsSource) read() (err error) {
 	// bufio.ErrTooLong instead of growing memory to fit it. ScanLines drops
 	// a carriage return before the newline, so a CRLF record reads the same
 	// everywhere in go-git. Git itself keeps the carriage return in the name
-	// and then ignores the record as a ref with a broken name. Only matches
-	// are copied out of the scanner's buffer.
+	// and then ignores the record as a ref with a broken name. Every record's
+	// ID is checked, as in Refs, and only matches are copied out of the
+	// scanner's buffer.
 	prefix := []byte(s.prefix)
 	sorted := true
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), bufio.MaxScanTokenSize)
 	for sc.Scan() {
-		hash, name, ok, err := s.d.parsePackedRefLine(sc.Bytes())
+		hash, name, ok, err := parsePackedRefLine(sc.Bytes())
 		if err != nil {
 			return err
 		}
-		if !ok || !bytes.HasPrefix(name, prefix) {
+		if !ok {
+			continue
+		}
+		if err := s.d.checkPackedID(hash); err != nil {
+			return err
+		}
+		if !bytes.HasPrefix(name, prefix) {
 			continue
 		}
 
