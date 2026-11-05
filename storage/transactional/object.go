@@ -44,6 +44,17 @@ func (o *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (int64, error) {
 	return sz, err
 }
 
+// EncodedObjectType honors the storer.EncodedObjectTypeStorer interface,
+// looking in the base storage and then in the temporal one.
+func (o *ObjectStorage) EncodedObjectType(h plumbing.Hash) (plumbing.ObjectType, error) {
+	typ, err := storer.EncodedObjectType(o.EncodedObjectStorer, h)
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		return storer.EncodedObjectType(o.temporal, h)
+	}
+
+	return typ, err
+}
+
 // EncodedObject honors the storer.EncodedObjectStorer interface.
 func (o *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	obj, err := o.EncodedObjectStorer.EncodedObject(t, h)

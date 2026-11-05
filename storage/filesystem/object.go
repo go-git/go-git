@@ -578,25 +578,98 @@ func (s *ObjectStorage) HasEncodedObject(h plumbing.Hash) (err error) {
 }
 
 func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int64, err error) {
+	_, size, err = s.unpackedHeader(h)
+	return size, err
+}
+
+// unpackedHeader returns the type and size in the header of the loose object
+// h, without reading its content.
+func (s *ObjectStorage) unpackedHeader(h plumbing.Hash) (typ plumbing.ObjectType, size int64, err error) {
 	f, err := s.dir.Object(h)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, plumbing.ErrObjectNotFound
+			return plumbing.InvalidObject, 0, plumbing.ErrObjectNotFound
 		}
 
-		return 0, err
+		return plumbing.InvalidObject, 0, err
 	}
 	// The objfile.Reader closes only its zlib stream.
 	defer ioutil.CheckClose(f, &err)
 
 	r, err := objfile.NewReader(f, s.options.ObjectFormat)
 	if err != nil {
-		return 0, err
+		return plumbing.InvalidObject, 0, err
 	}
 	defer ioutil.CheckClose(r, &err)
 
-	_, size, err = r.Header()
-	return size, err
+	return r.Header()
+}
+
+// maxExternalBases bounds how many REF_DELTA bases outside their own packfile
+// EncodedObjectType follows for one object, so that packfiles whose deltas
+// name each other's objects in a cycle cannot make it loop. Each hop walks a
+// chain of up to 4,096 headers in its packfile, so the bound is kept small:
+// git completes a thin pack before storing it and the packfile writer here
+// refuses one, so such bases only come from a packfile placed by other means.
+const maxExternalBases = 8
+
+// EncodedObjectType returns the type of the object with the given hash,
+// reading only object headers: a packed delta's type is its base's, found
+// without inflating either, wherever the base is stored.
+func (s *ObjectStorage) EncodedObjectType(h plumbing.Hash) (plumbing.ObjectType, error) {
+	for range maxExternalBases + 1 {
+		typ, err := s.encodedObjectType(h)
+		var ext *packfile.ExternalBaseError
+		if !errors.As(err, &ext) {
+			return typ, err
+		}
+		h = ext.Base
+	}
+	return plumbing.InvalidObject, fmt.Errorf("%w: more than %d delta bases outside their packfile",
+		packfile.ErrMalformedPackfile, maxExternalBases)
+}
+
+// encodedObjectType returns the type of the object h as EncodedObjectType
+// does, or an [*packfile.ExternalBaseError] naming the base whose type it is
+// when h is a packed delta of an object outside its packfile.
+func (s *ObjectStorage) encodedObjectType(h plumbing.Hash) (typ plumbing.ObjectType, err error) {
+	// Routed as EncodedObjectSize is.
+	idxErr := s.requireIndex()
+	if idxErr == nil {
+		if pack, idx, offset := s.findObjectInPackfile(h); !pack.IsZero() {
+			if cached, ok := s.objectCache.Get(h); ok {
+				return cached.Type(), nil
+			}
+			p, perr := s.packfile(idx, pack)
+			if perr != nil {
+				return plumbing.InvalidObject, perr
+			}
+			// Each Packfile holds a reference to the pack until closed.
+			defer ioutil.CheckClose(p, &err)
+			typ, err = p.GetTypeByOffset(offset)
+			if !errors.Is(err, plumbing.ErrObjectNotFound) {
+				return typ, err
+			}
+			// Membership claimed the hash but the pack lost it: fall
+			// through to loose and alternates.
+		}
+	}
+
+	typ, _, err = s.unpackedHeader(h)
+	if err == nil {
+		return typ, nil
+	}
+	if !errors.Is(err, plumbing.ErrObjectNotFound) {
+		return plumbing.InvalidObject, err
+	}
+	if idxErr != nil {
+		return plumbing.InvalidObject, idxErr
+	}
+
+	// An alternate follows its own bases.
+	return findInAlternates(s, func(alt *ObjectStorage) (plumbing.ObjectType, error) {
+		return alt.EncodedObjectType(h)
+	})
 }
 
 func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfile.Packfile, error) {

@@ -329,8 +329,8 @@ func (f *liveFile) Close() error {
 	return f.File.Close()
 }
 
-// TestIntegration_HeaderLookupsReleaseFiles checks that EncodedObjectSize
-// closes the files it opens: the Packfile of a packed object, so that
+// TestIntegration_HeaderLookupsReleaseFiles checks that EncodedObjectType
+// and EncodedObjectSize close the files they open: the Packfile of a packed object, so that
 // CloseIdleDescriptors can close the pack afterwards, and the file of a loose
 // object.
 func TestIntegration_HeaderLookupsReleaseFiles(t *testing.T) {
@@ -338,6 +338,10 @@ func TestIntegration_HeaderLookupsReleaseFiles(t *testing.T) {
 
 	packed := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
 	for name, lookup := range map[string]func(*ObjectStorage, plumbing.Hash) error{
+		"EncodedObjectType": func(s *ObjectStorage, h plumbing.Hash) error {
+			_, err := s.EncodedObjectType(h)
+			return err
+		},
 		"EncodedObjectSize": func(s *ObjectStorage, h plumbing.Hash) error {
 			_, err := s.EncodedObjectSize(h)
 			return err
