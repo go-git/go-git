@@ -2136,6 +2136,12 @@ func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
 			(err == nil && !fi.IsDir()) {
 			return nil
 		}
+		if err != nil {
+			// A prefix that cannot be examined may still be a Git
+			// directory, so the name is refused rather than accepted, as
+			// isGitDir does for its entries.
+			return fmt.Errorf("check %q: %w", elide(prefix), pathErrCause(err))
+		}
 		nested, err := d.isGitDir(prefix)
 		if err != nil {
 			return err

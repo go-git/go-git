@@ -185,6 +185,19 @@ func (s *SuiteDotGit) TestModuleNestingFailsClosedOnUncheckableEntry() {
 	}
 }
 
+// A prefix of the name that cannot be examined for a reason other than its
+// absence refuses the name, as it may be a Git directory.
+func (s *SuiteDotGit) TestModuleNestingFailsClosedOnUncheckablePrefix() {
+	fs := &statErrorFS{Filesystem: s.EmptyFS(), path: "modules/lib", err: os.ErrPermission}
+	d := New(fs)
+	s.initModule(d, "lib")
+
+	_, err := d.Module("lib/hooks")
+	s.Require().ErrorIs(err, os.ErrPermission)
+	s.NotErrorIs(err, ErrModuleGitDirNested)
+	s.Contains(err.Error(), "modules/lib")
+}
+
 // statCountingFS counts the Stat and Lstat calls made through it.
 type statCountingFS struct {
 	billy.Filesystem
