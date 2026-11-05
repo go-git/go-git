@@ -586,6 +586,8 @@ func (s *ObjectStorage) encodedObjectSizeFromUnpacked(h plumbing.Hash) (size int
 
 		return 0, err
 	}
+	// The objfile.Reader closes only its zlib stream.
+	defer ioutil.CheckClose(f, &err)
 
 	r, err := objfile.NewReader(f, s.options.ObjectFormat)
 	if err != nil {
@@ -627,6 +629,8 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 			if perr != nil {
 				return 0, perr
 			}
+			// Each Packfile holds a reference to the pack until closed.
+			defer ioutil.CheckClose(p, &err)
 			size, err = p.GetSizeByOffset(offset)
 			if err == nil {
 				return size, nil
