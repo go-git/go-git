@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -305,4 +306,28 @@ func TestShallowStorageDoesNotAliasCaller(t *testing.T) {
 	again, err := s.Shallow()
 	require.NoError(t, err)
 	assert.Equal(t, []plumbing.Hash{hashA, hashB}, again)
+}
+
+// The stored index is handed out to be changed in place, so it keeps no
+// cache-tree, which would stop describing its entries, as the filesystem
+// storage does not write one. The caller's index keeps its own.
+func TestSetIndexDropsCacheTree(t *testing.T) {
+	t.Parallel()
+
+	s := memory.NewStorage()
+	given := &index.Index{
+		Version: 2,
+		Entries: []*index.Entry{{Name: "a/f"}},
+		Cache: &index.Tree{Entries: []index.TreeEntry{
+			{Entries: 1, Trees: 1, Hash: plumbing.NewHash("1111111111111111111111111111111111111111")},
+			{Path: "a", Entries: 1, Hash: plumbing.NewHash("2222222222222222222222222222222222222222")},
+		}},
+	}
+	require.NoError(t, s.SetIndex(given))
+
+	idx, err := s.Index()
+	require.NoError(t, err)
+	assert.Nil(t, idx.Cache)
+	assert.Len(t, idx.Entries, 1)
+	assert.NotNil(t, given.Cache)
 }
