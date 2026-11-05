@@ -1729,8 +1729,13 @@ func (r *Repository) Notes() (storer.ReferenceIter, error) {
 // as one named like "x.lock", one storage reports with the all-zero ID
 // because it cannot read it, and a symbolic reference whose target is
 // missing, broken, not a valid name or too many links away; other errors
-// resolving a target are returned. Unlike git, it also skips a packed reference that holds the
-// all-zero ID, which it cannot tell apart from an unreadable one.
+// resolving a target are returned.
+//
+// Unlike git, it also skips a packed reference that holds the all-zero ID,
+// which it cannot tell apart from an unreadable one, and, with filesystem
+// storage, a symbolic reference to a one-level name that is not a root
+// reference, such as "ORIG" or "foo": git lists those, but the storage
+// refuses to read such names, while memory storage reads and lists them.
 // https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L3015-L3023
 func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error) {
 	iter, err := storer.IterReferencesWithPrefix(r.Storer, prefix)
@@ -1745,6 +1750,13 @@ func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error)
 type listedReferencesIter struct {
 	s    storer.ReferenceStorer
 	iter storer.ReferenceIter
+
+	// refs holds every reference, read once when the first symbolic
+	// reference needs a target under refs/, so that resolving many of them
+	// does not read packed-refs once each. noRefs is set when that read
+	// failed, and targets are then read one by one.
+	refs   map[plumbing.ReferenceName]*plumbing.Reference
+	noRefs bool
 }
 
 func (it *listedReferencesIter) Next() (*plumbing.Reference, error) {
@@ -1799,7 +1811,7 @@ func (it *listedReferencesIter) resolve(ref *plumbing.Reference) (*plumbing.Refe
 		if depth == symrefMaxDepth || !validTargetName(ref.Target()) {
 			return nil, nil
 		}
-		next, err := it.s.Reference(ref.Target())
+		next, err := it.lookup(ref.Target())
 		if reference.IsUnresolvableForAdvertisement(err) {
 			return nil, nil
 		}
@@ -1809,6 +1821,46 @@ func (it *listedReferencesIter) resolve(ref *plumbing.Reference) (*plumbing.Refe
 		ref = next
 	}
 	return ref, nil
+}
+
+// lookup reads the reference name a symbolic reference points to. A name
+// under refs/ is looked up in it.refs, loading it first if needed; other
+// names, such as ORIG_HEAD, are read from storage, as is every name should
+// loading fail, so that a failure reading a reference no target names does
+// not fail the listing.
+func (it *listedReferencesIter) lookup(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if !name.IsUnderRefs() || it.noRefs {
+		return it.s.Reference(name)
+	}
+	if it.refs == nil {
+		refs, err := allReferences(it.s)
+		if err != nil {
+			it.noRefs = true
+			return it.s.Reference(name)
+		}
+		it.refs = refs
+	}
+	if ref, ok := it.refs[name]; ok {
+		return ref, nil
+	}
+	return nil, plumbing.ErrReferenceNotFound
+}
+
+// allReferences returns every reference of s by name, keeping the first of
+// a repeated name.
+func allReferences(s storer.ReferenceStorer) (map[plumbing.ReferenceName]*plumbing.Reference, error) {
+	iter, err := s.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	refs := make(map[plumbing.ReferenceName]*plumbing.Reference)
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if _, ok := refs[ref.Name()]; !ok {
+			refs[ref.Name()] = ref
+		}
+		return nil
+	})
+	return refs, err
 }
 
 func (it *listedReferencesIter) ForEach(cb func(*plumbing.Reference) error) error {

@@ -149,19 +149,34 @@ func (s *PruneSuite) TestPruneStopsBeforeDeletingOnSymrefReadError() {
 	}
 }
 
+// The walker gives up on a cycle after storer.MaxResolveRecursion links, as
+// storer.ResolveReference does.
 func (s *PruneSuite) TestPruneStopsBeforeDeletingOnCyclicSymref() {
 	r, commit, tree := newPruneSymrefRepository(s.T())
 	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/loop")))
 	s.Require().NoError(r.Storer.SetReference(plumbing.NewSymbolicReference("refs/heads/loop", plumbing.HEAD)))
+	counter := &pruneReferenceReadCounter{Storage: r.Storer.(*filesystem.Storage)}
+	r.Storer = counter
 	called := false
 	err := r.Prune(PruneOptions{Handler: func(plumbing.Hash) error {
 		called = true
 		return errors.New("destructive handler called")
 	}})
 	s.Require().ErrorIs(err, storer.ErrMaxResolveRecursion)
+	s.Equal(storer.MaxResolveRecursion+1, counter.reads)
 	s.Require().False(called)
 	s.Require().NoError(r.Storer.HasEncodedObject(commit))
 	s.Require().NoError(r.Storer.HasEncodedObject(tree))
+}
+
+type pruneReferenceReadCounter struct {
+	*filesystem.Storage
+	reads int
+}
+
+func (s *pruneReferenceReadCounter) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	s.reads++
+	return s.Storage.Reference(name)
 }
 
 type pruneRootRefOpenError struct {

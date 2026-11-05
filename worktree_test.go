@@ -1472,10 +1472,11 @@ func (s *WorktreeSuite) TestStatusEmpty() {
 	s.NotNil(status)
 }
 
-// A HEAD branch whose file cannot be read has no commits to compare with:
-// git status reports "No commits yet" rather than failing.
+// A HEAD branch whose file cannot be read, or that holds "ref:" and no
+// target, has no commits to compare with: git status reports "No commits
+// yet" rather than failing.
 func (s *WorktreeSuite) TestStatusOnBrokenHEADBranch() {
-	for _, content := range []string{"", "garbage\n"} {
+	for _, content := range []string{"", "garbage\n", "ref: \n"} {
 		s.Run(fmt.Sprintf("%q", content), func() {
 			dot, wt := memfs.New(), memfs.New()
 			r, err := Init(filesystem.NewStorage(dot, cache.NewObjectLRUDefault()), WithWorkTree(wt))

@@ -5025,6 +5025,8 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 		"refs/heads/chain/8":       head + "\n",
 		"ORIG_HEAD":                head + "\n",
 		"refs/heads/to-root":       "ref: ORIG_HEAD\n",
+		"refs/heads/to-packed-tag": "ref: refs/tags/v1\n",
+		"refs/heads/to-truncated":  "ref: refs/tags/truncated\n",
 	}
 	// Git follows at most SYMREF_MAXDEPTH references, so it lists
 	// chain/4, four links from chain/8, and skips chain/3 as dangling.
@@ -5052,6 +5054,47 @@ func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
 
 	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/heads/"), names(r.Branches()))
 	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/tags/"), names(r.Tags()))
+}
+
+type packedRefsOpenCounter struct {
+	billy.Filesystem
+	opens int
+}
+
+func (fs *packedRefsOpenCounter) Open(name string) (billy.File, error) {
+	if fs.Join(name) == "packed-refs" {
+		fs.opens++
+	}
+	return fs.Filesystem.Open(name)
+}
+
+// Listing branches that point to packed references, or to missing ones,
+// reads packed-refs once for the listing and once to resolve them all, not
+// once per branch.
+func (s *RepositorySuite) TestBranchesResolveSymbolicRefsWithOnePackedRefsRead() {
+	fs := &packedRefsOpenCounter{Filesystem: memfs.New()}
+	r, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+	const hash = "e8d3ffab552895c19b9fcf7aa264d277cde33881"
+	var packed strings.Builder
+	for i := range 20 {
+		fmt.Fprintf(&packed, "%s refs/tags/t%02d\n", hash, i)
+		s.Require().NoError(util.WriteFile(fs, fmt.Sprintf("refs/heads/s%02d", i), []byte(fmt.Sprintf("ref: refs/tags/t%02d\n", i)), 0o644))
+		s.Require().NoError(util.WriteFile(fs, fmt.Sprintf("refs/heads/to-missing%02d", i), []byte("ref: refs/tags/missing\n"), 0o644))
+	}
+	s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(packed.String()), 0o644))
+	fs.opens = 0
+
+	branches, err := r.Branches()
+	s.Require().NoError(err)
+	listed := 0
+	s.Require().NoError(branches.ForEach(func(*plumbing.Reference) error {
+		listed++
+		return nil
+	}))
+	s.Equal(20, listed)
+	s.Equal(2, fs.opens)
 }
 
 // A loose ref holding "ref:" and no target is a dangling symbolic ref to Git,

@@ -55,10 +55,12 @@ type StatusOptions struct {
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	var hash plumbing.Hash
 
-	// A HEAD branch that cannot be read has no commits to compare with, as
-	// git status reports it.
+	// A HEAD branch that cannot be read, or that points to a name storage
+	// refuses, such as the empty one of a "ref:" with no target, has no
+	// commits to compare with, as git status reports it.
 	ref, err := w.r.Head()
-	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) && !errors.Is(err, plumbing.ErrBrokenReference) {
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) &&
+		!errors.Is(err, plumbing.ErrBrokenReference) && !errors.Is(err, plumbing.ErrInvalidReferenceName) {
 		return nil, err
 	}
 
