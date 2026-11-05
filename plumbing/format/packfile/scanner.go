@@ -443,6 +443,75 @@ func packObjectsQty(r *Scanner) (stateFn, error) {
 	return nil, nil
 }
 
+// readObjectHeader reads the header of the object entry at offset, the
+// reader's current position: its type, size and, for a delta, its base. It
+// leaves the reader at the start of the entry's compressed content.
+func (r *Scanner) readObjectHeader(offset int64) (ObjectHeader, error) {
+	b := []byte{0}
+	_, err := r.Read(b)
+	if err != nil {
+		return ObjectHeader{}, err
+	}
+
+	typ := packutil.ObjectType(b[0])
+	if !typ.Valid() {
+		return ObjectHeader{}, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b[0])
+	}
+
+	size, err := packutil.VariableLengthSize(b[0], r)
+	if err != nil {
+		if errors.Is(err, packutil.ErrLengthOverflow) {
+			return ObjectHeader{}, fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
+		}
+		return ObjectHeader{}, err
+	}
+
+	oh := ObjectHeader{
+		Offset:   offset,
+		Type:     typ,
+		diskType: typ,
+		Size:     int64(size),
+	}
+
+	switch oh.Type {
+	case plumbing.OFSDeltaObject, plumbing.REFDeltaObject:
+		oh.Hash.ResetBySize(r.objectIDSize)
+
+		// For delta objects, we need to skip the base reference
+		if oh.Type == plumbing.OFSDeltaObject {
+			no, err := binary.ReadVariableWidthInt(r.scannerReader)
+			if err != nil {
+				return ObjectHeader{}, err
+			}
+			if err := ValidateOFSDeltaBase(oh.Offset, no); err != nil {
+				return ObjectHeader{}, err
+			}
+			oh.OffsetReference = oh.Offset - no
+		} else {
+			oh.Reference.ResetBySize(r.objectIDSize)
+			_, err := oh.Reference.ReadFrom(r.scannerReader)
+			if err != nil {
+				return ObjectHeader{}, err
+			}
+		}
+	}
+
+	return oh, nil
+}
+
+// objectHeaderAt reads the header of the object entry at offset without
+// reading its content, so the content is neither inflated nor hashed. The
+// header's Hash, ContentOffset and Crc32 are not set.
+func (r *Scanner) objectHeaderAt(offset int64) (ObjectHeader, error) {
+	if err := r.SeekFromStart(offset); err != nil {
+		return ObjectHeader{}, err
+	}
+	if err := r.Flush(); err != nil {
+		return ObjectHeader{}, err
+	}
+	return r.readObjectHeader(offset)
+}
+
 // objectEntry handles the object entries within a packfile. This is generally
 // split between object headers and their contents.
 //
@@ -463,53 +532,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	r.crc.Reset()
 
-	b := []byte{0}
-	_, err := r.Read(b)
+	oh, err := r.readObjectHeader(offset)
 	if err != nil {
 		return nil, err
-	}
-
-	typ := packutil.ObjectType(b[0])
-	if !typ.Valid() {
-		return nil, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b[0])
-	}
-
-	size, err := packutil.VariableLengthSize(b[0], r)
-	if err != nil {
-		if errors.Is(err, packutil.ErrLengthOverflow) {
-			return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
-		}
-		return nil, err
-	}
-
-	oh := ObjectHeader{
-		Offset:   offset,
-		Type:     typ,
-		diskType: typ,
-		Size:     int64(size),
-	}
-
-	switch oh.Type {
-	case plumbing.OFSDeltaObject, plumbing.REFDeltaObject:
-		oh.Hash.ResetBySize(r.objectIDSize)
-
-		// For delta objects, we need to skip the base reference
-		if oh.Type == plumbing.OFSDeltaObject {
-			no, err := binary.ReadVariableWidthInt(r.scannerReader)
-			if err != nil {
-				return nil, err
-			}
-			if err := ValidateOFSDeltaBase(oh.Offset, no); err != nil {
-				return nil, err
-			}
-			oh.OffsetReference = oh.Offset - no
-		} else {
-			oh.Reference.ResetBySize(r.objectIDSize)
-			_, err := oh.Reference.ReadFrom(r.scannerReader)
-			if err != nil {
-				return nil, err
-			}
-		}
 	}
 
 	oh.ContentOffset = r.offset

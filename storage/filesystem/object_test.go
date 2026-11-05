@@ -1,9 +1,13 @@
 package filesystem
 
 import (
+	"bytes"
+	"compress/zlib"
 	"crypto"
+	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +17,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +26,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -49,6 +56,83 @@ func (s *FsSuite) TestGetFromObjectFile() {
 	obj, err := o.EncodedObject(plumbing.AnyObject, expected)
 	s.Require().NoError(err)
 	s.Equal(expected, obj.Hash())
+}
+
+func (s *FsSuite) TestEncodedObjectType() {
+	for _, f := range []*fixtures.Fixture{
+		fixtures.Basic().ByTag(".git").ByObjectFormat("sha1").One(),
+		fixtures.ByTag(".git").ByTag("unpacked").One(),
+	} {
+		fs, err := f.DotGit()
+		s.Require().NoError(err)
+		objects := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+		// Types come from storage of their own, with nothing cached.
+		types := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+
+		iter, err := objects.IterEncodedObjects(plumbing.AnyObject)
+		s.Require().NoError(err)
+		n := 0
+		s.Require().NoError(iter.ForEach(func(obj plumbing.EncodedObject) error {
+			typ, err := types.EncodedObjectType(obj.Hash())
+			s.Require().NoError(err, "object %s", obj.Hash())
+			s.Equal(obj.Type(), typ, "object %s", obj.Hash())
+			n++
+			return nil
+		}))
+		s.Positive(n)
+
+		_, err = types.EncodedObjectType(plumbing.NewHash("1111111111111111111111111111111111111111"))
+		s.ErrorIs(err, plumbing.ErrObjectNotFound)
+
+		// A packed object already in the cache is answered from it.
+		head := plumbing.NewHash(f.Head)
+		obj, err := types.EncodedObject(plumbing.AnyObject, head)
+		s.Require().NoError(err)
+		typ, err := types.EncodedObjectType(head)
+		s.Require().NoError(err)
+		s.Equal(obj.Type(), typ)
+	}
+}
+
+// puttingCache counts the objects put into it.
+type puttingCache struct {
+	cache.Object
+	puts int
+}
+
+func (c *puttingCache) Put(o plumbing.EncodedObject) {
+	c.puts++
+	c.Object.Put(o)
+}
+
+// TestEncodedObjectTypeDoesNotReadPackedObjects checks that the type of a
+// packed object, deltas included, comes from the headers: reading an object
+// in full puts it, or the base of a delta, in the cache.
+func (s *FsSuite) TestEncodedObjectTypeDoesNotReadPackedObjects() {
+	f := fixtures.Basic().ByTag(".git").ByObjectFormat("sha1").One()
+	fs, err := f.DotGit()
+	s.Require().NoError(err)
+	objects := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+	c := &puttingCache{Object: cache.NewObjectLRUDefault()}
+	types := NewObjectStorage(dotgit.New(fs), c)
+
+	iter, err := objects.IterEncodedObjects(plumbing.AnyObject)
+	s.Require().NoError(err)
+	n := 0
+	s.Require().NoError(iter.ForEach(func(obj plumbing.EncodedObject) error {
+		typ, err := types.EncodedObjectType(obj.Hash())
+		s.Require().NoError(err, "object %s", obj.Hash())
+		s.Equal(obj.Type(), typ, "object %s", obj.Hash())
+		n++
+		return nil
+	}))
+	s.Positive(n)
+	s.Zero(c.puts, "objects were read to learn their type")
+
+	// The check would pass vacuously if reading did not cache.
+	_, err = types.EncodedObject(plumbing.AnyObject, plumbing.NewHash(f.Head))
+	s.Require().NoError(err)
+	s.Positive(c.puts)
 }
 
 func (s *FsSuite) TestGetFromPackfile() {
@@ -1405,4 +1489,118 @@ func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, hint, s.lastHitPackIdx.Load(),
 		"single-pack fixture: hint should stay stable")
+}
+
+// rawPackEntry is an object of a pack written by writeRawPack: a REF_DELTA
+// against base when base is set, otherwise a whole object of type typ.
+type rawPackEntry struct {
+	hash plumbing.Hash
+	typ  plumbing.ObjectType
+	base plumbing.Hash
+	data []byte
+}
+
+// writeRawPack writes entries as a packfile and its index under fs, without
+// resolving any delta, so that a REF_DELTA base can lie outside the pack, as
+// in a thin pack stored as received.
+func writeRawPack(t *testing.T, fs billy.Filesystem, entries ...rawPackEntry) {
+	t.Helper()
+	var pack bytes.Buffer
+	pack.WriteString("PACK")
+	pack.Write([]byte{0, 0, 0, 2, 0, 0, 0, byte(len(entries))})
+
+	idx := new(idxfile.Writer)
+	require.NoError(t, idx.OnHeader(uint32(len(entries))))
+	for _, e := range entries {
+		var entry bytes.Buffer
+		typ := e.typ
+		if !e.base.IsZero() {
+			typ = plumbing.REFDeltaObject
+		}
+		size := len(e.data)
+		b := byte(typ)<<4 | byte(size&0x0f)
+		for size >>= 4; size > 0; size >>= 7 {
+			entry.WriteByte(b | 0x80)
+			b = byte(size & 0x7f)
+		}
+		entry.WriteByte(b)
+		if !e.base.IsZero() {
+			entry.Write(e.base.Bytes())
+		}
+		zw := zlib.NewWriter(&entry)
+		_, err := zw.Write(e.data)
+		require.NoError(t, err)
+		require.NoError(t, zw.Close())
+
+		idx.Add(e.hash, uint64(pack.Len()), crc32.ChecksumIEEE(entry.Bytes()))
+		pack.Write(entry.Bytes())
+	}
+	sum := sha1.Sum(pack.Bytes())
+	pack.Write(sum[:])
+	checksum := plumbing.NewHash(hex.EncodeToString(sum[:]))
+	require.NoError(t, idx.OnFooter(checksum))
+	index, err := idx.Index()
+	require.NoError(t, err)
+	var idxFile bytes.Buffer
+	require.NoError(t, idxfile.Encode(&idxFile, sha1.New(), index))
+
+	name := fmt.Sprintf("objects/pack/pack-%s", checksum)
+	require.NoError(t, util.WriteFile(fs, name+".pack", pack.Bytes(), 0o644))
+	require.NoError(t, util.WriteFile(fs, name+".idx", idxFile.Bytes(), 0o644))
+}
+
+// TestEncodedObjectTypeFollowsBasesOutsideThePack checks that the type of a
+// packed REF_DELTA whose base is outside its packfile, in another packfile or
+// loose, comes from the headers too, and that packfiles whose deltas name
+// each other's objects in a cycle make the lookup fail rather than loop.
+func TestEncodedObjectTypeFollowsBasesOutsideThePack(t *testing.T) {
+	t.Parallel()
+	fs := osfs.New(t.TempDir())
+	// A delta's content is never read for its type.
+	delta := []byte{0x01, 0x01, 0x01, 'x'}
+
+	objects := NewObjectStorage(dotgit.New(fs), cache.NewObjectLRUDefault())
+	commit := objects.NewEncodedObject()
+	commit.SetType(plumbing.CommitObject)
+	loose, err := objects.SetEncodedObject(commit)
+	require.NoError(t, err)
+
+	blob := []byte("base\n")
+	baseObj := objects.NewEncodedObject()
+	baseObj.SetType(plumbing.BlobObject)
+	w, err := baseObj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write(blob)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	base := baseObj.Hash()
+	ofBlob := plumbing.NewHash("1111111111111111111111111111111111111111")
+	ofDelta := plumbing.NewHash("2222222222222222222222222222222222222222")
+	ofLoose := plumbing.NewHash("3333333333333333333333333333333333333333")
+	cycleA := plumbing.NewHash("4444444444444444444444444444444444444444")
+	cycleB := plumbing.NewHash("5555555555555555555555555555555555555555")
+	writeRawPack(t, fs, rawPackEntry{hash: base, typ: plumbing.BlobObject, data: blob})
+	writeRawPack(t, fs,
+		rawPackEntry{hash: ofBlob, base: base, data: delta},
+		rawPackEntry{hash: ofDelta, base: ofBlob, data: delta},
+		rawPackEntry{hash: ofLoose, base: loose, data: delta},
+	)
+	writeRawPack(t, fs, rawPackEntry{hash: cycleA, base: cycleB, data: delta})
+	writeRawPack(t, fs, rawPackEntry{hash: cycleB, base: cycleA, data: delta})
+
+	c := &puttingCache{Object: cache.NewObjectLRUDefault()}
+	types := NewObjectStorage(dotgit.New(fs), c)
+	for h, want := range map[plumbing.Hash]plumbing.ObjectType{
+		ofBlob:  plumbing.BlobObject,
+		ofDelta: plumbing.BlobObject,
+		ofLoose: plumbing.CommitObject,
+	} {
+		typ, err := types.EncodedObjectType(h)
+		require.NoError(t, err, "object %s", h)
+		assert.Equal(t, want, typ, "object %s", h)
+	}
+	assert.Zero(t, c.puts, "objects were read to learn their type")
+
+	_, err = types.EncodedObjectType(cycleA)
+	require.ErrorIs(t, err, packfile.ErrMalformedPackfile)
 }

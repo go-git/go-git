@@ -159,3 +159,30 @@ func (s *ObjectSuite) TestCommit() {
 	s.NoError(err)
 	s.Len(hashes, 2)
 }
+
+func (s *ObjectSuite) TestEncodedObjectType() {
+	base := memory.NewStorage()
+	temporal := memory.NewStorage()
+	os := NewObjectStorage(base, temporal)
+
+	inBase := base.NewEncodedObject()
+	inBase.SetType(plumbing.BlobObject)
+	baseHash, err := base.SetEncodedObject(inBase)
+	s.Require().NoError(err)
+
+	inTemporal := temporal.NewEncodedObject()
+	inTemporal.SetType(plumbing.TagObject)
+	temporalHash, err := os.SetEncodedObject(inTemporal)
+	s.Require().NoError(err)
+
+	typ, err := os.EncodedObjectType(baseHash)
+	s.Require().NoError(err)
+	s.Equal(plumbing.BlobObject, typ)
+
+	typ, err = os.EncodedObjectType(temporalHash)
+	s.Require().NoError(err)
+	s.Equal(plumbing.TagObject, typ)
+
+	_, err = os.EncodedObjectType(plumbing.NewHash("1111111111111111111111111111111111111111"))
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
+}

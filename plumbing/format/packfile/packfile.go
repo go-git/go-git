@@ -3,6 +3,7 @@ package packfile
 import (
 	"bufio"
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -122,6 +123,64 @@ func (p *Packfile) GetByOffset(offset int64) (plumbing.EncodedObject, error) {
 	}
 
 	return p.getByOffset(offset)
+}
+
+// ExternalBaseError is returned by [Packfile.GetTypeByOffset] when a delta
+// chain ends at a REF_DELTA base that is not in the packfile, as in a thin
+// pack. The object's type is that of Base, which the caller can look up
+// elsewhere.
+type ExternalBaseError struct {
+	// Base is the hash of the base object.
+	Base plumbing.Hash
+}
+
+func (e *ExternalBaseError) Error() string {
+	return fmt.Sprintf("delta base %s is not in the packfile", e.Base)
+}
+
+// GetTypeByOffset returns the type of the object at offset. A delta's type
+// is its base's, found by following the chain of bases through their headers
+// alone, so no object is inflated. A REF_DELTA base that is not in this
+// packfile returns an [*ExternalBaseError] naming it.
+func (p *Packfile) GetTypeByOffset(offset int64) (plumbing.ObjectType, error) {
+	if p.closed.Load() {
+		return plumbing.InvalidObject, fs.ErrClosed
+	}
+	if err := p.init(); err != nil {
+		return plumbing.InvalidObject, err
+	}
+	p.m.Lock()
+	defer p.m.Unlock()
+	// Re-check after Lock: Close may have flipped closed and torn
+	// down the scanner between the early Load and the Lock.
+	if p.closed.Load() {
+		return plumbing.InvalidObject, fs.ErrClosed
+	}
+
+	for range maxDeltaChainDepth + 1 {
+		oh, err := p.scanner.objectHeaderAt(offset)
+		if err != nil {
+			return plumbing.InvalidObject, err
+		}
+		switch oh.Type {
+		case plumbing.OFSDeltaObject:
+			offset = oh.OffsetReference
+		case plumbing.REFDeltaObject:
+			if obj, ok := p.cache.Get(oh.Reference); ok {
+				return obj.Type(), nil
+			}
+			offset, err = p.FindOffset(oh.Reference)
+			if errors.Is(err, plumbing.ErrObjectNotFound) {
+				return plumbing.InvalidObject, &ExternalBaseError{Base: oh.Reference}
+			}
+			if err != nil {
+				return plumbing.InvalidObject, err
+			}
+		default:
+			return oh.Type, nil
+		}
+	}
+	return plumbing.InvalidObject, fmt.Errorf("%w: delta chain depth exceeds %d", ErrMalformedPackfile, maxDeltaChainDepth)
 }
 
 // GetSizeByOffset retrieves the size of the encoded object from the

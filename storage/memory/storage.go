@@ -264,6 +264,16 @@ func (o *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (
 	return obj.Size(), nil
 }
 
+// EncodedObjectType returns the type of the object with the given hash.
+func (o *ObjectStorage) EncodedObjectType(h plumbing.Hash) (plumbing.ObjectType, error) {
+	obj, ok := o.Objects[h]
+	if !ok {
+		return plumbing.InvalidObject, plumbing.ErrObjectNotFound
+	}
+
+	return obj.Type(), nil
+}
+
 // EncodedObject returns the object with the given type and hash.
 func (o *ObjectStorage) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
 	obj, ok := o.Objects[h]
