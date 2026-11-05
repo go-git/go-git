@@ -265,3 +265,126 @@ func TestIntegration_PackMissingFromDiskSurfaces(t *testing.T) {
 	_, err = stor.EncodedObject(plumbing.AnyObject, target)
 	require.Error(t, err)
 }
+
+// liveFS wraps a billy.Filesystem, Chroot descendants included, and counts
+// the .pack and loose object files opened through it, and those not yet
+// closed.
+type liveFS struct {
+	billy.Filesystem
+	live, opened *atomic.Int64
+}
+
+func newLiveFS(fs billy.Filesystem) *liveFS {
+	return &liveFS{Filesystem: fs, live: new(atomic.Int64), opened: new(atomic.Int64)}
+}
+
+// tracked reports whether path names a .pack file or a loose object.
+func tracked(path string) bool {
+	dir, file := filepath.Split(filepath.Clean(path))
+	return hasSuffix(path, ".pack") ||
+		(len(filepath.Base(dir)) == 2 && len(file) >= 38 && hasSuffix(filepath.Dir(filepath.Dir(path)), "objects"))
+}
+
+func (l *liveFS) track(f billy.File, err error) (billy.File, error) {
+	if err != nil {
+		return nil, err
+	}
+	l.opened.Add(1)
+	l.live.Add(1)
+	return &liveFile{File: f, live: l.live}, nil
+}
+
+func (l *liveFS) Open(path string) (billy.File, error) {
+	if !tracked(path) {
+		return l.Filesystem.Open(path)
+	}
+	return l.track(l.Filesystem.Open(path))
+}
+
+func (l *liveFS) OpenFile(path string, flag int, perm fs.FileMode) (billy.File, error) {
+	if !tracked(path) {
+		return l.Filesystem.OpenFile(path, flag, perm)
+	}
+	return l.track(l.Filesystem.OpenFile(path, flag, perm))
+}
+
+func (l *liveFS) Chroot(p string) (billy.Filesystem, error) {
+	sub, err := l.Filesystem.Chroot(p)
+	if err != nil {
+		return nil, err
+	}
+	return &liveFS{Filesystem: sub, live: l.live, opened: l.opened}, nil
+}
+
+type liveFile struct {
+	billy.File
+	live   *atomic.Int64
+	closed atomic.Bool
+}
+
+func (f *liveFile) Close() error {
+	if f.closed.CompareAndSwap(false, true) {
+		f.live.Add(-1)
+	}
+	return f.File.Close()
+}
+
+// TestIntegration_HeaderLookupsReleaseFiles checks that EncodedObjectSize
+// closes the files it opens: the Packfile of a packed object, so that
+// CloseIdleDescriptors can close the pack afterwards, and the file of a loose
+// object.
+func TestIntegration_HeaderLookupsReleaseFiles(t *testing.T) {
+	t.Parallel()
+
+	packed := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	for name, lookup := range map[string]func(*ObjectStorage, plumbing.Hash) error{
+		"EncodedObjectSize": func(s *ObjectStorage, h plumbing.Hash) error {
+			_, err := s.EncodedObjectSize(h)
+			return err
+		},
+	} {
+		t.Run(name+"/packed", func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			_, err := fixtures.Basic().ByTag(".git").One().DotGit(
+				fixtures.WithTargetDir(func() string { return dir }),
+			)
+			require.NoError(t, err)
+
+			lfs := newLiveFS(osfs.New(dir))
+			stor := NewObjectStorage(dotgit.New(lfs), cache.NewObjectLRUDefault())
+			t.Cleanup(func() { _ = stor.Close() })
+
+			for range 3 {
+				require.NoError(t, lookup(stor, packed))
+			}
+			require.Positive(t, lfs.live.Load(), "the lookup did not open the pack")
+			require.NoError(t, stor.CloseIdleDescriptors())
+			assert.Zero(t, lfs.live.Load(), "a Packfile still holds the pack")
+		})
+
+		t.Run(name+"/loose", func(t *testing.T) {
+			t.Parallel()
+			lfs := newLiveFS(osfs.New(t.TempDir()))
+			stor := NewObjectStorage(dotgit.New(lfs), cache.NewObjectLRUDefault())
+			t.Cleanup(func() { _ = stor.Close() })
+
+			obj := stor.NewEncodedObject()
+			obj.SetType(plumbing.BlobObject)
+			w, err := obj.Writer()
+			require.NoError(t, err)
+			_, err = w.Write([]byte("loose\n"))
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+			h, err := stor.SetEncodedObject(obj)
+			require.NoError(t, err)
+
+			opened := lfs.opened.Load()
+			for range 3 {
+				require.NoError(t, lookup(stor, h))
+			}
+			require.Greater(t, lfs.opened.Load(), opened, "the lookup did not open the object file")
+			assert.Zero(t, lfs.live.Load(), "an object file is still open")
+		})
+	}
+}
