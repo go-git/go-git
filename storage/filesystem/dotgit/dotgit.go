@@ -143,6 +143,10 @@ var (
 	// [DotGit.Module] for a name with more than 255 components, counted as
 	// its separators plus one.
 	ErrModuleNameTooDeep = errors.New("submodule name has too many components")
+	// ErrModuleNameTooLong is wrapped by the error returned by
+	// [DotGit.Module] for a name whose Git directory path, modules/ and the
+	// name, is longer than 4096 bytes.
+	ErrModuleNameTooLong = errors.New("submodule name is too long")
 	// ErrReferenceNameEscape is returned when a reference name fails the
 	// filesystem storage's name checks. Reads and deletes require a safe path;
 	// writes also require a valid reference name. These errors also wrap
@@ -2041,16 +2045,26 @@ func (d *DotGit) PackRefs() (err error) {
 	return nil
 }
 
-// maxModuleNameDepth is the most components a submodule name may have. Git
-// has no such limit; go-git sets one to bound the nesting check.
-const maxModuleNameDepth = 255
+// maxModuleNameDepth is the most components a submodule name may have, and
+// maxModuleGitDirLen the most bytes its Git directory path, modules/ and the
+// name, may have. Git has no such limits; go-git sets them to bound the
+// nesting check, whose cost grows with both. The length is Linux's PATH_MAX:
+// Linux and macOS refuse a longer path anyway, while Windows accepts one
+// through a \\?\ prefix.
+const (
+	maxModuleNameDepth = 255
+	maxModuleGitDirLen = 4096
+)
 
 // Module returns a filesystem rooted at the named submodule's Git directory.
 //
-// It returns [ErrModuleNameEscape] if the joined path leaves the modules
-// directory, an error wrapping [ErrModuleNameTooDeep] if the name has more
-// than 255 components, or an error wrapping [ErrModuleGitDirNested] if a
-// proper prefix of the name identifies another submodule's Git directory.
+// It returns [ErrModuleNameEscape] if the name addresses the modules
+// directory itself or leaves it, [ErrModuleNameInvalid] if it cannot name a
+// directory there, an error wrapping [ErrModuleNameTooLong] if modules/ and
+// the name are longer than 4096 bytes, an error wrapping
+// [ErrModuleNameTooDeep] if the name has more than 255 components, or an
+// error wrapping [ErrModuleGitDirNested] if a proper prefix of the name
+// identifies another submodule's Git directory.
 // It also returns an error if a prefix's commondir file is empty,
 // unreadable, not a regular file, or larger than 1 MiB, or if its path
 // cannot be resolved within the filesystem with Git's path semantics.
@@ -2076,8 +2090,13 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	}
 
 	// Every lookup walks each prefix of the name, and Git sets no limit on
-	// its depth, so a name from .gitmodules could otherwise make every
-	// Status or Update cost minutes. Real names are a few components deep.
+	// its depth or length, so a name from .gitmodules could otherwise make
+	// every Status or Update cost minutes on a filesystem that does not
+	// bound path length, such as memfs. Real names are a few components
+	// deep and far shorter.
+	if n := len(modulePath) + 1 + len(name); n > maxModuleGitDirLen {
+		return nil, fmt.Errorf("%w: %d bytes, more than %d", ErrModuleNameTooLong, n, maxModuleGitDirLen)
+	}
 	if n := strings.Count(filepath.ToSlash(name), "/") + 1; n > maxModuleNameDepth {
 		return nil, fmt.Errorf("%w: %d, more than %d", ErrModuleNameTooDeep, n, maxModuleNameDepth)
 	}
@@ -2101,8 +2120,9 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 // submodule named "lib/refs/heads" would otherwise keep its Git directory
 // inside the one holding the branches of the submodule "lib". The walk stops
 // at the first prefix that is not a directory, as nothing below it can be a
-// Git directory either, so its cost follows the directories that exist rather
-// than the length of the name.
+// Git directory either, so its cost follows the directories that exist.
+// Module bounds the name's depth and length, which bound the cost when every
+// prefix exists.
 //
 // [Git's validate_submodule_legacy_git_dir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2401-L2444
 func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
