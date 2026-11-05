@@ -79,3 +79,36 @@ func (s *SuiteDotGit) TestModuleNestingWithUnreadableCommonDirComponent() {
 	s.Require().ErrorIs(err, os.ErrPermission)
 	s.NotErrorIs(err, ErrModuleGitDirNested)
 }
+
+// TestModuleNestingWithEntriesLinkedOutsideRoot covers a prefix whose
+// objects and refs are symlinks leaving the filesystem root. Git's access
+// follows them and finds the prefix a Git directory, so the nesting must not
+// be accepted where the filesystem refuses to follow them.
+func (s *SuiteDotGit) TestModuleNestingWithEntriesLinkedOutsideRoot() {
+	for _, tc := range []struct {
+		name string
+		opts []osfs.Option
+	}{
+		{name: "default"},
+		{name: "BoundOS", opts: []osfs.Option{osfs.WithBoundOS()}},
+	} {
+		s.Run(tc.name, func() {
+			outside := s.T().TempDir()
+			for _, dir := range []string{"objects", "refs"} {
+				s.Require().NoError(os.Mkdir(filepath.Join(outside, dir), 0o755))
+			}
+
+			root := s.T().TempDir()
+			module := filepath.Join(root, "modules", "lib")
+			s.Require().NoError(os.MkdirAll(module, 0o755))
+			s.Require().NoError(os.WriteFile(filepath.Join(module, "HEAD"), []byte("ref: refs/heads/master\n"), 0o644))
+			for _, dir := range []string{"objects", "refs"} {
+				s.Require().NoError(os.Symlink(filepath.Join(outside, dir), filepath.Join(module, dir)))
+			}
+
+			_, err := New(osfs.New(root, tc.opts...)).Module("lib/hooks")
+			s.Require().Error(err)
+			s.NotErrorIs(err, ErrModuleGitDirNested)
+		})
+	}
+}

@@ -152,6 +152,39 @@ func (s *SuiteDotGit) TestModuleRejectsNestingInsideSiblingGitDir() {
 	}
 }
 
+// statErrorFS fails Stat of one path with err.
+type statErrorFS struct {
+	billy.Filesystem
+	path string
+	err  error
+}
+
+func (fs *statErrorFS) Stat(name string) (os.FileInfo, error) {
+	if filepath.ToSlash(name) == fs.path {
+		return nil, &os.PathError{Op: "stat", Path: name, Err: fs.err}
+	}
+	return fs.Filesystem.Stat(name)
+}
+
+// TestModuleNestingFailsClosedOnUncheckableEntry covers an objects or refs
+// entry of a prefix without commondir that cannot be checked for a reason
+// other than its absence. Git's access may still find the prefix a Git
+// directory, so the nesting is refused with the error rather than accepted.
+func (s *SuiteDotGit) TestModuleNestingFailsClosedOnUncheckableEntry() {
+	for _, entry := range []string{"objects", "refs"} {
+		s.Run(entry, func() {
+			fs := &statErrorFS{Filesystem: s.EmptyFS(), path: "modules/lib/" + entry, err: os.ErrPermission}
+			d := New(fs)
+			s.initModule(d, "lib")
+
+			_, err := d.Module("lib/hooks")
+			s.Require().ErrorIs(err, os.ErrPermission)
+			s.NotErrorIs(err, ErrModuleGitDirNested)
+			s.Contains(err.Error(), "modules/lib/"+entry)
+		})
+	}
+}
+
 // statCountingFS counts the Stat and Lstat calls made through it.
 type statCountingFS struct {
 	billy.Filesystem

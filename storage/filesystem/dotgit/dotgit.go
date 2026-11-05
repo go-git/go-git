@@ -2135,8 +2135,9 @@ func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
 // All paths are resolved within d.fs. Git's environment overrides are not
 // consulted. A commondir file that is not a regular file, or that is empty,
 // unreadable, oversized, or unresolvable, is reported as an error rather than
-// as an absent Git directory, so the caller cannot accept nesting without
-// having checked it.
+// as an absent Git directory, and so is an objects or refs entry that cannot
+// be checked for a reason other than its absence, so the caller cannot
+// accept nesting without having checked it.
 //
 // [Git's is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416-L454
 func (d *DotGit) isGitDir(p string) (bool, error) {
@@ -2212,7 +2213,10 @@ func (d *DotGit) isGitDir(p string) (bool, error) {
 			// error would repeat q in full, so only its cause is wrapped.
 			return false, fmt.Errorf("resolve submodule common directory %q: %w", elide(q), pathErrCause(err))
 		case err != nil:
-			return false, nil
+			// Git's access follows a symlink that leaves this filesystem,
+			// and may find p a Git directory there, so an entry that
+			// cannot be checked is an error, as in the redirected case.
+			return false, fmt.Errorf("check %q: %w", elide(q), pathErrCause(err))
 		}
 	}
 
