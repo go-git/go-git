@@ -425,7 +425,7 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 			return err
 		}
 		if len(changedFiles) == 0 {
-			return w.r.Storer.SetIndex(idx)
+			return w.storeIndex(idx)
 		}
 		return w.resetWorktree(cfg, t, idx, changedFiles)
 	}
@@ -516,7 +516,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string, changes merk
 	if err != nil {
 		return nil, err
 	}
-	return removedFiles, w.r.Storer.SetIndex(idx)
+	return removedFiles, w.storeIndex(idx)
 }
 
 // buildResetIndex returns the index reset to t, without storing it, and the
@@ -592,10 +592,22 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 	return idx, removedFiles, nil
 }
 
+// storeIndex stores idx, whose entries the caller changed, without its
+// cache-tree: go-git does not update the cache-tree when it changes the
+// entries, and a storer may keep the index it is given, so a cache-tree
+// stored with it could tell a later diff that a changed directory is not.
+func (w *Worktree) storeIndex(idx *index.Index) error {
+	idx.Cache = nil
+	return w.r.Storer.SetIndex(idx)
+}
+
 // copyIndex returns a copy of idx whose entries can be changed without
 // changing those of idx.
 func copyIndex(idx *index.Index) *index.Index {
 	c := *idx
+	// The copy is changed, after which the cache-tree it was read with
+	// would no longer describe it.
+	c.Cache = nil
 	c.Entries = make([]*index.Entry, len(idx.Entries))
 	for i, e := range idx.Entries {
 		ec := *e
@@ -844,7 +856,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 // resetWorktree updates the worktree to match idx, the index a merge reset
@@ -894,7 +906,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
