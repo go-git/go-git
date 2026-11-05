@@ -177,7 +177,11 @@ func (e Entry) String() string {
 }
 
 // Tree contains pre-computed hashes for trees that can be derived from the
-// index. It helps speed up tree object generation from index for a new commit.
+// index (Git's cache-tree, the TREE extension). It helps speed up tree object
+// generation from index for a new commit.
+//
+// Entries lists the trees in pre-order: the root, whose Path is empty, then
+// each of its Trees subtrees with their own subtrees after them.
 type Tree struct {
 	Entries []TreeEntry
 }
@@ -187,7 +191,9 @@ type TreeEntry struct {
 	// Path component (relative to its parent directory)
 	Path string
 	// Entries is the number of entries in the index that is covered by the tree
-	// this entry represents.
+	// this entry represents. It is negative when the entry is invalidated: the
+	// index changed under this path since the tree was computed, and Hash is
+	// not set.
 	Entries int
 	// Trees is the number that represents the number of subtrees this tree has
 	Trees int
