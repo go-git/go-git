@@ -115,24 +115,36 @@ func ReadAttributes(r io.Reader, domain []string, allowMacro bool) (attributes [
 	return attributes, nil
 }
 
+// blank holds the characters Git separates a pattern and its attributes
+// with. Other white space, such as U+00A0 or a vertical tab, is part of
+// the pattern or the attribute.
+const blank = " \t\r\n"
+
 // ParseAttributesLine parses a gitattribute line, extracting path pattern and
 // attributes.
+//
+// It follows Git's parse_attr_line: fields are separated by blanks only, a
+// pattern in double quotes is C-unquoted, and a "-" or "!" prefix unsets or
+// unspecifies an attribute and drops any value given to it.
+//
+// See https://github.com/git/git/blob/v2.54.0/attr.c#L276-L410.
 func ParseAttributesLine(line string, domain []string, allowMacro bool) (m MatchAttribute, err error) {
-	line = strings.TrimSpace(line)
-
+	line = strings.TrimLeft(line, blank)
 	if strings.HasPrefix(line, commentPrefix) || len(line) == 0 {
 		return m, err
 	}
 
-	name, unquoted := unquote(line)
-	attrs := strings.Fields(unquoted)
-	if len(name) == 0 {
-		// A quoted empty pattern names no path.
-		if len(attrs) == 0 || strings.HasPrefix(line, `""`) {
+	var name, states string
+	if line[0] == '"' {
+		var ok bool
+		if name, states, ok = unquoteC(line); !ok {
+			name, states = cutBlank(line)
+		} else if name == "" {
+			// A quoted empty pattern names no path.
 			return MatchAttribute{}, nil
 		}
-		name = attrs[0]
-		attrs = attrs[1:]
+	} else {
+		name, states = cutBlank(line)
 	}
 
 	var macro bool
@@ -142,30 +154,14 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	}
 
 	m.Name = name
-	m.Attributes = make([]Attribute, 0, len(attrs))
+	for states = strings.TrimLeft(states, blank); states != ""; {
+		var token string
+		token, states = cutBlank(states)
+		states = strings.TrimLeft(states, blank)
 
-	for _, attrName := range attrs {
-		attr := attribute{
-			name:  attrName,
-			state: attributeSet,
-		}
-
-		// ! and - prefixes
-		state := attributeState(attr.name[0])
-		if state == attributeUnspecified || state == attributeUnset {
-			attr.state = state
-			attr.name = attr.name[1:]
-		}
-
-		kv := strings.SplitN(attrName, "=", 2)
-		if len(kv) == 2 {
-			attr.name = kv[0]
-			attr.value = kv[1]
-			attr.state = attributeSetValue
-		}
-
-		if !validAttributeName(attr.name) {
-			return m, ErrInvalidAttributeName
+		attr, err := parseAttribute(token)
+		if err != nil {
+			return m, err
 		}
 		m.Attributes = append(m.Attributes, attr)
 	}
@@ -176,8 +172,39 @@ func ParseAttributesLine(line string, domain []string, allowMacro bool) (m Match
 	return m, err
 }
 
+// cutBlank splits s at its first blank.
+func cutBlank(s string) (field, rest string) {
+	if i := strings.IndexAny(s, blank); i >= 0 {
+		return s[:i], s[i:]
+	}
+	return s, ""
+}
+
+// parseAttribute parses one attribute of a line: name, -name, !name or
+// name=value. As in Git, the value of a -name=value or !name=value is
+// dropped, and the name is checked up to the "=".
+func parseAttribute(token string) (attribute, error) {
+	attr := attribute{state: attributeSet}
+	switch attributeState(token[0]) {
+	case attributeUnset, attributeUnspecified:
+		attr.state = attributeState(token[0])
+		token = token[1:]
+	}
+
+	name, value, hasValue := strings.Cut(token, "=")
+	if !validAttributeName(name) {
+		return attr, ErrInvalidAttributeName
+	}
+	attr.name = name
+	if hasValue && attr.state == attributeSet {
+		attr.state = attributeSetValue
+		attr.value = value
+	}
+	return attr, nil
+}
+
 func checkMacro(name string, allowMacro bool) (macro bool, macroName string, err error) {
-	if !strings.HasPrefix(name, macroPrefix) {
+	if len(name) <= len(macroPrefix) || !strings.HasPrefix(name, macroPrefix) {
 		return false, name, nil
 	}
 	if !allowMacro {
@@ -207,18 +234,57 @@ func validAttributeName(name string) bool {
 	return true
 }
 
-func unquote(str string) (string, string) {
-	if str[0] != '"' {
-		return "", str
+// unquoteC C-unquotes the double-quoted string at the start of s, as Git's
+// unquote_c_style does, and returns it with the rest of s. It reports
+// false when s does not start with a well-formed quoted string, which Git
+// then reads as an unquoted pattern.
+func unquoteC(s string) (unquoted, rest string, ok bool) {
+	if s == "" || s[0] != '"' {
+		return "", s, false
 	}
 
-	for i := 1; i < len(str); i++ {
-		switch str[i] {
+	var b strings.Builder
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '"':
+			return b.String(), s[i+1:], true
 		case '\\':
 			i++
-		case '"':
-			return str[1:i], str[i+1:]
+			if i >= len(s) {
+				return "", s, false
+			}
+			switch c = s[i]; c {
+			case 'a':
+				b.WriteByte('\a')
+			case 'b':
+				b.WriteByte('\b')
+			case 'f':
+				b.WriteByte('\f')
+			case 'n':
+				b.WriteByte('\n')
+			case 'r':
+				b.WriteByte('\r')
+			case 't':
+				b.WriteByte('\t')
+			case 'v':
+				b.WriteByte('\v')
+			case '\\', '"':
+				b.WriteByte(c)
+			case '0', '1', '2', '3':
+				if i+2 >= len(s) || !isOctal(s[i+1]) || !isOctal(s[i+2]) {
+					return "", s, false
+				}
+				b.WriteByte((c-'0')<<6 | (s[i+1]-'0')<<3 | (s[i+2] - '0'))
+				i += 2
+			default:
+				return "", s, false
+			}
+		default:
+			b.WriteByte(c)
 		}
 	}
-	return "", str
+	return "", s, false
 }
+
+func isOctal(c byte) bool { return c >= '0' && c <= '7' }

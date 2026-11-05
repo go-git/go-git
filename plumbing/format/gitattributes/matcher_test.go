@@ -31,7 +31,7 @@ func (s *MatcherSuite) TestMatcher_Match() {
 }
 
 // Each case is checked against `git check-attr text binary diff` with Git
-// 2.54: the matching line of the highest priority decides each attribute,
+// 2.54 (an empty want means every attribute is unspecified): the matching line of the highest priority decides each attribute,
 // and a set macro fills only attributes still undetermined.
 func TestMatcherMatchesGitPrecedence(t *testing.T) {
 	t.Parallel()
@@ -58,6 +58,20 @@ func TestMatcherMatchesGitPrecedence(t *testing.T) {
 		{name: "text after binary on a line", root: "*.dat binary text\n", path: "x.dat", want: [3]string{"set", "set", "unset"}},
 		{name: "binary after -binary", root: "*.dat -binary\n*.dat binary\n", path: "x.dat", want: [3]string{"unset", "set", "unset"}},
 		{name: "quoted empty pattern", root: "\"\" text\n*.dat -text\n", path: "x.dat", want: [3]string{"unset", "", ""}},
+		{name: "directory pattern and a file below it", root: "docs/ -text\n", path: "docs/x"},
+		{name: "directory pattern and a file of its name", root: "docs/ -text\n", path: "docs"},
+		{name: "unset with a value", root: "* text\n*.dat -text=x\n", path: "x.dat", want: [3]string{"unset", "", ""}},
+		{name: "unspecified with a value", root: "*.dat -text\n*.dat !text=x\n", path: "x.dat"},
+		{name: "no-break space in a pattern", root: "z\u00a0q.bin -text\n", path: "z\u00a0q.bin", want: [3]string{"unset", "", ""}},
+		{name: "no-break space is not a separator", root: "z\u00a0q.bin -text\n", path: "z"},
+		{name: "vertical tab in a pattern", root: "v\vq.bin -text\n", path: "v\vq.bin", want: [3]string{"unset", "", ""}},
+		{name: "quoted tab escape", root: "\"a\\tb\" -text\n", path: "a\tb", want: [3]string{"unset", "", ""}},
+		{name: "quoted space", root: "\"sp ace\" -text\n", path: "sp ace", want: [3]string{"unset", "", ""}},
+		{name: "quoted octal escapes", root: "\"\\303\\251.txt\" -text\n", path: "\u00e9.txt", want: [3]string{"unset", "", ""}},
+		{name: "unterminated quote", root: "\"un terminated -text\n", path: "\"un", want: [3]string{"unset", "", ""}},
+		{name: "attribute right after the quote", root: "\"x\"-text\n", path: "x", want: [3]string{"unset", "", ""}},
+		{name: "tab separator and CR", root: "*.dat\t-text\r\n", path: "x.dat", want: [3]string{"unset", "", ""}},
+		{name: "macro prefix alone", root: "[attr]\n", path: "x"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -104,4 +118,36 @@ func TestMatcherMatchesGitPrecedence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A pattern ending in a slash names a directory, so it matches no file,
+// at any depth, and does not panic once the path outruns it.
+func TestPatternWithTrailingSlashMatchesNoFile(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range []string{"docs/", "/docs/", "a/docs/", "/"} {
+		for _, path := range [][]string{{"docs"}, {"docs", "x"}, {"docs", "x", "y"}, {"a", "docs", "x"}} {
+			assert.False(t, ParsePattern(p, nil).Match(path), "%q %q", p, path)
+		}
+	}
+}
+
+// As in Git's parse_attr, a "-" or "!" prefix keeps its state and drops a
+// value, and the name is checked up to the "=".
+func TestParseAttributesLineDropsTheValueOfAPrefixedAttribute(t *testing.T) {
+	t.Parallel()
+
+	m, err := ParseAttributesLine("*.dat -text=x !eol=lf diff=lfs", nil, false)
+	require.NoError(t, err)
+	require.Len(t, m.Attributes, 3)
+	assert.True(t, m.Attributes[0].IsUnset())
+	assert.Equal(t, "text", m.Attributes[0].Name())
+	assert.Empty(t, m.Attributes[0].Value())
+	assert.True(t, m.Attributes[1].IsUnspecified())
+	assert.Equal(t, "eol", m.Attributes[1].Name())
+	assert.True(t, m.Attributes[2].IsValueSet())
+	assert.Equal(t, "lfs", m.Attributes[2].Value())
+
+	_, err = ParseAttributesLine("*.dat -te@xt=x", nil, false)
+	assert.ErrorIs(t, err, ErrInvalidAttributeName)
 }
