@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -197,6 +199,20 @@ type Config struct {
 		// version string in the initial response from the server.
 		//   2 - Wire protocol version 2.
 		Version protocol.Version
+		// Allow is protocol.allow, the fallback policy for protocols that
+		// have no entry in AllowByName, or nil when it is not set. When
+		// neither is set, the built-in defaults apply: http/https/git/ssh
+		// -> always, ext -> never, file and unknown schemes -> user.
+		//
+		// A set value must be "always", "never" or "user"
+		// (case-insensitive), but as in Git it is only checked when a
+		// transport looks it up, through ProtocolPolicy: an empty or
+		// unknown value fails that lookup, not loading the config.
+		Allow *string
+		// AllowByName holds protocol.<name>.allow, keyed by URL scheme
+		// (e.g. "file", "ssh"). A key that is present is set, whatever its
+		// value, and is checked like Allow when it is looked up.
+		AllowByName map[string]string
 	}
 
 	// Remotes list of repository remotes, the key of the map is the name
@@ -488,6 +504,7 @@ const (
 	gpgSignKey                 = "gpgSign"
 	uploadArchiveSection       = "uploadArchive"
 	allowUnreachableKey        = "allowUnreachable"
+	allowKey                   = "allow"
 
 	// DefaultPackWindow holds the number of previous objects used to
 	// generate deltas. The value 10 is the same used by git command.
@@ -718,7 +735,47 @@ func (c *Config) unmarshalProtocol() error {
 		c.Protocol.Version = v
 	}
 
+	c.unmarshalProtocolAllow(s)
+
 	return nil
+}
+
+// unmarshalProtocolAllow reads protocol.allow and protocol.<name>.allow from
+// the protocol section s.
+func (c *Config) unmarshalProtocolAllow(s *format.Section) {
+	// The allow keys are recorded as they are, an empty value included,
+	// and checked only when ProtocolPolicy looks one up: Git parses only
+	// the key a transport needs, so a bad value for one protocol does not
+	// stop the repository from opening.
+	if s.Options.Has(allowKey) {
+		rv := s.Options.Get(allowKey)
+		c.Protocol.Allow = &rv
+	}
+
+	for _, sub := range s.Subsections {
+		if !sub.Options.Has(allowKey) {
+			continue
+		}
+		if c.Protocol.AllowByName == nil {
+			c.Protocol.AllowByName = make(map[string]string, len(s.Subsections))
+		}
+		c.Protocol.AllowByName[sub.Name] = sub.Options.Get(allowKey)
+	}
+}
+
+// ReadProtocolPolicy decodes the config file b and returns a Config that
+// holds only its protocol policy, protocol.allow and protocol.<name>.allow.
+// Nothing else in b is interpreted, so a value another command would refuse
+// is not an error here, as Git reads only the keys a command needs; a file
+// that is not valid config syntax is.
+func ReadProtocolPolicy(b []byte) (*Config, error) {
+	raw := format.New()
+	if err := format.NewDecoder(bytes.NewReader(b)).Decode(raw); err != nil {
+		return nil, err
+	}
+	c := NewConfig()
+	c.unmarshalProtocolAllow(raw.Section(protocolSection))
+	return c, nil
 }
 
 func (c *Config) unmarshalIndex() {
@@ -983,20 +1040,54 @@ func (c *Config) marshalProtocol() {
 	if c.Protocol.Version != DefaultProtocolVersion {
 		s := c.Raw.Section(protocolSection)
 		s.SetOption(versionKey, c.Protocol.Version.String())
-		return
+	} else if c.Raw.HasSection(protocolSection) {
+		// The struct holds the default version. Clear any stale
+		// protocol.version left over in the raw config so switching back
+		// to the default persists.
+		c.Raw.Section(protocolSection).RemoveOption(versionKey)
 	}
 
-	// The struct holds the default version. Clear any stale protocol.version
-	// left over in the raw config so switching back to the default persists,
-	// and drop the section if it becomes empty. Guard on HasSection so a
-	// non-default round-trip does not introduce an empty [protocol].
-	if !c.Raw.HasSection(protocolSection) {
-		return
+	// Likewise clear per-scheme allow entries the struct no longer
+	// holds, so a removed entry does not linger. Unmarshal records every
+	// subsection carrying an allow key, so a subsection missing from the
+	// map had its entry dropped programmatically. Only the allow key is
+	// removed, and the subsection only once nothing else is left in it:
+	// unrelated keys under protocol.<name> are not ours to discard.
+	if c.Raw.HasSection(protocolSection) {
+		s := c.Raw.Section(protocolSection)
+		s.Subsections = slices.DeleteFunc(s.Subsections, func(sub *format.Subsection) bool {
+			if _, keep := c.Protocol.AllowByName[sub.Name]; keep {
+				return false
+			}
+			sub.RemoveOption(allowKey)
+			return len(sub.Options) == 0
+		})
 	}
-	s := c.Raw.Section(protocolSection)
-	s.RemoveOption(versionKey)
-	if len(s.Options) == 0 && len(s.Subsections) == 0 {
-		c.Raw.RemoveSection(protocolSection)
+
+	if c.Protocol.Allow != nil {
+		s := c.Raw.Section(protocolSection)
+		s.SetOption(allowKey, *c.Protocol.Allow)
+	} else if c.Raw.HasSection(protocolSection) {
+		c.Raw.Section(protocolSection).RemoveOption(allowKey)
+	}
+
+	if len(c.Protocol.AllowByName) > 0 {
+		s := c.Raw.Section(protocolSection)
+		// New subsections are appended in sorted order, as for remotes
+		// and branches, so the output does not vary between runs.
+		for _, name := range slices.Sorted(maps.Keys(c.Protocol.AllowByName)) {
+			sub := s.Subsection(name)
+			sub.SetOption(allowKey, c.Protocol.AllowByName[name])
+		}
+	}
+
+	// Drop the section once nothing is left in it, so neither a default
+	// round-trip nor a removal leaves an empty [protocol] behind.
+	if c.Raw.HasSection(protocolSection) {
+		s := c.Raw.Section(protocolSection)
+		if len(s.Options) == 0 && len(s.Subsections) == 0 {
+			c.Raw.RemoveSection(protocolSection)
+		}
 	}
 }
 

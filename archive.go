@@ -28,7 +28,14 @@ func ArchiveRemoteContext(ctx context.Context, url string, o *ArchiveOptions) (i
 		return nil, errors.New("remote URL is required")
 	}
 
-	cl, req, err := newClient(url, o.ClientOptions)
+	// ArchiveRemote has no repository, so the protocol policy comes from
+	// the global and system configs alone, as for git archive --remote
+	// outside a repository.
+	cfg, err := policyConfig(nil)
+	if err != nil {
+		return nil, err
+	}
+	cl, req, err := newClient(url, o.ClientOptions, cfg)
 	if err != nil {
 		return nil, err
 	}

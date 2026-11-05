@@ -210,8 +210,57 @@ compatibility status with go-git.
 | `http(s)://` (smart) | ✅           |                                                                        |                                                |
 | `git://`             | ✅           |                                                                        |                                                |
 | `ssh://`             | ✅           |                                                                        |                                                |
-| `file://`            | ✅           |                                                                        |                                                |
+| `file://`            | ✅           | Denied for submodule operations unless allowed, as in git. See [Protocol restrictions](#protocol-restrictions). |                                                |
 | Custom               | ✅           | All existing schemes can be replaced by custom implementations.        | - [custom_http](_examples/custom_http/main.go) |
+
+## Protocol restrictions
+
+Transports are gated the way git gates them, so a scheme can be refused
+before the handshake. A policy is one of `always`, `never` or `user`; `user`
+permits the scheme only when the operation was initiated by the user rather
+than by data in the repository, which is what keeps a submodule from choosing
+its own transport.
+
+Without configuration the defaults match git's `get_protocol_config`:
+`http`, `https`, `git` and `ssh` are `always`, `ext` is `never`, and every
+other scheme — `file` included, along with bare local paths — is `user`.
+A `file://` clone therefore still works, while a `file://` submodule update
+is refused unless it is allowed explicitly.
+
+Fetch, push, listing and `ArchiveRemote` read the policy from the global
+and system config on every operation, as git does, through the
+`ConfigLoader` plugin, which must therefore be registered before the first
+one. Only the policy is interpreted, but a global or system config that
+go-git cannot parse fails the operation. As in git, a global file that
+cannot be read for lack of permission is skipped when the policy is read,
+while an unreadable system file fails the operation.
+`Repository.ConfigScoped` still returns an error for either.
+
+Unlike git, the policy is not read from every place git reads it from, so
+a restriction set only in one of these is not enforced:
+
+- Only one global file is read: `~/.gitconfig`, or the XDG one when
+  `~/.gitconfig` is missing or unreadable. Git reads both.
+- `[include]` and `[includeIf]` are not followed.
+- `GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>`,
+  and `GIT_CONFIG_PARAMETERS`, are not read, so `-c` options a parent git
+  process passes down do not apply.
+
+The policy is also read differently from one header git reads:
+`[protocol ""]`, with an empty subsection, is read as `[protocol]`, as
+go-git's config decoder reads every empty subsection, so an `allow` under
+it sets `protocol.allow`. Git reads it as `protocol..allow`, which no
+transport looks up.
+
+Reading every config scope as git does is left to the config rework
+proposed in [#2224](https://github.com/go-git/go-git/issues/2224).
+
+| Feature                  | Status       | Notes                                                                                                                         |
+| ------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `protocol.allow`         | ✅           | Fallback policy for schemes with no per-scheme setting. Read from the repository, global and system config, the latter two through the `ConfigLoader` plugin. As in git, a value is checked when a transport looks it up: an unknown or empty one fails that lookup, not opening the repository. |
+| `protocol.<name>.allow`  | ✅           | Per-scheme policy, takes precedence over `protocol.allow`. Read and checked the same way.                                      |
+| `GIT_ALLOW_PROTOCOL`     | ✅           | Colon-separated allow-list. When set it replaces every other source, and an empty value denies every scheme.                   |
+| `GIT_PROTOCOL_FROM_USER` | ✅           | Whether an operation counts as user-initiated for the `user` policy, unless the caller sets `WithUserInitiated` or `Request.FromUser`. Submodule fetches never are. |
 
 ## Other features
 
