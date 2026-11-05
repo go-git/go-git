@@ -270,6 +270,21 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 			"outer/keep.txt":           "x\n",
 		},
 	}, {
+		name: "rule in info/exclude",
+		files: map[string]string{
+			".git/info/exclude": "excluded/\n",
+			"excluded/file":     "x\n",
+			"kept.txt":          "x\n",
+		},
+	}, {
+		name: "root .gitignore overrides info/exclude",
+		files: map[string]string{
+			".git/info/exclude": "*.log\n",
+			".gitignore":        "!keep.log\n",
+			"keep.log":          "x\n",
+			"other.log":         "x\n",
+		},
+	}, {
 		name: "children excluded but one re-included",
 		files: map[string]string{
 			".gitignore":      "foo/*\n!foo/bar\n",
@@ -372,4 +387,83 @@ func TestStatusReadsSubtreeStoredOnlyInLooseObjectsPack(t *testing.T) {
 	st, err := wt.Status()
 	require.NoError(t, err)
 	assert.True(t, st.IsClean(), "status: %v", st)
+}
+
+// TestStatusReadsInfoExcludeFromGitDir checks that info/exclude is found when
+// the git directory is not at .git in the worktree. Status must match reference
+// git, which reads the file from the common git directory.
+//
+// Skipped under -short or without a git binary.
+func TestStatusReadsInfoExcludeFromGitDir(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("oracle disabled: -short")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("oracle disabled: git not found: %v", err)
+	}
+
+	run := func(t *testing.T, args ...string) {
+		t.Helper()
+		require.NoError(t, gitenv.Command("git", args...).Run())
+	}
+
+	for _, tc := range []struct {
+		name string
+		// setup returns the worktree to open and the git directory that holds
+		// info/exclude.
+		setup func(t *testing.T, base string) (worktree, gitDir string)
+	}{{
+		name: "separate git directory",
+		setup: func(t *testing.T, base string) (string, string) {
+			worktree, gitDir := filepath.Join(base, "repo"), filepath.Join(base, "storage")
+			run(t, "init", "-q", "--separate-git-dir", gitDir, worktree)
+			return worktree, gitDir
+		},
+	}, {
+		name: "linked worktree",
+		setup: func(t *testing.T, base string) (string, string) {
+			main, linked := filepath.Join(base, "main"), filepath.Join(base, "linked")
+			run(t, "-c", "init.defaultBranch=main", "init", "-q", main)
+			run(t, "-C", main, "-c", "user.name=test", "-c", "user.email=test@example.com",
+				"commit", "-q", "--allow-empty", "-m", "init")
+			run(t, "-C", main, "worktree", "add", "-q", "-b", "linked", linked)
+			return linked, filepath.Join(main, GitDirName)
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			worktree, gitDir := tc.setup(t, t.TempDir())
+
+			require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "info"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(gitDir, "info", "exclude"), []byte("excluded\n"), 0o644))
+			for _, name := range []string{"excluded", "kept.txt"} {
+				require.NoError(t, os.WriteFile(filepath.Join(worktree, name), []byte("x\n"), 0o644))
+			}
+
+			out, err := gitenv.Command("git", "-C", worktree, "ls-files", "--others", "--exclude-standard").Output()
+			require.NoError(t, err)
+			require.Equal(t, "kept.txt", strings.TrimSpace(string(out)))
+
+			repo, err := PlainOpen(worktree)
+			require.NoError(t, err)
+			defer func() { _ = repo.Close() }()
+
+			wt, err := repo.Worktree()
+			require.NoError(t, err)
+
+			st, err := wt.Status()
+			require.NoError(t, err)
+
+			got := map[string]bool{}
+			for path, s := range st {
+				if s.Worktree == Untracked {
+					got[path] = true
+				}
+			}
+
+			assert.Equal(t, map[string]bool{"kept.txt": true}, got)
+		})
+	}
 }

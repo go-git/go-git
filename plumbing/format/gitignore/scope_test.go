@@ -228,6 +228,23 @@ func TestRootPatternsReadsExcludeThenGitignore(t *testing.T) {
 		".gitignore is read after .git/info/exclude, so it outranks it")
 }
 
+func TestInfoExcludePatterns(t *testing.T) {
+	t.Parallel()
+
+	gitDir := memfs.New()
+
+	ps, err := InfoExcludePatterns(gitDir)
+	require.NoError(t, err)
+	assert.Empty(t, ps)
+
+	require.NoError(t, util.WriteFile(gitDir, "info/exclude", []byte("# comment\n\nexcluded/\n"), 0o644))
+
+	ps, err = InfoExcludePatterns(gitDir)
+	require.NoError(t, err)
+	require.Len(t, ps, 1)
+	assert.Equal(t, Exclude, ps[0].Match([]string{"excluded"}, true))
+}
+
 func TestDirPatternsMissingFile(t *testing.T) {
 	t.Parallel()
 
