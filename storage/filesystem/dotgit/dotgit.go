@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	iofs "io/fs"
 	"maps"
 	"os"
 	"path"
@@ -19,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
@@ -89,6 +91,20 @@ const (
 	// a reference that fails to store, but one only go-git can move, that
 	// git reports as unlockable whenever something finally tries.
 	maxRefLeafLen = maxRefComponentLen - len(refLockSuffix)
+
+	// maxHeadRefSize matches the read limit in Git's validate_headref.
+	maxHeadRefSize = 255
+
+	// maxCommonDirSize bounds commondir reads. Oversized files are rejected;
+	// truncating a path could redirect the check to a different directory.
+	maxCommonDirSize = 1 << 20
+
+	// maxCommonDirInError limits the bytes quoted from a commondir path.
+	maxCommonDirInError = 100
+
+	// gitSpace matches Git's sane-ctype.h isspace table. Unlike C's isspace
+	// and unicode.IsSpace, it excludes vertical tab and form feed.
+	gitSpace = " \t\n\r"
 )
 
 var (
@@ -120,6 +136,17 @@ var (
 	// resolve outside the modules/ subtree, mirroring canonical Git's
 	// "ignoring suspicious submodule name" defence.
 	ErrModuleNameEscape = errors.New("submodule name escapes modules/ directory")
+	// ErrModuleGitDirNested is wrapped by the error returned by [DotGit.Module]
+	// when a submodule's Git directory is inside another submodule's Git directory.
+	ErrModuleGitDirNested = errors.New("submodule git dir is inside another submodule's git dir")
+	// ErrModuleNameTooDeep is wrapped by the error returned by
+	// [DotGit.Module] for a name with more than 255 components, counted as
+	// its separators plus one.
+	ErrModuleNameTooDeep = errors.New("submodule name has too many components")
+	// ErrModuleNameTooLong is wrapped by the error returned by
+	// [DotGit.Module] for a name whose Git directory path, modules/ and the
+	// name, is longer than 4096 bytes.
+	ErrModuleNameTooLong = errors.New("submodule name is too long")
 	// ErrReferenceNameEscape is returned when a reference name fails the
 	// filesystem storage's name checks. Reads and deletes require a safe path;
 	// writes also require a valid reference name. These errors also wrap
@@ -2018,19 +2045,41 @@ func (d *DotGit) PackRefs() (err error) {
 	return nil
 }
 
-// Module return a billy.Filesystem pointing to the module folder
+// maxModuleNameDepth is the most components a submodule name may have, and
+// maxModuleGitDirLen the most bytes its Git directory path, modules/ and the
+// name, may have. Git has no such limits; go-git sets them to bound the
+// nesting check, whose cost grows with both. The length is Linux's PATH_MAX:
+// Linux and macOS refuse a longer path anyway, while Windows accepts one
+// through a \\?\ prefix.
+const (
+	maxModuleNameDepth = 255
+	maxModuleGitDirLen = 4096
+)
+
+// Module returns a filesystem rooted at the named submodule's Git directory.
 //
-// As a defence in depth against submodule name path traversal,
-// refuse names whose joined path leaves the modules/ subtree once
-// cleaned. The config-layer parser also validates submodule names,
-// but Module may be reached from any caller that constructs a
-// Submodule struct programmatically and so bypasses the parser.
+// It returns [ErrModuleNameEscape] if the name addresses the modules
+// directory itself or leaves it, [ErrModuleNameInvalid] if it cannot name a
+// directory there, an error wrapping [ErrModuleNameTooLong] if modules/ and
+// the name are longer than 4096 bytes, an error wrapping
+// [ErrModuleNameTooDeep] if the name has more than 255 components, or an
+// error wrapping [ErrModuleGitDirNested] if a proper prefix of the name
+// identifies another submodule's Git directory.
+// It also returns an error if a prefix's commondir file is empty,
+// unreadable, not a regular file, or larger than 1 MiB, or if its path
+// cannot be resolved within the filesystem with Git's path semantics.
 //
-// path.Clean does not account for filesystem-specific aliases of the
-// current or the parent directory, so the name is checked with
-// pathutil.ValidStorageName, as the config layer checks it, before the
-// path is constructed.
+// Names may contain separators. As in [Git's submodule_name_to_gitdir],
+// nesting is checked on every call, so a name may be refused after a prefix
+// becomes a Git directory. Names without separators require no such check.
+//
+// The name is checked with pathutil.ValidStorageName, as the config layer
+// checks it, before the path is constructed: path.Clean does not account
+// for filesystem-specific aliases of the current or the parent directory.
+//
+// [Git's submodule_name_to_gitdir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2735
 func (d *DotGit) Module(name string) (billy.Filesystem, error) {
+	// Callers constructing config.Submodule values may bypass validation.
 	if err := d.checkModuleName(name, runtime.GOOS == "windows"); err != nil {
 		return nil, err
 	}
@@ -2039,7 +2088,481 @@ func (d *DotGit) Module(name string) (billy.Filesystem, error) {
 	if cleaned != modulePath && !strings.HasPrefix(cleaned, modulePath+"/") {
 		return nil, ErrModuleNameEscape
 	}
+
+	// Every lookup walks each prefix of the name, and Git sets no limit on
+	// its depth or length, so a name from .gitmodules could otherwise make
+	// every Status or Update cost minutes on a filesystem that does not
+	// bound path length, such as memfs. Real names are a few components
+	// deep and far shorter.
+	if n := len(modulePath) + 1 + len(name); n > maxModuleGitDirLen {
+		return nil, fmt.Errorf("%w: %d bytes, more than %d", ErrModuleNameTooLong, n, maxModuleGitDirLen)
+	}
+	if n := strings.Count(filepath.ToSlash(name), "/") + 1; n > maxModuleNameDepth {
+		return nil, fmt.Errorf("%w: %d, more than %d", ErrModuleNameTooDeep, n, maxModuleNameDepth)
+	}
+
+	// Git walks the name as given. The checks above refuse "." and ".."
+	// components, so its prefixes name the directories the cleaned name's
+	// do; an empty component only makes the walk check a prefix twice.
+	if err := d.checkModuleGitDirNesting(modulePath + "/" + filepath.ToSlash(name)); err != nil {
+		return nil, err
+	}
+
 	return d.fs.Chroot(p)
+}
+
+// checkModuleGitDirNesting rejects a Git directory nested inside another
+// submodule's Git directory. gitdir must be a slash-separated path rooted at
+// modules/, not cleaned, as Git checks the name as given.
+//
+// The prefix walk follows [Git's validate_submodule_legacy_git_dir]: every
+// prefix that ends at a separator after modules/ is checked. For example, a
+// submodule named "lib/refs/heads" would otherwise keep its Git directory
+// inside the one holding the branches of the submodule "lib". The walk stops
+// at the first prefix that is not a directory, as nothing below it can be a
+// Git directory either, so its cost follows the directories that exist.
+// Module bounds the name's depth and length, which bound the cost when every
+// prefix exists.
+//
+// [Git's validate_submodule_legacy_git_dir]: https://github.com/git/git/blob/v2.54.0/submodule.c#L2401-L2444
+func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
+	for i := len(modulePath) + 1; i < len(gitdir); i++ {
+		if gitdir[i] != '/' {
+			continue
+		}
+		prefix := gitdir[:i]
+		fi, err := d.fs.Stat(prefix)
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ENAMETOOLONG) ||
+			(err == nil && !fi.IsDir()) {
+			return nil
+		}
+		if err != nil {
+			// A prefix that cannot be examined may still be a Git
+			// directory, so the name is refused rather than accepted, as
+			// isGitDir does for its entries.
+			return fmt.Errorf("check %q: %w", elide(prefix), pathErrCause(err))
+		}
+		nested, err := d.isGitDir(prefix)
+		if err != nil {
+			return err
+		}
+		if nested {
+			return fmt.Errorf("%w: %q", ErrModuleGitDirNested, elide(prefix))
+		}
+	}
+
+	return nil
+}
+
+// isGitDir reports whether p holds a recognizable HEAD together with objects
+// and refs entries. As in [Git's is_git_directory], a commondir file in p
+// redirects the latter two; a relative path in it is resolved against p.
+//
+// All paths are resolved within d.fs. Git's environment overrides are not
+// consulted. A commondir file that is not a regular file, or that is empty,
+// unreadable, oversized, or unresolvable, is reported as an error rather than
+// as an absent Git directory, and so is an objects or refs entry that cannot
+// be checked for a reason other than its absence, so the caller cannot
+// accept nesting without having checked it.
+//
+// [Git's is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416-L454
+func (d *DotGit) isGitDir(p string) (bool, error) {
+	if !d.validHeadRef(d.fs.Join(p, "HEAD")) {
+		return false, nil
+	}
+
+	// Resolution errors in redirected paths must not bypass the nesting check.
+	redirected := false
+	commonFS := d.fs
+
+	// As Git, test for commondir without following it: a dangling symlink
+	// is a commondir that cannot be read, not a missing one.
+	commonFile := d.fs.Join(p, "commondir")
+	fi, err := d.fs.Lstat(commonFile)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		fi, err = d.fs.Stat(commonFile)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
+		}
+	}
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
+	case !fi.Mode().IsRegular():
+		// Opening a device or a named pipe can block indefinitely, so the
+		// mode is checked before the file is read.
+		return false, fmt.Errorf("submodule common directory file %q is not a regular file", elide(commonFile))
+	default:
+		f, err := d.fs.Open(commonFile)
+		if err != nil {
+			return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
+		}
+		defer func() { _ = f.Close() }()
+
+		b, err := io.ReadAll(io.LimitReader(f, maxCommonDirSize+1))
+		if err != nil {
+			return false, fmt.Errorf("read %q: %w", elide(commonFile), pathErrCause(err))
+		}
+		if len(b) == 0 {
+			return false, fmt.Errorf("empty submodule common directory file %q", elide(commonFile))
+		}
+		if len(b) > maxCommonDirSize {
+			return false, fmt.Errorf("submodule common directory file %q exceeds %d bytes", elide(commonFile), maxCommonDirSize)
+		}
+
+		common := strings.TrimRight(string(b), "\r\n")
+		if i := strings.IndexByte(common, 0); i >= 0 {
+			common = common[:i]
+		}
+		commonFS, p, err = d.resolveCommonDir(p, common)
+		if err != nil {
+			return false, err
+		}
+		redirected = true
+	}
+
+	// Git's access(X_OK) accepts executable files as well as directories;
+	// on Windows, it checks only existence. Billy has no access equivalent,
+	// so conservatively count any existing entry.
+	for _, dir := range []string{objectsPath, refsPath} {
+		q := commonFS.Join(p, dir)
+		_, err := commonFS.Stat(q)
+		switch {
+		case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+			// A commondir naming a file has no objects or refs: Git's
+			// access fails with ENOTDIR, and the prefix is not a Git
+			// directory.
+			return false, nil
+		case err != nil && redirected:
+			// This includes symlinks that leave the filesystem. The path
+			// error would repeat q in full, so only its cause is wrapped.
+			return false, fmt.Errorf("resolve submodule common directory %q: %w", elide(q), pathErrCause(err))
+		case err != nil:
+			// Git's access follows a symlink that leaves this filesystem,
+			// and may find p a Git directory there, so an entry that
+			// cannot be checked is an error, as in the redirected case.
+			return false, fmt.Errorf("check %q: %w", elide(q), pathErrCause(err))
+		}
+	}
+
+	return true, nil
+}
+
+// resolveCommonDir returns the backing filesystem and path named by commondir.
+// Relative paths are resolved against p. Absolute paths must name a location
+// within one of the repository's filesystem roots.
+func (d *DotGit) resolveCommonDir(p, common string) (billy.Filesystem, string, error) {
+	roots := []billy.Filesystem{d.fs}
+	if fs, ok := d.fs.(*RepositoryFilesystem); ok {
+		roots[0] = fs.dotGitFs
+		if fs.commonDotGitFs != nil {
+			roots = append(roots, fs.commonDotGitFs)
+		}
+	}
+
+	// Resolve against a backing filesystem, not RepositoryFilesystem's
+	// logical layout: a commondir path beginning with refs/ still names a
+	// location in the same filesystem as the file containing it.
+	if !filepath.IsAbs(common) && !path.IsAbs(filepath.ToSlash(common)) {
+		resolver := DotGit{fs: roots[0]}
+		resolved, err := resolver.resolveRelativeCommonDir(p, common, common, 0)
+		return roots[0], resolved, err
+	}
+
+	var resolveErr error
+	for _, fs := range roots {
+		resolver := DotGit{fs: fs}
+		resolved, err := resolver.resolveAbsoluteCommonDir(common, common, 0)
+		switch {
+		case err == nil:
+			return fs, resolved, nil
+		case errors.Is(err, errOutsideRoot):
+			continue
+		}
+		// The path may leave a worktree root but remain in the common root.
+		resolveErr = err
+	}
+	if resolveErr != nil {
+		return nil, "", resolveErr
+	}
+
+	return nil, "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(common))
+}
+
+// errOutsideRoot reports that an absolute commondir path lies outside the
+// filesystem it is resolved in.
+var errOutsideRoot = errors.New("outside the filesystem")
+
+// maxCommonDirLinks is the most symbolic links a commondir is resolved
+// through, as Git's realpath allows[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L67-L68
+const maxCommonDirLinks = 32
+
+// resolveAbsoluteCommonDir resolves the absolute path common within d's
+// filesystem, as resolveRelativeCommonDir does a relative one, or fails with
+// errOutsideRoot when it lies elsewhere. links counts the symbolic links
+// already followed to reach it; quoted is the commondir errors name.
+func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string, links int) (string, error) {
+	// Rel and Clean clean their arguments. Split before the first ".." so
+	// the component walk can check for symlinks before removing any part
+	// of the path.
+	base, tail := common, ""
+	segments := strings.Split(filepath.ToSlash(common), "/")
+	if i := slices.Index(segments, ".."); i >= 0 {
+		base = strings.Join(segments[:i], "/") + "/"
+		tail = strings.Join(segments[i:], "/")
+	}
+	root, err := filepath.Abs(d.fs.Root())
+	if err != nil {
+		return "", fmt.Errorf("resolve filesystem root: %w", err)
+	}
+	// filepath.Abs resolves a path on Windows through GetFullPathName,
+	// which drops trailing spaces and periods from its components, so
+	// "/common " would name "common". A path that names no volume is
+	// rooted on the filesystem root's instead, and only cleaned.
+	abs := filepath.FromSlash(base)
+	if !filepath.IsAbs(abs) {
+		abs = filepath.VolumeName(root) + abs
+	}
+	abs = filepath.Clean(abs)
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || escapesRoot(rel) {
+		return "", errOutsideRoot
+	}
+	if tail == "" {
+		// The segments as written keep what cleaning drops, such as a
+		// trailing separator after a missing component.
+		return d.resolveCommonDirWithoutParent(rel, ".", quoted, segments, links)
+	}
+	return d.resolveRelativeCommonDir(rel, tail, quoted, links)
+}
+
+// resolveRelativeCommonDir resolves common against the filesystem-relative p.
+// It rejects paths that leave the root or remove a symlink component with "..".
+// Git resolves symlinks before "..", but Billy has no realpath operation and
+// may clean paths before resolving them. As Git's realpath, only the last
+// component may be missing, written with nothing after it: a path through a
+// component that does not exist is invalid, and a missing last component
+// that is a symbolic link is resolved through its target. links counts the
+// symbolic links already followed; quoted is the commondir errors name.
+func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string, links int) (string, error) {
+	segments := strings.Split(filepath.ToSlash(common), "/")
+	if !slices.Contains(segments, "..") {
+		// Nothing is removed, so the filesystem follows the symlinks Git's
+		// realpath follows, and one or two lookups settle the path.
+		return d.resolveCommonDirWithoutParent(p, common, quoted, segments, links)
+	}
+
+	// Cache symlink status for each component. Once a component is absent,
+	// its descendants need no filesystem probes.
+	var resolved []string
+	var link []bool
+	absent := -1
+
+	// A component that cannot be examined for another reason than being
+	// absent fails the resolution, as it does Git's realpath.
+	descend := func(segment string) error {
+		resolved = append(resolved, segment)
+		if absent >= 0 && len(resolved) > absent {
+			link = append(link, false)
+			return nil
+		}
+		fi, err := d.fs.Lstat(d.fs.Join(resolved...))
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			absent = len(resolved)
+			link = append(link, false)
+			// Lstat found the components before this one, but realpath
+			// follows them: a symlink to nothing among them, or anything
+			// but a directory, is the missing component.
+			if absent > 1 {
+				if fi, err := d.fs.Stat(d.fs.Join(resolved[:absent-1]...)); err != nil || !fi.IsDir() {
+					absent--
+				}
+			}
+		case err != nil:
+			return fmt.Errorf("resolve submodule common directory %q: %w", elide(quoted), pathErrCause(err))
+		default:
+			link = append(link, fi.Mode()&os.ModeSymlink != 0)
+		}
+		return nil
+	}
+
+	if slashed := filepath.ToSlash(p); slashed != "" && slashed != "." {
+		for segment := range strings.SplitSeq(slashed, "/") {
+			if err := descend(segment); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	for _, segment := range segments {
+		switch segment {
+		case "", ".":
+			// Realpath refuses anything written after a missing component.
+			if absent >= 0 {
+				return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
+			}
+		case "..":
+			if len(resolved) == 0 {
+				return "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(quoted))
+			}
+			if absent >= 0 {
+				return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
+			}
+			if link[len(link)-1] {
+				return "", fmt.Errorf("submodule common directory %q is resolved through the symbolic link %q", elide(quoted), elide(d.fs.Join(resolved...)))
+			}
+			resolved, link = resolved[:len(resolved)-1], link[:len(link)-1]
+		default:
+			if err := descend(segment); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	if absent >= 0 && absent < len(resolved) {
+		return "", invalidCommonDir(quoted, d.fs.Join(resolved[:absent]...))
+	}
+	q := d.fs.Join(resolved...)
+	if absent < 0 && len(link) > 0 && link[len(link)-1] {
+		// A symlink last component exists, but may point at nothing.
+		if _, err := d.fs.Stat(q); errors.Is(err, os.ErrNotExist) {
+			return d.followDanglingLink(q, quoted, links)
+		}
+	}
+	return q, nil
+}
+
+// resolveCommonDirWithoutParent resolves common, whose segments name no "..",
+// against p. The path is accepted when it exists, or when only its last
+// component is missing, the component is written with nothing after it, and
+// its parent is a directory, as Git's realpath accepts it[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L120-L131
+func (d *DotGit) resolveCommonDirWithoutParent(p, common, quoted string, segments []string, links int) (string, error) {
+	q := d.fs.Join(p, common)
+	_, err := d.fs.Stat(q)
+	switch {
+	case err == nil:
+		return q, nil
+	case !errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("resolve submodule common directory %q: %w", elide(quoted), pathErrCause(err))
+	}
+	if last := segments[len(segments)-1]; last == "" || last == "." {
+		return "", invalidCommonDir(quoted, q)
+	}
+	parent := filepath.Dir(q)
+	if fi, err := d.fs.Stat(parent); err != nil || !fi.IsDir() {
+		return "", invalidCommonDir(quoted, parent)
+	}
+	return d.followDanglingLink(q, quoted, links)
+}
+
+// followDanglingLink resolves q, a path that does not exist under an
+// existing directory. A plain missing name resolves to itself. A symbolic
+// link to nothing is resolved through its target, as Git's realpath splices
+// the target into the path it resolves[1], so a target that is itself
+// invalid makes the commondir invalid.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/abspath.c#L138-L188
+func (d *DotGit) followDanglingLink(q, quoted string, links int) (string, error) {
+	fi, err := d.fs.Lstat(q)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return q, nil
+	}
+	if links >= maxCommonDirLinks {
+		return "", fmt.Errorf("submodule common directory %q: too many levels of symbolic links", elide(quoted))
+	}
+	target, err := d.fs.Readlink(q)
+	if err != nil {
+		return "", fmt.Errorf("resolve submodule common directory %q: %w", elide(quoted), pathErrCause(err))
+	}
+	if !filepath.IsAbs(target) && !path.IsAbs(filepath.ToSlash(target)) {
+		return d.resolveRelativeCommonDir(filepath.Dir(q), target, quoted, links+1)
+	}
+	resolved, err := d.resolveAbsoluteCommonDir(target, quoted, links+1)
+	if errors.Is(err, errOutsideRoot) {
+		return "", fmt.Errorf("submodule common directory %q is outside the filesystem", elide(quoted))
+	}
+	return resolved, err
+}
+
+// invalidCommonDir is the error for a commondir that resolves through the
+// missing component missing, which Git's realpath refuses with "Invalid
+// path".
+func invalidCommonDir(common, missing string) error {
+	return fmt.Errorf("submodule common directory %q: invalid path %q", elide(common), elide(missing))
+}
+
+// pathErrCause returns the cause of a path error, so an error message that
+// already quotes the path does not repeat it, and err itself otherwise.
+func pathErrCause(err error) error {
+	if pe, ok := errors.AsType[*iofs.PathError](err); ok {
+		return pe.Err
+	}
+	return err
+}
+
+// elide truncates a path for use in an error message.
+func elide(s string) string {
+	if len(s) <= maxCommonDirInError {
+		return s
+	}
+	return s[:maxCommonDirInError] + "..."
+}
+
+// escapesRoot reports whether a path relative to a root leaves it.
+func escapesRoot(rel string) bool {
+	rel = filepath.ToSlash(rel)
+	return rel == ".." || strings.HasPrefix(rel, "../")
+}
+
+// validHeadRef reports whether p contains a HEAD recognized by
+// [Git's validate_headref]: a symlink or symbolic reference into refs/, or a
+// hexadecimal object ID prefix. It examines at most 255 bytes without resolving
+// the reference or checking object existence. Only symlinks and regular files
+// are accepted.
+//
+// [Git's validate_headref]: https://github.com/git/git/blob/v2.54.0/setup.c#L353-L403
+func (d *DotGit) validHeadRef(p string) bool {
+	fi, err := d.fs.Lstat(p)
+	if err != nil {
+		return false
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		// Normalize host separators used by Billy's symlink implementations.
+		target, err := d.fs.Readlink(p)
+		return err == nil && strings.HasPrefix(filepath.ToSlash(target), refsPath+"/")
+	}
+	// Unlike Git, require a regular file: opening a device or a named pipe
+	// can block indefinitely. Size is not a criterion, as the read below is
+	// already bounded the way Git's is.
+	if !fi.Mode().IsRegular() {
+		return false
+	}
+
+	f, err := d.fs.Open(p)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	b, err := io.ReadAll(io.LimitReader(f, maxHeadRefSize))
+	if err != nil {
+		return false
+	}
+
+	head := string(b)
+	if target, ok := strings.CutPrefix(head, "ref:"); ok {
+		return strings.HasPrefix(strings.TrimLeft(target, gitSpace), refsPath+"/")
+	}
+
+	// Git accepts either hash format and ignores trailing bytes. A SHA-256
+	// prefix also contains a complete SHA-1-sized hexadecimal prefix.
+	return len(head) >= formatcfg.SHA1HexSize && plumbing.IsHash(head[:formatcfg.SHA1HexSize])
 }
 
 // AddAlternate appends an alternate object directory path to the alternates file.
