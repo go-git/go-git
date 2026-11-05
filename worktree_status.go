@@ -8,9 +8,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
@@ -162,7 +164,7 @@ func (w *Worktree) diffIndexWithWorktree(cfg *config.Config, idx *index.Index, r
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF:     cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		AutoCRLF:     autoCRLF(cfg),
 		Index:        idx,
 		ObjectFormat: cfg.Extensions.ObjectFormat,
 	}
@@ -256,15 +258,47 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 	return w.diffTreeWithStaging(t, reverse)
 }
 
+// diffTreeWithStaging returns the changes between t and the index as the
+// worktree sees it. SkipWorktree entries are left out, because a path the
+// sparse-checkout excludes is absent from disk by design.
 func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
-	var from noder.Noder
-	if t != nil {
-		from = object.NewTreeRootNode(t)
-	}
-
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
+	}
+	return diffTreeWithIndexEntries(t, idx, reverse)
+}
+
+// diffTreeWithIndex returns the changes between t and every entry of the
+// stored index, SkipWorktree entries included. A reset brings the index to
+// its target with it, while the flag still decides which paths reach the
+// worktree, as Git does.
+func (w *Worktree) diffTreeWithIndex(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return nil, err
+	}
+	if slices.ContainsFunc(idx.Entries, func(e *index.Entry) bool { return e.SkipWorktree }) {
+		// The index noder leaves out SkipWorktree entries, so diff a copy
+		// in which no entry carries the flag.
+		all := *idx
+		all.Entries = make([]*index.Entry, len(idx.Entries))
+		for i, e := range idx.Entries {
+			c := *e
+			c.SkipWorktree = false
+			all.Entries[i] = &c
+		}
+		idx = &all
+	}
+	return diffTreeWithIndexEntries(t, idx, reverse)
+}
+
+// diffTreeWithIndexEntries returns the changes between t and the entries of
+// idx the index noder includes.
+func diffTreeWithIndexEntries(t *object.Tree, idx *index.Index, reverse bool) (merkletrie.Changes, error) {
+	var from noder.Noder
+	if t != nil {
+		from = object.NewTreeRootNode(t)
 	}
 
 	// A directory the cache-tree records as unchanged is skipped without
@@ -584,27 +618,43 @@ func (w *Worktree) fillEncodedObjectFromFile(cfg *config.Config, dst io.Writer, 
 	}
 	defer ioutil.CheckClose(file, &err)
 
-	switch cfg.Core.AutoCRLF {
-	case "true", "input":
-		br := sync.GetBufioReader(file)
-		defer sync.PutBufioReader(br)
-
-		stat, err := convert.GetStat(br)
-		if err != nil {
+	if autoCRLF(cfg) {
+		if dst, _, err = toLF(file, dst); err != nil {
 			return err
-		}
-
-		if _, err = file.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-
-		if !stat.IsBinary() {
-			dst = convert.NewLFWriter(dst)
 		}
 	}
 
 	_, err = ioutil.CopyBufferPool(dst, file)
 	return err
+}
+
+// autoCRLF reports whether core.autocrlf has Git convert the CRLF line
+// endings of text files to LF when it adds them.
+func autoCRLF(cfg *config.Config) bool {
+	return cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input"
+}
+
+// toLF returns dst wrapped to convert CRLF line endings to LF, as Git
+// converts them when it adds f under core.autocrlf, and the number of bytes
+// the conversion drops. f is read from its start to tell whether it holds
+// text, and is left at its start. Binary content, which Git does not
+// convert, returns dst as it is.
+func toLF(f billy.File, dst io.Writer) (io.Writer, int64, error) {
+	br := sync.GetBufioReader(f)
+	stat, err := convert.GetStat(br)
+	sync.PutBufioReader(br)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, 0, err
+	}
+
+	if stat.IsBinary() {
+		return dst, 0, nil
+	}
+	return convert.NewLFWriter(dst), int64(stat.CRLF), nil
 }
 
 func (w *Worktree) fillEncodedObjectFromSymlink(dst io.Writer, path string, _ os.FileInfo) error {

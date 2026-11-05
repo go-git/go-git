@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -70,4 +72,16 @@ func (s *AttributesSuite) TestAttributes_ReadAttributesInvalidName() {
 
 	_, err := ReadAttributes(strings.NewReader(strings.Join(lines, "\n")), nil, true)
 	s.ErrorIs(err, ErrInvalidAttributeName)
+}
+
+// A quoted empty pattern names no path, and Git ignores the line.
+func TestParseAttributesLineQuotedEmptyPattern(t *testing.T) {
+	t.Parallel()
+
+	for _, line := range []string{`""`, `"" text`} {
+		m, err := ParseAttributesLine(line, nil, true)
+		require.NoError(t, err, line)
+		assert.Empty(t, m.Name, line)
+		assert.Nil(t, m.Pattern, line)
+	}
 }
