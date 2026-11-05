@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -13,6 +14,20 @@ import (
 )
 
 // FetchPack fetches a packfile from the remote into the given storage.
+//
+// caps must be the capabilities the fetch was negotiated with: as
+// [NegotiatePack] requests side-band only when req.Progress is set, packf is
+// read as multiplexed only when caps support side-band and req.Progress is
+// non-nil. A multiplexed response is read up to its closing flush-pkt, and
+// an error the remote sends on the error band, even after the pack, fails
+// the fetch. So does pack data the storage left unread after the pack
+// trailer, although the pack is then already stored. Otherwise packf may be
+// left unread past the pack trailer.
+//
+// FetchPack closes packf before it returns, whether or not the fetch fails,
+// unless cancelling ctx ended a read of packf. That read may still be
+// blocked, so packf is then left open, and the caller should tie it to ctx so
+// that cancelling ctx also closes it.
 func FetchPack(
 	ctx context.Context,
 	st storage.Storer,
@@ -31,7 +46,10 @@ func FetchPack(
 		demuxer = sideband.NewDemuxer(sideband.Sideband, reader)
 	}
 
-	if demuxer != nil && req.Progress != nil {
+	// Sideband is only requested when there is progress to report (see
+	// NegotiatePack), so only then is the response muxed.
+	muxed := demuxer != nil && req.Progress != nil
+	if muxed {
 		demuxer.Progress = req.Progress
 		reader = demuxer
 	}
@@ -46,15 +64,29 @@ func FetchPack(
 	// repacking (repack-promisor.c), and accepts either, because only the
 	// file's presence is ever consulted — packfile.c tests it with access(2)
 	// and never opens it.
+	var err error
 	if req.Filter != "" {
-		if err := packfile.UpdatePromisorObjectStorage(st, reader, ""); err != nil {
-			return err
-		}
-	} else if err := packfile.UpdateObjectStorage(st, reader); err != nil {
-		return err
+		err = packfile.UpdatePromisorObjectStorage(st, reader, "")
+	} else {
+		err = packfile.UpdateObjectStorage(st, reader)
 	}
 
-	if err := packf.Close(); err != nil {
+	// Storage that parses the pack stops reading at its trailer, so read the
+	// rest of the response here: an error the server sends after the pack
+	// must fail the fetch, as must pack data after it, and trailing progress
+	// must reach the caller. The demuxer stops at the closing flush-pkt; an
+	// unmuxed response has no end marker, so reading on would wait for the
+	// server to close.
+	if err == nil && muxed {
+		err = internal.DrainPackSection(demuxer)
+	}
+
+	// A read the context cancelled may still be blocked in the goroutine
+	// NewContextReadCloser started, and closing packf would race it.
+	if ioutil.ReadFinished(ctx, err) {
+		ioutil.CheckClose(packf, &err)
+	}
+	if err != nil {
 		return err
 	}
 
