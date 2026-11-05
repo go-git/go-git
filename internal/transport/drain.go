@@ -7,7 +7,7 @@ import (
 
 // ErrPackJunk is returned when pack data follows the pack trailer. The wording
 // is that of Git's index-pack, which reports it only for a pack read from a
-// regular file.
+// regular file. transport.ErrPackJunk aliases this value.
 var ErrPackJunk = errors.New("pack has junk at the end")
 
 // DrainPackSection reads the rest of a multiplexed pack response from demuxer,
