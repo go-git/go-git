@@ -180,3 +180,20 @@ func (o *MockObjectStorage) Begin() Transaction {
 func (o *MockObjectStorage) AddAlternate(_ string) error {
 	return nil
 }
+
+// EncodedObjectType reads the object from a storer that cannot look up a
+// type on its own.
+func (s *ObjectSuite) TestEncodedObjectTypeFallsBackToReading() {
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TagObject)
+	_, err := obj.Write([]byte("tag"))
+	s.Require().NoError(err)
+	st := &MockObjectStorage{db: []plumbing.EncodedObject{obj}}
+
+	typ, err := EncodedObjectType(st, obj.Hash())
+	s.Require().NoError(err)
+	s.Equal(plumbing.TagObject, typ)
+
+	_, err = EncodedObjectType(st, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
+}

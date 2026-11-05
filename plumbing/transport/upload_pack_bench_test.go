@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"testing"
 	"time"
 
@@ -93,7 +94,7 @@ func benchRepo(tb testing.TB, commits, refs int) (*memory.Storage, []plumbing.Ha
 // returns the number of bytes written to the client. The response is not
 // copied out of the buffer, so that the measurement stays on UploadPack
 // itself rather than on materialising the packfile a second time.
-func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) int {
+func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash, haves ...plumbing.Hash) int {
 	tb.Helper()
 
 	var upreq packp.UploadRequest
@@ -102,6 +103,7 @@ func serveUploadPack(tb testing.TB, st *memory.Storage, wants []plumbing.Hash) i
 
 	var final packp.UploadHaves
 	final.Done = true
+	final.Haves = haves
 
 	var req bytes.Buffer
 	if err := upreq.Encode(&req); err != nil {
@@ -140,3 +142,79 @@ func BenchmarkUploadPackWants1(b *testing.B)   { benchmarkUploadPack(b, 300, 1) 
 func BenchmarkUploadPackWants16(b *testing.B)  { benchmarkUploadPack(b, 300, 16) }
 func BenchmarkUploadPackWants64(b *testing.B)  { benchmarkUploadPack(b, 300, 64) }
 func BenchmarkUploadPackWants256(b *testing.B) { benchmarkUploadPack(b, 300, 256) }
+
+func benchmarkUploadPackHaveNearTip(b *testing.B, commits int) {
+	st, wants := benchRepo(b, commits, 1)
+	tip, err := object.GetCommit(st, wants[0])
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		if serveUploadPack(b, st, wants, tip.ParentHashes[0]) == 0 {
+			b.Fatal("no output produced")
+		}
+	}
+}
+
+// A fetch that is one commit behind should not cost more on a longer history.
+func BenchmarkUploadPackHaveNearTip300(b *testing.B)  { benchmarkUploadPackHaveNearTip(b, 300) }
+func BenchmarkUploadPackHaveNearTip3000(b *testing.B) { benchmarkUploadPackHaveNearTip(b, 3000) }
+
+// benchCommit stores a commit with the given parents, dated when, and
+// returns its hash.
+func benchCommit(tb testing.TB, st *memory.Storage, when int64, parents ...plumbing.Hash) plumbing.Hash {
+	tb.Helper()
+	sig := object.Signature{Name: "bench", Email: "bench@example.com", When: time.Unix(when, 0).UTC()}
+	c := &object.Commit{Author: sig, Committer: sig, Message: fmt.Sprintf("commit %d", when), TreeHash: plumbing.ZeroHash, ParentHashes: parents}
+	o := &plumbing.MemoryObject{}
+	if err := c.Encode(o); err != nil {
+		tb.Fatal(err)
+	}
+	h, err := st.SetEncodedObject(o)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return h
+}
+
+// BenchmarkCommonHavesManyCommonHaves measures negotiation when a stateless
+// request names many commits the server has that the want does not reach,
+// each followed by one it lacks: every new common commit lowers the cutoff,
+// so each answer needs a walk from the want.
+func BenchmarkCommonHavesManyCommonHaves(b *testing.B) {
+	for _, n := range []int{100, 1000} {
+		b.Run(fmt.Sprintf("commits=%d", n), func(b *testing.B) {
+			st := memory.NewStorage()
+			root := benchCommit(b, st, 1)
+			want, have := root, root
+			haves := make([]plumbing.Hash, 0, n)
+			for i := range n {
+				want = benchCommit(b, st, int64(2*i+2), want)
+				have = benchCommit(b, st, int64(2*i+3), have)
+				haves = append(haves, have)
+			}
+			unknown := plumbing.NewHash("1111111111111111111111111111111111111111")
+
+			ctx := context.Background()
+			b.ReportAllocs()
+			for b.Loop() {
+				c := mustCommonHaves(b, st, []plumbing.Hash{want}, nil)
+				for _, h := range slices.Backward(haves) {
+					if _, err := c.add(h); err != nil {
+						b.Fatal(err)
+					}
+					if _, err := c.add(unknown); err != nil {
+						b.Fatal(err)
+					}
+					if _, err := c.okToGiveUp(ctx); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+}

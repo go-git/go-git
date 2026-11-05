@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/revlist"
@@ -197,6 +198,30 @@ type v1Response struct {
 	pack *memory.Storage
 }
 
+// responseLines returns the pkt-lines of a stateless v0/v1 response without
+// sideband, up to the pack if there is one, without flushes and trailing
+// newlines.
+func responseLines(t testing.TB, raw []byte) []string {
+	t.Helper()
+	if at := bytes.Index(raw, []byte("PACK")); at != -1 {
+		raw = raw[:at]
+	}
+	var lines []string
+	rd := bytes.NewReader(raw)
+	for {
+		l, line, err := pktline.ReadLine(rd)
+		if err == io.EOF {
+			return lines
+		}
+		require.NoError(t, err)
+		if l == pktline.Flush {
+			continue
+		}
+		// git omits the optional trailing newline on shallow lines.
+		lines = append(lines, strings.TrimSuffix(string(line), "\n"))
+	}
+}
+
 // parseV1Response splits a v0/v1 response into its shallow, unshallow and
 // ACK or NAK lines and the pack that follows them.
 func parseV1Response(t testing.TB, r *canonicalRepo, raw []byte) v1Response {
@@ -205,18 +230,7 @@ func parseV1Response(t testing.TB, r *canonicalRepo, raw []byte) v1Response {
 	require.NotEqual(t, -1, at, "response must carry a pack: %q", raw)
 
 	var resp v1Response
-	rd := bytes.NewReader(raw[:at])
-	for {
-		l, line, err := pktline.ReadLine(rd)
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		if l == pktline.Flush {
-			continue
-		}
-		// git omits the optional trailing newline on shallow lines.
-		text := strings.TrimSuffix(string(line), "\n")
+	for _, text := range responseLines(t, raw) {
 		if hash, ok := strings.CutPrefix(text, "shallow "); ok {
 			resp.shallows = append(resp.shallows, r.names([]plumbing.Hash{plumbing.NewHash(hash)})...)
 		} else if hash, ok := strings.CutPrefix(text, "unshallow "); ok {
@@ -403,9 +417,10 @@ func TestGetShallowCommitsFollowsMergesAlongShortestPaths(t *testing.T) {
 	}
 }
 
-// requireGitV2 skips the test unless git speaks protocol v2, which git
-// introduced in 2.18. Older versions parse the command as a v0 want line.
-func requireGitV2(t testing.TB) {
+// requireGitAtLeast skips the test unless the git CLI is at least version
+// wantMajor.wantMinor. The reason names what the test needs from that version
+// and is reported in the skip message.
+func requireGitAtLeast(t testing.TB, wantMajor, wantMinor int, reason string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git CLI not found in PATH")
@@ -424,14 +439,15 @@ func requireGitV2(t testing.TB) {
 	if len(parts) > 1 {
 		minor, _ = strconv.Atoi(parts[1])
 	}
-	if errMajor != nil || major < 2 || (major == 2 && minor < 18) {
-		t.Skipf("git %s does not support protocol v2 (need >= 2.18)", fields[2])
+	if errMajor != nil || major < wantMajor || (major == wantMajor && minor < wantMinor) {
+		t.Skipf("git %s predates %s (need >= %d.%d)", fields[2], reason, wantMajor, wantMinor)
 	}
 }
 
 func TestUploadPackV2DeepenBeyondHistoryMatchesCanonicalShallowInfo(t *testing.T) {
 	t.Parallel()
-	requireGitV2(t)
+	// Versions before protocol v2 parse the command as a v0 want line.
+	requireGitAtLeast(t, 2, 18, "protocol v2")
 	r := mergeHistory(t)
 
 	req, err := io.ReadAll(v2Request(t, "fetch", nil, []string{
@@ -540,4 +556,46 @@ func TestPlanShallowStopsWhenCancelled(t *testing.T) {
 		_, err := planShallow(ctx, r.st, []plumbing.Hash{r.commits["D"]}, req)
 		require.ErrorIs(t, err, context.Canceled, name)
 	}
+}
+
+// TestUploadPackV1StatelessShallowListOnly checks that a stateless request
+// that ends after its wants, deepen and flush gets the shallow list and
+// nothing else, as git upload-pack answers it. git clients send such a
+// request first on a shallow clone over smart HTTP, and fail with "expected
+// shallow list" on anything after the list.
+func TestUploadPackV1StatelessShallowListOnly(t *testing.T) {
+	t.Parallel()
+	// Before 2.30, git upload-pack died on such a request instead of
+	// answering it: fb3d1a083f taught it to accept the client's EOF.
+	requireGitAtLeast(t, 2, 30, "git upload-pack answering a stateless request that ends after its shallow list")
+	r := mergeHistory(t)
+
+	var req bytes.Buffer
+	upreq := &packp.UploadRequest{Wants: r.hashes([]string{"D"})}
+	upreq.Depth.Deepen = 1
+	upreq.Capabilities.Set(capability.MultiACKDetailed)
+	require.NoError(t, upreq.Encode(&req))
+
+	want := canonicalUploadPack(t, r, req.Bytes())
+	got := goGitUploadPack(t, r, req.Bytes())
+	require.Equal(t, pktLines(t, want), pktLines(t, got))
+	require.Equal(t, []string{"shallow " + r.commits["D"].String(), "0000"}, pktLines(t, got))
+}
+
+// pktLines splits raw into its pkt-line payloads without their trailing line
+// feed, which pkt-line leaves optional, and with a flush-pkt as "0000".
+func pktLines(t testing.TB, raw []byte) []string {
+	t.Helper()
+	var lines []string
+	rd := bytes.NewReader(raw)
+	for rd.Len() > 0 {
+		l, line, err := pktline.ReadLine(rd)
+		require.NoError(t, err)
+		if l == pktline.Flush {
+			lines = append(lines, "0000")
+			continue
+		}
+		lines = append(lines, strings.TrimSuffix(string(line), "\n"))
+	}
+	return lines
 }
