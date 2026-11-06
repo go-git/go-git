@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
@@ -26,6 +27,9 @@ type StreamSession struct {
 	version protocol.Version
 	caps    capability.List
 	refs    *packp.AdvRefs
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewStreamSession creates a session from an open Conn.
@@ -140,8 +144,12 @@ func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOp
 	return NewRemoteRefs(refs), nil
 }
 
-// Fetch implements PackSession.
+// Fetch implements PackSession. If ctx is done while Fetch runs, the session
+// is closed, even if Fetch then returns nil.
 func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *FetchRequest) error {
+	stop := s.closeOnDone(ctx)
+	defer stop()
+
 	if s.version == protocol.V2 {
 		if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
 			return ErrFilterNotSupported
@@ -162,25 +170,29 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 			return out, s.r, nil
 		}
 		if err := internal.FetchV2(ctx, st, req, round); err != nil {
-			return s.wrapStderr(err)
+			return s.wrapStderr(ctx, err)
 		}
 		return nil
 	}
 
 	shallows, err := NegotiatePack(ctx, st, s.caps, false, s.r, s.w, req)
 	if err != nil {
-		return s.wrapStderr(err)
+		return s.wrapStderr(ctx, err)
 	}
 	if err := FetchPack(ctx, st, s.caps, io.NopCloser(s.r), shallows, req); err != nil {
-		return s.wrapStderr(err)
+		return s.wrapStderr(ctx, err)
 	}
 	return nil
 }
 
-// Push implements PackSession.
+// Push implements PackSession. If ctx is done while Push runs, the session is
+// closed, even if Push then returns nil.
 func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRequest) error {
+	stop := s.closeOnDone(ctx)
+	defer stop()
+
 	if err := SendPack(ctx, st, s.caps, s.w, io.NopCloser(s.r), req); err != nil {
-		return s.wrapStderr(err)
+		return s.wrapStderr(ctx, err)
 	}
 	return nil
 }
@@ -190,11 +202,16 @@ func (s *StreamSession) Push(ctx context.Context, st storage.Storer, req *PushRe
 // carries the capabilities collected during the handshake (the agent and the
 // server's object-format), so callers only provide the command arguments.
 //
-// Command is only valid on a session that negotiated Protocol v2.
+// Command is only valid on a session that negotiated Protocol v2. If ctx is
+// done while Command runs, the session is closed, even if Command then returns
+// nil.
 func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
 	if s.version != protocol.V2 {
 		return ErrUnsupportedVersion
 	}
+
+	stop := s.closeOnDone(ctx)
+	defer stop()
 
 	cr := &packp.CommandRequest{
 		Command:      cmd,
@@ -203,12 +220,12 @@ func (s *StreamSession) Command(ctx context.Context, cmd string, req packp.Comma
 	}
 
 	if err := cr.Encode(ioutil.NewContextWriter(ctx, s.w)); err != nil {
-		return s.wrapStderr(err)
+		return s.wrapStderr(ctx, err)
 	}
 
 	if resp != nil {
 		if err := resp.Decode(ioutil.NewContextReader(ctx, s.r)); err != nil {
-			return s.wrapStderr(err)
+			return s.wrapStderr(ctx, err)
 		}
 	}
 
@@ -224,10 +241,25 @@ func (s *StreamSession) commandCapabilities() capability.List {
 	return internal.ClientCapabilities(s.caps)
 }
 
+// closeOnDone closes the session once ctx is done, until stop is called. The
+// context wrappers cannot end a read or write already in flight, and a write
+// to a peer that has stopped reading never ends on its own; closing the
+// connection ends both.
+func (s *StreamSession) closeOnDone(ctx context.Context) (stop func() bool) {
+	return context.AfterFunc(ctx, func() { _ = s.Close() })
+}
+
 // wrapStderr checks if the underlying connection has stderr output and
 // returns it as a RemoteError so that remote error messages surface at
 // the operation site rather than at Close time.
-func (s *StreamSession) wrapStderr(err error) error {
+func (s *StreamSession) wrapStderr(ctx context.Context, err error) error {
+	// Once ctx is done the session is closed, which also ends the remote's
+	// stderr, and what it wrote there would replace the error the caller
+	// cancelled with. A deadline that is not ctx's own leaves stderr to
+	// explain the failure.
+	if ctx.Err() != nil {
+		return err
+	}
 	type stderrer interface {
 		Stderr() io.Reader
 	}
@@ -242,8 +274,13 @@ func (s *StreamSession) wrapStderr(err error) error {
 	return err
 }
 
-// Close implements Session.
-func (s *StreamSession) Close() error { return s.conn.Close() }
+// Close implements Session. It is safe to call more than once and
+// concurrently: only the first call closes the connection, and later calls
+// return its result.
+func (s *StreamSession) Close() error {
+	s.closeOnce.Do(func() { s.closeErr = s.conn.Close() })
+	return s.closeErr
+}
 
 // Archive implements Archiver. It speaks the git-upload-archive wire
 // protocol over the session's existing connection.
