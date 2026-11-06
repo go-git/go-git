@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -88,6 +89,18 @@ func (s *ShallowUpdateSuite) TestDecodeMalformed() {
 	s.NotNil(err)
 }
 
+func (s *ShallowUpdateSuite) TestDecodeNotHex() {
+	for _, raw := range []string{
+		"0034shallow " + strings.Repeat("z", 40) + "0000",
+		"0036unshallow " + strings.Repeat("z", 40) + "0000",
+		"004cshallow " + strings.Repeat("z", 64) + "0000",
+		"004eunshallow " + strings.Repeat("z", 64) + "0000",
+	} {
+		su := &ShallowUpdate{}
+		s.Error(su.Decode(bytes.NewBufferString(raw)), raw)
+	}
+}
+
 func (s *ShallowUpdateSuite) TestEncodeEmpty() {
 	su := &ShallowUpdate{}
 	buf := bytes.NewBuffer(nil)
@@ -153,4 +166,19 @@ func (s *ShallowUpdateSuite) TestEncodeUnshallow() {
 		"0000"
 
 	s.Equal(expected, buf.String())
+}
+
+func (s *ShallowUpdateSuite) TestDecodeSHA256() {
+	shallow := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	unshallow := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	raw := "" +
+		"004cshallow " + shallow +
+		"004funshallow " + unshallow + "\n" +
+		"0000"
+
+	su := &ShallowUpdate{}
+	s.Require().NoError(su.Decode(bytes.NewBufferString(raw)))
+
+	s.Equal([]plumbing.Hash{plumbing.NewHash(shallow)}, su.Shallows)
+	s.Equal([]plumbing.Hash{plumbing.NewHash(unshallow)}, su.Unshallows)
 }

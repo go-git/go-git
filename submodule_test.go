@@ -420,10 +420,6 @@ func TestSubmodulesFetchDepth(t *testing.T) {
 			t.Skip("skipping test in short mode.")
 		}
 
-		if f.ObjectFormat == "sha256" {
-			t.Skip("shallow submodule updates do not yet support SHA-256 shallow-update parsing")
-		}
-
 		r, wt := cloneFixture(t, f)
 		defer func() { _ = r.Close() }()
 
