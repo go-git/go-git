@@ -100,6 +100,41 @@ func (s *DecoderSuite) TestDecodeFailsWithGarbage() {
 	decodeFails(s, `[section]key=value"`)
 }
 
+// Git reads a `[section.subsection]` header as `[section "subsection"]`,
+// lowercasing both names, and only where a header can start.
+func (s *DecoderSuite) TestDecodeLegacySubsectionHeader() {
+	for _, tc := range []struct{ legacy, modern string }{
+		{"[protocol.file]\n\tallow = never\n", "[protocol \"file\"]\n\tallow = never\n"},
+		{"[Protocol.File]\n\tallow = never\n", "[protocol \"file\"]\n\tallow = never\n"},
+		{"[a.b.c]\n\tk = v\n", "[a \"b.c\"]\n\tk = v\n"},
+		{"[s]\n\tk = v\n  [a-1.b-2] ; comment\n\tk = w\n", "[s]\n\tk = v\n[a-1 \"b-2\"]\n\tk = w\n"},
+		// Not a header: a comment, a value, a value continued onto the
+		// next line, and a quoted subsection.
+		{"# [a.b]\n[s]\n\tk = v\n", "[s]\n\tk = v\n"},
+		{"[s]\n\tk = [a.b]\n", "[s]\n\tk = \"[a.b]\"\n"},
+		{"[s]\n\tk = x\\\n[a.b]\n", "[s]\n\tk = \"x\\n[a.b]\"\n"},
+		{"[remote \"A.B\"]\n\tk = v\n", "[remote \"A.B\"]\n\tk = v\n"},
+	} {
+		got, want := &Config{}, &Config{}
+		s.Require().NoError(NewDecoder(strings.NewReader(tc.legacy)).Decode(got), tc.legacy)
+		s.Require().NoError(NewDecoder(strings.NewReader(tc.modern)).Decode(want), tc.modern)
+		s.Equal(want, got, tc.legacy)
+	}
+
+	// Git rejects these too.
+	decodeFails(s, "[a.b c]\n\tk = v\n")
+	decodeFails(s, "[a_b.c]\n\tk = v\n")
+	// go-git rejects these, while Git accepts `[a.b]garbage` (as key
+	// a.b.garbage), `[.x]` and `[x.]`. An empty subsection is refused
+	// rather than read as `[x ""]`, which gcfg collapses onto `[x]`: for
+	// `[protocol.]` that would turn Git's protocol..allow into
+	// protocol.allow.
+	decodeFails(s, "[a.b]garbage\n\tk = v\n")
+	decodeFails(s, "[.x]\n\tk = v\n")
+	decodeFails(s, "[x.]\n\tk = v\n")
+	decodeFails(s, "[protocol]\n\tallow = never\n[protocol.]\n\tallow = always\n")
+}
+
 // referenceDecode decodes the way Decode did before it kept an index, by
 // going through the public Config.Section, Section.Subsection and
 // Config.AddOption lookups.
