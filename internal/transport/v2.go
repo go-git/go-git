@@ -332,23 +332,27 @@ func UpdateShallow(st storage.Storer, info *packp.ShallowUpdate) error {
 		return err
 	}
 
-outer:
+	boundary := make(map[plumbing.Hash]struct{}, len(shallows))
+	for _, s := range shallows {
+		boundary[s] = struct{}{}
+	}
 	for _, s := range info.Shallows {
-		for _, old := range shallows {
-			if s == old {
-				continue outer
-			}
+		if _, ok := boundary[s]; ok {
+			continue
 		}
+		boundary[s] = struct{}{}
 		shallows = append(shallows, s)
 	}
 
-	for _, s := range info.Unshallows {
-		for i, old := range shallows {
-			if s == old {
-				shallows = append(shallows[:i], shallows[i+1:]...)
-				break
-			}
+	if len(info.Unshallows) > 0 {
+		drop := make(map[plumbing.Hash]struct{}, len(info.Unshallows))
+		for _, s := range info.Unshallows {
+			drop[s] = struct{}{}
 		}
+		shallows = slices.DeleteFunc(shallows, func(s plumbing.Hash) bool {
+			_, ok := drop[s]
+			return ok
+		})
 	}
 
 	return st.SetShallow(shallows)

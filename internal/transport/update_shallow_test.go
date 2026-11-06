@@ -3,7 +3,9 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -116,4 +118,80 @@ func TestFetchV2RejectsShallowUpdateBeforePack(t *testing.T) {
 	shallows, err := st.Shallow()
 	require.NoError(t, err)
 	assert.Empty(t, shallows)
+}
+
+func TestUpdateShallowMerge(t *testing.T) {
+	t.Parallel()
+
+	a := plumbing.NewHash("1111111111111111111111111111111111111111")
+	b := plumbing.NewHash("2222222222222222222222222222222222222222")
+	c := plumbing.NewHash("3333333333333333333333333333333333333333")
+	d := plumbing.NewHash("4444444444444444444444444444444444444444")
+
+	for _, tc := range []struct {
+		name     string
+		boundary []plumbing.Hash
+		info     *packp.ShallowUpdate
+		want     []plumbing.Hash
+	}{
+		{
+			name:     "existing order kept, new shallows appended once, unshallows removed",
+			boundary: []plumbing.Hash{a, b},
+			info:     &packp.ShallowUpdate{Shallows: []plumbing.Hash{c, b, d, c}, Unshallows: []plumbing.Hash{a}},
+			want:     []plumbing.Hash{b, c, d},
+		},
+		{
+			name:     "unshallow removes every copy",
+			boundary: []plumbing.Hash{a, b, a},
+			info:     &packp.ShallowUpdate{Unshallows: []plumbing.Hash{a}},
+			want:     []plumbing.Hash{b},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := memory.NewStorage()
+			require.NoError(t, st.SetShallow(tc.boundary))
+
+			require.NoError(t, UpdateShallow(st, tc.info))
+
+			shallows, err := st.Shallow()
+			require.NoError(t, err)
+			require.Equal(t, tc.want, shallows)
+		})
+	}
+}
+
+func BenchmarkUpdateShallow(b *testing.B) {
+	for _, n := range []int{1_000, 10_000, 50_000} {
+		hashes := make([]plumbing.Hash, n)
+		for i := range hashes {
+			hashes[i] = plumbing.NewHash(fmt.Sprintf("%040x", i+1))
+		}
+
+		b.Run("shallow/"+strconv.Itoa(n), func(b *testing.B) {
+			info := &packp.ShallowUpdate{Shallows: hashes}
+			for b.Loop() {
+				if err := UpdateShallow(memory.NewStorage(), info); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run("unshallow/"+strconv.Itoa(n), func(b *testing.B) {
+			info := &packp.ShallowUpdate{Unshallows: hashes}
+			for b.Loop() {
+				b.StopTimer()
+				st := memory.NewStorage()
+				if err := st.SetShallow(hashes); err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+
+				if err := UpdateShallow(st, info); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
