@@ -140,9 +140,9 @@ type Entry struct {
 	Hash plumbing.Hash
 	// Name is the  Entry path name relative to top level directory
 	Name string
-	// CreatedAt time when the tracked path was created
-	CreatedAt time.Time
-	// ModifiedAt time when the tracked path was changed
+	// ChangedAt time when the tracked path was last changed
+	ChangedAt time.Time
+	// ModifiedAt time when the tracked path was last modified
 	ModifiedAt time.Time
 	// Dev and Inode of the tracked path
 	Dev, Inode uint32
@@ -167,7 +167,7 @@ func (e Entry) String() string {
 	buf := bytes.NewBuffer(nil)
 
 	fmt.Fprintf(buf, "%06o %s %d\t%s\n", e.Mode, e.Hash, e.Stage, e.Name)
-	fmt.Fprintf(buf, "  ctime: %d:%d\n", e.CreatedAt.Unix(), e.CreatedAt.Nanosecond())
+	fmt.Fprintf(buf, "  ctime: %d:%d\n", e.ChangedAt.Unix(), e.ChangedAt.Nanosecond())
 	fmt.Fprintf(buf, "  mtime: %d:%d\n", e.ModifiedAt.Unix(), e.ModifiedAt.Nanosecond())
 	fmt.Fprintf(buf, "  dev: %d\tino: %d\n", e.Dev, e.Inode)
 	fmt.Fprintf(buf, "  uid: %d\tgid: %d\n", e.UID, e.GID)

@@ -148,7 +148,7 @@ func (d *Decoder) readEntry(idx *Index) (*Entry, error) {
 	read := entryHeaderLength + d.hash.Size()
 
 	if sec != 0 || nsec != 0 {
-		e.CreatedAt = time.Unix(int64(sec), int64(nsec))
+		e.ChangedAt = time.Unix(int64(sec), int64(nsec))
 	}
 
 	if msec != 0 || mnsec != 0 {
