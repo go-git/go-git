@@ -239,9 +239,13 @@ func NegotiatePack(
 			}
 		}
 
-		readc := make(chan error)
+		// The server sends its shallow-update before it reads any haves
+		// (upload-pack.c receive_needs), so read it first, as git's
+		// fetch-pack does.
 		if !statelessRPC {
-			go func() { readc <- readShallows(statelessRPC, reader, req, &shallowInfo, firstRound) }()
+			if err := readShallows(statelessRPC, reader, req, &shallowInfo, firstRound); err != nil {
+				return nil, err
+			}
 		}
 
 		if err := uphav.Encode(writer); err != nil {
@@ -255,27 +259,14 @@ func NegotiatePack(
 			if err := readShallows(statelessRPC, reader, req, &shallowInfo, firstRound); err != nil {
 				return nil, err
 			}
-		} else {
-			if err := <-readc; err != nil {
-				return nil, err
-			}
 		}
 
-		go func() {
-			defer close(readc)
-			if done || len(uphav.Haves) > 0 {
-				var srvrs packp.ServerResponse
-				if err := srvrs.Decode(reader); err != nil {
-					readc <- fmt.Errorf("decoding server-response: %w", err)
-					return
-				}
-				applyServerACKs(statelessRPC, srvrs.ACKs, common, &statelessCommon, &gotContinue, &gotReady, &inVein)
+		if done || len(uphav.Haves) > 0 {
+			var srvrs packp.ServerResponse
+			if err := srvrs.Decode(reader); err != nil {
+				return nil, fmt.Errorf("decoding server-response: %w", err)
 			}
-			readc <- nil
-		}()
-
-		if err := <-readc; err != nil {
-			return nil, err
+			applyServerACKs(statelessRPC, srvrs.ACKs, common, &statelessCommon, &gotContinue, &gotReady, &inVein)
 		}
 		if sendDoneAfterReady {
 			break
