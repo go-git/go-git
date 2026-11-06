@@ -110,7 +110,10 @@ func transformChildren(t *Tree) ([]noder.Noder, error) {
 	// filesystem, so it must enumerate the tree faithfully — including entries
 	// with names that are unsafe to check out but valid per upstream Git (e.g.
 	// control characters). Path safety is enforced at materialisation
-	// boundaries (FindEntry, TreeEntryFile, archive, FileIter), not here.
+	// boundaries (FindEntry, TreeEntryFile, archive, FileIter, and the
+	// worktree filesystem wrapper's validPath, which the tree-derived
+	// deletes in resetWorktreeToTree reach without passing any of the
+	// others), not here.
 	walker.skipPathValidation = true
 	// don't defer walker.Close() for efficiency reasons.
 	for {

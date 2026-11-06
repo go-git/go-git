@@ -22,10 +22,6 @@ import (
 	"github.com/go-git/go-git/v6/utils/sync"
 )
 
-var ignore = map[string]bool{
-	".git": true,
-}
-
 // Options contains configuration for the filesystem node.
 type Options struct {
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.
@@ -52,6 +48,13 @@ type Options struct {
 	// Requires Index to be set: without an index there is no way to identify
 	// tracked entries, so the scope is treated as a no-op.
 	IgnoreScope *gitignore.Scope
+
+	// IgnoreCase skips the repository directory in any case, such as
+	// .GIT, as Git does under core.ignorecase, where on a
+	// case-insensitive filesystem such a name may be that directory.
+	// Without it only .git is skipped, and a .GIT is walked like any
+	// other entry, as Git lists it.
+	IgnoreCase bool
 }
 
 // The node represents a file or a directory in a billy.Filesystem. It
@@ -224,7 +227,9 @@ func (n *node) calculateChildren() error {
 	}
 
 	for _, file := range files {
-		if _, ok := ignore[file.Name()]; ok {
+		// The repository's own directory is skipped, compared as Git's
+		// fspathcmp does: in any case under core.ignorecase.
+		if n.isGitDir(file.Name()) {
 			continue
 		}
 
@@ -249,6 +254,14 @@ func (n *node) calculateChildren() error {
 	}
 
 	return nil
+}
+
+// isGitDir reports whether a listed name is the repository's own directory.
+func (n *node) isGitDir(name string) bool {
+	if n.options != nil && n.options.IgnoreCase {
+		return strings.EqualFold(name, ".git")
+	}
+	return name == ".git"
 }
 
 // resolveScope derives this directory's ignore scope from the listing just

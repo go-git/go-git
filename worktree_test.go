@@ -38,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -2461,6 +2462,35 @@ func TestRemovalKeepsDirectoriesItCannotRemove(t *testing.T) {
 	}
 }
 
+func TestRemovalRefusesDotGitAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range []string{"memfs", "osfs"} {
+		for _, name := range []string{".git", "a/.git/b", "sub/.GIT", "sub/git~1"} {
+			for _, directory := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/refuse/%q/directory=%t", backend, name, directory), func(t *testing.T) {
+					t.Parallel()
+
+					raw := memfs.New()
+					if backend == "osfs" {
+						raw = osfs.New(t.TempDir())
+					}
+
+					p := name
+					if directory {
+						p += "/inner.txt"
+					}
+					require.NoError(t, util.WriteFile(raw, p, []byte("keep"), 0o644))
+
+					before := snapshotSubtree(t, raw, name)
+					require.Error(t, rmFileAndDirsIfEmpty(newWorktreeFilesystem(raw, true, false), name))
+					require.Equal(t, before, snapshotSubtree(t, raw, name))
+				})
+			}
+		}
+	}
+}
+
 // Git preserves a removed submodule's worktree even when it contains local changes.
 func TestResetPreservesSubmoduleDirectory(t *testing.T) {
 	t.Parallel()
@@ -2587,7 +2617,7 @@ func TestResetPreservesLeadingSymlink(t *testing.T) {
 
 			// Git 2.32 fixed unlink_entry following leading symlinks
 			// when removing entries (upstream commit fab78a0c3d).
-			if implementation == "git" && !gitAtLeast(t, 2, 32) {
+			if implementation == "git" && !gitAtLeast(t, 2, 32, 0) {
 				t.Skip("Git 2.32 or newer is required for symlink-safe removal")
 			}
 
@@ -4856,4 +4886,422 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 	})
+}
+
+// TestStatusAndCleanWithDotGitAliases checks that an untracked file or
+// directory named like a .git alias, which Git reports and removes like any
+// other, is listed by Status, file by file, and removed by Clean with every
+// other untracked file. Only .git is skipped, and under core.ignorecase
+// .git in any case, as Git's fspathcmp compares it: on a case-insensitive
+// filesystem ".GIT" may be the repository's own directory. Clean also
+// skips it with the setting unset. memfs is case-sensitive, so every
+// setting is exercised on every host.
+func TestStatusAndCleanWithDotGitAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{".GIT", "dir/.Git"} {
+		for _, ignoreCase := range []config.OptBool{config.OptBoolUnset, config.OptBoolFalse, config.OptBoolTrue} {
+			t.Run(fmt.Sprintf("%s/ignorecase=%s", name, ignoreCase), func(t *testing.T) {
+				t.Parallel()
+
+				fs := memfs.New()
+				r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+				require.NoError(t, err)
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				cfg.Core.IgnoreCase = ignoreCase
+				require.NoError(t, r.SetConfig(cfg))
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				untracked := name + "/HEAD"
+				require.NoError(t, util.WriteFile(fs, untracked, []byte("x"), 0o644))
+				// An empty directory, as a repository holds, which Clean
+				// removes unless it skips the whole directory.
+				empty := name + "/refs/tags"
+				require.NoError(t, fs.MkdirAll(empty, 0o755))
+
+				// Status follows Git, which skips .GIT only under
+				// core.ignorecase.
+				status, err := w.Status()
+				require.NoError(t, err)
+				if ignoreCase.IsTrue() {
+					require.Empty(t, status)
+				} else {
+					require.Equal(t, Status{untracked: &FileStatus{Staging: Untracked, Worktree: Untracked}}, status)
+				}
+
+				// Clean also leaves .GIT alone with the setting unset,
+				// as go-git's init never writes it.
+				require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+				for _, p := range []string{untracked, empty} {
+					_, err = fs.Stat(p)
+					if ignoreCase != config.OptBoolFalse {
+						require.NoError(t, err, "Clean removed %q", p)
+					} else {
+						require.ErrorIs(t, err, os.ErrNotExist, "Clean left %q", p)
+					}
+				}
+			})
+		}
+	}
+
+	for _, name := range []string{"git~1", "GIT~1", "dir/git~1"} {
+		for _, dir := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/directory=%t", name, dir), func(t *testing.T) {
+				t.Parallel()
+
+				fs := memfs.New()
+				r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+				require.NoError(t, err)
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				untracked := name
+				if dir {
+					untracked = name + "/f"
+				}
+				require.NoError(t, util.WriteFile(fs, untracked, []byte("x"), 0o644))
+				require.NoError(t, util.WriteFile(fs, "z", []byte("x"), 0o644))
+
+				status, err := w.Status()
+				require.NoError(t, err)
+				require.True(t, status.IsUntracked(untracked), "status: %v", status)
+
+				require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+				for _, p := range []string{untracked, "z"} {
+					_, err = fs.Stat(p)
+					require.ErrorIs(t, err, os.ErrNotExist, "Clean left %q", p)
+				}
+			})
+		}
+	}
+}
+
+// On a case-insensitive filesystem a repository whose directory is spelled
+// ".GIT" opens, and Clean must never remove it, whatever core.ignorecase
+// says: go-git's init does not write the setting, and with it false Git
+// itself would remove the directory. Status follows Git and lists its files
+// unless core.ignorecase is true.
+func TestCleanKeepsRepositorySpelledInOtherCase(t *testing.T) {
+	t.Parallel()
+
+	probe := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(probe, "probe"), nil, 0o644))
+	if _, err := os.Stat(filepath.Join(probe, "PROBE")); err != nil {
+		t.Skip("the filesystem is case-sensitive")
+	}
+
+	for _, ignoreCase := range []config.OptBool{config.OptBoolUnset, config.OptBoolFalse, config.OptBoolTrue} {
+		t.Run("ignorecase="+ignoreCase.String(), func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			_, err := PlainInit(dir, false)
+			require.NoError(t, err)
+			require.NoError(t, os.Rename(filepath.Join(dir, ".git"), filepath.Join(dir, ".GIT")))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked"), []byte("x"), 0o644))
+
+			r, err := PlainOpen(dir)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.IgnoreCase = ignoreCase
+			require.NoError(t, r.SetConfig(cfg))
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			status, err := w.Status()
+			require.NoError(t, err)
+			require.True(t, status.IsUntracked("untracked"))
+			if ignoreCase.IsTrue() {
+				require.Len(t, status, 1)
+			}
+
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			_, err = os.Stat(filepath.Join(dir, ".GIT", "HEAD"))
+			require.NoError(t, err, "Clean removed the repository")
+			_, err = os.Stat(filepath.Join(dir, "untracked"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// Clean must never remove the storer's Git directory, even where its name
+// is not .git and the name rules would not skip it. This runs on any host:
+// the storage is opened on the directory directly, so a case-sensitive
+// filesystem stands in for a case-insensitive one where .GIT is the
+// repository. With core.ignorecase false only the identity check protects
+// it.
+func TestCleanKeepsStorerGitDir(t *testing.T) {
+	t.Parallel()
+
+	for _, gitDir := range []string{".GIT", "repo.git"} {
+		for _, ignoreCase := range []config.OptBool{config.OptBoolUnset, config.OptBoolFalse, config.OptBoolTrue} {
+			t.Run(gitDir+"/ignorecase="+ignoreCase.String(), func(t *testing.T) {
+				t.Parallel()
+
+				dir := t.TempDir()
+				st := filesystem.NewStorage(osfs.New(filepath.Join(dir, gitDir)), cache.NewObjectLRUDefault())
+				// Init with a worktree would write a .git file, which a
+				// case-insensitive filesystem cannot hold beside .GIT.
+				_, err := Init(st)
+				require.NoError(t, err)
+				r, err := Open(st, osfs.New(dir))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = r.Close() })
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				cfg.Core.IgnoreCase = ignoreCase
+				require.NoError(t, r.SetConfig(cfg))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked"), []byte("x"), 0o644))
+
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+
+				_, err = os.Stat(filepath.Join(dir, gitDir, "HEAD"))
+				require.NoError(t, err, "Clean removed the repository")
+				_, err = os.Stat(filepath.Join(dir, "untracked"))
+				require.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
+	}
+}
+
+// For a linked worktree, the storer's own Git directory is the private one
+// below worktrees/, and the common directory must be kept too. Here the
+// common directory sits inside the worktree under a name no rule skips,
+// so only the identity check keeps it, on any host.
+func TestCleanKeepsLinkedWorktreeCommonDir(t *testing.T) {
+	t.Parallel()
+
+	for _, commonName := range []string{".GIT", "store.git"} {
+		t.Run(commonName, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			common := filepath.Join(dir, commonName)
+			_, err := Init(filesystem.NewStorage(osfs.New(common), cache.NewObjectLRUDefault()))
+			require.NoError(t, err)
+			private := filepath.Join(common, "worktrees", "wt")
+			require.NoError(t, os.MkdirAll(private, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(private, "HEAD"), []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(private, "commondir"), []byte("../..\n"), 0o644))
+
+			st := filesystem.NewStorage(
+				dotgit.NewRepositoryFilesystem(osfs.New(private), osfs.New(common)),
+				cache.NewObjectLRUDefault(),
+			)
+			r, err := Open(st, osfs.New(dir))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.IgnoreCase = config.OptBoolFalse
+			require.NoError(t, r.SetConfig(cfg))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked"), []byte("x"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+
+			for _, p := range []string{filepath.Join(common, "HEAD"), filepath.Join(common, "objects"), filepath.Join(private, "HEAD")} {
+				_, err = os.Stat(p)
+				require.NoError(t, err, "Clean removed %q", p)
+			}
+			_, err = os.Stat(filepath.Join(dir, "untracked"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// Clean leaves a directory holding a .git entry alone, as `git clean`
+// without a second -f leaves a nested repository: neither its files nor its
+// Git directory are removed. memfs is case-sensitive, so this runs on every
+// host.
+func TestCleanKeepsNestedRepository(t *testing.T) {
+	t.Parallel()
+
+	for _, gitEntry := range []string{"dir", "file"} {
+		t.Run(gitEntry, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			if gitEntry == "dir" {
+				require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			} else {
+				require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../elsewhere\n"), 0o644))
+			}
+			require.NoError(t, util.WriteFile(fs, "sub/file", []byte("x"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "untracked", []byte("x"), 0o644))
+
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			_, err = fs.Lstat("sub/.git")
+			require.NoError(t, err)
+			_, err = fs.Stat("sub/file")
+			require.NoError(t, err, "Clean removed a nested repository's file")
+			_, err = fs.Stat("untracked")
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// A directory with tracked files is not a nested repository to Git, even
+// when it holds a .git entry, so Clean removes its untracked files as Status
+// lists them.
+func TestCleanTrackedDirectoryHoldingGitEntry(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "t/tracked", []byte("x"), 0o644))
+	_, err = w.Add("t/tracked")
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "t/.git", []byte("gitdir: ../elsewhere\n"), 0o644))
+	require.NoError(t, util.WriteFile(fs, "t/junk", []byte("x"), 0o644))
+
+	status, err := w.Status()
+	require.NoError(t, err)
+	require.True(t, status.IsUntracked("t/junk"), "status: %v", status)
+
+	require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+	_, err = fs.Stat("t/junk")
+	require.ErrorIs(t, err, os.ErrNotExist, "Clean left t/junk")
+	_, err = fs.Stat("t/tracked")
+	require.NoError(t, err)
+}
+
+// On a case-insensitive filesystem a nested repository whose Git directory
+// is spelled .GIT is still a nested repository, as Git finds it through
+// sub/.git, so Clean keeps it whatever core.ignorecase says.
+func TestCleanKeepsNestedRepositorySpelledInOtherCase(t *testing.T) {
+	t.Parallel()
+
+	probe := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(probe, "probe"), nil, 0o644))
+	if _, err := os.Stat(filepath.Join(probe, "PROBE")); err != nil {
+		t.Skip("the filesystem is case-sensitive")
+	}
+
+	for _, ignoreCase := range []config.OptBool{config.OptBoolUnset, config.OptBoolFalse, config.OptBoolTrue} {
+		t.Run("ignorecase="+ignoreCase.String(), func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			r, err := PlainInit(dir, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.IgnoreCase = ignoreCase
+			require.NoError(t, r.SetConfig(cfg))
+
+			sub := filepath.Join(dir, "sub")
+			_, err = PlainInit(sub, false)
+			require.NoError(t, err)
+			require.NoError(t, os.Rename(filepath.Join(sub, ".git"), filepath.Join(sub, ".GIT")))
+			require.NoError(t, os.WriteFile(filepath.Join(sub, "file"), []byte("x"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			for _, p := range []string{filepath.Join(sub, ".GIT", "HEAD"), filepath.Join(sub, "file")} {
+				_, err = os.Stat(p)
+				require.NoError(t, err, "Clean removed %q", p)
+			}
+		})
+	}
+}
+
+// swapDirFS replaces dir with a symlink right after the swapAt-th listing
+// of it, as a local process racing Clean could, and records every removal.
+type swapDirFS struct {
+	billy.Filesystem
+	dir     string
+	swapAt  int
+	reads   int
+	removed []string
+}
+
+func (f *swapDirFS) ReadDir(p string) ([]fs.DirEntry, error) {
+	entries, err := f.Filesystem.ReadDir(p)
+	if err != nil || p != f.dir {
+		return entries, err
+	}
+	f.reads++
+	if f.reads == f.swapAt {
+		if err := util.RemoveAll(f.Filesystem, f.dir); err != nil {
+			return nil, err
+		}
+		if err := f.Symlink("/outside", f.dir); err != nil {
+			return nil, err
+		}
+	}
+	return entries, nil
+}
+
+func (f *swapDirFS) Remove(p string) error {
+	f.removed = append(f.removed, p)
+	return f.Filesystem.Remove(p)
+}
+
+// Clean lists and removes through the worktree's own filesystem, so it
+// must refuse a removal through a symlink as the worktree filesystem does:
+// a directory swapped for a link after Clean listed it must not be
+// followed to the link's target, neither for an untracked file below it
+// nor for an empty directory below it.
+func TestCleanRefusesRemovalThroughSwappedSymlink(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		create func(billy.Filesystem) error
+		target string
+	}{
+		{
+			name:   "file",
+			create: func(fs billy.Filesystem) error { return util.WriteFile(fs, "dir/f", []byte("x"), 0o644) },
+			target: "dir/f",
+		},
+		{
+			name:   "empty directory",
+			create: func(fs billy.Filesystem) error { return fs.MkdirAll("dir/sub", 0o755) },
+			target: "dir/sub",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sfs := &swapDirFS{Filesystem: memfs.New(), dir: "dir"}
+			r, err := Init(memory.NewStorage(), WithWorkTree(sfs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, tc.create(sfs))
+			// The link's target holds the same layout, so a removal
+			// that follows the link finds something to remove there.
+			require.NoError(t, util.WriteFile(sfs, "/outside/f", []byte("x"), 0o644))
+			require.NoError(t, sfs.MkdirAll("/outside/sub", 0o755))
+
+			// Clean runs Status first, then lists dir once more itself.
+			_, err = w.Status()
+			require.NoError(t, err)
+			sfs.swapAt = 2*sfs.reads + 1
+
+			err = w.Clean(&CleanOptions{Dir: true})
+			require.ErrorIs(t, err, errLeadingSymlink)
+			require.NotContains(t, sfs.removed, tc.target)
+
+			fi, err := sfs.Lstat("dir")
+			require.NoError(t, err)
+			require.NotZero(t, fi.Mode()&os.ModeSymlink)
+		})
+	}
 }
