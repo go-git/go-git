@@ -763,6 +763,12 @@ func TestSubmoduleRepositoryURLResolution(t *testing.T) {
 			wantRemote:   "file:///abs/path/X.git",
 		},
 		{
+			name:         "remote helper URL preserved",
+			parentURL:    "https://example.invalid/group/proj.git",
+			submoduleURL: "file::../X.git",
+			wantRemote:   "file::../X.git",
+		},
+		{
 			name:         "relative URL with no parent remote",
 			submoduleURL: "../X.git",
 			wantErr:      `resolving relative submodule URL: remote "origin" not found`,
