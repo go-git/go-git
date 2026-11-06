@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -13,16 +14,23 @@ import (
 // implement. It provides access to arbitrary v2 commands beyond the
 // built-in Fetch and Push operations.
 //
-// Sessions that negotiate Protocol v2 (version 2) implement this interface.
-// The Command method executes a named v2 command: req carries the
-// command-specific arguments and is encoded into the request, while resp
-// decodes the response. For example, GetRemoteRefs runs
-// Command(ctx, "ls-refs", lsRefsArgs, lsRefsOutput). The session builds the v2
-// request envelope (command name, the capabilities collected during the
-// handshake, delim-pkt, the arguments, and flush-pkt) and, for HTTP, handles
-// the response-end packet.
+// Command executes a named command with req as its arguments and returns its
+// response reader. The caller decodes metadata, reads any packfile from the
+// same reader, and closes it. The session builds the request envelope.
+//
+// Read the complete protocol response before another command on the same
+// session. Stream transports keep their connection open when the reader closes.
+// To abandon an incomplete response on a stream transport, close the session.
+// HTTP readers drain a bounded remainder before closure to allow connection
+// reuse. Use a request context with cancellation or a deadline to bound that wait.
+//
+// HTTP sends the request on the first Read. A nil error from Command does not
+// mean the HTTP request succeeded; request errors can arrive on that read.
+//
+// For example, call Command(ctx, "ls-refs", lsRefsArgs), decode a
+// packp.LsRefsOutput from the returned reader, then close the reader.
 type Commander interface {
-	Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error
+	Command(ctx context.Context, cmd string, req packp.CommandArgs) (io.ReadCloser, error)
 }
 
 // Transport is implemented by transports that speak the Git pack
