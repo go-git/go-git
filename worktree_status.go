@@ -220,16 +220,50 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 		return nil, err
 	}
 
-	for _, s := range status {
+	for i, s := range status {
 		if s.Current.IsZero() {
 			o[s.Path] = s.Expected
 			continue
 		}
 
-		o[s.Path] = s.Current
+		hash := s.Current
+		// git status treats a submodule as modified when its HEAD still
+		// matches the gitlink but the worktree is dirty (tracked changes
+		// or untracked files; submodule.<name>.ignore=none). The filesystem
+		// noder only sees the HEAD hash, so a dirty worktree at the recorded
+		// commit would otherwise compare equal to the index. Use a distinct
+		// placeholder so the merkletrie reports Modify, matching
+		// `git status --porcelain` (" M <path>"). See #2559.
+		if s.Current == s.Expected {
+			dirty, err := sub[i].worktreeDirty()
+			if err != nil {
+				return nil, err
+			}
+			if dirty {
+				hash = dirtySubmodulePlaceholder(s.Current)
+			}
+		}
+
+		o[s.Path] = hash
 	}
 
 	return o, nil
+}
+
+// dirtySubmodulePlaceholder returns a hash that differs from h so a
+// worktree-dirty submodule is not equal to its index gitlink. The value
+// is never shown to callers; Status only records Modified vs Unmodified.
+func dirtySubmodulePlaceholder(h plumbing.Hash) plumbing.Hash {
+	b := append([]byte(nil), h.Bytes()...)
+	if len(b) == 0 {
+		return h
+	}
+	b[0] ^= 0xff
+	out, ok := plumbing.FromBytes(b)
+	if !ok {
+		return h
+	}
+	return out
 }
 
 func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {

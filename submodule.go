@@ -103,6 +103,34 @@ func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
 	return status, err
 }
 
+// worktreeDirty reports whether the submodule worktree has changes that
+// `git status` would show: modified tracked files or untracked files.
+// That is git's default (submodule.<name>.ignore=none). HEAD vs the
+// gitlink is the caller's concern; git submodule status uses + only for
+// a SHA mismatch and is unchanged.
+func (s *Submodule) worktreeDirty() (bool, error) {
+	r, err := s.Repository()
+	if err != nil {
+		if errors.Is(err, ErrSubmoduleNotInitialized) {
+			return false, nil
+		}
+		return false, err
+	}
+	defer func() { _ = r.Close() }()
+
+	wt, err := r.Worktree()
+	if err != nil {
+		return false, err
+	}
+
+	st, err := wt.Status()
+	if err != nil {
+		return false, err
+	}
+
+	return !st.IsClean(), nil
+}
+
 // Repository returns the Repository represented by this submodule
 func (s *Submodule) Repository() (*Repository, error) {
 	if !s.initialized {
