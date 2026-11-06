@@ -763,12 +763,12 @@ func (r *FetchOutput) encodeAcknowledgments(w io.Writer) error {
 
 func (r *FetchOutput) encodeShallowInfo(w io.Writer) error {
 	for _, h := range r.ShallowInfo.Shallows {
-		if _, err := pktline.Writef(w, "shallow %s\n", h); err != nil {
+		if _, err := pktline.Writef(w, "shallow %s", h); err != nil {
 			return err
 		}
 	}
 	for _, h := range r.ShallowInfo.Unshallows {
-		if _, err := pktline.Writef(w, "unshallow %s\n", h); err != nil {
+		if _, err := pktline.Writef(w, "unshallow %s", h); err != nil {
 			return err
 		}
 	}

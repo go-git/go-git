@@ -447,6 +447,10 @@ func TestFetchOutputEncode(t *testing.T) {
 
 		var buf bytes.Buffer
 		require.NoError(t, resp.Encode(&buf))
+		// Like git's send_shallow and send_unshallow, no trailing newline.
+		require.Contains(t, buf.String(),
+			"0034shallow 1111111111111111111111111111111111111111"+
+				"0036unshallow 2222222222222222222222222222222222222222")
 		pktline.WriteFlush(&buf)
 
 		got := &FetchOutput{}

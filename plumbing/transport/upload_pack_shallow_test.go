@@ -215,14 +215,15 @@ func parseV1Response(t testing.TB, r *canonicalRepo, raw []byte) v1Response {
 		if l == pktline.Flush {
 			continue
 		}
-		// git omits the optional trailing newline on shallow lines.
-		text := strings.TrimSuffix(string(line), "\n")
+		text := string(line)
 		if hash, ok := strings.CutPrefix(text, "shallow "); ok {
+			requireNoNewline(t, text)
 			resp.shallows = append(resp.shallows, r.names([]plumbing.Hash{plumbing.NewHash(hash)})...)
 		} else if hash, ok := strings.CutPrefix(text, "unshallow "); ok {
+			requireNoNewline(t, text)
 			resp.unshallows = append(resp.unshallows, r.names([]plumbing.Hash{plumbing.NewHash(hash)})...)
 		} else {
-			resp.acks = append(resp.acks, text)
+			resp.acks = append(resp.acks, strings.TrimSuffix(text, "\n"))
 		}
 	}
 	slices.Sort(resp.shallows)
@@ -231,6 +232,14 @@ func parseV1Response(t testing.TB, r *canonicalRepo, raw []byte) v1Response {
 	resp.pack = memory.NewStorage()
 	require.NoError(t, packfile.UpdateObjectStorage(resp.pack, bytes.NewReader(raw[at:])))
 	return resp
+}
+
+// requireNoNewline fails unless a shallow or unshallow line ends without a
+// newline, as git's send_shallow and send_unshallow write it. libgit2 rejects
+// the line otherwise.
+func requireNoNewline(t testing.TB, line string) {
+	t.Helper()
+	require.False(t, strings.HasSuffix(line, "\n"), "trailing newline on %q", line)
 }
 
 // commitNames lists the commits in a pack by name.
@@ -453,6 +462,37 @@ func TestUploadPackV2DeepenBeyondHistoryMatchesCanonicalShallowInfo(t *testing.T
 		require.NotContains(t, section, "shallow ", name)
 		require.NotContains(t, section, "unshallow ", name)
 	}
+}
+
+// TestUploadPackV2ShallowInfoMatchesCanonicalBytes checks the shallow-info
+// section byte for byte. git writes its shallow lines without the optional
+// trailing newline, and libgit2 rejects a line that has one.
+func TestUploadPackV2ShallowInfoMatchesCanonicalBytes(t *testing.T) {
+	t.Parallel()
+	requireGitV2(t)
+	r := mergeHistory(t)
+
+	// Depth 2 from D has the single boundary M, so the line order cannot
+	// differ.
+	req, err := io.ReadAll(v2Request(t, "fetch", nil, []string{
+		"want " + r.commits["D"].String(),
+		"deepen 2",
+		"done",
+	}))
+	require.NoError(t, err)
+
+	section := func(name, out string) string {
+		start := strings.Index(out, "shallow-info")
+		require.NotEqual(t, -1, start, "%s response has no shallow-info section", name)
+		end := strings.Index(out, "packfile")
+		require.Greater(t, end, start, "%s response has no packfile section", name)
+		return out[start:end]
+	}
+	canonical := section("git", string(canonicalUploadPack(t, r, req, "GIT_PROTOCOL=version=2")))
+	got := section("go-git", serveUploadPackV2Test(t, r.st, io.NopCloser(bytes.NewReader(req))))
+
+	require.Contains(t, canonical, "shallow "+r.commits["M"].String())
+	require.Equal(t, canonical, got)
 }
 
 // TestPlanShallowClientShallowLines checks that the client's shallow lines are

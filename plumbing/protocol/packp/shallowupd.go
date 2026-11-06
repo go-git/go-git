@@ -79,13 +79,13 @@ func (r *ShallowUpdate) decodeLine(line, prefix []byte, expLen int) (plumbing.Ha
 // Encode writes the shallow update to the writer.
 func (r *ShallowUpdate) Encode(w io.Writer) error {
 	for _, h := range r.Shallows {
-		if _, err := pktline.Writef(w, "%s%s\n", shallow, h.String()); err != nil {
+		if _, err := pktline.Writef(w, "%s%s", shallow, h.String()); err != nil {
 			return err
 		}
 	}
 
 	for _, h := range r.Unshallows {
-		if _, err := pktline.Writef(w, "%s%s\n", unshallow, h.String()); err != nil {
+		if _, err := pktline.Writef(w, "%s%s", unshallow, h.String()); err != nil {
 			return err
 		}
 	}
