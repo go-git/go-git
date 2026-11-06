@@ -85,9 +85,13 @@ func main() {
 }
 
 func getCommitNodeIndex(r *git.Repository, fs billy.Filesystem) (commitgraph.CommitNodeIndex, io.ReadCloser) {
+	cfg, err := r.Config()
+	if err != nil {
+		return commitgraph.NewObjectCommitNodeIndex(r.Storer), nil
+	}
 	file, err := fs.Open(path.Join("objects", "info", "commit-graph"))
 	if err == nil {
-		index, err := commitgraph_fmt.OpenFileIndex(file)
+		index, err := commitgraph_fmt.OpenFileIndex(file, commitgraph_fmt.WithObjectFormat(cfg.Extensions.ObjectFormat))
 		if err == nil {
 			return commitgraph.NewGraphCommitNodeIndex(index, r.Storer), file
 		}

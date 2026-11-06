@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 	"sort"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
@@ -860,4 +862,17 @@ func TestLazyIndex_WithPool_EvictionAndReopen(t *testing.T) {
 		"FindHash on an evicted LazyIndex must transparently reopen both idx and rev")
 	require.Equal(t, entry.Hash, gotHash,
 		"FindHash must return the same hash MemoryIndex has at this offset")
+}
+
+func TestLazyIndexRejectsOtherFormatHash(t *testing.T) {
+	t.Parallel()
+
+	const hashSize = 20
+	idxBytes := buildMinimalIdx(3, hashSize)
+	idx, err := NewLazyIndex(readerAtOpener(idxBytes), readerAtOpener(buildMinimalRev(3, hashSize)), extractPackHash(idxBytes, hashSize))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = idx.Close() })
+
+	_, err = idx.Contains(plumbing.NewHash(strings.Repeat("a", 64)))
+	require.ErrorIs(t, err, formatcfg.ErrObjectFormatMismatch)
 }
