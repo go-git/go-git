@@ -62,6 +62,15 @@ type Worktree struct {
 }
 
 // Filesystem returns the underlying filesystem for the worktree.
+// It bypasses the worktree wrapper's reserved-path and leading-symlink checks.
+//
+// PlainInit and PlainOpen use a filesystem bound to the worktree root, but
+// root containment does not protect an in-root .git directory from direct
+// writes or writes through an in-root symlink. Caller-supplied filesystems
+// provide their own containment guarantees, which may be none.
+//
+// Use Checkout or Reset to materialize tree contents with worktree path
+// validation and blocking-symlink handling.
 func (w *Worktree) Filesystem() billy.Filesystem {
 	return w.filesystem.Filesystem
 }
@@ -150,14 +159,16 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 		return err
 	}
 
-	if err := w.updateHEAD(ref.Hash()); err != nil {
-		return err
-	}
-
-	if err := w.Reset(&ResetOptions{
+	if err := w.reset(&ResetOptions{
 		Mode:   MergeReset,
 		Commit: ref.Hash(),
 	}); err != nil {
+		return err
+	}
+
+	// Publish the fetched commit only after the reset succeeds. updateHEAD
+	// also creates the current branch when pulling into an unborn HEAD.
+	if err := w.updateHEAD(ref.Hash()); err != nil {
 		return err
 	}
 
@@ -194,7 +205,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	}
 
 	if opts.Create {
-		if err := w.createBranch(opts); err != nil {
+		if err := w.validateNewBranch(opts); err != nil {
 			return err
 		}
 	}
@@ -215,30 +226,24 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = SoftReset
 	}
 
-	// For HardReset and KeepReset, capture the current tree BEFORE updating
-	// HEAD. This ensures resetWorktreeToTree correctly diffs from where we
-	// actually are, not from where HEAD will point after the update.
-	if ro.Mode == HardReset || ro.Mode == KeepReset {
-		ro.fromTree, err = w.headTree()
-		if err != nil {
-			return err
-		}
-	}
-
-	if !opts.Hash.IsZero() && !opts.Create {
-		err = w.setHEADToCommit(opts.Hash)
-	} else {
-		err = w.setHEADToBranch(opts.Branch, c)
-	}
-
-	if err != nil {
+	if err := w.reset(ro); err != nil {
 		return err
 	}
 
-	return w.Reset(ro)
+	// A failed tree read must not switch HEAD or create a branch. Resetting
+	// through the current HEAD would also move the branch we are leaving.
+	if opts.Create {
+		if err := w.r.Storer.SetReference(plumbing.NewHashReference(opts.Branch, c)); err != nil {
+			return err
+		}
+	}
+	if !opts.Hash.IsZero() && !opts.Create {
+		return w.setHEADToCommit(c)
+	}
+	return w.setHEADToBranch(opts.Branch, c)
 }
 
-func (w *Worktree) createBranch(opts *CheckoutOptions) error {
+func (w *Worktree) validateNewBranch(opts *CheckoutOptions) error {
 	// Git applies its branch-name rules to the shorthand a user types, so
 	// recover the shorthand before checking a name that is one. A name that is
 	// not under refs/heads/ gets the reference-name rules alone: handing it to
@@ -273,9 +278,7 @@ func (w *Worktree) createBranch(opts *CheckoutOptions) error {
 		opts.Hash = ref.Hash()
 	}
 
-	return w.r.Storer.SetReference(
-		plumbing.NewHashReference(opts.Branch, opts.Hash),
-	)
+	return nil
 }
 
 func (w *Worktree) getCommitFromCheckoutOptions(opts *CheckoutOptions) (plumbing.Hash, error) {
@@ -331,6 +334,15 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
+	if err := w.reset(opts); err != nil {
+		return err
+	}
+	return w.setHEADCommit(opts.Commit)
+}
+
+// reset updates the index and worktree without changing references. Checkout
+// switches HEAD afterward; Reset and Pull move the current branch afterward.
+func (w *Worktree) reset(opts *ResetOptions) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -359,7 +371,7 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == SoftReset {
-		return w.setHEADCommit(opts.Commit)
+		return nil
 	}
 
 	t, err := w.r.getTreeFromCommitHash(opts.Commit)
@@ -373,57 +385,73 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 		}
 	}
 
-	// For HardReset and KeepReset, capture the current HEAD tree before
-	// resetting HEAD. resetWorktreeToTree will diff prevTree→t and apply only
-	// those changes to the worktree. Since the diff is tree-to-tree, untracked
-	// files are invisible and are never deleted — matching real git reset --hard.
-	//
-	// If opts.fromTree is set (by Checkout), use that instead of calling
-	// headTree(). This handles the case where HEAD was already updated before
-	// Reset was called (e.g., in Checkout), ensuring we diff from the actual
-	// previous state rather than the new HEAD.
-	var prevTree *object.Tree
-	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		if opts.fromTree != nil {
-			prevTree = opts.fromTree
-		} else {
-			prevTree, err = w.headTree()
-			if err != nil {
-				return err
-			}
+	var trackedChanges merkletrie.Changes
+	if opts.Mode == HardReset {
+		// The index identifies tracked paths even when the old HEAD tree is
+		// unreadable. Capture its diff before resetIndex replaces it, including
+		// staged additions that must be removed when absent from the target.
+		trackedChanges, err = w.diffTreeWithStaging(t, true)
+		if err != nil {
+			return err
 		}
 	}
 
 	if opts.Mode == KeepReset {
+		prevTree, err := w.headTree()
+		if err != nil {
+			return err
+		}
 		if err := w.checkKeepResetConflicts(prevTree, t, opts.SparseDirs, opts.Files); err != nil {
 			return err
 		}
+		trackedChanges, err = diffTrees(prevTree, t)
+		if err != nil {
+			return err
+		}
 	}
 
-	if err := w.setHEADCommit(opts.Commit); err != nil {
+	// Mixed resets only update the index.
+	if opts.Mode == MixedReset {
+		_, err := w.resetIndex(t, opts.SparseDirs, opts.Files, nil)
 		return err
 	}
 
-	var removedFiles []string
-	if opts.Mode == MixedReset || opts.Mode == MergeReset || opts.Mode == HardReset || opts.Mode == KeepReset {
-		if removedFiles, err = w.resetIndex(t, opts.SparseDirs, opts.Files); err != nil {
+	// Merge resets also check out the paths whose index entries changed.
+	// As for hard and keep resets below, the index is stored only once the
+	// worktree is updated.
+	if opts.Mode == MergeReset {
+		idx, changedFiles, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, nil)
+		if err != nil {
 			return err
 		}
-	}
-
-	if opts.Mode == MergeReset && len(removedFiles) > 0 {
-		if err := w.resetWorktree(cfg, t, removedFiles); err != nil {
-			return err
+		if len(changedFiles) == 0 {
+			return w.storeIndex(idx)
 		}
+		return w.resetWorktree(cfg, t, idx, changedFiles)
 	}
 
-	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		if err := w.resetWorktreeToTree(cfg, prevTree, t, opts.Files); err != nil {
-			return err
-		}
+	// Hard and keep resets update the worktree in Git's order: the target
+	// index is built first, which validates every path it adds or changes,
+	// then the tracked paths the target drops are removed, the files the
+	// target adds or changes are written, and only then is the index
+	// stored. A target with an invalid path therefore changes nothing, and
+	// a write that fails leaves the index and HEAD as they were, so a hard
+	// reset can be run again. The tracked deletions come from the old index
+	// or HEAD tree, which the stored index still describes until the end.
+	var stagingChanges merkletrie.Changes
+	if opts.Mode == HardReset {
+		// A hard reset's tracked changes are the staging diff the index
+		// is built from, so it is not computed twice.
+		stagingChanges = trackedChanges
 	}
-
-	return nil
+	idx, _, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, stagingChanges)
+	if err != nil {
+		return err
+	}
+	if err := w.removeTrackedDeletions(trackedChanges, opts.Files); err != nil {
+		return err
+	}
+	return w.resetWorktreeToTree(cfg, t, idx, opts.Files)
 }
 
 // treeContainsDirs checks if the given tree contains all the directories.
@@ -481,17 +509,36 @@ func (w *Worktree) Restore(o *RestoreOptions) error {
 	return ErrRestoreWorktreeOnlyNotSupported
 }
 
-func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, error) {
-	idx, err := w.r.Storer.Index()
+// resetIndex resets the index to t. changes is the diff of t against the
+// index, as diffTreeWithStaging(t, true) returns it, or nil to compute it.
+func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string, changes merkletrie.Changes) ([]string, error) {
+	idx, removedFiles, err := w.buildResetIndex(t, dirs, files, changes)
 	if err != nil {
 		return nil, err
 	}
+	return removedFiles, w.storeIndex(idx)
+}
+
+// buildResetIndex returns the index reset to t, without storing it, and the
+// paths it changed. Every path it adds or changes is looked up in t, which
+// validates it, so a target that names an invalid path fails here, before
+// anything is written.
+func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes merkletrie.Changes) (*index.Index, []string, error) {
+	stored, err := w.r.Storer.Index()
+	if err != nil {
+		return nil, nil, err
+	}
+	// Some storages hand out the index they store, so it is copied: a reset
+	// that fails before storing its index must leave the stored one as it
+	// was.
+	idx := copyIndex(stored)
 
 	b := newIndexBuilder(idx)
 
-	changes, err := w.diffTreeWithStaging(t, true)
-	if err != nil {
-		return nil, err
+	if changes == nil {
+		if changes, err = w.diffTreeWithStaging(t, true); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	removedFiles := make([]string, 0, len(changes))
@@ -499,7 +546,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		var name string
@@ -510,7 +557,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 			name = ch.To.String()
 			e, err = t.FindEntry(name)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case merkletrie.Delete:
 			name = ch.From.String()
@@ -542,7 +589,31 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string) ([]string, e
 		idx.SkipUnless(dirs)
 	}
 
-	return removedFiles, w.r.Storer.SetIndex(idx)
+	return idx, removedFiles, nil
+}
+
+// storeIndex stores idx, whose entries the caller changed, without its
+// cache-tree: go-git does not update the cache-tree when it changes the
+// entries, and a storer may keep the index it is given, so a cache-tree
+// stored with it could tell a later diff that a changed directory is not.
+func (w *Worktree) storeIndex(idx *index.Index) error {
+	idx.Cache = nil
+	return w.r.Storer.SetIndex(idx)
+}
+
+// copyIndex returns a copy of idx whose entries can be changed without
+// changing those of idx.
+func copyIndex(idx *index.Index) *index.Index {
+	c := *idx
+	// The copy is changed, after which the cache-tree it was read with
+	// would no longer describe it.
+	c.Cache = nil
+	c.Entries = make([]*index.Entry, len(idx.Entries))
+	for i, e := range idx.Entries {
+		ec := *e
+		c.Entries[i] = &ec
+	}
+	return &c
 }
 
 // inFiles checks if the given file is in the list of files. The incoming filepaths in files should be cleaned before calling this function.
@@ -676,37 +747,18 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 	return nil
 }
 
-// resetWorktreeToTree updates the worktree to match toTree, mirroring
-// real git reset --hard / checkout -f:
-//
-//  1. Tree-to-tree diff (fromTree→toTree): remove files that were tracked in
-//     fromTree but deleted in toTree. Because the diff is purely object-graph,
-//     untracked files never appear and are never deleted.
-//
-//  2. New-index-to-worktree diff: write files that are in the new index but
-//     absent or different on disk. For Delete actions (file on disk, but absent
-//     from the index): the file is truly untracked and is preserved.
-//     (SkipWorktree entries are invisible to the merkletrie diff; they are
-//     handled in step 3.)
-//
-//  3. Remove SkipWorktree files from disk: diffStagingWithWorktree never
-//     surfaces SkipWorktree-flagged entries as Delete actions because the
-//     merkletrie marks them skip=true. Mirror git's behaviour: any tracked
-//     file with SkipWorktree=true must not exist in the worktree.
-//
-// files optionally restricts the operation to a specific subset of paths.
-func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *object.Tree, files []string) error {
+// removeTrackedDeletions removes from the worktree the tracked paths that
+// changes deletes, restricted to files when it is not empty. Each is removed
+// as a single entry: a directory that is not empty is left in place. changes
+// must be computed before resetting the index: HardReset compares the old
+// index with the target tree; KeepReset compares the old HEAD tree with it.
+func (w *Worktree) removeTrackedDeletions(changes merkletrie.Changes, files []string) error {
 	filesMap := buildFilePathMap(files)
 
 	fs, closeFS := w.reusableRootFS()
 	defer closeFS()
 
-	// Step 1: delete files removed from the tracked tree.
-	treeChanges, err := diffTrees(fromTree, toTree)
-	if err != nil {
-		return err
-	}
-	for _, ch := range treeChanges {
+	for _, ch := range changes {
 		a, err := ch.Action()
 		if err != nil {
 			return err
@@ -722,6 +774,21 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 			return err
 		}
 	}
+	return nil
+}
+
+// resetWorktreeToTree writes the contents of idx, the index a reset built
+// for toTree, to the worktree, after removeTrackedDeletions has removed what
+// the target drops, and then stores idx.
+//
+// Untracked paths absent from the target are preserved. SkipWorktree entries
+// are removed separately because they are excluded from the worktree diff.
+// A nonempty files slice restricts updates to the selected paths.
+func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, idx *index.Index, files []string) error {
+	filesMap := buildFilePathMap(files)
+
+	fs, closeFS := w.reusableRootFS()
+	defer closeFS()
 
 	// Step 2: write files that are in the new index but missing or stale
 	// in the worktree. We use diffStagingWithWorktree(reverse=true) which
@@ -736,15 +803,11 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffStagingWithWorktree(cfg, true, true)
+	worktreeChanges, err := w.diffIndexWithWorktree(cfg, idx, true, true)
 	if err != nil {
 		return err
 	}
 
-	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return err
-	}
 	b := newIndexBuilder(idx)
 
 	for _, ch := range worktreeChanges {
@@ -793,28 +856,25 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
-// resetWorktree updates the worktree to match the staging area.
-// files restricts the operation to the named paths; nil means all files.
+// resetWorktree updates the worktree to match idx, the index a merge reset
+// built, and then stores idx. files restricts the operation to the named
+// paths; nil means all files.
 //
 // excludeIgnoredChanges is intentionally false here. The caller is
-// MergeReset, and files contains paths that were just removed from the
-// index by resetIndex. A tracked-but-gitignored path that was removed
+// MergeReset, and files contains paths that buildResetIndex just changed
+// in idx. A tracked-but-gitignored path that was removed
 // from the index in this same Reset is no longer in idxMap, so the
 // noder's IgnoreScope would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
-func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []string) error {
-	changes, err := w.diffStagingWithWorktree(cfg, true, false)
+func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.Index, files []string) error {
+	changes, err := w.diffIndexWithWorktree(cfg, idx, true, false)
 	if err != nil {
 		return err
 	}
 
-	idx, err := w.r.Storer.Index()
-	if err != nil {
-		return err
-	}
 	b := newIndexBuilder(idx)
 
 	fs, closeFS := w.reusableRootFS()
@@ -846,7 +906,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, files []str
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {

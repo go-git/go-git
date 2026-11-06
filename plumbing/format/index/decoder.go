@@ -439,10 +439,6 @@ func (d *treeExtensionDecoder) Decode(t *Tree) error {
 			return err
 		}
 
-		if e == nil {
-			continue
-		}
-
 		t.Entries = append(t.Entries, *e)
 	}
 }
@@ -483,9 +479,11 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 	// An entry can be in an invalidated state and is represented by having a
 	// negative number in the entry_count field. In this case, there is no
 	// object name and the next entry starts immediately after the newline.
+	// It is kept, with its negative count and no hash: its subtrees follow
+	// it and may still be valid, and only the full list says where they are.
 	if i < 0 {
 		trace.Internal.Printf("index: tree extension entry %q invalidated (entry count %d)", e.Path, i)
-		return nil, nil
+		return e, nil
 	}
 
 	e.Hash.ResetBySize(d.h.Size())

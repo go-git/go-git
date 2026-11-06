@@ -557,3 +557,35 @@ func TestDiffTreeSkipsUnchangedMissingSubtree(t *testing.T) {
 		assert.Equal(t, []string{"a.txt", "z.txt"}, modified)
 	})
 }
+
+// Descending into a directory checks its name as Tree.FindEntry does, so a
+// diff cannot report a path below a directory entry named "..", ".git" or
+// "a/b", which a caller writing the change to disk would follow.
+func TestDiffTreeRejectsUnsafeDirectoryNames(t *testing.T) {
+	t.Parallel()
+
+	for _, dirName := range []string{"..", ".git", "a/b"} {
+		t.Run(dirName, func(t *testing.T) {
+			t.Parallel()
+
+			st := memory.NewStorage()
+			blob := storeTestObject(t, st, plumbing.BlobObject, []byte("payload\n"))
+			sub := storeTestTree(t, st, []TreeEntry{
+				{Name: "config", Mode: filemode.Regular, Hash: blob},
+			})
+			root, err := st.SetEncodedObject(newRawTreeObject(t, encodeRawTreeEntries(
+				rawTreeEntry{"40000", dirName, sub.Bytes()},
+			)))
+			require.NoError(t, err)
+
+			from, err := GetTree(st, storeTestTree(t, st, nil))
+			require.NoError(t, err)
+			to, err := GetTree(st, root)
+			require.NoError(t, err)
+
+			changes, err := DiffTree(from, to)
+			require.ErrorIs(t, err, pathutil.ErrInvalidPath)
+			assert.Empty(t, changes)
+		})
+	}
+}
