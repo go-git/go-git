@@ -53,15 +53,9 @@ type StatusOptions struct {
 
 // StatusWithOptions returns the working tree status.
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
-	var hash plumbing.Hash
-
-	ref, err := w.r.Head()
-	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
+	hash, err := w.headHash()
+	if err != nil {
 		return nil, err
-	}
-
-	if err == nil {
-		hash = ref.Hash()
 	}
 
 	cfg, err := w.r.Config()
@@ -69,16 +63,37 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		return nil, err
 	}
 
-	return w.status(cfg, o.Strategy, hash)
+	return w.status(cfg, o.Strategy, hash, "")
 }
 
-func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
+// headHash returns the commit the worktree's HEAD points at, or the zero hash
+// when there is no HEAD yet.
+func (w *Worktree) headHash() (plumbing.Hash, error) {
+	ref, err := w.r.Head()
+	if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return plumbing.ZeroHash, err
+	}
+
+	if err != nil {
+		return plumbing.ZeroHash, nil
+	}
+
+	return ref.Hash(), nil
+}
+
+// status returns the working tree status. When scope is non-empty both sides
+// of the diff are restricted to the subtree at that slash-separated path, so
+// the cost is bounded by that subtree rather than by the worktree. Only
+// doAddDirectory scopes, through statusForAdd, and it has no use for the
+// entries of any other subtree: the statuses outside scope are then absent
+// from the result rather than wrong.
+func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash, scope string) (Status, error) {
 	s, err := ss.new(w)
 	if err != nil {
 		return nil, err
 	}
 
-	left, err := w.diffCommitWithStaging(commit, false)
+	left, err := w.diffCommitWithStaging(commit, false, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +117,7 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 		}
 	}
 
-	right, err := w.diffStagingWithWorktree(cfg, false, true)
+	right, err := w.diffStagingWithWorktree(cfg, false, true, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +156,13 @@ func nameFromAction(ch *merkletrie.Change) string {
 	return name
 }
 
-func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+// diffStagingWithWorktree returns the changes between the index and the
+// worktree, in the direction given by reverse. When scope is non-empty both
+// trees are restricted to the subtree at that slash-separated path, so the
+// entries of every other directory are left out as their directory is listed
+// rather than after being walked. Paths remain those of the whole worktree, so
+// the diff describes the same subtree the unscoped call does.
+func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool, scope string) (merkletrie.Changes, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
@@ -149,6 +170,7 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: cfg.Core.FileMode,
+		Prefix:              scope,
 	})
 	submodules, err := w.getSubmodulesStatus(cfg)
 	if err != nil {
@@ -158,6 +180,7 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	fsOpts := filesystem.Options{
 		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
 		Index:    idx,
+		Prefix:   scope,
 	}
 
 	// When ignored changes are to be filtered out, hand the noder the ignore
@@ -232,7 +255,7 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 	return o, nil
 }
 
-func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool, scope string) (merkletrie.Changes, error) {
 	var t *object.Tree
 	if !commit.IsZero() {
 		c, err := w.r.CommitObject(commit)
@@ -246,13 +269,15 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 		}
 	}
 
-	return w.diffTreeWithStaging(t, reverse)
+	return w.diffTreeWithStaging(t, reverse, scope)
 }
 
-func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+// diffTreeWithStaging returns the changes between a commit's tree and the
+// index, both scoped to the subtree at scope when it is non-empty.
+func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool, scope string) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
-		from = object.NewTreeRootNode(t)
+		from = object.NewTreeRootNodeWithPrefix(t, scope)
 	}
 
 	idx, err := w.r.Storer.Index()
@@ -260,7 +285,10 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	to := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+		Prefix:              scope,
+	})
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
@@ -394,16 +422,6 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 
 	fi, err := w.filesystem.Lstat(path)
 
-	// status is required for doAddDirectory
-	var s Status
-	var err2 error
-	if !skipStatus || fi == nil || fi.IsDir() {
-		s, err2 = w.Status()
-		if err2 != nil {
-			return plumbing.ZeroHash, err2
-		}
-	}
-
 	path = filepath.Clean(path)
 	if filepath.IsAbs(path) {
 		root := w.filesystem.Root()
@@ -417,6 +435,15 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		path = relPath
 	}
 	path = filepath.ToSlash(path)
+
+	var s Status
+	var err2 error
+	if !skipStatus || fi == nil || fi.IsDir() {
+		s, err2 = w.statusForAdd(cfg, path, err == nil && fi.IsDir())
+		if err2 != nil {
+			return plumbing.ZeroHash, err2
+		}
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(cfg, idx, s, path, ignorePattern)
@@ -433,6 +460,32 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 	}
 
 	return h, w.r.Storer.SetIndex(idx)
+}
+
+// statusForAdd returns the status of the worktree an Add needs: the directory
+// being added alone when the path names one below the root, and the whole
+// worktree otherwise.
+//
+// doAddDirectory only consults the entries under the directory it is given, so
+// the entries of every other directory are of no use to it and the status that
+// produces them need not be computed. Restricting the worktree side of the
+// diff to the subtree is what bounds the walk by the directory being added
+// instead of by the size of the worktree.
+//
+// A file add and an add of the root keep the whole status: the former looks up
+// a single path in it, and the latter wants every entry anyway.
+func (w *Worktree) statusForAdd(cfg *config.Config, path string, isDir bool) (Status, error) {
+	var scope string
+	if isDir && path != "." {
+		scope = path
+	}
+
+	hash, err := w.headHash()
+	if err != nil {
+		return nil, err
+	}
+
+	return w.status(cfg, defaultStatusStrategy, hash, scope)
 }
 
 // AddGlob adds all paths, matching pattern, to the index. If pattern matches a
