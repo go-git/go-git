@@ -292,3 +292,67 @@ func TestUploadPackV2FetchNotReadyContinuesNegotiation(t *testing.T) {
 	require.NotContains(t, out, "ready")
 	require.NotContains(t, out, "packfile")
 }
+
+// v2RawRequest encodes the given key lines (command and capabilities, in the
+// given order), a delim packet, the argument lines, and a flush.
+func v2RawRequest(t testing.TB, keys, args []string) io.ReadCloser {
+	t.Helper()
+	var buf bytes.Buffer
+	for _, k := range keys {
+		_, err := pktline.Writef(&buf, "%s\n", k)
+		require.NoError(t, err)
+	}
+	require.NoError(t, pktline.WriteDelim(&buf))
+	for _, a := range args {
+		_, err := pktline.Writef(&buf, "%s\n", a)
+		require.NoError(t, err)
+	}
+	require.NoError(t, pktline.WriteFlush(&buf))
+	return io.NopCloser(&buf)
+}
+
+// The command line and the client capabilities may come in any order before
+// the delim-pkt: upstream serve.c (process_request) accepts either, and git's
+// own client sends its capabilities before "command=bundle-uri"
+// (connect.c get_remote_bundle_uri).
+func TestUploadPackV2CapabilitiesBeforeCommand(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+	head, err := storer.ResolveReference(st, plumbing.HEAD)
+	require.NoError(t, err)
+
+	t.Run("ls-refs", func(t *testing.T) {
+		t.Parallel()
+		out := serveUploadPackV2Test(t, st, v2RawRequest(t,
+			[]string{"agent=git/2.55.0", "object-format=sha1", "command=ls-refs"},
+			[]string{"symrefs"},
+		))
+		require.Contains(t, out, head.Hash().String()+" HEAD symref-target:")
+		require.NotContains(t, out, "unknown-command")
+	})
+
+	t.Run("fetch", func(t *testing.T) {
+		t.Parallel()
+		out := serveUploadPackV2Test(t, st, v2RawRequest(t,
+			[]string{"object-format=sha1", "command=fetch", "agent=git/2.55.0"},
+			[]string{"want " + head.Hash().String(), "done"},
+		))
+		require.Contains(t, out, "packfile")
+		require.NotContains(t, out, "unknown-command")
+	})
+}
+
+func TestUploadPackV2UnknownCommandAfterCapabilities(t *testing.T) {
+	t.Parallel()
+	st := basicV2Storage(t)
+
+	var out bytes.Buffer
+	err := UploadPack(context.TODO(), st, v2RawRequest(t,
+		[]string{"object-format=sha1", "command=bogus"}, nil,
+	), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+		GitProtocol:  "version=2",
+		StatelessRPC: true,
+	})
+	require.ErrorContains(t, err, `unsupported v2 command "bogus"`)
+	require.Contains(t, out.String(), "error unknown-command bogus\n")
+}
