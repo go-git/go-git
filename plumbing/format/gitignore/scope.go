@@ -123,9 +123,24 @@ func DirPatterns(fs billy.Filesystem, path []string) ([]Pattern, error) {
 	return ps, nil
 }
 
+// InfoExcludePatterns returns the patterns declared by the info/exclude file of
+// a repository. gitDir is rooted at the repository's git directory, which need
+// not be .git in the worktree. A missing file is not an error and yields no
+// patterns.
+func InfoExcludePatterns(gitDir billy.Filesystem) ([]Pattern, error) {
+	ps, err := readIgnoreFile(gitDir, nil, infoExclude)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return ps, nil
+}
+
 // RootPatterns returns the patterns that apply to a whole worktree before any
 // .gitignore is consulted: .git/info/exclude followed by the .gitignore at the
 // root, in ascending order of priority. Missing files are not an error.
+//
+// The exclude file is read through fs, so it is only found when fs can open
+// .git. Use InfoExcludePatterns and DirPatterns when it cannot.
 func RootPatterns(fs billy.Filesystem) ([]Pattern, error) {
 	// Both files are opened directly rather than confirmed against a listing of
 	// the root. Two opens cost less than enumerating a directory that may hold

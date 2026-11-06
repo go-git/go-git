@@ -27,7 +27,8 @@ const (
 	gitignoreFile   = IgnoreFile
 	gitconfigFile   = ".gitconfig"
 	systemFile      = "/etc/gitconfig"
-	infoExcludeFile = gitDir + "/info/exclude"
+	infoExclude     = "info/exclude"
+	infoExcludeFile = gitDir + "/" + infoExclude
 )
 
 // readIgnoreFile reads a specific git ignore file.
