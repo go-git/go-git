@@ -53,3 +53,34 @@ func (s *OptionSuite) TestOption_IsKey() {
 	s.False((&Option{Key: "key"}).IsKey(""))
 	s.False((&Option{Key: ""}).IsKey("key"))
 }
+
+func TestOptionsTypedAccessors(t *testing.T) {
+	t.Parallel()
+	opts := Options{
+		&Option{Key: "bare", Value: "yes"},
+		&Option{Key: "window", Value: "1k"},
+		&Option{Key: "name", Value: "value"},
+	}
+
+	if v, ok := opts.Lookup("bare"); !ok || v != "yes" {
+		t.Errorf("Lookup bare = %q, %v", v, ok)
+	}
+	if _, ok := opts.Lookup("missing"); ok {
+		t.Error("Lookup missing should be absent")
+	}
+	if b, err := opts.Bool("bare", false); err != nil || !b {
+		t.Errorf("Bool bare = %v, %v", b, err)
+	}
+	if b, _ := opts.Bool("missing", true); !b {
+		t.Error("Bool missing should return default")
+	}
+	if n, err := opts.Int("window", 0); err != nil || n != 1024 {
+		t.Errorf("Int window = %d, %v", n, err)
+	}
+	if s := opts.String("name", "def"); s != "value" {
+		t.Errorf("String name = %q", s)
+	}
+	if s := opts.String("missing", "def"); s != "def" {
+		t.Errorf("String default = %q", s)
+	}
+}
