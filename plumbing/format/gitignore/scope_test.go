@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/helper/polyfill"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/assert"
@@ -237,6 +238,90 @@ func TestDirPatternsMissingFile(t *testing.T) {
 	ps, err := DirPatterns(fs, []string{"empty"})
 	require.NoError(t, err, "a missing .gitignore is not an error")
 	assert.Empty(t, ps)
+}
+
+// TestDirPatternsReadsOnlyRegularFiles pins that git reads an in-tree
+// .gitignore only as a regular file, never through a symbolic link.
+func TestDirPatternsReadsOnlyRegularFiles(t *testing.T) {
+	t.Parallel()
+
+	regular := func(fs billy.Filesystem) error {
+		return util.WriteFile(fs, ".gitignore", []byte("*.log\n"), 0o644)
+	}
+	directory := func(fs billy.Filesystem) error {
+		return fs.MkdirAll(".gitignore", os.ModePerm)
+	}
+
+	for _, tc := range []struct {
+		name         string
+		create       func(fs billy.Filesystem) error
+		withoutLstat bool
+		want         int
+	}{{
+		name:   "regular file",
+		create: regular,
+		want:   1,
+	}, {
+		name: "symbolic link",
+		create: func(fs billy.Filesystem) error {
+			if err := util.WriteFile(fs, "rules", []byte("*.log\n"), 0o644); err != nil {
+				return err
+			}
+			return fs.Symlink("rules", ".gitignore")
+		},
+	}, {
+		name:   "directory",
+		create: directory,
+	}, {
+		name: "file Windows reports as irregular, such as a cloud-files placeholder",
+		create: func(fs billy.Filesystem) error {
+			return util.WriteFile(fs, ".gitignore", []byte("*.log\n"), os.ModeIrregular|0o644)
+		},
+		want: 1,
+	}, {
+		name:         "regular file on a filesystem without Lstat",
+		create:       regular,
+		withoutLstat: true,
+		want:         1,
+	}, {
+		name:         "directory on a filesystem without Lstat",
+		create:       directory,
+		withoutLstat: true,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			require.NoError(t, tc.create(fs))
+			if tc.withoutLstat {
+				fs = polyfill.New(struct {
+					billy.Basic
+					billy.Dir
+				}{fs, fs})
+			}
+
+			ps, err := DirPatterns(fs, nil)
+			require.NoError(t, err)
+			assert.Len(t, ps, tc.want)
+
+			ps, err = ReadPatterns(fs, nil)
+			require.NoError(t, err)
+			assert.Len(t, ps, tc.want)
+		})
+	}
+}
+
+func TestRootPatternsFollowsSymlinkedExclude(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	writeScopeFile(t, fs, "rules", "*.log\n")
+	require.NoError(t, fs.MkdirAll(".git/info", os.ModePerm))
+	require.NoError(t, fs.Symlink("../../rules", ".git/info/exclude"))
+
+	ps, err := RootPatterns(fs)
+	require.NoError(t, err)
+	assert.True(t, NewScope(ps).Match([]string{"a.log"}, false))
 }
 
 // TestNewScopeCopiesBase pins the immutability the type documents: a caller
