@@ -958,13 +958,48 @@ func (s *WorktreeSuite) TestCheckoutIndexOS() {
 	s.False(idx.Entries[0].ModifiedAt.IsZero())
 	s.Equal(uint32(189), idx.Entries[0].Size)
 
-	s.False(idx.Entries[0].CreatedAt.IsZero())
+	if runtime.GOOS == "windows" {
+		s.False(idx.Entries[0].CreatedAt.IsZero())
+	} else {
+		// These platforms do not provide a reliable creation time through
+		// FileInfo.Sys().
+		s.True(idx.Entries[0].CreatedAt.IsZero())
+	}
 	if runtime.GOOS != "windows" {
 		s.NotEqual(uint32(0), idx.Entries[0].Dev)
 		s.NotEqual(uint32(0), idx.Entries[0].Inode)
 		s.NotEqual(uint32(0), idx.Entries[0].UID)
 		s.NotEqual(uint32(0), idx.Entries[0].GID)
 	}
+}
+
+func (s *WorktreeSuite) TestAddClearsUnsupportedCreatedAt() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("Windows has a reliable creation time")
+	}
+
+	fs := s.TemporalFilesystem()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.NoError(w.Checkout(&CheckoutOptions{}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.NoError(err)
+	name := idx.Entries[0].Name
+	idx.Entries[0].CreatedAt = time.Now()
+	s.NoError(s.Repository.Storer.SetIndex(idx))
+
+	s.NoError(w.AddWithOptions(&AddOptions{
+		Path:       name,
+		SkipStatus: true,
+	}))
+
+	idx, err = s.Repository.Storer.Index()
+	s.NoError(err)
+	s.True(idx.Entries[0].CreatedAt.IsZero())
 }
 
 func (s *WorktreeSuite) TestCheckoutBranch() {

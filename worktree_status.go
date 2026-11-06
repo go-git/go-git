@@ -644,6 +644,10 @@ func (w *Worktree) doUpdateFileToIndex(e *index.Entry, filename string, h plumbi
 	// The size of Regular and Executable files is the size of the files.
 	e.Size = uint32(info.Size())
 
+	// Only Windows exposes a reliable creation time through FileInfo.Sys().
+	// Clear values loaded from an older index before platform-specific
+	// metadata is filled in.
+	e.CreatedAt = time.Time{}
 	fillSystemInfo(e, info.Sys())
 	return nil
 }
