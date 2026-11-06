@@ -95,21 +95,36 @@ func (p *objectWalker) walkAllRefs() error {
 	}
 	defer it.Close()
 	err = it.ForEach(func(ref *plumbing.Reference) error {
-		if ref.Type() == plumbing.SymbolicReference {
-			resolved, err := storer.ResolveReference(p.Storer, ref.Target())
+		name := ref.Name()
+		for depth := 0; ref.Type() == plumbing.SymbolicReference; depth++ {
+			// Unborn HEAD and dangling symrefs do not name any objects,
+			// and git reads a loose "ref:" with no target as dangling.
+			if ref.Target() == "" {
+				return nil
+			}
+			if depth > storer.MaxResolveRecursion {
+				return fmt.Errorf("resolving reference %q failed: %w", name, storer.ErrMaxResolveRecursion)
+			}
+			next, err := p.Storer.Reference(ref.Target())
 			if errors.Is(err, plumbing.ErrReferenceNotFound) {
-				// Unborn HEAD and dangling symrefs do not name any objects.
 				return nil
 			}
 			if err != nil {
 				// Prune and repack must not discard objects when a failed
 				// lookup or an unresolved cycle makes reachability unknown.
-				return fmt.Errorf("resolving reference %q failed: %w", ref.Name(), err)
+				return fmt.Errorf("resolving reference %q failed: %w", name, err)
 			}
-			ref = resolved
+			ref = next
 		}
 		if ref.Type() != plumbing.HashReference {
 			return nil
+		}
+		// Storage reports a reference it cannot read with the all-zero ID.
+		// Like git prune and git repack, fail rather than skip it, since the
+		// objects it pointed at are unknown; in a partial clone the lookup
+		// below would otherwise pass it off as a promised object.
+		if ref.Hash().IsZero() {
+			return fmt.Errorf("reference %q is broken: %w", ref.Name(), plumbing.ErrObjectNotFound)
 		}
 		return p.walkObjectTree(ref.Hash())
 	})

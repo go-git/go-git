@@ -44,6 +44,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/storage/transactional"
 	"github.com/go-git/go-git/v6/x/plugin"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
@@ -1523,6 +1524,22 @@ func (s *RepositorySuite) TestPlainOpenNotExists() {
 	r, err := PlainOpen("/not-exists/")
 	s.ErrorIs(err, ErrRepositoryNotExists)
 	s.Nil(r)
+}
+
+// A HEAD file git cannot read does not make a repository, to git or go-git.
+func (s *RepositorySuite) TestOpenRefusesBrokenHEAD() {
+	for _, content := range []string{"", "garbage\n"} {
+		s.Run(fmt.Sprintf("%q", content), func() {
+			fs := memfs.New()
+			_, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+			s.Require().NoError(err)
+			s.Require().NoError(util.WriteFile(fs, "HEAD", []byte(content), 0o644))
+
+			r, err := Open(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()), nil)
+			s.ErrorIs(err, ErrRepositoryNotExists)
+			s.Nil(r)
+		})
+	}
 }
 
 func (s *RepositorySuite) TestPlainOpenDetectDotGit() {
@@ -3800,6 +3817,88 @@ func (s *RepositorySuite) TestBranches() {
 	s.Equal(8, count)
 }
 
+// An empty loose branch file, as a crash during SetRef leaves, is skipped by
+// Branches and Tags, as git branch and git tag do. References reports it with
+// the all-zero ID, as git ls-remote does, and Prune refuses to run past it,
+// as git prune does, since the objects it pointed at are unknown.
+func (s *RepositorySuite) TestBranchesAndTagsSkipBrokenLooseRefs() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+	r, err := Open(sto, nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	names := func(iter storer.ReferenceIter, err error) []string {
+		s.Require().NoError(err)
+		var names []string
+		s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+			names = append(names, ref.Name().String())
+			return nil
+		}))
+		return names
+	}
+	branchesBefore := names(r.Branches())
+	tagsBefore := names(r.Tags())
+
+	for _, name := range []string{"refs/heads/truncated", "refs/tags/truncated"} {
+		s.Require().NoError(util.WriteFile(dotgit, name, nil, 0o644))
+	}
+
+	s.Equal(branchesBefore, names(r.Branches()))
+	s.Equal(tagsBefore, names(r.Tags()))
+
+	iter, err := r.References()
+	s.Require().NoError(err)
+	var zero []string
+	s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() == plumbing.HashReference && ref.Hash().IsZero() {
+			zero = append(zero, ref.Name().String())
+		}
+		return nil
+	}))
+	s.Equal([]string{"refs/heads/truncated", "refs/tags/truncated"}, zero)
+
+	pruned := 0
+	err = r.Prune(PruneOptions{Handler: func(plumbing.Hash) error {
+		pruned++
+		return nil
+	}})
+	s.ErrorIs(err, plumbing.ErrObjectNotFound)
+	s.Zero(pruned)
+}
+
+// Branches lists the same branches whether the storage is used directly or
+// through a transaction over it.
+func (s *RepositorySuite) TestBranchesSameThroughTransaction() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	for name, content := range map[string]string{
+		"refs/heads/truncated":   "",
+		"refs/heads/locked.lock": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+	} {
+		s.Require().NoError(util.WriteFile(dotgit, name, []byte(content), 0o644))
+	}
+	sto := filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault())
+
+	branches := func(st storage.Storer) []string {
+		r, err := Open(st, nil)
+		s.Require().NoError(err)
+		iter, err := r.Branches()
+		s.Require().NoError(err)
+		var names []string
+		s.Require().NoError(iter.ForEach(func(ref *plumbing.Reference) error {
+			names = append(names, ref.Name().String())
+			return nil
+		}))
+		return names
+	}
+
+	direct := branches(sto)
+	s.NotEmpty(direct)
+	s.Equal(direct, branches(transactional.NewStorage(sto, memory.NewStorage())))
+}
+
 func (s *RepositorySuite) TestNotes() {
 	// TODO add fixture with Notes
 	url := s.GetLocalRepositoryURL(
@@ -4909,4 +5008,174 @@ func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
 	s.Require().NotContains(loose, tree)
 	s.Require().NoError(r.Storer.HasEncodedObject(commit))
 	s.Require().NoError(r.Storer.HasEncodedObject(tree))
+}
+
+// Branches and Tags list what git for-each-ref lists, skipping what it skips:
+// broken loose refs, symbolic refs whose target is missing or broken or too
+// many links away, and names that are not valid, whether loose "*.lock" files
+// or packed entries.
+func TestBranchesAndTagsMatchGitForEachRef(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git := func(args ...string) string {
+		out, err := gitenv.Command("git", append([]string{"-C", dir}, args...)...).Output()
+		require.NoError(t, err, "git %v", args)
+		return strings.TrimSpace(string(out))
+	}
+	git("-c", "init.defaultBranch=main", "init", "-q")
+	if _, err := os.Stat(filepath.Join(dir, ".git", "reftable")); err == nil {
+		t.Skip("git defaults to the reftable backend")
+	}
+	git("-c", "user.name=a", "-c", "user.email=a@example.com", "commit", "-q", "--allow-empty", "-m", "a")
+	head := git("rev-parse", "HEAD")
+	for _, name := range []string{"refs/heads/feature", "refs/heads/shadowed", "refs/tags/v1"} {
+		git("update-ref", name, head)
+	}
+	git("pack-refs", "--all")
+
+	// Add a packed name git rejects, keeping the file sorted as its header
+	// claims.
+	packed, err := os.ReadFile(filepath.Join(dir, ".git", "packed-refs"))
+	require.NoError(t, err)
+	header, records, _ := strings.Cut(string(packed), "\n")
+	lines := append(strings.Split(strings.TrimSuffix(records, "\n"), "\n"), head+" refs/heads/bad..name")
+	slices.SortFunc(lines, func(a, b string) int {
+		return strings.Compare(a[strings.IndexByte(a, ' ')+1:], b[strings.IndexByte(b, ' ')+1:])
+	})
+	files := map[string]string{
+		"packed-refs":              header + "\n" + strings.Join(lines, "\n") + "\n",
+		"refs/heads/empty":         "",
+		"refs/heads/garbage":       "garbage\n",
+		"refs/heads/shadowed":      "garbage\n",
+		"refs/heads/locked.lock":   head + "\n",
+		"refs/heads/.hidden":       head + "\n",
+		"refs/tags/truncated":      "",
+		"refs/tags/v1.lock":        head + "\n",
+		"refs/heads/topic/nested":  head + "\n",
+		"refs/heads/topic/broken":  "ref:\n",
+		"refs/heads/trailing-text": head + " trailing\n",
+		"refs/heads/alias":         "ref: refs/heads/feature\n",
+		"refs/heads/dangling":      "ref: refs/heads/missing\n",
+		"refs/heads/to-broken":     "ref: refs/heads/garbage\n",
+		"refs/heads/to-lock":       "ref: refs/heads/locked.lock\n",
+		"refs/heads/chain/8":       head + "\n",
+		"ORIG_HEAD":                head + "\n",
+		"refs/heads/to-root":       "ref: ORIG_HEAD\n",
+		"refs/heads/to-packed-tag": "ref: refs/tags/v1\n",
+		"refs/heads/to-truncated":  "ref: refs/tags/truncated\n",
+	}
+	// Git follows at most SYMREF_MAXDEPTH references, so it lists
+	// chain/4, four links from chain/8, and skips chain/3 as dangling.
+	for i := 1; i < 8; i++ {
+		files[fmt.Sprintf("refs/heads/chain/%d", i)] = fmt.Sprintf("ref: refs/heads/chain/%d\n", i+1)
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, ".git", filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+
+	r, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	names := func(iter storer.ReferenceIter, err error) string {
+		require.NoError(t, err)
+		var names []string
+		require.NoError(t, iter.ForEach(func(ref *plumbing.Reference) error {
+			names = append(names, ref.Name().String())
+			return nil
+		}))
+		return strings.Join(names, "\n")
+	}
+
+	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/heads/"), names(r.Branches()))
+	assert.Equal(t, git("for-each-ref", "--format=%(refname)", "refs/tags/"), names(r.Tags()))
+}
+
+type packedRefsOpenCounter struct {
+	billy.Filesystem
+	opens int
+}
+
+func (fs *packedRefsOpenCounter) Open(name string) (billy.File, error) {
+	if fs.Join(name) == "packed-refs" {
+		fs.opens++
+	}
+	return fs.Filesystem.Open(name)
+}
+
+// Listing branches that point to packed references, or to missing ones,
+// reads packed-refs once for the listing and once to resolve them all, not
+// once per branch.
+func (s *RepositorySuite) TestBranchesResolveSymbolicRefsWithOnePackedRefsRead() {
+	fs := &packedRefsOpenCounter{Filesystem: memfs.New()}
+	r, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+	const hash = "e8d3ffab552895c19b9fcf7aa264d277cde33881"
+	var packed strings.Builder
+	for i := range 20 {
+		fmt.Fprintf(&packed, "%s refs/tags/t%02d\n", hash, i)
+		s.Require().NoError(util.WriteFile(fs, fmt.Sprintf("refs/heads/s%02d", i), []byte(fmt.Sprintf("ref: refs/tags/t%02d\n", i)), 0o644))
+		s.Require().NoError(util.WriteFile(fs, fmt.Sprintf("refs/heads/to-missing%02d", i), []byte("ref: refs/tags/missing\n"), 0o644))
+	}
+	s.Require().NoError(util.WriteFile(fs, "packed-refs", []byte(packed.String()), 0o644))
+	fs.opens = 0
+
+	branches, err := r.Branches()
+	s.Require().NoError(err)
+	listed := 0
+	s.Require().NoError(branches.ForEach(func(*plumbing.Reference) error {
+		listed++
+		return nil
+	}))
+	s.Equal(20, listed)
+	s.Equal(2, fs.opens)
+}
+
+// A loose ref holding "ref:" and no target is a dangling symbolic ref to Git,
+// not a broken one: git for-each-ref leaves it out without a warning, and
+// git gc runs past it.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L673-L680
+func (s *RepositorySuite) TestEmptySymbolicTargetIsDangling() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	s.Require().NoError(util.WriteFile(dotgit, "refs/heads/empty-target", []byte("ref: \n"), 0o644))
+	s.Require().NoError(util.WriteFile(dotgit, "refs/heads/to-empty-target", []byte("ref: refs/heads/empty-target\n"), 0o644))
+	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	ref, err := r.Reference("refs/heads/empty-target", false)
+	s.Require().NoError(err)
+	s.Equal(plumbing.SymbolicReference, ref.Type())
+
+	branches, err := r.Branches()
+	s.Require().NoError(err)
+	s.NoError(branches.ForEach(func(ref *plumbing.Reference) error {
+		s.NotEqual(plumbing.ReferenceName("refs/heads/empty-target"), ref.Name())
+		return nil
+	}))
+	s.NoError(r.Prune(PruneOptions{Handler: func(plumbing.Hash) error { return nil }}))
+	s.NoError(r.RepackObjects(&RepackConfig{}))
+}
+
+// A "*.lock" file, which git update-ref holds briefly while it updates a ref,
+// is not a reference. Git's ref store skips it, so maintenance must not
+// treat it as a broken reference and refuse to run.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/files-backend.c#L386-L391
+func (s *RepositorySuite) TestMaintenanceIgnoresLockFiles() {
+	dotgit, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	for _, name := range []string{"refs/heads/x.lock", "refs/heads/.hidden"} {
+		s.Require().NoError(util.WriteFile(dotgit, name, nil, 0o644))
+	}
+	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	s.NoError(r.Prune(PruneOptions{Handler: func(plumbing.Hash) error { return nil }}))
+	s.NoError(r.RepackObjects(&RepackConfig{}))
 }

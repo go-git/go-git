@@ -1537,6 +1537,82 @@ func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
 	}
 }
 
+// Storage reports a loose ref it cannot read, such as the empty file a
+// crash during SetRef leaves, with the all-zero ID. Pushed, that ID would
+// delete the mapped destination, as git push does with such a ref; go-git
+// refuses the push instead, through an explicit or a wildcard refspec, and
+// with prune, which would otherwise read a skipped source as a deletion.
+func (s *RemoteSuite) TestPushRejectsBrokenSource() {
+	for _, tc := range []struct {
+		spec    config.RefSpec
+		prune   bool
+		files   map[string]string
+		wantErr error
+	}{
+		{spec: "+refs/heads/keep:refs/heads/keep", files: map[string]string{"refs/heads/keep": ""}, wantErr: plumbing.ErrObjectNotFound},
+		{spec: "+refs/heads/*:refs/heads/*", files: map[string]string{"refs/heads/keep": ""}, wantErr: plumbing.ErrObjectNotFound},
+		{spec: "+refs/heads/*:refs/heads/*", prune: true, files: map[string]string{"refs/heads/keep": ""}, wantErr: plumbing.ErrObjectNotFound},
+		// A symbolic source to a ref that cannot be read is refused too.
+		{spec: "+refs/heads/alias:refs/heads/keep", files: map[string]string{
+			"refs/heads/garbage": "garbage\n",
+			"refs/heads/alias":   "ref: refs/heads/garbage\n",
+		}, wantErr: plumbing.ErrBrokenReference},
+		{spec: "+refs/heads/empty-alias:refs/heads/keep", files: map[string]string{
+			"refs/heads/empty":       "",
+			"refs/heads/empty-alias": "ref: refs/heads/empty\n",
+		}, wantErr: plumbing.ErrBrokenReference},
+	} {
+		s.Run(fmt.Sprintf("%s/prune=%t", tc.spec, tc.prune), func() {
+			srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+			s.Require().NoError(err)
+			src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+			head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+			s.Require().NoError(err)
+			for name, content := range tc.files {
+				s.Require().NoError(util.WriteFile(srcFs, name, []byte(content), 0o644))
+			}
+
+			dir := s.T().TempDir()
+			dst, err := PlainClone(dir, &CloneOptions{URL: s.GetBasicLocalRepositoryURL(), Bare: true})
+			s.Require().NoError(err)
+			defer func() { _ = dst.Close() }()
+			keep := plumbing.NewHashReference("refs/heads/keep", head.Hash())
+			s.Require().NoError(dst.Storer.SetReference(keep))
+
+			remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+			err = remote.Push(&PushOptions{Prune: tc.prune, RefSpecs: []config.RefSpec{tc.spec}})
+			s.ErrorIs(err, tc.wantErr)
+
+			ref, err := dst.Storer.Reference(keep.Name())
+			s.Require().NoError(err)
+			s.Equal(keep, ref)
+		})
+	}
+}
+
+// A remote-tracking ref storage cannot read, such as an empty file, is not
+// taken as missing and overwritten by fetch: git fails with "bad object".
+func (s *RemoteSuite) TestFetchRefusesBrokenTrackingRef() {
+	for _, content := range []string{"", "garbage\n"} {
+		s.Run(fmt.Sprintf("%q", content), func() {
+			fs := memfs.New()
+			r, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+			s.Require().NoError(err)
+			_, err = r.CreateRemote(&config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{s.GetBasicLocalRepositoryURL()}})
+			s.Require().NoError(err)
+			name := "refs/remotes/origin/master"
+			s.Require().NoError(util.WriteFile(fs, name, []byte(content), 0o644))
+
+			err = r.Fetch(&FetchOptions{})
+			s.ErrorIs(err, plumbing.ErrBrokenReference)
+
+			got, err := util.ReadFile(fs, name)
+			s.Require().NoError(err)
+			s.Equal(content, string(got))
+		})
+	}
+}
+
 func (s *RemoteSuite) TestPushPrune() {
 	server, err := PlainClone(s.T().TempDir(), &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
 	s.Require().NoError(err)

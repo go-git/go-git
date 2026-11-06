@@ -1,6 +1,7 @@
 package transactional
 
 import (
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
@@ -113,6 +114,28 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	}
 
 	return storer.NewReferenceSliceIter(append(base, refs...)), nil
+}
+
+// IterReferencesWithPrefix honors the storer.PrefixReferenceIterer interface.
+// It merges the storers' prefix iterators, the temporal reference over the
+// base one and none once removed, so it skips what they skip: a transaction
+// over a storage lists the same references under a prefix as the storage.
+func (r ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	temporalIter, err := storer.IterReferencesWithPrefix(r.temporal, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	baseIter, err := storer.IterReferencesWithPrefix(r.ReferenceStorer, prefix)
+	if err != nil {
+		temporalIter.Close()
+		return nil, err
+	}
+
+	return storer.NewReferenceFilteredIter(func(ref *plumbing.Reference) bool {
+		_, deleted := r.deleted[ref.Name()]
+		return !deleted
+	}, reference.NewOverlayIter(temporalIter, baseIter)), nil
 }
 
 // CountLooseRefs honors the storer.ReferenceStorer interface.

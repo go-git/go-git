@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	"github.com/go-git/go-git/v6/internal/reference"
 	"github.com/go-git/go-git/v6/internal/revision"
 	"github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -281,8 +282,10 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 		}()
 	}
 
+	// A HEAD that cannot be read, such as an empty file, does not make a
+	// repository either: git does not take the directory as one.
 	_, err := s.Reference(plumbing.HEAD)
-	if err == plumbing.ErrReferenceNotFound {
+	if err == plumbing.ErrReferenceNotFound || errors.Is(err, plumbing.ErrBrokenReference) {
 		return nil, ErrRepositoryNotExists
 	}
 
@@ -1677,7 +1680,9 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 	return nil
 }
 
-// Tags returns all the tag References in a repository.
+// Tags returns all the tag References in a repository, sorted by name. Like
+// git tag, it may skip tags that cannot be read, such as an empty loose ref
+// file, rather than fail.
 //
 // If you want to check to see if the tag is an annotated tag, you can call
 // TagObject on the hash Reference passed in through ForEach:
@@ -1702,45 +1707,183 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 //	  // Handle outer iterator error
 //	}
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	return storer.NewReferenceFilteredIter(
-		func(r *plumbing.Reference) bool {
-			return r.Name().IsTag()
-		}, refIter,
-	), nil
+	return r.listReferences(plumbing.RefPrefix + "tags/")
 }
 
-// Branches returns all the References that are Branches.
+// Branches returns all the References that are Branches, sorted by name.
+// Like git branch, it may skip branches that cannot be read, such as an empty
+// loose ref file, rather than fail.
 func (r *Repository) Branches() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
-	if err != nil {
-		return nil, err
-	}
-
-	return storer.NewReferenceFilteredIter(
-		func(r *plumbing.Reference) bool {
-			return r.Name().IsBranch()
-		}, refIter,
-	), nil
+	return r.listReferences(plumbing.RefHeadPrefix)
 }
 
-// Notes returns all the References that are notes. For more information:
-// https://git-scm.com/docs/git-notes
+// Notes returns all the References that are notes, sorted by name. It may
+// skip references that cannot be read, as Tags and Branches do. For more
+// information: https://git-scm.com/docs/git-notes
 func (r *Repository) Notes() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+	return r.listReferences(plumbing.RefPrefix + "notes/")
+}
+
+// listReferences returns the references under prefix, sorted by name, that
+// git for-each-ref lists. It skips a reference whose name is not valid, such
+// as one named like "x.lock", one storage reports with the all-zero ID
+// because it cannot read it, and a symbolic reference whose target is
+// missing, broken, not a valid name or too many links away; other errors
+// resolving a target are returned.
+//
+// Unlike git, it also skips a packed reference that holds the all-zero ID,
+// which it cannot tell apart from an unreadable one, and, with filesystem
+// storage, a symbolic reference to a one-level name that is not a root
+// reference, such as "ORIG" or "foo": git lists those, but the storage
+// refuses to read such names, while memory storage reads and lists them.
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/ref-filter.c#L3015-L3023
+func (r *Repository) listReferences(prefix string) (storer.ReferenceIter, error) {
+	iter, err := storer.IterReferencesWithPrefix(r.Storer, prefix)
 	if err != nil {
 		return nil, err
 	}
+	return &listedReferencesIter{s: r.Storer, iter: iter}, nil
+}
 
-	return storer.NewReferenceFilteredIter(
-		func(r *plumbing.Reference) bool {
-			return r.Name().IsNote()
-		}, refIter,
-	), nil
+// listedReferencesIter yields the references of iter that git for-each-ref
+// lists, resolving symbolic ones as it reaches them.
+type listedReferencesIter struct {
+	s    storer.ReferenceStorer
+	iter storer.ReferenceIter
+
+	// refs holds every reference, read once when the first symbolic
+	// reference needs a target under refs/, so that resolving many of them
+	// does not read packed-refs once each. noRefs is set when that read
+	// failed, and targets are then read one by one.
+	refs   map[plumbing.ReferenceName]*plumbing.Reference
+	noRefs bool
+}
+
+func (it *listedReferencesIter) Next() (*plumbing.Reference, error) {
+	for {
+		ref, err := it.iter.Next()
+		if err != nil {
+			return nil, err
+		}
+		if ref.Name().Validate() != nil {
+			continue
+		}
+
+		resolved, err := it.resolve(ref)
+		if err != nil {
+			return nil, err
+		}
+		if resolved == nil {
+			continue
+		}
+		if resolved.Type() == plumbing.HashReference && resolved.Hash().IsZero() {
+			continue
+		}
+		return ref, nil
+	}
+}
+
+// validTargetName reports whether git resolves a symbolic reference to name:
+// it checks the name's format as Validate does, but accepts a one-level name
+// such as ORIG_HEAD, as git does:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L2190
+func validTargetName(name plumbing.ReferenceName) bool {
+	if !strings.Contains(name.String(), "/") && name != "@" {
+		// The rule requiring a slash is the only one git waives, so check
+		// the name as a component. "@" is refused as a whole name, so it is
+		// left to Validate as it is.
+		name = "x/" + name
+	}
+	return name.Validate() == nil
+}
+
+// symrefMaxDepth is the number of references git reads at most to resolve
+// one, the first included, before it gives up on it as dangling:
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs/refs-internal.h#L260
+// https://github.com/git/git/blob/0f8e75abebff0877cae681a3d5ff31ac47f54220/refs.c#L2147
+const symrefMaxDepth = 5
+
+// resolve follows ref as git for-each-ref does, returning nil when ref
+// is dangling: its target is missing, broken or not a valid name, or more
+// than symrefMaxDepth references away.
+func (it *listedReferencesIter) resolve(ref *plumbing.Reference) (*plumbing.Reference, error) {
+	for depth := 1; ref.Type() == plumbing.SymbolicReference; depth++ {
+		if depth == symrefMaxDepth || !validTargetName(ref.Target()) {
+			return nil, nil
+		}
+		next, err := it.lookup(ref.Target())
+		if reference.IsUnresolvableForAdvertisement(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		ref = next
+	}
+	return ref, nil
+}
+
+// lookup reads the reference name a symbolic reference points to. A name
+// under refs/ is looked up in it.refs, loading it first if needed; other
+// names, such as ORIG_HEAD, are read from storage, as is every name should
+// loading fail, so that a failure reading a reference no target names does
+// not fail the listing.
+func (it *listedReferencesIter) lookup(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if !name.IsUnderRefs() || it.noRefs {
+		return it.s.Reference(name)
+	}
+	if it.refs == nil {
+		refs, err := allReferences(it.s)
+		if err != nil {
+			it.noRefs = true
+			return it.s.Reference(name)
+		}
+		it.refs = refs
+	}
+	if ref, ok := it.refs[name]; ok {
+		return ref, nil
+	}
+	return nil, plumbing.ErrReferenceNotFound
+}
+
+// allReferences returns every reference of s by name, keeping the first of
+// a repeated name.
+func allReferences(s storer.ReferenceStorer) (map[plumbing.ReferenceName]*plumbing.Reference, error) {
+	iter, err := s.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	refs := make(map[plumbing.ReferenceName]*plumbing.Reference)
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if _, ok := refs[ref.Name()]; !ok {
+			refs[ref.Name()] = ref
+		}
+		return nil
+	})
+	return refs, err
+}
+
+func (it *listedReferencesIter) ForEach(cb func(*plumbing.Reference) error) error {
+	defer it.Close()
+	for {
+		ref, err := it.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := cb(ref); err != nil {
+			if errors.Is(err, storer.ErrStop) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func (it *listedReferencesIter) Close() {
+	it.iter.Close()
 }
 
 // TreeObject return a Tree with the given hash. If not found

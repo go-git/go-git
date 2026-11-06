@@ -102,6 +102,21 @@ func (s *objectWalkerSuite) TestShallowClonedRepo() {
 	s.Contains(walker.seen, shallow[0])
 }
 
+// Storage reports a reference it cannot read with the all-zero ID. The walk
+// must fail on it, as git prune does, even in a partial clone, where an
+// absent object otherwise counts as promised and the walk carries on.
+func (s *objectWalkerSuite) TestBrokenReferenceFailsWalk() {
+	for _, promisor := range []bool{false, true} {
+		st := memory.NewStorage()
+		s.Require().NoError(st.SetReference(plumbing.NewHashReference("refs/heads/broken", plumbing.ZeroHash)))
+
+		walker := newObjectWalker(st)
+		walker.promisor = promisor
+		s.ErrorIs(walker.walkAllRefs(), plumbing.ErrObjectNotFound, "promisor=%v", promisor)
+		s.Empty(walker.missing, "promisor=%v", promisor)
+	}
+}
+
 func (s *objectWalkerSuite) TestUnexpectedErrors() {
 	memStorage := memory.NewStorage()
 	hash := plumbing.NewHash("c0ffee0000000000000000000000000000000000")
