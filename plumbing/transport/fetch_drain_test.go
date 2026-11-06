@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -144,10 +143,11 @@ func TestFetchPackReadsResponseAfterPack(t *testing.T) {
 	}
 }
 
-// TestFetchPackRejectsPackDataAfterPack checks that FetchPack fails when
-// pack data follows the pack trailer, as Git does, but not for an empty
-// pack-data packet, which servers send as a keepalive. trailerStorer leaves
-// everything after the trailer to FetchPack.
+// TestFetchPackRejectsPackDataAfterPack checks that FetchPack fails with the
+// exported [ErrPackJunk] when pack data follows the pack trailer, which is
+// stricter than Git (see DrainPackSection in internal/transport), but not
+// for an empty pack-data packet, which servers send as a keepalive.
+// trailerStorer leaves everything after the trailer to FetchPack.
 func TestFetchPackRejectsPackDataAfterPack(t *testing.T) {
 	t.Parallel()
 
@@ -165,7 +165,7 @@ func TestFetchPackRejectsPackDataAfterPack(t *testing.T) {
 		wantErr      error
 		wantProgress string
 	}{
-		{name: "pack data", after: "0009\x01junk", wantErr: internal.ErrPackJunk},
+		{name: "pack data", after: "0009\x01junk", wantErr: ErrPackJunk},
 		{name: "keepalive", after: "0005\x01"},
 		{name: "keepalive and progress", after: "0005\x01" + "0009\x02done", wantProgress: "done"},
 	}

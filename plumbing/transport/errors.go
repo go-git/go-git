@@ -13,6 +13,7 @@ var (
 	ErrRepositoryNotFound     = errors.New("repository not found")
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
 	ErrNoChange               = internal.ErrNoChange
+	ErrPackJunk               = internal.ErrPackJunk
 	ErrAuthenticationRequired = errors.New("authentication required")
 	ErrAuthorizationFailed    = errors.New("authorization failed")
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")

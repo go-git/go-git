@@ -21,8 +21,8 @@ import (
 // non-nil. A multiplexed response is read up to its closing flush-pkt, and
 // an error the remote sends on the error band, even after the pack, fails
 // the fetch. So does pack data the storage left unread after the pack
-// trailer, although the pack is then already stored. Otherwise packf may be
-// left unread past the pack trailer.
+// trailer, with [ErrPackJunk], although the pack is then already stored.
+// Otherwise packf may be left unread past the pack trailer.
 //
 // FetchPack closes packf before it returns, whether or not the fetch fails,
 // unless cancelling ctx ended a read of packf. That read may still be
