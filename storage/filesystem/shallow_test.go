@@ -1,9 +1,11 @@
 package filesystem_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
 	"github.com/stretchr/testify/assert"
@@ -149,4 +151,38 @@ func TestShallowFollowsSetObjectFormat(t *testing.T) {
 	got, err := st.Shallow()
 	require.NoError(t, err)
 	assert.Equal(t, []plumbing.Hash{plumbing.NewHash(sha256)}, got)
+}
+
+func TestSetShallowReportsCloseError(t *testing.T) {
+	t.Parallel()
+
+	errClose := errors.New("close failed")
+	st := filesystem.NewStorage(&closeErrorFS{Filesystem: memfs.New(), err: errClose}, cache.NewObjectLRUDefault())
+
+	err := st.SetShallow([]plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")})
+	require.ErrorIs(t, err, errClose)
+}
+
+// closeErrorFS creates files whose Close fails with err.
+type closeErrorFS struct {
+	billy.Filesystem
+	err error
+}
+
+func (fs *closeErrorFS) Create(name string) (billy.File, error) {
+	f, err := fs.Filesystem.Create(name)
+	if err != nil {
+		return nil, err
+	}
+	return &closeErrorFile{File: f, err: fs.err}, nil
+}
+
+type closeErrorFile struct {
+	billy.File
+	err error
+}
+
+func (f *closeErrorFile) Close() error {
+	_ = f.File.Close()
+	return f.err
 }

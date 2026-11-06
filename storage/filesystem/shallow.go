@@ -17,23 +17,23 @@ type ShallowStorage struct {
 	objectFormat formatcfg.ObjectFormat
 }
 
-// SetShallow save the shallows in the shallow file in the .git folder as one
-// commit per line represented by 40-byte hexadecimal object terminated by a
-// newline.
-func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
+// SetShallow replaces the shallow file with commits, one hex object ID per
+// line.
+func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) (err error) {
 	f, err := s.dir.ShallowWriter()
 	if err != nil {
 		return err
 	}
 
 	defer ioutil.CheckClose(f, &err)
+	w := bufio.NewWriter(f)
 	for _, h := range commits {
-		if _, err := fmt.Fprintf(f, "%s\n", h); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\n", h); err != nil {
 			return err
 		}
 	}
 
-	return err
+	return w.Flush()
 }
 
 // Shallow returns the shallow commits reading from shallow file from .git.
