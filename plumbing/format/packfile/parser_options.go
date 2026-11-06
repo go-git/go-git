@@ -1,6 +1,8 @@
 package packfile
 
 import (
+	"io"
+
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
@@ -25,6 +27,16 @@ func WithStorage(storage storer.EncodedObjectStorer) ParserOption {
 func WithScannerObservers(ob ...Observer) ParserOption {
 	return func(p *Parser) {
 		p.observers = ob
+	}
+}
+
+// WithProgress reports git-style "Receiving objects" and "Resolving
+// deltas" lines to w as the pack is indexed. This is the client-side
+// progress git's index-pack prints; the remote's sideband messages are
+// a separate stream. A nil writer is ignored.
+func WithProgress(w io.Writer) ParserOption {
+	return func(p *Parser) {
+		p.SetProgress(w)
 	}
 }
 

@@ -267,7 +267,7 @@ func streamPackfile(ctx context.Context, st storage.Storer, packReader io.Reader
 		if err := packfile.UpdatePromisorObjectStorage(st, demuxer, ""); err != nil {
 			return err
 		}
-	} else if err := packfile.UpdateObjectStorage(st, demuxer); err != nil {
+	} else if err := packfile.UpdateObjectStorageProgress(st, demuxer, progress); err != nil {
 		return err
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	"github.com/go-git/go-billy/v6"
@@ -38,6 +39,8 @@ type PackWriter struct {
 	result   chan error
 	format   formatcfg.ObjectFormat
 	writeRev bool
+	progress atomic.Value // io.Writer
+	parserMu sync.Mutex
 	// promisor, when non-nil, writes a .promisor sidecar next to the pack
 	// carrying these contents. A nil value leaves the pack unmarked.
 	promisor *string
@@ -70,22 +73,44 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 	return writer, nil
 }
 
+// SetProgress sets the writer that receives client-side pack indexing
+// progress. Call it before the first Write so the indexer sees it when
+// the pack header arrives.
+func (w *PackWriter) SetProgress(p io.Writer) {
+	if p == nil {
+		return
+	}
+	w.progress.Store(p)
+	w.parserMu.Lock()
+	parser := w.parser
+	w.parserMu.Unlock()
+	if parser != nil {
+		parser.SetProgress(p)
+	}
+}
+
 func (w *PackWriter) buildIndex() {
 	w.writer = new(idxfile.Writer)
 	var err error
 
-	w.parser = packfile.NewParser(w.synced,
+	parser := packfile.NewParser(w.synced,
 		packfile.WithScannerObservers(w.writer),
 		packfile.WithObjectFormat(w.format))
+	w.parserMu.Lock()
+	w.parser = parser
+	if p, ok := w.progress.Load().(io.Writer); ok && p != nil {
+		parser.SetProgress(p)
+	}
+	w.parserMu.Unlock()
 
-	h, err := w.parser.Parse()
+	h, err := parser.Parse()
 	if err != nil {
 		w.result <- err
 		return
 	}
 
 	w.checksum = h
-	w.size = w.parser.Size()
+	w.size = parser.Size()
 	w.result <- nil
 }
 

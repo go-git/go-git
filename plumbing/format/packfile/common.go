@@ -29,6 +29,13 @@ const (
 // UpdateObjectStorage updates the storer with the objects in the given
 // packfile.
 func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
+	return UpdateObjectStorageProgress(s, packfile, nil)
+}
+
+// UpdateObjectStorageProgress is UpdateObjectStorage with a writer for
+// client-side "Receiving objects" / "Resolving deltas" progress. A nil
+// progress writer keeps the previous behaviour.
+func UpdateObjectStorageProgress(s storer.Storer, packfile io.Reader, progress io.Writer) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -37,7 +44,7 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 	}
 
 	if pw, ok := s.(storer.PackfileWriter); ok {
-		return WritePackfileToObjectStorage(pw, packfile)
+		return writePackfileToObjectStorage(pw, packfile, progress)
 	}
 
 	of := formatcfg.DefaultObjectFormat
@@ -48,7 +55,11 @@ func UpdateObjectStorage(s storer.Storer, packfile io.Reader) error {
 		}
 	}
 
-	p := NewParser(packfile, WithStorage(s), WithObjectFormat(of))
+	opts := []ParserOption{WithStorage(s), WithObjectFormat(of)}
+	if progress != nil {
+		opts = append(opts, WithProgress(progress))
+	}
+	p := NewParser(packfile, opts...)
 	_, err := p.Parse()
 	return err
 }
@@ -115,9 +126,23 @@ func WritePackfileToObjectStorage(
 	sw storer.PackfileWriter,
 	packfile io.Reader,
 ) (err error) {
+	return writePackfileToObjectStorage(sw, packfile, nil)
+}
+
+func writePackfileToObjectStorage(
+	sw storer.PackfileWriter,
+	packfile io.Reader,
+	progress io.Writer,
+) error {
 	w, err := sw.PackfileWriter()
 	if err != nil {
 		return err
+	}
+
+	if progress != nil {
+		if sp, ok := w.(interface{ SetProgress(io.Writer) }); ok {
+			sp.SetProgress(progress)
+		}
 	}
 
 	return copyPackfile(w, packfile)

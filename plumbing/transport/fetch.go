@@ -68,7 +68,7 @@ func FetchPack(
 	if req.Filter != "" {
 		err = packfile.UpdatePromisorObjectStorage(st, reader, "")
 	} else {
-		err = packfile.UpdateObjectStorage(st, reader)
+		err = packfile.UpdateObjectStorageProgress(st, reader, req.Progress)
 	}
 
 	// Storage that parses the pack stops reading at its trailer, so read the

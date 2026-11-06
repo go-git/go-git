@@ -82,6 +82,14 @@ type Parser struct {
 	size     atomic.Int64
 	m        stdsync.Mutex
 	parsed   bool
+
+	// progressOut, when set, receives git-style "Receiving objects" and
+	// "Resolving deltas" lines as the pack is indexed. Clone/fetch clients
+	// produce these locally; the remote only sends "Compressing objects".
+	// See #1089.
+	progressOut atomic.Value // io.Writer
+	recv        *objectProgress
+	deltas      *objectProgress
 }
 
 // LowMemoryCapable is implemented by storage types that are capable of
@@ -127,6 +135,21 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p.cache = newParserCache()
 
 	return p
+}
+
+// SetProgress sets the writer that receives client-side pack indexing
+// progress. It is safe to call before or during Parse: the writer is
+// read when the pack header is seen, which is after the first bytes
+// arrive.
+func (p *Parser) SetProgress(w io.Writer) {
+	if w != nil {
+		p.progressOut.Store(w)
+	}
+}
+
+func (p *Parser) progressWriter() io.Writer {
+	w, _ := p.progressOut.Load().(io.Writer)
+	return w
 }
 
 func (p *Parser) storeOrCache(oh *ObjectHeader) error {
@@ -193,9 +216,15 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 			header := data.Value().(Header)
 
 			p.resetCache(int(header.ObjectsQty))
+			if w := p.progressWriter(); w != nil {
+				p.recv = newObjectProgress(w, "Receiving objects", header.ObjectsQty, true, func() int64 {
+					return p.scanner.offset
+				})
+			}
 			_ = p.onHeader(header.ObjectsQty)
 
 		case ObjectSection:
+			p.recv.step()
 			oh := data.Value().(ObjectHeader)
 			if oh.Type.IsDelta() {
 				oh.Hash.ResetBySize(p.scanner.objectIDSize)
@@ -218,6 +247,7 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		case FooterSection:
 			p.checksum = data.Value().(plumbing.Hash)
 			p.size.Store(p.scanner.packSize)
+			p.recv.done()
 		}
 	}
 
@@ -317,6 +347,12 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 	// hashes, not the count of delta entries. Real packs cluster many
 	// children under one parent (chains and wide trees), so a hint
 	// sized to len(deltas) consistently overshoots. Let the maps grow.
+	nDeltas := uint32(len(ofsDeltas) + len(refDeltas))
+	if w := p.progressWriter(); w != nil && nDeltas > 0 {
+		p.deltas = newObjectProgress(w, "Resolving deltas", nDeltas, false, nil)
+		defer p.deltas.done()
+	}
+
 	ofsChildren := map[int64][]*ObjectHeader{}
 	for _, d := range ofsDeltas {
 		ofsChildren[d.OffsetReference] = append(ofsChildren[d.OffsetReference], d)
@@ -435,7 +471,11 @@ func (p *Parser) processDelta(oh *ObjectHeader) error {
 		return err
 	}
 
-	return p.storeOrCache(oh)
+	err := p.storeOrCache(oh)
+	if err == nil {
+		p.deltas.step()
+	}
+	return err
 }
 
 // checkDeltaChainDepth verifies that the delta chain rooted at oh
