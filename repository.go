@@ -2081,7 +2081,8 @@ type RepackConfig struct {
 	OnlyDeletePacksOlderThan time.Time
 }
 
-// RepackObjects packs reachable objects and removes old packs according to cfg.
+// RepackObjects packs objects reachable from refs, the index and available reflogs,
+// then removes old packs according to cfg.
 // Reachability follows symbolic references. Missing targets are ignored, but
 // other resolution errors, including the recursion limit, stop the operation
 // before it creates a replacement pack or removes existing objects.
@@ -2180,6 +2181,12 @@ func (r *Repository) createNewObjectPack(cfg *RepackConfig) (h plumbing.Hash, er
 	ow := newObjectWalker(r.Storer)
 	err = ow.walkAllRefs()
 	if err != nil {
+		return h, err
+	}
+	if err := ow.walkIndex(); err != nil {
+		return h, err
+	}
+	if err := ow.walkReflogs(); err != nil {
 		return h, err
 	}
 	// Only objects that are actually present can be written out. In a partial
