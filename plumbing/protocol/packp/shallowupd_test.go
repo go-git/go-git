@@ -5,9 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
 type ShallowUpdateSuite struct {
@@ -181,4 +183,50 @@ func (s *ShallowUpdateSuite) TestDecodeSHA256() {
 
 	s.Equal([]plumbing.Hash{plumbing.NewHash(shallow)}, su.Shallows)
 	s.Equal([]plumbing.Hash{plumbing.NewHash(unshallow)}, su.Unshallows)
+}
+
+// TestShallowUpdateDecodeLineLimit mutates the package-wide maxSectionLines,
+// so it cannot run in parallel with other tests that read it.
+//
+//nolint:paralleltest // mutates the shared maxSectionLines cap
+func TestShallowUpdateDecodeLineLimit(t *testing.T) {
+	old := maxSectionLines
+	maxSectionLines = 3
+	defer func() { maxSectionLines = old }()
+
+	tests := []struct {
+		name       string
+		shallows   int
+		unshallows int
+		wantErr    string
+	}{
+		{name: "both lists at limit", shallows: maxSectionLines, unshallows: maxSectionLines},
+		{name: "shallow over limit", shallows: maxSectionLines + 1, wantErr: "too many shallow lines (limit 3)"},
+		{name: "unshallow over limit", unshallows: maxSectionLines + 1, wantErr: "too many unshallow lines (limit 3)"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			for range tc.shallows {
+				_, err := pktline.WriteString(&buf, "shallow 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+				require.NoError(t, err)
+			}
+			for range tc.unshallows {
+				_, err := pktline.WriteString(&buf, "unshallow 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+				require.NoError(t, err)
+			}
+			require.NoError(t, pktline.WriteFlush(&buf))
+
+			var su ShallowUpdate
+			err := su.Decode(&buf)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, su.Shallows, tc.shallows)
+			require.Len(t, su.Unshallows, tc.unshallows)
+		})
+	}
 }
