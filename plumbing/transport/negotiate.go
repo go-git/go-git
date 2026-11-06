@@ -342,7 +342,9 @@ func ReconcileObjectFormatV2(st storage.Storer, caps capability.List) error {
 
 	advertised := caps.Get(capability.ObjectFormat)
 	if len(advertised) == 0 {
-		// The server advertised no object-format, so it only speaks sha1.
+		// The server advertised no object-format, so it only speaks sha1. A
+		// bare object-format, without "=", counts as none, as git's
+		// server_feature_v2 matches only "object-format=".
 		// Upstream errors when the client repo uses a different algorithm
 		// rather than letting it fail later on a checksum mismatch.
 		if clientFormat != config.UnsetObjectFormat && clientFormat != config.SHA1 {
@@ -355,19 +357,11 @@ func ReconcileObjectFormatV2(st storage.Storer, caps capability.List) error {
 	switch v := config.ObjectFormat(advertised[0]); v {
 	case config.SHA1, config.SHA256:
 		serverFormat = v
-	case config.UnsetObjectFormat:
-		// An empty value carries no algorithm; treat it exactly as an absent
-		// object-format (the server only speaks sha1). Apply the same guard as
-		// the len(advertised)==0 branch so a client repo on a different
-		// algorithm is rejected rather than slipping past to fail later on a
-		// checksum mismatch.
-		if clientFormat != config.UnsetObjectFormat && clientFormat != config.SHA1 {
-			return fmt.Errorf("the server does not support algorithm '%s'", clientFormat)
-		}
-		return nil
 	default:
-		// An algorithm go-git does not speak. Fail fast rather than proceed
-		// with the wrong hash format, matching NegotiatePack's v0/v1 handling.
+		// An algorithm go-git does not speak, including an empty value and a
+		// list such as "sha1 sha256": git's send_capabilities dies on these
+		// too. Fail fast rather than proceed with the wrong hash format,
+		// matching NegotiatePack's v0/v1 handling.
 		return fmt.Errorf("server advertised unsupported object-format %q", v)
 	}
 

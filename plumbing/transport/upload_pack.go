@@ -12,7 +12,9 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -444,6 +446,8 @@ func shallowFrontierDepth(ctx context.Context, st storage.Storer, heads, shallow
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
 // It is used when the client requests version=2 via GIT_PROTOCOL.
 func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader, w io.WriteCloser, opts *UploadPackRequest) error {
+	repo := internal.ObjectFormat(st)
+	client := formatcfg.SHA1
 	for {
 		// Peek the command line to choose the argument decoder, then decode the
 		// whole request envelope through packp.CommandRequest (the same type the
@@ -477,6 +481,11 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 
 		if err := req.Decode(rd); err != nil {
 			return fmt.Errorf("decoding %s request: %w", cmd, err)
+		}
+		// The client's format holds for the rest of the session, as in git.
+		var el *pktline.ErrorLine
+		if client, el = v2ObjectFormatError(repo, client, req.Capabilities); el != nil {
+			return rejectWithErrorLine(w, el)
 		}
 
 		switch cmd {
