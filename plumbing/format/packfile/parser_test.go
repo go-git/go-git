@@ -997,3 +997,54 @@ func TestParserSizeFromObserver(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(len(pack)), ob.size)
 }
+
+// TestParserReportsReceivingAndResolvingProgress is the #1089 regression:
+// indexing a pack must print the client-side lines git's index-pack emits
+// (Receiving objects / Resolving deltas). The remote only sends
+// "Compressing objects".
+func TestParserReportsReceivingAndResolvingProgress(t *testing.T) {
+	t.Parallel()
+
+	pf, err := fixtures.Basic().One().Packfile()
+	require.NoError(t, err)
+	defer func() { _ = pf.Close() }()
+
+	var buf bytes.Buffer
+	p := packfile.NewParser(pf, packfile.WithStorage(memory.NewStorage()), packfile.WithProgress(&buf))
+	_, err = p.Parse()
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Regexp(t, `Receiving objects:\s+100% \(\d+/\d+\).*done\.`, out)
+	assert.Regexp(t, `Resolving deltas:\s+100% \(\d+/\d+\), done\.`, out)
+}
+
+func TestUpdateObjectStorageProgress(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		st   storer.Storer
+	}{
+		{name: "memory", st: memory.NewStorage()},
+		{name: "filesystem", st: filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if c, ok := tc.st.(io.Closer); ok {
+				defer func() { _ = c.Close() }()
+			}
+
+			pf, err := fixtures.Basic().One().Packfile()
+			require.NoError(t, err)
+			defer func() { _ = pf.Close() }()
+
+			var buf bytes.Buffer
+			require.NoError(t, packfile.UpdateObjectStorageProgress(tc.st, pf, &buf))
+
+			out := buf.String()
+			assert.Regexp(t, `Receiving objects:\s+100% \(\d+/\d+\).*done\.`, out)
+			assert.Regexp(t, `Resolving deltas:\s+100% \(\d+/\d+\), done\.`, out)
+		})
+	}
+}
