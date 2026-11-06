@@ -172,15 +172,57 @@ func (c *Commit) Patch(to *Commit) (*Patch, error) {
 }
 
 // Parents return a CommitIter to the parent Commits.
+//
+// Returns an empty iterator if c is a shallow commit; see isShallow.
 func (c *Commit) Parents() CommitIter {
 	return NewCommitIter(c.s,
-		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.ParentHashes),
+		storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, c.liveParentHashes()),
 	)
 }
 
 // NumParents returns the number of parents in a commit.
+//
+// Returns 0 for a shallow commit, regardless of ParentHashes; see isShallow.
+// Note that this consults the storer, so unlike a plain field read it can
+// perform I/O. A lookup error is treated as "not shallow", which reports the
+// commit's recorded parent count.
 func (c *Commit) NumParents() int {
+	if shallow, err := c.isShallow(); err == nil && shallow {
+		return 0
+	}
 	return len(c.ParentHashes)
+}
+
+// liveParentHashes returns c's parent hashes truncated to NumParents, for
+// the walkers that read ParentHashes directly and must not follow a shallow
+// commit's recorded-but-never-fetched parents.
+//
+// Callers should prefer this over guarding a ParentHashes loop with
+// "NumParents() > 0": that only holds while truncation is all-or-nothing,
+// whereas this stays correct if a partial truncation is ever introduced. The
+// commitgraph package's liveParentHashes is the CommitNode equivalent.
+func (c *Commit) liveParentHashes() []plumbing.Hash {
+	return c.ParentHashes[:c.NumParents()]
+}
+
+// isShallow reports whether c is a shallow commit, meaning its ParentHashes
+// were recorded by git but never fetched. NumParents, Parents, and Parent
+// all treat such a commit as having no parents; ParentHashes itself is left
+// untouched.
+//
+// A lookup error is treated as "not shallow".
+func (c *Commit) isShallow() (bool, error) {
+	ss, ok := c.s.(storer.ShallowStorer)
+	if !ok {
+		return false, nil
+	}
+
+	shallow, err := ss.Shallow()
+	if err != nil {
+		return false, err
+	}
+
+	return slices.Contains(shallow, c.Hash), nil
 }
 
 // ErrParentNotFound is returned when the parent commit is not found.
@@ -192,8 +234,11 @@ var ErrParentNotFound = errors.New("commit parent not found")
 var ErrMalformedCommit = errors.New("malformed commit")
 
 // Parent returns the ith parent of a commit.
+//
+// Returns ErrParentNotFound if i is out of range, and for any index if c is a
+// shallow commit; see isShallow.
 func (c *Commit) Parent(i int) (*Commit, error) {
-	if len(c.ParentHashes) == 0 || i > len(c.ParentHashes)-1 {
+	if i < 0 || i >= c.NumParents() {
 		return nil, ErrParentNotFound
 	}
 
