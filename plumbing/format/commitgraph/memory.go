@@ -98,12 +98,18 @@ func (mi *MemoryIndex) HasGenerationV2() bool {
 	return mi.hasGenerationV2
 }
 
-// Close closes the index
-func (mi *MemoryIndex) Close() error {
-	return nil
-}
-
 // MaximumNumberOfHashes returns the maximum number of hashes in the index.
 func (mi *MemoryIndex) MaximumNumberOfHashes() uint32 {
 	return uint32(len(mi.indexMap))
+}
+
+// GetBloomFilterByIndex returns nil: a MemoryIndex holds no changed-path
+// Bloom filters.
+func (mi *MemoryIndex) GetBloomFilterByIndex(uint32) (*BloomFilter, error) {
+	return nil, nil
+}
+
+// Close closes the index
+func (mi *MemoryIndex) Close() error {
+	return nil
 }
