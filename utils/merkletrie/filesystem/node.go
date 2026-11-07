@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -28,6 +29,11 @@ var ignore = map[string]bool{
 
 // Options contains configuration for the filesystem node.
 type Options struct {
+	// Path limits the walk to this slash-separated, repository-relative file
+	// or directory. An empty path walks the whole filesystem. Ancestors are
+	// visited to preserve inherited ignore rules and repository-relative paths.
+	Path string
+
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.
 	AutoCRLF bool
 
@@ -124,15 +130,22 @@ func NewRootNodeWithOptions(
 	var trackedDirs map[string]struct{}
 
 	if options.Index != nil {
-		idxMap = make(map[string]*index.Entry, len(options.Index.Entries))
+		size := 0
+		if options.Path == "" {
+			size = len(options.Index.Entries)
+		}
+		idxMap = make(map[string]*index.Entry, size)
 		for _, entry := range options.Index.Entries {
+			if !pathutil.IsWithinPath(entry.Name, options.Path) {
+				continue
+			}
 			idxMap[entry.Name] = entry
 		}
 
 		if options.IgnoreScope != nil {
 			trackedDirs = make(map[string]struct{})
-			for _, entry := range options.Index.Entries {
-				for parent := path.Dir(entry.Name); parent != "." && parent != "/"; parent = path.Dir(parent) {
+			for name := range idxMap {
+				for parent := path.Dir(name); parent != "." && parent != "/"; parent = path.Dir(parent) {
 					if _, ok := trackedDirs[parent]; ok {
 						break
 					}
@@ -228,12 +241,29 @@ func (n *node) calculateChildren() error {
 			continue
 		}
 
+		// Ancestors remain visible for ignore inheritance. Unrelated entries
+		// are pruned before Info(), which may itself require filesystem I/O.
+		childPath := path.Join(n.path, file.Name())
+		ancestor := strings.HasPrefix(n.options.Path, childPath+"/")
+		if !ancestor && !pathutil.IsWithinPath(childPath, n.options.Path) {
+			continue
+		}
+
 		fi, err := file.Info()
 		if err != nil {
 			return err
 		}
 		if fi.Mode()&os.ModeSocket != 0 {
 			continue
+		}
+		if ancestor {
+			// Files and gitlinks cannot be traversed to reach a deeper scope.
+			if !fi.IsDir() {
+				continue
+			}
+			if _, submodule := n.submodules[childPath]; submodule {
+				continue
+			}
 		}
 
 		if n.shouldSkipIgnored(file.Name(), fi.IsDir()) {
