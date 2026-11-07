@@ -446,12 +446,11 @@ func TestPool_EvictsUnpinnedFirst(t *testing.T) {
 		"the walk past pinned should be counted")
 }
 
-// TestPool_AllPinned_FallsBackToLRU verifies that when every
-// Member is pinned, Touch falls back to evicting the LRU tail
-// anyway — matching canonical Git's find_lru_pack policy
-// (packfile.c:482-530) where the inuse_cnt preference is a
-// soft hint, not a guarantee.
-func TestPool_AllPinned_FallsBackToLRU(t *testing.T) {
+// TestPool_AllPinned_OverCommits verifies that when every Member is
+// pinned, Touch over-commits (retains both members) rather than
+// force-evicting a live pin — the LRU tail is NOT released and
+// OverCommits is incremented instead.
+func TestPool_AllPinned_OverCommits(t *testing.T) {
 	t.Parallel()
 	p := New(2)
 
@@ -466,15 +465,53 @@ func TestPool_AllPinned_FallsBackToLRU(t *testing.T) {
 	overflow := &pinnableMember{}
 	p.Touch(overflow, &overflow.h)
 
-	require.Equal(t, int32(1), tail.releaseCount(),
-		"with all members pinned, LRU tail must still be evicted")
+	require.Equal(t, int32(0), tail.releaseCount(),
+		"with all members pinned, LRU tail must not be force-evicted")
 	require.Equal(t, int32(0), head.releaseCount(),
-		"MRU front must not be evicted ahead of LRU tail")
+		"MRU front must not be evicted")
 
 	got := p.Stats()
-	require.Equal(t, uint64(1), got.Evictions)
+	require.Equal(t, uint64(0), got.Evictions)
 	require.Equal(t, uint64(2), got.PinnedSkips,
 		"both pinned members should appear in the walk count")
+	require.Equal(t, uint64(1), got.OverCommits,
+		"over-commit counter must be bumped once")
+	require.Equal(t, 3, got.Active,
+		"all three members retained when over-committed")
+}
+
+// pinnedMember is a simple Pinnable that records ReleaseNow calls
+// without atomics (used in single-goroutine tests).
+type pinnedMember struct {
+	pinned   bool
+	released int
+}
+
+func (m *pinnedMember) ReleaseNow() error { m.released++; return nil }
+func (m *pinnedMember) Pinned() bool      { return m.pinned }
+
+func TestPool_OverCommitsWhenAllPinned(t *testing.T) {
+	t.Parallel()
+	p := New(1)
+
+	a := &pinnedMember{pinned: true}
+	b := &pinnedMember{pinned: true}
+	var ha, hb Handle
+	p.Touch(a, &ha)
+	p.Touch(b, &hb) // capacity exceeded, but both pinned
+
+	require.Equal(t, 0, a.released, "must not force-evict a live pin")
+	require.Equal(t, 0, b.released)
+	st := p.Stats()
+	require.Equal(t, 2, st.Active, "over-committed: both members retained")
+	require.Equal(t, uint64(1), st.OverCommits)
+
+	// Once a member goes idle, the next Touch reclaims it normally.
+	a.pinned = false
+	c := &pinnedMember{pinned: true}
+	var hc Handle
+	p.Touch(c, &hc)
+	require.Equal(t, 1, a.released, "unpinned member is evicted")
 }
 
 // TestPool_MemberWithoutPinnable_PreservesLRU verifies that
