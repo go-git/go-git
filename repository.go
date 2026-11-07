@@ -1939,6 +1939,19 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 
 				tagObj, err := r.TagObject(hash)
 				if err == nil {
+					// Peel tags of tags as `git rev-parse <tag>^{commit}` does.
+					// The bound keeps a corrupt store whose tags form a cycle
+					// from hanging the caller.
+					for depth := 0; tagObj.TargetType == plumbing.TagObject; depth++ {
+						if depth == storer.MaxResolveRecursion {
+							return &plumbing.ZeroHash, fmt.Errorf("tag %s: %w", hash, storer.ErrMaxResolveRecursion)
+						}
+						tagObj, err = r.TagObject(tagObj.Target)
+						if err != nil {
+							return &plumbing.ZeroHash, err
+						}
+					}
+
 					// If the tag target lookup fails here, this most likely
 					// represents some sort of repo corruption, so let the
 					// error bubble up.
