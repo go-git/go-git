@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
@@ -433,11 +434,14 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 	return ref, nil
 }
 
-// IterReferences returns an iterator for all references.
-func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
+// IterReferences returns an iterator for the references whose name starts
+// with prefix.
+func (r ReferenceStorage) IterReferences(prefix string) (storer.ReferenceIter, error) {
 	refs := make([]*plumbing.Reference, 0, len(r))
-	for _, ref := range r {
-		refs = append(refs, ref)
+	for name, ref := range r {
+		if strings.HasPrefix(string(name), prefix) {
+			refs = append(refs, ref)
+		}
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil

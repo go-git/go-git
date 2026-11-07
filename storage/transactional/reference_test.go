@@ -117,7 +117,7 @@ func (s *ReferenceSuite) TestCommit() {
 	err := rs.Commit()
 	s.NoError(err)
 
-	iter, err := base.IterReferences()
+	iter, err := base.IterReferences("")
 	s.NoError(err)
 
 	var count int
@@ -150,7 +150,7 @@ func (s *ReferenceSuite) TestCommitDelete() {
 	err := rs.Commit()
 	s.NoError(err)
 
-	iter, err := base.IterReferences()
+	iter, err := base.IterReferences("")
 	s.NoError(err)
 
 	var count int
@@ -182,7 +182,7 @@ func (s *ReferenceSuite) TestIterReferencesMatchesReference() {
 	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/topic", hashB)))
 	s.Require().NoError(rs.RemoveReference("refs/heads/gone"))
 
-	iter, err := rs.IterReferences()
+	iter, err := rs.IterReferences("")
 	s.Require().NoError(err)
 	var got []string
 	s.Require().NoError(iter.ForEach(func(r *plumbing.Reference) error {
@@ -200,13 +200,43 @@ func (s *ReferenceSuite) TestIterReferencesMatchesReference() {
 	}, got)
 }
 
+func (s *ReferenceSuite) TestIterReferencesWithPrefixSpansBothStorers() {
+	const (
+		hashA = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+		hashB = "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	)
+	base := memory.NewStorage()
+	for _, name := range []string{"refs/heads/feature", "refs/heads/gone", "refs/heads/main", "refs/tags/v1"} {
+		s.Require().NoError(base.SetReference(plumbing.NewReferenceFromStrings(name, hashA)))
+	}
+	rs := NewReferenceStorage(base, memory.NewStorage())
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/main", hashB)))
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/heads/topic", hashB)))
+	s.Require().NoError(rs.SetReference(plumbing.NewReferenceFromStrings("refs/tags/v2", hashB)))
+	s.Require().NoError(rs.RemoveReference("refs/heads/gone"))
+
+	iter, err := rs.IterReferences("refs/heads/")
+	s.Require().NoError(err)
+	var got []string
+	s.Require().NoError(iter.ForEach(func(r *plumbing.Reference) error {
+		got = append(got, r.String())
+		return nil
+	}))
+
+	s.ElementsMatch([]string{
+		hashA + " refs/heads/feature",
+		hashB + " refs/heads/main",
+		hashB + " refs/heads/topic",
+	}, got)
+}
+
 // failingIterStorer fails IterReferences, as a storer does that cannot read
 // one of its references.
 type failingIterStorer struct {
 	storer.ReferenceStorer
 }
 
-func (failingIterStorer) IterReferences() (storer.ReferenceIter, error) {
+func (failingIterStorer) IterReferences(string) (storer.ReferenceIter, error) {
 	return nil, errReferencesUnreadable
 }
 
@@ -220,7 +250,7 @@ func (s *ReferenceSuite) TestIterReferencesReportsErrors() {
 		"base":     NewReferenceStorage(failingIterStorer{memory.NewStorage()}, memory.NewStorage()),
 		"temporal": NewReferenceStorage(memory.NewStorage(), failingIterStorer{memory.NewStorage()}),
 	} {
-		_, err := rs.IterReferences()
+		_, err := rs.IterReferences("")
 		s.ErrorIs(err, errReferencesUnreadable, name)
 	}
 }
@@ -246,7 +276,7 @@ func (s *ReferenceSuite) TestIterReferencesHidesFailedTemporalRemoval() {
 
 	_, err := rs.Reference("refs/heads/main")
 	s.Require().ErrorIs(err, plumbing.ErrReferenceNotFound)
-	iter, err := rs.IterReferences()
+	iter, err := rs.IterReferences("")
 	s.Require().NoError(err)
 	_, err = iter.Next()
 	s.ErrorIs(err, io.EOF)

@@ -498,7 +498,7 @@ func TestIterReferences(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		i, err := sto.IterReferences()
+		i, err := sto.IterReferences("")
 		require.NoError(t, err)
 
 		e, err := i.Next()
@@ -508,6 +508,35 @@ func TestIterReferences(t *testing.T) {
 		e, err = i.Next()
 		assert.Nil(t, e)
 		assert.ErrorIs(t, err, io.EOF)
+	})
+}
+
+func TestIterReferencesWithPrefix(t *testing.T) {
+	t.Parallel()
+
+	forEachStorage(t, func(sto Storer, t *testing.T) {
+		const hash = "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"
+		for _, name := range []string{"refs/heads/main", "refs/heads/topic", "refs/headsx", "refs/tags/v1"} {
+			require.NoError(t, sto.SetReference(plumbing.NewReferenceFromStrings(name, hash)))
+		}
+		require.NoError(t, sto.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/main")))
+
+		namesWithPrefix := func(prefix string) []string {
+			i, err := sto.IterReferences(prefix)
+			require.NoError(t, err)
+			var names []string
+			require.NoError(t, i.ForEach(func(ref *plumbing.Reference) error {
+				names = append(names, ref.Name().String())
+				return nil
+			}))
+			return names
+		}
+
+		assert.ElementsMatch(t, []string{"refs/heads/main", "refs/heads/topic"}, namesWithPrefix("refs/heads/"))
+		assert.ElementsMatch(t, []string{"refs/heads/main", "refs/heads/topic", "refs/headsx"}, namesWithPrefix("refs/heads"))
+		assert.ElementsMatch(t, []string{"refs/heads/main", "refs/heads/topic", "refs/headsx", "refs/tags/v1"}, namesWithPrefix("refs/"))
+		assert.ElementsMatch(t, []string{"HEAD", "refs/heads/main", "refs/heads/topic", "refs/headsx", "refs/tags/v1"}, namesWithPrefix(""))
+		assert.Empty(t, namesWithPrefix("refs/remotes/"))
 	})
 }
 
