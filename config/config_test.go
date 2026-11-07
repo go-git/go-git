@@ -1414,3 +1414,40 @@ func (s *ConfigSuite) TestUnmarshalBoolValues() {
 			"extensions.worktreeConfig = %s", tc.value)
 	}
 }
+
+func (s *ConfigSuite) TestUnmarshalBoolValuesWithDefaults() {
+	for _, tc := range []struct {
+		value string
+		want  OptBool
+	}{
+		{value: "true", want: OptBoolTrue},
+		{value: "yes", want: OptBoolTrue},
+		{value: "on", want: OptBoolTrue},
+		{value: "1", want: OptBoolTrue},
+		{value: "false", want: OptBoolFalse},
+		{value: "no", want: OptBoolFalse},
+		{value: "off", want: OptBoolFalse},
+		{value: "0", want: OptBoolFalse},
+		// An unreadable value leaves each key at its default.
+		{value: "garbage", want: OptBoolUnset},
+	} {
+		input := []byte("[core]\n\tbare = " + tc.value +
+			"\n\tfilemode = " + tc.value +
+			"\n[pack]\n\treadReverseIndex = " + tc.value +
+			"\n\twriteReverseIndex = " + tc.value +
+			"\n[remote \"origin\"]\n\turl = https://example.com/repo.git" +
+			"\n\tmirror = " + tc.value +
+			"\n\tpromisor = " + tc.value + "\n")
+
+		cfg := NewConfig()
+		s.Require().NoError(cfg.Unmarshal(input), tc.value)
+
+		// bare, mirror and promisor default to false; the others to true.
+		s.Equal(tc.want == OptBoolTrue, cfg.Core.IsBare, "core.bare = %s", tc.value)
+		s.Equal(tc.want != OptBoolFalse, cfg.Core.FileMode, "core.filemode = %s", tc.value)
+		s.Equal(tc.want != OptBoolFalse, cfg.Pack.ReadReverseIndex, "pack.readReverseIndex = %s", tc.value)
+		s.Equal(tc.want != OptBoolFalse, cfg.Pack.WriteReverseIndex, "pack.writeReverseIndex = %s", tc.value)
+		s.Equal(tc.want == OptBoolTrue, cfg.Remotes["origin"].Mirror, "remote.origin.mirror = %s", tc.value)
+		s.Equal(tc.want == OptBoolTrue, cfg.Remotes["origin"].Promisor, "remote.origin.promisor = %s", tc.value)
+	}
+}
