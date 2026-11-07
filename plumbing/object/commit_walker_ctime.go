@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 )
 
 type commitIteratorByCTime struct {
@@ -29,6 +30,55 @@ func NewCommitIterCTime(
 	seenExternal map[plumbing.Hash]bool,
 	ignore []plumbing.Hash,
 ) CommitIter {
+	return newCommitIterCTime([]*Commit{c}, seenExternal, ignore)
+}
+
+// NewCommitAllIterCTime returns a CommitIter over the history of HEAD and every
+// reference pointing to a commit, interleaved in a single Committer Time order.
+func NewCommitAllIterCTime(repoStorer storage.Storer) (CommitIter, error) {
+	var commits []*Commit
+	add := func(h plumbing.Hash) {
+		if c, err := GetCommit(repoStorer, h); err == nil {
+			commits = append(commits, c)
+		}
+	}
+
+	head, err := storer.ResolveReference(repoStorer, plumbing.HEAD)
+	switch {
+	case err == nil:
+		add(head.Hash())
+	case !errors.Is(err, plumbing.ErrReferenceNotFound):
+		return nil, err
+	}
+
+	refIter, err := repoStorer.IterReferences()
+	if err != nil {
+		return nil, err
+	}
+	defer refIter.Close()
+
+	for {
+		ref, err := refIter.Next()
+		if err == io.EOF {
+			break
+		}
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		add(ref.Hash())
+	}
+
+	return newCommitIterCTime(commits, nil, nil), nil
+}
+
+func newCommitIterCTime(
+	commits []*Commit,
+	seenExternal map[plumbing.Hash]bool,
+	ignore []plumbing.Hash,
+) *commitIteratorByCTime {
 	seen := make(map[plumbing.Hash]bool)
 	for _, h := range ignore {
 		seen[h] = true
@@ -40,7 +90,9 @@ func NewCommitIterCTime(
 		}
 		return -1
 	})
-	heap.Push(c)
+	for _, c := range commits {
+		heap.Push(c)
+	}
 
 	return &commitIteratorByCTime{
 		seenExternal: seenExternal,

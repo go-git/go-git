@@ -1577,9 +1577,14 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		it  object.CommitIter
 		err error
 	)
-	if o.All {
+	switch {
+	// The path filters below only count a change when the next commit is a
+	// parent, which holds less often once references are interleaved.
+	case o.All && o.Order == LogOrderCommitterTime && o.FileName == nil && o.PathFilter == nil:
+		it, err = object.NewCommitAllIterCTime(r.Storer)
+	case o.All:
 		it, err = r.logAll(fn)
-	} else {
+	default:
 		it, err = r.log(o.From, fn)
 	}
 
