@@ -10,11 +10,24 @@ import (
 // A Decoder reads and decodes config files from an input stream.
 type Decoder struct {
 	io.Reader
+
+	include *IncludeOptions
 }
 
 // NewDecoder returns a new decoder that reads from r.
+//
+// Any [include] or [includeIf] directives are decoded as ordinary
+// options and not followed. Use [NewDecoderWithIncludes] to resolve them.
 func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{r}
+	return &Decoder{Reader: r}
+}
+
+// NewDecoderWithIncludes returns a new decoder that reads from r and
+// follows [include] and [includeIf] directives using opts, expanding
+// each included file in place. Passing a nil opts behaves like
+// [NewDecoder].
+func NewDecoderWithIncludes(r io.Reader, opts *IncludeOptions) *Decoder {
+	return &Decoder{Reader: r, include: opts}
 }
 
 // Decode reads the whole config from its input and stores it in the
@@ -24,7 +37,15 @@ func (d *Decoder) Decode(config *Config) error {
 		return errors.New("config is nil")
 	}
 
-	idx := newDecodeIndex(config)
+	return decodeInto(newDecodeIndex(config), d.Reader, d.include, 0)
+}
+
+// decodeInto parses r into the config idx resolves sections in. Included
+// files are expanded as they are encountered so that options keep their file
+// order, which is what determines precedence within a single scope. They are
+// decoded through the same index, so that it knows of the sections they
+// create.
+func decodeInto(idx *decodeIndex, r io.Reader, opts *IncludeOptions, depth int) error {
 	cb := func(s, ss, k, v string, _ bool) error {
 		// A header line carries no option and is reported only so that
 		// the section it names comes into existence.
@@ -38,9 +59,24 @@ func (d *Decoder) Decode(config *Config) error {
 		} else {
 			section.AddOption(k, v)
 		}
-		return nil
+
+		if opts == nil {
+			return nil
+		}
+
+		if opts.forbidRemoteURL && isRemoteURL(s, k) {
+			return ErrRemoteURLInConditionalInclude
+		}
+
+		condition, ok := includeDirective(s, ss, k)
+		if !ok {
+			return nil
+		}
+
+		return opts.processInclude(idx, condition, v, depth)
 	}
-	return gcfg.ReadWithCallback(d, cb)
+
+	return gcfg.ReadWithCallback(r, cb)
 }
 
 // decodeIndex resolves the sections and subsections a decoder writes into.
@@ -53,9 +89,10 @@ func (d *Decoder) Decode(config *Config) error {
 // expensive to decode. The index replaces both scans with map lookups.
 //
 // It lives no longer than one Decode call, which is the config's only writer
-// for that time, so the index cannot go stale. It is deliberately not kept on
-// Config, whose Sections, Subsections and Options fields are exported and
-// assigned to directly by other packages, with no hook an index could observe.
+// for that time, so the index cannot go stale. Files included while
+// decoding go through the same index. It is deliberately not kept on Config,
+// whose Sections, Subsections and Options fields are exported and assigned to
+// directly by other packages, with no hook an index could observe.
 //
 // Only the lookup is reimplemented. Sections and subsections are created
 // through the same appendSection and appendSubsection that Config.Section and
