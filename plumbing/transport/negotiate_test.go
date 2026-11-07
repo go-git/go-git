@@ -442,3 +442,49 @@ func TestReconcileObjectFormatV2(t *testing.T) {
 		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), capability.List{}))
 	})
 }
+
+func TestNegotiatePackAdvertisesShallowWithoutDepth(t *testing.T) {
+	t.Parallel()
+
+	hashA := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	st := memory.NewStorage()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{hashA}))
+
+	caps := capability.List{}
+	caps.Add(capability.Shallow)
+
+	writer := newMockWriteCloser(nil)
+	_, err := NegotiatePack(
+		context.TODO(),
+		st,
+		caps,
+		false,
+		bytes.NewReader([]byte("0008NAK\n")),
+		writer,
+		&FetchRequest{Wants: []plumbing.Hash{hashA}},
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, writer.writeBuf.String(), "shallow "+hashA.String(),
+		"a shallow repository must advertise its boundary even without depth")
+}
+
+func TestNegotiatePackShallowClientNeedsCapability(t *testing.T) {
+	t.Parallel()
+
+	hashA := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	st := memory.NewStorage()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{hashA}))
+
+	writer := newMockWriteCloser(nil)
+	_, err := NegotiatePack(
+		context.TODO(),
+		st,
+		capability.List{},
+		false,
+		bytes.NewReader([]byte{}),
+		writer,
+		&FetchRequest{Wants: []plumbing.Hash{hashA}},
+	)
+	require.ErrorIs(t, err, ErrShallowNotSupported)
+}
