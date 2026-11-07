@@ -165,6 +165,37 @@ func (s *NoderSuite) TestDiffFileMode() {
 	s.Len(ch, 1)
 }
 
+func (s *NoderSuite) TestIncludeSkipWorktreeDiffDetectsSkippedEntryChange() {
+	indexA := &index.Index{
+		Entries: []*index.Entry{{
+			Name:         path.Join("bar", "baz", "foo"),
+			Hash:         plumbing.NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d"),
+			SkipWorktree: true,
+		}},
+	}
+
+	indexB := &index.Index{
+		Entries: []*index.Entry{{
+			Name:         path.Join("bar", "baz", "foo"),
+			Hash:         plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			SkipWorktree: true,
+		}},
+	}
+
+	ch, err := merkletrie.DiffTree(NewRootNode(indexA), NewRootNode(indexB), isEquals)
+	s.NoError(err)
+	s.Len(ch, 0)
+
+	opts := RootNodeOptions{IncludeSkipWorktree: true}
+	ch, err = merkletrie.DiffTree(
+		NewRootNodeWithOptions(indexA, opts),
+		NewRootNodeWithOptions(indexB, opts),
+		isEquals,
+	)
+	s.NoError(err)
+	s.Len(ch, 1)
+}
+
 var empty = make([]byte, 24)
 
 func isEquals(a, b noder.Hasher) bool {
