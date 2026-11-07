@@ -127,7 +127,7 @@ func (fs *RepositoryFilesystem) Lstat(filename string) (os.FileInfo, error) {
 
 // Symlink creates a symlink in the appropriate filesystem.
 func (fs *RepositoryFilesystem) Symlink(target, link string) error {
-	return fs.mapToRepositoryFsByPath(target).Symlink(target, link)
+	return fs.mapToRepositoryFsByPath(link).Symlink(target, link)
 }
 
 // Readlink reads the target of a symlink.
