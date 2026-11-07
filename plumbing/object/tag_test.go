@@ -243,6 +243,7 @@ func (s *TagSuite) TestTagEncodeDecodeIdempotent() {
 		s.NoError(err)
 		tag.Hash = obj.Hash()
 		tag.src = obj
+		tag.taggerSource = newTag.taggerSource
 		s.Equal(tag, newTag)
 	}
 }
@@ -295,6 +296,7 @@ func (s *TagSuite) TestTagDecodeClearsExistingState() {
 		Target:          plumbing.NewHash("2222222222222222222222222222222222222222"),
 		s:               store,
 		src:             staleSrc,
+		taggerSource:    newIdentSource([]byte("Stale <stale@example.local> 1 +0000")),
 	}
 
 	obj := &plumbing.MemoryObject{}
@@ -313,6 +315,7 @@ func (s *TagSuite) TestTagDecodeClearsExistingState() {
 	s.Equal("c029517f6300c2da0f4b651b8642506cd6aaf45e", tag.Target.String())
 	s.Equal(store, tag.s)
 	s.Equal(obj, tag.src)
+	s.Zero(tag.taggerSource)
 }
 
 func (s *TagSuite) TestTagDecodeRoundTrip() {
@@ -1059,6 +1062,25 @@ tagger Test Tagger <tagger@example.local> 1700000000 +0000
 tag message
 `,
 		},
+		{
+			name: "clearing tagger omits decoded tagger",
+			tagRaw: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger Test Tagger <tagger@example.local> 1700000000 +0000
+
+tag message
+`,
+			mutate: func(t *Tag) {
+				t.Tagger = Signature{}
+			},
+			expected: `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+
+tag message
+`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1088,4 +1110,76 @@ tag message
 			s.Equal(tc.expected, string(payload))
 		})
 	}
+}
+
+func (s *TagSuite) TestEncodeWithoutSignaturePreservesDecodedIdentBytes() {
+	tests := []struct {
+		name  string
+		ident string
+	}{
+		{name: "no space before date", ident: "A U Thor <author@example.test>1700000000 +0000"},
+		{name: "no space before email", ident: "A U Thor<author@example.test> 1700000000 +0000"},
+		{name: "no timezone", ident: "A U Thor <author@example.test> 1700000000"},
+		{name: "zero-padded timestamp", ident: "A U Thor <author@example.test> 01700000000 +0000"},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			raw := "object 1eca38290a3131d0c90709496a9b2207a872631e\n" +
+				"type commit\n" +
+				"tag v1\n" +
+				"tagger " + tc.ident + "\n\nmessage\n"
+
+			obj := &plumbing.MemoryObject{}
+			obj.SetType(plumbing.TagObject)
+			_, err := obj.Write([]byte(raw))
+			s.Require().NoError(err)
+
+			tag := &Tag{}
+			s.Require().NoError(tag.Decode(obj))
+			tag.Name = "v2"
+
+			encoded := &plumbing.MemoryObject{}
+			s.Require().NoError(tag.EncodeWithoutSignature(encoded))
+			r, err := encoded.Reader()
+			s.Require().NoError(err)
+			payload, err := io.ReadAll(r)
+			s.Require().NoError(err)
+			s.Equal(strings.Replace(raw, "tag v1", "tag v2", 1), string(payload))
+		})
+	}
+}
+
+func (s *TagSuite) TestEncodeWithoutSignatureCanonicalizesChangedIdent() {
+	const raw = `object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v1
+tagger A U Thor <author@example.test>1700000000 +0000
+
+message
+`
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.TagObject)
+	_, err := obj.Write([]byte(raw))
+	s.Require().NoError(err)
+
+	tag := &Tag{}
+	s.Require().NoError(tag.Decode(obj))
+	tag.Tagger.Name = "Changed Tagger"
+	tag.Name = "v2"
+
+	encoded := &plumbing.MemoryObject{}
+	s.Require().NoError(tag.EncodeWithoutSignature(encoded))
+	r, err := encoded.Reader()
+	s.Require().NoError(err)
+	payload, err := io.ReadAll(r)
+	s.Require().NoError(err)
+	s.Equal(`object 1eca38290a3131d0c90709496a9b2207a872631e
+type commit
+tag v2
+tagger Changed Tagger <author@example.test> 1700000000 +0000
+
+message
+`, string(payload))
 }
