@@ -1,10 +1,17 @@
 package pathutil
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// windows reports whether the test binary runs on Windows. The
+// reserved-name check mirrors upstream Git's compile-time
+// is_valid_win32_path gating, so every platform-gated expectation
+// derives from this single expression.
+func windows() bool { return runtime.GOOS == "windows" }
 
 func TestWindowsValidPath(t *testing.T) {
 	t.Parallel()
@@ -24,20 +31,6 @@ func TestWindowsValidPath(t *testing.T) {
 		{"git~1.", false},
 		{"GIT~1 ", false},
 		{"git~1::$DATA", false},
-		{"CON", false},
-		{"con", false},
-		{"CON.txt", false},
-		{"CON:ads", false},
-		{"CON ", false},
-		{"PRN", false},
-		{"AUX", false},
-		{"NUL", false},
-		{"COM1", false},
-		{"COM9", false},
-		{"LPT1", false},
-		{"LPT9", false},
-		{"CONIN$", false},
-		{"CONOUT$", false},
 		{"a", true},
 		{"a\\b", true},
 		{"a/b", true},
@@ -53,6 +46,17 @@ func TestWindowsValidPath(t *testing.T) {
 		{"git~1", true},
 	}
 
+	// Windows reserved device names are rejected only on Windows
+	// builds, matching upstream Git's is_valid_win32_path which is
+	// compiled only into Windows-native/Cygwin builds. On other
+	// platforms these are legitimate filenames.
+	for _, name := range WindowsReservedNames {
+		tests = append(tests, struct {
+			path string
+			want bool
+		}{name, !windows()})
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
@@ -60,6 +64,62 @@ func TestWindowsValidPath(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestIsWindowsReservedName(t *testing.T) {
+	t.Parallel()
+
+	// Bare reserved names match deterministically on Windows, on every
+	// Windows version, since filepath.IsLocal's reserved-name check
+	// matches these without a live OS call. On non-Windows the stdlib
+	// never checks reserved names at all.
+	for _, name := range WindowsReservedNames {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, windows(), IsWindowsReservedName(name))
+		})
+	}
+
+	// Non-reserved lookalikes are never flagged, on any platform.
+	for _, name := range []string{"CONNECT", "comic", "COM", "COM0", "LPT0", "readme.md"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.False(t, IsWindowsReservedName(name))
+		})
+	}
+
+	// Extension-bearing reserved names (e.g. "prn.sh") are deliberately
+	// not asserted here: after delegating to filepath.IsLocal, whether
+	// Windows treats them as reserved depends on the live OS's
+	// RtlIsDosDeviceName_U syscall, which varies by Windows
+	// version/build. Asserting against filepath.IsLocal's own result
+	// would compare the function to its own definition and prove
+	// nothing; there is no independent oracle for this case in this
+	// codebase. See worktree_fs_test.go's TestCheckoutWindowsReservedDeviceName
+	// for the regression coverage this case actually gets (observed on
+	// the windows-latest CI runner, not asserted here).
+
+	t.Run("empty string is never reserved", func(t *testing.T) {
+		t.Parallel()
+		assert.False(t, IsWindowsReservedName(""))
+	})
+
+	// filepath.IsLocal also rejects "..", an absolute-looking
+	// component, and, on Windows only, a colon-bearing component --
+	// a disclosed broadening beyond pure reserved-name detection.
+	// Harmless: the sole caller (worktree_fs.go's validPath) already
+	// filters ".", "..", and empty components before calling
+	// WindowsValidPath, and never passes an absolute-looking or
+	// colon-bearing single path component.
+	t.Run("dot-dot reports true on every platform", func(t *testing.T) {
+		t.Parallel()
+		assert.True(t, IsWindowsReservedName(".."))
+	})
+
+	t.Run("colon-bearing component reports true on Windows only", func(t *testing.T) {
+		t.Parallel()
+		assert.Equal(t, windows(), IsWindowsReservedName("notes:txt"))
+	})
 }
 
 func TestIsNTFSDotGit(t *testing.T) {
