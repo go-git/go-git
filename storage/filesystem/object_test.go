@@ -455,15 +455,13 @@ func (s *FsSuite) TestPackfileReindex() {
 		s.Require().NoError(copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", packFilename)), packFile))
 		s.Require().NoError(copyFile(fs, filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.idx", packFilename)), idxFile))
 
-		// check that we cannot still retrieve the test object
-		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
-		s.ErrorIs(err, plumbing.ErrObjectNotFound)
+		// HasEncodedObject does not rescan the pack directory on a miss,
+		// unlike EncodedObject, so only a Reindex makes the pack visible to it.
+		s.ErrorIs(storer.HasEncodedObject(testObjectHash), plumbing.ErrObjectNotFound)
 
-		storer.Reindex() // actually reindex
+		s.Require().NoError(storer.Reindex())
 
-		// Now check that the test object can be retrieved
-		_, err = storer.EncodedObject(plumbing.CommitObject, testObjectHash)
-		s.Require().NoError(err)
+		s.Require().NoError(storer.HasEncodedObject(testObjectHash))
 	}
 }
 
