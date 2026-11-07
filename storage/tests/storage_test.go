@@ -444,6 +444,36 @@ func TestCheckAndSetReferenceError(t *testing.T) {
 	})
 }
 
+// A zero `old` creates a reference only if it doesn't exist yet, as with
+// git update-ref <ref> <new> <zero-oid>.
+func TestCheckAndSetReferenceZeroOld(t *testing.T) {
+	t.Parallel()
+
+	forEachStorage(t, func(sto Storer, t *testing.T) {
+		zero := plumbing.NewHashReference("refs/foo", plumbing.ZeroHash)
+		first := plumbing.NewReferenceFromStrings("refs/foo", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52")
+		second := plumbing.NewReferenceFromStrings("refs/foo", "c3f4688a08fd86f1bf8e055724c84b7a40a09733")
+
+		require.NoError(t, sto.CheckAndSetReference(first, zero))
+		err := sto.CheckAndSetReference(second, zero)
+		assert.ErrorIs(t, err, storage.ErrReferenceHasChanged)
+
+		e, err := sto.Reference("refs/foo")
+		require.NoError(t, err)
+		assert.Equal(t, first, e)
+
+		// A symbolic reference exists too.
+		symbolic := plumbing.NewSymbolicReference("refs/bar", "refs/foo")
+		require.NoError(t, sto.SetReference(symbolic))
+		err = sto.CheckAndSetReference(plumbing.NewHashReference("refs/bar", second.Hash()), plumbing.NewHashReference("refs/bar", plumbing.ZeroHash))
+		assert.ErrorIs(t, err, storage.ErrReferenceHasChanged)
+
+		e, err = sto.Reference("refs/bar")
+		require.NoError(t, err)
+		assert.Equal(t, symbolic, e)
+	})
+}
+
 func TestRemoveReference(t *testing.T) {
 	t.Parallel()
 
