@@ -53,14 +53,17 @@ type StatusOptions struct {
 
 	// Path limits status to a literal file or directory, relative to the
 	// worktree root. Absolute paths inside the worktree are also accepted.
-	// Empty and "." select the whole worktree. Returned names remain relative
-	// to the worktree root.
+	// Empty and "." select the whole worktree. As with git pathspecs, a
+	// trailing slash matches only a directory or submodule, never a file.
+	// Returned names remain relative to the worktree root.
 	// IsClean on the returned status reports cleanliness only within Path.
 	Path string
 }
 
 // StatusWithOptions returns the working tree status.
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
+	dirOnly := strings.HasSuffix(filepath.ToSlash(o.Path), "/")
+
 	var err error
 	o.Path, err = w.statusPath(o.Path)
 	if err != nil {
@@ -83,22 +86,77 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		return nil, err
 	}
 
-	return w.status(cfg, o, hash)
+	s, err := w.status(cfg, o, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	// A trailing slash, as in "foo/", tells git to match only directories.
+	// Entries under the directory, such as "foo/bar", always match, so they
+	// stay in the result. The question is what to do with an entry named
+	// exactly "foo".
+	//
+	// Status keys are always files or gitlinks, never directories, so an
+	// entry at "foo" is a file or a submodule. Git counts a gitlink in the
+	// index[1] or in HEAD[2] as a directory for this purpose, and a file as
+	// not one[3]. So keep the entry only if HEAD or the index records a
+	// gitlink at that path.
+	//
+	// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.h#L36-L43
+	// [2]: https://github.com/git/git/blob/v2.54.0/tree-walk.c#L890-L902
+	// [3]: https://github.com/git/git/blob/v2.54.0/dir.c#L374-L386
+	if _, ok := s[o.Path]; ok && dirOnly {
+		idx, err := w.r.Storer.Index()
+		if err != nil {
+			return nil, err
+		}
+
+		gitlink := false
+		if e, err := idx.Entry(o.Path); err == nil {
+			gitlink = e.Mode == filemode.Submodule
+		}
+
+		if !gitlink && !hash.IsZero() {
+			c, err := w.r.CommitObject(hash)
+			if err != nil {
+				return nil, err
+			}
+			t, err := c.Tree()
+			if err != nil {
+				return nil, err
+			}
+			e, err := t.FindEntry(o.Path)
+			notFound := errors.Is(err, object.ErrEntryNotFound) ||
+				errors.Is(err, object.ErrDirectoryNotFound) ||
+				errors.Is(err, plumbing.ErrObjectNotFound) // a file ancestor is read as a missing tree
+			if err != nil && !notFound {
+				return nil, err
+			}
+			gitlink = err == nil && e.Mode == filemode.Submodule
+		}
+
+		if !gitlink {
+			delete(s, o.Path)
+		}
+	}
+
+	return s, nil
 }
 
-func (w *Worktree) statusPath(name string) (string, error) {
-	name = filepath.Clean(name)
+func (w *Worktree) statusPath(original string) (string, error) {
+	root := w.filesystem.Root()
+	name := filepath.Clean(original)
 	if filepath.IsAbs(name) {
-		rel, err := filepath.Rel(w.filesystem.Root(), name)
+		rel, err := filepath.Rel(root, name)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("path %q is not inside the worktree root %q: %w", original, root, err)
 		}
 		name = rel
 	}
 
 	name = filepath.ToSlash(name)
 	if name == ".." || strings.HasPrefix(name, "../") {
-		return "", fmt.Errorf("status path %q is outside the worktree root", name)
+		return "", fmt.Errorf("path %q is outside the worktree root %q", original, root)
 	}
 
 	if name == "." {
@@ -512,8 +570,19 @@ func (w *Worktree) AddGlob(pattern string) error {
 		}()
 	}
 
+	// Make an absolute pattern relative before globbing, as git does for
+	// pathspecs. The worktree filesystem rejects volume names, so on windows
+	// an absolute pattern would otherwise never match.
+	relPattern, err := w.statusPath(pattern)
+	if err != nil {
+		return err
+	}
+	if relPattern == "" {
+		relPattern = "."
+	}
+
 	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
-	files, err := util.Glob(w.filesystem, pattern)
+	files, err := util.Glob(w.filesystem, relPattern)
 	if err != nil {
 		return err
 	}

@@ -32,6 +32,8 @@ type Options struct {
 	// Path limits the walk to this slash-separated, repository-relative file
 	// or directory. An empty path walks the whole filesystem. Ancestors are
 	// visited to preserve inherited ignore rules and repository-relative paths.
+	// Path is not normalized: it must be clean, with no leading or trailing
+	// slash and no "." or ".." elements.
 	Path string
 
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.

@@ -12,8 +12,6 @@ import (
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 )
 
-// TestRootNodePath checks that index scoping selects exactly the requested leaves
-// and preserves their full paths, including empty, missing, and exact-file scopes.
 func TestRootNodePath(t *testing.T) {
 	t.Parallel()
 
@@ -58,8 +56,6 @@ func TestRootNodePath(t *testing.T) {
 
 			root := NewRootNodeWithOptions(idx, RootNodeOptions{Path: tc.path, UpholdExecutableBit: true})
 
-			// Diffing against an empty tree exposes every retained leaf and its
-			// full path. Ancestor nodes must not strip the repository prefix.
 			changes, err := merkletrie.DiffTree(nil, root, isEquals)
 			require.NoError(t, err)
 
@@ -68,20 +64,16 @@ func TestRootNodePath(t *testing.T) {
 				names = append(names, change.To.String())
 			}
 
-			// Retain exactly the selected leaves with their full names. Ignore
-			// enumeration order, but reject extra siblings or stripped prefixes.
 			assert.ElementsMatch(t, tc.want, names)
 		})
 	}
 }
 
-// TestRootNodePathSkipWorktree ensures ancestor skip flags depend only on selected
-// index entries, so an unrelated visible sibling cannot force a scoped subtree walk.
 func TestRootNodePathSkipWorktree(t *testing.T) {
 	t.Parallel()
 
-	// The visible sibling normally prevents docs from being skipped. Once
-	// scoped away, only the skipped descendant contributes to its ancestors.
+	// A directory is skipped only when every entry below it is SkipWorktree,
+	// so the out-of-scope visible sibling must not count towards docs.
 	idx := &index.Index{Entries: []*index.Entry{
 		{Name: "docs/generated/skipped.txt", SkipWorktree: true, Mode: filemode.Regular},
 		{Name: "docs/other/visible.txt", Mode: filemode.Regular},
@@ -90,11 +82,6 @@ func TestRootNodePathSkipWorktree(t *testing.T) {
 	root := NewRootNodeWithOptions(idx, RootNodeOptions{Path: "docs/generated"})
 	children, err := root.Children()
 	require.NoError(t, err)
-
-	// All selected entries share docs as their sole top-level ancestor.
 	require.Len(t, children, 1)
-
-	// The out-of-scope visible sibling must no longer clear the ancestor's
-	// skip flag: every descendant retained under docs is SkipWorktree.
 	assert.True(t, children[0].Skip())
 }

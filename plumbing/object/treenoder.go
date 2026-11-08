@@ -36,6 +36,8 @@ type TreeRootNodeOptions struct {
 	// Path limits entries to this slash-separated, repository-relative file
 	// or directory. An empty path includes all entries. Ancestor directory
 	// nodes are retained so changes keep their repository-relative paths.
+	// Path is not normalized: it must be clean, with no leading or trailing
+	// slash and no "." or ".." elements.
 	Path string
 }
 
