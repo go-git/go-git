@@ -18,8 +18,6 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
-// blameBenchmarks are the files blamed by BenchmarkBlame. Each one stresses a
-// different part of the history walk.
 var blameBenchmarks = []struct {
 	name string
 	repo string
@@ -40,8 +38,6 @@ var blameBenchmarks = []struct {
 	{"go-git-unchanged", "https://github.com/src-d/go-git.git", "e8788ad9165781196e917292d6055cba1d78664e", "diff/diff.go"},
 }
 
-// BenchmarkBlame blames files from fixture repositories stored on disk, the
-// way Blame is used on a cloned repository.
 func BenchmarkBlame(b *testing.B) {
 	root := b.TempDir()
 	dirs := make(map[string]string)
