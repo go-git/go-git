@@ -2,7 +2,9 @@ package git
 
 import (
 	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -71,6 +73,65 @@ func BenchmarkBlame(b *testing.B) {
 				return filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault()), nil
 			}
 			benchmarkBlame(b, open, plumbing.NewHash(t.rev), t.path)
+		})
+	}
+}
+
+// BenchmarkBlameRepository blames files of a repository on disk, to measure
+// Blame on histories larger than the fixtures. It is skipped unless
+// GOGIT_BLAME_BENCH_REPO is set:
+//
+//	GOGIT_BLAME_BENCH_REPO   path to the repository
+//	GOGIT_BLAME_BENCH_FILES  comma-separated paths of the files to blame
+//	GOGIT_BLAME_BENCH_REV    revision to blame the files at, HEAD by default
+//
+// For example, with a clone of git in $HOME/src/git:
+//
+//	GOGIT_BLAME_BENCH_REPO=$HOME/src/git GOGIT_BLAME_BENCH_FILES=diff.c,blame.c \
+//		go test -run '^$' -bench BenchmarkBlameRepository .
+func BenchmarkBlameRepository(b *testing.B) {
+	dir := os.Getenv("GOGIT_BLAME_BENCH_REPO")
+	if dir == "" {
+		b.Skip("GOGIT_BLAME_BENCH_REPO is not set")
+	}
+
+	files := os.Getenv("GOGIT_BLAME_BENCH_FILES")
+	if files == "" {
+		b.Fatal("GOGIT_BLAME_BENCH_FILES is not set")
+	}
+
+	rev := os.Getenv("GOGIT_BLAME_BENCH_REV")
+	if rev == "" {
+		rev = "HEAD"
+	}
+
+	r, err := PlainOpen(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	h, err := r.ResolveRevision(plumbing.Revision(rev))
+	closeBlameBenchmarkStorage(b, r.Storer)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	open := func() (storer.EncodedObjectStorer, error) {
+		r, err := PlainOpen(dir)
+		if err != nil {
+			return nil, err
+		}
+
+		return r.Storer, nil
+	}
+	for path := range strings.SplitSeq(files, ",") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+
+		b.Run(path, func(b *testing.B) {
+			benchmarkBlame(b, open, *h, path)
 		})
 	}
 }
