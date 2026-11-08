@@ -80,7 +80,31 @@ func BenchmarkBlame(b *testing.B) {
 // iteration and times reading rev from it along with Blame, so loading the
 // pack indexes and filling the object cache count towards the result, while
 // "warm" reuses one storage across iterations.
+//
+// Both report the number of commits, trees and blobs a Blame call reads,
+// which, unlike its duration, does not depend on the machine.
 func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error), rev plumbing.Hash, path string) {
+	// Count the objects in a separate Blame call, so the timed runs read from
+	// the storage directly.
+	s, err := open()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	reads := make(blameObjectReads)
+	c, err := object.GetCommit(&countingObjectStorer{EncodedObjectStorer: s, reads: reads}, rev)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Only count what Blame reads, not the commit it starts from.
+	clear(reads)
+	_, err = Blame(c, path)
+	closeBlameBenchmarkStorage(b, s)
+	if err != nil {
+		b.Fatal(err)
+	}
+
 	b.Run("cold", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
@@ -103,6 +127,8 @@ func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error
 			closeBlameBenchmarkStorage(b, s)
 			b.StartTimer()
 		}
+
+		reads.report(b)
 	})
 
 	b.Run("warm", func(b *testing.B) {
@@ -128,7 +154,37 @@ func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error
 				b.Fatal(err)
 			}
 		}
+
+		reads.report(b)
 	})
+}
+
+// blameObjectReads counts the objects of each type read by a Blame call.
+type blameObjectReads map[plumbing.ObjectType]int
+
+// report reports the counts as metrics of b. It must be called after the
+// benchmark loop, as starting the loop resets the timer, which discards
+// reported metrics.
+func (r blameObjectReads) report(b *testing.B) {
+	b.ReportMetric(float64(r[plumbing.CommitObject]), "commits/op")
+	b.ReportMetric(float64(r[plumbing.TreeObject]), "trees/op")
+	b.ReportMetric(float64(r[plumbing.BlobObject]), "blobs/op")
+}
+
+// countingObjectStorer is an EncodedObjectStorer that counts the objects read
+// through it.
+type countingObjectStorer struct {
+	storer.EncodedObjectStorer
+	reads blameObjectReads
+}
+
+func (s *countingObjectStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := s.EncodedObjectStorer.EncodedObject(t, h)
+	if err == nil {
+		s.reads[obj.Type()]++
+	}
+
+	return obj, err
 }
 
 // closeBlameBenchmarkStorage closes s, if it can be closed.
