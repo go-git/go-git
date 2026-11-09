@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -19,26 +20,17 @@ type ShallowStorage struct {
 
 // SetShallow replaces the shallow file with commits, one hex object ID per
 // line. Without commits it removes the file, since Git takes any shallow file,
-// even an empty one, to mean the repository is shallow.
-func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) (err error) {
-	if len(commits) == 0 {
-		return s.dir.RemoveShallow()
-	}
-
-	f, err := s.dir.ShallowWriter()
-	if err != nil {
-		return err
-	}
-
-	defer ioutil.CheckClose(f, &err)
-	w := bufio.NewWriter(f)
+// even an empty one, to mean the repository is shallow. See
+// [dotgit.DotGit.SetShallow] for how the file is replaced.
+func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) error {
+	var buf bytes.Buffer
+	buf.Grow(len(commits) * (s.objectFormat.HexSize() + 1))
 	for _, h := range commits {
-		if _, err := fmt.Fprintf(w, "%s\n", h); err != nil {
-			return err
-		}
+		buf.WriteString(h.String())
+		buf.WriteByte('\n')
 	}
 
-	return w.Flush()
+	return s.dir.SetShallow(buf.Bytes())
 }
 
 // Shallow returns the shallow commits reading from shallow file from .git.
