@@ -109,17 +109,17 @@ const (
 	Preload StatusStrategy = 1
 )
 
-func (s StatusStrategy) new(w *Worktree) (Status, error) {
+func (s StatusStrategy) new(w *Worktree, path string) (Status, error) {
 	switch s {
 	case Preload:
-		return preloadStatus(w)
+		return preloadStatus(w, path)
 	case Empty:
 		return make(Status), nil
 	}
 	return nil, fmt.Errorf("%w: %+v", ErrUnsupportedStatusStrategy, s)
 }
 
-func preloadStatus(w *Worktree) (Status, error) {
+func preloadStatus(w *Worktree, path string) (Status, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
@@ -132,6 +132,7 @@ func preloadStatus(w *Worktree) (Status, error) {
 
 	idxRoot := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: c.Core.FileMode,
+		Path:                path,
 	})
 	nodes := []noder.Noder{idxRoot}
 
