@@ -2,6 +2,8 @@ package packp
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -160,14 +162,146 @@ func TestCommandRequestRoundTrip(t *testing.T) {
 	assert.True(t, args.Done)
 }
 
-func TestCommandRequestDecodeInvalidLine(t *testing.T) {
+func TestCommandRequestDecodeNoCommand(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
 	pktline.WriteString(&buf, "not-a-command\n")
+	pktline.WriteDelim(&buf)
+	pktline.WriteFlush(&buf)
 
 	cmd := &CommandRequest{}
 	err := cmd.Decode(&buf)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected command line")
+	assert.Contains(t, err.Error(), "no command requested")
+}
+
+func TestCommandRequestDecodeTruncated(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "command=fetch\n")
+
+	cmd := &CommandRequest{}
+	require.ErrorIs(t, cmd.Decode(&buf), io.ErrUnexpectedEOF)
+}
+
+// Upstream serve.c (process_request) accepts the command line anywhere among
+// the capability lines, and git's own client sends its capabilities first for
+// "command=bundle-uri" (connect.c get_remote_bundle_uri).
+func TestCommandRequestDecodeCapabilitiesBeforeCommand(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "agent=git/2.55.0\n")
+	pktline.WriteString(&buf, "object-format=sha1\n")
+	pktline.WriteString(&buf, "command=fetch\n")
+	pktline.WriteString(&buf, "session-id=abc\n")
+	pktline.WriteDelim(&buf)
+	pktline.Writef(&buf, "want %s\n", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	pktline.WriteString(&buf, "done\n")
+	pktline.WriteFlush(&buf)
+
+	cmd := &CommandRequest{Args: &FetchArgs{}}
+	require.NoError(t, cmd.Decode(&buf))
+	assert.Equal(t, "fetch", cmd.Command)
+	assert.Equal(t, []string{"git/2.55.0"}, cmd.Capabilities.Get(capability.Agent))
+	assert.Equal(t, []string{"sha1"}, cmd.Capabilities.Get(capability.ObjectFormat))
+	assert.Equal(t, []string{"abc"}, cmd.Capabilities.Get(capability.SessionID))
+	assert.False(t, cmd.Capabilities.Supports("command"))
+
+	args, ok := cmd.Args.(*FetchArgs)
+	require.True(t, ok)
+	assert.Len(t, args.Wants, 1)
+	assert.True(t, args.Done)
+}
+
+func TestCommandRequestDecodeDuplicateCommand(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "command=ls-refs\n")
+	pktline.WriteString(&buf, "command=fetch\n")
+	pktline.WriteDelim(&buf)
+	pktline.WriteFlush(&buf)
+
+	cmd := &CommandRequest{}
+	err := cmd.Decode(&buf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already requesting command")
+}
+
+// An empty command is still a command: one requested after it is a duplicate.
+func TestCommandRequestDecodeEmptyThenCommand(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "command=\n")
+	pktline.WriteString(&buf, "command=ls-refs\n")
+	pktline.WriteDelim(&buf)
+	pktline.WriteFlush(&buf)
+
+	cmd := &CommandRequest{}
+	err := cmd.Decode(&buf)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already requesting command")
+}
+
+// Without command arguments the delim-pkt may be omitted, as in upstream
+// serve.c where the flush-pkt then also ends the arguments.
+func TestCommandRequestDecodeWithoutDelim(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "object-format=sha1\n")
+	pktline.WriteString(&buf, "command=ls-refs\n")
+	pktline.WriteFlush(&buf)
+	pktline.WriteString(&buf, "next\n")
+
+	cmd := &CommandRequest{NewArgs: func(string) (CommandArgs, error) { return &LsRefsArgs{}, nil }}
+	require.NoError(t, cmd.Decode(&buf))
+	assert.Equal(t, "ls-refs", cmd.Command)
+	assert.Equal(t, &LsRefsArgs{}, cmd.Args)
+
+	// The flush-pkt ending the request is consumed, and nothing after it.
+	_, line, err := pktline.ReadLine(&buf)
+	require.NoError(t, err)
+	assert.Equal(t, "next\n", string(line))
+}
+
+func TestCommandRequestDecodeNewArgs(t *testing.T) {
+	t.Parallel()
+
+	newArgs := func(command string) (CommandArgs, error) {
+		switch command {
+		case "ls-refs":
+			return &LsRefsArgs{}, nil
+		case "fetch":
+			return &FetchArgs{}, nil
+		}
+		return nil, errors.New("unknown command")
+	}
+
+	var buf bytes.Buffer
+	pktline.WriteString(&buf, "object-format=sha1\n")
+	pktline.WriteString(&buf, "command=ls-refs\n")
+	pktline.WriteDelim(&buf)
+	pktline.WriteString(&buf, "ref-prefix refs/heads/\n")
+	pktline.WriteFlush(&buf)
+
+	cmd := &CommandRequest{NewArgs: newArgs}
+	require.NoError(t, cmd.Decode(&buf))
+	args, ok := cmd.Args.(*LsRefsArgs)
+	require.True(t, ok)
+	assert.Equal(t, []string{"refs/heads/"}, args.RefPrefixes)
+
+	buf.Reset()
+	pktline.WriteString(&buf, "object-format=sha1\n")
+	pktline.WriteString(&buf, "command=bogus\n")
+	pktline.WriteDelim(&buf)
+	pktline.WriteFlush(&buf)
+
+	cmd = &CommandRequest{NewArgs: newArgs}
+	require.EqualError(t, cmd.Decode(&buf), "unknown command")
+	assert.Equal(t, "bogus", cmd.Command)
 }
