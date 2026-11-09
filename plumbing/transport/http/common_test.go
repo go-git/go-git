@@ -105,6 +105,8 @@ func TestErr_ErrorRedactsCredentials(t *testing.T) {
 func TestApplyRedirect(t *testing.T) {
 	t.Parallel()
 
+	long := strings.Repeat("a", maxRedactedComponent+1)
+
 	tests := []struct {
 		name             string
 		baseURL          string
@@ -245,6 +247,25 @@ func TestApplyRedirect(t *testing.T) {
 			finalURL:         "https://dev.azure.com/org/_signin",
 			wantErr:          "redirect to",
 			wantAuthRequired: true,
+		},
+		{
+			name:     "an oversized redirect target is bounded",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: "https://example.com/" + long,
+			wantErr:  `redirect target "TRUNCATED"`,
+		},
+		{
+			name:             "an oversized _signin target is bounded",
+			baseURL:          "https://dev.azure.com/org/project/_git/repo",
+			finalURL:         "https://dev.azure.com/" + long + "/_signin",
+			wantErr:          `redirect to "TRUNCATED"`,
+			wantAuthRequired: true,
+		},
+		{
+			name:     "an oversized unsupported scheme is bounded",
+			baseURL:  "https://example.com/repo.git",
+			finalURL: long + "://evil.com/repo.git/info/refs",
+			wantErr:  `unsupported scheme "TRUNCATED"`,
 		},
 	}
 
@@ -991,6 +1012,11 @@ func TestRedactedURLBoundsWhatItRenders(t *testing.T) {
 			want: "https://TRUNCATED@example.com/repo.git",
 		},
 		{
+			name: "an oversized scheme is replaced whole",
+			in:   &url.URL{Scheme: long, Host: "example.com", Path: "/repo.git"},
+			want: "TRUNCATED://example.com/repo.git",
+		},
+		{
 			// Redacting lengthens, so the cap applies to the result too. Without
 			// that, rendering the result again would collapse it, leaving an
 			// *Err whose field and whose message disagree.
@@ -1152,6 +1178,14 @@ func TestDoRequestRedactsWhatNetHTTPEmbedded(t *testing.T) {
 			location: "https://someone:glpat-password@elsewhere.example/x",
 			policy:   NoFollowRedirects,
 			want:     `Get "https://someone:REDACTED@elsewhere.example/x": `,
+		},
+		{
+			// checkRedirect bounds the scheme it refuses; url.Error.URL
+			// carries it again.
+			name:     "an oversized scheme",
+			location: strings.Repeat("z", maxRedactedComponent+1) + "://elsewhere.example/x",
+			policy:   FollowInitialRedirects,
+			want:     `Get "TRUNCATED://elsewhere.example/x": `,
 		},
 	}
 
