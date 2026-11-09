@@ -36,6 +36,7 @@ func TestCheckShallowUpdateRejectsOtherObjectFormat(t *testing.T) {
 			t.Parallel()
 
 			st := memory.NewStorage(memory.WithObjectFormat(tc.format))
+			require.NoError(t, st.SetShallow([]plumbing.Hash{tc.have}))
 			for _, info := range []*packp.ShallowUpdate{
 				{Shallows: []plumbing.Hash{tc.foreign}},
 				{Unshallows: []plumbing.Hash{tc.foreign}},
@@ -146,6 +147,12 @@ func TestUpdateShallowMerge(t *testing.T) {
 			info:     &packp.ShallowUpdate{Unshallows: []plumbing.Hash{a}},
 			want:     []plumbing.Hash{b},
 		},
+		{
+			name:     "unshallows apply before the update's shallows",
+			boundary: []plumbing.Hash{a, b},
+			info:     &packp.ShallowUpdate{Shallows: []plumbing.Hash{a}, Unshallows: []plumbing.Hash{a}},
+			want:     []plumbing.Hash{b, a},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -160,6 +167,83 @@ func TestUpdateShallowMerge(t *testing.T) {
 			require.Equal(t, tc.want, shallows)
 		})
 	}
+}
+
+func TestUpdateShallowRejectsUnknownUnshallow(t *testing.T) {
+	t.Parallel()
+
+	a := plumbing.NewHash("1111111111111111111111111111111111111111")
+	b := plumbing.NewHash("2222222222222222222222222222222222222222")
+	c := plumbing.NewHash("3333333333333333333333333333333333333333")
+
+	for _, tc := range []struct {
+		name string
+		info *packp.ShallowUpdate
+		want string
+	}{
+		{
+			name: "not in the boundary",
+			info: &packp.ShallowUpdate{Unshallows: []plumbing.Hash{a, c}},
+			want: c.String(),
+		},
+		{
+			name: "only among the update's shallows",
+			info: &packp.ShallowUpdate{Shallows: []plumbing.Hash{c}, Unshallows: []plumbing.Hash{c}},
+			want: c.String(),
+		},
+		{
+			name: "unshallowed twice",
+			info: &packp.ShallowUpdate{Unshallows: []plumbing.Hash{a, a}},
+			want: a.String(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := memory.NewStorage()
+			require.NoError(t, st.SetShallow([]plumbing.Hash{a, b}))
+
+			want := "shallow update: " + tc.want + " is not shallow"
+			require.ErrorContains(t, CheckShallowUpdate(st, tc.info), want)
+			require.ErrorContains(t, UpdateShallow(st, tc.info), want)
+
+			shallows, err := st.Shallow()
+			require.NoError(t, err)
+			require.Equal(t, []plumbing.Hash{a, b}, shallows, "boundary must be unchanged")
+		})
+	}
+}
+
+// TestFetchV2RejectsUnknownUnshallowBeforePack checks that an unshallow of a
+// commit that is not shallow fails the fetch before the pack is read, as Git
+// dies on the shallow-info section before it reads the pack.
+func TestFetchV2RejectsUnknownUnshallowBeforePack(t *testing.T) {
+	t.Parallel()
+
+	a := plumbing.NewHash("1111111111111111111111111111111111111111")
+	c := plumbing.NewHash("3333333333333333333333333333333333333333")
+
+	st := memory.NewStorage()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{a}))
+	body := &unreadBody{t: t}
+	round := func(*packp.FetchArgs) (*packp.FetchOutput, io.Reader, error) {
+		return &packp.FetchOutput{
+			ShallowInfo: &packp.ShallowInfo{Unshallows: []plumbing.Hash{c}},
+			Packfile:    true,
+		}, body, nil
+	}
+	req := &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("2222222222222222222222222222222222222222")},
+		Depth: 2,
+	}
+
+	err := FetchV2(context.Background(), st, req, round)
+	require.ErrorContains(t, err, "shallow update: "+c.String()+" is not shallow")
+	assert.True(t, body.closed, "pack response left open")
+
+	shallows, err := st.Shallow()
+	require.NoError(t, err)
+	assert.Equal(t, []plumbing.Hash{a}, shallows)
 }
 
 func BenchmarkUpdateShallow(b *testing.B) {
