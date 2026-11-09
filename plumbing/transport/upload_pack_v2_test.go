@@ -243,25 +243,56 @@ func TestUploadPackV2FetchNoWantsEmitsNothing(t *testing.T) {
 }
 
 // fetch=filter is not advertised, so a filter argument is refused, as
-// upload-pack refuses it with uploadpack.allowFilter unset.
-func TestUploadPackV2FetchRejectsUnadvertisedFilter(t *testing.T) {
+// upload-pack refuses it with uploadpack.allowFilter unset. So is any
+// argument the server does not know, and nothing before the flush-pkt
+// may end the arguments early and hide one.
+func TestUploadPackV2FetchRejectsUnadvertisedArgs(t *testing.T) {
 	t.Parallel()
 	st := basicV2Storage(t)
 	head, err := storer.ResolveReference(st, plumbing.HEAD)
 	require.NoError(t, err)
+	want := "want " + head.Hash().String()
 
-	var out bytes.Buffer
-	err = UploadPack(context.TODO(), st, v2Request(t, "fetch", nil, []string{
-		"want " + head.Hash().String(),
-		"filter blob:none",
-		"done",
-	}), ioutil.WriteNopCloser(&out), &UploadPackRequest{
-		GitProtocol:  "version=2",
-		StatelessRPC: true,
-	})
-	require.ErrorIs(t, err, ErrFilterNotSupported)
-	require.False(t, strings.Contains(out.String(), "packfile"),
-		"a filtered request must not be answered with a pack")
+	for _, tc := range []struct {
+		name string
+		args []string // "<delim>" writes a delim-pkt
+		err  error
+		msg  string
+	}{
+		{name: "filter", args: []string{want, "filter blob:none", "done"}, err: ErrFilterNotSupported},
+		{name: "unknown argument", args: []string{want, "sideband-all", "done"}, msg: "unexpected line"},
+		{name: "filter after empty line", args: []string{want, "done", "", "filter blob:none"}, msg: "unexpected line"},
+		{name: "filter after delim-pkt", args: []string{want, "done", "<delim>", "filter blob:none"}, msg: "expected flush"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var req bytes.Buffer
+			_, err := pktline.WriteString(&req, "command=fetch\n")
+			require.NoError(t, err)
+			require.NoError(t, pktline.WriteDelim(&req))
+			for _, a := range tc.args {
+				if a == "<delim>" {
+					require.NoError(t, pktline.WriteDelim(&req))
+					continue
+				}
+				_, err := pktline.Writef(&req, "%s\n", a)
+				require.NoError(t, err)
+			}
+			require.NoError(t, pktline.WriteFlush(&req))
+
+			var out bytes.Buffer
+			err = UploadPack(context.TODO(), st, io.NopCloser(&req), ioutil.WriteNopCloser(&out), &UploadPackRequest{
+				GitProtocol:  "version=2",
+				StatelessRPC: true,
+			})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+			} else {
+				require.ErrorContains(t, err, tc.msg)
+			}
+			require.Empty(t, out.String(), "a refused request must not be answered")
+		})
+	}
 }
 
 func TestUploadPackV2LsRefsHeadResolvedOID(t *testing.T) {
