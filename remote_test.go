@@ -334,6 +334,31 @@ func (s *RemoteSuite) TestFetchTagRefSpecDoesNotClobberExistingTag() {
 	s.Equal(pinned.Hash(), got.Hash())
 }
 
+func (s *RemoteSuite) TestFetchTagRefSpecWithNoTagsDoesNotClobberExistingTag() {
+	sto := memory.NewStorage()
+
+	pinned := plumbing.NewReferenceFromStrings("refs/tags/v1.0.0", "918c48b83bd081e863dbe1b80f8998f058cd8294")
+	s.Require().NoError(sto.SetReference(pinned))
+
+	r := NewRemote(sto, &config.RemoteConfig{
+		URLs: []string{s.GetBasicLocalRepositoryURL()},
+	})
+
+	// NoTags only turns off tag following; the explicit tag refspec is
+	// still refused, as git fetch --no-tags refuses it.
+	err := r.Fetch(&FetchOptions{
+		Tags: NoTags,
+		RefSpecs: []config.RefSpec{
+			config.RefSpec("refs/tags/*:refs/tags/*"),
+		},
+	})
+	s.ErrorIs(err, ErrForceNeeded)
+
+	got, err := sto.Reference("refs/tags/v1.0.0")
+	s.Require().NoError(err)
+	s.Equal(pinned.Hash(), got.Hash())
+}
+
 func (s *RemoteSuite) TestFetchForcedTagRefSpecClobbersExistingTag() {
 	sto := memory.NewStorage()
 
@@ -2362,6 +2387,45 @@ func TestFetchFastForwardForCustomRef(t *testing.T) {
 	}
 	if remoteCommitID != ref.Hash() {
 		t.Errorf("expected %s, got %s", remoteCommitID.String(), ref.Hash().String())
+	}
+}
+
+// TestFetchNonFastForwardRejectedForEveryTagMode checks that a rejected
+// non-fast-forward update fails the fetch whatever the tag mode, as git
+// fetch --no-tags does.
+func (s *RemoteSuite) TestFetchNonFastForwardRejectedForEveryTagMode() {
+	for _, mode := range []struct {
+		name string
+		tags plumbing.TagMode
+	}{{"default", plumbing.InvalidTagMode}, {"all", plumbing.AllTags}, {"none", plumbing.NoTags}} {
+		s.Run(mode.name, func() {
+			url := s.T().TempDir()
+			upstream, err := PlainInit(url, true)
+			s.Require().NoError(err)
+			defer func() { _ = upstream.Close() }()
+
+			tree := writeEmptyTree(s.T(), upstream)
+			base := writeCommitToRef(s.T(), upstream, "refs/heads/master", tree, time.Unix(1, 0))
+			old := writeCommitToRef(s.T(), upstream, "refs/heads/master", tree, time.Unix(2, 0))
+			s.Require().NoError(upstream.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
+
+			sto := memory.NewStorage()
+			r := NewRemote(sto, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{url}})
+			refspec := config.RefSpec("refs/heads/master:refs/remotes/origin/master")
+			s.Require().NoError(r.Fetch(&FetchOptions{Tags: mode.tags, RefSpecs: []config.RefSpec{refspec}}))
+
+			// Force-push upstream: replace old with a sibling of it.
+			s.Require().NoError(upstream.Storer.SetReference(plumbing.NewHashReference(plumbing.Master, base)))
+			rewritten := writeCommitToRef(s.T(), upstream, "refs/heads/master", tree, time.Unix(3, 0))
+			s.Require().NotEqual(old, rewritten)
+
+			err = r.Fetch(&FetchOptions{Tags: mode.tags, RefSpecs: []config.RefSpec{refspec}})
+			s.ErrorIs(err, ErrForceNeeded)
+
+			ref, err := sto.Reference("refs/remotes/origin/master")
+			s.Require().NoError(err)
+			s.Equal(old, ref.Hash())
+		})
 	}
 }
 
