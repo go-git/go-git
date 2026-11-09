@@ -2739,3 +2739,30 @@ func (s *RemoteSuite) TestPushPreservesValidWildcardSources() {
 		})
 	}
 }
+
+func TestForcedDeleteBuildsCommand(t *testing.T) {
+	t.Parallel()
+	for _, spec := range []config.RefSpec{":refs/heads/victim", "+:refs/heads/victim"} {
+		t.Run(spec.String(), func(t *testing.T) {
+			t.Parallel()
+			local := memory.NewStorage()
+			remote := memory.NewStorage()
+			name := plumbing.NewBranchReferenceName("victim")
+			hash := plumbing.NewHash("1111111111111111111111111111111111111111")
+			if err := remote.SetReference(plumbing.NewHashReference(name, hash)); err != nil {
+				t.Fatal(err)
+			}
+			r := NewRemote(local, &config.RemoteConfig{Name: "origin"})
+			var cmds []*packp.Command
+			if err := r.addReferencesToUpdate([]config.RefSpec{spec}, nil, remote, &cmds, false, nil); err != nil {
+				t.Fatal(err)
+			}
+			if len(cmds) != 1 {
+				t.Fatalf("deletion commands = %d, want 1", len(cmds))
+			}
+			if cmds[0].Name != name || cmds[0].Old != hash || !cmds[0].New.IsZero() {
+				t.Fatalf("unexpected deletion command: %+v", cmds[0])
+			}
+		})
+	}
+}

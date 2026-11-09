@@ -58,7 +58,7 @@ func (s RefSpec) IsForceUpdate() bool {
 
 // IsDelete returns true if the refspec indicates a delete (empty src).
 func (s RefSpec) IsDelete() bool {
-	return s[0] == refSpecSeparator[0]
+	return strings.HasPrefix(strings.TrimPrefix(string(s), refSpecForce), refSpecSeparator)
 }
 
 // IsExactSHA1 returns true if the source is a SHA1 hash.
