@@ -226,8 +226,9 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name  string
-		files map[string]string
+		name     string
+		files    map[string]string
+		symlinks map[string]string
 	}{{
 		name: "repeated slash patterns do not hide files",
 		files: map[string]string{
@@ -276,6 +277,17 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 			"foo/bar/baz.txt": "x\n",
 			"foo/other.txt":   "x\n",
 		},
+	}, {
+		name: "symlinked .gitignore is not read",
+		files: map[string]string{
+			"rules":     "*.log\n",
+			"a.log":     "x\n",
+			"sub/b.log": "x\n",
+		},
+		symlinks: map[string]string{
+			".gitignore":     "rules",
+			"sub/.gitignore": "../rules",
+		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -287,6 +299,9 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 					}
 				}
 			}
+			if len(tc.symlinks) > 0 && !gitAtLeast(t, 2, 32) {
+				t.Skip("oracle disabled: Git before 2.32 reads a symlinked .gitignore")
+			}
 
 			dir := filepath.Join(t.TempDir(), "repo")
 			require.NoError(t, os.MkdirAll(dir, 0o755))
@@ -296,6 +311,16 @@ func TestStatusMatchesReferenceGitForIgnoreLayouts(t *testing.T) {
 				abs := filepath.Join(dir, filepath.FromSlash(p))
 				require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
 				require.NoError(t, os.WriteFile(abs, []byte(content), 0o644))
+			}
+			for p, target := range tc.symlinks {
+				abs := filepath.Join(dir, filepath.FromSlash(p))
+				require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o755))
+				if err := os.Symlink(target, abs); err != nil {
+					if isSymlinkWindowsNonAdmin(err) {
+						t.Skipf("symlink creation requires elevated privileges: %v", err)
+					}
+					require.NoError(t, err)
+				}
 			}
 
 			out, err := gitenv.Command("git", "-C", dir, "ls-files", "--others", "--exclude-standard").Output()

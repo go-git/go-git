@@ -87,7 +87,7 @@ func ReadPatterns(fs billy.Filesystem, path []string) (ps []Pattern, err error) 
 	}
 
 	if hasGitignore {
-		subps, _ := readIgnoreFile(fs, path, gitignoreFile)
+		subps, _ := DirPatterns(fs, path)
 		ps = append(ps, subps...)
 	}
 
