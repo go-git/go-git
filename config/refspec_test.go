@@ -62,6 +62,9 @@ func (s *RefSpecSuite) TestRefSpecIsDelete() {
 	spec := RefSpec(":refs/heads/master")
 	s.True(spec.IsDelete())
 
+	spec = RefSpec("+:refs/heads/master")
+	s.True(spec.IsDelete())
+
 	spec = RefSpec("+refs/heads/*:refs/remotes/origin/*")
 	s.False(spec.IsDelete())
 
