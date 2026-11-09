@@ -464,6 +464,15 @@ func (d *DotGit) ShallowWriter() (billy.File, error) {
 	return d.fs.Create(shallowPath)
 }
 
+// RemoveShallow removes the shallow file. It is not an error if there is none.
+func (d *DotGit) RemoveShallow() error {
+	if err := d.fs.Remove(shallowPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	return nil
+}
+
 // Shallow returns a file pointer for read to the shallow file
 func (d *DotGit) Shallow() (billy.File, error) {
 	f, err := d.fs.Open(shallowPath)

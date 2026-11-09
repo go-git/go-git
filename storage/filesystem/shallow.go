@@ -18,8 +18,13 @@ type ShallowStorage struct {
 }
 
 // SetShallow replaces the shallow file with commits, one hex object ID per
-// line.
+// line. Without commits it removes the file, since Git takes any shallow file,
+// even an empty one, to mean the repository is shallow.
 func (s *ShallowStorage) SetShallow(commits []plumbing.Hash) (err error) {
+	if len(commits) == 0 {
+		return s.dir.RemoveShallow()
+	}
+
 	f, err := s.dir.ShallowWriter()
 	if err != nil {
 		return err

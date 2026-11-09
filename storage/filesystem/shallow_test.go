@@ -2,6 +2,7 @@ package filesystem_test
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -136,6 +137,30 @@ func TestShallowRoundTrip(t *testing.T) {
 	got, err := st.Shallow()
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
+}
+
+// TestSetShallowRemovesFileWhenEmpty checks that an empty boundary removes
+// the shallow file rather than leaving it empty: Git takes any shallow file,
+// even an empty one, to mean the repository is shallow.
+func TestSetShallowRemovesFileWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	require.NoError(t, st.SetShallow([]plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")}))
+
+	require.NoError(t, st.SetShallow(nil))
+	_, err := fs.Lstat("shallow")
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	got, err := st.Shallow()
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	// Without a shallow file there is nothing to remove.
+	require.NoError(t, st.SetShallow(nil))
+	_, err = fs.Lstat("shallow")
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestShallowFollowsSetObjectFormat(t *testing.T) {

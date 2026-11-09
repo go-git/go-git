@@ -784,6 +784,44 @@ func TestPlainCloneContext_SingleBranchMissingRefIsNotEmpty(t *testing.T) {
 	}
 }
 
+// TestPlainCloneDepthBeyondHistoryWritesNoShallowFile checks that a clone
+// whose depth reaches past the root commit leaves no shallow file. Git takes
+// any shallow file, even an empty one, to mean the repository is shallow, and
+// its own clone writes none in this case.
+func TestPlainCloneDepthBeyondHistoryWritesNoShallowFile(t *testing.T) {
+	t.Parallel()
+
+	srcDir := t.TempDir()
+	src, err := PlainInit(srcDir, false)
+	require.NoError(t, err)
+	defer func() { _ = src.Close() }()
+
+	wt, err := src.Worktree()
+	require.NoError(t, err)
+	for _, content := range []string{"one", "two", "three"} {
+		require.NoError(t, os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte(content), 0o644))
+		_, err = wt.Add("file.txt")
+		require.NoError(t, err)
+		_, err = wt.Commit(content, &CommitOptions{
+			Author: &object.Signature{Name: "Test", Email: "t@t.com", When: time.Now()},
+		})
+		require.NoError(t, err)
+	}
+
+	dstDir := filepath.Join(t.TempDir(), "dst")
+	dst, err := PlainClone(dstDir, &CloneOptions{URL: srcDir, Depth: 10})
+	require.NoError(t, err)
+	defer func() { _ = dst.Close() }()
+
+	_, err = os.Lstat(filepath.Join(dstDir, GitDirName, "shallow"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	t.Run("git", func(t *testing.T) {
+		requireGitBinary(t)
+		assert.Equal(t, "false\n", git(t, dstDir, "rev-parse", "--is-shallow-repository"))
+	})
+}
+
 // TestPlainCloneContext_DetachedHeadSource is a regression test for a bug
 // where PlainCloneContext returns plumbing.ErrReferenceNotFound when the
 // source repository has a detached HEAD.
