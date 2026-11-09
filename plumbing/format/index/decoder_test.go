@@ -931,16 +931,22 @@ func TestTreeExtensionInvalidatedEntry(t *testing.T) {
 	err := d.Decode(tree)
 	require.NoError(t, err)
 
-	// The invalidated entry is skipped; only the two valid entries remain.
-	require.Len(t, tree.Entries, 2)
+	// The invalidated entry is kept, without a hash, so the entries after it
+	// can still be placed in the tree.
+	require.Len(t, tree.Entries, 3)
 
 	assert.Equal(t, "", tree.Entries[0].Path)
 	assert.Equal(t, 5, tree.Entries[0].Entries)
 	assert.Equal(t, 2, tree.Entries[0].Trees)
 	assert.Equal(t, rootHash, tree.Entries[0].Hash.Bytes())
 
-	assert.Equal(t, "good", tree.Entries[1].Path)
-	assert.Equal(t, 2, tree.Entries[1].Entries)
+	assert.Equal(t, "stale", tree.Entries[1].Path)
+	assert.Equal(t, -1, tree.Entries[1].Entries)
 	assert.Equal(t, 0, tree.Entries[1].Trees)
-	assert.Equal(t, goodHash, tree.Entries[1].Hash.Bytes())
+	assert.True(t, tree.Entries[1].Hash.IsZero())
+
+	assert.Equal(t, "good", tree.Entries[2].Path)
+	assert.Equal(t, 2, tree.Entries[2].Entries)
+	assert.Equal(t, 0, tree.Entries[2].Trees)
+	assert.Equal(t, goodHash, tree.Entries[2].Hash.Bytes())
 }
