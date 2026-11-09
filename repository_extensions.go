@@ -40,16 +40,25 @@ var (
 		// noop-v1 does not change git’s behavior at all.
 		// It is useful only for testing format-1 compatibility.
 		"noop-v1": {},
+
+		// The extensions below predate core.repositoryformatversion. They
+		// were accepted by go-git before the strict extension checks were
+		// introduced, so they remain accepted. go-git does not act on them.
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 
 	// Some Git extensions were supported upstream before the introduction
 	// of repositoryformatversion. These are the only extensions that can be
 	// enabled while core.repositoryformatversion is unset or set to 0.
+	// Keys must be lowercase to match the output of extensions(), which
+	// normalises extension names with strings.ToLower.
 	extensionsValidForV0 = map[string]struct{}{
 		"noop":            {},
-		"partialClone":    {},
-		"preciousObjects": {},
-		"worktreeConfig":  {},
+		"partialclone":    {},
+		"preciousobjects": {},
+		"worktreeconfig":  {},
 	}
 )
 

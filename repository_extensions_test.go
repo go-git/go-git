@@ -42,6 +42,37 @@ func TestVerifyExtensions(t *testing.T) {
 			},
 		},
 		{
+			name: "repositoryformatversion=0: allows extensions that predate the format version",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+				cfg.Raw.Section("extensions").SetOption("partialClone", "origin")
+				cfg.Raw.Section("extensions").SetOption("preciousObjects", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion='': allows worktreeConfig",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+			},
+		},
+		{
+			name: "repositoryformatversion=0: rejects unknown extension next to worktreeConfig",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_0
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+				cfg.Raw.Section("extensions").SetOption("unknown", "foo")
+			},
+			wantErr: "repositoryformatversion does not support extension: unknown",
+		},
+		{
+			name: "repositoryformatversion=1: allows worktreeConfig",
+			setup: func(t *testing.T, cfg *config.Config) {
+				cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
+				cfg.Raw.Section("extensions").SetOption("worktreeConfig", "true")
+			},
+		},
+		{
 			name: "repositoryformatversion=1: rejects unknown extensions",
 			setup: func(t *testing.T, cfg *config.Config) {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version_1
