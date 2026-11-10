@@ -2,10 +2,12 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"time"
 
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 )
@@ -69,6 +71,37 @@ func ExampleForOrigin() {
 
 	// Output:
 	// gateway received: Bearer gateway-token
+}
+
+func ExampleLowSpeedGuard() {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	repositoryURL, err := url.Parse(server.URL + "/repo.git")
+	if err != nil {
+		panic(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client := NewTransport(Options{
+		LowSpeed: &LowSpeedGuard{Limit: 100, Time: 100 * time.Millisecond},
+	})
+	session, err := client.Handshake(ctx, &transport.Request{
+		URL: repositoryURL, Command: transport.UploadPackService,
+	})
+	if session != nil {
+		defer session.Close()
+	}
+	fmt.Println("transfer timed out:", errors.Is(err, context.DeadlineExceeded))
+	fmt.Println("caller context active:", ctx.Err() == nil)
+
+	// Output:
+	// transfer timed out: true
+	// caller context active: true
 }
 
 // The common case: one credential, for the repository's own origin, and
