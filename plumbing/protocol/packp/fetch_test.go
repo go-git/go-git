@@ -168,6 +168,66 @@ func TestFetchArgsDecodeFromWire(t *testing.T) {
 		assert.True(t, got.OFSDelta)
 		assert.Equal(t, Filter("blob:none"), got.Filter)
 	})
+
+	t.Run("wait-for-done", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		pktline.Writef(&buf, "want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+		pktline.WriteString(&buf, "wait-for-done\n")
+		pktline.WriteFlush(&buf)
+
+		got := &FetchArgs{}
+		require.NoError(t, got.Decode(&buf))
+		assert.True(t, got.WaitForDone)
+	})
+
+	// upload-pack dies on an argument it does not know or has not
+	// advertised, rather than answer a request it did not understand.
+	for _, arg := range []string{
+		"want-ref refs/heads/main",
+		"sideband-all",
+		"packfile-uris https",
+		"thin-pack-please",
+	} {
+		t.Run("unexpected "+arg, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			pktline.Writef(&buf, "want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+			pktline.Writef(&buf, "%s\n", arg)
+			pktline.WriteString(&buf, "done\n")
+			pktline.WriteFlush(&buf)
+
+			got := &FetchArgs{}
+			err := got.Decode(&buf)
+			require.ErrorContains(t, err, "unexpected line")
+			assert.ErrorContains(t, err, arg)
+		})
+	}
+
+	// Only a flush-pkt ends the arguments. Anything else that stopped
+	// Decode early would hide the lines after it.
+	for _, tc := range []struct {
+		name string
+		sep  func(io.Writer) error
+		err  string
+	}{
+		{"empty line", func(w io.Writer) error { _, err := pktline.WriteString(w, "\n"); return err }, "unexpected line"},
+		{"blank line", func(w io.Writer) error { _, err := pktline.WriteString(w, "   \n"); return err }, "unexpected line"},
+		{"empty pkt-line", func(w io.Writer) error { _, err := w.Write([]byte("0004")); return err }, "unexpected line"},
+		{"delim-pkt", pktline.WriteDelim, "expected flush"},
+	} {
+		t.Run("filter after "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			pktline.Writef(&buf, "want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+			require.NoError(t, tc.sep(&buf))
+			pktline.WriteString(&buf, "filter blob:none\n")
+			pktline.WriteFlush(&buf)
+
+			got := &FetchArgs{}
+			require.ErrorContains(t, got.Decode(&buf), tc.err)
+		})
+	}
 }
 
 func TestFetchOutputDecode(t *testing.T) {

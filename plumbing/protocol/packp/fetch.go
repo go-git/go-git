@@ -175,7 +175,9 @@ func (r *FetchArgs) Encode(w io.Writer) error {
 
 // Decode reads v2 fetch command arguments from a reader until a flush-pkt
 // is encountered. The caller is responsible for reading the delim-pkt
-// and command header before calling Decode.
+// and command header before calling Decode. Decode returns an error for
+// an argument it does not know, and for a delim-pkt or an empty line
+// before the flush-pkt.
 func (r *FetchArgs) Decode(rd io.Reader) error {
 	for {
 		l, pkt, err := pktline.ReadLine(rd)
@@ -186,15 +188,14 @@ func (r *FetchArgs) Decode(rd io.Reader) error {
 			return err
 		}
 
-		if l == pktline.Flush || l == pktline.Delim {
+		if l == pktline.Flush {
 			return nil
+		}
+		if l == pktline.Delim {
+			return errors.New("expected flush after fetch arguments")
 		}
 
 		line := strings.TrimSpace(string(pkt))
-		if len(line) == 0 {
-			return nil
-		}
-
 		switch {
 		case strings.HasPrefix(line, "want "):
 			h, ok := parseFullHash(line[5:])
@@ -274,6 +275,11 @@ func (r *FetchArgs) Decode(rd io.Reader) error {
 
 		case line == "wait-for-done":
 			r.WaitForDone = true
+
+		default:
+			// Upstream dies on anything else rather than answer a request
+			// it did not understand (upload-pack.c, process_args).
+			return fmt.Errorf("unexpected line: %q", line)
 		}
 	}
 }
