@@ -74,6 +74,7 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 		nil,
 		c,
 		path,
+		file.Hash,
 		contents,
 		needsMap,
 		0,
@@ -250,21 +251,18 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 
 	anyPushed := false
 	for parnetNo, prev := range parents {
-		currentHash, err := blobHash(curItem.path, curItem.Commit)
-		if err != nil {
-			return false, err
-		}
 		prevHash, err := blobHash(prev.Path, prev.Commit)
 		if err != nil {
 			return false, err
 		}
-		if currentHash == prevHash {
+		if curItem.hash == prevHash {
 			if len(parents) == 1 && curItem.MergedChildren == nil && curItem.IdenticalToChild {
 				// commit that has 1 parent and 1 child and is the same as both, bypass it completely
 				b.q.Push(&queueItem{
 					Child:            curItem.Child,
 					Commit:           prev.Commit,
 					path:             prev.Path,
+					hash:             prevHash,
 					Contents:         curItem.Contents,
 					NeedsMap:         curItem.NeedsMap, // reuse the NeedsMap as we are throwing away this item
 					IdenticalToChild: true,
@@ -275,6 +273,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 					Child:            curItem,
 					Commit:           prev.Commit,
 					path:             prev.Path,
+					hash:             prevHash,
 					Contents:         curItem.Contents,
 					NeedsMap:         append([]lineMap(nil), curItem.NeedsMap...), // create new slice and copy
 					IdenticalToChild: true,
@@ -342,6 +341,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 				nil,
 				prev.Commit,
 				prev.Path,
+				prevHash,
 				prevContents,
 				getFromParent,
 				0,
@@ -484,6 +484,7 @@ type queueItem struct {
 	MergedChildren          []childToNeedsMap
 	Commit                  *object.Commit
 	path                    string
+	hash                    plumbing.Hash // the blob of path in Commit
 	Contents                string
 	NeedsMap                []lineMap
 	numParentsNeedResolving int
