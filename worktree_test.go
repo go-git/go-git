@@ -931,7 +931,7 @@ func (s *WorktreeSuite) TestCheckoutIndexMem() {
 	s.Equal(uint32(189), idx.Entries[0].Size)
 
 	// ctime, dev, inode, uid and gid are not supported on memfs fs
-	s.True(idx.Entries[0].CreatedAt.IsZero())
+	s.True(idx.Entries[0].ChangedAt.IsZero())
 	s.Equal(uint32(0), idx.Entries[0].Dev)
 	s.Equal(uint32(0), idx.Entries[0].Inode)
 	s.Equal(uint32(0), idx.Entries[0].UID)
@@ -958,7 +958,7 @@ func (s *WorktreeSuite) TestCheckoutIndexOS() {
 	s.False(idx.Entries[0].ModifiedAt.IsZero())
 	s.Equal(uint32(189), idx.Entries[0].Size)
 
-	s.False(idx.Entries[0].CreatedAt.IsZero())
+	s.False(idx.Entries[0].ChangedAt.IsZero())
 	if runtime.GOOS != "windows" {
 		s.NotEqual(uint32(0), idx.Entries[0].Dev)
 		s.NotEqual(uint32(0), idx.Entries[0].Inode)
