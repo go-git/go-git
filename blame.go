@@ -244,25 +244,21 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		curItem.Child = nil
 	}
 
-	parents, err := parentsContainingPath(curItem.path, curItem.Commit)
+	parents, err := parentsContainingPath(curItem.path, curItem.hash, curItem.Commit)
 	if err != nil {
 		return false, err
 	}
 
 	anyPushed := false
 	for parnetNo, prev := range parents {
-		prevHash, err := blobHash(prev.Path, prev.Commit)
-		if err != nil {
-			return false, err
-		}
-		if curItem.hash == prevHash {
+		if curItem.hash == prev.Hash {
 			if len(parents) == 1 && curItem.MergedChildren == nil && curItem.IdenticalToChild {
 				// commit that has 1 parent and 1 child and is the same as both, bypass it completely
 				b.q.Push(&queueItem{
 					Child:            curItem.Child,
 					Commit:           prev.Commit,
 					path:             prev.Path,
-					hash:             prevHash,
+					hash:             prev.Hash,
 					Contents:         curItem.Contents,
 					NeedsMap:         curItem.NeedsMap, // reuse the NeedsMap as we are throwing away this item
 					IdenticalToChild: true,
@@ -273,7 +269,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 					Child:            curItem,
 					Commit:           prev.Commit,
 					path:             prev.Path,
-					hash:             prevHash,
+					hash:             prev.Hash,
 					Contents:         curItem.Contents,
 					NeedsMap:         append([]lineMap(nil), curItem.NeedsMap...), // create new slice and copy
 					IdenticalToChild: true,
@@ -285,12 +281,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 			continue
 		}
 
-		// get the contents of the file
-		file, err := prev.Commit.File(prev.Path)
-		if err != nil {
-			return false, err
-		}
-		prevContents, err := file.Contents()
+		prevContents, err := prev.File.Contents()
 		if err != nil {
 			return false, err
 		}
@@ -341,7 +332,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 				nil,
 				prev.Commit,
 				prev.Path,
-				prevHash,
+				prev.Hash,
 				prevContents,
 				getFromParent,
 				0,
@@ -532,9 +523,15 @@ func (pq *priorityQueue) Peek() *object.Commit { return (*priorityQueueImp)(pq).
 type parentCommit struct {
 	Commit *object.Commit
 	Path   string
+	Hash   plumbing.Hash // the blob of Path in Commit
+	// File is the file at Path in Commit. It is only read when Hash differs
+	// from the child's, as its contents are then needed for the diff.
+	File *object.File
 }
 
-func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error) {
+// parentsContainingPath returns the parents of c that have the file at path,
+// or the file it was renamed from. hash is the file's blob in c.
+func parentsContainingPath(path string, hash plumbing.Hash, c *object.Commit) ([]parentCommit, error) {
 	// TODO: benchmark this method making git.object.Commit.parent public instead of using
 	// an iterator
 	var result []parentCommit
@@ -547,8 +544,21 @@ func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error
 		if err != nil {
 			return nil, err
 		}
-		if _, err := parent.File(path); err == nil {
-			result = append(result, parentCommit{parent, path})
+		tree, err := parent.Tree()
+		if err != nil {
+			return nil, err
+		}
+
+		// The parent has the file if path names a blob in it. An entry with
+		// the child's hash names the child's blob, so only an entry with
+		// another hash has to be read to tell.
+		var file *object.File
+		entry, err := tree.FindEntry(path)
+		if err == nil && entry.Hash != hash {
+			file, err = tree.File(path)
+		}
+		if err == nil {
+			result = append(result, parentCommit{parent, path, entry.Hash, file})
 		} else {
 			// look for renames
 			patch, err := parent.Patch(c)
@@ -558,19 +568,17 @@ func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error
 				for _, fp := range patch.FilePatches() {
 					from, to := fp.Files()
 					if from != nil && to != nil && to.Path() == path {
-						result = append(result, parentCommit{parent, from.Path()})
+						var fromFile *object.File
+						if from.Hash() != hash {
+							if fromFile, err = tree.File(from.Path()); err != nil {
+								return nil, err
+							}
+						}
+						result = append(result, parentCommit{parent, from.Path(), from.Hash(), fromFile})
 						break
 					}
 				}
 			}
 		}
 	}
-}
-
-func blobHash(path string, commit *object.Commit) (plumbing.Hash, error) {
-	file, err := commit.File(path)
-	if err != nil {
-		return plumbing.ZeroHash, err
-	}
-	return file.Hash, nil
 }
