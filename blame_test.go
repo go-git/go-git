@@ -139,6 +139,54 @@ func (s *BlameSuite) TestBlameMergeIdenticalToSecondParent() {
 	s.Equal([]plumbing.Hash{base, branch, base}, h.blame(merge, "f"))
 }
 
+func (s *BlameSuite) TestBlameFileReplacingDirectory() {
+	h := newBlameHistory(s)
+	directory := h.commit(h.tree(h.dir("p", h.file("x", "x\n"))))
+	file := h.commit(h.tree(h.file("p", "a\nb\n")), directory)
+
+	s.Equal([]plumbing.Hash{file, file}, h.blame(file, "p"))
+}
+
+func (s *BlameSuite) TestBlameFileMovedOverItsDirectory() {
+	h := newBlameHistory(s)
+	directory := h.commit(h.tree(h.dir("p", h.file("x", "a\nb\n"))))
+	file := h.commit(h.tree(h.file("p", "a\nb\n")), directory)
+
+	s.Equal([]plumbing.Hash{directory, directory}, h.blame(file, "p"))
+}
+
+func (s *BlameSuite) TestBlameFileBelowFormerFile() {
+	h := newBlameHistory(s)
+	file := h.commit(h.tree(h.file("a", "x\n")))
+	below := h.commit(h.tree(h.dir("a", h.file("b", "y\n"))), file)
+
+	s.Equal([]plumbing.Hash{below}, h.blame(below, "a/b"))
+}
+
+func (s *BlameSuite) TestBlameModeChange() {
+	h := newBlameHistory(s)
+	regular := h.commit(h.tree(h.file("p", "a\nb\n")))
+	executable := h.commit(h.tree(object.TreeEntry{Name: "p", Mode: filemode.Executable, Hash: h.blob("a\nb\n")}), regular)
+
+	s.Equal([]plumbing.Hash{regular, regular}, h.blame(executable, "p"))
+}
+
+func (s *BlameSuite) TestBlameRename() {
+	h := newBlameHistory(s)
+	added := h.commit(h.tree(h.dir("d", h.file("f", "a\nb\nc\n"))))
+	renamed := h.commit(h.tree(h.dir("d", h.file("g", "a\nb\nc\n"))), added)
+
+	s.Equal([]plumbing.Hash{added, added, added}, h.blame(renamed, "d/g"))
+}
+
+func (s *BlameSuite) TestBlameRenameWithEdit() {
+	h := newBlameHistory(s)
+	added := h.commit(h.tree(h.dir("d", h.file("f", "a\nb\nc\nd\ne\n"))))
+	renamed := h.commit(h.tree(h.dir("d", h.file("g", "a\nb\nC\nd\ne\n"))), added)
+
+	s.Equal([]plumbing.Hash{added, added, renamed, added, added}, h.blame(renamed, "d/g"))
+}
+
 // blameHistory writes a history to memory, for blaming histories that no
 // fixture has.
 type blameHistory struct {
@@ -162,6 +210,10 @@ func (h *blameHistory) blob(contents string) plumbing.Hash {
 
 func (h *blameHistory) file(name, contents string) object.TreeEntry {
 	return object.TreeEntry{Name: name, Mode: filemode.Regular, Hash: h.blob(contents)}
+}
+
+func (h *blameHistory) dir(name string, entries ...object.TreeEntry) object.TreeEntry {
+	return object.TreeEntry{Name: name, Mode: filemode.Dir, Hash: h.tree(entries...)}
 }
 
 func (h *blameHistory) tree(entries ...object.TreeEntry) plumbing.Hash {
