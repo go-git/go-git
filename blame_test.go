@@ -2,13 +2,17 @@ package git
 
 import (
 	"fmt"
+	"sort"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/memory"
 )
 
 type BlameSuite struct {
@@ -100,6 +104,164 @@ func (s *BlameSuite) mockBlame(t blameTest, r *Repository) (blame *BlameResult) 
 		Rev:   plumbing.NewHash(t.rev),
 		Lines: blamedLines,
 	}
+}
+
+func (s *BlameSuite) TestBlameRevertedEdit() {
+	h := newBlameHistory(s)
+	added := h.commit(h.tree(h.file("f", "a\nm\nn\n")))
+	rewritten := h.commit(h.tree(h.file("f", "a\nz\n")), added)
+	edited := h.commit(h.tree(h.file("f", "m\nn\na\nz\n")), rewritten)
+	reverted := h.commit(h.tree(h.file("f", "a\nz\n")), edited)
+
+	// reverted has the same blob as rewritten, but edited, between them,
+	// moves m and n from added before a.
+	s.Equal([]plumbing.Hash{added, rewritten}, h.blame(reverted, "f"))
+}
+
+func (s *BlameSuite) TestBlameMergeOfTwoEdits() {
+	h := newBlameHistory(s)
+	base := h.commit(h.tree(h.file("f", "a\nb\nc\n")))
+	left := h.commit(h.tree(h.file("f", "A\nb\nc\n")), base)
+	right := h.commit(h.tree(h.file("f", "a\nb\nC\n")), base)
+	merge := h.commit(h.tree(h.file("f", "A\nb\nC\n")), left, right)
+
+	s.Equal([]plumbing.Hash{left, base, right}, h.blame(merge, "f"))
+}
+
+func (s *BlameSuite) TestBlameMergeIdenticalToSecondParent() {
+	h := newBlameHistory(s)
+	base := h.commit(h.tree(h.file("f", "a\nb\nc\n"), h.file("g", "1\n")))
+	branch := h.commit(h.tree(h.file("f", "a\nB\nc\n"), h.file("g", "1\n")), base)
+	unrelated := h.commit(h.tree(h.file("f", "a\nb\nc\n"), h.file("g", "2\n")), base)
+	unrelated = h.commit(h.tree(h.file("f", "a\nb\nc\n"), h.file("g", "3\n")), unrelated)
+	merge := h.commit(h.tree(h.file("f", "a\nB\nc\n"), h.file("g", "3\n")), unrelated, branch)
+
+	s.Equal([]plumbing.Hash{base, branch, base}, h.blame(merge, "f"))
+}
+
+func (s *BlameSuite) TestBlameFileReplacingDirectory() {
+	h := newBlameHistory(s)
+	directory := h.commit(h.tree(h.dir("p", h.file("x", "x\n"))))
+	file := h.commit(h.tree(h.file("p", "a\nb\n")), directory)
+
+	s.Equal([]plumbing.Hash{file, file}, h.blame(file, "p"))
+}
+
+func (s *BlameSuite) TestBlameFileMovedOverItsDirectory() {
+	h := newBlameHistory(s)
+	directory := h.commit(h.tree(h.dir("p", h.file("x", "a\nb\n"))))
+	file := h.commit(h.tree(h.file("p", "a\nb\n")), directory)
+
+	s.Equal([]plumbing.Hash{directory, directory}, h.blame(file, "p"))
+}
+
+func (s *BlameSuite) TestBlameFileBelowFormerFile() {
+	h := newBlameHistory(s)
+	file := h.commit(h.tree(h.file("a", "x\n")))
+	below := h.commit(h.tree(h.dir("a", h.file("b", "y\n"))), file)
+
+	s.Equal([]plumbing.Hash{below}, h.blame(below, "a/b"))
+}
+
+func (s *BlameSuite) TestBlameModeChange() {
+	h := newBlameHistory(s)
+	regular := h.commit(h.tree(h.file("p", "a\nb\n")))
+	executable := h.commit(h.tree(object.TreeEntry{Name: "p", Mode: filemode.Executable, Hash: h.blob("a\nb\n")}), regular)
+
+	s.Equal([]plumbing.Hash{regular, regular}, h.blame(executable, "p"))
+}
+
+func (s *BlameSuite) TestBlameRename() {
+	h := newBlameHistory(s)
+	added := h.commit(h.tree(h.dir("d", h.file("f", "a\nb\nc\n"))))
+	renamed := h.commit(h.tree(h.dir("d", h.file("g", "a\nb\nc\n"))), added)
+
+	s.Equal([]plumbing.Hash{added, added, added}, h.blame(renamed, "d/g"))
+}
+
+func (s *BlameSuite) TestBlameRenameWithEdit() {
+	h := newBlameHistory(s)
+	added := h.commit(h.tree(h.dir("d", h.file("f", "a\nb\nc\nd\ne\n"))))
+	renamed := h.commit(h.tree(h.dir("d", h.file("g", "a\nb\nC\nd\ne\n"))), added)
+
+	s.Equal([]plumbing.Hash{added, added, renamed, added, added}, h.blame(renamed, "d/g"))
+}
+
+// blameHistory writes a history to memory, for blaming histories that no
+// fixture has.
+type blameHistory struct {
+	s       *BlameSuite
+	storage *memory.Storage
+	commits int
+}
+
+func newBlameHistory(s *BlameSuite) *blameHistory {
+	return &blameHistory{s: s, storage: memory.NewStorage()}
+}
+
+func (h *blameHistory) blob(contents string) plumbing.Hash {
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(plumbing.BlobObject)
+	_, err := obj.Write([]byte(contents))
+	h.s.Require().NoError(err)
+
+	return h.store(obj)
+}
+
+func (h *blameHistory) file(name, contents string) object.TreeEntry {
+	return object.TreeEntry{Name: name, Mode: filemode.Regular, Hash: h.blob(contents)}
+}
+
+func (h *blameHistory) dir(name string, entries ...object.TreeEntry) object.TreeEntry {
+	return object.TreeEntry{Name: name, Mode: filemode.Dir, Hash: h.tree(entries...)}
+}
+
+func (h *blameHistory) tree(entries ...object.TreeEntry) plumbing.Hash {
+	sort.Sort(object.TreeEntrySorter(entries))
+	obj := &plumbing.MemoryObject{}
+	h.s.Require().NoError((&object.Tree{Entries: entries}).Encode(obj))
+
+	return h.store(obj)
+}
+
+// commit dates each commit an hour after the previous one, as Blame visits
+// commits from the newest committer date.
+func (h *blameHistory) commit(tree plumbing.Hash, parents ...plumbing.Hash) plumbing.Hash {
+	h.commits++
+	sig := object.Signature{Name: "Blame", Email: "blame@example.com", When: time.Unix(int64(h.commits)*3600, 0).UTC()}
+	c := &object.Commit{
+		Author:       sig,
+		Committer:    sig,
+		Message:      fmt.Sprintf("commit %d", h.commits),
+		TreeHash:     tree,
+		ParentHashes: parents,
+	}
+	obj := &plumbing.MemoryObject{}
+	h.s.Require().NoError(c.Encode(obj))
+
+	return h.store(obj)
+}
+
+func (h *blameHistory) store(obj plumbing.EncodedObject) plumbing.Hash {
+	hash, err := h.storage.SetEncodedObject(obj)
+	h.s.Require().NoError(err)
+
+	return hash
+}
+
+// blame returns the hash of the commit blamed for each line of path at rev.
+func (h *blameHistory) blame(rev plumbing.Hash, path string) []plumbing.Hash {
+	c, err := object.GetCommit(h.storage, rev)
+	h.s.Require().NoError(err)
+	result, err := Blame(c, path)
+	h.s.Require().NoError(err)
+
+	hashes := make([]plumbing.Hash, len(result.Lines))
+	for i, l := range result.Lines {
+		hashes[i] = l.Hash
+	}
+
+	return hashes
 }
 
 // utility function to avoid writing so many repeated commits
