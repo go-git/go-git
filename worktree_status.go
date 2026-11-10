@@ -156,8 +156,9 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
-		Index:    idx,
+		AutoCRLF:   cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:      idx,
+		IgnoreCase: cfg.Core.IgnoreCase.IsTrue(),
 	}
 
 	// When ignored changes are to be filtered out, hand the noder the ignore
@@ -176,7 +177,12 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 		fsOpts.IgnoreScope = w.ignoreScope()
 	}
 
-	to := filesystem.NewRootNodeWithOptions(w.filesystem, submodules, fsOpts)
+	// The walk reads the worktree filesystem directly: every name in it
+	// comes from listing its directory, so it names a real file, and Git
+	// reports an untracked directory named like a .git alias, such as
+	// git~1, as it does any other. The worktree filesystem's path policy is
+	// for names taken from trees, the index and .gitmodules.
+	to := filesystem.NewRootNodeWithOptions(w.filesystem.Filesystem, submodules, fsOpts)
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)

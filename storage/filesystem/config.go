@@ -23,6 +23,9 @@ type ConfigStorage struct {
 // When the worktreeConfig extension is active and a config.worktree file
 // exists, the returned config would be the worktree config overlayed over
 // the commonDir config.
+//
+// dotgit.DotGit reads core.protectNTFS with the same overlay on its own
+// (protectNTFS in dotgit/module.go); keep the two in step.
 func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 	f, err := c.dir.Config()
 	if err != nil {

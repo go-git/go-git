@@ -1,9 +1,11 @@
 package pathutil
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsHFSDotGit(t *testing.T) {
@@ -79,6 +81,18 @@ func TestIsHFSDot(t *testing.T) {
 			assert.Equal(t, tc.want, got, "IsHFSDot(%q, %q)", tc.part, tc.needle)
 		})
 	}
+}
+
+// IsHFSDot runs on every component of every path that reaches tree,
+// worktree, submodule and reference validation, so the ASCII fast
+// path has to stay allocation-free: without it the []rune conversion
+// allocates for every ordinary name.
+//
+//nolint:paralleltest // AllocsPerRun must run without parallel tests.
+func TestIsHFSDotAllocations(t *testing.T) {
+	part := strings.Repeat("a", 40)
+	allocations := testing.AllocsPerRun(1000, func() { IsHFSDot(part, ".") })
+	require.Zero(t, allocations)
 }
 
 func TestIsHFSDotGitmodules(t *testing.T) {
