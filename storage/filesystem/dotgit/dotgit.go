@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -42,6 +43,7 @@ const (
 	configWorktreePath = "config.worktree"
 	indexPath          = "index"
 	shallowPath        = "shallow"
+	shallowLockPath    = shallowPath + ".lock"
 	modulePath         = "modules"
 	objectsPath        = "objects"
 	packPath           = "pack"
@@ -460,8 +462,61 @@ func (d *DotGit) StatIndex() (os.FileInfo, error) {
 }
 
 // ShallowWriter returns a file pointer for write to the shallow file
+//
+// Deprecated: ShallowWriter truncates the shallow file in place, without
+// shallow.lock. Use [DotGit.SetShallow].
 func (d *DotGit) ShallowWriter() (billy.File, error) {
 	return d.fs.Create(shallowPath)
+}
+
+// SetShallow replaces the shallow file with data, or removes it when data is
+// empty. As Git does, it holds shallow.lock while it does so, and writes data
+// to that file before renaming it into place. A failed write leaves the old
+// file in place, and SetShallow fails, with an error wrapping [os.ErrExist],
+// while another writer holds the lock.
+func (d *DotGit) SetShallow(data []byte) (err error) {
+	lock, err := d.fs.OpenFile(shallowLockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	if err != nil {
+		return err
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			_ = d.fs.Remove(shallowLockPath)
+		}
+	}()
+
+	if len(data) == 0 {
+		if err := lock.Close(); err != nil {
+			return err
+		}
+		if err := d.fs.Remove(shallowPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+
+	if _, err := lock.Write(data); err != nil {
+		_ = lock.Close()
+		return err
+	}
+	if err := lock.Close(); err != nil {
+		return err
+	}
+
+	err = d.fs.Rename(shallowLockPath, shallowPath)
+	if errors.Is(err, billy.ErrNotSupported) {
+		// Without rename, as on sivafs, the file can only be rewritten in
+		// place.
+		return util.WriteFile(d.fs, shallowPath, data, 0o666)
+	}
+	if err != nil {
+		return err
+	}
+	committed = true
+
+	return nil
 }
 
 // Shallow returns a file pointer for read to the shallow file

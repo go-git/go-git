@@ -63,7 +63,7 @@ func (fs *RepositoryFilesystem) mapToRepositoryFsByPath(path string) billy.Files
 	// There are some elements which should always use commondir when commondir defined.
 	// Usual dot-git root will be used for the rest of files.
 	switch strings.Split(cleanPath, string(filepath.Separator))[0] {
-	case objectsPath, refsPath, packedRefsPath, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, worktreesPath:
+	case objectsPath, refsPath, packedRefsPath, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, shallowLockPath, worktreesPath:
 		return fs.commonDotGitFs
 	default:
 		return fs.dotGitFs

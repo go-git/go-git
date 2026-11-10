@@ -303,8 +303,9 @@ func closeReader(r io.Reader) {
 }
 
 // CheckShallowUpdate returns an error when info holds an object ID that is
-// not of st's object format. Call it before the pack is read, so that a
-// rejected fetch leaves storage as it was.
+// not of st's object format, or an unshallow that does not name an object ID
+// in st's shallow boundary, or names one twice. Call it before the pack is
+// read, so that a rejected fetch leaves storage as it was.
 func CheckShallowUpdate(st storage.Storer, info *packp.ShallowUpdate) error {
 	cfg, err := st.Config()
 	if err != nil {
@@ -321,35 +322,63 @@ func CheckShallowUpdate(st storage.Storer, info *packp.ShallowUpdate) error {
 			}
 		}
 	}
-	return nil
+
+	if len(info.Unshallows) == 0 {
+		return nil
+	}
+	shallows, err := st.Shallow()
+	if err != nil {
+		return err
+	}
+	_, err = unshallow(shallows, info.Unshallows)
+	return err
 }
 
-// UpdateShallow merges a shallow update into st's shallow boundary. The
-// update must have passed [CheckShallowUpdate].
+// UpdateShallow merges a shallow update into st's shallow boundary. Each
+// unshallow must name an object ID in the boundary as it was before the
+// update, and at most once; the update's shallows are added afterwards. It
+// returns an error, and leaves the boundary unchanged, when the update breaks
+// that rule. The update must have passed [CheckShallowUpdate].
 func UpdateShallow(st storage.Storer, info *packp.ShallowUpdate) error {
 	shallows, err := st.Shallow()
 	if err != nil {
 		return err
 	}
 
-outer:
+	boundary, err := unshallow(shallows, info.Unshallows)
+	if err != nil {
+		return err
+	}
+	if len(info.Unshallows) > 0 {
+		shallows = slices.DeleteFunc(shallows, func(s plumbing.Hash) bool {
+			_, ok := boundary[s]
+			return !ok
+		})
+	}
+
 	for _, s := range info.Shallows {
-		for _, old := range shallows {
-			if s == old {
-				continue outer
-			}
+		if _, ok := boundary[s]; ok {
+			continue
 		}
+		boundary[s] = struct{}{}
 		shallows = append(shallows, s)
 	}
 
-	for _, s := range info.Unshallows {
-		for i, old := range shallows {
-			if s == old {
-				shallows = append(shallows[:i], shallows[i+1:]...)
-				break
-			}
-		}
-	}
-
 	return st.SetShallow(shallows)
+}
+
+// unshallow returns the set of shallows left after removing unshallows, or an
+// error when an unshallow is not in shallows, or is given twice.
+func unshallow(shallows, unshallows []plumbing.Hash) (map[plumbing.Hash]struct{}, error) {
+	boundary := make(map[plumbing.Hash]struct{}, len(shallows))
+	for _, s := range shallows {
+		boundary[s] = struct{}{}
+	}
+	for _, s := range unshallows {
+		if _, ok := boundary[s]; !ok {
+			return nil, fmt.Errorf("shallow update: %s is not shallow", s)
+		}
+		delete(boundary, s)
+	}
+	return boundary, nil
 }
