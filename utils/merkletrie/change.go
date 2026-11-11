@@ -136,6 +136,13 @@ func (l *Changes) addRecursive(root noder.Path, ctor noderToChangeFn) error {
 		return nil
 	}
 
+	if c, ok := root.Last().(noder.Collapser); ok && c.Collapse() {
+		if !root.Skip() {
+			l.Add(ctor(root))
+		}
+		return nil
+	}
+
 	i, err := NewIterFromPath(root)
 	if err != nil {
 		return err

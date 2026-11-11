@@ -42,13 +42,41 @@ var (
 )
 
 // Status returns the working tree status.
+//
+// Untracked directories are reported as a single entry, without listing
+// their contents, matching the default behavior of "git status". Use
+// StatusWithOptions with UntrackedFilesAll to list every untracked file
+// individually.
 func (w *Worktree) Status() (Status, error) {
 	return w.StatusWithOptions(StatusOptions{Strategy: defaultStatusStrategy})
 }
 
+// UntrackedFilesMode defines how Status reports untracked files, mirroring
+// the values of git's status.showUntrackedFiles configuration.
+type UntrackedFilesMode int
+
+const (
+	// UntrackedFilesNormal reports untracked directories as a single
+	// entry, without descending into them. This matches the default
+	// behavior of "git status" (status.showUntrackedFiles=normal) and is
+	// significantly faster on worktrees with many untracked files.
+	UntrackedFilesNormal UntrackedFilesMode = iota
+	// UntrackedFilesAll reports every untracked file individually,
+	// matching "git status --untracked-files=all". This is go-git's
+	// historical behavior.
+	UntrackedFilesAll
+	// UntrackedFilesNo omits untracked entries from the status, matching
+	// "git status --untracked-files=no". Tracked changes are still
+	// reported.
+	UntrackedFilesNo
+)
+
 // StatusOptions defines the options for Worktree.StatusWithOptions().
 type StatusOptions struct {
 	Strategy StatusStrategy
+	// UntrackedFiles controls how untracked files are reported. The zero
+	// value is UntrackedFilesNormal.
+	UntrackedFiles UntrackedFilesMode
 }
 
 // StatusWithOptions returns the working tree status.
@@ -69,11 +97,11 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		return nil, err
 	}
 
-	return w.status(cfg, o.Strategy, hash)
+	return w.status(cfg, o, hash)
 }
 
-func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
-	s, err := ss.new(w)
+func (w *Worktree) status(cfg *config.Config, o StatusOptions, commit plumbing.Hash) (Status, error) {
+	s, err := o.Strategy.new(w)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +130,7 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 		}
 	}
 
-	right, err := w.diffStagingWithWorktree(cfg, false, true)
+	right, err := w.diffStagingWithWorktree(cfg, false, true, o.UntrackedFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +139,10 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 		a, err := ch.Action()
 		if err != nil {
 			return nil, err
+		}
+
+		if a == merkletrie.Insert && o.UntrackedFiles == UntrackedFilesNo {
+			continue
 		}
 
 		fs := s.File(nameFromAction(&ch))
@@ -141,7 +173,7 @@ func nameFromAction(ch *merkletrie.Change) string {
 	return name
 }
 
-func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool, untracked UntrackedFilesMode) (merkletrie.Changes, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
@@ -156,8 +188,9 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
-		Index:    idx,
+		AutoCRLF:              cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:                 idx,
+		CollapseUntrackedDirs: untracked != UntrackedFilesAll,
 	}
 
 	// When ignored changes are to be filtered out, hand the noder the ignore
@@ -394,11 +427,14 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 
 	fi, err := w.filesystem.Lstat(path)
 
-	// status is required for doAddDirectory
+	// status is required for doAddDirectory, which enumerates untracked files.
 	var s Status
 	var err2 error
 	if !skipStatus || fi == nil || fi.IsDir() {
-		s, err2 = w.Status()
+		s, err2 = w.StatusWithOptions(StatusOptions{
+			Strategy:       defaultStatusStrategy,
+			UntrackedFiles: UntrackedFilesAll,
+		})
 		if err2 != nil {
 			return plumbing.ZeroHash, err2
 		}
@@ -461,7 +497,11 @@ func (w *Worktree) AddGlob(pattern string) error {
 		return err
 	}
 
-	s, err := w.Status()
+	// UntrackedFilesAll: glob matches are added file by file.
+	s, err := w.StatusWithOptions(StatusOptions{
+		Strategy:       defaultStatusStrategy,
+		UntrackedFiles: UntrackedFilesAll,
+	})
 	if err != nil {
 		return err
 	}
