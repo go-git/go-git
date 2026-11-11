@@ -23,7 +23,12 @@ type ReferenceStorer interface {
 	// not, it returns an error and doesn't update `new`.
 	CheckAndSetReference(newRef, old *plumbing.Reference) error
 	Reference(plumbing.ReferenceName) (*plumbing.Reference, error)
-	IterReferences() (ReferenceIter, error)
+	// IterReferences returns an iterator over the references whose full
+	// name starts with prefix. "refs/heads" matches refs/headsx as well as
+	// refs/heads/main; pass "refs/heads/" to stay within the subtree.
+	// HEAD is filtered like every other reference,
+	// so only the empty prefix, which iterates everything, includes it.
+	IterReferences(prefix string) (ReferenceIter, error)
 	RemoveReference(plumbing.ReferenceName) error
 	CountLooseRefs() (int, error)
 	PackRefs() error

@@ -479,7 +479,7 @@ func (s *RemoteSuite) testFetch(r *Remote, o *FetchOptions, expected []*plumbing
 	s.NoError(err)
 
 	var refs int
-	l, err := r.s.IterReferences()
+	l, err := r.s.IterReferences("")
 	s.Require().NoError(err)
 	err = l.ForEach(func(*plumbing.Reference) error { refs++; return nil })
 	s.Require().NoError(err)
@@ -729,7 +729,7 @@ func (s *RemoteSuite) TestPushToEmptyRepository() {
 	})
 	s.NoError(err)
 
-	iter, err := r.s.IterReferences()
+	iter, err := r.s.IterReferences("")
 	s.NoError(err)
 
 	expected := make(map[string]string)

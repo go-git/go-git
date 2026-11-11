@@ -246,7 +246,7 @@ func NewCommitAllIter(repoStorer storage.Storer, commitIterFunc func(*Commit) Co
 	}
 
 	// add all references along with the HEAD
-	refIter, err := repoStorer.IterReferences()
+	refIter, err := repoStorer.IterReferences("")
 	if err != nil {
 		return nil, err
 	}

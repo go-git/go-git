@@ -1702,7 +1702,7 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 //	  // Handle outer iterator error
 //	}
 func (r *Repository) Tags() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+	refIter, err := r.Storer.IterReferences("")
 	if err != nil {
 		return nil, err
 	}
@@ -1716,7 +1716,7 @@ func (r *Repository) Tags() (storer.ReferenceIter, error) {
 
 // Branches returns all the References that are Branches.
 func (r *Repository) Branches() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+	refIter, err := r.Storer.IterReferences("")
 	if err != nil {
 		return nil, err
 	}
@@ -1731,7 +1731,7 @@ func (r *Repository) Branches() (storer.ReferenceIter, error) {
 // Notes returns all the References that are notes. For more information:
 // https://git-scm.com/docs/git-notes
 func (r *Repository) Notes() (storer.ReferenceIter, error) {
-	refIter, err := r.Storer.IterReferences()
+	refIter, err := r.Storer.IterReferences("")
 	if err != nil {
 		return nil, err
 	}
@@ -1849,7 +1849,7 @@ func (r *Repository) Reference(name plumbing.ReferenceName, resolved bool) (
 
 // References returns an unsorted ReferenceIter for all references.
 func (r *Repository) References() (storer.ReferenceIter, error) {
-	return r.Storer.IterReferences()
+	return r.Storer.IterReferences("")
 }
 
 // Worktree returns a worktree based on the given fs, if nil the default

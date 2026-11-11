@@ -511,7 +511,7 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 // represent. writeV2Ref resolves the symref's hash from the storer, matching
 // upstream git's send_ref.
 func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *packp.LsRefsArgs) error {
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences("")
 	if err != nil {
 		return err
 	}
@@ -1121,7 +1121,7 @@ func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.H
 		have[h] = struct{}{}
 	}
 
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences("")
 	if err != nil {
 		return objs, err
 	}
