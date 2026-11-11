@@ -2808,6 +2808,35 @@ func (s *WorktreeSuite) TestStatusDeleted() {
 	s.Equal(Deleted, status.File(".gitignore").Worktree)
 }
 
+func (s *WorktreeSuite) TestStatusDeletedFromIndexKeptOnDisk() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	content, err := util.ReadFile(fs, "LICENSE")
+	s.NoError(err)
+
+	// Same as `git rm --cached LICENSE`: the staged deletion stays while the
+	// file is back on disk as an untracked file.
+	_, err = w.Remove("LICENSE")
+	s.NoError(err)
+	err = util.WriteFile(fs, "LICENSE", content, 0o644)
+	s.NoError(err)
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.Len(status, 1)
+	s.Equal(Deleted, status.File("LICENSE").Staging)
+	s.Equal(Untracked, status.File("LICENSE").Worktree)
+	s.True(status.IsUntracked("LICENSE"))
+	s.Equal("D? LICENSE\n", status.String())
+}
+
 func (s *WorktreeSuite) TestStatusFileMode() {
 	runTest := func(t *testing.T, fileMode bool) string {
 		fs := memfs.New()
