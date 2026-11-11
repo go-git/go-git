@@ -36,6 +36,7 @@ var (
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
 	ErrRemoteRefNotFound     = errors.New("couldn't find remote ref")
+	ErrSrcRefSpecNotFound    = errors.New("src refspec does not match any")
 )
 
 const (
@@ -187,8 +188,7 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 		return err
 	}
 	// Storage enumeration is also used by repository maintenance and must
-	// remain complete. Only push candidates exclude malformed ordinary refs,
-	// including stale lock files that Git's files ref iterator skips.
+	// remain complete. Only push candidates exclude malformed ordinary refs.
 	pushRefs := localRefs[:0]
 	for _, ref := range localRefs {
 		if ref.Name().IsUnderRefs() {
@@ -895,10 +895,17 @@ func (r *Remote) addOrUpdateReferences(
 		ref, ok := refsDict[rs.Src()]
 		if !ok {
 			object, err := object.GetObject(r.s, plumbing.NewHash(rs.Src()))
-			if err == nil {
-				return r.addObject(rs, remoteRefs, object.ID(), cmds)
+			if errors.Is(err, plumbing.ErrObjectNotFound) {
+				// Like git, fail rather than skip the refspec: prune would
+				// take the missing source for a request to delete its
+				// destination.
+				// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/remote.c#L1191-L1197.
+				return fmt.Errorf("%w: %q", ErrSrcRefSpecNotFound, rs.Src())
 			}
-			return nil
+			if err != nil {
+				return err
+			}
+			return r.addObject(rs, remoteRefs, object.ID(), cmds)
 		}
 
 		return r.addReferenceIfRefSpecMatches(rs, remoteRefs, ref, cmds, forceWithLease)

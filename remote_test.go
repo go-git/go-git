@@ -1510,7 +1510,7 @@ func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
 	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
 	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
 	s.Require().NoError(err)
-	for _, name := range []string{"main.lock", ".hidden", "bad~name", "a..b"} {
+	for _, name := range []string{".hidden", "bad~name", "a..b"} {
 		fullName := plumbing.NewBranchReferenceName(name)
 		s.Require().NoError(util.WriteFile(srcFs, fullName.String(), []byte(head.Hash().String()+"\n"), 0o644))
 		for _, prune := range []bool{false, true} {
@@ -1527,6 +1527,40 @@ func (s *RemoteSuite) TestPushRejectsExplicitMalformedSourceBeforePrune() {
 					config.RefSpec(fullName.String() + ":refs/heads/keep"),
 				}})
 				s.ErrorIs(err, plumbing.ErrInvalidReferenceName)
+				ref, err := dst.Storer.Reference(keep.Name())
+				s.Require().NoError(err)
+				s.Equal(keep, ref)
+				_, err = dst.Storer.Reference("refs/heads/allowed")
+				s.ErrorIs(err, plumbing.ErrReferenceNotFound)
+			})
+		}
+	}
+}
+
+func (s *RemoteSuite) TestPushRejectsExplicitMissingSourceBeforePrune() {
+	srcFs, err := fixtures.Basic().One().DotGit(fixtures.WithMemFS())
+	s.Require().NoError(err)
+	src := filesystem.NewStorage(srcFs, cache.NewObjectLRUDefault())
+	head, err := src.Reference(plumbing.NewBranchReferenceName("master"))
+	s.Require().NoError(err)
+	// Like git, a lock file is not a reference, whatever it holds.
+	lockFile := plumbing.NewBranchReferenceName("main.lock")
+	s.Require().NoError(util.WriteFile(srcFs, lockFile.String(), []byte(head.Hash().String()+"\n"), 0o644))
+	for _, source := range []plumbing.ReferenceName{"refs/heads/missing", lockFile} {
+		for _, prune := range []bool{false, true} {
+			s.Run(fmt.Sprintf("%s/prune=%t", source, prune), func() {
+				dir := s.T().TempDir()
+				dst, err := PlainClone(dir, &CloneOptions{URL: s.GetBasicLocalRepositoryURL(), Bare: true})
+				s.Require().NoError(err)
+				defer func() { _ = dst.Close() }()
+				keep := plumbing.NewHashReference("refs/heads/keep", head.Hash())
+				s.Require().NoError(dst.Storer.SetReference(keep))
+				remote := NewRemote(src, &config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{dir}})
+				err = remote.Push(&PushOptions{Prune: prune, RefSpecs: []config.RefSpec{
+					"refs/heads/master:refs/heads/allowed",
+					config.RefSpec(source.String() + ":refs/heads/keep"),
+				}})
+				s.ErrorIs(err, ErrSrcRefSpecNotFound)
 				ref, err := dst.Storer.Reference(keep.Name())
 				s.Require().NoError(err)
 				s.Equal(keep, ref)
