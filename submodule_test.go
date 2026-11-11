@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -273,6 +274,67 @@ func TestSubmodulesStatus(t *testing.T) {
 	})
 }
 
+func TestSubmodulesOnlyIncludesGitlinks(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	wt, err := r.Worktree()
+	require.NoError(t, err)
+	file, err := fs.Create(".gitmodules")
+	require.NoError(t, err)
+	defer func() { _ = file.Close() }()
+	_, err = file.Write([]byte(`[submodule "real-name"]
+	path = real-path
+	url = https://example.com/real.git
+[submodule "ghost"]
+	path = ghost
+	url = https://example.com/ghost.git
+[submodule "regular"]
+	path = regular
+	url = https://example.com/regular.git
+[submodule "executable"]
+	path = executable
+	url = https://example.com/executable.git
+[submodule "symlink"]
+	path = symlink
+	url = https://example.com/symlink.git
+`))
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	hash := plumbing.NewHash("0123456789012345678901234567890123456789")
+	require.NoError(t, r.Storer.SetIndex(&index.Index{
+		Version: 2,
+		Entries: []*index.Entry{
+			{Name: "real-path", Mode: filemode.Submodule, Hash: hash},
+			{Name: "regular", Mode: filemode.Regular},
+			{Name: "executable", Mode: filemode.Executable},
+			{Name: "symlink", Mode: filemode.Symlink},
+		},
+	}))
+
+	sm, err := wt.Submodules()
+	require.NoError(t, err)
+	require.Len(t, sm, 1)
+	require.Equal(t, "real-name", sm[0].Config().Name)
+	require.Equal(t, "real-path", sm[0].Config().Path)
+	status, err := sm.Status()
+	require.NoError(t, err)
+	require.Len(t, status, 1)
+	require.Equal(t, hash, status[0].Expected)
+	require.NoError(t, sm.Init())
+	cfg, err := r.Config()
+	require.NoError(t, err)
+	require.Len(t, cfg.Submodules, 1)
+	require.Contains(t, cfg.Submodules, "real-name")
+	_, err = wt.Submodule("ghost")
+	require.ErrorIs(t, err, ErrSubmoduleNotFound)
+}
+
 func TestSubmodulesUpdateContext(t *testing.T) {
 	t.Parallel()
 
@@ -331,9 +393,10 @@ func TestSubmodulesUpdateSkipsEntryMissingFromIndex(t *testing.T) {
 	wt, err := r.Worktree()
 	require.NoError(t, err)
 
-	sm, err := wt.Submodules()
+	modules, err := wt.readGitmodulesFile()
 	require.NoError(t, err)
-	require.Len(t, sm, 1)
+	// Exercise Update with a stale handle even though Submodules filters it out.
+	sm := Submodules{wt.newSubmodule(modules.Submodules["ghost"], nil)}
 
 	require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
 
@@ -352,7 +415,9 @@ func TestSubmoduleUpdateEntryMissingFromIndex(t *testing.T) {
 	wt, err := r.Worktree()
 	require.NoError(t, err)
 
-	sm := namedSubmodule(t, wt, "ghost")
+	modules, err := wt.readGitmodulesFile()
+	require.NoError(t, err)
+	sm := wt.newSubmodule(modules.Submodules["ghost"], nil)
 
 	err = sm.Update(&SubmoduleUpdateOptions{Init: true})
 	require.ErrorIs(t, err, index.ErrEntryNotFound)
