@@ -14,8 +14,9 @@ func main() {
 	CheckArgs("<url>", "<directory>")
 	url, directory := os.Args[1], os.Args[2]
 
-	authMethod, err := ssh.NewSSHAgentAuth("git")
+	authMethod, closer, err := ssh.NewSSHAgentAuthWithCloser("git")
 	CheckIfError(err)
+	defer func() { _ = closer.Close() }()
 
 	Info("git clone %s ", url)
 
