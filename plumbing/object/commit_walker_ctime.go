@@ -64,7 +64,7 @@ func (w *commitIteratorByCTime) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		for _, h := range c.ParentHashes {
+		for _, h := range c.liveParentHashes() {
 			if w.seen[h] || w.seenExternal[h] {
 				continue
 			}
