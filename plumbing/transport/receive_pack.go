@@ -169,6 +169,14 @@ func ReceivePack(
 		return err
 	}
 
+	// Git runs the whole of receive-pack inside "if ((commands =
+	// read_head_info(...)))", so a request that updates nothing ends here: no
+	// packfile, no hooks, no report. Capabilities only ever arrive on a command
+	// line, so such a request carries none and there is no sideband to flush.
+	if len(updreq.Commands) == 0 {
+		return nil
+	}
+
 	var (
 		caps         = updreq.Capabilities
 		needPackfile bool
