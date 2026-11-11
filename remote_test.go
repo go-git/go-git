@@ -21,11 +21,13 @@ import (
 	"github.com/go-git/go-billy/v6/osfs"
 	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -2736,6 +2738,48 @@ func (s *RemoteSuite) TestPushPreservesValidWildcardSources() {
 			ref, err := dst.Storer.Reference(tc.destination)
 			s.Require().NoError(err)
 			s.Require().Equal(head.Hash(), ref.Hash())
+		})
+	}
+}
+
+func TestFetchShallowSHA256(t *testing.T) {
+	t.Parallel()
+
+	for _, v := range []protocol.Version{protocol.V1, protocol.V2} {
+		t.Run(v.String(), func(t *testing.T) {
+			t.Parallel()
+
+			remoteURL := t.TempDir()
+			remote, err := PlainInit(remoteURL, false, WithObjectFormat(formatcfg.SHA256))
+			require.NoError(t, err)
+			_ = CommitNewFile(t, remote, "File1")
+			head := CommitNewFile(t, remote, "File2")
+
+			repo, err := PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA256))
+			require.NoError(t, err)
+			cfg, err := repo.Config()
+			require.NoError(t, err)
+			cfg.Protocol.Version = v
+			require.NoError(t, repo.SetConfig(cfg))
+			_, err = repo.CreateRemote(&config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{remoteURL}})
+			require.NoError(t, err)
+
+			// A decode error in the v1 negotiation deadlocks the in-process
+			// transport, and cancelling the context does not end it, so
+			// bound the wait here rather than hang until the test binary
+			// times out.
+			done := make(chan error, 1)
+			go func() { done <- repo.Fetch(&FetchOptions{Depth: 1}) }()
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(time.Minute):
+				t.Fatal("shallow fetch did not complete")
+			}
+
+			shallows, err := repo.Storer.Shallow()
+			require.NoError(t, err)
+			require.Equal(t, []plumbing.Hash{head}, shallows)
 		})
 	}
 }

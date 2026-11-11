@@ -9,11 +9,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 )
 
-const (
-	shallowLineLen   = 48
-	unshallowLineLen = 50
-)
-
 // ShallowUpdate represents shallow/unshallow updates during fetch.
 type ShallowUpdate struct {
 	Shallows   []plumbing.Hash
@@ -48,7 +43,7 @@ func (r *ShallowUpdate) Decode(reader io.Reader) error {
 }
 
 func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
-	hash, err := r.decodeLine(line, shallow, shallowLineLen)
+	hash, err := r.decodeLine(line, shallow)
 	if err != nil {
 		return err
 	}
@@ -58,7 +53,7 @@ func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
 }
 
 func (r *ShallowUpdate) decodeUnshallowLine(line []byte) error {
-	hash, err := r.decodeLine(line, unshallow, unshallowLineLen)
+	hash, err := r.decodeLine(line, unshallow)
 	if err != nil {
 		return err
 	}
@@ -67,13 +62,12 @@ func (r *ShallowUpdate) decodeUnshallowLine(line []byte) error {
 	return nil
 }
 
-func (r *ShallowUpdate) decodeLine(line, prefix []byte, expLen int) (plumbing.Hash, error) {
-	if len(line) != expLen {
-		return plumbing.ZeroHash, fmt.Errorf("malformed %s%q", prefix, line)
+func (r *ShallowUpdate) decodeLine(line, prefix []byte) (plumbing.Hash, error) {
+	hash, ok := parseFullHash(string(line[len(prefix):]))
+	if !ok {
+		return plumbing.ZeroHash, fmt.Errorf("malformed shallow update line: %q", line)
 	}
-
-	raw := string(line[expLen-40 : expLen])
-	return plumbing.NewHash(raw), nil
+	return hash, nil
 }
 
 // Encode writes the shallow update to the writer.
