@@ -1472,6 +1472,27 @@ func (s *WorktreeSuite) TestStatusEmpty() {
 	s.NotNil(status)
 }
 
+// A HEAD branch whose file cannot be read, or that holds "ref:" and no
+// target, has no commits to compare with: git status reports "No commits
+// yet" rather than failing.
+func (s *WorktreeSuite) TestStatusOnBrokenHEADBranch() {
+	for _, content := range []string{"", "garbage\n", "ref: \n"} {
+		s.Run(fmt.Sprintf("%q", content), func() {
+			dot, wt := memfs.New(), memfs.New()
+			r, err := Init(filesystem.NewStorage(dot, cache.NewObjectLRUDefault()), WithWorkTree(wt))
+			s.Require().NoError(err)
+			s.Require().NoError(util.WriteFile(dot, "refs/heads/master", []byte(content), 0o644))
+			s.Require().NoError(util.WriteFile(wt, "f", []byte("x"), 0o644))
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			status, err := w.Status()
+			s.Require().NoError(err)
+			s.Equal(Untracked, status.File("f").Worktree)
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestStatusCheckedInBeforeIgnored() {
 	fs := memfs.New()
 	storage := memory.NewStorage()
@@ -4856,4 +4877,55 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 	})
+}
+
+// A loose ref that exists but cannot be read is not an unborn branch: like
+// git, which refuses with "unable to resolve reference", committing on it or
+// creating a branch over it fails instead of replacing the file.
+func TestWritesRefuseBrokenReference(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ op, content string }{
+		{"commit", "garbage\n"},
+		{"commit", ""},
+		{"checkout-create", "garbage\n"},
+		{"checkout-create", ""},
+		{"create-tag", "garbage\n"},
+		{"create-tag", ""},
+	} {
+		op := tc.op
+		t.Run(fmt.Sprintf("%s/%q", op, tc.content), func(t *testing.T) {
+			t.Parallel()
+			dot, wt := memfs.New(), memfs.New()
+			r, err := Init(filesystem.NewStorage(dot, cache.NewObjectLRUDefault()), WithWorkTree(wt))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, util.WriteFile(wt, "f", []byte("x"), 0o644))
+			_, err = w.Add("f")
+			require.NoError(t, err)
+			head, err := w.Commit("a", &CommitOptions{Author: defaultSignature()})
+			require.NoError(t, err)
+
+			var name string
+			switch op {
+			case "commit":
+				name = "refs/heads/master"
+				require.NoError(t, util.WriteFile(dot, name, []byte(tc.content), 0o644))
+				_, err = w.Commit("b", &CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true})
+			case "checkout-create":
+				name = "refs/heads/broken"
+				require.NoError(t, util.WriteFile(dot, name, []byte(tc.content), 0o644))
+				err = w.Checkout(&CheckoutOptions{Branch: plumbing.ReferenceName(name), Create: true, Hash: head})
+			case "create-tag":
+				name = "refs/tags/broken"
+				require.NoError(t, util.WriteFile(dot, name, []byte(tc.content), 0o644))
+				_, err = r.CreateTag("broken", head, nil)
+			}
+			require.ErrorIs(t, err, plumbing.ErrBrokenReference)
+
+			content, err := util.ReadFile(dot, name)
+			require.NoError(t, err)
+			assert.Equal(t, tc.content, string(content))
+		})
+	}
 }

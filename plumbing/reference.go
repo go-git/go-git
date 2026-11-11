@@ -37,6 +37,16 @@ var (
 	// ErrReferenceNotFound is returned when a reference is not found.
 	ErrReferenceNotFound = errors.New("reference not found")
 
+	// ErrBrokenReference is returned when a reference exists but cannot be
+	// read, such as a loose ref file holding neither a symbolic reference
+	// nor an object ID. Unlike a missing reference, it must not be taken as
+	// unborn: like git, operations that read a reference before updating
+	// it, such as commit, checkout, tag creation and fetch, refuse to replace
+	// it, while listings may skip it. Unlike git, a storer's SetReference
+	// and RemoveReference, which do not read it first, still replace or
+	// remove it.
+	ErrBrokenReference = errors.New("reference is broken")
+
 	// ErrInvalidReferenceName is returned when a reference name is invalid.
 	ErrInvalidReferenceName = errors.New("invalid reference name")
 )

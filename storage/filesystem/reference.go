@@ -11,7 +11,9 @@ import (
 // Writes require valid reference names, short enough for git to lock. Reads and
 // deletes use less restrictive path-safety checks so that existing names such
 // as refs/heads/main.lock can be inspected and removed. IterReferences reports
-// stored entries without applying either name check; an enumerated name is not
+// stored entries without applying either name check, skipping only loose
+// entries named ".*" or "*.lock", which Git never reads as refs, and reporting
+// a loose ref it cannot read with the all-zero ID; an enumerated name is not
 // necessarily readable or writable.
 //
 // Path-safety checks apply on every operating system. They reject backslashes,
@@ -61,6 +63,12 @@ func (r *ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 	}
 
 	return storer.NewReferenceSliceIter(refs), nil
+}
+
+// IterReferencesWithPrefix implements storer.PrefixReferenceIterer with lazy,
+// prefix-scoped reads.
+func (r *ReferenceStorage) IterReferencesWithPrefix(prefix string) (storer.ReferenceIter, error) {
+	return r.dir.RefsWithPrefix(prefix)
 }
 
 // RemoveReference deletes the reference with the given name. Invalid-format

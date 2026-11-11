@@ -202,3 +202,36 @@ func (s *ReferenceSuite) TestMultiReferenceIterForEach() {
 	s.Len(result, 2)
 	s.Equal([]string{"foo", "bar"}, result)
 }
+
+// iterOnlyStorer exposes only IterReferences, so IterReferencesWithPrefix
+// has to fall back to it.
+type iterOnlyStorer struct {
+	ReferenceStorer
+	refs []*plumbing.Reference
+}
+
+func (s iterOnlyStorer) IterReferences() (ReferenceIter, error) {
+	return NewReferenceSliceIter(s.refs), nil
+}
+
+func (s *ReferenceSuite) TestIterReferencesWithPrefixFallbackSortsAndKeepsFirst() {
+	st := iterOnlyStorer{refs: []*plumbing.Reference{
+		plumbing.NewReferenceFromStrings("refs/heads/b", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/tags/v1", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/heads/a", "bc9968d75e48de59f0870ffb71f5e160bbbdcf52"),
+		plumbing.NewReferenceFromStrings("refs/heads/b", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+	}}
+
+	iter, err := IterReferencesWithPrefix(st, "refs/heads/")
+	s.Require().NoError(err)
+	var got []string
+	s.Require().NoError(iter.ForEach(func(r *plumbing.Reference) error {
+		got = append(got, r.String())
+		return nil
+	}))
+
+	s.Equal([]string{
+		"bc9968d75e48de59f0870ffb71f5e160bbbdcf52 refs/heads/a",
+		"bc9968d75e48de59f0870ffb71f5e160bbbdcf52 refs/heads/b",
+	}, got)
+}
