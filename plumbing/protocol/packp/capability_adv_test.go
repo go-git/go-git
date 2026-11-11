@@ -33,7 +33,7 @@ func TestCapabilityAdvDecode(t *testing.T) {
 		assert.True(t, ca.Capabilities.Supports(capability.LsRefs))
 		assert.Equal(t, []string{"unborn"}, ca.Capabilities.Get(capability.LsRefs))
 		assert.True(t, ca.Capabilities.Supports(capability.FetchCmd))
-		assert.Equal(t, []string{"shallow", "wait-for-done", "filter"}, ca.Capabilities.Get(capability.FetchCmd))
+		assert.Equal(t, []string{"shallow wait-for-done filter"}, ca.Capabilities.Get(capability.FetchCmd))
 		assert.True(t, ca.Capabilities.Supports(capability.ServerOption))
 		assert.True(t, ca.Capabilities.Supports(capability.ObjectFormat))
 		assert.Equal(t, []string{"sha1"}, ca.Capabilities.Get(capability.ObjectFormat))
@@ -107,7 +107,8 @@ func TestCapabilityAdvEncode(t *testing.T) {
 		assert.Equal(t, protocol.V2, got.Version)
 		assert.Equal(t, []string{"git/2.45.0"}, got.Capabilities.Get(capability.Agent))
 		assert.Equal(t, []string{"unborn"}, got.Capabilities.Get(capability.LsRefs))
-		assert.Equal(t, []string{"shallow", "wait-for-done", "filter"}, got.Capabilities.Get(capability.FetchCmd))
+		// The values go out as one space-separated value and come back as one.
+		assert.Equal(t, []string{"shallow wait-for-done filter"}, got.Capabilities.Get(capability.FetchCmd))
 		assert.True(t, got.Capabilities.Supports(capability.ServerOption))
 		assert.Equal(t, []string{"sha1"}, got.Capabilities.Get(capability.ObjectFormat))
 	})

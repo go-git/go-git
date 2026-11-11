@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 )
 
 // Encode writes the AdvRefs encoding to a writer.
@@ -33,9 +35,15 @@ func (a *AdvRefs) Encode(w io.Writer) error {
 	// Write first line: hash SP refname NUL capabilities
 	caps := a.Capabilities.String()
 	if firstName == "" {
-		// No refs: zero-id capabilities^{}
+		// No refs: zero-id capabilities^{}, sized for the advertised
+		// object format.
+		zero := plumbing.ZeroHash
+		// The first advertised object-format value is the repository's.
+		if vals := a.Capabilities.Get(capability.ObjectFormat); len(vals) > 0 {
+			zero.ResetBySize(config.ObjectFormat(vals[0]).Size())
+		}
 		firstLine := fmt.Sprintf("%s %s\x00%s\n",
-			plumbing.ZeroHash.String(), "capabilities^{}", caps)
+			zero.String(), "capabilities^{}", caps)
 		if _, err := pktline.WriteString(w, firstLine); err != nil {
 			return err
 		}
