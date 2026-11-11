@@ -116,6 +116,81 @@ func (p *objectWalker) walkAllRefs() error {
 	return err
 }
 
+// walkReflogs preserves available objects mentioned by reflogs.
+func (p *objectWalker) walkReflogs() error {
+	iter, ok := p.Storer.(interface {
+		ForEachReflogHash(func(plumbing.Hash) error) error
+	})
+	if !ok {
+		return nil
+	}
+
+	return iter.ForEachReflogHash(func(hash plumbing.Hash) error {
+		if hash.IsZero() || p.isSeen(hash) {
+			return nil
+		}
+
+		if !p.promisor {
+			err := p.Storer.HasEncodedObject(hash)
+			if errors.Is(err, plumbing.ErrObjectNotFound) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("checking reflog object %s: %w", hash, err)
+			}
+		}
+
+		if err := p.walkObjectTree(hash); err != nil {
+			return fmt.Errorf("walking reflog object %s: %w", hash, err)
+		}
+		return nil
+	})
+}
+
+// walkIndex includes objects reachable only through the staging index.
+func (p *objectWalker) walkIndex() error {
+	idx, err := p.Storer.Index()
+	if err != nil {
+		return fmt.Errorf("reading index: %w", err)
+	}
+
+	for _, entry := range idx.Entries {
+		if entry.IntentToAdd ||
+			entry.Hash == plumbing.ZeroHash ||
+			entry.Mode == filemode.Submodule {
+			continue
+		}
+
+		if entry.Mode == filemode.Dir {
+			if err := p.walkObjectTree(entry.Hash); err != nil {
+				return fmt.Errorf("walking indexed tree %q: %w", entry.Name, err)
+			}
+			continue
+		}
+
+		if !entry.Mode.IsFile() {
+			return fmt.Errorf("unsupported index mode %s for %q", entry.Mode, entry.Name)
+		}
+
+		if p.isSeen(entry.Hash) {
+			continue
+		}
+
+		if err := p.Storer.HasEncodedObject(entry.Hash); err != nil {
+			if p.promisor && errors.Is(err, plumbing.ErrObjectNotFound) {
+				p.add(entry.Hash)
+				p.missing[entry.Hash] = struct{}{}
+				continue
+			}
+			return fmt.Errorf("reading indexed object %q: %w", entry.Name, err)
+		}
+
+		p.add(entry.Hash)
+	}
+
+	return nil
+}
+
 func (p *objectWalker) isSeen(hash plumbing.Hash) bool {
 	_, seen := p.seen[hash]
 	return seen

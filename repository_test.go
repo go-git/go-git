@@ -4910,3 +4910,315 @@ func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
 	s.Require().NoError(r.Storer.HasEncodedObject(commit))
 	s.Require().NoError(r.Storer.HasEncodedObject(tree))
 }
+
+func TestRepackObjectsIncludesStagedBlobInReplacementPack(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+	if !gitAtLeast(t, 2, 30) {
+		t.Skip("requires git maintenance loose-objects support")
+	}
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "committed"),
+		[]byte("committed\n"), 0o644,
+	))
+	git(t, dir, "add", "committed")
+	git(t, dir, "commit", "-q", "-m", "first")
+	git(t, dir, "gc", "-q")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "staged"),
+		[]byte("staged\n"), 0o644,
+	))
+	git(t, dir, "add", "staged")
+
+	git(t, dir, "maintenance", "run", "--task=loose-objects")
+	git(t, dir, "maintenance", "run", "--task=loose-objects")
+
+	staged := strings.TrimSpace(
+		git(t, dir, "rev-parse", ":staged"),
+	)
+
+	_, err := os.Stat(filepath.Join(
+		dir, ".git", "objects", staged[:2], staged[2:],
+	))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+
+	indexes, err := filepath.Glob(filepath.Join(
+		dir, ".git", "objects", "pack", "pack-*.idx",
+	))
+	require.NoError(t, err)
+	require.Len(t, indexes, 1)
+
+	packContents := git(t, dir, "verify-pack", "-v", indexes[0])
+	require.Contains(t, packContents, staged+" blob ")
+}
+
+func TestRepackObjectsPreservesIndexedSymlink(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "base"), []byte("base"), 0o644,
+	))
+	git(t, dir, "add", "base")
+	git(t, dir, "commit", "-q", "-m", "base")
+	git(t, dir, "gc", "-q")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "target"), []byte("link-target"), 0o644,
+	))
+	hash := strings.TrimSpace(git(t, dir, "hash-object", "-w", "target"))
+	git(t, dir, "update-index", "--add", "--cacheinfo",
+		"120000,"+hash+",link")
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+
+	indexes, err := filepath.Glob(filepath.Join(
+		dir, ".git", "objects", "pack", "pack-*.idx",
+	))
+	require.NoError(t, err)
+	require.Len(t, indexes, 1)
+	require.Contains(t,
+		git(t, dir, "verify-pack", "-v", indexes[0]),
+		hash+" blob ",
+	)
+}
+
+func TestRepackObjectsSkipsIndexedSubmodule(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "base"), []byte("base"), 0o644,
+	))
+	git(t, dir, "add", "base")
+	git(t, dir, "commit", "-q", "-m", "base")
+	git(t, dir, "gc", "-q")
+
+	git(t, dir, "update-index", "--add", "--cacheinfo",
+		"160000,"+strings.Repeat("a", 40)+",module")
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+	git(t, dir, "cat-file", "-e", "HEAD")
+}
+
+func TestRepackObjectsRejectsMissingIndexedBlob(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "base"), []byte("base"), 0o644,
+	))
+	git(t, dir, "add", "base")
+	git(t, dir, "commit", "-q", "-m", "base")
+	git(t, dir, "gc", "-q")
+
+	git(t, dir, "update-index", "--add", "--cacheinfo",
+		"100644,"+strings.Repeat("b", 40)+",missing")
+
+	pattern := filepath.Join(
+		dir, ".git", "objects", "pack", "pack-*.pack",
+	)
+	before, err := filepath.Glob(pattern)
+	require.NoError(t, err)
+	require.NotEmpty(t, before)
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.Error(t, repo.RepackObjects(&RepackConfig{}))
+
+	after, err := filepath.Glob(pattern)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	git(t, dir, "cat-file", "-e", "HEAD")
+}
+
+func TestRepackObjectsIncludesReflogOnlyCommit(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	git(t, dir, "config", "core.logAllRefUpdates", "true")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "base"), []byte("base\n"), 0o644,
+	))
+	git(t, dir, "add", "base")
+	git(t, dir, "commit", "-q", "-m", "base")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "reflog-only"),
+		[]byte("preserve through reflog\n"), 0o644,
+	))
+	git(t, dir, "add", "reflog-only")
+	git(t, dir, "commit", "-q", "-m", "reflog commit")
+
+	oldCommit := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	oldBlob := strings.TrimSpace(
+		git(t, dir, "rev-parse", "HEAD:reflog-only"),
+	)
+
+	git(t, dir, "gc", "-q")
+	git(t, dir, "reset", "--hard", "HEAD~1")
+
+	require.Contains(t,
+		git(t, dir, "reflog", "show", "--format=%H", "HEAD"),
+		oldCommit,
+	)
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+
+	indexes, err := filepath.Glob(filepath.Join(
+		dir, ".git", "objects", "pack", "pack-*.idx",
+	))
+	require.NoError(t, err)
+	require.Len(t, indexes, 1)
+
+	contents := git(t, dir, "verify-pack", "-v", indexes[0])
+	require.Contains(t, contents, oldCommit+" commit ")
+	require.Contains(t, contents, oldBlob+" blob ")
+}
+
+func TestRepackObjectsIncludesOrphanedReflog(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	git(t, dir, "config", "core.logAllRefUpdates", "true")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "base"), []byte("base\n"), 0o644,
+	))
+	git(t, dir, "add", "base")
+	git(t, dir, "commit", "-q", "-m", "base")
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "second"), []byte("second\n"), 0o644,
+	))
+	git(t, dir, "add", "second")
+	git(t, dir, "commit", "-q", "-m", "second")
+
+	oldCommit := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	git(t, dir, "gc", "-q")
+	git(t, dir, "reset", "--hard", "HEAD~1")
+
+	logs := filepath.Join(dir, ".git", "logs")
+	headLog, err := os.ReadFile(filepath.Join(logs, "HEAD"))
+	require.NoError(t, err)
+
+	orphan := filepath.Join(logs, "refs", "heads", "deleted")
+	require.NoError(t, os.MkdirAll(filepath.Dir(orphan), 0o755))
+	require.NoError(t, os.WriteFile(orphan, headLog, 0o644))
+
+	branch := strings.TrimSpace(
+		git(t, dir, "symbolic-ref", "--short", "HEAD"),
+	)
+	require.NoError(t, os.Remove(filepath.Join(logs, "HEAD")))
+	require.NoError(t, os.Remove(
+		filepath.Join(logs, "refs", "heads", branch),
+	))
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+
+	indexes, err := filepath.Glob(filepath.Join(
+		dir, ".git", "objects", "pack", "pack-*.idx",
+	))
+	require.NoError(t, err)
+	require.Len(t, indexes, 1)
+	require.Contains(t,
+		git(t, dir, "verify-pack", "-v", indexes[0]),
+		oldCommit+" commit ",
+	)
+}
+
+func TestRepackObjectsSkipsInvalidReflogEntries(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	git(t, dir, "config", "core.logAllRefUpdates", "true")
+
+	for _, name := range []string{"base", "second"} {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, name), []byte(name), 0o644,
+		))
+		git(t, dir, "add", name)
+		git(t, dir, "commit", "-q", "-m", name)
+	}
+
+	oldCommit := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	git(t, dir, "gc", "-q")
+	git(t, dir, "reset", "--hard", "HEAD~1")
+
+	logPath := filepath.Join(dir, ".git", "logs", "HEAD")
+	original, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+
+	missing := strings.Repeat("a", 40) + " " +
+		strings.Repeat("b", 40) +
+		" Tester <test@example.org> 1234567890 +0000\tmissing\\n"
+
+	contents := append([]byte("invalid first line\n"), original...)
+	contents = append(contents, []byte("invalid last line\n"+missing)...)
+	require.NoError(t, os.WriteFile(logPath, contents, 0o644))
+
+	branch := strings.TrimSpace(
+		git(t, dir, "symbolic-ref", "--short", "HEAD"),
+	)
+	require.NoError(t, os.Remove(filepath.Join(
+		dir, ".git", "logs", "refs", "heads", branch,
+	)))
+
+	repo, err := PlainOpen(dir)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	require.NoError(t, repo.RepackObjects(&RepackConfig{}))
+
+	indexes, err := filepath.Glob(filepath.Join(
+		dir, ".git", "objects", "pack", "pack-*.idx",
+	))
+	require.NoError(t, err)
+	require.Len(t, indexes, 1)
+	require.Contains(t,
+		git(t, dir, "verify-pack", "-v", indexes[0]),
+		oldCommit+" commit ",
+	)
+}
