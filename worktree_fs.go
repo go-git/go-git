@@ -33,7 +33,7 @@ func defaultProtectHFS() bool {
 //
 // [1]: https://github.com/git/git/commit/9102f958ee5
 func defaultProtectNTFS() bool {
-	return true
+	return runtime.GOOS == "windows"
 }
 
 // worktreeFilesystem wraps a billy.Filesystem and validates every path it
