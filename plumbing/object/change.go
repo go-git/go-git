@@ -41,6 +41,8 @@ func (c *Change) Action() (merkletrie.Action, error) {
 
 // Files returns the files before and after a change.
 // For insertions from will be nil. For deletions to will be nil.
+// The returned File objects have their Name field set to the full path
+// (from ChangeEntry.Name), not just the basename from TreeEntry.Name.
 func (c *Change) Files() (from, to *File, err error) {
 	action, err := c.Action()
 	if err != nil {
@@ -48,22 +50,22 @@ func (c *Change) Files() (from, to *File, err error) {
 	}
 
 	if action == merkletrie.Insert || action == merkletrie.Modify {
-		to, err = c.To.Tree.TreeEntryFile(&c.To.TreeEntry)
 		if !c.To.TreeEntry.Mode.IsFile() {
 			return nil, nil, nil
 		}
 
+		to, err = c.To.Tree.FileFromEntry(c.To.Name, &c.To.TreeEntry)
 		if err != nil {
 			return from, to, err
 		}
 	}
 
 	if action == merkletrie.Delete || action == merkletrie.Modify {
-		from, err = c.From.Tree.TreeEntryFile(&c.From.TreeEntry)
 		if !c.From.TreeEntry.Mode.IsFile() {
 			return nil, nil, nil
 		}
 
+		from, err = c.From.Tree.FileFromEntry(c.From.Name, &c.From.TreeEntry)
 		if err != nil {
 			return from, to, err
 		}
