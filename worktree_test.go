@@ -2960,6 +2960,14 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 
 			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0o644)
 			s.NoError(err)
+			idx := &index.Index{Version: 2}
+			for name := range tc.expected {
+				idx.Entries = append(idx.Entries, &index.Entry{
+					Name: name,
+					Mode: filemode.Submodule,
+				})
+			}
+			s.Require().NoError(r.Storer.SetIndex(idx))
 
 			submodules, err := w.Submodules()
 			s.NoError(err)

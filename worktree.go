@@ -1242,7 +1242,8 @@ func resolveModuleURL(originURL, moduleURL string) (string, error) {
 	return base.String(), nil
 }
 
-// Submodules returns all the available submodules
+// Submodules returns the submodules declared in .gitmodules that have a gitlink
+// in the index.
 func (w *Worktree) Submodules() (Submodules, error) {
 	cfg, err := w.r.Config()
 	if err != nil {
@@ -1259,6 +1260,16 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 	if err != nil || m == nil {
 		return l, err
 	}
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return nil, err
+	}
+	gitlinks := make(map[string]struct{})
+	for _, entry := range idx.Entries {
+		if entry.Mode == filemode.Submodule {
+			gitlinks[entry.Name] = struct{}{}
+		}
+	}
 
 	var originURL string
 	if origin, err := w.r.Remote(DefaultRemoteName); err == nil {
@@ -1268,6 +1279,9 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 	}
 
 	for _, s := range m.Submodules {
+		if _, ok := gitlinks[s.Path]; !ok {
+			continue
+		}
 		sub := w.newSubmodule(s, cfg.Submodules[s.Name])
 		subCfg := sub.Config()
 		resolvedURL, err := resolveModuleURL(originURL, subCfg.URL)
