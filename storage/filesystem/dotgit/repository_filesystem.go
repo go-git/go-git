@@ -100,6 +100,16 @@ func (fs *RepositoryFilesystem) Remove(filename string) error {
 	return fs.mapToRepositoryFsByPath(filename).Remove(filename)
 }
 
+// Chmod changes the mode of a file in the appropriate filesystem. It returns
+// [billy.ErrNotSupported] when that filesystem cannot change modes.
+func (fs *RepositoryFilesystem) Chmod(name string, mode os.FileMode) error {
+	c, ok := fs.mapToRepositoryFsByPath(name).(billy.Chmod)
+	if !ok {
+		return billy.ErrNotSupported
+	}
+	return c.Chmod(name, mode)
+}
+
 // Join joins path elements using the dot-git filesystem.
 func (fs *RepositoryFilesystem) Join(elem ...string) string {
 	return fs.dotGitFs.Join(elem...)
