@@ -2,6 +2,8 @@ package commitgraph_test
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"os"
 	"path"
 	"strings"
@@ -11,11 +13,13 @@ import (
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/util"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/commitgraph"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 func TestOpenChainFile(t *testing.T) {
@@ -40,11 +44,12 @@ func TestOpenChainFile(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			option := commitgraph.WithObjectFormat(formatcfg.ObjectFormat(tc.name))
 
 			chainData := strings.Join(tc.goodShas, "\n") + "\n"
 			chainReader := strings.NewReader(chainData)
 
-			chain, err := commitgraph.OpenChainFile(chainReader)
+			chain, err := commitgraph.OpenChainFile(chainReader, option)
 			require.NoError(t, err)
 			assert.Equal(t, chain, tc.goodShas)
 
@@ -53,14 +58,14 @@ func TestOpenChainFile(t *testing.T) {
 
 			chainReader = strings.NewReader(chainData)
 
-			chain, err = commitgraph.OpenChainFile(chainReader)
+			chain, err = commitgraph.OpenChainFile(chainReader, option)
 			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
 			assert.Nil(t, chain)
 
 			// Test with empty file
 			emptyChainReader := bytes.NewReader(nil)
 
-			chain, err = commitgraph.OpenChainFile(emptyChainReader)
+			chain, err = commitgraph.OpenChainFile(emptyChainReader, option)
 			require.NoError(t, err)
 			assert.Equal(t, []string{}, chain)
 
@@ -68,7 +73,7 @@ func TestOpenChainFile(t *testing.T) {
 			newlineChainData := []byte("\n\n\n")
 			newlineChainReader := bytes.NewReader(newlineChainData)
 
-			chain, err = commitgraph.OpenChainFile(newlineChainReader)
+			chain, err = commitgraph.OpenChainFile(newlineChainReader, option)
 			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
 			assert.Nil(t, chain)
 		})
@@ -78,16 +83,21 @@ func TestOpenChainFile(t *testing.T) {
 func TestOpenChainIndexBrokenLayer(t *testing.T) {
 	t.Parallel()
 
-	const (
-		base = "c336d16298a017486c4164c40f8acb28afe64e84"
-		tip  = "31eae7b619d166c366bf5df4991f04ba8cebea0a"
-	)
+	const tip = "31eae7b619d166c366bf5df4991f04ba8cebea0a"
 
+	// A chain names each layer by its trailing checksum, so the valid
+	// base must be named after the graph it holds.
+	baseGraph := encodeTestGraph(t)
+	base := hex.EncodeToString(baseGraph[len(baseGraph)-sha1.Size:])
+
+	// Like Git, a chain keeps the layers below a broken one, so only a
+	// broken first layer fails it.
 	tests := []struct {
 		name   string
 		chain  []string
 		graphs map[string][]byte
 		err    error
+		hashes uint32
 	}{
 		{
 			name:  "missing graph",
@@ -103,17 +113,37 @@ func TestOpenChainIndexBrokenLayer(t *testing.T) {
 		{
 			name:   "missing graph after valid base",
 			chain:  []string{base, tip},
-			graphs: map[string][]byte{base: encodeTestGraph(t)},
-			err:    os.ErrNotExist,
+			graphs: map[string][]byte{base: baseGraph},
+			hashes: 1,
 		},
 		{
 			name:  "corrupt graph after valid base",
 			chain: []string{base, tip},
 			graphs: map[string][]byte{
-				base: encodeTestGraph(t),
+				base: baseGraph,
 				tip:  []byte("not a graph"),
 			},
-			err: commitgraph.ErrMalformedCommitGraphFile,
+			hashes: 1,
+		},
+		{
+			// An entry's length, as shorter remainders are not read.
+			name:   "malformed entry after valid base",
+			chain:  []string{base, "not a hash" + strings.Repeat(" ", 30)},
+			graphs: map[string][]byte{base: baseGraph},
+			hashes: 1,
+		},
+		{
+			name:   "other format's entry after valid base",
+			chain:  []string{base, strings.Repeat("a", 64)},
+			graphs: map[string][]byte{base: baseGraph},
+			hashes: 1,
+		},
+		{
+			// Like Git, the chain's name for its top layer is not checked.
+			name:   "only graph named after another",
+			chain:  []string{tip},
+			graphs: map[string][]byte{tip: baseGraph},
+			hashes: 1,
 		},
 	}
 
@@ -130,8 +160,30 @@ func TestOpenChainIndexBrokenLayer(t *testing.T) {
 			}
 
 			index, err := commitgraph.OpenChainIndex(fs)
-			require.ErrorIs(t, err, tc.err)
-			assert.Nil(t, index)
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				assert.Nil(t, index)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.hashes, index.MaximumNumberOfHashes())
+				require.NoError(t, index.Close())
+			}
+			assert.Zero(t, fs.open, "files left open")
+
+			// With WithStrictChain, a chain that loads only in part is an
+			// error, and none of its layers is left open.
+			index, err = commitgraph.OpenChainIndex(fs, commitgraph.WithStrictChain())
+			switch {
+			case tc.err != nil:
+				require.ErrorIs(t, err, tc.err)
+				assert.Nil(t, index)
+			case len(tc.chain) > 1:
+				require.ErrorIs(t, err, commitgraph.ErrIncompleteChain)
+				assert.Nil(t, index)
+			default:
+				require.NoError(t, err)
+				require.NoError(t, index.Close())
+			}
 			assert.Zero(t, fs.open, "files left open")
 		})
 	}
@@ -216,6 +268,28 @@ func encodeTestGraph(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
+func TestOpenChainFileIgnoresUnterminatedEntry(t *testing.T) {
+	t.Parallel()
+	first := strings.Repeat("a", 40)
+	last := strings.Repeat("b", 40)
+	for _, tc := range []struct {
+		name string
+		data string
+		want []string
+	}{
+		{"terminated", first + "\n" + last + "\n", []string{first, last}},
+		{"unterminated", first + "\n" + last, []string{first}},
+		{"single unterminated", last, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			chain, err := commitgraph.OpenChainFile(strings.NewReader(tc.data))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, chain)
+		})
+	}
+}
+
 var (
 	sha1Data = []string{
 		"c336d16298a017486c4164c40f8acb28afe64e84",
@@ -273,3 +347,134 @@ var (
 		"3a00a29e08d29454b5197662f70ccab5699b0ce8c85af7fbf511b8915d97cfdx",
 	}
 )
+
+// TestOpenChainIndexMisnamedLowerLayer checks that a layer the chain cannot
+// add, because the chain names the layer below it after another graph, is
+// closed, and that the layers kept are closed with the index.
+func TestOpenChainIndexMisnamedLowerLayer(t *testing.T) {
+	t.Parallel()
+
+	matches := fixtures.ByTag("commit-graph-chain-sha1")
+	require.Len(t, matches, 1)
+	dotgit, err := matches.One().DotGit(fixtures.WithMemFS())
+	require.NoError(t, err)
+	fs := &closeTrackingFS{Filesystem: dotgit}
+
+	dir := path.Join("objects", "info", "commit-graphs")
+	chainPath := path.Join(dir, "commit-graph-chain")
+	f, err := fs.Open(chainPath)
+	require.NoError(t, err)
+	names, err := commitgraph.OpenChainFile(f)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Greater(t, len(names), 1)
+
+	wrong := strings.Repeat("f", len(names[0]))
+	require.NoError(t, fs.Rename(path.Join(dir, "graph-"+names[0]+".graph"), path.Join(dir, "graph-"+wrong+".graph")))
+	names[0] = wrong
+	require.NoError(t, util.WriteFile(fs, chainPath, []byte(strings.Join(names, "\n")+"\n"), 0o644))
+
+	index, err := commitgraph.OpenChainIndex(fs)
+	require.NoError(t, err)
+	assert.Equal(t, 1, fs.open, "only the first layer stays open")
+	require.NoError(t, index.Close())
+	assert.Zero(t, fs.open, "files left open")
+
+	_, err = commitgraph.OpenChainIndex(fs, commitgraph.WithStrictChain())
+	require.ErrorIs(t, err, commitgraph.ErrIncompleteChain)
+	assert.Zero(t, fs.open, "files left open")
+}
+
+// TestEncodeOutOfHashOrder checks that commit data is written for the right
+// commit when the index is filled in an order other than by hash.
+func TestEncodeOutOfHashOrder(t *testing.T) {
+	t.Parallel()
+
+	trees := map[plumbing.Hash]plumbing.Hash{
+		plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"): plumbing.NewHash("1111111111111111111111111111111111111111"),
+		plumbing.NewHash("8888888888888888888888888888888888888888"): plumbing.NewHash("2222222222222222222222222222222222222222"),
+		plumbing.NewHash("0000000000000000000000000000000000000001"): plumbing.NewHash("3333333333333333333333333333333333333333"),
+	}
+	idx := commitgraph.NewMemoryIndex()
+	for _, h := range []string{
+		"ffffffffffffffffffffffffffffffffffffffff",
+		"8888888888888888888888888888888888888888",
+		"0000000000000000000000000000000000000001",
+	} {
+		hash := plumbing.NewHash(h)
+		idx.Add(hash, &commitgraph.CommitData{TreeHash: trees[hash], Generation: 1, When: time.Unix(1, 0)})
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, commitgraph.NewEncoder(&buf).Encode(idx))
+	got, err := commitgraph.OpenFileIndex(discardCloseReader{bytes.NewReader(buf.Bytes())})
+	require.NoError(t, err)
+	defer got.Close()
+
+	for commit, tree := range trees {
+		i, err := got.GetIndexByHash(commit)
+		require.NoError(t, err)
+		data, err := got.GetCommitDataByIndex(i)
+		require.NoError(t, err)
+		assert.Equal(t, tree, data.TreeHash, "commit %s", commit)
+	}
+}
+
+// TestOpenChainIndexTrailingContent checks that, as in Git, only as many
+// lines of commit-graph-chain are read as its size has room for whole
+// entries, so a shorter remainder after the last entry is ignored even
+// with WithStrictChain, while a remainder of an entry's length is read as
+// another layer.
+func TestOpenChainIndexTrailingContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		trailer  string
+		complete bool
+	}{
+		{name: "blank line", trailer: "\n", complete: true},
+		{name: "blank lines", trailer: "\n\n\n", complete: true},
+		{name: "partial line", trailer: "abc", complete: true},
+		{name: "short line", trailer: "abc\n", complete: true},
+		{name: "entry-length line", trailer: strings.Repeat("x", 40) + "\n", complete: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			matches := fixtures.ByTag("commit-graph-chain-sha1")
+			require.Len(t, matches, 1)
+			dotgit, err := matches.One().DotGit(fixtures.WithMemFS())
+			require.NoError(t, err)
+			fs := &closeTrackingFS{Filesystem: dotgit}
+
+			want, err := commitgraph.OpenChainIndex(fs, commitgraph.WithStrictChain())
+			require.NoError(t, err)
+			hashes := want.MaximumNumberOfHashes()
+			require.NoError(t, want.Close())
+
+			chainPath := path.Join("objects", "info", "commit-graphs", "commit-graph-chain")
+			data, err := util.ReadFile(fs, chainPath)
+			require.NoError(t, err)
+			require.NoError(t, util.WriteFile(fs, chainPath, append(data, tc.trailer...), 0o644))
+
+			index, err := commitgraph.OpenChainIndex(fs)
+			require.NoError(t, err)
+			assert.Equal(t, hashes, index.MaximumNumberOfHashes())
+			require.NoError(t, index.Close())
+
+			index, err = commitgraph.OpenChainIndex(fs, commitgraph.WithStrictChain())
+			if tc.complete {
+				require.NoError(t, err)
+				assert.Equal(t, hashes, index.MaximumNumberOfHashes())
+				require.NoError(t, index.Close())
+			} else {
+				require.ErrorIs(t, err, commitgraph.ErrIncompleteChain)
+				assert.Nil(t, index)
+			}
+			assert.Zero(t, fs.open, "files left open")
+		})
+	}
+}
