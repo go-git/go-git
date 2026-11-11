@@ -1167,6 +1167,8 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Tags:          o.Tags,
 		RemoteName:    o.RemoteName,
 		Filter:        o.Filter,
+		// git clone does not write FETCH_HEAD.
+		NoWriteFetchHead: true,
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
