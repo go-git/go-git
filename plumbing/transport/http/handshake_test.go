@@ -758,6 +758,167 @@ func TestFetchClosesResponseOnNegotiationError(t *testing.T) {
 		"a non-cancellation negotiation error must close the response body")
 }
 
+// TestFetchKeepsConnection checks that a fetch into storage that stops reading
+// at the pack trailer still reads the response to its end, so the connection
+// is reused. The response is chunked, as git http-backend sends it, and the
+// server ends it only once the pack is stored, so the end of the body is
+// only seen by reading on after the pack.
+func TestFetchKeepsConnection(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	pack, err := f.Packfile()
+	require.NoError(t, err)
+	packData, err := io.ReadAll(pack)
+	require.NoError(t, err)
+
+	stored := make(chan struct{}, 1)
+	srv, conns := connCountingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+		_, _ = w.Write([]byte("0008NAK\n"))
+		_, _ = w.Write(packData)
+		w.(http.Flusher).Flush()
+
+		select {
+		case <-stored:
+		case <-r.Context().Done():
+		}
+	})
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	session := &smartPackSession{
+		sessionBase: sessionBase{
+			client:  srv.Client(),
+			baseURL: u,
+			service: transport.UploadPackService,
+		},
+	}
+
+	for range 2 {
+		// The handler holds the response open until the pack is stored, so a
+		// fetch that reads on to EOF would otherwise wait for the test timeout.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		st := &packStoredStorage{Storage: initBareStorage(t, t.TempDir()), stored: stored}
+		err := session.Fetch(ctx, st, &transport.FetchRequest{
+			Wants: []plumbing.Hash{plumbing.NewHash(f.Head)},
+		})
+		cancel()
+		require.NoError(t, err)
+		require.NoError(t, st.HasEncodedObject(plumbing.NewHash(f.Head)))
+	}
+
+	assert.Equal(t, int64(1), conns.Load())
+}
+
+// packStoredStorage signals stored when a packfile written to it is closed.
+type packStoredStorage struct {
+	*filesystem.Storage
+	stored chan<- struct{}
+}
+
+func (s *packStoredStorage) PackfileWriter() (io.WriteCloser, error) {
+	w, err := s.Storage.PackfileWriter()
+	if err != nil {
+		return nil, err
+	}
+
+	return &packStoredWriter{WriteCloser: w, PackReader: w.(storer.PackReader), stored: s.stored}, nil
+}
+
+type packStoredWriter struct {
+	io.WriteCloser
+	storer.PackReader
+	stored chan<- struct{}
+}
+
+func (w *packStoredWriter) Close() error {
+	defer func() { w.stored <- struct{}{} }()
+	return w.WriteCloser.Close()
+}
+
+// TestFetchResponseAfterPack checks what Fetch does with the rest of the
+// response once storage has stopped at the pack trailer: data that keeps
+// coming is discarded only up to maxDrainSize, and a body that breaks fails
+// the fetch.
+func TestFetchResponseAfterPack(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	pack, err := f.Packfile()
+	require.NoError(t, err)
+	packData, err := io.ReadAll(pack)
+	require.NoError(t, err)
+	response := append([]byte("0008NAK\n"), packData...)
+
+	fetch := func(t *testing.T, srv *httptest.Server) error {
+		t.Helper()
+
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		session := &smartPackSession{
+			sessionBase: sessionBase{
+				client:  srv.Client(),
+				baseURL: u,
+				service: transport.UploadPackService,
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return session.Fetch(ctx, initBareStorage(t, t.TempDir()), &transport.FetchRequest{
+			Wants: []plumbing.Hash{plumbing.NewHash(f.Head)},
+		})
+	}
+
+	t.Run("endless data", func(t *testing.T) {
+		t.Parallel()
+
+		var sent atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+			_, _ = w.Write(response)
+			junk := bytes.Repeat([]byte{'x'}, 32<<10)
+			for r.Context().Err() == nil {
+				n, err := w.Write(junk)
+				sent.Add(int64(n))
+				if err != nil {
+					return
+				}
+			}
+		}))
+		t.Cleanup(srv.Close)
+
+		require.NoError(t, fetch(t, srv))
+		// The rest is what fills the socket buffers before the response is
+		// closed; without the cap the fetch reads until the timeout.
+		assert.Less(t, sent.Load(), int64(64<<20))
+	})
+
+	t.Run("broken framing", func(t *testing.T) {
+		t.Parallel()
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.ReadAll(r.Body)
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\n"+
+				"Content-Type: application/x-git-upload-pack-result\r\n"+
+				"Transfer-Encoding: chunked\r\n\r\n%x\r\n", len(response))
+			_, _ = buf.Write(response)
+			_, _ = buf.WriteString("\r\nnot a chunk size\r\n")
+			_ = buf.Flush()
+		}))
+		t.Cleanup(srv.Close)
+
+		require.Error(t, fetch(t, srv))
+	})
+}
+
 // serveInfoRefs answers /info/refs with the given content type and body, and
 // nothing else, so the handshake is decided purely by that response.
 func serveInfoRefs(t testing.TB, contentType, body string) *url.URL {
