@@ -85,6 +85,19 @@ func (s *Submodule) status(idx *index.Index) (*SubmoduleStatus, error) {
 		return status, nil
 	}
 
+	storer, err := s.w.r.Storer.Module(s.c.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = storer.Reference(plumbing.HEAD)
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return status, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	r, err := s.Repository()
 	if err != nil {
 		return nil, err
