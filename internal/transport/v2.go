@@ -103,15 +103,11 @@ func LsRefs(ctx context.Context, cmd CommandFunc, server capability.List, refPre
 
 // IsEmptyLsRefs reports whether out advertises no reference with an object id,
 // the v2 equivalent of an empty v0/v1 advertisement. An unborn HEAD is not a
-// reference (connect.c process_ref_v2), and the decoder keeps it in References
-// once at most. A symbolic HEAD that carries an object id is a reference, even
-// when a ref-prefix left its target out of the result.
+// reference (connect.c process_ref_v2). A symbolic HEAD that carries an object
+// id is a reference, even when a ref-prefix left its target out of the result.
 func IsEmptyLsRefs(out *packp.LsRefsOutput) bool {
-	n := len(out.References)
-	if out.UnbornHead != "" {
-		n--
-	}
-	return n == 0
+	return len(out.References) == 0 ||
+		(len(out.References) == 1 && out.UnbornHead != "")
 }
 
 // wantsLocal reports whether every wanted object is already present in haves, so

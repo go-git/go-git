@@ -386,15 +386,16 @@ func (r *Remote) FetchContext(ctx context.Context, o *FetchOptions) error {
 
 // fetchRefPrefixes derives the ls-refs "ref-prefix" hints for a fetch from its
 // refspecs and tag mode, mirroring canonical git (builtin/fetch.c,
-// builtin/clone.c). HEAD is always included so default-branch resolution keeps
-// working (e.g. on clone), and refs/tags/ is added when tags are being
-// followed.
+// builtin/clone.c). HEAD is included when wantsHead is set or a refspec reads
+// from it, so default-branch resolution keeps working (e.g. on clone), and
+// refs/tags/ is added when tags are being followed. wantsHead mirrors git
+// clone's wants_head, which a single-branch clone of a named ref clears.
 //
 // ref-prefix is purely an optimization, so the returned prefixes must cover
 // every ref the fetch could match. When a refspec cannot be safely turned into
 // a prefix (an exact-OID source) or there are no refspecs, it returns nil to
 // request the full advertisement rather than risk under-scoping it.
-func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
+func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode, wantsHead bool) []string {
 	if len(specs) == 0 {
 		return nil
 	}
@@ -422,10 +423,11 @@ func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
 
 		// A HEAD source (single-branch clone, "+HEAD:...") resolves through a
 		// symref to a branch under refs/heads/. HEAD itself is appended
-		// unconditionally below, so advertise that namespace too; otherwise a
-		// v2 server that strictly honours ref-prefix omits the resolved branch
-		// and it cannot be fetched. Matches git clone.
+		// below, so advertise that namespace too. Otherwise a v2 server that
+		// strictly honours ref-prefix omits the resolved branch and it cannot
+		// be fetched. Matches git clone.
 		if src == "HEAD" {
+			wantsHead = true
 			prefixes = append(prefixes, plumbing.RefHeadPrefix)
 			continue
 		}
@@ -445,7 +447,9 @@ func fetchRefPrefixes(specs []config.RefSpec, tags plumbing.TagMode) []string {
 	if tags == plumbing.AllTags || tags == plumbing.TagFollowing {
 		prefixes = append(prefixes, "refs/tags/")
 	}
-	prefixes = append(prefixes, "HEAD")
+	if wantsHead {
+		prefixes = append(prefixes, "HEAD")
+	}
 	return prefixes
 }
 
@@ -513,7 +517,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	rRefs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{
-		RefPrefixes: fetchRefPrefixes(o.RefSpecs, o.Tags),
+		RefPrefixes: fetchRefPrefixes(o.RefSpecs, o.Tags, !o.skipHead),
 	})
 	if err != nil {
 		return nil, err
