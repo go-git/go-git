@@ -13,6 +13,7 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/utils/diff"
 )
@@ -256,6 +257,9 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		}
 		prevHash, err := blobHash(prev.Path, prev.Commit)
 		if err != nil {
+			if errors.Is(err, object.ErrFileNotFound) {
+				continue
+			}
 			return false, err
 		}
 		if currentHash == prevHash {
@@ -287,8 +291,11 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		}
 
 		// get the contents of the file
-		file, err := prev.Commit.File(prev.Path)
+		file, err := regularFile(prev.Commit, prev.Path)
 		if err != nil {
+			if errors.Is(err, object.ErrFileNotFound) {
+				continue
+			}
 			return false, err
 		}
 		prevContents, err := file.Contents()
@@ -546,17 +553,32 @@ func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error
 		if err != nil {
 			return nil, err
 		}
-		if _, err := parent.File(path); err == nil {
+		file, err := parent.File(path)
+		switch {
+		case err == nil && isBlameOriginMode(file.Mode):
 			result = append(result, parentCommit{parent, path})
-		} else {
-			// look for renames
+		case err == nil:
+			// Same path, but the parent has a symlink or other non-file type.
+		case !errors.Is(err, object.ErrFileNotFound):
+			return nil, err
+		default:
+			// ErrFileNotFound: the path is missing, or it is a gitlink whose
+			// object is not a blob. An entry at the same path is a type change,
+			// not a rename.
+			if tree, terr := parent.Tree(); terr != nil {
+				return nil, terr
+			} else if _, eerr := tree.FindEntry(path); eerr == nil {
+				break
+			}
+
+			// look for renames of a regular file
 			patch, err := parent.Patch(c)
 			if err != nil {
 				return nil, err
 			} else if patch != nil {
 				for _, fp := range patch.FilePatches() {
 					from, to := fp.Files()
-					if from != nil && to != nil && to.Path() == path {
+					if from != nil && to != nil && to.Path() == path && isBlameOriginMode(from.Mode()) {
 						result = append(result, parentCommit{parent, from.Path()})
 						break
 					}
@@ -566,8 +588,23 @@ func parentsContainingPath(path string, c *object.Commit) ([]parentCommit, error
 	}
 }
 
-func blobHash(path string, commit *object.Commit) (plumbing.Hash, error) {
+func isBlameOriginMode(m filemode.FileMode) bool {
+	return m == filemode.Regular || m == filemode.Executable || m == filemode.Deprecated
+}
+
+func regularFile(commit *object.Commit, path string) (*object.File, error) {
 	file, err := commit.File(path)
+	if err != nil {
+		return nil, err
+	}
+	if !isBlameOriginMode(file.Mode) {
+		return nil, object.ErrFileNotFound
+	}
+	return file, nil
+}
+
+func blobHash(path string, commit *object.Commit) (plumbing.Hash, error) {
+	file, err := regularFile(commit, path)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
