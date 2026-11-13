@@ -12,7 +12,9 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1372,6 +1374,73 @@ func TestEncodedObjectSize_Packed(t *testing.T) {
 	size, err := s.EncodedObjectSize(obj.Hash())
 	require.NoError(t, err)
 	assert.Greater(t, size, int64(0))
+}
+
+// openTrackingFS wraps every file opened for reading in a closeCounter,
+// so a test can check that each of them was closed.
+type openTrackingFS struct {
+	billy.Filesystem
+	opened []*closeCounter
+}
+
+func (fs *openTrackingFS) Open(name string) (billy.File, error) {
+	f, err := fs.Filesystem.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	c := &closeCounter{File: f}
+	fs.opened = append(fs.opened, c)
+	return c, nil
+}
+
+func TestEncodedObjectSize_LooseClosesFile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		corrupt bool
+	}{
+		{name: "valid object"},
+		{name: "corrupt object", corrupt: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fs := &openTrackingFS{Filesystem: memfs.New()}
+			s := NewStorage(fs, cache.NewObjectLRUDefault())
+			t.Cleanup(func() { _ = s.Close() })
+
+			content := []byte("loose")
+			o := s.NewEncodedObject()
+			o.SetType(plumbing.BlobObject)
+			w, err := o.Writer()
+			require.NoError(t, err)
+			_, err = w.Write(content)
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+			h, err := s.SetEncodedObject(o)
+			require.NoError(t, err)
+
+			if tc.corrupt {
+				path := fs.Join("objects", h.String()[:2], h.String()[2:])
+				require.NoError(t, util.WriteFile(fs, path, []byte("not zlib"), 0o644))
+			}
+
+			size, err := s.EncodedObjectSize(h)
+			if tc.corrupt {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, int64(len(content)), size)
+			}
+
+			require.NotEmpty(t, fs.opened)
+			for _, f := range fs.opened {
+				assert.Equalf(t, 1, f.closed, "%s must be closed exactly once", f.Name())
+			}
+		})
+	}
 }
 
 func TestFindObjectInPackfile_MRU_SeedsAndUses(t *testing.T) {
