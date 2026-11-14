@@ -26,6 +26,11 @@ func TestValidTreePath(t *testing.T) {
 		{"reject ..", "a/../b", true},
 		{"reject .", ".", true},
 		{"reject empty", "", true},
+		{"reject separators only", "/\\//", true},
+		{"reject dot across repeated separators", "a//../b", true},
+		{"reject .git across mixed separators", "a/\\.git/b", true},
+		{"allow repeated separators", "a//b", false},
+		{"allow mixed separators", "a\\/b", false},
 		{"reject control char SOH", "a\x01b", true},
 		{"reject DEL", "foo\x7fbar", true},
 

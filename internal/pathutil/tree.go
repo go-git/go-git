@@ -42,8 +42,7 @@ func ValidTreePath(p string) error {
 		}
 	}
 
-	parts := strings.FieldsFunc(p, func(r rune) bool { return r == '\\' || r == '/' })
-	if len(parts) == 0 {
+	if strings.Trim(p, "/\\") == "" {
 		return fmt.Errorf("%w: %q", ErrInvalidPath, p)
 	}
 
@@ -52,11 +51,10 @@ func ValidTreePath(p string) error {
 		return fmt.Errorf("%w: %q", ErrInvalidPath, p)
 	}
 
-	for _, part := range parts {
+	for part := range strings.FieldsFuncSeq(p, func(r rune) bool { return r == '\\' || r == '/' }) {
 		if part == "." || part == ".." {
 			return fmt.Errorf("%w %q: cannot use %q", ErrInvalidPath, p, part)
 		}
-
 		if IsDotGitName(part) || IsHFSDotGit(part) || IsNTFSDotGit(part) {
 			return fmt.Errorf("%w component: %q", ErrInvalidPath, p)
 		}
