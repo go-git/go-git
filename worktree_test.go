@@ -2026,6 +2026,36 @@ func (s *WorktreeSuite) TestResetHardSubFolders() {
 	s.True(status.IsClean())
 }
 
+func (s *WorktreeSuite) TestResetHardRemovesStagedNewFile() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+	s.Require().NoError(util.WriteFile(fs, "staged.txt", []byte("discard me"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "untracked.txt", []byte("keep me"), 0o644))
+	_, err := w.Add("staged.txt")
+	s.Require().NoError(err)
+
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset}))
+	_, err = fs.Stat("staged.txt")
+	s.True(os.IsNotExist(err), "staged-only file should be deleted, got %v", err)
+	content, err := util.ReadFile(fs, "untracked.txt")
+	s.Require().NoError(err)
+	s.Equal("keep me", string(content))
+
+	// An entry staged and then deleted from disk must not fail the reset.
+	s.Require().NoError(fs.MkdirAll("removed", 0o755))
+	s.Require().NoError(util.WriteFile(fs, "removed/file.txt", []byte("gone"), 0o644))
+	_, err = w.Add("removed/file.txt")
+	s.Require().NoError(err)
+	s.Require().NoError(fs.Remove("removed/file.txt"))
+	s.Require().NoError(fs.Remove("removed"))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset}))
+}
+
 func (s *WorktreeSuite) TestResetHardWithGitIgnore() {
 	fs := memfs.New()
 	w := &Worktree{

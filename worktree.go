@@ -374,9 +374,9 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	// For HardReset and KeepReset, capture the current HEAD tree before
-	// resetting HEAD. resetWorktreeToTree will diff prevTree→t and apply only
-	// those changes to the worktree. Since the diff is tree-to-tree, untracked
-	// files are invisible and are never deleted — matching real git reset --hard.
+	// resetting HEAD. resetWorktreeToTree uses the tree diff and, for HardReset,
+	// removed index entries to discard staged additions while retaining files
+	// that were never tracked.
 	//
 	// If opts.fromTree is set (by Checkout), use that instead of calling
 	// headTree(). This handles the case where HEAD was already updated before
@@ -418,7 +418,11 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 	}
 
 	if opts.Mode == HardReset || opts.Mode == KeepReset {
-		if err := w.resetWorktreeToTree(cfg, prevTree, t, opts.Files); err != nil {
+		var removedIndexFiles []string
+		if opts.Mode == HardReset {
+			removedIndexFiles = removedFiles
+		}
+		if err := w.resetWorktreeToTree(cfg, prevTree, t, opts.Files, removedIndexFiles); err != nil {
 			return err
 		}
 	}
@@ -679,9 +683,8 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 // resetWorktreeToTree updates the worktree to match toTree, mirroring
 // real git reset --hard / checkout -f:
 //
-//  1. Tree-to-tree diff (fromTree→toTree): remove files that were tracked in
-//     fromTree but deleted in toTree. Because the diff is purely object-graph,
-//     untracked files never appear and are never deleted.
+//  1. Remove files deleted from the tracked tree. HardReset also removes
+//     staged additions absent from toTree; files never staged are preserved.
 //
 //  2. New-index-to-worktree diff: write files that are in the new index but
 //     absent or different on disk. For Delete actions (file on disk, but absent
@@ -695,7 +698,7 @@ func (w *Worktree) checkKeepResetConflicts(fromTree, toTree *object.Tree, sparse
 //     file with SkipWorktree=true must not exist in the worktree.
 //
 // files optionally restricts the operation to a specific subset of paths.
-func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *object.Tree, files []string) error {
+func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *object.Tree, files, removedIndexFiles []string) error {
 	filesMap := buildFilePathMap(files)
 
 	fs, closeFS := w.reusableRootFS()
@@ -717,6 +720,26 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, fromTree, toTree *obj
 		name := ch.From.String()
 		if len(files) > 0 && !inFiles(filesMap, name) {
 			continue
+		}
+		if err := rmFileAndDirsIfEmpty(fs, name); err != nil {
+			return err
+		}
+	}
+
+	// HardReset must also remove staged additions absent from the target tree.
+	// These paths are invisible to the HEAD-to-target tree diff above.
+	for _, name := range removedIndexFiles {
+		if _, err := toTree.FindEntry(name); err == nil {
+			continue
+		} else if !errors.Is(err, object.ErrEntryNotFound) && !errors.Is(err, object.ErrDirectoryNotFound) {
+			return err
+		}
+		if fromTree != nil {
+			if _, err := fromTree.FindEntry(name); err == nil {
+				continue // Already handled by the tree diff.
+			} else if !errors.Is(err, object.ErrEntryNotFound) && !errors.Is(err, object.ErrDirectoryNotFound) {
+				return err
+			}
 		}
 		if err := rmFileAndDirsIfEmpty(fs, name); err != nil {
 			return err
