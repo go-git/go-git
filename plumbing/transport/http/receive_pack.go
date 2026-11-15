@@ -15,6 +15,16 @@ import (
 	"github.com/go-git/go-git/v5/utils/ioutil"
 )
 
+// maxReceivePackContentLength matches Git v2.54.0's default HTTP push framing.
+// http_post_buffer holds 16 packets of LARGE_PACKET_MAX (65520 bytes each).
+// rpc_read_from_out requires one packet of free space before every read, even
+// the final flush, leaving (16 - 1) * 65520 bytes for a fixed-length body.
+// post_rpc uses unknown-length framing for larger requests. See:
+// https://github.com/git/git/blob/v2.54.0/http.c
+// https://github.com/git/git/blob/v2.54.0/pkt-line.h
+// https://github.com/git/git/blob/v2.54.0/remote-curl.c
+const maxReceivePackContentLength = 15 * 65520
+
 type rpSession struct {
 	*session
 }
@@ -94,6 +104,10 @@ func (s *rpSession) doRequest(
 	}
 
 	applyHeadersToRequest(req, content, s.endpoint.Host, transport.ReceivePackServiceName)
+	if req.ContentLength > maxReceivePackContentLength {
+		req.ContentLength = -1
+		req.Header.Del("Content-Length")
+	}
 	s.ApplyAuthToRequest(req)
 
 	res, err := s.client.Do(req.WithContext(ctx))
