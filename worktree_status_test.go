@@ -373,3 +373,103 @@ func TestStatusReadsSubtreeStoredOnlyInLooseObjectsPack(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, st.IsClean(), "status: %v", st)
 }
+
+// TestStatusReportsDirtySubmoduleWorktree checks Worktree.Status against
+// `git status --porcelain=v1` when a submodule's HEAD still matches the
+// gitlink. git reports " M <path>" for a dirty worktree (tracked edits or
+// untracked files); go-git previously returned a clean status. #2559.
+func TestStatusReportsDirtySubmoduleWorktree(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required")
+	}
+
+	gitRun := func(t *testing.T, dir string, args ...string) string {
+		t.Helper()
+		out, err := gitenv.CommandContext(t.Context(), "git",
+			append([]string{"-c", "protocol.file.allow=always", "-C", dir}, args...)...,
+		).CombinedOutput()
+		require.NoError(t, err, "git %q: %s", args, out)
+		return strings.TrimSpace(string(out))
+	}
+
+	for _, tc := range []struct {
+		name    string
+		mutate  func(t *testing.T, subDir string)
+		wantMod bool
+	}{
+		{name: "clean"},
+		{
+			name: "tracked file modified",
+			mutate: func(t *testing.T, subDir string) {
+				require.NoError(t, os.WriteFile(filepath.Join(subDir, "f"), []byte("b\n"), 0o644))
+			},
+			wantMod: true,
+		},
+		{
+			name: "untracked file",
+			mutate: func(t *testing.T, subDir string) {
+				require.NoError(t, os.WriteFile(filepath.Join(subDir, "new"), []byte("x\n"), 0o644))
+			},
+			wantMod: true,
+		},
+		{
+			name: "HEAD moved",
+			mutate: func(t *testing.T, subDir string) {
+				gitRun(t, subDir, "commit", "--allow-empty", "-qm", "moved")
+			},
+			wantMod: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			subDir := filepath.Join(root, "sub")
+			parent := filepath.Join(root, "parent")
+			require.NoError(t, os.Mkdir(subDir, 0o755))
+			require.NoError(t, os.Mkdir(parent, 0o755))
+
+			gitRun(t, subDir, "init", "-q")
+			require.NoError(t, os.WriteFile(filepath.Join(subDir, "f"), []byte("a\n"), 0o644))
+			gitRun(t, subDir, "add", "f")
+			gitRun(t, subDir, "commit", "-qm", "f")
+
+			gitRun(t, parent, "init", "-q")
+			gitRun(t, parent, "submodule", "add", "-q", subDir, "sub")
+			gitRun(t, parent, "commit", "-qm", "sub")
+
+			if tc.mutate != nil {
+				tc.mutate(t, filepath.Join(parent, "sub"))
+			}
+
+			porcelainOut, err := gitenv.CommandContext(t.Context(), "git",
+				"-c", "protocol.file.allow=always", "-C", parent, "status", "--porcelain=v1",
+			).CombinedOutput()
+			require.NoError(t, err, "git status: %s", porcelainOut)
+			porcelain := strings.TrimRight(string(porcelainOut), "\n")
+			repo, err := PlainOpen(parent)
+			require.NoError(t, err)
+			defer func() { _ = repo.Close() }()
+
+			wt, err := repo.Worktree()
+			require.NoError(t, err)
+
+			st, err := wt.Status()
+			require.NoError(t, err)
+
+			fs, ok := st["sub"]
+			if tc.wantMod {
+				assert.Equal(t, " M sub", porcelain)
+				require.True(t, ok, "status: %v", st)
+				assert.Equal(t, Unmodified, fs.Staging)
+				assert.Equal(t, Modified, fs.Worktree)
+				return
+			}
+
+			assert.Empty(t, porcelain)
+			assert.False(t, ok, "clean submodule must not appear in Status: %v", st)
+			assert.True(t, st.IsClean(), "status: %v", st)
+		})
+	}
+}
