@@ -39,6 +39,8 @@ var (
 	ErrSubmoduleNotFound = errors.New("submodule not found")
 	// ErrUnstagedChanges is returned when the worktree has unstaged changes.
 	ErrUnstagedChanges = errors.New("worktree contains unstaged changes")
+	// ErrUntrackedOverwrite is returned when checkout would overwrite an untracked file.
+	ErrUntrackedOverwrite = errors.New("untracked file would be overwritten by checkout")
 	// ErrLocalChanges is returned when a KeepReset is attempted but a file
 	// that would be changed by the reset has local modifications.
 	ErrLocalChanges = errors.New("worktree contains local changes that would be overwritten by reset")
@@ -213,6 +215,48 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = HardReset
 	} else if opts.Keep {
 		ro.Mode = SoftReset
+	}
+
+	// Check for conflicts before changing HEAD: Reset(MergeReset) would refuse
+	// tracked edits after HEAD had already moved to the target branch.
+	if ro.Mode == MergeReset {
+		cfg, err := w.r.Config()
+		if err != nil {
+			return err
+		}
+		changes, err := w.diffStagingWithWorktree(cfg, false, true)
+		if err != nil {
+			return err
+		}
+		target, err := w.r.getTreeFromCommitHash(c)
+		if err != nil {
+			return err
+		}
+		for _, change := range changes {
+			action, err := change.Action()
+			if err != nil {
+				return err
+			}
+			if action != merkletrie.Insert {
+				return ErrUnstagedChanges
+			}
+			name := change.To.String()
+			if len(ro.SparseDirs) > 0 && !slices.ContainsFunc(ro.SparseDirs, func(dir string) bool {
+				return name == dir || strings.HasPrefix(name, dir+"/")
+			}) {
+				continue
+			}
+			for candidate := name; candidate != "."; candidate = path.Dir(candidate) {
+				entry, err := target.FindEntry(candidate)
+				if err == nil {
+					if candidate == name || entry.Mode != filemode.Dir {
+						return fmt.Errorf("%w: %s", ErrUntrackedOverwrite, name)
+					}
+					} else if !errors.Is(err, object.ErrEntryNotFound) && !errors.Is(err, object.ErrDirectoryNotFound) {
+					return err
+				}
+			}
+		}
 	}
 
 	// For HardReset and KeepReset, capture the current tree BEFORE updating
