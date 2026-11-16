@@ -86,6 +86,12 @@ type fileIndex struct {
 	objSize               int
 	numChunks             uint8
 	fileSize              int64
+
+	// bloom holds the Bloom filter settings of this file, or nil when it
+	// has no usable filters. bloomRef holds the settings of the newest
+	// layer with filters, at or below this one.
+	bloom    *bloomSettings
+	bloomRef *bloomSettings
 }
 
 // ReaderAtCloser is an interface that combines io.ReaderAt and io.Closer.
@@ -129,6 +135,14 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 	}
 	if err := fi.readFanout(); err != nil {
 		return nil, err
+	}
+	if err := fi.readBloomSettings(); err != nil {
+		return nil, err
+	}
+
+	fi.bloomRef = fi.bloom
+	if p, ok := fi.parent.(*fileIndex); ok && fi.bloomRef == nil {
+		fi.bloomRef = p.bloomRef
 	}
 
 	fi.hasGenerationV2 = fi.offsets[GenerationDataChunk] > 0
@@ -663,4 +677,105 @@ func (fi *fileIndex) HasGenerationV2() bool {
 
 func (fi *fileIndex) MaximumNumberOfHashes() uint32 {
 	return fi.minimumNumberOfHashes + fi.fanout[0xff]
+}
+
+// readBloomSettings reads the BDAT chunk header into fi.bloom. Like Git's
+// graph_read_bloom_index and graph_read_bloom_data [1], a missing, wrongly
+// sized or too small chunk disables the filters of this file instead of
+// rejecting it.
+//
+// Unlike Git, which hashes any version other than 2 as version 1, filters
+// with an unknown hash version are disabled, since their hashing cannot be
+// known. So are filters declaring more than maxBloomNumHashes hashes per
+// path, which would make every query loop that many times: Git writes 7
+// and only lets tests change it [2].
+//
+// [1]: https://github.com/git/git/blob/v2.53.0/commit-graph.c#L336-L371
+// [2]: https://github.com/git/git/blob/v2.53.0/commit-graph.c#L2541-L2544
+func (fi *fileIndex) readBloomSettings() error {
+	if fi.offsets[BloomFilterIndexChunk] <= 0 || fi.offsets[BloomFilterDataChunk] <= 0 {
+		return nil
+	}
+	if fi.sizes[BloomFilterIndexChunk]/szUint32 != int64(fi.fanout[0xff]) ||
+		fi.sizes[BloomFilterDataChunk] < szBloomDataHeader {
+		return nil
+	}
+
+	var buf [szBloomDataHeader]byte
+	if _, err := fi.reader.ReadAt(buf[:], fi.offsets[BloomFilterDataChunk]); err != nil {
+		return err
+	}
+	settings := bloomSettings{
+		hashVersion:  encbin.BigEndian.Uint32(buf[0:]),
+		numHashes:    encbin.BigEndian.Uint32(buf[4:]),
+		bitsPerEntry: encbin.BigEndian.Uint32(buf[8:]),
+	}
+	if settings.hashVersion != 1 && settings.hashVersion != 2 ||
+		settings.numHashes > maxBloomNumHashes {
+		return nil
+	}
+	fi.bloom = &settings
+	return nil
+}
+
+// GetBloomFilterByIndex returns the changed-path Bloom filter of the commit
+// at index idx in the commit-graph, or nil when none is usable.
+//
+// In a chain, Git queries every layer with the settings of the newest layer
+// that has filters, and ignores the filters of layers whose settings differ
+// (validate_mixed_bloom_settings [1]).
+//
+// [1]: https://github.com/git/git/blob/v2.53.0/commit-graph.c#L545-L568
+func (fi *fileIndex) GetBloomFilterByIndex(idx uint32) (*BloomFilter, error) {
+	return fi.bloomFilter(idx, fi.bloomRef)
+}
+
+// bloomFilter follows Git's load_bloom_filter_from_graph [1], which ignores
+// a filter whose BIDX offsets are out of range or decreasing. A zero-length
+// filter was not computed and is returned as nil.
+//
+// [1]: https://github.com/git/git/blob/v2.53.0/bloom.c#L57-L101
+func (fi *fileIndex) bloomFilter(idx uint32, settings *bloomSettings) (*BloomFilter, error) {
+	if idx < fi.minimumNumberOfHashes {
+		if fi.parent == nil {
+			return nil, plumbing.ErrObjectNotFound
+		}
+		if p, ok := fi.parent.(*fileIndex); ok {
+			return p.bloomFilter(idx, settings)
+		}
+		return nil, nil
+	}
+	idx -= fi.minimumNumberOfHashes
+	if idx >= fi.fanout[0xff] {
+		return nil, plumbing.ErrObjectNotFound
+	}
+	if fi.bloom == nil || settings == nil || *fi.bloom != *settings {
+		return nil, nil
+	}
+
+	var buf [2 * szUint32]byte
+	var start, end uint32
+	if idx > 0 {
+		if _, err := fi.reader.ReadAt(buf[:], fi.offsets[BloomFilterIndexChunk]+int64(idx-1)*szUint32); err != nil {
+			return nil, err
+		}
+		start = encbin.BigEndian.Uint32(buf[:szUint32])
+		end = encbin.BigEndian.Uint32(buf[szUint32:])
+	} else {
+		if _, err := fi.reader.ReadAt(buf[:szUint32], fi.offsets[BloomFilterIndexChunk]); err != nil {
+			return nil, err
+		}
+		end = encbin.BigEndian.Uint32(buf[:szUint32])
+	}
+
+	dataSize := fi.sizes[BloomFilterDataChunk] - szBloomDataHeader
+	if int64(end) > dataSize || end <= start {
+		return nil, nil
+	}
+
+	data := make([]byte, end-start)
+	if _, err := fi.reader.ReadAt(data, fi.offsets[BloomFilterDataChunk]+szBloomDataHeader+int64(start)); err != nil {
+		return nil, err
+	}
+	return &BloomFilter{data: data, settings: *settings}, nil
 }

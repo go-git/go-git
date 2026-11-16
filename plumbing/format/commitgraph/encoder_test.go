@@ -99,10 +99,11 @@ func (i danglingEdgeIndex) GetCommitDataByIndex(uint32) (*CommitData, error) {
 	}, nil
 }
 
-func (i danglingEdgeIndex) Hashes() []plumbing.Hash       { return []plumbing.Hash{i.hash} }
-func (i danglingEdgeIndex) HasGenerationV2() bool         { return false }
-func (i danglingEdgeIndex) MaximumNumberOfHashes() uint32 { return 1 }
-func (i danglingEdgeIndex) Close() error                  { return nil }
+func (i danglingEdgeIndex) Hashes() []plumbing.Hash                            { return []plumbing.Hash{i.hash} }
+func (i danglingEdgeIndex) HasGenerationV2() bool                              { return false }
+func (i danglingEdgeIndex) MaximumNumberOfHashes() uint32                      { return 1 }
+func (i danglingEdgeIndex) GetBloomFilterByIndex(uint32) (*BloomFilter, error) { return nil, nil }
+func (i danglingEdgeIndex) Close() error                                       { return nil }
 
 // An unresolvable parent hash must not be written as index 0, which is a real
 // but arbitrary commit.

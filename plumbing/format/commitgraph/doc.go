@@ -97,6 +97,21 @@
 //	    positions for the parents until reaching a value with the most-significant
 //	    bit on. The other bits correspond to the position of the last parent.
 //
+//	Bloom Filter Index (ID: {'B', 'I', 'D', 'X'}) (N * 4 bytes) [Optional]
+//	    One 4-byte value per commit, in the order of the OID Lookup chunk:
+//	    the end offset of that commit's filter, counted from the first byte
+//	    after the Bloom Filter Data header. A filter starts where the
+//	    previous commit's filter ends, or at 0 for the first commit.
+//
+//	Bloom Filter Data (ID: {'B', 'D', 'A', 'T'}) [Optional]
+//	  * A 12-byte header made of three 4-byte values: the hash version
+//	    (1 or 2, both murmur3), the number of bit positions set per path,
+//	    and the number of bits allotted per path when sizing a filter.
+//	  * The filters themselves follow, back to back. Each one holds the
+//	    paths, and their leading directories, that differ between a commit
+//	    and its first parent. A single 0x00 byte means no path changed; a
+//	    single 0xFF byte means too many paths changed to be recorded.
+//
 // TRAILER:
 //
 //	H-byte HASH-checksum of all of the above.

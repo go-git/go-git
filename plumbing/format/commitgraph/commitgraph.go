@@ -56,6 +56,11 @@ type Index interface {
 	HasGenerationV2() bool
 	// MaximumNumberOfHashes returns the maximum number of hashes within the index
 	MaximumNumberOfHashes() uint32
+	// GetBloomFilterByIndex returns the changed-path Bloom filter of the
+	// commit at index i. It returns a nil filter and no error when no
+	// usable filter is stored for that commit, in which case any path may
+	// have changed.
+	GetBloomFilterByIndex(i uint32) (*BloomFilter, error)
 
 	io.Closer
 }
