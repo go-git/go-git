@@ -37,20 +37,24 @@ func (e *EncodedObject) Reader() (io.ReadCloser, error) {
 	}
 	r, err := objfile.NewReader(f, e.dir.options.ObjectFormat)
 	if err != nil {
+		_ = f.Close()
 		return nil, err
 	}
 
 	t, size, err := r.Header()
 	if err != nil {
 		_ = r.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	if t != e.t {
 		_ = r.Close()
+		_ = f.Close()
 		return nil, objfile.ErrHeader
 	}
 	if size != e.sz {
 		_ = r.Close()
+		_ = f.Close()
 		return nil, objfile.ErrHeader
 	}
 	return ioutil.NewReadCloserWithCloser(r, f.Close), nil
