@@ -466,6 +466,68 @@ func (s *WorktreeSuite) TestCheckout() {
 	s.Len(idx.Entries, 9)
 }
 
+func TestCheckoutRejectsConflictsBeforeMovingHEAD(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	tracked := filepath.Join(dir, "tracked.txt")
+	untracked := filepath.Join(dir, "settings.ini")
+	require.NoError(t, os.WriteFile(tracked, []byte("main\n"), 0o644))
+	_, err = w.Add("tracked.txt")
+	require.NoError(t, err)
+	_, err = w.Commit("initial", defaultTestCommitOptions())
+	require.NoError(t, err)
+	main, err := r.Head()
+	require.NoError(t, err)
+
+	feature := plumbing.NewBranchReferenceName("feature")
+	require.NoError(t, w.Checkout(&CheckoutOptions{Branch: feature, Create: true}))
+	require.NoError(t, os.WriteFile(untracked, []byte("feature config\n"), 0o644))
+	_, err = w.Add("settings.ini")
+	require.NoError(t, err)
+	_, err = w.Commit("feature", defaultTestCommitOptions())
+	require.NoError(t, err)
+	require.NoError(t, w.Checkout(&CheckoutOptions{Branch: main.Name(), Force: true}))
+
+	// An untracked file at a path introduced by the target is not disposable.
+	require.NoError(t, os.WriteFile(untracked, []byte("local notes\n"), 0o644))
+	require.ErrorIs(t, w.Checkout(&CheckoutOptions{Branch: feature}), ErrUntrackedOverwrite)
+	head, err := r.Head()
+	require.NoError(t, err)
+	require.Equal(t, main.Name(), head.Name())
+	require.Equal(t, main.Hash(), head.Hash())
+	data, err := os.ReadFile(untracked)
+	require.NoError(t, err)
+	require.Equal(t, "local notes\n", string(data))
+
+	// A tracked edit must also refuse before HEAD changes.
+	require.NoError(t, os.Remove(untracked))
+	require.NoError(t, os.WriteFile(tracked, []byte("local change\n"), 0o644))
+	require.ErrorIs(t, w.Checkout(&CheckoutOptions{Branch: feature}), ErrUnstagedChanges)
+	head, err = r.Head()
+	require.NoError(t, err)
+	require.Equal(t, main.Name(), head.Name())
+	require.Equal(t, main.Hash(), head.Hash())
+	data, err = os.ReadFile(tracked)
+	require.NoError(t, err)
+	require.Equal(t, "local change\n", string(data))
+
+	// Unrelated untracked files remain allowed and survive a clean checkout.
+	require.NoError(t, os.WriteFile(tracked, []byte("main\n"), 0o644))
+	notes := filepath.Join(dir, "notes.txt")
+	require.NoError(t, os.WriteFile(notes, []byte("keep\n"), 0o644))
+	require.NoError(t, w.Checkout(&CheckoutOptions{Branch: feature}))
+	data, err = os.ReadFile(notes)
+	require.NoError(t, err)
+	require.Equal(t, "keep\n", string(data))
+}
+
 func (s *WorktreeSuite) TestCheckoutForce() {
 	w := &Worktree{
 		r:          s.Repository,
