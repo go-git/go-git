@@ -36,6 +36,15 @@ func FetchPack(
 	shallowInfo *packp.ShallowUpdate,
 	req *FetchRequest,
 ) error {
+	// Git dies on a bad shallow line before it reads the pack, so a rejected
+	// update stores nothing.
+	if shallowInfo != nil {
+		if err := internal.CheckShallowUpdate(st, shallowInfo); err != nil {
+			_ = packf.Close()
+			return err
+		}
+	}
+
 	packf = ioutil.NewContextReadCloser(ctx, packf)
 
 	var demuxer *sideband.Demuxer
@@ -91,38 +100,10 @@ func FetchPack(
 	}
 
 	if shallowInfo != nil {
-		if err := updateShallow(st, shallowInfo); err != nil {
+		if err := internal.UpdateShallow(st, shallowInfo); err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-func updateShallow(st storage.Storer, shallowInfo *packp.ShallowUpdate) error {
-	shallows, err := st.Shallow()
-	if err != nil {
-		return err
-	}
-
-outer:
-	for _, s := range shallowInfo.Shallows {
-		for _, oldS := range shallows {
-			if s == oldS {
-				continue outer
-			}
-		}
-		shallows = append(shallows, s)
-	}
-
-	for _, s := range shallowInfo.Unshallows {
-		for i, oldS := range shallows {
-			if s == oldS {
-				shallows = append(shallows[:i], shallows[i+1:]...)
-				break
-			}
-		}
-	}
-
-	return st.SetShallow(shallows)
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
@@ -208,6 +209,15 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 				Shallows:   out.ShallowInfo.Shallows,
 				Unshallows: out.ShallowInfo.Unshallows,
 			}
+			// Git dies on a bad shallow line before it reads the pack, so
+			// a rejected update stores nothing. The fetch fails, so the
+			// response is closed without draining it for reuse.
+			if err := CheckShallowUpdate(st, shallowInfo); err != nil {
+				if c, ok := packReader.(io.Closer); ok {
+					_ = c.Close()
+				}
+				return err
+			}
 		}
 
 		if out.Acknowledgments != nil {
@@ -241,7 +251,7 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 	}
 
 	if shallowInfo != nil {
-		if err := updateShallow(st, shallowInfo); err != nil {
+		if err := UpdateShallow(st, shallowInfo); err != nil {
 			return err
 		}
 	}
@@ -292,8 +302,31 @@ func closeReader(r io.Reader) {
 	}
 }
 
-// updateShallow merges a shallow-info update into st's shallow boundary.
-func updateShallow(st storage.Storer, info *packp.ShallowUpdate) error {
+// CheckShallowUpdate returns an error when info holds an object ID that is
+// not of st's object format. Call it before the pack is read, so that a
+// rejected fetch leaves storage as it was.
+func CheckShallowUpdate(st storage.Storer, info *packp.ShallowUpdate) error {
+	cfg, err := st.Config()
+	if err != nil {
+		return err
+	}
+	format := formatcfg.DefaultObjectFormat
+	if cfg != nil && cfg.Extensions.ObjectFormat != formatcfg.UnsetObjectFormat {
+		format = cfg.Extensions.ObjectFormat
+	}
+	for _, hashes := range [][]plumbing.Hash{info.Shallows, info.Unshallows} {
+		for _, h := range hashes {
+			if h.HexSize() != format.HexSize() {
+				return fmt.Errorf("shallow update: %s is not a %s object ID", h, format)
+			}
+		}
+	}
+	return nil
+}
+
+// UpdateShallow merges a shallow update into st's shallow boundary. The
+// update must have passed [CheckShallowUpdate].
+func UpdateShallow(st storage.Storer, info *packp.ShallowUpdate) error {
 	shallows, err := st.Shallow()
 	if err != nil {
 		return err
