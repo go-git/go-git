@@ -13,8 +13,10 @@ type List struct {
 }
 
 type entry struct {
-	Name   string
-	Values []string
+	Name      string
+	Values    []string
+	bare      bool
+	bareFirst bool
 }
 
 // IsEmpty returns true if the List is empty
@@ -87,6 +89,8 @@ func (l *List) Get(capability string) []string {
 func (l *List) Set(capability string, values ...string) {
 	if _, ok := l.m[capability]; ok {
 		l.m[capability].Values = l.m[capability].Values[:0]
+		l.m[capability].bare = false
+		l.m[capability].bareFirst = len(values) == 0
 	}
 	l.Add(capability, values...)
 }
@@ -102,15 +106,36 @@ func (l *List) Add(c string, values ...string) {
 	l.init()
 
 	if !l.Supports(c) {
-		l.m[c] = &entry{Name: c}
+		l.m[c] = &entry{Name: c, bareFirst: len(values) == 0}
 		l.sort = append(l.sort, c)
 	}
 
 	if len(values) == 0 {
+		l.m[c].bare = true
 		return
 	}
 
 	l.m[c].Values = append(l.m[c].Values, values...)
+}
+
+// Bare reports whether capability was added at least once without a value.
+// Get does not show it when a valued occurrence follows, as with a v2
+// request that sends "object-format" and then "object-format=sha256".
+func (l *List) Bare(capability string) bool {
+	if l == nil || l.m == nil {
+		return false
+	}
+	e, ok := l.m[capability]
+	return ok && e.bare
+}
+
+// BareFirst reports whether the first occurrence of capability had no value.
+func (l *List) BareFirst(capability string) bool {
+	if l == nil || l.m == nil {
+		return false
+	}
+	e, ok := l.m[capability]
+	return ok && e.bareFirst
 }
 
 // Supports returns true if capability is present

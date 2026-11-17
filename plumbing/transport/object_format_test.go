@@ -287,6 +287,8 @@ func TestUploadPackV2ObjectFormat(t *testing.T) {
 		// serve.c keeps the last object-format line.
 		{repo: config.SHA256, headers: []string{"object-format=sha1", "object-format=sha256"}},
 		{repo: config.SHA256, headers: []string{"object-format=sha256", "object-format=sha1"}, wantErr: "mismatched object format: server sha256; client sha1"},
+		{repo: config.SHA256, headers: []string{"object-format", "object-format=sha256"}, wantErr: "object-format capability requires an argument"},
+		{repo: config.SHA256, headers: []string{"object-format=sha256", "object-format"}, wantErr: "object-format capability requires an argument"},
 	}
 
 	for _, command := range []string{"ls-refs", "fetch"} {
@@ -336,4 +338,16 @@ func TestUploadPackV2ObjectFormatBeforeArguments(t *testing.T) {
 			assert.Contains(t, out.String(), "ERR "+want)
 		})
 	}
+}
+
+func TestReceivePackObjectFormatErrorBareThenValue(t *testing.T) {
+	t.Parallel()
+	caps := capability.List{}
+	caps.Add(capability.ObjectFormat)
+	caps.Add(capability.ObjectFormat, "sha256")
+
+	el := receivePackObjectFormatError(config.SHA256, caps)
+
+	require.NotNil(t, el)
+	assert.Equal(t, "unsupported object format ''", el.Text)
 }

@@ -55,7 +55,7 @@ func receivePackObjectFormatError(repo config.ObjectFormat, caps capability.List
 	client := config.SHA1.String()
 	if caps.Supports(capability.ObjectFormat) {
 		client = ""
-		if vals := caps.Get(capability.ObjectFormat); len(vals) > 0 {
+		if vals := caps.Get(capability.ObjectFormat); len(vals) > 0 && !caps.BareFirst(capability.ObjectFormat) {
 			client = vals[0]
 		}
 	}
@@ -97,7 +97,7 @@ func escapeClientValue(v string) string {
 func v2ObjectFormatError(repo, client config.ObjectFormat, caps capability.List) (config.ObjectFormat, *pktline.ErrorLine) {
 	if caps.Supports(capability.ObjectFormat) {
 		vals := caps.Get(capability.ObjectFormat)
-		if len(vals) == 0 {
+		if len(vals) == 0 || caps.Bare(capability.ObjectFormat) {
 			return client, &pktline.ErrorLine{Text: "object-format capability requires an argument"}
 		}
 		for _, v := range vals {
