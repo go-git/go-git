@@ -191,6 +191,14 @@ func TestRepositoryFilesystemRoutesFilesAndTheirLockAndStagingFiles(t *testing.T
 		{"index", false},
 		{"config.worktree", false},
 		{"logs/HEAD", false},
+		{"refs/bisect/bad", false},
+		{"refs/rewritten/x", false},
+		{"refs/worktree/x", false},
+		{"logs/refs/bisect/bad", false},
+		{"logs/refs/rewritten/x", false},
+		{"logs/refs/worktree/x", false},
+		{"refs/bisect-other", true},
+		{"logs/refs/heads/main", true},
 	}
 	type route struct {
 		path     string
@@ -375,4 +383,90 @@ func TestStagingPackedRefsGivesUpWhenEveryNameExists(t *testing.T) {
 			require.Equal(t, maxStagedPackedRefsAttempts, fs.attempts)
 		})
 	}
+}
+
+func refNames(t *testing.T, d *DotGit) []plumbing.ReferenceName {
+	t.Helper()
+
+	refs, err := d.Refs()
+	require.NoError(t, err)
+	var names []plumbing.ReferenceName
+	for _, ref := range refs {
+		if ref.Name() != plumbing.HEAD {
+			names = append(names, ref.Name())
+		}
+	}
+	return names
+}
+
+func TestRefsListsPerWorktreeRefsOfLinkedWorktree(t *testing.T) {
+	t.Parallel()
+
+	forEachFilesystem(t, func(t *testing.T, newFS func() billy.Filesystem) {
+		w := newLinkedWorktree(t, newFS)
+		setRefs(t, w.linked, "refs/bisect/bad", "refs/rewritten/x", "refs/worktree/y", "refs/heads/z")
+
+		require.ElementsMatch(t,
+			[]plumbing.ReferenceName{"refs/bisect/bad", "refs/rewritten/x", "refs/worktree/y", "refs/heads/z"},
+			refNames(t, w.linked))
+		require.Equal(t, []plumbing.ReferenceName{"refs/heads/z"}, refNames(t, w.main))
+	})
+}
+
+func TestPackRefsFromLinkedWorktreeLeavesPerWorktreeRefsLoose(t *testing.T) {
+	t.Parallel()
+
+	forEachFilesystem(t, func(t *testing.T, newFS func() billy.Filesystem) {
+		w := newLinkedWorktree(t, newFS)
+		setRefs(t, w.main, "refs/bisect/main-bad", "refs/worktree/main-x", "refs/rewritten/main-x")
+		setRefs(t, w.linked, "refs/bisect/linked-bad", "refs/worktree/linked-x", "refs/rewritten/linked-x", "refs/heads/z")
+
+		require.NoError(t, w.linked.PackRefs())
+
+		requireOnePackedRefs(t, w)
+		packed, err := util.ReadFile(w.commondir, packedRefsPath)
+		require.NoError(t, err)
+		require.NotContains(t, string(packed), "refs/bisect")
+		require.NotContains(t, string(packed), "refs/worktree")
+		require.NotContains(t, string(packed), "refs/rewritten")
+		require.ElementsMatch(t,
+			[]plumbing.ReferenceName{"refs/bisect/main-bad", "refs/worktree/main-x", "refs/rewritten/main-x", "refs/heads/z"},
+			refNames(t, w.main))
+		requireRefs(t, w.linked, "refs/bisect/linked-bad", "refs/worktree/linked-x", "refs/rewritten/linked-x")
+		requireNoRefs(t, w.main, "refs/bisect/linked-bad", "refs/worktree/linked-x", "refs/rewritten/linked-x")
+	})
+}
+
+func TestRefNamedLikePerWorktreeDirectoryIsListedAndPacked(t *testing.T) {
+	t.Parallel()
+
+	forEachFilesystem(t, func(t *testing.T, newFS func() billy.Filesystem) {
+		for _, name := range []plumbing.ReferenceName{"refs/bisect", "refs/rewritten", "refs/worktree"} {
+			t.Run(name.String(), func(t *testing.T) {
+				t.Parallel()
+
+				d := New(newFS())
+				setRefs(t, d, name, "refs/heads/x")
+
+				require.ElementsMatch(t, []plumbing.ReferenceName{name, "refs/heads/x"}, refNames(t, d))
+				count, err := d.CountLooseRefs()
+				require.NoError(t, err)
+				require.Equal(t, 2, count)
+				require.NoError(t, d.PackRefs())
+				requireRefs(t, d, name, "refs/heads/x")
+			})
+		}
+	})
+}
+
+func TestRefNamedLikePerWorktreeDirectoryIsListedFromLinkedWorktree(t *testing.T) {
+	t.Parallel()
+
+	forEachFilesystem(t, func(t *testing.T, newFS func() billy.Filesystem) {
+		w := newLinkedWorktree(t, newFS)
+		setRefs(t, w.linked, "refs/bisect", "refs/heads/x")
+
+		require.ElementsMatch(t, []plumbing.ReferenceName{"refs/bisect", "refs/heads/x"}, refNames(t, w.linked))
+		require.Equal(t, []plumbing.ReferenceName{"refs/heads/x"}, refNames(t, w.main))
+	})
 }
