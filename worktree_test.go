@@ -2305,6 +2305,194 @@ func (s *WorktreeSuite) TestResetSparselyInvalidDir() {
 	}
 }
 
+const sparseSwitchDir = "in"
+
+// newSparseSwitchRepository builds commits A and B that differ both inside
+// and outside sparseSwitchDir, then leaves the worktree sparse-checked-out
+// (HardReset with SparseDirs) at A.
+func newSparseSwitchRepository(t *testing.T) (*Repository, billy.Filesystem, plumbing.Hash, plumbing.Hash) {
+	t.Helper()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	commitAll := func(msg string) plumbing.Hash {
+		require.NoError(t, w.AddWithOptions(&AddOptions{All: true}))
+		h, err := w.Commit(msg, &CommitOptions{Author: defaultSignature()})
+		require.NoError(t, err)
+		return h
+	}
+
+	for name, content := range map[string]string{
+		"in/keep.txt":       "keep A\n",
+		"in/changed.txt":    "in changed A\n",
+		"in/removed.txt":    "in removed A\n",
+		"out/same.txt":      "out same\n",
+		"out/changed.txt":   "out changed A\n",
+		"out/removed.txt":   "out removed A\n",
+		"out/script.sh":     "#!/bin/sh\necho A\n",
+		"out/sub/deep.txt":  "deep A\n",
+		"out/gone/only.txt": "only in A\n",
+	} {
+		require.NoError(t, util.WriteFile(fs, name, []byte(content), 0o644))
+	}
+	a := commitAll("A")
+
+	for name, content := range map[string]string{
+		"in/changed.txt":   "in changed B\n",
+		"in/added.txt":     "in added B\n",
+		"out/changed.txt":  "out changed B\n",
+		"out/added.txt":    "out added B\n",
+		"out/sub/deep.txt": "deep B\n",
+	} {
+		require.NoError(t, util.WriteFile(fs, name, []byte(content), 0o644))
+	}
+	require.NoError(t, fs.(billy.Chmod).Chmod("out/script.sh", 0o755))
+	for _, name := range []string{"in/removed.txt", "out/removed.txt", "out/gone/only.txt"} {
+		require.NoError(t, fs.Remove(name))
+	}
+	b := commitAll("B")
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: a, Mode: HardReset, SparseDirs: []string{sparseSwitchDir}}))
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	outEntry, err := idx.Entry("out/changed.txt")
+	require.NoError(t, err)
+	require.True(t, outEntry.SkipWorktree, "precondition: paths outside the sparse dir are skip-worktree at A")
+
+	return r, fs, a, b
+}
+
+func commitTree(t *testing.T, r *Repository, h plumbing.Hash) *object.Tree {
+	t.Helper()
+	c, err := r.CommitObject(h)
+	require.NoError(t, err)
+	tree, err := c.Tree()
+	require.NoError(t, err)
+	return tree
+}
+
+// assertIndexMatchesTree checks that the index has exactly the paths, blob
+// hashes and modes of tree.
+func assertIndexMatchesTree(t *testing.T, r *Repository, tree *object.Tree) *index.Index {
+	t.Helper()
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+
+	want := map[string]string{}
+	require.NoError(t, tree.Files().ForEach(func(f *object.File) error {
+		want[f.Name] = fmt.Sprintf("%s %s", f.Mode, f.Hash)
+		return nil
+	}))
+	got := map[string]string{}
+	for _, e := range idx.Entries {
+		got[e.Name] = fmt.Sprintf("%s %s", e.Mode, e.Hash)
+	}
+	assert.Equal(t, want, got, "index entries must match the target tree")
+	return idx
+}
+
+func TestSparseCheckoutSwitchCommitMatchesTargetTree(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		apply func(w *Worktree, b plumbing.Hash) error
+	}{
+		{
+			name: "Checkout",
+			apply: func(w *Worktree, b plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: b, SparseCheckoutDirectories: []string{sparseSwitchDir}})
+			},
+		},
+		{
+			name: "ResetHard",
+			apply: func(w *Worktree, b plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: b, Mode: HardReset, SparseDirs: []string{sparseSwitchDir}})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, fs, _, b := newSparseSwitchRepository(t)
+			defer func() { _ = r.Close() }()
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			require.NoError(t, tc.apply(w, b))
+
+			bTree := commitTree(t, r, b)
+			idx := assertIndexMatchesTree(t, r, bTree)
+
+			for _, e := range idx.Entries {
+				inSparse := strings.HasPrefix(e.Name, sparseSwitchDir+"/")
+				assert.Equal(t, !inSparse, e.SkipWorktree, "SkipWorktree of %q", e.Name)
+
+				_, statErr := fs.Lstat(e.Name)
+				if inSparse {
+					assert.NoError(t, statErr, "sparse file %q must be in the worktree", e.Name)
+				} else {
+					assert.True(t, os.IsNotExist(statErr), "non-sparse file %q must not be in the worktree, got err=%v", e.Name, statErr)
+				}
+			}
+
+			status, err := w.Status()
+			require.NoError(t, err)
+			assert.True(t, status.IsClean(), "status after switching to B:\n%s", status)
+
+			require.NoError(t, util.WriteFile(fs, "in/keep.txt", []byte("keep C\n"), 0o644))
+			_, err = w.Add("in/keep.txt")
+			require.NoError(t, err)
+			c, err := w.Commit("C", &CommitOptions{Author: defaultSignature()})
+			require.NoError(t, err)
+
+			changes, err := object.DiffTree(bTree, commitTree(t, r, c))
+			require.NoError(t, err)
+			changed := make([]string, 0, len(changes))
+			for _, ch := range changes {
+				changed = append(changed, ch.From.Name+"|"+ch.To.Name)
+			}
+			assert.Equal(t, []string{"in/keep.txt|in/keep.txt"}, changed, "B..C must only change in/keep.txt")
+		})
+	}
+}
+
+func TestCheckoutWithoutSparseDirsKeepsSkipWorktreeEntriesInSync(t *testing.T) {
+	t.Parallel()
+
+	r, fs, a, b := newSparseSwitchRepository(t)
+	defer func() { _ = r.Close() }()
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	require.NoError(t, w.Checkout(&CheckoutOptions{Hash: b}))
+
+	idx := assertIndexMatchesTree(t, r, commitTree(t, r, b))
+
+	aTree := commitTree(t, r, a)
+	for _, e := range idx.Entries {
+		if strings.HasPrefix(e.Name, sparseSwitchDir+"/") {
+			continue
+		}
+		// go-git does not store the sparse-checkout patterns, so without dirs
+		// a path that only exists in the target has no skip-worktree bit to keep.
+		if _, err := aTree.FindEntry(e.Name); err != nil {
+			continue
+		}
+		assert.True(t, e.SkipWorktree, "SkipWorktree of %q", e.Name)
+		_, statErr := fs.Lstat(e.Name)
+		assert.True(t, os.IsNotExist(statErr), "skip-worktree file %q must not be in the worktree, got err=%v", e.Name, statErr)
+	}
+}
+
 func snapshotSubtree(t *testing.T, fs billy.Filesystem, root string) map[string]string {
 	t.Helper()
 
