@@ -73,7 +73,7 @@ func EncodeList(l *List) []byte {
 
 // Get returns the values for a capability
 func (l *List) Get(capability string) []string {
-	if l.m == nil {
+	if l == nil || l.m == nil {
 		return nil
 	}
 	if _, ok := l.m[capability]; !ok {
@@ -115,7 +115,7 @@ func (l *List) Add(c string, values ...string) {
 
 // Supports returns true if capability is present
 func (l *List) Supports(capability string) bool {
-	if l.m == nil {
+	if l == nil || l.m == nil {
 		return false
 	}
 	_, ok := l.m[capability]
@@ -141,7 +141,7 @@ func (l *List) Delete(capability string) {
 
 // All returns a slice with all defined capabilities.
 func (l *List) All() []string {
-	if len(l.sort) == 0 {
+	if l == nil || len(l.sort) == 0 {
 		return nil
 	}
 
