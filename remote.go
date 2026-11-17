@@ -169,7 +169,10 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 	}
 
 	// TODO: support delete-refs
-	caps := sess.Capabilities() // server capabilities
+	var caps capability.List // server capabilities
+	if c := sess.Capabilities(); c != nil {
+		caps = *c
+	}
 
 	haves, err := referencesToHashes(remoteRefs)
 	if err != nil {
@@ -182,7 +185,7 @@ func (r *Remote) sendPack(ctx context.Context, sess transport.Session, remoteRef
 	// earlier when no refspec matched anything and the remote has no refs,
 	// which is only known once the commands are built.
 	checkServer := func() error {
-		if err := xtransport.CheckPushObjectFormat(r.s, *caps); err != nil {
+		if err := xtransport.CheckPushObjectFormat(r.s, caps); err != nil {
 			return err
 		}
 		if isDelete && !caps.Supports(capability.DeleteRefs) {
