@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
@@ -185,17 +186,18 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 }
 
 // ignoreScope builds the ignore scope in effect at the root of the worktree:
-// .git/info/exclude, the root .gitignore, then any patterns supplied by the
-// caller, in ascending order of priority. Ignore files in subdirectories are
-// read by the walk itself, only where it goes.
+// info/exclude, the root .gitignore, then any patterns supplied by the caller,
+// in ascending order of priority. Ignore files in subdirectories are read by
+// the walk itself, only where it goes.
 func (w *Worktree) ignoreScope() *gitignore.Scope {
+	patterns := w.infoExcludePatterns()
+
 	// A worktree whose root cannot be listed yields no patterns rather than an
 	// error, as collecting them did before: the walk itself already treats a
 	// missing root as an empty tree, and Status should not start failing for
 	// worktrees it used to report on.
-	patterns, err := gitignore.RootPatterns(w.filesystem)
-	if err != nil {
-		patterns = nil
+	if root, err := gitignore.DirPatterns(w.filesystem, nil); err == nil {
+		patterns = append(patterns, root...)
 	}
 
 	patterns = append(patterns, w.Excludes...)
@@ -205,6 +207,28 @@ func (w *Worktree) ignoreScope() *gitignore.Scope {
 	// down; returning nil here would mean never looking.
 
 	return gitignore.NewScope(patterns)
+}
+
+// infoExcludePatterns returns the rules in the repository's info/exclude file.
+// They come from storage because the worktree filesystem refuses paths inside
+// .git, and because linked worktrees and submodules have no .git directory to
+// open. An unreadable file yields no patterns, as git carries on without it.
+func (w *Worktree) infoExcludePatterns() []gitignore.Pattern {
+	type fsBased interface {
+		Filesystem() billy.Filesystem
+	}
+
+	storage, isFSBased := w.r.Storer.(fsBased)
+	if !isFSBased {
+		return nil
+	}
+
+	patterns, err := gitignore.InfoExcludePatterns(storage.Filesystem())
+	if err != nil {
+		return nil
+	}
+
+	return patterns
 }
 
 func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.Hash, error) {
