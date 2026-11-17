@@ -16,6 +16,14 @@ type objectWalker interface {
 // Objects computes object hashes reachable from wants while excluding
 // commits reachable from haves.
 //
+// The built-in walk also excludes every tree and blob reachable from the
+// tree of each have commit, and from the tree of each edge commit: one
+// reachable from haves that is a parent of a commit it returns.
+// git rev-list --objects excludes only the edge commits' trees
+// (mark_edges_uninteresting in Git's list-objects.c), so the result can be
+// a subset of Git's, but it never lacks an object a client with those
+// haves needs: their full trees are already on the client.
+//
 // If s implements objectWalker, its RevListObjects method is used.
 // Otherwise, Objects expands haves first to establish commit boundaries,
 // then walks wants in the same object store.
