@@ -180,7 +180,7 @@ func (s *SuiteDotGit) TestModuleNestingFailsClosedOnUncheckableEntry() {
 			_, err := d.Module("lib/hooks")
 			s.Require().ErrorIs(err, os.ErrPermission)
 			s.NotErrorIs(err, ErrModuleGitDirNested)
-			s.Contains(err.Error(), "modules/lib/"+entry)
+			s.Contains(err.Error(), fmt.Sprintf("%q", filepath.Join("modules", "lib", entry)))
 		})
 	}
 }
