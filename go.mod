@@ -14,7 +14,7 @@ require (
 	github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.7.0
-	github.com/sergi/go-diff v1.4.0
+	github.com/sergi/go-diff v1.4.5
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
