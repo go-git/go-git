@@ -4,11 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"os"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/format/gitattributes"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -29,8 +33,9 @@ const (
 // hashes for the index, the check-in direction[1]: from the .gitattributes
 // files along the file's path, each read from the worktree or, where the
 // worktree has none, as under a sparse checkout, from the index; then from
-// $GIT_DIR/info/attributes, which has the highest priority. The global
-// attributes file (core.attributesFile) and the system one are not read.
+// $GIT_DIR/info/attributes, which has the highest priority. The global and
+// the system attributes files are read below them, see globalAttributes.
+// A tree named by attr.tree is not read.
 //
 // Git warns about an attributes file it cannot read and about a line it
 // cannot parse, and goes on without them, so neither fails here either.
@@ -39,6 +44,7 @@ const (
 type checkinAttributes struct {
 	w   *Worktree
 	idx *index.Index
+	cfg *config.Config
 	// fold tells whether patterns match regardless of case, as under
 	// core.ignorecase.
 	fold bool
@@ -50,14 +56,97 @@ type checkinAttributes struct {
 	info    []gitattributes.MatchAttribute
 	// infoRead tells whether info has been read.
 	infoRead bool
+	// global holds the attributes of the system and the global attributes
+	// files, read once globalRead is set.
+	global     []gitattributes.MatchAttribute
+	globalRead bool
 }
 
-// newCheckinAttributes returns the check-in attributes of w, with idx, the
-// index the operation starts from, for the attributes files the worktree
-// lacks, and fold set when core.ignorecase makes patterns match regardless
-// of case.
-func newCheckinAttributes(w *Worktree, idx *index.Index, fold bool) *checkinAttributes {
-	return &checkinAttributes{w: w, idx: idx, fold: fold, dirs: make(map[string][]gitattributes.MatchAttribute)}
+// newCheckinAttributes returns the check-in attributes of w under the
+// configuration cfg, with idx, the index the operation starts from, for the
+// attributes files the worktree lacks.
+func newCheckinAttributes(w *Worktree, idx *index.Index, cfg *config.Config) *checkinAttributes {
+	a := &checkinAttributes{w: w, idx: idx, cfg: cfg, dirs: make(map[string][]gitattributes.MatchAttribute)}
+	switch v := strings.ToLower(rawOption(cfg, "core", "", "ignorecase")); v {
+	case "true", "yes", "on":
+		a.fold = true
+	default:
+		n, err := strconv.Atoi(v)
+		a.fold = err == nil && n != 0
+	}
+	return a
+}
+
+// rawOption returns the value of the option key in the section, and
+// subsection, of cfg's raw configuration, or "" when there is none.
+func rawOption(cfg *config.Config, section, subsection, key string) string {
+	if cfg == nil || cfg.Raw == nil || !cfg.Raw.HasSection(section) {
+		return ""
+	}
+	s := cfg.Raw.Section(section)
+	if subsection == "" {
+		return s.Option(key)
+	}
+	if !s.HasSubsection(subsection) {
+		return ""
+	}
+	return s.Subsection(subsection).Option(key)
+}
+
+// globalAttributes returns the attributes of the system attributes file
+// and of the global one, which Git reads at the lowest priority, the
+// global file over the system one. The global file is core.attributesFile
+// of the repository's configuration, or else
+// $XDG_CONFIG_HOME/git/attributes, or ~/.config/git/attributes when that
+// is unset. A core.attributesFile set in the user's own configuration is
+// not seen, as go-git does not read it here.
+//
+// Git reads the system file, /etc/gitattributes, unless GIT_ATTR_NOSYSTEM
+// is set[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/attr.c#L891-L894
+func (a *checkinAttributes) globalAttributes() []gitattributes.MatchAttribute {
+	if a.globalRead {
+		return a.global
+	}
+	a.globalRead = true
+
+	if os.Getenv("GIT_ATTR_NOSYSTEM") == "" {
+		a.global = readHostAttributes("/etc/gitattributes")
+	}
+
+	home, _ := os.UserHomeDir()
+	name := rawOption(a.cfg, "core", "", "attributesfile")
+	switch {
+	case strings.HasPrefix(name, "~/") && home != "":
+		name = filepath.Join(home, name[2:])
+	case name != "":
+	case os.Getenv("XDG_CONFIG_HOME") != "":
+		name = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "attributes")
+	case home != "":
+		name = filepath.Join(home, ".config", "git", "attributes")
+	}
+	if name != "" {
+		a.global = append(a.global, readHostAttributes(name)...)
+	}
+	a.foldPatterns(a.global, nil)
+	return a.global
+}
+
+// readHostAttributes reads the attributes file name of the host's
+// filesystem, following a symlink, as Git does.
+func readHostAttributes(name string) []gitattributes.MatchAttribute {
+	fi, err := os.Stat(name)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() >= maxAttributesFile {
+		return nil
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+
+	return parseAttributes(f, nil, true, true)
 }
 
 // keepsCRLF reports whether the attributes of name tell Git to hash the
@@ -71,7 +160,9 @@ func (a *checkinAttributes) keepsCRLF(name string) bool {
 	parts := strings.Split(name, "/")
 
 	info := a.infoAttributes()
-	stack := make([]gitattributes.MatchAttribute, 0, len(info))
+	global := a.globalAttributes()
+	stack := make([]gitattributes.MatchAttribute, 0, len(global)+len(info))
+	stack = append(stack, global...)
 	for i := range parts {
 		stack = append(stack, a.dir(parts[:i])...)
 	}
