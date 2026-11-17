@@ -3,6 +3,7 @@ package filesystem_test
 import (
 	"errors"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -327,5 +328,89 @@ func TestSetShallowWritesThroughSymlink(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "e8d3ffab552895c19b9fcf7aa264d277cde33881\n", string(got))
 	_, err = fs.Lstat("real-shallow.lock")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestSetShallowRejectsSymlinkOutsideGitDir(t *testing.T) {
+	t.Parallel()
+
+	targets := map[string]string{
+		"absolute": "/etc/shallow",
+		"parent":   "../shallow",
+	}
+	if runtime.GOOS == "windows" {
+		targets["rooted"] = `\shallow`
+		targets["drive-relative"] = `C:shallow`
+		targets["drive-absolute"] = `C:\shallow`
+		targets["unc"] = `\\server\share\shallow`
+	}
+
+	for name, target := range targets {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			require.NoError(t, fs.Symlink(target, "shallow"))
+			st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+			err := st.SetShallow([]plumbing.Hash{plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")})
+			require.Error(t, err)
+
+			got, err := fs.Readlink("shallow")
+			require.NoError(t, err)
+			assert.Equal(t, target, got)
+		})
+	}
+}
+
+// TestSetShallowRemovesSymlinkNotTarget checks that removing the shallow
+// file removes the link and leaves its target, as Git does.
+func TestSetShallowRemovesSymlinkNotTarget(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	require.NoError(t, util.WriteFile(fs, "real-shallow", []byte(oldShallow), 0o644))
+	require.NoError(t, fs.Symlink("real-shallow", "shallow"))
+	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	require.NoError(t, st.SetShallow(nil))
+
+	_, err := fs.Lstat("shallow")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	got, err := util.ReadFile(fs, "real-shallow")
+	require.NoError(t, err)
+	assert.Equal(t, oldShallow, string(got))
+	_, err = fs.Lstat("real-shallow.lock")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// TestSetShallowSymlinkChainLimit checks that SetShallow follows 5 links, as
+// Git's lockfile.c does, and refuses longer chains.
+func TestSetShallowSymlinkChainLimit(t *testing.T) {
+	t.Parallel()
+
+	chain := func(links int) billy.Filesystem {
+		fs := memfs.New()
+		require.NoError(t, util.WriteFile(fs, "target", []byte(oldShallow), 0o644))
+		next := "target"
+		for i := links; i > 1; i-- {
+			name := "link" + string(rune('a'+i))
+			require.NoError(t, fs.Symlink(next, name))
+			next = name
+		}
+		require.NoError(t, fs.Symlink(next, "shallow"))
+		return fs
+	}
+	commit := []plumbing.Hash{plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")}
+
+	fs := chain(5)
+	require.NoError(t, filesystem.NewStorage(fs, cache.NewObjectLRUDefault()).SetShallow(commit))
+	got, err := util.ReadFile(fs, "target")
+	require.NoError(t, err)
+	assert.Equal(t, "e8d3ffab552895c19b9fcf7aa264d277cde33881\n", string(got))
+
+	fs = chain(6)
+	require.Error(t, filesystem.NewStorage(fs, cache.NewObjectLRUDefault()).SetShallow(commit))
+	_, err = fs.Lstat("shallow.lock")
 	require.ErrorIs(t, err, os.ErrNotExist)
 }

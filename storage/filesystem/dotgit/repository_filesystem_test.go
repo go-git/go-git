@@ -270,3 +270,31 @@ func (s *SuiteDotGit) TestSetShallowInLinkedWorktree() {
 	_, err = commonDotGitFs.Lstat(shallowPath)
 	s.ErrorIs(err, os.ErrNotExist)
 }
+
+// TestSetShallowSymlinkInLinkedWorktree checks that a symlinked shallow file
+// in the common directory is resolved there, not in the worktree's own git
+// directory.
+func (s *SuiteDotGit) TestSetShallowSymlinkInLinkedWorktree() {
+	fs := s.EmptyFS()
+
+	s.Require().NoError(fs.MkdirAll("dotGit", 0o777))
+	dotGitFs, err := fs.Chroot("dotGit")
+	s.Require().NoError(err)
+	s.Require().NoError(fs.MkdirAll("commonDotGit", 0o777))
+	commonDotGitFs, err := fs.Chroot("commonDotGit")
+	s.Require().NoError(err)
+
+	dir := New(NewRepositoryFilesystem(dotGitFs, commonDotGitFs))
+	s.Require().NoError(util.WriteFile(commonDotGitFs, "real-shallow", []byte("old\n"), 0o644))
+	s.Require().NoError(commonDotGitFs.Symlink("real-shallow", shallowPath))
+
+	s.Require().NoError(dir.SetShallow([]byte("new\n")))
+
+	got, err := util.ReadFile(commonDotGitFs, "real-shallow")
+	s.Require().NoError(err)
+	s.Equal("new\n", string(got))
+	for _, name := range []string{"real-shallow", "real-shallow.lock"} {
+		_, err = dotGitFs.Lstat(name)
+		s.ErrorIs(err, os.ErrNotExist, name)
+	}
+}
