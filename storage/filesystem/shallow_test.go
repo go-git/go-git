@@ -309,3 +309,23 @@ func (f *failingFile) Close() error {
 	}
 	return err
 }
+
+func TestSetShallowWritesThroughSymlink(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	require.NoError(t, util.WriteFile(fs, "real-shallow", []byte(oldShallow), 0o644))
+	require.NoError(t, fs.Symlink("real-shallow", "shallow"))
+	st := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+
+	require.NoError(t, st.SetShallow([]plumbing.Hash{plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")}))
+
+	target, err := fs.Readlink("shallow")
+	require.NoError(t, err)
+	assert.Equal(t, "real-shallow", target)
+	got, err := util.ReadFile(fs, "real-shallow")
+	require.NoError(t, err)
+	assert.Equal(t, "e8d3ffab552895c19b9fcf7aa264d277cde33881\n", string(got))
+	_, err = fs.Lstat("real-shallow.lock")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}

@@ -474,8 +474,29 @@ func (d *DotGit) ShallowWriter() (billy.File, error) {
 // to that file before renaming it into place. A failed write leaves the old
 // file in place, and SetShallow fails, with an error wrapping [os.ErrExist],
 // while another writer holds the lock.
+//
+// A shallow file that is a symlink is resolved first, as Git does, so the
+// target is replaced and locked, and the link is kept. Only links relative to
+// the Git directory, and at most 40 of them in a chain, are followed.
 func (d *DotGit) SetShallow(data []byte) (err error) {
-	lock, err := d.fs.OpenFile(shallowLockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	shallow := shallowPath
+	for range 40 {
+		fi, err := d.fs.Lstat(shallow)
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+		link, err := d.fs.Readlink(shallow)
+		if err != nil {
+			return err
+		}
+		if !path.IsAbs(link) {
+			link = path.Join(path.Dir(shallow), link)
+		}
+		shallow = link
+	}
+	shallowLock := shallow + ".lock"
+
+	lock, err := d.fs.OpenFile(shallowLock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return err
 	}
@@ -483,7 +504,7 @@ func (d *DotGit) SetShallow(data []byte) (err error) {
 	committed := false
 	defer func() {
 		if !committed {
-			_ = d.fs.Remove(shallowLockPath)
+			_ = d.fs.Remove(shallowLock)
 		}
 	}()
 
@@ -491,7 +512,7 @@ func (d *DotGit) SetShallow(data []byte) (err error) {
 		if err := lock.Close(); err != nil {
 			return err
 		}
-		if err := d.fs.Remove(shallowPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := d.fs.Remove(shallow); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
@@ -505,11 +526,12 @@ func (d *DotGit) SetShallow(data []byte) (err error) {
 		return err
 	}
 
-	err = d.fs.Rename(shallowLockPath, shallowPath)
-	if errors.Is(err, billy.ErrNotSupported) {
-		// Without rename, as on sivafs, the file can only be rewritten in
-		// place.
-		return util.WriteFile(d.fs, shallowPath, data, 0o666)
+	err = d.fs.Rename(shallowLock, shallow)
+	if errors.Is(err, billy.ErrNotSupported) || (err != nil && runtime.GOOS == "windows") {
+		// Without rename, as on sivafs, or when Windows refuses to rename
+		// over a file another handle has open, the file can only be
+		// rewritten in place.
+		return util.WriteFile(d.fs, shallow, data, 0o666)
 	}
 	if err != nil {
 		return err
