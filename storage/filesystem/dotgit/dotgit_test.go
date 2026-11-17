@@ -238,13 +238,13 @@ func (s *SuiteDotGit) TestModuleRejectsDeepName() {
 	s.ErrorIs(err, ErrModuleNameTooDeep)
 }
 
-// A name whose Git directory path is longer than maxModuleGitDirLen is
+// A name whose Git directory path is longer than 4096 bytes is
 // refused, so long components cannot make every lookup walk many bytes on a
 // filesystem that does not bound path length.
 func (s *SuiteDotGit) TestModuleRejectsLongName() {
 	d := New(s.EmptyFS())
-	longest := "a/" + strings.Repeat("b", maxModuleGitDirLen-len(modulePath)-1-len("a/"))
-	s.Require().Len(modulePath+"/"+longest, maxModuleGitDirLen)
+	longest := "a/" + strings.Repeat("b", 4096-len(modulePath)-1-len("a/"))
+	s.Require().Len(modulePath+"/"+longest, 4096)
 	s.initModule(d, longest)
 
 	_, err := d.Module(longest)
