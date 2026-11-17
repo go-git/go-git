@@ -176,14 +176,14 @@ func (r *FetchArgs) Encode(w io.Writer) error {
 // Decode reads v2 fetch command arguments from a reader until a flush-pkt
 // is encountered. The caller is responsible for reading the delim-pkt
 // and command header before calling Decode. Decode returns an error for
-// an argument it does not know, and for a delim-pkt or an empty line
-// before the flush-pkt.
+// an argument it does not know, and for a delim-pkt, an empty line or the end of
+// the stream before the flush-pkt.
 func (r *FetchArgs) Decode(rd io.Reader) error {
 	for {
 		l, pkt, err := pktline.ReadLine(rd)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return nil
+				return errors.New("expected flush after fetch arguments")
 			}
 			return err
 		}

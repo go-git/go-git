@@ -602,3 +602,14 @@ func TestFetchArgsRoundTrip(t *testing.T) {
 		assert.Equal(t, req.WaitForDone, got.WaitForDone)
 	})
 }
+
+func TestFetchArgsDecodeRejectsEOFBeforeFlush(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	pktline.Writef(&buf, "want 6ecf0ef2c2dffb796033e5a02219af86ec6584e5\n")
+	pktline.WriteString(&buf, "done\n")
+
+	got := &FetchArgs{}
+	require.ErrorContains(t, got.Decode(&buf), "expected flush after fetch arguments")
+}
