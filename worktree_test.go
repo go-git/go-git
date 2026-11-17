@@ -7022,6 +7022,12 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		{name: "directory pattern", path: "d/s", files: map[string]string{".gitattributes": "d/ -text\n"}},
 		{name: "unset with a value", path: "d/s", files: map[string]string{".gitattributes": "* text\nd/s -text=x\n"}, want: true},
 		{name: "no-break space in a pattern", path: "d/z\u00a0q.bin", files: map[string]string{".gitattributes": "z\u00a0q.bin -text\n"}, want: true},
+		{name: "NUL ends the line", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00junk\n"}, want: true},
+		{name: "NUL in a blob ends the file", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text\n\x00\nd/s text\n"}, want: true},
+		{name: "CR counts toward a blob line limit", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}},
+		{name: "CR does not count toward a file line limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}, want: true},
+		{name: "NUL ends the line before the line limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00" + strings.Repeat("a", 3000) + "\n"}, want: true},
+		{name: "line limit counts up to the NUL", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2100) + "\x00\n"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
