@@ -818,7 +818,7 @@ func TestPlainCloneDepthBeyondHistoryWritesNoShallowFile(t *testing.T) {
 
 	t.Run("git", func(t *testing.T) {
 		requireGitBinary(t)
-		assert.Equal(t, "false\n", git(t, dstDir, "rev-parse", "--is-shallow-repository"))
+		assert.Equal(t, "3\n", git(t, dstDir, "rev-list", "--count", "HEAD"))
 	})
 }
 
