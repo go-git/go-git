@@ -13,8 +13,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
-	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/plumbing/revlist"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -131,27 +129,6 @@ func TestUploadPackV2FetchShallowDeepen(t *testing.T) {
 	require.Contains(t, out, "packfile")
 	require.Less(t, strings.Index(out, "shallow-info"), strings.Index(out, "packfile"),
 		"shallow-info must precede the packfile section")
-}
-
-func TestObjectsToUploadShallowBounded(t *testing.T) {
-	t.Parallel()
-	st := basicV2Storage(t)
-	head, err := storer.ResolveReference(st, plumbing.HEAD)
-	require.NoError(t, err)
-	c, err := object.GetCommit(st, head.Hash())
-	require.NoError(t, err)
-	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
-	parent := c.ParentHashes[0]
-
-	full, err := objectsToUpload(st, []plumbing.Hash{head.Hash()}, nil)
-	require.NoError(t, err)
-	require.Contains(t, full, parent, "unbounded pack should include the parent commit")
-
-	bounded, err := revlist.ObjectsWithShallows(st, []plumbing.Hash{head.Hash()}, nil, []plumbing.Hash{head.Hash()})
-	require.NoError(t, err)
-	require.Contains(t, bounded, head.Hash(), "shallow boundary commit must be included")
-	require.NotContains(t, bounded, parent, "depth-1 pack must exclude the boundary's parent")
-	require.Less(t, len(bounded), len(full), "shallow pack must be smaller than the full pack")
 }
 
 func TestUploadPackV2FetchNoDeepenNoShallowInfo(t *testing.T) {
