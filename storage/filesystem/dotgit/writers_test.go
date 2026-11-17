@@ -1657,3 +1657,38 @@ func TestPackWriterCloseReleasesReadHandleWhenTruncateFails(t *testing.T) {
 	require.ErrorIs(t, w.Close(), errTruncate)
 	assert.Zero(t, fs.open.Load(), "read handle left open")
 }
+
+// TestPackWriterSaveReadsAnIdenticalExistingFinalOnce checks that a final
+// already in place is compared with its temporary file once, not again when
+// it is placed.
+func TestPackWriterSaveReadsAnIdenticalExistingFinalOnce(t *testing.T) {
+	t.Parallel()
+
+	data := packBytes(t, fixtures.Basic().One())
+	fs := &removeFailingFS{Filesystem: osfs.New(t.TempDir())}
+	dot := New(fs)
+	require.NoError(t, dot.Initialize())
+
+	save := func() {
+		w, err := dot.NewObjectPack()
+		require.NoError(t, err)
+		_, err = w.Write(data)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+	}
+	save()
+
+	opens := map[string]int{}
+	fs.beforeOpen = func(name string) {
+		if !strings.HasPrefix(filepath.Base(name), "tmp_") {
+			opens[filepath.Base(name)]++
+		}
+	}
+	save()
+
+	finals := packDirNames(t, fs)
+	require.NotEmpty(t, finals)
+	for _, n := range finals {
+		require.Equal(t, 1, opens[n], "%s read a different number of times than once", n)
+	}
+}
