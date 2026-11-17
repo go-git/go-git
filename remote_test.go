@@ -2923,3 +2923,22 @@ func TestSendPackObjectFormatCheckComesAfterNothingMatched(t *testing.T) {
 		require.ErrorIs(t, err, transport.ErrUnsupportedObjectFormat)
 	})
 }
+
+type nilCapabilitiesSession struct {
+	transport.Session
+}
+
+func (nilCapabilitiesSession) Capabilities() *capability.List { return nil }
+
+func TestSendPackSessionWithoutCapabilities(t *testing.T) {
+	t.Parallel()
+	r := NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: "origin"})
+	remoteRefs := memory.NewStorage()
+	require.NoError(t, remoteRefs.SetReference(plumbing.NewHashReference("refs/heads/other", plumbing.NewHash("1111111111111111111111111111111111111111"))))
+
+	err := r.sendPack(context.Background(), nilCapabilitiesSession{}, remoteRefs, &PushOptions{
+		RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"},
+	})
+
+	require.ErrorIs(t, err, NoErrAlreadyUpToDate)
+}
