@@ -211,7 +211,7 @@ func checkMacro(name string, allowMacro bool) (macro bool, macroName string, err
 		return true, name, ErrMacroNotAllowed
 	}
 
-	macroName = name[len(macroPrefix):]
+	macroName, _ = cutBlank(strings.TrimLeft(name[len(macroPrefix):], blank))
 	if !validAttributeName(macroName) {
 		return true, name, ErrInvalidAttributeName
 	}
