@@ -5861,3 +5861,51 @@ func TestHardResetRemovesAConflictByItsLowestStage(t *testing.T) {
 	_, err = fs.Lstat("c")
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+// A merge reset removes an entry by the mode of the index entry it removes,
+// so a file standing where an uninitialised submodule's gitlink is tracked
+// is kept, as rmdir refuses it. The status of an uninitialised submodule
+// reports its expected hash, which the file hashes as, so the reset is not
+// refused for unstaged changes.
+func TestMergeResetKeepsFileAtUninitialisedGitlink(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	const gitlink = "1111111111111111111111111111111111111111"
+	modules := "[submodule \"sub\"]\n\tpath = sub\n\turl = https://example.com/sub.git\n"
+	modulesBlob := writeBlob(t, s, []byte(modules))
+	withGitlink := storeCommit(t, s, &object.Commit{
+		Author: *sig, Committer: *sig, Message: "adds sub\n",
+		TreeHash: storeRawTree(t, s, []object.TreeEntry{
+			{Name: ".gitmodules", Mode: filemode.Regular, Hash: modulesBlob},
+			{Name: "sub", Mode: filemode.Submodule, Hash: plumbing.NewHash(gitlink)},
+		}),
+	})
+	withoutGitlink := storeCommit(t, s, &object.Commit{
+		Author: *sig, Committer: *sig, Message: "drops sub\n",
+		TreeHash: storeRawTree(t, s, []object.TreeEntry{
+			{Name: ".gitmodules", Mode: filemode.Regular, Hash: modulesBlob},
+		}),
+		ParentHashes: []plumbing.Hash{withGitlink},
+	})
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	require.NoError(t, s.SetReference(plumbing.NewHashReference(head.Target(), withGitlink)))
+	require.NoError(t, util.WriteFile(fs, ".gitmodules", []byte(modules), 0o644))
+	require.NoError(t, w.Reset(&ResetOptions{Mode: MixedReset, Commit: withGitlink}))
+	require.NoError(t, util.WriteFile(fs, "sub", []byte("user data\n"), 0o644))
+
+	require.NoError(t, w.Reset(&ResetOptions{Mode: MergeReset, Commit: withoutGitlink}))
+
+	body, err := util.ReadFile(fs, "sub")
+	require.NoError(t, err, "the file at the gitlink was removed")
+	require.Equal(t, "user data\n", string(body))
+}

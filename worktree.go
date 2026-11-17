@@ -783,17 +783,9 @@ func (w *Worktree) removeTrackedDeletions(changes merkletrie.Changes, files []st
 			continue
 		}
 		if entries == nil {
-			idx, err := w.r.Storer.Index()
+			entries, err = w.storedEntries()
 			if err != nil {
 				return err
-			}
-			entries = make(map[string]*index.Entry, len(idx.Entries))
-			for _, e := range idx.Entries {
-				// idx.Entries need not be sorted, so the lowest stage
-				// of a conflict is found by comparing stages.
-				if seen, ok := entries[e.Name]; !ok || e.Stage < seen.Stage {
-					entries[e.Name] = e
-				}
 			}
 		}
 		mode := unknownMode
@@ -805,6 +797,23 @@ func (w *Worktree) removeTrackedDeletions(changes merkletrie.Changes, files []st
 		}
 	}
 	return nil
+}
+
+// storedEntries returns the stored index's entries by name. A path with several
+// stages maps to its lowest, the one Git keeps when it drops an unmerged path
+// to stage 0.
+func (w *Worktree) storedEntries() (map[string]*index.Entry, error) {
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return nil, err
+	}
+	entries := make(map[string]*index.Entry, len(idx.Entries))
+	for _, e := range idx.Entries {
+		if seen, ok := entries[e.Name]; !ok || e.Stage < seen.Stage {
+			entries[e.Name] = e
+		}
+	}
+	return entries, nil
 }
 
 // resetWorktreeToTree writes the contents of idx, the index a reset built
@@ -861,7 +870,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 			}
 		}
 
-		if err := w.checkoutChange(cfg, fs, ch, toTree, b); err != nil {
+		if err := w.checkoutChange(cfg, fs, ch, toTree, b, unknownMode); err != nil {
 			return err
 		}
 	}
@@ -910,6 +919,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 	fs, closeFS := w.reusableRootFS()
 	defer closeFS()
 
+	var entries map[string]*index.Entry
 	filesMap := buildFilePathMap(files)
 	for _, ch := range changes {
 		if len(files) > 0 {
@@ -930,7 +940,20 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 			}
 		}
 
-		if err := w.checkoutChange(cfg, fs, ch, t, b); err != nil {
+		removedMode := unknownMode
+		if a, err := ch.Action(); err == nil && a == merkletrie.Delete {
+			if entries == nil {
+				entries, err = w.storedEntries()
+				if err != nil {
+					return err
+				}
+			}
+			if e, ok := entries[ch.From.String()]; ok {
+				removedMode = e.Mode
+			}
+		}
+
+		if err := w.checkoutChange(cfg, fs, ch, t, b, removedMode); err != nil {
 			return err
 		}
 	}
@@ -939,7 +962,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 	return w.r.Storer.SetIndex(idx)
 }
 
-func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder) error {
+func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder, removedMode filemode.FileMode) error {
 	a, err := ch.Action()
 	if err != nil {
 		return err
@@ -967,11 +990,10 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 		// helper in resetWorktreeToTree.
 		//
 		// resetWorktree is the only caller that reaches this, for a merge
-		// reset. The mode would be the stored index entry's, but a merge
-		// reset refuses a file or a directory standing at a tracked path
-		// with ErrUnstagedChanges, so the shapes the mode separates never
-		// reach here, and unknownMode removes the rest.
-		return rmEntryAndDirsIfEmpty(fs, ch.From.String(), unknownMode)
+		// reset, and passes the stored index entry's mode. A file standing at
+		// an uninitialised submodule's gitlink hashes as the gitlink, so the
+		// reset is not refused for it and the mode keeps it.
+		return rmEntryAndDirsIfEmpty(fs, ch.From.String(), removedMode)
 	}
 
 	if isSubmodule {
