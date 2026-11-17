@@ -372,3 +372,46 @@ func (sfs *worktreeFilesystem) validSymlinkName(name string) error {
 	}
 	return nil
 }
+
+// symlinkGuardedFilesystem is the read side of the worktree filesystem
+// without its path policy. Status and Clean walk names taken from listing
+// the directory, which name real files, so a directory called git~1 is an
+// ordinary one. A read still refuses a path through a symlink, so a
+// directory replaced by a link after it was listed is not followed.
+type symlinkGuardedFilesystem struct {
+	billy.Filesystem
+	guard *worktreeFilesystem
+}
+
+// walkFilesystem returns the filesystem for walking the worktree.
+func (sfs *worktreeFilesystem) walkFilesystem() billy.Filesystem {
+	return &symlinkGuardedFilesystem{Filesystem: sfs.Filesystem, guard: sfs}
+}
+
+func (g *symlinkGuardedFilesystem) Open(filename string) (billy.File, error) {
+	if err := g.guard.validNoLeadingSymlink(filename); err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	return g.Filesystem.Open(filename)
+}
+
+func (g *symlinkGuardedFilesystem) ReadDir(path string) ([]fs.DirEntry, error) {
+	if err := g.guard.validNoLeadingSymlink(path); err != nil {
+		return nil, fmt.Errorf("readdir: %w", err)
+	}
+	return g.Filesystem.ReadDir(path)
+}
+
+func (g *symlinkGuardedFilesystem) Lstat(filename string) (os.FileInfo, error) {
+	if err := g.guard.validNoLeadingSymlink(filename); err != nil {
+		return nil, fmt.Errorf("lstat: %w", err)
+	}
+	return g.Filesystem.Lstat(filename)
+}
+
+func (g *symlinkGuardedFilesystem) Readlink(link string) (string, error) {
+	if err := g.guard.validNoLeadingSymlink(link); err != nil {
+		return "", fmt.Errorf("readlink: %w", err)
+	}
+	return g.Filesystem.Readlink(link)
+}

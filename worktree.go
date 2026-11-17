@@ -1474,12 +1474,12 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 	// does, so a directory swapped for a link after it was listed is
 	// not followed.
 	root := ""
-	files, err := w.filesystem.Filesystem.ReadDir(root)
+	files, err := w.filesystem.walkFilesystem().ReadDir(root)
 	if err != nil {
 		return err
 	}
 
-	guard := cleanGuard{ignoreCase: cfg.Core.IgnoreCase, gitDirs: w.gitDirInfos(), fs: w.filesystem.Filesystem}
+	guard := cleanGuard{ignoreCase: cfg.Core.IgnoreCase, gitDirs: w.gitDirInfos(), fs: w.filesystem.walkFilesystem()}
 	return w.doClean(s, opts, guard, root, files)
 }
 
@@ -1574,7 +1574,7 @@ func (w *Worktree) gitDirInfos() []os.FileInfo {
 }
 
 func (w *Worktree) doClean(status Status, opts *CleanOptions, guard cleanGuard, dir string, files []fs.DirEntry) error {
-	wfs := w.filesystem.Filesystem
+	wfs := w.filesystem.walkFilesystem()
 	for _, fi := range files {
 		if guard.skip(dir, fi, files) {
 			continue

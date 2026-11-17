@@ -2706,3 +2706,41 @@ func TestValidPathAllowsDotsOnlyWithProtectionOff(t *testing.T) {
 		})
 	}
 }
+
+// TestStatusWalkRefusesLeadingSymlinks covers the filesystem Status walks
+// the worktree through: a directory that was listed and then replaced by
+// a symlink must not be read through the link, while names that the path
+// policy refuses for tree entries, such as git~1, stay readable.
+func TestStatusWalkRefusesLeadingSymlinks(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+
+	root := t.TempDir()
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret"), []byte("x"), 0o644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(root, "swapped")))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "git~1"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "git~1", "f"), []byte("x"), 0o644))
+
+	wt := newWorktreeFilesystem(osfs.New(root), true, true)
+	walk := wt.walkFilesystem()
+
+	_, err := walk.ReadDir("swapped/sub")
+	require.ErrorIs(t, err, errLeadingSymlink)
+	_, err = walk.Open("swapped/secret")
+	require.ErrorIs(t, err, errLeadingSymlink)
+	_, err = walk.Lstat("swapped/secret")
+	require.ErrorIs(t, err, errLeadingSymlink)
+	_, err = walk.Readlink("swapped/secret")
+	require.ErrorIs(t, err, errLeadingSymlink)
+
+	entries, err := walk.ReadDir("git~1")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	f, err := walk.Open("git~1/f")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+}

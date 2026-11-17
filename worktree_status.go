@@ -184,12 +184,12 @@ func (w *Worktree) diffIndexWithWorktree(cfg *config.Config, idx *index.Index, r
 		fsOpts.IgnoreScope = w.ignoreScope()
 	}
 
-	// The walk reads the worktree filesystem directly: every name in it
+	// The walk skips the worktree filesystem's path policy: every name in it
 	// comes from listing its directory, so it names a real file, and Git
 	// reports an untracked directory named like a .git alias, such as
-	// git~1, as it does any other. The worktree filesystem's path policy is
-	// for names taken from trees, the index and .gitmodules.
-	to := filesystem.NewRootNodeWithOptions(w.filesystem.Filesystem, submodules, fsOpts)
+	// git~1, as it does any other. That policy is for names taken from trees,
+	// the index and .gitmodules. Reads still refuse a leading symlink.
+	to := filesystem.NewRootNodeWithOptions(w.filesystem.walkFilesystem(), submodules, fsOpts)
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)

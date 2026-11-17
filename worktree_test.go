@@ -6222,10 +6222,14 @@ type swapDirFS struct {
 	dir     string
 	swapAt  int
 	reads   int
+	listed  []string // listings after the swap
 	removed []string
 }
 
 func (f *swapDirFS) ReadDir(p string) ([]fs.DirEntry, error) {
+	if f.swapAt != 0 && f.reads >= f.swapAt {
+		f.listed = append(f.listed, p)
+	}
 	entries, err := f.Filesystem.ReadDir(p)
 	if err != nil || p != f.dir {
 		return entries, err
@@ -6293,6 +6297,7 @@ func TestCleanRefusesRemovalThroughSwappedSymlink(t *testing.T) {
 			err = w.Clean(&CleanOptions{Dir: true})
 			require.ErrorIs(t, err, errLeadingSymlink)
 			require.NotContains(t, sfs.removed, tc.target)
+			require.NotContains(t, sfs.listed, tc.target, "Clean listed a directory through the link")
 
 			fi, err := sfs.Lstat("dir")
 			require.NoError(t, err)
