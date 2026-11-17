@@ -18,8 +18,8 @@ import (
 // value, a quoted subsection or a comment is never rewritten. Headers Git
 // rejects, and a legacy header with an empty section or subsection name, are
 // left for gcfg to refuse. The latter fails closed: gcfg would read
-// `[protocol ""]` as `[protocol]`, so `[protocol.]`, whose `allow` Git reads
-// as `protocol..allow`, would set `protocol.allow` instead.
+// `[protocol.]` as `[protocol]`, whose `allow` Git reads as
+// `protocol..allow`, so it would set `protocol.allow` instead.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/config.c#L963-L978
 func rewriteLegacyHeaders(src []byte) ([]byte, error) {

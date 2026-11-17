@@ -244,11 +244,10 @@ a restriction set only in one of these is not enforced:
   and `GIT_CONFIG_PARAMETERS`, are not read, so `-c` options a parent git
   process passes down do not apply.
 
-The policy is also read differently from one header git reads:
-`[protocol ""]`, with an empty subsection, is read as `[protocol]`, as
-go-git's config decoder reads every empty subsection, so an `allow` under
-it sets `protocol.allow`. Git reads it as `protocol..allow`, which no
-transport looks up.
+A `[protocol ""]` header, with a quoted empty subsection, is refused as a
+syntax error. Git reads its `allow` as `protocol..allow`, which no
+transport looks up, while go-git's config decoder would read it as
+`[protocol]`.
 
 Reading every config scope as git does is left to the config rework
 proposed in [#2224](https://github.com/go-git/go-git/issues/2224).

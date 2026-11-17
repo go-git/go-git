@@ -112,7 +112,7 @@ func (s *DecoderSuite) TestDecodeLegacySubsectionHeader() {
 		// next line, and a quoted subsection, also one holding a header.
 		{"# [a.b]\n[s]\n\tk = v\n", "[s]\n\tk = v\n"},
 		{"[s]\n\tk = [a.b]\n", "[s]\n\tk = \"[a.b]\"\n"},
-		{"[s]\n\tk = x\\\n[a.b]\n", "[s]\n\tk = \"x\\n[a.b]\"\n"},
+		{"[s]\n\tk = x\\\n[a.b]\n", "[s]\n\tk = \"x[a.b]\"\n"},
 		{"[remote \"A.B\"]\n\tk = v\n", "[remote \"A.B\"]\n\tk = v\n"},
 		{"[remote \"[a.b]\"]\n\tk = v\n", "[remote \"[a.b]\"]\n\tk = v\n"},
 	} {
@@ -134,6 +134,19 @@ func (s *DecoderSuite) TestDecodeLegacySubsectionHeader() {
 	decodeFails(s, "[.x]\n\tk = v\n")
 	decodeFails(s, "[x.]\n\tk = v\n")
 	decodeFails(s, "[protocol]\n\tallow = never\n[protocol.]\n\tallow = always\n")
+	// Nor `[protocol ""]`, which gcfg reads as `[protocol]` but Git reads as
+	// protocol..allow, so it could override an earlier `[protocol] allow`.
+	decodeFails(s, "[protocol]\n\tallow = never\n[protocol \"\"]\n\tallow = always\n")
+	decodeFails(s, "[PROTOCOL \t\"\" ]\n\tallow = always\n")
+	decodeFails(s, "[protocol\"\"]\n\tallow = always\n")
+	decodeFails(s, "[protocol\r\"\"]\n\tallow = always\n")
+	err := NewDecoder(strings.NewReader("[core]\n\tk = v\n  [protocol \"\"]\n\tallow = always\n")).Decode(&Config{})
+	s.ErrorIs(err, errEmptyProtocolSubsection)
+	s.ErrorContains(err, "3:3: ")
+	// Other sections still read an empty subsection as none.
+	core := &Config{}
+	s.Require().NoError(NewDecoder(strings.NewReader("[core \"\"]\n\tk = v\n")).Decode(core))
+	s.Equal("v", core.Section("core").Option("k"))
 }
 
 // referenceDecode decodes the way Decode did before it kept an index, by

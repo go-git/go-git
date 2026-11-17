@@ -3,10 +3,17 @@ package config
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/gcfg/v2"
 )
+
+// errEmptyProtocolSubsection is returned for a `[protocol ""]` header. Git
+// reads its keys as `protocol..key`, which no transport looks up, whereas the
+// decoder would store them as `protocol.key` and let them override the policy.
+var errEmptyProtocolSubsection = errors.New(`empty subsection in a "protocol" header`)
 
 // A Decoder reads and decodes config files from an input stream.
 type Decoder struct {
@@ -28,18 +35,22 @@ func (d *Decoder) Decode(config *Config) error {
 	}
 
 	idx := newDecodeIndex(config)
-	cb := func(s, ss, k, v string, _ bool) error {
+	cb := func(e gcfg.Event) error {
+		if e.HasSubsection && e.Subsection == "" && strings.EqualFold(e.Section, "protocol") {
+			return fmt.Errorf("%s: %w", e.Position, errEmptyProtocolSubsection)
+		}
+
 		// A header line carries no option and is reported only so that
 		// the section it names comes into existence.
-		section, subsection := idx.lookup(s, ss)
-		if k == "" {
+		section, subsection := idx.lookup(e.Section, e.Subsection)
+		if e.Key == "" {
 			return nil
 		}
 
 		if subsection != nil {
-			subsection.AddOption(k, v)
+			subsection.AddOption(e.Key, e.Value)
 		} else {
-			section.AddOption(k, v)
+			section.AddOption(e.Key, e.Value)
 		}
 		return nil
 	}
@@ -51,7 +62,7 @@ func (d *Decoder) Decode(config *Config) error {
 	if err != nil {
 		return err
 	}
-	return gcfg.ReadWithCallback(bytes.NewReader(src), cb)
+	return gcfg.ReadWithOptions(bytes.NewReader(src), gcfg.WithCallback(cb))
 }
 
 // decodeIndex resolves the sections and subsections a decoder writes into.
