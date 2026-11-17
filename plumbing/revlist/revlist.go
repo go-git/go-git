@@ -45,12 +45,21 @@ func Objects(
 // from wants, the commits to send, excluding those reachable from haves,
 // the commits the client already has. Each of shallows is treated as a
 // shallow commit: the commit and its tree are included, its parents are
-// not walked. shallows come on top of the storer's own shallow commits,
+// not walked. A shallow commit reachable from haves is still excluded, as
+// upstream does for commits the client has unshallowed. shallows come on
+// top of the storer's own shallow commits,
 // which must still bound the walk, and they bound the walk from haves as
 // well as the walk from wants; the built-in walk does both, as upstream's
 // graft set does. A walker that applied shallows to the wants alone would
-// send history the client already has. Hashes in shallows that are missing
-// or not commits are ignored.
+// walk the haves past the shallow commits and withhold history the
+// client lacks. Hashes in shallows that are missing or not commits are
+// ignored.
+//
+// To fall back, an implementation calls ObjectsWithShallows on the inner
+// storer it wraps, never on itself: that dispatches back to the method
+// and recurses until the stack overflows. The same holds for Objects and
+// a storer that has RevListObjects. A storer without this method gets the
+// built-in walk.
 type ShallowObjectWalker interface {
 	RevListObjectsWithShallows(wants, haves, shallows []plumbing.Hash) ([]plumbing.Hash, error)
 }
@@ -61,8 +70,8 @@ type ShallowObjectWalker interface {
 // way.
 //
 // If s implements ShallowObjectWalker, its RevListObjectsWithShallows
-// method is used. Otherwise the built-in walk is, as a RevListObjects of s
-// cannot see shallows. With no shallows it is Objects.
+// method is used. Otherwise the built-in walk is used, because
+// RevListObjects cannot see shallows. With no shallows it is Objects.
 func ObjectsWithShallows(
 	s storer.EncodedObjectStorer,
 	wants,
