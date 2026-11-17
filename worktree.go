@@ -162,7 +162,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	if err := w.reset(&ResetOptions{
 		Mode:   MergeReset,
 		Commit: ref.Hash(),
-	}); err != nil {
+	}, false); err != nil {
 		return err
 	}
 
@@ -226,7 +226,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = SoftReset
 	}
 
-	if err := w.reset(ro); err != nil {
+	if err := w.reset(ro, false); err != nil {
 		return err
 	}
 
@@ -346,7 +346,10 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
-	if err := w.reset(opts); err != nil {
+	// Git parses the whole target of `reset --hard` and `reset --keep`, but
+	// not that of a path-limited restore.
+	parseTarget := opts.Mode == KeepReset || (opts.Mode == HardReset && len(opts.Files) == 0)
+	if err := w.reset(opts, parseTarget); err != nil {
 		return err
 	}
 	return w.setHEADCommit(opts.Commit)
@@ -354,7 +357,12 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 
 // reset updates the index and worktree without changing references. Checkout
 // switches HEAD afterward; Reset and Pull move the current branch afterward.
-func (w *Worktree) reset(opts *ResetOptions) error {
+//
+// parseTarget makes a hard or keep reset read every tree of the target before
+// it changes anything, as `git reset` does to rebuild its cache-tree. Git's
+// checkout and restore skip a subtree that the index's cache-tree vouches
+// for, so they pass false.
+func (w *Worktree) reset(opts *ResetOptions, parseTarget bool) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -395,6 +403,21 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 		if !treeContainsDirs(t, opts.SparseDirs) {
 			return ErrSparseResetDirectoryNotFound
 		}
+	}
+
+	if parseTarget {
+		walker := object.NewTreeWalker(t, true, nil)
+		for {
+			_, _, err := walker.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				walker.Close()
+				return err
+			}
+		}
+		walker.Close()
 	}
 
 	var trackedChanges merkletrie.Changes

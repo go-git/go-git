@@ -607,6 +607,112 @@ func TestStoredIndexDropsTheCacheTreeForAnyStorer(t *testing.T) {
 	assert.Equal(t, "f\n", string(body))
 }
 
+// A hard or keep reset reads the whole target tree, as Git does to rebuild
+// the cache-tree, so a missing subtree fails it even where the cache-tree
+// vouches that the subtree is unchanged.
+func TestHardAndKeepResetFailOnMissingSubtreeOfTarget(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		gitFlag string
+		gitErr  string // git 2.11 dies on the tree earlier than 2.20
+		mode    ResetMode
+	}{
+		{"hard", "--hard", "Could not read|unable to read tree", HardReset},
+		{"keep", "--keep", "unable to read tree", KeepReset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := repoWithMissingUnchangedSubtree(t, true)
+			c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+			c2 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD")))
+
+			probe := t.TempDir()
+			require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+			// Refreshing first keeps keep reset from failing on a stat-dirty
+			// entry, so that it fails on the missing tree.
+			git(t, probe, "update-index", "-q", "--refresh")
+			out, gitOK := gitAllowFail(t, probe, "reset", "-q", tc.gitFlag, "HEAD~1")
+			require.False(t, gitOK, "git reset %s", tc.gitFlag)
+			require.Regexp(t, tc.gitErr, out)
+
+			r, err := PlainOpen(dir)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			err = w.Reset(&ResetOptions{Commit: c1, Mode: tc.mode})
+			require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+			head, err := r.Head()
+			require.NoError(t, err)
+			assert.Equal(t, c2, head.Hash())
+		})
+	}
+}
+
+// Git's checkout -f and restore compare the target against the index with
+// the cache-tree and never read a subtree that it vouches for, so they
+// succeed where reset --hard fails.
+func TestForcedCheckoutAndRestoreSkipUnchangedSubtreeByCacheTree(t *testing.T) {
+	t.Parallel()
+
+	t.Run("checkout", func(t *testing.T) {
+		t.Parallel()
+
+		dir := repoWithMissingUnchangedSubtree(t, true)
+		if !gitAtLeast(t, 2, 20) {
+			t.Skip("checkout -f skips unchanged subtrees from Git 2.20")
+		}
+
+		c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+
+		probe := t.TempDir()
+		require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+		_, gitOK := gitAllowFail(t, probe, "checkout", "-q", "-f", "HEAD~1")
+		require.True(t, gitOK, "git checkout -f")
+
+		r, err := PlainOpen(dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, w.Checkout(&CheckoutOptions{Hash: c1, Force: true}))
+		body, err := os.ReadFile(filepath.Join(dir, "top"))
+		require.NoError(t, err)
+		assert.Equal(t, "1\n", string(body))
+	})
+
+	t.Run("restore", func(t *testing.T) {
+		t.Parallel()
+
+		dir := repoWithMissingUnchangedSubtree(t, true)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "top"), []byte("edited\n"), 0o644))
+
+		probe := t.TempDir()
+		require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+		if gitAtLeast(t, 2, 23) {
+			_, gitOK := gitAllowFail(t, probe, "restore", "-S", "-W", "top")
+			require.True(t, gitOK, "git restore")
+		}
+
+		r, err := PlainOpen(dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, w.Restore(&RestoreOptions{Staged: true, Worktree: true, Files: []string{"top"}}))
+		body, err := os.ReadFile(filepath.Join(dir, "top"))
+		require.NoError(t, err)
+		assert.Equal(t, "2\n", string(body))
+	})
+}
+
 // beforeSetIndexStorer runs a hook when the index is stored, which a reset
 // does last.
 type beforeSetIndexStorer struct {
