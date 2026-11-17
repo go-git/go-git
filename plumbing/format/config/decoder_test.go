@@ -109,11 +109,12 @@ func (s *DecoderSuite) TestDecodeLegacySubsectionHeader() {
 		{"[a.b.c]\n\tk = v\n", "[a \"b.c\"]\n\tk = v\n"},
 		{"[s]\n\tk = v\n  [a-1.b-2] ; comment\n\tk = w\n", "[s]\n\tk = v\n[a-1 \"b-2\"]\n\tk = w\n"},
 		// Not a header: a comment, a value, a value continued onto the
-		// next line, and a quoted subsection.
+		// next line, and a quoted subsection, also one holding a header.
 		{"# [a.b]\n[s]\n\tk = v\n", "[s]\n\tk = v\n"},
 		{"[s]\n\tk = [a.b]\n", "[s]\n\tk = \"[a.b]\"\n"},
 		{"[s]\n\tk = x\\\n[a.b]\n", "[s]\n\tk = \"x\\n[a.b]\"\n"},
 		{"[remote \"A.B\"]\n\tk = v\n", "[remote \"A.B\"]\n\tk = v\n"},
+		{"[remote \"[a.b]\"]\n\tk = v\n", "[remote \"[a.b]\"]\n\tk = v\n"},
 	} {
 		got, want := &Config{}, &Config{}
 		s.Require().NoError(NewDecoder(strings.NewReader(tc.legacy)).Decode(got), tc.legacy)
