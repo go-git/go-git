@@ -3238,3 +3238,19 @@ func (s *SuiteDotGit) TestModuleRejectsRootShapedNames() {
 		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
 	}
 }
+
+func (s *SuiteDotGit) TestModuleNestingBoundsTheErrorOfACommonDirThroughSymlink() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("symlink creation is privileged on windows")
+	}
+
+	outside := s.T().TempDir()
+	fs := osfs.New(s.T().TempDir())
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", []byte("link/"+strings.Repeat("x", 3000)+"\n"), 0o644))
+	s.Require().NoError(fs.Symlink(outside, "modules/lib/link"))
+
+	_, err := New(fs).Module("lib/refs/heads")
+	s.Require().Error(err)
+	s.Less(len(err.Error()), 4*maxCommonDirInError)
+}

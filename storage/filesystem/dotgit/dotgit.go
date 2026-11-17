@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -2343,7 +2344,6 @@ func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string, links int) (str
 	return d.resolveRelativeCommonDir(rel, tail, quoted, links)
 }
 
-// TODO(go-git/go-billy#TODO): replace with a root-confined realpath.
 // resolveRelativeCommonDir resolves common against the filesystem-relative p.
 // It rejects paths that leave the root or remove a symlink component with "..".
 // Git resolves symlinks before "..", but Billy has no realpath operation and
@@ -2353,6 +2353,7 @@ func (d *DotGit) resolveAbsoluteCommonDir(common, quoted string, links int) (str
 // that is a symbolic link is resolved through its target. links counts the
 // symbolic links already followed; quoted is the commondir errors name.
 func (d *DotGit) resolveRelativeCommonDir(p, common, quoted string, links int) (string, error) {
+	// TODO(go-git/go-billy#TODO): replace with a root-confined realpath.
 	segments := strings.Split(filepath.ToSlash(common), "/")
 	if !slices.Contains(segments, "..") {
 		// Nothing is removed, so the filesystem follows the symlinks Git's
@@ -2504,7 +2505,14 @@ func invalidCommonDir(common, missing string) error {
 
 // pathErrCause returns the cause of a path error, so an error message that
 // already quotes the path does not repeat it, and err itself otherwise.
+// go-billy reports a path leaving its root as a wrapped
+// [osfs.ErrPathEscapesParent] quoting the whole path, so that is reduced to
+// the sentinel.
 func pathErrCause(err error) error {
+	// TODO(go-git/go-billy#TODO): match a bounded escape error with errors.Is.
+	if errors.Is(err, osfs.ErrPathEscapesParent) {
+		return osfs.ErrPathEscapesParent
+	}
 	if pe, ok := errors.AsType[*iofs.PathError](err); ok {
 		return pe.Err
 	}
