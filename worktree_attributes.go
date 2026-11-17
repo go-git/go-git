@@ -155,9 +155,17 @@ func readHostAttributes(name string) []gitattributes.MatchAttribute {
 // text unspecified or of another value than auto or input, crlf is
 // unset[1].
 //
+// It also reports true where it cannot tell what Git would hash: attr.tree
+// is set, or a filter with a clean command applies, which go-git does not
+// run. A reset then keeps the file as a change rather than overwrite it.
+//
 // [1]: https://github.com/git/git/blob/v2.54.0/convert.c#L1269-L1339
 func (a *checkinAttributes) keepsCRLF(name string) bool {
 	parts := strings.Split(name, "/")
+
+	if rawOption(a.cfg, "attr", "", "tree") != "" {
+		return true
+	}
 
 	info := a.infoAttributes()
 	global := a.globalAttributes()
@@ -176,7 +184,10 @@ func (a *checkinAttributes) keepsCRLF(name string) bool {
 			parts[i] = asciiLower(part)
 		}
 	}
-	results, _ := gitattributes.NewMatcher(stack).Match(parts, []string{"text", "crlf"})
+	results, _ := gitattributes.NewMatcher(stack).Match(parts, []string{"text", "crlf", "filter"})
+	if f := results["filter"]; f != nil && f.IsValueSet() && rawOption(a.cfg, "filter", f.Value(), "clean") != "" {
+		return true
+	}
 	if action, ok := crlfAction(results["text"]); ok {
 		return action
 	}
