@@ -267,3 +267,59 @@ func newIndexStorageWithSpy(t *testing.T) (*filesystem.Storage, *spyIndexCache) 
 
 	return sto, spy
 }
+
+func TestIndexCacheIsolatesEntryMutation(t *testing.T) {
+	t.Parallel()
+	sto, _ := newIndexStorageWithSpy(t)
+	defer func() { _ = sto.Close() }()
+
+	original := plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198")
+	require.NoError(t, sto.SetIndex(&index.Index{
+		Version: 2,
+		Entries: []*index.Entry{{Hash: original, Name: "foo.go"}},
+	}))
+
+	idx1, err := sto.Index()
+	require.NoError(t, err)
+	idx1.Entries[0].Hash = plumbing.NewHash("def460562de28eb7e7ac40e0ee1e0603a33a9a00")
+
+	idx2, err := sto.Index()
+	require.NoError(t, err)
+	assert.Equal(t, original, idx2.Entries[0].Hash)
+}
+
+func TestIndexCacheIsolatesSetIndexCallerEntryMutation(t *testing.T) {
+	t.Parallel()
+	sto, _ := newIndexStorageWithSpy(t)
+	defer func() { _ = sto.Close() }()
+
+	original := plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198")
+	idx := &index.Index{
+		Version: 2,
+		Entries: []*index.Entry{{Hash: original, Name: "foo.go"}},
+	}
+	require.NoError(t, sto.SetIndex(idx))
+	idx.Entries[0].Hash = plumbing.NewHash("def460562de28eb7e7ac40e0ee1e0603a33a9a00")
+
+	got, err := sto.Index()
+	require.NoError(t, err)
+	assert.Equal(t, original, got.Entries[0].Hash)
+}
+
+func TestSetIndexDoesNotCacheTheCacheTree(t *testing.T) {
+	t.Parallel()
+	sto, _ := newIndexStorageWithSpy(t)
+	defer func() { _ = sto.Close() }()
+
+	require.NoError(t, sto.SetIndex(&index.Index{
+		Version: 2,
+		Entries: []*index.Entry{
+			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
+		},
+		Cache: &index.Tree{Entries: []index.TreeEntry{{Entries: 1}}},
+	}))
+
+	got, err := sto.Index()
+	require.NoError(t, err)
+	assert.Nil(t, got.Cache)
+}
