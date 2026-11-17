@@ -12,6 +12,10 @@ import (
 // RepositoryFilesystem is a billy.Filesystem compatible object wrapper
 // which handles dot-git filesystem operations and supports commondir according to git scm layout:
 // https://github.com/git/git/blob/master/Documentation/gitrepository-layout.adoc
+//
+// A relative path ending in ".lock" is routed as the file it locks. A file
+// whose name starts with "packed-refs." goes to the common directory, like
+// packed-refs.
 type RepositoryFilesystem struct {
 	dotGitFs       billy.Filesystem
 	commonDotGitFs billy.Filesystem
@@ -51,6 +55,15 @@ func (fs *RepositoryFilesystem) mapToRepositoryFsByPath(path string) billy.Files
 		return fs.dotGitFs
 	}
 
+	// A lock file is routed as the file it locks, as git does:
+	// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/path.c#L355
+	cleanPath = strings.TrimSuffix(cleanPath, refLockSuffix)
+
+	// Determine dot-git root by first path element.
+	// There are some elements which should always use commondir when commondir defined.
+	// Usual dot-git root will be used for the rest of files.
+	first, _, _ := strings.Cut(cleanPath, string(filepath.Separator))
+
 	// Check exceptions for commondir (https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt)
 	switch cleanPath {
 	case fs.dotGitFs.Join(logsPath, "HEAD"):
@@ -59,10 +72,14 @@ func (fs *RepositoryFilesystem) mapToRepositoryFsByPath(path string) billy.Files
 		return fs.dotGitFs
 	}
 
-	// Determine dot-git root by first path element.
-	// There are some elements which should always use commondir when commondir defined.
-	// Usual dot-git root will be used for the rest of files.
-	switch strings.Split(cleanPath, string(filepath.Separator))[0] {
+	// The files beside packed-refs go with it, such as the one its new content
+	// is written to before being renamed over it. Its lock already does, by
+	// the suffix trimmed above.
+	if strings.HasPrefix(first, stagedPackedRefsPrefix) {
+		return fs.commonDotGitFs
+	}
+
+	switch first {
 	case objectsPath, refsPath, packedRefsPath, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, worktreesPath:
 		return fs.commonDotGitFs
 	default:
