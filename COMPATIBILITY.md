@@ -239,8 +239,6 @@ while an unreadable system file fails the operation.
 Unlike git, the policy is not read from every place git reads it from, so
 a restriction set only in one of these is not enforced:
 
-- Only one global file is read: `~/.gitconfig`, or the XDG one when
-  `~/.gitconfig` is missing or unreadable. Git reads both.
 - `[include]` and `[includeIf]` are not followed.
 - `GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>`,
   and `GIT_CONFIG_PARAMETERS`, are not read, so `-c` options a parent git

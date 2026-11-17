@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -47,8 +48,8 @@ func WithFilesystem(fs billy.Basic) Option {
 //   - GIT_CONFIG_GLOBAL, when set to a non-empty path, reads only that
 //     file. When set to "", global config is disabled entirely.
 //     When unset, ~/.gitconfig is used if it exists; otherwise the XDG
-//     config path is used as a fallback. Unlike Git, which reads both,
-//     only one of them is read.
+//     config path is used as a fallback. Git reads both files. Load reads
+//     only one of them, whereas LoadProtocolPolicy reads both, as Git does.
 //   - GIT_CONFIG_NOSYSTEM, when truthy, skips system config entirely.
 //   - GIT_CONFIG_SYSTEM, when set to a non-empty path, reads only that
 //     file. When set to "", system config is disabled entirely.
@@ -77,8 +78,8 @@ func (a *auto) Load(scope config.Scope) (config.ConfigStorer, error) {
 //
 // Unlike Load, it skips the files Git skips when it reads them: a file
 // below a path component that is not a directory, and a global file that
-// cannot be read for lack of permission, when ~/.gitconfig then gives way
-// to the XDG file. So an unreadable ~/.gitconfig does not fail every
+// cannot be read for lack of permission. It also reads both the XDG file and
+// ~/.gitconfig, as Git does. So an unreadable ~/.gitconfig does not fail every
 // operation that reads the protocol policy, as it does not fail Git.
 func (a *auto) LoadProtocolPolicy(scope config.Scope) (*config.Config, error) {
 	return a.load(scope, config.ReadProtocolPolicy, true)
@@ -103,9 +104,10 @@ func (a *auto) load(scope config.Scope, read func([]byte) (*config.Config, error
 // explicitly disables global config. When unset, ~/.gitconfig is used
 // if it exists, otherwise the XDG config path is used as a fallback.
 //
-// When gently is true, a global file that cannot be read for lack of
-// permission is skipped, as Git skips it [1], and ~/.gitconfig is used if
-// it can be read.
+// When gently is true, as when only the protocol policy is read, both the
+// XDG config and ~/.gitconfig are read and merged, ~/.gitconfig taking
+// precedence, as Git does [1]. A file that cannot be read for lack of
+// permission is skipped, as Git skips it.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/config.c#L1551-L1557
 func (a *auto) loadGlobal(read func([]byte) (*config.Config, error), gently bool) (*config.Config, error) {
@@ -129,16 +131,8 @@ func (a *auto) loadGlobal(read func([]byte) (*config.Config, error), gently bool
 		}
 		return a.loadAndMerge(paths, skip, read)
 	}
-	for _, p := range paths {
-		cfg, found, err := a.loadFile(p, skip, read)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return cfg, nil
-		}
-	}
-	return config.NewConfig(), nil
+	slices.Reverse(paths)
+	return a.loadAndMerge(paths, skip, read)
 }
 
 // loadSystem resolves system config following git's precedence rules.
@@ -171,9 +165,10 @@ func (a *auto) loadSystem(read func([]byte) (*config.Config, error), gently bool
 // globalPaths returns the candidate config file paths for the global
 // scope, in the order they are tried: ~/.gitconfig, then the XDG config.
 //
-// Git reads both, the XDG config first and then ~/.gitconfig [1], while
-// go-git reads only the first of them it finds, a known limitation: a key
-// set only in the XDG config is ignored when ~/.gitconfig is read.
+// Git reads both, the XDG config first and then ~/.gitconfig [1]. Load
+// reads only the first of them it finds, a known limitation: a key set
+// only in the XDG config is ignored when ~/.gitconfig is read. The
+// protocol policy reads both.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/config.c#L1549-L1557
 func (a *auto) globalPaths() []string {
