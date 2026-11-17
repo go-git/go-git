@@ -1794,8 +1794,60 @@ func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
 	}
 }
 
+// perWorktreeRefDirs are the directories under refs that Git keeps per
+// worktree, and does not pack:
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/path.c#L98-L119
+var perWorktreeRefDirs = []string{"bisect", "rewritten", "worktree"}
+
+func isPerWorktreeRef(name plumbing.ReferenceName) bool {
+	for _, dir := range perWorktreeRefDirs {
+		if strings.HasPrefix(name.String(), refsPath+"/"+dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// addRefsFromRefDir lists the loose references. In a linked worktree, refs
+// lists only the common directory, which may not have the per-worktree
+// directories, so those are walked on their own, as
+// add_per_worktree_entries_to_dir does in Git's refs/files-backend.c.
 func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) error {
-	return d.walkReferencesTree(refs, []string{refsPath}, seen)
+	if err := d.walkReferencesTree(refs, []string{refsPath}, seen); err != nil {
+		return err
+	}
+	for _, dir := range perWorktreeRefDirs {
+		name := refsPath + "/" + dir
+		st, err := d.fs.Stat(name)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+
+		if st.IsDir() {
+			err = d.walkReferencesTree(refs, []string{refsPath, dir}, seen)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// A reference may be named like the directory.
+		if seen[plumbing.ReferenceName(name)] {
+			continue
+		}
+		ref, err := d.readReferenceFile(".", name)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if ref != nil {
+			*refs = append(*refs, ref)
+			seen[ref.Name()] = true
+		}
+	}
+	return nil
 }
 
 func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string, seen map[plumbing.ReferenceName]bool) error {
@@ -1819,7 +1871,12 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []strin
 			continue
 		}
 
-		ref, err := d.readReferenceFile(".", strings.Join(newRelPath, "/"))
+		name := strings.Join(newRelPath, "/")
+		if seen[plumbing.ReferenceName(name)] {
+			continue
+		}
+
+		ref, err := d.readReferenceFile(".", name)
 		if os.IsNotExist(err) {
 			// a race happened, and our file is gone now
 			continue
@@ -1917,7 +1974,8 @@ func (d *DotGit) PackRefs() (err error) {
 	}
 	packable := refs[:0]
 	for _, ref := range refs {
-		if ref.Type() != plumbing.HashReference || ref.Hash().IsZero() || ref.Name().Validate() != nil {
+		if ref.Type() != plumbing.HashReference || ref.Hash().IsZero() || ref.Name().Validate() != nil ||
+			isPerWorktreeRef(ref.Name()) {
 			delete(seen, ref.Name())
 			continue
 		}
