@@ -103,7 +103,8 @@ func NewRootNodeWithOptions(idx *index.Index, options RootNodeOptions) noder.Nod
 // cache-tree, where that entry is valid and covers exactly the index
 // entries below the directory, none of which is a conflict stage or an
 // intent to add. Git leaves such an entry invalid, as no tree can be
-// written from them.
+// written from them. An all-zero hash is not
+// used either, as Git does not take a null object name for the same tree.
 //
 // See all_trees_same_as_cache_tree and its use at
 // https://github.com/git/git/blob/v2.54.0/unpack-trees.c#L754-L768 and
@@ -143,7 +144,7 @@ func applyCacheTree(m map[string]*node, idx *index.Index) {
 	for dir, t := range trees {
 		n, ok := m[dir]
 		s := spans[dir]
-		if !ok || !n.isDir || s.untreed || s.entries != t.Entries {
+		if !ok || !n.isDir || t.Hash.IsZero() || s.untreed || s.entries != t.Entries {
 			continue
 		}
 		n.treeHash = t.Hash
