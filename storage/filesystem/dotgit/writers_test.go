@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
+	"time"
 
 	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
@@ -517,6 +519,315 @@ func TestObjectWriterPermissions(t *testing.T) {
 			ro, err := isReadOnly(tc.fs, path)
 			require.NoError(t, err)
 			assert.True(t, ro, "file %q is not read-only", path)
+		})
+	}
+}
+
+// TestSyncedReaderNoLostWakeup checks that a reader that has caught up with
+// the writer is woken by the next write, however the two goroutines
+// interleave.
+func TestSyncedReaderNoLostWakeup(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	for i := range 2000 {
+		fw, err := fs.Create(fmt.Sprintf("f%d", i))
+		require.NoError(t, err)
+		fr, err := fs.Open(fw.Name())
+		require.NoError(t, err)
+
+		s := newSyncedReader(fw, fr)
+		got := make(chan error, 1)
+		go func() {
+			b := make([]byte, 1)
+			_, err := io.ReadFull(s, b)
+			got <- err
+		}()
+
+		_, err = s.Write([]byte{'x'})
+		require.NoError(t, err)
+
+		select {
+		case err := <-got:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			_ = s.Close() // release the reader goroutine
+			t.Fatalf("iteration %d: reader never woke after write", i)
+		}
+		require.NoError(t, s.Close())
+		require.NoError(t, fr.Close())
+		require.NoError(t, fw.Close())
+	}
+}
+
+// packBytes returns the contents of f's packfile.
+func packBytes(t *testing.T, f *fixtures.Fixture) []byte {
+	t.Helper()
+
+	pf, err := f.Packfile()
+	require.NoError(t, err)
+	data, err := io.ReadAll(pf)
+	require.NoError(t, err)
+	return data
+}
+
+// assertNoPackFiles checks that objects/pack holds nothing, temporary files
+// included.
+func assertNoPackFiles(t *testing.T, fs billy.Filesystem) {
+	t.Helper()
+
+	entries, err := fs.ReadDir("objects/pack")
+	require.NoError(t, err)
+	for _, e := range entries {
+		t.Errorf("objects/pack/%s left behind", e.Name())
+	}
+}
+
+// TestPackWriterIsNotReaderFrom checks that PackWriter does not implement
+// [io.ReaderFrom]: ReadPack stops at the pack trailer, and [io.Copy] into a
+// PackWriter must keep reading to EOF.
+func TestPackWriterIsNotReaderFrom(t *testing.T) {
+	t.Parallel()
+
+	var w io.Writer = &PackWriter{}
+	_, ok := w.(io.ReaderFrom)
+	assert.False(t, ok)
+}
+
+// chunkedReader serves data at most chunk bytes per Read and fails the test
+// if read again after the data ran out: a git:// client sends nothing after
+// the pack and keeps the connection open, so such a read would block forever.
+type chunkedReader struct {
+	t     *testing.T
+	data  []byte
+	chunk int
+}
+
+func (r *chunkedReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		r.t.Error("read past the end of the pack")
+		return 0, errors.New("read past the end of the pack")
+	}
+	n := min(len(p), r.chunk, len(r.data))
+	n = copy(p, r.data[:n])
+	r.data = r.data[n:]
+	return n, nil
+}
+
+// assertPackSaved checks that f's pack and index were saved.
+func assertPackSaved(t *testing.T, fs billy.Filesystem, f *fixtures.Fixture) {
+	t.Helper()
+
+	for _, ext := range []string{"pack", "idx"} {
+		_, err := fs.Stat(fmt.Sprintf("objects/pack/pack-%s.%s", f.PackfileHash, ext))
+		require.NoError(t, err)
+	}
+}
+
+func TestPackWriterReadPackStopsAtTrailer(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []config.ObjectFormat{config.SHA1, config.SHA256} {
+		for _, chunk := range []int{1, 7, 4096, 1 << 20} {
+			t.Run(fmt.Sprintf("%s/%d", format, chunk), func(t *testing.T) {
+				t.Parallel()
+
+				f := fixtures.ByTag("packfile").ByObjectFormat(string(format)).One()
+				data := packBytes(t, f)
+
+				fs := osfs.New(t.TempDir())
+				w, err := newPackWrite(fs, format, false)
+				require.NoError(t, err)
+
+				n, err := w.ReadPack(&chunkedReader{t: t, data: data, chunk: chunk})
+				require.NoError(t, err)
+				assert.Equal(t, int64(len(data)), n)
+				require.NoError(t, w.Close())
+
+				assertPackSaved(t, fs, f)
+			})
+		}
+	}
+}
+
+// TestPackWriterReadPackTrailingData checks that bytes ReadPack reads past
+// the trailer, in the same Read as the end of the pack, are counted but not
+// saved as part of the pack.
+func TestPackWriterReadPackTrailingData(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	data := packBytes(t, f)
+	const trailing = "trailing data after the pack checksum"
+
+	fs := osfs.New(t.TempDir())
+	w, err := New(fs).NewObjectPack()
+	require.NoError(t, err)
+
+	n, err := w.ReadPack(strings.NewReader(string(data) + trailing))
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(data)+len(trailing)), n)
+	require.NoError(t, w.Close())
+
+	saved, err := util.ReadFile(fs, fmt.Sprintf("objects/pack/pack-%s.pack", f.PackfileHash))
+	require.NoError(t, err)
+	assert.Equal(t, data, saved)
+}
+
+func TestPackWriterReadPackAfterWrite(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	data := packBytes(t, f)
+
+	fs := osfs.New(t.TempDir())
+	w, err := New(fs).NewObjectPack()
+	require.NoError(t, err)
+
+	_, err = w.Write(data[:100])
+	require.NoError(t, err)
+
+	n, err := w.ReadPack(&chunkedReader{t: t, data: data[100:], chunk: 4096})
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(data)-100), n)
+	require.NoError(t, w.Close())
+
+	assertPackSaved(t, fs, f)
+}
+
+func TestPackWriterReadPackEmpty(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	w, err := New(fs).NewObjectPack()
+	require.NoError(t, err)
+
+	n, err := w.ReadPack(bytes.NewReader(nil))
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	require.NoError(t, w.Close())
+
+	assertNoPackFiles(t, fs)
+}
+
+func TestPackWriterReadPackTruncated(t *testing.T) {
+	t.Parallel()
+
+	data := packBytes(t, fixtures.Basic().One())
+
+	fs := osfs.New(t.TempDir())
+	w, err := New(fs).NewObjectPack()
+	require.NoError(t, err)
+
+	_, err = w.ReadPack(bytes.NewReader(data[:len(data)/2]))
+	require.Error(t, err)
+	assert.Error(t, w.Close())
+
+	assertNoPackFiles(t, fs)
+}
+
+// TestPackWriterReadPackOnce checks that once ReadPack has been called,
+// ReadPack and Write fail without touching the pack being written.
+func TestPackWriterReadPackOnce(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.Basic().One()
+	data := packBytes(t, f)
+
+	fs := osfs.New(t.TempDir())
+	w, err := New(fs).NewObjectPack()
+	require.NoError(t, err)
+
+	_, err = w.ReadPack(bytes.NewReader(data))
+	require.NoError(t, err)
+
+	n, err := w.ReadPack(bytes.NewReader(data))
+	require.ErrorIs(t, err, errReadPackCalled)
+	assert.Zero(t, n)
+
+	written, err := w.Write([]byte("junk"))
+	require.ErrorIs(t, err, errReadPackCalled)
+	assert.Zero(t, written)
+
+	require.NoError(t, w.Close())
+	assertPackSaved(t, fs, f)
+}
+
+func TestPackWriterReadPackSourceError(t *testing.T) {
+	t.Parallel()
+
+	data := packBytes(t, fixtures.Basic().One())
+
+	fs := osfs.New(t.TempDir())
+	w, err := New(fs).NewObjectPack()
+	require.NoError(t, err)
+
+	boom := errors.New("boom")
+	_, err = w.ReadPack(io.MultiReader(bytes.NewReader(data[:len(data)/2]), iotest.ErrReader(boom)))
+	require.ErrorIs(t, err, boom)
+	require.ErrorIs(t, w.Close(), boom)
+
+	assertNoPackFiles(t, fs)
+}
+
+// failOnceReader returns data in one Read and then err, in the same Read
+// when errWithData is set, and fails the test if read again after
+// returning err: a source that has failed, such as a closed connection,
+// may block or misbehave on the next Read.
+type failOnceReader struct {
+	t           *testing.T
+	data        []byte
+	err         error
+	errWithData bool
+	failed      bool
+}
+
+func (r *failOnceReader) Read(p []byte) (int, error) {
+	if r.failed {
+		r.t.Error("source read again after returning an error")
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	if len(r.data) > 0 || (n > 0 && !r.errWithData) {
+		return n, nil
+	}
+	r.failed = true
+	return n, r.err
+}
+
+// TestSyncedReaderSourceErrorSticky checks that once the source has
+// returned an error, Read keeps returning it without reading the source
+// again, whether the error came with the last data or on its own.
+func TestSyncedReaderSourceErrorSticky(t *testing.T) {
+	t.Parallel()
+
+	for _, errWithData := range []bool{true, false} {
+		t.Run(fmt.Sprintf("errWithData=%t", errWithData), func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			fw, err := fs.Create("f")
+			require.NoError(t, err)
+			defer fw.Close()
+			fr, err := fs.Open(fw.Name())
+			require.NoError(t, err)
+			defer fr.Close()
+
+			boom := errors.New("boom")
+			s := newSyncedReader(fw, fr)
+			s.pull(&failOnceReader{t: t, data: []byte("abc"), err: boom, errWithData: errWithData})
+
+			b := make([]byte, 3)
+			n, err := s.Read(b)
+			require.NoError(t, err)
+			assert.Equal(t, "abc", string(b[:n]))
+
+			for range 3 {
+				n, err = s.Read(b)
+				require.ErrorIs(t, err, boom)
+				assert.Zero(t, n)
+			}
 		})
 	}
 }

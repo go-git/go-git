@@ -89,12 +89,11 @@ func (c *closeRecorder) Close() error {
 // the fetch and still close packf, and trailing progress must reach the
 // caller.
 //
-// Filesystem storage copies the pack to EOF, and memory storage parses it
-// through a buffer whose last fill reads past the pack unless it happens to
-// end at the trailer. Both read the trailing packets themselves, and only the
-// band-3 error, which the parser's buffer holds back, is left to FetchPack.
-// trailerStorer stops at the trailer, so every case run against it depends
-// on FetchPack.
+// Filesystem storage stops once it has parsed the trailer, and memory storage
+// parses the pack through a buffer whose last fill reads past it unless it
+// happens to end at the trailer, so either may or may not have read the
+// trailing packets itself. trailerStorer reads exactly the pack, so every case
+// run against it depends on FetchPack.
 func TestFetchPackReadsResponseAfterPack(t *testing.T) {
 	t.Parallel()
 

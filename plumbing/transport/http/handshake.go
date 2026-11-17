@@ -461,6 +461,18 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		}
 	}
 	err = transport.FetchPack(ctx, st, s.caps, io.NopCloser(neg), shallows, req)
+	if err == nil {
+		// FetchPack may stop at the pack trailer. Read the body to its end
+		// so that the connection can be reused, up to maxDrainSize so that
+		// a server that keeps sending cannot hold the fetch. A broken body
+		// fails the fetch, as it did when the pack was copied to EOF.
+		//
+		// The cap deliberately differs from Git: remote-curl hands every
+		// byte of the body to fetch-pack and so reads it to the end
+		// (rpc_in, remote-curl.c:828-846 at v2.54.0). Past the cap the
+		// response is abandoned rather than drained.
+		_, err = io.Copy(io.Discard, io.LimitReader(neg, maxDrainSize))
+	}
 	if ioutil.ReadFinished(ctx, err) {
 		neg.closeResponse()
 	}
