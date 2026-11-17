@@ -11,7 +11,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -700,17 +699,7 @@ func (w *Worktree) checkSkipWorktreeUpToDate(cfg *config.Config, t *object.Tree,
 	if len(skipped) == 0 {
 		return nil, nil
 	}
-	var ignoreCase bool
-	if cfg.Raw != nil {
-		switch v := strings.ToLower(cfg.Raw.Section("core").Option("ignorecase")); v {
-		case "true", "yes", "on":
-			ignoreCase = true
-		default:
-			n, err := strconv.Atoi(v)
-			ignoreCase = err == nil && n != 0
-		}
-	}
-	attrs := newCheckinAttributes(w, stored, ignoreCase)
+	attrs := newCheckinAttributes(w, stored, cfg)
 
 	filesMap := buildFilePathMap(files)
 	var update merkletrie.Changes

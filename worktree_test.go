@@ -6556,7 +6556,8 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		// symlinks in the worktree, by name.
 		files, indexed, links map[string]string
 		want                  bool
-		fold                  bool
+		// options are config options, as section, subsection, key, value.
+		options [][4]string
 	}{
 		{name: "none", path: "d/s"},
 		{name: "-text after text=auto", path: "x.dat", files: map[string]string{".gitattributes": "* text=auto\n*.dat -text -diff\n"}, want: true},
@@ -6588,9 +6589,9 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		{name: "unset with a value", path: "d/s", files: map[string]string{".gitattributes": "* text\nd/s -text=x\n"}, want: true},
 		{name: "no-break space in a pattern", path: "d/z\u00a0q.bin", files: map[string]string{".gitattributes": "z\u00a0q.bin -text\n"}, want: true},
 		{name: "case differs", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}},
-		{name: "case folded", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, fold: true, want: true},
-		{name: "case folded in a nested file", path: "d/X.bin", files: map[string]string{"d/.gitattributes": "x.BIN -text\n"}, fold: true, want: true},
-		{name: "Kelvin sign does not match k", path: "d/a.k", files: map[string]string{".gitattributes": "*.\u212a -text\n"}, fold: true},
+		{name: "case folded", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}, want: true},
+		{name: "case folded in a nested file", path: "d/X.bin", files: map[string]string{"d/.gitattributes": "x.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}, want: true},
+		{name: "Kelvin sign does not match k", path: "d/a.k", files: map[string]string{".gitattributes": "*.\u212a -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}},
 		{name: "NUL ends the line", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00junk\n"}, want: true},
 		{name: "NUL in a blob ends the file", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text\n\x00\nd/s text\n"}, want: true},
 		{name: "CR counts toward a blob line limit", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}},
@@ -6626,7 +6627,11 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 
 			idx, err := r.Storer.Index()
 			require.NoError(t, err)
-			require.Equal(t, tc.want, newCheckinAttributes(w, idx, tc.fold).keepsCRLF(tc.path))
+			cfg := config.NewConfig()
+			for _, o := range tc.options {
+				cfg.Raw.SetOption(o[0], o[1], o[2], o[3])
+			}
+			require.Equal(t, tc.want, newCheckinAttributes(w, idx, cfg).keepsCRLF(tc.path))
 		})
 	}
 }
@@ -6797,4 +6802,41 @@ func (s *WorktreeSuite) TestResetKeepsSkipWorktreeWithoutSparseDirs() {
 
 	_, err = fs.Stat("excluded/f.txt")
 	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
+}
+
+func TestCheckinAttributesReadGlobalFiles(t *testing.T) {
+	home := t.TempDir()
+	xdg := filepath.Join(home, "xdg")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("GIT_ATTR_NOSYSTEM", "1")
+
+	write := func(name, content string) {
+		require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+		require.NoError(t, os.WriteFile(name, []byte(content), 0o644))
+	}
+	write(filepath.Join(xdg, "git", "attributes"), "*.xdg -text\n*.both -text\n")
+	write(filepath.Join(home, "configured"), "*.configured -text\n")
+
+	dir := t.TempDir()
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	write(filepath.Join(dir, ".gitattributes"), "*.both text\n")
+
+	keeps := func(cfg *config.Config, name string) bool {
+		return newCheckinAttributes(w, nil, cfg).keepsCRLF(name)
+	}
+
+	assert.True(t, keeps(config.NewConfig(), "a.xdg"))
+	assert.False(t, keeps(config.NewConfig(), "a.configured"))
+	assert.False(t, keeps(config.NewConfig(), "a.both"), "the worktree file overrides the global one")
+
+	configured := config.NewConfig()
+	configured.Raw.SetOption("core", "", "attributesFile", "~/configured")
+	assert.True(t, keeps(configured, "a.configured"))
+	assert.False(t, keeps(configured, "a.xdg"), "core.attributesFile replaces the default location")
 }
