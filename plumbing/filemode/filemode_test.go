@@ -30,7 +30,7 @@ func (s *ModeSuite) TestNew() {
 		{input: "100755", expected: Executable},
 		{input: "120000", expected: Symlink},
 		{input: "160000", expected: Submodule},
-		// these are are not used by standard git to codify modes in
+		// these are not used by standard git to codify modes in
 		// packfiles, but they often appear when parsing some git
 		// outputs ("git diff-tree", for instance).
 		{input: "000000", expected: Empty},
