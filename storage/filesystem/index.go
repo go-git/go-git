@@ -131,14 +131,17 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 	return copyIndex(idx), nil
 }
 
-// copyIndex returns a shallow copy of the Index struct with its own
-// copy of the Entries slice, so that callers can append/remove entries
-// without affecting the cached copy. Individual *Entry pointers are
-// shared; this is safe because callers replace entries rather than
-// mutating them in place.
+// copyIndex returns a copy of the Index struct with its own copy of the
+// entries, so that callers can change them, in place or by appending or
+// removing, without affecting the cached copy. go-git changes entries in
+// place, and a change that is never stored must not reach later readers.
 func copyIndex(idx *index.Index) *index.Index {
 	cp := *idx
+	entries := make([]index.Entry, len(idx.Entries))
 	cp.Entries = make([]*index.Entry, len(idx.Entries))
-	copy(cp.Entries, idx.Entries)
+	for i, e := range idx.Entries {
+		entries[i] = *e
+		cp.Entries[i] = &entries[i]
+	}
 	return &cp
 }
