@@ -96,9 +96,10 @@ const (
 	// maxHeadRefSize matches the read limit in Git's validate_headref.
 	maxHeadRefSize = 255
 
-	// maxCommonDirSize bounds commondir reads. Oversized files are rejected;
+	// maxCommonDirSize bounds commondir reads to a path's length, as the
+	// limit on a submodule name does. Oversized files are rejected;
 	// truncating a path could redirect the check to a different directory.
-	maxCommonDirSize = 1 << 20
+	maxCommonDirSize = 4096
 
 	// maxCommonDirInError limits the bytes quoted from a commondir path.
 	maxCommonDirInError = 100
@@ -2071,7 +2072,7 @@ const (
 // error wrapping [ErrModuleGitDirNested] if a proper prefix of the name
 // identifies another submodule's Git directory.
 // It also returns an error if a prefix's commondir file is empty,
-// unreadable, not a regular file, or larger than 1 MiB, or if its path
+// unreadable, not a regular file, or larger than 4096 bytes, or if its path
 // cannot be resolved within the filesystem with Git's path semantics.
 //
 // Names may contain separators. As in [Git's submodule_name_to_gitdir],

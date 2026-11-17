@@ -811,8 +811,8 @@ func (s *SuiteDotGit) TestModuleNestingWithOversizedCommonDir() {
 		size    int
 		wantErr string
 	}{
-		{name: "at the limit", size: maxCommonDirSize},
-		{name: "past the limit", size: maxCommonDirSize + 1, wantErr: "exceeds"},
+		{name: "at the limit", size: 4096},
+		{name: "past the limit", size: 4096 + 1, wantErr: "exceeds"},
 	} {
 		s.Run(tc.name, func() {
 			fs := s.EmptyFS()
