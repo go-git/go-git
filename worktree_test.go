@@ -6556,6 +6556,7 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		// symlinks in the worktree, by name.
 		files, indexed, links map[string]string
 		want                  bool
+		fold                  bool
 	}{
 		{name: "none", path: "d/s"},
 		{name: "-text after text=auto", path: "x.dat", files: map[string]string{".gitattributes": "* text=auto\n*.dat -text -diff\n"}, want: true},
@@ -6586,6 +6587,10 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		{name: "directory pattern", path: "d/s", files: map[string]string{".gitattributes": "d/ -text\n"}},
 		{name: "unset with a value", path: "d/s", files: map[string]string{".gitattributes": "* text\nd/s -text=x\n"}, want: true},
 		{name: "no-break space in a pattern", path: "d/z\u00a0q.bin", files: map[string]string{".gitattributes": "z\u00a0q.bin -text\n"}, want: true},
+		{name: "case differs", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}},
+		{name: "case folded", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, fold: true, want: true},
+		{name: "case folded in a nested file", path: "d/X.bin", files: map[string]string{"d/.gitattributes": "x.BIN -text\n"}, fold: true, want: true},
+		{name: "Kelvin sign does not match k", path: "d/a.k", files: map[string]string{".gitattributes": "*.\u212a -text\n"}, fold: true},
 		{name: "NUL ends the line", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00junk\n"}, want: true},
 		{name: "NUL in a blob ends the file", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text\n\x00\nd/s text\n"}, want: true},
 		{name: "CR counts toward a blob line limit", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}},
@@ -6621,7 +6626,7 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 
 			idx, err := r.Storer.Index()
 			require.NoError(t, err)
-			require.Equal(t, tc.want, newCheckinAttributes(w, idx).keepsCRLF(tc.path))
+			require.Equal(t, tc.want, newCheckinAttributes(w, idx, tc.fold).keepsCRLF(tc.path))
 		})
 	}
 }

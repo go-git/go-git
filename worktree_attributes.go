@@ -39,6 +39,9 @@ const (
 type checkinAttributes struct {
 	w   *Worktree
 	idx *index.Index
+	// fold tells whether patterns match regardless of case, as under
+	// core.ignorecase.
+	fold bool
 
 	// dirs holds the attributes read for each directory, by its path.
 	dirs map[string][]gitattributes.MatchAttribute
@@ -51,9 +54,10 @@ type checkinAttributes struct {
 
 // newCheckinAttributes returns the check-in attributes of w, with idx, the
 // index the operation starts from, for the attributes files the worktree
-// lacks.
-func newCheckinAttributes(w *Worktree, idx *index.Index) *checkinAttributes {
-	return &checkinAttributes{w: w, idx: idx, dirs: make(map[string][]gitattributes.MatchAttribute)}
+// lacks, and fold set when core.ignorecase makes patterns match regardless
+// of case.
+func newCheckinAttributes(w *Worktree, idx *index.Index, fold bool) *checkinAttributes {
+	return &checkinAttributes{w: w, idx: idx, fold: fold, dirs: make(map[string][]gitattributes.MatchAttribute)}
 }
 
 // keepsCRLF reports whether the attributes of name tell Git to hash the
@@ -76,6 +80,11 @@ func (a *checkinAttributes) keepsCRLF(name string) bool {
 		return false
 	}
 
+	if a.fold {
+		for i, part := range parts {
+			parts[i] = asciiLower(part)
+		}
+	}
 	results, _ := gitattributes.NewMatcher(stack).Match(parts, []string{"text", "crlf"})
 	if action, ok := crlfAction(results["text"]); ok {
 		return action
@@ -115,6 +124,7 @@ func (a *checkinAttributes) dir(dir []string) []gitattributes.MatchAttribute {
 	if !ok {
 		attrs = a.indexAttributes(name, dir, root)
 	}
+	a.foldPatterns(attrs, dir)
 	a.dirs[key] = attrs
 	return attrs
 }
@@ -201,6 +211,7 @@ func (a *checkinAttributes) infoAttributes() []gitattributes.MatchAttribute {
 	defer func() { _ = f.Close() }()
 
 	a.info = parseAttributes(f, nil, true, true)
+	a.foldPatterns(a.info, nil)
 	return a.info
 }
 
@@ -279,4 +290,36 @@ func parseAttributesLine(line string, domain []string, macros bool) (gitattribut
 		}
 	}
 	return m, true
+}
+
+// foldPatterns makes the patterns of attrs, relative to domain, match
+// regardless of case when a.fold is set, by lowercasing them to match
+// against a lowercased path.
+func (a *checkinAttributes) foldPatterns(attrs []gitattributes.MatchAttribute, domain []string) {
+	if !a.fold {
+		return
+	}
+	folded := make([]string, len(domain))
+	for i, part := range domain {
+		folded[i] = asciiLower(part)
+	}
+	for i := range attrs {
+		if attrs[i].Pattern != nil {
+			attrs[i].Pattern = gitattributes.ParsePattern(asciiLower(attrs[i].Name), folded)
+		}
+	}
+}
+
+// asciiLower lowercases the ASCII letters of s only, as Git's wildmatch
+// does under WM_CASEFOLD[1]: the Kelvin sign U+212A does not match k.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/dir.c#L186-L210
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }
