@@ -8,6 +8,7 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -441,4 +442,55 @@ func TestReconcileObjectFormatV2(t *testing.T) {
 		t.Parallel()
 		require.NoError(t, ReconcileObjectFormatV2(memory.NewStorage(), capability.List{}))
 	})
+}
+
+// TestNegotiatePackReturnsShallowDecodeError covers a v0/v1 depth fetch over an
+// unbuffered stream, like the file transport's pipes, whose server sends a
+// shallow-update the client cannot decode. The decode error must reach the
+// caller rather than leave both ends blocked writing to each other.
+func TestNegotiatePackReturnsShallowDecodeError(t *testing.T) {
+	t.Parallel()
+
+	toServer, clientW := io.Pipe()
+	clientR, toClient := io.Pipe()
+	// Unblock the fake server however the test ends.
+	t.Cleanup(func() {
+		_ = toServer.Close()
+		_ = clientR.Close()
+	})
+
+	go func() {
+		var upreq packp.UploadRequest
+		if err := upreq.Decode(toServer); err != nil {
+			return
+		}
+		if _, err := pktline.WriteString(toClient, "shallow not-a-hash\n"); err != nil {
+			return
+		}
+		if err := pktline.WriteFlush(toClient); err != nil {
+			return
+		}
+		_, _ = io.Copy(io.Discard, toServer)
+	}()
+
+	caps := capability.List{}
+	caps.Set(capability.Shallow)
+	req := &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
+		Haves: makeSyntheticHaves(1),
+		Depth: 1,
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		_, err := NegotiatePack(context.Background(), memory.NewStorage(), caps, false, clientR, clientW, req)
+		errc <- err
+	}()
+
+	select {
+	case err := <-errc:
+		require.ErrorContains(t, err, "decoding shallow-update")
+	case <-time.After(10 * time.Second):
+		t.Fatal("NegotiatePack did not return the shallow-update decode error")
+	}
 }
