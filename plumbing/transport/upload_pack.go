@@ -701,6 +701,10 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 			return true, err
 		}
 		for _, h := range haves {
+			if err := ctx.Err(); err != nil {
+				_ = w.Close()
+				return true, err
+			}
 			if _, err := common.add(h); err != nil {
 				_ = w.Close()
 				return true, fmt.Errorf("checking have %s: %w", h, err)

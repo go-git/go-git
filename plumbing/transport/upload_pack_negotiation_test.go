@@ -741,3 +741,22 @@ func TestCommonHavesWantsThatDoNotPeelToACommit(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadPackV2StopsReadingHavesWhenContextIsDone(t *testing.T) {
+	t.Parallel()
+	r := mergeHistory(t)
+	args := make([]string, 0, 101)
+	args = append(args, "want "+r.commits["D"].String())
+	for i := range 100 {
+		args = append(args, fmt.Sprintf("have %040x", i+1))
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	st := &cancelingStorer{countingStorer: countingStorer{Storer: r.st}, cancel: cancel}
+	var out bytes.Buffer
+	err := UploadPack(ctx, st, v2Request(t, "fetch", nil, args), ioutil.WriteNopCloser(&out),
+		&UploadPackRequest{GitProtocol: "version=2", StatelessRPC: true})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, st.reads, "haves were looked up after the context was done")
+}
