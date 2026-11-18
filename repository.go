@@ -96,26 +96,27 @@ type Repository struct {
 }
 
 type initOptions struct {
-	defaultBranch plumbing.ReferenceName
-	workTree      billy.Filesystem
-	objectFormat  formatcfg.ObjectFormat
-	partialInit   bool
+	defaultBranch    plumbing.ReferenceName
+	defaultBranchSet bool
+	workTree         billy.Filesystem
+	objectFormat     formatcfg.ObjectFormat
+	partialInit      bool
 }
 
 func newInitOptions() initOptions {
-	return initOptions{
-		defaultBranch: plumbing.Master,
-		workTree:      nil,
-	}
+	return initOptions{}
 }
 
 // InitOption configures repository initialization.
 type InitOption func(*initOptions)
 
 // WithDefaultBranch sets the default branch for the new repo (e.g. "refs/heads/master").
+// If not used, init.defaultBranch from the global or system config is used,
+// falling back to "refs/heads/master" when that is unset.
 func WithDefaultBranch(b plumbing.ReferenceName) InitOption {
 	return func(o *initOptions) {
 		o.defaultBranch = b
+		o.defaultBranchSet = true
 	}
 }
 
@@ -167,10 +168,6 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 		return nil, err
 	}
 
-	if err := options.defaultBranch.Validate(); err != nil {
-		return nil, err
-	}
-
 	r := newRepository(s, options.workTree)
 	_, err := r.Reference(plumbing.HEAD, false)
 	switch err {
@@ -179,6 +176,21 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 		return nil, ErrTargetDirNotEmpty
 	default:
 		return nil, err
+	}
+
+	// Like git, the default branch is only resolved for a new repository.
+	if !options.partialInit {
+		if !options.defaultBranchSet {
+			b, err := r.defaultBranch()
+			if err != nil {
+				return nil, err
+			}
+			options.defaultBranch = b
+		}
+
+		if err := options.defaultBranch.Validate(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := setInitObjectFormat(s, options.objectFormat); err != nil {
@@ -224,6 +236,56 @@ func setInitObjectFormat(s storage.Storer, of formatcfg.ObjectFormat) error {
 	}
 
 	return setter.SetObjectFormat(of)
+}
+
+// defaultBranch returns the branch that HEAD points to in a new repository.
+// Like git, it reads init.defaultBranch from the system and global config and
+// falls back to master when that is unset. A key that is present but empty is
+// an error, as in git.
+func (r *Repository) defaultBranch() (plumbing.ReferenceName, error) {
+	// Use Has before Get so the key is not frozen when no plugin is
+	// registered, allowing callers to register one later.
+	if !plugin.Has(plugin.ConfigLoader()) {
+		return plumbing.Master, nil
+	}
+
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return "", err
+	}
+
+	var name string
+	var set bool
+	// Global is read last so that it takes precedence over system.
+	for _, scope := range []config.Scope{config.SystemScope, config.GlobalScope} {
+		st, err := src.Load(scope)
+		if err != nil {
+			return "", err
+		}
+		cfg, err := st.Config()
+		if err != nil {
+			return "", err
+		}
+
+		switch {
+		case cfg.Init.DefaultBranch != "":
+			name, set = cfg.Init.DefaultBranch, true
+		case cfg.Raw != nil && cfg.Raw.HasSection("init") &&
+			cfg.Raw.Section("init").Options.Has("defaultBranch"):
+			name, set = "", true
+		}
+	}
+
+	if !set {
+		return plumbing.Master, nil
+	}
+
+	b := plumbing.NewBranchReferenceName(name)
+	if err := b.Validate(); err != nil {
+		return "", fmt.Errorf("invalid branch name: init.defaultBranch = %s: %w", name, err)
+	}
+
+	return b, nil
 }
 
 func initStorer(s storer.Storer) error {
@@ -1209,7 +1271,11 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
 	if err1 == nil && hr.Target() == plumbing.Invalid {
-		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+		branch, berr := r.defaultBranch()
+		if berr != nil {
+			return errors.Join(err, berr)
+		}
+		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, branch))
 	}
 
 	if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {

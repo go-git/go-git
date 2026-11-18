@@ -33,6 +33,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	archivePkg "github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/server"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -345,6 +346,14 @@ func TestInitWithSHA1ObjectFormatLeavesConfigUntouched(t *testing.T) {
 	}
 }
 
+func TestInitWithEmptyDefaultBranch(t *testing.T) {
+	t.Parallel()
+
+	r, err := Init(memory.NewStorage(), WithDefaultBranch(""))
+	require.Error(t, err)
+	assert.Nil(t, r)
+}
+
 func TestInitWithObjectFormatUnsupportedStorer(t *testing.T) {
 	t.Parallel()
 
@@ -405,6 +414,108 @@ func TestInitDoesNotCloseCallerStorer(t *testing.T) {
 			}
 			assert.Nil(t, r)
 			assert.False(t, st.closed, "Init must not close a storer it does not own")
+		})
+	}
+}
+
+func TestInitDefaultBranchFromConfig(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	global := config.NewConfig()
+	global.Init.DefaultBranch = "trunk"
+	testconfig.Register(*global, *config.NewConfig())
+	t.Cleanup(registerTestConfigLoader)
+
+	emptyRemote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(emptyRemote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	tests := []struct {
+		name       string
+		repo       func(t *testing.T) (*Repository, error)
+		wantBranch plumbing.ReferenceName
+	}{
+		{
+			name: "Init",
+			repo: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "Init with explicit default branch",
+			repo: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithDefaultBranch("refs/heads/explicit"))
+			},
+			wantBranch: "refs/heads/explicit",
+		},
+		{
+			name: "PlainInit",
+			repo: func(t *testing.T) (*Repository, error) {
+				return PlainInit(t.TempDir(), false)
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "Clone of empty remote",
+			repo: func(*testing.T) (*Repository, error) {
+				return Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+					URL:            emptyRemote,
+					AllowEmptyRepo: true,
+				})
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "PlainClone of empty remote",
+			repo: func(t *testing.T) (*Repository, error) {
+				return PlainClone(t.TempDir(), &CloneOptions{
+					URL:            emptyRemote,
+					AllowEmptyRepo: true,
+				})
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := tc.repo(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantBranch, head.Target())
+		})
+	}
+}
+
+func TestInitInvalidDefaultBranchFromConfig(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "empty", value: ""},
+		{name: "invalid", value: "foo..bar"},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			global := config.NewConfig()
+			raw := fmt.Sprintf("[init]\n\tdefaultBranch = %s\n", tc.value)
+			require.NoError(t, global.Unmarshal([]byte(raw)))
+			testconfig.Register(*global, *config.NewConfig())
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := Init(memory.NewStorage())
+			require.ErrorContains(t, err, "invalid branch name: init.defaultBranch")
+			assert.Nil(t, r)
+
+			st := memory.NewStorage()
+			require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
+			r, err = Init(st)
+			require.ErrorIs(t, err, ErrTargetDirNotEmpty)
+			assert.Nil(t, r)
 		})
 	}
 }
