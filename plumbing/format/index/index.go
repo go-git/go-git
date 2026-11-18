@@ -62,6 +62,10 @@ type Index struct {
 // Add creates a new Entry and returns it. The caller should first check
 // that another entry with the same path does not exist.
 //
+// The cache-tree is invalidated for the path. The caller fills in the entry
+// and, if it later changes the hash or mode of an entry that already
+// exists, calls InvalidateCache itself.
+//
 // The path is validated against pathutil.ValidTreePath: the index feeds
 // future trees, so a name that the tree-side gates would reject must
 // not enter the index in the first place. Mirrors the FindEntry /
@@ -75,6 +79,7 @@ func (i *Index) Add(path string) (*Entry, error) {
 		Name: filepath.ToSlash(path),
 	}
 
+	i.InvalidateCache(e.Name)
 	i.Entries = append(i.Entries, e)
 	return e, nil
 }
@@ -96,6 +101,7 @@ func (i *Index) Remove(path string) (*Entry, error) {
 	path = filepath.ToSlash(path)
 	for index, e := range i.Entries {
 		if e.Name == path {
+			i.InvalidateCache(path)
 			i.Entries = append(i.Entries[:index], i.Entries[index+1:]...)
 			return e, nil
 		}
