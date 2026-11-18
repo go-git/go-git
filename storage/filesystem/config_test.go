@@ -70,6 +70,35 @@ func newDualStorer(commonFs, wtFs billy.Filesystem) *ConfigStorage {
 	return &ConfigStorage{dir: dotgit.New(repoFs)}
 }
 
+func TestConfigWithoutFileUsesDefaultObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		format      formatcfg.ObjectFormat
+		wantFormat  formatcfg.ObjectFormat
+		wantVersion bool
+	}{
+		{name: "unset", format: formatcfg.UnsetObjectFormat, wantFormat: formatcfg.UnsetObjectFormat},
+		{name: "sha1", format: formatcfg.SHA1, wantFormat: formatcfg.UnsetObjectFormat},
+		{name: "sha256", format: formatcfg.SHA256, wantFormat: formatcfg.SHA256, wantVersion: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &ConfigStorage{dir: dotgit.New(memfs.New()), objectFormat: tc.format}
+
+			cfg, err := c.Config()
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantFormat, cfg.Extensions.ObjectFormat)
+			assert.Equal(t, tc.wantVersion,
+				cfg.Core.RepositoryFormatVersion == formatcfg.RepositoryFormatVersion(formatcfg.Version1))
+		})
+	}
+}
+
 func TestWorktreeConfigRead(t *testing.T) {
 	t.Parallel()
 
