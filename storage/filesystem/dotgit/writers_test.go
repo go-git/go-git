@@ -384,7 +384,7 @@ func TestPackWriterExistingReadOnly(t *testing.T) {
 			f := fixtures.Basic().One()
 
 			dot := New(tc.fs)
-			dot.options.WriteReverseIndex = tc.writeRev
+			dot.options.SkipWriteReverseIndex = !tc.writeRev
 			require.NoError(t, dot.Initialize())
 
 			pfPath := filepath.Join("objects", "pack", fmt.Sprintf("pack-%s.pack", f.PackfileHash))
@@ -461,7 +461,7 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			fs := osfs.New(t.TempDir(), osfs.WithBoundOS())
 
 			dot := New(fs)
-			dot.options.WriteReverseIndex = (ext == ".rev")
+			dot.options.SkipWriteReverseIndex = ext != ".rev"
 			require.NoError(t, dot.Initialize())
 
 			// Place a directory where the pack file should go.

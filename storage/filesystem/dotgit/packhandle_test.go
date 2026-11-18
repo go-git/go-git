@@ -19,10 +19,7 @@ import (
 func TestPackHandle_CachedAcrossCalls(t *testing.T) {
 	t.Parallel()
 
-	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, _ := createPackWithRev(t, Options{})
 
 	ph1, err := dot.packHandle(h)
 	require.NoError(t, err)
@@ -41,11 +38,11 @@ func TestPackHandle_UsesInMemoryRevWhenDiskRevAbsent(t *testing.T) {
 	// must still succeed by routing through OpenPackRev's in-memory
 	// fallback.
 	_, h, fs := createPackWithRev(t, Options{
-		ReadReverseIndex:  false,
-		WriteReverseIndex: false,
+		SkipReadReverseIndex:  true,
+		SkipWriteReverseIndex: true,
 	})
 
-	dot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	dot := NewWithOptions(fs, Options{SkipReadReverseIndex: true})
 	ph, err := dot.packHandle(h)
 	require.NoError(t, err)
 
@@ -64,9 +61,7 @@ func TestPackHandle_InvalidatedOnDelete(t *testing.T) {
 	t.Parallel()
 
 	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-		ExclusiveAccess:   true,
+		ExclusiveAccess: true,
 	})
 
 	ph1, err := dot.packHandle(h)
@@ -93,10 +88,7 @@ func TestPackHandle_ClosedOnDotGitClose(t *testing.T) {
 	// one pack and synthesizing a separate DotGit instance for the
 	// other. Simpler: use a single pack but ensure the cache is
 	// non-empty, and verify Close releases it.
-	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, _ := createPackWithRev(t, Options{})
 
 	ph, err := dot.packHandle(h)
 	require.NoError(t, err)
@@ -181,10 +173,7 @@ func TestPackHandle_ClosesAllCachedHandles(t *testing.T) {
 func TestPackHandle_CleanPackListClosesActiveCursor(t *testing.T) {
 	t.Parallel()
 
-	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, _ := createPackWithRev(t, Options{})
 
 	ph, err := dot.packHandle(h)
 	require.NoError(t, err)
@@ -229,10 +218,7 @@ func TestPackHandle_CleanPackListClosesActiveCursor(t *testing.T) {
 func TestPackHandle_IndexUsableOnDiskRev(t *testing.T) {
 	t.Parallel()
 
-	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, _ := createPackWithRev(t, Options{})
 
 	ph, err := dot.packHandle(h)
 	require.NoError(t, err)
