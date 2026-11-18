@@ -14,6 +14,19 @@ compatibility status with go-git.
 | `clone` | Authentication: <br/> - none <br/> - access token <br/> - username + password <br/> - ssh                          | ✅     |       | - [clone ssh (private_key)](_examples/clone/auth/ssh/private_key/main.go) <br/> - [clone ssh (ssh_agent)](_examples/clone/auth/ssh/ssh_agent/main.go) <br/> - [clone access token](_examples/clone/auth/basic/access_token/main.go) <br/> - [clone user + password](_examples/clone/auth/basic/username_password/main.go) |
 | `clone` | `--progress` <br/> `--single-branch` <br/> `--depth` <br/> `--origin` <br/> `--recurse-submodules` <br/>`--shared` | ✅     |       | - [recurse submodules](_examples/clone/main.go) <br/> - [progress](_examples/progress/main.go)                                                                                                                      |
 
+### Shallow clone defaults
+
+Setting `CloneOptions.Depth` does not change branch or tag selection.
+`SingleBranch` defaults to `false`, and `Tags` defaults to `AllTags`.
+Fetching all tags can require additional objects and increase the amount of
+data transferred, even for a shallow clone.
+
+In comparison, [`git clone --depth`](https://git-scm.com/docs/git-clone)
+implies `--single-branch` unless `--no-single-branch` is specified.
+Set `SingleBranch: true` explicitly to limit branch selection in go-git.
+If tags are not needed, also set `Tags: git.NoTags`. This disables automatic
+tag fetching; Git's default shallow clone can still fetch tags.
+
 ## Basic snapshotting
 
 | Feature  | Sub-feature | Status | Notes                                                    | Examples                             |
