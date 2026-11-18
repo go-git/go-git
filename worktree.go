@@ -483,6 +483,11 @@ func (w *Worktree) reset(opts *ResetOptions, parseTarget bool) error {
 	if err != nil {
 		return err
 	}
+	if parseTarget && opts.Mode == HardReset {
+		// The whole target was read above, so every tree of it exists and the
+		// index, now the target, can record them in its cache-tree.
+		idx.FillCache(t.Hash)
+	}
 	if err := w.removeTrackedDeletions(trackedChanges, opts.Files); err != nil {
 		return err
 	}

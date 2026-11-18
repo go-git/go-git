@@ -105,6 +105,14 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		return plumbing.ZeroHash, err
 	}
 
+	// BuildTree has just written every tree of the index, so the cache-tree
+	// can record them, as Git does after a commit.
+	if idx.FillCache(treeHash) {
+		if err := w.storeIndex(idx); err != nil {
+			return plumbing.ZeroHash, err
+		}
+	}
+
 	return commit, w.updateHEAD(commit)
 }
 

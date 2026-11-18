@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"cmp"
 	"slices"
 	"sort"
 	"strconv"
@@ -367,7 +368,7 @@ func (i *Index) FillCache(root plumbing.Hash) bool {
 		children[parent] = append(children[parent], name)
 	}
 	for _, names := range children {
-		sort.Strings(names)
+		slices.SortFunc(names, subtreeNameCmp)
 	}
 
 	entries := make([]TreeEntry, 0, len(sums))
@@ -383,4 +384,10 @@ func (i *Index) FillCache(root plumbing.Hash) bool {
 
 	i.Cache = &Tree{Entries: entries}
 	return true
+}
+
+// subtreeNameCmp orders subtree names as Git writes them to the cache-tree,
+// shorter names first (subtree_name_cmp).
+func subtreeNameCmp(a, b string) int {
+	return cmp.Or(cmp.Compare(len(a), len(b)), strings.Compare(a, b))
 }
