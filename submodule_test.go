@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/config"
@@ -17,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -920,4 +923,52 @@ func TestSubmoduleRepositoryAcceptsPeriodsOnlyPath(t *testing.T) {
 			t.Cleanup(func() { _ = subRepo.Close() })
 		})
 	}
+}
+
+type failingInitStorer struct {
+	*memory.Storage
+	closed bool
+}
+
+func (s *failingInitStorer) Init() error {
+	return errors.New("init failed")
+}
+
+func (s *failingInitStorer) Close() error {
+	s.closed = true
+	return nil
+}
+
+type moduleStorer struct {
+	*memory.Storage
+	module storage.Storer
+}
+
+func (s *moduleStorer) Module(string) (storage.Storer, error) {
+	return s.module, nil
+}
+
+func TestSubmoduleRepositoryClosesStorerWhenInitFails(t *testing.T) {
+	t.Parallel()
+
+	module := &failingInitStorer{Storage: memory.NewStorage()}
+	parent := &Repository{
+		Storer: &moduleStorer{Storage: memory.NewStorage(), module: module},
+		wt:     memfs.New(),
+	}
+
+	sub := &Submodule{
+		initialized: true,
+		w:           &Worktree{filesystem: newWorktreeFilesystem(memfs.New(), defaultProtectNTFS(), defaultProtectHFS()), r: parent},
+		c: &config.Submodule{
+			Name: "child",
+			Path: "child",
+			URL:  "https://example.com/child",
+		},
+	}
+
+	subRepo, err := sub.Repository()
+	require.ErrorContains(t, err, "init failed")
+	assert.Nil(t, subRepo)
+	assert.True(t, module.closed, "the submodule storer must be closed when Init fails")
 }
