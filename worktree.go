@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -1478,8 +1479,12 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 	if err != nil {
 		return err
 	}
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return err
+	}
 
-	guard := cleanGuard{ignoreCase: cfg.Core.IgnoreCase, gitDirs: w.gitDirInfos(), fs: w.filesystem.walkFilesystem()}
+	guard := cleanGuard{ignoreCase: cfg.Core.IgnoreCase, gitDirs: w.gitDirInfos(), fs: w.filesystem.walkFilesystem(), trackedDirs: indexDirs(idx)}
 	return w.doClean(s, opts, guard, root, files)
 }
 
@@ -1505,13 +1510,37 @@ func (w *Worktree) Clean(opts *CleanOptions) error {
 //     entry: a case-insensitive filesystem's view of a nested repository
 //     spelled .GIT, which Git keeps.
 //
+// doClean also skips a nested repository, as Git does.
+//
 // Status follows Git and lists such a directory's files as untracked.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/dir.c#L2439
 type cleanGuard struct {
-	ignoreCase config.OptBool
-	gitDirs    []os.FileInfo
-	fs         billy.Filesystem
+	ignoreCase  config.OptBool
+	gitDirs     []os.FileInfo
+	fs          billy.Filesystem
+	trackedDirs map[string]struct{}
+}
+
+// tracked reports whether the index holds an entry below the directory at
+// path.
+func (g cleanGuard) tracked(path string) bool {
+	_, ok := g.trackedDirs[filepath.ToSlash(path)]
+	return ok
+}
+
+// indexDirs returns every directory that holds an index entry below it.
+func indexDirs(idx *index.Index) map[string]struct{} {
+	dirs := make(map[string]struct{})
+	for _, e := range idx.Entries {
+		for dir := path.Dir(e.Name); dir != "." && dir != "/"; dir = path.Dir(dir) {
+			if _, ok := dirs[dir]; ok {
+				break
+			}
+			dirs[dir] = struct{}{}
+		}
+	}
+	return dirs
 }
 
 func (g cleanGuard) skip(dir string, e fs.DirEntry, siblings []fs.DirEntry) bool {
@@ -1573,7 +1602,232 @@ func (w *Worktree) gitDirInfos() []os.FileInfo {
 	return infos
 }
 
+// isNestedRepository reports whether the directory at path holds a .git
+// that Git takes for a nested repository, which Clean leaves alone as
+// `git clean` does without a second -f [1]. As in Git, doClean asks only
+// for a directory with no index entries below it [2]. Git requires a .git
+// that is a Git directory or a gitfile pointing at one [3], following a
+// symlink at any step; any other, such as an empty directory, a junk
+// file or a dangling gitfile, does not count, and Clean removes the
+// directory. On a case-insensitive filesystem the lookup also finds a
+// .GIT.
+//
+// Where the worktree filesystem cannot decide, it reports true, which
+// keeps more, never less: a target that is absolute or above the root, a
+// read that crosses a symlink inside the worktree and so is refused as
+// a leading symlink, a symlink loop, and a gitfile that cannot be read,
+// which Git also keeps.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/builtin/clean.c#L176-L177
+// [2]: https://github.com/git/git/blob/v2.54.0/dir.c#L1982-L1988
+// [3]: https://github.com/git/git/blob/v2.54.0/setup.c#L456-L471
+func isNestedRepository(fs billy.Filesystem, path string) bool {
+	gitPath := fs.Join(path, GitDirName)
+	for range maxSymlinkHops {
+		fi, err := fs.Lstat(gitPath)
+		if err != nil {
+			return errors.Is(err, errLeadingSymlink)
+		}
+		switch {
+		case fi.Mode()&os.ModeSymlink != 0:
+			link, err := fs.Readlink(gitPath)
+			if err != nil {
+				return true
+			}
+			target, ok := worktreeRelative(fs, filepath.Dir(gitPath), link)
+			if !ok {
+				return true
+			}
+			gitPath = target
+		case fi.IsDir():
+			return isGitDirectory(fs, gitPath)
+		case fi.Mode().IsRegular():
+			content, err := readGitFile(fs, gitPath)
+			if errors.Is(err, errGitFileTooLarge) {
+				return false
+			}
+			if err != nil {
+				return true
+			}
+			target, ok := strings.CutPrefix(string(content), "gitdir: ")
+			if !ok {
+				return false
+			}
+			target, ok = worktreeRelative(fs, path, strings.TrimRight(target, "\r\n"))
+			if !ok {
+				return true
+			}
+			return isGitDirectory(fs, target)
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// maxSymlinkHops bounds the symlinks isNestedRepository follows from a
+// .git.
+const maxSymlinkHops = 40
+
+// worktreeRelative resolves target, taken from a file or link in dir,
+// to a path under the worktree root. It reports false for a target that
+// is absolute or leaves the root, which the worktree filesystem cannot
+// reach, and for one with a ".." that follows a symlink or a component
+// that cannot be examined: Git lets the operating system resolve ".."
+// after following the link, so the lexical result may name another
+// directory.
+func worktreeRelative(fs billy.Filesystem, dir, target string) (string, bool) {
+	if isAbsolutePath(target, runtime.GOOS == "windows") {
+		return "", false
+	}
+	var parts []string
+	for part := range strings.SplitSeq(filepath.ToSlash(dir)+"/"+filepath.ToSlash(target), "/") {
+		switch part {
+		case "", ".":
+		case "..":
+			if len(parts) == 0 {
+				return "", false
+			}
+			fi, err := fs.Lstat(filepath.Join(parts...))
+			if err != nil || fi.Mode()&os.ModeSymlink != 0 {
+				return "", false
+			}
+			parts = parts[:len(parts)-1]
+		default:
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return ".", true
+	}
+	return filepath.Join(parts...), true
+}
+
+// isAbsolutePath reports whether Git takes p for an absolute path. With
+// dos, as on Windows, that includes a leading slash or backslash and a
+// drive prefix with no separator after it, such as C:x, see
+// is_absolute_path in git-compat-util.h.
+func isAbsolutePath(p string, dos bool) bool {
+	if filepath.IsAbs(p) {
+		return true
+	}
+	if !dos {
+		return false
+	}
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`) {
+		return true
+	}
+	return len(p) >= 2 && p[1] == ':' && (p[0]|0x20) >= 'a' && (p[0]|0x20) <= 'z'
+}
+
+// maxGitFileSize is the largest gitfile Git reads, see read_gitfile_gently
+// in setup.c. Git reads commondir without a limit; the same bound there
+// is go-git's own, to avoid reading a huge file into memory.
+const maxGitFileSize = 1 << 20
+
+var errGitFileTooLarge = errors.New("file too large")
+
+// readGitFile reads a gitfile or commondir file, refusing more than
+// maxGitFileSize, so a huge file is not read into memory.
+func readGitFile(fs billy.Filesystem, path string) ([]byte, error) {
+	f, err := fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	content, err := io.ReadAll(io.LimitReader(f, maxGitFileSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxGitFileSize {
+		return nil, errGitFileTooLarge
+	}
+	return content, nil
+}
+
+// isGitDirectory reports whether the directory at path looks like a Git
+// directory to Git: it holds HEAD, objects and refs [1]. A linked
+// worktree's directory keeps objects and refs in the common directory
+// named by its commondir file. Like isNestedRepository, it reports true
+// where it cannot decide. That includes a commondir that cannot be read,
+// is empty or exceeds maxGitFileSize, where Git reads it whole or dies,
+// and one below a directory that does not exist, where Git dies. As Git
+// asks access(2) for execute permission, objects and refs may be any
+// file with an execute bit, not only a directory.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/setup.c#L362-L429
+func isGitDirectory(fs billy.Filesystem, path string) bool {
+	if _, err := fs.Lstat(fs.Join(path, "HEAD")); err != nil {
+		return errors.Is(err, errLeadingSymlink)
+	}
+	common := path
+	content, err := readGitFile(fs, fs.Join(path, "commondir"))
+	switch {
+	case err == nil:
+		var ok bool
+		if len(content) == 0 {
+			return true
+		}
+		common, ok = worktreeRelative(fs, path, strings.TrimRight(string(content), "\r\n"))
+		if !ok {
+			return true
+		}
+		if parent := filepath.Dir(common); parent != "." {
+			if fi, err := fs.Stat(parent); err != nil || !fi.IsDir() {
+				return true
+			}
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return true
+	}
+	for _, name := range []string{"objects", "refs"} {
+		fi, err := fs.Stat(fs.Join(common, name))
+		if err != nil {
+			return errors.Is(err, errLeadingSymlink)
+		}
+		if !fi.IsDir() && runtime.GOOS != "windows" && fi.Mode()&0o111 == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// cleanStep is one removal doClean plans: an untracked file, or a directory
+// removed once it is empty.
+type cleanStep struct {
+	path string
+	dir  bool
+}
+
+// doClean decides what to keep before it removes anything, as Git's
+// fill_directory does before clean removes what it listed. Removing as it
+// walks would let one removal change a later keep decision: a nested
+// repository whose gitfile points into an untracked directory would be
+// judged after that directory was removed.
 func (w *Worktree) doClean(status Status, opts *CleanOptions, guard cleanGuard, dir string, files []fs.DirEntry) error {
+	steps, err := w.planClean(nil, status, opts, guard, dir, files)
+	if err != nil {
+		return err
+	}
+	wfs := w.filesystem.walkFilesystem()
+	for _, step := range steps {
+		if err := w.filesystem.validNoLeadingSymlink(step.path); err != nil {
+			return err
+		}
+		if step.dir {
+			_, err = removeDirIfEmpty(wfs, step.path)
+		} else {
+			err = wfs.Remove(step.path)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Worktree) planClean(steps []cleanStep, status Status, opts *CleanOptions, guard cleanGuard, dir string, files []fs.DirEntry) ([]cleanStep, error) {
 	wfs := w.filesystem.walkFilesystem()
 	for _, fi := range files {
 		if guard.skip(dir, fi, files) {
@@ -1583,37 +1837,27 @@ func (w *Worktree) doClean(status Status, opts *CleanOptions, guard cleanGuard, 
 		// relative path under the root
 		path := filepath.Join(dir, fi.Name())
 		if fi.IsDir() {
-			if !opts.Dir {
+			if !opts.Dir || (!guard.tracked(path) && isNestedRepository(wfs, path)) {
 				continue
 			}
 
 			subfiles, err := wfs.ReadDir(path)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			err = w.doClean(status, opts, guard, path, subfiles)
+			steps, err = w.planClean(steps, status, opts, guard, path, subfiles)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if status.IsUntracked(path) {
-			if err := w.filesystem.validNoLeadingSymlink(path); err != nil {
-				return err
-			}
-			if err := wfs.Remove(path); err != nil {
-				return err
-			}
+			steps = append(steps, cleanStep{path: path})
 		}
 	}
 
 	if opts.Dir && dir != "" {
-		if err := w.filesystem.validNoLeadingSymlink(dir); err != nil {
-			return err
-		}
-		_, err := removeDirIfEmpty(wfs, dir)
-		return err
+		steps = append(steps, cleanStep{path: dir, dir: true})
 	}
-
-	return nil
+	return steps, nil
 }
 
 // isGitDirName reports whether a listed name is the repository's own
