@@ -16,8 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
@@ -405,4 +407,51 @@ func TestStatusHashesFilesInTheObjectFormat(t *testing.T) {
 			require.True(t, st.IsClean(), "status: %v", st)
 		})
 	}
+}
+
+// beforeSetIndexStorer runs a hook when the index is stored, which a reset
+// does last.
+type beforeSetIndexStorer struct {
+	*filesystem.Storage
+	hook func()
+}
+
+func (s *beforeSetIndexStorer) SetIndex(idx *index.Index) error {
+	if s.hook != nil {
+		s.hook()
+	}
+	return s.Storage.SetIndex(idx)
+}
+
+func TestCheckoutCreateDoesNotOverwriteBranchCreatedDuringReset(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte("1\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "c1")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte("2\n"), 0o644))
+	git(t, dir, "commit", "-q", "-am", "c2")
+	c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+	c2 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD")))
+
+	st := &beforeSetIndexStorer{Storage: filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())}
+	r, err := Open(st, osfs.New(dir))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	branch := plumbing.NewBranchReferenceName("feature")
+	st.hook = func() {
+		require.NoError(t, st.SetReference(plumbing.NewHashReference(branch, c2)))
+	}
+
+	err = w.Checkout(&CheckoutOptions{Hash: c1, Branch: branch, Create: true})
+	require.ErrorContains(t, err, "already exists")
+
+	ref, err := r.Reference(branch, true)
+	require.NoError(t, err)
+	assert.Equal(t, c2, ref.Hash())
 }

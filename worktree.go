@@ -233,6 +233,12 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 	// A failed tree read must not switch HEAD or create a branch. Resetting
 	// through the current HEAD would also move the branch we are leaving.
 	if opts.Create {
+		// The reset can take long enough for another process to create the
+		// branch. There is no create-only write, so check once more to narrow
+		// the window before overwriting it.
+		if err := w.checkBranchAbsent(opts.Branch); err != nil {
+			return err
+		}
 		if err := w.r.Storer.SetReference(plumbing.NewHashReference(opts.Branch, c)); err != nil {
 			return err
 		}
@@ -260,12 +266,7 @@ func (w *Worktree) validateNewBranch(opts *CheckoutOptions) error {
 		return err
 	}
 
-	_, err := w.r.Storer.Reference(opts.Branch)
-	if err == nil {
-		return fmt.Errorf("a branch named %q already exists", opts.Branch)
-	}
-
-	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+	if err := w.checkBranchAbsent(opts.Branch); err != nil {
 		return err
 	}
 
@@ -278,6 +279,17 @@ func (w *Worktree) validateNewBranch(opts *CheckoutOptions) error {
 		opts.Hash = ref.Hash()
 	}
 
+	return nil
+}
+
+func (w *Worktree) checkBranchAbsent(name plumbing.ReferenceName) error {
+	_, err := w.r.Storer.Reference(name)
+	if err == nil {
+		return fmt.Errorf("a branch named %q already exists", name)
+	}
+	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return err
+	}
 	return nil
 }
 
