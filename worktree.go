@@ -627,12 +627,12 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 	return idx, removedFiles, nil
 }
 
-// storeIndex stores idx, whose entries the caller changed, without its
-// cache-tree: go-git does not update the cache-tree when it changes the
-// entries, and a storer may keep the index it is given, so a cache-tree
-// stored with it could tell a later diff that a changed directory is not.
+// storeIndex stores idx, whose entries the caller changed. A storer may keep
+// the index it is given, and a stale cache-tree would tell a later diff that
+// a changed directory is not, so every cache-tree entry that no longer
+// describes the entries is invalidated first, whether or not the caller did.
 func (w *Worktree) storeIndex(idx *index.Index) error {
-	idx.Cache = nil
+	idx.PruneCache()
 	return w.r.Storer.SetIndex(idx)
 }
 
@@ -640,9 +640,11 @@ func (w *Worktree) storeIndex(idx *index.Index) error {
 // changing those of idx.
 func copyIndex(idx *index.Index) *index.Index {
 	c := *idx
-	// The copy is changed, after which the cache-tree it was read with
-	// would no longer describe it.
-	c.Cache = nil
+	if idx.Cache != nil {
+		// The copy is changed, after which the cache-tree has to be pruned
+		// as the one stored with it.
+		c.Cache = &index.Tree{Entries: slices.Clone(idx.Cache.Entries)}
+	}
 	c.Entries = make([]*index.Entry, len(idx.Entries))
 	for i, e := range idx.Entries {
 		ec := *e

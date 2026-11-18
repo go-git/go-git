@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
@@ -308,26 +309,45 @@ func TestShallowStorageDoesNotAliasCaller(t *testing.T) {
 	assert.Equal(t, []plumbing.Hash{hashA, hashB}, again)
 }
 
-// The stored index is handed out to be changed in place, so it keeps no
-// cache-tree, which would stop describing its entries, as the filesystem
-// storage does not write one. The caller's index keeps its own.
-func TestSetIndexDropsCacheTree(t *testing.T) {
+// The stored index is handed out to be changed in place, so its cache-tree
+// is a copy of the caller's, pruned of what no longer describes the entries.
+// The caller's own is left as it was.
+func TestSetIndexStoresItsOwnPrunedCacheTree(t *testing.T) {
 	t.Parallel()
 
-	s := memory.NewStorage()
-	given := &index.Index{
-		Version: 2,
-		Entries: []*index.Entry{{Name: "a/f"}},
-		Cache: &index.Tree{Entries: []index.TreeEntry{
-			{Entries: 1, Trees: 1, Hash: plumbing.NewHash("1111111111111111111111111111111111111111")},
-			{Path: "a", Entries: 1, Hash: plumbing.NewHash("2222222222222222222222222222222222222222")},
-		}},
-	}
-	require.NoError(t, s.SetIndex(given))
+	blob := plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198")
+	body := append([]byte("100644 f\x00"), blob.Bytes()...)
+	h := plumbing.NewHasher(formatcfg.SHA1, plumbing.TreeObject, int64(len(body)))
+	_, _ = h.Write(body)
+	accurate := h.Sum()
+	stale := plumbing.NewHash("1111111111111111111111111111111111111111")
 
-	idx, err := s.Index()
-	require.NoError(t, err)
-	assert.Nil(t, idx.Cache)
-	assert.Len(t, idx.Entries, 1)
-	assert.NotNil(t, given.Cache)
+	for name, tc := range map[string]struct {
+		hash  plumbing.Hash
+		valid bool
+	}{
+		"accurate": {accurate, true},
+		"stale":    {stale, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := memory.NewStorage()
+			given := &index.Index{
+				Version: 2,
+				Entries: []*index.Entry{{Name: "f", Mode: filemode.Regular, Hash: blob}},
+				Cache:   &index.Tree{Entries: []index.TreeEntry{{Entries: 1, Hash: tc.hash}}},
+			}
+			require.NoError(t, s.SetIndex(given))
+
+			idx, err := s.Index()
+			require.NoError(t, err)
+			require.NotNil(t, idx.Cache)
+			assert.Equal(t, tc.valid, idx.Cache.Entries[0].Entries >= 0)
+			assert.Equal(t, 1, given.Cache.Entries[0].Entries, "the caller's cache-tree is left alone")
+
+			idx.InvalidateCache("f")
+			assert.Equal(t, 1, given.Cache.Entries[0].Entries)
+		})
+	}
 }

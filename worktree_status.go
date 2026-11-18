@@ -627,6 +627,7 @@ func (w *Worktree) addOrUpdateFileToIndex(idx *index.Index, filename string, h p
 		return w.doAddFileToIndex(idx, filename, h)
 	}
 
+	idx.InvalidateCache(filename)
 	return w.doUpdateFileToIndex(e, filename, h)
 }
 

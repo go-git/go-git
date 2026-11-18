@@ -5,6 +5,7 @@ import (
 	"errors"
 	"hash"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -21,7 +22,8 @@ type IndexStorage struct {
 	skipHash bool
 }
 
-// SetIndex writes the index to disk and updates the cache.
+// SetIndex writes the index to disk and updates the cache. Like
+// index.Encoder.Encode, it prunes the cache-tree of idx in place.
 func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 	if err := s.writeIndex(idx); err != nil {
 		return err
@@ -32,10 +34,6 @@ func (s *IndexStorage) SetIndex(idx *index.Index) (err error) {
 		if statErr == nil {
 			cp := copyIndex(idx)
 			cp.ModTime = fi.ModTime()
-			// The encoder does not write the cache-tree, so the cached
-			// index must not carry one either: it would describe the
-			// entries the index was read with, not the ones written.
-			cp.Cache = nil
 			s.cache.Set(cp, fi.ModTime(), fi.Size())
 		} else {
 			s.cache.Clear()
@@ -135,6 +133,7 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 // entries, so that callers can change them, in place or by appending or
 // removing, without affecting the cached copy. go-git changes entries in
 // place, and a change that is never stored must not reach later readers.
+// The cache-tree is copied too, as invalidating it changes it in place.
 func copyIndex(idx *index.Index) *index.Index {
 	cp := *idx
 	entries := make([]index.Entry, len(idx.Entries))
@@ -142,6 +141,9 @@ func copyIndex(idx *index.Index) *index.Index {
 	for i, e := range idx.Entries {
 		entries[i] = *e
 		cp.Entries[i] = &entries[i]
+	}
+	if idx.Cache != nil {
+		cp.Cache = &index.Tree{Entries: slices.Clone(idx.Cache.Entries)}
 	}
 	return &cp
 }
