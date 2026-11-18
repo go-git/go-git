@@ -943,6 +943,40 @@ func TestRemoveAndReplaceInvalidateTheCacheTreeGitReads(t *testing.T) {
 	assert.Equal(t, Deleted, status.File("a/b/g").Staging, "status: %v", status)
 }
 
+func TestCommitAndHardResetWriteTheCacheTree(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	for _, name := range []string{"top", "a/f", "a/b/g"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644))
+	}
+	_, err = w.Add(".")
+	require.NoError(t, err)
+	c1, err := w.Commit("c1", &CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{":valid", "a/:valid", "a/b/:valid"}, cacheTreeOnDisk(t, dir))
+	requireGitAcceptsIndexOf(t, dir)
+	assert.Equal(t, strings.TrimSpace(git(t, dir, "rev-parse", c1.String()+"^{tree}")), strings.TrimSpace(git(t, dir, "write-tree")))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b", "g"), []byte("c2\n"), 0o644))
+	_, err = w.Add("a/b/g")
+	require.NoError(t, err)
+	assert.Equal(t, []string{":invalid", "a/:invalid", "a/b/:invalid"}, cacheTreeOnDisk(t, dir))
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: c1, Mode: HardReset}))
+	assert.Equal(t, []string{":valid", "a/:valid", "a/b/:valid"}, cacheTreeOnDisk(t, dir))
+	requireGitAcceptsIndexOf(t, dir)
+}
+
 // Git writes the cache-tree and go-git reads it: a go-git Add on top of an
 // index that Git wrote leaves a status that Git agrees with.
 func TestGitAndGoGitAgreeOnStatusAcrossCacheTreeWrites(t *testing.T) {

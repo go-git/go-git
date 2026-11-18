@@ -391,6 +391,40 @@ func TestFillCacheRefusesAnotherTree(t *testing.T) {
 	assert.Nil(t, idx.Cache)
 }
 
+// Git lists the subtrees of a directory by name length first, so that "c"
+// comes before "bb".
+func TestFillCacheMatchesGitsSubtreeOrder(t *testing.T) {
+	t.Parallel()
+
+	if _, err := gitenv.Command("git", "--version").CombinedOutput(); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q")
+	for _, name := range []string{"top", "bb/f", "c/f", "ccc/f", "aa/f"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644))
+	}
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c")
+
+	idx := readIndex(t, dir)
+	want := append([]TreeEntry(nil), idx.Cache.Entries...)
+	require.Equal(t, []string{"", "c", "aa", "bb", "ccc"}, treeNames(want))
+
+	idx.Cache = nil
+	require.True(t, idx.FillCache(plumbing.NewHash(runGit(t, dir, "rev-parse", "HEAD^{tree}"))))
+	assert.Equal(t, want, idx.Cache.Entries)
+}
+
+func treeNames(es []TreeEntry) []string {
+	names := make([]string, len(es))
+	for i, e := range es {
+		names[i] = e.Path
+	}
+	return names
+}
+
 // Git rejects this cache-tree with "cache-tree: internal error": the
 // negative count of "a" lets the entries balance out at the end of the list.
 func TestCacheTreeWithNegativeSubtreeCountIsDropped(t *testing.T) {
