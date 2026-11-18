@@ -595,7 +595,9 @@ type CommitOptions struct {
 	// len(Parents) is zero, the hash of HEAD reference is used.
 	Parents []plumbing.Hash
 	// Signer denotes a cryptographic signer to sign the commit with.
-	// A nil value here means the commit will not be signed.
+	// When nil, the commit is signed only if commit.gpgSign is enabled in the
+	// config. The registered ObjectSigner plugin is then used, and
+	// ErrNoObjectSigner is returned if there is none.
 	Signer Signer
 	// Amend will create a new commit object and replace the commit that HEAD currently
 	// points to. Cannot be used with All nor Parents.
@@ -690,7 +692,9 @@ type CreateTagOptions struct {
 	// ending in a newline.
 	Message string
 	// Signer denotes a cryptographic signer to sign the tag with.
-	// A nil value here means the tag will not be signed.
+	// When nil, the tag is signed only if tag.gpgSign is enabled in the
+	// config. The registered ObjectSigner plugin is then used, and
+	// ErrNoObjectSigner is returned if there is none.
 	Signer Signer
 }
 

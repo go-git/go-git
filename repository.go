@@ -974,7 +974,7 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 			// Use Has before Get so the key is not frozen when no plugin is
 			// registered, allowing callers to register one later.
 			if !plugin.Has(plugin.ObjectSigner()) {
-				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin")
+				return plumbing.ZeroHash, fmt.Errorf("%w: tag.gpgSign is enabled, disable it, pass a Signer or register an ObjectSigner plugin", ErrNoObjectSigner)
 			}
 
 			signer, err = plugin.Get(plugin.ObjectSigner())

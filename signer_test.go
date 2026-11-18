@@ -5,12 +5,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/util"
+	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 type b64signer struct{}
@@ -56,4 +63,68 @@ func ExampleSigner() {
 	}
 	fmt.Println(obj.Signature)
 	// Output: dHJlZSA0YjgyNWRjNjQyY2I2ZWI5YTA2MGU1NGJmOGQ2OTI4OGZiZWU0OTA0CmF1dGhvciBKb2huIERvZSA8am9obkBleGFtcGxlLmNvbT4gMTIzNCArMDAwMApjb21taXR0ZXIgSm9obiBEb2UgPGpvaG5AZXhhbXBsZS5jb20+IDEyMzQgKzAwMDAKCmV4YW1wbGUgY29tbWl0
+}
+
+func isolateGitConfig(t *testing.T, gitconfig string) {
+	t.Helper()
+
+	home := t.TempDir()
+	path := filepath.Join(home, ".gitconfig")
+	require.NoError(t, os.WriteFile(path, []byte(gitconfig), 0o600))
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("GIT_CONFIG_GLOBAL", path)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_SYSTEM", "")
+
+	resetPluginEntry("object-signer")
+	t.Cleanup(func() { resetPluginEntry("object-signer") })
+	resetPluginEntry("config-loader")
+	t.Cleanup(registerTestConfigLoader)
+	err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+		return xconfig.NewAuto()
+	})
+	require.NoError(t, err)
+}
+
+func TestCommitGlobalGpgSignWithoutSigner(t *testing.T) { //nolint:paralleltest // modifies environment
+	isolateGitConfig(t, "[commit]\n\tgpgSign = true\n")
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "file.txt", []byte("content"), 0o644))
+	_, err = w.Add("file.txt")
+	require.NoError(t, err)
+
+	_, err = w.Commit("test commit\n", &CommitOptions{Author: defaultSignature()})
+	require.ErrorIs(t, err, ErrNoObjectSigner)
+}
+
+func TestCreateTagGlobalGpgSignWithoutSigner(t *testing.T) { //nolint:paralleltest // modifies environment
+	isolateGitConfig(t, "[tag]\n\tgpgSign = true\n")
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	hash, err := w.Commit("initial\n", &CommitOptions{
+		Author:            defaultSignature(),
+		AllowEmptyCommits: true,
+	})
+	require.NoError(t, err)
+
+	_, err = r.CreateTag("v1", hash, &CreateTagOptions{
+		Tagger:  defaultSignature(),
+		Message: "tag message\n",
+	})
+	require.ErrorIs(t, err, ErrNoObjectSigner)
 }

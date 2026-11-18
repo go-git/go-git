@@ -4446,7 +4446,7 @@ func TestCreateTagSignerSelection(t *testing.T) { //nolint:paralleltest // modif
 		{
 			name:       "error if tag.signGpg=true and no plugin registered",
 			tagSignGpg: config.OptBoolTrue,
-			wantErr:    "cannot auto-sign tag: disable tag.gpgSign or register an ObjectSigner plugin",
+			wantErr:    "no object signer available: tag.gpgSign is enabled, disable it, pass a Signer or register an ObjectSigner plugin",
 		},
 		{
 			name:           "CreateTagOptions.Signer takes precedence over plugin",

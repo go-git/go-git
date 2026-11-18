@@ -2,10 +2,16 @@ package git
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
+
+// ErrNoObjectSigner is returned when commit.gpgSign or tag.gpgSign is enabled
+// in the Git configuration, but no Signer was provided and no ObjectSigner
+// plugin is registered.
+var ErrNoObjectSigner = errors.New("no object signer available")
 
 // signableObject is an object which can be signed.
 type signableObject interface {

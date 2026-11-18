@@ -1197,7 +1197,7 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 			name:          "error if commit.signGpg=true and no plugin registered",
 			commitSignGpg: config.OptBoolTrue,
 			wantSignature: "",
-			wantErr:       "cannot auto-sign commit: disable commit.gpgSign or register an ObjectSigner plugin",
+			wantErr:       "no object signer available: commit.gpgSign is enabled, disable it, pass a Signer or register an ObjectSigner plugin",
 		},
 		{
 			name:           "CommitOptions.Signer takes precedence over plugin",

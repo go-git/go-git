@@ -262,7 +262,7 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 			// Use Has before Get so the key is not frozen when no plugin is
 			// registered, allowing callers to register one later.
 			if !plugin.Has(plugin.ObjectSigner()) {
-				return plumbing.ZeroHash, fmt.Errorf("cannot auto-sign commit: disable commit.gpgSign or register an ObjectSigner plugin")
+				return plumbing.ZeroHash, fmt.Errorf("%w: commit.gpgSign is enabled, disable it, pass a Signer or register an ObjectSigner plugin", ErrNoObjectSigner)
 			}
 
 			signer, err = plugin.Get(plugin.ObjectSigner())
