@@ -9,11 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -1228,4 +1233,109 @@ func (s *SuiteCommit) TestLess() {
 		}
 		s.Equal(t.Exp, commit1.Less(commit2))
 	}
+}
+
+func TestVerifySHA256CommitSignature(t *testing.T) {
+	t.Parallel()
+
+	entity, err := openpgp.NewEntity("go-git", "", "go-git@example.com",
+		&packet.Config{Algorithm: packet.PubKeyAlgoEdDSA})
+	require.NoError(t, err)
+
+	var pub bytes.Buffer
+	aw, err := armor.Encode(&pub, openpgp.PublicKeyType, nil)
+	require.NoError(t, err)
+	require.NoError(t, entity.Serialize(aw))
+	require.NoError(t, aw.Close())
+	armoredKeyRing := pub.String()
+
+	const payload = "tree 6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321\n" +
+		"author go-git <go-git@example.com> 1700000000 +0000\n" +
+		"committer go-git <go-git@example.com> 1700000000 +0000\n" +
+		"\n" +
+		"signed\n"
+
+	var sig bytes.Buffer
+	require.NoError(t, openpgp.ArmoredDetachSign(&sig, entity, strings.NewReader(payload), nil))
+
+	headerEnd := strings.Index(payload, "\n\n") + 1
+	signed := payload[:headerEnd] +
+		"gpgsig-sha256 " + strings.ReplaceAll(strings.TrimSuffix(sig.String(), "\n"), "\n", "\n ") + "\n" +
+		payload[headerEnd:]
+
+	decode := func(t *testing.T, raw string) *Commit {
+		t.Helper()
+		obj := plumbing.NewMemoryObject(plumbing.FromObjectFormat(formatcfg.SHA256))
+		obj.SetType(plumbing.CommitObject)
+		_, err := obj.Write([]byte(raw))
+		require.NoError(t, err)
+		c := &Commit{}
+		require.NoError(t, c.Decode(obj))
+		require.Equal(t, formatcfg.SHA256, c.Hash.Format())
+		return c
+	}
+
+	t.Run("decoded", func(t *testing.T) {
+		t.Parallel()
+
+		c := decode(t, signed)
+		require.Empty(t, c.Signature)
+		require.NotEmpty(t, c.SignatureSHA256)
+
+		e, err := c.Verify(armoredKeyRing)
+		require.NoError(t, err)
+		require.Contains(t, e.Identities, "go-git <go-git@example.com>")
+	})
+
+	t.Run("in memory", func(t *testing.T) {
+		t.Parallel()
+
+		decoded := decode(t, signed)
+		c := &Commit{
+			Author:          decoded.Author,
+			Committer:       decoded.Committer,
+			Message:         decoded.Message,
+			TreeHash:        decoded.TreeHash,
+			SignatureSHA256: decoded.SignatureSHA256,
+		}
+
+		_, err := c.Verify(armoredKeyRing)
+		require.NoError(t, err)
+	})
+
+	t.Run("in memory with only gpgsig", func(t *testing.T) {
+		t.Parallel()
+
+		decoded := decode(t, signed)
+		c := &Commit{
+			Author:    decoded.Author,
+			Committer: decoded.Committer,
+			Message:   decoded.Message,
+			TreeHash:  decoded.TreeHash,
+			Signature: decoded.SignatureSHA256,
+		}
+
+		_, err := c.Verify(armoredKeyRing)
+		require.Error(t, err)
+	})
+
+	t.Run("decoded with only gpgsig", func(t *testing.T) {
+		t.Parallel()
+
+		c := decode(t, strings.Replace(signed, "gpgsig-sha256 ", "gpgsig ", 1))
+		require.NotEmpty(t, c.Signature)
+		require.Empty(t, c.SignatureSHA256)
+
+		_, err := c.Verify(armoredKeyRing)
+		require.Error(t, err)
+	})
+
+	t.Run("tampered", func(t *testing.T) {
+		t.Parallel()
+
+		c := decode(t, strings.Replace(signed, "\nsigned\n", "\ntampered\n", 1))
+
+		_, err := c.Verify(armoredKeyRing)
+		require.ErrorContains(t, err, "invalid signature")
+	})
 }
