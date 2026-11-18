@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -209,4 +210,22 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 
 		assert.Equal(t, baseConfig, string(data))
 	})
+}
+
+func TestSetConfigRefusedNameKeepsConfig(t *testing.T) {
+	t.Parallel()
+
+	const existing = "[core]\n\tbare = false\n"
+	fs := memfs.New()
+	require.NoError(t, util.WriteFile(fs, "config", []byte(existing), 0o644))
+
+	cfg := config.NewConfig()
+	cfg.Raw.AddOption("core", "", "fö", "1")
+
+	err := NewStorage(fs, nil).SetConfig(cfg)
+	require.ErrorIs(t, err, formatcfg.ErrInvalidKey)
+
+	data, err := util.ReadFile(fs, "config")
+	require.NoError(t, err)
+	assert.Equal(t, existing, string(data))
 }

@@ -95,17 +95,17 @@ func (c *ConfigStorage) SetConfig(cfg *config.Config) (err error) {
 		}
 	}
 
+	b, err := cfg.Marshal()
+	if err != nil {
+		return err
+	}
+
 	f, err := c.dir.ConfigWriter()
 	if err != nil {
 		return err
 	}
 
 	defer ioutil.CheckClose(f, &err)
-
-	b, err := cfg.Marshal()
-	if err != nil {
-		return err
-	}
 
 	_, err = f.Write(b)
 	return err
