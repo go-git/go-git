@@ -57,6 +57,10 @@ type stateFn func(*decoder) (stateFn, error)
 // The caller must not close out; Decode closes it when done.
 // This function is safe to call concurrently with different parameters.
 func Decode(r io.Reader, objCount int64, packChecksum plumbing.ObjectID, out chan<- uint32) error {
+	if out != nil {
+		defer close(out)
+	}
+
 	if r == nil {
 		return fmt.Errorf("%w: nil reader", ErrMalformedRevFile)
 	}
@@ -76,8 +80,6 @@ func Decode(r io.Reader, objCount int64, packChecksum plumbing.ObjectID, out cha
 		packChecksum: packChecksum,
 		out:          out,
 	}
-
-	defer close(d.out)
 
 	for state := readMagicNumber; state != nil; {
 		var err error
