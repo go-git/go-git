@@ -917,156 +917,479 @@ func TestMarshalIndexSkipHash(t *testing.T) {
 	assert.Equal(t, OptBoolTrue, cfg2.Index.SkipHash)
 }
 
-func TestMerge(t *testing.T) {
+func TestUnmarshalRemoteEmptyURLResets(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name  string
-		input []*Config
-		want  Config
+		input string
+		want  []string
 	}{
 		{
-			name:  "nil",
-			input: nil,
-			want:  Config{},
+			name:  "empty url clears earlier urls",
+			input: "[remote \"origin\"]\n\turl = https://example.com/a.git\n\turl = \"\"\n",
+			want:  nil,
 		},
 		{
-			name: "separate objs",
-			input: []*Config{
-				{User: user{
-					Name: "foo", Email: "bar@test",
-				}},
-				{
-					Extensions: struct {
-						ObjectFormat   config.ObjectFormat
-						WorktreeConfig bool
-					}{
-						ObjectFormat:   config.SHA256,
-						WorktreeConfig: true,
-					},
-				},
-			},
-			want: Config{
-				User: user{
-					Name:  "foo",
-					Email: "bar@test",
-				},
-				Extensions: struct {
-					ObjectFormat   config.ObjectFormat
-					WorktreeConfig bool
-				}{
-					ObjectFormat:   config.SHA256,
-					WorktreeConfig: true,
-				},
-			},
+			name: "urls after an empty url are kept",
+			input: "[remote \"origin\"]\n\turl = https://example.com/a.git\n\turl = \"\"\n" +
+				"\turl = https://example.com/b.git\n",
+			want: []string{"https://example.com/b.git"},
 		},
 		{
-			name: "merge nested fields",
-			input: []*Config{
-				{User: user{Name: "foo"}},
-				{User: user{Email: "bar@test"}},
-			},
-			want: Config{
-				User: user{
-					Name:  "foo",
-					Email: "bar@test",
-				},
-			},
+			name: "empty pushurl clears only earlier pushurls",
+			input: "[remote \"origin\"]\n\turl = https://example.com/a.git\n" +
+				"\tpushurl = https://example.com/p.git\n\tpushurl = \"\"\n",
+			want: []string{"https://example.com/a.git"},
 		},
 		{
-			name: "override nested fields",
-			input: []*Config{
-				{User: user{Name: "foo"}},
-				{User: user{Name: "bar", Email: "foo@test"}},
-			},
-			want: Config{
-				User: user{
-					Name:  "bar",
-					Email: "foo@test",
-				},
-			},
+			name: "empty url keeps pushurls",
+			input: "[remote \"origin\"]\n\turl = https://example.com/a.git\n" +
+				"\tpushurl = https://example.com/p.git\n\turl = \"\"\n",
+			want: []string{"https://example.com/p.git"},
 		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := NewConfig()
+			require.NoError(t, cfg.Unmarshal([]byte(tc.input)))
+
+			require.Contains(t, cfg.Remotes, "origin")
+			assert.Equal(t, tc.want, cfg.Remotes["origin"].URLs)
+
+			b, err := cfg.Marshal()
+			require.NoError(t, err)
+
+			again := NewConfig()
+			require.NoError(t, again.Unmarshal(b))
+			require.Contains(t, again.Remotes, "origin")
+			assert.Equal(t, tc.want, again.Remotes["origin"].URLs)
+		})
+	}
+}
+
+func TestMarshalRemoteKeepsEmptyURL(t *testing.T) {
+	t.Parallel()
+
+	const input = "[remote \"origin\"]\n\turl = \"\"\n"
+
+	cfg := NewConfig()
+	require.NoError(t, cfg.Unmarshal([]byte(input)))
+
+	b, err := cfg.Marshal()
+	require.NoError(t, err)
+
+	got := Merge(
+		mustReadConfig(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"),
+		mustReadConfig(t, string(b)),
+	)
+	require.Contains(t, got.Remotes, "origin")
+	assert.Empty(t, got.Remotes["origin"].URLs)
+}
+
+func TestMergeRawAddsNoEmptySections(t *testing.T) {
+	t.Parallel()
+
+	typed := NewConfig()
+	typed.User.Name = "x"
+
+	raw := typed.mergeRaw()
+	require.NotNil(t, raw)
+	assert.Equal(t, []string{"x"}, raw.Section("user").OptionAll("name"))
+	for _, s := range raw.Sections {
+		assert.Truef(t, len(s.Options) > 0 || len(s.Subsections) > 0, "section %q is empty", s.Name)
+	}
+}
+
+func mustReadConfig(t *testing.T, s string) *Config {
+	t.Helper()
+
+	cfg, err := ReadConfig(strings.NewReader(s))
+	require.NoError(t, err)
+
+	return cfg
+}
+
+func TestMerge(t *testing.T) {
+	t.Parallel()
+
+	read := func(t *testing.T, s string) *Config {
+		t.Helper()
+		cfg, err := ReadConfig(strings.NewReader(s))
+		require.NoError(t, err)
+		return cfg
+	}
+
+	tests := []struct {
+		name   string
+		input  func(t *testing.T) []*Config
+		assert func(t *testing.T, got Config)
+	}{
 		{
-			name: "src nil map preserves dst map",
-			input: []*Config{
-				{
-					Remotes: map[string]*RemoteConfig{
-						"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
-					},
-				},
-				{
-					// Remotes is nil (zero value)
-					Branches: map[string]*Branch{
-						"main": {Name: "main"},
-					},
-				},
+			name: "later false overrides earlier true",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[core]\n\tfilemode = true\n[pack]\n\treadReverseIndex = true\n"),
+					read(t, "[core]\n\tfilemode = false\n[pack]\n\treadReverseIndex = false\n"),
+				}
 			},
-			want: Config{
-				Remotes: map[string]*RemoteConfig{
-					"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
-				},
-				Branches: map[string]*Branch{
-					"main": {Name: "main"},
-				},
-			},
-		},
-		{
-			name: "src empty map preserves dst map",
-			input: []*Config{
-				{
-					Remotes: map[string]*RemoteConfig{
-						"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
-					},
-				},
-				{
-					// Remotes is explicitly initialised but empty (mirrors NewConfig behaviour).
-					Remotes: map[string]*RemoteConfig{},
-				},
-			},
-			want: Config{
-				Remotes: map[string]*RemoteConfig{
-					"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
-				},
-			},
-		},
-		{
-			name: "merge maps with disjoint keys",
-			input: []*Config{
-				{
-					Remotes: map[string]*RemoteConfig{
-						"origin": {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
-					},
-				},
-				{
-					Remotes: map[string]*RemoteConfig{
-						"upstream": {Name: "upstream", URLs: []string{"https://upstream.com/repo.git"}},
-					},
-				},
-			},
-			want: Config{
-				Remotes: map[string]*RemoteConfig{
-					"origin":   {Name: "origin", URLs: []string{"https://example.com/repo.git"}},
-					"upstream": {Name: "upstream", URLs: []string{"https://upstream.com/repo.git"}},
-				},
+			assert: func(t *testing.T, got Config) {
+				assert.False(t, got.Core.FileMode)
+				assert.False(t, got.Pack.ReadReverseIndex)
 			},
 		},
 		{
-			name: "src map entry overrides dst map entry",
-			input: []*Config{
-				{
-					Remotes: map[string]*RemoteConfig{
-						"origin": {Name: "origin", URLs: []string{"https://old.com/repo.git"}},
-					},
-				},
-				{
-					Remotes: map[string]*RemoteConfig{
-						"origin": {Name: "origin", URLs: []string{"https://new.com/repo.git"}},
-					},
-				},
+			name: "later source without key keeps earlier value",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[core]\n\tfilemode = false\n[pack]\n\twindow = 5\n"),
+					read(t, "[user]\n\tname = foo\n"),
+				}
 			},
-			want: Config{
-				Remotes: map[string]*RemoteConfig{
-					"origin": {Name: "origin", URLs: []string{"https://new.com/repo.git"}},
-				},
+			assert: func(t *testing.T, got Config) {
+				assert.False(t, got.Core.FileMode)
+				assert.Equal(t, uint(5), got.Pack.Window)
+				assert.Equal(t, "foo", got.User.Name)
+			},
+		},
+		{
+			name: "insteadOf rules from all sources are kept",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[url \"https://github.com/\"]\n\tinsteadOf = gh:\n"),
+					read(t, "[url \"https://gitlab.com/\"]\n\tinsteadOf = gl:\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Len(t, got.URLs, 2)
+				assert.Equal(t, "https://github.com/", got.URLs[0].Name)
+				assert.Equal(t, []string{"gh:"}, got.URLs[0].InsteadOfs)
+				assert.Equal(t, "https://gitlab.com/", got.URLs[1].Name)
+				assert.Equal(t, []string{"gl:"}, got.URLs[1].InsteadOfs)
+			},
+		},
+		{
+			name: "insteadOf values for the same base accumulate",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[url \"https://github.com/\"]\n\tinsteadOf = gh:\n"),
+					read(t, "[url \"https://github.com/\"]\n\tinsteadOf = github:\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Len(t, got.URLs, 1)
+				assert.Equal(t, []string{"gh:", "github:"}, got.URLs[0].InsteadOfs)
+				assert.Equal(t, "https://github.com/x/y", got.URLs[0].ApplyInsteadOf("gh:x/y"))
+				assert.Equal(t, "https://github.com/x/y", got.URLs[0].ApplyInsteadOf("github:x/y"))
+			},
+		},
+		{
+			name: "insteadOf rules apply to remotes from other sources",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[url \"https://github.com/\"]\n\tinsteadOf = gh:\n"),
+					read(t, "[remote \"origin\"]\n\turl = gh:x/y\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, []string{"https://github.com/x/y"}, got.Remotes["origin"].URLs)
+			},
+		},
+		{
+			name: "repeated subsections accumulate multi-valued keys",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"+
+						"\tfetch = +refs/heads/*:refs/remotes/origin/*\n"),
+					read(t, "[remote \"origin\"]\n\tfetch = +refs/tags/*:refs/tags/*\n"+
+						"[remote \"upstream\"]\n\turl = https://example.com/b.git\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, []string{"https://example.com/a.git"}, got.Remotes["origin"].URLs)
+				assert.Equal(t, []RefSpec{
+					"+refs/heads/*:refs/remotes/origin/*",
+					"+refs/tags/*:refs/tags/*",
+				}, got.Remotes["origin"].Fetch)
+				require.Contains(t, got.Remotes, "upstream")
+				assert.Equal(t, []string{"https://example.com/b.git"}, got.Remotes["upstream"].URLs)
+			},
+		},
+		{
+			name: "empty url in a later source clears earlier urls",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"+
+						"\tfetch = +refs/heads/*:refs/remotes/origin/*\n"),
+					read(t, "[remote \"origin\"]\n\turl = \"\"\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Remotes, "origin")
+				assert.Empty(t, got.Remotes["origin"].URLs)
+				assert.Equal(t, []RefSpec{"+refs/heads/*:refs/remotes/origin/*"}, got.Remotes["origin"].Fetch)
+			},
+		},
+		{
+			name: "url after an empty url in a later source replaces earlier urls",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"),
+					read(t, "[remote \"origin\"]\n\turl = \"\"\n\turl = https://example.com/b.git\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, []string{"https://example.com/b.git"}, got.Remotes["origin"].URLs)
+			},
+		},
+		{
+			name: "empty pushurl in a later source clears earlier pushurls",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"+
+						"\tpushurl = https://example.com/p.git\n"),
+					read(t, "[remote \"origin\"]\n\tpushurl = \"\"\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, []string{"https://example.com/a.git"}, got.Remotes["origin"].URLs)
+			},
+		},
+		{
+			name: "typed source adds a branch without options",
+			input: func(t *testing.T) []*Config {
+				typed := NewConfig()
+				typed.Branches["topic"] = &Branch{Name: "topic"}
+				return []*Config{read(t, "[user]\n\tname = a\n"), typed}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Contains(t, got.Branches, "topic")
+			},
+		},
+		{
+			name: "typed-only source",
+			input: func(t *testing.T) []*Config {
+				typed := NewConfig()
+				typed.Raw = nil
+				typed.User.Name = "typed"
+				typed.Pack.Window = 3
+				return []*Config{
+					read(t, "[user]\n\tname = file\n\temail = file@example.com\n"),
+					typed,
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Equal(t, "typed", got.User.Name)
+				assert.Equal(t, "file@example.com", got.User.Email)
+				assert.Equal(t, uint(3), got.Pack.Window)
+			},
+		},
+		{
+			name: "raw-only source",
+			input: func(t *testing.T) []*Config {
+				rawOnly := NewConfig()
+				rawOnly.Raw.SetOption("user", "", "name", "raw")
+				rawOnly.Raw.SetOption("custom", "", "key", "value")
+				return []*Config{
+					read(t, "[user]\n\tname = file\n"),
+					rawOnly,
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Equal(t, "raw", got.User.Name)
+				require.NotNil(t, got.Raw)
+				assert.Equal(t, "value", got.Raw.Section("custom").Option("key"))
+			},
+		},
+		{
+			name: "stale Raw uses typed fields",
+			input: func(t *testing.T) []*Config {
+				stale := read(t, "[core]\n\tfilemode = true\n[user]\n\tname = old\n")
+				stale.Core.FileMode = false
+				stale.User.Name = "new"
+				return []*Config{stale}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.False(t, got.Core.FileMode)
+				assert.Equal(t, "new", got.User.Name)
+			},
+		},
+		{
+			name: "stale source does not override keys it never set",
+			input: func(t *testing.T) []*Config {
+				global := read(t, "[user]\n\tname = a\n")
+				global.User.Email = "a@example.com"
+				return []*Config{read(t, "[core]\n\tfilemode = false\n"), global}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.False(t, got.Core.FileMode)
+				assert.Equal(t, "a@example.com", got.User.Email)
+				require.NotNil(t, got.Raw)
+				assert.False(t, got.Raw.Section("core").HasOption("bare"))
+			},
+		},
+		{
+			name: "changed NewConfig does not override keys it never set",
+			input: func(t *testing.T) []*Config {
+				typed := NewConfig()
+				typed.User.Name = "x"
+				return []*Config{read(t, "[core]\n\tfilemode = false\n[pack]\n\twindow = 5\n"), typed}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Equal(t, "x", got.User.Name)
+				assert.False(t, got.Core.FileMode)
+				assert.Equal(t, uint(5), got.Pack.Window)
+			},
+		},
+		{
+			name: "stale source keeps pushurl apart from url",
+			input: func(t *testing.T) []*Config {
+				stale := read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"+
+					"\tpushurl = https://example.com/p.git\n")
+				stale.User.Name = "x"
+				return []*Config{stale}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, []string{
+					"https://example.com/a.git",
+					"https://example.com/p.git",
+				}, got.Remotes["origin"].URLs)
+				origin := got.Raw.Section("remote").Subsection("origin")
+				assert.Equal(t, []string{"https://example.com/a.git"}, origin.OptionAll("url"))
+				assert.Equal(t, []string{"https://example.com/p.git"}, origin.OptionAll("pushurl"))
+			},
+		},
+		{
+			name: "stale source removes a deleted remote",
+			input: func(t *testing.T) []*Config {
+				stale := read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"+
+					"[remote \"upstream\"]\n\turl = https://example.com/b.git\n")
+				delete(stale.Remotes, "upstream")
+				return []*Config{stale}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Contains(t, got.Remotes, "origin")
+				assert.NotContains(t, got.Remotes, "upstream")
+			},
+		},
+		{
+			name: "zero values of a Config literal count as set",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[pack]\n\twindow = 5\n"),
+					{User: user{Name: "x"}},
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Equal(t, "x", got.User.Name)
+				assert.False(t, got.Core.FileMode)
+				assert.Equal(t, uint(0), got.Pack.Window)
+				assert.False(t, got.Pack.ReadReverseIndex)
+				assert.Equal(t, protocol.V0, got.Protocol.Version)
+			},
+		},
+		{
+			name: "invalid typed change falls back to the source Raw",
+			input: func(t *testing.T) []*Config {
+				invalid := read(t, "[branch \"main\"]\n\tremote = origin\n")
+				invalid.Branches["main"].Rebase = "bogus"
+				invalid.User.Name = "dropped"
+				return []*Config{
+					read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"+
+						"[url \"https://github.com/\"]\n\tinsteadOf = gh:\n"+
+						"[protocol]\n\tversion = 1\n"),
+					invalid,
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.Contains(t, got.Branches, "main")
+				assert.Equal(t, "origin", got.Branches["main"].Remote)
+				assert.Empty(t, got.Branches["main"].Rebase)
+				assert.Empty(t, got.User.Name)
+				assert.Contains(t, got.Remotes, "origin")
+				assert.Len(t, got.URLs, 1)
+				assert.Equal(t, protocol.V1, got.Protocol.Version)
+			},
+		},
+		{
+			name: "source with an unreadable Raw is skipped",
+			input: func(t *testing.T) []*Config {
+				invalid := NewConfig()
+				invalid.Raw.SetOption("pack", "", "window", "bogus")
+				invalid.Raw.SetOption("user", "", "name", "dropped")
+				return []*Config{
+					read(t, "[remote \"origin\"]\n\turl = https://example.com/a.git\n"),
+					invalid,
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, DefaultPackWindow, got.Pack.Window)
+				assert.Empty(t, got.User.Name)
+			},
+		},
+		{
+			name: "section names match case-insensitively and subsection names do not",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[Core]\n\tFileMode = false\n"+
+						"[remote \"Origin\"]\n\turl = https://example.com/a.git\n"),
+					read(t, "[core]\n\tbare = true\n"+
+						"[remote \"origin\"]\n\turl = https://example.com/b.git\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.False(t, got.Core.FileMode)
+				assert.True(t, got.Core.IsBare)
+				require.Contains(t, got.Remotes, "Origin")
+				require.Contains(t, got.Remotes, "origin")
+				assert.Equal(t, []string{"https://example.com/a.git"}, got.Remotes["Origin"].URLs)
+				assert.Equal(t, []string{"https://example.com/b.git"}, got.Remotes["origin"].URLs)
+			},
+		},
+		{
+			name: "placeholder sources add no keys",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					NewConfig(),
+					nil,
+					read(t, "[core]\n\tfilemode = false\n"),
+					NewConfig(),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				assert.False(t, got.Core.FileMode)
+				require.NotNil(t, got.Raw)
+				assert.False(t, got.Raw.Section("core").HasOption("bare"))
+				assert.Equal(t, []string{"false"}, got.Raw.Section("core").OptionAll("filemode"))
+			},
+		},
+		{
+			name: "merged Raw holds keys from all sources",
+			input: func(t *testing.T) []*Config {
+				return []*Config{
+					read(t, "[core]\n\trepositoryformatversion = 1\n"+
+						"[extensions]\n\tworktreeConfig = true\n"+
+						"[user]\n\tname = base-user\n\temail = base@example.com\n"),
+					read(t, "[user]\n\tname = wt-user\n[custom]\n\tkey = value\n"),
+				}
+			},
+			assert: func(t *testing.T, got Config) {
+				require.NotNil(t, got.Raw)
+				assert.True(t, got.Extensions.WorktreeConfig)
+				assert.Equal(t, "wt-user", got.User.Name)
+				assert.Equal(t, "base@example.com", got.User.Email)
+				assert.Equal(t, "true", got.Raw.Section("extensions").Option("worktreeConfig"))
+				assert.Equal(t, []string{"base-user", "wt-user"}, got.Raw.Section("user").OptionAll("name"))
+				assert.Equal(t, "value", got.Raw.Section("custom").Option("key"))
 			},
 		},
 	}
@@ -1075,44 +1398,43 @@ func TestMerge(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := Merge(tc.input...)
-
-			assert.Equal(t, tc.want, got)
+			tc.assert(t, Merge(tc.input(t)...))
 		})
 	}
 
-	t.Run("merge resets Raw section", func(t *testing.T) {
+	t.Run("no sources", func(t *testing.T) {
 		t.Parallel()
 
-		const baseConfig = "[core]\n\tbare = false\n\tfilemode = true\n" +
-			"repositoryformatversion = 1\n" +
-			"[extensions]\n\tworktreeConfig = true\n" +
-			"[user]\n\tname = base-user\n\temail = base@example.com\n"
-		const wtConfig = "[user]\n\tname = wt-user\n"
+		got := Merge()
 
-		base, err := ReadConfig(strings.NewReader(baseConfig))
-		require.NoError(t, err)
-		wt, err := ReadConfig(strings.NewReader(wtConfig))
-		require.NoError(t, err)
+		assert.Equal(t, *read(t, ""), got)
+	})
 
-		merged := Merge(base, wt)
+	t.Run("sources are not modified", func(t *testing.T) {
+		t.Parallel()
 
-		assert.Equal(t, "wt-user", merged.User.Name)
-		assert.Equal(t, "base@example.com", merged.User.Email)
-		assert.True(t, merged.Extensions.WorktreeConfig)
+		const input = "[core]\n\tfilemode = true\n" +
+			"[remote \"origin\"]\n\turl = https://example.com/a.git\n" +
+			"[branch \"main\"]\n\tremote = origin\n" +
+			"[url \"https://github.com/\"]\n\tinsteadOf = gh:\n"
+		stale := read(t, input)
+		stale.Core.FileMode = false
+		stale.Remotes["origin"].URLs = []string{"https://example.com/b.git"}
+		stale.Branches["main"].Remote = "upstream"
+		stale.URLs[0].InsteadOfs = []string{"github:"}
 
-		require.Nil(t, merged.Raw, "merged Raw must be nil")
+		var before strings.Builder
+		require.NoError(t, config.NewEncoder(&before).Encode(stale.Raw))
 
-		_, err = merged.Marshal()
-		require.NoError(t, err)
+		got := Merge(stale)
 
-		assert.True(t, merged.Raw.HasSection("extensions"),
-			"[extensions] section was dropped from merged Raw")
-		assert.Equal(t, "true",
-			merged.Raw.Section("extensions").Options.Get("worktreeConfig"))
-
-		assert.Equal(t, "wt-user",
-			merged.Raw.Section("user").Options.Get("name"))
+		var after strings.Builder
+		require.NoError(t, config.NewEncoder(&after).Encode(stale.Raw))
+		assert.Equal(t, before.String(), after.String())
+		assert.False(t, got.Core.FileMode)
+		assert.Equal(t, []string{"https://example.com/b.git"}, got.Remotes["origin"].URLs)
+		assert.Equal(t, "upstream", got.Branches["main"].Remote)
+		assert.Equal(t, []string{"github:"}, got.URLs[0].InsteadOfs)
 	})
 }
 

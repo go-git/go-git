@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-git/go-billy/v6/osfs"
 
@@ -236,85 +238,302 @@ type user struct {
 	SigningKey string
 }
 
-// Merge combines all the src Config objects into one.
-// The objects are processed in the order they are passed on, and will
-// override any existing values. Empty configs are ignored.
+// Merge combines the src configs into one, the way git combines the system,
+// global and local config files it reads in turn.
 //
-// The config field Raw cannot be merged via reflection, so it is ignored
-// as part of the Merge operation. To update Raw after a merge, call Marshal().
+// The options of every source are kept in order, so a later source overrides
+// the single-valued keys an earlier one sets and keeps those it does not set.
+// Multi-valued keys, such as remote.<name>.fetch or url.<base>.insteadOf,
+// accumulate across sources. The returned Raw holds the options of all
+// sources and the typed fields are read back from it. Nil sources are
+// ignored.
+//
+// Sources are expected to come from NewConfig or ReadConfig. Typed fields
+// changed after that are part of the merge, and where they disagree with the
+// source's Raw the typed fields win. Only the keys whose values they change
+// are taken, so defaults a source never set do not override earlier sources.
+// A source built as a Config literal has no defaults to compare with, so its
+// zero values, such as a pack.window of 0, count as set.
+//
+// Sources are never modified. The typed changes of a source are applied
+// together, so if any of them does not parse back, such as an unknown branch
+// rebase mode, all of that source's typed changes are dropped and only its
+// Raw is used. A source whose Raw does not parse is skipped.
+//
+// As in git, an empty remote.<name>.url or remote.<name>.pushurl clears the
+// values of that key set before it, including those of earlier sources. A
+// remote left without URLs is kept, but it fails RemoteConfig.Validate.
 func Merge(src ...*Config) Config {
-	var final Config
-
+	raw := format.New()
 	for _, c := range src {
 		if c == nil {
 			continue
 		}
 
-		merge(&final, c)
+		if r := c.mergeRaw(); r != nil {
+			appendRaw(raw, r)
+		}
 	}
 
-	return final
+	// Every contribution parses on its own, so the merged options do too.
+	cfg := NewConfig()
+	_ = cfg.unmarshalRaw(raw)
+
+	return *cfg
 }
 
-func merge(dst, src any) {
-	tv := reflect.ValueOf(dst).Elem()
-	sv := reflect.ValueOf(src).Elem()
-	tt := tv.Type()
+// mergeRaw returns what c contributes to a merge: a copy of c.Raw with the
+// options its changed typed fields set. It returns nil when c.Raw does not
+// parse. c is not modified.
+func (c *Config) mergeRaw() *format.Config {
+	raw := format.New()
+	if c.Raw != nil {
+		appendRaw(raw, c.Raw)
+	}
 
-	for i := 0; i < tv.NumField(); i++ {
-		// Raw holds a *format.Config whose Sections field is a slice. The
-		// generic default case below would replace dst.Sections with
-		// src.Sections wholesale, dropping sections that exist only in the
-		// base config (e.g. [extensions]).  Merge() rebuilds Raw from the
-		// merged struct state after all sources have been processed, so we
-		// skip it here.
-		if tt.Field(i).Name == "Raw" {
+	have := NewConfig()
+	if err := have.unmarshalRaw(cloneRaw(raw)); err != nil {
+		return nil
+	}
+
+	if sameTypedFields(c, have) {
+		return raw
+	}
+
+	// Marshal always writes some keys, such as core.bare, and rewrites
+	// others, such as changed remote urls, which it writes with the pushurls
+	// folded in. Marshalling both the typed fields read from Raw and those of c, and
+	// taking only the options that differ, keeps those keys out unless c
+	// changed them.
+	have.marshalRaw()
+	changed := cloneRaw(raw)
+	applyChanges(changed, have.Raw, c.marshalCopy(cloneRaw(raw)))
+
+	if err := NewConfig().unmarshalRaw(cloneRaw(changed)); err != nil {
+		return raw
+	}
+
+	return changed
+}
+
+// marshalCopy marshals the typed fields of c into raw and returns it. Marshal
+// writes into Raw and into the raw subsection of every remote, branch,
+// submodule and URL, so they are pointed at raw to leave c as it is.
+func (c *Config) marshalCopy(raw *format.Config) *format.Config {
+	parsed := NewConfig()
+	_ = parsed.unmarshalRaw(raw)
+
+	cp := *c
+	cp.Raw = raw
+
+	cp.Remotes = make(map[string]*RemoteConfig, len(c.Remotes))
+	for name, r := range c.Remotes {
+		rc := *r
+		rc.raw = nil
+		if pr, ok := parsed.Remotes[name]; ok {
+			rc.raw = pr.raw
+		}
+		cp.Remotes[name] = &rc
+	}
+
+	cp.Branches = make(map[string]*Branch, len(c.Branches))
+	for name, b := range c.Branches {
+		bc := *b
+		bc.raw = nil
+		if pb, ok := parsed.Branches[name]; ok {
+			bc.raw = pb.raw
+		}
+		cp.Branches[name] = &bc
+	}
+
+	cp.Submodules = make(map[string]*Submodule, len(c.Submodules))
+	for name, m := range c.Submodules {
+		mc := *m
+		mc.raw = nil
+		if pm, ok := parsed.Submodules[name]; ok {
+			mc.raw = pm.raw
+		}
+		cp.Submodules[name] = &mc
+	}
+
+	cp.URLs = make([]*URL, 0, len(c.URLs))
+	for _, u := range c.URLs {
+		uc := *u
+		uc.raw = nil
+		for _, pu := range parsed.URLs {
+			if pu.Name == u.Name {
+				uc.raw = pu.raw
+				break
+			}
+		}
+		cp.URLs = append(cp.URLs, &uc)
+	}
+
+	cp.marshalRaw()
+
+	return cp.Raw
+}
+
+// sameTypedFields reports whether a and b hold the same typed fields. It is
+// only a fast path. It can report a difference where there is none, for
+// example a nil and an empty option list behind a remote's raw subsection,
+// and that only costs the slower path of mergeRaw.
+func sameTypedFields(a, b *Config) bool {
+	ac, bc := *a, *b
+	ac.Raw, bc.Raw = nil, nil
+
+	return reflect.DeepEqual(ac, bc)
+}
+
+// applyChanges sets in dst the options whose values differ between have and
+// want, and removes the subsections that have holds and want does not. A
+// section or subsection is only added to dst when an option is set in it or
+// when want adds it.
+func applyChanges(dst, have, want *format.Config) {
+	seen := make(map[string]bool)
+	for _, s := range slices.Concat(have.Sections, want.Sections) {
+		key := strings.ToLower(s.Name)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		hs, ws := findSection(have, s.Name), findSection(want, s.Name)
+		ds := findSection(dst, s.Name)
+		opts := changedOptions(sectionOptions(ds), sectionOptions(hs), sectionOptions(ws))
+		if ds == nil && len(opts) > 0 {
+			ds = dst.Section(s.Name)
+		}
+		if ds != nil {
+			ds.Options = opts
+		}
+
+		seenSub := make(map[string]bool)
+		for _, ss := range slices.Concat(sectionSubsections(hs), sectionSubsections(ws)) {
+			if seenSub[ss.Name] {
+				continue
+			}
+			seenSub[ss.Name] = true
+
+			hss, wss := findSubsection(hs, ss.Name), findSubsection(ws, ss.Name)
+			if wss == nil {
+				if ds != nil {
+					ds.RemoveSubsection(ss.Name)
+				}
+				continue
+			}
+
+			dss := findSubsection(ds, ss.Name)
+			opts := changedOptions(subsectionOptions(dss), subsectionOptions(hss), wss.Options)
+
+			// A subsection want adds is kept even without options, as it
+			// still names a remote, branch or submodule.
+			if dss == nil && (len(opts) > 0 || hss == nil) {
+				if ds == nil {
+					ds = dst.Section(s.Name)
+				}
+				dss = ds.Subsection(ss.Name)
+			}
+			if dss != nil {
+				dss.Options = opts
+			}
+		}
+	}
+}
+
+// changedOptions returns dst with every key whose values differ between have
+// and want set to the values in want.
+func changedOptions(dst, have, want format.Options) format.Options {
+	seen := make(map[string]bool)
+	for _, o := range slices.Concat(have, want) {
+		key := strings.ToLower(o.Key)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		values := want.GetAll(o.Key)
+		if slices.Equal(have.GetAll(o.Key), values) {
 			continue
 		}
 
-		df := tv.Field(i)
-		sf := sv.Field(i)
+		kept := make(format.Options, 0, len(dst)+len(values))
+		for _, d := range dst {
+			if !d.IsKey(o.Key) {
+				kept = append(kept, d)
+			}
+		}
+		for _, v := range values {
+			kept = append(kept, &format.Option{Key: o.Key, Value: v})
+		}
+		dst = kept
+	}
 
-		if !df.CanSet() || sf.IsZero() {
-			continue
+	return dst
+}
+
+func findSection(c *format.Config, name string) *format.Section {
+	if !c.HasSection(name) {
+		return nil
+	}
+
+	return c.Section(name)
+}
+
+func findSubsection(s *format.Section, name string) *format.Subsection {
+	if s == nil || !s.HasSubsection(name) {
+		return nil
+	}
+
+	return s.Subsection(name)
+}
+
+func sectionOptions(s *format.Section) format.Options {
+	if s == nil {
+		return nil
+	}
+
+	return s.Options
+}
+
+func sectionSubsections(s *format.Section) format.Subsections {
+	if s == nil {
+		return nil
+	}
+
+	return s.Subsections
+}
+
+func subsectionOptions(s *format.Subsection) format.Options {
+	if s == nil {
+		return nil
+	}
+
+	return s.Options
+}
+
+func cloneRaw(src *format.Config) *format.Config {
+	dst := format.New()
+	appendRaw(dst, src)
+
+	return dst
+}
+
+// appendRaw appends copies of the options in src to dst. Options of a section
+// or subsection that dst already has are added after the existing ones, as
+// git does when the same section appears again in a later file.
+func appendRaw(dst, src *format.Config) {
+	for _, ss := range src.Sections {
+		ds := dst.Section(ss.Name)
+		for _, o := range ss.Options {
+			ds.AddOption(o.Key, o.Value)
 		}
 
-		switch df.Kind() {
-		case reflect.Struct:
-			// Handle nested fields which are based off structs.
-			merge(df.Addr().Interface(), sf.Addr().Interface())
-
-		case reflect.Pointer:
-			if sf.IsNil() {
-				continue
+		for _, sss := range ss.Subsections {
+			dss := ds.Subsection(sss.Name)
+			for _, o := range sss.Options {
+				dss.AddOption(o.Key, o.Value)
 			}
-			if df.IsNil() {
-				df.Set(reflect.New(df.Type().Elem()))
-			}
-			// Same as per reflect.Struct, but for a struct pointer.
-			if df.Elem().Kind() == reflect.Struct {
-				merge(df.Interface(), sf.Interface())
-			} else {
-				df.Set(sf)
-			}
-
-		case reflect.Map:
-			// An empty (but non-nil) src map must not overwrite dst entries.
-			// Only copy individual entries from src so that dst keys not
-			// present in src are preserved and src entries override same-key
-			// dst entries.
-			if sf.Len() == 0 {
-				continue
-			}
-			if df.IsNil() {
-				df.Set(reflect.MakeMap(df.Type()))
-			}
-			for _, key := range sf.MapKeys() {
-				df.SetMapIndex(key, sf.MapIndex(key))
-			}
-
-		default:
-			df.Set(sf)
 		}
 	}
 }
@@ -501,10 +720,17 @@ func (c *Config) Unmarshal(b []byte) error {
 	r := bytes.NewBuffer(b)
 	d := format.NewDecoder(r)
 
-	c.Raw = format.New()
-	if err := d.Decode(c.Raw); err != nil {
+	raw := format.New()
+	if err := d.Decode(raw); err != nil {
 		return err
 	}
+
+	return c.unmarshalRaw(raw)
+}
+
+// unmarshalRaw sets c.Raw to raw and fills the typed fields from it.
+func (c *Config) unmarshalRaw(raw *format.Config) error {
+	c.Raw = raw
 
 	c.unmarshalCore()
 	c.unmarshalExtensions()
@@ -741,6 +967,18 @@ func (c *Config) unmarshalUploadArchive() {
 // This call populates the field Raw with the current values of
 // the config.
 func (c *Config) Marshal() ([]byte, error) {
+	c.marshalRaw()
+
+	buf := bytes.NewBuffer(nil)
+	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// marshalRaw writes the typed fields into c.Raw.
+func (c *Config) marshalRaw() {
 	if c.Raw == nil {
 		c.Raw = format.New()
 	}
@@ -760,13 +998,6 @@ func (c *Config) Marshal() ([]byte, error) {
 	c.marshalProtocol()
 	c.marshalInit()
 	c.marshalUploadArchive()
-
-	buf := bytes.NewBuffer(nil)
-	if err := format.NewEncoder(buf).Encode(c.Raw); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
 }
 
 func (c *Config) marshalCore() {
@@ -1098,8 +1329,7 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	}
 
 	c.Name = c.raw.Name
-	c.URLs = append([]string(nil), c.raw.Options.GetAll(urlKey)...)
-	c.URLs = append(c.URLs, c.raw.Options.GetAll(pushurlKey)...)
+	c.URLs = rawURLs(c.raw)
 	c.Fetch = fetch
 	c.Mirror = c.raw.Options.Get(mirrorKey) == "true"
 	c.Promisor = c.raw.Options.Get(promisorKey) == "true"
@@ -1108,21 +1338,52 @@ func (c *RemoteConfig) unmarshal(s *format.Subsection) error {
 	return nil
 }
 
+// rawURLs returns the url values of s followed by its pushurl values. As in
+// git, an empty value clears the values of the same key before it.
+func rawURLs(s *format.Subsection) []string {
+	return append(valuesAfterReset(s.Options.GetAll(urlKey)),
+		valuesAfterReset(s.Options.GetAll(pushurlKey))...)
+}
+
+// valuesAfterReset returns the values that follow the last empty one.
+func valuesAfterReset(values []string) []string {
+	kept := make([]string, 0, len(values))
+	for _, v := range values {
+		if v == "" {
+			kept = kept[:0]
+			continue
+		}
+
+		kept = append(kept, v)
+	}
+
+	if len(kept) == 0 {
+		return nil
+	}
+
+	return kept
+}
+
 func (c *RemoteConfig) marshal() *format.Subsection {
 	if c.raw == nil {
 		c.raw = &format.Subsection{}
 	}
 
 	c.raw.Name = c.Name
-	if len(c.URLs) == 0 {
-		c.raw.RemoveOption(urlKey)
-	} else {
-		urls := c.URLs
-		if c.insteadOfRulesApplied {
-			urls = c.originalURLs
-		}
 
-		c.raw.SetOption(urlKey, urls...)
+	urls := c.URLs
+	if c.insteadOfRulesApplied {
+		urls = c.originalURLs
+	}
+
+	// The url options are only rewritten when the URLs changed. That keeps
+	// an empty url, which clears the urls set by an earlier config file.
+	if !slices.Equal(rawURLs(c.raw), urls) {
+		if len(urls) == 0 {
+			c.raw.RemoveOption(urlKey)
+		} else {
+			c.raw.SetOption(urlKey, urls...)
+		}
 	}
 
 	if len(c.Fetch) == 0 {

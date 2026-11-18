@@ -492,6 +492,10 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	}
 
 	if o.RemoteURL == "" {
+		if len(r.c.URLs) == 0 {
+			return nil, ErrEmptyUrls
+		}
+
 		o.RemoteURL = r.c.URLs[0]
 	}
 
