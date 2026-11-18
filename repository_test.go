@@ -240,6 +240,18 @@ func TestPlainOpenRelativeWorktree(t *testing.T) {
 	assert.Equal(t, filepath.Clean(linkedDir), filepath.Clean(worktree.Filesystem().Root()))
 }
 
+func TestPlainInitSkipsNilOptions(t *testing.T) {
+	t.Parallel()
+
+	r, err := PlainInit(t.TempDir(), false, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.Master, head.Target())
+}
+
 type RepositorySuite struct {
 	BaseSuite
 }
