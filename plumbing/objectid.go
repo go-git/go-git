@@ -56,11 +56,37 @@ func FromBytes(in []byte) (ObjectID, bool) {
 	return id, true
 }
 
+// ZeroID returns the zero ObjectID for the object format [f]. Unknown
+// formats yield the SHA-1 zero, which is [ZeroHash].
+func ZeroID(f format.ObjectFormat) ObjectID {
+	if f == format.SHA256 {
+		return ObjectID{format: format.SHA256}
+	}
+	return ObjectID{}
+}
+
 // ObjectID represents the ID of a Git object. The object data is kept
 // in its hexadecimal form.
+//
+// Every id has exactly one representation regardless of how it was
+// produced (parsed, hashed, decoded or read), so ==, [ObjectID.Equal]
+// and map keys always agree. SHA-1 ids never carry an explicit format,
+// which makes the zero value equal to [ZeroHash]. SHA-256 ids always
+// carry their format. Bytes past the format's size are always zero.
+// Ids of different formats are never equal, including their zero ids.
+// Use [ObjectID.IsZero] to test for a zero id of any format.
 type ObjectID struct {
 	hash   [format.SHA256Size]byte
 	format format.ObjectFormat
+}
+
+// Format returns the object format of the ObjectID. Ids that carry no
+// explicit format are SHA-1.
+func (s ObjectID) Format() format.ObjectFormat {
+	if s.format == format.SHA256 {
+		return format.SHA256
+	}
+	return format.SHA1
 }
 
 // HexSize returns the size for the hex representation of the current
@@ -79,9 +105,10 @@ func (s ObjectID) Compare(b []byte) int {
 	return bytes.Compare(s.hash[:s.Size()], b)
 }
 
-// Equal returns true if [in] equals the current object.
+// Equal returns true if [in] equals the current object. Ids of
+// different object formats are never equal. It is equivalent to ==.
 func (s ObjectID) Equal(in ObjectID) bool {
-	return bytes.Equal(s.hash[:], in.hash[:])
+	return s == in
 }
 
 // Bytes returns the slice of bytes representing the hash in hexadecimal.
@@ -98,7 +125,9 @@ func (s ObjectID) HasPrefix(prefix []byte) bool {
 	return bytes.HasPrefix(s.hash[:s.Size()], prefix)
 }
 
-// IsZero returns true if the hash is zero.
+// IsZero returns true if the hash is zero, whatever its object format.
+// It is the only format-agnostic zero test, as == [ZeroHash] only
+// matches the SHA-1 zero id.
 func (s ObjectID) IsZero() bool {
 	return bytes.Equal(s.hash[:], empty)
 }
@@ -110,9 +139,10 @@ func (s ObjectID) String() string {
 }
 
 // Write writes the hexadecimal representation of the ObjectID from [in]
-// directly into the current object.
+// directly into the current object. At most the ObjectID's current size
+// is written, and any bytes in [in] past it are ignored.
 func (s *ObjectID) Write(in []byte) (int, error) {
-	n := copy(s.hash[:], in)
+	n := copy(s.hash[:s.Size()], in)
 	return n, nil
 }
 

@@ -260,3 +260,103 @@ func benchmarkObjectHashParse(b *testing.B, in string) {
 		b.SetBytes(int64(len(in)))
 	}
 }
+
+func TestObjectIDSHA1Identity(t *testing.T) {
+	t.Parallel()
+
+	const content = "hash object sample"
+	const want = "9f361d484fcebb869e1919dc7467b82ac6ca5fad"
+	raw, err := hex.DecodeString(want)
+	require.NoError(t, err)
+
+	fromHex, ok := FromHex(want)
+	require.True(t, ok)
+
+	fromBytes, ok := FromBytes(raw)
+	require.True(t, ok)
+
+	fromObjectHasher, err := FromObjectFormat(config.SHA1).Compute(BlobObject, []byte(content))
+	require.NoError(t, err)
+
+	hasher := NewHasher(config.SHA1, BlobObject, int64(len(content)))
+	_, err = hasher.Write([]byte(content))
+	require.NoError(t, err)
+	fromHasher := hasher.Sum()
+
+	var fromReadFrom ObjectID
+	fromReadFrom.ResetBySize(config.SHA1Size)
+	_, err = fromReadFrom.ReadFrom(bytes.NewReader(raw))
+	require.NoError(t, err)
+
+	var fromLongWrite ObjectID
+	fromLongWrite.ResetBySize(config.SHA1Size)
+	_, err = fromLongWrite.Write(append(raw, bytes.Repeat([]byte{0xff}, 20)...))
+	require.NoError(t, err)
+
+	ids := map[string]ObjectID{
+		"FromHex":          fromHex,
+		"FromBytes":        fromBytes,
+		"ObjectHasher":     fromObjectHasher,
+		"Hasher":           fromHasher,
+		"ReadFrom":         fromReadFrom,
+		"Write long input": fromLongWrite,
+	}
+
+	keys := map[ObjectID]struct{}{}
+	for name, id := range ids {
+		assert.Equal(t, want, id.String(), name)
+		assert.True(t, id == fromHex, "%s: == FromHex", name)
+		assert.True(t, id.Equal(fromHex), "%s: Equal FromHex", name)
+		assert.Equal(t, config.SHA1, id.Format(), name)
+		keys[id] = struct{}{}
+	}
+	assert.Len(t, keys, 1)
+}
+
+func TestObjectIDEqualAcrossFormats(t *testing.T) {
+	t.Parallel()
+
+	sha1, ok := FromHex("9f361d484fcebb869e1919dc7467b82ac6ca5fad")
+	require.True(t, ok)
+	sha256, ok := FromHex("9f361d484fcebb869e1919dc7467b82ac6ca5fad000000000000000000000000")
+	require.True(t, ok)
+
+	assert.False(t, sha1 == sha256)
+	assert.False(t, sha1.Equal(sha256))
+	assert.False(t, sha256.Equal(sha1))
+}
+
+func TestObjectIDFormat(t *testing.T) {
+	t.Parallel()
+
+	sha1, ok := FromHex("9f361d484fcebb869e1919dc7467b82ac6ca5fad")
+	require.True(t, ok)
+	sha256, ok := FromHex("2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677")
+	require.True(t, ok)
+
+	assert.Equal(t, config.SHA1, ObjectID{}.Format())
+	assert.Equal(t, config.SHA1, ZeroHash.Format())
+	assert.Equal(t, config.SHA1, sha1.Format())
+	assert.Equal(t, config.SHA256, sha256.Format())
+}
+
+func TestZeroID(t *testing.T) {
+	t.Parallel()
+
+	sha256Zero, ok := FromHex(strings.Repeat("0", config.SHA256HexSize))
+	require.True(t, ok)
+	sha1Zero, ok := FromHex(strings.Repeat("0", config.SHA1HexSize))
+	require.True(t, ok)
+
+	assert.True(t, ObjectID{} == ZeroHash)
+	assert.True(t, sha1Zero == ZeroHash)
+	assert.True(t, ZeroID(config.SHA1) == ZeroHash)
+	assert.True(t, ZeroID(config.UnsetObjectFormat) == ZeroHash)
+
+	assert.True(t, sha256Zero.IsZero())
+	assert.True(t, sha256Zero == ZeroID(config.SHA256))
+	assert.True(t, sha256Zero.Equal(ZeroID(config.SHA256)))
+	assert.False(t, sha256Zero.Equal(ZeroHash))
+	assert.Equal(t, config.SHA256, ZeroID(config.SHA256).Format())
+	assert.Equal(t, config.SHA256HexSize, ZeroID(config.SHA256).HexSize())
+}
