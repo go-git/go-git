@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/hash"
@@ -52,12 +53,15 @@ func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
 }
 
 // Encode writes the Index to the stream of the encoder.
+//
+// It first prunes idx.Cache with PruneCache, in place, so that a cache-tree
+// that went stale is written as invalid and never as valid. The pruned
+// cache-tree stays in idx.
 func (e *Encoder) Encode(idx *Index) error {
 	return e.encode(idx, true)
 }
 
 func (e *Encoder) encode(idx *Index, footer bool) error {
-	// TODO: support extensions
 	if idx.Version > EncodeVersionSupported {
 		return ErrUnsupportedVersion
 	}
@@ -67,6 +71,10 @@ func (e *Encoder) encode(idx *Index, footer bool) error {
 	}
 
 	if err := e.encodeEntries(idx); err != nil {
+		return err
+	}
+
+	if err := e.encodeCacheTree(idx); err != nil {
 		return err
 	}
 
@@ -207,6 +215,36 @@ func commonPrefixLen(a, b string) int {
 		}
 	}
 	return n
+}
+
+// encodeCacheTree writes the TREE extension. The cache-tree is first pruned
+// of every entry that does not describe the entries about to be written, so
+// that a stale one is written as invalid, never as valid: Git takes a valid
+// entry as the tree of its directory.
+func (e *Encoder) encodeCacheTree(idx *Index) error {
+	if idx.Cache == nil {
+		return nil
+	}
+
+	idx.PruneCache()
+	if idx.Cache == nil {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	for _, t := range idx.Cache.Entries {
+		buf.WriteString(t.Path)
+		buf.WriteByte(0)
+		buf.WriteString(strconv.Itoa(t.Entries))
+		buf.WriteByte(0x20)
+		buf.WriteString(strconv.Itoa(t.Trees))
+		buf.WriteByte('\n')
+		if t.Entries >= 0 {
+			buf.Write(t.Hash.Bytes())
+		}
+	}
+
+	return e.encodeRawExtension(string(treeExtSignature), buf.Bytes())
 }
 
 func (e *Encoder) encodeRawExtension(signature string, data []byte) error {
