@@ -1273,3 +1273,62 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 		})
 	}
 }
+
+func TestCommitSignatureHeaderFollowsObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		objectFormat formatcfg.ObjectFormat
+		wantHeader   string
+		wantAbsent   string
+	}{
+		{objectFormat: formatcfg.SHA1, wantHeader: "\ngpgsig ", wantAbsent: "\ngpgsig-sha256 "},
+		{objectFormat: formatcfg.SHA256, wantHeader: "\ngpgsig-sha256 ", wantAbsent: "\ngpgsig "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.objectFormat.String(), func(t *testing.T) {
+			t.Parallel()
+
+			storage := memory.NewStorage(memory.WithObjectFormat(tt.objectFormat))
+			r, err := Init(storage, WithWorkTree(memfs.New()), WithObjectFormat(tt.objectFormat))
+			require.NoError(t, err)
+			defer func() { _ = r.Close() }()
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			for _, amend := range []bool{false, true} {
+				t.Run(fmt.Sprintf("amend=%t", amend), func(t *testing.T) {
+					hash, err := w.Commit("signed\n", &CommitOptions{
+						Author:            defaultSignature(),
+						Signer:            b64signer{},
+						AllowEmptyCommits: true,
+						Amend:             amend,
+					})
+					require.NoError(t, err)
+
+					commit, err := r.CommitObject(hash)
+					require.NoError(t, err)
+
+					sig, other := commit.Signature, commit.SignatureSHA256
+					if tt.objectFormat == formatcfg.SHA256 {
+						sig, other = other, sig
+					}
+					assert.NotEmpty(t, sig)
+					assert.Empty(t, other)
+
+					obj, err := storage.EncodedObject(plumbing.CommitObject, hash)
+					require.NoError(t, err)
+					rd, err := obj.Reader()
+					require.NoError(t, err)
+					raw, err := io.ReadAll(rd)
+					require.NoError(t, err)
+
+					assert.Contains(t, string(raw), tt.wantHeader)
+					assert.NotContains(t, string(raw), tt.wantAbsent)
+				})
+			}
+		})
+	}
+}
