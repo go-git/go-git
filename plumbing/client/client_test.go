@@ -582,3 +582,21 @@ func TestWithHTTPAuthNilIsANoOp(t *testing.T) {
 	WithHTTPAuth(nil)(&kept)
 	assert.Equal(t, "Basic dXNlcjpwYXNz", header(t, kept, "example.com"))
 }
+
+func TestWithSSHAuthNilIsANoOp(t *testing.T) {
+	t.Parallel()
+
+	require.NotPanics(t, func() {
+		c := New(WithSSHAuth(nil))
+		defer c.Close()
+	})
+
+	var o options
+	WithSSHAuth(nil)(&o)
+	assert.Nil(t, o.ssh.ClientConfig)
+
+	var kept options
+	WithSSHAuth(&xssh.Password{User: "git", Password: "secret"})(&kept)
+	WithSSHAuth(nil)(&kept)
+	assert.NotNil(t, kept.ssh.ClientConfig)
+}
