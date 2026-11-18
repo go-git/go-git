@@ -17,9 +17,9 @@ func TestOptionSuite(t *testing.T) {
 
 func (s *OptionSuite) TestOptions_Has() {
 	o := Options{
-		&Option{"k", "v"},
-		&Option{"ok", "v1"},
-		&Option{"K", "v2"},
+		&Option{Key: "k", Value: "v"},
+		&Option{Key: "ok", Value: "v1"},
+		&Option{Key: "K", Value: "v2"},
 	}
 	s.True(o.Has("k"))
 	s.True(o.Has("K"))
@@ -32,9 +32,9 @@ func (s *OptionSuite) TestOptions_Has() {
 
 func (s *OptionSuite) TestOptions_GetAll() {
 	o := Options{
-		&Option{"k", "v"},
-		&Option{"ok", "v1"},
-		&Option{"K", "v2"},
+		&Option{Key: "k", Value: "v"},
+		&Option{Key: "ok", Value: "v1"},
+		&Option{Key: "K", Value: "v2"},
 	}
 	s.Equal([]string{"v", "v2"}, o.GetAll("k"))
 	s.Equal([]string{"v", "v2"}, o.GetAll("K"))

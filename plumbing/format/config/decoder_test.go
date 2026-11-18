@@ -176,6 +176,17 @@ func (s *DecoderSuite) TestDecodeFoldsSectionNamesIntoOne() {
 	}}, obtained)
 }
 
+func (s *DecoderSuite) TestDecodeKeepsKeysWithoutValue() {
+	in := "[receive]\n\tdenyCurrentBranch\n\tdenyNonFastForwards =\n\tdenyDeleteCurrent ; comment\n"
+
+	cfg := New()
+	s.Require().NoError(NewDecoder(strings.NewReader(in)).Decode(cfg))
+
+	var buf bytes.Buffer
+	s.Require().NoError(NewEncoder(&buf).Encode(cfg))
+	s.Equal("[receive]\n\tdenyCurrentBranch\n\tdenyNonFastForwards = \n\tdenyDeleteCurrent\n", buf.String())
+}
+
 // TestDecodeIntoNonEmptyConfig covers decoding into a config that already
 // holds sections, which the index has to pick up to keep resolving names the
 // way Config.Section does.
