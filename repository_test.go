@@ -252,6 +252,110 @@ func TestPlainInitSkipsNilOptions(t *testing.T) {
 	assert.Equal(t, plumbing.Master, head.Target())
 }
 
+type storerWithoutObjectFormatSetter struct {
+	storage.Storer
+}
+
+func TestInitWithObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		store func(t *testing.T) storage.Storer
+	}{
+		{
+			name:  "memory",
+			store: func(_ *testing.T) storage.Storer { return memory.NewStorage() },
+		},
+		{
+			name: "filesystem",
+			store: func(t *testing.T) storage.Storer {
+				return filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := Init(tc.store(t), WithWorkTree(memfs.New()), WithObjectFormat(formatcfg.SHA256))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, formatcfg.SHA256, cfg.Extensions.ObjectFormat)
+			assert.Equal(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+
+			blob := r.Storer.NewEncodedObject()
+			blob.SetType(plumbing.BlobObject)
+			h, err := r.Storer.SetEncodedObject(blob)
+			require.NoError(t, err)
+			assert.Len(t, h.String(), formatcfg.SHA256.HexSize())
+
+			assert.Len(t, createCommit(t, r).String(), formatcfg.SHA256.HexSize())
+		})
+	}
+}
+
+func TestInitWithSHA1ObjectFormatLeavesConfigUntouched(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		init func(t *testing.T) (*Repository, error)
+	}{
+		{
+			name: "Init memory",
+			init: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithObjectFormat(formatcfg.SHA1))
+			},
+		},
+		{
+			name: "Init filesystem",
+			init: func(t *testing.T) (*Repository, error) {
+				st := filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+				return Init(st, WithObjectFormat(formatcfg.SHA1))
+			},
+		},
+		{
+			name: "PlainInit",
+			init: func(t *testing.T) (*Repository, error) {
+				return PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA1))
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := tc.init(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, formatcfg.UnsetObjectFormat, cfg.Extensions.ObjectFormat)
+			assert.NotEqual(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+			assert.False(t, cfg.Raw.Section("extensions").Options.Has("objectformat"))
+		})
+	}
+}
+
+func TestInitWithObjectFormatUnsupportedStorer(t *testing.T) {
+	t.Parallel()
+
+	st := storerWithoutObjectFormatSetter{memory.NewStorage()}
+	_, err := Init(st, WithObjectFormat(formatcfg.SHA256))
+	require.Error(t, err)
+
+	r, err := Init(storerWithoutObjectFormatSetter{memory.NewStorage()}, WithObjectFormat(formatcfg.SHA1))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+}
+
 type closeTrackingStorer struct {
 	*memory.Storage
 	closed bool

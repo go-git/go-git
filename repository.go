@@ -36,6 +36,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
 	"github.com/go-git/go-git/v6/x/plugin"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -177,6 +178,10 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 		return nil, err
 	}
 
+	if err := setInitObjectFormat(s, options.objectFormat); err != nil {
+		return nil, err
+	}
+
 	if options.partialInit {
 		return r.setInvalidHEAD()
 	}
@@ -187,6 +192,35 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	return r, r.setWorktreeAndStoragePaths()
+}
+
+// setInitObjectFormat applies the object format requested for a new
+// repository. SHA-1 is the default format, so like git it leaves the config
+// untouched when the storer already uses SHA-1.
+func setInitObjectFormat(s storage.Storer, of formatcfg.ObjectFormat) error {
+	if of == formatcfg.UnsetObjectFormat {
+		return nil
+	}
+
+	cfg, err := s.Config()
+	if err != nil {
+		return err
+	}
+
+	current := cfg.Extensions.ObjectFormat
+	if current == formatcfg.UnsetObjectFormat {
+		current = formatcfg.SHA1
+	}
+	if of == current {
+		return nil
+	}
+
+	setter, ok := s.(xstorage.ObjectFormatSetter)
+	if !ok {
+		return fmt.Errorf("storer does not support object format %q", of)
+	}
+
+	return setter.SetObjectFormat(of)
 }
 
 func initStorer(s storer.Storer) error {

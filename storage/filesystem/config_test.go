@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/config"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -67,6 +68,25 @@ func (s *ConfigSuite) TearDownTest() {
 func newDualStorer(commonFs, wtFs billy.Filesystem) *ConfigStorage {
 	repoFs := dotgit.NewRepositoryFilesystem(wtFs, commonFs)
 	return &ConfigStorage{dir: dotgit.New(repoFs)}
+}
+
+func TestConfigWithoutFileUsesDefaultObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, of := range []formatcfg.ObjectFormat{formatcfg.UnsetObjectFormat, formatcfg.SHA1} {
+		c := &ConfigStorage{dir: dotgit.New(memfs.New()), objectFormat: of}
+
+		cfg, err := c.Config()
+		require.NoError(t, err)
+		assert.Equal(t, formatcfg.UnsetObjectFormat, cfg.Extensions.ObjectFormat)
+		assert.NotEqual(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+	}
+
+	c := &ConfigStorage{dir: dotgit.New(memfs.New()), objectFormat: formatcfg.SHA256}
+	cfg, err := c.Config()
+	require.NoError(t, err)
+	assert.Equal(t, formatcfg.SHA256, cfg.Extensions.ObjectFormat)
+	assert.Equal(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
 }
 
 func TestWorktreeConfigRead(t *testing.T) {
