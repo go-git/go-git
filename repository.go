@@ -140,7 +140,10 @@ func withPartialInit() InitOption {
 
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
-// the given storer is not empty ErrTargetDirNotEmpty is returned
+// the given storer is not empty ErrTargetDirNotEmpty is returned.
+//
+// The caller owns the given Storer. Init does not close it, including when an
+// error is returned.
 func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
@@ -157,16 +160,10 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	if err := initStorer(s); err != nil {
-		if closer, ok := s.(io.Closer); ok {
-			_ = closer.Close()
-		}
 		return nil, err
 	}
 
 	if err := options.defaultBranch.Validate(); err != nil {
-		if closer, ok := s.(io.Closer); ok {
-			_ = closer.Close()
-		}
 		return nil, err
 	}
 
@@ -175,10 +172,8 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	switch err {
 	case plumbing.ErrReferenceNotFound:
 	case nil:
-		_ = r.Close()
 		return nil, ErrTargetDirNotEmpty
 	default:
-		_ = r.Close()
 		return nil, err
 	}
 
@@ -188,7 +183,6 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
 	if err := s.SetReference(h); err != nil {
-		_ = r.Close()
 		return nil, err
 	}
 
@@ -379,11 +373,13 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	})
 	r, err := initFn(s)
 	if err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 
+	// Init already pointed HEAD at the clone placeholder.
 	if o.partialInit {
-		return r.setInvalidHEAD()
+		return r, nil
 	}
 
 	cfg, err := r.Config()

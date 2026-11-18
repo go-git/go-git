@@ -252,6 +252,58 @@ func TestPlainInitSkipsNilOptions(t *testing.T) {
 	assert.Equal(t, plumbing.Master, head.Target())
 }
 
+type closeTrackingStorer struct {
+	*memory.Storage
+	closed bool
+}
+
+func (s *closeTrackingStorer) Close() error {
+	s.closed = true
+	return nil
+}
+
+func TestInitDoesNotCloseCallerStorer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		prepare func(t *testing.T, st storage.Storer)
+		opts    []InitOption
+		wantErr error
+	}{
+		{
+			name: "target not empty",
+			prepare: func(t *testing.T, st storage.Storer) {
+				_, err := Init(st)
+				require.NoError(t, err)
+			},
+			wantErr: ErrTargetDirNotEmpty,
+		},
+		{
+			name:    "invalid default branch",
+			prepare: func(*testing.T, storage.Storer) {},
+			opts:    []InitOption{WithDefaultBranch("foo")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := &closeTrackingStorer{Storage: memory.NewStorage()}
+			tc.prepare(t, st)
+
+			r, err := Init(st, tc.opts...)
+			require.Error(t, err)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			}
+			assert.Nil(t, r)
+			assert.False(t, st.closed, "Init must not close a storer it does not own")
+		})
+	}
+}
+
 type RepositorySuite struct {
 	BaseSuite
 }
