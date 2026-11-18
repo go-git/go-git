@@ -916,6 +916,118 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
 }
 
+func TestCloneRejectsBareWithWorktree(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts CloneOptions
+	}{
+		{name: "bare", opts: CloneOptions{URL: "file:///does/not/matter", Bare: true}},
+		{name: "mirror", opts: CloneOptions{URL: "file:///does/not/matter", Mirror: true}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := &closeTrackingStorer{Storage: memory.NewStorage()}
+			r, err := Clone(st, memfs.New(), &tc.opts)
+			require.ErrorIs(t, err, ErrBareCloneWithWorktree)
+			assert.Nil(t, r)
+
+			_, err = st.Reference(plumbing.HEAD)
+			assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound, "storer must be left untouched")
+		})
+	}
+}
+
+func TestCloneEmptyRemote(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	_, err = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{URL: remote})
+	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+
+	tests := []struct {
+		name string
+		wt   billy.Filesystem
+	}{
+		{name: "bare", wt: nil},
+		{name: "non-bare", wt: memfs.New()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := Clone(memory.NewStorage(), tc.wt, &CloneOptions{
+				URL:            remote,
+				AllowEmptyRepo: true,
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, plumbing.Master, head.Target())
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, tc.wt == nil, cfg.Core.IsBare)
+			assert.Contains(t, cfg.Remotes, DefaultRemoteName)
+
+			if tc.wt == nil {
+				assert.Empty(t, cfg.Branches)
+				return
+			}
+			require.Contains(t, cfg.Branches, "master")
+			assert.Equal(t, DefaultRemoteName, cfg.Branches["master"].Remote)
+			assert.Equal(t, plumbing.Master, cfg.Branches["master"].Merge)
+		})
+	}
+}
+
+func TestCloneEmptyRemoteWithReferenceName(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	for _, ref := range []plumbing.ReferenceName{"refs/heads/x", "refs/tags/v1"} {
+		t.Run(ref.String(), func(t *testing.T) {
+			t.Parallel()
+
+			o := func() *CloneOptions {
+				return &CloneOptions{URL: remote, AllowEmptyRepo: true, ReferenceName: ref}
+			}
+
+			_, err := Clone(memory.NewStorage(), memfs.New(), o())
+			require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			require.ErrorContains(t, err, "remote branch "+ref.Short()+" not found in upstream origin")
+
+			dest := filepath.Join(t.TempDir(), "clone")
+			_, err = PlainClone(dest, o())
+			require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			assert.NoDirExists(t, dest)
+		})
+	}
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+		ReferenceName:  plumbing.HEAD,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+}
+
 // A single-branch clone of a missing branch narrows ls-refs to HEAD, which
 // the remote still advertises with an object id. That is a missing branch,
 // not an empty remote, so AllowEmptyRepo must not turn it into a success.

@@ -82,6 +82,9 @@ var (
 	ErrFastForwardMergeNotPossible = errors.New("not possible to fast-forward merge changes")
 	// ErrTargetDirNotEmpty is returned when the destination path is not empty.
 	ErrTargetDirNotEmpty = errors.New("destination path already exists and is not empty")
+	// ErrBareCloneWithWorktree is returned when a bare or mirror clone is
+	// requested together with a worktree.
+	ErrBareCloneWithWorktree = errors.New("bare clone cannot have a worktree")
 )
 
 // Repository represents a git repository
@@ -322,14 +325,18 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 
 // Clone a repository into the given Storer and worktree Filesystem with the
 // given options, if worktree is nil a bare repository is created. If the given
-// storer is not empty ErrTargetDirNotEmpty is returned.
+// storer is not empty ErrTargetDirNotEmpty is returned. A bare or mirror clone
+// cannot have a worktree, so ErrBareCloneWithWorktree is returned when
+// CloneOptions.Bare or CloneOptions.Mirror is set and worktree is not nil.
 func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
 	return CloneContext(context.Background(), s, worktree, o)
 }
 
 // CloneContext a repository into the given Storer and worktree Filesystem with
 // the given options, if worktree is nil a bare repository is created. If the
-// given storer is not empty ErrTargetDirNotEmpty is returned.
+// given storer is not empty ErrTargetDirNotEmpty is returned. A bare or mirror
+// clone cannot have a worktree, so ErrBareCloneWithWorktree is returned when
+// CloneOptions.Bare or CloneOptions.Mirror is set and worktree is not nil.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
@@ -337,14 +344,21 @@ func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repos
 func CloneContext(
 	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
 ) (*Repository, error) {
+	if o == nil {
+		o = &CloneOptions{}
+	}
+
+	// A clone is bare exactly when no worktree is given, so asking for a
+	// bare or mirror clone together with a worktree is contradictory.
+	if worktree != nil && (o.Bare || o.Mirror) {
+		return nil, ErrBareCloneWithWorktree
+	}
+
 	r, err := Init(s, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
 
-	if o == nil {
-		o = &CloneOptions{}
-	}
 	o.worktree = worktree
 
 	return r, r.clone(ctx, o)
@@ -656,9 +670,6 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	}
 
 	if err := r.clone(ctx, o); err != nil {
-		if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return r, nil
-		}
 		_ = r.Close()
 		if dirPreexisted {
 			// Restore the directory to its original empty state.
@@ -1199,6 +1210,34 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
 	}
 
+	if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		// Like git, a reference requested explicitly must exist in the remote.
+		if o.ReferenceName != plumbing.HEAD {
+			return fmt.Errorf("remote branch %s not found in upstream %s: %w",
+				o.ReferenceName.Short(), o.RemoteName, plumbing.ErrReferenceNotFound)
+		}
+
+		if err := r.setWorktreeAndStoragePaths(); err != nil {
+			return err
+		}
+
+		if r.wt == nil || o.Mirror {
+			return nil
+		}
+
+		// Like git, track the unborn branch so that the first pull or push
+		// after a commit knows its upstream.
+		head, err := r.Storer.Reference(plumbing.HEAD)
+		if err != nil {
+			return err
+		}
+		if !head.Target().IsBranch() {
+			return nil
+		}
+
+		return r.createCloneBranchConfig(o, head.Target())
+	}
+
 	if err != nil {
 		return err
 	}
@@ -1247,26 +1286,27 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	if !o.Mirror && ref.Name().IsBranch() {
-		branchRef := ref.Name()
-		branchName := strings.Split(string(branchRef), "refs/heads/")[1]
-
-		b := &config.Branch{
-			Name:  branchName,
-			Merge: branchRef,
-		}
-
-		if o.RemoteName == "" {
-			b.Remote = "origin"
-		} else {
-			b.Remote = o.RemoteName
-		}
-
-		if err := r.CreateBranch(b); err != nil {
+		if err := r.createCloneBranchConfig(o, ref.Name()); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// createCloneBranchConfig records the remote and merge settings of the
+// branch checked out by a clone.
+func (r *Repository) createCloneBranchConfig(o *CloneOptions, branchRef plumbing.ReferenceName) error {
+	remote := o.RemoteName
+	if remote == "" {
+		remote = DefaultRemoteName
+	}
+
+	return r.CreateBranch(&config.Branch{
+		Name:   branchRef.Short(),
+		Remote: remote,
+		Merge:  branchRef,
+	})
 }
 
 const (
