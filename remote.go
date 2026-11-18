@@ -515,6 +515,16 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	rRefs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{
 		RefPrefixes: fetchRefPrefixes(o.RefSpecs, o.Tags),
 	})
+	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		// An empty remote still advertises its object format, and git's clone
+		// adopts it even when there is nothing to fetch. No pack is negotiated
+		// here, so a clone (HEAD still at the placeholder) adopts it now.
+		if head, herr := r.s.Reference(plumbing.HEAD); herr == nil && head.Target() == plumbing.Invalid {
+			if ferr := transport.ReconcileObjectFormatV2(r.s, *sess.Capabilities()); ferr != nil {
+				return nil, ferr
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

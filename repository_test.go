@@ -38,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -897,16 +898,14 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.NoError(t, statErr,
 		"PlainCloneContext must not remove .git when cloning an empty remote")
 
-	// HEAD must be a valid symbolic reference (not .invalid), because
-	// AllowEmptyRepo skips withPartialInit and fully initialises the repo.
+	// HEAD must be moved off the clone placeholder to the default branch.
 	head, err := r.Reference(plumbing.HEAD, false)
 	require.NoError(t, err)
 	assert.Equal(t, plumbing.SymbolicReference, head.Type())
 	assert.NotEqual(t, plumbing.Invalid, head.Target(),
 		"HEAD must not point to .invalid when AllowEmptyRepo is set")
 
-	// The repository should be re-openable — a fully initialised repo has
-	// its config persisted (unlike a partialInit repo).
+	// The repository should be re-openable, with its config persisted.
 	reopened, err := PlainOpen(dest)
 	require.NoError(t, err)
 	defer func() { _ = reopened.Close() }()
@@ -1001,6 +1000,64 @@ func TestCloneEmptyRemoteWithReferenceName(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
+}
+
+func TestCloneEmptySHA256Remote(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+	url := "file://" + filepath.ToSlash(remote)
+
+	memoryClone := func(version protocol.Version) func(*testing.T) (*Repository, error) {
+		return func(t *testing.T) (*Repository, error) {
+			st := memory.NewStorage()
+			cfg, err := st.Config()
+			require.NoError(t, err)
+			cfg.Protocol.Version = version
+			require.NoError(t, st.SetConfig(cfg))
+
+			return Clone(st, memfs.New(), &CloneOptions{URL: url, AllowEmptyRepo: true})
+		}
+	}
+
+	tests := []struct {
+		name  string
+		clone func(t *testing.T) (*Repository, error)
+	}{
+		{name: "Clone v0", clone: memoryClone(protocol.V0)},
+		{name: "Clone v1", clone: memoryClone(protocol.V1)},
+		{name: "Clone v2", clone: memoryClone(protocol.V2)},
+		{
+			name: "PlainClone",
+			clone: func(t *testing.T) (*Repository, error) {
+				return PlainClone(t.TempDir(), &CloneOptions{URL: url, AllowEmptyRepo: true})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := tc.clone(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, formatcfg.SHA256, cfg.Extensions.ObjectFormat)
+			assert.Equal(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+
+			blob := r.Storer.NewEncodedObject()
+			blob.SetType(plumbing.BlobObject)
+			h, err := r.Storer.SetEncodedObject(blob)
+			require.NoError(t, err)
+			assert.Len(t, h.String(), formatcfg.SHA256.HexSize())
+		})
+	}
 }
 
 // A single-branch clone of a missing branch narrows ls-refs to HEAD, which
