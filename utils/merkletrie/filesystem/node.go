@@ -31,6 +31,11 @@ type Options struct {
 	// AutoCRLF converts CRLF line endings in text files into LF line endings.
 	AutoCRLF bool
 
+	// ObjectFormat is the object format the hashes of the files are
+	// computed in, which must be the index's for them to compare equal.
+	// SHA-1 is used when it is unset.
+	ObjectFormat format.ObjectFormat
+
 	// Index is used to enable the metadata-first comparison optimization while
 	// correctly handling the "racy git" condition. If no index is provided,
 	// the function works without the optimization.
@@ -425,6 +430,14 @@ func (n *node) metadataMatches(entry *index.Entry) bool {
 	return true
 }
 
+// objectFormat returns the object format n's hash is computed in.
+func (n *node) objectFormat() format.ObjectFormat {
+	if n.options == nil || n.options.ObjectFormat == format.UnsetObjectFormat {
+		return format.SHA1
+	}
+	return n.options.ObjectFormat
+}
+
 func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	f, err := n.fs.Open(n.path)
 	if err != nil {
@@ -432,7 +445,7 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	}
 	defer func() { _ = f.Close() }()
 
-	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
+	h := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
 	var dst io.Writer = h
 
 	if n.options != nil && n.options.AutoCRLF {
@@ -467,7 +480,7 @@ func (n *node) doCalculateHashForSymlink() plumbing.Hash {
 		return plumbing.ZeroHash
 	}
 
-	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, n.size)
+	h := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
 	if _, err := h.Write([]byte(target)); err != nil {
 		return plumbing.ZeroHash
 	}

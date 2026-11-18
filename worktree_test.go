@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -37,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -298,6 +300,104 @@ func (s *RepositorySuite) TestPullAdd() {
 	branch, err = r.Reference("refs/heads/master", false)
 	s.NoError(err)
 	s.NotEqual("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", branch.Hash().String())
+}
+
+func (s *WorktreeSuite) TestPullAbsentSubtreePreservesCurrentBranch() {
+	const (
+		readmePath     = "README"
+		directoryName  = "adir"
+		childName      = "child"
+		siblingPath    = "zsibling"
+		payloadContent = "payload\n"
+	)
+
+	t := s.T()
+	dir := t.TempDir()
+	remote, _, initial := initRepoWithReadme(t, dir)
+
+	local, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{URL: dir})
+	s.Require().NoError(err)
+	t.Cleanup(func() { require.NoError(t, local.Close()) })
+
+	w, err := local.Worktree()
+	s.Require().NoError(err)
+
+	beforeBranch, err := local.Head()
+	s.Require().NoError(err)
+
+	beforeHEAD, err := local.Storer.Reference(plumbing.HEAD)
+	s.Require().NoError(err)
+
+	beforeIndex := snapshotIndex(t, local)
+
+	payload := writeBlob(t, remote.Storer, []byte(payloadContent))
+	subtree := storeRawTree(t, remote.Storer, []object.TreeEntry{
+		{Name: childName, Mode: filemode.Regular, Hash: payload},
+	})
+	target := buildCommitWithEntries(t, remote.Storer, initial, initial.Hash, []object.TreeEntry{
+		{Name: directoryName, Mode: filemode.Dir, Hash: subtree},
+		{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+	}, "withheld subtree")
+
+	err = remote.Storer.SetReference(plumbing.NewHashReference(beforeBranch.Name(), target.Hash))
+	s.Require().NoError(err)
+
+	// Model a filtered fetch by copying the commit, root tree, and blobs
+	// while withholding the subtree.
+	for _, hash := range []plumbing.Hash{payload, target.TreeHash, target.Hash} {
+		obj, err := remote.Storer.EncodedObject(plumbing.AnyObject, hash)
+		s.Require().NoError(err)
+
+		_, err = local.Storer.SetEncodedObject(obj)
+		s.Require().NoError(err)
+	}
+
+	for range 2 {
+		err = w.Pull(&PullOptions{})
+		s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+		afterHEAD, err := local.Storer.Reference(plumbing.HEAD)
+		s.Require().NoError(err)
+		s.Equal(beforeHEAD, afterHEAD)
+
+		afterBranch, err := local.Head()
+		s.Require().NoError(err)
+		s.Equal(beforeBranch, afterBranch)
+
+		s.Equal(beforeIndex, snapshotIndex(t, local))
+
+		readme, err := util.ReadFile(w.Filesystem(), readmePath)
+		s.Require().NoError(err)
+		s.Equal("init", string(readme))
+
+		_, err = w.Filesystem().Lstat(siblingPath)
+		s.ErrorIs(err, os.ErrNotExist)
+	}
+
+	_, err = w.Commit("after failed pull", &CommitOptions{Author: defaultSignature()})
+	s.ErrorIs(err, ErrEmptyCommit)
+
+	err = w.Checkout(&CheckoutOptions{Branch: beforeBranch.Name(), Force: true})
+	s.Require().NoError(err)
+
+	obj, err := remote.Storer.EncodedObject(plumbing.TreeObject, subtree)
+	s.Require().NoError(err)
+
+	_, err = local.Storer.SetEncodedObject(obj)
+	s.Require().NoError(err)
+
+	err = w.Pull(&PullOptions{})
+	s.Require().NoError(err)
+
+	afterBranch, err := local.Head()
+	s.Require().NoError(err)
+	s.Equal(target.Hash, afterBranch.Hash())
+
+	for _, path := range []string{directoryName + "/" + childName, siblingPath} {
+		data, err := util.ReadFile(w.Filesystem(), path)
+		s.Require().NoError(err)
+		s.Equal(payloadContent, string(data), "path: %s", path)
+	}
 }
 
 func (s *WorktreeSuite) TestPullAlreadyUptodate() {
@@ -1303,7 +1403,7 @@ func (s *WorktreeSuite) TestCheckoutCreateInvalidBranch() {
 	}
 }
 
-// A name outside refs/heads/ takes the other arm of createBranch and keeps the
+// A name outside refs/heads/ takes the other arm of validateNewBranch and keeps the
 // reference-name rules alone. The creation rules must not reach it: they would
 // splice a second "refs/heads/" in front and judge that instead, which accepts
 // the one-level spellings Validate exists to refuse.
@@ -1564,6 +1664,159 @@ func (s *WorktreeSuite) TestStatusUnmodified() {
 
 	s.Equal(Untracked, status.File("LICENSE").Staging)
 	s.Equal(Untracked, status.File("LICENSE").Worktree)
+}
+
+func (s *WorktreeSuite) TestResetUnreadableTreePreservesReferences() {
+	const (
+		targetBranch    = "refs/heads/target"
+		newBranch       = "refs/heads/new"
+		missingObjectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		readmePath      = "README"
+		readmeContent   = "initial\n"
+		siblingPath     = "zsibling"
+	)
+
+	tests := []struct {
+		name string
+		run  func(*Worktree, plumbing.Hash) error
+	}{
+		{
+			name: "checkout hash",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: hash})
+			},
+		},
+		{
+			name: "force checkout hash",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Hash: hash, Force: true})
+			},
+		},
+		{
+			name: "checkout branch",
+			run: func(w *Worktree, _ plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Branch: targetBranch, Force: true})
+			},
+		},
+		{
+			name: "create branch",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Checkout(&CheckoutOptions{Branch: newBranch, Hash: hash, Create: true, Force: true})
+			},
+		},
+		{
+			name: "hard reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: HardReset})
+			},
+		},
+		{
+			name: "mixed reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: MixedReset})
+			},
+		},
+		{
+			name: "merge reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: MergeReset})
+			},
+		},
+		{
+			name: "keep reset",
+			run: func(w *Worktree, hash plumbing.Hash) error {
+				return w.Reset(&ResetOptions{Commit: hash, Mode: KeepReset})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			t := s.T()
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			s.Require().NoError(err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte(readmeContent), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(readmePath)
+			s.Require().NoError(err)
+
+			initialHash, err := w.Commit("initial", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			initial, err := r.CommitObject(initialHash)
+			s.Require().NoError(err)
+
+			payload := writeBlob(t, r.Storer, []byte("payload\n"))
+			target := buildCommitWithEntries(t, r.Storer, initial, initialHash, []object.TreeEntry{
+				{Name: "adir", Mode: filemode.Dir, Hash: plumbing.NewHash(missingObjectID)},
+				{Name: siblingPath, Mode: filemode.Regular, Hash: payload},
+			}, "absent subtree")
+
+			err = r.Storer.SetReference(plumbing.NewHashReference(targetBranch, target.Hash))
+			s.Require().NoError(err)
+
+			snapshotReferences := func() map[plumbing.ReferenceName]string {
+				t.Helper()
+
+				iter, err := r.Storer.IterReferences()
+				s.Require().NoError(err)
+
+				refs := make(map[plumbing.ReferenceName]string)
+				err = iter.ForEach(func(ref *plumbing.Reference) error {
+					refs[ref.Name()] = ref.String()
+					return nil
+				})
+				s.Require().NoError(err)
+
+				return refs
+			}
+			beforeRefs := snapshotReferences()
+			beforeIndex := snapshotIndex(t, r)
+
+			err = tc.run(w, target.Hash)
+			s.Require().ErrorIs(err, plumbing.ErrObjectNotFound)
+
+			s.Equal(beforeRefs, snapshotReferences())
+			s.Equal(beforeIndex, snapshotIndex(t, r))
+
+			readme, err := util.ReadFile(fs, readmePath)
+			s.Require().NoError(err)
+			s.Equal(readmeContent, string(readme))
+
+			_, err = fs.Lstat(siblingPath)
+			s.ErrorIs(err, os.ErrNotExist)
+
+			_, err = w.Commit("after failed reset", &CommitOptions{Author: defaultSignature()})
+			s.ErrorIs(err, ErrEmptyCommit)
+
+			err = w.Checkout(&CheckoutOptions{Hash: initialHash, Force: true})
+			s.Require().NoError(err)
+
+			status, err := w.Status()
+			s.Require().NoError(err)
+			s.True(status.IsClean())
+		})
+	}
+}
+
+func snapshotIndex(t *testing.T, r *Repository) []byte {
+	t.Helper()
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	err = index.NewEncoder(&buf, crypto.SHA1.New()).Encode(idx)
+	require.NoError(t, err)
+
+	return buf.Bytes()
 }
 
 func (s *WorktreeSuite) TestReset() {
@@ -1959,6 +2212,125 @@ func (s *WorktreeSuite) TestResetKeepUntrackedOverwrite() {
 	head, err := r.Head()
 	s.NoError(err)
 	s.Equal(commitA, head.Hash())
+}
+
+func (s *WorktreeSuite) TestResetHardRecoversFromUnreadableHEADTree() {
+	const (
+		readmePath       = "README"
+		initialContent   = "initial\n"
+		directoryName    = "dir"
+		childPath        = directoryName + "/child"
+		stagedPath       = "staged"
+		untrackedPath    = "untracked"
+		untrackedContent = "keep\n"
+	)
+
+	tests := []struct {
+		name          string
+		missingRoot   bool
+		forceCheckout bool
+	}{
+		{name: "subtree/reset"},
+		{name: "subtree/force checkout", forceCheckout: true},
+		{name: "root/reset", missingRoot: true},
+		{name: "root/force checkout", missingRoot: true, forceCheckout: true},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			t := s.T()
+			st := memory.NewStorage()
+			fs := memfs.New()
+			r, err := Init(st, WithWorkTree(fs))
+			s.Require().NoError(err)
+			t.Cleanup(func() { require.NoError(t, r.Close()) })
+
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte(initialContent), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(readmePath)
+			s.Require().NoError(err)
+
+			target, err := w.Commit("initial", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, readmePath, []byte("changed\n"), 0o644)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, childPath, []byte("tracked\n"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(".")
+			s.Require().NoError(err)
+
+			current, err := w.Commit("with subtree", &CommitOptions{Author: defaultSignature()})
+			s.Require().NoError(err)
+
+			commit, err := r.CommitObject(current)
+			s.Require().NoError(err)
+
+			tree, err := commit.Tree()
+			s.Require().NoError(err)
+
+			entry, err := tree.FindEntry(directoryName)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, stagedPath, []byte("staged\n"), 0o644)
+			s.Require().NoError(err)
+
+			_, err = w.Add(stagedPath)
+			s.Require().NoError(err)
+
+			err = util.WriteFile(fs, untrackedPath, []byte(untrackedContent), 0o644)
+			s.Require().NoError(err)
+
+			missingHash := entry.Hash
+			if tc.missingRoot {
+				missingHash = tree.Hash
+			}
+			delete(st.Objects, missingHash)
+			delete(st.Trees, missingHash)
+
+			for range 2 {
+				if tc.forceCheckout {
+					err = w.Checkout(&CheckoutOptions{Hash: target, Force: true})
+				} else {
+					err = w.Reset(&ResetOptions{Commit: target, Mode: HardReset})
+				}
+				s.Require().NoError(err)
+
+				head, err := r.Head()
+				s.Require().NoError(err)
+				s.Equal(target, head.Hash())
+
+				idx, err := st.Index()
+				s.Require().NoError(err)
+				s.Require().Len(idx.Entries, 1)
+				s.Equal(readmePath, idx.Entries[0].Name)
+
+				data, err := util.ReadFile(fs, readmePath)
+				s.Require().NoError(err)
+				s.Equal(initialContent, string(data))
+
+				for _, path := range []string{childPath, stagedPath} {
+					_, err := fs.Lstat(path)
+					s.ErrorIs(err, os.ErrNotExist, "path: %s", path)
+				}
+
+				data, err = util.ReadFile(fs, untrackedPath)
+				s.Require().NoError(err)
+				s.Equal(untrackedContent, string(data))
+
+				status, err := w.Status()
+				s.Require().NoError(err)
+				s.Require().Len(status, 1)
+				s.Equal(Untracked, status.File(untrackedPath).Worktree)
+			}
+		})
+	}
 }
 
 func (s *WorktreeSuite) TestResetHard() {
@@ -4856,4 +5228,379 @@ func (s *WorktreeSuite) TestRestoreBoth() {
 		{Worktree: Untracked, Staging: Untracked},
 		{Worktree: Untracked, Staging: Untracked},
 	})
+}
+
+// failingRemoveFS fails Remove of one name while failing is set.
+type failingRemoveFS struct {
+	billy.Filesystem
+	name    string
+	failing bool
+}
+
+func (f *failingRemoveFS) Remove(name string) error {
+	if f.failing && name == f.name {
+		return errors.New("injected remove failure")
+	}
+	return f.Filesystem.Remove(name)
+}
+
+// A hard reset that fails to remove a path the target drops leaves the index
+// as it was, so a retry finds the path again and removes it. Writing the
+// index first would have recorded the target, and the retry would have
+// nothing left to delete.
+func TestHardResetRetryRemovesWhatAFailedResetCouldNot(t *testing.T) {
+	t.Parallel()
+
+	fs := &failingRemoveFS{Filesystem: memfs.New(), name: "b"}
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	target, err := w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	require.NoError(t, util.WriteFile(fs, "b", []byte("b"), 0o644))
+	_, err = w.Add("b")
+	require.NoError(t, err)
+	_, err = w.Commit("b", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	fs.failing = true
+	require.Error(t, w.Reset(&ResetOptions{Commit: target, Mode: HardReset}))
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	_, err = idx.Entry("b")
+	require.NoError(t, err, "the failed reset already dropped b from the index")
+
+	fs.failing = false
+	require.NoError(t, w.Reset(&ResetOptions{Commit: target, Mode: HardReset}))
+	_, err = fs.Lstat("b")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// A hard reset removes a staged path the target lacks as a single entry, as
+// Git does: a staged gitlink's directory, or a directory that replaced a
+// staged file, keeps its contents.
+func TestHardResetKeepsContentsOfStagedOnlyDirectories(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	head, err := w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	// Stage a gitlink and a file that HEAD does not have.
+	require.NoError(t, util.WriteFile(fs, "f", []byte("f"), 0o644))
+	_, err = w.Add("f")
+	require.NoError(t, err)
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	idx.Entries = append(idx.Entries, &index.Entry{
+		Name: "sub",
+		Mode: filemode.Submodule,
+		Hash: plumbing.NewHash("1111111111111111111111111111111111111111"),
+	})
+	require.NoError(t, r.Storer.SetIndex(idx))
+
+	// The gitlink's directory holds a file, and the staged file has been
+	// replaced by a directory.
+	require.NoError(t, util.WriteFile(fs, "sub/keep.txt", []byte("keep"), 0o644))
+	require.NoError(t, fs.Remove("f"))
+	require.NoError(t, util.WriteFile(fs, "f/keep.txt", []byte("keep"), 0o644))
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: head, Mode: HardReset}))
+	for _, name := range []string{"sub/keep.txt", "f/keep.txt"} {
+		body, err := util.ReadFile(fs, name)
+		require.NoError(t, err, name)
+		require.Equal(t, "keep", string(body), name)
+	}
+}
+
+// A hard reset or forced checkout to a commit whose tree names an invalid
+// path fails before it changes anything, as Git's unpack_trees checks
+// every path with verify_path first: a tracked file the target drops keeps
+// its local edit, and the index and HEAD stay where they were.
+func TestHardResetInvalidTargetPathKeepsWorktree(t *testing.T) {
+	t.Parallel()
+
+	for _, bad := range []string{".git/config", "../config", "a/b"} {
+		for _, op := range []string{"reset", "checkout"} {
+			t.Run(bad+"/"+op, func(t *testing.T) {
+				t.Parallel()
+
+				fs := memfs.New()
+				s := memory.NewStorage()
+				r, err := Init(s, WithWorkTree(fs))
+				require.NoError(t, err)
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+				require.NoError(t, util.WriteFile(fs, "f", []byte("f"), 0o644))
+				_, err = w.Add("f")
+				require.NoError(t, err)
+				head, err := w.Commit("f", &CommitOptions{Author: sig})
+				require.NoError(t, err)
+				require.NoError(t, util.WriteFile(fs, "f", []byte("edited"), 0o644))
+
+				blob := writeBlob(t, s, []byte("x"))
+				var entries []object.TreeEntry
+				if dir, file, ok := strings.Cut(bad, "/"); ok && bad != "a/b" {
+					sub := storeRawTree(t, s, []object.TreeEntry{{Name: file, Mode: filemode.Regular, Hash: blob}})
+					entries = []object.TreeEntry{{Name: dir, Mode: filemode.Dir, Hash: sub}}
+				} else {
+					entries = []object.TreeEntry{{Name: bad, Mode: filemode.Regular, Hash: blob}}
+				}
+				tree := storeRawTree(t, s, entries)
+				target := storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "bad\n", TreeHash: tree, ParentHashes: []plumbing.Hash{head}})
+
+				if op == "reset" {
+					err = w.Reset(&ResetOptions{Commit: target, Mode: HardReset})
+				} else {
+					err = w.Checkout(&CheckoutOptions{Hash: target, Force: true})
+				}
+				require.Error(t, err)
+
+				body, err := util.ReadFile(fs, "f")
+				require.NoError(t, err, "f was removed")
+				require.Equal(t, "edited", string(body))
+				ref, err := r.Head()
+				require.NoError(t, err)
+				require.Equal(t, head, ref.Hash())
+				idx, err := s.Index()
+				require.NoError(t, err)
+				_, err = idx.Entry("f")
+				require.NoError(t, err, "f left the index")
+			})
+		}
+	}
+}
+
+// failingCreateFS fails to create one file while failing is set.
+type failingCreateFS struct {
+	billy.Filesystem
+	name    string
+	failing bool
+}
+
+func (f *failingCreateFS) OpenFile(name string, flag int, perm os.FileMode) (billy.File, error) {
+	if f.failing && name == f.name && flag&os.O_CREATE != 0 {
+		return nil, errors.New("injected create failure")
+	}
+	return f.Filesystem.OpenFile(name, flag, perm)
+}
+
+func (f *failingCreateFS) Create(name string) (billy.File, error) {
+	return f.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o666)
+}
+
+// A hard reset whose file write fails leaves the index and HEAD as they
+// were, as Git writes the index only once the worktree is updated, so the
+// reset can be run again.
+func TestHardResetWriteFailureKeepsIndexAndHEAD(t *testing.T) {
+	t.Parallel()
+
+	fs := &failingCreateFS{Filesystem: memfs.New(), name: "b"}
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	first, err := w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "b", []byte("b"), 0o644))
+	_, err = w.Add("b")
+	require.NoError(t, err)
+	second, err := w.Commit("b", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+	require.NoError(t, w.Reset(&ResetOptions{Commit: first, Mode: HardReset}))
+
+	// A non-force checkout, which resets with MergeReset, and Pull fail
+	// the same way, and leave the index and HEAD as they were too.
+	fs.failing = true
+	require.Error(t, w.Checkout(&CheckoutOptions{Hash: second}))
+	ref, err := r.Head()
+	require.NoError(t, err)
+	require.Equal(t, first, ref.Hash())
+	idx, err := s.Index()
+	require.NoError(t, err)
+	_, err = idx.Entry("b")
+	require.ErrorIs(t, err, index.ErrEntryNotFound, "the checkout stored the target index")
+
+	require.Error(t, w.Reset(&ResetOptions{Commit: second, Mode: HardReset}))
+	ref, err = r.Head()
+	require.NoError(t, err)
+	require.Equal(t, first, ref.Hash())
+	idx, err = s.Index()
+	require.NoError(t, err)
+	_, err = idx.Entry("b")
+	require.ErrorIs(t, err, index.ErrEntryNotFound, "the index already holds the target")
+
+	fs.failing = false
+	require.NoError(t, w.Reset(&ResetOptions{Commit: second, Mode: HardReset}))
+	body, err := util.ReadFile(fs, "b")
+	require.NoError(t, err)
+	require.Equal(t, "b", string(body))
+}
+
+// storeCommit writes commit to s and returns its hash.
+func storeCommit(t *testing.T, s storer.Storer, commit *object.Commit) plumbing.Hash {
+	t.Helper()
+
+	obj := s.NewEncodedObject()
+	require.NoError(t, commit.Encode(obj))
+	hash, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
+// A checkout moves HEAD to the branch it checks out and leaves the branch
+// it leaves where it was, whether or not it forces.
+func TestCheckoutLeavesTheBranchItLeaves(t *testing.T) {
+	t.Parallel()
+
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprintf("force=%t", force), func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+			require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+			_, err = w.Add("a")
+			require.NoError(t, err)
+			first, err := w.Commit("a", &CommitOptions{Author: sig})
+			require.NoError(t, err)
+			head, err := r.Head()
+			require.NoError(t, err)
+			require.NoError(t, r.Storer.SetReference(plumbing.NewHashReference("refs/heads/other", first)))
+
+			require.NoError(t, util.WriteFile(fs, "b", []byte("b"), 0o644))
+			_, err = w.Add("b")
+			require.NoError(t, err)
+			second, err := w.Commit("b", &CommitOptions{Author: sig})
+			require.NoError(t, err)
+
+			require.NoError(t, w.Checkout(&CheckoutOptions{Branch: "refs/heads/other", Force: force}))
+			left, err := r.Reference(head.Name(), false)
+			require.NoError(t, err)
+			require.Equal(t, second, left.Hash(), "the branch checked out from moved")
+			now, err := r.Head()
+			require.NoError(t, err)
+			require.Equal(t, plumbing.ReferenceName("refs/heads/other"), now.Name())
+			require.Equal(t, first, now.Hash())
+		})
+	}
+}
+
+// A hard reset restricted to some files leaves every other path alone,
+// including a staged file the target does not have.
+func TestHardResetWithFilesKeepsOtherStagedFiles(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("a"), 0o644))
+	_, err = w.Add("a")
+	require.NoError(t, err)
+	_, err = w.Commit("a", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	require.NoError(t, util.WriteFile(fs, "a", []byte("edited"), 0o644))
+	require.NoError(t, util.WriteFile(fs, "new", []byte("new"), 0o644))
+	_, err = w.Add("new")
+	require.NoError(t, err)
+
+	require.NoError(t, w.Restore(&RestoreOptions{Staged: true, Worktree: true, Files: []string{"a"}}))
+	body, err := util.ReadFile(fs, "a")
+	require.NoError(t, err)
+	require.Equal(t, "a", string(body))
+	body, err = util.ReadFile(fs, "new")
+	require.NoError(t, err, "the staged file outside Files was removed")
+	require.Equal(t, "new", string(body))
+}
+
+// A hard reset that fails to write leaves every stored index entry as it
+// was, the hashes of entries it changed and the skip-worktree flags it set
+// for SparseDirs included: the index it builds is a copy.
+func TestHardResetWriteFailureLeavesStoredEntries(t *testing.T) {
+	t.Parallel()
+
+	for _, sparse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sparse=%t", sparse), func(t *testing.T) {
+			t.Parallel()
+
+			fs := &failingCreateFS{Filesystem: memfs.New(), name: "a"}
+			s := memory.NewStorage()
+			r, err := Init(s, WithWorkTree(fs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+			for _, n := range []string{"a", "b", "c", "d"} {
+				require.NoError(t, util.WriteFile(fs, n, []byte(n), 0o644))
+				_, err = w.Add(n)
+				require.NoError(t, err)
+			}
+			target, err := w.Commit("abcd", &CommitOptions{Author: sig})
+			require.NoError(t, err)
+			require.NoError(t, util.WriteFile(fs, "a", []byte("A"), 0o644))
+			_, err = w.Add("a")
+			require.NoError(t, err)
+			_, err = w.Commit("A", &CommitOptions{Author: sig})
+			require.NoError(t, err)
+
+			before, err := s.Index()
+			require.NoError(t, err)
+			want := map[string]index.Entry{}
+			for _, e := range before.Entries {
+				want[e.Name] = *e
+			}
+
+			opts := &ResetOptions{Commit: target, Mode: HardReset}
+			if sparse {
+				opts.SparseDirs = []string{"a"}
+				opts.SkipSparseDirValidation = true
+			}
+			fs.failing = true
+			require.Error(t, w.Reset(opts))
+
+			after, err := s.Index()
+			require.NoError(t, err)
+			require.Len(t, after.Entries, len(want))
+			for _, e := range after.Entries {
+				w := want[e.Name]
+				require.Equal(t, w.Hash, e.Hash, "entry %s changed", e.Name)
+				require.Equal(t, w.SkipWorktree, e.SkipWorktree, "entry %s changed", e.Name)
+			}
+		})
+	}
 }

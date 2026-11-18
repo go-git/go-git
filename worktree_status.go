@@ -146,7 +146,13 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	if err != nil {
 		return nil, err
 	}
+	return w.diffIndexWithWorktree(cfg, idx, reverse, excludeIgnoredChanges)
+}
 
+// diffIndexWithWorktree is diffStagingWithWorktree for idx, which need not be
+// the stored index: a reset compares the worktree with the index it is about
+// to store.
+func (w *Worktree) diffIndexWithWorktree(cfg *config.Config, idx *index.Index, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: cfg.Core.FileMode,
 	})
@@ -156,8 +162,9 @@ func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeI
 	}
 
 	fsOpts := filesystem.Options{
-		AutoCRLF: cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
-		Index:    idx,
+		AutoCRLF:     cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
+		Index:        idx,
+		ObjectFormat: cfg.Extensions.ObjectFormat,
 	}
 
 	// When ignored changes are to be filtered out, hand the noder the ignore

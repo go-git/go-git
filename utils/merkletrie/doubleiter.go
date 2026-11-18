@@ -42,17 +42,17 @@ func newDoubleIter(from, to noder.Noder, hashEqual noder.Equal) (
 	var err error
 
 	if ii.from.iter, err = NewIter(from); err != nil {
-		return nil, fmt.Errorf("from: %s", err)
+		return nil, fmt.Errorf("from: %w", err)
 	}
 	if ii.from.current, err = ii.from.iter.Next(); turnEOFIntoNil(err) != nil {
-		return nil, fmt.Errorf("from: %s", err)
+		return nil, fmt.Errorf("from: %w", err)
 	}
 
 	if ii.to.iter, err = NewIter(to); err != nil {
-		return nil, fmt.Errorf("to: %s", err)
+		return nil, fmt.Errorf("to: %w", err)
 	}
 	if ii.to.current, err = ii.to.iter.Next(); turnEOFIntoNil(err) != nil {
-		return nil, fmt.Errorf("to: %s", err)
+		return nil, fmt.Errorf("to: %w", err)
 	}
 
 	ii.hashEqual = hashEqual

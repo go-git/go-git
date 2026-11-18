@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v6/memfs"
 	"github.com/go-git/go-billy/v6/osfs"
@@ -15,7 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
@@ -372,4 +376,82 @@ func TestStatusReadsSubtreeStoredOnlyInLooseObjectsPack(t *testing.T) {
 	st, err := wt.Status()
 	require.NoError(t, err)
 	assert.True(t, st.IsClean(), "status: %v", st)
+}
+
+// A file whose metadata no longer matches its index entry is hashed to
+// compare it with the entry, in the repository's object format: an
+// unchanged file in a SHA-256 repository is not reported as modified.
+func TestStatusHashesFilesInTheObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range []formatcfg.ObjectFormat{formatcfg.SHA1, formatcfg.SHA256} {
+		t.Run(f.String(), func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			r, err := PlainInit(dir, false, WithObjectFormat(f))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "a"), []byte("a\n"), 0o644))
+			_, err = w.Add("a")
+			require.NoError(t, err)
+			_, err = w.Commit("a", &CommitOptions{Author: defaultSignature()})
+			require.NoError(t, err)
+
+			later := time.Now().Add(time.Hour)
+			require.NoError(t, os.Chtimes(filepath.Join(dir, "a"), later, later))
+			st, err := w.Status()
+			require.NoError(t, err)
+			require.True(t, st.IsClean(), "status: %v", st)
+		})
+	}
+}
+
+// beforeSetIndexStorer runs a hook when the index is stored, which a reset
+// does last.
+type beforeSetIndexStorer struct {
+	*filesystem.Storage
+	hook func()
+}
+
+func (s *beforeSetIndexStorer) SetIndex(idx *index.Index) error {
+	if s.hook != nil {
+		s.hook()
+	}
+	return s.Storage.SetIndex(idx)
+}
+
+func TestCheckoutCreateDoesNotOverwriteBranchCreatedDuringReset(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte("1\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "c1")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), []byte("2\n"), 0o644))
+	git(t, dir, "commit", "-q", "-am", "c2")
+	c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+	c2 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD")))
+
+	st := &beforeSetIndexStorer{Storage: filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())}
+	r, err := Open(st, osfs.New(dir))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	branch := plumbing.NewBranchReferenceName("feature")
+	st.hook = func() {
+		require.NoError(t, st.SetReference(plumbing.NewHashReference(branch, c2)))
+	}
+
+	err = w.Checkout(&CheckoutOptions{Hash: c1, Branch: branch, Create: true})
+	require.ErrorContains(t, err, "already exists")
+
+	ref, err := r.Reference(branch, true)
+	require.NoError(t, err)
+	assert.Equal(t, c2, ref.Hash())
 }
