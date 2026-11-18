@@ -2041,12 +2041,22 @@ func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
 	if hashStr == "" {
 		return nil
 	}
-	if len(hashStr) == plumbing.ZeroHash.HexSize() {
-		h, ok := plumbing.FromHex(hashStr)
-		if !ok {
-			return nil
+	// A full id has the length of the repository's object format. Shorter
+	// input, such as 40 hex digits in a SHA-256 repository, is a prefix.
+	// Only full-id lengths depend on the format, so the config is read
+	// for those alone.
+	if n := len(hashStr); n == formatcfg.SHA1.HexSize() || n == formatcfg.SHA256.HexSize() {
+		hexSize := formatcfg.DefaultObjectFormat.HexSize()
+		if cfg, err := r.Storer.Config(); err == nil && cfg != nil {
+			hexSize = cfg.Extensions.ObjectFormat.HexSize()
 		}
-		return []plumbing.Hash{h}
+		if n == hexSize {
+			h, ok := plumbing.FromHex(hashStr)
+			if !ok {
+				return nil
+			}
+			return []plumbing.Hash{h}
+		}
 	}
 
 	// Partial hash.

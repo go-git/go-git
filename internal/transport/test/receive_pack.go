@@ -326,7 +326,7 @@ func (s *ReceivePackSuite) checkRemoteReference(ep *url.URL,
 			break
 		}
 	}
-	if head == plumbing.ZeroHash {
+	if head.IsZero() {
 		s.Require().False(ok)
 	} else {
 		s.Require().True(ok)

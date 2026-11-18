@@ -1071,7 +1071,7 @@ func (r *Remote) checkForceWithLease(localRef *plumbing.Reference, cmd *packp.Co
 }
 
 func checkTagUpdate(cmd *packp.Command) error {
-	if cmd.Name.IsTag() && cmd.Old != plumbing.ZeroHash {
+	if cmd.Name.IsTag() && !cmd.Old.IsZero() {
 		return fmt.Errorf("tag already exists: %s", cmd.Name.String())
 	}
 
