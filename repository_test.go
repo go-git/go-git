@@ -1099,8 +1099,9 @@ func TestCloneEmptyRemoteWithReferenceName(t *testing.T) {
 		require.ErrorContains(t, err, "remote branch "+ref.Short()+" not found in upstream origin")
 
 		dest := filepath.Join(t.TempDir(), "clone")
-		_, err = PlainClone(dest, o())
+		r, err := PlainClone(dest, o())
 		require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+		assert.Nil(t, r)
 		assert.NoDirExists(t, dest)
 	}
 
@@ -1169,6 +1170,15 @@ func TestCloneEmptySHA256Remote(t *testing.T) {
 			assert.Len(t, h.String(), formatcfg.SHA256.HexSize())
 		})
 	}
+}
+
+func TestPlainCloneContextNilOptions(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, nil)
+	require.ErrorIs(t, err, ErrMissingURL)
+	assert.Nil(t, r)
 }
 
 // A single-branch clone of a missing branch narrows ls-refs to HEAD, which
@@ -2180,7 +2190,7 @@ func (s *RepositorySuite) TestPlainCloneContextCancel() {
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
-	s.NotNil(r)
+	s.Nil(r)
 	s.ErrorIs(err, context.Canceled)
 }
 
@@ -2196,7 +2206,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir() {
 	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
-	s.NotNil(r)
+	s.Nil(r)
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(dir)
@@ -2221,7 +2231,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir() {
 	r, err := PlainCloneContext(ctx, repoDir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
-	s.NotNil(r)
+	s.Nil(r)
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(repoDir)

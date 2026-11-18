@@ -694,16 +694,14 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 	return commonDir, nil
 }
 
-// PlainClone a repository into the path with the given options, isBare defines
-// if the new repository will be bare or normal. If the path is not empty
-// ErrTargetDirNotEmpty is returned.
+// PlainClone a repository into the path with the given options. If the path is
+// not empty ErrTargetDirNotEmpty is returned.
 func PlainClone(path string, o *CloneOptions) (*Repository, error) {
 	return PlainCloneContext(context.Background(), path, o)
 }
 
-// PlainCloneContext a repository into the path with the given options, isBare
-// defines if the new repository will be bare or normal. If the path is not empty
-// ErrTargetDirNotEmpty is returned.
+// PlainCloneContext a repository into the path with the given options. If the
+// path is not empty ErrTargetDirNotEmpty is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
@@ -715,6 +713,10 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	}
 	if !empty {
 		return nil, fmt.Errorf("%w %s", ErrTargetDirNotEmpty, path)
+	}
+
+	if o == nil {
+		o = &CloneOptions{}
 	}
 
 	isBare := o.Bare
@@ -742,7 +744,7 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 			// We created the directory; remove it entirely.
 			_ = os.RemoveAll(path)
 		}
-		return r, err
+		return nil, err
 	}
 
 	return r, nil
