@@ -25,7 +25,7 @@
 package sshagent
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -63,11 +63,11 @@ func New() (agent.Agent, net.Conn, error) {
 	trace.SSH.Printf("ssh: winio.DialPipe %s", sshAgentPipe)
 	conn, err := winio.DialPipe(sshAgentPipe, nil)
 	if err != nil {
-		return nil, nil, errors.New(
-			"SSH agent requested, but could not detect Pageant or Windows native SSH agent",
+		return nil, nil, fmt.Errorf(
+			"SSH agent requested, but could not detect Pageant or Windows native SSH agent: %w", err,
 		)
 	}
-	return agent.NewClient(conn), nil, nil
+	return agent.NewClient(conn), conn, nil
 }
 
 type conn struct {

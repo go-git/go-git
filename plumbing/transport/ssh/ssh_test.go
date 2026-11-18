@@ -34,7 +34,7 @@ func startSSHServer(t *testing.T, opts ...ssh.Option) *net.TCPAddr {
 	server := &ssh.Server{Handler: handlerSSH}
 	server.SetOption(ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]))
 	for _, opt := range opts {
-		server.SetOption(opt)
+		require.NoError(t, server.SetOption(opt))
 	}
 
 	done := make(chan struct{})

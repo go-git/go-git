@@ -16,6 +16,7 @@ func main() {
 
 	authMethod, err := ssh.NewSSHAgentAuth("git")
 	CheckIfError(err)
+	defer func() { _ = authMethod.Close() }()
 
 	Info("git clone %s ", url)
 

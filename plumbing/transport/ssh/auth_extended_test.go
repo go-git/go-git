@@ -59,6 +59,7 @@ func TestNewSSHAgentAuth(t *testing.T) {
 	auth, err := NewSSHAgentAuth("foo")
 	require.NoError(t, err)
 	require.NotNil(t, auth)
+	t.Cleanup(func() { _ = auth.Close() })
 	assert.Equal(t, "foo", auth.User)
 }
 
