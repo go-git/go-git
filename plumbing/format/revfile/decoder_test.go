@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
@@ -191,5 +192,26 @@ func TestDecode(t *testing.T) {
 				assert.Equal(t, tc.wantPositions, got)
 			}
 		})
+	}
+}
+
+func TestDecodeClosesOutOnNilReader(t *testing.T) {
+	t.Parallel()
+
+	ch := make(chan uint32, 1)
+	err := Decode(nil, 1, plumbing.ZeroHash, ch)
+	require.ErrorIs(t, err, ErrMalformedRevFile)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range ch {
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("out was not closed after Decode returned an error for a nil reader")
 	}
 }
