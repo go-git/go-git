@@ -185,3 +185,11 @@ func (s *SuiteCapabilities) TestZeroValueSafe() {
 	s.True(caps.Supports(OFSDelta))
 	s.Equal("ofs-delta", caps.String())
 }
+
+func (s *SuiteCapabilities) TestReadingANilListFindsNothing() {
+	var l *List
+
+	s.False(l.Supports(OFSDelta))
+	s.Nil(l.Get(Agent))
+	s.Nil(l.All())
+}
