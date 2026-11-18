@@ -46,6 +46,37 @@ type EncodedObjectStorer interface {
 	AddAlternate(remote string) error
 }
 
+// EncodedObjectTypeStorer is an optional interface for an
+// [EncodedObjectStorer] that can tell an object's type without reading the
+// object itself, as Git's odb_read_object_info does.
+//
+// A type that embeds a storage implementing it, such as
+// *filesystem.ObjectStorage or *memory.ObjectStorage, gets its
+// EncodedObjectType promoted. A wrapper that overrides EncodedObject, to hide
+// or rewrite objects, must then override EncodedObjectType as well, or
+// [EncodedObjectType] answers from the embedded storage and bypasses the
+// override.
+type EncodedObjectTypeStorer interface {
+	// EncodedObjectType returns the type of the object h, or
+	// plumbing.ErrObjectNotFound when there is no such object.
+	EncodedObjectType(h plumbing.Hash) (plumbing.ObjectType, error)
+}
+
+// EncodedObjectType returns the type of the object h in s. It asks s through
+// [EncodedObjectTypeStorer] when s implements it, and reads the object
+// otherwise. A wrapper storage whose EncodedObject must be honoured has to
+// implement EncodedObjectType too; see [EncodedObjectTypeStorer].
+func EncodedObjectType(s EncodedObjectStorer, h plumbing.Hash) (plumbing.ObjectType, error) {
+	if ts, ok := s.(EncodedObjectTypeStorer); ok {
+		return ts.EncodedObjectType(h)
+	}
+	obj, err := s.EncodedObject(plumbing.AnyObject, h)
+	if err != nil {
+		return plumbing.InvalidObject, err
+	}
+	return obj.Type(), nil
+}
+
 // DeltaObjectStorer is an EncodedObjectStorer that can return delta
 // objects.
 type DeltaObjectStorer interface {

@@ -254,10 +254,11 @@ func gitOut(t testing.TB, dir string, args ...string) string {
 }
 
 // TestBackend_HTTP_E2E_ShallowClone verifies that a real git CLI "clone --depth 1"
-// over protocol v2 against the go-git backend produces a properly shallow clone:
-// the server's shallow-info section must be framed correctly (before the packfile)
-// and the client must end up grafted at the tip, even though the server's packfile
-// is not yet truncated to the boundary.
+// over protocols v0 and v2 against the go-git backend produces a properly
+// shallow clone, bounded to the tip. Over v2 the server's shallow-info section
+// must be framed correctly (before the packfile). Over v0 the client first
+// sends a request that ends after its deepen, and takes anything after the
+// shallow list as an error.
 func TestBackend_HTTP_E2E_ShallowClone(t *testing.T) {
 	t.Parallel()
 
@@ -296,23 +297,28 @@ func TestBackend_HTTP_E2E_ShallowClone(t *testing.T) {
 
 	authed := fmt.Sprintf("http://u:p@%s/%s", strings.TrimPrefix(ep, "http://"), repoName)
 
-	cloneDir := t.TempDir()
-	runV2(t, cloneDir, "git", "clone", "--depth", "1", authed, "shallow")
-	cloned := filepath.Join(cloneDir, "shallow")
-
-	// The clone is grafted shallow: rev-list stops at the tip (depth 1), even
-	// though the unbounded packfile carried the full history's objects.
-	require.FileExists(t, filepath.Join(cloned, ".git", "shallow"))
-	require.Equal(t, "1", gitOut(t, cloned, "rev-list", "--count", "HEAD"),
-		"a --depth 1 clone must graft the tip as shallow")
-
-	// Bounding: the parent commit's objects were never transferred (the pack is
-	// truncated to the boundary, not merely grafted).
 	parent := gitOut(t, work, "rev-parse", "HEAD~1")
-	// This one asserts a failure, so the isolation matters more here than
-	// elsewhere: a git that failed because it could not read the machine's
-	// config would satisfy the assertion while saying nothing about the object.
-	catFile := gitenv.Command("git", "cat-file", "-e", parent)
-	catFile.Dir = cloned
-	require.Error(t, catFile.Run(), "parent commit %s must be absent from a bounded --depth 1 clone", parent)
+	for _, version := range []string{"0", "2"} {
+		t.Run("protocol v"+version, func(t *testing.T) {
+			t.Parallel()
+			cloneDir := t.TempDir()
+			runV2(t, cloneDir, "git", "-c", "protocol.version="+version, "clone", "--depth", "1", authed, "shallow")
+			cloned := filepath.Join(cloneDir, "shallow")
+
+			// The clone is grafted shallow: rev-list stops at the tip.
+			require.FileExists(t, filepath.Join(cloned, ".git", "shallow"))
+			require.Equal(t, "1", gitOut(t, cloned, "rev-list", "--count", "HEAD"),
+				"a --depth 1 clone must graft the tip as shallow")
+
+			// Bounding: the parent commit's objects were never transferred
+			// (the pack is truncated to the boundary, not merely grafted).
+			// This one asserts a failure, so the isolation matters more here
+			// than elsewhere: a git that failed because it could not read the
+			// machine's config would satisfy the assertion while saying
+			// nothing about the object.
+			catFile := gitenv.Command("git", "cat-file", "-e", parent)
+			catFile.Dir = cloned
+			require.Error(t, catFile.Run(), "parent commit %s must be absent from a bounded --depth 1 clone", parent)
+		})
+	}
 }

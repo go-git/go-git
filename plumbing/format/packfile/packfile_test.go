@@ -351,3 +351,29 @@ func benchmarkGetByOffset(entries map[plumbing.Hash]int64, p *packfile.Packfile)
 		}
 	}
 }
+
+func TestGetTypeByOffset(t *testing.T) {
+	t.Parallel()
+
+	packs := fixtures.ByTag("packfile-entries")
+	require.GreaterOrEqual(t, len(packs), 2)
+
+	packs.Run(t, func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
+
+		// Types come from a packfile of their own, so they are read from
+		// the headers and not from objects another lookup cached.
+		types := newPackfile(t, f)
+		defer types.Close()
+		objects := newPackfile(t, f)
+		defer objects.Close()
+
+		for h, offset := range f.Entries() {
+			typ, err := types.GetTypeByOffset(offset)
+			require.NoError(t, err, "object %s", h)
+			obj, err := objects.GetByOffset(offset)
+			require.NoError(t, err, "object %s", h)
+			assert.Equal(t, obj.Type(), typ, "object %s", h)
+		}
+	})
+}
