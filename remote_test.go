@@ -54,6 +54,12 @@ func (s *RemoteSuite) TestFetchInvalidEndpoint() {
 	s.ErrorContains(err, "invalid character")
 }
 
+func (s *RemoteSuite) TestFetchNoURLs() {
+	r := NewRemote(nil, &config.RemoteConfig{Name: "foo"})
+	err := r.Fetch(&FetchOptions{})
+	s.ErrorIs(err, ErrEmptyUrls)
+}
+
 func (s *RemoteSuite) TestFetchNonExistentEndpoint() {
 	r := NewRemote(nil, &config.RemoteConfig{Name: "foo", URLs: []string{"ssh://non-existent/foo.git"}})
 	err := r.Fetch(&FetchOptions{})

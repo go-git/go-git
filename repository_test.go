@@ -3213,6 +3213,31 @@ func (s *RepositorySuite) TestConfigScoped() {
 	s.NotEqual("", cfg.User.Email)
 }
 
+func TestConfigScopedLocalMatchesConfig(t *testing.T) {
+	t.Parallel()
+
+	const localConfig = "[core]\n\tbare = false\n\tfilemode = false\n" +
+		"[pack]\n\treadReverseIndex = false\n[custom]\n\tkey = value\n"
+
+	fs := memfs.New()
+	r, err := Init(filesystem.NewStorage(fs, cache.NewObjectLRUDefault()))
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	require.NoError(t, util.WriteFile(fs, "config", []byte(localConfig), 0o644))
+
+	local, err := r.Config()
+	require.NoError(t, err)
+	require.False(t, local.Core.FileMode)
+
+	cfg, err := r.ConfigScoped(config.LocalScope)
+	require.NoError(t, err)
+
+	assert.False(t, cfg.Core.FileMode)
+	assert.False(t, cfg.Pack.ReadReverseIndex)
+	require.NotNil(t, cfg.Raw)
+	assert.Equal(t, "value", cfg.Raw.Section("custom").Option("key"))
+}
+
 func (s *RepositorySuite) TestCommit() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()

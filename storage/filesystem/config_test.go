@@ -93,6 +93,33 @@ func TestWorktreeConfigRead(t *testing.T) {
 		assert.True(t, cfg.Extensions.WorktreeConfig)
 	})
 
+	t.Run("config.worktree values merge with base config by key", func(t *testing.T) {
+		t.Parallel()
+
+		const base = baseConfig +
+			"[remote \"origin\"]\n\turl = https://example.com/a.git\n" +
+			"\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+		const wt = "[core]\n\tfilemode = false\n\tsparseCheckout = true\n" +
+			"[remote \"origin\"]\n\tfetch = +refs/tags/*:refs/tags/*\n"
+
+		commonFs, wtFs := memfs.New(), memfs.New()
+		require.NoError(t, util.WriteFile(commonFs, "config", []byte(base), 0o644))
+		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(wt), 0o644))
+
+		cfg, err := newDualStorer(commonFs, wtFs).Config()
+		require.NoError(t, err)
+
+		assert.False(t, cfg.Core.FileMode)
+		require.NotNil(t, cfg.Raw)
+		assert.Equal(t, "true", cfg.Raw.Section("core").Option("sparseCheckout"))
+		require.Contains(t, cfg.Remotes, "origin")
+		assert.Equal(t, []string{"https://example.com/a.git"}, cfg.Remotes["origin"].URLs)
+		assert.Equal(t, []config.RefSpec{
+			"+refs/heads/*:refs/remotes/origin/*",
+			"+refs/tags/*:refs/tags/*",
+		}, cfg.Remotes["origin"].Fetch)
+	})
+
 	t.Run("returns base config when config.worktree is absent", func(t *testing.T) {
 		t.Parallel()
 
