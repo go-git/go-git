@@ -13,11 +13,20 @@ var empty = make([]byte, format.SHA256Size)
 
 // FromHex parses a hexadecimal string and returns an ObjectID
 // and a boolean confirming whether the operation was successful.
-// The object format is inferred from the length of the input.
-//
-// For backwards compatibility, partial hashes will be handled as
-// being SHA1.
+// The object format is inferred from the length of the input, which
+// must be exactly that of a SHA-1 or a SHA-256 id.
 func FromHex(in string) (ObjectID, bool) {
+	if len(in) != format.SHA1HexSize && len(in) != format.SHA256HexSize {
+		return ObjectID{}, false
+	}
+	return fromHexLax(in)
+}
+
+// fromHexLax parses a hexadecimal string of any length. Input of any
+// length other than a SHA-256 id is handled as SHA-1. Shorter input
+// is zero-padded and longer input is truncated. It keeps the behaviour
+// [NewHash] has always had.
+func fromHexLax(in string) (ObjectID, bool) {
 	var id ObjectID
 
 	if len(in) == format.SHA256HexSize {

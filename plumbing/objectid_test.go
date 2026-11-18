@@ -135,9 +135,15 @@ func TestFromHex(t *testing.T) {
 		{"empty sha1", "0000000000000000000000000000000000000000", true, true},
 		{"empty sha256", "0000000000000000000000000000000000000000000000000000000000000000", true, true},
 		{"partial sha1", "8ab686eafeb1f44702738", false, false},
-		{"partial sha256", "edeaaff3f1774ad28886", true, false},
+		{"partial sha256", "edeaaff3f1774ad28886", false, false},
 		{"invalid sha1", "8ab686eafeb1f44702738x", false, true},
 		{"invalid sha256", "edeaaff3f1774ad28886x", false, true},
+		{"invalid full sha1", "8ab686eafeb1f44702738c8b0f24f2567c36da6x", false, true},
+		{"invalid full sha256", "edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cx", false, true},
+		{"empty", "", false, true},
+		{"one byte", "ab", false, true},
+		{"over-long sha1", "8ab686eafeb1f44702738c8b0f24f2567c36da6d00", false, true},
+		{"over-long sha256", "edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb00", false, true},
 	}
 
 	for _, tc := range tests {

@@ -25,7 +25,7 @@ var ZeroHash ObjectID
 //
 // deprecated: Use the new FromHex instead.
 func NewHash(s string) Hash {
-	h, _ := FromHex(s)
+	h, _ := fromHexLax(s)
 	return h
 }
 
