@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
@@ -20,6 +22,13 @@ import (
 	xhttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	xssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
 )
+
+// ErrUnsupportedProxyScheme is returned when an SSH or Git connection is
+// dialed through a proxy, set by WithProxyURL or by ALL_PROXY under
+// WithProxyEnvironment, whose scheme golang.org/x/net/proxy cannot use, for
+// example http. Only socks5 and socks5h are supported. The connection fails
+// instead of silently bypassing the proxy. HTTP connections never return it.
+var ErrUnsupportedProxyScheme = errors.New("unsupported proxy scheme")
 
 // SSHAuth is implemented by SSH authentication types whose ClientConfig
 // method can be used to produce an *ssh.ClientConfig for each request.
@@ -144,7 +153,9 @@ func WithHTTPCredentials(fn CredentialsFunc) Option {
 
 // WithProxyURL routes all transport connections through the given proxy URL.
 // For HTTP, this uses http.ProxyURL. For SSH and Git TCP, this uses
-// golang.org/x/net/proxy.FromURL to wrap the underlying dialer.
+// golang.org/x/net/proxy.FromURL to wrap the underlying dialer, which only
+// supports socks5 and socks5h. Any other scheme fails SSH and Git connections
+// with ErrUnsupportedProxyScheme instead of bypassing the proxy.
 func WithProxyURL(u *url.URL) Option {
 	return func(o *options) {
 		o.http.HTTPProxy = http.ProxyURL(u)
@@ -160,17 +171,69 @@ func WithProxyURL(u *url.URL) Option {
 // WithProxyEnvironment honors standard proxy environment variables
 // (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY) for all transports.
 // For HTTP, this uses http.ProxyFromEnvironment. For SSH and Git TCP,
-// this uses golang.org/x/net/proxy.FromEnvironmentUsing.
+// ALL_PROXY (or all_proxy) selects the proxy and NO_PROXY (or no_proxy)
+// lists the hosts dialed directly, as golang.org/x/net/proxy.FromEnvironment
+// does. If ALL_PROXY is set to a scheme other than socks5 or socks5h, SSH and
+// Git connections to hosts not listed in NO_PROXY fail with
+// ErrUnsupportedProxyScheme instead of bypassing the proxy.
+//
+// Unlike golang.org/x/net/proxy, which reads ALL_PROXY and NO_PROXY once per
+// process, they are read again for every SSH and Git connection. An ALL_PROXY
+// value that is not a valid URL fails SSH and Git connections to hosts not
+// listed in NO_PROXY with an "invalid ALL_PROXY" error rather than dialing
+// directly. That error does not wrap ErrUnsupportedProxyScheme, as no scheme
+// could be read from the value.
 func WithProxyEnvironment() Option {
 	return func(o *options) {
 		o.http.HTTPProxy = http.ProxyFromEnvironment
 
 		wrap := proxyDialer(func(forward proxy.Dialer) (proxy.Dialer, error) {
-			return proxy.FromEnvironmentUsing(forward), nil
+			allProxy := getEnvAny("ALL_PROXY", "all_proxy")
+			if allProxy == "" {
+				return forward, nil
+			}
+
+			// x/net's FromEnvironmentUsing dials directly when ALL_PROXY
+			// holds an unsupported scheme, so the dialer is built here.
+			var d proxy.Dialer
+			u, err := url.Parse(allProxy)
+			if err != nil {
+				d = failDialer{fmt.Errorf("invalid ALL_PROXY: %w", err)}
+			} else if d, err = proxy.FromURL(u, forward); err != nil {
+				d = failDialer{fmt.Errorf("%w: %w", ErrUnsupportedProxyScheme, err)}
+			}
+
+			noProxy := getEnvAny("NO_PROXY", "no_proxy")
+			if noProxy == "" {
+				return d, nil
+			}
+			perHost := proxy.NewPerHost(d, forward)
+			perHost.AddFromString(noProxy)
+			return perHost, nil
 		})
 		o.ssh.DialProxy = wrap
 		o.git.DialProxy = wrap
 	}
+}
+
+// getEnvAny returns the value of the first non-empty environment variable
+// in names.
+func getEnvAny(names ...string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// failDialer is a proxy.Dialer that fails every dial with err.
+type failDialer struct{ err error }
+
+func (f failDialer) Dial(string, string) (net.Conn, error) { return nil, f.err }
+
+func (f failDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, f.err
 }
 
 // WithDialer sets a custom dialer for SSH and Git TCP transports.
@@ -318,12 +381,16 @@ func (c *Client) builtin(scheme string) (transport.Transport, error) {
 }
 
 // proxyDialer creates a DialProxy wrapper from a function that produces
-// a proxy.Dialer given a forwarding proxy.Dialer.
+// a proxy.Dialer given a forwarding proxy.Dialer. If no dialer can be
+// produced, the returned dial func fails rather than dialing directly.
 func proxyDialer(makeDialer func(proxy.Dialer) (proxy.Dialer, error)) func(transport.DialContextFunc) transport.DialContextFunc {
 	return func(direct transport.DialContextFunc) transport.DialContextFunc {
 		d, err := makeDialer(direct)
 		if err != nil {
-			return direct
+			err = fmt.Errorf("%w: %w", ErrUnsupportedProxyScheme, err)
+			return func(context.Context, string, string) (net.Conn, error) {
+				return nil, err
+			}
 		}
 		if cd, ok := d.(proxy.ContextDialer); ok {
 			return cd.DialContext
