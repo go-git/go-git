@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/go-git/go-git/v6/config"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -223,8 +224,10 @@ func diffSubsections(
 	return out
 }
 
-// diffOptions compares last-writer-wins keys between base and updated.
-// If the full value set for a key differs, the option is included.
+// diffOptions returns the options of updated whose values differ from base.
+// Git reads config.worktree after the base config, so when the updated values
+// start with the base ones only the values after them are returned. Otherwise
+// all updated values for the key are returned.
 func diffOptions(
 	baseOpts, updated formatcfg.Options,
 ) formatcfg.Options {
@@ -235,19 +238,25 @@ func diffOptions(
 	seen := make(map[string]struct{}, len(updated))
 	var out formatcfg.Options
 
-	// Reverse iteration to preserve last-writer-wins semantics.
-	for _, opt := range slices.Backward(updated) {
-		if _, ok := seen[opt.Key]; ok {
+	for _, opt := range updated {
+		key := strings.ToLower(opt.Key)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[opt.Key] = struct{}{}
+		seen[key] = struct{}{}
 
 		baseVals := baseOpts.GetAll(opt.Key)
 		updVals := updated.GetAll(opt.Key)
+		if slices.Equal(baseVals, updVals) {
+			continue
+		}
 
-		if !slices.Equal(baseVals, updVals) {
-			// Prepend to restore original order.
-			out = append(formatcfg.Options{opt}, out...)
+		if len(updVals) > len(baseVals) && slices.Equal(baseVals, updVals[:len(baseVals)]) {
+			updVals = updVals[len(baseVals):]
+		}
+
+		for _, v := range updVals {
+			out = append(out, &formatcfg.Option{Key: opt.Key, Value: v})
 		}
 	}
 
