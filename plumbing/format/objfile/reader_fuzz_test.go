@@ -29,16 +29,23 @@ func FuzzReader(f *testing.F) {
 	addSeed(append([]byte("blob "), bytes.Repeat([]byte{'0'}, 1024)...))
 	f.Add([]byte{})
 
-	f.Fuzz(func(_ *testing.T, data []byte) {
+	f.Fuzz(func(t *testing.T, data []byte) {
 		r, err := NewReader(bytes.NewReader(data), format.SHA1)
 		if err != nil {
 			return
 		}
 		defer r.Close()
-		if _, _, err = r.Header(); err != nil {
+		_, size, err := r.Header()
+		if err != nil {
 			return
 		}
-		_, _ = io.Copy(io.Discard, r)
+		n, err := io.Copy(io.Discard, r)
+		if n > size {
+			t.Fatalf("Read %d bytes, more than the declared %d", n, size)
+		}
+		if err == nil && n != size {
+			t.Fatalf("Read %d bytes without error, want the declared %d", n, size)
+		}
 		_ = r.Hash()
 	})
 }

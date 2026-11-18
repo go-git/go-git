@@ -6,9 +6,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -84,6 +87,16 @@ func testReader(
 
 	assert.Equal(t, hash, r.Hash()) // Test Hash() before close
 	assert.NoError(t, r.Close())
+}
+
+func compress(t *testing.T, payload []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	_, err := w.Write(payload)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	return buf.Bytes()
 }
 
 func (s *SuiteReader) TestReadEmptyObjfile() {
@@ -178,27 +191,34 @@ func (s *SuiteReader) TestHeaderRejectsOverlongSizeField() {
 	s.ErrorIs(err, ErrHeaderTooLong)
 }
 
-func (s *SuiteReader) TestHeaderAcceptsExactMaxLength() {
-	// "blob " (5) + 26 size digits + NUL = 32 bytes exactly. Canonical Git
-	// accepts this; the cap is on excess, not equality.
+func (s *SuiteReader) TestHeaderParsesSizeAtMaxLength() {
+	// "blob " (5) + 26 size digits + NUL = 32 bytes exactly. The cap is on
+	// excess, not equality, so the size field is parsed. Canonical Git
+	// rejects it there, as the size is not in canonical decimal form.
 	payload := append([]byte("blob "), bytes.Repeat([]byte{'0'}, 26)...)
 	payload = append(payload, 0)
 	s.Require().Len(payload, 32)
 
-	var buf bytes.Buffer
-	w := zlib.NewWriter(&buf)
-	_, err := w.Write(payload)
-	s.Require().NoError(err)
-	s.Require().NoError(w.Close())
-
-	r, err := NewReader(&buf, format.SHA1)
+	r, err := NewReader(bytes.NewReader(compress(s.T(), payload)), format.SHA1)
 	s.Require().NoError(err)
 	defer r.Close()
 
-	t, size, err := r.Header()
+	_, _, err = r.Header()
+	s.ErrorIs(err, ErrHeader)
+}
+
+func (s *SuiteReader) TestHeaderAcceptsLargestSize() {
+	r, err := NewReader(bytes.NewReader(compress(s.T(), []byte("commit 9223372036854775807\x00"))), format.SHA1)
 	s.Require().NoError(err)
-	s.Equal(plumbing.BlobObject, t)
-	s.Equal(int64(0), size)
+	defer r.Close()
+
+	typ, size, err := r.Header()
+	s.Require().NoError(err)
+	s.Equal(plumbing.CommitObject, typ)
+	s.Equal(int64(math.MaxInt64), size)
+
+	_, err = io.ReadAll(r)
+	s.ErrorIs(err, io.ErrUnexpectedEOF)
 }
 
 func (s *SuiteReader) TestHeaderRejectsOneByteOverMaxLength() {
@@ -239,4 +259,216 @@ func (s *SuiteReader) TestReaderReadAfterHeaderError() {
 	n, readErr := r.Read(buf[:])
 	s.Error(readErr)
 	s.Equal(0, n)
+}
+
+func (s *SuiteReader) TestHeaderRejectsInvalidSize() {
+	sizes := []string{"", "-1", "+1", "01", "00", " 1", "1 ", "0x1", "1e3", "9223372036854775808"}
+	for _, size := range sizes {
+		s.Run(fmt.Sprintf("%q", size), func() {
+			payload := []byte("blob " + size + "\x00")
+			r, err := NewReader(bytes.NewReader(compress(s.T(), payload)), format.SHA1)
+			s.Require().NoError(err)
+			defer r.Close()
+
+			_, _, err = r.Header()
+			s.ErrorIs(err, ErrHeader)
+		})
+	}
+}
+
+type readCase struct {
+	name     string
+	payload  []byte
+	trailing []byte
+	want     []byte
+	wantErr  error
+}
+
+var readCases = []readCase{
+	{
+		name:    "exact",
+		payload: []byte("blob 5\x00hello"),
+		want:    []byte("hello"),
+	},
+	{
+		name:    "empty",
+		payload: []byte("tree 0\x00"),
+		want:    []byte{},
+	},
+	{
+		name:    "longer than declared",
+		payload: append([]byte("blob 1\x00"), bytes.Repeat([]byte{'A'}, 64<<10)...),
+		want:    []byte("A"),
+		wantErr: ErrOverflow,
+	},
+	{
+		name:    "non-empty body for empty object",
+		payload: []byte("tree 0\x00x"),
+		want:    []byte{},
+		wantErr: ErrOverflow,
+	},
+	{
+		name:    "shorter than declared",
+		payload: []byte("blob 5\x00hi"),
+		want:    []byte("hi"),
+		wantErr: io.ErrUnexpectedEOF,
+	},
+	{
+		name:     "trailing data after zlib stream",
+		payload:  []byte("blob 5\x00hello"),
+		trailing: []byte("x"),
+		want:     []byte("hello"),
+		wantErr:  ErrTrailingData,
+	},
+	{
+		name:     "longer than declared with trailing data",
+		payload:  []byte("blob 5\x00hello world"),
+		trailing: []byte("x"),
+		want:     []byte("hello"),
+		wantErr:  ErrOverflow,
+	},
+}
+
+func (tc readCase) data(t *testing.T) []byte {
+	return append(compress(t, tc.payload), tc.trailing...)
+}
+
+func (s *SuiteReader) TestReadBodyMatchesDeclaredSize() {
+	wrappers := []struct {
+		name   string
+		source func(io.Reader) io.Reader
+		reader func(io.Reader) io.Reader
+	}{
+		{
+			name:   "whole reads",
+			source: func(r io.Reader) io.Reader { return r },
+			reader: func(r io.Reader) io.Reader { return r },
+		},
+		{
+			name:   "one byte reads",
+			source: iotest.OneByteReader,
+			reader: iotest.OneByteReader,
+		},
+	}
+
+	for _, w := range wrappers {
+		for _, tc := range readCases {
+			s.Run(w.name+"/"+tc.name, func() {
+				r, err := NewReader(w.source(bytes.NewReader(tc.data(s.T()))), format.SHA1)
+				s.Require().NoError(err)
+				defer r.Close()
+
+				_, _, err = r.Header()
+				s.Require().NoError(err)
+
+				got, err := io.ReadAll(w.reader(r))
+				if tc.wantErr != nil {
+					s.ErrorIs(err, tc.wantErr)
+				} else {
+					s.NoError(err)
+				}
+				s.Equal(tc.want, got)
+			})
+		}
+	}
+}
+
+func (s *SuiteReader) TestReadErrorIsSticky() {
+	for _, tc := range readCases {
+		s.Run(tc.name, func() {
+			r, err := NewReader(bytes.NewReader(tc.data(s.T())), format.SHA1)
+			s.Require().NoError(err)
+			defer r.Close()
+
+			_, _, err = r.Header()
+			s.Require().NoError(err)
+
+			_, _ = io.ReadAll(r)
+
+			wantErr := tc.wantErr
+			if wantErr == nil {
+				wantErr = io.EOF
+			}
+			for range 2 {
+				n, err := r.Read(make([]byte, 16))
+				s.Equal(0, n)
+				s.ErrorIs(err, wantErr)
+			}
+		})
+	}
+}
+
+func (s *SuiteReader) TestReadRejectsTruncatedStream() {
+	data := compress(s.T(), []byte("blob 11\x00hello world"))
+	r, err := NewReader(bytes.NewReader(data[:len(data)-6]), format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.Require().NoError(err)
+
+	_, err = io.ReadAll(r)
+	s.ErrorIs(err, io.ErrUnexpectedEOF)
+}
+
+func (s *SuiteReader) TestReadFullSkipsEndChecks() {
+	data := append(compress(s.T(), []byte("blob 5\x00hello")), 'x')
+	r, err := NewReader(bytes.NewReader(data), format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.Require().NoError(err)
+
+	got := make([]byte, 5)
+	_, err = io.ReadFull(r, got)
+	s.Require().NoError(err)
+	s.Equal([]byte("hello"), got)
+
+	_, err = r.Read(make([]byte, 1))
+	s.ErrorIs(err, ErrTrailingData)
+}
+
+func (s *SuiteReader) TestReadZeroLengthReadsNothing() {
+	data := append(compress(s.T(), []byte("tree 0\x00")), 'x')
+	r, err := NewReader(bytes.NewReader(data), format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.Require().NoError(err)
+
+	n, err := r.Read(nil)
+	s.Equal(0, n)
+	s.NoError(err)
+
+	got, err := io.ReadAll(r)
+	s.ErrorIs(err, ErrTrailingData)
+	s.Empty(got)
+}
+
+func (s *SuiteReader) TestUseAfterClose() {
+	newReader := func() *Reader {
+		r, err := NewReader(bytes.NewReader(compress(s.T(), []byte("blob 5\x00hello"))), format.SHA1)
+		s.Require().NoError(err)
+		return r
+	}
+
+	s.Run("Header", func() {
+		r := newReader()
+		s.Require().NoError(r.Close())
+
+		_, _, err := r.Header()
+		s.ErrorIs(err, ErrClosed)
+	})
+
+	s.Run("Read", func() {
+		r := newReader()
+		_, _, err := r.Header()
+		s.Require().NoError(err)
+		s.Require().NoError(r.Close())
+
+		_, err = r.Read(make([]byte, 5))
+		s.ErrorIs(err, ErrClosed)
+	})
 }

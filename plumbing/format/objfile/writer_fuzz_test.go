@@ -12,7 +12,7 @@ import (
 // FuzzWriterReaderRoundTrip drives Writer with a fuzz-supplied object
 // type and declared size, then parses the produced loose-object stream
 // via Reader. Every Writer call that returns nil must produce a stream
-// the Reader accepts; this catches future drift between the writer's
+// the Reader accepts. This catches future drift between the writer's
 // MAX_HEADER_LEN cap and the reader's MAX_HEADER_LEN budget, and any
 // other shape change that breaks read/write symmetry.
 func FuzzWriterReaderRoundTrip(f *testing.F) {
@@ -33,8 +33,8 @@ func FuzzWriterReaderRoundTrip(f *testing.F) {
 		var buf bytes.Buffer
 		w := NewWriter(&buf, format.SHA1)
 		if err := w.WriteHeader(ot, size); err != nil {
-			// Legitimate rejections: ErrNegativeSize, ErrHeaderTooLong,
-			// plumbing.ErrInvalidType.
+			// Legitimate Writer rejections: ErrNegativeSize,
+			// ErrHeaderTooLong, plumbing.ErrInvalidType.
 			return
 		}
 
@@ -48,31 +48,32 @@ func FuzzWriterReaderRoundTrip(f *testing.F) {
 		}
 		if body > 0 {
 			if _, err := w.Write(bytes.Repeat([]byte{0xab}, int(body))); err != nil {
-				return
+				t.Fatalf("Write: %v", err)
 			}
 		}
 		if err := w.Close(); err != nil {
-			return
+			t.Fatalf("Close: %v", err)
 		}
 
 		r, err := NewReader(&buf, format.SHA1)
 		if err != nil {
-			return
+			t.Fatalf("NewReader: %v", err)
 		}
-		t.Cleanup(func() { _ = r.Close() })
+		defer func() { _ = r.Close() }()
 
 		gotType, gotSize, err := r.Header()
 		if err != nil {
+			t.Fatalf("Header: %v", err)
+		}
+		if gotType != ot || gotSize != size {
+			t.Fatalf("Header = %v %d, want %v %d", gotType, gotSize, ot, size)
+		}
+		if body != size {
 			return
 		}
-		if gotType != ot {
-			return
-		}
-		if gotSize != size {
-			return
-		}
-		if body > 0 {
-			_, _ = io.Copy(io.Discard, r)
+		n, err := io.Copy(io.Discard, r)
+		if err != nil || n != size {
+			t.Fatalf("Read %d bytes, err %v, want %d bytes", n, err, size)
 		}
 	})
 }
