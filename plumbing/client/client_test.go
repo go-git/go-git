@@ -582,3 +582,110 @@ func TestWithHTTPAuthNilIsANoOp(t *testing.T) {
 	WithHTTPAuth(nil)(&kept)
 	assert.Equal(t, "Basic dXNlcjpwYXNz", header(t, kept, "example.com"))
 }
+
+func TestWithProxyURL_UnsupportedSchemeDoesNotBypassProxy(t *testing.T) {
+	t.Parallel()
+
+	proxyURL, err := url.Parse("http://127.0.0.1:1")
+	require.NoError(t, err)
+
+	for _, scheme := range []string{"ssh", "git"} {
+		t.Run(scheme, func(t *testing.T) {
+			t.Parallel()
+
+			dialed, err := handshakeThroughProxy(t, scheme, WithProxyURL(proxyURL))
+			require.ErrorIs(t, err, ErrUnsupportedProxyScheme)
+			assert.False(t, dialed, "target must not be dialed directly")
+		})
+	}
+}
+
+func TestWithProxyEnvironment_UnsupportedSchemeDoesNotBypassProxy(t *testing.T) {
+	t.Setenv("ALL_PROXY", "http://127.0.0.1:1")
+	t.Setenv("all_proxy", "")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+
+	for _, scheme := range []string{"ssh", "git"} { //nolint:paralleltest // modifies process environment
+		t.Run(scheme, func(t *testing.T) {
+			dialed, err := handshakeThroughProxy(t, scheme, WithProxyEnvironment())
+			require.ErrorIs(t, err, ErrUnsupportedProxyScheme)
+			assert.False(t, dialed, "target must not be dialed directly")
+		})
+	}
+}
+
+func TestWithProxyEnvironment_NoProxyDialsDirectly(t *testing.T) {
+	t.Setenv("ALL_PROXY", "http://127.0.0.1:1")
+	t.Setenv("all_proxy", "")
+	t.Setenv("NO_PROXY", "127.0.0.1")
+	t.Setenv("no_proxy", "")
+
+	for _, scheme := range []string{"ssh", "git"} { //nolint:paralleltest // modifies process environment
+		t.Run(scheme, func(t *testing.T) {
+			dialed, err := handshakeThroughProxy(t, scheme, WithProxyEnvironment())
+			require.Error(t, err)
+			assert.NotErrorIs(t, err, ErrUnsupportedProxyScheme)
+			assert.True(t, dialed, "NO_PROXY host must be dialed directly")
+		})
+	}
+}
+
+func TestWithProxyEnvironment_InvalidURL(t *testing.T) {
+	t.Setenv("ALL_PROXY", "socks5://[::1")
+	t.Setenv("all_proxy", "")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+
+	dialed, err := handshakeThroughProxy(t, "git", WithProxyEnvironment())
+	require.ErrorContains(t, err, "invalid ALL_PROXY")
+	assert.NotErrorIs(t, err, ErrUnsupportedProxyScheme)
+	assert.False(t, dialed, "target must not be dialed directly")
+}
+
+// handshakeThroughProxy runs an upload-pack handshake against a local
+// listener and reports whether the listener accepted a connection, along
+// with the handshake error.
+func handshakeThroughProxy(t *testing.T, scheme string, opt Option) (bool, error) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- struct{}{}
+		conn.Close()
+	}()
+
+	// A fixed SSH config keeps the test away from the SSH agent and
+	// known_hosts, which CI runners may not have.
+	c := New(opt, WithSSHAuth(staticSSHAuth{}))
+	defer c.Close()
+
+	target, err := url.Parse(scheme + "://" + ln.Addr().String() + "/repo.git")
+	require.NoError(t, err)
+
+	_, err = c.Handshake(context.Background(), &transport.Request{
+		URL:     target,
+		Command: transport.UploadPackService,
+	})
+
+	ln.Close()
+	return len(accepted) > 0, err
+}
+
+type staticSSHAuth struct{}
+
+func (staticSSHAuth) ClientConfig(context.Context, *transport.Request) (*gossh.ClientConfig, error) {
+	return &gossh.ClientConfig{
+		User:              "git",
+		HostKeyCallback:   gossh.InsecureIgnoreHostKey(),
+		HostKeyAlgorithms: []string{gossh.KeyAlgoED25519},
+	}, nil
+}
