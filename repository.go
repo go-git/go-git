@@ -345,7 +345,9 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 
 	o := newInitOptions()
 	for _, oFn := range options {
-		oFn(&o)
+		if oFn != nil {
+			oFn(&o)
+		}
 	}
 
 	var err error
