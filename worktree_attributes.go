@@ -3,6 +3,7 @@ package git
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -11,11 +12,13 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/osfs"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/format/gitattributes"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/x/plugin"
 )
 
 const (
@@ -44,7 +47,12 @@ const (
 type checkinAttributes struct {
 	w   *Worktree
 	idx *index.Index
-	cfg *config.Config
+	// cfgs holds the configurations to read raw options from, the
+	// highest priority first: the repository, the global and the system one.
+	cfgs []*config.Config
+	// files provides the system and the global attributes files, and is
+	// nil when the config loader has none.
+	files plugin.AttributesSource
 	// fold tells whether patterns match regardless of case, as under
 	// core.ignorecase.
 	fold bool
@@ -60,87 +68,262 @@ type checkinAttributes struct {
 	// files, read once globalRead is set.
 	global     []gitattributes.MatchAttribute
 	globalRead bool
+	globalErr  error
+
+	// repo is the repository configuration, whose scopes below it are
+	// loaded once loaded is set, when a path first needs them.
+	repo   *config.Config
+	loaded bool
 }
 
 // newCheckinAttributes returns the check-in attributes of w under the
-// configuration cfg, with idx, the index the operation starts from, for the
-// attributes files the worktree lacks.
-func newCheckinAttributes(w *Worktree, idx *index.Index, cfg *config.Config) *checkinAttributes {
-	a := &checkinAttributes{w: w, idx: idx, cfg: cfg, dirs: make(map[string][]gitattributes.MatchAttribute)}
-	switch v := strings.ToLower(rawOption(cfg, "core", "", "ignorecase")); v {
-	case "true", "yes", "on":
-		a.fold = true
-	default:
-		n, err := strconv.Atoi(v)
-		a.fold = err == nil && n != 0
+// configurations cfgs, the highest priority first, with idx, the index the
+// operation starts from, for the attributes files the worktree lacks.
+func newCheckinAttributes(w *Worktree, idx *index.Index, cfgs ...*config.Config) *checkinAttributes {
+	return &checkinAttributes{
+		w:      w,
+		idx:    idx,
+		cfgs:   cfgs,
+		fold:   rawBool(cfgs, "core", "", "ignorecase"),
+		dirs:   make(map[string][]gitattributes.MatchAttribute),
+		loaded: true,
 	}
+}
+
+// lazyCheckinAttributes returns the check-in attributes of w under the
+// repository configuration cfg, which load completes with the global and
+// the system ones, when a path first needs them: Git reads no attributes
+// configuration for a path it does not check.
+func lazyCheckinAttributes(w *Worktree, idx *index.Index, cfg *config.Config) *checkinAttributes {
+	a := newCheckinAttributes(w, idx, cfg)
+	a.repo, a.loaded = cfg, false
 	return a
 }
 
+// load reads the configuration scopes below the repository one, once.
+func (a *checkinAttributes) load() error {
+	if a.loaded {
+		return nil
+	}
+	cfgs, files, err := scopedConfigs(a.repo)
+	if err != nil {
+		return err
+	}
+	a.cfgs, a.files, a.loaded = cfgs, files, true
+	a.fold = rawBool(cfgs, "core", "", "ignorecase")
+	return nil
+}
+
 // rawOption returns the value of the option key in the section, and
-// subsection, of cfg's raw configuration, or "" when there is none.
-func rawOption(cfg *config.Config, section, subsection, key string) string {
-	if cfg == nil || cfg.Raw == nil || !cfg.Raw.HasSection(section) {
-		return ""
+// subsection, of the raw configuration of the first of cfgs that sets it,
+// and whether any does. A configuration that sets an option to nothing
+// hides it from those below.
+func rawOption(cfgs []*config.Config, section, subsection, key string) (string, bool) {
+	for _, cfg := range cfgs {
+		if cfg == nil || cfg.Raw == nil || !cfg.Raw.HasSection(section) {
+			continue
+		}
+		s := cfg.Raw.Section(section)
+		switch {
+		case subsection == "" && s.HasOption(key):
+			return s.Option(key), true
+		case subsection != "" && s.HasSubsection(subsection) && s.Subsection(subsection).HasOption(key):
+			return s.Subsection(subsection).Option(key), true
+		}
 	}
-	s := cfg.Raw.Section(section)
-	if subsection == "" {
-		return s.Option(key)
+	return "", false
+}
+
+// rawBool reports whether the option key is true, as Git's
+// git_config_bool does. The parser reads an option without a value the
+// same as one set to nothing, so both read as true, which Git does for
+// the former only.
+func rawBool(cfgs []*config.Config, section, subsection, key string) bool {
+	v, ok := rawOption(cfgs, section, subsection, key)
+	return ok && (v == "" || parseBool(v))
+}
+
+// scopedConfigs returns the repository configuration cfg and, below it,
+// the global and the system ones of the registered config loader, the
+// highest priority first, and the attributes files of the loader, when it
+// provides them. It fails where Git dies: when a scope cannot be loaded.
+func scopedConfigs(cfg *config.Config) ([]*config.Config, plugin.AttributesSource, error) {
+	cfgs := []*config.Config{cfg}
+	if !plugin.Has(plugin.ConfigLoader()) {
+		return cfgs, nil, nil
 	}
-	if !s.HasSubsection(subsection) {
-		return ""
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return nil, nil, err
 	}
-	return s.Subsection(subsection).Option(key)
+	for _, scope := range []struct {
+		scope config.Scope
+		name  string
+	}{{config.GlobalScope, "global"}, {config.SystemScope, "system"}} {
+		s, err := src.Load(scope.scope)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load %s configuration: %w", scope.name, err)
+		}
+		c, err := s.Config()
+		if err != nil {
+			return nil, nil, fmt.Errorf("read %s configuration: %w", scope.name, err)
+		}
+		cfgs = append(cfgs, c)
+	}
+	files, _ := src.(plugin.AttributesSource)
+	return cfgs, files, nil
 }
 
 // globalAttributes returns the attributes of the system attributes file
 // and of the global one, which Git reads at the lowest priority, the
 // global file over the system one. The global file is core.attributesFile
-// of the repository's configuration, or else
-// $XDG_CONFIG_HOME/git/attributes, or ~/.config/git/attributes when that
-// is unset. A core.attributesFile set in the user's own configuration is
-// not seen, as go-git does not read it here.
+// of the repository, global or system configuration, or else the default
+// location. A relative name is read from the worktree, which is where Git
+// runs. An option set to nothing leaves no global file, not the default
+// one. With the prefix ":(optional)", a missing file is as if the option
+// were unset[2].
 //
-// Git reads the system file, /etc/gitattributes, unless GIT_ATTR_NOSYSTEM
-// is set[1].
+// The files come from the attributes source of the config loader, if it
+// has one, so a loader that provides none leaves no host file to read.
+// Git reads the system file unless GIT_ATTR_NOSYSTEM is true[1].
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/attr.c#L891-L894
-func (a *checkinAttributes) globalAttributes() []gitattributes.MatchAttribute {
+// [2]: https://github.com/git/git/blob/v2.54.0/config.c#L1279-L1297
+func (a *checkinAttributes) globalAttributes() ([]gitattributes.MatchAttribute, error) {
 	if a.globalRead {
-		return a.global
+		return a.global, a.globalErr
 	}
 	a.globalRead = true
-
-	if os.Getenv("GIT_ATTR_NOSYSTEM") == "" {
-		a.global = readHostAttributes("/etc/gitattributes")
-	}
-
-	home, _ := os.UserHomeDir()
-	name := rawOption(a.cfg, "core", "", "attributesfile")
-	switch {
-	case strings.HasPrefix(name, "~/") && home != "":
-		name = filepath.Join(home, name[2:])
-	case name != "":
-	case os.Getenv("XDG_CONFIG_HOME") != "":
-		name = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "attributes")
-	case home != "":
-		name = filepath.Join(home, ".config", "git", "attributes")
-	}
-	if name != "" {
-		a.global = append(a.global, readHostAttributes(name)...)
-	}
-	a.foldPatterns(a.global, nil)
-	return a.global
+	a.global, a.globalErr = a.readGlobalAttributes()
+	return a.global, a.globalErr
 }
 
-// readHostAttributes reads the attributes file name of the host's
-// filesystem, following a symlink, as Git does.
-func readHostAttributes(name string) []gitattributes.MatchAttribute {
-	fi, err := os.Stat(name)
+func (a *checkinAttributes) readGlobalAttributes() ([]gitattributes.MatchAttribute, error) {
+	if a.files == nil {
+		return nil, nil
+	}
+
+	var global []gitattributes.MatchAttribute
+	if !envBool("GIT_ATTR_NOSYSTEM") {
+		fs, name, err := a.files.AttributesFile(config.SystemScope, "")
+		if err != nil {
+			return nil, err
+		}
+		if name != "" {
+			global = readAttributesFile(fs, name)
+		}
+	}
+
+	fs, file, err := a.globalFile()
+	if err != nil {
+		return nil, err
+	}
+	if file != "" {
+		global = append(global, readAttributesFile(fs, file)...)
+	}
+	a.foldPatterns(global, nil)
+	return global, nil
+}
+
+// globalFile returns the filesystem and the name of the global attributes
+// file, or an empty name when there is none. It fails where Git dies, on
+// a name that cannot be expanded, even an optional one.
+func (a *checkinAttributes) globalFile() (billy.Basic, string, error) {
+	configured, set := rawOption(a.cfgs, "core", "", "attributesfile")
+	name, optional := strings.CutPrefix(configured, ":(optional)")
+	if name == "" && set && !optional {
+		return nil, "", nil
+	}
+
+	if name != "" {
+		var fs billy.Basic = a.w.filesystem
+		file := name
+		var err error
+		switch {
+		case strings.HasPrefix(name, "~") || strings.HasPrefix(name, "/") || filepath.IsAbs(name):
+			fs, file, err = a.files.AttributesFile(config.GlobalScope, name)
+		default:
+			if root, ok := worktreeRoot(a.w.filesystem); ok {
+				fs, file, err = a.files.AttributesFile(config.GlobalScope, resolveFromRoot(root, name))
+			}
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		if !optional {
+			return fs, file, nil
+		}
+		if fs != nil && file != "" {
+			if _, err := fs.Stat(file); err == nil {
+				return fs, file, nil
+			}
+		}
+	}
+	return a.files.AttributesFile(config.GlobalScope, "")
+}
+
+// resolveFromRoot returns the path of name, relative to the directory root,
+// with the symlinks along it resolved as the host does, which a source may
+// refuse to follow itself. Where that fails, it is the cleaned path.
+func resolveFromRoot(root, name string) string {
+	if p, err := filepath.EvalSymlinks(root + string(filepath.Separator) + filepath.FromSlash(name)); err == nil {
+		return p
+	}
+	return filepath.Join(root, name)
+}
+
+// worktreeRoot returns the directory of the host that holds the worktree
+// fs, if it is one on disk, which only an [osfs.BoundOS] tells from an
+// in-memory one that also has a root. Git runs there, and reads a relative name, such as
+// ../attrs, or one through a symlink, from outside the worktree, which fs
+// itself refuses.
+func worktreeRoot(fs billy.Filesystem) (string, bool) {
+	if wfs, ok := fs.(*worktreeFilesystem); ok {
+		fs = wfs.Filesystem
+	}
+	b, ok := fs.(*osfs.BoundOS)
+	if !ok || !filepath.IsAbs(b.Root()) {
+		return "", false
+	}
+	return b.Root(), true
+}
+
+// envBool reports whether the environment variable name is set to a true
+// value, as Git's git_env_bool does.
+func envBool(name string) bool {
+	return parseBool(os.Getenv(name))
+}
+
+// parseBool reports whether v is a true value for Git: true, yes, on, or a
+// non-zero number in any base, with an optional k, m or g suffix, as
+// git_parse_maybe_bool and git_parse_int read it[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/parse.c#L157-L182
+func parseBool(v string) bool {
+	v = strings.ToLower(v)
+	switch v {
+	case "true", "yes", "on":
+		return true
+	}
+	if strings.HasSuffix(v, "k") || strings.HasSuffix(v, "m") || strings.HasSuffix(v, "g") {
+		v = v[:len(v)-1]
+	}
+	digits := strings.TrimLeft(v, "+-")
+	if strings.Contains(digits, "_") || strings.HasPrefix(digits, "0b") || strings.HasPrefix(digits, "0o") {
+		return false
+	}
+	n, err := strconv.ParseInt(v, 0, 64)
+	return err == nil && n != 0
+}
+
+// readAttributesFile reads the attributes file name of fs, following a
+// symlink, as Git does for the files outside the worktree.
+func readAttributesFile(fs billy.Basic, name string) []gitattributes.MatchAttribute {
+	fi, err := fs.Stat(name)
 	if err != nil || !fi.Mode().IsRegular() || fi.Size() >= maxAttributesFile {
 		return nil
 	}
-	f, err := os.Open(name)
+	f, err := fs.Open(name)
 	if err != nil {
 		return nil
 	}
@@ -156,19 +339,29 @@ func readHostAttributes(name string) []gitattributes.MatchAttribute {
 // unset[1].
 //
 // It also reports true where it cannot tell what Git would hash: attr.tree
-// is set, or a filter with a clean command applies, which go-git does not
-// run. A reset then keeps the file as a change rather than overwrite it.
+// or GIT_ATTR_SOURCE is set, or a filter applies that Git would run, see
+// runsFilter, which go-git does not. A reset then keeps the file as a change
+// rather than overwrite it.
+// It fails where Git dies, on a configuration or a global attributes file
+// name it cannot load or expand.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/convert.c#L1269-L1339
-func (a *checkinAttributes) keepsCRLF(name string) bool {
+func (a *checkinAttributes) keepsCRLF(name string) (bool, error) {
+	if err := a.load(); err != nil {
+		return false, err
+	}
 	parts := strings.Split(name, "/")
 
-	if rawOption(a.cfg, "attr", "", "tree") != "" {
-		return true
+	_, sourceSet := os.LookupEnv("GIT_ATTR_SOURCE")
+	if tree, _ := rawOption(a.cfgs, "attr", "", "tree"); tree != "" || sourceSet {
+		return true, nil
 	}
 
 	info := a.infoAttributes()
-	global := a.globalAttributes()
+	global, err := a.globalAttributes()
+	if err != nil {
+		return false, err
+	}
 	stack := make([]gitattributes.MatchAttribute, 0, len(global)+len(info))
 	stack = append(stack, global...)
 	for i := range parts {
@@ -176,7 +369,7 @@ func (a *checkinAttributes) keepsCRLF(name string) bool {
 	}
 	stack = append(stack, info...)
 	if len(stack) == 0 {
-		return false
+		return false, nil
 	}
 
 	if a.fold {
@@ -185,14 +378,30 @@ func (a *checkinAttributes) keepsCRLF(name string) bool {
 		}
 	}
 	results, _ := gitattributes.NewMatcher(stack).Match(parts, []string{"text", "crlf", "filter"})
-	if f := results["filter"]; f != nil && f.IsValueSet() && rawOption(a.cfg, "filter", f.Value(), "clean") != "" {
-		return true
+	if f := results["filter"]; f != nil && f.IsValueSet() && a.runsFilter(f.Value()) {
+		return true, nil
 	}
 	if action, ok := crlfAction(results["text"]); ok {
-		return action
+		return action, nil
 	}
 	action, _ := crlfAction(results["crlf"])
-	return action
+	return action, nil
+}
+
+// runsFilter reports whether Git would run the filter driver to clean a
+// file, or fail for want of a command: one that is required, or whose
+// process command, or without one its clean command, is not empty[1].
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/convert.c#L1008-L1019
+func (a *checkinAttributes) runsFilter(driver string) bool {
+	if rawBool(a.cfgs, "filter", driver, "required") {
+		return true
+	}
+	if process, ok := rawOption(a.cfgs, "filter", driver, "process"); ok {
+		return process != ""
+	}
+	clean, _ := rawOption(a.cfgs, "filter", driver, "clean")
+	return clean != ""
 }
 
 // crlfAction reports whether attr, text or the older crlf, keeps line
@@ -301,18 +510,7 @@ func (a *checkinAttributes) infoAttributes() []gitattributes.MatchAttribute {
 		return nil
 	}
 	fs := s.Filesystem()
-	name := fs.Join("info", "attributes")
-	fi, err := fs.Stat(name)
-	if err != nil || !fi.Mode().IsRegular() || fi.Size() >= maxAttributesFile {
-		return nil
-	}
-	f, err := fs.Open(name)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = f.Close() }()
-
-	a.info = parseAttributes(f, nil, true, true)
+	a.info = readAttributesFile(fs, fs.Join("info", "attributes"))
 	a.foldPatterns(a.info, nil)
 	return a.info
 }

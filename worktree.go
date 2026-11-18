@@ -699,7 +699,7 @@ func (w *Worktree) checkSkipWorktreeUpToDate(cfg *config.Config, t *object.Tree,
 	if len(skipped) == 0 {
 		return nil, nil
 	}
-	attrs := newCheckinAttributes(w, stored, cfg)
+	attrs := lazyCheckinAttributes(w, stored, cfg)
 
 	filesMap := buildFilePathMap(files)
 	var update merkletrie.Changes
@@ -842,7 +842,11 @@ func (w *Worktree) worktreeMatchesEntry(cfg *config.Config, attrs *checkinAttrib
 	if got.Equal(e.Hash) || !autoCRLF(cfg) {
 		return true, got.Equal(e.Hash), nil
 	}
-	if attrs.keepsCRLF(e.Name) {
+	keeps, err := attrs.keepsCRLF(e.Name)
+	if err != nil {
+		return true, false, err
+	}
+	if keeps {
 		return true, false, nil
 	}
 	if got, err = w.hashWorktreeFile(cfg, e.Name, fi.Size(), true); err != nil {

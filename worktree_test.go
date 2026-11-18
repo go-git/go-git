@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto"
 	"errors"
@@ -31,6 +32,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/go-git/go-git/v6/config"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -39,8 +41,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 func defaultTestCommitOptions() *CommitOptions {
@@ -6591,9 +6596,10 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		{name: "case differs", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}},
 		{name: "case folded", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}, want: true},
 		{name: "case folded in a nested file", path: "d/X.bin", files: map[string]string{"d/.gitattributes": "x.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}, want: true},
-		{name: "Kelvin sign does not match k", path: "d/a.k", files: map[string]string{".gitattributes": "*.\u212a -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}},
 		{name: "attr.tree", path: "d/s", files: map[string]string{".gitattributes": "d/s text\n"}, options: [][4]string{{"attr", "", "tree", "HEAD"}}, want: true},
 		{name: "clean filter", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "clean", "cat"}}, want: true},
+		{name: "process filter", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "process", "cat"}}, want: true},
+		{name: "required filter", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "required", "true"}}, want: true},
 		{name: "filter without a clean command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "smudge", "cat"}}},
 		{name: "filter without a definition", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}},
 		{name: "NUL ends the line", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00junk\n"}, want: true},
@@ -6602,6 +6608,15 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 		{name: "CR does not count toward a file line limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}, want: true},
 		{name: "NUL ends the line before the line limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00" + strings.Repeat("a", 3000) + "\n"}, want: true},
 		{name: "line limit counts up to the NUL", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2100) + "\x00\n"}},
+		{name: "Kelvin sign does not match k", path: "d/a.k", files: map[string]string{".gitattributes": "*.K -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}},
+		{name: "ignorecase without a value", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", ""}}, want: true},
+		{name: "ignorecase in hexadecimal", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "0x1"}}, want: true},
+		{name: "ignorecase with a unit", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "1k"}}, want: true},
+		{name: "required filter without a value", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "required", ""}}, want: true},
+		{name: "filter that is not required and has no command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "required", "false"}}},
+		{name: "filter with an empty process", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "process", ""}}},
+		{name: "empty process hides the clean command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "clean", "cat"}, {"filter", "f", "process", ""}}},
+		{name: "process hides an empty clean command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "clean", ""}, {"filter", "f", "process", "cat"}}, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -6635,7 +6650,9 @@ func TestCheckinAttributesKeepCRLF(t *testing.T) {
 			for _, o := range tc.options {
 				cfg.Raw.SetOption(o[0], o[1], o[2], o[3])
 			}
-			require.Equal(t, tc.want, newCheckinAttributes(w, idx, cfg).keepsCRLF(tc.path))
+			got, err := newCheckinAttributes(w, idx, cfg).keepsCRLF(tc.path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -6808,39 +6825,332 @@ func (s *WorktreeSuite) TestResetKeepsSkipWorktreeWithoutSparseDirs() {
 	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
 }
 
-func TestCheckinAttributesReadGlobalFiles(t *testing.T) {
-	home := t.TempDir()
-	xdg := filepath.Join(home, "xdg")
+// attributesHost registers a config loader that reads the files of the
+// host from host, with the environment pointing at the home /home/u.
+func attributesHost(t *testing.T, host billy.Filesystem) {
+	t.Helper()
+
+	home := filepath.Join(string(filepath.Separator), "home", "u")
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	t.Setenv("GIT_ATTR_NOSYSTEM", "1")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GIT_ATTR_NOSYSTEM", "0")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
+	t.Setenv("GIT_CONFIG_SYSTEM", "")
+	t.Setenv("GIT_ATTR_SOURCE", "")
+	require.NoError(t, os.Unsetenv("GIT_ATTR_SOURCE"))
 
-	write := func(name, content string) {
-		require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
-		require.NoError(t, os.WriteFile(name, []byte(content), 0o644))
-	}
-	write(filepath.Join(xdg, "git", "attributes"), "*.xdg -text\n*.both -text\n")
-	write(filepath.Join(home, "configured"), "*.configured -text\n")
+	testconfig.RegisterSource(xconfig.NewAuto(xconfig.WithFilesystem(host)))
+	t.Cleanup(registerTestConfigLoader)
+}
 
-	dir := t.TempDir()
-	r, err := PlainInit(dir, false)
+// attributesWorktree returns a worktree on st and a memory filesystem,
+// over a host holding the files of host.
+func attributesWorktree(t *testing.T, host billy.Filesystem, st storage.Storer) *Worktree {
+	t.Helper()
+
+	attributesHost(t, host)
+	r, err := Init(st, WithWorkTree(memfs.New()))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = r.Close() })
 	w, err := r.Worktree()
 	require.NoError(t, err)
-	write(filepath.Join(dir, ".gitattributes"), "*.both text\n")
+	return w
+}
 
-	keeps := func(cfg *config.Config, name string) bool {
-		return newCheckinAttributes(w, nil, cfg).keepsCRLF(name)
+// keepsCRLFOf reports whether the attributes w reads for name, under its
+// configuration and that of the config loader, keep line endings.
+func keepsCRLFOf(t *testing.T, w *Worktree, name string) bool {
+	t.Helper()
+
+	cfg, err := w.r.Config()
+	require.NoError(t, err)
+	keeps, err := lazyCheckinAttributes(w, nil, cfg).keepsCRLF(name)
+	require.NoError(t, err)
+	return keeps
+}
+
+// The global and the system attributes files are read through the config
+// loader, below the worktree's, the global one over the system one, from
+// where Git looks: core.attributesFile of any scope, or else the XDG
+// directory or ~/.config/git. A relative name is the worktree's.
+func TestCheckinAttributesReadGlobalFiles(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+	xdg := filepath.Join(string(filepath.Separator), "xdg")
+	system := func(t *testing.T) string {
+		t.Helper()
+		_, name, err := xconfig.NewAuto().AttributesFile(config.SystemScope, "")
+		require.NoError(t, err)
+		if name == "" {
+			t.Skip("no system attributes file here")
+		}
+		return name
 	}
 
-	assert.True(t, keeps(config.NewConfig(), "a.xdg"))
-	assert.False(t, keeps(config.NewConfig(), "a.configured"))
-	assert.False(t, keeps(config.NewConfig(), "a.both"), "the worktree file overrides the global one")
+	for _, tc := range []struct {
+		name string
+		// host maps the files of the host to their content, with the
+		// system file as "system".
+		host map[string]string
+		// worktree is the content of the worktree's file worktreeName,
+		// which is .gitattributes unless set.
+		worktree, worktreeName string
+		// gitconfig is the global configuration.
+		gitconfig string
+		env       map[string]string
+		path      string
+		want      bool
+	}{
+		{name: "default location", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "XDG_CONFIG_HOME", env: map[string]string{"XDG_CONFIG_HOME": xdg}, host: map[string]string{filepath.Join(xdg, "git", "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "XDG_CONFIG_HOME replaces the default", env: map[string]string{"XDG_CONFIG_HOME": xdg}, host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile", gitconfig: "[core]\n\tattributesFile = /abs/attributes\n", host: map[string]string{"/abs/attributes": "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile in the home", gitconfig: "[core]\n\tattributesFile = ~/attributes\n", host: map[string]string{filepath.Join(home, "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile optional", gitconfig: "[core]\n\tattributesFile = :(optional)~/attributes\n", host: map[string]string{filepath.Join(home, "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile optional and missing", gitconfig: "[core]\n\tattributesFile = :(optional)~/missing\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile missing", gitconfig: "[core]\n\tattributesFile = ~/missing\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile replaces the default", gitconfig: "[core]\n\tattributesFile = /abs/attributes\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile set to nothing", gitconfig: "[core]\n\tattributesFile =\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile relative to the worktree", gitconfig: "[core]\n\tattributesFile = rel\n", worktree: "*.f -text\n", worktreeName: "rel", path: "a.f", want: true},
+		{name: "worktree overrides the global file", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, worktree: "*.f text\n", path: "a.f"},
+		{name: "system file", host: map[string]string{"system": "*.f -text\n"}, path: "a.f", want: true},
+		{name: "global file overrides the system one", host: map[string]string{"system": "*.f -text\n", filepath.Join(home, ".config", "git", "attributes"): "*.f text\n"}, path: "a.f"},
+		{name: "GIT_ATTR_NOSYSTEM", env: map[string]string{"GIT_ATTR_NOSYSTEM": "1"}, host: map[string]string{"system": "*.f -text\n"}, path: "a.f"},
+		{name: "GIT_ATTR_NOSYSTEM=0x0", env: map[string]string{"GIT_ATTR_NOSYSTEM": "0x0"}, host: map[string]string{"system": "*.f -text\n"}, path: "a.f", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := memfs.New()
+			w := attributesWorktree(t, host, memory.NewStorage())
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			for name, content := range tc.host {
+				if name == "system" {
+					name = system(t)
+				}
+				require.NoError(t, util.WriteFile(host, name, []byte(content), 0o644))
+			}
+			if tc.gitconfig != "" {
+				require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte(tc.gitconfig), 0o644))
+			}
+			if tc.worktree != "" {
+				name := cmp.Or(tc.worktreeName, ".gitattributes")
+				require.NoError(t, util.WriteFile(w.filesystem, name, []byte(tc.worktree), 0o644))
+			}
 
-	configured := config.NewConfig()
-	configured.Raw.SetOption("core", "", "attributesFile", "~/configured")
-	assert.True(t, keeps(configured, "a.configured"))
-	assert.False(t, keeps(configured, "a.xdg"), "core.attributesFile replaces the default location")
+			assert.Equal(t, tc.want, keepsCRLFOf(t, w, tc.path))
+		})
+	}
+}
+
+// A config loader that does not provide attributes files, such as the
+// static and the empty one, leaves no host file to read, and a storage
+// of any kind reads them through the loader that does.
+func TestCheckinAttributesOfTheConfigLoader(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+	hostFiles := func(t *testing.T) billy.Filesystem {
+		t.Helper()
+		host := memfs.New()
+		require.NoError(t, util.WriteFile(host, filepath.Join(home, ".config", "git", "attributes"), []byte("*.f -text\n"), 0o644))
+		require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte("[filter \"f\"]\n\tclean = cat\n[attr]\n\ttree = HEAD\n"), 0o644))
+		return host
+	}
+	storages := map[string]func() storage.Storer{
+		"memory":     func() storage.Storer { return memory.NewStorage() },
+		"filesystem": func() storage.Storer { return filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()) },
+	}
+
+	for name, newStorer := range storages { //nolint:paralleltest // modifies global plugin state
+		t.Run(name, func(t *testing.T) {
+			w := attributesWorktree(t, hostFiles(t), newStorer())
+			require.NoError(t, util.WriteFile(w.filesystem, ".gitattributes", []byte("a.g filter=f\n"), 0o644))
+
+			assert.True(t, keepsCRLFOf(t, w, "a.f"), "the global attributes file")
+			assert.True(t, keepsCRLFOf(t, w, "a.g"), "filter of the global configuration")
+
+			testconfig.RegisterSource(xconfig.NewStatic(*config.NewConfig(), *config.NewConfig()))
+			assert.False(t, keepsCRLFOf(t, w, "a.f"), "a static loader provides no attributes file")
+			testconfig.RegisterSource(xconfig.NewEmpty())
+			assert.False(t, keepsCRLFOf(t, w, "a.f"), "an empty loader provides no attributes file")
+		})
+	}
+}
+
+func TestScopedConfigsCarryTheGlobalConfiguration(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	global := config.NewConfig()
+	global.Raw.SetOption("filter", "f", "clean", "cat")
+	global.Raw.SetOption("attr", "", "tree", "HEAD")
+	testconfig.Register(*global, *config.NewConfig())
+	t.Cleanup(registerTestConfigLoader)
+
+	cfgs, files, err := scopedConfigs(config.NewConfig())
+	require.NoError(t, err)
+	require.Len(t, cfgs, 3)
+	assert.Nil(t, files)
+
+	clean, ok := rawOption(cfgs, "filter", "f", "clean")
+	assert.True(t, ok)
+	assert.Equal(t, "cat", clean)
+	tree, ok := rawOption(cfgs, "attr", "", "tree")
+	assert.True(t, ok)
+	assert.Equal(t, "HEAD", tree)
+}
+
+// Git dies on a configuration it cannot read when it checks a path for
+// its attributes, where reading on would drop a filter the file defines
+// and let a reset overwrite files. A reset that checks none is not
+// affected.
+func TestResetFailsOnAnUnreadableGlobalConfiguration(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+
+	for _, tc := range []struct { //nolint:paralleltest // modifies global plugin state
+		name, disk string
+		wantErr    bool
+	}{
+		{name: "path that needs its attributes", disk: "x\r\n", wantErr: true},
+		{name: "path that holds its content", disk: "x\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := memfs.New()
+			fs := memfs.New()
+			attributesHost(t, host)
+			require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte("[filter \"lfs\"\n"), 0o644))
+
+			r, h := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{entry(t, s, "s", filemode.Regular, "x\n")},
+					[]object.TreeEntry{entry(t, s, "s", filemode.Regular, "y\n")}
+			})
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.AutoCRLF = "true"
+			require.NoError(t, r.Storer.SetConfig(cfg))
+			require.NoError(t, util.WriteFile(fs, "s", []byte(tc.disk), 0o644))
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			err = w.Reset(&ResetOptions{Commit: h, Mode: HardReset})
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.NotErrorIs(t, err, ErrLocalChanges)
+			require.ErrorContains(t, err, "global configuration")
+
+			body, err := util.ReadFile(fs, "s")
+			require.NoError(t, err)
+			assert.Equal(t, tc.disk, string(body))
+		})
+	}
+}
+
+// Git dies on a global attributes file name it cannot expand, even with
+// ":(optional)", where reading on would drop the attributes it names.
+func TestCheckinAttributesFailOnAGlobalFileThatCannotBeExpanded(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+
+	for _, configured := range []string{ //nolint:paralleltest // modifies global plugin state
+		"~no-such-user-here/attrs",
+		":(optional)~no-such-user-here/attrs",
+	} {
+		t.Run(configured, func(t *testing.T) {
+			host := memfs.New()
+			w := attributesWorktree(t, host, memory.NewStorage())
+			require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte("[core]\n\tattributesFile = "+configured+"\n"), 0o644))
+			cfg, err := w.r.Config()
+			require.NoError(t, err)
+
+			_, err = lazyCheckinAttributes(w, nil, cfg).keepsCRLF("a.f")
+			require.ErrorContains(t, err, "failed to expand user dir")
+		})
+	}
+}
+
+// A source may leave a scope without a file, and an optional name then
+// has none to find.
+func TestCheckinAttributesOfASourceWithoutFiles(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	w := attributesWorktree(t, memfs.New(), memory.NewStorage())
+	testconfig.RegisterSource(noAttributesFiles{xconfig.NewEmpty()})
+	t.Cleanup(registerTestConfigLoader)
+	cfg := config.NewConfig()
+	cfg.Raw.SetOption("core", "", "attributesfile", ":(optional)/abs/attrs")
+
+	keeps, err := lazyCheckinAttributes(w, nil, cfg).keepsCRLF("a.f")
+	require.NoError(t, err)
+	assert.False(t, keeps)
+}
+
+type noAttributesFiles struct{ plugin.ConfigSource }
+
+func (noAttributesFiles) AttributesFile(config.Scope, string) (billy.Basic, string, error) {
+	return nil, "", nil
+}
+
+// Git reads a relative core.attributesFile from the top of the worktree,
+// even when it leaves it, by .. or by a symlink, which the worktree's
+// filesystem refuses.
+func TestCheckinAttributesReadFilesOutsideTheWorktree(t *testing.T) {
+	for _, tc := range []struct {
+		name, configured string
+		symlink          bool
+	}{
+		{name: "parent directory", configured: "../outside/attrs"},
+		{name: "optional parent directory", configured: ":(optional)../outside/attrs"},
+		{name: "symlink to a directory", configured: "link/attrs", symlink: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "wt")
+			outside := filepath.Join(dir, "outside")
+			require.NoError(t, os.MkdirAll(outside, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(outside, "attrs"), []byte("*.f -text\n"), 0o644))
+			if tc.symlink {
+				require.NoError(t, os.MkdirAll(root, 0o755))
+				if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+					t.Skipf("cannot create a symlink: %v", err)
+				}
+			}
+			gitconfig := filepath.Join(dir, "gitconfig")
+			require.NoError(t, os.WriteFile(gitconfig, []byte("[core]\n\tattributesFile = "+tc.configured+"\n"), 0o644))
+
+			t.Setenv("GIT_CONFIG_GLOBAL", gitconfig)
+			t.Setenv("GIT_CONFIG_SYSTEM", "")
+			t.Setenv("GIT_ATTR_NOSYSTEM", "1")
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			require.NoError(t, os.Unsetenv("GIT_ATTR_SOURCE"))
+			testconfig.RegisterSource(xconfig.NewAuto())
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := PlainInit(root, false)
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			assert.True(t, keepsCRLFOf(t, w, "a.f"))
+		})
+	}
+}
+
+func TestParseBool(t *testing.T) {
+	t.Parallel()
+
+	for value, want := range map[string]bool{
+		"1": true, "true": true, "yes": true, "ON": true, "0x1": true, "1k": true, "2M": true, "-1": true, "010": true,
+		"0": false, "false": false, "no": false, "": false, "0x0": false, "0k": false, "0b1": false, "1_0": false, "x": false,
+	} {
+		assert.Equal(t, want, parseBool(value), value)
+	}
+}
+
+// A tree of attributes named by GIT_ATTR_SOURCE, even an empty name where
+// Git dies, is one go-git does not read.
+func TestCheckinAttributesWithAnAttributesSource(t *testing.T) {
+	w := attributesWorktree(t, memfs.New(), memory.NewStorage())
+
+	assert.False(t, keepsCRLFOf(t, w, "a.txt"))
+
+	t.Setenv("GIT_ATTR_SOURCE", "HEAD")
+	assert.True(t, keepsCRLFOf(t, w, "a.txt"))
+
+	t.Setenv("GIT_ATTR_SOURCE", "")
+	assert.True(t, keepsCRLFOf(t, w, "a.txt"))
 }
