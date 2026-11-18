@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage"
@@ -277,7 +278,14 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
-		commit.Signature = string(sig)
+		// Git stores the signature under the header of the repository's
+		// hash algorithm, gpgsig for SHA-1 and gpgsig-sha256 for SHA-256.
+		// See gpg_sig_headers in commit.c.
+		if tree.Format() == formatcfg.SHA256 {
+			commit.SignatureSHA256 = string(sig)
+		} else {
+			commit.Signature = string(sig)
+		}
 	}
 
 	obj := w.r.Storer.NewEncodedObject()
