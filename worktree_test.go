@@ -6215,11 +6215,86 @@ func TestCleanKeepsNestedGitDirCaseVariant(t *testing.T) {
 	}
 }
 
+// A directory with tracked files is not a nested repository to Git, even
+// when it holds a .git entry, so Clean removes its untracked files as Status
+// lists them.
+func TestCleanTrackedDirectoryHoldingGitEntry(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "t/tracked", []byte("x"), 0o644))
+	_, err = w.Add("t/tracked")
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "t/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	require.NoError(t, fs.MkdirAll("t/.git/objects", 0o755))
+	require.NoError(t, fs.MkdirAll("t/.git/refs", 0o755))
+	require.NoError(t, util.WriteFile(fs, "t/junk", []byte("x"), 0o644))
+
+	status, err := w.Status()
+	require.NoError(t, err)
+	require.True(t, status.IsUntracked("t/junk"), "status: %v", status)
+
+	require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+	_, err = fs.Stat("t/junk")
+	require.ErrorIs(t, err, os.ErrNotExist, "Clean left t/junk")
+	_, err = fs.Stat("t/tracked")
+	require.NoError(t, err)
+}
+
+// On a case-insensitive filesystem a nested repository whose Git directory
+// is spelled .GIT is still a nested repository, as Git finds it through
+// sub/.git, so Clean keeps it whatever core.ignorecase says.
+func TestCleanKeepsNestedRepositorySpelledInOtherCase(t *testing.T) {
+	t.Parallel()
+
+	probe := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(probe, "probe"), nil, 0o644))
+	if _, err := os.Stat(filepath.Join(probe, "PROBE")); err != nil {
+		t.Skip("the filesystem is case-sensitive")
+	}
+
+	for _, ignoreCase := range []config.OptBool{config.OptBoolUnset, config.OptBoolFalse, config.OptBoolTrue} {
+		t.Run("ignorecase="+ignoreCase.String(), func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			r, err := PlainInit(dir, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.IgnoreCase = ignoreCase
+			require.NoError(t, r.SetConfig(cfg))
+
+			sub := filepath.Join(dir, "sub")
+			subRepo, err := PlainInit(sub, false)
+			require.NoError(t, err)
+			require.NoError(t, subRepo.Close())
+			require.NoError(t, os.Rename(filepath.Join(sub, ".git"), filepath.Join(sub, ".GIT")))
+			require.NoError(t, os.WriteFile(filepath.Join(sub, "file"), []byte("x"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			for _, p := range []string{filepath.Join(sub, ".GIT", "HEAD"), filepath.Join(sub, "file")} {
+				_, err = os.Stat(p)
+				require.NoError(t, err, "Clean removed %q", p)
+			}
+		})
+	}
+}
+
 // swapDirFS replaces dir with a symlink right after the swapAt-th listing
-// of it, as a local process racing Clean could, and records every removal.
+// of listed, as a local process racing Clean could, and records every
+// removal.
 type swapDirFS struct {
 	billy.Filesystem
 	dir     string
+	trigger string
 	swapAt  int
 	reads   int
 	listed  []string // listings after the swap
@@ -6227,11 +6302,12 @@ type swapDirFS struct {
 }
 
 func (f *swapDirFS) ReadDir(p string) ([]fs.DirEntry, error) {
+	p = filepath.ToSlash(p)
 	if f.swapAt != 0 && f.reads >= f.swapAt {
 		f.listed = append(f.listed, p)
 	}
 	entries, err := f.Filesystem.ReadDir(p)
-	if err != nil || p != f.dir {
+	if err != nil || p != f.trigger {
 		return entries, err
 	}
 	f.reads++
@@ -6247,7 +6323,7 @@ func (f *swapDirFS) ReadDir(p string) ([]fs.DirEntry, error) {
 }
 
 func (f *swapDirFS) Remove(p string) error {
-	f.removed = append(f.removed, p)
+	f.removed = append(f.removed, filepath.ToSlash(p))
 	return f.Filesystem.Remove(p)
 }
 
@@ -6260,25 +6336,28 @@ func TestCleanRefusesRemovalThroughSwappedSymlink(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name   string
-		create func(billy.Filesystem) error
-		target string
+		name    string
+		create  func(billy.Filesystem) error
+		target  string
+		trigger string
 	}{
 		{
-			name:   "file",
-			create: func(fs billy.Filesystem) error { return util.WriteFile(fs, "dir/f", []byte("x"), 0o644) },
-			target: "dir/f",
+			name:    "file",
+			create:  func(fs billy.Filesystem) error { return util.WriteFile(fs, "dir/f", []byte("x"), 0o644) },
+			target:  "dir/f",
+			trigger: "dir",
 		},
 		{
-			name:   "empty directory",
-			create: func(fs billy.Filesystem) error { return fs.MkdirAll("dir/sub", 0o755) },
-			target: "dir/sub",
+			name:    "empty directory",
+			create:  func(fs billy.Filesystem) error { return fs.MkdirAll("dir/sub", 0o755) },
+			target:  "dir/sub",
+			trigger: "dir/sub",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			sfs := &swapDirFS{Filesystem: memfs.New(), dir: "dir"}
+			sfs := &swapDirFS{Filesystem: memfs.New(), dir: "dir", trigger: tc.trigger}
 			r, err := Init(memory.NewStorage(), WithWorkTree(sfs))
 			require.NoError(t, err)
 			w, err := r.Worktree()
@@ -6289,7 +6368,7 @@ func TestCleanRefusesRemovalThroughSwappedSymlink(t *testing.T) {
 			require.NoError(t, util.WriteFile(sfs, "/outside/f", []byte("x"), 0o644))
 			require.NoError(t, sfs.MkdirAll("/outside/sub", 0o755))
 
-			// Clean runs Status first, then lists dir once more itself.
+			// Clean runs Status first, then plans from its own listing.
 			_, err = w.Status()
 			require.NoError(t, err)
 			sfs.swapAt = 2*sfs.reads + 1
@@ -6304,4 +6383,396 @@ func TestCleanRefusesRemovalThroughSwappedSymlink(t *testing.T) {
 			require.NotZero(t, fi.Mode()&os.ModeSymlink)
 		})
 	}
+}
+
+// Git keeps a directory whose .git is a Git directory or a gitfile that
+// points at one, and removes any other, as `git clean -fd` does
+// (is_nonbare_repository_dir in setup.c).
+func TestCleanNestedRepositoryNeedsRealGitEntry(t *testing.T) {
+	t.Parallel()
+
+	gitDir := func(fs billy.Filesystem, dir string) {
+		require.NoError(t, util.WriteFile(fs, dir+"/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+		require.NoError(t, fs.MkdirAll(dir+"/objects", 0o755))
+		require.NoError(t, fs.MkdirAll(dir+"/refs", 0o755))
+	}
+
+	tests := []struct {
+		name  string
+		setup func(fs billy.Filesystem)
+		kept  bool
+	}{
+		{"git directory", func(fs billy.Filesystem) { gitDir(fs, "sub/.git") }, true},
+		{"gitfile to git directory", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../real/.git\n"), 0o644))
+		}, true},
+		{"empty git directory", func(fs billy.Filesystem) { require.NoError(t, fs.MkdirAll("sub/.git", 0o755)) }, false},
+		{"empty git file", func(fs billy.Filesystem) { require.NoError(t, util.WriteFile(fs, "sub/.git", nil, 0o644)) }, false},
+		{"junk git file", func(fs billy.Filesystem) { require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("junk\n"), 0o644)) }, false},
+		{"gitfile to nothing", func(fs billy.Filesystem) {
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../elsewhere\n"), 0o644))
+		}, false},
+		{"relative linked worktree", func(fs billy.Filesystem) {
+			gitDir(fs, ".git")
+			require.NoError(t, util.WriteFile(fs, ".git/worktrees/sub/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, ".git/worktrees/sub/commondir", []byte("../..\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../.git/worktrees/sub\n"), 0o644))
+		}, true},
+		{"commondir larger than 1 MiB", func(fs billy.Filesystem) {
+			gitDir(fs, ".git")
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			content := append([]byte("../../.git\n"), bytes.Repeat([]byte("\n"), 1<<20)...)
+			require.NoError(t, util.WriteFile(fs, "sub/.git/commondir", content, 0o644))
+		}, true},
+		{"commondir below a directory that does not exist", func(fs billy.Filesystem) {
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git/commondir", []byte("../../nodir/store\n"), 0o644))
+		}, true},
+		{"empty commondir", func(fs billy.Filesystem) {
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git/commondir", nil, 0o644))
+		}, true},
+		{"commondir to a missing directory", func(fs billy.Filesystem) {
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git/commondir", []byte("../../store\n"), 0o644))
+		}, false},
+		{"gitfile with a target of PATH_MAX bytes or more", func(fs billy.Filesystem) {
+			gitDir(fs, "sub/real/.git")
+			require.NoError(t, fs.MkdirAll("sub/a", 0o755))
+			target := strings.Repeat("a/../", 900) + "real/.git"
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: "+target+"\n"), 0o644))
+		}, false},
+		{"commondir with a target of PATH_MAX bytes or more, which go-git keeps", func(fs billy.Filesystem) {
+			require.NoError(t, fs.MkdirAll("sub/.git/a", 0o755))
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			target := strings.Repeat("a/../", 900) + "../store"
+			require.NoError(t, util.WriteFile(fs, "sub/.git/commondir", []byte(target+"\n"), 0o644))
+		}, true},
+		{"symlink loop", func(fs billy.Filesystem) {
+			require.NoError(t, fs.MkdirAll("sub", 0o755))
+			require.NoError(t, fs.Symlink(".git", "sub/.git"))
+		}, false},
+		{"gitfile with an empty target", func(fs billy.Filesystem) {
+			gitDir(fs, "sub")
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: \n"), 0o644))
+		}, false},
+		{"gitfile larger than 1 MiB", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			content := append([]byte("gitdir: ../real/.git\n"), bytes.Repeat([]byte("\n"), 1<<20)...)
+			require.NoError(t, util.WriteFile(fs, "sub/.git", content, 0o644))
+		}, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			tc.setup(fs)
+			require.NoError(t, util.WriteFile(fs, "sub/file", []byte("x"), 0o644))
+
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			_, err = fs.Stat("sub/file")
+			if tc.kept {
+				require.NoError(t, err, "Clean removed a nested repository")
+			} else {
+				require.ErrorIs(t, err, os.ErrNotExist, "Clean kept a directory Git removes")
+			}
+		})
+	}
+}
+
+// unreadableFS refuses to open the files named in unreadable, as a file
+// without read permission does.
+type unreadableFS struct {
+	billy.Filesystem
+	unreadable []string
+}
+
+func (f unreadableFS) Open(name string) (billy.File, error) {
+	if slices.Contains(f.unreadable, filepath.ToSlash(name)) {
+		return nil, fs.ErrPermission
+	}
+	return f.Filesystem.Open(name)
+}
+
+// Git asks access(2) for execute permission on objects and refs, so a
+// file with an execute bit passes and one without does not. Windows has no
+// such bit, and Clean keeps the directory there.
+func TestCleanNestedRepositoryObjectsNeedExecuteBit(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no execute bit")
+	}
+
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+		kept bool
+	}{
+		{"executable file", 0o755, true},
+		{"file without execute bit", 0o644, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git/objects", []byte("x"), tc.mode))
+			require.NoError(t, fs.MkdirAll("sub/.git/refs", 0o755))
+			require.NoError(t, util.WriteFile(fs, "sub/file", []byte("x"), 0o644))
+
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			_, err = fs.Stat("sub/file")
+			if tc.kept {
+				require.NoError(t, err, "Clean removed a nested repository")
+			} else {
+				require.ErrorIs(t, err, os.ErrNotExist, "Clean kept a directory Git removes")
+			}
+		})
+	}
+}
+
+// Git dies on a gitfile or a commondir it cannot read, so Clean keeps the
+// directory rather than guess.
+func TestCleanKeepsDirectoryWithUnreadableGitEntry(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		unreadable string
+		setup      func(fs billy.Filesystem)
+	}{
+		{"gitfile", "sub/.git", func(fs billy.Filesystem) {
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../elsewhere\n"), 0o644))
+		}},
+		{"commondir", "sub/.git/commondir", func(fs billy.Filesystem) {
+			require.NoError(t, util.WriteFile(fs, "sub/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git/commondir", []byte("../elsewhere\n"), 0o644))
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mfs := memfs.New()
+			r, err := Init(memory.NewStorage(), WithWorkTree(unreadableFS{mfs, []string{tc.unreadable}}))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			tc.setup(mfs)
+			require.NoError(t, util.WriteFile(mfs, "sub/file", []byte("x"), 0o644))
+
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			_, err = mfs.Stat("sub/file")
+			require.NoError(t, err, "Clean removed a directory with a %s Git cannot read", tc.name)
+		})
+	}
+}
+
+// Git decides which nested repositories to keep while it lists what to
+// remove, before removing anything. A removal must not change that
+// decision: subE's gitfile points into estore, which Clean also removes,
+// and estore sorts first.
+func TestCleanDecidesWhatToKeepBeforeRemoving(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, util.WriteFile(fs, "estore/e/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+	require.NoError(t, fs.MkdirAll("estore/e/objects", 0o755))
+	require.NoError(t, fs.MkdirAll("estore/e/refs", 0o755))
+	require.NoError(t, util.WriteFile(fs, "estore/f", []byte("x"), 0o644))
+	require.NoError(t, util.WriteFile(fs, "subE/.git", []byte("gitdir: ../estore/e\n"), 0o644))
+	require.NoError(t, util.WriteFile(fs, "subE/file", []byte("x"), 0o644))
+
+	require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+
+	_, err = fs.Stat("subE/file")
+	require.NoError(t, err, "Clean removed a nested repository after removing its Git directory")
+	_, err = fs.Stat("estore/f")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestIsAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path string
+		dos  bool
+		abs  bool
+	}{
+		{"/x", false, true},
+		{"x", false, false},
+		{`\x`, false, false},
+		{"C:x", false, false},
+		{"/x", true, true},
+		{`\x`, true, true},
+		{"C:x", true, true},
+		{`c:\x`, true, true},
+		{"x", true, false},
+		{"1:x", true, false},
+		{"..", true, false},
+	}
+	for _, tc := range tests {
+		require.Equal(t, tc.abs, isAbsolutePath(tc.path, tc.dos), "%q dos=%v", tc.path, tc.dos)
+	}
+}
+
+// Git follows symlinks wherever it looks for a nested repository's Git
+// directory, and Clean keeps the directory in each case, including the
+// ones where the worktree filesystem refuses to read through a symlink
+// itself.
+func TestCleanFollowsSymlinks(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+
+	gitDir := func(fs billy.Filesystem, dir string) {
+		require.NoError(t, util.WriteFile(fs, dir+"/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+		require.NoError(t, fs.MkdirAll(dir+"/objects", 0o755))
+		require.NoError(t, fs.MkdirAll(dir+"/refs", 0o755))
+	}
+
+	tests := []struct {
+		name  string
+		setup func(fs billy.Filesystem)
+		kept  bool
+	}{
+		{".git to git directory", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, fs.Symlink("../real/.git", "sub/.git"))
+		}, true},
+		{".git to directory that is not a git directory", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, fs.Symlink("../real", "sub/.git"))
+		}, false},
+		{".git to nothing", func(fs billy.Filesystem) {
+			require.NoError(t, fs.Symlink("../missing", "sub/.git"))
+		}, false},
+		{".git to a symlink to git directory", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, fs.Symlink("real/.git", "l1"))
+			require.NoError(t, fs.Symlink("../l1", "sub/.git"))
+		}, true},
+		{".git to gitfile", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, util.WriteFile(fs, "gf", []byte("gitdir: ../real/.git\n"), 0o644))
+			require.NoError(t, fs.Symlink("../gf", "sub/.git"))
+		}, true},
+		{"gitfile through a symlinked directory", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, fs.Symlink("real", "link"))
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../link/.git\n"), 0o644))
+		}, true},
+		{"gitfile with .. after a symlink", func(fs billy.Filesystem) {
+			gitDir(fs, "sub/far/store")
+			require.NoError(t, fs.MkdirAll("sub/far/deep", 0o755))
+			require.NoError(t, fs.Symlink("far/deep", "sub/lnk"))
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: lnk/../store\n"), 0o644))
+		}, true},
+		{"commondir through a symlinked directory", func(fs billy.Filesystem) {
+			gitDir(fs, "real/.git")
+			require.NoError(t, fs.Symlink("real", "link"))
+			require.NoError(t, util.WriteFile(fs, "wt/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "wt/commondir", []byte("../link/.git\n"), 0o644))
+			require.NoError(t, util.WriteFile(fs, "sub/.git", []byte("gitdir: ../wt\n"), 0o644))
+		}, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, fs.MkdirAll("sub", 0o755))
+			tc.setup(fs)
+			require.NoError(t, util.WriteFile(fs, "sub/file", []byte("x"), 0o644))
+
+			require.NoError(t, w.Clean(&CleanOptions{Dir: true}))
+			_, err = fs.Stat("sub/file")
+			if tc.kept {
+				require.NoError(t, err, "Clean removed a nested repository")
+			} else {
+				require.ErrorIs(t, err, os.ErrNotExist, "Clean kept a directory Git removes")
+			}
+		})
+	}
+}
+
+// Git follows 40 symlinks and fails the 41st with ELOOP, so a nested
+// repository behind 40 links counts and one behind 41 does not.
+func TestIsNestedRepositoryFollowsFortySymlinks(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		links  int
+		nested bool
+	}{
+		{40, true},
+		{41, false},
+	} {
+		t.Run(fmt.Sprintf("%d links", tc.links), func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			require.NoError(t, util.WriteFile(fs, "sub/real/.git/HEAD", []byte("ref: refs/heads/master\n"), 0o644))
+			require.NoError(t, fs.MkdirAll("sub/real/.git/objects", 0o755))
+			require.NoError(t, fs.MkdirAll("sub/real/.git/refs", 0o755))
+			require.NoError(t, fs.Symlink("l1", "sub/.git"))
+			for i := 1; i < tc.links-1; i++ {
+				require.NoError(t, fs.Symlink(fmt.Sprintf("l%d", i+1), fmt.Sprintf("sub/l%d", i)))
+			}
+			require.NoError(t, fs.Symlink("real/.git", fmt.Sprintf("sub/l%d", tc.links-1)))
+
+			require.Equal(t, tc.nested, isNestedRepository(fs, "sub"))
+		})
+	}
+}
+
+type lstatCountingFS struct {
+	billy.Filesystem
+	lstats int
+}
+
+func (f *lstatCountingFS) Lstat(name string) (os.FileInfo, error) {
+	f.lstats++
+	return f.Filesystem.Lstat(name)
+}
+
+// Every Lstat on the worktree filesystem checks each ancestor for a
+// symlink, so a target that climbs out of a deep prefix with ".." must
+// not examine the same prefix once per component.
+func TestWorktreeRelativeExaminesDeepPrefixOnce(t *testing.T) {
+	t.Parallel()
+
+	fs := &lstatCountingFS{Filesystem: memfs.New()}
+	deep := strings.Repeat("a/", 700)
+	require.NoError(t, fs.MkdirAll("sub/"+deep, 0o755))
+
+	got, ok := worktreeRelative(fs, "sub", deep+strings.Repeat("../", 700)+"x")
+
+	require.True(t, ok)
+	require.Equal(t, filepath.Join("sub", "x"), got)
+	require.LessOrEqual(t, fs.lstats, 5)
 }
