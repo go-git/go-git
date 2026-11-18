@@ -178,9 +178,10 @@ func (s *SuiteReader) TestHeaderRejectsOverlongSizeField() {
 	s.ErrorIs(err, ErrHeaderTooLong)
 }
 
-func (s *SuiteReader) TestHeaderAcceptsExactMaxLength() {
-	// "blob " (5) + 26 size digits + NUL = 32 bytes exactly. Canonical Git
-	// accepts this; the cap is on excess, not equality.
+func (s *SuiteReader) TestHeaderReadsExactMaxLength() {
+	// "blob " (5) + 26 size digits + NUL = 32 bytes exactly. The cap is on
+	// excess, not equality, so the size field is parsed. Canonical Git
+	// rejects it there, as the size is not in canonical decimal form.
 	payload := append([]byte("blob "), bytes.Repeat([]byte{'0'}, 26)...)
 	payload = append(payload, 0)
 	s.Require().Len(payload, 32)
@@ -195,10 +196,8 @@ func (s *SuiteReader) TestHeaderAcceptsExactMaxLength() {
 	s.Require().NoError(err)
 	defer r.Close()
 
-	t, size, err := r.Header()
-	s.Require().NoError(err)
-	s.Equal(plumbing.BlobObject, t)
-	s.Equal(int64(0), size)
+	_, _, err = r.Header()
+	s.ErrorIs(err, ErrHeader)
 }
 
 func (s *SuiteReader) TestHeaderRejectsOneByteOverMaxLength() {
@@ -239,4 +238,141 @@ func (s *SuiteReader) TestReaderReadAfterHeaderError() {
 	n, readErr := r.Read(buf[:])
 	s.Error(readErr)
 	s.Equal(0, n)
+}
+
+func (s *SuiteReader) TestHeaderRejectsNonCanonicalSize() {
+	for _, size := range []string{"", "-1", "+1", "01", "00", " 1", "1 ", "0x1", "1e3"} {
+		s.Run(fmt.Sprintf("%q", size), func() {
+			payload := []byte("blob " + size + "\x00")
+			r, err := NewReader(bytes.NewReader(compress(s.T(), payload)), format.SHA1)
+			s.Require().NoError(err)
+			defer r.Close()
+
+			_, _, err = r.Header()
+			s.ErrorIs(err, ErrHeader)
+		})
+	}
+}
+
+func (s *SuiteReader) TestReadRejectsTrailingData() {
+	data := append(compress(s.T(), []byte("blob 5\x00hello")), 'x')
+	r, err := NewReader(bytes.NewReader(data), format.SHA1)
+	s.Require().NoError(err)
+	defer r.Close()
+
+	_, _, err = r.Header()
+	s.Require().NoError(err)
+
+	got, err := io.ReadAll(r)
+	s.ErrorIs(err, ErrTrailingData)
+	s.Equal([]byte("hello"), got)
+}
+
+func (s *SuiteReader) TestReadBodyMatchesDeclaredSize() {
+	tests := []struct {
+		name    string
+		payload []byte
+		want    []byte
+		wantErr error
+	}{
+		{
+			name:    "exact",
+			payload: []byte("blob 5\x00hello"),
+			want:    []byte("hello"),
+		},
+		{
+			name:    "empty",
+			payload: []byte("tree 0\x00"),
+			want:    []byte{},
+		},
+		{
+			name:    "longer than declared",
+			payload: append([]byte("blob 1\x00"), bytes.Repeat([]byte{'A'}, 64<<10)...),
+			want:    []byte("A"),
+			wantErr: ErrOverflow,
+		},
+		{
+			name:    "non-empty body for empty object",
+			payload: []byte("tree 0\x00x"),
+			want:    []byte{},
+			wantErr: ErrOverflow,
+		},
+		{
+			name:    "shorter than declared",
+			payload: []byte("blob 5\x00hi"),
+			want:    []byte("hi"),
+			wantErr: io.ErrUnexpectedEOF,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			r, err := NewReader(bytes.NewReader(compress(s.T(), tt.payload)), format.SHA1)
+			s.Require().NoError(err)
+			defer r.Close()
+
+			_, _, err = r.Header()
+			s.Require().NoError(err)
+
+			got, err := io.ReadAll(r)
+			if tt.wantErr != nil {
+				s.ErrorIs(err, tt.wantErr)
+			} else {
+				s.NoError(err)
+			}
+			s.Equal(tt.want, got)
+
+			// The result is sticky across further reads.
+			var buf [16]byte
+			n, err := r.Read(buf[:])
+			s.Equal(0, n)
+			if tt.wantErr != nil {
+				s.ErrorIs(err, tt.wantErr)
+			} else {
+				s.ErrorIs(err, io.EOF)
+			}
+		})
+	}
+}
+
+func compress(t *testing.T, payload []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	_, err := w.Write(payload)
+	assert.NoError(t, err)
+	assert.NoError(t, w.Close())
+	return buf.Bytes()
+}
+
+func (s *SuiteReader) TestUseAfterClose() {
+	newReader := func() *Reader {
+		var buf bytes.Buffer
+		w := zlib.NewWriter(&buf)
+		_, err := w.Write([]byte("blob 5\x00hello"))
+		s.Require().NoError(err)
+		s.Require().NoError(w.Close())
+
+		r, err := NewReader(&buf, format.SHA1)
+		s.Require().NoError(err)
+		return r
+	}
+
+	s.Run("Header", func() {
+		r := newReader()
+		s.Require().NoError(r.Close())
+
+		_, _, err := r.Header()
+		s.ErrorIs(err, ErrClosed)
+	})
+
+	s.Run("Read", func() {
+		r := newReader()
+		_, _, err := r.Header()
+		s.Require().NoError(err)
+		s.Require().NoError(r.Close())
+
+		_, err = r.Read(make([]byte, 5))
+		s.ErrorIs(err, ErrClosed)
+	})
 }

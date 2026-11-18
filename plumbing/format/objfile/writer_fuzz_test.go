@@ -21,7 +21,7 @@ func FuzzWriterReaderRoundTrip(f *testing.F) {
 	f.Add(byte(2), int64(1<<62))
 	f.Add(byte(3), int64(-1))
 
-	f.Fuzz(func(t *testing.T, typeIdx byte, size int64) {
+	f.Fuzz(func(_ *testing.T, typeIdx byte, size int64) {
 		types := []plumbing.ObjectType{
 			plumbing.BlobObject,
 			plumbing.TreeObject,
@@ -59,7 +59,7 @@ func FuzzWriterReaderRoundTrip(f *testing.F) {
 		if err != nil {
 			return
 		}
-		t.Cleanup(func() { _ = r.Close() })
+		defer r.Close()
 
 		gotType, gotSize, err := r.Header()
 		if err != nil {
