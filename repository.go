@@ -659,12 +659,7 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	_, preErr := os.Stat(path)
 	dirPreexisted := !os.IsNotExist(preErr)
 
-	var initOptions []InitOption
-	if !o.AllowEmptyRepo {
-		initOptions = append(initOptions, withPartialInit())
-	}
-
-	r, err := PlainInit(path, isBare, initOptions...)
+	r, err := PlainInit(path, isBare, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
