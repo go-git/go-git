@@ -303,15 +303,27 @@ func (s *UlReqEncodeSuite) TestDepthCommitsWithNotRefsError() {
 func (s *UlReqEncodeSuite) TestFilter() {
 	ur := &UploadRequest{}
 	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	ur.Capabilities.Add(capability.Filter)
 	ur.Filter = FilterTreeDepth(0)
 
 	expected := []string{
-		"want 1111111111111111111111111111111111111111\n",
+		"want 1111111111111111111111111111111111111111 filter\n",
 		"filter tree:0\n",
 		"",
 	}
 
 	testUlReqEncode(s, ur, expected)
+}
+
+func (s *UlReqEncodeSuite) TestFilterWithoutCapabilityError() {
+	ur := &UploadRequest{}
+	ur.Wants = append(ur.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	ur.Capabilities.Add(capability.OFSDelta)
+	ur.Filter = FilterBlobNone()
+
+	var buf bytes.Buffer
+	s.ErrorContains(ur.Encode(&buf), "filter capability")
+	s.Zero(buf.Len(), "nothing may be written for a request Decode would reject")
 }
 
 func (s *UlReqEncodeSuite) TestAll() {
