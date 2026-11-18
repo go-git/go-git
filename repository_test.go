@@ -33,6 +33,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	archivePkg "github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/server"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -345,6 +346,14 @@ func TestInitWithSHA1ObjectFormatLeavesConfigUntouched(t *testing.T) {
 	}
 }
 
+func TestInitWithEmptyDefaultBranch(t *testing.T) {
+	t.Parallel()
+
+	r, err := Init(memory.NewStorage(), WithDefaultBranch(""))
+	require.Error(t, err)
+	assert.Nil(t, r)
+}
+
 func TestInitWithObjectFormatUnsupportedStorer(t *testing.T) {
 	t.Parallel()
 
@@ -405,6 +414,236 @@ func TestInitDoesNotCloseCallerStorer(t *testing.T) {
 			}
 			assert.Nil(t, r)
 			assert.False(t, st.closed, "Init must not close a storer it does not own")
+		})
+	}
+}
+
+func TestInitDefaultBranchFromConfig(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	global := config.NewConfig()
+	global.Init.DefaultBranch = "trunk"
+	testconfig.Register(*global, *config.NewConfig())
+	t.Cleanup(registerTestConfigLoader)
+
+	emptyRemote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(emptyRemote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	tests := []struct {
+		name       string
+		repo       func(t *testing.T) (*Repository, error)
+		wantBranch plumbing.ReferenceName
+	}{
+		{
+			name: "Init",
+			repo: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "Init with explicit default branch",
+			repo: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithDefaultBranch("refs/heads/explicit"))
+			},
+			wantBranch: "refs/heads/explicit",
+		},
+		{
+			name: "PlainInit",
+			repo: func(t *testing.T) (*Repository, error) {
+				return PlainInit(t.TempDir(), false)
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "Clone of empty remote",
+			repo: func(*testing.T) (*Repository, error) {
+				return Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+					URL:            emptyRemote,
+					AllowEmptyRepo: true,
+				})
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "PlainClone of empty remote",
+			repo: func(t *testing.T) (*Repository, error) {
+				return PlainClone(t.TempDir(), &CloneOptions{
+					URL:            emptyRemote,
+					AllowEmptyRepo: true,
+				})
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := tc.repo(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantBranch, head.Target())
+		})
+	}
+}
+
+func TestInitInvalidDefaultBranchFromConfig(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "empty", value: ""},
+		{name: "invalid", value: "foo..bar"},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			global := config.NewConfig()
+			raw := fmt.Sprintf("[init]\n\tdefaultBranch = %s\n", tc.value)
+			require.NoError(t, global.Unmarshal([]byte(raw)))
+			testconfig.Register(*global, *config.NewConfig())
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := Init(memory.NewStorage())
+			require.ErrorContains(t, err, "invalid branch name: init.defaultBranch")
+			assert.Nil(t, r)
+
+			st := memory.NewStorage()
+			require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
+			r, err = Init(st)
+			require.ErrorIs(t, err, ErrTargetDirNotEmpty)
+			assert.Nil(t, r)
+		})
+	}
+}
+
+func TestInitDefaultBranchPrecedence(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	withBranch := func(name string) config.Config {
+		cfg := config.NewConfig()
+		cfg.Init.DefaultBranch = name
+		return *cfg
+	}
+
+	tests := []struct {
+		name   string
+		system config.Config
+		global config.Config
+		want   plumbing.ReferenceName
+	}{
+		{name: "global over system", system: withBranch("system"), global: withBranch("global"), want: "refs/heads/global"},
+		{name: "system only", system: withBranch("system"), global: *config.NewConfig(), want: "refs/heads/system"},
+		{name: "global only", system: *config.NewConfig(), global: withBranch("global"), want: "refs/heads/global"},
+		{name: "neither", system: *config.NewConfig(), global: *config.NewConfig(), want: plumbing.Master},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			testconfig.Register(tc.global, tc.system)
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := Init(memory.NewStorage())
+			require.NoError(t, err)
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, head.Target())
+		})
+	}
+}
+
+func TestInitDefaultBranchMatchesGit(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	requireGitBinary(t)
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	git(t, filepath.Dir(remote), "init", "--bare", remote)
+
+	branch := func(name string) string {
+		return "[init]\n\tdefaultBranch = " + name + "\n"
+	}
+
+	tests := []struct {
+		name   string
+		system string
+		global string
+	}{
+		{name: "unset"},
+		{name: "global", global: branch("trunk")},
+		{name: "system", system: branch("sysbranch")},
+		{name: "global over system", system: branch("sysbranch"), global: branch("trunk")},
+		{name: "invalid system under valid global", system: branch("foo..bar"), global: branch("trunk")},
+		{name: "invalid", global: branch("foo..bar")},
+		{name: "empty", global: branch("")},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			systemPath := filepath.Join(dir, "system")
+			globalPath := filepath.Join(dir, "global")
+			require.NoError(t, os.WriteFile(systemPath, []byte(tc.system), 0o600))
+			require.NoError(t, os.WriteFile(globalPath, []byte(tc.global), 0o600))
+
+			system := config.NewConfig()
+			require.NoError(t, system.Unmarshal([]byte(tc.system)))
+			global := config.NewConfig()
+			require.NoError(t, global.Unmarshal([]byte(tc.global)))
+			testconfig.Register(*global, *system)
+			t.Cleanup(registerTestConfigLoader)
+
+			// protocol.version=0 keeps git from taking the unborn HEAD of the
+			// remote, which go-git does not read yet, so that git's clone falls
+			// back to init.defaultBranch.
+			for _, op := range []struct {
+				name   string
+				git    []string
+				goGit  func(path string) (*Repository, error)
+				goPath string
+			}{
+				{
+					name: "init",
+					git:  []string{"init", filepath.Join(dir, "git-init")},
+					goGit: func(path string) (*Repository, error) {
+						return PlainInit(path, false)
+					},
+					goPath: filepath.Join(dir, "go-git-init"),
+				},
+				{
+					name: "clone of empty remote",
+					git:  []string{"-c", "protocol.version=0", "clone", remote, filepath.Join(dir, "git-clone")},
+					goGit: func(path string) (*Repository, error) {
+						return PlainClone(path, &CloneOptions{URL: remote, AllowEmptyRepo: true})
+					},
+					goPath: filepath.Join(dir, "go-git-clone"),
+				},
+			} {
+				t.Run(op.name, func(t *testing.T) {
+					cmd := gitenv.Command("git", op.git...)
+					cmd.Env = append(cmd.Env,
+						"GIT_CONFIG_NOSYSTEM=0",
+						"GIT_CONFIG_SYSTEM="+systemPath,
+						"GIT_CONFIG_GLOBAL="+globalPath,
+						"GIT_CONFIG_COUNT=0",
+						"GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=",
+					)
+					out, gitErr := cmd.CombinedOutput()
+
+					r, err := op.goGit(op.goPath)
+					if gitErr != nil {
+						require.Error(t, err, "git failed: %s", out)
+						return
+					}
+					require.NoError(t, err)
+					t.Cleanup(func() { _ = r.Close() })
+
+					gitHead := git(t, op.git[len(op.git)-1], "symbolic-ref", "HEAD")
+					head, err := r.Reference(plumbing.HEAD, false)
+					require.NoError(t, err)
+					assert.Equal(t, strings.TrimSpace(gitHead), head.Target().String())
+				})
+			}
 		})
 	}
 }
