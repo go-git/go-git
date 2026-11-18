@@ -2,6 +2,9 @@ package ssh
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +12,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport/ssh/knownhosts"
 )
 
 func TestPassword_ClientConfig(t *testing.T) {
@@ -140,6 +144,31 @@ func TestHostKeyCallbackHelper_Default(t *testing.T) {
 	cfg, err := h.SetHostKeyCallback(cfg)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.HostKeyCallback)
+}
+
+func TestPublicKeys_ClientConfigConcurrent(t *testing.T) {
+	// The known_hosts file lets the old implementation reach its racy write
+	// instead of failing early, so the race detector can catch a regression.
+	home := t.TempDir()
+	knownHosts := filepath.Join(home, ".ssh", "known_hosts")
+	require.NoError(t, os.MkdirAll(filepath.Dir(knownHosts), 0o700))
+	t.Setenv("HOME", home)
+	t.Setenv("SSH_KNOWN_HOSTS", knownHosts)
+
+	a, err := NewPublicKeys("git", testEd25519Key, "")
+	require.NoError(t, err)
+	line := knownhosts.Line([]string{"localhost"}, a.Signer.PublicKey())
+	require.NoError(t, os.WriteFile(knownHosts, []byte(line+"\n"), 0o600))
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			_, err := a.ClientConfig(context.Background(), &transport.Request{})
+			assert.NoError(t, err)
+		})
+	}
+	wg.Wait()
+	assert.Nil(t, a.HostKeyCallback)
 }
 
 func TestClientConfigMethodValue(t *testing.T) {
