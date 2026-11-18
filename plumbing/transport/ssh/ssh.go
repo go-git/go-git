@@ -65,9 +65,14 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshConn, error) {
-	config, err := t.resolveConfig(ctx, req)
+	config, agentConn, err := t.resolveConfig(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if agentConn != nil {
+		// The agent is only asked to sign during the SSH handshake, which is
+		// over by the time connect returns.
+		defer func() { _ = agentConn.Close() }()
 	}
 
 	hostWithPort, err := t.resolveHostWithPort(ctx, req)
@@ -152,9 +157,13 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	return conn, nil
 }
 
-func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, error) {
+// resolveConfig returns the SSH client config for req. When it falls back to
+// SSH agent auth, it also returns the agent connection, which the caller must
+// close.
+func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, io.Closer, error) {
 	if t.opts.ClientConfig != nil {
-		return t.opts.ClientConfig(ctx, req)
+		config, err := t.opts.ClientConfig(ctx, req)
+		return config, nil, err
 	}
 
 	username := DefaultUsername
@@ -168,9 +177,14 @@ func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (
 
 	auth, err := NewSSHAgentAuth(username)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return auth.ClientConfig(ctx, req)
+	config, err := auth.ClientConfig(ctx, req)
+	if err != nil {
+		_ = auth.Close()
+		return nil, nil, err
+	}
+	return config, auth, nil
 }
 
 func (t *Transport) dial(ctx context.Context, network, addr string, config *gossh.ClientConfig) (*gossh.Client, error) {

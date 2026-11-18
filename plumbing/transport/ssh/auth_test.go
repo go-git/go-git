@@ -89,6 +89,14 @@ func TestPublicKeysCallback_ClientConfig(t *testing.T) {
 	assert.NotNil(t, cfg.HostKeyCallback)
 }
 
+func TestPublicKeysCallback_CloseWithoutAgent(t *testing.T) {
+	t.Parallel()
+
+	var nilAuth *PublicKeysCallback
+	require.NoError(t, nilAuth.Close())
+	require.NoError(t, (&PublicKeysCallback{User: "git"}).Close())
+}
+
 func TestKeyboardInteractive_ClientConfig(t *testing.T) {
 	t.Parallel()
 
