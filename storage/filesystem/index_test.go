@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
@@ -306,20 +308,71 @@ func TestIndexCacheIsolatesSetIndexCallerEntryMutation(t *testing.T) {
 	assert.Equal(t, original, got.Entries[0].Hash)
 }
 
-func TestSetIndexDoesNotCacheTheCacheTree(t *testing.T) {
+func singleFileTreeHash(name string, blob plumbing.Hash) plumbing.Hash {
+	body := append([]byte("100644 "+name+"\x00"), blob.Bytes()...)
+	h := plumbing.NewHasher(formatcfg.SHA1, plumbing.TreeObject, int64(len(body)))
+	_, _ = h.Write(body)
+	return h.Sum()
+}
+
+// A cache-tree that describes the entries being written is kept, in the
+// cached copy as in the file, and a claim that does not is invalidated in
+// both.
+func TestSetIndexKeepsTheCacheTreeItCanVouchFor(t *testing.T) {
+	t.Parallel()
+
+	blob := plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198")
+	for name, tc := range map[string]struct {
+		hash  plumbing.Hash
+		valid bool
+	}{
+		"accurate": {singleFileTreeHash("foo.go", blob), true},
+		"stale":    {plumbing.NewHash("1111111111111111111111111111111111111111"), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			sto, _ := newIndexStorageWithSpy(t)
+			defer func() { _ = sto.Close() }()
+
+			require.NoError(t, sto.SetIndex(&index.Index{
+				Version: 2,
+				Entries: []*index.Entry{{Hash: blob, Mode: filemode.Regular, Name: "foo.go"}},
+				Cache:   &index.Tree{Entries: []index.TreeEntry{{Entries: 1, Hash: tc.hash}}},
+			}))
+
+			got, err := sto.Index()
+			require.NoError(t, err)
+			require.NotNil(t, got.Cache)
+			require.Len(t, got.Cache.Entries, 1)
+			assert.Equal(t, tc.valid, got.Cache.Entries[0].Entries >= 0)
+			if tc.valid {
+				assert.Equal(t, tc.hash, got.Cache.Entries[0].Hash)
+			}
+		})
+	}
+}
+
+// The index handed out is the caller's to change, cache-tree included.
+func TestIndexCacheIsolatesCacheTreeInvalidation(t *testing.T) {
 	t.Parallel()
 	sto, _ := newIndexStorageWithSpy(t)
 	defer func() { _ = sto.Close() }()
 
+	blob := plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198")
+	hash := singleFileTreeHash("foo.go", blob)
 	require.NoError(t, sto.SetIndex(&index.Index{
 		Version: 2,
-		Entries: []*index.Entry{
-			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
-		},
-		Cache: &index.Tree{Entries: []index.TreeEntry{{Entries: 1}}},
+		Entries: []*index.Entry{{Hash: blob, Mode: filemode.Regular, Name: "foo.go"}},
+		Cache:   &index.Tree{Entries: []index.TreeEntry{{Entries: 1, Hash: hash}}},
 	}))
 
-	got, err := sto.Index()
+	first, err := sto.Index()
 	require.NoError(t, err)
-	assert.Nil(t, got.Cache)
+	first.InvalidateCache("foo.go")
+
+	second, err := sto.Index()
+	require.NoError(t, err)
+	require.NotNil(t, second.Cache)
+	assert.Equal(t, 1, second.Cache.Entries[0].Entries)
+	assert.Equal(t, hash, second.Cache.Entries[0].Hash)
 }

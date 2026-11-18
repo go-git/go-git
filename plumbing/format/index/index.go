@@ -49,7 +49,10 @@ type Index struct {
 	// Entries collection of entries represented by this Index. The order of
 	// this collection is not guaranteed
 	Entries []*Entry
-	// Cache represents the 'Cached tree' extension
+	// Cache represents the 'Cached tree' extension. Code that changes Entries
+	// must invalidate the directories it touches with InvalidateCache; a
+	// cache-tree that describes other entries than Entries must not be stored
+	// or trusted, which PruneCache enforces.
 	Cache *Tree
 	// ResolveUndo represents the 'Resolve undo' extension
 	ResolveUndo *ResolveUndo

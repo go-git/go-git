@@ -45,7 +45,9 @@ type RootNodeOptions struct {
 	//
 	// The cache-tree must describe idx.Entries. That holds for an index
 	// decoded from a file; an index whose entries were changed since must
-	// have its Cache cleared or updated.
+	// have the changed directories invalidated with Index.InvalidateCache,
+	// or be pruned with Index.PruneCache; go-git does the latter before it
+	// stores an index.
 	CacheTree bool
 }
 
