@@ -290,6 +290,31 @@ func (s *SuiteDotGit) TestReferenceNameRejectsNamesOnlyValidateCatches() {
 	s.Empty(entries, "no refused name may have become a path")
 }
 
+func (s *SuiteDotGit) TestSetRefRejectsInvalidSymbolicTarget() {
+	d := New(s.EmptyFS())
+	s.Require().NoError(d.Initialize())
+
+	for _, target := range []plumbing.ReferenceName{
+		"../../config",
+		"refs/heads/../../config",
+		"/etc/passwd",
+		"config",
+		"CONFIG",
+		"refs/heads/con\x01fig",
+	} {
+		err := d.SetRef(plumbing.NewSymbolicReference("refs/remotes/origin/HEAD", target), nil)
+		s.ErrorIs(err, ErrReferenceNameEscape, "target %q", target)
+		s.ErrorIs(err, plumbing.ErrInvalidReferenceName, "target %q", target)
+	}
+
+	_, err := d.fs.Stat(d.fs.Join(refsPath, "remotes", "origin", "HEAD"))
+	s.ErrorIs(err, os.ErrNotExist)
+
+	s.NoError(d.SetRef(plumbing.NewSymbolicReference("refs/remotes/origin/HEAD", "refs/remotes/origin/main"), nil))
+	s.NoError(d.SetRef(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Invalid), nil),
+		"git clone points HEAD at a placeholder that fails the format rules but is safe")
+}
+
 // Git's files backend updates refs/heads/main by creating refs/heads/main.lock
 // beside it, so the longest reference git can move stops that suffix short of
 // the longest one a directory entry can hold. go-git writes the file in place

@@ -1478,7 +1478,8 @@ func (d *DotGit) checkReferenceAndTruncate(f billy.File, old *plumbing.Reference
 }
 
 // SetRef stores a reference, optionally checking that old matches the current value.
-// The reference name must pass the write checks described by DotGit.
+// The reference name must pass the write checks described by DotGit, and the
+// target of a symbolic reference must pass the read checks.
 func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 	if err := validNewReferenceName(r.Name()); err != nil {
 		return err
@@ -1487,6 +1488,15 @@ func (d *DotGit) SetRef(r, old *plumbing.Reference) error {
 	var content string
 	switch r.Type() {
 	case plumbing.SymbolicReference:
+		// The target becomes a path under .git each time the reference is
+		// resolved, and a remote can choose it through a symref-target. Git
+		// writes a target verbatim and refuses to resolve one that fails
+		// refname_is_safe, so only path safety is required here. A target
+		// that fails the format rules, such as clone's refs/heads/.invalid
+		// placeholder, is still accepted.
+		if err := validReferenceName(r.Target()); err != nil {
+			return fmt.Errorf("symbolic reference %q target: %w", r.Name(), err)
+		}
 		content = fmt.Sprintf("ref: %s\n", r.Target())
 	case plumbing.HashReference:
 		content = fmt.Sprintln(r.Hash().String())
