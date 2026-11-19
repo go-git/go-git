@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/fixtureutil"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 )
 
@@ -59,4 +60,35 @@ func TestFSObjectConcurrentReader(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestFSObjectReaderAfterFailedReopen verifies that Reader returns an
+// error, and does not panic, on each call when the pack handle is
+// closed and the pack cannot be opened again. An earlier Reader kept
+// the nil handle from the failed open, so the next call panicked.
+// See https://github.com/go-git/go-git/issues/1787.
+func TestFSObjectReaderAfterFailedReopen(t *testing.T) {
+	t.Parallel()
+
+	fs := osfs.New(t.TempDir())
+	closedPack, err := fs.Create("closed.pack")
+	require.NoError(t, err)
+	require.NoError(t, closedPack.Close())
+
+	obj := packfile.NewFSObject(
+		plumbing.ZeroHash,
+		plumbing.BlobObject,
+		0,
+		1,
+		nil,
+		fs,
+		closedPack,
+		"missing.pack",
+		cache.NewObjectLRUDefault(),
+	)
+
+	for range 2 {
+		_, err := obj.Reader()
+		require.Error(t, err)
+	}
 }
