@@ -734,3 +734,19 @@ func (s *UlReqDecodeSuite) TestFilterRoundTrip() {
 	s.Equal(want.Filter, got.Filter)
 	s.Equal(want.Depth, got.Depth)
 }
+
+func (s *UlReqDecodeSuite) TestHavesInvalidHash() {
+	for _, have := range []string{
+		"have 2222",
+		"have 2222222222222222222222222222222222222222aa",
+		"have zz22222222222222222222222222222222222222",
+	} {
+		var buf bytes.Buffer
+		_, err := pktline.WriteString(&buf, have+"\n")
+		s.Require().NoError(err)
+
+		var hav UploadHaves
+		s.ErrorContains(hav.Decode(&buf), "invalid have line", have)
+		s.Empty(hav.Haves, have)
+	}
+}
