@@ -238,20 +238,65 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 	}
 }
 
-// Scanner returns the Packfile's inner scanner.
+// GetUnresolvedByOffset returns the object stored at offset without
+// applying deltas to it.
 //
-// Deprecated: this will be removed in future versions of the packfile package
-// to avoid exposing the package internals and to improve its thread-safety.
-// TODO: Remove Scanner method
-func (p *Packfile) Scanner() (*Scanner, error) {
+// When the entry is a delta, obj holds the delta instructions, with
+// plumbing.OFSDeltaObject or plumbing.REFDeltaObject as its type. base
+// is the hash of the delta base, and size is the size declared in the
+// entry header, which is the size of the delta data. The caller is
+// responsible for resolving the delta against base, for example with
+// PatchDelta.
+//
+// Otherwise obj is the same object GetByOffset returns, base is the
+// zero hash and size is 0.
+func (p *Packfile) GetUnresolvedByOffset(offset int64) (obj plumbing.EncodedObject, base plumbing.Hash, size int64, err error) {
 	if p.closed.Load() {
-		return nil, fs.ErrClosed
+		return nil, plumbing.ZeroHash, 0, fs.ErrClosed
 	}
 	if err := p.init(); err != nil {
-		return nil, err
+		return nil, plumbing.ZeroHash, 0, err
+	}
+	p.m.Lock()
+	defer p.m.Unlock()
+	if p.closed.Load() {
+		return nil, plumbing.ZeroHash, 0, fs.ErrClosed
 	}
 
-	return p.scanner, nil
+	if err := p.scanner.SeekFromStart(offset); err != nil {
+		return nil, plumbing.ZeroHash, 0, err
+	}
+	if !p.scanner.Scan() {
+		return nil, plumbing.ZeroHash, 0, fmt.Errorf("failed to decode delta object")
+	}
+
+	header := p.scanner.Data().Value().(ObjectHeader)
+
+	switch header.Type {
+	case plumbing.REFDeltaObject:
+		base = header.Reference
+	case plumbing.OFSDeltaObject:
+		base, err = p.FindHash(header.OffsetReference)
+		if err != nil {
+			return nil, plumbing.ZeroHash, 0, err
+		}
+	default:
+		obj, err = p.getByOffset(offset)
+		return obj, plumbing.ZeroHash, 0, err
+	}
+
+	delta := &plumbing.MemoryObject{}
+	delta.SetType(header.Type)
+	w, err := delta.Writer()
+	if err != nil {
+		return nil, plumbing.ZeroHash, 0, err
+	}
+
+	if err := p.scanner.WriteObject(&header, w); err != nil {
+		return nil, plumbing.ZeroHash, 0, err
+	}
+
+	return delta, base, header.Size, nil
 }
 
 // ID returns the ID of the packfile, which is the checksum at the end of it.
