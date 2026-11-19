@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
@@ -320,16 +321,9 @@ func UploadPack(
 
 	// TODO: Support shallow-file
 	// TODO: Support thin-pack
-	var packWindow uint
-	if opts.SkipDeltaCompression {
-		packWindow = 0
-	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
-		packWindow = cfg.Pack.Window
-	} else {
-		packWindow = config.DefaultPackWindow
-	}
+	packWindow, objectFormat := packConfig(st, opts.SkipDeltaCompression)
 
-	e := packfile.NewEncoder(writer, st, false)
+	e := packfile.NewEncoder(writer, st, false, packfile.WithObjectFormat(objectFormat))
 	_, err = e.Encode(objs, packWindow)
 	if err != nil {
 		return fmt.Errorf("encoding packfile: %w", err)
@@ -346,6 +340,22 @@ func UploadPack(
 	}
 
 	return nil
+}
+
+// packConfig returns the delta window and the object format of the
+// pack to send from st. Without a readable config, it uses the default
+// window and the default object format, SHA-1.
+func packConfig(st storage.Storer, skipDeltaCompression bool) (uint, hash.ObjectFormat) {
+	window := uint(config.DefaultPackWindow)
+	var of hash.ObjectFormat
+	if cfg, err := st.Config(); err == nil && cfg != nil {
+		window = cfg.Pack.Window
+		of = cfg.Extensions.ObjectFormat
+	}
+	if skipDeltaCompression {
+		window = 0
+	}
+	return window, of
 }
 
 func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
@@ -804,16 +814,9 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	// is honored by construction; there is nothing to suppress.
 	writer := sideband.NewMuxer(sideband.Sideband64k, w)
 
-	var packWindow uint
-	if opts.SkipDeltaCompression {
-		packWindow = 0
-	} else if cfg, cerr := st.Config(); cerr == nil && cfg != nil {
-		packWindow = cfg.Pack.Window
-	} else {
-		packWindow = config.DefaultPackWindow
-	}
+	packWindow, objectFormat := packConfig(st, opts.SkipDeltaCompression)
 
-	e := packfile.NewEncoder(writer, st, false)
+	e := packfile.NewEncoder(writer, st, false, packfile.WithObjectFormat(objectFormat))
 	if _, err := e.Encode(objs, packWindow); err != nil {
 		return true, fmt.Errorf("encoding packfile: %w", err)
 	}

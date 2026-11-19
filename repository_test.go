@@ -4227,6 +4227,27 @@ func (s *RepositorySuite) TestRepackObjectsKeepsPackWithoutIndex() {
 	s.Require().NoError(err)
 }
 
+func TestRepackObjectsSHA256(t *testing.T) {
+	t.Parallel()
+
+	r, err := PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	_ = CommitNewFile(t, r, "File1")
+	head := CommitNewFile(t, r, "File2")
+
+	require.NoError(t, r.RepackObjects(&RepackConfig{}))
+
+	packs, err := r.Storer.(storer.PackedObjectStorer).ObjectPacks()
+	require.NoError(t, err)
+	require.Len(t, packs, 1)
+	assert.Equal(t, formatcfg.SHA256, packs[0].Format())
+
+	commit, err := r.CommitObject(head)
+	require.NoError(t, err)
+	_, err = commit.Tree()
+	require.NoError(t, err)
+}
+
 // The loose-objects task packs every loose object into loose-<hash>.pack,
 // including blobs only the index reaches. RepackObjects packs only what the
 // refs reach, whereas `git repack` also passes --indexed-objects and --reflog

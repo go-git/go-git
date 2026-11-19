@@ -312,7 +312,7 @@ func BenchmarkParseBasic(b *testing.B) {
 		var scanOpts []packfile.ScannerOption
 		var parseOpts []packfile.ParserOption
 		if f.ObjectFormat == "sha256" {
-			scanOpts = append(scanOpts, packfile.WithSHA256())
+			scanOpts = append(scanOpts, packfile.WithObjectFormat(config.SHA256))
 			parseOpts = append(parseOpts, packfile.WithObjectFormat(config.SHA256))
 		}
 

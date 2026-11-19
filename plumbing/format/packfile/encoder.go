@@ -1,14 +1,11 @@
 package packfile
 
 import (
-	"crypto"
 	"errors"
 	"fmt"
 	"io"
 
-	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
-	cfgformat "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -37,12 +34,22 @@ type Encoder struct {
 	w              *offsetWriter
 	zw             sync.ZlibWriter
 	hasher         hash.Hash
+	objectFormat   hash.ObjectFormat
+	// err holds the error for an unsupported objectFormat, which Encode
+	// returns.
+	err error
 
 	useRefDeltas bool
 }
 
 // EncoderOption configures an Encoder at construction time.
-type EncoderOption func(*Encoder)
+type EncoderOption interface {
+	applyEncoder(*Encoder)
+}
+
+type encoderOptionFunc func(*Encoder)
+
+func (f encoderOptionFunc) applyEncoder(e *Encoder) { f(e) }
 
 // WithObjectSelector overrides the ObjectSelector used by Encode to
 // produce the object list. The default is the encoder's own
@@ -59,51 +66,49 @@ type EncoderOption func(*Encoder)
 // (e.g. when a concurrent repack invalidates a chosen delta base),
 // so the storer passed to NewEncoder must remain valid.
 func WithObjectSelector(s ObjectSelector) EncoderOption {
-	return func(e *Encoder) {
+	return encoderOptionFunc(func(e *Encoder) {
 		if s != nil {
 			e.objectSelector = s
 		}
-	}
+	})
 }
 
 // NewEncoder creates a new packfile encoder using a specific Writer and
 // EncodedObjectStorer. By default deltas used to generate the packfile will be
 // OFSDeltaObject. To use Reference deltas, set useRefDeltas to true.
 //
+// The pack is written in SHA-1 unless [WithObjectFormat] sets another
+// object format, which must be the object format of the storer: Encode
+// rejects an object whose id is of another format with
+// [ErrObjectFormatMismatch] before writing anything. An unsupported
+// format makes Encode return an error wrapping
+// [hash.ErrUnsupportedHashFunction], also before writing anything.
+//
 // Optional EncoderOptions configure encoder behavior; see
 // WithObjectSelector for the main use case (precomputed selection for
 // streaming output).
 func NewEncoder(w io.Writer, s storer.EncodedObjectStorer, useRefDeltas bool, opts ...EncoderOption) *Encoder {
-	var of cfgformat.ObjectFormat
-	if c, ok := s.(config.ConfigStorer); ok {
-		cfg, err := c.Config()
-		if err == nil {
-			of = cfg.Extensions.ObjectFormat
-		}
-	}
-
-	var h hash.Hash
-	if of == cfgformat.SHA256 {
-		h = hash.New(crypto.SHA256)
-	} else {
-		h = hash.New(crypto.SHA1)
-	}
-
-	mw := io.MultiWriter(w, h)
-	ow := newOffsetWriter(mw)
-	zw := sync.GetZlibWriter(mw)
 	sel := NewDeltaSelector(s)
 	e := &Encoder{
 		deltaSelector:  sel,
 		objectSelector: sel,
-		w:              ow,
-		zw:             zw,
-		hasher:         h,
+		objectFormat:   hash.DefaultObjectFormat,
 		useRefDeltas:   useRefDeltas,
 	}
 	for _, opt := range opts {
-		opt(e)
+		if opt != nil {
+			opt.applyEncoder(e)
+		}
 	}
+
+	if e.err = checkObjectFormat(e.objectFormat); e.err != nil {
+		return e
+	}
+
+	e.hasher = packHash(e.objectFormat)
+	mw := io.MultiWriter(w, e.hasher)
+	e.w = newOffsetWriter(mw)
+	e.zw = sync.GetZlibWriter(mw)
 	return e
 }
 
@@ -120,6 +125,10 @@ func (e *Encoder) Encode(
 	hashes []plumbing.Hash,
 	packWindow uint,
 ) (plumbing.Hash, error) {
+	if e.err != nil {
+		return plumbing.ZeroHash, e.err
+	}
+
 	objects, err := e.objectSelector.ObjectsToPack(hashes, packWindow)
 	if err != nil {
 		return plumbing.ZeroHash, err
@@ -129,6 +138,10 @@ func (e *Encoder) Encode(
 }
 
 func (e *Encoder) encode(objects []*ObjectToPack) (plumbing.Hash, error) {
+	if err := e.checkObjectFormat(objects); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
 	if err := e.head(len(objects)); err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -140,6 +153,26 @@ func (e *Encoder) encode(objects []*ObjectToPack) (plumbing.Hash, error) {
 	}
 
 	return e.footer()
+}
+
+// checkObjectFormat rejects objects whose ids, or the ids of their
+// delta bases, are of another format than the pack's. They would be
+// written as references of the wrong size, and hashed with another
+// algorithm than the pack checksum.
+func (e *Encoder) checkObjectFormat(objects []*ObjectToPack) error {
+	for _, o := range objects {
+		if f := o.Hash().Format(); f != e.objectFormat {
+			return fmt.Errorf("%w: %s object %s in a %s pack",
+				ErrObjectFormatMismatch, f, o.Hash(), e.objectFormat)
+		}
+		if o.IsDelta() {
+			if f := o.Base.Hash().Format(); f != e.objectFormat {
+				return fmt.Errorf("%w: %s delta base %s in a %s pack",
+					ErrObjectFormatMismatch, f, o.Base.Hash(), e.objectFormat)
+			}
+		}
+	}
+	return nil
 }
 
 func (e *Encoder) head(numEntries int) error {
