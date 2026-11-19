@@ -193,8 +193,8 @@ type Scanner struct {
 	// Note that delta objects are not stored.
 	storage storer.EncodedObjectStorer
 
-	*scannerReader
-	rbuf *bufio.Reader
+	reader *scannerReader
+	rbuf   *bufio.Reader
 
 	lowMemoryMode bool
 }
@@ -218,7 +218,7 @@ func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 		opt(r)
 	}
 
-	r.scannerReader = newScannerReader(rs, io.MultiWriter(crc, r.packhash), r.rbuf)
+	r.reader = newScannerReader(rs, io.MultiWriter(crc, r.packhash), r.rbuf)
 
 	return r
 }
@@ -266,10 +266,10 @@ func (r *Scanner) Scan() bool {
 // Reset resets the current scanner, enabling it to be used to scan the
 // same Packfile again.
 func (r *Scanner) Reset() error {
-	if err := r.Flush(); err != nil {
+	if err := r.reader.Flush(); err != nil {
 		return err
 	}
-	if _, err := r.Seek(0, io.SeekStart); err != nil {
+	if _, err := r.reader.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 	r.packhash.Reset()
@@ -305,7 +305,7 @@ func (r *Scanner) SeekFromStart(offset int64) error {
 		return fmt.Errorf("failed to reset and read header")
 	}
 
-	_, err := r.Seek(offset, io.SeekStart)
+	_, err := r.reader.Seek(offset, io.SeekStart)
 	return err
 }
 
@@ -324,7 +324,7 @@ func (r *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 	}
 
 	// Not a seeker data source.
-	if r.seeker == nil {
+	if r.reader.seeker == nil {
 		return plumbing.ErrObjectNotFound
 	}
 
@@ -338,12 +338,12 @@ func (r *Scanner) WriteObject(oh *ObjectHeader, writer io.Writer) error {
 
 func (r *Scanner) inflateContent(contentOffset int64, writer io.Writer, declaredSize int64) error {
 	bounded := &boundedWriter{w: writer, limit: declaredSize}
-	_, err := r.Seek(contentOffset, io.SeekStart)
+	_, err := r.reader.Seek(contentOffset, io.SeekStart)
 	if err != nil {
 		return err
 	}
 
-	zr, err := gogitsync.GetZlibReader(r.scannerReader)
+	zr, err := gogitsync.GetZlibReader(r.reader)
 	if err != nil {
 		return fmt.Errorf("zlib reset error: %w", err)
 	}
@@ -387,7 +387,7 @@ type stateFn func(*Scanner) (stateFn, error)
 func packHeaderSignature(r *Scanner) (stateFn, error) {
 	start := make([]byte, 4)
 	// Input too short to hold a signature falls through to ErrBadSignature.
-	_, err := io.ReadFull(r, start)
+	_, err := io.ReadFull(r.reader, start)
 	if err == io.EOF {
 		return nil, ErrEmptyPackfile
 	}
@@ -406,7 +406,7 @@ func packHeaderSignature(r *Scanner) (stateFn, error) {
 // when the version cannot be parsed. If a valid version is parsed, but it is
 // not currently supported, it returns [ErrUnsupportedVersion] instead.
 func packVersion(r *Scanner) (stateFn, error) {
-	version, err := binary.ReadUint32(r.scannerReader)
+	version, err := binary.ReadUint32(r.reader)
 	if err != nil {
 		return nil, fmt.Errorf("read version: %w", err)
 	}
@@ -425,7 +425,7 @@ func packVersion(r *Scanner) (stateFn, error) {
 //
 // This state ends the packfile header chain.
 func packObjectsQty(r *Scanner) (stateFn, error) {
-	qty, err := binary.ReadUint32(r.scannerReader)
+	qty, err := binary.ReadUint32(r.reader)
 	if err != nil {
 		return nil, fmt.Errorf("read number of objects: %w", err)
 	}
@@ -448,7 +448,7 @@ func packObjectsQty(r *Scanner) (stateFn, error) {
 // leaves the reader at the start of the entry's compressed content.
 func (r *Scanner) readObjectHeader(offset int64) (ObjectHeader, error) {
 	b := []byte{0}
-	_, err := r.Read(b)
+	_, err := r.reader.Read(b)
 	if err != nil {
 		return ObjectHeader{}, err
 	}
@@ -458,7 +458,7 @@ func (r *Scanner) readObjectHeader(offset int64) (ObjectHeader, error) {
 		return ObjectHeader{}, fmt.Errorf("%w: invalid object type: %v", ErrMalformedPackfile, b[0])
 	}
 
-	size, err := packutil.VariableLengthSize(b[0], r)
+	size, err := packutil.VariableLengthSize(b[0], r.reader)
 	if err != nil {
 		if errors.Is(err, packutil.ErrLengthOverflow) {
 			return ObjectHeader{}, fmt.Errorf("%w: %w", ErrMalformedPackfile, err)
@@ -479,7 +479,7 @@ func (r *Scanner) readObjectHeader(offset int64) (ObjectHeader, error) {
 
 		// For delta objects, we need to skip the base reference
 		if oh.Type == plumbing.OFSDeltaObject {
-			no, err := binary.ReadVariableWidthInt(r.scannerReader)
+			no, err := binary.ReadVariableWidthInt(r.reader)
 			if err != nil {
 				return ObjectHeader{}, err
 			}
@@ -489,7 +489,7 @@ func (r *Scanner) readObjectHeader(offset int64) (ObjectHeader, error) {
 			oh.OffsetReference = oh.Offset - no
 		} else {
 			oh.Reference.ResetBySize(r.objectIDSize)
-			_, err := oh.Reference.ReadFrom(r.scannerReader)
+			_, err := oh.Reference.ReadFrom(r.reader)
 			if err != nil {
 				return ObjectHeader{}, err
 			}
@@ -506,7 +506,7 @@ func (r *Scanner) objectHeaderAt(offset int64) (ObjectHeader, error) {
 	if err := r.SeekFromStart(offset); err != nil {
 		return ObjectHeader{}, err
 	}
-	if err := r.Flush(); err != nil {
+	if err := r.reader.Flush(); err != nil {
 		return ObjectHeader{}, err
 	}
 	return r.readObjectHeader(offset)
@@ -525,9 +525,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	}
 	r.objIndex++
 
-	offset := r.offset
+	offset := r.reader.offset
 
-	if err := r.Flush(); err != nil {
+	if err := r.reader.Flush(); err != nil {
 		return nil, err
 	}
 	r.crc.Reset()
@@ -537,9 +537,9 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		return nil, err
 	}
 
-	oh.ContentOffset = r.offset
+	oh.ContentOffset = r.reader.offset
 
-	zr, err := gogitsync.GetZlibReader(r.scannerReader)
+	zr, err := gogitsync.GetZlibReader(r.reader)
 	if err != nil {
 		return nil, fmt.Errorf("zlib reset error: %w", err)
 	}
@@ -563,7 +563,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	// If low memory mode isn't supported, and either the reader
 	// isn't seekable or this is a delta object, keep the contents
 	// of the objects in memory.
-	if !r.lowMemoryMode && (oh.Type.IsDelta() || r.seeker == nil) {
+	if !r.lowMemoryMode && (oh.Type.IsDelta() || r.reader.seeker == nil) {
 		oh.content = gogitsync.GetBytesBuffer()
 		mw = io.MultiWriter(mw, oh.content)
 	}
@@ -583,7 +583,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 		return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, ErrInflatedSizeShort)
 	}
 
-	if err := r.Flush(); err != nil {
+	if err := r.reader.Flush(); err != nil {
 		return nil, err
 	}
 
@@ -603,7 +603,7 @@ func objectEntry(r *Scanner) (stateFn, error) {
 // calculated during the scanning process, an [ErrMalformedPackfile] is
 // returned.
 func packFooter(r *Scanner) (stateFn, error) {
-	if err := r.Flush(); err != nil {
+	if err := r.reader.Flush(); err != nil {
 		return nil, err
 	}
 
@@ -611,7 +611,7 @@ func packFooter(r *Scanner) (stateFn, error) {
 
 	var checksum plumbing.Hash
 	checksum.ResetBySize(r.objectIDSize)
-	_, err := checksum.ReadFrom(r.scannerReader)
+	_, err := checksum.ReadFrom(r.reader)
 	if err != nil {
 		return nil, fmt.Errorf("read pack checksum: %w", err)
 	}
@@ -623,7 +623,7 @@ func packFooter(r *Scanner) (stateFn, error) {
 
 	r.packData.Section = FooterSection
 	r.packData.checksum = checksum
-	r.packSize = r.offset
+	r.packSize = r.reader.offset
 	r.nextFn = nil
 
 	return nil, nil

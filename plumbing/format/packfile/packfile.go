@@ -404,13 +404,13 @@ func (p *Packfile) init() error {
 			}
 			p.id = id
 		} else {
-			_, err := p.scanner.Seek(-int64(p.objectIDSize), io.SeekEnd)
+			_, err := p.scanner.reader.Seek(-int64(p.objectIDSize), io.SeekEnd)
 			if err != nil {
 				p.onceErr = err
 				return
 			}
 			p.id.ResetBySize(p.objectIDSize)
-			_, err = p.id.ReadFrom(p.scanner)
+			_, err = p.id.ReadFrom(p.scanner.reader)
 			if err != nil {
 				p.onceErr = err
 			}

@@ -29,10 +29,8 @@ func (s *WriterSuite) TestWriter() {
 	f := fixtures.Basic().One()
 	pf, err := f.Packfile()
 	s.Require().NoError(err)
-	scanner := packfile.NewScanner(pf)
-
 	obs := new(idxfile.Writer)
-	parser := packfile.NewParser(scanner, packfile.WithScannerObservers(obs))
+	parser := packfile.NewParser(pf, packfile.WithScannerObservers(obs))
 
 	_, err = parser.Parse()
 	s.NoError(err)
