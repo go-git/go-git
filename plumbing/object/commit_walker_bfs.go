@@ -14,14 +14,15 @@ type bfsCommitIterator struct {
 	queue        []*Commit
 }
 
-// NewCommitIterBSF returns a CommitIter that walks the commit history,
-// starting at the given commit and visiting its parents in pre-order.
-// The given callback will be called for each visited commit. Each commit will
-// be visited only once. If the callback returns an error, walking will stop
-// and will return the error. Other errors might be returned if the history
-// cannot be traversed (e.g. missing objects). Ignore allows to skip some
-// commits from being iterated.
-func NewCommitIterBSF(
+// NewCommitIterBFS returns a CommitIter that walks the commit history
+// breadth-first, starting at the given commit. Commits are visited in order
+// of their distance, in parent links, from the starting commit.
+// Each commit is visited only once. ForEach calls its callback for each
+// visited commit. If the callback returns an error, the walk stops and ForEach
+// returns that error, or nil if the error is storer.ErrStop. Other errors
+// might be returned if the history cannot be traversed (e.g. missing objects).
+// Ignore allows to skip some commits from being iterated.
+func NewCommitIterBFS(
 	c *Commit,
 	seenExternal map[plumbing.Hash]bool,
 	ignore []plumbing.Hash,

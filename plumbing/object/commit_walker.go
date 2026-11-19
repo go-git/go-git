@@ -41,11 +41,11 @@ func forEachCommit(next func() (*Commit, error), cb func(*Commit) error) error {
 
 // NewCommitPreorderIter returns a CommitIter that walks the commit history,
 // starting at the given commit and visiting its parents in pre-order.
-// The given callback will be called for each visited commit. Each commit will
-// be visited only once. If the callback returns an error, walking will stop
-// and will return the error. Other errors might be returned if the history
-// cannot be traversed (e.g. missing objects). Ignore allows to skip some
-// commits from being iterated.
+// Each commit is visited only once. ForEach calls its callback for each
+// visited commit. If the callback returns an error, the walk stops and ForEach
+// returns that error, or nil if the error is storer.ErrStop. Other errors
+// might be returned if the history cannot be traversed (e.g. missing objects).
+// Ignore allows to skip some commits from being iterated.
 func NewCommitPreorderIter(
 	c *Commit,
 	seenExternal map[plumbing.Hash]bool,
@@ -126,11 +126,14 @@ type commitPostIterator struct {
 	seen  map[plumbing.Hash]bool
 }
 
-// NewCommitPostorderIter returns a CommitIter that walks the commit
-// history like WalkCommitHistory but in post-order. This means that after
-// walking a merge commit, the merged commit will be walked before the base
-// it was merged on. This can be useful if you wish to see the history in
-// chronological order. Ignore allows to skip some commits from being iterated.
+// NewCommitPostorderIter returns a CommitIter that walks the commit history
+// depth-first in pre-order, starting at the given commit, like
+// NewCommitPreorderIter but visiting the parents of a merge in reverse order.
+// This yields the merged-in history before the history it was merged into.
+// Despite its name it is not a post-order walk. A commit reachable through
+// more than one path is yielded the first time it is reached, which can be
+// before some of its children. Ignore allows to skip some commits from being
+// iterated.
 func NewCommitPostorderIter(c *Commit, ignore []plumbing.Hash) CommitIter {
 	seen := make(map[plumbing.Hash]bool)
 	for _, h := range ignore {
@@ -171,30 +174,29 @@ func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
 
 func (w *commitPostIterator) Close() {}
 
-type commitPostIteratorFirstParent struct {
+type commitFirstParentIterator struct {
 	stack []*Commit
 	seen  map[plumbing.Hash]bool
 }
 
-// NewCommitPostorderIterFirstParent returns a CommitIter that walks the commit
-// history like WalkCommitHistory but in post-order.
-//
-// This option acts like the git log --first-parent flag, skipping intermediate
-// commits that were brought in via a merge commit.
+// NewCommitFirstParentIter returns a CommitIter that follows only the first
+// parent of each commit, starting at the given commit and yielding each commit
+// before its parent. This matches `git log --first-parent` from a single
+// starting commit, skipping the commits that were brought in by a merge.
 // Ignore allows to skip some commits from being iterated.
-func NewCommitPostorderIterFirstParent(c *Commit, ignore []plumbing.Hash) CommitIter {
+func NewCommitFirstParentIter(c *Commit, ignore []plumbing.Hash) CommitIter {
 	seen := make(map[plumbing.Hash]bool)
 	for _, h := range ignore {
 		seen[h] = true
 	}
 
-	return &commitPostIteratorFirstParent{
+	return &commitFirstParentIterator{
 		stack: []*Commit{c},
 		seen:  seen,
 	}
 }
 
-func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
+func (w *commitFirstParentIterator) Next() (*Commit, error) {
 	for {
 		if len(w.stack) == 0 {
 			return nil, io.EOF
@@ -218,11 +220,11 @@ func (w *commitPostIteratorFirstParent) Next() (*Commit, error) {
 	}
 }
 
-func (w *commitPostIteratorFirstParent) ForEach(cb func(*Commit) error) error {
+func (w *commitFirstParentIterator) ForEach(cb func(*Commit) error) error {
 	return forEachCommit(w.Next, cb)
 }
 
-func (w *commitPostIteratorFirstParent) Close() {}
+func (w *commitFirstParentIterator) Close() {}
 
 // commitAllIterator stands for commit iterator for all refs.
 type commitAllIterator struct {

@@ -16,8 +16,16 @@ type commitLimitIter struct {
 
 // LogLimitOptions defines limits for log traversal.
 type LogLimitOptions struct {
-	Since    *time.Time
-	Until    *time.Time
+	// Since drops commits whose committer time is before it.
+	Since *time.Time
+	// Until drops commits whose committer time is after it.
+	Until *time.Time
+	// TailHash, when set, ends the walk at the commit with this hash. The
+	// boundary is inclusive: that commit is yielded and then the walk
+	// stops. TailHash is checked after Since and Until, so a commit dropped
+	// by either of them does not stop the walk. Next returns the TailHash
+	// commit together with storer.ErrStop, and ForEach calls the callback
+	// for it and then returns nil. The zero hash disables it.
 	TailHash plumbing.Hash
 }
 

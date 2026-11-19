@@ -504,7 +504,7 @@ func nthCommitFromHead(t testing.TB, storage storer.EncodedObjectStorer, head pl
 	commit, err := object.GetCommit(storage, head)
 	require.NoError(t, err)
 
-	iter := object.NewCommitPostorderIterFirstParent(commit, nil)
+	iter := object.NewCommitFirstParentIter(commit, nil)
 	defer iter.Close()
 
 	var (
@@ -530,7 +530,7 @@ func commitHaves(t testing.TB, storage storer.EncodedObjectStorer, head plumbing
 	commit, err := object.GetCommit(storage, head)
 	require.NoError(t, err)
 
-	iter := object.NewCommitPostorderIterFirstParent(commit, nil)
+	iter := object.NewCommitFirstParentIter(commit, nil)
 	defer iter.Close()
 
 	haves := make([]plumbing.Hash, 0, n)
