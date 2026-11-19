@@ -33,10 +33,6 @@ func (s noReflogStorage) NewEncodedObject() plumbing.EncodedObject {
 	return s.sto.NewEncodedObject()
 }
 
-func (s noReflogStorage) RawObjectWriter(typ plumbing.ObjectType, sz int64) (io.WriteCloser, error) {
-	return s.sto.RawObjectWriter(typ, sz)
-}
-
 func (s noReflogStorage) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
 	return s.sto.SetEncodedObject(obj)
 }
