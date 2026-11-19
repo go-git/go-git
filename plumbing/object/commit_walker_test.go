@@ -289,11 +289,11 @@ func (s *CommitWalkerSuite) TestCommitCTimeIteratorWithIgnore() {
 	}
 }
 
-func (s *CommitWalkerSuite) TestCommitBSFIterator() {
+func (s *CommitWalkerSuite) TestCommitBFSIterator() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitIterBSF(commit, nil, nil).ForEach(func(c *Commit) error {
+	NewCommitIterBFS(commit, nil, nil).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
 		return nil
 	})
@@ -315,11 +315,11 @@ func (s *CommitWalkerSuite) TestCommitBSFIterator() {
 	}
 }
 
-func (s *CommitWalkerSuite) TestCommitBSFIteratorWithIgnore() {
+func (s *CommitWalkerSuite) TestCommitBFSIteratorWithIgnore() {
 	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
 
 	var commits []*Commit
-	NewCommitIterBSF(commit, nil, []plumbing.Hash{
+	NewCommitIterBFS(commit, nil, []plumbing.Hash{
 		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
 	}).ForEach(func(c *Commit) error {
 		commits = append(commits, c)
