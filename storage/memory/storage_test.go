@@ -306,3 +306,31 @@ func TestShallowStorageDoesNotAliasCaller(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []plumbing.Hash{hashA, hashB}, again)
 }
+
+func TestModuleInheritsObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	for _, of := range []formatcfg.ObjectFormat{formatcfg.SHA1, formatcfg.SHA256} {
+		parent := memory.NewStorage(memory.WithObjectFormat(of))
+
+		m, err := parent.Module("sub")
+		require.NoError(t, err)
+
+		cfg, err := m.Config()
+		require.NoError(t, err)
+		assert.Equal(t, of, cfg.Extensions.ObjectFormat)
+		assert.Equal(t, of.Size(), m.NewEncodedObject().Hash().Size())
+
+		again, err := parent.Module("sub")
+		require.NoError(t, err)
+		assert.Same(t, m, again)
+	}
+
+	parent := memory.NewStorage()
+	require.NoError(t, parent.SetObjectFormat(formatcfg.SHA256))
+	m, err := parent.Module("sub")
+	require.NoError(t, err)
+	cfg, err := m.Config()
+	require.NoError(t, err)
+	assert.Equal(t, formatcfg.SHA256, cfg.Extensions.ObjectFormat)
+}

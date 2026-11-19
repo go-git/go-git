@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/pathutil"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -920,4 +922,51 @@ func TestSubmoduleRepositoryAcceptsPeriodsOnlyPath(t *testing.T) {
 			t.Cleanup(func() { _ = subRepo.Close() })
 		})
 	}
+}
+
+func TestCloneRecurseSubmodulesSHA256InMemory(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	base := t.TempDir()
+	runGit := func(dir string, args ...string) string {
+		t.Helper()
+		args = append([]string{
+			"-C", dir,
+			"-c", "protocol.file.allow=always",
+			"-c", "user.name=a", "-c", "user.email=a@example.com",
+		}, args...)
+		out, err := gitenv.Command("git", args...).Output()
+		require.NoError(t, err, "git %v", args)
+		return strings.TrimSpace(string(out))
+	}
+
+	sub := filepath.Join(base, "sub")
+	super := filepath.Join(base, "super")
+	for _, dir := range []string{sub, super} {
+		runGit(base, "init", "-q", "--object-format=sha256", "-b", "main", dir)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte(dir), 0o644))
+		runGit(dir, "add", "file")
+		runGit(dir, "commit", "-q", "-m", "init")
+	}
+	runGit(super, "submodule", "add", "-q", "file://"+filepath.ToSlash(sub), "sub")
+	runGit(super, "commit", "-q", "-m", "add sub")
+	wantSub := runGit(sub, "rev-parse", "HEAD")
+	require.Len(t, wantSub, 64)
+	require.Equal(t, wantSub, runGit(super, "rev-parse", "HEAD:sub"))
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL:               "file://" + filepath.ToSlash(super),
+		RecurseSubmodules: DefaultSubmoduleRecursionDepth,
+	})
+	require.NoError(t, err)
+
+	wt, err := r.Worktree()
+	require.NoError(t, err)
+	subRepo, err := namedSubmodule(t, wt, "sub").Repository()
+	require.NoError(t, err)
+
+	head, err := subRepo.Head()
+	require.NoError(t, err)
+	require.Equal(t, wantSub, head.Hash().String())
 }

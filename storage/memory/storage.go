@@ -492,14 +492,26 @@ type ModuleStorage map[string]*Storage
 
 // Module returns the storage for the given submodule.
 func (s ModuleStorage) Module(name string) (storage.Storer, error) {
+	return s.module(name), nil
+}
+
+func (s ModuleStorage) module(name string, o ...StorageOption) *Storage {
 	if m, ok := s[name]; ok {
-		return m, nil
+		return m
 	}
 
-	m := NewStorage()
+	m := NewStorage(o...)
 	s[name] = m
 
-	return m, nil
+	return m
+}
+
+// Module returns the storage for the given submodule. A storage created
+// by this call takes the object format of s, as the filesystem storage
+// does. A submodule storage keeps the format it had when first created,
+// so later calls return it unchanged even if the format of s differs.
+func (s *Storage) Module(name string) (storage.Storer, error) {
+	return s.module(name, WithObjectFormat(s.options.objectFormat)), nil
 }
 
 // ReflogStorage implements storer.ReflogStorer for in-memory storage.
