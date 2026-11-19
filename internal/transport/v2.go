@@ -235,7 +235,7 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 			streamErr := streamPackfile(ctx, st, packReader, req.Progress, req.Filter)
 			// streamPackfile wraps packReader in a NewContextReader, so
 			// whether this may be closed is that wrapper's question to answer.
-			if ioutil.ReadFinished(ctx, streamErr) {
+			if ReadFinished(ctx, streamErr) {
 				closeReader(packReader)
 			}
 			if streamErr != nil {
