@@ -97,6 +97,35 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 	s.Len(expected, entries)
 }
 
+func (s *IdxfileSuite) TestDecodedHashesMatchParsedHashes() {
+	f := fixtures.ByTag("root-reference").One()
+
+	idxf, err := f.Idx()
+	s.Require().NoError(err)
+	idx := new(MemoryIndex)
+	s.Require().NoError(NewDecoder(idxf, hash.New(crypto.SHA1)).Decode(idx))
+
+	iter, err := idx.Entries()
+	s.Require().NoError(err)
+	defer iter.Close()
+
+	for {
+		e, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		s.Require().NoError(err)
+
+		parsed, ok := plumbing.FromHex(e.Hash.String())
+		s.Require().True(ok)
+		s.True(e.Hash == parsed, "Entries: %s", parsed)
+
+		found, err := idx.FindHash(int64(e.Offset))
+		s.Require().NoError(err)
+		s.True(found == parsed, "FindHash: %s", parsed)
+	}
+}
+
 const fixtureLarge4GB = `/3RPYwAAAAIAAAAAAAAAAAAAAAAAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEA
 AAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAA
 AAEAAAACAAAAAgAAAAIAAAACAAAAAgAAAAIAAAACAAAAAgAAAAIAAAACAAAAAgAAAAIAAAACAAAA

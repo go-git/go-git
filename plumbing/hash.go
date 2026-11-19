@@ -14,7 +14,10 @@ import (
 // Hash SHA1 hashed content
 type Hash = ObjectID
 
-// ZeroHash is an ObjectID with value zero.
+// ZeroHash is the SHA-1 ObjectID with value zero. It equals the zero
+// value of ObjectID. A SHA-256 zero id is not == ZeroHash. Use
+// [ObjectID.IsZero] to test for a zero id of any format, and [ZeroID]
+// to get the zero id of a given format.
 var ZeroHash ObjectID
 
 // NewHash return a new Hash based on a hexadecimal hash representation.
@@ -22,7 +25,7 @@ var ZeroHash ObjectID
 //
 // deprecated: Use the new FromHex instead.
 func NewHash(s string) Hash {
-	h, _ := FromHex(s)
+	h, _ := fromHexLax(s)
 	return h
 }
 

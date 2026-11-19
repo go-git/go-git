@@ -23,6 +23,13 @@ func (s *HashSuite) TestIsZero() {
 	s.False(hash.IsZero())
 }
 
+func (s *HashSuite) TestNewHashPartialInput() {
+	s.Equal("ab00000000000000000000000000000000000000", NewHash("ab").String())
+	s.Equal("8ab686eafeb1f44702738c8b0f24f2567c36da6d",
+		NewHash("8ab686eafeb1f44702738c8b0f24f2567c36da6d00").String())
+	s.True(NewHash("").IsZero())
+}
+
 func (s *HashSuite) TestHashesSort() {
 	i := []Hash{
 		NewHash("2222222222222222222222222222222222222222"),
