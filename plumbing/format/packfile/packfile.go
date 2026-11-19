@@ -12,6 +12,7 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/packfile/access"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -238,20 +239,65 @@ func (p *Packfile) GetByType(typ plumbing.ObjectType) (storer.EncodedObjectIter,
 	}
 }
 
-// Scanner returns the Packfile's inner scanner.
-//
-// Deprecated: this will be removed in future versions of the packfile package
-// to avoid exposing the package internals and to improve its thread-safety.
-// TODO: Remove Scanner method
-func (p *Packfile) Scanner() (*Scanner, error) {
+func init() {
+	access.DeltaObjectAt = func(p any, offset int64) (plumbing.EncodedObject, plumbing.Hash, int64, error) {
+		return p.(*Packfile).deltaObjectAt(offset)
+	}
+}
+
+// deltaObjectAt returns the object at offset without resolving deltas.
+// For a delta entry it returns the raw delta data, the hash of its base
+// and the size declared in the entry header. Any other entry is returned
+// fully resolved, with a zero base hash.
+func (p *Packfile) deltaObjectAt(offset int64) (plumbing.EncodedObject, plumbing.Hash, int64, error) {
 	if p.closed.Load() {
-		return nil, fs.ErrClosed
+		return nil, plumbing.ZeroHash, 0, fs.ErrClosed
 	}
 	if err := p.init(); err != nil {
-		return nil, err
+		return nil, plumbing.ZeroHash, 0, err
+	}
+	p.m.Lock()
+	defer p.m.Unlock()
+	if p.closed.Load() {
+		return nil, plumbing.ZeroHash, 0, fs.ErrClosed
 	}
 
-	return p.scanner, nil
+	if err := p.scanner.SeekFromStart(offset); err != nil {
+		return nil, plumbing.ZeroHash, 0, err
+	}
+	if !p.scanner.Scan() {
+		return nil, plumbing.ZeroHash, 0, fmt.Errorf("failed to decode delta object")
+	}
+
+	header := p.scanner.Data().Value().(ObjectHeader)
+
+	var base plumbing.Hash
+	switch header.Type {
+	case plumbing.REFDeltaObject:
+		base = header.Reference
+	case plumbing.OFSDeltaObject:
+		var err error
+		base, err = p.FindHash(header.OffsetReference)
+		if err != nil {
+			return nil, plumbing.ZeroHash, 0, err
+		}
+	default:
+		obj, err := p.getByOffset(offset)
+		return obj, plumbing.ZeroHash, 0, err
+	}
+
+	obj := &plumbing.MemoryObject{}
+	obj.SetType(header.Type)
+	w, err := obj.Writer()
+	if err != nil {
+		return nil, plumbing.ZeroHash, 0, err
+	}
+
+	if err := p.scanner.WriteObject(&header, w); err != nil {
+		return nil, plumbing.ZeroHash, 0, err
+	}
+
+	return obj, base, header.Size, nil
 }
 
 // ID returns the ID of the packfile, which is the checksum at the end of it.
