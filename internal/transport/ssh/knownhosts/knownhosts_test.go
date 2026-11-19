@@ -12,23 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Originally from: https://github.com/skeema/knownhosts/blob/main/knownhosts_test.go
+// Originally from: https://github.com/skeema/knownhosts/blob/v1.3.0/knownhosts_test.go
+// Upstream commit: 9485bdec8ed521b32ab0e9310619effa071a99d6
 
 package knownhosts
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
+	xknownhosts "golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestNewDB(t *testing.T) {
@@ -70,40 +74,12 @@ func TestNewDB(t *testing.T) {
 	}
 }
 
-func TestNew(t *testing.T) {
-	t.Parallel()
-	khPath := getTestKnownHosts(t)
-
-	// Valid path should return a callback and no error; callback should be usable
-	// in ssh.ClientConfig.HostKeyCallback
-	if kh, err := New(khPath); err != nil {
-		t.Errorf("Unexpected error from New on valid known_hosts path: %v", err)
-	} else {
-		// Confirm kh can be converted to an ssh.HostKeyCallback
-		_ = ssh.ClientConfig{
-			HostKeyCallback: ssh.HostKeyCallback(kh),
-		}
-		// Confirm return value of HostKeyCallback is an ssh.HostKeyCallback
-		_ = ssh.ClientConfig{
-			HostKeyCallback: kh.HostKeyCallback(),
-		}
-	}
-
-	// Invalid path should return an error, with or without other valid paths
-	if _, err := New(khPath + "_does_not_exist"); err == nil {
-		t.Error("Expected error from New with invalid path, but error was nil")
-	}
-	if _, err := New(khPath, khPath+"_does_not_exist"); err == nil {
-		t.Error("Expected error from New with mix of valid and invalid paths, but error was nil")
-	}
-}
-
 func TestHostKeys(t *testing.T) {
 	t.Parallel()
 	khPath := getTestKnownHosts(t)
-	kh, err := New(khPath)
+	kh, err := NewDB(khPath)
 	if err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
+		t.Fatalf("Unexpected error from NewDB: %v", err)
 	}
 
 	expectedKeyTypes := map[string][]string{
@@ -117,14 +93,14 @@ func TestHostKeys(t *testing.T) {
 		"192.168.1.102":                {}, // different port than entry in file
 	}
 	for host, expected := range expectedKeyTypes {
-		actual := kh.HostKeys(host)
+		actual := kh.hostKeys(host)
 		if len(actual) != len(expected) {
-			t.Errorf("Unexpected number of keys returned by HostKeys(%q): expected %d, found %d", host, len(expected), len(actual))
+			t.Errorf("Unexpected number of keys returned by hostKeys(%q): expected %d, found %d", host, len(expected), len(actual))
 			continue
 		}
 		for n := range expected {
 			if actualType := actual[n].Type(); expected[n] != actualType {
-				t.Errorf("Unexpected key returned by HostKeys(%q): expected key[%d] to be type %v, found %v", host, n, expected, actualType)
+				t.Errorf("Unexpected key returned by hostKeys(%q): expected key[%d] to be type %v, found %v", host, n, expected, actualType)
 				break
 			}
 		}
@@ -134,9 +110,9 @@ func TestHostKeys(t *testing.T) {
 func TestHostKeyAlgorithms(t *testing.T) {
 	t.Parallel()
 	khPath := getTestKnownHosts(t)
-	kh, err := New(khPath)
+	kh, err := NewDB(khPath)
 	if err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
+		t.Fatalf("Unexpected error from NewDB: %v", err)
 	}
 
 	expectedAlgorithms := map[string][]string{
@@ -151,13 +127,12 @@ func TestHostKeyAlgorithms(t *testing.T) {
 	}
 	for host, expected := range expectedAlgorithms {
 		actual := kh.HostKeyAlgorithms(host)
-		actual2 := HostKeyAlgorithms(kh.HostKeyCallback(), host)
-		if len(actual) != len(expected) || len(actual2) != len(expected) {
+		if len(actual) != len(expected) {
 			t.Errorf("Unexpected number of algorithms returned by HostKeyAlgorithms(%q): expected %d, found %d", host, len(expected), len(actual))
 			continue
 		}
 		for n := range expected {
-			if expected[n] != actual[n] || expected[n] != actual2[n] {
+			if expected[n] != actual[n] {
 				t.Errorf("Unexpected algorithms returned by HostKeyAlgorithms(%q): expected %v, found %v", host, expected, actual)
 				break
 			}
@@ -173,21 +148,6 @@ func TestWithCertLines(t *testing.T) {
 	appendCertTestKnownHosts(t, certKeys, khPath, "*.certy.test", ssh.KeyAlgoRSA)
 	appendCertTestKnownHosts(t, certKeys, khPath2, "*", ssh.KeyAlgoECDSA256)
 	appendCertTestKnownHosts(t, certKeys, khPath2, "*.certy.test", ssh.KeyAlgoED25519)
-
-	// Test behavior of HostKeyCallback type, which doesn't properly handle
-	// @cert-authority lines but shouldn't error on them. It should just return
-	// them as regular keys / algorithms.
-	cbOnly, err := New(khPath2, khPath)
-	if err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
-	}
-	algos := cbOnly.HostKeyAlgorithms("only-ed25519.example.test:22")
-	// algos should return ssh.KeyAlgoED25519 (as per previous test) but now also
-	// ssh.KeyAlgoECDSA256 due to the cert entry on *. They should always be in
-	// that order due to matching the file and line order from NewDB.
-	if len(algos) != 2 || algos[0] != ssh.KeyAlgoED25519 || algos[1] != ssh.KeyAlgoECDSA256 {
-		t.Errorf("Unexpected return from HostKeyCallback.HostKeyAlgorithms: %v", algos)
-	}
 
 	// Now test behavior of HostKeyDB type, which should properly support
 	// @cert-authority lines as being different from other lines
@@ -239,13 +199,13 @@ func TestWithCertLines(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		annotatedKeys := kh.HostKeys(tc.host)
+		annotatedKeys := kh.hostKeys(tc.host)
 		if len(annotatedKeys) != len(tc.expectedKeyTypes) {
-			t.Errorf("Unexpected return from HostKeys(%q): %v", tc.host, annotatedKeys)
+			t.Errorf("Unexpected return from hostKeys(%q): %v", tc.host, annotatedKeys)
 		} else {
 			for n := range annotatedKeys {
 				if annotatedKeys[n].Type() != tc.expectedKeyTypes[n] || annotatedKeys[n].Cert != tc.expectedIsCert[n] {
-					t.Errorf("Unexpected return from HostKeys(%q) at index %d: %v", tc.host, n, annotatedKeys)
+					t.Errorf("Unexpected return from hostKeys(%q) at index %d: %v", tc.host, n, annotatedKeys)
 					break
 				}
 			}
@@ -267,21 +227,22 @@ func TestWithCertLines(t *testing.T) {
 func TestIsHostKeyChanged(t *testing.T) {
 	t.Parallel()
 	khPath := getTestKnownHosts(t)
-	kh, err := New(khPath)
+	db, err := NewDB(khPath)
 	if err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
+		t.Fatalf("Unexpected error from NewDB: %v", err)
 	}
+	kh := db.HostKeyCallback()
 	noAddr, _ := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
 	pubKey := generatePubKeyEd25519(t)
 
 	// Unknown host: should return false
-	if err := kh("unknown.example.test:22", noAddr, pubKey); IsHostKeyChanged(err) {
-		t.Error("IsHostKeyChanged unexpectedly returned true for unknown host")
+	if err := kh("unknown.example.test:22", noAddr, pubKey); isHostKeyChanged(err) {
+		t.Error("isHostKeyChanged unexpectedly returned true for unknown host")
 	}
 
 	// Known host, wrong key: should return true
-	if err := kh("multi.example.test:2233", noAddr, pubKey); !IsHostKeyChanged(err) {
-		t.Error("IsHostKeyChanged unexpectedly returned false for known host with different host key")
+	if err := kh("multi.example.test:2233", noAddr, pubKey); !isHostKeyChanged(err) {
+		t.Error("isHostKeyChanged unexpectedly returned false for known host with different host key")
 	}
 
 	// Append the key for a known host that doesn't already have that key type,
@@ -290,138 +251,16 @@ func TestIsHostKeyChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
-	if err := WriteKnownHost(f, "only-ecdsa.example.test:22", noAddr, pubKey); err != nil {
+	if err := writeKnownHost(f, "only-ecdsa.example.test:22", pubKey); err != nil {
 		t.Fatalf("Unable to write known host line: %v", err)
 	}
 	f.Close()
-	if kh, err = New(khPath); err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
+	if db, err = NewDB(khPath); err != nil {
+		t.Fatalf("Unexpected error from NewDB: %v", err)
 	}
-	if err := kh("only-ecdsa.example.test:22", noAddr, pubKey); IsHostKeyChanged(err) {
-		t.Error("IsHostKeyChanged unexpectedly returned true for valid known host")
-	}
-}
-
-func TestIsHostUnknown(t *testing.T) {
-	t.Parallel()
-	khPath := getTestKnownHosts(t)
-	kh, err := New(khPath)
-	if err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
-	}
-	noAddr, _ := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
-	pubKey := generatePubKeyEd25519(t)
-
-	// Unknown host: should return true
-	if err := kh("unknown.example.test:22", noAddr, pubKey); !IsHostUnknown(err) {
-		t.Error("IsHostUnknown unexpectedly returned false for unknown host")
-	}
-
-	// Known host, wrong key: should return false
-	if err := kh("multi.example.test:2233", noAddr, pubKey); IsHostUnknown(err) {
-		t.Error("IsHostUnknown unexpectedly returned true for known host with different host key")
-	}
-
-	// Append the key for an unknown host, re-init the known_hosts, and check
-	// again: should return false
-	f, err := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
-	}
-	if err := WriteKnownHost(f, "newhost.example.test:22", noAddr, pubKey); err != nil {
-		t.Fatalf("Unable to write known host line: %v", err)
-	}
-	f.Close()
-	if kh, err = New(khPath); err != nil {
-		t.Fatalf("Unexpected error from New: %v", err)
-	}
-	if err := kh("newhost.example.test:22", noAddr, pubKey); IsHostUnknown(err) {
-		t.Error("IsHostUnknown unexpectedly returned true for valid known host")
-	}
-}
-
-func TestNormalize(t *testing.T) {
-	t.Parallel()
-	for in, want := range map[string]string{
-		"127.0.0.1":                 "127.0.0.1",
-		"127.0.0.1:22":              "127.0.0.1",
-		"[127.0.0.1]:22":            "127.0.0.1",
-		"[127.0.0.1]:23":            "[127.0.0.1]:23",
-		"127.0.0.1:23":              "[127.0.0.1]:23",
-		"[a.b.c]:22":                "a.b.c",
-		"abcd::abcd:abcd:abcd":      "abcd::abcd:abcd:abcd",
-		"[abcd::abcd:abcd:abcd]":    "abcd::abcd:abcd:abcd",
-		"[abcd::abcd:abcd:abcd]:22": "abcd::abcd:abcd:abcd",
-		"[abcd::abcd:abcd:abcd]:23": "[abcd::abcd:abcd:abcd]:23",
-	} {
-		got := Normalize(in)
-		if got != want {
-			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestLine(t *testing.T) {
-	t.Parallel()
-	edKeyStr := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF9Wn63tLEhSWl9Ye+4x2GnruH8cq0LIh2vum/fUHrFQ"
-	edKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(edKeyStr))
-	if err != nil {
-		t.Fatalf("Unable to parse authorized key: %v", err)
-	}
-	for in, want := range map[string]string{
-		"server.org":                             "server.org " + edKeyStr,
-		"server.org:22":                          "server.org " + edKeyStr,
-		"server.org:23":                          "[server.org]:23 " + edKeyStr,
-		"[c629:1ec4:102:304:102:304:102:304]:22": "c629:1ec4:102:304:102:304:102:304 " + edKeyStr,
-		"[c629:1ec4:102:304:102:304:102:304]:23": "[c629:1ec4:102:304:102:304:102:304]:23 " + edKeyStr,
-	} {
-		if got := Line([]string{in}, edKey); got != want {
-			t.Errorf("Line(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestWriteKnownHost(t *testing.T) {
-	t.Parallel()
-	edKeyStr := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF9Wn63tLEhSWl9Ye+4x2GnruH8cq0LIh2vum/fUHrFQ"
-	edKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(edKeyStr))
-	if err != nil {
-		t.Fatalf("Unable to parse authorized key: %v", err)
-	}
-	for _, m := range []struct {
-		hostname   string
-		remoteAddr string
-		want       string
-		err        string
-	}{
-		{hostname: "::1", remoteAddr: "[::1]:22", want: "::1 " + edKeyStr + "\n"},
-		{hostname: "127.0.0.1", remoteAddr: "127.0.0.1:22", want: "127.0.0.1 " + edKeyStr + "\n"},
-		{hostname: "ipv4.test", remoteAddr: "192.168.0.1:23", want: "ipv4.test,[192.168.0.1]:23 " + edKeyStr + "\n"},
-		{hostname: "ipv6.test", remoteAddr: "[ff01::1234]:23", want: "ipv6.test,[ff01::1234]:23 " + edKeyStr + "\n"},
-		{hostname: "normal.zone", remoteAddr: "[fe80::1%en0]:22", want: "normal.zone,fe80::1%en0 " + edKeyStr + "\n"},
-		{hostname: "spaces.zone", remoteAddr: "[fe80::1%Ethernet  1]:22", want: "spaces.zone " + edKeyStr + "\n"},
-		{hostname: "spaces.zone", remoteAddr: "[fe80::1%Ethernet\t2]:23", want: "spaces.zone " + edKeyStr + "\n"},
-		{hostname: "[fe80::1%Ethernet 1]:22", err: "knownhosts: hostname 'fe80::1%Ethernet 1' contains spaces"},
-		{hostname: "[fe80::1%Ethernet\t2]:23", err: "knownhosts: hostname '[fe80::1%Ethernet\t2]:23' contains spaces"},
-	} {
-		remote, err := net.ResolveTCPAddr("tcp", m.remoteAddr)
-		if err != nil {
-			t.Fatalf("Unable to resolve tcp addr: %v", err)
-		}
-		var got bytes.Buffer
-		err = WriteKnownHost(&got, m.hostname, remote, edKey)
-		if m.err != "" {
-			if err == nil || err.Error() != m.err {
-				t.Errorf("WriteKnownHost(%q) expected error %v, found %v", m.hostname, m.err, err)
-			}
-			continue
-		}
-		if err != nil {
-			t.Fatalf("Unable to write known host: %v", err)
-		}
-		if got.String() != m.want {
-			t.Errorf("WriteKnownHost(%q) = %q, want %q", m.hostname, got.String(), m.want)
-		}
+	kh = db.HostKeyCallback()
+	if err := kh("only-ecdsa.example.test:22", noAddr, pubKey); isHostKeyChanged(err) {
+		t.Error("isHostKeyChanged unexpectedly returned true for valid known host")
 	}
 }
 
@@ -465,10 +304,9 @@ func writeTestKnownHosts(t *testing.T) string {
 		t.Fatalf("Unable to open %s for writing: %v", khPath, err)
 	}
 	defer f.Close()
-	noAddr, _ := net.ResolveTCPAddr("tcp", "0.0.0.0:0")
 	for host, keys := range hosts {
 		for _, k := range keys {
-			if err := WriteKnownHost(f, host, noAddr, k); err != nil {
+			if err := writeKnownHost(f, host, k); err != nil {
 				t.Fatalf("Unable to write known host line: %v", err)
 			}
 		}
@@ -506,7 +344,7 @@ func appendCertTestKnownHosts(t *testing.T, certKeys map[string]ssh.PublicKey, f
 		t.Fatalf("Unable to open %s for writing: %v", filePath, err)
 	}
 	defer f.Close()
-	if err := WriteKnownHostCA(f, hostPattern, pubKey); err != nil {
+	if err := writeKnownHostCA(f, hostPattern, pubKey); err != nil {
 		t.Fatalf("Unable to append @cert-authority line to %s: %v", filePath, err)
 	}
 }
@@ -548,4 +386,15 @@ func generatePubKeyEd25519(t *testing.T) ssh.PublicKey {
 		t.Fatalf("Unable to convert public key: %v", err)
 	}
 	return pub
+}
+
+func writeKnownHost(w io.Writer, hostname string, key ssh.PublicKey) error {
+	_, err := io.WriteString(w, xknownhosts.Line([]string{hostname}, key)+"\n")
+	return err
+}
+
+func writeKnownHostCA(w io.Writer, hostPattern string, key ssh.PublicKey) error {
+	encodedKey := base64.StdEncoding.EncodeToString(key.Marshal())
+	_, err := fmt.Fprintf(w, "@cert-authority %s %s %s\n", hostPattern, key.Type(), encodedKey)
+	return err
 }

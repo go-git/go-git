@@ -11,8 +11,8 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/go-git/go-git/v6/internal/transport/ssh/knownhosts"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/plumbing/transport/ssh/knownhosts"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh/sshagent"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
