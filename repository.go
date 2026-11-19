@@ -1167,6 +1167,9 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Tags:          o.Tags,
 		RemoteName:    o.RemoteName,
 		Filter:        o.Filter,
+		// git clone clears wants_head for a single named branch or tag
+		// (builtin/clone.c), since the remote HEAD plays no part in it.
+		skipHead: o.SingleBranch && o.ReferenceName != plumbing.HEAD,
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
@@ -1175,6 +1178,12 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	if err != nil {
+		// git clone looks for a requested branch or tag before it checks
+		// for an empty remote (builtin/clone.c), so an empty remote cannot
+		// satisfy a named ref.
+		if o.ReferenceName != plumbing.HEAD && errors.Is(err, transport.ErrEmptyRemoteRepository) {
+			return fmt.Errorf("%w: %s", ErrRemoteRefNotFound, o.ReferenceName)
+		}
 		return err
 	}
 
