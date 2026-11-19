@@ -68,7 +68,10 @@ func (u *UploadHaves) Decode(r io.Reader) error {
 			return fmt.Errorf("invalid have line: %q", line)
 		}
 
-		have := plumbing.NewHash(strings.TrimSpace(string(line[5:])))
+		have, ok := plumbing.FromHex(strings.TrimSpace(string(line[5:])))
+		if !ok {
+			return fmt.Errorf("invalid have line: %q", line)
+		}
 		u.Haves = append(u.Haves, have)
 	}
 

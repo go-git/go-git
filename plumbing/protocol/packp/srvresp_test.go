@@ -106,6 +106,18 @@ func (s *ServerResponseSuite) TestDecodeMalformed() {
 	s.NotNil(err)
 }
 
+func (s *ServerResponseSuite) TestDecodeMalformedHash() {
+	for _, raw := range []string{
+		"0031ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584zz\n",
+		"0033ACK 6ecf0ef2c2dffb796033e5a02219af86ec6584e500\n",
+	} {
+		sr := &ServerResponse{}
+		err := sr.Decode(bytes.NewBufferString(raw))
+		s.ErrorContains(err, "malformed ACK", raw)
+		s.Empty(sr.ACKs, raw)
+	}
+}
+
 func (s *ServerResponseSuite) TestDecodeMultiACK() {
 	raw := "" +
 		"003aACK 1111111111111111111111111111111111111111 continue\n" +
