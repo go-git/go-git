@@ -222,28 +222,28 @@ func hashBlock(raw []byte, ptr int) int {
 		((uint32(raw[ptr+1]) & 0xff) << 16) |
 		((uint32(raw[ptr+2]) & 0xff) << 8) |
 		(uint32(raw[ptr+3]) & 0xff)
-	hash ^= T[hash>>31]
+	hash ^= deltaHashTable[hash>>31]
 
-	hash = ((hash << 8) | (uint32(raw[ptr+4]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+5]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+6]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+7]) & 0xff)) ^ T[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+4]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+5]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+6]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+7]) & 0xff)) ^ deltaHashTable[hash>>23]
 
-	hash = ((hash << 8) | (uint32(raw[ptr+8]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+9]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+10]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+11]) & 0xff)) ^ T[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+8]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+9]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+10]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+11]) & 0xff)) ^ deltaHashTable[hash>>23]
 
-	hash = ((hash << 8) | (uint32(raw[ptr+12]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+13]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+14]) & 0xff)) ^ T[hash>>23]
-	hash = ((hash << 8) | (uint32(raw[ptr+15]) & 0xff)) ^ T[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+12]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+13]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+14]) & 0xff)) ^ deltaHashTable[hash>>23]
+	hash = ((hash << 8) | (uint32(raw[ptr+15]) & 0xff)) ^ deltaHashTable[hash>>23]
 
 	return int(hash)
 }
 
-// T is the hash lookup table for delta index computation.
-var T = []uint32{
+// deltaHashTable is the hash lookup table for delta index computation.
+var deltaHashTable = []uint32{
 	0x00000000, 0xd4c6b32d, 0x7d4bd577,
 	0xa98d665a, 0x2e5119c3, 0xfa97aaee, 0x531accb4, 0x87dc7f99,
 	0x5ca23386, 0x886480ab, 0x21e9e6f1, 0xf52f55dc, 0x72f32a45,

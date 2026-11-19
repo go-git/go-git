@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -154,24 +155,11 @@ func copyPackfile(w io.WriteCloser, packfile io.Reader) (err error) {
 	return err
 }
 
-// ValidateOFSDeltaBase enforces the canonical-Git invariant on an
-// OFS-delta's encoded negative offset: the resolved base offset
-// (deltaOffset - negativeOffset) must be strictly positive (past the
-// 12-byte pack header) and strictly less than deltaOffset, since an
-// OFS-delta can only reference an earlier entry in the same pack.
-//
-// Mirrors canonical Git's predicate in packfile.c[1]:
-//
-//	base_offset = delta_obj_offset - base_offset;
-//	if (base_offset <= 0 || base_offset >= delta_obj_offset)
-//		return 0;  /* out of bound */
-//
-// Returns a wrapped ErrMalformedPackfile when the bounds are violated;
-// returns nil otherwise.
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1289-L1290
-func ValidateOFSDeltaBase(deltaOffset, negativeOffset int64) error {
-	if negativeOffset <= 0 || negativeOffset >= deltaOffset {
+// validateOFSDeltaBase returns a wrapped ErrMalformedPackfile when the
+// OFS-delta base offset is out of bounds. See
+// [packutil.ValidOFSDeltaBase] for the invariant.
+func validateOFSDeltaBase(deltaOffset, negativeOffset int64) error {
+	if !packutil.ValidOFSDeltaBase(deltaOffset, negativeOffset) {
 		return fmt.Errorf("%w: invalid OFS delta offset", ErrMalformedPackfile)
 	}
 	return nil

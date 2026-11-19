@@ -10,6 +10,7 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -163,7 +164,7 @@ func (o *FSObject) Reader() (io.ReadCloser, error) {
 		}
 		return nil, err
 	}
-	return NewBoundedReadCloser(&zlibReadCloser{r: zr, f: file, rbuf: br}, o.size), nil
+	return packutil.NewBoundedReadCloser(&zlibReadCloser{r: zr, f: file, rbuf: br}, o.size), nil
 }
 
 type zlibReadCloser struct {
