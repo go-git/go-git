@@ -1640,3 +1640,45 @@ func TestNewObjectStorageTakesObjectFormatFromDotGit(t *testing.T) {
 	assert.Equal(t, "blob", runGit("cat-file", "-t", h.String()))
 	assert.Equal(t, "hello", runGit("cat-file", "-p", h.String()))
 }
+
+func TestHashesWithPrefixSHA256Packed(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	runGit := func(stdin string, args ...string) string {
+		t.Helper()
+		cmd := gitenv.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.Output()
+		require.NoError(t, err, "git %v", args)
+		return strings.TrimSpace(string(out))
+	}
+	runGit("", "init", "-q", "--bare", "--object-format=sha256")
+	id := runGit("hello\n", "hash-object", "-w", "--stdin")
+	require.Len(t, id, 64)
+	runGit("", "update-ref", "refs/tags/hello", id)
+	runGit("", "repack", "-a", "-d", "-q")
+	require.Equal(t, "0 objects, 0 kilobytes", runGit("", "count-objects"))
+
+	for _, inMemoryIdx := range []bool{false, true} {
+		s := NewStorageWithOptions(osfs.New(dir), cache.NewObjectLRUDefault(), Options{
+			ObjectFormat:   formatcfg.SHA256,
+			UseInMemoryIdx: inMemoryIdx,
+		})
+		for _, n := range []int{40, 42, 62, 64} {
+			hexPrefix := id[:n]
+			assert.Equal(t, id, runGit("", "rev-parse", "--verify", "--quiet", hexPrefix))
+
+			prefix, err := hex.DecodeString(hexPrefix)
+			require.NoError(t, err)
+			hashes, err := s.HashesWithPrefix(prefix)
+			require.NoError(t, err)
+			require.Len(t, hashes, 1, "inMemoryIdx=%v prefix=%s", inMemoryIdx, hexPrefix)
+			assert.Equal(t, id, hashes[0].String())
+		}
+		require.NoError(t, s.Close())
+	}
+}

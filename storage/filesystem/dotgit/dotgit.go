@@ -1128,7 +1128,7 @@ func (d *DotGit) ObjectsWithPrefix(prefix []byte) ([]plumbing.Hash, error) {
 	// Handle edge cases.
 	if len(prefix) < 1 {
 		return d.Objects()
-	} else if len(prefix) > plumbing.ZeroHash.Size() {
+	} else if len(prefix) > d.ObjectFormat().Size() {
 		return nil, nil
 	}
 
