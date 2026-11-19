@@ -200,7 +200,7 @@ func FuzzEncoderRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("encoded graph does not open: %v", err)
 		}
-		t.Cleanup(func() { _ = out.Close() })
+		defer func() { _ = out.Close() }()
 
 		for i, want := range commits {
 			idx, err := out.GetIndexByHash(hashes[i])

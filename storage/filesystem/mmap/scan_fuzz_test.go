@@ -117,6 +117,12 @@ func FuzzPackScanner(f *testing.F) {
 		// so close every handle here: a second Close on a file the scanner
 		// already released just returns os.ErrClosed.
 		dir := t.TempDir()
+		var files []*os.File
+		defer func() {
+			for _, file := range files {
+				_ = file.Close()
+			}
+		}()
 		open := func(name string, data []byte) *os.File {
 			path := filepath.Join(dir, name)
 			if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -126,7 +132,7 @@ func FuzzPackScanner(f *testing.F) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = file.Close() })
+			files = append(files, file)
 			return file
 		}
 

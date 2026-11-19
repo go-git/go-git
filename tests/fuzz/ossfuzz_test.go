@@ -13,12 +13,14 @@
 package fuzz_test
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -94,6 +96,57 @@ func TestTargetNamesAreUnique(t *testing.T) {
 	}
 	require.Empty(t, duplicates,
 		"each target listed here is declared in more than one package, and OSS-Fuzz keeps one binary per name. Qualify the names with the package they cover")
+}
+
+func TestTargetsDoNotUseCleanup(t *testing.T) {
+	t.Parallel()
+
+	root := repoRoot(t)
+
+	// OSS-Fuzz runs targets through go-118-fuzz-build, whose T.Cleanup calls
+	// the function straight away instead of when the input is done. A target
+	// that registers a Close there keeps using what it just closed, so it
+	// fails under OSS-Fuzz while `go test -fuzz` passes. Use defer instead.
+	var calls []string
+	for _, file := range targetFiles(t, root) {
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, filepath.Join(root, file), nil, 0)
+		require.NoError(t, err)
+
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || !slices.Contains(declaredIn(t, filepath.Join(root, file)), fn.Name.Name) {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Cleanup" {
+					pos := fset.Position(call.Pos())
+					calls = append(calls, fmt.Sprintf("%s:%d", file, pos.Line))
+				}
+				return true
+			})
+		}
+	}
+	require.Empty(t, calls,
+		"these fuzz targets call Cleanup, which OSS-Fuzz runs immediately. Use defer instead")
+}
+
+// targetFiles lists the files under root that declare a fuzz target.
+func targetFiles(t *testing.T, root string) []string {
+	t.Helper()
+
+	var files []string
+	for _, tg := range findTargets(t, root) {
+		if !slices.Contains(files, tg.file) {
+			files = append(files, tg.file)
+		}
+	}
+
+	return files
 }
 
 // findTargets collects every fuzz target declared under root.
