@@ -12,13 +12,13 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
+	gogitsync "github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
 var (
