@@ -3,7 +3,6 @@ package filesystem
 import (
 	"bytes"
 	"compress/zlib"
-	"crypto"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
@@ -28,6 +27,7 @@ import (
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 )
 
@@ -460,7 +460,7 @@ func (s *FsSuite) TestPackfileIter() {
 		fs, err := f.DotGit()
 		s.Require().NoError(err)
 		dg := dotgit.New(fs)
-		objectIDSize := objectIDSizeFromFormat(f.ObjectFormat)
+		of := hash.ObjectFormat(f.ObjectFormat)
 
 		for _, t := range objectTypes {
 			ph, err := dg.ObjectPacks()
@@ -473,7 +473,7 @@ func (s *FsSuite) TestPackfileIter() {
 				idxf, err := dg.ObjectPackIdx(h)
 				s.Require().NoError(err)
 
-				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, objectIDSize)
+				iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, of)
 				s.Require().NoError(err)
 
 				err = iter.ForEach(func(o plumbing.EncodedObject) error {
@@ -484,13 +484,6 @@ func (s *FsSuite) TestPackfileIter() {
 			}
 		}
 	}
-}
-
-func objectIDSizeFromFormat(format string) int {
-	if format == "sha256" {
-		return crypto.SHA256.Size()
-	}
-	return crypto.SHA1.Size()
 }
 
 func copyFile(fs billy.Filesystem, dstFilename string, srcFile billy.File) error {
@@ -675,7 +668,7 @@ func BenchmarkPackfileIter(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, hash.SHA1)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -723,7 +716,7 @@ func BenchmarkPackfileIterReadContent(b *testing.B) {
 							b.Fatal(err)
 						}
 
-						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, crypto.SHA1.Size())
+						iter, err := NewPackfileIter(fs, f, idxf, t, false, 0, hash.SHA1)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -1542,7 +1535,7 @@ func writeRawPack(t *testing.T, fs billy.Filesystem, entries ...rawPackEntry) {
 	index, err := idx.Index()
 	require.NoError(t, err)
 	var idxFile bytes.Buffer
-	require.NoError(t, idxfile.Encode(&idxFile, sha1.New(), index))
+	require.NoError(t, idxfile.Encode(&idxFile, index))
 
 	name := fmt.Sprintf("objects/pack/pack-%s", checksum)
 	require.NoError(t, util.WriteFile(fs, name+".pack", pack.Bytes(), 0o644))

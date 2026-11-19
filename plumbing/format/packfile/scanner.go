@@ -3,7 +3,6 @@ package packfile
 import (
 	"bufio"
 	"bytes"
-	"crypto"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
@@ -174,8 +172,13 @@ type Scanner struct {
 	// packhash hashes the pack contents so that at the end it is able to
 	// validate the packfile's footer checksum against the calculated hash.
 	packhash gogithash.Hash
-	// objectIdSize holds the object ID size.
+	// objectFormat is the object format of the pack.
+	objectFormat gogithash.ObjectFormat
+	// objectIDSize holds the object ID size of objectFormat.
 	objectIDSize int
+	// formatErr holds the error for an unsupported objectFormat. Scan
+	// returns it, also after a Reset.
+	formatErr error
 	// packSize holds the size of the pack, set once its checksum is read.
 	packSize int64
 
@@ -199,26 +202,38 @@ type Scanner struct {
 	lowMemoryMode bool
 }
 
-// NewScanner creates a new instance of Scanner.
+// NewScanner creates a new instance of Scanner. The pack is read as
+// SHA-1 unless [WithObjectFormat] sets another object format. An
+// unsupported object format makes Scan return false, and Error return
+// an error wrapping [gogithash.ErrUnsupportedHashFunction].
 func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
-	crc := crc32.NewIEEE()
-	packhash := gogithash.New(crypto.SHA1)
-
 	r := &Scanner{
 		objIndex: -1,
-		hasher:   plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
-		crc:      crc,
-		packhash: packhash,
+		crc:      crc32.NewIEEE(),
 		nextFn:   packHeaderSignature,
-		// Set the default size, which can be overridden by opts.
-		objectIDSize: packhash.Size(),
 	}
 
 	for _, opt := range opts {
-		opt(r)
+		if opt != nil {
+			opt.applyScanner(r)
+		}
 	}
 
-	r.scannerReader = newScannerReader(rs, io.MultiWriter(crc, r.packhash), r.rbuf)
+	if r.objectFormat == gogithash.UnsetObjectFormat {
+		r.objectFormat = gogithash.DefaultObjectFormat
+	}
+	hasher, err := plumbing.NewHasher(r.objectFormat, plumbing.AnyObject, 0)
+	if err != nil {
+		// Scan returns err before reading anything, so the hashers are
+		// never used.
+		r.formatErr = err
+		r.err = err
+	}
+	r.hasher = hasher
+	r.packhash = packHash(r.objectFormat)
+	r.objectIDSize = r.objectFormat.Size()
+
+	r.scannerReader = newScannerReader(rs, io.MultiWriter(r.crc, r.packhash), r.rbuf)
 
 	return r
 }
@@ -279,7 +294,7 @@ func (r *Scanner) Reset() error {
 	r.objects = 0
 	r.packSize = 0
 	r.packData = PackData{}
-	r.err = nil
+	r.err = r.formatErr
 	r.nextFn = packHeaderSignature
 	return nil
 }

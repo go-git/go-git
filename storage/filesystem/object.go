@@ -2,7 +2,6 @@ package filesystem
 
 import (
 	"context"
-	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -105,11 +104,26 @@ func NewObjectStorage(dir *dotgit.DotGit, objectCache cache.Object) *ObjectStora
 
 // NewObjectStorageWithOptions creates a new ObjectStorage with the given .git directory, cache and extra options
 func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, ops Options) *ObjectStorage {
+	// NewObjectHasher cannot fail for a supported format.
+	oh, _ := plumbing.NewObjectHasher(supportedObjectFormat(ops.ObjectFormat))
 	return &ObjectStorage{
 		options:     ops,
 		objectCache: objectCache,
 		dir:         dir,
-		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
+		oh:          oh,
+	}
+}
+
+// supportedObjectFormat returns [f] when go-git can hash objects in it,
+// and [hash.DefaultObjectFormat] otherwise. It is for constructors that
+// cannot return an error. Repositories with an unsupported format are
+// rejected when their extensions are validated on open.
+func supportedObjectFormat(f hash.ObjectFormat) hash.ObjectFormat {
+	switch f {
+	case hash.SHA1, hash.SHA256:
+		return f
+	default:
+		return hash.DefaultObjectFormat
 	}
 }
 
@@ -403,15 +417,8 @@ func (s *ObjectStorage) loadMemoryIndexValue(h plumbing.Hash) (idx idxfile.Index
 
 	defer ioutil.CheckClose(f, &err)
 
-	var hasher hash.Hash
-	if h.Size() == crypto.SHA256.Size() {
-		hasher = hash.New(crypto.SHA256)
-	} else {
-		hasher = hash.New(crypto.SHA1)
-	}
-
-	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f, hasher)
+	idxf := idxfile.NewMemoryIndex(h.Format())
+	d := idxfile.NewDecoder(f, idxfile.WithObjectFormat(h.Format()))
 	if err = d.Decode(idxf); err != nil {
 		return nil, err
 	}
@@ -681,7 +688,7 @@ func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfi
 		packfile.WithIdx(idx),
 		packfile.WithFs(s.dir.Fs()),
 		packfile.WithCache(s.objectCache),
-		packfile.WithObjectIDSize(pack.Size()),
+		packfile.WithObjectFormat(pack.Format()),
 	), nil
 }
 
@@ -1149,7 +1156,7 @@ func (s *ObjectStorage) buildPackfileIters(
 			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, idx,
-				s.objectCache, false, h.Size(),
+				s.objectCache, false, h.Format(),
 			)
 		},
 	}, nil

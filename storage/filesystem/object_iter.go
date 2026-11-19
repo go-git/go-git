@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"crypto"
 	"io"
 
 	"github.com/go-git/go-billy/v6"
@@ -75,7 +74,8 @@ type packfileIter struct {
 // NewPackfileIter returns a new EncodedObjectIter for the provided packfile
 // and object type. Packfile and index file will be closed after they're
 // used. If keepPack is true the packfile won't be closed after the iteration
-// finished.
+// finished. The packfile and index file are read in the object format f,
+// SHA-1 when it is unset.
 func NewPackfileIter(
 	fs billy.Filesystem,
 	f billy.File,
@@ -83,17 +83,14 @@ func NewPackfileIter(
 	t plumbing.ObjectType,
 	keepPack bool,
 	_ int64, // largeObjectThreshold - currently unused
-	objectIDSize int,
+	of hash.ObjectFormat,
 ) (storer.EncodedObjectIter, error) {
-	var hasher hash.Hash
-	if objectIDSize == crypto.SHA256.Size() {
-		hasher = hash.New(crypto.SHA256)
-	} else {
-		hasher = hash.New(crypto.SHA1)
+	if of == hash.UnsetObjectFormat {
+		of = hash.DefaultObjectFormat
 	}
 
-	idx := idxfile.NewMemoryIndex(objectIDSize)
-	if err := idxfile.NewDecoder(idxFile, hasher).Decode(idx); err != nil {
+	idx := idxfile.NewMemoryIndex(of)
+	if err := idxfile.NewDecoder(idxFile, idxfile.WithObjectFormat(of)).Decode(idx); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +99,7 @@ func NewPackfileIter(
 	}
 
 	seen := make(map[plumbing.Hash]struct{})
-	return newPackfileIter(fs, f, t, seen, idx, nil, keepPack, objectIDSize)
+	return newPackfileIter(fs, f, t, seen, idx, nil, keepPack, of)
 }
 
 func newPackfileIter(
@@ -113,13 +110,13 @@ func newPackfileIter(
 	index idxfile.Index,
 	cache cache.Object,
 	keepPack bool,
-	objectIDSize int,
+	of hash.ObjectFormat,
 ) (storer.EncodedObjectIter, error) {
 	p := packfile.NewPackfile(f,
 		packfile.WithFs(fs),
 		packfile.WithCache(cache),
 		packfile.WithIdx(index),
-		packfile.WithObjectIDSize(objectIDSize),
+		packfile.WithObjectFormat(of),
 	)
 
 	iter, err := p.GetByType(t)

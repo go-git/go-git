@@ -111,10 +111,11 @@ func decodeLine(line []byte) (*Entry, error) {
 		return nil, fmt.Errorf("reflog entry too short")
 	}
 	oldHashStr := string(line[:spaceIdx])
-	if !plumbing.IsHash(oldHashStr) {
+	oldHash, ok := plumbing.FromHex(oldHashStr)
+	if !ok {
 		return nil, fmt.Errorf("invalid old hash in reflog entry: %s", quoteBounded(line[:spaceIdx]))
 	}
-	e.OldHash = plumbing.NewHash(oldHashStr)
+	e.OldHash = oldHash
 	line = line[spaceIdx+1:]
 
 	// Parse new hash (up to next space)
@@ -123,10 +124,11 @@ func decodeLine(line []byte) (*Entry, error) {
 		return nil, fmt.Errorf("expected space after new hash")
 	}
 	newHashStr := string(line[:spaceIdx])
-	if !plumbing.IsHash(newHashStr) {
+	newHash, ok := plumbing.FromHex(newHashStr)
+	if !ok {
 		return nil, fmt.Errorf("invalid new hash in reflog entry: %s", quoteBounded(line[:spaceIdx]))
 	}
-	e.NewHash = plumbing.NewHash(newHashStr)
+	e.NewHash = newHash
 	line = line[spaceIdx+1:]
 
 	// Split on tab to separate signature from message

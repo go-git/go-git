@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"crypto"
 	"errors"
 	"io"
 	"testing"
@@ -43,7 +42,7 @@ func TestPackfileIter_SeenSkips(t *testing.T) {
 			}
 
 			iter, err := newPackfileIter(pf.fs, pack, plumbing.AnyObject, seen, pf.idx,
-				cache.NewObjectLRUDefault(), false, crypto.SHA1.Size())
+				cache.NewObjectLRUDefault(), false, hash.SHA1)
 			require.NoError(t, err)
 
 			var got int
@@ -65,7 +64,7 @@ func TestPackfileIter_SharedSeenDedupsAcrossIterators(t *testing.T) {
 	count := func() int {
 		pack := pf.openPack(t)
 		iter, err := newPackfileIter(pf.fs, pack, plumbing.AnyObject, seen, pf.idx,
-			cch, false, crypto.SHA1.Size())
+			cch, false, hash.SHA1)
 		require.NoError(t, err)
 
 		var n int
@@ -123,7 +122,7 @@ func TestPackfileIter_ForEachClosesPack(t *testing.T) {
 			pack := &closeCounter{File: pf.openPack(t)}
 			iter, err := newPackfileIter(pf.fs, pack, plumbing.AnyObject,
 				make(map[plumbing.Hash]struct{}), pf.idx,
-				cache.NewObjectLRUDefault(), false, crypto.SHA1.Size())
+				cache.NewObjectLRUDefault(), false, hash.SHA1)
 			require.NoError(t, err)
 
 			var i int
@@ -148,7 +147,7 @@ func TestPackfileIter_ForEachKeepsPackOpen(t *testing.T) {
 
 	iter, err := newPackfileIter(pf.fs, pack, plumbing.AnyObject,
 		make(map[plumbing.Hash]struct{}), pf.idx,
-		cache.NewObjectLRUDefault(), true, crypto.SHA1.Size())
+		cache.NewObjectLRUDefault(), true, hash.SHA1)
 	require.NoError(t, err)
 
 	require.NoError(t, iter.ForEach(func(plumbing.EncodedObject) error { return nil }))
@@ -175,7 +174,7 @@ func TestNewPackfileIter_ClosesPackOnGetByTypeError(t *testing.T) {
 			pack := &closeCounter{File: pf.openPack(t)}
 			iter, err := newPackfileIter(pf.fs, pack, plumbing.OFSDeltaObject,
 				make(map[plumbing.Hash]struct{}), pf.idx,
-				cache.NewObjectLRUDefault(), tc.keepPack, crypto.SHA1.Size())
+				cache.NewObjectLRUDefault(), tc.keepPack, hash.SHA1)
 			require.Error(t, err)
 			require.Nil(t, iter)
 			require.Equal(t, tc.wantClosed, pack.closed, tc.wantClosedR)
@@ -242,8 +241,8 @@ func loadPackFixture(t *testing.T) packFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = idxFile.Close() })
 
-	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
-	require.NoError(t, idxfile.NewDecoder(idxFile, hash.New(crypto.SHA1)).Decode(idx))
+	idx := idxfile.NewMemoryIndex(hash.SHA1)
+	require.NoError(t, idxfile.NewDecoder(idxFile).Decode(idx))
 
 	entries, err := idx.Entries()
 	require.NoError(t, err)

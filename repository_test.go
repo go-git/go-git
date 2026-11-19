@@ -4076,6 +4076,39 @@ func (s *RepositorySuite) TestResolveRevisionAnnotated() {
 	}
 }
 
+type noIterStorer struct {
+	storage.Storer
+}
+
+func (noIterStorer) IterEncodedObjects(plumbing.ObjectType) (storer.EncodedObjectIter, error) {
+	return nil, errors.New("object iteration disabled")
+}
+
+func TestResolveRevisionSHA256(t *testing.T) {
+	t.Parallel()
+
+	f := fixtures.ByTag(".git").ByObjectFormat("sha256").One()
+	dotgit, err := f.DotGit()
+	require.NoError(t, err)
+	r, err := Open(filesystem.NewStorage(dotgit, cache.NewObjectLRUDefault()), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	head, err := r.Head()
+	require.NoError(t, err)
+	full := head.Hash().String()
+	require.Len(t, full, formatcfg.SHA256HexSize)
+
+	h, err := r.ResolveRevision(plumbing.Revision(full[:formatcfg.SHA1HexSize]))
+	require.NoError(t, err, "40-hex prefix of a SHA-256 id")
+	assert.Equal(t, head.Hash(), *h)
+
+	r.Storer = noIterStorer{r.Storer}
+	h, err = r.ResolveRevision(plumbing.Revision(full))
+	require.NoError(t, err, "full SHA-256 id without object iteration")
+	assert.Equal(t, head.Hash(), *h)
+}
+
 func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 	url := s.GetLocalRepositoryURL(
 		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
@@ -4192,6 +4225,27 @@ func (s *RepositorySuite) TestRepackObjectsKeepsPackWithoutIndex() {
 	s.Require().NoError(r.RepackObjects(&RepackConfig{}))
 	_, err = fs.Lstat(orphanPath)
 	s.Require().NoError(err)
+}
+
+func TestRepackObjectsSHA256(t *testing.T) {
+	t.Parallel()
+
+	r, err := PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	_ = CommitNewFile(t, r, "File1")
+	head := CommitNewFile(t, r, "File2")
+
+	require.NoError(t, r.RepackObjects(&RepackConfig{}))
+
+	packs, err := r.Storer.(storer.PackedObjectStorer).ObjectPacks()
+	require.NoError(t, err)
+	require.Len(t, packs, 1)
+	assert.Equal(t, formatcfg.SHA256, packs[0].Format())
+
+	commit, err := r.CommitObject(head)
+	require.NoError(t, err)
+	_, err = commit.Tree()
+	require.NoError(t, err)
 }
 
 // The loose-objects task packs every loose object into loose-<hash>.pack,

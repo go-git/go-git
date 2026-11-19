@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 // Errors returned by PackScanner operations.
@@ -31,8 +32,10 @@ var (
 // PackScanner represents a scanner for packfiles by using the memory
 // representation of the pack, idx and rev files provided by mmap.
 type PackScanner struct {
-	hashSize int
-	count    int
+	format    hash.ObjectFormat
+	hashSize  int
+	revHashID uint32
+	count     int
 
 	fanoutStart  int
 	namesStart   int
@@ -49,10 +52,24 @@ type PackScanner struct {
 	revCleanup  func() error
 }
 
-// NewPackScanner creates a PackScanner from the given pack, idx, and rev files.
-func NewPackScanner(hashSize int, pack, idx, rev billy.File) (*PackScanner, error) {
+// NewPackScanner creates a PackScanner from the given pack, idx, and rev
+// files, in the object format f. SHA-1 is used when f is unset. An
+// unsupported format returns an error wrapping
+// [hash.ErrUnsupportedHashFunction] before any of the files is used,
+// and a rev file of another format is rejected as malformed.
+func NewPackScanner(f hash.ObjectFormat, pack, idx, rev billy.File) (*PackScanner, error) {
+	if f == hash.UnsetObjectFormat {
+		f = hash.DefaultObjectFormat
+	}
+	revHashID, ok := revHashIDs[f]
+	if !ok {
+		return nil, fmt.Errorf("%w: object format %q", hash.ErrUnsupportedHashFunction, f)
+	}
+
 	s := &PackScanner{
-		hashSize: hashSize,
+		format:    f,
+		hashSize:  f.Size(),
+		revHashID: revHashID,
 	}
 
 	err := s.loadPackFile(pack)

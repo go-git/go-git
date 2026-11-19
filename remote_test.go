@@ -904,6 +904,19 @@ func (s *RemoteSuite) TestPushTags() {
 	})
 }
 
+func TestCheckTagUpdateZeroOldID(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range []formatcfg.ObjectFormat{formatcfg.SHA1, formatcfg.SHA256} {
+		cmd := &packp.Command{
+			Name: plumbing.NewTagReferenceName("v1.0.0"),
+			Old:  plumbing.ZeroID(f),
+			New:  plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		}
+		require.NoError(t, checkTagUpdate(cmd), f.String())
+	}
+}
+
 func (s *RemoteSuite) TestPushTagsByOID() {
 	url := s.T().TempDir()
 
@@ -2804,6 +2817,36 @@ func (s *RemoteSuite) TestPushPreservesValidWildcardSources() {
 			s.Require().Equal(head.Hash(), ref.Hash())
 		})
 	}
+}
+
+func TestPushSHA256(t *testing.T) {
+	t.Parallel()
+
+	url := t.TempDir()
+	server, err := PlainInit(url, true, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	defer func() { _ = server.Close() }()
+
+	r, err := PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	_ = CommitNewFile(t, r, "File1")
+	head := CommitNewFile(t, r, "File2")
+	_, err = r.CreateRemote(&config.RemoteConfig{Name: DefaultRemoteName, URLs: []string{url}})
+	require.NoError(t, err)
+
+	local, err := r.Head()
+	require.NoError(t, err)
+
+	require.NoError(t, r.Push(&PushOptions{}))
+
+	ref, err := server.Reference(local.Name(), false)
+	require.NoError(t, err)
+	require.Equal(t, head, ref.Hash())
+	commit, err := server.CommitObject(head)
+	require.NoError(t, err)
+	_, err = commit.Tree()
+	require.NoError(t, err)
 }
 
 func TestFetchShallowSHA256(t *testing.T) {

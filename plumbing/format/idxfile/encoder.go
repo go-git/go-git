@@ -2,7 +2,6 @@ package idxfile
 
 import (
 	"fmt"
-	"hash"
 	"io"
 
 	"github.com/go-git/go-git/v6/utils/binary"
@@ -20,15 +19,23 @@ type encoder struct {
 // represents encoding an idxfile.
 type stateFnEncode func(*encoder) (stateFnEncode, error)
 
-// Encode encodes a MemoryIndex to the writer.
+// Encode encodes a MemoryIndex to the writer. The checksum is computed
+// with the hash of the index's object format, set by [NewMemoryIndex].
+// An unsupported object format returns an error wrapping
+// [hash.ErrUnsupportedHashFunction] before anything is written.
 // This function is safe to call concurrently with different parameters.
-func Encode(w io.Writer, h hash.Hash, idx *MemoryIndex) error {
+func Encode(w io.Writer, idx *MemoryIndex) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
 
 	if idx == nil {
 		return fmt.Errorf("nil index")
+	}
+
+	h, err := newHash(idx.ObjectFormat())
+	if err != nil {
+		return err
 	}
 
 	e := &encoder{

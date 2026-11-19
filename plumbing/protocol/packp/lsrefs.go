@@ -301,9 +301,8 @@ func parseLsRefsLine(line string) (refs []*plumbing.Reference, unbornHead plumbi
 }
 
 // parseFullHash strictly parses a full-length SHA-1 or SHA-256 object id in hex
-// form. Object ids on the wire are always full length, so unlike
-// plumbing.FromHex (which zero-pads shorter input as a partial SHA-1) it rejects
-// anything that is not exactly an object-id length, refusing malformed input.
+// form. Object ids on the wire are always full length, so it rejects anything
+// that is not exactly an object-id length, refusing malformed input.
 func parseFullHash(s string) (plumbing.Hash, bool) {
 	if !plumbing.IsHash(s) {
 		return plumbing.ZeroHash, false

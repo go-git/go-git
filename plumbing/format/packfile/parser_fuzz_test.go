@@ -43,7 +43,7 @@ func FuzzPackfileParser(f *testing.F) {
 		mid := []byte("a stable base payload modified by the OFS-delta entry")
 		leaf := []byte("a stable base payload modified twice for the REF-delta")
 
-		midHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(mid)))
+		midHasher, _ := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(mid)))
 		_, _ = midHasher.Write(mid)
 		midHash := midHasher.Sum()
 

@@ -44,7 +44,7 @@
 //	1-byte version number:
 //	    Currently, the only valid version is 1.
 //
-//	1-byte Hash Version (1 = SHA-1)
+//	1-byte Hash Version (1 = SHA-1, 2 = SHA-256)
 //	    We infer the hash length (H) from this value.
 //
 //	1-byte number (C) of "chunks"

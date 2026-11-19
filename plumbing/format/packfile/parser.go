@@ -74,7 +74,6 @@ type Parser struct {
 
 	scanner   *Scanner
 	observers []Observer
-	hasher    plumbing.Hasher
 
 	objectFormat format.ObjectFormat
 
@@ -95,23 +94,21 @@ type LowMemoryCapable interface {
 // NewParser creates a new Parser.
 // When a storage is set, the objects are written to storage as they
 // are parsed.
+//
+// The pack is parsed as SHA-1 unless [WithObjectFormat] sets another
+// object format. The storage must be of the same object format, as the
+// parser does not check it.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
 		objectFormat: format.DefaultObjectFormat,
 	}
 	for _, opt := range opts {
 		if opt != nil {
-			opt(p)
+			opt.applyParser(p)
 		}
 	}
 
-	p.hasher = plumbing.NewHasher(p.objectFormat, plumbing.AnyObject, 0)
-	var sopts []ScannerOption
-	if p.objectFormat == format.SHA256 {
-		sopts = append(sopts, WithSHA256())
-	}
-
-	p.scanner = NewScanner(data, sopts...)
+	p.scanner = NewScanner(data, WithObjectFormat(p.objectFormat))
 
 	if p.storage != nil {
 		p.scanner.storage = p.storage
@@ -182,6 +179,10 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, ErrParserConsumed
 	}
 	p.parsed = true
+
+	if err := checkObjectFormat(p.objectFormat); err != nil {
+		return plumbing.ZeroHash, err
+	}
 
 	var pendingDeltas []*ObjectHeader
 	var pendingDeltaREFs []*ObjectHeader

@@ -390,6 +390,22 @@ func (s *AdvRefsDecodeSuite) TestMalformedOtherRefsNoSpace() {
 	s.testDecoderErrorMatches(r, ".*malformed ref data.*")
 }
 
+func (s *AdvRefsDecodeSuite) TestMalformedOtherRefsInvalidHash() {
+	for _, hash := range []string{
+		"5dc01c59",
+		"5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c00",
+		"zzc01c595e6c6ec9ccda4f6f69c131c0dd945f8c",
+	} {
+		payloads := []string{
+			"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",
+			hash + " refs/tags/v2.6.11\n",
+			"",
+		}
+		r := toPktLines(s.T(), payloads)
+		s.testDecoderErrorMatches(r, ".*malformed ref data: invalid hash.*")
+	}
+}
+
 func (s *AdvRefsDecodeSuite) TestMalformedOtherRefsMultipleSpaces() {
 	payloads := []string{
 		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5 HEAD\x00multi_ack thin-pack\n",

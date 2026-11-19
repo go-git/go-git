@@ -45,15 +45,19 @@ func OpenChainFile(r io.Reader) ([]string, error) {
 // commit-graph chain file and its index files. If neither are present, an error is returned.
 // Otherwise an Index will be returned.
 //
+// The object format is read from the graph files, which must all share
+// it. [WithObjectFormat] makes a graph in another format fail with
+// [ErrUnsupportedHash].
+//
 // See: https://git-scm.com/docs/commit-graph
-func OpenChainOrFileIndex(fs billy.Filesystem) (Index, error) {
+func OpenChainOrFileIndex(fs billy.Filesystem, opts ...Option) (Index, error) {
 	file, err := fs.Open(path.Join("objects", "info", "commit-graph"))
 	if err != nil {
 		// try to open a chain file
-		return OpenChainIndex(fs)
+		return OpenChainIndex(fs, opts...)
 	}
 
-	index, err := OpenFileIndex(file)
+	index, err := OpenFileIndex(file, opts...)
 	if err != nil {
 		// Ignore any file closing errors and return the error from OpenFileIndex instead
 		_ = file.Close()
@@ -67,8 +71,12 @@ func OpenChainOrFileIndex(fs billy.Filesystem) (Index, error) {
 // If the chain file is not present or names no graphs, or a graph in that
 // chain is not present or invalid, an error is returned.
 //
+// The object format is read from the graph files, which must all share
+// it. [WithObjectFormat] makes a graph in another format fail with
+// [ErrUnsupportedHash].
+//
 // See: https://git-scm.com/docs/commit-graph
-func OpenChainIndex(fs billy.Filesystem) (Index, error) {
+func OpenChainIndex(fs billy.Filesystem, opts ...Option) (Index, error) {
 	chainFile, err := fs.Open(path.Join("objects", "info", "commit-graphs", "commit-graph-chain"))
 	if err != nil {
 		return nil, err
@@ -94,7 +102,7 @@ func OpenChainIndex(fs billy.Filesystem) (Index, error) {
 			return nil, err
 		}
 
-		next, err := OpenFileIndexWithParent(file, index)
+		next, err := OpenFileIndexWithParent(file, index, opts...)
 		if err != nil {
 			// Ignore closing errors and return the error from OpenFileIndexWithParent instead
 			_ = file.Close()

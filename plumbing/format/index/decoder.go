@@ -5,12 +5,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"strconv"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
@@ -47,15 +47,20 @@ type Decoder struct {
 	hash      hash.Hash
 	lastEntry *Entry
 	skipHash  bool
+	err       error
 
 	extReader *bufio.Reader
 }
 
-// NewDecoder returns a new decoder that reads from r.
-func NewDecoder(r io.Reader, h hash.Hash, opts ...Option) *Decoder {
-	var cfg options
-	for _, o := range opts {
-		o(&cfg)
+// NewDecoder returns a new decoder that reads from r. The index is read
+// as SHA-1 unless [WithObjectFormat] sets another object format. An
+// unsupported object format makes [Decoder.Decode] fail without
+// reading anything.
+func NewDecoder(r io.Reader, opts ...Option) *Decoder {
+	cfg := newOptions(opts)
+	h, err := newHash(cfg.objectFormat)
+	if err != nil {
+		return &Decoder{err: err}
 	}
 
 	buf := bufio.NewReader(r)
@@ -69,7 +74,6 @@ func NewDecoder(r io.Reader, h hash.Hash, opts ...Option) *Decoder {
 	if d.skipHash {
 		d.r = buf
 	} else {
-		h.Reset()
 		d.r = io.TeeReader(buf, h)
 	}
 
@@ -79,6 +83,10 @@ func NewDecoder(r io.Reader, h hash.Hash, opts ...Option) *Decoder {
 // Decode reads the whole index object from its input and stores it in the
 // value pointed to by idx.
 func (d *Decoder) Decode(idx *Index) error {
+	if d.err != nil {
+		return d.err
+	}
+
 	var err error
 	idx.Version, err = validateHeader(d.r)
 	if err != nil {

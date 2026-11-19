@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"sort"
 	"time"
 
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -27,13 +27,18 @@ type Encoder struct {
 	hash      hash.Hash
 	lastEntry *Entry
 	skipHash  bool
+	err       error
 }
 
-// NewEncoder returns a new encoder that writes to w.
-func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
-	var cfg options
-	for _, o := range opts {
-		o(&cfg)
+// NewEncoder returns a new encoder that writes to w. The index is
+// written in SHA-1 unless [WithObjectFormat] sets another object
+// format. An unsupported object format makes [Encoder.Encode] fail
+// without writing anything.
+func NewEncoder(w io.Writer, opts ...Option) *Encoder {
+	cfg := newOptions(opts)
+	h, err := newHash(cfg.objectFormat)
+	if err != nil {
+		return &Encoder{w: w, err: err}
 	}
 
 	e := &Encoder{
@@ -44,7 +49,6 @@ func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
 	if e.skipHash {
 		e.w = w
 	} else {
-		h.Reset()
 		e.w = io.MultiWriter(w, h)
 	}
 
@@ -53,6 +57,9 @@ func NewEncoder(w io.Writer, h hash.Hash, opts ...Option) *Encoder {
 
 // Encode writes the Index to the stream of the encoder.
 func (e *Encoder) Encode(idx *Index) error {
+	if e.err != nil {
+		return e.err
+	}
 	return e.encode(idx, true)
 }
 

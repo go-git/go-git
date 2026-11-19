@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -53,25 +52,42 @@ type Input interface {
 
 // Decoder reads and decodes idx files from an [Input].
 type Decoder struct {
-	in Input
-	h  hash.Hash
+	in   Input
+	opts options
 }
 
-// NewDecoder builds a new idx decoder that reads from in.
-func NewDecoder(in Input, h hash.Hash) *Decoder {
-	return &Decoder{in, h}
+// NewDecoder builds a new idx decoder that reads from in. The idx file
+// is decoded as SHA-1 unless [WithObjectFormat] sets another object
+// format.
+func NewDecoder(in Input, opts ...Option) *Decoder {
+	d := &Decoder{in: in}
+	for _, opt := range opts {
+		opt(&d.opts)
+	}
+	return d
 }
 
-// Decode reads from the input and decodes the content into idx.
+// Decode reads from the input and decodes the content into idx. The
+// object format of idx, set by [NewMemoryIndex], must be the decoder's.
+// An unsupported object format returns an error wrapping
+// [hash.ErrUnsupportedHashFunction].
 func (d *Decoder) Decode(idx *MemoryIndex) error {
+	format := defaultFormat(d.opts.objectFormat)
+	h, err := newHash(format)
+	if err != nil {
+		return err
+	}
+	if idx.ObjectFormat() != format {
+		return fmt.Errorf("idxfile: decoder object format %s does not match index object format %s", format, idx.ObjectFormat())
+	}
+
 	fi, err := d.in.Stat()
 	if err != nil {
 		return fmt.Errorf("%w: stat input: %w", ErrMalformedIdxFile, err)
 	}
 	idxSize := fi.Size()
 
-	d.h.Reset()
-	r := io.TeeReader(d.in, d.h)
+	r := io.TeeReader(d.in, h)
 
 	if err := validateHeader(r); err != nil {
 		return err
@@ -103,7 +119,7 @@ func (d *Decoder) Decode(idx *MemoryIndex) error {
 		}
 	}
 
-	actual := d.h.Sum(nil)
+	actual := h.Sum(nil)
 	if err := readIdxChecksum(idx, r); err != nil {
 		return err
 	}

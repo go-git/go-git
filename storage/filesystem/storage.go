@@ -25,9 +25,8 @@ const defaultPoolCapacity = 256
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
-	fs     billy.Filesystem
-	dir    *dotgit.DotGit
-	hasher plumbing.Hasher
+	fs  billy.Filesystem
+	dir *dotgit.DotGit
 
 	*ObjectStorage
 	ReferenceStorage
@@ -164,8 +163,6 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		_ = f.Close()
 	}
 
-	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
-
 	// Construct a per-Storage FD pool at the package default
 	// capacity unless the caller injected one. Pass a non-positive-
 	// capacity Pool via Options.Pool to disable pooling.
@@ -193,13 +190,12 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	s := &Storage{
-		fs:     fs,
-		dir:    dir,
-		hasher: hasher,
+		fs:  fs,
+		dir: dir,
 
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
+		IndexStorage:     IndexStorage{dir: dir, objectFormat: supportedObjectFormat(ops.ObjectFormat), cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
@@ -236,6 +232,11 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	}
 
 	if cfg.Extensions.ObjectFormat != of {
+		oh, err := plumbing.NewObjectHasher(of)
+		if err != nil {
+			return err
+		}
+
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 		err = s.SetConfig(cfg)
@@ -252,9 +253,8 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		s.ModuleStorage.objectFormat = of
 		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
-		s.oh = plumbing.FromObjectFormat(of)
-		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
-		s.h = s.hasher.Hash
+		s.oh = oh
+		s.IndexStorage.objectFormat = of
 	}
 
 	return nil

@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type SuiteReader struct {
@@ -56,7 +57,7 @@ func readerFixtureHash(
 		return plumbing.NewHash(fixture.hash)
 	}
 
-	hasher := plumbing.NewHasher(objectFormat, fixture.t, int64(len(content)))
+	hasher, _ := plumbing.NewHasher(objectFormat, fixture.t, int64(len(content)))
 	_, _ = hasher.Write(content)
 	return hasher.Sum()
 }
@@ -239,4 +240,15 @@ func (s *SuiteReader) TestReaderReadAfterHeaderError() {
 	n, readErr := r.Read(buf[:])
 	s.Error(readErr)
 	s.Equal(0, n)
+}
+
+func TestNewReaderUnknownObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	data, err := base64.StdEncoding.DecodeString(objfileFixtures[0].data)
+	assert.NoError(t, err)
+
+	r, err := NewReader(bytes.NewReader(data), format.ObjectFormat("sha512"))
+	assert.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.Nil(t, r)
 }
