@@ -11,7 +11,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/x/fdpool"
@@ -164,9 +163,6 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		_ = f.Close()
 	}
 
-	// FromObjectFormat cannot fail for a supported format.
-	indexHash, _ := hash.FromObjectFormat(supportedObjectFormat(ops.ObjectFormat))
-
 	// Construct a per-Storage FD pool at the package default
 	// capacity unless the caller injected one. Pass a non-positive-
 	// capacity Pool via Options.Pool to disable pooling.
@@ -199,7 +195,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: indexHash, cache: ops.IndexCache, skipHash: skipHash},
+		IndexStorage:     IndexStorage{dir: dir, objectFormat: supportedObjectFormat(ops.ObjectFormat), cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
@@ -240,10 +236,6 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		if err != nil {
 			return err
 		}
-		indexHash, err := hash.FromObjectFormat(of)
-		if err != nil {
-			return err
-		}
 
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
@@ -262,7 +254,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
 		s.oh = oh
-		s.h = indexHash
+		s.IndexStorage.objectFormat = of
 	}
 
 	return nil
