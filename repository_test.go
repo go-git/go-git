@@ -943,22 +943,35 @@ func TestPlainCloneContext_FailedCloneRemovesCreatedDirectory(t *testing.T) {
 func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *testing.T) {
 	t.Parallel()
 
-	// dest exists and is empty before the clone attempt.
-	dest := t.TempDir()
+	tests := []struct {
+		name string
+		opts CloneOptions
+	}{
+		{name: "non-bare", opts: CloneOptions{URL: "incorrectOnPurpose"}},
+		{name: "bare", opts: CloneOptions{URL: "incorrectOnPurpose", Bare: true}},
+		{name: "mirror", opts: CloneOptions{URL: "incorrectOnPurpose", Mirror: true}},
+	}
 
-	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
-		URL: "incorrectOnPurpose",
-	})
-	require.Error(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// The directory itself must still be there …
-	_, statErr := os.Stat(dest)
-	assert.NoError(t, statErr, "PlainCloneContext must not remove a pre-existing directory")
+			// dest exists and is empty before the clone attempt.
+			dest := t.TempDir()
 
-	// … and must be empty (any .git content added by PlainInit must be removed).
-	entries, _ := os.ReadDir(dest)
-	assert.Empty(t, entries,
-		"PlainCloneContext must remove any content it added to a pre-existing empty directory")
+			_, err := PlainCloneContext(context.Background(), dest, &tc.opts)
+			require.Error(t, err)
+
+			// The directory itself must still be there …
+			_, statErr := os.Stat(dest)
+			assert.NoError(t, statErr, "PlainCloneContext must not remove a pre-existing directory")
+
+			// … and must be empty (any content added by PlainInit must be removed).
+			entries, _ := os.ReadDir(dest)
+			assert.Empty(t, entries,
+				"PlainCloneContext must remove any content it added to a pre-existing empty directory")
+		})
+	}
 }
 
 // TestPlainCloneContext_EmptyRemoteReturnsError verifies that cloning an

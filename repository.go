@@ -738,8 +738,10 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	if err := r.clone(ctx, o); err != nil {
 		_ = r.Close()
 		if dirPreexisted {
-			// Restore the directory to its original empty state.
-			_ = os.RemoveAll(filepath.Join(path, GitDirName))
+			// Restore the directory to its original empty state. It was
+			// empty before, so every entry in it was created by the clone.
+			// A bare clone writes its files directly under path.
+			removeDirContents(path)
 		} else {
 			// We created the directory; remove it entirely.
 			_ = os.RemoveAll(path)
@@ -748,6 +750,19 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	}
 
 	return r, nil
+}
+
+// removeDirContents removes every entry in dir, keeping dir itself. Errors
+// are ignored as this is a best effort cleanup.
+func removeDirContents(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
