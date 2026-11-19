@@ -14,15 +14,15 @@
 // limitations under the License.
 //
 
-// Originally from: https://github.com/xanzy/ssh-agent/blob/main/sshagent.go
+// Originally from: https://github.com/xanzy/ssh-agent/blob/v0.3.3/sshagent.go
+// Upstream commit: 0fa644ba07f41bbe341c7f3d59bd30443ff13002
+// The full API, including Pageant, is in github.com/go-git/x/ssh/agent.
 
 //go:build !windows
 
-// Package sshagent provides functionality to interact with the SSH agent.
 package sshagent
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -32,24 +32,21 @@ import (
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
-// New returns a new agent.Agent that uses a unix socket
+// New connects to the SSH agent listening on the socket named by
+// SSH_AUTH_SOCK. It returns the agent client and its connection, which the
+// caller must close. The returned error wraps ErrNotFound when SSH_AUTH_SOCK
+// is not set or cannot be dialed.
 func New() (agent.Agent, net.Conn, error) {
-	if !Available() {
-		return nil, nil, errors.New("SSH agent requested but SSH_AUTH_SOCK not-specified")
-	}
-
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
+	if sshAuthSock == "" {
+		return nil, nil, fmt.Errorf("SSH_AUTH_SOCK is not set: %w", ErrNotFound)
+	}
 
 	trace.SSH.Printf("ssh: net.Dial unix sock %s", sshAuthSock)
 	conn, err := net.Dial("unix", sshAuthSock)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error connecting to SSH_AUTH_SOCK: %w", err)
+		return nil, nil, fmt.Errorf("error connecting to SSH_AUTH_SOCK: %w: %w", err, ErrNotFound)
 	}
 
 	return agent.NewClient(conn), conn, nil
-}
-
-// Available returns true is a auth socket is defined
-func Available() bool {
-	return os.Getenv("SSH_AUTH_SOCK") != ""
 }

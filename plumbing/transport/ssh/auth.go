@@ -12,8 +12,8 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/go-git/go-git/v6/internal/transport/ssh/knownhosts"
+	"github.com/go-git/go-git/v6/internal/transport/ssh/sshagent"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/plumbing/transport/ssh/sshagent"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
@@ -164,6 +164,11 @@ type PublicKeysCallback struct {
 // key callback function. The pipe stays open until [PublicKeysCallback.Close]
 // is called, so callers must close the returned PublicKeysCallback once it is
 // no longer needed.
+//
+// The agent is reached through the socket named by SSH_AUTH_SOCK on Unix-like
+// systems, and through the Windows OpenSSH agent named pipe on Windows. For
+// Pageant or other agents, use the github.com/go-git/x/ssh/agent module and
+// pass its Signers method as the Callback of a PublicKeysCallback.
 func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 	var err error
 	if u == "" {
