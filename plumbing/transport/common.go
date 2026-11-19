@@ -26,14 +26,20 @@ func (f DialContextFunc) DialContext(ctx context.Context, network, addr string) 
 }
 
 // RemoteError represents an error returned by the remote.
-// TODO: embed error
 type RemoteError struct {
 	Reason string
+
+	err error
 }
 
 // Error implements the error interface.
 func (e *RemoteError) Error() string {
 	return e.Reason
+}
+
+// Unwrap returns the local error the remote's stderr explains, if any.
+func (e *RemoteError) Unwrap() error {
+	return e.err
 }
 
 // NewRemoteError creates a new RemoteError.

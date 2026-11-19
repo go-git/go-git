@@ -244,3 +244,45 @@ type stderrConn struct {
 }
 
 func (c *stderrConn) Stderr() io.Reader { return strings.NewReader(c.stderr) }
+
+func TestStreamSessionStderrKeepsErrorInChain(t *testing.T) {
+	t.Parallel()
+
+	s := &StreamSession{
+		conn: &stderrConn{
+			testConn: testConn{close: func() error { return nil }},
+			stderr:   "ssh: connection warning",
+		},
+	}
+
+	err := s.wrapStderr(context.Background(), ErrPackJunk)
+
+	require.ErrorIs(t, err, ErrPackJunk)
+	var remoteErr *RemoteError
+	require.ErrorAs(t, err, &remoteErr)
+	assert.Equal(t, "ssh: connection warning", remoteErr.Reason)
+}
+
+func TestStreamSessionFetchMatchesErrNoChangeWithStderr(t *testing.T) {
+	t.Parallel()
+
+	have := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	s := &StreamSession{
+		conn: &stderrConn{
+			testConn: testConn{close: func() error { return nil }},
+			stderr:   "warning: permanently added the host key",
+		},
+		r: bufio.NewReader(strings.NewReader("")),
+		w: ioutil.WriteNopCloser(io.Discard),
+	}
+
+	err := s.Fetch(context.Background(), memory.NewStorage(), &FetchRequest{
+		Wants: []plumbing.Hash{have},
+		Haves: []plumbing.Hash{have},
+	})
+
+	require.ErrorIs(t, err, ErrNoChange)
+	var remoteErr *RemoteError
+	require.ErrorAs(t, err, &remoteErr)
+	assert.Equal(t, "warning: permanently added the host key", remoteErr.Reason)
+}
