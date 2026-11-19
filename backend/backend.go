@@ -86,8 +86,10 @@ type Backend struct {
 	// ErrorLog is used to log errors. If nil, errors are not logged.
 	ErrorLog *log.Logger
 
-	// Prefix is an HTTP path prefix stripped before route matching.
-	// Only used by [ServeHTTP].
+	// Prefix is an HTTP path prefix stripped before route matching. It
+	// matches whole path segments, so "/git" matches "/git/repo.git" but
+	// not "/gitx/repo.git". Requests outside the prefix answer 404. Only
+	// used by [Backend.ServeHTTP].
 	Prefix string
 
 	// UploadPack controls whether git-upload-pack (fetch and clone) is

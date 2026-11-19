@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
@@ -124,4 +126,55 @@ func TestServeHTTPDisabledServiceSkipsAuthorize(t *testing.T) {
 	}
 	w := serveHTTP(b, rpc(transport.ReceivePackService))
 	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestServeHTTPPrefixMatchesPathBoundary(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		prefix string
+		path   string
+		want   int
+	}{
+		{prefix: "/git", path: "/git/repo.git/info/refs", want: http.StatusOK},
+		{prefix: "/git/", path: "/git/repo.git/info/refs", want: http.StatusOK},
+		{prefix: "/git", path: "/gitx/repo.git/info/refs", want: http.StatusNotFound},
+		{prefix: "/git", path: "/repo.git/info/refs", want: http.StatusNotFound},
+		{prefix: "/repo", path: "/repository.git/info/refs", want: http.StatusNotFound},
+	} {
+		b := newBackend(t, transport.MapLoader{
+			"repo.git":   memory.NewStorage(),
+			"x/repo.git": memory.NewStorage(),
+			"sitory.git": memory.NewStorage(),
+		})
+		b.Prefix = tc.prefix
+		w := serveHTTP(b, httptest.NewRequest(http.MethodGet, tc.path+"?service=git-upload-pack", nil))
+		require.Equal(t, tc.want, w.Code, "prefix %q path %q", tc.prefix, tc.path)
+	}
+}
+
+func TestServeHTTPRejectsDotSegments(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		prefix string
+		path   string
+	}{
+		{prefix: "/git", path: "/git/../x.git/info/refs"},
+		{prefix: "/git", path: "/git/%2e%2e/x.git/info/refs"},
+		{prefix: "/git", path: "/git/%2E%2E/x.git/info/refs"},
+		{prefix: "/git", path: "/git/./x.git/info/refs"},
+		{prefix: "/git", path: "/git//x.git/info/refs"},
+		{path: "/repo/../repo2/x.git/info/refs"},
+		{path: "/repo/%2e%2e/repo2/x.git/info/refs"},
+		{path: "/../x.git/info/refs"},
+	} {
+		var loaded []string
+		b := newBackend(t, loaderFunc(func(u *url.URL) (storage.Storer, error) {
+			loaded = append(loaded, u.Path)
+			return memory.NewStorage(), nil
+		}))
+		b.Prefix = tc.prefix
+		w := serveHTTP(b, httptest.NewRequest(http.MethodGet, tc.path+"?service=git-upload-pack", nil))
+		require.Equal(t, http.StatusNotFound, w.Code, "prefix %q path %q", tc.prefix, tc.path)
+		require.Empty(t, loaded, "prefix %q path %q", tc.prefix, tc.path)
+	}
 }

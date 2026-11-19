@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
 	"strings"
 
@@ -58,8 +59,21 @@ var httpServices = []httpService{
 // and receive-pack and upload-archive are served when enabled, or when
 // [Backend.Authorize] accepts the request. Without Authorize, a push is
 // refused with 403 unless [Backend.ReceivePack] is [ServiceEnabled].
+//
+// A request whose decoded path has a "." or ".." segment or an empty
+// segment, apart from a trailing slash, answers 404 before [Backend.Prefix]
+// is applied, so the path cannot step out of the prefix.
 func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	urlPath := strings.TrimPrefix(r.URL.Path, b.Prefix)
+	if !isCanonicalPath(r.URL.Path) {
+		b.logf("non-canonical request path: %q", r.URL.Path)
+		renderStatusError(w, http.StatusNotFound)
+		return
+	}
+	urlPath, ok := b.trimPrefix(r.URL.Path)
+	if !ok {
+		renderStatusError(w, http.StatusNotFound)
+		return
+	}
 	for _, s := range httpServices {
 		if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
 			if r.Method != s.method {
@@ -74,6 +88,40 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderStatusError(w, http.StatusNotFound)
+}
+
+// isCanonicalPath reports whether the decoded URL path p has no "." or ".."
+// segments and no empty segments, apart from a trailing slash. A Backend
+// used directly as an [http.Server] handler does not get the path cleaning
+// that [http.ServeMux] does, and a ".." segment would otherwise step out of
+// [Backend.Prefix] before the repository path reaches the Loader. git
+// refuses the same paths with daemon_avoid_alias in path.c.
+func isCanonicalPath(p string) bool {
+	for seg := range strings.SplitSeq(p, "/") {
+		if seg == ".." {
+			return false
+		}
+	}
+	clean := path.Clean(p)
+	if strings.HasSuffix(p, "/") && clean != "/" {
+		clean += "/"
+	}
+	return clean == p
+}
+
+// trimPrefix strips b.Prefix from urlPath. The prefix matches whole path
+// segments only, so "/repo" matches "/repo/x.git" but not "/repository".
+// It reports false when urlPath is outside the prefix.
+func (b *Backend) trimPrefix(urlPath string) (string, bool) {
+	prefix := strings.TrimSuffix(b.Prefix, "/")
+	if prefix == "" {
+		return urlPath, true
+	}
+	rest, ok := strings.CutPrefix(urlPath, prefix)
+	if !ok || (rest != "" && rest[0] != '/') {
+		return "", false
+	}
+	return rest, true
 }
 
 func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo, svc string) {
