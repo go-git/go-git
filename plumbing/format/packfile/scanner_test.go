@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/fixtureutil"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func TestScan(t *testing.T) {
@@ -35,7 +36,7 @@ func TestScan(t *testing.T) {
 
 		var opts []ScannerOption
 		if f.ObjectFormat == "sha256" {
-			opts = append(opts, WithSHA256())
+			opts = append(opts, WithObjectFormat(hash.SHA256))
 		}
 
 		s := NewScanner(mustPackfile(t, f), opts...)

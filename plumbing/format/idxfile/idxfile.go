@@ -65,6 +65,9 @@ type Index interface {
 	// an implementation that performs I/O or scales with index
 	// size silently regresses every storage-level read.
 	MayContain(h plumbing.Hash) bool
+	// ObjectFormat returns the object format of the ids in the index,
+	// which is the object format of its pack.
+	ObjectFormat() hash.ObjectFormat
 	// Close releases any resources held by the index. Implementations
 	// backed by on-disk files must close their file descriptors; pure
 	// in-memory implementations must return nil. Close is idempotent.

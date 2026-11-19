@@ -153,6 +153,8 @@ func (idx *singleEntryIndex) MayContain(h plumbing.Hash) bool {
 	return idx.entry.Hash.Equal(h)
 }
 
+func (idx *singleEntryIndex) ObjectFormat() format.ObjectFormat { return idx.entry.Hash.Format() }
+
 func (idx *singleEntryIndex) Close() error { return nil }
 
 type singleEntryIter struct {

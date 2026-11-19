@@ -8,9 +8,9 @@ import (
 	stdsync "sync"
 	"sync/atomic"
 
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
@@ -95,22 +95,21 @@ type LowMemoryCapable interface {
 // NewParser creates a new Parser.
 // When a storage is set, the objects are written to storage as they
 // are parsed.
+//
+// The pack is parsed as SHA-1 unless [WithObjectFormat] sets another
+// object format. The storage must be of the same object format, as the
+// parser does not check it.
 func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
 		objectFormat: format.DefaultObjectFormat,
 	}
 	for _, opt := range opts {
 		if opt != nil {
-			opt(p)
+			opt.applyParser(p)
 		}
 	}
 
-	var sopts []ScannerOption
-	if p.objectFormat == format.SHA256 {
-		sopts = append(sopts, WithSHA256())
-	}
-
-	p.scanner = NewScanner(data, sopts...)
+	p.scanner = NewScanner(data, WithObjectFormat(p.objectFormat))
 
 	if p.storage != nil {
 		p.scanner.storage = p.storage
@@ -182,11 +181,8 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 	}
 	p.parsed = true
 
-	switch p.objectFormat {
-	case format.SHA1, format.SHA256:
-	default:
-		return plumbing.ZeroHash, fmt.Errorf("%w: object format %q",
-			hash.ErrUnsupportedHashFunction, p.objectFormat)
+	if err := hashutil.Check(p.objectFormat); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
 	var pendingDeltas []*ObjectHeader

@@ -691,7 +691,7 @@ func (s *ObjectStorage) packfile(idx idxfile.Index, pack plumbing.Hash) (*packfi
 		packfile.WithIdx(idx),
 		packfile.WithFs(s.dir.Fs()),
 		packfile.WithCache(s.objectCache),
-		packfile.WithObjectIDSize(pack.Size()),
+		packfile.WithObjectFormat(pack.Format()),
 	), nil
 }
 
@@ -1159,7 +1159,7 @@ func (s *ObjectStorage) buildPackfileIters(
 			}
 			return newPackfileIter(
 				s.dir.Fs(), pack, t, seen, idx,
-				s.objectCache, false, h.Size(),
+				s.objectCache, false, h.Format(),
 			)
 		},
 	}, nil

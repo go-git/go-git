@@ -276,7 +276,7 @@ func newPackfile(t testing.TB, f *fixtures.Fixture) *packfile.Packfile {
 		packfile.WithFs(osfs.New(t.TempDir())),
 	}
 	if f.ObjectFormat == "sha256" {
-		opts = append(opts, packfile.WithObjectIDSize(config.SHA256.Size()))
+		opts = append(opts, packfile.WithObjectFormat(config.SHA256))
 	}
 
 	return packfile.NewPackfile(pf, opts...)
@@ -306,7 +306,7 @@ func BenchmarkGetByOffset(b *testing.B) {
 					packfile.WithCache(c),
 				}
 				if f.ObjectFormat == "sha256" {
-					opts = append(opts, packfile.WithObjectIDSize(config.SHA256.Size()))
+					opts = append(opts, packfile.WithObjectFormat(config.SHA256))
 				}
 				return benchmarkGetByOffset(entries, packfile.NewPackfile(pf1, opts...))
 			}())
@@ -321,7 +321,7 @@ func BenchmarkGetByOffset(b *testing.B) {
 					packfile.WithIdx(idx),
 				}
 				if f.ObjectFormat == "sha256" {
-					opts = append(opts, packfile.WithObjectIDSize(config.SHA256.Size()))
+					opts = append(opts, packfile.WithObjectFormat(config.SHA256))
 				}
 				return benchmarkGetByOffset(entries, packfile.NewPackfile(pf2, opts...))
 			}())
