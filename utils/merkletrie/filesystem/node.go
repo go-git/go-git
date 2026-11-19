@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -19,7 +20,6 @@ import (
 	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
-	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 // Options contains configuration for the filesystem node.

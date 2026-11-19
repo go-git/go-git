@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/internal/sharedfile"
+	gsync "github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
-	gsync "github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
 

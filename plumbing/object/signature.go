@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"io"
 
+	"github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 const (

@@ -10,11 +10,11 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 // probeSize is the byte count for the closed-FD probe. A one-byte
