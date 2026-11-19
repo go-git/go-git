@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
 )
@@ -2451,4 +2452,17 @@ func (s *SuiteDotGit) TestModuleRejectsRootShapedNames() {
 		_, err := d.Module(n)
 		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
 	}
+}
+
+func TestDotGitObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, formatcfg.SHA1, NewWithOptions(memfs.New(), Options{}).ObjectFormat())
+	assert.Equal(t, formatcfg.SHA1, New(memfs.New()).ObjectFormat())
+
+	d := NewWithOptions(memfs.New(), Options{ObjectFormat: formatcfg.SHA256})
+	assert.Equal(t, formatcfg.SHA256, d.ObjectFormat())
+
+	require.NoError(t, d.SetObjectFormat(formatcfg.SHA1))
+	assert.Equal(t, formatcfg.SHA1, d.ObjectFormat())
 }

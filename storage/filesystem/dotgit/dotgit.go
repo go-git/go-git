@@ -2182,6 +2182,16 @@ func (d *DotGit) Fs() billy.Filesystem {
 	return d.fs
 }
 
+// ObjectFormat returns the object format of the repository, as set by
+// Options.ObjectFormat or SetObjectFormat. An unset format is reported
+// as formatcfg.DefaultObjectFormat.
+func (d *DotGit) ObjectFormat() formatcfg.ObjectFormat {
+	if d.options.ObjectFormat == formatcfg.UnsetObjectFormat {
+		return formatcfg.DefaultObjectFormat
+	}
+	return d.options.ObjectFormat
+}
+
 // SetObjectFormat configures the object format for this DotGit instance.
 func (d *DotGit) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	d.options.ObjectFormat = of
