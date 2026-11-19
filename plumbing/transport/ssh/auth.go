@@ -140,11 +140,16 @@ type PublicKeysCallback struct {
 	User     string
 	Callback func() (signers []gossh.Signer, err error)
 	HostKeyCallbackHelper
+
+	// agentConn is the SSH agent connection opened by NewSSHAgentAuth.
+	agentConn net.Conn
 }
 
 // NewSSHAgentAuth returns a PublicKeysCallback based on an SSH agent. It opens
 // a pipe with the SSH agent and uses the pipe as the implementer of the public
-// key callback function.
+// key callback function. The pipe stays open until [PublicKeysCallback.Close]
+// is called, so callers must close the returned PublicKeysCallback once it is
+// no longer needed.
 func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 	var err error
 	if u == "" {
@@ -154,15 +159,30 @@ func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 		}
 	}
 
-	a, _, err := sshagent.New()
+	a, conn, err := sshagent.New()
 	if err != nil {
 		return nil, fmt.Errorf("error creating SSH agent: %w", err)
 	}
 
 	return &PublicKeysCallback{
-		User:     u,
-		Callback: a.Signers,
+		User:      u,
+		Callback:  a.Signers,
+		agentConn: conn,
 	}, nil
+}
+
+// Close closes the SSH agent connection opened by [NewSSHAgentAuth]. The
+// Callback stops working once it is closed. Close is a no-op when the
+// PublicKeysCallback was not created by NewSSHAgentAuth.
+func (a *PublicKeysCallback) Close() error {
+	if a == nil || a.agentConn == nil {
+		return nil
+	}
+	err := a.agentConn.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 // ClientConfig returns the ssh.ClientConfig for public key callback authentication.

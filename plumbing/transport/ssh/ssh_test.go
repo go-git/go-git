@@ -25,12 +25,15 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
-func startSSHServer(t *testing.T) *net.TCPAddr {
+func startSSHServer(t *testing.T, opts ...ssh.Option) *net.TCPAddr {
 	t.Helper()
 
 	l := test.ListenTCP(t)
 	server := &ssh.Server{Handler: handlerSSH}
 	server.SetOption(ssh.HostKeyPEM(testdata.PEMBytes["ed25519"]))
+	for _, opt := range opts {
+		require.NoError(t, server.SetOption(opt))
+	}
 
 	done := make(chan struct{})
 	go func() {

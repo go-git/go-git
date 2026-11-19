@@ -43,7 +43,7 @@ func New() (agent.Agent, net.Conn, error) {
 	trace.SSH.Printf("ssh: net.Dial unix sock %s", sshAuthSock)
 	conn, err := net.Dial("unix", sshAuthSock)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error connecting to SSH_AUTH_SOCK: %v", err)
+		return nil, nil, fmt.Errorf("error connecting to SSH_AUTH_SOCK: %w", err)
 	}
 
 	return agent.NewClient(conn), conn, nil
