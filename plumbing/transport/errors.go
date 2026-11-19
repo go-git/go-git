@@ -15,10 +15,6 @@ var (
 	ErrNoChange               = internal.ErrNoChange
 	ErrAuthenticationRequired = errors.New("authentication required")
 	ErrAuthorizationFailed    = errors.New("authorization failed")
-	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
-	ErrInvalidAuthMethod      = errors.New("invalid auth method")
-	ErrAlreadyConnected       = errors.New("session already established")
-	ErrInvalidRequest         = errors.New("invalid request")
 )
 
 // ErrPackJunk is returned by a fetch, through [FetchPack] or a v2
@@ -34,11 +30,9 @@ var (
 	ErrConnectUnsupported        = errors.New("transport does not support raw connections")
 	ErrArchiveUnsupported        = errors.New("transport does not support archive")
 	ErrCommandUnsupported        = errors.New("command is not supported by transport")
-	ErrProtocolUnsupported       = errors.New("protocol version is not supported")
 	ErrUnsupportedVersion        = errors.New("unsupported protocol version")
 	ErrUnsupportedService        = errors.New("unsupported service")
 	ErrInvalidResponse           = errors.New("invalid response")
-	ErrTimeoutExceeded           = errors.New("timeout exceeded")
 	ErrPackedObjectsNotSupported = errors.New("packed objects not supported")
 )
 
