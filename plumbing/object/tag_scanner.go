@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
@@ -34,6 +35,12 @@ type tagScanner struct {
 	// parse_buffer_signed_by_header (commit.c:1186) accumulates every
 	// occurrence into one signature buffer, so we do the same.
 	sawObject, sawType, sawName, sawTagger bool
+
+	// sig256 accumulates the gpgsig-sha256 value across lines and repeated
+	// headers. Appending to a string field instead would copy the whole
+	// value on every line, which is quadratic in the number of lines.
+	// (*Tag).Decode moves it into the Tag once scanning ends.
+	sig256 strings.Builder
 }
 
 // tagState is one step of the decoder state machine. Each function reads
@@ -187,7 +194,8 @@ func scanTagHeaders(s *tagScanner) (tagState, error) {
 		// Out-of-canonical-position duplicates are dropped, mirroring the
 		// strict ordering of upstream's parse_tag_buffer.
 	case headerpgp256:
-		s.t.SignatureSHA256 += string(data) + "\n"
+		s.sig256.Write(data)
+		s.sig256.WriteByte('\n')
 		next = scanTagPgp256Cont
 	default:
 		// Unknown header — silently dropped (the Tag struct does not
@@ -212,7 +220,7 @@ func scanTagPgp256Cont(s *tagScanner) (tagState, error) {
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
-		s.t.SignatureSHA256 += string(line[1:])
+		s.sig256.Write(line[1:])
 		if err == io.EOF {
 			return nil, nil
 		}
