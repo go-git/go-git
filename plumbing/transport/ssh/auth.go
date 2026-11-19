@@ -246,7 +246,9 @@ func (a *KeyboardInteractive) ClientConfig(_ context.Context, _ *transport.Reque
 // Setting the returned callback as HostKeyCallback turns off host key
 // algorithm selection from known_hosts, so the server may offer a key type
 // that known_hosts does not list. Leave HostKeyCallback nil to keep that
-// selection, or set HostKeyAlgorithms as well.
+// selection, or set HostKeyAlgorithms as well. The
+// github.com/go-git/x/ssh/knownhosts module provides both the callback and
+// the algorithms for a host.
 func NewKnownHostsCallback(files ...string) (gossh.HostKeyCallback, error) {
 	db, err := newKnownHostsDb(files...)
 	if db == nil {
