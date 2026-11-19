@@ -2,7 +2,6 @@ package idxfile
 
 import (
 	"bytes"
-	"crypto"
 	encbin "encoding/binary"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 const (
@@ -101,7 +101,7 @@ type MemoryIndex struct {
 	offsetBuildOnce sync.Once
 	mu              sync.RWMutex
 
-	objectIDSize int
+	format hash.ObjectFormat
 }
 
 var _ Index = (*MemoryIndex)(nil)
@@ -109,12 +109,22 @@ var _ Index = (*MemoryIndex)(nil)
 // Close is a no-op. MemoryIndex holds no external resources.
 func (idx *MemoryIndex) Close() error { return nil }
 
-// NewMemoryIndex returns an instance of a new MemoryIndex.
-func NewMemoryIndex(objectIDSize int) *MemoryIndex {
-	m := &MemoryIndex{objectIDSize: objectIDSize}
-	m.IdxChecksum.ResetBySize(objectIDSize)
-	m.PackfileChecksum.ResetBySize(objectIDSize)
+// NewMemoryIndex returns an instance of a new MemoryIndex for ids of
+// the object format f. [hash.UnsetObjectFormat] is handled as SHA-1, as
+// is the zero value of MemoryIndex.
+func NewMemoryIndex(f hash.ObjectFormat) *MemoryIndex {
+	m := &MemoryIndex{format: f}
+	m.IdxChecksum.ResetBySize(f.Size())
+	m.PackfileChecksum.ResetBySize(f.Size())
 	return m
+}
+
+// ObjectFormat returns the object format of the index.
+func (idx *MemoryIndex) ObjectFormat() hash.ObjectFormat {
+	if idx.format == hash.UnsetObjectFormat {
+		return hash.DefaultObjectFormat
+	}
+	return idx.format
 }
 
 func (idx *MemoryIndex) findHashIndex(h plumbing.Hash) (int, bool) {
@@ -274,7 +284,7 @@ func (idx *MemoryIndex) genOffsetHash() error {
 	offsetHash := make(map[int64]plumbing.Hash, count)
 
 	var hash plumbing.Hash
-	hash.ResetBySize(idx.objectIDSize)
+	hash.ResetBySize(idx.idSize())
 
 	i := uint32(0)
 	for firstLevel, fanoutValue := range idx.Fanout {
@@ -393,10 +403,7 @@ func (idx *MemoryIndex) EntriesByOffset() (EntryIter, error) {
 }
 
 func (idx *MemoryIndex) idSize() int {
-	if idx.objectIDSize != 0 {
-		return idx.objectIDSize
-	}
-	return crypto.SHA1.Size()
+	return idx.format.Size()
 }
 
 // EntryIter is an iterator that will return the entries in a packfile index.

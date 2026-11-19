@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"crypto"
 	"io"
 
 	"github.com/go-git/go-billy/v6"
@@ -85,15 +84,13 @@ func NewPackfileIter(
 	_ int64, // largeObjectThreshold - currently unused
 	objectIDSize int,
 ) (storer.EncodedObjectIter, error) {
-	var hasher hash.Hash
-	if objectIDSize == crypto.SHA256.Size() {
-		hasher = hash.New(crypto.SHA256)
-	} else {
-		hasher = hash.New(crypto.SHA1)
+	format := hash.SHA1
+	if objectIDSize == hash.SHA256Size {
+		format = hash.SHA256
 	}
 
-	idx := idxfile.NewMemoryIndex(objectIDSize)
-	if err := idxfile.NewDecoder(idxFile, hasher).Decode(idx); err != nil {
+	idx := idxfile.NewMemoryIndex(format)
+	if err := idxfile.NewDecoder(idxFile).Decode(idx); err != nil {
 		return nil, err
 	}
 

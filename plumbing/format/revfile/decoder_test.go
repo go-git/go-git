@@ -2,7 +2,6 @@ package revfile
 
 import (
 	"bytes"
-	"crypto"
 	"errors"
 	"io"
 	"testing"
@@ -59,8 +58,8 @@ func TestDecodeSHA256(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, idxf)
 
-	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
+	idx := idxfile.NewMemoryIndex(hash.SHA256)
+	idec := idxfile.NewDecoder(idxf)
 	err = idec.Decode(idx)
 	require.NoError(t, err)
 

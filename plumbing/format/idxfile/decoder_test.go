@@ -2,7 +2,6 @@ package idxfile_test
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	. "github.com/go-git/go-git/v6/plumbing/format/idxfile"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type IdxfileSuite struct {
@@ -32,7 +30,7 @@ func (s *IdxfileSuite) TestDecode() {
 
 	idxf, err := f.Idx()
 	s.Require().NoError(err)
-	d := NewDecoder(idxf, hash.New(crypto.SHA1))
+	d := NewDecoder(idxf)
 	idx := new(MemoryIndex)
 	err = d.Decode(idx)
 	s.NoError(err)
@@ -63,7 +61,7 @@ func (s *IdxfileSuite) TestDecode64bitsOffsets() {
 
 	idx := new(MemoryIndex)
 
-	d := NewDecoder(FromBytes(raw), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(raw))
 	err = d.Decode(idx)
 	s.NoError(err)
 
@@ -103,7 +101,7 @@ func (s *IdxfileSuite) TestDecodedHashesMatchParsedHashes() {
 	idxf, err := f.Idx()
 	s.Require().NoError(err)
 	idx := new(MemoryIndex)
-	s.Require().NoError(NewDecoder(idxf, hash.New(crypto.SHA1)).Decode(idx))
+	s.Require().NoError(NewDecoder(idxf).Decode(idx))
 
 	iter, err := idx.Entries()
 	s.Require().NoError(err)
@@ -164,10 +162,9 @@ func BenchmarkDecode(b *testing.B) {
 		b.Errorf("unexpected error reading idx file: %s", err)
 	}
 
-	hasher := hash.New(crypto.SHA1)
 	for b.Loop() {
 		idx := new(MemoryIndex)
-		d := NewDecoder(FromBytes(fixture), hasher)
+		d := NewDecoder(FromBytes(fixture))
 		if err := d.Decode(idx); err != nil {
 			b.Errorf("unexpected error decoding: %s", err)
 		}
@@ -294,7 +291,7 @@ func TestDecodeErrors(t *testing.T) {
 			t.Parallel()
 
 			idx := new(MemoryIndex)
-			d := NewDecoder(FromBytes(tt.input()), hash.New(crypto.SHA1))
+			d := NewDecoder(FromBytes(tt.input()))
 
 			err := d.Decode(idx)
 			require.Error(t, err)
@@ -382,7 +379,7 @@ func TestDecoderSizeFormulaBoundary(t *testing.T) {
 			t.Parallel()
 
 			idx := new(MemoryIndex)
-			d := NewDecoder(FromBytes(build(tt.nr, tt.size)), hash.New(crypto.SHA1))
+			d := NewDecoder(FromBytes(build(tt.nr, tt.size)))
 			err := d.Decode(idx)
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrMalformedIdxFile)
@@ -411,7 +408,7 @@ func TestDecoderRejectsInconsistentObjectCount(t *testing.T) {
 	}
 
 	idx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(buf.Bytes()), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(buf.Bytes()))
 	err := d.Decode(idx)
 	if !errors.Is(err, ErrMalformedIdxFile) {
 		t.Fatalf("expected ErrMalformedIdxFile, got %v", err)
