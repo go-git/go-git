@@ -2,7 +2,6 @@ package storer
 
 import (
 	"fmt"
-	"io"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -126,10 +125,6 @@ func (s *ObjectSuite) TestObjectSliceIterError() {
 
 type MockObjectStorage struct {
 	db []plumbing.EncodedObject
-}
-
-func (o *MockObjectStorage) RawObjectWriter(_ plumbing.ObjectType, _ int64) (w io.WriteCloser, err error) {
-	return nil, nil
 }
 
 func (o *MockObjectStorage) NewEncodedObject() plumbing.EncodedObject {

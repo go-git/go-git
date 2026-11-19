@@ -546,17 +546,17 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	defer gogitsync.PutZlibReader(zr)
 
 	mw := io.Discard
+	var ow io.WriteCloser
 	if !oh.Type.IsDelta() {
 		r.hasher.Reset(oh.Type, oh.Size)
 		mw = r.hasher
 		if r.storage != nil {
-			w, err := r.storage.RawObjectWriter(oh.Type, oh.Size)
+			ow, err = rawObjectWriter(r.storage, oh.Type, oh.Size)
 			if err != nil {
 				return nil, err
 			}
 
-			defer func() { _ = w.Close() }()
-			mw = io.MultiWriter(r.hasher, w)
+			mw = io.MultiWriter(r.hasher, ow)
 		}
 	}
 
@@ -576,11 +576,19 @@ func objectEntry(r *Scanner) (stateFn, error) {
 	mw = &boundedWriter{w: mw, limit: oh.Size}
 
 	n, err := ioutil.CopyBufferPool(mw, zr)
+	if err == nil && n != oh.Size {
+		err = fmt.Errorf("%w: %w", ErrMalformedPackfile, ErrInflatedSizeShort)
+	}
 	if err != nil {
+		if ow != nil {
+			abortObjectWriter(ow)
+		}
 		return nil, err
 	}
-	if n != oh.Size {
-		return nil, fmt.Errorf("%w: %w", ErrMalformedPackfile, ErrInflatedSizeShort)
+	if ow != nil {
+		if err := ow.Close(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := r.Flush(); err != nil {

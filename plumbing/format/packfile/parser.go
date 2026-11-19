@@ -133,15 +133,17 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 	// Only need to store deltas, as the scanner already stored non-delta
 	// objects.
 	if p.storage != nil && oh.diskType.IsDelta() {
-		w, err := p.storage.RawObjectWriter(oh.Type, oh.Size)
+		w, err := rawObjectWriter(p.storage, oh.Type, oh.Size)
 		if err != nil {
 			return err
 		}
 
-		defer func() { _ = w.Close() }()
+		if _, err := ioutil.CopyBufferPool(w, oh.content); err != nil {
+			abortObjectWriter(w)
+			return err
+		}
 
-		_, err = ioutil.CopyBufferPool(w, oh.content)
-		if err != nil {
+		if err := w.Close(); err != nil {
 			return err
 		}
 	}
