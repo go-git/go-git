@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
-	"github.com/go-git/go-git/v6/storage/filesystem/mmap"
+	"github.com/go-git/go-git/v6/internal/storage/mmap"
 )
 
 func newPackScanner(pack, idx, rev billy.File) packHandler[uint64] {
