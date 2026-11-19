@@ -9,9 +9,9 @@ import (
 	"io"
 	gosync "sync"
 
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
