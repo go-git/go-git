@@ -1,7 +1,6 @@
 package plumbing
 
 import (
-	"crypto"
 	"encoding/hex"
 	"hash"
 	"sort"
@@ -32,21 +31,22 @@ func NewHash(s string) Hash {
 // Hasher wraps a hash.Hash to compute git object hashes.
 type Hasher struct {
 	hash.Hash
-	format format.ObjectFormat
+	format githash.ObjectFormat
 }
 
-// NewHasher returns a new Hasher for the given object format, type and size.
-func NewHasher(f format.ObjectFormat, t ObjectType, size int64) Hasher {
-	h := Hasher{format: f}
-	switch f {
-	case format.SHA256:
-		h.Hash = githash.New(crypto.SHA256)
-	default:
-		// TODO: return error when format is not supported
-		h.Hash = githash.New(crypto.SHA1)
+// NewHasher returns a new Hasher for the given object format, type and
+// size. [githash.UnsetObjectFormat] is handled as
+// [githash.DefaultObjectFormat]. Any other format that is neither SHA-1
+// nor SHA-256 returns an error wrapping
+// [githash.ErrUnsupportedHashFunction].
+func NewHasher(f githash.ObjectFormat, t ObjectType, size int64) (Hasher, error) {
+	hh, err := newHash(f)
+	if err != nil {
+		return Hasher{}, err
 	}
+	h := Hasher{Hash: hh, format: idFormat(f)}
 	h.Reset(t, size)
-	return h
+	return h, nil
 }
 
 // Reset resets the hasher with a new object type and size.
@@ -60,11 +60,7 @@ func (h Hasher) Reset(t ObjectType, size int64) {
 
 // Sum returns the computed hash.
 func (h Hasher) Sum() (hash Hash) {
-	if h.format == format.SHA256 {
-		hash.format = h.format
-	} else {
-		hash.format = format.UnsetObjectFormat
-	}
+	hash.format = h.format
 	_, _ = hash.Write(h.Hash.Sum(nil))
 	return hash
 }

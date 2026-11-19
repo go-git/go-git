@@ -236,7 +236,7 @@ func zlibCompress(t *testing.T, content []byte) []byte {
 }
 
 func testObjectHash(typ plumbing.ObjectType, content []byte) plumbing.Hash {
-	h := plumbing.NewHasher(format.SHA1, typ, int64(len(content)))
+	h, _ := plumbing.NewHasher(format.SHA1, typ, int64(len(content)))
 	_, _ = h.Write(content)
 	return h.Sum()
 }

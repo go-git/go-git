@@ -23,14 +23,18 @@ func TestObjectHasherUsesRegisteredSHA1(t *testing.T) { //nolint: paralleltest /
 	oh, err := NewObjectHasher(githash.SHA1)
 	require.NoError(t, err)
 	assert.IsType(t, sha1cd.New(), oh.hasher)
-	assert.IsType(t, sha1cd.New(), NewHasher(githash.SHA1, BlobObject, 0).Hash)
+	h, err := NewHasher(githash.SHA1, BlobObject, 0)
+	require.NoError(t, err)
+	assert.IsType(t, sha1cd.New(), h.Hash)
 
 	require.NoError(t, githash.RegisterHash(crypto.SHA1, sha1.New))
 
 	oh, err = NewObjectHasher(githash.SHA1)
 	require.NoError(t, err)
 	assert.IsType(t, sha1.New(), oh.hasher)
-	assert.IsType(t, sha1.New(), NewHasher(githash.SHA1, BlobObject, 0).Hash)
+	h, err = NewHasher(githash.SHA1, BlobObject, 0)
+	require.NoError(t, err)
+	assert.IsType(t, sha1.New(), h.Hash)
 }
 
 func TestNewObjectHasher(t *testing.T) {
@@ -240,4 +244,54 @@ func benchmarkObjectHash(b *testing.B, f githash.ObjectFormat, sz int64) {
 		_, _ = oh.Compute(BlobObject, content)
 		b.SetBytes(sz)
 	}
+}
+
+func TestNewHasher(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		format    githash.ObjectFormat
+		blob      string
+		emptyTree string
+	}{
+		{
+			githash.SHA1,
+			"9f361d484fcebb869e1919dc7467b82ac6ca5fad",
+			"4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+		},
+		{
+			githash.UnsetObjectFormat,
+			"9f361d484fcebb869e1919dc7467b82ac6ca5fad",
+			"4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+		},
+		{
+			githash.SHA256,
+			"2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677",
+			"6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(string(tc.format), func(t *testing.T) {
+			t.Parallel()
+			content := []byte("hash object sample")
+			h, err := NewHasher(tc.format, BlobObject, int64(len(content)))
+			require.NoError(t, err)
+
+			_, err = h.Write(content)
+			require.NoError(t, err)
+			assert.Equal(t, tc.blob, h.Sum().String())
+
+			h.Reset(TreeObject, 0)
+			assert.Equal(t, tc.emptyTree, h.Sum().String())
+		})
+	}
+}
+
+func TestNewHasherUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewHasher(githash.ObjectFormat("sha512"), BlobObject, 0)
+	assert.ErrorIs(t, err, githash.ErrUnsupportedHashFunction)
+	assert.ErrorContains(t, err, "sha512")
 }
