@@ -36,8 +36,17 @@ type commitScanner struct {
 	sawTree, sawAuthor, sawCommitter bool
 	sawEncoding                      bool
 
-	// extra is the multi-line ExtraHeader currently being assembled.
-	extra *ExtraHeader
+	// sig and sig256 accumulate the gpgsig and gpgsig-sha256 values across
+	// lines and repeated headers. Appending to a string field instead would
+	// copy the whole value on every line, which is quadratic in the number
+	// of lines. (*Commit).Decode moves them into the Commit once scanning
+	// ends.
+	sig, sig256 strings.Builder
+
+	// extra is the multi-line ExtraHeader currently being assembled, and
+	// extraValue accumulates its value for the same reason as sig.
+	extra      *ExtraHeader
+	extraValue strings.Builder
 }
 
 // commitState is one step of the decoder state machine. Each function reads
@@ -220,15 +229,18 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 			s.sawEncoding = true
 		}
 	case headerpgp:
-		s.c.Signature += string(data) + "\n"
+		s.sig.Write(data)
+		s.sig.WriteByte('\n')
 		next = scanPgpCont
 	case headerpgp256:
-		s.c.SignatureSHA256 += string(data) + "\n"
+		s.sig256.Write(data)
+		s.sig256.WriteByte('\n')
 		next = scanPgp256Cont
 	default:
 		h, multiline := parseExtraHeader(originalLine)
 		if multiline {
 			s.extra = &h
+			s.extraValue.WriteString(h.Value)
 			next = scanExtraCont
 		} else {
 			s.c.ExtraHeaders = append(s.c.ExtraHeaders, h)
@@ -250,20 +262,20 @@ func scanHeaders(s *commitScanner) (commitState, error) {
 // (commit.c:1186). Mergetag continuations go through scanExtraCont
 // because mergetag is modelled as an entry in ExtraHeaders.
 func scanPgpCont(s *commitScanner) (commitState, error) {
-	return continuationCont(s, &s.c.Signature, scanPgpCont)
+	return continuationCont(s, &s.sig, scanPgpCont)
 }
 
 func scanPgp256Cont(s *commitScanner) (commitState, error) {
-	return continuationCont(s, &s.c.SignatureSHA256, scanPgp256Cont)
+	return continuationCont(s, &s.sig256, scanPgp256Cont)
 }
 
-func continuationCont(s *commitScanner, dst *string, self commitState) (commitState, error) {
+func continuationCont(s *commitScanner, dst *strings.Builder, self commitState) (commitState, error) {
 	line, err := s.readLine()
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
-		*dst += string(line[1:])
+		dst.Write(line[1:])
 		if err == io.EOF {
 			return nil, nil
 		}
@@ -284,7 +296,7 @@ func scanExtraCont(s *commitScanner) (commitState, error) {
 		return nil, err
 	}
 	if len(line) > 0 && line[0] == ' ' {
-		s.extra.Value += string(line[1:])
+		s.extraValue.Write(line[1:])
 		if err == io.EOF {
 			s.finaliseExtra()
 			return nil, nil
@@ -299,7 +311,8 @@ func scanExtraCont(s *commitScanner) (commitState, error) {
 }
 
 func (s *commitScanner) finaliseExtra() {
-	s.extra.Value = strings.TrimRight(s.extra.Value, "\n")
+	s.extra.Value = strings.TrimRight(s.extraValue.String(), "\n")
+	s.extraValue.Reset()
 	s.c.ExtraHeaders = append(s.c.ExtraHeaders, *s.extra)
 	s.extra = nil
 }

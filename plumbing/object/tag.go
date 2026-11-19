@@ -120,6 +120,7 @@ func (t *Tag) Decode(o plumbing.EncodedObject) (err error) {
 		}
 	}
 
+	t.SignatureSHA256 = s.sig256.String()
 	data := s.msgbuf.Bytes()
 	if sm, _ := parseSignedBytes(data); sm >= 0 {
 		t.Signature = string(data[sm:])

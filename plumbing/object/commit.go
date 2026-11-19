@@ -274,6 +274,8 @@ func (c *Commit) Decode(o plumbing.EncodedObject) (err error) {
 	if !s.sawTree {
 		return fmt.Errorf("%w: missing tree header", ErrMalformedCommit)
 	}
+	c.Signature = s.sig.String()
+	c.SignatureSHA256 = s.sig256.String()
 	c.Message = s.msgbuf.String()
 	return nil
 }
