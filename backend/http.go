@@ -59,7 +59,11 @@ var httpServices = []httpService{
 // [Backend.Authorize] accepts the request. Without Authorize, a push is
 // refused with 403 unless [Backend.ReceivePack] is [ServiceEnabled].
 func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	urlPath := strings.TrimPrefix(r.URL.Path, b.Prefix)
+	urlPath, ok := b.trimPrefix(r.URL.Path)
+	if !ok {
+		renderStatusError(w, http.StatusNotFound)
+		return
+	}
 	for _, s := range httpServices {
 		if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
 			if r.Method != s.method {
@@ -74,6 +78,21 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderStatusError(w, http.StatusNotFound)
+}
+
+// trimPrefix strips b.Prefix from urlPath. The prefix matches whole path
+// segments only, so "/repo" matches "/repo/x.git" but not "/repository".
+// It reports false when urlPath is outside the prefix.
+func (b *Backend) trimPrefix(urlPath string) (string, bool) {
+	prefix := strings.TrimSuffix(b.Prefix, "/")
+	if prefix == "" {
+		return urlPath, true
+	}
+	rest, ok := strings.CutPrefix(urlPath, prefix)
+	if !ok || (rest != "" && rest[0] != '/') {
+		return "", false
+	}
+	return rest, true
 }
 
 func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo, svc string) {

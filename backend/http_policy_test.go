@@ -125,3 +125,27 @@ func TestServeHTTPDisabledServiceSkipsAuthorize(t *testing.T) {
 	w := serveHTTP(b, rpc(transport.ReceivePackService))
 	require.Equal(t, http.StatusForbidden, w.Code)
 }
+
+func TestServeHTTPPrefixMatchesPathBoundary(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		prefix string
+		path   string
+		want   int
+	}{
+		{prefix: "/git", path: "/git/repo.git/info/refs", want: http.StatusOK},
+		{prefix: "/git/", path: "/git/repo.git/info/refs", want: http.StatusOK},
+		{prefix: "/git", path: "/gitx/repo.git/info/refs", want: http.StatusNotFound},
+		{prefix: "/git", path: "/repo.git/info/refs", want: http.StatusNotFound},
+		{prefix: "/repo", path: "/repository.git/info/refs", want: http.StatusNotFound},
+	} {
+		b := newBackend(t, transport.MapLoader{
+			"repo.git":   memory.NewStorage(),
+			"x/repo.git": memory.NewStorage(),
+			"sitory.git": memory.NewStorage(),
+		})
+		b.Prefix = tc.prefix
+		w := serveHTTP(b, httptest.NewRequest(http.MethodGet, tc.path+"?service=git-upload-pack", nil))
+		require.Equal(t, tc.want, w.Code, "prefix %q path %q", tc.prefix, tc.path)
+	}
+}
