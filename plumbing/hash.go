@@ -9,7 +9,8 @@ import (
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
-// Hash SHA1 hashed content
+// Hash is an alias of [ObjectID], kept for compatibility. It holds ids
+// of any object format, not only SHA-1. New code should use ObjectID.
 type Hash = ObjectID
 
 // ZeroHash is the SHA-1 ObjectID with value zero. It equals the zero
@@ -18,10 +19,13 @@ type Hash = ObjectID
 // to get the zero id of a given format.
 var ZeroHash ObjectID
 
-// NewHash return a new Hash based on a hexadecimal hash representation.
-// Invalid input results into an empty hash.
+// NewHash returns the Hash for a hexadecimal representation. It parses
+// leniently: input that is not hexadecimal yields a zero id, input of
+// any length other than that of a SHA-256 id is parsed as SHA-1, and
+// shorter input is zero-padded while longer input is truncated.
 //
-// deprecated: Use the new FromHex instead.
+// Deprecated: Use [FromHex], which accepts only a full object id and
+// reports whether the input was valid.
 func NewHash(s string) Hash {
 	h, _ := fromHexLax(s)
 	return h
