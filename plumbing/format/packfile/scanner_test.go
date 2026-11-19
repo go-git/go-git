@@ -122,42 +122,42 @@ func TestPackHeaderSignature(t *testing.T) {
 		{
 			name: "valid signature",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader([]byte("PACK")), nil, nil),
+				reader: newScannerReader(bytes.NewReader([]byte("PACK")), nil, nil),
 			},
 			nextState: packVersion,
 		},
 		{
 			name: "valid signature over short reads",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(iotest.OneByteReader(bytes.NewReader([]byte("PACK"))), nil, nil),
+				reader: newScannerReader(iotest.OneByteReader(bytes.NewReader([]byte("PACK"))), nil, nil),
 			},
 			nextState: packVersion,
 		},
 		{
 			name: "invalid signature",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader([]byte("FOOBAR")), nil, nil),
+				reader: newScannerReader(bytes.NewReader([]byte("FOOBAR")), nil, nil),
 			},
 			wantErr: ErrBadSignature,
 		},
 		{
 			name: "invalid signature - too small",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader([]byte("FOO")), nil, nil),
+				reader: newScannerReader(bytes.NewReader([]byte("FOO")), nil, nil),
 			},
 			wantErr: ErrBadSignature,
 		},
 		{
 			name: "invalid signature - too small over short reads",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(iotest.OneByteReader(bytes.NewReader([]byte("PAC"))), nil, nil),
+				reader: newScannerReader(iotest.OneByteReader(bytes.NewReader([]byte("PAC"))), nil, nil),
 			},
 			wantErr: ErrBadSignature,
 		},
 		{
 			name: "empty packfile: ErrEmptyPackfile",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
+				reader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: ErrEmptyPackfile,
 		},
@@ -195,7 +195,7 @@ func TestPackVersion(t *testing.T) {
 			name:    "Version 2",
 			version: Version(2),
 			scanner: &Scanner{
-				scannerReader: func() *scannerReader {
+				reader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(2))
 					return newScannerReader(buf, nil, nil)
@@ -206,7 +206,7 @@ func TestPackVersion(t *testing.T) {
 		{
 			name: "Version -1",
 			scanner: &Scanner{
-				scannerReader: func() *scannerReader {
+				reader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, -1) //nolint:staticcheck // intentionally testing invalid input
 					return newScannerReader(buf, nil, nil)
@@ -217,7 +217,7 @@ func TestPackVersion(t *testing.T) {
 		{
 			name: "Unsupported version",
 			scanner: &Scanner{
-				scannerReader: func() *scannerReader {
+				reader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(3))
 					return newScannerReader(buf, nil, nil)
@@ -228,7 +228,7 @@ func TestPackVersion(t *testing.T) {
 		{
 			name: "empty packfile: EOF",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
+				reader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: io.EOF,
 		},
@@ -266,7 +266,7 @@ func TestPackObjectQty(t *testing.T) {
 		{
 			name: "Zero",
 			scanner: &Scanner{
-				scannerReader: func() *scannerReader {
+				reader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(0))
 					return newScannerReader(buf, nil, nil)
@@ -277,7 +277,7 @@ func TestPackObjectQty(t *testing.T) {
 		{
 			name: "Valid number",
 			scanner: &Scanner{
-				scannerReader: func() *scannerReader {
+				reader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 4))
 					binary.Write(buf, binary.BigEndian, uint32(7))
 					return newScannerReader(buf, nil, nil)
@@ -289,7 +289,7 @@ func TestPackObjectQty(t *testing.T) {
 		{
 			name: "less than 2 bytes on source",
 			scanner: &Scanner{
-				scannerReader: func() *scannerReader {
+				reader: func() *scannerReader {
 					buf := bytes.NewBuffer(make([]byte, 0, 2))
 					return newScannerReader(buf, nil, nil)
 				}(),
@@ -299,7 +299,7 @@ func TestPackObjectQty(t *testing.T) {
 		{
 			name: "empty packfile: EOF",
 			scanner: &Scanner{
-				scannerReader: newScannerReader(bytes.NewReader(nil), nil, nil),
+				reader: newScannerReader(bytes.NewReader(nil), nil, nil),
 			},
 			wantErr: io.EOF,
 		},
@@ -596,4 +596,18 @@ func TestScannerOFSDeltaBaseBoundary(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScannerDoesNotExposeReader(t *testing.T) {
+	t.Parallel()
+
+	var s any = NewScanner(bytes.NewReader(nil))
+	_, ok := s.(io.Reader)
+	assert.False(t, ok, "Scanner must not implement io.Reader")
+	_, ok = s.(io.ByteReader)
+	assert.False(t, ok, "Scanner must not implement io.ByteReader")
+	_, ok = s.(io.Seeker)
+	assert.False(t, ok, "Scanner must not implement io.Seeker")
+	_, ok = s.(interface{ Flush() error })
+	assert.False(t, ok, "Scanner must not expose Flush")
 }

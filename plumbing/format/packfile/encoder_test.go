@@ -380,10 +380,8 @@ func packfileFromReader(s *EncoderSuite, buf *bytes.Buffer) (*Packfile, func()) 
 	_, err = file.Seek(0, io.SeekStart)
 	s.NoError(err)
 
-	scanner := NewScanner(file)
-
 	w := new(idxfile.Writer)
-	p := NewParser(scanner, WithScannerObservers(w))
+	p := NewParser(file, WithScannerObservers(w))
 
 	_, err = p.Parse()
 	s.NoError(err)

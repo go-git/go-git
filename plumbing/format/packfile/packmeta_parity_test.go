@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 )
 
 // stagePackOnDisk copies the fixture's .pack file into a temp
@@ -59,23 +58,11 @@ func TestPackMeta_ParityWithScanner(t *testing.T) {
 			root, packHash, relPath := stagePackOnDisk(t, f)
 			fs := osfs.New(root)
 
-			// Scanner-driven path: read the trailing hash directly.
-			// Use the hash size derived from the fixture's packHash so
-			// the test covers both SHA1 and SHA256 pack fixtures.
-			hashSize := packHash.Size()
-
-			pf, err := fs.Open(relPath)
-			require.NoError(t, err)
-			defer pf.Close()
-
-			scanner := packfile.NewScanner(pf)
-			require.True(t, scanner.Scan(), "scanner.Scan: %v", scanner.Error())
-
-			_, err = scanner.Seek(-int64(hashSize), io.SeekEnd)
-			require.NoError(t, err)
-			var scannerID plumbing.Hash
-			scannerID.ResetBySize(hashSize)
-			_, err = scannerID.ReadFrom(scanner)
+			// Scanner-driven path: Packfile.init reads the trailing
+			// hash when no PackHandle is set.
+			p := newPackfile(t, f)
+			defer p.Close()
+			scannerID, err := p.ID()
 			require.NoError(t, err)
 
 			// Meta-driven path: PackHandle.Meta returns the parsed

@@ -308,14 +308,11 @@ func BenchmarkParseBasic(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		var scanOpts []packfile.ScannerOption
 		var parseOpts []packfile.ParserOption
 		if f.ObjectFormat == "sha256" {
-			scanOpts = append(scanOpts, packfile.WithSHA256())
 			parseOpts = append(parseOpts, packfile.WithObjectFormat(config.SHA256))
 		}
 
-		scanner := packfile.NewScanner(pf, scanOpts...)
 		storage := filesystem.NewStorage(osfs.New(b.TempDir()), cache.NewObjectLRUDefault())
 		b.Cleanup(func() {
 			_ = storage.Close()
@@ -324,30 +321,27 @@ func BenchmarkParseBasic(b *testing.B) {
 		// TODO: storage modes for SHA256 once the parser's low-memory path supports it.
 		if f.ObjectFormat != "sha256" {
 			b.Run(format+"/with_storage", func(b *testing.B) {
-				benchmarkParseBasic(b, pf, scanner, append(parseOpts, packfile.WithStorage(storage))...)
+				benchmarkParseBasic(b, pf, append(parseOpts, packfile.WithStorage(storage))...)
 			})
 			b.Run(format+"/with_memory_storage", func(b *testing.B) {
-				benchmarkParseBasic(b, pf, scanner, append(parseOpts, packfile.WithStorage(memory.NewStorage()))...)
+				benchmarkParseBasic(b, pf, append(parseOpts, packfile.WithStorage(memory.NewStorage()))...)
 			})
 		}
 		b.Run(format+"/without_storage", func(b *testing.B) {
-			benchmarkParseBasic(b, pf, scanner, parseOpts...)
+			benchmarkParseBasic(b, pf, parseOpts...)
 		})
 	}
 }
 
 func benchmarkParseBasic(b *testing.B,
-	f billy.File, scanner *packfile.Scanner,
+	f billy.File,
 	opts ...packfile.ParserOption,
 ) {
 	for i := 0; i < b.N; i++ {
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			b.Fatal(err)
 		}
-		if err := scanner.Reset(); err != nil {
-			b.Fatal(err)
-		}
-		parser := packfile.NewParser(scanner, opts...)
+		parser := packfile.NewParser(f, opts...)
 
 		checksum, err := parser.Parse()
 		if err != nil {
@@ -366,10 +360,8 @@ func BenchmarkParse(b *testing.B) {
 		if pffErr != nil {
 			b.Fatal(pffErr)
 		}
-		scanner := packfile.NewScanner(pff)
-
 		b.Run(f.URL, func(b *testing.B) {
-			benchmarkParseBasic(b, pff, scanner)
+			benchmarkParseBasic(b, pff)
 		})
 	}
 }
@@ -540,8 +532,7 @@ func TestChecksumMismatch(t *testing.T) {
 	_, err = f.Seek(0, io.SeekStart)
 	require.NoError(t, err)
 
-	scanner := packfile.NewScanner(f)
-	parser := packfile.NewParser(scanner)
+	parser := packfile.NewParser(f)
 
 	_, err = parser.Parse()
 	require.ErrorContains(t, err, "checksum mismatch")
@@ -562,8 +553,7 @@ func TestMalformedPack(t *testing.T) {
 	_, err = f.Seek(0, io.SeekStart)
 	require.NoError(t, err)
 
-	scanner := packfile.NewScanner(f)
-	parser := packfile.NewParser(scanner)
+	parser := packfile.NewParser(f)
 
 	_, err = parser.Parse()
 	require.ErrorContains(t, err, "malformed pack")
