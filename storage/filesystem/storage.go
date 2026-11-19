@@ -236,6 +236,11 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	}
 
 	if cfg.Extensions.ObjectFormat != of {
+		oh, err := plumbing.NewObjectHasher(of)
+		if err != nil {
+			return err
+		}
+
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 		err = s.SetConfig(cfg)
@@ -252,7 +257,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		s.ModuleStorage.objectFormat = of
 		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
-		s.oh = plumbing.FromObjectFormat(of)
+		s.oh = oh
 		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
 		s.h = s.hasher.Hash
 	}

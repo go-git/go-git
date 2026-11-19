@@ -281,7 +281,9 @@ func TestObjectIDSHA1Identity(t *testing.T) {
 	fromBytes, ok := FromBytes(raw)
 	require.True(t, ok)
 
-	fromObjectHasher, err := FromObjectFormat(config.SHA1).Compute(BlobObject, []byte(content))
+	oh, err := NewObjectHasher(config.SHA1)
+	require.NoError(t, err)
+	fromObjectHasher, err := oh.Compute(BlobObject, []byte(content))
 	require.NoError(t, err)
 
 	hasher := NewHasher(config.SHA1, BlobObject, int64(len(content)))

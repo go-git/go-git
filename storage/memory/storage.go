@@ -66,10 +66,16 @@ func NewStorage(o ...StorageOption) *Storage {
 		cfg, _ := s.Config()
 		cfg.Extensions.ObjectFormat = opts.objectFormat
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
-		s.oh = plumbing.FromObjectFormat(opts.objectFormat)
-	} else {
-		s.oh = plumbing.FromObjectFormat(formatcfg.DefaultObjectFormat)
 	}
+
+	oh, err := plumbing.NewObjectHasher(opts.objectFormat)
+	if err != nil {
+		// NewStorage cannot return an error. An unsupported format set
+		// through WithObjectFormat keeps the default hasher, as it did
+		// before NewObjectHasher reported such formats.
+		oh, _ = plumbing.NewObjectHasher(formatcfg.DefaultObjectFormat)
+	}
+	s.oh = oh
 
 	return s
 }
@@ -97,11 +103,16 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		return nil
 	}
 
+	oh, err := plumbing.NewObjectHasher(of)
+	if err != nil {
+		return err
+	}
+
 	cfg, _ := s.Config()
 	cfg.Extensions.ObjectFormat = of
 	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 	s.options.objectFormat = of
-	s.oh = plumbing.FromObjectFormat(of)
+	s.oh = oh
 	return nil
 }
 

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"sync"
 
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -21,16 +20,12 @@ import (
 type ObjectHasher struct {
 	hasher hash.Hash
 	m      sync.Mutex
-	format format.ObjectFormat
+	format githash.ObjectFormat
 }
 
 // Size returns the size of the hash in bytes.
 func (h *ObjectHasher) Size() int {
 	return h.hasher.Size()
-}
-
-func (h *ObjectHasher) Write(p []byte) (int, error) {
-	return h.hasher.Write(p)
 }
 
 // Compute computes the hash of the given data with the specified object type.
@@ -51,41 +46,42 @@ func (h *ObjectHasher) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 	return out, nil
 }
 
-// FromObjectFormat returns a new ObjectHasher for the given
-// ObjectFormat.
-//
-// If the format is not recognised, defaults to SHA1.
-func FromObjectFormat(f format.ObjectFormat) *ObjectHasher {
-	var hasher hash.Hash
-	switch f {
-	case format.SHA256:
-		hasher = githash.New(crypto.SHA256)
-	default:
-		hasher = githash.New(crypto.SHA1)
-		f = format.UnsetObjectFormat
+// NewObjectHasher returns an ObjectHasher for the object format [f].
+// [githash.UnsetObjectFormat] is handled as [githash.DefaultObjectFormat].
+// Any other format that is neither SHA-1 nor SHA-256 returns an error
+// wrapping [githash.ErrUnsupportedHashFunction].
+func NewObjectHasher(f githash.ObjectFormat) (*ObjectHasher, error) {
+	h, err := newHash(f)
+	if err != nil {
+		return nil, err
 	}
 	return &ObjectHasher{
-		hasher: hasher,
-		format: f,
+		hasher: h,
+		format: idFormat(f),
+	}, nil
+}
+
+// newHash returns the hash function for the object format [f], handling
+// [githash.UnsetObjectFormat] as the default.
+func newHash(f githash.ObjectFormat) (hash.Hash, error) {
+	switch f {
+	case githash.SHA1, githash.UnsetObjectFormat:
+		return githash.New(crypto.SHA1), nil
+	case githash.SHA256:
+		return githash.New(crypto.SHA256), nil
+	default:
+		return nil, fmt.Errorf("%w: object format %q", githash.ErrUnsupportedHashFunction, f)
 	}
 }
 
-// FromHash returns the correct ObjectHasher for the given
-// Hash.
-//
-// If the hash type is not recognised, an ErrUnsupportedHashFunction
-// error is returned.
-func FromHash(h hash.Hash) (*ObjectHasher, error) {
-	var f format.ObjectFormat
-	switch h.Size() {
-	case format.SHA1Size:
-		f = format.UnsetObjectFormat
-	case format.SHA256Size:
-		f = format.SHA256
-	default:
-		return nil, fmt.Errorf("unsupported hash function: %T", h)
+// idFormat returns the format an ObjectID of format [f] carries. SHA-1
+// ids carry no explicit format, so that every SHA-1 id has a single
+// representation.
+func idFormat(f githash.ObjectFormat) githash.ObjectFormat {
+	if f == githash.SHA256 {
+		return githash.SHA256
 	}
-	return FromObjectFormat(f), nil
+	return githash.UnsetObjectFormat
 }
 
 func writeHeader(h hash.Hash, ot ObjectType, sz int64) {
