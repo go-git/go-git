@@ -748,8 +748,6 @@ type ListOptions struct {
 	// PeelingOption defines how peeled objects are handled during a
 	// remote list.
 	PeelingOption PeelingOption
-	// Timeout specifies the timeout in seconds for list operations
-	Timeout int
 }
 
 // PeelingOption represents the different ways to handle peeled references.
