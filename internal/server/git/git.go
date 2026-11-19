@@ -94,16 +94,21 @@ func (s *Server) Start() (string, error) {
 		s.Loader = loader.Default()
 	}
 
+	srv, err := backend.New(s.Loader)
+	if err != nil {
+		return "", fmt.Errorf("git: %w", err)
+	}
+	// The server backs tests that push and archive over git://, like a
+	// git daemon run with --enable=receive-pack --enable=upload-archive.
+	srv.ReceivePack = backend.ServiceEnabled
+	srv.UploadArchive = backend.ServiceEnabled
+
 	ln, err := net.Listen("tcp", defaultAddr)
 	if err != nil {
 		return "", fmt.Errorf("git: listen: %w", err)
 	}
 
-	s.srv = backend.New(s.Loader)
-	// The server backs tests that push and archive over git://, like a
-	// git daemon run with --enable=receive-pack --enable=upload-archive.
-	s.srv.ReceivePack = backend.ServiceEnabled
-	s.srv.UploadArchive = backend.ServiceEnabled
+	s.srv = srv
 	s.conns = make(map[net.Conn]context.CancelFunc)
 	s.done = make(chan struct{})
 	s.ln = ln

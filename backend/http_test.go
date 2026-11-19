@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 type callerStream struct {
@@ -104,7 +105,7 @@ func TestServeKeepsCallerStreamsOpen(t *testing.T) {
 				require.NoError(t, pktline.WriteFlush(r))
 			}
 
-			b := New(transport.MapLoader{"/repo": st})
+			b := newBackend(t, transport.MapLoader{"/repo": st})
 			b.ReceivePack = ServiceEnabled
 			b.UploadArchive = ServiceEnabled
 			err = b.Serve(t.Context(), r, w, &Request{
@@ -172,7 +173,7 @@ func TestServeKeepsCallerStreamsOpen(t *testing.T) {
 
 func TestServeNilReceiveStreams(t *testing.T) {
 	t.Parallel()
-	b := New(transport.MapLoader{"/repo": memory.NewStorage()})
+	b := newBackend(t, transport.MapLoader{"/repo": memory.NewStorage()})
 	b.ReceivePack = ServiceEnabled
 	req := &Request{URL: &url.URL{Path: "/repo"}, Service: transport.ReceivePackService, StatelessRPC: true}
 	require.EqualError(t, b.Serve(t.Context(), nil, nil, req), "nil writer")
@@ -205,21 +206,33 @@ func (f *fixturesLoader) Load(ep *url.URL) (storage.Storer, error) {
 	return st, nil
 }
 
+func TestNewRejectsNilLoader(t *testing.T) {
+	t.Parallel()
+	b, err := New(nil)
+	require.Error(t, err)
+	require.Nil(t, b)
+}
+
 func TestNilLoaderBackend(t *testing.T) {
 	t.Parallel()
-	h := New(nil)
-	req := httptest.NewRequest("GET", "/", nil)
+	b := &Backend{}
+	err := b.Serve(t.Context(), nil, ioutil.WriteNopCloser(&bytes.Buffer{}), &Request{
+		URL:           &url.URL{Path: "/repo"},
+		Service:       transport.UploadPackService,
+		AdvertiseRefs: true,
+	})
+	require.EqualError(t, err, "backend: nil loader")
+
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	res := w.Result()
-	require.Equal(t, 404, res.StatusCode)
+	b.ServeHTTP(w, httptest.NewRequest("GET", "/repo/info/refs?service=git-upload-pack", nil))
+	require.Equal(t, 500, w.Code)
 }
 
 // Every dumb request is denied the way git http-backend denies it while
 // http.getanyfile is unset: 403, not the 404 an unrecognised path would get.
 func TestDumbRequestsAreForbidden(t *testing.T) {
 	t.Parallel()
-	h := New(&fixturesLoader{t})
+	h := newBackend(t, &fixturesLoader{t})
 	for _, path := range []string{
 		"/basic.git/info/refs",
 		"/basic.git/HEAD",
@@ -248,7 +261,7 @@ func TestSmartInfoRefs(t *testing.T) {
 00486ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/remotes/origin/master
 003e6ecf0ef2c2dffb796033e5a02219af86ec6584e5 refs/tags/v1.0.0
 0000`
-	h := New(&fixturesLoader{t})
+	h := newBackend(t, &fixturesLoader{t})
 
 	req := httptest.NewRequest("GET", "/basic.git/info/refs?service=git-upload-pack", nil)
 	w := httptest.NewRecorder()
@@ -333,7 +346,7 @@ func TestSmartInfoRefsObjectFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			b := New(&tagLoader{TB: t, tag: tc.tag, objectFormat: tc.forceObjectFormat})
+			b := newBackend(t, &tagLoader{TB: t, tag: tc.tag, objectFormat: tc.forceObjectFormat})
 
 			req := httptest.NewRequest("GET", "/repo.git/info/refs?service=git-upload-pack", nil)
 			w := httptest.NewRecorder()
@@ -355,7 +368,7 @@ func TestSmartInfoRefsObjectFormat(t *testing.T) {
 func TestUnsupportedService(t *testing.T) {
 	t.Parallel()
 
-	h := New(&fixturesLoader{t})
+	h := newBackend(t, &fixturesLoader{t})
 
 	req := httptest.NewRequest("GET", "/basic.git/info/refs?service=invalid-service", nil)
 	w := httptest.NewRecorder()
@@ -367,7 +380,7 @@ func TestUnsupportedService(t *testing.T) {
 func TestInvalidService(t *testing.T) {
 	t.Parallel()
 
-	h := New(&fixturesLoader{t})
+	h := newBackend(t, &fixturesLoader{t})
 
 	req := httptest.NewRequest("POST", "/basic.git/git-your-face", nil)
 	w := httptest.NewRecorder()
