@@ -18,7 +18,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
-	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
 // maxReceivePackContentLength matches Git v2.54.0's default HTTP push framing.
@@ -449,7 +448,7 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 
 	shallows, err := transport.NegotiatePack(ctx, st, s.caps, true, neg, neg, req)
 	if err != nil {
-		if ioutil.ReadFinished(ctx, err) {
+		if internal.ReadFinished(ctx, err) {
 			neg.closeResponse()
 		}
 		return err
@@ -473,7 +472,7 @@ func (s *smartPackSession) Fetch(ctx context.Context, st storage.Storer, req *tr
 		// response is abandoned rather than drained.
 		_, err = io.Copy(io.Discard, io.LimitReader(neg, maxDrainSize))
 	}
-	if ioutil.ReadFinished(ctx, err) {
+	if internal.ReadFinished(ctx, err) {
 		neg.closeResponse()
 	}
 	return err
@@ -526,7 +525,7 @@ func (s *smartPackSession) fetchV2(ctx context.Context, st storage.Storer, req *
 func (s *smartPackSession) Push(ctx context.Context, st storage.Storer, req *transport.PushRequest) error {
 	rwc := &httpRequester{session: s, ctx: ctx}
 	err := transport.SendPack(ctx, st, s.caps, rwc, io.NopCloser(rwc), req)
-	if ioutil.ReadFinished(ctx, err) && rwc.resp != nil {
+	if internal.ReadFinished(ctx, err) && rwc.resp != nil {
 		_ = rwc.resp.Body.Close()
 	}
 	return err
@@ -672,7 +671,7 @@ func (n *httpNegotiator) Close() error {
 // altogether, so no request follows that the connection could serve.
 //
 // Whether the body was read to its end is the caller's affair. So is whether
-// closing is safe at all — ioutil.ReadFinished answers that, and a caller that
+// closing is safe at all. internal.ReadFinished answers that, and a caller that
 // does not ask races the context reader wrapped around this body.
 func (n *httpNegotiator) closeResponse() {
 	if n.current != nil && n.current.resp != nil {

@@ -92,7 +92,7 @@ func FetchPack(
 
 	// A read the context cancelled may still be blocked in the goroutine
 	// NewContextReadCloser started, and closing packf would race it.
-	if ioutil.ReadFinished(ctx, err) {
+	if internal.ReadFinished(ctx, err) {
 		ioutil.CheckClose(packf, &err)
 	}
 	if err != nil {
