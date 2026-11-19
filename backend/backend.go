@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/go-git/go-git/v6/internal/transport/loader"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -45,8 +46,9 @@ type Request struct {
 // requests. It implements [http.Handler] for HTTP and provides [Serve]
 // and [ServeConn] for stream-based transports.
 type Backend struct {
-	// Loader resolves repository URLs to storage. If nil,
-	// [transport.DefaultLoader] is used.
+	// Loader resolves repository URLs to storage. If nil, a filesystem
+	// loader that resolves URL paths against the root of the OS
+	// filesystem is used.
 	Loader transport.Loader
 
 	// ErrorLog is used to log errors. If nil, errors are not logged.
@@ -57,13 +59,15 @@ type Backend struct {
 	Prefix string
 }
 
-// New creates a Backend with the given loader.
-func New(loader transport.Loader) *Backend {
-	if loader == nil {
-		loader = transport.DefaultLoader
+// New creates a Backend with the given loader. If l is nil, a filesystem
+// loader that resolves URL paths against the root of the OS filesystem is
+// used.
+func New(l transport.Loader) *Backend {
+	if l == nil {
+		l = loader.Default()
 	}
 	return &Backend{
-		Loader: loader,
+		Loader: l,
 	}
 }
 
@@ -79,12 +83,12 @@ func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 		return fmt.Errorf("nil request URL")
 	}
 
-	loader := b.Loader
-	if loader == nil {
-		loader = transport.DefaultLoader
+	l := b.Loader
+	if l == nil {
+		l = loader.Default()
 	}
 
-	st, err := loader.Load(req.URL)
+	st, err := l.Load(req.URL)
 	if err != nil {
 		return err
 	}
