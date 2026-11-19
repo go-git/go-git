@@ -13,7 +13,6 @@ var (
 	ErrRepositoryNotFound     = errors.New("repository not found")
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
 	ErrNoChange               = internal.ErrNoChange
-	ErrPackJunk               = internal.ErrPackJunk
 	ErrAuthenticationRequired = errors.New("authentication required")
 	ErrAuthorizationFailed    = errors.New("authorization failed")
 	ErrEmptyUploadPackRequest = errors.New("empty git-upload-pack given")
@@ -21,6 +20,14 @@ var (
 	ErrAlreadyConnected       = errors.New("session already established")
 	ErrInvalidRequest         = errors.New("invalid request")
 )
+
+// ErrPackJunk is returned by a fetch, through [FetchPack] or a v2
+// [Session.Fetch], when the storage leaves pack data unread after the pack
+// trailer. The pack is already stored by then. Git's outcome for such data
+// depends on how it unpacks the pack, and the check is best effort: the
+// fetch reports only junk the storage left unread, so small junk can go
+// unnoticed. See [FetchPack].
+var ErrPackJunk = internal.ErrPackJunk
 
 // Transport capability and support errors.
 var (
