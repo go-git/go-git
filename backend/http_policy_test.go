@@ -14,8 +14,8 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 )
 
-func newPolicyBackend() *Backend {
-	return New(transport.MapLoader{"repo.git": memory.NewStorage()})
+func newPolicyBackend(t testing.TB) *Backend {
+	return newBackend(t, transport.MapLoader{"repo.git": memory.NewStorage()})
 }
 
 func infoRefs(service string) *http.Request {
@@ -41,7 +41,7 @@ func TestServeHTTPPushWithoutAuthorizationRefused(t *testing.T) {
 		rpc(transport.ReceivePackService),
 	} {
 		req.Header.Set("Authorization", "Basic dGVzdDp0ZXN0")
-		w := serveHTTP(newPolicyBackend(), req)
+		w := serveHTTP(newPolicyBackend(t), req)
 		require.Equal(t, http.StatusForbidden, w.Code, req.URL)
 	}
 }
@@ -72,7 +72,7 @@ func TestServeHTTPServicePolicy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			b := newPolicyBackend()
+			b := newPolicyBackend(t)
 			if tc.configure != nil {
 				tc.configure(b)
 			}
@@ -102,7 +102,7 @@ func TestServeHTTPAuthorizeReceivesService(t *testing.T) {
 		{rpc(transport.UploadArchiveService), transport.UploadArchiveService},
 	} {
 		var got []string
-		b := newPolicyBackend()
+		b := newPolicyBackend(t)
 		b.Authorize = func(r *http.Request, service string) error {
 			require.Same(t, tc.req, r)
 			got = append(got, service)
@@ -116,7 +116,7 @@ func TestServeHTTPAuthorizeReceivesService(t *testing.T) {
 
 func TestServeHTTPDisabledServiceSkipsAuthorize(t *testing.T) {
 	t.Parallel()
-	b := newPolicyBackend()
+	b := newPolicyBackend(t)
 	b.ReceivePack = ServiceDisabled
 	b.Authorize = func(*http.Request, string) error {
 		t.Error("Authorize called for a disabled service")

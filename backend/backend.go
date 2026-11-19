@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-git/go-git/v6/internal/transport/loader"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -52,6 +51,8 @@ type Request struct {
 // that gets no reply cannot tell why the connection closed.
 var ErrServiceNotEnabled = errors.New("service not enabled")
 
+var errNilLoader = errors.New("backend: nil loader")
+
 // ServiceState controls whether a [Backend] serves a service. The zero
 // value, [ServiceDefault], applies the default of the transport serving
 // the request, which follows C git:
@@ -78,9 +79,8 @@ const (
 // requests. It implements [http.Handler] for HTTP and provides [Serve]
 // and [ServeConn] for stream-based transports.
 type Backend struct {
-	// Loader resolves repository URLs to storage. If nil, a filesystem
-	// loader that resolves URL paths against the root of the OS
-	// filesystem is used.
+	// Loader resolves repository URLs to storage. It is required.
+	// Requests fail while it is nil.
 	Loader transport.Loader
 
 	// ErrorLog is used to log errors. If nil, errors are not logged.
@@ -124,16 +124,22 @@ type Backend struct {
 	ReceivePackHooks transport.ReceivePackHooks
 }
 
-// New creates a Backend with the given loader. If l is nil, a filesystem
-// loader that resolves URL paths against the root of the OS filesystem is
-// used.
-func New(l transport.Loader) *Backend {
+// New creates a Backend that resolves repositories with l. It returns an
+// error if l is nil, so that a missing loader is not silently replaced by
+// one that can reach any repository on the host.
+//
+// New only detects a nil interface. A nil pointer of a concrete loader
+// type, such as a nil *[transport.FilesystemLoader], is not nil as a
+// [transport.Loader], so New accepts it, and the first request that
+// reaches the loader panics. Detecting it would take reflection on every
+// loader type, so New leaves that to the caller.
+func New(l transport.Loader) (*Backend, error) {
 	if l == nil {
-		l = loader.Default()
+		return nil, errNilLoader
 	}
 	return &Backend{
 		Loader: l,
-	}
+	}, nil
 }
 
 // Serve handles a Git pack protocol request. It resolves the repository
@@ -187,12 +193,11 @@ func (b *Backend) daemonEnabled(service string) (enabled, known bool) {
 
 // serve runs the service for req without applying any service policy.
 func (b *Backend) serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, req *Request) error {
-	l := b.Loader
-	if l == nil {
-		l = loader.Default()
+	if b.Loader == nil {
+		return errNilLoader
 	}
 
-	st, err := l.Load(req.URL)
+	st, err := b.Loader.Load(req.URL)
 	if err != nil {
 		return err
 	}

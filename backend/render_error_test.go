@@ -51,7 +51,7 @@ func TestFlushResponseWriterMarksStarted(t *testing.T) {
 // suppression.
 func TestInfoRefsLoadErrorBeforeStreamReturnsErrorStatus(t *testing.T) {
 	t.Parallel()
-	h := New(errorLoader{})
+	h := newBackend(t, errorLoader{})
 	req := httptest.NewRequest("GET", "/basic.git/info/refs?service=git-upload-pack", nil)
 	w := httptest.NewRecorder()
 

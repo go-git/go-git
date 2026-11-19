@@ -20,7 +20,7 @@ const (
 var errAlreadyStarted = errors.New("http: server already started")
 
 type server struct {
-	l transport.Loader
+	h *backend.Backend
 
 	ln  net.Listener
 	srv *gohttp.Server
@@ -31,10 +31,15 @@ type server struct {
 
 // FromLoader creates an HTTP git server backed by the given loader.
 func FromLoader(l transport.Loader) (*server, error) {
-	s := &server{
-		l: l,
+	h, err := backend.New(l)
+	if err != nil {
+		return nil, fmt.Errorf("http: %w", err)
 	}
-	return s, nil
+	// The server backs tests that push and archive over HTTP, like git
+	// http-backend with http.receivepack and http.uploadarchive set.
+	h.ReceivePack = backend.ServiceEnabled
+	h.UploadArchive = backend.ServiceEnabled
+	return &server{h: h}, nil
 }
 
 func (s *server) Start() (string, error) {
@@ -50,14 +55,9 @@ func (s *server) Start() (string, error) {
 		return "", fmt.Errorf("cannot listen to TCP: %w", err)
 	}
 
-	h := backend.New(s.l)
-	// The server backs tests that push and archive over HTTP, like git
-	// http-backend with http.receivepack and http.uploadarchive set.
-	h.ReceivePack = backend.ServiceEnabled
-	h.UploadArchive = backend.ServiceEnabled
 	srv := &gohttp.Server{
 		Addr:         addr,
-		Handler:      h,
+		Handler:      s.h,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -56,7 +56,10 @@ func main() {
 	}
 
 	loader := transport.NewFilesystemLoader(osfs.New(*root), false)
-	b := backend.New(loader)
+	b, err := backend.New(loader)
+	if err != nil {
+		log.Fatalf("backend: %v", err)
+	}
 
 	// Set up backend error logging (the backend logs things like auth failures,
 	// parse errors, etc. to this logger).

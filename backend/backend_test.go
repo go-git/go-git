@@ -23,6 +23,13 @@ type loaderFunc func(*url.URL) (storage.Storer, error)
 
 func (f loaderFunc) Load(u *url.URL) (storage.Storer, error) { return f(u) }
 
+func newBackend(t testing.TB, l transport.Loader) *Backend {
+	t.Helper()
+	b, err := New(l)
+	require.NoError(t, err)
+	return b
+}
+
 func TestServeDaemonServicePolicy(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -45,7 +52,7 @@ func TestServeDaemonServicePolicy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			loaded := false
-			b := New(loaderFunc(func(*url.URL) (storage.Storer, error) {
+			b := newBackend(t, loaderFunc(func(*url.URL) (storage.Storer, error) {
 				loaded = true
 				return memory.NewStorage(), nil
 			}))
@@ -111,7 +118,7 @@ func TestServeDaemonPushRefusedByDefault(t *testing.T) {
 		})
 	}
 
-	b := New(transport.MapLoader{"/repo": st})
+	b := newBackend(t, transport.MapLoader{"/repo": st})
 	require.ErrorIs(t, push(b), ErrServiceNotEnabled)
 	_, err = st.Reference(ref.Name())
 	require.NoError(t, err)
@@ -137,7 +144,7 @@ func TestServeReceivePackHooks(t *testing.T) {
 	require.NoError(t, st.SetReference(ref))
 
 	var pre []*packp.Command
-	b := New(transport.MapLoader{"/repo": st})
+	b := newBackend(t, transport.MapLoader{"/repo": st})
 	b.ReceivePack = ServiceEnabled
 	b.ReceivePackHooks.PreReceive = func(_ context.Context, info *transport.PreReceiveInfo) error {
 		pre = info.Commands

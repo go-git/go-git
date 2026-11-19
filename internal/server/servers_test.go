@@ -91,7 +91,7 @@ func (s *ServerSuite) TestUnsupportedService() {
 }
 
 func (s *ServerSuite) TestStartAlreadyStarted() {
-	srv, err := s.impl.newServer(nil)
+	srv, err := s.impl.newServer(transport.MapLoader{})
 	s.Require().NoError(err)
 
 	endpoint, err := srv.Start()
@@ -106,7 +106,7 @@ func (s *ServerSuite) TestStartAlreadyStarted() {
 }
 
 func (s *ServerSuite) TestStartAfterClose() {
-	srv, err := s.impl.newServer(nil)
+	srv, err := s.impl.newServer(transport.MapLoader{})
 	s.Require().NoError(err)
 
 	endpoint, err := srv.Start()
