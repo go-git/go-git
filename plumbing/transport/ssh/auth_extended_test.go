@@ -134,15 +134,11 @@ Host *
 func TestHostKeyCallbackHelper_NilFallback(t *testing.T) {
 	t.Parallel()
 
-	h := &HostKeyCallbackHelper{}
-	cfg := &gossh.ClientConfig{}
-	_, err := h.SetHostKeyCallback(cfg)
-	if os.Getenv("SSH_KNOWN_HOSTS") != "" || fileExists(os.ExpandEnv("$HOME/.ssh/known_hosts")) || fileExists("/etc/ssh/ssh_known_hosts") {
-		require.NoError(t, err)
-		assert.NotNil(t, cfg.HostKeyCallback)
-	} else {
-		require.Error(t, err)
-	}
+	h := &HostKeyCallbackHelper{HostKeyAlgorithms: []string{gossh.KeyAlgoED25519}}
+	cfg, err := h.SetHostKeyCallback(&gossh.ClientConfig{})
+	require.NoError(t, err)
+	assert.Nil(t, cfg.HostKeyCallback)
+	assert.Equal(t, []string{gossh.KeyAlgoED25519}, cfg.HostKeyAlgorithms)
 }
 
 func newTransportWithConfig(t *testing.T, content string) *Transport {
@@ -164,9 +160,4 @@ func mustParseURL(s string) *url.URL {
 		panic(err)
 	}
 	return u
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

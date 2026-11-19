@@ -27,34 +27,48 @@ const (
 )
 
 // HostKeyCallbackHelper provides common functionality to configure
-// HostKeyCallback on a *ssh.ClientConfig.
+// HostKeyCallback and HostKeyAlgorithms on a *ssh.ClientConfig.
 type HostKeyCallbackHelper struct {
 	// HostKeyCallback is the function used for verifying server keys.
-	// If nil, a default callback is created using NewKnownHostsCallback.
+	// If nil, the SSH transport verifies server keys against known_hosts
+	// files and selects host key algorithms from the entries for the host.
+	// See NewKnownHostsCallback for how the files are located.
 	HostKeyCallback gossh.HostKeyCallback
+
+	// HostKeyAlgorithms lists the host key algorithms the client accepts,
+	// in order of preference. Set it when HostKeyCallback only accepts
+	// specific key types, such as a key pinned with ssh.FixedHostKey.
+	// If empty, the defaults from golang.org/x/crypto/ssh are used, or the
+	// algorithms found in known_hosts when HostKeyCallback is nil.
+	HostKeyAlgorithms []string
 }
 
-// SetHostKeyCallback sets HostKeyCallback on cfg. If HostKeyCallback is nil,
-// a default callback is created from known_hosts files.
+// SetHostKeyCallback sets HostKeyCallback and HostKeyAlgorithms on cfg.
+//
+// If HostKeyCallback is nil, cfg.HostKeyCallback is left nil and the SSH
+// transport installs a known_hosts callback when connecting. A cfg built
+// this way and used outside go-git's SSH transport has no callback, so
+// golang.org/x/crypto/ssh refuses to connect.
+//
+// The helper itself is never modified, so it is safe to call concurrently.
 func (m *HostKeyCallbackHelper) SetHostKeyCallback(cfg *gossh.ClientConfig) (*gossh.ClientConfig, error) {
-	if m.HostKeyCallback == nil {
-		db, err := newKnownHostsDb()
-		if err != nil {
-			return cfg, err
-		}
-		m.HostKeyCallback = db.HostKeyCallback()
+	if m.HostKeyCallback != nil {
+		cfg.HostKeyCallback = traceHostKeyCallback(m.HostKeyCallback)
 	}
-
-	cfg.HostKeyCallback = m.traceHostKeyCallback
+	if len(m.HostKeyAlgorithms) > 0 {
+		cfg.HostKeyAlgorithms = m.HostKeyAlgorithms
+	}
 	return cfg, nil
 }
 
-func (m *HostKeyCallbackHelper) traceHostKeyCallback(hostname string, remote net.Addr, key gossh.PublicKey) error {
-	trace.SSH.Printf(
-		`ssh: hostkey callback hostname=%s remote=%s pubkey="%s %s"`,
-		hostname, remote, key.Type(), gossh.FingerprintSHA256(key),
-	)
-	return m.HostKeyCallback(hostname, remote, key)
+func traceHostKeyCallback(cb gossh.HostKeyCallback) gossh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
+		trace.SSH.Printf(
+			`ssh: hostkey callback hostname=%s remote=%s pubkey="%s %s"`,
+			hostname, remote, key.Type(), gossh.FingerprintSHA256(key),
+		)
+		return cb(hostname, remote, key)
+	}
 }
 
 // Password implements SSH password authentication.
@@ -203,6 +217,11 @@ func (a *KeyboardInteractive) ClientConfig(_ context.Context, _ *transport.Reque
 //
 //	~/.ssh/known_hosts
 //	/etc/ssh/ssh_known_hosts
+//
+// Setting the returned callback as HostKeyCallback turns off host key
+// algorithm selection from known_hosts, so the server may offer a key type
+// that known_hosts does not list. Leave HostKeyCallback nil to keep that
+// selection, or set HostKeyAlgorithms as well.
 func NewKnownHostsCallback(files ...string) (gossh.HostKeyCallback, error) {
 	db, err := newKnownHostsDb(files...)
 	if db == nil {
