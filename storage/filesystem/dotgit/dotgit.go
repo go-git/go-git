@@ -686,8 +686,8 @@ func packBaseHash(base string) (plumbing.Hash, bool) {
 	}
 
 	hex := base[i+1:]
-	h := plumbing.NewHash(hex)
-	return h, !h.IsZero() && h.String() == hex
+	h, ok := plumbing.FromHex(hex)
+	return h, ok && !h.IsZero() && h.String() == hex
 }
 
 // cachedPackBase returns the base name the pack is listed under in the
@@ -1234,8 +1234,8 @@ func (d *DotGit) forEachObjectHash(fun func(plumbing.Hash) error) error {
 			}
 
 			for _, o := range d {
-				h := plumbing.NewHash(base + o.Name())
-				if h.IsZero() {
+				h, ok := plumbing.FromHex(base + o.Name())
+				if !ok {
 					// Ignore files with badly-formatted names.
 					continue
 				}
