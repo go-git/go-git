@@ -118,6 +118,10 @@ type Backend struct {
 	// so receive-pack and upload-archive are only served when enabled
 	// explicitly.
 	Authorize func(r *http.Request, service string) error
+
+	// ReceivePackHooks are the server-side hooks run for every
+	// receive-pack request, over any transport. The zero value runs none.
+	ReceivePackHooks transport.ReceivePackHooks
 }
 
 // New creates a Backend with the given loader. If l is nil, a filesystem
@@ -219,6 +223,7 @@ func (b *Backend) serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, 
 			GitProtocol:   req.GitProtocol,
 			AdvertiseRefs: req.AdvertiseRefs,
 			StatelessRPC:  req.StatelessRPC,
+			Hooks:         b.ReceivePackHooks,
 		})
 	case transport.UploadArchiveService:
 		return transport.UploadArchive(ctx, st, r, w, &transport.UploadArchiveRequest{})

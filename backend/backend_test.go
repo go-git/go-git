@@ -2,6 +2,8 @@ package backend
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/url"
 	"testing"
@@ -9,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
@@ -122,3 +125,45 @@ func TestServeDaemonPushRefusedByDefault(t *testing.T) {
 func uploadPackState(b *Backend) *ServiceState    { return &b.UploadPack }
 func receivePackState(b *Backend) *ServiceState   { return &b.ReceivePack }
 func uploadArchiveState(b *Backend) *ServiceState { return &b.UploadArchive }
+
+func TestServeReceivePackHooks(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	obj := st.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	hash, err := st.SetEncodedObject(obj)
+	require.NoError(t, err)
+	ref := plumbing.NewHashReference("refs/heads/main", hash)
+	require.NoError(t, st.SetReference(ref))
+
+	var pre []*packp.Command
+	b := New(transport.MapLoader{"/repo": st})
+	b.ReceivePack = ServiceEnabled
+	b.ReceivePackHooks.PreReceive = func(_ context.Context, info *transport.PreReceiveInfo) error {
+		pre = info.Commands
+		return errors.New("protected branch")
+	}
+	b.ReceivePackHooks.PostReceive = func(context.Context, *transport.PostReceiveInfo) error {
+		t.Error("PostReceive ran after PreReceive refused the push")
+		return nil
+	}
+
+	var r, w bytes.Buffer
+	req := &packp.UpdateRequests{Commands: []*packp.Command{{Name: ref.Name(), Old: ref.Hash()}}}
+	req.Capabilities.Set(capability.ReportStatus)
+	require.NoError(t, req.Encode(&r))
+	err = b.Serve(t.Context(), io.NopCloser(&r), ioutil.WriteNopCloser(&w), &Request{
+		URL:          &url.URL{Path: "/repo"},
+		Service:      transport.ReceivePackService,
+		StatelessRPC: true,
+	})
+	require.ErrorContains(t, err, "protected branch")
+
+	require.Len(t, pre, 1)
+	require.Equal(t, ref.Name(), pre[0].Name)
+	var report packp.ReportStatus
+	require.NoError(t, report.Decode(&w))
+	require.ErrorContains(t, report.Error(), "protected branch")
+	_, err = st.Reference(ref.Name())
+	require.NoError(t, err)
+}
