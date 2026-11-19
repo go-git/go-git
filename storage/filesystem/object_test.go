@@ -10,7 +10,9 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -1603,4 +1606,37 @@ func TestEncodedObjectTypeFollowsBasesOutsideThePack(t *testing.T) {
 
 	_, err = types.EncodedObjectType(cycleA)
 	require.ErrorIs(t, err, packfile.ErrMalformedPackfile)
+}
+
+func TestNewObjectStorageTakesObjectFormatFromDotGit(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := gitenv.Command("git", append([]string{"-C", dir}, args...)...).Output()
+		require.NoError(t, err, "git %v", args)
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-q", "--bare", "--object-format=sha256")
+
+	dg := dotgit.NewWithOptions(osfs.New(dir), dotgit.Options{ObjectFormat: formatcfg.SHA256})
+	s := NewObjectStorage(dg, cache.NewObjectLRUDefault())
+
+	obj := s.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	w, err := obj.Writer()
+	require.NoError(t, err)
+	_, err = w.Write([]byte("hello\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	h, err := s.SetEncodedObject(obj)
+	require.NoError(t, err)
+	assert.Equal(t, "2cf8d83d9ee29543b34a87727421fdecb7e3f3a183d337639025de576db9ebb4", h.String())
+	assert.Equal(t, "blob", runGit("cat-file", "-t", h.String()))
+	assert.Equal(t, "hello", runGit("cat-file", "-p", h.String()))
 }

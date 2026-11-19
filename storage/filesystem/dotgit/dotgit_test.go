@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
 )
@@ -2329,4 +2330,17 @@ func TestWalkPackHandles_JoinsErrors(t *testing.T) {
 	// Crucially: the walk did not stop on the first error.
 	assert.Equal(t, int32(totalEntries), visits.Load(),
 		"walk should not stop on first error")
+}
+
+func TestDotGitObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, formatcfg.SHA1, NewWithOptions(memfs.New(), Options{}).ObjectFormat())
+	assert.Equal(t, formatcfg.SHA1, New(memfs.New()).ObjectFormat())
+
+	d := NewWithOptions(memfs.New(), Options{ObjectFormat: formatcfg.SHA256})
+	assert.Equal(t, formatcfg.SHA256, d.ObjectFormat())
+
+	require.NoError(t, d.SetObjectFormat(formatcfg.SHA1))
+	assert.Equal(t, formatcfg.SHA1, d.ObjectFormat())
 }
