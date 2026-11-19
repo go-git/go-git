@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 
 	"github.com/go-git/go-git/v6/internal/transport/loader"
@@ -57,6 +58,9 @@ var ErrServiceNotEnabled = errors.New("service not enabled")
 //
 //   - [Backend.Serve] (git daemon): upload-pack is enabled, receive-pack
 //     and upload-archive are disabled.
+//   - [Backend.ServeHTTP] (git http-backend): upload-pack is enabled,
+//     receive-pack and upload-archive are enabled only for requests that
+//     [Backend.Authorize] accepts.
 type ServiceState int8
 
 const (
@@ -97,6 +101,23 @@ type Backend struct {
 	// UploadArchive controls whether git-upload-archive is served. See
 	// [ServiceState] for the defaults.
 	UploadArchive ServiceState
+
+	// Authorize decides whether an HTTP request may use service, one of
+	// the git-* service names in [transport]. It is called by
+	// [Backend.ServeHTTP] for every smart HTTP request to a service that
+	// is not disabled, and is the only authentication ServeHTTP does. A
+	// nil error authorizes the request, even one that carries no
+	// credentials, and that opens receive-pack and upload-archive to it.
+	// Implementations must therefore check the credentials themselves,
+	// and return [ErrUnauthorized] when there are none. This matches git
+	// http-backend, which serves receive-pack whenever REMOTE_USER is
+	// non-empty and trusts the web server to have set it.
+	// [ErrUnauthorized] answers 401 with a WWW-Authenticate challenge,
+	// [ErrForbidden] answers 403, and any other error answers 500 without
+	// exposing the error to the client. If nil, no request is authorized,
+	// so receive-pack and upload-archive are only served when enabled
+	// explicitly.
+	Authorize func(r *http.Request, service string) error
 }
 
 // New creates a Backend with the given loader. If l is nil, a filesystem
