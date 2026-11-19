@@ -3,11 +3,11 @@
 package pack_test
 
 import (
-	"crypto"
 	"io"
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage/filesystem/mmap"
 )
 
@@ -25,7 +25,7 @@ func newPackScanner(pack, idx, rev billy.File) packHandler[uint64] {
 		panic(err)
 	}
 
-	s, err := mmap.NewPackScanner(crypto.SHA1.Size(), pack, idx, rev)
+	s, err := mmap.NewPackScanner(hash.SHA1, pack, idx, rev)
 	if err != nil {
 		panic(err)
 	}
