@@ -3,10 +3,10 @@ package packfile
 import (
 	"bytes"
 
+	"github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 // See https://github.com/jelmer/dulwich/blob/master/dulwich/pack.py and

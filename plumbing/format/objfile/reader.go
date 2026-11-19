@@ -5,10 +5,10 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/go-git/go-git/v6/utils/sync"
 )
 
 // Errors returned by the objfile package.

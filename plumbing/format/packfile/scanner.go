@@ -12,6 +12,7 @@ import (
 	"io"
 	"sync"
 
+	gogitsync "github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
@@ -19,7 +20,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
-	gogitsync "github.com/go-git/go-git/v6/utils/sync"
 )
 
 var (
