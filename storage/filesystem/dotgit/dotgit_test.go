@@ -3254,3 +3254,17 @@ func (s *SuiteDotGit) TestModuleNestingBoundsTheErrorOfACommonDirThroughSymlink(
 	s.Require().Error(err)
 	s.Less(len(err.Error()), 4*maxCommonDirInError)
 }
+
+// An error from deciding whether a prefix is a Git directory names the
+// prefix that was being checked, as the error of an unexaminable prefix
+// does.
+func (s *SuiteDotGit) TestModuleNestingGitDirErrorNamesPrefix() {
+	fs := memfs.New()
+	s.initModule(New(fs), "lib")
+	s.Require().NoError(util.WriteFile(fs, "modules/lib/commondir", nil, 0o644))
+
+	_, err := New(fs).Module("lib/sub")
+	s.Require().Error(err)
+	s.NotErrorIs(err, ErrModuleGitDirNested)
+	s.Contains(err.Error(), `check "modules/lib": `)
+}

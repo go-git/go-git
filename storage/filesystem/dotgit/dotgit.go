@@ -2150,7 +2150,7 @@ func (d *DotGit) checkModuleGitDirNesting(gitdir string) error {
 		}
 		nested, err := d.isGitDir(prefix)
 		if err != nil {
-			return err
+			return fmt.Errorf("check %q: %w", elide(prefix), err)
 		}
 		if nested {
 			return fmt.Errorf("%w: %q", ErrModuleGitDirNested, elide(prefix))
