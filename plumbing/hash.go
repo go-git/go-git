@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -81,7 +80,7 @@ func (p HashSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 // IsHash returns true if the given string is a valid hash.
 func IsHash(s string) bool {
 	switch len(s) {
-	case format.SHA1HexSize, format.SHA256HexSize:
+	case githash.SHA1HexSize, githash.SHA256HexSize:
 		_, err := hex.DecodeString(s)
 		return err == nil
 	default:
