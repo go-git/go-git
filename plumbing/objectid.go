@@ -42,8 +42,8 @@ func fromHexLax(in string) (ObjectID, bool) {
 	return id, true
 }
 
-// FromBytes creates an ObjectID based off its hex representation in bytes.
-// The object format is inferred from the length of the input.
+// FromBytes creates an ObjectID from its raw bytes. The object format is
+// inferred from the length of the input.
 //
 // If the size of [in] does not match the supported object formats,
 // an empty ObjectID will be returned.
@@ -74,8 +74,9 @@ func ZeroID(f githash.ObjectFormat) ObjectID {
 	return ObjectID{}
 }
 
-// ObjectID represents the ID of a Git object. The object data is kept
-// in its hexadecimal form.
+// ObjectID represents the ID of a Git object, which is the hash of the
+// object in the repository's object format. It holds the raw bytes of
+// the hash. [ObjectID.String] returns its hexadecimal form.
 //
 // Every id has exactly one representation regardless of how it was
 // produced (parsed, hashed, decoded or read), so ==, [ObjectID.Equal]
@@ -120,12 +121,9 @@ func (s ObjectID) Equal(in ObjectID) bool {
 	return s == in
 }
 
-// Bytes returns the slice of bytes representing the hash in hexadecimal.
+// Bytes returns the raw bytes of the ObjectID. Their length is the size
+// of the id's object format.
 func (s ObjectID) Bytes() []byte {
-	if len(s.hash) == 0 {
-		v := make([]byte, s.Size())
-		return v
-	}
 	return s.hash[:s.Size()]
 }
 
@@ -147,9 +145,9 @@ func (s ObjectID) String() string {
 	return hex.EncodeToString(val)
 }
 
-// Write writes the hexadecimal representation of the ObjectID from [in]
-// directly into the current object. At most the ObjectID's current size
-// is written, and any bytes in [in] past it are ignored.
+// Write copies the raw bytes of an id from [in] into the ObjectID. At
+// most the ObjectID's current size is written, and any bytes in [in]
+// past it are ignored.
 func (s *ObjectID) Write(in []byte) (int, error) {
 	n := copy(s.hash[:s.Size()], in)
 	return n, nil
@@ -167,8 +165,7 @@ func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
 	return int64(n), nil
 }
 
-// WriteTo writes the Big Endian representation of the ObjectID
-// into the writer [w].
+// WriteTo writes the raw bytes of the ObjectID into the writer [w].
 func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 	err := binary.Write(w, binary.BigEndian, s.hash[:s.Size()])
 	if err != nil {

@@ -31,10 +31,10 @@ linters:
             - "**/*_test.go"
   exclusions:
     rules:
-      - path: plumbing/hash.go
+      - path: _test\.go
         linters:
-          - gocritic
-        text: deprecatedComment # Causes churn in test files, better to do separately.
+          - staticcheck
+        text: "SA1019: github.com/go-git/go-git/v6/plumbing.NewHash is deprecated" # Tests keep NewHash for fixture ids.
       - path: _test\.go
         linters:
           - errcheck
