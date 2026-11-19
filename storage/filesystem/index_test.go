@@ -3,6 +3,7 @@ package filesystem_test
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 )
 
@@ -266,4 +268,55 @@ func newIndexStorageWithSpy(t *testing.T) (*filesystem.Storage, *spyIndexCache) 
 	require.NoError(t, sto.Init())
 
 	return sto, spy
+}
+
+type noIndexCache struct{}
+
+func (noIndexCache) Get(time.Time, int64) *index.Index  { return nil }
+func (noIndexCache) Set(*index.Index, time.Time, int64) {}
+func (noIndexCache) Clear()                             {}
+
+func TestIndexConcurrentReads(t *testing.T) {
+	t.Parallel()
+
+	sto := filesystem.NewStorageWithOptions(osfs.New(t.TempDir()), cache.NewObjectLRUDefault(),
+		filesystem.Options{IndexCache: noIndexCache{}})
+	require.NoError(t, sto.Init())
+	require.NoError(t, sto.SetIndex(&index.Index{
+		Version: 2,
+		Entries: []*index.Entry{
+			{Hash: plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198"), Name: "foo.go"},
+		},
+	}))
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			idx, err := sto.Index()
+			assert.NoError(t, err)
+			assert.Len(t, idx.Entries, 1)
+		})
+	}
+	wg.Wait()
+}
+
+func TestIndexSHA256(t *testing.T) {
+	t.Parallel()
+
+	sto := filesystem.NewStorageWithOptions(osfs.New(t.TempDir()), cache.NewObjectLRUDefault(),
+		filesystem.Options{IndexCache: noIndexCache{}})
+	require.NoError(t, sto.Init())
+	require.NoError(t, sto.SetObjectFormat(hash.SHA256))
+
+	id, ok := plumbing.FromHex("2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677")
+	require.True(t, ok)
+	require.NoError(t, sto.SetIndex(&index.Index{
+		Version: 2,
+		Entries: []*index.Entry{{Hash: id, Name: "foo.go"}},
+	}))
+
+	idx, err := sto.Index()
+	require.NoError(t, err)
+	require.Len(t, idx.Entries, 1)
+	assert.Equal(t, id, idx.Entries[0].Hash)
 }

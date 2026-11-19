@@ -174,10 +174,8 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	// Objects, packs and the index are hashed in a supported format,
-	// as documented on Options.ObjectFormat. hashutil.New cannot fail
-	// for one.
+	// as documented on Options.ObjectFormat.
 	hashFormat := supportedObjectFormat(ops.ObjectFormat)
-	indexHash, _ := hashutil.New(hashFormat)
 
 	// Construct a per-Storage FD pool at the package default
 	// capacity unless the caller injected one. Pass a non-positive-
@@ -211,7 +209,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: indexHash, cache: ops.IndexCache, skipHash: skipHash},
+		IndexStorage:     IndexStorage{dir: dir, objectFormat: hashFormat, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
@@ -258,10 +256,6 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		if err != nil {
 			return err
 		}
-		indexHash, err := hashutil.New(of)
-		if err != nil {
-			return err
-		}
 
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
@@ -280,7 +274,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
 		s.oh = oh
-		s.h = indexHash
+		s.IndexStorage.objectFormat = of
 	}
 
 	return nil

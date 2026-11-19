@@ -3,11 +3,11 @@ package filesystem
 import (
 	"bufio"
 	"errors"
-	"hash"
 	"os"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -15,10 +15,10 @@ import (
 
 // IndexStorage implements index read/write backed by the filesystem.
 type IndexStorage struct {
-	dir      *dotgit.DotGit
-	h        hash.Hash
-	cache    IndexCache
-	skipHash bool
+	dir          *dotgit.DotGit
+	objectFormat hash.ObjectFormat
+	cache        IndexCache
+	skipHash     bool
 }
 
 // SetIndex writes the index to disk and updates the cache.
@@ -55,12 +55,12 @@ func (s *IndexStorage) writeIndex(idx *index.Index) (err error) {
 		}
 	}()
 
-	var encOpts []index.Option
+	encOpts := []index.Option{index.WithObjectFormat(s.objectFormat)}
 	if s.skipHash {
 		encOpts = append(encOpts, index.WithSkipHash())
 	}
 
-	e := index.NewEncoder(bw, s.h, encOpts...)
+	e := index.NewEncoder(bw, encOpts...)
 	return e.Encode(idx)
 }
 
@@ -109,12 +109,12 @@ func (s *IndexStorage) Index() (i *index.Index, err error) {
 		sz = fi.Size()
 	}
 
-	var decOpts []index.Option
+	decOpts := []index.Option{index.WithObjectFormat(s.objectFormat)}
 	if s.skipHash {
 		decOpts = append(decOpts, index.WithSkipHash())
 	}
 
-	d := index.NewDecoder(f, s.h, decOpts...)
+	d := index.NewDecoder(f, decOpts...)
 	err = d.Decode(idx)
 	if err != nil {
 		return nil, err
