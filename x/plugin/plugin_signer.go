@@ -19,6 +19,6 @@ type Signer interface {
 // ObjectSigner returns the key used to register an object-signing plugin.
 // When set, this plugin will set the default signer for new commits and
 // tags.
-func ObjectSigner() key[Signer] { //nolint:revive // intentional unexported return type
+func ObjectSigner() key[Signer] {
 	return objectSigner
 }

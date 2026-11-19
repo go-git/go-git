@@ -8,6 +8,6 @@ import (
 
 // NewEmpty returns a ConfigSource that yields empty configs for both scopes.
 // The returned configs carry the same initialized defaults as [config.NewConfig].
-func NewEmpty() *static { //nolint:revive
+func NewEmpty() *static {
 	return NewStatic(*config.NewConfig(), *config.NewConfig())
 }
