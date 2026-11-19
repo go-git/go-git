@@ -32,10 +32,14 @@ func main() {
 	w, err := r.Worktree()
 	CheckIfError(err)
 
+	// ... resolving the commit, which may be abbreviated
+	h, err := r.ResolveRevision(plumbing.Revision(commit))
+	CheckIfError(err)
+
 	// ... checking out to commit
 	Info("git checkout %s", commit)
 	err = w.Checkout(&git.CheckoutOptions{
-		Hash: plumbing.NewHash(commit),
+		Hash: *h,
 	})
 	CheckIfError(err)
 

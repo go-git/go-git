@@ -157,7 +157,7 @@ func (s *UploadPackSuite) TestUploadPack() {
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	clientStorer := memory.NewStorage(memory.WithObjectFormat(config.SHA1))
 	err = conn.Fetch(context.Background(), clientStorer, req)
@@ -182,7 +182,7 @@ func (s *UploadPackSuite) TestUploadPackWithContext() {
 	s.Require().NotNil(info)
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	clientStorer := memory.NewStorage(memory.WithObjectFormat(config.SHA1))
 	err = conn.Fetch(ctx, clientStorer, req)
@@ -203,7 +203,7 @@ func (s *UploadPackSuite) TestUploadPackWithContextOnRead() {
 	s.Require().NotNil(info)
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	cancel()
 	err = conn.Fetch(ctx, s.Storer, req)
@@ -222,7 +222,7 @@ func (s *UploadPackSuite) TestUploadPackFull() {
 	s.Require().NotNil(info)
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	clientStorer := memory.NewStorage(memory.WithObjectFormat(config.SHA1))
 	err = conn.Fetch(context.Background(), clientStorer, req)
@@ -240,7 +240,7 @@ func (s *UploadPackSuite) TestUploadPackInvalidReq() {
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().NoError(err)
@@ -254,8 +254,8 @@ func (s *UploadPackSuite) TestUploadPackNoChanges() {
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	req.Haves = append(req.Haves, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Haves = append(req.Haves, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
 
 	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().ErrorIs(err, transport.ErrNoChange)
@@ -264,16 +264,16 @@ func (s *UploadPackSuite) TestUploadPackNoChanges() {
 // TestUploadPackMulti tests upload-pack with multiple wants.
 func (s *UploadPackSuite) TestUploadPackMulti() {
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	req.Wants = append(req.Wants, plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Wants = append(req.Wants, fixtureHash("e8d3ffab552895c19b9fcf7aa264d277cde33881"))
 	s.testUploadPackFetch(req, 31)
 }
 
 // TestUploadPackPartial tests upload-pack with haves for a partial fetch.
 func (s *UploadPackSuite) TestUploadPackPartial() {
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
-	req.Haves = append(req.Haves, plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
+	req.Wants = append(req.Wants, fixtureHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"))
+	req.Haves = append(req.Haves, fixtureHash("918c48b83bd081e863dbe1b80f8998f058cd8294"))
 	s.testUploadPackFetch(req, 4)
 }
 
@@ -301,7 +301,7 @@ func (s *UploadPackSuite) TestFetchError() {
 	defer func() { s.Require().NoError(conn.Close()) }()
 
 	req := &transport.FetchRequest{}
-	req.Wants = append(req.Wants, plumbing.NewHash("1111111111111111111111111111111111111111"))
+	req.Wants = append(req.Wants, fixtureHash("1111111111111111111111111111111111111111"))
 
 	err = conn.Fetch(context.Background(), s.Storer, req)
 	s.Require().Error(err)
