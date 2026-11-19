@@ -22,8 +22,9 @@ import (
 // resolve to no changes without relying on the metadata fast-path.
 func blobHash(t *testing.T, content []byte) plumbing.Hash {
 	t.Helper()
-	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
-	_, err := h.Write(content)
+	h, err := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
+	require.NoError(t, err)
+	_, err = h.Write(content)
 	require.NoError(t, err)
 	return h.Sum()
 }
@@ -379,4 +380,18 @@ func childNames(t *testing.T, root noder.Noder, path ...string) []string {
 		names = append(names, c.Name())
 	}
 	return names
+}
+
+func TestUnknownObjectFormatHashesToZero(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "foo", []byte("foo\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{ObjectFormat: format.ObjectFormat("sha512")})
+	children, err := root.Children()
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+
+	h := children[0].Hash()
+	require.Equal(t, plumbing.ZeroHash.Bytes(), h[:plumbing.ZeroHash.Size()])
 }

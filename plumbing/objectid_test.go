@@ -286,7 +286,8 @@ func TestObjectIDSHA1Identity(t *testing.T) {
 	fromObjectHasher, err := oh.Compute(BlobObject, []byte(content))
 	require.NoError(t, err)
 
-	hasher := NewHasher(config.SHA1, BlobObject, int64(len(content)))
+	hasher, err := NewHasher(config.SHA1, BlobObject, int64(len(content)))
+	require.NoError(t, err)
 	_, err = hasher.Write([]byte(content))
 	require.NoError(t, err)
 	fromHasher := hasher.Sum()

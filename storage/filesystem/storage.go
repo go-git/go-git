@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/x/fdpool"
@@ -25,9 +26,8 @@ const defaultPoolCapacity = 256
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
-	fs     billy.Filesystem
-	dir    *dotgit.DotGit
-	hasher plumbing.Hasher
+	fs  billy.Filesystem
+	dir *dotgit.DotGit
 
 	*ObjectStorage
 	ReferenceStorage
@@ -164,7 +164,8 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		_ = f.Close()
 	}
 
-	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
+	// FromObjectFormat cannot fail for a supported format.
+	indexHash, _ := hash.FromObjectFormat(supportedObjectFormat(ops.ObjectFormat))
 
 	// Construct a per-Storage FD pool at the package default
 	// capacity unless the caller injected one. Pass a non-positive-
@@ -193,13 +194,12 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	s := &Storage{
-		fs:     fs,
-		dir:    dir,
-		hasher: hasher,
+		fs:  fs,
+		dir: dir,
 
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
+		IndexStorage:     IndexStorage{dir: dir, h: indexHash, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
@@ -240,6 +240,10 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		if err != nil {
 			return err
 		}
+		indexHash, err := hash.FromObjectFormat(of)
+		if err != nil {
+			return err
+		}
 
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
@@ -258,8 +262,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
 		s.oh = oh
-		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
-		s.h = s.hasher.Hash
+		s.h = indexHash
 	}
 
 	return nil
