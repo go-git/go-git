@@ -12,9 +12,9 @@ import (
 	"io"
 	"sync"
 
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
-	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/binary"

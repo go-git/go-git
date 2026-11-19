@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 )
 
 func TestVariableLengthSizeOverflow(t *testing.T) {
