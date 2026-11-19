@@ -109,8 +109,20 @@ func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, o
 		options:     ops,
 		objectCache: objectCache,
 		dir:         dir,
-		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
+		oh:          newObjectHasher(ops.ObjectFormat),
 	}
+}
+
+// newObjectHasher returns the ObjectHasher for the object format [f],
+// for constructors that cannot return an error. An unsupported format
+// keeps the default hasher. Repositories with such a format are
+// rejected when their extensions are validated on open.
+func newObjectHasher(f hash.ObjectFormat) *plumbing.ObjectHasher {
+	oh, err := plumbing.NewObjectHasher(f)
+	if err != nil {
+		oh, _ = plumbing.NewObjectHasher(hash.DefaultObjectFormat)
+	}
+	return oh
 }
 
 // initAlternates initializes the cached alternate ObjectStorage instances.

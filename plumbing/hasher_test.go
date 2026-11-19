@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/sha1"
 	"fmt"
-	"hash"
 	"sync"
 	"testing"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -22,13 +20,57 @@ func TestObjectHasherUsesRegisteredSHA1(t *testing.T) { //nolint: paralleltest /
 		require.NoError(t, githash.RegisterHash(crypto.SHA1, sha1cd.New))
 	}()
 
-	assert.IsType(t, sha1cd.New(), FromObjectFormat(format.SHA1).hasher)
-	assert.IsType(t, sha1cd.New(), NewHasher(format.SHA1, BlobObject, 0).Hash)
+	oh, err := NewObjectHasher(githash.SHA1)
+	require.NoError(t, err)
+	assert.IsType(t, sha1cd.New(), oh.hasher)
+	assert.IsType(t, sha1cd.New(), NewHasher(githash.SHA1, BlobObject, 0).Hash)
 
 	require.NoError(t, githash.RegisterHash(crypto.SHA1, sha1.New))
 
-	assert.IsType(t, sha1.New(), FromObjectFormat(format.SHA1).hasher)
-	assert.IsType(t, sha1.New(), NewHasher(format.SHA1, BlobObject, 0).Hash)
+	oh, err = NewObjectHasher(githash.SHA1)
+	require.NoError(t, err)
+	assert.IsType(t, sha1.New(), oh.hasher)
+	assert.IsType(t, sha1.New(), NewHasher(githash.SHA1, BlobObject, 0).Hash)
+}
+
+func TestNewObjectHasher(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		format githash.ObjectFormat
+		want   string
+	}{
+		{githash.SHA1, "9f361d484fcebb869e1919dc7467b82ac6ca5fad"},
+		{githash.UnsetObjectFormat, "9f361d484fcebb869e1919dc7467b82ac6ca5fad"},
+		{githash.SHA256, "2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677"},
+	}
+
+	for _, tc := range tests {
+		t.Run(string(tc.format), func(t *testing.T) {
+			t.Parallel()
+			oh, err := NewObjectHasher(tc.format)
+			require.NoError(t, err)
+			assert.Equal(t, tc.format.Size(), oh.Size())
+
+			id, err := oh.Compute(BlobObject, []byte("hash object sample"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, id.String())
+			assert.Equal(t, tc.format.Size(), id.Size())
+
+			want, ok := FromHex(tc.want)
+			require.True(t, ok)
+			assert.Equal(t, want, id)
+		})
+	}
+}
+
+func TestNewObjectHasherUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	oh, err := NewObjectHasher(githash.ObjectFormat("sha512"))
+	assert.ErrorIs(t, err, githash.ErrUnsupportedHashFunction)
+	assert.ErrorContains(t, err, "sha512")
+	assert.Nil(t, oh)
 }
 
 func TestHasher(t *testing.T) {
@@ -36,31 +78,31 @@ func TestHasher(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		h       hash.Hash
+		format  githash.ObjectFormat
 		ot      ObjectType
 		content []byte
 		want    string
 	}{
 		{
-			"blob object (sha1)", crypto.SHA1.New(),
+			"blob object (sha1)", githash.SHA1,
 			BlobObject,
 			[]byte("hash object sample"),
 			"9f361d484fcebb869e1919dc7467b82ac6ca5fad",
 		},
 		{
-			"empty blob object (sha1)", crypto.SHA1.New(),
+			"empty blob object (sha1)", githash.SHA1,
 			BlobObject,
 			[]byte(""),
 			"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
 		},
 		{
-			"blob object (sha256)", crypto.SHA256.New(),
+			"blob object (sha256)", githash.SHA256,
 			BlobObject,
 			[]byte("hash object sample"),
 			"2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677",
 		},
 		{
-			"empty blob object (sha256)", crypto.SHA256.New(),
+			"empty blob object (sha256)", githash.SHA256,
 			BlobObject,
 			[]byte(""),
 			"473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813",
@@ -70,7 +112,7 @@ func TestHasher(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, ""), func(t *testing.T) {
 			t.Parallel()
-			oh, err := FromHash(tc.h)
+			oh, err := NewObjectHasher(tc.format)
 			assert.NoError(t, err)
 
 			h, err := oh.Compute(tc.ot, tc.content)
@@ -85,7 +127,7 @@ func TestMultipleHashes(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		h        hash.Hash
+		format   githash.ObjectFormat
 		ot       ObjectType
 		content1 []byte
 		content2 []byte
@@ -93,7 +135,7 @@ func TestMultipleHashes(t *testing.T) {
 		want2    string
 	}{
 		{
-			"reuse sha1 hasher instance for two ops", crypto.SHA1.New(),
+			"reuse sha1 hasher instance for two ops", githash.SHA1,
 			BlobObject,
 			[]byte("hash object sample"),
 			[]byte("other object content"),
@@ -101,7 +143,7 @@ func TestMultipleHashes(t *testing.T) {
 			"e8bb453830a9efdfe4785275b92eb0766da3a73d",
 		},
 		{
-			"reuse sha256 hasher instance for two ops", crypto.SHA256.New(),
+			"reuse sha256 hasher instance for two ops", githash.SHA256,
 			BlobObject,
 			[]byte("hash object sample"),
 			[]byte("other object content"),
@@ -113,7 +155,7 @@ func TestMultipleHashes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s:%q", tc.name, ""), func(t *testing.T) {
 			t.Parallel()
-			oh, err := FromHash(tc.h)
+			oh, err := NewObjectHasher(tc.format)
 			assert.NoError(t, err)
 
 			h, err := oh.Compute(tc.ot, tc.content1)
@@ -132,21 +174,21 @@ func TestThreadSafety(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		h       hash.Hash
+		format  githash.ObjectFormat
 		ot      ObjectType
 		content []byte
 		count   int
 		want    string
 	}{
 		{
-			"thread safety sha1", crypto.SHA1.New(),
+			"thread safety sha1", githash.SHA1,
 			BlobObject,
 			bytes.Repeat([]byte{2}, 500),
 			20,
 			"147979c263be42345f0721a22c5339492aadd0bf",
 		},
 		{
-			"thread safety sha256", crypto.SHA256.New(),
+			"thread safety sha256", githash.SHA256,
 			BlobObject,
 			bytes.Repeat([]byte{2}, 500),
 			20,
@@ -157,7 +199,7 @@ func TestThreadSafety(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			oh, err := FromHash(tc.h)
+			oh, err := NewObjectHasher(tc.format)
 			assert.NoError(t, err)
 
 			var wg sync.WaitGroup
@@ -180,17 +222,17 @@ func BenchmarkHasher(b *testing.B) {
 
 	for _, q := range qtds {
 		b.Run(fmt.Sprintf("objecthash-sha1-%dB", q), func(b *testing.B) {
-			benchmarkObjectHash(b, sha1cd.New(), q)
+			benchmarkObjectHash(b, githash.SHA1, q)
 		})
 		b.Run(fmt.Sprintf("objecthash-sha256-%dB", q), func(b *testing.B) {
-			benchmarkObjectHash(b, crypto.SHA256.New(), q)
+			benchmarkObjectHash(b, githash.SHA256, q)
 		})
 	}
 }
 
-func benchmarkObjectHash(b *testing.B, h hash.Hash, sz int64) {
+func benchmarkObjectHash(b *testing.B, f githash.ObjectFormat, sz int64) {
 	content := bytes.Repeat([]byte("s"), int(sz))
-	oh, err := FromHash(h)
+	oh, err := NewObjectHasher(f)
 	assert.NoError(b, err)
 
 	b.ResetTimer()
