@@ -17,18 +17,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-// Originally from: https://github.com/xanzy/ssh-agent/blob/main/sshagent_windows.go
+// Originally from: https://github.com/xanzy/ssh-agent/blob/v0.3.3/sshagent_windows.go
+// Upstream commit: 0fa644ba07f41bbe341c7f3d59bd30443ff13002
 // MIT LICENSE: https://github.com/davidmz/go-pageant/blob/master/LICENSE.txt
+// Pageant support was removed. The full API, including Pageant, is in
+// github.com/go-git/x/ssh/agent.
 
 //go:build windows
 
 package sshagent
 
 import (
-	"errors"
-	"io"
+	"fmt"
 	"net"
-	"sync"
 
 	"github.com/Microsoft/go-winio"
 	"golang.org/x/crypto/ssh/agent"
@@ -40,71 +41,18 @@ const (
 	sshAgentPipe = `\\.\pipe\openssh-ssh-agent`
 )
 
-// Available returns true if Pageant is running
-func Available() bool {
-	if pageantWindow() != 0 {
-		return true
-	}
-
-	conn, err := winio.DialPipe(sshAgentPipe, nil)
-	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
-}
-
-// New returns a new agent.Agent and the (custom) connection it uses
-// to communicate with a running pagent.exe instance (see README.md)
+// New connects to the Windows OpenSSH agent named pipe. It returns the agent
+// client and its connection, which the caller must close. The returned error
+// wraps ErrNotFound when the pipe cannot be opened. Pageant is not supported.
 func New() (agent.Agent, net.Conn, error) {
-	if pageantWindow() != 0 {
-		return agent.NewClient(&conn{}), nil, nil
-	}
-	trace.SSH.Printf("ssh: winio.DialPipe %s", sshAgentPipe)
-	conn, err := winio.DialPipe(sshAgentPipe, nil)
+	return dialPipe(sshAgentPipe)
+}
+
+func dialPipe(name string) (agent.Agent, net.Conn, error) {
+	trace.SSH.Printf("ssh: winio.DialPipe %s", name)
+	conn, err := winio.DialPipe(name, nil)
 	if err != nil {
-		return nil, nil, errors.New(
-			"SSH agent requested, but could not detect Pageant or Windows native SSH agent",
-		)
+		return nil, nil, fmt.Errorf("error connecting to the Windows OpenSSH agent at %s: %w: %w", name, err, ErrNotFound)
 	}
-	return agent.NewClient(conn), nil, nil
-}
-
-type conn struct {
-	sync.Mutex
-	buf []byte
-}
-
-func (c *conn) Close() {
-	c.Lock()
-	defer c.Unlock()
-	c.buf = nil
-}
-
-func (c *conn) Write(p []byte) (int, error) {
-	c.Lock()
-	defer c.Unlock()
-
-	resp, err := query(p)
-	if err != nil {
-		return 0, err
-	}
-
-	c.buf = append(c.buf, resp...)
-
-	return len(p), nil
-}
-
-func (c *conn) Read(p []byte) (int, error) {
-	c.Lock()
-	defer c.Unlock()
-
-	if len(c.buf) == 0 {
-		return 0, io.EOF
-	}
-
-	n := copy(p, c.buf)
-	c.buf = c.buf[n:]
-
-	return n, nil
+	return agent.NewClient(conn), conn, nil
 }

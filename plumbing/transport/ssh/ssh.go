@@ -1,4 +1,14 @@
 // Package ssh implements the SSH transport for the new transport API.
+//
+// Unless the auth method sets a HostKeyCallback, host keys are verified
+// against known_hosts files and the host key algorithms are taken from the
+// entries for the host. Without an auth method, the transport authenticates
+// with the SSH agent named by SSH_AUTH_SOCK, or with the Windows OpenSSH agent
+// named pipe on Windows.
+//
+// The github.com/go-git/x/ssh/knownhosts and github.com/go-git/x/ssh/agent
+// modules provide the full known_hosts and agent APIs, including Pageant on
+// Windows, for use with the auth methods of this package.
 package ssh
 
 import (
@@ -65,9 +75,14 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshConn, error) {
-	config, err := t.resolveConfig(ctx, req)
+	config, agentConn, err := t.resolveConfig(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if agentConn != nil {
+		// The agent is only asked to sign during the SSH handshake, which is
+		// over by the time connect returns.
+		defer func() { _ = agentConn.Close() }()
 	}
 
 	hostWithPort, err := t.resolveHostWithPort(ctx, req)
@@ -75,19 +90,19 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 		return nil, err
 	}
 
+	// known_hosts is only consulted when no callback was supplied. A
+	// caller-supplied callback owns host key verification, so the caller
+	// also sets HostKeyAlgorithms when the callback accepts only some key
+	// types.
 	if config.HostKeyCallback == nil {
 		db, err := newKnownHostsDb()
 		if err != nil {
 			return nil, err
 		}
-		config.HostKeyCallback = db.HostKeyCallback()
-		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
-	} else if len(config.HostKeyAlgorithms) == 0 {
-		db, err := newKnownHostsDb()
-		if err != nil {
-			return nil, err
+		config.HostKeyCallback = traceHostKeyCallback(db.HostKeyCallback())
+		if len(config.HostKeyAlgorithms) == 0 {
+			config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
 		}
-		config.HostKeyAlgorithms = db.HostKeyAlgorithms(hostWithPort)
 	}
 
 	trace.SSH.Printf("ssh: host key algorithms %s", strings.Join(config.HostKeyAlgorithms, ", "))
@@ -152,9 +167,13 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (*sshCo
 	return conn, nil
 }
 
-func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, error) {
+// resolveConfig returns the SSH client config for req. When it falls back to
+// SSH agent auth, it also returns the agent connection, which the caller must
+// close.
+func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (*gossh.ClientConfig, io.Closer, error) {
 	if t.opts.ClientConfig != nil {
-		return t.opts.ClientConfig(ctx, req)
+		config, err := t.opts.ClientConfig(ctx, req)
+		return config, nil, err
 	}
 
 	username := DefaultUsername
@@ -168,9 +187,14 @@ func (t *Transport) resolveConfig(ctx context.Context, req *transport.Request) (
 
 	auth, err := NewSSHAgentAuth(username)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return auth.ClientConfig(ctx, req)
+	config, err := auth.ClientConfig(ctx, req)
+	if err != nil {
+		_ = auth.Close()
+		return nil, nil, err
+	}
+	return config, auth, nil
 }
 
 func (t *Transport) dial(ctx context.Context, network, addr string, config *gossh.ClientConfig) (*gossh.Client, error) {

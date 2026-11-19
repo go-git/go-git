@@ -11,9 +11,9 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/go-git/go-git/v6/internal/transport/ssh/knownhosts"
+	"github.com/go-git/go-git/v6/internal/transport/ssh/sshagent"
 	transport "github.com/go-git/go-git/v6/plumbing/transport"
-	"github.com/go-git/go-git/v6/plumbing/transport/ssh/knownhosts"
-	"github.com/go-git/go-git/v6/plumbing/transport/ssh/sshagent"
 	"github.com/go-git/go-git/v6/utils/trace"
 )
 
@@ -27,34 +27,48 @@ const (
 )
 
 // HostKeyCallbackHelper provides common functionality to configure
-// HostKeyCallback on a *ssh.ClientConfig.
+// HostKeyCallback and HostKeyAlgorithms on a *ssh.ClientConfig.
 type HostKeyCallbackHelper struct {
 	// HostKeyCallback is the function used for verifying server keys.
-	// If nil, a default callback is created using NewKnownHostsCallback.
+	// If nil, the SSH transport verifies server keys against known_hosts
+	// files and selects host key algorithms from the entries for the host.
+	// See NewKnownHostsCallback for how the files are located.
 	HostKeyCallback gossh.HostKeyCallback
+
+	// HostKeyAlgorithms lists the host key algorithms the client accepts,
+	// in order of preference. Set it when HostKeyCallback only accepts
+	// specific key types, such as a key pinned with ssh.FixedHostKey.
+	// If empty, the defaults from golang.org/x/crypto/ssh are used, or the
+	// algorithms found in known_hosts when HostKeyCallback is nil.
+	HostKeyAlgorithms []string
 }
 
-// SetHostKeyCallback sets HostKeyCallback on cfg. If HostKeyCallback is nil,
-// a default callback is created from known_hosts files.
+// SetHostKeyCallback sets HostKeyCallback and HostKeyAlgorithms on cfg.
+//
+// If HostKeyCallback is nil, cfg.HostKeyCallback is left nil and the SSH
+// transport installs a known_hosts callback when connecting. A cfg built
+// this way and used outside go-git's SSH transport has no callback, so
+// golang.org/x/crypto/ssh refuses to connect.
+//
+// The helper itself is never modified, so it is safe to call concurrently.
 func (m *HostKeyCallbackHelper) SetHostKeyCallback(cfg *gossh.ClientConfig) (*gossh.ClientConfig, error) {
-	if m.HostKeyCallback == nil {
-		db, err := newKnownHostsDb()
-		if err != nil {
-			return cfg, err
-		}
-		m.HostKeyCallback = db.HostKeyCallback()
+	if m.HostKeyCallback != nil {
+		cfg.HostKeyCallback = traceHostKeyCallback(m.HostKeyCallback)
 	}
-
-	cfg.HostKeyCallback = m.traceHostKeyCallback
+	if len(m.HostKeyAlgorithms) > 0 {
+		cfg.HostKeyAlgorithms = m.HostKeyAlgorithms
+	}
 	return cfg, nil
 }
 
-func (m *HostKeyCallbackHelper) traceHostKeyCallback(hostname string, remote net.Addr, key gossh.PublicKey) error {
-	trace.SSH.Printf(
-		`ssh: hostkey callback hostname=%s remote=%s pubkey="%s %s"`,
-		hostname, remote, key.Type(), gossh.FingerprintSHA256(key),
-	)
-	return m.HostKeyCallback(hostname, remote, key)
+func traceHostKeyCallback(cb gossh.HostKeyCallback) gossh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
+		trace.SSH.Printf(
+			`ssh: hostkey callback hostname=%s remote=%s pubkey="%s %s"`,
+			hostname, remote, key.Type(), gossh.FingerprintSHA256(key),
+		)
+		return cb(hostname, remote, key)
+	}
 }
 
 // Password implements SSH password authentication.
@@ -140,11 +154,21 @@ type PublicKeysCallback struct {
 	User     string
 	Callback func() (signers []gossh.Signer, err error)
 	HostKeyCallbackHelper
+
+	// agentConn is the SSH agent connection opened by NewSSHAgentAuth.
+	agentConn net.Conn
 }
 
 // NewSSHAgentAuth returns a PublicKeysCallback based on an SSH agent. It opens
 // a pipe with the SSH agent and uses the pipe as the implementer of the public
-// key callback function.
+// key callback function. The pipe stays open until [PublicKeysCallback.Close]
+// is called, so callers must close the returned PublicKeysCallback once it is
+// no longer needed.
+//
+// The agent is reached through the socket named by SSH_AUTH_SOCK on Unix-like
+// systems, and through the Windows OpenSSH agent named pipe on Windows. For
+// Pageant or other agents, use the github.com/go-git/x/ssh/agent module and
+// pass its Signers method as the Callback of a PublicKeysCallback.
 func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 	var err error
 	if u == "" {
@@ -154,15 +178,30 @@ func NewSSHAgentAuth(u string) (*PublicKeysCallback, error) {
 		}
 	}
 
-	a, _, err := sshagent.New()
+	a, conn, err := sshagent.New()
 	if err != nil {
 		return nil, fmt.Errorf("error creating SSH agent: %w", err)
 	}
 
 	return &PublicKeysCallback{
-		User:     u,
-		Callback: a.Signers,
+		User:      u,
+		Callback:  a.Signers,
+		agentConn: conn,
 	}, nil
+}
+
+// Close closes the SSH agent connection opened by [NewSSHAgentAuth]. The
+// Callback stops working once it is closed. Close is a no-op when the
+// PublicKeysCallback was not created by NewSSHAgentAuth.
+func (a *PublicKeysCallback) Close() error {
+	if a == nil || a.agentConn == nil {
+		return nil
+	}
+	err := a.agentConn.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 // ClientConfig returns the ssh.ClientConfig for public key callback authentication.
@@ -203,6 +242,13 @@ func (a *KeyboardInteractive) ClientConfig(_ context.Context, _ *transport.Reque
 //
 //	~/.ssh/known_hosts
 //	/etc/ssh/ssh_known_hosts
+//
+// Setting the returned callback as HostKeyCallback turns off host key
+// algorithm selection from known_hosts, so the server may offer a key type
+// that known_hosts does not list. Leave HostKeyCallback nil to keep that
+// selection, or set HostKeyAlgorithms as well. The
+// github.com/go-git/x/ssh/knownhosts module provides both the callback and
+// the algorithms for a host.
 func NewKnownHostsCallback(files ...string) (gossh.HostKeyCallback, error) {
 	db, err := newKnownHostsDb(files...)
 	if db == nil {

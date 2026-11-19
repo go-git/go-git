@@ -209,7 +209,7 @@ compatibility status with go-git.
 | `http(s)://` (dumb)  | ❌           | Not supported, neither as a client nor when serving.                   |                                                |
 | `http(s)://` (smart) | ✅           |                                                                        |                                                |
 | `git://`             | ✅           |                                                                        |                                                |
-| `ssh://`             | ✅           |                                                                        |                                                |
+| `ssh://`             | ✅           | Host keys are checked against `known_hosts`. The default agent is `SSH_AUTH_SOCK`, or the Windows OpenSSH agent pipe. For Pageant, use [`github.com/go-git/x/ssh/agent`](https://github.com/go-git/x/tree/main/ssh/agent). | - [clone ssh (ssh_agent)](_examples/clone/auth/ssh/ssh_agent/main.go) |
 | `file://`            | ✅           |                                                                        |                                                |
 | Custom               | ✅           | All existing schemes can be replaced by custom implementations.        | - [custom_http](_examples/custom_http/main.go) |
 
