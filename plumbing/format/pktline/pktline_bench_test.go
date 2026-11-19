@@ -100,11 +100,11 @@ func BenchmarkReadPacket(b *testing.B) {
 	for _, tc := range cases {
 		r := strings.NewReader("")
 		b.Run(tc.name, func(b *testing.B) {
-			buf := pktline.GetBuffer()
+			var buf [pktline.MaxSize]byte
 			for i := 0; i < b.N; i++ {
 				r.Reset(tc.input)
 				for {
-					_, err := pktline.Read(r, (*buf)[:])
+					_, err := pktline.Read(r, buf[:])
 					if err == io.EOF {
 						break
 					}
@@ -113,7 +113,6 @@ func BenchmarkReadPacket(b *testing.B) {
 					}
 				}
 			}
-			pktline.PutBuffer(buf)
 		})
 	}
 }

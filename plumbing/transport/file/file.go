@@ -11,8 +11,8 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// ServerFunc is a function that runs a git server-side command over pipes.
-type ServerFunc func(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, gitProtocol string) error
+// serverFunc is a function that runs a git server-side command over pipes.
+type serverFunc func(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, gitProtocol string) error
 
 func defaultUploadPack(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, gitProtocol string) error {
 	return transport.UploadPack(ctx, st, r, w, &transport.UploadPackRequest{
@@ -41,9 +41,9 @@ type Options struct {
 // Transport implements the file:// transport protocol.
 type Transport struct {
 	loader        transport.Loader
-	uploadPack    ServerFunc
-	receivePack   ServerFunc
-	uploadArchive ServerFunc
+	uploadPack    serverFunc
+	receivePack   serverFunc
+	uploadArchive serverFunc
 }
 
 // NewTransport creates a file transport with the given options.
@@ -70,7 +70,7 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Reader, *io.PipeWriter, func() error, error) {
-	var serverFn ServerFunc
+	var serverFn serverFunc
 	switch req.Command {
 	case transport.UploadPackService:
 		serverFn = t.uploadPack
