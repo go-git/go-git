@@ -2,6 +2,7 @@ package backend
 
 import (
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,22 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
+
+var (
+	// ErrUnauthorized is returned by [Backend.Authorize] when the request
+	// carries no valid credentials. ServeHTTP answers it with 401 and a
+	// WWW-Authenticate challenge, so the client asks for credentials.
+	ErrUnauthorized = errors.New("unauthorized")
+
+	// ErrForbidden is returned by [Backend.Authorize] when the request is
+	// authenticated but may not use the service. ServeHTTP answers it
+	// with 403.
+	ErrForbidden = errors.New("forbidden")
+)
+
+// authChallenge is the WWW-Authenticate value sent with a 401. git asks its
+// credential helpers for any challenge it receives.
+const authChallenge = `Basic realm="git"`
 
 type httpService struct {
 	pattern *regexp.Regexp
@@ -35,6 +52,12 @@ var httpServices = []httpService{
 // ServeHTTP implements [http.Handler]. It supports the smart HTTP protocol
 // only. The dumb protocol's requests are recognised so they can be denied,
 // rather than answered as if the endpoint did not exist.
+//
+// ServeHTTP does no authentication on its own. It follows git
+// http-backend's service policy: upload-pack is served unless disabled,
+// and receive-pack and upload-archive are served when enabled, or when
+// [Backend.Authorize] accepts the request. Without Authorize, a push is
+// refused with 403 unless [Backend.ReceivePack] is [ServiceEnabled].
 func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	urlPath := strings.TrimPrefix(r.URL.Path, b.Prefix)
 	for _, s := range httpServices {
@@ -54,6 +77,10 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo, svc string) {
+	if !b.authorizeHTTP(w, r, svc) {
+		return
+	}
+
 	version := r.Header.Get("Git-Protocol")
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 
@@ -87,10 +114,6 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 	if err != nil {
 		b.logf("error parsing URL: %v", err)
 		renderStatusError(w, http.StatusBadRequest)
-		return
-	}
-
-	if !b.requireReceivePackAuth(w, r, svc) {
 		return
 	}
 
@@ -128,7 +151,7 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, _
 		return
 	}
 
-	if !b.requireReceivePackAuth(w, r, service) {
+	if !b.authorizeHTTP(w, r, service) {
 		return
 	}
 
@@ -172,11 +195,53 @@ func (b *Backend) handleDumbRequest(w http.ResponseWriter, _ *http.Request, _, _
 	renderStatusError(w, http.StatusForbidden)
 }
 
-func (b *Backend) requireReceivePackAuth(w http.ResponseWriter, r *http.Request, service string) bool {
-	// For receive-pack, require authentication as a basic sanity check.
-	if service == transport.ReceivePackService && strings.TrimSpace(r.Header.Get("Authorization")) == "" {
-		b.logf("missing Authorization header for receive-pack service")
-		renderStatusError(w, http.StatusUnauthorized)
+// authorizeHTTP applies git http-backend's service policy to r and renders
+// the refusal when service may not be used. A service that is not disabled
+// is authorized by Authorize. upload-pack is then served, and receive-pack
+// and upload-archive are served only when enabled or authorized, the way
+// http-backend serves them only when enabled or REMOTE_USER is set.
+func (b *Backend) authorizeHTTP(w http.ResponseWriter, r *http.Request, service string) bool {
+	var state ServiceState
+	switch service {
+	case transport.UploadPackService:
+		state = b.UploadPack
+	case transport.ReceivePackService:
+		state = b.ReceivePack
+	case transport.UploadArchiveService:
+		state = b.UploadArchive
+	}
+
+	if state == ServiceDisabled {
+		b.logf("service not enabled: %q", service)
+		renderStatusError(w, http.StatusForbidden)
+		return false
+	}
+
+	authorized := false
+	if b.Authorize != nil {
+		err := b.Authorize(r, service)
+		switch {
+		case err == nil:
+			authorized = true
+		case errors.Is(err, ErrUnauthorized):
+			b.logf("unauthorized request for %q: %v", service, err)
+			w.Header().Set("WWW-Authenticate", authChallenge)
+			renderStatusError(w, http.StatusUnauthorized)
+			return false
+		case errors.Is(err, ErrForbidden):
+			b.logf("forbidden request for %q: %v", service, err)
+			renderStatusError(w, http.StatusForbidden)
+			return false
+		default:
+			b.logf("error authorizing request for %q: %v", service, err)
+			renderStatusError(w, http.StatusInternalServerError)
+			return false
+		}
+	}
+
+	if state == ServiceDefault && service != transport.UploadPackService && !authorized {
+		b.logf("service not enabled: %q", service)
+		renderStatusError(w, http.StatusForbidden)
 		return false
 	}
 	return true

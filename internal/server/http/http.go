@@ -51,6 +51,10 @@ func (s *server) Start() (string, error) {
 	}
 
 	h := backend.New(s.l)
+	// The server backs tests that push and archive over HTTP, like git
+	// http-backend with http.receivepack and http.uploadarchive set.
+	h.ReceivePack = backend.ServiceEnabled
+	h.UploadArchive = backend.ServiceEnabled
 	srv := &gohttp.Server{
 		Addr:         addr,
 		Handler:      h,
