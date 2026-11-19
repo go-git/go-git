@@ -4,7 +4,6 @@ package mmap
 
 import (
 	"bytes"
-	"crypto"
 	"io"
 	"testing"
 
@@ -14,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 var _ plumbing.EncodedObject = (*ondemandObject)(nil)
@@ -43,7 +43,7 @@ func TestOndemandObject(t *testing.T) {
 	require.NoError(t, err)
 	rev, err := fixture.Rev()
 	require.NoError(t, err)
-	scanner, err := NewPackScanner(crypto.SHA1.Size(), pack, idx, rev)
+	scanner, err := NewPackScanner(hash.SHA1, pack, idx, rev)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := scanner.Close()
