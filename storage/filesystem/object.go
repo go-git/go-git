@@ -2,7 +2,6 @@ package filesystem
 
 import (
 	"context"
-	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -418,15 +417,8 @@ func (s *ObjectStorage) loadMemoryIndexValue(h plumbing.Hash) (idx idxfile.Index
 
 	defer ioutil.CheckClose(f, &err)
 
-	var hasher hash.Hash
-	if h.Size() == crypto.SHA256.Size() {
-		hasher = hash.New(crypto.SHA256)
-	} else {
-		hasher = hash.New(crypto.SHA1)
-	}
-
-	idxf := idxfile.NewMemoryIndex(h.Size())
-	d := idxfile.NewDecoder(f, hasher)
+	idxf := idxfile.NewMemoryIndex(h.Format())
+	d := idxfile.NewDecoder(f, idxfile.WithObjectFormat(h.Format()))
 	if err = d.Decode(idxf); err != nil {
 		return nil, err
 	}

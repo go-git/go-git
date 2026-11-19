@@ -1,22 +1,23 @@
 package revfile
 
 import (
-	"crypto"
 	"fmt"
-	"hash"
+	stdhash "hash"
 	"io"
 	"reflect"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
 // encoder is the internal state for encoding a rev file.
 // It is not exported to prevent reuse - each Encode call creates fresh state.
 type encoder struct {
-	writer io.Writer
-	hash   hash.Hash
+	writer   io.Writer
+	hash     stdhash.Hash
+	hashFunc uint32
 
 	entries      []uint32
 	packChecksum plumbing.Hash
@@ -28,8 +29,12 @@ type stateFnEncode func(*encoder) (stateFnEncode, error)
 
 // Encode encodes a reverse index from a MemoryIndex to the writer.
 // The reverse index maps pack offsets (sorted order) to index positions.
+// It is written in the object format of idx, which sets its hash
+// function id and the hash of its checksum. An unsupported object
+// format returns an error wrapping [hash.ErrUnsupportedHashFunction]
+// before anything is written.
 // This function is safe to call concurrently with different parameters.
-func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
+func Encode(w io.Writer, idx *idxfile.MemoryIndex) error {
 	if w == nil {
 		return fmt.Errorf("nil writer")
 	}
@@ -45,10 +50,25 @@ func Encode(w io.Writer, h hash.Hash, idx *idxfile.MemoryIndex) error {
 		return fmt.Errorf("nil index")
 	}
 
-	h.Reset()
+	var hashFunc uint32
+	format := idx.ObjectFormat()
+	switch format {
+	case hash.SHA1:
+		hashFunc = sha1Hash
+	case hash.SHA256:
+		hashFunc = sha256Hash
+	default:
+		return fmt.Errorf("%w: object format %q", hash.ErrUnsupportedHashFunction, format)
+	}
+	h, err := hash.FromObjectFormat(format)
+	if err != nil {
+		return err
+	}
+
 	e := &encoder{
-		writer: w,
-		hash:   h,
+		writer:   w,
+		hash:     h,
+		hashFunc: hashFunc,
 	}
 
 	if err := e.buildReverseIndex(idx); err != nil {
@@ -140,10 +160,7 @@ func writeVersion(e *encoder) (stateFnEncode, error) {
 }
 
 func writeHashFunction(e *encoder) (stateFnEncode, error) {
-	hf := sha1Hash
-	if e.hash.Size() == crypto.SHA256.Size() {
-		hf = sha256Hash
-	}
+	hf := e.hashFunc
 
 	err := binary.WriteUint32(e.writer, uint32(hf))
 	if err != nil {
