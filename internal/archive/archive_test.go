@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"archive/tar"
 	"bytes"
 	"strings"
 	"testing"
@@ -546,4 +547,42 @@ func TestApplyUmaskDir(t *testing.T) {
 	t.Parallel()
 	got := ApplyUmaskDir(0o000)
 	assert.Equal(t, int64(0o775), got)
+}
+
+func TestGetTarCommitID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		comment string
+		wantErr bool
+	}{
+		{comment: "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"},
+		{comment: "2c07a4773e3a957c77810e8cc5deb52cd70493803c048e48dcc0e01f94cbe677"},
+		{comment: "6ecf0ef2", wantErr: true},
+		{comment: "6ecf0ef2c2dffb796033e5a02219af86ec6584e500", wantErr: true},
+		{comment: "not a commit id", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.comment, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			require.NoError(t, tw.WriteHeader(&tar.Header{
+				Typeflag:   tar.TypeXGlobalHeader,
+				Name:       "pax_global_header",
+				PAXRecords: map[string]string{"comment": tc.comment},
+			}))
+			require.NoError(t, tw.Close())
+
+			id, err := GetTarCommitID(&buf)
+			if tc.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, id)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.comment, id.String())
+		})
+	}
 }
