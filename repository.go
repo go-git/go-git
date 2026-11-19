@@ -720,9 +720,13 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 // not empty ErrTargetDirNotEmpty is returned. Nil options are treated as zero
 // CloneOptions, which fail with ErrMissingURL.
 //
-// PlainClone returns a nil *Repository when it fails. Like [Clone], it reads
-// init.defaultBranch through the registered config loader when HEAD is left
-// unborn, and fails when the system or global config cannot be loaded.
+// PlainClone returns a nil *Repository when it fails. It then removes what the
+// clone wrote: the path itself when it did not exist before, or every entry in
+// it when it was an existing empty directory, which is kept.
+//
+// Like [Clone], it reads init.defaultBranch through the registered config
+// loader when HEAD is left unborn, and fails when the system or global config
+// cannot be loaded.
 func PlainClone(path string, o *CloneOptions) (*Repository, error) {
 	return PlainCloneContext(context.Background(), path, o)
 }
@@ -731,9 +735,13 @@ func PlainClone(path string, o *CloneOptions) (*Repository, error) {
 // path is not empty ErrTargetDirNotEmpty is returned. Nil options are treated as
 // zero CloneOptions, which fail with ErrMissingURL.
 //
-// PlainCloneContext returns a nil *Repository when it fails. Like [Clone], it
-// reads init.defaultBranch through the registered config loader when HEAD is
-// left unborn, and fails when the system or global config cannot be loaded.
+// PlainCloneContext returns a nil *Repository when it fails. It then removes what the
+// clone wrote: the path itself when it did not exist before, or every entry in
+// it when it was an existing empty directory, which is kept.
+//
+// Like [Clone], it reads init.defaultBranch through the registered config
+// loader when HEAD is left unborn, and fails when the system or global config
+// cannot be loaded.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
@@ -770,8 +778,16 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	if err := r.clone(ctx, o); err != nil {
 		_ = r.Close()
 		if dirPreexisted {
-			// Restore the directory to its original empty state.
-			_ = os.RemoveAll(filepath.Join(path, GitDirName))
+			// Restore the directory to its original empty state. It was
+			// empty before, so every entry in it was created by the clone.
+			// A bare clone writes its files directly under path.
+			entries, rerr := os.ReadDir(path)
+			if rerr != nil {
+				return nil, errors.Join(err, rerr)
+			}
+			for _, e := range entries {
+				_ = os.RemoveAll(filepath.Join(path, e.Name()))
+			}
 		} else {
 			// We created the directory; remove it entirely.
 			_ = os.RemoveAll(path)
