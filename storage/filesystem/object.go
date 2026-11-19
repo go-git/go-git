@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -103,8 +104,12 @@ func NewObjectStorage(dir *dotgit.DotGit, objectCache cache.Object) *ObjectStora
 	return NewObjectStorageWithOptions(dir, objectCache, Options{})
 }
 
-// NewObjectStorageWithOptions creates a new ObjectStorage with the given .git directory, cache and extra options
+// NewObjectStorageWithOptions creates a new ObjectStorage with the given .git directory, cache and extra options.
+// When ops.ObjectFormat is unset, the object format of dir is used.
 func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, ops Options) *ObjectStorage {
+	if ops.ObjectFormat == formatcfg.UnsetObjectFormat {
+		ops.ObjectFormat = dir.ObjectFormat()
+	}
 	return &ObjectStorage{
 		options:     ops,
 		objectCache: objectCache,
