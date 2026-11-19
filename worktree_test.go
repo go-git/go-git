@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto"
 	"errors"
@@ -31,6 +32,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/go-git/go-git/v6/config"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
@@ -39,8 +41,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/go-git/go-git/v6/x/plugin"
+	xconfig "github.com/go-git/go-git/v6/x/plugin/config"
 )
 
 func defaultTestCommitOptions() *CommitOptions {
@@ -5908,4 +5913,1244 @@ func TestMergeResetKeepsFileAtUninitialisedGitlink(t *testing.T) {
 	body, err := util.ReadFile(fs, "sub")
 	require.NoError(t, err, "the file at the gitlink was removed")
 	require.Equal(t, "user data\n", string(body))
+}
+
+// skipWorktreeRepo returns a repository whose HEAD holds a and s, with s
+// flagged SkipWorktree in the index and its path holding disk, or absent
+// when disk is nil, and the commits a reset can target: one that drops s,
+// one that modifies it, and one that makes it a directory, s/x.
+func skipWorktreeRepo(t *testing.T, disk []byte) (r *Repository, fs billy.Filesystem, targets map[string]plumbing.Hash) {
+	t.Helper()
+
+	fs = memfs.New()
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(fs))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}
+
+	for _, n := range []string{"a", "s"} {
+		require.NoError(t, util.WriteFile(fs, n, []byte(n), 0o644))
+		_, err = w.Add(n)
+		require.NoError(t, err)
+	}
+	head, err := w.Commit("as", &CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	idx, err := s.Index()
+	require.NoError(t, err)
+	a, err := idx.Entry("a")
+	require.NoError(t, err)
+	e, err := idx.Entry("s")
+	require.NoError(t, err)
+	e.SkipWorktree = true
+	require.NoError(t, s.SetIndex(idx))
+	require.NoError(t, fs.Remove("s"))
+	if disk != nil {
+		require.NoError(t, util.WriteFile(fs, "s", disk, 0o644))
+	}
+
+	commit := func(entries ...object.TreeEntry) plumbing.Hash {
+		entries = append([]object.TreeEntry{{Name: "a", Mode: filemode.Regular, Hash: a.Hash}}, entries...)
+		return storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "t\n", TreeHash: storeRawTree(t, s, entries), ParentHashes: []plumbing.Hash{head}})
+	}
+	s2 := writeBlob(t, s, []byte("s2"))
+	x := writeBlob(t, s, []byte("x"))
+	targets = map[string]plumbing.Hash{
+		"drop":   commit(),
+		"modify": commit(object.TreeEntry{Name: "s", Mode: filemode.Regular, Hash: s2}),
+		"dir":    commit(object.TreeEntry{Name: "s", Mode: filemode.Dir, Hash: storeRawTree(t, s, []object.TreeEntry{{Name: "x", Mode: filemode.Regular, Hash: x}})}),
+	}
+	return r, fs, targets
+}
+
+// skipWorktreeOps are the ways a reset reaches a commit.
+var skipWorktreeOps = map[string]func(w *Worktree, h plumbing.Hash) error{
+	"hard":     func(w *Worktree, h plumbing.Hash) error { return w.Reset(&ResetOptions{Commit: h, Mode: HardReset}) },
+	"keep":     func(w *Worktree, h plumbing.Hash) error { return w.Reset(&ResetOptions{Commit: h, Mode: KeepReset}) },
+	"merge":    func(w *Worktree, h plumbing.Hash) error { return w.Reset(&ResetOptions{Commit: h, Mode: MergeReset}) },
+	"checkout": func(w *Worktree, h plumbing.Hash) error { return w.Checkout(&CheckoutOptions{Hash: h}) },
+	"forced":   func(w *Worktree, h plumbing.Hash) error { return w.Checkout(&CheckoutOptions{Hash: h, Force: true}) },
+}
+
+// A reset that changes or removes a skip-worktree entry whose path holds
+// something else than the entry records refuses, in every mode, before it
+// writes anything, as Git does when sparse checkout is off: the user's
+// content is not discarded.
+func TestResetRefusesToChangeAModifiedSkipWorktreePath(t *testing.T) {
+	t.Parallel()
+
+	for _, target := range []string{"drop", "modify", "dir"} {
+		for op, run := range skipWorktreeOps {
+			t.Run(target+"/"+op, func(t *testing.T) {
+				t.Parallel()
+
+				r, fs, targets := skipWorktreeRepo(t, []byte("user"))
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				head, err := r.Head()
+				require.NoError(t, err)
+				before, err := r.Storer.Index()
+				require.NoError(t, err)
+				want := len(before.Entries)
+
+				err = run(w, targets[target])
+				require.ErrorIs(t, err, ErrLocalChanges)
+
+				body, err := util.ReadFile(fs, "s")
+				require.NoError(t, err)
+				require.Equal(t, "user", string(body))
+				now, err := r.Head()
+				require.NoError(t, err)
+				require.Equal(t, head.Hash(), now.Hash())
+				idx, err := r.Storer.Index()
+				require.NoError(t, err)
+				require.Len(t, idx.Entries, want)
+				e, err := idx.Entry("s")
+				require.NoError(t, err)
+				require.True(t, e.SkipWorktree)
+			})
+		}
+	}
+}
+
+// A skip-worktree entry whose path holds what it records is updated like
+// any tracked path, and one whose path is absent is changed in the index
+// alone. Either way the entry keeps its flag.
+func TestResetUpdatesSkipWorktreeEntries(t *testing.T) {
+	t.Parallel()
+
+	for _, present := range []bool{false, true} {
+		for _, target := range []string{"drop", "modify", "dir"} {
+			for op, run := range skipWorktreeOps {
+				t.Run(fmt.Sprintf("present=%t/%s/%s", present, target, op), func(t *testing.T) {
+					t.Parallel()
+
+					var disk []byte
+					if present {
+						disk = []byte("s")
+					}
+					r, fs, targets := skipWorktreeRepo(t, disk)
+					w, err := r.Worktree()
+					require.NoError(t, err)
+					require.NoError(t, run(w, targets[target]))
+					commit, err := r.CommitObject(targets[target])
+					require.NoError(t, err)
+					tree, err := commit.Tree()
+					require.NoError(t, err)
+
+					idx, err := r.Storer.Index()
+					require.NoError(t, err)
+					e, err := idx.Entry("s")
+					body, readErr := util.ReadFile(fs, "s")
+					switch target {
+					case "drop":
+						require.ErrorIs(t, err, index.ErrEntryNotFound)
+						require.ErrorIs(t, readErr, os.ErrNotExist)
+					case "dir":
+						require.ErrorIs(t, err, index.ErrEntryNotFound)
+						x, err := idx.Entry("s/x")
+						require.NoError(t, err)
+						require.False(t, x.SkipWorktree)
+						body, err := util.ReadFile(fs, "s/x")
+						require.NoError(t, err)
+						require.Equal(t, "x", string(body))
+					default:
+						require.NoError(t, err)
+						require.True(t, e.SkipWorktree)
+						want, err := tree.FindEntry("s")
+						require.NoError(t, err)
+						require.Equal(t, want.Hash, e.Hash, "the index was not brought to the target")
+						if present {
+							require.NoError(t, readErr)
+							require.Equal(t, "s2", string(body))
+							// Git takes an entry without the stat data
+							// of the file it wrote for a local change.
+							require.Equal(t, uint32(len(body)), e.Size)
+							require.False(t, e.ModifiedAt.IsZero())
+						} else {
+							require.ErrorIs(t, readErr, os.ErrNotExist)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// A mixed reset brings a skip-worktree entry to the target in the index
+// alone, whatever its path holds, as it does any entry.
+func TestResetMixedBringsSkipWorktreeEntryToTarget(t *testing.T) {
+	t.Parallel()
+
+	r, fs, targets := skipWorktreeRepo(t, []byte("user"))
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, w.Reset(&ResetOptions{Commit: targets["modify"], Mode: MixedReset}))
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	e, err := idx.Entry("s")
+	require.NoError(t, err)
+	require.True(t, e.SkipWorktree)
+	commit, err := r.CommitObject(targets["modify"])
+	require.NoError(t, err)
+	tree, err := commit.Tree()
+	require.NoError(t, err)
+	want, err := tree.FindEntry("s")
+	require.NoError(t, err)
+	require.Equal(t, want.Hash, e.Hash)
+	body, err := util.ReadFile(fs, "s")
+	require.NoError(t, err)
+	require.Equal(t, "user", string(body))
+}
+
+// A reset restricted to files neither checks nor changes a skip-worktree
+// entry outside them.
+func TestResetFilesLeavesOtherSkipWorktreeEntries(t *testing.T) {
+	t.Parallel()
+
+	r, fs, targets := skipWorktreeRepo(t, []byte("user"))
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	before, err := r.Storer.Index()
+	require.NoError(t, err)
+	old, err := before.Entry("s")
+	require.NoError(t, err)
+	oldHash := old.Hash
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: targets["modify"], Mode: HardReset, Files: []string{"a"}}))
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	e, err := idx.Entry("s")
+	require.NoError(t, err)
+	require.Equal(t, oldHash, e.Hash)
+	body, err := util.ReadFile(fs, "s")
+	require.NoError(t, err)
+	require.Equal(t, "user", string(body))
+}
+
+// skipWorktreeEntryRepo returns a repository with the worktree wt whose HEAD
+// and index hold a and the entries from, with the entry skip flagged
+// SkipWorktree, and a commit holding a and the entries to. build writes
+// the entries' objects to s and returns them. Only a is on disk: the
+// caller lays down what the other paths hold.
+func skipWorktreeEntryRepo(t *testing.T, wt billy.Filesystem, skip string, build func(s storer.Storer) (from, to []object.TreeEntry)) (r *Repository, target plumbing.Hash) {
+	t.Helper()
+
+	s := memory.NewStorage()
+	r, err := Init(s, WithWorkTree(wt))
+	require.NoError(t, err)
+	sig := defaultSignature()
+	from, to := build(s)
+	a := object.TreeEntry{Name: "a", Mode: filemode.Regular, Hash: writeBlob(t, s, []byte("a"))}
+	tree := func(entries []object.TreeEntry) plumbing.Hash {
+		return storeRawTree(t, s, append([]object.TreeEntry{a}, entries...))
+	}
+	head := storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "from\n", TreeHash: tree(from)})
+	target = storeCommit(t, s, &object.Commit{Author: *sig, Committer: *sig, Message: "to\n", TreeHash: tree(to), ParentHashes: []plumbing.Hash{head}})
+
+	ref, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	require.NoError(t, s.SetReference(plumbing.NewHashReference(ref.Target(), head)))
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, w.Reset(&ResetOptions{Commit: head, Mode: MixedReset}))
+	idx, err := s.Index()
+	require.NoError(t, err)
+	e, err := idx.Entry(skip)
+	require.NoError(t, err)
+	e.SkipWorktree = true
+	require.NoError(t, s.SetIndex(idx))
+	require.NoError(t, util.WriteFile(wt, "a", []byte("a"), 0o644))
+	return r, target
+}
+
+// entry returns a tree entry for name with mode, holding content.
+func entry(t *testing.T, s storer.Storer, name string, mode filemode.FileMode, content string) object.TreeEntry {
+	t.Helper()
+	return object.TreeEntry{Name: name, Mode: mode, Hash: writeBlob(t, s, []byte(content))}
+}
+
+// gitlink returns a gitlink entry for name naming the commit h, which need
+// not exist here.
+func gitlink(name, h string) object.TreeEntry {
+	return object.TreeEntry{Name: name, Mode: filemode.Submodule, Hash: plumbing.NewHash(strings.Repeat(h, 40))}
+}
+
+// A skip-worktree symlink whose link holds its recorded target is updated
+// like any tracked symlink.
+func TestResetUpdatesSkipWorktreeSymlink(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, target := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{entry(t, s, "s", filemode.Symlink, "one")},
+					[]object.TreeEntry{entry(t, s, "s", filemode.Symlink, "two")}
+			})
+			require.NoError(t, fs.Symlink("one", "s"))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, run(w, target))
+			link, err := fs.Readlink("s")
+			require.NoError(t, err)
+			require.Equal(t, "two", link)
+		})
+	}
+}
+
+// What stands at a skip-worktree entry's path must be of the entry's type
+// to be up to date: a directory, or a symlink whose target text is the
+// entry's contents, is refused like a modified file.
+func TestResetRefusesSkipWorktreePathOfAnotherType(t *testing.T) {
+	t.Parallel()
+
+	for _, shape := range []string{"directory", "symlink"} {
+		for op, run := range skipWorktreeOps {
+			t.Run(shape+"/"+op, func(t *testing.T) {
+				t.Parallel()
+
+				r, fs, targets := skipWorktreeRepo(t, nil)
+				if shape == "directory" {
+					require.NoError(t, util.WriteFile(fs, "s/user", []byte("user"), 0o644))
+				} else {
+					require.NoError(t, fs.Symlink("s", "s"))
+				}
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				require.ErrorIs(t, run(w, targets["modify"]), ErrLocalChanges)
+			})
+		}
+	}
+}
+
+// A regular file whose contents are a skip-worktree symlink's target text
+// is not that symlink, and is refused like a modified file.
+func TestResetRefusesFileAtSkipWorktreeSymlink(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, target := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{entry(t, s, "s", filemode.Symlink, "one")}, nil
+			})
+			require.NoError(t, util.WriteFile(fs, "s", []byte("one"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.ErrorIs(t, run(w, target), ErrLocalChanges)
+			body, err := util.ReadFile(fs, "s")
+			require.NoError(t, err)
+			require.Equal(t, "one", string(body))
+		})
+	}
+}
+
+// With core.fileMode set, a skip-worktree file whose executable bit differs
+// from its entry's mode is not up to date.
+func TestResetRefusesSkipWorktreeFileOfAnotherMode(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			r, fs, targets := skipWorktreeRepo(t, nil)
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.FileMode = true
+			require.NoError(t, r.Storer.SetConfig(cfg))
+			require.NoError(t, util.WriteFile(fs, "s", []byte("s"), 0o755))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.ErrorIs(t, run(w, targets["drop"]), ErrLocalChanges)
+		})
+	}
+}
+
+// A target that only makes a skip-worktree file executable gives the file
+// whose path holds its recorded content the new mode.
+func TestResetUpdatesSkipWorktreeFileMode(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, target := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{entry(t, s, "s", filemode.Regular, "s")},
+					[]object.TreeEntry{entry(t, s, "s", filemode.Executable, "s")}
+			})
+			require.NoError(t, util.WriteFile(fs, "s", []byte("s"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, run(w, target))
+			fi, err := fs.Lstat("s")
+			require.NoError(t, err)
+			require.NotZero(t, fi.Mode()&0o100, "mode %v", fi.Mode())
+		})
+	}
+}
+
+// A skip-worktree gitlink is up to date whatever its directory holds, as
+// Git lets a submodule be out of sync with the index, when the target keeps
+// a gitlink there or drops it: the index is brought to the target and the
+// submodule's files are kept.
+func TestResetUpdatesSkipWorktreeGitlink(t *testing.T) {
+	t.Parallel()
+
+	for _, target := range []string{"bump", "drop"} {
+		for op, run := range skipWorktreeOps {
+			t.Run(target+"/"+op, func(t *testing.T) {
+				t.Parallel()
+
+				to := gitlink("m", "2")
+				fs := memfs.New()
+				r, h := skipWorktreeEntryRepo(t, fs, "m", func(storer.Storer) (_, _ []object.TreeEntry) {
+					if target == "drop" {
+						return []object.TreeEntry{gitlink("m", "1")}, nil
+					}
+					return []object.TreeEntry{gitlink("m", "1")}, []object.TreeEntry{to}
+				})
+				require.NoError(t, util.WriteFile(fs, "m/user", []byte("user"), 0o644))
+
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				require.NoError(t, run(w, h))
+
+				body, err := util.ReadFile(fs, "m/user")
+				require.NoError(t, err)
+				require.Equal(t, "user", string(body))
+				idx, err := r.Storer.Index()
+				require.NoError(t, err)
+				e, err := idx.Entry("m")
+				if target == "drop" {
+					require.ErrorIs(t, err, index.ErrEntryNotFound)
+					return
+				}
+				require.NoError(t, err)
+				require.True(t, e.SkipWorktree)
+				require.Equal(t, to.Hash, e.Hash)
+			})
+		}
+	}
+}
+
+// A target that puts a file or a tree where a skip-worktree gitlink is
+// refuses, in every mode and before anything is written, unless the
+// gitlink's path is an empty directory: whatever else stands there is the
+// user's.
+func TestResetRefusesToReplaceSkipWorktreeGitlink(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		to   func(t *testing.T, s storer.Storer) object.TreeEntry
+		disk func(t *testing.T, fs billy.Filesystem)
+	}{
+		{
+			name: "file over a file",
+			to: func(t *testing.T, s storer.Storer) object.TreeEntry {
+				return entry(t, s, "m", filemode.Regular, "target")
+			},
+			disk: func(t *testing.T, fs billy.Filesystem) {
+				require.NoError(t, util.WriteFile(fs, "m", []byte("user"), 0o644))
+			},
+		},
+		{
+			name: "file over a populated directory",
+			to: func(t *testing.T, s storer.Storer) object.TreeEntry {
+				return entry(t, s, "m", filemode.Regular, "target")
+			},
+			disk: func(t *testing.T, fs billy.Filesystem) {
+				require.NoError(t, util.WriteFile(fs, "m/user", []byte("user"), 0o644))
+			},
+		},
+		{
+			name: "tree over its own file",
+			to: func(t *testing.T, s storer.Storer) object.TreeEntry {
+				return object.TreeEntry{Name: "m", Mode: filemode.Dir, Hash: storeRawTree(t, s, []object.TreeEntry{entry(t, s, "user", filemode.Regular, "target")})}
+			},
+			disk: func(t *testing.T, fs billy.Filesystem) {
+				require.NoError(t, util.WriteFile(fs, "m/user", []byte("user"), 0o644))
+			},
+		},
+	} {
+		for op, run := range skipWorktreeOps {
+			t.Run(tc.name+"/"+op, func(t *testing.T) {
+				t.Parallel()
+
+				fs := memfs.New()
+				r, h := skipWorktreeEntryRepo(t, fs, "m", func(s storer.Storer) (from, to []object.TreeEntry) {
+					// The target drops k too, so a reset that removed
+					// anything before refusing would remove it.
+					return []object.TreeEntry{entry(t, s, "k", filemode.Regular, "k"), gitlink("m", "1")},
+						[]object.TreeEntry{tc.to(t, s)}
+				})
+				require.NoError(t, util.WriteFile(fs, "k", []byte("k"), 0o644))
+				tc.disk(t, fs)
+				before, err := r.Storer.Index()
+				require.NoError(t, err)
+				want := len(before.Entries)
+
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				require.ErrorIs(t, run(w, h), ErrLocalChanges)
+
+				path := "m"
+				if _, err := fs.Lstat("m/user"); err == nil {
+					path = "m/user"
+				}
+				body, err := util.ReadFile(fs, path)
+				require.NoError(t, err)
+				require.Equal(t, "user", string(body))
+				_, err = fs.Lstat("k")
+				require.NoError(t, err, "the reset removed a file before refusing")
+				idx, err := r.Storer.Index()
+				require.NoError(t, err)
+				require.Len(t, idx.Entries, want)
+			})
+		}
+	}
+}
+
+// A skip-worktree gitlink whose path is an empty directory, as go-git
+// leaves an unpopulated submodule, is replaced by the file the target puts
+// there.
+func TestResetReplacesEmptySkipWorktreeGitlink(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, h := skipWorktreeEntryRepo(t, fs, "m", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{gitlink("m", "1")}, []object.TreeEntry{entry(t, s, "m", filemode.Regular, "target")}
+			})
+			require.NoError(t, fs.MkdirAll("m", 0o755))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, run(w, h))
+			body, err := util.ReadFile(fs, "m")
+			require.NoError(t, err)
+			require.Equal(t, "target", string(body))
+		})
+	}
+}
+
+// A skip-worktree file whose path holds its recorded content is replaced
+// by a directory when the target turns it into a gitlink, as a checkout of
+// the gitlink creates one.
+func TestResetTurnsSkipWorktreeFileIntoGitlink(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, h := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{entry(t, s, "s", filemode.Regular, "s")}, []object.TreeEntry{gitlink("s", "2")}
+			})
+			require.NoError(t, util.WriteFile(fs, "s", []byte("s"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, run(w, h))
+
+			fi, err := fs.Lstat("s")
+			require.NoError(t, err)
+			require.True(t, fi.IsDir())
+			idx, err := r.Storer.Index()
+			require.NoError(t, err)
+			e, err := idx.Entry("s")
+			require.NoError(t, err)
+			require.Equal(t, filemode.Submodule, e.Mode)
+		})
+	}
+}
+
+// With core.autocrlf, a skip-worktree file holds its recorded content when
+// it hashes to its blob as written, or, for a blob without CRLF, once its
+// CRLF line endings are converted, as Git converts only then, and only for
+// a path its attributes do not mark as binary or not text.
+func TestResetSkipWorktreeFileWithAutoCRLF(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, blob, disk string
+		// attributes is the worktree's .gitattributes.
+		attributes string
+		upToDate   bool
+	}{
+		{name: "CRLF checkout of an LF blob", blob: "x\n", disk: "x\r\n", upToDate: true},
+		{name: "CRLF blob as written", blob: "x\r\n", disk: "x\r\n", upToDate: true},
+		{name: "LF file for a CRLF blob", blob: "x\r\n", disk: "x\n"},
+		{name: "CRLF file at a -text path", blob: "x\n", disk: "x\r\n", attributes: "s -text\n"},
+		{name: "CRLF file at a binary path", blob: "x\n", disk: "x\r\n", attributes: "s binary\n"},
+		{name: "CRLF file at a -crlf path", blob: "x\n", disk: "x\r\n", attributes: "s -crlf\n"},
+		{name: "CRLF file at a -text path after text=auto", blob: "x\n", disk: "x\r\n", attributes: "* text=auto\ns -text -diff\n"},
+		{name: "CRLF file at an LFS path", blob: "x\n", disk: "x\r\n", attributes: "* text=auto\ns filter=lfs diff=lfs merge=lfs -text\n"},
+		{name: "CRLF file at a text path", blob: "x\n", disk: "x\r\n", attributes: "s binary\ns text\n", upToDate: true},
+	} {
+		for op, run := range skipWorktreeOps {
+			t.Run(tc.name+"/"+op, func(t *testing.T) {
+				t.Parallel()
+
+				fs := memfs.New()
+				r, h := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+					return []object.TreeEntry{entry(t, s, "s", filemode.Regular, tc.blob)},
+						[]object.TreeEntry{entry(t, s, "s", filemode.Regular, "y\n")}
+				})
+				cfg, err := r.Config()
+				require.NoError(t, err)
+				cfg.Core.AutoCRLF = "true"
+				require.NoError(t, r.Storer.SetConfig(cfg))
+				require.NoError(t, util.WriteFile(fs, "s", []byte(tc.disk), 0o644))
+				if tc.attributes != "" {
+					require.NoError(t, util.WriteFile(fs, ".gitattributes", []byte(tc.attributes), 0o644))
+				}
+
+				w, err := r.Worktree()
+				require.NoError(t, err)
+				err = run(w, h)
+				body, readErr := util.ReadFile(fs, "s")
+				require.NoError(t, readErr)
+				if !tc.upToDate {
+					require.ErrorIs(t, err, ErrLocalChanges)
+					require.Equal(t, tc.disk, string(body))
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, "y\r\n", string(body))
+			})
+		}
+	}
+}
+
+// The attributes that keep a path's line endings are those `git check-attr`
+// reports in Git 2.54: read from the .gitattributes files along the path,
+// deeper ones first, each from the worktree or else from the index, and
+// from $GIT_DIR/info/attributes before them all, by Git's precedence, and
+// skipping what Git skips with a warning.
+func TestCheckinAttributesKeepCRLF(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("a", 3000)
+	huge := strings.Repeat("b", 70000)
+	for _, tc := range []struct {
+		name string
+		path string
+		// files are written to the worktree, indexed are added to the
+		// index and then removed from the worktree, and links are
+		// symlinks in the worktree, by name.
+		files, indexed, links map[string]string
+		want                  bool
+		// options are config options, as section, subsection, key, value.
+		options [][4]string
+	}{
+		{name: "none", path: "d/s"},
+		{name: "-text after text=auto", path: "x.dat", files: map[string]string{".gitattributes": "* text=auto\n*.dat -text -diff\n"}, want: true},
+		{name: "LFS", path: "x.dat", files: map[string]string{".gitattributes": "* text=auto\n*.dat filter=lfs diff=lfs merge=lfs -text\n"}, want: true},
+		{name: "other attribute after -text", path: "x.dat", files: map[string]string{".gitattributes": "*.dat -text\n*.dat linguist-generated\n"}, want: true},
+		{name: "custom macro", path: "x.dat", files: map[string]string{".gitattributes": "[attr]keep -text\n* text\n*.dat keep\n"}, want: true},
+		{name: "nested line without text", path: "d/x.dat", files: map[string]string{".gitattributes": "*.dat -text\n", "d/.gitattributes": "*.dat eol=lf\n"}, want: true},
+		{name: "later line for another attribute", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\nd/* diff\n"}, want: true},
+		{name: "nested overrides root", path: "d/s", files: map[string]string{".gitattributes": "d/s text\n", "d/.gitattributes": "s -text -diff\n"}, want: true},
+		{name: "info overrides root", path: "d/s", files: map[string]string{".gitattributes": "d/s text\n", ".git/info/attributes": "d/s -text -diff\n"}, want: true},
+		{name: "binary in a nested file", path: "d/s", files: map[string]string{".gitattributes": "d/s text\n", "d/.gitattributes": "s binary -diff\n"}, want: true},
+		{name: "nested text overrides root", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\n", "d/.gitattributes": "s text\n"}},
+		{name: "info text overrides nested", path: "d/s", files: map[string]string{"d/.gitattributes": "s -text\n", ".git/info/attributes": "d/s text\n"}},
+		{name: "-crlf", path: "d/s", files: map[string]string{".gitattributes": "d/s -crlf\n"}, want: true},
+		{name: "text=auto before -crlf", path: "d/s", files: map[string]string{".gitattributes": "d/s -crlf text=auto\n"}},
+		{name: "index only", path: "d/s", indexed: map[string]string{"d/.gitattributes": "s -text\n"}, want: true},
+		{name: "worktree before index", path: "d/s", indexed: map[string]string{"d/.gitattributes": "s -text\n"}, files: map[string]string{"d/.gitattributes": "s text\n"}},
+		{name: "symlink falls back to the index", path: "d/s", indexed: map[string]string{"d/.gitattributes": "s -text\n"}, files: map[string]string{"d/other": "s text\n"}, links: map[string]string{"d/.gitattributes": "other"}, want: true},
+		{name: "symlink not followed", path: "d/s", files: map[string]string{"elsewhere": "d/s -text\n"}, links: map[string]string{".gitattributes": "elsewhere"}},
+		{name: "byte order mark", path: "d/s", files: map[string]string{".gitattributes": "\xef\xbb\xbfd/s -text\n"}, want: true},
+		{name: "quoted empty pattern", path: "d/s", files: map[string]string{".gitattributes": "\"\"\nd/s -text\n"}, want: true},
+		{name: "overly long line", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + long + "\n"}},
+		{name: "line past the scanner's limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\n" + huge + "\n"}, want: true},
+		{name: "invalid attribute name", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\nd/s foo@bar text\n"}, want: true},
+		{name: "macro in a nested file", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\n", "d/.gitattributes": "[attr]m text\ns m\n"}, want: true},
+		{name: "negative pattern and reserved name", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\n!d/s text\nd/s builtin_x text\n"}, want: true},
+		{name: "negative pattern", path: "!x", files: map[string]string{".gitattributes": "!x -text\n"}},
+		{name: "directory pattern", path: "d/s", files: map[string]string{".gitattributes": "d/ -text\n"}},
+		{name: "unset with a value", path: "d/s", files: map[string]string{".gitattributes": "* text\nd/s -text=x\n"}, want: true},
+		{name: "no-break space in a pattern", path: "d/z\u00a0q.bin", files: map[string]string{".gitattributes": "z\u00a0q.bin -text\n"}, want: true},
+		{name: "case differs", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}},
+		{name: "case folded", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}, want: true},
+		{name: "case folded in a nested file", path: "d/X.bin", files: map[string]string{"d/.gitattributes": "x.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}, want: true},
+		{name: "attr.tree", path: "d/s", files: map[string]string{".gitattributes": "d/s text\n"}, options: [][4]string{{"attr", "", "tree", "HEAD"}}, want: true},
+		{name: "clean filter", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "clean", "cat"}}, want: true},
+		{name: "process filter", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "process", "cat"}}, want: true},
+		{name: "required filter", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "required", "true"}}, want: true},
+		{name: "filter without a clean command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "smudge", "cat"}}},
+		{name: "filter without a definition", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}},
+		{name: "NUL ends the line", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00junk\n"}, want: true},
+		{name: "NUL in a blob ends the file", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text\n\x00\nd/s text\n"}, want: true},
+		{name: "CR counts toward a blob line limit", path: "d/s", indexed: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}},
+		{name: "CR does not count toward a file line limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2037) + "\r\n"}, want: true},
+		{name: "NUL ends the line before the line limit", path: "d/s", files: map[string]string{".gitattributes": "d/s -text\x00" + strings.Repeat("a", 3000) + "\n"}, want: true},
+		{name: "line limit counts up to the NUL", path: "d/s", files: map[string]string{".gitattributes": "d/s -text " + strings.Repeat("a", 2100) + "\x00\n"}},
+		{name: "Kelvin sign does not match k", path: "d/a.k", files: map[string]string{".gitattributes": "*.K -text\n"}, options: [][4]string{{"core", "", "ignorecase", "true"}}},
+		{name: "ignorecase without a value", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", ""}}, want: true},
+		{name: "ignorecase in hexadecimal", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "0x1"}}, want: true},
+		{name: "ignorecase with a unit", path: "d/foo.bin", files: map[string]string{".gitattributes": "*.BIN -text\n"}, options: [][4]string{{"core", "", "ignorecase", "1k"}}, want: true},
+		{name: "required filter without a value", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "required", ""}}, want: true},
+		{name: "filter that is not required and has no command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "required", "false"}}},
+		{name: "filter with an empty process", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "process", ""}}},
+		{name: "empty process hides the clean command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "clean", "cat"}, {"filter", "f", "process", ""}}},
+		{name: "process hides an empty clean command", path: "d/s", files: map[string]string{".gitattributes": "d/s filter=f\n"}, options: [][4]string{{"filter", "f", "clean", ""}, {"filter", "f", "process", "cat"}}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			r, err := PlainInit(dir, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			write := func(name, content string) {
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, filepath.Dir(name)), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644))
+			}
+			for name, content := range tc.indexed {
+				write(name, content)
+				_, err := w.Add(name)
+				require.NoError(t, err)
+				require.NoError(t, os.Remove(filepath.Join(dir, name)))
+			}
+			for name, content := range tc.files {
+				write(name, content)
+			}
+			for name, target := range tc.links {
+				require.NoError(t, os.Symlink(target, filepath.Join(dir, name)))
+			}
+
+			idx, err := r.Storer.Index()
+			require.NoError(t, err)
+			cfg := config.NewConfig()
+			for _, o := range tc.options {
+				cfg.Raw.SetOption(o[0], o[1], o[2], o[3])
+			}
+			got, err := newCheckinAttributes(w, idx, cfg).keepsCRLF(tc.path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// A skip-worktree entry under a symlinked directory is not at its path: the
+// reset changes the index alone, and nothing is read or written through
+// the link.
+func TestResetLeavesSkipWorktreePathUnderSymlink(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := memfs.New()
+			r, h := skipWorktreeEntryRepo(t, fs, "d/s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				d := object.TreeEntry{Name: "d", Mode: filemode.Dir, Hash: storeRawTree(t, s, []object.TreeEntry{entry(t, s, "s", filemode.Regular, "s")})}
+				return []object.TreeEntry{d}, []object.TreeEntry{entry(t, s, "b", filemode.Regular, "b")}
+			})
+			require.NoError(t, util.WriteFile(fs, "elsewhere/s", []byte("s"), 0o644))
+			require.NoError(t, fs.Symlink("elsewhere", "d"))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.NoError(t, run(w, h))
+			idx, err := r.Storer.Index()
+			require.NoError(t, err)
+			_, err = idx.Entry("d/s")
+			require.ErrorIs(t, err, index.ErrEntryNotFound)
+			body, err := util.ReadFile(fs, "elsewhere/s")
+			require.NoError(t, err)
+			require.Equal(t, "s", string(body))
+		})
+	}
+}
+
+// A skip-worktree path whose parent directory is now a file is not up to
+// date, and the reset refuses with ErrLocalChanges, as Git refuses any
+// lstat failure but a missing path.
+func TestResetRefusesSkipWorktreePathUnderAFile(t *testing.T) {
+	t.Parallel()
+
+	for op, run := range skipWorktreeOps {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			r, h := skipWorktreeEntryRepo(t, fs, "d/f", func(s storer.Storer) (from, to []object.TreeEntry) {
+				d := func(content string) object.TreeEntry {
+					return object.TreeEntry{Name: "d", Mode: filemode.Dir, Hash: storeRawTree(t, s, []object.TreeEntry{entry(t, s, "f", filemode.Regular, content)})}
+				}
+				return []object.TreeEntry{d("f")}, []object.TreeEntry{d("g")}
+			})
+			require.NoError(t, util.WriteFile(fs, "d", []byte("user"), 0o644))
+
+			w, err := r.Worktree()
+			require.NoError(t, err)
+			require.ErrorIs(t, run(w, h), ErrLocalChanges)
+			body, err := util.ReadFile(fs, "d")
+			require.NoError(t, err)
+			require.Equal(t, "user", string(body))
+		})
+	}
+}
+
+// commitSparseFixture writes path with content, stages it and commits, so
+// the sparse reset tests have two commits that differ outside the sparse
+// directories.
+func (s *WorktreeSuite) commitSparseFixture(w *Worktree, fs billy.Filesystem, path, content string) plumbing.Hash {
+	s.Require().NoError(fs.MkdirAll(filepath.Dir(path), os.ModePerm))
+	s.Require().NoError(util.WriteFile(fs, path, []byte(content), 0o644))
+	_, err := w.Add(path)
+	s.Require().NoError(err)
+	h, err := w.Commit(content, &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	s.Require().NoError(err)
+
+	return h
+}
+
+// TestResetSparselyUpdatesExcludedEntry checks that a sparse reset brings an
+// index entry outside the sparse directories to its target. git keeps the
+// index matching the commit it resets to and lets SkipWorktree decide only
+// which paths reach the worktree, so status is clean afterwards.
+func (s *WorktreeSuite) TestResetSparselyUpdatesExcludedEntry() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	first := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	second := s.commitSparseFixture(w, fs, "excluded/f.txt", "v2")
+
+	sparse := []string{"php"}
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: first, SparseDirs: sparse}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: second, SparseDirs: sparse}))
+
+	target, err := s.Repository.getTreeFromCommitHash(second)
+	s.Require().NoError(err)
+	want, err := target.FindEntry("excluded/f.txt")
+	s.Require().NoError(err)
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	e, err := idx.Entry("excluded/f.txt")
+	s.Require().NoError(err)
+	s.Equal(want.Hash, e.Hash, "index entry must match the reset target")
+	s.True(e.SkipWorktree, "the path stays outside the sparse directories")
+
+	_, err = fs.Stat("excluded/f.txt")
+	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
+}
+
+// TestResetSparselyRemovesExcludedEntry checks that a sparse reset drops an
+// index entry the target no longer records, even though the path is outside
+// the sparse directories.
+func (s *WorktreeSuite) TestResetSparselyRemovesExcludedEntry() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	withFile := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	_, err := w.Remove("excluded/f.txt")
+	s.Require().NoError(err)
+	withoutFile, err := w.Commit("without file", &CommitOptions{Author: &object.Signature{Name: "name", Email: "email"}})
+	s.Require().NoError(err)
+
+	sparse := []string{"php"}
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: withFile, SparseDirs: sparse}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: withoutFile, SparseDirs: sparse}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	_, err = idx.Entry("excluded/f.txt")
+	s.ErrorIs(err, index.ErrEntryNotFound, "index must not track a path the target dropped")
+}
+
+// TestResetKeepsSkipWorktreeWithoutSparseDirs checks that a reset which does
+// not restate SparseDirs leaves the flag alone. The index entries are the
+// only record of the sparse set, so rewriting one must carry its flag over
+// or the next worktree update would materialise the path.
+func (s *WorktreeSuite) TestResetKeepsSkipWorktreeWithoutSparseDirs() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{}))
+
+	first := s.commitSparseFixture(w, fs, "excluded/f.txt", "v1")
+	second := s.commitSparseFixture(w, fs, "excluded/f.txt", "v2")
+
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: first, SparseDirs: []string{"php"}}))
+	s.Require().NoError(w.Reset(&ResetOptions{Mode: HardReset, Commit: second}))
+
+	idx, err := s.Repository.Storer.Index()
+	s.Require().NoError(err)
+	e, err := idx.Entry("excluded/f.txt")
+	s.Require().NoError(err)
+	s.True(e.SkipWorktree, "a reset without SparseDirs must not clear the flag")
+
+	_, err = fs.Stat("excluded/f.txt")
+	s.True(os.IsNotExist(err), "excluded path must stay off disk, got err=%v", err)
+}
+
+// attributesHost registers a config loader that reads the files of the
+// host from host, with the environment pointing at the home /home/u.
+func attributesHost(t *testing.T, host billy.Filesystem) {
+	t.Helper()
+
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GIT_ATTR_NOSYSTEM", "0")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
+	t.Setenv("GIT_CONFIG_SYSTEM", "")
+	t.Setenv("GIT_ATTR_SOURCE", "")
+	require.NoError(t, os.Unsetenv("GIT_ATTR_SOURCE"))
+
+	testconfig.RegisterSource(xconfig.NewAuto(xconfig.WithFilesystem(host)))
+	t.Cleanup(registerTestConfigLoader)
+}
+
+// attributesWorktree returns a worktree on st and a memory filesystem,
+// over a host holding the files of host.
+func attributesWorktree(t *testing.T, host billy.Filesystem, st storage.Storer) *Worktree {
+	t.Helper()
+
+	attributesHost(t, host)
+	r, err := Init(st, WithWorkTree(memfs.New()))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	return w
+}
+
+// keepsCRLFOf reports whether the attributes w reads for name, under its
+// configuration and that of the config loader, keep line endings.
+func keepsCRLFOf(t *testing.T, w *Worktree, name string) bool {
+	t.Helper()
+
+	cfg, err := w.r.Config()
+	require.NoError(t, err)
+	keeps, err := lazyCheckinAttributes(w, nil, cfg).keepsCRLF(name)
+	require.NoError(t, err)
+	return keeps
+}
+
+// The global and the system attributes files are read through the config
+// loader, below the worktree's, the global one over the system one, from
+// where Git looks: core.attributesFile of any scope, or else the XDG
+// directory or ~/.config/git. A relative name is the worktree's.
+func TestCheckinAttributesReadGlobalFiles(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+	xdg := filepath.Join(string(filepath.Separator), "xdg")
+	system := func(t *testing.T) string {
+		t.Helper()
+		_, name, err := xconfig.NewAuto().AttributesFile(config.SystemScope, "")
+		require.NoError(t, err)
+		if name == "" {
+			t.Skip("no system attributes file here")
+		}
+		return name
+	}
+
+	for _, tc := range []struct {
+		name string
+		// host maps the files of the host to their content, with the
+		// system file as "system".
+		host map[string]string
+		// worktree is the content of the worktree's file worktreeName,
+		// which is .gitattributes unless set.
+		worktree, worktreeName string
+		// gitconfig is the global configuration.
+		gitconfig string
+		env       map[string]string
+		path      string
+		want      bool
+	}{
+		{name: "default location", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "XDG_CONFIG_HOME", env: map[string]string{"XDG_CONFIG_HOME": xdg}, host: map[string]string{filepath.Join(xdg, "git", "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "XDG_CONFIG_HOME replaces the default", env: map[string]string{"XDG_CONFIG_HOME": xdg}, host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile", gitconfig: "[core]\n\tattributesFile = /abs/attributes\n", host: map[string]string{"/abs/attributes": "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile in the home", gitconfig: "[core]\n\tattributesFile = ~/attributes\n", host: map[string]string{filepath.Join(home, "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile optional", gitconfig: "[core]\n\tattributesFile = :(optional)~/attributes\n", host: map[string]string{filepath.Join(home, "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile optional and missing", gitconfig: "[core]\n\tattributesFile = :(optional)~/missing\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f", want: true},
+		{name: "core.attributesFile missing", gitconfig: "[core]\n\tattributesFile = ~/missing\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile replaces the default", gitconfig: "[core]\n\tattributesFile = /abs/attributes\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile set to nothing", gitconfig: "[core]\n\tattributesFile =\n", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, path: "a.f"},
+		{name: "core.attributesFile relative to the worktree", gitconfig: "[core]\n\tattributesFile = rel\n", worktree: "*.f -text\n", worktreeName: "rel", path: "a.f", want: true},
+		{name: "worktree overrides the global file", host: map[string]string{filepath.Join(home, ".config", "git", "attributes"): "*.f -text\n"}, worktree: "*.f text\n", path: "a.f"},
+		{name: "system file", host: map[string]string{"system": "*.f -text\n"}, path: "a.f", want: true},
+		{name: "global file overrides the system one", host: map[string]string{"system": "*.f -text\n", filepath.Join(home, ".config", "git", "attributes"): "*.f text\n"}, path: "a.f"},
+		{name: "GIT_ATTR_NOSYSTEM", env: map[string]string{"GIT_ATTR_NOSYSTEM": "1"}, host: map[string]string{"system": "*.f -text\n"}, path: "a.f"},
+		{name: "GIT_ATTR_NOSYSTEM=0x0", env: map[string]string{"GIT_ATTR_NOSYSTEM": "0x0"}, host: map[string]string{"system": "*.f -text\n"}, path: "a.f", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := memfs.New()
+			w := attributesWorktree(t, host, memory.NewStorage())
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			for name, content := range tc.host {
+				if name == "system" {
+					name = system(t)
+				}
+				require.NoError(t, util.WriteFile(host, name, []byte(content), 0o644))
+			}
+			if tc.gitconfig != "" {
+				require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte(tc.gitconfig), 0o644))
+			}
+			if tc.worktree != "" {
+				name := cmp.Or(tc.worktreeName, ".gitattributes")
+				require.NoError(t, util.WriteFile(w.filesystem, name, []byte(tc.worktree), 0o644))
+			}
+
+			assert.Equal(t, tc.want, keepsCRLFOf(t, w, tc.path))
+		})
+	}
+}
+
+// A config loader that does not provide attributes files, such as the
+// static and the empty one, leaves no host file to read, and a storage
+// of any kind reads them through the loader that does.
+func TestCheckinAttributesOfTheConfigLoader(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+	hostFiles := func(t *testing.T) billy.Filesystem {
+		t.Helper()
+		host := memfs.New()
+		require.NoError(t, util.WriteFile(host, filepath.Join(home, ".config", "git", "attributes"), []byte("*.f -text\n"), 0o644))
+		require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte("[filter \"f\"]\n\tclean = cat\n[attr]\n\ttree = HEAD\n"), 0o644))
+		return host
+	}
+	storages := map[string]func() storage.Storer{
+		"memory":     func() storage.Storer { return memory.NewStorage() },
+		"filesystem": func() storage.Storer { return filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()) },
+	}
+
+	for name, newStorer := range storages { //nolint:paralleltest // modifies global plugin state
+		t.Run(name, func(t *testing.T) {
+			w := attributesWorktree(t, hostFiles(t), newStorer())
+			require.NoError(t, util.WriteFile(w.filesystem, ".gitattributes", []byte("a.g filter=f\n"), 0o644))
+
+			assert.True(t, keepsCRLFOf(t, w, "a.f"), "the global attributes file")
+			assert.True(t, keepsCRLFOf(t, w, "a.g"), "filter of the global configuration")
+
+			testconfig.RegisterSource(xconfig.NewStatic(*config.NewConfig(), *config.NewConfig()))
+			assert.False(t, keepsCRLFOf(t, w, "a.f"), "a static loader provides no attributes file")
+			testconfig.RegisterSource(xconfig.NewEmpty())
+			assert.False(t, keepsCRLFOf(t, w, "a.f"), "an empty loader provides no attributes file")
+		})
+	}
+}
+
+func TestScopedConfigsCarryTheGlobalConfiguration(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	global := config.NewConfig()
+	global.Raw.SetOption("filter", "f", "clean", "cat")
+	global.Raw.SetOption("attr", "", "tree", "HEAD")
+	testconfig.Register(*global, *config.NewConfig())
+	t.Cleanup(registerTestConfigLoader)
+
+	cfgs, files, err := scopedConfigs(config.NewConfig())
+	require.NoError(t, err)
+	require.Len(t, cfgs, 3)
+	assert.Nil(t, files)
+
+	clean, ok := rawOption(cfgs, "filter", "f", "clean")
+	assert.True(t, ok)
+	assert.Equal(t, "cat", clean)
+	tree, ok := rawOption(cfgs, "attr", "", "tree")
+	assert.True(t, ok)
+	assert.Equal(t, "HEAD", tree)
+}
+
+// Git dies on a configuration it cannot read when it checks a path for
+// its attributes, where reading on would drop a filter the file defines
+// and let a reset overwrite files. A reset that checks none is not
+// affected.
+func TestResetFailsOnAnUnreadableGlobalConfiguration(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+
+	for _, tc := range []struct { //nolint:paralleltest // modifies global plugin state
+		name, disk string
+		wantErr    bool
+	}{
+		{name: "path that needs its attributes", disk: "x\r\n", wantErr: true},
+		{name: "path that holds its content", disk: "x\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := memfs.New()
+			fs := memfs.New()
+			attributesHost(t, host)
+			require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte("[filter \"lfs\"\n"), 0o644))
+
+			r, h := skipWorktreeEntryRepo(t, fs, "s", func(s storer.Storer) (from, to []object.TreeEntry) {
+				return []object.TreeEntry{entry(t, s, "s", filemode.Regular, "x\n")},
+					[]object.TreeEntry{entry(t, s, "s", filemode.Regular, "y\n")}
+			})
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			cfg.Core.AutoCRLF = "true"
+			require.NoError(t, r.Storer.SetConfig(cfg))
+			require.NoError(t, util.WriteFile(fs, "s", []byte(tc.disk), 0o644))
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			err = w.Reset(&ResetOptions{Commit: h, Mode: HardReset})
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.NotErrorIs(t, err, ErrLocalChanges)
+			require.ErrorContains(t, err, "global configuration")
+
+			body, err := util.ReadFile(fs, "s")
+			require.NoError(t, err)
+			assert.Equal(t, tc.disk, string(body))
+		})
+	}
+}
+
+// Git dies on a global attributes file name it cannot expand, even with
+// ":(optional)", where reading on would drop the attributes it names.
+func TestCheckinAttributesFailOnAGlobalFileThatCannotBeExpanded(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	home := filepath.Join(string(filepath.Separator), "home", "u")
+
+	for _, configured := range []string{ //nolint:paralleltest // modifies global plugin state
+		"~no-such-user-here/attrs",
+		":(optional)~no-such-user-here/attrs",
+	} {
+		t.Run(configured, func(t *testing.T) {
+			host := memfs.New()
+			w := attributesWorktree(t, host, memory.NewStorage())
+			require.NoError(t, util.WriteFile(host, filepath.Join(home, ".gitconfig"), []byte("[core]\n\tattributesFile = "+configured+"\n"), 0o644))
+			cfg, err := w.r.Config()
+			require.NoError(t, err)
+
+			_, err = lazyCheckinAttributes(w, nil, cfg).keepsCRLF("a.f")
+			require.ErrorContains(t, err, "failed to expand user dir")
+		})
+	}
+}
+
+// A source may leave a scope without a file, and an optional name then
+// has none to find.
+func TestCheckinAttributesOfASourceWithoutFiles(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	w := attributesWorktree(t, memfs.New(), memory.NewStorage())
+	testconfig.RegisterSource(noAttributesFiles{xconfig.NewEmpty()})
+	t.Cleanup(registerTestConfigLoader)
+	cfg := config.NewConfig()
+	cfg.Raw.SetOption("core", "", "attributesfile", ":(optional)/abs/attrs")
+
+	keeps, err := lazyCheckinAttributes(w, nil, cfg).keepsCRLF("a.f")
+	require.NoError(t, err)
+	assert.False(t, keeps)
+}
+
+type noAttributesFiles struct{ plugin.ConfigSource }
+
+func (noAttributesFiles) AttributesFile(config.Scope, string) (billy.Basic, string, error) {
+	return nil, "", nil
+}
+
+// Git reads a relative core.attributesFile from the top of the worktree,
+// even when it leaves it, by .. or by a symlink, which the worktree's
+// filesystem refuses.
+func TestCheckinAttributesReadFilesOutsideTheWorktree(t *testing.T) {
+	for _, tc := range []struct {
+		name, configured string
+		symlink          bool
+	}{
+		{name: "parent directory", configured: "../outside/attrs"},
+		{name: "optional parent directory", configured: ":(optional)../outside/attrs"},
+		{name: "symlink to a directory", configured: "link/attrs", symlink: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "wt")
+			outside := filepath.Join(dir, "outside")
+			require.NoError(t, os.MkdirAll(outside, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(outside, "attrs"), []byte("*.f -text\n"), 0o644))
+			if tc.symlink {
+				require.NoError(t, os.MkdirAll(root, 0o755))
+				if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+					t.Skipf("cannot create a symlink: %v", err)
+				}
+			}
+			gitconfig := filepath.Join(dir, "gitconfig")
+			require.NoError(t, os.WriteFile(gitconfig, []byte("[core]\n\tattributesFile = "+tc.configured+"\n"), 0o644))
+
+			t.Setenv("GIT_CONFIG_GLOBAL", gitconfig)
+			t.Setenv("GIT_CONFIG_SYSTEM", "")
+			t.Setenv("GIT_ATTR_NOSYSTEM", "1")
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			require.NoError(t, os.Unsetenv("GIT_ATTR_SOURCE"))
+			testconfig.RegisterSource(xconfig.NewAuto())
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := PlainInit(root, false)
+			require.NoError(t, err)
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			assert.True(t, keepsCRLFOf(t, w, "a.f"))
+		})
+	}
+}
+
+func TestParseBool(t *testing.T) {
+	t.Parallel()
+
+	for value, want := range map[string]bool{
+		"1": true, "true": true, "yes": true, "ON": true, "0x1": true, "1k": true, "2M": true, "-1": true, "010": true,
+		"0": false, "false": false, "no": false, "": false, "0x0": false, "0k": false, "0b1": false, "1_0": false, "x": false,
+	} {
+		assert.Equal(t, want, parseBool(value), value)
+	}
+}
+
+// A tree of attributes named by GIT_ATTR_SOURCE, even an empty name where
+// Git dies, is one go-git does not read.
+func TestCheckinAttributesWithAnAttributesSource(t *testing.T) {
+	w := attributesWorktree(t, memfs.New(), memory.NewStorage())
+
+	assert.False(t, keepsCRLFOf(t, w, "a.txt"))
+
+	t.Setenv("GIT_ATTR_SOURCE", "HEAD")
+	assert.True(t, keepsCRLFOf(t, w, "a.txt"))
+
+	t.Setenv("GIT_ATTR_SOURCE", "")
+	assert.True(t, keepsCRLFOf(t, w, "a.txt"))
 }

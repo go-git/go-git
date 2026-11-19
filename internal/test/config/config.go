@@ -46,3 +46,15 @@ func Register(global, system gitconfig.Config) {
 		panic(fmt.Errorf("failed to register test config loader: %v", err))
 	}
 }
+
+// RegisterSource replaces the auto-detected ConfigLoader plugin with src.
+func RegisterSource(src plugin.ConfigSource) {
+	resetPluginEntry("config-loader")
+
+	err := plugin.Register(plugin.ConfigLoader(), func() plugin.ConfigSource {
+		return src
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to register test config loader: %v", err))
+	}
+}

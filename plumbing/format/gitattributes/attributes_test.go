@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -70,4 +72,31 @@ func (s *AttributesSuite) TestAttributes_ReadAttributesInvalidName() {
 
 	_, err := ReadAttributes(strings.NewReader(strings.Join(lines, "\n")), nil, true)
 	s.ErrorIs(err, ErrInvalidAttributeName)
+}
+
+// A quoted empty pattern names no path, and Git ignores the line.
+func TestParseAttributesLineQuotedEmptyPattern(t *testing.T) {
+	t.Parallel()
+
+	for _, line := range []string{`""`, `"" text`} {
+		m, err := ParseAttributesLine(line, nil, true)
+		require.NoError(t, err, line)
+		assert.Empty(t, m.Name, line)
+		assert.Nil(t, m.Pattern, line)
+	}
+}
+
+// A quoted macro line takes the macro name up to the next blank, and its
+// attributes from after the closing quote.
+func TestParseAttributesLineQuotedMacro(t *testing.T) {
+	t.Parallel()
+
+	for _, line := range []string{`"[attr]keep x" -text`, `"[attr] keep x" -text`} {
+		m, err := ParseAttributesLine(line, nil, true)
+		require.NoError(t, err, line)
+		assert.Equal(t, "keep", m.Name, line)
+		assert.Nil(t, m.Pattern, line)
+		require.Len(t, m.Attributes, 1, line)
+		assert.True(t, m.Attributes[0].IsUnset(), line)
+	}
 }

@@ -31,6 +31,11 @@ func ParsePattern(p string, domain []string) Pattern {
 }
 
 func (p *pattern) Match(path []string) bool {
+	// A pattern ending in a slash matches only a directory, as in Git, and
+	// a path names a file.
+	if len(p.pattern) > 1 && p.pattern[len(p.pattern)-1] == "" {
+		return false
+	}
 	if len(path) <= len(p.domain) {
 		return false
 	}
@@ -60,6 +65,9 @@ func (p *pattern) Match(path []string) bool {
 		// skip empty
 		if pattern[0] == "" {
 			pattern = pattern[1:]
+			if len(pattern) == 0 {
+				return false
+			}
 		}
 
 		// eat doublestar
