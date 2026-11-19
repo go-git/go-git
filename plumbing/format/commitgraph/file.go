@@ -2,15 +2,15 @@ package commitgraph
 
 import (
 	"bytes"
-	"crypto"
 	encbin "encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -19,8 +19,9 @@ var (
 	// file version is not supported.
 	ErrUnsupportedVersion = errors.New("unsupported version")
 	// ErrUnsupportedHash is returned by OpenFileIndex when the commit graph
-	// hash function is not supported. Currently only SHA-1 is defined and
-	// supported.
+	// hash version is neither SHA-1 nor SHA-256, or does not match the
+	// expected object format. Encoder.Encode returns it for an id that is
+	// not of the encoder's object format.
 	ErrUnsupportedHash = errors.New("unsupported hash algorithm")
 	// ErrMalformedCommitGraphFile is returned by OpenFileIndex when the commit
 	// graph file is corrupted.
@@ -83,6 +84,7 @@ type fileIndex struct {
 	parent                Index
 	hasGenerationV2       bool
 	minimumNumberOfHashes uint32
+	format                hash.ObjectFormat
 	objSize               int
 	numChunks             uint8
 	fileSize              int64
@@ -97,25 +99,38 @@ type ReaderAtCloser interface {
 // OpenFileIndex opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
 //
+// The object format is read from the hash version in the file header.
+// [WithObjectFormat] makes a file in another format fail with
+// [ErrUnsupportedHash].
+//
 // On success the returned Index owns reader and closes it on Close. On
 // error reader is left open and the caller remains responsible for it.
-func OpenFileIndex(reader ReaderAtCloser) (Index, error) {
-	return OpenFileIndexWithParent(reader, nil)
+func OpenFileIndex(reader ReaderAtCloser, opts ...Option) (Index, error) {
+	return OpenFileIndexWithParent(reader, nil, opts...)
 }
 
 // OpenFileIndexWithParent opens a serialized commit graph file in the format described at
 // https://github.com/git/git/blob/v2.54.0/Documentation/technical/commit-graph-format.adoc
 //
+// The object format is read from the hash version in the file header.
+// It must match the format of a parent opened by this package and the
+// one set by [WithObjectFormat], if any, or [ErrUnsupportedHash] is
+// returned.
+//
 // On success the returned Index owns reader and parent and closes both on
 // Close. On error neither is closed and the caller remains responsible
 // for them.
-func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error) {
+func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index, opts ...Option) (Index, error) {
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
 	}
-	fi := &fileIndex{reader: reader, parent: parent, objSize: config.SHA1Size}
+	fi := &fileIndex{reader: reader, parent: parent}
 
-	if err := fi.verifyFileHeader(); err != nil {
+	expected := newOptions(opts).objectFormat
+	if p, ok := parent.(*fileIndex); ok && expected == hash.UnsetObjectFormat {
+		expected = p.format
+	}
+	if err := fi.verifyFileHeader(expected); err != nil {
 		return nil, err
 	}
 	if err := fi.verifyFileSize(); err != nil {
@@ -158,7 +173,11 @@ func (fi *fileIndex) Close() (err error) {
 	return err
 }
 
-func (fi *fileIndex) verifyFileHeader() error {
+// verifyFileHeader checks the signature and the version and takes the
+// object format from the hash version, as Git's parse_commit_graph in
+// commit-graph.c does. Git rejects a hash version that differs from
+// the repository's, and so does this when [expected] is set.
+func (fi *fileIndex) verifyFileHeader(expected hash.ObjectFormat) error {
 	// Verify file signature
 	signature := make([]byte, szSignature)
 	if _, err := fi.reader.ReadAt(signature, 0); err != nil {
@@ -176,11 +195,16 @@ func (fi *fileIndex) verifyFileHeader() error {
 	if header[0] != 1 {
 		return ErrUnsupportedVersion
 	}
-	if (fi.objSize != crypto.SHA1.Size() || header[1] != 1) &&
-		(fi.objSize != crypto.SHA256.Size() || header[1] != 2) {
-		// Unknown hash type / unsupported hash type
-		return ErrUnsupportedHash
+	format, ok := objectFormat(header[1])
+	if !ok {
+		return fmt.Errorf("%w: hash version %d", ErrUnsupportedHash, header[1])
 	}
+	if expected != hash.UnsetObjectFormat && expected != format {
+		return fmt.Errorf("%w: hash version %d does not match object format %s",
+			ErrUnsupportedHash, header[1], expected)
+	}
+	fi.format = format
+	fi.objSize = format.Size()
 	fi.numChunks = header[2]
 
 	return nil
@@ -412,6 +436,7 @@ func (fi *fileIndex) readFanout() error {
 // GetIndexByHash looks up the provided hash in the commit-graph fanout and returns the index of the commit data for the given hash.
 func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {
 	var oid plumbing.Hash
+	oid.ResetBySize(fi.objSize)
 
 	// Find the hash in the oid lookup table
 	var low uint32
@@ -470,8 +495,8 @@ func (fi *fileIndex) GetCommitDataByIndex(idx uint32) (*CommitData, error) {
 	offset := fi.offsets[CommitDataChunk] + int64(idx)*int64(fi.objSize+szCommitData)
 	commitDataReader := io.NewSectionReader(fi.reader, offset, int64(fi.objSize+szCommitData))
 
-	// TODO: Add support for SHA256
 	var treeHash plumbing.Hash
+	treeHash.ResetBySize(fi.objSize)
 	_, err := treeHash.ReadFrom(commitDataReader)
 	if err != nil {
 		return nil, err
@@ -597,6 +622,7 @@ func (fi *fileIndex) GetHashByIndex(idx uint32) (found plumbing.Hash, err error)
 	}
 
 	offset := fi.offsets[OIDLookupChunk] + int64(idx)*int64(fi.objSize)
+	found.ResetBySize(fi.objSize)
 	if _, err := found.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(found.Size()))); err != nil {
 		return found, err
 	}
@@ -627,6 +653,7 @@ func (fi *fileIndex) getHashesFromIndexes(indexes []uint32) ([]plumbing.Hash, er
 		}
 
 		offset := fi.offsets[OIDLookupChunk] + int64(idx)*int64(fi.objSize)
+		hashes[i].ResetBySize(fi.objSize)
 		if _, err := hashes[i].ReadFrom(io.NewSectionReader(fi.reader, offset, int64(hashes[i].Size()))); err != nil {
 			return nil, err
 		}
@@ -648,6 +675,7 @@ func (fi *fileIndex) Hashes() []plumbing.Hash {
 
 	for i := uint32(0); i < fi.fanout[0xff]; i++ {
 		h := &hashes[i+fi.minimumNumberOfHashes]
+		h.ResetBySize(fi.objSize)
 		offset := fi.offsets[OIDLookupChunk] + int64(i)*int64(h.Size())
 		n, err := h.ReadFrom(io.NewSectionReader(fi.reader, offset, int64(h.Size())))
 		if err != nil || n < int64(h.Size()) {
