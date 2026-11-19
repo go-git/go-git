@@ -2,7 +2,6 @@ package revfile
 
 import (
 	"bytes"
-	"crypto"
 	"io"
 	"testing"
 
@@ -22,8 +21,8 @@ func TestEncode(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, idxf)
 
-	idx := idxfile.NewMemoryIndex(crypto.SHA256.Size())
-	idec := idxfile.NewDecoder(idxf, hash.New(crypto.SHA256))
+	idx := idxfile.NewMemoryIndex(hash.SHA256)
+	idec := idxfile.NewDecoder(idxf, idxfile.WithObjectFormat(hash.SHA256))
 	err = idec.Decode(idx)
 	require.NoError(t, err)
 
@@ -55,9 +54,8 @@ func TestEncode(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h := hash.New(crypto.SHA256)
 
-			err := Encode(tc.writer, h, tc.idx)
+			err := Encode(tc.writer, tc.idx)
 			if tc.want != "" {
 				assert.EqualError(t, err, tc.want)
 			} else {
@@ -82,17 +80,17 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	tests := []struct {
 		name    string
 		fixture *fixtures.Fixture
-		hasher  crypto.Hash
+		format  hash.ObjectFormat
 	}{
 		{
 			name:    "sha256 packfile",
 			fixture: fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
-			hasher:  crypto.SHA256,
+			format:  hash.SHA256,
 		},
 		{
 			name:    "basic packfile",
 			fixture: fixtures.Basic().One(),
-			hasher:  crypto.SHA1,
+			format:  hash.SHA1,
 		},
 	}
 
@@ -103,15 +101,13 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, idxf)
 
-			idx := idxfile.NewMemoryIndex(tc.hasher.Size())
-			idec := idxfile.NewDecoder(idxf, hash.New(tc.hasher))
+			idx := idxfile.NewMemoryIndex(tc.format)
+			idec := idxfile.NewDecoder(idxf, idxfile.WithObjectFormat(tc.format))
 			err = idec.Decode(idx)
 			require.NoError(t, err)
 
 			var buf bytes.Buffer
-			h := hash.New(tc.hasher)
-
-			err = Encode(&buf, h, idx)
+			err = Encode(&buf, idx)
 			require.NoError(t, err)
 
 			// Form expected entries based on the index so that they can
@@ -166,4 +162,13 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			assert.Equal(t, want, got)
 		})
 	}
+}
+
+func TestEncodeRejectsUnsupportedObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	err := Encode(&buf, idxfile.NewMemoryIndex("md5"))
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.Zero(t, buf.Len())
 }

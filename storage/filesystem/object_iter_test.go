@@ -242,8 +242,8 @@ func loadPackFixture(t *testing.T) packFixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = idxFile.Close() })
 
-	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
-	require.NoError(t, idxfile.NewDecoder(idxFile, hash.New(crypto.SHA1)).Decode(idx))
+	idx := idxfile.NewMemoryIndex(hash.SHA1)
+	require.NoError(t, idxfile.NewDecoder(idxFile).Decode(idx))
 
 	entries, err := idx.Entries()
 	require.NoError(t, err)

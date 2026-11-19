@@ -181,8 +181,10 @@ func ResolveTreeish(st storage.Storer, treeish string, allowUnreachable bool) (*
 
 // ResolveRef resolves a ref name to a hash.
 func ResolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, error) {
-	if allowHash && plumbing.IsHash(name) {
-		return plumbing.NewHash(name), nil
+	if allowHash {
+		if h, ok := plumbing.FromHex(name); ok {
+			return h, nil
+		}
 	}
 
 	for _, candidate := range []plumbing.ReferenceName{
@@ -444,8 +446,8 @@ func MatchesPathFilter(name string, filters []string) bool {
 // GetTarCommitID extracts the commit ID from a git-generated tar archive.
 // It reads the PAX global extended header from the beginning of the archive
 // and returns the value of the "comment" field, which contains the commit hash.
-// If no global header is found or it doesn't contain a comment, it returns
-// an error.
+// If no global header is found, or its comment is missing or is not a full
+// object id, it returns an error.
 func GetTarCommitID(r io.Reader) (*plumbing.Hash, error) {
 	tr := tar.NewReader(r)
 	hdr, err := tr.Next()
@@ -461,7 +463,11 @@ func GetTarCommitID(r io.Reader) (*plumbing.Hash, error) {
 	if !ok {
 		return nil, fmt.Errorf("global header missing comment field")
 	}
-	hash := plumbing.NewHash(comment)
+	// Like git get-tar-commit-id, accept only a full object id.
+	hash, ok := plumbing.FromHex(comment)
+	if !ok {
+		return nil, errors.New("global header comment is not an object id")
+	}
 	return &hash, nil
 }
 

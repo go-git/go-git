@@ -107,7 +107,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 		return nil, fmt.Errorf("the index still hasn't finished building")
 	}
 
-	idx := NewMemoryIndex(w.checksum.Size())
+	idx := NewMemoryIndex(w.checksum.Format())
 	w.index = idx
 
 	sort.Sort(w.objects)

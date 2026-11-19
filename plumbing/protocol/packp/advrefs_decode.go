@@ -199,5 +199,9 @@ func parseRef(data []byte) (string, plumbing.Hash, error) {
 	if bytes.IndexByte(after, ' ') != -1 {
 		return "", plumbing.ZeroHash, fmt.Errorf("malformed ref data: multiple spaces")
 	}
-	return string(after), plumbing.NewHash(string(before)), nil
+	h, ok := plumbing.FromHex(string(before))
+	if !ok {
+		return "", plumbing.ZeroHash, fmt.Errorf("malformed ref data: invalid hash %q", before)
+	}
+	return string(after), h, nil
 }

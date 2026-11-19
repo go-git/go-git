@@ -904,6 +904,19 @@ func (s *RemoteSuite) TestPushTags() {
 	})
 }
 
+func TestCheckTagUpdateZeroOldID(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range []formatcfg.ObjectFormat{formatcfg.SHA1, formatcfg.SHA256} {
+		cmd := &packp.Command{
+			Name: plumbing.NewTagReferenceName("v1.0.0"),
+			Old:  plumbing.ZeroID(f),
+			New:  plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		}
+		require.NoError(t, checkTagUpdate(cmd), f.String())
+	}
+}
+
 func (s *RemoteSuite) TestPushTagsByOID() {
 	url := s.T().TempDir()
 

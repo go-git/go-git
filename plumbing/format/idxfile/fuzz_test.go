@@ -2,12 +2,10 @@ package idxfile
 
 import (
 	"bytes"
-	"crypto"
 	"testing"
 	"testing/fstest"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func FuzzLazyIndex(f *testing.F) {
@@ -105,7 +103,7 @@ func FuzzMemoryIndex(f *testing.F) {
 			return
 		}
 		idx := new(MemoryIndex)
-		d := NewDecoder(in, hash.New(crypto.SHA1))
+		d := NewDecoder(in)
 		if err := d.Decode(idx); err != nil {
 			// Expected for most fuzz inputs.
 			return

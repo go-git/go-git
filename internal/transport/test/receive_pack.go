@@ -120,10 +120,10 @@ func (s *ReceivePackSuite) TestFullSendPackOnEmpty() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: fixtureHash(fixture.Head)},
 	}
 	s.receivePack(endpoint, req, fixture, full)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 // TestSendPackWithContext tests send-pack with a cancelled context.
@@ -132,7 +132,7 @@ func (s *ReceivePackSuite) TestSendPackWithContext() {
 	req := &transport.PushRequest{
 		Packfile: s.mustPackfile(fixture),
 		Commands: []*packp.Command{
-			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
+			{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: fixtureHash(fixture.Head)},
 		},
 	}
 
@@ -155,10 +155,10 @@ func (s *ReceivePackSuite) TestSendPackOnEmpty() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: fixtureHash(fixture.Head)},
 	}
 	s.receivePack(endpoint, req, fixture, full)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 // TestSendPackOnEmptyWithReportStatus tests send-pack on an empty repo with report-status.
@@ -168,10 +168,10 @@ func (s *ReceivePackSuite) TestSendPackOnEmptyWithReportStatus() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: fixtureHash(fixture.Head)},
 	}
 	s.receivePack(endpoint, req, fixture, full)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 // TestFullSendPackOnNonEmpty tests a full send-pack on a non-empty repo.
@@ -181,10 +181,10 @@ func (s *ReceivePackSuite) TestFullSendPackOnNonEmpty() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: fixtureHash(fixture.Head), New: fixtureHash(fixture.Head)},
 	}
 	s.receivePack(endpoint, req, fixture, full)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 // TestSendPackOnNonEmpty tests send-pack on a non-empty repo.
@@ -194,10 +194,10 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmpty() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: fixtureHash(fixture.Head), New: fixtureHash(fixture.Head)},
 	}
 	s.receivePack(endpoint, req, fixture, full)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 // TestSendPackOnNonEmptyWithReportStatus tests send-pack on a non-empty repo with report-status.
@@ -207,10 +207,10 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatus() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.NewHash(fixture.Head), New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: fixtureHash(fixture.Head), New: fixtureHash(fixture.Head)},
 	}
 	s.receivePack(endpoint, req, fixture, full)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 // TestSendPackOnNonEmptyWithReportStatusWithError tests send-pack error handling.
@@ -220,11 +220,11 @@ func (s *ReceivePackSuite) TestSendPackOnNonEmptyWithReportStatusWithError() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{}
 	req.Commands = []*packp.Command{
-		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
+		{Name: "refs/heads/master", Old: plumbing.ZeroHash, New: fixtureHash(fixture.Head)},
 	}
 	err := s.receivePackNoCheck(endpoint, req, fixture, full)
 	s.Regexp(regexp.MustCompile(".*(failed to update ref|failed to lock|reference already exists).*"), err)
-	s.checkRemoteHead(endpoint, plumbing.NewHash(fixture.Head))
+	s.checkRemoteHead(endpoint, fixtureHash(fixture.Head))
 }
 
 func (s *ReceivePackSuite) receivePackNoCheck(ep *url.URL,
@@ -326,7 +326,7 @@ func (s *ReceivePackSuite) checkRemoteReference(ep *url.URL,
 			break
 		}
 	}
-	if head == plumbing.ZeroHash {
+	if head.IsZero() {
 		s.Require().False(ok)
 	} else {
 		s.Require().True(ok)
@@ -356,11 +356,11 @@ func (s *ReceivePackSuite) testSendPackAddReference() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{
 		Commands: []*packp.Command{
-			{Name: "refs/heads/newbranch", Old: plumbing.ZeroHash, New: plumbing.NewHash(fixture.Head)},
+			{Name: "refs/heads/newbranch", Old: plumbing.ZeroHash, New: fixtureHash(fixture.Head)},
 		},
 	}
 	s.receivePack(s.Endpoint, req, fixture, false)
-	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.NewHash(fixture.Head))
+	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", fixtureHash(fixture.Head))
 }
 
 func (s *ReceivePackSuite) testSendPackDeleteReference() {
@@ -379,7 +379,7 @@ func (s *ReceivePackSuite) testSendPackDeleteReference() {
 	fixture := fixtures.Basic().ByTag("packfile").One()
 	req := &transport.PushRequest{
 		Commands: []*packp.Command{
-			{Name: "refs/heads/newbranch", Old: plumbing.NewHash(fixture.Head), New: plumbing.ZeroHash},
+			{Name: "refs/heads/newbranch", Old: fixtureHash(fixture.Head), New: plumbing.ZeroHash},
 		},
 	}
 

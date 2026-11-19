@@ -10,8 +10,6 @@ import (
 	"hash"
 
 	"github.com/pjbgf/sha1cd"
-
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 // ErrUnsupportedHashFunction is returned when an unsupported hash function is used.
@@ -72,13 +70,13 @@ func New(h crypto.Hash) Hash {
 // FromObjectFormat returns the correct Hash to be used based on the
 // ObjectFormat being used.
 // If the ObjectFormat is not recognised, returns ErrInvalidObjectFormat.
-func FromObjectFormat(f format.ObjectFormat) (hash.Hash, error) {
+func FromObjectFormat(f ObjectFormat) (hash.Hash, error) {
 	switch f {
-	case format.SHA1:
+	case SHA1:
 		return New(crypto.SHA1), nil
-	case format.SHA256:
+	case SHA256:
 		return New(crypto.SHA256), nil
 	default:
-		return nil, format.ErrInvalidObjectFormat
+		return nil, ErrInvalidObjectFormat
 	}
 }

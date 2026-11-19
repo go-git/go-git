@@ -32,7 +32,7 @@ func TestDecodeEntries(t *testing.T) {
 		wantNoEntries   int
 		wantResolveUndo *ResolveUndo
 		wantIntentToAdd []int
-		hash            hash.Hash
+		format          hash.ObjectFormat
 	}{
 		{
 			name: "Version 2",
@@ -139,7 +139,7 @@ func TestDecodeEntries(t *testing.T) {
 				Version: 2,
 			},
 			wantNoEntries: 10,
-			hash:          crypto.SHA256.New(),
+			format:        hash.SHA256,
 		},
 	}
 
@@ -147,14 +147,10 @@ func TestDecodeEntries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if tc.hash == nil {
-				tc.hash = crypto.SHA1.New()
-			}
-
 			f := tc.input()
 			t.Cleanup(func() { f.Close() })
 
-			d := NewDecoder(f, tc.hash)
+			d := NewDecoder(f, WithObjectFormat(tc.format))
 			got := &Index{}
 
 			err := d.Decode(got)
@@ -311,7 +307,7 @@ func TestDecodeMergeConflict(t *testing.T) {
 	defer func() { require.NoError(t, f.Close()) }()
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA1.New())
+	d := NewDecoder(f)
 	err = d.Decode(idx)
 	require.NoError(t, err)
 
@@ -351,7 +347,7 @@ func readSimpleIndex(tb testing.TB) *Index {
 	defer func() { require.NoError(tb, f.Close()) }()
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA1.New())
+	d := NewDecoder(f)
 	err = d.Decode(idx)
 	require.NoError(tb, err)
 
@@ -363,7 +359,7 @@ func buildIndexWithExtension(tb testing.TB, signature, data string) []byte {
 	idx := readSimpleIndex(tb)
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 
 	err := e.encode(idx, false)
 	require.NoError(tb, err)
@@ -381,7 +377,7 @@ func TestDecodeUnknownOptionalExt(t *testing.T) {
 	f := bytes.NewReader(buildIndexWithExtension(t, "TEST", "testdata"))
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA1.New())
+	d := NewDecoder(f)
 	err := d.Decode(idx)
 	require.NoError(t, err)
 }
@@ -391,7 +387,7 @@ func TestDecodeUnknownMandatoryExt(t *testing.T) {
 	f := bytes.NewReader(buildIndexWithExtension(t, "test", "testdata"))
 
 	idx := &Index{}
-	d := NewDecoder(f, crypto.SHA1.New())
+	d := NewDecoder(f)
 	err := d.Decode(idx)
 	assert.ErrorContains(t, err, ErrUnknownExtension.Error())
 }
@@ -401,7 +397,7 @@ func TestDecodeTruncatedExt(t *testing.T) {
 	idx := readSimpleIndex(t)
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 
 	err := e.encode(idx, false)
 	require.NoError(t, err)
@@ -419,7 +415,7 @@ func TestDecodeTruncatedExt(t *testing.T) {
 	require.NoError(t, err)
 
 	idx = &Index{}
-	d := NewDecoder(buf, crypto.SHA1.New())
+	d := NewDecoder(buf)
 	err = d.Decode(idx)
 	assert.ErrorContains(t, err, io.EOF.Error())
 }
@@ -456,7 +452,7 @@ func TestDecodeSkipHash(t *testing.T) {
 			}
 
 			buf := bytes.NewBuffer(nil)
-			e := NewEncoder(buf, tc.hash.New())
+			e := NewEncoder(buf, WithObjectFormat(formatOf(tc.hash)))
 
 			err := e.encode(idx, false)
 			require.NoError(t, err)
@@ -469,14 +465,14 @@ func TestDecodeSkipHash(t *testing.T) {
 			// A null (all-zero) trailing checksum is accepted without
 			// opting in, matching git's index.skipHash read behaviour.
 			out := &Index{}
-			d := NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New())
+			d := NewDecoder(bytes.NewReader(buf.Bytes()), WithObjectFormat(formatOf(tc.hash)))
 			err = d.Decode(out)
 			require.NoError(t, err)
 			assert.Len(t, out.Entries, 1)
 
 			// WithSkipHash also decodes successfully.
 			out = &Index{}
-			d = NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New(), WithSkipHash())
+			d = NewDecoder(bytes.NewReader(buf.Bytes()), WithObjectFormat(formatOf(tc.hash)), WithSkipHash())
 			err = d.Decode(out)
 			require.NoError(t, err)
 			assert.Len(t, out.Entries, 1)
@@ -518,7 +514,7 @@ func TestDecodeSkipHashWithKnownAndUnknownExtensions(t *testing.T) {
 	newFile.Write(make([]byte, hashSize))
 
 	idx := &Index{}
-	d := NewDecoder(bytes.NewReader(newFile.Bytes()), crypto.SHA1.New(), WithSkipHash())
+	d := NewDecoder(bytes.NewReader(newFile.Bytes()), WithSkipHash())
 	err = d.Decode(idx)
 	require.NoError(t, err)
 	require.NotNil(t, idx.Cache, "TREE cache should be decoded")
@@ -530,7 +526,7 @@ func TestDecodeInvalidHash(t *testing.T) {
 	idx := readSimpleIndex(t)
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 
 	err := e.encode(idx, false)
 	require.NoError(t, err)
@@ -543,7 +539,7 @@ func TestDecodeInvalidHash(t *testing.T) {
 	require.NoError(t, err)
 
 	idx = &Index{}
-	d := NewDecoder(buf, h)
+	d := NewDecoder(buf)
 	err = d.Decode(idx)
 	assert.ErrorContains(t, err, ErrInvalidChecksum.Error())
 }
@@ -643,7 +639,7 @@ func TestDecodeV4StripLength(t *testing.T) {
 			}
 
 			buf := bytes.NewBuffer(nil)
-			enc := NewEncoder(buf, tc.hash.New())
+			enc := NewEncoder(buf, WithObjectFormat(formatOf(tc.hash)))
 			err := enc.Encode(idx)
 			require.NoError(t, err)
 
@@ -675,7 +671,7 @@ func TestDecodeV4StripLength(t *testing.T) {
 			h.Write(raw[:len(raw)-hashSize])
 			copy(raw[len(raw)-hashSize:], h.Sum(nil))
 
-			dec := NewDecoder(bytes.NewReader(raw), tc.hash.New())
+			dec := NewDecoder(bytes.NewReader(raw), WithObjectFormat(formatOf(tc.hash)))
 			out := &Index{}
 			err = dec.Decode(out)
 			if tc.wantErr != nil {
@@ -764,11 +760,11 @@ func TestDecodeNameLength0xFFF(t *testing.T) {
 			idx := &Index{Version: tc.version, Entries: entries}
 
 			buf := bytes.NewBuffer(nil)
-			err := NewEncoder(buf, tc.hash.New()).Encode(idx)
+			err := NewEncoder(buf, WithObjectFormat(formatOf(tc.hash))).Encode(idx)
 			require.NoError(t, err)
 
 			output := &Index{}
-			err = NewDecoder(bytes.NewReader(buf.Bytes()), tc.hash.New()).Decode(output)
+			err = NewDecoder(bytes.NewReader(buf.Bytes()), WithObjectFormat(formatOf(tc.hash))).Decode(output)
 			require.NoError(t, err)
 
 			require.Len(t, output.Entries, len(tc.names))
@@ -816,7 +812,7 @@ func TestDecodeNameLength0xFFFPatchedFlags(t *testing.T) {
 			}
 
 			buf := bytes.NewBuffer(nil)
-			err := NewEncoder(buf, tc.hash.New()).Encode(idx)
+			err := NewEncoder(buf, WithObjectFormat(formatOf(tc.hash))).Encode(idx)
 			require.NoError(t, err)
 
 			raw := buf.Bytes()
@@ -837,7 +833,7 @@ func TestDecodeNameLength0xFFFPatchedFlags(t *testing.T) {
 			copy(raw[len(raw)-hashSize:], h.Sum(nil))
 
 			output := &Index{}
-			err = NewDecoder(bytes.NewReader(raw), tc.hash.New()).Decode(output)
+			err = NewDecoder(bytes.NewReader(raw), WithObjectFormat(formatOf(tc.hash))).Decode(output)
 			require.NoError(t, err)
 
 			require.Len(t, output.Entries, 1)
@@ -880,7 +876,7 @@ func TestDecodeAllIndexFixtures(t *testing.T) {
 			}
 
 			idx := &Index{}
-			d := NewDecoder(fi, h.New())
+			d := NewDecoder(fi, WithObjectFormat(formatOf(h)))
 			err = d.Decode(idx)
 			require.NoError(t, err)
 

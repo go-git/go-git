@@ -1,6 +1,6 @@
 package config
 
-import "errors"
+import "github.com/go-git/go-git/v6/plumbing/hash"
 
 // RepositoryFormatVersion represents the repository format version,
 // as per defined at:
@@ -40,62 +40,35 @@ const (
 	DefaultRepositoryFormatVersion = Version0
 )
 
-// ObjectFormat defines the object format.
-type ObjectFormat string
+// ObjectFormat defines the object format. It is an alias of
+// [hash.ObjectFormat], kept so that the format can be named from the
+// configuration package.
+type ObjectFormat = hash.ObjectFormat
 
 const (
-	// UnsetObjectFormat indicates no object format has been set.
-	UnsetObjectFormat ObjectFormat = ""
+	// UnsetObjectFormat is [hash.UnsetObjectFormat].
+	UnsetObjectFormat = hash.UnsetObjectFormat
 
-	// SHA1 represents the object format used for SHA1.
-	SHA1 ObjectFormat = "sha1"
+	// SHA1 is [hash.SHA1].
+	SHA1 = hash.SHA1
 
-	// SHA256 represents the object format used for SHA256.
-	SHA256 ObjectFormat = "sha256"
+	// SHA256 is [hash.SHA256].
+	SHA256 = hash.SHA256
 
-	// DefaultObjectFormat holds the default object format.
-	DefaultObjectFormat = SHA1
+	// DefaultObjectFormat is [hash.DefaultObjectFormat].
+	DefaultObjectFormat = hash.DefaultObjectFormat
 )
 
-// String returns the string representation of the ObjectFormat.
-func (f ObjectFormat) String() string {
-	return string(f)
-}
-
-// Size returns the hash size of the ObjectFormat.
-func (f ObjectFormat) Size() int {
-	switch f {
-	case SHA1:
-		return SHA1Size
-	case SHA256:
-		return SHA256Size
-	default:
-		return DefaultObjectFormat.Size()
-	}
-}
-
-// HexSize returns the hash size in hexadecimal format of the ObjectFormat.
-func (f ObjectFormat) HexSize() int {
-	switch f {
-	case SHA1:
-		return SHA1HexSize
-	case SHA256:
-		return SHA256HexSize
-	default:
-		return DefaultObjectFormat.HexSize()
-	}
-}
-
-// ErrInvalidObjectFormat is returned when an invalid ObjectFormat is used.
-var ErrInvalidObjectFormat = errors.New("invalid object format")
+// ErrInvalidObjectFormat is [hash.ErrInvalidObjectFormat].
+var ErrInvalidObjectFormat = hash.ErrInvalidObjectFormat
 
 const (
-	// SHA1Size is the size of SHA1 hash.
-	SHA1Size = 20
-	// SHA256Size is the size of SHA256 hash.
-	SHA256Size = 32
-	// SHA1HexSize is the size of SHA1 hash in hexadecimal format.
-	SHA1HexSize = SHA1Size * 2
-	// SHA256HexSize is the size of SHA256 hash in hexadecimal format.
-	SHA256HexSize = SHA256Size * 2
+	// SHA1Size is [hash.SHA1Size].
+	SHA1Size = hash.SHA1Size
+	// SHA256Size is [hash.SHA256Size].
+	SHA256Size = hash.SHA256Size
+	// SHA1HexSize is [hash.SHA1HexSize].
+	SHA1HexSize = hash.SHA1HexSize
+	// SHA256HexSize is [hash.SHA256HexSize].
+	SHA256HexSize = hash.SHA256HexSize
 )

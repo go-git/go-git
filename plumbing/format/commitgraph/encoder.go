@@ -1,7 +1,6 @@
 package commitgraph
 
 import (
-	"crypto"
 	"fmt"
 	"io"
 
@@ -13,19 +12,47 @@ import (
 // Encoder writes MemoryIndex structs to an output stream.
 type Encoder struct {
 	io.Writer
-	hash hash.Hash
+	hash    hash.Hash
+	format  hash.ObjectFormat
+	version byte
+	err     error
 }
 
-// NewEncoder returns a new stream encoder that writes to w.
-func NewEncoder(w io.Writer) *Encoder {
-	// TODO: Support passing an ObjectFormat (sha256)
-	h := hash.New(crypto.SHA1)
-	mw := io.MultiWriter(w, h)
-	return &Encoder{mw, h}
+// NewEncoder returns a new stream encoder that writes to w. The
+// commit-graph is written in SHA-1 unless [WithObjectFormat] sets
+// another object format. An unsupported object format makes
+// [Encoder.Encode] fail without writing anything.
+func NewEncoder(w io.Writer, opts ...Option) *Encoder {
+	o := newOptions(opts)
+	format := o.objectFormat
+	if format == hash.UnsetObjectFormat {
+		format = hash.DefaultObjectFormat
+	}
+
+	version, err := hashVersion(format)
+	if err != nil {
+		return &Encoder{Writer: w, err: err}
+	}
+	h, err := hash.FromObjectFormat(format)
+	if err != nil {
+		return &Encoder{Writer: w, err: err}
+	}
+	return &Encoder{
+		Writer:  io.MultiWriter(w, h),
+		hash:    h,
+		format:  format,
+		version: version,
+	}
 }
 
-// Encode writes an index into the commit-graph file
+// Encode writes an index into the commit-graph file. Every id in the
+// index must be of the encoder's object format, or [ErrUnsupportedHash]
+// is returned before anything is written.
 func (e *Encoder) Encode(idx Index) error {
+	if e.err != nil {
+		return e.err
+	}
+
 	// Get all the hashes in the input index
 	hashes := idx.Hashes()
 
@@ -101,6 +128,9 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	hashToIndex = make(map[plumbing.Hash]uint32)
 	fanout = make([]uint32, lenFanout)
 	for i, hash := range hashes {
+		if err := e.checkFormat(hash); err != nil {
+			return nil, nil, 0, 0, err
+		}
 		hashToIndex[hash] = uint32(i)
 		fanout[hash.Bytes()[0]]++
 	}
@@ -120,6 +150,9 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		if err != nil {
 			return nil, nil, 0, 0, err
 		}
+		if err := e.checkFormat(v.TreeHash); err != nil {
+			return nil, nil, 0, 0, err
+		}
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
 		}
@@ -131,16 +164,22 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, nil
 }
 
+// checkFormat reports an id of another object format than the
+// encoder's, which would corrupt the fixed-size tables.
+func (e *Encoder) checkFormat(id plumbing.Hash) error {
+	if id.Format() != e.format {
+		return fmt.Errorf("%w: %s id %s in a %s commit-graph",
+			ErrUnsupportedHash, id.Format(), id, e.format)
+	}
+	return nil
+}
+
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
 	if chunkCount > 255 {
 		return ErrTooManyChunks
 	}
 	if _, err = e.Write(commitFileSignature); err == nil {
-		version := byte(1)
-		if crypto.Hash(e.hash.Size()) == crypto.Hash(crypto.SHA256.Size()) {
-			version = byte(2)
-		}
-		_, err = e.Write([]byte{1, version, byte(chunkCount), 0})
+		_, err = e.Write([]byte{1, e.version, byte(chunkCount), 0})
 	}
 	return err
 }

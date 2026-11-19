@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/protocol"
 )
 
@@ -97,4 +98,14 @@ func ListenTCP(t testing.TB) *net.TCPListener {
 	})
 
 	return l.(*net.TCPListener)
+}
+
+// fixtureHash parses a full-length hex object id from a fixture. It panics
+// on malformed input, which is a bug in the fixture.
+func fixtureHash(s string) plumbing.Hash {
+	h, ok := plumbing.FromHex(s)
+	if !ok {
+		panic("malformed fixture object id: " + s)
+	}
+	return h
 }

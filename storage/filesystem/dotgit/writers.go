@@ -1,10 +1,8 @@
 package dotgit
 
 import (
-	"crypto"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -17,7 +15,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
-	githash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
@@ -191,11 +188,6 @@ func (w *PackWriter) clean() error {
 func (w *PackWriter) save() error {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
 
-	h := githash.New(crypto.SHA1)
-	if w.checksum.Size() == crypto.SHA256.Size() {
-		h = githash.New(crypto.SHA256)
-	}
-
 	// Pack files are content addressable. Each file is checked
 	// individually — if it already exists on disk, skip creating it.
 	idxPath := fmt.Sprintf("%s.idx", base)
@@ -209,7 +201,7 @@ func (w *PackWriter) save() error {
 			return err
 		}
 
-		if err := w.encodeIdx(idx, h); err != nil {
+		if err := w.encodeIdx(idx); err != nil {
 			_ = idx.Close()
 			return err
 		}
@@ -232,7 +224,7 @@ func (w *PackWriter) save() error {
 				return err
 			}
 
-			if err := w.encodeRev(rev, h); err != nil {
+			if err := w.encodeRev(rev); err != nil {
 				_ = rev.Close()
 				return err
 			}
@@ -312,22 +304,22 @@ func fileExists(fs billy.Filesystem, path string) (bool, error) {
 	return true, nil
 }
 
-func (w *PackWriter) encodeIdx(writer io.Writer, h hash.Hash) error {
+func (w *PackWriter) encodeIdx(writer io.Writer) error {
 	idx, err := w.writer.Index()
 	if err != nil {
 		return err
 	}
 
-	return idxfile.Encode(writer, h, idx)
+	return idxfile.Encode(writer, idx)
 }
 
-func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
+func (w *PackWriter) encodeRev(writer io.Writer) error {
 	idx, err := w.writer.Index()
 	if err != nil {
 		return err
 	}
 
-	return revfile.Encode(writer, h, idx)
+	return revfile.Encode(writer, idx)
 }
 
 // syncedReader lets a reader trail a writer on the same file: Read

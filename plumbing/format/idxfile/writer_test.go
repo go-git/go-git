@@ -2,7 +2,6 @@ package idxfile_test
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/base64"
 	"io"
 	"testing"
@@ -13,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type WriterSuite struct {
@@ -47,7 +45,7 @@ func (s *WriterSuite) TestWriter() {
 	idxFile.Close()
 
 	buf := new(bytes.Buffer)
-	err = idxfile.Encode(buf, hash.New(crypto.SHA1), idx)
+	err = idxfile.Encode(buf, idx)
 	s.NoError(err)
 	s.Len(expected, buf.Len())
 
@@ -76,7 +74,7 @@ func (s *WriterSuite) TestWriterLarge() {
 	s.NoError(err)
 
 	buf := new(bytes.Buffer)
-	err = idxfile.Encode(buf, hash.New(crypto.SHA1), idx)
+	err = idxfile.Encode(buf, idx)
 	s.NoError(err)
 	s.Len(expected, buf.Len())
 

@@ -2,7 +2,6 @@ package idxfile_test
 
 import (
 	"bytes"
-	"crypto"
 	"io"
 	"testing"
 
@@ -26,8 +25,8 @@ func TestEncode(t *testing.T) {
 	require.NoError(t, err)
 
 	validIdxFn := func() *MemoryIndex {
-		idx := NewMemoryIndex(crypto.SHA1.Size())
-		d := NewDecoder(FromBytes(expected), hash.New(crypto.SHA1))
+		idx := NewMemoryIndex(hash.SHA1)
+		d := NewDecoder(FromBytes(expected))
 		err := d.Decode(idx)
 		require.NoError(t, err)
 		return idx
@@ -106,9 +105,7 @@ func TestEncode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := hash.New(crypto.SHA1)
-
-			err := Encode(tc.writer, h, tc.idx())
+			err := Encode(tc.writer, tc.idx())
 			if tc.want != "" {
 				assert.EqualError(t, err, tc.want)
 			} else {
@@ -124,19 +121,17 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	tests := []struct {
 		name    string
 		fixture *fixtures.Fixture
-		hasher  crypto.Hash
+		format  hash.ObjectFormat
 	}{
 		{
-			// This does not mean idxfile supports sha256. That will take place
-			// when Version 3 is implemented.
 			name:    "sha256 packfile",
 			fixture: fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
-			hasher:  crypto.SHA256,
+			format:  hash.SHA256,
 		},
 		{
 			name:    "sha1 packfile",
 			fixture: fixtures.Basic().ByObjectFormat("sha1").One(),
-			hasher:  crypto.SHA1,
+			format:  hash.SHA1,
 		},
 	}
 
@@ -151,14 +146,13 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			expected, err := io.ReadAll(idxf)
 			require.NoError(t, err)
 
-			idx := NewMemoryIndex(tc.hasher.Size())
-			d := NewDecoder(FromBytes(expected), hash.New(tc.hasher))
+			idx := NewMemoryIndex(tc.format)
+			d := NewDecoder(FromBytes(expected), WithObjectFormat(tc.format))
 			err = d.Decode(idx)
 			require.NoError(t, err)
 
 			result := bytes.NewBuffer(nil)
-			h := hash.New(tc.hasher)
-			err = Encode(result, h, idx)
+			err = Encode(result, idx)
 			require.NoError(t, err)
 
 			assert.Len(t, expected, result.Len())
@@ -175,18 +169,14 @@ func TestDecodeEncode(t *testing.T) {
 		expected, err := io.ReadAll(idxFile)
 		require.NoError(t, err)
 
-		h := crypto.SHA1
-		if f.ObjectFormat == "sha256" {
-			h = crypto.SHA256
-		}
-
-		idx := NewMemoryIndex(h.Size())
-		d := NewDecoder(FromBytes(expected), hash.New(h))
+		format := hash.ObjectFormat(f.ObjectFormat)
+		idx := NewMemoryIndex(format)
+		d := NewDecoder(FromBytes(expected), WithObjectFormat(format))
 		err = d.Decode(idx)
 		require.NoError(t, err)
 
 		result := bytes.NewBuffer(nil)
-		err = Encode(result, hash.New(h), idx)
+		err = Encode(result, idx)
 		require.NoError(t, err)
 
 		assert.Len(t, expected, result.Len())

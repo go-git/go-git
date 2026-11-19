@@ -25,6 +25,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -673,7 +674,7 @@ func writeZlibPayload(tb testing.TB, w io.Writer, payload []byte) {
 }
 
 func blobHash(content []byte) plumbing.Hash {
-	hasher := plumbing.NewHasher(config.SHA1, plumbing.BlobObject, int64(len(content)))
+	hasher, _ := plumbing.NewHasher(config.SHA1, plumbing.BlobObject, int64(len(content)))
 	_, _ = hasher.Write(content)
 	return hasher.Sum()
 }
@@ -996,4 +997,21 @@ func TestParserSizeFromObserver(t *testing.T) {
 	_, err = p.Parse()
 	require.NoError(t, err)
 	assert.Equal(t, int64(len(pack)), ob.size)
+}
+
+func TestParserUnknownObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	h := sha1.New()
+	w := io.MultiWriter(&buf, h)
+	_, _ = w.Write([]byte{'P', 'A', 'C', 'K'})
+	_ = binary.Write(w, binary.BigEndian, uint32(2))
+	_ = binary.Write(w, binary.BigEndian, uint32(0))
+	_, _ = buf.Write(h.Sum(nil))
+
+	p := packfile.NewParser(bytes.NewReader(buf.Bytes()),
+		packfile.WithObjectFormat(config.ObjectFormat("sha512")))
+	_, err := p.Parse()
+	assert.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
 }

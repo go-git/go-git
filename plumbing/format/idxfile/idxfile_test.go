@@ -2,7 +2,6 @@ package idxfile_test
 
 import (
 	"bytes"
-	"crypto"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -200,7 +199,7 @@ func fixtureIndex() (*idxfile.MemoryIndex, error) {
 
 	idx := new(idxfile.MemoryIndex)
 
-	d := idxfile.NewDecoder(idxfile.FromBytes(raw), hash.New(crypto.SHA1))
+	d := idxfile.NewDecoder(idxfile.FromBytes(raw))
 	if err := d.Decode(idx); err != nil {
 		return nil, fmt.Errorf("unexpected error decoding index: %s", err)
 	}
@@ -218,7 +217,7 @@ func TestMemoryIndexSuite(t *testing.T) {
 }
 
 func (s *MemoryIndexSuite) TestCloseIsNoOp() {
-	idx := idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	idx := idxfile.NewMemoryIndex(hash.SHA1)
 	s.NoError(idx.Close())
 	// Calling Close repeatedly is fine.
 	s.NoError(idx.Close())
@@ -226,7 +225,7 @@ func (s *MemoryIndexSuite) TestCloseIsNoOp() {
 
 func (s *MemoryIndexSuite) TestSatisfiesIndexInterface() {
 	// Close must be reachable via the interface.
-	var idx idxfile.Index = idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	var idx idxfile.Index = idxfile.NewMemoryIndex(hash.SHA1)
 	s.NoError(idx.Close())
 }
 
