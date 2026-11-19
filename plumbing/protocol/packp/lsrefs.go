@@ -234,20 +234,54 @@ func (r *LsRefsOutput) Decode(rd io.Reader) error {
 // Format: <oid-or-unborn> SP <refname> [SP <attr>...] LF
 // Returns one or two references (base + peeled if the peeled attribute is present),
 // and the symref target of HEAD when the line reports HEAD as unborn.
+//
+// It follows upstream connect.c process_ref_v2, which ignores a ref with an
+// invalid name and an invalid symref-target instead of failing the whole
+// advertisement.
+// See https://github.com/git/git/blob/f357b9c2c77eae1a1d37dfa44c1dda53f532a82a/connect.c#L393-L490.
 func parseLsRefsLine(line string) (refs []*plumbing.Reference, unbornHead plumbing.ReferenceName, err error) {
-	// Fields tolerates the SP-separated grammar without producing empty tokens
-	// on repeated spaces: [oid-or-unborn, refname, attr1, attr2, ...].
-	parts := strings.Fields(line)
+	// Upstream splits on each single space, so a repeated space yields an empty
+	// field: [oid-or-unborn, refname, attr1, attr2, ...]. Splitting on any
+	// whitespace would instead cut a ref name at a non-ASCII space, which a
+	// valid name may hold.
+	parts := strings.Split(line, " ")
 	if len(parts) < 2 {
 		return nil, "", fmt.Errorf("malformed ref line: %q", line)
 	}
 
 	oidStr := parts[0]
 	refName := plumbing.ReferenceName(parts[1])
+	attrs := parts[2:]
 
-	// Only HEAD can be unborn. Upstream skips any other unborn line without
-	// reading its attributes (connect.c process_ref_v2), so do the same.
-	if oidStr == "unborn" && refName != plumbing.HEAD {
+	// Only HEAD can be unborn, and upstream skips any other unborn line. For
+	// HEAD it reads only the first symref-target and ignores the line when
+	// that target is missing or invalid, so a clone falls back to its default
+	// branch.
+	if oidStr == "unborn" {
+		if refName != plumbing.HEAD {
+			return nil, "", nil
+		}
+		for _, attr := range attrs {
+			target, ok := strings.CutPrefix(attr, "symref-target:")
+			if !ok {
+				continue
+			}
+			unbornHead = plumbing.ReferenceName(target)
+			if !validSymrefTarget(unbornHead) {
+				return nil, "", nil
+			}
+			return []*plumbing.Reference{plumbing.NewSymbolicReference(refName, unbornHead)}, unbornHead, nil
+		}
+		return nil, "", nil
+	}
+
+	hash, ok := parseFullHash(oidStr)
+	if !ok {
+		return nil, "", fmt.Errorf("malformed object id: %q", oidStr)
+	}
+
+	// Upstream skips a ref with an invalid name before reading its attributes.
+	if !validAdvertisedName(refName) {
 		return nil, "", nil
 	}
 
@@ -255,32 +289,21 @@ func parseLsRefsLine(line string) (refs []*plumbing.Reference, unbornHead plumbi
 	var peeledHash plumbing.Hash
 	hasPeeled := false
 
-	for _, attr := range parts[2:] {
-		if strings.HasPrefix(attr, "symref-target:") {
-			symrefTarget = plumbing.ReferenceName(attr[len("symref-target:"):])
-		} else if strings.HasPrefix(attr, "peeled:") {
-			h, ok := parseFullHash(attr[len("peeled:"):])
+	for _, attr := range attrs {
+		if target, ok := strings.CutPrefix(attr, "symref-target:"); ok {
+			// Upstream ignores an invalid target and keeps any earlier valid
+			// one, so a ref left without a target is reported by its object id.
+			if t := plumbing.ReferenceName(target); validSymrefTarget(t) {
+				symrefTarget = t
+			}
+		} else if p, ok := strings.CutPrefix(attr, "peeled:"); ok {
+			h, ok := parseFullHash(p)
 			if !ok {
 				return nil, "", fmt.Errorf("malformed peeled hash: %q", attr)
 			}
 			peeledHash = h
 			hasPeeled = true
 		}
-	}
-
-	// Handle unborn refs
-	if oidStr == "unborn" {
-		if symrefTarget == "" {
-			return nil, "", fmt.Errorf("malformed unborn ref line, missing symref-target: %q", line)
-		}
-		refs = append(refs, plumbing.NewSymbolicReference(refName, symrefTarget))
-		return refs, symrefTarget, nil
-	}
-
-	// Regular hash ref
-	hash, ok := parseFullHash(oidStr)
-	if !ok {
-		return nil, "", fmt.Errorf("malformed object id: %q", oidStr)
 	}
 
 	if symrefTarget != "" {
@@ -298,6 +321,27 @@ func parseLsRefsLine(line string) (refs []*plumbing.Reference, unbornHead plumbi
 	}
 
 	return refs, "", nil
+}
+
+// validAdvertisedName reports whether an advertised ref name passes upstream's
+// check_refname_format(name, REFNAME_ALLOW_ONELEVEL). Validate has no
+// one-level mode, so a one-level name is checked as the last component of a
+// name under refs/, which applies the same component rules. "@" is the only
+// whole-name rule that the prefix would hide.
+func validAdvertisedName(name plumbing.ReferenceName) bool {
+	if strings.Contains(string(name), "/") {
+		return name.Validate() == nil
+	}
+	return name != "@" && plumbing.ReferenceName("refs/"+name).Validate() == nil
+}
+
+// validSymrefTarget reports whether a symref-target advertised by the remote is
+// a valid reference name. Upstream checks it with check_refname_format(target,
+// 0), which refuses one-level names, so HEAD is refused as well even though
+// Validate admits it.
+// See https://github.com/git/git/commit/8cb7e2e031978c59381adf086fd1c0ce1e3a7315.
+func validSymrefTarget(target plumbing.ReferenceName) bool {
+	return target != plumbing.HEAD && target.Validate() == nil
 }
 
 // parseFullHash strictly parses a full-length SHA-1 or SHA-256 object id in hex
