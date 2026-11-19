@@ -16,12 +16,22 @@ var (
 	minCommandAndCapsLength = minCommandLength + 1
 )
 
+// read_head_info re-reads the feature list on every command line but only sets
+// fixed flags, so Git's memory does not grow with the number of lines carrying
+// capabilities. go-git keeps the decoded names and values, so without these
+// bounds a client could make the server hold far more than it sends. Both sit
+// far above anything a push declares: Git defines fewer than forty
+// capabilities, and only symref, which receive-pack does not accept, takes
+// more than one value.
+const (
+	maxCapabilities     = 256
+	maxCapabilityValues = 16
+)
+
 // Decode errors.
 var (
-	ErrEmpty                        = errors.New("empty update-request message")
-	errNoCommands                   = errors.New("unexpected EOF before any command")
-	errMissingCapabilitiesDelimiter = errors.New("capabilities delimiter not found")
-	errNoFlush                      = errors.New("unexpected EOF before flush line")
+	ErrEmpty   = errors.New("empty update-request message")
+	errNoFlush = errors.New("unexpected EOF before flush line")
 )
 
 func errMalformedRequest(reason string) error {
@@ -105,66 +115,15 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 		return nil
 	}
 
-	// Scan first line
-	if err := readLine(ErrEmpty); err != nil {
-		return err
-	}
-
-	// Process all consecutive shallow lines
+	// Every packet is read the same way, mirroring read_head_info: a shallow
+	// line is recognised at any position, and capabilities come from any
+	// command line carrying a null byte.
+	eofErr := ErrEmpty
 	for {
-		b := bytes.TrimSuffix(payload, eol)
-		if !bytes.HasPrefix(b, shallowNoSp) {
-			break
-		}
-
-		hashLen := len(b) - len(shallow)
-		if hashLen != sha1HexSize && hashLen != sha256HexSize {
-			return errInvalidShallowLineLength(len(b))
-		}
-
-		h, err := parseHash(string(b[len(shallow):]))
-		if err != nil {
-			return errInvalidShallowObjID(err)
-		}
-		req.Shallows = append(req.Shallows, h)
-
-		if err := readLine(errNoCommands); err != nil {
+		if err := readLine(eofErr); err != nil {
 			return err
 		}
-	}
-
-	// A shallow-only no-op push (shallow lines followed immediately by a
-	// flush, with no commands) is a valid empty request, e.g. from a shallow
-	// clone with nothing to push. A bare flush with no shallows is still
-	// treated as malformed.
-	if length == pktline.Flush && len(req.Shallows) > 0 {
-		return nil
-	}
-
-	// The first command line must contain capabilities separated by a null byte
-	before, after, ok := bytes.Cut(payload, []byte{0})
-	if !ok {
-		return errMissingCapabilitiesDelimiter
-	}
-	if len(payload) < minCommandAndCapsLength {
-		return errInvalidCommandCapabilitiesLineLength(len(payload))
-	}
-
-	// Extract and decode capabilities (everything after the null byte)
-	capability.DecodeList(after, &req.Capabilities)
-
-	// Extract the command (everything before the null byte)
-	cmd, err := parseCommand(before)
-	if err != nil {
-		return err
-	}
-	req.Commands = append(req.Commands, cmd)
-
-	// Read and process remaining commands
-	for {
-		if err := readLine(errNoFlush); err != nil {
-			return err
-		}
+		eofErr = errNoFlush
 
 		// Stop reading once we reach the flush line
 		if length == pktline.Flush {
@@ -173,19 +132,98 @@ func (req *UpdateRequests) Decode(r io.Reader) error {
 
 		// Match receive-pack's PACKET_READ_CHOMP_NEWLINE without stripping
 		// whitespace that belongs to the reference name.
-		cmd, err := parseCommand(bytes.TrimSuffix(payload, eol))
+		b := bytes.TrimSuffix(payload, eol)
+
+		// Git gates the shallow branch on a line longer than the prefix, so a
+		// bare "shallow" or "shallow " is parsed as a command instead.
+		if len(b) > len(shallow) && bytes.HasPrefix(b, shallow) {
+			h, err := parseShallow(b)
+			if err != nil {
+				return err
+			}
+			req.Shallows = append(req.Shallows, h)
+			continue
+		}
+
+		cmdLine := b
+		if before, after, ok := bytes.Cut(b, []byte{0}); ok {
+			if len(b) < minCommandAndCapsLength {
+				return errInvalidCommandCapabilitiesLineLength(len(b))
+			}
+
+			if err := decodeCapabilities(after, &req.Capabilities); err != nil {
+				return err
+			}
+			cmdLine = before
+		}
+
+		cmd, err := parseCommand(cmdLine)
 		if err != nil {
 			return err
 		}
 		req.Commands = append(req.Commands, cmd)
 	}
 
-	// We should always have a flush line at the end of the request.
-	if len(payload) != 0 || length != pktline.Flush {
-		return errMalformedRequest("unexpected data after flush")
+	// A request without commands is a no-op, as sent by a push with nothing to
+	// update, and by a shallow clone that only advertises its grafts. Git's
+	// read_head_info returns no commands for it, so there is nothing left to
+	// validate.
+	if len(req.Commands) == 0 {
+		return nil
 	}
 
 	return validateUpdateRequests(req)
+}
+
+// decodeCapabilities records the capabilities a command line declares. A name
+// already recorded is left alone, so a client repeating capabilities on every
+// line adds nothing to the list.
+func decodeCapabilities(raw []byte, dst *capability.List) error {
+	var line capability.List
+	capability.DecodeList(raw, &line)
+
+	have := len(dst.All())
+	for _, c := range line.All() {
+		if dst.Supports(c) {
+			continue
+		}
+
+		if have >= maxCapabilities {
+			return errMalformedRequest(fmt.Sprintf(
+				"too many capabilities: limit %d", maxCapabilities,
+			))
+		}
+
+		values := line.Get(c)
+		if len(values) > maxCapabilityValues {
+			return errMalformedRequest(fmt.Sprintf(
+				"too many values for capability %q: limit %d", c, maxCapabilityValues,
+			))
+		}
+
+		dst.Add(c, values...)
+		have++
+	}
+
+	return nil
+}
+
+// parseShallow parses a shallow line. Git's read_head_info tests for the
+// shallow prefix on every packet, so these lines are accepted at any position
+// in the request, before, between or after the command lines.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L2204-L2211.
+func parseShallow(b []byte) (plumbing.Hash, error) {
+	hashLen := len(b) - len(shallow)
+	if hashLen != sha1HexSize && hashLen != sha256HexSize {
+		return plumbing.ZeroHash, errInvalidShallowLineLength(len(b))
+	}
+
+	h, err := parseHash(string(b[len(shallow):]))
+	if err != nil {
+		return plumbing.ZeroHash, errInvalidShallowObjID(err)
+	}
+
+	return h, nil
 }
 
 // parseCommand preserves the complete reference name after the two object IDs.
