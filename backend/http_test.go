@@ -105,6 +105,8 @@ func TestServeKeepsCallerStreamsOpen(t *testing.T) {
 			}
 
 			b := New(transport.MapLoader{"/repo": st})
+			b.ReceivePack = ServiceEnabled
+			b.UploadArchive = ServiceEnabled
 			err = b.Serve(t.Context(), r, w, &Request{
 				URL:           &url.URL{Path: "/repo"},
 				Service:       tc.service,
@@ -171,6 +173,7 @@ func TestServeKeepsCallerStreamsOpen(t *testing.T) {
 func TestServeNilReceiveStreams(t *testing.T) {
 	t.Parallel()
 	b := New(transport.MapLoader{"/repo": memory.NewStorage()})
+	b.ReceivePack = ServiceEnabled
 	req := &Request{URL: &url.URL{Path: "/repo"}, Service: transport.ReceivePackService, StatelessRPC: true}
 	require.EqualError(t, b.Serve(t.Context(), nil, nil, req), "nil writer")
 	w := &callerStream{}

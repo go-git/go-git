@@ -7,6 +7,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -42,6 +43,30 @@ type Request struct {
 	StatelessRPC bool
 }
 
+// ErrServiceNotEnabled is returned by [Backend.Serve] when the requested
+// service is not enabled. The message matches the one git daemon sends to
+// the client in that case.
+var ErrServiceNotEnabled = errors.New("service not enabled")
+
+// ServiceState controls whether a [Backend] serves a service. The zero
+// value, [ServiceDefault], applies the default of the transport serving
+// the request, which follows C git:
+//
+//   - [Backend.Serve] (git daemon): upload-pack is enabled, receive-pack
+//     and upload-archive are disabled.
+type ServiceState int8
+
+const (
+	// ServiceDefault applies the transport's default for the service.
+	ServiceDefault ServiceState = iota
+	// ServiceEnabled always serves the service, the same as setting
+	// daemon.<service> or http.<service> to true in git.
+	ServiceEnabled
+	// ServiceDisabled never serves the service, the same as setting
+	// daemon.<service> or http.<service> to false in git.
+	ServiceDisabled
+)
+
 // Backend is a Git server that dispatches upload-pack and receive-pack
 // requests. It implements [http.Handler] for HTTP and provides [Serve]
 // and [ServeConn] for stream-based transports.
@@ -57,6 +82,18 @@ type Backend struct {
 	// Prefix is an HTTP path prefix stripped before route matching.
 	// Only used by [ServeHTTP].
 	Prefix string
+
+	// UploadPack controls whether git-upload-pack (fetch and clone) is
+	// served. See [ServiceState] for the defaults.
+	UploadPack ServiceState
+
+	// ReceivePack controls whether git-receive-pack (push) is served.
+	// See [ServiceState] for the defaults.
+	ReceivePack ServiceState
+
+	// UploadArchive controls whether git-upload-archive is served. See
+	// [ServiceState] for the defaults.
+	UploadArchive ServiceState
 }
 
 // New creates a Backend with the given loader. If l is nil, a filesystem
@@ -75,14 +112,45 @@ func New(l transport.Loader) *Backend {
 // from req.URL, validates the service, and runs the appropriate server
 // command (upload-pack or receive-pack).
 //
+// Serve applies git daemon's service policy: upload-pack is served unless
+// disabled, receive-pack and upload-archive only when enabled. A service
+// that is not enabled fails with [ErrServiceNotEnabled] before the
+// repository is loaded. Serve does no authentication. Callers that
+// authenticate the connection on their own, such as an SSH server, enable
+// the services the client may use.
+//
 // The caller is responsible for closing r and w. Errors are returned, not
-// written to the wire — the caller decides the error format (pkt-line for
+// written to the wire. The caller decides the error format (pkt-line for
 // TCP/SSH, HTTP status for HTTP).
 func (b *Backend) Serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, req *Request) error {
 	if req.URL == nil {
 		return fmt.Errorf("nil request URL")
 	}
+	if !b.daemonEnabled(req.Service) {
+		b.logf("%q: service not enabled", req.Service)
+		return fmt.Errorf("%w: %s", ErrServiceNotEnabled, req.URL.Path)
+	}
+	return b.serve(ctx, r, w, req)
+}
 
+// daemonEnabled reports whether service is enabled under git daemon's
+// policy (daemon.c daemon_service). Unknown services are let through so
+// serve reports them as unsupported.
+func (b *Backend) daemonEnabled(service string) bool {
+	switch service {
+	case transport.UploadPackService:
+		return b.UploadPack != ServiceDisabled
+	case transport.ReceivePackService:
+		return b.ReceivePack == ServiceEnabled
+	case transport.UploadArchiveService:
+		return b.UploadArchive == ServiceEnabled
+	default:
+		return true
+	}
+}
+
+// serve runs the service for req without applying any service policy.
+func (b *Backend) serve(ctx context.Context, r io.ReadCloser, w io.WriteCloser, req *Request) error {
 	l := b.Loader
 	if l == nil {
 		l = loader.Default()

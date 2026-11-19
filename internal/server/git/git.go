@@ -100,6 +100,10 @@ func (s *Server) Start() (string, error) {
 	}
 
 	s.srv = backend.New(s.Loader)
+	// The server backs tests that push and archive over git://, like a
+	// git daemon run with --enable=receive-pack --enable=upload-archive.
+	s.srv.ReceivePack = backend.ServiceEnabled
+	s.srv.UploadArchive = backend.ServiceEnabled
 	s.conns = make(map[net.Conn]context.CancelFunc)
 	s.done = make(chan struct{})
 	s.ln = ln

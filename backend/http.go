@@ -95,7 +95,7 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 	}
 
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
-	if err := b.Serve(r.Context(), reader, frw, &Request{
+	if err := b.serve(r.Context(), reader, frw, &Request{
 		URL:          ep,
 		Service:      svc,
 		GitProtocol:  version,
@@ -145,7 +145,7 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, _
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", transport.ServiceName(service)))
 
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
-	if err := b.Serve(r.Context(), nil, frw, &Request{
+	if err := b.serve(r.Context(), nil, frw, &Request{
 		URL:           ep,
 		Service:       service,
 		GitProtocol:   version,
