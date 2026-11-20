@@ -38,6 +38,13 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+      # These constructors return unexported types on purpose. revive only
+      # reports them on Go 1.26, so inline nolint directives would be flagged
+      # as unused by nolintlint on Go 1.27.
+      - path: (internal/server/http/http|x/plugin/plugin_config|x/plugin/plugin_signer|x/plugin/config/(auto|empty|static))\.go
+        linters:
+          - revive
+        text: unexported-return
 
 formatters:
   enable:
