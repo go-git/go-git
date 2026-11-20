@@ -88,12 +88,14 @@ func TestUnmarshalProtectNTFSAcceptsGitStyleBooleans(t *testing.T) {
 		t.Run(tc.value, func(t *testing.T) {
 			t.Parallel()
 
-			body := []byte("[core]\n\tprotectNTFS = " + tc.value + "\n\tprotectHFS = " + tc.value + "\n")
+			body := []byte("[core]\n\tprotectNTFS = " + tc.value + "\n\tprotectHFS = " + tc.value +
+				"\n\tignoreCase = " + tc.value + "\n")
 			cfg := NewConfig()
 			err := cfg.Unmarshal(body)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.want, cfg.Core.ProtectNTFS, "protectNTFS")
 			assert.Equal(t, tc.want, cfg.Core.ProtectHFS, "protectHFS")
+			assert.Equal(t, tc.want, cfg.Core.IgnoreCase, "ignoreCase")
 		})
 	}
 }
@@ -101,7 +103,7 @@ func TestUnmarshalProtectNTFSAcceptsGitStyleBooleans(t *testing.T) {
 func TestUnmarshalProtectNTFSUnsetForUnrecognised(t *testing.T) {
 	t.Parallel()
 
-	body := []byte("[core]\n\tprotectNTFS = maybe\n\tprotectHFS = maybe\n")
+	body := []byte("[core]\n\tprotectNTFS = maybe\n\tprotectHFS = maybe\n\tignoreCase = maybe\n")
 	cfg := NewConfig()
 	err := cfg.Unmarshal(body)
 	assert.NoError(t, err)
@@ -109,4 +111,24 @@ func TestUnmarshalProtectNTFSUnsetForUnrecognised(t *testing.T) {
 		"unrecognised value should leave protectNTFS unset")
 	assert.Equal(t, OptBoolUnset, cfg.Core.ProtectHFS,
 		"unrecognised value should leave protectHFS unset")
+	assert.Equal(t, OptBoolUnset, cfg.Core.IgnoreCase,
+		"unrecognised value should leave ignoreCase unset")
+}
+
+func TestMarshalIgnoreCaseOnlyWhenSet(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	b, err := cfg.Marshal()
+	assert.NoError(t, err)
+	assert.NotContains(t, string(b), "ignoreCase")
+
+	cfg.Core.IgnoreCase = NewOptBool(false)
+	b, err = cfg.Marshal()
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), "\tignoreCase = false\n")
+
+	got := NewConfig()
+	assert.NoError(t, got.Unmarshal(b))
+	assert.Equal(t, OptBoolFalse, got.Core.IgnoreCase)
 }
