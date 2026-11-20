@@ -126,6 +126,81 @@ func (s *RevListSuite) TestRevListObjects_DelegatesToObjectWalker() {
 	s.Equal(expected, got)
 }
 
+// shallowDelegatedObjectStorer walks objects with shallows itself.
+type shallowDelegatedObjectStorer struct {
+	delegatedObjectStorer
+	shallows []plumbing.Hash
+}
+
+func (s *shallowDelegatedObjectStorer) RevListObjectsWithShallows(wants, haves, shallows []plumbing.Hash) ([]plumbing.Hash, error) {
+	s.shallows = append([]plumbing.Hash(nil), shallows...)
+	return s.RevListObjects(wants, haves)
+}
+
+func (s *RevListSuite) TestObjectsWithShallows_DelegatesToShallowObjectWalker() {
+	want := plumbing.NewHash(initialCommit)
+	shallow := plumbing.NewHash(secondCommit)
+	expected := []plumbing.Hash{plumbing.NewHash(someCommit)}
+
+	sto := &shallowDelegatedObjectStorer{delegatedObjectStorer: delegatedObjectStorer{
+		EncodedObjectStorer: memory.NewStorage(),
+		result:              expected,
+	}}
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{want}, nil, []plumbing.Hash{shallow})
+	s.Require().NoError(err)
+	s.Equal([]plumbing.Hash{shallow}, sto.shallows)
+	s.Equal(expected, got)
+}
+
+// A storer that walks objects but cannot bound the walk at shallows is not
+// asked to: its walk would include the history below them.
+func (s *RevListSuite) TestObjectsWithShallows_BoundsTheBuiltInWalk() {
+	sto := &delegatedObjectStorer{EncodedObjectStorer: s.Storer}
+	head := plumbing.NewHash(someCommit)
+	c, err := object.GetCommit(s.Storer, head)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(c.ParentHashes)
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{head}, nil, []plumbing.Hash{head})
+	s.Require().NoError(err)
+	s.False(sto.called, "RevListObjects cannot see the shallows")
+	s.Contains(got, head)
+	s.NotContains(got, c.ParentHashes[0])
+}
+
+func (s *RevListSuite) TestObjectsWithShallows_UnionsWithTheStorersOwnShallows() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	chain := make([]plumbing.Hash, 0, 4)
+	trees := make([]plumbing.Hash, 0, 4)
+	var parents []plumbing.Hash
+	for i := range 4 {
+		blob := testMakeBlob(t, sto, fmt.Sprintf("revision %d\n", i))
+		tree := testMakeTree(t, sto, []object.TreeEntry{
+			{Name: "file", Mode: filemode.Regular, Hash: blob},
+		})
+		commit := testMakeCommit(t, sto, tree, parents...)
+		chain = append(chain, commit)
+		trees = append(trees, tree)
+		parents = []plumbing.Hash{commit}
+	}
+	tip, middle, own := chain[3], chain[2], chain[1]
+	s.Require().NoError(sto.SetShallow([]plumbing.Hash{own}))
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{tip}, nil, []plumbing.Hash{tip})
+	s.Require().NoError(err)
+	s.Contains(got, tip)
+	s.NotContains(got, middle, "the extra shallow bounds the walk at the tip")
+
+	got, err = ObjectsWithShallows(sto, []plumbing.Hash{tip, middle}, nil, []plumbing.Hash{tip})
+	s.Require().NoError(err)
+	s.Contains(got, own)
+	s.Contains(got, trees[1])
+	s.NotContains(got, chain[0], "the storer's own shallow commit still bounds the walk")
+}
+
 // ---
 // | |\
 // | | * b8e471f Creating changelog
@@ -1455,4 +1530,35 @@ func (s *RevListSuite) TestRevListObjects_WantCommitPaintedByHavesLater() {
 				"Objects output must match git rev-list --objects")
 		})
 	}
+}
+
+func (s *RevListSuite) TestObjectsWithShallows_ShallowCommitReachableFromHavesIsExcluded() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	blob := testMakeBlob(t, sto, "base\n")
+	baseTree := testMakeTree(t, sto, []object.TreeEntry{{Name: "file", Mode: filemode.Regular, Hash: blob}})
+	base := testMakeCommit(t, sto, baseTree)
+	next := testMakeCommit(t, sto, baseTree, base)
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{next}, []plumbing.Hash{base}, []plumbing.Hash{base})
+	s.Require().NoError(err)
+	s.Equal([]plumbing.Hash{next}, got)
+}
+
+func (s *RevListSuite) TestObjectsWithShallows_ShallowBoundsTheWalkFromHaves() {
+	sto := memory.NewStorage()
+	t := s.T()
+
+	blob := testMakeBlob(t, sto, "base\n")
+	tree := testMakeTree(t, sto, []object.TreeEntry{{Name: "file", Mode: filemode.Regular, Hash: blob}})
+	base := testMakeCommit(t, sto, tree)
+	shallow := testMakeCommit(t, sto, tree, base)
+	have := testMakeCommit(t, sto, tree, shallow)
+	want := testMakeCommit(t, sto, tree, base)
+
+	got, err := ObjectsWithShallows(sto, []plumbing.Hash{want}, []plumbing.Hash{have}, []plumbing.Hash{shallow})
+	s.Require().NoError(err)
+	s.Contains(got, want)
+	s.Contains(got, base, "the client lacks the history below its shallow commit")
 }
