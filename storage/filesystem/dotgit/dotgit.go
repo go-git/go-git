@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v6"
+	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -42,6 +43,7 @@ const (
 	configWorktreePath = "config.worktree"
 	indexPath          = "index"
 	shallowPath        = "shallow"
+	shallowLockPath    = shallowPath + ".lock"
 	modulePath         = "modules"
 	objectsPath        = "objects"
 	packPath           = "pack"
@@ -460,8 +462,106 @@ func (d *DotGit) StatIndex() (os.FileInfo, error) {
 }
 
 // ShallowWriter returns a file pointer for write to the shallow file
+//
+// Deprecated: ShallowWriter truncates the shallow file in place, without
+// shallow.lock. Use [DotGit.SetShallow].
 func (d *DotGit) ShallowWriter() (billy.File, error) {
 	return d.fs.Create(shallowPath)
+}
+
+// SetShallow replaces the shallow file with data, or removes it when data is
+// empty. As Git does, it holds shallow.lock while it does so, and writes data
+// to that file before renaming it into place. A failed write leaves the old
+// file in place, unless the rename is unsupported or refused (sivafs,
+// Windows), where the file is rewritten in place and a failed write can
+// truncate it. SetShallow fails, with an error wrapping [os.ErrExist], while
+// another writer holds the lock.
+//
+// A shallow file that is a symlink is resolved first, as Git does, so the
+// target is locked and replaced and the link is kept. Removing the file
+// removes the link itself and leaves its target alone, again as Git does.
+// Git follows at most 5 links and takes the one after that for the file;
+// SetShallow fails on a longer chain instead. It also fails on a link that
+// is absolute or whose path, taken lexically, leaves the Git directory. That
+// check does not see through a directory symlink inside the Git directory,
+// so only a bounded filesystem such as BoundOS keeps such a path from
+// escaping. In a linked worktree, links are relative to the common
+// directory, where the shallow file lives.
+func (d *DotGit) SetShallow(data []byte) (err error) {
+	fsys := d.fs
+	if rfs, ok := fsys.(*RepositoryFilesystem); ok && rfs.commonDotGitFs != nil {
+		fsys = rfs.commonDotGitFs
+	}
+
+	const maxSymlinkDepth = 5
+	shallow := shallowPath
+	for depth := 0; ; depth++ {
+		fi, err := fsys.Lstat(shallow)
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+		if depth == maxSymlinkDepth {
+			return fmt.Errorf("shallow symlink chain longer than %d links", maxSymlinkDepth)
+		}
+		link, err := fsys.Readlink(shallow)
+		if err != nil {
+			return err
+		}
+		link = filepath.ToSlash(link)
+		if path.IsAbs(link) || filepath.VolumeName(link) != "" {
+			return fmt.Errorf("shallow symlink %q points outside the git directory", link)
+		}
+		link = path.Join(path.Dir(shallow), link)
+		if link == ".." || strings.HasPrefix(link, "../") {
+			return fmt.Errorf("shallow symlink %q points outside the git directory", link)
+		}
+		shallow = link
+	}
+	shallowLock := shallow + ".lock"
+
+	lock, err := fsys.OpenFile(shallowLock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	if err != nil {
+		return err
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			_ = fsys.Remove(shallowLock)
+		}
+	}()
+
+	if len(data) == 0 {
+		if err := lock.Close(); err != nil {
+			return err
+		}
+		if err := fsys.Remove(shallowPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+
+	if _, err := lock.Write(data); err != nil {
+		_ = lock.Close()
+		return err
+	}
+	if err := lock.Close(); err != nil {
+		return err
+	}
+
+	err = fsys.Rename(shallowLock, shallow)
+	if errors.Is(err, billy.ErrNotSupported) || (err != nil && runtime.GOOS == "windows") {
+		// Without rename, as on sivafs, or when Windows refuses to rename
+		// over a file another handle has open, the file can only be
+		// rewritten in place.
+		return util.WriteFile(fsys, shallow, data, 0o666)
+	}
+	if err != nil {
+		return err
+	}
+	committed = true
+
+	return nil
 }
 
 // Shallow returns a file pointer for read to the shallow file
