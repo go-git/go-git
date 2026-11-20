@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -16,7 +17,7 @@ import (
 // SendPack sends a packfile to a remote server.
 func SendPack(
 	ctx context.Context,
-	_ storage.Storer,
+	st storage.Storer,
 	caps capability.List,
 	writer io.WriteCloser,
 	reader io.ReadCloser,
@@ -40,7 +41,22 @@ func SendPack(
 		return fmt.Errorf("packfile is required for push request with new objects")
 	}
 
+	// git's send-pack refuses a server that cannot store the local format.
+	if err := internal.CheckPushObjectFormat(st, caps); err != nil {
+		return err
+	}
+	local := internal.ObjectFormat(st)
+
 	upreq := buildUpdateRequests(caps, req)
+
+	// Echo the repository's object format when the server advertised the
+	// capability, as git's send-pack does; receive-pack treats a missing
+	// value as sha1 and refuses a sha256 push otherwise.
+	if caps.Supports(capability.ObjectFormat) {
+		upreq.Capabilities.Set(capability.ObjectFormat, local.String())
+	}
+	upreq.Commands = sizeZeroIDs(upreq.Commands, local)
+
 	if err := upreq.Encode(writer); err != nil {
 		return err
 	}

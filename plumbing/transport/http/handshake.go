@@ -406,10 +406,14 @@ func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.Ge
 // single stateless HTTP POST: the request envelope is buffered and sent, and
 // the response is decoded from the response body. Fetch uses its own round
 // instead so it can stream the packfile from the body; Command is for
-// non-streaming commands such as ls-refs.
+// non-streaming commands such as ls-refs. A server that advertised an
+// object-format go-git does not know is refused before anything is sent.
 func (s *smartPackSession) Command(ctx context.Context, cmd string, req packp.CommandArgs, resp packp.Decoder) error {
 	if s.version != protocol.V2 {
 		return transport.ErrUnsupportedVersion
+	}
+	if err := internal.CheckServerObjectFormat(s.caps); err != nil {
+		return err
 	}
 
 	r := &httpRequester{session: s, ctx: ctx}
