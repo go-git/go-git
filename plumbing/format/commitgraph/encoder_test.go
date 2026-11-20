@@ -2,6 +2,9 @@ package commitgraph
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"crypto/sha256"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
 func TestEncodeFileHeaderRejectsTooManyChunks(t *testing.T) {
@@ -116,4 +120,44 @@ func TestEncodeDanglingEdgeReturnsError(t *testing.T) {
 
 	err := NewEncoder(&bytes.Buffer{}).Encode(idx)
 	require.ErrorIs(t, err, ErrParentNotInIndex)
+}
+
+// TestEncodeTwice checks that an Encoder can be reused: each Encode writes
+// a graph whose trailer is the checksum of that graph alone.
+func TestEncodeTwice(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		format formatcfg.ObjectFormat
+		sum    func([]byte) []byte
+	}{
+		{formatcfg.SHA1, func(b []byte) []byte { s := sha1.Sum(b); return s[:] }},
+		{formatcfg.SHA256, func(b []byte) []byte { s := sha256.Sum256(b); return s[:] }},
+	} {
+		t.Run(tc.format.String(), func(t *testing.T) {
+			t.Parallel()
+
+			hexSize := tc.format.HexSize()
+			mi := NewMemoryIndex()
+			mi.Add(plumbing.NewHash(strings.Repeat("a", hexSize)), &CommitData{
+				TreeHash:   plumbing.NewHash(strings.Repeat("b", hexSize)),
+				When:       time.Unix(1700000000, 0),
+				Generation: 1,
+			})
+
+			var fresh bytes.Buffer
+			require.NoError(t, NewEncoder(&fresh, WithObjectFormat(tc.format)).Encode(mi))
+			want := fresh.Bytes()
+			body := want[:len(want)-hexSize/2]
+			require.Equal(t, tc.sum(body), want[len(body):], "trailer")
+
+			var buf bytes.Buffer
+			e := NewEncoder(&buf, WithObjectFormat(tc.format))
+			require.NoError(t, e.Encode(mi))
+			require.NoError(t, e.Encode(mi))
+			require.Len(t, buf.Bytes(), 2*len(want))
+			assert.Equal(t, want, buf.Bytes()[:len(want)], "first Encode")
+			assert.Equal(t, want, buf.Bytes()[len(want):], "second Encode")
+		})
+	}
 }
