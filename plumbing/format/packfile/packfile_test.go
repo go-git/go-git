@@ -3,6 +3,7 @@ package packfile_test
 import (
 	"crypto"
 	"io"
+	"io/fs"
 	"math"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/internal/fixtureutil"
+	"github.com/go-git/go-git/v6/internal/packfile/access"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
@@ -376,4 +378,57 @@ func TestGetTypeByOffset(t *testing.T) {
 			assert.Equal(t, obj.Type(), typ, "object %s", h)
 		}
 	})
+}
+
+func TestDeltaObjectAt(t *testing.T) {
+	t.Parallel()
+
+	packs := fixtures.ByTag("packfile-entries")
+	require.GreaterOrEqual(t, len(packs), 2)
+
+	packs.Run(t, func(t *testing.T, f *fixtures.Fixture) {
+		t.Parallel()
+
+		entries := fixtureutil.Entries(f)
+		p := newPackfile(t, f)
+
+		var deltas int
+		for h, o := range entries {
+			obj, base, size, err := access.DeltaObjectAt(p, o)
+			require.NoError(t, err)
+
+			if !obj.Type().IsDelta() {
+				assert.Equal(t, h, obj.Hash())
+				assert.True(t, base.IsZero())
+				continue
+			}
+			deltas++
+
+			assert.Equal(t, obj.Size(), size)
+			baseObj, err := p.Get(base)
+			require.NoError(t, err)
+			full, err := p.GetByOffset(o)
+			require.NoError(t, err)
+
+			patched, err := packfile.PatchDelta(readContent(t, baseObj), readContent(t, obj))
+			require.NoError(t, err)
+			assert.Equal(t, readContent(t, full), patched)
+		}
+		assert.Positive(t, deltas)
+
+		require.NoError(t, p.Close())
+		_, _, _, err := access.DeltaObjectAt(p, 12)
+		assert.ErrorIs(t, err, fs.ErrClosed)
+	})
+}
+
+func readContent(t *testing.T, obj plumbing.EncodedObject) []byte {
+	t.Helper()
+
+	r, err := obj.Reader()
+	require.NoError(t, err)
+	defer r.Close()
+	b, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return b
 }

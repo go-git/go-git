@@ -9,9 +9,9 @@ import (
 	"io"
 	gosync "sync"
 
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
-	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 	"github.com/go-git/go-git/v6/utils/binary"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
@@ -109,7 +109,7 @@ func (o *ondemandObject) Reader() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return packfile.NewBoundedReadCloser(&zlibReadCloser{r: zr, rbuf: br}, o.size), nil
+	return packutil.NewBoundedReadCloser(&zlibReadCloser{r: zr, rbuf: br}, o.size), nil
 }
 
 // Hash holds the object's ID.
@@ -181,8 +181,8 @@ func (o *ondemandObject) resolveMetadata() error {
 		if err != nil {
 			return fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		if err := packfile.ValidateOFSDeltaBase(o.offset, negativeOffset); err != nil {
-			return err
+		if !packutil.ValidOFSDeltaBase(o.offset, negativeOffset) {
+			return fmt.Errorf("%w: invalid OFS delta offset", packfile.ErrMalformedPackfile)
 		}
 		baseOffset := uint64(o.offset) - uint64(negativeOffset)
 		consumed := len(o.scanner.packMmap[pos:]) - reader.Len()
@@ -266,8 +266,8 @@ func (o *ondemandObject) resolveDelta() (io.ReadCloser, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read OFS delta offset: %w", err)
 		}
-		if err := packfile.ValidateOFSDeltaBase(o.offset, negativeOffset); err != nil {
-			return nil, err
+		if !packutil.ValidOFSDeltaBase(o.offset, negativeOffset) {
+			return nil, fmt.Errorf("%w: invalid OFS delta offset", packfile.ErrMalformedPackfile)
 		}
 		baseOffset = uint64(o.offset) - uint64(negativeOffset)
 

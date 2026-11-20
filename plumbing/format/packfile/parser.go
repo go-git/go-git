@@ -120,7 +120,7 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 		p.lowMemoryMode = ok && lm.LowMemoryMode()
 	}
 
-	if p.scanner.seeker == nil {
+	if p.scanner.reader.seeker == nil {
 		p.lowMemoryMode = false
 	}
 	p.scanner.lowMemoryMode = p.lowMemoryMode
@@ -269,7 +269,7 @@ func (p *Parser) ensureContent(oh *ObjectHeader) error {
 		defer sync.PutBytesBuffer(source)
 
 		err = p.applyPatchBaseHeader(oh, source, oh.content, nil)
-	case p.scanner.seeker != nil:
+	case p.scanner.reader.seeker != nil:
 		deltaData := sync.GetBytesBuffer()
 		defer sync.PutBytesBuffer(deltaData)
 
@@ -523,7 +523,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, int64, error) 
 	}
 
 	// Not a seeker data source, so avoid seeking the content.
-	if p.scanner.seeker == nil {
+	if p.scanner.reader.seeker == nil {
 		return nil, 0, plumbing.ErrObjectNotFound
 	}
 

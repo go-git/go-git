@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -101,4 +102,19 @@ func TestCopyPackfileReaderFrom(t *testing.T) {
 	require.NoError(t, copyPackfile(w, strings.NewReader(data)))
 	assert.False(t, w.readFrom, "ReadFrom was called directly")
 	assert.Equal(t, data, w.String())
+}
+
+func TestInflatedSizeMismatchMatchesBoundedReader(t *testing.T) {
+	t.Parallel()
+
+	b := packutil.NewBoundedReadCloser(io.NopCloser(strings.NewReader("too long")), 1)
+	_, err := io.ReadAll(b)
+	assert.ErrorIs(t, err, ErrInflatedSizeMismatch)
+}
+
+func TestValidateOFSDeltaBase(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateOFSDeltaBase(100, 88))
+	assert.ErrorIs(t, validateOFSDeltaBase(100, 100), ErrMalformedPackfile)
 }

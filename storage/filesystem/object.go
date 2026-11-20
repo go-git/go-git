@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/go-git/go-git/v6/internal/packfile/access"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
@@ -888,53 +889,20 @@ func (s *ObjectStorage) getFromPackfileAt(pack plumbing.Hash, idx idxfile.Index,
 	return p.GetByOffset(offset)
 }
 
-// TODO: refactor this logic into packfile package.
 func (s *ObjectStorage) decodeDeltaObjectAt(
 	p *packfile.Packfile,
 	offset int64,
 	hash plumbing.Hash,
 ) (plumbing.EncodedObject, error) {
-	scan, err := p.Scanner() //nolint:staticcheck // TODO: Refactor to avoid deprecated Scanner method
+	obj, base, size, err := access.DeltaObjectAt(p, offset)
 	if err != nil {
 		return nil, err
 	}
-	err = scan.SeekFromStart(offset)
-	if err != nil {
-		return nil, err
+	if !obj.Type().IsDelta() {
+		return obj, nil
 	}
 
-	if !scan.Scan() {
-		return nil, fmt.Errorf("failed to decode delta object")
-	}
-
-	header := scan.Data().Value().(packfile.ObjectHeader)
-
-	var base plumbing.Hash
-
-	switch header.Type {
-	case plumbing.REFDeltaObject:
-		base = header.Reference
-	case plumbing.OFSDeltaObject:
-		base, err = p.FindHash(header.OffsetReference)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return p.GetByOffset(offset)
-	}
-
-	obj := &plumbing.MemoryObject{}
-	obj.SetType(header.Type)
-	w, err := obj.Writer()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := scan.WriteObject(&header, w); err != nil {
-		return nil, err
-	}
-
-	return newDeltaObject(obj, hash, base, header.Size), nil
+	return newDeltaObject(obj, hash, base, size), nil
 }
 
 // findObjectInPackfile locates h across the storage's packs and
