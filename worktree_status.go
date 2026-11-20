@@ -763,6 +763,12 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 	if err != nil {
 		return err
 	}
+	// Glob does not cross "/". A plain directory name matches no index
+	// path. A file and a directory cannot share that name, so this only
+	// runs when Glob found nothing.
+	if len(entries) == 0 {
+		entries = indexEntriesInDirectory(idx, pattern)
+	}
 
 	for _, e := range entries {
 		file := filepath.FromSlash(e.Name)
@@ -774,15 +780,53 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 			return err
 		}
 
-		dir, _ := filepath.Split(file)
-		if dir != "" {
-			if err := w.removeEmptyDirectory(dir); err != nil {
-				return err
-			}
+		if err := w.removeEmptyParents(file); err != nil {
+			return err
 		}
 	}
 
 	return w.r.Storer.SetIndex(idx)
+}
+
+// indexEntriesInDirectory returns tracked files under pattern when pattern
+// is an exact directory. Patterns that contain glob meta are left to Glob.
+func indexEntriesInDirectory(idx *index.Index, pattern string) []*index.Entry {
+	dir := path.Clean(strings.TrimRight(filepath.ToSlash(pattern), "/"))
+	if dir == "." || dir == "/" || dir == ".." || strings.HasPrefix(dir, "../") || strings.ContainsAny(dir, "*?[\\") {
+		return nil
+	}
+
+	prefix := dir + "/"
+	var matches []*index.Entry
+	for _, e := range idx.Entries {
+		if strings.HasPrefix(e.Name, prefix) {
+			matches = append(matches, e)
+		}
+	}
+	return matches
+}
+
+// removeEmptyParents removes file's parent directories while they are empty.
+// git rm -r does the same. It stops at the worktree root and at the first
+// directory that still has an entry.
+func (w *Worktree) removeEmptyParents(file string) error {
+	dir := filepath.Dir(file)
+	for dir != "." && dir != string(filepath.Separator) && dir != "" {
+		if err := w.removeEmptyDirectory(dir); err != nil {
+			if os.IsNotExist(err) {
+				dir = filepath.Dir(dir)
+				continue
+			}
+			return err
+		}
+		if _, err := w.filesystem.Lstat(dir); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		dir = filepath.Dir(dir)
+	}
+	return nil
 }
 
 // Move moves or rename a file in the worktree and the index, directories are

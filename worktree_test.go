@@ -4312,6 +4312,68 @@ func (s *WorktreeSuite) TestRemoveGlobDirectory() {
 	s.True(os.IsNotExist(err))
 }
 
+func (s *WorktreeSuite) TestRemoveGlobExactDirectory() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	err = util.WriteFile(w.filesystem, "json2/a", []byte("a"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.filesystem, "json-file", []byte("f"), 0o644)
+	s.NoError(err)
+	err = util.WriteFile(w.filesystem, "json/zz/c", []byte("c"), 0o644)
+	s.NoError(err)
+	_, err = w.Add("json2/a")
+	s.NoError(err)
+	_, err = w.Add("json-file")
+	s.NoError(err)
+	_, err = w.Add("json/zz/c")
+	s.NoError(err)
+
+	err = w.RemoveGlob("json")
+	s.NoError(err)
+
+	status, err := w.Status()
+	s.NoError(err)
+	s.Equal(Deleted, status.File("json/short.json").Staging)
+	s.Equal(Deleted, status.File("json/long.json").Staging)
+	s.Equal(Added, status.File("json2/a").Staging)
+	s.Equal(Added, status.File("json-file").Staging)
+	_, present := status["json/zz/c"]
+	s.False(present)
+
+	_, err = w.filesystem.Stat("json")
+	s.True(os.IsNotExist(err))
+	_, err = w.filesystem.Stat("json2/a")
+	s.NoError(err)
+	_, err = w.filesystem.Stat("json-file")
+	s.NoError(err)
+}
+
+func (s *WorktreeSuite) TestRemoveGlobExactDirectoryDotSlash() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+
+	err := w.Checkout(&CheckoutOptions{Force: true})
+	s.NoError(err)
+
+	err = w.RemoveGlob("./json")
+	s.NoError(err)
+
+	_, err = w.filesystem.Stat("json")
+	s.True(os.IsNotExist(err))
+	_, err = w.filesystem.Stat("LICENSE")
+	s.NoError(err)
+}
+
 func (s *WorktreeSuite) TestRemoveGlobDirectoryDeleted() {
 	fs := memfs.New()
 	w := &Worktree{
