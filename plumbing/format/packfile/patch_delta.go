@@ -515,6 +515,11 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, baseSz int64, delta []byt
 		return 0, plumbing.ZeroHash, err
 	}
 
+	hasher, err := plumbing.NewHasher(of, typ, int64(targetSz))
+	if err != nil {
+		return 0, plumbing.ZeroHash, err
+	}
+
 	// Avoid several interactions expanding the buffer, which can be quite
 	// inefficient on large deltas. targetSz has been validated against the
 	// operation stream, so all of it can be made available at once.
@@ -534,7 +539,6 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, baseSz int64, delta []byt
 
 	remainingTargetSz := targetSz
 
-	hasher := plumbing.NewHasher(of, typ, int64(targetSz))
 	mw := io.MultiWriter(dst, hasher)
 
 	bufp := sync.GetByteSlice()

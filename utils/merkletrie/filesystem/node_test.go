@@ -290,7 +290,8 @@ func (s *NoderSuite) TestRacyGit() {
 	s.Require().NoError(err)
 	modTime := fi.ModTime()
 
-	fooHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(origContent)))
+	fooHasher, err := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(origContent)))
+	s.Require().NoError(err)
 	_, err = fooHasher.Write(origContent)
 	s.Require().NoError(err)
 	fooHash := fooHasher.Sum()
@@ -328,7 +329,8 @@ func (s *NoderSuite) TestRacyGit() {
 	s.Equal(newContent, actualContent, "content should have changed")
 	s.NotEqual(origContent, actualContent, "content should be different")
 
-	barHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(newContent)))
+	barHasher, err := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(newContent)))
+	s.Require().NoError(err)
 	_, err = barHasher.Write(newContent)
 	s.Require().NoError(err)
 	barHash := barHasher.Sum()
@@ -368,14 +370,16 @@ func (s *NoderSuite) TestZeroIndexModTime() {
 	modTime := fi.ModTime()
 
 	// Calculate the actual hash for the file content
-	actualHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
+	actualHasher, err := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
+	s.Require().NoError(err)
 	_, err = actualHasher.Write(content)
 	s.Require().NoError(err)
 	actualHash := actualHasher.Sum()
 
 	// Create a fake hash for the index entry (different from actual)
 	fakeContent := []byte("bar")
-	fakeHasher := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(fakeContent)))
+	fakeHasher, err := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(fakeContent)))
+	s.Require().NoError(err)
 	_, err = fakeHasher.Write(fakeContent)
 	s.Require().NoError(err)
 	fakeHash := fakeHasher.Sum()

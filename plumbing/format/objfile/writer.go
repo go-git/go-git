@@ -47,7 +47,9 @@ func NewWriter(w io.Writer, objectFormat format.ObjectFormat) *Writer {
 // object's contents. If an invalid t is provided, plumbing.ErrInvalidType
 // is returned. If a negative size is provided, ErrNegativeSize is
 // returned. If the encoded header exceeds maxHeaderLen,
-// ErrHeaderTooLong is returned, mirroring the reader's bound.
+// ErrHeaderTooLong is returned, mirroring the reader's bound. If the
+// Writer's object format is not supported, an error wrapping
+// [github.com/go-git/go-git/v6/plumbing/hash.ErrUnsupportedHashFunction] is returned.
 func (w *Writer) WriteHeader(t plumbing.ObjectType, size int64) error {
 	if !t.Valid() {
 		return plumbing.ErrInvalidType
@@ -70,15 +72,20 @@ func (w *Writer) writeHeader(t plumbing.ObjectType, typeBytes []byte, size int64
 		return ErrHeaderTooLong
 	}
 
-	defer w.prepareForWrite(t, size)
-	_, err := w.zlib.Write(b)
+	hasher, err := plumbing.NewHasher(w.objectFormat, t, size)
+	if err != nil {
+		return err
+	}
+
+	defer w.prepareForWrite(hasher, size)
+	_, err = w.zlib.Write(b)
 	return err
 }
 
-func (w *Writer) prepareForWrite(t plumbing.ObjectType, size int64) {
+func (w *Writer) prepareForWrite(hasher plumbing.Hasher, size int64) {
 	w.pending = size
 
-	w.hasher = plumbing.NewHasher(w.objectFormat, t, size)
+	w.hasher = hasher
 	w.multi = io.MultiWriter(w.zlib, w.hasher)
 }
 

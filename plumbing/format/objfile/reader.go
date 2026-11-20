@@ -39,8 +39,14 @@ type Reader struct {
 }
 
 // NewReader returns a new Reader reading from r and hashing objects with the
-// given object format.
+// given object format. An unsupported object format returns an error
+// wrapping [github.com/go-git/go-git/v6/plumbing/hash.ErrUnsupportedHashFunction].
 func NewReader(r io.Reader, objectFormat format.ObjectFormat) (*Reader, error) {
+	hasher, err := plumbing.NewHasher(objectFormat, plumbing.AnyObject, 0)
+	if err != nil {
+		return nil, err
+	}
+
 	zlib, err := sync.GetZlibReader(r)
 	if err != nil {
 		return nil, packfile.ErrZLib.AddDetails("%s", err.Error())
@@ -48,6 +54,7 @@ func NewReader(r io.Reader, objectFormat format.ObjectFormat) (*Reader, error) {
 
 	return &Reader{
 		zlib:         zlib,
+		hasher:       hasher,
 		objectFormat: objectFormat,
 	}, nil
 }
@@ -110,7 +117,7 @@ func (r *Reader) readUntil(delim byte, budget int) ([]byte, int, error) {
 }
 
 func (r *Reader) prepareForRead(t plumbing.ObjectType, size int64) {
-	r.hasher = plumbing.NewHasher(r.objectFormat, t, size)
+	r.hasher.Reset(t, size)
 	r.multi = io.TeeReader(r.zlib, r.hasher)
 }
 

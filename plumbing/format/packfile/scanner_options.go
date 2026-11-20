@@ -15,7 +15,8 @@ type ScannerOption func(*Scanner)
 // WithSHA256 enables the SHA256 hashing while scanning a pack file.
 func WithSHA256() ScannerOption {
 	return func(s *Scanner) {
-		h := plumbing.NewHasher(format.SHA256, plumbing.AnyObject, 0)
+		// NewHasher cannot fail for SHA-256.
+		h, _ := plumbing.NewHasher(format.SHA256, plumbing.AnyObject, 0)
 		s.objectIDSize = format.SHA256Size
 		s.hasher = h
 		s.packhash = hash.New(crypto.SHA256)

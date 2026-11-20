@@ -1400,6 +1400,25 @@ func (s *SuiteDotGit) TestObjectsExclusive() {
 	testObjectsWithPrefix(s, fs, dir)
 }
 
+func TestObjectsSkipsMalformedNames(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	full := "a8a940627d132695a9769df883f85992f0ff4a43"
+	for _, name := range []string{
+		full[2:],
+		"cd",
+		full[2:] + "00",
+		"tmp_obj_123456",
+	} {
+		require.NoError(t, util.WriteFile(fs, fs.Join("objects", "a8", name), []byte("x"), 0o644))
+	}
+
+	hashes, err := New(fs).Objects()
+	require.NoError(t, err)
+	require.Len(t, hashes, 1)
+	assert.Equal(t, full, hashes[0].String())
+}
+
 func testObjects(s *SuiteDotGit, _ billy.Filesystem, dir *DotGit) {
 	hashes, err := dir.Objects()
 	s.Require().NoError(err)

@@ -105,11 +105,26 @@ func NewObjectStorage(dir *dotgit.DotGit, objectCache cache.Object) *ObjectStora
 
 // NewObjectStorageWithOptions creates a new ObjectStorage with the given .git directory, cache and extra options
 func NewObjectStorageWithOptions(dir *dotgit.DotGit, objectCache cache.Object, ops Options) *ObjectStorage {
+	// NewObjectHasher cannot fail for a supported format.
+	oh, _ := plumbing.NewObjectHasher(supportedObjectFormat(ops.ObjectFormat))
 	return &ObjectStorage{
 		options:     ops,
 		objectCache: objectCache,
 		dir:         dir,
-		oh:          plumbing.FromObjectFormat(ops.ObjectFormat),
+		oh:          oh,
+	}
+}
+
+// supportedObjectFormat returns [f] when go-git can hash objects in it,
+// and [hash.DefaultObjectFormat] otherwise. It is for constructors that
+// cannot return an error. Repositories with an unsupported format are
+// rejected when their extensions are validated on open.
+func supportedObjectFormat(f hash.ObjectFormat) hash.ObjectFormat {
+	switch f {
+	case hash.SHA1, hash.SHA256:
+		return f
+	default:
+		return hash.DefaultObjectFormat
 	}
 }
 

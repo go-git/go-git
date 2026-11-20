@@ -432,7 +432,11 @@ type Reference struct {
 
 // NewReferenceFromStrings creates a reference from name and target as string,
 // the resulting reference can be a SymbolicReference or a HashReference base
-// on the target provided
+// on the target provided.
+//
+// A hash target is parsed leniently, like [NewHash]: a target that is not
+// hexadecimal yields [ZeroHash], and one that is not a full object id is
+// zero-padded or truncated.
 func NewReferenceFromStrings(name, target string) *Reference {
 	n := ReferenceName(name)
 
@@ -441,7 +445,8 @@ func NewReferenceFromStrings(name, target string) *Reference {
 		return NewSymbolicReference(n, target)
 	}
 
-	return NewHashReference(n, NewHash(target))
+	h, _ := fromHexLax(target)
+	return NewHashReference(n, h)
 }
 
 // NewSymbolicReference creates a new SymbolicReference reference

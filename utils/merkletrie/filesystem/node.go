@@ -458,7 +458,10 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	}
 	defer func() { _ = f.Close() }()
 
-	h := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	h, err := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	if err != nil {
+		return plumbing.ZeroHash
+	}
 	var dst io.Writer = h
 
 	if n.options != nil && n.options.AutoCRLF {
@@ -493,7 +496,10 @@ func (n *node) doCalculateHashForSymlink() plumbing.Hash {
 		return plumbing.ZeroHash
 	}
 
-	h := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	h, err := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	if err != nil {
+		return plumbing.ZeroHash
+	}
 	if _, err := h.Write([]byte(target)); err != nil {
 		return plumbing.ZeroHash
 	}

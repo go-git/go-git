@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
@@ -74,7 +75,6 @@ type Parser struct {
 
 	scanner   *Scanner
 	observers []Observer
-	hasher    plumbing.Hasher
 
 	objectFormat format.ObjectFormat
 
@@ -105,7 +105,6 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 		}
 	}
 
-	p.hasher = plumbing.NewHasher(p.objectFormat, plumbing.AnyObject, 0)
 	var sopts []ScannerOption
 	if p.objectFormat == format.SHA256 {
 		sopts = append(sopts, WithSHA256())
@@ -182,6 +181,13 @@ func (p *Parser) Parse() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, ErrParserConsumed
 	}
 	p.parsed = true
+
+	switch p.objectFormat {
+	case format.SHA1, format.SHA256:
+	default:
+		return plumbing.ZeroHash, fmt.Errorf("%w: object format %q",
+			hash.ErrUnsupportedHashFunction, p.objectFormat)
+	}
 
 	var pendingDeltas []*ObjectHeader
 	var pendingDeltaREFs []*ObjectHeader
