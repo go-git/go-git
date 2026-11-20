@@ -21,6 +21,10 @@ type ReferenceStorer interface {
 	// not `nil`, it first checks that the current stored value for
 	// `old.Name()` matches the given reference value in `old`.  If
 	// not, it returns an error and doesn't update `new`.
+	//
+	// As in git, a reference that doesn't exist has the zero hash: a hash
+	// reference `old` with the zero hash requires that the reference
+	// doesn't exist yet, as with `git update-ref <ref> <new> <zero-oid>`.
 	CheckAndSetReference(newRef, old *plumbing.Reference) error
 	Reference(plumbing.ReferenceName) (*plumbing.Reference, error)
 	IterReferences() (ReferenceIter, error)

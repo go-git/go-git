@@ -12,7 +12,11 @@ import (
 // deletes use less restrictive path-safety checks so that existing names such
 // as refs/heads/main.lock can be inspected and removed. IterReferences reports
 // stored entries without applying either name check; an enumerated name is not
-// necessarily readable or writable.
+// necessarily readable or writable. Like git, it skips the lock files of
+// reference updates, loose files whose name ends in ".lock".
+//
+// Writes and deletes hold the lock file of the reference, as git does, so they
+// exclude each other and git's own updates of the reference.
 //
 // Path-safety checks apply on every operating system. They reject backslashes,
 // control characters, non-reference root names, and path components that HFS+
