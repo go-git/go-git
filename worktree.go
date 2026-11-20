@@ -402,7 +402,7 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 		// The index identifies tracked paths even when the old HEAD tree is
 		// unreadable. Capture its diff before resetIndex replaces it, including
 		// staged additions that must be removed when absent from the target.
-		trackedChanges, err = w.diffTreeWithStaging(t, true)
+		trackedChanges, err = w.diffTreeWithStaging(t, true, "")
 		if err != nil {
 			return err
 		}
@@ -548,7 +548,7 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 	b := newIndexBuilder(idx)
 
 	if changes == nil {
-		if changes, err = w.diffTreeWithStaging(t, true); err != nil {
+		if changes, err = w.diffTreeWithStaging(t, true, ""); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -842,7 +842,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 	// Delete actions. The observable result is unchanged because Delete
 	// actions are skipped by the loop below; the matcher only avoids the
 	// pointless lstat of every file under directories like node_modules.
-	worktreeChanges, err := w.diffIndexWithWorktree(cfg, idx, true, true)
+	worktreeChanges, err := w.diffIndexWithWorktree(cfg, idx, true, true, "")
 	if err != nil {
 		return err
 	}
@@ -909,7 +909,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 // noder's IgnoreScope would prune it from the walk and the Delete
 // action needed to remove it from disk would never be emitted.
 func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.Index, files []string) error {
-	changes, err := w.diffIndexWithWorktree(cfg, idx, true, false)
+	changes, err := w.diffIndexWithWorktree(cfg, idx, true, false, "")
 	if err != nil {
 		return err
 	}
@@ -1004,7 +1004,7 @@ func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch
 }
 
 func (w *Worktree) containsUnstagedChanges(cfg *config.Config) (bool, error) {
-	ch, err := w.diffStagingWithWorktree(cfg, false, true)
+	ch, err := w.diffStagingWithWorktree(cfg, false, true, "")
 	if err != nil {
 		return false, err
 	}
