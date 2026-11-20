@@ -9,18 +9,17 @@ var pktBuffer = sync.Pool{
 	},
 }
 
-// GetBuffer returns a *[MaxSize]byte that is managed by a sync.Pool. The
-// initial slice length will be 65520 (65kb).
+// getBuffer returns a *[MaxSize]byte that is managed by a sync.Pool.
 //
 // After use, the *[MaxSize]byte should be put back into the sync.Pool by
-// calling PutBuffer.
-func GetBuffer() *[MaxSize]byte {
+// calling putBuffer.
+func getBuffer() *[MaxSize]byte {
 	buf := pktBuffer.Get().(*[MaxSize]byte)
 	return buf
 }
 
-// PutBuffer puts buf back into its sync.Pool.
-func PutBuffer(buf *[MaxSize]byte) {
+// putBuffer puts buf back into its sync.Pool.
+func putBuffer(buf *[MaxSize]byte) {
 	if buf == nil {
 		return
 	}

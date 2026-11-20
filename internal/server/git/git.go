@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/backend"
+	"github.com/go-git/go-git/v6/internal/transport/loader"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -31,7 +32,7 @@ var errAlreadyStarted = errors.New("git: server already started")
 // Server is a git:// protocol server.
 type Server struct {
 	// Loader resolves repository URLs to storage. If nil,
-	// [transport.DefaultLoader] is used.
+	// [loader.Default] is used.
 	Loader transport.Loader
 
 	// ErrorLog is used to log errors. If nil, errors are not logged.
@@ -90,15 +91,24 @@ func (s *Server) Start() (string, error) {
 	}
 
 	if s.Loader == nil {
-		s.Loader = transport.DefaultLoader
+		s.Loader = loader.Default()
 	}
+
+	srv, err := backend.New(s.Loader)
+	if err != nil {
+		return "", fmt.Errorf("git: %w", err)
+	}
+	// The server backs tests that push and archive over git://, like a
+	// git daemon run with --enable=receive-pack --enable=upload-archive.
+	srv.ReceivePack = backend.ServiceEnabled
+	srv.UploadArchive = backend.ServiceEnabled
 
 	ln, err := net.Listen("tcp", defaultAddr)
 	if err != nil {
 		return "", fmt.Errorf("git: listen: %w", err)
 	}
 
-	s.srv = backend.New(s.Loader)
+	s.srv = srv
 	s.conns = make(map[net.Conn]context.CancelFunc)
 	s.done = make(chan struct{})
 	s.ln = ln

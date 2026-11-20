@@ -40,11 +40,11 @@ New filesystems (e.g. cloud based storage) could be created by implementing `go-
 
 ## Transport Schemes
 
-Git supports various transport schemes, including `http`, `https`, `ssh`, `git`, `file`. `go-git` defines the [transport.Transport interface](plumbing/transport/common.go#L48) to represent them.
+Git supports various transport schemes, including `http`, `https`, `ssh`, `git`, `file`. `go-git` defines the [transport.Transport interface](plumbing/transport/pack_session.go) to represent them.
 
-The built-in implementations can be replaced by calling `transport.Register`.
+The built-in implementations can be replaced, or new schemes added, per operation with `client.WithTransport`, passed through the `ClientOptions` field of the operation's options.
 
-An example of changing the built-in `https` implementation to skip TLS could look like this:
+An example of changing the built-in `https` implementation to use a custom HTTP client could look like this:
 
 ```go
 	customClient := &http.Client{
@@ -53,10 +53,15 @@ An example of changing the built-in `https` implementation to skip TLS could loo
 		},
 	}
 
-	transport.Register("https", githttp.NewTransport(&githttp.TransportOptions{Client: customClient}))
+	_, err := git.PlainClone("/tmp/foo", &git.CloneOptions{
+		URL: "https://github.com/go-git/go-git",
+		ClientOptions: []client.Option{
+			client.WithTransport("https", githttp.NewTransport(githttp.Options{Client: customClient})),
+		},
+	})
 ```
 
-Some internal implementations enables code reuse amongst the different transport implementations. Some of these may be made public in the future (e.g. `plumbing/transport/internal/common`).
+The `plumbing/transport` package documentation describes the helpers a custom transport uses (`NewStreamSession`, `NegotiatePack`, `FetchPack`, `SendPack`) and the order in which it calls them.
 
 ## Cache
 
