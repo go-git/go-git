@@ -11,6 +11,7 @@ import (
 	"hash"
 	"io"
 	"maps"
+	"math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
@@ -54,8 +55,16 @@ const (
 	worktreesPath      = "worktrees"
 	alternatesPath     = "alternates"
 
-	tmpPackedRefsPrefix = "._packed-refs"
-	packedRefsHeader    = "# pack-refs with: "
+	// stagedPackedRefsPrefix starts the names of the files a new packed-refs is
+	// staged in, beside it. Git stages it in packed-refs.new, next to
+	// packed-refs.lock.
+	stagedPackedRefsPrefix = packedRefsPath + "."
+
+	// maxStagedPackedRefsAttempts bounds the names tried for a staged file,
+	// as os.CreateTemp does.
+	maxStagedPackedRefsAttempts = 10000
+
+	packedRefsHeader = "# pack-refs with: "
 
 	packPrefix = "pack-"
 	packExt    = ".pack"
@@ -1691,6 +1700,22 @@ func (d *DotGit) openAndLockPackedRefs(doCreate bool) (
 	return f, nil
 }
 
+// createStagedPackedRefs creates a new, uniquely named file beside packed-refs
+// for its replacement content, and returns it open for writing. The caller
+// renames it over packed-refs or removes it.
+func (d *DotGit) createStagedPackedRefs() (billy.File, error) {
+	var err error
+	for range maxStagedPackedRefsAttempts {
+		var f billy.File
+		name := fmt.Sprintf("%s%016x", stagedPackedRefsPrefix, rand.Uint64())
+		f, err = d.fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		if !errors.Is(err, os.ErrExist) {
+			return f, err
+		}
+	}
+	return nil, fmt.Errorf("staging packed-refs: %w", err)
+}
+
 func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err error) {
 	pr, err := d.openAndLockPackedRefs(false)
 	if err != nil {
@@ -1701,9 +1726,8 @@ func (d *DotGit) rewritePackedRefsWithoutRef(name plumbing.ReferenceName) (err e
 	}
 	defer ioutil.CheckClose(pr, &err)
 
-	// Creating the temp file in the same directory as the target file
-	// improves our chances for rename operation to be atomic.
-	tmp, err := d.fs.TempFile("", tmpPackedRefsPrefix)
+	// Staging the new file beside the target keeps the rename atomic.
+	tmp, err := d.createStagedPackedRefs()
 	if err != nil {
 		return err
 	}
@@ -1770,8 +1794,60 @@ func (d *DotGit) processLine(line string) (*plumbing.Reference, error) {
 	}
 }
 
+// perWorktreeRefDirs are the directories under refs that Git keeps per
+// worktree, and does not pack:
+// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/path.c#L98-L119
+var perWorktreeRefDirs = []string{"bisect", "rewritten", "worktree"}
+
+func isPerWorktreeRef(name plumbing.ReferenceName) bool {
+	for _, dir := range perWorktreeRefDirs {
+		if strings.HasPrefix(name.String(), refsPath+"/"+dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// addRefsFromRefDir lists the loose references. In a linked worktree, refs
+// lists only the common directory, which may not have the per-worktree
+// directories, so those are walked on their own, as
+// add_per_worktree_entries_to_dir does in Git's refs/files-backend.c.
 func (d *DotGit) addRefsFromRefDir(refs *[]*plumbing.Reference, seen map[plumbing.ReferenceName]bool) error {
-	return d.walkReferencesTree(refs, []string{refsPath}, seen)
+	if err := d.walkReferencesTree(refs, []string{refsPath}, seen); err != nil {
+		return err
+	}
+	for _, dir := range perWorktreeRefDirs {
+		name := refsPath + "/" + dir
+		st, err := d.fs.Stat(name)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+
+		if st.IsDir() {
+			err = d.walkReferencesTree(refs, []string{refsPath, dir}, seen)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// A reference may be named like the directory.
+		if seen[plumbing.ReferenceName(name)] {
+			continue
+		}
+		ref, err := d.readReferenceFile(".", name)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if ref != nil {
+			*refs = append(*refs, ref)
+			seen[ref.Name()] = true
+		}
+	}
+	return nil
 }
 
 func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []string, seen map[plumbing.ReferenceName]bool) error {
@@ -1795,7 +1871,12 @@ func (d *DotGit) walkReferencesTree(refs *[]*plumbing.Reference, relPath []strin
 			continue
 		}
 
-		ref, err := d.readReferenceFile(".", strings.Join(newRelPath, "/"))
+		name := strings.Join(newRelPath, "/")
+		if seen[plumbing.ReferenceName(name)] {
+			continue
+		}
+
+		ref, err := d.readReferenceFile(".", name)
 		if os.IsNotExist(err) {
 			// a race happened, and our file is gone now
 			continue
@@ -1893,7 +1974,8 @@ func (d *DotGit) PackRefs() (err error) {
 	}
 	packable := refs[:0]
 	for _, ref := range refs {
-		if ref.Type() != plumbing.HashReference || ref.Hash().IsZero() || ref.Name().Validate() != nil {
+		if ref.Type() != plumbing.HashReference || ref.Hash().IsZero() || ref.Name().Validate() != nil ||
+			isPerWorktreeRef(ref.Name()) {
 			delete(seen, ref.Name())
 			continue
 		}
@@ -1966,7 +2048,7 @@ func (d *DotGit) PackRefs() (err error) {
 	}
 
 	// Write them all to a new temp packed-refs file.
-	tmp, err := d.fs.TempFile("", tmpPackedRefsPrefix)
+	tmp, err := d.createStagedPackedRefs()
 	if err != nil {
 		return err
 	}
