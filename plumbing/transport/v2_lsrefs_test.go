@@ -258,4 +258,7 @@ func TestV2GetRemoteRefsUnbornOnlyIsEmpty(t *testing.T) {
 	s := newV2Session(t, serve)
 	_, err := s.GetRemoteRefs(context.TODO(), nil)
 	require.ErrorIs(t, err, ErrEmptyRemoteRepository)
+	var emptyErr *EmptyRemoteRepositoryError
+	require.ErrorAs(t, err, &emptyErr)
+	require.Equal(t, plumbing.ReferenceName("refs/heads/main"), emptyErr.Unborn)
 }

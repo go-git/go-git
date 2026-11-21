@@ -146,7 +146,6 @@ func AdvertiseCapabilities(_ context.Context, st storage.Storer, w io.Writer, se
 // it is advertised as the single token upstream uses.
 //
 // TODO: advertise these once implemented:
-//   - ls-refs=unborn       report an unborn HEAD on an empty repository
 //   - fetch=filter         partial-clone object filters
 //   - fetch=ref-in-want    want-ref negotiation
 //   - fetch=sideband-all   sideband for the entire response, not just the packfile
@@ -157,7 +156,7 @@ func AdvertiseCapabilities(_ context.Context, st storage.Storer, w io.Writer, se
 func serverV2Capabilities(st storage.Storer) capability.List {
 	var caps capability.List
 	caps.Set(capability.Agent, capability.DefaultAgent())
-	caps.Set(capability.LsRefs)
+	caps.Set(capability.LsRefs, "unborn")
 	caps.Set(capability.FetchCmd, "shallow")
 	caps.Set(capability.ObjectFormat, objectFormat(st).String())
 	return caps

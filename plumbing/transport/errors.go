@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	internal "github.com/go-git/go-git/v6/internal/transport"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 // Transport errors.
@@ -28,6 +29,21 @@ var (
 // fetch reports only junk the storage left unread, so small junk can go
 // unnoticed. See [FetchPack].
 var ErrPackJunk = internal.ErrPackJunk
+
+// EmptyRemoteRepositoryError is returned when an empty remote repository is
+// encountered. If the remote advertised an unborn HEAD over Protocol v2,
+// Unborn contains its symref target (e.g. "refs/heads/main").
+type EmptyRemoteRepositoryError struct {
+	Unborn plumbing.ReferenceName
+}
+
+func (e *EmptyRemoteRepositoryError) Error() string {
+	return ErrEmptyRemoteRepository.Error()
+}
+
+func (e *EmptyRemoteRepositoryError) Unwrap() error {
+	return ErrEmptyRemoteRepository
+}
 
 // Transport capability and support errors.
 var (
