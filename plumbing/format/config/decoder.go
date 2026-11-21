@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"io"
 
@@ -18,7 +19,9 @@ func NewDecoder(r io.Reader) *Decoder {
 }
 
 // Decode reads the whole config from its input and stores it in the
-// value pointed to by config.
+// value pointed to by config. A section header in the legacy
+// `[section.subsection]` form, which Git still reads, is read as
+// `[section "subsection"]`, with both names lowercased as Git does.
 func (d *Decoder) Decode(config *Config) error {
 	if config == nil {
 		return errors.New("config is nil")
@@ -40,7 +43,15 @@ func (d *Decoder) Decode(config *Config) error {
 		}
 		return nil
 	}
-	return gcfg.ReadWithCallback(d, cb)
+	src, err := io.ReadAll(d)
+	if err != nil {
+		return err
+	}
+	src, err = rewriteLegacyHeaders(src)
+	if err != nil {
+		return err
+	}
+	return gcfg.ReadWithCallback(bytes.NewReader(src), cb)
 }
 
 // decodeIndex resolves the sections and subsections a decoder writes into.
