@@ -93,7 +93,8 @@ type CloneOptions struct {
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
 	// Bare determines whether the repository will have a worktree (non-bare)
-	// or not (bare).
+	// or not (bare). Clone and CloneContext return ErrBareCloneWithWorktree
+	// when Bare is set and a worktree is given.
 	Bare bool
 	// AllowEmptyRepo when set to true, cloning an empty remote repository
 	// will not return an error. The resulting repository will be initialized

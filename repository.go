@@ -36,6 +36,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
 	"github.com/go-git/go-git/v6/x/plugin"
+	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
 // GitDirName this is a special folder where all the git stuff is.
@@ -81,6 +82,9 @@ var (
 	ErrFastForwardMergeNotPossible = errors.New("not possible to fast-forward merge changes")
 	// ErrTargetDirNotEmpty is returned when the destination path is not empty.
 	ErrTargetDirNotEmpty = errors.New("destination path already exists and is not empty")
+	// ErrBareCloneWithWorktree is returned when a bare or mirror clone is
+	// requested together with a worktree.
+	ErrBareCloneWithWorktree = errors.New("bare clone cannot have a worktree")
 )
 
 // Repository represents a git repository
@@ -92,26 +96,27 @@ type Repository struct {
 }
 
 type initOptions struct {
-	defaultBranch plumbing.ReferenceName
-	workTree      billy.Filesystem
-	objectFormat  formatcfg.ObjectFormat
-	partialInit   bool
+	defaultBranch    plumbing.ReferenceName
+	defaultBranchSet bool
+	workTree         billy.Filesystem
+	objectFormat     formatcfg.ObjectFormat
+	partialInit      bool
 }
 
 func newInitOptions() initOptions {
-	return initOptions{
-		defaultBranch: plumbing.Master,
-		workTree:      nil,
-	}
+	return initOptions{}
 }
 
 // InitOption configures repository initialization.
 type InitOption func(*initOptions)
 
 // WithDefaultBranch sets the default branch for the new repo (e.g. "refs/heads/master").
+// If not used, init.defaultBranch from the global or system config is used,
+// falling back to "refs/heads/master" when that is unset.
 func WithDefaultBranch(b plumbing.ReferenceName) InitOption {
 	return func(o *initOptions) {
 		o.defaultBranch = b
+		o.defaultBranchSet = true
 	}
 }
 
@@ -140,7 +145,10 @@ func withPartialInit() InitOption {
 
 // Init creates an empty git repository, based on the given Storer and worktree.
 // The worktree Filesystem is optional, if nil a bare repository is created. If
-// the given storer is not empty ErrTargetDirNotEmpty is returned
+// the given storer is not empty ErrTargetDirNotEmpty is returned.
+//
+// The caller owns the given Storer. Init does not close it, including when an
+// error is returned.
 func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
@@ -157,16 +165,6 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	}
 
 	if err := initStorer(s); err != nil {
-		if closer, ok := s.(io.Closer); ok {
-			_ = closer.Close()
-		}
-		return nil, err
-	}
-
-	if err := options.defaultBranch.Validate(); err != nil {
-		if closer, ok := s.(io.Closer); ok {
-			_ = closer.Close()
-		}
 		return nil, err
 	}
 
@@ -175,10 +173,27 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 	switch err {
 	case plumbing.ErrReferenceNotFound:
 	case nil:
-		_ = r.Close()
 		return nil, ErrTargetDirNotEmpty
 	default:
-		_ = r.Close()
+		return nil, err
+	}
+
+	// Like git, the default branch is only resolved for a new repository.
+	if !options.partialInit {
+		if !options.defaultBranchSet {
+			b, err := r.defaultBranch()
+			if err != nil {
+				return nil, err
+			}
+			options.defaultBranch = b
+		}
+
+		if err := options.defaultBranch.Validate(); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := setInitObjectFormat(s, options.objectFormat); err != nil {
 		return nil, err
 	}
 
@@ -188,11 +203,89 @@ func Init(s storage.Storer, opts ...InitOption) (*Repository, error) {
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, options.defaultBranch)
 	if err := s.SetReference(h); err != nil {
-		_ = r.Close()
 		return nil, err
 	}
 
 	return r, r.setWorktreeAndStoragePaths()
+}
+
+// setInitObjectFormat applies the object format requested for a new
+// repository. SHA-1 is the default format, so like git it leaves the config
+// untouched when the storer already uses SHA-1.
+func setInitObjectFormat(s storage.Storer, of formatcfg.ObjectFormat) error {
+	if of == formatcfg.UnsetObjectFormat {
+		return nil
+	}
+
+	cfg, err := s.Config()
+	if err != nil {
+		return err
+	}
+
+	current := cfg.Extensions.ObjectFormat
+	if current == formatcfg.UnsetObjectFormat {
+		current = formatcfg.SHA1
+	}
+	if of == current {
+		return nil
+	}
+
+	setter, ok := s.(xstorage.ObjectFormatSetter)
+	if !ok {
+		return fmt.Errorf("storer does not support object format %q", of)
+	}
+
+	return setter.SetObjectFormat(of)
+}
+
+// defaultBranch returns the branch that HEAD points to in a new repository.
+// Like git, it reads init.defaultBranch from the system and global config and
+// falls back to master when that is unset. A key that is present but empty is
+// an error, as in git.
+func (r *Repository) defaultBranch() (plumbing.ReferenceName, error) {
+	// Use Has before Get so the key is not frozen when no plugin is
+	// registered, allowing callers to register one later.
+	if !plugin.Has(plugin.ConfigLoader()) {
+		return plumbing.Master, nil
+	}
+
+	src, err := plugin.Get(plugin.ConfigLoader())
+	if err != nil {
+		return "", err
+	}
+
+	var name string
+	var set bool
+	// Global is read last so that it takes precedence over system.
+	for _, scope := range []config.Scope{config.SystemScope, config.GlobalScope} {
+		st, err := src.Load(scope)
+		if err != nil {
+			return "", err
+		}
+		cfg, err := st.Config()
+		if err != nil {
+			return "", err
+		}
+
+		switch {
+		case cfg.Init.DefaultBranch != "":
+			name, set = cfg.Init.DefaultBranch, true
+		case cfg.Raw != nil && cfg.Raw.HasSection("init") &&
+			cfg.Raw.Section("init").Options.Has("defaultBranch"):
+			name, set = "", true
+		}
+	}
+
+	if !set {
+		return plumbing.Master, nil
+	}
+
+	b := plumbing.NewBranchReferenceName(name)
+	if err := b.Validate(); err != nil {
+		return "", fmt.Errorf("invalid branch name: init.defaultBranch = %s: %w", name, err)
+	}
+
+	return b, nil
 }
 
 func initStorer(s storer.Storer) error {
@@ -301,14 +394,18 @@ func Open(s storage.Storer, worktree billy.Filesystem) (*Repository, error) {
 
 // Clone a repository into the given Storer and worktree Filesystem with the
 // given options, if worktree is nil a bare repository is created. If the given
-// storer is not empty ErrTargetDirNotEmpty is returned.
+// storer is not empty ErrTargetDirNotEmpty is returned. A bare or mirror clone
+// cannot have a worktree, so ErrBareCloneWithWorktree is returned when
+// CloneOptions.Bare or CloneOptions.Mirror is set and worktree is not nil.
 func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repository, error) {
 	return CloneContext(context.Background(), s, worktree, o)
 }
 
 // CloneContext a repository into the given Storer and worktree Filesystem with
 // the given options, if worktree is nil a bare repository is created. If the
-// given storer is not empty ErrTargetDirNotEmpty is returned.
+// given storer is not empty ErrTargetDirNotEmpty is returned. A bare or mirror
+// clone cannot have a worktree, so ErrBareCloneWithWorktree is returned when
+// CloneOptions.Bare or CloneOptions.Mirror is set and worktree is not nil.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
@@ -316,14 +413,21 @@ func Clone(s storage.Storer, worktree billy.Filesystem, o *CloneOptions) (*Repos
 func CloneContext(
 	ctx context.Context, s storage.Storer, worktree billy.Filesystem, o *CloneOptions,
 ) (*Repository, error) {
+	if o == nil {
+		o = &CloneOptions{}
+	}
+
+	// A clone is bare exactly when no worktree is given, so asking for a
+	// bare or mirror clone together with a worktree is contradictory.
+	if worktree != nil && (o.Bare || o.Mirror) {
+		return nil, ErrBareCloneWithWorktree
+	}
+
 	r, err := Init(s, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
 
-	if o == nil {
-		o = &CloneOptions{}
-	}
 	o.worktree = worktree
 
 	return r, r.clone(ctx, o)
@@ -345,7 +449,9 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 
 	o := newInitOptions()
 	for _, oFn := range options {
-		oFn(&o)
+		if oFn != nil {
+			oFn(&o)
+		}
 	}
 
 	var err error
@@ -377,11 +483,13 @@ func PlainInit(path string, isBare bool, options ...InitOption) (*Repository, er
 	})
 	r, err := initFn(s)
 	if err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 
+	// Init already pointed HEAD at the clone placeholder.
 	if o.partialInit {
-		return r.setInvalidHEAD()
+		return r, nil
 	}
 
 	cfg, err := r.Config()
@@ -586,16 +694,14 @@ func dotGitCommonDirectory(fs billy.Filesystem) (commonDir billy.Filesystem, err
 	return commonDir, nil
 }
 
-// PlainClone a repository into the path with the given options, isBare defines
-// if the new repository will be bare or normal. If the path is not empty
-// ErrTargetDirNotEmpty is returned.
+// PlainClone a repository into the path with the given options. If the path is
+// not empty ErrTargetDirNotEmpty is returned.
 func PlainClone(path string, o *CloneOptions) (*Repository, error) {
 	return PlainCloneContext(context.Background(), path, o)
 }
 
-// PlainCloneContext a repository into the path with the given options, isBare
-// defines if the new repository will be bare or normal. If the path is not empty
-// ErrTargetDirNotEmpty is returned.
+// PlainCloneContext a repository into the path with the given options. If the
+// path is not empty ErrTargetDirNotEmpty is returned.
 //
 // The provided Context must be non-nil. If the context expires before the
 // operation is complete, an error is returned. The context only affects the
@@ -609,6 +715,10 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 		return nil, fmt.Errorf("%w %s", ErrTargetDirNotEmpty, path)
 	}
 
+	if o == nil {
+		o = &CloneOptions{}
+	}
+
 	isBare := o.Bare
 	if o.Mirror {
 		isBare = true
@@ -620,32 +730,39 @@ func PlainCloneContext(ctx context.Context, path string, o *CloneOptions) (*Repo
 	_, preErr := os.Stat(path)
 	dirPreexisted := !os.IsNotExist(preErr)
 
-	var initOptions []InitOption
-	if !o.AllowEmptyRepo {
-		initOptions = append(initOptions, withPartialInit())
-	}
-
-	r, err := PlainInit(path, isBare, initOptions...)
+	r, err := PlainInit(path, isBare, withPartialInit())
 	if err != nil {
 		return nil, err
 	}
 
 	if err := r.clone(ctx, o); err != nil {
-		if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return r, nil
-		}
 		_ = r.Close()
 		if dirPreexisted {
-			// Restore the directory to its original empty state.
-			_ = os.RemoveAll(filepath.Join(path, GitDirName))
+			// Restore the directory to its original empty state. It was
+			// empty before, so every entry in it was created by the clone.
+			// A bare clone writes its files directly under path.
+			removeDirContents(path)
 		} else {
 			// We created the directory; remove it entirely.
 			_ = os.RemoveAll(path)
 		}
-		return r, err
+		return nil, err
 	}
 
 	return r, nil
+}
+
+// removeDirContents removes every entry in dir, keeping dir itself. Errors
+// are ignored as this is a best effort cleanup.
+func removeDirContents(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
 }
 
 func newRepository(s storage.Storer, worktree billy.Filesystem) *Repository {
@@ -1171,7 +1288,15 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
 	if err1 == nil && hr.Target() == plumbing.Invalid {
-		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+		branch, berr := r.defaultBranch()
+		if berr != nil {
+			return errors.Join(err, berr)
+		}
+		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, branch))
+	}
+
+	if o.AllowEmptyRepo && errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		return r.cloneEmpty(o)
 	}
 
 	if err != nil {
@@ -1222,26 +1347,57 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}
 
 	if !o.Mirror && ref.Name().IsBranch() {
-		branchRef := ref.Name()
-		branchName := strings.Split(string(branchRef), "refs/heads/")[1]
-
-		b := &config.Branch{
-			Name:  branchName,
-			Merge: branchRef,
-		}
-
-		if o.RemoteName == "" {
-			b.Remote = "origin"
-		} else {
-			b.Remote = o.RemoteName
-		}
-
-		if err := r.CreateBranch(b); err != nil {
+		if err := r.createCloneBranchConfig(o, ref.Name()); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// cloneEmpty completes the clone of an empty remote when AllowEmptyRepo is
+// set. HEAD must already point to the unborn default branch.
+func (r *Repository) cloneEmpty(o *CloneOptions) error {
+	// Like git, a reference requested explicitly must exist in the remote.
+	if o.ReferenceName != plumbing.HEAD {
+		return fmt.Errorf("remote branch %s not found in upstream %s: %w",
+			o.ReferenceName.Short(), o.RemoteName, plumbing.ErrReferenceNotFound)
+	}
+
+	if err := r.setWorktreeAndStoragePaths(); err != nil {
+		return err
+	}
+
+	if r.wt == nil || o.Mirror {
+		return nil
+	}
+
+	// Like git, track the unborn branch so that the first pull or push
+	// after a commit knows its upstream.
+	head, err := r.Storer.Reference(plumbing.HEAD)
+	if err != nil {
+		return err
+	}
+	if !head.Target().IsBranch() {
+		return nil
+	}
+
+	return r.createCloneBranchConfig(o, head.Target())
+}
+
+// createCloneBranchConfig records the remote and merge settings of the
+// branch checked out by a clone.
+func (r *Repository) createCloneBranchConfig(o *CloneOptions, branchRef plumbing.ReferenceName) error {
+	remote := o.RemoteName
+	if remote == "" {
+		remote = DefaultRemoteName
+	}
+
+	return r.CreateBranch(&config.Branch{
+		Name:   branchRef.Short(),
+		Remote: remote,
+		Merge:  branchRef,
+	})
 }
 
 const (
