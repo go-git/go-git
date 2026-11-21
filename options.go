@@ -493,13 +493,39 @@ func (o *ResetOptions) Validate(r *Repository) error {
 type LogOrder int8
 
 // Log traversal order options.
+//
+// Every order yields each reachable commit at most once. Only
+// LogOrderCommitterTime and LogOrderDFSPostFirstParent correspond to a
+// `git log` invocation.
 const (
-	// LogOrderDefault uses depth-first search.
+	// LogOrderDefault is the zero value and behaves exactly like
+	// LogOrderDFS.
 	LogOrderDefault LogOrder = iota
+	// LogOrderDFS walks the history depth-first in pre-order. Each commit
+	// is yielded before its parents, and the first parent's history is
+	// followed to the end before the other parents of a merge are
+	// visited. It has no `git log` equivalent.
 	LogOrderDFS
+	// LogOrderDFSPost walks the history depth-first. Despite its name it
+	// is not a post-order walk: each commit is yielded before its
+	// parents. At a merge the parents are visited in reverse order, which
+	// yields the merged-in history before the history it was merged into.
+	// It has no `git log` equivalent.
 	LogOrderDFSPost
-	LogOrderBSF
+	// LogOrderBFS walks the history breadth-first. Commits are yielded in
+	// order of their distance, in parent links, from the starting commit.
+	// It has no `git log` equivalent.
+	LogOrderBFS
+	// LogOrderCommitterTime yields commits newest first by committer
+	// time, using a priority queue seeded with the starting point. This
+	// matches the default order of `git log` with no ordering flag. Like
+	// `git log`, it does not guarantee that a commit is yielded after all
+	// of its children when committer times are skewed, which
+	// `git log --date-order` would.
 	LogOrderCommitterTime
+	// LogOrderDFSPostFirstParent follows only the first parent of each
+	// commit, yielding each commit before its parent. This matches
+	// `git log --first-parent`.
 	LogOrderDFSPostFirstParent
 )
 
@@ -510,13 +536,24 @@ type LogOptions struct {
 	// the default From.
 	From plumbing.Hash
 
-	// When To is set the log will go down until it reaches to the commit with the
-	// specified hash. The default value for this field in nil
-	To plumbing.Hash
+	// StopAt, when set, ends the walk at the commit with this hash. The
+	// boundary is inclusive: that commit is yielded and then the walk
+	// stops, so no further commit is yielded even if other branches of
+	// the history remain unvisited. StopAt is checked after FileName,
+	// PathFilter, Since and Until are applied, so a commit dropped by one
+	// of those filters does not stop the walk. The default value for this
+	// field is the zero hash, which disables it.
+	//
+	// ForEach calls the callback for the StopAt commit and then returns
+	// nil. Next returns the StopAt commit together with storer.ErrStop.
+	//
+	// StopAt is not `git log <stop>..<from>`, which excludes every
+	// ancestor of <stop> and does not show <stop> itself.
+	StopAt plumbing.Hash
 
-	// The default traversal algorithm is Depth-first search
-	// set Order=LogOrderCommitterTime for ordering by committer time (more compatible with `git log`)
-	// set Order=LogOrderBSF for Breadth-first search
+	// Order selects the traversal order. The default is LogOrderDefault,
+	// a depth-first search. Set Order=LogOrderCommitterTime for the order
+	// `git log` uses by default. See the LogOrder constants for the rest.
 	Order LogOrder
 
 	// Show only those commits in which the specified file was inserted/updated.

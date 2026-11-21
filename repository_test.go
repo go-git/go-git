@@ -3150,6 +3150,38 @@ func (s *RepositorySuite) TestLogAllLimitForEach() {
 	s.Equal(2, expectedIndex)
 }
 
+func (s *RepositorySuite) TestLogStopAtIsInclusive() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.NoError(err)
+
+	stopAt := plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	cIter, err := r.Log(&LogOptions{
+		Order:  LogOrderCommitterTime,
+		StopAt: stopAt,
+	})
+	s.NoError(err)
+	defer cIter.Close()
+
+	var got []plumbing.Hash
+	err = cIter.ForEach(func(c *object.Commit) error {
+		got = append(got, c.Hash)
+		return nil
+	})
+	s.NoError(err)
+
+	s.Equal([]plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		stopAt,
+	}, got)
+}
+
 func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()

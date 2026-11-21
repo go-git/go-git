@@ -1595,8 +1595,8 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		it = r.logWithPathFilter(o.PathFilter, it, o.All)
 	}
 
-	if o.Since != nil || o.Until != nil || !o.To.IsZero() {
-		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until, TailHash: o.To}
+	if o.Since != nil || o.Until != nil || !o.StopAt.IsZero() {
+		limitOptions := object.LogLimitOptions{Since: o.Since, Until: o.Until, TailHash: o.StopAt}
 		it = r.logWithLimit(it, limitOptions)
 	}
 
@@ -1661,9 +1661,9 @@ func commitIterFunc(order LogOrder) func(c *object.Commit) object.CommitIter {
 		return func(c *object.Commit) object.CommitIter {
 			return object.NewCommitPostorderIter(c, nil)
 		}
-	case LogOrderBSF:
+	case LogOrderBFS:
 		return func(c *object.Commit) object.CommitIter {
-			return object.NewCommitIterBSF(c, nil, nil)
+			return object.NewCommitIterBFS(c, nil, nil)
 		}
 	case LogOrderCommitterTime:
 		return func(c *object.Commit) object.CommitIter {
