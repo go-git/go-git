@@ -12,7 +12,7 @@ import (
 func init() {
 	fillSystemInfo = func(e *index.Entry, sys any) {
 		if os, ok := sys.(*syscall.Stat_t); ok {
-			e.CreatedAt = time.Unix(os.Atimespec.Unix())
+			e.ChangedAt = time.Unix(os.Ctimespec.Unix())
 			e.Dev = uint32(os.Dev)
 			e.Inode = uint32(os.Ino)
 			e.GID = os.Gid
