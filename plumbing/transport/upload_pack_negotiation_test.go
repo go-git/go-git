@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -679,7 +680,7 @@ func (s unreadableStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) 
 
 // tagObject stores an annotated tag of target, of type typ, and returns its
 // hash.
-func tagObject(t *testing.T, st *memory.Storage, target plumbing.Hash, typ plumbing.ObjectType) plumbing.Hash {
+func tagObject(t *testing.T, st storer.EncodedObjectStorer, target plumbing.Hash, typ plumbing.ObjectType) plumbing.Hash {
 	t.Helper()
 	tag := &object.Tag{Name: "t", Tagger: object.Signature{Name: "t", Email: "t@t"}, Target: target, TargetType: typ}
 	o := st.NewEncodedObject()

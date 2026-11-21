@@ -136,4 +136,17 @@ var fixtures = []*Fixture{
 			AddOption("sect1", "", "opt1", "value1").
 			AddOption("sect1", "", "opt1", "value2"),
 	},
+	{
+		Raw:  "[sect1]\n\topt1\n\topt2 =\n[sect1 \"subsect1\"]\n\topt3 # comment\n",
+		Text: "[sect1]\n\topt1\n\topt2 = \n[sect1 \"subsect1\"]\n\topt3\n",
+		Config: &Config{Sections: Sections{
+			{
+				Name:    "sect1",
+				Options: Options{{Key: "opt1", NoValue: true}, {Key: "opt2"}},
+				Subsections: Subsections{
+					{Name: "subsect1", Options: Options{{Key: "opt3", NoValue: true}}},
+				},
+			},
+		}},
+	},
 }

@@ -13,6 +13,11 @@ type Option struct {
 	Key string
 	// Original value as string, could be not normalized.
 	Value string
+	// NoValue reports that the key was written without "=" and a value.
+	// Git reads such a key as boolean true, while a key followed by "="
+	// and nothing else is false. Value is empty when NoValue is set. The
+	// encoder writes the key alone when NoValue is set and Value is empty.
+	NoValue bool
 }
 
 // Options is a collection of Option.
@@ -88,7 +93,7 @@ func (opts Options) withoutOption(key string) Options {
 }
 
 func (opts Options) withAddedOption(key, value string) Options {
-	return append(opts, &Option{key, value})
+	return append(opts, &Option{Key: key, Value: value})
 }
 
 func (opts Options) withSettedOption(key string, values ...string) Options {

@@ -31,7 +31,7 @@ func (s *SectionSuite) TestSections_GoString() {
 		},
 	}
 
-	expected := "&config.Section{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\"}, &config.Option{Key:\"key2\", Value:\"value2\"}, Subsections:}, &config.Section{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value3\"}, &config.Option{Key:\"key2\", Value:\"value4\"}, Subsections:}"
+	expected := "&config.Section{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\", NoValue:false}, &config.Option{Key:\"key2\", Value:\"value2\", NoValue:false}, Subsections:}, &config.Section{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value3\", NoValue:false}, &config.Option{Key:\"key2\", Value:\"value4\", NoValue:false}, Subsections:}"
 	s.Equal(expected, sects.GoString())
 }
 
@@ -53,7 +53,7 @@ func (s *SectionSuite) TestSubsections_GoString() {
 		},
 	}
 
-	expected := "&config.Subsection{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\"}, &config.Option{Key:\"key2\", Value:\"value2\"}, &config.Option{Key:\"key1\", Value:\"value3\"}}, &config.Subsection{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\"}, &config.Option{Key:\"key2\", Value:\"value2\"}, &config.Option{Key:\"key1\", Value:\"value3\"}}"
+	expected := "&config.Subsection{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\", NoValue:false}, &config.Option{Key:\"key2\", Value:\"value2\", NoValue:false}, &config.Option{Key:\"key1\", Value:\"value3\", NoValue:false}}, &config.Subsection{Name:\"\", Options:&config.Option{Key:\"key1\", Value:\"value1\", NoValue:false}, &config.Option{Key:\"key2\", Value:\"value2\", NoValue:false}, &config.Option{Key:\"key1\", Value:\"value3\", NoValue:false}}"
 	s.Equal(expected, sects.GoString())
 }
 
@@ -166,22 +166,22 @@ func (s *SectionSuite) TestSection_HasOption() {
 func (s *SectionSuite) TestSection_AddOption() {
 	sect := &Section{
 		Options: []*Option{
-			{"key1", "value1"},
+			{Key: "key1", Value: "value1"},
 		},
 	}
 	sect1 := &Section{
 		Options: []*Option{
-			{"key1", "value1"},
-			{"key2", "value2"},
+			{Key: "key1", Value: "value1"},
+			{Key: "key2", Value: "value2"},
 		},
 	}
 	s.Equal(sect1, sect.AddOption("key2", "value2"))
 
 	sect2 := &Section{
 		Options: []*Option{
-			{"key1", "value1"},
-			{"key2", "value2"},
-			{"key1", "value3"},
+			{Key: "key1", Value: "value1"},
+			{Key: "key2", Value: "value2"},
+			{Key: "key1", Value: "value3"},
 		},
 	}
 	s.Equal(sect2, sect.AddOption("key1", "value3"))
@@ -273,22 +273,22 @@ func (s *SectionSuite) TestSubsection_HasOption() {
 func (s *SectionSuite) TestSubsection_AddOption() {
 	sect := &Subsection{
 		Options: []*Option{
-			{"key1", "value1"},
+			{Key: "key1", Value: "value1"},
 		},
 	}
 	sect1 := &Subsection{
 		Options: []*Option{
-			{"key1", "value1"},
-			{"key2", "value2"},
+			{Key: "key1", Value: "value1"},
+			{Key: "key2", Value: "value2"},
 		},
 	}
 	s.Equal(sect1, sect.AddOption("key2", "value2"))
 
 	sect2 := &Subsection{
 		Options: []*Option{
-			{"key1", "value1"},
-			{"key2", "value2"},
-			{"key1", "value3"},
+			{Key: "key1", Value: "value1"},
+			{Key: "key2", Value: "value2"},
+			{Key: "key1", Value: "value3"},
 		},
 	}
 	s.Equal(sect2, sect.AddOption("key1", "value3"))

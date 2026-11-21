@@ -34,6 +34,30 @@ var ErrDuplicateRefname = errors.New("multiple updates for ref not allowed")
 // refusal to point a reference at a nonexistent object.
 var ErrMissingObject = errors.New("missing necessary objects")
 
+// ErrBranchCheckedOut is reported for a command that updates the branch HEAD
+// points at in a non-bare repository while receive.denyCurrentBranch refuses
+// it, which is the default.
+var ErrBranchCheckedOut = errors.New("branch is currently checked out")
+
+// ErrUpdateInsteadUnsupported is reported for a command that
+// receive.denyCurrentBranch=updateInstead would apply by updating the working
+// tree, which receive-pack does not do.
+var ErrUpdateInsteadUnsupported = errors.New("denyCurrentBranch = updateInstead is not supported")
+
+// ErrDeleteCurrentBranch is reported for a command that deletes the branch
+// HEAD points at while receive.denyDeleteCurrent refuses it, which is the
+// default.
+var ErrDeleteCurrentBranch = errors.New("deletion of the current branch prohibited")
+
+// ErrNonFastForward is reported for a command that moves a branch to a commit
+// that does not descend from its old value while receive.denyNonFastForwards
+// is set.
+var ErrNonFastForward = errors.New("non-fast-forward")
+
+// ErrBadRef is reported when receive.denyNonFastForwards is set and the old
+// or new value of a branch update is not a commit the repository holds.
+var ErrBadRef = errors.New("bad ref")
+
 // AdvertiseRefs is a server command that implements the reference
 // discovery phase of the v0/v1 Git transfer protocol. Protocol v2 advertises
 // capabilities only, via [AdvertiseCapabilities]; the sole reason this function
