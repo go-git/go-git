@@ -5,11 +5,13 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
@@ -62,4 +64,25 @@ func TestTransactionalPackfileWriter(t *testing.T) {
 	_, tmpOK := temporal.(storer.PackfileWriter)
 	_, ok := st.(storer.PackfileWriter)
 	assert.Equal(t, tmpOK, ok)
+}
+
+func TestUpdateObjectStorageWritesToTemporal(t *testing.T) {
+	t.Parallel()
+	base := memory.NewStorage()
+	temporal := memory.NewStorage()
+	st := NewStorage(base, temporal)
+
+	f := fixtures.Basic().One()
+	pf, err := f.Packfile()
+	require.NoError(t, err)
+
+	require.NoError(t, packfile.UpdateObjectStorage(st, pf))
+
+	assert.Empty(t, base.Objects)
+	assert.Len(t, temporal.Objects, 31)
+
+	h := plumbing.NewHash(f.Head)
+	_, err = st.EncodedObject(plumbing.CommitObject, h)
+	require.NoError(t, err)
+	assert.ErrorIs(t, base.HasEncodedObject(h), plumbing.ErrObjectNotFound)
 }
