@@ -93,6 +93,33 @@ func TestWorktreeConfigRead(t *testing.T) {
 		assert.True(t, cfg.Extensions.WorktreeConfig)
 	})
 
+	t.Run("config.worktree values merge with base config by key", func(t *testing.T) {
+		t.Parallel()
+
+		const base = baseConfig +
+			"[remote \"origin\"]\n\turl = https://example.com/a.git\n" +
+			"\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+		const wt = "[core]\n\tfilemode = false\n\tsparseCheckout = true\n" +
+			"[remote \"origin\"]\n\tfetch = +refs/tags/*:refs/tags/*\n"
+
+		commonFs, wtFs := memfs.New(), memfs.New()
+		require.NoError(t, util.WriteFile(commonFs, "config", []byte(base), 0o644))
+		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(wt), 0o644))
+
+		cfg, err := newDualStorer(commonFs, wtFs).Config()
+		require.NoError(t, err)
+
+		assert.False(t, cfg.Core.FileMode)
+		require.NotNil(t, cfg.Raw)
+		assert.Equal(t, "true", cfg.Raw.Section("core").Option("sparseCheckout"))
+		require.Contains(t, cfg.Remotes, "origin")
+		assert.Equal(t, []string{"https://example.com/a.git"}, cfg.Remotes["origin"].URLs)
+		assert.Equal(t, []config.RefSpec{
+			"+refs/heads/*:refs/remotes/origin/*",
+			"+refs/tags/*:refs/tags/*",
+		}, cfg.Remotes["origin"].Fetch)
+	})
+
 	t.Run("returns base config when config.worktree is absent", func(t *testing.T) {
 		t.Parallel()
 
@@ -187,6 +214,41 @@ func TestWorktreeConfigSetConfig(t *testing.T) {
 		assert.NotContains(t, baseContent, "Worktree Author", "new author must not be in config")
 		assert.Contains(t, baseContent, "base-user", "base user.name must still be in config")
 		assert.Contains(t, baseContent, "base@example.com", "base user.email must still be in config")
+	})
+
+	t.Run("config.worktree exists: round trip keeps multi-valued keys", func(t *testing.T) {
+		t.Parallel()
+
+		const base = baseConfig +
+			"[remote \"origin\"]\n\turl = https://example.com/a.git\n\tfetch = +refs/heads/a:refs/a\n" +
+			"[custom]\n\tmulti = a\n"
+		const existingWTConfig = "[remote \"origin\"]\n" +
+			"\tfetch = +refs/heads/b:refs/b\n\tfetch = +refs/heads/c:refs/c\n" +
+			"[custom]\n\tmulti = b\n\tmulti = c\n"
+
+		commonFs, wtFs := memfs.New(), memfs.New()
+		require.NoError(t, util.WriteFile(commonFs, "config", []byte(base), 0o644))
+		require.NoError(t, util.WriteFile(wtFs, "config.worktree", []byte(existingWTConfig), 0o644))
+
+		cs := newDualStorer(commonFs, wtFs)
+		for range 2 {
+			cfg, err := cs.Config()
+			require.NoError(t, err)
+			require.NoError(t, cs.SetConfig(cfg))
+		}
+
+		cfg, err := cs.Config()
+		require.NoError(t, err)
+		assert.Equal(t, []config.RefSpec{
+			"+refs/heads/a:refs/a",
+			"+refs/heads/b:refs/b",
+			"+refs/heads/c:refs/c",
+		}, cfg.Remotes["origin"].Fetch)
+		assert.Equal(t, []string{"a", "b", "c"}, cfg.Raw.Section("custom").OptionAll("multi"))
+
+		data, err := util.ReadFile(commonFs, "config")
+		require.NoError(t, err)
+		assert.Equal(t, base, string(data))
 	})
 
 	t.Run("config.worktree exists: base config is not modified", func(t *testing.T) {
