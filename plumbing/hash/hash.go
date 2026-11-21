@@ -66,17 +66,3 @@ func New(h crypto.Hash) Hash {
 	}
 	return hh()
 }
-
-// FromObjectFormat returns the correct Hash to be used based on the
-// ObjectFormat being used.
-// If the ObjectFormat is not recognised, returns ErrInvalidObjectFormat.
-func FromObjectFormat(f ObjectFormat) (hash.Hash, error) {
-	switch f {
-	case SHA1:
-		return New(crypto.SHA1), nil
-	case SHA256:
-		return New(crypto.SHA256), nil
-	default:
-		return nil, ErrInvalidObjectFormat
-	}
-}

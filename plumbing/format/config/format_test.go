@@ -20,5 +20,4 @@ func TestObjectFormatAliases(t *testing.T) {
 	assert.Equal(t, hash.SHA256Size, SHA256Size)
 	assert.Equal(t, hash.SHA1HexSize, SHA1HexSize)
 	assert.Equal(t, hash.SHA256HexSize, SHA256HexSize)
-	assert.ErrorIs(t, ErrInvalidObjectFormat, hash.ErrInvalidObjectFormat)
 }

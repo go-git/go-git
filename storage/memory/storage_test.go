@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
 	xstorage "github.com/go-git/go-git/v6/x/storage"
@@ -37,6 +38,7 @@ func TestSetObjectFormat(t *testing.T) {
 		targetFormat  formatcfg.ObjectFormat
 		wantErr       bool
 		errContains   string
+		errIs         error
 	}{
 		{
 			name:          "set SHA1 on empty storage",
@@ -79,7 +81,14 @@ func TestSetObjectFormat(t *testing.T) {
 			initialFormat: formatcfg.UnsetObjectFormat,
 			targetFormat:  formatcfg.ObjectFormat("invalid"),
 			wantErr:       true,
-			errContains:   "invalid object format",
+			errContains:   "invalid",
+			errIs:         hash.ErrUnsupportedHashFunction,
+		},
+		{
+			name:          "unset object format is SHA1",
+			initialFormat: formatcfg.UnsetObjectFormat,
+			targetFormat:  formatcfg.UnsetObjectFormat,
+			wantErr:       false,
 		},
 	}
 
@@ -95,6 +104,9 @@ func TestSetObjectFormat(t *testing.T) {
 				require.Error(t, err)
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				if tt.errIs != nil {
+					assert.ErrorIs(t, err, tt.errIs)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -305,4 +317,16 @@ func TestShallowStorageDoesNotAliasCaller(t *testing.T) {
 	again, err := s.Shallow()
 	require.NoError(t, err)
 	assert.Equal(t, []plumbing.Hash{hashA, hashB}, again)
+}
+
+func TestNewStorageUnsupportedObjectFormatHashesSHA1(t *testing.T) {
+	t.Parallel()
+
+	sto := memory.NewStorage(memory.WithObjectFormat(formatcfg.ObjectFormat("sha512")))
+
+	obj := sto.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	h, err := sto.SetEncodedObject(obj)
+	require.NoError(t, err)
+	assert.Equal(t, "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", h.String())
 }

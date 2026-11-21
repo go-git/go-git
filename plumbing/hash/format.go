@@ -54,8 +54,10 @@ func (f ObjectFormat) HexSize() int {
 	}
 }
 
-// ErrInvalidObjectFormat is returned when an invalid ObjectFormat is used.
-var ErrInvalidObjectFormat = errors.New("invalid object format")
+// ErrObjectFormatMismatch is returned when data or an object ID uses another
+// object format than the one expected, such as a SHA-256 hash given to a
+// SHA-1 index.
+var ErrObjectFormatMismatch = errors.New("object format mismatch")
 
 const (
 	// SHA1Size is the size of SHA1 hash.

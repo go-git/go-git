@@ -1,12 +1,12 @@
 package plumbing
 
 import (
-	"crypto"
 	"fmt"
 	"hash"
 	"strconv"
 	"sync"
 
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -51,7 +51,7 @@ func (h *ObjectHasher) Compute(ot ObjectType, d []byte) (ObjectID, error) {
 // Any other format that is neither SHA-1 nor SHA-256 returns an error
 // wrapping [githash.ErrUnsupportedHashFunction].
 func NewObjectHasher(f githash.ObjectFormat) (*ObjectHasher, error) {
-	h, err := newHash(f)
+	h, err := hashutil.New(f)
 	if err != nil {
 		return nil, err
 	}
@@ -59,19 +59,6 @@ func NewObjectHasher(f githash.ObjectFormat) (*ObjectHasher, error) {
 		hasher: h,
 		format: idFormat(f),
 	}, nil
-}
-
-// newHash returns the hash function for the object format [f], handling
-// [githash.UnsetObjectFormat] as the default.
-func newHash(f githash.ObjectFormat) (hash.Hash, error) {
-	switch f {
-	case githash.SHA1, githash.UnsetObjectFormat:
-		return githash.New(crypto.SHA1), nil
-	case githash.SHA256:
-		return githash.New(crypto.SHA256), nil
-	default:
-		return nil, fmt.Errorf("%w: object format %q", githash.ErrUnsupportedHashFunction, f)
-	}
 }
 
 // idFormat returns the format an ObjectID of format [f] carries. SHA-1

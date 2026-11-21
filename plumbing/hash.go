@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
@@ -43,7 +44,7 @@ type Hasher struct {
 // nor SHA-256 returns an error wrapping
 // [githash.ErrUnsupportedHashFunction].
 func NewHasher(f githash.ObjectFormat, t ObjectType, size int64) (Hasher, error) {
-	hh, err := newHash(f)
+	hh, err := hashutil.New(f)
 	if err != nil {
 		return Hasher{}, err
 	}

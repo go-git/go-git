@@ -59,13 +59,8 @@ const (
 	DefaultObjectFormat = hash.DefaultObjectFormat
 )
 
-// ErrInvalidObjectFormat is [hash.ErrInvalidObjectFormat].
-var ErrInvalidObjectFormat = hash.ErrInvalidObjectFormat
-
-// ErrObjectFormatMismatch is returned when data or an object ID uses another
-// object format than the one expected, such as a SHA-256 hash given to a
-// SHA-1 index.
-var ErrObjectFormatMismatch = errors.New("object format mismatch")
+// ErrObjectFormatMismatch is [hash.ErrObjectFormatMismatch].
+var ErrObjectFormatMismatch = hash.ErrObjectFormatMismatch
 
 const (
 	// SHA1Size is [hash.SHA1Size].

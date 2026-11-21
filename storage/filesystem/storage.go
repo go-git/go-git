@@ -8,10 +8,10 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	"github.com/go-git/go-git/v6/x/fdpool"
@@ -70,6 +70,15 @@ type Options struct {
 	// This value is completely ignored when the storage is pointing to an
 	// existing dotgit. In such cases the repository config will define the
 	// ObjectFormat - even if implicitly (e.g. SHA1).
+	//
+	// The constructors cannot return an error, so they do not reject a
+	// format that is neither SHA-1 nor SHA-256, whether it comes from
+	// this field or from the repository config. Objects are then hashed
+	// with SHA-1. Opening an existing repository whose config names
+	// such a format fails when its extensions are validated, but a new
+	// repository initialised on the storage is not rejected until it is
+	// opened again. Use [Storage.SetObjectFormat] to get an error for an
+	// unsupported format.
 	ObjectFormat formatcfg.ObjectFormat
 
 	// UseInMemoryIdx loads .idx files fully into memory (MemoryIndex) instead
@@ -164,8 +173,11 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		_ = f.Close()
 	}
 
-	// FromObjectFormat cannot fail for a supported format.
-	indexHash, _ := hash.FromObjectFormat(supportedObjectFormat(ops.ObjectFormat))
+	// Objects, packs and the index are hashed in a supported format,
+	// as documented on Options.ObjectFormat. hashutil.New cannot fail
+	// for one.
+	hashFormat := supportedObjectFormat(ops.ObjectFormat)
+	indexHash, _ := hashutil.New(hashFormat)
 
 	// Construct a per-Storage FD pool at the package default
 	// capacity unless the caller injected one. Pass a non-positive-
@@ -178,7 +190,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	dirOps := dotgit.Options{
 		ExclusiveAccess:   ops.ExclusiveAccess,
 		AlternatesFS:      ops.AlternatesFS,
-		ObjectFormat:      ops.ObjectFormat,
+		ObjectFormat:      hashFormat,
 		ReadReverseIndex:  readRevIdx,
 		WriteReverseIndex: writeRevIdx,
 		Pool:              pool,
@@ -215,11 +227,17 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 //
 // If the storage is empty and the new ObjectFormat is the same as the
 // current, this call will be treated as a no-op.
+//
+// [formatcfg.UnsetObjectFormat] is handled as
+// [formatcfg.DefaultObjectFormat]. Any other format that is neither
+// SHA-1 nor SHA-256 returns an error wrapping
+// [github.com/go-git/go-git/v6/plumbing/hash.ErrUnsupportedHashFunction].
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
-	switch of {
-	case formatcfg.SHA1, formatcfg.SHA256:
-	default:
-		return fmt.Errorf("invalid object format: %s", of)
+	if of == formatcfg.UnsetObjectFormat {
+		of = formatcfg.DefaultObjectFormat
+	}
+	if err := hashutil.Check(of); err != nil {
+		return err
 	}
 
 	// Presently, storage only supports a single object format at a
@@ -240,7 +258,7 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		if err != nil {
 			return err
 		}
-		indexHash, err := hash.FromObjectFormat(of)
+		indexHash, err := hashutil.New(of)
 		if err != nil {
 			return err
 		}
