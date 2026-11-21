@@ -251,7 +251,7 @@ func (s *StreamSession) closeOnDone(ctx context.Context) (stop func() bool) {
 
 // wrapStderr checks if the underlying connection has stderr output and
 // returns it as a RemoteError so that remote error messages surface at
-// the operation site rather than at Close time.
+// the operation site rather than at Close time. The RemoteError wraps err.
 func (s *StreamSession) wrapStderr(ctx context.Context, err error) error {
 	// Once ctx is done the session is closed, which also ends the remote's
 	// stderr, and what it wrote there would replace the error the caller
@@ -267,7 +267,7 @@ func (s *StreamSession) wrapStderr(ctx context.Context, err error) error {
 		if r := se.Stderr(); r != nil {
 			b, readErr := io.ReadAll(r)
 			if readErr == nil && len(b) > 0 {
-				return NewRemoteError(strings.TrimSpace(string(b)))
+				return &RemoteError{Reason: strings.TrimSpace(string(b)), err: err}
 			}
 		}
 	}
