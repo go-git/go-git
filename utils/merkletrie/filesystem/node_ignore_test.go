@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -11,6 +12,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
@@ -382,16 +384,17 @@ func childNames(t *testing.T, root noder.Noder, path ...string) []string {
 	return names
 }
 
-func TestUnknownObjectFormatHashesToZero(t *testing.T) {
+func TestUnknownObjectFormatFailsChildren(t *testing.T) {
 	t.Parallel()
 	fs := memfs.New()
 	require.NoError(t, WriteFile(fs, "foo", []byte("foo\n"), 0o644))
 
 	root := NewRootNodeWithOptions(fs, nil, Options{ObjectFormat: format.ObjectFormat("sha512")})
 	children, err := root.Children()
-	require.NoError(t, err)
-	require.Len(t, children, 1)
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.Empty(t, children)
 
-	h := children[0].Hash()
-	require.Equal(t, plumbing.ZeroHash.Bytes(), h[:plumbing.ZeroHash.Size()])
+	n, err := root.NumChildren()
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.Equal(t, -1, n)
 }

@@ -29,12 +29,11 @@ func (o *MemoryObject) Hash() Hash {
 	if o.h.IsZero() && int64(len(o.cont)) == o.sz {
 		// TODO: Ensure that every MemoryObject has an object hasher.
 		if o.oh == nil {
-			oh, err := NewObjectHasher(githash.SHA1)
-			if err != nil {
-				return ZeroHash
-			}
-			o.oh = oh
+			// NewObjectHasher cannot fail for SHA-1.
+			o.oh, _ = NewObjectHasher(githash.SHA1)
 		}
+		// Compute only fails when writing to its hash.Hash fails, which
+		// the hash.Hash contract rules out.
 		h, err := o.oh.Compute(o.t, o.cont)
 		if err != nil {
 			return ZeroHash
