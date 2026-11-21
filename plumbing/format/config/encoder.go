@@ -76,6 +76,13 @@ func (e *Encoder) encodeSubsection(sectionName string, s *Subsection) error {
 
 func (e *Encoder) encodeOptions(opts Options) error {
 	for _, o := range opts {
+		if o.NoValue && o.Value == "" {
+			if err := e.printf("\t%s\n", o.Key); err != nil {
+				return err
+			}
+			continue
+		}
+
 		var value string
 		if strings.ContainsAny(o.Value, "#;\"\t\n\r\\") || strings.HasPrefix(o.Value, " ") || strings.HasSuffix(o.Value, " ") {
 			value = `"` + valueReplacer.Replace(o.Value) + `"`
