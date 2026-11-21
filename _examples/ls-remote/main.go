@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"os/signal"
 
 	"github.com/go-git/go-git/v6"
 	. "github.com/go-git/go-git/v6/_examples"
@@ -25,8 +27,12 @@ func main() {
 
 	log.Print("Fetching tags...")
 
+	// Like git ls-remote, listing has no timeout. Cancel it on interrupt.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	// We can then use every Remote functions to retrieve wanted information
-	refs, err := rem.List(&git.ListOptions{
+	refs, err := rem.ListContext(ctx, &git.ListOptions{
 		// Returns all references, including peeled references.
 		PeelingOption: git.AppendPeeled,
 	})

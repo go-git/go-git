@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path"
@@ -37,11 +38,27 @@ var (
 // Commit stores the current contents of the index in a new commit along with
 // a log message from the user describing the changes.
 func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error) {
+	return w.CommitContext(context.Background(), msg, opts)
+}
+
+// CommitContext stores the current contents of the index in a new commit along
+// with a log message from the user describing the changes.
+//
+// The provided Context must be non-nil. It is passed to the commit signer and
+// checked before each expensive step. If it is done before the commit object
+// is written, ctx.Err() is returned and neither the commit nor any reference
+// is written. Blobs and trees stored before that point are left in place,
+// unreferenced, as git does.
+func (w *Worktree) CommitContext(ctx context.Context, msg string, opts *CommitOptions) (plumbing.Hash, error) {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
 			trace.Performance.Printf("performance: %.9f s: git command: git commit", time.Since(start).Seconds())
 		}()
+	}
+
+	if err := ctx.Err(); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
 	if err := opts.Validate(w.r); err != nil {
@@ -50,6 +67,10 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 
 	if opts.All {
 		if err := w.autoAddModifiedAndDeleted(); err != nil {
+			return plumbing.ZeroHash, err
+		}
+
+		if err := ctx.Err(); err != nil {
 			return plumbing.ZeroHash, err
 		}
 	}
@@ -100,7 +121,7 @@ func (w *Worktree) Commit(msg string, opts *CommitOptions) (plumbing.Hash, error
 		return plumbing.ZeroHash, ErrEmptyCommit
 	}
 
-	commit, err := w.buildCommitObject(msg, opts, treeHash)
+	commit, err := w.buildCommitObject(ctx, msg, opts, treeHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -246,7 +267,7 @@ func (w *Worktree) updateHEAD(commit plumbing.Hash) error {
 	return w.r.Storer.SetReference(ref)
 }
 
-func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumbing.Hash) (plumbing.Hash, error) {
+func (w *Worktree) buildCommitObject(ctx context.Context, msg string, opts *CommitOptions, tree plumbing.Hash) (plumbing.Hash, error) {
 	commit := &object.Commit{
 		Author:       w.sanitize(*opts.Author),
 		Committer:    w.sanitize(*opts.Committer),
@@ -273,11 +294,17 @@ func (w *Worktree) buildCommitObject(msg string, opts *CommitOptions, tree plumb
 	}
 
 	if signer != nil {
-		sig, err := signObject(signer, commit)
+		sig, err := signObject(ctx, signer, commit)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
 		commit.Signature = string(sig)
+	}
+
+	// A signer may ignore ctx. Check again so a cancelled commit is never
+	// written.
+	if err := ctx.Err(); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
 	obj := w.r.Storer.NewEncodedObject()

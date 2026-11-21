@@ -1853,6 +1853,21 @@ func (s *RemoteSuite) TestList() {
 	}
 }
 
+func (s *RemoteSuite) TestListNilOptions() {
+	repo := fixtures.Basic().One()
+	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{repo.URL},
+	})
+
+	refs, err := remote.List(nil)
+	s.Require().NoError(err)
+
+	withOpts, err := remote.List(&ListOptions{})
+	s.Require().NoError(err)
+	s.ElementsMatch(withOpts, refs)
+}
+
 func (s *RemoteSuite) TestListPeeling() {
 	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: DefaultRemoteName,
@@ -1906,6 +1921,25 @@ func (s *RemoteSuite) TestListTimeout() {
 
 	_, err := remote.ListContext(ctx, &ListOptions{})
 	s.ErrorIs(err, context.DeadlineExceeded)
+}
+
+func (s *RemoteSuite) TestListContextCancelled() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		cancel()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	remote := NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: DefaultRemoteName,
+		URLs: []string{srv.URL},
+	})
+
+	_, err := remote.ListContext(ctx, nil)
+	s.ErrorIs(err, context.Canceled)
 }
 
 /*

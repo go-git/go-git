@@ -1273,3 +1273,121 @@ func TestBuildCommitObjectSignerSelection(t *testing.T) { //nolint:paralleltest 
 		})
 	}
 }
+
+type funcSigner func(ctx context.Context, message io.Reader) ([]byte, error)
+
+func (f funcSigner) Sign(ctx context.Context, message io.Reader) ([]byte, error) {
+	return f(ctx, message)
+}
+
+// cancellingSigners builds signers that each cancel the operation's
+// context while signing and observe that cancellation differently.
+var cancellingSigners = []struct {
+	name   string
+	signer func(cancel context.CancelFunc) Signer
+}{
+	{
+		name: "blocks until cancelled",
+		signer: func(cancel context.CancelFunc) Signer {
+			return funcSigner(func(ctx context.Context, _ io.Reader) ([]byte, error) {
+				go cancel()
+				<-ctx.Done()
+				return nil, ctx.Err()
+			})
+		},
+	},
+	{
+		name: "ignores cancellation",
+		signer: func(cancel context.CancelFunc) Signer {
+			return funcSigner(func(context.Context, io.Reader) ([]byte, error) {
+				cancel()
+				return []byte(mockSignature), nil
+			})
+		},
+	},
+}
+
+func countObjects(t *testing.T, s storer.EncodedObjectStorer, typ plumbing.ObjectType) int {
+	t.Helper()
+
+	iter, err := s.IterEncodedObjects(typ)
+	require.NoError(t, err)
+
+	n := 0
+	require.NoError(t, iter.ForEach(func(plumbing.EncodedObject) error {
+		n++
+		return nil
+	}))
+	return n
+}
+
+func TestCommitContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	setup := func(t *testing.T) (*Repository, *Worktree) {
+		t.Helper()
+
+		fs := memfs.New()
+		r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, util.WriteFile(fs, "file.txt", []byte("content"), 0o644))
+		_, err = w.Add("file.txt")
+		require.NoError(t, err)
+
+		return r, w
+	}
+
+	assertNoCommit := func(t *testing.T, r *Repository) {
+		t.Helper()
+
+		assert.Zero(t, countObjects(t, r.Storer, plumbing.CommitObject))
+		_, err := r.Storer.Reference(plumbing.Master)
+		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+	}
+
+	t.Run("before start", func(t *testing.T) {
+		t.Parallel()
+
+		r, w := setup(t)
+		before := countObjects(t, r.Storer, plumbing.AnyObject)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		called := false
+		_, err := w.CommitContext(ctx, "msg\n", &CommitOptions{
+			All:    true,
+			Author: defaultSignature(),
+			Signer: funcSigner(func(context.Context, io.Reader) ([]byte, error) {
+				called = true
+				return []byte(mockSignature), nil
+			}),
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		assert.False(t, called, "signer must not be called with a cancelled context")
+		assert.Equal(t, before, countObjects(t, r.Storer, plumbing.AnyObject))
+		assertNoCommit(t, r)
+	})
+
+	for _, tc := range cancellingSigners {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, w := setup(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			_, err := w.CommitContext(ctx, "msg\n", &CommitOptions{
+				Author: defaultSignature(),
+				Signer: tc.signer(cancel),
+			})
+			require.ErrorIs(t, err, context.Canceled)
+			assertNoCommit(t, r)
+		})
+	}
+}

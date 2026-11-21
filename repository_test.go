@@ -4943,3 +4943,87 @@ func (s *RepositorySuite) TestRepackPreservesObjectsThroughRootSymref() {
 	s.Require().NoError(r.Storer.HasEncodedObject(commit))
 	s.Require().NoError(r.Storer.HasEncodedObject(tree))
 }
+
+func TestCreateTagContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	setup := func(t *testing.T) (*Repository, plumbing.Hash) {
+		t.Helper()
+
+		fs := memfs.New()
+		r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, util.WriteFile(fs, "file.txt", []byte("content"), 0o644))
+		_, err = w.Add("file.txt")
+		require.NoError(t, err)
+
+		hash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+		require.NoError(t, err)
+
+		return r, hash
+	}
+
+	assertNoTag := func(t *testing.T, r *Repository) {
+		t.Helper()
+
+		assert.Zero(t, countObjects(t, r.Storer, plumbing.TagObject))
+		_, err := r.Storer.Reference(plumbing.NewTagReferenceName("v1"))
+		assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+	}
+
+	t.Run("lightweight before start", func(t *testing.T) {
+		t.Parallel()
+
+		r, hash := setup(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := r.CreateTagContext(ctx, "v1", hash, nil)
+		require.ErrorIs(t, err, context.Canceled)
+		assertNoTag(t, r)
+	})
+
+	t.Run("annotated before start", func(t *testing.T) {
+		t.Parallel()
+
+		r, hash := setup(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		called := false
+		_, err := r.CreateTagContext(ctx, "v1", hash, &CreateTagOptions{
+			Tagger:  defaultSignature(),
+			Message: "msg",
+			Signer: funcSigner(func(context.Context, io.Reader) ([]byte, error) {
+				called = true
+				return []byte(mockSignature), nil
+			}),
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		assert.False(t, called, "signer must not be called with a cancelled context")
+		assertNoTag(t, r)
+	})
+
+	for _, tc := range cancellingSigners {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, hash := setup(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			_, err := r.CreateTagContext(ctx, "v1", hash, &CreateTagOptions{
+				Tagger:  defaultSignature(),
+				Message: "msg",
+				Signer:  tc.signer(cancel),
+			})
+			require.ErrorIs(t, err, context.Canceled)
+			assertNoTag(t, r)
+		})
+	}
+}

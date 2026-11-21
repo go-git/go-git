@@ -913,6 +913,22 @@ func (r *Repository) DeleteBranch(name string) error {
 // otherwise a lightweight tag is created.
 // The shorthand name must satisfy plumbing.ValidateTagName.
 func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
+	return r.CreateTagContext(context.Background(), name, hash, opts)
+}
+
+// CreateTagContext creates a tag. If opts is included, the tag is an annotated
+// tag, otherwise a lightweight tag is created.
+// The shorthand name must satisfy plumbing.ValidateTagName.
+//
+// The provided Context must be non-nil. It is passed to the tag signer and
+// checked before each expensive step. If it is done before the tag object is
+// written, ctx.Err() is returned and neither the tag object nor the reference
+// is written.
+func (r *Repository) CreateTagContext(ctx context.Context, name string, hash plumbing.Hash, opts *CreateTagOptions) (*plumbing.Reference, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if err := plumbing.ValidateTagName(name); err != nil {
 		return nil, err
 	}
@@ -933,7 +949,7 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagO
 
 	var target plumbing.Hash
 	if opts != nil {
-		target, err = r.createTagObject(name, hash, opts)
+		target, err = r.createTagObject(ctx, name, hash, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -949,7 +965,7 @@ func (r *Repository) CreateTag(name string, hash plumbing.Hash, opts *CreateTagO
 	return ref, nil
 }
 
-func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
+func (r *Repository) createTagObject(ctx context.Context, name string, hash plumbing.Hash, opts *CreateTagOptions) (plumbing.Hash, error) {
 	if err := opts.Validate(r, hash); err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -985,12 +1001,18 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	}
 
 	if signer != nil {
-		sig, err := r.buildTagSignature(tag, signer)
+		sig, err := signObject(ctx, signer, tag)
 		if err != nil {
 			return plumbing.ZeroHash, err
 		}
 
-		tag.Signature = sig
+		tag.Signature = string(sig)
+	}
+
+	// A signer may ignore ctx. Check again so a cancelled tag is never
+	// written.
+	if err := ctx.Err(); err != nil {
+		return plumbing.ZeroHash, err
 	}
 
 	obj := r.Storer.NewEncodedObject()
@@ -999,26 +1021,6 @@ func (r *Repository) createTagObject(name string, hash plumbing.Hash, opts *Crea
 	}
 
 	return r.Storer.SetEncodedObject(obj)
-}
-
-func (r *Repository) buildTagSignature(tag *object.Tag, signer Signer) (string, error) {
-	encoded := &plumbing.MemoryObject{}
-	if err := tag.Encode(encoded); err != nil {
-		return "", err
-	}
-
-	rdr, err := encoded.Reader()
-	if err != nil {
-		return "", err
-	}
-
-	// TODO: thread a caller-supplied context once CreateTag accepts one.
-	b, err := signer.Sign(context.TODO(), rdr)
-	if err != nil {
-		return "", err
-	}
-
-	return string(b), nil
 }
 
 // Tag returns the tag reference with the given shorthand name.
