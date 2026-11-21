@@ -160,3 +160,10 @@ func (fs *RepositoryFilesystem) CommonFilesystem() billy.Filesystem {
 func (fs *RepositoryFilesystem) Root() string {
 	return fs.dotGitFs.Root()
 }
+
+// RootFor returns the root path of the filesystem path resolves in: the
+// common dot-git filesystem for state shared between worktrees, such as
+// the config, and the dot-git filesystem otherwise.
+func (fs *RepositoryFilesystem) RootFor(path string) string {
+	return fs.mapToRepositoryFsByPath(path).Root()
+}
