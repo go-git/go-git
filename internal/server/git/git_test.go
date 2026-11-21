@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 
 	servergit "github.com/go-git/go-git/v6/internal/server"
 	servergitdaemon "github.com/go-git/go-git/v6/internal/server/git"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	transportgit "github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/git"
 )
@@ -226,4 +228,40 @@ func startGitServer(t *testing.T, f *fixtures.Fixture) *gitServer {
 		server:   srv,
 		endpoint: endpoint,
 	}
+}
+
+func TestGitServer_ReceivePackDisabled(t *testing.T) {
+	t.Parallel()
+
+	srv := servergitdaemon.FromLoader(servergit.Loader(t, fixtures.Basic().One()))
+	srv.DisableReceivePack = true
+	endpoint, err := srv.Start()
+	require.NoError(t, err)
+	t.Cleanup(func() { srv.Close() })
+
+	u, err := url.Parse(endpoint + "/basic.git")
+	require.NoError(t, err)
+
+	conn, err := net.Dial("tcp", u.Host)
+	require.NoError(t, err)
+	defer conn.Close()
+	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+
+	req := packp.GitProtoRequest{
+		RequestCommand: transportgit.ReceivePackService,
+		Pathname:       "/basic.git",
+		Host:           u.Host,
+	}
+	require.NoError(t, req.Encode(conn))
+
+	reply, err := io.ReadAll(conn)
+	require.NoError(t, err)
+	const msg = "ERR access denied or repository not exported: /basic.git"
+	require.Equal(t, fmt.Sprintf("%04x%s", len(msg)+4, msg), string(reply))
+
+	tr := git.NewTransport(git.Options{})
+	_, err = tr.Handshake(context.Background(), &transportgit.Request{
+		URL: u, Command: transportgit.ReceivePackService,
+	})
+	require.ErrorContains(t, err, "access denied or repository not exported: /basic.git")
 }

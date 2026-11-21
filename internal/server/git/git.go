@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-git/go-git/v6/backend"
 	"github.com/go-git/go-git/v6/internal/transport/loader"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -61,6 +62,11 @@ type Server struct {
 	// closed.
 	MaxConnections int
 
+	// DisableReceivePack refuses git-receive-pack, the way git daemon
+	// does unless run with --enable=receive-pack. The server enables it
+	// by default because it backs tests that push over git://.
+	DisableReceivePack bool
+
 	ln  net.Listener
 	srv *backend.Backend
 
@@ -100,7 +106,9 @@ func (s *Server) Start() (string, error) {
 	}
 	// The server backs tests that push and archive over git://, like a
 	// git daemon run with --enable=receive-pack --enable=upload-archive.
-	srv.ReceivePack = backend.ServiceEnabled
+	if !s.DisableReceivePack {
+		srv.ReceivePack = backend.ServiceEnabled
+	}
 	srv.UploadArchive = backend.ServiceEnabled
 
 	ln, err := net.Listen("tcp", defaultAddr)
@@ -279,6 +287,18 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	if err := s.srv.Serve(ctx, io.NopCloser(br), ioutil.WriteNopCloser(sc), req); err != nil {
 		s.logf("git: serve %s %s: %v", req.Service, req.URL.Path, err)
+		if errors.Is(err, backend.ErrServiceNotEnabled) {
+			s.writeDenied(sc, req.URL.Path)
+		}
+	}
+}
+
+// writeDenied tells the client that dir may not be served, with the
+// message git daemon sends when it runs without --informative-errors
+// (daemon.c daemon_error).
+func (s *Server) writeDenied(w io.Writer, dir string) {
+	if _, err := pktline.Writef(w, "ERR access denied or repository not exported: %s", dir); err != nil {
+		s.logf("git: write error response: %v", err)
 	}
 }
 
