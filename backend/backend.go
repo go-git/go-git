@@ -1,8 +1,9 @@
 // Package backend provides a unified Git server backend that handles
-// git-upload-pack and git-receive-pack over any transport (TCP, HTTP, SSH).
+// git-upload-pack, git-receive-pack and git-upload-archive over any
+// transport (TCP, HTTP, SSH).
 //
-// Use [Backend.Serve] or [Backend.ServeConn] for stream-based transports
-// (TCP, SSH, pipes). Use [Backend.ServeHTTP] for smart HTTP.
+// Use [Backend.Serve] for stream-based transports (TCP, SSH, pipes). Use
+// [Backend.ServeHTTP] for smart HTTP.
 package backend
 
 import (
@@ -26,7 +27,8 @@ type Request struct {
 	// appropriately for the configured Loader.
 	URL *url.URL
 
-	// Service is the Git command: "git-upload-pack" or "git-receive-pack".
+	// Service is the Git command: "git-upload-pack", "git-receive-pack" or
+	// "git-upload-archive".
 	Service string
 
 	// GitProtocol is the value of the GIT_PROTOCOL environment variable
@@ -75,9 +77,9 @@ const (
 	ServiceDisabled
 )
 
-// Backend is a Git server that dispatches upload-pack and receive-pack
-// requests. It implements [http.Handler] for HTTP and provides [Serve]
-// and [ServeConn] for stream-based transports.
+// Backend is a Git server that dispatches upload-pack, receive-pack and
+// upload-archive requests. It implements [http.Handler] for HTTP and
+// provides [Backend.Serve] for stream-based transports.
 type Backend struct {
 	// Loader resolves repository URLs to storage. It is required.
 	// Requests fail while it is nil.
@@ -146,7 +148,7 @@ func New(l transport.Loader) (*Backend, error) {
 
 // Serve handles a Git pack protocol request. It resolves the repository
 // from req.URL, validates the service, and runs the appropriate server
-// command (upload-pack or receive-pack).
+// command (upload-pack, receive-pack or upload-archive).
 //
 // Serve applies git daemon's service policy: upload-pack is served unless
 // disabled, receive-pack and upload-archive only when enabled. A service
