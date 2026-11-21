@@ -748,6 +748,82 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
 }
 
+// TestPlainCloneContext_EmptyRemoteRespectsUnbornHEAD verifies that cloning an
+// empty remote repository over protocol v2 points the local HEAD at the remote's
+// unborn branch (e.g. refs/heads/trunk) rather than falling back to default.
+func TestPlainCloneContext_EmptyRemoteRespectsUnbornHEAD(t *testing.T) {
+	t.Parallel()
+
+	unbornBranch := plumbing.ReferenceName("refs/heads/trunk")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithDefaultBranch(unbornBranch))
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, unbornBranch, head.Target())
+}
+
+// TestPlainCloneContext_EmptyRemoteRejectsNonBranchUnbornTarget verifies that a
+// remote advertising an unborn target outside refs/heads/ (e.g. refs/tags/x) is rejected
+// and falls back to default branch (master).
+func TestPlainCloneContext_EmptyRemoteRejectsNonBranchUnbornTarget(t *testing.T) {
+	t.Parallel()
+
+	nonBranch := plumbing.ReferenceName("refs/tags/v1.0.0")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithDefaultBranch(nonBranch))
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, plumbing.Master, head.Target())
+}
+
+// TestPlainCloneContext_EmptyRemoteFallbackWithoutUnborn verifies that an empty
+// remote repository without a custom unborn advertisement points local HEAD to master.
+func TestPlainCloneContext_EmptyRemoteFallbackWithoutUnborn(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, plumbing.Master, head.Target())
+}
+
 // A single-branch clone of a missing branch narrows ls-refs to HEAD, which
 // the remote still advertises with an object id. That is a missing branch,
 // not an empty remote, so AllowEmptyRepo must not turn it into a success.

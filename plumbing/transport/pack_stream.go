@@ -120,13 +120,15 @@ func (s *StreamSession) GetRemoteRefs(ctx context.Context, opts *GetRemoteRefsOp
 		if err != nil {
 			return nil, err
 		}
-		if !forPush && internal.IsEmptyLsRefs(out) {
-			return nil, ErrEmptyRemoteRepository
-		}
 		rr := NewRemoteRefs(out.References)
 		// A ref-prefix can leave HEAD's target out of the result, so take an
 		// unborn HEAD from ls-refs rather than inferring it from the refs.
 		rr.Unborn = out.UnbornHead
+		if !forPush && internal.IsEmptyLsRefs(out) {
+			return nil, &EmptyRemoteRepositoryError{
+				Unborn: rr.Unborn,
+			}
+		}
 		return rr, nil
 	}
 

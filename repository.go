@@ -1170,8 +1170,15 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
-	if err1 == nil && hr.Target() == plumbing.Invalid {
-		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+	if err1 == nil && (hr.Target() == plumbing.Invalid || errors.Is(err, transport.ErrEmptyRemoteRepository)) {
+		target := plumbing.Master
+		var emptyErr *transport.EmptyRemoteRepositoryError
+		if errors.As(err, &emptyErr) && emptyErr.Unborn.IsBranch() && emptyErr.Unborn.Validate() == nil {
+			target = emptyErr.Unborn
+		}
+		if setErr := r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, target)); setErr != nil {
+			return setErr
+		}
 	}
 
 	if err != nil {

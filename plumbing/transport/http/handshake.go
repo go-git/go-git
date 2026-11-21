@@ -379,13 +379,15 @@ func (s *smartPackSession) GetRemoteRefs(ctx context.Context, opts *transport.Ge
 		if err != nil {
 			return nil, err
 		}
-		if !forPush && internal.IsEmptyLsRefs(out) {
-			return nil, transport.ErrEmptyRemoteRepository
-		}
 		rr := transport.NewRemoteRefs(out.References)
 		// A ref-prefix can leave HEAD's target out of the result, so take an
 		// unborn HEAD from ls-refs rather than inferring it from the refs.
 		rr.Unborn = out.UnbornHead
+		if !forPush && internal.IsEmptyLsRefs(out) {
+			return nil, &transport.EmptyRemoteRepositoryError{
+				Unborn: rr.Unborn,
+			}
+		}
 		return rr, nil
 	}
 
