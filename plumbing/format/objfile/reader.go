@@ -1,6 +1,7 @@
 package objfile
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"strconv"
@@ -18,6 +19,7 @@ var (
 	ErrHeaderTooLong = errors.New("objfile: header exceeds maximum length")
 	ErrHeaderNotRead = errors.New("objfile: Header must be called before Read")
 	ErrNegativeSize  = errors.New("objfile: negative object size")
+	ErrTrailingData  = errors.New("objfile: garbage at end of loose object")
 )
 
 // maxHeaderLen mirrors canonical Git's MAX_HEADER_LEN [1]. The type,
@@ -32,28 +34,40 @@ const maxHeaderLen = 32
 // the Reader. Close will not close the underlying io.Reader.
 type Reader struct {
 	multi        io.Reader
+	src          *bufio.Reader
 	zlib         *sync.ZLibReader
 	hasher       plumbing.Hasher
 	objectFormat format.ObjectFormat
+	pending      int64 // number of unread bytes of the declared size
+	readErr      error // returned by every Read after the stream ends or fails
 	closed       bool
 }
 
 // NewReader returns a new Reader reading from r and hashing objects with the
 // given object format.
 func NewReader(r io.Reader, objectFormat format.ObjectFormat) (*Reader, error) {
-	zlib, err := sync.GetZlibReader(r)
+	// A zlib reader given an io.ByteReader reads no further than the end of
+	// the zlib stream, which lets checkEnd find data that follows it.
+	src := sync.GetBufioReader(r)
+	zlib, err := sync.GetZlibReader(src)
 	if err != nil {
+		sync.PutBufioReader(src)
 		return nil, packfile.ErrZLib.AddDetails("%s", err.Error())
 	}
 
 	return &Reader{
+		src:          src,
 		zlib:         zlib,
 		objectFormat: objectFormat,
 	}, nil
 }
 
-// Header reads the type and the size of object, and prepares the reader for read
+// Header reads the type and the size of object, and prepares the reader for read.
+// It returns ErrClosed if the Reader has been closed.
 func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
+	if r.closed {
+		return t, size, ErrClosed
+	}
 	budget := maxHeaderLen
 
 	var raw []byte
@@ -72,9 +86,8 @@ func (r *Reader) Header() (t plumbing.ObjectType, size int64, err error) {
 		return t, size, err
 	}
 
-	size, err = strconv.ParseInt(string(raw), 10, 64)
+	size, err = parseSize(raw)
 	if err != nil {
-		err = ErrHeader
 		return t, size, err
 	}
 
@@ -109,9 +122,32 @@ func (r *Reader) readUntil(delim byte, budget int) ([]byte, int, error) {
 	}
 }
 
+// parseSize parses the size field of a loose-object header. Like canonical
+// Git's parse_loose_header [1], it accepts only canonical decimal digits, so
+// a sign, a leading zero or any other byte is an ErrHeader.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/object-file.c#L365-L391
+func parseSize(raw []byte) (int64, error) {
+	if len(raw) == 0 || (raw[0] == '0' && len(raw) > 1) {
+		return 0, ErrHeader
+	}
+	for _, c := range raw {
+		if c < '0' || c > '9' {
+			return 0, ErrHeader
+		}
+	}
+
+	size, err := strconv.ParseInt(string(raw), 10, 64)
+	if err != nil {
+		return 0, ErrHeader
+	}
+	return size, nil
+}
+
 func (r *Reader) prepareForRead(t plumbing.ObjectType, size int64) {
 	r.hasher = plumbing.NewHasher(r.objectFormat, t, size)
 	r.multi = io.TeeReader(r.zlib, r.hasher)
+	r.pending = size
 }
 
 // Read reads len(p) bytes into p from the object data stream. It returns
@@ -122,12 +158,71 @@ func (r *Reader) prepareForRead(t plumbing.ObjectType, size int64) {
 // If Read encounters the end of the data stream it will return err == io.EOF,
 // either in the current call if n > 0 or in a subsequent call.
 //
-// Read returns ErrHeaderNotRead if Header has not been called successfully.
+// Read never returns more bytes than the size declared in the header, and
+// returns io.ErrUnexpectedEOF if the data stream holds fewer. Once the
+// declared size has been read, the next Read checks that the object ends
+// there. It returns ErrOverflow if the data stream holds more bytes, and
+// ErrTrailingData if data follows the zlib stream. A caller that stops after
+// the declared size, as io.ReadFull does, skips these checks. Reading until
+// Read returns an error, as io.Copy and io.ReadAll do, performs them.
+//
+// Read returns ErrHeaderNotRead if Header has not been called successfully,
+// and ErrClosed if the Reader has been closed.
 func (r *Reader) Read(p []byte) (n int, err error) {
+	if r.closed {
+		return 0, ErrClosed
+	}
 	if r.multi == nil {
 		return 0, ErrHeaderNotRead
 	}
-	return r.multi.Read(p)
+	if r.readErr != nil {
+		return 0, r.readErr
+	}
+	if r.pending == 0 {
+		r.readErr = r.checkEnd()
+		return 0, r.readErr
+	}
+
+	if int64(len(p)) > r.pending {
+		p = p[:r.pending]
+	}
+	n, err = r.multi.Read(p)
+	r.pending -= int64(n)
+	if err == io.EOF {
+		if r.pending > 0 {
+			err = io.ErrUnexpectedEOF
+		} else {
+			err = r.checkEnd()
+		}
+	}
+	if err != nil {
+		r.readErr = err
+	}
+	return n, err
+}
+
+// checkEnd reports whether the object ends exactly at the declared size,
+// as canonical Git's unpack_loose_rest does [1]. The data stream must end
+// there, and no data may follow the zlib stream. It reads past the hasher,
+// so any extra byte does not affect Hash.
+//
+// [1]: https://github.com/git/git/blob/v2.54.0/object-file.c#L318-L326
+func (r *Reader) checkEnd() error {
+	var buf [1]byte
+	n, err := io.ReadFull(r.zlib, buf[:])
+	if n > 0 {
+		return ErrOverflow
+	}
+	if err != io.EOF {
+		return err
+	}
+	if _, err := r.src.ReadByte(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return ErrTrailingData
+	}
+	return io.EOF
 }
 
 // Hash returns the hash of the object data stream that has been read so far.
@@ -152,6 +247,7 @@ func (r *Reader) Close() error {
 	}
 	r.closed = true
 
+	defer sync.PutBufioReader(r.src)
 	defer sync.PutZlibReader(r.zlib)
 	return r.zlib.Close()
 }
