@@ -177,9 +177,7 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 	// delete clears it, so the next lookup lists objects/pack again and
 	// reports the pack as gone.
 	opts := dotgit.Options{
-		ExclusiveAccess:   true,
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
+		ExclusiveAccess: true,
 	}
 	dg := dotgit.NewWithOptions(base, opts)
 	require.NoError(t, dg.Initialize())

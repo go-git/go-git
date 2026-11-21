@@ -67,8 +67,15 @@ func (o *options) ensureTLS() *tls.Config {
 
 // WithSSHAuth sets SSH authentication. The auth type's ClientConfig method
 // is called for each SSH connection.
+//
+// An untyped nil a is ignored. A typed nil in a non-nil interface, such as
+// WithSSHAuth((*ssh.Password)(nil)), is a value like any other and panics
+// on the first SSH connection.
 func WithSSHAuth(a SSHAuth) Option {
 	return func(o *options) {
+		if a == nil {
+			return
+		}
 		o.ssh.ClientConfig = a.ClientConfig
 	}
 }

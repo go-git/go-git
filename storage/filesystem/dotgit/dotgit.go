@@ -292,13 +292,14 @@ type Options struct {
 
 	ObjectFormat formatcfg.ObjectFormat
 
-	// ReadReverseIndex controls whether .rev files are read from disk.
-	// When false, a reverse index is generated in memory on demand.
-	// Defaults to true.
-	ReadReverseIndex bool
-	// WriteReverseIndex controls whether .rev files are written when
-	// creating new packfiles. Defaults to true.
-	WriteReverseIndex bool
+	// SkipReadReverseIndex disables reading .rev files from disk. When
+	// true, a reverse index is generated in memory on demand. The zero
+	// value reads them, matching git's pack.readReverseIndex default.
+	SkipReadReverseIndex bool
+	// SkipWriteReverseIndex disables writing .rev files when creating new
+	// packfiles. The zero value writes them, matching git's
+	// pack.writeReverseIndex default.
+	SkipWriteReverseIndex bool
 	// Pool, when non-nil, governs the LRU eviction of file
 	// descriptors held by [packhandle.PackHandle] instances
 	// constructed by this DotGit. Nil disables pooling for the
@@ -363,9 +364,7 @@ type DotGit struct {
 // "/foo/bar/.git").
 func New(fs billy.Filesystem) *DotGit {
 	return NewWithOptions(fs, Options{
-		ObjectFormat:      formatcfg.DefaultObjectFormat,
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
+		ObjectFormat: formatcfg.DefaultObjectFormat,
 	})
 }
 
@@ -525,7 +524,7 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 // disk and also generates and save the index for the given packfile.
 func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 	cleanErr := d.cleanPackList()
-	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, !d.options.SkipWriteReverseIndex)
 	if err != nil {
 		return nil, errors.Join(cleanErr, err)
 	}
@@ -821,10 +820,10 @@ func (d *DotGit) ObjectPackRev(hash plumbing.Hash) (billy.File, error) {
 }
 
 // OpenPackRev returns a [idxfile.ReadAtCloser] for the reverse index of the given
-// packfile. When ReadReverseIndex is true the .rev file is read from disk;
+// packfile. Unless [Options.SkipReadReverseIndex] is set the .rev file is read from disk;
 // otherwise the reverse index is generated in memory on demand.
 func (d *DotGit) OpenPackRev(hash plumbing.Hash) (idxfile.ReadAtCloser, error) {
-	if d.options.ReadReverseIndex {
+	if !d.options.SkipReadReverseIndex {
 		r, err := d.ObjectPackRev(hash)
 		if err == nil {
 			return r, nil
@@ -881,8 +880,8 @@ func (b *bytesReadAtCloser) Close() error { return nil }
 // packHandle returns the cached [packhandle.PackHandle] for the
 // given pack hash, constructing one on first access. Rev is
 // served through [DotGit.OpenPackRev] so the in-memory fallback
-// applies when the .rev file is absent or [Options.ReadReverseIndex]
-// is false. Returns [ErrPackfileNotFound] when the .pack file
+// applies when the .rev file is absent or [Options.SkipReadReverseIndex]
+// is true. Returns [ErrPackfileNotFound] when the .pack file
 // cannot be located.
 func (d *DotGit) packHandle(hash plumbing.Hash) (*packhandle.PackHandle, error) {
 	d.packHandlesMu.Lock()
@@ -2130,10 +2129,8 @@ func (d *DotGit) Alternates() ([]*DotGit, error) {
 		// storage-wide budget covers alternate packs and idxes.
 		// Other Options keep their defaults from New.
 		alternates = append(alternates, NewWithOptions(afs, Options{
-			ObjectFormat:      d.options.ObjectFormat,
-			ReadReverseIndex:  true,
-			WriteReverseIndex: true,
-			Pool:              d.options.Pool,
+			ObjectFormat: d.options.ObjectFormat,
+			Pool:         d.options.Pool,
 		}))
 	}
 

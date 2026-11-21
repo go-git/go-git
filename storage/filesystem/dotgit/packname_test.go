@@ -314,7 +314,7 @@ func TestMissingReverseIndexIsLookedUpOnce(t *testing.T) {
 
 	fs := &readDirCounter{Filesystem: memfs.New()}
 	h := writeFixturePack(t, fs, "pack-"+fixtures.Basic().One().PackfileHash, packExt, idxExt)
-	dot := NewWithOptions(fs, Options{ReadReverseIndex: true})
+	dot := NewWithOptions(fs, Options{})
 	defer func() { _ = dot.Close() }()
 
 	for range 3 {

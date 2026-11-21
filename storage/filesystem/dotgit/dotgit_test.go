@@ -1156,10 +1156,7 @@ func (s *SuiteDotGit) TestObjectPackIdx() {
 func TestOpenPackRevReadFromDisk(t *testing.T) {
 	t.Parallel()
 
-	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, _ := createPackWithRev(t, Options{})
 
 	rev, err := dot.OpenPackRev(h)
 	require.NoError(t, err)
@@ -1172,13 +1169,40 @@ func TestOpenPackRevReadFromDisk(t *testing.T) {
 	require.NoError(t, rev.Close())
 }
 
+func TestZeroOptionsWriteReverseIndex(t *testing.T) {
+	t.Parallel()
+
+	for name, newDot := range map[string]func(billy.Filesystem) *DotGit{
+		"New":                New,
+		"NewWithZeroOptions": func(fs billy.Filesystem) *DotGit { return NewWithOptions(fs, Options{}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := fixtures.Basic().One()
+			fs := osfs.New(t.TempDir())
+			dot := newDot(fs)
+			require.NoError(t, dot.Initialize())
+
+			w, err := dot.NewObjectPack()
+			require.NoError(t, err)
+			pf, err := f.Packfile()
+			require.NoError(t, err)
+			_, err = io.Copy(w, pf)
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+
+			h := plumbing.NewHash(f.PackfileHash)
+			_, err = fs.Stat(fmt.Sprintf("objects/pack/pack-%s.rev", h))
+			require.NoError(t, err, ".rev file should be written")
+		})
+	}
+}
+
 func TestOpenPackRevIgnoreReverseIndex(t *testing.T) {
 	t.Parallel()
 
-	dot, h, fs := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, fs := createPackWithRev(t, Options{})
 
 	// Overwrite the .rev with garbage.
 	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", h)
@@ -1193,11 +1217,10 @@ func TestOpenPackRevIgnoreReverseIndex(t *testing.T) {
 	assert.NotEqual(t, [4]byte{'R', 'I', 'D', 'X'}, hdr)
 	require.NoError(t, rev.Close())
 
-	// Re-open DotGit with ReadReverseIndex=false so the corrupt disk
+	// Re-open DotGit with SkipReadReverseIndex=true so the corrupt disk
 	// file is ignored and a fresh rev is generated instead.
 	dot = NewWithOptions(fs, Options{
-		ReadReverseIndex:  false,
-		WriteReverseIndex: true,
+		SkipReadReverseIndex: true,
 	})
 
 	rev, err = dot.OpenPackRev(h)
@@ -1213,15 +1236,15 @@ func TestOpenPackRevNoRevFileOnDisk(t *testing.T) {
 	t.Parallel()
 
 	_, h, fs := createPackWithRev(t, Options{
-		ReadReverseIndex:  false,
-		WriteReverseIndex: false,
+		SkipReadReverseIndex:  true,
+		SkipWriteReverseIndex: true,
 	})
 
 	revPath := fmt.Sprintf("objects/pack/pack-%s.rev", h)
 	_, err := fs.Stat(revPath)
 	require.True(t, os.IsNotExist(err), ".rev file should not exist on disk")
 
-	dot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	dot := NewWithOptions(fs, Options{SkipReadReverseIndex: true})
 	rev, err := dot.OpenPackRev(h)
 	require.NoError(t, err)
 
@@ -1236,13 +1259,13 @@ func TestOpenRevFileDoesNotExist(t *testing.T) {
 	t.Parallel()
 
 	_, h, fs := createPackWithRev(t, Options{
-		ReadReverseIndex:  false,
-		WriteReverseIndex: false,
+		SkipReadReverseIndex:  true,
+		SkipWriteReverseIndex: true,
 	})
 
-	// ReadReverseIndex=true tries to open the .rev from disk — which
+	// Reading the reverse index tries to open the .rev from disk — which
 	// does not exist. Generate one on demand.
-	dot := NewWithOptions(fs, Options{ReadReverseIndex: true})
+	dot := NewWithOptions(fs, Options{})
 	_, err := dot.OpenPackRev(h)
 	require.NoError(t, err)
 }
@@ -1250,10 +1273,7 @@ func TestOpenRevFileDoesNotExist(t *testing.T) {
 func TestOpenPackRevGeneratedMatchesDisk(t *testing.T) {
 	t.Parallel()
 
-	dot, h, fs := createPackWithRev(t, Options{
-		ReadReverseIndex:  true,
-		WriteReverseIndex: true,
-	})
+	dot, h, fs := createPackWithRev(t, Options{})
 
 	diskRev, err := dot.OpenPackRev(h)
 	require.NoError(t, err)
@@ -1262,7 +1282,7 @@ func TestOpenPackRevGeneratedMatchesDisk(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, diskRev.Close())
 
-	genDot := NewWithOptions(fs, Options{ReadReverseIndex: false})
+	genDot := NewWithOptions(fs, Options{SkipReadReverseIndex: true})
 	genRev, err := genDot.OpenPackRev(h)
 	require.NoError(t, err)
 
@@ -1277,8 +1297,8 @@ func TestOpenPackRevUsableByLazyIndex(t *testing.T) {
 	t.Parallel()
 
 	dot, h, _ := createPackWithRev(t, Options{
-		ReadReverseIndex:  false,
-		WriteReverseIndex: false,
+		SkipReadReverseIndex:  true,
+		SkipWriteReverseIndex: true,
 	})
 
 	openIdx := func() (idxfile.ReadAtCloser, error) {
