@@ -57,6 +57,13 @@ func growHint(n int64) int {
 	}
 }
 
+// writerOnly hides any io.ReaderFrom implementation of the wrapped writer, so
+// io.CopyBuffer streams through its own fixed-size buffer instead of handing
+// the copy to the destination. bytes.Buffer.ReadFrom grows the buffer by
+// MinRead before every read, so a destination that Grow left exactly full is
+// reallocated to about twice its size just to observe EOF.
+type writerOnly struct{ io.Writer }
+
 // Parser decodes a packfile and calls any observer associated to it. Is used
 // to generate indexes.
 //
@@ -507,7 +514,11 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, int64, error) 
 				}
 				parent.content.Grow(growHint(parent.Size))
 
-				_, err = ioutil.CopyBufferPool(parent.content, r)
+				// The buffer is sized for exactly the parent's bytes, so
+				// copy through a plain io.Writer: bytes.Buffer.ReadFrom
+				// would grow it by MinRead before each read and reallocate
+				// it to about twice its size on the final, empty read.
+				_, err = ioutil.CopyBufferPool(writerOnly{parent.content}, r)
 				if err == nil {
 					return contents()
 				}
