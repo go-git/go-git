@@ -1,0 +1,254 @@
+package git
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/go-git/go-billy/v6/osfs"
+	fixtures "github.com/go-git/go-git-fixtures/v6"
+
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
+)
+
+var blameBenchmarks = []struct {
+	name string
+	repo string
+	rev  string
+	path string
+}{
+	// A long script built up by many commits.
+	{"spinnaker-script", "https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "InstallSpinnaker.sh"},
+	// A binary file, diffed as if it were text.
+	{"spinnaker-binary", "https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "gradle/wrapper/gradle-wrapper.jar"},
+	// The most edited file in the repository.
+	{"go-git-most-edited", "https://github.com/src-d/go-git.git", "e8788ad9165781196e917292d6055cba1d78664e", "repository.go"},
+	// Renamed from storage/seekable/storage.go, so the walk goes through
+	// rename detection.
+	{"go-git-renamed", "https://github.com/src-d/go-git.git", "e8788ad9165781196e917292d6055cba1d78664e", "storage/filesystem/storage.go"},
+	// Unchanged in the 186 commits after it was added, so most of the walk
+	// finds nothing to blame.
+	{"go-git-unchanged", "https://github.com/src-d/go-git.git", "e8788ad9165781196e917292d6055cba1d78664e", "diff/diff.go"},
+}
+
+func BenchmarkBlame(b *testing.B) {
+	root := b.TempDir()
+	dirs := make(map[string]string)
+	for _, t := range blameBenchmarks {
+		b.Run(t.name, func(b *testing.B) {
+			dir, ok := dirs[t.repo]
+			if !ok {
+				// Write the fixture packfile to a repository on disk, the
+				// first time a file of the fixture is blamed.
+				dir = filepath.Join(root, t.name)
+				p, err := fixtures.ByURL(t.repo).One().Packfile()
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				st := filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault())
+				err = packfile.UpdateObjectStorage(st, p)
+				_ = p.Close()
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := st.Close(); err != nil {
+					b.Fatal(err)
+				}
+				dirs[t.repo] = dir
+			}
+
+			open := func() (storer.EncodedObjectStorer, error) {
+				return filesystem.NewStorage(osfs.New(dir), cache.NewObjectLRUDefault()), nil
+			}
+			benchmarkBlame(b, open, plumbing.NewHash(t.rev), t.path)
+		})
+	}
+}
+
+// BenchmarkBlameRepository blames files of a repository on disk, to measure
+// Blame on histories larger than the fixtures. It is skipped unless
+// GOGIT_BLAME_BENCH_REPO is set:
+//
+//	GOGIT_BLAME_BENCH_REPO   path to the repository
+//	GOGIT_BLAME_BENCH_FILES  comma-separated paths of the files to blame
+//	GOGIT_BLAME_BENCH_REV    revision to blame the files at, HEAD by default
+//
+// For example, with a clone of git in $HOME/src/git:
+//
+//	GOGIT_BLAME_BENCH_REPO=$HOME/src/git GOGIT_BLAME_BENCH_FILES=diff.c,blame.c \
+//		go test -run '^$' -bench BenchmarkBlameRepository .
+func BenchmarkBlameRepository(b *testing.B) {
+	dir := os.Getenv("GOGIT_BLAME_BENCH_REPO")
+	if dir == "" {
+		b.Skip("GOGIT_BLAME_BENCH_REPO is not set")
+	}
+
+	files := os.Getenv("GOGIT_BLAME_BENCH_FILES")
+	if files == "" {
+		b.Fatal("GOGIT_BLAME_BENCH_FILES is not set")
+	}
+
+	rev := os.Getenv("GOGIT_BLAME_BENCH_REV")
+	if rev == "" {
+		rev = "HEAD"
+	}
+
+	r, err := PlainOpen(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	h, err := r.ResolveRevision(plumbing.Revision(rev))
+	closeBlameBenchmarkStorage(b, r.Storer)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	open := func() (storer.EncodedObjectStorer, error) {
+		r, err := PlainOpen(dir)
+		if err != nil {
+			return nil, err
+		}
+
+		return r.Storer, nil
+	}
+	for path := range strings.SplitSeq(files, ",") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+
+		b.Run(path, func(b *testing.B) {
+			benchmarkBlame(b, open, *h, path)
+		})
+	}
+}
+
+// benchmarkBlame blames path at rev, reading objects from the storage
+// returned by open. It runs twice: "cold" opens a new storage for every
+// iteration and times reading rev from it along with Blame, so loading the
+// pack indexes and filling the object cache count towards the result, while
+// "warm" reuses one storage across iterations.
+//
+// Both report the number of commits, trees and blobs a Blame call reads,
+// which, unlike its duration, does not depend on the machine.
+func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error), rev plumbing.Hash, path string) {
+	// Count the objects in a separate Blame call, so the timed runs read from
+	// the storage directly.
+	s, err := open()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	reads := make(blameObjectReads)
+	c, err := object.GetCommit(&countingObjectStorer{EncodedObjectStorer: s, reads: reads}, rev)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Only count what Blame reads, not the commit it starts from.
+	clear(reads)
+	_, err = Blame(c, path)
+	closeBlameBenchmarkStorage(b, s)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.Run("cold", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			b.StopTimer()
+			s, err := open()
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.StartTimer()
+
+			c, err := object.GetCommit(s, rev)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if _, err := Blame(c, path); err != nil {
+				b.Fatal(err)
+			}
+
+			b.StopTimer()
+			closeBlameBenchmarkStorage(b, s)
+			b.StartTimer()
+		}
+
+		reads.report(b)
+	})
+
+	b.Run("warm", func(b *testing.B) {
+		b.ReportAllocs()
+		s, err := open()
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer closeBlameBenchmarkStorage(b, s)
+
+		c, err := object.GetCommit(s, rev)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		// Fill the caches before timing.
+		if _, err := Blame(c, path); err != nil {
+			b.Fatal(err)
+		}
+
+		for b.Loop() {
+			if _, err := Blame(c, path); err != nil {
+				b.Fatal(err)
+			}
+		}
+
+		reads.report(b)
+	})
+}
+
+// blameObjectReads counts the objects of each type read by a Blame call.
+type blameObjectReads map[plumbing.ObjectType]int
+
+// report reports the counts as metrics of b. It must be called after the
+// benchmark loop, as starting the loop resets the timer, which discards
+// reported metrics.
+func (r blameObjectReads) report(b *testing.B) {
+	b.ReportMetric(float64(r[plumbing.CommitObject]), "commits/op")
+	b.ReportMetric(float64(r[plumbing.TreeObject]), "trees/op")
+	b.ReportMetric(float64(r[plumbing.BlobObject]), "blobs/op")
+}
+
+// countingObjectStorer is an EncodedObjectStorer that counts the objects read
+// through it.
+type countingObjectStorer struct {
+	storer.EncodedObjectStorer
+	reads blameObjectReads
+}
+
+func (s *countingObjectStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := s.EncodedObjectStorer.EncodedObject(t, h)
+	if err == nil {
+		s.reads[obj.Type()]++
+	}
+
+	return obj, err
+}
+
+// closeBlameBenchmarkStorage closes s, if it can be closed.
+func closeBlameBenchmarkStorage(b *testing.B, s storer.EncodedObjectStorer) {
+	if closer, ok := s.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
