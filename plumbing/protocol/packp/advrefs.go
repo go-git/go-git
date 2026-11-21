@@ -2,7 +2,6 @@
 package packp
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -60,7 +59,7 @@ func (a *AdvRefs) ResolvedHead() (*plumbing.Reference, error) {
 	}
 
 	if a.supportSymrefs() {
-		return a.resolvedHeadFromSymref(head)
+		return a.resolvedHeadFromSymref(head), nil
 	}
 
 	return a.resolvedHeadFromHeuristic(head), nil
@@ -68,15 +67,11 @@ func (a *AdvRefs) ResolvedHead() (*plumbing.Reference, error) {
 
 // resolvedHeadFromSymref resolves HEAD using the symref capability.
 // Returns head unchanged if no HEAD entry exists in the symref map.
-func (a *AdvRefs) resolvedHeadFromSymref(head *plumbing.Reference) (*plumbing.Reference, error) {
-	symrefs, err := a.symRefMap()
-	if err != nil {
-		return nil, err
+func (a *AdvRefs) resolvedHeadFromSymref(head *plumbing.Reference) *plumbing.Reference {
+	if target, ok := a.symRefMap()[plumbing.HEAD]; ok {
+		return plumbing.NewSymbolicReference(plumbing.HEAD, target)
 	}
-	if target, ok := symrefs[plumbing.HEAD]; ok {
-		return plumbing.NewSymbolicReference(plumbing.HEAD, target), nil
-	}
-	return head, nil
+	return head
 }
 
 // ResolvedReferences returns all references with HEAD resolved to a
@@ -86,12 +81,8 @@ func (a *AdvRefs) ResolvedReferences() ([]*plumbing.Reference, error) {
 	refs := make([]*plumbing.Reference, len(a.References))
 	copy(refs, a.References)
 
-	symrefs, err := a.symRefMap()
-	if err != nil {
-		return nil, err
-	}
 	if a.supportSymrefs() {
-		for name, target := range symrefs {
+		for name, target := range a.symRefMap() {
 			symRef := plumbing.NewSymbolicReference(name, target)
 			found := false
 			for i, ref := range refs {
@@ -121,17 +112,27 @@ func (a *AdvRefs) ResolvedReferences() ([]*plumbing.Reference, error) {
 }
 
 // symRefMap parses the symref capability values into a name→target map.
-func (a *AdvRefs) symRefMap() (map[plumbing.ReferenceName]plumbing.ReferenceName, error) {
+//
+// It follows upstream connect.c parse_one_symref_info, which splits a value
+// at its first colon and ignores it when either side fails
+// check_refname_format(name, REFNAME_ALLOW_ONELEVEL), instead of failing the
+// whole advertisement.
+// See https://github.com/git/git/blob/f357b9c2c77eae1a1d37dfa44c1dda53f532a82a/connect.c#L183-L207.
+func (a *AdvRefs) symRefMap() map[plumbing.ReferenceName]plumbing.ReferenceName {
 	symrefs := a.Capabilities.Get(capability.SymRef)
 	m := make(map[plumbing.ReferenceName]plumbing.ReferenceName, len(symrefs))
 	for _, symref := range symrefs {
-		chunks := strings.Split(symref, ":")
-		if len(chunks) != 2 {
-			return nil, fmt.Errorf("bad number of `:` in symref value (%q)", symref)
+		name, target, ok := strings.Cut(symref, ":")
+		if !ok {
+			continue
 		}
-		m[plumbing.ReferenceName(chunks[0])] = plumbing.ReferenceName(chunks[1])
+		n, t := plumbing.ReferenceName(name), plumbing.ReferenceName(target)
+		if !validAdvertisedName(n) || !validAdvertisedName(t) {
+			continue
+		}
+		m[n] = t
 	}
-	return m, nil
+	return m
 }
 
 // resolvedHeadFromHeuristic tries to convert HEAD from a HashReference to
