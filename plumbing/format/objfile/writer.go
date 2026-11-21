@@ -113,8 +113,12 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 }
 
 // Hash returns the hash of the object data stream that has been written so far.
-// It can be called before or after Close.
+// It can be called before or after Close. It returns the zero id when no
+// header has been written, including when WriteHeader failed.
 func (w *Writer) Hash() plumbing.Hash {
+	if w.hasher.Hash == nil {
+		return plumbing.ZeroHash
+	}
 	return w.hasher.Sum() // Not yet closed, return hash of data written so far
 }
 

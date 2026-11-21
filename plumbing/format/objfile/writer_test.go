@@ -145,5 +145,6 @@ func TestWriteHeaderUnknownObjectFormat(t *testing.T) {
 	w := NewWriter(&buf, format.ObjectFormat("sha512"))
 	err := w.WriteHeader(plumbing.BlobObject, 0)
 	assert.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.True(t, w.Hash().IsZero())
 	assert.NoError(t, w.Close())
 }
