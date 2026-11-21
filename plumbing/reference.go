@@ -255,15 +255,13 @@ func (r ReferenceName) String() string {
 // Short returns the short name of a ReferenceName
 func (r ReferenceName) Short() string {
 	s := string(r)
-	res := s
-	for _, format := range RefRevParseRules[1:] {
-		_, err := fmt.Sscanf(s, format, &res)
-		if err == nil {
-			continue
+	for _, prefix := range []string{RefHeadPrefix, refTagPrefix, refRemotePrefix, RefPrefix} {
+		if short, ok := strings.CutPrefix(s, prefix); ok && short != "" {
+			return short
 		}
 	}
 
-	return res
+	return s
 }
 
 var ctrlSeqs = regexp.MustCompile(`[\000-\037\177]`)

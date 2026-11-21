@@ -25,7 +25,24 @@ func (s *ReferenceSuite) TestReferenceTypeString() {
 }
 
 func (s *ReferenceSuite) TestReferenceNameShort() {
-	s.Equal("v4", ExampleReferenceName.Short())
+	for _, tc := range []struct {
+		name ReferenceName
+		want string
+	}{
+		{ExampleReferenceName, "v4"},
+		{"HEAD", "HEAD"},
+		{"refs/heads/feature/x", "feature/x"},
+		{"refs/tags/v1.2.3", "v1.2.3"},
+		{"refs/remotes/origin/main", "origin/main"},
+		{"refs/remotes/origin/HEAD", "origin/HEAD"},
+		{"refs/pull/7/head", "pull/7/head"},
+		{"refs/heads/", "heads/"},
+		{"refs/", "refs/"},
+		{"refsheads/main", "refsheads/main"},
+		{"", ""},
+	} {
+		s.Equal(tc.want, tc.name.Short(), "Short(%q)", tc.name)
+	}
 }
 
 // TestReferenceNameIsSafeAndIsRoot pins IsSafe and IsRoot against the same
@@ -351,6 +368,22 @@ func BenchmarkReferenceObjectID(b *testing.B) {
 
 func BenchmarkReferenceStringInvalid(b *testing.B) {
 	benchMarkReferenceString(&Reference{}, b)
+}
+
+func BenchmarkReferenceNameShort(b *testing.B) {
+	names := []ReferenceName{
+		HEAD,
+		"refs/heads/feature/x",
+		"refs/tags/v1.2.3",
+		"refs/remotes/origin/main",
+		"refs/pull/7/head",
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, name := range names {
+			_ = name.Short()
+		}
+	}
 }
 
 // The four gates that draw a line at refs/ used to each carry their own copy
