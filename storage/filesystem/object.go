@@ -706,7 +706,14 @@ func (s *ObjectStorage) EncodedObjectSize(h plumbing.Hash) (size int64, err erro
 			// Each Packfile holds a reference to the pack until closed.
 			defer ioutil.CheckClose(p, &err)
 			size, err = p.GetSizeByOffset(offset)
+			// Release the pack before falling through: packfile()
+			// takes a SharedFile ref that pins the descriptor, and
+			// the loose/alternates lookup below must not hold it.
+			closeErr := p.Close()
 			if err == nil {
+				if closeErr != nil {
+					return 0, closeErr
+				}
 				return size, nil
 			}
 			if !errors.Is(err, plumbing.ErrObjectNotFound) {
