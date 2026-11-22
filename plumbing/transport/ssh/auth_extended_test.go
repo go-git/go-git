@@ -64,11 +64,16 @@ func TestNewSSHAgentAuth(t *testing.T) {
 }
 
 func TestNewSSHAgentAuthNoAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows OpenSSH agent pipe cannot be redirected")
+	}
 	t.Setenv("SSH_AUTH_SOCK", "")
 
 	k, err := NewSSHAgentAuth("foo")
 	assert.Nil(t, k)
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "SSH_AUTH_SOCK")
+	assert.ErrorContains(t, err, "github.com/go-git/x/ssh/agent")
 }
 
 func TestNewKnownHostsCallback(t *testing.T) {
