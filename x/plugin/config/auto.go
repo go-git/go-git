@@ -48,7 +48,7 @@ func WithFilesystem(fs billy.Basic) Option {
 //   - GIT_CONFIG_NOSYSTEM, when truthy, skips system config entirely.
 //   - GIT_CONFIG_SYSTEM, when set to a non-empty path, reads only that
 //     file. When set to "", system config is disabled entirely.
-func NewAuto(opts ...Option) *auto { //nolint:revive
+func NewAuto(opts ...Option) *auto {
 	a := &auto{fs: osfs.Default}
 	for _, o := range opts {
 		o(a)

@@ -30,7 +30,7 @@ type server struct {
 }
 
 // FromLoader creates an HTTP git server backed by the given loader.
-func FromLoader(l transport.Loader) (*server, error) { //nolint:revive // unexported-return is intentional
+func FromLoader(l transport.Loader) (*server, error) {
 	s := &server{
 		l: l,
 	}
