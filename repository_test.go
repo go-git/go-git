@@ -4140,6 +4140,41 @@ func (s *RepositorySuite) TestResolveRevisionWithErrors() {
 	}
 }
 
+func (s *RepositorySuite) TestResolveRevisionRefNamedLikeAbbreviatedHash() {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	s.Require().NoError(r.clone(context.Background(), &CloneOptions{URL: url}))
+
+	head, err := r.Head()
+	s.Require().NoError(err)
+
+	// Git reads a ref before an abbreviated object id, and each of these
+	// names also abbreviates a commit id in the fixture: 918c48b8,
+	// 1669dce1, b029517f and b8e471f5.
+	for _, name := range []plumbing.ReferenceName{"refs/heads/918c", "refs/tags/1669", "refs/heads/b"} {
+		s.Require().NoError(r.Storer.SetReference(plumbing.NewHashReference(name, head.Hash())))
+	}
+
+	datas := map[string]string{
+		"918c":      "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c~1":    "918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"1669":      "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"tags/1669": "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"b":         "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c4":     "918c48b83bd081e863dbe1b80f8998f058cd8294",
+	}
+
+	for rev, hash := range datas {
+		h, err := r.ResolveRevision(plumbing.Revision(rev))
+		s.Require().NoError(err, rev)
+		s.Equal(hash, h.String(), rev)
+	}
+}
+
 func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks int) {
 	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)

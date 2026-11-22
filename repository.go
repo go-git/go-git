@@ -1912,22 +1912,26 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 	for _, item := range items {
 		switch item := item.(type) {
 		case revision.Ref:
-			revisionRef := item
+			name := string(item)
 
+			// Like get_oid_basic in Git's object-name.c, prefer a full
+			// object id to a ref of the same name, and a ref to an
+			// abbreviated id: a tag named 1234 names the tag even when
+			// a commit id starts with 1234.
 			var tryHashes []plumbing.Hash
-
-			tryHashes = append(tryHashes, r.resolveHashPrefix(string(revisionRef))...)
-
-			ref, err := expandRef(r.Storer, plumbing.ReferenceName(revisionRef))
-			if err == nil {
-				tryHashes = append(tryHashes, ref.Hash())
+			full, isFull := r.fullHash(name)
+			if isFull {
+				tryHashes = append(tryHashes, full)
 			}
 
-			// in ambiguous cases, `git rev-parse` will emit a warning, but
-			// will always return the oid in preference to a ref; we don't have
-			// the ability to emit a warning here, so (for speed purposes)
-			// don't bother to detect the ambiguity either, just return in the
-			// priority that git would.
+			ref, err := expandRef(r.Storer, plumbing.ReferenceName(name))
+			switch {
+			case err == nil:
+				tryHashes = append(tryHashes, ref.Hash())
+			case !isFull:
+				tryHashes = r.resolveHashPrefix(name)
+			}
+
 			gotOne := false
 			for _, hash := range tryHashes {
 				commitObj, err := r.CommitObject(hash)
@@ -2031,35 +2035,34 @@ func (r *Repository) ResolveRevision(in plumbing.Revision) (*plumbing.Hash, erro
 	return &commit.Hash, nil
 }
 
-// resolveHashPrefix returns a list of potential hashes that the given string
-// is a prefix of. It quietly swallows errors, returning nil.
-func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
-	// Handle complete and partial hashes.
-	// plumbing.NewHash forces args into a full 20 byte hash, which isn't suitable
-	// for partial hashes since they will become zero-filled.
-
-	if hashStr == "" {
-		return nil
-	}
+// fullHash parses s as a full id of the repository's object format.
+func (r *Repository) fullHash(s string) (plumbing.Hash, bool) {
 	// A full id has the length of the repository's object format. Shorter
 	// input, such as 40 hex digits in a SHA-256 repository, is a prefix.
 	// Only full-id lengths depend on the format, so the config is read
 	// for those alone.
-	if n := len(hashStr); n == formatcfg.SHA1.HexSize() || n == formatcfg.SHA256.HexSize() {
-		hexSize := formatcfg.DefaultObjectFormat.HexSize()
-		if cfg, err := r.Storer.Config(); err == nil && cfg != nil {
-			hexSize = cfg.Extensions.ObjectFormat.HexSize()
-		}
-		if n == hexSize {
-			h, ok := plumbing.FromHex(hashStr)
-			if !ok {
-				return nil
-			}
-			return []plumbing.Hash{h}
-		}
+	if n := len(s); n != formatcfg.SHA1.HexSize() && n != formatcfg.SHA256.HexSize() {
+		return plumbing.ZeroHash, false
+	}
+	hexSize := formatcfg.DefaultObjectFormat.HexSize()
+	if cfg, err := r.Storer.Config(); err == nil && cfg != nil {
+		hexSize = cfg.Extensions.ObjectFormat.HexSize()
+	}
+	if len(s) != hexSize {
+		return plumbing.ZeroHash, false
+	}
+	return plumbing.FromHex(s)
+}
+
+// resolveHashPrefix returns a list of potential hashes that the given string
+// is a prefix of. It quietly swallows errors, returning nil.
+func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
+	if hashStr == "" {
+		return nil
 	}
 
-	// Partial hash.
+	// plumbing.NewHash forces args into a full 20 byte hash, which isn't suitable
+	// for partial hashes since they will become zero-filled.
 	// hex.DecodeString only decodes to complete bytes, so only works with pairs of hex digits.
 	evenHex := hashStr[:len(hashStr)&^1]
 	hexb, err := hex.DecodeString(evenHex)
