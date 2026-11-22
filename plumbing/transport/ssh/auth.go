@@ -248,7 +248,9 @@ func (a *KeyboardInteractive) ClientConfig(_ context.Context, _ *transport.Reque
 // of a type that known_hosts does not list for the host, the connection fails
 // with a "knownhosts: key mismatch" error, even when known_hosts holds a
 // valid key of another type for it. Leave HostKeyCallback nil to keep that
-// selection, or set HostKeyAlgorithms as well.
+// selection, or set HostKeyAlgorithms as well. The
+// github.com/go-git/x/ssh/knownhosts module, which backs this callback,
+// provides both the callback and the algorithms for a host.
 func NewKnownHostsCallback(files ...string) (gossh.HostKeyCallback, error) {
 	db, err := newKnownHostsDb(files...)
 	if db == nil {

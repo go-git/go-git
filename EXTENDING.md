@@ -56,6 +56,15 @@ An example of changing the built-in `https` implementation to skip TLS could loo
 	transport.Register("https", githttp.NewTransport(&githttp.TransportOptions{Client: customClient}))
 ```
 
+### SSH host keys and agents
+
+By default, the `ssh` transport verifies host keys against `known_hosts` files, picking the host key algorithms from the entries for the host, and authenticates with the SSH agent reached through `SSH_AUTH_SOCK` (or the Windows OpenSSH agent named pipe). The `known_hosts` handling comes from [`github.com/go-git/x/ssh/knownhosts`](https://github.com/go-git/x/tree/main/ssh/knownhosts), and the agent client is internal to go-git.
+
+To take control of either, set the fields of the auth method instead:
+
+- [`github.com/go-git/x/ssh/knownhosts`](https://github.com/go-git/x/tree/main/ssh/knownhosts) provides the full `known_hosts` API, such as other files or adding new hosts. Set its `HostKeyCallback()` and `HostKeyAlgorithms(host)` on the auth method's `HostKeyCallback` and `HostKeyAlgorithms` fields.
+- [`github.com/go-git/x/ssh/agent`](https://github.com/go-git/x/tree/main/ssh/agent) provides the full agent client, including Pageant on Windows. Use `&ssh.PublicKeysCallback{User: "git", Callback: a.Signers}` and close the agent when done.
+
 Some internal implementations enables code reuse amongst the different transport implementations. Some of these may be made public in the future (e.g. `plumbing/transport/internal/common`).
 
 ## Cache

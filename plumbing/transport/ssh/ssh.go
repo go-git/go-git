@@ -1,4 +1,15 @@
 // Package ssh implements the SSH transport for the new transport API.
+//
+// Unless the auth method sets a HostKeyCallback, host keys are verified
+// against known_hosts files with the github.com/go-git/x/ssh/knownhosts
+// module, and the host key algorithms are taken from the entries for the
+// host. Without an auth method, the transport authenticates with the SSH agent
+// named by SSH_AUTH_SOCK, or with the Windows OpenSSH agent named pipe on
+// Windows.
+//
+// The github.com/go-git/x/ssh/knownhosts and github.com/go-git/x/ssh/agent
+// modules provide the full known_hosts and agent APIs, including Pageant on
+// Windows, for use with the auth methods of this package.
 package ssh
 
 import (
