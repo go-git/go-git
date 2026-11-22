@@ -2,6 +2,7 @@ package git
 
 import (
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -17,10 +18,11 @@ import (
 )
 
 var blameBenchmarks = []struct {
-	name    string
-	fixture string
-	rev     string
-	path    string
+	name     string
+	fixture  string
+	checkout string
+	rev      string
+	path     string
 }{
 	// A long script built up by many commits.
 	{name: "spinnaker-script", fixture: "https://github.com/spinnaker/spinnaker.git", rev: "f39d86f59a0781f130e8de6b2115329c1fbe9545", path: "InstallSpinnaker.sh"},
@@ -34,6 +36,12 @@ var blameBenchmarks = []struct {
 	// Unchanged in the 186 commits after it was added, so most of the walk
 	// finds nothing to blame.
 	{name: "go-git-unchanged", fixture: "https://github.com/src-d/go-git.git", rev: "e8788ad9165781196e917292d6055cba1d78664e", path: "diff/diff.go"},
+	// The cases below blame a clone in tests/testdata/repos, which git
+	// ignores, and are skipped without it. Create it with:
+	//
+	//	git clone https://github.com/go-git/go-git tests/testdata/repos/go-git
+	{name: "go-git-checkout-blame.go", checkout: "go-git", rev: "9decb13c199a6b5b8d55df169dc3b5c22482364a", path: "blame.go"},
+	{name: "go-git-checkout-commit.go", checkout: "go-git", rev: "9decb13c199a6b5b8d55df169dc3b5c22482364a", path: "plumbing/object/commit.go"},
 }
 
 func BenchmarkBlame(b *testing.B) {
@@ -42,7 +50,12 @@ func BenchmarkBlame(b *testing.B) {
 	for _, t := range blameBenchmarks {
 		b.Run(t.name, func(b *testing.B) {
 			dir, ok := dirs[t.fixture]
-			if !ok {
+			if t.checkout != "" {
+				dir = filepath.Join("tests", "testdata", "repos", t.checkout, ".git")
+				if _, err := os.Stat(dir); err != nil {
+					b.Skip(err)
+				}
+			} else if !ok {
 				// Write the fixture packfile to a repository on disk, the
 				// first time a file of the fixture is blamed.
 				dir = filepath.Join(root, t.name)
