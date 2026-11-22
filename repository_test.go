@@ -4175,6 +4175,26 @@ func (s *RepositorySuite) TestResolveRevisionRefNamedLikeAbbreviatedHash() {
 	}
 }
 
+func (s *RepositorySuite) TestResolveRevisionAbbreviatedHashTooShort() {
+	url := s.GetLocalRepositoryURL(
+		fixtures.ByURL("https://github.com/git-fixtures/basic.git").One(),
+	)
+
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	s.Require().NoError(r.clone(context.Background(), &CloneOptions{URL: url}))
+
+	// Git takes no abbreviated object id shorter than four hex digits.
+	for _, rev := range []string{"918", "91", "9"} {
+		_, err := r.ResolveRevision(plumbing.Revision(rev))
+		s.ErrorIs(err, plumbing.ErrReferenceNotFound, rev)
+	}
+
+	h, err := r.ResolveRevision(plumbing.Revision("918c"))
+	s.Require().NoError(err)
+	s.Equal("918c48b83bd081e863dbe1b80f8998f058cd8294", h.String())
+}
+
 func (s *RepositorySuite) testRepackObjects(deleteTime time.Time, expectedPacks int) {
 	srcFs, err := fixtures.ByTag("unpacked").One().DotGit()
 	s.Require().NoError(err)

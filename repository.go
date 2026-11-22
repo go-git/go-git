@@ -2057,7 +2057,9 @@ func (r *Repository) fullHash(s string) (plumbing.Hash, bool) {
 // resolveHashPrefix returns a list of potential hashes that the given string
 // is a prefix of. It quietly swallows errors, returning nil.
 func (r *Repository) resolveHashPrefix(hashStr string) []plumbing.Hash {
-	if hashStr == "" {
+	// Git reads nothing shorter than four hex digits as an abbreviated id
+	// (minimum_abbrev, checked in init_object_disambiguation).
+	if len(hashStr) < 4 {
 		return nil
 	}
 
