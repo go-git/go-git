@@ -20,6 +20,8 @@ github.com/go-git/go-billy/v6 v6.0.0-beta.1 h1:OJ4r207zcEbeq/DJNajQUOMd+pph3r9A7
 github.com/go-git/go-billy/v6 v6.0.0-beta.1/go.mod h1:QGOWN4CzmtRfpFeCw5paG3RJyKdTwsfGASkxBVkIaAU=
 github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1.0.20261119064959-a5796c55ab4e h1:4qZ5xqI6Atmig430SbJ+IpYf+5d2cj277jnANnLwG44=
 github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1.0.20261119064959-a5796c55ab4e/go.mod h1:DvqXlJDOI/eY7inoU6CuBwNJjwHRJEcTHsJSoT41Wzc=
+github.com/go-git/x/ssh/knownhosts v0.0.0-20261127150830-6a86daa321dc h1:2ygAou+euD1wzdR93lbBwUlGgVU3fjNCAoo973OlByc=
+github.com/go-git/x/ssh/knownhosts v0.0.0-20261127150830-6a86daa321dc/go.mod h1:zlYUKURuhjFsrB76SVT+cxl8F57FlwL2y4xj0GCTXTo=
 github.com/kevinburke/ssh_config v1.6.0 h1:J1FBfmuVosPHf5GRdltRLhPJtJpTlMdKTBjRgTaQBFY=
 github.com/kevinburke/ssh_config v1.6.0/go.mod h1:q2RIzfka+BXARoNexmF9gkxEX7DmvbW9P4hIVx2Kg4M=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
