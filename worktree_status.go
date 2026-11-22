@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -275,7 +276,15 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 
 	// A directory the cache-tree records as unchanged is skipped without
 	// reading its tree, as Git does, so Status and a mixed reset work when
-	// such a tree is missing.
+	// such a tree is missing. The cache-tree of an index file is input, so
+	// it is pruned first, on a copy as the stored index may be shared, to
+	// agree with the entries; Commit does not trust it either.
+	pruned := *idx
+	if idx.Cache != nil {
+		pruned.Cache = &index.Tree{Entries: slices.Clone(idx.Cache.Entries)}
+		pruned.PruneCache()
+	}
+	idx = &pruned
 	to := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: true,
 		CacheTree:           true,
