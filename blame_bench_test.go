@@ -80,7 +80,31 @@ func BenchmarkBlame(b *testing.B) {
 // iteration and times reading rev from it along with Blame, so loading the
 // pack indexes and filling the object cache count towards the result, while
 // "warm" reuses one storage across iterations.
+//
+// Both report the number of commit, tree and blob lookups a Blame call
+// makes, which, unlike its duration, does not depend on the machine.
 func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error), rev plumbing.Hash, path string) {
+	// Count the lookups in a separate Blame call, so the timed runs read from
+	// the storage directly.
+	s, err := open()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	lookups := make(blameObjectLookups)
+	c, err := object.GetCommit(&countingObjectStorer{EncodedObjectStorer: s, lookups: lookups}, rev)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Only count what Blame looks up, not the commit it starts from.
+	clear(lookups)
+	_, err = Blame(c, path)
+	closeBlameBenchmarkStorage(b, s)
+	if err != nil {
+		b.Fatal(err)
+	}
+
 	b.Run("cold", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
@@ -103,6 +127,8 @@ func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error
 			closeBlameBenchmarkStorage(b, s)
 			b.StartTimer()
 		}
+
+		lookups.report(b)
 	})
 
 	b.Run("warm", func(b *testing.B) {
@@ -128,7 +154,39 @@ func benchmarkBlame(b *testing.B, open func() (storer.EncodedObjectStorer, error
 				b.Fatal(err)
 			}
 		}
+
+		lookups.report(b)
 	})
+}
+
+// blameObjectLookups counts the object lookups of a Blame call, by type.
+type blameObjectLookups map[plumbing.ObjectType]int
+
+// report reports the counts as metrics of b. It must be called after the
+// benchmark loop, as starting the loop resets the timer, which discards
+// reported metrics.
+func (l blameObjectLookups) report(b *testing.B) {
+	b.ReportMetric(float64(l[plumbing.CommitObject]), "commits/op")
+	b.ReportMetric(float64(l[plumbing.TreeObject]), "trees/op")
+	b.ReportMetric(float64(l[plumbing.BlobObject]), "blobs/op")
+}
+
+// countingObjectStorer is an EncodedObjectStorer that counts the lookups made
+// through it. It sits above the storage's object cache, so a lookup counts
+// whether or not the cache serves it, and again each time the same object is
+// looked up.
+type countingObjectStorer struct {
+	storer.EncodedObjectStorer
+	lookups blameObjectLookups
+}
+
+func (s *countingObjectStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	obj, err := s.EncodedObjectStorer.EncodedObject(t, h)
+	if err == nil {
+		s.lookups[obj.Type()]++
+	}
+
+	return obj, err
 }
 
 // closeBlameBenchmarkStorage closes s, if it can be closed.
