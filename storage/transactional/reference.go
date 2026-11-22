@@ -74,10 +74,10 @@ func (r ReferenceStorage) Reference(n plumbing.ReferenceName) (*plumbing.Referen
 // name once, with the value Reference returns: the temporal reference over
 // the base one, and none once removed. Errors from either storer are
 // returned, so a reference one of them cannot read is not silently left out.
-func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
+func (r ReferenceStorage) IterReferences(prefix string) (storer.ReferenceIter, error) {
 	var refs []*plumbing.Reference
 	seen := make(map[plumbing.ReferenceName]bool)
-	temporalIter, err := r.temporal.IterReferences()
+	temporalIter, err := r.temporal.IterReferences(prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (r ReferenceStorage) IterReferences() (storer.ReferenceIter, error) {
 		return nil, err
 	}
 
-	baseIter, err := r.ReferenceStorer.IterReferences()
+	baseIter, err := r.ReferenceStorer.IterReferences(prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (r ReferenceStorage) Commit() error {
 		}
 	}
 
-	iter, err := r.temporal.IterReferences()
+	iter, err := r.temporal.IterReferences("")
 	if err != nil {
 		return err
 	}

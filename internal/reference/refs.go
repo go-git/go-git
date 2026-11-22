@@ -12,7 +12,7 @@ import (
 func References(st storage.Storer) ([]*plumbing.Reference, error) {
 	var localRefs []*plumbing.Reference
 
-	iter, err := st.IterReferences()
+	iter, err := st.IterReferences("")
 	if err != nil {
 		return nil, err
 	}

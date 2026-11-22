@@ -89,7 +89,7 @@ func (p *objectWalker) isShallow(hash plumbing.Hash) (bool, error) {
 // walkAllRefs walks the objects reachable through hash and symbolic references.
 func (p *objectWalker) walkAllRefs() error {
 	// Walk over all the references in the repo.
-	it, err := p.Storer.IterReferences()
+	it, err := p.Storer.IterReferences("")
 	if err != nil {
 		return err
 	}
