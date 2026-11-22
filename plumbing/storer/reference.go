@@ -174,13 +174,14 @@ func (iter *ReferenceSliceIter) Close() {
 // The MultiReferenceIter must be closed with a call to Close() when it is no
 // longer needed.
 type MultiReferenceIter struct {
-	iters []ReferenceIter
+	alreadySend map[string]struct{}
+	iters       []ReferenceIter
 }
 
 // NewMultiReferenceIter returns an reference iterator for the given slice of
 // EncodedObjectIters.
 func NewMultiReferenceIter(iters []ReferenceIter) ReferenceIter {
-	return &MultiReferenceIter{iters: iters}
+	return &MultiReferenceIter{alreadySend: make(map[string]struct{}), iters: iters}
 }
 
 // Next returns the next reference from the iterator, if one iterator reach
@@ -197,7 +198,14 @@ func (iter *MultiReferenceIter) Next() (*plumbing.Reference, error) {
 		return iter.Next()
 	}
 
-	return obj, err
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := iter.alreadySend[obj.Name().String()]; !ok {
+		iter.alreadySend[obj.Name().String()] = struct{}{}
+		return obj, nil
+	}
+	return iter.Next()
 }
 
 // ForEach call the cb function for each reference contained on this iter until
@@ -209,6 +217,7 @@ func (iter *MultiReferenceIter) ForEach(cb func(*plumbing.Reference) error) erro
 
 // Close releases any resources used by the iterator.
 func (iter *MultiReferenceIter) Close() {
+	clear(iter.alreadySend)
 	for _, i := range iter.iters {
 		i.Close()
 	}
