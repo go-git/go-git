@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	gosync "sync"
 	"testing"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -196,6 +197,38 @@ func (s *TreeSuite) TestFindEntryCacheDepth1() {
 	s.Equal("foo.go", e2.Name)
 
 	s.Equal(1, cs.calls[vendorHash], "second FindEntry should reuse cached vendor tree")
+}
+
+// TestFindEntryConcurrent verifies that FindEntry can be called from several
+// goroutines on the same tree. Run with -race to detect unsynchronised access
+// to the tree path cache.
+func (s *TreeSuite) TestFindEntryConcurrent() {
+	hash := plumbing.NewHash("a8d315b2b1c615d43042c3a62402b8a54288cf5c")
+	tree, err := GetTree(s.Storer, hash)
+	s.Require().NoError(err)
+
+	paths := map[string]string{
+		"vendor/foo.go":   "foo.go",
+		"json/short.json": "short.json",
+		"json/long.json":  "long.json",
+	}
+
+	var wg gosync.WaitGroup
+	for range 8 {
+		for path, name := range paths {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				e, err := tree.FindEntry(path)
+				s.NoError(err)
+				if err == nil {
+					s.Equal(name, e.Name)
+				}
+			}()
+		}
+	}
+	wg.Wait()
 }
 
 // TestFindEntryCacheDepth2 verifies that the tree path cache works for

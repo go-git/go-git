@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	gosync "sync"
 
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -57,6 +58,7 @@ type Tree struct {
 	Hash    plumbing.Hash
 
 	s             storer.EncodedObjectStorer
+	tMu           gosync.Mutex     // guards t
 	t             map[string]*Tree // tree path cache
 	entriesSorted bool
 }
@@ -194,9 +196,6 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	if err := pathutil.ValidTreePath(path); err != nil {
 		return nil, err
 	}
-	if t.t == nil {
-		t.t = make(map[string]*Tree)
-	}
 
 	pathParts := strings.Split(path, "/")
 	startingTree := t
@@ -206,7 +205,7 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 	for i := len(pathParts) - 1; i >= 1; i-- {
 		path := filepath.Join(pathParts[:i]...)
 
-		tree, ok := t.t[path]
+		tree, ok := t.cachedTree(path)
 		if ok {
 			startingTree = tree
 			pathParts = pathParts[i:]
@@ -224,10 +223,28 @@ func (t *Tree) FindEntry(path string) (*TreeEntry, error) {
 		}
 
 		pathCurrent = filepath.Join(pathCurrent, pathParts[0])
-		t.t[pathCurrent] = tree
+		t.cacheTree(pathCurrent, tree)
 	}
 
 	return tree.entry(pathParts[0])
+}
+
+func (t *Tree) cachedTree(path string) (*Tree, bool) {
+	t.tMu.Lock()
+	defer t.tMu.Unlock()
+
+	tree, ok := t.t[path]
+	return tree, ok
+}
+
+func (t *Tree) cacheTree(path string, tree *Tree) {
+	t.tMu.Lock()
+	defer t.tMu.Unlock()
+
+	if t.t == nil {
+		t.t = make(map[string]*Tree)
+	}
+	t.t[path] = tree
 }
 
 func (t *Tree) dir(baseName string) (*Tree, error) {
