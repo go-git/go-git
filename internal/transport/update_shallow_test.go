@@ -109,7 +109,7 @@ func TestFetchV2RejectsShallowUpdateBeforePack(t *testing.T) {
 		Depth: 1,
 	}
 
-	err := FetchV2(context.Background(), st, req, round)
+	err := FetchV2(context.Background(), st, shallowFeature(), req, round)
 	require.ErrorContains(t, err, "is not a sha256 object ID")
 	assert.True(t, body.closed, "pack response left open")
 

@@ -45,7 +45,7 @@ var (
 // Negotiation errors.
 var (
 	ErrFilterNotSupported  = errors.New("server does not support filters")
-	ErrShallowNotSupported = errors.New("server does not support shallow clients")
+	ErrShallowNotSupported = internal.ErrShallowNotSupported
 )
 
 // CredentialsDroppedError reports that a redirect chain left the origin
