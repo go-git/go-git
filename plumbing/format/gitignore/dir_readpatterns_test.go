@@ -88,3 +88,30 @@ func TestReadPatternsAvoidsBlindOpens(t *testing.T) {
 		}
 	})
 }
+
+// TestReadPatternsSkipsUTF8BOM covers ignore files saved with a UTF-8 byte
+// order mark, as some Windows editors do. Reference git skips the mark in
+// add_patterns_from_buffer (dir.c), so the first line is read as written:
+// a pattern stays a pattern and a comment stays a comment. Verified with
+// `git check-ignore -v`. Only a mark that opens the file is skipped.
+func TestReadPatternsSkipsUTF8BOM(t *testing.T) {
+	t.Parallel()
+
+	const bom = "\xef\xbb\xbf"
+
+	fs := memfs.New()
+	writeScopeFile(t, fs, ".git/info/exclude", bom+"*.tmp\n")
+	writeScopeFile(t, fs, ".gitignore", bom+"*.log\n"+bom+"later\n")
+	writeScopeFile(t, fs, "sub/.gitignore", bom+"# comment\nkeep\n")
+
+	ps, err := ReadPatterns(fs, nil)
+	require.NoError(t, err)
+	require.Len(t, ps, 4, "the comment behind the mark is not a pattern")
+
+	m := NewMatcher(ps)
+	assert.True(t, m.Match([]string{"x.tmp"}, false), ".git/info/exclude")
+	assert.True(t, m.Match([]string{"x.log"}, false), ".gitignore")
+	assert.True(t, m.Match([]string{"sub", "keep"}, false), "nested .gitignore")
+	assert.False(t, m.Match([]string{"later"}, false), "a mark on a later line is part of the pattern")
+	assert.True(t, m.Match([]string{bom + "later"}, false), "a mark on a later line is part of the pattern")
+}

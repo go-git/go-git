@@ -28,6 +28,7 @@ const (
 	gitconfigFile   = ".gitconfig"
 	systemFile      = "/etc/gitconfig"
 	infoExcludeFile = gitDir + "/info/exclude"
+	utf8BOM         = "\xef\xbb\xbf"
 )
 
 // readIgnoreFile reads a specific git ignore file.
@@ -38,9 +39,15 @@ func readIgnoreFile(fs billy.Filesystem, path []string, ignoreFile string) (ps [
 	if err == nil {
 		defer func() { _ = f.Close() }()
 
+		// Git skips a UTF-8 byte order mark that opens an ignore file, so
+		// the first line is not lost to it: skip_utf8_bom in
+		// add_patterns_from_buffer (dir.c).
+		bom := utf8BOM
+
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
-			s := scanner.Text()
+			s := strings.TrimPrefix(scanner.Text(), bom)
+			bom = ""
 			if !strings.HasPrefix(s, commentPrefix) && len(strings.TrimSpace(s)) > 0 {
 				ps = append(ps, ParsePattern(s, path))
 			}
