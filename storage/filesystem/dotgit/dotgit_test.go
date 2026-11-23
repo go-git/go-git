@@ -1727,7 +1727,7 @@ func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	unpackable := map[string]string{
 		"refs/heads/alias":         "ref: refs/heads/main\n",
 		"refs/heads/bad\ninjected": newHash + "\n",
-		"refs/heads/main.lock":     newHash + "\n",
+		"refs/heads/gone.lock":     newHash + "\n",
 		"refs/heads/bad~name":      newHash + "\n",
 		"refs/heads/zero":          plumbing.ZeroHash.String() + "\n",
 		"refs/heads/gibberish":     "not an object id\n",
@@ -1773,7 +1773,8 @@ func (s *SuiteDotGit) TestPackRefsPreservesUnpackableLooseRefs() {
 	s.Require().Equal(data, rerun)
 	looseCount, err := dir.CountLooseRefs()
 	s.Require().NoError(err)
-	s.Require().Equal(len(unpackable), looseCount)
+	// Like git, refs/heads/gone.lock is taken for a lock file, not a reference.
+	s.Require().Equal(len(unpackable)-1, looseCount)
 }
 
 func TestAlternatesDefault(t *testing.T) {
