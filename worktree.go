@@ -218,13 +218,13 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 
 	// When HEAD and the target share a tree, switching changes no tracked
 	// file, so the reset and its scan of every worktree file are skipped.
-	// Local changes carry over untouched, as with `git switch -c`, which
-	// skips merge_working_tree for the same reason:
+	// Staged and unstaged changes carry over untouched, as with
+	// `git switch -c`, which skips merge_working_tree for the same reason:
 	// https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L1214-L1215
 	//
-	// An index that differs from the tree still goes through the reset, so
-	// that an index never populated, as after a NoCheckout clone, gets the
-	// initial checkout `git checkout <branch>` gives an unborn index:
+	// An empty index still goes through the reset, so that an index never
+	// populated, as after a NoCheckout clone, gets the initial checkout
+	// `git checkout <branch>` gives an unborn index:
 	// https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L780
 	skipReset := false
 	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
@@ -236,8 +236,8 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		// Errors are left for the reset to report.
 		sameTree, err := w.canSkipWorktreeUpdate(targetCommit)
 		if err == nil && sameTree {
-			indexMatches, err := w.indexMatchesTargetTree(targetCommit)
-			skipReset = err == nil && indexMatches
+			idx, err := w.r.Storer.Index()
+			skipReset = err == nil && len(idx.Entries) > 0
 		}
 	}
 
@@ -386,22 +386,6 @@ func (w *Worktree) canSkipWorktreeUpdate(targetCommit *object.Commit) (bool, err
 	}
 
 	return currentCommit.TreeHash == targetCommit.TreeHash, nil
-}
-
-// indexMatchesTargetTree reports whether the index has no staged changes
-// against the tree of targetCommit.
-func (w *Worktree) indexMatchesTargetTree(targetCommit *object.Commit) (bool, error) {
-	targetTree, err := targetCommit.Tree()
-	if err != nil {
-		return false, err
-	}
-
-	changes, err := w.diffTreeWithStaging(targetTree, false)
-	if err != nil {
-		return false, err
-	}
-
-	return len(changes) == 0, nil
 }
 
 // Reset the worktree to a specified state.

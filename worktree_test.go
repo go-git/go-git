@@ -6348,7 +6348,7 @@ func (s *WorktreeSuite) TestCanSkipWorktreeUpdate() {
 	s.False(canSkip, "should not skip worktree update when trees differ")
 }
 
-func (s *WorktreeSuite) TestCheckoutSameTreeKeepsUnstagedChanges() {
+func (s *WorktreeSuite) TestCheckoutSameTreeKeepsLocalChanges() {
 	tests := []struct {
 		name     string
 		opts     func(sameTree plumbing.Hash) *CheckoutOptions
@@ -6391,6 +6391,7 @@ func (s *WorktreeSuite) TestCheckoutSameTreeKeepsUnstagedChanges() {
 			w, err := r.Worktree()
 			s.Require().NoError(err)
 
+			s.Require().NoError(util.WriteFile(fs, "staged", []byte("committed"), 0o644))
 			s.Require().NoError(util.WriteFile(fs, "modified", []byte("committed"), 0o644))
 			s.Require().NoError(util.WriteFile(fs, "deleted", []byte("committed"), 0o644))
 			_, err = w.Add(".")
@@ -6404,6 +6405,9 @@ func (s *WorktreeSuite) TestCheckoutSameTreeKeepsUnstagedChanges() {
 			_, err = w.Commit("same tree commit", emptyCommitOptions)
 			s.Require().NoError(err)
 
+			s.Require().NoError(util.WriteFile(fs, "staged", []byte("staged"), 0o644))
+			_, err = w.Add("staged")
+			s.Require().NoError(err)
 			s.Require().NoError(util.WriteFile(fs, "modified", []byte("unstaged"), 0o644))
 			s.Require().NoError(fs.Remove("deleted"))
 
@@ -6413,12 +6417,16 @@ func (s *WorktreeSuite) TestCheckoutSameTreeKeepsUnstagedChanges() {
 			s.Require().NoError(err)
 			s.Equal(tc.wantHEAD(sameTree), head)
 
-			content, err := util.ReadFile(fs, "modified")
+			content, err := util.ReadFile(fs, "staged")
+			s.Require().NoError(err)
+			s.Equal("staged", string(content))
+			content, err = util.ReadFile(fs, "modified")
 			s.Require().NoError(err)
 			s.Equal("unstaged", string(content))
 
 			status, err := w.Status()
 			s.Require().NoError(err)
+			s.Equal(Modified, status.File("staged").Staging)
 			s.Equal(Modified, status.File("modified").Worktree)
 			s.Equal(Deleted, status.File("deleted").Worktree)
 		})
@@ -6439,106 +6447,4 @@ func (s *WorktreeSuite) TestCanSkipWorktreeUpdateNoHead() {
 
 	_, err = w.canSkipWorktreeUpdate(dummyCommit)
 	s.Error(err, "should return error when HEAD doesn't exist")
-}
-
-func (s *WorktreeSuite) TestIndexMatchesTargetTree() {
-	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err)
-
-	w, err := r.Worktree()
-	s.NoError(err)
-
-	err = util.WriteFile(fs, "file1.txt", []byte("content1"), 0o644)
-	s.NoError(err)
-	err = util.WriteFile(fs, "file2.txt", []byte("content2"), 0o644)
-	s.NoError(err)
-	_, err = w.Add("file1.txt")
-	s.NoError(err)
-	_, err = w.Add("file2.txt")
-	s.NoError(err)
-	initialCommit, err := w.Commit("initial commit", defaultTestCommitOptions())
-	s.NoError(err)
-
-	targetCommit, err := r.CommitObject(initialCommit)
-	s.NoError(err)
-
-	matches, err := w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.True(matches, "index should match target tree right after commit")
-
-	err = util.WriteFile(fs, "file1.txt", []byte("modified content"), 0o644)
-	s.NoError(err)
-	_, err = w.Add("file1.txt")
-	s.NoError(err)
-
-	matches, err = w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.False(matches, "index should not match target tree when file is modified in staging")
-
-	secondCommit, err := w.Commit("second commit", defaultTestCommitOptions())
-	s.NoError(err)
-
-	err = util.WriteFile(fs, "newfile.txt", []byte("new content"), 0o644)
-	s.NoError(err)
-	_, err = w.Add("newfile.txt")
-	s.NoError(err)
-
-	targetCommit, err = r.CommitObject(secondCommit)
-	s.NoError(err)
-
-	matches, err = w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.False(matches, "index should not match target tree when new file is staged")
-
-	thirdCommit, err := w.Commit("third commit", defaultTestCommitOptions())
-	s.NoError(err)
-
-	_, err = w.Remove("newfile.txt")
-	s.NoError(err)
-
-	targetCommit, err = r.CommitObject(thirdCommit)
-	s.NoError(err)
-
-	matches, err = w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.False(matches, "index should not match target tree when file deletion is staged")
-
-	err = w.Reset(&ResetOptions{Mode: HardReset, Commit: thirdCommit})
-	s.NoError(err)
-
-	matches, err = w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.True(matches, "index should match target tree after hard reset")
-}
-
-func (s *WorktreeSuite) TestIndexMatchesTargetTreeEmptyTree() {
-	fs := memfs.New()
-	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
-	s.NoError(err)
-
-	w, err := r.Worktree()
-	s.NoError(err)
-
-	emptyCommit, err := w.Commit("empty commit", &CommitOptions{
-		Author:            &object.Signature{Name: "test", Email: "test@test.com"},
-		AllowEmptyCommits: true,
-	})
-	s.NoError(err)
-
-	targetCommit, err := r.CommitObject(emptyCommit)
-	s.NoError(err)
-
-	matches, err := w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.True(matches, "empty index should match empty tree")
-
-	err = util.WriteFile(fs, "file.txt", []byte("content"), 0o644)
-	s.NoError(err)
-	_, err = w.Add("file.txt")
-	s.NoError(err)
-
-	matches, err = w.indexMatchesTargetTree(targetCommit)
-	s.NoError(err)
-	s.False(matches, "non-empty index should not match empty tree")
 }
