@@ -65,7 +65,7 @@ type Index struct {
 // The path is validated against pathutil.ValidTreePath: the index feeds
 // future trees, so a name that the tree-side gates would reject must
 // not enter the index in the first place. Mirrors the FindEntry /
-// TreeWalker / TreeEntryFile chokepoints on the read side.
+// TreeWalker / FileFromEntry / TreeEntryFile chokepoints on the read side.
 func (i *Index) Add(path string) (*Entry, error) {
 	if err := pathutil.ValidTreePath(path); err != nil {
 		return nil, err
