@@ -10,7 +10,8 @@ import (
 )
 
 // Status represents the current status of a Worktree.
-// The key of the map is the path of the file.
+// The key of the map is the path of the file, or of an untracked directory
+// reported as a whole, which carries a trailing slash such as "dir/".
 type Status map[string]*FileStatus
 
 // File returns the FileStatus for a given path, if the FileStatus doesn't
