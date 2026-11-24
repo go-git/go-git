@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1603,4 +1604,31 @@ func TestEncodedObjectTypeFollowsBasesOutsideThePack(t *testing.T) {
 
 	_, err = types.EncodedObjectType(cycleA)
 	require.ErrorIs(t, err, packfile.ErrMalformedPackfile)
+}
+
+// A received pack is indexed without a storage behind the parser, so the
+// writer must hand it the storage's memory mode or low-memory mode is never
+// used while cloning or fetching.
+func TestPackfileWritersIndexWithStorageMemoryMode(t *testing.T) {
+	t.Parallel()
+
+	for name, newWriter := range map[string]func(*ObjectStorage) (io.WriteCloser, error){
+		"PackfileWriter": (*ObjectStorage).PackfileWriter,
+		"PromisorPackfileWriter": func(s *ObjectStorage) (io.WriteCloser, error) {
+			return s.PromisorPackfileWriter("")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			objects := NewObjectStorage(dotgit.New(osfs.New(t.TempDir())), cache.NewObjectLRUDefault())
+			w, err := newWriter(objects)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, w.Close()) }()
+
+			lmc := reflect.ValueOf(w).Elem().FieldByName("lowMemoryCapable")
+			require.True(t, lmc.IsValid())
+			assert.False(t, lmc.IsNil(), "pack index built without the storage's memory mode")
+		})
+	}
 }

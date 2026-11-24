@@ -523,9 +523,11 @@ func (d *DotGit) DeleteReflog(name plumbing.ReferenceName) error {
 
 // NewObjectPack return a writer for a new packfile, it saves the packfile to
 // disk and also generates and save the index for the given packfile.
-func (d *DotGit) NewObjectPack() (*PackWriter, error) {
+// lmc optionally controls whether the parser operates in low-memory mode;
+// pass nil to use the default (high-memory) behaviour.
+func (d *DotGit) NewObjectPack(lmc packfile.LowMemoryCapable) (*PackWriter, error) {
 	cleanErr := d.cleanPackList()
-	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex)
+	pw, err := newPackWrite(d.fs, d.options.ObjectFormat, d.options.WriteReverseIndex, lmc)
 	if err != nil {
 		return nil, errors.Join(cleanErr, err)
 	}
@@ -545,8 +547,8 @@ func (d *DotGit) NewObjectPack() (*PackWriter, error) {
 // Git writes the refs it sought as the marker, one "<hash> <ref>" line each,
 // when the pack came from a fetch, and an empty marker when repacking. Either
 // is accepted: only the file's presence is ever consulted, never its contents.
-func (d *DotGit) NewPromisorObjectPack(marker string) (*PackWriter, error) {
-	pw, err := d.NewObjectPack()
+func (d *DotGit) NewPromisorObjectPack(marker string, lmc packfile.LowMemoryCapable) (*PackWriter, error) {
+	pw, err := d.NewObjectPack(lmc)
 	if err != nil {
 		return nil, err
 	}

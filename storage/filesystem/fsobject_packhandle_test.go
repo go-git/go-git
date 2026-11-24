@@ -129,7 +129,7 @@ func TestIntegration_FSObjectSurvivesCleanPackList(t *testing.T) {
 	// the repack flow does it. cleanPackList runs inline — the
 	// store is empty on return, so no synchronisation is needed
 	// before the read below.
-	_, err = dg.NewObjectPack()
+	_, err = dg.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	// The cached FSObject must re-resolve the new PackHandle on

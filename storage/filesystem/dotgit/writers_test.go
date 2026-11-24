@@ -35,7 +35,7 @@ func BenchmarkNewObjectPack(b *testing.B) {
 	fs := osfs.New(b.TempDir())
 
 	for b.Loop() {
-		w, err := newPackWrite(fs, config.SHA1, false)
+		w, err := newPackWrite(fs, config.SHA1, false, nil)
 
 		require.NoError(b, err)
 		pf, pfErr := f.Packfile()
@@ -55,7 +55,7 @@ func TestNewObjectPack(t *testing.T) {
 	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	pf, pfErr := f.Packfile()
@@ -103,7 +103,7 @@ func TestNewObjectPackTrailingData(t *testing.T) {
 	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	pf, err := f.Packfile()
@@ -145,7 +145,7 @@ func TestNewObjectPackTrailingDataTruncateError(t *testing.T) {
 	t.Parallel()
 
 	fs := noTruncateFS{memfs.New()}
-	w, err := newPackWrite(fs, config.SHA1, false)
+	w, err := newPackWrite(fs, config.SHA1, false, nil)
 	require.NoError(t, err)
 
 	pf, err := fixtures.Basic().One().Packfile()
@@ -180,7 +180,7 @@ func TestNewObjectPackTruncated(t *testing.T) {
 			t.Parallel()
 
 			fs := osfs.New(t.TempDir())
-			w, err := newPackWrite(fs, config.SHA1, false)
+			w, err := newPackWrite(fs, config.SHA1, false, nil)
 			require.NoError(t, err)
 
 			_, err = w.Write(data)
@@ -201,7 +201,7 @@ func TestNewObjectPackUnused(t *testing.T) {
 	fs := osfs.New(t.TempDir())
 	dot := New(fs)
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 
 	assert.NoError(t, w.Close())
@@ -318,7 +318,7 @@ func TestPackWriterUnusedNotify(t *testing.T) {
 	t.Parallel()
 	fs := osfs.New(t.TempDir())
 
-	w, err := newPackWrite(fs, config.SHA1, false)
+	w, err := newPackWrite(fs, config.SHA1, false, nil)
 	require.NoError(t, err)
 
 	w.Notify = func(_ plumbing.Hash, _ *idxfile.Writer) {
@@ -358,7 +358,7 @@ func TestPackWriterPermissions(t *testing.T) {
 			dot := New(tc.fs)
 			require.NoError(t, dot.Initialize())
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 
 			pf, pfErr := f.Packfile()
@@ -408,7 +408,7 @@ func TestPackWriterExistingReadOnly(t *testing.T) {
 
 			writePack := func() {
 				t.Helper()
-				w, err := dot.NewObjectPack()
+				w, err := dot.NewObjectPack(nil)
 				require.NoError(t, err)
 
 				pf, pfErr := f.Packfile()
@@ -484,7 +484,7 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 				fmt.Sprintf("pack-%s%s", f.PackfileHash, ext))
 			require.NoError(t, fs.MkdirAll(path, 0o755))
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 
 			pf, pfErr := f.Packfile()
@@ -500,6 +500,43 @@ func TestPackWriterRejectsNonRegularFile(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "unexpected file type")
 			assert.False(t, notified)
+		})
+	}
+}
+
+type lowMemStub struct{ lowMemory bool }
+
+func (s *lowMemStub) LowMemoryMode() bool { return s.lowMemory }
+
+func TestNewObjectPackLowMemory(t *testing.T) {
+	t.Parallel()
+
+	for name, f := range map[string]*fixtures.Fixture{
+		"ofs-delta": fixtures.Basic().ByTag("ofs-delta").One(),
+		"ref-delta": fixtures.Basic().ByTag("ref-delta").One(),
+		"src-d":     fixtures.ByURL("https://github.com/src-d/go-git.git").One(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			fs := osfs.New(t.TempDir())
+			w, err := New(fs).NewObjectPack(&lowMemStub{true})
+			require.NoError(t, err)
+
+			pf, err := f.Packfile()
+			require.NoError(t, err)
+			_, err = io.Copy(w, pf)
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+
+			gitIdx, err := f.Idx()
+			require.NoError(t, err)
+			want, err := io.ReadAll(gitIdx)
+			require.NoError(t, err)
+
+			got, err := util.ReadFile(fs, fmt.Sprintf("objects/pack/pack-%s.idx", f.PackfileHash))
+			require.NoError(t, err)
+			assert.Equal(t, want, got)
 		})
 	}
 }
@@ -651,7 +688,7 @@ func TestPackWriterReadPackStopsAtTrailer(t *testing.T) {
 				data := packBytes(t, f)
 
 				fs := osfs.New(t.TempDir())
-				w, err := newPackWrite(fs, format, false)
+				w, err := newPackWrite(fs, format, false, nil)
 				require.NoError(t, err)
 
 				n, err := w.ReadPack(&chunkedReader{t: t, data: data, chunk: chunk})
@@ -676,7 +713,7 @@ func TestPackWriterReadPackTrailingData(t *testing.T) {
 	const trailing = "trailing data after the pack checksum"
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	n, err := w.ReadPack(strings.NewReader(string(data) + trailing))
@@ -696,7 +733,7 @@ func TestPackWriterReadPackAfterWrite(t *testing.T) {
 	data := packBytes(t, f)
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	_, err = w.Write(data[:100])
@@ -714,7 +751,7 @@ func TestPackWriterReadPackEmpty(t *testing.T) {
 	t.Parallel()
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	n, err := w.ReadPack(bytes.NewReader(nil))
@@ -731,7 +768,7 @@ func TestPackWriterReadPackTruncated(t *testing.T) {
 	data := packBytes(t, fixtures.Basic().One())
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	_, err = w.ReadPack(bytes.NewReader(data[:len(data)/2]))
@@ -750,7 +787,7 @@ func TestPackWriterReadPackOnce(t *testing.T) {
 	data := packBytes(t, f)
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	_, err = w.ReadPack(bytes.NewReader(data))
@@ -774,7 +811,7 @@ func TestPackWriterReadPackSourceError(t *testing.T) {
 	data := packBytes(t, fixtures.Basic().One())
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	boom := errors.New("boom")
@@ -853,7 +890,7 @@ func TestPackWriterWriteInvalidCleansUp(t *testing.T) {
 	t.Parallel()
 
 	fs := osfs.New(t.TempDir())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 
 	_, err = w.Write([]byte("KCAP\x00\x00\x00\x02\x00\x00\x00\x00"))
@@ -912,7 +949,7 @@ func TestPackWriterSaveFailureCleansUp(t *testing.T) {
 			dot := NewWithOptions(fs, Options{WriteReverseIndex: true})
 			require.NoError(t, dot.Initialize())
 
-			w, err := dot.NewPromisorObjectPack("")
+			w, err := dot.NewPromisorObjectPack("", nil)
 			require.NoError(t, err)
 			_, err = w.Write(packBytes(t, fixtures.Basic().One()))
 			require.NoError(t, err)
@@ -945,7 +982,7 @@ func TestPackWriterSaveFailureKeepsExistingIndex(t *testing.T) {
 	// shape a concurrent writer leaves: its index in place, its pack not yet.
 	ref := osfs.New(t.TempDir())
 	require.NoError(t, New(ref).Initialize())
-	w, err := New(ref).NewObjectPack()
+	w, err := New(ref).NewObjectPack(nil)
 	require.NoError(t, err)
 	_, err = w.Write(data)
 	require.NoError(t, err)
@@ -965,7 +1002,7 @@ func TestPackWriterSaveFailureKeepsExistingIndex(t *testing.T) {
 	require.NoError(t, dot.Initialize())
 	require.NoError(t, util.WriteFile(fs, "objects/pack/"+idxName, idxData, 0o444))
 
-	w, err = dot.NewObjectPack()
+	w, err = dot.NewObjectPack(nil)
 	require.NoError(t, err)
 	_, err = w.Write(data)
 	require.NoError(t, err)
@@ -1023,7 +1060,7 @@ func savedPackFiles(t *testing.T, data []byte) map[string][]byte {
 
 	fs := osfs.New(t.TempDir())
 	require.NoError(t, New(fs).Initialize())
-	w, err := New(fs).NewObjectPack()
+	w, err := New(fs).NewObjectPack(nil)
 	require.NoError(t, err)
 	_, err = w.Write(data)
 	require.NoError(t, err)
@@ -1057,7 +1094,7 @@ func TestPackWriterSaveCarriesOnWhenDiscardFails(t *testing.T) {
 		}
 	}
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 	_, err = w.Write(data)
 	require.NoError(t, err)
@@ -1095,7 +1132,7 @@ func TestPackWriterSaveFinalAppearsBeforeRename(t *testing.T) {
 			dot := New(fs)
 			require.NoError(t, dot.Initialize())
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 			_, err = w.Write(data)
 			require.NoError(t, err)
@@ -1138,7 +1175,7 @@ func TestPackWriterSaveDifferentFinalAppearsBeforeRename(t *testing.T) {
 			dot := New(fs)
 			require.NoError(t, dot.Initialize())
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 			_, err = w.Write(data)
 			require.NoError(t, err)
@@ -1194,9 +1231,9 @@ func TestPackWriterSaveFinalVanishesDuringCheck(t *testing.T) {
 					}
 				}
 
-				newPack := dot.NewObjectPack
+				newPack := func() (*PackWriter, error) { return dot.NewObjectPack(nil) }
 				if promisor {
-					newPack = func() (*PackWriter, error) { return dot.NewPromisorObjectPack("") }
+					newPack = func() (*PackWriter, error) { return dot.NewPromisorObjectPack("", nil) }
 				}
 				w, err := newPack()
 				require.NoError(t, err)
@@ -1272,7 +1309,7 @@ func TestPackWriterSaveFinalVanishesBeforeCompare(t *testing.T) {
 			dot := New(fs)
 			require.NoError(t, dot.Initialize())
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 			_, err = w.Write(data)
 			require.NoError(t, err)
@@ -1320,7 +1357,7 @@ func TestPackWriterSaveFinalKeepsVanishing(t *testing.T) {
 	dot := New(fs)
 	require.NoError(t, dot.Initialize())
 
-	w, err := dot.NewObjectPack()
+	w, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 	_, err = w.Write(data)
 	require.NoError(t, err)
@@ -1380,7 +1417,7 @@ func TestPackWriterSaveComparesFinalReplacedAfterCheck(t *testing.T) {
 				}
 			}
 
-			w, err := dot.NewObjectPack()
+			w, err := dot.NewObjectPack(nil)
 			require.NoError(t, err)
 			_, err = w.Write(data)
 			require.NoError(t, err)
@@ -1443,7 +1480,7 @@ func TestPackWriterSavePromisorMarkerFollowsPlacement(t *testing.T) {
 				}
 			}
 
-			w, err := dot.NewPromisorObjectPack("")
+			w, err := dot.NewPromisorObjectPack("", nil)
 			require.NoError(t, err)
 			_, err = w.Write(data)
 			require.NoError(t, err)
@@ -1491,7 +1528,7 @@ func TestPackWriterCloseFailure(t *testing.T) {
 
 			fs := osfs.New(t.TempDir())
 			require.NoError(t, New(fs).Initialize())
-			w, err := newPackWrite(fs, config.SHA1, false)
+			w, err := newPackWrite(fs, config.SHA1, false, nil)
 			require.NoError(t, err)
 			wrap(w)
 
@@ -1529,9 +1566,9 @@ func TestPackWriterRefusesDifferentExistingIndex(t *testing.T) {
 			}
 			require.NotEmpty(t, idxName)
 
-			newPack := dot.NewObjectPack
+			newPack := func() (*PackWriter, error) { return dot.NewObjectPack(nil) }
 			if promisor {
-				newPack = func() (*PackWriter, error) { return dot.NewPromisorObjectPack("") }
+				newPack = func() (*PackWriter, error) { return dot.NewPromisorObjectPack("", nil) }
 			}
 			w, err := newPack()
 			require.NoError(t, err)
@@ -1646,7 +1683,7 @@ func TestPackWriterCloseReleasesReadHandleWhenTruncateFails(t *testing.T) {
 	t.Parallel()
 
 	fs := &closeCountingFS{Filesystem: noTruncateFS{memfs.New()}}
-	w, err := newPackWrite(fs, config.SHA1, false)
+	w, err := newPackWrite(fs, config.SHA1, false, nil)
 	require.NoError(t, err)
 
 	pf, err := fixtures.Basic().One().Packfile()
@@ -1670,7 +1707,7 @@ func TestPackWriterSaveReadsAnIdenticalExistingFinalOnce(t *testing.T) {
 	require.NoError(t, dot.Initialize())
 
 	save := func() {
-		w, err := dot.NewObjectPack()
+		w, err := dot.NewObjectPack(nil)
 		require.NoError(t, err)
 		_, err = w.Write(data)
 		require.NoError(t, err)

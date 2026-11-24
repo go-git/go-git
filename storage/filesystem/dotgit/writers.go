@@ -50,9 +50,12 @@ type PackWriter struct {
 	// promisor, when non-nil, writes a .promisor sidecar next to the pack
 	// carrying these contents. A nil value leaves the pack unmarked.
 	promisor *string
+	// lowMemoryCapable, when non-nil, lets the index build run in low-memory
+	// mode. A nil value keeps the historical high-memory behaviour.
+	lowMemoryCapable packfile.LowMemoryCapable
 }
 
-func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool) (*PackWriter, error) {
+func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev bool, lmc packfile.LowMemoryCapable) (*PackWriter, error) {
 	fw, err := fs.TempFile(fs.Join(objectsPath, packPath), "tmp_pack_")
 	if err != nil {
 		return nil, err
@@ -71,6 +74,8 @@ func newPackWrite(fs billy.Filesystem, format formatcfg.ObjectFormat, writeRev b
 		parsed:   make(chan struct{}),
 		format:   format,
 		writeRev: writeRev,
+
+		lowMemoryCapable: lmc,
 	}
 
 	writer.checksum.ResetBySize(format.Size())
@@ -85,7 +90,8 @@ func (w *PackWriter) buildIndex() {
 
 	w.parser = packfile.NewParser(w.synced,
 		packfile.WithScannerObservers(w.writer),
-		packfile.WithObjectFormat(w.format))
+		packfile.WithObjectFormat(w.format),
+		packfile.WithLowMemoryCapable(w.lowMemoryCapable))
 
 	h, err := w.parser.Parse()
 	if err != nil {

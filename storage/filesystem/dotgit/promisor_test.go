@@ -28,7 +28,7 @@ func createPromisorPack(t *testing.T, marker string) (*DotGit, plumbing.Hash, bi
 	dot := New(fs)
 	require.NoError(t, dot.Initialize())
 
-	w, err := dot.NewPromisorObjectPack(marker)
+	w, err := dot.NewPromisorObjectPack(marker, nil)
 	require.NoError(t, err)
 
 	pf, err := f.Packfile()
@@ -78,7 +78,7 @@ func TestNewPromisorObjectPackKeepsExistingMarker(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f0.Close())
 
-	w, err := dot.NewPromisorObjectPack("later\n")
+	w, err := dot.NewPromisorObjectPack("later\n", nil)
 	require.NoError(t, err)
 	pf, err := f.Packfile()
 	require.NoError(t, err)
@@ -207,7 +207,7 @@ func TestPromisorMarkerNotAddedToExistingPack(t *testing.T) {
 		require.NoError(t, w.Close())
 	}
 
-	plain, err := dot.NewObjectPack()
+	plain, err := dot.NewObjectPack(nil)
 	require.NoError(t, err)
 	writePack(plain)
 
@@ -216,7 +216,7 @@ func TestPromisorMarkerNotAddedToExistingPack(t *testing.T) {
 	require.Empty(t, promisors, "an ordinary pack must start unmarked")
 
 	// The same pack again, this time from a promisor remote.
-	dup, err := dot.NewPromisorObjectPack("")
+	dup, err := dot.NewPromisorObjectPack("", nil)
 	require.NoError(t, err)
 	writePack(dup)
 
@@ -254,7 +254,7 @@ func TestDeleteOldObjectPackKeepsMarkerWhenPackSurvives(t *testing.T) {
 	dot := New(fs)
 	require.NoError(t, dot.Initialize())
 
-	w, err := dot.NewPromisorObjectPack("")
+	w, err := dot.NewPromisorObjectPack("", nil)
 	require.NoError(t, err)
 	pf, err := f.Packfile()
 	require.NoError(t, err)

@@ -997,3 +997,149 @@ func TestParserSizeFromObserver(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(len(pack)), ob.size)
 }
+
+type stubLowMemoryCapable struct{ lowMemory bool }
+
+func (s *stubLowMemoryCapable) LowMemoryMode() bool { return s.lowMemory }
+
+func TestWithLowMemoryCapable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		provider          packfile.LowMemoryCapable
+		seekable          bool
+		wantLowMemoryMode bool
+	}{
+		{
+			name:              "nil provider",
+			provider:          nil,
+			seekable:          true,
+			wantLowMemoryMode: false,
+		},
+		{
+			name:              "provider returns true, seekable reader",
+			provider:          &stubLowMemoryCapable{true},
+			seekable:          true,
+			wantLowMemoryMode: true,
+		},
+		{
+			name:              "provider returns true, non-seekable reader",
+			provider:          &stubLowMemoryCapable{true},
+			seekable:          false,
+			wantLowMemoryMode: false,
+		},
+		{
+			name:              "provider returns false",
+			provider:          &stubLowMemoryCapable{false},
+			seekable:          true,
+			wantLowMemoryMode: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			pf, pfErr := fixtures.Basic().One().Packfile()
+			require.NoError(t, pfErr)
+
+			var reader io.Reader
+			if tc.seekable {
+				f, err := os.CreateTemp(t.TempDir(), "pack")
+				require.NoError(t, err)
+				defer f.Close()
+				_, err = io.Copy(f, pf)
+				require.NoError(t, err)
+				_, err = f.Seek(0, io.SeekStart)
+				require.NoError(t, err)
+				reader = f
+			} else {
+				// Wrap in a struct to strip io.Seeker.
+				reader = struct{ io.Reader }{pf}
+			}
+
+			parser := packfile.NewParser(reader, packfile.WithLowMemoryCapable(tc.provider))
+			field := reflect.ValueOf(parser).Elem().FieldByName("lowMemoryMode")
+			assert.Equal(t, tc.wantLowMemoryMode, field.Bool())
+		})
+	}
+}
+
+// TestParserLowMemoryCapableResolvesDeltas parses packs the way
+// PackWriter.buildIndex does in low-memory mode: a seekable source and no
+// storage. Delta bases then live only in the parser's cache, so a base
+// released while a pending delta still names it would fail the parse or
+// produce wrong hashes.
+func TestParserLowMemoryCapableResolvesDeltas(t *testing.T) {
+	t.Parallel()
+
+	lowMemory := packfile.WithLowMemoryCapable(&stubLowMemoryCapable{true})
+
+	t.Run("fixtures", func(t *testing.T) {
+		t.Parallel()
+
+		packs := fixtures.ByTag("packfile-entries")
+		require.GreaterOrEqual(t, len(packs), 2)
+
+		packs.Run(t, func(t *testing.T, f *fixtures.Fixture) {
+			t.Parallel()
+
+			entries := fixtureutil.Entries(f)
+			pf, pfErr := f.Packfile()
+			require.NoError(t, pfErr)
+
+			obs := new(testObserver)
+			opts := []packfile.ParserOption{packfile.WithScannerObservers(obs), lowMemory}
+			if f.ObjectFormat == "sha256" {
+				opts = append(opts, packfile.WithObjectFormat(config.SHA256))
+			}
+
+			_, err := packfile.NewParser(pf, opts...).Parse()
+			require.NoError(t, err)
+
+			assert.Equal(t, f.PackfileHash, obs.checksum)
+			assert.Len(t, obs.objects, len(entries))
+			for _, obj := range obs.objects {
+				h := plumbing.NewHash(obj.hash)
+				offset, ok := entries[h]
+				assert.True(t, ok, "unexpected object %s", obj.hash)
+				assert.Equal(t, offset, obj.offset, "offset mismatch for %s", obj.hash)
+			}
+		})
+	})
+
+	t.Run("ref-delta on ofs-delta", func(t *testing.T) {
+		t.Parallel()
+
+		pack, midHash, leafHash := buildRefOnOfsDeltaChainPack(t)
+		obs := new(testObserver)
+		_, err := packfile.NewParser(bytes.NewReader(pack), packfile.WithScannerObservers(obs), lowMemory).Parse()
+		require.NoError(t, err)
+
+		seen := make(map[plumbing.Hash]bool, len(obs.objects))
+		for _, o := range obs.objects {
+			seen[plumbing.NewHash(o.hash)] = true
+		}
+		assert.True(t, seen[midHash])
+		assert.True(t, seen[leafHash])
+	})
+
+	t.Run("alternating delta chain", func(t *testing.T) {
+		t.Parallel()
+
+		for _, depth := range []int{1, 2, 7, 64} {
+			pack := buildAlternatingDeltaChainPack(t, depth)
+
+			high := new(testObserver)
+			_, err := packfile.NewParser(bytes.NewReader(pack), packfile.WithScannerObservers(high)).Parse()
+			require.NoError(t, err)
+
+			low := new(testObserver)
+			_, err = packfile.NewParser(bytes.NewReader(pack), packfile.WithScannerObservers(low), lowMemory).Parse()
+			require.NoError(t, err, "depth %d", depth)
+
+			assert.ElementsMatch(t, high.objects, low.objects, "depth %d", depth)
+		}
+	})
+}
