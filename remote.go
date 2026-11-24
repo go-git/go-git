@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -537,16 +538,15 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 		}
 	}
 
-	isWildcard := true
-	for _, s := range o.RefSpecs {
-		if !s.IsWildcard() {
-			isWildcard = false
-			break
-		}
-	}
-
 	var haves []plumbing.Hash
 	wants, _ := getWants(r.s, refs, o.Depth)
+	if o.Tags == plumbing.TagFollowing {
+		tagWants, err := r.followedTagWants(remoteRefs, rRefs.References, localRefs, wants)
+		if err != nil {
+			return nil, err
+		}
+		wants = append(wants, tagWants...)
+	}
 	if len(wants) > 0 {
 		haves, err = getHaves(localRefs, remoteRefs, r.s, o.Depth)
 		if err != nil {
@@ -580,7 +580,7 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			Haves:       haves,
 			Depth:       o.Depth,
 			Progress:    o.Progress,
-			IncludeTags: isWildcard && o.Tags == plumbing.TagFollowing,
+			IncludeTags: o.Tags == plumbing.TagFollowing,
 			Filter:      o.Filter,
 		}
 
@@ -594,6 +594,12 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 			if err := r.recordPromisor(o.Filter); err != nil {
 				return nil, err
 			}
+		}
+	}
+
+	if len(wants) > 0 && o.Tags == plumbing.TagFollowing {
+		if err := r.backfillTags(ctx, cl, req, sess, rRefs.References, remoteRefs, localRefs, refs); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1432,6 +1438,108 @@ func (r *Remote) isSupportedRefSpec(refs []config.RefSpec, caps *capability.List
 	return ErrExactSHA1NotSupported
 }
 
+// followedTagWants returns the annotated tag objects to fetch so TagFollowing
+// can create their refs. Like git's find_non_local_tags (builtin/fetch.c), it
+// only considers advertised tags missing locally whose target is present or
+// in fetching: a tag pointing at an object the fetch does not reach, such as
+// a tag on a branch not fetched, is left alone.
+func (r *Remote) followedTagWants(
+	remoteRefs memory.ReferenceStorage,
+	advertised, localRefs []*plumbing.Reference,
+	fetching []plumbing.Hash,
+) ([]plumbing.Hash, error) {
+	peeled := make(map[string]plumbing.Hash)
+	for _, ref := range advertised {
+		if name, ok := strings.CutSuffix(ref.Name().String(), peeledSuffix); ok {
+			peeled[name] = ref.Hash()
+		}
+	}
+	local := make(map[plumbing.ReferenceName]bool, len(localRefs))
+	for _, ref := range localRefs {
+		local[ref.Name()] = true
+	}
+	fetched := make(map[plumbing.Hash]bool, len(fetching))
+	for _, h := range fetching {
+		fetched[h] = true
+	}
+
+	var wants []plumbing.Hash
+	for _, ref := range remoteRefs {
+		if !ref.Name().IsTag() || local[ref.Name()] || fetched[ref.Hash()] {
+			continue
+		}
+		// A lightweight tag has no peeled entry, and no object of its own.
+		target, ok := peeled[ref.Name().String()]
+		if !ok {
+			continue
+		}
+		if !fetched[target] {
+			targetPresent, err := objectExists(r.s, target)
+			if err != nil {
+				return nil, err
+			}
+			if !targetPresent {
+				continue
+			}
+		}
+		tagPresent, err := objectExists(r.s, ref.Hash())
+		if err != nil {
+			return nil, err
+		}
+		if !tagPresent {
+			wants = append(wants, ref.Hash())
+		}
+	}
+	return wants, nil
+}
+
+// backfillTags fetches the tag objects to follow that the main fetch did not
+// bring, e.g. because the server ignored include-tag, like git's backfill_tags
+// (builtin/fetch.c).
+func (r *Remote) backfillTags(
+	ctx context.Context,
+	cl *client.Client,
+	req *transport.Request,
+	sess transport.Session,
+	advertised []*plumbing.Reference,
+	remoteRefs memory.ReferenceStorage,
+	localRefs []*plumbing.Reference,
+	fetchedRefs memory.ReferenceStorage,
+) (err error) {
+	wants, err := r.followedTagWants(remoteRefs, advertised, localRefs, nil)
+	if err != nil || len(wants) == 0 {
+		return err
+	}
+
+	// The fetched refs are not stored yet but their objects are: offer them
+	// as haves so the server does not send their history again.
+	tips := slices.Clone(localRefs)
+	for _, ref := range fetchedRefs {
+		tips = append(tips, ref)
+	}
+	haves, err := getHaves(tips, remoteRefs, r.s, 0)
+	if err != nil {
+		return err
+	}
+
+	// Like git (transport.c, fetch_refs_via_pack), a connection that has
+	// served a fetch is not reused: upload-pack may exit after one pack.
+	if err := sess.Close(); err != nil {
+		return err
+	}
+	sess, err = cl.Handshake(ctx, req)
+	if err != nil {
+		return err
+	}
+	defer ioutil.CheckClose(sess, &err)
+
+	err = sess.Fetch(ctx, r.s, &transport.FetchRequest{Wants: wants, Haves: haves})
+	if errors.Is(err, transport.ErrNoChange) {
+		return nil
+	}
+	return err
+}
+
 func (r *Remote) updateLocalReferenceStorage(
 	specs []config.RefSpec,
 	fetchedRefs, remoteRefs memory.ReferenceStorage,
@@ -1439,16 +1547,11 @@ func (r *Remote) updateLocalReferenceStorage(
 	tagMode plumbing.TagMode,
 	force bool,
 ) (updated bool, err error) {
-	isWildcard := true
 	forceNeeded := false
 
 	shallows, _ := r.s.Shallow()
 
 	for i, spec := range specs {
-		if !spec.IsWildcard() {
-			isWildcard = false
-		}
-
 		for _, ref := range specToRefs[i] {
 			if ref.Type() != plumbing.HashReference {
 				continue
@@ -1505,8 +1608,16 @@ func (r *Remote) updateLocalReferenceStorage(
 	}
 
 	if tagMode != plumbing.NoTags {
+		// Tag-following mirrors canonical git's default auto-follow: any
+		// advertised tag whose target object is now present locally gets a
+		// local ref (builtin/fetch.c, backfill_tags). Use the advertised refs
+		// as the tag source so non-wildcard fetches -- e.g. a single-branch
+		// fetch whose refspec matches no tags -- still pick up tags whose
+		// targets were fetched, including tags made reachable by a deepen.
+		// AllTags already pulled every tag via the refs/tags/* refspec, so
+		// fetchedRefs suffices.
 		tags := fetchedRefs
-		if isWildcard {
+		if tagMode == plumbing.TagFollowing {
 			tags = remoteRefs
 		}
 		tagUpdated, tagForceNeeded, err := r.buildFetchedTags(tags, tagMode == plumbing.AllTags, force)
@@ -1530,37 +1641,53 @@ func (r *Remote) updateLocalReferenceStorage(
 }
 
 func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force bool) (updated, forceNeeded bool, err error) {
+	localRefs, err := reference.References(r.s)
+	if err != nil {
+		return false, false, err
+	}
+	local := make(map[plumbing.ReferenceName]plumbing.Hash, len(localRefs))
+	for _, ref := range localRefs {
+		local[ref.Name()] = ref.Hash()
+	}
+
 	for _, ref := range refs {
 		if !ref.Name().IsTag() {
 			continue
 		}
 
-		_, err := r.s.EncodedObject(plumbing.AnyObject, ref.Hash())
+		old, exists := local[ref.Name()]
+		// An auto-followed tag only creates one that is missing locally; it
+		// never moves a tag that already points elsewhere.
+		if exists && (old == ref.Hash() || !allTags) {
+			continue
+		}
+
+		obj, err := r.s.EncodedObject(plumbing.AnyObject, ref.Hash())
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			continue
 		}
-
 		if err != nil {
 			return updated, forceNeeded, err
 		}
+		// Like find_non_local_tags, an auto-followed tag needs its target
+		// locally; AllTags creates every tag the server sent.
+		if !allTags && obj.Type() == plumbing.TagObject {
+			tag, err := object.DecodeTag(r.s, obj)
+			if err != nil {
+				return updated, forceNeeded, err
+			}
+			targetPresent, err := objectExists(r.s, tag.Target)
+			if err != nil {
+				return updated, forceNeeded, err
+			}
+			if !targetPresent {
+				continue
+			}
+		}
 
-		old, err := r.s.Reference(ref.Name())
-		if unstorableRefName(ref.Name(), ref.Name(), err) {
+		if exists && !force {
+			forceNeeded = true
 			continue
-		}
-		if err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
-			return updated, forceNeeded, err
-		}
-		if err == nil && old.Hash() != ref.Hash() {
-			if !allTags {
-				// An auto-followed tag only creates one that is missing locally; it
-				// never moves a tag that already points elsewhere.
-				continue
-			}
-			if !force {
-				forceNeeded = true
-				continue
-			}
 		}
 
 		refUpdated, err := updateReferenceStorerIfNeeded(r.s, ref)

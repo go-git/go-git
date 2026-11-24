@@ -216,8 +216,8 @@ func (o *PullOptions) Validate() error {
 const (
 	InvalidTagMode = plumbing.InvalidTagMode
 	// TagFollowing any tag that points into the histories being fetched is also
-	// fetched. TagFollowing requires a server with `include-tag` capability
-	// in order to fetch the annotated tags objects.
+	// fetched. Annotated tag objects the server does not send through the
+	// `include-tag` capability are fetched in a second round.
 	TagFollowing = plumbing.TagFollowing
 	// AllTags fetch all tags from the remote (i.e., fetch remote tags
 	// refs/tags/* into local tags with the same name)
