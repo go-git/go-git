@@ -1068,6 +1068,43 @@ func (s *WorktreeSuite) TestCheckoutIndexOS() {
 	}
 }
 
+// Only filesystem storage checks files out in parallel; memory storage keeps
+// the sequential path, so the two clones must agree.
+func (s *WorktreeSuite) TestCheckoutParallelMatchesSequential() {
+	url := s.GetBasicLocalRepositoryURL()
+	sequentialFS := memfs.New()
+	sequential, err := Clone(memory.NewStorage(), sequentialFS, &CloneOptions{URL: url})
+	s.Require().NoError(err)
+	parallelFS := memfs.New()
+	parallel, err := Clone(filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()), parallelFS, &CloneOptions{URL: url})
+	s.Require().NoError(err)
+
+	indexEntries := func(r *Repository) map[string]string {
+		idx, err := r.Storer.Index()
+		s.Require().NoError(err)
+		entries := make(map[string]string, len(idx.Entries))
+		for _, e := range idx.Entries {
+			entries[e.Name] = e.Mode.String() + " " + e.Hash.String()
+		}
+		return entries
+	}
+	s.Equal(indexEntries(sequential), indexEntries(parallel))
+
+	files := func(fs billy.Filesystem) map[string]string {
+		contents := map[string]string{}
+		s.Require().NoError(util.Walk(fs, "", func(path string, fi os.FileInfo, err error) error {
+			if err != nil || fi.IsDir() || path == GitDirName {
+				return err
+			}
+			b, err := util.ReadFile(fs, path)
+			contents[path] = string(b)
+			return err
+		}))
+		return contents
+	}
+	s.Equal(files(sequentialFS), files(parallelFS))
+}
+
 func (s *WorktreeSuite) TestCheckoutBranch() {
 	w := &Worktree{
 		r:          s.Repository,

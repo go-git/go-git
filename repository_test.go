@@ -1606,6 +1606,36 @@ func (s *RepositorySuite) TestPlainOpenAlternatesFS() {
 	s.NotNil(commit)
 }
 
+func (s *RepositorySuite) TestCheckoutAlternatesFS() {
+	root := s.T().TempDir()
+	src := filepath.Join(root, "src")
+	shared := filepath.Join(root, "shared")
+
+	srcRepo, err := PlainClone(src, &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+	s.Require().NoError(err)
+	head, err := srcRepo.Head()
+	s.Require().NoError(err)
+
+	_, err = PlainInit(shared, false)
+	s.Require().NoError(err)
+	altLine := filepath.Join(src, GitDirName, "objects") + "\n"
+	s.Require().NoError(os.WriteFile(filepath.Join(shared, GitDirName, "objects", "info", "alternates"), []byte(altLine), 0o644))
+
+	r, err := PlainOpenWithOptions(shared, &PlainOpenOptions{
+		AlternatesFS: osfs.New(root),
+	})
+	s.Require().NoError(err)
+	s.Require().NoError(r.Storer.SetReference(plumbing.NewHashReference(plumbing.Master, head.Hash())))
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+	s.Require().NoError(w.Checkout(&CheckoutOptions{Branch: plumbing.Master}))
+
+	status, err := w.Status()
+	s.Require().NoError(err)
+	s.True(status.IsClean(), status.String())
+}
+
 func (s *RepositorySuite) TestPlainClone() {
 	dir := "rel-dir"
 	err := os.Mkdir(dir, 0o755)
