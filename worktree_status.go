@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v6/util"
@@ -550,6 +551,10 @@ func (w *Worktree) doAddFile(cfg *config.Config, idx *index.Index, s Status, pat
 func (w *Worktree) copyFileToStorage(cfg *config.Config, path string) (hash plumbing.Hash, err error) {
 	fi, err := w.filesystem.Lstat(path)
 	if err != nil {
+		if errors.Is(err, syscall.ENOTDIR) {
+			// A directory in the index can be a regular file in the worktree.
+			return plumbing.ZeroHash, os.ErrNotExist
+		}
 		return plumbing.ZeroHash, err
 	}
 
