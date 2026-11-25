@@ -193,3 +193,37 @@ func TestAddGlobAbsolutePattern(t *testing.T) {
 	outside := filepath.Join(filepath.Dir(wt.filesystem.Root()), "*.txt")
 	assert.ErrorContains(t, wt.AddGlob(outside), fmt.Sprintf("path %q is outside the worktree root", outside))
 }
+
+func TestAddGlobTrailingSlashMatchesOnlyDirectories(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		pattern string
+		want    map[string]string
+	}{
+		{pattern: "*.txt/", want: map[string]string{"dir.txt/inner": "c"}},
+		{pattern: "dir.txt/", want: map[string]string{"dir.txt/inner": "c"}},
+		{pattern: "dir.txt/.", want: map[string]string{"dir.txt/inner": "c"}},
+		{pattern: "f.txt/"},
+		{pattern: "f.txt/."},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			t.Parallel()
+
+			wt := statusScopeWorktree(t)
+			writeStatusScopeFile(t, wt, "f.txt", "a")
+			writeStatusScopeFile(t, wt, "g.txt", "b")
+			writeStatusScopeFile(t, wt, "dir.txt/inner", "c")
+
+			err := wt.AddGlob(tc.pattern)
+			if tc.want == nil {
+				require.ErrorIs(t, err, ErrGlobNoMatches)
+				assert.Empty(t, indexContents(t, wt))
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, blobHashes(t, tc.want), indexContents(t, wt))
+		})
+	}
+}

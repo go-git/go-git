@@ -62,10 +62,11 @@ type StatusOptions struct {
 
 // StatusWithOptions returns the working tree status.
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
-	dirOnly := strings.HasSuffix(filepath.ToSlash(o.Path), "/")
-
-	var err error
-	o.Path, err = w.statusPath(o.Path)
+	var (
+		dirOnly bool
+		err     error
+	)
+	o.Path, dirOnly, err = w.statusPath(o.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -96,27 +97,30 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	// stay in the result. The question is what to do with an entry named
 	// exactly "foo".
 	//
-	// Status keys are always files or gitlinks, never directories, so an
-	// entry at "foo" is a file or a submodule. Git counts a gitlink in the
-	// index[1] or in HEAD[2] as a directory for this purpose, and a file as
-	// not one[3]. So keep the entry only if HEAD or the index records a
-	// gitlink at that path.
+	// Status only records leaf entries, so an entry at exactly "foo" is a
+	// file or a submodule (gitlink), never a plain directory. Of those, a
+	// trailing slash matches the gitlink but not the file: git's pathspec
+	// check treats an entry as directory-like when its mode is a tree or a
+	// gitlink[1]. Git takes that mode from the index entry when there is
+	// one, and from the HEAD entry only when the index has none[2]. So a
+	// gitlink in HEAD that the index now records as a file does not match.
 	//
 	// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.h#L36-L43
-	// [2]: https://github.com/git/git/blob/v2.54.0/tree-walk.c#L890-L902
-	// [3]: https://github.com/git/git/blob/v2.54.0/dir.c#L374-L386
+	// [2]: https://github.com/git/git/blob/v2.54.0/diff-lib.c#L533-L535
 	if _, ok := s[o.Path]; ok && dirOnly {
 		idx, err := w.r.Storer.Index()
 		if err != nil {
 			return nil, err
 		}
 
-		gitlink := false
-		if e, err := idx.Entry(o.Path); err == nil {
+		var gitlink bool
+		e, err := idx.Entry(o.Path)
+		switch {
+		case err == nil:
 			gitlink = e.Mode == filemode.Submodule
-		}
-
-		if !gitlink && !hash.IsZero() {
+		case !errors.Is(err, index.ErrEntryNotFound):
+			return nil, err
+		case !hash.IsZero():
 			c, err := w.r.CommitObject(hash)
 			if err != nil {
 				return nil, err
@@ -125,10 +129,12 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 			if err != nil {
 				return nil, err
 			}
+			// A name Git refuses in trees, such as ".GIT", cannot be in HEAD.
 			e, err := t.FindEntry(o.Path)
 			notFound := errors.Is(err, object.ErrEntryNotFound) ||
 				errors.Is(err, object.ErrDirectoryNotFound) ||
-				errors.Is(err, plumbing.ErrObjectNotFound) // a file ancestor is read as a missing tree
+				errors.Is(err, plumbing.ErrObjectNotFound) || // a file ancestor is read as a missing tree
+				errors.Is(err, pathutil.ErrInvalidPath)
 			if err != nil && !notFound {
 				return nil, err
 			}
@@ -143,27 +149,34 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 	return s, nil
 }
 
-func (w *Worktree) statusPath(original string) (string, error) {
+// statusPath cleans original into a slash-separated, worktree-relative path,
+// returning "" for the whole worktree. dirOnly reports a trailing "/" or "/.",
+// which cleaning removes but which, as in git pathspecs, limits original to
+// directories and submodules.
+func (w *Worktree) statusPath(original string) (name string, dirOnly bool, err error) {
+	slashed := filepath.ToSlash(original)
+	dirOnly = strings.HasSuffix(slashed, "/") || strings.HasSuffix(slashed, "/.")
+
 	root := w.filesystem.Root()
-	name := filepath.Clean(original)
+	name = filepath.Clean(original)
 	if filepath.IsAbs(name) {
 		rel, err := filepath.Rel(root, name)
 		if err != nil {
-			return "", fmt.Errorf("path %q is not inside the worktree root %q: %w", original, root, err)
+			return "", false, fmt.Errorf("path %q is not inside the worktree root %q: %w", original, root, err)
 		}
 		name = rel
 	}
 
 	name = filepath.ToSlash(name)
 	if name == ".." || strings.HasPrefix(name, "../") {
-		return "", fmt.Errorf("path %q is outside the worktree root %q", original, root)
+		return "", false, fmt.Errorf("path %q is outside the worktree root %q", original, root)
 	}
 
 	if name == "." {
-		return "", nil
+		return "", dirOnly, nil
 	}
 
-	return name, nil
+	return name, dirOnly, nil
 }
 
 func (w *Worktree) status(cfg *config.Config, opts StatusOptions, commit plumbing.Hash) (Status, error) {
@@ -586,7 +599,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 	// Make an absolute pattern relative before globbing, as git does for
 	// pathspecs. The worktree filesystem rejects volume names, so on windows
 	// an absolute pattern would otherwise never match.
-	relPattern, err := w.statusPath(pattern)
+	relPattern, dirOnly, err := w.statusPath(pattern)
 	if err != nil {
 		return err
 	}
@@ -600,6 +613,22 @@ func (w *Worktree) AddGlob(pattern string) error {
 		return err
 	}
 
+	// Globbing the cleaned pattern also matches files, which a trailing slash
+	// excludes, as git add does for "*.txt/".
+	if dirOnly {
+		dirs := files[:0]
+		for _, name := range files {
+			fi, err := w.filesystem.Lstat(name)
+			if err != nil {
+				return err
+			}
+			if fi.IsDir() {
+				dirs = append(dirs, name)
+			}
+		}
+		files = dirs
+	}
+
 	if len(files) == 0 {
 		return ErrGlobNoMatches
 	}
@@ -610,7 +639,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 	}
 
 	for i, name := range files {
-		files[i], err = w.statusPath(name)
+		files[i], _, err = w.statusPath(name)
 		if err != nil {
 			return err
 		}

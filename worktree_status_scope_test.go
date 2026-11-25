@@ -237,6 +237,78 @@ func TestStatusPathTrailingSlashHeadGitlink(t *testing.T) {
 	assert.Equal(t, Deleted, status.File("module").Staging)
 }
 
+// Git tests a trailing-slash path against the index entry when there is one,
+// so a gitlink in HEAD replaced by a file in the index is not a directory.
+func TestStatusPathTrailingSlashIndexFileOverHeadGitlink(t *testing.T) {
+	t.Parallel()
+
+	wt := statusScopeWorktree(t)
+	idx, err := wt.r.Storer.Index()
+	require.NoError(t, err)
+	idx.Entries = append(idx.Entries, &index.Entry{
+		Name: "module",
+		Mode: filemode.Submodule,
+		Hash: plumbing.NewHash("1111111111111111111111111111111111111111"),
+	})
+	require.NoError(t, wt.r.Storer.SetIndex(idx))
+
+	sig := &object.Signature{Name: "test", Email: "test@example.com"}
+	_, err = wt.Commit("base", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	idx.Entries = nil
+	require.NoError(t, wt.r.Storer.SetIndex(idx))
+	writeStatusScopeFile(t, wt, "module", "file")
+	_, err = wt.Add("module")
+	require.NoError(t, err)
+
+	status, err := wt.StatusWithOptions(StatusOptions{Path: "module/"})
+	require.NoError(t, err)
+	assert.Empty(t, status)
+
+	status, err = wt.StatusWithOptions(StatusOptions{Path: "module"})
+	require.NoError(t, err)
+	assert.Contains(t, status, "module")
+}
+
+func TestStatusPathTrailingDotMatchesOnlyDirectories(t *testing.T) {
+	t.Parallel()
+
+	wt := statusScopeWorktree(t)
+	writeStatusScopeFile(t, wt, "f.txt", "base")
+	writeStatusScopeFile(t, wt, "docs/g.txt", "base")
+	commitStatusScopeFiles(t, wt)
+	writeStatusScopeFile(t, wt, "f.txt", "changed")
+	writeStatusScopeFile(t, wt, "docs/g.txt", "changed")
+
+	modified := &FileStatus{Staging: Unmodified, Worktree: Modified}
+	for scope, want := range map[string]Status{
+		"f.txt/.":   {},
+		"f.txt/./":  {},
+		"f.txt/./.": {},
+		"docs/.":    {"docs/g.txt": modified},
+	} {
+		status, err := wt.StatusWithOptions(StatusOptions{Path: scope})
+		require.NoError(t, err, "path %q", scope)
+		assert.Equal(t, want, status, "path %q", scope)
+	}
+}
+
+// Git refuses ".GIT" in trees, but a worktree file may still carry the name.
+// Looking it up in HEAD must report no gitlink rather than an invalid path.
+func TestStatusPathTrailingSlashInvalidTreeName(t *testing.T) {
+	t.Parallel()
+
+	wt := statusScopeWorktree(t)
+	writeStatusScopeFile(t, wt, "f.txt", "base")
+	commitStatusScopeFiles(t, wt)
+	writeStatusScopeFile(t, wt, ".GIT", "untracked")
+
+	status, err := wt.StatusWithOptions(StatusOptions{Path: ".GIT/"})
+	require.NoError(t, err)
+	assert.Empty(t, status)
+}
+
 func TestStatusPathIgnoreAncestors(t *testing.T) {
 	t.Parallel()
 
@@ -362,6 +434,7 @@ func TestStatusPathMatchesReferenceGit(t *testing.T) {
 	for _, scope := range []string{
 		"docs/generated", "docs/generated/", "docs/generated/staged.txt",
 		"docs/generated/staged.txt/", "docs/generated/deleted.txt/",
+		"docs/generated/staged.txt/.", "docs/generated/.",
 		"docs/generated/staged-deleted.txt", "docs/generated/staged-deleted.txt/",
 		"docs/deleted", "docs/deleted/", "missing", ".",
 	} {
