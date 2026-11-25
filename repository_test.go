@@ -757,7 +757,7 @@ func TestPlainCloneContext_SingleBranchMissingRefIsNotEmpty(t *testing.T) {
 	src := t.TempDir()
 	repo, err := PlainInit(src, false)
 	require.NoError(t, err)
-	defer func() { _ = repo.Close() }()
+	t.Cleanup(func() { _ = repo.Close() })
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(src, "a.txt"), []byte("hi"), 0o600))
