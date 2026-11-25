@@ -52,12 +52,51 @@ func (s *AdvRefSuite) TestResolvedReferencesSymref() {
 	}
 }
 
-func (s *AdvRefSuite) TestResolvedReferencesBadSymref() {
-	a := &AdvRefs{}
-	a.Capabilities.Set(capability.SymRef, "foo")
+func (s *AdvRefSuite) TestResolvedReferencesIgnoresInvalidSymref() {
+	hash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
 
-	_, err := a.ResolvedReferences()
-	s.NotNil(err)
+	for _, symref := range []string{
+		"foo",
+		"HEAD:",
+		":refs/heads/main",
+		"HEAD:refs/heads/../../config",
+		"HEAD:refs/heads/ma*n",
+		"HEAD:refs/heads/main:extra",
+		"refs/heads/../../config:refs/heads/main",
+	} {
+		s.Run(symref, func() {
+			a := &AdvRefs{}
+			a.Capabilities.Set(capability.SymRef, symref)
+			a.References = append(a.References, plumbing.NewHashReference(plumbing.HEAD, hash))
+
+			refs, err := a.ResolvedReferences()
+			s.Require().NoError(err)
+			s.Equal([]*plumbing.Reference{plumbing.NewHashReference(plumbing.HEAD, hash)}, refs)
+
+			head, err := a.ResolvedHead()
+			s.Require().NoError(err)
+			s.Equal(plumbing.NewHashReference(plumbing.HEAD, hash), head)
+		})
+	}
+}
+
+func (s *AdvRefSuite) TestResolvedReferencesKeepsValidSymrefBesideInvalid() {
+	hash := plumbing.NewHash("5dc01c595e6c6ec9ccda4f6f69c131c0dd945f8c")
+
+	a := &AdvRefs{}
+	a.Capabilities.Set(capability.SymRef, "refs/remotes/origin/HEAD:../../config")
+	a.Capabilities.Add(capability.SymRef, "HEAD:refs/heads/main")
+	a.References = append(a.References,
+		plumbing.NewHashReference(plumbing.HEAD, hash),
+		plumbing.NewHashReference("refs/heads/main", hash),
+	)
+
+	refs, err := a.ResolvedReferences()
+	s.Require().NoError(err)
+	s.Equal([]*plumbing.Reference{
+		plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/main"),
+		plumbing.NewHashReference("refs/heads/main", hash),
+	}, refs)
 }
 
 func (s *AdvRefSuite) TestNoSymRefCapabilityHeadToMaster() {
