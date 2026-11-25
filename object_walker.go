@@ -111,7 +111,7 @@ func (p *objectWalker) walkAllRefs() error {
 		if ref.Type() != plumbing.HashReference {
 			return nil
 		}
-		return p.walkObjectTree(ref.Hash())
+		return p.walkObjectTree(ref.Hash(), plumbing.AnyObject)
 	})
 	return err
 }
@@ -128,28 +128,38 @@ func (p *objectWalker) add(hash plumbing.Hash) {
 // walkObjectTree walks over all objects and remembers references
 // to them in the objectWalker. This is used instead of the revlist
 // walks because memory usage is tight with huge repos.
-func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
-	// Check if we have already seen, and mark this object
-	if p.isSeen(hash) {
+func (p *objectWalker) walkObjectTree(hash plumbing.Hash, expected plumbing.ObjectType) error {
+	if p.isSeen(hash) && expected == plumbing.AnyObject {
 		return nil
 	}
-	p.add(hash)
-	// Fetch the object.
-	obj, err := object.GetObject(p.Storer, hash)
+	encoded, err := p.Storer.EncodedObject(plumbing.AnyObject, hash)
 	if err != nil {
 		// In a partial clone the promisor remote withheld objects on
 		// purpose, so an absent one is expected. Record it and stop
 		// descending: there is nothing local to walk into.
 		if p.promisor && errors.Is(err, plumbing.ErrObjectNotFound) {
+			p.add(hash)
 			p.missing[hash] = struct{}{}
 			return nil
 		}
 		return fmt.Errorf("getting object %s failed: %w", hash, err)
 	}
+	// A prior file or tag visit does not satisfy an edge that requires a tree.
+	if expected != plumbing.AnyObject && encoded.Type() != expected {
+		return fmt.Errorf("object %s is %s, expected %s: %w", hash, encoded.Type(), expected, plumbing.ErrInvalidType)
+	}
+	if p.isSeen(hash) {
+		return nil
+	}
+	p.add(hash)
+	obj, err := object.DecodeObject(p.Storer, encoded)
+	if err != nil {
+		return fmt.Errorf("decoding object %s failed: %w", hash, err)
+	}
 	// Walk all children depending on object type.
 	switch obj := obj.(type) {
 	case *object.Commit:
-		err = p.walkObjectTree(obj.TreeHash)
+		err = p.walkObjectTree(obj.TreeHash, plumbing.TreeObject)
 		if err != nil {
 			return err
 		}
@@ -163,13 +173,17 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 			break
 		}
 		for _, h := range obj.ParentHashes {
-			err = p.walkObjectTree(h)
+			err = p.walkObjectTree(h, plumbing.AnyObject)
 			if err != nil {
 				return err
 			}
 		}
 	case *object.Tree:
 		for i := range obj.Entries {
+			if obj.Entries[i].Mode == filemode.Submodule {
+				// Gitlinks name commits in another repository.
+				continue
+			}
 			// Shortcut for blob objects:
 			// 'or' the lower bits of a mode and check that it
 			// it matches a filemode.Executable. The type information
@@ -196,14 +210,20 @@ func (p *objectWalker) walkObjectTree(hash plumbing.Hash) error {
 				}
 				continue
 			}
-			// Normal walk for sub-trees (and symlinks etc).
-			err = p.walkObjectTree(obj.Entries[i].Hash)
+			// Walk subtrees and symlink blobs.
+			expected := plumbing.TreeObject
+			if obj.Entries[i].Mode == filemode.Symlink {
+				expected = plumbing.BlobObject
+			}
+			err = p.walkObjectTree(obj.Entries[i].Hash, expected)
 			if err != nil {
 				return err
 			}
 		}
 	case *object.Tag:
-		return p.walkObjectTree(obj.Target)
+		return p.walkObjectTree(obj.Target, plumbing.AnyObject)
+	case *object.Blob:
+		return nil
 	default:
 		// Error out on unhandled object types.
 		return fmt.Errorf("unknown object %X %s %T", obj.ID(), obj.Type(), obj)
