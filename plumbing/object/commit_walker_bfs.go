@@ -12,6 +12,7 @@ type bfsCommitIterator struct {
 	seenExternal map[plumbing.Hash]bool
 	seen         map[plumbing.Hash]bool
 	queue        []*Commit
+	parents      parentsFunc
 }
 
 // NewCommitIterBSF returns a CommitIter that walks the commit history,
@@ -65,7 +66,12 @@ func (w *bfsCommitIterator) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		for _, h := range c.ParentHashes {
+		parents, err := w.parents.of(c)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, h := range parents {
 			err := w.appendHash(c.s, h)
 			if err != nil {
 				return nil, err
@@ -74,6 +80,10 @@ func (w *bfsCommitIterator) Next() (*Commit, error) {
 
 		return c, nil
 	}
+}
+
+func (w *bfsCommitIterator) followParents(parents parentsFunc) {
+	w.parents = parents
 }
 
 func (w *bfsCommitIterator) ForEach(cb func(*Commit) error) error {

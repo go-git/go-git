@@ -1587,12 +1587,22 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 		return nil, err
 	}
 
-	if o.FileName != nil {
-		// for `git log --all` also check parent (if the next commit comes from the real parent)
-		it = r.logWithFile(*o.FileName, it, o.All)
-	}
-	if o.PathFilter != nil {
-		it = r.logWithPathFilter(o.PathFilter, it, o.All)
+	// LogOrderDFSPostFirstParent keeps the filter below: its walk only visits
+	// first parents, so each commit is compared with its first parent, as
+	// `git log --first-parent -- <path>` does.
+	if (o.FileName != nil || o.PathFilter != nil) && !o.All && o.Order != LogOrderDFSPostFirstParent {
+		it, err = r.logWithPaths(o.FileName, o.PathFilter, it)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if o.FileName != nil {
+			// for `git log --all` also check parent (if the next commit comes from the real parent)
+			it = r.logWithFile(*o.FileName, it, o.All)
+		}
+		if o.PathFilter != nil {
+			it = r.logWithPathFilter(o.PathFilter, it, o.All)
+		}
 	}
 
 	if o.Since != nil || o.Until != nil || !o.To.IsZero() {
@@ -1623,6 +1633,21 @@ func (r *Repository) log(from plumbing.Hash, commitIterFunc func(*object.Commit)
 
 func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
 	return object.NewCommitAllIter(r.Storer, commitIterFunc)
+}
+
+// logWithPaths lists the commits `git log -- <path>` lists for the paths
+// that fileName and pathFilter both accept, simplifying the history the way
+// git does by default.
+func (r *Repository) logWithPaths(fileName *string, pathFilter func(string) bool, commitIter object.CommitIter) (object.CommitIter, error) {
+	accept := pathFilter
+	if fileName != nil {
+		name := *fileName
+		accept = func(path string) bool {
+			return path == name && (pathFilter == nil || pathFilter(path))
+		}
+	}
+
+	return object.NewCommitPathLogIter(r.Storer, accept, commitIter)
 }
 
 func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {
