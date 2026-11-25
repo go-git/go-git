@@ -186,6 +186,50 @@ var oneChunkPatchInverted Patch = testPatch{
 	}},
 }
 
+// funcContextPatch deletes two lines from the body of a C function whose
+// opening brace sits on its own line. Every other fixture here uses one-letter
+// context lines, which all satisfy the funcname heuristic, so they cannot tell
+// "the line just above the context window" apart from "the nearest enclosing
+// header": the first hunk's preceding line is "{" and the second hunk is
+// preceded only by indented statements. Cross-checked against
+// `git diff -U2`, which labels both hunks "int main(void)".
+var funcContextPatch Patch = testPatch{
+	message: "",
+	filePatches: []testFilePatch{{
+		from: &testFile{
+			mode: filemode.Regular,
+			path: "main.c",
+			seed: "int main(void)\n{\n\tint a = 1;\n\tint b = 2;\n\tint old1 = 3;\n" +
+				"\tint c = 4;\n\tint d = 5;\n\tint e = 6;\n\tint f = 7;\n\tint g = 8;\n" +
+				"\tint old2 = 9;\n\tint h = 10;\n\tint i = 11;\n}\n",
+		},
+		to: &testFile{
+			mode: filemode.Regular,
+			path: "main.c",
+			seed: "int main(void)\n{\n\tint a = 1;\n\tint b = 2;\n" +
+				"\tint c = 4;\n\tint d = 5;\n\tint e = 6;\n\tint f = 7;\n\tint g = 8;\n" +
+				"\tint h = 10;\n\tint i = 11;\n}\n",
+		},
+
+		chunks: []testChunk{{
+			content: "int main(void)\n{\n\tint a = 1;\n\tint b = 2;\n",
+			op:      Equal,
+		}, {
+			content: "\tint old1 = 3;\n",
+			op:      Delete,
+		}, {
+			content: "\tint c = 4;\n\tint d = 5;\n\tint e = 6;\n\tint f = 7;\n\tint g = 8;\n",
+			op:      Equal,
+		}, {
+			content: "\tint old2 = 9;\n",
+			op:      Delete,
+		}, {
+			content: "\tint h = 10;\n\tint i = 11;\n}\n",
+			op:      Equal,
+		}},
+	}},
+}
+
 var fixtures = []*fixture{{
 	patch: testPatch{
 		message: "",
@@ -1000,6 +1044,27 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 		" T\n" +
 		color.Red + "-U" + color.Reset + "\n" +
 		" V\n",
+}, {
+	patch:   funcContextPatch,
+	desc:    "hunk header names the enclosing function, not the line above the context",
+	context: 2,
+	diff: `diff --git a/main.c b/main.c
+index 9f03bde1c31d472737d36825dc9f653033738e2b..33770a8ab26e425bad0f91f78fd7498c9a84f38b 100644
+--- a/main.c
++++ b/main.c
+@@ -3,5 +3,4 @@ int main(void)
+ 	int a = 1;
+ 	int b = 2;
+-	int old1 = 3;
+ 	int c = 4;
+ 	int d = 5;
+@@ -9,5 +8,4 @@ int main(void)
+ 	int f = 7;
+ 	int g = 8;
+-	int old2 = 9;
+ 	int h = 10;
+ 	int i = 11;
+`,
 }}
 
 type testPatch struct {
