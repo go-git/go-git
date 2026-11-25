@@ -35,7 +35,9 @@ var (
 	ErrForceNeeded           = errors.New("some refs were not updated")
 	ErrExactSHA1NotSupported = errors.New("server does not support exact SHA1 refspec")
 	ErrEmptyUrls             = errors.New("URLs cannot be empty")
-	ErrRemoteRefNotFound     = errors.New("couldn't find remote ref")
+	// ErrRemoteRefNotFound reports a requested reference missing from the
+	// remote. Clone returns it for a named branch or tag on an empty remote.
+	ErrRemoteRefNotFound = errors.New("couldn't find remote ref")
 )
 
 const (

@@ -38,6 +38,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -696,6 +697,77 @@ func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
 		URL: remote,
 	})
 	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+}
+
+// git clone checks a requested branch or tag before it looks for an empty
+// remote (builtin/clone.c), so naming one that an empty remote cannot have
+// is a missing ref, and AllowEmptyRepo does not apply.
+func TestPlainCloneContext_EmptyRemoteNamedRefIsNotFound(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	refs := []plumbing.ReferenceName{
+		plumbing.NewBranchReferenceName("no-such-branch"),
+		plumbing.NewTagReferenceName("no-such-tag"),
+	}
+	for _, ref := range refs {
+		for _, singleBranch := range []bool{false, true} {
+			for _, allowEmpty := range []bool{false, true} {
+				name := fmt.Sprintf("%s/SingleBranch=%t/AllowEmptyRepo=%t", ref, singleBranch, allowEmpty)
+				t.Run(name, func(t *testing.T) {
+					t.Parallel()
+					dest := filepath.Join(t.TempDir(), "clone")
+					cloned, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+						URL:            remote,
+						ReferenceName:  ref,
+						SingleBranch:   singleBranch,
+						AllowEmptyRepo: allowEmpty,
+					})
+					if cloned != nil {
+						t.Cleanup(func() { _ = cloned.Close() })
+					}
+					require.ErrorIs(t, err, ErrRemoteRefNotFound)
+					assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+					assert.NoDirExists(t, dest)
+				})
+			}
+		}
+	}
+}
+
+func TestCloneContext_EmptyRemoteNamedRefIsNotFoundPerProtocol(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	for _, version := range []protocol.Version{protocol.V0, protocol.V2} {
+		for _, singleBranch := range []bool{false, true} {
+			name := fmt.Sprintf("protocol=%s/SingleBranch=%t", version, singleBranch)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				st := memory.NewStorage()
+				cfg, err := st.Config()
+				require.NoError(t, err)
+				cfg.Protocol.Version = version
+				require.NoError(t, st.SetConfig(cfg))
+
+				_, err = CloneContext(context.Background(), st, nil, &CloneOptions{
+					URL:           remote,
+					ReferenceName: plumbing.NewBranchReferenceName("no-such-branch"),
+					SingleBranch:  singleBranch,
+				})
+				require.ErrorIs(t, err, ErrRemoteRefNotFound)
+				assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+			})
+		}
+	}
 }
 
 // TestPlainCloneContext_EmptyRemoteDoesNotCleanup verifies that cloning an

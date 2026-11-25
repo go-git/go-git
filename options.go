@@ -97,7 +97,9 @@ type CloneOptions struct {
 	Bare bool
 	// AllowEmptyRepo when set to true, cloning an empty remote repository
 	// will not return an error. The resulting repository will be initialized
-	// with the remote configured but no commits.
+	// with the remote configured but no commits. It only applies when
+	// ReferenceName is HEAD. An empty remote cannot have a named branch or
+	// tag, so cloning one returns ErrRemoteRefNotFound.
 	AllowEmptyRepo bool
 
 	// worktree defines the worktree filesystem for non-bare clone operations.
