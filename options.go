@@ -260,6 +260,10 @@ type FetchOptions struct {
 	// Filter requests that the server to send only a subset of the objects.
 	// See https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filterltfilter-specgtcode
 	Filter packp.Filter
+
+	// skipHead leaves HEAD out of the ls-refs ref-prefixes, unless a refspec
+	// reads from HEAD.
+	skipHead bool
 }
 
 // Validate validates the fields and sets the default values.

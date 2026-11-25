@@ -1167,6 +1167,10 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Tags:          o.Tags,
 		RemoteName:    o.RemoteName,
 		Filter:        o.Filter,
+		// Approximates git clone clearing wants_head for --single-branch
+		// --branch (builtin/clone.c). go-git cannot tell --branch HEAD from
+		// no --branch, so a single-branch clone of HEAD still asks for it.
+		skipHead: o.SingleBranch && o.ReferenceName != plumbing.HEAD,
 	}, o.ReferenceName)
 
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
