@@ -112,72 +112,107 @@ func (p *pattern) Match(path []string, isDir bool) MatchResult {
 	return Exclude
 }
 
-// The wildmatch implementation below ports the matcher from canonical Git's
-// wildmatch.c at tag v2.54.0[1]. The Go shape trades C idioms (raw pointers,
-// NUL-terminated strings, goto-based control flow) for explicit bounds checks
-// and a regular switch. Returned codes match upstream so callers can prune
-// recursion the same way.
+// matchSegment reports whether name, one path component, matches glob, one
+// component of a gitignore pattern. Neither contains a '/'. The whole of
+// name has to match the whole of glob, byte for byte:
 //
-// Bracket expressions are the one deliberate departure. Upstream re-reads a
-// bracket from its '[' every time it is reached, and dowild reaches the same
-// '[' once per text offset a preceding '*' retries, so the reading grows with
-// the pattern and the text together. Here a bracket is read once per pattern
-// offset into the set of bytes it accepts (see bracketCache) and every later
-// visit is a bit test. That matters because ignore patterns are repository
-// content, and matching runs on every path walked by Status and Add.
-// Positions in the pattern are absolute indices rather than reslices of p so
-// that the cache can key on them.
+//   - '*' matches any run of bytes, an empty one included;
+//   - '?' matches any single byte;
+//   - a bracket expression matches one byte out of its set;
+//   - '\' makes the byte after it literal;
+//   - any other byte matches itself.
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/wildmatch.c
-
-// wildmatch return codes mirror the WM_* constants from upstream wildmatch.h.
-// wmAbortToStarStar lets a recursive call signal to its caller that it hit a
-// '/' boundary while expanding a non-'**' star, so the outer '*' can prune
-// further alternatives instead of re-trying them.
-const (
-	wmMatch           = 0
-	wmNoMatch         = 1
-	wmAbortAll        = -1
-	wmAbortToStarStar = -2
-)
-
-// wildmatch flags mirror the WM_* flag bits in upstream wildmatch.h. The
-// current go-git API does not expose case-insensitive matching, and the
-// matcher splits paths on '/' before dispatching here, so wmCasefold and
-// wmPathname code paths are kept for upstream parity but never exercised by
-// the public Match.
-const (
-	wmCasefold = 1
-	wmPathname = 2
-)
-
-// wildmatch reports whether text matches the wildcard pattern. It is a thin
-// wrapper over dowild; the gitignore matcher splits paths on '/' before
-// dispatching, so dowild always operates on a single pattern/text segment
-// with flags=0.
+// A glob that ends in a lone '\' or holds a malformed bracket expression
+// matches nothing.
 //
-// brackets caches the bracket expressions of pattern and nothing else. The
-// caller owns it so that matching one pattern segment against several path
-// components reads each bracket once, and must reset it before reusing it
-// for a different pattern string or a different set of flags.
-func wildmatch(pattern, text string, brackets *bracketCache) bool {
-	return dowild(pattern, 0, text, 0, brackets) == wmMatch
+// brackets caches the bracket expressions of glob; the caller owns it and
+// resets it before reusing it for another glob.
+//
+// Only the latest '*' is ever reconsidered. When the rest of the glob
+// fails, that '*' takes one more byte and the rest is tried again; an
+// earlier '*' taking more could only hide bytes the later one is free to
+// skip anyway. The work is therefore bounded by len(glob) * len(name),
+// however many '*' the glob has.
+func matchSegment(glob, name string, brackets *bracketCache) bool {
+	var (
+		g, n = 0, 0 // next byte of glob and of name
+		// resumeG is the glob position after the latest '*', or -1 before
+		// the first one; resumeN is where in name its current attempt
+		// started.
+		resumeG, resumeN = -1, 0
+	)
+
+	for {
+		if g < len(glob) && glob[g] == '*' {
+			g++
+			if g == len(glob) {
+				return true
+			}
+			resumeG, resumeN = g, n
+			continue
+		}
+		if n == len(name) {
+			// Nothing is left for a '*' to give back.
+			return g == len(glob)
+		}
+
+		matched, width := false, 1
+		if g < len(glob) {
+			switch glob[g] {
+			case '?':
+				matched = true
+			case '[':
+				set := brackets.get(glob, g)
+				if set.malformed {
+					return false
+				}
+				matched, width = set.has(name[n]), set.end-g+1
+			case '\\':
+				if g+1 == len(glob) {
+					return false
+				}
+				matched, width = glob[g+1] == name[n], 2
+			default:
+				matched = glob[g] == name[n]
+			}
+		}
+		if matched {
+			g += width
+			n++
+			continue
+		}
+
+		if resumeG < 0 {
+			return false
+		}
+		resumeN++
+		// When a plain byte follows the '*', only its occurrences in name
+		// are worth trying.
+		if next := glob[resumeG]; strings.IndexByte(`?[\`, next) < 0 {
+			skip := strings.IndexByte(name[resumeN:], next)
+			if skip < 0 {
+				return false
+			}
+			resumeN += skip
+		}
+		g, n = resumeG, resumeN
+	}
 }
 
-// bracketSet holds everything the '[' case needs to know about one bracket
-// expression, so that a repeat visit costs a bit test instead of a re-read.
-// accept has negation and the WM_PATHNAME rule for '/' already folded in, so
-// a clear bit means the bracket rejects that byte.
+// bracketSet is one bracket expression of a pattern, read once: the bytes
+// it accepts as a 256-bit set with negation already applied, and where it
+// ends. A malformed expression accepts nothing, and neither does the
+// pattern segment it is part of.
 type bracketSet struct {
-	accept [4]uint64
-	end    int  // index of the closing ']'
-	abort  bool // malformed; wildmatch.c answers WM_ABORT_ALL for any byte
+	accept    [4]uint64
+	end       int // index of the closing ']'
+	malformed bool
 }
 
 func (b *bracketSet) add(ch byte) { b.accept[ch>>6] |= 1 << (ch & 63) }
 
-// addRange adds every byte from lo to hi, or nothing when the range is
-// inverted, which is how the comparison it replaces behaves.
+// addRange adds every byte from lo to hi. A range written backwards holds
+// nothing.
 func (b *bracketSet) addRange(lo, hi byte) {
 	if lo > hi {
 		return
@@ -221,7 +256,7 @@ func (c *bracketCache) reset() {
 
 // get returns the set for the bracket opening at p[start], reading the
 // bracket the first time it is asked for.
-func (c *bracketCache) get(p string, start, flags int) *bracketSet {
+func (c *bracketCache) get(p string, start int) *bracketSet {
 	for i := range c.n {
 		if c.offsets[i] == start {
 			return &c.sets[i]
@@ -234,11 +269,11 @@ func (c *bracketCache) get(p string, start, flags int) *bracketSet {
 		i := c.n
 		c.offsets[i] = start
 		c.n++
-		readBracket(&c.sets[i], p, start, flags)
+		readBracket(&c.sets[i], p, start)
 		return &c.sets[i]
 	}
 	b := new(bracketSet)
-	readBracket(b, p, start, flags)
+	readBracket(b, p, start)
 	if c.overflow == nil {
 		c.overflow = make(map[int]*bracketSet, 1)
 	}
@@ -246,386 +281,134 @@ func (c *bracketCache) get(p string, start, flags int) *bracketSet {
 	return b
 }
 
-// readBracket walks the bracket expression opening at p[start] once and
-// records which bytes it accepts. It follows the '[' case of wildmatch.c
-// member for member; the difference is only that each member contributes to
-// a set instead of being compared against one byte, so the answer does not
-// depend on the text. Every way that loop can report WM_ABORT_ALL (a bracket
-// with no ']', a trailing backslash, an unknown [:class:]) is independent of
-// the text too, and is recorded as abort.
+// readBracket reads the bracket expression that starts at p[start] into b.
 //
-// The C source uses a do/while loop terminating when p_ch == ']'; each
-// iteration ends with prev_ch = p_ch and p_ch = *++p. NUL from the C string
-// is detected here with explicit pi bounds checks before every read.
-func readBracket(b *bracketSet, p string, start, flags int) {
-	// The slot may still hold the bracket a previous pattern put there.
-	*b = bracketSet{}
-	pi := start + 1
-	if pi >= len(p) {
-		b.abort = true
-		return
-	}
-	pCh := p[pi]
-	if pCh == '^' {
-		pCh = '!'
-	}
-	negated := pCh == '!'
+// After the '[' an optional '!' or '^' negates the expression. Its members
+// run up to the next ']', except that a ']' in first position is a member
+// itself. A member is a byte, "\" and the byte it makes literal, a range
+// "a-z", or a class such as "[:digit:]".
+//
+// The expression is malformed when p ends before the closing ']', when a
+// "\" has nothing to escape, or when a class name is not known.
+func readBracket(b *bracketSet, p string, start int) {
+	// b stays malformed, and empty, until the closing bracket is reached.
+	*b = bracketSet{malformed: true}
+	var set bracketSet
+
+	i := start + 1
+	negated := i < len(p) && (p[i] == '!' || p[i] == '^')
 	if negated {
-		pi++
-		if pi >= len(p) {
-			b.abort = true
-			return
-		}
-		pCh = p[pi]
+		i++
 	}
-	var prevCh byte
-	// closeAt is the ']' found by the most recent "[:" scan below. Those
-	// scans ask for the first ']' at or after a position that only ever
-	// moves forward, so remembering the last answer keeps their combined
-	// cost linear in the bracket instead of quadratic.
-	closeAt := -1
-	for {
+
+	// rangeFrom is the member a following '-' would extend into a range,
+	// or -1 after a range or a class, which have no single byte to offer.
+	rangeFrom := -1
+	// nextClose is the first ']' at or after the last "[:" looked at.
+	nextClose := -1
+	for first := i; i < len(p); i++ {
+		ch := p[i]
 		switch {
-		case pCh == '\\':
-			pi++
-			if pi >= len(p) {
-				b.abort = true
-				return
+		case ch == ']' && i > first:
+			if negated {
+				for w := range set.accept {
+					set.accept[w] = ^set.accept[w]
+				}
 			}
-			pCh = p[pi]
-			b.add(pCh)
-		case pCh == '-' && prevCh != 0 &&
-			pi+1 < len(p) && p[pi+1] != ']':
-			pi++
-			pCh = p[pi]
-			if pCh == '\\' {
-				pi++
-				if pi >= len(p) {
-					b.abort = true
+			set.end = i
+			*b = set
+			return
+
+		case ch == '-' && rangeFrom >= 0 && i+1 < len(p) && p[i+1] != ']':
+			// Whatever follows the '-' is the upper end, a '[' included;
+			// only an escape is looked into.
+			i++
+			to := p[i]
+			if to == '\\' {
+				if i++; i == len(p) {
 					return
 				}
-				pCh = p[pi]
+				to = p[i]
 			}
-			b.addRange(prevCh, pCh)
-			if flags&wmCasefold != 0 {
-				// A folded lowercase byte also matches when its
-				// uppercase form falls in the range.
-				for c := byte('a'); c <= 'z'; c++ {
-					if u := c - ('a' - 'A'); u <= pCh && u >= prevCh {
-						b.add(c)
-					}
+			set.addRange(byte(rangeFrom), to)
+			rangeFrom = -1
+			continue
+
+		case ch == '[' && i+1 < len(p) && p[i+1] == ':':
+			// "[:" opens a class only if a ":" of its own stands before
+			// the next ']'. Otherwise the '[' is an ordinary member.
+			if nextClose < i+2 {
+				// The search only ever moves forward, so a bracket is read
+				// in time linear in its length however many "[:" it holds.
+				nextClose = len(p)
+				if at := strings.IndexByte(p[i+2:], ']'); at >= 0 {
+					nextClose = i + 2 + at
 				}
 			}
-			pCh = 0 // resets prev_ch for next iteration
-		case pCh == '[' && pi+1 < len(p) && p[pi+1] == ':':
-			// POSIX class [:name:]. Walk forward to the next ']';
-			// if it isn't preceded by ':' the construct is not a
-			// class, so rewind and treat the '[' as a literal.
-			s := pi + 2
-			if closeAt < s {
-				closeAt = s
-				for closeAt < len(p) && p[closeAt] != ']' {
-					closeAt++
-				}
-			}
-			pi = closeAt
-			if pi >= len(p) {
-				b.abort = true
+			if nextClose == len(p) {
+				// No ']' is left, so the expression is never closed.
 				return
 			}
-			nameLen := pi - s - 1
-			if nameLen < 0 || p[pi-1] != ':' {
-				pi = s - 2
-				pCh = '['
-				b.add(pCh)
-				// Fall through to the loop tail with pCh='[' so the
-				// post-step records it as prev_ch.
-				break
-			}
-			class, valid := posixClassSet(p[s:pi-1], flags)
-			if !valid {
-				b.abort = true
-				return
-			}
-			for i := range b.accept {
-				b.accept[i] |= class[i]
-			}
-			pCh = 0 // resets prev_ch
-		default:
-			b.add(pCh)
-		}
-		prevCh = pCh
-		pi++
-		if pi >= len(p) {
-			b.abort = true
-			return
-		}
-		if p[pi] == ']' {
-			break
-		}
-		pCh = p[pi]
-	}
-	b.end = pi
-	if negated {
-		for i := range b.accept {
-			b.accept[i] = ^b.accept[i]
-		}
-	}
-	if flags&wmPathname != 0 {
-		b.accept['/'>>6] &^= 1 << ('/' & 63)
-	}
-}
-
-// dowild walks pattern and text in lock-step, recursing at each '*' to try
-// every text suffix and propagating wmMatch, wmNoMatch, wmAbortAll, or
-// wmAbortToStarStar back up so callers can prune work the same way the
-// upstream C implementation does (wildmatch.c#L59-L283).
-//
-// Matching starts at p[pStart]. Upstream recurses on a pointer into the
-// pattern; this recurses on an index into the same string, so a bracket keeps
-// the same offset in every call and brackets can be shared across the whole
-// call tree.
-func dowild(p string, pStart int, text string, flags int, brackets *bracketCache) int {
-	pi, ti := pStart, 0
-	for pi < len(p) {
-		pCh := p[pi]
-		var tCh byte
-		atEndOfText := ti >= len(text)
-		if !atEndOfText {
-			tCh = text[ti]
-		}
-		if atEndOfText && pCh != '*' {
-			return wmAbortAll
-		}
-		if flags&wmCasefold != 0 && isASCIIUpper(tCh) {
-			tCh += 'a' - 'A'
-		}
-		if flags&wmCasefold != 0 && isASCIIUpper(pCh) {
-			pCh += 'a' - 'A'
-		}
-
-		switch pCh {
-		case '\\':
-			// Literal match with the following character. A trailing '\'
-			// has no character to escape; canonical Git reads NUL (the C
-			// string terminator) into p_ch and the default-case compare
-			// fails because t_ch can never be NUL (the surrounding check
-			// returned wmAbortAll when text was exhausted). We mirror that
-			// by returning wmNoMatch directly.
-			if pi+1 >= len(p) {
-				return wmNoMatch
-			}
-			pi++
-			pCh = p[pi]
-			if tCh != pCh {
-				return wmNoMatch
-			}
-			pi++
-			ti++
-		case '?':
-			// Match any character except '/'.
-			if flags&wmPathname != 0 && tCh == '/' {
-				return wmNoMatch
-			}
-			pi++
-			ti++
-		case '*':
-			pi++
-			var matchSlash bool
-			if pi < len(p) && p[pi] == '*' {
-				prevPi := pi
-				for pi < len(p) && p[pi] == '*' {
-					pi++
+			if nextClose > i+2 && p[nextClose-1] == ':' {
+				class, known := posixClasses[p[i+2:nextClose-1]]
+				if !known {
+					return
 				}
-				switch {
-				case flags&wmPathname == 0:
-					// Without WM_PATHNAME, '*' == '**'.
-					matchSlash = true
-				case (prevPi-2 < pStart || p[prevPi-2] == '/') &&
-					(pi >= len(p) || p[pi] == '/' ||
-						(pi+1 < len(p) && p[pi] == '\\' && p[pi+1] == '/')):
-					// At a '/<**>/' boundary: optionally match the slash as
-					// nothing, recursing past it so that foo/<*><*>/bar
-					// matches both foo/bar and foo/a/bar.
-					if pi < len(p) && p[pi] == '/' &&
-						dowild(p, pi+1, text[ti:], flags, brackets) == wmMatch {
-						return wmMatch
-					}
-					matchSlash = true
+				for w := range set.accept {
+					set.accept[w] |= class[w]
 				}
-			} else {
-				// Single '*': without WM_PATHNAME crosses '/'; with it,
-				// does not.
-				matchSlash = flags&wmPathname == 0
-			}
-
-			if pi >= len(p) {
-				// Trailing "**" matches everything; trailing "*" matches only
-				// when no '/' remains in text.
-				if !matchSlash && strings.IndexByte(text[ti:], '/') >= 0 {
-					return wmAbortToStarStar
-				}
-				return wmMatch
-			} else if !matchSlash && p[pi] == '/' {
-				// One '*' followed by '/' with WM_PATHNAME: advance text to
-				// the next '/' so the outer loop consumes it.
-				slash := strings.IndexByte(text[ti:], '/')
-				if slash < 0 {
-					return wmAbortAll
-				}
-				ti += slash
-				// Fall through to the outer-loop advance.
-				pi++
-				ti++
+				i = nextClose
+				rangeFrom = -1
 				continue
 			}
 
-			for {
-				if ti >= len(text) {
-					return wmAbortAll
-				}
-				tCh = text[ti]
-				// Try to advance faster when '*' is followed by a literal.
-				// Everything before the next occurrence of that literal
-				// must belong to '*'. With matchSlash=false, stop at the
-				// first '/'.
-				if !isGlobSpecial(p[pi]) {
-					pCh = p[pi]
-					if flags&wmCasefold != 0 && isASCIIUpper(pCh) {
-						pCh += 'a' - 'A'
-					}
-					for ti < len(text) {
-						tCh = text[ti]
-						if !matchSlash && tCh == '/' {
-							break
-						}
-						if flags&wmCasefold != 0 && isASCIIUpper(tCh) {
-							tCh += 'a' - 'A'
-						}
-						if tCh == pCh {
-							break
-						}
-						ti++
-					}
-					if ti >= len(text) || tCh != pCh {
-						if matchSlash {
-							return wmAbortAll
-						}
-						return wmAbortToStarStar
-					}
-				}
-				matched := dowild(p, pi, text[ti:], flags, brackets)
-				if matched != wmNoMatch {
-					if !matchSlash || matched != wmAbortToStarStar {
-						return matched
-					}
-				} else if !matchSlash && tCh == '/' {
-					return wmAbortToStarStar
-				}
-				ti++
+		case ch == '\\':
+			if i++; i == len(p) {
+				return
 			}
-		case '[':
-			// The bracket is read once per pattern offset; see
-			// bracketCache. tCh has already been case-folded, and
-			// accept accounts for negation and WM_PATHNAME.
-			b := brackets.get(p, pi, flags)
-			if b.abort {
-				return wmAbortAll
-			}
-			if !b.has(tCh) {
-				return wmNoMatch
-			}
-			pi = b.end + 1
-			ti++
-		default:
-			if tCh != pCh {
-				return wmNoMatch
-			}
-			pi++
-			ti++
+			ch = p[i]
 		}
-	}
 
-	if ti < len(text) {
-		return wmNoMatch
+		set.add(ch)
+		rangeFrom = int(ch)
 	}
-	return wmMatch
 }
 
-// isGlobSpecial mirrors is_glob_special() from upstream ctype.c. Bytes that
-// can start or modify a wildmatch sub-pattern are "special"; everything else
-// is literal text and may be fast-skipped in the '*' loop.
-func isGlobSpecial(c byte) bool {
-	switch c {
-	case '*', '?', '[', '\\':
-		return true
+// posixClasses holds the bytes of each [:name:] character class a bracket
+// expression may contain. Only ASCII is classified: no byte with the high
+// bit set belongs to any class.
+var posixClasses = buildPOSIXClasses()
+
+func buildPOSIXClasses() map[string][4]uint64 {
+	members := map[string]func(ch byte) bool{
+		"alnum": func(ch byte) bool { return isASCIIAlpha(ch) || isASCIIDigit(ch) },
+		"alpha": isASCIIAlpha,
+		"blank": func(ch byte) bool { return ch == ' ' || ch == '\t' },
+		"cntrl": func(ch byte) bool { return ch < 0x20 || ch == 0x7f },
+		"digit": isASCIIDigit,
+		"graph": func(ch byte) bool { return ch > ' ' && ch < 0x7f },
+		"lower": func(ch byte) bool { return ch >= 'a' && ch <= 'z' },
+		"print": func(ch byte) bool { return ch >= ' ' && ch < 0x7f },
+		"punct": isASCIIPunct,
+		// Git leaves vertical tab and form feed out of [:space:].
+		"space": func(ch byte) bool { return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' },
+		"upper": func(ch byte) bool { return ch >= 'A' && ch <= 'Z' },
+		"xdigit": func(ch byte) bool {
+			return isASCIIDigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+		},
 	}
-	return false
-}
 
-// posixClasses holds the [:name:] character classes a bracket expression may
-// contain. Classification is ASCII-only to mirror sane-ctype.h: bytes with
-// the high bit set never satisfy any class. A name missing from this table
-// is what wildmatch.c calls a "malformed [:class:] string".
-var posixClasses = map[string]func(ch byte, flags int) bool{
-	"alnum": func(ch byte, _ int) bool { return isASCIIAlpha(ch) || isASCIIDigit(ch) },
-	"alpha": func(ch byte, _ int) bool { return isASCIIAlpha(ch) },
-	"blank": func(ch byte, _ int) bool { return ch == ' ' || ch == '\t' },
-	"cntrl": func(ch byte, _ int) bool { return ch < 0x20 || ch == 0x7f },
-	"digit": func(ch byte, _ int) bool { return isASCIIDigit(ch) },
-	"graph": func(ch byte, _ int) bool { return ch > ' ' && ch < 0x7f },
-	"lower": func(ch byte, _ int) bool { return ch >= 'a' && ch <= 'z' },
-	"print": func(ch byte, _ int) bool { return ch >= ' ' && ch < 0x7f },
-	"punct": func(ch byte, _ int) bool { return isASCIIPunct(ch) },
-	"space": func(ch byte, _ int) bool {
-		return ch == ' ' || ch == '\t' || ch == '\n' ||
-			ch == '\v' || ch == '\f' || ch == '\r'
-	},
-	"upper": func(ch byte, flags int) bool {
-		return (ch >= 'A' && ch <= 'Z') ||
-			(flags&wmCasefold != 0 && isASCIILower(ch))
-	},
-	"xdigit": func(ch byte, _ int) bool {
-		return isASCIIDigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
-	},
-}
-
-// posixClassSets is posixClasses evaluated over every byte once, so reading a
-// [:class:] out of a bracket costs a map lookup. Index 1 is the WM_CASEFOLD
-// variant; [:upper:] is the only class that reads the flag.
-var posixClassSets = buildPOSIXClassSets()
-
-func buildPOSIXClassSets() [2]map[string][4]uint64 {
-	var sets [2]map[string][4]uint64
-	for i := range sets {
-		flags := 0
-		if i == 1 {
-			flags = wmCasefold
-		}
-		sets[i] = make(map[string][4]uint64, len(posixClasses))
-		for name, in := range posixClasses {
-			var set [4]uint64
-			for c := range 256 {
-				if in(byte(c), flags) {
-					set[c>>6] |= 1 << (c & 63)
-				}
+	classes := make(map[string][4]uint64, len(members))
+	for name, isMember := range members {
+		var set [4]uint64
+		for c := range 256 {
+			if isMember(byte(c)) {
+				set[c>>6] |= 1 << (c & 63)
 			}
-			sets[i][name] = set
 		}
+		classes[name] = set
 	}
-	return sets
-}
-
-// posixClassSet returns the bytes matched by the class named [:name:]. valid
-// is false when the name is unrecognized — wildmatch.c propagates that as
-// wmAbortAll.
-func posixClassSet(name string, flags int) (set [4]uint64, valid bool) {
-	i := 0
-	if flags&wmCasefold != 0 {
-		i = 1
-	}
-	set, valid = posixClassSets[i][name]
-	return set, valid
+	return classes
 }
 
 func isASCIIAlpha(ch byte) bool {
@@ -634,14 +417,6 @@ func isASCIIAlpha(ch byte) bool {
 
 func isASCIIDigit(ch byte) bool {
 	return ch >= '0' && ch <= '9'
-}
-
-func isASCIIUpper(ch byte) bool {
-	return ch >= 'A' && ch <= 'Z'
-}
-
-func isASCIILower(ch byte) bool {
-	return ch >= 'a' && ch <= 'z'
 }
 
 func isASCIIPunct(ch byte) bool {
@@ -654,7 +429,7 @@ func isASCIIPunct(ch byte) bool {
 func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 	var brackets bracketCache
 	for i, name := range path {
-		if !wildmatch(p.pattern[0], name, &brackets) {
+		if !matchSegment(p.pattern[0], name, &brackets) {
 			continue
 		}
 		if p.dirOnly && !isDir && i == len(path)-1 {
@@ -695,7 +470,7 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 			continue
 		}
 		// Note: If pattern contains ** but isn't exactly **, it's treated as a regular wildcard pattern
-		// (e.g., foo** or **bar) and wildmatch will handle it
+		// (e.g., foo** or **bar) and matchSegment will handle it
 		if len(path) == 0 {
 			return false
 		}
@@ -707,7 +482,7 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 			for len(path) > 0 {
 				e := path[0]
 				path = path[1:]
-				if wildmatch(pattern, e, &brackets) {
+				if matchSegment(pattern, e, &brackets) {
 					matched = true
 					break
 				}
@@ -721,7 +496,7 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 				}
 			}
 		} else {
-			if !wildmatch(pattern, path[0], &brackets) {
+			if !matchSegment(pattern, path[0], &brackets) {
 				return false
 			}
 			matched = true
