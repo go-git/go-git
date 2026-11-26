@@ -249,8 +249,8 @@ func TestReaderFromDeltaRepeatedRewinds(t *testing.T) {
 
 // TestPatchDeltaRejectsTrailingBytes asserts that a delta whose
 // operations exactly fill the declared target size but is followed by
-// extra bytes is rejected, matching upstream's `data != top` post-loop
-// sanity check.
+// extra bytes is rejected, as upstream rejects a delta it has not consumed
+// in full.
 func TestPatchDeltaRejectsTrailingBytes(t *testing.T) {
 	t.Parallel()
 
@@ -266,8 +266,7 @@ func TestPatchDeltaRejectsTrailingBytes(t *testing.T) {
 
 // TestPatchDeltaAcceptsEmptyTarget asserts that a delta whose declared
 // target size is zero and which carries no operations succeeds and
-// produces an empty result, matching upstream's behaviour of treating
-// `data == top && size == 0` as success.
+// produces an empty result, which upstream accepts as well.
 func TestPatchDeltaAcceptsEmptyTarget(t *testing.T) {
 	t.Parallel()
 

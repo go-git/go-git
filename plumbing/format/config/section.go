@@ -7,25 +7,17 @@ import (
 )
 
 // Section is the representation of a section inside git configuration files.
-// Each Section contains Options that are used by both the Git plumbing
-// and the porcelains.
-// Sections can be further divided into subsections. To begin a subsection
-// put its name in double quotes, separated by space from the section name,
-// in the section header, like in the example below:
+// A section has a name, options of its own, and any number of named
+// subsections, each with their own options:
 //
-//	[section "subsection"]
-//
-// All the other lines (and the remainder of the line after the section header)
-// are recognized as option variables, in the form "name = value" (or just name,
-// which is a short-hand to say that the variable is the boolean "true").
-// The variable names are case-insensitive, allow only alphanumeric characters
-// and -, and must start with an alphabetic character:
-//
-//	[section "subsection1"]
+//	[section]
 //	    option1 = value1
-//	    option2
-//	[section "subsection2"]
-//	    option3 = value2
+//	[section "subsection"]
+//	    option2 = value2
+//	    option3
+//
+// An option written without a value, like option3, reads as boolean true.
+// Section and option names are case-insensitive; subsection names are not.
 type Section struct {
 	Name        string
 	Options     Options

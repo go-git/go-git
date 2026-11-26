@@ -160,11 +160,8 @@ func copyPackfile(w io.WriteCloser, packfile io.Reader) (err error) {
 // 12-byte pack header) and strictly less than deltaOffset, since an
 // OFS-delta can only reference an earlier entry in the same pack.
 //
-// Mirrors canonical Git's predicate in packfile.c[1]:
-//
-//	base_offset = delta_obj_offset - base_offset;
-//	if (base_offset <= 0 || base_offset >= delta_obj_offset)
-//		return 0;  /* out of bound */
+// Git applies the same bounds when it resolves the base of an OFS-delta in
+// packfile.c[1], and treats a base outside them as out of bound.
 //
 // Returns a wrapped ErrMalformedPackfile when the bounds are violated;
 // returns nil otherwise.

@@ -31,15 +31,13 @@ var (
 	// Some extensions are storage-specific, those are defined by the Storers
 	// themselves by implementing the ExtensionChecker interface.
 	builtinExtensions = map[string]struct{}{
-		// noop does not change git’s behavior at all.
-		// It is useful only for testing format-1 compatibility.
-		//
-		// This extension is respected regardless of the
-		// core.repositoryFormatVersion setting.
+		// noop has no effect. It exists so that extension handling can
+		// be tested, and is accepted whatever the repository format
+		// version is.
 		"noop": {},
 
-		// noop-v1 does not change git’s behavior at all.
-		// It is useful only for testing format-1 compatibility.
+		// noop-v1 has no effect either, and is accepted only in a
+		// repository of format version 1.
 		"noop-v1": {},
 	}
 

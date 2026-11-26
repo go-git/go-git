@@ -342,8 +342,9 @@ func (d *Decoder) readExtension(idx *Index) error {
 		}
 		trace.Internal.Printf("index: end-of-index-entry extension decoded, offset %d hash %s", idx.EndOfIndexEntry.Offset, idx.EndOfIndexEntry.Hash)
 	default:
-		// See https://git-scm.com/docs/index-format, which says:
-		// If the first byte is 'A'..'Z' the extension is optional and can be ignored.
+		// An extension whose signature starts with an uppercase letter is
+		// optional and may be skipped; any other must be understood. See
+		// https://git-scm.com/docs/gitformat-index.
 		if header[0] < 'A' || header[0] > 'Z' {
 			trace.Internal.Printf("index: unknown mandatory extension %s", string(header[:]))
 			return ErrUnknownExtension
@@ -480,9 +481,8 @@ func (d *treeExtensionDecoder) readEntry() (*TreeEntry, error) {
 
 	e.Trees = subtrees
 
-	// An entry can be in an invalidated state and is represented by having a
-	// negative number in the entry_count field. In this case, there is no
-	// object name and the next entry starts immediately after the newline.
+	// A negative entry count marks the entry as invalidated. Such an entry
+	// carries no object name, so the next one follows the newline directly.
 	if i < 0 {
 		trace.Internal.Printf("index: tree extension entry %q invalidated (entry count %d)", e.Path, i)
 		return nil, nil

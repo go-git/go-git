@@ -42,8 +42,8 @@ var (
 	ErrInflatedSizeMismatch = errors.New("packfile: inflated object exceeds declared size")
 	// ErrInflatedSizeShort is the converse: the object inflated to fewer
 	// bytes than its header declared. Canonical Git enforces the same
-	// equality in get_data (builtin/index-pack.c), whose inflate loop only
-	// breaks on `stream.total_out == size && ret == Z_STREAM_END`. The
+	// equality when it unpacks an entry: the stream has to end exactly at
+	// the declared size. The
 	// declared size is what the object id is computed over, so a short
 	// stream would otherwise be indexed under an id that does not hash it.
 	ErrInflatedSizeShort = errors.New("inflated object size mismatch")

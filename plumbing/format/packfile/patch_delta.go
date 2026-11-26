@@ -273,8 +273,8 @@ func ReaderFromDelta(base plumbing.EncodedObject, deltaRC io.Reader) (io.ReadClo
 			}
 		}
 
-		// Mirror upstream's `data != top` post-loop check: every byte
-		// of the delta payload must be consumed.
+		// As upstream does once its loop ends, check that every byte
+		// of the delta payload was consumed.
 		if _, err := deltaBuf.ReadByte(); err == nil {
 			_ = dstWr.CloseWithError(ErrInvalidDelta)
 			return
@@ -392,8 +392,8 @@ func validateDeltaOps(delta []byte, srcSz, targetSz uint) error {
 		}
 	}
 
-	// Mirror upstream's `data != top` post-loop check: every byte of
-	// the delta payload must be consumed.
+	// As upstream does once its loop ends, check that every byte of
+	// the delta payload was consumed.
 	if len(delta) != 0 {
 		return ErrInvalidDelta
 	}
@@ -473,8 +473,8 @@ func patchDelta(dst *bytes.Buffer, src, delta []byte) error {
 		}
 	}
 
-	// Mirror upstream's `data != top` post-loop check: every byte of
-	// the delta payload must be consumed.
+	// As upstream does once its loop ends, check that every byte of
+	// the delta payload was consumed.
 	if len(delta) != 0 {
 		return ErrInvalidDelta
 	}
@@ -596,8 +596,8 @@ func patchDeltaWriter(dst io.Writer, base io.ReaderAt, baseSz int64, delta []byt
 		}
 	}
 
-	// Mirror upstream's `data != top` post-loop check: every byte of
-	// the delta payload must be consumed.
+	// As upstream does once its loop ends, check that every byte of
+	// the delta payload was consumed.
 	if _, err := deltaBuf.ReadByte(); err == nil {
 		return 0, plumbing.ZeroHash, ErrInvalidDelta
 	} else if err != io.EOF {
