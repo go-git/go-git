@@ -872,7 +872,7 @@ func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, 
 	}
 	revList := !req.since.IsZero() || len(req.notTips) > 0
 	if req.depth > 0 && revList {
-		return nil, errors.New("deepen and deepen-since (or deepen-not) cannot be used together")
+		return nil, packp.ErrDeepenMutuallyExclusive
 	}
 	if req.depth <= 0 && !revList && len(req.clientShallows) == 0 {
 		return nil, nil

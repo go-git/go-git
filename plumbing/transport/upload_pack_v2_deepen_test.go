@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -99,8 +100,7 @@ func TestUploadPackV2FetchDeepenAndSinceConflict(t *testing.T) {
 		ioutil.WriteNopCloser(&out),
 		&UploadPackRequest{GitProtocol: "version=2", StatelessRPC: true},
 	)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot be used together")
+	require.ErrorIs(t, err, packp.ErrDeepenMutuallyExclusive)
 }
 
 func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
