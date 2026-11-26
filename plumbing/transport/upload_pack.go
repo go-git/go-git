@@ -1293,8 +1293,8 @@ type commonHaves struct {
 
 	// counted holds the common haves not already implied by an earlier one.
 	counted []plumbing.Hash
-	// theyHave holds every common have and the parents of common commits.
-	theyHave map[plumbing.Hash]struct{}
+	// clientHas holds every common have and the parents of common commits.
+	clientHas map[plumbing.Hash]struct{}
 	// oldest is the committer date, in seconds since the epoch, of the oldest
 	// common commit. Zero means no common commit yet, so a commit dated zero
 	// does not pin it.
@@ -1309,7 +1309,7 @@ type commonHaves struct {
 	// not have.
 	nodes map[plumbing.Hash]*commitNode
 	// checked reports that ready holds the answer of okToGiveUp for the
-	// current theyHave and oldest.
+	// current clientHas and oldest.
 	checked bool
 	ready   bool
 
@@ -1335,12 +1335,12 @@ func newCommonHaves(st storage.Storer, wants, grafts []plumbing.Hash) (*commonHa
 		return nil, fmt.Errorf("reading shallow commits: %w", err)
 	}
 	c := &commonHaves{
-		st:       st,
-		wants:    wants,
-		grafts:   make(map[plumbing.Hash]struct{}, len(grafts)+len(shallows)),
-		theyHave: map[plumbing.Hash]struct{}{},
-		added:    map[plumbing.Hash]bool{},
-		nodes:    map[plumbing.Hash]*commitNode{},
+		st:        st,
+		wants:     wants,
+		grafts:    make(map[plumbing.Hash]struct{}, len(grafts)+len(shallows)),
+		clientHas: map[plumbing.Hash]struct{}{},
+		added:     map[plumbing.Hash]bool{},
+		nodes:     map[plumbing.Hash]*commitNode{},
 	}
 	for _, h := range slices.Concat(grafts, shallows) {
 		c.grafts[h] = struct{}{}
@@ -1354,8 +1354,8 @@ type commitNode struct {
 	date int64
 	// parents are none for a grafted commit.
 	parents []plumbing.Hash
-	// theyHave mirrors the commit's membership of commonHaves.theyHave.
-	theyHave bool
+	// clientHas mirrors the commit's membership of commonHaves.clientHas.
+	clientHas bool
 	// parentNodes holds the nodes of the first resolved parents, nil for a
 	// parent the server lacks. A walk looks at the parents in order, so a
 	// later check follows the pointers instead of looking each parent up.
@@ -1377,19 +1377,19 @@ func (c *commonHaves) remember(commit *object.Commit) *commitNode {
 	if _, ok := c.grafts[commit.Hash]; ok {
 		n.parents = nil
 	}
-	_, n.theyHave = c.theyHave[commit.Hash]
+	_, n.clientHas = c.clientHas[commit.Hash]
 	c.nodes[commit.Hash] = n
 	return n
 }
 
-// markHave adds h to theyHave and reports whether it was not there yet.
-func (c *commonHaves) markHave(h plumbing.Hash) bool {
-	if _, ok := c.theyHave[h]; ok {
+// markClientHas adds h to clientHas and reports whether it was not there yet.
+func (c *commonHaves) markClientHas(h plumbing.Hash) bool {
+	if _, ok := c.clientHas[h]; ok {
 		return false
 	}
-	c.theyHave[h] = struct{}{}
+	c.clientHas[h] = struct{}{}
 	if n := c.nodes[h]; n != nil {
-		n.theyHave = true
+		n.clientHas = true
 	}
 	return true
 }
@@ -1414,7 +1414,7 @@ func (c *commonHaves) node(h plumbing.Hash) (*commitNode, error) {
 // add records the have h and reports whether the server has it, returning an
 // error if the object cannot be read. The parents of a common commit count
 // as had by the client before the commit itself is checked. A have that adds
-// nothing to theyHave and does not move oldest, such as a repeated have or a
+// nothing to clientHas and does not move oldest, such as a repeated have or a
 // blob, leaves checked set, so the last answer of okToGiveUp stands.
 //
 // A have add has already processed is answered without reading it again. Of
@@ -1456,12 +1456,12 @@ func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 			c.checked = false
 		}
 		for _, p := range n.parents {
-			if c.markHave(p) {
+			if c.markClientHas(p) {
 				c.checked = false
 			}
 		}
 	}
-	if c.markHave(h) {
+	if c.markClientHas(h) {
 		c.counted = append(c.counted, h)
 		if isCommit {
 			c.checked = false
@@ -1512,7 +1512,7 @@ func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 // so the answer does not depend on the file. Only the round in which "ready"
 // is sent differs, not what is fetched.
 func (c *commonHaves) okToGiveUp(ctx context.Context) (bool, error) {
-	if len(c.theyHave) == 0 {
+	if len(c.clientHas) == 0 {
 		return false, nil
 	}
 	if c.checked {
@@ -1588,7 +1588,7 @@ func (c *commonHaves) reachesCommon(ctx context.Context, tip *commitNode) (bool,
 		}
 		step := &path[len(path)-1]
 		at := step.node
-		if at.theyHave || at.reaches == c.walk {
+		if at.clientHas || at.reaches == c.walk {
 			// Nothing below a commit known to reach the client's history
 			// needs walking, and its child on the path reaches it too.
 			path = path[:len(path)-1]
@@ -1618,12 +1618,12 @@ func (c *commonHaves) reachesCommon(ctx context.Context, tip *commitNode) (bool,
 			if parent == nil {
 				// The server lacks this parent, but the client may have
 				// named a child of it, and then has it.
-				if _, ok := c.theyHave[h]; ok {
+				if _, ok := c.clientHas[h]; ok {
 					at.reaches = c.walk
 				}
 				continue
 			}
-			if parent.theyHave || parent.reaches == c.walk {
+			if parent.clientHas || parent.reaches == c.walk {
 				at.reaches = c.walk
 			}
 			if parent.entered == c.walk {
@@ -1645,7 +1645,7 @@ func (c *commonHaves) reachesCommon(ctx context.Context, tip *commitNode) (bool,
 		// parent is looked at again for what the walk below it found.
 		path = append(path, walkStep{node: enter})
 	}
-	return tip.theyHave || tip.reaches == c.walk, nil
+	return tip.clientHas || tip.reaches == c.walk, nil
 }
 
 // peelWant resolves the want h to a commit, following annotated tags. It

@@ -743,7 +743,7 @@ func TestCommonHavesLooksUpTheTypeOfABlobHave(t *testing.T) {
 	assert.True(t, had)
 }
 
-// A have that is already in theyHave, as an earlier have's parent, can
+// A have that is already in clientHas, as an earlier have's parent, can
 // still bring new parents, and so change readiness without moving the
 // cutoff. The answer okToGiveUp gave before must not be reused.
 func TestCommonHavesWalksAgainForNewParentsOfAKnownHave(t *testing.T) {
