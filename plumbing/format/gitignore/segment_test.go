@@ -298,3 +298,21 @@ func TestMatchSegmentMatchesGit(t *testing.T) {
 		}
 	}
 }
+
+// TestGlobManyDoubleStars matches a pattern with many "**/a" steps against a
+// deep path of matching components that ends in a mismatch. Every "**" can
+// start at many components, and without remembering which tails already
+// failed the number of combinations tried would not finish in any test run.
+func TestGlobManyDoubleStars(t *testing.T) {
+	t.Parallel()
+
+	pattern := ParsePattern(strings.Repeat("**/a/", 25)+"b", nil)
+	path := append(slices.Repeat([]string{"a"}, 60), "c")
+
+	start := time.Now()
+	assert.Equal(t, NoMatch, pattern.Match(path, false))
+	assert.Less(t, time.Since(start), 5*time.Second)
+
+	path[len(path)-1] = "b"
+	assert.Equal(t, Exclude, pattern.Match(path, false))
+}

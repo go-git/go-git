@@ -325,6 +325,13 @@ func (s *ConformanceSuite) TestWildmatchSlashSemantics() {
 		{"*/bar/**", "foo/bar/baz/x", true, "mixed single double star"},
 		{"*/bar/**", "deep/foo/bar/baz/x", false, "mixed stars wrong depth"},
 		{"**/bar/*/*", "deep/foo/bar/baz/x", true, "double star with fixed depth"},
+		{"**/a/b", "a/a/b", true, "double star tries a later component"},
+		{"**/build/out", "build/build/out", true, "double star skips a first match that leads nowhere"},
+		{"**/*/a", "a/b/a", true, "double star before a star segment"},
+		{"/**/a/f", "a/a/f", true, "anchored double star tries a later component"},
+		{"**/a/**/a/b", "a/a/a/b", true, "two double stars, both skipping"},
+		{"**/a/**/a/b", "a/x/b", false, "two double stars, second segment missing"},
+		{"**/a/b", "a/a/c", false, "double star with no component that fits"},
 
 		// Path-relative patterns (t3070's pathmatch entries).
 		{"fo", "foo", false, "prefix no match"},

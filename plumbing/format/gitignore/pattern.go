@@ -59,9 +59,7 @@ func ParsePattern(p string, domain []string) Pattern {
 		p = p[1:]
 	}
 
-	if !strings.HasSuffix(p, "\\ ") {
-		p = strings.TrimRight(p, " ")
-	}
+	p = trimTrailingSpaces(p)
 
 	if strings.HasSuffix(p, patternDirSep) {
 		res.dirOnly = true
@@ -441,11 +439,25 @@ func (p *pattern) simpleNameMatch(path []string, isDir bool) bool {
 }
 
 func (p *pattern) globMatch(path []string, isDir bool) bool {
-	matched := false
+	var failed []bool
+	return p.matchFrom(0, path, isDir, false, &failed, len(path))
+}
+
+// matchFrom matches the pattern segments from i on against path. matched is
+// what the segments before i have established.
+//
+// A "**" followed by another segment may stand for any number of leading
+// components, so every component that matches that segment is tried in turn
+// with the rest of the pattern. failed remembers, for a segment index and a
+// number of components left, that the rest did not match from there, which
+// keeps a pattern with several "**" from trying the same tail over and over.
+// It is allocated on the first such failure, with room for total components.
+func (p *pattern) matchFrom(i int, path []string, isDir, matched bool, failed *[]bool, total int) bool {
 	canTraverse := false
 	trailingStar := false
 	var brackets bracketCache
-	for i, pattern := range p.pattern {
+	for ; i < len(p.pattern); i++ {
+		pattern := p.pattern[i]
 		if pattern == "" {
 			if i > 0 {
 				// Only the first empty component anchors a pattern at the root.
@@ -478,33 +490,39 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 		// the previous one no longer mean anything.
 		brackets.reset()
 		if canTraverse {
-			canTraverse = false
-			for len(path) > 0 {
-				e := path[0]
-				path = path[1:]
-				if matchSegment(pattern, e, &brackets) {
-					matched = true
-					break
+			// A `**` that never finds the segment following it, or finds it
+			// only where the rest of the pattern does not fit, is a
+			// definitive non-match. Returning here rather than clearing
+			// matched keeps a trailing `**` from reviving the pattern once
+			// the path is exhausted, which would make `**/bar/**` match
+			// directories containing no bar.
+			for k, name := range path {
+				if !matchSegment(pattern, name, &brackets) {
+					continue
 				}
-				if len(path) == 0 {
-					// A `**` that never finds the segment following it is a
-					// definitive non-match. Returning here rather than
-					// clearing matched keeps a trailing `**` from reviving
-					// the pattern once the path is exhausted, which would
-					// make `**/bar/**` match directories containing no bar.
-					return false
+				rest := path[k+1:]
+				key := (i+1)*(total+1) + len(rest)
+				if *failed != nil && (*failed)[key] {
+					continue
 				}
+				if p.matchFrom(i+1, rest, isDir, true, failed, total) {
+					return true
+				}
+				if *failed == nil {
+					*failed = make([]bool, (len(p.pattern)+1)*(total+1))
+				}
+				(*failed)[key] = true
 			}
-		} else {
-			if !matchSegment(pattern, path[0], &brackets) {
-				return false
-			}
-			matched = true
-			path = path[1:]
-			// files matching dir globs, don't match
-			if len(path) == 0 && i < len(p.pattern)-1 {
-				matched = false
-			}
+			return false
+		}
+		if !matchSegment(pattern, path[0], &brackets) {
+			return false
+		}
+		matched = true
+		path = path[1:]
+		// files matching dir globs, don't match
+		if len(path) == 0 && i < len(p.pattern)-1 {
+			matched = false
 		}
 	}
 	// Check dirOnly: either we consumed all path (len(path) == 0) or we matched a trailing **
@@ -512,4 +530,29 @@ func (p *pattern) globMatch(path []string, isDir bool) bool {
 		matched = false
 	}
 	return matched
+}
+
+// trimTrailingSpaces drops the spaces at the end of a pattern line, as
+// gitignore does, unless a backslash escapes them: "a\ " keeps its space. A
+// backslash escapes the byte after it whatever that is, so the space in
+// "a\\ " is not escaped and goes.
+func trimTrailingSpaces(p string) string {
+	cut := -1
+	for i := 0; i < len(p); i++ {
+		switch p[i] {
+		case ' ':
+			if cut < 0 {
+				cut = i
+			}
+		case '\\':
+			i++
+			cut = -1
+		default:
+			cut = -1
+		}
+	}
+	if cut < 0 {
+		return p
+	}
+	return p[:cut]
 }
