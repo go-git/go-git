@@ -197,7 +197,10 @@ func NegotiatePack(
 
 	for !done {
 		var uphav packp.UploadHaves
-		if statelessRPC && !sendDoneAfterReady {
+		// A stateless server remembers nothing, so every request repeats the
+		// common haves, the last one included: it is the one the pack is
+		// built for.
+		if statelessRPC {
 			uphav.Haves = append(uphav.Haves, statelessCommon...)
 		}
 

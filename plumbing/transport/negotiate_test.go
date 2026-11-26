@@ -494,3 +494,41 @@ func TestNegotiatePackReturnsShallowDecodeError(t *testing.T) {
 		t.Fatal("NegotiatePack did not return the shallow-update decode error")
 	}
 }
+
+// A fetch traced from git 2.54.0 over smart HTTP with protocol.version=0,
+// against a server that does not advertise no-done. The server acknowledges
+// one have of the first request as common and answers "ready" for a later
+// one it lacks. The request that follows carries the wants, the common have
+// and "done": the server has forgotten the first request, and builds the
+// pack from the haves of the last one alone.
+func TestNegotiatePackRepeatsCommonHavesAfterReady(t *testing.T) {
+	t.Parallel()
+
+	haves := makeSyntheticHaves(40)
+	// Haves are offered from the end of the list.
+	common, unknown := haves[len(haves)-3], haves[len(haves)-4]
+
+	reader := bytes.NewBuffer(nil)
+	for _, line := range []string{
+		"ACK " + common.String() + " common\n",
+		"ACK " + unknown.String() + " ready\n",
+		"NAK\n",
+		"ACK " + common.String() + "\n",
+	} {
+		_, err := pktline.WriteString(reader, line)
+		require.NoError(t, err)
+	}
+
+	writer := newMockWriteCloser(nil)
+	req := &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
+		Haves: haves,
+	}
+
+	_, err := NegotiatePack(context.Background(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
+	require.NoError(t, err)
+
+	requests := strings.SplitAfter(writer.writeBuf.String(), "0000")
+	require.Len(t, requests, 4, "two requests, each a want section and a have section")
+	assert.Equal(t, "0032have "+common.String()+"\n0009done\n", requests[3])
+}
