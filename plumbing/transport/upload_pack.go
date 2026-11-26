@@ -194,9 +194,10 @@ func UploadPack(
 			}
 		}
 
-		// UploadHaves.Decode takes EOF for a flush. Upstream dies when a
-		// stateful client hangs up mid-negotiation, so do the same instead of
-		// looping on empty rounds.
+		// UploadHaves.Decode takes EOF for a flush. A stateful client that
+		// hangs up mid-negotiation has not finished its request, so report
+		// the truncated stream instead of looping on empty rounds. Git's
+		// server ends with an error here too.
 		if !opts.StatelessRPC {
 			if _, _, err := pktline.PeekLine(rd); errors.Is(err, io.EOF) {
 				return fmt.Errorf("decoding upload-haves: %w", io.ErrUnexpectedEOF)
@@ -589,8 +590,8 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 // The reference lines are encoded by writeV2Ref rather than packp.LsRefsOutput:
 // a v2 HEAD line carries both a resolved object id and a symref-target
 // attribute, which a single plumbing.Reference (hash XOR symbolic) cannot
-// represent. writeV2Ref resolves the symref's hash from the storer, matching
-// upstream git's send_ref.
+// represent. writeV2Ref resolves the symref's hash from the storer, so the
+// line names the object the symref currently points at.
 func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *packp.LsRefsArgs) error {
 	iter, err := st.IterReferences()
 	if err != nil {
@@ -614,9 +615,10 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *pack
 
 	prefixes := args.RefPrefixes
 
-	// HEAD is emitted first, but only when it passes the ref-prefix filter,
-	// matching upstream's send_possibly_unborn_head -> send_ref (ls-refs.c),
-	// where HEAD is subject to ref_match like every other ref.
+	// HEAD is listed first, but only when it passes the ref-prefix filter:
+	// a client that sends prefixes gets HEAD when one of them matches
+	// "HEAD", like every other ref. Git's server filters HEAD the same
+	// way.
 	for _, r := range refs {
 		if r.Name() == plumbing.HEAD {
 			if len(prefixes) == 0 || refMatchesAnyPrefix(r.Name().String(), prefixes) {
@@ -652,8 +654,11 @@ func refMatchesAnyPrefix(name string, prefixes []string) bool {
 	return false
 }
 
-// writeV2Ref writes an ls-refs response with the requested reference attributes.
-// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/ls-refs.c#L91-L117.
+// writeV2Ref writes one line of an ls-refs response for r, with the
+// attributes the client asked for. A symbolic reference is listed with the
+// object id of the reference it resolves to; one that cannot be resolved, or
+// that resolves to no object, is left out.
+// See https://git-scm.com/docs/gitprotocol-v2#_ls_refs.
 func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, peel bool) error {
 	var hash plumbing.Hash
 	var target string
@@ -676,18 +681,20 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 	// Protocol v2 ls-refs grammar:
 	//   ref = obj-id SP refname *(SP ref-attribute) LF
 	//   ref-attribute = (symref | peeled)
-	// Both symref-target and peeled are attributes on the ref's own line
-	// (symref-target first, matching upstream's send_ref ordering), not
-	// separate lines as in the v0/v1 advertisement format.
+	// Both symref-target and peeled are attributes on the ref's own line,
+	// not separate lines as in the v0/v1 advertisement format. The grammar
+	// allows either order; symref-target is written first, as Git's server
+	// writes it.
 	line := fmt.Sprintf("%s %s", hash, r.Name())
 	if symrefs && target != "" && advertisable(plumbing.ReferenceName(target)) {
 		line += " symref-target:" + target
 	}
 	if peel {
-		// Peel any ref whose object is (a chain of) annotated tags, not just
-		// refs/tags/*, and resolve all the way to the underlying non-tag object
-		// — matching upstream's reference_get_peeled_oid (ls-refs.c). Lightweight
-		// tags and branches don't point at tag objects, so they emit no attribute.
+		// Peel any ref whose object is an annotated tag, or a chain of
+		// them, down to the first object that is not a tag; the ref need
+		// not be under refs/tags/. Branches and lightweight tags do not
+		// point at tag objects, so they get no attribute. Git's server
+		// answers the same way.
 		if peeled, ok := peelToNonTag(st, hash); ok {
 			line += " peeled:" + peeled.String()
 		}
@@ -699,9 +706,10 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 }
 
 // peelToNonTag follows annotated-tag objects from h down to the first non-tag
-// object, mirroring upstream's reference_get_peeled_oid. It returns the peeled
-// hash and true when h points at one or more tag objects; false when h is not a
-// tag (a lightweight tag, branch, etc.) so no "peeled" attribute is emitted.
+// object, which is what a "peeled" attribute reports. It returns the peeled
+// hash and true when h points at one or more tag objects; false when h is not
+// a tag object, as for a branch or a lightweight tag, so that no "peeled"
+// attribute is emitted.
 func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 	tag, err := object.GetTag(st, h)
 	if err != nil {
@@ -711,8 +719,8 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 		next := tag.Target
 		inner, err := object.GetTag(st, next)
 		if err != nil {
-			// next is a non-tag object (or missing); return it as the peeled
-			// value, as upstream's peel does.
+			// next is not a tag object, or the server lacks it. Either
+			// way the chain of tags ends here and next is the peeled value.
 			return next, true
 		}
 		tag = inner
@@ -735,17 +743,18 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	haves := args.Haves
 	done := args.Done
 
-	// fetch=filter is not advertised. Upstream rejects the argument as an
-	// unexpected line before acting on any other, so do the same rather than
-	// send a pack the client takes for a filtered one.
+	// The filter feature of fetch is not advertised, so a client may not
+	// send a filter argument. Refuse it before acting on any other
+	// argument, rather than send a complete pack that the client takes for
+	// a filtered one. Git's server refuses it the same way.
 	if args.Filter != "" {
 		_ = w.Close()
 		return true, fmt.Errorf("%w: %q", ErrFilterNotSupported, args.Filter)
 	}
 
-	// No 'want' lines: the client guessed it didn't want anything. Upstream
-	// emits no response at all here (upload-pack.c, UPLOAD_DONE), so write
-	// nothing and just close the stream, no stray flush packet.
+	// No want lines: the client found it needs nothing. There is nothing
+	// to answer, so close the stream without writing anything, not even a
+	// flush packet. Git's server sends no response here either.
 	if len(wants) == 0 {
 		return true, w.Close()
 	}
@@ -759,16 +768,18 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	//   - haves and !done -> emit an acknowledgments section. ACK every common
 	//                        have not already implied by an earlier one.
 	//                        "ready" is sent only once every want reaches a
-	//                        common have or a parent of one (upstream's
-	//                        ok_to_give_up); then the packfile follows in the
+	//                        common have or a parent of one (see
+	//                        okToGiveUp); then the packfile follows in the
 	//                        same response. Otherwise the section ends without a
 	//                        packfile and the client negotiates again with more
 	//                        haves (NAK when there is no common object at all).
 	if !done && len(haves) > 0 {
-		// Unlike v0/v1, upstream negotiates before send_shallow_info adds the
-		// parents of unshallowed commits to the wants and registers the
-		// client's shallow commits, so neither applies here. The server's
-		// own shallow commits do, and newCommonHaves reads them.
+		// The acknowledgments of a v2 fetch are decided before its shallow
+		// request is worked out, where v0/v1 send the shallow update first.
+		// So the parents of unshallowed commits are not negotiated as wants
+		// here, and the client's shallow commits do not end the walks. The
+		// server's own shallow commits do, and newCommonHaves reads them.
+		// Git's server negotiates a v2 fetch in the same order.
 		common, err := newCommonHaves(st, wants, nil)
 		if err != nil {
 			_ = w.Close()
@@ -786,12 +797,12 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 		}
 		out.Acknowledgments = &packp.Acknowledgments{ACKs: common.counted}
 
-		// "ready" is withheld until every want reaches a common have
-		// (upstream's ok_to_give_up). Declaring it on the first common
-		// have would force single-round negotiation and a larger pack. When not
-		// ready (including no common object at all, which encodes as NAK), the
-		// acknowledgments section stands alone and the client refines its haves
-		// in the next request.
+		// "ready" is withheld until every want reaches a common have (see
+		// okToGiveUp). Declaring it on the first common have would force
+		// single-round negotiation and a larger pack. When not ready
+		// (including no common object at all, which encodes as NAK), the
+		// acknowledgments section stands alone and the client refines its
+		// haves in the next request.
 		ready, err := common.okToGiveUp(ctx)
 		if err != nil {
 			_ = w.Close()
@@ -829,9 +840,9 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 		_ = w.Close()
 		return true, fmt.Errorf("planning shallow fetch: %w", err)
 	}
-	// Upstream send_shallow_info writes the section, even when empty, when
-	// there is a deepen request or a client shallow line. Serving from a
-	// shallow repository is not handled.
+	// The shallow-info section is written, even when empty, whenever the
+	// client asks to deepen or sends a shallow line, as Git's server does.
+	// Serving from a shallow repository is not handled.
 	if plan != nil {
 		out.ShallowInfo = &packp.ShallowInfo{Shallows: plan.shallows, Unshallows: plan.unshallows}
 	}
@@ -842,8 +853,9 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 		return true, fmt.Errorf("getting objects to upload: %w", err)
 	}
 
-	// include-tag: add annotated tags whose target is in the pack (auto-tag
-	// following), mirroring upstream pack-objects --include-tag.
+	// include-tag: also pack the annotated tags that point at an object in
+	// the pack, so that the client gets the tags of the history it fetches
+	// without asking again.
 	if args.IncludeTag {
 		objs, err = includeReachableTags(st, objs)
 		if err != nil {
@@ -1117,9 +1129,11 @@ func commitsNoLongerShallow(ctx context.Context, st storage.Storer, wants, clien
 	return unshallows, parents, nil
 }
 
-// resolveDeepenNot resolves each deepen-not argument (a ref name or an object
-// id) to a commit hash, peeling annotated tags, mirroring how upstream feeds
-// "--not <oid>" to rev-list (upload-pack.c send_shallow_list).
+// resolveDeepenNot resolves each deepen-not argument, a ref name or an object
+// id, to the object it names, peeling annotated tags. The history reachable
+// from these objects is what the shallow fetch leaves out. An argument that
+// is neither a ref nor the id of an object the server has is an error, as on
+// Git's server.
 func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -1228,9 +1242,11 @@ func boundaryByDateOrExclusion(ctx context.Context, st storage.Storer, heads []p
 }
 
 // includeReachableTags implements the fetch "include-tag" feature: for every
-// annotated tag whose (peeled) target is already in objs, it adds the tag
-// object and every tag object along the chain, mirroring upstream pack-objects
-// --include-tag. Lightweight tags have no tag object and are skipped.
+// tag ref whose annotated tag leads, directly or through further tags, to an
+// object already in objs, it adds the tag objects on the way there. This is
+// the rule gitprotocol-capabilities gives for include-tag: a tag is packed
+// when the object it points at is. Lightweight tags have no tag object and
+// are skipped.
 func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.Hash, error) {
 	have := make(map[plumbing.Hash]struct{}, len(objs))
 	for _, h := range objs {
@@ -1327,8 +1343,10 @@ type commonHaves struct {
 
 // newCommonHaves returns the negotiation state of a fetch of wants, before
 // any have is known, in which the commits in grafts and the server's own
-// shallow commits have no parents. Upstream registers the latter when it
-// reads the repository, so they bound both walks in every protocol version.
+// shallow commits have no parents. A shallow repository holds no history
+// beyond its shallow commits, whatever the request says, so they bound the
+// walks in every protocol version. Git's server treats its own shallow
+// commits the same way.
 func newCommonHaves(st storage.Storer, wants, grafts []plumbing.Hash) (*commonHaves, error) {
 	shallows, err := st.Shallow()
 	if err != nil {
@@ -1354,7 +1372,7 @@ type commitNode struct {
 	date int64
 	// parents are none for a grafted commit.
 	parents []plumbing.Hash
-	// clientHas mirrors the commit's membership of commonHaves.clientHas.
+	// clientHas reports whether the commit is in commonHaves.clientHas.
 	clientHas bool
 	// parentNodes holds the nodes of the first resolved parents, nil for a
 	// parent the server lacks. A walk looks at the parents in order, so a
