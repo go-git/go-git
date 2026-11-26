@@ -19,24 +19,97 @@ import (
 )
 
 // ErrNoChange is returned by FetchV2 when every wanted object is already present
-// in the client's haves and no shallow change was requested, mirroring git's
-// everything_local short-circuit in do_fetch_pack_v2. transport.ErrNoChange
-// aliases this value.
+// in the client's haves and no shallow change was requested, so that there is
+// nothing to ask the server for. transport.ErrNoChange aliases this value.
 var ErrNoChange = errors.New("no change")
 
-// Negotiation pacing, mirroring git's fetch-pack.c (INITIAL_FLUSH, LARGE_FLUSH,
-// MAX_IN_VAIN). v2 is stateless per command, so the stateless schedule applies.
+// Pacing of the have rounds, as measured from the git client (how many
+// haves a round offers, not which haves they are): 16 new haves in the first
+// round and twice as many in each round after it. Once a round has reached
+// 16384 haves, the next is only a tenth larger, so that requests from a
+// client that shares little with the server stop doubling.
+// After a first acknowledgement the client stops offering haves when 256
+// in a row have gone unacknowledged, and accepts a larger pack instead.
 const (
-	initialFlush = 16
-	largeFlush   = 16384
-	maxInVain    = 256
+	firstHaveBatch  = 16
+	maxUnackedHaves = 256
+
+	// largeHaveBatch is the batch size from which growth slows down.
+	largeHaveBatch = 16384
 )
 
-func nextFlush(count int) int {
-	if count < largeFlush {
-		return count << 1
+// nextHaveBatch returns the size of the batch that follows one of count.
+func nextHaveBatch(count int) int {
+	if count < largeHaveBatch {
+		return count * 2
 	}
 	return count * 11 / 10
+}
+
+// haveNegotiator decides which haves go into each round of a v2 fetch, and
+// keeps what the server has acknowledged.
+//
+// A v2 fetch command stands on its own: the server remembers nothing from
+// one round to the next, so every round repeats the haves acknowledged so
+// far and adds a batch of new ones.
+type haveNegotiator struct {
+	// pending are the haves not offered yet. They are taken from the end.
+	pending []plumbing.Hash
+	// batch is the number of new haves the next round offers.
+	batch int
+
+	// common holds the haves the server reported as common.
+	common map[plumbing.Hash]struct{}
+	// repeat lists those haves in the order they were first reported, to
+	// send again with every later round.
+	repeat []plumbing.Hash
+	// anyAcknowledged is set by the first acknowledgement. Only from then
+	// on do unacknowledged haves count towards giving up.
+	anyAcknowledged bool
+	// unacknowledged counts the haves offered since the last
+	// acknowledgement.
+	unacknowledged int
+}
+
+// newHaveNegotiator returns a negotiator that offers haves. It works on a
+// copy, so the caller's slice is left as it is.
+func newHaveNegotiator(haves []plumbing.Hash) *haveNegotiator {
+	return &haveNegotiator{
+		pending: slices.Clone(haves),
+		batch:   firstHaveBatch,
+		common:  make(map[plumbing.Hash]struct{}),
+	}
+}
+
+// nextRound returns the haves of the next round: the common ones again,
+// then a new batch. done reports whether the round is the last, because
+// no have was left to offer or because too many in a row went
+// unacknowledged.
+func (n *haveNegotiator) nextRound() (haves []plumbing.Hash, done bool) {
+	fresh := min(n.batch, len(n.pending))
+	haves = slices.Clone(n.repeat)
+	for range fresh {
+		haves = append(haves, n.pending[len(n.pending)-1])
+		n.pending = n.pending[:len(n.pending)-1]
+	}
+	n.unacknowledged += fresh
+	n.batch = nextHaveBatch(n.batch)
+
+	done = fresh == 0 || (n.anyAcknowledged && n.unacknowledged >= maxUnackedHaves)
+	return haves, done
+}
+
+// acknowledge takes in the haves the server reported as common in its
+// answer to a round.
+func (n *haveNegotiator) acknowledge(acks []plumbing.Hash) {
+	for _, ack := range acks {
+		if _, ok := n.common[ack]; !ok {
+			n.common[ack] = struct{}{}
+			n.repeat = append(n.repeat, ack)
+		}
+		n.anyAcknowledged = true
+		n.unacknowledged = 0
+	}
 }
 
 // CommandFunc runs a single Protocol v2 command: it encodes req into the
@@ -141,17 +214,17 @@ func wantsLocal(wants, haves []plumbing.Hash) bool {
 type FetchRound func(args *packp.FetchArgs) (out *packp.FetchOutput, packReader io.Reader, err error)
 
 // FetchV2 drives the v2 fetch negotiation and streams the resulting packfile into
-// st. It mirrors git's do_fetch_pack_v2: each round sends the wants, the common
-// commits acked so far, and a growing batch of haves, until the server reports
-// "ready" (the packfile follows in the same response) or the client runs out of
-// haves and sends "done". The packfile (always sideband-64k muxed in v2) is
-// streamed here, and any shallow-info from the response is applied to st.
+// st. Each round sends the wants, the common commits acknowledged so far, and
+// a growing batch of haves, until the server reports "ready" (the packfile
+// follows in the same response) or the client stops offering haves and sends
+// "done". The packfile (always sideband-64k muxed in v2) is streamed here, and
+// any shallow-info from the response is applied to st.
 //
 // The caller is responsible for validating optional features against the server
 // advertisement (see FetchSupports) before requesting Filter or Depth.
 func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round FetchRound) error {
-	// Everything wanted is already local and no shallow change was requested:
-	// short-circuit before opening negotiation, matching git's everything_local.
+	// Everything wanted is already local and no shallow change was requested,
+	// so there is nothing to negotiate.
 	if req.Depth == 0 && wantsLocal(req.Wants, req.Haves) {
 		return ErrNoChange
 	}
@@ -174,30 +247,12 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		baseArgs.Shallows = shallows
 	}
 
-	// Pop haves from a private copy so the caller's slice is left untouched.
-	remaining := append([]plumbing.Hash(nil), req.Haves...)
-	var common []plumbing.Hash
-	seen := make(map[plumbing.Hash]struct{})
-	havesToSend := initialFlush
-	inVain := 0
-	seenAck := false
+	negotiator := newHaveNegotiator(req.Haves)
 
 	var shallowInfo *packp.ShallowUpdate
 	for {
 		args := *baseArgs
-		// v2 fetch is stateless per command: re-send every common commit acked
-		// so far, then a fresh batch of haves.
-		roundHaves := append([]plumbing.Hash(nil), common...)
-		batch := 0
-		for batch < havesToSend && len(remaining) > 0 {
-			roundHaves = append(roundHaves, remaining[len(remaining)-1])
-			remaining = remaining[:len(remaining)-1]
-			batch++
-			inVain++
-		}
-		havesToSend = nextFlush(havesToSend)
-		args.Haves = roundHaves
-		args.Done = batch == 0 || (seenAck && inVain >= maxInVain)
+		args.Haves, args.Done = negotiator.nextRound()
 
 		out, packReader, err := round(&args)
 		if err != nil {
@@ -209,8 +264,8 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 				Shallows:   out.ShallowInfo.Shallows,
 				Unshallows: out.ShallowInfo.Unshallows,
 			}
-			// Git dies on a bad shallow line before it reads the pack, so
-			// a rejected update stores nothing. The fetch fails, so the
+			// A bad shallow line is refused before the pack is read, so a
+			// rejected update stores nothing. The fetch fails, so the
 			// response is closed without draining it for reuse.
 			if err := CheckShallowUpdate(st, shallowInfo); err != nil {
 				if c, ok := packReader.(io.Closer); ok {
@@ -221,14 +276,7 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		}
 
 		if out.Acknowledgments != nil {
-			for _, ack := range out.Acknowledgments.ACKs {
-				if _, ok := seen[ack]; !ok {
-					seen[ack] = struct{}{}
-					common = append(common, ack)
-				}
-				seenAck = true
-				inVain = 0
-			}
+			negotiator.acknowledge(out.Acknowledgments.ACKs)
 		}
 
 		if out.Packfile {
