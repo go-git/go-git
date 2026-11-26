@@ -12,6 +12,12 @@ import (
 // RepositoryFilesystem is a billy.Filesystem compatible object wrapper
 // which handles dot-git filesystem operations and supports commondir according to git scm layout:
 // https://github.com/git/git/blob/master/Documentation/gitrepository-layout.adoc
+//
+// A relative path ending in ".lock" is routed as the file it locks. A file
+// whose name starts with "packed-refs." goes to the common directory, like
+// packed-refs. The refs and reflogs of bisect, rewritten and worktree are per
+// worktree: the directories refs/<name> and logs/refs/<name>, and everything
+// below them.
 type RepositoryFilesystem struct {
 	dotGitFs       billy.Filesystem
 	commonDotGitFs billy.Filesystem
@@ -51,18 +57,42 @@ func (fs *RepositoryFilesystem) mapToRepositoryFsByPath(path string) billy.Files
 		return fs.dotGitFs
 	}
 
-	// Check exceptions for commondir (https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt)
-	switch cleanPath {
-	case fs.dotGitFs.Join(logsPath, "HEAD"):
-		return fs.dotGitFs
-	case fs.dotGitFs.Join(refsPath, "bisect"), fs.dotGitFs.Join(refsPath, "rewritten"), fs.dotGitFs.Join(refsPath, "worktree"):
-		return fs.dotGitFs
-	}
+	// A lock file is routed as the file it locks, as git does:
+	// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/path.c#L355
+	cleanPath = strings.TrimSuffix(cleanPath, refLockSuffix)
 
 	// Determine dot-git root by first path element.
 	// There are some elements which should always use commondir when commondir defined.
 	// Usual dot-git root will be used for the rest of files.
-	switch strings.Split(cleanPath, string(filepath.Separator))[0] {
+	first, _, _ := strings.Cut(cleanPath, string(filepath.Separator))
+
+	// Check exceptions for commondir (https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt)
+	// The refs and reflogs of bisect, rewritten and worktree are per worktree,
+	// with everything under them:
+	// https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/path.c#L98-L119
+	// Only paths under refs and logs can match, so the rest skip the joins.
+	if first == refsPath || first == logsPath {
+		if cleanPath == fs.dotGitFs.Join(logsPath, "HEAD") {
+			return fs.dotGitFs
+		}
+		for _, dir := range []string{"bisect", "rewritten", "worktree"} {
+			for _, root := range []string{refsPath, fs.dotGitFs.Join(logsPath, refsPath)} {
+				perWorktree := fs.dotGitFs.Join(root, dir)
+				if cleanPath == perWorktree || strings.HasPrefix(cleanPath, perWorktree+string(filepath.Separator)) {
+					return fs.dotGitFs
+				}
+			}
+		}
+	}
+
+	// The files beside packed-refs go with it, such as the one its new content
+	// is written to before being renamed over it. Its lock already does, by
+	// the suffix trimmed above.
+	if strings.HasPrefix(first, stagedPackedRefsPrefix) {
+		return fs.commonDotGitFs
+	}
+
+	switch first {
 	case objectsPath, refsPath, packedRefsPath, configPath, branchesPath, hooksPath, infoPath, remotesPath, logsPath, shallowPath, worktreesPath:
 		return fs.commonDotGitFs
 	default:
