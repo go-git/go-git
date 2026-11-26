@@ -355,7 +355,7 @@ func TestUploadPackV1ShallowClientMatchesCanonical(t *testing.T) {
 		// holds files that only commits beyond the boundary introduced.
 		{name: "shallow fetch by a client with older history", want: "D", haves: []string{"B"}, depth: 1},
 		{name: "refetch a shallow clone at the same depth", want: "D", shallows: []string{"M"}, haves: []string{"D"}, depth: 2},
-		{name: "unshallow a branch the wants do not reach", want: "C", shallows: []string{"Y"}, depth: infiniteDepth},
+		{name: "unshallow a branch the wants do not reach", want: "C", shallows: []string{"Y"}, depth: unlimitedDepth},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -412,15 +412,15 @@ func TestGetShallowCommitsFollowsMergesAlongShortestPaths(t *testing.T) {
 	// Expected boundaries are those of git clone --depth <n> of the same
 	// history (.git/shallow), verified with git 2.54.
 	for depth, want := range map[int][]string{
-		1:             {"D"},
-		2:             {"M"},
-		3:             {"C", "Y"},
-		4:             {"B", "X"},
-		5:             {"A"},
-		6:             {},
-		infiniteDepth: {},
+		1:              {"D"},
+		2:              {"M"},
+		3:              {"C", "Y"},
+		4:              {"B", "X"},
+		5:              {"A"},
+		6:              {},
+		unlimitedDepth: {},
 	} {
-		got, err := getShallowCommits(context.Background(), r.st, []plumbing.Hash{r.commits["D"]}, depth)
+		got, err := boundaryAtDepth(context.Background(), r.st, []plumbing.Hash{r.commits["D"]}, depth)
 		require.NoError(t, err)
 		require.Equal(t, want, r.names(got), "depth %d", depth)
 	}
@@ -591,7 +591,7 @@ func TestPlanShallowStopsWhenCancelled(t *testing.T) {
 		"deepen-relative": {depth: 1, relative: true, clientShallows: r.hashes([]string{"M"})},
 		"deepen-since":    {since: r.when},
 		"deepen-not":      {notTips: r.hashes([]string{"B"})},
-		"infinite deepen": {depth: infiniteDepth, clientShallows: r.hashes([]string{"M"})},
+		"infinite deepen": {depth: unlimitedDepth, clientShallows: r.hashes([]string{"M"})},
 	} {
 		_, err := planShallow(ctx, r.st, []plumbing.Hash{r.commits["D"]}, req)
 		require.ErrorIs(t, err, context.Canceled, name)

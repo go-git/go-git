@@ -112,7 +112,7 @@ func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	require.NoError(t, err)
 	since := c.Committer.When
 
-	shallows, err := getShallowCommitsByRevList(context.Background(), st, []plumbing.Hash{head.Hash()}, since, nil)
+	shallows, err := boundaryByDateOrExclusion(context.Background(), st, []plumbing.Hash{head.Hash()}, since, nil)
 	require.NoError(t, err)
 
 	require.NotEmpty(t, shallows)
