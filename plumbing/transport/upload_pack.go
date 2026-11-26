@@ -966,13 +966,15 @@ func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, 
 	}
 
 	plan := &shallowPlan{grafts: req.clientShallows}
+	// selected is the set of commits a date or exclusion request picks.
+	var selected map[plumbing.Hash]struct{}
 	switch {
 	case !byDepth && !byDateOrExclusion:
 		// Shallow lines without a deepen: the client's boundary only bounds
 		// what it has.
 		return plan, nil
 	case byDateOrExclusion:
-		plan.shallows, err = boundaryByDateOrExclusion(ctx, st, wants, req.since, req.notTips)
+		plan.shallows, selected, err = boundaryByDateOrExclusion(ctx, st, wants, req.since, req.notTips)
 	default:
 		depth := req.depth
 		if depth >= unlimitedDepth && len(req.clientShallows) > 0 {
@@ -1022,7 +1024,11 @@ func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, 
 	}
 
 	plan.deepened = true
-	plan.unshallows, plan.extraWants, err = commitsNoLongerShallow(ctx, st, wants, req.clientShallows, plan.shallows)
+	if byDateOrExclusion {
+		plan.unshallows, plan.extraWants, err = selectedClientShallows(st, req.clientShallows, selected, plan.shallows)
+	} else {
+		plan.unshallows, plan.extraWants, err = commitsNoLongerShallow(ctx, st, wants, req.clientShallows, plan.shallows)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("computing unshallowed commits: %w", err)
 	}
@@ -1204,25 +1210,33 @@ func reachableCommits(ctx context.Context, st storage.Storer, tips []plumbing.Ha
 // and/or deepen-not request. The included set is every commit reachable from
 // heads that is not older than since (when set) and not reachable from any
 // notTips (when set); a commit in the set with a parent outside it is a
-// shallow boundary.
+// shallow boundary. The set is returned along with the boundary. A request
+// that selects no commit at all is refused with errNothingSelected, as Git's
+// server refuses it.
 //
 // The walk stops at the first commit older than since on each path. Git's
 // server looks a little further, to tolerate committer timestamps that are
 // out of order, so under clock skew the boundary may differ by a few
 // commits; the resulting shallow clone is still valid.
-func boundaryByDateOrExclusion(ctx context.Context, st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash) ([]plumbing.Hash, error) {
+func boundaryByDateOrExclusion(ctx context.Context, st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash) (shallows []plumbing.Hash, included map[plumbing.Hash]struct{}, err error) {
 	exclude, err := reachableCommits(ctx, st, notTips)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	included := make(map[plumbing.Hash]struct{})
+	included = make(map[plumbing.Hash]struct{})
 	parents := make(map[plumbing.Hash][]plumbing.Hash)
 	visited := make(map[plumbing.Hash]struct{})
-	stack := append([]plumbing.Hash(nil), heads...)
+	// A wanted tag stands for the commit it peels to.
+	var stack []plumbing.Hash
+	for _, h := range heads {
+		if c, ok := peelToCommit(st, h); ok {
+			stack = append(stack, c.Hash)
+		}
+	}
 	for len(stack) > 0 {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		h := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -1244,8 +1258,10 @@ func boundaryByDateOrExclusion(ctx context.Context, st storage.Storer, heads []p
 		parents[h] = c.ParentHashes
 		stack = append(stack, c.ParentHashes...)
 	}
+	if len(included) == 0 {
+		return nil, nil, errNothingSelected
+	}
 
-	var shallows []plumbing.Hash
 	for h := range included {
 		for _, p := range parents[h] {
 			if _, ok := included[p]; !ok {
@@ -1255,7 +1271,7 @@ func boundaryByDateOrExclusion(ctx context.Context, st storage.Storer, heads []p
 		}
 	}
 	plumbing.HashesSort(shallows)
-	return shallows, nil
+	return shallows, included, nil
 }
 
 // includeReachableTags implements the fetch "include-tag" feature: for every
@@ -1734,4 +1750,28 @@ func peelToCommit(st storage.Storer, h plumbing.Hash) (*object.Commit, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// errNothingSelected is returned for a deepen-since or deepen-not request
+// that leaves no commit to send.
+var errNothingSelected = errors.New("shallow request selects no commit")
+
+// selectedClientShallows returns the client's shallow commits that a date or
+// exclusion request makes interior, and their parents: those the request
+// selects that are not on the new boundary. A client shallow commit that is
+// merely reachable from a want, but older than the date asked for or
+// excluded, stays shallow.
+func selectedClientShallows(st storage.Storer, clientShallows []plumbing.Hash, selected map[plumbing.Hash]struct{}, boundary []plumbing.Hash) (unshallows, parents []plumbing.Hash, err error) {
+	for _, h := range clientShallows {
+		if _, ok := selected[h]; !ok || slices.Contains(boundary, h) {
+			continue
+		}
+		c, err := object.GetCommit(st, h)
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting commit %s: %w", h, err)
+		}
+		unshallows = append(unshallows, h)
+		parents = append(parents, c.ParentHashes...)
+	}
+	return unshallows, parents, nil
 }

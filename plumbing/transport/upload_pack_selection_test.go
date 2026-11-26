@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -113,4 +114,53 @@ func TestUploadPackV2DeepenNotAmbiguousNameMatchesCanonical(t *testing.T) {
 	canonical, got := v2ShallowAnswers(t, r, "want "+r.commits["m"].String(), "deepen-not both")
 	assert.Equal(t, canonical.refused, got.refused)
 	assert.Equal(t, canonical.lines, got.lines)
+}
+
+// A wanted annotated tag stands for the commit it peels to: its history is
+// cut at the boundary like that of a wanted commit.
+func TestUploadPackV2DeepenSinceWithTagWantMatchesCanonical(t *testing.T) {
+	t.Parallel()
+	r := selectionHistory(t)
+	tag := &object.Tag{
+		Name: "annotated", Tagger: object.Signature{Name: "t", Email: "t@example.com", When: r.when},
+		Target: r.commits["c3"], TargetType: plumbing.CommitObject, Message: "annotated\n",
+	}
+	o := r.st.NewEncodedObject()
+	require.NoError(t, tag.Encode(o))
+	tagHash, err := r.st.SetEncodedObject(o)
+	require.NoError(t, err)
+	require.NoError(t, r.st.SetReference(plumbing.NewHashReference("refs/tags/annotated", tagHash)))
+
+	for _, arg := range []string{"deepen-since 1700002500", "deepen-not old"} {
+		canonical, got := v2ShallowAnswers(t, r, "want "+tagHash.String(), arg)
+		require.False(t, canonical.refused, "git refused %s", arg)
+		require.NotEmpty(t, canonical.lines, arg)
+		assert.Equal(t, canonical, got, arg)
+	}
+}
+
+// A client shallow commit stops being shallow only when the request selects
+// it. c2 is reachable from the want c3, but older than the date asked for.
+func TestUploadPackV2DeepenSinceKeepsUnselectedClientShallow(t *testing.T) {
+	t.Parallel()
+	r := selectionHistory(t)
+
+	canonical, got := v2ShallowAnswers(t, r,
+		"want "+r.commits["m"].String(), "want "+r.commits["c3"].String(),
+		"shallow "+r.commits["c2"].String(), "deepen-since 1700004000")
+	require.False(t, canonical.refused, "git refused the request")
+	assert.Equal(t, canonical, got)
+	assert.NotContains(t, got.lines, "unshallow c2")
+}
+
+// A request that selects no commit at all is refused.
+func TestUploadPackV2DeepenSelectingNothingMatchesCanonical(t *testing.T) {
+	t.Parallel()
+	r := selectionHistory(t)
+
+	for _, arg := range []string{"deepen-since 1700003000", "deepen-not refs/heads/main"} {
+		canonical, got := v2ShallowAnswers(t, r, "want "+r.commits["c2"].String(), arg)
+		require.True(t, canonical.refused, "git answered %s", arg)
+		assert.True(t, got.refused, "go-git answered %s with %v", arg, got.lines)
+	}
 }
