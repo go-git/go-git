@@ -1283,26 +1283,20 @@ func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.H
 }
 
 // commonHaves is the negotiation state of a fetch: the client's haves that
-// the server also has, as upstream tracks them in have_obj and with the
-// THEY_HAVE flag, and the last answer of okToGiveUp.
+// the server also has, and the last answer of okToGiveUp.
 type commonHaves struct {
 	st storage.Storer
-	// wants are the commits that must reach the client's history before
-	// negotiation can stop.
+	// wants are the objects the client asked for.
 	wants []plumbing.Hash
-	// grafts are the commits taken as parentless, upstream's registered
-	// shallow commits.
+	// grafts are the commits taken as parentless.
 	grafts map[plumbing.Hash]struct{}
 
-	// counted holds the common haves not already implied by an earlier one,
-	// upstream's have_obj.
+	// counted holds the common haves not already implied by an earlier one.
 	counted []plumbing.Hash
-	// theyHave holds every common have and the parents of common commits,
-	// upstream's THEY_HAVE flag.
+	// theyHave holds every common have and the parents of common commits.
 	theyHave map[plumbing.Hash]struct{}
 	// oldest is the committer date, in seconds since the epoch, of the oldest
-	// common commit; the walk in okToGiveUp does not go below it. Zero means
-	// no common commit yet, as upstream's oldest_have, so a commit dated zero
+	// common commit. Zero means no common commit yet, so a commit dated zero
 	// does not pin it.
 	oldest int64
 	// last is the most recent common have.
@@ -1312,24 +1306,23 @@ type commonHaves struct {
 	added map[plumbing.Hash]bool
 
 	// nodes holds the commits read so far, nil for a commit the server does
-	// not have. Upstream keeps parsed commits in memory and clears only its
-	// marks between walks; keeping them here makes a repeated walk as cheap.
+	// not have.
 	nodes map[plumbing.Hash]*commitNode
-	// starts are the wants peeled to commits, oldest first. okToGiveUp fills
-	// it on its first walk and sets startsKnown, as no want may peel to one.
-	starts      []plumbing.Hash
-	startsKnown bool
 	// checked reports that ready holds the answer of okToGiveUp for the
 	// current theyHave and oldest.
 	checked bool
 	ready   bool
-	// gen numbers the walks of okToGiveUp. A node stamped with the current
-	// gen was visited, or reaches a common commit, in this walk, as
-	// upstream marks commits and clears the marks after each walk.
-	gen uint64
-	// stack is the walk's stack, kept so that each walk reuses its backing
-	// array rather than growing a new one.
-	stack []*commitNode
+
+	// tips holds the commits the wants peel to, oldest first, once peeled
+	// is set.
+	tips   []*commitNode
+	peeled bool
+	// walk numbers the checks okToGiveUp has run. A commitNode's marks
+	// count only when they carry the number of the current one, so a new
+	// check starts without marks and without clearing any.
+	walk uint
+	// path is the stack of the last walk, kept for its capacity.
+	path []walkStep
 }
 
 // newCommonHaves returns the negotiation state of a fetch of wants, before
@@ -1361,17 +1354,21 @@ type commitNode struct {
 	date int64
 	// parents are none for a grafted commit.
 	parents []plumbing.Hash
-	// parentNodes holds the nodes of the first resolved parents, nil for a
-	// parent the server does not have. A walk resolves the parents in order,
-	// the first time it scans each, so later walks follow them without
-	// looking them up in nodes.
-	parentNodes []*commitNode
-	resolved    int
 	// theyHave mirrors the commit's membership of commonHaves.theyHave.
 	theyHave bool
-	// visited and reaches hold the gen of the last walk of okToGiveUp that
-	// visited the commit, and that found it reaches a common commit.
-	visited, reaches uint64
+	// parentNodes holds the nodes of the first resolved parents, nil for a
+	// parent the server lacks. A walk looks at the parents in order, so a
+	// later check follows the pointers instead of looking each parent up.
+	parentNodes []*commitNode
+	resolved    int
+
+	// entered is the check in which a walk entered the commit, or passed
+	// it over as older than the cutoff. It is not entered again in that
+	// check.
+	entered uint
+	// reaches is the check in which a walk found the commit to descend
+	// from one the client has.
+	reaches uint
 }
 
 // remember records commit in nodes and returns its node.
@@ -1414,37 +1411,15 @@ func (c *commonHaves) node(h plumbing.Hash) (*commitNode, error) {
 	return c.remember(commit), nil
 }
 
-// parentNode returns the node of the i-th parent of n, as node does, and
-// keeps it in n so that the next walk does not look it up again. The parents
-// before i must have been resolved already, as a walk scans them in order.
-func (c *commonHaves) parentNode(n *commitNode, i int) (*commitNode, error) {
-	if i < n.resolved {
-		return n.parentNodes[i], nil
-	}
-	p, err := c.node(n.parents[i])
-	if err != nil {
-		return nil, err
-	}
-	if n.parentNodes == nil {
-		n.parentNodes = make([]*commitNode, len(n.parents))
-	}
-	n.parentNodes[i] = p
-	n.resolved = i + 1
-	return p, nil
-}
-
 // add records the have h and reports whether the server has it, returning an
-// error if the object cannot be read. It mirrors upstream got_oid and
-// do_got_oid: the parents of a common commit count as had before the commit
-// itself is checked, and the oldest common commit bounds okToGiveUp. A have
-// that adds no commit to theyHave and does not move that bound, such as a
-// repeated have or a blob, keeps the answer okToGiveUp last gave.
+// error if the object cannot be read. The parents of a common commit count
+// as had by the client before the commit itself is checked. A have that adds
+// nothing to theyHave and does not move oldest, such as a repeated have or a
+// blob, leaves checked set, so the last answer of okToGiveUp stands.
 //
-// A have add has already processed is answered without reading it again, and
-// a commit an earlier walk read is not read again either. Of any other
-// object only the type is looked up, as upstream does for a have that is not
-// a commit, so a have naming a large blob, or a delta against one, is not
-// inflated; a commit is then read.
+// A have add has already processed is answered without reading it again. Of
+// an object that is not a known commit only the type is looked up, so a have
+// naming a large blob is not inflated; a commit is then read.
 func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 	if had, ok := c.added[h]; ok {
 		if had {
@@ -1495,133 +1470,188 @@ func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 	return true, nil
 }
 
-// okToGiveUp reports whether every want reaches a commit the client has, so
-// that negotiation can stop. It mirrors upstream ok_to_give_up and
-// can_all_from_reach_with_flag (commit-reach.c): a depth-first walk per want,
-// oldest want first, sharing what earlier walks in the same call learned,
-// that does not descend below the oldest common commit. Upstream orders the
-// wants by generation number and then by date; without a commit-graph every
-// generation number is the same, so the date decides. It reports false while
-// no have is common, as upstream does. A want that does not peel to a commit
-// cannot be judged by ancestry and does not hold negotiation back, but one
-// that cannot be read is an error, unlike upstream in one case; see
-// peelWant.
+// okToGiveUp reports whether the client has told the server enough for
+// negotiation to stop: every want that peels to a commit either is had by the
+// client or descends from a commit the client has. From then on more haves
+// could only shrink the pack, not connect it, so the server answers "ready"
+// (or "continue" under multi_ack) and the client may send "done". It is false
+// while no have is common.
 //
-// The answer depends only on theyHave, oldest and the wants, so it is
-// returned again without a walk until add changes one of them. Otherwise it
-// walks again from scratch, as upstream does for every have it lacks, but
-// over the commits in nodes, so only commits no earlier walk reached are read
-// from storage. It is not monotonic: when a commit is dated before its parent,
-// a lower cutoff can let the walk from one want visit a commit before the
-// walk from another want marks it, and a true answer can turn false. A walk
-// that finds ctx done stops and returns ctx's error.
+// The answer is searched for the way git's server does, because the round in
+// which a server says "ready" is visible to the client. The search is not a
+// plain ancestry test: it is bounded and it shares its marks between wants,
+// so on histories whose commit dates disagree with their order it can miss a
+// path that exists. Those misses are part of the answer and are kept:
+//
+//   - The wants are walked one after the other, oldest committer date first,
+//     and the check fails at the first want that reaches nothing the client
+//     has.
+//   - A walk goes depth-first through the parents, in the order the commit
+//     lists them. It does not enter a parent dated before the oldest common
+//     commit, since a commit older than everything the client is known to
+//     have is not expected to descend from any of it. A parent dated the
+//     same second is entered. The bound applies to parents only, so a want
+//     is walked whatever its date.
+//   - A commit is entered at most once per check, whichever want the walk
+//     started from. Meeting it again only tells whether it was found to
+//     reach a common commit, which it may not have been when it was entered
+//     with a higher cutoff ahead of it or was skipped as too old.
+//   - A commit learns that a parent reaches a common commit when it looks at
+//     that parent, not when the walk returns from it. So once the walk is
+//     back at a commit, it still enters that commit's next unvisited parent
+//     before leaving it.
+//
+// The marks live for one check only. The answer is kept until add reports a
+// change that can alter it, and commits are read through nodes, so a later
+// check costs no object reads for commits an earlier one saw. Each check
+// enters a commit at most once and looks at each parent link at most twice.
+//
+// The answers are those git gives for a repository without a commit-graph
+// file. With one, git can say "ready" in a different round on a history whose
+// dates run against its parent links. The commit-graph is not consulted here,
+// so the answer does not depend on the file. Only the round in which "ready"
+// is sent differs, not what is fetched.
 func (c *commonHaves) okToGiveUp(ctx context.Context) (bool, error) {
-	if len(c.counted) == 0 {
+	if len(c.theyHave) == 0 {
 		return false, nil
 	}
 	if c.checked {
 		return c.ready, nil
 	}
+	if err := c.peelWants(); err != nil {
+		return false, err
+	}
 
-	if !c.startsKnown {
-		for _, w := range c.wants {
-			start, err := peelWant(c.st, w)
-			if err != nil {
-				c.starts = c.starts[:0]
-				return false, fmt.Errorf("reading want %s: %w", w, err)
-			}
-			if start != nil {
-				c.remember(start)
-				c.starts = append(c.starts, start.Hash)
-			}
+	c.walk++
+	ready := true
+	for _, tip := range c.tips {
+		reaches, err := c.reachesCommon(ctx, tip)
+		if err != nil {
+			return false, err
 		}
-		slices.SortStableFunc(c.starts, func(a, b plumbing.Hash) int {
-			return cmp.Compare(c.nodes[a].date, c.nodes[b].date)
-		})
-		c.startsKnown = true
+		if !reaches {
+			ready = false
+			break
+		}
 	}
+	c.checked, c.ready = true, ready
+	return ready, nil
+}
 
-	c.gen++
-	gen := c.gen
-	marked := func(n *commitNode) bool {
-		return n.theyHave || n.reaches == gen
+// peelWants fills tips, once, with the commits the wants peel to, oldest
+// first and otherwise in request order. A want that peels to no commit asks
+// for no history, so it cannot hold readiness back.
+func (c *commonHaves) peelWants() error {
+	if c.peeled {
+		return nil
 	}
+	tips := make([]*commitNode, 0, len(c.wants))
+	for _, h := range c.wants {
+		commit, err := peelWant(c.st, h)
+		if err != nil {
+			return fmt.Errorf("peeling want %s: %w", h, err)
+		}
+		if commit == nil {
+			continue
+		}
+		n := c.nodes[commit.Hash]
+		if n == nil {
+			n = c.remember(commit)
+		}
+		tips = append(tips, n)
+	}
+	slices.SortStableFunc(tips, func(a, b *commitNode) int {
+		return cmp.Compare(a.date, b.date)
+	})
+	c.tips, c.peeled = tips, true
+	return nil
+}
 
-	for _, start := range c.starts {
-		sn := c.nodes[start]
-		sn.visited = gen
-		c.stack = append(c.stack[:0], sn)
-		stack := c.stack
-		for len(stack) > 0 {
-			if err := ctx.Err(); err != nil {
-				return false, err
+// walkStep is a commit a walk is in, and the parent it looks at next.
+type walkStep struct {
+	node *commitNode
+	next int
+}
+
+// reachesCommon walks from tip as okToGiveUp describes and reports whether
+// tip is had by the client or was found to descend from a commit it has. It
+// honours the marks earlier walks of the same check left, and leaves its own.
+func (c *commonHaves) reachesCommon(ctx context.Context, tip *commitNode) (bool, error) {
+	tip.entered = c.walk
+	path := c.path[:0]
+	path = append(path, walkStep{node: tip})
+	defer func() { c.path = path[:0] }()
+
+	for len(path) > 0 {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		step := &path[len(path)-1]
+		at := step.node
+		if at.theyHave || at.reaches == c.walk {
+			// Nothing below a commit known to reach the client's history
+			// needs walking, and its child on the path reaches it too.
+			path = path[:len(path)-1]
+			if len(path) > 0 {
+				path[len(path)-1].node.reaches = c.walk
 			}
-			top := stack[len(stack)-1]
-			if marked(top) {
-				stack = stack[:len(stack)-1]
-				if len(stack) > 0 {
-					stack[len(stack)-1].reaches = gen
+			continue
+		}
+
+		var enter *commitNode
+		for ; step.next < len(at.parents); step.next++ {
+			h := at.parents[step.next]
+			var parent *commitNode
+			if step.next < at.resolved {
+				parent = at.parentNodes[step.next]
+			} else {
+				var err error
+				if parent, err = c.node(h); err != nil {
+					return false, fmt.Errorf("getting commit %s: %w", h, err)
+				}
+				if at.parentNodes == nil {
+					at.parentNodes = make([]*commitNode, len(at.parents))
+				}
+				at.parentNodes[step.next] = parent
+				at.resolved = step.next + 1
+			}
+			if parent == nil {
+				// The server lacks this parent, but the client may have
+				// named a child of it, and then has it.
+				if _, ok := c.theyHave[h]; ok {
+					at.reaches = c.walk
 				}
 				continue
 			}
-
-			// The parents are scanned from the first one each time the walk
-			// returns to a commit, so a parent marked since marks the commit,
-			// and the scan still goes on to walk any parent not yet visited.
-			// What this visits decides what later walks skip.
-			pushed := false
-			for i := range top.parents {
-				n, err := c.parentNode(top, i)
-				if err != nil {
-					return false, err
-				}
-				if n == nil {
-					// A parent the server lacks is never walked, but may
-					// still be one the client has.
-					if _, ok := c.theyHave[top.parents[i]]; ok {
-						top.reaches = gen
-					}
-					continue
-				}
-				if marked(n) {
-					top.reaches = gen
-				}
-				if n.visited == gen {
-					continue
-				}
-				n.visited = gen
-				if c.oldest != 0 && n.date < c.oldest {
-					continue
-				}
-				stack = append(stack, n)
-				pushed = true
-				break
+			if parent.theyHave || parent.reaches == c.walk {
+				at.reaches = c.walk
 			}
-			if !pushed {
-				stack = stack[:len(stack)-1]
+			if parent.entered == c.walk {
+				continue
 			}
+			parent.entered = c.walk
+			// Zero means no common commit yet, and then nothing is too old.
+			if c.oldest != 0 && parent.date < c.oldest {
+				continue
+			}
+			enter = parent
+			break
 		}
-		c.stack = stack
-
-		if !marked(sn) {
-			c.checked, c.ready = true, false
-			return false, nil
+		if enter == nil {
+			path = path[:len(path)-1]
+			continue
 		}
+		// next stays on the entered parent: when the walk is back here, that
+		// parent is looked at again for what the walk below it found.
+		path = append(path, walkStep{node: enter})
 	}
-
-	c.checked, c.ready = true, true
-	return true, nil
+	return tip.theyHave || tip.reaches == c.walk, nil
 }
 
-// peelWant resolves the want h to the commit okToGiveUp walks from,
-// following annotated tags. It returns no commit, and no error, when h peels
-// to an object that is not a commit, or to a tag whose target the server does
-// not have: upstream can_all_from_reach_with_flag skips both, as deref_tag
-// gives no object for the latter. Any other failure to read h, a tag or the
-// commit is returned. For the want itself that matches upstream, which dies
-// on a want it cannot parse (receive_needs). It does not for a tag's target
-// that exists but cannot be read: upstream's deref_tag gives no object for it
-// too, so upstream skips that want where this returns the error.
+// peelWant resolves the want h to a commit, following annotated tags. It
+// returns no commit, and no error, when h peels to an object that is not a
+// commit, or to a tag whose target the server does not have. Any other
+// failure to read h, a tag or the commit is returned.
 func peelWant(st storage.Storer, h plumbing.Hash) (*object.Commit, error) {
 	for want := true; ; want = false {
 		typ, err := storer.EncodedObjectType(st, h)
