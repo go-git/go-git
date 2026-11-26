@@ -13,7 +13,9 @@ import (
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/reference"
+	internal "github.com/go-git/go-git/v6/internal/transport"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -465,6 +467,8 @@ func shallowFrontierDepth(ctx context.Context, st storage.Storer, heads, shallow
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
 // It is used when the client requests version=2 via GIT_PROTOCOL.
 func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader, w io.WriteCloser, opts *UploadPackRequest) error {
+	repo := internal.ObjectFormat(st)
+	client := formatcfg.SHA1
 	for {
 		// Peek the command line to choose the argument decoder, then decode the
 		// whole request envelope through packp.CommandRequest (the same type the
@@ -485,11 +489,28 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 		cmd := strings.TrimPrefix(strings.TrimSuffix(string(line), "\n"), "command=")
 
 		req := &packp.CommandRequest{}
+		// serve.c checks the format right after the capability list, before
+		// the command parses its arguments, so the check runs as the first
+		// step of decoding them.
+		var el *pktline.ErrorLine
+		var (
+			lsRefsArgs *packp.LsRefsArgs
+			fetchArgs  *packp.FetchArgs
+		)
+		check := func() error {
+			client, el = v2ObjectFormatError(repo, client, req.Capabilities)
+			if el != nil {
+				return el
+			}
+			return nil
+		}
 		switch cmd {
 		case "ls-refs":
-			req.Args = &packp.LsRefsArgs{}
+			lsRefsArgs = &packp.LsRefsArgs{}
+			req.Args = &checkedArgs{CommandArgs: lsRefsArgs, check: check}
 		case "fetch":
-			req.Args = &packp.FetchArgs{}
+			fetchArgs = &packp.FetchArgs{}
+			req.Args = &checkedArgs{CommandArgs: fetchArgs, check: check}
 		default:
 			_, _ = pktline.Writef(w, "error unknown-command %s\n", cmd)
 			_ = pktline.WriteFlush(w)
@@ -497,12 +518,15 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 		}
 
 		if err := req.Decode(rd); err != nil {
+			if el != nil {
+				return rejectWithErrorLine(w, el)
+			}
 			return fmt.Errorf("decoding %s request: %w", cmd, err)
 		}
 
 		switch cmd {
 		case "ls-refs":
-			if err := serveLsRefsV2(ctx, st, w, req.Args.(*packp.LsRefsArgs)); err != nil {
+			if err := serveLsRefsV2(ctx, st, w, lsRefsArgs); err != nil {
 				return err
 			}
 			// Stateless (HTTP) carries a single command per request; stateful
@@ -511,7 +535,7 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 				return nil
 			}
 		case "fetch":
-			concluded, err := serveFetchV2(ctx, st, w, req.Args.(*packp.FetchArgs), opts)
+			concluded, err := serveFetchV2(ctx, st, w, fetchArgs, opts)
 			if err != nil {
 				return err
 			}
@@ -1601,4 +1625,18 @@ func peelToCommit(st storage.Storer, h plumbing.Hash) (*object.Commit, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// checkedArgs runs check before the wrapped arguments are decoded, that is,
+// right after the capabilities of a v2 command have been read.
+type checkedArgs struct {
+	packp.CommandArgs
+	check func() error
+}
+
+func (a *checkedArgs) Decode(r io.Reader) error {
+	if err := a.check(); err != nil {
+		return err
+	}
+	return a.CommandArgs.Decode(r)
 }
