@@ -187,6 +187,27 @@ func (s *BlameSuite) TestBlameRenameWithEdit() {
 	s.Equal([]plumbing.Hash{added, added, renamed, added, added}, h.blame(renamed, "d/g"))
 }
 
+func (s *BlameSuite) TestBlameReadsOnlyChangedBlobs() {
+	h := newBlameHistory(s)
+	tip := h.commit(h.tree(h.file("f", "a\n"), h.file("g", "0")))
+	for i := 1; i < 6; i++ {
+		tip = h.commit(h.tree(h.file("f", "a\n"), h.file("g", fmt.Sprint(i))), tip)
+	}
+	for i := 6; i < 12; i++ {
+		tip = h.commit(h.tree(h.file("f", "a\nb\n"), h.file("g", fmt.Sprint(i))), tip)
+	}
+
+	reads := make(blameObjectReads)
+	c, err := object.GetCommit(&countingObjectStorer{EncodedObjectStorer: h.storage, reads: reads}, tip)
+	s.Require().NoError(err)
+	clear(reads)
+	_, err = Blame(c, "f")
+	s.Require().NoError(err)
+
+	s.Equal(12, reads[plumbing.TreeObject], "one tree per commit")
+	s.Equal(2, reads[plumbing.BlobObject], "f at the tip, and before it was edited")
+}
+
 // blameHistory writes a history to memory, for blaming histories that no
 // fixture has.
 type blameHistory struct {
