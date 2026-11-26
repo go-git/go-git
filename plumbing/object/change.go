@@ -81,18 +81,22 @@ func (c *Change) String() string {
 	return fmt.Sprintf("<Action: %s, Path: %s>", action, c.name())
 }
 
-// Patch returns a Patch with all the file changes in chunks. This
-// representation can be used to create several diff outputs.
+// Patch returns a Patch with metadata and text differences for the file.
 func (c *Change) Patch() (*Patch, error) {
 	return c.PatchContext(context.Background())
 }
 
-// PatchContext returns a Patch with all the file changes in chunks. This
-// representation can be used to create several diff outputs.
-// If context expires, an non-nil error will be returned.
+// PatchContext returns a Patch with metadata and text differences for the file.
+// If the context expires, a non-nil error is returned.
 // Provided context must be non-nil.
 func (c *Change) PatchContext(ctx context.Context) (*Patch, error) {
-	return getPatchContext(ctx, "", c)
+	return c.PatchWithOptions(ctx, nil)
+}
+
+// PatchWithOptions creates a patch with the selected text backend.
+// A nil options value uses the default backend. The context must be non-nil.
+func (c *Change) PatchWithOptions(ctx context.Context, options *PatchOptions) (*Patch, error) {
+	return getPatchWithOptions(ctx, "", options, c)
 }
 
 func (c *Change) name() string {
@@ -144,16 +148,20 @@ func (c Changes) String() string {
 	return buffer.String()
 }
 
-// Patch returns a Patch with all the changes in chunks. This
-// representation can be used to create several diff outputs.
+// Patch returns a Patch with metadata and text differences for the changes.
 func (c Changes) Patch() (*Patch, error) {
 	return c.PatchContext(context.Background())
 }
 
-// PatchContext returns a Patch with all the changes in chunks. This
-// representation can be used to create several diff outputs.
-// If context expires, an non-nil error will be returned.
+// PatchContext returns a Patch with metadata and text differences for the changes.
+// If the context expires, a non-nil error is returned.
 // Provided context must be non-nil.
 func (c Changes) PatchContext(ctx context.Context) (*Patch, error) {
-	return getPatchContext(ctx, "", c...)
+	return c.PatchWithOptions(ctx, nil)
+}
+
+// PatchWithOptions creates patches with the selected text backend.
+// A nil options value uses the default backend. The context must be non-nil.
+func (c Changes) PatchWithOptions(ctx context.Context, options *PatchOptions) (*Patch, error) {
+	return getPatchWithOptions(ctx, "", options, c...)
 }

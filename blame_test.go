@@ -2,14 +2,75 @@ package git
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
+
+func TestBlameMatchesGit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		contents []string
+	}{
+		{"insert delete replace", []string{"A\nold\nB\nC\n", "A\nB\nnew\nC\n", "first\nA\nB\nnew\nC"}},
+		{"repeated blocks", []string{"f() {\n  one();\n}\n", "f() {\n  one();\n}\n\ng() {\n  two();\n}\n"}},
+		{"empty file", []string{"old\n", ""}},
+		{"invalid UTF-8", []string{"\xff\nsame\r\n", "\xfe\nsame\r\n"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			runGit := func(args ...string) string {
+				t.Helper()
+				cmd := gitenv.Command("git", args...)
+				cmd.Dir = dir
+				output, err := cmd.CombinedOutput()
+				require.NoError(t, err, "%s", output)
+				return string(output)
+			}
+			runGit("init")
+			for _, content := range tc.contents {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte(content), 0o644))
+				runGit("add", "file")
+				runGit("commit", "-m", "change")
+			}
+			expected := runGit("blame", "--line-porcelain", "HEAD", "--", "file")
+			repo, err := PlainOpen(dir)
+			require.NoError(t, err)
+			defer func() { _ = repo.Close() }()
+			head, err := repo.Head()
+			require.NoError(t, err)
+			commit, err := repo.CommitObject(head.Hash())
+			require.NoError(t, err)
+			actual, err := Blame(commit, "file")
+			require.NoError(t, err)
+
+			var hash string
+			lineIndex := 0
+			for line := range strings.SplitSeq(expected, "\n") {
+				if text, ok := strings.CutPrefix(line, "\t"); ok {
+					require.Less(t, lineIndex, len(actual.Lines))
+					require.Equal(t, hash, actual.Lines[lineIndex].Hash.String())
+					require.Equal(t, text, actual.Lines[lineIndex].Text)
+					lineIndex++
+				} else if fields := strings.Fields(line); len(fields) >= 3 && len(fields[0]) == 40 {
+					hash = fields[0]
+				}
+			}
+			require.Len(t, actual.Lines, lineIndex)
+		})
+	}
+}
 
 type BlameSuite struct {
 	BaseSuite
@@ -151,167 +212,6 @@ var blameTests = [...]blameTest{
 	{"https://github.com/git-fixtures/basic.git", "6ecf0ef2c2dffb796033e5a02219af86ec6584e5", "vendor/foo.go", concat(
 		repeat("6ecf0ef2c2dffb796033e5a02219af86ec6584e5", 7),
 	)},
-	/*
-		// This fails due to the different diff tool being used to create the patches.
-		// For example in commit d4b48a39aba7d3bd3e8abef2274a95b112d1ae73 when "function echo_status()" is added:
-		// - 'git diff' adds the new "}\n\n" to the end of function and keeps the "}\n\n" beforehand blamed to the previous commit
-		// - our diff adds the new "}\n\n" before the function and reuses the existing "}\n\n" to close the new function
-		// the resultant file is the same, but it causes blame not to match.
-		{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "InstallSpinnaker.sh", concat(
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 2),
-			repeat("a47d0aaeda421f06df248ad65bd58230766bf118", 1),
-			repeat("23673af3ad70b50bba7fdafadc2323302f5ba520", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 29),
-			repeat("9a06d3f20eabb254d0a1e2ff7735ef007ccd595e", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 4),
-			repeat("a47d0aaeda421f06df248ad65bd58230766bf118", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 5),
-			repeat("0c5bb1e4392e751f884f3c57de5d4aee72c40031", 2),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 3),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 7),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 2),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 5),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 7),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 3),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 6),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 10),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 4),
-			repeat("0c5bb1e4392e751f884f3c57de5d4aee72c40031", 2),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 2),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 4),
-			repeat("23673af3ad70b50bba7fdafadc2323302f5ba520", 4),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 4),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("0c5bb1e4392e751f884f3c57de5d4aee72c40031", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 13),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 2),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 6),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 2),
-			repeat("0c5bb1e4392e751f884f3c57de5d4aee72c40031", 1),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 4),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 3),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 2),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 4),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 3),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 15),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 1),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 1),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 8),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 2),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 12),
-			repeat("505577dc87d300cf562dc4702a05a5615d90d855", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 5),
-			repeat("370d61cdbc1f3c90db6759f1599ccbabd40ad6c1", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 4),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 1),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 5),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 3),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 2),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 2),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 9),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 1),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 3),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 4),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("8eb116de9128c314ac8a6f5310ca500b8c74f5db", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 6),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 6),
-			repeat("d2f6214b625db706384b378a29cc4c22237db97a", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 3),
-			repeat("d2f6214b625db706384b378a29cc4c22237db97a", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 4),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("c9c2a0ec03968ab17e8b16fdec9661eb1dbea173", 1),
-			repeat("d2f6214b625db706384b378a29cc4c22237db97a", 2),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 12),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 5),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 3),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 5),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 3),
-			repeat("a47d0aaeda421f06df248ad65bd58230766bf118", 5),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 5),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 2),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 1),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("b2c7142082d52b09ca20228606c31c7479c0833e", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("495c7118e7cf757aa04eab410b64bfb5b5149ad2", 1),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 1),
-			repeat("495c7118e7cf757aa04eab410b64bfb5b5149ad2", 3),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 1),
-			repeat("495c7118e7cf757aa04eab410b64bfb5b5149ad2", 1),
-			repeat("50d0556563599366f29cb286525780004fa5a317", 1),
-			repeat("dd2d03c19658ff96d371aef00e75e2e54702da0e", 1),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 1),
-			repeat("dd2d03c19658ff96d371aef00e75e2e54702da0e", 2),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 2),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 1),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("b5c6053a46993b20d1b91e7b7206bffa54669ad7", 1),
-			repeat("9e74d009894d73dd07773ea6b3bdd8323db980f7", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("d4b48a39aba7d3bd3e8abef2274a95b112d1ae73", 4),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 1),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 1),
-			repeat("d2f6214b625db706384b378a29cc4c22237db97a", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 3),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 2),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 2),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 4),
-			repeat("d2f6214b625db706384b378a29cc4c22237db97a", 1),
-			repeat("b7015a5d36990d69a054482556127b9c7404a24a", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 5),
-			repeat("b41d7c0e5b20bbe7c8eb6606731a3ff68f4e3941", 2),
-			repeat("d2f6214b625db706384b378a29cc4c22237db97a", 1),
-			repeat("ce9f123d790717599aaeb76bc62510de437761be", 5),
-			repeat("ba486de7c025457963701114c683dcd4708e1dee", 4),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 1),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 3),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 1),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 3),
-			repeat("6328ee836affafc1b52127147b5ca07300ac78e6", 2),
-			repeat("01e65d67eed8afcb67a6bdf1c962541f62b299c9", 3),
-			repeat("3de4f77c105f700f50d9549d32b9a05a01b46c4b", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 2),
-			repeat("370d61cdbc1f3c90db6759f1599ccbabd40ad6c1", 6),
-			repeat("dd7e66c862209e8b912694a582a09c0db3227f0d", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 2),
-			repeat("dd7e66c862209e8b912694a582a09c0db3227f0d", 3),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 1),
-			repeat("dd7e66c862209e8b912694a582a09c0db3227f0d", 1),
-			repeat("8980daf661408a3faa1f22c225702a5c1d11d5c9", 3),
-		)},
-	*/
 	{"https://github.com/spinnaker/spinnaker.git", "f39d86f59a0781f130e8de6b2115329c1fbe9545", "pylib/spinnaker/reconfigure_spinnaker.py", concat(
 		repeat("a24001f6938d425d0e7504bdf5d27fc866a85c3d", 22),
 		repeat("c89dab0d42f1856d157357e9010f8cc6a12f5b1f", 7),

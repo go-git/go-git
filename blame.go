@@ -3,18 +3,18 @@ package git
 import (
 	"bytes"
 	"container/heap"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/sergi/go-diff/diffmatchpatch"
-
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/utils/diff"
 )
 
 // BlameResult represents the result of a Blame operation.
@@ -30,6 +30,21 @@ type BlameResult struct {
 // Blame returns a BlameResult with the information about the last author of
 // each line from file `path` at commit `c`.
 func Blame(c *object.Commit, path string) (*BlameResult, error) {
+	return BlameWithOptions(context.Background(), c, path, nil)
+}
+
+// BlameOptions selects the text backend. Nil Differ uses the go-diff backend.
+// Output filters do not affect attribution, which uses raw change ranges.
+type BlameOptions struct {
+	Differ diff.Differ
+}
+
+// BlameWithOptions returns line attribution with the selected text backend.
+// The context must be non-nil. Options are not modified.
+func BlameWithOptions(ctx context.Context, c *object.Commit, path string, options *BlameOptions) (*BlameResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// The file to blame is identified by the input arguments:
 	// commit and path. commit is a Commit object obtained from a Repository. Path
 	// represents a path to a specific file contained in the repository.
@@ -47,6 +62,11 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 	// hunks rather than lines. Then when encountering diff hunks it would need to split them where necessary.
 
 	b := new(blame)
+	b.ctx = ctx
+	b.differ = diff.NewDefault()
+	if options != nil && options.Differ != nil {
+		b.differ = options.Differ
+	}
 	b.fRev = c
 	b.path = path
 	b.q = new(priorityQueue)
@@ -55,19 +75,19 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	finalLines, err := file.Lines()
+	contents, err := file.Bytes()
 	if err != nil {
 		return nil, err
+	}
+	finalLines := strings.Split(string(contents), "\n")
+	if finalLines[len(finalLines)-1] == "" {
+		finalLines = finalLines[:len(finalLines)-1]
 	}
 	finalLength := len(finalLines)
 
 	needsMap := make([]lineMap, finalLength)
 	for i := range needsMap {
 		needsMap[i] = lineMap{i, i, nil, -1}
-	}
-	contents, err := file.Contents()
-	if err != nil {
-		return nil, err
 	}
 	b.q.Push(&queueItem{
 		nil,
@@ -82,6 +102,9 @@ func Blame(c *object.Commit, path string) (*BlameResult, error) {
 	})
 	items := make([]*queueItem, 0)
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		items = items[:0]
 		for {
 			if b.q.Len() == 0 {
@@ -156,6 +179,8 @@ func newLines(contents []string, commits []*object.Commit) []*Line {
 // this struct is internally used by the blame function to hold its
 // inputs, outputs and state.
 type blame struct {
+	ctx    context.Context
+	differ diff.Differ
 	// the path of the file to blame
 	path string
 	// the commit of the final revision of the file to blame
@@ -291,49 +316,39 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		prevContents, err := file.Contents()
+		prevContents, err := file.Bytes()
 		if err != nil {
 			return false, err
 		}
 
-		hunks := diff.Do(prevContents, curItem.Contents)
-		prevl := -1
-		curl := -1
-		need := 0
+		result, err := b.differ.Diff(b.ctx, prevContents, curItem.Contents)
+		if err != nil {
+			return false, err
+		}
+		if result == nil {
+			return false, errors.New("diff: backend returned a nil result")
+		}
+		needIndex, offset := 0, 0
 		getFromParent := make([]lineMap, 0)
-	out:
-		for h := range hunks {
-			hLines := countLines(hunks[h].Text)
-			for range hLines {
-				switch hunks[h].Type {
-				case diffmatchpatch.DiffEqual:
-					prevl++
-					curl++
-					if curl == curItem.NeedsMap[need].Cur {
-						// add to needs
-						getFromParent = append(getFromParent, lineMap{curl, prevl, nil, -1})
-						// move to next need
-						need++
-						if need >= len(curItem.NeedsMap) {
-							break out
-						}
-					}
-				case diffmatchpatch.DiffInsert:
-					curl++
-					if curl == curItem.NeedsMap[need].Cur {
-						// the line we want is added, it may have been added here (or by another parent), skip it for now
-						need++
-						if need >= len(curItem.NeedsMap) {
-							break out
-						}
-					}
-				case diffmatchpatch.DiffDelete:
-					prevl += hLines
-					continue out
-				default:
-					return false, errors.New("invalid state: invalid hunk Type")
-				}
+		for edit := range result.Edits() {
+			if err := b.ctx.Err(); err != nil {
+				return false, err
 			}
+			for needIndex < len(curItem.NeedsMap) && curItem.NeedsMap[needIndex].Cur < edit.After.Start {
+				need := curItem.NeedsMap[needIndex]
+				getFromParent = append(getFromParent, lineMap{need.Cur, need.Cur + offset, nil, -1})
+				needIndex++
+			}
+			for needIndex < len(curItem.NeedsMap) && curItem.NeedsMap[needIndex].Cur < edit.After.End {
+				needIndex++
+			}
+			offset = edit.Before.End - edit.After.End
+		}
+		if err := b.ctx.Err(); err != nil {
+			return false, err
+		}
+		for _, need := range curItem.NeedsMap[needIndex:] {
+			getFromParent = append(getFromParent, lineMap{need.Cur, need.Cur + offset, nil, -1})
 		}
 
 		if len(getFromParent) > 0 {
@@ -353,7 +368,7 @@ func (b *blame) addBlames(curItems []*queueItem) (bool, error) {
 		}
 	}
 
-	curItem.Contents = "" // no longer need, free the memory
+	curItem.Contents = nil // no longer need, free the memory
 
 	if !anyPushed {
 		return finishNeeds(curItem)
@@ -484,7 +499,7 @@ type queueItem struct {
 	MergedChildren          []childToNeedsMap
 	Commit                  *object.Commit
 	path                    string
-	Contents                string
+	Contents                []byte
 	NeedsMap                []lineMap
 	numParentsNeedResolving int
 	IdenticalToChild        bool

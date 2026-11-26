@@ -1,57 +1,50 @@
 package diff
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	textdiff "github.com/go-git/go-git/v6/plumbing/diff"
 )
 
 // DefaultContextLines is the default number of context lines.
 const DefaultContextLines = 3
 
-var (
-	operationChar = map[Operation]byte{
-		Add:    '+',
-		Delete: '-',
-		Equal:  ' ',
-	}
-
-	operationColorKey = map[Operation]ColorKey{
-		Add:    New,
-		Delete: Old,
-		Equal:  Context,
-	}
-)
-
-// UnifiedEncoder encodes an unified diff into the provided Writer. It does not
+// UnifiedEncoder encodes a unified diff into the provided Writer. It does not
 // support similarity index for renames or sorting hash representations.
 type UnifiedEncoder struct {
 	io.Writer
 
-	// contextLines is the count of unchanged lines that will appear surrounding
-	// a change.
-	contextLines int
+	hunkOptions textdiff.HunkOptions
 
-	// srcPrefix and dstPrefix are prepended to file paths when encoding a diff.
+	// srcPrefix and dstPrefix are prepended to file paths.
 	srcPrefix string
 	dstPrefix string
 
-	// colorConfig is the color configuration. The default is no color.
+	// color is the color configuration. The default is no color.
 	color ColorConfig
 }
 
 // NewUnifiedEncoder returns a new UnifiedEncoder that writes to w.
 func NewUnifiedEncoder(w io.Writer, contextLines int) *UnifiedEncoder {
 	return &UnifiedEncoder{
-		Writer:       w,
-		srcPrefix:    "a/",
-		dstPrefix:    "b/",
-		contextLines: contextLines,
+		Writer:      w,
+		srcPrefix:   "a/",
+		dstPrefix:   "b/",
+		hunkOptions: textdiff.HunkOptions{Context: contextLines},
 	}
+}
+
+// SetHunkOptions replaces the context controls and returns e.
+// The encoder copies options and does not modify them.
+func (e *UnifiedEncoder) SetHunkOptions(options textdiff.HunkOptions) *UnifiedEncoder {
+	e.hunkOptions = options
+	return e
 }
 
 // SetColor sets e's color configuration and returns e.
@@ -74,8 +67,16 @@ func (e *UnifiedEncoder) SetDstPrefix(prefix string) *UnifiedEncoder {
 
 // Encode encodes patch.
 func (e *UnifiedEncoder) Encode(patch Patch) error {
-	sb := &strings.Builder{}
+	return e.EncodeContext(context.Background(), patch)
+}
 
+// EncodeContext encodes a patch with cancellation and backend error propagation.
+// The context must be non-nil.
+func (e *UnifiedEncoder) EncodeContext(ctx context.Context, patch Patch) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	sb := &strings.Builder{}
 	if message := patch.Message(); message != "" {
 		sb.WriteString(message)
 		if !strings.HasSuffix(message, "\n") {
@@ -84,18 +85,56 @@ func (e *UnifiedEncoder) Encode(patch Patch) error {
 	}
 
 	for _, filePatch := range patch.FilePatches() {
-		e.writeFilePatchHeader(sb, filePatch)
-		g := newHunksGenerator(filePatch.Chunks(), e.contextLines)
-		for _, hunk := range g.Generate() {
-			hunk.writeTo(sb, e.color)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		result := filePatch.Diff()
+		isBinary := filePatch.IsBinary()
+		if !isBinary && result == nil {
+			return errors.New("diff: text patch has no diff result")
+		}
+		if isBinary {
+			e.writeFilePatchHeader(sb, filePatch, true)
+			continue
+		}
+		headerWritten := false
+		for hunk, err := range result.Hunks(ctx, e.hunkOptions) {
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if !headerWritten {
+				e.writeFilePatchHeader(sb, filePatch, true)
+				headerWritten = true
+			}
+			e.writeHunkHeader(sb, hunk)
+			for _, line := range hunk.Lines {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if err := e.writeLine(sb, line); err != nil {
+					return err
+				}
+			}
+		}
+		if !headerWritten {
+			e.writeFilePatchHeader(sb, filePatch, false)
 		}
 	}
 
-	_, err := e.Write([]byte(sb.String()))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	n, err := io.WriteString(e.Writer, sb.String())
+	if err == nil && n != sb.Len() {
+		return io.ErrShortWrite
+	}
 	return err
 }
 
-func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch FilePatch) {
+func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch FilePatch, hasChanges bool) {
 	from, to := filePatch.Files()
 	if from == nil && to == nil {
 		return
@@ -105,6 +144,9 @@ func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch Fil
 	var lines []string
 	switch {
 	case from != nil && to != nil:
+		if !isBinary && !hasChanges && from.Mode() == to.Mode() && from.Path() == to.Path() {
+			return
+		}
 		hashEquals := from.Hash() == to.Hash()
 		lines = append(lines,
 			fmt.Sprintf("diff --git %s%s %s%s",
@@ -131,7 +173,7 @@ func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch Fil
 				fmt.Sprintf("index %s..%s %o", from.Hash(), to.Hash(), from.Mode()),
 			)
 		}
-		if !hashEquals {
+		if !hashEquals && (isBinary || hasChanges) {
 			lines = e.appendPathLines(lines, e.srcPrefix+from.Path(), e.dstPrefix+to.Path(), isBinary)
 		}
 	case from == nil:
@@ -140,14 +182,18 @@ func (e *UnifiedEncoder) writeFilePatchHeader(sb *strings.Builder, filePatch Fil
 			fmt.Sprintf("new file mode %o", to.Mode()),
 			fmt.Sprintf("index %s..%s", plumbing.ZeroHash, to.Hash()),
 		)
-		lines = e.appendPathLines(lines, "/dev/null", e.dstPrefix+to.Path(), isBinary)
+		if isBinary || hasChanges {
+			lines = e.appendPathLines(lines, "/dev/null", e.dstPrefix+to.Path(), isBinary)
+		}
 	case to == nil:
 		lines = append(lines,
 			fmt.Sprintf("diff --git %s %s", e.srcPrefix+from.Path(), e.dstPrefix+from.Path()),
 			fmt.Sprintf("deleted file mode %o", from.Mode()),
 			fmt.Sprintf("index %s..%s", from.Hash(), plumbing.ZeroHash),
 		)
-		lines = e.appendPathLines(lines, e.srcPrefix+from.Path(), "/dev/null", isBinary)
+		if isBinary || hasChanges {
+			lines = e.appendPathLines(lines, e.srcPrefix+from.Path(), "/dev/null", isBinary)
+		}
 	}
 
 	sb.WriteString(e.color[Meta])
@@ -172,222 +218,68 @@ func (e *UnifiedEncoder) appendPathLines(lines []string, fromPath, toPath string
 	)
 }
 
-type hunksGenerator struct {
-	fromLine, toLine            int
-	ctxLines                    int
-	chunks                      []Chunk
-	current                     *hunk
-	hunks                       []*hunk
-	beforeContext, afterContext []string
-}
-
-func newHunksGenerator(chunks []Chunk, ctxLines int) *hunksGenerator {
-	return &hunksGenerator{
-		chunks:   chunks,
-		ctxLines: ctxLines,
-	}
-}
-
-func (g *hunksGenerator) Generate() []*hunk {
-	for i, chunk := range g.chunks {
-		lines := splitLines(chunk.Content())
-		nLines := len(lines)
-
-		switch chunk.Type() {
-		case Equal:
-			g.fromLine += nLines
-			g.toLine += nLines
-			g.processEqualsLines(lines, i)
-		case Delete:
-			if nLines != 0 {
-				g.fromLine++
-			}
-
-			g.processHunk(i, chunk.Type())
-			g.fromLine += nLines - 1
-			g.current.AddOp(chunk.Type(), lines...)
-		case Add:
-			if nLines != 0 {
-				g.toLine++
-			}
-			g.processHunk(i, chunk.Type())
-			g.toLine += nLines - 1
-			g.current.AddOp(chunk.Type(), lines...)
-		}
-
-		if i == len(g.chunks)-1 && g.current != nil {
-			g.hunks = append(g.hunks, g.current)
-		}
-	}
-
-	return g.hunks
-}
-
-func (g *hunksGenerator) processHunk(i int, op Operation) {
-	if g.current != nil {
-		return
-	}
-
-	var ctxPrefix string
-	linesBefore := len(g.beforeContext)
-	if linesBefore > g.ctxLines {
-		ctxPrefix = g.beforeContext[linesBefore-g.ctxLines-1]
-		g.beforeContext = g.beforeContext[linesBefore-g.ctxLines:]
-		linesBefore = g.ctxLines
-	}
-
-	g.current = &hunk{ctxPrefix: strings.TrimSuffix(ctxPrefix, "\n")}
-	g.current.AddOp(Equal, g.beforeContext...)
-
-	switch op {
-	case Delete:
-		g.current.fromLine, g.current.toLine = g.addLineNumbers(g.fromLine, g.toLine, linesBefore, i, Add)
-	case Add:
-		g.current.toLine, g.current.fromLine = g.addLineNumbers(g.toLine, g.fromLine, linesBefore, i, Delete)
-	}
-
-	g.beforeContext = nil
-}
-
-// addLineNumbers obtains the line numbers in a new chunk.
-func (g *hunksGenerator) addLineNumbers(la, lb, linesBefore, i int, op Operation) (cla, clb int) {
-	cla = la - linesBefore
-	// we need to search for a reference for the next diff
-	switch {
-	case linesBefore != 0 && g.ctxLines != 0:
-		if lb > g.ctxLines {
-			clb = lb - g.ctxLines + 1
-		} else {
-			clb = 1
-		}
-	case g.ctxLines == 0:
-		clb = lb
-	case i != len(g.chunks)-1:
-		next := g.chunks[i+1]
-		if next.Type() == op || next.Type() == Equal {
-			// this diff will be into this chunk
-			clb = lb + 1
-		}
-	}
-
-	return cla, clb
-}
-
-func (g *hunksGenerator) processEqualsLines(ls []string, i int) {
-	if g.current == nil {
-		g.beforeContext = append(g.beforeContext, ls...)
-		return
-	}
-
-	g.afterContext = append(g.afterContext, ls...)
-	if len(g.afterContext) <= g.ctxLines*2 && i != len(g.chunks)-1 {
-		g.current.AddOp(Equal, g.afterContext...)
-		g.afterContext = nil
-	} else {
-		ctxLines := min(g.ctxLines, len(g.afterContext))
-		g.current.AddOp(Equal, g.afterContext[:ctxLines]...)
-		g.hunks = append(g.hunks, g.current)
-
-		g.current = nil
-		g.beforeContext = g.afterContext[ctxLines:]
-		g.afterContext = nil
-	}
-}
-
-func splitLines(s string) []string {
-	// strings.SplitAfter keeps the trailing newline on each line, matching the
-	// previous `[^\n]*(\n|$)` regexp but without the backtracking cost — line
-	// splitting dominated the unified-diff encode hot path. A string ending in
-	// "\n" yields a trailing "" element, which we drop to preserve behaviour.
-	out := strings.SplitAfter(s, "\n")
-	if out[len(out)-1] == "" {
-		out = out[:len(out)-1]
-	}
-	return out
-}
-
-type hunk struct {
-	fromLine int
-	toLine   int
-
-	fromCount int
-	toCount   int
-
-	ctxPrefix string
-	ops       []*op
-}
-
-func (h *hunk) writeTo(sb *strings.Builder, color ColorConfig) {
-	sb.WriteString(color[Frag])
+func (e *UnifiedEncoder) writeHunkHeader(sb *strings.Builder, h textdiff.Hunk) {
+	sb.WriteString(e.color[Frag])
 	sb.WriteString("@@ -")
-
-	if h.fromCount == 1 {
-		sb.WriteString(strconv.Itoa(h.fromLine))
-	} else {
-		sb.WriteString(strconv.Itoa(h.fromLine))
-		sb.WriteByte(',')
-		sb.WriteString(strconv.Itoa(h.fromCount))
-	}
-
+	writeRange(sb, h.Before.Start, h.Before.End-h.Before.Start)
 	sb.WriteString(" +")
-
-	if h.toCount == 1 {
-		sb.WriteString(strconv.Itoa(h.toLine))
-	} else {
-		sb.WriteString(strconv.Itoa(h.toLine))
-		sb.WriteByte(',')
-		sb.WriteString(strconv.Itoa(h.toCount))
-	}
-
+	writeRange(sb, h.After.Start, h.After.End-h.After.Start)
 	sb.WriteString(" @@")
-	sb.WriteString(color.Reset(Frag))
-
-	if h.ctxPrefix != "" {
+	sb.WriteString(e.color.Reset(Frag))
+	if h.Section != "" {
 		sb.WriteByte(' ')
-		sb.WriteString(color[Func])
-		sb.WriteString(h.ctxPrefix)
-		sb.WriteString(color.Reset(Func))
+		sb.WriteString(e.color[Func])
+		sb.WriteString(h.Section)
+		sb.WriteString(e.color.Reset(Func))
 	}
-
 	sb.WriteByte('\n')
+}
 
-	for _, op := range h.ops {
-		op.writeTo(sb, color)
+func writeRange(sb *strings.Builder, start, count int) {
+	if count != 0 {
+		start++
+	}
+	sb.WriteString(strconv.Itoa(start))
+	if count != 1 {
+		sb.WriteByte(',')
+		sb.WriteString(strconv.Itoa(count))
 	}
 }
 
-func (h *hunk) AddOp(t Operation, ss ...string) {
-	n := len(ss)
-	switch t {
-	case Add:
-		h.toCount += n
-	case Delete:
-		h.fromCount += n
-	case Equal:
-		h.toCount += n
-		h.fromCount += n
+func (e *UnifiedEncoder) writeLine(sb *strings.Builder, line textdiff.Line) error {
+	key := Context
+	var prefix byte
+	switch line.Operation {
+	case textdiff.Equal:
+		prefix = ' '
+	case textdiff.Delete:
+		prefix = '-'
+		key = Old
+	case textdiff.Insert:
+		prefix = '+'
+		key = New
+	default:
+		return fmt.Errorf("diff: invalid line operation %d", line.Operation)
 	}
-
-	h.ops = slices.Grow(h.ops, n)
-	for _, s := range ss {
-		h.ops = append(h.ops, &op{s, t})
+	content := line.Content
+	end := len(content)
+	if end > 0 && content[end-1] == '\n' {
+		end--
 	}
-}
-
-type op struct {
-	text string
-	t    Operation
-}
-
-func (o *op) writeTo(sb *strings.Builder, color ColorConfig) {
-	colorKey := operationColorKey[o.t]
-	sb.WriteString(color[colorKey])
-	sb.WriteByte(operationChar[o.t])
-	if text, found := strings.CutSuffix(o.text, "\n"); found {
-		sb.WriteString(text)
-	} else {
-		sb.WriteString(o.text + "\n\\ No newline at end of file")
+	if end > 0 && content[end-1] == '\r' {
+		end--
 	}
-	sb.WriteString(color.Reset(colorKey))
-	sb.WriteByte('\n')
+	sb.WriteString(e.color[key])
+	sb.WriteByte(prefix)
+	sb.Write(content[:end])
+	sb.WriteString(e.color.Reset(key))
+	sb.Write(content[end:])
+	if len(content) == 0 || content[len(content)-1] != '\n' {
+		sb.WriteByte('\n')
+		sb.WriteString(e.color[Context])
+		sb.WriteString("\\ No newline at end of file")
+		sb.WriteString(e.color.Reset(Context))
+		sb.WriteByte('\n')
+	}
+	return nil
 }

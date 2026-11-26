@@ -115,6 +115,25 @@ Date:   Fri Nov 11 13:23:22 2016 +0100
 
 You can find this [example](_examples/log/main.go) and many others in the [examples](_examples) folder.
 
+### Diff backends
+
+The core module uses go-diff by default. Patch generation and blame accept
+an explicit `plumbing/diff.Differ` through `object.PatchOptions` and
+`git.BlameOptions`. There is no global backend registry.
+
+The [patch example](_examples/patch/main.go) shows backend selection,
+context-aware encoding, statistics, and blame. `FilePatch.Diff()` returns
+a backend-neutral result. `Result.Edits()` returns a Go iterator over raw
+edits. `Result.Hunks(ctx, options)` returns an iterator over structured
+hunks and errors. Each backend constructs its own hunks.
+`Patch.Stats()` returns `FileStats` from the raw edits, not display filters.
+Comparison errors reach the caller when it creates the patch.
+
+Configure algorithms, section detection, and display filters on the selected
+backend. `NewDefaultWithOptions` accepts a custom section detector.
+Use `UnifiedEncoder.SetHunkOptions` for context and inter-hunk context.
+The encoder owns metadata, prefixes, colors, and missing-newline notices.
+
 ## Contribute
 
 [Contributions](https://github.com/go-git/go-git/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) are more than welcome, if you are interested please take a look to

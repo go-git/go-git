@@ -2,7 +2,8 @@ package diff
 
 import (
 	"bytes"
-	"slices"
+	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/color"
+	textdiff "github.com/go-git/go-git/v6/plumbing/diff"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 )
@@ -36,6 +38,7 @@ func (s *UnifiedEncoderTestSuite) TestBinaryFile() {
 	p := testPatch{
 		message: "",
 		filePatches: []testFilePatch{{
+			binary: true,
 			from: &testFile{
 				mode: filemode.Regular,
 				path: "binary",
@@ -65,6 +68,7 @@ func (s *UnifiedEncoderTestSuite) TestCustomSrcDstPrefix() {
 	p := testPatch{
 		message: "",
 		filePatches: []testFilePatch{{
+			binary: true,
 			from: &testFile{
 				mode: filemode.Regular,
 				path: "binary",
@@ -115,32 +119,6 @@ var oneChunkPatch Patch = testPatch{
 			path: "onechunk.txt",
 			seed: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\nZ",
 		},
-
-		chunks: []testChunk{{
-			content: "A\n",
-			op:      Delete,
-		}, {
-			content: "B\nC\nD\nE\nF\nG\n",
-			op:      Equal,
-		}, {
-			content: "H\n",
-			op:      Delete,
-		}, {
-			content: "I\nJ\nK\nL\nM\nN\n",
-			op:      Equal,
-		}, {
-			content: "Ñ\n",
-			op:      Delete,
-		}, {
-			content: "O\nP\nQ\nR\nS\nT\n",
-			op:      Equal,
-		}, {
-			content: "U\n",
-			op:      Delete,
-		}, {
-			content: "V\nW\nX\nY\nZ",
-			op:      Equal,
-		}},
 	}},
 }
 
@@ -157,32 +135,6 @@ var oneChunkPatchInverted Patch = testPatch{
 			path: "onechunk.txt",
 			seed: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\nZ",
 		},
-
-		chunks: []testChunk{{
-			content: "A\n",
-			op:      Add,
-		}, {
-			content: "B\nC\nD\nE\nF\nG\n",
-			op:      Equal,
-		}, {
-			content: "H\n",
-			op:      Add,
-		}, {
-			content: "I\nJ\nK\nL\nM\nN\n",
-			op:      Equal,
-		}, {
-			content: "Ñ\n",
-			op:      Add,
-		}, {
-			content: "O\nP\nQ\nR\nS\nT\n",
-			op:      Equal,
-		}, {
-			content: "U\n",
-			op:      Add,
-		}, {
-			content: "V\nW\nX\nY\nZ",
-			op:      Equal,
-		}},
 	}},
 }
 
@@ -200,16 +152,6 @@ var fixtures = []*fixture{{
 				path: "README.md",
 				seed: "hello\nbug\n",
 			},
-			chunks: []testChunk{{
-				content: "hello\n",
-				op:      Equal,
-			}, {
-				content: "world\n",
-				op:      Delete,
-			}, {
-				content: "bug\n",
-				op:      Add,
-			}},
 		}},
 	},
 	desc:    "positive negative number",
@@ -237,7 +179,6 @@ index 94954abda49de8615a048f8d2e64b5de848e27a1..f3dad9514629b9ff9136283ae331ad1f
 				path: "test.txt",
 				seed: "test",
 			},
-			chunks: nil,
 		}},
 	},
 	desc:    "make executable",
@@ -260,7 +201,6 @@ new mode 100755
 				path: "test1.txt",
 				seed: "test",
 			},
-			chunks: nil,
 		}},
 	},
 	desc:    "rename file",
@@ -283,13 +223,6 @@ rename to test1.txt
 				path: "test1.txt",
 				seed: "test1\n",
 			},
-			chunks: []testChunk{{
-				content: "test\n",
-				op:      Delete,
-			}, {
-				content: "test1\n",
-				op:      Add,
-			}},
 		}},
 	},
 	desc:    "rename file with changes",
@@ -318,7 +251,6 @@ index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..a5bce3fd2565d8f458555a0c6f42d050
 				path: "test1.txt",
 				seed: "test",
 			},
-			chunks: nil,
 		}},
 	},
 	desc:    "rename with file mode change",
@@ -343,14 +275,6 @@ rename to test1.txt
 				path: "test.txt",
 				seed: "test2\n",
 			},
-
-			chunks: []testChunk{{
-				content: "test\n",
-				op:      Delete,
-			}, {
-				content: "test2\n",
-				op:      Add,
-			}},
 		}},
 	},
 
@@ -378,14 +302,6 @@ index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..180cf8328022becee9aaa2577a8f84ea
 				path: "test.txt",
 				seed: "test2\n",
 			},
-
-			chunks: []testChunk{{
-				content: "test\n",
-				op:      Delete,
-			}, {
-				content: "test2\n",
-				op:      Add,
-			}},
 		}},
 	},
 
@@ -414,14 +330,6 @@ index 9daeafb9864cf43055ae93beb0afd6c7d144bfa4..180cf8328022becee9aaa2577a8f84ea
 				path: "test.txt",
 				seed: "test2",
 			},
-
-			chunks: []testChunk{{
-				content: "test",
-				op:      Delete,
-			}, {
-				content: "test2",
-				op:      Add,
-			}},
 		}},
 	},
 
@@ -448,11 +356,6 @@ index 30d74d258442c7c65512eafab474568dd706c430..d606037cb232bfda7788a8322492312d
 				path: "new.txt",
 				seed: "test\ntest2\ntest3",
 			},
-
-			chunks: []testChunk{{
-				content: "test\ntest2\ntest3",
-				op:      Add,
-			}},
 		}},
 	},
 
@@ -479,11 +382,6 @@ index 0000000000000000000000000000000000000000..3ceaab5442b64a0c2b33dd25fae67ccd
 				seed: "test",
 			},
 			to: nil,
-
-			chunks: []testChunk{{
-				content: "test",
-				op:      Delete,
-			}},
 		}},
 	},
 
@@ -837,14 +735,6 @@ index 0adddcde4fd38042c354518351820eb06c417c82..ab5eed5d4a2c33aeef67e0188ee79bed
 				path: "onechunk.txt",
 				seed: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\n",
 			},
-
-			chunks: []testChunk{{
-				content: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY\n",
-				op:      Equal,
-			}, {
-				content: "Z",
-				op:      Delete,
-			}},
 		}},
 	},
 	desc:    "remove last letter",
@@ -871,17 +761,6 @@ index 0adddcde4fd38042c354518351820eb06c417c82..553ae669c7a9303cf848fcc749a25692
 				path: "onechunk.txt",
 				seed: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\nY",
 			},
-
-			chunks: []testChunk{{
-				content: "B\nC\nD\nE\nF\nG\nI\nJ\nK\nL\nM\nN\nO\nP\nQ\nR\nS\nT\nV\nW\nX\n",
-				op:      Equal,
-			}, {
-				content: "Y\nZ",
-				op:      Delete,
-			}, {
-				content: "Y",
-				op:      Add,
-			}},
 		}},
 	},
 	desc:    "remove last letter and no newline at end of file",
@@ -890,7 +769,7 @@ index 0adddcde4fd38042c354518351820eb06c417c82..553ae669c7a9303cf848fcc749a25692
 index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f26c9218d 100644
 --- a/onechunk.txt
 +++ b/onechunk.txt
-@@ -22,2 +21 @@ X
+@@ -22,2 +22 @@ X
 -Y
 -Z
 \ No newline at end of file
@@ -911,16 +790,6 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 				path: "README.md",
 				seed: "hello\nbug\n",
 			},
-			chunks: []testChunk{{
-				content: "hello\n",
-				op:      Equal,
-			}, {
-				content: "world\n",
-				op:      Delete,
-			}, {
-				content: "bug\n",
-				op:      Add,
-			}},
 		}},
 	},
 	desc:    "positive negative number with color",
@@ -949,14 +818,6 @@ index 0adddcde4fd38042c354518351820eb06c417c82..d39ae38aad7ba9447b5e7998b2e4714f
 				path: "test.txt",
 				seed: "test2\n",
 			},
-
-			chunks: []testChunk{{
-				content: "test\n",
-				op:      Delete,
-			}, {
-				content: "test2\n",
-				op:      Add,
-			}},
 		}},
 	},
 
@@ -1022,11 +883,12 @@ func (t testPatch) Message() string {
 
 type testFilePatch struct {
 	from, to *testFile
-	chunks   []testChunk
+	binary   bool
+	result   textdiff.Result
 }
 
 func (t testFilePatch) IsBinary() bool {
-	return len(t.chunks) == 0
+	return t.binary
 }
 
 func (t testFilePatch) Files() (File, File) {
@@ -1043,10 +905,23 @@ func (t testFilePatch) Files() (File, File) {
 	return t.from, t.to
 }
 
-func (t testFilePatch) Chunks() []Chunk {
-	result := make([]Chunk, 0, len(t.chunks))
-	for _, c := range t.chunks {
-		result = append(result, c)
+func (t testFilePatch) Diff() textdiff.Result {
+	if t.binary {
+		return nil
+	}
+	if t.result != nil {
+		return t.result
+	}
+	var oldContent, newContent []byte
+	if t.from != nil {
+		oldContent = []byte(t.from.seed)
+	}
+	if t.to != nil {
+		newContent = []byte(t.to.seed)
+	}
+	result, err := textdiff.NewDefault().Diff(context.Background(), oldContent, newContent)
+	if err != nil {
+		panic(err)
 	}
 	return result
 }
@@ -1071,19 +946,6 @@ func (t testFile) Path() string {
 	return t.path
 }
 
-type testChunk struct {
-	content string
-	op      Operation
-}
-
-func (t testChunk) Content() string {
-	return t.content
-}
-
-func (t testChunk) Type() Operation {
-	return t.op
-}
-
 type fixture struct {
 	desc    string
 	context int
@@ -1092,50 +954,16 @@ type fixture struct {
 	patch   Patch
 }
 
-func TestSplitLines(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		name string
-		in   string
-		want []string
-	}{
-		{"empty string", "", []string{}},
-		{"single newline", "\n", []string{"\n"}},
-		{"two blank lines", "\n\n", []string{"\n", "\n"}},
-		{"single line no trailing newline", "a", []string{"a"}},
-		{"single line with trailing newline", "a\n", []string{"a\n"}},
-		{"two lines no trailing newline", "a\nb", []string{"a\n", "b"}},
-		{"two lines with trailing newline", "a\nb\n", []string{"a\n", "b\n"}},
-		{"leading blank line", "\na", []string{"\n", "a"}},
-		{"blank line in the middle", "a\n\nb", []string{"a\n", "\n", "b"}},
-		{"trailing blank line keeps one empty line", "a\n\n", []string{"a\n", "\n"}},
-		{"CRLF rides on the line", "a\r\nb\r\n", []string{"a\r\n", "b\r\n"}},
-		{"lone CR is not a separator", "a\rb", []string{"a\rb"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := splitLines(tc.in); !slices.Equal(got, tc.want) {
-				t.Errorf("splitLines(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// BenchmarkSplitLines measures line splitting on a representative
-// multi-line input. splitLines runs once per diff chunk and dominated
-// the unified-diff encode hot path under the previous regexp-based
-// implementation; this guards against regressing the strings.SplitAfter
-// fast path back into per-line allocation and backtracking.
-func BenchmarkSplitLines(b *testing.B) {
-	var sb strings.Builder
-	for range 200 {
-		sb.WriteString("the quick brown fox jumps over the lazy dog\n")
-	}
-	text := sb.String()
-
+func BenchmarkUnifiedEncoder(b *testing.B) {
+	patch := testPatch{filePatches: []testFilePatch{{
+		from: &testFile{seed: strings.Repeat("unchanged\n", 200) + "old\n"},
+		to:   &testFile{seed: strings.Repeat("unchanged\n", 200) + "new\n"},
+	}}}
+	patch.filePatches[0].result = patch.filePatches[0].Diff()
 	b.ReportAllocs()
 	for b.Loop() {
-		splitLines(text)
+		if err := NewUnifiedEncoder(io.Discard, DefaultContextLines).Encode(patch); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

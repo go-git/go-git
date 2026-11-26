@@ -147,6 +147,12 @@ func (c *Commit) Tree() (*Tree, error) {
 // NOTE: Since version 5.1.0 the renames are correctly handled, the settings
 // used are the recommended options DefaultDiffTreeOptions.
 func (c *Commit) PatchContext(ctx context.Context, to *Commit) (*Patch, error) {
+	return c.PatchWithOptions(ctx, to, nil)
+}
+
+// PatchWithOptions compares commits with the selected text backend.
+// A nil destination deletes the source tree. The context must be non-nil.
+func (c *Commit) PatchWithOptions(ctx context.Context, to *Commit, options *PatchOptions) (*Patch, error) {
 	fromTree, err := c.Tree()
 	if err != nil {
 		return nil, err
@@ -160,7 +166,7 @@ func (c *Commit) PatchContext(ctx context.Context, to *Commit) (*Patch, error) {
 		}
 	}
 
-	return fromTree.PatchContext(ctx, toTree)
+	return fromTree.PatchWithOptions(ctx, toTree, options)
 }
 
 // Patch returns the Patch between the actual commit and the provided one.
@@ -468,7 +474,10 @@ func (c *Commit) StatsContext(ctx context.Context) (FileStats, error) {
 		return nil, err
 	}
 
-	return getFileStatsFromFilePatches(patch.FilePatches()), nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return patch.Stats(), nil
 }
 
 func (c *Commit) String() string {

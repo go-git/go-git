@@ -3,19 +3,8 @@ package diff
 
 import (
 	"github.com/go-git/go-git/v6/plumbing"
+	textdiff "github.com/go-git/go-git/v6/plumbing/diff"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
-)
-
-// Operation defines the operation of a diff item.
-type Operation int
-
-const (
-	// Equal item represents an equals diff.
-	Equal Operation = iota
-	// Add item represents an insert diff.
-	Add
-	// Delete item represents a delete diff.
-	Delete
 )
 
 // Patch represents a collection of steps to transform several files.
@@ -35,9 +24,10 @@ type FilePatch interface {
 	// about them. If the patch creates a new file, "from" will be nil.
 	// If the patch deletes a file, "to" will be nil.
 	Files() (from, to File)
-	// Chunks returns a slice of ordered changes to transform "from" File into
-	// "to" File. If the file is a binary one, Chunks will be empty.
-	Chunks() []Chunk
+	// Diff returns the text changes, or nil for a binary file.
+	// Text files return a non-nil result even when empty or unchanged.
+	// The result's input bytes must not be modified.
+	Diff() textdiff.Result
 }
 
 // File contains all the file metadata necessary to print some patch formats.
@@ -48,12 +38,4 @@ type File interface {
 	Mode() filemode.FileMode
 	// Path returns the complete Path to the file, including the filename.
 	Path() string
-}
-
-// Chunk represents a portion of a file transformation into another.
-type Chunk interface {
-	// Content contains the portion of the file.
-	Content() string
-	// Type contains the Operation to do with this Chunk.
-	Type() Operation
 }

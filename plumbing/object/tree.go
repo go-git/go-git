@@ -642,12 +642,18 @@ func (t *Tree) Patch(to *Tree) (*Patch, error) {
 // NOTE: Since version 5.1.0 the renames are correctly handled, the settings
 // used are the recommended options DefaultDiffTreeOptions.
 func (t *Tree) PatchContext(ctx context.Context, to *Tree) (*Patch, error) {
+	return t.PatchWithOptions(ctx, to, nil)
+}
+
+// PatchWithOptions compares trees with the selected text backend.
+// Rename detection uses DefaultDiffTreeOptions. The context must be non-nil.
+func (t *Tree) PatchWithOptions(ctx context.Context, to *Tree, options *PatchOptions) (*Patch, error) {
 	changes, err := t.DiffContext(ctx, to)
 	if err != nil {
 		return nil, err
 	}
 
-	return changes.PatchContext(ctx)
+	return changes.PatchWithOptions(ctx, options)
 }
 
 // treeEntryIter facilitates iterating through the TreeEntry objects in a Tree.

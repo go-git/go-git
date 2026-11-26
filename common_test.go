@@ -1,7 +1,6 @@
 package git
 
 import (
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -169,37 +168,6 @@ func (s *BaseSuite) TemporalFilesystem() (fs billy.Filesystem) {
 	s.Require().NoError(err)
 
 	return fs
-}
-
-type SuiteCommon struct {
-	suite.Suite
-}
-
-func TestSuiteCommon(t *testing.T) {
-	t.Parallel()
-	suite.Run(t, new(SuiteCommon))
-}
-
-var countLinesTests = [...]struct {
-	i string // the string we want to count lines from
-	e int    // the expected number of lines in i
-}{
-	{"", 0},
-	{"a", 1},
-	{"a\n", 1},
-	{"a\nb", 2},
-	{"a\nb\n", 2},
-	{"a\nb\nc", 3},
-	{"a\nb\nc\n", 3},
-	{"a\n\n\nb\n", 4},
-	{"first line\n\tsecond line\nthird line\n", 3},
-}
-
-func (s *SuiteCommon) TestCountLines() {
-	for i, t := range countLinesTests {
-		o := countLines(t.i)
-		s.Equal(t.e, o, fmt.Sprintf("subtest %d, input=%q", i, t.i))
-	}
 }
 
 func AssertReferences(t *testing.T, r *Repository, expected map[string]string) {

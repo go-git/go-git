@@ -28,6 +28,7 @@ Here you can find a list of annotated _go-git_ examples:
 - [revision](revision/main.go) - Solve a revision into a commit.
 - [submodule](submodule/main.go) - Submodule update remote.
 - [blame](blame/main.go) - Blame/annotate a commit.
+- [patch](patch/main.go) - Encode a patch and access its go-xdiff result.
 - [ls-remote](ls-remote/main.go) - List remote tags without cloning a repository.
 
 ### Advanced
