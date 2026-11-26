@@ -125,6 +125,16 @@ func TestUploadPackV2LsRefsUnbornSymrefLoop(t *testing.T) {
 	require.NotContains(t, out, "unborn")
 }
 
+func TestUploadPackV2LsRefsUnbornChainedSymref(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/a")))
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference("refs/heads/a", "refs/heads/b")))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"unborn", "symrefs"}))
+	require.Contains(t, out, "unborn HEAD symref-target:refs/heads/b")
+}
+
 func TestUploadPackV2LsRefsPeeledInline(t *testing.T) {
 	t.Parallel()
 	st := v2StorageFromFixture(t, fixtures.ByTag("tags").One())

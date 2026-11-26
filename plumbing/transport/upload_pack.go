@@ -600,10 +600,19 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 	if r.Type() == plumbing.SymbolicReference {
 		ref, err := storer.ResolveReference(st, r.Target())
 		if reference.IsUnresolvableForAdvertisement(err) {
-			if unborn && symrefs && r.Name() == plumbing.HEAD && errors.Is(err, plumbing.ErrReferenceNotFound) && r.Target().Validate() == nil {
-				target = r.Target().String()
-				if _, err := pktline.Writef(w, "unborn %s symref-target:%s\n", r.Name(), target); err != nil {
-					return err
+			if unborn && symrefs && r.Name() == plumbing.HEAD && errors.Is(err, plumbing.ErrReferenceNotFound) {
+				targetName := r.Target()
+				for range 16 {
+					next, refErr := st.Reference(targetName)
+					if refErr != nil || next.Type() != plumbing.SymbolicReference {
+						break
+					}
+					targetName = next.Target()
+				}
+				if targetName.Validate() == nil {
+					if _, err := pktline.Writef(w, "unborn %s symref-target:%s\n", r.Name(), targetName.String()); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
