@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -1112,5 +1113,32 @@ func TestOracleVersionHint(t *testing.T) {
 		if got := oracleVersionHint([]string{p}); got != "" {
 			t.Errorf("oracleVersionHint(%q) = %q; the shape is unaffected and must not blame the Git version", p, got)
 		}
+	}
+}
+
+// TestTrailingSpaces covers the spaces at the end of a pattern line: they are
+// dropped unless a backslash escapes them, and a backslash escapes whatever
+// byte follows it, another backslash included.
+func (s *ConformanceSuite) TestTrailingSpaces() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("the names end in a space or a backslash, which a Windows path cannot carry")
+	}
+	tests := []struct {
+		pattern  string
+		text     string
+		expected bool
+		desc     string
+	}{
+		{"foo  ", "foo", true, "unescaped trailing spaces are dropped"},
+		{`foo\ `, "foo ", true, "an escaped trailing space is kept"},
+		{`foo\ `, "foo", false, "an escaped trailing space is required"},
+		{`foo\  `, "foo ", true, "only the spaces after an escaped one are dropped"},
+		{`foo\  `, "foo  ", false, "the second space is not part of the name"},
+		{`foo\\ `, `foo\`, true, "a space after an escaped backslash is dropped"},
+		{`foo\\ `, `foo\ `, false, "and so is not part of the name"},
+		{`foo \ `, "foo  ", true, "an escaped space protects the ones before it"},
+	}
+	for _, tt := range tests {
+		s.testMatch(tt.pattern, tt.text, tt.expected, tt.desc)
 	}
 }
